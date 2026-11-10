@@ -5,6 +5,7 @@ import { fakeBackend, runView } from './fake-backend.ts';
 import { KEYS, renderObservable, untilFrame, untilOutput } from './ink-helpers.ts';
 import { frame, runStarted, start, type } from './tui-harness.tsx';
 import { startPlan } from './fake-plan-gateway.tsx';
+import { fakeScreenTerminal } from './tui/screen-fakes.ts';
 
 describe('App startup', () => {
   it('opens the session of a trusted folder and shows the status line', async () => {
@@ -49,6 +50,8 @@ describe('App startup', () => {
   });
 });
 
+const IDLE = /^(?![\s\S]*working \(esc to cancel\))[\s\S]*mode: manual \(shift\+tab\)/;
+
 describe('App run rendering', () => {
   it('streams assistant text, shows tool calls with their status and reports usage and context', async () => {
     const { backend, app } = await start();
@@ -69,7 +72,8 @@ describe('App run rendering', () => {
     await untilFrame(app, 'tokens: 1.6k · context: 20%');
     backend.emit(frame({ type: 'run.status', from: 'RUNNING', to: 'COMPLETED' }));
     backend.finish(runView());
-    await untilFrame(app, /mode: manual \(shift\+tab\) · tokens: 1\.6k · context: 20%$/m);
+    await untilFrame(app, IDLE);
+    expect(app.lastFrame()).toMatch(/mode: manual \(shift\+tab\) · tokens: 1\.6k · context: 20% +ctrl\+j: new line$/m);
     app.unmount();
   });
 
@@ -292,7 +296,7 @@ describe('App input', () => {
     await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'one');
     backend.finish(runView());
-    await untilFrame(app, /mode: manual \(shift\+tab\) · tokens: 0$/m);
+    await untilFrame(app, IDLE);
     app.stdin.write(KEYS.up);
     await untilFrame(app, '> one');
     app.unmount();
@@ -397,7 +401,7 @@ describe('App slash commands', () => {
     await untilFrame(app, 'mode: manual');
     await type(app, '/clear', '> /clear');
     app.stdin.write(KEYS.enter);
-    await untilFrame(app, /mode: manual \(shift\+tab\) · tokens: 0$/m);
+    await untilFrame(app, IDLE);
     await type(app, 'again', '> again');
     app.stdin.write(KEYS.enter);
     await backend.called('openSession');
@@ -438,7 +442,7 @@ describe('App slash commands', () => {
       { name: 'review', description: 'review the diff', run: async (args) => void seen.push(args) },
     ]);
     const backend = fakeBackend();
-    const app = renderObservable(<App backend={backend} initialMode={undefined} slash={registry} onExit={() => undefined} />);
+    const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal()} now={Date.now} initialMode={undefined} slash={registry} onExit={() => undefined} />);
     await untilFrame(app, 'mode: manual');
     await type(app, '/review main', '> /review main');
     app.stdin.write(KEYS.enter);

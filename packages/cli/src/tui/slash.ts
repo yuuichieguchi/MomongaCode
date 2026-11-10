@@ -4,6 +4,7 @@ import { selectableModes } from '../modes.ts';
 import type { ModeAvailability } from '../modes.ts';
 import type { AutoModeCheckOptions, AutoModeCheckOutcome, AutoModeStatusOptions, AutoModeStatusOutcome } from '../commands/auto-mode.ts';
 import type { TuiBackend } from './backend.ts';
+import type { ScreenMode } from './terminal/modes.ts';
 
 export type AutoModePort = {
   check(options: AutoModeCheckOptions, write: (text: string) => void): Promise<AutoModeCheckOutcome>;
@@ -13,6 +14,8 @@ export type AutoModePort = {
 export type ShellPort = {
   run(argv: readonly string[], io: { write(text: string): void; signal: AbortSignal }): Promise<number>;
 };
+
+export type ScreenPort = { current(): ScreenMode; set(mode: ScreenMode): Promise<void> };
 
 export type SlashContext = ModeAvailability & {
   readonly mode: PermissionMode;
@@ -28,6 +31,7 @@ export type SlashContext = ModeAvailability & {
   background<T>(label: string, work: (signal: AbortSignal) => Promise<T>): Promise<T>;
   readonly autoMode: AutoModePort;
   readonly shell: ShellPort;
+  readonly screen: ScreenPort;
 };
 
 export type SlashCommand = {

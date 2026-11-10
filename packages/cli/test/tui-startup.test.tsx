@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ART_GAP, ART_WIDTH, artFits, shortenHome, textLines } from '../src/tui/startup.tsx';
 import type { StartupConfig } from '../src/tui/startup.tsx';
+import { SCROLLBAR_COLUMNS } from '../src/tui/screen/transcript-view.tsx';
 import { untilFrame } from './ink-helpers.ts';
 import { start } from './tui-harness.tsx';
 
@@ -13,10 +14,6 @@ const COLORED = /\u001b\[(?:3[0-7]|9[0-7]|38;)/;
 const config = (overrides: Partial<StartupConfig> = {}): StartupConfig => ({ version: '1.2.3', home: '/Users/ada', color: true, ...overrides });
 
 const bannerRows = (output: string): string[] => output.split('\n').filter((row) => /[∩•░┬]/.test(row));
-
-const widthOf = (app: Awaited<ReturnType<typeof start>>['app'], columns: number): void => {
-  Object.defineProperty(app.stdout, 'columns', { value: columns, configurable: true });
-};
 
 describe('startup screen', () => {
   it('shows the squirrel, the version, the model with its target, the mode and the shortened folder side by side', async () => {
@@ -47,9 +44,8 @@ describe('startup screen', () => {
     expect(artFits(needed, lines)).toBe(true);
     expect(artFits(needed - 1, lines)).toBe(false);
 
-    const { app } = await start({ session: { cwd: '/Users/ada/p' } }, { startup: config() });
-    widthOf(app, needed - 1);
-    const screen = await untilFrame(app, 'MomongaCode v1.2.3');
+    const { app } = await start({ session: { cwd: '/Users/ada/p' } }, { startup: config() }, { columns: needed - 1 + SCROLLBAR_COLUMNS });
+    const screen = await untilFrame(app, 'model: default → primary');
     expect(screen).not.toContain('•ᴥ•');
     app.unmount();
   });

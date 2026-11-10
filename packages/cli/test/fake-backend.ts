@@ -49,6 +49,7 @@ export type FakeBackend = TuiBackend & {
   readonly openUrlCalls: { url: URL; watch: AbortSignal | undefined; onFailure(message: string): void }[];
   readonly recorded: string[];
   emit(frame: RunEventFrame): void;
+  following(): FollowHandlers;
   finish(run: RunView): void;
 };
 
@@ -155,6 +156,10 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
         else waiters.push({ call, resolve });
       }),
     emit,
+    following: () => {
+      if (handlers === undefined) throw new Error('no run is being followed');
+      return handlers;
+    },
     finish: (run) => {
       if (finishRun === undefined) throw new Error('no run is being followed');
       finishRun(run);
@@ -216,8 +221,9 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       if (failure !== undefined) queueMicrotask(() => onFailure(failure.message));
       return Promise.resolve();
     },
-    copyToClipboard: (text) => {
+    copyToClipboard: async (text) => {
       record(`copy:${text}`);
+      return { kind: 'copied', characters: [...text].length };
     },
     skills: async () => ({ skills: [...(options.skills ?? [])], warnings: [...(options.skillWarnings ?? [])] }),
     memories: async () => memories,

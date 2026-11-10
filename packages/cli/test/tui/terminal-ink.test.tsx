@@ -212,7 +212,7 @@ describe('the frame around the screen', () => {
     expect(mounts).toBe(1);
   });
 
-  it('writes a notice above the screen and redraws on request', async () => {
+  it('leaves a notice to the screen below it and redraws on request', async () => {
     const fake = fakeLayer(false);
     const app = render(
       <TerminalFrame layer={fake.layer}>
@@ -221,7 +221,7 @@ describe('the frame around the screen', () => {
     );
     await vi.waitFor(() => expect(fake.requestListeners()).toBe(1));
     fake.request({ type: 'notice', text: 'The paste was larger than 1 MiB and was not inserted.' });
-    await vi.waitFor(() => expect(app.frames.join('\n')).toContain('The paste was larger than 1 MiB and was not inserted.'));
+    expect(app.frames.join('\n')).not.toContain('The paste was larger than 1 MiB and was not inserted.');
     const before = app.frames.length;
     fake.request({ type: 'redraw' });
     await vi.waitFor(() => expect(app.frames.length).toBeGreaterThan(before));

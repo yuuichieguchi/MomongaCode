@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { PublicRunEvent } from '@momonga/protocol';
-import { initialTranscript, nextMode, reduceChildEvent, reduceEvent, settledCount } from '../src/tui/transcript.ts';
-import type { Transcript } from '../src/tui/transcript.ts';
+import { initialState } from '../src/tui/screen/store.ts';
+import { nextMode } from '../src/tui/transcript.ts';
+import { fold, foldChild, plainOf, storeOf } from './tui/screen-fakes.ts';
+import type { Folded } from './tui/screen-fakes.ts';
 
 const envelope = { id: 1, runId: 'r', sessionId: 's', seq: 1, step: 1, createdAt: 1 } as const;
 
-const apply = (events: readonly Record<string, unknown>[]): Transcript =>
-  events.reduce<Transcript>((state, event) => reduceEvent(state, { ...envelope, ...event } as PublicRunEvent), initialTranscript);
+const apply = (events: readonly Record<string, unknown>[]): Folded => fold(events);
 
 const call = { type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Read', kind: 'read', title: 'Read /a', rawInput: {} };
 
-describe('reduceEvent', () => {
+describe('foldEvent', () => {
   it('appends message deltas of one item and starts a new entry for the next item', () => {
     const state = apply([
       { type: 'agent.message.delta', attempt: 0, itemId: 'a', text: 'Hel' },
@@ -44,15 +45,16 @@ describe('reduceEvent', () => {
     const toolCall = (runId: string): PublicRunEvent => childEvent(runId, { ...call, callId: 'c1' });
     const request = (runId: string, approvalId: string): PublicRunEvent => childEvent(runId, { type: 'tool.permission.requested', approvalId, callId: 'c1', subjectDigest: 'd', options: option });
     const settle = (runId: string, approvalId: string): PublicRunEvent => childEvent(runId, { type: 'tool.permission.resolved', approvalId, optionId: 'o' });
-    const both = [toolCall('a'), request('a', 'ap-a'), toolCall('b'), request('b', 'ap-b')].reduce((state, event) => reduceChildEvent(state, event, 'reviewer'), initialTranscript);
+    const raised = [toolCall('a'), request('a', 'ap-a'), toolCall('b'), request('b', 'ap-b')];
+    const both = plainOf(foldChild(raised, 'reviewer'));
 
     expect(both.approval).toMatchObject({ approvalId: 'ap-a', callId: 'a/c1' });
     expect(both.queuedApprovals).toMatchObject([{ approvalId: 'ap-b', callId: 'b/c1' }]);
-    const afterFirst = reduceChildEvent(both, settle('a', 'ap-a'), 'reviewer');
+    const afterFirst = plainOf(foldChild([...raised, settle('a', 'ap-a')], 'reviewer'));
     expect(afterFirst.approval).toMatchObject({ approvalId: 'ap-b' });
     expect(afterFirst.queuedApprovals).toEqual([]);
     expect(afterFirst.entries).toMatchObject([{ callId: 'a/c1', status: 'requested' }, { callId: 'b/c1', status: 'awaiting_approval' }]);
-    const queuedWithdrawn = reduceChildEvent(both, settle('b', 'ap-b'), 'reviewer');
+    const queuedWithdrawn = plainOf(foldChild([...raised, settle('b', 'ap-b')], 'reviewer'));
     expect(queuedWithdrawn.approval).toMatchObject({ approvalId: 'ap-a' });
     expect(queuedWithdrawn.queuedApprovals).toEqual([]);
     expect(queuedWithdrawn.entries).toMatchObject([{ status: 'awaiting_approval' }, { status: 'requested' }]);
@@ -60,11 +62,12 @@ describe('reduceEvent', () => {
 
   it('keeps the questions of parallel subagents in order', () => {
     const ask = (inputId: string, callId: string) => ({ type: 'tool.elicitation.requested', inputId, callId, server: 'remote', requests: [{ key: 'who', mode: 'url', message: 'Sign in', url: 'https://example.test/consent' }] });
-    const both = apply([call, { ...call, callId: 'c2' }, ask('in-1', 'c1'), ask('in-2', 'c2')]);
+    const asked = [call, { ...call, callId: 'c2' }, ask('in-1', 'c1'), ask('in-2', 'c2')];
+    const both = apply(asked);
 
     expect(both.elicitation).toMatchObject({ inputId: 'in-1' });
     expect(both.queuedElicitations).toMatchObject([{ inputId: 'in-2' }]);
-    const next = reduceEvent(both, { ...envelope, type: 'tool.elicitation.resolved', inputId: 'in-1' } as unknown as PublicRunEvent);
+    const next = apply([...asked, { type: 'tool.elicitation.resolved', inputId: 'in-1' }]);
     expect(next.elicitation).toMatchObject({ inputId: 'in-2' });
     expect(next.queuedElicitations).toEqual([]);
   });
@@ -100,6 +103,7 @@ describe('reduceEvent', () => {
     ]);
     expect(state.usage).toEqual({ inputTokens: 10, outputTokens: 5, totalTokens: 15 });
     expect(state.contextTokens).toBe(15);
+    expect(apply([]).contextTokens).toBe(0);
   });
 
   it('records notices and compaction, and clears the approval when the run ends', () => {
@@ -117,24 +121,24 @@ describe('reduceEvent', () => {
 
   it('shows the plan live and folds it into the transcript when the run ends', () => {
     const plan = { type: 'plan.updated', entries: [{ content: 'step one', priority: 'high', status: 'completed' }] };
-    const live = apply([plan]);
-    expect(live.entries[0]).toMatchObject({ kind: 'plan' });
-    expect(settledCount(live.entries)).toBe(0);
+    const live = storeOf([plan]);
+    expect(live.at(0).entry).toMatchObject({ kind: 'plan' });
+    expect(live.settledCount()).toBe(0);
     const ended = apply([plan, { type: 'run.status', from: 'RUNNING', to: 'COMPLETED' }]);
     expect(ended.entries).toEqual([{ kind: 'info', text: '[x] step one' }]);
   });
 
   it('ignores events it has no view for', () => {
-    expect(apply([{ type: 'instructions.loaded', path: '/a' }])).toEqual(initialTranscript);
+    expect(apply([{ type: 'instructions.loaded', path: '/a' }])).toEqual({ ...initialState, entries: [] });
   });
 });
 
 describe('settledCount', () => {
   it('counts the leading entries that can no longer change', () => {
-    const state = apply([call, { type: 'agent.message.delta', attempt: 0, itemId: 'a', text: 'x' }]);
-    expect(settledCount(state.entries)).toBe(0);
-    const done = apply([call, { type: 'tool.completed', callId: 'c1', status: 'completed', output: '' }, { type: 'agent.message.delta', attempt: 0, itemId: 'a', text: 'x' }]);
-    expect(settledCount(done.entries)).toBe(1);
+    const state = storeOf([call, { type: 'agent.message.delta', attempt: 0, itemId: 'a', text: 'x' }]);
+    expect(state.settledCount()).toBe(0);
+    const done = storeOf([call, { type: 'tool.completed', callId: 'c1', status: 'completed', output: '' }, { type: 'agent.message.delta', attempt: 0, itemId: 'a', text: 'x' }]);
+    expect(done.settledCount()).toBe(1);
   });
 });
 
@@ -192,17 +196,26 @@ describe('waiting and subagent runs', () => {
     expect(waiting).toMatchObject({ runStatus: 'WAITING_TOOL', waiting: 'subagent reviewer' });
     const job = apply([{ type: 'tool.waiting', callId: 'c2', awaits: { kind: 'job', jobId: 'bash_1' } }]);
     expect(job.waiting).toBe('job bash_1');
-    const woken = reduceEvent(waiting, { ...envelope, type: 'run.status', from: 'WAITING_TOOL', to: 'QUEUED' } as PublicRunEvent);
+    const woken = apply([
+      { type: 'run.status', from: 'RUNNING', to: 'WAITING_TOOL' },
+      { type: 'tool.waiting', callId: 'c1', awaits: { kind: 'run', runId: 'child', sessionId: 's2', agent: 'reviewer' } },
+      { type: 'run.status', from: 'WAITING_TOOL', to: 'QUEUED' },
+    ]);
     expect(woken.waiting).toBeUndefined();
   });
 
   it('shows the call and the approval of a child run without touching the status or the text of the run', () => {
-    const state = [
+    const state = plainOf(
+      foldChild(
+        ([
       { ...envelope, runId: 'child', type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Edit', kind: 'edit', title: 'Edit /a', rawInput: {} },
       { ...envelope, runId: 'child', type: 'tool.permission.requested', approvalId: 'ap-1', callId: 'c1', subjectDigest: 'd', options: [], expiresAt: 10 },
       { ...envelope, runId: 'child', type: 'agent.message.delta', attempt: 0, itemId: 'm', text: 'child text' },
       { ...envelope, runId: 'child', type: 'run.status', from: 'RUNNING', to: 'COMPLETED' },
-    ].reduce((current, event) => reduceChildEvent(current, event as PublicRunEvent, 'reviewer'), initialTranscript);
+    ] as unknown[]) as PublicRunEvent[],
+        'reviewer',
+      ),
+    );
 
     expect(state.entries).toMatchObject([{ kind: 'tool', callId: 'child/c1', title: 'reviewer: Edit /a', status: 'awaiting_approval' }]);
     expect(state.approval).toMatchObject({ approvalId: 'ap-1', callId: 'child/c1' });

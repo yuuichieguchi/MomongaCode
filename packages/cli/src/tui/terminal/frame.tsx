@@ -13,7 +13,13 @@ export type FrameLayer = {
 export const TerminalFrame = ({ layer, children }: { layer: FrameLayer; children: ReactNode }): ReactNode => {
   const { tooSmall } = useSyncExternalStore(layer.subscribe, layer.state);
   const { write } = useStdout();
-  useEffect(() => layer.subscribeScreen((request) => write(request.type === 'notice' ? `${request.text}\n` : '')), [layer, write]);
+  useEffect(
+    () =>
+      layer.subscribeScreen((request) => {
+        if (request.type === 'redraw') write('');
+      }),
+    [layer, write],
+  );
   return (
     <>
       <Box display={tooSmall ? 'none' : 'flex'} flexDirection="column">

@@ -1,5 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { currentSocketResolver, systemTiming } from '@momonga/foundation';
+import { currentSocketResolver, findProgramOnPath, systemTiming } from '@momonga/foundation';
 import { LOCAL_SERVER_CANDIDATES } from '@momonga/protocol';
 import type { AddRuleRequest, ElicitationAnswerRecord, LocalServerDetection, GatewayHealth, GoverningFactView, ImageAttachment, MemoryView, MomongaModelEntry, PermissionMode, RuleAddResponse, SkillsResponse } from '@momonga/protocol';
 import { addModelConnection, loadUserSettings } from '@momonga/config';
@@ -19,16 +19,19 @@ import { daemonReadyBoundMs, ensureDaemon, restoreDaemon } from '../daemon/ensur
 import type { CliPorts } from '../ports.ts';
 import { followRun } from '../run/follow.ts';
 import type { NoticeSource } from './notices.ts';
+import { createClipboardPrograms } from './screen/clipboard-host.ts';
+import type { ClipboardPrograms } from './screen/clipboard-host.ts';
+import { copyThroughRoutes } from './screen/clipboard.ts';
+import type { CopyOutcome } from './screen/clipboard.ts';
 import { readImageAttachment } from '../images.ts';
 import { autoModeConfigured, connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import type { SessionOptions } from '../run/open-session.ts';
 
-const OSC = '\u001b]';
-const BEL = '\u0007';
-
 export type FollowHandlers = {
   onEvent(frame: RunEventFrame): void;
   onChildEvent(frame: RunEventFrame, agent: string): void;
+  onChildStarted(agent: string, runId: string): void;
+  onChildEnded(agent: string, runId: string): void;
   onReconnecting(attempt: number): void;
 };
 
@@ -51,7 +54,7 @@ export type TuiBackend = {
   resolveApproval(approvalId: string, optionId: string): Promise<void>;
   resolveElicitation(inputId: string, responses: Readonly<Record<string, ElicitationAnswerRecord>>): Promise<void>;
   openUrl(url: URL, watch: AbortSignal | undefined, onFailure: (message: string) => void): void;
-  copyToClipboard(text: string): void;
+  copyToClipboard(text: string): Promise<CopyOutcome>;
   skills(): Promise<SkillsResponse>;
   memories(filter?: MemoryFilter): Promise<MemoryView[]>;
   memory(id: string): Promise<MemoryView>;
@@ -85,6 +88,7 @@ export const createTuiBackend = (
   options: SessionOptions,
   history: HistoryStore,
   noticeSources: readonly NoticeSource[],
+  clipboard: ClipboardPrograms = createClipboardPrograms(),
 ): TuiBackend => {
   let client: RuntimeClient | undefined;
   let session: SessionView | undefined;
@@ -183,6 +187,8 @@ export const createTuiBackend = (
         restoreConnection: restoreDaemon(ports, paths, onNotice),
         onEvent: handlers.onEvent,
         onChildEvent: handlers.onChildEvent,
+        onChildStarted: handlers.onChildStarted,
+        onChildEnded: handlers.onChildEnded,
         onReconnecting: handlers.onReconnecting,
         signal: closing.signal,
       }),
@@ -196,10 +202,10 @@ export const createTuiBackend = (
       await runtime().resolveElicitation(inputId, responses);
     },
     openUrl: (url, watch, onFailure) => ports.openUrl(url, watch === undefined ? closing.signal : AbortSignal.any([closing.signal, watch]), onFailure),
-    copyToClipboard: (text) => {
+    copyToClipboard: async (text) => {
       const terminal = ports.terminal;
       if (terminal === undefined) throw new Error('the clipboard request needs a terminal');
-      terminal.stdout.write(`${OSC}52;c;${Buffer.from(text, 'utf8').toString('base64')}${BEL}`);
+      return copyThroughRoutes({ env: ports.env, findProgram: (name) => findProgramOnPath(name, ports.env), pipe: clipboard.pipe, writeTerminal: (sequence) => void terminal.stdout.write(sequence) }, text);
     },
     skills: () => runtime().skills(current().id),
     memories: (filter) => runtime().memories(filter),
@@ -218,6 +224,7 @@ export const createTuiBackend = (
     recordHistory: (text) => history.append(text),
     close: async () => {
       closing.abort();
+      clipboard.stop();
       await client?.close();
     },
   };

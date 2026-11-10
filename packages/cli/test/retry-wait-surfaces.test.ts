@@ -4,8 +4,10 @@ import { createMapperState, mapRunEvent } from '../src/acp/events.ts';
 import type { ClientFeatures, Effect } from '../src/acp/events.ts';
 import { createFrameSink } from '../src/run/headless.ts';
 import type { RunEventFrame } from '../src/client/runtime-client.ts';
-import { initialTranscript, reduceEvent } from '../src/tui/transcript.ts';
-import type { Transcript } from '../src/tui/transcript.ts';
+import { createTranscriptStore } from '../src/tui/screen/store.ts';
+import { foldEvent } from '../src/tui/transcript.ts';
+import { plainOf } from './tui/screen-fakes.ts';
+import type { Folded } from './tui/screen-fakes.ts';
 
 const RETRY_AT = new Date(2026, 10, 7, 23, 41, 5).getTime();
 const RETRY_TIME = '23:41:05';
@@ -49,9 +51,13 @@ const chunkTexts = (effects: readonly Effect[]): string[] =>
     return [String(content.text)];
   });
 
-const transcriptOf = (payloads: readonly Record<string, unknown>[]): Transcript => eventsOf(payloads).reduce<Transcript>(reduceEvent, initialTranscript);
+const transcriptOf = (payloads: readonly Record<string, unknown>[]): Folded => {
+  const store = createTranscriptStore();
+  for (const event of eventsOf(payloads)) foldEvent(store, event);
+  return plainOf(store);
+};
 
-const shownBy = (transcript: Transcript): string[] => [
+const shownBy = (transcript: Folded): string[] => [
   ...transcript.entries.flatMap((entry) => ('text' in entry ? [entry.text] : [])),
   ...(transcript.waiting === undefined ? [] : [transcript.waiting]),
 ];

@@ -3,6 +3,7 @@ import { render } from 'ink';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/tui/app.tsx';
 import type { TuiOutcome } from '../../src/tui/app.tsx';
+import { createScreenInput } from '../../src/tui/screen/input.ts';
 import { TerminalFrame } from '../../src/tui/terminal/frame.tsx';
 import { inkInputOf } from '../../src/tui/terminal/ink-bridge.ts';
 import { createInkStdin } from '../../src/tui/terminal/ink-stdin.ts';
@@ -34,6 +35,7 @@ const startOnLayer = () => {
   const stdout = new FakeStdout();
   const control: string[] = [];
   const inkStdin = createInkStdin();
+  const input = createScreenInput((events) => inkStdin.push(inkInputOf(events)));
   const layer = createTerminalLayer({
     input: { setRawMode: () => undefined, resume: () => undefined, pause: () => undefined, on: (event, listener) => terminalInput.on(event, listener), off: (event, listener) => terminalInput.off(event, listener) },
     output: { writeSync: (text) => control.push(text), size: () => ({ columns: stdout.columns, rows: stdout.rows }), onResize: () => () => undefined },
@@ -41,13 +43,13 @@ const startOnLayer = () => {
     screen: 'scrollback',
     screenSetByUser: true,
     mouse: true,
-    onEvents: (events) => inkStdin.push(inkInputOf(events)),
+    onEvents: (events) => input.push(events),
   });
   layer.start();
   const outcomes: TuiOutcome[] = [];
   const instance = render(
     <TerminalFrame layer={layer}>
-      <App backend={fakeBackend()} initialMode={undefined} onExit={(outcome) => outcomes.push(outcome)} />
+      <App backend={fakeBackend()} terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, input }} now={Date.now} initialMode={undefined} onExit={(outcome) => outcomes.push(outcome)} />
     </TerminalFrame>,
     { stdin: inkStdin.stream, stdout: stdout as unknown as NodeJS.WriteStream, exitOnCtrlC: false, patchConsole: false },
   );

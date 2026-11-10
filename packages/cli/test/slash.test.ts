@@ -26,6 +26,8 @@ const unusedShell: SlashContext['shell'] = {
   run: async () => 0,
 };
 
+const unusedScreen: SlashContext['screen'] = { current: () => 'fullscreen', set: async () => undefined };
+
 const unusedAutoMode: SlashContext['autoMode'] = {
   check: async () => ({ measurement: 'passed' }),
   status: async () => ({ measurement: 'not_measured' }),
@@ -66,6 +68,7 @@ describe('built-in commands', () => {
       background: (_label, work) => work(new AbortController().signal),
       autoMode: unusedAutoMode,
       shell: unusedShell,
+      screen: unusedScreen,
       ...overrides,
     };
     return { context, infos, modes, models };
@@ -175,6 +178,7 @@ const contextWith = (backendOptions: FakeBackendOptions = {}) => {
     background: (_label, work) => work(new AbortController().signal),
     autoMode: unusedAutoMode,
     shell: unusedShell,
+    screen: unusedScreen,
   };
   return { context, infos, runs, backend };
 };

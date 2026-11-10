@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { runView } from './fake-backend.ts';
-import { untilFrame, untilOutput } from './ink-helpers.ts';
+import { untilFrame, untilOutput, withoutLinks } from './ink-helpers.ts';
 import { runStarted } from './tui-harness.tsx';
 import { AUTHORIZATION_URL, PLAN_TEST_TIMEOUT_MS, account, choose, startPlan, submitLine } from './fake-plan-gateway.tsx';
 
@@ -23,7 +23,7 @@ describe('the TUI starts the browser through the opener port and hears of a fail
     await runStarted(backend, app, 'go');
     backend.finish(runView({ status: 'STOPPED', stopReason: 'usage_limit' as never, error: { code: 'plan_usage_limit', message: 'Manage usage', plan: { profile: 'chatgpt', account: 'chatgpt' } } as never }));
     await choose(app, 'Manage usage');
-    await untilOutput(app, 'Could not open the browser (no opener). Manage usage: https://chatgpt.com/settings/usage');
+    await untilOutput(app, (shown) => withoutLinks(shown).includes('Could not open the browser (no opener). Manage usage: https://chatgpt.com/settings/usage'));
     expect(backend.openUrlCalls).toHaveLength(1);
     expect(backend.openUrlCalls[0]?.watch).toBeUndefined();
     app.unmount();

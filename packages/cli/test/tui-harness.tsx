@@ -6,6 +6,7 @@ import { fakeBackend } from './fake-backend.ts';
 import type { FakeBackend, FakeBackendOptions } from './fake-backend.ts';
 import { KEYS, renderObservable, untilFrame, untilOutput } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
+import { fakeScreenTerminal } from './tui/screen-fakes.ts';
 
 export const base = { runId: 'run-1', sessionId: 'session-1', step: 1, createdAt: 1 } as const;
 
@@ -16,14 +17,17 @@ export const frame = (event: Record<string, unknown>): RunEventFrame => {
   return { id: sequence, event: String(event['type']), data: { ...base, id: sequence, seq: sequence, ...event } as PublicRunEvent };
 };
 
-export const start = async (options: FakeBackendOptions = {}, extra: Pick<AppProps, 'initialPrompt' | 'initialImages' | 'startup'> = {}) => {
+export const start = async (options: FakeBackendOptions = {}, extra: Partial<Pick<AppProps, 'initialPrompt' | 'initialImages' | 'startup' | 'copyOnSelect' | 'now'>> = {}, screen: Parameters<typeof fakeScreenTerminal>[0] = {}) => {
   const backend = fakeBackend(options);
+  const terminal = fakeScreenTerminal(screen);
   const outcomes: TuiOutcome[] = [];
   const exited = Promise.withResolvers<TuiOutcome>();
   const app = renderObservable(
     <App
       backend={backend}
+      terminal={terminal}
       initialMode={undefined}
+      now={Date.now}
       {...extra}
       onExit={(outcome) => {
         outcomes.push(outcome);
@@ -31,7 +35,7 @@ export const start = async (options: FakeBackendOptions = {}, extra: Pick<AppPro
       }}
     />,
   );
-  return { backend, app, outcomes, exited: exited.promise };
+  return { backend, app, terminal, outcomes, exited: exited.promise };
 };
 
 export const type = async (app: Instance, text: string, echo: string): Promise<void> => {

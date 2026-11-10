@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { ElicitationRequestView, ImageAttachment, SkillView } from '@momonga/protocol';
 import { maxDiffLines } from '../src/tui/diff.ts';
-import { FRAME_BOUND_MS, KEYS, untilFrame, untilOutput } from './ink-helpers.ts';
+import { panelRowsCap } from '../src/tui/screen/layout.ts';
+import { FRAME_BOUND_MS, KEYS, untilFrame, untilOutput, withoutLinks } from './ink-helpers.ts';
 import { frame, runStarted, start, type } from './tui-harness.tsx';
 
 const FORM: ElicitationRequestView = {
@@ -103,8 +104,9 @@ describe('elicitation in the TUI', () => {
     app.stdin.write('1');
     const url = URL_REQUEST.mode === 'url' ? URL_REQUEST.url : '';
     const notice = `MCP server calc: Could not open the browser (no browser). Open this URL to continue: ${url}`;
-    const shown = await untilOutput(app, wrappedAtWordGaps(notice));
+    const shown = withoutLinks(await untilOutput(app, (output) => wrappedAtWordGaps(notice).test(withoutLinks(output))));
     expect(wrappedAtWordGaps(notice).exec(shown)?.[0].replaceAll('\n', ' ')).toBe(notice);
+    expect(await untilOutput(app, `\u001b]8;;${url}\u0007${url}\u001b]8;;\u0007`)).toContain(url);
     expect(backend.elicitationAnswers).toEqual([{ inputId: 'in2', responses: { consent: { action: 'accept' } } }]);
     app.unmount();
   });
@@ -200,8 +202,7 @@ describe('images in the TUI', () => {
 
 describe('approval diff size', () => {
   it('clips the diff to the rows the terminal leaves after the prompt chrome', async () => {
-    const { backend, app } = await start();
-    (app.stdout as unknown as { rows: number }).rows = 20;
+    const { backend, app } = await start({}, {}, { rows: 20 });
     await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'write a file');
     const content = Array.from({ length: 30 }, (_, index) => `line ${index}`).join('\n');
@@ -219,7 +220,7 @@ describe('approval diff size', () => {
         ],
       }),
     );
-    const visible = maxDiffLines(20, 2);
+    const visible = maxDiffLines(panelRowsCap(20), 2);
     const prompt = await untilFrame(app, 'Permission requested: Write /work/a.txt');
     expect(prompt).toContain(`… ${31 - visible} more lines`);
     expect(prompt).toContain(`+ line ${visible - 2}`);

@@ -16,6 +16,8 @@ import { autoModeCheck, autoModeCheckPortsOf, autoModeStatus, autoModeStatusPort
 import { createTuiBackend } from './backend.ts';
 import { createBackgroundTasks } from './background-tasks.ts';
 import { defaultNoticeSources } from './notices.ts';
+import { MAX_FPS, SCREEN_SETTINGS } from './screen/constants.ts';
+import { createScreenInput } from './screen/input.ts';
 import { TerminalFrame } from './terminal/frame.tsx';
 import { hostProcess, hostTerminalOutput } from './terminal/host.ts';
 import { inkInputOf } from './terminal/ink-bridge.ts';
@@ -36,20 +38,21 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
     outcome = result;
   };
   const inkStdin = createInkStdin();
+  const input = createScreenInput((events) => inkStdin.push(inkInputOf(events)));
   const layer = createTerminalLayer({
     input: terminal.stdin,
     output: hostTerminalOutput(terminal.stdout),
     process: hostProcess,
-    screen: 'scrollback',
-    screenSetByUser: true,
-    mouse: true,
-    onEvents: (events) => inkStdin.push(inkInputOf(events)),
+    screen: SCREEN_SETTINGS.screen,
+    screenSetByUser: false,
+    mouse: SCREEN_SETTINGS.mouse,
+    onEvents: input.push,
   });
   layer.start();
   try {
     const instance = render(
       <TerminalFrame layer={layer}>
-        <App backend={backend} initialMode={options.permissionMode} startup={{ version: ports.version, home: ports.home, color: (ports.env['NO_COLOR'] ?? '') === '' }} {...(options.prompt === undefined ? {} : { initialPrompt: options.prompt })}
+        <App backend={backend} terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, input }} copyOnSelect={SCREEN_SETTINGS.copyOnSelect} now={() => ports.clock.now()} initialMode={options.permissionMode} startup={{ version: ports.version, home: ports.home, color: (ports.env['NO_COLOR'] ?? '') === '' }} {...(options.prompt === undefined ? {} : { initialPrompt: options.prompt })}
           {...(options.skill === undefined ? {} : { initialSkill: options.skill })}
           {...(options.images === undefined ? {} : { initialImages: options.images })}
           tasks={tasks}
@@ -58,7 +61,7 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
           onExit={onExit}
         />
       </TerminalFrame>,
-      { stdin: inkStdin.stream, stdout: terminal.stdout, exitOnCtrlC: false },
+      { stdin: inkStdin.stream, stdout: terminal.stdout, exitOnCtrlC: false, maxFps: MAX_FPS, incrementalRendering: true },
     );
     await instance.waitUntilExit();
   } finally {

@@ -21,6 +21,7 @@ import { fakeBackend } from './fake-backend.ts';
 import type { FakeBackend, FakeBackendOptions } from './fake-backend.ts';
 import { FRAME_BOUND_MS, KEYS, renderObservable, untilFrame } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
+import { fakeScreenTerminal } from './tui/screen-fakes.ts';
 
 const shipped = PLAN_PROFILES['chatgpt'];
 if (shipped === undefined) throw new Error('the chatgpt profile is not shipped');
@@ -174,8 +175,9 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
     listenerPaths,
     detections,
     clipboard,
-    copyToClipboard: (text: string) => {
+    copyToClipboard: async (text: string) => {
       clipboard.push(text);
+      return { kind: 'copied' as const, characters: [...text].length };
     },
     models: async () => (await fakeBackend({ ...options, aliases }).models()).map(withBilling),
     model: async () => withBilling(await fakeBackend(options).model()),
@@ -209,21 +211,25 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
   return backend;
 };
 
-export const startPlan = async (options: FakePlanOptions = {}, extra: Pick<AppProps, 'initialPrompt' | 'initialSkill'> = {}) => {
+export const startPlan = async (options: FakePlanOptions = {}, extra: Pick<AppProps, 'initialPrompt' | 'initialSkill'> = {}, screen: Parameters<typeof fakeScreenTerminal>[0] = {}) => {
   const backend = fakePlanBackend(options);
   const outcomes: TuiOutcome[] = [];
-  const app = renderObservable(<App backend={backend as TuiBackend} initialMode={undefined} {...extra} onExit={(outcome) => void outcomes.push(outcome)} />);
+  const app = renderObservable(<App backend={backend as TuiBackend} terminal={fakeScreenTerminal(screen)} now={Date.now} initialMode={undefined} {...extra} onExit={(outcome) => void outcomes.push(outcome)} />);
   return { backend, app, outcomes };
 };
 
+const numberedRowOf = (frame: string, label: string): string | undefined => frame.split('\n').find((candidate) => /^\s*\W?\s*\d+\. /.test(candidate) && candidate.includes(label));
+
 export const rowNumberOf = (frame: string, label: string): number => {
-  const line = frame.split('\n').find((candidate) => /^\s*\W?\s*\d+\. /.test(candidate) && candidate.includes(label));
+  const line = numberedRowOf(frame, label);
   if (line === undefined) throw new Error(`no numbered row with ${label} in:\n${frame}`);
   return Number(/(\d+)\. /.exec(line)?.[1]);
 };
 
+export const untilRow = (app: Instance, label: string, also = ''): Promise<string> => untilFrame(app, (frame) => frame.includes(also) && numberedRowOf(frame, label) !== undefined);
+
 export const choose = async (app: Instance, label: string): Promise<void> => {
-  const frame = await untilFrame(app, label);
+  const frame = await untilRow(app, label);
   const row = rowNumberOf(frame, label);
   for (let step = 1; step < row; step += 1) app.stdin.write(KEYS.down);
   app.stdin.write(KEYS.enter);
