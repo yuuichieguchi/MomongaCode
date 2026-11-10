@@ -38,12 +38,12 @@ const listingOnly = (inner: ListableCredentialStore, key: string): ListingStore 
     store: {
       read: (asked) => {
         reads.push(asked);
-        return inner.read(asked);
+        return inner.read(asked, new AbortController().signal);
       },
-      remove: (asked) => inner.remove(asked),
-      write: (asked, value) => inner.write(asked, value),
-      update: (asked, change) => inner.update(asked, change),
-      withKey: (asked, action) => inner.withKey(asked, action),
+      remove: (asked) => inner.remove(asked, new AbortController().signal),
+      write: (asked, value) => inner.write(asked, value, new AbortController().signal),
+      update: (asked, change) => inner.update(asked, change, new AbortController().signal),
+      withKey: (asked, action) => inner.withKey(asked, action, new AbortController().signal),
       listKeys: async () => ({ keys: [{ key, file: LISTED_FILE }], problems: [] }),
     },
   };
@@ -62,7 +62,7 @@ describe('a listed record key names a plan account only when its profile and acc
     expect(h.sessions.listProblems()).toEqual([{ file: LISTED_FILE, cause: KEY_PROBLEM }]);
     expect(h.warnings).toContain(`could not list ${LISTED_FILE}: ${KEY_PROBLEM}`);
     expect(h.warnings.filter((warning) => warning.includes(shown))).toEqual([]);
-    expect(await h.sessions.known()).toEqual([]);
+    expect(await h.sessions.known(new AbortController().signal)).toEqual([]);
     expect(listing.reads).toEqual([]);
   });
 
@@ -72,7 +72,7 @@ describe('a listed record key names a plan account only when its profile and acc
     const listing = listingOnly(h.store, `plan/${PROFILE_ID}/work`);
     await h.reopen({ store: listing.store });
     expect(h.sessions.listProblems()).toEqual([]);
-    expect((await h.sessions.known()).map((account) => ({ profile: account.profile, account: account.account }))).toEqual([work]);
+    expect((await h.sessions.known(new AbortController().signal)).map((account) => ({ profile: account.profile, account: account.account }))).toEqual([work]);
   });
 });
 
@@ -123,7 +123,7 @@ describe('a stored plan record that is refused is described by its file and fiel
   it('a record that is not valid JSON is refused with a text that holds no fragment of the file', async () => {
     const h = await harness();
     await signedIn(h, 'work');
-    await h.store.write(recordKey('work'), BROKEN_JSON);
+    await h.store.write(recordKey('work'), BROKEN_JSON, new AbortController().signal);
     const text = 'the plan record is not valid JSON';
     const seen = await shownFor(h);
     expect(seen.status).toEqual({ state: 'store_unreadable', cause: text });
@@ -139,7 +139,7 @@ describe('a stored plan catalog record that is refused does not quote the entry 
   it('a catalog record that is not valid JSON is refused as plan_store_unreadable with a text that holds no fragment of the record', async () => {
     const h = await harness();
     const store = createMemoryCredentialStore();
-    await store.write(catalogKey(PROFILE_ID, 'work'), BROKEN_JSON);
+    await store.write(catalogKey(PROFILE_ID, 'work'), BROKEN_JSON, new AbortController().signal);
     const catalog = createPlanCatalog({
       store,
       clock: h.clock,
@@ -160,7 +160,7 @@ describe('a stored plan catalog record that is refused does not quote the entry 
   it('an unrecognised entry is refused as plan_store_unreadable without the slug read from the record', async () => {
     const h = await harness();
     const store = createMemoryCredentialStore();
-    await store.write(catalogKey(PROFILE_ID, 'work'), JSON.stringify({ readAt: new Date(h.clock.now()).toISOString(), models: { 'leaked-slug': { contextWindow: 'wide' } } }));
+    await store.write(catalogKey(PROFILE_ID, 'work'), JSON.stringify({ readAt: new Date(h.clock.now()).toISOString(), models: { 'leaked-slug': { contextWindow: 'wide' } } }), new AbortController().signal);
     const catalog = createPlanCatalog({
       store,
       clock: h.clock,

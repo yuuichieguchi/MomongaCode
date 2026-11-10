@@ -145,7 +145,7 @@ const startRemoteStack = async (
   fs.mkdirSync(layout.planSessions, { recursive: true, mode: 0o700 });
   const { hostId } = await ensureHostIdentity(nodeFileSystem, layout.planHost, { accountsExist: false });
   const store = createFileCredentialStore(layout.planSessions);
-  for (const record of options.records?.(hostId) ?? []) await store.write(`plan/${PROFILE_ID}/${String(record['account'])}`, JSON.stringify(record));
+  for (const record of options.records?.(hostId) ?? []) await store.write(`plan/${PROFILE_ID}/${String(record['account'])}`, JSON.stringify(record), new AbortController().signal);
   const settingsWith = (network: Record<string, unknown>) => ({ credentials: { plaintextTokenFiles: true }, models: pinnedTargets(options.accounts), network });
   replaceSettings(home, settingsWith(options.network));
   const handle = await startGatewayProcess({

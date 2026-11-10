@@ -115,7 +115,7 @@ describe('a sign-out, a register and an install whose record lock cannot be take
     const h = await harness();
     const signIn = await signInAtFake(h);
     await h.reopen({ store: refusedLock(h.store) });
-    expect(await planError(h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId }))).toEqual({
+    expect(await planError(h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId }, new AbortController().signal))).toEqual({
       code: 'plan_store_unwritable',
       retryable: false,
       message: UNWRITABLE,
@@ -126,7 +126,7 @@ describe('a sign-out, a register and an install whose record lock cannot be take
   it('an install answers plan_store_unwritable, leaves the record bytes and does not move the active pointer', async () => {
     const h = await harness();
     const signIn = await signInAtFake(h);
-    await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId });
+    await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId }, new AbortController().signal);
     const before = await rawRecord(h, 'work');
     await h.reopen({ store: refusedLock(h.store) });
     const installing = h.sessions.install({
@@ -138,7 +138,7 @@ describe('a sign-out, a register and an install whose record lock cannot be take
       email: signIn.email,
       idToken: signIn.idToken,
       tokens: signIn.tokens,
-    });
+    }, new AbortController().signal);
     expect(await planError(installing)).toEqual({ code: 'plan_store_unwritable', retryable: false, message: UNWRITABLE });
     expect(await rawRecord(h, 'work')).toBe(before);
     expect(h.sessions.activeLabel(PROFILE_ID)).toBeUndefined();

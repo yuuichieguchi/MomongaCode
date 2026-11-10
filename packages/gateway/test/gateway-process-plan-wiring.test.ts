@@ -70,7 +70,7 @@ describe('plan tokens are redacted in every generation (M6, I-C1)', () => {
       plaintextTokenFiles: () => false,
     });
     const clock = createFakeClock(Date.now());
-    const sessions = await openPlanSessions({
+    const sessions = await openPlanSessions({ signal: new AbortController().signal,
       profiles: { [PROFILE_ID]: profile },
       paths: { sessions: layout.planSessions, host: layout.planHost, active: layout.planActive },
       store,
@@ -87,8 +87,8 @@ describe('plan tokens are redacted in every generation (M6, I-C1)', () => {
     });
     const signIn = await signInAtFake({ paths: { host: layout.planHost }, auth } as unknown as Harness, { resource: profile.oauth.resource });
     installed.add(signIn.tokens.access_token);
-    await sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId });
-    await sessions.install({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId, subject: signIn.subject, email: signIn.email, idToken: signIn.idToken, tokens: signIn.tokens });
+    await sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId }, new AbortController().signal);
+    await sessions.install({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId, subject: signIn.subject, email: signIn.email, idToken: signIn.idToken, tokens: signIn.tokens }, new AbortController().signal);
     await sessions.close();
     clock.advance(60_000);
 

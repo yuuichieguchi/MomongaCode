@@ -98,6 +98,9 @@ import type { AdapterAuth } from './adapters/shared/auth.ts';
 import { openPlanSessions, planRecordKeyOfPlaintext } from './plan/session.ts';
 import { createPlanApi } from './plan/api.ts';
 import { createPlanCatalog } from './plan/catalog.ts';
+import { authSourceWithinRequestLimit } from './plan/request-limit.ts';
+import { startSharedCall } from './plan/shared-call.ts';
+import type { SharedCall } from './plan/shared-call.ts';
 import { createPlanSignIn } from './plan/signin.ts';
 import type { AuthSource, PlanHealth } from './plan/auth-source.ts';
 import type { PlanEvents } from './plan/events.ts';
@@ -1030,6 +1033,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       clock,
       outbound: withOutboundNetwork,
       sleep: planSleep,
+      signal: startSignal,
+      timing: timers,
       random,
       events: planEvents,
       redact: (key, values) => shared.redactor.set(key, values),
@@ -1078,21 +1083,27 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       return { served: { profile: target.plan.profile, account: input.account }, ...(input.reported === undefined ? {} : { reported: input.reported }) };
     };
     const planLoaded = new Set<string>();
-    const planLoads = new Map<string, Promise<void>>();
-    const planLoadOf = (key: string, ref: { profile: string; account: string }): Promise<void> => {
+    const planLoads = new Map<string, SharedCall<void>>();
+    const planLoadOf = (key: string, ref: { profile: string; account: string }, loadSignal: AbortSignal): Promise<void> => {
       const running = planLoads.get(key);
-      if (running !== undefined) return running;
-      const started = Promise.all([sessions.load(ref), catalog.load(ref.profile, ref.account)])
-        .then(() => {
-          planLoaded.add(key);
-        })
-        .finally(() => {
-          planLoads.delete(key);
-        });
+      if (running !== undefined) return running.join(loadSignal);
+      const forget = (): void => {
+        if (planLoads.get(key) === started) planLoads.delete(key);
+      };
+      const started: SharedCall<void> = startSharedCall(
+        sessions.lifetime,
+        (sharedSignal) =>
+          Promise.all([sessions.load(ref, sharedSignal), catalog.load(ref.profile, ref.account, sharedSignal)])
+            .then(() => {
+              planLoaded.add(key);
+            })
+            .finally(forget),
+        forget,
+      );
       planLoads.set(key, started);
-      return started;
+      return started.join(loadSignal);
     };
-    const preparePlan = (current: ResolvedSettings): Promise<void> | undefined => {
+    const preparePlan = (current: ResolvedSettings, prepareSignal: AbortSignal): Promise<void> | undefined => {
       const pending = new Map(
         planTargetsOf(current).flatMap(([, target]): Array<[string, { profile: string; account: string }]> => {
           const { profile, account } = servedOf(target);
@@ -1102,7 +1113,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         }),
       );
       if (pending.size === 0) return undefined;
-      return Promise.all([...pending].map(([key, ref]) => planLoadOf(key, ref))).then(() => undefined);
+      return Promise.all([...pending].map(([key, ref]) => planLoadOf(key, ref, prepareSignal))).then(() => undefined);
     };
     const secretResolverOfPart = (): SecretResolver => {
       const resolver = createSecretResolver(secretStore, secretStore.backend);
@@ -1242,7 +1253,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       key: string,
       { served, reported }: { served: ServedAccount; reported?: ReportedNumbers },
     ): TargetPart => {
-      const auth = served.account === null ? sessions.signedOutSource(served.profile) : sessions.authSource({ profile: served.profile, account: served.account });
+      const source = served.account === null ? sessions.signedOutSource(served.profile) : sessions.authSource({ profile: served.profile, account: served.account });
+      const auth = authSourceWithinRequestLimit(source, keyReadLimitOf(current.models.headersTimeoutMs), timers);
       const adapter = createPlanAdapter(name, target, auth, planProfiles, () => reported ?? undefined, {
         clock,
         userDialects: current.models.dialects,

@@ -35,7 +35,7 @@ describe('the gateway serves a plan target through the session engine (P5a-w)', 
     writeSettings(home, planSettings('work'));
     const sessions = momongaLayout(home).planSessions;
     fs.mkdirSync(sessions, { recursive: true, mode: 0o700 });
-    await createFileCredentialStore(sessions).write('plan/chatgpt/work', JSON.stringify({ version: 1, profile: 'chatgpt', account: 'work', state: 'registered' }));
+    await createFileCredentialStore(sessions).write('plan/chatgpt/work', JSON.stringify({ version: 1, profile: 'chatgpt', account: 'work', state: 'registered' }), new AbortController().signal);
     const health = await targetHealth(home);
     expect(health).toMatchObject({ ok: false, reason: 'store_unreadable' });
     expect(health.detail).toContain('is not encrypted');

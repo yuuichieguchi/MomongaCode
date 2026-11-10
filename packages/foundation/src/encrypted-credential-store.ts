@@ -246,7 +246,8 @@ export const createEncryptedCredentialStore = (options: EncryptedCredentialStore
     return options.keyOfPlaintext(text);
   };
 
-  const listKeys = async (): Promise<CredentialKeyListing> => {
+  const listKeys = async (signal: AbortSignal): Promise<CredentialKeyListing> => {
+    signal.throwIfAborted();
     const listing: CredentialKeyListing = { keys: [], problems: [] };
     let names: string[];
     try {
@@ -257,6 +258,7 @@ export const createEncryptedCredentialStore = (options: EncryptedCredentialStore
       return listing;
     }
     for (const name of names.filter((entry) => RECORD_FILE_NAME.test(entry)).sort()) {
+      signal.throwIfAborted();
       const file = path.join(options.directory, name);
       try {
         const text = await nodeFileSystem.readOwnerOnlyTextFile(file, `credential file ${file}`, AUTH_DOCUMENT_MAX_BYTES);

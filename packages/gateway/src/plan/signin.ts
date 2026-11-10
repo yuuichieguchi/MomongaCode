@@ -22,7 +22,7 @@ import type { PlanSessions, Registration } from './session.ts';
 export type SignInEnd = { outcome: 'signed_in' | 'plan_disabled'; ref: PlanAccountRef; firstSignIn: boolean } | { outcome: 'retry'; reason: 'invalid_grant' };
 
 export type PlanSignIn = {
-  begin(request: PlanSignInBeginRequest): Promise<PlanSignInBeginResponse>;
+  begin(request: PlanSignInBeginRequest, signal: AbortSignal): Promise<PlanSignInBeginResponse>;
   complete(attemptId: string, callbackUrl: string, signal: AbortSignal): Promise<SignInEnd>;
   cancel(attemptId: string): boolean;
   waiting(): boolean;
@@ -162,11 +162,11 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
 
   const waiting = (): boolean => completing > 0 || [...attempts.values()].some((attempt) => options.clock.now() < attempt.expiresAt);
 
-  const beginAttempt = async (profile: PlanProfile, request: PlanSignInBeginRequest): Promise<Attempt> => {
+  const beginAttempt = async (profile: PlanProfile, request: PlanSignInBeginRequest, signal: AbortSignal): Promise<Attempt> => {
     await options.sessions.pointerReady();
-    const saved = await options.sessions.registration({ profile: profile.id, account: request.account });
+    const saved = await options.sessions.registration({ profile: profile.id, account: request.account }, signal);
     if (saved?.state === 'signing_out') throw invalidRequest(PLAN_SIGN_OUT_IN_PROGRESS_CODE, `${request.account} is still signing out. Try again in a moment.`, null, CONFLICT_STATUS);
-    const accountsExist = saved !== undefined || (await options.sessions.known()).length > 0;
+    const accountsExist = saved !== undefined || (await options.sessions.known(signal)).length > 0;
     const { hostId } = await ensureHostIdentity(options.fileSystem, options.hostFile, { accountsExist }).catch((error: unknown) => {
       throw hostIdentityFailure(error);
     });
@@ -199,10 +199,10 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
       return resetHostIdentity(options.fileSystem, options.hostFile);
     });
 
-  const begin = async (request: PlanSignInBeginRequest): Promise<PlanSignInBeginResponse> => {
+  const begin = async (request: PlanSignInBeginRequest, signal: AbortSignal): Promise<PlanSignInBeginResponse> => {
     const profile = profileOf(request.profile);
     if (!Number.isInteger(request.port) || request.port < MIN_PORT || request.port > MAX_PORT) throw invalidRequest('invalid_port', `the port must be an integer from ${MIN_PORT} to ${MAX_PORT}`, 'port');
-    const attempt = await hostGate.run(() => beginAttempt(profile, request));
+    const attempt = await hostGate.run(() => beginAttempt(profile, request, signal));
     const { saved, hostId } = attempt;
     const oauth = profile.oauth;
     const url = new URL(oauth.authorizeUrl);
@@ -277,19 +277,19 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     return options.outbound(signal, async (fetch) => {
       completing += 1;
       try {
-        return await completeAttempt(fetch, attemptId, callbackUrl);
+        return await completeAttempt(fetch, attemptId, callbackUrl, signal);
       } finally {
         completing -= 1;
       }
     });
   };
 
-  const completeAttempt = async (fetch: PlanFetch, attemptId: string, callbackUrl: string): Promise<SignInEnd> => {
+  const completeAttempt = async (fetch: PlanFetch, attemptId: string, callbackUrl: string, signal: AbortSignal): Promise<SignInEnd> => {
     const attempt = consume(attemptId);
     if (attempt === undefined) throw signInFailure('attempt_not_found', undefined);
     const progress: Progress = { endStep: STEP_ATTEMPT, facts: {} };
     try {
-      const end = await finishAttempt(fetch, attempt, callbackUrl, progress);
+      const end = await finishAttempt(fetch, attempt, callbackUrl, progress, signal);
       signInEvent(attempt, progress, { outcome: end.outcome });
       return end;
     } catch (error) {
@@ -298,7 +298,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     }
   };
 
-  const finishAttempt = async (fetch: PlanFetch, attempt: Attempt, callbackUrl: string, progress: Progress): Promise<SignInEnd> => {
+  const finishAttempt = async (fetch: PlanFetch, attempt: Attempt, callbackUrl: string, progress: Progress, signal: AbortSignal): Promise<SignInEnd> => {
     const { profile } = attempt;
     if (options.clock.now() >= attempt.expiresAt) throw signInFailure('attempt_expired', profile);
     progress.endStep = STEP_CALLBACK;
@@ -316,7 +316,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     const clientId = attempt.saved?.clientId ?? returned ?? '';
     const ref = { profile: profile.id, account: attempt.account };
     progress.endStep = STEP_REGISTER;
-    const registered = await options.sessions.register({ ...ref, clientId, hostId: attempt.hostId });
+    const registered = await options.sessions.register({ ...ref, clientId, hostId: attempt.hostId }, signal);
     if (registered.outcome === 'rejected') throw signInFailure('registration_superseded', profile);
     progress.endStep = STEP_EXCHANGE;
     const tokens = await exchange(fetch, attempt, clientId, code, progress);
@@ -333,15 +333,18 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     progress.endStep = STEP_IDENTITY;
     if (attempt.saved?.subject !== undefined && attempt.saved.subject !== verdict.subject) throw signInFailure('identity_mismatch', profile);
     progress.endStep = STEP_INSTALL;
-    const installed = await options.sessions.install({
-      ...ref,
-      clientId,
-      hostId: attempt.hostId,
-      subject: verdict.subject,
-      ...(verdict.email === undefined ? {} : { email: verdict.email }),
-      idToken,
-      tokens,
-    });
+    const installed = await options.sessions.install(
+      {
+        ...ref,
+        clientId,
+        hostId: attempt.hostId,
+        subject: verdict.subject,
+        ...(verdict.email === undefined ? {} : { email: verdict.email }),
+        idToken,
+        tokens,
+      },
+      signal,
+    );
     if (installed.outcome === 'rejected') throw signInFailure('registration_superseded', profile);
     return { outcome: installed.outcome, ref, firstSignIn: installed.firstSignIn };
   };

@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { editUserSettings } from '@momonga/config';
 import { CONTEXT_REPORT_FORMAT } from '@momonga/eval';
-import { NoCurrentGenerationError, createUdsClient, currentSocketResolver, fixedSocket, isRecord, momongaLayout } from '@momonga/foundation';
+import { HOST_READ_BOUND_MS, NoCurrentGenerationError, createUdsClient, currentSocketResolver, fixedSocket, isRecord, momongaLayout, operationLimit } from '@momonga/foundation';
 import type { MomongaPaths, UdsClient } from '@momonga/foundation';
 import { WORKSPACE_USAGE_LIMIT_CODE } from '@momonga/protocol';
 
@@ -394,8 +394,9 @@ const readSettings = (paths: MomongaPaths): Record<string, unknown> => {
   return parsed;
 };
 
-const writeCarriageAliases = (paths: MomongaPaths, alias: string): Promise<void> =>
-  editUserSettings(paths.home, paths.settingsFile, (document) => {
+const withCarriageAliases =
+  (alias: string) =>
+  (document: Record<string, unknown>): boolean => {
     const target = planTargetOf(document, alias);
     const models = document['models'];
     if (target === undefined || !isRecord(models) || !isRecord(models['targets']) || !isRecord(models['aliases'])) throw new Error(`the alias ${alias} is not a single plan target of this home`);
@@ -405,7 +406,18 @@ const writeCarriageAliases = (paths: MomongaPaths, alias: string): Promise<void>
       models['aliases'][entry.alias] = [entry.alias];
     }
     return true;
-  });
+  };
+
+const scriptLifetime = new AbortController();
+
+const writeCarriageAliases = async (paths: MomongaPaths, alias: string): Promise<void> => {
+  const limit = operationLimit(scriptLifetime.signal, HOST_READ_BOUND_MS, 'the command limit');
+  try {
+    await editUserSettings(paths.home, paths.settingsFile, withCarriageAliases(alias), { signal: limit.signal });
+  } finally {
+    limit.dispose();
+  }
+};
 
 const carriage = async (client: UdsClient, paths: MomongaPaths, alias: string): Promise<Step[]> => {
   await writeCarriageAliases(paths, alias);

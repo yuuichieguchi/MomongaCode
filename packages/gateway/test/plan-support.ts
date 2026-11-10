@@ -447,16 +447,19 @@ export const signedIn = async (h: Harness, account: string): Promise<FakeSignIn>
   const signIn = await signInAtFake(h);
   const registered = await h.sessions.register({ profile: PROFILE_ID, account, clientId: signIn.clientId, hostId: signIn.hostId }, NEVER_ENDED);
   if (registered.outcome !== 'registered') throw new Error(`register failed: ${JSON.stringify(registered)}`);
-  const installed = await h.sessions.install({
-    profile: PROFILE_ID,
-    account,
-    clientId: signIn.clientId,
-    hostId: signIn.hostId,
-    subject: signIn.subject,
-    email: signIn.email,
-    idToken: signIn.idToken,
-    tokens: signIn.tokens,
-  }, NEVER_ENDED);
+  const installed = await h.sessions.install(
+    {
+      profile: PROFILE_ID,
+      account,
+      clientId: signIn.clientId,
+      hostId: signIn.hostId,
+      subject: signIn.subject,
+      email: signIn.email,
+      idToken: signIn.idToken,
+      tokens: signIn.tokens,
+    },
+    NEVER_ENDED,
+  );
   if (installed.outcome !== 'signed_in') throw new Error(`install failed: ${JSON.stringify(installed)}`);
   return signIn;
 };

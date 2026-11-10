@@ -138,9 +138,9 @@ export const createTuiBackend = (
         detectLocalServers({ candidates: LOCAL_SERVER_CANDIDATES, typed, signal: closing.signal, fetch, ...localManagedPorts(settings.models.servers, ports) }),
       );
     },
-    addModelConnection: (connection) => addModelConnection(paths.home, paths.settingsFile, connection),
+    addModelConnection: (connection) => addModelConnection(paths.home, paths.settingsFile, connection, closing.signal),
     dismissedNotices: () => readDismissedNotices(ports.files, paths.state, onNotice),
-    dismissNotice: (key) => dismissNotice(ports.files, paths.state, key, new Date(ports.clock.now())),
+    dismissNotice: (key) => dismissNotice(ports.files, paths.state, key, new Date(ports.clock.now()), closing.signal),
     boot: async () => {
       await ensureDaemon(ports, paths, { signal: closing.signal, onNotice });
       client = connectRuntime(paths);

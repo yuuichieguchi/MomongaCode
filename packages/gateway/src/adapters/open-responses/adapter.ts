@@ -82,7 +82,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
       );
       if (response.status !== 200) {
         const failure = await httpErrorOf(response, options.clock, nestedErrorDetail, CHAT_COMPLETIONS_VOCABULARY);
-        await applyCredentialEffect(auth, classify(failure), options.clock);
+        await applyCredentialEffect(auth, classify(failure), options.clock, ctx.signal);
         throw failure;
       }
 
@@ -95,7 +95,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
           if (message.data === SSE_DONE_MARKER) break;
           for (const event of driver.accept(parseOpenResponsesEvent(message.data))) {
             ctx.signal.throwIfAborted();
-            if (event.type === 'response.failed') await applyCredentialEffect(auth, classifyFailedEvent(event.response.error), options.clock);
+            if (event.type === 'response.failed') await applyCredentialEffect(auth, classifyFailedEvent(event.response.error), options.clock, ctx.signal);
             yield event;
           }
           if (driver.terminated) return;

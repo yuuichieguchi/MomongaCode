@@ -33,8 +33,8 @@ export type CatalogRead = { profile: PlanProfile; account: string; refresh: bool
 
 export type PlanCatalog = {
   read(request: CatalogRead): Promise<PlanModelsResponse>;
-  record(profile: string, account: string): Promise<CatalogRecord | undefined>;
-  load(profile: string, account: string): Promise<void>;
+  record(profile: string, account: string, signal: AbortSignal): Promise<CatalogRecord | undefined>;
+  load(profile: string, account: string, signal: AbortSignal): Promise<void>;
   capabilitiesOf(profile: string, account: string, model: string): { contextWindow: number; maxOutputTokens: number } | undefined;
 };
 
@@ -120,14 +120,19 @@ export const createPlanCatalog = (options: PlanCatalogOptions): PlanCatalog => {
 
   const listOf = (profile: string, account: string): string => `the plan model list of ${profile} account ${account}`;
 
-  const record = (profile: string, account: string): Promise<CatalogRecord | undefined> =>
-    recordAccess('read', listOf(profile, account), async () => {
-      const raw = await options.store.read(catalogKey(profile, account));
-      return raw === undefined ? undefined : parseRecord(raw);
-    });
+  const record = (profile: string, account: string, signal: AbortSignal): Promise<CatalogRecord | undefined> =>
+    recordAccess(
+      'read',
+      listOf(profile, account),
+      async () => {
+        const raw = await options.store.read(catalogKey(profile, account), signal);
+        return raw === undefined ? undefined : parseRecord(raw);
+      },
+      signal,
+    );
 
-  const load = async (profile: string, account: string): Promise<void> => {
-    const found = await record(profile, account);
+  const load = async (profile: string, account: string, signal: AbortSignal): Promise<void> => {
+    const found = await record(profile, account, signal);
     if (found !== undefined) records.set(catalogKey(profile, account), found);
   };
 
@@ -172,7 +177,7 @@ export const createPlanCatalog = (options: PlanCatalogOptions): PlanCatalog => {
     try {
       if (response.status !== SUCCESS_STATUS) {
         const classified = classify(listErrorOf(response, options.clock));
-        await applyCredentialEffect(request.auth, classified, options.clock);
+        await applyCredentialEffect(request.auth, classified, options.clock, request.signal);
         end({ outcome: classified.error.code ?? UNCLASSIFIED, requestIdHeaders });
         throw gatewayErrorFromBody(classified.error);
       }
@@ -195,12 +200,12 @@ export const createPlanCatalog = (options: PlanCatalogOptions): PlanCatalog => {
 
   const read = async (request: CatalogRead): Promise<PlanModelsResponse> => {
     const key = catalogKey(request.profile.id, request.account);
-    const saved = await record(request.profile.id, request.account);
+    const saved = await record(request.profile.id, request.account, request.signal);
     const answered = answers.get(key);
     if (!request.refresh && saved !== undefined && answered !== undefined && answered.readAt === saved.readAt && isFresh(saved, options.clock.now())) return answered;
     const response = await options.outbound(request.signal, (fetch) => readUpstream(fetch, request));
     const fresh = recordOf(response);
-    await recordAccess('write', listOf(request.profile.id, request.account), () => options.store.write(key, JSON.stringify(fresh)));
+    await recordAccess('write', listOf(request.profile.id, request.account), () => options.store.write(key, JSON.stringify(fresh), request.signal), request.signal);
     answers.set(key, response);
     records.set(key, fresh);
     return response;

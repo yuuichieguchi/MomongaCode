@@ -259,10 +259,10 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   };
 
   app.get(planRoute(PLAN_ROUTES.accounts), (context) =>
-    withPinnedServices(services, requestSignalOf(context), async ({ planTargets }) => context.json(await planApi().accounts(planTargets))),
+    withPinnedServices(services, requestSignalOf(context), async ({ planTargets }) => context.json(await planApi().accounts(planTargets, requestSignalOf(context)))),
   );
-  app.post(planRoute(PLAN_ROUTES.accountsActive), async (context) => context.json(await planApi().setActive(await planBody(context))));
-  app.post(planRoute(PLAN_ROUTES.signInBegin), async (context) => context.json(await planApi().begin(await planBody(context))));
+  app.post(planRoute(PLAN_ROUTES.accountsActive), async (context) => context.json(await planApi().setActive(await planBody(context), requestSignalOf(context))));
+  app.post(planRoute(PLAN_ROUTES.signInBegin), async (context) => context.json(await planApi().begin(await planBody(context), requestSignalOf(context))));
   app.post(planRoute(PLAN_ROUTES.signInComplete), async (context) => {
     const body = await planBody(context);
     const signal = requestSignalOf(context);
@@ -275,7 +275,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   });
   app.post(planRoute(PLAN_ROUTES.accountResume), async (context) => {
     const body = await planBody(context);
-    return withPinnedServices(services, requestSignalOf(context), async ({ planTargets }) => context.json(await planApi().resume(accountParam(context), body, planTargets)));
+    return withPinnedServices(services, requestSignalOf(context), async ({ planTargets }) => context.json(await planApi().resume(accountParam(context), body, planTargets, requestSignalOf(context))));
   });
   app.get(planRoute(PLAN_ROUTES.accountModels), async (context) =>
     context.json(
@@ -284,7 +284,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
         .catch(closedOr),
     ),
   );
-  app.post(planRoute(PLAN_ROUTES.accountTargets), async (context) => context.json(await planApi().addTarget(accountParam(context), await planBody(context))));
+  app.post(planRoute(PLAN_ROUTES.accountTargets), async (context) => context.json(await planApi().addTarget(accountParam(context), await planBody(context), requestSignalOf(context))));
   app.post(planRoute(PLAN_ROUTES.hostReset), async (context) => context.json(await planApi().resetHost()));
 
   return app;

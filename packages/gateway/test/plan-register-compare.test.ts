@@ -11,7 +11,7 @@ afterEach(async () => {
 const HOST = 'urn:ietf:params:oauth:jwk-thumbprint:sha-256:host';
 const TOKEN_FIELDS = ['access_token', 'refresh_token', 'id_token', 'subject', 'email'];
 
-const register = (h: Harness, clientId: string) => h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId, hostId: HOST });
+const register = (h: Harness, clientId: string) => h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId, hostId: HOST }, new AbortController().signal);
 
 describe('the step-4 compare-and-write of the registered record (O-R5-5 item 2, I-S4)', () => {
   it('writes client A, refuses client B leaving the bytes, and accepts client A again without a change', async () => {

@@ -152,11 +152,12 @@ export const editUserSettings = async (
 export const addModelConnection = async (home: string, settingsFile: string, connection: ModelConnection, signal: AbortSignal): Promise<WrittenConnection> => {
   assertConnection(connection);
   const placed: { written?: WrittenConnection } = {};
-  await editUserSettings(home, settingsFile, (document) => {
+  const place = (document: Record<string, unknown>): boolean => {
     const { written, changed } = withConnection(document, settingsFile, connection);
     placed.written = written;
     return changed;
-  }, { signal });
+  };
+  await editUserSettings(home, settingsFile, place, { signal });
   if (placed.written === undefined) throw new Error(`${settingsFile}: the connection was not placed`);
   return placed.written;
 };

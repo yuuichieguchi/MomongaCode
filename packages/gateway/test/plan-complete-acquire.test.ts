@@ -28,7 +28,7 @@ describe('O-R5-6 (M) 2.4: the acquire comes before the first irreversible step o
       fileSystem: nodeFileSystem,
       hostFile: h.paths.host,
     });
-    const { attemptId, authorizationUrl } = await signIn.begin({ profile: PROFILE_ID, account: 'work', port: 49152 });
+    const { attemptId, authorizationUrl } = await signIn.begin({ profile: PROFILE_ID, account: 'work', port: 49152 }, new AbortController().signal);
     const browsed = await siwcBrowse(authorizationUrl);
     const callback = browsed.redirect;
     if (callback === undefined) throw new Error(`the fake refused the authorization: ${JSON.stringify(browsed.body)}`);
@@ -37,7 +37,7 @@ describe('O-R5-6 (M) 2.4: the acquire comes before the first irreversible step o
     controller.abort(reason);
 
     await expect(signIn.complete(attemptId, callback.href, controller.signal)).rejects.toBe(reason);
-    expect(await h.sessions.registration({ profile: PROFILE_ID, account: 'work' })).toBeUndefined();
+    expect(await h.sessions.registration({ profile: PROFILE_ID, account: 'work' }, new AbortController().signal)).toBeUndefined();
     expect(h.auth.calls.tokenAuthorizationCode).toBe(0);
     expect(signIn.waiting()).toBe(true);
 

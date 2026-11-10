@@ -156,7 +156,7 @@ describe('the session engine refuses to select an account in state store_unwrita
     await source.read(new AbortController().signal);
     expect(source.status()).toMatchObject({ state: 'store_unwritable' });
 
-    const selected = h.sessions.selectActive({ profile: PROFILE_ID, account: 'work' });
+    const selected = h.sessions.selectActive({ profile: PROFILE_ID, account: 'work' }, new AbortController().signal);
     await expect(selected).rejects.toBeInstanceOf(PlanAccountNotSelectableError);
     await expect(selected).rejects.toThrow('work has no verified sign-in to switch to. Sign in to it first.');
   });

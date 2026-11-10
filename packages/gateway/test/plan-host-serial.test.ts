@@ -34,7 +34,7 @@ const setup = async () => {
   const isHost = (file: string): boolean => file === h.paths.host;
   const fileHostId = (): string => String((JSON.parse(fs.readFileSync(h.paths.host, 'utf8')) as Record<string, unknown>)['hostId']);
   const hostIdOf = (authorizationUrl: string): string | null => new URL(authorizationUrl).searchParams.get(h.profile.oauth.registrationParameters.hostId);
-  const begin = (account = 'work') => signIn.begin({ profile: PROFILE_ID, account, port: PORT });
+  const begin = (account = 'work') => signIn.begin({ profile: PROFILE_ID, account, port: PORT }, new AbortController().signal);
   return { h, gated, signIn, isHost, fileHostId, hostIdOf, begin };
 };
 

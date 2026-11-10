@@ -38,7 +38,7 @@ describe('editUserSettings is the one writer of a settings file and takes the se
     lockRunDirectoryOf(tree);
     const holder = await startLockHolder(context, settingsLockPath(tree.home, file));
     const recorded = recordingEdit();
-    await expect(editUserSettings(tree.home, file, recorded.edit, { lockTimeoutMs: 50 })).rejects.toThrow(`held by process ${holder.pid}`);
+    await expect(editUserSettings(tree.home, file, recorded.edit, { signal: new AbortController().signal, lockTimeoutMs: 50 })).rejects.toThrow(`held by process ${holder.pid}`);
     expect(recorded.calls).toEqual([]);
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual(ORIGINAL);
   });
@@ -52,27 +52,27 @@ describe('editUserSettings is the one writer of a settings file and takes the se
     const linkPath = path.join(viaLink, path.basename(realFile));
     const holder = await startLockHolder(context, settingsLockPath(tree.home, realFile));
     const recorded = recordingEdit();
-    await expect(editUserSettings(tree.home, linkPath, recorded.edit, { lockTimeoutMs: 50 })).rejects.toThrow(`held by process ${holder.pid}`);
+    await expect(editUserSettings(tree.home, linkPath, recorded.edit, { signal: new AbortController().signal, lockTimeoutMs: 50 })).rejects.toThrow(`held by process ${holder.pid}`);
     expect(recorded.calls).toEqual([]);
   });
 
   it('creates no lock file beside the settings file', async () => {
     const tree = makeTree();
     const file = userSettingsOf(tree);
-    await editUserSettings(tree.home, file, recordingEdit().edit);
+    await editUserSettings(tree.home, file, recordingEdit().edit, { signal: new AbortController().signal });
     expect(fs.readdirSync(path.dirname(file)).filter((name) => name.endsWith('.lock'))).toEqual([]);
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ ...ORIGINAL, network: { httpsProxy: 'http://proxy.corp:3128' } });
   });
 
   it('appendPermissionRule and editUserSettings take the same lock for one local settings file', async (context) => {
     const tree = makeTree();
-    await appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(a)', effect: 'allow' });
+    await appendPermissionRule({ signal: new AbortController().signal, ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(a)', effect: 'allow' });
     const holder = await startLockHolder(context, settingsLockPath(tree.home, localSettingsPath(tree)));
-    await expect(appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(b)', effect: 'allow', lockTimeoutMs: 50 })).rejects.toThrow(
+    await expect(appendPermissionRule({ signal: new AbortController().signal, ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(b)', effect: 'allow', lockTimeoutMs: 50 })).rejects.toThrow(
       `held by process ${holder.pid}`,
     );
     const recorded = recordingEdit();
-    await expect(editUserSettings(tree.home, localSettingsPath(tree), recorded.edit, { lockTimeoutMs: 50 })).rejects.toThrow(`held by process ${holder.pid}`);
+    await expect(editUserSettings(tree.home, localSettingsPath(tree), recorded.edit, { signal: new AbortController().signal, lockTimeoutMs: 50 })).rejects.toThrow(`held by process ${holder.pid}`);
     expect(recorded.calls).toEqual([]);
   });
 

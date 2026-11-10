@@ -33,9 +33,19 @@ export const readDismissedNotices = async (files: Pick<CliFiles, 'readTextIfPres
   return value;
 };
 
-export const dismissNotice = (files: Pick<CliFiles, 'readTextIfPresent' | 'mkdirPrivate' | 'writeTextAtomically'>, stateDirectory: string, key: string, at: Date): Promise<void> =>
-  serializeInProcess(fileIn(stateDirectory), async () => {
-    const earlier = await readDismissedNotices(files, stateDirectory, () => undefined);
-    await files.mkdirPrivate(stateDirectory);
-    await files.writeTextAtomically(fileIn(stateDirectory), `${JSON.stringify({ ...earlier, [key]: at.toISOString() })}\n`, FILE_MODE);
-  });
+export const dismissNotice = (
+  files: Pick<CliFiles, 'readTextIfPresent' | 'mkdirPrivate' | 'writeTextAtomically'>,
+  stateDirectory: string,
+  key: string,
+  at: Date,
+  signal: AbortSignal,
+): Promise<void> =>
+  serializeInProcess(
+    fileIn(stateDirectory),
+    async () => {
+      const earlier = await readDismissedNotices(files, stateDirectory, () => undefined);
+      await files.mkdirPrivate(stateDirectory);
+      await files.writeTextAtomically(fileIn(stateDirectory), `${JSON.stringify({ ...earlier, [key]: at.toISOString() })}\n`, FILE_MODE);
+    },
+    signal,
+  );

@@ -23,7 +23,7 @@ export interface CredentialStore {
 export type CredentialKeyListing = { keys: { key: string; file: string }[]; problems: { file: string; cause: string }[] };
 
 export interface ListableCredentialStore extends CredentialStore {
-  listKeys(): Promise<CredentialKeyListing>;
+  listKeys(signal: AbortSignal): Promise<CredentialKeyListing>;
 }
 
 export const AUTH_DOCUMENT_MAX_BYTES = 256 * 1024;
@@ -60,7 +60,10 @@ export const createMemoryCredentialStore = (): ListableCredentialStore => {
       read: (key) => Promise.resolve(entries.get(key)),
       withKey: (key, action, signal) => serialized(key, () => action(entryOf(key)), signal),
     }),
-    listKeys: () => Promise.resolve({ keys: [...entries.keys()].map((key) => ({ key, file: key })), problems: [] }),
+    listKeys: async (signal) => {
+      signal.throwIfAborted();
+      return { keys: [...entries.keys()].map((key) => ({ key, file: key })), problems: [] };
+    },
   };
 };
 
