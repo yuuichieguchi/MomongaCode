@@ -3,8 +3,7 @@ import { currentSocketResolver } from '@momonga/foundation';
 import { LOCAL_SERVER_CANDIDATES, agentReadiness, isProbingCapabilities } from '@momonga/protocol';
 import type { AliasCapabilities, DetectedLocalServer, MomongaModelEntry } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
-import { ensureDaemon } from '../daemon/ensure-daemon.ts';
-import { stderrStopNotice } from '../daemon/stop-notice.ts';
+import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { escapedLines } from '../terminal-writer.ts';
 
@@ -32,7 +31,7 @@ export const formatModels = (models: readonly MomongaModelEntry[]): string =>
       );
 
 export const listModels = async (ports: CliPorts, paths: MomongaPaths, json: boolean): Promise<number> => {
-  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
+  await ensureCurrentDaemon(ports, paths);
   const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
   try {
     const models = await gateway.models();

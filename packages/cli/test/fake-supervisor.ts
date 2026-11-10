@@ -22,6 +22,7 @@ export type FakeSupervisorOptions = {
   holdsKernelLock?: boolean;
   publishes?: boolean;
   startRecordVersion?: string;
+  reports?: Pick<SupervisorHealth, 'steps' | 'jobs' | 'calls' | 'role'>;
 };
 
 export type FakeWork = {
@@ -93,6 +94,7 @@ const serveFakeSupervisor = async (options: FakeSupervisorOptions): Promise<Fake
         logs: { droppedLines: 0 },
         ...(options.stopBoundMs === undefined ? {} : { stopBoundMs: options.stopBoundMs }),
         generation,
+        ...options.reports,
       };
       response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(health));
       return;

@@ -1,12 +1,11 @@
-import { FIRST_GENERATION, forceKillGroup, generationLayout, inspectProcessLock, isProcessAlive } from '@momonga/foundation';
+import { forceKillGroup, generationLayout, inspectProcessLock, isProcessAlive, listGenerationNumbers, momongaPaths } from '@momonga/foundation';
 
 export const CLEANUP_KILL_DEADLINE_MS = 5000;
 const HOLDER_EXIT_POLL_MS = 20;
 
 const isMissingProcess = (error: unknown): boolean => (error as NodeJS.ErrnoException).code === 'ESRCH';
 
-export const stopSupervisorHolder = async (home: string): Promise<number | undefined> => {
-  const lockPath = generationLayout(home, FIRST_GENERATION).locks.supervisor;
+const stopHolderOf = async (lockPath: string): Promise<number | undefined> => {
   const lock = await inspectProcessLock(lockPath);
   if (lock.state === 'free') return undefined;
   if (lock.state === 'unreadable') throw new Error(`the supervisor lock ${lockPath} is held by a process that cannot be identified`);
@@ -25,6 +24,15 @@ export const stopSupervisorHolder = async (home: string): Promise<number | undef
     await new Promise<void>((resolve) => setTimeout(resolve, HOLDER_EXIT_POLL_MS));
   }
   return pid;
+};
+
+export const stopSupervisorHolders = async (home: string): Promise<number[]> => {
+  const stopped: number[] = [];
+  for (const generation of await listGenerationNumbers(momongaPaths(home, process.platform, {}))) {
+    const pid = await stopHolderOf(generationLayout(home, generation).locks.supervisor);
+    if (pid !== undefined) stopped.push(pid);
+  }
+  return stopped;
 };
 
 export const killGroupsForCleanup = async (pgids: readonly number[]): Promise<void> => {

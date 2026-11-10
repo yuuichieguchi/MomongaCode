@@ -1,6 +1,5 @@
-import fs from 'node:fs';
 import path from 'node:path';
-import { CLAIM_POLL_MS, claimWithin } from '@momonga/foundation';
+import { CLAIM_POLL_MS, claimWithin, sweepLeftovers } from '@momonga/foundation';
 import type { KernelLockMechanism, ReapTiming } from '@momonga/foundation';
 
 export class EarlierAttemptNotStoppedError extends Error {
@@ -17,11 +16,7 @@ export class EarlierAttemptNotStoppedError extends Error {
 const CALL_LOCK_SUFFIX = '.lock';
 
 export const sweepCallLocks = async ({ dir, mechanism }: { dir: string; mechanism: KernelLockMechanism }): Promise<void> => {
-  for (const name of await fs.promises.readdir(dir)) {
-    if (!name.endsWith(CALL_LOCK_SUFFIX)) continue;
-    const outcome = await mechanism.claim(path.join(dir, name));
-    if (outcome.kind === 'claimed') outcome.lock.dispose();
-  }
+  await sweepLeftovers({ directories: [{ directory: dir, isLeftover: (name) => name.endsWith(CALL_LOCK_SUFFIX) }], lock: mechanism });
 };
 
 export type CallLock = { release(): void };

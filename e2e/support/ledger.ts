@@ -1,10 +1,10 @@
 import { execFile } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ProbeFailedError, defaultProcessInspector, findHolders, isProcessAlive, judgeProcessIdentity, rotatedLogPath, valueOrThrow } from '@momonga/foundation';
+import { ProbeFailedError, defaultProcessInspector, findHolders, generationLayout, isProcessAlive, judgeProcessIdentity, listGenerationNumbers, rotatedLogPath, valueOrThrow } from '@momonga/foundation';
 import type { MomongaPaths, ProbeResult, StartTime } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { firstGeneration, killGroupsForCleanup } from '@momonga/testkit';
+import { killGroupsForCleanup } from '@momonga/testkit';
 import { readDb } from './db.ts';
 import { readLog } from './log-reader.ts';
 import { appendHarnessFile } from './run-env.ts';
@@ -187,9 +187,11 @@ export const createProcessLedger = (options: CreateProcessLedgerOptions): Proces
   };
 
   const collectSupervisorLock = async (paths: MomongaPaths): Promise<void> => {
-    const text = readTextIfPresent(firstGeneration(paths).locks.supervisor);
-    const pid = text === undefined ? Number.NaN : Number.parseInt(text, 10);
-    if (Number.isInteger(pid) && pid > 1) await add(pid, 'supervisor');
+    for (const generation of await listGenerationNumbers(paths)) {
+      const text = readTextIfPresent(generationLayout(path.dirname(paths.root), generation).locks.supervisor);
+      const pid = text === undefined ? Number.NaN : Number.parseInt(text, 10);
+      if (Number.isInteger(pid) && pid > 1) await add(pid, 'supervisor');
+    }
   };
 
   const collectDatabase = async (paths: MomongaPaths): Promise<void> => {

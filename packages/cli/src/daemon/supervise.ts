@@ -22,7 +22,7 @@ export const runSupervise = async (io: EntryIo, options: SuperviseOptions): Prom
   const successorLauncher: NonNullable<EntryDeps['successorLauncher']> = {
     launch: (generation) => {
       const home = parseFlags(io.argv, SUPERVISE_ENTRY_FLAGS).home ?? io.home;
-      const invocation = superviseInvocation(options.successor.self, home, generation, false);
+      const invocation = superviseInvocation(options.successor.self, home, generation, undefined);
       options.successor.spawnDetached({ command: invocation.command, args: invocation.args, env: io.env, cwd: home });
       return { pid: undefined };
     },

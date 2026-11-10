@@ -1,4 +1,3 @@
-import { LIFELINE_FD } from '@momonga/foundation';
 import type { ChildRole } from '../client/supervisor-client.ts';
 import type { SelfExecutable } from '../ports.ts';
 
@@ -29,14 +28,14 @@ export const selfLauncher =
   (role: ChildRole): SelfInvocation =>
     selfInvocation(self, SUPERVISED_ROLE_COMMANDS[role]);
 
-export const superviseFlags = (home: string, generation: number, lifeline: boolean): string[] => [
+export const superviseFlags = (home: string, generation: number, lifelineFd: number | undefined): string[] => [
   `--home=${home}`,
   `--generation=${generation}`,
   '--log-target=file',
-  ...(lifeline ? [`--lifeline-fd=${LIFELINE_FD}`] : []),
+  ...(lifelineFd === undefined ? [] : [`--lifeline-fd=${lifelineFd}`]),
 ];
 
-export const superviseInvocation = (self: SelfExecutable, home: string, generation: number, lifeline: boolean): SelfInvocation => {
+export const superviseInvocation = (self: SelfExecutable, home: string, generation: number, lifelineFd: number | undefined): SelfInvocation => {
   const [subcommand, ...leading] = MOMONGA_LAUNCHES.supervise.args;
-  return selfInvocation(self, subcommand, [...leading, ...superviseFlags(home, generation, lifeline)]);
+  return selfInvocation(self, subcommand, [...leading, ...superviseFlags(home, generation, lifelineFd)]);
 };

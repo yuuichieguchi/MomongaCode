@@ -2,8 +2,7 @@ import type { MomongaPaths } from '@momonga/foundation';
 import { escapeTerminalLine } from '@momonga/protocol';
 import type { ElicitationAnswerRecord } from '@momonga/protocol';
 import { cleanFailureMessage, parseOutsideJson } from '@momonga/foundation';
-import { ensureDaemon } from '../daemon/ensure-daemon.ts';
-import { stderrStopNotice } from '../daemon/stop-notice.ts';
+import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import { describeElicitation } from '../elicit/describe.ts';
 import { fieldsOf, parseFieldInput, validateContent } from '../elicit/form.ts';
 import type { ContentValue } from '../elicit/form.ts';
@@ -114,7 +113,7 @@ export const elicit = async (ports: CliPorts, paths: MomongaPaths, inputId: stri
   const actions = chosenActions(options);
   if (actions.length > 1) throw new ElicitationUsageError(`choose one of --accept, --decline, --cancel and --responses, not ${actions.join(' and ')}`);
   if (inputId === undefined && (actions.length > 0 || options.set.length > 0)) throw new ElicitationUsageError('name the elicitation to answer: momonga elicit <id> ...');
-  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
+  await ensureCurrentDaemon(ports, paths);
   const client = connectRuntime(paths);
   try {
     if (inputId === undefined) {

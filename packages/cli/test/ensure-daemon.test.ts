@@ -168,7 +168,7 @@ describe('ensureDaemon', () => {
     await start({ version: '1.2.4' });
     const { spawn, spawned } = recordingSpawn(() => undefined);
 
-    const failure = await restoreDaemon(portsWith(spawn), paths, () => undefined)(undefined).catch((error: unknown) => error);
+    const failure = await restoreDaemon(portsWith(spawn), paths)(undefined).catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(DaemonStartError);
     expect((failure as DaemonStartError).message).toBe('momonga was updated to v1.2.4; reopen this session.');
@@ -201,11 +201,9 @@ describe('ensureDaemon', () => {
       return undefined;
     });
 
-    const notices: string[] = [];
-    await restoreDaemon(portsWith(spawn), paths, (message) => notices.push(message))(undefined).catch(() => undefined);
+    await restoreDaemon(portsWith(spawn), paths)(undefined).catch(() => undefined);
 
     expect(old.shutdowns).toBe(0);
-    expect(notices).toEqual([]);
   });
 
   it('reports a child held by its configuration instead of waiting for it', async (context) => {

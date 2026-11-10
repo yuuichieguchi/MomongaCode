@@ -1,6 +1,6 @@
 import type { McpServerConfig } from '@momonga/config';
 import { setTimeout as sleepFor } from 'node:timers/promises';
-import { MOVED_CODE, createUdsClient, decodeSse, isRecord, parseRetryAfter } from '@momonga/foundation';
+import { MOVED_CODE, createUdsClient, decodeSse, isRecord, parseRetryAfter, systemClock } from '@momonga/foundation';
 import type { SocketResolver, UdsResponse } from '@momonga/foundation';
 import { DAEMON_CURRENT_EVENT } from '@momonga/protocol';
 import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse } from '@momonga/protocol';
@@ -236,7 +236,7 @@ const frameOf = (event: { id?: string; event?: string; data: string }, descripti
   return { id, event: event.event, data: checkRunEvent(parsed(event.data, description), description) };
 };
 
-export type RuntimeClientOptions = { resolveSocket: SocketResolver; sleep?: (ms: number) => Promise<void> };
+export type RuntimeClientOptions = { resolveSocket: SocketResolver; sleep?: (ms: number) => Promise<void>; onMoved?: () => Promise<void> };
 
 export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClient => {
   const http = createUdsClient(options.resolveSocket);
@@ -270,8 +270,9 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
       if (expected.includes(response.status)) return { response, body: response.status === 204 ? undefined : init.raw === true ? text : parsed(text, description) };
       const failure = new RunApiError(description, response.status, text);
       if (response.status !== 503 || failure.code !== MOVED_CODE || movedResends >= MOVED_RESENDS) throw failure;
-      const retryAfterMs = parseRetryAfter(response.headers['retry-after'], Date.now());
+      const retryAfterMs = parseRetryAfter(response.headers['retry-after'], systemClock.now());
       if (retryAfterMs === undefined) throw failure;
+      await options.onMoved?.();
       movedResends += 1;
       await sleep(retryAfterMs);
     }

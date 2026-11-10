@@ -6,7 +6,6 @@ import { RunApiError } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView } from '../client/views.ts';
 import { daemonReadyBoundMs, restoreDaemon } from '../daemon/ensure-daemon.ts';
-import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import type { CliPorts } from '../ports.ts';
 import { escapedLines } from '../terminal-writer.ts';
 import { describeElicitation } from '../elicit/describe.ts';
@@ -210,7 +209,7 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
     ...(options.after === undefined ? {} : { seenThrough: options.after }),
     onSeenEvent: sink.absorb,
     reconnectBoundMs: await daemonReadyBoundMs(),
-    restoreConnection: restoreDaemon(ports, paths, stderrStopNotice(ports)),
+    restoreConnection: restoreDaemon(ports, paths),
     onEvent: sink.handle,
     onChildEvent: sink.handleChild,
     onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the event stream, reconnecting (attempt ${attempt + 1})\n`),

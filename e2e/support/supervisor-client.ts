@@ -3,8 +3,8 @@ import { createSupervisorClient as createProductClient } from '../../packages/cl
 import type { ChildRole } from '../../packages/cli/src/client/supervisor-client.ts';
 import type { E2eHome } from './home.ts';
 import { until } from './wait.ts';
-import { firstGeneration } from '@momonga/testkit';
-import { fixedSocket } from '@momonga/foundation';
+import path from 'node:path';
+import { FIRST_GENERATION, fixedSocket, generationLayout } from '@momonga/foundation';
 
 export { childOf, pidOf } from '../../packages/cli/src/client/supervisor-client.ts';
 export type { ChildRole };
@@ -17,8 +17,8 @@ export type SupervisorClient = {
   close(): Promise<void>;
 };
 
-export const createSupervisorClient = (home: E2eHome): SupervisorClient => {
-  const product = createProductClient({ resolveSocket: fixedSocket(firstGeneration(home.paths).sockets.supervisor), onHealth: (body) => home.ledger.record(body) });
+export const createSupervisorClient = (home: E2eHome, generation: number = FIRST_GENERATION): SupervisorClient => {
+  const product = createProductClient({ resolveSocket: fixedSocket(generationLayout(path.dirname(home.paths.root), generation).sockets.supervisor), onHealth: (body) => home.ledger.record(body) });
 
   const shutdown = async (): Promise<{ status: number; body: SupervisorShutdownResponse }> => {
     await product.health();

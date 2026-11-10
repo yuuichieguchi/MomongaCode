@@ -1,8 +1,7 @@
 import type { MomongaPaths } from '@momonga/foundation';
 import { escapeTerminalLine } from '@momonga/protocol';
 import type { JobView } from '@momonga/protocol';
-import { ensureDaemon } from '../daemon/ensure-daemon.ts';
-import { stderrStopNotice } from '../daemon/stop-notice.ts';
+import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
 import { newestSessionIdOf } from './targets.ts';
@@ -16,7 +15,7 @@ const endOf = (job: JobView): string => {
 export const jobLine = (job: JobView): string => `${job.id}  ${job.status}${endOf(job)}  run ${job.runId}  ${escapeTerminalLine(job.command)}`;
 
 export const listJobs = async (ports: CliPorts, paths: MomongaPaths, sessionId: string | undefined, json: boolean): Promise<number> => {
-  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
+  await ensureCurrentDaemon(ports, paths);
   const client = connectRuntime(paths);
   try {
     const target = sessionId ?? (await newestSessionIdOf(client, ports.cwd));

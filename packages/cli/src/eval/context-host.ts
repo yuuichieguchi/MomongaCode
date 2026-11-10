@@ -5,7 +5,7 @@ import type { EndpointProbeKey } from '@momonga/config';
 import type { ModelsSettings, ResolvedModels, SandboxSetting, UserModels } from '@momonga/config';
 import { caseSettingsFor, expandContextDataset, failedWithCleanup, liveBoundsFor, runContextDataset } from '@momonga/eval';
 import type { ContextCaseHost, ContextDataset, ExpandedCase, PolicyOverlay, Transcript, WorkspaceStep } from '@momonga/eval';
-import { FIRST_GENERATION, claimPathOf, generationLayout, momongaLayout, socketPathLimit } from '@momonga/foundation';
+import { FIRST_GENERATION, SocketPathUnsupportedError, claimPathOf, momongaLayout } from '@momonga/foundation';
 import type { KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
 import { goldenRunApi } from '../client/golden-run-api.ts';
 import type { ReflectionSettle } from '../client/golden-run-api.ts';
@@ -33,9 +33,9 @@ export type ContextHostEffects = {
   writeFile(file: string, text: string): Promise<void>;
   makeDirectory(directory: string): Promise<void>;
   canonical(directory: string): Promise<string>;
-  startDaemon(root: string, paths: MomongaPaths, env: Readonly<Record<string, string>>): Promise<number>;
-  daemonHolder(paths: MomongaPaths): Promise<number | undefined>;
-  terminate(pid: number): Promise<void>;
+  refuseUnfitSockets(paths: MomongaPaths, generation: number): Promise<void>;
+  startDaemon(root: string, paths: MomongaPaths, env: Readonly<Record<string, string>>): Promise<void>;
+  terminate(paths: MomongaPaths): Promise<void>;
   remove(directory: string): Promise<void>;
   connect(paths: MomongaPaths): ContextRuntime;
   applyStep(cwd: string, step: WorkspaceStep): Promise<void>;
@@ -61,13 +61,12 @@ export const caseEnvironment = (base: Readonly<Record<string, string | undefined
   return Object.fromEntries(entries);
 };
 
-export const assertSocketsFit = (root: string, platform: NodeJS.Platform): void => {
-  const limit = socketPathLimit(platform);
-  for (const socket of Object.values(generationLayout(root, FIRST_GENERATION, platform).sockets)) {
-    const bytes = Buffer.byteLength(socket);
-    if (bytes >= limit) {
-      throw new ContextHostError(`the socket ${socket} of the temporary home would be ${bytes} bytes, but a socket path must be shorter than ${limit} bytes on ${platform}; the benchmark needs a shorter temporary directory`);
-    }
+export const assertSocketsFit = async (paths: MomongaPaths, refuseUnfitSockets: ContextHostEffects['refuseUnfitSockets']): Promise<void> => {
+  try {
+    await refuseUnfitSockets(paths, FIRST_GENERATION);
+  } catch (error) {
+    if (!(error instanceof SocketPathUnsupportedError)) throw error;
+    throw new ContextHostError(`the sockets of the temporary home do not fit: ${error.message}; the benchmark needs a shorter temporary directory`, { cause: error });
   }
 };
 
@@ -211,8 +210,7 @@ export const sweepStaleHomes = async (effects: ContextHostEffects): Promise<Swee
     const claim = await effects.lock.claim(claimPathOf(effects.lock, root, 'sidecar'));
     if (claim.kind === 'held') continue;
     try {
-      const holder = await effects.daemonHolder(momongaLayout(root, effects.platform, {}));
-      if (holder !== undefined) await effects.terminate(holder);
+      await effects.terminate(momongaLayout(root, effects.platform, {}));
       await effects.remove(root);
     } catch (error) {
       claim.lock.release();
@@ -224,7 +222,7 @@ export const sweepStaleHomes = async (effects: ContextHostEffects): Promise<Swee
   return { removed, unreadable, unowned };
 };
 
-type CaseRecord = { root: string; paths: MomongaPaths | undefined; pid: number | undefined; runtime: ContextRuntime | undefined; released: boolean };
+type CaseRecord = { root: string; paths: MomongaPaths | undefined; runtime: ContextRuntime | undefined; released: boolean };
 
 export type ContextHosts = {
   openCase(entry: ExpandedCase): Promise<ContextCaseHost>;
@@ -272,8 +270,7 @@ export const createHomes = (effects: ContextHostEffects, options: HomesOptions):
       await attempt(() => runtime.close());
     }
     const { paths } = record;
-    const pid = record.pid ?? (paths === undefined ? undefined : await effects.daemonHolder(paths));
-    if (pid !== undefined) await attempt(() => effects.terminate(pid));
+    if (paths !== undefined) await attempt(() => effects.terminate(paths));
     await attempt(() => effects.remove(record.root));
     if (failures.length === 1) throw failures[0];
     if (failures.length > 1) throw new AggregateError(failures, `releasing the temporary home ${record.root} failed ${failures.length} times`);
@@ -282,10 +279,10 @@ export const createHomes = (effects: ContextHostEffects, options: HomesOptions):
   const prepared = async (spec: HomeSpec, record: CaseRecord): Promise<OpenedHome> => {
     const { root } = record;
     await effects.writeFile(path.join(root, OWNER_FILE), ownerRecord({ pid: effects.ownerPid, home: effects.ownerHome }));
-    assertSocketsFit(await effects.canonical(root), effects.platform);
     const paths = momongaLayout(root, effects.platform, {});
     record.paths = paths;
     await effects.prepare(paths);
+    await assertSocketsFit(momongaLayout(await effects.canonical(root), effects.platform, {}), effects.refuseUnfitSockets);
     await effects.writeFile(paths.settingsFile, `${JSON.stringify(spec.settings, null, 2)}\n`);
     for (const source of options.managedTargets) await effects.copyProbeRecord(source, paths);
     for (const probe of options.endpointProbes) await effects.copyEndpointProbeRecord(probe, paths);
@@ -294,10 +291,9 @@ export const createHomes = (effects: ContextHostEffects, options: HomesOptions):
     for (const [name, content] of Object.entries(spec.files ?? {})) await effects.writeFile(path.join(workspace, name), content);
     const cwd = await effects.canonical(workspace);
     if (record.released) throw new ContextInterrupted();
-    const pid = await effects.startDaemon(root, paths, { ...caseEnvironment(effects.env, root, effects.platform), ...options.credentialValues });
-    record.pid = pid;
+    await effects.startDaemon(root, paths, { ...caseEnvironment(effects.env, root, effects.platform), ...options.credentialValues });
     if (record.released) {
-      await effects.terminate(pid);
+      await effects.terminate(paths);
       throw new ContextInterrupted();
     }
     const runtime = effects.connect(paths);
@@ -328,7 +324,7 @@ export const createHomes = (effects: ContextHostEffects, options: HomesOptions):
       await effects.remove(root);
       throw new ContextInterrupted();
     }
-    const record: CaseRecord = { root, paths: undefined, pid: undefined, runtime: undefined, released: false };
+    const record: CaseRecord = { root, paths: undefined, runtime: undefined, released: false };
     records.push(record);
     try {
       return await prepared(spec, record);

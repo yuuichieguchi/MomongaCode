@@ -79,6 +79,27 @@ describe('a request answered moved (20.33)', () => {
     expect(sleeps).toEqual([1000, 1000, 1000]);
   });
 
+  it('asks its owner before each resend, and raises what the owner raises without sending again (20.69)', async (context) => {
+    const seen: Seen[] = [];
+    const retiring = await listen(context, 'retiring', seen, () => moved);
+    const sleeps: number[] = [];
+    const ended = new Error('momonga was updated to v1.2.4; reopen this session.');
+    const client = createRuntimeClient({
+      resolveSocket: async () => retiring,
+      sleep: async (ms) => void sleeps.push(ms),
+      onMoved: async () => {
+        throw ended;
+      },
+    });
+    registerCleanup(context, () => client.close());
+
+    const failure = await client.createSession({ cwd: '/work', env: {} }).catch((error: unknown) => error);
+
+    expect(failure).toBe(ended);
+    expect(seen).toHaveLength(1);
+    expect(sleeps).toEqual([]);
+  });
+
   it('resends a request of every kind, since a moved answer means it was not processed', async (context) => {
     const seen: Seen[] = [];
     let answered = 0;

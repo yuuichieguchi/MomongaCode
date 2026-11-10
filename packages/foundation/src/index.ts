@@ -217,7 +217,7 @@ export { compareVersions, isAtLeastVersion, orderVersions, tryParseVersion } fro
 export type { Version, VersionOrder } from './version-order.ts';
 export { PROBE_KEY_COMPONENT_LABELS, createBinaryHashCache, createHeldHostReadings, createHostExec, probeKeyComponentLabel, readProbeKeyComponents } from './host-identity.ts';
 export type { BinaryHashCache, HeldHostReadings, HostExec, HostExecAnswer, ProbeKeyReading, ProbeKeyReadings, ReadProbeKeyComponentsRequest } from './host-identity.ts';
-export { CurrentGenerationMalformedError, NoCurrentGenerationError, currentSocketResolver, formatCurrentGeneration, publishCurrentGeneration, readCurrentGeneration, resolveGenerationFor } from './current-generation.ts';
+export { CurrentGenerationMalformedError, NoCurrentGenerationError, NoGenerationOfVersionError, currentSocketResolver, formatCurrentGeneration, publishCurrentGeneration, readCurrentGeneration, resolveGenerationFor, versionSocketResolver } from './current-generation.ts';
 export type { CurrentGeneration, PublishOptions, PublishOutcome, ResolvedGeneration } from './current-generation.ts';
 export type { MomongaPaths, SessionScratch, SessionScratchClaim } from './momonga-paths.ts';
 export { createExecWithStdin } from './exec-with-stdin.ts';

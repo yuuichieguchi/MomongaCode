@@ -105,6 +105,15 @@ export const currentSocketResolver =
 
 const homeOf = (paths: MomongaPaths): string => path.dirname(paths.root);
 
+export class NoGenerationOfVersionError extends Error {
+  readonly code = 'ENOENT';
+
+  constructor(version: string) {
+    super(`no running daemon generation is of version ${version}`);
+    this.name = 'NoGenerationOfVersionError';
+  }
+}
+
 export type ResolvedGeneration = { generation: number; version: string; sockets: GenerationSockets };
 
 export const resolveGenerationFor = async (paths: MomongaPaths, version: string, options: ListGenerationsOptions): Promise<ResolvedGeneration | undefined> => {
@@ -114,3 +123,11 @@ export const resolveGenerationFor = async (paths: MomongaPaths, version: string,
   const newest = sameVersion.at(-1);
   return newest === undefined ? undefined : { generation: newest.generation, version, sockets: generationLayout(homeOf(paths), newest.generation).sockets };
 };
+
+export const versionSocketResolver =
+  (paths: MomongaPaths, version: string, role: GenerationProcessRole, options: ListGenerationsOptions): (() => Promise<string>) =>
+  async () => {
+    const own = await resolveGenerationFor(paths, version, options);
+    if (own === undefined) throw new NoGenerationOfVersionError(version);
+    return own.sockets[role];
+  };

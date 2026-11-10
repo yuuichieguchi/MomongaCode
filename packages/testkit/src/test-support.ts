@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { TestContext } from 'vitest';
 import { FIRST_GENERATION, SOCKET_PATH_LIMIT, forceKillGroup, generationLayout, isProcessAlive, shortTempBase } from '@momonga/foundation';
-import { stopSupervisorHolder } from './process-groups.ts';
+import { stopSupervisorHolders } from './process-groups.ts';
 
 export const TEST_RUN_ENV = 'MOMONGA_TEST_RUN';
 export const TEMP_DIR_PREFIX = 'mmt-';
@@ -81,7 +81,7 @@ export const withTempDir = (context: CleanupContext | undefined, options: TempDi
   const asHome = options.asHome === true;
   const created = fs.mkdtempSync(path.join(tempDirBase(asHome), tempDirPrefixFor(testRunToken())));
   context.onTestFinished(async () => {
-    if (asHome) await stopSupervisorHolder(created);
+    if (asHome) await stopSupervisorHolders(created);
     removeTempDir(created);
   });
   const dir = fs.realpathSync(created);

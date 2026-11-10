@@ -24,7 +24,9 @@ export type UpdateLock = { acquire(): Promise<UpdateLockHandle | undefined>; isH
 
 export type UpdateStateStore = { read(): Promise<unknown>; write(state: unknown): Promise<void> };
 
-export type DaemonProbe = { running(): Promise<boolean>; restartBoundMs(): Promise<number> };
+export type RetiringWork = { steps: number; jobs: number; versions: string[] };
+
+export type DaemonProbe = { running(): Promise<boolean>; retiring(): Promise<RetiringWork>; restartBoundMs(): Promise<number> };
 
 export type UpdatePorts = {
   version: string;
