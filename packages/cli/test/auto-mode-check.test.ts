@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ResolvedChatCompletionsTarget, UserModels } from '@momonga/config';
 import { autoFitDirectoryOf } from '@momonga/config';
+import { momongaPaths, nodeFileSystem, publishCurrentGeneration } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { createFakeKernelLock } from '@momonga/testkit';
 import type { PublicRunEvent } from '@momonga/protocol';
@@ -287,5 +288,80 @@ describe('a check aborted by its signal leaves no daemon and no home behind (C1,
     expect(state.roots.size).toBeLessThan(AUTO_MODE_RUNS);
     noDaemonOrHomeLeft(state);
     expect(recordsIn(home)).toEqual([]);
+  });
+});
+
+const PLAN_CAPABILITIES = {
+  contextWindow: 272000,
+  maxOutputTokens: 128000,
+  structuredOutput: 'json_schema',
+  streaming: true,
+  stopSequences: true,
+  imageInput: true,
+  parallelToolCalls: false,
+  schemaDialect: 'json-schema-2020-12',
+  tokenCounting: 'estimated',
+  usageReported: true,
+  source: 'reported',
+  maxConcurrency: 4,
+};
+
+const GATE_GATEWAY_SOCKET = '/tmp/gate-home-sockets/gateway-2.sock';
+
+const withPlanAgent = (models: UserModels): UserModels => {
+  const user = models as unknown as { declared: { aliases: Record<string, string[]>; targets: Record<string, unknown> }; resolved: { aliases: Record<string, string[]>; targets: Record<string, unknown> } };
+  return {
+    ...user,
+    declared: { aliases: { ...user.declared.aliases, planner: ['p'] }, targets: { ...user.declared.targets, p: { adapter: 'open-responses', model: 'plan-model', plan: { profile: 'chatgpt', account: 'gate' } } } },
+    resolved: {
+      ...user.resolved,
+      aliases: { ...user.resolved.aliases, planner: ['p'] },
+      targets: {
+        ...user.resolved.targets,
+        p: {
+          adapter: 'open-responses',
+          model: 'plan-model',
+          provider: 'openai',
+          toolCalling: 'native',
+          baseUrl: 'https://chatgpt.invalid/backend-api/codex',
+          plan: { profile: 'chatgpt', account: 'gate' },
+          billing: 'plan',
+          capabilities: PLAN_CAPABILITIES,
+          maxConcurrency: 4,
+          admissionTimeoutMs: 30000,
+        },
+      },
+    },
+  } as unknown as UserModels;
+};
+
+describe('auto-mode check with a plan alias relays through the gateway of the gate home (O-R5-6 J 7, P6.10)', () => {
+  it('writes the relay target with exactly the keys of the rule into every case home and does not refuse', async () => {
+    const state = fake();
+    const { ports, home } = portsFor(state.effects);
+    fs.mkdirSync(path.dirname(momongaPaths(home).current), { recursive: true, mode: 0o700 });
+    await publishCurrentGeneration(
+      momongaPaths(home),
+      { generation: 2, version: '0.0.0-test', sockets: { gateway: GATE_GATEWAY_SOCKET, runtime: '/tmp/gate-home-sockets/runtime-2.sock', supervisor: '/tmp/gate-home-sockets/supervisor-2.sock' } },
+      nodeFileSystem,
+      createFakeKernelLock({ inheritable: false }),
+    );
+    await autoModeCheck({ ...ports, models: withPlanAgent(ports.models) }, { classifier: 'guard', agent: 'planner' });
+    expect(state.roots.size).toBe(AUTO_MODE_RUNS);
+    for (const entry of state.roots.values()) {
+      const settings = JSON.parse(entry.settings ?? '{}') as { models?: { aliases?: Record<string, unknown>; targets?: Record<string, unknown> } };
+      expect(settings.models?.aliases).toEqual({ planner: ['p'], guard: ['g'] });
+      expect(settings.models?.targets?.['p']).toEqual({
+        adapter: 'open-responses',
+        model: 'plan-model',
+        provider: 'openai',
+        toolCalling: 'native',
+        socketPath: GATE_GATEWAY_SOCKET,
+        billing: 'plan',
+        capabilities: PLAN_CAPABILITIES,
+        maxConcurrency: 4,
+        admissionTimeoutMs: 30000,
+      });
+    }
   });
 });

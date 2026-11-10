@@ -15,6 +15,8 @@ import { App } from '../src/tui/app.tsx';
 import type { AppProps, TuiOutcome } from '../src/tui/app.tsx';
 import type { PlanGatewayClient } from '../src/client/gateway-client.ts';
 import type { SignInListener, TuiBackend } from '../src/tui/backend.ts';
+import type { SignInWaitTimers, StartSignInListener } from '../src/plan/sign-in.ts';
+import { createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { fakeBackend } from './fake-backend.ts';
 import type { FakeBackend, FakeBackendOptions } from './fake-backend.ts';
 import { FRAME_BOUND_MS, KEYS, renderObservable, untilFrame } from './ink-helpers.ts';
@@ -57,6 +59,8 @@ export type FakePlanOptions = FakeBackendOptions & {
   completeHeld?: Promise<void>;
   listProblems?: readonly { file: string; cause: string }[];
   listenerFails?: Error;
+  startListener?: StartSignInListener;
+  signInTimers?: SignInWaitTimers;
 };
 
 export type FakePlanBackend = FakeBackend & {
@@ -183,7 +187,8 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
       state: 'running',
     }),
     sandbox: async () => 'seatbelt' as const,
-    startSignInListener: listener,
+    startSignInListener: options.startListener ?? listener,
+    signInTimers: options.signInTimers ?? createFakeTimers(createFakeClock(0)),
     detectLocalServers: async (typed: readonly string[]) => {
       detections.push(typed);
       return [...(options.detected ?? [])];

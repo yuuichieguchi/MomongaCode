@@ -46,15 +46,11 @@ describe('the plan_use_not_enabled block of the TUI (P6.5, O-R5-6 designed and n
     await runStarted(backend, app, 'go');
     failWith(backend, 'plan_use_not_enabled', NOT_ENABLED_MESSAGE);
     await choose(app, 'Enable ChatGPT plan use');
-    let continued = false;
-    await eventually(() => {
-      const begun = backend.planCalls.some((call) => call.route === 'sign-in/begin');
-      if (!begun && !continued && (app.lastFrame() ?? '').includes(CHATGPT.loginLabel)) {
-        continued = true;
-        void choose(app, CHATGPT.loginLabel);
-      }
-      return begun;
-    }, 'the sign-in begin');
+    const sentenceScreen = await untilFrame(app, CHATGPT.messages.description);
+    expect(rowNumberOf(sentenceScreen, 'Enable ChatGPT plan use')).toBe(1);
+    expect(rowNumberOf(sentenceScreen, CHATGPT.messages.apiKeyLabel)).toBe(2);
+    await choose(app, 'Enable ChatGPT plan use');
+    await eventually(() => backend.planCalls.some((call) => call.route === 'sign-in/begin'), 'the sign-in begin');
     expect(backend.planCalls.find((call) => call.route === 'sign-in/begin')?.body).toEqual({ profile: 'chatgpt', account: 'work', port: LISTENER_PORT, reconsent: true });
     app.unmount();
   });

@@ -6,7 +6,7 @@ import { PLAN_ROUTES } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { gatewayErrorOfCredential } from '../src/plan/api.ts';
 import { PlanCredentialError } from '../src/plan/auth-source.ts';
-import { GatewayError } from '../src/core/errors.ts';
+import { GatewayError, statusFor } from '../src/core/errors.ts';
 import { ACCOUNT, accountRoute, begin, browse, sessionsDirectory, signIn, startPlanGateway } from './plan-signin-support.ts';
 import type { PlanGateway } from './plan-signin-support.ts';
 import { PROFILE_ID } from './plan-support.ts';
@@ -142,7 +142,8 @@ describe('the accounts the gateway lists are the record files of plan-sessions (
     await gateway.restart();
 
     const begun = await begin(gateway, { account: 'third' });
-    expect(begun.status).not.toBe(200);
+    expect(begun.status).toBe(500);
+    expect(begun.body.error.type).toBe('server_error');
     expect(begun.body.error.code).toBe('plan_host_identity_unavailable');
     expect(begun.body.error.message).toContain('plan-host.json');
     expect(begun.body.error.message).toContain('momonga auth reset-host');
@@ -226,6 +227,7 @@ describe('admin routes translate a PlanCredentialError by the one status rule of
     ['plan_usage_paused', 429],
     ['plan_store_unreadable', 500],
     ['plan_store_unwritable', 500],
+    ['plan_host_identity_unavailable', 500],
   ] as const)('%s answers %i', (code, status) => {
     const translated = translatedOf(code, false);
     expect(translated.status).toBe(status);
@@ -233,10 +235,16 @@ describe('admin routes translate a PlanCredentialError by the one status rule of
     expect(translated.body.message).toBe(`message of ${code}`);
   });
 
-  it('the store codes are server_error and the paused code too_many_requests (N-chatgpt-r5)', () => {
+  it('the store codes and plan_host_identity_unavailable are server_error and the paused code too_many_requests (N-chatgpt-r5, O-R5-6 J 1)', () => {
     expect(translatedOf('plan_store_unreadable', false).body.type).toBe('server_error');
+    expect(translatedOf('plan_host_identity_unavailable', false).body.type).toBe('server_error');
     expect(translatedOf('plan_store_unwritable', false).body.type).toBe('server_error');
     expect(translatedOf('plan_usage_paused', false).body.type).toBe('too_many_requests');
+  });
+
+  it('plan_host_identity_unavailable is 500 through the one status mapping, as the store codes are (O-R5-6 J 1)', () => {
+    expect(statusFor('server_error', 'plan_host_identity_unavailable')).toBe(500);
+    expect(statusFor('server_error', 'plan_store_unreadable')).toBe(500);
   });
 
   it('the retryable plan_credential_unavailable keeps 503 server_error', () => {
