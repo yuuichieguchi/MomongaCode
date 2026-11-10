@@ -11,7 +11,7 @@ export { systemClock } from './clock.ts';
 export type { Clock } from './clock.ts';
 export { Deadline } from './deadline.ts';
 export type { DeadlineTiming } from './deadline.ts';
-export { isRecord, parseBoundedJson, parseJsonOrText } from './json.ts';
+export { TOO_DEEP_PLACEHOLDER, isRecord, parseBoundedJson, spanValueOfJsonText } from './json.ts';
 export type { BoundedJson } from './json.ts';
 export { JsonDepthError, MAX_JSON_DEPTH, checkJsonDepth, parseOutsideJson } from './json-depth.ts';
 export { describeFirstError, jsonReplyInstructions, readJsonReply } from './json-reply.ts';

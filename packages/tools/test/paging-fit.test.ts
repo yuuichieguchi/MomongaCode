@@ -15,7 +15,7 @@ describe('a paging tool sizes its page by ctx.outputFit', () => {
   it('ReadOutput returns a page the port says fits, notes where to continue, and is never cut', async () => {
     const harness = makeHarness();
     const lines = Array.from({ length: 300 }, (_unused, index) => `out ${index + 1}`);
-    const { handle } = harness.blobs.port.put(lines.join('\n'), { mediaType: 'text/plain; charset=utf-8' });
+    const { handle } = await harness.blobs.port.put(lines.join('\n'), { mediaType: 'text/plain; charset=utf-8' });
     const putsBefore = harness.blobs.puts.length;
     const [outcome] = await harness.executor.runBatch({
       ...harness.input(await toolSetOf(readOutputTool), [call('c1', 'ReadOutput', { handle })]),

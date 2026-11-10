@@ -1,4 +1,4 @@
-import { canonicalJson, isRecord, parseJsonOrText } from '@momonga/foundation';
+import { canonicalJson, isRecord, parseBoundedJson } from '@momonga/foundation';
 import { LOOP_GROUPS_KEPT } from '@momonga/protocol';
 import type { InputItem, RunState } from '@momonga/protocol';
 
@@ -49,7 +49,8 @@ const keptGroupsOf = (history: RunState['history']): SeenGroup[] => {
   for (const { item } of history) {
     const open = groups.at(-1);
     if (item.type === 'function_call') {
-      const call = { name: item.name, arguments: parseJsonOrText(item.arguments), callId: item.call_id };
+      const parsed = parseBoundedJson(item.arguments);
+      const call = { name: item.name, arguments: parsed.kind === 'value' ? parsed.value : parsed.text, callId: item.call_id };
       if (open !== undefined && !open.answered) open.calls.push(call);
       else groups.push({ calls: [call], answered: false });
     } else if (item.type === 'function_call_output' && open !== undefined) {

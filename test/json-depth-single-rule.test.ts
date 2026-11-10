@@ -149,6 +149,13 @@ describe('one JSON depth rule for every value that enters from outside', () => {
     expect(source).toMatch(/import \{[^}]*\bMAX_JSON_DEPTH\b[^}]*\} from '@momonga\/foundation'/);
   });
 
+  it('has no wrapper that turns outside text deeper than the bound into text without its reason', () => {
+    const users = productSources()
+      .filter((file) => /\bparseJsonOrText\b/.test(fs.readFileSync(file, 'utf8')))
+      .map((file) => path.relative(ROOT, file));
+    expect(users).toEqual([]);
+  });
+
   it('leaves canonicalJson without a depth limit of its own', () => {
     const source = sourceOf('packages/foundation/src/canonical-json.ts');
     expect(source).not.toMatch(/\bcheckJsonDepth\b/);

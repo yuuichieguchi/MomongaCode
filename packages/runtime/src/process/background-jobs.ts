@@ -168,7 +168,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       }
       await drain(pumps);
       const window = entry.output.window();
-      const stored = window.bytes.length === 0 ? undefined : store.blobs.put(window.bytes, { mediaType: 'text/plain', runId: job.runId });
+      const stored = window.bytes.length === 0 ? undefined : await store.blobs.put(window.bytes, { mediaType: 'text/plain', runId: job.runId });
       const result: JobResult = {
         status: uninspectable.length > 0 ? 'unknown' : entry.stopReason === undefined ? 'exited' : 'killed',
         ...(exit.code === null ? {} : { exitCode: exit.code }),
@@ -236,7 +236,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       try {
         const window = await readJobFileWindow(job.outputPath, 0, JOB_OUTPUT_WINDOW_BYTES);
         if (window !== undefined && window.bytes.length > 0) {
-          output = { handle: store.blobs.put(window.bytes, { mediaType: 'text/plain', runId: job.runId }).handle, start: window.start, total: window.total };
+          output = { handle: (await store.blobs.put(window.bytes, { mediaType: 'text/plain', runId: job.runId })).handle, start: window.start, total: window.total };
         }
       } catch (error) {
         onWarning(`the output file of background job ${job.id} could not be read: ${asError(error).message}`);

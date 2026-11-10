@@ -239,6 +239,7 @@ export const chainBuilder = (h: ReferenceHarness) => {
   let steps = 0;
   let messages = 0;
   const outputs = new Map<string, string>();
+  const blobWrites: Promise<unknown>[] = [];
 
   const createRun = (input: string, options: { history?: 'inherit' | 'fresh'; timeoutMs?: number } = {}): Run => {
     const result = h.store.createRunAndEnqueue(h.sessionId, {
@@ -293,7 +294,8 @@ export const chainBuilder = (h: ReferenceHarness) => {
     const inherited = oracleState(h.store, claim.runId).history.find((entry) => entry.item.type === 'function_call_output' && entry.item.call_id === callId)?.item;
     const output = outputs.get(callId) ?? (inherited?.type === 'function_call_output' && typeof inherited.output === 'string' ? inherited.output : undefined);
     if (output === undefined) throw new Error(`no output is known for call ${callId}`);
-    const { handle } = h.store.blobs.put(output, { mediaType: 'text/plain' } as never);
+    const handle = h.store.blobs.handleFor(output);
+    blobWrites.push(h.store.blobs.put(output, { mediaType: 'text/plain' } as never));
     append(claim, [{ type: 'context.truncated', callId, handle, kind: 'omitted', ...(tokens === undefined ? {} : { tokens }) } as RunEventPayload]);
   };
 
@@ -334,6 +336,7 @@ export const chainBuilder = (h: ReferenceHarness) => {
   type Ending = { to: 'COMPLETED' } | { to: 'STOPPED'; stopReason: StopReason } | { to: 'FAILED'; code: string } | { to: 'CANCELLED' };
 
   const end = async (claim: Claim, ending: Ending): Promise<void> => {
+    await Promise.all(blobWrites.splice(0));
     if (ending.to === 'CANCELLED') {
       const requestedCancel = await h.store.requestCancel(claim.runId);
       if (requestedCancel.kind !== 'ok') throw new Error(`cancel of ${claim.runId} returned ${requestedCancel.kind}`);

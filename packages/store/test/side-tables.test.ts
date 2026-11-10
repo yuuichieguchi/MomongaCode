@@ -111,19 +111,19 @@ describe('blobs', () => {
 
   it('stores content-addressed private files and deduplicates', async () => {
     const { dir, store } = harness();
-    const first = store.blobs.put(text, { mediaType: 'text/plain' });
+    const first = await store.blobs.put(text, { mediaType: 'text/plain' });
     expect(first).toEqual({ handle: sha256(text), sha256: sha256(text), byteLength: 12, lineCount: 4 });
     const file = path.join(dir, 'blobs', sha256(text));
     expect(fs.readFileSync(file, 'utf8')).toBe(text);
     expect(fileMode(file)).toBe(0o600);
     expect(fileMode(path.join(dir, 'blobs'))).toBe(0o700);
-    expect(store.blobs.put(Buffer.from(text, 'utf8'), { mediaType: 'text/plain' })).toEqual(first);
+    expect(await store.blobs.put(Buffer.from(text, 'utf8'), { mediaType: 'text/plain' })).toEqual(first);
     expect(fs.readdirSync(path.join(dir, 'blobs'))).toEqual([sha256(text)]);
   });
 
   it('reads an inclusive 1-based line range with totals', async () => {
     const { store } = harness();
-    const { handle } = store.blobs.put(text, { mediaType: 'text/plain' });
+    const { handle } = await store.blobs.put(text, { mediaType: 'text/plain' });
     expect(await store.blobs.read(handle, { lineStart: 2, lineEnd: 3 })).toEqual({ text: 'l2\nl3\n', totalLines: 4, totalBytes: 12 });
     expect(await store.blobs.read(handle, { lineStart: 4, lineEnd: 99 })).toEqual({ text: 'l4\n', totalLines: 4, totalBytes: 12 });
     expect(await store.blobs.read(handle, { lineStart: 5, lineEnd: 9 })).toEqual({ text: '', totalLines: 4, totalBytes: 12 });
@@ -131,13 +131,13 @@ describe('blobs', () => {
 
   it('keeps an unterminated last line intact in a line range', async () => {
     const { store } = harness();
-    const { handle } = store.blobs.put('a\nb', { mediaType: 'text/plain' });
+    const { handle } = await store.blobs.put('a\nb', { mediaType: 'text/plain' });
     expect(await store.blobs.read(handle, { lineStart: 2, lineEnd: 2 })).toEqual({ text: 'b', totalLines: 2, totalBytes: 3 });
   });
 
   it('reads a byte range with totals and the actual range returned', async () => {
     const { store } = harness();
-    const { handle } = store.blobs.put(text, { mediaType: 'text/plain' });
+    const { handle } = await store.blobs.put(text, { mediaType: 'text/plain' });
     expect(await store.blobs.read(handle, { offset: 3, length: 5 })).toEqual({
       text: 'l2\nl3',
       totalLines: 4,
@@ -149,7 +149,7 @@ describe('blobs', () => {
 
   it('never splits a multi-byte character at either end of a byte range', async () => {
     const { store } = harness();
-    const { handle } = store.blobs.put('a€b€c', { mediaType: 'text/plain' });
+    const { handle } = await store.blobs.put('a€b€c', { mediaType: 'text/plain' });
     const read = (offset: number, length: number) => store.blobs.read(handle, { offset, length });
     expect(await read(2, 6)).toMatchObject({ text: 'b€', offset: 4, length: 4 });
     expect(await read(0, 6)).toMatchObject({ text: 'a€b€', offset: 0, length: 8 });
@@ -166,7 +166,7 @@ describe('blobs', () => {
   it('continues a byte-range walk without gaps or duplicates', async () => {
     const { store } = harness();
     const content = 'aé€😀z'.repeat(20);
-    const { handle, byteLength } = store.blobs.put(content, { mediaType: 'text/plain' });
+    const { handle, byteLength } = await store.blobs.put(content, { mediaType: 'text/plain' });
     let offset = 0;
     let rebuilt = '';
     while (offset < byteLength) {
@@ -181,7 +181,7 @@ describe('blobs', () => {
   it.each([1, 2, 3, 4, 5, 6, 7, 8])('walks mixed 1-4 byte characters with window size %i to completion', async (window) => {
     const { store } = harness();
     const content = 'aé€😀z€é😀'.repeat(7);
-    const { handle, byteLength } = store.blobs.put(content, { mediaType: 'text/plain' });
+    const { handle, byteLength } = await store.blobs.put(content, { mediaType: 'text/plain' });
     let offset = 0;
     let rebuilt = '';
     let steps = 0;
@@ -199,7 +199,7 @@ describe('blobs', () => {
 
   it('always makes progress and never emits a replacement character from any starting offset', async () => {
     const { store } = harness();
-    const { handle, byteLength } = store.blobs.put('aé€😀z', { mediaType: 'text/plain' });
+    const { handle, byteLength } = await store.blobs.put('aé€😀z', { mediaType: 'text/plain' });
     for (let start = 0; start < byteLength; start += 1) {
       for (let window = 1; window <= 8; window += 1) {
         const slice = await store.blobs.read(handle, { offset: start, length: window });
@@ -212,7 +212,7 @@ describe('blobs', () => {
 
   it('counts a last line without trailing newline', async () => {
     const { store } = harness();
-    expect(store.blobs.put('a\nb', { mediaType: 'text/plain' }).lineCount).toBe(2);
+    expect((await store.blobs.put('a\nb', { mediaType: 'text/plain' })).lineCount).toBe(2);
   });
 
   it('fails clearly for an unknown handle', async () => {
@@ -223,7 +223,7 @@ describe('blobs', () => {
 
   it('rejects content that is not valid UTF-8', async () => {
     const { dir, store } = harness();
-    expect(() => store.blobs.put(Buffer.from([0x61, 0xff, 0xfe]), { mediaType: 'application/octet-stream' })).toThrow(/UTF-8/);
+    await expect(store.blobs.put(Buffer.from([0x61, 0xff, 0xfe]), { mediaType: 'application/octet-stream' })).rejects.toThrow(/UTF-8/);
     expect(fs.existsSync(path.join(dir, 'blobs'))).toBe(true);
     expect(fs.readdirSync(path.join(dir, 'blobs'))).toEqual([]);
   });
@@ -231,7 +231,7 @@ describe('blobs', () => {
   it('streams line ranges instead of loading the whole blob', async () => {
     const { store } = harness();
     const line = 'x'.repeat(99) + '\n';
-    const { handle, byteLength } = store.blobs.put(line.repeat(200_000), { mediaType: 'text/plain' });
+    const { handle, byteLength } = await store.blobs.put(line.repeat(200_000), { mediaType: 'text/plain' });
     expect(byteLength).toBe(20_000_000);
     const readFileSync = vi.spyOn(fs, 'readFileSync');
     const createReadStream = vi.spyOn(fs, 'createReadStream');
@@ -250,28 +250,35 @@ describe('blobs', () => {
 
   it('fsyncs the blob directory after publishing a new blob', async () => {
     const { dir, store } = harness();
-    const open = vi.spyOn(fs, 'openSync');
-    const fsync = vi.spyOn(fs, 'fsyncSync');
+    const openFile = fs.promises.open.bind(fs.promises);
+    const directorySyncs: string[] = [];
+    const open = vi.spyOn(fs.promises, 'open').mockImplementation(async (...opened: Parameters<typeof fs.promises.open>) => {
+      const handle = await openFile(...opened);
+      if (opened[0] !== path.join(dir, 'blobs') || opened[1] !== 'r') return handle;
+      const sync = handle.sync.bind(handle);
+      handle.sync = async () => {
+        await sync();
+        directorySyncs.push(String(opened[0]));
+      };
+      return handle;
+    });
     try {
-      store.blobs.put('durable', { mediaType: 'text/plain' });
-      const directoryOpen = open.mock.calls.findIndex(([target, flags]) => target === path.join(dir, 'blobs') && flags === 'r');
-      expect(directoryOpen).toBeGreaterThanOrEqual(0);
-      expect(fsync.mock.calls.map(([handle]) => handle)).toContain(open.mock.results[directoryOpen]!.value);
+      await store.blobs.put('durable', { mediaType: 'text/plain' });
+      expect(directorySyncs).toEqual([path.join(dir, 'blobs')]);
     } finally {
       open.mockRestore();
-      fsync.mockRestore();
     }
   });
 
   it.each([
     ['same size', (original: string) => 'z'.repeat(original.length)],
     ['different size', () => 'truncated'],
-  ])('rewrites an existing blob file whose content no longer matches (%s)', (_name, corrupt) => {
+  ])('rewrites an existing blob file whose content no longer matches (%s)', async (_name, corrupt) => {
     const { dir, store } = harness();
-    const { handle } = store.blobs.put(text, { mediaType: 'text/plain' });
+    const { handle } = await store.blobs.put(text, { mediaType: 'text/plain' });
     const file = path.join(dir, 'blobs', handle);
     fs.writeFileSync(file, corrupt(text));
-    store.blobs.put(text, { mediaType: 'text/plain' });
+    await store.blobs.put(text, { mediaType: 'text/plain' });
     expect(fs.readFileSync(file, 'utf8')).toBe(text);
     expect(fileMode(file)).toBe(0o600);
     expect(fs.readdirSync(path.join(dir, 'blobs'))).toEqual([handle]);
