@@ -61,11 +61,6 @@ const groupGoneWithin = async (pgid: number, deadlineMs: number): Promise<number
   return members;
 };
 
-const tlcMetadirsLeft = (): string[] => {
-  const token = process.env['MOMONGA_TEST_RUN'] as string;
-  return fs.readdirSync(os.tmpdir()).filter((entry) => entry.startsWith(`mmt-${token}-tlc-`));
-};
-
 const sandboxWithScript = (root: string, specs: Readonly<Record<string, string>>, withJar: boolean): string => {
   const script = path.join(root, 'scripts', 'tlc.sh');
   fs.mkdirSync(path.dirname(script), { recursive: true });
@@ -300,11 +295,11 @@ describe('running tlc.sh under the harness', () => {
     expect(argv.slice(1).join(' ')).toContain('-lncheck final');
     expect(argv.slice(1).join(' ')).toContain(`-workers ${TLC_WORKERS}`);
     const metadir = (run.stdout.split('\n').find((line) => line.startsWith('METADIR ')) ?? '').slice('METADIR '.length);
-    expect(path.dirname(metadir)).toBe(os.tmpdir());
-    expect(path.basename(metadir).startsWith(`mmt-${process.env['MOMONGA_TEST_RUN']}-tlc-`)).toBe(true);
+    expect(metadir).toBe(run.metadir);
+    expect(path.dirname(run.metadir)).toBe(os.tmpdir());
+    expect(path.basename(run.metadir).startsWith(`mmt-${process.env['MOMONGA_TEST_RUN']}-tlc-`)).toBe(true);
     expect(run.stdout).toContain('METADIR_EXISTS');
-    expect(fs.existsSync(metadir)).toBe(false);
-    expect(tlcMetadirsLeft()).toEqual([]);
+    expect(fs.existsSync(run.metadir)).toBe(false);
   });
 
   it(
@@ -406,7 +401,7 @@ describe('running tlc.sh under the harness', () => {
       expect(run.signal).toBe('SIGKILL');
       expect(run.stdout).toContain('TLC2 Version');
       expect(await groupGoneWithin(run.pid, REAP_SLACK_MS)).toEqual([]);
-      expect(tlcMetadirsLeft()).toEqual([]);
+      expect(fs.existsSync(run.metadir)).toBe(false);
       expect(verdictProblems({ ...holdsEntry, config: 'Endless', budgetCpuSeconds: ENDLESS_BUDGET_CPU_SECONDS }, run)).not.toEqual([]);
     },
     ENDLESS_BUDGET_CPU_SECONDS * TLC_WORKERS * 1000 + 2 * REAP_SLACK_MS,

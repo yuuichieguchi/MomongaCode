@@ -147,7 +147,7 @@ export const runTlc = async (options: TlcRunOptions): Promise<TlcRun> => {
     };
     try {
       const [[exitCode, signal]] = await Promise.all([closed, watchCpu()]);
-      return { pid, exitCode, signal, killedAtCpuBudget, stdout, stderr };
+      return { pid, exitCode, signal, killedAtCpuBudget, metadir, stdout, stderr };
     } finally {
       finished = true;
       wake();

@@ -34,6 +34,7 @@ export type TlcRun = {
   readonly exitCode: number | null;
   readonly signal: NodeJS.Signals | null;
   readonly killedAtCpuBudget: boolean;
+  readonly metadir: string;
   readonly stdout: string;
   readonly stderr: string;
 };
