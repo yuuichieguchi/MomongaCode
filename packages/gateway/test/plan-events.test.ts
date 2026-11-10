@@ -1,57 +1,33 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createJsonLogger } from '@momonga/foundation';
-import type { JsonLogger } from '@momonga/foundation';
+import fs from 'node:fs';
+import { credentialFileFor } from '@momonga/foundation';
 import { PLAN_ROUTES } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, openResponsesTextReply, planErrorHttpReply } from '@momonga/testkit';
 import type { FakeUpstreamReply } from '@momonga/testkit';
 import { userInput } from './gateway-helpers.ts';
 import { clientFor } from './gateway-process-helpers.ts';
-import { ACCOUNT, CALLBACK_PORT, accountRoute, signIn, startPlanGateway } from './plan-signin-support.ts';
-import type { PlanGateway, PlanGatewayOptions } from './plan-signin-support.ts';
+import { ACCOUNT, CALLBACK_PORT, PLAN_EVENT_NAMES, accountRoute, recordingLogger, sessionsDirectory, signIn, startPlanGateway } from './plan-signin-support.ts';
+import type { PlanGateway, PlanGatewayOptions, RecordedEvent } from './plan-signin-support.ts';
 import { CONDITION_WAIT, PROFILE_ID } from './plan-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-type Event = { name: string; data: Record<string, unknown> };
 
-const EVENT_NAMES = ['plan.sign_in', 'plan.refresh', 'plan.rejected', 'plan.sign_out', 'plan.pause', 'plan.catalog'] as const;
 
-const FIELDS: Readonly<Record<(typeof EVENT_NAMES)[number], readonly string[]>> = {
+const FIELDS: Readonly<Record<(typeof PLAN_EVENT_NAMES)[number], readonly string[]>> = {
   'plan.sign_in': ['profile', 'account', 'outcome', 'failure', 'endStep', 'durationMs', 'port', 'alg', 'kid', 'audShape', 'scope', 'earliestRefreshAt', 'claimNames'],
-  'plan.refresh': ['profile', 'account', 'outcome', 'code', 'attempts', 'latencyMs', 'remainingMs', 'earliestRefreshAt', 'at'],
+  'plan.refresh': ['profile', 'account', 'outcome', 'code', 'interrupted', 'attempts', 'latencyMs', 'remainingMs', 'earliestRefreshAt', 'at'],
   'plan.rejected': ['profile', 'account', 'generation', 'answer'],
   'plan.sign_out': ['profile', 'account', 'revocation', 'resumed'],
   'plan.pause': ['profile', 'account', 'code', 'until'],
   'plan.catalog': ['profile', 'account', 'outcome', 'listed', 'usable', 'entryKeys', 'requestIdHeaders'],
 };
 
-const ENVELOPE = new Set(['ts', 'level', 'service', 'pid', 'msg']);
-
-const lineLogger = (events: Event[]): JsonLogger => {
-  let pending = '';
-  const stream = {
-    write: (chunk: string): boolean => {
-      pending += chunk;
-      const lines = pending.split('\n');
-      pending = lines.pop() ?? '';
-      for (const line of lines) {
-        if (line === '') continue;
-        const parsed = JSON.parse(line) as Record<string, unknown>;
-        const name = parsed['msg'];
-        if (typeof name !== 'string' || !(EVENT_NAMES as readonly string[]).includes(name)) continue;
-        events.push({ name, data: Object.fromEntries(Object.entries(parsed).filter(([key]) => !ENVELOPE.has(key))) });
-      }
-      return true;
-    },
-  };
-  return createJsonLogger({ service: 'gateway', clock: createFakeClock(0), stream });
-};
-
-type Observed = { gateway: PlanGateway; events: Event[]; secrets(): string[] };
+type Observed = { gateway: PlanGateway; events: RecordedEvent[]; secrets(): string[] };
 
 const observed = async (options: PlanGatewayOptions = {}): Promise<Observed> => {
-  const events: Event[] = [];
-  const gateway = await startPlanGateway({ ...options, logger: lineLogger(events) });
+  const events: RecordedEvent[] = [];
+  const gateway = await startPlanGateway({ ...options, logger: recordingLogger(events) });
   const signedIn = await signIn(gateway);
   const authorization = new URL(signedIn.begun.body.authorizationUrl as string);
   const secrets = (): string[] =>
@@ -69,9 +45,9 @@ const observed = async (options: PlanGatewayOptions = {}): Promise<Observed> => 
   return { gateway, events, secrets };
 };
 
-const named = (events: readonly Event[], name: string): Event[] => events.filter((event) => event.name === name);
+const named = (events: readonly RecordedEvent[], name: string): RecordedEvent[] => events.filter((event) => event.name === name);
 
-const presentKeys = (event: Event): string[] => Object.keys(event.data).filter((key) => event.data[key] !== undefined).sort();
+const presentKeys = (event: RecordedEvent): string[] => Object.keys(event.data).filter((key) => event.data[key] !== undefined).sort();
 
 const expectNoSecret = (observation: Observed): void => {
   const text = JSON.stringify(observation.events);
@@ -213,5 +189,26 @@ describe('O-R5-6 L10: the plan events, their fields and what they never carry', 
     expect(JSON.stringify(event)).not.toContain('Plan Model');
     expectNoSecret(observation);
     await observation.gateway.close();
+  });
+});
+
+describe('O-R5-6 (N) 8a: a resumed sign-out is one shared flight', () => {
+  it('a route sign-out on a signing_out record found on disk joins the resumed one', async () => {
+    const events: RecordedEvent[] = [];
+    const gateway = await startPlanGateway({ plaintextTokenFiles: true, logger: recordingLogger(events) });
+    await signIn(gateway);
+    await gateway.close();
+    const file = credentialFileFor(sessionsDirectory(gateway.home), `plan/${PROFILE_ID}/${ACCOUNT}`);
+    const record = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+    fs.writeFileSync(file, JSON.stringify({ ...record, state: 'signing_out' }), { mode: 0o600 });
+    fs.chmodSync(file, 0o600);
+    await gateway.restart();
+    const signedOut = await gateway.post(PLAN_ROUTES.signOut, { profile: PROFILE_ID, account: ACCOUNT });
+    expect(signedOut.status).toBe(200);
+    expect(signedOut.body.revocation).toBe('confirmed');
+    expect(gateway.auth.calls.revoke).toBe(1);
+    await vi.waitFor(() => expect(named(events, 'plan.sign_out')).toHaveLength(1), CONDITION_WAIT);
+    expect(named(events, 'plan.sign_out').map((event) => event.data['resumed'])).toEqual([true]);
+    await gateway.close();
   });
 });

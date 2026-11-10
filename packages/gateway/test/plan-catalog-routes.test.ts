@@ -6,8 +6,8 @@ import { PLAN_ROUTES } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
 import { getJson } from './gateway-helpers.ts';
 import { clientFor } from './gateway-process-helpers.ts';
-import { ACCOUNT, accountRoute, signIn, startPlanGateway } from './plan-signin-support.ts';
-import type { PlanGateway } from './plan-signin-support.ts';
+import { ACCOUNT, accountRoute, recordingLogger, signIn, startPlanGateway } from './plan-signin-support.ts';
+import type { PlanGateway, RecordedEvent } from './plan-signin-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -16,6 +16,8 @@ const LISTED = [
   { slug: 'silent-model', display_name: 'Silent Model', visibility: 'list' },
   { slug: 'hidden-model', display_name: 'Hidden Model', visibility: 'hide', context_window: 100000 },
 ];
+
+const LISTED_WITH_TARGET = [...LISTED, { slug: 'plan-model', display_name: 'Plan Model', visibility: 'list', context_window: 200000 }];
 
 const NO_WINDOW = 'the server reports no context window for this model';
 const ACCESS_LIFETIME_MS = 3_600_000;
@@ -106,14 +108,44 @@ describe('the live model catalog of a signed-in account (P7, M2a, I-M2)', () => 
   });
 
   it('loads the record at gateway start, so a plan target with no declared window takes the reported one without a list read', async () => {
+    const gateway = await startPlanGateway({ models: LISTED_WITH_TARGET, declaredCapabilities: false });
+    await signIn(gateway);
+    await gateway.get(modelsRoute());
+    const reads = listReads(gateway);
+    await gateway.restart();
+    const health = await getJson(clientFor(gateway.socketPath), '/v1/momonga/health');
+    expect(health.body.targets['gpt'].ok).toBe(true);
+    expect(health.body.targets['gpt']).not.toHaveProperty('reason');
+    const models = await getJson(clientFor(gateway.socketPath), '/v1/momonga/models');
+    expect(models.status).toBe(200);
+    const entry = (models.body.data as Array<{ targetCapabilities: Record<string, { contextWindow?: unknown }> }>).find((model) => model.targetCapabilities['gpt'] !== undefined);
+    expect(entry?.targetCapabilities['gpt']?.contextWindow).toBe(200000);
+    expect(listReads(gateway)).toBe(reads);
+    await gateway.close();
+  });
+
+  it('a plan target whose model the record does not list is capabilities_unknown after a restart', async () => {
     const gateway = await startPlanGateway({ models: LISTED, declaredCapabilities: false });
     await signIn(gateway);
     await gateway.get(modelsRoute());
     const reads = listReads(gateway);
     await gateway.restart();
     const health = await getJson(clientFor(gateway.socketPath), '/v1/momonga/health');
-    expect(health.body.targets['gpt'].reason).not.toBe('capabilities_unknown');
+    expect(health.body.targets['gpt']).toMatchObject({ ok: false, reason: 'capabilities_unknown' });
     expect(listReads(gateway)).toBe(reads);
+    await gateway.close();
+  });
+
+  it('a catalog answer with no list writes plan.catalog list_invalid', async () => {
+    const events: RecordedEvent[] = [];
+    const gateway = await startPlanGateway({ models: LISTED, catalogListKey: 'items', logger: recordingLogger(events) });
+    await signIn(gateway);
+    await gateway.get(modelsRoute('profile=chatgpt&refresh=1'));
+    const catalog = events.filter((event) => event.name === 'plan.catalog');
+    expect(catalog).toHaveLength(1);
+    expect(catalog[0]?.data['outcome']).toBe('list_invalid');
+    expect(Array.isArray(catalog[0]?.data['requestIdHeaders'])).toBe(true);
+    expect(catalog[0]?.data).not.toHaveProperty('listed');
     await gateway.close();
   });
 });

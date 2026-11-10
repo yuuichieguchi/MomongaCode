@@ -156,8 +156,8 @@ describe('read: the state decides the failure, and no failure is skippable', () 
   });
 });
 
-describe('read: a target with no account follows the active-account pointer on every read', () => {
-  it('reads the label from plan-active.json at each read, and fails with sign_in_required when the profile has no entry', async () => {
+describe('O-R5-6 (N) 3: the active pointer of the gateway is the one reader', () => {
+  it('an unpinned source follows the active pointer of the gateway on every read, and never the file', async () => {
     const h = await harness();
     const unpinned = h.sessions.authSource({ profile: PROFILE_ID });
     expect((await planError(unpinned.read(new AbortController().signal))).code).toBe('sign_in_required');
@@ -165,7 +165,58 @@ describe('read: a target with no account follows the active-account pointer on e
     h.auth.identity = { sub: 'sub-second-user', email: 'second@example.com' };
     const home = await signedIn(h, 'home');
     expect((await unpinned.read(new AbortController().signal)).bearer).toBe(home.tokens.access_token);
-    await fs.writeFile(h.paths.active, JSON.stringify({ [PROFILE_ID]: 'work' }), { mode: 0o600 });
+    await h.sessions.selectActive({ profile: PROFILE_ID, account: 'work' });
+    expect((await unpinned.read(new AbortController().signal)).bearer).toBe(work.tokens.access_token);
+    await fs.writeFile(h.paths.active, JSON.stringify({ [PROFILE_ID]: 'home' }));
     expect((await unpinned.read(new AbortController().signal)).bearer).toBe(work.tokens.access_token);
   });
+
+  const damaged: Array<{ name: string; damage(file: string): Promise<void>; cause(file: string): string | RegExp }> = [
+    {
+      name: 'a file that cannot be read',
+      damage: async (file) => {
+        await fs.rm(file, { force: true });
+        await fs.mkdir(file);
+      },
+      cause: (file) => new RegExp(`^could not read the active plan account file ${escaped(file)}: .+`),
+    },
+    {
+      name: 'a file that is not valid JSON',
+      damage: (file) => fs.writeFile(file, '{'),
+      cause: (file) => new RegExp(`^the active plan account file ${escaped(file)} is not valid JSON: .+`),
+    },
+    {
+      name: 'a file that is not a JSON object',
+      damage: (file) => fs.writeFile(file, '"x"'),
+      cause: (file) => `the active plan account file ${file} is not a JSON object`,
+    },
+    {
+      name: 'a file that names a non-string account',
+      damage: (file) => fs.writeFile(file, JSON.stringify({ [PROFILE_ID]: 1 })),
+      cause: (file) => `the active plan account file ${file} names a non-string account for "${PROFILE_ID}"`,
+    },
+  ];
+
+  for (const entry of damaged) {
+    it(`${entry.name} is warned at open, an unpinned source fails plan_store_unreadable with the cause, a pinned source reads and selectActive does not overwrite it`, async () => {
+      const h = await harness();
+      const work = await signedIn(h, 'work');
+      await entry.damage(h.paths.active);
+      await h.reopen({ accounts: [{ profile: PROFILE_ID, account: 'work' }] });
+      const cause = entry.cause(h.paths.active);
+      const failure = await planError(h.sessions.authSource({ profile: PROFILE_ID }).read(new AbortController().signal));
+      expect(failure.code).toBe('plan_store_unreadable');
+      if (typeof cause === 'string') {
+        expect(failure.message).toBe(cause);
+        expect(h.warnings).toContain(`could not list plan-active.json: ${cause}`);
+      } else {
+        expect(failure.message).toMatch(cause);
+        expect(h.warnings.filter((warning) => warning.startsWith('could not list plan-active.json: ') && cause.test(warning.slice('could not list plan-active.json: '.length)))).toHaveLength(1);
+      }
+      expect((await pinned(h, 'work').read(new AbortController().signal)).bearer).toBe(work.tokens.access_token);
+      await expect(h.sessions.selectActive({ profile: PROFILE_ID, account: 'work' })).rejects.toThrow(cause);
+    });
+  }
 });
+
+const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

@@ -3,6 +3,8 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, registerCleanup, startFa
 import type { CleanupContext, SiwcAuth } from '@momonga/testkit';
 import { createIdTokenVerifier } from '../src/plan/id-token.ts';
 import type { IdTokenVerdict } from '../src/plan/id-token.ts';
+import type { PlanSleep } from '../src/plan/refresh.ts';
+import { realSleep } from './plan-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -10,7 +12,7 @@ const CONCURRENT = 4;
 
 type PlanFetch = (url: string, init: RequestInit) => Promise<Response>;
 
-type VerifierOptions = { jwksUrl: string; outbound: <T>(signal: AbortSignal, use: (fetch: PlanFetch) => Promise<T>) => Promise<T>; lifetime: AbortSignal; clock: ReturnType<typeof createFakeClock> };
+type VerifierOptions = { jwksUrl: string; outbound: <T>(signal: AbortSignal, use: (fetch: PlanFetch) => Promise<T>) => Promise<T>; lifetime: AbortSignal; sleep: PlanSleep; clock: ReturnType<typeof createFakeClock> };
 
 const segment = (value: Record<string, unknown>): string => Buffer.from(JSON.stringify(value)).toString('base64url');
 
@@ -23,9 +25,10 @@ const verifierAt = async (context: CleanupContext): Promise<{ auth: SiwcAuth; ve
     jwksUrl: auth.jwksUrl,
     outbound: (_signal, use) => use((url, init) => fetch(url, init)),
     lifetime: new AbortController().signal,
+    sleep: realSleep,
     clock: createFakeClock(Date.now()),
   };
-  const verifier = createIdTokenVerifier(options as unknown as Parameters<typeof createIdTokenVerifier>[0]);
+  const verifier = createIdTokenVerifier(options);
   const kid = auth.jwks().keys[0]?.kid ?? 'kid-missing';
   const expected = { issuer: 'issuer', clientId: 'client', nonce: 'nonce', algorithms: ['RS256'] };
   return { auth, verify: () => verifier(tokenWithKid(kid), expected) };

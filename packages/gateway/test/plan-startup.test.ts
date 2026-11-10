@@ -69,7 +69,7 @@ describe('startup of the session engine', () => {
     expect(h.auth.records.find((record) => record.path.endsWith('/revoke'))?.form['token']).toBe(signIn.tokens.refresh_token);
   });
 
-  it('a record with pendingRefresh is marked ambiguous: its terminal answer keeps the server code and sets interrupted', async () => {
+  it('a record with pendingRefresh: its terminal answer keeps the server code, sets interrupted and writes a terminal plan.refresh event with interrupted true', async () => {
     const h = await harness();
     await signedIn(h, 'work');
     const installed = await readRecord(h, 'work');
@@ -80,5 +80,8 @@ describe('startup of the session engine', () => {
     await source.rejected(installed?.['generation'] as number, new AbortController().signal);
     expect(source.status()).toMatchObject({ state: 'needs_sign_in', cause: 'invalid_grant' });
     expect(await readRecord(h, 'work')).toMatchObject({ state: 'needs_sign_in', cause: 'invalid_grant', interrupted: true });
+    const refreshes = h.events.filter((event) => event.name === 'plan.refresh');
+    expect(refreshes).toHaveLength(1);
+    expect(refreshes[0]?.data).toMatchObject({ outcome: 'terminal', code: 'invalid_grant', interrupted: true, attempts: 1 });
   });
 });

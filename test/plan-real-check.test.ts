@@ -171,6 +171,14 @@ describe('O-R5-6 L10: scripts/plan-real-check.ts against the fakes only', () => 
     expect(report.format).toBe(REPORT_FORMAT);
     expect(report.account).toBe('work');
     for (const step of ['R1', 'R3', 'R5', 'R7']) expect(verdictOf(report, step), step).toBe('recorded');
+    const notRun = (step: string, reason: string) => ({ step, verdict: 'not_run', facts: { reason } });
+    expect(report.steps.filter((entry) => ['R8', 'R9', 'R10', 'R11', 'R12'].includes(entry.step))).toEqual([
+      notRun('R8', 'no plan.rejected followed by a terminal plan.refresh in the gateway log'),
+      notRun('R9', 'no plan.refresh event with outcome terminal and interrupted true in the gateway log'),
+      notRun('R10', 'no plan.pause event with code plan_workspace_usage_limit in the gateway log'),
+      notRun('R11', '--screens-seen was not given'),
+      notRun('R12', 'no --eval-reports given'),
+    ]);
 
     const carriage = path.join(reports, 'carriage.json');
     const carried = await runScript(['carriage', '--home', gateway.home, '--alias', 'default', '--report', carriage]);
@@ -178,16 +186,31 @@ describe('O-R5-6 L10: scripts/plan-real-check.ts against the fakes only', () => 
     const carriedReport = readReport(carriage);
     expect(carriedReport.format).toBe(REPORT_FORMAT);
     expect(carriedReport.steps.map((entry) => entry.step)).toEqual(['R2', 'R4']);
-    const r4 = carriedReport.steps.find((entry) => entry.step === 'R4')?.facts as { requests: Array<{ status: unknown }> };
-    expect(r4.requests).toHaveLength(4);
-    for (const request of r4.requests) expect(typeof request.status).toBe('number');
+    expect(carriedReport.steps.map((entry) => entry.verdict)).toEqual(['recorded', 'recorded']);
+    expect(carriedReport.steps.find((entry) => entry.step === 'R2')?.facts).toEqual({ status: 200, code: null, param: null, functionCalled: false });
+    const r4 = carriedReport.steps.find((entry) => entry.step === 'R4')?.facts as { requests: Array<Record<string, unknown>> };
+    expect(r4.requests.map((request) => [request['alias'], request['request']])).toEqual([
+      ['plan-r4-cache', 1],
+      ['plan-r4-cache', 2],
+      ['plan-r4-reasoning', 1],
+      ['plan-r4-both', 1],
+    ]);
+    for (const request of r4.requests) {
+      expect(request).toMatchObject({ status: 200, code: null, param: null });
+      expect(request['cachedTokens'] === null || typeof request['cachedTokens'] === 'number').toBe(true);
+    }
     const sized = path.join(reports, 'request-size.json');
     const sizing = await runScript(['request-size', '--home', gateway.home, '--alias', 'default', '--report', sized]);
     expect(sizing.code).toBe(0);
     const sizedReport = readReport(sized);
     expect(sizedReport.format).toBe(REPORT_FORMAT);
-    expect(sizedReport.steps.map((entry) => entry.step)).toEqual(['R6']);
-    expect(sizedReport.steps[0]?.facts).toMatchObject({ bytes: 1048577 });
+    expect(sizedReport.steps.map((entry) => [entry.step, entry.verdict])).toEqual([['R6', 'recorded']]);
+    const r6 = sizedReport.steps[0]?.facts as Record<string, unknown>;
+    expect(r6['bytes']).toBe(1048577);
+    expect(typeof r6['status']).toBe('number');
+    expect(r6['accepted']).toBe((r6['status'] as number) < 400);
+    expect(r6['code'] === null || typeof r6['code'] === 'string').toBe(true);
+    expect(r6['param'] === null || typeof r6['param'] === 'string').toBe(true);
 
     const forbidden = [...gateway.auth.issuedSecrets(), ...exposed, gateway.auth.identity.email, gateway.auth.identity.sub, ...gateway.auth.registrations().flatMap((registration) => [registration.clientId, registration.hostId])].filter((value) => value !== '');
     const outputs = [collected, carriage, sized].map((file) => fs.readFileSync(file, 'utf8')).join('\n') + collect.stdout + carried.stdout + sizing.stdout;

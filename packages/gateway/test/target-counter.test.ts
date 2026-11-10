@@ -114,7 +114,7 @@ describe('O-R5-6 L3: counter inputs', () => {
     expect(counterOf({ target: probed, codeDigest: CODE_DIGEST, outputPolicy: { unboundedOutputReserve: true } })).toBe(counterOf({ target: probed, codeDigest: CODE_DIGEST, outputPolicy: { unboundedOutputReserve: true } }));
   });
 
-  it('outputPolicy changes only the three kinds that read it: managed, ollama and chat-completions with toolCalling auto', async () => {
+  it('outputPolicy changes only the two kinds that read it: managed and chat-completions with toolCalling auto', async () => {
     const managed = await resolvedTarget({ adapter: 'managed', server: 'fm' });
     const ollama = await resolvedTarget(OLLAMA);
     const probed = await resolvedTarget({ ...HOSTED, toolCalling: 'auto' });
@@ -124,9 +124,9 @@ describe('O-R5-6 L3: counter inputs', () => {
     const plan = await resolvedTarget(PLAN_TARGET);
     const differs = (target: CounterInput['target']): boolean =>
       counterOf({ target, codeDigest: CODE_DIGEST, outputPolicy: { unboundedOutputReserve: true } }) !== counterOf({ target, codeDigest: CODE_DIGEST, outputPolicy: { unboundedOutputReserve: false } });
-    expect([managed, ollama, probed].map(readsOutputPolicyOf)).toEqual([true, true, true]);
+    expect([managed, ollama, probed].map(readsOutputPolicyOf)).toEqual([true, false, true]);
     expect([native, responses, plan].map(readsOutputPolicyOf)).toEqual([false, false, false]);
-    expect([managed, ollama, probed].map(differs)).toEqual([true, true, true]);
+    expect([managed, ollama, probed].map(differs)).toEqual([true, false, true]);
     expect([native, responses, plan].map(differs)).toEqual([false, false, false]);
   });
 });

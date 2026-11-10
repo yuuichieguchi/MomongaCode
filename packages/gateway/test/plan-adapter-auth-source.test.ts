@@ -15,6 +15,7 @@ import {
   startFakePlanResponses,
 } from '@momonga/testkit';
 import type { FakePlanResponses, FakeUpstreamReply } from '@momonga/testkit';
+import { applyCredentialEffect } from '../src/adapters/shared/auth.ts';
 import { PlanCredentialError } from '../src/plan/auth-source.ts';
 import type { AuthSource, PlanRead } from '../src/plan/auth-source.ts';
 import { START_MS, postJson, readJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
@@ -24,7 +25,7 @@ const PLAN_CAPABILITIES: Capabilities = { ...REMOTE_CAPABILITIES, sampling: { ac
 
 const bearerOf = (generation: number): string => `plan-access-generation-${generation}`;
 
-type FakeAuth = AuthSource & { rejectedCalls: number[]; pauses: Array<{ untilMs?: number }>; reads: number };
+type FakeAuth = AuthSource & { rejectedCalls: number[]; pauses: Array<{ untilMs?: number; code: string }>; reads: number };
 
 const fakeAuth = (options: { renew: boolean; failRead?: PlanCredentialError }): FakeAuth => {
   let generation = 1;
@@ -117,7 +118,7 @@ describe('the adapter applies the profile errorRules and their credential effect
     const response = await plan.post();
     expect(response.status).toBe(429);
     expect(response.body.error.code).toBe('plan_usage_limit');
-    expect(auth.pauses).toEqual([{ untilMs: START_MS + 30_000 }]);
+    expect(auth.pauses).toEqual([{ code: 'plan_usage_limit', untilMs: START_MS + 30_000 }]);
     expect(posts(plan.fake)).toHaveLength(1);
   });
 
@@ -145,8 +146,15 @@ describe('the adapter applies the profile errorRules and their credential effect
     const plan = await startPlan(auth, () => true, [planErrorStreamReply('subscription_sharing_usage_limit_exceeded', {})]);
     const response = await plan.post();
     expect(JSON.stringify(response.body)).toContain('plan_usage_limit');
-    expect(auth.pauses).toEqual([{}]);
+    expect(auth.pauses).toEqual([{ code: 'plan_usage_limit' }]);
     expect(posts(plan.fake)).toHaveLength(1);
+  });
+
+  it('a classification that pauses and carries no code is refused', async () => {
+    const auth = fakeAuth({ renew: false });
+    const clock = createFakeClock(START_MS);
+    await expect(applyCredentialEffect(auth, { credential: 'pause', error: { code: null } } as never, clock)).rejects.toThrow('a classification that pauses the credential carries no code');
+    expect(auth.pauses).toEqual([]);
   });
 });
 

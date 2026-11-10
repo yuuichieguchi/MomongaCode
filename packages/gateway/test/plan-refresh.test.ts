@@ -122,6 +122,18 @@ describe('terminal refresh answers (F9, I-C6, I-C7)', () => {
     expect(await readRecord(h, 'work')).toMatchObject({ state: 'needs_sign_in', cause: 'refresh_token_invalidated' });
   });
 
+  it('a terminal answer with no earlier unanswered send writes interrupted false', async () => {
+    const h = await harness();
+    await signedIn(h, 'work');
+    const installed = await readRecord(h, 'work');
+    h.auth.scriptToken('refresh_token', [{ kind: 'error', code: 'invalid_grant' }]);
+    const source = h.sessions.authSource({ profile: PROFILE_ID, account: 'work' });
+    await source.rejected(installed?.['generation'] as number, new AbortController().signal);
+    const refreshes = h.events.filter((event) => event.name === 'plan.refresh');
+    expect(refreshes).toHaveLength(1);
+    expect(refreshes[0]?.data).toMatchObject({ outcome: 'terminal', code: 'invalid_grant', interrupted: false });
+  });
+
   it('a terminal answer to a refresh whose intent survived a restart keeps the server code as cause and sets interrupted', async () => {
     const h = await harness();
     const signIn = await signedIn(h, 'work');

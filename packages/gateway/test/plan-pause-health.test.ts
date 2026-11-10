@@ -1,6 +1,5 @@
-import fs from 'node:fs/promises';
 import { afterEach, describe, expect, it } from 'vitest';
-import { PROFILE_ID, editRecord, planError, readRecord, signedIn, startHarness } from './plan-support.ts';
+import { PAUSE_CODE, PROFILE_ID, editRecord, planError, readRecord, signedIn, startHarness } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 
 const harnesses: Harness[] = [];
@@ -24,7 +23,7 @@ const twoAccounts = async (h: Harness) => {
   return { work, home };
 };
 
-const pointTo = (h: Harness, account: string) => fs.writeFile(h.paths.active, JSON.stringify({ [PROFILE_ID]: account }), { mode: 0o600 });
+const pointTo = (h: Harness, account: string) => h.sessions.selectActive({ profile: PROFILE_ID, account });
 
 describe('the account pause of M7 is one rule on the AuthSource', () => {
   it('pauses every target on the account: reads fail at once with plan_usage_paused and the usage-limit sentence, and nothing is sent', async () => {
@@ -33,7 +32,7 @@ describe('the account pause of M7 is one rule on the AuthSource', () => {
     const pinnedSource = h.sessions.authSource({ profile: PROFILE_ID, account: 'work' });
     const activeSource = h.sessions.authSource({ profile: PROFILE_ID });
     await activeSource.read(signal());
-    await pinnedSource.pause({});
+    await pinnedSource.pause({ code: PAUSE_CODE });
     const urlsBefore = h.fetchUrls.length;
     for (const source of [pinnedSource, activeSource]) {
       const failure = await planError(source.read(signal()));
@@ -48,7 +47,7 @@ describe('the account pause of M7 is one rule on the AuthSource', () => {
     const h = await harness();
     const signIn = await signedIn(h, 'work');
     const source = h.sessions.authSource({ profile: PROFILE_ID, account: 'work' });
-    await source.pause({});
+    await source.pause({ code: PAUSE_CODE });
     await source.resume();
     expect((await source.read(signal())).bearer).toBe(signIn.tokens.access_token);
     expect(source.status().paused).toBeUndefined();
@@ -59,7 +58,7 @@ describe('the account pause of M7 is one rule on the AuthSource', () => {
     const signIn = await signedIn(h, 'work');
     const source = h.sessions.authSource({ profile: PROFILE_ID, account: 'work' });
     const until = h.clock.now() + 90_000;
-    await source.pause({ untilMs: until });
+    await source.pause({ code: PAUSE_CODE, untilMs: until });
     h.clock.set(until - 1);
     expect((await planError(source.read(signal()))).code).toBe('plan_usage_paused');
     h.clock.set(until);
@@ -69,7 +68,7 @@ describe('the account pause of M7 is one rule on the AuthSource', () => {
   it('a pause belongs to its account only', async () => {
     const h = await harness();
     const { home } = await twoAccounts(h);
-    await h.sessions.authSource({ profile: PROFILE_ID, account: 'work' }).pause({});
+    await h.sessions.authSource({ profile: PROFILE_ID, account: 'work' }).pause({ code: PAUSE_CODE });
     expect((await h.sessions.authSource({ profile: PROFILE_ID, account: 'home' }).read(signal())).bearer).toBe(home.tokens.access_token);
   });
 });
@@ -81,7 +80,7 @@ describe('pause and rejected act on the account whose bearer the read served (I-
     const unpinned = h.sessions.authSource({ profile: PROFILE_ID });
     expect((await unpinned.read(signal())).bearer).toBe(home.tokens.access_token);
     await pointTo(h, 'work');
-    await unpinned.pause({});
+    await unpinned.pause({ code: PAUSE_CODE });
     expect((await planError(h.sessions.authSource({ profile: PROFILE_ID, account: 'home' }).read(signal()))).code).toBe('plan_usage_paused');
     expect((await h.sessions.authSource({ profile: PROFILE_ID, account: 'work' }).read(signal())).bearer).toBe(work.tokens.access_token);
   });
@@ -143,7 +142,7 @@ describe('health of a plan target: one name per condition, the profile sentence,
     const h = await harness();
     await signedIn(h, 'work');
     const source = h.sessions.authSource({ profile: PROFILE_ID, account: 'work' });
-    await source.pause({});
+    await source.pause({ code: PAUSE_CODE });
     const health = source.health();
     expect(health).toMatchObject({
       ok: false,

@@ -320,22 +320,28 @@ describe('O-R5-6 (K) 2: an account pinned for the first time by a later change g
     await gateway.close();
   });
 
-  it('a signing_out record pinned by a change is resumed through the network in force when the account is loaded, even if the request that pinned it is abandoned', async (context) => {
+  it('a signing_out record pinned by a change is resumed through the network in force when the account is loaded, and it outlives the request that pinned it', async (context) => {
     const first = await startProxy(context, 'refuse');
-    const second = await startProxy(context, 'refuse');
+    const second = await startProxy(context, 'silent');
     const stack = await startRemoteStack(context, {
       profile: profileWith(remoteOAuth),
       accounts: [ACCOUNT],
       records: (hostId) => [{ ...activeRecord(SPARE, FAR_EXPIRY_MS, hostId), state: 'signing_out' }],
       network: proxied(first),
     });
-    expect(first.connects()).toEqual([]);
-    replaceSettings(stack.home, { credentials: { plaintextTokenFiles: true }, models: pinnedTargets([ACCOUNT, SPARE]), network: proxied(second) });
-    send(stack.client, 'POST', '/v1/responses', { model: SPARE, input: userInput('hi'), stream: false });
-    stack.client.destroy();
-    await waitFor(() => second.connects().length > 0, CHANGE_WAIT);
-    expect(second.connects().slice(0, 1)).toEqual([connectLine(AUTH_HOST)]);
-    expect(first.connects()).toEqual([]);
+    try {
+      expect(first.connects()).toEqual([]);
+      replaceSettings(stack.home, { credentials: { plaintextTokenFiles: true }, models: pinnedTargets([ACCOUNT, SPARE]), network: proxied(second) });
+      const answered = await postJsonOf(stack.client, '/v1/responses', { model: SPARE, input: userInput('hi'), stream: false });
+      expect(answered.status).toBe(401);
+      expect(answered.body.error.code).toBe('sign_in_required');
+      await waitFor(() => second.connects().length === 1, CHANGE_WAIT);
+      expect(second.connects()).toEqual([connectLine(AUTH_HOST)]);
+      expect(second.openSockets()).toBe(1);
+      expect(first.connects()).toEqual([]);
+    } finally {
+      second.refuseAll();
+    }
   });
 
   it('an account no longer pinned keeps its record and its state', async () => {
@@ -522,5 +528,27 @@ describe('O-R5-6 L3: the served account, the reported numbers and the output pol
     expect(on['probed']).not.toBe(off['probed']);
     expect(on['keyed']).toBe(off['keyed']);
     await handle.close();
+  });
+});
+
+describe('O-R5-6 (N) 3: a damaged active pointer is a listed problem, not a failed start', () => {
+  it('a damaged plan-active.json does not stop the gateway: it is a listed problem and an unpinned target fails plan_store_unreadable', async () => {
+    const gateway = await startPlanGateway({ plaintextTokenFiles: true });
+    await signInAs(gateway, ACCOUNT);
+    await gateway.close();
+    const pointer = momongaLayout(gateway.home).planActive;
+    fs.writeFileSync(pointer, '"x"');
+    await expect(gateway.restart()).resolves.toBeUndefined();
+    replaceSettings(gateway.home, unpinnedSettings(true));
+    const cause = `the active plan account file ${pointer} is not a JSON object`;
+    const listed = await gateway.get(PLAN_ROUTES.accounts);
+    expect(listed.status).toBe(200);
+    expect(listed.body.listProblems).toEqual([{ file: 'plan-active.json', cause }]);
+    const answered = await askDefault(gateway);
+    expect(answered.status).toBe(500);
+    expect(answered.body.error.code).toBe('plan_store_unreadable');
+    expect(answered.body.error.message).toBe(cause);
+    expect(await entryOf(gateway, ACCOUNT)).toMatchObject({ state: 'active' });
+    await gateway.close();
   });
 });

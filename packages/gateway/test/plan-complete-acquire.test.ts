@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { nodeFileSystem } from '@momonga/foundation';
 import { siwcBrowse } from '@momonga/testkit';
 import { createPlanSignIn } from '../src/plan/signin.ts';
-import { PROFILE_ID, startHarness } from './plan-support.ts';
+import { PROFILE_ID, realSleep, startHarness } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 
 const harnesses: Harness[] = [];
@@ -24,6 +24,7 @@ describe('O-R5-6 (M) 2.4: the acquire comes before the first irreversible step o
         return use((url, init) => fetch(url, init));
       },
       lifetime: h.sessions.lifetime,
+      sleep: realSleep,
       fileSystem: nodeFileSystem,
       hostFile: h.paths.host,
     });

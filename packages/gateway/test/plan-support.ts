@@ -10,7 +10,7 @@ import { SIWC_RESOURCE, createFakeClock, siwcBrowse, startFakeSiwcAuth } from '@
 import type { FakeClock, SiwcAuth } from '@momonga/testkit';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
 import { openPlanSessions, planRecordKeyOfPlaintext } from '../src/plan/session.ts';
-import type { PlanSessions, PlanTokenResponse } from '../src/plan/session.ts';
+import type { PlanSessions, PlanSleep, PlanTokenResponse } from '../src/plan/session.ts';
 
 export const START_MS = 1_800_000_000_000;
 export const PROFILE_ID = 'chatgpt';
@@ -19,6 +19,22 @@ export const ACCESS_LIFETIME_MS = 3600 * SECOND;
 export const SKEW_MS = 60 * SECOND;
 export const MARGIN_MS = 121 * SECOND;
 export const CONDITION_WAIT = { timeout: 30_000, interval: 5 } as const;
+export const PAUSE_CODE = 'plan_usage_limit';
+
+export const realSleep: PlanSleep = (ms, signal) =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer);
+        reject(signal.reason);
+      },
+      { once: true },
+    );
+  });
+
+export type RecordedPlanEvent = { name: string; data: Record<string, unknown> };
 
 export type TokenFetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -41,6 +57,7 @@ export type Harness = {
   secrets: string[];
   warnings: string[];
   fetchUrls: string[];
+  events: RecordedPlanEvent[];
   holdNextRefresh(): Gate;
   holdNextRevoke(): Gate;
   pendingBounds(): number[];
@@ -81,6 +98,7 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
   const secrets: string[] = [];
   const warnings: string[] = [];
   const fetchUrls: string[] = [];
+  const events: RecordedPlanEvent[] = [];
   const gates: Gate[] = [];
   const revokeGates: Gate[] = [];
   const bounds: PendingBound[] = [];
@@ -152,6 +170,9 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
       warn: (message) => {
         warnings.push(message);
       },
+      events: (name, data) => {
+        events.push({ name, data: data as Record<string, unknown> });
+      },
     });
   const harness: Harness = {
     home,
@@ -165,6 +186,7 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
     secrets,
     warnings,
     fetchUrls,
+    events,
     holdNextRefresh: () => {
       const gate = newGate();
       gates.push(gate);

@@ -1,8 +1,8 @@
 import type { PlanProfile } from '@momonga/config';
-import { FIRST_GENERATION, momongaLayout } from '@momonga/foundation';
+import { FIRST_GENERATION, createJsonLogger, generationLayout, momongaLayout, momongaPaths, publishCurrentGeneration } from '@momonga/foundation';
 import type { JsonLogger } from '@momonga/foundation';
 import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
-import { createFakeSecretStore, startFakePlanResponses, startFakeSiwcAuth } from '@momonga/testkit';
+import { createFakeClock, createFakeSecretStore, startFakePlanResponses, startFakeSiwcAuth } from '@momonga/testkit';
 import type { FakeClock, FakePlanResponses, FakeSecretStore, PlanResponsesOptions, SiwcAccessTokenForm, SiwcAuth } from '@momonga/testkit';
 import { getJson, postJson, readJson, registerCleanup } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
@@ -24,6 +24,32 @@ export type PlanGateway = {
   close(): Promise<void>;
 };
 
+export type RecordedEvent = { name: string; data: Record<string, unknown> };
+
+export const PLAN_EVENT_NAMES = ['plan.sign_in', 'plan.refresh', 'plan.rejected', 'plan.sign_out', 'plan.pause', 'plan.catalog'] as const;
+
+const ENVELOPE = new Set(['ts', 'level', 'service', 'pid', 'msg']);
+
+export const recordingLogger = (events: RecordedEvent[]): JsonLogger => {
+  let pending = '';
+  const stream = {
+    write: (chunk: string): boolean => {
+      pending += chunk;
+      const lines = pending.split('\n');
+      pending = lines.pop() ?? '';
+      for (const line of lines) {
+        if (line === '') continue;
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+        const name = parsed['msg'];
+        if (typeof name !== 'string' || !(PLAN_EVENT_NAMES as readonly string[]).includes(name)) continue;
+        events.push({ name, data: Object.fromEntries(Object.entries(parsed).filter(([key]) => !ENVELOPE.has(key))) });
+      }
+      return true;
+    },
+  };
+  return createJsonLogger({ service: 'gateway', clock: createFakeClock(0), stream });
+};
+
 export const accountRoute = (route: string, account: string = ACCOUNT): string => route.replace(':account', encodeURIComponent(account));
 
 export type PlanGatewayOptions = {
@@ -35,6 +61,7 @@ export type PlanGatewayOptions = {
   logger?: JsonLogger;
   verifyBearer?: PlanResponsesOptions['verifyBearer'];
   respond?: PlanResponsesOptions['respond'];
+  catalogListKey?: string;
 };
 
 export const holdNextExchange = (gateway: PlanGateway): { reached: Promise<void>; release(): void } => {
@@ -58,7 +85,12 @@ export const startPlanGateway = async (options: PlanGatewayOptions = {}): Promis
   const auth = await startFakeSiwcAuth({ resource: loopback, ...(options.accessTokenForm === undefined ? {} : { accessTokenForm: options.accessTokenForm }) });
   registerCleanup(() => auth.close());
   const shipped = profileFor(auth);
-  const profile: PlanProfile = { ...shipped, oauth: { ...shipped.oauth, resource: loopback }, targetDefaults: { ...shipped.targetDefaults, baseUrl: loopback } };
+  const profile: PlanProfile = {
+    ...shipped,
+    oauth: { ...shipped.oauth, resource: loopback },
+    targetDefaults: { ...shipped.targetDefaults, baseUrl: loopback },
+    ...(options.catalogListKey === undefined ? {} : { catalog: { ...shipped.catalog, listKey: options.catalogListKey } }),
+  };
   const secretStore = createFakeSecretStore({});
   writeSettings(home, {
     ...(options.plaintextTokenFiles === true ? { credentials: { plaintextTokenFiles: true } } : {}),
@@ -74,7 +106,16 @@ export const startPlanGateway = async (options: PlanGatewayOptions = {}): Promis
       },
     },
   });
-  const launch = () => launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, secretStore, planProfiles: { [PROFILE_ID]: profile }, ...(options.clock === undefined ? {} : { clock: options.clock }), ...(options.logger === undefined ? {} : { logger: options.logger }) });
+  const launchOnly = () => launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, secretStore, planProfiles: { [PROFILE_ID]: profile }, ...(options.clock === undefined ? {} : { clock: options.clock }), ...(options.logger === undefined ? {} : { logger: options.logger }) });
+  const launch = async () => {
+    const launched = await launchOnly();
+    await publishCurrentGeneration(momongaPaths(home, process.platform, {}), {
+      generation: FIRST_GENERATION,
+      version: PROCESS_VERSION,
+      sockets: { ...generationLayout(home, FIRST_GENERATION).sockets, gateway: launched.socketPath },
+    });
+    return launched;
+  };
   let handle = await launch();
   const gateway: PlanGateway = {
     home,
