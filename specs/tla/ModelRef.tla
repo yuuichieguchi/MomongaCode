@@ -49,9 +49,10 @@
 (*     reorder are one action: the whole list is rewritten), SetStart,     *)
 (*     SetRole (roles, classifier and billing scope are three slots of     *)
 (*     one kind), SetModelField (a number of one model entry) and          *)
-(*     SetProvider (renames a server: the Canon of its models changes and  *)
-(*     the writer refuses when a reference would be left, so every stored  *)
-(*     record then resolves to nothing, never to another model)            *)
+(*     SetProvider (renames a server: the writer rewrites every settings   *)
+(*     reference to the server\'s models to the new name in the same       *)
+(*     write; stored references are not rewritten, so each then resolves   *)
+(*     to nothing, never to another model)                                  *)
 (*   readers, each resolving with the settings it read:                    *)
 (*     gateway derivation per epoch packages/gateway/src/process.ts:1217, *)
 (*       :1254                                                             *)
@@ -305,9 +306,19 @@ SetModelField(p, i, v) ==
     /\ p \in conns /\ i \in models[p] /\ v # win[p][i]
     /\ Edited(conns, models, [win EXCEPT ![p][i] = v], start, slots, fallback)
 
+Renamed(p, q, t) ==
+    IF t # None /\ \E c \in ByCanon(Confs, t) : c.prov = p
+    THEN <<q>> \o (CHOOSE c \in ByCanon(Confs, t) : TRUE).id
+    ELSE t
+
 SetProvider(p, q) ==
     /\ p \in conns /\ q \notin conns
-    /\ Edited((conns \ {p}) \cup {q}, [models EXCEPT ![q] = models[p], ![p] = {}], [win EXCEPT ![q] = win[p], ![p] = [i \in Ids |-> 1]], start, slots, fallback)
+    /\ Edited((conns \ {p}) \cup {q},
+               [models EXCEPT ![q] = models[p], ![p] = {}],
+               [win EXCEPT ![q] = win[p], ![p] = [i \in Ids |-> 1]],
+               Renamed(p, q, start),
+               [k \in Slots |-> Renamed(p, q, slots[k])],
+               [k \in 1..Len(fallback) |-> Renamed(p, q, fallback[k])])
 
 CreateSession(s, ref) ==
     LET r == IF ref = None THEN StartModel ELSE Resolve(ref) IN

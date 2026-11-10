@@ -5007,10 +5007,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 229927,
-      "measuredSeconds": 29.08,
-      "measuredCpuSeconds": 32.54,
-      "budgetCpuSeconds": 69
+      "distinctStates": 230627,
+      "measuredSeconds": 28.63,
+      "measuredCpuSeconds": 32.25,
+      "budgetCpuSeconds": 68
     },
     {
       "config": "ModelRef.slash",
@@ -5018,9 +5018,9 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 225844,
-      "measuredSeconds": 26.1,
-      "measuredCpuSeconds": 29.43,
+      "distinctStates": 226544,
+      "measuredSeconds": 25.92,
+      "measuredCpuSeconds": 29.28,
       "budgetCpuSeconds": 62
     },
     {
@@ -5032,9 +5032,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1716,
-      "measuredSeconds": 1.59,
-      "measuredCpuSeconds": 2.57,
+      "distinctStates": 1724,
+      "measuredSeconds": 1.61,
+      "measuredCpuSeconds": 2.61,
       "budgetCpuSeconds": 9
     },
     {
@@ -5047,9 +5047,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 3699,
-      "measuredSeconds": 1.83,
-      "measuredCpuSeconds": 3.04,
-      "budgetCpuSeconds": 10
+      "measuredSeconds": 1.67,
+      "measuredCpuSeconds": 2.74,
+      "budgetCpuSeconds": 9
     },
     {
       "config": "ModelRef.lastWins",
@@ -5062,7 +5062,7 @@
       "tier": "every-run",
       "distinctStates": 8,
       "measuredSeconds": 1.19,
-      "measuredCpuSeconds": 1.56,
+      "measuredCpuSeconds": 1.55,
       "budgetCpuSeconds": 7
     },
     {
@@ -5074,10 +5074,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 11510,
-      "measuredSeconds": 2.36,
-      "measuredCpuSeconds": 3.63,
-      "budgetCpuSeconds": 11
+      "distinctStates": 11558,
+      "measuredSeconds": 2.29,
+      "measuredCpuSeconds": 3.47,
+      "budgetCpuSeconds": 10
     },
     {
       "config": "ModelRef.noCascade",
@@ -5089,8 +5089,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 240,
-      "measuredSeconds": 1.31,
-      "measuredCpuSeconds": 1.96,
+      "measuredSeconds": 1.32,
+      "measuredCpuSeconds": 1.93,
       "budgetCpuSeconds": 7
     }
   ]
