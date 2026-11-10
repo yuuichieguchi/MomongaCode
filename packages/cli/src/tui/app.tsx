@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useReducer, useRef, useState } from 'react';
 import { Box, Static, Text, useApp, useInput, usePaste, useStdout, useWindowSize } from 'ink';
-import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, agentReadiness, autoModeNotice, escapeTerminalBlock, escapeTerminalLine, isProbingCapabilities } from '@momonga/protocol';
+import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, escapeTerminalBlock, escapeTerminalLine, isNotListedCapabilities } from '@momonga/protocol';
 import type { AliasCapabilities, ImageAttachment, MomongaModelEntry, PermissionMode, PermissionOption, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
 import { cleanFailureMessage } from '@momonga/foundation';
 import { currentField, currentRequest, decide, enterValue, leaveFields, withError } from '../elicit/flow.ts';
@@ -8,6 +8,7 @@ import type { ElicitationDecision, ElicitationFlow } from '../elicit/flow.ts';
 import type { RunEventFrame } from '../client/runtime-client.ts';
 import type { RunView, SessionView } from '../client/views.ts';
 import { describeAttachment, pastedImagePaths } from '../images.ts';
+import { couldNotOpenBrowser } from '../browser-text.ts';
 import { describeFailure } from '../failure.ts';
 import { readinessNoticeOf } from '../readiness.ts';
 import { describeDenial } from '../policy-messages.ts';
@@ -81,7 +82,6 @@ const RESUBMIT_NOTICE = 'Signed in again. Retrying your last prompt.';
 const NEEDS_SESSION_NOTE = 'This command needs a session. Connect a model first with /login.';
 const UNCONNECTED_FOOTER = 'no model connected · /login';
 const INVITATION_ROWS = 2;
-const USAGE_PAUSED_CODE = 'plan_usage_paused';
 
 const PLAN_BLOCK_CODES: ReadonlySet<string> = new Set([PLAN_USE_NOT_ENABLED_CODE, PLAN_NOT_ELIGIBLE_CODE]);
 
@@ -365,7 +365,7 @@ export function App(props: AppProps) {
   const [model, setModel] = useState<MomongaModelEntry | undefined>(undefined);
   const [alias, setAlias] = useState<string | undefined>(undefined);
   const [notices, setNotices] = useState<readonly string[]>([]);
-  const capabilities: AliasCapabilities | undefined = model === undefined || isProbingCapabilities(model.capabilities) ? undefined : model.capabilities;
+  const capabilities: AliasCapabilities | undefined = model === undefined || isNotListedCapabilities(model.capabilities) ? undefined : model.capabilities;
   const [attachments, setAttachmentsState] = useState<readonly Attachment[]>([]);
   const [elicitEditor, setElicitEditor] = useState<EditorState>(emptyEditor());
   const [epoch, setEpoch] = useState(0);
@@ -577,6 +577,13 @@ export function App(props: AppProps) {
       }
       replaceOverlayEditor(emptyEditor());
       showOverlay({ kind: 'waiting', view, handlers, delivered: false });
+    },
+    delivered: () => {
+      const current = overlayRef.current;
+      if (current?.kind !== 'waiting' || current.delivered) return;
+      replaceOverlayEditor(emptyEditor());
+      const { problem: _problem, status: _status, ...rest } = current;
+      showOverlay({ ...rest, delivered: true });
     },
     closeWaiting: () => {
       if (overlayRef.current?.kind === 'waiting') showOverlay(undefined);
@@ -870,14 +877,15 @@ export function App(props: AppProps) {
     const flow = flowOf(pending);
     const request = currentRequest(flow);
     if (decision === 'accept' && request.mode === 'url') {
-      decide(flow, decision).then(
-        (next) =>
-          backend.openUrl(new URL(request.url)).then(
-            () => proceedFlow(pending, next),
-            (error: unknown) => applyFlow(pending, withError(flow, `could not open the URL: ${errorOf(error).message}`)),
-          ),
-        fail,
-      );
+      decide(flow, decision).then((next) => {
+        backend.openUrl(new URL(request.url), undefined, (message) => {
+          dispatch({
+            kind: 'append',
+            entry: { kind: 'notice', level: 'warning', text: escapeTerminalLine(`MCP server ${cleanFailureMessage(pending.server)}: ${couldNotOpenBrowser(message)} Open this URL to continue: ${request.url}`) },
+          });
+        });
+        proceedFlow(pending, next);
+      }, fail);
       return;
     }
     decide(flow, decision).then((next) => proceedFlow(pending, next), fail);
@@ -972,8 +980,6 @@ export function App(props: AppProps) {
       showOverlay({ ...current, problem });
       return;
     }
-    const { problem: _problem, ...rest } = current;
-    showOverlay({ ...rest, delivered: true });
     current.handlers.deliver(text);
   };
 

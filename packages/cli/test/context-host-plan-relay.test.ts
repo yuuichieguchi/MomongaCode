@@ -16,7 +16,7 @@ const resolvedPlanTarget = {
   baseUrl: 'https://chatgpt.invalid/backend-api/codex',
   plan: { profile: 'chatgpt', account: 'gate' },
   billing: 'plan',
-  capabilities: { contextWindow: 272000, maxOutputTokens: 128000, imageInput: true, parallelToolCalls: false, schemaDialect: 'json-schema-2020-12', tokenCounting: 'estimated', usageReported: true, source: 'reported', maxConcurrency: 4 },
+  capabilities: { contextWindow: 272000, maxOutputTokens: 128000, imageInput: false, parallelToolCalls: false, schemaDialect: 'json-schema-2020-12', tokenCounting: 'estimated', usageReported: true, source: 'config', maxConcurrency: 4 },
   maxConcurrency: 4,
   admissionTimeoutMs: 30000,
 };
@@ -53,7 +53,9 @@ describe('the eval relay of a plan target (P6.10)', () => {
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     fs.writeFileSync(file, JSON.stringify({ models: settings.models }), { mode: 0o600 });
     const loaded = await loadUserSettings({ home });
-    expect(loaded.settings.models.targets['p']?.capabilities.contextWindow).toBe(272000);
+    const target = loaded.settings.models.targets['p'];
+    if (target === undefined || !('capabilities' in target) || target.capabilities === undefined) throw new Error('the relayed target p was not loaded with capabilities');
+    expect(target.capabilities.contextWindow).toBe(272000);
   });
 
   it('a plan target without a context window is refused with the exact text', () => {

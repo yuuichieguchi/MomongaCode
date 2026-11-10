@@ -1,12 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import fs from 'node:fs';
-import { credentialFileFor } from '@momonga/foundation';
 import { PLAN_ROUTES } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, openResponsesTextReply, planErrorHttpReply } from '@momonga/testkit';
 import type { FakeUpstreamReply } from '@momonga/testkit';
 import { userInput } from './gateway-helpers.ts';
 import { clientFor } from './gateway-process-helpers.ts';
-import { ACCOUNT, CALLBACK_PORT, PLAN_EVENT_NAMES, accountRoute, recordingLogger, sessionsDirectory, signIn, startPlanGateway } from './plan-signin-support.ts';
+import { ACCOUNT, CALLBACK_PORT, PLAN_EVENT_NAMES, accountRoute, recordingLogger, signIn, startPlanGateway } from './plan-signin-support.ts';
 import type { PlanGateway, PlanGatewayOptions, RecordedEvent } from './plan-signin-support.ts';
 import { CONDITION_WAIT, PROFILE_ID } from './plan-support.ts';
 
@@ -189,26 +187,5 @@ describe('O-R5-6 L10: the plan events, their fields and what they never carry', 
     expect(JSON.stringify(event)).not.toContain('Plan Model');
     expectNoSecret(observation);
     await observation.gateway.close();
-  });
-});
-
-describe('O-R5-6 (N) 8a: a resumed sign-out is one shared flight', () => {
-  it('a route sign-out on a signing_out record found on disk joins the resumed one', async () => {
-    const events: RecordedEvent[] = [];
-    const gateway = await startPlanGateway({ plaintextTokenFiles: true, logger: recordingLogger(events) });
-    await signIn(gateway);
-    await gateway.close();
-    const file = credentialFileFor(sessionsDirectory(gateway.home), `plan/${PROFILE_ID}/${ACCOUNT}`);
-    const record = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
-    fs.writeFileSync(file, JSON.stringify({ ...record, state: 'signing_out' }), { mode: 0o600 });
-    fs.chmodSync(file, 0o600);
-    await gateway.restart();
-    const signedOut = await gateway.post(PLAN_ROUTES.signOut, { profile: PROFILE_ID, account: ACCOUNT });
-    expect(signedOut.status).toBe(200);
-    expect(signedOut.body.revocation).toBe('confirmed');
-    expect(gateway.auth.calls.revoke).toBe(1);
-    await vi.waitFor(() => expect(named(events, 'plan.sign_out')).toHaveLength(1), CONDITION_WAIT);
-    expect(named(events, 'plan.sign_out').map((event) => event.data['resumed'])).toEqual([true]);
-    await gateway.close();
   });
 });

@@ -8,6 +8,7 @@ import { describeElicitation } from '../elicit/describe.ts';
 import { fieldsOf, parseFieldInput, validateContent } from '../elicit/form.ts';
 import type { ContentValue } from '../elicit/form.ts';
 import type { ElicitationView } from '../client/views.ts';
+import { couldNotOpenBrowser } from '../browser-text.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
 import { activeRunIdOf, runTreeOf } from './targets.ts';
@@ -135,7 +136,11 @@ export const elicit = async (ports: CliPorts, paths: MomongaPaths, inputId: stri
     const { responses, notices } = await responsesFor(view, options, interrupt);
     for (const notice of notices) ports.stderr.write(`${escapeTerminalLine(`momonga: ${notice}`)}\n`);
     const [request] = view.requests;
-    if (options.accept && request?.mode === 'url') await ports.openUrl(new URL(request.url), interrupt);
+    if (options.accept && request?.mode === 'url') {
+      const url = new URL(request.url);
+      ports.stderr.write(`${escapeTerminalLine(`Open this URL in your browser: ${url.href}`)}\n`);
+      ports.openUrl(url, interrupt, (message) => ports.stderr.write(`${escapeTerminalLine(couldNotOpenBrowser(message))}\n`));
+    }
     const resolved = await client.resolveElicitation(view.id, responses);
     ports.stdout.write(`elicitation ${resolved.elicitation.id} ${resolved.elicitation.status}; run ${resolved.run.id} is ${resolved.run.status}\n`);
     return 0;

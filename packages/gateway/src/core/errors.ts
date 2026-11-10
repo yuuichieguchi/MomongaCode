@@ -1,5 +1,13 @@
-import { TARGET_NOT_READY } from '@momonga/protocol';
-import type { ErrorBody, ErrorType } from '@momonga/protocol';
+import {
+  PLAN_HOST_IDENTITY_UNAVAILABLE_CODE,
+  PLAN_STORE_UNREADABLE_CODE,
+  PLAN_STORE_UNWRITABLE_CODE,
+  PLAN_USE_NOT_ENABLED_CODE,
+  SIGN_IN_REQUIRED_CODE,
+  TARGET_NOT_READY,
+  USAGE_PAUSED_CODE,
+} from '@momonga/protocol';
+import type { ErrorBody, ErrorType, PlanAccountRef } from '@momonga/protocol';
 
 export type GatewayErrorInit = {
   status: number;
@@ -8,6 +16,7 @@ export type GatewayErrorInit = {
   message: string;
   param?: string | null;
   headers?: Record<string, string>;
+  plan?: PlanAccountRef;
 };
 
 export class GatewayError extends Error {
@@ -19,7 +28,7 @@ export class GatewayError extends Error {
     super(init.message);
     this.name = 'GatewayError';
     this.status = init.status;
-    this.body = { message: init.message, type: init.type, param: init.param ?? null, code: init.code };
+    this.body = { message: init.message, type: init.type, param: init.param ?? null, code: init.code, ...(init.plan === undefined ? {} : { plan: init.plan }) };
     this.headers = init.headers ?? {};
   }
 }
@@ -40,12 +49,12 @@ const STATUS_BY_CODE: Record<string, number> = {
   secret_unavailable: 401,
   precondition_failed: 412,
   [TARGET_NOT_READY]: 412,
-  sign_in_required: 401,
-  plan_use_not_enabled: 403,
-  plan_usage_paused: 429,
-  plan_store_unreadable: 500,
-  plan_store_unwritable: 500,
-  plan_host_identity_unavailable: 500,
+  [SIGN_IN_REQUIRED_CODE]: 401,
+  [PLAN_USE_NOT_ENABLED_CODE]: 403,
+  [USAGE_PAUSED_CODE]: 429,
+  [PLAN_STORE_UNREADABLE_CODE]: 500,
+  [PLAN_STORE_UNWRITABLE_CODE]: 500,
+  [PLAN_HOST_IDENTITY_UNAVAILABLE_CODE]: 500,
 };
 
 export const statusFor = (type: ErrorType, code: string | null): number =>
@@ -59,6 +68,7 @@ export const gatewayErrorFromBody = (body: ErrorBody, headers: Record<string, st
     message: body.message,
     param: body.param,
     headers,
+    ...(body.plan === undefined ? {} : { plan: body.plan }),
   });
 
 export const invalidRequest = (code: string, message: string, param: string | null = null, status = 400): GatewayError =>

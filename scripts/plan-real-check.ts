@@ -5,6 +5,7 @@ import { editUserSettings } from '@momonga/config';
 import { CONTEXT_REPORT_FORMAT } from '@momonga/eval';
 import { NoCurrentGenerationError, createUdsClient, currentSocketResolver, fixedSocket, isRecord, momongaLayout } from '@momonga/foundation';
 import type { MomongaPaths, UdsClient } from '@momonga/foundation';
+import { WORKSPACE_USAGE_LIMIT_CODE } from '@momonga/protocol';
 
 const REPORT_FORMAT = 'momonga-plan-real-check/1';
 
@@ -109,7 +110,23 @@ const parseArguments = (argv: readonly string[]): Arguments => {
   };
 };
 
-const isOwnHome = (home: string): boolean => fs.realpathSync(path.resolve(home)) === fs.realpathSync(path.resolve(os.homedir()));
+const MISSING_PATH_CODES: readonly string[] = ['ENOENT', 'ENOTDIR'];
+
+const isMissingPath = (error: unknown): boolean => error instanceof Error && 'code' in error && typeof error.code === 'string' && MISSING_PATH_CODES.includes(error.code);
+
+const realOwnHome = (): string | undefined => {
+  try {
+    return fs.realpathSync(path.resolve(os.homedir()));
+  } catch (error) {
+    if (isMissingPath(error)) return undefined;
+    throw error;
+  }
+};
+
+const isOwnHome = (home: string): boolean => {
+  const own = realOwnHome();
+  return own !== undefined && fs.realpathSync(path.resolve(home)) === own;
+};
 
 const text = (event: Event, key: string): string | null => {
   const value = event[key];
@@ -192,12 +209,16 @@ const stepR5 = (events: readonly Event[]): Step => {
   };
 };
 
+const SIGN_OUT_CLEARED = 'cleared';
+
 const stepR7 = (events: readonly Event[]): Step => {
   const [signOut] = named(events, 'plan.sign_out');
   if (signOut === undefined) return notRun('R7', 'no plan.sign_out event in the gateway log');
   const revocation = text(signOut, 'revocation');
-  if (revocation === 'confirmed') return { step: 'R7', verdict: 'recorded', facts: { revocation } };
-  return { step: 'R7', verdict: 'failed', facts: { revocation, reason: 'the revocation was not confirmed' } };
+  const end = text(signOut, 'end') ?? SIGN_OUT_CLEARED;
+  if (end === SIGN_OUT_CLEARED && revocation === 'confirmed') return { step: 'R7', verdict: 'recorded', facts: { revocation, end } };
+  const reason = revocation === 'unconfirmed' ? 'the revocation was not confirmed' : 'the sign-out ended without a revocation outcome';
+  return { step: 'R7', verdict: 'failed', facts: { revocation, end, reason } };
 };
 
 type Rejection = { rejected: Event; terminal: Event };
@@ -244,8 +265,8 @@ const stepR9 = (events: readonly Event[]): Step => {
 };
 
 const stepR10 = (events: readonly Event[]): Step => {
-  const pause = named(events, 'plan.pause').find((event) => event['code'] === 'plan_workspace_usage_limit');
-  if (pause === undefined) return notRun('R10', 'no plan.pause event with code plan_workspace_usage_limit in the gateway log');
+  const pause = named(events, 'plan.pause').find((event) => event['code'] === WORKSPACE_USAGE_LIMIT_CODE);
+  if (pause === undefined) return notRun('R10', `no plan.pause event with code ${WORKSPACE_USAGE_LIMIT_CODE} in the gateway log`);
   return { step: 'R10', verdict: 'recorded', facts: { code: text(pause, 'code'), until: text(pause, 'until') } };
 };
 
@@ -374,7 +395,7 @@ const readSettings = (paths: MomongaPaths): Record<string, unknown> => {
 };
 
 const writeCarriageAliases = (paths: MomongaPaths, alias: string): Promise<void> =>
-  editUserSettings(paths.settingsFile, (document) => {
+  editUserSettings(paths.home, paths.settingsFile, (document) => {
     const target = planTargetOf(document, alias);
     const models = document['models'];
     if (target === undefined || !isRecord(models) || !isRecord(models['targets']) || !isRecord(models['aliases'])) throw new Error(`the alias ${alias} is not a single plan target of this home`);

@@ -26,6 +26,19 @@ describe('nodeFileSystem', () => {
     expect((await nodeFileSystem.stat(path.join(root, 'a'))).isDirectory()).toBe(true);
   });
 
+  it('mkdir with a mode creates the directory with that mode and leaves the mode of an existing directory as it was', async () => {
+    const created = path.join(root, 'made', 'nested');
+    await nodeFileSystem.mkdir(created, 0o700);
+    expect(fs.statSync(created).mode & 0o777).toBe(0o700);
+    expect(fs.statSync(path.dirname(created)).mode & 0o777).toBe(0o700);
+
+    const existing = path.join(root, 'existing');
+    fs.mkdirSync(existing);
+    fs.chmodSync(existing, 0o755);
+    await nodeFileSystem.mkdir(existing, 0o700);
+    expect(fs.statSync(existing).mode & 0o777).toBe(0o755);
+  });
+
   it('lists names and typed entries of a directory', async () => {
     fs.mkdirSync(path.join(root, 'dir'));
     fs.writeFileSync(path.join(root, 'file'), '');

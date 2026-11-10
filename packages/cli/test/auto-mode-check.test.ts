@@ -291,20 +291,21 @@ describe('a check aborted by its signal leaves no daemon and no home behind (C1,
   });
 });
 
-const PLAN_CAPABILITIES = {
+const RELAYED_PLAN_CAPABILITIES = {
   contextWindow: 272000,
   maxOutputTokens: 128000,
   structuredOutput: 'json_schema',
   streaming: true,
   stopSequences: true,
-  imageInput: true,
+  imageInput: false,
   parallelToolCalls: false,
   schemaDialect: 'json-schema-2020-12',
   tokenCounting: 'estimated',
   usageReported: true,
-  source: 'reported',
-  maxConcurrency: 4,
+  source: 'config',
 };
+
+const RESOLVED_PLAN_CAPABILITIES = { ...RELAYED_PLAN_CAPABILITIES, maxConcurrency: 4 };
 
 const GATE_GATEWAY_SOCKET = '/tmp/gate-home-sockets/gateway-2.sock';
 
@@ -326,7 +327,7 @@ const withPlanAgent = (models: UserModels): UserModels => {
           baseUrl: 'https://chatgpt.invalid/backend-api/codex',
           plan: { profile: 'chatgpt', account: 'gate' },
           billing: 'plan',
-          capabilities: PLAN_CAPABILITIES,
+          capabilities: RESOLVED_PLAN_CAPABILITIES,
           maxConcurrency: 4,
           admissionTimeoutMs: 30000,
         },
@@ -358,7 +359,7 @@ describe('auto-mode check with a plan alias relays through the gateway of the ga
         toolCalling: 'native',
         socketPath: GATE_GATEWAY_SOCKET,
         billing: 'plan',
-        capabilities: PLAN_CAPABILITIES,
+        capabilities: RELAYED_PLAN_CAPABILITIES,
         maxConcurrency: 4,
         admissionTimeoutMs: 30000,
       });

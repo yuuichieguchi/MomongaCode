@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { keyAuthSource } from '@momonga/gateway';
 import { InMemorySpanExporter } from '@opentelemetry/sdk-trace';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace';
-import { createJsonLogger } from '@momonga/foundation';
+import { MAX_JSON_DEPTH, createJsonLogger } from '@momonga/foundation';
 import type { TextStream } from '@momonga/foundation';
 import { createTelemetry } from '@momonga/observability';
 import type { ClassifiedError, ProviderAdapter, StreamEvent } from '@momonga/protocol';
 import { createFakeClock, createScriptedAdapter, responseResource, textResponseEvents } from '@momonga/testkit';
 import { GatewayError } from '../src/core/errors.ts';
+import { capabilityFailingAdapter } from './capability-failing-adapter.ts';
 import { START_MS, getJson, postJson, readJson, readSse, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 import type { SseFrame } from './gateway-helpers.ts';
 import { makeAdapter, startFake } from './cc-support.ts';
@@ -107,21 +108,29 @@ describe('T6: traces hold redacted upstream text', () => {
 });
 
 describe('T8: unknown and GatewayError failures cross the guard redacted', () => {
-  it('answers a redacted 500 and logs a redacted message and stack when capabilities() throws', async () => {
+  it('lists a target whose capabilities() throws as unavailable with a redacted message', async () => {
+    const broken = capabilityFailingAdapter({ inner: createScriptedAdapter({ calls: [] }), fails: () => new Error(`boom ${TEST_API_KEY}`) });
+    const { client } = await startGateway({ adapters: { primary: broken }, credentials: [TEST_API_KEY] });
+    const response = await client.request({ method: 'GET', path: '/v1/momonga/models' });
+    const body = await response.text();
+    expect(response.status).toBe(200);
+    const entry = (JSON.parse(body).data as Array<{ targets: string[]; capabilities: unknown }>).find((candidate) => candidate.targets.includes('primary'));
+    expect(entry?.capabilities).toEqual({ toolCalling: { state: 'unavailable', status: 502, type: 'server_error', code: 'adapter_error', message: `boom ${REDACTED}` }, source: 'unprobed' });
+    expectRedacted(body, TEST_API_KEY);
+  });
+
+  it('answers a redacted 500 and logs a redacted message and stack when the cost report throws', async () => {
     const log = captureLog();
     const logger = createJsonLogger({ service: 'gateway', clock: createFakeClock(START_MS), stream: log });
-    const broken: ProviderAdapter = {
-      ...createScriptedAdapter({ calls: [] }),
-      capabilities: async () => {
-        throw new Error(`boom ${TEST_API_KEY}`);
-      },
-    };
     const { client } = await startGateway({
-      adapters: { primary: broken },
+      adapters: { primary: createScriptedAdapter({ calls: [] }) },
       credentials: [TEST_API_KEY],
       onError: (error) => logger.error('unhandled gateway error', { err: error instanceof Error ? error : new Error(String(error)) }),
+      costReport: async () => {
+        throw new Error(`boom ${TEST_API_KEY}`);
+      },
     });
-    const response = await client.request({ method: 'GET', path: '/v1/momonga/models' });
+    const response = await postJson(client, '/v1/momonga/cost', { runs: [], includeRunless: false });
     const body = await response.text();
     expect(response.status).toBe(500);
     expect(JSON.parse(body).error).toMatchObject({ code: 'internal_error', message: `boom ${REDACTED}` });
@@ -143,6 +152,44 @@ describe('T8: unknown and GatewayError failures cross the guard redacted', () =>
     const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
     expect(response.status).toBe(400);
     expect(response.body.error).toEqual({ type: 'invalid_request', code: 'invalid_body', param: 'input[0]', message: `bad body ${REDACTED}` });
+  });
+});
+
+describe('a request-body error quotes nothing of the body', () => {
+  it.each([
+    { label: 'a short body that is the bare credential', sent: TEST_API_KEY },
+    { label: 'a long body with the credential at the failing position', sent: `{"a":1,"padding":"${'p'.repeat(200)}","key":${TEST_API_KEY}}` },
+  ])('answers invalid_json with the fixed message for $label', async ({ sent }) => {
+    const { client } = await startGateway({ adapters: { primary: createScriptedAdapter({ calls: [] }) }, credentials: [TEST_API_KEY] });
+    const response = await client.request({ method: 'POST', path: '/v1/responses', headers: { 'content-type': 'application/json' }, body: sent });
+    const text = await response.text();
+    expect(response.status).toBe(400);
+    expect(JSON.parse(text)).toEqual({ error: { message: 'the request body is not valid JSON', type: 'invalid_request', param: null, code: 'invalid_json' } });
+    expectNoCredential(text, TEST_API_KEY);
+  });
+
+  it('answers json_too_deep with the gateway wording and the depth limit only', async () => {
+    const depth = MAX_JSON_DEPTH + 1;
+    const sent = `{"key":"${TEST_API_KEY}","extra":${'['.repeat(depth - 1)}${']'.repeat(depth - 1)}}`;
+    const { client } = await startGateway({ adapters: { primary: createScriptedAdapter({ calls: [] }) }, credentials: [TEST_API_KEY] });
+    const response = await client.request({ method: 'POST', path: '/v1/responses', headers: { 'content-type': 'application/json' }, body: sent });
+    const text = await response.text();
+    expect(response.status).toBe(400);
+    expect(JSON.parse(text)).toEqual({
+      error: { message: 'the request body is too deeply nested: JSON depth exceeds the limit of 128', type: 'invalid_request', param: null, code: 'json_too_deep' },
+    });
+    expectNoCredential(text, TEST_API_KEY);
+  });
+});
+
+describe('a validation error body crosses the redactor at the exit', () => {
+  it('redacts a credential that the validator quotes as an unknown item type', async () => {
+    const { client } = await startGateway({ adapters: { primary: createScriptedAdapter({ calls: [] }) }, credentials: [TEST_API_KEY] });
+    const response = await postJson(client, '/v1/responses', { model: 'fast', input: [{ type: TEST_API_KEY }] });
+    const text = await response.text();
+    expect(response.status).toBe(400);
+    expect(JSON.parse(text)).toEqual({ error: { message: `input[0].type has unknown item type "${REDACTED}"`, type: 'invalid_request', param: 'input[0].type', code: 'invalid_body' } });
+    expectRedacted(text, TEST_API_KEY);
   });
 });
 

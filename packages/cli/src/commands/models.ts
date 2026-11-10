@@ -1,7 +1,7 @@
 import { loadUserSettings } from '@momonga/config';
 import type { MomongaPaths, OutboundFetch } from '@momonga/foundation';
 import { currentSocketResolver } from '@momonga/foundation';
-import { LOCAL_SERVER_CANDIDATES, agentReadiness, isProbingCapabilities } from '@momonga/protocol';
+import { LOCAL_SERVER_CANDIDATES, agentReadiness, isNotListedCapabilities, notListedMessage } from '@momonga/protocol';
 import { localManagedPorts } from '../local-managed-ports.ts';
 import type { AliasCapabilities, LocalServerDetection, MomongaModelEntry, PlanAccountView, PlanCatalogEntry } from '@momonga/protocol';
 import type { PlanGatewayClient } from '../client/gateway-client.ts';
@@ -31,7 +31,7 @@ export const formatModels = (models: readonly MomongaModelEntry[]): string =>
   models.length === 0
     ? 'the gateway lists no model aliases'
     : escapedLines(
-        models.flatMap((model) => [`${model.id}  -> ${model.targets.join(', ')}`, ...(isProbingCapabilities(model.capabilities) ? [`    ${model.capabilities.toolCalling.message}`] : describeCapabilities(model.capabilities))]),
+        models.flatMap((model) => [`${model.id}  -> ${model.targets.join(', ')}`, ...(isNotListedCapabilities(model.capabilities) ? [`    ${notListedMessage(model.capabilities)}`] : describeCapabilities(model.capabilities))]),
       );
 
 export const listModels = async (ports: CliPorts, paths: MomongaPaths, json: boolean): Promise<number> => {
@@ -76,7 +76,7 @@ export const detectModels = async (
     typed: options.typed,
     signal: options.interrupt,
     fetch: options.fetch,
-    ...localManagedPorts(settings.models.servers),
+    ...localManagedPorts(settings.models.servers, ports),
   });
   ports.stdout.write(`${options.json ? JSON.stringify(found) : formatDetected(found, paths.settingsFile)}\n`);
   return 0;

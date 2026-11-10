@@ -17,13 +17,13 @@ export const bearerOf = (generation: number): string => `plan-access-generation-
 
 export type FakeAuth = AuthSource & { resolvedAccount(): PlanAccountRef | undefined; rejectedCalls: number[]; pauses: Array<{ untilMs?: number; code: string }>; reads: number };
 
-export const fakeAuth = (options: { renew?: boolean; failRead?: PlanCredentialError } = {}): FakeAuth => {
+export const fakeAuth = (options: { renew?: boolean; failRead?: PlanCredentialError; account?: PlanAccountRef } = {}): FakeAuth => {
   let generation = 1;
   const auth: FakeAuth = {
     rejectedCalls: [],
     pauses: [],
     reads: 0,
-    resolvedAccount: () => ({ ...RESOLVED_ACCOUNT }),
+    resolvedAccount: () => ({ ...(options.account ?? RESOLVED_ACCOUNT) }),
     read: async (): Promise<PlanRead> => {
       auth.reads += 1;
       if (options.failRead !== undefined) throw options.failRead;

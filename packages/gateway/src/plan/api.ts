@@ -1,7 +1,8 @@
 import { addModelConnection } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
-import { isRecord } from '@momonga/foundation';
-import type { Clock, FileSystem } from '@momonga/foundation';
+import { SECRET_NAME_PATTERN, isRecord } from '@momonga/foundation';
+import type { Clock } from '@momonga/foundation';
+import { PLAN_ACCOUNT_NOT_SELECTABLE_CODE } from '@momonga/protocol';
 import type {
   PlanAccountRef,
   PlanAccountView,
@@ -19,7 +20,6 @@ import type {
 import { GatewayError, invalidRequest, notFound, statusFor } from '../core/errors.ts';
 import { PlanCredentialError, credentialErrorType, statusOf } from './auth-source.ts';
 import type { AccountView } from './auth-source.ts';
-import { resetHostIdentity } from './host-identity.ts';
 import { NO_REPORTED_WINDOW } from './catalog.ts';
 import type { PlanCatalog } from './catalog.ts';
 import { PlanAccountNotSelectableError } from './session.ts';
@@ -45,10 +45,9 @@ export type PlanApiOptions = {
   profiles: Readonly<Record<string, PlanProfile>>;
   sessions: PlanSessions;
   signIn: PlanSignIn;
-  fileSystem: FileSystem;
-  paths: { host: string };
   clock: Clock;
   catalog: PlanCatalog;
+  home: string;
   settingsFile: string;
 };
 
@@ -58,7 +57,14 @@ const stringField = (body: unknown, name: string): string => {
   return value;
 };
 
-const accountRefOf = (body: unknown): PlanAccountRef => ({ profile: stringField(body, 'profile'), account: stringField(body, 'account') });
+const LABEL = new RegExp(SECRET_NAME_PATTERN);
+
+const accountLabelOf = (value: string): string => {
+  if (!LABEL.test(value)) throw invalidRequest('invalid_account_label', `the account label must match ${SECRET_NAME_PATTERN}`, 'account');
+  return value;
+};
+
+const accountRefOf = (body: unknown): PlanAccountRef => ({ profile: stringField(body, 'profile'), account: accountLabelOf(stringField(body, 'account')) });
 
 const optionalBoolean = (body: unknown, name: string): boolean | undefined => {
   const value = isRecord(body) ? body[name] : undefined;
@@ -77,7 +83,7 @@ const RETRYABLE_STATUS = 503;
 const CONFLICT_STATUS = 409;
 
 export const gatewayErrorOfCredential = (error: unknown): unknown => {
-  if (error instanceof PlanAccountNotSelectableError) return invalidRequest('plan_account_not_selectable', error.message, null, CONFLICT_STATUS);
+  if (error instanceof PlanAccountNotSelectableError) return invalidRequest(PLAN_ACCOUNT_NOT_SELECTABLE_CODE, error.message, null, CONFLICT_STATUS);
   if (!(error instanceof PlanCredentialError)) return error;
   const type = credentialErrorType(error.code);
   return new GatewayError({ status: error.retryable ? RETRYABLE_STATUS : statusFor(type, error.code), type, code: error.code, message: error.message });
@@ -155,7 +161,8 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
     };
   };
 
-  const signedInRef = async (profile: string | undefined, account: string): Promise<{ profile: PlanProfile; account: string }> => {
+  const signedInRef = async (profile: string | undefined, label: string): Promise<{ profile: PlanProfile; account: string }> => {
+    const account = accountLabelOf(label);
     if (profile === undefined || profile === '') throw invalidRequest('invalid_query', 'the profile query parameter is required', 'profile');
     const chosen = profileOf(profile);
     if ((await sessions.registration({ profile: chosen.id, account })) === undefined) {
@@ -177,7 +184,7 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
       const entry = (await options.catalog.record(ref.profile.id, account))?.models[slug];
       if (entry === undefined) throw notFound('plan_model_unknown', `the ${ref.profile.messages.identityLabel} model list of ${account} has no model ${JSON.stringify(slug)}; momonga models --catalog lists them`, 'slug');
       if ('unreported' in entry) throw invalidRequest('plan_model_unusable', `the model ${slug} cannot be added: ${NO_REPORTED_WINDOW}`, 'slug');
-      return addModelConnection(options.settingsFile, { kind: 'plan', profile: ref.profile.id, model: slug });
+      return addModelConnection(options.home, options.settingsFile, { kind: 'plan', profile: ref.profile.id, model: slug });
     });
 
   return {
@@ -206,20 +213,19 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
     signOut: (body, signal) =>
       translated(async () => {
         const ref = accountRefOf(body);
-        profileOf(ref.profile);
+        await signedInRef(ref.profile, ref.account);
         const report = await sessions.signOut(ref, signal);
         return { revocation: report.revocation, usageUrl: report.usageUrl };
       }),
     resume: (account, body, targets) =>
       translated(async () => {
-        const ref = { profile: stringField(body, 'profile'), account };
+        const ref = { profile: stringField(body, 'profile'), account: accountLabelOf(account) };
         profileOf(ref.profile);
         await viewNamed(ref, targets);
         return { resumed: await sessions.resume(ref) };
       }),
     resetHost: async () => {
-      if (options.signIn.waiting()) throw invalidRequest('plan_sign_in_pending', 'A sign-in is waiting for the browser. Finish or cancel it, then reset the host.', null, CONFLICT_STATUS);
-      const { hostId } = await resetHostIdentity(options.fileSystem, options.paths.host);
+      const { hostId } = await options.signIn.resetHost();
       return { hostId };
     },
   };

@@ -40,6 +40,10 @@ describe('the one text module of plan answers, for both surfaces (P-C8)', () => 
     ]);
   });
 
+  it('signedOutLines says an account with nothing to sign out was already signed out', () => {
+    expect(texts.signedOutLines(CHATGPT, 'work', { revocation: 'none', usageUrl: 'https://chatgpt.com/settings/usage' })).toEqual(['work was already signed out.']);
+  });
+
   it('listProblemLine names the file and the cause', () => {
     expect(texts.listProblemLine({ file: 'abc123.json', cause: 'the file mode is 644' })).toBe('could not list abc123.json: the file mode is 644');
   });

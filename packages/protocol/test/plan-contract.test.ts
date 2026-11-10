@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   BREAKER_VERDICTS,
   CREDENTIAL_EFFECTS,
@@ -19,7 +19,7 @@ import {
   TOOL_PLACEMENTS,
   applyCapabilityOverride,
 } from '../src/index.ts';
-import type { Capabilities } from '../src/index.ts';
+import type { Capabilities, PlanSignOutResponse } from '../src/index.ts';
 
 const BASE: Capabilities = {
   contextWindow: 8192,
@@ -121,5 +121,12 @@ describe('the plan admin routes', () => {
 
   it('names the account states of the credential model', () => {
     expect([...PLAN_ACCOUNT_STATES]).toEqual(['active', 'plan_disabled', 'needs_sign_in', 'signing_out', 'registered', 'store_unreadable', 'store_unwritable']);
+  });
+});
+
+describe('the sign-out response', () => {
+  it('reports the revocation as confirmed, unconfirmed or none', () => {
+    expectTypeOf<PlanSignOutResponse['revocation']>().toEqualTypeOf<'confirmed' | 'unconfirmed' | 'none'>();
+    expectTypeOf<PlanSignOutResponse>().toEqualTypeOf<{ revocation: 'confirmed' | 'unconfirmed' | 'none'; usageUrl: string }>();
   });
 });

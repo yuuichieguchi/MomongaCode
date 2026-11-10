@@ -1,4 +1,4 @@
-import type { FileSystem, SecretStore } from '@momonga/foundation';
+import type { FileSystem, HostExec, OpenUrl, SecretStore } from '@momonga/foundation';
 
 export type CliClock = {
   now(): number;
@@ -29,12 +29,14 @@ export type AcpStdio = { input: ReadableStream<Uint8Array>; output: WritableStre
 
 export type Terminal = { stdin: NodeJS.ReadStream; stdout: NodeJS.WriteStream };
 
-export type CliFiles = Pick<FileSystem, 'readFile' | 'readTextFile' | 'mkdir' | 'mkdtemp' | 'rm' | 'rename'> & {
+export type CliFiles = Pick<FileSystem, 'readFile' | 'readTextFile' | 'mkdir' | 'mkdirPrivate' | 'mkdtemp' | 'rm' | 'rename'> & {
   readText(file: string): Promise<string>;
   writeText(file: string, text: string): Promise<void>;
   listFiles(directory: string): Promise<string[]>;
   readTextIfPresent(file: string): Promise<string | undefined>;
   appendText(file: string, text: string, modes: { directory: number; file: number }): Promise<void>;
+  exists(file: string): Promise<boolean>;
+  writeTextAtomically(file: string, text: string, mode: number): Promise<void>;
 };
 
 export type CliPorts = {
@@ -52,7 +54,8 @@ export type CliPorts = {
   spawnDetached: SpawnDetached;
   terminal: Terminal | undefined;
   files: CliFiles;
-  openUrl(url: URL, signal: AbortSignal): Promise<void>;
+  exec: HostExec;
+  openUrl: OpenUrl;
   secretStore(): SecretStore;
   acpStdio?: () => AcpStdio;
 };

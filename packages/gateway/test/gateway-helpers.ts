@@ -127,6 +127,7 @@ export type HarnessOptions = {
   hmacKey?: Uint8Array;
   debugTcp?: GatewayOptions['debugTcp'];
   onError?: GatewayOptions['onError'];
+  costReport?: GatewayOptions['costReport'];
   credentials?: readonly string[];
   credentialFeed?: GatewayOptions['credentialFeed'];
   priceTable?: FixedModelsOptions['priceTable'];
@@ -152,6 +153,7 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
     socketPath,
     version: TEST_VERSION,
     ...(options.onError === undefined ? {} : { onError: options.onError }),
+    ...(options.costReport === undefined ? {} : { costReport: options.costReport }),
     ...(options.telemetry === undefined ? {} : { telemetry: options.telemetry }),
     ...(options.debugTcp === undefined ? {} : { debugTcp: options.debugTcp }),
     ...(options.priceTable === undefined ? {} : { priceTable: options.priceTable }),

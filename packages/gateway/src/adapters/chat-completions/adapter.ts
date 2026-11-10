@@ -35,6 +35,7 @@ import type { ChatWire } from './wire.ts';
 import { NO_USER_DIALECTS, resolveDialect } from '../../dialect/choice.ts';
 import { RenderLedger } from '../../dialect/ledger.ts';
 import { FULL_KEYWORD_SUPPORT } from '../../dialect/keyword-support.ts';
+import { unavailableError } from '../../core/unavailable.ts';
 import { targetProbingError } from '../../probe/auto-probe.ts';
 
 const DONE_MARKER = '[DONE]';
@@ -48,6 +49,7 @@ const LITERALLESS_CONSTRAINED_TOOL_CHOICE: ToolChoiceWire = { forms: ['filter'],
 const modeOf = ({ toolCalling }: Capabilities): ToolCallingMode => {
   if (typeof toolCalling !== 'string') {
     if (toolCalling.state === 'probing') throw targetProbingError(toolCalling);
+    if (toolCalling.state === 'unavailable') throw unavailableError(toolCalling);
     throw new PreconditionFailedError(toolCalling.message, toolCalling.evidence, toolCalling.remedy);
   }
   return toolCalling;

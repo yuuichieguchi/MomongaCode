@@ -1,14 +1,15 @@
 import { aliasRoomVerdict } from '@momonga/config';
 import type { AliasMember } from '@momonga/config';
 import type { Clock } from '@momonga/foundation';
-import { MOMONGA_REQUEST_FIELDS, PRECONDITION_FAILED_CODE, agentReadiness, applyCapabilityOverride, imageCapability, sizingRatioFor, summaryTokenCapFor } from '@momonga/protocol';
-import type { AliasCapabilities, Capabilities, CapabilityOverride, InputKinds, ClientOperation, FunctionTool, ToolChoice, ToolCallingMode, ToolCallingState, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
+import { MOMONGA_REQUEST_FIELDS, PRECONDITION_FAILED_CODE, agentReadiness, applyCapabilityOverride, imageCapability, isUnavailableCapabilities, sizingRatioFor, summaryTokenCapFor } from '@momonga/protocol';
+import type { AliasCapabilities, Capabilities, CapabilityOverride, InputKinds, ClientOperation, FunctionTool, ToolChoice, ToolCallingMode, ToolCallingState, GatewayHealth, HealthResult, ImageCapability, PlanAccountRef, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
 import { constrainsToolChoice, resolveToolChoice } from './tool-choice.ts';
 import { UnsupportedInputError } from './unsupported-input.ts';
 import { createAdmissionGate } from './admission.ts';
 import type { AdmissionGate } from './admission.ts';
 import { preconditionText } from '../precondition-text.ts';
 import { ClientDisconnectedError, GatewayError, invalidRequest, notFound } from './errors.ts';
+import { unavailableError } from './unavailable.ts';
 import { plainError } from './retry.ts';
 import { CandidateRefused, REFUSAL_STAGES, UnprobedTarget, refusalErrorOf } from './candidate-refusal.ts';
 import type { Refusal } from './candidate-refusal.ts';
@@ -37,6 +38,7 @@ export type TargetRuntime = {
   plan: { profile: string; account?: string } | undefined;
   keyGroup: string | undefined;
   lastFailure: { code: string | null; message: string } | undefined;
+  servedAccount: () => PlanAccountRef | undefined;
 };
 
 export type UnknownFieldsRequirement = { keys: readonly string[]; operation: ClientOperation };
@@ -61,7 +63,6 @@ export type Router = {
   hasAlias(alias: string): boolean;
   targetsOf(alias: string): TargetRuntime[];
   capabilitiesOf(target: TargetRuntime): Promise<Capabilities>;
-  aliasCapabilitiesOf(alias: string): Promise<AliasCapabilities>;
   candidates(alias: string, requirements: CandidateRequirements): Promise<Narrowed>;
   narrow(alias: string, targets: readonly TargetRuntime[], requirements: CandidateRequirements): Promise<Narrowed>;
   health(): Promise<Pick<GatewayHealth, 'ok' | 'targets'>>;
@@ -141,7 +142,7 @@ const missingInputKind = (required: InputKindsRequirement, declared: InputKinds 
 
 const carriesInputKinds = (required: InputKindsRequirement | undefined): boolean => required !== undefined && (required.content.length > 0 || required.tools.length > 0);
 
-const mergeCapabilities = (all: readonly [Capabilities, ...Capabilities[]]): AliasCapabilities => {
+export const mergeCapabilities = (all: readonly [Capabilities, ...Capabilities[]]): AliasCapabilities => {
   const [first] = all;
   return {
     contextWindow: Math.min(...all.map((entry) => entry.contextWindow)),
@@ -174,13 +175,14 @@ export const createRouter = (options: RouterOptions): Router => {
     const sameTarget = [options.previous, ...(options.live ?? [])]
       .map((router) => router?.target(name))
       .find((carried) => carried !== undefined && carried.counter === target.counter);
+    const adapter = guardAdapter(requireEntry(adapters, name, 'adapter'), options.redactor, options.reasoningOrigin);
     targets.set(name, {
       name,
       provider: target.provider,
       model: target.model,
       billing: target.billing,
       counter: target.counter,
-      adapter: guardAdapter(requireEntry(adapters, name, 'adapter'), options.redactor, options.reasoningOrigin),
+      adapter,
       breaker: sameTarget?.breaker ?? new TargetBreaker({ failureThreshold: config.breaker.failureThreshold, openMs: config.breaker.openMs, clock }),
       gate:
         sameTarget?.gate ??
@@ -194,6 +196,7 @@ export const createRouter = (options: RouterOptions): Router => {
       plan: target.plan,
       keyGroup: target.keyGroup,
       lastFailure: undefined,
+      servedAccount: () => adapter.servedAccount?.({ name, model: target.model }),
     });
   }
   const targetsByName = Object.fromEntries(targets);
@@ -237,13 +240,6 @@ export const createRouter = (options: RouterOptions): Router => {
     throw invalidRequest(PRECONDITION_FAILED_CODE, verdict.message, 'model', 412);
   };
 
-  const aliasCapabilitiesOf = async (alias: string): Promise<AliasCapabilities> => {
-    const all = await Promise.all(targetsOf(alias).map((target) => capabilitiesOf(target)));
-    const [first, ...rest] = all;
-    if (first === undefined) throw new Error(`model alias "${alias}" has no targets`);
-    return mergeCapabilities([first, ...rest]);
-  };
-
   const billingChanges = config.models.billingChanges ?? [];
   const billingWalkOf = (alias: string): BillingWalk => {
     const [first] = targetsOf(alias);
@@ -270,6 +266,7 @@ export const createRouter = (options: RouterOptions): Router => {
     const { sampling } = requirements;
     const samples = sampling !== undefined && carriesSampling(sampling);
     const judge = (target: TargetRuntime, capabilities: Capabilities): Refusal | undefined => {
+      if (isUnavailableCapabilities(capabilities)) throw new UnprobedTarget(unavailableError(capabilities.toolCalling));
       if (requirements.tools === true) {
         const readiness = agentReadiness(capabilities);
         if (readiness.state === 'needs_probe') {
@@ -372,7 +369,6 @@ export const createRouter = (options: RouterOptions): Router => {
     hasAlias: (alias) => aliasTargets.has(alias),
     targetsOf,
     capabilitiesOf,
-    aliasCapabilitiesOf,
     candidates: async (alias, requirements) => {
       const members = targetsOf(alias);
       await checkAliasRoom(alias, members);

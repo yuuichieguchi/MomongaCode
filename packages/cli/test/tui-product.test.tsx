@@ -22,6 +22,14 @@ const PNG: ImageAttachment = { mediaType: 'image/png', data: Buffer.from('png-by
 
 const PDF: SkillView = { name: 'pdf', description: 'Extract PDF text', scope: 'project', location: '/p/.agents/skills/pdf/SKILL.md' };
 
+const wrappedAtWordGaps = (text: string): RegExp =>
+  new RegExp(
+    text
+      .split(' ')
+      .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .join('[ \\n]'),
+  );
+
 const pasted = (text: string): string => `\u001b[200~${text}\u001b[201~`;
 
 describe('elicitation in the TUI', () => {
@@ -94,7 +102,9 @@ describe('elicitation in the TUI', () => {
     await untilFrame(app, 'Sign in to continue');
     app.stdin.write('1');
     const url = URL_REQUEST.mode === 'url' ? URL_REQUEST.url : '';
-    await untilOutput(app, `MCP server calc: Could not open the browser (no browser). Open this URL to continue: ${url}`);
+    const notice = `MCP server calc: Could not open the browser (no browser). Open this URL to continue: ${url}`;
+    const shown = await untilOutput(app, wrappedAtWordGaps(notice));
+    expect(wrappedAtWordGaps(notice).exec(shown)?.[0].replaceAll('\n', ' ')).toBe(notice);
     expect(backend.elicitationAnswers).toEqual([{ inputId: 'in2', responses: { consent: { action: 'accept' } } }]);
     app.unmount();
   });

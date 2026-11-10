@@ -30,7 +30,7 @@ import { runContextLive, unownedHomesNotice, unreadableHomesNotice } from '../ev
 import type { ContextHostEffects } from '../eval/context-host.ts';
 import type { CliPorts, Sink } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
-import { isProbingCapabilities } from '@momonga/protocol';
+import { isNotListedCapabilities, notListedMessage } from '@momonga/protocol';
 
 export class ContextImproveError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -148,7 +148,7 @@ export const contextImprove = async (
     const models = loadUserModels({ home: ports.home });
     const analysis = await analysisModelFor({ roles: models.resolved.roles, alias: options.alias, capabilitiesOf: async (alias) => {
         const capabilities = await gatewayInfo.capabilitiesOf(alias);
-        if (isProbingCapabilities(capabilities)) throw new Error(capabilities.toolCalling.message);
+        if (isNotListedCapabilities(capabilities)) throw new Error(notListedMessage(capabilities));
         return capabilities;
       },
     });

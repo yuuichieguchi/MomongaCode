@@ -4,9 +4,9 @@ import { hostKernelLock, isAtomicWriteTemporary, isRecord, isTransientErrno, swe
 import type { Clock, CredentialEntry, FileSystem, KernelLockMechanism, ListableCredentialStore } from '@momonga/foundation';
 import { PLAN_ACCOUNT_STATES } from '@momonga/protocol';
 import type { PlanAccountState, PlanListProblem } from '@momonga/protocol';
-import { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS } from '../defaults.ts';
+import { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS, PLAN_SIGN_IN_DEFAULTS } from '../defaults.ts';
 import type { WaitPolicy } from '../core/retry.ts';
-import { readActivePointer, writeActiveAccount } from './active-account.ts';
+import { readActivePointer, writeActivePointer } from './active-account.ts';
 import type { ActivePointer } from './active-account.ts';
 import {
   PlanCredentialError,
@@ -14,20 +14,23 @@ import {
   conditionFailure,
   healthOf,
   hostIdentityFailure,
-  signInRequiredMessage,
+  signInRequiredCondition,
   statusOf,
   unavailableFailure,
   unwritableFailure,
 } from './auth-source.ts';
 import type { AccountView, AuthSource, PlanPause, PlanRead, PlanStatus } from './auth-source.ts';
-import { noPlanEvents } from './events.ts';
+import { PLAN_EVENT_INTERNAL, endCodeOf, noPlanEvents } from './events.ts';
 import type { PlanEvents } from './events.ts';
 import { ensureHostIdentity } from './host-identity.ts';
 import type { PlanOutbound } from './outbound.ts';
-import { grantsScope, refreshRequiredFor, sendRefresh, sendWasInterrupted, tokenResponseProblem } from './refresh.ts';
+import { describeError, recordAccess, storeReadFailure, storeWriteFailure, withRecord } from './record-io.ts';
+import { grantsScope, lazyRefreshMarginMs, refreshRequiredFor, sendRefresh, sendWasInterrupted, tokenResponseProblem } from './refresh.ts';
 import type { PlanFetch, PlanSleep, PlanTokenResponse, RefreshEnd } from './refresh.ts';
 import { revokeRefreshToken } from './revoke.ts';
 import type { RevocationAnswer } from './revoke.ts';
+import { createSerial } from './serial.ts';
+import type { Serial } from './serial.ts';
 
 export type { PlanFetch, PlanSleep, PlanTokenResponse } from './refresh.ts';
 export { PlanCredentialError } from './auth-source.ts';
@@ -53,6 +56,7 @@ export type PlanRecord = {
   refresh_token?: string;
   id_token?: string;
   expiresAt?: number;
+  lifetimeMs?: number;
   scope?: string;
   earliestRefreshAt?: string;
   generation?: number;
@@ -75,11 +79,12 @@ export type OpenPlanSessionsOptions = {
   clock: Clock;
   outbound: PlanOutbound;
   sleep: PlanSleep;
-  onSecret(value: string): void;
+  redact(key: string, values: readonly string[]): void;
   warn(message: string): void;
   lock?: KernelLockMechanism;
   random?: () => number;
   events?: PlanEvents;
+  pointerSerial?: Serial;
 };
 
 export type RegisterInput = { profile: string; account: string; clientId: string; hostId: string };
@@ -94,7 +99,7 @@ export type KnownAccount = { profile: string; account: string; view: AccountView
 
 export type Rejected = { outcome: 'rejected'; reason: 'registration_superseded' };
 
-export type SignOutReport = { revocation: RevocationAnswer; usageUrl: string };
+export type SignOutReport = { revocation: RevocationAnswer | 'none'; usageUrl: string };
 
 export type PlanSessions = {
   register(input: RegisterInput): Promise<{ outcome: 'registered' } | Rejected>;
@@ -105,6 +110,7 @@ export type PlanSessions = {
   listProblems(): readonly PlanListProblem[];
   resume(ref: PlanAccountRef): Promise<boolean>;
   selectActive(ref: PlanAccountRef): Promise<void>;
+  pointerReady(): Promise<void>;
   signOut(ref: PlanAccountRef, signal: AbortSignal): Promise<SignOutReport>;
   authSource(target: { profile: string; account?: string }): AuthSource;
   signedOutSource(profile: string): AuthSource;
@@ -116,6 +122,16 @@ export type PlanSessions = {
 
 type Loaded = { kind: 'absent' } | { kind: 'unreadable'; cause: string } | { kind: 'record'; record: PlanRecord };
 
+type ReplacedBy = 'lazy' | 'forced';
+
+type FedRecord = { tokens: readonly string[]; access: string; accessExpiresAt: number | undefined };
+
+type Fed = {
+  current: FedRecord | undefined;
+  previous: (FedRecord & { replacedBy: ReplacedBy }) | undefined;
+  older: ReadonlyArray<{ value: string; expiresAt: number }>;
+};
+
 type Account = {
   key: string;
   profile: PlanProfile;
@@ -124,7 +140,7 @@ type Account = {
   loading: Promise<void> | undefined;
   dirty: boolean;
   unwritable: string | undefined;
-  interrupted: boolean;
+  fed: Fed;
   inflight: Promise<void> | undefined;
   forced: Map<number, Promise<void>>;
   persisting: boolean;
@@ -218,6 +234,7 @@ const parseRecord = (text: string): PlanRecord => {
     ...optional('refresh_token', stringField(value, 'refresh_token')),
     ...optional('id_token', stringField(value, 'id_token')),
     ...optional('expiresAt', numberField(value, 'expiresAt')),
+    ...optional('lifetimeMs', numberField(value, 'lifetimeMs')),
     ...optional('scope', stringField(value, 'scope')),
     ...optional('earliestRefreshAt', stringField(value, 'earliestRefreshAt')),
     ...optional('generation', numberField(value, 'generation')),
@@ -244,7 +261,7 @@ const registrationOf = (record: PlanRecord): PlanRecord => ({
 });
 
 const withoutTokens = (record: PlanRecord, cause: string, interrupted: boolean): PlanRecord => {
-  const { access_token: _access, refresh_token: _refresh, expiresAt: _expires, pendingRefresh: _pending, interrupted: _interrupted, ...kept } = record;
+  const { access_token: _access, refresh_token: _refresh, expiresAt: _expires, lifetimeMs: _lifetime, pendingRefresh: _pending, interrupted: _interrupted, ...kept } = record;
   return { ...kept, state: 'needs_sign_in', cause, ...(interrupted ? { interrupted: true } : {}) };
 };
 
@@ -272,7 +289,11 @@ export class PlanAccountNotSelectableError extends Error {
   }
 }
 
-const describeError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+const tokensOf = (record: PlanRecord): string[] => [record.access_token, record.refresh_token, record.id_token].filter((value): value is string => value !== undefined);
+
+const sameTokens = (left: readonly string[], right: readonly string[]): boolean => left.length === right.length && left.every((value, index) => value === right[index]);
+
+const causeOf = (failure: unknown): unknown => (failure instanceof PlanCredentialError ? failure.cause : failure);
 
 const sweepTemporaries = async (fileSystem: FileSystem, directory: string, lock: KernelLockMechanism, warn: (message: string) => void): Promise<void> => {
   await sweepLeftovers({
@@ -307,6 +328,8 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   const retry = GATEWAY_CONFIG_DEFAULTS.retry;
   const waitPolicy: WaitPolicy = { totalWaitMs: retry.totalWaitMs, baseMs: retry.baseMs, maxMs: retry.maxMs, random: options.random ?? systemRandom.float };
   const events = options.events ?? noPlanEvents;
+  const pointerWrites = options.pointerSerial ?? createSerial();
+  const pointerFile = `the active plan account file ${paths.active}`;
   const activeLabels = new Map<string, string>();
   let pointerProblem: string | undefined;
   const accounts = new Map<string, Account>();
@@ -333,7 +356,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       loading: undefined,
       dirty: false,
       unwritable: undefined,
-      interrupted: false,
+      fed: { current: undefined, previous: undefined, older: [] },
       inflight: undefined,
       forced: new Map(),
       persisting: false,
@@ -343,9 +366,15 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     return created;
   };
 
+  const sessionOf = (account: Account): string => `the plan session of ${account.profile.id} account ${account.label}`;
+
+  const identityOf = (account: Account): { profile: string; account: string } => ({ profile: account.profile.id, account: account.label });
+
+  const endedByLifetime = (error: unknown): boolean => closing.signal.aborted && error === closing.signal.reason;
+
   const endedAtClose = (work: Promise<void>): Promise<void> =>
     work.catch((error: unknown) => {
-      if (!closing.signal.aborted || error !== closing.signal.reason) throw error;
+      if (!endedByLifetime(error)) throw error;
     });
 
   const runInBackground = (task: Promise<void>): void => {
@@ -360,21 +389,29 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     void tracked.then(() => background.delete(tracked));
   };
 
+  const readRecordOf = (account: Account, read: () => Promise<string | undefined>): Promise<PlanRecord | undefined> =>
+    recordAccess('read', sessionOf(account), async () => {
+      const raw = await read();
+      return raw === undefined ? undefined : parseRecord(raw);
+    });
+
+  const writeRecord = (account: Account, entry: CredentialEntry, record: PlanRecord): Promise<void> => recordAccess('write', sessionOf(account), () => entry.write(serialize(record)));
+
+  const lockedRecord = <T>(account: Account, action: (entry: CredentialEntry) => Promise<T>): Promise<T> => withRecord(store, account.key, sessionOf(account), action);
+
   const loadNow = async (account: Account): Promise<void> => {
     try {
-      const raw = await store.read(account.key);
-      if (raw === undefined) {
+      const record = await readRecordOf(account, () => store.read(account.key));
+      if (record === undefined) {
         account.loaded = { kind: 'absent' };
         return;
       }
-      const record = parseRecord(raw);
-      adopt(account, record);
-      account.interrupted = record.pendingRefresh !== undefined;
+      adopt(account, record, 'lazy');
       if (record.state === 'signing_out') resumeSignOut(account);
     } catch (error) {
-      const cause = describeError(error);
+      const cause = describeError(causeOf(error));
       account.loaded = { kind: 'unreadable', cause };
-      options.warn(`the plan session of ${account.profile.id} account ${account.label} cannot be read: ${cause}`);
+      options.warn(`${sessionOf(account)} cannot be read: ${cause}`);
     }
   };
 
@@ -391,8 +428,25 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     return loaded.kind === 'record' ? { kind: 'record', record: loaded.record, unwritable: account.unwritable } : loaded;
   };
 
-  const adopt = (account: Account, record: PlanRecord): void => {
-    for (const value of [record.access_token, record.refresh_token, record.id_token]) if (value !== undefined) options.onSecret(value);
+  const feedRedactor = (account: Account, record: PlanRecord, replacedBy: ReplacedBy): void => {
+    const access = record.access_token;
+    if (access === undefined) return;
+    const tokens = tokensOf(record);
+    const { current, previous, older } = account.fed;
+    if (current !== undefined && sameTokens(current.tokens, tokens)) return;
+    const nowMs = clock.now();
+    const leaving = previous !== undefined && previous.replacedBy === 'lazy' && previous.accessExpiresAt !== undefined ? [{ value: previous.access, expiresAt: previous.accessExpiresAt }] : [];
+    const kept = [...older, ...leaving].filter((entry) => nowMs < entry.expiresAt);
+    account.fed = {
+      current: { tokens, access, accessExpiresAt: record.expiresAt },
+      previous: current === undefined ? undefined : { ...current, replacedBy },
+      older: kept,
+    };
+    options.redact(account.key, [...tokens, ...(current?.tokens ?? []), ...kept.map((entry) => entry.value)]);
+  };
+
+  const adopt = (account: Account, record: PlanRecord, replacedBy: ReplacedBy): void => {
+    feedRedactor(account, record, replacedBy);
     account.loaded = { kind: 'record', record };
   };
 
@@ -406,22 +460,25 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     hostKnown = true;
   };
 
-  const markWriteFailure = (account: Account, error: unknown): void => {
+  const markWriteFailure = (account: Account, failure: unknown): void => {
     account.dirty = true;
-    if (isTransientErrno(error)) {
+    const cause = causeOf(failure);
+    if (isTransientErrno(cause)) {
       schedulePersistRetry(account);
       return;
     }
-    account.unwritable = describeError(error);
+    account.unwritable = describeError(cause);
   };
 
-  const persistAfterSend = async (account: Account, entry: CredentialEntry, record: PlanRecord): Promise<void> => {
-    adopt(account, record);
+  const persistAfterSend = async (account: Account, entry: CredentialEntry, record: PlanRecord, replacedBy: ReplacedBy): Promise<boolean> => {
+    adopt(account, record, replacedBy);
     try {
-      await entry.write(serialize(record));
+      await writeRecord(account, entry, record);
       account.dirty = false;
+      return true;
     } catch (error) {
       markWriteFailure(account, error);
+      return false;
     }
   };
 
@@ -433,14 +490,15 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
         if (closing.signal.aborted) return;
         throw error;
       }
-      await store.withKey(account.key, async (entry) => {
+      await lockedRecord(account, async (entry) => {
         const record = recordOf(account);
         if (!account.dirty || record === undefined) return;
         try {
-          await entry.write(serialize(record));
+          await writeRecord(account, entry, record);
           account.dirty = false;
         } catch (error) {
-          if (!isTransientErrno(error)) account.unwritable = describeError(error);
+          const cause = causeOf(error);
+          if (!isTransientErrno(cause)) account.unwritable = describeError(cause);
         }
       });
     }
@@ -456,27 +514,30 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     );
   }
 
+  const lazyMarginOf = (record: PlanRecord): number => (record.lifetimeMs === undefined ? defaults.marginMs : lazyRefreshMarginMs(record.lifetimeMs));
+
   const refreshNeeded = (record: PlanRecord, trigger: RefreshTrigger): boolean => {
     if (record.state !== 'active' || record.refresh_token === undefined || record.expiresAt === undefined) return false;
+    if (record.lifetimeMs !== undefined && clock.now() - (record.expiresAt - record.lifetimeMs) < defaults.skewMs) return false;
     if (trigger.kind === 'forced') return (record.generation ?? 0) === trigger.generation;
-    return record.expiresAt - clock.now() <= defaults.marginMs;
+    return record.expiresAt - clock.now() <= lazyMarginOf(record);
   };
 
-  const applyRefreshEnd = async (account: Account, entry: CredentialEntry, record: PlanRecord, end: RefreshEnd, interrupted: boolean): Promise<void> => {
+  const applyRefreshEnd = async (account: Account, entry: CredentialEntry, record: PlanRecord, end: RefreshEnd, interrupted: boolean, replacedBy: ReplacedBy): Promise<void> => {
     if (end.kind === 'transient') return;
     if (end.kind === 'configuration') {
-      await persistAfterSend(account, entry, { ...record, state: 'needs_sign_in', cause: end.code });
+      await persistAfterSend(account, entry, { ...record, state: 'needs_sign_in', cause: end.code }, replacedBy);
       return;
     }
     if (end.kind === 'terminal') {
-      await persistAfterSend(account, entry, withoutTokens(record, end.code, interrupted));
-      account.interrupted = false;
+      await persistAfterSend(account, entry, withoutTokens(record, end.code, interrupted), replacedBy);
       return;
     }
     const { tokens } = end;
     const scope = tokens.scope;
     const replaced = tokens.refresh_token !== undefined && tokens.refresh_token !== record.refresh_token;
     const intentKept = !replaced && interrupted;
+    const lifetimeMs = tokens.expires_in * 1000;
     const next: PlanRecord = {
       ...withoutPending(record),
       ...(intentKept ? optional('pendingRefresh', record.pendingRefresh) : {}),
@@ -484,58 +545,82 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       access_token: tokens.access_token,
       ...optional('refresh_token', tokens.refresh_token ?? record.refresh_token),
       ...optional('id_token', tokens.id_token ?? record.id_token),
-      expiresAt: clock.now() + tokens.expires_in * 1000,
+      expiresAt: clock.now() + lifetimeMs,
+      lifetimeMs,
       scope,
       ...optional('earliestRefreshAt', tokens.earliest_refresh_at),
       generation: (record.generation ?? 0) + 1,
     };
-    await persistAfterSend(account, entry, next);
-    account.interrupted = intentKept;
+    await persistAfterSend(account, entry, next, replacedBy);
   };
 
+  const refreshTiming = (startedAt: number, remainingMs: number): { latencyMs: number; remainingMs: number; at: string } => ({
+    latencyMs: clock.now() - startedAt,
+    remainingMs,
+    at: new Date(clock.now()).toISOString(),
+  });
+
   const refreshEvent = (account: Account, end: RefreshEnd, interrupted: boolean, startedAt: number, remainingMs: number): void => {
+    const { latencyMs, at } = refreshTiming(startedAt, remainingMs);
     events('plan.refresh', {
-      profile: account.profile.id,
-      account: account.label,
+      ...identityOf(account),
       outcome: end.kind,
       ...(end.kind === 'terminal' || end.kind === 'configuration' ? { code: end.code } : {}),
       ...(end.kind === 'terminal' ? { interrupted } : {}),
       attempts: end.attempts,
-      latencyMs: clock.now() - startedAt,
+      latencyMs,
       remainingMs,
       ...(end.kind === 'adopted' && end.tokens.earliest_refresh_at !== undefined ? { earliestRefreshAt: end.tokens.earliest_refresh_at } : {}),
-      at: new Date(clock.now()).toISOString(),
+      at,
     });
   };
 
+  const refreshFailedEvent = (account: Account, failure: unknown, attempts: number, startedAt: number, remainingMs: number): void => {
+    events('plan.refresh', { ...identityOf(account), outcome: 'failed', code: endCodeOf(failure), attempts, ...refreshTiming(startedAt, remainingMs) });
+  };
+
   const refreshWith = (fetch: PlanFetch, account: Account, trigger: RefreshTrigger): Promise<void> =>
-    store.withKey(account.key, async (entry) => {
+    lockedRecord(account, async (entry) => {
       const record = recordOf(account);
       if (record === undefined || account.unwritable !== undefined || !refreshNeeded(record, trigger)) return;
       const { refresh_token: refreshToken, expiresAt } = record;
       if (refreshToken === undefined || expiresAt === undefined) return;
       const startedAt = clock.now();
+      const remainingMs = expiresAt - startedAt;
+      const intentLoaded = record.pendingRefresh !== undefined;
       const intent: PlanRecord = { ...record, pendingRefresh: { generation: record.generation ?? 0, startedAt } };
       try {
-        await entry.write(serialize(intent));
+        await writeRecord(account, entry, intent);
       } catch (error) {
         markWriteFailure(account, error);
+        refreshFailedEvent(account, error, 0, startedAt, remainingMs);
         return;
       }
-      adopt(account, intent);
+      adopt(account, intent, 'lazy');
       account.dirty = false;
-      const end = await sendRefresh({
-        ports: { fetch, sleep: options.sleep },
-        clock,
-        tokenUrl: account.profile.oauth.tokenUrl,
-        form: { grant_type: 'refresh_token', client_id: record.client_id, refresh_token: refreshToken, resource: account.profile.oauth.resource },
-        attempts: retry.maxAttempts,
-        attemptTimeoutMs: defaults.attemptTimeoutMs,
-        waitPolicy,
-      });
-      const interrupted = (end.kind === 'terminal' || end.kind === 'adopted') && sendWasInterrupted({ intentLoaded: account.interrupted, unansweredBefore: end.unansweredBefore });
-      await applyRefreshEnd(account, entry, intent, end, interrupted);
-      refreshEvent(account, end, interrupted, startedAt, expiresAt - startedAt);
+      let attempts = 0;
+      let finished: { end: RefreshEnd; interrupted: boolean };
+      try {
+        const end = await sendRefresh({
+          ports: { fetch, sleep: options.sleep },
+          clock,
+          tokenUrl: account.profile.oauth.tokenUrl,
+          form: { grant_type: 'refresh_token', client_id: record.client_id, refresh_token: refreshToken, resource: account.profile.oauth.resource },
+          attempts: retry.maxAttempts,
+          attemptTimeoutMs: defaults.attemptTimeoutMs,
+          waitPolicy,
+          maxBodyBytes: PLAN_SIGN_IN_DEFAULTS.authBodyBytes,
+          signal: closing.signal,
+        });
+        attempts = end.attempts;
+        const interrupted = (end.kind === 'terminal' || end.kind === 'adopted') && sendWasInterrupted({ intentLoaded, unansweredBefore: end.unansweredBefore });
+        await applyRefreshEnd(account, entry, intent, end, interrupted, trigger.kind);
+        finished = { end, interrupted };
+      } catch (error) {
+        refreshFailedEvent(account, error, attempts, startedAt, remainingMs);
+        throw error;
+      }
+      refreshEvent(account, finished.end, finished.interrupted, startedAt, remainingMs);
     });
 
   const refreshInScope = (account: Account, trigger: RefreshTrigger): Promise<void> =>
@@ -554,9 +639,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     const condition = blockingCondition(account.profile, viewOf(account), clock.now());
     if (condition !== undefined) throw conditionFailure(condition);
     const record = recordOf(account);
-    if (record?.access_token === undefined || record.expiresAt === undefined) {
-      throw conditionFailure({ reason: 'sign_in_required', code: 'sign_in_required', detail: signInRequiredMessage(account.profile, record) });
-    }
+    if (record?.access_token === undefined || record.expiresAt === undefined) throw conditionFailure(signInRequiredCondition(account.profile, record));
     await ensureHost();
     return record;
   };
@@ -570,43 +653,47 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       if (remaining(before) > defaults.skewMs) return served(before);
       throw unwritableFailure(account.unwritable);
     }
-    if (remaining(before) > defaults.marginMs) return served(before);
+    if (remaining(before) > lazyMarginOf(before)) return served(before);
     await waitFor(refreshOnce(account, { kind: 'lazy' }), signal);
     const after = await usableRecord(account);
-    if ((after.generation ?? 0) !== (before.generation ?? 0) || remaining(after) > defaults.marginMs) return served(after);
+    if ((after.generation ?? 0) !== (before.generation ?? 0) || remaining(after) > lazyMarginOf(after)) return served(after);
     if (remaining(after) > defaults.skewMs) return served(after);
     throw unavailableFailure();
   };
 
   const rejected = async (account: Account, generation: number, signal: AbortSignal): Promise<'renewed' | 'unchanged'> => {
     await waitFor(load(account), signal);
-    const current = recordOf(account)?.generation ?? 0;
-    if (generation === current && !account.forced.has(current)) account.forced.set(current, refreshOnce(account, { kind: 'forced', generation: current }));
+    const record = recordOf(account);
+    const current = record?.generation ?? 0;
+    const trigger: RefreshTrigger = { kind: 'forced', generation: current };
+    if (generation === current && !account.forced.has(current) && record !== undefined && refreshNeeded(record, trigger)) account.forced.set(current, refreshOnce(account, trigger));
     const pending = account.forced.get(generation);
     if (pending !== undefined) await waitFor(pending, signal);
     return (recordOf(account)?.generation ?? 0) > generation ? 'renewed' : 'unchanged';
   };
 
-  const changeRecord = async (account: Account, change: (record: PlanRecord) => PlanRecord): Promise<void> => {
+  const applyChange = async (account: Account, change: (record: PlanRecord) => PlanRecord): Promise<{ record: PlanRecord; saved: boolean } | undefined> => {
     await load(account);
-    await store.withKey(account.key, async (entry) => {
+    return lockedRecord(account, async (entry) => {
       const record = recordOf(account);
-      if (record === undefined) throw conditionFailure(blockingCondition(account.profile, viewOf(account), clock.now()) ?? { reason: 'sign_in_required', code: 'sign_in_required', detail: signInRequiredMessage(account.profile, undefined) });
+      if (record === undefined) return undefined;
       const next = change(record);
-      await entry.write(serialize(next));
-      adopt(account, next);
-      account.dirty = false;
+      return { record: next, saved: await persistAfterSend(account, entry, next, 'lazy') };
     });
   };
 
-  const signOutWith = (fetch: PlanFetch, account: Account): Promise<SignOutReport> =>
-    store.withKey(account.key, async (entry) => {
+  type SignOutProgress = { changed: boolean; revocation: RevocationAnswer | 'none' };
+
+  const signOutWith = (fetch: PlanFetch, account: Account, progress: SignOutProgress): Promise<SignOutReport> =>
+    lockedRecord(account, async (entry) => {
       const record = recordOf(account);
-      if (record === undefined) throw conditionFailure(blockingCondition(account.profile, viewOf(account), clock.now()) ?? { reason: 'sign_in_required', code: 'sign_in_required', detail: signInRequiredMessage(account.profile, undefined) });
+      if (record === undefined) throw conditionFailure(blockingCondition(account.profile, viewOf(account), clock.now()) ?? signInRequiredCondition(account.profile, undefined));
+      if (record.state === 'registered') return { revocation: 'none', usageUrl: account.profile.usageUrl };
       const latestKnown = record.pendingRefresh === undefined;
       const signingOut = signingOutRecord(record);
-      await entry.write(serialize(signingOut));
-      adopt(account, signingOut);
+      progress.changed = true;
+      await writeRecord(account, entry, signingOut);
+      adopt(account, signingOut, 'lazy');
       account.dirty = false;
       const answer: RevocationAnswer =
         record.refresh_token === undefined
@@ -620,28 +707,57 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
               attempts: retry.maxAttempts,
               attemptTimeoutMs: defaults.revocationTimeoutMs,
               waitPolicy,
+              maxBodyBytes: PLAN_SIGN_IN_DEFAULTS.authBodyBytes,
+              signal: closing.signal,
             });
+      const revocation: RevocationAnswer = answer === 'confirmed' && latestKnown ? 'confirmed' : 'unconfirmed';
+      progress.revocation = revocation;
       const cleared = registrationOf(record);
-      await entry.write(serialize(cleared));
-      adopt(account, cleared);
+      await writeRecord(account, entry, cleared);
+      adopt(account, cleared, 'lazy');
       account.unwritable = undefined;
-      account.interrupted = false;
       account.forced.clear();
-      return { revocation: answer === 'confirmed' && latestKnown ? 'confirmed' : 'unconfirmed', usageUrl: account.profile.usageUrl };
+      return { revocation, usageUrl: account.profile.usageUrl };
     });
 
+  const unloadForResume = (account: Account): void => {
+    account.loaded = undefined;
+    account.loading = undefined;
+    account.resumedSignOut = undefined;
+  };
+
   const runSignOut = async (account: Account, signal: AbortSignal, resumed: boolean): Promise<SignOutReport> => {
-    const report = await options.outbound(signal, (fetch) => signOutWith(fetch, account));
-    events('plan.sign_out', { profile: account.profile.id, account: account.label, revocation: report.revocation, resumed });
-    return report;
+    const progress: SignOutProgress = { changed: false, revocation: 'none' };
+    try {
+      const report = await options.outbound(signal, (fetch) => signOutWith(fetch, account, progress));
+      if (progress.changed) events('plan.sign_out', { ...identityOf(account), resumed, end: 'cleared', revocation: report.revocation });
+      return report;
+    } catch (error) {
+      if (recordOf(account)?.state === 'signing_out') unloadForResume(account);
+      if (!progress.changed || endedByLifetime(error)) {
+        if (progress.changed || resumed) events('plan.sign_out', { ...identityOf(account), resumed, end: 'interrupted', revocation: 'none' });
+      } else {
+        events('plan.sign_out', { ...identityOf(account), resumed, end: 'failed', revocation: progress.revocation, code: endCodeOf(error) });
+      }
+      throw error;
+    }
   };
 
   function resumeSignOut(account: Account): void {
-    const flight = runSignOut(account, closing.signal, true).finally(() => {
-      account.resumedSignOut = undefined;
-    });
+    const flight = runSignOut(account, closing.signal, true);
     account.resumedSignOut = flight;
-    runInBackground(endedAtClose(flight.then(() => undefined)));
+    runInBackground(
+      flight
+        .then(
+          () => undefined,
+          (error: unknown) => {
+            if (!endedByLifetime(error)) options.warn(`the sign-out of ${account.profile.id} account ${account.label} did not finish: ${describeError(error)}; it is resumed at the next load`);
+          },
+        )
+        .finally(() => {
+          if (account.resumedSignOut === flight) account.resumedSignOut = undefined;
+        }),
+    );
   }
 
   const signOutAccount = async (account: Account, signal: AbortSignal): Promise<SignOutReport> => {
@@ -650,24 +766,43 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   };
 
   const adoptPointer = (pointer: ActivePointer): void => {
-    for (const profile of Object.keys(options.profiles)) {
-      const label = Object.hasOwn(pointer, profile) ? pointer[profile] : undefined;
-      if (label !== undefined) activeLabels.set(profile, label);
-    }
+    for (const [profile, label] of Object.entries(pointer)) activeLabels.set(profile, label);
     pointerProblem = undefined;
   };
 
-  const moveActive = async (ref: PlanAccountRef): Promise<void> => {
-    adoptPointer(await writeActiveAccount(fileSystem, paths.active, ref.profile, ref.account));
+  const heal = async (): Promise<void> => {
+    if (pointerProblem === undefined) return;
+    try {
+      adoptPointer(await readActivePointer(fileSystem, paths.active));
+    } catch (error) {
+      pointerProblem = describeError(error);
+      throw storeReadFailure(pointerProblem, error);
+    }
+  };
+
+  const moveActive = (ref: PlanAccountRef): Promise<void> =>
+    pointerWrites.run(async () => {
+      await heal();
+      const next: ActivePointer = { ...Object.fromEntries(activeLabels), [ref.profile]: ref.account };
+      try {
+        await writeActivePointer(fileSystem, paths.active, next);
+      } catch (error) {
+        throw storeWriteFailure(pointerFile, error);
+      }
+      adoptPointer(next);
+    });
+
+  const pointerReady = async (): Promise<void> => {
+    if (pointerProblem === undefined) return;
+    await pointerWrites.run(heal);
   };
 
   const register = async (input: RegisterInput): Promise<{ outcome: 'registered' } | Rejected> => {
     const account = accountOf(input.profile, input.account);
-    return store.withKey(account.key, async (entry) => {
-      const raw = await entry.read();
-      if (raw !== undefined) {
-        const existing = parseRecord(raw);
-        adopt(account, existing);
+    return lockedRecord(account, async (entry) => {
+      const existing = await readRecordOf(account, () => entry.read());
+      if (existing !== undefined) {
+        adopt(account, existing, 'lazy');
         return existing.client_id === input.clientId ? { outcome: 'registered' as const } : { outcome: 'rejected' as const, reason: 'registration_superseded' as const };
       }
       const record: PlanRecord = {
@@ -679,8 +814,8 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
         ext_agent_host_id: input.hostId,
         welcomeShown: false,
       };
-      await entry.write(serialize(record));
-      adopt(account, record);
+      await writeRecord(account, entry, record);
+      adopt(account, record, 'lazy');
       return { outcome: 'registered' as const };
     });
   };
@@ -690,14 +825,14 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     const { tokens } = input;
     const problem = tokenResponseProblem(tokens, { refreshRequired: typeof tokens.scope === 'string' && refreshRequiredFor(tokens.scope) });
     if (problem !== undefined) throw new Error(`the sign-in installed nothing: ${problem}`);
-    const outcome = await store.withKey(account.key, async (entry) => {
-      const raw = await entry.read();
-      const existing = raw === undefined ? undefined : parseRecord(raw);
+    const outcome = await lockedRecord(account, async (entry) => {
+      const existing = await readRecordOf(account, () => entry.read());
       if (existing === undefined || existing.client_id !== input.clientId || (existing.subject !== undefined && existing.subject !== input.subject)) {
         return { outcome: 'rejected' as const, reason: 'registration_superseded' as const };
       }
       const state: RecordState = grantsScope(tokens.scope, account.profile.oauth.requiredScope) ? 'active' : 'plan_disabled';
       const firstSignIn = state === 'active' && !existing.welcomeShown;
+      const lifetimeMs = tokens.expires_in * 1000;
       const record: PlanRecord = {
         version: RECORD_VERSION,
         profile: input.profile,
@@ -711,16 +846,16 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
         id_token: input.idToken,
-        expiresAt: clock.now() + tokens.expires_in * 1000,
+        expiresAt: clock.now() + lifetimeMs,
+        lifetimeMs,
         scope: tokens.scope,
         ...optional('earliestRefreshAt', tokens.earliest_refresh_at),
         generation: (existing.generation ?? 0) + 1,
       };
-      await entry.write(serialize(record));
-      adopt(account, record);
+      await writeRecord(account, entry, record);
+      adopt(account, record, 'lazy');
       account.dirty = false;
       account.unwritable = undefined;
-      account.interrupted = false;
       account.forced.clear();
       return { outcome: state === 'active' ? ('signed_in' as const) : ('plan_disabled' as const), firstSignIn };
     });
@@ -731,7 +866,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   const registration = async (ref: PlanAccountRef): Promise<Registration | undefined> => {
     const account = accountOf(ref.profile, ref.account);
     await load(account);
-    if (account.loaded?.kind === 'unreadable') throw conditionFailure({ reason: 'store_unreadable', code: 'plan_store_unreadable', detail: account.loaded.cause });
+    if (account.loaded?.kind === 'unreadable') throw storeReadFailure(account.loaded.cause, undefined);
     const record = recordOf(account);
     if (record === undefined) return undefined;
     return { state: record.state, clientId: record.client_id, ...optional('subject', record.subject), ...optional('email', record.email), ...optional('idToken', record.id_token) };
@@ -747,8 +882,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     const account = accountOf(ref.profile, ref.account);
     await load(account);
     if (recordOf(account)?.paused === undefined) return false;
-    await changeRecord(account, withoutPause);
-    return true;
+    return (await applyChange(account, withoutPause)) !== undefined;
   };
 
   const selectActive = async (ref: PlanAccountRef): Promise<void> => {
@@ -758,10 +892,10 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     await moveActive(ref);
   };
 
+  const unpinnedView = (): AccountView => (pointerProblem === undefined ? { kind: 'absent' } : { kind: 'unreadable', cause: pointerProblem });
+
   const noActiveAccount = (profile: PlanProfile): PlanCredentialError =>
-    pointerProblem === undefined
-      ? conditionFailure({ reason: 'sign_in_required', code: 'sign_in_required', detail: signInRequiredMessage(profile, undefined) })
-      : conditionFailure({ reason: 'store_unreadable', code: 'plan_store_unreadable', detail: pointerProblem });
+    conditionFailure(blockingCondition(profile, unpinnedView(), clock.now()) ?? signInRequiredCondition(profile, undefined));
 
   const signedOutSource = (profileId: string): AuthSource => {
     const profile = profileOf(profileId);
@@ -773,7 +907,8 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       pause: async () => undefined,
       resume: async () => undefined,
       status: () => statusOf({ kind: 'absent' }, clock.now()),
-      health: () => healthOf(profile, undefined, { kind: 'absent' }, clock.now()),
+      health: () => healthOf(profile, undefined, unpinnedView(), clock.now()),
+      resolvedAccount: () => undefined,
     };
   };
 
@@ -789,23 +924,34 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       return account;
     };
     const servedAccount = async (): Promise<Account> => (servedLabel === undefined ? resolve() : accountOf(profile.id, servedLabel));
-    const knownView = (): AccountView => (servedLabel === undefined ? { kind: 'absent' } : viewOf(accountOf(profile.id, servedLabel)));
+    const statusView = (): AccountView => (servedLabel === undefined ? { kind: 'absent' } : viewOf(accountOf(profile.id, servedLabel)));
+    const healthView = (): AccountView => (servedLabel === undefined ? unpinnedView() : viewOf(accountOf(profile.id, servedLabel)));
     return {
       read: async (signal) => bearer(await waitFor(resolve(), signal), signal),
       rejected: async (generation, signal) => {
         const account = await waitFor(servedAccount(), signal);
-        const answer = await rejected(account, generation, signal);
-        events('plan.rejected', { profile: profile.id, account: account.label, generation, answer });
-        return answer;
+        const rejection = { ...identityOf(account), generation };
+        try {
+          const answer = await rejected(account, generation, signal);
+          events('plan.rejected', { ...rejection, answer });
+          return answer;
+        } catch (error) {
+          events('plan.rejected', { ...rejection, answer: signal.aborted && error === signal.reason ? 'aborted' : PLAN_EVENT_INTERNAL });
+          throw error;
+        }
       },
       pause: async ({ untilMs, code }) => {
         const account = await servedAccount();
-        await changeRecord(account, (record) => ({ ...record, paused: untilMs === undefined ? {} : { until: untilMs } }));
-        events('plan.pause', { profile: profile.id, account: account.label, code, ...(untilMs === undefined ? {} : { until: new Date(untilMs).toISOString() }) });
+        const changed = await applyChange(account, (record) => ({ ...record, paused: untilMs === undefined ? {} : { until: untilMs } }));
+        if (changed === undefined) return;
+        events('plan.pause', { ...identityOf(account), code, saved: changed.saved, ...(untilMs === undefined ? {} : { until: new Date(untilMs).toISOString() }) });
       },
-      resume: async () => changeRecord(await servedAccount(), withoutPause),
-      status: () => statusOf(knownView(), clock.now()),
-      health: () => healthOf(profile, servedLabel, knownView(), clock.now()),
+      resume: async () => {
+        await applyChange(await servedAccount(), withoutPause);
+      },
+      status: () => statusOf(statusView(), clock.now()),
+      health: () => healthOf(profile, servedLabel, healthView(), clock.now()),
+      resolvedAccount: () => (servedLabel === undefined ? undefined : { profile: profile.id, account: servedLabel }),
     };
   };
 
@@ -838,7 +984,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       if (outcome.outcome !== 'rejected') {
         const account = accountOf(input.profile, input.account);
         const record = recordOf(account);
-        if (record?.paused !== undefined) adopt(account, withoutPause(record));
+        if (record?.paused !== undefined) adopt(account, withoutPause(record), 'lazy');
       }
       return outcome;
     },
@@ -848,6 +994,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     listProblems,
     resume,
     selectActive,
+    pointerReady,
     signOut: (ref, signal) => signOutAccount(accountOf(ref.profile, ref.account), signal),
     authSource,
     signedOutSource,

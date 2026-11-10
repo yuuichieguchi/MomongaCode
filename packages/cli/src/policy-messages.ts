@@ -67,6 +67,8 @@ export const signInCommandOf = (surface: MessageSurface, plan: PlanAccountRef | 
   return plan === undefined ? 'momonga auth login' : `momonga auth login ${plan.profile} --account ${plan.account}`;
 };
 
+export const reconsentCommand = (profile: string, account: string): string => `momonga auth login ${profile} --account ${account} --reconsent`;
+
 const defaultRunErrorLines = (error: { code: string; message: string }): string[] => {
   const [first = '', ...rest] = PRODUCT_COMPOSED_CODES.has(error.code) ? error.message.split('\n') : [error.message];
   return [`${error.code}: ${first}`, ...rest];
@@ -75,7 +77,7 @@ const defaultRunErrorLines = (error: { code: string; message: string }): string[
 const planRunErrorLines = (error: { code: string; message: string }, plan: PlanAccountRef): string[] | undefined => {
   switch (error.code) {
     case PLAN_USE_NOT_ENABLED_CODE:
-      return [`${error.message} · Run momonga auth login ${plan.profile} --account ${plan.account} --reconsent to enable it`, `cause: ${error.code}`];
+      return [`${error.message} · Run ${reconsentCommand(plan.profile, plan.account)} to enable it`, `cause: ${error.code}`];
     case PLAN_NOT_ELIGIBLE_CODE:
       return [error.message, `cause: ${error.code}`, `Run momonga auth login ${plan.profile} --account <new label> to use another account, or use an API key.`];
     default:

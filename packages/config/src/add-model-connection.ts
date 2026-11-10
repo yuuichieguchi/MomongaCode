@@ -1,8 +1,11 @@
 import path from 'node:path';
-import { createKeyedSerializer, isRecord, nodeFileSystem, systemFileLockPorts, systemRandom, withFileLock, writeFileAtomically } from '@momonga/foundation';
+import { comparablePath, createKeyedSerializer, isRecord, nodeFileSystem, systemFileLockPorts, systemRandom, withFileLock, writeFileAtomically } from '@momonga/foundation';
+import type { FileLockPorts } from '@momonga/foundation';
 import { maxOutputTokensFor } from '@momonga/protocol';
 import type { LocalServerShape } from '@momonga/protocol';
+import { settingsLockPath } from './file-lock.ts';
 import { readJsonFile } from './json-file.ts';
+import { layoutOf } from './layout.ts';
 import { LOCAL_CONNECTION_TARGET_SCHEMAS } from './settings-schema.ts';
 
 export type ModelConnection =
@@ -15,6 +18,7 @@ export type WrittenConnection = { target: string; alias: string };
 type ConnectionAdapter = keyof typeof LOCAL_CONNECTION_TARGET_SCHEMAS;
 
 const SETTINGS_FILE_MODE = 0o600;
+const PRIVATE_DIRECTORY_MODE = 0o700;
 
 const ADAPTER_OF_SHAPE: Readonly<Record<LocalServerShape, ConnectionAdapter>> = { ollama: 'ollama', openai: 'chat-completions' };
 
@@ -111,28 +115,41 @@ const withConnection = (document: Record<string, unknown>, file: string, connect
   return { written: { target: name, alias: name }, changed: true };
 };
 
-export const editUserSettings = (settingsFile: string, edit: (document: Record<string, unknown>) => boolean): Promise<void> =>
-  serializeInProcess(settingsFile, () =>
+export type EditUserSettingsOptions = { ports?: FileLockPorts; lockTimeoutMs?: number };
+
+const documentOf = async (settingsFile: string): Promise<Record<string, unknown>> => {
+  const read = await readJsonFile(settingsFile);
+  if (!read.found) return {};
+  if (!isRecord(read.value)) throw new Error(`${settingsFile}: settings must be a JSON object`);
+  return read.value;
+};
+
+export const editUserSettings = async (
+  home: string,
+  settingsFile: string,
+  edit: (document: Record<string, unknown>) => boolean,
+  options: EditUserSettingsOptions = {},
+): Promise<void> => {
+  const ports = options.ports ?? systemFileLockPorts;
+  await nodeFileSystem.mkdir(path.dirname(settingsFile), PRIVATE_DIRECTORY_MODE);
+  await nodeFileSystem.mkdir(layoutOf(home).run, PRIVATE_DIRECTORY_MODE);
+  await serializeInProcess(comparablePath(settingsFile), () =>
     withFileLock(
-      path.join(path.dirname(settingsFile), `${path.basename(settingsFile)}.lock`),
+      settingsLockPath(home, settingsFile),
       async () => {
-        const read = await readJsonFile(settingsFile);
-        let document: Record<string, unknown> = {};
-        if (read.found) {
-          if (!isRecord(read.value)) throw new Error(`${settingsFile}: settings must be a JSON object`);
-          document = read.value;
-        }
+        const document = await documentOf(settingsFile);
         if (!edit(document)) return;
-        await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: systemFileLockPorts.randomHex }, settingsFile, `${JSON.stringify(document, null, 2)}\n`, { mode: SETTINGS_FILE_MODE });
+        await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: ports.randomHex }, settingsFile, `${JSON.stringify(document, null, 2)}\n`, { mode: SETTINGS_FILE_MODE });
       },
-      { ports: systemFileLockPorts },
+      { ports, ...(options.lockTimeoutMs === undefined ? {} : { timeoutMs: options.lockTimeoutMs }) },
     ),
   );
+};
 
-export const addModelConnection = async (settingsFile: string, connection: ModelConnection): Promise<WrittenConnection> => {
+export const addModelConnection = async (home: string, settingsFile: string, connection: ModelConnection): Promise<WrittenConnection> => {
   assertConnection(connection);
   const placed: { written?: WrittenConnection } = {};
-  await editUserSettings(settingsFile, (document) => {
+  await editUserSettings(home, settingsFile, (document) => {
     const { written, changed } = withConnection(document, settingsFile, connection);
     placed.written = written;
     return changed;

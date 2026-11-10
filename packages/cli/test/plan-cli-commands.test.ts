@@ -219,4 +219,14 @@ describe('momonga auth logout', () => {
     expect(code).toBe(0);
     expect(backend.planCalls.filter((call) => call.route === 'sign-out')).toEqual([{ route: 'sign-out', body: { profile: 'chatgpt', account: 'work' } }]);
   });
+
+  it('prints only that the account was already signed out when the gateway reports no revocation', async () => {
+    const out = writer();
+    const err = writer();
+    const backend = fakePlanBackend({ accounts: [account({ label: 'work' })], signOutRevocation: 'none' });
+    const code = await authLogout({ stdout: out, stderr: err, plan: backend.plan, isTerminal: false }, { account: 'work' });
+    expect(code).toBe(0);
+    expect(out.written.join('')).toBe('work was already signed out.\n');
+    expect(err.written.join('')).toBe('');
+  });
 });

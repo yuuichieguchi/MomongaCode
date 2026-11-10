@@ -11,8 +11,6 @@ export { systemClock } from './clock.ts';
 export type { Clock } from './clock.ts';
 export { Deadline } from './deadline.ts';
 export type { DeadlineTiming } from './deadline.ts';
-export { BILLING_CHANGE_ALLOWED, BILLING_CHANGE_REFUSED, describeFallbackCause } from './fallback-cause.ts';
-export type { BillingChangeRecord, FallbackCause } from './fallback-cause.ts';
 export { isRecord, parseBoundedJson, parseJsonOrText } from './json.ts';
 export type { BoundedJson } from './json.ts';
 export { JsonDepthError, MAX_JSON_DEPTH, checkJsonDepth, parseOutsideJson } from './json-depth.ts';
@@ -27,7 +25,7 @@ export { highestAppliedMigration, immediateTx, joinedTx, migrate, openDatabase, 
 export type { MigrateResult, Migration, OpenDatabaseOptions } from './sqlite.ts';
 export { SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, decodeSse, encodeSse } from './sse.ts';
 export { createBrowserOpener, openCommandFor } from './open-browser.ts';
-export type { BrowserOpenerPorts, BrowserRunPort, OpenCommand } from './open-browser.ts';
+export type { BrowserOpenerPorts, LaunchProgram, OpenCommand, OpenUrl, ProgramEnd } from './open-browser.ts';
 export { findProgramOnPath } from './program-search.ts';
 export type { SseEvent } from './sse.ts';
 export { createUdsClient, fixedSocket, isUnixSocketLive, listenUnix } from './uds.ts';

@@ -1,7 +1,7 @@
-import { BILLING_CHANGE_ALLOWED, BILLING_CHANGE_REFUSED, computeBackoff } from '@momonga/foundation';
-import type { Clock, FallbackCause } from '@momonga/foundation';
-import type { ClassifiedError, TargetBilling } from '@momonga/protocol';
-import { DEFERRED_HEADER } from '@momonga/protocol';
+import { computeBackoff } from '@momonga/foundation';
+import type { Clock } from '@momonga/foundation';
+import type { ClassifiedError, FallbackCause, PlanAccountRef, TargetBilling } from '@momonga/protocol';
+import { BILLING_CHANGE_ALLOWED, BILLING_CHANGE_REFUSED, DEFERRED_HEADER } from '@momonga/protocol';
 import { CandidateRefused, UnprobedTarget, refusalErrorOf } from './candidate-refusal.ts';
 import type { Refusal } from './candidate-refusal.ts';
 import { breakerVerdictOf } from './breaker-verdict.ts';
@@ -136,10 +136,16 @@ const withNotTried = (error: GatewayError, refusals: readonly FallbackCause[]): 
     message: [error.body.message, ...refusals.map(notTriedSentence)].join(' '),
     param: error.body.param,
     headers: { ...error.headers },
+    ...(error.body.plan === undefined ? {} : { plan: error.body.plan }),
   });
 };
 
-type LastFailure = { kind: 'upstream'; classified: ClassifiedError } | { kind: 'skip'; error: GatewayError };
+const withPlan = (error: GatewayError, plan: PlanAccountRef | undefined): GatewayError => {
+  if (plan === undefined) return error;
+  return new GatewayError({ status: error.status, type: error.body.type, code: error.body.code, message: error.body.message, param: error.body.param, headers: { ...error.headers }, plan });
+};
+
+type LastFailure = { kind: 'upstream'; classified: ClassifiedError; plan: PlanAccountRef | undefined } | { kind: 'skip'; error: GatewayError; plan: PlanAccountRef | undefined };
 
 export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOutcome<T>> => {
   const { candidates, policy, signal, deadlineAt, billing } = request;
@@ -168,8 +174,8 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
     const notTried = [...billingRefusals, ...candidates.slice(from).filter((target) => !eligible(target)).map((target) => billingRefusalOf(target, kind))];
     if (lastFailure === undefined && refusals.length > 0) throw withNotTried(refusalErrorOf(refusals), notTried);
     if (lastFailure === undefined) throw new Error('runWithRetry ended without trying any candidate');
-    if (lastFailure.kind === 'skip') throw withNotTried(lastFailure.error, notTried);
-    throw withNotTried(finalError(lastFailure.classified, policy.totalWaitMs), notTried);
+    if (lastFailure.kind === 'skip') throw withNotTried(withPlan(lastFailure.error, lastFailure.plan), notTried);
+    throw withNotTried(withPlan(finalError(lastFailure.classified, policy.totalWaitMs), lastFailure.plan), notTried);
   };
 
   for (const [index, target] of candidates.entries()) {
@@ -222,25 +228,27 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
             break;
           }
           sentTo(target);
+          const plan = target.servedAccount();
           if (error instanceof GatewayError && isSkipCode(error.body.code)) {
             verdict = 'neutral';
             target.lastFailure = { code: error.body.code, message: error.message };
             causeHere = { target: target.name, ...target.lastFailure };
-            lastFailure = { kind: 'skip', error };
+            lastFailure = { kind: 'skip', error, plan };
             break;
           }
+          if (error instanceof GatewayError) throw withPlan(error, plan);
           if (!(error instanceof UpstreamFailure)) throw error;
           const { classified } = error;
           target.lastFailure = { code: classified.error.code, message: classified.error.message };
           causeHere = { target: target.name, ...target.lastFailure };
           if (skipsNow(classified)) {
             verdict = classified.verdict ?? 'neutral';
-            lastFailure = { kind: 'skip', error: plainError(classified) };
+            lastFailure = { kind: 'skip', error: plainError(classified), plan };
             break;
           }
           verdict = classified.verdict ?? breakerVerdictOf(classified.error.type, classified.error.code);
-          if (!classified.retryable || classified.stalled === true) throw plainError(classified);
-          lastFailure = { kind: 'upstream', classified };
+          if (!classified.retryable || classified.stalled === true) throw withPlan(plainError(classified), plan);
+          lastFailure = { kind: 'upstream', classified, plan };
           const movesOn = nextEligible() !== undefined && classified.fallback !== 'stop';
           const decision = nextWait({
             attempt: sends - 1,

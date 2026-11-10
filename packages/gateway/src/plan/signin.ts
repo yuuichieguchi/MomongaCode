@@ -1,21 +1,22 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { PlanProfile } from '@momonga/config';
-import { CLIENT_NAME, SECRET_NAME_PATTERN, isRecord, parseOutsideJson, systemRandom } from '@momonga/foundation';
+import { CLIENT_NAME, isRecord, parseOutsideJson, systemRandom } from '@momonga/foundation';
 import type { Clock, FileSystem } from '@momonga/foundation';
-import { PLAN_SIGN_IN_FAILURES, PLAN_SIGN_IN_FAILURE_RULES } from '@momonga/protocol';
+import { PLAN_SIGN_IN_FAILURES, PLAN_SIGN_IN_FAILURE_RULES, PLAN_SIGN_IN_PENDING_CODE, PLAN_SIGN_OUT_IN_PROGRESS_CODE } from '@momonga/protocol';
 import type { PlanAccountRef, PlanSignInBeginRequest, PlanSignInBeginResponse, PlanSignInFailure } from '@momonga/protocol';
 import { GatewayError, invalidRequest } from '../core/errors.ts';
 import { PLAN_SIGN_IN_DEFAULTS } from '../defaults.ts';
 import { hostIdentityFailure } from './auth-source.ts';
-import { cappedSend } from './capped-send.ts';
-import { noPlanEvents } from './events.ts';
+import { endCodeOf, noPlanEvents } from './events.ts';
 import type { PlanEvents } from './events.ts';
-import { ensureHostIdentity } from './host-identity.ts';
+import { ensureHostIdentity, resetHostIdentity } from './host-identity.ts';
+import type { HostIdentity } from './host-identity.ts';
 import { createIdTokenVerifier, idTokenFacts } from './id-token.ts';
 import type { IdTokenFacts, IdTokenVerifier } from './id-token.ts';
 import type { PlanOutbound } from './outbound.ts';
-import { refreshRequiredFor, tokenResponseProblem } from './refresh.ts';
+import { boundedSend, refreshRequiredFor, tokenResponseProblem } from './refresh.ts';
 import type { PlanFetch, PlanSleep, PlanTokenResponse } from './refresh.ts';
+import { createSerial } from './serial.ts';
 import type { PlanSessions, Registration } from './session.ts';
 
 export type SignInEnd = { outcome: 'signed_in' | 'plan_disabled'; ref: PlanAccountRef; firstSignIn: boolean } | { outcome: 'retry'; reason: 'invalid_grant' };
@@ -25,6 +26,7 @@ export type PlanSignIn = {
   complete(attemptId: string, callbackUrl: string, signal: AbortSignal): Promise<SignInEnd>;
   cancel(attemptId: string): boolean;
   waiting(): boolean;
+  resetHost(): Promise<HostIdentity>;
 };
 
 export type PlanSignInOptions = {
@@ -75,8 +77,6 @@ const failureCodeOf = (error: unknown): string | undefined => {
   const code = error instanceof GatewayError ? error.body.code : null;
   return code !== null && SIGN_IN_FAILURE_CODES.has(code) ? code : undefined;
 };
-
-const LABEL = new RegExp(SECRET_NAME_PATTERN);
 
 const MIN_PORT = 1;
 const MAX_PORT = 65_535;
@@ -134,6 +134,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
   const pendingByAccount = new Map<string, string>();
   const verifiers = new Map<string, IdTokenVerifier>();
   const events = options.events ?? noPlanEvents;
+  const hostGate = createSerial();
 
   const profileOf = (id: string): PlanProfile => {
     const profile = Object.hasOwn(options.profiles, id) ? options.profiles[id] : undefined;
@@ -161,12 +162,10 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
 
   const waiting = (): boolean => completing > 0 || [...attempts.values()].some((attempt) => options.clock.now() < attempt.expiresAt);
 
-  const begin = async (request: PlanSignInBeginRequest): Promise<PlanSignInBeginResponse> => {
-    const profile = profileOf(request.profile);
-    if (!LABEL.test(request.account)) throw invalidRequest('invalid_account_label', `the account label must match ${SECRET_NAME_PATTERN}`, 'account');
-    if (!Number.isInteger(request.port) || request.port < MIN_PORT || request.port > MAX_PORT) throw invalidRequest('invalid_port', `the port must be an integer from ${MIN_PORT} to ${MAX_PORT}`, 'port');
+  const beginAttempt = async (profile: PlanProfile, request: PlanSignInBeginRequest): Promise<Attempt> => {
+    await options.sessions.pointerReady();
     const saved = await options.sessions.registration({ profile: profile.id, account: request.account });
-    if (saved?.state === 'signing_out') throw invalidRequest('plan_sign_out_in_progress', `${request.account} is still signing out. Try again in a moment.`, null, CONFLICT_STATUS);
+    if (saved?.state === 'signing_out') throw invalidRequest(PLAN_SIGN_OUT_IN_PROGRESS_CODE, `${request.account} is still signing out. Try again in a moment.`, null, CONFLICT_STATUS);
     const accountsExist = saved !== undefined || (await options.sessions.known()).length > 0;
     const { hostId } = await ensureHostIdentity(options.fileSystem, options.hostFile, { accountsExist }).catch((error: unknown) => {
       throw hostIdentityFailure(error);
@@ -174,7 +173,6 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     const key = attemptKey(profile.id, request.account);
     const replaced = pendingByAccount.get(key);
     if (replaced !== undefined) attempts.delete(replaced);
-    const oauth = profile.oauth;
     const attempt: Attempt = {
       id: randomToken(PLAN_SIGN_IN_DEFAULTS.randomStateBytes),
       key,
@@ -183,7 +181,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
       state: randomToken(PLAN_SIGN_IN_DEFAULTS.randomStateBytes),
       nonce: randomToken(PLAN_SIGN_IN_DEFAULTS.randomStateBytes),
       verifier: randomToken(PLAN_SIGN_IN_DEFAULTS.verifierBytes),
-      redirectUri: `http://127.0.0.1:${request.port}${oauth.callbackPath}`,
+      redirectUri: `http://127.0.0.1:${request.port}${profile.oauth.callbackPath}`,
       port: request.port,
       startedAt: options.clock.now(),
       expiresAt: options.clock.now() + PLAN_SIGN_IN_DEFAULTS.attemptTtlMs,
@@ -192,6 +190,21 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     };
     attempts.set(attempt.id, attempt);
     pendingByAccount.set(key, attempt.id);
+    return attempt;
+  };
+
+  const resetHost = (): Promise<HostIdentity> =>
+    hostGate.run(async () => {
+      if (waiting()) throw invalidRequest(PLAN_SIGN_IN_PENDING_CODE, 'A sign-in is waiting for the browser. Finish or cancel it, then reset the host.', null, CONFLICT_STATUS);
+      return resetHostIdentity(options.fileSystem, options.hostFile);
+    });
+
+  const begin = async (request: PlanSignInBeginRequest): Promise<PlanSignInBeginResponse> => {
+    const profile = profileOf(request.profile);
+    if (!Number.isInteger(request.port) || request.port < MIN_PORT || request.port > MAX_PORT) throw invalidRequest('invalid_port', `the port must be an integer from ${MIN_PORT} to ${MAX_PORT}`, 'port');
+    const attempt = await hostGate.run(() => beginAttempt(profile, request));
+    const { saved, hostId } = attempt;
+    const oauth = profile.oauth;
     const url = new URL(oauth.authorizeUrl);
     const params: Array<[string, string]> = [
       ['client_id', saved?.clientId ?? oauth.registrationClientId],
@@ -216,7 +229,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
   const exchange = async (fetch: PlanFetch, attempt: Attempt, clientId: string, code: string, progress: Progress): Promise<PlanTokenResponse | { outcome: 'retry'; reason: 'invalid_grant' }> => {
     const { profile } = attempt;
     const form = { grant_type: 'authorization_code', client_id: clientId, code, code_verifier: attempt.verifier, redirect_uri: attempt.redirectUri, resource: profile.oauth.resource };
-    const answer = await cappedSend(
+    const answer = await boundedSend(
       { fetch, sleep: options.sleep },
       profile.oauth.tokenUrl,
       { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' }, body: new URLSearchParams(form).toString() },
@@ -259,8 +272,9 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     });
   };
 
-  const complete = async (attemptId: string, callbackUrl: string, signal: AbortSignal): Promise<SignInEnd> =>
-    options.outbound(signal, async (fetch) => {
+  const complete = async (attemptId: string, callbackUrl: string, signal: AbortSignal): Promise<SignInEnd> => {
+    await options.sessions.pointerReady();
+    return options.outbound(signal, async (fetch) => {
       completing += 1;
       try {
         return await completeAttempt(fetch, attemptId, callbackUrl);
@@ -268,6 +282,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
         completing -= 1;
       }
     });
+  };
 
   const completeAttempt = async (fetch: PlanFetch, attemptId: string, callbackUrl: string): Promise<SignInEnd> => {
     const attempt = consume(attemptId);
@@ -278,8 +293,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
       signInEvent(attempt, progress, { outcome: end.outcome });
       return end;
     } catch (error) {
-      const failure = failureCodeOf(error);
-      if (failure !== undefined) signInEvent(attempt, progress, { outcome: 'failed', failure });
+      signInEvent(attempt, progress, { outcome: 'failed', failure: failureCodeOf(error) ?? endCodeOf(error) });
       throw error;
     }
   };
@@ -334,5 +348,5 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
 
   const cancel = (attemptId: string): boolean => consume(attemptId) !== undefined;
 
-  return { begin, complete, cancel, waiting };
+  return { begin, complete, cancel, waiting, resetHost };
 };

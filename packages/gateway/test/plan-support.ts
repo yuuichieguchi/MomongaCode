@@ -132,6 +132,19 @@ export const recordingSerial = (): RecordingSerial => {
   return serial;
 };
 
+export type RecordingSignal = { signal: AbortSignal; listeners(): number };
+
+export const recordingSignal = (): RecordingSignal => {
+  const signal = new AbortController().signal;
+  const register = signal.addEventListener.bind(signal);
+  let registered = 0;
+  signal.addEventListener = (...registration: Parameters<AbortSignal['addEventListener']>): void => {
+    if (registration[0] === 'abort') registered += 1;
+    register(...registration);
+  };
+  return { signal, listeners: () => registered };
+};
+
 export const resettingFetch = (): PlanFetch => async () => {
   throw Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
 };

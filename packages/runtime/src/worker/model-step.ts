@@ -1,11 +1,12 @@
-import { canonicalJson, describeFallbackCause, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { TokenMeter } from '@momonga/context';
-import { LOWEST_REASONING_EFFORT, marginFloorFor, wireUsageOf } from '@momonga/protocol';
+import { LOWEST_REASONING_EFFORT, describeFallbackCause, marginFloorFor, wireUsageOf } from '@momonga/protocol';
 import { billedDetailOf, priceOutcomeOf } from './model-stream.ts';
 import type { Capabilities, CreateResponseBody, ModelRejectionReason, FunctionTool, InputItem, ModelResponse, MomongaResponseExtension, ResponseResource, RunEventPayload, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { modelKey } from '../model-key.ts';
 import { GatewayFailureError } from './errors.ts';
+import { responseFailureDisposition, terminalOf } from './gateway-policy.ts';
 import { outputBoundOf } from './output-bound.ts';
 import { isRecord } from './json.ts';
 import { buildNext, cancelIfInterrupted, recoverRejectedCompaction } from './context-step.ts';
@@ -152,7 +153,8 @@ const handleResult = async (
     }
     if (result.code === DEADLINE_CODE) return terminals.finish('STOPPED', { stopReason: 'timeout' });
     if (result.retryable) throw new GatewayFailureError(`${result.code}: ${result.message}`);
-    return terminals.finish('FAILED', { error: { code: result.code, message: result.message } });
+    const terminal = terminalOf(responseFailureDisposition(result));
+    return terminals.finish(terminal.to, terminal.patch);
   }
   const { response, incomplete } = result;
   const usage = response.usage;

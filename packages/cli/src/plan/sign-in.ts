@@ -48,10 +48,11 @@ export type SignInShown = { url: URL; state: string };
 export type SignInPorts = {
   plan: PlanGatewayClient;
   startListener: StartSignInListener;
-  authorize(shown: SignInShown): Promise<void>;
+  authorize(shown: SignInShown, waiting: AbortSignal): Promise<void>;
   pasted(state: string, signal: AbortSignal): Promise<string>;
   signal: AbortSignal;
   timers: SignInWaitTimers;
+  delivered?(): void;
 };
 
 export const PASTE_LABEL = 'On a remote machine? Paste the redirect URL here';
@@ -129,18 +130,21 @@ export const signIn = async (ports: SignInPorts, request: SignInRequest): Promis
   try {
     const begun = await ports.plan.signInBegin({ profile: request.profile, account: request.account, port: listener.port, ...(request.reconsent ? { reconsent: true } : {}) });
     const expiry = new AbortController();
+    const ended = new AbortController();
     const timer = ports.timers.setTimeout(() => expiry.abort(new SignInExpiredError()), AUTHORIZATION_WAIT_MS);
     let value: string;
     try {
-      const waiting = AbortSignal.any([ports.signal, expiry.signal]);
-      await ports.authorize({ url: new URL(begun.authorizationUrl), state: begun.state });
+      const waiting = AbortSignal.any([ports.signal, expiry.signal, ended.signal]);
+      await ports.authorize({ url: new URL(begun.authorizationUrl), state: begun.state }, waiting);
       waiting.throwIfAborted();
       value = await firstValue([async (signal) => (await listener.callback({ state: begun.state, signal })).href, (signal) => ports.pasted(begun.state, signal)], waiting);
+      ports.delivered?.();
     } catch (error) {
       await ports.plan.signInCancel({ attemptId: begun.attemptId }).catch(() => undefined);
       throw error;
     } finally {
       ports.timers.clearTimeout(timer);
+      ended.abort();
     }
     return await completed(ports.plan, begun.attemptId, value);
   } finally {

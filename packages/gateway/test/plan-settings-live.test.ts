@@ -482,7 +482,7 @@ describe('O-R5-6 L3: the served account, the reported numbers and the output pol
     expect(unlisted?.capabilities.toolCalling.message).toBe(UNKNOWN_CAPABILITIES_TEXT);
     const refused = await askDefault(gateway);
     expect(refused.status).toBe(412);
-    expect(refused.body.error).toEqual({ message: UNKNOWN_CAPABILITIES_TEXT, type: 'invalid_request', param: 'model', code: 'capabilities_unknown' });
+    expect(refused.body.error).toEqual({ message: UNKNOWN_CAPABILITIES_TEXT, type: 'invalid_request', param: 'model', code: 'capabilities_unknown', plan: { profile: PROFILE_ID, account: ACCOUNT } });
     const healthBefore = await getJson(client, '/v1/momonga/health');
     expect(healthBefore.body.targets.gpt).toMatchObject({ ok: false, reason: 'capabilities_unknown', detail: UNKNOWN_CAPABILITIES_TEXT });
     expect((await gateway.get(`${accountRoute(PLAN_ROUTES.accountModels, ACCOUNT)}?profile=${PROFILE_ID}&refresh=1`)).status).toBe(200);

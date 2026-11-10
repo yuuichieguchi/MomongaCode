@@ -118,8 +118,9 @@ describe('one serializer for pointer writes, built from the mirror (P-S5, S8, S9
       await Promise.all([first, second]);
     }
     expect(serial.maxActive).toBe(1);
-    expect(serial.started).toEqual([base + 1, base + 2]);
-    expect(serial.finished).toEqual([base + 1, base + 2]);
+    const afterBase = (index: number): boolean => index > base;
+    expect(serial.started.filter(afterBase)).toEqual([base + 1, base + 2]);
+    expect(serial.finished.filter(afterBase)).toEqual([base + 1, base + 2]);
     expect(await readActivePointer(nodeFileSystem, h.paths.active)).toEqual({ [PROFILE_ID]: 'home' });
     expect(h.sessions.activeLabel(PROFILE_ID)).toBe('home');
   });

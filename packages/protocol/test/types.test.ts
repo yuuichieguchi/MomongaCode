@@ -11,6 +11,7 @@ import type {
   RunHealth,
   ToolCallingMode,
   ToolCallingSetting,
+  Unavailable,
 } from '@momonga/protocol';
 
 describe('protocol capability types', () => {
@@ -25,7 +26,7 @@ describe('protocol capability types', () => {
         promptCache?: { kind: 'breakpoints'; maxBreakpoints: number } | { kind: 'key' } | { kind: 'automatic' } | { kind: 'none' };
         contextWindow: number;
         maxOutputTokens: number;
-        toolCalling: ToolCallingMode | { state: 'needs_probe'; message: string; evidence: string; remedy: string } | { state: 'probing'; message: string; retryAfterSeconds: number };
+        toolCalling: ToolCallingMode | { state: 'needs_probe'; message: string; evidence: string; remedy: string } | { state: 'probing'; message: string; retryAfterSeconds: number } | Unavailable;
         structuredOutput: 'json_schema' | 'none';
         jsonMode?: 'json_object' | 'none';
         streaming: boolean;

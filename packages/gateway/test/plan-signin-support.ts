@@ -64,6 +64,7 @@ export type PlanGatewayOptions = {
   catalogListKey?: string;
   catalogReply?: PlanResponsesOptions['catalogReply'];
   planStore?: (store: ListableCredentialStore) => ListableCredentialStore;
+  pinned?: boolean;
 };
 
 export const holdNextExchange = (gateway: PlanGateway): { reached: Promise<void>; release(): void } => {
@@ -108,7 +109,7 @@ export const startPlanGateway = async (options: PlanGatewayOptions = {}): Promis
           adapter: 'open-responses',
           model: 'plan-model',
           ...(options.declaredCapabilities === false ? {} : { capabilities: { contextWindow: 128000, maxOutputTokens: 16000 } }),
-          plan: { profile: PROFILE_ID, account: ACCOUNT },
+          plan: options.pinned === false ? { profile: PROFILE_ID } : { profile: PROFILE_ID, account: ACCOUNT },
         },
       },
     },

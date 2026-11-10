@@ -25,6 +25,41 @@ const PARAM_SHAPE = /^[A-Za-z0-9_.[\]:-]{1,128}$/;
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
+export const redactedError = (redactor: Redactor, error: unknown): Error => {
+  const redacted = new Error(redactor.text(messageOf(error)));
+  if (error instanceof Error) {
+    redacted.name = error.name;
+    if (error.stack !== undefined) redacted.stack = redactor.whole(error.stack);
+  }
+  return redacted;
+};
+
+const redactedOrNull = (redactor: Redactor, value: string | null): string | null => (value === null ? null : redactor.whole(value));
+
+export const redactedGatewayError = (redactor: Redactor, error: GatewayError): GatewayError => {
+  const message = redactor.whole(error.body.message);
+  const code = redactedOrNull(redactor, error.body.code);
+  const param = redactedOrNull(redactor, error.body.param);
+  if (message === error.body.message && code === error.body.code && param === error.body.param) return error;
+  return new GatewayError({ status: error.status, type: error.body.type, code, param, headers: { ...error.headers }, message, ...(error.body.plan === undefined ? {} : { plan: error.body.plan }) });
+};
+
+export const redactedEvent = (redactor: Redactor, event: StreamEvent): StreamEvent => {
+  if (event.type === 'error') {
+    const message = redactor.whole(event.error.message);
+    const code = redactedOrNull(redactor, event.error.code);
+    const param = redactedOrNull(redactor, event.error.param);
+    if (message === event.error.message && code === event.error.code && param === event.error.param) return event;
+    return { ...event, error: { ...event.error, message, code, param } };
+  }
+  if (event.type !== 'response.failed') return event;
+  const { error } = event.response;
+  const message = redactor.whole(error.message);
+  const code = redactor.whole(error.code);
+  if (message === error.message && code === error.code) return event;
+  return { ...event, response: { ...event.response, error: { ...error, message, code } } };
+};
+
 export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoningOrigin: ReasoningOriginCodec): GuardedAdapter => {
   const shaped = (value: unknown, shape: RegExp): string | null =>
     typeof value === 'string' && shape.test(value) && redactor.text(value) === value ? value : null;
@@ -36,6 +71,7 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
     type: body.type,
     code: namedCode(body.code),
     param: shaped(body.param, PARAM_SHAPE),
+    ...(body.plan === undefined ? {} : { plan: body.plan }),
   });
 
   const guardedClassified = (classified: ClassifiedError): ClassifiedError => ({ ...classified, error: guardedBody(classified.error) });
@@ -48,7 +84,7 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
     const code = namedCode(error.body.code);
     const param = shaped(error.body.param, PARAM_SHAPE);
     if (message === error.body.message && code === error.body.code && param === error.body.param) return error;
-    return new GatewayError({ status: error.status, type: error.body.type, code, param, headers: { ...error.headers }, message });
+    return new GatewayError({ status: error.status, type: error.body.type, code, param, headers: { ...error.headers }, message, ...(error.body.plan === undefined ? {} : { plan: error.body.plan }) });
   };
 
   const guardedError = (error: unknown): unknown => {
@@ -72,6 +108,7 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
           message: redactor.text(error.message),
           param: 'param' in error ? shaped(error.param, PARAM_SHAPE) : null,
           ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
+          ...(error.plan === undefined ? {} : { plan: error.plan }),
         },
       },
     };
@@ -107,7 +144,7 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
     };
   };
 
-  const { countTokens, countWire, compact, renderWire, renderCompactWire, health, roomFacts, close } = inner;
+  const { countTokens, countWire, compact, renderWire, renderCompactWire, health, roomFacts, close, servedAccount } = inner;
 
   const guardedHealth = (check: NonNullable<ProviderAdapter['health']>) => async (target: AdapterTarget): Promise<HealthResult> => {
     try {
@@ -142,6 +179,7 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
     toolChoiceWire: (capabilities, target) => inner.toolChoiceWire(capabilities, target),
     ...(health === undefined ? {} : { health: guardedHealth(health) }),
     ...(roomFacts === undefined ? {} : { roomFacts: (target) => converting(() => roomFacts.call(inner, target)) }),
+    ...(servedAccount === undefined ? {} : { servedAccount: (target: AdapterTarget) => servedAccount.call(inner, target) }),
     ...(close === undefined ? {} : { close: (stop) => close.call(inner, stop) }),
     [guardBrand]: true,
   };

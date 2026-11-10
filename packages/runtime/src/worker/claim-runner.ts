@@ -12,7 +12,7 @@ import type { ClaimContext, Flow, RunMemory, Terminals } from './claim-context.t
 import { reconcileStartedCalls, releaseWaitingOnCancel } from './cancel-recovery.ts';
 import { startClaimControl } from './claim-control.ts';
 import type { ClaimControl } from './claim-control.ts';
-import { dispositionOf, observedCodeOf } from './gateway-policy.ts';
+import { dispositionOf, observedCodeOf, terminalOf } from './gateway-policy.ts';
 import { heartbeatMsFor } from './heartbeat.ts';
 import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
 import { meteredOutputFit, reconcileOutputFit } from './output-fit.ts';
@@ -210,16 +210,13 @@ const requeueOrStop = async (
 ): Promise<void> => {
   if (await stopRejectedWrapUp(options, claim, journal, terminals, cause)) return;
   const disposition = dispositionOf(cause, memory.interruptions);
-  if (disposition.kind === 'fail') {
-    await terminals.finish('FAILED', { error: { code: disposition.code, message: disposition.message } });
+  if (disposition.kind === 'fail' || disposition.kind === 'stop') {
+    const terminal = terminalOf(disposition);
+    await terminals.finish(terminal.to, terminal.patch);
     return;
   }
   if (disposition.kind === 'timeout') {
     await terminals.finish('STOPPED', { stopReason: 'timeout' });
-    return;
-  }
-  if (disposition.kind === 'stop') {
-    await terminals.finish('STOPPED', { stopReason: disposition.reason, error: { code: disposition.code, message: disposition.message } });
     return;
   }
   if (disposition.kind === 'wait') {

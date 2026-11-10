@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { REDACTED_MARKER } from '@momonga/foundation';
 import { TARGET_PROBING_MESSAGE } from '@momonga/protocol';
-import type { Capabilities } from '@momonga/protocol';
+import type { Capabilities, ProviderAdapter } from '@momonga/protocol';
 import { createScriptedAdapter } from '@momonga/testkit';
 import { invalidRequest } from '../src/core/errors.ts';
 import { targetProbingError } from '../src/probe/auto-probe.ts';
@@ -43,7 +43,7 @@ const failing = (fails: () => unknown) => capabilityFailingAdapter({ inner: avai
 
 type Entry = { id: string; capabilities: Record<string, unknown>; targetCapabilities: Record<string, Record<string, unknown>> };
 
-const listing = async (adapters: Record<string, ReturnType<typeof available>>, aliases: Record<string, string[]>): Promise<{ status: number; entries: Entry[] }> => {
+const listing = async (adapters: Record<string, ProviderAdapter>, aliases: Record<string, string[]>): Promise<{ status: number; entries: Entry[] }> => {
   const targets = Object.fromEntries(Object.keys(adapters).map((name) => [name, { model: `model-${name}` }]));
   const { client } = await startGateway({ credentials: [KEY], adapters, config: { aliases, targets } });
   const response = await getJson(client, '/v1/momonga/models');

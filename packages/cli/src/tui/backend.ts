@@ -50,7 +50,7 @@ export type TuiBackend = {
   cancel(runId: string): Promise<void>;
   resolveApproval(approvalId: string, optionId: string): Promise<void>;
   resolveElicitation(inputId: string, responses: Readonly<Record<string, ElicitationAnswerRecord>>): Promise<void>;
-  openUrl(url: URL): Promise<void>;
+  openUrl(url: URL, watch: AbortSignal | undefined, onFailure: (message: string) => void): void;
   copyToClipboard(text: string): void;
   skills(): Promise<SkillsResponse>;
   memories(filter?: MemoryFilter): Promise<MemoryView[]>;
@@ -135,12 +135,12 @@ export const createTuiBackend = (
       const { detectLocalServers } = await import('@momonga/gateway');
       const { settings } = await loadUserSettings({ home: paths.home });
       return withIdentityReadFetch(ports, closing.signal, (fetch) =>
-        detectLocalServers({ candidates: LOCAL_SERVER_CANDIDATES, typed, signal: closing.signal, fetch, ...localManagedPorts(settings.models.servers) }),
+        detectLocalServers({ candidates: LOCAL_SERVER_CANDIDATES, typed, signal: closing.signal, fetch, ...localManagedPorts(settings.models.servers, ports) }),
       );
     },
-    addModelConnection: (connection) => addModelConnection(paths.settingsFile, connection),
-    dismissedNotices: () => readDismissedNotices(paths.state, onNotice),
-    dismissNotice: (key) => dismissNotice(paths.state, key, new Date(ports.clock.now())),
+    addModelConnection: (connection) => addModelConnection(paths.home, paths.settingsFile, connection),
+    dismissedNotices: () => readDismissedNotices(ports.files, paths.state, onNotice),
+    dismissNotice: (key) => dismissNotice(ports.files, paths.state, key, new Date(ports.clock.now())),
     boot: async () => {
       await ensureDaemon(ports, paths, { signal: closing.signal, onNotice });
       client = connectRuntime(paths);
@@ -195,7 +195,7 @@ export const createTuiBackend = (
     resolveElicitation: async (inputId, responses) => {
       await runtime().resolveElicitation(inputId, responses);
     },
-    openUrl: (url) => ports.openUrl(url, closing.signal),
+    openUrl: (url, watch, onFailure) => ports.openUrl(url, watch === undefined ? closing.signal : AbortSignal.any([closing.signal, watch]), onFailure),
     copyToClipboard: (text) => {
       const terminal = ports.terminal;
       if (terminal === undefined) throw new Error('the clipboard request needs a terminal');

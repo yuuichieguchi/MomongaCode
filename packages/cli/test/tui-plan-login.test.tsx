@@ -218,6 +218,22 @@ describe('a command and the TUI print the same sign-out lines (P-C8)', () => {
   });
 });
 
+describe('/logout of an account with nothing to sign out', () => {
+  it('shows only that the account was already signed out', async () => {
+    const { app, backend } = await startPlan({ accounts: [account({ label: 'home' }), account({ label: 'work', active: false })], signOutRevocation: 'none' });
+    await ready(app);
+    await submitLine(app, '/logout');
+    await choose(app, 'work · ada@example.com');
+    await quiet();
+    app.stdin.write(KEYS.enter);
+    await eventually(() => routesOf(backend).includes('sign-out'), 'the sign-out');
+    const output = await untilOutput(app, 'work was already signed out.');
+    expect(output).not.toContain('Signed out work');
+    expect(output).not.toContain('Remote revocation');
+    app.unmount();
+  });
+});
+
 describe('Using ChatGPT plan in the footer', () => {
   const planned = {
     targets: ['plan-gpt', 'metered-key'],

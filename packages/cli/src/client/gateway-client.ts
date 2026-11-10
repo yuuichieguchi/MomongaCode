@@ -1,13 +1,11 @@
 import { createUdsClient, isRecord, parseOutsideJson } from '@momonga/foundation';
 import type { SocketResolver } from '@momonga/foundation';
-import { JSON_MODES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_ROUTES, TARGET_BILLINGS, agentReadiness, isProbingCapabilities, isToolCallingState } from '@momonga/protocol';
+import { JSON_MODES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_REVOCATIONS, PLAN_ROUTES, TARGET_BILLINGS, TARGET_HEALTH_REASONS, isNotListedCapabilities, isToolCallingState, notListedMessage, planAccountRefOf } from '@momonga/protocol';
 import type {
-  AliasCapabilities,
   Capabilities,
   GatewayHealth,
   MomongaModelEntry,
   MomongaModelList,
-  PlanAccountRef,
   PlanAccountView,
   PlanAccountsResponse,
   PlanActiveRequest,
@@ -28,7 +26,6 @@ import type {
   PlanSignOutResponse,
   PlanTargetRequest,
   PlanTargetResponse,
-  ProbingCapabilities,
   TargetHealth,
   UsageReport,
 } from '@momonga/protocol';
@@ -74,7 +71,7 @@ export type PlanGatewayClient = {
 export type GatewayClient = {
   models(): Promise<readonly MomongaModelEntry[]>;
   modelOf(alias: string): Promise<MomongaModelEntry>;
-  capabilitiesOf(alias: string): Promise<AliasCapabilities | ProbingCapabilities>;
+  capabilitiesOf(alias: string): Promise<MomongaModelEntry['capabilities']>;
   contextWindowOf(alias: string): Promise<number>;
   usageOf(runId: string): Promise<UsageReport>;
   health(): Promise<GatewayHealth>;
@@ -106,15 +103,13 @@ const isCapabilities = (value: unknown): value is Capabilities =>
   (value['tokenErrorRatio'] === undefined || typeof value['tokenErrorRatio'] === 'number') &&
   (value['probedAt'] === undefined || typeof value['probedAt'] === 'string');
 
-const isProbingListing = (value: unknown): boolean => isRecord(value) && isToolCallingState(value['toolCalling']) && agentReadiness({ toolCalling: value['toolCalling'] }).state === 'probing';
+const isNotListedListing = (value: unknown): boolean => isRecord(value) && isToolCallingState(value['toolCalling']) && isNotListedCapabilities({ toolCalling: value['toolCalling'] });
 
 const isRecordOf = (value: unknown, holds: (entry: unknown) => boolean): boolean => isRecord(value) && Object.values(value).every(holds);
 
 const isString = (value: unknown): value is string => typeof value === 'string';
 
 const isOptional = (value: unknown, holds: (entry: unknown) => boolean): boolean => value === undefined || holds(value);
-
-const isAccountRef = (value: unknown): value is PlanAccountRef => isRecord(value) && isString(value['profile']) && isString(value['account']);
 
 const isTargetPlan = (value: unknown): boolean => isRecord(value) && isString(value['profile']) && isOptional(value['account'], isString);
 
@@ -127,18 +122,16 @@ const isModelList = (value: unknown): value is MomongaModelList =>
       typeof entry['id'] === 'string' &&
       Array.isArray(entry['targets']) &&
       entry['targets'].every((target) => typeof target === 'string') &&
-      (isCapabilities(entry['capabilities']) || isProbingListing(entry['capabilities'])) &&
+      (isCapabilities(entry['capabilities']) || isNotListedListing(entry['capabilities'])) &&
       isOptional(entry['targetBilling'], (billing) => isRecordOf(billing, (kind) => oneOf(kind, TARGET_BILLINGS))) &&
       isOptional(entry['targetPlan'], (plans) => isRecordOf(plans, isTargetPlan)),
   );
-
-const HEALTH_REASONS = ['not_running', 'unhealthy', 'precondition_failed', 'health_check_failed', 'sign_in_required', 'store_unreadable', 'store_unwritable', 'capabilities_unknown'] as const satisfies readonly NonNullable<TargetHealth['reason']>[];
 
 const isTargetHealth = (value: unknown): value is TargetHealth =>
   isRecord(value) &&
   typeof value['ok'] === 'boolean' &&
   oneOf(value['breaker'], ['closed', 'open', 'half-open']) &&
-  isOptional(value['reason'], (reason) => oneOf(reason, HEALTH_REASONS)) &&
+  isOptional(value['reason'], (reason) => oneOf(reason, TARGET_HEALTH_REASONS)) &&
   isOptional(value['detail'], isString) &&
   isOptional(value['remediation'], isString);
 
@@ -191,9 +184,9 @@ const isCompleteResponse = (value: unknown): value is PlanSignInCompleteResponse
   ((value['outcome'] === 'retry' && value['reason'] === 'invalid_grant') ||
     (oneOf(value['outcome'], ['signed_in', 'plan_disabled']) && isAccountView(value['account']) && typeof value['firstSignIn'] === 'boolean'));
 
-const isSignOutResponse = (value: unknown): value is PlanSignOutResponse => isRecord(value) && oneOf(value['revocation'], ['confirmed', 'unconfirmed']) && isString(value['usageUrl']);
+const isSignOutResponse = (value: unknown): value is PlanSignOutResponse => isRecord(value) && oneOf(value['revocation'], PLAN_REVOCATIONS) && isString(value['usageUrl']);
 
-const isActiveResponse = (value: unknown): value is PlanActiveResponse => isRecord(value) && isAccountRef(value['active']);
+const isActiveResponse = (value: unknown): value is PlanActiveResponse => isRecord(value) && planAccountRefOf(value['active']) !== undefined;
 
 const isCatalogEntry = (value: unknown): value is PlanCatalogEntry =>
   isRecord(value) &&
@@ -277,11 +270,11 @@ export const createGatewayClient = (options: { resolveSocket: SocketResolver }):
     return entry;
   };
 
-  const capabilitiesOf = async (alias: string): Promise<AliasCapabilities | ProbingCapabilities> => (await modelOf(alias)).capabilities;
+  const capabilitiesOf = async (alias: string): Promise<MomongaModelEntry['capabilities']> => (await modelOf(alias)).capabilities;
 
   const contextWindowOf = async (alias: string): Promise<number> => {
     const capabilities = await capabilitiesOf(alias);
-    if (isProbingCapabilities(capabilities)) throw new Error(capabilities.toolCalling.message);
+    if (isNotListedCapabilities(capabilities)) throw new Error(notListedMessage(capabilities));
     return capabilities.contextWindow;
   };
 

@@ -24,7 +24,7 @@ export interface FileSystem extends AtomicWriteFileSystem {
   readdirEntries(directory: string): Promise<fs.Dirent[]>;
   readFile(file: string): Promise<Uint8Array>;
   readTextFile(file: string): Promise<string>;
-  mkdir(directory: string): Promise<void>;
+  mkdir(directory: string, mode?: number): Promise<void>;
   mkdirPrivate(directory: string): Promise<void>;
   readOwnerOnlyTextFile(file: string, description: string, maxBytes?: number): Promise<string | undefined>;
   writeFile(file: string, content: FileContent): Promise<void>;
@@ -100,7 +100,7 @@ export const nodeFileSystem: FileSystem = {
   readdirEntries: (directory) => fs.promises.readdir(directory, { withFileTypes: true }),
   readFile: async (file) => new Uint8Array(await fs.promises.readFile(file)),
   readTextFile: (file) => fs.promises.readFile(file, 'utf8'),
-  mkdir: async (directory) => void (await fs.promises.mkdir(directory, { recursive: true })),
+  mkdir: async (directory, mode) => void (await fs.promises.mkdir(directory, { recursive: true, ...(mode === undefined ? {} : { mode }) })),
   mkdirPrivate: async (directory) => {
     await fs.promises.mkdir(directory, { recursive: true, mode: PRIVATE_MODE.directory });
     await fs.promises.chmod(directory, PRIVATE_MODE.directory);

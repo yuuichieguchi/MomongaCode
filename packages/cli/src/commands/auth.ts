@@ -1,4 +1,6 @@
 import type { MomongaModelEntry, PlanAccountView, PlanAccountsResponse, PlanProfileView, PlanSignInCompleteResponse, TargetBilling } from '@momonga/protocol';
+import type { OpenUrl } from '@momonga/foundation';
+import { couldNotOpenBrowser } from '../browser-text.ts';
 import type { PlanGatewayClient } from '../client/gateway-client.ts';
 import { createInterface } from 'node:readline';
 import { SANDBOX_OFF_NOTICE, accountStateWord, accountsOf, nextAccountLabel, profileOf, savedAccountAction } from '../plan/accounts.ts';
@@ -12,7 +14,8 @@ import {
   pastedCallbackProblem,
   signIn,
 } from '../plan/sign-in.ts';
-import type { SandboxKind, SignInShown, SignInWaitTimers, StartSignInListener } from '../plan/sign-in.ts';
+import type { SandboxKind, SignInWaitTimers, StartSignInListener } from '../plan/sign-in.ts';
+import { codeNotAcceptedLine, listProblemLine, noBrowserHintLine, planDisabledLines, resumeLine, sensitiveUrlLines, signedInLine, signedOutLines, tryAgainLine } from '../plan/texts.ts';
 import { escapedLines } from '../terminal-writer.ts';
 
 export { nextAccountLabel };
@@ -62,11 +65,14 @@ export const authStatus = async (ports: AuthStatusPorts, options: { json: boolea
     return [
       `${profile.messages.pickerLabel} (${profile.id})`,
       ...(accounts.length === 0 ? ['  not signed in'] : accounts.flatMap(accountLines)),
-      ...(listed.listProblems ?? []).map((problem) => `  could not list ${problem.file}: ${problem.cause}`),
       `${profile.messages.manageUsageLabel}: ${profile.usageUrl}`,
     ];
   });
-  print(ports.stdout, [...(lines.length === 0 ? ['no subscription provider is available'] : lines), modelLineText(model)]);
+  print(ports.stdout, [
+    ...(lines.length === 0 ? ['no subscription provider is available'] : lines),
+    ...(listed.listProblems ?? []).map((problem) => `  ${listProblemLine(problem)}`),
+    modelLineText(model),
+  ]);
   return 0;
 };
 
@@ -83,13 +89,11 @@ export type AuthLoginPorts = {
   stderr: Writer;
   plan: PlanGatewayClient;
   startListener: StartSignInListener;
-  openUrl(url: URL): Promise<void>;
+  openUrl: OpenUrl;
   sandbox(): Promise<SandboxKind>;
   signal: AbortSignal;
   timers: SignInWaitTimers;
 } & LoginTerminalPorts;
-
-const SENSITIVE_URL_LINE = 'Open this URL (it is sensitive: do not share it):';
 
 const PASTE_PROMPT = `${PASTE_LABEL}, then press Enter. Otherwise finish the sign-in in the browser.`;
 
@@ -137,15 +141,15 @@ const chosenProfile = async (ports: AuthLoginPorts, listed: PlanAccountsResponse
   return index === undefined ? undefined : listed.profiles[index];
 };
 
-const outcomeLines = (profile: PlanProfileView, answer: PlanSignInCompleteResponse): string[] => {
+const outcomeLines = (profile: PlanProfileView, account: string, answer: PlanSignInCompleteResponse): string[] => {
   switch (answer.outcome) {
     case 'retry':
-      return [`${profile.messages.identityLabel} did not accept the sign-in code (invalid_grant). Run momonga auth login ${profile.id} again to start a new sign-in.`];
+      return [codeNotAcceptedLine('headless', profile, account)];
     case 'plan_disabled':
-      return [`${profile.messages.planNotEnabledMessage} · Run momonga auth login ${profile.id} --account ${answer.account.label} --reconsent to enable it`];
+      return planDisabledLines('headless', profile, answer.account.label);
     case 'signed_in':
       return [
-        `Signed in as ${answer.account.label}${answer.account.email === undefined ? '' : ` (${answer.account.email})`}`,
+        signedInLine(answer.account),
         ...(answer.firstSignIn ? [profile.messages.firstSignIn.title, profile.messages.firstSignIn.body, `${profile.messages.manageUsageLabel}: ${profile.usageUrl}`] : []),
       ];
   }
@@ -163,7 +167,7 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
   }
   if ((await ports.sandbox()) === 'none') print(ports.stderr, SANDBOX_OFF_NOTICE);
   print(ports.stdout, [profile.messages.description]);
-  const tryAgain = `Run momonga auth login ${profile.id} --account ${account} to try again.`;
+  const tryAgain = tryAgainLine('headless', { profile: profile.id, account });
   const pasted =
     ports.isTerminal
       ? (state: string, signal: AbortSignal): Promise<string> => {
@@ -180,11 +184,15 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
         signal: ports.signal,
         timers: ports.timers,
         pasted,
-        authorize: async ({ url }: SignInShown) => {
-          print(ports.stdout, [SENSITIVE_URL_LINE, url.href]);
-          if (options.browser === false) return;
-          await ports.openUrl(url).catch((error: unknown) => {
-            print(ports.stderr, [`Could not open the browser (${error instanceof Error ? error.message : String(error)}). Open the URL above to continue.`]);
+        authorize: async ({ url }, waiting) => {
+          if (options.browser === false) {
+            print(ports.stdout, sensitiveUrlLines(url));
+            return;
+          }
+          print(ports.stdout, [noBrowserHintLine(profile.id, account)]);
+          ports.openUrl(url, waiting, (message) => {
+            print(ports.stdout, sensitiveUrlLines(url));
+            print(ports.stderr, [`${couldNotOpenBrowser(message)} Open the URL above to continue.`]);
           });
         },
       },
@@ -205,7 +213,7 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
     }
     throw error;
   }
-  print(ports.stdout, outcomeLines(profile, answer));
+  print(ports.stdout, outcomeLines(profile, account, answer));
   return answer.outcome === 'signed_in' ? 0 : EXIT_NOT_SIGNED_IN;
 };
 
@@ -234,10 +242,7 @@ export const authLogout = async (ports: AuthLogoutPorts, options: { account?: st
   }
   const report = await ports.plan.signOut({ profile: chosen.profile, account: chosen.label });
   const profile = profileOf(listed.profiles, chosen.profile);
-  print(ports.stdout, [
-    `Signed out ${chosen.label}`,
-    ...(report.revocation === 'confirmed' ? [] : [`The sign-in could not be confirmed as revoked; disconnect the app in ${profile.messages.identityLabel} settings: ${report.usageUrl}`]),
-  ]);
+  print(ports.stdout, signedOutLines(profile, chosen.label, report));
   return 0;
 };
 
@@ -251,7 +256,7 @@ export const authResume = async (ports: AuthResumePorts, options: { account: str
   }
   const chosen = accountNamed(listed.accounts, options.account);
   const answer = await ports.plan.resume(chosen.label, { profile: chosen.profile });
-  print(ports.stdout, [answer.resumed ? `Resumed plan use for ${chosen.label}` : `${chosen.label} is not paused`]);
+  print(ports.stdout, [resumeLine(chosen.label, answer.resumed)]);
   return 0;
 };
 

@@ -1,4 +1,7 @@
 import type { DialectId } from './dialect.ts';
+import { ERROR_TYPES } from './open-responses.ts';
+import type { ErrorType } from './open-responses.ts';
+import { CAPABILITIES_UNKNOWN_CODE, SIGN_IN_REQUIRED_CODE } from './plan-api.ts';
 
 export type ToolCallingMode = 'native' | 'constrained' | 'none';
 
@@ -6,9 +9,13 @@ export type NeedsProbe = { state: 'needs_probe'; message: string; evidence: stri
 
 export type Probing = { state: 'probing'; message: string; retryAfterSeconds: number };
 
-export type ToolCallingState = ToolCallingMode | NeedsProbe | Probing;
+export type Unavailable = { state: 'unavailable'; status: number; type: ErrorType; code: string; message: string; param?: string };
+
+export type ToolCallingState = ToolCallingMode | NeedsProbe | Probing | Unavailable;
 
 export type ProbingCapabilities = { toolCalling: Probing; source: 'unprobed' };
+export type UnavailableCapabilities = { toolCalling: Unavailable; source: 'unprobed' };
+export type NotListedCapabilities = ProbingCapabilities | UnavailableCapabilities;
 export type ToolCallingSetting = 'native' | 'constrained' | 'auto';
 
 export const TARGET_BILLINGS = ['metered', 'local', 'plan'] as const;
@@ -224,22 +231,31 @@ export const applyCapabilityOverride = (declared: Capabilities, override: Capabi
   return { ...declaredCore, ...overrideCore, ...imageCapability(imageInput, imageTokens) };
 };
 
-export type HealthResult = {
-  ok: boolean;
-  reason?: 'not_running' | 'unhealthy' | 'precondition_failed' | 'health_check_failed' | 'sign_in_required' | 'store_unreadable' | 'store_unwritable' | 'capabilities_unknown';
-  detail?: string;
-  remediation?: string;
-};
-
 export const PRECONDITION_FAILED_CODE = 'precondition_failed';
 
+export const TARGET_HEALTH_REASONS = ['not_running', 'unhealthy', PRECONDITION_FAILED_CODE, 'health_check_failed', SIGN_IN_REQUIRED_CODE, 'store_unreadable', 'store_unwritable', CAPABILITIES_UNKNOWN_CODE] as const;
+export type TargetHealthReason = (typeof TARGET_HEALTH_REASONS)[number];
+
+export type HealthResult = { ok: boolean; reason?: TargetHealthReason; detail?: string; remediation?: string };
+
 const TOOL_CALLING_MODES: readonly ToolCallingMode[] = ['native', 'constrained', 'none'];
+
+const MIN_HTTP_STATUS = 100;
+const MAX_HTTP_STATUS = 599;
+
+const isUnavailableFields = (record: Record<string, unknown>): boolean => {
+  const { status, type, code, message, param } = record;
+  if (typeof status !== 'number' || !Number.isInteger(status) || status < MIN_HTTP_STATUS || status > MAX_HTTP_STATUS) return false;
+  if (!ERROR_TYPES.some((known) => known === type)) return false;
+  return typeof code === 'string' && typeof message === 'string' && (param === undefined || typeof param === 'string');
+};
 
 export const isToolCallingState = (value: unknown): value is ToolCallingState => {
   if (typeof value === 'string') return TOOL_CALLING_MODES.some((mode) => mode === value);
   if (typeof value !== 'object' || value === null) return false;
   const record = value as Record<string, unknown>;
   if (record['state'] === 'probing') return typeof record['message'] === 'string' && typeof record['retryAfterSeconds'] === 'number';
+  if (record['state'] === 'unavailable') return isUnavailableFields(record);
   return record['state'] === 'needs_probe' && typeof record['message'] === 'string' && typeof record['evidence'] === 'string' && typeof record['remedy'] === 'string';
 };
 
@@ -269,12 +285,21 @@ export function agentReadiness(input: ReadinessInput): Readiness {
   const { toolCalling } = input;
   if (typeof toolCalling !== 'string') {
     if (toolCalling.state === 'probing') return { state: 'probing', message: toolCalling.message, retryAfterSeconds: toolCalling.retryAfterSeconds };
+    if (toolCalling.state === 'unavailable') return { state: 'unavailable', message: toolCalling.message, remedy: UNAVAILABLE_REMEDY };
     return { state: 'needs_probe', message: toolCalling.message, evidence: toolCalling.evidence, remedy: toolCalling.remedy };
   }
   return toolCalling === 'none' ? { state: 'no_tools', message: NO_TOOLS_MESSAGE, remedy: NO_TOOLS_REMEDY } : { state: 'ready' };
 }
 
 export const isProbingCapabilities = (capabilities: { toolCalling: ToolCallingState }): capabilities is ProbingCapabilities => agentReadiness({ toolCalling: capabilities.toolCalling }).state === 'probing';
+
+export const isUnavailableCapabilities = (capabilities: { toolCalling: ToolCallingState }): capabilities is UnavailableCapabilities =>
+  typeof capabilities.toolCalling === 'object' && capabilities.toolCalling.state === 'unavailable';
+
+export const isNotListedCapabilities = (capabilities: { toolCalling: ToolCallingState }): capabilities is NotListedCapabilities =>
+  isUnavailableCapabilities(capabilities) || isProbingCapabilities(capabilities);
+
+export const notListedMessage = (capabilities: NotListedCapabilities): string => capabilities.toolCalling.message;
 
 export const readinessText = (readiness: Exclude<Readiness, { state: 'ready' }>): string => ('remedy' in readiness ? [readiness.message, readiness.remedy].join('\n') : readiness.message);
 

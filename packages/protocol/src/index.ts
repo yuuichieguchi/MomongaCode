@@ -35,6 +35,10 @@ export type {
   NeedsProbe,
   Probing,
   ProbingCapabilities,
+  NotListedCapabilities,
+  TargetHealthReason,
+  Unavailable,
+  UnavailableCapabilities,
   ToolCallingMode,
   ToolCallingState,
   ToolCallingSetting,
@@ -127,12 +131,16 @@ export {
   THINKING_OFFS,
   ALLOWED_TOOLS_FORMS,
   PRECONDITION_FAILED_CODE,
+  TARGET_HEALTH_REASONS,
   NO_MODEL_TARGET,
   TARGET_NOT_READY,
   JSON_MODES,
   agentReadiness,
+  isNotListedCapabilities,
   isProbingCapabilities,
   isToolCallingState,
+  isUnavailableCapabilities,
+  notListedMessage,
   readinessRemedyOf,
   readinessText,
 } from './capabilities.ts';
@@ -144,6 +152,20 @@ export type { ManagedDeclarableField, ManagedRecordedDefaults, ManagedServerDesc
 export {
   BREAKER_VERDICTS,
   USAGE_LIMIT_CODES,
+  USAGE_LIMIT_CODE,
+  WORKSPACE_USAGE_LIMIT_CODE,
+  USAGE_PAUSED_CODE,
+  PLAN_STORE_UNREADABLE_CODE,
+  PLAN_STORE_UNWRITABLE_CODE,
+  PLAN_HOST_IDENTITY_UNAVAILABLE_CODE,
+  PLAN_CREDENTIAL_UNAVAILABLE_CODE,
+  PLAN_ACCOUNT_NOT_SELECTABLE_CODE,
+  PLAN_SIGN_IN_PENDING_CODE,
+  PLAN_SIGN_OUT_IN_PROGRESS_CODE,
+  CAPABILITIES_UNKNOWN_CODE,
+  PLAN_CODES,
+  PLAN_HEALTH_REASONS,
+  PLAN_REVOCATIONS,
   CREDENTIAL_EFFECTS,
   ERROR_FALLBACKS,
   PLAN_ACCOUNT_STATES,
@@ -164,6 +186,7 @@ export type {
   ErrorRule,
   ErrorRules,
   PlanAccountRef,
+  PlanHealthReason,
   PlanAccountState,
   PlanAccountView,
   PlanAccountsResponse,
@@ -189,6 +212,7 @@ export type {
   PlanSignInFailure,
   PlanSignOutRequest,
   PlanSignOutResponse,
+  PlanRevocation,
   PlanTargetRequest,
   PlanTargetResponse,
 } from './plan-api.ts';
@@ -315,7 +339,6 @@ export type {
   CostFallbackView,
   CostTotalsView,
   RoleCostView,
-  FallbackCauseView,
   GatewayCostReportView,
   JsonSchema,
   McpAuthState,
@@ -487,7 +510,7 @@ export type {
   ModelRejectionReason,
   UsageChargePurpose,
 } from './run-types.ts';
-export { BILLING_CHANGE_REASONS, cachedDetailOf, CHAT_REASONING_FIELDS, reportedCachedTokensOf, wireUsageOf, carriesOutput, ERROR_TYPES, OPEN_RESPONSES_STREAM_EVENT_TYPES, OPEN_RESPONSES_VERSION, TERMINAL_STREAM_EVENT_TYPES } from './open-responses.ts';
+export { cachedDetailOf, CHAT_REASONING_FIELDS, reportedCachedTokensOf, wireUsageOf, carriesOutput, ERROR_TYPES, OPEN_RESPONSES_STREAM_EVENT_TYPES, OPEN_RESPONSES_VERSION, TERMINAL_STREAM_EVENT_TYPES } from './open-responses.ts';
 export type {
   Annotation,
   CompactMomongaExtension,
@@ -562,7 +585,7 @@ export type {
   UsageSource,
   UsageTotals,
 } from './gateway-api.ts';
-export type { BillingChangeReason, FallbackCauseRecord, JsonReplyPath, MomongaResponseExtension, WireUsage } from './open-responses.ts';
+export type { JsonReplyPath, MomongaResponseExtension, WireUsage } from './open-responses.ts';
 export type {
   AdapterCompactRequest,
   AdapterCompactResult,
@@ -596,3 +619,6 @@ export type {
   SupervisorPhase,
   SupervisorShutdownResponse,
 } from './supervisor-api.ts';
+export { BILLING_CHANGE_ALLOWED, BILLING_CHANGE_REASONS, BILLING_CHANGE_REFUSED, describeFallbackCause, isFallbackCause, isFallbackCauseList } from './fallback-cause.ts';
+export type { BillingChangeReason, BillingChangeRecord, FallbackCause } from './fallback-cause.ts';
+export { planAccountRefOf } from './plan-account.ts';

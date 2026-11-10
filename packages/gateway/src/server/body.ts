@@ -9,7 +9,7 @@ export const parseRequestJson = (text: string, subject: string): unknown => {
     return parseOutsideJson(text);
   } catch (error) {
     if (error instanceof JsonDepthError) throw invalidRequest('json_too_deep', `${subject} is too deeply nested: ${error.message}`);
-    if (error instanceof SyntaxError) throw invalidRequest('invalid_json', `${subject} is not valid JSON: ${error.message}`);
+    if (error instanceof SyntaxError) throw invalidRequest('invalid_json', `${subject} is not valid JSON`);
     throw error;
   }
 };

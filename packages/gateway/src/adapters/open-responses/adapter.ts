@@ -1,6 +1,7 @@
 import { decodeSse } from '@momonga/foundation';
-import { agentReadiness, readinessText, summaryTokenCapFor } from '@momonga/protocol';
+import { agentReadiness, isUnavailableCapabilities, readinessText, summaryTokenCapFor } from '@momonga/protocol';
 import type { ClassifiedError, ResponseError, Capabilities, ToolChoiceWire, AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
+import { unavailableError } from '../../core/unavailable.ts';
 import { resolveToolChoice } from '../../core/tool-choice.ts';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { boundedSseBytes } from '../shared/body-reading.ts';
@@ -42,6 +43,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
   async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the open-responses adapter is closed');
     const capabilities = ctx.capabilities;
+    if (isUnavailableCapabilities(capabilities)) throw unavailableError(capabilities.toolCalling);
     const readiness = agentReadiness(capabilities);
     if (readiness.state === 'no_tools' && (request.tools ?? []).length > 0) {
       throw new UnsupportedInputError('capability_unsupported', readinessText(readiness), 'tools');
@@ -143,6 +145,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
     renderCompactWire,
     toolChoiceWire: () => OPEN_RESPONSES_TOOL_CHOICE,
     classify,
+    servedAccount: (target: AdapterTarget) => options.authSource(target).resolvedAccount(),
     ...(health === undefined ? {} : { health: (target: AdapterTarget) => health(target) }),
     close: () => {
       closed = true;

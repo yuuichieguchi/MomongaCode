@@ -1,4 +1,5 @@
 import { uuidv7 } from '@momonga/foundation';
+import { redactedError } from './guarded-adapter.ts';
 import type {
   AdapterRequest,
   Capabilities,
@@ -451,12 +452,13 @@ async function* relaySteps(
   const completedAt = Math.floor(clock.now() / 1000);
 
   const failedTerminal = (error: ResponseError, output: ItemField[], retryable: boolean): StreamEvent => {
+    const plan = target.servedAccount();
     const response: FailedResponseResource = {
       ...base,
       status: 'failed',
       completed_at: completedAt,
       output,
-      error,
+      error: plan === undefined ? error : { ...error, plan },
       momonga: momongaFor('estimated', undefined, undefined, retryable),
     };
     return { type: 'response.failed', sequence_number: nextSequence(), response };
@@ -562,7 +564,7 @@ async function* relaySteps(
     }
   }
   if (commitFailure !== undefined) {
-    const message = `the gateway could not persist the response: ${messageOfError(commitFailure)}`;
+    const message = `the gateway could not persist the response: ${redactedError(services.redactor, commitFailure).message}`;
     outcome.settle('neutral');
     opened.span.fail('server_error', commitFailure, message);
     progress.concluded = true;

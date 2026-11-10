@@ -61,7 +61,7 @@ export type FakePlanOptions = FakeBackendOptions & {
   listenerFails?: Error;
   startListener?: StartSignInListener;
   signInTimers?: SignInWaitTimers;
-  signOutRevocation?: 'confirmed' | 'unconfirmed';
+  signOutRevocation?: 'confirmed' | 'unconfirmed' | 'none';
   resumeAnswer?: { resumed: boolean };
 };
 

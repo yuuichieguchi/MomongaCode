@@ -19,6 +19,7 @@ export const keyAuthSource =
     resume: async () => {},
     status: () => ({ state: 'active' }),
     health: () => ({ ok: true }),
+    resolvedAccount: () => undefined,
   });
 
 export const unauthenticatedSource: AdapterAuth = () => ({
@@ -28,13 +29,14 @@ export const unauthenticatedSource: AdapterAuth = () => ({
   resume: async () => {},
   status: () => ({ state: 'active' }),
   health: () => ({ ok: true }),
+  resolvedAccount: () => undefined,
 });
 
-export const sendAuthorized = async (
+export const sendAuthorized = async <Answer extends CompletionResponse>(
   auth: AuthSource,
   signal: AbortSignal,
-  send: (bearer: string | undefined) => Promise<CompletionResponse>,
-): Promise<CompletionResponse> => {
+  send: (bearer: string | undefined) => Promise<Answer>,
+): Promise<Answer> => {
   const sent = await auth.read(signal);
   const response = await send(sent.bearer);
   if (response.status !== UNAUTHORIZED) return response;

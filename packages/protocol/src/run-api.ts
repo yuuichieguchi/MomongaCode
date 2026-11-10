@@ -6,7 +6,9 @@ import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts'
 import { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
 import { CACHE_MISS_CAUSES, PREFIX_EVENTS } from './prefix-events.ts';
 import type { PrefixEvent } from './prefix-events.ts';
-import type { FallbackCauseRecord } from './open-responses.ts';
+import { BILLING_CHANGE_REASONS } from './fallback-cause.ts';
+import type { FallbackCause } from './fallback-cause.ts';
+import { TARGET_BILLINGS } from './capabilities.ts';
 import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES, REFLECTION_DROP_CAUSES, REFLECTION_JOB_STATES, VALIDITY_CLOSERS } from './memory.ts';
 import type { ContextChargePurpose, SummaryFidelity, SummarySource } from './context-record.ts';
 import { AUTO_FIT_FAILED_BOUNDS, AUTO_FIT_MEASUREMENTS } from './auto-mode-gate.ts';
@@ -646,7 +648,14 @@ const runTracePrefix = closed(
   ['preservedItems', 'toolsChanged', 'causes'],
 );
 
-const fallbackCauseSchema = closed({ target: string, code: nullable(string), message: string }, ['target', 'code', 'message']);
+const fallbackCauseBase = { target: string, code: nullable(string), message: string };
+
+const fallbackCauseSchema: JsonSchema = {
+  oneOf: [
+    closed({ ...fallbackCauseBase, fromBilling: enumOf(TARGET_BILLINGS), toBilling: enumOf(TARGET_BILLINGS), reason: enumOf(BILLING_CHANGE_REASONS) }, ['target', 'code', 'message', 'fromBilling', 'toBilling', 'reason']),
+    closed(fallbackCauseBase, ['target', 'code', 'message']),
+  ],
+};
 
 const costFallbackProperties: Record<string, JsonSchema> = {
   fallbackCalls: nonNegativeInteger,
@@ -1010,9 +1019,7 @@ export type JobView = {
 };
 
 export type JobsResponse = { jobs: JobView[] };
-export type FallbackCauseView = FallbackCauseRecord;
-
-export type CostFallbackView = { answeredBy: string; calls: number; failed: FallbackCauseView[] };
+export type CostFallbackView = { answeredBy: string; calls: number; failed: FallbackCause[] };
 
 export type RoleCostView = {
   fallbackCalls?: number;

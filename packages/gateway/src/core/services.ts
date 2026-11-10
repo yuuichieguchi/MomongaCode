@@ -3,6 +3,7 @@ import type { Clock } from '@momonga/foundation';
 import type { PriceTable, Telemetry } from '@momonga/observability';
 import type { CompactionCodec } from './compaction.ts';
 import type { ReasoningOriginCodec } from './reasoning-origin.ts';
+import type { Redactor } from './redaction.ts';
 import type { Router } from './router.ts';
 import type { GatewayStore } from './store.ts';
 import type { PlanTargetRef } from '../plan/api.ts';
@@ -31,6 +32,7 @@ export type GatewayServices = {
   reasoningOrigin: ReasoningOriginCodec;
   closeSignal: AbortSignal;
   forceCloseSignal: AbortSignal;
+  redactor: Redactor;
 };
 
 export type Services = GatewayServices & GatewayEpoch;

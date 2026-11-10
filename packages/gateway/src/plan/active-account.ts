@@ -34,9 +34,7 @@ export const readActivePointer = async (fileSystem: FileSystem, file: string): P
   return pointer;
 };
 
-export const writeActiveAccount = async (fileSystem: FileSystem, file: string, profile: string, account: string): Promise<ActivePointer> => {
-  const pointer = { ...(await readActivePointer(fileSystem, file)), [profile]: account };
+export const writeActivePointer = async (fileSystem: FileSystem, file: string, pointer: ActivePointer): Promise<void> => {
   await fileSystem.mkdirPrivate(path.dirname(file));
   await writeFileAtomically(fileSystem, systemRandom, file, JSON.stringify(pointer), { mode: FILE_MODE });
-  return pointer;
 };

@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { createKeyedSerializer, isRecord, nodeFileSystem, systemRandom, writeFileAtomically } from '@momonga/foundation';
+import { createKeyedSerializer, isRecord } from '@momonga/foundation';
+import type { CliFiles } from '../ports.ts';
 
 export type DismissedNotices = Readonly<Record<string, string>>;
 
@@ -12,15 +13,6 @@ const fileIn = (stateDirectory: string): string => path.join(stateDirectory, FIL
 
 const isDismissedNotices = (value: unknown): value is DismissedNotices => isRecord(value) && Object.values(value).every((time) => typeof time === 'string');
 
-const readText = async (file: string): Promise<string | undefined> => {
-  try {
-    return await nodeFileSystem.readTextFile(file);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-    throw error;
-  }
-};
-
 const parsed = (text: string): unknown => {
   try {
     return JSON.parse(text);
@@ -29,9 +21,9 @@ const parsed = (text: string): unknown => {
   }
 };
 
-export const readDismissedNotices = async (stateDirectory: string, warn: (warning: string) => void): Promise<DismissedNotices> => {
+export const readDismissedNotices = async (files: Pick<CliFiles, 'readTextIfPresent'>, stateDirectory: string, warn: (warning: string) => void): Promise<DismissedNotices> => {
   const file = fileIn(stateDirectory);
-  const text = await readText(file);
+  const text = await files.readTextIfPresent(file);
   if (text === undefined) return {};
   const value = parsed(text);
   if (!isDismissedNotices(value)) {
@@ -41,10 +33,9 @@ export const readDismissedNotices = async (stateDirectory: string, warn: (warnin
   return value;
 };
 
-export const dismissNotice = (stateDirectory: string, key: string, at: Date): Promise<void> =>
+export const dismissNotice = (files: Pick<CliFiles, 'readTextIfPresent' | 'mkdirPrivate' | 'writeTextAtomically'>, stateDirectory: string, key: string, at: Date): Promise<void> =>
   serializeInProcess(fileIn(stateDirectory), async () => {
-    const file = fileIn(stateDirectory);
-    const earlier = await readDismissedNotices(stateDirectory, () => undefined);
-    await nodeFileSystem.mkdirPrivate(stateDirectory);
-    await writeFileAtomically(nodeFileSystem, systemRandom, file, `${JSON.stringify({ ...earlier, [key]: at.toISOString() })}\n`, { mode: FILE_MODE });
+    const earlier = await readDismissedNotices(files, stateDirectory, () => undefined);
+    await files.mkdirPrivate(stateDirectory);
+    await files.writeTextAtomically(fileIn(stateDirectory), `${JSON.stringify({ ...earlier, [key]: at.toISOString() })}\n`, FILE_MODE);
   });

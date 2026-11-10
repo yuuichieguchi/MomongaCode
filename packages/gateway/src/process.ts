@@ -19,7 +19,8 @@ import {
   upstreamEndpointOf,
 } from '@momonga/config';
 import type { ResolvedSettings } from '@momonga/config';
-import type { ManagedServerDescription } from '@momonga/protocol';
+import { CAPABILITIES_UNKNOWN_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_PAUSED_CODE } from '@momonga/protocol';
+import type { ManagedServerDescription, PlanHealthReason, TargetHealthReason } from '@momonga/protocol';
 import {
   acquireProcessLock,
   JsonDepthError,
@@ -52,7 +53,7 @@ import {
   generationLayout,
 } from '@momonga/foundation';
 import type { EndpointProbeKey, PlanProfiles, ServerRegistry, StopValuesReader } from '@momonga/config';
-import type { BinaryHashCache, Clock, JsonLogger, MomongaPaths, NetworkConfig, OutboundNetwork, ProcessLock, ReadyFields, SecretStore, StopValues, TextStream } from '@momonga/foundation';
+import type { BinaryHashCache, Clock, JsonLogger, ListableCredentialStore, MomongaPaths, NetworkConfig, OutboundNetwork, ProcessLock, ReadyFields, SecretStore, StopValues, TextStream } from '@momonga/foundation';
 import { createEncryptedCredentialStore, createFileCredentialStore, createOutboundDispatcher, givenCredentialSecretStore, installTrust, nodeFileSystem, outboundFetch, trustFailureText, proxyPasswordsOf } from '@momonga/foundation';
 import {
   buildCostReport,
@@ -152,6 +153,7 @@ export type StartGatewayProcessOptions = {
   measureOllama?: MeasureEndpointPort<OllamaMeasurement>;
   stopValues?: StopValuesReader;
   planProfiles?: PlanProfiles;
+  planStore?: (store: ListableCredentialStore) => ListableCredentialStore;
 };
 
 export type GatewayCloseResult = {
@@ -612,10 +614,10 @@ const sleepOn = (timers: GatewayTimers, ms: number, signal: AbortSignal | undefi
     signal?.addEventListener('abort', onAbort, { once: true });
   });
 
-const HEALTH_REASON_OF_PLAN: Readonly<Record<NonNullable<PlanHealth['reason']>, NonNullable<HealthResult['reason']>>> = {
-  sign_in_required: 'sign_in_required',
-  plan_use_not_enabled: 'sign_in_required',
-  plan_usage_paused: 'sign_in_required',
+const HEALTH_REASON_OF_PLAN: Readonly<Record<PlanHealthReason, TargetHealthReason>> = {
+  [SIGN_IN_REQUIRED_CODE]: SIGN_IN_REQUIRED_CODE,
+  [PLAN_USE_NOT_ENABLED_CODE]: SIGN_IN_REQUIRED_CODE,
+  [USAGE_PAUSED_CODE]: SIGN_IN_REQUIRED_CODE,
   store_unreadable: 'store_unreadable',
   store_unwritable: 'store_unwritable',
 };
@@ -642,20 +644,20 @@ const planCapabilityNumbers = (target: PlanTarget, reported: PlanReported): Plan
 
 const declaresPlanNumbers = (target: PlanTarget): boolean => planCapabilityNumbers(target, () => undefined) !== undefined;
 
-const unknownCapabilitiesText = (name: string, target: PlanTarget): string =>
-  `the plan target ${name} declares no contextWindow and maxOutputTokens, and the model list of its account reports none for ${target.model}; momonga models --catalog reads the list`;
+const unknownCapabilitiesText = (target: PlanTarget): string =>
+  `the model ${target.model} cannot be used yet: the settings give no context window and output limit for it, and the model list of its account reports none; momonga models --catalog reads the list`;
 
-const planCapabilitiesOf = (name: string, target: PlanTarget, reported: PlanReported): Capabilities => {
+const planCapabilitiesOf = (target: PlanTarget, reported: PlanReported): Capabilities => {
   const { contextWindow: _contextWindow, maxOutputTokens: _maxOutputTokens, ...rest } = target.capabilities;
   const numbers = planCapabilityNumbers(target, reported);
-  if (numbers === undefined) throw invalidRequest('capabilities_unknown', unknownCapabilitiesText(name, target), 'model', PRECONDITION_STATUS);
+  if (numbers === undefined) throw invalidRequest(CAPABILITIES_UNKNOWN_CODE, unknownCapabilitiesText(target), 'model', PRECONDITION_STATUS);
   return withImageDefault({ ...rest, ...numbers, toolCalling: target.toolCalling });
 };
 
-const planHealthOf = (name: string, target: PlanTarget, auth: AuthSource, reported: PlanReported): HealthResult => {
+const planHealthOf = (target: PlanTarget, auth: AuthSource, reported: PlanReported): HealthResult => {
   const authHealth = healthResultOf(auth.health());
   if (!authHealth.ok || planCapabilityNumbers(target, reported) !== undefined) return authHealth;
-  return { ok: false, reason: 'capabilities_unknown', detail: unknownCapabilitiesText(name, target) };
+  return { ok: false, reason: CAPABILITIES_UNKNOWN_CODE, detail: unknownCapabilitiesText(target) };
 };
 
 const createPlanAdapter = (name: string, target: PlanTarget, auth: AuthSource, profiles: PlanProfiles, reported: PlanReported, wiring: PlanAdapterWiring): ProviderAdapter => {
@@ -663,8 +665,8 @@ const createPlanAdapter = (name: string, target: PlanTarget, auth: AuthSource, p
   if (profile === undefined) throw new Error(`the plan target ${name} names the unknown plan profile ${JSON.stringify(target.plan.profile)}`);
   return createOpenResponsesAdapter({
     resolveEndpoint: async () => reachableEndpoint(upstreamEndpointOf(target), wiring.network),
-    capabilities: async () => planCapabilitiesOf(name, target, reported),
-    health: async () => planHealthOf(name, target, auth, reported),
+    capabilities: async () => planCapabilitiesOf(target, reported),
+    health: async () => planHealthOf(target, auth, reported),
     authSource: () => auth,
     errorRules: profile.errorRules,
     clock: wiring.clock,
@@ -988,19 +990,20 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const planEvents: PlanEvents = (name, data) => logger.info(name, { data });
     const planSleep = (ms: number, sleepSignal?: AbortSignal): Promise<void> => sleepOn(timers, ms, sleepSignal);
     await nodeFileSystem.mkdirPrivate(paths.planSessions);
+    const planRecordStore = createEncryptedCredentialStore({
+      directory: paths.planSessions,
+      stateDirectory: paths.state,
+      secretStore:
+        options.secretStore === undefined
+          ? givenCredentialSecretStore(options.execWithStdin ?? createExecWithStdin({ ...childEnv, ...givenSecretStoreChildEnv(options.env) }), options.env)
+          : { kind: 'available', store: options.secretStore },
+      plaintextTokenFiles: () => planScopes.current().plaintextTokenFiles,
+      keyOfPlaintext: planRecordKeyOfPlaintext,
+    });
     const sessions = await openPlanSessions({
       profiles: planProfiles,
       paths: { sessions: paths.planSessions, host: paths.planHost, active: paths.planActive },
-      store: createEncryptedCredentialStore({
-        directory: paths.planSessions,
-        stateDirectory: paths.state,
-        secretStore:
-          options.secretStore === undefined
-            ? givenCredentialSecretStore(options.execWithStdin ?? createExecWithStdin({ ...childEnv, ...givenSecretStoreChildEnv(options.env) }), options.env)
-            : { kind: 'available', store: options.secretStore },
-        plaintextTokenFiles: () => planScopes.current().plaintextTokenFiles,
-        keyOfPlaintext: planRecordKeyOfPlaintext,
-      }),
+      store: options.planStore === undefined ? planRecordStore : options.planStore(planRecordStore),
       fileSystem: nodeFileSystem,
       accounts: [],
       clock,
@@ -1008,13 +1011,14 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       sleep: planSleep,
       random,
       events: planEvents,
-      onSecret: (value) => shared.redactor.add(value),
+      redact: (key, values) => shared.redactor.set(key, values),
       warn: (message) => logger.warn(message),
     });
     cleanups.push(() => sessions.close());
     const catalog = createPlanCatalog({ store: createFileCredentialStore(paths.planCatalog), clock, outbound: withOutboundNetwork, sleep: planSleep, events: planEvents });
     const planApi = createPlanApi({
       catalog,
+      home: options.home,
       settingsFile: paths.settingsFile,
       profiles: planProfiles,
       sessions,
@@ -1029,8 +1033,6 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         hostFile: paths.planHost,
         events: planEvents,
       }),
-      fileSystem: nodeFileSystem,
-      paths: { host: paths.planHost },
       clock,
     });
     const servedOf = (target: PlanTarget): ServedAccount => ({ profile: target.plan.profile, account: target.plan.account ?? sessions.activeLabel(target.plan.profile) ?? null });
@@ -1038,18 +1040,49 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       if (declaresPlanNumbers(target)) return undefined;
       return served.account === null ? null : (catalog.capabilitiesOf(served.profile, served.account, target.model) ?? null);
     };
-    const planComponentsOf = (target: PlanTarget): { served: ServedAccount; reported?: ReportedNumbers } => {
-      const served = servedOf(target);
-      const reported = reportedOf(target, served);
-      return { served, ...(reported === undefined ? {} : { reported }) };
-    };
-    const planInputsOf = (current: ResolvedSettings): Record<string, { account: string | null; reported?: ReportedNumbers }> =>
+    type PlanInput = { account: string | null; reported?: ReportedNumbers };
+    type EpochInputs = { plan: Readonly<Record<string, PlanInput>> };
+    const planInputsOf = (current: ResolvedSettings): Record<string, PlanInput> =>
       Object.fromEntries(
         planTargetsOf(current).map(([name, target]) => {
-          const { served, ...reported } = planComponentsOf(target);
-          return [name, { account: served.account, ...reported }];
+          const served = servedOf(target);
+          const reported = reportedOf(target, served);
+          return [name, { account: served.account, ...(reported === undefined ? {} : { reported }) }];
         }),
       );
+    const epochInputsOf = (current: ResolvedSettings): EpochInputs => ({ ...derivedInputsOf('D1')(current), plan: planInputsOf(current) });
+    const planComponentsOf = (name: string, target: PlanTarget, inputs: EpochInputs): { served: ServedAccount; reported?: ReportedNumbers } => {
+      const input = Object.hasOwn(inputs.plan, name) ? inputs.plan[name] : undefined;
+      if (input === undefined) throw new Error(`the derivation inputs name no plan account for the target ${name}`);
+      return { served: { profile: target.plan.profile, account: input.account }, ...(input.reported === undefined ? {} : { reported: input.reported }) };
+    };
+    const planLoaded = new Set<string>();
+    const planLoads = new Map<string, Promise<void>>();
+    const planLoadOf = (key: string, ref: { profile: string; account: string }): Promise<void> => {
+      const running = planLoads.get(key);
+      if (running !== undefined) return running;
+      const started = Promise.all([sessions.load(ref), catalog.load(ref.profile, ref.account)])
+        .then(() => {
+          planLoaded.add(key);
+        })
+        .finally(() => {
+          planLoads.delete(key);
+        });
+      planLoads.set(key, started);
+      return started;
+    };
+    const preparePlan = (current: ResolvedSettings): Promise<void> | undefined => {
+      const pending = new Map(
+        planTargetsOf(current).flatMap(([, target]): Array<[string, { profile: string; account: string }]> => {
+          const { profile, account } = servedOf(target);
+          if (account === null) return [];
+          const key = JSON.stringify([profile, account]);
+          return planLoaded.has(key) ? [] : [[key, { profile, account }]];
+        }),
+      );
+      if (pending.size === 0) return undefined;
+      return Promise.all([...pending].map(([key, ref]) => planLoadOf(key, ref))).then(() => undefined);
+    };
     const secretResolverOfPart = (): SecretResolver => {
       const resolver = createSecretResolver(secretStore);
       resolver.onResolved((name, value) => {
@@ -1198,25 +1231,17 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       return unmanagedPart(key, adapter, targetCounterOf({ target, codeDigest, served, ...(reported === undefined ? {} : { reported }) }));
     };
 
-    const servePlanAccounts = async (current: ResolvedSettings): Promise<void> => {
-      const served = planTargetsOf(current).map(([, target]) => servedOf(target));
-      const refs = new Map(served.flatMap(({ profile, account }): Array<[string, { profile: string; account: string }]> => (account === null ? [] : [[JSON.stringify([profile, account]), { profile, account }]])));
-      await sessions.serve([...refs.values()]);
-      await Promise.all([...refs.values()].map((ref) => catalog.load(ref.profile, ref.account)));
-    };
-
-    const deriveEpoch = async (shared: GatewayEpochsShared, current: ResolvedSettings, previous: ProcessEpoch | undefined, keySignal: AbortSignal): Promise<ProcessEpoch> => {
+    const deriveEpoch = async (shared: GatewayEpochsShared, current: ResolvedSettings, previous: ProcessEpoch | undefined, keySignal: AbortSignal, inputs: EpochInputs): Promise<ProcessEpoch> => {
       const networkDigest = settingsInputsDigest(current.network ?? null);
       const outbound = previous !== undefined && previous.networkDigest === networkDigest ? previous.network : await outboundNetworkOf(current.network, keySignal);
       const shape = { userDialects: current.models.dialects, headersTimeoutMs: current.models.headersTimeoutMs, idleTimeoutMs: current.models.idleTimeoutMs };
       const outputPolicy: ProbeOutputPolicy = { unboundedOutputReserve: current.context.unboundedOutputReserve };
-      await servePlanAccounts(current);
       const parts = new Map<string, TargetPart>();
       const built: Closable[] = [];
       try {
         for (const [name, target] of Object.entries(current.models.targets) as Array<[string, ResolvedTarget]>) {
           const server = target.adapter === 'managed' ? requiredServer(current.models.servers, target.server) : null;
-          const plan = 'plan' in target ? planComponentsOf(target) : undefined;
+          const plan = 'plan' in target ? planComponentsOf(name, target, inputs) : undefined;
           const keys = {
             part: settingsInputsDigest({
               target,
@@ -1284,8 +1309,9 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const derivation = createPinnedDerivation<ProcessEpoch>({
       cache,
       signal: lifetime.signal,
-      inputsOf: (current) => ({ ...derivedInputsOf('D1')(current), plan: planInputsOf(current) }),
-      derive: (current, previous, deriveSignal) => deriveEpoch(shared, current, previous, deriveSignal),
+      inputsOf: epochInputsOf,
+      prepare: preparePlan,
+      derive: (current, previous, deriveSignal, inputs) => deriveEpoch(shared, current, previous, deriveSignal, inputs as EpochInputs),
       retire: async (epoch) => {
         liveEpochs.delete(epoch);
         await Promise.all(closablesOf(epoch).map(letGo));

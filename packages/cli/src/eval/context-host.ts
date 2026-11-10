@@ -2,7 +2,7 @@ import path from 'node:path';
 import { escapeTerminalLine } from '@momonga/protocol';
 import { probeRecordKeyOf } from '@momonga/config';
 import type { EndpointProbeKey } from '@momonga/config';
-import type { ModelsSettings, ResolvedModels, SandboxSetting, UserModels } from '@momonga/config';
+import type { ModelsSettings, OpenResponsesTarget, ResolvedModels, ResolvedPlanTarget, SandboxSetting, UserModels } from '@momonga/config';
 import { caseSettingsFor, expandContextDataset, failedWithCleanup, liveBoundsFor, runContextDataset } from '@momonga/eval';
 import type { ContextCaseHost, ContextDataset, ExpandedCase, PolicyOverlay, Transcript, WorkspaceStep } from '@momonga/eval';
 import { FIRST_GENERATION, claimPathOf, generationLayout, momongaLayout, socketPathLimit } from '@momonga/foundation';
@@ -101,6 +101,24 @@ export const needsPlanRelay = (user: UserModels, aliases: readonly string[]): bo
     return target !== undefined && 'plan' in target;
   }));
 
+const relayTargetOf = (name: string, resolved: ResolvedPlanTarget, socketPath: string): OpenResponsesTarget => {
+  const { maxConcurrency: _maxConcurrency, contextWindow, maxOutputTokens, imageInput, imageTokens, ...core } = resolved.capabilities;
+  if (contextWindow === undefined || maxOutputTokens === undefined) {
+    throw new ContextHostError(`the target ${name} has no known context window or output limit, so a case home cannot be given it; read the account's models first with momonga models --catalog`);
+  }
+  return {
+    adapter: 'open-responses',
+    model: resolved.model,
+    provider: resolved.provider,
+    toolCalling: resolved.toolCalling,
+    socketPath,
+    billing: resolved.billing,
+    capabilities: { ...core, contextWindow, maxOutputTokens, ...(imageInput === undefined ? {} : { imageInput }), ...(imageTokens === undefined ? {} : { imageTokens }) },
+    maxConcurrency: resolved.maxConcurrency,
+    admissionTimeoutMs: resolved.admissionTimeoutMs,
+  };
+};
+
 export const liveSettingsFor = (user: UserModels, aliases: readonly string[], relay?: PlanRelay): LiveSettings => {
   const targets: NonNullable<ModelsSettings['targets']> = {};
   const servers: NonNullable<ModelsSettings['servers']> = {};
@@ -118,17 +136,7 @@ export const liveSettingsFor = (user: UserModels, aliases: readonly string[], re
     if (declared === undefined) throw new ContextHostError(`the target ${name} is not declared in the user settings, so it cannot be copied into a case`);
     if ('plan' in resolved) {
       if (relay === undefined) throw new ContextHostError(`the target ${name} uses a ${resolved.plan.profile} plan sign-in, which a case home can reach only through the gateway of this home; this command has no relay for it`);
-      targets[name] = {
-        adapter: 'open-responses',
-        model: resolved.model,
-        provider: resolved.provider,
-        toolCalling: resolved.toolCalling,
-        socketPath: relay.planRelaySocket,
-        billing: resolved.billing,
-        capabilities: resolved.capabilities,
-        maxConcurrency: resolved.maxConcurrency,
-        admissionTimeoutMs: resolved.admissionTimeoutMs,
-      } as NonNullable<ModelsSettings['targets']>[string];
+      targets[name] = relayTargetOf(name, resolved, relay.planRelaySocket);
       return;
     }
     const recordKey = probeRecordKeyOf(name, resolved);

@@ -15,6 +15,7 @@ import type {
   ImageAttachment,
   PermissionMode,
   PermissionOption,
+  PlanAccountRef,
   RunEvent,
   RunEventPayload,
   RunState,
@@ -64,7 +65,7 @@ export type CreateSessionInput = {
   mcpServers?: SessionMcpServers;
 };
 
-export type RunError = { code: string; message: string };
+export type RunError = { code: string; message: string; plan?: PlanAccountRef };
 
 export type HistoryMode = 'inherit' | 'fresh';
 

@@ -2,8 +2,8 @@ import { isRecord, parseJwt, parseOutsideJson, verifyRs256 } from '@momonga/foun
 import type { Clock, ParsedJwt } from '@momonga/foundation';
 import type { IdTokenCheck } from '@momonga/protocol';
 import { PLAN_SESSION_DEFAULTS, PLAN_SIGN_IN_DEFAULTS } from '../defaults.ts';
-import { cappedSend } from './capped-send.ts';
 import type { PlanOutbound } from './outbound.ts';
+import { boundedSend } from './refresh.ts';
 import type { PlanFetch, PlanSleep } from './refresh.ts';
 
 export type IdTokenExpectation = { issuer: string; clientId: string; nonce: string; algorithms: readonly string[] };
@@ -77,7 +77,7 @@ export const createIdTokenVerifier = (options: IdTokenVerifierOptions): IdTokenV
   let flight: Promise<KeySet> | undefined;
 
   const fetchKeys = async (fetch: PlanFetch): Promise<KeySet> => {
-    const outcome = await cappedSend(
+    const outcome = await boundedSend(
       { fetch, sleep: options.sleep },
       options.jwksUrl,
       { method: 'GET', headers: { accept: 'application/json' } },

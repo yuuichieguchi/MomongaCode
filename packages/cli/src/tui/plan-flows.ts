@@ -1,9 +1,12 @@
 import { SECRET_NAME_PATTERN } from '@momonga/foundation';
+import { SIGN_IN_REQUIRED_CODE } from '@momonga/protocol';
 import type { DetectedLocalServer, DetectedManagedServer, LocalServerDetection, MomongaModelEntry, PlanAccountView, PlanAccountsResponse, PlanProfileView, TargetHealth } from '@momonga/protocol';
 import type { ModelConnection } from '@momonga/config';
+import { couldNotOpenBrowser } from '../browser-text.ts';
 import { SANDBOX_OFF_NOTICE, accountRowLabel, accountsOf, nextAccountLabel, profileOf, profileStateText, savedAccountAction } from '../plan/accounts.ts';
 import { SignInAttemptNotFoundError, SignInExpiredError, SignInGatewayStoppedError, SignInListenerError, SignInListenerFailedError, signIn, waitForPaste } from '../plan/sign-in.ts';
 import type { SignInShown } from '../plan/sign-in.ts';
+import { codeNotAcceptedLine, listProblemLine, planDisabledLines, resumeLine, signedInLine, signedOutLines, tryAgainLine } from '../plan/texts.ts';
 import type { TuiBackend } from './backend.ts';
 import type { OverlayPorts, PickRow } from './picker.tsx';
 
@@ -58,7 +61,7 @@ const windowError = (text: string, ceiling: number | undefined): string | undefi
   return undefined;
 };
 
-const isSignInRequired = (health: TargetHealth | undefined): boolean => health?.reason === 'sign_in_required';
+const isSignInRequired = (health: TargetHealth | undefined): boolean => health?.reason === SIGN_IN_REQUIRED_CODE;
 
 export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   const { backend } = ports;
@@ -122,11 +125,11 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       deliver = resolve;
     });
     const handlers = { cancel: () => cancel.abort(), deliver: (text: string) => deliver(text) };
-    const authorize = async ({ url, state }: SignInShown): Promise<void> => {
+    const authorize = async ({ url, state }: SignInShown, waiting: AbortSignal): Promise<void> => {
       const lines = ['Open this URL in your browser if it does not open by itself:', url.href];
       ports.waiting({ title: profile.loginLabel, lines, url, state }, handlers);
-      await backend.openUrl(url).catch((error: unknown) => {
-        ports.waiting({ title: profile.loginLabel, lines: [...lines, `Could not open the browser (${error instanceof Error ? error.message : String(error)}). Copy the URL and continue manually.`], url, state }, handlers);
+      backend.openUrl(url, waiting, (message) => {
+        ports.waiting({ title: profile.loginLabel, lines: [...lines, `${couldNotOpenBrowser(message)} Copy the URL and continue manually.`], url, state }, handlers);
       });
     };
     let answer;
@@ -139,6 +142,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
           pasted: (_state, signal) => waitForPaste(deliveries, signal),
           signal: cancel.signal,
           timers: backend.signInTimers,
+          delivered: () => ports.delivered(),
         },
         { profile: profile.id, account, reconsent },
       );
@@ -152,7 +156,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         return;
       }
       if (error instanceof SignInExpiredError || error instanceof SignInAttemptNotFoundError) {
-        ports.info(`${error.message} Run /login to try again.`);
+        ports.info(`${error.message} ${tryAgainLine('tui', { profile: profile.id, account })}`);
         return;
       }
       throw error;
@@ -161,15 +165,15 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     }
     switch (answer.outcome) {
       case 'retry':
-        ports.info(`${profile.messages.identityLabel} did not accept the sign-in code (invalid_grant); start the sign-in again.`);
+        ports.info(codeNotAcceptedLine('tui', profile, account));
         await sentence(profile, account, reconsent);
         return;
       case 'plan_disabled':
-        ports.info(profile.messages.planNotEnabledMessage);
+        for (const line of planDisabledLines('tui', profile, account)) ports.info(line);
         await sentence(profile, account, true);
         return;
       case 'signed_in':
-        ports.info(`Signed in as ${answer.account.label}${answer.account.email === undefined ? '' : ` (${answer.account.email})`}`);
+        ports.info(signedInLine(answer.account));
         await afterSignIn(profile, answer.account, answer.firstSignIn);
         await ports.signedIn();
         return;
@@ -225,8 +229,8 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         .map((account) => ({
           row: { label: `Resume plan use for ${account.label}` },
           act: async () => {
-            await backend.plan.resume(account.label, { profile: profile.id });
-            ports.info(`${account.label}: plan use resumed`);
+            const answer = await backend.plan.resume(account.label, { profile: profile.id });
+            ports.info(resumeLine(account.label, answer.resumed));
           },
         })),
       { row: { label: 'Add another account or workspace' }, act: () => newAccount(profile, listed) },
@@ -234,7 +238,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   };
 
   const providerFlowOf = async (profile: PlanProfileView, listed: PlanAccountsResponse): Promise<void> => {
-    for (const problem of listed.listProblems ?? []) ports.info(`could not list ${problem.file}: ${problem.cause}`);
+    for (const problem of listed.listProblems ?? []) ports.info(listProblemLine(problem));
     if (accountsOf(profile.id, listed.accounts).length === 0) {
       await sentence(profile, nextAccountLabel(profile.id, listed.accounts), false);
       return;
@@ -331,8 +335,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     if (chosen === undefined) return;
     const report = await backend.plan.signOut({ profile: chosen.profile, account: chosen.label });
     const profile = profileOf(listed.profiles, chosen.profile);
-    ports.info(`Signed out ${chosen.label}`);
-    if (report.revocation !== 'confirmed') ports.info(`The sign-in could not be confirmed as revoked; disconnect the app in ${profile.messages.identityLabel} settings: ${report.usageUrl}`);
+    for (const line of signedOutLines(profile, chosen.label, report)) ports.info(line);
   };
 
   const targetSignIn = async (listed: PlanAccountsResponse, plan: { profile: string; account?: string }): Promise<void> => {
@@ -399,7 +402,9 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
 
   const usageLimit = async (profile: PlanProfileView): Promise<void> => {
     await chooseFrom({}, [
-      { row: { label: profile.messages.manageUsageLabel }, act: () => backend.openUrl(new URL(profile.usageUrl)) },
+      { row: { label: profile.messages.manageUsageLabel }, act: async () =>
+          backend.openUrl(new URL(profile.usageUrl), undefined, (message) => ports.info(`${couldNotOpenBrowser(message)} ${profile.messages.manageUsageLabel}: ${profile.usageUrl}`)),
+      },
       { row: { label: 'Dismiss' }, act: async () => undefined },
     ]);
   };

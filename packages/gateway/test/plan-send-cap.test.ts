@@ -9,7 +9,7 @@ import type { PulledBody } from './plan-send-fakes.ts';
 
 const CAP = PLAN_SIGN_IN_DEFAULTS.authBodyBytes;
 const OVERSIZE_BYTES = 8 * CAP;
-const PULL_LIMIT = CAP + CHUNK_BYTES;
+const PULL_LIMIT = CAP + 2 * CHUNK_BYTES;
 const PLAN_SOURCE = path.resolve(import.meta.dirname, '..', 'src', 'plan');
 
 const refreshWith = (fetch: ReturnType<typeof recordedFetch>['fetch']) =>

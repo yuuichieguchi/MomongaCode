@@ -1,4 +1,6 @@
 import type { SchemaNarrowing } from './dialect.ts';
+import type { FallbackCause } from './fallback-cause.ts';
+import type { PlanAccountRef } from './plan-account.ts';
 import type { ModelCost, UnpricedOutcome } from './token-anatomy.ts';
 
 export const OPEN_RESPONSES_VERSION = '2026-04-24' as const;
@@ -38,7 +40,7 @@ export type StreamEventType = (typeof OPEN_RESPONSES_STREAM_EVENT_TYPES)[number]
 export type TerminalStreamEventType = (typeof TERMINAL_STREAM_EVENT_TYPES)[number];
 export type ErrorType = (typeof ERROR_TYPES)[number];
 
-export type ErrorBody = { message: string; type: ErrorType; param: string | null; code: string | null };
+export type ErrorBody = { message: string; type: ErrorType; param: string | null; code: string | null; plan?: PlanAccountRef };
 export type ErrorEnvelope = { error: ErrorBody };
 
 export type Annotation = { type: string; [key: string]: unknown };
@@ -214,7 +216,7 @@ export const reportedCachedTokensOf = (
   extension: { cacheReadNotReported?: true } | undefined,
 ): number | undefined => (extension?.cacheReadNotReported === true ? undefined : usage.input_tokens_details?.cached_tokens);
 
-export type ResponseError = { code: string; message: string; type?: ErrorType; retryAfterMs?: number };
+export type ResponseError = { code: string; message: string; type?: ErrorType; retryAfterMs?: number; plan?: PlanAccountRef };
 
 export type FailedResponseResource = ResponseResource & { error: ResponseError };
 
@@ -222,21 +224,13 @@ export type ResponseStatus = 'in_progress' | 'completed' | 'failed' | 'incomplet
 
 export type JsonReplyPath = 'enforced' | 'prompt';
 
-export const BILLING_CHANGE_REASONS = ['billing_change_allowed', 'billing_change_refused'] as const;
-export type BillingChangeReason = (typeof BILLING_CHANGE_REASONS)[number];
-
-export type FallbackCauseRecord = { target: string; code: string | null; message: string } & (
-  | { fromBilling: string; toBilling: string; reason: BillingChangeReason }
-  | { fromBilling?: never; toBilling?: never; reason?: never }
-);
-
 export type MomongaResponseExtension = {
   alias: string;
   target: string;
   counter: string;
   attempts: number;
   fallbackFrom?: string[];
-  fallbackCauses?: FallbackCauseRecord[];
+  fallbackCauses?: FallbackCause[];
   schemaNarrowings?: SchemaNarrowing[];
   jsonReply?: JsonReplyPath;
   usageSource: 'reported' | 'estimated';

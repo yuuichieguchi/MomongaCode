@@ -2,17 +2,6 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
 import { MAX_BILLED_CALLS_PAGE } from '@momonga/observability';
-import { isTargetProbing, probingOf } from '../probe/auto-probe.ts';
-import type { ProbingCapabilities } from '@momonga/protocol';
-
-const probingOr = async <Measured>(capabilities: Promise<Measured>): Promise<Measured | ProbingCapabilities> => {
-  try {
-    return await capabilities;
-  } catch (error) {
-    if (!isTargetProbing(error)) throw error;
-    return { toolCalling: probingOf(error), source: 'unprobed' };
-  }
-};
 import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView, GatewayHealth, ModelList, MomongaModelList } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, gatewayClosedError, invalidRequest, notFound } from '../core/errors.ts';
 import type { ResponsesService, SubmitHeaders } from '../core/responses-service.ts';
@@ -23,6 +12,8 @@ import { withPinnedServices } from '../core/services.ts';
 import type { GatewayServices } from '../core/services.ts';
 import type { UnaryService } from '../core/unary.ts';
 import { readJsonBody } from './body.ts';
+import { listAlias } from './capability-listing.ts';
+import type { ErrorExit } from './error-exit.ts';
 import { collectTerminalResource } from './response-body.ts';
 import { compactSseResponse, sseResponse } from './sse.ts';
 import type { RequestTracker } from './tracker.ts';
@@ -37,7 +28,7 @@ export type AppDependencies = {
   version: string;
   costReport: ((runs: readonly { runId: string; sessionId: string }[], includeRunless: boolean, signal: AbortSignal) => Promise<{ report: GatewayCostReportView; text: string }>) | undefined;
   billedCalls: ((runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean, signal: AbortSignal) => Promise<BilledCallsPageView>) | undefined;
-  onError: ((error: unknown) => void) | undefined;
+  errors: ErrorExit;
   plan: PlanApi | undefined;
 };
 
@@ -79,12 +70,8 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   app.notFound(() => errorResponse(notFound('route_not_found', 'no such route')));
 
   app.onError((error) => {
-    if (error instanceof GatewayError) return errorResponse(error);
     if (error instanceof ClientDisconnectedError) return new Response(null, { status: 499 });
-    dependencies.onError?.(error);
-    return errorResponse(
-      new GatewayError({ status: 500, type: 'server_error', code: 'internal_error', message: error.message }),
-    );
+    return errorResponse(dependencies.errors.answer(error));
   });
 
   app.post('/v1/responses', async (context) => {
@@ -94,25 +81,26 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     try {
       const idleBoundMs = streamIdleBoundOf(context.req.header(STREAM_IDLE_HEADER));
       const submission = await responses.submit(raw, submitHeadersOf(context), context.req.raw.signal);
+      const shownEvents = dependencies.errors.shownFrom(submission.events);
       const streamOptions = {
         timers: services.timers,
         readerStallMs: services.config.limits.readerStallMs,
         signal: AbortSignal.any([context.req.raw.signal, services.forceCloseSignal, submission.events.evicted]),
         onEnd: release,
-        onError: (error: unknown): void => dependencies.onError?.(error),
+        onError: dependencies.errors.report,
       };
       if (submission.stream && idleBoundMs !== undefined) {
         streaming = true;
-        return sseResponse(undefined, submission.events, { ...streamOptions, keepAliveMs: keepAliveMsFor(idleBoundMs) });
+        return sseResponse(undefined, shownEvents, { ...streamOptions, keepAliveMs: keepAliveMsFor(idleBoundMs) });
       }
-      const first = await submission.events.next();
+      const first = await shownEvents.next();
       if (first.done === true) throw new ClientDisconnectedError();
       if (submission.stream) {
         streaming = true;
-        return sseResponse(first.value, submission.events, { ...streamOptions, keepAliveMs: services.config.sseKeepAliveMs });
+        return sseResponse(first.value, shownEvents, { ...streamOptions, keepAliveMs: services.config.sseKeepAliveMs });
       }
       try {
-        return context.json(await collectTerminalResource(first.value, submission.events));
+        return context.json(await collectTerminalResource(first.value, shownEvents));
       } finally {
         await submission.events.return?.();
       }
@@ -134,12 +122,15 @@ export const createApp = (dependencies: AppDependencies): Hono => {
       });
       if (idleBoundMs === undefined) return context.json(await work);
       streaming = true;
-      return compactSseResponse(work, {
+      const shownWork = work.catch((error: unknown) => {
+        throw dependencies.errors.shown(error);
+      });
+      return compactSseResponse(shownWork, {
         timers: services.timers,
         keepAliveMs: keepAliveMsFor(idleBoundMs),
         signal: AbortSignal.any([context.req.raw.signal, services.forceCloseSignal]),
         onEnd: release,
-        onError: (error: unknown): void => dependencies.onError?.(error),
+        onError: dependencies.errors.report,
       });
     } finally {
       if (!streaming) release();
@@ -166,8 +157,9 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     }),
   );
 
-  app.get('/v1/momonga/models', (context) =>
-    withPinnedServices(services, requestSignalOf(context), async ({ router }) => {
+  app.get('/v1/momonga/models', (context) => {
+    const signal = requestSignalOf(context);
+    return withPinnedServices(services, signal, async ({ router }) => {
       const data = await Promise.all(
         router.aliases().map(async (id) => {
           const targets = router.targetsOf(id);
@@ -182,17 +174,13 @@ export const createApp = (dependencies: AppDependencies): Hono => {
             ...(planned.length === 0 ? {} : { targetPlan: Object.fromEntries(planned) }),
             ...(keyed.length === 0 ? {} : { targetKey: Object.fromEntries(keyed) }),
           };
-          return {
-            ...identity,
-            capabilities: await probingOr(router.aliasCapabilitiesOf(id)),
-            targetCapabilities: Object.fromEntries(await Promise.all(targets.map(async (target) => [target.name, await probingOr(router.capabilitiesOf(target))] as const))),
-          };
+          return { ...identity, ...(await listAlias(router, id, signal)) };
         }),
       );
       const list: MomongaModelList = { object: 'list', data };
       return context.json(list);
-    }),
-  );
+    });
+  });
 
   app.get('/v1/momonga/health', (context) =>
     withPinnedServices(services, requestSignalOf(context), async ({ router }) => {

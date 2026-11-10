@@ -44,6 +44,7 @@ export type OverlayPorts = {
   promptText(request: TextRequest): Promise<string | undefined>;
   waiting(view: WaitingView, handlers: WaitingHandlers): void;
   closeWaiting(): void;
+  delivered(): void;
   loading(title: string): void;
 };
 

@@ -54,7 +54,7 @@ export const runAuthLogin = (ports: CliPorts, paths: MomongaPaths, options: Auth
         signal: interrupt,
         timers: systemTiming,
         startListener: loopbackSignInListener(interrupt),
-        openUrl: (url) => ports.openUrl(url, interrupt),
+        openUrl: ports.openUrl,
         sandbox: async () => {
           const runtime = connectRuntime(paths);
           try {
