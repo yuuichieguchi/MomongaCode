@@ -3576,10 +3576,9 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 450371,
-      "measuredSeconds": 739.5,
-      "measuredCpuSeconds": 669.68,
-      "budgetCpuSeconds": 1343,
-      "note": "2026-11-10: the old deep configuration (all of Extended, two clients) is split into this core check (Extended FALSE, jobs, two clients, MaxV 3), UpdateSwitch.owner and UpdateSwitch.gatewayJobs; run with one worker beside other TLC runs of the same session, 1-minute load 10.5 at start: wall and CPU are not a measurement, re-measure in the quiet window"
+      "measuredSeconds": 582.66,
+      "measuredCpuSeconds": 600.85,
+      "budgetCpuSeconds": 1205
     },
     {
       "config": "UpdateSwitch.owner",
@@ -3591,10 +3590,9 @@
       ],
       "tier": "deep",
       "distinctStates": 895680,
-      "measuredSeconds": 1422.07,
-      "measuredCpuSeconds": 1457.82,
-      "budgetCpuSeconds": 2919,
-      "note": "new row (owner side of the old deep configuration: OwnerStop, Reconcile, OutWrite, KillReq, OutputRead, jobs, two clients, MaxV 2, no gateway, no sweep or prune); one worker, 1-minute load 82 at start (other sessions): wall and CPU are not a measurement, re-measure in the quiet window"
+      "measuredSeconds": 1397.05,
+      "measuredCpuSeconds": 1426.91,
+      "budgetCpuSeconds": 2857
     },
     {
       "config": "UpdateSwitch.gatewayJobs",
@@ -3606,10 +3604,9 @@
       ],
       "tier": "deep",
       "distinctStates": 1210465,
-      "measuredSeconds": 2938.72,
-      "measuredCpuSeconds": 2958.72,
-      "budgetCpuSeconds": 5921,
-      "note": "new row (gateway together with jobs and kill, one client, MaxV 2, no sweep or prune); one worker, the only TLC process of the session, 1-minute load 5.3 at start"
+      "measuredSeconds": 2972.15,
+      "measuredCpuSeconds": 2986.27,
+      "budgetCpuSeconds": 5976
     },
     {
       "config": "UpdateSwitch.crashJobs",
@@ -3621,10 +3618,9 @@
       ],
       "tier": "deep",
       "distinctStates": 317324,
-      "measuredSeconds": 436.93,
-      "measuredCpuSeconds": 450.79,
-      "budgetCpuSeconds": 905,
-      "note": "new row (a promoted generation crashes under MaxCrash 1 with a live job or a stepping run; one client, MaxV 2); one worker, 1-minute load 5.6 at start"
+      "measuredSeconds": 466.03,
+      "measuredCpuSeconds": 456.17,
+      "budgetCpuSeconds": 916
     },
     {
       "config": "UpdateSwitch.noReconcile",
@@ -3664,9 +3660,8 @@
       "tier": "every-run",
       "distinctStates": 111414,
       "measuredSeconds": 13.17,
-      "measuredCpuSeconds": 46.34,
-      "budgetCpuSeconds": 96,
-      "note": "state space changed by the 2026-11-10 model edits; time not re-measured (run started at 1-minute load 24.4, gate 15): re-measure in the quiet window"
+      "measuredCpuSeconds": 9.59,
+      "budgetCpuSeconds": 23
     },
     {
       "config": "UpdateSwitch.today",
@@ -4365,10 +4360,9 @@
       ],
       "tier": "deep",
       "distinctStates": 194518,
-      "measuredSeconds": 46.49,
-      "measuredCpuSeconds": 201.98,
-      "budgetCpuSeconds": 407,
-      "note": "holds on the 2026-11-10 head with 194518 distinct states (unchanged); one worker, 1-minute load 10.7 at start beside other TLC runs of the same session, 743 s wall and 677 CPU s: not a measurement, so the earlier time fields stand; re-measure in the quiet window"
+      "measuredSeconds": 606.64,
+      "measuredCpuSeconds": 622.97,
+      "budgetCpuSeconds": 1249
     },
     {
       "config": "LeftoverCleanup",
@@ -4564,8 +4558,8 @@
       "tier": "every-run",
       "distinctStates": 230159,
       "measuredSeconds": 74.81,
-      "measuredCpuSeconds": 141.72,
-      "budgetCpuSeconds": 287
+      "measuredCpuSeconds": 128.52,
+      "budgetCpuSeconds": 261
     },
     {
       "config": "UpdateSwitch.crash",
@@ -4575,8 +4569,8 @@
       "tier": "every-run",
       "distinctStates": 306695,
       "measuredSeconds": 15.11,
-      "measuredCpuSeconds": 19.46,
-      "budgetCpuSeconds": 42
+      "measuredCpuSeconds": 18.52,
+      "budgetCpuSeconds": 41
     },
     {
       "config": "UpdateSwitch.sessionsDeep",
@@ -4585,10 +4579,9 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 355213,
-      "measuredSeconds": 90.65,
-      "measuredCpuSeconds": 172.66,
-      "budgetCpuSeconds": 349,
-      "note": "holds on the 2026-11-10 head, one worker, 355213 distinct states (the earlier 595391 was recorded before the edits); 123 s wall and 127 CPU s at 1-minute load 62 at start: not a measurement, so the time fields stand; re-measure in the quiet window"
+      "measuredSeconds": 113.87,
+      "measuredCpuSeconds": 122.04,
+      "budgetCpuSeconds": 248
     },
     {
       "config": "UpdateSwitch.failSetsNone",
@@ -4718,9 +4711,9 @@
       "tier": "every-run",
       "distinctStates": 514043,
       "measuredSeconds": 914.94,
-      "measuredCpuSeconds": 1136.21,
-      "budgetCpuSeconds": 2276,
-      "note": "2026-11-10 head: holds with 514043 distinct states (unchanged); one worker, alone on the machine, 1-minute load 5.6 at start: 1104 s wall and 1136.21 CPU s; the wall field is the earlier two-worker value"
+      "measuredCpuSeconds": 1127.05,
+      "budgetCpuSeconds": 2258,
+      "note": "holds on the 2026-11-10 head; CPU measured with one worker alone at 1-minute load 3.4 (1127.05 CPU s, 1104.51 s wall); the wall field is the earlier two-worker value"
     },
     {
       "config": "UpdateSwitch.upkeep",
@@ -4730,8 +4723,8 @@
       "tier": "every-run",
       "distinctStates": 2178467,
       "measuredSeconds": 67.11,
-      "measuredCpuSeconds": 135.95,
-      "budgetCpuSeconds": 275
+      "measuredCpuSeconds": 137.35,
+      "budgetCpuSeconds": 278
     },
     {
       "config": "UpdateSwitch.killWithoutRequest",
@@ -4759,9 +4752,8 @@
       "tier": "every-run",
       "distinctStates": 9541,
       "measuredSeconds": 1.74,
-      "measuredCpuSeconds": 3.56,
-      "budgetCpuSeconds": 11,
-      "note": "measured above the load gate (workers 2, other tlc2.TLC processes running, load 9 to 37), to be re-measured in the quiet window"
+      "measuredCpuSeconds": 3.24,
+      "budgetCpuSeconds": 10
     },
     {
       "config": "UpdateSwitch.reconcileLive",
@@ -4774,9 +4766,8 @@
       "tier": "every-run",
       "distinctStates": 10891,
       "measuredSeconds": 1.76,
-      "measuredCpuSeconds": 3.81,
-      "budgetCpuSeconds": 11,
-      "note": "measured above the load gate (workers 2, other tlc2.TLC processes running, load 9 to 37), to be re-measured in the quiet window"
+      "measuredCpuSeconds": 3.46,
+      "budgetCpuSeconds": 10
     },
     {
       "config": "UpdateSwitch.jobRetiring",
@@ -4789,9 +4780,8 @@
       "tier": "every-run",
       "distinctStates": 326353,
       "measuredSeconds": 6.98,
-      "measuredCpuSeconds": 15.75,
-      "budgetCpuSeconds": 35,
-      "note": "measured above the load gate (workers 2, other tlc2.TLC processes running, load 9 to 37), to be re-measured in the quiet window"
+      "measuredCpuSeconds": 22.14,
+      "budgetCpuSeconds": 48
     },
     {
       "config": "UpdateSwitch.sweepRetiring",
