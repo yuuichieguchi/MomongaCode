@@ -14,7 +14,7 @@ const probingOr = async <Measured>(capabilities: Promise<Measured>): Promise<Mea
   }
 };
 import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView, GatewayHealth, ModelList, MomongaModelList } from '@momonga/protocol';
-import { ClientDisconnectedError, GatewayError, invalidRequest, notFound } from '../core/errors.ts';
+import { ClientDisconnectedError, GatewayError, generationRetiredError, invalidRequest, notFound } from '../core/errors.ts';
 import type { ResponsesService, SubmitHeaders } from '../core/responses-service.ts';
 import { roleOfHeader } from '../core/role.ts';
 import { withPinnedServices } from '../core/services.ts';
@@ -30,6 +30,8 @@ export type AppDependencies = {
   responses: ResponsesService;
   unary: UnaryService;
   tracker: RequestTracker;
+  isRetiring: () => boolean;
+  activeRequests: () => number;
   startedAtSeconds: number;
   startedAt: string;
   version: string;
@@ -72,6 +74,14 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   const keepAliveMsFor = (idleBoundMs: number): number =>
     Math.min(services.config.sseKeepAliveMs, Math.max(1, Math.floor(idleBoundMs / KEEP_ALIVES_PER_IDLE_BOUND)));
   const app = new Hono();
+  const refuseWhileRetiring = (): void => {
+    if (dependencies.isRetiring()) throw generationRetiredError();
+  };
+
+  app.use(async (context, next) => {
+    await next();
+    if (dependencies.isRetiring()) context.header('connection', 'close');
+  });
 
   app.notFound(() => errorResponse(notFound('route_not_found', 'no such route')));
 
@@ -85,6 +95,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   });
 
   app.post('/v1/responses', async (context) => {
+    refuseWhileRetiring();
     const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
     const release = tracker.begin();
     let streaming = false;
@@ -119,6 +130,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   });
 
   app.post('/v1/responses/compact', async (context) => {
+    refuseWhileRetiring();
     const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
     const release = tracker.begin();
     let streaming = false;
@@ -144,6 +156,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   });
 
   app.post('/v1/momonga/count_tokens', async (context) => {
+    refuseWhileRetiring();
     const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
     const release = tracker.begin();
     try {
@@ -194,7 +207,8 @@ export const createApp = (dependencies: AppDependencies): Hono => {
         apiVersion: 1,
         pid: process.pid,
         startedAt: dependencies.startedAt,
-        state: services.closeSignal.aborted ? 'draining' : 'running',
+        state: services.closeSignal.aborted ? 'draining' : dependencies.isRetiring() ? 'retiring' : 'running',
+        activeRequests: dependencies.activeRequests(),
       };
       return context.json(report);
     }),

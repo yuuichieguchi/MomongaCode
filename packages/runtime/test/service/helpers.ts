@@ -6,8 +6,8 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { afterEach, expect } from 'vitest';
-import { createRedactor, createUdsClient, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, momongaLayout, momongaPaths, EMPTY_PROTECTED_SET, fixedSocket } from '@momonga/foundation';
-import type { UdsClient } from '@momonga/foundation';
+import { createRedactor, createUdsClient, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, momongaLayout, momongaPaths, EMPTY_PROTECTED_SET, fixedRolePort, fixedSocket } from '@momonga/foundation';
+import type { RolePort, UdsClient } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import { computeFileRules } from '@momonga/policy';
 import * as protocol from '@momonga/protocol';
@@ -420,6 +420,10 @@ const unusedMcpAdmin: McpAdminPort = {
 };
 
 export type ServiceOverrides = {
+  role?: RolePort;
+  work?: { steps(): number; jobs(): number };
+  ignorableMarkerDirectories?: () => Promise<readonly string[]>;
+  onRequestEnd?: () => void;
   timers?: FakeTimers;
   keepAliveMs?: number;
   sweepIntervalMs?: number;
@@ -446,7 +450,15 @@ export type ServiceOverrides = {
 
 export type Notifier = { onCommit(touched: { runId?: string; sessionId: string }[]): void; subscriberCount(): number };
 
-export type RunService = { socketPath: string; beginDraining(): void; close(): Promise<void> };
+export type RunService = {
+  socketPath: string;
+  beginDraining(): void;
+  applyRole(): void;
+  openRequests(): number;
+  stopListening(): void;
+  retire(current: { generation: number; version: string } | undefined): Promise<void>;
+  close(): Promise<void>;
+};
 
 export type ServiceEnv = Awaited<ReturnType<typeof startService>>;
 
@@ -530,6 +542,10 @@ export const serviceOptions = (
       },
       text: 'cost report',
     })),
+  role: overrides.role ?? fixedRolePort('serving'),
+  work: overrides.work ?? { steps: () => 0, jobs: () => 0 },
+  ignorableMarkerDirectories: overrides.ignorableMarkerDirectories ?? (async () => [momongaLayout(base.home).markers.root]),
+  ...(overrides.onRequestEnd === undefined ? {} : { onRequestEnd: overrides.onRequestEnd }),
   onError: (error: unknown) => base.errors.push(error),
   ...(base.fatals === undefined ? {} : { onFatal: (error: Error) => base.fatals?.push(error) }),
 });
@@ -768,6 +784,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
       tracers: fixedTracers(tracer),
       clock: env.clock,
       workerId: id,
+      role: fixedRolePort('serving'),
       leaseMs: LEASE_MS,
       random: () => 0.5,
       platform: 'darwin',

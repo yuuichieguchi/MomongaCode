@@ -138,11 +138,15 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
     const tracker = createRequestTracker();
     const startedAtMs = clock.now();
     const startedAt = new Date(startedAtMs).toISOString();
+    const isRetiring = (): boolean => options.role.current() === 'retiring';
+    const activeRequests = (): number => Math.max(tracker.active(), responses.activeCount() + unary.activeCount()) + (options.probeFlights?.() ?? 0);
     const app = createApp({
       services,
       responses,
       unary,
       tracker,
+      isRetiring,
+      activeRequests,
       startedAtSeconds: Math.floor(startedAtMs / 1000),
       costReport: options.costReport,
       billedCalls: options.billedCalls,
@@ -156,6 +160,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       services,
       responses,
       tracker,
+      isRetiring,
       connectionLimitMs: limits.websocketConnectionMs,
       ...(options.onError === undefined ? {} : { onError: options.onError }),
     });
@@ -174,6 +179,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
         services,
         responses,
         tracker,
+        isRetiring,
         connectionLimitMs: limits.websocketConnectionMs,
         authorize: (request) => tokenMatches(token, request.headers.authorization ?? null),
         ...(options.onError === undefined ? {} : { onError: options.onError }),
@@ -238,6 +244,11 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
         return abandonedRuns;
       },
       addCredential: (credential) => redactor.add(credential),
+      activeRequests,
+      releaseIdleConnections: () => {
+        for (const transport of transports) transport.beginClose();
+        for (const server of servers) server.closeIdleConnections();
+      },
       close,
       abort: (values) => {
         requestAbort();

@@ -9,7 +9,7 @@ import { isAtomicWriteTemporary } from './atomic-file.ts';
 import type { LeftoverDirectory } from './leftover-sweep.ts';
 import { hostKernelLock } from './platform/host-kernel-lock.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
-import { claimNewEntry } from './platform/lock-form.ts';
+import { EntryLockHeldError, claimNewEntry } from './platform/lock-form.ts';
 import { SocketPathUnsupportedError, assertSocketPathLength, isPipePath, pipePathFor, refuseUnbindableUnixSocketPath } from './socket-path.ts';
 
 export interface MomongaPaths {
@@ -508,13 +508,22 @@ const ensureSessionTmpDirWindows = async (paths: MomongaPaths, sessionId: string
 
 const heldSessionScratch = new Map<string, HeldKernelLock>();
 
-const claimSessionScratch = async (directory: string, lock: KernelLockMechanism): Promise<boolean> => {
-  if (heldSessionScratch.has(directory)) return false;
-  heldSessionScratch.set(directory, await claimNewEntry(lock, directory, 'sidecar'));
-  return true;
+export type SessionScratchClaim = 'owned' | 'shared';
+
+export type SessionScratch = { dir: string; claim: SessionScratchClaim };
+
+const claimSessionScratch = async (directory: string, lock: KernelLockMechanism): Promise<{ claimedNow: boolean; claim: SessionScratchClaim }> => {
+  if (heldSessionScratch.has(directory)) return { claimedNow: false, claim: 'owned' };
+  try {
+    heldSessionScratch.set(directory, await claimNewEntry(lock, directory, 'sidecar'));
+  } catch (error) {
+    if (error instanceof EntryLockHeldError) return { claimedNow: false, claim: 'shared' };
+    throw error;
+  }
+  return { claimedNow: true, claim: 'owned' };
 };
 
-const releaseSessionScratch = (directory: string): void => {
+export const releaseSessionScratch = (directory: string): void => {
   const held = heldSessionScratch.get(directory);
   heldSessionScratch.delete(directory);
   held?.release();
@@ -527,13 +536,13 @@ const assertSessionsRootIsDirectory = async (root: string): Promise<void> => {
   }
 };
 
-export const ensureSessionTmpDir = async (paths: MomongaPaths, sessionId: string, ports: PlatformDirectoryPorts = {}): Promise<string> => {
+export const ensureSessionTmpDir = async (paths: MomongaPaths, sessionId: string, ports: PlatformDirectoryPorts = {}): Promise<SessionScratch> => {
   assertSessionId(sessionId);
   const directory = path.join(paths.tmp.sessions, sessionId);
   await assertSessionsRootIsDirectory(paths.tmp.sessions);
-  const claimedNow = await claimSessionScratch(directory, ports.lock ?? hostKernelLock());
+  const { claimedNow, claim } = await claimSessionScratch(directory, ports.lock ?? hostKernelLock());
   try {
-    return await ensureClaimedSessionTmpDir(paths, sessionId, ports);
+    return { dir: await ensureClaimedSessionTmpDir(paths, sessionId, ports), claim };
   } catch (error) {
     if (claimedNow) releaseSessionScratch(directory);
     throw error;

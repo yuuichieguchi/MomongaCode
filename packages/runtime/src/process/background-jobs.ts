@@ -1,14 +1,16 @@
 import path from 'node:path';
-import { canonicalJson, claimRetry, commandMayStillRun, defaultProcessInspector, findHolders, groupAlive, groupPortOf, groupRecordOutcome, outlivedNotes, reapMarkedProcesses, recordMarkerGroup, reconcileProcessGroup, reportUninspectableOnce, sha256Hex } from '@momonga/foundation';
-import type { Clock, MarkerMode, MarkerState, ProcessGroupPort, ReapTiming, UninspectableProcess, UninspectableRegistry } from '@momonga/foundation';
+import { CLAIM_POLL_MS, canonicalJson, claimRetry, commandMayStillRun, defaultProcessInspector, findHolders, groupAlive, groupPortOf, groupRecordOutcome, markerReapClockBoundMs, outlivedNotes, reapMarkedProcesses, recordMarkerGroup, reconcileProcessGroup, reportUninspectableOnce, sha256Hex } from '@momonga/foundation';
+import type { Clock, MarkerMode, MarkerState, ProcessGroupPort, ReapTiming, RolePort, UninspectableProcess, UninspectableRegistry } from '@momonga/foundation';
 import type { SandboxedProcess } from '@momonga/sandbox';
 import type { Job, JobResult, RuntimeStore } from '@momonga/store';
-import { ToolExecutionError, createMarkerOwners, unnamedLivenessNotes } from '@momonga/tools';
+import { RetiringYield, ToolExecutionError, createMarkerOwners, unnamedLivenessNotes } from '@momonga/tools';
 import type { BackgroundJobs, MarkerOwners } from '@momonga/tools';
 import { toJobView as viewOf } from '../service/views.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { asError } from './as-error.ts';
-import { JOB_ID_HEX_CHARS, JOB_IDEMPOTENCY_TTL_MS, JOB_OUTPUT_WINDOW_BYTES, JOB_STREAM_DRAIN_MS, MAX_RUNNING_JOBS_PER_SESSION } from './constants.ts';
+import { JOB_ID_HEX_CHARS, JOB_IDEMPOTENCY_TTL_MS, JOB_KILL_OWNER_WAKE_MS, JOB_OUTPUT_FILE_MAX_BYTES, JOB_OUTPUT_WINDOW_BYTES, JOB_RECONCILE_BATCH_JOBS, JOB_STREAM_DRAIN_MS, MAX_RUNNING_JOBS_PER_SESSION } from './constants.ts';
+import { jobOutputFileErrorCode, jobOutputPathOf, openJobOutputFile, readJobFileWindow, removeJobOutputFile } from './job-output-file.ts';
+import type { JobOutputFile } from './job-output-file.ts';
 import { createJobOutput } from './job-output.ts';
 import type { JobMarkerFiles } from './job-marker-files.ts';
 import type { JobOutput } from './job-output.ts';
@@ -18,6 +20,12 @@ export type BackgroundJobsOptions = {
   clock: Clock;
   timers: ServiceTimers;
   markerDir: string;
+  generation: number;
+  jobsDir: string;
+  role: Pick<RolePort, 'current'>;
+  markerDirOf(ownerGeneration: number): string;
+  ownerAlive(ownerGeneration: number): Promise<boolean>;
+  onSettled?: () => void;
   markerFiles: JobMarkerFiles;
   owners?: MarkerOwners;
   killGraceMs: number;
@@ -40,9 +48,15 @@ export type ProcessProbes = {
 export type BackgroundJobRegistry = BackgroundJobs & {
   liveKeys(): ReadonlySet<string>;
   finalized(jobId: string): Promise<void>;
-  reconcileOrphans(): Promise<void>;
+  liveCount(): number;
+  stopKillRequested(): void;
+  reconcileOrphans(options?: { batch: number }): Promise<void>;
   stopAll(): Promise<void>;
 };
+
+export const jobKillWaitMs = (killGraceMs: number): number => markerReapClockBoundMs(killGraceMs) + JOB_KILL_OWNER_WAKE_MS;
+
+export { JOB_RECONCILE_BATCH_JOBS };
 
 type StopReason = 'killed' | 'timeout' | 'shutdown';
 
@@ -50,6 +64,7 @@ type LiveJob = {
   job: Job;
   controller: AbortController;
   output: JobOutput;
+  file: JobOutputFile;
   stopReason: StopReason | undefined;
   finalized: Promise<void>;
 };
@@ -101,6 +116,15 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       await Promise.race([pumps, expired]);
     } finally {
       timers.clearTimeout(handle);
+    }
+  };
+
+  const discardOutputFile = async (file: JobOutputFile, jobId: string): Promise<void> => {
+    try {
+      await file.close();
+      await removeJobOutputFile(file.path);
+    } catch (error) {
+      onWarning(`the output file of background job ${jobId} could not be removed: ${asError(error).message}`);
     }
   };
 
@@ -157,10 +181,12 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       recordUnknown();
       throw error;
     } finally {
+      await discardOutputFile(entry.file, job.id);
       timers.clearTimeout(timer);
       if (markerSettled) await markerFiles.remove(marker, onWarning);
       ownedKeys.delete(job.idemKey);
       live.delete(job.id);
+      options.onSettled?.();
     }
   };
 
@@ -172,9 +198,68 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     return entry.finalized;
   };
 
-  const pump = async (stream: AsyncIterable<Uint8Array>, output: JobOutput): Promise<void> => {
-    for await (const chunk of stream) output.push(Buffer.from(chunk));
+  const pump = async (stream: AsyncIterable<Uint8Array>, output: JobOutput, file: JobOutputFile): Promise<void> => {
+    for await (const chunk of stream) {
+      const bytes = Buffer.from(chunk);
+      output.push(bytes);
+      file.append(bytes);
+    }
   };
+
+  const ownerLives = async (job: Job): Promise<boolean> => {
+    if (job.ownerGeneration === undefined || job.ownerGeneration === options.generation) return false;
+    return options.ownerAlive(job.ownerGeneration);
+  };
+
+  const markerOf = (job: Job): string => path.join(job.ownerGeneration === undefined ? markerDir : options.markerDirOf(job.ownerGeneration), job.idemKey);
+
+  const reconcileOrphan = async (job: Job): Promise<void> => {
+    const orphanMarker = markerOf(job);
+    try {
+      const claim = await claimRetry(orphanMarker, 'startup', { signal: lifecycle });
+      if (claim === 'absent' || claim === 'claimed') {
+        await probes.reapMarkedProcesses({
+          marker: orphanMarker,
+          ...(job.pgid === undefined ? {} : { pgid: job.pgid }),
+          killGraceMs,
+          label: 'job',
+          onWarning,
+          timing: reapTiming,
+          signal: lifecycle,
+        });
+      }
+    } catch (error) {
+      onWarning(`background job ${job.id} could not be reaped: ${asError(error).message}`);
+    }
+    let output: JobResult['output'];
+    if (job.outputPath !== undefined) {
+      try {
+        const window = await readJobFileWindow(job.outputPath, 0, JOB_OUTPUT_WINDOW_BYTES);
+        if (window !== undefined && window.bytes.length > 0) {
+          output = { handle: store.blobs.put(window.bytes, { mediaType: 'text/plain', runId: job.runId }).handle, start: window.start, total: window.total };
+        }
+      } catch (error) {
+        onWarning(`the output file of background job ${job.id} could not be read: ${asError(error).message}`);
+      }
+    }
+    store.jobs.finish(job.id, { status: 'unknown', ...(output === undefined ? {} : { output }) });
+    settleRecord(job, { job: job.id, status: 'unknown' });
+    if (job.outputPath !== undefined) {
+      await removeJobOutputFile(job.outputPath).catch((error: unknown) => onWarning(`the output file of background job ${job.id} could not be removed: ${asError(error).message}`));
+    }
+  };
+
+  const waitUntilEnded = async (jobId: string): Promise<Job> => {
+    const deadline = reapTiming.now() + jobKillWaitMs(killGraceMs);
+    for (;;) {
+      const current = store.jobs.get(jobId);
+      if (current === undefined) throw new Error(`job ${jobId} vanished`);
+      if (current.status !== 'running' || reapTiming.now() >= deadline || lifecycle.aborted) return current;
+      await reapTiming.sleep(Math.min(CLAIM_POLL_MS, deadline - reapTiming.now()));
+    }
+  };
+
+  let reconcileCursor: string | undefined;
 
   const start: BackgroundJobs['start'] = async (request) => {
     const run = store.getRun(request.runId);
@@ -182,19 +267,45 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     const idemKey = jobKeyOf(request.callKey);
     const existing = store.jobs.byIdemKey(idemKey);
     if (existing !== undefined) return { jobId: existing.id };
+    if (options.role.current() === 'retiring') throw new RetiringYield();
     const running = store.jobs.listForSession(run.sessionId).filter((job) => job.status === 'running').length;
     if (running >= MAX_RUNNING_JOBS_PER_SESSION) {
       throw new ToolExecutionError(`This session already has ${running} running background jobs; stop one with KillBash before starting another`);
     }
-    store.idempotency.begin(idemKey, { expiresAt: clock.now() + JOB_IDEMPOTENCY_TTL_MS, meta: { tool: 'Bash', runId: request.runId, job: true } });
-    const { job } = store.jobs.start({
-      id: `bash_${idemKey.slice(0, JOB_ID_HEX_CHARS)}`,
-      idemKey,
-      sessionId: run.sessionId,
-      runId: request.runId,
-      callId: request.callId,
-      command: request.command,
-    });
+    const jobId = `bash_${idemKey.slice(0, JOB_ID_HEX_CHARS)}`;
+    const outputPath = jobOutputPathOf(options.jobsDir, jobId);
+    let fileFailure: ((code: string) => void) | undefined;
+    let file: JobOutputFile;
+    try {
+      file = await openJobOutputFile({ path: outputPath, maxBytes: JOB_OUTPUT_FILE_MAX_BYTES, onFailure: (code) => fileFailure?.(code) });
+    } catch (error) {
+      throw new ToolExecutionError(`could not start the background job: its output file could not be created (${jobOutputFileErrorCode(error)})`);
+    }
+    fileFailure = () => {
+      try {
+        store.jobs.clearOutputPath(jobId);
+      } catch (error) {
+        report(error);
+      }
+    };
+    const discardFile = (): Promise<void> => discardOutputFile(file, jobId);
+    let job: Job;
+    try {
+      store.idempotency.begin(idemKey, { expiresAt: clock.now() + JOB_IDEMPOTENCY_TTL_MS, meta: { tool: 'Bash', runId: request.runId, job: true } });
+      job = store.jobs.start({
+        id: jobId,
+        idemKey,
+        sessionId: run.sessionId,
+        runId: request.runId,
+        callId: request.callId,
+        command: request.command,
+        ownerGeneration: options.generation,
+        outputPath,
+      }).job;
+    } catch (error) {
+      await discardFile();
+      throw error;
+    }
     const marker = path.join(markerDir, idemKey);
     const controller = new AbortController();
     let process: SandboxedProcess;
@@ -210,6 +321,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     } catch (error) {
       if (created) await markerFiles.remove(marker, onWarning);
       ownedKeys.delete(idemKey);
+      await discardFile();
       store.jobs.finish(job.id, { status: 'unknown' });
       settleRecord(job, { job: job.id, status: 'unknown' });
       throw error;
@@ -217,8 +329,8 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     store.jobs.attachProcess(job.id, process.pgid);
     store.idempotency.attachProcess(idemKey, { pgid: process.pgid, startedAt: clock.now() });
     const output = createJobOutput(JOB_OUTPUT_WINDOW_BYTES);
-    const pumps = Promise.all([pump(process.stdout, output), pump(process.stderr, output)]).then(() => undefined);
-    const entry: LiveJob = { job, controller, output, stopReason: undefined, finalized: Promise.resolve() };
+    const pumps = Promise.all([pump(process.stdout, output, file), pump(process.stderr, output, file)]).then(() => undefined);
+    const entry: LiveJob = { job, controller, output, file, stopReason: undefined, finalized: Promise.resolve() };
     const timer = timers.setTimeout(() => void stop(entry, 'timeout'), request.timeoutMs);
     entry.finalized = finalize(entry, process, pumps, timer);
     entry.finalized.catch(report);
@@ -234,6 +346,17 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       const begin = Math.max(from, window.start);
       return { text: window.bytes.subarray(begin - window.start).toString('utf8'), omitted: Math.max(0, window.start - from), total: window.total };
     }
+    if (job.status === 'running' && job.outputPath !== undefined) {
+      const window = await readJobFileWindow(job.outputPath, from, JOB_OUTPUT_WINDOW_BYTES);
+      if (window !== undefined) return { text: window.bytes.toString('utf8'), omitted: Math.max(0, window.start - from), total: window.total };
+      const reread = store.jobs.get(job.id);
+      if (reread === undefined || reread.status === 'running') return { text: '', omitted: 0, total: job.readOffset };
+      return readStored(reread, from);
+    }
+    return readStored(job, from);
+  };
+
+  const readStored = async (job: Job, from: number): Promise<{ text: string; omitted: number; total: number }> => {
     if (job.outputHandle === undefined) return { text: '', omitted: 0, total: job.readOffset };
     const begin = Math.max(from, job.outputStart);
     const length = job.outputTotal - begin;
@@ -255,43 +378,48 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       const kept = filter === undefined ? text : matching(text, filter);
       const note = omitted > 0 ? `[… ${omitted} bytes omitted …]\n` : '';
       const current = store.jobs.get(job.id) ?? job;
-      return { job: viewOf(current), output: kept === '' ? note.trimEnd() : `${note}${kept}`.replace(/\n+$/, '') };
+      const shown = kept === '' ? note.trimEnd() : `${note}${kept}`.replace(/\n+$/, '');
+      const fileFailure = live.get(job.id)?.file.failure();
+      const unavailable = fileFailure === undefined ? '' : `[output file unavailable: ${fileFailure}]`;
+      return { job: viewOf(current), output: unavailable === '' ? shown : shown === '' ? unavailable : `${shown}\n${unavailable}` };
     },
     kill: async (runId, jobId) => {
       const job = authorize(runId, jobId);
       const entry = live.get(job.id);
       if (entry !== undefined) await stop(entry, 'killed');
+      else if (job.status === 'running') {
+        if (await ownerLives(job)) {
+          store.jobs.requestKill(job.id);
+          const waited = await waitUntilEnded(job.id);
+          return { view: viewOf(waited), kill: waited.status === 'running' ? 'requested' : 'stopped' };
+        }
+        await reconcileOrphan(job);
+      }
       const current = store.jobs.get(job.id);
       if (current === undefined) throw new Error(`job ${job.id} vanished`);
-      return viewOf(current);
+      return { view: viewOf(current), kill: 'stopped' };
     },
     finalized: (jobId) => live.get(jobId)?.finalized ?? Promise.resolve(),
     liveKeys: () => new Set([...live.values()].map((entry) => entry.job.idemKey)),
     stopAll: async () => {
       await Promise.allSettled([...live.values()].map((entry) => stop(entry, 'shutdown')));
     },
-    reconcileOrphans: async () => {
-      for (const job of store.jobs.listRunning()) {
+    liveCount: () => live.size,
+    stopKillRequested: () => {
+      for (const entry of live.values()) {
+        if (entry.stopReason === undefined && store.jobs.get(entry.job.id)?.killRequestedAt !== undefined) void stop(entry, 'killed');
+      }
+    },
+    reconcileOrphans: async (batchOptions) => {
+      const running = store.jobs.listRunning();
+      const after = reconcileCursor === undefined ? -1 : running.findIndex((job) => job.id === reconcileCursor);
+      const ordered = [...running.slice(after + 1), ...running.slice(0, after + 1)];
+      const batch = batchOptions === undefined ? ordered : ordered.slice(0, batchOptions.batch);
+      for (const job of batch) {
+        reconcileCursor = job.id;
         if (live.has(job.id)) continue;
-        const orphanMarker = path.join(markerDir, job.idemKey);
-        try {
-          const claim = await claimRetry(orphanMarker, 'startup', { signal: lifecycle });
-          if (claim === 'absent' || claim === 'claimed') {
-            await probes.reapMarkedProcesses({
-              marker: orphanMarker,
-              ...(job.pgid === undefined ? {} : { pgid: job.pgid }),
-              killGraceMs,
-              label: 'job',
-              onWarning,
-              timing: reapTiming,
-              signal: lifecycle,
-            });
-          }
-        } catch (error) {
-          onWarning(`background job ${job.id} could not be reaped: ${asError(error).message}`);
-        }
-        store.jobs.finish(job.id, { status: 'unknown' });
-        settleRecord(job, { job: job.id, status: 'unknown' });
+        if (await ownerLives(job)) continue;
+        await reconcileOrphan(job);
       }
     },
   };

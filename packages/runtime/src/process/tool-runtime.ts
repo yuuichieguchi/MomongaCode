@@ -11,11 +11,17 @@ import {
   minimalChildEnv,
   hostProcessInspector,
   ensureSessionTmpDir as defaultEnsureSessionTmpDir,
+  generationMarkerDirectories,
+  inspectProcessLock,
+  generationLayout,
+  generationOfDirectoryName,
+  nodeFileSystem,
+  releaseSessionScratch,
   hostInspectorPorts,
   ruleEnforcementOf,
   sha256Hex,
 } from '@momonga/foundation';
-import type { Clock, CredentialSecretStore, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, ProcessInspector, ReapTiming, RuleEnforcement } from '@momonga/foundation';
+import type { Clock, CredentialSecretStore, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, ProcessInspector, ReapTiming, RolePort, RuleEnforcement, SessionScratch } from '@momonga/foundation';
 import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/mcp';
 import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { SandboxBindings } from '../ports.ts';
@@ -44,6 +50,10 @@ export type ToolRuntimeOptions = {
   lockCapability?: LockCapabilityProbe;
   kernelLock?: KernelLockMechanism;
   paths: MomongaPaths;
+  sharedPaths: MomongaPaths;
+  generation: number;
+  role: Pick<RolePort, 'current'>;
+  onJobSettled?: () => void;
   home: string;
   store: RuntimeStore;
   notifier: Pick<RunNotifier, 'watchRun'>;
@@ -61,7 +71,7 @@ export type ToolRuntimeOptions = {
   createAdminPool?: (options: McpPoolOptions) => McpAuthorizingPool;
   mcpRemote?: McpRemotePorts;
   credentialSecretStore?: CredentialSecretStore;
-  ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<string>;
+  ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<SessionScratch>;
   policyFilesystem?: PolicyHostFilesystem;
   bundledRipgrep?: BundledRipgrepResolver;
   owners?: MarkerOwners;
@@ -105,6 +115,13 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     clock,
     timers,
     markerDir: paths.markers.tools,
+    generation: options.generation,
+    jobsDir: paths.jobs,
+    role: options.role,
+    ...(options.onJobSettled === undefined ? {} : { onSettled: options.onJobSettled }),
+    markerDirOf: (ownerGeneration) => generationMarkerDirectories(options.sharedPaths, ownerGeneration).tools,
+    ownerAlive: async (ownerGeneration) =>
+      (await inspectProcessLock(generationLayout(home, ownerGeneration).locks.runtime, options.kernelLock === undefined ? {} : { mechanism: options.kernelLock })).state !== 'free',
     markerFiles: createNodeJobMarkerFiles(lockCapability),
     killGraceMs: SANDBOX_KILL_GRACE_MS,
     reapTiming,
@@ -120,6 +137,11 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     blobs: store.blobs,
     clock,
     processMarkerDir: paths.markers.tools,
+    earlierMarkerDirs: async () =>
+      (await nodeFileSystem.readdir(options.sharedPaths.markers.root))
+        .map(generationOfDirectoryName)
+        .filter((generation): generation is number => generation !== undefined)
+        .map((generation) => generationMarkerDirectories(options.sharedPaths, generation).tools),
     owners,
     callLockDir: paths.callLocks,
     ...(options.kernelLock === undefined ? {} : { kernelLock: options.kernelLock }),
@@ -139,7 +161,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     markers: { dir: paths.markers.mcp, onWarning: (message) => logger.warn(message) },
   });
   const mcpPools = createMcpPoolCache({ store, notifier, timers, logger, report });
-  const sessionStates = createSessionStates({ clock, store, logger });
+  const sessionStates = createSessionStates({ clock, store, logger, releaseScratch: (sessionId) => releaseSessionScratch(path.join(paths.tmp.sessions, sessionId)) });
   const policyOptions = { paths, home, fs: policyFilesystem, sessionStates, ensureSessionTmpDir };
   const policyBuilders = new Map<RuleEnforcement, EnforcedPolicyFor>();
   const policyFor: ToolRuntimePort['policyFor'] = (session, request) => {

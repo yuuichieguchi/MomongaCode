@@ -31,7 +31,6 @@ export const sweepSessionTmp = async ({
   root,
   store,
   now,
-  hasInMemoryState,
   onWarning,
   files = nodeRuntimeFiles,
   lock = hostKernelLock(),
@@ -39,13 +38,11 @@ export const sweepSessionTmp = async ({
   root: string;
   store: Pick<RuntimeStore, 'sessionActivity'>;
   now: number;
-  hasInMemoryState(sessionId: string): boolean;
   onWarning(message: string): void;
   files?: RuntimeFiles;
   lock?: KernelLockMechanism;
 }): Promise<{ removed: number; kept: number }> => {
   const retained = (sessionId: string): boolean => {
-    if (hasInMemoryState(sessionId)) return true;
     const activity = store.sessionActivity(sessionId);
     return activity !== undefined && (activity.hasActiveRun || now - activity.lastActivityAt < SESSION_TMP_RETENTION_MS);
   };

@@ -22,11 +22,15 @@ const targetNameWhoseSocketIs = (home: string, byteLength: number): string => {
   return `t${'n'.repeat(byteLength - prefix - 1)}`;
 };
 
-const unfitText = (target: string, byteLength: number, limit: number): string =>
-  `the target "${target}": its server socket path is ${byteLength} bytes, longer than the ${limit} bytes this platform allows; choose a shorter target name`;
+const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-describe.skipIf(process.platform === 'win32')('an instance socket path that does not fit the platform refuses that target only, with the not-ready error of 18.2.5 (design-managed-servers section 18, item 4)', () => {
-  it('starts the gateway, answers the long-path target 412 target_not_ready with the 18.2.5 text, creates no socket or marker for it, and still serves the other target', async () => {
+const unfitText = (target: string, byteLength: number, directory: string): RegExp =>
+  new RegExp(
+    `^${escaped(`the target "${target}": its server socket path is ${byteLength} bytes, and the system refused to bind a socket path of that length in ${directory} (`)}(ENAMETOOLONG|EINVAL)${escaped('); choose a shorter target name')}$`,
+  );
+
+describe.skipIf(process.platform === 'win32')('an instance socket path that does not fit the platform refuses that target only, with the not-ready error of the bind measurement (design-update 20.58)', () => {
+  it('starts the gateway, answers the long-path target 412 target_not_ready with the bind-measurement text, creates no socket or marker for it, and still serves the other target', async () => {
     const fm = await createFakeFm({ dir: makeDir() });
     const home = makeHome();
     const limit = socketPathLimit(process.platform);
@@ -49,7 +53,7 @@ describe.skipIf(process.platform === 'win32')('an instance socket path that does
     const refused = await readJson(await postJson(client, '/v1/responses', { model: 'long', input: userInput('hello') }));
     expect(refused.status).toBe(412);
     expect(refused.body.error.code).toBe(TARGET_NOT_READY);
-    expect(refused.body.error.message).toBe(unfitText(longTarget, limit + 1, limit));
+    expect(refused.body.error.message).toMatch(unfitText(longTarget, limit + 1, instanceSockets(home)));
     expect(fs.existsSync(longSocket)).toBe(false);
     expect(fs.existsSync(instanceMarkers(home, `${longTarget}${FIRST_INCARNATION_SUFFIX}`))).toBe(false);
 

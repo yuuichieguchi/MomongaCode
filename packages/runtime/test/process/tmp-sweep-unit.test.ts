@@ -62,9 +62,16 @@ const exists = (target: string): boolean => {
   }
 };
 
-const sweep = (temp: TempHome, store: { sessionActivity(id: string): Activity | undefined }, hasInMemoryState: (id: string) => boolean = () => false, lock: KernelLockMechanism = hostKernelLock()) => {
+const sweep = (temp: TempHome, store: { sessionActivity(id: string): Activity | undefined }, lock: KernelLockMechanism = hostKernelLock()) => {
   const warned = warnings();
-  return { warned, result: sweepSessionTmp({ root: temp.paths.tmp.sessions, store, now: NOW, hasInMemoryState, onWarning: warned.onWarning, lock }) };
+  return { warned, result: sweepSessionTmp({ root: temp.paths.tmp.sessions, store, now: NOW, onWarning: warned.onWarning, lock }) };
+};
+
+const holdScratchClaim = (entry: string): (() => void) => {
+  const lock = hostKernelLock();
+  const claimed = lock.claimSync?.(claimPathOf(lock, entry, 'sidecar'));
+  if (claimed?.kind !== 'claimed') throw new Error(`the sidecar of ${entry} could not be claimed by the test`);
+  return () => claimed.lock.dispose();
 };
 
 describe('sweepSpawnTmp (fake clock, fake timers, none armed)', () => {
@@ -147,15 +154,20 @@ describe('sweepSessionTmp (fake clock, fake timers, none armed)', () => {
     expect(exists(dir)).toBe(true);
   });
 
-  it('keeps a session with in-memory state', async () => {
+  it('keeps a session whose scratch claim its owner holds', async () => {
     const temp = await makeTempHome();
     const dir = sessionDir(temp, sessionId(1));
     const store = activityStore({});
+    const release = holdScratchClaim(dir);
 
-    const { result } = sweep(temp, store, (id) => id === sessionId(1));
+    try {
+      const { result } = sweep(temp, store);
 
-    expect(await result).toEqual({ removed: 0, kept: 1 });
-    expect(exists(dir)).toBe(true);
+      expect(await result).toEqual({ removed: 0, kept: 1 });
+      expect(exists(dir)).toBe(true);
+    } finally {
+      release();
+    }
   });
 
   for (const platform of ['darwin', 'linux'] as const) {
@@ -168,23 +180,29 @@ describe('sweepSessionTmp (fake clock, fake timers, none armed)', () => {
       fs.writeFileSync(file, 'stray');
       claimed.lock.release();
 
-      const { result } = sweep(temp, activityStore({}), () => false, lock);
+      const { result } = sweep(temp, activityStore({}), lock);
 
       expect(await result).toEqual({ removed: 1, kept: 0 });
       expect(fs.readdirSync(temp.paths.tmp.sessions)).toEqual([]);
     });
   }
 
-  it('a symlink entry of a live session is kept untouched (in-memory state)', async () => {
+  it('a symlink entry of a live session is kept untouched (its scratch claim is held)', async () => {
     const temp = await makeTempHome();
     const outside = makeDir(temp.root, 'outside');
     fs.writeFileSync(path.join(outside, 'keep.txt'), 'kept');
     const link = path.join(temp.paths.tmp.sessions, sessionId(1));
     fs.symlinkSync(outside, link);
+    const release = holdScratchClaim(link);
 
-    const { result } = sweep(temp, activityStore({}), (id) => id === sessionId(1));
+    let swept: { removed: number; kept: number };
+    try {
+      swept = await sweep(temp, activityStore({})).result;
+    } finally {
+      release();
+    }
 
-    expect(await result).toEqual({ removed: 0, kept: 1 });
+    expect(swept).toEqual({ removed: 0, kept: 1 });
     expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
     expect(fs.readlinkSync(link)).toBe(outside);
     expect(fs.readFileSync(path.join(outside, 'keep.txt'), 'utf8')).toBe('kept');
@@ -272,21 +290,6 @@ describe('sweepSessionTmp (fake clock, fake timers, none armed)', () => {
     expect(await hostKernelLock().isHeld(claimPathOf(hostKernelLock(), dir, 'sidecar'))).toBe(false);
   });
 
-  it('retention is decided once, under the claim: in-memory state is read once per entry', async () => {
-    const temp = await makeTempHome();
-    const dir = sessionDir(temp, sessionId(1));
-    let checks = 0;
-
-    const { result } = sweep(temp, activityStore({}), () => {
-      checks += 1;
-      return true;
-    });
-
-    expect(await result).toEqual({ removed: 0, kept: 1 });
-    expect(checks).toBe(1);
-    expect(fs.readFileSync(path.join(dir, 'note.txt'), 'utf8')).toBe('x');
-  });
-
   it('retention is decided once, under the claim: the store is asked once per entry', async () => {
     const temp = await makeTempHome();
     const dir = sessionDir(temp, sessionId(1));
@@ -348,9 +351,15 @@ describe('sweepSessionTmp (fake clock, fake timers, none armed)', () => {
       return (originalLstat as (...args: unknown[]) => Promise<unknown>)(target, ...rest);
     }) as typeof fs.promises.lstat);
 
-    const { result } = sweep(temp, activityStore({ [sessionId(2)]: { lastActivityAt: NOW - 30 * DAY_MS, hasActiveRun: true } }), (id) => id === sessionId(1));
+    const release = holdScratchClaim(live);
+    let swept: { removed: number; kept: number };
+    try {
+      swept = await sweep(temp, activityStore({ [sessionId(2)]: { lastActivityAt: NOW - 30 * DAY_MS, hasActiveRun: true } })).result;
+    } finally {
+      release();
+    }
 
-    expect(await result).toEqual({ removed: 0, kept: 2 });
+    expect(swept).toEqual({ removed: 0, kept: 2 });
     expect(lstatted).not.toContain(live);
     expect(lstatted).not.toContain(active);
   });

@@ -1,3 +1,4 @@
+import { fixedRolePort } from '@momonga/foundation';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Agent, request } from 'undici';
@@ -21,6 +22,7 @@ const constructWith = (debugTcp: { host: string; port: number; token: string }) 
     dir,
     attempt: (async () =>
       createGateway({
+      role: fixedRolePort('serving'),
       random: () => 0.5,
       credentials: [],
       config: buildConfig(),

@@ -1106,9 +1106,16 @@ export type RunHealth = {
   apiVersion: 1;
   pid: number;
   startedAt: string;
-  state: 'running' | 'draining';
+  state: 'running' | 'retiring' | 'draining';
+  role?: 'starting' | 'serving' | 'retiring';
+  steps?: number;
+  jobs?: number;
   sandbox: 'seatbelt' | 'bubblewrap' | 'none';
 };
+
+export const DAEMON_CURRENT_EVENT = 'daemon.current';
+
+export type DaemonCurrentFrame = { generation: number; version: string };
 
 const runView = closed(
   {
@@ -1241,7 +1248,10 @@ export const RUN_API_SCHEMAS = {
         apiVersion: { type: 'integer', const: 1 },
         pid: integer,
         startedAt: string,
-        state: enumOf(['running', 'draining']),
+        state: enumOf(['running', 'retiring', 'draining']),
+        role: enumOf(['starting', 'serving', 'retiring']),
+        steps: integer,
+        jobs: integer,
         sandbox: enumOf(['seatbelt', 'bubblewrap', 'none']),
       },
       ['status', 'version', 'apiVersion', 'pid', 'startedAt', 'state', 'sandbox'],

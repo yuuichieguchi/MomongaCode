@@ -1,4 +1,4 @@
-import { createUdsClient, isRecord } from '@momonga/foundation';
+import { GENERATION_RETIRED_CODE, createUdsClient, isRecord } from '@momonga/foundation';
 import type { SocketResolver } from '@momonga/foundation';
 import { JSON_MODES, agentReadiness, isProbingCapabilities, isToolCallingState } from '@momonga/protocol';
 import type { AliasCapabilities, Capabilities, MomongaModelEntry, MomongaModelList, ProbingCapabilities, UsageReport } from '@momonga/protocol';
@@ -61,14 +61,33 @@ const isUsageReport = (value: unknown): value is UsageReport =>
   isCount(value['total']['output_tokens']) &&
   isCount(value['total']['total_tokens']);
 
+const retiredRefusalOf = (text: string): string | undefined => {
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch (error) {
+    if (error instanceof SyntaxError) return undefined;
+    throw error;
+  }
+  const error = isRecord(body) ? body['error'] : undefined;
+  return isRecord(error) && error['code'] === GENERATION_RETIRED_CODE && typeof error['message'] === 'string' ? error['message'] : undefined;
+};
+
 export const createGatewayClient = (options: { resolveSocket: SocketResolver }): GatewayClient => {
   const http = createUdsClient(options.resolveSocket);
 
-  const getJson = async (path: string): Promise<unknown> => {
+  const send = async (path: string): Promise<{ status: number; text: string }> => {
     const response = await http.request({ method: 'GET', path });
-    const text = await response.text();
-    if (response.status !== 200) throw new Error(`GET ${path} answered ${response.status}: ${text}`);
-    return JSON.parse(text);
+    return { status: response.status, text: await response.text() };
+  };
+
+  const getJson = async (path: string): Promise<unknown> => {
+    const first = await send(path);
+    const answer = retiredRefusalOf(first.text) === undefined ? first : await send(path);
+    const refusal = retiredRefusalOf(answer.text);
+    if (refusal !== undefined) throw new Error(refusal);
+    if (answer.status !== 200) throw new Error(`GET ${path} answered ${answer.status}: ${answer.text}`);
+    return JSON.parse(answer.text);
   };
 
   const models = async (): Promise<readonly MomongaModelEntry[]> => {

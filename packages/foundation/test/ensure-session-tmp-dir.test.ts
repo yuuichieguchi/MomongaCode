@@ -31,7 +31,7 @@ const preparedPaths = async (): Promise<MomongaPaths> => {
 describe('ensureSessionTmpDir', () => {
   it('creates the session dir under tmp.sessions with mode 0700 and returns it', async () => {
     const paths = await preparedPaths();
-    const dir = await ensureSessionTmpDir(paths, 'session-1');
+    const { dir } = await ensureSessionTmpDir(paths, 'session-1');
     const expected = path.join(paths.tmp.sessions, 'session-1');
     expect(fs.realpathSync(dir)).toBe(fs.realpathSync(expected));
     const stat = fs.lstatSync(expected);
@@ -41,9 +41,9 @@ describe('ensureSessionTmpDir', () => {
 
   it('is idempotent and keeps existing contents', async () => {
     const paths = await preparedPaths();
-    const first = await ensureSessionTmpDir(paths, 'session-1');
+    const { dir: first } = await ensureSessionTmpDir(paths, 'session-1');
     fs.writeFileSync(path.join(first, 'keep'), 'kept');
-    const second = await ensureSessionTmpDir(paths, 'session-1');
+    const { dir: second } = await ensureSessionTmpDir(paths, 'session-1');
     expect(second).toBe(first);
     expect(fs.readFileSync(path.join(second, 'keep'), 'utf8')).toBe('kept');
   });

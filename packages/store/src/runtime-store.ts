@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
-import { FIDELITY_FOLD_VERSION, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
+import { MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
 import type { CallTiming, ElicitationAnswerRecord, ElicitationRequestView, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
 import { createAppendRecords, columnsOf } from './append-records.ts';
 import { createVerdictWriter } from './fidelity-verdicts.ts';
@@ -147,6 +147,8 @@ const CLAIMABLE = `
   )
 `;
 
+export const FIDELITY_PRUNE_BATCH_ROWS = 500;
+
 const TAKEOVER = "(r.status IN ('RUNNING', 'CANCELLING') AND r.lease_owner IS NOT NULL)";
 
 const EXHAUSTED = `((${TAKEOVER} AND r.failed_attempts + 1 >= :maxAttempts) OR r.attempts + 1 > :maxTotalAttempts)`;
@@ -169,6 +171,7 @@ const RUN_WRITE_SQL = `
     stop_reason = :stopReason,
     version = :version,
     lease_owner = :leaseOwner,
+    lease_generation = CASE WHEN :leaseOwner IS NULL THEN NULL ELSE lease_generation END,
     lease_token = :leaseToken,
     lease_expires_at = :leaseExpiresAt,
     available_at = :availableAt,
@@ -229,6 +232,11 @@ const prepareStatements = (db: DatabaseSync) => ({
   ),
   activeRunsOfSession: db.prepare(`SELECT id FROM runs WHERE session_id = :sessionId AND status NOT IN (${TERMINAL_LIST}) ORDER BY ordinal`),
   jobs: prepareJobStatements(db),
+  pruneFidelityVerdicts: db.prepare(
+    `DELETE FROM fidelity_verdicts WHERE (run_id, cwd, fold_version, token) IN (
+       SELECT run_id, cwd, fold_version, token FROM fidelity_verdicts WHERE fold_version < :bound LIMIT :limit
+     )`,
+  ),
   dataVersion: db.prepare('PRAGMA data_version'),
   selectRun: db.prepare('SELECT * FROM runs WHERE id = :id'),
   leaseTokenOf: db.prepare('SELECT lease_token FROM runs WHERE id = :runId'),
@@ -314,6 +322,7 @@ const prepareStatements = (db: DatabaseSync) => ({
        status = CASE WHEN status = 'QUEUED' THEN 'RUNNING' ELSE status END,
        version = version + 1,
        lease_owner = :workerId,
+       lease_generation = :generation,
        lease_token = lease_token + 1,
        lease_expires_at = :leaseExpiresAt,
        attempts = attempts + 1,
@@ -336,7 +345,7 @@ const prepareStatements = (db: DatabaseSync) => ({
     `SELECT * FROM runs WHERE id = :runId AND lease_token = :leaseToken AND lease_owner = :workerId AND status NOT IN (${sqlList(RUN_STATUSES)})`,
   ),
   releaseHeldLease: db.prepare(
-    `UPDATE runs SET version = version + 1, lease_owner = NULL, lease_expires_at = NULL, available_at = :availableAt, failed_attempts = 0, attempts = :attempts
+    `UPDATE runs SET version = version + 1, lease_owner = NULL, lease_generation = NULL, lease_expires_at = NULL, available_at = :availableAt, failed_attempts = 0, attempts = :attempts
      WHERE id = :runId AND lease_token = :leaseToken AND lease_owner = :workerId`,
   ),
   inheritedEvent: db.prepare("SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'context.inherited' LIMIT 1"),
@@ -412,7 +421,6 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   try {
     identity = fs.statSync(options.path);
     migrate(db, MIGRATIONS);
-    db.prepare('DELETE FROM fidelity_verdicts WHERE fold_version < :current').run({ current: FIDELITY_FOLD_VERSION });
     blobDirectory = blobDirectoryOf(options.path);
     prepareBlobDirectory(blobDirectory);
     statements = prepareStatements(db);
@@ -984,7 +992,17 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       transaction(() => {
         const existing = sql.jobs.selectByKey.get({ idemKey: input.idemKey });
         if (existing !== undefined) return { job: decodeJob(existing, decodeContext), created: false };
-        sql.jobs.insert.run({ ...input, sessionId: rootSessionIdOf(input.sessionId), startedAt: clock.now() });
+        sql.jobs.insert.run({
+          id: input.id,
+          idemKey: input.idemKey,
+          sessionId: rootSessionIdOf(input.sessionId),
+          runId: input.runId,
+          callId: input.callId,
+          command: input.command,
+          ownerGeneration: input.ownerGeneration ?? null,
+          outputPath: input.outputPath ?? null,
+          startedAt: clock.now(),
+        });
         const row = sql.jobs.select.get({ id: input.id });
         if (row === undefined) throw new Error(`job ${input.id} vanished during start`);
         return { job: decodeJob(row, decodeContext), created: true };
@@ -1038,6 +1056,10 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       }),
     advanceRead: (id, offset, call) => {
       sql.jobs.advance.run({ id, offset, call });
+    },
+    requestKill: (id) => Number(sql.jobs.requestKill.run({ id, now: clock.now() }).changes) === 1,
+    clearOutputPath: (id) => {
+      sql.jobs.clearOutputPath.run({ id });
     },
   };
 
@@ -1235,6 +1257,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     maxTotalAttempts,
 
+    pruneFidelityVerdicts: (bound) => Number(sql.pruneFidelityVerdicts.run({ bound, limit: FIDELITY_PRUNE_BATCH_ROWS }).changes),
+
     checkIdentity: () => {
       let current: fs.Stats;
       try {
@@ -1263,7 +1287,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       const now = clock.now();
       const claim = transaction(() => {
         const candidate = sql.claimTakeover.get({ now, maxAttempts, maxTotalAttempts });
-        const row = sql.claim.get({ now, maxAttempts, maxTotalAttempts, workerId, leaseExpiresAt: now + leaseMs });
+        const row = sql.claim.get({ now, maxAttempts, maxTotalAttempts, workerId, generation: options.generation ?? null, leaseExpiresAt: now + leaseMs });
         if (row === undefined) return null;
         const claimed = decodeRun(row, decodeContext);
         const takenFrom = candidate === undefined ? null : readerFor('runs', claimed.id, candidate).nullableNumber('taken_from');

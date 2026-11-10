@@ -5,7 +5,7 @@ import type { MarkerOwners } from '@momonga/tools';
 import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, stripCredentialEnv } from '@momonga/config';
 import type { AutoFitKey, CredentialRules } from '@momonga/config';
 import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
-import type { Clock } from '@momonga/foundation';
+import type { Clock, GenerationRole } from '@momonga/foundation';
 import { AUTO_MODE_UNAVAILABLE, NO_MODEL_TARGET, RUN_STATUSES, agentReadiness } from '@momonga/protocol';
 import type { Capabilities, CostBreakdownView, GatewayCostReportView, PermissionMode, RunStatus, RunTraceView } from '@momonga/protocol';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
@@ -26,6 +26,7 @@ import {
   invalidRequest,
   methodNotAllowed,
   modeNotAllowed,
+  moved,
   notFound,
   serviceUnavailable,
   skillUnavailable,
@@ -81,6 +82,8 @@ export type RunAppDeps = {
   evidenceRun: (project: string) => EvidenceRun;
   isDraining(): boolean;
   beginDraining(): void;
+  role(): GenerationRole;
+  work: { steps(): number; jobs(): number };
   health: { pid: number; startedAt: string; sandbox: (signal: AbortSignal) => Promise<SandboxKind> };
   protectedRootAreas: readonly string[];
   defaults: RunServiceDefaults;
@@ -89,11 +92,14 @@ export type RunAppDeps = {
   keepAliveMs: number;
   maxBodyBytes: number;
   closeSignal: AbortSignal;
+  retireSignal: AbortSignal;
+  retireFrame: () => Uint8Array | undefined;
   runTrace: (runId: string) => Promise<RunTraceView | undefined>;
   runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>;
   runCostBreakdown: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ breakdown: CostBreakdownView; text: string }>;
   mcp: McpAdminPort;
   markerOwners: MarkerOwners;
+  ignorableMarkerDirectories: () => Promise<readonly string[]>;
   onError: (error: unknown) => void;
 };
 
@@ -177,11 +183,26 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     apiVersion: 1,
     pid: deps.health.pid,
     startedAt: deps.health.startedAt,
-    state: deps.isDraining() ? 'draining' : 'running',
+    state: deps.isDraining() ? 'draining' : deps.role() === 'retiring' ? 'retiring' : 'running',
+    role: deps.role(),
+    steps: deps.work.steps(),
+    jobs: deps.work.jobs(),
     sandbox: await deps.health.sandbox(context.req.raw.signal),
   });
 
   const drainingError = () => serviceUnavailable('draining', 'the service is draining and accepts no new work');
+
+  const newWorkRefusal = (): ApiError | undefined => (deps.isDraining() ? drainingError() : deps.role() === 'serving' ? undefined : moved());
+
+  const refuseNewWork = (): void => {
+    const refusal = newWorkRefusal();
+    if (refusal !== undefined) throw refusal;
+  };
+
+  const refuseWhileRetiring = (): void => {
+    if (deps.isDraining()) throw drainingError();
+    if (deps.role() === 'retiring') throw moved();
+  };
 
   const gatewayAliases = async (): Promise<readonly string[]> => {
     try {
@@ -215,7 +236,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   };
 
   const createSession: Handler = async (context) => {
-    if (deps.isDraining()) throw drainingError();
+    refuseNewWork();
     const body = validateBody<CreateSessionBody>('CreateSessionRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
     const resolved = canonicalDirectory(body.cwd);
     if (!resolved.ok) throw invalidRequest(`cwd ${body.cwd} ${resolved.reason}`, 'cwd');
@@ -245,7 +266,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     checkModeAllowed(permissionMode, bypassAllowed, settings.autoModeClassifier, aliases);
     const stripped = stripCredentialEnv(body.env, settings.credentialEnvNames, settings.credentials);
     const mcpServers = checkedMcpServers(body.mcpServers ?? {});
-    if (deps.isDraining()) throw drainingError();
+    refuseNewWork();
     const session = store.createSession({ cwd, env: stripped.env, permissionMode, modelAlias, bypassAllowed, additionalDirectories, mcpServers });
     return json({ session: await sessionViewOf(session, settings), strippedEnvKeys: stripped.removed }, 201, { location: `/v1/sessions/${session.id}` });
   };
@@ -335,14 +356,15 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       if (!sameRunRequest(found, idempotency.requestDigest)) throw idempotencyKeyReused();
       return json({ run: toRunView(found.run) }, 202, { location: `/v1/runs/${found.run.id}`, 'idempotent-replayed': 'true' });
     };
-    const replayWhileDraining = (): Response | undefined => {
-      if (!deps.isDraining()) return undefined;
+    const replayWhileRefusing = (): Response | undefined => {
+      const refusal = newWorkRefusal();
+      if (refusal === undefined) return undefined;
       const replayed = replay();
-      if (replayed === undefined) throw drainingError();
+      if (replayed === undefined) throw refusal;
       return replayed;
     };
-    const drained = replayWhileDraining();
-    if (drained !== undefined) return drained;
+    const refused = replayWhileRefusing();
+    if (refused !== undefined) return refused;
     const replayed = replay();
     if (replayed !== undefined) return replayed;
     await sessionSettingsOf(session.cwd, context.req.raw.signal);
@@ -357,8 +379,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       }
       if (!capabilities.imageInput) throw imageInputUnsupported(session.modelAlias);
     }
-    const drainedDuringChecks = replayWhileDraining();
-    if (drainedDuringChecks !== undefined) return drainedDuringChecks;
+    const refusedDuringChecks = replayWhileRefusing();
+    if (refusedDuringChecks !== undefined) return refusedDuringChecks;
     const result = store.createRunAndEnqueue(session.id, {
       input: body.input,
       ...idempotency,
@@ -504,7 +526,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
           watch,
           timers: deps.timers,
           keepAliveMs: deps.keepAliveMs,
-          signals: [deps.closeSignal, context.req.raw.signal],
+          signals: [deps.closeSignal, deps.retireSignal, context.req.raw.signal],
+          finalFrame: deps.retireFrame,
           onError: deps.onError,
         });
 
@@ -569,9 +592,10 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     modelCapabilities: deps.modelCapabilities,
     maxBodyBytes: deps.maxBodyBytes,
     closeSignal: deps.closeSignal,
+    refuseWhileRetiring,
   });
-  registerMarkerRoutes(route, { home: deps.home, owners: deps.markerOwners, closeSignal: deps.closeSignal });
-  registerInputRoutes(route, { store, mcp: deps.mcp, maxBodyBytes: deps.maxBodyBytes, closeSignal: deps.closeSignal });
+  registerMarkerRoutes(route, { markerDirectories: deps.ignorableMarkerDirectories, owners: deps.markerOwners, closeSignal: deps.closeSignal });
+  registerInputRoutes(route, { store, mcp: deps.mcp, maxBodyBytes: deps.maxBodyBytes, closeSignal: deps.closeSignal, refuseWhileRetiring });
 
   app.notFound(() => errorResponse(notFound('no such route')));
   app.onError((error) => {

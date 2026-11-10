@@ -68,7 +68,7 @@ const tokensOf = (transcripts: readonly Transcript[]): number =>
 type Completer = (request: GuidelineCompletionRequest) => Promise<GuidelineCompletion>;
 
 const completerFor = async (ports: CliPorts, paths: MomongaPaths, alias: string, capabilities: AliasCapabilities, interrupt: AbortSignal | undefined): Promise<{ complete: Completer; close(): Promise<void> }> => {
-  const { RUNTIME_DEFAULTS, billedDetailOf, carriesOutput, createGatewayClient } = await import('@momonga/runtime');
+  const { RUNTIME_DEFAULTS, billedDetailOf, carriesOutput, createGatewayClient, isGenerationRetiredRefusal } = await import('@momonga/runtime');
   const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway'), clock: ports.clock, version: ports.version });
   const signal = interrupt ?? new AbortController().signal;
   const complete: Completer = async (request) => {
@@ -84,13 +84,21 @@ const completerFor = async (ports: CliPorts, paths: MomongaPaths, alias: string,
       stream: true,
       metadata: { purpose: 'guideline', ...(request.seed === undefined ? {} : { seed: String(request.seed) }) },
     };
-    const events: StreamEvent[] = [];
     const startedAt = ports.clock.now();
+    const call = { idempotencyKey: randomUUID(), deadlineAt: startedAt + RUNTIME_DEFAULTS.runTimeoutMs, signal, role: 'analysis' } as const;
     let firstEventMs: number | undefined;
-    for await (const event of gateway.stream(body, { idempotencyKey: randomUUID(), deadlineAt: startedAt + RUNTIME_DEFAULTS.runTimeoutMs, signal, role: 'analysis' })) {
-      if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = ports.clock.now() - startedAt;
-      events.push(event);
-    }
+    const collect = async (): Promise<StreamEvent[]> => {
+      const collected: StreamEvent[] = [];
+      for await (const event of gateway.stream(body, call)) {
+        if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = ports.clock.now() - startedAt;
+        collected.push(event);
+      }
+      return collected;
+    };
+    const events = await collect().catch((error: unknown) => {
+      if (!isGenerationRetiredRefusal(error)) throw error;
+      return collect();
+    });
     const timing = { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: ports.clock.now() - startedAt };
     const response = terminalResponseOf(events);
     if (response.usage === null) throw new ContextImproveError('the model response carries no usage, so its tokens cannot be charged');

@@ -1,4 +1,4 @@
-import type { Clock, StopValues } from '@momonga/foundation';
+import type { Clock, RolePort, StopValues } from '@momonga/foundation';
 import type { PriceTable, Telemetry } from '@momonga/observability';
 import type { GatewayEpochs } from './core/services.ts';
 import type { ReasoningOriginCodec } from './core/reasoning-origin.ts';
@@ -50,6 +50,8 @@ export type GatewayOptions = GatewayCommonOptions & (FixedModelsOptions | Derive
 
 export type GatewayCommonOptions = {
   startSignal?: AbortSignal;
+  role: RolePort;
+  probeFlights?: () => number;
   credentials: readonly string[];
   credentialFeed?: (add: (credential: string) => void) => void;
   clock: Clock;
@@ -72,6 +74,8 @@ export type Gateway = {
   readonly tcpPort: number | undefined;
   readonly abandonedRuns: number;
   addCredential(credential: string): void;
+  activeRequests(): number;
+  releaseIdleConnections(): void;
   close(values?: StopValues): Promise<void>;
   abort(values?: StopValues): Promise<void>;
 };

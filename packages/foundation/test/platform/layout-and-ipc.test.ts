@@ -170,10 +170,10 @@ describe('windows session temporary directories', () => {
 
   it('creates the session directory directly under the sessions root', async () => {
     await withSessions(async (layout) => {
-      const directory = await ensureSessionTmpDir(layout, 'abc', { platform: 'win32' });
+      const { dir: directory } = await ensureSessionTmpDir(layout, 'abc', { platform: 'win32' });
       expect(directory).toBe(path.join(layout.tmp.sessions, 'abc'));
       expect(fs.statSync(directory).isDirectory()).toBe(true);
-      expect(await ensureSessionTmpDir(layout, 'abc', { platform: 'win32' })).toBe(directory);
+      expect((await ensureSessionTmpDir(layout, 'abc', { platform: 'win32' })).dir).toBe(directory);
     });
   });
 

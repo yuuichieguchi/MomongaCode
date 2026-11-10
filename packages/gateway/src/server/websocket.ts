@@ -4,7 +4,7 @@ import { WebSocketServer } from 'ws';
 import type { RawData, WebSocket } from 'ws';
 import { RUN_ROLE } from '@momonga/protocol';
 import type { StreamEvent } from '@momonga/protocol';
-import { ClientDisconnectedError, GatewayError, invalidRequest, readerStalledError } from '../core/errors.ts';
+import { ClientDisconnectedError, GatewayError, generationRetiredError, invalidRequest, readerStalledError } from '../core/errors.ts';
 import { errorHintsOf } from './sse.ts';
 import type { ConnectionResponses } from '../core/input.ts';
 import type { ResponsesService, Submission } from '../core/responses-service.ts';
@@ -28,6 +28,7 @@ export type WebSocketTransportOptions = {
   services: GatewayServices;
   responses: ResponsesService;
   tracker: RequestTracker;
+  isRetiring: () => boolean;
   connectionLimitMs: number;
   authorize?: (request: http.IncomingMessage) => boolean;
   onError?: (error: unknown) => void;
@@ -174,7 +175,19 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
       }
     }
 
+    private async refuseRetired(): Promise<void> {
+      this.closing = true;
+      this.queue.discard();
+      if (this.socket.readyState !== this.socket.OPEN) return;
+      await this.send(envelopeOf(generationRetiredError()));
+      this.socket.close(GOING_AWAY);
+    }
+
     private async turn(text: string): Promise<void> {
+      if (options.isRetiring()) {
+        await this.refuseRetired();
+        return;
+      }
       const release = tracker.begin();
       let previousId: string | undefined;
       let failed = false;
@@ -223,7 +236,7 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
           refuse(socket, '401 Unauthorized');
           return;
         }
-        if (services.closeSignal.aborted) {
+        if (services.closeSignal.aborted || options.isRetiring()) {
           refuse(socket, '503 Service Unavailable');
           return;
         }

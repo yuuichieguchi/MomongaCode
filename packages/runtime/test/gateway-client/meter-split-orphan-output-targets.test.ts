@@ -11,6 +11,7 @@ import { createGatewayClient } from '../../src/gateway-client.ts';
 import { OLLAMA_MODEL, startFakeOllama } from '../../../gateway/test/ollama-support.ts';
 import { CLIENT_VERSION, fakeClock } from './fixtures.ts';
 import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
+import { prepareGatewayHome } from './prepared-home.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -47,6 +48,7 @@ const writeTarget = (home: string, target: Record<string, unknown>): void => {
 const launch = async (home: string) => {
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
   closers.push(() => stdout.mockRestore());
+  await prepareGatewayHome(home);
   const gateway = await startGatewayProcess({ generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: '1.10.0-test' });
   closers.push(() => gateway.close());
   const client = createGatewayClient({ resolveSocket: fixedSocket(gateway.socketPath), clock: fakeClock(), version: CLIENT_VERSION });

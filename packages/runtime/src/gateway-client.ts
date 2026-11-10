@@ -1,4 +1,4 @@
-import { createUdsClient, decodeSse, parseRetryAfter } from '@momonga/foundation';
+import { GENERATION_RETIRED_CODE, createUdsClient, decodeSse, parseRetryAfter } from '@momonga/foundation';
 import type { SocketResolver, UdsClient, UdsResponse } from '@momonga/foundation';
 import { COMPACTION_RESULT_EVENT, DEFERRED_HEADER, ERROR_TYPES, ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER, TARGET_PROBING, agentReadiness, isToolCallingState } from '@momonga/protocol';
 import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView, HeaderRole } from '@momonga/protocol';
@@ -51,6 +51,13 @@ export class GatewayRequestError extends Error {
     if (fields.deferred !== undefined) this.deferred = fields.deferred;
   }
 }
+
+export const GATEWAY_UNAVAILABLE_CODE = 'gateway_unavailable';
+
+export const isGenerationRetiredRefusal = (error: unknown): error is GatewayRequestError => error instanceof GatewayRequestError && error.code === GENERATION_RETIRED_CODE;
+
+export const isGatewayNeverReached = (error: unknown): error is GatewayRequestError =>
+  error instanceof GatewayRequestError && error.type === 'transport' && error.code === GATEWAY_UNAVAILABLE_CODE && error.provenNotSent === true;
 
 export type GatewayClientOptions = {
   resolveSocket: SocketResolver;
@@ -107,8 +114,8 @@ const errorCodeOf = (error: unknown): string | undefined => {
 export const transportFailureOf = (error: unknown): GatewayRequestError | undefined => {
   const code = errorCodeOf(error);
   if (code === undefined) return undefined;
-  if (NEVER_SENT_CODES.has(code)) return transportError('gateway_unavailable', 'the gateway socket is unavailable', true);
-  return transportError('gateway_unavailable', 'the gateway connection was lost', false);
+  if (NEVER_SENT_CODES.has(code)) return transportError(GATEWAY_UNAVAILABLE_CODE, 'the gateway socket is unavailable', true);
+  return transportError(GATEWAY_UNAVAILABLE_CODE, 'the gateway connection was lost', false);
 };
 
 const describeError = (error: unknown): string => (error instanceof Error ? error.message : String(error));

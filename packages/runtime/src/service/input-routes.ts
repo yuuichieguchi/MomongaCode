@@ -20,6 +20,7 @@ export type InputRoutesDeps = {
   mcp: McpAdminPort;
   maxBodyBytes: number;
   closeSignal: AbortSignal;
+  refuseWhileRetiring(): void;
 };
 
 const json = (body: unknown, status = 200): Response =>
@@ -81,8 +82,10 @@ export const registerInputRoutes = (route: RouteRegistrar, deps: InputRoutesDeps
   const listServers: Handler = async (context) =>
     json({ servers: await mcp.servers(context.req.param('id') ?? '', AbortSignal.any([deps.closeSignal, context.req.raw.signal])) });
 
-  const startAuthorization: Handler = async (context) =>
-    json({ authorization: await mcp.startAuthorization(context.req.param('id') ?? '', context.req.param('name') ?? '') }, 202);
+  const startAuthorization: Handler = async (context) => {
+    deps.refuseWhileRetiring();
+    return json({ authorization: await mcp.startAuthorization(context.req.param('id') ?? '', context.req.param('name') ?? '') }, 202);
+  };
 
   const getAuthorization: Handler = (context) => {
     const name = context.req.param('name') ?? '';

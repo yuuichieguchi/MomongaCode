@@ -150,6 +150,7 @@ export {
   ensureGenerationDirs,
   ensureMomongaDirs,
   ensureSessionTmpDir,
+  releaseSessionScratch,
   generationLayout,
   generationMarkerDirectories,
   generationMemberOf,
@@ -202,15 +203,23 @@ export type {
   StarterOutcome,
   StarterView,
 } from './generation-start.ts';
-export { reapDeadGenerations } from './generation-reaper.ts';
-export type { GenerationReaperOptions, GenerationReaperResult } from './generation-reaper.ts';
+export {
+  GENERATION_MARKER_LABELS,
+  GENERATION_MARKER_REAP_ORDER,
+  GENERATION_REAPER_OCCASION,
+  GENERATION_REAPER_STEPS,
+  GENERATION_REAPER_STEP_ACTIONS,
+  nodeGenerationReaperFiles,
+  reapDeadGenerations,
+} from './generation-reaper.ts';
+export type { GenerationMarkerReap, GenerationReaperFiles, GenerationReaperOptions, GenerationReaperResult, GenerationReaperStep } from './generation-reaper.ts';
 export { compareVersions, isAtLeastVersion, orderVersions, tryParseVersion } from './version-order.ts';
 export type { Version, VersionOrder } from './version-order.ts';
 export { PROBE_KEY_COMPONENT_LABELS, createBinaryHashCache, createHeldHostReadings, createHostExec, probeKeyComponentLabel, readProbeKeyComponents } from './host-identity.ts';
 export type { BinaryHashCache, HeldHostReadings, HostExec, HostExecAnswer, ProbeKeyReading, ProbeKeyReadings, ReadProbeKeyComponentsRequest } from './host-identity.ts';
 export { CurrentGenerationMalformedError, NoCurrentGenerationError, currentSocketResolver, formatCurrentGeneration, publishCurrentGeneration, readCurrentGeneration, resolveGenerationFor } from './current-generation.ts';
 export type { CurrentGeneration, PublishOptions, PublishOutcome, ResolvedGeneration } from './current-generation.ts';
-export type { MomongaPaths } from './momonga-paths.ts';
+export type { MomongaPaths, SessionScratch, SessionScratchClaim } from './momonga-paths.ts';
 export { createExecWithStdin } from './exec-with-stdin.ts';
 export { createSecretKeyFile, secretKeyFile } from './secret-key-file.ts';
 export {
@@ -320,9 +329,9 @@ export { createUninspectableRegistry } from './uninspectable-registry.ts';
 export type { UninspectableRegistry, UninspectableRegistryPorts } from './uninspectable-registry.ts';
 export { isProcessAlive } from './process-alive.ts';
 export type { SignalSender } from './process-alive.ts';
-export { LINUX_SOCKET_PATH_LIMIT, PIPE_NAME_LIMIT, SOCKET_PATH_LIMIT, SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, isPipePath, setSocketBind, pipePathFor, socketPathLimit } from './socket-path.ts';
+export { LINUX_SOCKET_PATH_LIMIT, PIPE_NAME_LIMIT, SOCKET_PATH_LIMIT, SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, endpointFormsOfSocket, isPipePath, setSocketBind, socketBindRefusalOf, pipePathFor, socketPathLimit } from './socket-path.ts';
 export { MAX_SYMLINK_HOPS, canonicalDirectory, canonicalPath, comparableContains, comparableFromParts, comparablePath, containsByComponents, locateThroughFiles, caseSensitivityOf, setCaseSensitivityProbe, volumeIsCaseInsensitive, walkPath } from './path-compare.ts';
-export type { SocketBind } from './socket-path.ts';
+export type { EndpointForm, SocketBind, SocketBindRefusal } from './socket-path.ts';
 export { createAsyncCapabilityProbe, createCapabilityProbe, unmeasuredBecause } from './capability-probe.ts';
 export type { CapabilityResult } from './capability-probe.ts';
 export type { CanonicalDirectoryFailureCode, CanonicalDirectoryResult, CaseSensitivityProbe, LocatedParts, PathParts, StepRead, StepReader, WalkEntry, WalkFailure, WalkFailureDetail, WalkFailureReason, WalkResult, WalkStep } from './path-compare.ts';

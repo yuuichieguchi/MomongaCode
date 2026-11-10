@@ -913,6 +913,13 @@ CREATE TRIGGER fidelity_verdicts_session_delete AFTER DELETE ON sessions BEGIN
 END;
 `;
 
+const GENERATION_OWNERSHIP = `
+ALTER TABLE runs ADD COLUMN lease_generation INTEGER;
+ALTER TABLE jobs ADD COLUMN owner_generation INTEGER;
+ALTER TABLE jobs ADD COLUMN kill_requested_at INTEGER;
+ALTER TABLE jobs ADD COLUMN output_path TEXT;
+`;
+
 const STORE_COMPATIBILITY = `
 CREATE TABLE store_compat (
   id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -1034,5 +1041,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 28,
     name: 'let a previous release run beside this one: a reader floor in store_compat, a watermark per run and derivation of the records filled at append, and an events trigger that lets only an empty derived column be filled',
     sql: STORE_COMPATIBILITY,
+  },
+  {
+    version: 29,
+    name: 'record the generation that holds a run lease, and for a background job the generation that owns it, the time a kill was requested and the file its owner writes the output to',
+    sql: GENERATION_OWNERSHIP,
   },
 ];

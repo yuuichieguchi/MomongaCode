@@ -22,6 +22,7 @@ import {
   prepareStack,
   runtimeAlreadyRunningError,
   startRuntimeProcess,
+  startRuntimeProcessUnprepared,
   startStack,
   stepsLogged,
 } from './run-helpers.ts';
@@ -440,7 +441,9 @@ describe('startRuntimeProcess startup (system timers)', () => {
       [{ drainTimeoutMs: 0.5 }, RangeError],
     ];
     for (const [options, kind] of cases) {
-      const { started, logger, stdout } = startBare(temp, options);
+      const logger = hookLogger(() => undefined);
+      const stdout = captureStream();
+      const started = startRuntimeProcessUnprepared({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger, stdout, ...options });
       const error = await failureOf(started);
       expect(error, JSON.stringify(options)).toBeInstanceOf(kind);
       expect(stepsLogged(logger), JSON.stringify(options)).toEqual([]);

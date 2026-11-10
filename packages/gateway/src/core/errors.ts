@@ -1,3 +1,4 @@
+import { GENERATION_RETIRED_CODE, GENERATION_RETIRED_STATUS } from '@momonga/foundation';
 import { TARGET_NOT_READY } from '@momonga/protocol';
 import type { ErrorBody, ErrorType } from '@momonga/protocol';
 
@@ -65,6 +66,10 @@ export const serverError = (status: number, code: string, message: string): Gate
   new GatewayError({ status, type: 'server_error', code, message });
 
 export const gatewayClosedError = (): GatewayError => serverError(503, 'gateway_closed', 'the gateway is shutting down');
+
+export const GENERATION_RETIRED_MESSAGE = 'This gateway belongs to a replaced generation and takes no new requests. The request was not run; send it again.';
+
+export const generationRetiredError = (): GatewayError => serverError(GENERATION_RETIRED_STATUS, GENERATION_RETIRED_CODE, GENERATION_RETIRED_MESSAGE);
 
 export const isGatewayClosed = (error: unknown): boolean => error instanceof GatewayError && error.body.code === 'gateway_closed';
 

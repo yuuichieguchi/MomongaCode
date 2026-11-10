@@ -68,6 +68,44 @@ const recorded = (overrides: MarkerPorts = {}) => {
 };
 
 describe('reapOrphans', () => {
+  it('with an occasion, hands it to the marker reap so that each marker spends that one chance (20.62)', async (context) => {
+    const dir = markersDir(context);
+    fs.writeFileSync(path.join(dir, 'runtime-05'), '', { mode: 0o600 });
+    const { calls, ports } = recorded({ reapMarkerDirectory: async () => ({ reaped: 1, kept: 0 }) });
+    const { options } = reapSetup(dir, { markerPorts: ports, occasion: 'sweep' });
+    await expect(reapOrphans(options)).resolves.toEqual({ reaped: 1, kept: 0, aborted: false });
+    expect(calls.reap.map((call) => call.options.occasion)).toEqual(['sweep']);
+  });
+
+  it('with an occasion, neither waits for nor signals the holders of markers that spent it or are ignored, and writes no line (20.62)', async (context) => {
+    const dir = markersDir(context);
+    fs.writeFileSync(path.join(dir, 'runtime-06'), 'r01000\n', { mode: 0o600 });
+    fs.writeFileSync(path.join(dir, 'gateway-07'), 'r00001\n', { mode: 0o600 });
+    const { calls, ports } = recorded({ findHolders: async () => [HOLDER_PID] });
+    const { options, log } = reapSetup(dir, { markerPorts: ports, occasion: 'sweep' });
+    await expect(reapOrphans(options)).resolves.toEqual({ reaped: 0, kept: 2, aborted: false });
+    expect(calls.findHolders).toBe(0);
+    expect(calls.reap).toEqual([]);
+    expect(log.lines()).toEqual([]);
+  });
+
+  it('with an occasion, still waits for a marker that has the chance left beside one that spent it', async (context) => {
+    const dir = markersDir(context);
+    fs.writeFileSync(path.join(dir, 'runtime-08'), 'r01000\n', { mode: 0o600 });
+    fs.writeFileSync(path.join(dir, 'runtime-09'), '', { mode: 0o600 });
+    const probed: string[] = [];
+    const { calls, ports } = recorded({
+      findHolders: async (marker) => {
+        probed.push(path.basename(marker));
+        return [];
+      },
+    });
+    const { options } = reapSetup(dir, { markerPorts: ports, occasion: 'sweep' });
+    await reapOrphans(options);
+    expect(probed).toEqual(['runtime-09']);
+    expect(calls.reap).toHaveLength(1);
+  });
+
   it('returns at once when there are no markers', async (context) => {
     const dir = markersDir(context);
     const { calls, ports } = recorded();

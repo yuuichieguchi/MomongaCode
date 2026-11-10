@@ -1,6 +1,8 @@
 import type { McpServerConfig } from '@momonga/config';
-import { createUdsClient, decodeSse, isRecord } from '@momonga/foundation';
+import { setTimeout as sleepFor } from 'node:timers/promises';
+import { MOVED_CODE, createUdsClient, decodeSse, isRecord, parseRetryAfter } from '@momonga/foundation';
 import type { SocketResolver, UdsResponse } from '@momonga/foundation';
+import { DAEMON_CURRENT_EVENT } from '@momonga/protocol';
 import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import {
   ContractViolation,
@@ -61,6 +63,26 @@ export class RunApiError extends Error {
     this.status = status;
     this.body = body;
     this.code = code;
+  }
+}
+
+export const MOVED_RESENDS = 3;
+
+const SOCKET_ERROR_RESENDS = 1;
+
+const RESENT_SOCKET_CODES: ReadonlySet<string> = new Set(['UND_ERR_SOCKET', 'ECONNRESET', 'EPIPE']);
+
+const REPEATABLE_METHODS: ReadonlySet<string> = new Set(['GET', 'PUT', 'PATCH', 'DELETE']);
+
+export class DaemonMoved extends Error {
+  readonly generation: number;
+  readonly version: string;
+
+  constructor(generation: number, version: string) {
+    super(`the daemon moved to generation ${generation} (v${version})`);
+    this.name = 'DaemonMoved';
+    this.generation = generation;
+    this.version = version;
   }
 }
 
@@ -193,15 +215,32 @@ const listOf = (body: unknown, key: string, description: string): unknown[] => {
   return list;
 };
 
+const movedOf = (data: string, description: string): DaemonMoved => {
+  const body = parsed(data, description);
+  if (!isRecord(body) || typeof body['generation'] !== 'number' || typeof body['version'] !== 'string') throw new ContractViolation(description, `a ${DAEMON_CURRENT_EVENT} frame without a generation and a version: ${data}`);
+  return new DaemonMoved(body['generation'], body['version']);
+};
+
+const socketErrorCodeOf = (error: unknown): string | undefined => {
+  for (let current: unknown = error; isRecord(current); current = current['cause']) {
+    if (typeof current['code'] === 'string' && RESENT_SOCKET_CODES.has(current['code'])) return current['code'];
+  }
+  return undefined;
+};
+
 const frameOf = (event: { id?: string; event?: string; data: string }, description: string): RunEventFrame => {
+  if (event.id === undefined && event.event === DAEMON_CURRENT_EVENT) throw movedOf(event.data, description);
   if (event.id === undefined) throw new ContractViolation(description, `an event without an id: ${event.data}`);
   const id = Number(event.id);
   if (!Number.isInteger(id)) throw new ContractViolation(description, `an event with a non-integer id ${event.id}`);
   return { id, event: event.event, data: checkRunEvent(parsed(event.data, description), description) };
 };
 
-export const createRuntimeClient = (options: { resolveSocket: SocketResolver }): RuntimeClient => {
+export type RuntimeClientOptions = { resolveSocket: SocketResolver; sleep?: (ms: number) => Promise<void> };
+
+export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClient => {
   const http = createUdsClient(options.resolveSocket);
+  const sleep = options.sleep ?? ((ms: number): Promise<void> => sleepFor(ms).then(() => undefined));
 
   const send = async (
     method: string,
@@ -210,16 +249,32 @@ export const createRuntimeClient = (options: { resolveSocket: SocketResolver }):
     init: { body?: unknown; headers?: Record<string, string>; raw?: true } = {},
   ): Promise<{ response: UdsResponse; body: unknown }> => {
     const description = `${method} ${path}`;
-    const headers = { ...(init.body === undefined ? {} : JSON_HEADERS), ...init.headers };
-    const response = await http.request({
-      method,
-      path,
-      ...(Object.keys(headers).length === 0 ? {} : { headers }),
-      ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-    });
-    const text = await response.text();
-    if (!expected.includes(response.status)) throw new RunApiError(description, response.status, text);
-    return { response, body: response.status === 204 ? undefined : init.raw === true ? text : parsed(text, description) };
+    const headers: Record<string, string> = { ...(init.body === undefined ? {} : JSON_HEADERS), ...init.headers };
+    const repeatable = REPEATABLE_METHODS.has(method) || (method === 'POST' && headers['idempotency-key'] !== undefined);
+    let socketResends = 0;
+    for (let movedResends = 0; ; ) {
+      let response: UdsResponse;
+      try {
+        response = await http.request({
+          method,
+          path,
+          ...(Object.keys(headers).length === 0 ? {} : { headers }),
+          ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+        });
+      } catch (error) {
+        if (!repeatable || socketResends >= SOCKET_ERROR_RESENDS || socketErrorCodeOf(error) === undefined) throw error;
+        socketResends += 1;
+        continue;
+      }
+      const text = await response.text();
+      if (expected.includes(response.status)) return { response, body: response.status === 204 ? undefined : init.raw === true ? text : parsed(text, description) };
+      const failure = new RunApiError(description, response.status, text);
+      if (response.status !== 503 || failure.code !== MOVED_CODE || movedResends >= MOVED_RESENDS) throw failure;
+      const retryAfterMs = parseRetryAfter(response.headers['retry-after'], Date.now());
+      if (retryAfterMs === undefined) throw failure;
+      movedResends += 1;
+      await sleep(retryAfterMs);
+    }
   };
 
   const sessionOf = (body: unknown, description: string): SessionView => checkSession(fieldOf(body, 'session', description), description);

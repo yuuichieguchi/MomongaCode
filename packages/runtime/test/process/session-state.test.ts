@@ -9,8 +9,9 @@ const setup = (activity: Record<string, Activity> = {}) => {
   const clock = createFakeClock(START_MS);
   const logger = makeLogger();
   const store = { sessionActivity: (id: string): Activity => activity[id] };
-  const states = runtime.createSessionStates({ clock, store, logger });
-  return { clock, logger, states, activity };
+  const released: string[] = [];
+  const states = runtime.createSessionStates({ clock, store, logger, releaseScratch: (sessionId) => void released.push(sessionId) });
+  return { clock, logger, states, activity, released };
 };
 
 const idle = { lastActivityAt: START_MS, hasActiveRun: false };

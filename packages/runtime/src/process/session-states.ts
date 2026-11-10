@@ -7,6 +7,7 @@ export type SessionStates = {
   get(session: Pick<Session, 'id' | 'cwd'>): ToolSessionState;
   has(sessionId: string): boolean;
   evictIdle(nowMs: number): string[];
+  evictAll(): string[];
   size(): number;
 };
 
@@ -14,12 +15,22 @@ export type SessionStatesOptions = {
   clock: Clock;
   store: Pick<RuntimeStore, 'sessionActivity'>;
   logger: JsonLogger;
+  releaseScratch(sessionId: string): void;
 };
 
 type Entry = { state: ToolSessionState; lastUsedAt: number };
 
-export const createSessionStates = ({ clock, store, logger }: SessionStatesOptions): SessionStates => {
+export const createSessionStates = ({ clock, store, logger, releaseScratch }: SessionStatesOptions): SessionStates => {
   const entries = new Map<string, Entry>();
+  const evict = (ids: readonly string[]): string[] => {
+    for (const id of ids) {
+      entries.delete(id);
+      releaseScratch(id);
+    }
+    if (ids.length > 0) logger.debug('session_state.evicted', { count: ids.length, ids });
+    return [...ids];
+  };
+  const withoutActiveRun = (id: string): boolean => store.sessionActivity(id)?.hasActiveRun !== true;
   return {
     get: (session) => {
       const existing = entries.get(session.id);
@@ -32,17 +43,8 @@ export const createSessionStates = ({ clock, store, logger }: SessionStatesOptio
       return entry.state;
     },
     has: (sessionId) => entries.has(sessionId),
-    evictIdle: (nowMs) => {
-      const evicted: string[] = [];
-      for (const [id, entry] of entries) {
-        if (entry.lastUsedAt > nowMs - SESSION_STATE_IDLE_MS) continue;
-        if (store.sessionActivity(id)?.hasActiveRun === true) continue;
-        entries.delete(id);
-        evicted.push(id);
-      }
-      if (evicted.length > 0) logger.debug('session_state.evicted', { count: evicted.length, ids: evicted });
-      return evicted;
-    },
+    evictIdle: (nowMs) => evict([...entries].filter(([id, entry]) => entry.lastUsedAt <= nowMs - SESSION_STATE_IDLE_MS && withoutActiveRun(id)).map(([id]) => id)),
+    evictAll: () => evict([...entries.keys()]),
     size: () => entries.size,
   };
 };

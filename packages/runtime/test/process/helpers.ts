@@ -4,8 +4,8 @@ import path from 'node:path';
 import { afterEach } from 'vitest';
 import { createUserSettingsCache, diskKeptRecords, keptSettingsDirectory } from '@momonga/config';
 import type { UserSettingsCache } from '@momonga/config';
-import { claimPathOf, ensureMomongaDirs, hostKernelLock, momongaPaths, nodeFileSystemSync } from '@momonga/foundation';
-import type { JsonLogger, LogFields, MomongaPaths, ReapTiming } from '@momonga/foundation';
+import { FIRST_GENERATION, claimPathOf, ensureMomongaDirs, fixedRolePort, hostKernelLock, momongaPaths, nodeFileSystemSync } from '@momonga/foundation';
+import type { JsonLogger, LogFields, MomongaPaths, ReapTiming, RolePort, SessionScratch } from '@momonga/foundation';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
 import type { RunNotifier, SettingsComposition, ToolRuntime } from '@momonga/runtime';
@@ -275,8 +275,10 @@ export type RuntimeFixtureOptions = {
   temp?: TempHome;
   sandbox?: Sandbox;
   createPool?: (options: McpPoolOptions) => McpPool;
-  ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<string>;
+  ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<SessionScratch>;
   reapTiming?: ReapTiming;
+  role?: RolePort;
+  generation?: number;
 };
 
 export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): Promise<RuntimeFixture> => {
@@ -288,8 +290,12 @@ export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): P
   const pools = makeFakePoolFactory();
   const reapTiming = recordingReapTiming(fixture.clock, fixture.timers);
   const composition = runtime.createSettingsComposition({ home: temp.home, platform: process.platform, cache, store: fixture.store });
+  fs.mkdirSync(temp.paths.jobs, { recursive: true, mode: 0o700 });
   const toolRuntime = runtime.createToolRuntime({
     paths: temp.paths,
+    sharedPaths: temp.paths,
+    generation: options.generation ?? FIRST_GENERATION,
+    role: options.role ?? fixedRolePort('serving'),
     home: temp.home,
     store: fixture.store,
     notifier: fixture.notifier,

@@ -13,6 +13,7 @@ import {
 } from '@momonga/foundation';
 import type { EntryIo, JsonLogger } from '@momonga/foundation';
 import { SUPERVISOR_SERVICE } from './constants.ts';
+import { entryReaperPass } from './reaper-pass.ts';
 import { startSupervisor } from './start-supervisor.ts';
 import type { SupervisorOptions } from './start-supervisor.ts';
 
@@ -51,15 +52,19 @@ export const runSupervisorEntry = (io: EntryIo, deps: SupervisorEntryDeps): Prom
     logPath: (home) => pathsOf(home).logFiles.supervisor,
     isConfigError: () => false,
     start: async (context) => {
+      const clock = deps.clock ?? io.clock;
+      const timers = deps.timers ?? io.timers;
+      const logger = withLogData(context.logger, { generation: generationOfFlag(context.flags.generation) });
       const supervisor = await startSupervisor({
         ...deps,
-        clock: deps.clock ?? io.clock,
-        timers: deps.timers ?? io.timers,
+        reaperPass: deps.reaperPass ?? entryReaperPass(deps, { home: canonicalPath(context.home), clock, timers, logger, stopValues: stopValuesOf(context.home, context.logger) }),
+        clock,
+        timers,
         home: canonicalPath(context.home),
         version: context.version,
         generation: generationOfFlag(context.flags.generation),
         env: context.env,
-        logger: withLogData(context.logger, { generation: generationOfFlag(context.flags.generation) }),
+        logger,
         droppedLogLines: context.droppedLogLines,
         stdout: context.stdout,
         signal: context.signal,

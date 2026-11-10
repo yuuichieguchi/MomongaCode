@@ -14,9 +14,14 @@ export class EarlierAttemptNotStoppedError extends Error {
   }
 }
 
-export const clearCallLocks = async (dir: string): Promise<void> => {
-  const names = await fs.promises.readdir(dir);
-  await Promise.all(names.map((name) => fs.promises.rm(path.join(dir, name), { force: true })));
+const CALL_LOCK_SUFFIX = '.lock';
+
+export const sweepCallLocks = async ({ dir, mechanism }: { dir: string; mechanism: KernelLockMechanism }): Promise<void> => {
+  for (const name of await fs.promises.readdir(dir)) {
+    if (!name.endsWith(CALL_LOCK_SUFFIX)) continue;
+    const outcome = await mechanism.claim(path.join(dir, name));
+    if (outcome.kind === 'claimed') outcome.lock.dispose();
+  }
 };
 
 export type CallLock = { release(): void };
@@ -34,7 +39,7 @@ export type CallLocksOptions = {
 
 export const createCallLocks = ({ dir, mechanism, timing, waitMs }: CallLocksOptions): CallLocks => ({
   acquire: async (key, signal) => {
-    const outcome = await claimWithin({ mechanism, lockPath: path.join(dir, `${key}.lock`), holder: String(process.pid), timing, pollMs: CLAIM_POLL_MS, waitMs, signal });
+    const outcome = await claimWithin({ mechanism, lockPath: path.join(dir, `${key}${CALL_LOCK_SUFFIX}`), holder: String(process.pid), timing, pollMs: CLAIM_POLL_MS, waitMs, signal });
     if (outcome.kind === 'aborted') return 'aborted';
     if (outcome.kind === 'claimed') return { release: () => outcome.lock.dispose() };
     throw new EarlierAttemptNotStoppedError(

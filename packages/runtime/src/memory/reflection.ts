@@ -1,5 +1,5 @@
 import { computeBackoff, readJsonReply } from '@momonga/foundation';
-import type { Clock } from '@momonga/foundation';
+import type { Clock, RolePort } from '@momonga/foundation';
 import { normalizeMemoryText } from '@momonga/memory';
 import { LOWEST_REASONING_EFFORT, jsonReplyOf, summaryTokenCapFor } from '@momonga/protocol';
 import type { BilledDetail, CallTiming, CreateResponseBody, MomongaResponseExtension, ReflectionDrop, Usage } from '@momonga/protocol';
@@ -9,6 +9,7 @@ import type { GatewayPort, SettingsPort } from '../ports.ts';
 import { requestKey } from '../model-key.ts';
 import { REQUEUE_BASE_MS, REQUEUE_MAX_MS } from '../process/constants.ts';
 import type { ServiceTimers } from '../service/timers.ts';
+import { retireDecisionOf } from '../worker/gateway-policy.ts';
 import { readPins } from '../worker/pins.ts';
 import { billedDetailOf, carriesOutput, terminalResultOf } from '../worker/model-stream.ts';
 import type { ModelResult } from '../worker/model-stream.ts';
@@ -22,6 +23,7 @@ export type ReflectorOptions = {
   gateway: Pick<GatewayPort, 'stream' | 'capabilities'>;
   settings: Pick<SettingsPort, 'trusted' | 'verification' | 'memory'>;
   clock: Clock;
+  role: Pick<RolePort, 'refresh'>;
   isIdle(): boolean;
   evidenceRun: (project: string) => EvidenceRun;
   maxAttempts: number;
@@ -259,6 +261,11 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
           recordUnrecorded(ledger, error);
           store.reflection.release(job.runId);
           throw error;
+        }
+        if ((await retireDecisionOf(error, options.role)) === 'retire-yield') {
+          recordUnrecorded(ledger, error);
+          store.reflection.release(job.runId);
+          return 'idle';
         }
         const attempts = store.reflection.get(job.runId)?.attempts ?? job.attempts;
         const reason = error instanceof Error ? error.message : String(error);

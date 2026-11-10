@@ -3,7 +3,7 @@ import { createUdsClient, createJsonLogger, systemClock, FIRST_GENERATION, fixed
 import { startGatewayProcess } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, openResponsesTextReply, registerCleanup, startFakeOpenResponses, usageOf, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
-import { PROCESS_VERSION, baseEnv, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, writeSettings, prepareHome } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -15,6 +15,7 @@ const startPricedGateway = async (context: CleanupContext, pricing: unknown[] | 
   const upstream = await startFakeOpenResponses({ script: [openResponsesTextReply(['priced'], usageOf(11, 3))] });
   registerCleanup(context, () => upstream.close());
   const home = withTempDir(context, { asHome: true });
+  prepareHome(home);
   writeSettings(home, {
     models: {
       aliases: { fast: ['local'] },

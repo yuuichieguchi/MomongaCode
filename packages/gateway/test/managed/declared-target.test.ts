@@ -42,8 +42,8 @@ const sha256OfFile = (file: string): string => createHash('sha256').update(fs.re
 
 const idleServer: ManagedServer = {
   restarts: 0,
-  start: async () => ({ kind: 'unix', socketPath: '/unused.sock' }),
-  ensureRunning: async () => ({ kind: 'unix', socketPath: '/unused.sock' }),
+  start: async () => ({ kind: 'unix', path: '/unused.sock' }),
+  ensureRunning: async () => ({ kind: 'unix', path: '/unused.sock' }),
   stop: async () => undefined,
   health: async () => ({ ok: true }),
 };
