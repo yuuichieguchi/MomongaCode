@@ -389,6 +389,8 @@ export const sweepStaleHomes = async (effects: ContextHostEffects): Promise<Swee
   return { removed, unreadable, unowned };
 };
 
+export type HomeEffects<Runtime extends ContextRuntime> = Omit<ContextHostEffects, 'connect'> & { connect(paths: MomongaPaths): Runtime };
+
 type CaseRecord = { root: string; paths: MomongaPaths | undefined; runtime: ContextRuntime | undefined; released: boolean };
 
 export type ContextHosts = {
@@ -402,10 +404,10 @@ export type ReflectionBounds = Pick<ReflectionSettle, 'pendingBoundMs' | 'attemp
 
 export type HomeSpec = { label: string; settings: Record<string, unknown>; files?: Readonly<Record<string, string>> };
 
-export type OpenedHome = { cwd: string; env: Record<string, string>; runtime: ContextRuntime; api: ContextCaseHost['api']; close(): Promise<void> };
+export type OpenedHome<Runtime extends ContextRuntime = ContextRuntime> = { cwd: string; env: Record<string, string>; runtime: Runtime; api: ContextCaseHost['api']; close(): Promise<void> };
 
-export type Homes = {
-  open(spec: HomeSpec): Promise<OpenedHome>;
+export type Homes<Runtime extends ContextRuntime = ContextRuntime> = {
+  open(spec: HomeSpec): Promise<OpenedHome<Runtime>>;
   dispose(): Promise<void>;
 };
 
@@ -418,7 +420,7 @@ export type HomesOptions = {
   interrupt: AbortSignal;
 };
 
-export const createHomes = (effects: ContextHostEffects, options: HomesOptions): Homes => {
+export const createHomes = <Runtime extends ContextRuntime = ContextRuntime>(effects: HomeEffects<Runtime>, options: HomesOptions): Homes<Runtime> => {
   const records: CaseRecord[] = [];
 
   const release = async (record: CaseRecord): Promise<void> => {
@@ -443,7 +445,7 @@ export const createHomes = (effects: ContextHostEffects, options: HomesOptions):
     if (failures.length > 1) throw new AggregateError(failures, `releasing the temporary home ${record.root} failed ${failures.length} times`);
   };
 
-  const prepared = async (spec: HomeSpec, record: CaseRecord): Promise<OpenedHome> => {
+  const prepared = async (spec: HomeSpec, record: CaseRecord): Promise<OpenedHome<Runtime>> => {
     const { root } = record;
     await effects.writeFile(path.join(root, OWNER_FILE), ownerRecord({ pid: effects.ownerPid, home: effects.ownerHome }));
     const paths = momongaLayout(root, effects.platform, {});
@@ -484,7 +486,7 @@ export const createHomes = (effects: ContextHostEffects, options: HomesOptions):
 
   let disposed = false;
 
-  const open = async (spec: HomeSpec): Promise<OpenedHome> => {
+  const open = async (spec: HomeSpec): Promise<OpenedHome<Runtime>> => {
     if (disposed) throw new ContextInterrupted();
     const root = await effects.makeRoot();
     if (disposed) {

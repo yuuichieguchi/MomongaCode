@@ -13,7 +13,7 @@ import type { Answerer } from './transcript.ts';
 import { percent } from './report.ts';
 import { EvalError } from './runner.ts';
 import { uncachedInputOf } from './token-metrics.ts';
-import type { RatioMetric, ReflectionColumn } from './token-metrics.ts';
+import type { CaseTokenTotals, RatioMetric, ReflectionColumn } from './token-metrics.ts';
 
 export const GATE_CHECKS = [
   'real_model',
@@ -133,7 +133,7 @@ type Terms = {
   loss: BootstrapInterval | undefined;
   tokens: BootstrapInterval | undefined;
   passRate: BootstrapInterval | undefined;
-  primary: { metric: TokenPrimaryMetric; interval: BootstrapInterval | undefined; why: string | undefined };
+  primary: PrimaryMeasure;
 };
 
 type Term = (terms: Terms) => GateCheck;
@@ -147,7 +147,7 @@ export type Answering = { answeredBy: readonly Answerer[]; unrecordedAnswers: nu
 
 const identitiesOf = (report: Answering): string => report.answeredBy.map(answererIdentityOf).join(', ');
 
-const answerProblemsOf = (label: string, report: Answering): string[] => {
+export const answerProblemsOf = (label: string, report: Answering): string[] => {
   const kind = modelKindOf(report.answeredBy, report.unrecordedAnswers);
   const named = (answers: 'script' | 'unknown'): string => report.answeredBy.filter((answerer) => answerer.answers === answers).map((answerer) => answerer.target).join(', ');
   if (kind === 'fake') return [`the ${label} was answered by scripted target(s) ${named('script')}, and a scripted model proves only that the machinery works`];
@@ -222,30 +222,42 @@ const unclassifiedTerm: Term = ({ baseline, candidate }) => ({
   detail: `${baseline.unclassifiedCompactions} in the baseline and ${candidate.unclassifiedCompactions} in the candidate; a compaction with no source or fidelity lies outside the fabrication term`,
 });
 
-const passRateTerm: Term = ({ pairs, passRate }) => {
+export type PairWords = { baseline: string; candidate: string; unit: string; both: string; either: string };
+
+const REPORT_PAIR: PairWords = { baseline: 'baseline', candidate: 'candidate', unit: 'case', both: 'both reports', either: 'either report' };
+
+export type PrimaryMeasure = { metric: TokenPrimaryMetric; interval: BootstrapInterval | undefined; why: string | undefined };
+
+type NamedCheck<Name extends string> = { name: Name; passed: boolean; detail: string };
+
+export const passRateCheck = (pairCount: number, passRate: BootstrapInterval | undefined, words: PairWords = REPORT_PAIR): NamedCheck<'passRate'> => {
   const name = 'passRate';
-  if (passRate === undefined) return { name, passed: false, detail: `${NO_MEASURE}: no case is recorded in both reports` };
+  if (passRate === undefined) return { name, passed: false, detail: `${NO_MEASURE}: no ${words.unit} is recorded in ${words.both}` };
   const described = `paired difference ${describeInterval(passRate, 3)}`;
-  if (pairs.length < MINIMUM_PAIRS) return { name, passed: false, detail: `too few pairs: ${pairs.length} of the ${MINIMUM_PAIRS} needed for a real interval; ${described}` };
-  return { name, passed: !(passRate.high < 0), detail: `${described}; the candidate is worse only when the whole interval lies below 0` };
+  if (pairCount < MINIMUM_PAIRS) return { name, passed: false, detail: `too few pairs: ${pairCount} of the ${MINIMUM_PAIRS} needed for a real interval; ${described}` };
+  return { name, passed: !(passRate.high < 0), detail: `${described}; the ${words.candidate} is worse only when the whole interval lies below 0` };
 };
 
-const primaryTerm: Term = ({ pairs, primary }) => {
+export const primaryCheck = (pairCount: number, primary: PrimaryMeasure, words: PairWords = REPORT_PAIR): NamedCheck<TokenPrimaryMetric> => {
   const { metric, interval, why } = primary;
   const reason = why === undefined ? '' : `; judged on uncached input because ${why}`;
   if (interval === undefined) {
-    return { name: metric, passed: false, detail: `${NO_MEASURE}: ${metric} is not recorded for every case of both reports${why === undefined ? '' : `; ${why}`}` };
+    return { name: metric, passed: false, detail: `${NO_MEASURE}: ${metric} is not recorded for every ${words.unit} of ${words.both}${why === undefined ? '' : `; ${why}`}` };
   }
   const described = `paired difference per success ${describeInterval(interval, metric === 'costPerSuccess' ? 6 : 1)}`;
-  if (pairs.length < MINIMUM_PAIRS) {
-    return { name: metric, passed: false, detail: `too few pairs: ${pairs.length} of the ${MINIMUM_PAIRS} needed for a real interval; ${described}${reason}` };
+  if (pairCount < MINIMUM_PAIRS) {
+    return { name: metric, passed: false, detail: `too few pairs: ${pairCount} of the ${MINIMUM_PAIRS} needed for a real interval; ${described}${reason}` };
   }
   return {
     name: metric,
     passed: interval.high < 0,
-    detail: `${described}; the candidate must be lower, the whole interval below 0; resamples with no success in either report are skipped, so the ${MINIMUM_PAIRS}-pair tail holds only while few are skipped${reason}`,
+    detail: `${described}; the ${words.candidate} must be lower, the whole interval below 0; resamples with no success in ${words.either} are skipped, so the ${MINIMUM_PAIRS}-pair tail holds only while few are skipped${reason}`,
   };
 };
+
+const passRateTerm: Term = ({ pairs, passRate }) => passRateCheck(pairs.length, passRate);
+
+const primaryTerm: Term = ({ pairs, primary }) => primaryCheck(pairs.length, primary);
 
 const QUALITY_TERMS: readonly Term[] = QUALITY_METRICS.map(qualityTerm);
 
@@ -254,9 +266,13 @@ const GATE_TERMS: Record<ContextGateName, readonly Term[]> = {
   token: [realModelTerm, passRateTerm, primaryTerm, lossTerm, fabricationTerm, ...QUALITY_TERMS],
 };
 
-const perSuccessPairsOf = (pairs: readonly CasePair[], numeratorOf: (entry: ContextCaseReport) => number | undefined): ClusterPair[] | undefined => {
+type SuccessCounted = { passedRuns: number };
+
+type SidePair<Entry> = { baseline: Entry; candidate: Entry };
+
+const perSuccessPairsOf = <Entry extends SuccessCounted>(pairs: readonly SidePair<Entry>[], numeratorOf: (entry: Entry) => number | undefined): ClusterPair[] | undefined => {
   const clusters = pairs.map((pair) => {
-    const pick = (entry: ContextCaseReport): Cluster | undefined => {
+    const pick = (entry: Entry): Cluster | undefined => {
       const numerator = numeratorOf(entry);
       return numerator === undefined ? undefined : { numerator, denominator: entry.passedRuns };
     };
@@ -273,7 +289,17 @@ const perSuccessIntervalOf = (pairs: readonly CasePair[], numeratorOf: (entry: C
 
 const sideNames = ['baseline', 'candidate'] as const;
 
-const tokenPrimaryOf = (baseline: ContextReport, candidate: ContextReport, pairs: readonly CasePair[], seed: number): Terms['primary'] => {
+export type PrimaryCase = SuccessCounted & { tokens?: CaseTokenTotals | undefined };
+
+export type PrimarySide = {
+  metrics: { costPerSuccess?: RatioMetric | undefined; uncachedInputPerSuccess?: RatioMetric | undefined };
+  cases: readonly PrimaryCase[];
+};
+
+export const primaryNumeratorOf = (metric: TokenPrimaryMetric, entry: PrimaryCase): number | undefined =>
+  entry.tokens === undefined ? undefined : metric === 'costPerSuccess' ? entry.tokens.cost : uncachedInputOf(entry.tokens);
+
+export const tokenPrimaryOf = (baseline: PrimarySide, candidate: PrimarySide, pairs: readonly SidePair<PrimaryCase>[], seed: number, words: PairWords = REPORT_PAIR): PrimaryMeasure => {
   const reports = { baseline, candidate };
   const costMissing = sideNames.flatMap((side) => (reports[side].metrics.costPerSuccess === undefined ? [side] : []));
   const costFree = sideNames.flatMap((side) => (reports[side].metrics.costPerSuccess?.numerator === 0 ? [side] : []));
@@ -282,14 +308,14 @@ const tokenPrimaryOf = (baseline: ContextReport, candidate: ContextReport, pairs
     metric === 'costPerSuccess'
       ? undefined
       : costMissing.length > 0
-        ? costMissing.map((side) => `cost per success is not measured in the ${side} (${unmeasuredCostCauseOf(reports[side].cases)})`).join('; ')
-        : `the total cost of the ${costFree.join(' and the ')} is 0, which a cost per success cannot rank`;
-  const complete = perSuccessPairsOf(pairs, (entry) => (entry.tokens === undefined ? undefined : metric === 'costPerSuccess' ? entry.tokens.cost : uncachedInputOf(entry.tokens)));
+        ? costMissing.map((side) => `cost per success is not measured in the ${words[side]} (${unmeasuredCostCauseOf(reports[side].cases)})`).join('; ')
+        : `the total cost of the ${costFree.map((side) => words[side]).join(' and the ')} is 0, which a cost per success cannot rank`;
+  const complete = perSuccessPairsOf(pairs, (entry) => primaryNumeratorOf(metric, entry));
   const measured = complete !== undefined && baseline.metrics[metric] !== undefined && candidate.metrics[metric] !== undefined;
   const uncachedNote =
     metric === 'uncachedInputPerSuccess'
       ? sideNames.flatMap((side) =>
-          reports[side].metrics.uncachedInputPerSuccess === undefined ? [`uncached input per success is not measured in the ${side} (${unmeasuredCauseOf(metric, reports[side].cases)})`] : [],
+          reports[side].metrics.uncachedInputPerSuccess === undefined ? [`uncached input per success is not measured in the ${words[side]} (${unmeasuredCauseOf(metric, reports[side].cases)})`] : [],
         )
       : [];
   return { metric, interval: measured ? pairedRatioBootstrap(complete, { seed }) : undefined, why: [why, ...uncachedNote].filter((part) => part !== undefined).join('; ') || undefined };
@@ -384,7 +410,7 @@ const policyDifferenceLine = (comparison: ContextComparison): string[] => {
 
 const describeFabrication = (value: ClusteredProportion | undefined): string => (value === undefined ? 'n/a' : describeClustered(value));
 
-export const gateLines = (comparison: { gate: ContextComparison['gate'] }): string[] => [
+export const gateLines = (comparison: { gate: { passed: boolean; checks: readonly { name: string; passed: boolean; detail: string }[] } }): string[] => [
   `gate: ${comparison.gate.passed ? 'PASS' : 'FAIL'}`,
   ...comparison.gate.checks.map((check) => `  ${check.passed ? 'ok  ' : 'FAIL'} ${check.name}: ${check.detail}`),
 ];

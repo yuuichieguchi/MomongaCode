@@ -13,6 +13,7 @@ import { showCost } from './cost.ts';
 import { elicit } from './elicit.ts';
 import { autoModeCheck, autoModeCheckPortsOf, autoModeStatus, autoModeStatusPortsOf } from './auto-mode.ts';
 import { compareContext, evaluate, evaluateContext } from './evaluate.ts';
+import { evaluateYield } from './yield.ts';
 import { mcpList, mcpLogin } from './mcp.ts';
 import { memoryAccept, memoryAdd, memoryDelete, memoryHistory, memoryList, memoryPromote, memoryReject, memoryRestore, memoryReview, memoryShow } from './memory.ts';
 import { ruleAdd, ruleHistory, ruleList, ruleRetire } from './rule.ts';
@@ -351,6 +352,16 @@ const registerEvaluate: CommandGroup = (program, deps) => {
           ...(options.settings === undefined ? {} : { settings: options.settings }),
         }),
       );
+    });
+  evaluation
+    .command('yield <dataset>')
+    .description(
+      'run a yield dataset live and judge whether reflection pays: each family runs a learn session and then a reuse session with and without the candidates of its reflection, counted as accepted when they hold an anchor of the dataset; exits non-zero when the gate fails',
+    )
+    .requiredOption('--model <model>', 'the model every session of the run uses')
+    .requiredOption('--report <file>', 'the file the report is stored in as JSON')
+    .action(async (dataset: string, options: { model: string; report: string }) => {
+      deps.complete(await evaluateYield(deps.ports, dataset, { model: options.model, report: options.report, interrupt: deps.interrupt }));
     });
   evaluation
     .command('compare <baseline> <candidate>')

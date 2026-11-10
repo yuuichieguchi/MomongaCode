@@ -149,6 +149,12 @@ const cacheFiguresOf = (calls: readonly CallFacts[]): Pick<CaseTokenTotals, 'cac
   };
 };
 
+export const uncachedInputOfCalls = (calls: readonly CallFacts[]): number | undefined => {
+  const reported = calls.filter(isCacheReadReported);
+  if (reported.length < calls.length || !reported.every(isConsistent)) return undefined;
+  return reported.reduce((total, call) => total + call.inputTokens - call.cachedInputTokens - call.cacheWriteInputTokens, 0);
+};
+
 const priceOutcomeTotalsOf = (calls: readonly CallFacts[]): Pick<CaseTokenTotals, 'unpriced' | 'unrecordedPrice'> => {
   const unpriced: Partial<Record<UnpricedCode, number>> = {};
   let unrecordedPrice = 0;

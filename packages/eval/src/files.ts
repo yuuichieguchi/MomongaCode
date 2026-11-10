@@ -8,6 +8,10 @@ import { parseDataset } from './dataset.ts';
 import type { GoldenDataset } from './dataset.ts';
 import { decodeTranscript, encodeTranscript } from './transcript.ts';
 import type { Transcript } from './transcript.ts';
+import { parseYieldDataset } from './yield-dataset.ts';
+import type { YieldDataset } from './yield-dataset.ts';
+import { encodeYieldReport } from './yield-report.ts';
+import type { YieldReport } from './yield-report.ts';
 
 export type EvalFiles = {
   readText(file: string): Promise<string>;
@@ -31,6 +35,10 @@ export const loadContextDataset = async (files: EvalFiles, file: string): Promis
 export const loadContextReport = async (files: EvalFiles, file: string): Promise<ContextReport> => parseContextReport(await files.readText(file), file);
 
 export const saveContextReport = (files: EvalFiles, file: string, report: ContextReport): Promise<void> => files.writeText(file, encodeContextReport(report));
+
+export const loadYieldDataset = async (files: EvalFiles, file: string): Promise<YieldDataset> => parseYieldDataset(await files.readText(file), file);
+
+export const saveYieldReport = (files: EvalFiles, file: string, report: YieldReport): Promise<void> => files.writeText(file, encodeYieldReport(report));
 
 export const transcriptFileName = (transcript: Transcript): string => `${transcript.caseId}.${transcript.runIndex}${TRANSCRIPT_FILE_SUFFIX}`;
 
