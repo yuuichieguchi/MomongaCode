@@ -129,6 +129,10 @@ describe('run event payloads', () => {
       | 'tool.loaded'
       | 'tool.offered'
       | 'loop.warned'
+      | 'budget.exhausted'
+      | 'tool.held'
+      | 'tool.held.resolved'
+      | 'run.quiescent'
       | 'meter.observed'
       | 'model.rejected'
       | 'approval.rule.persisted'
@@ -251,7 +255,7 @@ describe('run event payloads', () => {
       content?: unknown[];
       truncated?: boolean;
       handle?: string;
-      denial?: { source: 'sandbox' | 'rule' | 'mode' | 'hook'; reason: string };
+      denial?: { source: 'sandbox' | 'rule' | 'mode' | 'hook' | 'mandate' | 'held'; reason: string };
       files?: { path: string; sha256?: string; access: 'read' | 'write' | 'remove' }[];
       mutated?: true;
       command?: string;
@@ -413,7 +417,25 @@ describe('RunState', () => {
       stopReason?: StopReason;
       step: number;
       attempt: number;
-      usage: { inputTokens: number; outputTokens: number; totalTokens: number };
+      usage: { inputTokens: number; outputTokens: number; totalTokens: number; costNano?: number; unpricedCalls?: number };
+      heldCalls?: Record<
+        string,
+        {
+          name: string;
+          providerCallId: string;
+          arguments: unknown;
+          step: number;
+          approvalId: string;
+          reason: string;
+          sinceSeq: number;
+          footprint: { reads: string[]; writes: string[] };
+          subjectDigest?: string;
+          options?: PermissionOption[];
+          resolution?: { optionId: string; kind: PermissionOption['kind']; subjectDigest: string };
+          cancelled?: 'expired' | 'withdrawn' | 'superseded';
+        }
+      >;
+      quiescent?: true;
       history: { seq: number; item: InputItem; callId?: string; handle?: string; omittedTokens?: number }[];
       nextItemSeq: number;
       summary?: { item: CompactionInputItem | MessageInputItem; summary: string; replacedThroughSeq: number };

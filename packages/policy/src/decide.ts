@@ -6,7 +6,7 @@ import type { ApprovalBasis, PermissionMode } from '@momonga/protocol';
 import { commandApproval } from './approval.ts';
 import { commandCoveredByAllowRules } from './command-match.ts';
 import type { PolicyFilesystem } from './filesystem.ts';
-import { supersededFormOf } from './superseded.ts';
+import { supersededVerdictOf } from './superseded.ts';
 import type { SupersededForm } from './superseded.ts';
 import { matchRule, matchStrength, ruleCoversSubject } from './match-rule.ts';
 import { absoluteFrom } from './path-match.ts';
@@ -321,11 +321,23 @@ const withNetworkRequest = (input: DecideInput, decision: Decision): Decision =>
   return { kind: 'ask', source: 'mode', reason: requests, humanOnly: true, network: true };
 };
 
-const supersededDecision = (input: DecideInput): Decision | undefined => {
-  if (input.mandate !== true || input.subject.kind !== 'command' || input.supersededForms === undefined) return undefined;
-  const form = supersededFormOf(input.subject.command, input.supersededForms, commandSpecsFor(input.fs.platform));
-  if (form === undefined) return undefined;
-  return byMode('deny', `Not run: this run has a mandate, and ${form.argv.join(' ')} is replaced by a dedicated operation; use ${form.operation}`);
-};
+const programsOf = (forms: readonly SupersededForm[]): string => [...new Set(forms.map((form) => form.argv[0]))].join(', ');
 
-export const decide = (input: DecideInput): Decision => supersededDecision(input) ?? withNetworkRequest(input, decideWithoutNetwork(input));
+export const decide = (input: DecideInput): Decision => {
+  const ordinary = (): Decision => withNetworkRequest(input, decideWithoutNetwork(input));
+  if (input.mandate !== true || input.subject.kind !== 'command' || input.supersededForms === undefined) return ordinary();
+  const verdict = supersededVerdictOf(input.subject.command, input.supersededForms, commandSpecsFor(input.fs.platform));
+  if (verdict === undefined) return ordinary();
+  if (verdict.kind === 'superseded') {
+    return byMode('deny', `Not run: this run has a mandate, and ${verdict.form.argv.join(' ')} is replaced by a dedicated operation; use ${verdict.form.operation}`);
+  }
+  const decided = ordinary();
+  if (decided.kind === 'deny') return decided;
+  return {
+    kind: 'ask',
+    source: 'operation',
+    humanOnly: true,
+    reason: `this run has a mandate, and the command could be a form that a dedicated operation replaces (${programsOf(input.supersededForms)}): a word before its subcommand is not literal, so a person decides`,
+    ...(decided.network === true ? { network: true as const } : {}),
+  };
+};

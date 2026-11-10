@@ -37,8 +37,8 @@ import {
   runtimeTeardownBudgetMs,
 } from '@momonga/foundation';
 import type { Clock, GenerationRole, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, StopValues, TextStream } from '@momonga/foundation';
-import { createTelemetry, exportersFor, openTraceStore, pageRunBodies, startBodyPurge } from '@momonga/observability';
-import type { Telemetry, TraceStore } from '@momonga/observability';
+import { createTelemetry, definePriceTable, exportersFor, openTraceStore, pageRunBodies, startBodyPurge } from '@momonga/observability';
+import type { PriceTable, Telemetry, TraceStore } from '@momonga/observability';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
@@ -116,6 +116,7 @@ import { createMemoryPort } from './memory-port.ts';
 import { createAgentsPort } from './agents-port.ts';
 import { createChildRuns } from './child-runs.ts';
 import { permissionRulesFor } from '../governance/rules.ts';
+import { chainPrice } from '../worker/budget.ts';
 import { createSkillsPort } from './skills-port.ts';
 import { runTeardown } from './teardown.ts';
 import type { TeardownStep } from './teardown.ts';
@@ -653,6 +654,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       agents: agentsPort,
       evidenceRunFor,
     } = ports;
+    const priceTableNow = (): PriceTable => definePriceTable(settingsComposition.takeUserSnapshot().settings.pricing ?? []);
     await step('background-jobs', () => toolRuntime.jobs.reconcileOrphans());
     cleanups.push({
       name: 'tool-markers',
@@ -696,6 +698,16 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         protectedRootAreas: protectedRootAreasOf(paths, canonicalHome),
         notifier,
         modelListing: (requestSignal) => gatewayClient.listing({ signal: requestSignal }),
+        delegation: {
+          settings: () => {
+            const { limits, ceilings, mandates } = settingsComposition.takeUserSnapshot().settings;
+            return { ...(limits === undefined ? {} : { limits }), ...(ceilings === undefined ? {} : { ceilings }), ...(mandates === undefined ? {} : { mandates }) };
+          },
+          chainBilling: async (model, requestSignal) => {
+            const { chain } = await gatewayClient.model(model, { signal: requestSignal });
+            return { metered: chain.some((member) => member.billed?.billing === 'metered'), priced: chainPrice(chain, priceTableNow(), clock.now()) !== undefined };
+          },
+        },
         modelCapabilities: (model, requestSignal) => gatewayClient.capabilities(model, { signal: requestSignal }),
         sessionCreateSettings: async (cwd, requestSignal) => {
           const admittedSettings = await settingsComposition.sessionCreateSettings(cwd, requestSignal);
@@ -784,6 +796,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           platform,
           timers,
           defaults: RUNTIME_DEFAULTS.limits,
+          priceTable: priceTableNow,
           home: canonicalHome,
           blobs: store.blobs,
           instructionReader: createFsInstructionReader(),

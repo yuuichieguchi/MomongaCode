@@ -1,5 +1,5 @@
 import { MCP_CONNECT_TIMEOUT_LIMITS, SANDBOX_NETWORK_SETTINGS, SECRET_NAME_PATTERN, SHUTDOWN_SETTING_LIMITS } from '@momonga/foundation';
-import { MANAGED_DECLARABLE_FIELDS, ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, PROVIDER_NAME_PATTERN, REASONING_EFFORTS, REQUEST_TOOL_KINDS, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS, MANAGED_ENDPOINT_FORMS, IDEMPOTENCY_KEY_HEADER_PATTERN } from '@momonga/protocol';
+import { MAX_COST_USD, QUIESCENT_BEHAVIOURS, MANAGED_DECLARABLE_FIELDS, ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, PROVIDER_NAME_PATTERN, REASONING_EFFORTS, REQUEST_TOOL_KINDS, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS, MANAGED_ENDPOINT_FORMS, IDEMPOTENCY_KEY_HEADER_PATTERN } from '@momonga/protocol';
 import type { CallRole, ManagedDeclarableField } from '@momonga/protocol';
 
 export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const satisfies readonly CallRole[];
@@ -565,6 +565,64 @@ export const SETTINGS_SCHEMA = {
         required: ['provider', 'model', 'effectiveFrom', 'inputPerMTok', 'outputPerMTok', 'currency'],
         additionalProperties: false,
       },
+    },
+    limits: {
+      type: 'object',
+      properties: { maxCostUsd: { type: 'number', minimum: 0, maximum: MAX_COST_USD } },
+      additionalProperties: false,
+    },
+    ceilings: {
+      type: 'object',
+      properties: {
+        costUsd: { type: 'number', minimum: 0, maximum: MAX_COST_USD },
+        tokens: { type: 'integer', minimum: 1, maximum: 100_000_000 },
+        timeMs: { type: 'integer', minimum: 1000, maximum: 604_800_000 },
+      },
+      additionalProperties: false,
+    },
+    mandates: {
+      type: 'object',
+      additionalProperties: {
+        type: 'object',
+        properties: {
+          allow: NON_EMPTY_STRING_ARRAY,
+          ask: NON_EMPTY_STRING_ARRAY,
+          deny: NON_EMPTY_STRING_ARRAY,
+          until: NON_EMPTY_STRING_ARRAY,
+          require: NON_EMPTY_STRING_ARRAY,
+          steps: { type: 'integer', minimum: 1, maximum: 1000 },
+          tokens: { type: 'integer', minimum: 1, maximum: 100_000_000 },
+          costUsd: { type: 'number', minimum: 0, maximum: MAX_COST_USD },
+          timeMs: { type: 'integer', minimum: 1000, maximum: 604_800_000 },
+          retries: { type: 'integer', minimum: 1, maximum: 100 },
+          onQuiescent: { enum: [...QUIESCENT_BEHAVIOURS] },
+        },
+        additionalProperties: false,
+      },
+    },
+    forges: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', minLength: 1 },
+          descriptor: { type: 'string', minLength: 1 },
+          host: { type: 'string', minLength: 1 },
+          apiBaseUrl: { type: 'string', minLength: 1 },
+          credentialEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
+          credentialSecret: { type: 'string', pattern: SECRET_NAME_PATTERN },
+        },
+        required: ['id', 'descriptor', 'host', 'apiBaseUrl'],
+        additionalProperties: false,
+      },
+    },
+    operations: {
+      type: 'object',
+      properties: {
+        protectedRefs: NON_EMPTY_STRING_ARRAY,
+        approval: { type: 'object', additionalProperties: { type: 'string', enum: ['rule', 'always'] } },
+      },
+      additionalProperties: false,
     },
     sandbox: { enum: ['seatbelt', 'bubblewrap', 'none'] },
     sandboxNetwork: { enum: [...SANDBOX_NETWORK_SETTINGS] },

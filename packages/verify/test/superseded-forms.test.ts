@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { HOST_RULE_ENFORCEMENT, protectedSetFor } from '@momonga/foundation';
+import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import { hostFilesystemOf } from '@momonga/testkit';
 import { verifyPermissions } from '../src/index.ts';
 import type { PropertyResult, VerificationReport, VerifyRequest } from '../src/index.ts';
@@ -28,7 +28,7 @@ const verifyWith = (specs: readonly RuleSpec[]): Promise<VerificationReport> => 
     fs: hostFilesystemOf(fileSystem),
     secretLocations: [sshLocation(layout)],
     exemptDirectory: null,
-    enforcement: HOST_RULE_ENFORCEMENT,
+    enforcement: ruleEnforcementOf('none'),
     budgetMs: 120_000,
     supersededForms: SUPERSEDED,
   } as VerifyRequest;

@@ -47,7 +47,7 @@ export const createIdempotencyStore = (db: DatabaseSync, clock: Clock, holdsLeas
   const attach = db.prepare(
     "UPDATE idempotency SET pgid = :pgid, started_at = :startedAt WHERE key = :key AND state = 'PENDING'",
   );
-  const adopt = db.prepare("UPDATE idempotency SET lease_token = :leaseToken, authorised_at = :authorisedAt WHERE key = :key AND state IN ('PENDING', 'UNKNOWN')");
+  const adopt = db.prepare("UPDATE idempotency SET lease_token = :leaseToken, authorised_at = COALESCE(:authorisedAt, authorised_at) WHERE key = :key AND state IN ('PENDING', 'UNKNOWN')");
   const setCheckpoint = db.prepare(
     "UPDATE idempotency SET meta_json = json_set(meta_json, '$.checkpoint', json(:state)) WHERE key = :key AND state = 'PENDING'",
   );
@@ -113,9 +113,9 @@ export const createIdempotencyStore = (db: DatabaseSync, clock: Clock, holdsLeas
     return {
       begin: (key, options) =>
         immediateTx<LeasedBegin>(db, () => (holdsLease(fence) ? beginRecord(key, options, fence.leaseToken) : { s: 'LEASE_LOST' })),
-      authorise: (key) =>
+      authorise: (key, purpose) =>
         whileHolding(() => {
-          requireChange(adopt.run({ key, leaseToken: fence.leaseToken, authorisedAt: clock.now() }).changes, key, 'authorise', 'PENDING or UNKNOWN');
+          requireChange(adopt.run({ key, leaseToken: fence.leaseToken, authorisedAt: purpose === 'reconcile' ? null : clock.now() }).changes, key, 'authorise', 'PENDING or UNKNOWN');
         }),
       attachProcess: (key, process) => whileHolding(() => attachRecord(key, process)),
       checkpoint: (key, state) =>

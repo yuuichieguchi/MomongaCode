@@ -17,7 +17,7 @@ export type PatchSessionBody = { permissionMode?: PermissionMode; model?: string
 
 export type CreateRunBody = {
   input: string;
-  limits?: { maxSteps?: number; maxTotalTokens?: number; approvalTtlMs?: number; loopThreshold?: number };
+  limits?: { maxSteps?: number; maxTotalTokens?: number; approvalTtlMs?: number; loopThreshold?: number; maxCostUsd?: number; maxFailedAttempts?: number };
   timeoutMs?: number;
   history?: 'inherit' | 'fresh';
   skill?: string;

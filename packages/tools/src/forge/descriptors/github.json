@@ -1,0 +1,57 @@
+{
+  "id": "github",
+  "auth": { "header": "Authorization", "prefix": "Bearer " },
+  "operations": {
+    "listPullRequests": {
+      "method": "GET",
+      "path": "/repos/{owner}/{name}/pulls",
+      "query": { "head": "{owner}:{head}", "base": "{base}", "state": "open" },
+      "success": [200],
+      "items": "",
+      "result": { "number": "number", "url": "html_url", "headSha": "head.sha", "state": "state", "merged": "merged" }
+    },
+    "getPullRequest": {
+      "method": "GET",
+      "path": "/repos/{owner}/{name}/pulls/{number}",
+      "success": [200],
+      "result": { "number": "number", "url": "html_url", "headSha": "head.sha", "state": "state", "merged": "merged" }
+    },
+    "createPullRequest": {
+      "method": "POST",
+      "path": "/repos/{owner}/{name}/pulls",
+      "body": { "head": "{head}", "base": "{base}", "title": "{title}", "body": "{body}" },
+      "success": [201],
+      "alreadyExists": [422],
+      "result": { "number": "number", "url": "html_url", "headSha": "head.sha" }
+    },
+    "mergePullRequest": {
+      "method": "PUT",
+      "path": "/repos/{owner}/{name}/pulls/{number}/merge",
+      "body": { "sha": "{headSha}" },
+      "success": [200],
+      "conflict": [409],
+      "result": { "sha": "sha" }
+    },
+    "listChecks": {
+      "method": "GET",
+      "path": "/repos/{owner}/{name}/commits/{headSha}/check-runs",
+      "success": [200],
+      "items": "check_runs",
+      "result": { "name": "name", "status": "status" }
+    },
+    "listComments": {
+      "method": "GET",
+      "path": "/repos/{owner}/{name}/issues/{number}/comments",
+      "success": [200],
+      "items": "",
+      "result": { "body": "body" }
+    },
+    "createComment": {
+      "method": "POST",
+      "path": "/repos/{owner}/{name}/issues/{number}/comments",
+      "body": { "body": "{body}" },
+      "success": [201],
+      "result": { "id": "id" }
+    }
+  }
+}

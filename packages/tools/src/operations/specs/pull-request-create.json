@@ -1,0 +1,32 @@
+{
+  "name": "PullRequestCreate",
+  "description": "Opens a pull request from a pushed branch. The forge refuses a second open pull request for the same head and base, and a pull request that already exists at the given head commit completes the call without a request.",
+  "kind": "other",
+  "sideEffect": "write",
+  "title": "Open a pull request from {input.head} into {input.base}",
+  "subject": { "kind": "forge", "headSha": "{input.headSha}" },
+  "approval": "rule",
+  "input": {
+    "type": "object",
+    "properties": {
+      "head": { "type": "string", "refName": true, "description": "The branch with the changes" },
+      "base": { "type": "string", "refName": true, "description": "The branch to merge into" },
+      "title": { "type": "string", "minLength": 1 },
+      "body": { "type": "string" },
+      "headSha": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The commit the head branch is expected to be at" }
+    },
+    "required": ["head", "base", "title", "body", "headSha"],
+    "additionalProperties": false
+  },
+  "timeoutMs": 60000,
+  "observe": [{ "id": "existing", "via": { "forge": "listPullRequests", "args": { "head": "{input.head}", "base": "{input.base}" }, "shape": "list" } }],
+  "effect": { "forge": "createPullRequest", "args": { "head": "{input.head}", "base": "{input.base}", "title": "{input.title}", "body": "{input.body}" } },
+  "applied": [
+    ["after.existing.count", { "literal": "1" }],
+    ["after.existing.headSha", "input.headSha"]
+  ],
+  "unchanged": [["after.existing.count", { "literal": "0" }]],
+  "guard": "server_unique",
+  "supersedes": [["gh", "pr", "create"]],
+  "report": "Pull request #{after.existing.number} is open for {input.head} into {input.base}: {after.existing.url}"
+}

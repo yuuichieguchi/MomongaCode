@@ -46,6 +46,10 @@ import type {
   ReflectionJobState,
   StopReason,
   ToolKind,
+  RunUsage,
+  Admission,
+  AdmissionAsk,
+  TreeSpend,
 } from '@momonga/protocol';
 
 export type SessionMcpServers = Readonly<Record<string, Readonly<Record<string, unknown>>>>;
@@ -99,7 +103,7 @@ export type Run = {
   pins: Record<string, unknown>;
   step: number;
   lastSeq: number;
-  usage: { inputTokens: number; outputTokens: number; totalTokens: number };
+  usage: RunUsage;
   previousRunId: string | null;
   history: Stored<HistoryMode>;
   parentRunId: string | null;
@@ -245,7 +249,7 @@ export type LeasedOutcome = { kind: 'ok' } | LeaseLost;
 
 export type LeasedIdempotency = {
   begin(key: string, options: { expiresAt: number; meta: Record<string, unknown> }): LeasedBegin;
-  authorise(key: string): LeasedOutcome;
+  authorise(key: string, purpose?: 'reconcile'): LeasedOutcome;
   attachProcess(key: string, process: { pgid: number; startedAt: number }): LeasedOutcome;
   checkpoint(key: string, state: Record<string, unknown> | undefined): LeasedOutcome;
   complete(key: string, result: unknown, meta?: Record<string, unknown>): LeasedOutcome;
@@ -686,6 +690,9 @@ export type RuntimeStore = {
   createChildRun(input: ChildRunInput): CreateChildRunResult;
   listChildRuns(runId: string): Run[];
   treeTokens(runId: string): number;
+  treeSpend(runId: string): TreeSpend & { runsRead: number };
+  admitModelRequest(claim: LeaseFence, ask: AdmissionAsk): Admission | LeaseLost;
+  releaseBudget(runId: string): void;
   rootSessionId(sessionId: string): string;
   jobs: JobStore;
   idempotency: IdempotencyStore;

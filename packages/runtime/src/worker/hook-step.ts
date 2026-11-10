@@ -59,7 +59,7 @@ export const withSessionCommands = async <T>(ctx: ClaimContext, work: (commands:
   try {
     const session = sessionOf(ctx);
     const rules: PermissionRule[] = await permissionRulesFor(ctx.options, session);
-    const policy = await ctx.options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories, ruleEnforcement: held.ruleEnforcement });
+    const policy = await ctx.options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories, ruleEnforcement: held.ruleEnforcement, signal: ctx.control.signal });
     return await work({ session, policy, sandbox: held.sandbox });
   } finally {
     held.done();

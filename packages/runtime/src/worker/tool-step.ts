@@ -238,7 +238,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
 const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSession, calls: ToolCall[], step: number): Promise<Flow> => {
   const { options, journal, run } = ctx;
   const rules = await permissionRulesFor(options, session);
-  const policy = await options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories, ruleEnforcement: held.ruleEnforcement });
+  const policy = await options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories, ruleEnforcement: held.ruleEnforcement, signal: ctx.control.signal });
   const verdict = await ruleVerdictFor(ctx, session, { rules, roots: policy.roots, enforcement: held.ruleEnforcement });
   const laterVerdict = laterVerdictNotice(journal.state, ctx.policyFingerprint, verdict);
   if (laterVerdict.length > 0) journal.append(laterVerdict);

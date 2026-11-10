@@ -28,7 +28,7 @@ export type LeasedOutcome = { kind: 'ok' } | { kind: 'lease_lost' };
 
 export type LeasedIdempotencyPort = {
   begin(key: string, options: { expiresAt: number; meta: Record<string, unknown> }): LeasedBegin;
-  authorise(key: string): LeasedOutcome;
+  authorise(key: string, purpose?: 'reconcile'): LeasedOutcome;
   attachProcess(key: string, process: { pgid: number; startedAt: number }): LeasedOutcome;
   checkpoint(key: string, state: Record<string, unknown> | undefined): LeasedOutcome;
   complete(key: string, result: unknown, meta?: Record<string, unknown>): LeasedOutcome;

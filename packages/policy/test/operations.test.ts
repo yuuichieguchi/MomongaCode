@@ -199,4 +199,45 @@ describe('Bash forms superseded by an operation', () => {
     expect(decideWith(layout, BASH, push, 'manual', [], { mandate: true, supersededForms: SUPERSEDED }).kind).toBe('deny');
     expect(decideWith(layout, BASH, status, 'manual', [], { mandate: true, supersededForms: SUPERSEDED }).kind).not.toBe('deny');
   });
+
+  describe('a command whose words up to the subcommand are not all literal', () => {
+    const UNDECIDABLE = ['git $X origin main', 'git -c a=b "$(echo push)"', 'G=git; $G push', 'gh pr $(echo create)'];
+    const allowAll = (layout: Layout) => [ruleIn(layout)('allow', 'Bash(git:*)'), ruleIn(layout)('allow', 'Bash(gh:*)'), ruleIn(layout)('allow', 'Bash')];
+
+    it.each(UNDECIDABLE)('is not run without a person in a mandate run, whatever the allow rules and the mode: %s', (command) => {
+      const layout = makeLayout();
+      const subject: PermissionSubject = { kind: 'command', tool: 'Bash', command };
+      for (const mode of ['manual', 'bypassPermissions'] as const) {
+        const decision = decideWith(layout, BASH, subject, mode, allowAll(layout), { mandate: true, supersededForms: SUPERSEDED });
+        expect(decision).toMatchObject({ kind: 'ask', source: 'operation', humanOnly: true });
+        expect(decision.reason).toContain('could be');
+      }
+    });
+
+    it.each(UNDECIDABLE)('takes the ordinary path without a mandate: %s', (command) => {
+      const layout = makeLayout();
+      const subject: PermissionSubject = { kind: 'command', tool: 'Bash', command };
+      const without = decideWith(layout, BASH, subject, 'manual', [], {});
+      expect(decideWith(layout, BASH, subject, 'manual', [], { supersededForms: SUPERSEDED })).toEqual(without);
+      expect(without.source).not.toBe('operation');
+    });
+
+    it('still yields to a deny rule in a mandate run', () => {
+      const layout = makeLayout();
+      const subject: PermissionSubject = { kind: 'command', tool: 'Bash', command: 'git $X origin main' };
+      expect(decideWith(layout, BASH, subject, 'manual', [ruleIn(layout)('deny', 'Bash(git:*)')], { mandate: true, supersededForms: SUPERSEDED })).toMatchObject({ kind: 'deny', source: 'rule' });
+    });
+
+    it.each(['git push origin "$BRANCH"', 'gh pr create --title "$(cat title)"'])('is still the superseded form when the non-literal word comes after it: %s', (command) => {
+      const layout = makeLayout();
+      const subject: PermissionSubject = { kind: 'command', tool: 'Bash', command };
+      expect(decideWith(layout, BASH, subject, 'manual', [], { mandate: true, supersededForms: SUPERSEDED })).toMatchObject({ kind: 'deny' });
+    });
+
+    it.each(['git status $X', 'npm run $X', 'ls $DIR'])('is not held when a literal word already rules every form out: %s', (command) => {
+      const layout = makeLayout();
+      const subject: PermissionSubject = { kind: 'command', tool: 'Bash', command };
+      expect(decideWith(layout, BASH, subject, 'manual', [], { mandate: true, supersededForms: SUPERSEDED }).source).not.toBe('operation');
+    });
+  });
 });

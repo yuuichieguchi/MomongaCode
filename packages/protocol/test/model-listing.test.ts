@@ -49,7 +49,7 @@ describe('the models listing of the gateway names every model by its canonical r
     expectTypeOf<MomongaModelEntry['billing']>().toEqualTypeOf<TargetBilling>();
     expectTypeOf<MomongaModelEntry['capabilities']>().toEqualTypeOf<ChainCapabilities | ProbingCapabilities | UnavailableCapabilities>();
     expectTypeOf<MomongaModelEntry['chain']>().toEqualTypeOf<ChainMemberEntry[]>();
-    expectTypeOf<keyof ChainMemberEntry>().toEqualTypeOf<'model' | 'counter' | 'billing' | 'adapter' | 'answers' | 'upstream' | 'plan' | 'key' | 'capabilities'>();
+    expectTypeOf<keyof ChainMemberEntry>().toEqualTypeOf<'model' | 'counter' | 'billing' | 'provider' | 'adapter' | 'answers' | 'upstream' | 'plan' | 'key' | 'capabilities'>();
     expectTypeOf<ChainMemberEntry['answers']>().toEqualTypeOf<'model' | 'script'>();
     expectTypeOf<ChainMemberEntry['capabilities']>().toEqualTypeOf<Capabilities | ProbingCapabilities | UnavailableCapabilities>();
     const entry: MomongaModelEntry = {

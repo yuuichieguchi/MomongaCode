@@ -273,9 +273,10 @@ ALTER TABLE jobs ADD COLUMN read_call TEXT;
 ALTER TABLE jobs ADD COLUMN read_before INTEGER;
 `;
 
-const AUTHORISED_MARK_AND_RUN_RETRY_BUDGET = `
+const AUTHORISED_MARK_AND_BUDGET_RESERVATIONS = `
 ALTER TABLE idempotency ADD COLUMN authorised_at INTEGER;
-ALTER TABLE runs ADD COLUMN max_failed_attempts INTEGER;
+ALTER TABLE runs ADD COLUMN reserved_tokens INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE runs ADD COLUMN reserved_nano INTEGER NOT NULL DEFAULT 0;
 `;
 
 const IDEMPOTENCY_LEASE_TOKEN = `
@@ -1221,9 +1222,10 @@ export const MIGRATIONS: readonly Migration[] = [
     name: 'let an approval ask a person about a tool call whose effect is unknown, by rebuilding approvals with the kind unknown_effect in its CHECK list, and store the verdict of a rule set under the fingerprint of its input in rule_verdicts',
     sql: UNKNOWN_EFFECT_APPROVALS_AND_RULE_VERDICTS,
   },
+  { version: 35, name: 'placeholder on this branch only: the merge replaces this entry with migration 35 of the branch that adds run_indexed_chars', sql: 'SELECT 1;' },
   {
-    version: 35,
-    name: 'record when an idempotency record was authorised, so a recovery can tell an effect that never started from one that may have, and let a run carry its own bound of consecutive failed attempts',
-    sql: AUTHORISED_MARK_AND_RUN_RETRY_BUDGET,
+    version: 36,
+    name: 'record when an idempotency record was authorised, so a recovery can tell an effect that never started from one that may have, and hold what an admitted model request of a run reserves of the budget of its run tree, in tokens and in nano-USD',
+    sql: AUTHORISED_MARK_AND_BUDGET_RESERVATIONS,
   },
 ];

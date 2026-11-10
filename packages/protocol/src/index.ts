@@ -410,6 +410,8 @@ export type {
 } from './run-api.ts';
 export { assistantTextOf, jsonReplyOf } from './assistant-text.ts';
 export { jsonReplyPathFor } from './json-reply-path.ts';
+export { BUDGET_CAUSES, BUDGET_DIMENSIONS, HELD_OUTCOMES, MAX_COST_USD, NANO_PER_USD, PRICE_UNITS_PER_NANO, QUIESCENT_EXIT_CODE, admitRequest, composeBudget, nanoOfAmount, usdOfNano } from './budget.ts';
+export type { Admission, AdmissionAsk, CallFootprint, BudgetCause, BudgetDimension, BudgetExhausted, ComposedBudget, HeldCallView, HeldOutcome, RunUsage, TokenPrice, TreeSpend } from './budget.ts';
 export { ANATOMY_FLAT_LAYERS, ANATOMY_HISTORY_LAYERS, CACHE_READS_NOT_REPORTED, PRICE_NOT_RECORDED, UNPRICED_CODES, UNPRICED_CODE_TEXT, anatomyLayerEntries } from './token-anatomy.ts';
 export type {
   BilledDetail,
@@ -540,6 +542,8 @@ export {
   initialVerificationState,
   pinnedCompletionOf,
   readMandate,
+  pinnedDelegationOf,
+  QUIESCENT_BEHAVIOURS,
   readPinnedCompletion,
   reconciliationMutates,
   verificationRequiredOf,
@@ -554,6 +558,10 @@ export type {
   ConditionState,
   ConditionWhen,
   Mandate,
+  MandateBudget,
+  MandateHold,
+  MandateScope,
+  PinnedDelegation,
   MutationFacts,
   NotRunReason,
   PinnedCompletion,
@@ -585,6 +593,7 @@ export type {
   InboxRowView,
   InboxState,
   ModelResponse,
+  HeldCall,
   PendingCallStatus,
   PermissionMode,
   PermissionOption,

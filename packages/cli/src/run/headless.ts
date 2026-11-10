@@ -1,6 +1,6 @@
 import { isRecord } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { TARGET_NOT_READY, agentReadiness, readinessShownText, unknownEffectLines, unknownEffectTitle } from '@momonga/protocol';
+import { QUIESCENT_EXIT_CODE, TARGET_NOT_READY, agentReadiness, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
 import type { Mandate, MomongaModelEntry, PermissionMode, PublicRunEvent, RunReport, UnknownEffectCall } from '@momonga/protocol';
 import { noTargetLines } from '../readiness.ts';
 import { RunApiError } from '../client/runtime-client.ts';
@@ -50,6 +50,7 @@ export type HeadlessOptions = {
   skill?: string;
   images?: readonly string[];
   mandate?: Mandate;
+  limits?: { maxCostUsd?: number };
   verbose: boolean;
   interrupt: AbortSignal;
 };
@@ -66,6 +67,8 @@ export type RunResult = {
   error?: { code: string; message: string };
   num_turns: number;
   usage: RunView['usage'];
+  cost_usd?: string;
+  unpriced_calls?: number;
   report?: RunReport;
 };
 
@@ -81,6 +84,8 @@ export const resultOf = (run: RunView, result: string): RunResult => ({
   ...(run.error === undefined ? {} : { error: run.error }),
   num_turns: run.step,
   usage: run.usage,
+  ...(run.usage.costNano === undefined ? {} : { cost_usd: usdOfNano(run.usage.costNano) }),
+  ...(run.usage.unpricedCalls === undefined ? {} : { unpriced_calls: run.usage.unpricedCalls }),
   ...(run.report === undefined ? {} : { report: run.report }),
 });
 
@@ -105,10 +110,25 @@ const noteText = (lines: readonly string[]): string => `${escapedLines(lines)}\n
 
 const leadWith = (prefix: string, lines: readonly string[]): string[] => lines.map((line, index) => (index === 0 ? `${prefix}${line}` : line));
 
-export type FrameSink = { absorb(frame: RunEventFrame): void; handle(frame: RunEventFrame): void; handleChild(frame: RunEventFrame, agent: string): void; finalText(): string; pending(): number };
+export type FrameSink = {
+  absorb(frame: RunEventFrame): void;
+  handle(frame: RunEventFrame): void;
+  handleChild(frame: RunEventFrame, agent: string): void;
+  finalText(): string;
+  pending(): number;
+  onQuiescent(listener: () => void): void;
+};
 
 const awaitedOf = (awaits: Extract<PublicRunEvent, { type: 'tool.waiting' }>['awaits']): string =>
   awaits.kind === 'run' ? `subagent ${awaits.agent} (run ${awaits.runId})` : `job ${awaits.jobId}`;
+
+const HELD_OUTCOME_WORDS = { executed: 'was approved and has run', rejected: 'was rejected and was not run', withdrawn: 'was withdrawn and was not run' } as const;
+
+const BUDGET_CAUSE_WORDS = { limit: 'the limit is reached', unpriced: 'a model call has no price', cap_too_small: 'what is left does not pay for another request' } as const;
+
+const budgetFigure = (dimension: string, value: number): string => (dimension === 'cost' ? `${usdOfNano(value)} USD` : `${value} ${dimension}`);
+
+export const EXIT_WAITING_FOR_APPROVAL = QUIESCENT_EXIT_CODE;
 
 export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, format: OutputFormat, verbose: boolean): FrameSink => {
   const items = new Map<string, string>();
@@ -118,6 +138,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
   let lastFailure: AttemptFailed | undefined;
   const open = new Set<string>();
   const found = new Map<string, string>();
+  const quiescentListeners: Array<() => void> = [];
 
   const unknownCallsOf = (callIds: readonly string[]): UnknownEffectCall[] =>
     callIds.map((callId) => {
@@ -160,6 +181,28 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
         break;
       case 'tool.waiting':
         note([`momonga: waiting for ${awaitedOf(event.awaits)}`]);
+        break;
+      case 'tool.held':
+        note([
+          `momonga: held for approval ${event.approvalId}${by}: ${titles.get(event.callId) ?? event.callId}`,
+          `  ${event.reason}`,
+          '  the run goes on with work that does not depend on it',
+          `  momonga approve ${event.approvalId} allow_once`,
+          `  momonga approve ${event.approvalId} reject_once`,
+        ]);
+        break;
+      case 'tool.held.resolved':
+        note([`momonga: held call ${titles.get(event.callId) ?? event.callId} ${HELD_OUTCOME_WORDS[event.outcome]}${event.outcome === 'executed' ? ` (${event.status})` : ''}`]);
+        break;
+      case 'budget.exhausted':
+        note([`momonga: budget exhausted: ${event.dimension} (${BUDGET_CAUSE_WORDS[event.cause]}); ${budgetFigure(event.dimension, event.spent)} of ${budgetFigure(event.dimension, event.limit)} used or reserved`]);
+        break;
+      case 'run.quiescent':
+        note([
+          `momonga: the run waits for you: ${event.held.length} call${event.held.length === 1 ? '' : 's'} held for approval, and nothing else can proceed`,
+          ...event.held.flatMap((held) => [`  ${held.approvalId}  ${held.tool}: ${held.reason}`, `    momonga approve ${held.approvalId} allow_once`]),
+        ]);
+        if (agent === undefined) for (const listener of quiescentListeners) listener();
         break;
       case 'tool.permission.requested':
         note([
@@ -235,7 +278,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
   };
 
   const finalText = (): string => [...items.values()].at(-1) ?? '';
-  return { absorb, handle, handleChild, finalText, pending: () => open.size };
+  return { absorb, handle, handleChild, finalText, pending: () => open.size, onQuiescent: (listener) => void quiescentListeners.push(listener) };
 };
 
 export type WatchOptions = {
@@ -243,6 +286,7 @@ export type WatchOptions = {
   runId: string;
   format: OutputFormat;
   verbose: boolean;
+  leaveWhenQuiescent?: boolean;
   after?: number;
   interrupt: AbortSignal;
   move?: StreamMove;
@@ -281,10 +325,13 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
   const checkMove = (): void => {
     void move?.mover.check();
   };
+  const quiescent = new AbortController();
+  if (options.leaveWhenQuiescent === true) sink.onQuiescent(() => quiescent.abort());
   let run: RunView;
   try {
     run = await followRun({
       client,
+      signal: quiescent.signal,
       clock: ports.clock,
       random: ports.random,
       runId,
@@ -306,6 +353,13 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
       },
       onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the event stream, reconnecting (attempt ${attempt + 1})\n`),
     });
+  } catch (error) {
+    if (!quiescent.signal.aborted) throw error;
+    options.interrupt.removeEventListener('abort', cancelOnInterrupt);
+    const waiting = await client.getRun(runId);
+    if (options.format !== 'text') ports.stdout.write(`${JSON.stringify(resultOf(waiting, sink.finalText()))}\n`);
+    ports.stderr.write(noteText([`momonga: run ${runId} stays in the daemon; it resumes when you answer (momonga approve <id> allow_once), and momonga attach ${runId} follows it`]));
+    return EXIT_WAITING_FOR_APPROVAL;
   } finally {
     detach?.();
   }
@@ -410,13 +464,14 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
       ...(invocation.skill === undefined ? {} : { skill: invocation.skill }),
       ...(images.length === 0 ? {} : { images }),
       ...(options.mandate === undefined ? {} : { mandate: options.mandate }),
+      ...(options.limits === undefined ? {} : { limits: options.limits }),
     });
     if (options.format === 'stream-json') {
       ports.stdout.write(
         `${JSON.stringify({ type: 'system', subtype: 'init', session_id: sessionId, run_id: started.id, cwd: ports.cwd, permission_mode: session.created.session.permissionMode, stripped_env_keys: session.created.strippedEnvKeys })}\n`,
       );
     }
-    return await watchRun(ports, paths, { client: session.client, runId: started.id, format: options.format, verbose: options.verbose, interrupt: options.interrupt, ...(move === undefined ? {} : { move }) });
+    return await watchRun(ports, paths, { client: session.client, runId: started.id, format: options.format, verbose: options.verbose, leaveWhenQuiescent: options.mandate?.hold?.onQuiescent !== 'wait', interrupt: options.interrupt, ...(move === undefined ? {} : { move }) });
   } finally {
     await session.close();
   }

@@ -16,8 +16,8 @@ const leased = () => {
 const hasAuthorisedAt = (lookup: IdempotencyLookup | undefined): boolean => lookup !== undefined && lookup.s !== 'COMPLETED' && 'authorisedAt' in lookup.rec;
 
 describe('the authorised mark of an idempotency record', () => {
-  it('is migration 35, which adds a nullable authorised_at column to the idempotency table', () => {
-    const migration = MIGRATIONS.find((entry) => entry.version === 35);
+  it('is migration 36, which adds a nullable authorised_at column to the idempotency table', () => {
+    const migration = MIGRATIONS.find((entry) => entry.version === 36);
     expect(migration?.sql).toMatch(/authorised_at/);
     const { dbPath } = harness();
     const columns = rawDb(dbPath).prepare("SELECT name, \"notnull\" AS \"notNull\" FROM pragma_table_info('idempotency')").all();
@@ -50,5 +50,17 @@ describe('the authorised mark of an idempotency record', () => {
     clock.advance(2);
     ledger.authorise(KEY);
     expect(store.idempotency.get(KEY)).toMatchObject({ s: 'PENDING', rec: { pgid: 4242, startedAt: START_MS + 1, authorisedAt: START_MS + 2 } });
+  });
+
+  it('is left as it was by an authorise that only adopts the lease for a reconcile', () => {
+    const { clock, store, ledger } = leased();
+    ledger.begin(KEY, { expiresAt: EXPIRES_AT, meta: { tool: 'GitPush' } });
+    expect(ledger.authorise(KEY, 'reconcile')).toEqual({ kind: 'ok' });
+    expect(hasAuthorisedAt(store.idempotency.get(KEY))).toBe(false);
+    clock.advance(4);
+    ledger.authorise(KEY);
+    clock.advance(4);
+    ledger.authorise(KEY, 'reconcile');
+    expect(store.idempotency.get(KEY)).toMatchObject({ s: 'PENDING', rec: { authorisedAt: START_MS + 4 } });
   });
 });

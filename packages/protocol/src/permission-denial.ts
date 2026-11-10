@@ -1,4 +1,4 @@
-export const PERMISSION_DENIAL_SOURCES = ['sandbox', 'rule', 'mode', 'hook'] as const;
+export const PERMISSION_DENIAL_SOURCES = ['sandbox', 'rule', 'mode', 'hook', 'mandate', 'held'] as const;
 
 export type PermissionDenialSource = (typeof PERMISSION_DENIAL_SOURCES)[number];
 

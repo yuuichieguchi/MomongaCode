@@ -1,6 +1,6 @@
 import type { Stored } from './stored-value.ts';
 import { UNKNOWN_VALUE } from './stored-value.ts';
-import { CONDITION_SOURCES, CONDITION_STATES, CONDITION_WHENS, NOT_RUN_REASONS, RESIDUAL_RISK_CODES, VERIFICATION_OUTCOMES } from './completion.ts';
+import { CONDITION_SOURCES, CONDITION_STATES, CONDITION_WHENS, NOT_RUN_REASONS, QUIESCENT_BEHAVIOURS, RESIDUAL_RISK_CODES, VERIFICATION_OUTCOMES } from './completion.ts';
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
 import { RULE_VERDICTS } from './rule-verdict.ts';
 import { GUIDELINE_TEXT_PATTERN } from './guideline-text.ts';
@@ -15,6 +15,7 @@ import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STAT
 import type { ContextChargePurpose, SummaryFidelity, SummarySource } from './context-record.ts';
 import { AUTO_FIT_FAILED_BOUNDS, AUTO_FIT_MEASUREMENTS } from './auto-mode-gate.ts';
 import { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
+import { BUDGET_CAUSES, BUDGET_DIMENSIONS, HELD_OUTCOMES, MAX_COST_USD } from './budget.ts';
 import { RECOVERY_CAUSES, RECOVERY_OUTCOMES, REPORT_PAGE_ROWS } from './reliability.ts';
 import { FILE_ACCESSES } from './working-facts.ts';
 import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_MAX_PENDING, INBOX_STATES, JOB_STATUSES, isInheritedReference, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES, USER_SHELL_COMMAND_CHARS, PROMPT_TEXT_MAX_CHARS } from './run-types.ts';
@@ -141,7 +142,9 @@ const elicitationAnswer = {
   ],
 } as const satisfies JsonSchema;
 
-const usage = closed({ inputTokens: nonNegativeInteger, outputTokens: nonNegativeInteger, totalTokens: nonNegativeInteger }, [
+const heldCallView = closed({ callId: string, approvalId: string, tool: string, reason: string, sinceSeq: nonNegativeInteger }, ['callId', 'approvalId', 'tool', 'reason', 'sinceSeq']);
+
+const usage = closed({ inputTokens: nonNegativeInteger, outputTokens: nonNegativeInteger, totalTokens: nonNegativeInteger, costNano: nonNegativeInteger, unpricedCalls: nonNegativeInteger }, [
   'inputTokens',
   'outputTokens',
   'totalTokens',
@@ -166,7 +169,31 @@ export const COMPLETION_DECLARATION_SCHEMA: JsonSchema = closed(
   [],
 );
 
-const mandate = closed({ completion: COMPLETION_DECLARATION_SCHEMA }, []);
+const ruleTexts = { type: 'array', items: { type: 'string', minLength: 1 } } as const;
+
+const MANDATE_SCOPE_SCHEMA: JsonSchema = closed({ allow: ruleTexts, ask: ruleTexts, deny: ruleTexts }, []);
+
+const MANDATE_BUDGET_SCHEMA: JsonSchema = closed(
+  {
+    steps: boundedInteger(1, 1000),
+    tokens: boundedInteger(1, 100_000_000),
+    costUsd: { type: 'number', minimum: 0, maximum: MAX_COST_USD },
+    timeMs: boundedInteger(1000, 7 * DAY_MS),
+    retries: boundedInteger(1, 100),
+  },
+  [],
+);
+
+const mandate = closed(
+  {
+    completion: COMPLETION_DECLARATION_SCHEMA,
+    profile: { type: 'string', minLength: 1 },
+    scope: MANDATE_SCOPE_SCHEMA,
+    budget: MANDATE_BUDGET_SCHEMA,
+    hold: closed({ onQuiescent: enumOf(QUIESCENT_BEHAVIOURS) }, []),
+  },
+  [],
+);
 
 const pinnedCondition = closed(
   { id: string, command: string, when: enumOf(CONDITION_WHENS), source: enumOf(CONDITION_SOURCES), timeoutMs: nonNegativeInteger },
@@ -218,6 +245,8 @@ const runLimits = closed(
     maxTotalTokens: boundedInteger(1, 100_000_000),
     approvalTtlMs: boundedInteger(1000, 7 * DAY_MS),
     loopThreshold: boundedInteger(2, 20),
+    maxCostUsd: { type: 'number', minimum: 0, maximum: MAX_COST_USD },
+    maxFailedAttempts: boundedInteger(1, 100),
   },
   [],
 );
@@ -578,6 +607,19 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
   'tool.loaded': { properties: { names: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } } }, required: ['names'] },
   'tool.offered': { properties: { names: { type: 'array', items: { type: 'string', minLength: 1 } } }, required: ['names'] },
   'loop.warned': { properties: { signature: string }, required: ['signature'] },
+  'budget.exhausted': {
+    properties: { dimension: enumOf(BUDGET_DIMENSIONS), cause: enumOf(BUDGET_CAUSES), spent: nonNegativeInteger, limit: nonNegativeInteger },
+    required: ['dimension', 'cause', 'spent', 'limit'],
+  },
+  'tool.held': {
+    properties: { callId: string, approvalId: string, reason: string, footprint: closed({ reads: { type: 'array', items: string }, writes: { type: 'array', items: string } }, ['reads', 'writes']) },
+    required: ['callId', 'approvalId', 'reason', 'footprint'],
+  },
+  'tool.held.resolved': {
+    properties: { callId: string, approvalId: string, outcome: enumOf(HELD_OUTCOMES), status: enumOf(['completed', 'failed']), output: string },
+    required: ['callId', 'approvalId', 'outcome', 'status', 'output'],
+  },
+  'run.quiescent': { properties: { held: { type: 'array', items: heldCallView } }, required: ['held'] },
   'model.rejected': {
     properties: { step: nonNegativeInteger, attempt: nonNegativeInteger, reason: enumOf(MODEL_REJECTION_REASONS), counter: string, meterCounter: string, target: string },
     required: ['step', 'attempt', 'reason'],

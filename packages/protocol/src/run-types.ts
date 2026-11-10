@@ -7,6 +7,7 @@ import type { MemoryStatus } from './memory.ts';
 import type { Stored } from './stored-value.ts';
 import type { CompactionInputItem, InputItem, MessageInputItem } from './open-responses.ts';
 import type { ApprovalBasis, PermissionDenial } from './permission-denial.ts';
+import type { BudgetExhausted, CallFootprint, HeldCallView, HeldOutcome, RunUsage } from './budget.ts';
 import type { CallTiming, ModelCost, TokenAnatomy, UnpricedOutcome } from './token-anatomy.ts';
 
 export const RUN_STATUSES = [
@@ -298,6 +299,10 @@ export type RunEventPayload =
   | { type: 'tool.loaded'; names: string[] }
   | { type: 'tool.offered'; names: string[] }
   | { type: 'loop.warned'; signature: string }
+  | ({ type: 'budget.exhausted' } & BudgetExhausted)
+  | { type: 'tool.held'; callId: string; approvalId: string; reason: string; footprint: CallFootprint }
+  | { type: 'tool.held.resolved'; callId: string; approvalId: string; outcome: HeldOutcome; status: 'completed' | 'failed'; output: string }
+  | { type: 'run.quiescent'; held: HeldCallView[] }
   | {
       type: 'model.rejected';
       step: number;
@@ -418,6 +423,21 @@ export type RunEventEnvelope = {
 
 export type RunEvent = RunEventPayload extends infer Payload ? (Payload extends unknown ? Payload & RunEventEnvelope : never) : never;
 
+export type HeldCall = {
+  name: string;
+  providerCallId: string;
+  arguments: unknown;
+  step: number;
+  approvalId: string;
+  reason: string;
+  sinceSeq: number;
+  footprint: CallFootprint;
+  subjectDigest?: string;
+  options?: PermissionOption[];
+  resolution?: { optionId: string; kind: PermissionOption['kind']; subjectDigest: string };
+  cancelled?: 'expired' | 'withdrawn' | 'superseded';
+};
+
 export type PendingCallStatus = 'requested' | 'awaiting_approval' | 'awaiting_input' | 'started' | 'completed' | 'reconciled';
 
 export type NoticeReduction = { turn: number; from: number; to: number };
@@ -429,7 +449,9 @@ export type RunState = {
   stopReason?: StopReason;
   step: number;
   attempt: number;
-  usage: { inputTokens: number; outputTokens: number; totalTokens: number };
+  usage: RunUsage;
+  heldCalls?: Record<string, HeldCall>;
+  quiescent?: true;
   history: { seq: number; item: InputItem; callId?: string; handle?: string; omittedTokens?: number }[];
   nextItemSeq: number;
   summary?: { item: CompactionInputItem | MessageInputItem; summary: string; replacedThroughSeq: number };

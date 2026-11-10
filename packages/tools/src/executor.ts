@@ -30,7 +30,7 @@ import { cancellableTimer } from './timers.ts';
 import { observedToolFiles } from './work-tree-observer.ts';
 import type { WorkTreeMark, WorkTreeObserver } from './work-tree-observer.ts';
 import { startsProcesses, ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
-import type { AnyTool, CallOutputFit, OutputFit, SpawnMarker, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
+import type { AnyTool, CallOutputFit, GateFacts, OutputFit, SpawnMarker, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
 import { cleanFailureMessage } from '@momonga/foundation';
 import { toolRefusalKey, unavailable, validateToolInput } from './validate.ts';
 import type { ValidationResult } from './validate.ts';
@@ -218,9 +218,9 @@ type RecoveryPlan = {
 
 type RunPlan = ExecutionPlan | RecoveryPlan;
 
-type Gate = { subject: PermissionSubject; access: BatchAccess };
+type Gate = { subject: PermissionSubject; access: BatchAccess; facts?: GateFacts };
 
-type GateTarget = { input: unknown; subject: PermissionSubject; hookInput?: unknown; basis?: ApprovalBasis };
+type GateTarget = { input: unknown; subject: PermissionSubject; facts?: GateFacts; hookInput?: unknown; basis?: ApprovalBasis };
 
 const allowBasisOf = (decision: Decision): ApprovalBasis => {
   if (decision.basis === undefined) throw new Error(`an allow decision from ${decision.source} carries no basis`);
@@ -389,6 +389,13 @@ const subjectContextOf = (batch: BatchCore): SubjectContext => ({
   home: batch.home,
   roots: rootsOf(batch),
 });
+
+const subjectOfTool = async (tool: AnyTool, input: unknown, batch: BatchCore): Promise<{ subject: PermissionSubject; facts?: GateFacts }> => {
+  const context = subjectContextOf(batch);
+  if (tool.gateFacts === undefined) return { subject: tool.subject(input, context) };
+  const facts = await tool.gateFacts(input, context, { signal: batch.signal, env: batch.env });
+  return { subject: tool.subject(input, context, facts), facts };
+};
 
 type SubjectFacts = { command?: string; files?: ToolFile[] };
 
@@ -745,8 +752,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         const validation = await validateFor(batch, tool, verdict.updatedInput);
         if (!validation.ok) return failedOutcome(call.callId, `A PreToolUse hook returned an input that ${tool.name} rejects: ${rejectionOf(batch, tool, validation)}`);
         let subject: PermissionSubject;
+        let facts: GateFacts | undefined;
         try {
-          subject = tool.subject(validation.value, subjectContextOf(batch));
+          ({ subject, facts } = await subjectOfTool(tool, validation.value, batch));
         } catch (error) {
           return failedOutcome(call.callId, describeThrown(tool.name, error));
         }
@@ -755,6 +763,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         decision = second.decision;
         target.input = validation.value;
         target.subject = subject;
+        if (facts === undefined) delete target.facts;
+        else target.facts = facts;
         target.hookInput = validation.value;
       }
       if (verdict?.decision === 'deny') {
@@ -876,12 +886,13 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     if (hooked !== undefined) input = hooked.input;
 
     let subject: PermissionSubject;
+    let facts: GateFacts | undefined;
     try {
-      subject = tool.subject(input, subjectContextOf(batch));
+      ({ subject, facts } = await subjectOfTool(tool, input, batch));
     } catch (error) {
       return outcome(failedOutcome(call.callId, describeThrown(tool.name, error)));
     }
-    const target: GateTarget = { input, subject };
+    const target: GateTarget = { input, subject, ...(facts === undefined ? {} : { facts }) };
 
     if (recovered === undefined) {
       const gated = await permissionGate(call, tool, target, access, batch, stage);
@@ -894,7 +905,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         call,
         tool,
         input: target.input,
-        gate: { subject: target.subject, access },
+        gate: { subject: target.subject, access, ...(target.facts === undefined ? {} : { facts: target.facts }) },
         key,
         batch,
         gateRan: recovered === undefined,
@@ -1209,7 +1220,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
 
   const reconcileAsHolder = async (scope: CallScope, callId: string, tool: AnyTool, input: unknown, record: ToolIdempotencyRecord): Promise<Resumed> => {
     if ((await scope.holdCall()) === 'aborted') return { kind: 'outcome', outcome: failedOutcome(callId, `${tool.name} was cancelled`) };
-    if (!scope.holding(scope.ledger.authorise(record.key))) return { kind: 'outcome', outcome: scope.deferred };
+    if (!scope.holding(scope.ledger.authorise(record.key, 'reconcile'))) return { kind: 'outcome', outcome: scope.deferred };
     const earlierAttempt = await reapEarlierAttempt(record.key, record.pgid, scope.controller.signal);
     try {
       const ctx: ReconcileContext = { ...scope.reconcileCtx, earlierAttempt };
@@ -1288,6 +1299,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const target: GateTarget = {
       input: plan.input,
       subject: gate.subject,
+      ...(gate.facts === undefined ? {} : { facts: gate.facts }),
       ...(plan.hookInput === undefined ? {} : { hookInput: plan.hookInput }),
       ...(plan.basis === undefined ? {} : { basis: plan.basis }),
     };
@@ -1328,7 +1340,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         await batch.outputFit.ready?.();
         if (tool.prepare !== undefined) {
           try {
-            prepared = await tool.prepare(target.input, contextForBasis());
+            prepared = await tool.prepare(target.input, contextForBasis(), target.facts);
           } catch (error) {
             return failedOutcome(callId, describeThrown(tool.name, error));
           }

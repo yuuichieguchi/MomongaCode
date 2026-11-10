@@ -355,6 +355,37 @@ export type CredentialsSettings = { env?: string[]; keep?: string[]; valuePatter
 
 export type NetworkSettings = { httpProxy?: string; httpsProxy?: string; noProxy?: string; extraCaFiles?: string[]; environment?: boolean };
 
+export type LimitsSettings = { maxCostUsd?: number };
+
+export type CeilingsSettings = { costUsd?: number; tokens?: number; timeMs?: number };
+
+export type MandateProfileSettings = {
+  allow?: string[];
+  ask?: string[];
+  deny?: string[];
+  until?: string[];
+  require?: string[];
+  steps?: number;
+  tokens?: number;
+  costUsd?: number;
+  timeMs?: number;
+  retries?: number;
+  onQuiescent?: 'report' | 'wait';
+};
+
+export type ForgeInstanceSettings = {
+  id: string;
+  descriptor: string;
+  host: string;
+  apiBaseUrl: string;
+  credentialEnv?: string;
+  credentialSecret?: string;
+};
+
+export type OperationApprovalClass = 'rule' | 'always';
+
+export type OperationsSettings = { protectedRefs?: string[]; approval?: Record<string, OperationApprovalClass> };
+
 export type Settings = {
   permissions?: PermissionsSettings;
   env?: Record<string, string>;
@@ -377,6 +408,11 @@ export type Settings = {
   telemetry?: TelemetrySettings;
   network?: NetworkSettings;
   pricing?: PriceEntrySettings[];
+  limits?: LimitsSettings;
+  ceilings?: CeilingsSettings;
+  mandates?: Record<string, MandateProfileSettings>;
+  forges?: ForgeInstanceSettings[];
+  operations?: OperationsSettings;
   memory?: MemorySettings;
   verification?: VerificationSettings;
   context?: ContextSettings;
@@ -510,6 +546,10 @@ export const assertSettings = (value: unknown, source: string): Settings => {
   });
   (settings.sandboxUnixSockets?.allow ?? []).forEach((entry, index) => {
     if (!path.isAbsolute(entry)) throw new Error(`${source}: invalid settings at /sandboxUnixSockets/allow/${index}: not an absolute path`);
+  });
+  (settings.forges ?? []).forEach((forge, index) => {
+    const references = [forge.credentialEnv, forge.credentialSecret].filter((reference) => reference !== undefined).length;
+    if (references !== 1) throw new Error(`${source}: invalid settings at /forges/${index}: exactly one of credentialEnv and credentialSecret must name the token`);
   });
   const endpoint = settings.telemetry?.otlp?.endpoint;
   if (endpoint !== undefined) {

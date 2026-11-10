@@ -21,18 +21,19 @@ import {
   ruleEnforcementOf,
   sha256Hex,
 } from '@momonga/foundation';
-import type { Clock, CredentialSecretStore, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, OutboundNetwork, ProcessInspector, ReapTiming, RolePort, RuleEnforcement, SessionScratch } from '@momonga/foundation';
+import type { Clock, CredentialSecretStore, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, OutboundNetwork, ProcessInspector, ReapTiming, RolePort, RuleEnforcement, SecretStore, SessionScratch } from '@momonga/foundation';
 import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/mcp';
 import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { SandboxBindings } from '../ports.ts';
 import type { RuntimeStore } from '@momonga/store';
 import { createBuiltinTools, createGitWorkTreeObserver, createHostRipgrepLocator, createMarkerOwners, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
-import type { BundledRipgrepResolver, MarkerOwners, ShellHost, ToolSet, UserPolicy, WorkTreeObserver } from '@momonga/tools';
+import type { BundledRipgrepResolver, ForgeFetch, MarkerOwners, ShellHost, ToolSet, UserPolicy, WorkTreeObserver } from '@momonga/tools';
 import type { PolicyHostFilesystem } from '@momonga/policy';
 import type { ToolRuntimePort } from '../ports.ts';
 import type { RunNotifier } from '../service/notifier.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { createBackgroundJobs } from './background-jobs.ts';
+import { createOperationToolSource } from './operation-tools.ts';
 import { createNodeJobMarkerFiles } from './job-marker-files.ts';
 import type { BackgroundJobRegistry } from './background-jobs.ts';
 import { SANDBOX_KILL_GRACE_MS } from './constants.ts';
@@ -62,6 +63,9 @@ export type ToolRuntimeOptions = {
   logger: JsonLogger;
   report(error: unknown): void;
   sandboxes: SandboxBindings;
+  forgeSecretStore?: () => SecretStore;
+  forgeEnvironment?: Readonly<Record<string, string | undefined>>;
+  forgeFetch?: ForgeFetch;
   shellHost: ShellHost;
   settings: Pick<SettingsComposition, 'envFor' | 'takeUserSnapshot' | 'admitUserSnapshot' | 'keptLayers' | 'loadSessionSettings' | 'trustOracle'>;
   reapTiming: ReapTiming;
@@ -177,6 +181,19 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     return { ...(await builder(session, { ...request, unixSocketAllow: sandboxUnixSockets.allow })), sandboxNetwork };
   };
   const recoveryContextFor = createRecoveryContextFor(policyOptions);
+  const operationTools = createOperationToolSource({
+    paths,
+    home,
+    sandboxes,
+    fs: policyFilesystem,
+    network: options.network,
+    shellHost: options.shellHost,
+    owners,
+    inspector,
+    ...(options.forgeSecretStore === undefined ? {} : { secretStore: options.forgeSecretStore }),
+    ...(options.forgeEnvironment === undefined ? {} : { environment: options.forgeEnvironment }),
+    ...(options.forgeFetch === undefined ? {} : { forgeFetch: options.forgeFetch }),
+  });
 
   const toolSet: ToolRuntimePort['toolSet'] = async (runId, { signal, env, additionalTools, only }) => {
     const run = store.getRun(runId);
@@ -227,6 +244,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
 
       const registry = createToolRegistry();
       for (const tool of createBuiltinTools()) registry.register(tool);
+      for (const tool of operationTools(snapshot)) registry.register(tool);
       for (const tool of additionalTools ?? []) registry.register(tool);
       for (const source of sources) registry.addSource(source);
       const set = await registry.snapshot({ signal, ...(only === undefined ? {} : { only }) });
@@ -248,6 +266,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   const recoveryToolSet: ToolRuntimePort['recoveryToolSet'] = async ({ signal, additionalTools }) => {
     const registry = createToolRegistry();
     for (const tool of createBuiltinTools()) registry.register(tool);
+    for (const tool of operationTools(settings.takeUserSnapshot())) registry.register(tool);
     for (const tool of additionalTools ?? []) registry.register(tool);
     return registry.snapshot({ signal });
   };

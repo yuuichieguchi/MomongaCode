@@ -33,6 +33,7 @@ export type RealWorkspace = {
   exists(relative: string): boolean;
   read(relative: string): string;
   decide(command: string, options?: DecideOptions): Decision;
+  decideWrite(toolName: 'Write' | 'Edit', file: string, options?: DecideOptions): Decision;
   decideExpanding(command: string, options?: DecideOptions): Promise<Decision>;
   runBash(command: string, cwd?: string, extra?: Record<string, string>): { stdout: string; stderr: string; status: number | null };
   env(extra?: Record<string, string>): NodeJS.ProcessEnv;
@@ -105,6 +106,26 @@ export const makeRealWorkspace = (): RealWorkspace => {
     exists: (relative) => fs.existsSync(at(relative)),
     read: (relative) => fs.readFileSync(at(relative), 'utf8'),
     decide: (command, options = {}) => decideWith(EMPTY_GLOB_TABLE, command, options),
+    decideWrite: (toolName, file, options = {}) => {
+      const rules: PermissionRule[] = (options.rules ?? []).map(([effect, text]) =>
+        parseRule(text, { effect, origin: 'user', source: 'user-settings', settingsRoot: project, home, cwd: project }),
+      );
+      const roots = [project];
+      return decide({
+        tool: { name: toolName, kind: 'edit', sideEffect: 'write', subjectKind: 'path' },
+        subject: { kind: 'path', tool: toolName, paths: [file], access: 'write' },
+        mode: options.mode ?? 'manual',
+        rules,
+        roots,
+        home,
+        cwd: options.cwd ?? project,
+        fileRules: computeFileRules(rules, roots, null, HOST_RULE_ENFORCEMENT),
+        protectedSet: protectedSetFor(roots, filesystem),
+        fs: settleGlobs(filesystem, EMPTY_GLOB_TABLE),
+        searchPath: TEST_SEARCH_PATH,
+        isWritable: isWritableFor(roots),
+      });
+    },
     decideExpanding: async (command, options = {}) => {
       const globs = await prepareGlobs({
         expand: filesystem.expandGlob,

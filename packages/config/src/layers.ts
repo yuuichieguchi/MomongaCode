@@ -120,6 +120,22 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
     delete restricted.network;
   }
 
+  for (const key of ['limits', 'ceilings', 'mandates'] as const) {
+    if (settings[key] === undefined) continue;
+    warnings.push(`${source}: ${key} is only honored in user settings; discarded`);
+    delete restricted[key];
+  }
+
+  if (settings.forges !== undefined) {
+    warnings.push(`${source}: forges is only honored in user settings; discarded`);
+    delete restricted.forges;
+  }
+
+  if (settings.operations !== undefined) {
+    warnings.push(`${source}: operations is only honored in user settings; discarded`);
+    delete restricted.operations;
+  }
+
   if (settings.pricing !== undefined) {
     warnings.push(`${source}: pricing is only honored in user settings; discarded`);
     delete restricted.pricing;

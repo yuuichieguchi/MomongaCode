@@ -22,6 +22,7 @@ import { runStartHooks } from './hook-step.ts';
 import { openJournal } from './journal.ts';
 import type { Journal } from './journal.ts';
 import { readRunLimits } from './limits.ts';
+import { chainPrice } from './budget.ts';
 import { decideAfterResponse, responsePending, resumeInFlight, runModelStep } from './model-step.ts';
 import { guidelineOf, guidelineVersionFor } from './guideline-pin.ts';
 import { memoryShareFor } from './memory-share.ts';
@@ -539,6 +540,7 @@ const drive = async (
     ...(pins.memoryShare === undefined ? {} : { memoryShare: pins.memoryShare }),
     ...(pinnedGuideline === undefined ? {} : { guideline: pinnedGuideline }),
     limits,
+    chainPrice: () => chainPrice(listing.chain, options.priceTable?.() ?? [], options.clock.now()),
     toolSet: offeredSet,
     ...(loading === undefined ? {} : { toolLoading: loading }),
     skills,

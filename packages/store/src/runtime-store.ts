@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
-import { FIDELITY_FOLD_VERSION, INBOX_MAX_PENDING, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, unknownEffectLines, unknownEffectOptions } from '@momonga/protocol';
-import type { CallTiming, ElicitationAnswerRecord, ElicitationRequestView, InboxDelivery, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus, UserShellRecord } from '@momonga/protocol';
+import { FIDELITY_FOLD_VERSION, INBOX_MAX_PENDING, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, admitRequest, unknownEffectLines, unknownEffectOptions } from '@momonga/protocol';
+import type { Admission, CallTiming, ElicitationAnswerRecord, ElicitationRequestView, InboxDelivery, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, TreeSpend, RunStatus, SessionEventPayload, TerminalStatus, UserShellRecord } from '@momonga/protocol';
 import { createAppendRecords, columnsOf } from './append-records.ts';
 import { createVerdictWriter } from './fidelity-verdicts.ts';
 import { createApprovalStore } from './approvals.ts';
@@ -162,7 +162,9 @@ export const FIDELITY_PRUNE_BATCH_ROWS = 500;
 
 const TAKEOVER = "(r.status IN ('RUNNING', 'CANCELLING') AND r.lease_owner IS NOT NULL)";
 
-const EXHAUSTED = `((${TAKEOVER} AND r.failed_attempts + 1 >= :maxAttempts) OR r.attempts + 1 > :maxTotalAttempts)`;
+const RUN_MAX_ATTEMPTS = "MIN(:maxAttempts, COALESCE(json_extract(r.limits_json, '$.maxFailedAttempts'), :maxAttempts))";
+
+const EXHAUSTED = `((${TAKEOVER} AND r.failed_attempts + 1 >= ${RUN_MAX_ATTEMPTS}) OR r.attempts + 1 > :maxTotalAttempts)`;
 
 const CLAIM_ORDER = 'ORDER BY r.available_at, r.created_at, r.rowid';
 
@@ -233,6 +235,17 @@ const prepareStatements = (db: DatabaseSync) => ({
     `WITH RECURSIVE tree(id) AS (SELECT :rootId UNION ALL SELECT r.id FROM runs r JOIN tree t ON r.parent_run_id = t.id)
      SELECT COALESCE(SUM(json_extract(r.usage_json, '$.totalTokens')), 0) AS total FROM runs r JOIN tree t ON r.id = t.id`,
   ),
+  treeSpend: db.prepare(
+    `WITH RECURSIVE tree(id) AS (SELECT :rootId UNION ALL SELECT r.id FROM runs r JOIN tree t ON r.parent_run_id = t.id)
+     SELECT COALESCE(SUM(json_extract(r.usage_json, '$.totalTokens')), 0) AS total_tokens,
+            COALESCE(SUM(json_extract(r.usage_json, '$.costNano')), 0) AS cost_nano,
+            COALESCE(SUM(json_extract(r.usage_json, '$.unpricedCalls')), 0) AS unpriced_calls,
+            COALESCE(SUM(CASE WHEN r.id = :exceptId OR r.status IN (${TERMINAL_LIST}) THEN 0 ELSE r.reserved_tokens END), 0) AS reserved_tokens,
+            COALESCE(SUM(CASE WHEN r.id = :exceptId OR r.status IN (${TERMINAL_LIST}) THEN 0 ELSE r.reserved_nano END), 0) AS reserved_nano,
+            COUNT(*) AS runs_read
+     FROM runs r JOIN tree t ON r.id = t.id`,
+  ),
+  reserveBudget: db.prepare('UPDATE runs SET reserved_tokens = :tokens, reserved_nano = :nano WHERE id = :id'),
   waitingInSessionTree: db.prepare(
     `WITH RECURSIVE tree(session_id) AS (
        SELECT :rootSessionId
@@ -777,6 +790,20 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     }
   };
 
+  const treeSpendOf = (runId: string, exceptId: string | null): TreeSpend & { runsRead: number } => {
+    const row = sql.treeSpend.get({ rootId: rootRunIdOf(runId), exceptId });
+    if (row === undefined) throw new Error(`could not compute the spend of the run tree of ${runId}`);
+    const reader = readerFor('runs', runId, row);
+    return {
+      totalTokens: reader.number('total_tokens'),
+      costNano: reader.number('cost_nano'),
+      unpricedCalls: reader.number('unpriced_calls'),
+      reservedTokens: reader.number('reserved_tokens'),
+      reservedNano: reader.number('reserved_nano'),
+      runsRead: reader.number('runs_read'),
+    };
+  };
+
   const wakeRun = (runId: string): void => {
     const run = requireRun(runId);
     if (run.status !== 'WAITING_TOOL') return;
@@ -789,9 +816,11 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
   const deadLetter = (run: Run, prepared: Prepared | undefined): void => {
     const overTotal = run.attempts + 1 > maxTotalAttempts;
+    const ownMaximum = run.limits['maxFailedAttempts'];
+    const failedMaximum = typeof ownMaximum === 'number' ? Math.min(maxAttempts, ownMaximum) : maxAttempts;
     const error = overTotal
       ? { code: 'max_total_attempts', message: `run ${run.id} exceeded ${maxTotalAttempts} total attempts` }
-      : { code: 'max_attempts', message: `run ${run.id} exceeded ${maxAttempts} consecutive failed attempts` };
+      : { code: 'max_attempts', message: `run ${run.id} exceeded ${failedMaximum} consecutive failed attempts` };
     const cancelled = run.cancelRequested || run.status === 'CANCELLING';
     changeStatus(run, cancelled ? 'CANCELLED' : 'FAILED', {
       edges: DEAD_LETTER_TRANSITIONS,
@@ -1377,6 +1406,20 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       }),
 
     listChildRuns: (runId) => sql.childRuns.all({ runId }).map((row) => decodeRun(row, decodeContext)),
+
+    treeSpend: (runId) => treeSpendOf(runId, null),
+
+    admitModelRequest: (claim, ask) =>
+      transaction<Admission | LeaseLost>(() => {
+        if (fenced(claim) === undefined) return leaseLost;
+        const verdict = admitRequest(ask, treeSpendOf(claim.runId, claim.runId));
+        if (verdict.kind === 'admitted') sql.reserveBudget.run({ id: claim.runId, tokens: verdict.reservedTokens, nano: verdict.reservedNano });
+        return verdict;
+      }),
+
+    releaseBudget: (runId) => {
+      sql.reserveBudget.run({ id: runId, tokens: 0, nano: 0 });
+    },
 
     treeTokens: (runId) => {
       const row = sql.treeTokens.get({ rootId: rootRunIdOf(runId) });

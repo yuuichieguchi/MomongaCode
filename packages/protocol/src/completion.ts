@@ -44,7 +44,64 @@ export type ConditionDeclaration = { id?: string; command: string; timeoutMs?: n
 
 export type CompletionDeclaration = { conditions?: ConditionDeclaration[]; requirements?: string[]; inherit?: boolean };
 
-export type Mandate = { completion?: CompletionDeclaration };
+export type MandateScope = { allow?: string[]; ask?: string[]; deny?: string[] };
+
+export type MandateBudget = { steps?: number; tokens?: number; costUsd?: number; timeMs?: number; retries?: number };
+
+export const QUIESCENT_BEHAVIOURS = ['report', 'wait'] as const;
+
+export type MandateHold = { onQuiescent?: (typeof QUIESCENT_BEHAVIOURS)[number] };
+
+export type Mandate = { completion?: CompletionDeclaration; profile?: string; scope?: MandateScope; budget?: MandateBudget; hold?: MandateHold };
+
+export type PinnedDelegation = { scope: Required<MandateScope>; hold?: MandateHold };
+
+const MANDATE_KEYS = ['completion', 'profile', 'scope', 'budget', 'hold'];
+const SCOPE_KEYS = ['allow', 'ask', 'deny'] as const;
+const BUDGET_KEYS = ['steps', 'tokens', 'costUsd', 'timeMs', 'retries'] as const;
+
+const isStringList = (value: unknown): value is string[] => Array.isArray(value) && value.every((entry) => typeof entry === 'string' && entry !== '');
+
+const readScope = (value: unknown, malformed: () => Error): MandateScope => {
+  if (!isRecord(value) || Object.keys(value).some((key) => !isOneOf(SCOPE_KEYS, key))) throw malformed();
+  const scope: MandateScope = {};
+  for (const key of SCOPE_KEYS) {
+    const rules = value[key];
+    if (rules === undefined) continue;
+    if (!isStringList(rules)) throw malformed();
+    scope[key] = [...rules];
+  }
+  return scope;
+};
+
+const readBudget = (value: unknown, malformed: () => Error): MandateBudget => {
+  if (!isRecord(value) || Object.keys(value).some((key) => !isOneOf(BUDGET_KEYS, key))) throw malformed();
+  const budget: MandateBudget = {};
+  for (const key of BUDGET_KEYS) {
+    const amount = value[key];
+    if (amount === undefined) continue;
+    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0 || (key !== 'costUsd' && !Number.isInteger(amount))) throw malformed();
+    budget[key] = amount;
+  }
+  return budget;
+};
+
+const readHold = (value: unknown, malformed: () => Error): MandateHold => {
+  if (!isRecord(value) || Object.keys(value).some((key) => key !== 'onQuiescent')) throw malformed();
+  const { onQuiescent } = value;
+  if (onQuiescent === undefined) return {};
+  if (!isOneOf(QUIESCENT_BEHAVIOURS, onQuiescent)) throw malformed();
+  return { onQuiescent };
+};
+
+export const pinnedDelegationOf = (pins: Record<string, unknown> | undefined): PinnedDelegation | undefined => {
+  const mandate = pins?.['mandate'];
+  if (!isRecord(mandate) || mandate['scope'] === undefined) return undefined;
+  const malformed = (): Error => new Error('the mandate pinned for this run is malformed');
+  const scope = readScope(mandate['scope'], malformed);
+  const hold = mandate['hold'] === undefined ? undefined : readHold(mandate['hold'], malformed);
+  return { scope: { allow: scope.allow ?? [], ask: scope.ask ?? [], deny: scope.deny ?? [] }, ...(hold === undefined ? {} : { hold }) };
+};
 
 export type PinnedCondition = { id: string; command: string; when: ConditionWhen; source: ConditionSource; timeoutMs?: number };
 
@@ -162,9 +219,17 @@ export const verificationRequiredOf = (pins: Record<string, unknown> | undefined
 
 export const readMandate = (value: unknown, subject: string): Mandate => {
   const malformed = (): Error => new Error(`the mandate of ${subject} is malformed`);
-  if (!isRecord(value) || Object.keys(value).some((key) => key !== 'completion')) throw malformed();
+  if (!isRecord(value) || Object.keys(value).some((key) => !MANDATE_KEYS.includes(key))) throw malformed();
+  const { profile } = value;
+  if (profile !== undefined && (typeof profile !== 'string' || profile === '')) throw malformed();
+  const delegation: Mandate = {
+    ...(profile === undefined ? {} : { profile }),
+    ...(value['scope'] === undefined ? {} : { scope: readScope(value['scope'], malformed) }),
+    ...(value['budget'] === undefined ? {} : { budget: readBudget(value['budget'], malformed) }),
+    ...(value['hold'] === undefined ? {} : { hold: readHold(value['hold'], malformed) }),
+  };
   const completion = value['completion'];
-  if (completion === undefined) return {};
+  if (completion === undefined) return delegation;
   if (!isRecord(completion) || Object.keys(completion).some((key) => key !== 'conditions' && key !== 'requirements' && key !== 'inherit')) throw malformed();
   const { conditions, requirements, inherit } = completion;
   if (inherit !== undefined && typeof inherit !== 'boolean') throw malformed();
@@ -190,6 +255,7 @@ export const readMandate = (value: unknown, subject: string): Mandate => {
   };
   if (conditions !== undefined && !Array.isArray(conditions)) throw malformed();
   return {
+    ...delegation,
     completion: {
       ...(conditions === undefined ? {} : { conditions: (conditions as unknown[]).map(readCondition) }),
       ...(requirements === undefined ? {} : { requirements: [...(requirements as string[])] }),

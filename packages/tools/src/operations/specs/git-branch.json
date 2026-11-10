@@ -1,0 +1,26 @@
+{
+  "name": "GitBranch",
+  "description": "Switches the working tree to a branch, creating it first when create is true. The result is checked against the branch that is actually checked out.",
+  "kind": "execute",
+  "sideEffect": "exec",
+  "title": "Switch to branch {input.name}",
+  "subject": { "kind": "repo", "refs": ["{input.name}"] },
+  "approval": "rule",
+  "input": {
+    "type": "object",
+    "properties": {
+      "name": { "type": "string", "refName": true, "description": "The branch name" },
+      "create": { "type": "boolean", "description": "Create the branch before switching to it" }
+    },
+    "required": ["name"],
+    "additionalProperties": false
+  },
+  "timeoutMs": 30000,
+  "observe": [{ "id": "branch", "via": { "argv": ["git", "symbolic-ref", "--short", "HEAD"], "extract": "trim" } }],
+  "effect": { "argv": ["git", "switch", "-q", { "if": "input.create", "then": ["-c"] }, "{input.name}"] },
+  "applied": [["after.branch", "input.name"]],
+  "unchanged": [["after.branch", "before.branch"]],
+  "guard": "compare_and_set",
+  "supersedes": [],
+  "report": "The working tree is on branch {after.branch}."
+}

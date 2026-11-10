@@ -240,6 +240,10 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
     case 'tool.loaded':
     case 'tool.offered':
     case 'loop.warned':
+    case 'budget.exhausted':
+    case 'tool.held':
+    case 'tool.held.resolved':
+    case 'run.quiescent':
     case 'meter.observed':
     case 'model.rejected':
     case 'approval.rule.persisted':

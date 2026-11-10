@@ -7,6 +7,7 @@ import type { OutputFit, ToolSet } from '@momonga/tools';
 import type { MemorySet, ToolEnv, TracerPort, TraceSpan } from '../ports.ts';
 import type { ClaimControl } from './claim-control.ts';
 import type { Journal } from './journal.ts';
+import type { TokenPrice } from '@momonga/protocol';
 import type { RunLimits } from './limits.ts';
 import type { ToolOffer } from './tool-offer.ts';
 import type { ClaimTouched } from './touched-paths.ts';
@@ -35,6 +36,7 @@ export type ClaimContext = {
   memoryShare?: number;
   guideline?: { version: number; text: string };
   limits: RunLimits;
+  chainPrice(): TokenPrice | undefined;
   toolSet: ToolSet;
   skills: SkillSet;
   recalled: MemorySet;

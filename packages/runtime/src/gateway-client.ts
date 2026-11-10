@@ -105,13 +105,15 @@ export type GatewayClientOptions = {
   streamIdleTimeoutMs?: number;
 };
 
-export type ListedChainMember = { model: string; counter: string; adapter: string; answers: TargetAnswers; upstream: string; capabilities: Record<string, unknown> };
+export type ChainMemberBilling = { billing: string; provider?: string; upstream: string };
+
+export type ListedChainMember = { model: string; counter: string; adapter: string; answers: TargetAnswers; upstream: string; capabilities: Record<string, unknown>; billing?: string; provider?: string };
 
 export type ListedGatewayModel = ModelView & { id: string; capabilities: Record<string, unknown>; chain: ListedChainMember[] };
 
 export type GatewayListing = { models: ListedGatewayModel[]; views: ModelViews; start: string | null; roles: MomongaModelRoles };
 
-export type GatewayChainMember = { model: string; counter: string; capabilities: Capabilities };
+export type GatewayChainMember = { model: string; counter: string; capabilities: Capabilities; billed?: ChainMemberBilling };
 
 export type GatewayModel = {
   id: string;
@@ -246,7 +248,16 @@ const listedMemberOf = (member: unknown): ListedChainMember => {
   ) {
     throw invalidResponse('the model list holds an entry without its chain members and their counters');
   }
-  return { model: member['model'], counter: member['counter'], adapter: member['adapter'], answers: member['answers'], upstream: member['upstream'], capabilities: member['capabilities'] };
+  return {
+    model: member['model'],
+    counter: member['counter'],
+    adapter: member['adapter'],
+    answers: member['answers'],
+    upstream: member['upstream'],
+    capabilities: member['capabilities'],
+    ...(typeof member['billing'] === 'string' ? { billing: member['billing'] } : {}),
+    ...(typeof member['provider'] === 'string' ? { provider: member['provider'] } : {}),
+  };
 };
 
 const listedModelOf = (entry: unknown): ListedGatewayModel => {
@@ -331,7 +342,12 @@ export const gatewayModelIn = (listing: GatewayListing, model: string): GatewayM
     capabilities: found.capabilities as Capabilities,
     chain: found.chain
       .filter((member, index) => index === 0 || unlistedErrorOf(member.capabilities) === undefined)
-      .map((member) => ({ model: member.model, counter: member.counter, capabilities: member.capabilities as Capabilities })),
+      .map((member) => ({
+        model: member.model,
+        counter: member.counter,
+        capabilities: member.capabilities as Capabilities,
+        ...(member.billing === undefined ? {} : { billed: { billing: member.billing, upstream: member.upstream, ...(member.provider === undefined ? {} : { provider: member.provider }) } }),
+      })),
     targets: Object.fromEntries(found.chain.map((member) => [member.model, { adapter: member.adapter, model: member.upstream, answers: member.answers }])),
     roles: listing.roles,
     views: listing.views,

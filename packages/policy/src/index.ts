@@ -4,8 +4,8 @@ export { decide, decidePrimary, denyingRuleFor, isGoverningRule } from './decide
 export type { DecideInput, Decision } from './decide.ts';
 export { foldedKey } from './fold.ts';
 export { matchRule, ruleCoversSubject, wildcardMatches } from './match-rule.ts';
-export { supersededFormOf } from './superseded.ts';
-export type { SupersededForm } from './superseded.ts';
+export { supersededFormOf, supersededVerdictOf } from './superseded.ts';
+export type { SupersededForm, SupersededVerdict } from './superseded.ts';
 export { commandPatternOf } from './command-match.ts';
 export { inertPrinterSet } from './command-specs.ts';
 export type { CommandPattern } from './command-match.ts';

@@ -1,4 +1,4 @@
-import { LOOP_GROUPS_KEPT } from '@momonga/protocol';
+import { LOOP_GROUPS_KEPT, MAX_COST_USD, nanoOfAmount } from '@momonga/protocol';
 import type { WorkerDefaults } from './types.ts';
 
 export type RunLimits = {
@@ -6,6 +6,7 @@ export type RunLimits = {
   maxTotalTokens: number;
   approvalTtlMs: number;
   loopThreshold: number;
+  maxCostNano?: number;
 };
 
 const DEFAULT_MAX_STEPS = 50;
@@ -28,4 +29,5 @@ export const readRunLimits = (limits: Record<string, unknown>, defaults: WorkerD
   maxTotalTokens: readLimit(limits, 'maxTotalTokens', defaults.maxTotalTokens ?? DEFAULT_MAX_TOTAL_TOKENS, 1),
   approvalTtlMs: readLimit(limits, 'approvalTtlMs', defaults.approvalTtlMs ?? DEFAULT_APPROVAL_TTL_MS, 1),
   loopThreshold: readLimit(limits, 'loopThreshold', defaults.loopThreshold ?? DEFAULT_LOOP_THRESHOLD, 2, LOOP_GROUPS_KEPT),
+  ...(limits['maxCostUsd'] === undefined ? {} : { maxCostNano: nanoOfAmount(readLimit(limits, 'maxCostUsd', 0, 0, MAX_COST_USD)) }),
 });

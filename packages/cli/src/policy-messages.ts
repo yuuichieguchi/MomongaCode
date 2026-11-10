@@ -30,6 +30,8 @@ const DENIAL_SOURCE_WORDS: Readonly<Record<PermissionDenialSource, string>> = {
   rule: 'a permission rule',
   mode: 'the permission mode',
   hook: 'a hook',
+  mandate: 'the mandate of this run',
+  held: 'a hold for approval',
 };
 
 export const hookLevel = (event: HookCompleted): Level => HOOK_OUTCOME_LEVELS[event.outcome];

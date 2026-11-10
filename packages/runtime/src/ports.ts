@@ -137,7 +137,7 @@ export type ToolRuntimePort = {
   envFor(session: Session): ToolEnv;
   toolSet(runId: string, options: { signal: AbortSignal; env: ToolEnv; additionalTools?: readonly AnyTool[]; only?: readonly string[] }): Promise<ToolSet>;
   recoveryToolSet(options: { signal: AbortSignal; additionalTools?: readonly AnyTool[] }): Promise<ToolSet>;
-  policyFor(session: Session, options: { env: ToolEnv; rules: readonly PermissionRule[]; readableDirectories?: readonly string[]; ruleEnforcement: RuleEnforcement }): Promise<ToolPolicy>;
+  policyFor(session: Session, options: { env: ToolEnv; rules: readonly PermissionRule[]; readableDirectories?: readonly string[]; ruleEnforcement: RuleEnforcement; signal?: AbortSignal }): Promise<ToolPolicy>;
   recoveryContextFor(session: Session, options: { env: ToolEnv }): Promise<RecoveryContext>;
   executor: ToolExecutor;
   sandboxes: SandboxBindings;
