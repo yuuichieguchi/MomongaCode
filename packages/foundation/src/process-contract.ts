@@ -75,6 +75,14 @@ export const MAXIMUM_STOP_VALUES: StopValues = stopValuesOf((name) => SHUTDOWN_S
 
 export const RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS = DEFAULT_STOP_VALUES.drainTimeoutMs;
 
+export const MCP_CONNECT_TIMEOUT_LIMITS = { min: 1, max: 3_600_000, default: 30_000 } as const;
+
+export const mcpConnectTimeoutProblem = (value: unknown): string | undefined => {
+  const { min, max } = MCP_CONNECT_TIMEOUT_LIMITS;
+  if (typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max) return undefined;
+  return `mcp.connectTimeoutMs must be an integer from ${min} to ${max} milliseconds; got ${JSON.stringify(value)}`;
+};
+
 export const stopValueProblem = (name: StopValueName, value: unknown, label: string = name): string | undefined => {
   const { min, max } = SHUTDOWN_SETTING_LIMITS[name];
   if (typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max) return undefined;

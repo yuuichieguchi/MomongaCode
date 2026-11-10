@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { defineProductSchema, stopValueProblem, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
+import { defineProductSchema, mcpConnectTimeoutProblem, stopValueProblem, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
 import type { ProductValidator, StopValueName } from '@momonga/foundation';
 import type { AnthropicApiVersion, CapabilitiesCore, ManagedEndpointForm, DialectDefinition, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetAnswers, TargetBilling, PermissionMode } from '@momonga/protocol';
 import { PLAN_PROFILES } from './plan-profiles.ts';
@@ -370,7 +370,7 @@ export type GatewaySettings = { closeGraceMs?: number; managedServerStopGraceMs?
 
 export type RuntimeSettings = { drainTimeoutMs?: number };
 
-export type McpSettings = McpCallSettings & { closeGraceMs?: number };
+export type McpSettings = McpCallSettings & { closeGraceMs?: number; connectTimeoutMs?: number };
 
 export const STOP_SETTING_KEYS = {
   closeGraceMs: { object: 'gateway', key: 'closeGraceMs' },
@@ -418,6 +418,13 @@ const assertTuiValues = (value: unknown, source: string): void => {
   }
 };
 
+const assertMcpConnectTimeout = (value: unknown, source: string): void => {
+  const mcp = isRecord(value) ? value['mcp'] : undefined;
+  if (!isRecord(mcp) || !Object.hasOwn(mcp, 'connectTimeoutMs')) return;
+  const problem = mcpConnectTimeoutProblem(mcp['connectTimeoutMs']);
+  if (problem !== undefined) throw new Error(`${source}: ${problem}`);
+};
+
 const assertStopValues = (value: unknown, source: string): void => {
   if (!isRecord(value)) return;
   for (const [name, { object, key }] of Object.entries(STOP_SETTING_KEYS) as Array<[StopValueName, (typeof STOP_SETTING_KEYS)[StopValueName]]>) {
@@ -434,6 +441,7 @@ export const assertSettings = (value: unknown, source: string): Settings => {
   }
   assertPlanAdapters(value, source);
   assertStopValues(value, source);
+  assertMcpConnectTimeout(value, source);
   assertTuiValues(value, source);
   const verdict = validateSettings(value);
   if (!verdict.valid) throw new Error(`${source}: invalid settings at ${describeSchemaErrors(verdict.errors)}`);

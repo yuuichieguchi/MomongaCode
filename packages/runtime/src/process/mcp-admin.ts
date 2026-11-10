@@ -32,6 +32,7 @@ export type McpAdminOptions = {
   remote: McpRemotePorts;
   createPool(options: McpPoolOptions): McpAuthorizingPool;
   readCloseGraceMs(): number;
+  readConnectTimeoutMs(): number | undefined;
   markers?: McpMarkerOptions;
 };
 
@@ -67,6 +68,8 @@ const failureOf = (server: string, error: unknown): { code: string; message: str
   return { code: 'error', message: `the authorization of MCP server "${server}" failed: ${asError(error).message}` };
 };
 
+const connectTimeoutOf = (connectTimeoutMs: number | undefined): { connectTimeoutMs?: number } => (connectTimeoutMs === undefined ? {} : { connectTimeoutMs });
+
 export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
   const { clock, report } = options;
   const attempts = new Map<string, Attempt>();
@@ -95,6 +98,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
       timers: options.timers,
       remote,
       closeGraceMs: options.readCloseGraceMs(),
+      ...connectTimeoutOf(options.readConnectTimeoutMs()),
       ...(options.markers === undefined ? {} : { markers: options.markers }),
     });
 

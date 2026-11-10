@@ -2,7 +2,7 @@ import { Client, ProtocolError, SdkError, SdkErrorCode, TRACEPARENT_META_KEY, TR
 import type { CallToolResult, Implementation, JSONRPCMessage, ProtocolEra, Tool, Transport } from '@modelcontextprotocol/client';
 import { stripCredentialEnv } from '@momonga/config';
 import type { CredentialRules, McpServerConfig, McpServerScope } from '@momonga/config';
-import { CircuitBreaker, CredentialStoreError, JsonDepthError, MIN_CREDENTIAL_CHARS, OperationLimitError, checkJsonDepth, computeBackoff, limitEndOf, limitEndText, operationLimit, settledOrAborted } from '@momonga/foundation';
+import { CircuitBreaker, CredentialStoreError, MCP_CONNECT_TIMEOUT_LIMITS, JsonDepthError, MIN_CREDENTIAL_CHARS, OperationLimitError, checkJsonDepth, computeBackoff, limitEndOf, limitEndText, operationLimit, settledOrAborted } from '@momonga/foundation';
 import type { Clock, OperationLimit } from '@momonga/foundation';
 import { authorizeMcpServer } from './authorize.ts';
 import { credentialNoticesOf } from './credential-strength.ts';
@@ -38,7 +38,7 @@ import type { McpTimers } from './timers.ts';
 
 const CLIENT_NAME = 'momonga';
 const CLIENT_VERSION = '0.0.0';
-const DEFAULT_CONNECT_TIMEOUT_MS = 30_000;
+const DEFAULT_CONNECT_TIMEOUT_MS = MCP_CONNECT_TIMEOUT_LIMITS.default;
 const DEFAULT_RESET_AFTER_MS = 60_000;
 const FAILURE_THRESHOLD = 3;
 const BACKOFF_BASE_MS = 200;

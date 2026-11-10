@@ -161,6 +161,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     remote: mcpRemote,
     createPool: options.createAdminPool ?? createMcpPool,
     readCloseGraceMs,
+    readConnectTimeoutMs: () => settings.takeUserSnapshot().settings.mcp.connectTimeoutMs,
     markers: { dir: paths.markers.mcp, onWarning: (message) => logger.warn(message) },
   });
   const mcpPools = createMcpPoolCache({ store, notifier, timers, logger, report, readCloseGraceMs });
@@ -189,8 +190,12 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
       const sources: McpPool['sources'] = [];
       if (mcp.enabled.length > 0) {
         const servers = mcp.enabled;
-        const { toolIdleTimeoutMs, toolTotalTimeoutMs } = loaded.settings.mcp;
-        const callBounds = { ...(toolIdleTimeoutMs === undefined ? {} : { toolIdleTimeoutMs }), ...(toolTotalTimeoutMs === undefined ? {} : { toolTotalTimeoutMs }) };
+        const { toolIdleTimeoutMs, toolTotalTimeoutMs, connectTimeoutMs } = loaded.settings.mcp;
+        const callBounds = {
+          ...(toolIdleTimeoutMs === undefined ? {} : { toolIdleTimeoutMs }),
+          ...(toolTotalTimeoutMs === undefined ? {} : { toolTotalTimeoutMs }),
+          ...(connectTimeoutMs === undefined ? {} : { connectTimeoutMs }),
+        };
         const { credentials } = loaded.settings;
         const credentialNames = credentialEnvNames(loaded.settings);
         const key = sha256Hex(canonicalJson({ project: session.cwd, servers, trust: trust ?? 'unset', env: inheritedEnvOf(env), credentials, credentialNames, ...(Object.keys(callBounds).length === 0 ? {} : { callBounds }) }));

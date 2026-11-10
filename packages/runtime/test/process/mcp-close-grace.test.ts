@@ -87,6 +87,7 @@ const adminSetup = async () => {
   const reader = { graceMs: 900, reads: 0 };
   const admin = createMcpAdmin({
     home: temp.home,
+    readConnectTimeoutMs: () => undefined,
     store,
     clock,
     timers,

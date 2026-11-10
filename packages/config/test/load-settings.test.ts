@@ -37,6 +37,7 @@ describe('SETTINGS_SCHEMA', () => {
         'network',
         'permissions',
         'pricing',
+        'runtime',
         'sandbox',
         'telemetry',
         'tools',

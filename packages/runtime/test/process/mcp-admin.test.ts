@@ -58,6 +58,7 @@ const makeAuthPool = (options: McpPoolOptions, plan: ProbePlan): FakeAuthPool =>
 };
 
 const CLOSE_GRACE_MS = 40;
+const CONNECT_TIMEOUT_MS = 45_000;
 
 const setup = async () => {
   const temp = await makeTempHome();
@@ -78,6 +79,7 @@ const setup = async () => {
     logger: makeLogger(),
     report: reporter.report,
     readCloseGraceMs: () => CLOSE_GRACE_MS,
+    readConnectTimeoutMs: () => CONNECT_TIMEOUT_MS,
     settings: {
       envFor: () => ({}),
       admitUserSnapshot: () => {
@@ -178,6 +180,13 @@ describe('createMcpAdmin servers', () => {
 
     expect(pools).toHaveLength(1);
     expect(pools[0]?.closes).toBe(0);
+  });
+
+  it('opens its pools with the connect limit the user set (mcp.connectTimeoutMs)', async () => {
+    const { admin, session, pools } = await setup();
+    await admin.servers(session.id, controllerSignal());
+    expect(pools[0]?.options.connectTimeoutMs).toBe(CONNECT_TIMEOUT_MS);
+    await admin.close(CLOSE_GRACE_MS);
   });
 
   it('closes its pools on close', async () => {

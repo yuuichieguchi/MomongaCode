@@ -18,7 +18,7 @@ describe('runtime.drainTimeoutMs and mcp.closeGraceMs are user settings read as 
     expect(Object.keys(runtime.properties)).toEqual(['drainTimeoutMs']);
     expect(runtime.additionalProperties).toBe(false);
     const mcp = SETTINGS_SCHEMA.properties['mcp'] as { properties: Record<string, unknown> };
-    expect(Object.keys(mcp.properties).sort()).toEqual(['closeGraceMs', 'toolIdleTimeoutMs', 'toolTotalTimeoutMs']);
+    expect(Object.keys(mcp.properties).sort()).toEqual(['closeGraceMs', 'connectTimeoutMs', 'toolIdleTimeoutMs', 'toolTotalTimeoutMs']);
   });
 
   it.each([

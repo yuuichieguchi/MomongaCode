@@ -234,12 +234,13 @@ class StdioTransportImpl implements StdioTransport {
     try {
       const child = this.child;
       if (child !== undefined && child.pid !== undefined) {
-        const stopBound = Deadline.after(groupTerminationBoundMs(graceMs), this.timing);
         child.stdin.end();
         await this.raceTimeout(this.exited, graceMs);
+        const stopBound = Deadline.after(groupTerminationBoundMs(graceMs), this.timing);
         let terminateFailure: { error: unknown } | undefined;
         try {
-          await (this.options.terminate ?? terminateGroup)(child.pid, { graceMs, signal: stopBound.signal, timing: this.sleepTiming });
+          const outcome = await (this.options.terminate ?? terminateGroup)(child.pid, { graceMs, signal: stopBound.signal, timing: this.sleepTiming });
+          if (outcome !== 'unconfirmed') await this.exitRecordedWithin(stopBound.signal);
         } catch (error) {
           terminateFailure = { error };
         } finally {
@@ -284,6 +285,20 @@ class StdioTransportImpl implements StdioTransport {
       this.pendingBytes = 0;
       this.closed = true;
       this.onclose?.();
+    }
+  }
+
+  private async exitRecordedWithin(stopBound: AbortSignal): Promise<void> {
+    if (stopBound.aborted) return;
+    let release: () => void = () => undefined;
+    const bound = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    stopBound.addEventListener('abort', release, { once: true });
+    try {
+      await Promise.race([this.exited, bound]);
+    } finally {
+      stopBound.removeEventListener('abort', release);
     }
   }
 
