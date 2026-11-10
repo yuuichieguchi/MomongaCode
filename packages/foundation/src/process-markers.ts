@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { SignalSender } from './process-alive.ts';
 import { groupPortOf, hostAsyncSignalSender } from './platform/group-port.ts';
 import type { AsyncSignalSender, ProcessGroupPort } from './platform/group-port.ts';
-import type { MarkerMode } from './marker-state.ts';
+import type { MarkerMode, MarkerState } from './marker-state.ts';
 import { commandMayStillRun } from './command-liveness.ts';
 import { ProbeFailedError, valueOrThrow } from './platform/inspector-types.ts';
 import { noFollowFlag } from './platform/privacy.ts';
@@ -69,33 +69,31 @@ const sweepReads = (inspector: ProcessInspector, stop: AbortSignal): PassReads =
   groups: (pids, candidateGroups) => groupsByHolder(pids, candidateGroups, inspector, stop),
 });
 
-class StopUnreadable extends Error {
-  readonly failure: ProbeFailedError;
+const messageOfReason = (reason: unknown): string => (reason instanceof Error ? reason.message : String(reason));
 
-  constructor(failure: ProbeFailedError) {
+const endedByAsker = (stop: AbortSignal): boolean => stop.aborted;
+
+const errorOf = (thrown: unknown): Error => (thrown instanceof Error ? thrown : new Error(String(thrown)));
+
+class StopUnreadable extends Error {
+  readonly failure: Error;
+  readonly reason: string;
+
+  constructor(failure: Error, stop: AbortSignal) {
     super(failure.message);
     this.name = 'StopUnreadable';
     this.failure = failure;
+    this.reason = endedByAsker(stop) ? messageOfReason(stop.reason) : failure.message;
   }
 }
 
-const setReadOrEnd = async <T>(read: () => Promise<T>): Promise<T> => {
+const setReadOrEnd = async <T>(stop: AbortSignal, read: () => Promise<T>): Promise<T> => {
   try {
     return await read();
   } catch (error) {
-    if (error instanceof ProbeFailedError) throw new StopUnreadable(error);
-    throw error;
+    throw new StopUnreadable(errorOf(error), stop);
   }
 };
-
-const stopReads = (inspector: ProcessInspector, stop: AbortSignal): PassReads => ({
-  startTime: async (pid) => {
-    const read = await inspector.startTimeOf(pid, { signal: stop });
-    if (read.kind === 'failed' && stop.aborted) throw new StopUnreadable(new ProbeFailedError(`reading the start time of ${pid}`, read));
-    return read;
-  },
-  groups: (pids, candidateGroups) => setReadOrEnd(() => groupsByHolder(pids, candidateGroups, inspector, stop)),
-});
 
 type Identified = { identities: Identity[]; unreadable: number[] };
 
@@ -224,6 +222,43 @@ const holdersAfterWindow = async (marker: string, listing: Listing, windowMs: nu
   return holders;
 };
 
+type ReconcileReads = PassReads & {
+  groupRunnable(pgid: number): Promise<boolean>;
+  markerState(): Promise<MarkerState>;
+  holders(withinMs: number, observed?: UninspectableProcess[]): Promise<number[]>;
+  holdersAfterWindow(windowMs: number): Promise<number[]>;
+};
+
+type ReconcileReadsOf = {
+  marker: string;
+  markerMode: MarkerMode | undefined;
+  inspector: ProcessInspector;
+  group: ProcessGroupPort;
+  timing: ReapTiming;
+  stop: AbortSignal;
+  unsettled: Map<number, UninspectableProcess> | undefined;
+};
+
+const stopReads = ({ marker, markerMode, inspector, group, timing, stop, unsettled }: ReconcileReadsOf): ReconcileReads => {
+  const listing: Listing = { inspector, timing, signal: stop };
+  return {
+    startTime: async (pid) => {
+      const read = await setReadOrEnd(stop, () => inspector.startTimeOf(pid, { signal: stop }));
+      if (read.kind === 'failed' && endedByAsker(stop)) throw new StopUnreadable(new ProbeFailedError(`reading the start time of ${pid}`, read), stop);
+      return read;
+    },
+    groups: (pids, candidateGroups) => setReadOrEnd(stop, () => groupsByHolder(pids, candidateGroups, inspector, stop)),
+    groupRunnable: (pgid) => setReadOrEnd(stop, () => group.alive(pgid, { signal: stop })),
+    markerState: async () => {
+      const state = await setReadOrEnd(stop, () => inspector.markerState(marker, { signal: stop, ...(markerMode === undefined ? {} : { mode: markerMode }) }));
+      if (state === 'unknown' && endedByAsker(stop)) throw new StopUnreadable(new Error(`reading the marker state of ${marker} was ended`), stop);
+      return state;
+    },
+    holders: (withinMs, observed) => setReadOrEnd(stop, () => holdersUntil(marker, listing, timing.now() + withinMs, unsettled, observed)),
+    holdersAfterWindow: (windowMs) => setReadOrEnd(stop, () => holdersAfterWindow(marker, listing, windowMs, unsettled)),
+  };
+};
+
 export type MarkerReconcileResult = {
   outcome: 'unknown';
   output: string;
@@ -274,10 +309,12 @@ export type ReconcileProcessGroupOptions = {
   markerMode?: MarkerMode;
 };
 
-type ReconcileEnd = { kind: 'listed'; result: MarkerReconcileResult; lastHolders: number[] } | { kind: 'unlisted'; failure: ProbeFailedError; reason: string; signalled: boolean; stoppedHolders: number[] };
+type ReconcileEnd = { kind: 'listed'; result: MarkerReconcileResult; lastHolders: number[] } | { kind: 'unlisted'; failure: Error; reason: string; signalled: boolean; stoppedHolders: number[] };
 
-const unlistedResult = ({ reason, signalled, stoppedHolders }: Extract<ReconcileEnd, { kind: 'unlisted' }>): MarkerReconcileResult =>
+const couldNotCheckResult = (reason: string, signalled: boolean, stoppedHolders: number[]): MarkerReconcileResult =>
   unknownResult(`MomongaCode could not check whether a process started by the interrupted command is still running (${reason}).${signalled ? '' : ' Nothing was stopped.'}`, signalled, { stoppedHolders });
+
+const unlistedResult = ({ reason, signalled, stoppedHolders }: Extract<ReconcileEnd, { kind: 'unlisted' }>): MarkerReconcileResult => couldNotCheckResult(reason, signalled, stoppedHolders);
 
 export const reconcileProcessGroup = async (
   recorded: { pgid: number; marker: string },
@@ -304,19 +341,16 @@ type ReconcileWithin = {
   markerMode: MarkerMode | undefined;
 };
 
-const messageOfReason = (reason: unknown): string => (reason instanceof Error ? reason.message : String(reason));
-
 const reconcileWithin = async (recorded: { pgid: number; marker: string }, options: ReconcileWithin): Promise<ReconcileEnd> => {
   const passes: SignalPass[] = [];
   try {
     return await reconcilePasses(recorded, options, passes);
   } catch (error) {
     if (!(error instanceof StopUnreadable)) throw error;
-    const { stop } = options;
     return {
       kind: 'unlisted',
       failure: error.failure,
-      reason: stop.aborted ? messageOfReason(stop.reason) : error.failure.message,
+      reason: error.reason,
       signalled: passes.some(({ sent }) => sent.length > 0),
       stoppedHolders: [...new Set(passes.flatMap(({ stoppedHolders }) => stoppedHolders))],
     };
@@ -329,23 +363,22 @@ const reconcilePasses = async (
   passes: SignalPass[],
 ): Promise<ReconcileEnd> => {
   const { pgid, marker } = recorded;
-  const groupRunning = (): Promise<boolean> => group.alive(pgid, { signal: stop });
-  const listing: Listing = { inspector, timing, signal: stop };
+  const reads = stopReads({ marker, markerMode, inspector, group, timing, stop, unsettled });
+  const groupRunning = (): Promise<boolean> => reads.groupRunnable(pgid);
   const listed = (end: MarkerReconcileResult, lastHolders: number[]): ReconcileEnd => ({ kind: 'listed', result: end, lastHolders });
   const refused: UninspectableProcess[] = [];
-  const holders = await setReadOrEnd(() => holdersUntil(marker, listing, timing.now() + killGraceMs, unsettled, refused));
+  const holders = await reads.holders(killGraceMs, refused);
   const groupAlive = await groupRunning();
   if (holders.length === 0) {
     const liveness = commandMayStillRun({
-      marker: await inspector.markerState(marker, { signal: stop, ...(markerMode === undefined ? {} : { mode: markerMode }) }),
+      marker: await reads.markerState(),
       listing: { kind: 'listed', holders, refused },
       group: { kind: 'read', runnable: groupAlive },
     });
     if (liveness.answer === 'no') return listed(unknownResult('The interrupted command is no longer running.', false), []);
-    if (liveness.answer === 'unknown') return listed(unknownResult(`MomongaCode could not check whether a process started by the interrupted command is still running (${liveness.reason}).`, false), []);
+    if (liveness.answer === 'unknown') return listed(couldNotCheckResult(liveness.reason, false, []), []);
     return listed(unknownResult([NONE_VERIFIED, ...findingNotes({ leftAloneGroup: pgid })].join(' '), false, { leftAloneGroup: pgid }), []);
   }
-  const reads = stopReads(inspector, stop);
   const proved: ProvedSignal = { send: asyncSenderOf(kill), reads, stop };
   const first = await splitByGroup(holders, pgid, reads);
   const termPass = await signalProved(proved, [...groupTarget(pgid, first.inGroup, groupAlive), ...first.outsideGroup.map(ownProof)], 'SIGTERM', passes);
@@ -362,7 +395,7 @@ const reconcilePasses = async (
   await graceSleep(timing, killGraceMs, given, stop);
   if (stop.aborted) return waitEnded();
 
-  const remaining = await setReadOrEnd(() => holdersUntil(marker, listing, timing.now() + killGraceMs, unsettled));
+  const remaining = await reads.holders(killGraceMs);
   if (stop.aborted) return waitEnded();
   const second = await splitByGroup(remaining, pgid, reads);
   const stillInGroup = second.inGroup.length > 0 && (await groupRunning());
@@ -370,7 +403,7 @@ const reconcilePasses = async (
   for (const pid of killPass.unsignalled) unsignalled.add(pid);
 
   const leftAloneGroup = !killPass.sent.includes(-pgid) && (await groupRunning()) ? pgid : undefined;
-  const lastHolders = await setReadOrEnd(() => holdersAfterWindow(marker, listing, killGraceMs, unsettled));
+  const lastHolders = await reads.holdersAfterWindow(killGraceMs);
   const outsideAfter = await holdersOutsideGroup(lastHolders, pgid, reads);
   const findings: StructuredFindings = {
     stoppedHolders: [...new Set([...termPass.stoppedHolders, ...killPass.stoppedHolders])],
@@ -505,7 +538,7 @@ const reapWithin = async (options: ReapMarkedProcessesOptions, stop: AbortSignal
   let remaining: number[];
   if (recorded !== undefined && recorded > 1 && recorded !== ownGroup) {
     const end = await reconcileWithin({ pgid: recorded, marker }, { given: options.signal, killGraceMs, kill, group: groupPortOf(options.groupPort, kill), timing, stop, inspector, unsettled, markerMode });
-    if (end.kind === 'unlisted') throw end.failure;
+    if (end.kind === 'unlisted') throw new ReapUnlisted(end.failure, end.signalled);
     const { result } = end;
     stopped = result.stopped;
     if (result.leftAloneGroup !== undefined) {
@@ -537,13 +570,26 @@ const reapWithin = async (options: ReapMarkedProcessesOptions, stop: AbortSignal
   return { removed: true, stopped, uninspectable: [] };
 };
 
+class ReapUnlisted extends Error {
+  readonly failure: Error;
+  readonly signalled: boolean;
+
+  constructor(failure: Error, signalled: boolean) {
+    super(failure.message);
+    this.name = 'ReapUnlisted';
+    this.failure = failure;
+    this.signalled = signalled;
+  }
+}
+
 const reapObserved = async (options: ReapMarkedProcessesOptions): Promise<ReapReport> => {
   const operation = operationSignal(options.signal);
   try {
     return await reapWithin(options, operation.signal);
   } catch (error) {
-    if (operation.signal.aborted && error instanceof ProbeFailedError) return { removed: false, stopped: false, uninspectable: [] };
-    throw error;
+    const endedRead = error instanceof ReapUnlisted || error instanceof ProbeFailedError;
+    if (endedRead && endedByAsker(operation.signal)) return { removed: false, stopped: error instanceof ReapUnlisted && error.signalled, uninspectable: [] };
+    throw error instanceof ReapUnlisted ? error.failure : error;
   } finally {
     operation.end();
   }

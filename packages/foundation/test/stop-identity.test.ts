@@ -754,7 +754,7 @@ describe('every read of a stop goes through its one read port: the group-runnabl
     world.inspector.markerState = async () => 'unknown';
     const marker = realMarker();
     const result = await reconcileProcessGroup({ pgid: GROUP, marker }, { killGraceMs: 100, kill: world.kill, groupPort: world.groupPort, timing: world.timing, inspector: world.inspector, signal: new AbortController().signal });
-    expect(result.output).toBe(`MomongaCode could not check whether a process started by the interrupted command is still running (the marker state could not be read).${UNKNOWN}`);
+    expect(result.output).toBe(`MomongaCode could not check whether a process started by the interrupted command is still running (the marker state could not be read). Nothing was stopped.${UNKNOWN}`);
     expect(result.stopped).toBe(false);
     expect(signalsOf(world)).toEqual([]);
   });
