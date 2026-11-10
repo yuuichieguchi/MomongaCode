@@ -118,6 +118,7 @@ export type RuntimeClient = {
   setPermissionMode(sessionId: string, mode: PermissionMode): Promise<SessionView>;
   setModelAlias(sessionId: string, modelAlias: string): Promise<SessionView>;
   createRun(sessionId: string, input: string, options?: CreateRunOptions): Promise<{ run: RunView; location: string }>;
+  compact(sessionId: string, instructions?: string): Promise<RunView>;
   getRun(id: string): Promise<RunView>;
   inboxAdd(sessionId: string, delivery: InboxDelivery, text: string, images?: readonly ImageAttachment[]): Promise<InboxAddResponse>;
   inboxWithdraw(id: string): Promise<InboxWithdrawResponse>;
@@ -334,6 +335,12 @@ export const createRuntimeClient = (options: { resolveSocket: SocketResolver }):
     const location = response.headers['location'];
     if (location === undefined) throw new ContractViolation(`POST ${path}`, 'no Location header');
     return { run: runOf(body, `POST ${path}`), location };
+  };
+
+  const compact = async (sessionId: string, instructions?: string): Promise<RunView> => {
+    const path = `/v1/sessions/${sessionId}/compact`;
+    const { body } = await send('POST', path, [202], { body: instructions === undefined ? {} : { instructions } });
+    return runOf(body, `POST ${path}`);
   };
 
   const getRun = async (id: string): Promise<RunView> => {
@@ -648,6 +655,7 @@ export const createRuntimeClient = (options: { resolveSocket: SocketResolver }):
     setPermissionMode,
     setModelAlias,
     createRun,
+    compact,
     inboxAdd,
     inboxWithdraw,
     inboxList,

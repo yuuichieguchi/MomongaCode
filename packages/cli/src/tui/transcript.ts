@@ -14,6 +14,7 @@ import { isRecord } from '@momonga/foundation';
 import { appliedDiffOf } from './screen/diff.ts';
 import type { AppliedDiff, DiffFields } from './screen/diff.ts';
 import { EMPTY_USAGE } from './screen/store.ts';
+import { formatTokens } from './screen/footer.tsx';
 import { tailOf } from './screen/tool-view.ts';
 import type { OutputTail } from './screen/tool-view.ts';
 import type { TranscriptState, TranscriptStore } from './screen/store.ts';
@@ -55,6 +56,8 @@ export type PendingApproval = { approvalId: string; callId: string; options: rea
 export type PendingElicitation = { inputId: string; callId: string; server: string; flow: ElicitationFlow; submitted: boolean };
 
 export type Usage = { inputTokens: number; outputTokens: number; totalTokens: number };
+
+export const compactedText = (tokensBefore: number, tokensAfter: number): string => `Compacted: ${formatTokens(tokensBefore)} -> ${formatTokens(tokensAfter)} tokens`;
 
 export type PhaseKind = 'queued' | 'model' | 'thinking' | 'responding' | 'tool' | 'classifying' | 'hook' | 'compacting' | 'retry' | 'awaited';
 
@@ -315,7 +318,11 @@ const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
         appendEntry(store, { kind: 'info', text: `model changed: ${state.answeringTarget} -> ${event.target}` });
       return;
     case 'context.compacted':
-      appendEntry(store, { kind: 'notice', level: 'info', text: 'context compacted' });
+      appendEntry(store, {
+        kind: 'notice',
+        level: 'info',
+        text: event.tokensBefore === undefined || event.tokensAfter === undefined ? 'context compacted' : compactedText(event.tokensBefore, event.tokensAfter),
+      });
       return;
     case 'notice':
       appendEntry(store, { kind: 'notice', level: event.level, text: event.message });

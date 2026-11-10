@@ -44,7 +44,7 @@ export type EditorAction = (typeof EDITOR_ACTIONS)[number];
 
 export const isEditorAction = (action: string | undefined): action is EditorAction => EDITOR_ACTIONS.some((known) => known === action);
 
-export const UNDO_DEPTH = 100;
+export const UNDO_STEPS_MAX = 100;
 export const PASTE_COLLAPSE_LINES = 3;
 export const PASTE_COLLAPSE_CHARACTERS = 800;
 
@@ -99,7 +99,7 @@ const outsideSpans = (state: EditorState, cursor: number, toward: 'start' | 'end
 
 const movedTo = (state: EditorState, cursor: number, toward: 'start' | 'end' = 'end'): EditorState => ({ ...state, cursor: outsideSpans(state, cursor, toward), typing: false });
 
-const remembered = (state: EditorState): readonly Snapshot[] => [...state.undo, { text: state.text, cursor: state.cursor }].slice(-UNDO_DEPTH);
+const remembered = (state: EditorState): readonly Snapshot[] => [...state.undo, { text: state.text, cursor: state.cursor }].slice(-UNDO_STEPS_MAX);
 
 const edited = (state: EditorState, text: string, cursor: number, typing = false): EditorState => ({
   ...state,

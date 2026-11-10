@@ -2,12 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { attachMentions } from '@momonga/context';
 import type { AttachHost, AttachTarget } from '@momonga/context';
-import { comparableContains, listDirectoryEntries } from '@momonga/foundation';
+import { comparableContains } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { tokensForText } from '@momonga/protocol';
 import type { Sandbox } from '@momonga/sandbox';
 import type { RuntimeStore, Session } from '@momonga/store';
-import { runUserCommand } from '@momonga/tools';
+import { listDirectoryEntries, runUserCommand } from '@momonga/tools';
 import type { UserPolicy, UserPolicyFacts } from '@momonga/tools';
 import { permissionRulesFor } from '../governance/rules.ts';
 import type { SettingsPort, ToolRuntimePort, UserInputPort } from '../ports.ts';
@@ -69,15 +69,16 @@ export const createUserInputPort = ({ tools, policy, store, settings, clock, hom
   return {
     attach: async (session, text, { ceiling, imageInput, signal }) => {
       const facts = await factsFor(session, signal);
+      const trusted = settings.trusted(session);
       const host: AttachHost = {
         ceiling,
         imageInput,
-        trusted: settings.trusted(session),
+        trusted,
         tokens: tokensForText,
         resolve: (mention) => targetOf(session, facts.roots, mention),
         floor: async (absolute) => ((await policy.userRefusal({ tool: 'Read', path: absolute }, facts)) === undefined ? 'allowed' : 'denied'),
         read: readBounded,
-        list: (absolute) => listDirectoryEntries({ root: absolute, env: facts.env, signal }),
+        list: (absolute) => listDirectoryEntries({ root: absolute, env: facts.env, trusted, signal }),
       };
       return attachMentions(text, host);
     },

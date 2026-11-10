@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 import { KEY_FILE_MAX_BYTES, isReserved, keyDocumentText, parseKey, parseKeyFile, resolveBindings, withAllDefaults, withBinding, withDefaultsOf, withoutKeysOf } from '../../src/tui/keys/bindings.ts';
 import type { BindingReport } from '../../src/tui/keys/bindings.ts';
 import { capturedOf, captureTitle } from '../../src/tui/keys/capture.ts';
@@ -8,6 +9,8 @@ import { chordPressOf, createKeyTable, DEFAULT_KEY_TABLE, KEYS, keyReported, nee
 import type { ActionId, KeyContext } from '../../src/tui/keys/table.ts';
 import type { KeyEvent, KeyName } from '../../src/tui/terminal/events.ts';
 import { seeded } from './screen-fakes.ts';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const plain = { ctrl: false, alt: false, shift: false };
 const named = (name: KeyName, mods: Partial<typeof plain> = {}): KeyEvent => ({ type: 'key', name, ...plain, ...mods });
@@ -180,6 +183,11 @@ describe('the text of a key-binding file', () => {
     const refused = parseKeyFile('{"bindings": [');
     expect(refused.kind).toBe('refused');
     expect(refused).toMatchObject({ reason: expect.stringMatching(/^not valid JSON: .+/) });
+  });
+
+  it('refuses a file nested deeper than the one JSON depth limit', () => {
+    const deep = `{"bindings":${'['.repeat(200)}${']'.repeat(200)}}`;
+    expect(parseKeyFile(deep)).toEqual({ kind: 'refused', reason: 'JSON depth exceeds the limit of 128' });
   });
 
   it('is refused when it has another shape', () => {

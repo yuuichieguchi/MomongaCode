@@ -76,6 +76,8 @@ export { runUserCommand } from './builtins/bash.ts';
 export type { UserCommandHost, UserCommandOutcome } from './builtins/bash.ts';
 export type { PolicyFacts, UserPolicy, UserPolicyFacts, UserSubject } from './executor.ts';
 export { readOnlyEnvironment, readOnlySandboxPolicy } from './read-only-call.ts';
+export { listDirectoryEntries, listFileCandidates } from './file-listing.ts';
+export type { FileListingOptions } from './file-listing.ts';
 export type { SandboxPolicyOptions } from './builtins/index.ts';
 export { ShellNotFoundError, nodeShellHost, resolveBashPath } from './builtins/shell.ts';
 export type { ShellHost } from './builtins/shell.ts';

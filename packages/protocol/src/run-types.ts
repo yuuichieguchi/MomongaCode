@@ -72,6 +72,9 @@ export const USER_SHELL_HEAD_BYTES = 16 * 1024;
 export const USER_SHELL_TAIL_BYTES = USER_SHELL_OUTPUT_BYTES - USER_SHELL_HEAD_BYTES;
 export const USER_SHELL_COMMAND_CHARS = 100_000;
 export const USER_SHELL_RUN_ACTIVE_CODE = 'run_active';
+export const PROMPT_TEXT_MAX_CHARS = 1_000_000;
+export const NOTHING_TO_COMPACT_CODE = 'nothing_to_compact';
+export const NOTHING_TO_COMPACT_MESSAGE = 'Nothing to compact.';
 
 export type UserShellRecord = { command: string; exitCode: number | null; output: string; include: boolean };
 
@@ -306,6 +309,8 @@ export type RunEventPayload =
       source?: SummarySource;
       fidelity?: SummaryFidelity;
       guidelineVersion?: number;
+      tokensBefore?: number;
+      tokensAfter?: number;
     }
   | { type: 'context.governing_loaded'; active: { id: string; textSha256: string }[]; conflicts: { target: string; ids: string[] }[] }
   | { type: 'context.memories_loaded'; memories: { id: string; status: MemoryStatus }[] }

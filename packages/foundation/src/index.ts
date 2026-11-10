@@ -27,8 +27,8 @@ export { SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, decodeSse, encodeSse } fro
 export { createBrowserOpener, openCommandFor } from './open-browser.ts';
 export type { BrowserOpenerPorts, LaunchProgram, OpenCommand, OpenUrl, ProgramEnd } from './open-browser.ts';
 export { findProgramOnPath } from './program-search.ts';
-export { FILE_CANDIDATE_LIMIT, directoryEntriesOf, listDirectoryEntries, listFileCandidates } from './file-candidates.ts';
-export type { FileCandidateOptions, FileCandidates } from './file-candidates.ts';
+export { FILE_CANDIDATE_LIMIT, directoryEntriesOf } from './file-candidates.ts';
+export type { FileCandidates } from './file-candidates.ts';
 export type { SseEvent } from './sse.ts';
 export { createUdsClient, fixedSocket, isUnixSocketLive, listenUnix } from './uds.ts';
 export type { SocketResolver, UdsClient, UdsClientOptions, UdsRequestOptions, UdsResponse } from './uds.ts';

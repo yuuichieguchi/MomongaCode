@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyAction, emptyEditor, enterOf, expandedText, insertPaste, insertText, pastedLabel, placeCaret, placeText, UNDO_DEPTH, withHistory } from '../src/tui/editor.ts';
+import { applyAction, emptyEditor, enterOf, expandedText, insertPaste, insertText, pastedLabel, placeCaret, placeText, UNDO_STEPS_MAX, withHistory } from '../src/tui/editor.ts';
 import type { EditorAction, EditorState } from '../src/tui/editor.ts';
 
 const typed = (text: string, state: EditorState = emptyEditor()): EditorState => Array.from(text).reduce((current, character) => insertText(current, character), state);
@@ -74,11 +74,11 @@ describe('undo', () => {
     expect(steps.map((step) => step.text)).toEqual(['\n', '', 'abc']);
   });
 
-  it(`keeps at most ${UNDO_DEPTH} steps`, () => {
+  it(`keeps at most ${UNDO_STEPS_MAX} steps`, () => {
     let state = emptyEditor();
-    for (let index = 0; index < UNDO_DEPTH + 20; index += 1) state = act(insertText(state, 'x'), 'editor.lineEnd');
-    expect(state.undo).toHaveLength(UNDO_DEPTH);
-    for (let index = 0; index < UNDO_DEPTH + 20; index += 1) state = act(state, 'editor.undo');
+    for (let index = 0; index < UNDO_STEPS_MAX + 20; index += 1) state = act(insertText(state, 'x'), 'editor.lineEnd');
+    expect(state.undo).toHaveLength(UNDO_STEPS_MAX);
+    for (let index = 0; index < UNDO_STEPS_MAX + 20; index += 1) state = act(state, 'editor.undo');
     expect(state.text).toBe('x'.repeat(20));
   });
 

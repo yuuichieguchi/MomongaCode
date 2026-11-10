@@ -15,7 +15,7 @@ import { AUTO_FIT_FAILED_BOUNDS, AUTO_FIT_MEASUREMENTS } from './auto-mode-gate.
 import { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
 import { RECOVERY_CAUSES, RECOVERY_OUTCOMES, REPORT_PAGE_ROWS } from './reliability.ts';
 import { FILE_ACCESSES } from './working-facts.ts';
-import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_MAX_PENDING, INBOX_STATES, JOB_STATUSES, isInheritedReference, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES, USER_SHELL_COMMAND_CHARS } from './run-types.ts';
+import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_MAX_PENDING, INBOX_STATES, JOB_STATUSES, isInheritedReference, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES, USER_SHELL_COMMAND_CHARS, PROMPT_TEXT_MAX_CHARS } from './run-types.ts';
 import type { ImageMediaType, InboxDelivery, InboxRowView, MessageAttachment, UserShellRecord, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent, SessionEventPayload } from './run-types.ts';
 import type { ReflectionJobView } from './memory.ts';
 import { UNPRICED_CODES } from './token-anatomy.ts';
@@ -84,7 +84,7 @@ const imageAttachment = closed(
 
 const imageSummary = closed({ mediaType: enumOf(IMAGE_MEDIA_TYPES), byteLength: nonNegativeInteger }, ['mediaType', 'byteLength']);
 
-const PROMPT_TEXT: JsonSchema = { type: 'string', minLength: 1, maxLength: 1_000_000 };
+const PROMPT_TEXT: JsonSchema = { type: 'string', minLength: 1, maxLength: PROMPT_TEXT_MAX_CHARS };
 
 const userShellRecord = closed({ command: string, exitCode: nullable(integer), output: string, include: boolean }, ['command', 'exitCode', 'output', 'include']);
 
@@ -562,6 +562,8 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       source: enumOf(SUMMARY_SOURCES),
       fidelity: summaryFidelity,
       guidelineVersion: nonNegativeInteger,
+      tokensBefore: nonNegativeInteger,
+      tokensAfter: nonNegativeInteger,
     },
     required: ['summary', 'replacedThroughSeq'],
   },
@@ -1215,6 +1217,8 @@ export type InboxResponse = { pending: InboxRowView[] };
 
 export type UserShellRequest = { command: string; include: boolean };
 
+export type CompactSessionRequest = { instructions?: string };
+
 export type UserShellPendingResponse = { pending: UserShellRecord[] };
 
 export type UserShellFrame = { type: 'output'; text: string } | { type: 'refused'; reason: string } | { type: 'exit'; record: UserShellRecord };
@@ -1252,6 +1256,7 @@ export const RUN_API_SCHEMAS = {
       ['input'],
     ),
   ),
+  CompactSessionRequest: root(closed({ instructions: PROMPT_TEXT }, [])),
   UserShellRequest: root(closed({ command: { type: 'string', minLength: 1, maxLength: USER_SHELL_COMMAND_CHARS }, include: boolean }, ['command', 'include'])),
   UserShellPendingResponse: root(closed({ pending: { type: 'array', items: userShellRecord } }, ['pending'])),
   UserShellFrame: root({
@@ -1555,7 +1560,7 @@ type PublicPayload =
   | { type: 'user.message'; text: string; images?: { mediaType: ImageMediaType; byteLength: number }[]; source?: InboxDelivery; attachments?: AttachmentSummary[]; shell?: UserShellRecord[] }
   | { type: 'model.requested'; step: number; attempt: number; digest: string; anatomy?: TokenAnatomy; prefix?: Extract<RunEventPayload, { type: 'model.requested' }>['prefix'] }
   | { type: 'run.started'; attempt: number }
-  | { type: 'context.compacted'; summary: string; replacedThroughSeq: number; source?: SummarySource; fidelity?: SummaryFidelity; guidelineVersion?: number }
+  | { type: 'context.compacted'; summary: string; replacedThroughSeq: number; source?: SummarySource; fidelity?: SummaryFidelity; guidelineVersion?: number; tokensBefore?: number; tokensAfter?: number }
   | { type: 'context.compaction_rejected'; step?: number; attempt?: number }
   | {
       type: 'context.inherited';
@@ -1657,6 +1662,8 @@ const toPublicKnownEvent = (event: RunEvent | SessionEvent): PublicRunEvent => {
         ...(event.source === undefined ? {} : { source: event.source }),
         ...(event.fidelity === undefined ? {} : { fidelity: event.fidelity }),
         ...(event.guidelineVersion === undefined ? {} : { guidelineVersion: event.guidelineVersion }),
+        ...(event.tokensBefore === undefined ? {} : { tokensBefore: event.tokensBefore }),
+        ...(event.tokensAfter === undefined ? {} : { tokensAfter: event.tokensAfter }),
       };
     case 'context.compaction_rejected':
       return { ...envelope, type: event.type, ...(event.attempt === undefined ? {} : { attempt: event.attempt }) };

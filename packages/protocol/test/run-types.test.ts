@@ -299,6 +299,8 @@ describe('run event payloads', () => {
       source?: 'model' | 'deterministic';
       fidelity?: SummaryFidelity;
       guidelineVersion?: number;
+      tokensBefore?: number;
+      tokensAfter?: number;
     }>();
     expectTypeOf<Payload<'context.governing_loaded'>>().toEqualTypeOf<{
       type: 'context.governing_loaded';

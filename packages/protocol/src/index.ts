@@ -320,7 +320,7 @@ export type {
 export { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, MOMONGA_EVENTS, MOMONGA_REQUEST_FIELDS, MOMONGA_SPAN_NOTES } from './trace-attributes.ts';
 export { EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, runApiSchemaName, toPublicRunEvent } from './run-api.ts';
 export { INBOX_WITHDRAW_OUTCOMES, MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES, MODEL_KINDS, attachmentSummaryOf, modelKindOf } from './run-api.ts';
-export type { AttachmentSummary, InboxAddResponse, InboxResponse, InboxWithdrawOutcome, InboxWithdrawResponse, ModelKind, UserShellFrame, UserShellPendingResponse, UserShellRequest } from './run-api.ts';
+export type { AttachmentSummary, InboxAddResponse, InboxResponse, InboxWithdrawOutcome, InboxWithdrawResponse, ModelKind, UserShellFrame, UserShellPendingResponse, UserShellRequest, CompactSessionRequest } from './run-api.ts';
 export type {
   JobView,
   JobsResponse,
@@ -478,7 +478,7 @@ export {
 export type { HookCommand, HookEvent, HookExecution, HookStart, HookMatcherGroup, HookOutcome, HookPreToolDecision, HooksSettings } from './hooks.ts';
 export { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES, permissionDeniedOutput } from './permission-denial.ts';
 export type { ApprovalBasis, PermissionDenial, PermissionDenialSource } from './permission-denial.ts';
-export { APPROVAL_STATUSES, isInheritedReference, IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_FULL_CODE, INBOX_MAX_PENDING, INBOX_STATES, inboxFullMessage, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, USAGE_CHARGE_PURPOSES, USER_SHELL_COMMAND_CHARS, USER_SHELL_HEAD_BYTES, USER_SHELL_OUTPUT_BYTES, USER_SHELL_RUN_ACTIVE_CODE, USER_SHELL_TAIL_BYTES } from './run-types.ts';
+export { APPROVAL_STATUSES, isInheritedReference, IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_FULL_CODE, INBOX_MAX_PENDING, INBOX_STATES, inboxFullMessage, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, USAGE_CHARGE_PURPOSES, USER_SHELL_COMMAND_CHARS, USER_SHELL_HEAD_BYTES, USER_SHELL_OUTPUT_BYTES, USER_SHELL_RUN_ACTIVE_CODE, USER_SHELL_TAIL_BYTES, NOTHING_TO_COMPACT_CODE, NOTHING_TO_COMPACT_MESSAGE, PROMPT_TEXT_MAX_CHARS } from './run-types.ts';
 export type {
   ActivatedSkillEntry,
   ActivatedSkillRecord,

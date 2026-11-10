@@ -748,26 +748,19 @@ export function App(props: AppProps) {
     await refreshInbox();
   };
 
-  const runPrompt = async (text: string, options: StartRunOptions = {}): Promise<void> => {
+  type Resubmit = { text: string; options: StartRunOptions; alias: string };
+
+  const runStarted = async (prepare: () => { start: () => Promise<RunView>; resubmit: Resubmit | undefined }): Promise<void> => {
     setBusyState(true);
     disarmExit();
     attention.runEnded(undefined);
     signInFailedRun.current = undefined;
-    const sent = heldAttachments(attachmentsRef.current, text);
-    setAttachments([]);
-    append({ kind: 'user', text });
-    for (const attachment of sent) note(`attached ${describeAttachment(attachment.file, attachment.image)}`);
+    const { start, resubmit } = prepare();
     try {
-      const runOptions: StartRunOptions = {
-        ...options,
-        ...(sent.length === 0 ? {} : { images: [...(options.images ?? []), ...sent.map((attachment) => attachment.image)] }),
-        ...(attachOn && hasMentionToken(text) ? { attachMentions: true } : {}),
-      };
-      const runAlias = aliasRef.current;
-      const started = await backend.startRun(text, 'inherit', runOptions);
+      const started = await start();
       if (openedSession.current !== undefined) openedSession.current.hasRun = true;
       runCreated(store, started.id, now());
-      await watchRun(started.id, undefined, runAlias === undefined ? undefined : { text, options: runOptions, alias: runAlias });
+      await watchRun(started.id, undefined, resubmit);
       await watchQueuedRuns(started.id);
     } catch (error) {
       attention.runEnded('error');
@@ -779,6 +772,27 @@ export function App(props: AppProps) {
       setBusyState(false);
     }
   };
+
+  const runPrompt = (text: string, options: StartRunOptions = {}): Promise<void> =>
+    runStarted(() => {
+      const sent = heldAttachments(attachmentsRef.current, text);
+      setAttachments([]);
+      append({ kind: 'user', text });
+      for (const attachment of sent) note(`attached ${describeAttachment(attachment.file, attachment.image)}`);
+      const runOptions: StartRunOptions = {
+        ...options,
+        ...(sent.length === 0 ? {} : { images: [...(options.images ?? []), ...sent.map((attachment) => attachment.image)] }),
+        ...(attachOn && hasMentionToken(text) ? { attachMentions: true } : {}),
+      };
+      const runAlias = aliasRef.current;
+      return { start: () => backend.startRun(text, 'inherit', runOptions), resubmit: runAlias === undefined ? undefined : { text, options: runOptions, alias: runAlias } };
+    });
+
+  const runCompaction = (instructions: string | undefined): Promise<void> =>
+    runStarted(() => {
+      append({ kind: 'user', text: instructions === undefined ? '/compact' : `/compact ${instructions}` });
+      return { start: () => backend.compact(instructions), resubmit: undefined };
+    });
 
   const runSlash = async (line: string): Promise<boolean> => {
     const parsed = parseSlash(line);
@@ -807,6 +821,7 @@ export function App(props: AppProps) {
         }
         await runPrompt(task, runOptions);
       },
+      compact: runCompaction,
       sessions: { startNew: startNewSession, resume: resumeSession, now, columns: () => terminal.state().size.columns },
       exit: () => finish({}),
       background: (label, work) => {

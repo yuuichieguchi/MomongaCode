@@ -1,4 +1,4 @@
-import { isRecord } from '@momonga/foundation';
+import { JsonDepthError, isRecord, parseOutsideJson } from '@momonga/foundation';
 import { KEY_NAMES } from '../terminal/events.ts';
 import { chordOf, chordParts, isPlainKey, KEYS, KEY_CONTEXTS, RESERVED_KEYS } from './table.ts';
 import type { ActionId, ActionRow, KeyContext, KeySpec } from './table.ts';
@@ -169,9 +169,10 @@ export const parseKeyFile = (text: string): ParsedKeyFile => {
   if (Buffer.byteLength(text, 'utf8') > KEY_FILE_MAX_BYTES) return { kind: 'refused', reason: REASONS.tooLarge };
   let value: unknown;
   try {
-    value = JSON.parse(text);
+    value = parseOutsideJson(text);
   } catch (error) {
     if (error instanceof SyntaxError) return { kind: 'refused', reason: `not valid JSON: ${error.message}` };
+    if (error instanceof JsonDepthError) return { kind: 'refused', reason: error.message };
     throw error;
   }
   if (!isRecord(value) || entriesOf(value) === undefined) return { kind: 'refused', reason: REASONS.shape };

@@ -279,6 +279,11 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       if (!conversations.some((conversation) => conversation.session.id === session.id)) conversations.push({ session: { ...session }, firstPrompt: text, runs: [{ id: 'run-1', frames: [] }] });
       return runView({ status: 'QUEUED', sessionId: session.id });
     },
+    compact: async (instructions) => {
+      startedHere = true;
+      record(instructions === undefined ? 'compact' : `compact:${instructions}`);
+      return runView({ status: 'QUEUED', sessionId: session.id });
+    },
     follow: (runId, followHandlers) => {
       const kept = startedHere ? undefined : conversationRun(runId);
       startedHere = false;

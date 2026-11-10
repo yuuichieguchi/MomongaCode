@@ -16,7 +16,8 @@ import { dispositionOf, observedCodeOf, terminalOf } from './gateway-policy.ts';
 import { heartbeatMsFor } from './heartbeat.ts';
 import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
 import { meteredOutputFit, reconcileOutputFit } from './output-fit.ts';
-import { governingFailureAtStart, measurePinnedFor } from './context-step.ts';
+import { compactOnly, governingFailureAtStart, measurePinnedFor } from './context-step.ts';
+import { readCompactPin } from './compact-pin.ts';
 import { runStartHooks } from './hook-step.ts';
 import { openJournal } from './journal.ts';
 import type { Journal } from './journal.ts';
@@ -530,6 +531,11 @@ const drive = async (
   const governingFailure = await governingFailureAtStart(ctx);
   if (governingFailure !== undefined) {
     await terminals.finish('FAILED', { error: governingFailure });
+    return;
+  }
+  const compactPin = readCompactPin(run.pins);
+  if (compactPin !== undefined) {
+    await compactOnly(ctx, compactPin.instructions);
     return;
   }
   if ((await runStartHooks(ctx)) === 'done') return;

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 import { DOUBLE_CLICK_MS } from '../../src/tui/screen/constants.ts';
 import { createRowCache as createRowCacheWith } from '../../src/tui/screen/row-cache.ts';
 import { createClickCounter, extractSelection, lineSelection, selectedColumns, wordSelection } from '../../src/tui/screen/selection.ts';
@@ -8,6 +9,8 @@ import { sourceOf } from '../../src/tui/screen/viewport.ts';
 import { displayWidth } from '../../src/tui/screen/wrap.ts';
 import { appendEntry } from '../../src/tui/transcript.ts';
 import { randomText, seeded, ROW_RENDERERS } from './screen-fakes.ts';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const createRowCache = (renderers: Parameters<typeof createRowCacheWith>[0] = ROW_RENDERERS) => createRowCacheWith(renderers);
 

@@ -29,6 +29,7 @@ const codeTable = (table: Record<string, readonly string[]>): Record<string, str
   Object.fromEntries(Object.entries(table).map(([status, targets]) => [status, [...targets].sort()]));
 
 const UNMODELLED_EVENT_TYPES = [
+  'user_shell',
   'agent.message.delta',
   'agent.thought.delta',
   'approval.rule.persisted',

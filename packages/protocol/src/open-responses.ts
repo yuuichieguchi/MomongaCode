@@ -401,7 +401,7 @@ export const carriesOutput = (event: StreamEvent): boolean =>
   event.type === 'response.function_call_arguments.delta' ||
   (event.type === 'response.output_item.added' && event.item.type === 'function_call');
 
-export type CompactMomongaExtension = { max_summary_tokens?: number; retains_user_request?: boolean; guideline?: string };
+export type CompactMomongaExtension = { max_summary_tokens?: number; retains_user_request?: boolean; guideline?: string; instructions?: string };
 
 export type CompactRequest = {
   model: string;

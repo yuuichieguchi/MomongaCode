@@ -67,6 +67,7 @@ const INTERNAL_PARSES: Readonly<Record<string, InternalParse>> = {
   'packages/verify/src/z3-distribution.ts': { calls: 1, reason: 'the Z3 manifest the product builds and ships' },
   'packages/tools/src/ripgrep-distribution.ts': { calls: 1, reason: 'the ripgrep manifest the product builds and ships' },
   'packages/foundation/src/oauth-provider.ts': { calls: 1, reason: 'the OAuth credential store the product writes' },
+  'packages/cli/src/tui/terminal/handover.ts': { calls: 1, reason: 'the terminal state the product hands to its own next process' },
   'packages/cli/src/tui/dismissed-notices.ts': { calls: 1, reason: 'the dismissed notices file the product writes in its state directory' },
   'packages/gateway/src/plan/session.ts': { calls: 1, reason: 'the plan session records the product writes through the credential store' },
   'packages/gateway/src/plan/host-identity.ts': { calls: 1, reason: 'the plan host identity file the product writes' },

@@ -9,6 +9,7 @@ const SCHEMA_NAMES = [
   'CreateSessionRequest',
   'PatchSessionRequest',
   'CreateRunRequest',
+  'CompactSessionRequest',
   'ResolveApprovalRequest',
   'Health',
   'SessionView',
@@ -402,6 +403,25 @@ describe('PublicRunEvent projection', () => {
     const reduced = { ...RUN_ENVELOPE, type: 'context.compacted', summary: 'so far', replacedThroughSeq: 4 };
     expect(accepts('PublicRunEvent', reduced)).toBe(true);
     expect(accepts('PublicRunEvent', { ...reduced, item: { type: 'compaction', encrypted_content: 'x' } })).toBe(false);
+  });
+
+  it('carries the token counts of a compaction on the public event, schema and codec both ways', () => {
+    const counted = { ...RUN_ENVELOPE, type: 'context.compacted', summary: 'so far', replacedThroughSeq: 4, tokensBefore: 84_000, tokensAfter: 12_000 };
+    expect(accepts('PublicRunEvent', counted)).toBe(true);
+    expect(accepts('PublicRunEvent', { ...counted, tokensBefore: -1 })).toBe(false);
+    expect(accepts('PublicRunEvent', { ...counted, tokensAfter: 1.5 })).toBe(false);
+    const recorded = { ...counted, leaseToken: 4, item: { type: 'compaction', encrypted_content: 'x' } };
+    expect(toPublicRunEvent(recorded as unknown as RunEvent)).toEqual(counted);
+    const { tokensBefore: _before, tokensAfter: _after, ...uncounted } = counted;
+    expect(toPublicRunEvent({ ...uncounted, leaseToken: 4, item: { type: 'compaction', encrypted_content: 'x' } } as unknown as RunEvent)).toEqual(uncounted);
+  });
+
+  it('accepts a compact request with or without the focus text, bounded like a prompt', () => {
+    expect(accepts('CompactSessionRequest', {})).toBe(true);
+    expect(accepts('CompactSessionRequest', { instructions: 'keep the test names' })).toBe(true);
+    expect(accepts('CompactSessionRequest', { instructions: '' })).toBe(false);
+    expect(accepts('CompactSessionRequest', { instructions: 'x'.repeat(1_000_001) })).toBe(false);
+    expect(accepts('CompactSessionRequest', { instructions: 'x', input: 'y' })).toBe(false);
   });
 
   it('reduces context.compaction_rejected to step and attempt, without the item', () => {

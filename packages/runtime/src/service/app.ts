@@ -6,10 +6,10 @@ import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, stripCredenti
 import type { AutoFitKey, CredentialRules } from '@momonga/config';
 import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { AUTO_MODE_UNAVAILABLE, INBOX_FULL_CODE, NO_MODEL_TARGET, RUN_STATUSES, TARGET_PROBING_MESSAGE, agentReadiness, inboxFullMessage, outputReserveFor, readinessText } from '@momonga/protocol';
+import { AUTO_MODE_UNAVAILABLE, INBOX_FULL_CODE, NO_MODEL_TARGET, RUN_STATUSES, USER_SHELL_RUN_ACTIVE_CODE, TARGET_PROBING_MESSAGE, agentReadiness, inboxFullMessage, outputReserveFor, readinessText } from '@momonga/protocol';
 import { mentionsOf } from '@momonga/context';
 import type { AttachedMentions } from '@momonga/context';
-import type { Capabilities, CostBreakdownView, GatewayCostReportView, PermissionMode, RunStatus, RunTraceView } from '@momonga/protocol';
+import type { Capabilities, CompactSessionRequest, CostBreakdownView, GatewayCostReportView, PermissionMode, RunStatus, RunTraceView } from '@momonga/protocol';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
 import { JournalThreadError, inboxRowView, sameRunRequest } from '@momonga/store';
 import type { ContextCharge, Run, RuntimeStore, Session } from '@momonga/store';
@@ -40,6 +40,7 @@ import { STREAM_HEADERS, eventStreamResponse } from './event-stream.ts';
 import type { EventSource } from './event-stream.ts';
 import type { RunNotifier } from './notifier.ts';
 import { JSON_MEDIA_TYPES, PATCH_MEDIA_TYPES, parseCursor, parseIdempotencyKey, readJson, validateBody } from './request.ts';
+import { compactInputOf, compactPinOf } from '../worker/compact-pin.ts';
 import type { AddInboxBody, CreateRunBody, CreateSessionBody, PatchSessionBody, ResolveApprovalBody } from './request.ts';
 import { createRecordViews } from '../memory/views.ts';
 import type { EvidenceRun } from '../memory/evidence.ts';
@@ -407,6 +408,25 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     });
   };
 
+  const compactSession: Handler = async (context) => {
+    const session = requireSession(context.req.param('id') ?? '');
+    requireRootSession(session);
+    if (deps.isDraining()) throw drainingError();
+    const body = validateBody<CompactSessionRequest>('CompactSessionRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
+    if (deps.isDraining()) throw drainingError();
+    if (store.userShell.runActive(session.id)) throw conflict(USER_SHELL_RUN_ACTIVE_CODE, 'a run of this session is working; the compaction starts when it has ended');
+    const result = store.createRunAndEnqueue(session.id, {
+      input: compactInputOf(body.instructions),
+      timeoutMs: deps.defaults.runTimeoutMs,
+      limits: { ...deps.defaults.limits },
+      pins: compactPinOf(body.instructions),
+      history: 'inherit',
+    });
+    if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
+    if (result.kind === 'key_reused') throw idempotencyKeyReused();
+    return json({ run: toRunView(result.run) }, 202, { location: `/v1/runs/${result.run.id}` });
+  };
+
   const addInbox: Handler = async (context) => {
     const session = requireSession(context.req.param('id') ?? '');
     requireRootSession(session);
@@ -604,6 +624,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   route('/v1/sessions', { GET: listSessions, POST: createSession });
   route('/v1/sessions/:id', { GET: getSession, PATCH: patchSession });
   route('/v1/sessions/:id/runs', { GET: listRuns, POST: createRun });
+  route('/v1/sessions/:id/compact', { POST: compactSession });
   route('/v1/sessions/:id/skills', { GET: listSkills });
   route('/v1/sessions/:id/agents', { GET: listAgents });
   route('/v1/sessions/:id/jobs', { GET: listJobs });

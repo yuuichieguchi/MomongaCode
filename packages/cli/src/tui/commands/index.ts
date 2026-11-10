@@ -2,6 +2,7 @@ import { BUILTIN_SLASH_COMMANDS } from '../slash.ts';
 import type { SlashCommand } from '../slash.ts';
 import { autoModeCommand } from './auto-mode.ts';
 import { clearCommand } from './clear.ts';
+import { compactCommand } from './compact.ts';
 import { configCommand } from './config.ts';
 import { hooksCommand } from './hooks.ts';
 import { initCommand } from './init.ts';
@@ -16,4 +17,4 @@ import { shellSlashCommands } from './shell-commands.ts';
 import { themeCommand } from './theme.ts';
 import { tuiCommand } from './tui.ts';
 
-export const DEFAULT_SLASH_COMMANDS: readonly SlashCommand[] = [...BUILTIN_SLASH_COMMANDS, clearCommand, resumeCommand, autoModeCommand, markersCommand, memoryCommand, ruleCommand, tuiCommand, themeCommand, keybindingsCommand, configCommand, permissionsCommand, hooksCommand, mcpCommand, initCommand, ...shellSlashCommands];
+export const DEFAULT_SLASH_COMMANDS: readonly SlashCommand[] = [...BUILTIN_SLASH_COMMANDS, clearCommand, compactCommand, resumeCommand, autoModeCommand, markersCommand, memoryCommand, ruleCommand, tuiCommand, themeCommand, keybindingsCommand, configCommand, permissionsCommand, hooksCommand, mcpCommand, initCommand, ...shellSlashCommands];

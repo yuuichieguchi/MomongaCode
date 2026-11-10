@@ -32,6 +32,7 @@ export type SlashContext = ModeAvailability & {
   readonly backend: TuiBackend;
   info(text: string): void;
   startRun(text: string, options?: { skill?: string }): Promise<void>;
+  compact(instructions: string | undefined): Promise<void>;
   exit(): void;
   setMode(mode: PermissionMode): Promise<void>;
   setModel(modelAlias: string): Promise<void>;

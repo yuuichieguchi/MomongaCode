@@ -40,6 +40,7 @@ type RequestSchemaName =
   | 'ResolveApprovalRequest'
   | 'AddInboxRequest'
   | 'UserShellRequest'
+  | 'CompactSessionRequest'
   | 'ResolveElicitationRequest'
   | 'PutTrustRequest'
   | 'AddRuleRequest'
@@ -57,6 +58,7 @@ const validators: Record<RequestSchemaName, ProductValidator<unknown>> = {
   ResolveApprovalRequest: requestValidator(RUN_API_SCHEMAS.ResolveApprovalRequest),
   AddInboxRequest: requestValidator(RUN_API_SCHEMAS.AddInboxRequest),
   UserShellRequest: requestValidator(RUN_API_SCHEMAS.UserShellRequest),
+  CompactSessionRequest: requestValidator(RUN_API_SCHEMAS.CompactSessionRequest),
   ResolveElicitationRequest: requestValidator(RUN_API_SCHEMAS.ResolveElicitationRequest),
   PutTrustRequest: requestValidator(RUN_API_SCHEMAS.PutTrustRequest),
   AddRuleRequest: requestValidator(RUN_API_SCHEMAS.AddRuleRequest),

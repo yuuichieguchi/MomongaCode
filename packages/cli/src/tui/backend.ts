@@ -1,5 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { currentSocketResolver, findProgramOnPath, listFileCandidates, systemTiming } from '@momonga/foundation';
+import { currentSocketResolver, findProgramOnPath, systemTiming } from '@momonga/foundation';
 import type { FileCandidates } from '@momonga/foundation';
 import { LOCAL_SERVER_CANDIDATES } from '@momonga/protocol';
 import type { AddRuleRequest, ElicitationAnswerRecord, LocalServerDetection, GatewayHealth, GoverningFactView, ImageAttachment, UserShellRecord, McpServerView, MemoryView, MomongaModelEntry, PermissionMode, RuleAddResponse, SkillsResponse } from '@momonga/protocol';
@@ -66,6 +66,7 @@ export type TuiBackend = {
   setModel(modelAlias: string): Promise<SessionView>;
   autoModeAvailable(): Promise<boolean>;
   startRun(text: string, history: 'inherit' | 'fresh', options?: StartRunOptions): Promise<RunView>;
+  compact(instructions?: string): Promise<RunView>;
   follow(runId: string, handlers: FollowHandlers): Promise<RunView>;
   cancel(runId: string): Promise<void>;
   readonly inbox: BusyInbox;
@@ -237,6 +238,7 @@ export const createTuiBackend = (
     autoModeAvailable: () => autoModeConfigured(ports),
     startRun: async (text, history, runOptions = {}) =>
       (await runtime().createRun(current().id, text, { history, ...runOptions })).run,
+    compact: (instructions) => runtime().compact(current().id, instructions),
     follow: async (runId, handlers) =>
       followRun({
         client: runtime(),
@@ -262,7 +264,10 @@ export const createTuiBackend = (
       successor: (runId) => runtime().runSuccessor(runId),
     },
     userInput: {
-      fileCandidates: (signal) => listFileCandidates({ root: ports.cwd, env: ports.env, signal }),
+      fileCandidates: async (signal) => {
+        const { listFileCandidates } = await import('@momonga/runtime');
+        return listFileCandidates({ root: ports.cwd, env: ports.env, trusted: (await runtime().trust(ports.cwd)).decision === 'trusted', signal });
+      },
       shell: (command, include, onOutput) => runtime().userShell(current().id, command, include, onOutput),
       stopShell: () => runtime().stopUserShell(current().id),
       pendingShell: () => runtime().pendingUserShell(current().id),

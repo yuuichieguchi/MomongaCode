@@ -236,6 +236,10 @@ export const fakeRuntime = (): FakeRuntime => {
       runtime.modelAliasChanged?.(modelAlias, previousModelAlias);
       return runtime.session;
     },
+    compact: async (sessionId, instructions) => {
+      record(`compact ${sessionId} ${JSON.stringify(instructions ?? null)}`);
+      return runView({ id: 'run-compact', status: 'QUEUED' });
+    },
     createRun: async (sessionId, input, options) => {
       record(`createRun ${sessionId} ${JSON.stringify({ input, ...(options?.skill === undefined ? {} : { skill: options.skill }) })}`);
       const failure = runtime.failures.get('createRun');

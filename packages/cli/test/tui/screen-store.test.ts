@@ -1,8 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 import { createRowCache as createRowCacheWith } from '../../src/tui/screen/row-cache.ts';
 import { createTranscriptStore } from '../../src/tui/screen/store.ts';
 import { appendEntry, foldEvent, sessionTokens, subagentEnded, subagentStarted } from '../../src/tui/transcript.ts';
 import { eventOf, fold, foldChild, plainOf, seeded, storeOf, ROW_RENDERERS } from './screen-fakes.ts';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const createRowCache = (renderers: Parameters<typeof createRowCacheWith>[0] = ROW_RENDERERS) => createRowCacheWith(renderers);
 

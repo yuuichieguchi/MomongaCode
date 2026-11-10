@@ -30,6 +30,7 @@ export type {
   CompactionBlock,
   CompactionBlockReason,
   CompactionPlan,
+  CompactionTokens,
   ContextArrival,
   ContextBudget,
   ContextEviction,

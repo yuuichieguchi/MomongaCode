@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 import { DIFF_PREVIEW_ROWS } from '../../src/tui/screen/diff.ts';
 import { rowsOfEntry as rowsOfEntryWith } from '../../src/tui/screen/entry-rows.ts';
 import { createPager, entryViewLines, hasHiddenLines, OUTPUT_TAIL_MAX_BYTES, tailOf, VIEWER_UNIT_BYTES } from '../../src/tui/screen/tool-view.ts';
@@ -7,6 +8,8 @@ import type { Row } from '../../src/tui/screen/wrap.ts';
 import { tickRunningTools } from '../../src/tui/transcript.ts';
 import type { ToolEntry } from '../../src/tui/transcript.ts';
 import { eventOf, plainOf, randomText, seeded, storeOf, ROW_FACTS } from './screen-fakes.ts';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const rowsOfEntry = (entry: Parameters<typeof rowsOfEntryWith>[0], width: number) => rowsOfEntryWith(entry, width, ROW_FACTS);
 

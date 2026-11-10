@@ -5,7 +5,7 @@ import type { Link, Row, Span } from './wrap.ts';
 
 export const MARKDOWN_UNIT_BYTES = 16 * 1024;
 
-const INLINE_DEPTH_MAX = 8;
+const INLINE_NESTING_MAX = 8;
 const WIDEST_GRAPHEME_COLUMNS = 2;
 const CODE_INDENT = '  ';
 const QUOTE_GUTTER = '│ ';
@@ -115,7 +115,7 @@ const inlineInto = (out: Inline, source: string, depth: number): void => {
     const match = sticky(MARKDOWN_LINK, position);
     const label = match?.[1];
     const url = match?.[2];
-    if (label === undefined || url === undefined || depth >= INLINE_DEPTH_MAX) return undefined;
+    if (label === undefined || url === undefined || depth >= INLINE_NESTING_MAX) return undefined;
     const end = MARKDOWN_LINK.lastIndex;
     const start = out.text.length;
     if (label !== url) linked(out, url, () => inlineInto(out, label, depth + 1));
@@ -154,7 +154,7 @@ const inlineInto = (out: Inline, source: string, depth: number): void => {
     const after = source[position + length];
     const before = source[position - 1];
     const word = (character: string | undefined): boolean => character !== undefined && WORD_CHARACTER.test(character);
-    const opens = length <= 3 && depth < INLINE_DEPTH_MAX && after !== undefined && !SPACE.test(after) && !(mark === '_' && word(before));
+    const opens = length <= 3 && depth < INLINE_NESTING_MAX && after !== undefined && !SPACE.test(after) && !(mark === '_' && word(before));
     const end = opens
       ? closer(source.slice(position, position + length), position + length + 1, (index) => {
           const previous = source[index - 1];
