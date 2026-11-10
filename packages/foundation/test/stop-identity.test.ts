@@ -543,6 +543,71 @@ describe('a group read that cannot be made ends the stop like a listing that can
     await expectEndedAt(place, world, marker, stopWith(world, marker, asker), ASKER_REASON);
   });
 
+  const ABORTED_START: ProbeResult<bigint> = { kind: 'failed', cause: 'deterministic', evidence: { kind: 'errno', code: 'ABORT_ERR', detail: 'The operation was aborted' } };
+
+  const abortingStartRead = (world: World, asker: AbortController, abortsWhen: () => boolean): { readsAfterAbort: () => number } => {
+    const { startTimeOf, holdersOf, groupsOf } = world.inspector;
+    let after = 0;
+    const counted = <A extends unknown[], R>(read: (...args: A) => Promise<R>) => async (...args: A): Promise<R> => {
+      if (asker.signal.aborted) after += 1;
+      return read(...args);
+    };
+    world.inspector.holdersOf = counted(holdersOf.bind(world.inspector));
+    world.inspector.groupsOf = counted(groupsOf.bind(world.inspector));
+    world.inspector.startTimeOf = async (pid, options) => {
+      if (asker.signal.aborted) after += 1;
+      else if (abortsWhen()) {
+        asker.abort(new Error(ASKER_REASON));
+        return ABORTED_START;
+      }
+      return startTimeOf.call(world.inspector, pid, options);
+    };
+    return { readsAfterAbort: () => after };
+  };
+
+  it('a start-time read in the first pass ended by the asker signal ends the stop with the could-not-check result and nothing more (point 20)', async () => {
+    const world = worldOf({ [ENTRY]: { start: 100n, group: GROUP, holds: true } });
+    const asker = new AbortController();
+    const reads = abortingStartRead(world, asker, () => true);
+    const marker = realMarker();
+    const result = await stopWith(world, marker, asker);
+    expect(result.output).toBe(expectedOutput(ASKER_REASON, false));
+    expect(result.stopped).toBe(false);
+    expect(result.stoppedHolders).toEqual([]);
+    expect(targetsOf(world)).toEqual([]);
+    expect(reads.readsAfterAbort()).toBe(0);
+    expect(fs.existsSync(marker)).toBe(true);
+  });
+
+  it('a start-time read in the SIGKILL pass ended by the asker signal ends the stop with the could-not-check result, keeps the SIGTERM pass holders and sends no SIGKILL (point 20)', async () => {
+    const world = worldOf({ [ENTRY]: { start: 100n, group: GROUP, holds: true, survives: ['SIGTERM'] } });
+    const asker = new AbortController();
+    const reads = abortingStartRead(world, asker, () => lastSignalOf(world.sent) === 'SIGTERM');
+    const marker = realMarker();
+    const result = await stopWith(world, marker, asker);
+    expect(result.output).toBe(expectedOutput(ASKER_REASON, true));
+    expect(result.stopped).toBe(true);
+    expect(result.stoppedHolders).toEqual([ENTRY]);
+    expect(world.sent.filter(({ signal }) => signal !== 0)).toEqual([{ target: -GROUP, signal: 'SIGTERM' }]);
+    expect(reads.readsAfterAbort()).toBe(0);
+    expect(fs.existsSync(marker)).toBe(true);
+  });
+
+  it('a start-time read that fails for one of two holders leaves that holder alone and still signals the other in the same pass (point 20)', async () => {
+    const UNREADABLE = 80_007;
+    const world = worldOf({
+      [OUTSIDE]: { start: 400n, group: OUTSIDE, holds: true },
+      [UNREADABLE]: { start: 500n, group: UNREADABLE, holds: true, survives: ['SIGTERM', 'SIGKILL'] },
+    });
+    const startTimeOf = world.inspector.startTimeOf.bind(world.inspector);
+    world.inspector.startTimeOf = async (pid, options) => (pid === UNREADABLE ? { kind: 'failed', cause: 'transient', evidence: { kind: 'timeout', detail: 'the start-time read was slow' } } : startTimeOf(pid, options));
+    const result = await reconcile(world, GROUP);
+    expect(world.sent).toContainEqual({ target: OUTSIDE, signal: 'SIGTERM' });
+    expect(targetsOf(world)).not.toContain(UNREADABLE);
+    expect(result.leftAlonePids).toContain(UNREADABLE);
+    expect(result.stopped).toBe(true);
+  });
+
   it('a sweep whose group read fails after its retries still rejects with the probe error and keeps the marker', async () => {
     const world = worldOf({ [ENTRY]: { start: 100n, group: GROUP, holds: true } });
     const groupsOf = world.inspector.groupsOf.bind(world.inspector);
