@@ -316,7 +316,7 @@ const couldNotCheckResult = (reason: string, signalled: boolean, stoppedHolders:
 
 const unlistedResult = ({ reason, signalled, stoppedHolders }: Extract<ReconcileEnd, { kind: 'unlisted' }>): MarkerReconcileResult => couldNotCheckResult(reason, signalled, stoppedHolders);
 
-const recallRecordedGroup = async (group: ProcessGroupPort, marker: string, pgid: number): Promise<void> => {
+export const recallMarkerGroup = async (group: ProcessGroupPort, marker: string, pgid: number): Promise<void> => {
   if (group.names === undefined) return;
   let text: string;
   try {
@@ -336,7 +336,7 @@ export const reconcileProcessGroup = async (
   const operation = operationSignal(signal);
   try {
     const group = groupPortOf(groupPort, kill);
-    await recallRecordedGroup(group, recorded.marker, recorded.pgid);
+    await recallMarkerGroup(group, recorded.marker, recorded.pgid);
     const end = await reconcileWithin(recorded, { given: signal, killGraceMs, kill, group, timing, stop: operation.signal, inspector, unsettled, markerMode });
     return end.kind === 'listed' ? end.result : unlistedResult(end);
   } finally {
@@ -548,7 +548,7 @@ const reapWithin = async (options: ReapMarkedProcessesOptions, stop: AbortSignal
   }
   const recorded = pgid ?? (await readRecordedGroup(marker));
   const group = groupPortOf(options.groupPort, kill);
-  if (recorded !== undefined) await recallRecordedGroup(group, marker, recorded);
+  if (recorded !== undefined) await recallMarkerGroup(group, marker, recorded);
   const ownGroup = (await holderGroups([process.pid], recorded === undefined ? [] : [recorded], { signal: stop, inspector }))[0];
   const unsettled = new Map<number, UninspectableProcess>();
   let stopped: boolean;

@@ -1,4 +1,4 @@
-import { UNNAMED_REASON, commandMayStillRun, refusedReason, defaultProcessInspector, groupAlive, groupPortOf, nodeFileSystem, findHolders, outlivedNotes, reconcileProcessGroup } from '@momonga/foundation';
+import { UNNAMED_REASON, commandMayStillRun, refusedReason, defaultProcessInspector, groupAlive, groupPortOf, nodeFileSystem, findHolders, outlivedNotes, recallMarkerGroup, reconcileProcessGroup } from '@momonga/foundation';
 import type { CommandLiveness, HolderListing, MarkerMode, MarkerReconcileResult, MarkerState, ProcessGroupPort, ProcessInspector, ReapTiming, SignalSender, UninspectableProcess } from '@momonga/foundation';
 
 import { ToolExecutionError } from './types.ts';
@@ -52,7 +52,10 @@ export const createMarkerSettle = ({ marker, mode, inspector = defaultProcessIns
       const holders = await findHolders(marker, { signal, inspector, onUninspectable: (process) => void refused.push(process) });
       return { holders, refused };
     },
-    groupAlive: (pgid, signal) => groupAlive(pgid, group, signal),
+    groupAlive: async (pgid, signal) => {
+      await recallMarkerGroup(group, marker, pgid);
+      return groupAlive(pgid, group, signal);
+    },
     reap: async (pgid, signal) => {
       cached = undefined;
       return reconcileProcessGroup(

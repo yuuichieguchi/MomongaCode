@@ -24,10 +24,10 @@ const MANIFEST = new TextEncoder().encode(JSON.stringify({ target: 'win-x64', bi
 const portsOf = (home: string) => ({ home, platform: process.platform, interrupt: new AbortController().signal });
 
 describe('the composition root extracts the bundled keeper and provides it to the group port', () => {
-  it('provides nothing outside a single executable and in a single executable that carries no keeper', async () => {
+  it('provides no embedded keeper outside a single executable and in a single executable that carries no keeper', async () => {
     const provided: string[] = [];
-    await provideEmbeddedWindowsKeeper(portsOf(homeOf()), undefined, (file) => void provided.push(file));
-    await provideEmbeddedWindowsKeeper(portsOf(homeOf()), { present: () => false, raw: () => new Uint8Array() }, (file) => void provided.push(file));
+    await provideEmbeddedWindowsKeeper(portsOf(homeOf()), undefined, (file) => void provided.push(file), () => undefined);
+    await provideEmbeddedWindowsKeeper(portsOf(homeOf()), { present: () => false, raw: () => new Uint8Array() }, (file) => void provided.push(file), () => undefined);
     expect(provided).toEqual([]);
   });
 

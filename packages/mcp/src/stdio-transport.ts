@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import type { ChildProcessByStdio } from 'node:child_process';
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
@@ -6,7 +6,7 @@ import type { Readable, Stream, Writable } from 'node:stream';
 import { deserializeMessage, serializeMessage, type JSONRPCMessage, type Transport } from '@modelcontextprotocol/client';
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
-import { Deadline, groupTerminationBoundMs, operationSignal, reapMarkedProcesses, systemTiming, terminateGroup, type DeadlineTiming, type GroupTiming, type TerminateOutcome } from '@momonga/foundation';
+import { Deadline, groupTerminationBoundMs, launchGroupLeader, operationSignal, reapMarkedProcesses, systemTiming, terminateGroup, type DeadlineTiming, type GroupTiming, type GroupLaunch, type TerminateOutcome } from '@momonga/foundation';
 
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 const STDERR_TAIL_BYTES = 64 * 1024;
@@ -47,6 +47,8 @@ export interface StdioTransport extends Transport {
 }
 
 type ServerProcess = ChildProcessByStdio<Writable, Readable, Readable>;
+
+const MARKER_SLOT = 3;
 
 export function inheritedEnvOf(baseEnv: Readonly<Record<string, string>>): Record<string, string> {
   const env: Record<string, string> = {};
@@ -101,6 +103,7 @@ class StdioTransportImpl implements StdioTransport {
   private closed = false;
   private deliveryStopped = false;
   private markerPath: string | undefined;
+  private group: number | undefined;
 
   private readonly options: StdioTransportOptions;
   private readonly timing: DeadlineTiming;
@@ -120,7 +123,7 @@ class StdioTransportImpl implements StdioTransport {
   }
 
   get pgid(): number | undefined {
-    return this.child?.pid;
+    return this.group;
   }
 
   get pid(): number | undefined {
@@ -141,14 +144,16 @@ class StdioTransportImpl implements StdioTransport {
     const cwd = path.resolve(projectDir, config.cwd ?? '.');
     const env = composeEnv(baseEnv, config.env);
     const markerPath = this.options.markers === undefined ? undefined : path.join(this.options.markers.dir, randomUUID());
-    let child: ServerProcess;
+    let launched: GroupLaunch;
     try {
-      child = this.spawnServer(config, cwd, env, markerPath);
+      launched = this.spawnServer(config, cwd, env, markerPath);
     } catch (error) {
       if (markerPath !== undefined) fs.rmSync(markerPath, { force: true });
       throw error;
     }
+    const child = launched.child as ServerProcess;
     this.child = child;
+    this.group = launched.pgid;
     this.markerPath = markerPath;
     try {
       await new Promise<void>((resolve, reject) => {
@@ -163,12 +168,16 @@ class StdioTransportImpl implements StdioTransport {
       if (markerPath !== undefined) fs.rmSync(markerPath, { force: true });
       throw error;
     }
-    if (markerPath !== undefined) fs.writeFileSync(markerPath, `${child.pid}\n`);
+    if (markerPath !== undefined) fs.writeFileSync(markerPath, `${launched.pgid}\n`);
     this.exited = new Promise<void>((resolve) => {
-      child.once('exit', (code, signal) => {
-        this.exit = { code, signal };
+      const ended = (exit: StdioTransportExit): void => {
+        this.exit = exit;
         resolve();
         void this.drainThenClose();
+      };
+      launched.onExit(ended, (error) => {
+        this.reportError(error);
+        ended({ code: null, signal: null });
       });
     });
     this.stdoutEnded = new Promise<void>((resolve) => {
@@ -180,22 +189,12 @@ class StdioTransportImpl implements StdioTransport {
     child.stderr.on('data', (chunk: Buffer) => this.onStderr(chunk));
   }
 
-  private spawnServer(config: McpStdioServerConfig, cwd: string, env: Record<string, string>, markerPath: string | undefined): ServerProcess {
+  private spawnServer(config: McpStdioServerConfig, cwd: string, env: Record<string, string>, markerPath: string | undefined): GroupLaunch {
     const file = resolveCommand(config.command, cwd, env['PATH'] ?? '');
     const args = config.args ?? [];
-    if (markerPath === undefined) return spawn(file, args, { cwd, env, detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
-    const creator = fs.openSync(markerPath, 'wx', 0o600);
-    let markerFd: number;
-    try {
-      markerFd = fs.openSync(markerPath, 'r');
-    } finally {
-      fs.closeSync(creator);
-    }
-    try {
-      return spawn(file, args, { cwd, env, detached: true, stdio: ['pipe', 'pipe', 'pipe', markerFd] }) as ServerProcess;
-    } finally {
-      fs.closeSync(markerFd);
-    }
+    if (markerPath === undefined) return launchGroupLeader({ file, args, cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+    fs.closeSync(fs.openSync(markerPath, 'wx', 0o600));
+    return launchGroupLeader({ file, args, cwd, env, stdio: ['pipe', 'pipe', 'pipe'], marker: { slot: MARKER_SLOT, file: markerPath } });
   }
 
   send(message: JSONRPCMessage): Promise<void> {
@@ -235,13 +234,14 @@ class StdioTransportImpl implements StdioTransport {
   private async shutdown(graceMs: number): Promise<void> {
     try {
       const child = this.child;
-      if (child !== undefined && child.pid !== undefined) {
+      const group = this.group;
+      if (child !== undefined && group !== undefined) {
         child.stdin.end();
         await this.raceTimeout(this.exited, graceMs);
         const stopBound = Deadline.after(groupTerminationBoundMs(graceMs), this.timing);
         let terminateFailure: { error: unknown } | undefined;
         try {
-          const outcome = await (this.options.terminate ?? terminateGroup)(child.pid, { graceMs, signal: stopBound.signal, timing: this.sleepTiming });
+          const outcome = await (this.options.terminate ?? terminateGroup)(group, { graceMs, signal: stopBound.signal, timing: this.sleepTiming });
           if (outcome !== 'unconfirmed') await this.exitRecordedWithin(stopBound.signal);
         } catch (error) {
           terminateFailure = { error };
@@ -255,7 +255,7 @@ class StdioTransportImpl implements StdioTransport {
           try {
             await reapMarkedProcesses({
               marker: this.markerPath,
-              pgid: child.pid,
+              pgid: group,
               killGraceMs: graceMs,
               label: 'mcp',
               onWarning: this.options.markers.onWarning,

@@ -182,3 +182,7 @@ export const nodeFileSystemSync: FileSystemSync = {
 };
 
 export const readFileBytesSync = (file: string): Uint8Array => fs.readFileSync(file);
+
+export const openReadOnlySync = (file: string): number => fs.openSync(file, 'r');
+
+export const closeDescriptorSync = (descriptor: number): void => fs.closeSync(descriptor);

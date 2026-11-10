@@ -153,7 +153,6 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/sandbox/src/always-write-denied.ts': { 'node:fs': 1 },
   'packages/sandbox/src/bubblewrap.ts': { 'Date.now': 1, 'node:fs': 1 },
   'packages/sandbox/src/placeholder-journal.ts': { 'node:fs': 1 },
-  'packages/sandbox/src/process.ts': { 'node:fs': 1 },
   'packages/sandbox/src/scratch.ts': { 'node:fs': 1 },
   'packages/sandbox/src/seatbelt.ts': { 'node:fs': 1 },
   'packages/skills/src/file-system.ts': { 'node:fs/promises': 1 },

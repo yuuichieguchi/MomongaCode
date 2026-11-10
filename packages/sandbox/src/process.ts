@@ -1,10 +1,11 @@
-import { spawn } from 'node:child_process';
-import fs from 'node:fs';
-import { SANDBOX_KILL_GRACE_MS, closeMarkerDescriptor, deadlineSignal, groupSignalsOf, groupTerminationBoundMs, hostProbeTiming, hostProcessGroupPort, signalGroup, terminateGroup } from '@momonga/foundation';
-import type { GroupKeeper, KeptExit, ProbeTiming, ProcessGroupPort, TerminateOutcome } from '@momonga/foundation';
+import type { spawn } from 'node:child_process';
+import { SANDBOX_KILL_GRACE_MS, closeMarkerDescriptor, deadlineSignal, groupSignalsOf, groupTerminationBoundMs, hostProbeTiming, hostProcessGroupPort, launchGroupLeader, signalGroup, terminateGroup } from '@momonga/foundation';
+import type { GroupLaunch, GroupLaunchMarker, ProbeTiming, ProcessGroupPort, TerminateOutcome } from '@momonga/foundation';
 import type { SandboxExit, SandboxedProcess } from './types.ts';
 
 export { SANDBOX_KILL_GRACE_MS };
+
+const MARKER_SLOT = 3;
 
 export const SANDBOX_STOP_BOUND_MS = groupTerminationBoundMs(SANDBOX_KILL_GRACE_MS);
 
@@ -25,62 +26,36 @@ export interface LaunchOptions {
   timing?: ProbeTiming;
 }
 
-type Child = ReturnType<typeof spawn>;
-
-type Started = { child: Child; keptExit: Promise<KeptExit> | undefined };
-
-const exitCodeOf = (child: Child): Promise<number | undefined> =>
-  new Promise((resolve, reject) => {
-    child.once('error', reject);
-    child.once('exit', (code) => resolve(code ?? undefined));
-  });
-
-const startKept = (keeper: GroupKeeper, options: LaunchOptions, spawnProcess: typeof spawn, stdinMode: 'ignore' | 'pipe'): Started => {
-  if (options.markerFd !== undefined && options.markerFile === undefined) throw new Error(`the marker of ${options.file} reaches a kept command by its path, and only a descriptor was given`);
-  const opening = keeper.open({
-    command: { file: options.file, args: options.args },
-    marker: options.markerFile,
-    start: (executable, args) => {
-      const child = spawnProcess(executable, [...args], { cwd: options.cwd, env: { ...options.env }, detached: true, windowsHide: true, stdio: [stdinMode, 'pipe', 'pipe'] });
-      return { child, pid: child.pid, exited: exitCodeOf(child) };
-    },
-  });
-  return { child: opening.process.child, keptExit: opening.commandExit };
-};
-
-const startDirect = (options: LaunchOptions, spawnProcess: typeof spawn, stdinMode: 'ignore' | 'pipe', markerFd: number | undefined): Started => ({
-  child: spawnProcess(options.file, [...options.args], {
-    cwd: options.cwd,
-    env: { ...options.env },
-    detached: true,
-    windowsHide: true,
-    stdio: markerFd === undefined ? [stdinMode, 'pipe', 'pipe'] : [stdinMode, 'pipe', 'pipe', markerFd],
-  }),
-  keptExit: undefined,
-});
-
 export function launch(options: LaunchOptions): SandboxedProcess {
-  const spawnProcess = options.spawnProcess ?? spawn;
   const stdinMode = options.stdin === undefined ? 'ignore' : 'pipe';
   const { signal, killGraceMs } = options;
   const timing = options.timing ?? hostProbeTiming;
   const groupPort = options.groupPort ?? hostProcessGroupPort();
   const [firstSignal, ...laterSignals] = groupSignalsOf(groupPort);
   const lastSignal = laterSignals[laterSignals.length - 1];
-  const { keeper } = groupPort;
-  const markerFd = options.markerFd ?? (options.markerFile === undefined || keeper !== undefined ? undefined : fs.openSync(options.markerFile, 'r'));
-  let started: Started;
+  const marker: GroupLaunchMarker | undefined =
+    options.markerFile !== undefined
+      ? { slot: MARKER_SLOT, file: options.markerFile, ...(options.markerFd === undefined ? {} : { descriptor: options.markerFd }) }
+      : options.markerFd === undefined
+        ? undefined
+        : { slot: MARKER_SLOT, descriptor: options.markerFd };
+  let launched: GroupLaunch;
   try {
-    started = keeper === undefined ? startDirect(options, spawnProcess, stdinMode, markerFd) : startKept(keeper, options, spawnProcess, stdinMode);
+    launched = launchGroupLeader({
+      file: options.file,
+      args: options.args,
+      cwd: options.cwd,
+      env: options.env,
+      stdio: [stdinMode, 'pipe', 'pipe'],
+      ...(marker === undefined ? {} : { marker }),
+      port: groupPort,
+      ...(options.spawnProcess === undefined ? {} : { spawnProcess: options.spawnProcess }),
+    });
   } finally {
-    if (markerFd !== undefined) {
-      if (options.markerFd === undefined) fs.closeSync(markerFd);
-      else closeMarkerDescriptor(markerFd);
-    }
+    if (options.markerFd !== undefined) closeMarkerDescriptor(options.markerFd);
   }
-  const { child, keptExit } = started;
-  keptExit?.catch(() => undefined);
-  const pid = child.pid;
+  const { child } = launched;
+  const pid = launched.pgid;
   if (pid === undefined) {
     child.once('error', () => undefined);
     throw new Error(`failed to spawn ${options.file} in ${options.cwd}`);
@@ -199,14 +174,7 @@ export function launch(options: LaunchOptions): SandboxedProcess {
       }, reject);
     };
     child.once('error', failed);
-    if (keptExit === undefined) {
-      child.once('exit', leaderEnded);
-      return;
-    }
-    keptExit.then(
-      (exit) => (exit.kind === 'exit' ? leaderEnded(exit.code, null) : leaderEnded(null, 'SIGKILL')),
-      (error: unknown) => failed(error instanceof Error ? error : new Error(String(error))),
-    );
+    launched.onExit(({ code, signal: exitSignal }) => leaderEnded(code, exitSignal), failed);
   });
 
   signal.addEventListener('abort', onAbort, { once: true });

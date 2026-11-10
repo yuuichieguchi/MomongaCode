@@ -1,8 +1,8 @@
-import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { WorkspaceProbe } from '@momonga/eval';
+import { groupSignalsOf, hostProcessGroupPort, launchGroupLeader, signalGroup } from '@momonga/foundation';
 
 const absentOnMissing = (error: NodeJS.ErrnoException): undefined => {
   if (error.code === 'ENOENT') return undefined;
@@ -23,13 +23,18 @@ const contentOf = (file: string): Promise<Buffer | undefined> => fs.readFile(fil
 
 const sha256 = (data: string | Buffer): string => createHash('sha256').update(data).digest('hex');
 
+const strongestSignal = (): NodeJS.Signals => {
+  const signals = groupSignalsOf(hostProcessGroupPort());
+  return signals[signals.length - 1] ?? signals[0];
+};
+
 const runShell = (env: Readonly<Record<string, string>>, command: string, timeoutMs: number, cwd: string): Promise<{ exitCode: number | null; timedOut: boolean }> =>
   new Promise((resolve, reject) => {
-    const child = spawn('/bin/sh', ['-c', command], { cwd, env: { ...env }, detached: true, stdio: 'ignore' });
+    const { child, pgid } = launchGroupLeader({ file: '/bin/sh', args: ['-c', command], cwd, env, stdio: ['ignore', 'ignore', 'ignore'] });
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
-      if (child.pid !== undefined) process.kill(-child.pid, 'SIGKILL');
+      if (pgid !== undefined) signalGroup(pgid, strongestSignal()).catch(reject);
     }, timeoutMs);
     child.once('error', (error) => {
       clearTimeout(timer);
