@@ -5007,70 +5007,84 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 19801,
-      "measuredSeconds": 5.1,
-      "measuredCpuSeconds": 6.76,
-      "budgetCpuSeconds": 17
+      "distinctStates": 34108,
+      "measuredSeconds": 9.48,
+      "measuredCpuSeconds": 11.87,
+      "budgetCpuSeconds": 27
     },
     {
-      "config": "ModelRef.slash",
+      "config": "ModelRef.child",
       "role": "check",
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 9666,
-      "measuredSeconds": 2.64,
-      "measuredCpuSeconds": 4.02,
-      "budgetCpuSeconds": 12
-    },
-    {
-      "config": "ModelRef.slashTag",
-      "role": "check",
-      "expect": "holds",
-      "args": [],
-      "tier": "every-run",
-      "distinctStates": 19307,
-      "measuredSeconds": 4.8,
-      "measuredCpuSeconds": 6.34,
+      "distinctStates": 14580,
+      "measuredSeconds": 4.88,
+      "measuredCpuSeconds": 6.47,
       "budgetCpuSeconds": 16
     },
     {
-      "config": "ModelRef.rename",
+      "config": "ModelRef.childDeep",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 589435,
+      "measuredSeconds": 164.07,
+      "measuredCpuSeconds": 174.95,
+      "budgetCpuSeconds": 353
+    },
+    {
+      "config": "ModelRef.displayShortOnly",
+      "role": "evidence",
+      "expect": {
+        "violates": "DisplayRoundTrip",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 7,
+      "measuredSeconds": 1.95,
+      "measuredCpuSeconds": 2.59,
+      "budgetCpuSeconds": 9
+    },
+    {
+      "config": "ModelRef.flip",
       "role": "check",
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 19965,
-      "measuredSeconds": 5.39,
-      "measuredCpuSeconds": 6.9,
-      "budgetCpuSeconds": 17
+      "distinctStates": 32629,
+      "measuredSeconds": 8.89,
+      "measuredCpuSeconds": 11.4,
+      "budgetCpuSeconds": 26
     },
     {
-      "config": "ModelRef.storeDisplay",
+      "config": "ModelRef.flipNoNorm",
       "role": "evidence",
       "expect": {
-        "violates": "NoRebind",
+        "violates": "OneOwnNamePerModel",
         "exitCode": 12
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 4807,
-      "measuredSeconds": 2.07,
-      "measuredCpuSeconds": 3.31,
+      "distinctStates": 1093,
+      "measuredSeconds": 2.31,
+      "measuredCpuSeconds": 3.07,
       "budgetCpuSeconds": 10
     },
     {
-      "config": "ModelRef.storedBareName",
+      "config": "ModelRef.forgetUsed",
       "role": "evidence",
       "expect": {
-        "violates": "NoRebind",
+        "violates": "WriterKeepsLoadable",
         "exitCode": 12
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1981,
-      "measuredSeconds": 1.96,
-      "measuredCpuSeconds": 2.88,
+      "distinctStates": 399,
+      "measuredSeconds": 2.23,
+      "measuredCpuSeconds": 2.89,
       "budgetCpuSeconds": 9
     },
     {
@@ -5083,23 +5097,20 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 7,
-      "measuredSeconds": 1.27,
-      "measuredCpuSeconds": 1.67,
-      "budgetCpuSeconds": 7
+      "measuredSeconds": 1.88,
+      "measuredCpuSeconds": 2.21,
+      "budgetCpuSeconds": 8
     },
     {
-      "config": "ModelRef.unpinned",
-      "role": "evidence",
-      "expect": {
-        "violates": "RunKeepsPin",
-        "exitCode": 12
-      },
+      "config": "ModelRef.managed",
+      "role": "check",
+      "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 8680,
-      "measuredSeconds": 2.35,
-      "measuredCpuSeconds": 3.78,
-      "budgetCpuSeconds": 11
+      "distinctStates": 5572,
+      "measuredSeconds": 2.79,
+      "measuredCpuSeconds": 4.39,
+      "budgetCpuSeconds": 12
     },
     {
       "config": "ModelRef.noCascade",
@@ -5110,9 +5121,90 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 396,
-      "measuredSeconds": 1.38,
-      "measuredCpuSeconds": 2.17,
+      "distinctStates": 451,
+      "measuredSeconds": 2.09,
+      "measuredCpuSeconds": 2.75,
+      "budgetCpuSeconds": 9
+    },
+    {
+      "config": "ModelRef.noNorm",
+      "role": "evidence",
+      "expect": {
+        "violates": "OneOwnNamePerModel",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 2,
+      "measuredSeconds": 2.08,
+      "measuredCpuSeconds": 2.3,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "ModelRef.reclaimRepins",
+      "role": "evidence",
+      "expect": {
+        "violates": "ResumeKeepsPin",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 9545,
+      "measuredSeconds": 3.6,
+      "measuredCpuSeconds": 4.92,
+      "budgetCpuSeconds": 13
+    },
+    {
+      "config": "ModelRef.rename",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 30215,
+      "measuredSeconds": 8.41,
+      "measuredCpuSeconds": 10.68,
+      "budgetCpuSeconds": 25
+    },
+    {
+      "config": "ModelRef.roleLate",
+      "role": "evidence",
+      "expect": {
+        "violates": "RunKeepsPin",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 9545,
+      "measuredSeconds": 3.72,
+      "measuredCpuSeconds": 4.96,
+      "budgetCpuSeconds": 13
+    },
+    {
+      "config": "ModelRef.serveUnchecked",
+      "role": "evidence",
+      "expect": {
+        "violates": "ServedIsNamed",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 2315,
+      "measuredSeconds": 3.04,
+      "measuredCpuSeconds": 3.95,
+      "budgetCpuSeconds": 11
+    },
+    {
+      "config": "ModelRef.shortEverywhere",
+      "role": "evidence",
+      "expect": {
+        "violates": "ShortOnlyWithDefaultTag",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 6,
+      "measuredSeconds": 2.05,
+      "measuredCpuSeconds": 2.23,
       "budgetCpuSeconds": 8
     },
     {
@@ -5125,51 +5217,73 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 7,
-      "measuredSeconds": 1.22,
-      "measuredCpuSeconds": 1.64,
-      "budgetCpuSeconds": 7
+      "measuredSeconds": 1.77,
+      "measuredCpuSeconds": 2.61,
+      "budgetCpuSeconds": 9
     },
     {
-      "config": "ModelRef.displayShortOnly",
+      "config": "ModelRef.slash",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 14511,
+      "measuredSeconds": 4.4,
+      "measuredCpuSeconds": 6.1,
+      "budgetCpuSeconds": 16
+    },
+    {
+      "config": "ModelRef.slashTag",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 33122,
+      "measuredSeconds": 10.68,
+      "measuredCpuSeconds": 11.65,
+      "budgetCpuSeconds": 27
+    },
+    {
+      "config": "ModelRef.storeDisplay",
       "role": "evidence",
       "expect": {
-        "violates": "DisplayRoundTrip",
+        "violates": "NoRebind",
         "exitCode": 12
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 7,
-      "measuredSeconds": 1.19,
-      "measuredCpuSeconds": 1.61,
-      "budgetCpuSeconds": 7
+      "distinctStates": 980,
+      "measuredSeconds": 2.23,
+      "measuredCpuSeconds": 3.56,
+      "budgetCpuSeconds": 11
     },
     {
-      "config": "ModelRef.shortEverywhere",
+      "config": "ModelRef.storedBareName",
       "role": "evidence",
       "expect": {
-        "violates": "ShortOnlyWithDefaultTag",
+        "violates": "NoRebind",
         "exitCode": 12
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 6,
-      "measuredSeconds": 1.18,
-      "measuredCpuSeconds": 1.57,
-      "budgetCpuSeconds": 7
+      "distinctStates": 1062,
+      "measuredSeconds": 2.17,
+      "measuredCpuSeconds": 3.36,
+      "budgetCpuSeconds": 10
     },
     {
-      "config": "ModelRef.noNorm",
+      "config": "ModelRef.unpinned",
       "role": "evidence",
       "expect": {
-        "violates": "OneOwnNamePerModel",
+        "violates": "RunKeepsPin",
         "exitCode": 12
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 2,
-      "measuredSeconds": 1.3,
-      "measuredCpuSeconds": 1.71,
-      "budgetCpuSeconds": 7
+      "distinctStates": 9533,
+      "measuredSeconds": 4.03,
+      "measuredCpuSeconds": 5.35,
+      "budgetCpuSeconds": 14
     }
   ]
 }

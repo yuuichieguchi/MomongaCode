@@ -1,0 +1,7510 @@
+{
+ "defaultTag": {
+  "p1": true,
+  "p2": false
+ },
+ "rows": [
+  {
+   "display": [],
+   "settings": {
+    "conns": [],
+    "models": {
+     "p1": [],
+     "p2": []
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p2",
+     "text": [
+      "x:latest"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p2"
+    ],
+    "models": {
+     "p1": [],
+     "p2": [
+      [
+       "x:latest"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p2",
+     "text": [
+      "y"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p2"
+    ],
+    "models": {
+     "p1": [],
+     "p2": [
+      [
+       "y"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p2",
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p2",
+     "text": [
+      "x:latest"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p2"
+    ],
+    "models": {
+     "p1": [],
+     "p2": [
+      [
+       "y"
+      ],
+      [
+       "x:latest"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "x"
+     ],
+     "prov": "p2",
+     "text": [
+      "x"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p2"
+    ],
+    "models": {
+     "p1": [],
+     "p2": [
+      [
+       "x"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "x"
+     ],
+     "prov": "p2",
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p2",
+     "text": [
+      "x:latest"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p2"
+    ],
+    "models": {
+     "p1": [],
+     "p2": [
+      [
+       "x"
+      ],
+      [
+       "x:latest"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "x"
+     ],
+     "prov": "p2",
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p2",
+     "text": [
+      "y"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p2"
+    ],
+    "models": {
+     "p1": [],
+     "p2": [
+      [
+       "x"
+      ],
+      [
+       "y"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "x"
+     ],
+     "prov": "p2",
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p2",
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p2",
+     "text": [
+      "x:latest"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p2"
+    ],
+    "models": {
+     "p1": [],
+     "p2": [
+      [
+       "x"
+      ],
+      [
+       "y"
+      ],
+      [
+       "x:latest"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p1",
+     "text": [
+      "x"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1"
+    ],
+    "models": {
+     "p1": [
+      [
+       "x:latest"
+      ]
+     ],
+     "p2": []
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p1",
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1",
+     "p2"
+    ],
+    "models": {
+     "p1": [
+      [
+       "x:latest"
+      ]
+     ],
+     "p2": [
+      [
+       "x:latest"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p1",
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p2",
+     "text": [
+      "y"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1",
+     "p2"
+    ],
+    "models": {
+     "p1": [
+      [
+       "x:latest"
+      ]
+     ],
+     "p2": [
+      [
+       "y"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p1",
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p2",
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1",
+     "p2"
+    ],
+    "models": {
+     "p1": [
+      [
+       "x:latest"
+      ]
+     ],
+     "p2": [
+      [
+       "y"
+      ],
+      [
+       "x:latest"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p1",
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "x"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "x"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1",
+     "p2"
+    ],
+    "models": {
+     "p1": [
+      [
+       "x:latest"
+      ]
+     ],
+     "p2": [
+      [
+       "x"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p1",
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "x"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1",
+     "p2"
+    ],
+    "models": {
+     "p1": [
+      [
+       "x:latest"
+      ]
+     ],
+     "p2": [
+      [
+       "x"
+      ],
+      [
+       "x:latest"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p1",
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "x"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p2",
+     "text": [
+      "y"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1",
+     "p2"
+    ],
+    "models": {
+     "p1": [
+      [
+       "x:latest"
+      ]
+     ],
+     "p2": [
+      [
+       "x"
+      ],
+      [
+       "y"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p1",
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "x"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p2",
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1",
+     "p2"
+    ],
+    "models": {
+     "p1": [
+      [
+       "x:latest"
+      ]
+     ],
+     "p2": [
+      [
+       "x"
+      ],
+      [
+       "y"
+      ],
+      [
+       "x:latest"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p1",
+     "text": [
+      "y"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1"
+    ],
+    "models": {
+     "p1": [
+      [
+       "y"
+      ]
+     ],
+     "p2": []
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p1",
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p2",
+     "text": [
+      "x:latest"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1",
+     "p2"
+    ],
+    "models": {
+     "p1": [
+      [
+       "y"
+      ]
+     ],
+     "p2": [
+      [
+       "x:latest"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p1",
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "y"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1",
+     "p2"
+    ],
+    "models": {
+     "p1": [
+      [
+       "y"
+      ]
+     ],
+     "p2": [
+      [
+       "y"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p1",
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p2",
+     "text": [
+      "x:latest"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1",
+     "p2"
+    ],
+    "models": {
+     "p1": [
+      [
+       "y"
+      ]
+     ],
+     "p2": [
+      [
+       "y"
+      ],
+      [
+       "x:latest"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p1",
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "x"
+     ],
+     "prov": "p2",
+     "text": [
+      "x"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1",
+     "p2"
+    ],
+    "models": {
+     "p1": [
+      [
+       "y"
+      ]
+     ],
+     "p2": [
+      [
+       "x"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p1",
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "x"
+     ],
+     "prov": "p2",
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p2",
+     "text": [
+      "x:latest"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1",
+     "p2"
+    ],
+    "models": {
+     "p1": [
+      [
+       "y"
+      ]
+     ],
+     "p2": [
+      [
+       "x"
+      ],
+      [
+       "x:latest"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p1",
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "x"
+     ],
+     "prov": "p2",
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "y"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1",
+     "p2"
+    ],
+    "models": {
+     "p1": [
+      [
+       "y"
+      ]
+     ],
+     "p2": [
+      [
+       "x"
+      ],
+      [
+       "y"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p1",
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "x"
+     ],
+     "prov": "p2",
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p2",
+     "text": [
+      "x:latest"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1",
+     "p2"
+    ],
+    "models": {
+     "p1": [
+      [
+       "y"
+      ]
+     ],
+     "p2": [
+      [
+       "x"
+      ],
+      [
+       "y"
+      ],
+      [
+       "x:latest"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p1",
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p1",
+     "text": [
+      "x"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1"
+    ],
+    "models": {
+     "p1": [
+      [
+       "y"
+      ],
+      [
+       "x:latest"
+      ]
+     ],
+     "p2": []
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p1",
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p1",
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1",
+     "p2"
+    ],
+    "models": {
+     "p1": [
+      [
+       "y"
+      ],
+      [
+       "x:latest"
+      ]
+     ],
+     "p2": [
+      [
+       "x:latest"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p1",
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p1",
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "y"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1",
+     "p2"
+    ],
+    "models": {
+     "p1": [
+      [
+       "y"
+      ],
+      [
+       "x:latest"
+      ]
+     ],
+     "p2": [
+      [
+       "y"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p1",
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p1",
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1",
+     "p2"
+    ],
+    "models": {
+     "p1": [
+      [
+       "y"
+      ],
+      [
+       "x:latest"
+      ]
+     ],
+     "p2": [
+      [
+       "y"
+      ],
+      [
+       "x:latest"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p1",
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p1",
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "x"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "x"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1",
+     "p2"
+    ],
+    "models": {
+     "p1": [
+      [
+       "y"
+      ],
+      [
+       "x:latest"
+      ]
+     ],
+     "p2": [
+      [
+       "x"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p1",
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p1",
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "x"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1",
+     "p2"
+    ],
+    "models": {
+     "p1": [
+      [
+       "y"
+      ],
+      [
+       "x:latest"
+      ]
+     ],
+     "p2": [
+      [
+       "x"
+      ],
+      [
+       "x:latest"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p1",
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p1",
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "x"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "y"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1",
+     "p2"
+    ],
+    "models": {
+     "p1": [
+      [
+       "y"
+      ],
+      [
+       "x:latest"
+      ]
+     ],
+     "p2": [
+      [
+       "x"
+      ],
+      [
+       "y"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  },
+  {
+   "display": [
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p1",
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p1",
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "x"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "id": [
+      "y"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "id": [
+      "x:latest"
+     ],
+     "prov": "p2",
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "settings": {
+    "conns": [
+     "p1",
+     "p2"
+    ],
+    "models": {
+     "p1": [
+      [
+       "y"
+      ],
+      [
+       "x:latest"
+      ]
+     ],
+     "p2": [
+      [
+       "x"
+      ],
+      [
+       "y"
+      ],
+      [
+       "x:latest"
+      ]
+     ]
+    }
+   },
+   "stored": [
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "missing"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ],
+   "typed": [
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "k": "ambiguous"
+     },
+     "text": [
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p1"
+     },
+     "text": [
+      "p1",
+      "x:latest"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "y"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "y"
+     ]
+    },
+    {
+     "outcome": {
+      "id": [
+       "x:latest"
+      ],
+      "k": "found",
+      "prov": "p2"
+     },
+     "text": [
+      "p2",
+      "x:latest"
+     ]
+    }
+   ]
+  }
+ ]
+}
