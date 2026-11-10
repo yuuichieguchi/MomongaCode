@@ -1,7 +1,8 @@
-import { createFakeClock, createFakeTimers, startMcpHttpFixture, startMcpOauthFixture } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, createFakeClock, createFakeTimers, startMcpHttpFixture, startMcpOauthFixture } from '@momonga/testkit';
 import type { FakeClock, FakeTimers, McpHttpFixture, McpHttpFixtureOptions, McpOauthFixture } from '@momonga/testkit';
 import { createManagedConnection } from '@momonga/mcp';
 import { createMemoryCredentialStore } from '@momonga/foundation';
+import type { OutboundNetwork } from '@momonga/foundation';
 import type { HostResolver, McpConnectionOptions, McpCredentialStore, McpRemotePorts, McpTimers } from '@momonga/mcp';
 import type { McpServerScope } from '@momonga/config';
 import { BASE_ENV, makeDir, onCleanup } from './mcp-harness.ts';
@@ -57,6 +58,7 @@ export type RemoteHarnessOptions = {
   oauth?: { clientId?: string; scope?: string; callbackPort?: number };
   closeInCleanup?: boolean;
   resolver?: HostResolver;
+  network?: OutboundNetwork;
   clock?: FakeClock;
 };
 
@@ -66,6 +68,7 @@ export const makeRemoteConnection = (options: RemoteHarnessOptions) => {
   let tokenCounter = 0;
   const remote: McpRemotePorts = {
     credentials: store,
+    network: options.network ?? UNCONFIGURED_NETWORK,
     randomToken: () => {
       tokenCounter += 1;
       return `random-${tokenCounter}`;

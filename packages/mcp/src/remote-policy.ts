@@ -1,9 +1,10 @@
 import dns from 'node:dns';
 import type { LookupFunction } from 'node:net';
-import { Agent, fetch as undiciFetch } from 'undici';
 import type { RequestInit as UndiciRequestInit } from 'undici';
 import type { FetchLike } from '@modelcontextprotocol/client';
 import type { McpServerScope } from '@momonga/config';
+import { createOutboundDispatcher, findOutboundError, outboundFetch } from '@momonga/foundation';
+import type { OutboundNetwork } from '@momonga/foundation';
 import { isAddressLiteral, isPublicAddress, stripBrackets } from './ip-address.ts';
 import { McpRemotePolicyError } from './remote-errors.ts';
 
@@ -44,23 +45,35 @@ export const assertAuthorizationUrl = (url: URL, scope: McpServerScope): void =>
   assertRemoteUrl(url.href, scope);
 };
 
+const USER_SCOPE_NOTE = 'a server added in user settings is not subject to this check';
+
+const codeOrMessageOf = (error: unknown): string => {
+  if (!(error instanceof Error)) return String(error);
+  return 'code' in error && typeof error.code === 'string' ? error.code : error.message;
+};
+
 const lookupVia = (resolver: HostResolver): LookupFunction => {
   const lookup = (hostname: string, options: { all?: boolean }, callback: (...args: unknown[]) => void): void => {
     resolver(hostname).then(
       (addresses) => {
         if (addresses.length === 0) {
-          callback(new McpRemotePolicyError('unresolvable_host', `${hostname} did not resolve to any address`));
+          callback(new McpRemotePolicyError('unresolvable_host', `${hostname} did not resolve to any address, so its address could not be verified; ${USER_SCOPE_NOTE}`));
           return;
         }
         const refused = addresses.find((entry) => !isPublicAddress(entry.address));
         if (refused !== undefined) {
-          callback(new McpRemotePolicyError('non_public_resolved_address', `${hostname} resolves to a non-public address (${refused.address})`));
+          callback(new McpRemotePolicyError('non_public_resolved_address', `${hostname} resolves to a non-public address (${refused.address}); ${USER_SCOPE_NOTE}`));
           return;
         }
         if (options.all === true) callback(null, addresses);
         else callback(null, (addresses[0] as ResolvedAddress).address, (addresses[0] as ResolvedAddress).family);
       },
-      (error: unknown) => callback(error),
+      (error: unknown) =>
+        callback(
+          new McpRemotePolicyError('unresolvable_host', `the address of ${hostname} could not be verified: the name did not resolve on this machine (${codeOrMessageOf(error)}); ${USER_SCOPE_NOTE}`, {
+            cause: error,
+          }),
+        ),
     );
   };
   return lookup as unknown as LookupFunction;
@@ -70,18 +83,27 @@ export type GuardedFetch = { fetch: FetchLike; close(): Promise<void> };
 
 type Send = (url: URL, init: RequestInit | undefined) => Promise<Response>;
 
-export type GuardedFetchOptions = { scope: McpServerScope; resolver?: HostResolver; send?: Send };
+export type GuardedFetchOptions = { scope: McpServerScope; network: OutboundNetwork; connectTimeoutMs: number; resolver?: HostResolver; send?: Send };
 
-export const createGuardedFetch = ({ scope, resolver = systemResolver, send }: GuardedFetchOptions): GuardedFetch => {
-  const agent = new Agent({
+export const createGuardedFetch = ({ scope, network, connectTimeoutMs, resolver = systemResolver, send }: GuardedFetchOptions): GuardedFetch => {
+  const dispatcher = createOutboundDispatcher(network, {
+    connectReplyTimeoutMs: connectTimeoutMs,
     headersTimeout: 0,
     bodyTimeout: 0,
-    ...(scope === 'project' ? { connect: { lookup: lookupVia(resolver) } } : {}),
+    ...(scope === 'project' ? { lookup: lookupVia(resolver) } : {}),
   });
+  const routed = outboundFetch(dispatcher);
   const dispatch: Send =
-    send ?? ((url, init) => undiciFetch(url, { ...(init as UndiciRequestInit | undefined), dispatcher: agent }) as unknown as Promise<Response>);
+    send ??
+    (async (url, init) => {
+      try {
+        return (await routed(url, init as UndiciRequestInit | undefined)) as unknown as Response;
+      } catch (error) {
+        throw findOutboundError(error) ?? error;
+      }
+    });
   return {
     fetch: async (input, init) => dispatch(assertRemoteUrl(String(input), scope), { ...init, redirect: init?.redirect === 'error' ? 'error' : 'manual' }),
-    close: () => agent.destroy(),
+    close: () => dispatcher.destroy(),
   };
 };

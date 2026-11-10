@@ -3,8 +3,11 @@ import type { AddressInfo } from 'node:net';
 import { describe, expect, it } from 'vitest';
 import { McpRemotePolicyError, assertRemoteUrl, createGuardedFetch, isPublicAddress } from '@momonga/mcp';
 import type { HostResolver } from '@momonga/mcp';
+import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
 import { onCleanup } from './mcp-harness.ts';
 import { makeRemoteConnection, startHttpFixture } from './remote-harness.ts';
+
+const OUTBOUND = { network: UNCONFIGURED_NETWORK, connectTimeoutMs: 30_000 } as const;
 
 const violationOf = (action: () => unknown): string | undefined => {
   try {
@@ -130,7 +133,7 @@ describe('resolved addresses', () => {
 
   it('refuses a public-looking name that resolves to a loopback address, without connecting', async () => {
     const server = await countingServer((_req, res) => res.end('reached'));
-    const guarded = createGuardedFetch({ scope: 'project', resolver: resolverTo('127.0.0.1') });
+    const guarded = createGuardedFetch({ ...OUTBOUND, scope: 'project', resolver: resolverTo('127.0.0.1') });
     onCleanup(() => guarded.close());
     const failure = await guarded.fetch(`https://rebind.example.test:${server.port}/`).then(
       () => undefined,
@@ -141,7 +144,7 @@ describe('resolved addresses', () => {
   });
 
   it('refuses a name when any one of its addresses is non-public', async () => {
-    const guarded = createGuardedFetch({ scope: 'project', resolver: resolverTo('93.184.216.34', '169.254.169.254') });
+    const guarded = createGuardedFetch({ ...OUTBOUND, scope: 'project', resolver: resolverTo('93.184.216.34', '169.254.169.254') });
     onCleanup(() => guarded.close());
     const failure = await guarded.fetch('https://mixed.example.test/').then(
       () => undefined,
@@ -151,7 +154,7 @@ describe('resolved addresses', () => {
   });
 
   it('refuses a name that resolves to nothing', async () => {
-    const guarded = createGuardedFetch({ scope: 'project', resolver: resolverTo() });
+    const guarded = createGuardedFetch({ ...OUTBOUND, scope: 'project', resolver: resolverTo() });
     onCleanup(() => guarded.close());
     const failure = await guarded.fetch('https://empty.example.test/').then(
       () => undefined,
@@ -163,6 +166,7 @@ describe('resolved addresses', () => {
   it('refuses an address literal before any resolution', async () => {
     let resolutions = 0;
     const guarded = createGuardedFetch({
+      ...OUTBOUND,
       scope: 'project',
       resolver: (host) => {
         resolutions += 1;
@@ -242,7 +246,7 @@ describe('redirect handling of the guarded fetch', () => {
 
   it('never follows a redirect itself and hands the 3xx response to the caller, which re-enters the guard for the next hop', async () => {
     const { calls, send } = scripted(redirectTo('https://169.254.169.254/latest/meta-data'));
-    const guarded = createGuardedFetch({ scope: 'project', send });
+    const guarded = createGuardedFetch({ ...OUTBOUND, scope: 'project', send });
     const response = await guarded.fetch('https://mcp.example.com/mcp');
     expect(response.status).toBe(302);
     expect(calls).toEqual([{ url: 'https://mcp.example.com/mcp', redirect: 'manual' }]);
@@ -250,14 +254,14 @@ describe('redirect handling of the guarded fetch', () => {
 
   it('does not follow a same-origin redirect either', async () => {
     const { calls, send } = scripted(redirectTo('/other'), new Response('ok'));
-    const guarded = createGuardedFetch({ scope: 'project', send });
+    const guarded = createGuardedFetch({ ...OUTBOUND, scope: 'project', send });
     expect((await guarded.fetch('https://mcp.example.com/mcp')).status).toBe(302);
     expect(calls).toHaveLength(1);
   });
 
   it('sends manual to the transport when the caller names no redirect mode, so the HTTP client cannot follow on its own', async () => {
     const { calls, send } = scripted(new Response('ok'), new Response('ok'), new Response('ok'));
-    const guarded = createGuardedFetch({ scope: 'project', send });
+    const guarded = createGuardedFetch({ ...OUTBOUND, scope: 'project', send });
     await guarded.fetch('https://mcp.example.com/a');
     await guarded.fetch('https://mcp.example.com/b', { redirect: 'follow' });
     await guarded.fetch('https://mcp.example.com/c', { redirect: 'manual' });
@@ -266,14 +270,14 @@ describe('redirect handling of the guarded fetch', () => {
 
   it('keeps a caller that asks to fail on redirects', async () => {
     const { calls, send } = scripted(new Response('ok'));
-    const guarded = createGuardedFetch({ scope: 'project', send });
+    const guarded = createGuardedFetch({ ...OUTBOUND, scope: 'project', send });
     await guarded.fetch('https://mcp.example.com/a', { redirect: 'error' });
     expect(calls.map((call) => call.redirect)).toEqual(['error']);
   });
 
   it('checks the URL of every call, so each hop the caller makes is checked', async () => {
     const { calls, send } = scripted(redirectTo('https://10.1.2.3/'));
-    const guarded = createGuardedFetch({ scope: 'project', send });
+    const guarded = createGuardedFetch({ ...OUTBOUND, scope: 'project', send });
     const first = await guarded.fetch('https://mcp.example.com/mcp', { redirect: 'manual' });
     const next = first.headers.get('location') ?? '';
     await expect(guarded.fetch(next, { redirect: 'manual' })).rejects.toMatchObject({ violation: 'non_public_address_literal' });
@@ -282,7 +286,7 @@ describe('redirect handling of the guarded fetch', () => {
 
   it('refuses a URL with credentials before sending it', async () => {
     const { calls, send } = scripted();
-    const guarded = createGuardedFetch({ scope: 'project', send });
+    const guarded = createGuardedFetch({ ...OUTBOUND, scope: 'project', send });
     await expect(guarded.fetch('https://user:pass@mcp.example.com/mcp')).rejects.toMatchObject({ violation: 'credentials_in_url' });
     expect(calls).toEqual([]);
   });
