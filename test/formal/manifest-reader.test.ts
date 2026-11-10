@@ -57,6 +57,12 @@ describe('the manifest reader', () => {
     expect(readManifest(manifestWith({ args })).entries[0]?.args).toEqual(args);
   });
 
+  it('refuses a manifest with no entries', () => {
+    const file = path.join(root, 'manifest.json');
+    writeFile(file, JSON.stringify({ format: MANIFEST_FORMAT, unitSuiteSeconds: 100, startupCpuSeconds: 3, entries: [] }));
+    expect(() => readManifest(file)).toThrow(new Error('the TLA manifest is invalid: entries must not be empty'));
+  });
+
   it('is still reachable through the manifest module with every name it exported before', () => {
     for (const name of ['MANIFEST_FORMAT', 'readManifest', 'discoveryProblems', 'verdictProblems', 'TLC_WORKERS', 'runTlc', 'everyRunBudgetSeconds', 'tierBudgetProblem', 'EVERY_RUN_BUDGET_RATIO'] as const) {
       expect(manifestModule[name], name).toBeDefined();

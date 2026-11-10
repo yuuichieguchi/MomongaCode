@@ -1,8 +1,10 @@
+import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { RUN_LOCK_EXIT } from '../../scripts/support/run-lock.ts';
 import { actionPropertyViolationOutput, completedOutput, holdsEntry, invariantEntry, invariantViolationOutput, runOf, temporalEntry, temporalViolationOutput } from './fixtures.ts';
 import type { ManifestEntry, TlcRun } from './manifest.ts';
 import { verdictProblems as verdictProblemsOfManifest } from './manifest.ts';
-import { factsOf, problemsOf, verdictProblems } from './verdict.ts';
+import { factsOf, problemsOf, SCRIPT_FAILURE_CODES, verdictProblems } from './verdict.ts';
 
 const FETCH_COMMAND = 'curl -L -o .cache/tla/tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar';
 
@@ -20,6 +22,8 @@ const factCases: readonly (readonly [string, ManifestEntry, TlcRun])[] = [
   ['an action property violation with exit 13 and the named property', temporalEntry, runOf(13, actionPropertyViolationOutput('Settles'))],
   ['an action property violation that names another property', temporalEntry, runOf(13, actionPropertyViolationOutput('Other'))],
 ];
+
+const LOCK_REFUSAL_CODES: readonly number[] = [RUN_LOCK_EXIT.refused, RUN_LOCK_EXIT.waitedOut, RUN_LOCK_EXIT.unusable];
 
 const killedRun: TlcRun = { ...runOf(0, ''), exitCode: null, signal: 'SIGKILL', killedAtCpuBudget: true };
 
@@ -78,8 +82,19 @@ describe('the facts of a TLC run and the verdict on them', () => {
     expect(violating.distinctStates).toBeNull();
   });
 
-  it.each([71, 72, 73])('reports exit %i as a failure of the script', (code) => {
+  it.each(LOCK_REFUSAL_CODES)('reports exit %i as a failure of the script', (code) => {
     expect(verdictProblems(holdsEntry, runOf(code, '', ''))[0]).toBe(`Tiny: tlc.sh exited ${code}`);
+  });
+
+  it('lists every exit code by which the run lock refuses a run among the failures of the script', () => {
+    expect(LOCK_REFUSAL_CODES).toHaveLength(3);
+    expect(SCRIPT_FAILURE_CODES).toEqual(expect.arrayContaining([...LOCK_REFUSAL_CODES]));
+  });
+
+  it('writes none of the exit codes of the run lock as a number in the verdict module', () => {
+    const source = fs.readFileSync(new URL('./verdict.ts', import.meta.url), 'utf8');
+    const written = LOCK_REFUSAL_CODES.filter((code) => new RegExp(`(?<![\\w.])${code}(?![\\w.])`).test(source));
+    expect(written).toEqual([]);
   });
 
   it.each([75, 76, 77])('reports exit %i as an evaluation failure of TLC', (code) => {
