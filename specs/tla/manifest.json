@@ -4961,6 +4961,98 @@
       "measuredCpuSeconds": 2.42,
       "budgetCpuSeconds": 8,
       "measuredNote": "measured above the load gate, to be re-measured (1-minute load 20 at start; ListFails added, design 19.6 point 10)"
+    },
+    {
+      "config": "SettingsSwap.reorder",
+      "role": "evidence",
+      "expect": {
+        "violates": "CarryOverByIdentity",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 36,
+      "measuredSeconds": 1.24,
+      "measuredCpuSeconds": 1.79,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "SettingsSwap.reorderHolds",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 33917,
+      "measuredSeconds": 3.25,
+      "measuredCpuSeconds": 4.69,
+      "budgetCpuSeconds": 13
+    },
+    {
+      "config": "RequestBreaker.repeatedMember",
+      "role": "evidence",
+      "expect": {
+        "violates": "OneVerdictPerRequestAndTarget",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 37,
+      "measuredSeconds": 1.13,
+      "measuredCpuSeconds": 1.42,
+      "budgetCpuSeconds": 6
+    },
+    {
+      "config": "ModelRef",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 162751,
+      "measuredSeconds": 17.4,
+      "measuredCpuSeconds": 19.96,
+      "budgetCpuSeconds": 43
+    },
+    {
+      "config": "ModelRef.storeDisplay",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoRebind",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 2771,
+      "measuredSeconds": 1.6,
+      "measuredCpuSeconds": 2.62,
+      "budgetCpuSeconds": 9
+    },
+    {
+      "config": "ModelRef.lastWins",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoGuess",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 7,
+      "measuredSeconds": 1.2,
+      "measuredCpuSeconds": 1.52,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "ModelRef.unpinned",
+      "role": "evidence",
+      "expect": {
+        "violates": "RunKeepsPin",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 6746,
+      "measuredSeconds": 1.79,
+      "measuredCpuSeconds": 2.9,
+      "budgetCpuSeconds": 9
     }
   ]
 }
