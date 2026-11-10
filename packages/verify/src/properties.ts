@@ -303,3 +303,22 @@ export const checkSupersededForms = (context: QueryContext, forms: readonly Supe
     verdict: verdictOf(tally),
   };
 };
+
+export const checkMandateHolds = (context: QueryContext, alwaysOperations: readonly string[]): PropertyResult => {
+  const tally = newTally();
+  const allows = context.models.rules.filter((rule) => rule.effect === 'allow' && alwaysOperations.includes(rule.tool));
+  for (const rule of allows) {
+    tally.findings.push({
+      subject: ruleLabel(rule),
+      message: `this allow rule names ${rule.tool}, which always needs a person: the rule does not lower it, and the call is held until a person approves`,
+    });
+  }
+  return {
+    id: 'mandate-holds',
+    title: 'no allow rule names an operation that always needs a person',
+    subject: `${context.models.rules.filter((rule) => rule.effect === 'allow').length} allow rule(s) against ${alwaysOperations.length} operation(s) of the class always`,
+    proves: 'no allow rule is written for an operation whose approval class is always, so no rule reads as if it let such an operation run without a person',
+    doesNotProve: ['an approval class the user changed under operations.approval in the user settings', 'a push that becomes always by its arguments (force, delete) or by a protected ref'],
+    verdict: verdictOf(tally),
+  };
+};

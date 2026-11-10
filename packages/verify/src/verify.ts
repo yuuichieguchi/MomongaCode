@@ -7,7 +7,7 @@ import { startBudget } from './budget.ts';
 import { alphabetFor } from './char-set.ts';
 import { createCommandModel } from './command-model.ts';
 import { createPathModel } from './path-model.ts';
-import { checkBashAdmission, checkDenyPrecedence, checkRuleConsistency, checkSecretReach, checkSupersededForms } from './properties.ts';
+import { checkBashAdmission, checkDenyPrecedence, checkRuleConsistency, checkMandateHolds, checkSecretReach, checkSupersededForms } from './properties.ts';
 import type { SecretLocation } from './properties.ts';
 import { buildSubjects } from './queries.ts';
 import type { QueryContext } from './queries.ts';
@@ -30,6 +30,7 @@ export type VerifyRequest = {
   budgetMs: number;
   clock?: Clock;
   supersededForms?: readonly SupersededForm[];
+  alwaysOperations?: readonly string[];
 };
 
 const STATIC_OUTSIDE_PROOF: readonly string[] = [
@@ -105,6 +106,7 @@ export const verifyPermissions = async (api: Z3Api, request: VerifyRequest): Pro
     results.push(await check({ ...context, budget: context.budget.share(checks.length - index) }));
   }
   if (request.supersededForms !== undefined) results.push(checkSupersededForms(context, request.supersededForms));
+  if (request.alwaysOperations !== undefined) results.push(checkMandateHolds(context, request.alwaysOperations));
   return {
     mode,
     ruleCount: rules.length,

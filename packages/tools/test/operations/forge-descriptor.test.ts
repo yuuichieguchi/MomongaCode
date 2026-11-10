@@ -8,7 +8,7 @@ import { expectRejected } from './support.ts';
 const PACKAGES = path.resolve(import.meta.dirname, '../../..');
 const DESCRIPTOR_DIR = path.join(PACKAGES, 'tools', 'src', 'forge', 'descriptors');
 
-const VOCABULARY = ['listPullRequests', 'getPullRequest', 'createPullRequest', 'mergePullRequest', 'listChecks', 'listComments', 'createComment'];
+const VOCABULARY = ['listPullRequests', 'getPullRequest', 'createPullRequest', 'mergePullRequest', 'getBranch', 'listChecks', 'listComments', 'createComment'];
 
 const sourceFiles = (dir: string): string[] =>
   fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

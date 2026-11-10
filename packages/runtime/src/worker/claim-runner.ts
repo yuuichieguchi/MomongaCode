@@ -23,6 +23,7 @@ import { openJournal } from './journal.ts';
 import type { Journal } from './journal.ts';
 import { readRunLimits } from './limits.ts';
 import { chainPrice } from './budget.ts';
+import { delegationOf } from './held-calls.ts';
 import { decideAfterResponse, responsePending, resumeInFlight, runModelStep } from './model-step.ts';
 import { guidelineOf, guidelineVersionFor } from './guideline-pin.ts';
 import { memoryShareFor } from './memory-share.ts';
@@ -43,7 +44,7 @@ import { createLoadToolsTool } from './load-tools-tool.ts';
 import { createToolLoading } from './tool-admission.ts';
 import { offerFor, offeredRecordFor } from './tool-offer.ts';
 import type { ToolOffer } from './tool-offer.ts';
-import { settleCalls } from './tool-step.ts';
+import { settleCalls, settleHeld } from './tool-step.ts';
 import { unknownGate } from './unknown-gate.ts';
 import { laterVerdictNotice, policyRefusal, ruleVerdictAtStart } from './rule-verdict.ts';
 import type { WorkerOptions } from './types.ts';
@@ -541,6 +542,7 @@ const drive = async (
     ...(pinnedGuideline === undefined ? {} : { guideline: pinnedGuideline }),
     limits,
     chainPrice: () => chainPrice(listing.chain, options.priceTable?.() ?? [], options.clock.now()),
+    ...delegationOf(pins as unknown as Record<string, unknown>, { home: options.home, cwd: session.cwd }),
     toolSet: offeredSet,
     ...(loading === undefined ? {} : { toolLoading: loading }),
     skills,
@@ -610,6 +612,7 @@ const drive = async (
       return;
     }
     if ((await unknownGate(ctx)) === 'done') return;
+    if ((await settleHeld(ctx)) === 'done') return;
     journal.deliverSteering();
     flow = await runModelStep(ctx);
   }

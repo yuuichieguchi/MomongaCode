@@ -84,6 +84,20 @@ describe.each(['hub', 'lab'] as const)('pull request operations against the %s f
       expect(forge.creates()).toBe(1);
     });
 
+    it('sends no create request when the head branch is no longer at the approved commit, and names both commits', async () => {
+      const { forge, world, tool } = await setup(shape);
+      const parts = partsOf(tool('PullRequestCreate'), CREATE, contextFor(world.work, world.env));
+      const prepared = await parts.prepare();
+      forge.branchSha.set('feature/x', OTHER_SHA);
+      const result = await parts.execute(prepared);
+      expect(result.status).toBe('failed');
+      expect(result.output).toContain('the precondition does not hold, so nothing was sent');
+      expect(result.output).toContain(HEAD_SHA);
+      expect(result.output).toContain(OTHER_SHA);
+      expect(forge.creates()).toBe(0);
+      expect(forge.openPullsFor('feature/x', 'main')).toEqual([]);
+    });
+
     it('finds an existing pull request at prepare and completes as already applied with zero create requests (the duplicate sweep)', async () => {
       const { forge, world, tool } = await setup(shape);
       forge.pulls.push({ number: 1, head: 'feature/x', base: 'main', headSha: HEAD_SHA, title: 'made by a person', state: 'open', merged: false });

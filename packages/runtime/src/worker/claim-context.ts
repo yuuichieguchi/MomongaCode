@@ -8,6 +8,7 @@ import type { MemorySet, ToolEnv, TracerPort, TraceSpan } from '../ports.ts';
 import type { ClaimControl } from './claim-control.ts';
 import type { Journal } from './journal.ts';
 import type { TokenPrice } from '@momonga/protocol';
+import type { PermissionRule } from '@momonga/config';
 import type { RunLimits } from './limits.ts';
 import type { ToolOffer } from './tool-offer.ts';
 import type { ClaimTouched } from './touched-paths.ts';
@@ -37,6 +38,7 @@ export type ClaimContext = {
   guideline?: { version: number; text: string };
   limits: RunLimits;
   chainPrice(): TokenPrice | undefined;
+  delegation?: { rules: readonly PermissionRule[]; onQuiescent?: 'report' | 'wait' };
   toolSet: ToolSet;
   skills: SkillSet;
   recalled: MemorySet;

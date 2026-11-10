@@ -31,7 +31,63 @@ const readingOf = (segment: Segment, form: SupersededForm): Reading => {
   return matched === form.argv.length ? 'superseded' : 'other';
 };
 
-const segmentVerdict = (segment: Segment, forms: readonly SupersededForm[]): SupersededVerdict | undefined => {
+export type CoveredProgram = { program: string; flagOptions: readonly string[]; valueOptions: readonly string[]; injecting: readonly string[]; readOnly: ReadonlyArray<readonly string[]> };
+
+const MAX_OPEN_OPTIONS = 6;
+
+const optionNameOf = (word: string): string => (word.startsWith('--') && word.includes('=') ? word.slice(0, word.indexOf('=')) : word);
+
+type Shape = { subcommands: string[][]; injected: boolean; decidable: boolean };
+
+const shapeOf = (segment: Segment, covered: CoveredProgram): Shape => {
+  const words = segment.words.slice(segment.effectiveIndex + 1);
+  let readings: string[][] = [[]];
+  let injected = false;
+  let open = 0;
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index];
+    if (word === undefined) break;
+    if (!word.literal) return { subcommands: readings, injected, decidable: false };
+    if (!word.value.startsWith('-')) {
+      readings = readings.map((reading) => [...reading, word.value]);
+      continue;
+    }
+    const name = optionNameOf(word.value);
+    if (covered.injecting.includes(name)) injected = true;
+    if (word.value.includes('=') && word.value.startsWith('--')) continue;
+    const next = words[index + 1];
+    if (covered.flagOptions.includes(name) || next === undefined || !next.literal || next.value.startsWith('-')) continue;
+    if (covered.valueOptions.includes(name)) {
+      index += 1;
+      continue;
+    }
+    open += 1;
+    if (open > MAX_OPEN_OPTIONS) return { subcommands: readings, injected, decidable: false };
+    readings = [...readings.map((reading) => [...reading, next.value]), ...readings];
+    index += 1;
+  }
+  return { subcommands: readings, injected, decidable: true };
+};
+
+const startsWithAll = (reading: readonly string[], prefix: readonly string[]): boolean => prefix.every((word, index) => reading[index] === word);
+
+const coveredVerdict = (segment: Segment, covered: CoveredProgram, forms: readonly SupersededForm[]): SupersededVerdict | undefined => {
+  const own = forms.filter((form) => form.argv[0] === covered.program);
+  const fallback: SupersededForm = own[0] ?? { operation: covered.program, argv: [covered.program] };
+  const shape = shapeOf(segment, covered);
+  const matched = own.find((form) => shape.subcommands.some((reading) => startsWithAll(reading, form.argv.slice(1))));
+  if (matched !== undefined) return { kind: 'superseded', form: matched };
+  if (!shape.decidable || shape.injected) return { kind: 'undecided', form: fallback };
+  const readOnly = shape.subcommands.every((reading) => covered.readOnly.some((known) => startsWithAll(reading, known)));
+  return readOnly ? undefined : { kind: 'undecided', form: fallback };
+};
+
+const segmentVerdict = (segment: Segment, forms: readonly SupersededForm[], programs: readonly CoveredProgram[]): SupersededVerdict | undefined => {
+  const program = segment.words[segment.effectiveIndex];
+  if (program !== undefined && program.literal) {
+    const covered = programs.find((candidate) => candidate.program === path.basename(program.value));
+    if (covered !== undefined) return coveredVerdict(segment, covered, forms);
+  }
   let undecided: SupersededForm | undefined;
   for (const form of forms) {
     const reading = readingOf(segment, form);
@@ -41,17 +97,17 @@ const segmentVerdict = (segment: Segment, forms: readonly SupersededForm[]): Sup
   return undecided === undefined ? undefined : { kind: 'undecided', form: undecided };
 };
 
-const analysisVerdict = (analysis: Analysis, forms: readonly SupersededForm[]): SupersededVerdict | undefined => {
-  const verdicts = [...analysis.segments.map((segment) => segmentVerdict(segment, forms)), ...analysis.nested.map((inner) => analysisVerdict(inner, forms))];
+const analysisVerdict = (analysis: Analysis, forms: readonly SupersededForm[], programs: readonly CoveredProgram[]): SupersededVerdict | undefined => {
+  const verdicts = [...analysis.segments.map((segment) => segmentVerdict(segment, forms, programs)), ...analysis.nested.map((inner) => analysisVerdict(inner, forms, programs))];
   return verdicts.find((verdict) => verdict?.kind === 'superseded') ?? verdicts.find((verdict) => verdict !== undefined);
 };
 
-export const supersededVerdictOf = (command: string, forms: readonly SupersededForm[], specs?: CommandSpecs): SupersededVerdict | undefined => {
-  if (forms.length === 0) return undefined;
+export const supersededVerdictOf = (command: string, forms: readonly SupersededForm[], specs?: CommandSpecs, programs: readonly CoveredProgram[] = []): SupersededVerdict | undefined => {
+  if (forms.length === 0 && programs.length === 0) return undefined;
   const analysis = analyzeCommand(command, specs);
   const first = forms[0];
   if (analysis === null) return first === undefined ? undefined : { kind: 'undecided', form: first };
-  return analysisVerdict(analysis, forms);
+  return analysisVerdict(analysis, forms, programs);
 };
 
 export const supersededFormOf = (command: string, forms: readonly SupersededForm[], specs?: CommandSpecs): SupersededForm | undefined => {

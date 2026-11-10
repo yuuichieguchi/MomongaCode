@@ -7,7 +7,7 @@ import { commandApproval } from './approval.ts';
 import { commandCoveredByAllowRules } from './command-match.ts';
 import type { PolicyFilesystem } from './filesystem.ts';
 import { supersededVerdictOf } from './superseded.ts';
-import type { SupersededForm } from './superseded.ts';
+import type { CoveredProgram, SupersededForm } from './superseded.ts';
 import { matchRule, matchStrength, ruleCoversSubject } from './match-rule.ts';
 import { absoluteFrom } from './path-match.ts';
 import { commandSpecsFor } from './platform-specs.ts';
@@ -37,6 +37,7 @@ export type DecideInput = {
   sandboxNetwork?: SandboxNetworkSetting;
   mandate?: true;
   supersededForms?: readonly SupersededForm[];
+  coveredPrograms?: readonly CoveredProgram[];
 };
 
 export type Decision = {
@@ -47,6 +48,7 @@ export type Decision = {
   humanOnly?: true;
   basis?: ApprovalBasis;
   network?: true;
+  outside?: true;
 };
 
 const WRITE_TOOL: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' };
@@ -323,21 +325,45 @@ const withNetworkRequest = (input: DecideInput, decision: Decision): Decision =>
 
 const programsOf = (forms: readonly SupersededForm[]): string => [...new Set(forms.map((form) => form.argv[0]))].join(', ');
 
+const targetOf = (subject: PermissionSubject): string | undefined => {
+  if (subject.kind === 'repo') {
+    if (subject.remote === null) return undefined;
+    const places = subject.destinations.length === 0 ? subject.remote : `${subject.remote} (${subject.destinations.join(', ')})`;
+    return `${subject.refs.join(', ')} at ${places}`;
+  }
+  if (subject.kind === 'forge') {
+    const pull = subject.pr === undefined ? '' : ` #${subject.pr}`;
+    const head = subject.headSha === undefined ? '' : ` at commit ${subject.headSha}`;
+    return `${subject.repo}${pull} on ${subject.host}${head}`;
+  }
+  return undefined;
+};
+
+const withTarget = (input: DecideInput, decision: Decision): Decision => {
+  const target = decision.kind === 'ask' ? targetOf(input.subject) : undefined;
+  return target === undefined ? decision : { ...decision, reason: `${decision.reason}; target: ${target}` };
+};
+
+const withinMandate = (input: DecideInput, decision: Decision): Decision => {
+  if (input.mandate !== true || decision.kind !== 'ask' || decision.source !== 'mode' || decision.humanOnly === true) return decision;
+  return { kind: 'deny', source: 'mode', outside: true, reason: `Not run: outside the declared mandate (${decision.reason}). Continue with work inside it or report.` };
+};
+
 export const decide = (input: DecideInput): Decision => {
-  const ordinary = (): Decision => withNetworkRequest(input, decideWithoutNetwork(input));
+  const ordinary = (): Decision => withTarget(input, withinMandate(input, withNetworkRequest(input, decideWithoutNetwork(input))));
   if (input.mandate !== true || input.subject.kind !== 'command' || input.supersededForms === undefined) return ordinary();
-  const verdict = supersededVerdictOf(input.subject.command, input.supersededForms, commandSpecsFor(input.fs.platform));
+  const verdict = supersededVerdictOf(input.subject.command, input.supersededForms, commandSpecsFor(input.fs.platform), input.coveredPrograms);
   if (verdict === undefined) return ordinary();
   if (verdict.kind === 'superseded') {
     return byMode('deny', `Not run: this run has a mandate, and ${verdict.form.argv.join(' ')} is replaced by a dedicated operation; use ${verdict.form.operation}`);
   }
-  const decided = ordinary();
+  const decided = withNetworkRequest(input, decideWithoutNetwork(input));
   if (decided.kind === 'deny') return decided;
   return {
     kind: 'ask',
     source: 'operation',
     humanOnly: true,
-    reason: `this run has a mandate, and the command could be a form that a dedicated operation replaces (${programsOf(input.supersededForms)}): a word before its subcommand is not literal, so a person decides`,
+    reason: `this run has a mandate, and the command could be a form that a dedicated operation replaces (${programsOf(input.supersededForms)}): it is not a form known to only read, so a person decides`,
     ...(decided.network === true ? { network: true as const } : {}),
   };
 };

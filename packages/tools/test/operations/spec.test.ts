@@ -148,3 +148,41 @@ describe('the clause evaluator', () => {
     expect(evaluateClauses(reversed, scope)).toBe(evaluateClauses(commitApplied, scope));
   });
 });
+
+describe('what an approval names is what the effect does (every field of the permission subject)', () => {
+  const referencesIn = (text: string): string[] => [...text.matchAll(/\{(input\.[A-Za-z0-9_]+)\}/g)].map((match) => match[1] as string);
+
+  const subjectReferences = (subject: Record<string, unknown>): string[] => [
+    ...Object.entries(subject).flatMap(([key, value]) => (key === 'kind' || key === 'alwaysWhen' ? [] : (Array.isArray(value) ? value : [value]).flatMap((entry) => referencesIn(String(entry))))),
+    ...(Array.isArray(subject['alwaysWhen']) ? subject['alwaysWhen'].map((flag) => `input.${String(flag)}`) : []),
+  ];
+
+  const boundReferences = (spec: Record<string, unknown>): Set<string> => {
+    const text = JSON.stringify([spec['effect'] ?? null, spec['require'] ?? []]);
+    return new Set([...referencesIn(text), ...[...text.matchAll(/"(input\.[A-Za-z0-9_]+)"/g)].map((match) => match[1] as string)]);
+  };
+
+  it.each(CATALOGUE)('%s: each subject field is an argument of the effect or is required against an observation', (name) => {
+    const spec = rawOf(name);
+    if (spec['effect'] === undefined) return;
+    const bound = boundReferences(spec);
+    expect(subjectReferences(spec['subject'] as Record<string, unknown>).filter((reference) => !bound.has(reference))).toEqual([]);
+  });
+
+  it('refuses at load a spec whose subject carries a field the effect does not take and no require clause checks', () => {
+    const { require: _checked, ...unchecked } = rawOf('PullRequestCreate');
+    let message = '';
+    try {
+      parseOperationSpec(unchecked);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toBe('PullRequestCreate: the approval names input.headSha, which is neither an argument of the effect nor required against an observation');
+  });
+
+  it('requires the head branch of PullRequestCreate to be at the approved commit, observed from the forge', () => {
+    const spec = OPERATION_SPECS.find((candidate) => candidate.name === 'PullRequestCreate');
+    expect(spec?.require).toEqual([['before.headBranch.sha', 'input.headSha']]);
+    expect(spec?.observe.find((probe) => probe.id === 'headBranch')?.via).toMatchObject({ forge: 'getBranch', args: { branch: '{input.head}' } });
+  });
+});

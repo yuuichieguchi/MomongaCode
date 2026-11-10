@@ -10,6 +10,7 @@ export type PolicyVerifyHost = {
   loadVerifier(): Promise<VerifyModule>;
   solverVersion(verifier: VerifyModule): Promise<string>;
   loadPolicyFilesystem(): Promise<VerifyRequestShape['fs']>;
+  loadOperationCatalogue?(): Promise<{ supersededForms: NonNullable<VerifyRequestShape['supersededForms']>; alwaysOperations: readonly string[] }>;
   openSolver(verifier: VerifyModule): Promise<SolverEngine>;
 };
 
@@ -21,6 +22,7 @@ const bundledVersionOf = (verifier: VerifyModule): string => `z3 ${bundledManife
 export const nodePolicyVerifyHost = (ports: Pick<CliPorts, 'random'>, paths: Pick<MomongaPaths, 'executables'>): PolicyVerifyHost => ({
   loadVerifier: () => import('@momonga/verify'),
   loadPolicyFilesystem: async () => (await import('@momonga/runtime')).createPolicyFilesystem(),
+  loadOperationCatalogue: async () => (await import('@momonga/runtime')).operationCatalogueFacts(),
   solverVersion: async (verifier) => {
     if (isSea()) return bundledVersionOf(verifier);
     return (await import('@momonga/runtime')).installedRuleSolver(import.meta.url).solverVersion();

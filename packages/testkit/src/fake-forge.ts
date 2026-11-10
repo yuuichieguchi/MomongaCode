@@ -31,7 +31,7 @@ const NAME = 'widgets';
 
 export const REPOSITORY_PATH = `${OWNER}/${NAME}`;
 
-type Route = { kind: 'list' | 'get' | 'create' | 'merge' | 'comments' | 'comment' | 'checks'; number?: number };
+type Route = { kind: 'list' | 'get' | 'create' | 'merge' | 'comments' | 'comment' | 'checks' | 'branch'; number?: number; branch?: string };
 
 const routeOf = (shape: ForgeShape, method: string, pathname: string): Route | undefined => {
   const parts = pathname.split('/').filter((part) => part !== '').map(decodeURIComponent);
@@ -43,6 +43,7 @@ const routeOf = (shape: ForgeShape, method: string, pathname: string): Route | u
     if (rest[0] === 'pulls' && rest[2] === 'merge' && method === 'PUT') return { kind: 'merge', number: Number(rest[1]) };
     if (rest[0] === 'issues' && rest[2] === 'comments') return { kind: method === 'GET' ? 'comments' : 'comment', number: Number(rest[1]) };
     if (rest[0] === 'commits' && rest[2] === 'check-runs') return { kind: 'checks' };
+    if (rest[0] === 'branches' && rest.length === 2 && method === 'GET') return { kind: 'branch', branch: rest[1] as string };
     return undefined;
   }
   if (parts[0] !== 'api' || parts[1] !== 'v4' || parts[2] !== 'projects' || parts[3] !== OWNER || parts[4] !== NAME) return undefined;
@@ -52,6 +53,7 @@ const routeOf = (shape: ForgeShape, method: string, pathname: string): Route | u
   if (rest[0] === 'merge_requests' && rest[2] === 'merge' && method === 'PUT') return { kind: 'merge', number: Number(rest[1]) };
   if (rest[0] === 'merge_requests' && rest[2] === 'notes') return { kind: method === 'GET' ? 'comments' : 'comment', number: Number(rest[1]) };
   if (rest[0] === 'repository' && rest[1] === 'commits' && rest[3] === 'statuses') return { kind: 'checks' };
+  if (rest[0] === 'repository' && rest[1] === 'branches' && rest.length === 3 && method === 'GET') return { kind: 'branch', branch: rest[2] as string };
   return undefined;
 };
 
@@ -107,6 +109,11 @@ export const startFakeForge = async (shape: ForgeShape, credential: string): Pro
       sendJson(res, status, payload);
     };
     switch (route.kind) {
+      case 'branch': {
+        const sha = branchSha.get(route.branch ?? '');
+        if (sha === undefined) return sendJson(res, 404, { message: 'branch not found' });
+        return sendJson(res, 200, shape === 'hub' ? { name: route.branch, commit: { sha } } : { name: route.branch, commit: { id: sha } });
+      }
       case 'list': {
         const head = branchOf(shape === 'hub' ? url.searchParams.get('head') ?? undefined : url.searchParams.get('source_branch') ?? undefined);
         const baseRef = shape === 'hub' ? url.searchParams.get('base') : url.searchParams.get('target_branch');
@@ -206,6 +213,12 @@ export const LAB_DESCRIPTOR = {
       success: [200],
       conflict: [406],
       result: { sha: 'merge_commit_sha' },
+    },
+    getBranch: {
+      method: 'GET',
+      path: '/api/v4/projects/{owner}/{name}/repository/branches/{branch}',
+      success: [200],
+      result: { sha: 'commit.id' },
     },
     listChecks: {
       method: 'GET',

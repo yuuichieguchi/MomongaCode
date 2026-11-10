@@ -19,7 +19,11 @@
     "additionalProperties": false
   },
   "timeoutMs": 60000,
-  "observe": [{ "id": "existing", "via": { "forge": "listPullRequests", "args": { "head": "{input.head}", "base": "{input.base}" }, "shape": "list" } }],
+  "observe": [
+    { "id": "existing", "via": { "forge": "listPullRequests", "args": { "head": "{input.head}", "base": "{input.base}" }, "shape": "list" } },
+    { "id": "headBranch", "via": { "forge": "getBranch", "args": { "branch": "{input.head}" }, "shape": "one" } }
+  ],
+  "require": [["before.headBranch.sha", "input.headSha"]],
   "effect": { "forge": "createPullRequest", "args": { "head": "{input.head}", "base": "{input.base}", "title": "{input.title}", "body": "{input.body}" } },
   "applied": [
     ["after.existing.count", { "literal": "1" }],

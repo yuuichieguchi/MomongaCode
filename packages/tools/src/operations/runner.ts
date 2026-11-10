@@ -258,8 +258,12 @@ const executeOperation = async (runtime: Runtime, input: Record<string, unknown>
     const current = (await destinationsOf(runtime, input, ctx, call)) ?? [];
     if (!sameList(approved, current)) return failedResult(runtime, beforeScope, `the push destinations changed after the approval, so nothing was sent: approved ${JSON.stringify(approved)}, now ${JSON.stringify(current)}`, undefined);
   }
-  const unmet = failedClauses(spec.require, beforeScope);
-  if (unmet.length > 0) return failedResult(runtime, beforeScope, `the precondition does not hold, so nothing was sent: ${unmet.map((clause) => describeClause(clause, beforeScope)).join('; ')}`, undefined);
+  if (spec.require.length > 0) {
+    const fresh = await observe(runtime, ctx, input, undefined, recorded, Array.isArray(approved) ? stringList(approved) : undefined);
+    const freshScope = scopeOf(ctx, input, fresh, fresh, recorded);
+    const unmet = failedClauses(spec.require, freshScope);
+    if (unmet.length > 0) return failedResult(runtime, freshScope, `the precondition does not hold, so nothing was sent: ${unmet.map((clause) => describeClause(clause, freshScope)).join('; ')}`, undefined);
+  }
   if (evaluateClauses(spec.applied, beforeScope)) return settledResult(runtime, beforeScope, 'already_applied');
   const effectScope = scopeOf(ctx, input, before, undefined, recorded);
   let effectProblem: string | undefined;

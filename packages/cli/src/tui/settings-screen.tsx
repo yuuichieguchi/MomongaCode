@@ -116,7 +116,7 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'ceilings.costUsd': { label: 'Ceiling on the money a mandate may declare (USD)', section: 'Budget and delegation', appliesNow: false },
   'ceilings.tokens': { label: 'Ceiling on the tokens a mandate may declare', section: 'Budget and delegation', appliesNow: false },
   'ceilings.timeMs': { label: 'Ceiling on the time a mandate may declare (ms)', section: 'Budget and delegation', appliesNow: false },
-  mandates: { label: 'Mandates (allowed operations, budget and completion, by name)', section: 'Budget and delegation', appliesNow: false },
+  mandates: { label: 'Mandates by name', section: 'Budget and delegation', appliesNow: false },
   forges: { label: 'Forges for pull request operations', section: 'Git and pull requests', appliesNow: false, form: FORGE_FORM, line: forgeLine },
   'operations.protectedRefs': { label: 'Protected branches (a push always asks you)', section: 'Git and pull requests', appliesNow: false },
   'operations.approval': { label: 'Approval class by operation (rule or always)', section: 'Git and pull requests', appliesNow: false },

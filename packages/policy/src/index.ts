@@ -5,7 +5,7 @@ export type { DecideInput, Decision } from './decide.ts';
 export { foldedKey } from './fold.ts';
 export { matchRule, ruleCoversSubject, wildcardMatches } from './match-rule.ts';
 export { supersededFormOf, supersededVerdictOf } from './superseded.ts';
-export type { SupersededForm, SupersededVerdict } from './superseded.ts';
+export type { CoveredProgram, SupersededForm, SupersededVerdict } from './superseded.ts';
 export { commandPatternOf } from './command-match.ts';
 export { inertPrinterSet } from './command-specs.ts';
 export type { CommandPattern } from './command-match.ts';

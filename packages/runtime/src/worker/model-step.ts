@@ -19,7 +19,8 @@ import { summaryStopReason } from './wrap-up.ts';
 import { admitStep, exhaustedText } from './budget.ts';
 import type { StepAdmission } from './budget.ts';
 import { stopGate } from './verification-step.ts';
-import { recordCalls, settleCalls } from './tool-step.ts';
+import { recordCalls, settleCalls, settleHeld } from './tool-step.ts';
+import { hasHeld, heldViewsOf, quiescentText } from './held-calls.ts';
 import { pinnedDigestOf } from './pinned-digest.ts';
 import { recordPrefix } from './prefix-record.ts';
 import { cacheControlsOf } from './cache-controls.ts';
@@ -53,6 +54,18 @@ const stopExhausted = (ctx: ClaimContext, exhausted: BudgetExhausted, stopReason
   return ctx.terminals.finish('STOPPED', { stopReason });
 };
 
+const quiesce = (ctx: ClaimContext): Promise<Flow> => {
+  const { journal } = ctx;
+  if (journal.state.quiescent !== true) {
+    const held = heldViewsOf(journal.state);
+    journal.append([
+      { type: 'run.quiescent', held },
+      { type: 'notice', level: 'warning', message: quiescentText(held), code: 'run_quiescent' },
+    ]);
+  }
+  return ctx.terminals.yieldTo('WAITING_HUMAN');
+};
+
 const incompleteFailure = (reason: string | undefined, terminals: ClaimContext['terminals']): Promise<Flow> => {
   if (reason === 'max_output_tokens') return terminals.finish('STOPPED', { stopReason: 'max_tokens' });
   if (reason === 'content_filter') return terminals.finish('STOPPED', { stopReason: 'refusal' });
@@ -81,6 +94,10 @@ export const decideAfterResponse = async (ctx: ClaimContext): Promise<Flow> => {
   if (response.refusal) return terminals.finish('STOPPED', { stopReason: 'refusal' });
   if (response.callIds.length === 0) {
     if (response.incomplete) return incompleteFailure(response.incompleteReason, terminals);
+    const settled = await settleHeld(ctx);
+    if (settled === 'done') return 'done';
+    if (settled !== 'continue' && settled > 0) return 'continue';
+    if (hasHeld(journal.state)) return quiesce(ctx);
     const gated = await stopGate(ctx);
     return gated === 'allow' ? terminals.finish('COMPLETED') : gated;
   }

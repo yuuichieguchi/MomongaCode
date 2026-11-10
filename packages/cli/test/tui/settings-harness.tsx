@@ -40,7 +40,7 @@ export type Started = { app: Instance; backend: FakeBackend; place: Place };
 
 export const startAt = async (place: Place, options: FakeBackendOptions = {}, tuiSettings?: TuiSettingsPort): Promise<Started> => {
   const backend = fakeBackend({ settingsPlace: { home: place.home, projectDir: place.project }, ...options });
-  const terminal = fakeScreenTerminal({ columns: 140, rows: 90 });
+  const terminal = fakeScreenTerminal({ columns: 140, rows: 120 });
   const app = renderObservable(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={systemTiming} {...(tuiSettings === undefined ? {} : { tuiSettings })} onExit={() => undefined} />);
   await untilFrame(app, 'mode: manual');
   return { app, backend, place };

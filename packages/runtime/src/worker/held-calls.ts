@@ -1,4 +1,20 @@
+import { parseRule } from '@momonga/config';
+import type { PermissionRule } from '@momonga/config';
+import { pinnedDelegationOf } from '@momonga/protocol';
 import type { HeldCall, HeldCallView, HeldOutcome, RunState } from '@momonga/protocol';
+
+const MANDATE_SOURCE = 'the mandate of this run';
+
+export type Delegation = { rules: readonly PermissionRule[]; onQuiescent?: 'report' | 'wait' };
+
+export const delegationOf = (pins: Record<string, unknown>, place: { home: string; cwd: string }): { delegation?: Delegation } => {
+  const pinned = pinnedDelegationOf(pins);
+  if (pinned === undefined) return {};
+  const rules = (['deny', 'ask', 'allow'] as const).flatMap((effect) =>
+    pinned.scope[effect].map((text) => parseRule(text, { effect, origin: 'cli', source: MANDATE_SOURCE, settingsRoot: place.cwd, home: place.home, cwd: place.cwd })),
+  );
+  return { delegation: { rules, ...(pinned.hold?.onQuiescent === undefined ? {} : { onQuiescent: pinned.hold.onQuiescent }) } };
+};
 
 export const heldOutput = (approvalId: string): string =>
   `Not run yet: waiting for a person to approve (${approvalId}). Do not repeat or rephrase this call. Continue with work that does not depend on it; its result will be shown to you when it has run.`;

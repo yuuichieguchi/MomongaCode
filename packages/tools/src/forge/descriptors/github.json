@@ -32,6 +32,12 @@
       "conflict": [409],
       "result": { "sha": "sha" }
     },
+    "getBranch": {
+      "method": "GET",
+      "path": "/repos/{owner}/{name}/branches/{branch}",
+      "success": [200],
+      "result": { "sha": "commit.sha" }
+    },
     "listChecks": {
       "method": "GET",
       "path": "/repos/{owner}/{name}/commits/{headSha}/check-runs",

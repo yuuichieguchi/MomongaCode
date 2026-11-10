@@ -1,10 +1,10 @@
 import { conditionIdOf, readMandate } from '@momonga/protocol';
-import type { CompletionDeclaration, ConditionSource, ConditionWhen, Mandate, PinnedCompletion, PinnedCondition } from '@momonga/protocol';
+import type { CompletionDeclaration, ConditionSource, ConditionWhen, Mandate, MandateHold, MandateScope, PinnedCompletion, PinnedCondition } from '@momonga/protocol';
 import { readAgentPin } from '@momonga/agents';
 import type { Run, Session } from '@momonga/store';
 import type { SettingsPort } from '../ports.ts';
 
-export type CompletionPin = { mandate?: { completion: PinnedCompletion }; verificationRequired?: true };
+export type CompletionPin = { mandate?: { completion: PinnedCompletion; scope?: MandateScope; hold?: MandateHold }; verificationRequired?: true };
 
 type Layer = { source: ConditionSource; defaultWhen: ConditionWhen; declaration: CompletionDeclaration };
 
@@ -46,7 +46,9 @@ export const completionPinFor = async (input: { run: Run; session: Session; sett
   const hasMandate = request !== undefined || profile !== undefined;
   const declared = hasMandate || conditions.length > 0 || requirements.length > 0;
   return {
-    ...(declared ? { mandate: { completion: { conditions, requirements } } } : {}),
+    ...(declared
+      ? { mandate: { completion: { conditions, requirements }, ...(request?.scope === undefined ? {} : { scope: request.scope }), ...(request?.hold === undefined ? {} : { hold: request.hold }) } }
+      : {}),
     ...(standing.required || hasMandate ? { verificationRequired: true as const } : {}),
   };
 };

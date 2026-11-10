@@ -31,6 +31,7 @@ const verifyWith = (specs: readonly RuleSpec[]): Promise<VerificationReport> => 
     enforcement: ruleEnforcementOf('none'),
     budgetMs: 120_000,
     supersededForms: SUPERSEDED,
+    alwaysOperations: ['PullRequestMerge'],
   } as VerifyRequest;
   return verifyPermissions(z3.engine().api, request);
 };
@@ -67,6 +68,30 @@ describe('the superseded-forms property (G9)', () => {
     async () => {
       const result = supersededResult(await verifyWith([['allow', 'Bash(npm:*)'], ['allow', 'Bash(ls:*)']]));
       expect(result?.verdict.status).toBe('proved');
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+});
+
+describe('the mandate-holds property (OD-6)', () => {
+  const holdsResult = (report: VerificationReport): PropertyResult | undefined => report.results.find((result) => (result.id as string) === 'mandate-holds');
+
+  it(
+    'reports an allow rule written for an operation that always needs a person, and says the call is held',
+    async () => {
+      const result = holdsResult(await verifyWith([['allow', 'PullRequestMerge'], ['allow', 'PullRequestCreate']]));
+      expect(result?.verdict.status).toBe('refuted');
+      const findings = result?.verdict.status === 'refuted' ? result.verdict.findings : [];
+      expect(findings).toHaveLength(1);
+      expect(findings[0]?.message).toBe('this allow rule names PullRequestMerge, which always needs a person: the rule does not lower it, and the call is held until a person approves');
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'is proved when no allow rule names such an operation',
+    async () => {
+      expect(holdsResult(await verifyWith([['allow', 'PullRequestCreate'], ['ask', 'PullRequestMerge']]))?.verdict.status).toBe('proved');
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );

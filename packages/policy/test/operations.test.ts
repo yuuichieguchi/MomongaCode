@@ -37,7 +37,7 @@ const SUPERSEDED = [
   { operation: 'PullRequestMerge', argv: ['gh', 'pr', 'merge'] },
 ];
 
-type Extra = { mandate?: true; supersededForms?: typeof SUPERSEDED };
+type Extra = { mandate?: true; supersededForms?: typeof SUPERSEDED; coveredPrograms?: Array<{ program: string; flagOptions: string[]; valueOptions: string[]; injecting: string[]; readOnly: string[][] }> };
 
 const decideWith = (layout: Layout, tool: PolicyTool, subject: PermissionSubject, mode: PermissionMode, rules: PermissionRule[], extra: Extra = {}) => {
   const roots = [layout.project];
@@ -176,11 +176,11 @@ describe('Bash forms superseded by an operation', () => {
     expect(decision.reason).toContain(`use ${operation}`);
   });
 
-  it.each(['git stash push', 'git log --grep push', 'git checkout push', 'gh issue create --title pr', 'git status push'])('does not deny %s, whose words only mention a superseded subcommand', (command) => {
+  it.each(['git stash push', 'git log --grep push', 'git checkout push', 'gh issue create --title pr', 'git status push'])('does not take %s for a superseded form, whose words only mention a superseded subcommand', (command) => {
     const layout = makeLayout();
     const subject: PermissionSubject = { kind: 'command', tool: 'Bash', command };
     const decision = decideWith(layout, BASH, subject, 'manual', [], { mandate: true, supersededForms: SUPERSEDED });
-    expect(decision.kind).not.toBe('deny');
+    expect(decision.reason).not.toContain('replaced by a dedicated operation');
   });
 
   it('denies the form only in a mandate run; without a mandate the rules of today decide', () => {
@@ -239,5 +239,86 @@ describe('Bash forms superseded by an operation', () => {
       const subject: PermissionSubject = { kind: 'command', tool: 'Bash', command };
       expect(decideWith(layout, BASH, subject, 'manual', [], { mandate: true, supersededForms: SUPERSEDED }).source).not.toBe('operation');
     });
+  });
+});
+
+describe('what a person is asked about names where the operation goes', () => {
+  it('names the ref, the remote and every destination of a push', () => {
+    expect(decideWith(makeLayout(), PUSH_TOOL, push('main', 'always'), 'manual', []).reason).toBe('GitPush always needs a person to approve it, in every mode; target: main at origin (file:///remote.git)');
+  });
+
+  it('names the repository, the pull request, the host and the approved commit of a merge', () => {
+    expect(decideWith(makeLayout(), MERGE_TOOL, MERGE, 'manual', []).reason).toBe(`PullRequestMerge always needs a person to approve it, in every mode; target: acme/widgets #7 on forge.example at commit ${'a'.repeat(40)}`);
+  });
+});
+
+describe('a covered program is judged by what is known to be read-only, not by what is known to write', () => {
+  const PROGRAMS = [
+    { program: 'git', flagOptions: ['--no-pager'], valueOptions: ['-C', '-c', '--exec-path', '--config-env'], injecting: ['-c', '--config-env', '--exec-path'], readOnly: [['status'], ['log'], ['diff']] },
+    { program: 'gh', flagOptions: [], valueOptions: ['-R', '--repo'], injecting: [], readOnly: [['pr', 'view'], ['pr', 'list'], ['status']] },
+  ];
+  const decideIn = (command: string, rules: Array<[('allow' | 'deny'), string]> = [], mandate = true) => {
+    const layout = makeLayout();
+    const subject: PermissionSubject = { kind: 'command', tool: 'Bash', command };
+    return decideWith(layout, BASH, subject, 'manual', rules.map(([effect, text]) => ruleIn(layout)(effect, text)), { ...(mandate ? { mandate: true as const } : {}), supersededForms: SUPERSEDED, coveredPrograms: PROGRAMS });
+  };
+
+  it.each(['git -c alias.x=push x origin main', 'git --config-env=alias.x=A x', 'git x', 'git rebase main', 'git --exec-path=/tmp/evil status', 'gh pr new', 'gh api -X POST repos/acme/widgets/pulls', 'gh api repos/acme/widgets/pulls/7/merge -X PUT', 'git --no-pager rebase log', 'git'])(
+    'needs a person in a mandate run, whatever the allow rules: %s',
+    (command) => {
+      expect(decideIn(command, [['allow', 'Bash(git:*)'], ['allow', 'Bash(gh:*)']])).toMatchObject({ kind: 'ask', source: 'operation', humanOnly: true });
+    },
+  );
+
+  it.each(['git status', 'git log --grep push', 'git -C sub diff', 'git --no-pager log -3', 'gh pr view 7', 'gh -R acme/widgets pr list', 'gh status'])('leaves a recognised read-only form to the ordinary decision: %s', (command) => {
+    expect(decideIn(command).source).not.toBe('operation');
+  });
+
+  it.each([
+    ['git -c alias.push=x push origin main', 'GitPush'],
+    ['git --no-pager commit -m log', 'GitCommit'],
+    ['gh pr create --fill', 'PullRequestCreate'],
+  ])('still denies a recognised superseded form and names the operation: %s', (command, operation) => {
+    const decision = decideIn(command);
+    expect(decision.kind).toBe('deny');
+    expect(decision.reason).toContain(`use ${operation}`);
+  });
+
+  it.each(['git x', 'gh pr new', 'git -c alias.x=push x'])('takes the ordinary path without a mandate: %s', (command) => {
+    const without = decideIn(command, [], false);
+    expect(without.source).not.toBe('operation');
+    expect(without).toEqual(decideWith(makeLayout(), BASH, { kind: 'command', tool: 'Bash', command }, 'manual', [], {}));
+  });
+
+  it('leaves a program the catalogue does not cover alone', () => {
+    expect(decideIn('npm run push', [['allow', 'Bash(npm run:*)']])).toMatchObject({ kind: 'allow', source: 'rule' });
+  });
+});
+
+describe('a decision the mode default would ask about, in a mandate run', () => {
+  const bash = (command: string): PermissionSubject => ({ kind: 'command', tool: 'Bash', command });
+
+  it('is denied as outside the mandate, and asked as today without one', () => {
+    const layout = makeLayout();
+    const inMandate = decideWith(layout, BASH, bash('npm install left-pad'), 'manual', [], { mandate: true });
+    expect(inMandate).toMatchObject({ kind: 'deny', source: 'mode', outside: true });
+    expect(inMandate.reason).toBe('Not run: outside the declared mandate (shell commands require approval). Continue with work inside it or report.');
+    expect(decideWith(layout, BASH, bash('npm install left-pad'), 'manual', [])).toMatchObject({ kind: 'ask', source: 'mode' });
+  });
+
+  it('is denied for an operation no rule of the mandate names', () => {
+    expect(decideWith(makeLayout(), CREATE_TOOL, CREATE, 'manual', [], { mandate: true })).toMatchObject({ kind: 'deny', outside: true });
+  });
+
+  it('runs what an allow rule covers and keeps a read-only command allowed', () => {
+    const layout = makeLayout();
+    expect(decideWith(layout, BASH, bash('npm test'), 'manual', [ruleIn(layout)('allow', 'Bash(npm test:*)')], { mandate: true })).toMatchObject({ kind: 'allow', source: 'rule' });
+    expect(decideWith(layout, BASH, bash('ls'), 'manual', [], { mandate: true })).toMatchObject({ kind: 'allow' });
+  });
+
+  it('stays an ask, to be held for a person, when a rule asks, when the operation is of class always, and when only a person may decide', () => {
+    const layout = makeLayout();
+    expect(decideWith(layout, PUSH_TOOL, push('main', 'rule'), 'manual', [ruleIn(layout)('ask', 'GitPush(origin:main)')], { mandate: true })).toMatchObject({ kind: 'ask', source: 'rule' });
+    expect(decideWith(layout, MERGE_TOOL, MERGE, 'manual', [ruleIn(layout)('allow', 'PullRequestMerge')], { mandate: true })).toMatchObject({ kind: 'ask', source: 'operation' });
   });
 });

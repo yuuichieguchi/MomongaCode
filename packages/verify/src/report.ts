@@ -2,7 +2,7 @@ import type { DecisionKind } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
 import type { Witness } from './decision-model.ts';
 
-export const PROPERTY_IDS = ['deny-precedence', 'secret-reach', 'rule-consistency', 'bash-admission', 'superseded-forms'] as const;
+export const PROPERTY_IDS = ['deny-precedence', 'secret-reach', 'rule-consistency', 'bash-admission', 'superseded-forms', 'mandate-holds'] as const;
 export type PropertyId = (typeof PROPERTY_IDS)[number];
 
 export type Replay =

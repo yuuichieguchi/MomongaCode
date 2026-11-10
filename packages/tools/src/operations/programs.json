@@ -1,0 +1,27 @@
+[
+  {
+    "program": "git",
+    "flagOptions": ["--no-pager", "--paginate", "-p", "-P", "--bare", "--no-replace-objects", "--literal-pathspecs", "--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs", "--no-optional-locks", "--no-lazy-fetch", "--version", "--help", "-h"],
+    "valueOptions": ["-C", "-c", "--exec-path", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env", "--list-cmds", "--attr-source"],
+    "injecting": ["-c", "--config-env", "--exec-path", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--attr-source"],
+    "readOnly": [
+      ["status"], ["log"], ["diff"], ["show"], ["rev-parse"], ["rev-list"], ["ls-files"], ["ls-tree"], ["cat-file"], ["blame"], ["grep"], ["describe"], ["shortlog"],
+      ["name-rev"], ["merge-base"], ["for-each-ref"], ["show-ref"], ["diff-tree"], ["diff-index"], ["diff-files"], ["whatchanged"], ["version"], ["help"], ["var"], ["check-ignore"], ["check-attr"], ["check-ref-format"], ["count-objects"]
+    ]
+  },
+  {
+    "program": "gh",
+    "flagOptions": ["--help", "--version"],
+    "valueOptions": ["-R", "--repo", "--hostname"],
+    "injecting": [],
+    "readOnly": [
+      ["pr", "view"], ["pr", "list"], ["pr", "status"], ["pr", "diff"], ["pr", "checks"],
+      ["issue", "view"], ["issue", "list"], ["issue", "status"],
+      ["repo", "view"], ["repo", "list"],
+      ["run", "view"], ["run", "list"],
+      ["release", "view"], ["release", "list"],
+      ["workflow", "view"], ["workflow", "list"],
+      ["search"], ["status"], ["auth", "status"], ["version"], ["help"]
+    ]
+  }
+]

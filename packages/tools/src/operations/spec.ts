@@ -18,7 +18,7 @@ export const OPERATION_CRASH_POINTS = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5'] as co
 export const APPROVAL_CLASSES = ['rule', 'always'] as const;
 export type ApprovalClass = (typeof APPROVAL_CLASSES)[number];
 
-export const FORGE_VOCABULARY = ['listPullRequests', 'getPullRequest', 'createPullRequest', 'mergePullRequest', 'listChecks', 'listComments', 'createComment'] as const;
+export const FORGE_VOCABULARY = ['listPullRequests', 'getPullRequest', 'createPullRequest', 'mergePullRequest', 'getBranch', 'listChecks', 'listComments', 'createComment'] as const;
 export type ForgeOperationName = (typeof FORGE_VOCABULARY)[number];
 
 export type Operand = string | { readonly literal: string };
@@ -162,6 +162,24 @@ const SPEC_SCHEMA = {
 
 const validateSpec = defineProductSchema<OperationSpec & { require?: readonly ClauseItem[] }>('tools/operation-spec', SPEC_SCHEMA);
 
+const INPUT_REFERENCE = /\{(input\.[A-Za-z0-9_]+)\}/g;
+
+const inputsIn = (text: string): string[] => [...text.matchAll(INPUT_REFERENCE)].map((match) => match[1] as string);
+
+const subjectInputs = (subject: SubjectSpec): string[] => {
+  if (subject.kind === 'none') return [];
+  if (subject.kind === 'repo') return [...inputsIn(subject.remote ?? ''), ...(subject.refs ?? []).flatMap(inputsIn), ...(subject.alwaysWhen ?? []).map((flag) => `input.${flag}`)];
+  return [...inputsIn(subject.pr ?? ''), ...inputsIn(subject.headSha ?? '')];
+};
+
+const isInputOperand = (operand: Operand): operand is string => typeof operand === 'string' && operand.startsWith('input.');
+
+const boundInputs = (effect: ArgvCall | ForgeCall, require: readonly ClauseItem[]): Set<string> => {
+  const fromEffect = 'argv' in effect ? effect.argv.flatMap((item) => (typeof item === 'string' ? inputsIn(item) : [item.if, ...item.then.flatMap(inputsIn), ...(item.else ?? []).flatMap(inputsIn)])) : Object.values(effect.args).flatMap(inputsIn);
+  const clauses = require.flatMap((item): Clause[] => (Array.isArray(item) ? [item as Clause] : [...(item as ConditionalClauses).then, ...(item as ConditionalClauses).else]));
+  return new Set([...fromEffect, ...clauses.flatMap((clause) => clause.filter(isInputOperand))]);
+};
+
 export const parseOperationSpec = (value: unknown): OperationSpec => {
   const verdict = validateSpec(value);
   if (!verdict.valid) {
@@ -176,6 +194,11 @@ export const parseOperationSpec = (value: unknown): OperationSpec => {
     if (spec.observe.length === 0) throw new OperationSpecError(`${spec.name} needs at least one probe`);
     if (spec.applied.length === 0) throw new OperationSpecError(`${spec.name} needs an applied clause, or every call would look applied`);
     if (spec.guard === undefined) throw new OperationSpecError(`${spec.name} needs a guard`);
+  }
+  if (spec.effect !== undefined) {
+    const bound = boundInputs(spec.effect, spec.require ?? []);
+    const unbound = subjectInputs(spec.subject).find((reference) => !bound.has(reference));
+    if (unbound !== undefined) throw new OperationSpecError(`${spec.name}: the approval names ${unbound}, which is neither an argument of the effect nor required against an observation`);
   }
   const ids = spec.observe.map((probe) => probe.id);
   if (new Set(ids).size !== ids.length) throw new OperationSpecError(`${spec.name} declares a probe id twice`);
