@@ -1,5 +1,5 @@
-import { spawn } from 'node:child_process';
-import type { ChildProcess, SpawnOptions } from 'node:child_process';
+import { spawn } from './child-process.ts';
+import type { ChildProcess, SpawnOptions } from './child-process.ts';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';

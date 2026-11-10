@@ -16,6 +16,7 @@ import {
   writeSettingsText,
 } from './fixtures/p3-harness.ts';
 import type { FakeSettingsWatch, Harness, HarnessOptions } from './fixtures/p3-harness.ts';
+import { testHostPath } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -193,7 +194,7 @@ describe('the first spawn and the settings read', () => {
         orphanGraceMs: 60_000,
         watchSettings: true,
         settingsWatch: fakeSettingsWatch().watch,
-        env: { PATH: '/usr/bin:/bin', LANG: 'C', UPSTREAM_SECRET_NAME: 'value-for-test' },
+        env: { PATH: testHostPath('/usr/bin:/bin'), LANG: 'C', UPSTREAM_SECRET_NAME: 'value-for-test' },
       },
     });
     await waitFor(() => h.markers.calls.findHolders.length > 0);

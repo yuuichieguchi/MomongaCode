@@ -84,6 +84,7 @@ const setup = async (options: SetupOptions = {}) => {
       : [];
   registerCleanup(() => killGroupsForCleanup(launched().map((record) => record.pid)));
   const probes = (): DumpRecord[] => launched().filter((record) => path.basename(record.argv[record.argv.indexOf('--socket') + 1] ?? '').startsWith('_probe-'));
+  const servings = (): DumpRecord[] => launched().filter((record) => !path.basename(record.argv[record.argv.indexOf('--socket') + 1] ?? '').startsWith('_probe-'));
   const handle = await launchGateway({
     generation: FIRST_GENERATION,
     home,
@@ -105,7 +106,7 @@ const setup = async (options: SetupOptions = {}) => {
   const replaceBinary = (): void => {
     fs.appendFileSync(fm.binaryPath, `\n// ${createHash('sha256').update(String(fs.statSync(fm.binaryPath).size)).digest('hex')}\n`);
   };
-  return { fm, home, host, logLines, handle, client, probeDir, keyNow, send, sendRaw, recordExists, anyRecord, replaceBinary, probes };
+  return { fm, home, host, logLines, handle, client, probeDir, keyNow, send, sendRaw, recordExists, anyRecord, replaceBinary, probes, servings };
 };
 
 const expectProbing = (response: { status: number; body: { error: { code: string; message: string } } }): void => {
@@ -293,16 +294,26 @@ describe('the automatic probe of an fm target with no probe record', () => {
   });
 
   describe('P6 RecordMatchesKey', () => {
-    it('sees a replaced binary at the next request through its file identity, and probes the new key', async () => {
+    it('keeps answering from the start key while its instance runs after the binary is replaced, and probes the new key when the instance next starts (19.11-a)', async () => {
       const gateway = await setup({ probe: 'complete' });
       expectProbing(await gateway.send(false));
       await until(gateway.recordExists, 'the probe record is written');
       expect((await gateway.send(false)).status).toBe(200);
       const before = gateway.keyNow();
+      const serving = gateway.servings();
+      expect(serving).toHaveLength(1);
 
       gateway.replaceBinary();
 
       expect(gateway.keyNow().digest).not.toBe(before.digest);
+      expect((await gateway.send(false)).status).toBe(200);
+      expect(gateway.probes()).toHaveLength(1);
+      expect(gateway.recordExists()).toBe(false);
+
+      const child = (serving[0] as DumpRecord).pid;
+      process.kill(child, 'SIGKILL');
+      await until(() => !isAlive(child), 'the serving child to end');
+
       expectProbing(await gateway.send(false));
       await until(gateway.recordExists, 'the probe record of the new key is written');
       expect(gateway.probes()).toHaveLength(2);

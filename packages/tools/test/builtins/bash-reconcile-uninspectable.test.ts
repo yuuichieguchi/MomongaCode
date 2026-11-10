@@ -11,7 +11,7 @@ import { keyFor } from '../helpers.ts';
 
 const KEY = keyFor('run-1', 1, 'call-a');
 
-const unreadable = { pid: 31_340, command: 'ssh-agent', startedAt: 9 };
+const unreadable = { pid: 31_340, command: 'ssh-agent', startedAt: 9n };
 
 const unreadableInspector: ProcessInspector = {
   startTimeOf: async () => ({ kind: 'gone' }),

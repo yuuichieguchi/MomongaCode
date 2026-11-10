@@ -14,7 +14,7 @@ import type { ExecFn } from '../managed/preconditions.ts';
 import { parseCount } from '../managed/target.ts';
 import type { ExecWithStdinFn } from '../managed/target.ts';
 import { decideToolCalling } from './decide.ts';
-import { recordProbe } from './auto-probe.ts';
+import { recordProbe, targetNotReadyError } from './auto-probe.ts';
 import type { MeasureProbe, ProbeLockKey, ProbePrecondition, ProbeSubject } from './auto-probe.ts';
 import { managedRecordPath, saveProbeRecord } from './record.ts';
 import type { ManagedRecordCurrency } from './record.ts';
@@ -171,6 +171,7 @@ export type ProbeManagedOptions = {
 export type ProbeManagedResult = { report: ProbeReport; toolCalling: ToolCallingMode; recordFile: string };
 
 export const probeManagedFm = async (options: ProbeManagedOptions): Promise<ProbeManagedResult> => {
+  if (!(await options.isUsableBinary(options.binary))) throw targetNotReadyError(options.target, missingExecutableVerdict(options.target, options.binary));
   const childEnv = managedChildEnvOf(options.env);
   const exec = options.exec ?? createExecFn(childEnv);
   const readKey = managedKeyReader({ description: options.description, binary: options.binary, model: options.model, exec, platform: options.platform, hashes: options.hashes });

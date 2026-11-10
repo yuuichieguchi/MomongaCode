@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -177,7 +177,7 @@ describe('stale fm marker reaping', () => {
     fs.writeFileSync(marker, content, { mode: 0o600 });
     const holderPidFile = path.join(markers, '..', 'holder.pid');
     const source = [
-      "const { spawn } = require('node:child_process');",
+      "const { spawn } = require('@momonga/testkit/child-process');",
       "const fs = require('node:fs');",
       `const fd = fs.openSync(${JSON.stringify(marker)}, 'r');`,
       `const child = spawn(process.execPath, ['-e', ${JSON.stringify(SLEEPER)}], { stdio: ['ignore', 'ignore', 'ignore', fd] });`,

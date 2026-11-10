@@ -2,7 +2,6 @@ import path from 'node:path';
 import { appendPermissionRule, autoFitKeyOf, readClassifierProbeKeys, ConfigError, systemFileLockPorts, credentialEnvNames, loadSettings, stripCredentialEnv } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, KeptLayers, LoadSettingsResult, ResolvedSettings, SettingsUse, TrustOracle, UserLayer, UserSettingsCache } from '@momonga/config';
 import { STARTUP_TIMEOUT_MS, createBinaryHashCache, createHeldHostReadings, createHostExec } from '@momonga/foundation';
-import { MANAGED_SERVERS } from '@momonga/protocol';
 import type { RuntimeStore, Session } from '@momonga/store';
 import type { SettingsPort, ToolEnv } from '../ports.ts';
 import type { SessionCreateSettings } from '../service/app.ts';
@@ -39,7 +38,7 @@ export const createSettingsComposition = ({ home, platform, cache, store }: Sett
 
   const trustOracle: TrustOracle = { isTrusted: (dir) => store.trust.decisionFor(dir).decision === 'trusted' };
 
-  const classifierKeyPorts = { servers: MANAGED_SERVERS, exec: createHostExec(), hashes: createBinaryHashCache(), host: createHeldHostReadings(), platform };
+  const classifierKeyPorts = { exec: createHostExec(), hashes: createBinaryHashCache(), host: createHeldHostReadings(), platform };
 
   const autoFitKeyFor = async (resolved: ResolvedSettings): Promise<AutoFitKey | undefined> => {
     const classifier = resolved.autoMode?.classifier;

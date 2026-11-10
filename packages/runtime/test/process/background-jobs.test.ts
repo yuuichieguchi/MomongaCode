@@ -274,8 +274,8 @@ describe('background jobs', () => {
   });
 
   const reportingSshd = {
-    findHolders: async (_marker: string, options: { onUninspectable?: (process: { pid: number; command: string; startedAt: number }) => void }): Promise<number[]> => {
-      options.onUninspectable?.({ pid: 31_338, command: 'sshd', startedAt: 515151 });
+    findHolders: async (_marker: string, options: { onUninspectable?: (process: { pid: number; command: string; startedAt: bigint }) => void }): Promise<number[]> => {
+      options.onUninspectable?.({ pid: 31_338, command: 'sshd', startedAt: 515151n });
       return [];
     },
   };

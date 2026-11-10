@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync } from '@momonga/testkit/child-process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -204,7 +204,7 @@ describe('copyProbeRecord', () => {
     const name = recordNameFor(binary, 'system');
     const record = JSON.stringify({ key: 'k', descriptionDigest: 'd', report: { anything: true } });
     fs.writeFileSync(path.join(from, name), record);
-    expect(await copyProbeRecord(nodeFiles, from, to, { target: 'apple', server: 'fm', binary, model: 'system' }, process.platform, new AbortController().signal)).toBe(true);
+    expect(await copyProbeRecord(nodeFiles, from, to, { target: 'apple', server: 'fm', binary, model: 'system' }, { [FM_SERVER.id]: FM_SERVER }, process.platform, new AbortController().signal)).toBe(true);
     expect(fs.readFileSync(path.join(to, name), 'utf8')).toBe(record);
     expect(fs.statSync(path.join(to, name)).mode & 0o777).toBe(0o600);
   });
@@ -212,7 +212,7 @@ describe('copyProbeRecord', () => {
   it('copies nothing when the person never probed the target, so the case sees the same answer', async () => {
     const from = temporary();
     const to = path.join(temporary(), 'probe');
-    expect(await copyProbeRecord(nodeFiles, from, to, { target: 'apple', server: 'fm', binary: binaryIn(temporary()), model: 'system' }, process.platform, new AbortController().signal)).toBe(false);
+    expect(await copyProbeRecord(nodeFiles, from, to, { target: 'apple', server: 'fm', binary: binaryIn(temporary()), model: 'system' }, { [FM_SERVER.id]: FM_SERVER }, process.platform, new AbortController().signal)).toBe(false);
     expect(fs.existsSync(to)).toBe(false);
   });
 });

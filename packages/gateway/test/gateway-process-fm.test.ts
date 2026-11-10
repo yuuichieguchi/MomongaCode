@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn } from '@momonga/testkit/child-process';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
 import { codeDigestOfRunningProcess, FIRST_GENERATION } from '@momonga/foundation';
 import { saveProbeRecord, targetCounterOf } from '@momonga/gateway';
-import { TARGET_PROBING_MESSAGE } from '@momonga/protocol';
+import { FM_SERVER, TARGET_PROBING_MESSAGE } from '@momonga/protocol';
 import { FM_CURRENCY, fmRecordKey, saveFakeFmRecord } from './fm-record-support.ts';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { getJson, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
@@ -191,7 +191,7 @@ describe('managed fm under startGatewayProcess', () => {
     const target = (await loadUserSettings({ home })).settings.models.targets['fm'];
     if (target === undefined) throw new Error('the default settings resolved no fm target');
     expect(entry.targetCounters).toEqual({
-      fm: targetCounterOf({ target, codeDigest: await codeDigestOfRunningProcess(), probeKey: fmRecordKey(binarySha256, FAKE_OS_BUILD).canonical }),
+      fm: targetCounterOf({ target, server: FM_SERVER, codeDigest: await codeDigestOfRunningProcess(), probeKey: fmRecordKey(binarySha256, FAKE_OS_BUILD).canonical }),
     });
   });
 

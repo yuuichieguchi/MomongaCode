@@ -253,7 +253,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     let lastWrittenSeq: number | undefined;
     const recordApplied = (key: string | undefined): void => {
       try {
-        const written = writeAppliedRecord(canonicalHome, own.settingsApplied, undefined, lastWrittenSeq);
+        const written = writeAppliedRecord(canonicalHome, own.settingsApplied, lastWrittenSeq);
         if (written.kind !== 'invalid') lastWrittenSeq = written.seq;
       } catch (error) {
         if (key === recordFailedKey) return;

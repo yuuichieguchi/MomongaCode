@@ -1,7 +1,7 @@
 import type { Readable } from 'node:stream';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { SpawnOptions } from 'node:child_process';
+import type { SpawnOptions } from '@momonga/testkit/child-process';
 import { spawnTracked } from '@momonga/testkit';
 import type { CleanupContext, TrackedChild } from '@momonga/testkit';
 

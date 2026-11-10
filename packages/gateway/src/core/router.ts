@@ -8,7 +8,8 @@ import { UnsupportedInputError } from './unsupported-input.ts';
 import { createAdmissionGate } from './admission.ts';
 import type { AdmissionGate } from './admission.ts';
 import { preconditionText } from '../precondition-text.ts';
-import { invalidRequest, notFound } from './errors.ts';
+import { ClientDisconnectedError, GatewayError, invalidRequest, notFound } from './errors.ts';
+import { plainError } from './retry.ts';
 import { CandidateRefused, REFUSAL_STAGES, UnprobedTarget, refusalErrorOf } from './candidate-refusal.ts';
 import type { Refusal } from './candidate-refusal.ts';
 import { carriesSampling, samplingRefusalOf } from './sampling.ts';
@@ -190,11 +191,20 @@ export const createRouter = (options: RouterOptions): Router => {
     return { ...applyCapabilityOverride(declared, target.capabilityOverride), source: 'config' };
   };
 
-  const roomMemberOf = async (target: TargetRuntime): Promise<AliasMember> => {
+  const readRoomMember = async (target: TargetRuntime): Promise<AliasMember> => {
     const adapterTarget = { name: target.name, model: target.model };
     if (target.adapter.roomFacts !== undefined) return { target: target.name, measuring: false, ...(await target.adapter.roomFacts(adapterTarget)) };
     const capabilities = await capabilitiesOf(target);
     return { target: target.name, measuring: false, outputBounded: capabilities.outputBoundField !== 'none', contextWindow: capabilities.contextWindow, maxOutputTokens: capabilities.maxOutputTokens };
+  };
+
+  const roomMemberOf = async (target: TargetRuntime): Promise<AliasMember> => {
+    try {
+      return await readRoomMember(target);
+    } catch (error) {
+      if (error instanceof GatewayError || error instanceof ClientDisconnectedError) throw error;
+      throw plainError(target.adapter.classify(error));
+    }
   };
 
   const checkAliasRoom = async (alias: string, members: readonly TargetRuntime[]): Promise<void> => {

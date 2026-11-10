@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSync } from '@momonga/testkit/child-process';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, defaultProtectedPaths, groupAlive } from '@momonga/foundation';
 import fs from 'node:fs';
 import net from 'node:net';

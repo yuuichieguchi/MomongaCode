@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import type { StartTime } from '@momonga/foundation';
 import { ProbeFailedError, classifyProbeCause, failureOfError, isTransientFailure, judgeProcessIdentity, probeFailed, valueOrThrow } from '@momonga/foundation';
 
 const errno = (code: string): NodeJS.ErrnoException => Object.assign(new Error(`${code}: injected`), { code });
@@ -48,20 +49,25 @@ describe('valueOrThrow and isTransientFailure', () => {
 
 describe('judgeProcessIdentity', () => {
   it('judges the same start time as the same process', () => {
-    expect(judgeProcessIdentity(1000, { kind: 'value', value: 1000 })).toEqual({ kind: 'same' });
+    expect(judgeProcessIdentity(5n, { kind: 'value', value: 5n })).toEqual({ kind: 'same' });
+    expect(judgeProcessIdentity(2n ** 60n, { kind: 'value', value: 2n ** 60n })).toEqual({ kind: 'same' });
   });
 
-  it('judges a different start time, or a start time where none was recorded, as a replaced process', () => {
-    expect(judgeProcessIdentity(1000, { kind: 'value', value: 2000 })).toEqual({ kind: 'replaced' });
-    expect(judgeProcessIdentity(undefined, { kind: 'value', value: 2000 })).toEqual({ kind: 'replaced' });
+  it('a start time is one bigint type on every platform', () => {
+    expectTypeOf<StartTime>().toEqualTypeOf<bigint>();
+  });
+
+  it('judges a different start time, or an undefined recorded start time, as a replaced process', () => {
+    expect(judgeProcessIdentity(1000n, { kind: 'value', value: 2000n })).toEqual({ kind: 'replaced' });
+    expect(judgeProcessIdentity(undefined, { kind: 'value', value: 2000n })).toEqual({ kind: 'replaced' });
   });
 
   it('judges a pid with no process as gone', () => {
-    expect(judgeProcessIdentity(1000, { kind: 'gone' })).toEqual({ kind: 'gone' });
+    expect(judgeProcessIdentity(1000n, { kind: 'gone' })).toEqual({ kind: 'gone' });
   });
 
   it('never turns a failed probe into a verdict about the process', () => {
     const failure = probeFailed({ kind: 'timeout', detail: 'ps timed out' });
-    expect(judgeProcessIdentity(1000, failure)).toBe(failure);
+    expect(judgeProcessIdentity(1000n, failure)).toBe(failure);
   });
 });

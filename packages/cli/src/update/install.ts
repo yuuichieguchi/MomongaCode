@@ -9,6 +9,7 @@ import { readText, requestOrFail } from './release.ts';
 import type { Release } from './release.ts';
 import { CHECKSUMS_ASSET, assetNameFor, resolveUpdateSource } from './source.ts';
 import type { BuildUpdateInputs, UpdateEndpoints, UpdateSource } from './source.ts';
+import { MOMONGA_LAUNCHES } from '../daemon/launcher.ts';
 
 export const CANDIDATE_CHECK_TIMEOUT_MS = 30_000;
 
@@ -147,7 +148,7 @@ const verifyCodesign = async (ports: UpdatePorts, source: UpdateSource, file: st
 };
 
 const verifyCandidateRuns = async (ports: UpdatePorts, file: string, release: Release, signal: AbortSignal): Promise<void> => {
-  const result = await ports.run(file, ['--version'], { env: ports.env, timeoutMs: CANDIDATE_CHECK_TIMEOUT_MS, signal });
+  const result = await ports.run(file, MOMONGA_LAUNCHES.reportVersion.args, { env: ports.env, timeoutMs: CANDIDATE_CHECK_TIMEOUT_MS, signal });
   if (result.exitCode !== 0) {
     throw new UpdateError('candidate_unusable', `the downloaded executable exited with code ${result.exitCode} for --version`, { detail: result.stderr.trim() });
   }
@@ -189,7 +190,7 @@ export type DaemonRestart = { kind: 'not_running' } | { kind: 'restarted' } | { 
 export type InstallResult = { from: string; to: string; target: string; restart: DaemonRestart };
 
 const restartDaemon = async (ports: UpdatePorts, target: string, signal: AbortSignal): Promise<void> => {
-  const result = await ports.run(target, ['daemon', 'start'], { env: ports.env, timeoutMs: await ports.daemon.restartBoundMs(), signal });
+  const result = await ports.run(target, MOMONGA_LAUNCHES.startDaemon.args, { env: ports.env, timeoutMs: await ports.daemon.restartBoundMs(), signal });
   if (result.exitCode !== 0) {
     throw new UpdateError('daemon_restart_failed', `the update was installed but the new daemon did not start (exit code ${result.exitCode})`, {
       detail: `${result.stdout}${result.stderr}`.trim(),

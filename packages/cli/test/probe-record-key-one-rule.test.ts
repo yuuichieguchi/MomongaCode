@@ -18,6 +18,7 @@ import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
 import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 import { OLLAMA_MODEL, startFakeOllama } from '../../gateway/test/ollama-support.ts';
+import { testHostPath } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -52,7 +53,7 @@ const runCli = async (home: string, args: readonly string[]): Promise<{ codes: n
     ...nodePorts('9.9.9'),
     home,
     cwd: home,
-    env: { PATH: '/usr/bin:/bin', HOME: home },
+    env: { PATH: testHostPath('/usr/bin:/bin'), HOME: home },
     terminal: undefined,
     stdout: { write: (text) => void stdout.push(text) },
     stderr: { write: (text) => void stderr.push(text) },

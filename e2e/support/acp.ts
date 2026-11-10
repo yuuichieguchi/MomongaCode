@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn } from '@momonga/testkit/child-process';
 import { Writable } from 'node:stream';
 import { client, ndJsonStream } from '@agentclientprotocol/sdk';
 import type {
@@ -39,7 +39,8 @@ export type AcpClient = {
 const PROTOCOL_VERSION = 1;
 
 export const startAcpClient = (home: E2eHome, options: AcpClientOptions = {}): AcpClient => {
-  const child = spawn(process.execPath, [CLI_BUNDLE, 'acp'], { cwd: home.project, env: cliEnv(home), stdio: ['pipe', 'pipe', 'pipe'] });
+  const env = cliEnv(home);
+  const child = spawn(process.execPath, [CLI_BUNDLE, 'acp'], { cwd: home.project, env, stdio: ['pipe', 'pipe', 'pipe'] });
   registerE2eCleanup(() => {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
   });

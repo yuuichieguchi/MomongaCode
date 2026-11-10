@@ -10,13 +10,14 @@ import {
   loadUserSettings,
   probeRecordKeyOf,
   readUserStopValues,
+  registeredIds,
+  registeredServer,
   resolveNetwork,
   resolveTelemetrySettings,
   settingsInputsDigest,
   upstreamEndpointOf,
 } from '@momonga/config';
 import type { ResolvedSettings } from '@momonga/config';
-import { MANAGED_SERVERS, managedServerOf } from '@momonga/protocol';
 import type { ManagedServerDescription } from '@momonga/protocol';
 import {
   acquireProcessLock,
@@ -49,7 +50,7 @@ import {
   ensureGenerationDirs,
   generationLayout,
 } from '@momonga/foundation';
-import type { EndpointProbeKey, StopValuesReader } from '@momonga/config';
+import type { EndpointProbeKey, ServerRegistry, StopValuesReader } from '@momonga/config';
 import type { BinaryHashCache, Clock, JsonLogger, MomongaPaths, NetworkConfig, OutboundNetwork, ProcessLock, ReadyFields, SecretStore, StopValues, TextStream } from '@momonga/foundation';
 import { installTrust, trustFailureText, proxyPasswordsOf } from '@momonga/foundation';
 import {
@@ -135,7 +136,6 @@ export type StartGatewayProcessOptions = {
   stdout?: TextStream;
   signal?: AbortSignal;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
-  managedServers?: readonly ManagedServerDescription[];
   measureEndpoint?: MeasureEndpointPort<EndpointMeasurement>;
   measureOllama?: MeasureEndpointPort<OllamaMeasurement>;
   stopValues?: StopValuesReader;
@@ -293,9 +293,9 @@ const onRecordKey =
 
 const SAMPLING_OF: Record<ManagedServerDescription['sampling'], { renders: [] }> = { none: { renders: [] } };
 
-const requiredServer = (servers: readonly ManagedServerDescription[], id: string): ManagedServerDescription => {
-  const description = managedServerOf(servers, id);
-  if (description === undefined) throw new Error(`server ${JSON.stringify(id)} is not a managed server this build supports; supported: ${servers.map((server) => server.id).join(', ')}`);
+const requiredServer = (servers: ServerRegistry | undefined, id: string): ManagedServerDescription => {
+  const description = registeredServer(servers, id);
+  if (description === undefined) throw new Error(`server ${JSON.stringify(id)} is not a managed server this build supports; supported: ${registeredIds(servers).join(', ')}`);
   return description;
 };
 
@@ -353,6 +353,10 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     timers: wiring.timers,
     readStopGraceMs: wiring.readStopGraceMs,
     onWarning: wiring.onWarning,
+    onChildStart: async (signal) => {
+      if (managed === undefined) throw new Error(`the server of the target ${name} started a child before its target was wired`);
+      await managed.childStarting(signal);
+    },
     onChildExit: () => managed?.childExited(),
     ...spawnPort,
   });
@@ -578,7 +582,7 @@ const DEBUG_TCP_HOST = '127.0.0.1';
 
 const NOT_LISTED_YET = 'not listed yet';
 
-const providerNameOf = (target: ResolvedTarget, servers: readonly ManagedServerDescription[]): string => {
+const providerNameOf = (target: ResolvedTarget, servers: ServerRegistry | undefined): string => {
   switch (target.adapter) {
     case 'managed':
       return requiredServer(servers, target.server).provider;
@@ -613,7 +617,7 @@ const withCounters = (config: UncountedGatewayConfig, counters: Readonly<Record<
 export const gatewayConfigOf = (
   targets: ResolvedTargets,
   aliases: Record<string, string | string[]>,
-  servers: readonly ManagedServerDescription[] = MANAGED_SERVERS,
+  servers?: ServerRegistry,
   listedModels: ReadonlyMap<string, string> = new Map(),
 ): UncountedGatewayConfig => ({
   models: {
@@ -671,7 +675,6 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   const random = options.random ?? systemProcessPorts.random;
   const files = options.files ?? systemProcessPorts.files;
   const logger = options.logger ?? createJsonLogger({ service: 'gateway', clock });
-  const managedServers = options.managedServers ?? MANAGED_SERVERS;
   const { signal } = options;
   const startSignal = startDeadlineSignal(signal);
   const stdout = options.stdout ?? process.stdout;
@@ -751,7 +754,6 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       home: options.home,
       onWarning: (message) => logger.warn(message),
       keptRecords: diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(options.home)),
-      managedServers,
       ...appliedRecordOf(options.env),
     });
     const started = cache.snapshot();
@@ -882,6 +884,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       const userDialects = current.models.dialects;
       const liveness: UpstreamLiveness = { headersTimeoutMs: current.models.headersTimeoutMs, idleTimeoutMs: current.models.idleTimeoutMs, timers };
       if (target.adapter === 'managed') {
+        const server = requiredServer(current.models.servers, target.server);
         const carried = previous?.managed !== undefined && previous.managed.key === keys.core ? previous.managed : undefined;
         const core =
           carried ??
@@ -889,7 +892,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
             const built = await createManagedCore({
               name,
               target,
-              description: requiredServer(managedServers, target.server),
+              description: server,
               paths,
               childEnv,
               exec,
@@ -911,11 +914,11 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
             return { key: keys.core, ...built, closable: { close: (values) => built.managed.close(values) } };
           })());
         const { close: _stopsTheServer, ...serving } = core.managed;
-        const adapter = createChatCompletionsAdapter({ ...serving, sampling: SAMPLING_OF[requiredServer(managedServers, target.server).sampling], clock, userDialects, liveness });
+        const adapter = createChatCompletionsAdapter({ ...serving, sampling: SAMPLING_OF[server.sampling], clock, userDialects, liveness });
         return {
           key: keys.part,
           adapter,
-          counter: targetCounterOf({ target, codeDigest, ...(core.probeKey === undefined ? {} : { probeKey: core.probeKey }) }),
+          counter: targetCounterOf({ target, server, codeDigest, ...(core.probeKey === undefined ? {} : { probeKey: core.probeKey }) }),
           listedModel: core.listedModel,
           managed: core,
           closables: [adapterClosable(adapter), core.closable],
@@ -971,9 +974,10 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
             parts.set(name, unmanagedPart(settingsInputsDigest({ target }), createUnservedAdapter(reason), targetCounterOf({ target, codeDigest })));
             continue;
           }
+          const server = target.adapter === 'managed' ? requiredServer(current.models.servers, target.server) : null;
           const keys = {
-            part: settingsInputsDigest({ target, ...shape, network: target.adapter === 'managed' ? null : (current.network ?? null) }),
-            core: settingsInputsDigest({ target, userDialects: shape.userDialects, requestLimitMs: shape.headersTimeoutMs }),
+            part: settingsInputsDigest({ target, server, ...shape, network: target.adapter === 'managed' ? null : (current.network ?? null) }),
+            core: settingsInputsDigest({ target, server, userDialects: shape.userDialects, requestLimitMs: shape.headersTimeoutMs }),
           };
           const livePartsOf = [previous, ...liveEpochs].flatMap((epoch) => {
             const part = epoch?.parts.get(name);
@@ -995,7 +999,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       }
       const listedModels = new Map([...parts].flatMap(([name, part]): Array<[string, string]> => (part.listedModel === undefined ? [] : [[name, part.listedModel]])));
       const counters = Object.fromEntries([...parts].map(([name, part]) => [name, part.counter]));
-      const config = withCounters(gatewayConfigOf(current.models.targets, current.models.aliases, managedServers, listedModels), counters);
+      const config = withCounters(gatewayConfigOf(current.models.targets, current.models.aliases, current.models.servers, listedModels), counters);
       const adapters: Record<string, ProviderAdapter> = {};
       for (const [name, part] of parts) {
         adapters[name] = part.adapter;

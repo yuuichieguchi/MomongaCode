@@ -45,6 +45,7 @@ export interface FakeChatCompletionsOptions {
   healthy?: boolean;
   script?: FakeScriptedReply[];
   routes?: FakeRoute[];
+  staticGets?: Readonly<Record<string, unknown>>;
 }
 
 export interface FakeRoute {
@@ -717,6 +718,11 @@ export const startFakeChatCompletions = async (
       }
       const requestPath = request.url ?? '/';
       requests.push({ method: request.method ?? 'GET', path: requestPath, headers: request.headers, body });
+      const staticGet = options.staticGets;
+      if (request.method === 'GET' && staticGet !== undefined && Object.hasOwn(staticGet, requestPath)) {
+        writeJson(response, 200, staticGet[requestPath]);
+        return;
+      }
       if (request.method === 'GET' && requestPath === '/health') {
         if (options.healthy === false) {
           writeJson(response, 503, { status: 'unavailable' });
@@ -822,6 +828,7 @@ export const startFakeChatCompletions = async (
 
   const { socketPath, ownedDir } =
     options.socketPath === undefined ? createSocketPath() : { socketPath: options.socketPath, ownedDir: undefined };
+  if (options.socketPath !== undefined) fs.rmSync(options.socketPath, { force: true });
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
     server.listen(socketPath, () => {

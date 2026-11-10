@@ -64,7 +64,7 @@ describe('the guard does not refuse when it cannot establish whether a process c
   });
 
   it('runs with the could-not-check note naming the refused process when the listing refused inspection, nobody is named and no member of the group can still run', async () => {
-    const h = world('held', {}, new Set(), [{ pid: 4343, command: 'sleep', startedAt: 0 }]);
+    const h = world('held', {}, new Set(), [{ pid: 4343, command: 'sleep', startedAt: 0n }]);
     await runOne(h, 'Leaver', 'first');
     const name = keyFor('run-1', 1, 'first');
     expect(resultOf(await runOne(h, 'Writer', 'second'))).toEqual({ status: 'completed', output: `wrote\n${COULD_NOT_CHECK(name, 'process 4343 (sleep) could not be inspected')}` });

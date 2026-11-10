@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSync } from '@momonga/testkit/child-process';
 import { Command } from 'commander';
 
 const program = new Command().name('sea-fixture').version('0.0.0-fixture');

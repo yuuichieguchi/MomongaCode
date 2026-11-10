@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/config';

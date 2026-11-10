@@ -16,6 +16,7 @@ import { nodeMarkerFiles } from '../../src/orphans.ts';
 import type { MarkerPorts } from '../../src/orphans.ts';
 import { startSupervisor } from '../../src/start-supervisor.ts';
 import type { SupervisorOptions, SupervisorProcess } from '../../src/start-supervisor.ts';
+import { testHostPath } from '@momonga/testkit';
 
 export const T0 = Date.parse('2026-01-01T00:00:00.000Z');
 export const HARNESS_CLOSE_BOUND_MS = 2_000_000;
@@ -452,7 +453,7 @@ export const startHarness = async (context: CleanupContext, options: HarnessOpti
     home,
     version: TEST_VERSION,
     launcher: options.overrides?.launcher ?? fakeLauncher,
-    env: { PATH: '/usr/bin:/bin', HOME: home, LANG: 'C' },
+    env: { PATH: testHostPath('/usr/bin:/bin'), HOME: home, LANG: 'C' },
     clock,
     timers,
     logger: log.logger,

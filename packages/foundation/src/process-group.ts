@@ -49,10 +49,14 @@ export type ProcessSignalSender = (pid: number, signal: NodeJS.Signals) => void;
 
 const sendToProcess: ProcessSignalSender = (pid, signal) => void process.kill(pid, signal);
 
-export function signalGroupExceptLeader(pgid: number, signal: NodeJS.Signals, members: GroupMembersReader, send: ProcessSignalSender = sendToProcess): number {
+export function signalGroupExceptLeader(pgid: number, signal: NodeJS.Signals, reader: GroupMembersReader, send: ProcessSignalSender = sendToProcess): number {
   assertSignalableGroup(pgid);
-  const followers = members(pgid).filter((pid) => pid !== pgid);
-  for (const pid of followers) {
+  let signalled = 0;
+  for (const { pid, startTicks } of reader.members(pgid)) {
+    if (pid === pgid) continue;
+    const now = reader.statOf(pid);
+    if (now === undefined || now.groupId !== pgid || now.startTicks !== startTicks) continue;
+    signalled += 1;
     try {
       send(pid, signal);
     } catch (error) {
@@ -60,7 +64,7 @@ export function signalGroupExceptLeader(pgid: number, signal: NodeJS.Signals, me
       if (code !== 'ESRCH' && code !== 'EPERM') throw error;
     }
   }
-  return followers.length;
+  return signalled;
 }
 
 export async function groupAlive(pgid: number, port: ProcessGroupPort = hostProcessGroupPort(), stop?: AbortSignal): Promise<boolean> {

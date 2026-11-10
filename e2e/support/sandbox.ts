@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSync } from '@momonga/testkit/child-process';
 import path from 'node:path';
 import { defaultSandboxSetting } from '@momonga/config';
 import type { SandboxSetting } from '@momonga/config';
