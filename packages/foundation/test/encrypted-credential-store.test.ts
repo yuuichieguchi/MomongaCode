@@ -20,6 +20,8 @@ import {
   inspectProcessLock,
 } from '@momonga/foundation';
 import type { CredentialEntry, CredentialStore, SecretStore } from '@momonga/foundation';
+import { KEYCHAIN_BACKEND } from '@momonga/foundation/secret-store';
+import type { SecretBackend } from '@momonga/foundation/secret-store';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretFiles, createFakeSecurityPort, startLockHolder, waitFor } from '@momonga/testkit';
 import type { FakeControl, FakeSecurityPort } from '@momonga/testkit';
 import type { ScopedOperations } from '../src/credential-store.ts';
@@ -81,11 +83,14 @@ const markerOf = (given: Setup): string => path.join(given.stateDirectory, CREDE
 
 const keyLockOf = (given: Setup): string => path.join(given.stateDirectory, CREDENTIAL_KEY_LOCK_NAME);
 
-const expectAbsentCause = (error: unknown, reason: string): void => {
+const expectAbsentCause = (error: unknown, reason: string, backend: SecretBackend | undefined): void => {
   const cause = (error as CredentialStoreError).cause;
   expect((cause as Error).name).toBe('SecretStoreAbsentError');
   expect(cause).toBeInstanceOf(SecretStoreAbsentError);
   expect((cause as SecretStoreAbsentError).reason).toBe(reason);
+  expect((cause as SecretStoreAbsentError).backend).toBe(backend);
+  expect((cause as SecretStoreAbsentError).call).toBeUndefined();
+  expect((cause as Error).message).not.toContain('credential-key-');
 };
 
 const rejection = async (attempt: Promise<unknown>): Promise<unknown> => {
@@ -266,7 +271,7 @@ describe('encrypted credential store: no OS secret store on the host (N81, NoPla
     expect((error as Error).message).toBe(
       `No secret store was found on this host (${reason}). MomongaCode does not keep sign-in tokens in a plain file unless you ask: set credentials.plaintextTokenFiles to true in your user settings to keep them in a file only you can read.`,
     );
-    expectAbsentCause(error, reason);
+    expectAbsentCause(error, reason, undefined);
     expect(fs.existsSync(given.directory) ? fs.readdirSync(given.directory) : []).toEqual([]);
     expect(fs.existsSync(path.join(given.stateDirectory, CREDENTIAL_KEY_MARKER_FILE))).toBe(false);
   });
@@ -279,7 +284,7 @@ describe('encrypted credential store: no OS secret store on the host (N81, NoPla
     expect(error).toBeInstanceOf(CredentialStoreError);
     expect((error as CredentialStoreError).code).toBe(action === 'read' ? 'store_unreadable' : 'store_unwritable');
     expect((error as Error).message).toBe(noStoreRefusal(R_PATH));
-    expectAbsentCause(error, R_PATH);
+    expectAbsentCause(error, R_PATH, undefined);
     expect(await storeOf(given).read('plan/p/a', SIGNAL)).toBe('token');
   });
 
@@ -331,7 +336,7 @@ describe('encrypted credential store: an OS store that is not ready (N81, readin
     expect((error as Error).message).toBe(
       'No secret store was found on this host (security reports no default keychain (SecKeychainCopyDefault: A default keychain could not be found.)). MomongaCode does not keep sign-in tokens in a plain file unless you ask: set credentials.plaintextTokenFiles to true in your user settings to keep them in a file only you can read.',
     );
-    expectAbsentCause(error, R_ND);
+    expectAbsentCause(error, R_ND, KEYCHAIN_BACKEND);
     expect(keychain.port.calls.map((call) => call.args)).toEqual([['default-keychain']]);
     expect(keychain.items.size).toBe(0);
     expect(fs.existsSync(recordFileOf(given.directory, 'plan/p/a'))).toBe(false);
@@ -351,7 +356,7 @@ describe('encrypted credential store: an OS store that is not ready (N81, readin
     expect(error).toBeInstanceOf(CredentialStoreError);
     expect((error as CredentialStoreError).code).toBe('store_unreadable');
     expect((error as Error).message).toBe(noStoreRefusal(R_ND));
-    expectAbsentCause(error, R_ND);
+    expectAbsentCause(error, R_ND, KEYCHAIN_BACKEND);
     expect(keychain.port.calls.slice(callsBefore).map((call) => call.args)).toEqual([['default-keychain']]);
     expect(fs.readFileSync(markerOf(given), 'utf8')).toBe(markerText);
     expect(keychain.items.size).toBe(1);
@@ -367,7 +372,7 @@ describe('encrypted credential store: an OS store that is not ready (N81, readin
     const error = await rejection(store.write('plan/p/a', 'replacement', SIGNAL));
     expect((error as CredentialStoreError).code).toBe('store_unwritable');
     expect((error as Error).message).toBe(noStoreRefusal(R_ND));
-    expectAbsentCause(error, R_ND);
+    expectAbsentCause(error, R_ND, KEYCHAIN_BACKEND);
     expect(fs.readFileSync(recordFileOf(given.directory, 'plan/p/a'), 'utf8')).toBe(before);
     expect(keychain.items.size).toBe(1);
   });

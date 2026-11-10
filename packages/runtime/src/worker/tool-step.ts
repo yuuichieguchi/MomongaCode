@@ -167,7 +167,7 @@ const persistRule = async (
   if (resolution.rulePersisted === true) return;
   const rule = requireSuggestedRule(callId, call);
   journal.verifyLease();
-  await options.settings.appendRule(session, { effect, rule });
+  await options.settings.appendRule(session, { effect, rule }, ctx.control.signal);
   const persisted: RunEventPayload = { type: 'approval.rule.persisted', approvalId, effect, rule };
   journal.append(
     effect === 'allow' ? [persisted, { type: 'notice', level: 'info', message: `Saved the allow rule ${rule} to the local settings.`, code: 'allow_rule_saved' }] : [persisted],

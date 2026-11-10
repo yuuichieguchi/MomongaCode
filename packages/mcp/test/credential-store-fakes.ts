@@ -14,6 +14,8 @@ export const keyReadLimitSentence = (label: string, limitMs: number): string =>
 
 export type StoreMode = 'answer' | 'hang' | 'absent';
 
+const KEY_READ = { action: 'read', name: undefined, backend: KEYCHAIN_BACKEND } as const;
+
 export type StoreCallRecord = { operation: 'read' | 'withKey'; key: string; signal: AbortSignal; mode: StoreMode; observed: unknown; rejection: unknown };
 
 export type ControlledCredentialStore = {
@@ -45,7 +47,8 @@ export const controlledCredentialStore = (): ControlledCredentialStore => {
     }
     try {
       if (mode === 'absent') throw new CredentialStoreError('store_unreadable', NO_STORE_REFUSAL);
-      if (mode === 'hang') throw endedStoreCall({ action: 'read', name: undefined, backend: KEYCHAIN_BACKEND }, await abortOf(signal));
+      if (mode === 'hang') throw endedStoreCall(KEY_READ, await abortOf(signal));
+      if (signal.aborted) throw endedStoreCall(KEY_READ, signal.reason);
       await controlled.beforeAnswer?.();
     } catch (error) {
       record.rejection = error;

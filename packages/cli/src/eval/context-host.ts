@@ -5,9 +5,10 @@ import type { EndpointProbeKey } from '@momonga/config';
 import type { ModelsSettings, ResolvedModels, SandboxSetting, UserModels } from '@momonga/config';
 import { caseSettingsFor, expandContextDataset, failedWithCleanup, liveBoundsFor, runContextDataset } from '@momonga/eval';
 import type { ContextCaseHost, ContextDataset, ExpandedCase, PolicyOverlay, Transcript, WorkspaceStep } from '@momonga/eval';
-import { FIRST_GENERATION, claimPathOf, generationLayout, momongaLayout, socketPathLimit } from '@momonga/foundation';
+import { FIRST_GENERATION, SecretEmptyError, SecretUnavailableError, claimPathOf, generationLayout, momongaLayout, socketPathLimit } from '@momonga/foundation';
 import type { KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
 import { goldenRunApi } from '../client/golden-run-api.ts';
+import { commandStoreFailureOf, withinCommandLimit } from '../command-limit.ts';
 import type { ReflectionSettle } from '../client/golden-run-api.ts';
 import type { RuntimeClient } from '../client/runtime-client.ts';
 
@@ -143,24 +144,34 @@ export const liveSettingsFor = (user: UserModels, aliases: readonly string[]): L
   };
 };
 
-export const readCredentials = async (
+const storeItWith = (secretName: string, failure: unknown): string =>
+  failure instanceof SecretUnavailableError || failure instanceof SecretEmptyError
+    ? `. The benchmark reads it with the same store the gateway uses; store it with momonga secret set ${secretName}`
+    : '';
+
+const unreadCredential = (secretName: string, failure: unknown): ContextHostError =>
+  new ContextHostError(
+    `the key of a target is the secret ${secretName} in the platform secret store, and it could not be read: ${failure instanceof Error ? failure.message : String(failure)}${storeItWith(secretName, failure)}`,
+    { cause: failure },
+  );
+
+export const readCredentials = (
   effects: Pick<ContextHostEffects, 'readSecret'>,
   credentials: readonly SecretCredential[],
   signal: AbortSignal,
-): Promise<Record<string, string>> => {
-  const values: Record<string, string> = {};
-  for (const credential of credentials) {
-    try {
-      values[credential.envName] = await effects.readSecret(credential.secretName, signal);
-    } catch (error) {
-      throw new ContextHostError(
-        `the key of a target is the secret ${credential.secretName} in the platform secret store, and it could not be read: ${error instanceof Error ? error.message : String(error)}. The benchmark reads it with the same store the gateway uses; store it with momonga secret set ${credential.secretName}`,
-        { cause: error },
-      );
+): Promise<Record<string, string>> =>
+  withinCommandLimit(signal, async (limited) => {
+    const values: Record<string, string> = {};
+    for (const credential of credentials) {
+      try {
+        values[credential.envName] = await effects.readSecret(credential.secretName, limited);
+      } catch (error) {
+        if (signal.aborted && error === signal.reason) throw error;
+        throw unreadCredential(credential.secretName, commandStoreFailureOf(error));
+      }
     }
-  }
-  return values;
-};
+    return values;
+  });
 
 export const OWNER_FILE = '.momonga-eval-owner';
 
@@ -250,7 +261,7 @@ export type HomesOptions = {
   managedTargets: readonly ManagedRecordSource[];
   endpointProbes: readonly EndpointProbe[];
   guideline?: string;
-  interrupt?: AbortSignal;
+  interrupt: AbortSignal;
 };
 
 export const createHomes = (effects: ContextHostEffects, options: HomesOptions): Homes => {
@@ -312,8 +323,8 @@ export const createHomes = (effects: ContextHostEffects, options: HomesOptions):
       api: goldenRunApi(runtime, env, {
         ...options.reflection,
         now: () => effects.now(),
-        wait: (milliseconds, signal) => effects.after(milliseconds, signal ?? new AbortController().signal),
-        ...(options.interrupt === undefined ? {} : { signal: options.interrupt }),
+        wait: (milliseconds) => effects.after(milliseconds, options.interrupt),
+        signal: options.interrupt,
       }),
       close: () => release(record),
     };
@@ -361,7 +372,7 @@ export const createHomes = (effects: ContextHostEffects, options: HomesOptions):
 
 export const createContextHosts = (
   effects: ContextHostEffects,
-  options: { settings: LiveSettings; credentialValues: Readonly<Record<string, string>>; reflection: ReflectionBounds; policy?: PolicyOverlay; guideline?: string; interrupt?: AbortSignal },
+  options: { settings: LiveSettings; credentialValues: Readonly<Record<string, string>>; reflection: ReflectionBounds; policy?: PolicyOverlay; guideline?: string; interrupt: AbortSignal },
 ): ContextHosts => {
   const { models, sandbox, managedTargets, endpointProbes } = options.settings;
   const base = { models, ...(sandbox === undefined ? {} : { sandbox }) };
@@ -371,7 +382,7 @@ export const createContextHosts = (
     managedTargets,
     endpointProbes,
     ...(options.guideline === undefined ? {} : { guideline: options.guideline }),
-    ...(options.interrupt === undefined ? {} : { interrupt: options.interrupt }),
+    interrupt: options.interrupt,
   });
 
   const openCase = async (entry: ExpandedCase): Promise<ContextCaseHost> => {
@@ -414,7 +425,7 @@ export type ContextLiveInput = {
   codeDigest: string;
   policy?: PolicyOverlay;
   guideline?: string;
-  interrupt?: AbortSignal;
+  interrupt: AbortSignal;
   onTranscript?(transcript: Transcript): Promise<void>;
   onUnreadableHomes?(count: number): void;
   onUnownedHomes?(roots: readonly string[]): void;
@@ -422,9 +433,9 @@ export type ContextLiveInput = {
 
 export const runContextLive = async (effects: ContextHostEffects, input: ContextLiveInput): Promise<Transcript[]> => {
   const { interrupt } = input;
-  interrupt?.throwIfAborted();
+  interrupt.throwIfAborted();
   const settings = liveSettingsFor(input.models, [input.alias]);
-  const credentialValues = await readCredentials(effects, settings.credentials, interrupt ?? new AbortController().signal);
+  const credentialValues = await readCredentials(effects, settings.credentials, interrupt);
   const swept = await sweepStaleHomes(effects);
   if (swept.unreadable > 0) input.onUnreadableHomes?.(swept.unreadable);
   if (swept.unowned.length > 0) input.onUnownedHomes?.(swept.unowned);
@@ -434,11 +445,11 @@ export const runContextLive = async (effects: ContextHostEffects, input: Context
     reflection: input.reflection,
     ...(input.policy === undefined ? {} : { policy: input.policy }),
     ...(input.guideline === undefined ? {} : { guideline: input.guideline }),
-    ...(interrupt === undefined ? {} : { interrupt }),
+    interrupt,
   });
   const bounds = liveBoundsFor(input.dataset, input.limits);
   const interrupted = new Promise<never>((_resolve, reject) => {
-    interrupt?.addEventListener('abort', () => reject(new ContextInterrupted()), { once: true });
+    interrupt.addEventListener('abort', () => reject(new ContextInterrupted()), { once: true });
   });
   const running = runContextDataset(expandContextDataset(input.dataset, input.seed), {
     policy: input.policy ?? {},

@@ -3,6 +3,7 @@ import type { EndpointProbeKey } from '@momonga/config';
 import { createBinaryHashCache, managedInstancePaths } from '@momonga/foundation';
 import type { MomongaPaths, OutboundNetwork } from '@momonga/foundation';
 import type { DialectDefinition, ProbeReportDialect } from '@momonga/protocol';
+import { withinCommandLimit } from '../command-limit.ts';
 import { ensureDaemon, stopDaemon } from '../daemon/ensure-daemon.ts';
 import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import type { CliPorts } from '../ports.ts';
@@ -44,7 +45,8 @@ export const probeTarget = async (ports: CliPorts, paths: MomongaPaths, target: 
 };
 
 const apiKeyOf = async (ports: CliPorts, target: ChatCompletionsConfig, interrupt: AbortSignal): Promise<string | undefined> => {
-  if (target.apiKeySecret !== undefined) return ports.secretStore().read(target.apiKeySecret, interrupt);
+  const { apiKeySecret } = target;
+  if (apiKeySecret !== undefined) return withinCommandLimit(interrupt, (signal) => ports.secretStore().read(apiKeySecret, signal));
   if (target.apiKeyEnv === undefined) return undefined;
   const value = ports.env[target.apiKeyEnv];
   if (value === undefined || value === '') throw new Error(`the environment variable ${target.apiKeyEnv} is unset or empty, so the target cannot be probed`);

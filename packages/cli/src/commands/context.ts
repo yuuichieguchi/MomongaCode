@@ -45,7 +45,7 @@ export type ContextImproveOptions = {
   tokenCap: number;
   seed: number;
   outcome: string;
-  interrupt?: AbortSignal;
+  interrupt: AbortSignal;
 };
 
 const RECORD_WINDOW_SHARE = 4;
@@ -67,10 +67,9 @@ const tokensOf = (transcripts: readonly Transcript[]): number =>
 
 type Completer = (request: GuidelineCompletionRequest) => Promise<GuidelineCompletion>;
 
-const completerFor = async (ports: CliPorts, paths: MomongaPaths, alias: string, capabilities: AliasCapabilities, interrupt: AbortSignal | undefined): Promise<{ complete: Completer; close(): Promise<void> }> => {
+const completerFor = async (ports: CliPorts, paths: MomongaPaths, alias: string, capabilities: AliasCapabilities, signal: AbortSignal): Promise<{ complete: Completer; close(): Promise<void> }> => {
   const { RUNTIME_DEFAULTS, billedDetailOf, carriesOutput, createGatewayClient } = await import('@momonga/runtime');
   const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway'), clock: ports.clock, version: ports.version });
-  const signal = interrupt ?? new AbortController().signal;
   const complete: Completer = async (request) => {
     const body: CreateResponseBody = {
       model: alias,
@@ -171,7 +170,7 @@ export const contextImprove = async (
               ...(guideline === undefined ? {} : { guideline }),
               onUnreadableHomes: (count) => ports.stderr.write(unreadableHomesNotice(count)),
               onUnownedHomes: (roots) => ports.stderr.write(unownedHomesNotice(roots)),
-              ...(options.interrupt === undefined ? {} : { interrupt: options.interrupt }),
+              interrupt: options.interrupt,
             });
             const report = buildContextReport({ dataset, transcripts, seed: CONTEXT_BOOTSTRAP_SEED, datasetSeed: options.seed });
             return { report, transcripts, tokens: tokensOf(transcripts) };

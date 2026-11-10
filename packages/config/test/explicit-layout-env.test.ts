@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { appendPermissionRule, createUserSettingsCache, loadMcpServers, loadSettings, loadUserSettings, noKeptRecords, systemFileLockPorts } from '@momonga/config';
 import { makeTree, trusting } from './helpers.ts';
 
+const NEVER_ABORTED = new AbortController().signal;
+
 const layoutCalls = vi.hoisted(() => [] as unknown[][]);
 
 vi.mock('@momonga/foundation', async (importOriginal) => {
@@ -45,7 +47,7 @@ describe('config passes an explicit env to momongaLayout', () => {
     layoutCalls.length = 0;
     const tree = makeTree();
     await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
-    await appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow' });
+    await appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow', signal: NEVER_ABORTED });
     expectExplicitEnv();
   });
 });

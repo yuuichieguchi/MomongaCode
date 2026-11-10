@@ -1,29 +1,83 @@
 import type { CredentialSecretStore } from './encrypted-credential-store.ts';
+import { nodeFileSystem } from './node-file-system.ts';
+import { settledOrAborted } from './operation-limit.ts';
 import { findProgramOnPath } from './program-search.ts';
 import { declaredChildEnv } from './process-contract.ts';
 import { powershellArgs, powershellPath } from './platform/windows-scripts.ts';
+import { SecretStoreAbsentError, SecretStoreAnswerError, endedStoreCall } from './secret-store-failures.ts';
+import type { NamedSecretCall } from './secret-store-failures.ts';
 
 export const SECRET_NAME_PATTERN = '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$';
 
 export const KEYCHAIN_SERVICE = 'momonga';
 export const SECURITY_BINARY = '/usr/bin/security';
 
-export type SecretStore = {
-  read(name: string, signal: AbortSignal): Promise<string>;
-  write(name: string, value: string, signal: AbortSignal): Promise<void>;
-};
-
 export type SecretProcessResult = { exitCode: number; stdout: string; stderr: string };
 
 export type SecretProcessPort = (file: string, args: readonly string[], stdin: string, signal: AbortSignal) => Promise<SecretProcessResult>;
 
-export type SecretBackend = { label: string; searchedProgram: string; childEnvNames: readonly string[]; storeCommand(secretName: string): string };
+export type FileKind = 'file' | 'other' | 'missing';
+
+export type SecretStoreFiles = { stat(path: string): Promise<{ isFile(): boolean }> };
+
+export const nodeSecretStoreFiles: SecretStoreFiles = { stat: (path) => nodeFileSystem.stat(path) };
+
+export type ReadinessReading =
+  | { kind: 'absent'; reason: string }
+  | { kind: 'unknown'; excerpt: string }
+  | { kind: 'file'; path: string; named: string };
+
+export type Readiness = {
+  advice: string;
+  args: readonly string[];
+  read(result: SecretProcessResult): ReadinessReading;
+};
+
+export type SecretBackend = {
+  label: string;
+  searchedProgram: string;
+  childEnvNames: readonly string[];
+  storeCommand(secretName: string): string;
+  unansweredAdvice: string | undefined;
+  readiness: Readiness | undefined;
+};
+
+export type SecretStore = {
+  readonly backend?: SecretBackend;
+  read(name: string, signal: AbortSignal): Promise<string>;
+  write(name: string, value: string, signal: AbortSignal): Promise<void>;
+};
+
+const DEFAULT_KEYCHAIN_ANSWER = /^    "(.+)"\n$/;
+const DEFAULT_KEYCHAIN_REFUSAL = /^(?:[^:\n]*: )?(SecKeychainCopyDefault: .*)$/;
+const READINESS_EXCERPT_CHARACTERS = 200;
+
+const firstLineOf = (text: string): string => text.split('\n', 1)[0] as string;
+
+const readinessExcerptOf = (result: SecretProcessResult): string => {
+  const stderr = result.stderr.trim();
+  const said = stderr === '' ? result.stdout.trim() : stderr;
+  return said === '' ? 'no output' : said.slice(0, READINESS_EXCERPT_CHARACTERS);
+};
+
+const readDefaultKeychain = (result: SecretProcessResult): ReadinessReading => {
+  const answered = result.exitCode === 0 ? DEFAULT_KEYCHAIN_ANSWER.exec(result.stdout) : null;
+  if (answered !== null) {
+    const path = answered[1] as string;
+    return { kind: 'file', path, named: `the default keychain ${path}` };
+  }
+  const refused = result.exitCode === 0 ? null : DEFAULT_KEYCHAIN_REFUSAL.exec(firstLineOf(result.stderr));
+  if (refused !== null) return { kind: 'absent', reason: `security reports no default keychain (${refused[1] as string})` };
+  return { kind: 'unknown', excerpt: readinessExcerptOf(result) };
+};
 
 export const KEYCHAIN_BACKEND: SecretBackend = {
   label: 'Keychain',
   searchedProgram: 'security',
   childEnvNames: [],
   storeCommand: (secretName) => `security add-generic-password -s ${KEYCHAIN_SERVICE} -a ${secretName} -w`,
+  unansweredAdvice: 'the Keychain may be waiting for an answer in a window on your screen: answer it or unlock the login keychain',
+  readiness: { advice: 'make a default keychain available', args: ['default-keychain'], read: readDefaultKeychain },
 };
 
 export const SECRET_SERVICE_BACKEND: SecretBackend = {
@@ -31,6 +85,8 @@ export const SECRET_SERVICE_BACKEND: SecretBackend = {
   searchedProgram: 'secret-tool',
   childEnvNames: ['DBUS_SESSION_BUS_ADDRESS'],
   storeCommand: (secretName) => `secret-tool store --label=${KEYCHAIN_SERVICE} service ${KEYCHAIN_SERVICE} account ${secretName}`,
+  unansweredAdvice: 'the Secret Service may be waiting for you to answer a prompt: answer it or unlock the keyring',
+  readiness: undefined,
 };
 
 export const CREDENTIAL_MANAGER_BACKEND: SecretBackend = {
@@ -38,6 +94,8 @@ export const CREDENTIAL_MANAGER_BACKEND: SecretBackend = {
   searchedProgram: 'cmdkey',
   childEnvNames: ['SystemRoot'],
   storeCommand: (secretName) => `cmdkey /generic:${KEYCHAIN_SERVICE}/${secretName} /user:${KEYCHAIN_SERVICE} /pass`,
+  unansweredAdvice: undefined,
+  readiness: undefined,
 };
 
 export class SecretUnavailableError extends Error {
@@ -82,61 +140,103 @@ const withoutOneTrailingNewline = (text: string): string => (text.endsWith('\n')
 
 export const SECRET_TOOL_BINARY = '/usr/bin/secret-tool';
 
-type SecretCommand = { file: string; args: readonly string[]; backend: SecretBackend; stdin?: string };
+type SecretCommand = { args: readonly string[]; stdin?: string };
+
+type CommandStoreHost = { run: SecretProcessPort; program: string; backend: SecretBackend; files: SecretStoreFiles };
 
 const assertNameShape = (name: string): void => {
   if (!NAME_SHAPE.test(name)) throw new RangeError(`secret name ${JSON.stringify(name)} does not match ${SECRET_NAME_PATTERN}`);
 };
 
+type CheckedFile = { kind: FileKind } | { kind: 'unchecked'; detail: string };
+
+const NO_SUCH_FILE_CODES: readonly string[] = ['ENOENT', 'ENOTDIR'];
+
+const errorCodeOf = (error: unknown): string | undefined => {
+  const code = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;
+  return typeof code === 'string' ? code : undefined;
+};
+
+const checkedFile = async (files: SecretStoreFiles, path: string, signal: AbortSignal): Promise<CheckedFile> => {
+  let stat: { isFile(): boolean };
+  try {
+    stat = await settledOrAborted(files.stat(path), signal);
+  } catch (error) {
+    if (signal.aborted && error === signal.reason) throw error;
+    const code = errorCodeOf(error);
+    if (code !== undefined && NO_SUCH_FILE_CODES.includes(code)) return { kind: 'missing' };
+    return { kind: 'unchecked', detail: code ?? (error instanceof Error ? error.message : String(error)) };
+  }
+  return { kind: stat.isFile() ? 'file' : 'other' };
+};
+
 const createCommandSecretStore = (
-  run: SecretProcessPort,
+  { run, program, backend, files }: CommandStoreHost,
   commands: { read(name: string): SecretCommand; write(name: string, value: string): SecretCommand },
-): SecretStore => ({
-  read: async (name, signal) => {
-    assertNameShape(name);
-    const command = commands.read(name);
-    const result = await run(command.file, command.args, command.stdin ?? '', signal);
-    if (result.exitCode !== 0) throw new SecretUnavailableError(name, result.exitCode, result.stderr.trim(), command.backend);
-    const value = withoutOneTrailingNewline(result.stdout);
-    if (value === '') throw new SecretEmptyError(name, command.backend);
-    return value;
-  },
-  write: async (name, value, signal) => {
-    assertNameShape(name);
-    if (value === '') throw new RangeError('a secret value must not be empty');
-    const command = commands.write(name, value);
-    const result = await run(command.file, command.args, command.stdin ?? '', signal);
-    if (result.exitCode !== 0) throw new SecretWriteError(name, result.exitCode, result.stderr.trim(), command.backend);
-  },
-});
+): SecretStore => {
+  const assertReady = async (call: NamedSecretCall, signal: AbortSignal): Promise<void> => {
+    const { readiness } = backend;
+    if (readiness === undefined) return;
+    const answer = await run(program, readiness.args, '', signal);
+    const reading = readiness.read(answer);
+    if (reading.kind === 'absent') throw new SecretStoreAbsentError({ reason: reading.reason, backend, call });
+    if (reading.kind === 'unknown') throw new SecretStoreAnswerError(backend, answer.exitCode, reading.excerpt);
+    const checked = await checkedFile(files, reading.path, signal);
+    if (checked.kind === 'missing') throw new SecretStoreAbsentError({ reason: `${reading.named} does not exist`, backend, call });
+    if (checked.kind === 'other') throw new SecretStoreAnswerError(backend, answer.exitCode, `${reading.named} is not a file`);
+    if (checked.kind === 'unchecked') throw new SecretStoreAnswerError(backend, answer.exitCode, `${reading.named} could not be checked: ${checked.detail}`);
+  };
+
+  const answeredWhenReady = async (call: NamedSecretCall, command: SecretCommand, signal: AbortSignal): Promise<SecretProcessResult> => {
+    try {
+      signal.throwIfAborted();
+      await assertReady(call, signal);
+      return await run(program, command.args, command.stdin ?? '', signal);
+    } catch (error) {
+      if (signal.aborted && error === signal.reason) throw endedStoreCall({ ...call, backend }, error);
+      throw error;
+    }
+  };
+
+  return {
+    backend,
+    read: async (name, signal) => {
+      assertNameShape(name);
+      const result = await answeredWhenReady({ action: 'read', name }, commands.read(name), signal);
+      if (result.exitCode !== 0) throw new SecretUnavailableError(name, result.exitCode, result.stderr.trim(), backend);
+      const value = withoutOneTrailingNewline(result.stdout);
+      if (value === '') throw new SecretEmptyError(name, backend);
+      return value;
+    },
+    write: async (name, value, signal) => {
+      assertNameShape(name);
+      if (value === '') throw new RangeError('a secret value must not be empty');
+      const result = await answeredWhenReady({ action: 'write', name }, commands.write(name, value), signal);
+      if (result.exitCode !== 0) throw new SecretWriteError(name, result.exitCode, result.stderr.trim(), backend);
+    },
+  };
+};
 
 export const keychainWriteCommand = (name: string, value: string): string =>
   `add-generic-password -U -s ${KEYCHAIN_SERVICE} -a ${name} -X ${Buffer.from(value, 'utf8').toString('hex')}\n`;
 
-export const createKeychainSecretStore = (run: SecretProcessPort, security: string = SECURITY_BINARY): SecretStore =>
-  createCommandSecretStore(run, {
-    read: (name) => ({
-      file: security,
-      args: ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', name, '-w'],
-      backend: KEYCHAIN_BACKEND,
-    }),
-    write: (name, value) => ({ file: security, args: ['-i'], stdin: keychainWriteCommand(name, value), backend: KEYCHAIN_BACKEND }),
-  });
+export const createKeychainSecretStore = (run: SecretProcessPort, security: string = SECURITY_BINARY, files: SecretStoreFiles = nodeSecretStoreFiles): SecretStore =>
+  createCommandSecretStore(
+    { run, program: security, backend: KEYCHAIN_BACKEND, files },
+    {
+      read: (name) => ({ args: ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', name, '-w'] }),
+      write: (name, value) => ({ args: ['-i'], stdin: keychainWriteCommand(name, value) }),
+    },
+  );
 
-export const createSecretServiceStore = (run: SecretProcessPort, secretTool: string = SECRET_TOOL_BINARY): SecretStore =>
-  createCommandSecretStore(run, {
-    read: (name) => ({
-      file: secretTool,
-      args: ['lookup', 'service', KEYCHAIN_SERVICE, 'account', name],
-      backend: SECRET_SERVICE_BACKEND,
-    }),
-    write: (name, value) => ({
-      file: secretTool,
-      args: ['store', `--label=${KEYCHAIN_SERVICE}`, 'service', KEYCHAIN_SERVICE, 'account', name],
-      stdin: value,
-      backend: SECRET_SERVICE_BACKEND,
-    }),
-  });
+export const createSecretServiceStore = (run: SecretProcessPort, secretTool: string = SECRET_TOOL_BINARY, files: SecretStoreFiles = nodeSecretStoreFiles): SecretStore =>
+  createCommandSecretStore(
+    { run, program: secretTool, backend: SECRET_SERVICE_BACKEND, files },
+    {
+      read: (name) => ({ args: ['lookup', 'service', KEYCHAIN_SERVICE, 'account', name] }),
+      write: (name, value) => ({ args: ['store', `--label=${KEYCHAIN_SERVICE}`, 'service', KEYCHAIN_SERVICE, 'account', name], stdin: value }),
+    },
+  );
 
 export const credentialReadScript = (target: string): string =>
   [
@@ -205,20 +305,18 @@ export const credentialWriteScript = (target: string, userName: string): string 
     'if ($status -ne 0) { [Console]::Error.WriteLine("CredWrite failed with Win32 error $status"); exit 2 }',
   ].join('\n');
 
-export const createCredentialManagerStore = (run: SecretProcessPort, powershell: { file: string; args(script: string): readonly string[] }): SecretStore =>
-  createCommandSecretStore(run, {
-    read: (name) => ({
-      file: powershell.file,
-      args: powershell.args(credentialReadScript(`${KEYCHAIN_SERVICE}/${name}`)),
-      backend: CREDENTIAL_MANAGER_BACKEND,
-    }),
-    write: (name, value) => ({
-      file: powershell.file,
-      args: powershell.args(credentialWriteScript(`${KEYCHAIN_SERVICE}/${name}`, KEYCHAIN_SERVICE)),
-      stdin: value,
-      backend: CREDENTIAL_MANAGER_BACKEND,
-    }),
-  });
+export const createCredentialManagerStore = (
+  run: SecretProcessPort,
+  powershell: { file: string; args(script: string): readonly string[] },
+  files: SecretStoreFiles = nodeSecretStoreFiles,
+): SecretStore =>
+  createCommandSecretStore(
+    { run, program: powershell.file, backend: CREDENTIAL_MANAGER_BACKEND, files },
+    {
+      read: (name) => ({ args: powershell.args(credentialReadScript(`${KEYCHAIN_SERVICE}/${name}`)) }),
+      write: (name, value) => ({ args: powershell.args(credentialWriteScript(`${KEYCHAIN_SERVICE}/${name}`, KEYCHAIN_SERVICE)), stdin: value }),
+    },
+  );
 
 type SecretEnv = Readonly<Record<string, string | undefined>>;
 
@@ -226,17 +324,21 @@ export const SECRET_BACKEND_ENV = 'MOMONGA_SECRET_BACKEND';
 export const SECRET_PROGRAM_ENV = 'MOMONGA_SECRET_PROGRAM';
 export const SECRET_REFUSAL_ENV = 'MOMONGA_SECRET_REFUSAL';
 
-type SecretBackendKind = { backend: SecretBackend; create(run: SecretProcessPort, program: string): SecretStore };
+type SecretBackendKind = { backend: SecretBackend; create(run: SecretProcessPort, program: string, files: SecretStoreFiles): SecretStore };
 
 const SECRET_BACKENDS: Readonly<Record<string, SecretBackendKind>> = {
-  keychain: { backend: KEYCHAIN_BACKEND, create: (run, program) => createKeychainSecretStore(run, program) },
-  'secret-service': { backend: SECRET_SERVICE_BACKEND, create: (run, program) => createSecretServiceStore(run, program) },
-  'credential-manager': { backend: CREDENTIAL_MANAGER_BACKEND, create: (run, program) => createCredentialManagerStore(run, { file: program, args: powershellArgs }) },
+  keychain: { backend: KEYCHAIN_BACKEND, create: (run, program, files) => createKeychainSecretStore(run, program, files) },
+  'secret-service': { backend: SECRET_SERVICE_BACKEND, create: (run, program, files) => createSecretServiceStore(run, program, files) },
+  'credential-manager': { backend: CREDENTIAL_MANAGER_BACKEND, create: (run, program, files) => createCredentialManagerStore(run, { file: program, args: powershellArgs }, files) },
 };
 
 export const SECRET_STORE_SEARCHED_PROGRAMS: readonly string[] = Object.values(SECRET_BACKENDS).map((kind) => kind.backend.searchedProgram);
 
 type ChosenSecretStore = { kind: 'chosen'; id: string; program: string } | { kind: 'none'; reason: string };
+
+const searchedAs = (backend: SecretBackend): string => `${backend.searchedProgram} (${backend.label})`;
+
+const notOnPath = (backend: SecretBackend): string => `${searchedAs(backend)} is not on PATH`;
 
 const chooseSecretBackend = (env: SecretEnv): ChosenSecretStore => {
   const security = findProgramOnPath(KEYCHAIN_BACKEND.searchedProgram, env);
@@ -247,8 +349,8 @@ const chooseSecretBackend = (env: SecretEnv): ChosenSecretStore => {
   if (secretTool !== undefined && hasSession) return { kind: 'chosen', id: 'secret-service', program: secretTool };
   if (findProgramOnPath(CREDENTIAL_MANAGER_BACKEND.searchedProgram, env) !== undefined) return { kind: 'chosen', id: 'credential-manager', program: powershellPath(env) };
   const secretServiceState =
-    secretTool === undefined ? 'secret-tool (Secret Service) is not on PATH' : `secret-tool (Secret Service) is on PATH at ${secretTool}, but no D-Bus session is set (DBUS_SESSION_BUS_ADDRESS is empty)`;
-  return { kind: 'none', reason: `security (Keychain) is not on PATH; ${secretServiceState}; cmdkey (Credential Manager) is not on PATH` };
+    secretTool === undefined ? notOnPath(SECRET_SERVICE_BACKEND) : `${searchedAs(SECRET_SERVICE_BACKEND)} is on PATH at ${secretTool}, but no D-Bus session is set (DBUS_SESSION_BUS_ADDRESS is empty)`;
+  return { kind: 'none', reason: `${notOnPath(KEYCHAIN_BACKEND)}; ${secretServiceState}; ${notOnPath(CREDENTIAL_MANAGER_BACKEND)}` };
 };
 
 const backendKindOf = (id: string): SecretBackendKind | undefined => (Object.hasOwn(SECRET_BACKENDS, id) ? SECRET_BACKENDS[id] : undefined);
@@ -278,30 +380,32 @@ export const givenSecretStoreChildEnv = (givenEnv: SecretEnv): Record<string, st
   return given.kind === 'none' ? {} : declaredChildEnv(givenEnv, given.backend.backend.childEnvNames);
 };
 
-export const givenCredentialSecretStore = (run: SecretProcessPort, givenEnv: SecretEnv): CredentialSecretStore => {
+export const givenCredentialSecretStore = (run: SecretProcessPort, givenEnv: SecretEnv, files: SecretStoreFiles = nodeSecretStoreFiles): CredentialSecretStore => {
   const given = givenSecretStore(givenEnv);
-  return given.kind === 'none' ? given : { kind: 'available', store: given.backend.create(run, given.program) };
+  return given.kind === 'none' ? given : { kind: 'available', store: given.backend.create(run, given.program, files) };
 };
 
-export const createGivenSecretStore = (run: SecretProcessPort, givenEnv: SecretEnv): SecretStore => {
-  const storeOf = (): SecretStore => {
-    const given = givenCredentialSecretStore(run, givenEnv);
-    if (given.kind === 'none') throw new Error(`no secret store is available to this process: ${given.reason}`);
+export const createGivenSecretStore = (run: SecretProcessPort, givenEnv: SecretEnv, files: SecretStoreFiles = nodeSecretStoreFiles): SecretStore => {
+  const storeFor = (call: NamedSecretCall): SecretStore => {
+    const given = givenCredentialSecretStore(run, givenEnv, files);
+    if (given.kind === 'none') throw new SecretStoreAbsentError({ reason: given.reason, call });
     return given.store;
   };
+  const given = givenSecretStore(givenEnv);
   return {
-    read: async (name, signal) => storeOf().read(name, signal),
-    write: async (name, value, signal) => storeOf().write(name, value, signal),
+    ...(given.kind === 'none' ? {} : { backend: given.backend.backend }),
+    read: async (name, signal) => storeFor({ action: 'read', name }).read(name, signal),
+    write: async (name, value, signal) => storeFor({ action: 'write', name }).write(name, value, signal),
   };
 };
 
-const storeFor = (run: SecretProcessPort, env: SecretEnv): SecretStore => {
+const chosenStoreFor = (run: SecretProcessPort, env: SecretEnv, files: SecretStoreFiles, call: NamedSecretCall): SecretStore => {
   const chosen = chooseSecretBackend(env);
-  if (chosen.kind === 'none') throw new Error(`no secret store was found on this host: ${chosen.reason}`);
-  return (backendKindOf(chosen.id) as SecretBackendKind).create(run, chosen.program);
+  if (chosen.kind === 'none') throw new SecretStoreAbsentError({ reason: chosen.reason, call });
+  return (backendKindOf(chosen.id) as SecretBackendKind).create(run, chosen.program, files);
 };
 
-export const createPlatformSecretStore = (run: SecretProcessPort, env: SecretEnv): SecretStore => ({
-  read: async (name, signal) => storeFor(run, env).read(name, signal),
-  write: async (name, value, signal) => storeFor(run, env).write(name, value, signal),
+export const createPlatformSecretStore = (run: SecretProcessPort, env: SecretEnv, files: SecretStoreFiles = nodeSecretStoreFiles): SecretStore => ({
+  read: async (name, signal) => chosenStoreFor(run, env, files, { action: 'read', name }).read(name, signal),
+  write: async (name, value, signal) => chosenStoreFor(run, env, files, { action: 'write', name }).write(name, value, signal),
 });

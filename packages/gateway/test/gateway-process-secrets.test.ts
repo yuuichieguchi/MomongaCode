@@ -4,8 +4,21 @@ import { SECRET_TOOL_BINARY, SECURITY_BINARY, KEYCHAIN_SERVICE, createJsonLogger
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
-import { READY_CONTROL, REAL_PROCESS_TEST_TIMEOUT_MS, anthropicErrorReply, anthropicTextReply, createFakeSecurityPort, openResponsesTextReply, registerCleanup, startFakeAnthropic, startFakeOpenResponses, withTempDir } from '@momonga/testkit';
-import type { CleanupContext, FakeControl, FakeUpstreamReply, FakeUpstreamServer } from '@momonga/testkit';
+import {
+  READY_CONTROL,
+  REAL_PROCESS_TEST_TIMEOUT_MS,
+  anthropicErrorReply,
+  anthropicTextReply,
+  createFakeClock,
+  createFakeSecurityPort,
+  createFakeTimers,
+  openResponsesTextReply,
+  registerCleanup,
+  startFakeAnthropic,
+  startFakeOpenResponses,
+  withTempDir,
+} from '@momonga/testkit';
+import type { CleanupContext, FakeControl, FakeTimers, FakeUpstreamReply, FakeUpstreamServer } from '@momonga/testkit';
 import { PROCESS_VERSION, baseEnv, fakeSecretHost, givenStoreOnHost, homePaths, portOnSecretHost, writeSettings } from './gateway-process-helpers.ts';
 import type { HostPort, SecretHost } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
@@ -80,6 +93,7 @@ const startStack = async (
     secretName?: string;
     control?: Partial<FakeControl>;
     headersTimeoutMs?: number;
+    timers?: FakeTimers;
   },
 ): Promise<Stack> => {
   const anthropic = await startFakeAnthropic({ apiKey: SECRET, script: options.anthropicScript });
@@ -108,6 +122,7 @@ const startStack = async (
     version: PROCESS_VERSION,
     execWithStdin: security,
     secretStore: givenStoreOnHost(security, host),
+    ...(options.timers === undefined ? {} : { timers: options.timers }),
     logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: { write: (chunk: string) => (lines.push(chunk), true) }, level: 'debug' }),
     stdout: { write: () => true },
   });
@@ -311,43 +326,42 @@ describe('a Keychain that cannot answer, in the gateway process', () => {
     return { state: () => state, value: () => value };
   };
 
-  const useLimitTimers = (context: CleanupContext): void => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    registerCleanup(context, () => void vi.useRealTimers());
-  };
+  const gatewayTimers = (): FakeTimers => createFakeTimers(createFakeClock(0));
 
-  const answerAtLimit = async (stack: Stack, limitMs: number): Promise<{ status: number; text: string }> => {
+  const answerAtLimit = async (stack: Stack, timers: FakeTimers, limitMs: number): Promise<{ status: number; text: string }> => {
     const answer = answerOf(post(stack.patient, request));
     await stack.security.arrived('find-generic-password');
-    await vi.advanceTimersByTimeAsync(limitMs - 1);
+    timers.advance(limitMs - 1);
     await new Promise<void>((resolve) => void setImmediate(resolve));
     expect(answer.state()).toBe('pending');
-    await vi.advanceTimersByTimeAsync(1);
+    timers.advance(1);
     await vi.waitFor(() => expect(answer.state()).toBe('fulfilled'), ANSWER_WAIT);
     return answer.value() as { status: number; text: string };
   };
 
   it.for([
-    { title: 'the default of 300000 ms', headersTimeoutMs: undefined, limitMs: 300_000 },
-    { title: 'a configured 5000 ms', headersTimeoutMs: 5000, limitMs: 5000 },
-  ])('a hung key read ends at models.headersTimeoutMs ($title)', async ({ headersTimeoutMs, limitMs }, context) => {
+    { title: 'the default of 300000 ms', headersTimeoutMs: undefined, limitMs: 300_000, label: 'the request limit' },
+    { title: 'a configured 5000 ms', headersTimeoutMs: 5000, limitMs: 5000, label: 'the request limit' },
+    { title: 'a configured 0 falls to the secret read limit', headersTimeoutMs: 0, limitMs: 300_000, label: 'the secret read limit' },
+  ])('a hung key read ends at models.headersTimeoutMs ($title)', async ({ headersTimeoutMs, limitMs, label }, context) => {
+    const timers = gatewayTimers();
     const stack = await startStack(context, KEYCHAIN, {
       secrets: { [K]: SECRET },
       secretName: K,
       anthropicScript: [anthropicTextReply(['unreachable'])],
       control: { calls: 'hang' },
+      timers,
       ...(headersTimeoutMs === undefined ? {} : { headersTimeoutMs }),
     });
-    useLimitTimers(context);
 
-    const response = await answerAtLimit(stack, limitMs);
+    const response = await answerAtLimit(stack, timers, limitMs);
 
     expect(response.status).toBe(401);
     expect(JSON.parse(response.text).error).toMatchObject({
       type: 'invalid_request',
       code: 'secret_unavailable',
       param: K,
-      message: `the read of the secret "k" did not finish within the request limit of ${limitMs} ms; ${ADVICE}; ${NEXT_REQUEST_TAIL}`,
+      message: `the read of the secret "k" did not finish within ${label} of ${limitMs} ms; ${ADVICE}; ${NEXT_REQUEST_TAIL}`,
     });
     expect(stack.anthropic.requests).toEqual([]);
   });
@@ -385,10 +399,10 @@ describe('a Keychain that cannot answer, in the gateway process', () => {
   });
 
   it('after a limit the next request reads again and nothing is cached', async (context) => {
-    const stack = await startStack(context, KEYCHAIN, { secrets: { [K]: SECRET }, secretName: K, anthropicScript: [anthropicTextReply(['hello'])], control: { calls: 'hang' } });
-    useLimitTimers(context);
+    const timers = gatewayTimers();
+    const stack = await startStack(context, KEYCHAIN, { secrets: { [K]: SECRET }, secretName: K, anthropicScript: [anthropicTextReply(['hello'])], control: { calls: 'hang' }, timers });
 
-    expect((await answerAtLimit(stack, 300_000)).status).toBe(401);
+    expect((await answerAtLimit(stack, timers, 300_000)).status).toBe(401);
     stack.control.calls = 'answer';
     const next = answerOf(post(stack.patient, request));
     await vi.waitFor(() => expect(next.state()).toBe('fulfilled'), ANSWER_WAIT);
@@ -399,10 +413,10 @@ describe('a Keychain that cannot answer, in the gateway process', () => {
   });
 
   it('a secret_unavailable limit lets the alias fall to the next target', async (context) => {
-    const stack = await startStack(context, KEYCHAIN, { secrets: { [K]: SECRET }, secretName: K, anthropicScript: [], aliasOrder: ['claude', 'local'], control: { calls: 'hang' } });
-    useLimitTimers(context);
+    const timers = gatewayTimers();
+    const stack = await startStack(context, KEYCHAIN, { secrets: { [K]: SECRET }, secretName: K, anthropicScript: [], aliasOrder: ['claude', 'local'], control: { calls: 'hang' }, timers });
 
-    const response = await answerAtLimit(stack, 300_000);
+    const response = await answerAtLimit(stack, timers, 300_000);
 
     expect(response.status).toBe(200);
     expect(JSON.parse(response.text).momonga).toMatchObject({ target: 'local', fallbackFrom: ['claude'] });

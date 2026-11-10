@@ -72,6 +72,25 @@ describe('authState against a credential store that cannot answer', () => {
     expect(probe.value()).toEqual({ state: 'unreachable', detail: keyReadLimitSentence('the MCP connect limit', 30_000) });
   });
 
+  it("authState with no live session reports the connect's limit sentence", LIMIT_TEST, async () => {
+    const fixture = await startHttpFixture({ era: 'legacy' });
+    const credentials = controlledCredentialStore();
+    credentials.mode = 'hang';
+    const { connection } = makeRemoteConnection({ fixture, store: credentials.store });
+    useLimitTimers();
+
+    const probe = outcomeOf(connection.authState(NEVER_ABORTED));
+    await credentials.arrived(1, 'hang');
+    await stillPendingAfter(probe, 29_999);
+    await vi.advanceTimersByTimeAsync(1);
+    await settledAfter(probe);
+
+    expect(probe.state()).toBe('fulfilled');
+    expect(probe.value()).toEqual({ state: 'unreachable', detail: keyReadLimitSentence('the MCP connect limit', 30_000) });
+    expect(credentials.calls).toHaveLength(1);
+    expect(fixture.rpcRecords('initialize')).toEqual([]);
+  });
+
   it('authState reports unreachable with the N81 text for an absent store', async () => {
     const { connection, credentials } = await serverWhoseStoredReadIs('absent');
 

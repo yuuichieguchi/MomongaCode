@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createKeyedSerializer, isRecord, nodeFileSystem, systemRandom, withFileLock, writeFileAtomically } from '@momonga/foundation';
+import { DEFAULT_LOCK_TIMEOUT_MS, createKeyedSerializer, isRecord, nodeFileSystem, systemRandom, withFileLock, writeFileAtomically } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
 import { settingsLockPath } from './file-lock.ts';
 import { layoutOf } from './layout.ts';
@@ -16,6 +16,7 @@ export type AppendPermissionRuleOptions = {
   lockTimeoutMs?: number;
   rule: string;
   effect: RuleEffect;
+  signal: AbortSignal;
 };
 
 const SETTINGS_FILE_MODE = 0o600;
@@ -34,7 +35,7 @@ const addRule = (document: Record<string, unknown>, file: string, rule: string, 
   return true;
 };
 
-export const appendPermissionRule = async ({ home, projectDir, rule, effect, ports, lockTimeoutMs }: AppendPermissionRuleOptions): Promise<void> => {
+export const appendPermissionRule = async ({ home, projectDir, rule, effect, ports, lockTimeoutMs, signal }: AppendPermissionRuleOptions): Promise<void> => {
   const directory = await localSettingsDirectory(home, projectDir);
   const file = path.join(directory, 'settings.local.json');
   const root = await worktreeRootOf(home, projectDir);
@@ -43,16 +44,19 @@ export const appendPermissionRule = async ({ home, projectDir, rule, effect, por
 
   await fs.promises.mkdir(directory, { recursive: true, mode: 0o700 });
   await fs.promises.mkdir(layoutOf(home).run, { recursive: true, mode: 0o700 });
-  await serializeInProcess(file, () =>
-    withFileLock(settingsLockPath(home, file), async () => {
-      const read = await readJsonFile(file);
-      let document: Record<string, unknown> = {};
-      if (read.found) {
-        if (!isRecord(read.value)) throw new Error(`${file}: settings must be a JSON object`);
-        document = read.value;
-      }
-      if (!addRule(document, file, stored, effect)) return;
-      await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: ports.randomHex }, file, `${JSON.stringify(document, null, 2)}\n`, { mode: SETTINGS_FILE_MODE });
-    }, { ports, ...(lockTimeoutMs === undefined ? {} : { timeoutMs: lockTimeoutMs }) }),
+  await serializeInProcess(
+    file,
+    () =>
+      withFileLock(settingsLockPath(home, file), async () => {
+        const read = await readJsonFile(file);
+        let document: Record<string, unknown> = {};
+        if (read.found) {
+          if (!isRecord(read.value)) throw new Error(`${file}: settings must be a JSON object`);
+          document = read.value;
+        }
+        if (!addRule(document, file, stored, effect)) return;
+        await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: ports.randomHex }, file, `${JSON.stringify(document, null, 2)}\n`, { mode: SETTINGS_FILE_MODE });
+      }, { ports, signal, timeoutMs: lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS }),
+    signal,
   );
 };

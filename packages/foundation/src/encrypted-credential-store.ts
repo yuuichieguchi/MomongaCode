@@ -9,6 +9,7 @@ import { systemFileLockPorts, withFileLock } from './file-lock.ts';
 import { parseOutsideJson } from './json-depth.ts';
 import type { FileLockPorts } from './file-lock.ts';
 import { nodeFileSystem } from './node-file-system.ts';
+import { SecretStoreAbsentError, StoreCallEndedError, limitEndOf } from './secret-store-failures.ts';
 import type { SecretStore } from './secret-store.ts';
 import { systemRandom } from './system-random.ts';
 
@@ -16,6 +17,7 @@ export const CREDENTIAL_KEY_PREFIX = 'credential-key-';
 export const CREDENTIAL_KEY_MARKER_FILE = 'credential-key.json';
 export const CREDENTIAL_KEY_LOCK_NAME = 'credential-key.lock';
 export const CREDENTIAL_KEY_CREATION_STEPS = ['read_marker_again', 'write_os_item', 'write_marker'] as const;
+export const CREDENTIAL_KEY_OS_POINTS = ['fast', 'locked', 'creating'] as const;
 
 export const CREDENTIAL_ENVELOPE_FORMAT = 'momonga-credential/1';
 
@@ -49,8 +51,9 @@ type CreatedKey = { keyHex: string; name: string };
 
 type CreationState = { found: string | undefined; created: CreatedKey | undefined };
 
-const throwIfCancelled = (error: unknown, signal: AbortSignal | undefined): void => {
-  if (signal?.aborted === true && error === signal.reason) throw error;
+const throwIfCancelled = (error: unknown, signal: AbortSignal): void => {
+  if (error instanceof StoreCallEndedError) throw new StoreCallEndedError({ ...error.call, name: undefined }, error.limit);
+  if ((signal.aborted && error === signal.reason) || limitEndOf(error) !== undefined) throw error;
 };
 
 const KEY_BYTES = 32;
@@ -62,8 +65,6 @@ const FILE_MODE = 0o600;
 type Envelope = { format: string; key: string; nonce: string; ciphertext: string; tag: string };
 
 const ENVELOPE_FIELDS: readonly (keyof Envelope)[] = ['format', 'key', 'nonce', 'ciphertext', 'tag'];
-
-const NEVER_ABORTED = new AbortController().signal;
 
 const randomBytesAsync = promisify(randomBytes);
 
@@ -124,6 +125,9 @@ const open = async (keyHex: string, envelope: Envelope): Promise<string> => {
 const noStoreRefusal = (reason: string): string =>
   `No secret store was found on this host (${reason}). MomongaCode does not keep sign-in tokens in a plain file unless you ask: set credentials.plaintextTokenFiles to true in your user settings to keep them in a file only you can read.`;
 
+const refusedWithoutStore = (code: CredentialStoreErrorCode, { reason, backend }: Pick<SecretStoreAbsentError, 'reason' | 'backend'>): CredentialStoreError =>
+  new CredentialStoreError(code, noStoreRefusal(reason), { cause: new SecretStoreAbsentError({ reason, backend }) });
+
 const notEncrypted = (file: string): string =>
   `The credential file ${file} is not encrypted. Delete it and sign in again, or set credentials.plaintextTokenFiles to true to keep using it.`;
 
@@ -147,12 +151,12 @@ export const createEncryptedCredentialStore = (options: EncryptedCredentialStore
     return text === undefined ? undefined : keyNameOfMarker(text, markerFile);
   };
 
-  const readNamedKey = async (store: SecretStore, signal: AbortSignal | undefined): Promise<string | undefined> => {
+  const readNamedKey = async (store: SecretStore, signal: AbortSignal): Promise<string | undefined> => {
     const name = await readMarker();
-    return name === undefined ? undefined : store.read(name, signal ?? NEVER_ABORTED);
+    return name === undefined ? undefined : store.read(name, signal);
   };
 
-  const createKey = async (store: SecretStore, signal: AbortSignal | undefined): Promise<string> => {
+  const createKey = async (store: SecretStore, signal: AbortSignal): Promise<string> => {
     const creation: CreationState = { found: undefined, created: undefined };
     const steps: Readonly<Record<CreationStep, () => Promise<void>>> = {
       read_marker_again: async () => {
@@ -161,7 +165,7 @@ export const createEncryptedCredentialStore = (options: EncryptedCredentialStore
       write_os_item: async () => {
         const keyHex = (await randomBytesAsync(KEY_BYTES)).toString('hex');
         const name = `${CREDENTIAL_KEY_PREFIX}${(await randomBytesAsync(KEY_NAME_BYTES)).toString('hex')}`;
-        await store.write(name, keyHex, signal ?? NEVER_ABORTED);
+        await store.write(name, keyHex, signal);
         creation.created = { keyHex, name };
       },
       write_marker: async () => {
@@ -176,24 +180,25 @@ export const createEncryptedCredentialStore = (options: EncryptedCredentialStore
     return (creation.created as CreatedKey).keyHex;
   };
 
-  const keyForWriting = async (store: SecretStore, signal: AbortSignal | undefined): Promise<string> => {
+  const keyForWriting = async (store: SecretStore, signal: AbortSignal): Promise<string> => {
     const named = await readNamedKey(store, signal);
     if (named !== undefined) return named;
     await nodeFileSystem.mkdirPrivate(options.stateDirectory);
-    return withFileLock(lockFile, () => createKey(store, signal), { ports, ...(signal === undefined ? {} : { signal }) });
+    return withFileLock(lockFile, () => createKey(store, signal), { ports, signal });
   };
 
-  const keyForReading = async (signal: AbortSignal | undefined, file: string): Promise<string> => {
-    if (options.secretStore.kind === 'none') throw new CredentialStoreError('store_unreadable', noStoreRefusal(options.secretStore.reason), { cause: new Error(options.secretStore.reason) });
+  const keyForReading = async (signal: AbortSignal, file: string): Promise<string> => {
+    if (options.secretStore.kind === 'none') throw refusedWithoutStore('store_unreadable', { reason: options.secretStore.reason, backend: undefined });
     const named = await readNamedKey(options.secretStore.store, signal).catch((error: unknown) => {
       throwIfCancelled(error, signal);
+      if (error instanceof SecretStoreAbsentError) throw refusedWithoutStore('store_unreadable', error);
       throw new CredentialStoreError('store_unreadable', `the key of the credential file ${file} could not be read: ${messageOf(error)}`, { cause: error });
     });
     if (named === undefined) throw new CredentialStoreError('store_unreadable', `the credential file ${file} is encrypted, but the marker ${markerFile} naming its key is missing`, { cause: new Error(`${markerFile} does not exist`) });
     return named;
   };
 
-  const decode = async (key: string, text: string | undefined, plaintext: boolean, signal: AbortSignal | undefined): Promise<string | undefined> => {
+  const decode = async (key: string, text: string | undefined, plaintext: boolean, signal: AbortSignal): Promise<string | undefined> => {
     if (text === undefined) return undefined;
     const file = credentialFileFor(options.directory, key);
     const envelope = envelopeOf(text);
@@ -210,17 +215,17 @@ export const createEncryptedCredentialStore = (options: EncryptedCredentialStore
     });
   };
 
-  const encode = async (key: string, value: string, signal: AbortSignal | undefined): Promise<string> => {
-    if (options.secretStore.kind === 'none') throw new CredentialStoreError('store_unwritable', noStoreRefusal(options.secretStore.reason), { cause: new Error(options.secretStore.reason) });
-    const store = options.secretStore.store;
-    const keyHex = await keyForWriting(store, signal).catch((error: unknown) => {
+  const encode = async (key: string, value: string, signal: AbortSignal): Promise<string> => {
+    if (options.secretStore.kind === 'none') throw refusedWithoutStore('store_unwritable', { reason: options.secretStore.reason, backend: undefined });
+    const keyHex = await keyForWriting(options.secretStore.store, signal).catch((error: unknown) => {
       throwIfCancelled(error, signal);
+      if (error instanceof SecretStoreAbsentError) throw refusedWithoutStore('store_unwritable', error);
       throw new CredentialStoreError('store_unwritable', `the credential key could not be read or created: ${messageOf(error)}`, { cause: error });
     });
     return JSON.stringify(await seal(keyHex, key, value));
   };
 
-  const entryOf = (key: string, inner: CredentialEntry, signal: AbortSignal | undefined): CredentialEntry => {
+  const entryOf = (key: string, inner: CredentialEntry, signal: AbortSignal): CredentialEntry => {
     const plaintext = options.plaintextTokenFiles();
     return {
       read: async () => decode(key, await inner.read(), plaintext, signal),

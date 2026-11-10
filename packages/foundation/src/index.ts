@@ -36,12 +36,13 @@ export { uuidv7 } from './uuidv7.ts';
 export { DEFAULT_LOCK_TIMEOUT_MS, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
 export type { FileLockOptions, FileLockPorts, KeyedSerializer } from './file-lock.ts';
 export { createFileCredentialStore, createMemoryCredentialStore } from './credential-store.ts';
-export type { CredentialEntry, CredentialStore, FileCredentialStoreOptions } from './credential-store.ts';
+export type { CredentialEntry, CredentialStore, FileCredentialStoreOptions, ScopedOperations } from './credential-store.ts';
 export {
   CREDENTIAL_ENVELOPE_FORMAT,
   CREDENTIAL_KEY_CREATION_STEPS,
   CREDENTIAL_KEY_LOCK_NAME,
   CREDENTIAL_KEY_MARKER_FILE,
+  CREDENTIAL_KEY_OS_POINTS,
   CREDENTIAL_KEY_PREFIX,
   CREDENTIAL_STORE_ERROR_CODES,
   CredentialStoreError,
@@ -141,6 +142,10 @@ export { NoCurrentGenerationError, currentGenerationLock, currentSocketResolver,
 export type { CurrentGeneration } from './current-generation.ts';
 export type { MomongaPaths } from './momonga-paths.ts';
 export { createExecWithStdin } from './exec-with-stdin.ts';
+export { OperationLimitError, operationLimit, settledOrAborted } from './operation-limit.ts';
+export type { LimitTiming, OperationLimit } from './operation-limit.ts';
+export { SecretStoreAbsentError, SecretStoreAnswerError, StoreCallEndedError, endedStoreCall, limitEndOf, limitEndText } from './secret-store-failures.ts';
+export type { LimitEnd, NamedSecretCall, SecretAction, SecretCall, SecretStoreAbsence } from './secret-store-failures.ts';
 export { createSecretKeyFile, secretKeyFile } from './secret-key-file.ts';
 export {
   KEYCHAIN_SERVICE,
@@ -165,8 +170,9 @@ export {
   createCredentialManagerStore,
   credentialReadScript,
   SECRET_TOOL_BINARY,
+  nodeSecretStoreFiles,
 } from './secret-store.ts';
-export type { SecretProcessPort, SecretProcessResult, SecretStore } from './secret-store.ts';
+export type { FileKind, Readiness, ReadinessReading, SecretBackend, SecretProcessPort, SecretProcessResult, SecretStore, SecretStoreFiles } from './secret-store.ts';
 export type { SecretKeyFile, SecretKeyFileOptions } from './secret-key-file.ts';
 export { isLoopbackHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
 export type { TransportUrlProblem } from './loopback.ts';

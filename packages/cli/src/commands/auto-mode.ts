@@ -29,7 +29,7 @@ export type AutoModeCheckPorts = {
   write(text: string): void;
 };
 
-export type AutoModeCheckOptions = { classifier?: string; agent: string; signal?: AbortSignal };
+export type AutoModeCheckOptions = { classifier?: string; agent: string; signal: AbortSignal };
 
 export type AutoModeCheckOutcome = { measurement: 'passed' | 'did_not_pass' | 'unmeasurable' };
 
@@ -76,13 +76,13 @@ const progressOf = (dataset: GoldenDataset, write: (text: string) => void): ((ca
 
 export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoModeCheckOptions): Promise<AutoModeCheckOutcome> => {
   const { signal } = options;
-  signal?.throwIfAborted();
+  signal.throwIfAborted();
   const classifier = classifierOf(ports.configuredClassifier, options.classifier);
   requireDefinedClassifier(ports.models, classifier);
   const dataset = parseDataset(AUTO_MODE_DATASET_TEXT, 'auto-mode.json');
   const key = await classifierKeyOf(ports.models, classifier, ports.effects.platform, signal);
   const settings = liveSettingsFor(ports.models, [options.agent, classifier]);
-  const credentialValues = await readCredentials(ports.effects, settings.credentials, signal ?? new AbortController().signal);
+  const credentialValues = await readCredentials(ports.effects, settings.credentials, signal);
   const swept = await sweepStaleHomes(ports.effects);
   if (swept.unreadable > 0) ports.write(unreadableHomesNotice(swept.unreadable));
   if (swept.unowned.length > 0) ports.write(unownedHomesNotice(swept.unowned));
@@ -91,7 +91,7 @@ export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoMode
     reflection: ports.reflection,
     managedTargets: settings.managedTargets,
     endpointProbes: settings.endpointProbes,
-    ...(signal === undefined ? {} : { interrupt: signal }),
+    interrupt: signal,
   });
   const base = { models: settings.models, ...(settings.sandbox === undefined ? {} : { sandbox: settings.sandbox }) };
   const progress = progressOf(dataset, ports.write);
@@ -100,7 +100,7 @@ export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoMode
     const report = await runDataset(dataset, {
       modelAlias: options.agent,
       open: async (golden, runIndex) => {
-        signal?.throwIfAborted();
+        signal.throwIfAborted();
         const home = await homes.open({
           label: `case ${golden.id} run ${runIndex}`,
           settings: caseSettingsFor(base, { classifier }),

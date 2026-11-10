@@ -80,7 +80,7 @@ describe('OAuth against a loopback authorization server', () => {
     const [firstAccess] = oauth.issuedAccessTokens();
     oauth.expireAccessTokens();
 
-    expect(textOf(await connection.callTool({ name: 'echo', arguments: { text: 'after refresh' } }))).toBe('after refresh');
+    expect(textOf(await connection.callTool({ name: 'echo', arguments: { text: 'after refresh' }, signal: NEVER_ABORTED }))).toBe('after refresh');
     const refresh = oauth.records.filter((record) => record.path === '/token' && record.form['grant_type'] === 'refresh_token');
     expect(refresh).toHaveLength(1);
     const tokens = Object.values((await storedTokens(store, fixture.url))?.issuers ?? {})[0]?.tokens;
@@ -96,7 +96,7 @@ describe('OAuth against a loopback authorization server', () => {
     oauth.expireAccessTokens();
     oauth.revokeRefreshTokens();
     const opensBefore = browserOpens();
-    const failure = await connection.callTool({ name: 'echo', arguments: { text: 'x' } }).then(
+    const failure = await connection.callTool({ name: 'echo', arguments: { text: 'x' }, signal: NEVER_ABORTED }).then(
       () => undefined,
       (error: unknown) => error,
     );

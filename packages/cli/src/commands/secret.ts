@@ -1,6 +1,7 @@
 import { CREDENTIAL_KEY_PREFIX, SECRET_NAME_PATTERN, currentSocketResolver } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
+import { withinCommandLimit } from '../command-limit.ts';
 import { probeSupervisor } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { withHiddenInput } from '../terminal/hidden-prompt.ts';
@@ -32,8 +33,11 @@ export const secretSet = async (ports: CliPorts, paths: MomongaPaths, name: stri
     return entered;
   });
   const store = ports.secretStore();
-  await store.write(name, value, interrupt);
-  if ((await store.read(name, interrupt)) !== value) throw new SecretVerificationError(name);
+  const readBack = await withinCommandLimit(interrupt, async (signal) => {
+    await store.write(name, value, signal);
+    return store.read(name, signal);
+  });
+  if (readBack !== value) throw new SecretVerificationError(name);
   ports.stdout.write(`stored secret ${name}\n`);
   const supervisor = createSupervisorClient({ resolveSocket: currentSocketResolver(paths, 'supervisor') });
   try {

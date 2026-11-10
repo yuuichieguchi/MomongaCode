@@ -35,7 +35,7 @@ export type McpPool = {
 
 export type McpAuthorizingPool = McpPool & {
   authorize(server: string, signal: AbortSignal): Promise<void>;
-  authState(server: string): Promise<McpAuthProbe>;
+  authState(server: string, signal: AbortSignal): Promise<McpAuthProbe>;
 };
 
 export const createMcpPool = (options: McpPoolOptions): McpAuthorizingPool => {
@@ -81,6 +81,6 @@ export const createMcpPool = (options: McpPoolOptions): McpAuthorizingPool => {
     },
     diagnostics: () => connections.map((connection) => connection.diagnostics()),
     authorize: (server, signal) => connectionNamed(server).then((connection) => connection.authorize(signal)),
-    authState: (server) => connectionNamed(server).then((connection) => connection.authState()),
+    authState: (server, signal) => connectionNamed(server).then((connection) => connection.authState(signal)),
   };
 };

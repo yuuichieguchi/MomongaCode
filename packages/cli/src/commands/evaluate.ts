@@ -94,7 +94,7 @@ export type EvaluateContextOptions = {
   seed?: number;
   report?: string;
   settings?: string;
-  interrupt?: AbortSignal;
+  interrupt: AbortSignal;
 };
 
 const seedOfTranscripts = (transcripts: readonly Transcript[]): number | undefined => {
@@ -112,7 +112,7 @@ const runContextLiveCommand = async (
   ports: CliPorts,
   hostEffects: (ports: CliPorts) => ContextHostEffects,
   dataset: ContextDataset,
-  options: { alias: string; seed: number; policy: PolicyOverlay; record: string | undefined; interrupt: AbortSignal | undefined },
+  options: { alias: string; seed: number; policy: PolicyOverlay; record: string | undefined; interrupt: AbortSignal },
 ): Promise<Transcript[]> => {
   const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS, RUNTIME_DEFAULTS } = await import('@momonga/runtime');
   if (options.record !== undefined) await ports.files.mkdir(options.record);
@@ -128,7 +128,7 @@ const runContextLiveCommand = async (
     reflection: { pendingBoundMs: REFLECTION_PICKUP_BOUND_MS, attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS, pollMs: REFLECTION_POLL_MS },
     onUnreadableHomes: (count) => ports.stderr.write(unreadableHomesNotice(count)),
     onUnownedHomes: (roots) => ports.stderr.write(unownedHomesNotice(roots)),
-    ...(options.interrupt === undefined ? {} : { interrupt: options.interrupt }),
+    interrupt: options.interrupt,
     ...(record === undefined ? {} : { onTranscript: async (transcript: Transcript) => void (await saveTranscript(ports.files, record, transcript)) }),
   });
 };

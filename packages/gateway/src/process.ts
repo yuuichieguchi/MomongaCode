@@ -23,8 +23,13 @@ import {
   acquireProcessLock,
   JsonDepthError,
   parseOutsideJson,
+  HOST_READ_BOUND_MS,
   SecretEmptyError,
+  SecretStoreAbsentError,
+  SecretStoreAnswerError,
   SecretUnavailableError,
+  StoreCallEndedError,
+  operationLimit,
   announceReady,
   createJsonLogger,
   createGivenSecretStore,
@@ -183,8 +188,19 @@ const declaredCapabilitiesOf = (target: RemoteTarget, mode: ToolCallingMode): De
 
 const capabilitiesOf = (target: RemoteTarget, mode: ToolCallingMode): Capabilities => withImageDefault(declaredCapabilitiesOf(target, mode));
 
-const startupFailureOf = (error: unknown): Error | undefined =>
-  error instanceof SecretUnavailableError || error instanceof SecretEmptyError ? error : undefined;
+const READ_AGAIN_ON_THE_NEXT_REQUEST = 'the gateway reads the secret again on the next request';
+
+type KeyReadLimit = { limitMs: number; label: string };
+
+const keyReadLimitOf = (headersTimeoutMs: number): KeyReadLimit =>
+  headersTimeoutMs > 0 ? { limitMs: headersTimeoutMs, label: 'the request limit' } : { limitMs: HOST_READ_BOUND_MS, label: 'the secret read limit' };
+
+const startupFailureOf = (error: unknown): Error | undefined => {
+  if (error instanceof SecretUnavailableError || error instanceof SecretEmptyError) return error;
+  if (error instanceof StoreCallEndedError) return new StoreCallEndedError(error.call, error.limit, READ_AGAIN_ON_THE_NEXT_REQUEST);
+  if (error instanceof SecretStoreAbsentError || error instanceof SecretStoreAnswerError) return new Error(`${error.message}; ${READ_AGAIN_ON_THE_NEXT_REQUEST}`, { cause: error });
+  return undefined;
+};
 
 type HandedCredential = (name: string, signal: AbortSignal) => Promise<string | undefined>;
 
@@ -229,16 +245,21 @@ const apiKeyReader = (
   resolver: SecretResolver,
   target: Pick<KeyedTarget, 'apiKeyEnv' | 'apiKeySecret'>,
   handed: HandedCredential,
+  keyReadLimit: KeyReadLimit,
+  timers: GatewayTimers,
 ): ((target: AdapterTarget, signal: AbortSignal) => Promise<string | undefined>) => {
   const { apiKeyEnv, apiKeySecret } = target;
   return async (_target, signal) => {
     if (apiKeySecret !== undefined) {
+      const limit = operationLimit(signal, keyReadLimit.limitMs, keyReadLimit.label, timers);
       try {
-        return await resolver.read(apiKeySecret, signal);
+        return await resolver.read(apiKeySecret, limit.signal);
       } catch (error) {
         const failure = startupFailureOf(error);
         if (failure === undefined) throw error;
         throw secretUnavailableError(apiKeySecret, failure);
+      } finally {
+        limit.dispose();
       }
     }
     if (apiKeyEnv === undefined) return undefined;
@@ -841,7 +862,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const secretStore =
       options.secretStore ?? createGivenSecretStore(options.execWithStdin ?? createExecWithStdin({ ...childEnv, ...givenSecretStoreChildEnv(options.env) }), options.env);
     const secretResolverOfPart = (): SecretResolver => {
-      const resolver = createSecretResolver(secretStore);
+      const resolver = createSecretResolver(secretStore, secretStore.backend);
       resolver.onResolved((name, value) => {
         for (const credential of credentialValuesOf({}, [], new Map([[name, value]]), (message) => logger.warn(message), undefined)) shared.redactor.add(credential);
       });
@@ -928,7 +949,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         const probed = await createProbedOllamaAdapter(name, target, paths.probe, clock, userDialects, liveness, outbound, probes);
         return unmanagedPart(keys.part, probed.adapter, targetCounterOf({ target, codeDigest, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) }));
       }
-      const readKey = apiKeyReader(options.env, secretResolverOfPart(), target, handedCredential);
+      const readKey = apiKeyReader(options.env, secretResolverOfPart(), target, handedCredential, keyReadLimitOf(current.models.headersTimeoutMs), timers);
       const identify = identificationOf(name, target, outbound);
       if (target.adapter === 'chat-completions' && target.toolCalling === 'auto') {
         const probed = await createAutoChatCompletionsAdapter(name, target, readKey, paths.probe, clock, identify, userDialects, liveness, outbound, probes);
