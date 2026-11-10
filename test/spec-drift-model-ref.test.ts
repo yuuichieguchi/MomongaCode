@@ -86,7 +86,7 @@ describe('ModelRef.tla and its configurations (a model is named by its server an
     const printing = entries().map((entry) => entry.config).filter((name) => constantOf(configOf(name), 'PrintTable') === 'TRUE').sort();
     expect(printing).toEqual([...TABLE_CONFIGS].sort());
     for (const file of ['ModelRef.table.json', 'ModelRef.slash.table.json']) {
-      const table = JSON.parse(fs.readFileSync(path.join(specDir, file), 'utf8')) as { defaultTag: Record<string, boolean>; rows: unknown[] };
+      const table = JSON.parse(fs.readFileSync(path.join(specDir, '..', file), 'utf8')) as { defaultTag: Record<string, boolean>; rows: unknown[] };
       expect(table.defaultTag, file).toEqual({ p1: true, p2: false });
       expect(table.rows, file).toHaveLength(32);
     }

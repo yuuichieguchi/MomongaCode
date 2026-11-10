@@ -185,7 +185,7 @@
 (*   every setting of connections and models, the typed outcome of every   *)
 (*   text, the stored outcome and the display of every model) as one line  *)
 (*   of TLC output; scripts/model-ref-table.ts turns that line into        *)
-(*   specs/tla/ModelRef.table.json. Every row is a value TLC computed.     *)
+(*   specs/ModelRef.table.json. Every row is a value TLC computed.         *)
 (*                                                                         *)
 (* Variants (every Variant other than "decided" is a wrong rule)          *)
 (*   serveUnchecked a run is claimed on a managed model whatever the       *)

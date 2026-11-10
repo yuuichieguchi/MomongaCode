@@ -18,7 +18,7 @@ type SpecTable = { defaultTag: Record<string, boolean>; rows: SpecRow[] };
 const SPEC_TAG = 'latest';
 const ROWS = 32;
 
-const tableOf = (file: string): SpecTable => JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../../../specs/tla', file), 'utf8')) as SpecTable;
+const tableOf = (file: string): SpecTable => JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../../../specs', file), 'utf8')) as SpecTable;
 
 const textOf = (segments: Segments): string => segments.join('/');
 
