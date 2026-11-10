@@ -75,11 +75,11 @@ export const endedStoreCall = (call: SecretCall, reason: unknown): unknown => (r
 
 export type LimitEnd = { call: SecretCall | undefined; limit: OperationLimitError };
 
-const CAUSE_CHAIN_DEPTH = 8;
+const MAX_CAUSE_DEPTH = 8;
 
 export const limitEndOf = (error: unknown): LimitEnd | undefined => {
   let current = error;
-  for (let depth = 0; depth < CAUSE_CHAIN_DEPTH; depth += 1) {
+  for (let depth = 0; depth < MAX_CAUSE_DEPTH; depth += 1) {
     if (current instanceof StoreCallEndedError) return { call: current.call, limit: current.limit };
     if (current instanceof OperationLimitError) return { call: undefined, limit: current };
     if (!(current instanceof Error)) return undefined;
