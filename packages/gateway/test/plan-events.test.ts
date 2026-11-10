@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { JsonLogger, LogFields } from '@momonga/foundation';
+import { createJsonLogger } from '@momonga/foundation';
+import type { JsonLogger } from '@momonga/foundation';
 import { PLAN_ROUTES } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, openResponsesTextReply, planErrorHttpReply } from '@momonga/testkit';
 import type { FakeUpstreamReply } from '@momonga/testkit';
@@ -16,28 +17,41 @@ type Event = { name: string; data: Record<string, unknown> };
 const EVENT_NAMES = ['plan.sign_in', 'plan.refresh', 'plan.rejected', 'plan.sign_out', 'plan.pause', 'plan.catalog'] as const;
 
 const FIELDS: Readonly<Record<(typeof EVENT_NAMES)[number], readonly string[]>> = {
-  'plan.sign_in': ['profile', 'account', 'outcome', 'failure', 'step', 'durationMs', 'port', 'alg', 'kid', 'audShape', 'scope', 'earliestRefreshAt', 'claimNames'],
+  'plan.sign_in': ['profile', 'account', 'outcome', 'failure', 'endStep', 'durationMs', 'port', 'alg', 'kid', 'audShape', 'scope', 'earliestRefreshAt', 'claimNames'],
   'plan.refresh': ['profile', 'account', 'outcome', 'code', 'attempts', 'latencyMs', 'remainingMs', 'earliestRefreshAt', 'at'],
   'plan.rejected': ['profile', 'account', 'generation', 'answer'],
   'plan.sign_out': ['profile', 'account', 'revocation', 'resumed'],
   'plan.pause': ['profile', 'account', 'code', 'until'],
-  'plan.catalog': ['profile', 'account', 'outcome', 'count', 'usable', 'entryKeys', 'requestIdHeaders'],
+  'plan.catalog': ['profile', 'account', 'outcome', 'listed', 'usable', 'entryKeys', 'requestIdHeaders'],
 };
 
-const recordingLogger = (events: Event[]): JsonLogger => {
-  const take = (msg: string, fields?: LogFields): void => {
-    if (!(EVENT_NAMES as readonly string[]).includes(msg)) return;
-    const data = (fields as { data?: Record<string, unknown> } | undefined)?.data ?? {};
-    events.push({ name: msg, data });
+const ENVELOPE = new Set(['ts', 'level', 'service', 'pid', 'msg']);
+
+const lineLogger = (events: Event[]): JsonLogger => {
+  let pending = '';
+  const stream = {
+    write: (chunk: string): boolean => {
+      pending += chunk;
+      const lines = pending.split('\n');
+      pending = lines.pop() ?? '';
+      for (const line of lines) {
+        if (line === '') continue;
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+        const name = parsed['msg'];
+        if (typeof name !== 'string' || !(EVENT_NAMES as readonly string[]).includes(name)) continue;
+        events.push({ name, data: Object.fromEntries(Object.entries(parsed).filter(([key]) => !ENVELOPE.has(key))) });
+      }
+      return true;
+    },
   };
-  return { debug: take, info: take, warn: take, error: take };
+  return createJsonLogger({ service: 'gateway', clock: createFakeClock(0), stream });
 };
 
 type Observed = { gateway: PlanGateway; events: Event[]; secrets(): string[] };
 
 const observed = async (options: PlanGatewayOptions = {}): Promise<Observed> => {
   const events: Event[] = [];
-  const gateway = await startPlanGateway({ ...options, logger: recordingLogger(events) });
+  const gateway = await startPlanGateway({ ...options, logger: lineLogger(events) });
   const signedIn = await signIn(gateway);
   const authorization = new URL(signedIn.begun.body.authorizationUrl as string);
   const secrets = (): string[] =>
@@ -97,13 +111,13 @@ describe('O-R5-6 L10: the plan events, their fields and what they never carry', 
     const [event, ...rest] = named(observation.events, 'plan.sign_in');
     expect(rest).toEqual([]);
     if (event === undefined) throw new Error('no plan.sign_in event was written');
-    expect(presentKeys(event)).toEqual(['account', 'alg', 'audShape', 'claimNames', 'durationMs', 'earliestRefreshAt', 'kid', 'outcome', 'port', 'profile', 'scope', 'step']);
+    expect(presentKeys(event)).toEqual(['account', 'alg', 'audShape', 'claimNames', 'durationMs', 'earliestRefreshAt', 'endStep', 'kid', 'outcome', 'port', 'profile', 'scope']);
     const claims = idTokenClaims(observation.gateway);
     expect(event.data).toMatchObject({
       profile: PROFILE_ID,
       account: ACCOUNT,
       outcome: 'signed_in',
-      step: 10,
+      endStep: 10,
       port: CALLBACK_PORT,
       alg: 'RS256',
       kid: observation.gateway.auth.jwks().keys[0]?.kid,
@@ -193,8 +207,9 @@ describe('O-R5-6 L10: the plan events, their fields and what they never carry', 
     expect(rest).toEqual([]);
     if (event === undefined) throw new Error('no plan.catalog event was written');
     for (const key of presentKeys(event)) expect(FIELDS['plan.catalog']).toContain(key);
-    expect(presentKeys(event)).toEqual(expect.arrayContaining(['account', 'count', 'entryKeys', 'outcome', 'profile', 'usable']));
-    expect(event.data).toMatchObject({ profile: PROFILE_ID, account: ACCOUNT, outcome: 'ok', count: 1, entryKeys: ['context_window', 'display_name', 'slug', 'visibility'] });
+    expect(presentKeys(event)).toEqual(['account', 'entryKeys', 'listed', 'outcome', 'profile', 'requestIdHeaders', 'usable']);
+    expect(event.data).toMatchObject({ profile: PROFILE_ID, account: ACCOUNT, outcome: 'ok', listed: 1, usable: 1, entryKeys: ['context_window', 'display_name', 'slug', 'visibility'] });
+    expect(Array.isArray(event.data['requestIdHeaders'])).toBe(true);
     expect(JSON.stringify(event)).not.toContain('Plan Model');
     expectNoSecret(observation);
     await observation.gateway.close();

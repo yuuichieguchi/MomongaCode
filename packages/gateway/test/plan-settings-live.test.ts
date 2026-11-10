@@ -320,6 +320,24 @@ describe('O-R5-6 (K) 2: an account pinned for the first time by a later change g
     await gateway.close();
   });
 
+  it('a signing_out record pinned by a change is resumed through the network in force when the account is loaded, even if the request that pinned it is abandoned', async (context) => {
+    const first = await startProxy(context, 'refuse');
+    const second = await startProxy(context, 'refuse');
+    const stack = await startRemoteStack(context, {
+      profile: profileWith(remoteOAuth),
+      accounts: [ACCOUNT],
+      records: (hostId) => [{ ...activeRecord(SPARE, FAR_EXPIRY_MS, hostId), state: 'signing_out' }],
+      network: proxied(first),
+    });
+    expect(first.connects()).toEqual([]);
+    replaceSettings(stack.home, { credentials: { plaintextTokenFiles: true }, models: pinnedTargets([ACCOUNT, SPARE]), network: proxied(second) });
+    send(stack.client, 'POST', '/v1/responses', { model: SPARE, input: userInput('hi'), stream: false });
+    stack.client.destroy();
+    await waitFor(() => second.connects().length > 0, CHANGE_WAIT);
+    expect(second.connects().slice(0, 1)).toEqual([connectLine(AUTH_HOST)]);
+    expect(first.connects()).toEqual([]);
+  });
+
   it('an account no longer pinned keeps its record and its state', async () => {
     const gateway = await startPlanGateway({ plaintextTokenFiles: true });
     replaceSettings(gateway.home, planSettings([ACCOUNT, SPARE]));
@@ -333,6 +351,9 @@ describe('O-R5-6 (K) 2: an account pinned for the first time by a later change g
     await gateway.close();
   });
 });
+
+const UNKNOWN_CAPABILITIES_TEXT =
+  'the plan target gpt declares no contextWindow and maxOutputTokens, and the model list of its account reports none for plan-model; momonga models --catalog reads the list';
 
 const catalogEntry = (contextWindow: number) => ({ slug: 'plan-model', display_name: 'Plan Model', visibility: 'list', context_window: contextWindow });
 
@@ -442,14 +463,26 @@ describe('O-R5-6 L3: the served account, the reported numbers and the output pol
   });
 
   it('a catalog read made after the part exists reaches a pinned target', async () => {
-    const gateway = await startPlanGateway({ models: [catalogEntry(200000)], declaredCapabilities: false });
+    const listed: unknown[] = [catalogEntry(200000)];
+    const gateway = await startPlanGateway({ models: listed, declaredCapabilities: false });
+    const client = clientFor(gateway.socketPath);
     await signInAs(gateway, ACCOUNT);
-    const before = await getJson(clientFor(gateway.socketPath), '/v1/momonga/models');
-    const reportedBefore = before.status === 200 ? (before.body.data as Array<{ id: string; targetCapabilities: Record<string, { contextWindow?: unknown }> }>).find((model) => model.id === 'default')?.targetCapabilities['gpt']?.contextWindow : undefined;
-    expect(reportedBefore).toBeUndefined();
+    const before = await getJson(client, '/v1/momonga/models');
+    expect(before.status).toBe(412);
+    expect(before.body.error).toEqual({ message: UNKNOWN_CAPABILITIES_TEXT, type: 'invalid_request', param: 'model', code: 'capabilities_unknown' });
+    const healthBefore = await getJson(client, '/v1/momonga/health');
+    expect(healthBefore.body.targets.gpt).toMatchObject({ ok: false, reason: 'capabilities_unknown', detail: UNKNOWN_CAPABILITIES_TEXT });
     expect((await gateway.get(`${accountRoute(PLAN_ROUTES.accountModels, ACCOUNT)}?profile=${PROFILE_ID}&refresh=1`)).status).toBe(200);
-    const after = await listedTarget(gateway);
-    expect(after.contextWindow).toBe(200000);
+    const first = await listedTarget(gateway);
+    expect(first.contextWindow).toBe(200000);
+    const healthAfter = await getJson(client, '/v1/momonga/health');
+    expect(healthAfter.body.targets.gpt.ok).toBe(true);
+    expect(healthAfter.body.targets.gpt.reason).toBeUndefined();
+    listed.splice(0, listed.length, catalogEntry(100000));
+    expect((await gateway.get(`${accountRoute(PLAN_ROUTES.accountModels, ACCOUNT)}?profile=${PROFILE_ID}&refresh=1`)).status).toBe(200);
+    const second = await listedTarget(gateway);
+    expect(second.contextWindow).toBe(100000);
+    expect(second.counter).not.toBe(first.counter);
     await gateway.close();
   });
 

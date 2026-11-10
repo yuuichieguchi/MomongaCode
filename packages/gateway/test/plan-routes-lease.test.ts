@@ -57,6 +57,18 @@ describe('O-R5-6 L6: the routes that read plan targets take the D1 lease and rea
     expect(pinned).toEqual({ [ACCOUNT]: ['gpt'], [SPARE]: ['gpt-spare'] });
     const resumed = await gateway.post(accountRoute(PLAN_ROUTES.accountResume, ACCOUNT), { profile: PROFILE_ID });
     expect(resumed.status).toBe(200);
+
+    const third = await begin(gateway, { account: 'third' });
+    expect(third.status).toBe(200);
+    const cancelled = await gateway.post(PLAN_ROUTES.signInCancel, { attemptId: third.body.attemptId });
+    expect(cancelled.status).toBe(200);
+    expect(cancelled.body).toEqual({ cancelled: true });
+    const active = await gateway.post(PLAN_ROUTES.accountsActive, { profile: PROFILE_ID, account: ACCOUNT });
+    expect(active.status).toBe(200);
+    expect(active.body).toEqual({ active: { profile: PROFILE_ID, account: ACCOUNT } });
+    expect((await gateway.get(`${accountRoute(PLAN_ROUTES.accountModels, ACCOUNT)}?profile=${PROFILE_ID}`)).status).toBe(200);
+    expect((await gateway.post(PLAN_ROUTES.signOut, { profile: PROFILE_ID, account: SPARE })).status).toBe(200);
+    expect((await gateway.post(PLAN_ROUTES.hostReset, {})).status).toBe(200);
     await gateway.close();
   });
 });

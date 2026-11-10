@@ -398,6 +398,18 @@ describe('S0: a derivation runs under its owner signal; a caller abort detaches 
     expect(h.warnings).toEqual([]);
   });
 
+  it('an acquire under an already aborted signal rejects with its reason, derives nothing and takes no lease', async () => {
+    const h = await ready();
+    const reason = new Error('gone');
+    const aborted = new AbortController();
+    aborted.abort(reason);
+    const outcome = h.derivation.acquire(aborted.signal);
+    await expect(outcome).rejects.toBe(reason);
+    await flushTurns();
+    expect(h.derived).toHaveLength(1);
+    expect(h.warnings).toEqual([]);
+  });
+
   it('the failure is logged only when derive itself throws', async () => {
     const h = await ready();
     const waiter = settled(h.derivation.acquire(new AbortController().signal));

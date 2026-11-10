@@ -154,7 +154,7 @@ describe('two accounts are isolated (AccountsIsolated, OtherAccountsUntouched)',
     const homeBefore = await rawRecord(h, 'home');
     toRefreshWindow(h, START_MS);
     await h.sessions.authSource({ profile: PROFILE_ID, account: 'work' }).read(new AbortController().signal);
-    await h.sessions.signOut({ profile: PROFILE_ID, account: 'work' });
+    await h.sessions.signOut({ profile: PROFILE_ID, account: 'work' }, new AbortController().signal);
     expect(await rawRecord(h, 'home')).toBe(homeBefore);
     expect(await readRecord(h, 'home')).toMatchObject({ client_id: home.clientId, subject: 'sub-second-user', refresh_token: home.tokens.refresh_token });
   });

@@ -315,3 +315,33 @@ describe('admin routes translate a PlanCredentialError by the one status rule of
     expect(translated.body.type).toBe('server_error');
   });
 });
+
+describe('O-R5-6 (M) 8.2: the active pointer has one reader of its file, the open', () => {
+  it('the active pointer is read from the file once at open and every later reader uses the mirror', async () => {
+    const gateway = await startPlanGateway({ plaintextTokenFiles: true });
+    try {
+      const activeFile = momongaLayout(gateway.home).planActive;
+      const activeOf = async (): Promise<Record<string, boolean>> => {
+        const listed = await gateway.get(PLAN_ROUTES.accounts);
+        expect(listed.status).toBe(200);
+        return Object.fromEntries((listed.body.accounts as { label: string; active: boolean }[]).map((entry) => [entry.label, entry.active]));
+      };
+      await signInAs(gateway, ACCOUNT);
+      await signInAs(gateway, SPARE);
+      await makeWorkActive(gateway);
+      fs.rmSync(activeFile);
+
+      expect(await activeOf()).toMatchObject({ [ACCOUNT]: true, [SPARE]: false });
+
+      await gateway.restart();
+      expect(Object.values(await activeOf())).not.toContain(true);
+
+      expect((await gateway.post(PLAN_ROUTES.accountsActive, { profile: PROFILE_ID, account: SPARE })).status).toBe(200);
+      expect(fs.existsSync(activeFile)).toBe(true);
+      await gateway.restart();
+      expect(await activeOf()).toMatchObject({ [SPARE]: true });
+    } finally {
+      await gateway.close();
+    }
+  });
+});

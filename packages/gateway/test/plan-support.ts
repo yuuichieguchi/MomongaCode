@@ -124,7 +124,10 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
       fileSystem: nodeFileSystem,
       accounts,
       clock,
-      outbound: (_signal, use) => use(fetchPort),
+      outbound: (signal, use) => {
+        signal.throwIfAborted();
+        return use(fetchPort);
+      },
       sleep: (ms, signal) => {
         if (ms !== TOKEN_ATTEMPT_BOUND_MS && ms !== REVOCATION_ATTEMPT_BOUND_MS) {
           sleeps.push(ms);

@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createJsonLogger, momongaLayout } from '@momonga/foundation';
@@ -21,9 +22,9 @@ const SPARE = 'spare';
 
 type Run = { code: number; stdout: string; stderr: string };
 
-const runScript = (args: readonly string[]): Promise<Run> =>
+const runScript = (args: readonly string[], env: NodeJS.ProcessEnv = process.env): Promise<Run> =>
   new Promise((resolve) => {
-    execFile(process.execPath, [SCRIPT, ...args], { encoding: 'utf8' }, (error, stdout, stderr) => {
+    execFile(process.execPath, [SCRIPT, ...args], { encoding: 'utf8', env }, (error, stdout, stderr) => {
       const code = error === null ? 0 : typeof error.code === 'number' ? error.code : -1;
       resolve({ code, stdout, stderr });
     });
@@ -82,13 +83,55 @@ describe('O-R5-6 L10: scripts/plan-real-check.ts against the fakes only', () => 
     const injected = tokenShaped();
     const logger = fileLogger(home, clock);
     for (const scope of [injected, 'openid']) {
-      logger.info('plan.sign_in', { data: { profile: PROFILE_ID, account: ACCOUNT, outcome: 'signed_in', step: 10, durationMs: 5, port: 49152, alg: 'RS256', kid: 'kid-1', audShape: 'string', scope, earliestRefreshAt: 'opaque-1' } });
+      logger.info('plan.sign_in', { data: { profile: PROFILE_ID, account: ACCOUNT, outcome: 'signed_in', endStep: 10, durationMs: 5, port: 49152, alg: 'RS256', kid: 'kid-1', audShape: 'string', scope, earliestRefreshAt: 'opaque-1', claimNames: ['sub'] } } as unknown as LogFields);
     }
     const report = path.join(withTempDir(context), 'report.json');
     const run = await runScript(['collect', '--home', home, '--report', report]);
     expect(run.code).toBe(3);
     expect(fs.existsSync(report)).toBe(false);
     expect(`${run.stdout}${run.stderr}`).not.toContain(injected);
+    expect(run.stdout).toBe('');
+    expect(run.stderr.trim()).toBe('plan-real-check: R1 field scope looks like a token, so nothing was written.');
+  });
+
+  it('a 45-character run in earliestRefreshAt fires the check, and --allow-long R3.earliestRefreshAt lets exactly that field through', async (context) => {
+    const home = withTempDir(context, { asHome: true });
+    const clock = createFakeClock(Date.now());
+    const long = 'a'.repeat(45);
+    const at = new Date(clock.now()).toISOString();
+    fileLogger(home, clock).info('plan.refresh', {
+      data: { profile: PROFILE_ID, account: ACCOUNT, outcome: 'adopted', attempts: 1, latencyMs: 12, remainingMs: 61000, earliestRefreshAt: long, at },
+    });
+    const reports = withTempDir(context);
+    const refused = path.join(reports, 'refused.json');
+    const run = await runScript(['collect', '--home', home, '--report', refused]);
+    expect(run.code).toBe(3);
+    expect(run.stdout).toBe('');
+    expect(run.stderr.trim()).toBe(
+      'plan-real-check: R3 field earliestRefreshAt looks like a long token, so nothing was written. If it is a value you may share, run again with --allow-long R3.earliestRefreshAt.',
+    );
+    expect(fs.existsSync(refused)).toBe(false);
+    const allowed = path.join(reports, 'allowed.json');
+    const passed = await runScript(['collect', '--home', home, '--report', allowed, '--allow-long', 'R3.earliestRefreshAt']);
+    expect(passed.code).toBe(1);
+    const report = readReport(allowed);
+    const r3 = report.steps.find((entry) => entry.step === 'R3');
+    expect(r3).toEqual({ step: 'R3', verdict: 'recorded', facts: { remainingMs: 61000, earliestRefreshAt: long, at } });
+  });
+
+  it("--home equal to the user's home directory exits 2 with the refusal text", async (context) => {
+    const userHome = withTempDir(context);
+    const reports = withTempDir(context);
+    const report = path.join(reports, 'report.json');
+    expect(fs.readdirSync(userHome)).toEqual([]);
+    const run = await runScript(['collect', '--home', userHome, '--report', report], { ...process.env, HOME: userHome });
+    expect(run.code).toBe(2);
+    expect(run.stderr.trim()).toBe(
+      'plan-real-check: --home is your own home directory. Use the temporary HOME in which you signed in; this script never touches ~/.momonga.',
+    );
+    expect(fs.readdirSync(userHome)).toEqual([]);
+    expect(fs.existsSync(report)).toBe(false);
+    expect(userHome).not.toBe(os.homedir());
   });
 
   it('collects the steps of a driven sign-in, request, refresh, catalog read and logout, and no issued token, code, state, nonce, URL, email or sub reaches a report', async (context) => {
@@ -126,16 +169,25 @@ describe('O-R5-6 L10: scripts/plan-real-check.ts against the fakes only', () => 
     expect(collect.code).toBe(1);
     const report = readReport(collected);
     expect(report.format).toBe(REPORT_FORMAT);
+    expect(report.account).toBe('work');
     for (const step of ['R1', 'R3', 'R5', 'R7']) expect(verdictOf(report, step), step).toBe('recorded');
 
     const carriage = path.join(reports, 'carriage.json');
     const carried = await runScript(['carriage', '--home', gateway.home, '--alias', 'default', '--report', carriage]);
-    expect([0, 1]).toContain(carried.code);
-    expect(readReport(carriage).format).toBe(REPORT_FORMAT);
+    expect(carried.code).toBe(0);
+    const carriedReport = readReport(carriage);
+    expect(carriedReport.format).toBe(REPORT_FORMAT);
+    expect(carriedReport.steps.map((entry) => entry.step)).toEqual(['R2', 'R4']);
+    const r4 = carriedReport.steps.find((entry) => entry.step === 'R4')?.facts as { requests: Array<{ status: unknown }> };
+    expect(r4.requests).toHaveLength(4);
+    for (const request of r4.requests) expect(typeof request.status).toBe('number');
     const sized = path.join(reports, 'request-size.json');
     const sizing = await runScript(['request-size', '--home', gateway.home, '--alias', 'default', '--report', sized]);
-    expect([0, 1]).toContain(sizing.code);
-    expect(readReport(sized).format).toBe(REPORT_FORMAT);
+    expect(sizing.code).toBe(0);
+    const sizedReport = readReport(sized);
+    expect(sizedReport.format).toBe(REPORT_FORMAT);
+    expect(sizedReport.steps.map((entry) => entry.step)).toEqual(['R6']);
+    expect(sizedReport.steps[0]?.facts).toMatchObject({ bytes: 1048577 });
 
     const forbidden = [...gateway.auth.issuedSecrets(), ...exposed, gateway.auth.identity.email, gateway.auth.identity.sub, ...gateway.auth.registrations().flatMap((registration) => [registration.clientId, registration.hostId])].filter((value) => value !== '');
     const outputs = [collected, carriage, sized].map((file) => fs.readFileSync(file, 'utf8')).join('\n') + collect.stdout + carried.stdout + sizing.stdout;
