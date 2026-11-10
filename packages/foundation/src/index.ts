@@ -35,7 +35,7 @@ export type { SocketResolver, UdsClient, UdsClientOptions, UdsRequestOptions, Ud
 export { uuidv7 } from './uuidv7.ts';
 export { DEFAULT_LOCK_TIMEOUT_MS, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
 export type { FileLockOptions, FileLockPorts, KeyedSerializer } from './file-lock.ts';
-export { CREDENTIAL_RECORD_MAX_BYTES, createFileCredentialStore, createMemoryCredentialStore, credentialFileFor } from './credential-store.ts';
+export { AUTH_DOCUMENT_MAX_BYTES, createFileCredentialStore, createMemoryCredentialStore, credentialFileFor } from './credential-store.ts';
 export type { CredentialEntry, CredentialKeyListing, CredentialStore, FileCredentialStoreOptions, ListableCredentialStore } from './credential-store.ts';
 export {
   CREDENTIAL_ENVELOPE_FORMAT,

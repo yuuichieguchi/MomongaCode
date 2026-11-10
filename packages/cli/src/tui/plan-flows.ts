@@ -2,8 +2,7 @@ import { SECRET_NAME_PATTERN } from '@momonga/foundation';
 import type { DetectedLocalServer, DetectedManagedServer, LocalServerDetection, MomongaModelEntry, PlanAccountView, PlanAccountsResponse, PlanProfileView, TargetHealth } from '@momonga/protocol';
 import type { ModelConnection } from '@momonga/config';
 import { SANDBOX_OFF_NOTICE, accountRowLabel, accountsOf, nextAccountLabel, profileOf, profileStateText, savedAccountAction } from '../plan/accounts.ts';
-import { systemTiming } from '@momonga/foundation';
-import { SignInAttemptNotFoundError, SignInGatewayStoppedError, SignInListenerError, signIn, waitForPaste } from '../plan/sign-in.ts';
+import { SignInAttemptNotFoundError, SignInExpiredError, SignInGatewayStoppedError, SignInListenerError, SignInListenerFailedError, signIn, waitForPaste } from '../plan/sign-in.ts';
 import type { SignInShown } from '../plan/sign-in.ts';
 import type { TuiBackend } from './backend.ts';
 import type { OverlayPorts, PickRow } from './picker.tsx';
@@ -139,7 +138,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
           authorize,
           pasted: (_state, signal) => waitForPaste(deliveries, signal),
           signal: cancel.signal,
-          timers: systemTiming,
+          timers: backend.signInTimers,
         },
         { profile: profile.id, account, reconsent },
       );
@@ -148,11 +147,11 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         ports.info('sign-in cancelled');
         return;
       }
-      if (error instanceof SignInListenerError || error instanceof SignInGatewayStoppedError) {
+      if (error instanceof SignInListenerError || error instanceof SignInListenerFailedError || error instanceof SignInGatewayStoppedError) {
         ports.info(error.message);
         return;
       }
-      if (error instanceof SignInAttemptNotFoundError) {
+      if (error instanceof SignInExpiredError || error instanceof SignInAttemptNotFoundError) {
         ports.info(`${error.message} Run /login to try again.`);
         return;
       }

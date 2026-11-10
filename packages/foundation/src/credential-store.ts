@@ -26,7 +26,7 @@ export interface ListableCredentialStore extends CredentialStore {
   listKeys(): Promise<CredentialKeyListing>;
 }
 
-export const CREDENTIAL_RECORD_MAX_BYTES = 256 * 1024;
+export const AUTH_DOCUMENT_MAX_BYTES = 256 * 1024;
 
 export type ScopedOperations = {
   read(key: string, signal?: AbortSignal): Promise<string | undefined>;

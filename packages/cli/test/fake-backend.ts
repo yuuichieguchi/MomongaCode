@@ -1,4 +1,5 @@
 import { applyCapabilityOverride } from '@momonga/protocol';
+import { createFakeClock, createFakeTimers } from '@momonga/testkit';
 import type { Capabilities, CapabilityOverride, ToolCallingState, ElicitationAnswerRecord, GoverningFactView, ImageAttachment, MemoryView, PermissionMode, SkillView } from '@momonga/protocol';
 import type { RunEventFrame } from '../src/client/runtime-client.ts';
 import type { RunView, SessionView, TrustView } from '../src/client/views.ts';
@@ -295,6 +296,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     startSignInListener: async () => {
       throw new Error('the fake backend opens no sign-in listener');
     },
+    signInTimers: createFakeTimers(createFakeClock(0)),
     detectLocalServers: async () => [],
     addModelConnection: async () => {
       throw new Error('the fake backend writes no model connection');

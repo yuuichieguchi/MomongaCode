@@ -8,6 +8,7 @@ import {
   SignInExpiredError,
   SignInGatewayStoppedError,
   SignInListenerError,
+  SignInListenerFailedError,
   pastedCallbackProblem,
   signIn,
 } from '../plan/sign-in.ts';
@@ -198,7 +199,7 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
       print(ports.stderr, [`${error.message} ${tryAgain}`]);
       return EXIT_NOT_SIGNED_IN;
     }
-    if (error instanceof SignInListenerError || error instanceof SignInGatewayStoppedError) {
+    if (error instanceof SignInListenerError || error instanceof SignInListenerFailedError || error instanceof SignInGatewayStoppedError) {
       print(ports.stderr, [error.message]);
       return EXIT_NOT_SIGNED_IN;
     }

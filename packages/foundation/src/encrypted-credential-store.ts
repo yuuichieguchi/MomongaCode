@@ -3,7 +3,7 @@ import type { webcrypto } from 'node:crypto';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { writeFileAtomically } from './atomic-file.ts';
-import { CREDENTIAL_RECORD_MAX_BYTES, createFileCredentialStore, credentialFileFor, storeThroughScope } from './credential-store.ts';
+import { AUTH_DOCUMENT_MAX_BYTES, createFileCredentialStore, credentialFileFor, storeThroughScope } from './credential-store.ts';
 import type { CredentialEntry, CredentialKeyListing, ListableCredentialStore } from './credential-store.ts';
 import { systemFileLockPorts, withFileLock } from './file-lock.ts';
 import type { FileLockPorts } from './file-lock.ts';
@@ -253,7 +253,7 @@ export const createEncryptedCredentialStore = (options: EncryptedCredentialStore
     for (const name of names.filter((entry) => RECORD_FILE_NAME.test(entry)).sort()) {
       const file = path.join(options.directory, name);
       try {
-        const text = await nodeFileSystem.readOwnerOnlyTextFile(file, `credential file ${file}`, CREDENTIAL_RECORD_MAX_BYTES);
+        const text = await nodeFileSystem.readOwnerOnlyTextFile(file, `credential file ${file}`, AUTH_DOCUMENT_MAX_BYTES);
         if (text === undefined) continue;
         const key = keyOfText(text, file);
         if (credentialFileFor(options.directory, key) !== file) throw new Error(`the credential file ${file} holds the record of ${JSON.stringify(key)}, which belongs in another file`);

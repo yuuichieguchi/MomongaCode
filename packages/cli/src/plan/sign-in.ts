@@ -1,4 +1,4 @@
-import { AUTHORIZATION_WAIT_MS, startLoopbackRedirect, systemTiming } from '@momonga/foundation';
+import { AUTHORIZATION_WAIT_MS, OAuthAuthorizationError, startLoopbackRedirect, systemTiming } from '@momonga/foundation';
 import type { Timing } from '@momonga/foundation';
 import { planProfileOf } from '@momonga/config';
 import type { PlanSignInCompleteResponse } from '@momonga/protocol';
@@ -24,7 +24,15 @@ export const loopbackSignInListener =
       port: Number(new URL(redirect.redirectUrl).port),
       redirectUrl: redirect.redirectUrl,
       callback: async (options) => {
-        const params = await redirect.callback({ state: options.state, signal: AbortSignal.any([signal, options.signal]), timeoutMs: AUTHORIZATION_WAIT_MS });
+        const waiting = AbortSignal.any([signal, options.signal]);
+        let params: URLSearchParams;
+        try {
+          params = await redirect.callback({ state: options.state, signal: waiting, timeoutMs: AUTHORIZATION_WAIT_MS });
+        } catch (error) {
+          if (waiting.aborted && error === waiting.reason) throw error;
+          if (error instanceof OAuthAuthorizationError && error.failure === 'timed_out') throw new SignInExpiredError();
+          throw new SignInListenerFailedError(error);
+        }
         return new URL(`${redirect.redirectUrl}?${params.toString()}`);
       },
       close: () => redirect.close(),
@@ -54,6 +62,13 @@ export class SignInListenerError extends Error {
   constructor(cause: unknown) {
     super(`Could not start the local sign-in listener (${cause instanceof Error ? cause.message : String(cause)}). Nothing was changed.`, { cause });
     this.name = 'SignInListenerError';
+  }
+}
+
+export class SignInListenerFailedError extends Error {
+  constructor(cause: unknown) {
+    super(`The local sign-in listener failed (${cause instanceof Error ? cause.message : String(cause)}). The sign-in was cancelled.`, { cause });
+    this.name = 'SignInListenerFailedError';
   }
 }
 

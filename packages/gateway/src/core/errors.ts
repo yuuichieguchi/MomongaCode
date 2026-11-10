@@ -45,6 +45,7 @@ const STATUS_BY_CODE: Record<string, number> = {
   plan_usage_paused: 429,
   plan_store_unreadable: 500,
   plan_store_unwritable: 500,
+  plan_host_identity_unavailable: 500,
 };
 
 export const statusFor = (type: ErrorType, code: string | null): number =>

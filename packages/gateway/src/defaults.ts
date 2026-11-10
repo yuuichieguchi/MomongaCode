@@ -1,4 +1,4 @@
-import { AUTHORIZATION_WAIT_MS, DEFAULT_STOP_VALUES } from '@momonga/foundation';
+import { AUTH_DOCUMENT_MAX_BYTES, AUTHORIZATION_WAIT_MS, DEFAULT_STOP_VALUES } from '@momonga/foundation';
 import type { GatewayConfig } from './types.ts';
 
 const MIB = 1024 * 1024;
@@ -45,7 +45,7 @@ export const PLAN_SIGN_IN_DEFAULTS = {
   keysRefetchMs: 60_000,
   keysBodyBytes: 64 * KIB,
   keysMaxCount: 16,
-  authBodyBytes: 256 * KIB,
+  authBodyBytes: AUTH_DOCUMENT_MAX_BYTES,
   errorTextChars: 64,
   randomStateBytes: 16,
   verifierBytes: 32,

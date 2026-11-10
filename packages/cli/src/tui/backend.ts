@@ -1,5 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { currentSocketResolver } from '@momonga/foundation';
+import { currentSocketResolver, systemTiming } from '@momonga/foundation';
 import { LOCAL_SERVER_CANDIDATES } from '@momonga/protocol';
 import type { AddRuleRequest, ElicitationAnswerRecord, LocalServerDetection, GatewayHealth, GoverningFactView, ImageAttachment, MemoryView, MomongaModelEntry, PermissionMode, RuleAddResponse, SkillsResponse } from '@momonga/protocol';
 import { addModelConnection } from '@momonga/config';
@@ -9,7 +9,7 @@ import type { GatewayClient, PlanGatewayClient } from '../client/gateway-client.
 import { withIdentityReadFetch } from '../network.ts';
 import { localManagedPorts } from '../local-managed-ports.ts';
 import { loopbackSignInListener } from '../plan/sign-in.ts';
-import type { SandboxKind, SignInListener, StartSignInListener } from '../plan/sign-in.ts';
+import type { SandboxKind, SignInListener, SignInWaitTimers, StartSignInListener } from '../plan/sign-in.ts';
 import { dismissNotice, readDismissedNotices } from './dismissed-notices.ts';
 import type { DismissedNotices } from './dismissed-notices.ts';
 import type { MemoryFilter, RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
@@ -71,6 +71,7 @@ export type TuiBackend = {
   health(): Promise<GatewayHealth>;
   sandbox(): Promise<SandboxKind>;
   startSignInListener: StartSignInListener;
+  signInTimers: SignInWaitTimers;
   detectLocalServers(typed: readonly string[]): Promise<readonly LocalServerDetection[]>;
   addModelConnection(connection: ModelConnection): Promise<WrittenConnection>;
   dismissedNotices(): Promise<DismissedNotices>;
@@ -129,6 +130,7 @@ export const createTuiBackend = (
     health: () => withGateway((gateway) => gateway.health()),
     sandbox: async () => (await runtime().health()).sandbox,
     startSignInListener: loopbackSignInListener(closing.signal),
+    signInTimers: systemTiming,
     detectLocalServers: async (typed) => {
       const { detectLocalServers } = await import('@momonga/gateway');
       return withIdentityReadFetch(ports, (fetch) => detectLocalServers({ candidates: LOCAL_SERVER_CANDIDATES, typed, signal: closing.signal, fetch, ...localManagedPorts() }));

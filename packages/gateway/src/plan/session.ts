@@ -17,7 +17,7 @@ import {
   unavailableFailure,
   unwritableFailure,
 } from './auth-source.ts';
-import type { AccountView, AuthSource, PlanPause, PlanRead } from './auth-source.ts';
+import type { AccountView, AuthSource, PlanPause, PlanRead, PlanStatus } from './auth-source.ts';
 import { ensureHostIdentity } from './host-identity.ts';
 import { grantsScope, refreshRequiredFor, sendRefresh, sendWasInterrupted, tokenResponseProblem } from './refresh.ts';
 import type { PlanFetch, PlanSleep, PlanTokenResponse, RefreshEnd } from './refresh.ts';
@@ -248,7 +248,7 @@ const withoutPause = (record: PlanRecord): PlanRecord => {
 
 const signingOutRecord = (record: PlanRecord): PlanRecord => ({ ...record, state: 'signing_out' });
 
-const SELECTABLE_STATES: ReadonlySet<RecordState | undefined> = new Set<RecordState | undefined>(['active', 'plan_disabled']);
+const SELECTABLE_STATES: ReadonlySet<PlanStatus['state']> = new Set<PlanStatus['state']>(['active']);
 
 export class PlanAccountNotSelectableError extends Error {
   readonly ref: PlanAccountRef;
@@ -684,7 +684,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   const selectActive = async (ref: PlanAccountRef): Promise<void> => {
     const account = accountOf(ref.profile, ref.account);
     await load(account);
-    if (!SELECTABLE_STATES.has(recordOf(account)?.state)) throw new PlanAccountNotSelectableError(ref);
+    if (!SELECTABLE_STATES.has(statusOf(viewOf(account), clock.now()).state)) throw new PlanAccountNotSelectableError(ref);
     await writeActiveAccount(fileSystem, paths.active, ref.profile, ref.account);
   };
 
