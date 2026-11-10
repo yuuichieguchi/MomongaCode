@@ -20,6 +20,8 @@ import { MANAGED_SERVERS, managedServerOf } from '@momonga/protocol';
 import type { ManagedServerDescription } from '@momonga/protocol';
 import {
   acquireProcessLock,
+  JsonDepthError,
+  parseOutsideJson,
   SecretEmptyError,
   SecretUnavailableError,
   announceReady,
@@ -191,9 +193,9 @@ const UNREACHABLE_CODES: ReadonlySet<string> = new Set(['ENOENT', 'ECONNREFUSED'
 const handedValueOf = (text: string): string | undefined => {
   let answer: unknown;
   try {
-    answer = JSON.parse(text);
+    answer = parseOutsideJson(text);
   } catch (error) {
-    if (error instanceof SyntaxError) return undefined;
+    if (error instanceof SyntaxError || error instanceof JsonDepthError) return undefined;
     throw error;
   }
   if (typeof answer !== 'object' || answer === null) return undefined;
