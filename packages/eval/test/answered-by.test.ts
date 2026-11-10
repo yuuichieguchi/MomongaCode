@@ -56,7 +56,7 @@ describe('the transcript records what answered', () => {
     expect(Object.keys(decoded.answeredBy?.[1] ?? {})).toEqual(['target', 'answers']);
   });
 
-  it('a momonga-transcript/5 file is retired with the reason that it cannot record an answerer whose adapter and model are unknown', () => {
+  it('a momonga-transcript/5 file is retired with the reason that it cannot record an answerer whose adapter and model are unknown, against the current transcript format of design-core-on 3.2', () => {
     const header = { format: 'momonga-transcript/5', caseId: 'a-on', runIndex: 0, run: recorded('a-on', 0, []).run, children: [], policy: {}, codeDigest: 'c'.repeat(64), answeredBy: [REAL_TARGET] };
     const text = `${JSON.stringify(header)}\n${JSON.stringify({ end: true, events: 0, childEvents: 0 })}\n`;
     expect(() => decodeTranscript(text, 'old.jsonl')).toThrow(TranscriptError);
@@ -83,7 +83,7 @@ describe('the transcript records what answered', () => {
 });
 
 describe('the report computes its model kind from answeredBy', () => {
-  it('is format momonga-eval-context-report/7, and /2, /3 and /5 are retired', () => {
+  it('is format momonga-eval-context-report/7, and /2, /3, /5 and /6 are retired', () => {
     expect(CONTEXT_REPORT_FORMAT).toBe('momonga-eval-context-report/7');
     const old = JSON.stringify({ format: 'momonga-eval-context-report/2' });
     expect(() => parseContextReport(old, 'old.json')).toThrow(/momonga-eval-context-report\/2/);

@@ -114,15 +114,29 @@ describe('the reflection role', () => {
     expect(env.gateway.streams.map((stream) => stream.body.model)).toEqual(['fm']);
   });
 
-  it('guards a role that is refused for a capability it does not need: a reflection role without structured output is called like any other', async () => {
+  it('guards a charge spent on a target that cannot enforce the schema: a reflection target reporting no structured output is not called and ends done naming the role and the alias', async () => {
     const env = setup();
     env.gateway.capabilitiesByModel['plain'] = capabilitiesFor(100_000, { structuredOutput: 'none' });
     const run = await env.finishedRun({ reflection: 'plain' });
     env.gateway.script.push(textStep(REPLY, { usage: usageOf(100, 20) }));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
-    expect(env.gateway.streams.map((stream) => stream.body.model)).toEqual(['plain']);
+    expect(env.gateway.capabilityRequests).toEqual(['plain']);
+    expect(env.gateway.streams).toEqual([]);
+    expect(env.api.contextCharges.list()).toEqual([]);
     const job = env.api.reflection.get((await run).id);
     expect(job?.state).toBe('done');
-    expect(env.api.contextCharges.list()).toMatchObject([{ purpose: 'reflection', model: 'plain' }]);
+    expect(job?.lastError).toContain('models.roles.reflection');
+    expect(job?.lastError).toContain('plain');
+  });
+
+  it('guards a blanket skip: a reflection target reporting json_schema is still called and charged', async () => {
+    const env = setup();
+    env.gateway.capabilitiesByModel['strict'] = capabilitiesFor(100_000, { structuredOutput: 'json_schema' });
+    const run = await env.finishedRun({ reflection: 'strict' });
+    env.gateway.script.push(textStep(REPLY, { usage: usageOf(100, 20) }));
+    expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
+    expect(env.gateway.streams.map((stream) => stream.body.model)).toEqual(['strict']);
+    expect(env.api.reflection.get((await run).id)?.state).toBe('done');
+    expect(env.api.contextCharges.list()).toMatchObject([{ purpose: 'reflection', model: 'strict', inputTokens: 100, outputTokens: 20 }]);
   });
 });

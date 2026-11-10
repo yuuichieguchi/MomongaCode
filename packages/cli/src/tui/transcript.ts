@@ -17,6 +17,8 @@ import { EMPTY_USAGE } from './screen/store.ts';
 import { formatTokens } from './screen/footer.tsx';
 import { tailOf } from './screen/tool-view.ts';
 import type { OutputTail } from './screen/tool-view.ts';
+import { isPrompt } from '../run/prompt-event.ts';
+import type { PromptEvent } from '../run/prompt-event.ts';
 import type { TranscriptState, TranscriptStore } from './screen/store.ts';
 import type { StartupBanner } from './startup.tsx';
 
@@ -431,9 +433,8 @@ export const foldEvent = (store: TranscriptStore, event: PublicRunEvent): void =
   foldPhase(store, event);
 };
 
-export type PromptEvent = Extract<PublicRunEvent, { type: 'user.message' }>;
-
-export const isPrompt = (event: PublicRunEvent, firstSeq: number | undefined): event is PromptEvent => event.type === 'user.message' && event.seq === firstSeq;
+export { isPrompt };
+export type { PromptEvent };
 
 const appendAttachments = (store: TranscriptStore, event: PromptEvent): void => {
   for (const part of event.attachments ?? []) {
@@ -442,14 +443,23 @@ const appendAttachments = (store: TranscriptStore, event: PromptEvent): void => 
   }
 };
 
+const foldPrompt = (store: TranscriptStore, event: PromptEvent): void => {
+  appendEntry(store, { kind: 'user', text: event.text });
+  appendAttachments(store, event);
+};
+
+export const foldLiveEvent = (store: TranscriptStore, event: PublicRunEvent, firstSeq: number | undefined): void => {
+  if (isPrompt(event, firstSeq)) foldPrompt(store, event);
+  else foldEvent(store, event);
+};
+
 export const foldReplayedEvent = (store: TranscriptStore, event: PublicRunEvent, firstSeq: number | undefined, showShell: (record: UserShellRecord) => void): void => {
   if (!isPrompt(event, firstSeq)) {
     foldEvent(store, event);
     return;
   }
   for (const record of event.shell ?? []) showShell(record);
-  appendEntry(store, { kind: 'user', text: event.text });
-  appendAttachments(store, event);
+  foldPrompt(store, event);
 };
 
 export const runCreated = (store: TranscriptStore, runId: string, startedAt: number): void => {

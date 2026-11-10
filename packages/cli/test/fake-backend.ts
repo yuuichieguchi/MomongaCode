@@ -142,6 +142,14 @@ const NO_PLAN: PlanGatewayClient = {
   addTarget: noPlanRoute('accounts/targets'),
 };
 
+export const PROMPT_SEQ = 0;
+
+const promptFrame = (runId: string, sessionId: string, text: string): RunEventFrame => ({
+  id: PROMPT_SEQ,
+  event: 'user.message',
+  data: { type: 'user.message', text, runId, sessionId, step: 0, createdAt: 1, id: PROMPT_SEQ, seq: PROMPT_SEQ },
+});
+
 export const FAKE_INIT_INSTRUCTION = 'Read this repository, then write AGENTS.md.';
 
 export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
@@ -162,6 +170,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
   let session: SessionView = { ...SESSION, ...options.session };
   const opened: FakeBackend['opened'] = [];
   let startedHere = false;
+  let startedPrompt: string | undefined;
   const conversations: FakeConversation[] = [...(options.conversations ?? [])];
   const viewOf = (conversation: FakeConversation): SessionView => {
     const newest = conversation.runs.at(-1);
@@ -277,6 +286,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     },
     startRun: async (text, history, runOptions = {}) => {
       startedHere = true;
+      startedPrompt = text;
       started.push({ text, history, ...(Object.keys(runOptions).length === 0 ? {} : { options: runOptions }) });
       if (!conversations.some((conversation) => conversation.session.id === session.id)) conversations.push({ session: { ...session }, firstPrompt: text, runs: [{ id: 'run-1', frames: [] }] });
       return runView({ status: 'QUEUED', sessionId: session.id });
@@ -289,6 +299,9 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     follow: (runId, followHandlers) => {
       const kept = startedHere ? undefined : conversationRun(runId);
       startedHere = false;
+      const prompt = startedPrompt;
+      startedPrompt = undefined;
+      if (prompt !== undefined) followHandlers.onEvent(promptFrame(runId, session.id, prompt));
       if (kept !== undefined) for (const frame of kept.run.frames) followHandlers.onEvent(frame);
       if (kept !== undefined && isTerminalStatus(kept.view.status)) return Promise.resolve(kept.view);
       return new Promise<RunView>((resolve) => {

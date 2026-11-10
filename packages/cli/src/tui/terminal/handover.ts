@@ -34,8 +34,9 @@ export const takeHandoverTerminal = (env: Record<string, string | undefined>): H
   return parseHandoverTerminal(value);
 };
 
-export const startFromHandover = (layer: Pick<TerminalLayer, 'adopt' | 'leaveEveryMode' | 'start'>, env: Record<string, string | undefined>, negotiation: NegotiationState): 'adopted' | 'lost' => {
-  const terminal = takeHandoverTerminal(env);
+type StartableLayer = Pick<TerminalLayer, 'adopt' | 'leaveEveryMode' | 'start'>;
+
+export const startWithHandoverTerminal = (layer: StartableLayer, terminal: HandoverTerminal | undefined, negotiation: NegotiationState): 'adopted' | 'lost' => {
   if (terminal === undefined) {
     layer.leaveEveryMode();
     layer.start();
@@ -44,3 +45,6 @@ export const startFromHandover = (layer: Pick<TerminalLayer, 'adopt' | 'leaveEve
   layer.adopt(terminal, negotiation);
   return 'adopted';
 };
+
+export const startFromHandover = (layer: StartableLayer, env: Record<string, string | undefined>, negotiation: NegotiationState): 'adopted' | 'lost' =>
+  startWithHandoverTerminal(layer, takeHandoverTerminal(env), negotiation);

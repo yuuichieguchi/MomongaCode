@@ -1,0 +1,13 @@
+{
+  "context": {
+    "adaptiveBudget": false,
+    "autoCompact": false,
+    "cachePrefix": false,
+    "outputFormatters": [],
+    "loopGuidance": false,
+    "observedCapacity": false,
+    "unboundedOutputReserve": false
+  },
+  "tools": { "deferral": false, "conciseDescriptions": false },
+  "memory": { "repositoryFacts": false, "reflection": { "enabled": false } }
+}

@@ -93,7 +93,7 @@ describe('eval records name a model by its full reference (design-model-names 3.
     } catch (error) {
       message = error instanceof Error ? error.message : String(error);
     }
-    expect(message).toContain('run `momonga eval context <dataset> --model <model> --report <off report>` without --settings, then `momonga eval context <dataset> --model <model> --settings <policy file> --report <on report>`');
+    expect(message).toContain('run `momonga eval context <dataset> --model <model> --settings <base policy file> --report <base report>`, then `momonga eval context <dataset> --model <model> --report <candidate report>`');
     expect(sourceTexts().filter((source) => /--alias|<alias>/.test(source.text)).map((source) => source.file)).toEqual([]);
   });
 
@@ -151,7 +151,7 @@ describe('eval records name a model by its full reference (design-model-names 3.
     expect(models).toEqual([LOCAL]);
     expect(() => parseContextReport(sixth, 'base.json')).toThrow(EvalError);
     expect(() => parseContextReport(sixth, 'base.json')).toThrow(
-      'base.json: momonga-eval-context-report/6 reports do not record the models the runs used (they were recorded as alias names), so momonga-eval-context-report/6 is retired and cannot be compared as momonga-eval-context-report/7; build a momonga-eval-context-report/7 base from one bundle',
+      'base.json: momonga-eval-context-report/6 reports do not record the models the runs used (they were recorded as alias names), so momonga-eval-context-report/6 is retired and cannot be compared as momonga-eval-context-report/7; every report older than momonga-eval-context-report/7 has its policy recorded relative to the old defaults, so build a momonga-eval-context-report/7 pair from one bundle',
     );
 
     const { analysisModel, digest: _digest, ...body } = outcomeFileOf(await improved(), { name: 'fields', digest: 'e'.repeat(64) });

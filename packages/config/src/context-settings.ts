@@ -1,3 +1,4 @@
+import { OUTPUT_FORMATTERS } from '@momonga/protocol';
 import type { OutputFormatterName } from '@momonga/protocol';
 import type { ContextSettings, MemorySettings, RipgrepSetting, ToolsSettings, VerificationSettings } from './settings.ts';
 
@@ -41,9 +42,9 @@ export const DEFAULT_VERIFICATION_MANIFESTS: readonly string[] = [
 ];
 
 export const defaultMemorySettings = (): ResolvedMemorySettings => ({
-  reflection: { enabled: false },
+  reflection: { enabled: true },
   forgetAfterDays: DEFAULT_FORGET_AFTER_DAYS,
-  repositoryFacts: false,
+  repositoryFacts: true,
 });
 
 export const defaultVerificationSettings = (): ResolvedVerificationSettings => ({
@@ -52,16 +53,16 @@ export const defaultVerificationSettings = (): ResolvedVerificationSettings => (
 });
 
 export const defaultContextSettings = (): ResolvedContextSettings => ({
-  adaptiveBudget: false,
+  adaptiveBudget: true,
   autoCompact: true,
-  cachePrefix: false,
-  outputFormatters: [],
-  loopGuidance: false,
-  observedCapacity: false,
-  unboundedOutputReserve: false,
+  cachePrefix: true,
+  outputFormatters: [...OUTPUT_FORMATTERS],
+  loopGuidance: true,
+  observedCapacity: true,
+  unboundedOutputReserve: true,
 });
 
-export const defaultToolsSettings = (): ResolvedToolsSettings => ({ deferral: false, conciseDescriptions: false, ripgrep: 'bundled' });
+export const defaultToolsSettings = (): ResolvedToolsSettings => ({ deferral: true, conciseDescriptions: true, ripgrep: 'bundled' });
 
 export const mergeMemorySettings = (base: ResolvedMemorySettings, layer: MemorySettings | undefined): ResolvedMemorySettings => {
   if (layer === undefined) return base;

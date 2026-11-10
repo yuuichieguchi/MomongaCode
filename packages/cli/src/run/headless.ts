@@ -7,6 +7,7 @@ import { RunApiError } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView } from '../client/views.ts';
 import { daemonReadyBoundMs, restoreDaemon } from '../daemon/ensure-daemon.ts';
+import type { NewerListener } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { escapedLines } from '../terminal-writer.ts';
 import { describeElicitation } from '../elicit/describe.ts';
@@ -18,14 +19,21 @@ import { describeClassification, describeDenial, describeHook, describeRunError 
 import type { MessageSurface } from '../policy-messages.ts';
 import { asChildEvent } from './child-events.ts';
 import { followRun } from './follow.ts';
-import { openSession } from './open-session.ts';
+import { adoptionOf, refuseStart } from '../handover/start.ts';
+import { newerListenerOf, streamMoveOf, streamSurface } from '../handover/stream.ts';
+import type { StreamMove } from '../handover/stream.ts';
+import type { StreamRecord } from '../handover/record.ts';
+import { ensureSessionDaemon } from '../daemon/ensure-daemon.ts';
+import { connectSessionRuntime, openSession } from './open-session.ts';
 import type { CliSession } from './open-session.ts';
 import type { HeadlessReopen } from './resolve-session.ts';
 import { resolveSkillInvocation } from './skill-invocation.ts';
 
-export const OUTPUT_FORMATS = ['text', 'json', 'stream-json'] as const;
+import { OUTPUT_FORMATS } from './output-format.ts';
+import type { OutputFormat } from './output-format.ts';
 
-export type OutputFormat = (typeof OUTPUT_FORMATS)[number];
+export { OUTPUT_FORMATS };
+export type { OutputFormat };
 
 export const EXIT_RUN_FAILED = 1;
 export const EXIT_CANCELLED = 130;
@@ -92,7 +100,7 @@ const noteText = (lines: readonly string[]): string => `${escapedLines(lines)}\n
 
 const leadWith = (prefix: string, lines: readonly string[]): string[] => lines.map((line, index) => (index === 0 ? `${prefix}${line}` : line));
 
-export type FrameSink = { absorb(frame: RunEventFrame): void; handle(frame: RunEventFrame): void; handleChild(frame: RunEventFrame, agent: string): void; finalText(): string };
+export type FrameSink = { absorb(frame: RunEventFrame): void; handle(frame: RunEventFrame): void; handleChild(frame: RunEventFrame, agent: string): void; finalText(): string; pending(): number };
 
 const awaitedOf = (awaits: Extract<PublicRunEvent, { type: 'tool.waiting' }>['awaits']): string =>
   awaits.kind === 'run' ? `subagent ${awaits.agent} (run ${awaits.runId})` : `job ${awaits.jobId}`;
@@ -103,6 +111,14 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
   let lastItem: string | undefined;
   let needsNewline = false;
   let lastFailure: AttemptFailed | undefined;
+  const open = new Set<string>();
+
+  const track = (event: PublicRunEvent): void => {
+    if (event.type === 'tool.permission.requested') open.add(event.approvalId);
+    else if (event.type === 'tool.permission.resolved' || event.type === 'tool.permission.cancelled') open.delete(event.approvalId);
+    else if (event.type === 'tool.elicitation.requested') open.add(event.inputId);
+    else if (event.type === 'tool.elicitation.resolved' || event.type === 'tool.elicitation.cancelled') open.delete(event.inputId);
+  };
 
   const note = (lines: readonly string[]): void => {
     ports.stderr.write(noteText(lines));
@@ -157,35 +173,41 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
     }
   };
 
+  const keep = (event: Extract<PublicRunEvent, { type: 'agent.message.delta' }>): void => {
+    items.set(event.itemId, `${items.get(event.itemId) ?? ''}${event.text}`);
+    lastItem = event.itemId;
+    needsNewline = !event.text.endsWith('\n');
+  };
+
   const absorb = (frame: RunEventFrame): void => {
     const event = frame.data;
+    track(event);
     if (event.type === 'tool.call') titles.set(event.callId, event.title);
-    if (event.type === 'agent.message.delta') items.set(event.itemId, `${items.get(event.itemId) ?? ''}${event.text}`);
+    if (event.type === 'agent.message.delta') keep(event);
   };
 
   const handle = (frame: RunEventFrame): void => {
     const event = frame.data;
+    track(event);
     if (format === 'stream-json') ports.stdout.write(`${JSON.stringify(event)}\n`);
     if (event.type !== 'agent.message.delta') {
       present(event, undefined);
       return;
     }
-    items.set(event.itemId, `${items.get(event.itemId) ?? ''}${event.text}`);
-    if (format !== 'text') return;
-    if (lastItem !== undefined && lastItem !== event.itemId && needsNewline) ports.stdout.write('\n');
-    lastItem = event.itemId;
-    ports.stdout.write(event.text);
-    needsNewline = !event.text.endsWith('\n');
+    if (format === 'text' && lastItem !== undefined && lastItem !== event.itemId && needsNewline) ports.stdout.write('\n');
+    keep(event);
+    if (format === 'text') ports.stdout.write(event.text);
   };
 
   const handleChild = (frame: RunEventFrame, agent: string): void => {
+    track(frame.data);
     if (format === 'stream-json') ports.stdout.write(`${JSON.stringify(frame.data)}\n`);
     const event = asChildEvent(frame.data, agent);
     if (event !== undefined) present(event, agent);
   };
 
   const finalText = (): string => [...items.values()].at(-1) ?? '';
-  return { absorb, handle, handleChild, finalText };
+  return { absorb, handle, handleChild, finalText, pending: () => open.size };
 };
 
 export type WatchOptions = {
@@ -195,6 +217,7 @@ export type WatchOptions = {
   verbose: boolean;
   after?: number;
   interrupt: AbortSignal;
+  move?: StreamMove;
 };
 
 export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: WatchOptions): Promise<number> => {
@@ -207,19 +230,57 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
   };
   if (options.interrupt.aborted) cancelOnInterrupt();
   else options.interrupt.addEventListener('abort', cancelOnInterrupt, { once: true });
-  const run = await followRun({
-    client,
-    clock: ports.clock,
-    random: ports.random,
-    runId,
-    ...(options.after === undefined ? {} : { seenThrough: options.after }),
-    onSeenEvent: sink.absorb,
-    reconnectBoundMs: await daemonReadyBoundMs(),
-    restoreConnection: restoreDaemon(ports, paths),
-    onEvent: sink.handle,
-    onChildEvent: sink.handleChild,
-    onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the event stream, reconnecting (attempt ${attempt + 1})\n`),
-  });
+  let cursor = options.after ?? 0;
+  let session: string | undefined;
+  const { move } = options;
+  const seen = (frame: RunEventFrame): void => {
+    cursor = Math.max(cursor, frame.id);
+    session ??= frame.data.sessionId;
+  };
+  const detach = move?.mover.attach(
+    streamSurface({
+      move,
+      version: ports.version,
+      runId,
+      format: options.format,
+      verbose: options.verbose,
+      session: () => session,
+      cursor: () => cursor,
+      pending: sink.pending,
+      say: (text) => ports.stderr.write(noteText([`momonga: ${text}`])),
+    }),
+  );
+  const checkMove = (): void => {
+    void move?.mover.check();
+  };
+  let run: RunView;
+  try {
+    run = await followRun({
+      client,
+      clock: ports.clock,
+      random: ports.random,
+      runId,
+      ...(options.after === undefined ? {} : { seenThrough: options.after }),
+      onSeenEvent: (frame) => {
+        seen(frame);
+        sink.absorb(frame);
+      },
+      reconnectBoundMs: await daemonReadyBoundMs(),
+      restoreConnection: restoreDaemon(ports, paths, newerListenerOf(ports)),
+      onEvent: (frame) => {
+        seen(frame);
+        sink.handle(frame);
+        checkMove();
+      },
+      onChildEvent: (frame, agent) => {
+        sink.handleChild(frame, agent);
+        checkMove();
+      },
+      onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the event stream, reconnecting (attempt ${attempt + 1})\n`),
+    });
+  } finally {
+    detach?.();
+  }
   options.interrupt.removeEventListener('abort', cancelOnInterrupt);
   const text = sink.finalText();
   if (options.format === 'text') {
@@ -236,6 +297,7 @@ const openInterruptibleSession = async (ports: CliPorts, paths: MomongaPaths, op
   try {
     return await openSession(ports, paths, {
       signal: options.interrupt,
+      ...onNewerOf(ports),
       ...(options.permissionMode === undefined ? {} : { permissionMode: options.permissionMode }),
       ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
       ...(options.model === undefined ? {} : { model: options.model }),
@@ -244,6 +306,25 @@ const openInterruptibleSession = async (ports: CliPorts, paths: MomongaPaths, op
   } catch (error) {
     if (options.interrupt.aborted && error === options.interrupt.reason) return undefined;
     throw error;
+  }
+};
+
+const onNewerOf = (ports: Pick<CliPorts, 'handover'>): { onNewer?: NewerListener } => {
+  const onNewer = newerListenerOf(ports);
+  return onNewer === undefined ? {} : { onNewer };
+};
+
+export const resumeStream = async (ports: CliPorts, paths: MomongaPaths, adopted: { record: StreamRecord; file: string }, interrupt: AbortSignal): Promise<number> => {
+  const { record, file } = adopted;
+  await ensureSessionDaemon(ports, paths, { signal: interrupt, ...onNewerOf(ports) });
+  const client = connectSessionRuntime(ports, paths, newerListenerOf(ports));
+  try {
+    await client.getRun(record.runId);
+    ports.handover?.removeRecord(file);
+    const move = streamMoveOf(ports, paths, record.kind);
+    return await watchRun(ports, paths, { client, runId: record.runId, format: record.output, verbose: record.verbose, after: record.lastSeq[record.runId] ?? 0, interrupt, ...(move === undefined ? {} : { move }) });
+  } finally {
+    await client.close();
   }
 };
 
@@ -263,6 +344,10 @@ const MODEL_PARAM = 'model';
 const isModelRefusal = (error: RunApiError): boolean => isRecord(error.body) && isRecord(error.body['error']) && error.body['error']['param'] === MODEL_PARAM;
 
 export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options: HeadlessOptions): Promise<number> => {
+  const adoption = adoptionOf(ports.handover?.started, ['headless']);
+  if (adoption.kind === 'refused') return refuseStart({ stderr: ports.stderr }, adoption);
+  if (adoption.kind === 'record') return resumeStream(ports, paths, adoption, options.interrupt);
+  const move = streamMoveOf(ports, paths, 'headless');
   let session: CliSession | undefined;
   try {
     session = await openInterruptibleSession(ports, paths, options);
@@ -301,7 +386,7 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
         `${JSON.stringify({ type: 'system', subtype: 'init', session_id: sessionId, run_id: started.id, cwd: ports.cwd, permission_mode: session.created.session.permissionMode, stripped_env_keys: session.created.strippedEnvKeys })}\n`,
       );
     }
-    return await watchRun(ports, paths, { client: session.client, runId: started.id, format: options.format, verbose: options.verbose, interrupt: options.interrupt });
+    return await watchRun(ports, paths, { client: session.client, runId: started.id, format: options.format, verbose: options.verbose, interrupt: options.interrupt, ...(move === undefined ? {} : { move }) });
   } finally {
     await session.close();
   }

@@ -338,7 +338,7 @@ const registerEvaluate: CommandGroup = (program, deps) => {
     .option('--model <model>', 'the model every session of a live run uses')
     .option('--seed <n>', 'the seed of the noise turns of a live run; 0 when omitted', seedArgument)
     .option('--report <file>', 'store the report as JSON for eval compare')
-    .option('--settings <file>', 'a token policy overlay (context.cachePrefix, outputFormatters, loopGuidance, observedCapacity, unboundedOutputReserve; tools.deferral, conciseDescriptions; memory.repositoryFacts) merged into the settings of every case of a live run and recorded in the report')
+    .option('--settings <file>', 'a token policy overlay over the defaults, every core key on unless the file turns it off (context.adaptiveBudget, context.autoCompact, context.cachePrefix, context.outputFormatters, context.loopGuidance, context.observedCapacity, context.unboundedOutputReserve, tools.deferral, tools.conciseDescriptions, memory.repositoryFacts, memory.reflection.enabled), merged into the settings of every case of a live run; the report records the resolved policy')
     .action(async (dataset: string, options: { replay?: string; record?: string; model?: string; seed?: number; report?: string; settings?: string }) => {
       deps.complete(
         await evaluateContext(deps.ports, dataset, {

@@ -15,19 +15,19 @@ const rejectedWith = async (settings: Record<string, unknown>, fragment: string 
   await expect(loadUserSettings({ home: tree.home })).rejects.toThrow(fragment);
 };
 
-const OFF_CONTEXT = { adaptiveBudget: false, autoCompact: true, cachePrefix: false, outputFormatters: [], loopGuidance: false, observedCapacity: false, unboundedOutputReserve: false };
+const DEFAULT_CONTEXT = { adaptiveBudget: true, autoCompact: true, cachePrefix: true, outputFormatters: ['log', 'json', 'grep', 'identicalOutput'], loopGuidance: true, observedCapacity: true, unboundedOutputReserve: true };
 
 describe('token settings defaults', () => {
-  it('turns every context policy of the token design off', async () => {
-    expect((await resolvedWith({})).context).toEqual(OFF_CONTEXT);
+  it('turns every context policy of the token design on', async () => {
+    expect((await resolvedWith({})).context).toEqual(DEFAULT_CONTEXT);
   });
 
-  it('turns tool deferral and concise descriptions off, and selects the bundled ripgrep', async () => {
-    expect((await resolvedWith({})).tools).toEqual({ deferral: false, conciseDescriptions: false, ripgrep: 'bundled' });
+  it('turns tool deferral and concise descriptions on, and selects the bundled ripgrep', async () => {
+    expect((await resolvedWith({})).tools).toEqual({ deferral: true, conciseDescriptions: true, ripgrep: 'bundled' });
   });
 
-  it('turns repository facts off', async () => {
-    expect((await resolvedWith({})).memory).toEqual({ reflection: { enabled: false }, forgetAfterDays: 90, repositoryFacts: false });
+  it('turns reflection and repository facts on', async () => {
+    expect((await resolvedWith({})).memory).toEqual({ reflection: { enabled: true }, forgetAfterDays: 90, repositoryFacts: true });
   });
 });
 
@@ -39,7 +39,7 @@ describe('token settings values', () => {
       memory: { repositoryFacts: true },
     });
     expect(settings.context).toEqual({
-      adaptiveBudget: false,
+      adaptiveBudget: true,
       autoCompact: true,
       cachePrefix: true,
       outputFormatters: ['log', 'json', 'grep', 'identicalOutput'],
@@ -48,7 +48,7 @@ describe('token settings values', () => {
       unboundedOutputReserve: true,
     });
     expect(settings.tools).toEqual({ deferral: true, conciseDescriptions: true, ripgrep: 'bundled' });
-    expect(settings.memory).toEqual({ reflection: { enabled: false }, forgetAfterDays: 90, repositoryFacts: true });
+    expect(settings.memory).toEqual({ reflection: { enabled: true }, forgetAfterDays: 90, repositoryFacts: true });
   });
 
   it('lets a later layer win each key and keeps the keys it does not set', async () => {
@@ -56,7 +56,7 @@ describe('token settings values', () => {
     writeJson(userSettingsPath(tree), { context: { cachePrefix: true, outputFormatters: ['log'] }, tools: { deferral: true } });
     writeJson(projectSettingsPath(tree), { context: { outputFormatters: ['json'] }, tools: { conciseDescriptions: true } });
     const { settings } = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
-    expect(settings.context).toEqual({ ...OFF_CONTEXT, cachePrefix: true, outputFormatters: ['json'] });
+    expect(settings.context).toEqual({ ...DEFAULT_CONTEXT, outputFormatters: ['json'] });
     expect(settings.tools).toEqual({ deferral: true, conciseDescriptions: true, ripgrep: 'bundled' });
   });
 

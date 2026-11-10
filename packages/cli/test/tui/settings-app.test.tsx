@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadUserSettings, writeTuiSetting } from '@momonga/config';
+import { OUTPUT_FORMATTERS } from '@momonga/protocol';
 import { describe, expect, it } from 'vitest';
 import { APPLIES_NEXT_SESSION, APPLIES_NOW, COMMAND_LINKS, OPEN_SETTINGS_FILE_ROW, SAVE_TO_TITLE, SETTINGS_TITLE, SETTING_ROWS, STRUCTURED_LINES, settingLeaves } from '../../src/tui/settings-screen.tsx';
 import type { TuiSettingsPort } from '../../src/tui/screen/notify.ts';
@@ -144,10 +145,10 @@ describe('/config, the settings screen', () => {
     const place = freshPlace();
     const started = await startAt(place);
     await open(started);
-    const marks = await openRow(started, 'Output formatters', '[ ] log');
+    const marks = await openRow(started, 'Output formatters', '[x] log');
     expect(marks).toContain('Output formatters (user)');
-    await press(started, KEYS.enter, '[x] log');
-    expect(stored(place.userFile)).toEqual({ context: { outputFormatters: ['log'] } });
+    await press(started, KEYS.enter, '[ ] log');
+    expect(stored(place.userFile)).toEqual({ context: { outputFormatters: OUTPUT_FORMATTERS.filter((name) => name !== 'log') } });
     started.app.unmount();
   });
 

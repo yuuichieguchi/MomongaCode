@@ -34,14 +34,14 @@ describe('isRunVerified with real settings', () => {
 });
 
 describe('the memory settings port', () => {
-  it('ignores project memory settings in an untrusted folder', async () => {
+  it('ignores project memory settings in an untrusted folder and keeps the design-core-on section 1 defaults there', async () => {
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, {});
-    writeProjectSettings(f.temp.project, { memory: { reflection: { enabled: true }, forgetAfterDays: 7 } });
+    writeProjectSettings(f.temp.project, { memory: { reflection: { enabled: false }, forgetAfterDays: 7, repositoryFacts: false } });
     const session = createSession(f.store, f.temp.project);
     const settings = f.composition.settings as unknown as { memory(session: unknown): Promise<unknown> };
-    expect(await settings.memory(session)).toEqual({ reflection: { enabled: false }, forgetAfterDays: 90, repositoryFacts: false });
+    expect(await settings.memory(session)).toEqual({ reflection: { enabled: true }, forgetAfterDays: 90, repositoryFacts: true });
     f.store.trust.set(f.temp.project, 'trusted');
-    expect(await settings.memory(session)).toEqual({ reflection: { enabled: true }, forgetAfterDays: 7, repositoryFacts: false });
+    expect(await settings.memory(session)).toEqual({ reflection: { enabled: false }, forgetAfterDays: 7, repositoryFacts: false });
   });
 });

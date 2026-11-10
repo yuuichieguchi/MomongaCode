@@ -18,6 +18,8 @@ import type { MemoryFilter, RunEventFrame, RuntimeClient, UserShellEnd } from '.
 import type { RunView, SessionView, TrustView } from '../client/views.ts';
 import type { HistoryStore } from '../history-store.ts';
 import { daemonReadyBoundMs, ensureSessionDaemon, restoreDaemon } from '../daemon/ensure-daemon.ts';
+import type { NewerListener } from '../daemon/ensure-daemon.ts';
+import { newerListenerOf } from '../handover/stream.ts';
 import { sessionSocketResolver } from '../daemon/generations.ts';
 import type { CliPorts } from '../ports.ts';
 import { followRun } from '../run/follow.ts';
@@ -115,6 +117,7 @@ export const createTuiBackend = (
   history: HistoryStore,
   noticeSources: readonly NoticeSource[],
   clipboard: ClipboardPrograms = createClipboardPrograms(),
+  onNewer: NewerListener | undefined = newerListenerOf(ports),
 ): TuiBackend => {
   let client: RuntimeClient | undefined;
   let session: SessionView | undefined;
@@ -199,8 +202,8 @@ export const createTuiBackend = (
     mcpServers: () => runtime().mcpServers(current().id),
     initInstruction: async () => (await import('@momonga/runtime')).INIT_INSTRUCTION,
     boot: async () => {
-      await ensureSessionDaemon(ports, paths, { signal: closing.signal });
-      client = connectSessionRuntime(ports, paths);
+      await ensureSessionDaemon(ports, paths, { signal: closing.signal, ...(onNewer === undefined ? {} : { onNewer }) });
+      client = connectSessionRuntime(ports, paths, onNewer);
       return client.trust(ports.cwd);
     },
     decideTrust: async (decision) => {
@@ -248,7 +251,7 @@ export const createTuiBackend = (
         random: ports.random,
         runId,
         reconnectBoundMs: await daemonReadyBoundMs(),
-        restoreConnection: restoreDaemon(ports, paths),
+        restoreConnection: restoreDaemon(ports, paths, onNewer),
         onEvent: handlers.onEvent,
         onChildEvent: handlers.onChildEvent,
         onChildStarted: handlers.onChildStarted,

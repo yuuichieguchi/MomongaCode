@@ -1,4 +1,5 @@
 import type { FileSystem, HostExec, OpenUrl, SecretStore } from '@momonga/foundation';
+import type { HandoverHost } from './handover/host.ts';
 
 export type CliClock = {
   now(): number;
@@ -58,4 +59,5 @@ export type CliPorts = {
   openUrl: OpenUrl;
   secretStore(): SecretStore;
   acpStdio?: () => AcpStdio;
+  handover?: HandoverHost;
 };

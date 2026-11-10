@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DATASET_FORMAT, EvalError, TranscriptError, decodeTranscript, encodeTranscript, formatReport, proportionOf, replayDataset } from '@momonga/eval';
 import type { GoldenDataset, Transcript } from '@momonga/eval';
-import { approvalTranscript, callsTranscript, finalAnswerTranscript, goldenCase, toolRoundTripTranscript } from './fixtures.ts';
+import { RESOLVED_ON_POLICY, approvalTranscript, callsTranscript, finalAnswerTranscript, goldenCase, toolRoundTripTranscript } from './fixtures.ts';
 
 const dataset = (...cases: GoldenDataset['cases']): GoldenDataset => ({ format: DATASET_FORMAT, name: 'unit', cases });
 
@@ -44,7 +44,7 @@ describe('transcript codec', () => {
     expect(() => decodeTranscript(lines.join('\n'), 'bad.jsonl')).toThrow(/bad\.jsonl:3: not a public run event/);
   });
 
-  it('rejects a file without a transcript header', () => {
+  it('rejects a file without a transcript header, naming the design-core-on 3.2 transcript format', () => {
     expect(() => decodeTranscript('{"type":"user.message"}\n', 'bad.jsonl')).toThrow(/first line must be a momonga-transcript\/8 header/);
   });
 
@@ -65,13 +65,13 @@ describe('transcript codec', () => {
   });
 
   it.each(['policy', 'codeDigest'])('refuses a version 8 header without %s', (field) => {
-    const header: Record<string, unknown> = { format: 'momonga-transcript/8', caseId: 'c1', runIndex: 0, run: finalAnswerTranscript('c1', 0).run, children: [], policy: {}, codeDigest: 'c'.repeat(64) };
+    const header: Record<string, unknown> = { format: 'momonga-transcript/8', caseId: 'c1', runIndex: 0, run: finalAnswerTranscript('c1', 0).run, children: [], policy: RESOLVED_ON_POLICY, codeDigest: 'c'.repeat(64) };
     delete header[field];
     expect(() => decodeTranscript(`${JSON.stringify(header)}\n{"end":true,"events":0,"childEvents":0}\n`, 'new.jsonl')).toThrow(new RegExp(`new\\.jsonl:1: ${field}`));
   });
 
   it('refuses a version 8 header without a children list instead of reading it as no subagents', () => {
-    const header = { format: 'momonga-transcript/8', caseId: 'c1', runIndex: 0, run: finalAnswerTranscript('c1', 0).run, policy: {}, codeDigest: 'c'.repeat(64) };
+    const header = { format: 'momonga-transcript/8', caseId: 'c1', runIndex: 0, run: finalAnswerTranscript('c1', 0).run, policy: RESOLVED_ON_POLICY, codeDigest: 'c'.repeat(64) };
     expect(() => decodeTranscript(`${JSON.stringify(header)}\n`, 'new.jsonl')).toThrow(/new\.jsonl:1: children must be a list/);
   });
 });

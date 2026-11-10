@@ -3,6 +3,7 @@ import path from 'node:path';
 import { canonicalJson, isRecord, lexicallyWithin } from '@momonga/foundation';
 import type { AddRuleRequest } from '@momonga/protocol';
 import type { CompactionSetting, ContextDataset, ContextMemory, ContextRule, ExpandedCase, ExpandedContextDataset, WorkspaceStep } from './context-dataset.ts';
+import { resolvePolicyOverlay } from './context-policy.ts';
 import type { PolicyOverlay } from './context-policy.ts';
 import { isInsideWorkspace } from './dataset.ts';
 import { EvalError, driveRun } from './runner.ts';
@@ -59,6 +60,15 @@ const sectionOf = (base: Readonly<Record<string, unknown>>, name: string): Recor
   return section;
 };
 
+const mergedSection = (base: Readonly<Record<string, unknown>>, overlay: Readonly<Record<string, unknown>>): Record<string, unknown> =>
+  Object.fromEntries([
+    ...Object.entries(base),
+    ...Object.entries(overlay).map(([key, value]): [string, unknown] => {
+      const below = base[key];
+      return [key, isRecord(value) && isRecord(below) ? mergedSection(below, value) : value];
+    }),
+  ]);
+
 export const caseSettingsFor = (
   base: Readonly<Record<string, unknown>>,
   setting: { compaction?: CompactionSetting; policy?: PolicyOverlay; classifier?: string },
@@ -66,7 +76,7 @@ export const caseSettingsFor = (
   const merged: Record<string, unknown> = { ...base };
   for (const name of POLICY_SECTIONS) {
     const overlay = setting.policy?.[name];
-    if (overlay !== undefined) merged[name] = { ...sectionOf(base, name), ...overlay };
+    if (overlay !== undefined) merged[name] = mergedSection(sectionOf(base, name) ?? {}, overlay);
   }
   const compacted = setting.compaction === undefined ? merged : { ...merged, context: { ...sectionOf(merged, 'context'), autoCompact: setting.compaction === 'on' } };
   return setting.classifier === undefined ? compacted : { ...compacted, autoMode: { classifier: setting.classifier } };
@@ -250,7 +260,7 @@ export const runContextDataset = async (expanded: ExpandedContextDataset, ports:
   const transcripts: Transcript[] = [];
   const state: CaseState = { spent: 0 };
   const emit = async (measured: Measured): Promise<void> => {
-    const transcript: Transcript = { ...measured, policy: ports.policy, codeDigest: ports.codeDigest };
+    const transcript: Transcript = { ...measured, policy: resolvePolicyOverlay(ports.policy), codeDigest: ports.codeDigest };
     transcripts.push(transcript);
     if (ports.onTranscript !== undefined) await ports.onTranscript(transcript);
   };
