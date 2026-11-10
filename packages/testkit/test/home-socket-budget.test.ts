@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FIRST_GENERATION, SOCKET_PATH_LIMIT, generationLayout, isPipePath } from '@momonga/foundation';
+import { FIRST_GENERATION, generationLayout, isPipePath } from '@momonga/foundation';
 import { assertHomeSocketBudget, registerCleanup, withTempDir } from '@momonga/testkit';
 
 const LONG_TEMP_COMPONENT_BYTES = 150;
@@ -25,16 +25,15 @@ const pointTempAtLongDirectory = (context: Parameters<typeof withTempDir>[0]): s
 };
 
 describe('withTempDir as a home does not depend on the length of the host temporary directory', () => {
-  it('gives a home whose longest generation socket fits the socket-path limit when TMPDIR is long', (context) => {
+  it('gives a home whose longest generation socket the host binds when TMPDIR is too long for one', async (context) => {
     const longDir = pointTempAtLongDirectory(context);
-    expect(Buffer.byteLength(os.tmpdir())).toBeGreaterThan(SOCKET_PATH_LIMIT);
+    if (process.platform !== 'win32') await expect(assertHomeSocketBudget(longDir)).rejects.toThrow(/leaves no socket-path budget/);
     expect(os.tmpdir()).toBe(longDir);
 
     const home = withTempDir(context, { asHome: true });
 
     const unixSockets = Object.values(generationLayout(home, FIRST_GENERATION).sockets).filter((socket) => !isPipePath(socket));
-    if (unixSockets.length > 0) expect(() => assertHomeSocketBudget(home)).not.toThrow();
-    for (const socket of unixSockets) expect(Buffer.byteLength(socket)).toBeLessThan(SOCKET_PATH_LIMIT);
+    if (unixSockets.length > 0) await expect(assertHomeSocketBudget(home)).resolves.toBeUndefined();
     const stat = fs.statSync(home);
     expect(stat.isDirectory()).toBe(true);
     expect(() => fs.accessSync(home, fs.constants.W_OK)).not.toThrow();

@@ -2,6 +2,9 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { pipeline } from 'node:stream/promises';
+import { settledOrAborted } from './operation-limit.ts';
+import { startSharedCall } from './shared-call.ts';
+import type { SharedCall } from './shared-call.ts';
 
 export type ProbeKeyReading = { kind: 'read'; value: string } | { kind: 'unreadable'; reason: string };
 
@@ -51,48 +54,52 @@ const streamedSha256 = async (file: string, signal: AbortSignal): Promise<string
 
 const fileIdentityOf = (stat: fs.Stats): string => `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}`;
 
+const NO_LIFETIME_END = new AbortController().signal;
+
 export const createBinaryHashCache = (): BinaryHashCache => {
-  const cached = new Map<string, { identity: string; digest: Promise<string> }>();
+  const cached = new Map<string, { identity: string; call: SharedCall<string> }>();
   return {
     sha256Of: async (file, signal) => {
       const identity = fileIdentityOf(await fs.promises.stat(file));
       const known = cached.get(file);
-      if (known !== undefined && known.identity === identity) return known.digest;
-      const digest = streamedSha256(file, signal);
-      cached.set(file, { identity, digest });
-      digest.catch(() => {
-        if (cached.get(file)?.digest === digest) cached.delete(file);
-      });
-      return digest;
+      if (known !== undefined && known.identity === identity) return known.call.join(signal);
+      const forget = (): void => {
+        if (cached.get(file)?.call === call) cached.delete(file);
+      };
+      const call = startSharedCall(NO_LIFETIME_END, (shared) => streamedSha256(file, shared), forget);
+      cached.set(file, { identity, call });
+      call.work.catch(forget);
+      return call.join(signal);
     },
   };
 };
 
-export type HeldHostReadings = { held(component: string, read: () => Promise<ProbeKeyReading>): Promise<ProbeKeyReading>; release(): void };
+export type HeldHostReadings = {
+  held(component: string, signal: AbortSignal, read: (shared: AbortSignal) => Promise<ProbeKeyReading>): Promise<ProbeKeyReading>;
+  release(): void;
+};
 
 export const createHeldHostReadings = (): HeldHostReadings => {
-  const readings = new Map<string, Promise<ProbeKeyReading>>();
+  const readings = new Map<string, SharedCall<ProbeKeyReading>>();
   return {
-    held: (component, read) => {
+    held: (component, signal, read) => {
       const known = readings.get(component);
-      if (known !== undefined) return known;
-      const reading = read();
-      readings.set(component, reading);
-      reading.then(
-        (result) => {
-          if (result.kind === 'unreadable' && readings.get(component) === reading) readings.delete(component);
-        },
-        () => {
-          if (readings.get(component) === reading) readings.delete(component);
-        },
-      );
-      return reading;
+      if (known !== undefined) return known.join(signal);
+      const forget = (): void => {
+        if (readings.get(component) === call) readings.delete(component);
+      };
+      const call = startSharedCall(NO_LIFETIME_END, read, forget);
+      readings.set(component, call);
+      call.work.then((result) => {
+        if (result.kind === 'unreadable') forget();
+      }, forget);
+      return call.join(signal);
     },
     release: () => readings.clear(),
   };
 };
 
-const UNHELD: HeldHostReadings = { held: (_component, read) => read(), release: () => undefined };
+const UNHELD: HeldHostReadings = { held: (_component, signal, read) => settledOrAborted(read(signal), signal), release: () => undefined };
 
 const UNCACHED: BinaryHashCache = { sha256Of: (file, signal) => streamedSha256(file, signal) };
 
@@ -129,7 +136,7 @@ const COMPONENT_READERS: Readonly<Record<string, ComponentReader>> = {
   hostOsBuild: async ({ platform, exec, signal, host }) => {
     const reader = OS_BUILD_READERS[platform];
     if (reader === undefined) return { kind: 'unreadable', reason: `no OS build reader exists on ${platform}` };
-    return host.held('hostOsBuild', () => reader({ exec, signal }));
+    return host.held('hostOsBuild', signal, (shared) => reader({ exec, signal: shared }));
   },
 };
 

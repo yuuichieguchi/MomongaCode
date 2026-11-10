@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { SOCKET_PATH_LIMIT, isProcessAlive } from '@momonga/foundation';
+import { isProcessAlive } from '@momonga/foundation';
 import { registerCleanup, spawnTracked, startLockHolder, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { OVERLAP_MESSAGE, assertInside, createE2eHome, disposeAll, registerE2eCleanup } from './home.ts';
@@ -65,7 +65,6 @@ describe('createE2eHome', () => {
     const privateRootBytes = Buffer.byteLength(sharedTempBase()) + 1 + Buffer.byteLength(privateRootName(currentIdentity()));
     expect(Buffer.byteLength(realTmp())).toBe(privateRootBytes);
     expect(longest).toBe(privateRootBytes + 48);
-    expect(longest).toBeLessThanOrEqual(SOCKET_PATH_LIMIT - 1);
     for (const socket of Object.values(firstGeneration(created.paths).sockets)) expect(Buffer.byteLength(socket)).toBeLessThanOrEqual(longest);
   });
 
@@ -75,7 +74,7 @@ describe('createE2eHome', () => {
     const long = path.join(base, 'x'.repeat(80 - Buffer.byteLength(base) - 1));
     fs.mkdirSync(long, { mode: 0o700 });
     expect(Buffer.byteLength(long)).toBe(80);
-    await expect(createE2eHome({ tmpRoot: long })).rejects.toThrow(/longest socket must be at most 103 bytes.*got 128/);
+    await expect(createE2eHome({ tmpRoot: long })).rejects.toThrow(/the longest socket of a home in .* is 128 bytes, which leaves no socket-path budget/);
     expect(entriesWithPrefix(long, 'mme-')).toEqual([]);
   });
 

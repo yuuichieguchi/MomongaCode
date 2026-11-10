@@ -128,6 +128,7 @@ export {
   TEST_HEARTBEAT_MS,
   TEST_RUN_ENV,
   assertHomeSocketBudget,
+  firstRefusedSocketPathBytes,
   isUnderTestTempBase,
   registerCleanup,
   spawnTracked,

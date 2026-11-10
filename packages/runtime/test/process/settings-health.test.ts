@@ -65,11 +65,11 @@ describe.each(LAYERS)('one rule for the $name settings file (SettingsHealth)', (
 
   it('AdmittedOnlyWhenValid, RefusalNamesFile: admission while the file is broken is refused with a ConfigError naming the file', async () => {
     const f = await prepared(layer, 'Bash(ls)');
-    expect((await f.composition.sessionCreateSettings(f.temp.project)).additionalDirectories).toEqual([]);
+    expect((await f.composition.sessionCreateSettings(f.temp.project, signalNever())).additionalDirectories).toEqual([]);
 
     breakFile(layer.fileOf(f));
 
-    const refusal = await rejectionOf(f.composition.sessionCreateSettings(f.temp.project));
+    const refusal = await rejectionOf(f.composition.sessionCreateSettings(f.temp.project, signalNever()));
     expect(refusal).toBeInstanceOf(ConfigError);
     expect((refusal as ConfigError).message).toContain(layer.fileOf(f));
     expect((refusal as ConfigError).message).toContain('running runs continue');
@@ -84,7 +84,7 @@ describe.each(LAYERS)('one rule for the $name settings file (SettingsHealth)', (
 
     layer.write(f, { permissions: { allow: ['Bash(pwd)'] } });
 
-    expect((await f.composition.sessionCreateSettings(f.temp.project)).additionalDirectories).toEqual([]);
+    expect((await f.composition.sessionCreateSettings(f.temp.project, signalNever())).additionalDirectories).toEqual([]);
     expect(await ruleTexts(f, session)).toEqual(['Bash(pwd)']);
   });
 });

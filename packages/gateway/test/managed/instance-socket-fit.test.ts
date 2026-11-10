@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { FIRST_GENERATION, momongaPaths, socketPathLimit } from '@momonga/foundation';
+import { FIRST_GENERATION, momongaPaths } from '@momonga/foundation';
 import { TARGET_NOT_READY } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, firstRefusedSocketPathBytes } from '@momonga/testkit';
 import { makeDir, postJson, readJson, userInput } from '../gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from '../gateway-process-helpers.ts';
 
@@ -33,10 +33,10 @@ describe.skipIf(process.platform === 'win32')('an instance socket path that does
   it('starts the gateway, answers the long-path target 412 target_not_ready with the bind-measurement text, creates no socket or marker for it, and still serves the other target', async () => {
     const fm = await createFakeFm({ dir: makeDir() });
     const home = makeHome();
-    const limit = socketPathLimit(process.platform);
-    const longTarget = targetNameWhoseSocketIs(home, limit + 1);
+    const refusedBytes = await firstRefusedSocketPathBytes(home);
+    const longTarget = targetNameWhoseSocketIs(home, refusedBytes);
     const longSocket = path.join(instanceSockets(home), `${longTarget}${FIRST_INCARNATION_SUFFIX}.sock`);
-    expect(Buffer.byteLength(longSocket)).toBe(limit + 1);
+    expect(Buffer.byteLength(longSocket)).toBe(refusedBytes);
     writeSettings(home, {
       models: modelsOf({
           [longTarget]: { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath, ...DECLARED },
@@ -50,7 +50,7 @@ describe.skipIf(process.platform === 'win32')('an instance socket path that does
     const refused = await readJson(await postJson(client, '/v1/responses', { model: `${longTarget}/system`, input: userInput('hello') }));
     expect(refused.status).toBe(412);
     expect(refused.body.error.code).toBe(TARGET_NOT_READY);
-    expect(refused.body.error.message).toMatch(unfitText(`${longTarget}/system`, limit + 1, instanceSockets(home)));
+    expect(refused.body.error.message).toMatch(unfitText(`${longTarget}/system`, refusedBytes, instanceSockets(home)));
     expect(fs.existsSync(longSocket)).toBe(false);
     expect(fs.existsSync(instanceMarkers(home, `${longTarget}${FIRST_INCARNATION_SUFFIX}`))).toBe(false);
 

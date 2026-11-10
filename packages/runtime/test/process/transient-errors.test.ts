@@ -44,7 +44,7 @@ describe('transient errno and abort rules of the runtime composition (system tim
     failReadsOf(settingsFile, failure);
 
     const rules = await rejectionOf(f.composition.settings.rules(session));
-    const created = await rejectionOf(f.composition.sessionCreateSettings(f.temp.project));
+    const created = await rejectionOf(f.composition.sessionCreateSettings(f.temp.project, signalNever()));
     const toolSet = await rejectionOf(f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: Object.freeze({ PATH: '/usr/bin:/bin' }) }));
 
     for (const error of [rules, created, toolSet]) {
@@ -72,7 +72,7 @@ describe('transient errno and abort rules of the runtime composition (system tim
     fs.chmodSync(path.join(f.temp.project, '.momonga', 'settings.json'), 0o000);
 
     const rules = await rejectionOf(f.composition.settings.rules(session));
-    const created = await rejectionOf(f.composition.sessionCreateSettings(f.temp.project));
+    const created = await rejectionOf(f.composition.sessionCreateSettings(f.temp.project, signalNever()));
 
     expect(rules).toBeInstanceOf(ConfigError);
     expect(created).toBeInstanceOf(ConfigError);

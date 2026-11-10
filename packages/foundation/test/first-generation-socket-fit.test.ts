@@ -1,23 +1,24 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FIRST_GENERATION, SocketPathUnsupportedError, beginGenerationStart, ensureMomongaDirs, generationLayout, hostKernelLock, momongaPaths, shortTempBase, socketPathLimit } from '@momonga/foundation';
+import { FIRST_GENERATION, SocketPathUnsupportedError, beginGenerationStart, ensureMomongaDirs, generationLayout, hostKernelLock, momongaPaths, shortTempBase } from '@momonga/foundation';
+import { firstRefusedSocketPathBytes } from '@momonga/testkit';
 
 const SUPERVISOR_SOCKET_SUFFIX = Buffer.byteLength(path.join('.momonga', 'run', `g${FIRST_GENERATION}`, 'supervisor.sock')) + 1;
 
-const homeWhoseFirstSupervisorSocketIs = (byteLength: number): string => {
+const homeWhoseFirstSupervisorSocketIs = async (fromFirstRefused: number): Promise<{ home: string; byteLength: number }> => {
   const parent = fs.realpathSync.native(fs.mkdtempSync(path.join(shortTempBase(process.platform), 'mm-fit-')));
+  const byteLength = (await firstRefusedSocketPathBytes(parent)) + fromFirstRefused;
   const nameLength = byteLength - SUPERVISOR_SOCKET_SUFFIX - Buffer.byteLength(parent) - 1;
-  return path.join(parent, 'h'.repeat(nameLength));
+  return { home: path.join(parent, 'h'.repeat(nameLength)), byteLength };
 };
 
 describe.skipIf(process.platform === 'win32')('the start of a generation measures its sockets by a bind in run/ (20.19)', () => {
-  it('refuses the first generation of a home whose supervisor socket passes the limit with SocketPathUnsupportedError, and consumes no number', async () => {
-    const limit = socketPathLimit(process.platform);
-    const home = homeWhoseFirstSupervisorSocketIs(limit + 1);
+  it('refuses the first generation of a home whose supervisor socket has the first length the host refuses to bind with SocketPathUnsupportedError, and consumes no number', async () => {
+    const { home, byteLength } = await homeWhoseFirstSupervisorSocketIs(0);
     try {
       const supervisorSocket = generationLayout(home, FIRST_GENERATION).sockets.supervisor;
-      expect(Buffer.byteLength(supervisorSocket)).toBe(limit + 1);
+      expect(Buffer.byteLength(supervisorSocket)).toBe(byteLength);
       const paths = momongaPaths(home, process.platform, {});
       await ensureMomongaDirs(paths);
       const error = await beginGenerationStart(paths, { version: '1.2.3', foldVersion: 1, lock: hostKernelLock() }).catch((caught: unknown) => caught);
@@ -32,9 +33,8 @@ describe.skipIf(process.platform === 'win32')('the start of a generation measure
     }
   });
 
-  it('starts the first generation of a home whose supervisor socket is exactly at the limit minus one', async () => {
-    const limit = socketPathLimit(process.platform);
-    const home = homeWhoseFirstSupervisorSocketIs(limit - 1);
+  it('starts the first generation of a home whose supervisor socket is one byte shorter than the first length the host refuses to bind', async () => {
+    const { home } = await homeWhoseFirstSupervisorSocketIs(-1);
     try {
       const paths = momongaPaths(home, process.platform, {});
       await ensureMomongaDirs(paths);
