@@ -1,5 +1,6 @@
 import { GIT_APPROVED_SUBCOMMANDS } from '@momonga/policy';
-import type { SandboxPolicy } from '@momonga/sandbox';
+import type { NetworkScope } from '@momonga/foundation';
+import type { SandboxNetwork, SandboxPolicy } from '@momonga/sandbox';
 import type { ToolContext } from './types.ts';
 
 type ConfigEntry = readonly [key: string, value: string];
@@ -72,6 +73,14 @@ export const readOnlySandboxPolicy = (policy: SandboxPolicy): SandboxPolicy => (
   ...policy,
   writableRoots: [],
   fileRules: { ...policy.fileRules, entries: policy.fileRules.entries.map((entry) => (entry.widening ? { ...entry, widening: false } : entry)) },
+});
+
+export const withNetwork = (policy: SandboxPolicy, network: SandboxNetwork): SandboxPolicy => (policy.network === network ? policy : { ...policy, network });
+
+export const contextWithNetwork = (context: ToolContext, scope: NetworkScope): ToolContext => ({
+  ...context,
+  network: scope,
+  sandboxPolicy: withNetwork(context.sandboxPolicy, scope.kind === 'open' ? 'allow' : 'deny'),
 });
 
 export const readOnlyContextOf = (context: ToolContext): ToolContext => {

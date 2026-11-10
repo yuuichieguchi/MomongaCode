@@ -14,6 +14,7 @@ export type SandboxPolicyOptions = {
   extraWritable?: readonly string[];
   extraReadDenied?: readonly string[];
   readAllowed?: readonly string[];
+  unixSocketAllow?: readonly string[];
 };
 
 const unique = (values: readonly string[]): string[] => [...new Set(values)];
@@ -37,6 +38,7 @@ export const buildSandboxPolicy = (options: SandboxPolicyOptions): SandboxPolicy
     readDenied,
     readAllowed,
     network: options.network ?? 'deny',
+    unixSocketAllow: unique(options.unixSocketAllow ?? []),
     fileRules: options.fileRules,
     protectedSet: options.protectedSet,
   };

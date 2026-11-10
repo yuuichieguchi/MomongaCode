@@ -170,10 +170,11 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   const sessionStates = createSessionStates({ clock, store, logger, releaseScratch: (sessionId) => releaseSessionScratch(path.join(paths.tmp.sessions, sessionId)) });
   const policyOptions = { paths, home, fs: policyFilesystem, sessionStates, ensureSessionTmpDir };
   const policyBuilders = new Map<RuleEnforcement, EnforcedPolicyFor>();
-  const policyFor: ToolRuntimePort['policyFor'] = (session, request) => {
+  const policyFor: ToolRuntimePort['policyFor'] = async (session, request) => {
     const builder = policyBuilders.get(request.ruleEnforcement) ?? createPolicyFor({ ...policyOptions, ruleEnforcement: request.ruleEnforcement });
     policyBuilders.set(request.ruleEnforcement, builder);
-    return builder(session, request);
+    const { sandboxNetwork, sandboxUnixSockets } = settings.takeUserSnapshot().settings;
+    return { ...(await builder(session, { ...request, unixSocketAllow: sandboxUnixSockets.allow })), sandboxNetwork };
   };
   const recoveryContextFor = createRecoveryContextFor(policyOptions);
 

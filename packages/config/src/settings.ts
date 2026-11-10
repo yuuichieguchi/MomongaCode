@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { defineProductSchema, mcpConnectTimeoutProblem, stopValueProblem, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
-import type { ProductValidator, StopValueName } from '@momonga/foundation';
+import type { ProductValidator, SandboxNetworkSetting, StopValueName } from '@momonga/foundation';
 import type { AnthropicApiVersion, CapabilitiesCore, ManagedEndpointForm, DialectDefinition, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetAnswers, TargetBilling, PermissionMode } from '@momonga/protocol';
 import { PLAN_PROFILES } from './plan-profiles.ts';
 import { describeSchemaErrors } from './schema-errors.ts';
@@ -300,6 +300,10 @@ export type McpCallSettings = { toolIdleTimeoutMs?: number; toolTotalTimeoutMs?:
 
 export type SandboxSetting = 'seatbelt' | 'bubblewrap' | 'none';
 
+export type SandboxUnixSocketsSettings = { allow?: string[] };
+
+export type ResolvedSandboxUnixSockets = { allow: string[] };
+
 export const defaultSandboxSetting = (platform: NodeJS.Platform = process.platform): SandboxSetting =>
   platform === 'darwin' ? 'seatbelt' : platform === 'linux' ? 'bubblewrap' : 'none';
 
@@ -368,6 +372,8 @@ export type Settings = {
   gateway?: GatewaySettings;
   runtime?: RuntimeSettings;
   sandbox?: SandboxSetting;
+  sandboxNetwork?: SandboxNetworkSetting;
+  sandboxUnixSockets?: SandboxUnixSocketsSettings;
   telemetry?: TelemetrySettings;
   network?: NetworkSettings;
   pricing?: PriceEntrySettings[];
@@ -501,6 +507,9 @@ export const assertSettings = (value: unknown, source: string): Settings => {
   });
   (settings.network?.extraCaFiles ?? []).forEach((file, index) => {
     if (!path.isAbsolute(file)) throw new Error(`${source}: invalid settings at /network/extraCaFiles/${index}: not an absolute path`);
+  });
+  (settings.sandboxUnixSockets?.allow ?? []).forEach((entry, index) => {
+    if (!path.isAbsolute(entry)) throw new Error(`${source}: invalid settings at /sandboxUnixSockets/allow/${index}: not an absolute path`);
   });
   const endpoint = settings.telemetry?.otlp?.endpoint;
   if (endpoint !== undefined) {

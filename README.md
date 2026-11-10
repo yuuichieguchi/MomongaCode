@@ -157,7 +157,7 @@ Inside the interactive session, slash commands include `/help`, `/clear`, `/exit
 | `~/.momonga/projects/<hash>/settings.local.json` | Local settings for one project, kept outside the repository |
 | `<project>/.mcp.json` | Project MCP servers |
 
-Project and local settings cannot set `models`, `credentials`, `mcpServers`, `sandbox`, `telemetry`, `pricing`, `autoUpdates`, or `autoMode`; those keys are discarded with a warning. They can set `permissions.defaultMode` only to modes other than `bypassPermissions` and `auto`. In `env`, only a short allowlist of names is kept. Unknown keys are ignored with a warning.
+Project and local settings cannot set `models`, `credentials`, `mcpServers`, `sandbox`, `sandboxNetwork`, `sandboxUnixSockets`, `telemetry`, `pricing`, `autoUpdates`, or `autoMode`; those keys are discarded with a warning. They can set `permissions.defaultMode` only to modes other than `bypassPermissions` and `auto`. In `env`, only a short allowlist of names is kept. Unknown keys are ignored with a warning.
 
 ### Models
 
@@ -224,7 +224,7 @@ In the example above, `Bash(npm test:*)` allows every command whose first words 
 
 A `Bash(...)` allow rule matches the command text literally, as in Claude Code, and does not check what the options of the program do. So it also allows options that make the program run another program, such as `npm test --script-shell=<program>` under `Bash(npm test:*)`, `find . -exec <program> {} \;` under `Bash(find:*)`, or `git -c core.pager=<program> log` under `Bash(git:*)`. Write an allow rule only for a program whose every option you accept.
 
-A command allowed this way still runs inside the sandbox. Network access is denied. File deny rules, such as `Read(...)` and `Edit(...)`, are enforced by the operating system, so no program the command starts can read or write a denied path. The command can write only where the sandbox allows writes. A `Bash(...)` deny rule, such as `Bash(rm:*)` in the example, matches only the command text, so it does not stop a program that an allowed command starts through an option.
+A command allowed this way still runs inside the sandbox. It has no network unless the call asks for it. The model sets `network` on the Bash call, either to `{"hosts": ["registry.example.org"]}` for named hosts (a name or an IP address, optionally with `:port`) or to `"open"` for unrestricted access, and you are asked to approve that call, with the request and the hosts named in the approval. Only you can grant it: a hook and the `auto` mode classifier never do. The approval holds for that one call and is never saved as a rule; the `sandboxNetwork` setting can refuse every request (`deny`) or grant them without asking (`allow`). With named hosts the command reaches the network only through a proxy that Momonga Code runs for that command on this machine: the proxy carries HTTP and HTTPS, lets through only the granted hosts, and refuses a name that resolves to a loopback, link-local, or private address unless that address is granted itself. A refused host is named in the tool result. A program that does not use the proxy variables (`HTTPS_PROXY` and the like), such as SSH, stays without network. Named hosts need the macOS sandbox; the Linux sandbox cannot limit a command to hosts and refuses such a call. A command that only reads never gets the network. File deny rules, such as `Read(...)` and `Edit(...)`, are enforced by the operating system, so no program the command starts can read or write a denied path. The command can write only where the sandbox allows writes. A `Bash(...)` deny rule, such as `Bash(rm:*)` in the example, matches only the command text, so it does not stop a program that an allowed command starts through an option.
 
 With `"sandbox": "none"` none of these bounds apply, so an allow rule no longer lets a command run without approval: Bash asks before every command, and in `auto` mode the classifier decides.
 
@@ -236,6 +236,8 @@ With `"sandbox": "none"` none of these bounds apply, so an allow rule no longer 
 | --- | --- |
 | `permissions.defaultMode`, `allow`, `ask`, `deny`, `additionalDirectories` | Permission mode, rules, and extra directories |
 | `sandbox` | `seatbelt`, `bubblewrap`, or `none`. Default: `seatbelt` on macOS, `bubblewrap` on Linux, `none` elsewhere. With `none`, Bash asks before every command |
+| `sandboxNetwork` | `deny`, `ask`, or `allow`. Default: `ask`. What happens when a Bash call asks for the network: refused, asked of you for each call, or granted without asking. User settings and the command line only |
+| `sandboxUnixSockets.allow` | Absolute paths. A sandboxed command may connect to a Unix socket at one of these paths or below it; every other Unix socket is denied, and the sockets of Momonga Code are always denied. Default: none. User settings only. The Linux sandbox cannot enforce a list, so there no entry is applied and every Unix socket stays denied |
 | `env` | Environment variables for sessions |
 | `credentials` | `env`, `keep`, `valuePatterns`: which environment variables and values are treated as credentials |
 | `hooks` | Hook commands by event, with an optional `matcher` and `timeout` |
