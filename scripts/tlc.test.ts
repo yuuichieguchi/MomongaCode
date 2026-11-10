@@ -182,7 +182,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('tlc.sh takes the heavy run lock for more than
     return child.pid;
   };
 
-  it.each([[['-workers', '1']], [[]]])('TB45 runs a one-worker call %j beside a heavy holder without the lock', async (extra) => {
+  it.each([[['-workers', '1']], [['-workers', '0']], [[]]])('TB45 runs a one-worker call %j beside a heavy holder without the lock', async (extra) => {
     await holdHeavy();
 
     const run = tlc(['Stub', ...extra]);
@@ -226,7 +226,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('tlc.sh takes the heavy run lock for more than
     expect(logLines()).toEqual([]);
   });
 
-  it.each(['auto', 'x'])('TB50 treats -workers %s as heavy and refuses it beside a heavy holder', async (workers) => {
+  it.each(['auto', 'x', 'abc', '2', '01', '00', '99999999999999999999'])('TB50 treats -workers %s as heavy and refuses it beside a heavy holder', async (workers) => {
     await holdHeavy();
 
     const run = tlc(['Stub', '-workers', workers]);

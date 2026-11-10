@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { bsdFileLock, sqliteFileLock } from '@momonga/foundation';
 import type { KernelLockMechanism, LockCapability } from '@momonga/foundation';
-import { acquireRunLock, clauseOf, parseWaitSeconds } from './run-lock.ts';
+import { HEAVY_STEPS, LIGHT_STEPS, acquireRunLock, clauseOf, parseWaitSeconds, runLockDirsOf } from './run-lock.ts';
 import { createTempRoot, removeTempRoot } from './temp.ts';
 
 const STARTED = '2026-11-10T00:00:00.000Z';
@@ -347,6 +347,66 @@ describe.each(MECHANISMS)('acquireRunLock with %s', (_name, mechanism) => {
 
     expect(await acquireRunLock(request())).toEqual({ kind: 'refused', message: `run-lock: heavy run refused: held by ${clauses.join('; ')}${TO_WAIT}` });
   });
+
+  type LockOperation = { operation: 'claim' | 'isHeld'; name: string; describedBefore: boolean };
+
+  const recording = (described: string): { mechanism: KernelLockMechanism; operations: LockOperation[] } => {
+    const operations: LockOperation[] = [];
+    const note = (operation: LockOperation['operation'], lockPath: string): void => {
+      operations.push({ operation, name: path.basename(lockPath), describedBefore: fs.existsSync(path.join(dir, described)) });
+    };
+    return {
+      operations,
+      mechanism: {
+        ...mechanism,
+        claim: (lockPath) => {
+          note('claim', lockPath);
+          return mechanism.claim(lockPath);
+        },
+        isHeld: (lockPath) => {
+          note('isHeld', lockPath);
+          return mechanism.isHeld(lockPath);
+        },
+      },
+    };
+  };
+
+  const LIGHT_LOCK_NAME = /^light\.[0-9a-f]{16}$/;
+
+  const withoutRepeats = (steps: readonly string[]): string[] => steps.filter((step, index) => step !== steps[index - 1]);
+
+  it('R3 claims the own name of a light run before it looks at the heavy lock, in the order of LIGHT_STEPS', async () => {
+    const recorder = recording('heavy.info');
+
+    const outcome = await hold({ runClass: 'light', mechanism: recorder.mechanism });
+
+    const ownName = outcome.token;
+    const observed = recorder.operations.map(({ operation, name }) => {
+      if (operation === 'claim' && name === ownName) return 'claimOwn';
+      if (operation === 'isHeld' && name === 'heavy') return 'checkHeavy';
+      return `${operation} ${name}`;
+    });
+    expect(LIGHT_LOCK_NAME.test(ownName)).toBe(true);
+    expect(observed).toEqual([...LIGHT_STEPS]);
+  });
+
+  it('R3 claims the heavy lock before any operation on a light name and decides after the scan, in the order of HEAVY_STEPS', async () => {
+    const hex = 'cccccccccccccccc';
+    const leftover = await claimRaw(`light.${hex}`, hex);
+    leftover.release();
+    const recorder = recording('heavy.info');
+
+    await hold({ mechanism: recorder.mechanism });
+
+    const scanned = recorder.operations.map(({ operation, name }) => {
+      if (operation === 'claim' && name === 'heavy') return 'claimHeavy';
+      if (name === `light.${hex}`) return 'scanOne';
+      return `${operation} ${name}`;
+    });
+    const decidedAfterTheScan = recorder.operations.every((operation) => !operation.describedBefore) && fs.existsSync(path.join(dir, 'heavy.info'));
+    expect(recorder.operations.filter((operation) => operation.name === `light.${hex}`).map((operation) => operation.operation)).toEqual(['isHeld', 'claim']);
+    expect([...withoutRepeats(scanned), ...(decidedAfterTheScan ? ['decide'] : [])]).toEqual([...HEAVY_STEPS]);
+  });
 });
 
 describe('acquireRunLock chooses its mechanism by capability', () => {
@@ -415,5 +475,23 @@ describe('clauseOf', () => {
     ['light', { ...description, cwd: '/a b', command: 'x: y  z' }, 'light pid 111 started 2026-11-10T00:00:00.000Z in /a b: x: y  z'],
   ] as const)('TB20 describes a %s holder with %j as %s', (runClass, holder, expected) => {
     expect(clauseOf(runClass, holder)).toBe(expected);
+  });
+});
+
+describe('the directories of the run lock', () => {
+  it('R7 are named by one function of the state directory', () => {
+    expect(runLockDirsOf('/state/momonga-dev')).toEqual({ dir: path.join('/state/momonga-dev', 'run-lock'), proofDir: path.join('/state/momonga-dev', 'run-lock-proof') });
+  });
+
+  it('R7 are named as text in scripts/support/run-lock.ts and in no other source of scripts, test or e2e', () => {
+    const repoRoot = path.resolve(import.meta.dirname, '..', '..');
+    const DIRECTORY_NAME = /['"`]run-lock(?:-proof)?['"`]/;
+    const sources = ['scripts', 'test', 'e2e'].flatMap((top) =>
+      (fs.readdirSync(path.join(repoRoot, top), { recursive: true }) as string[])
+        .filter((name) => /\.(?:ts|tsx|mjs|sh)$/.test(name) && !/\.test\.tsx?$/.test(name))
+        .map((name) => path.join(top, name).split(path.sep).join('/')),
+    );
+    const naming = sources.filter((file) => DIRECTORY_NAME.test(fs.readFileSync(path.join(repoRoot, file), 'utf8'))).sort();
+    expect(naming).toEqual(['scripts/support/run-lock.ts']);
   });
 });

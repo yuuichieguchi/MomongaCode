@@ -236,6 +236,36 @@ describe('the parts of a key read from a repository', () => {
     fs.appendFileSync(specFile('Unrelated.tla'), ' ');
     expect(await keyFor()).not.toBe(before);
   });
+
+  const helperModule = '---- MODULE Helper ----\nEXTENDS Naturals\n====\n';
+
+  const cutOffShapes: readonly (readonly [string, string])[] = [
+    ['an EXTENDS list continued on the next line after a line comment', 'EXTENDS Naturals, Sequences, \\* standard\n        Helper'],
+    ['an EXTENDS list with a block comment before a name', 'EXTENDS Naturals, (* c *) Helper'],
+    ['an EXTENDS list with a block comment before a comma', 'EXTENDS Naturals (* c *), Helper'],
+    ['an INSTANCE whose module name stands on the next line after a line comment', 'EXTENDS Naturals\nINSTANCE \\* the helper\n        Helper'],
+    ['an INSTANCE with a block comment before its module name', 'EXTENDS Naturals\nINSTANCE (* c *) Helper'],
+  ];
+
+  it.each(cutOffShapes)('keys on every module of the directory and sees a change of the module named after the comment in %s', async (_label, opening) => {
+    writeFile(specFile('Tiny.tla'), tinySpec.replace('EXTENDS Naturals', opening));
+    writeFile(specFile('Helper.tla'), helperModule);
+    const parts = (await partsFor()) as KeyParts;
+    expect(parts.modules.map(([name]) => name)).toEqual(['Helper', 'Tiny', 'Unrelated']);
+    const before = keyOf(parts);
+    fs.appendFileSync(specFile('Helper.tla'), ' ');
+    expect(await keyFor()).not.toBe(before);
+  });
+
+  it.each([
+    ['an INSTANCE followed by a line comment', 'EXTENDS Naturals\nINSTANCE Helper \\* the helper'],
+    ['an INSTANCE with a block comment before WITH', 'EXTENDS Naturals\nH == INSTANCE Helper (* c *) WITH a <- x'],
+  ])('keys on every module of the directory for %s', async (_label, opening) => {
+    writeFile(specFile('Tiny.tla'), tinySpec.replace('EXTENDS Naturals', opening));
+    writeFile(specFile('Helper.tla'), helperModule);
+    const parts = (await partsFor()) as KeyParts;
+    expect(parts.modules.map(([name]) => name)).toEqual(['Helper', 'Tiny', 'Unrelated']);
+  });
 });
 
 describe('the closure of a root module', () => {
@@ -264,6 +294,21 @@ describe('the closure of a root module', () => {
   ] as const)('follows %s', async (_label, modules, root, expected) => {
     for (const [name, body] of Object.entries(modules)) writeFile(path.join(specDir, `${name}.tla`), moduleText(name, body));
     expect(await closureOf(specDir, root)).toEqual({ modules: expected, complete: true });
+  });
+
+  it.each([
+    ['an EXTENDS list continued on the next line after a line comment', 'EXTENDS Naturals, Sequences, \\* standard\n        Helper'],
+    ['an EXTENDS list with a block comment before a name', 'EXTENDS Naturals, (* c *) Helper'],
+    ['an EXTENDS list with a block comment before a comma', 'EXTENDS Naturals (* c *), Helper'],
+    ['an EXTENDS list followed by a line comment', 'EXTENDS Naturals, Helper \\* standard'],
+    ['an INSTANCE whose module name stands on the next line after a line comment', 'INSTANCE \\* the helper\n        Helper'],
+    ['an INSTANCE with a block comment before its module name', 'INSTANCE (* c *) Helper'],
+    ['an INSTANCE followed by a line comment', 'INSTANCE Helper \\* the helper'],
+    ['an INSTANCE with a block comment before WITH', 'H == INSTANCE Helper (* c *) WITH a <- x'],
+  ])('is incomplete for %s', async (_label, body) => {
+    writeFile(path.join(specDir, 'Root.tla'), moduleText('Root', body));
+    writeFile(path.join(specDir, 'Helper.tla'), moduleText('Helper', ''));
+    expect((await closureOf(specDir, 'Root')).complete).toBe(false);
   });
 
   it('is incomplete when the word EXTENDS stands without a module name after it', async () => {
@@ -629,5 +674,27 @@ describe('the result store', () => {
     expect(outcomes).toEqual([{ stored: true }, { stored: true }]);
     expect(fs.readdirSync(path.join(dir, 'Tiny'))).toEqual([`${key}.json`]);
     expect(await store.read('Tiny', key)).toEqual({ kind: 'hit', record: recordOf('Tiny', key, 3) });
+  });
+});
+
+describe('one definition of the record format', () => {
+  it('is written in reuse.ts and in no other source of test/formal', () => {
+    const formalDir = import.meta.dirname;
+    const defining = fs
+      .readdirSync(formalDir)
+      .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))
+      .filter((name) => fs.readFileSync(path.join(formalDir, name), 'utf8').includes('momonga-tlc-result/1'));
+    expect(defining).toEqual(['reuse.ts']);
+  });
+});
+
+describe('the inputs TLC can load from the specification directory', () => {
+  it('are only modules, configurations and the manifest', () => {
+    const specDir = path.resolve(import.meta.dirname, '..', '..', 'specs', 'tla');
+    const others = fs
+      .readdirSync(specDir, { withFileTypes: true })
+      .filter((entry) => !(entry.isFile() && (entry.name.endsWith('.tla') || entry.name.endsWith('.cfg') || entry.name === 'manifest.json')))
+      .map((entry) => entry.name);
+    expect(others).toEqual([]);
   });
 });

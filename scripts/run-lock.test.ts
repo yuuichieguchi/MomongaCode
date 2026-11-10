@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from '@momonga/testkit/child-process';
 import type { ChildProcess } from '@momonga/testkit/child-process';
+import { isProcessAlive } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { repoRoot } from './bundle.ts';
@@ -251,6 +252,39 @@ describe.skipIf(!HAS_POSIX_SHELL)('node scripts/run-lock.ts', () => {
 
     expect(await run.exit).toBe(143);
     expect(fs.existsSync(marker)).toBe(true);
+  });
+
+  it('R4 a SIGTERM sent to the wrapper alone ends its command and frees the lock while a process that command started still runs', async () => {
+    const pidFile = path.join(root, 'grandchild-pid');
+    const signalled = path.join(root, 'grandchild-got-sigterm');
+    const grandchild = path.join(root, 'grandchild.cjs');
+    const command = path.join(root, 'command.sh');
+    fs.writeFileSync(
+      grandchild,
+      [
+        "const fs = require('node:fs');",
+        `process.on('SIGTERM', () => { fs.writeFileSync(${JSON.stringify(signalled)}, ''); process.exit(0); });`,
+        `setInterval(() => { if (!fs.existsSync(${JSON.stringify(root)})) process.exit(0); }, 50);`,
+        `fs.writeFileSync(${JSON.stringify(`${pidFile}.partial`)}, String(process.pid));`,
+        `fs.renameSync(${JSON.stringify(`${pidFile}.partial`)}, ${JSON.stringify(pidFile)});`,
+        '',
+      ].join('\n'),
+    );
+    fs.writeFileSync(command, ['#!/bin/sh', `"${process.execPath}" "${grandchild}" < /dev/null > /dev/null 2>&1`, ''].join('\n'), { mode: 0o755 });
+    const run = wrapper(['heavy', '--', '/bin/sh', command]);
+    let grandchildPid: number | undefined;
+    try {
+      await until(() => fs.existsSync(pidFile) && lockEntries().includes('heavy.info'), run);
+      grandchildPid = Number(fs.readFileSync(pidFile, 'utf8'));
+      run.child.kill('SIGTERM');
+
+      expect(await run.exit).toBe(143);
+      expect(lockEntries().filter((entry) => entry === 'heavy.info' || /^light\./.test(entry))).toEqual([]);
+      expect(await wrapper(['heavy', '--', 'true']).exit).toBe(0);
+      expect({ alive: isProcessAlive(grandchildPid), signalled: fs.existsSync(signalled) }).toEqual({ alive: true, signalled: false });
+    } finally {
+      if (grandchildPid !== undefined && isProcessAlive(grandchildPid)) process.kill(grandchildPid, 'SIGKILL');
+    }
   });
 
   it.each(['heavy', 'light'] as const)('TB31 gives the %s command its token', async (runClass) => {

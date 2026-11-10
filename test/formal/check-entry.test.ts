@@ -9,7 +9,7 @@ import type { CheckOutcome, CheckRequest } from './check-entry.ts';
 import { cfgFor, completedOutput, holdsEntry, invariantEntry, invariantViolationOutput, temporalEntry, temporalViolationOutput, tinySpec, writeFile } from './fixtures.ts';
 import type { ManifestEntry } from './manifest.ts';
 import { TLC_WORKERS } from './runner.ts';
-import { createJavaIdentityReader, createResultStore } from './reuse.ts';
+import { RAN_REASONS, createJavaIdentityReader, createResultStore } from './reuse.ts';
 import type { JavaIdentity, ResultStore } from './reuse.ts';
 
 const realRoot = path.resolve(import.meta.dirname, '..', '..');
@@ -280,6 +280,23 @@ describe('checking one configuration', () => {
     expect((outcome as { reason: string }).reason).toBe(reason);
   });
 
+  it.each([
+    ['the configuration file', 'specs/tla/Tiny.cfg'],
+    ['a module of the closure', 'specs/tla/Tiny.tla'],
+  ])('stores nothing when %s changes while the run is under way, and runs again next time', async (_label, input) => {
+    const changing = executable(path.join(temp, 'changing-tlc.sh'), [`echo "$*" >> "${fake.counter}"`, `echo " " >> "${path.join(repoRoot, input)}"`, `cat "${fake.output}"`, `exit $(cat "${fake.exit}")`]);
+    const watched = counting(createResultStore(storeDir));
+    const first = await checkEntry(request({ script: changing, store: watched.store }));
+    expect(first).toEqual({ outcome: 'ran', reason: 'inputs changed during the run', problems: [], stored: 'not eligible' });
+    expect(RAN_REASONS).toContain('inputs changed during the run');
+    expect(watched.writes()).toBe(0);
+    expect(recordFiles(storeDir, 'Tiny')).toEqual([]);
+    const second = await checkEntry(request({ script: changing }));
+    expect(second.outcome).toBe('ran');
+    expect(callsOf(fake)).toHaveLength(2);
+    expect(recordFiles(storeDir, 'Tiny')).toEqual([]);
+  });
+
   it('fails a run whose process group still has members at the test limit and stores nothing', async () => {
     let probes = 0;
     const port: ProcessGroupPort = {
@@ -381,6 +398,43 @@ const nestedEnv = (extra: Record<string, string>): Record<string, string | undef
   delete inherited['MOMONGA_TLC_REUSE'];
   return { ...inherited, ...extra };
 };
+
+const packageScripts = (JSON.parse(fs.readFileSync(path.join(realRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts;
+
+const quoted = (word: string): string => `'${word.replaceAll("'", "'\\''")}'`;
+
+const runPackageScript = (name: string, root: string, args: readonly string[], env: Record<string, string | undefined>): Promise<NestedRun> =>
+  new Promise((resolve, reject) => {
+    const commandLine = [packageScripts[name] as string, ...['--root', root, '--config', path.join(root, 'vitest.config.mjs'), ...args].map(quoted)].join(' ');
+    const child = spawn('/bin/sh', ['-c', commandLine], {
+      cwd: root,
+      env: { ...env, PATH: `${path.join(realRoot, 'node_modules', '.bin')}${path.delimiter}${env['PATH'] ?? ''}` },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    child.once('error', reject);
+    child.once('close', (code) => resolve({ code, stdout, stderr }));
+  });
+
+const storeSnapshot = (storeDir: string): string[] =>
+  fs.existsSync(storeDir)
+    ? (fs.readdirSync(storeDir, { recursive: true }) as string[])
+        .sort()
+        .map((name) => {
+          const file = path.join(storeDir, name);
+          const status = fs.statSync(file);
+          return status.isDirectory() ? `${name}/` : `${name} ${status.mtimeMs} ${fs.readFileSync(file, 'utf8')}`;
+        })
+    : [];
 
 type JsonReport = { testResults: { assertionResults: { title: string; fullName: string; status: string; failureMessages: string[] }[] }[] };
 
@@ -484,5 +538,110 @@ describe('the summary under a real vitest run', () => {
       }
     },
     3 * NESTED_RUN_TIMEOUT_MS,
+  );
+
+  const tierFixture = (entriesSource: string, manifestConfigs: readonly string[]): { project: string; counter: string; stateDir: string; storeDir: string; jsonFile: string; args: string[]; env: (mode: string) => Record<string, string | undefined> } => {
+    const project = path.join(temp, 'project');
+    const repoRoot = path.join(temp, 'repo');
+    fixtureRepository(repoRoot);
+    const counter = path.join(temp, 'calls');
+    const script = executable(path.join(temp, 'fake-tlc.sh'), [
+      `echo "$*" >> "${counter}"`,
+      'if [ "$1" = "Tiny" ]; then',
+      ...completedOutput(3)
+        .split('\n')
+        .map((line) => `  echo ${JSON.stringify(line)}`),
+      '  exit 0',
+      'fi',
+      ...invariantViolationOutput('Small')
+        .split('\n')
+        .map((line) => `echo ${JSON.stringify(line)}`),
+      'exit 12',
+    ]);
+    writeFile(path.join(project, 'vitest.config.mjs'), "export default { test: { name: 'unit', globals: true, include: ['*.test.ts'] } };\n");
+    writeFile(
+      path.join(project, 'tier.test.ts'),
+      [
+        `import { describeTier } from ${JSON.stringify(path.join(realRoot, 'test', 'formal', 'tier.ts'))};`,
+        `describeTier({ tier: 'every-run', entries: ${entriesSource}, manifestConfigs: ${JSON.stringify(manifestConfigs)}, script: ${JSON.stringify(script)}, repoRoot: ${JSON.stringify(repoRoot)}, env: process.env });`,
+        '',
+      ].join('\n'),
+    );
+    const stateDir = path.join(temp, 'state');
+    const jsonFile = path.join(temp, 'report.json');
+    return {
+      project,
+      counter,
+      stateDir,
+      storeDir: path.join(stateDir, 'tlc-results'),
+      jsonFile,
+      args: ['--reporter=default', '--reporter=json', `--outputFile.json=${jsonFile}`],
+      env: (mode) => nestedEnv({ MOMONGA_TLC_REUSE: mode, MOMONGA_DEV_STATE_DIR: stateDir, PATH: `${javaStubBin(temp)}:${process.env['PATH'] ?? ''}` }),
+    };
+  };
+
+  const callsIn = (counter: string): string[] => (fs.existsSync(counter) ? fs.readFileSync(counter, 'utf8').split('\n').filter((line) => line.length > 0) : []);
+
+  it(
+    'runs every configuration fresh through the text of the test script when the calling environment exports MOMONGA_TLC_REUSE=1',
+    async () => {
+      const fixture = tierFixture(JSON.stringify([holdsEntry, invariantEntry]), ['Tiny', 'Tiny.broken']);
+      const stored = await runNestedVitest(fixture.project, fixture.args, fixture.env('1'));
+      expect(stored.code).toBe(0);
+      expect(recordFiles(fixture.storeDir, 'Tiny').length + recordFiles(fixture.storeDir, 'Tiny.broken').length).toBe(2);
+      fs.mkdirSync(path.join(fixture.storeDir, 'Old'));
+      const storeBefore = storeSnapshot(fixture.storeDir);
+      const callsBefore = callsIn(fixture.counter).length;
+
+      const run = await runPackageScript('test', fixture.project, fixture.args, fixture.env('1'));
+
+      expect(run.code).toBe(0);
+      expect(run.stderr).toContain('TLC every-run: 2 configurations, 0 reused, 2 ran');
+      expect(run.stderr).toContain('ran (reuse off): 2: Tiny, Tiny.broken');
+      const calls = callsIn(fixture.counter).slice(callsBefore);
+      expect(calls.map((line) => line.split(' ')).sort()).toEqual([
+        ['Tiny', '-workers', String(TLC_WORKERS)],
+        ['Tiny.broken', '-workers', String(TLC_WORKERS)],
+      ]);
+      expect(storeSnapshot(fixture.storeDir)).toEqual(storeBefore);
+    },
+    2 * NESTED_RUN_TIMEOUT_MS,
+  );
+
+  it(
+    'fails the first test of the tier with the load error of the manifest and leaves the store as it was',
+    async () => {
+      const fixture = tierFixture("new Error('the manifest of this fixture did not load')", []);
+      fs.mkdirSync(path.join(fixture.storeDir, 'Tiny'), { recursive: true });
+      fs.mkdirSync(path.join(fixture.storeDir, 'Old'));
+      writeFile(path.join(fixture.storeDir, 'Tiny', 'kept.json'), '{}');
+      const storeBefore = storeSnapshot(fixture.storeDir);
+
+      const run = await runNestedVitest(fixture.project, fixture.args, fixture.env('1'));
+
+      expect(run.code).not.toBe(0);
+      const tests = assertionsOf(fixture.jsonFile);
+      expect(tests.map((test) => test.status)).toEqual(['failed']);
+      const [first] = tests as [(typeof tests)[number]];
+      expect(first.failureMessages.join('\n')).toContain('the manifest of this fixture did not load');
+      expect(first.failureMessages.join('\n')).not.toContain('to be greater than 0');
+      expect(storeSnapshot(fixture.storeDir)).toEqual(storeBefore);
+      expect(callsIn(fixture.counter)).toEqual([]);
+    },
+    NESTED_RUN_TIMEOUT_MS,
+  );
+
+  it(
+    'removes the orphans of the store at the end of a reuse-mode run whose manifest loaded',
+    async () => {
+      const fixture = tierFixture(JSON.stringify([holdsEntry, invariantEntry]), ['Tiny', 'Tiny.broken']);
+      fs.mkdirSync(path.join(fixture.storeDir, 'Old'), { recursive: true });
+
+      const run = await runNestedVitest(fixture.project, fixture.args, fixture.env('1'));
+
+      expect(run.code).toBe(0);
+      expect(fs.readdirSync(fixture.storeDir).sort()).toEqual(['Tiny', 'Tiny.broken']);
+    },
+    NESTED_RUN_TIMEOUT_MS,
   );
 });

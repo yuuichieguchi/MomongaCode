@@ -54,10 +54,27 @@ describe('CI configuration', () => {
     for (const reference of uses) expect(reference).toMatch(/^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/);
   });
 
-  it('turns on the reuse of model-checking results only in its own script, never in the gate, CI or the container', () => {
-    expect(packageJson.scripts['test']).toBe('vitest run --project unit');
-    expect(packageJson.scripts['test:reuse']).toBe('MOMONGA_TLC_REUSE=1 vitest run --project unit');
-    expect(packageJson.scripts['test:tlc-deep']).toBe('MOMONGA_TLC_TIER=deep vitest run --project unit test/formal');
+  const ASSIGNMENT = /^([A-Z_][A-Z0-9_]*)=(\S*)$/;
+
+  const scriptParts = (name: string): { assignments: Record<string, string>; command: string } => {
+    const words = (packageJson.scripts[name] as string).split(' ');
+    const commandStart = words.findIndex((word) => !ASSIGNMENT.test(word));
+    const assignments = Object.fromEntries(words.slice(0, commandStart).map((word) => (ASSIGNMENT.exec(word) as RegExpExecArray).slice(1, 3) as [string, string]));
+    return { assignments, command: words.slice(commandStart).join(' ') };
+  };
+
+  it('pins the reuse of model-checking results in each script that runs the tier: off in test and test:tlc-deep, on in test:reuse', () => {
+    expect(scriptParts('test')).toEqual({ assignments: { MOMONGA_TLC_REUSE: '0' }, command: 'vitest run --project unit' });
+    expect(scriptParts('test:reuse')).toEqual({ assignments: { MOMONGA_TLC_REUSE: '1' }, command: 'vitest run --project unit' });
+    expect(scriptParts('test:tlc-deep')).toEqual({ assignments: { MOMONGA_TLC_TIER: 'deep', MOMONGA_TLC_REUSE: '0' }, command: 'vitest run --project unit test/formal' });
+  });
+
+  it('names the reuse variable in no other script, and never in the gate, CI or the container', () => {
+    const naming = Object.entries(packageJson.scripts)
+      .filter(([, text]) => text.includes('MOMONGA_TLC_REUSE'))
+      .map(([name]) => name)
+      .sort();
+    expect(naming).toEqual(['test', 'test:reuse', 'test:tlc-deep']);
     for (const text of [workflow, fs.readFileSync(`${repoRoot}scripts/release.sh`, 'utf8'), fs.readFileSync(`${repoRoot}scripts/test-linux.sh`, 'utf8')]) {
       expect(text).not.toContain('MOMONGA_TLC_REUSE');
       expect(text).not.toContain('test:reuse');
