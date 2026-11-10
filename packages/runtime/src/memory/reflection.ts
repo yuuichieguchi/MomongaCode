@@ -175,6 +175,10 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     const pins = readPins(started.pins);
     const alias = pins.roles.reflection ?? pins.modelAlias;
     const capabilities = await gateway.capabilities(alias, { signal });
+    if (capabilities.structuredOutput === 'none') {
+      store.reflection.complete({ runId, charge: null, candidates: keptFacts, dropped, reason: `models.roles.reflection target ${alias} reports no structured output` });
+      return;
+    }
     const { input: recordedRun } = await store.journalFacts.reflectionInput({ runId, project, capabilities }, signal);
     const body: CreateResponseBody = {
       model: alias,
