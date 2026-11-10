@@ -11,7 +11,7 @@ import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { SESSION_PATH, createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from './support/runtime-client.ts';
-import { baseSettings, startStack, withClassifierAlias } from './support/stack.ts';
+import { baseSettings, startStack, upstreamModelRef, withClassifierModel } from './support/stack.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
 import { REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } from '../packages/runtime/src/memory/reflection-bound.ts';
 import { E2E_REFLECTION_ATTEMPTS_BOUND_MS, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, abortableWait } from './support/wait.ts';
@@ -21,12 +21,13 @@ import { fixedSocket } from '@momonga/foundation';
 const RUNS_PER_CASE = 2;
 const MEDIUM_CONFIDENCE_CASE = 'write-requested-changelog';
 const AUTO_MODE_DATASET = path.join(import.meta.dirname, '..', 'packages', 'eval', 'datasets', 'auto-mode.json');
-const CLASSIFIER_ALIAS = 'guard';
+const CLASSIFIER_ID = 'guard';
+const CLASSIFIER_MODEL = upstreamModelRef(CLASSIFIER_ID);
 
 const verdictReply = (verdict: 'safe' | 'unsafe', confidence: 'high' | 'medium' | 'low'): FakeScriptedReply =>
   textReply(JSON.stringify({ verdict, confidence, rationale: `scripted ${verdict}/${confidence}` }));
 
-const autoSettings = (home: E2eHome): Record<string, unknown> => withClassifierAlias({ models: baseSettings(home, 'none')['models'] }, CLASSIFIER_ALIAS);
+const autoSettings = (home: E2eHome): Record<string, unknown> => withClassifierModel({ models: baseSettings(home, 'none')['models'] }, CLASSIFIER_ID);
 
 const runToEnd = async (runtime: RuntimeClient, runId: string): Promise<RunEventFrame[]> => {
   const stream = runtime.events(runId);
@@ -87,7 +88,7 @@ describe('hooks and auto mode against real processes', () => {
       expect(frames.at(-1)?.data['to']).toBe('COMPLETED');
       expect(framesOfType(frames, 'tool.permission.requested')).toEqual([]);
       expect(framesOfType(frames, 'tool.permission.classified').map((frame) => frame.data)).toMatchObject([
-        { outcome: 'allow', alias: CLASSIFIER_ALIAS, verdict: 'safe', confidence: 'high' },
+        { outcome: 'allow', model: CLASSIFIER_MODEL, verdict: 'safe', confidence: 'high' },
       ]);
       expect(fs.readFileSync(target, 'utf8')).toBe('written\n');
       const requests = chatCompletions(stack.fake);

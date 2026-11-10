@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { EXIT_AFTER_READY_CODE } from './fixtures/exit-after-ready-supervisor.ts';
 import { createE2eHome } from './home.ts';
-import { STRUCTURED_TARGET, UPSTREAM_TARGET, baseSettings, startStack, withClassifierAlias, withStructuredRole } from './stack.ts';
+import { UPSTREAM_MODEL, UPSTREAM_MODEL_REF, UPSTREAM_PROVIDER, baseSettings, startStack, upstreamEntryOf, upstreamModelRef, withClassifierModel, withStructuredRole } from './stack.ts';
 import { E2E_TEST_TIMEOUT_MS } from './wait.ts';
 
 const EXIT_AFTER_READY_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'exit-after-ready-supervisor.ts');
@@ -20,32 +20,40 @@ describe('startStack readiness', () => {
   });
 });
 
-describe('withClassifierAlias', () => {
-  it('points the alias at a target that declares json_schema structured output and keeps the upstream target as it was', async () => {
+type WrittenModels = { start: string; roles?: Record<string, unknown>; connections: { provider: string; socketPath: string; models: { id: string; capabilities: Record<string, unknown> }[] }[] };
+
+const writtenModelsOf = (settings: Record<string, unknown>): WrittenModels => settings['models'] as WrittenModels;
+
+describe('withClassifierModel', () => {
+  it('adds a model that declares json_schema structured output to the upstream connection, names it as the classifier and keeps the upstream model as it was', async () => {
     const home = await createE2eHome();
     const base = baseSettings(home, 'none');
-    const settings = withClassifierAlias(base, 'guard');
-    const models = settings['models'] as { aliases: Record<string, unknown>; targets: Record<string, { socketPath: string; capabilities: Record<string, unknown> }> };
-    expect(models.aliases['guard']).toEqual([STRUCTURED_TARGET]);
-    expect(models.targets[STRUCTURED_TARGET]?.capabilities).toMatchObject({ structuredOutput: 'json_schema' });
-    expect(models.targets[STRUCTURED_TARGET]?.socketPath).toBe(home.upstreamSocket);
-    expect(models.targets[UPSTREAM_TARGET]).toEqual((base['models'] as { targets: Record<string, unknown> }).targets[UPSTREAM_TARGET]);
-    expect(settings['autoMode']).toEqual({ classifier: 'guard' });
+    const settings = withClassifierModel(base, 'guard');
+    const [connection, ...others] = writtenModelsOf(settings).connections;
+    expect(others).toEqual([]);
+    expect(connection?.provider).toBe(UPSTREAM_PROVIDER);
+    expect(connection?.socketPath).toBe(home.upstreamSocket);
+    expect(connection?.models.map((entry) => entry.id)).toEqual([UPSTREAM_MODEL, 'guard']);
+    expect(connection?.models[1]?.capabilities).toMatchObject({ structuredOutput: 'json_schema' });
+    expect(connection?.models[0]).toEqual(upstreamEntryOf(base));
+    expect(settings['autoMode']).toEqual({ classifier: upstreamModelRef('guard') });
   });
 });
 
 describe('withStructuredRole', () => {
-  it.each(['reflection', 'analysis'] as const)('points models.roles.%s at an alias whose target declares json_schema structured output and keeps the run alias on the upstream target', async (role) => {
+  it.each(['reflection', 'analysis'] as const)('points models.roles.%s at a model that declares json_schema structured output and keeps new sessions on the upstream model', async (role) => {
     const home = await createE2eHome();
     const base = baseSettings(home, 'none');
     const settings = withStructuredRole(base, role, 'thinker');
-    const models = settings['models'] as { aliases: Record<string, unknown>; roles: Record<string, unknown>; targets: Record<string, { socketPath: string; capabilities: Record<string, unknown> }> };
-    expect(models.roles).toEqual({ [role]: 'thinker' });
-    expect(models.aliases['thinker']).toEqual([STRUCTURED_TARGET]);
-    expect(models.aliases['default']).toEqual([UPSTREAM_TARGET]);
-    expect(models.targets[STRUCTURED_TARGET]?.capabilities).toMatchObject({ structuredOutput: 'json_schema' });
-    expect(models.targets[STRUCTURED_TARGET]?.socketPath).toBe(home.upstreamSocket);
-    expect(models.targets[UPSTREAM_TARGET]).toEqual((base['models'] as { targets: Record<string, unknown> }).targets[UPSTREAM_TARGET]);
+    const models = writtenModelsOf(settings);
+    const [connection, ...others] = models.connections;
+    expect(others).toEqual([]);
+    expect(models.roles).toEqual({ [role]: upstreamModelRef('thinker') });
+    expect(models.start).toBe(UPSTREAM_MODEL_REF);
+    expect(connection?.socketPath).toBe(home.upstreamSocket);
+    expect(connection?.models.map((entry) => entry.id)).toEqual([UPSTREAM_MODEL, 'thinker']);
+    expect(connection?.models[1]?.capabilities).toMatchObject({ structuredOutput: 'json_schema' });
+    expect(connection?.models[0]).toEqual(upstreamEntryOf(base));
     expect(settings['autoMode']).toBeUndefined();
   });
 });

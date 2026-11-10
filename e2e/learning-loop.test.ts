@@ -19,7 +19,7 @@ type Json = Record<string, any>;
 const RECALL_OPEN = '<recalled_memories>';
 const NOTE = 'The answer constant lives in answer.ts and is 42.';
 const SWEEP_BOUND_MS = E2E_RUN_COMPLETED_BOUND_MS;
-const REFLECTION_ALIAS = 'reflector';
+const REFLECTION_MODEL_ID = 'reflector';
 
 const rawClient = (home: E2eHome) => {
   const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime));
@@ -69,7 +69,7 @@ describe('learning loop', () => {
       settings: withStructuredRole(
         { models: baseSettings(home, 'none')['models'], memory: { reflection: { enabled: true } }, verification: { commands: ['echo verified'] } },
         'reflection',
-        REFLECTION_ALIAS,
+        REFLECTION_MODEL_ID,
       ),
       script: [
         toolCallReply('Write', { file_path: path.join(project, 'answer.ts'), content: 'export const answer = 42;\n' }, 'call_write'),

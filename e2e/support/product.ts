@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { FakeChatCompletionsServer, FakeRoute, FakeScriptedReply, RecordedRequest } from '@momonga/testkit';
 import { createE2eHome } from './home.ts';
 import type { E2eHome } from './home.ts';
-import { UPSTREAM_TARGET, baseSettings, sandboxChoiceOf, startUpstream, writeSettingsFile } from './stack.ts';
+import { baseSettings, sandboxChoiceOf, startUpstream, withUpstreamEntry, writeSettingsFile } from './stack.ts';
 import { E2E_IMAGE_TOKENS } from './upstream.ts';
 
 export type ProductOptions = {
@@ -18,12 +18,8 @@ export type Product = { home: E2eHome; fake: FakeChatCompletionsServer };
 
 export const WINDOW_WITH_ROOM_FOR_ALL_TOOLS_AND_AN_IMAGE = 32768;
 
-const withCapabilities = (settings: Record<string, unknown>, capabilities: Record<string, unknown>): Record<string, unknown> => {
-  const models = settings['models'] as { aliases: unknown; targets: Record<string, { capabilities: Record<string, unknown> }> };
-  const primary = models.targets[UPSTREAM_TARGET];
-  if (primary === undefined) throw new Error(`no ${UPSTREAM_TARGET} target to give capabilities`);
-  return { ...settings, models: { ...models, targets: { ...models.targets, [UPSTREAM_TARGET]: { ...primary, capabilities: { ...primary.capabilities, ...capabilities } } } } };
-};
+const withCapabilities = (settings: Record<string, unknown>, capabilities: Record<string, unknown>): Record<string, unknown> =>
+  withUpstreamEntry(settings, (entry) => ({ ...entry, capabilities: { ...entry.capabilities, ...capabilities } }));
 
 export const prepareProduct = async (options: ProductOptions = {}): Promise<Product> => {
   const home = await createE2eHome();

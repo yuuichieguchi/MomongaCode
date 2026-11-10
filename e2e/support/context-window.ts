@@ -9,7 +9,7 @@ import type { FakeChatCompletionsServer, FakeRoute } from '@momonga/testkit';
 import { sizingFor, overflowStepRange, wireTokensOfBody } from './budget.ts';
 import type { Sizing } from './budget.ts';
 import { runCli } from './cli.ts';
-import { E2E_MODEL_ALIAS, createGatewayCountClient } from './gateway-count.ts';
+import { E2E_MODEL, createGatewayCountClient } from './gateway-count.ts';
 import type { GatewayCountClient } from './gateway-count.ts';
 import type { E2eHome } from './home.ts';
 import { chatCompletions, textReply, toolCallReply } from './upstream.ts';
@@ -68,7 +68,7 @@ const widestFactlessWorkingStateText = (capabilities: Capabilities): string => {
 };
 
 const factlessWorkingStateTokensOf = async (client: GatewayCountClient, capabilities: Capabilities): Promise<number> => {
-  const meter = createTokenMeter({ counter: { count: (request) => client.gateway.countTokens(request, { signal: AbortSignal.timeout(E2E_MARGIN_MS) }) }, model: E2E_MODEL_ALIAS, capabilities });
+  const meter = createTokenMeter({ counter: { count: (request) => client.gateway.countTokens(request, { signal: AbortSignal.timeout(E2E_MARGIN_MS) }) }, model: E2E_MODEL, capabilities });
   return meter.countItem(workingStateMessage(widestFactlessWorkingStateText(capabilities)), { callNames: {}, withTools: true });
 };
 
@@ -112,7 +112,7 @@ export const measureWindow = async (home: E2eHome, fake: Pick<FakeChatCompletion
   if (personRequest === undefined) throw new Error('the prefix probe never reached the upstream');
   const calibrationFile = path.join(home.root, 'calibration.json');
   fs.writeFileSync(calibrationFile, calibrationDataset());
-  const calibration = await runCli(home, ['eval', 'context', calibrationFile, '--alias', 'default'], { cwd: home.project, boundMs });
+  const calibration = await runCli(home, ['eval', 'context', calibrationFile, '--model', E2E_MODEL], { cwd: home.project, boundMs });
   if (calibration.code !== 0) throw new Error(`the calibration run exited with ${String(calibration.code)}\n${calibration.stdout}\n${calibration.stderr}`);
   const [small, large] = CALIBRATION_LINE_COUNTS.map((lines) => ({ lines, ...firstRequestAndRead(fake, calibrationTask(lines)) }));
   if (small === undefined || large === undefined) throw new Error('the calibration needs two file sizes');

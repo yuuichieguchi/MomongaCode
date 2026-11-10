@@ -17,7 +17,7 @@ import { isAlive } from './support/process.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
 import { LAUNCHER_PATH, productSandbox } from './support/sandbox.ts';
-import { DEFAULT_E2E_DEPS, SUPERVISOR_APP_VERSION, baseSettings, spawnSupervisor, startStack, writeSettingsFile } from './support/stack.ts';
+import { DEFAULT_E2E_DEPS, SUPERVISOR_APP_VERSION, baseSettings, spawnSupervisor, startStack, upstreamModelRef, withUpstreamEntry, writeSettingsFile } from './support/stack.ts';
 import type { SpawnedSupervisor, SupervisorExit } from './support/stack.ts';
 import { childOf, createSupervisorClient, pidOf } from './support/supervisor-client.ts';
 import type { E2eDeps } from './support/supervisor-main.ts';
@@ -85,17 +85,15 @@ const editSettings = (home: E2eHome, edit: (settings: Settings) => Settings): vo
 };
 
 const withChangedModel = (settings: Settings): Settings => {
-  const models = settings.models as { targets: Record<string, Record<string, unknown>> } & Settings;
-  const primary = models.targets['primary'];
-  if (primary === undefined) throw new Error('settings have no primary target');
-  return { ...settings, models: { ...models, targets: { ...models.targets, primary: { ...primary, model: CHANGED_MODEL } } } };
+  const changed = withUpstreamEntry(settings, (entry) => ({ ...entry, id: CHANGED_MODEL }));
+  return { ...changed, models: { ...(changed['models'] as Settings), start: upstreamModelRef(CHANGED_MODEL) } };
 };
 
 const appliedModelOf = (home: E2eHome): unknown => {
   const file = firstGeneration(home.paths).settingsApplied;
   if (!fs.existsSync(file)) return undefined;
-  const record = JSON.parse(fs.readFileSync(file, 'utf8')) as { settings?: { models?: { targets?: Record<string, { model?: unknown }> } } };
-  return record.settings?.models?.targets?.['primary']?.model;
+  const record = JSON.parse(fs.readFileSync(file, 'utf8')) as { settings?: { models?: { connections?: { models?: { id?: unknown }[] }[] } } };
+  return record.settings?.models?.connections?.[0]?.models?.[0]?.id;
 };
 
 const trackExit = (supervisor: SpawnedSupervisor): (() => SupervisorExit | undefined) => {
