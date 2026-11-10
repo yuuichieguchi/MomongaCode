@@ -1,7 +1,8 @@
 import { createAcpBridge } from '../src/acp/agent.ts';
 import type { AcpBridge, AcpDeps, FollowRequest, FollowSessionRequest } from '../src/acp/agent.ts';
 import { withReplayedInitialize } from '../src/acp/handover.ts';
-import type { AgentApp, AnyMessage } from '@agentclientprotocol/sdk';
+import type { AgentConnection, AnyMessage } from '@agentclientprotocol/sdk';
+import type { MessageStream } from '../src/acp/handover.ts';
 import type { PublicRunEvent, SkillsResponse } from '@momonga/protocol';
 import { RunApiError } from '../src/client/runtime-client.ts';
 import type { CreatedSession, RunEventFrame, RuntimeClient } from '../src/client/runtime-client.ts';
@@ -33,7 +34,9 @@ const isRequest = (message: AnyMessage): message is AnyMessage & { id: string | 
 
 const isResponseTo = (message: AnyMessage, id: number): boolean => !('method' in message) && 'id' in message && message.id === id;
 
-export const connectPeer = (app: AgentApp): Peer => {
+export type Connectable = { connect(stream: MessageStream): AgentConnection };
+
+export const connectPeer = (app: Connectable): Peer => {
   const toAgent = new TransformStream<AnyMessage, AnyMessage>();
   const fromAgent = new TransformStream<AnyMessage, AnyMessage>();
   const connection = app.connect({ readable: toAgent.readable, writable: fromAgent.writable });
@@ -439,7 +442,7 @@ export const startAgent = (overrides: Partial<AcpDeps> = {}, replayedInitialize?
     ...overrides,
   };
   const bridge = createAcpBridge(deps);
-  const adopting: AgentApp = { ...bridge.app, connect: (stream) => bridge.app.connect(withReplayedInitialize(stream, replayedInitialize)) };
+  const adopting: Connectable = { connect: (stream) => bridge.app.connect(withReplayedInitialize(stream, replayedInitialize)) };
   const peer = connectPeer(replayedInitialize === undefined ? bridge.app : adopting);
   return {
     bridge,

@@ -5,7 +5,9 @@ import { ensureCurrentDaemon, ensureSessionDaemon } from '../daemon/ensure-daemo
 import type { CliPorts } from '../ports.ts';
 import type { ApprovalView, RunView } from '../client/views.ts';
 import { connectRuntime, connectSessionRuntime } from '../run/open-session.ts';
-import { watchRun } from '../run/headless.ts';
+import { adoptionOf, refuseStart } from '../handover/start.ts';
+import { newerListenerOf, streamMoveOf } from '../handover/stream.ts';
+import { resumeStream, watchRun } from '../run/headless.ts';
 import type { OutputFormat } from '../run/headless.ts';
 import { activeRunIdOf, latestRunIdOf, runTreeOf } from './targets.ts';
 
@@ -19,11 +21,16 @@ export class UnknownOption extends Error {
 export type AttachOptions = { runId?: string; format: OutputFormat; after: number; verbose: boolean; interrupt: AbortSignal };
 
 export const attachRun = async (ports: CliPorts, paths: MomongaPaths, options: AttachOptions): Promise<number> => {
-  await ensureSessionDaemon(ports, paths);
-  const client = connectSessionRuntime(ports, paths);
+  const adoption = adoptionOf(ports.handover?.started, ['attach']);
+  if (adoption.kind === 'refused') return refuseStart({ stderr: ports.stderr }, adoption);
+  if (adoption.kind === 'record') return resumeStream(ports, paths, adoption, options.interrupt);
+  const onNewer = newerListenerOf(ports);
+  await ensureSessionDaemon(ports, paths, onNewer === undefined ? {} : { onNewer });
+  const client = connectSessionRuntime(ports, paths, onNewer);
+  const move = streamMoveOf(ports, paths, 'attach');
   try {
     const runId = options.runId ?? (await latestRunIdOf(client, ports.cwd));
-    return await watchRun(ports, paths, { client, runId, format: options.format, verbose: options.verbose, after: options.after, interrupt: options.interrupt });
+    return await watchRun(ports, paths, { client, runId, format: options.format, verbose: options.verbose, after: options.after, interrupt: options.interrupt, ...(move === undefined ? {} : { move }) });
   } finally {
     await client.close();
   }

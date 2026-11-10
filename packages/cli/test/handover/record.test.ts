@@ -5,14 +5,12 @@ import type { AcpRecord, StreamRecord, TuiRecord } from '../../src/handover/reco
 
 const COMMON = { format: HANDOVER_FORMAT, fromVersion: '1.2.3', toVersion: '1.2.4', session: 'session-1', lastSeq: { 'run-1': 9, 'run-2': 4 } } as const;
 
-const TUI: TuiRecord = {
+const SCREENLESS: TuiRecord = {
   ...COMMON,
   kind: 'tui',
   neg: 'kitty',
   hint: 'shift+enter',
   size: { columns: 120, rows: 40 },
-  view: { key: { runId: 'run-1', seq: 5, index: 1 }, rowOffset: 3, following: false },
-  toggles: { thoughts: { t1: true, t2: false } },
   input: { text: 'half a prompt', cursor: 4, historyIndex: 2 },
   attachments: [{ file: '/work/shot.png', sha256: 'ab'.repeat(32) }],
   notes: [
@@ -23,9 +21,9 @@ const TUI: TuiRecord = {
   ],
 };
 
-const SCROLLBACK: TuiRecord = { ...TUI, view: undefined, toggles: undefined, printed: 7 };
-delete SCROLLBACK.view;
-delete SCROLLBACK.toggles;
+const TUI: TuiRecord = { ...SCREENLESS, view: { key: { runId: 'run-1', seq: 5, index: 1 }, rowOffset: 3, following: false }, toggles: { thoughts: { t1: true, t2: false } } };
+
+const SCROLLBACK: TuiRecord = { ...SCREENLESS, printed: 7 };
 
 const ACP: AcpRecord = { ...COMMON, session: 'acp-41', kind: 'acp', initialize: { protocolVersion: 1, clientCapabilities: { session: { notices: {} } } }, sessions: ['session-1', 'session-2'] };
 

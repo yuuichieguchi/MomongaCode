@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Text, useApp, useStdout } from 'ink';
 import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, isNotListedCapabilities } from '@momonga/protocol';
-import type { AliasCapabilities, InboxDelivery, InboxRowView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
+import type { AliasCapabilities, ImageAttachment, InboxDelivery, InboxRowView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
 import type { RunView, SessionView } from '../client/views.ts';
 import { describeAttachment, pastedImagePaths } from '../images.ts';
 import { describeFailure } from '../failure.ts';
@@ -64,8 +64,16 @@ import { UNSTORED_TUI_SETTINGS, useAttention } from './screen/notify.ts';
 import type { NotifyMode, TuiSettingsPort } from './screen/notify.ts';
 import { UNREPORTED_COLOUR_HOST, appearanceOf, applyAppearance, applyTheme } from './screen/theme.ts';
 import type { ColourHost, ThemeId } from './screen/theme.ts';
-import { appendEntry, BANNER_KEY, foldChildEvent, foldEvent, foldReplayedEvent, nextMode, runCreated, runLeft, sessionTokens, setThoughtWindow, shownRunPhase, subagentEnded, subagentStarted, thoughtWindowOf } from './transcript.ts';
+import { appendEntry, BANNER_KEY, foldChildEvent, foldLiveEvent, foldReplayedEvent, nextMode, runCreated, runLeft, sessionTokens, setThoughtWindow, shownRunPhase, subagentEnded, subagentStarted, thoughtWindowOf } from './transcript.ts';
 import type { Entry } from './transcript.ts';
+import { attachmentDigest } from '../handover/record.ts';
+import type { HandoverAttachment, HandoverInput, HandoverNote } from '../handover/record.ts';
+import { attachmentChangedText, attachmentUnreadableText } from '../handover/texts.ts';
+import { createNoteReplay, createOrigins, entryOfNote, isLocalNote, positionOf, restoreToggles, togglesOf, viewOf } from './handover.ts';
+import type { LocalNote, NoteReplay, TuiAdoption, TuiMovePort, TuiSnapshot, TuiSurface } from './handover.ts';
+import { createHistoryFeed } from './screen/history-feed.ts';
+import { FOLLOWING } from './screen/viewport.ts';
+import type { Position } from './screen/viewport.ts';
 
 export type TuiOutcome = { error?: Error; reopen?: string };
 
@@ -89,6 +97,8 @@ export type AppProps = {
   copyOnSelect?: boolean;
   colour?: ColourHost;
   tuiSettings?: TuiSettingsPort;
+  move?: TuiMovePort;
+  adoption?: TuiAdoption;
   now(): number;
   timers: ScreenTimers;
   onExit(outcome: TuiOutcome): void;
@@ -148,6 +158,10 @@ const CLEAR_SCREEN = '\u001b[2J\u001b[H';
 
 const errorOf = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
+type Replay = { queue: ReplayQueue; before: number; notes: NoteReplay | undefined };
+
+type ScreenFacts = { overlay: boolean; position: Position; tasks: BackgroundTasks; terminal: ScreenTerminal; flush(): Promise<void> };
+
 export function App(props: AppProps) {
   const { backend, terminal, onExit } = props;
   const { exit, waitUntilRenderFlush } = useApp();
@@ -164,6 +178,8 @@ export function App(props: AppProps) {
   const a11y = a11yOf(storedA11y, props.a11y ?? NOTHING_ASKED);
   applyA11y(a11y);
   const [store] = useState(createTranscriptStore);
+  const [origins] = useState(() => createOrigins(store));
+  useEffect(() => origins.stop, [origins]);
   useSyncExternalStore(store.subscribe, store.version);
   const transcript = store.state();
   const { now, timers } = props;
@@ -209,6 +225,14 @@ export function App(props: AppProps) {
   const stopMeasuring = useRef<(() => void) | undefined>(undefined);
   const [switching, setSwitching] = useState(false);
   const [historyGeneration, setHistoryGeneration] = useState(0);
+  const { adoption, move } = props;
+  const [feed, setFeed] = useState(() => createHistoryFeed(adoption?.record.printed ?? 0));
+  const feedRef = useRef(feed);
+  const [erased, setErased] = useState(false);
+  const phaseRef = useRef<Phase['kind']>('starting');
+  const readingRef = useRef(false);
+  const switchingRef = useRef(false);
+  const startsFromRecord = useRef(adoption !== undefined);
   const [panelRows, setPanelRows] = useState<number | undefined>(undefined);
   const [loading, setLoading] = useState<Loading | undefined>(undefined);
   const openedSession = useRef<{ id: string; hasRun: boolean } | undefined>(undefined);
@@ -227,12 +251,74 @@ export function App(props: AppProps) {
   const aliasRef = useRef<string | undefined>(undefined);
   const signInFailedRun = useRef<{ text: string; options: StartRunOptions; alias: string } | undefined>(undefined);
   const busyRef = useRef(false);
+  const facts = useRef<ScreenFacts>({ overlay: false, position: FOLLOWING, tasks, terminal, flush: waitUntilRenderFlush });
+  const [handover] = useState(() => {
+    let suspended = false;
+    let undrawn: LocalNote[] = [];
+    const appendLocal = (entry: Entry): void => {
+      if (isLocalNote(entry)) {
+        origins.noted(entry);
+        if (suspended) {
+          undrawn.push(entry);
+          return;
+        }
+      }
+      appendEntry(store, entry);
+    };
+    const snapshot = (): TuiSnapshot | undefined => {
+      const opened = openedSession.current;
+      if (opened === undefined) return undefined;
+      const state = facts.current.terminal.state();
+      const current = editorRef.current;
+      return {
+        kind: 'tui',
+        session: opened.id,
+        lastSeq: origins.applied(),
+        neg: state.negotiation,
+        hint: state.newlineHint,
+        size: state.size,
+        ...(state.screen === 'fullscreen' ? { view: viewOf(facts.current.position, origins), toggles: togglesOf(store) } : { printed: feedRef.current.handed() }),
+        input: { text: current.text, cursor: current.cursor, historyIndex: current.historyIndex ?? null, draft: current.draft, pastes: current.pastes.map((paste) => ({ ...paste })), pasteCount: current.pasteCount },
+        attachments: heldAttachments(attachmentsRef.current, current.text).map((attachment) => ({ file: attachment.file, sha256: attachmentDigest(attachment.image) })),
+        notes: origins.notes(),
+      };
+    };
+    const quiet = (): boolean => {
+      const state = store.state();
+      const now = facts.current;
+      if (openedSession.current === undefined || phaseRef.current !== 'ready' || now.overlay) return false;
+      if (readingRef.current || switchingRef.current || shellRunning.current || now.tasks.count() > 0) return false;
+      if (state.approval !== undefined || state.elicitation !== undefined) return false;
+      return now.terminal.state().screen === 'fullscreen' || !feedRef.current.pending(store.settledCount());
+    };
+    const surface: TuiSurface = {
+      session: () => openedSession.current?.id,
+      quiet,
+      snapshot,
+      suspend: async () => {
+        suspended = true;
+        if (facts.current.terminal.state().screen !== 'scrollback') return;
+        setErased(true);
+        await facts.current.flush();
+      },
+      resume: () => {
+        suspended = false;
+        setErased(false);
+        const kept = undrawn;
+        undrawn = [];
+        for (const entry of kept) appendEntry(store, entry);
+      },
+      say: (text) => appendLocal({ kind: 'info', text }),
+    };
+    return { appendLocal, surface };
+  });
   const fixedKeys = props.keys ?? DEFAULT_KEY_TABLE;
   const fixedBindings = useMemo(() => fixedKeyBindings(fixedKeys), [fixedKeys]);
   const bindings = props.keyBindings ?? fixedBindings;
   const keys = useSyncExternalStore(bindings.subscribe, bindings.table);
   const chord = useRef<KeySpec | undefined>(undefined);
-  useEffect(() => bindings.listen((text) => appendEntry(store, { kind: 'notice', level: 'warning', text })), [bindings, store]);
+  const warn = useEffectEvent((text: string): void => handover.appendLocal({ kind: 'notice', level: 'warning', text }));
+  useEffect(() => bindings.listen((text) => warn(text)), [bindings]);
   const externalEditor = props.externalEditor ?? unavailableExternalEditor;
   const [hint, setHint] = useState<string | undefined>(undefined);
   const armedExit = useRef<{ action: ExitAction; timer: unknown } | undefined>(undefined);
@@ -243,6 +329,18 @@ export function App(props: AppProps) {
     prompting: phase.kind === 'trust' || transcript.approval !== undefined || transcript.elicitation !== undefined,
     notify,
   });
+
+  const enterPhase = (next: Phase): void => {
+    phaseRef.current = next.kind;
+    setPhase(next);
+  };
+
+  const renewHistory = (): void => {
+    const fresh = createHistoryFeed();
+    feedRef.current = fresh;
+    setFeed(fresh);
+    setHistoryGeneration((generation) => generation + 1);
+  };
 
   const setBusyState = (value: boolean): void => {
     busyRef.current = value;
@@ -259,9 +357,7 @@ export function App(props: AppProps) {
     setEditor(next);
   };
 
-  const append = (entry: Entry): void => {
-    appendEntry(store, entry);
-  };
+  const append = handover.appendLocal;
 
   const finish = (outcome: TuiOutcome): void => {
     exiting.current = true;
@@ -294,16 +390,18 @@ export function App(props: AppProps) {
 
   const resetTranscript = (): void => {
     store.reset();
-    setHistoryGeneration((generation) => generation + 1);
+    renewHistory();
     if (aliasRef.current !== undefined) showBanner(aliasRef.current, notices);
   };
 
   const switchScreen = async (next: ScreenMode): Promise<void> => {
     if (terminal.state().screen !== next) {
+      switchingRef.current = true;
       setSwitching(true);
       await waitUntilRenderFlush();
       terminal.setScreen(next);
-      setHistoryGeneration((generation) => generation + 1);
+      renewHistory();
+      switchingRef.current = false;
       setSwitching(false);
     }
     note(`screen: ${next}`);
@@ -323,22 +421,22 @@ export function App(props: AppProps) {
     setMeasuringSince(undefined);
   };
 
-  const modelUnread = (error: unknown): void => {
+  const modelUnread = (error: unknown, announce = true): void => {
     endMeasuring();
-    append({ kind: 'notice', level: 'warning', text: `model information unavailable: ${errorOf(error).message}` });
+    if (announce) append({ kind: 'notice', level: 'warning', text: `model information unavailable: ${errorOf(error).message}` });
   };
 
-  const showModel = (entry: MomongaModelEntry): void => {
+  const showModel = (entry: MomongaModelEntry, announce = true): void => {
     endMeasuring();
     setModel(entry);
     const readiness = agentReadiness(entry.capabilities);
     if (readiness.state === 'probing') {
       setMeasuringSince(now());
-      stopMeasuring.current = followMeasurement({ read: () => backend.model(), timers }, readiness.retryAfterSeconds, showModel, modelUnread);
+      stopMeasuring.current = followMeasurement({ read: () => backend.model(), timers }, readiness.retryAfterSeconds, (measured) => showModel(measured), (error) => modelUnread(error));
       return;
     }
     const text = readinessNoticeOf(readiness);
-    if (text !== undefined) append({ kind: 'notice', level: 'warning', text });
+    if (text !== undefined && announce) append({ kind: 'notice', level: 'warning', text });
   };
 
   const showSession = async (session: SessionView): Promise<void> => {
@@ -349,20 +447,26 @@ export function App(props: AppProps) {
     setBypassAllowed(session.bypassAllowed);
     setAutoAvailable(await backend.autoModeAvailable());
     showBanner(session.modelAlias, notices);
-    showAutoNotice(session);
-    setPhase({ kind: 'ready' });
+    const announce = !startsFromRecord.current;
+    if (announce) showAutoNotice(session);
+    enterPhase({ kind: 'ready' });
     endMeasuring();
-    void backend.model().then(showModel, modelUnread);
+    void backend.model().then(
+      (entry) => showModel(entry, announce),
+      (error: unknown) => modelUnread(error, announce),
+    );
   };
 
   const enterFirstSession = async (session: SessionView): Promise<void> => {
     await showSession(session);
+    const announce = !startsFromRecord.current;
+    startsFromRecord.current = false;
     const history = await backend.loadHistory();
     replaceEditor(withHistory(editorRef.current, history));
     void backend.startupNotices().then(
       (found) => setNotices((previous) => [...previous, ...found]),
       (error: unknown) => {
-        append({ kind: 'notice', level: 'warning', text: `startup notices unavailable: ${errorOf(error).message}` });
+        if (announce) append({ kind: 'notice', level: 'warning', text: `startup notices unavailable: ${errorOf(error).message}` });
       },
     );
     void backend.skills().then(
@@ -370,10 +474,10 @@ export function App(props: AppProps) {
         const taken = new Set(baseSlash.list().flatMap((command) => [command.name, ...(command.aliases ?? [])]));
         const loaded = skillCommands(skills, taken);
         setSkillSlash(loaded.commands);
-        if (loaded.shadowed.length > 0) note(`skills shadowed by a built-in command and reachable only through the model: ${loaded.shadowed.join(', ')}`);
+        if (loaded.shadowed.length > 0 && announce) note(`skills shadowed by a built-in command and reachable only through the model: ${loaded.shadowed.join(', ')}`);
       },
       (error: unknown) => {
-        append({ kind: 'notice', level: 'warning', text: `skills unavailable: ${errorOf(error).message}` });
+        if (announce) append({ kind: 'notice', level: 'warning', text: `skills unavailable: ${errorOf(error).message}` });
       },
     );
   };
@@ -414,7 +518,7 @@ export function App(props: AppProps) {
     rememberProfiles(await backend.plan.accounts());
     if (aliasRef.current !== undefined) return;
     if ((await backend.models()).length > 0) await openSession(undefined);
-    else setPhase({ kind: 'unconnected' });
+    else enterPhase({ kind: 'unconnected' });
   };
 
   const setWaitingMessages = (rows: readonly InboxRowView[]): void => {
@@ -506,17 +610,17 @@ export function App(props: AppProps) {
       return;
     }
     if (listed.accounts.length === 0) {
-      setPhase({ kind: 'welcome' });
+      enterPhase({ kind: 'welcome' });
       runFlow(async () => {
         try {
           await flows.welcome(listed.profiles);
         } finally {
-          if (aliasRef.current === undefined) setPhase({ kind: 'unconnected' });
+          if (aliasRef.current === undefined) enterPhase({ kind: 'unconnected' });
         }
       });
       return;
     }
-    setPhase({ kind: 'unconnected' });
+    enterPhase({ kind: 'unconnected' });
     const usable = listed.accounts.find((account) => account.active && (account.state === 'active' || account.state === 'plan_disabled'));
     if (usable !== undefined) runFlow(() => flows.catalogPicker(profileOf(listed.profiles, usable.profile), usable.label));
   };
@@ -525,7 +629,7 @@ export function App(props: AppProps) {
     try {
       const trust = await backend.boot();
       if (trust.decision === null) {
-        setPhase({ kind: 'trust', path: trust.path });
+        enterPhase({ kind: 'trust', path: trust.path });
         return;
       }
       await connectAtLaunch();
@@ -546,7 +650,7 @@ export function App(props: AppProps) {
     setHint(undefined);
   };
 
-  const follow = (runId: string, replay: { queue: ReplayQueue; before: number } | undefined): Promise<RunView> => {
+  const follow = (runId: string, replay: Replay | undefined): Promise<RunView> => {
     let firstSeq: number | undefined;
     const deliver = (work: () => void, position?: number): void => {
       if (replay === undefined) work();
@@ -558,13 +662,16 @@ export function App(props: AppProps) {
         const seq = 'seq' in event ? event.seq : undefined;
         firstSeq ??= seq;
         const first = firstSeq;
+        const key = 'seq' in event ? { runId: event.runId, seq: event.seq } : undefined;
         deliver(
           () => {
             setReconnectingSince(undefined);
+            if (key !== undefined) origins.at(key);
             if (event.type === 'model.responded' && event.target !== undefined) setServedTarget(event.target);
             if (event.type === 'user.message' && event.source !== undefined) refreshInbox().catch(reportError);
-            if (replay === undefined) foldEvent(store, event);
+            if (replay === undefined) foldLiveEvent(store, event, first);
             else foldReplayedEvent(store, event, first, (record) => showShellRecord(store, record, now()));
+            if (key !== undefined) replay?.notes?.after(key);
           },
           replay === undefined || seq === undefined ? undefined : replay.before + seq,
         );
@@ -580,7 +687,7 @@ export function App(props: AppProps) {
     });
   };
 
-  const watchRun = async (runId: string, replay: { queue: ReplayQueue; before: number } | undefined, resubmit: { text: string; options: StartRunOptions; alias: string } | undefined): Promise<void> => {
+  const watchRun = async (runId: string, replay: Replay | undefined, resubmit: { text: string; options: StartRunOptions; alias: string } | undefined): Promise<void> => {
     runIdRef.current = runId;
     const run = await follow(runId, replay);
     await replay?.queue.drained();
@@ -595,6 +702,7 @@ export function App(props: AppProps) {
   };
 
   const endReading = (): void => {
+    readingRef.current = false;
     runIdRef.current = undefined;
     setReconnectingSince(undefined);
     runLeft(store);
@@ -602,7 +710,16 @@ export function App(props: AppProps) {
     setBusyState(false);
   };
 
-  const readConversation = async (session: SessionView, enter: (session: SessionView) => Promise<void>): Promise<void> => {
+  const restoreNote = (recorded: HandoverNote): void => {
+    const entry = entryOfNote(recorded);
+    origins.noted(entry, recorded.anchor);
+    appendEntry(store, entry);
+  };
+
+  type Restored = { notes: readonly HandoverNote[]; caughtUp(): void };
+
+  const readConversation = async (session: SessionView, enter: (session: SessionView) => Promise<void>, restored: Restored | undefined = undefined): Promise<void> => {
+    readingRef.current = true;
     const runs = await backend.runs();
     const total = runs.reduce((sum, run) => sum + run.lastSeq, 0);
     const startedAt = now();
@@ -614,20 +731,35 @@ export function App(props: AppProps) {
       endReading();
       throw error;
     }
-    const queue = createReplayQueue(timers, (done) => setLoading(done < total ? { done, total, startedAt } : undefined));
+    const notes = restored === undefined ? undefined : createNoteReplay(restored.notes, restoreNote);
+    let caught = false;
+    const caughtUp = (): void => {
+      if (caught) return;
+      caught = true;
+      readingRef.current = false;
+      notes?.rest();
+      restored?.caughtUp();
+    };
+    const queue = createReplayQueue(timers, (done) => {
+      setLoading(done < total ? { done, total, startedAt } : undefined);
+      if (done >= total) caughtUp();
+    });
+    notes?.before();
+    if (total === 0) caughtUp();
     try {
       let before = 0;
       for (const run of runs) {
         if (isTerminalStatus(run.status)) {
-          await follow(run.id, { queue, before });
+          await follow(run.id, { queue, before, notes });
           queue.push(() => runLeft(store), before + run.lastSeq);
         } else {
           store.update({ runId: run.id });
-          await watchRun(run.id, { queue, before }, undefined);
+          await watchRun(run.id, { queue, before, notes }, undefined);
         }
         before += run.lastSeq;
       }
       await queue.drained();
+      caughtUp();
       for (const record of await backend.userInput.pendingShell()) showShellRecord(store, record, now());
     } catch (error) {
       attention.runEnded('error');
@@ -669,7 +801,48 @@ export function App(props: AppProps) {
 
   const resumePorts = { backend, pick: overlayPorts.pick, info: note, resume: resumeSession, now, columns: () => terminal.state().size.columns };
 
+  const restoreInput = (input: HandoverInput): void => {
+    replaceEditor({ ...editorRef.current, text: input.text, cursor: input.cursor, historyIndex: input.historyIndex ?? undefined, draft: input.draft ?? '', pastes: input.pastes ?? [], pasteCount: input.pasteCount ?? 0 });
+  };
+
+  const readRecordedImage = async (file: string): Promise<{ image: ImageAttachment } | { reason: string }> => {
+    try {
+      return { image: await backend.readImage(file) };
+    } catch (error) {
+      return { reason: errorOf(error).message };
+    }
+  };
+
+  const restoreAttachments = async (recorded: readonly HandoverAttachment[]): Promise<void> => {
+    const kept: Attachment[] = [];
+    for (const { file, sha256 } of recorded) {
+      const read = await readRecordedImage(file);
+      if ('reason' in read) append({ kind: 'notice', level: 'warning', text: attachmentUnreadableText(file, read.reason) });
+      else if (attachmentDigest(read.image) !== sha256) append({ kind: 'notice', level: 'warning', text: attachmentChangedText(file) });
+      else kept.push({ file, image: read.image });
+    }
+    if (kept.length > 0) setAttachments([...attachmentsRef.current, ...kept]);
+  };
+
+  const adoptSession = async ({ record, attached }: TuiAdoption): Promise<void> => {
+    const enter = async (session: SessionView): Promise<void> => {
+      await enterFirstSession(session);
+      restoreInput(record.input);
+    };
+    const caughtUp = (): void => {
+      if (record.toggles !== undefined) restoreToggles(store, record.toggles);
+      if (record.view !== undefined) view.place(positionOf(record.view, origins));
+      attached();
+      restoreAttachments(record.attachments).catch(reportError);
+    };
+    await readConversation(await backend.resumeSession(record.session), enter, { notes: record.notes, caughtUp });
+  };
+
   const openAtLaunch = async (): Promise<void> => {
+    if (adoption !== undefined) {
+      await adoptSession(adoption);
+      return;
+    }
     const { reopen } = props;
     if (reopen === undefined || reopen.kind === 'pick') {
       await openSession(undefined);
@@ -777,7 +950,6 @@ export function App(props: AppProps) {
     runStarted(() => {
       const sent = heldAttachments(attachmentsRef.current, text);
       setAttachments([]);
-      append({ kind: 'user', text });
       for (const attachment of sent) note(`attached ${describeAttachment(attachment.file, attachment.image)}`);
       const runOptions: StartRunOptions = {
         ...options,
@@ -897,6 +1069,7 @@ export function App(props: AppProps) {
   const sendInitialPrompt = useEffectEvent((): void => {
     if (initialPromptSent.current) return;
     initialPromptSent.current = true;
+    if (adoption !== undefined) return;
     const { initialPrompt, initialImages, initialSkill } = props;
     const send = async (): Promise<void> => {
       if (initialImages !== undefined && initialImages.length > 0) await attach(initialImages);
@@ -946,9 +1119,9 @@ export function App(props: AppProps) {
   useEffect(
     () =>
       terminal.subscribeScreen((request) => {
-        if (request.type === 'notice') appendEntry(store, { kind: 'notice', level: 'warning', text: request.text });
+        if (request.type === 'notice') warn(request.text);
       }),
-    [terminal, store],
+    [terminal],
   );
 
   const imageInput = capabilities?.imageInput === true;
@@ -1192,6 +1365,7 @@ export function App(props: AppProps) {
   };
 
   const onTyped = useEffectEvent((event: TerminalEvent): boolean => {
+    move?.probe();
     if (event.type === 'paste') onPaste(event.text);
     else if (event.type === 'key') onKey(event, keys);
     return event.type === 'paste' || event.type === 'key';
@@ -1312,6 +1486,13 @@ export function App(props: AppProps) {
     return true;
   });
   useEffect(() => terminal.input.claim((event) => onChord(event)), [terminal]);
+  useEffect(() => {
+    facts.current = { overlay: overlay !== undefined, position: view.position, tasks, terminal, flush: waitUntilRenderFlush };
+    feedRef.current = feed;
+    move?.check();
+  });
+  useEffect(() => move?.attach(handover.surface), [move, handover]);
+  useEffect(() => tasks.subscribe(() => move?.check()), [tasks, move]);
   const pollKeyFile = useEffectEvent((): void => bindings.poll(now()));
   const keepHistory = useEffectEvent((): void => {
     if (a11y.screenReader && terminalState.screen === 'fullscreen') switchScreen('scrollback').catch(reportError);
@@ -1360,7 +1541,7 @@ export function App(props: AppProps) {
 
   return (
     <Screen
-      view={switching || terminalState.tooSmall ? 'blank' : terminalState.screen}
+      view={switching || erased || terminalState.tooSmall ? 'blank' : terminalState.screen}
       columns={columns}
       rows={rows}
       allocation={allocation}
@@ -1373,7 +1554,7 @@ export function App(props: AppProps) {
         ) : fullscreen ? (
           <TranscriptView window={view.window} height={allocation.viewport} width={transcriptWidth} entries={store.count()} following={view.position.following} selection={view.selection} />
         ) : (
-          <HistoryView key={historyGeneration} store={store} source={view.source} />
+          <HistoryView key={historyGeneration} store={store} source={view.source} feed={feed} />
         ),
         menu: !menuShown ? null : invitationInMenu ? prompts.invitationView() : atMenu.open ? <AtList labels={atMenu.labels} index={atMenu.index} /> : slashMenu.view(fullscreen ? allocation.menu : slashMenu.rows),
         waiting: waiting === undefined || a11y.screenReader ? null : <WaitingRow waiting={waiting} now={now} timers={timers} keys={keys} reducedMotion={a11y.reducedMotion} onTick={pollKeyFile} />,

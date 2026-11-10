@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
@@ -8,6 +9,9 @@ import { isSea } from 'node:sea';
 import { nodeEvalFiles } from '@momonga/eval';
 import { LIFELINE_FD, createBrowserOpener, createExecWithStdin, createHostExec, createPlatformSecretStore, minimalChildEnv, nodeFileSystem, systemClock, systemRandom, writeFileAtomically } from '@momonga/foundation';
 import type { LaunchProgram } from '@momonga/foundation';
+import { createHandoverHost } from './handover/host.ts';
+import type { RecordFiles } from './handover/host.ts';
+import { HANDOVER_RECORD_MAX_BYTES } from './handover/record.ts';
 import type { CliClock, CliFiles, CliPorts, SelfExecutable, SpawnDetached } from './ports.ts';
 
 export const launchProgram: LaunchProgram = (file, args) =>
@@ -101,22 +105,50 @@ export const nodeSelf = (argv: readonly string[], singleBinary: () => boolean): 
   return { kind: 'script', execPath: process.execPath, script: path.resolve(script) };
 };
 
-export const nodePorts = (version: string): CliPorts => ({
-  version,
-  platform: process.platform,
-  env: process.env,
-  cwd: process.cwd(),
-  home: process.env['HOME'] ?? os.homedir(),
-  stdout: process.stdout,
-  stderr: process.stderr,
-  clock: nodeClock,
-  random: Math.random,
-  self: nodeSelf(process.argv, isSea),
-  spawnDetached: nodeSpawnDetached,
-  terminal: process.stdin.isTTY && process.stdout.isTTY ? { stdin: process.stdin, stdout: process.stdout } : undefined,
-  files: nodeFiles,
-  exec: createHostExec(minimalChildEnv(process.env)),
-  openUrl: createBrowserOpener({ env: process.env, launch: launchProgram }),
-  secretStore: () => createPlatformSecretStore(createExecWithStdin(undefined), process.env),
-  acpStdio: () => ({ input: Readable.toWeb(process.stdin), output: Writable.toWeb(process.stdout) }),
-});
+const PRIVATE_DIRECTORY_MODE = 0o700;
+const PRIVATE_FILE_MODE = 0o600;
+
+export const nodeRecordFiles: RecordFiles = {
+  read: (file) => {
+    if (statSync(file).size > HANDOVER_RECORD_MAX_BYTES) throw new Error('it is larger than 1 MiB');
+    return readFileSync(file, 'utf8');
+  },
+  write: (file, text) => {
+    mkdirSync(path.dirname(file), { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
+    const temporary = `${file}.${process.pid}.tmp`;
+    try {
+      writeFileSync(temporary, text, { mode: PRIVATE_FILE_MODE });
+      renameSync(temporary, file);
+    } catch (error) {
+      rmSync(temporary, { force: true });
+      throw error;
+    }
+  },
+  remove: (file) => {
+    rmSync(file, { force: true });
+  },
+};
+
+export const nodePorts = (version: string): CliPorts => {
+  const self = nodeSelf(process.argv, isSea);
+  return {
+    version,
+    platform: process.platform,
+    env: process.env,
+    cwd: process.cwd(),
+    home: process.env['HOME'] ?? os.homedir(),
+    stdout: process.stdout,
+    stderr: process.stderr,
+    clock: nodeClock,
+    random: Math.random,
+    self,
+    handover: createHandoverHost({ version, self, argv: process.argv.slice(2), env: process.env, execArgv: process.execArgv, files: nodeRecordFiles }),
+    spawnDetached: nodeSpawnDetached,
+    terminal: process.stdin.isTTY && process.stdout.isTTY ? { stdin: process.stdin, stdout: process.stdout } : undefined,
+    files: nodeFiles,
+    exec: createHostExec(minimalChildEnv(process.env)),
+    openUrl: createBrowserOpener({ env: process.env, launch: launchProgram }),
+    secretStore: () => createPlatformSecretStore(createExecWithStdin(undefined), process.env),
+    acpStdio: () => ({ input: Readable.toWeb(process.stdin), output: Writable.toWeb(process.stdout) }),
+  };
+};

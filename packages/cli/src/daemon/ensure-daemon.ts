@@ -427,17 +427,23 @@ export const ensureCurrentDaemon = async (ports: DaemonPorts, paths: MomongaPath
   return connection.health;
 };
 
-export const ensureSessionDaemon = async (ports: DaemonPorts, paths: MomongaPaths, options: EnsureDaemonOptions = {}): Promise<void> => {
-  const connection = await ensureDaemon(ports, paths, options);
+export type NewerListener = (version: string) => Promise<void>;
+
+export type EnsureSessionOptions = EnsureDaemonOptions & { onNewer?: NewerListener };
+
+export const ensureSessionDaemon = async (ports: DaemonPorts, paths: MomongaPaths, options: EnsureSessionOptions = {}): Promise<void> => {
+  const { onNewer, ...daemonOptions } = options;
+  const connection = await ensureDaemon(ports, paths, daemonOptions);
   if (!connection.clientIsOlder) return;
+  await onNewer?.(connection.health.version);
   const own = await resolveGenerationFor(paths, ports.version, { lock: options.lock ?? hostKernelLock() });
   if (own === undefined) throw new DaemonStartError(reopenSessionMessage(connection.health.version), paths.logFiles.supervisor, notPointingAtLog);
 };
 
 export const restoreDaemon =
-  (ports: DaemonPorts, paths: MomongaPaths) =>
+  (ports: DaemonPorts, paths: MomongaPaths, onNewer?: NewerListener) =>
   (signal: AbortSignal | undefined): Promise<void> =>
-    ensureSessionDaemon(ports, paths, signal === undefined ? {} : { signal });
+    ensureSessionDaemon(ports, paths, { ...(signal === undefined ? {} : { signal }), ...(onNewer === undefined ? {} : { onNewer }) });
 
 export type RestartOutcome = { kind: 'started'; version: string } | { kind: 'nothing-serving' };
 

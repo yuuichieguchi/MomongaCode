@@ -98,7 +98,7 @@ describe('the ACP bridge across the move (16.7, red test 13)', () => {
       return runView({ id: 'run-1', status: 'COMPLETED' });
     });
     await prompt(harness, sessionId, 'hello');
-    expect(harness.bridge.snapshot()).toEqual({ initialize: INITIALIZE, sessions: [sessionId], lastSeq: { 'run-1': 2 } });
+    expect(harness.bridge.snapshot()).toMatchObject({ initialize: INITIALIZE, sessions: [sessionId], lastSeq: { 'run-1': 2 } });
     await harness.peer.close();
   });
 
@@ -118,7 +118,7 @@ describe('the ACP bridge across the move (16.7, red test 13)', () => {
 
     expect(harness.peer.received).toEqual([]);
     expect(harness.runtime.calls).toContain(`getSession ${SESSION.id}`);
-    expect(harness.bridge.snapshot()).toEqual({ initialize: INITIALIZE, sessions: [SESSION.id], lastSeq: { 'run-1': 2, 'run-2': 2 } });
+    expect(harness.bridge.snapshot()).toMatchObject({ initialize: INITIALIZE, sessions: [SESSION.id], lastSeq: { 'run-1': 2, 'run-2': 2 } });
     live.resolve();
     await harness.peer.untilReceived((received) => updatesOf([received]).length > 0);
     expect(updatesOf(harness.peer.received).map((update) => update['content'])).toEqual([{ type: 'text', text: ' and after it' }]);

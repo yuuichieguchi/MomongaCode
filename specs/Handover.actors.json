@@ -30,9 +30,9 @@
     "symbol": "case 'user.message':"
   },
   {
-    "actor": "TUI live echo of the prompt (removed by I7)",
-    "file": "packages/cli/src/tui/app.tsx",
-    "symbol": "append({ kind: 'user', text });"
+    "actor": "TUI user entry of the prompt, live and replayed alike, from the user.message event (the live echo of app.tsx was removed by I7)",
+    "file": "packages/cli/src/tui/transcript.ts",
+    "symbol": "appendEntry(store, { kind: 'user', text: event.text });"
   },
   {
     "actor": "TUI fold of approval requests",

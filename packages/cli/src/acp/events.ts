@@ -4,6 +4,7 @@ import type { ElicitationRequestView, PublicRunEvent } from '@momonga/protocol';
 import { classificationLevel, describeClassification, describeDenial, describeHook, hookLevel } from '../policy-messages.ts';
 import { describeRetryWait } from '../retry-wait.ts';
 import { asChildEvent } from '../run/child-events.ts';
+import { isPrompt } from '../run/prompt-event.ts';
 
 export type ClientFeatures = {
   readonly notices: boolean;
@@ -29,11 +30,12 @@ export type Effect =
 
 export type MapperState = {
   readonly calls: Map<string, ToolCall>;
+  readonly firstSeq: Map<string, number>;
   contextTokens: number | undefined;
   lastFailure: Extract<PublicRunEvent, { type: 'attempt.failed' }> | undefined;
 };
 
-export const createMapperState = (): MapperState => ({ calls: new Map(), contextTokens: undefined, lastFailure: undefined });
+export const createMapperState = (): MapperState => ({ calls: new Map(), firstSeq: new Map(), contextTokens: undefined, lastFailure: undefined });
 
 export class UnsupportedToolContent extends Error {
   constructor(detail: string) {
@@ -93,9 +95,10 @@ export const mapChildEvent = (event: PublicRunEvent, agent: string, state: Mappe
 };
 
 export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperState, features: ClientFeatures): Effect[] => {
+  if ('seq' in event && !state.firstSeq.has(event.runId)) state.firstSeq.set(event.runId, event.seq);
   switch (event.type) {
     case 'user.message':
-      return phase === 'history' ? [message('user_message_chunk', messageIdOf(event.runId, 'user'), event.text)] : [];
+      return phase === 'history' && isPrompt(event, state.firstSeq.get(event.runId)) ? [message('user_message_chunk', messageIdOf(event.runId, 'user'), event.text)] : [];
     case 'agent.message.delta':
       return [message('agent_message_chunk', messageIdOf(event.runId, event.itemId), event.text)];
     case 'agent.thought.delta':

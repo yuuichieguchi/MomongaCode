@@ -34,7 +34,7 @@ export type TranscriptViewHost = {
   a11y: A11y;
 };
 
-export type TranscriptViewState = { source: ViewSource; window: ViewWindow; position: Position; selection: Selection | undefined; toast: string | undefined; showToast(text: string): void; act(action: ActionId): boolean };
+export type TranscriptViewState = { source: ViewSource; window: ViewWindow; position: Position; selection: Selection | undefined; toast: string | undefined; showToast(text: string): void; act(action: ActionId): boolean; place(position: Position): void };
 
 type Drag = { anchor: Point; selecting: boolean };
 
@@ -189,5 +189,5 @@ export const useTranscriptView = (host: TranscriptViewHost): TranscriptViewState
 
   useEffect(() => terminal.input.claim((event) => onEvent(event)), [terminal]);
 
-  return { source, window, position, selection: held.selection, toast: held.toast, showToast: (text) => change({ toast: text }), act: (action) => host.fullscreen && (actOnSelection(action) || actOnViewport(action, true)) };
+  return { source, window, position, selection: held.selection, toast: held.toast, showToast: (text) => change({ toast: text }), act: (action) => host.fullscreen && (actOnSelection(action) || actOnViewport(action, true)), place: (next) => change({ position: next }) };
 };

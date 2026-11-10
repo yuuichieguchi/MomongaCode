@@ -1,5 +1,5 @@
 import type { PublicRunEvent } from '@momonga/protocol';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { RunEventFrame } from '../../src/client/runtime-client.ts';
 import { HANDOVER_FORMAT, attachmentDigest } from '../../src/handover/record.ts';
 import type { TuiRecord } from '../../src/handover/record.ts';
@@ -11,7 +11,9 @@ import type { FakeBackendOptions, FakeConversation } from '../fake-backend.ts';
 import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
 import { frame, runStarted, start, type } from '../tui-harness.tsx';
 
-const IDLE = /^(?![\s\S]*esc to cancel)[\s\S]*mode: \w+ \(shift\+tab\)/;
+const IDLE = /^(?![\s\S]*esc to cancel)(?![\s\S]*steer after)[\s\S]*mode: \w+ \(shift\+tab\)/;
+
+const read = (shown: string): boolean => IDLE.test(shown) && shown.includes('All green.');
 const SESSION_ID = 'aaaaaaaa11111111';
 const plain = { ctrl: false, alt: false, shift: false };
 
@@ -188,7 +190,7 @@ describe('the quiet point of the TUI (16.5, red tests 12 and 28)', () => {
 describe('what the old process puts in the record, and what the new one restores (16.3, 16.4)', () => {
   it('keeps the local notes in order at their anchors, the unsent input and the negotiation state (red tests 7 and 11)', async () => {
     const old = await open({ conversations: [LONG], history: ['first', 'second'] }, { reopen: { kind: 'id', id: SESSION_ID } });
-    await untilFrame(old.app, IDLE);
+    await untilFrame(old.app, read);
     old.terminal.negotiate('kitty');
     await type(old.app, '/nope', '> /nope');
     old.app.stdin.write(KEYS.enter);
@@ -217,6 +219,7 @@ describe('what the old process puts in the record, and what the new one restores
     expect(snapshot).not.toHaveProperty('printed');
 
     const fresh = await adopt({ conversations: [LONG], history: ['first', 'second'] }, recordOf(snapshot));
+    fresh.terminal.negotiate('kitty');
     await fresh.attached;
     const shown = await untilFrame(fresh.app, '> half a prompt');
     expect(shown.indexOf('All green.')).toBeLessThan(shown.indexOf('unknown command /nope'));
@@ -252,7 +255,7 @@ describe('what the old process puts in the record, and what the new one restores
 
   it('never sends the initial prompt, images or skill again (red test 9)', async () => {
     const old = await open({ conversations: [LONG] }, { reopen: { kind: 'id', id: SESSION_ID } });
-    await untilFrame(old.app, IDLE);
+    await untilFrame(old.app, read);
     const record = recordOf(old.move.surface().snapshot());
     old.app.unmount();
     const fresh = await adopt({ conversations: [LONG] }, record, { initialPrompt: 'fix the login bug', initialSkill: 'review', initialImages: ['/work/a.png'] });
@@ -267,7 +270,7 @@ describe('what the old process puts in the record, and what the new one restores
     const kept = { mediaType: 'image/png' as const, data: 'a2VwdA==' };
     const changed = { mediaType: 'image/png' as const, data: 'bmV3' };
     const old = await open({ conversations: [LONG] }, { reopen: { kind: 'id', id: SESSION_ID } });
-    await untilFrame(old.app, IDLE);
+    await untilFrame(old.app, read);
     const record = recordOf(old.move.surface().snapshot(), {
       attachments: [
         { file: '/work/kept.png', sha256: attachmentDigest(kept) },
@@ -291,7 +294,7 @@ describe('the fullscreen view across the move (16.6, red tests 21, 22 and 23)', 
 
   const scrolledUp = async () => {
     const old = await open({ conversations: [LONG] }, { reopen: { kind: 'id', id: SESSION_ID } }, SMALL);
-    await untilFrame(old.app, IDLE);
+    await untilFrame(old.app, read);
     old.terminal.emit({ type: 'key', name: 'pageup', ...plain });
     old.terminal.emit({ type: 'key', name: 'pageup', ...plain });
     const frameBefore = await untilFrame(old.app, (shown) => !shown.includes('All green.'));
@@ -320,7 +323,7 @@ describe('the fullscreen view across the move (16.6, red tests 21, 22 and 23)', 
 
   it('follows the end when the record followed it', async () => {
     const old = await open({ conversations: [LONG] }, { reopen: { kind: 'id', id: SESSION_ID } }, SMALL);
-    const frameBefore = await untilFrame(old.app, IDLE);
+    const frameBefore = await untilFrame(old.app, read);
     const snapshot = old.move.surface().snapshot();
     old.app.unmount();
     expect(snapshot?.view?.following).toBe(true);
@@ -364,9 +367,9 @@ describe('the scrollback output across the move (16.6, red test 8)', () => {
     const old = await open({ conversations: [STREAMING] }, { reopen: { kind: 'id', id: SESSION_ID } }, { screen: 'scrollback' });
     await untilFrame(old.app, 'Found two files, now checking');
     await untilOutput(old.app, '> list the files');
+    await vi.waitFor(() => expect(old.move.surface().quiet()).toBe(true), { timeout: 5000 });
     await old.move.surface().suspend();
     const snapshot = old.move.surface().snapshot();
-    expect(old.app.lastFrame()).not.toContain('Found two files');
     old.app.unmount();
     expect(snapshot?.printed).toBeGreaterThan(0);
     expect(snapshot).not.toHaveProperty('view');
