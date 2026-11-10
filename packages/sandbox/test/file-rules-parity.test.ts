@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fileRuleBlocks, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
@@ -9,7 +9,9 @@ import { PARITY_CANDIDATES, PARITY_SPECS } from '../../policy/test/parity-table.
 import { fileRulesOf, fileSpec } from './file-rule-specs.ts';
 import { makeTempDir, run } from './helpers.ts';
 
-describe.runIf(process.platform === 'darwin')('kernel parity with the exact matcher under real Seatbelt', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
+describe.runIf(process.platform === 'darwin')('kernel parity with the exact matcher under real Seatbelt', () => {
   let created: string[] = [];
   let spawned: SandboxedProcess[] = [];
 

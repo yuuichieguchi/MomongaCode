@@ -4,8 +4,10 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FAKE_DETERMINISTIC_REPLY, FAKE_OS_BUILD, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, countFakeTokens, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const MINIMAL_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 const TESTKIT_SRC_URL = pathToFileURL(path.resolve(import.meta.dirname, '..', 'src')).href;
@@ -77,7 +79,7 @@ const streamedContentOf = (sse: string): string =>
     .map((chunk) => chunk.choices?.[0]?.delta?.content ?? '')
     .join('');
 
-describe('createFakeFm script file', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('createFakeFm script file', () => {
   it('writes an executable regular file whose shebang is the absolute node binary', async () => {
     const dir = makeDir();
     const fm = await createFakeFm({ dir });
@@ -106,7 +108,7 @@ describe('createFakeFm script file', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, 
   });
 });
 
-describe('createFakeFm under the minimal env', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('createFakeFm under the minimal env', () => {
   it('exits 0 for license --status', async () => {
     const dir = makeDir();
     const fm = await createFakeFm({ dir });
@@ -211,7 +213,7 @@ describe('createFakeFm under the minimal env', { timeout: REAL_PROCESS_TEST_TIME
   });
 });
 
-describe('fakeExec', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('fakeExec', () => {
   it.each(['/usr/bin/sw_vers', 'sw_vers'])('answers %s -buildVersion with the fake build', async (file) => {
     expect(await fakeExec(file, ['-buildVersion'])).toEqual({ exitCode: 0, stdout: `${FAKE_OS_BUILD}\n`, stderr: '' });
   });
@@ -248,7 +250,7 @@ const holdersOf = (file: string): number[] => {
     .sort((a, b) => a - b);
 };
 
-describe('createFakeFm serveSurvivorPidFile', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('createFakeFm serveSurvivorPidFile', () => {
   it('forks a SIGTERM-ignoring child in the serve group that keeps the marker fd 3', async () => {
     const dir = makeDir();
     const fm = await createFakeFm({ dir });
@@ -292,7 +294,7 @@ describe('createFakeFm serveSurvivorPidFile', { timeout: REAL_PROCESS_TEST_TIMEO
   });
 });
 
-describe('createFakeFm serveDetachedHelperPidFile', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('createFakeFm serveDetachedHelperPidFile', () => {
   it('forks a SIGTERM-ignoring helper in the serve group that does not hold the marker', async () => {
     const dir = makeDir();
     const fm = await createFakeFm({ dir });

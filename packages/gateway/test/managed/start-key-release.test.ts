@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { probeKeyOf } from '@momonga/config';
 import type { KnownProbeKey } from '@momonga/config';
 import { createManagedTarget, managedCurrencyOf, saveProbeRecord } from '@momonga/gateway';
@@ -10,6 +10,8 @@ import { FAKE_OS_BUILD, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { makeReport } from '../report-fixture.ts';
 import { declaredForm } from './declared-support.ts';
 import { FakeChild, createManagedServer, makeShortDir } from './managed-support.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const COMMAND = '/opt/mine/bin/mine-server';
 const DECLARATION = { command: COMMAND, args: ['run', '--socket', '{socket}'], readyPath: '/ready' };
@@ -104,7 +106,7 @@ const wired = async ({ spawnFails, afterChildStarting }: Wiring) => {
 
 const target = { name: 'workbench', model: 'fake-1' };
 
-describe('a start that launches no child does not keep its start key for the next start (19.11-a, 19.14 item 16b)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('a start that launches no child does not keep its start key for the next start (19.11-a, 19.14 item 16b)', () => {
   it('reads the key again at the next start after a start abandoned because the instance is no longer current', async () => {
     const stops: Promise<void>[] = [];
     const { server, managed, binary, started } = await wired({

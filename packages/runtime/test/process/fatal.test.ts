@@ -1,11 +1,11 @@
-import { describe, expect, it } from 'vitest';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, firstGeneration } from '@momonga/testkit';
+import { describe, expect, it, vi } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, firstGeneration } from '@momonga/testkit';
 import { corruptSchema, entriesNamed, isLockFree, launchRuntime, settledState, startStack } from './run-helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 describe('fatal errors under a running runtime (system timers, in-process gateway)', () => {
-  it('a malformed schema under a running runtime resolves fatal after abort, close afterwards is a no-op and returns the same result with fatal set', PROCESS_TIMEOUT, async () => {
+  it('a malformed schema under a running runtime resolves fatal after abort, close afterwards is a no-op and returns the same result with fatal set', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     corruptSchema(stack.temp.paths.databases.runtime);
@@ -19,7 +19,7 @@ describe('fatal errors under a running runtime (system timers, in-process gatewa
     expect(await isLockFree(firstGeneration(stack.temp.paths).locks.runtime)).toBe(true);
   });
 
-  it('fatal stays pending after a normal close', PROCESS_TIMEOUT, async () => {
+  it('fatal stays pending after a normal close', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     expect(await launched.handle.close()).toEqual({ clean: true, abandoned: [], stragglers: [] });

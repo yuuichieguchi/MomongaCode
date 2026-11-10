@@ -15,7 +15,8 @@ import { FILE_ACCESSES } from './working-facts.ts';
 import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, isInheritedReference, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
 import type { ImageMediaType, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent, SessionEventPayload } from './run-types.ts';
 import type { ReflectionJobView } from './memory.ts';
-import type { BilledDetail, TokenAnatomy } from './token-anatomy.ts';
+import { UNPRICED_CODES } from './token-anatomy.ts';
+import type { BilledDetail, TokenAnatomy, UnpricedCode } from './token-anatomy.ts';
 
 const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
 const DAY_MS = 86_400_000;
@@ -194,11 +195,21 @@ const tokenAnatomy = closed(
 
 const modelCost = closed({ amount: { type: 'number', minimum: 0 }, currency: constant('USD'), priceVersion: string }, ['amount', 'currency', 'priceVersion']);
 
+const unpricedOutcome = closed({ code: enumOf(UNPRICED_CODES), reason: string }, ['code', 'reason']);
+
+const unpricedCounts = closed(Object.fromEntries(UNPRICED_CODES.map((code) => [code, { type: 'integer', minimum: 1 }])), []);
+
+const atMostOneOf = (keys: readonly string[]): JsonSchema => ({ not: { properties: Object.fromEntries(keys.map((key) => [key, anything])), required: keys } });
+
+const withOnePriceOutcome = (schema: JsonSchema): JsonSchema => ({ ...schema, ...atMostOneOf(['cost', 'unpriced']) });
+
 const callTiming = closed({ firstEventMs: nonNegativeInteger, durationMs: nonNegativeInteger }, ['durationMs']);
 
-const billedDetail = closed(
-  { responseId: string, cachedInputTokens: nonNegativeInteger, cacheWriteInputTokens: nonNegativeInteger, cost: modelCost, timing: callTiming },
-  [],
+const billedDetail = withOnePriceOutcome(
+  closed(
+    { responseId: string, cachedInputTokens: nonNegativeInteger, cacheWriteInputTokens: nonNegativeInteger, cost: modelCost, unpriced: unpricedOutcome, timing: callTiming },
+    [],
+  ),
 );
 
 const recoveryEpisodeView = closed(
@@ -264,6 +275,7 @@ type EnvelopeKey = keyof PublicRunEnvelope;
 type PayloadSchema<Type> = {
   properties: { [Key in Exclude<PublicPayloadKeys<Type>, EnvelopeKey>]: JsonSchema } & { [Key in Extract<PublicPayloadKeys<Type>, EnvelopeKey>]?: JsonSchema };
   required: readonly PublicPayloadKeys<Type>[];
+  exclusive?: readonly PublicPayloadKeys<Type>[];
 };
 
 const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']]: PayloadSchema<Type> } = {
@@ -308,7 +320,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
             },
             ['input_tokens', 'output_tokens', 'total_tokens'],
           ),
-          momonga: closed({ cacheWriteInputTokens: nonNegativeInteger, cost: modelCost }, []),
+          momonga: withOnePriceOutcome(closed({ cacheWriteInputTokens: nonNegativeInteger, cacheReadNotReported: { type: 'boolean', const: true }, cost: modelCost, unpriced: unpricedOutcome }, [])),
           timing: callTiming,
         },
         ['status', 'output', 'usage'],
@@ -487,10 +499,12 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       cachedInputTokens: nonNegativeInteger,
       cacheWriteInputTokens: nonNegativeInteger,
       cost: modelCost,
+      unpriced: unpricedOutcome,
       timing: callTiming,
       target: string,
     },
     required: ['purpose', 'inputTokens', 'outputTokens', 'totalTokens'],
+    exclusive: ['cost', 'unpriced'],
   },
   'context.compacted': {
     properties: {
@@ -563,17 +577,22 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
 };
 
 const publicEventVariant = (type: keyof typeof PAYLOAD_SCHEMAS): JsonSchema => {
-  const { properties, required } = PAYLOAD_SCHEMAS[type];
+  const schema: PayloadSchema<typeof type> = PAYLOAD_SCHEMAS[type];
+  const { properties, required } = schema;
+  const exclusive = schema.exclusive === undefined ? {} : atMostOneOf(schema.exclusive);
   if (type === 'mode.changed' || type === 'model.changed') {
     return closed(
       { id: integer, sessionId: string, createdAt: integer, type: constant(type), ...properties },
       ['id', 'sessionId', 'createdAt', 'type', ...required],
     );
   }
-  return closed(
-    { id: integer, runId: string, sessionId: string, seq: integer, step: nonNegativeInteger, createdAt: integer, type: constant(type), ...properties },
-    ['id', 'runId', 'sessionId', 'seq', 'createdAt', 'type', ...required],
-  );
+  return {
+    ...closed(
+      { id: integer, runId: string, sessionId: string, seq: integer, step: nonNegativeInteger, createdAt: integer, type: constant(type), ...properties },
+      ['id', 'runId', 'sessionId', 'seq', 'createdAt', 'type', ...required],
+    ),
+    ...exclusive,
+  };
 };
 
 export const EVENT_TYPES = Object.keys(PAYLOAD_SCHEMAS) as (keyof typeof PAYLOAD_SCHEMAS)[];
@@ -604,15 +623,19 @@ const costTotalsProperties: Record<string, JsonSchema> = {
   localCalls: nonNegativeInteger,
   unpricedCalls: nonNegativeInteger,
   unknownBillingCalls: nonNegativeInteger,
+  cacheReadNotReportedCalls: nonNegativeInteger,
+  cacheReadUnpricedCalls: nonNegativeInteger,
   planCalls: nonNegativeInteger,
   planInputTokens: nonNegativeInteger,
   planOutputTokens: nonNegativeInteger,
   inputTokens: nonNegativeInteger,
   outputTokens: nonNegativeInteger,
-  cachedInputTokens: nonNegativeInteger,
-  amount: { type: 'number', minimum: 0 },
+  cachedInputTokens: nullable(nonNegativeInteger),
+  amount: nullable({ type: 'number', minimum: 0 }),
   currency: constant('USD'),
   priceVersions: { type: 'array', items: string },
+  unpriced: unpricedCounts,
+  priceNotRecordedCalls: nonNegativeInteger,
 };
 const roleCostRequired = Object.keys(costTotalsProperties);
 const costTotalsRequired = [...roleCostRequired, 'roles'];
@@ -704,13 +727,14 @@ const costBreakdownView = closed(
     billed: closed(
       {
         inputTokens: nonNegativeInteger,
-        uncachedInputTokens: nonNegativeInteger,
-        cacheReadTokens: nonNegativeInteger,
-        cacheWriteTokens: nonNegativeInteger,
+        reportedInputTokens: nullable(nonNegativeInteger),
+        uncachedInputTokens: nullable(nonNegativeInteger),
+        cacheReadTokens: nullable(nonNegativeInteger),
+        cacheWriteTokens: nullable(nonNegativeInteger),
         outputTokens: nonNegativeInteger,
         reasoningTokens: nonNegativeInteger,
       },
-      ['inputTokens', 'uncachedInputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'outputTokens', 'reasoningTokens'],
+      ['inputTokens', 'reportedInputTokens', 'uncachedInputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'outputTokens', 'reasoningTokens'],
     ),
     cacheHitRatio: nullable({ type: 'number' }),
     cacheBreaks: causeCounts,
@@ -724,20 +748,24 @@ const costBreakdownView = closed(
         ['calls', 'timeToFirstToken', 'duration', 'totalDurationMs', 'timingNotRecorded'],
       ),
     },
-    cost: closed({ amount: nullable({ type: 'number' }), currency: constant('USD'), unpricedCalls: nonNegativeInteger }, ['amount', 'currency', 'unpricedCalls']),
+    cost: closed(
+      { amount: nullable({ type: 'number' }), currency: constant('USD'), unpricedCalls: nonNegativeInteger, unpriced: unpricedCounts, priceNotRecordedCalls: nonNegativeInteger, priceVersions: { type: 'array', items: string } },
+      ['amount', 'currency', 'unpricedCalls', 'unpriced', 'priceNotRecordedCalls', 'priceVersions'],
+    ),
     plan: closed({ calls: nonNegativeInteger, inputTokens: nonNegativeInteger, outputTokens: nonNegativeInteger }, ['calls', 'inputTokens', 'outputTokens']),
     unpriced: {
       type: 'array',
-      items: closed({ runId: string, provider: string, model: string, step: nonNegativeInteger, reason: string }, ['runId', 'provider', 'model', 'reason']),
+      items: closed({ runId: string, provider: string, model: string, step: nonNegativeInteger, code: enumOf(UNPRICED_CODES), reason: string }, ['runId', 'provider', 'model', 'code', 'reason']),
     },
     inconsistentUsage: {
       type: 'array',
       items: closed({ runId: string, provider: string, model: string, step: nonNegativeInteger, reason: string }, ['runId', 'provider', 'model', 'reason']),
     },
+    cacheReadNotReported: nonNegativeInteger,
     callsWithoutResponseId: nonNegativeInteger,
     unjoined: { type: 'array', items: closed({ runId: string, step: nonNegativeInteger, reason: string }, ['runId', 'reason']) },
   },
-  ['calls', 'layers', 'billed', 'cacheHitRatio', 'cacheBreaks', 'cacheMissCauses', 'timeToFirstToken', 'duration', 'roles', 'cost', 'plan', 'unpriced', 'inconsistentUsage', 'callsWithoutResponseId', 'unjoined'],
+  ['calls', 'layers', 'billed', 'cacheHitRatio', 'cacheBreaks', 'cacheMissCauses', 'timeToFirstToken', 'duration', 'roles', 'cost', 'plan', 'unpriced', 'inconsistentUsage', 'cacheReadNotReported', 'callsWithoutResponseId', 'unjoined'],
 );
 
 const memoryScope = enumOf(MEMORY_SCOPES);
@@ -927,7 +955,8 @@ export type RunTraceSummary = {
   toolCalls: number;
   inputTokens: number;
   outputTokens: number;
-  cachedInputTokens: number;
+  cachedInputTokens: number | null;
+  cacheReadNotReportedCalls: number;
   errorCount: number;
   durationMs: number;
   chatResults: { step: number; attempt: number; finishReasons: string[] }[];
@@ -991,15 +1020,19 @@ export type RoleCostView = {
   localCalls: number;
   unpricedCalls: number;
   unknownBillingCalls: number;
+  cacheReadNotReportedCalls: number;
+  cacheReadUnpricedCalls: number;
   planCalls: number;
   planInputTokens: number;
   planOutputTokens: number;
   inputTokens: number;
   outputTokens: number;
-  cachedInputTokens: number;
-  amount: number;
+  cachedInputTokens: number | null;
+  amount: number | null;
   currency: 'USD';
   priceVersions: string[];
+  unpriced: Partial<Record<UnpricedCode, number>>;
+  priceNotRecordedCalls: number;
 };
 
 export type CostTotalsView = RoleCostView & { roles: Record<string, RoleCostView> };
@@ -1279,7 +1312,8 @@ export const RUN_API_SCHEMAS = {
             toolCalls: nonNegativeInteger,
             inputTokens: nonNegativeInteger,
             outputTokens: nonNegativeInteger,
-            cachedInputTokens: nonNegativeInteger,
+            cachedInputTokens: nullable(nonNegativeInteger),
+            cacheReadNotReportedCalls: nonNegativeInteger,
             errorCount: nonNegativeInteger,
             durationMs: nonNegativeInteger,
             chatResults: {
@@ -1287,7 +1321,7 @@ export const RUN_API_SCHEMAS = {
               items: closed({ step: nonNegativeInteger, attempt: integer, finishReasons: { type: 'array', items: string } }, ['step', 'attempt', 'finishReasons']),
             },
           },
-          ['steps', 'chatCalls', 'toolCalls', 'inputTokens', 'outputTokens', 'cachedInputTokens', 'errorCount', 'durationMs', 'chatResults'],
+          ['steps', 'chatCalls', 'toolCalls', 'inputTokens', 'outputTokens', 'cachedInputTokens', 'cacheReadNotReportedCalls', 'errorCount', 'durationMs', 'chatResults'],
         ),
         spans: {
           type: 'array',

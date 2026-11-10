@@ -42,6 +42,7 @@ describe('router fallback', () => {
       fallbackFrom: ['a'],
       fallbackCauses: [{ target: 'a', code: 'upstream_error', message: 'a still down' }],
       usageSource: 'reported',
+      unpriced: { code: 'no_price_entry', reason: 'no price table' },
     });
     expect(b.calls[0]?.request.model).toBe('model-b');
   });

@@ -33,6 +33,7 @@ export interface FakeChatCompletionsOptions {
   rateLimitSizedImages?: { count: number; retryAfter: string };
   guardrailTrigger?: string;
   latencyMs?: number;
+  holdFirstUntilFile?: string;
   reasoning?: { tokens: number; effort: 'honoured' | 'ignored' | 'rejected'; reportsUsage?: boolean; field?: 'reasoning_content' | 'reasoning' };
   parallelToolCalls?: boolean;
   models?: Array<Record<string, unknown>> | (() => Array<Record<string, unknown>>);
@@ -298,6 +299,22 @@ const createSocketPath = (): { socketPath: string; ownedDir?: string } => {
   fs.chmodSync(dir, 0o700);
   return { socketPath: path.join(dir, 'fake.sock'), ownedDir: dir };
 };
+
+const untilFileExists = (file: string, signal: AbortSignal): Promise<void> =>
+  new Promise<void>((resolve, reject) => {
+    const watcher = fs.watch(path.dirname(file));
+    const finish = (settle: () => void): void => {
+      watcher.close();
+      signal.removeEventListener('abort', onAbort);
+      settle();
+    };
+    const onAbort = (): void => finish(() => reject(signal.reason));
+    watcher.on('change', () => {
+      if (fs.existsSync(file)) finish(resolve);
+    });
+    signal.addEventListener('abort', onAbort, { once: true });
+    if (fs.existsSync(file)) finish(resolve);
+  });
 
 export const startFakeChatCompletions = async (
   options: FakeChatCompletionsOptions,
@@ -665,6 +682,7 @@ export const startFakeChatCompletions = async (
   const handleCompletion = async (body: Json, response: http.ServerResponse, signal: AbortSignal): Promise<void> => {
     validateCompletionRequest(body);
     if (latencyMs > 0) await delay(latencyMs, undefined, { signal });
+    if (options.holdFirstUntilFile !== undefined && completionCount === 0) await untilFileExists(options.holdFirstUntilFile, signal);
     completionCount += 1;
     const out = complete(body);
     if (out.delayMs !== undefined) await delay(out.delayMs, undefined, { signal });

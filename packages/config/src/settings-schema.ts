@@ -418,7 +418,7 @@ export const SETTINGS_SCHEMA = {
     env: STRING_MAP,
     credentials: {
       type: 'object',
-      properties: { env: NON_EMPTY_STRING_ARRAY, keep: NON_EMPTY_STRING_ARRAY, valuePatterns: NON_EMPTY_STRING_ARRAY },
+      properties: { env: NON_EMPTY_STRING_ARRAY, keep: NON_EMPTY_STRING_ARRAY, valuePatterns: NON_EMPTY_STRING_ARRAY, plaintextTokenFiles: { type: 'boolean' } },
       additionalProperties: false,
     },
     hooks: { type: 'object', additionalProperties: { type: 'array', items: HOOK_MATCHER_GROUP_SCHEMA } },

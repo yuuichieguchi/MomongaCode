@@ -54,6 +54,7 @@ const reapAt = (dir: string, occasion: string, world: ReturnType<typeof survivin
     kill: world.kill,
     timing: world.timing,
     inspector: world.inspector,
+    signal: new AbortController().signal,
   } as ReapOptions);
 
 describe('a managed server marker follows decision 12 (design-managed-servers section 17, item 17)', () => {

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createBinaryHashCache, managedInstancePaths, momongaPaths } from '@momonga/foundation';
 import { probeKeyOf } from '@momonga/config';
 import type { KnownProbeKey } from '@momonga/config';
@@ -14,6 +14,8 @@ import { makeDir, registerCleanup } from '../gateway-helpers.ts';
 import { makeHome } from '../gateway-process-helpers.ts';
 import { makeReport } from '../report-fixture.ts';
 import { declaredForm, loadedDeclaration, writeExecutable } from './declared-support.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const COMMAND = '/opt/mine/bin/mine-server';
 const DECLARATION = { command: COMMAND, args: ['run', '--socket', '{socket}'], readyPath: '/ready' };
@@ -230,14 +232,14 @@ describe('a declared server follows the one generic declared-only rule (19.11-b,
     return { mode: decideToolCalling(report).mode, report };
   };
 
-  it('measures a server that refuses native tool calls as constrained, with its envelope shape measured', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('measures a server that refuses native tool calls as constrained, with its envelope shape measured', async () => {
     const { mode, report } = await measuredMode('tools-400');
     expect(mode).toBe('constrained');
     expect(report.nativeTools.accepted).toBe(false);
     expect(report.schemaDialect.tried.length).toBeGreaterThan(0);
   });
 
-  it('measures a server that accepts native tool calls as native', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('measures a server that accepts native tool calls as native', async () => {
     const { mode } = await measuredMode('tools-ok');
     expect(mode).toBe('native');
   });

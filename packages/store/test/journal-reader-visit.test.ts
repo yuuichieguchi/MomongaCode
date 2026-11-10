@@ -1,11 +1,13 @@
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { openDatabase } from '@momonga/foundation';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
 import { JOURNAL_SCAN_RANGE_ROWS, JournalThreadError, createJournalReader, openRuntimeStore } from '@momonga/store';
 import type { Run, RuntimeStore } from '@momonga/store';
-import { createFakeClock } from '@momonga/testkit';
+import { createFakeClock, PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 import { START_MS, enqueue, harness, makeStoreDir, mustClaim, mustRun, newSession, registerCleanup } from './helpers.ts';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const DELTAS = 6_000;
 

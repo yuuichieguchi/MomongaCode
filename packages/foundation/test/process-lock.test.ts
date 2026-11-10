@@ -2,10 +2,12 @@ import { spawn } from 'node:child_process';
 import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ProcessLockHeldError, acquireProcessLock, hostKernelLock, inspectProcessLock, isProcessAlive, listenUnix } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, withTempDir, realProcessTestSignal } from '@momonga/testkit';
 import { exitOf, startHolder } from './support/lock-processes.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const FILE_LOCK = hostKernelLock().name === 'file-lock';
 
@@ -17,7 +19,7 @@ const deadPid = async (): Promise<number> => {
   return pid;
 };
 
-describe('acquireProcessLock', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('acquireProcessLock', () => {
   it('records the current pid as the holder', async (context) => {
     const lockPath = path.join(withTempDir(context), 'gateway.lock');
     const lock = await acquireProcessLock(lockPath);
@@ -165,7 +167,7 @@ describe('ProcessLockHeldError', () => {
   });
 });
 
-describe('isProcessAlive', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('isProcessAlive', () => {
   it('reports the current process as alive', () => {
     expect(isProcessAlive(process.pid)).toBe(true);
   });

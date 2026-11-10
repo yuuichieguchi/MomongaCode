@@ -11,7 +11,8 @@ import type { ResponseJob } from './respond.ts';
 import { NEVER_EVICTED, startBufferedRun, startDirectRun } from './run.ts';
 import type { RunSubscription } from './run.ts';
 import type { SharedRun } from './run.ts';
-import type { Services } from './services.ts';
+import { pinnedServices } from './services.ts';
+import type { GatewayServices, Services } from './services.ts';
 import type { RequestValidator } from './validation.ts';
 
 export type SubmitHeaders = {
@@ -28,7 +29,7 @@ export type Submission = {
 };
 
 export type ResponsesService = {
-  submit(rawBody: unknown, headers: SubmitHeaders, signal: AbortSignal, connection?: ConnectionResponses): Submission;
+  submit(rawBody: unknown, headers: SubmitHeaders, signal: AbortSignal, connection?: ConnectionResponses): Promise<Submission>;
   cancel(idempotencyKey: string | undefined): boolean;
   abortUnkeyed(reason: unknown): void;
   abortAll(reason: unknown): void;
@@ -59,7 +60,7 @@ const replay = (frames: readonly StreamEvent[]): RunSubscription => {
 };
 
 const subscribeWithOwnDeadline = (
-  services: Services,
+  services: GatewayServices,
   run: SharedRun,
   signal: AbortSignal,
   deadlineAt: number | undefined,
@@ -96,70 +97,96 @@ const subscribeWithOwnDeadline = (
   };
 };
 
-export const createResponsesService = (services: Services, validator: RequestValidator): ResponsesService => {
+export const createResponsesService = (services: GatewayServices, validator: RequestValidator): ResponsesService => {
   const registry = createIdempotencyRegistry(services);
   const active = new Set<SharedRun>();
   const keyedRuns = new Set<SharedRun>();
 
+  const startSubmission = (
+    pinned: Services,
+    releaseEpoch: () => void,
+    rawBody: unknown,
+    body: ReturnType<RequestValidator['parseCreate']>,
+    deadlineAt: number | undefined,
+    headers: SubmitHeaders,
+    signal: AbortSignal,
+    connection: ConnectionResponses | undefined,
+  ): Submission => {
+    pinned.router.targetsOf(body.model);
+    const stream = body.stream === true;
+
+    const key = parseIdempotencyKey(headers.idempotencyKey);
+    const digest = key === undefined ? undefined : sha256Hex(canonicalJson(withoutStreamFlag(rawBody)));
+    if (key !== undefined && digest !== undefined) {
+      const found = registry.lookup(key, digest);
+      if (found.kind === 'inflight') {
+        releaseEpoch();
+        return { stream, events: subscribeWithOwnDeadline(services, found.run, signal, deadlineAt) };
+      }
+      if (found.kind === 'stored') {
+        releaseEpoch();
+        return { stream, events: replay(found.frames) };
+      }
+    }
+
+    const parent =
+      pinned.telemetry === undefined || headers.traceparent === undefined
+        ? undefined
+        : pinned.telemetry.propagation.extract({
+            traceparent: headers.traceparent,
+            ...(headers.tracestate === undefined ? {} : { tracestate: headers.tracestate }),
+          });
+    const job: ResponseJob = {
+      alias: body.model,
+      body,
+      unknownFields: validator.unknownCreateFields(rawBody),
+      clientInput: normalizeInput(body.input),
+      idempotency: key === undefined || digest === undefined ? undefined : { key, digest },
+      deadlineAt,
+      parent,
+      ...(connection === undefined ? {} : { connection }),
+      runId: body.metadata?.['run_id'],
+      step: parseStep(body.metadata?.['step']),
+      role: headers.role,
+    };
+    const onSettled = (): void => {
+      releaseEpoch();
+      active.delete(run);
+      keyedRuns.delete(run);
+      if (key !== undefined) registry.end(key, run);
+    };
+    const run: SharedRun =
+      key === undefined
+        ? startDirectRun((control) => executeResponse(pinned, job, control), onSettled)
+        : startBufferedRun(
+            (control) => executeResponse(pinned, job, control),
+            onSettled,
+            {
+              maxBufferedBytes: services.config.limits.maxIdempotencyFrameBytes,
+              readerStallMs: services.config.limits.readerStallMs,
+              detachedMaxMs: services.config.detachedMaxMs,
+              onAborted: () => registry.end(key, run),
+              timers: services.timers,
+            },
+          );
+    active.add(run);
+    if (key !== undefined) keyedRuns.add(run);
+    if (key !== undefined && digest !== undefined) registry.begin(key, digest, run);
+    return { stream, events: run.subscribe(signal) };
+  };
+
   return {
-    submit: (rawBody, headers, signal, connection) => {
+    submit: async (rawBody, headers, signal, connection) => {
       if (services.closeSignal.aborted) throw gatewayClosedError();
       const body = validator.parseCreate(rawBody);
       const deadlineAt = parseDeadlineHeader(headers.deadlineMs, services.clock.now());
-      services.router.targetsOf(body.model);
-      const stream = body.stream === true;
-
-      const key = parseIdempotencyKey(headers.idempotencyKey);
-      const digest = key === undefined ? undefined : sha256Hex(canonicalJson(withoutStreamFlag(rawBody)));
-      if (key !== undefined && digest !== undefined) {
-        const found = registry.lookup(key, digest);
-        if (found.kind === 'inflight') return { stream, events: subscribeWithOwnDeadline(services, found.run, signal, deadlineAt) };
-        if (found.kind === 'stored') return { stream, events: replay(found.frames) };
+      const lease = await services.epochs.acquire(signal);
+      try {
+        return startSubmission(pinnedServices(services, lease.value), lease.release, rawBody, body, deadlineAt, headers, signal, connection);
+      } catch (error) {
+        lease.release();
+        throw error;
       }
-
-      const parent =
-        services.telemetry === undefined || headers.traceparent === undefined
-          ? undefined
-          : services.telemetry.propagation.extract({
-              traceparent: headers.traceparent,
-              ...(headers.tracestate === undefined ? {} : { tracestate: headers.tracestate }),
-            });
-      const job: ResponseJob = {
-        alias: body.model,
-        body,
-        unknownFields: validator.unknownCreateFields(rawBody),
-        clientInput: normalizeInput(body.input),
-        idempotency: key === undefined || digest === undefined ? undefined : { key, digest },
-        deadlineAt,
-        parent,
-        ...(connection === undefined ? {} : { connection }),
-        runId: body.metadata?.['run_id'],
-        step: parseStep(body.metadata?.['step']),
-        role: headers.role,
-      };
-      const onSettled = (): void => {
-        active.delete(run);
-        keyedRuns.delete(run);
-        if (key !== undefined) registry.end(key, run);
-      };
-      const run: SharedRun =
-        key === undefined
-          ? startDirectRun((control) => executeResponse(services, job, control), onSettled)
-          : startBufferedRun(
-              (control) => executeResponse(services, job, control),
-              onSettled,
-              {
-                maxBufferedBytes: services.config.limits.maxIdempotencyFrameBytes,
-                readerStallMs: services.config.limits.readerStallMs,
-                detachedMaxMs: services.config.detachedMaxMs,
-                onAborted: () => registry.end(key, run),
-                timers: services.timers,
-              },
-            );
-      active.add(run);
-      if (key !== undefined) keyedRuns.add(run);
-      if (key !== undefined && digest !== undefined) registry.begin(key, digest, run);
-      return { stream, events: run.subscribe(signal) };
     },
     cancel: (idempotencyKey) => {
       const key = parseIdempotencyKey(idempotencyKey);

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { probeManagedFm, startGatewayProcess } from '@momonga/gateway';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { onCleanup, writeUserSettings } from './helpers.ts';
 import { GATEWAY_VERSION, launchRuntime, makeRunHome, readDb, sessionEnvFor, waitForCondition } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
@@ -10,7 +10,8 @@ import { FIRST_GENERATION } from '@momonga/foundation';
 import { createBinaryHashCache, managedInstancePaths } from '@momonga/foundation';
 import { FM_SERVER } from '@momonga/protocol';
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const GUARDRAIL_TRIGGER = 'FORBIDDEN-TOPIC';
 const SETTLED = ['COMPLETED', 'FAILED', 'CANCELLED', 'STOPPED'];
 
@@ -37,6 +38,7 @@ const startFmGateway = async (temp: RunHome): Promise<void> => {
   onCleanup(() => killGroupsForCleanup(servePids(dumpFile)));
   writeUserSettings(temp.home, { sandbox: 'none', models: { aliases: { default: ['fm'] }, targets: { fm: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, toolCalling: 'native' } } } });
   await probeManagedFm({
+    platform: process.platform,
     paths: temp.paths,
     instance: managedInstancePaths(temp.paths, { owner: 'cli', purpose: 'probe', target: 'fm' } as Parameters<typeof managedInstancePaths>[1]),
     description: FM_SERVER,
@@ -64,7 +66,7 @@ const startFmGateway = async (temp: RunHome): Promise<void> => {
 };
 
 describe('a run whose model step meets the guardrail error event the real fm sends', () => {
-  it('stops with the refusal stop reason on its first attempt and is not requeued', PROCESS_TIMEOUT, async () => {
+  it('stops with the refusal stop reason on its first attempt and is not requeued', async () => {
     const temp = makeRunHome();
     await startFmGateway(temp);
     const launched = await launchRuntime(temp);

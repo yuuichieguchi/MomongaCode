@@ -37,6 +37,17 @@ export { DEFAULT_LOCK_TIMEOUT_MS, createKeyedSerializer, systemFileLockPorts, wi
 export type { FileLockOptions, FileLockPorts, KeyedSerializer } from './file-lock.ts';
 export { createFileCredentialStore, createMemoryCredentialStore } from './credential-store.ts';
 export type { CredentialEntry, CredentialStore, FileCredentialStoreOptions } from './credential-store.ts';
+export {
+  CREDENTIAL_ENVELOPE_FORMAT,
+  CREDENTIAL_KEY_CREATION_STEPS,
+  CREDENTIAL_KEY_LOCK_NAME,
+  CREDENTIAL_KEY_MARKER_FILE,
+  CREDENTIAL_KEY_PREFIX,
+  CREDENTIAL_STORE_ERROR_CODES,
+  CredentialStoreError,
+  createEncryptedCredentialStore,
+} from './encrypted-credential-store.ts';
+export type { CredentialSecretStore, CredentialStoreErrorCode, EncryptedCredentialStoreOptions } from './encrypted-credential-store.ts';
 export { AUTHORIZATION_WAIT_MS } from './authorization-wait.ts';
 export { OAuthAuthorizationError } from './oauth-authorization-error.ts';
 export type { AuthorizationFailure } from './oauth-authorization-error.ts';
@@ -145,6 +156,7 @@ export {
   secretStoreEnvFor,
   givenSecretStoreChildEnv,
   createGivenSecretStore,
+  givenCredentialSecretStore,
   SECRET_BACKEND_ENV,
   SECRET_PROGRAM_ENV,
   SECRET_REFUSAL_ENV,
@@ -158,8 +170,9 @@ export type { SecretKeyFile, SecretKeyFileOptions } from './secret-key-file.ts';
 export { isLoopbackHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
 export type { TransportUrlProblem } from './loopback.ts';
 export { matchesNoProxy, NETWORK_ENV_NAMES, routeOf } from './network-route.ts';
-export { OutboundConnectionError, createOutboundDispatcher, findOutboundError, installTrust, outboundFetch, outboundPlan, proxyHopError, proxyPasswordsOf, proxyReplyError } from './outbound.ts';
-export type { OutboundFailure, OutboundFetch, OutboundHop, OutboundNetwork, OutboundOptions, OutboundPlan, TrustFailure, TrustFiles, TrustReport, TrustSource } from './outbound.ts';
+export { HOST_READ_BOUND_MS } from './host-read-bound.ts';
+export { OutboundConnectionError, createOutboundDispatcher, findOutboundError, installTrust, outboundFetch, outboundPlan, proxyHopError, proxyPasswordsOf, proxyReplyError, readSystemCertificatesInWorker, trustFailureText } from './outbound.ts';
+export type { InstallTrustOptions, OutboundFailure, OutboundFetch, OutboundHop, OutboundNetwork, OutboundOptions, OutboundPlan, TrustFailure, TrustFiles, TrustReport, TrustSource } from './outbound.ts';
 export type { Destination, NetworkConfig, NetworkEnvName, NetworkSettingKey, NetworkSource, Route, SourcedValue, UnsupportedProxyReason } from './network-route.ts';
 export {
   EXIT_ALREADY_RUNNING,
@@ -312,3 +325,5 @@ export { patternRefusal, renderInstancePath } from './pattern-refusal.ts';
 export { defineProductSchema, productErrorsText, productSchemas } from './product-schema.ts';
 export type { ProductSchema, ProductValidator, ProductVerdict } from './product-schema.ts';
 export { SHORT_TEMP_BASE, shortTempBase } from './short-temp-base.ts';
+export { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER } from './process-contract.ts';
+export { SETTINGS_APPLIED_ENV, SETTINGS_APPLIED_FILE } from './momonga-paths.ts';

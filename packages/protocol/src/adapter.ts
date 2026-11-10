@@ -1,5 +1,5 @@
 import type { AdapterSampling, AllowedToolsForm, Capabilities, HealthResult, ReasoningEffort } from './capabilities.ts';
-import type { CountTokensRequest, CountTokensResult } from './gateway-api.ts';
+import type { CountTokensRequest, CountTokensResult, UsageSource } from './gateway-api.ts';
 import type { CompactMomongaExtension, ErrorBody, FunctionTool, InputItem, PromptCacheCounts, ReasoningInputItem, StreamEvent, TextField, ToolChoice, Usage } from './open-responses.ts';
 
 export const ADAPTER_NEUTRAL_ERROR_CODES = [
@@ -69,7 +69,7 @@ export type ToolChoiceWire = { forms: readonly AllowedToolsForm[]; expressesRequ
 
 export type RenderWireOptions = { reasoningOrigin: ReasoningOrigin; capabilities: Capabilities; lenientItems?: LenientItems };
 
-export type AdapterCompactResult = { summary: string; usage: Usage; cacheWriteInputTokens?: number };
+export type AdapterCompactResult = { summary: string; usage: Usage; usageSource: UsageSource; cacheWriteInputTokens?: number };
 
 export type ClientOperation = 'create' | 'compact' | 'count_tokens';
 

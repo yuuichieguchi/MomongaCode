@@ -60,6 +60,7 @@ describe('startChatSpan and recordChatResponse', () => {
       responseModel: 'gpt-x-2026',
       responseId: 'resp_1',
       finishReasons: ['stop'],
+      usageSource: 'reported',
       usage: { inputTokens: 100, outputTokens: 20, cachedInputTokens: 40, reasoningTokens: 7 },
       timeToFirstChunkMs: 250,
     });
@@ -82,6 +83,7 @@ describe('startChatSpan and recordChatResponse', () => {
       'gen_ai.response.model': 'gpt-x-2026',
       'gen_ai.response.id': 'resp_1',
       'gen_ai.response.finish_reasons': ['stop'],
+      'momonga.usage_source': 'reported',
       'gen_ai.usage.input_tokens': 100,
       'gen_ai.usage.output_tokens': 20,
       'gen_ai.usage.cache_read.input_tokens': 40,
@@ -101,7 +103,7 @@ describe('startChatSpan and recordChatResponse', () => {
       step: 1,
       attempt: 2,
     });
-    recordChatResponse(chat, { finishReasons: ['length'], usage: { inputTokens: 5, outputTokens: 6 } });
+    recordChatResponse(chat, { finishReasons: ['length'], usageSource: 'reported', usage: { inputTokens: 5, outputTokens: 6 } });
     chat.end(h.clock.now());
     const [span] = await finished(h);
     expect(span?.attributes).toEqual({
@@ -114,6 +116,7 @@ describe('startChatSpan and recordChatResponse', () => {
       'momonga.attempt': 2,
       'momonga.billing': 'local',
       'gen_ai.response.finish_reasons': ['length'],
+      'momonga.usage_source': 'reported',
       'gen_ai.usage.input_tokens': 5,
       'gen_ai.usage.output_tokens': 6,
     });

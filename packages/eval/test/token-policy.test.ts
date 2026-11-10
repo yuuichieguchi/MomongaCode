@@ -205,20 +205,20 @@ describe('policies are compared by their effect', () => {
 });
 
 describe('the context report format', () => {
-  it('is version 4, which records the policy, the code digest and what answered', () => {
-    expect(CONTEXT_REPORT_FORMAT).toBe('momonga-eval-context-report/4');
-    expect(reportWith().format).toBe('momonga-eval-context-report/4');
+  it('is version 6, which records the policy, the code digest, what answered, which calls reported their cache reads and the price outcome of the calls', () => {
+    expect(CONTEXT_REPORT_FORMAT).toBe('momonga-eval-context-report/6');
+    expect(reportWith().format).toBe('momonga-eval-context-report/6');
   });
 
   it('refuses a version 1 report, naming the retired format, the required one and the file, not a schema path', () => {
     const { policy: _policy, codeDigest: _digest, ...rest } = reportWith();
     const retired = JSON.stringify({ ...rest, format: 'momonga-eval-context-report/1' });
     expect(() => parseContextReport(retired, 'base.json')).toThrow(EvalError);
-    expect(() => parseContextReport(retired, 'base.json')).toThrow(/base\.json.*momonga-eval-context-report\/1 .*momonga-eval-context-report\/4/);
+    expect(() => parseContextReport(retired, 'base.json')).toThrow(/base\.json.*momonga-eval-context-report\/1 .*momonga-eval-context-report\/6/);
     expect(() => parseContextReport(retired, 'base.json')).not.toThrow(/required property/);
   });
 
-  it('says a version 1 report is retired and names the off-against-on pair that produces a version 4 base', () => {
+  it('says a version 1 report is retired and names the off-against-on pair that produces a version 6 base', () => {
     const { policy: _policy, codeDigest: _digest, ...rest } = reportWith();
     const retired = JSON.stringify({ ...rest, format: 'momonga-eval-context-report/1' });
     expect(() => parseContextReport(retired, 'base.json')).toThrow(/retired/);
@@ -227,9 +227,9 @@ describe('the context report format', () => {
     expect(() => parseContextReport(retired, 'base.json')).toThrow(/momonga eval compare .*--gate token/);
   });
 
-  it('writes version 4 today, with the policy and the code digest of the runs', () => {
+  it('writes version 6 today, with the policy and the code digest of the runs', () => {
     const stored = JSON.parse(encodeContextReport(reportWith({ context: { cachePrefix: true } }, HEAD_CODE))) as Record<string, unknown>;
-    expect(stored['format']).toBe('momonga-eval-context-report/4');
+    expect(stored['format']).toBe('momonga-eval-context-report/6');
     expect(stored['policy']).toEqual({ context: { cachePrefix: true } });
     expect(stored['codeDigest']).toBe(HEAD_CODE);
   });

@@ -37,7 +37,7 @@ export type { PlanProfile, PlanProfileCapabilities, PlanProfileCatalog, PlanProf
 export type { ResolvedModels } from './models.ts';
 export { registeredIds, registeredServer } from './server-registry.ts';
 export type { ServerRegistry } from './server-registry.ts';
-export { ConfigError, createStopValuesReader, createUserSettingsCache, loadUserModels, loadUserSettings, readUserStopValues, userSettingsChangeKey } from './user-settings.ts';
+export { ConfigError, createStopValuesReader, createUserSettingsCache, writeAppliedRecord, loadUserModels, loadUserSettings, readUserStopValues, userSettingsChangeKey } from './user-settings.ts';
 export type { LoadUserSettingsOptions, LoadUserSettingsResult, StopValuesReader, StopValuesReaderOptions, UserModels, UserSettingsCache, UserSettingsCacheOptions, UserSettingsLoaded, UserSettingsSnapshot } from './user-settings.ts';
 export type { LoadSettingsOptions, LoadSettingsResult, ResolvedPermissions, ResolvedSettings } from './load-settings.ts';
 export { assertSessionMcpServers, loadMcpServers } from './mcp-servers.ts';
@@ -108,3 +108,5 @@ export type {
   GatewaySettings,
   NetworkSettings,
 } from './settings.ts';
+export { DERIVED_OBJECTS, createPinnedDerivation, derivationFailureText, derivedInputsOf, settingsInputsDigest } from './derived.ts';
+export type { DerivedObjectDeclaration, DerivedObjectId, Lease, PinnedDerivation, PinnedDerivationOptions, SettingsSection } from './derived.ts';

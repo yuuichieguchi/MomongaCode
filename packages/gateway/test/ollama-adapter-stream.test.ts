@@ -80,8 +80,15 @@ describe('ollama stream: done_reason', () => {
     expect(outputTextOf(events)).toBe('abcdef');
   });
 
-  it('reports zero cached tokens when the done chunk carries no prompt_eval_cached_count', async () => {
+  it('reports no cached token count when the done chunk carries no prompt_eval_cached_count', async () => {
     const { events } = await streamOf([chunkLine({ content: 'hi' }), withoutField(doneLine({ prompt_eval_count: 70, eval_count: 3 }), 'prompt_eval_cached_count')]);
+    const { usage } = terminalOf(events).response;
+    expect(usage.input_tokens).toBe(70);
+    expect(usage.input_tokens_details?.cached_tokens).toBeUndefined();
+  });
+
+  it('keeps a reported zero prompt_eval_cached_count as zero cached tokens', async () => {
+    const { events } = await streamOf([chunkLine({ content: 'hi' }), doneLine({ prompt_eval_count: 70, eval_count: 3, prompt_eval_cached_count: 0 })]);
     expect(terminalOf(events).response.usage).toEqual(usageFromCounts(70, 3, 0));
   });
 });

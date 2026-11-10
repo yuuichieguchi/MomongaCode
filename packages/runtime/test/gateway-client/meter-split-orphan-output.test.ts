@@ -5,11 +5,13 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createTokenMeter } from '@momonga/context';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { CountTokensRequest, CountTokensResult, FunctionTool, InputItem } from '@momonga/protocol';
-import { startFakeChatCompletions } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import { CLIENT_VERSION, fakeClock } from './fixtures.ts';
 import { FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const ALIAS = 'default';
 

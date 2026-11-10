@@ -54,7 +54,7 @@ export type {
 } from './service/index.ts';
 export { GatewayRequestError, createGatewayClient } from './gateway-client.ts';
 export type { GatewayClient, GatewayClientOptions, GatewayModel, GatewayRequestErrorFields } from './gateway-client.ts';
-export { createTracerPort } from './tracer.ts';
+export { createTracerPort, fixedTracers } from './tracer.ts';
 export { LeaseLostError, ShutdownError } from './worker/errors.ts';
 export { asError } from './process/as-error.ts';
 export { MCP_CLOSE_GRACE_MS, POOL_IDLE_CLOSE_MS, POOL_REFERENCE_AUDIT_MS, SESSION_STATE_IDLE_MS } from './process/constants.ts';
@@ -105,6 +105,7 @@ export { createNodeJobMarkerFiles } from './process/job-marker-files.ts';
 export type { JobMarkerFiles } from './process/job-marker-files.ts';
 export { createSkillsPort } from './process/skills-port.ts';
 export type { SkillsPortOptions } from './process/skills-port.ts';
+export { fixedSandboxBindings } from './process/sandbox-bindings.ts';
 export { createToolRuntime } from './process/tool-runtime.ts';
 export type { ToolRuntime, ToolRuntimeOptions } from './process/tool-runtime.ts';
 export { RUNTIME_ABORT_BUDGET_MS, RUNTIME_TEARDOWN_BUDGET_MS } from './process/constants.ts';

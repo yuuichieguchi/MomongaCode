@@ -2,19 +2,16 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { managedInstancePaths, momongaPaths } from '@momonga/foundation';
 
-type Instance = { owner: 'gateway'; generation: number; purpose: 'serve' | 'probe'; target: string } | { owner: 'cli'; purpose: 'serve' | 'probe'; target: string };
-
-const placeOf = managedInstancePaths as unknown as (paths: ReturnType<typeof momongaPaths>, instance: Instance) => { socketPath: string; markerDirectory: string; lockPath: string };
-
 const HOME = '/Users/someone';
 const paths = momongaPaths(HOME, 'darwin', {});
 
-const gateway = (generation: number, purpose: 'serve' | 'probe', target: string) => placeOf(paths, { owner: 'gateway', generation, purpose, target });
-const cli = (purpose: 'serve' | 'probe', target: string) => placeOf(paths, { owner: 'cli', purpose, target });
+const gateway = (generation: number, purpose: 'serve' | 'probe', target: string, incarnation = 1) =>
+  managedInstancePaths(paths, purpose === 'serve' ? { owner: 'gateway', generation, purpose, target, incarnation } : { owner: 'gateway', generation, purpose, target });
+const cli = (purpose: 'serve' | 'probe', target: string) => managedInstancePaths(paths, { owner: 'cli', purpose, target });
 
 describe.skipIf(process.platform === 'win32')('the one rule for the place of an instance (design-update-no-interrupt 18.2.1; design-managed-servers section 18, item 2)', () => {
   it.each([
-    ['serve', 'apple'],
+    ['serve', 'apple-1'],
     ['probe', '_probe-apple'],
   ] as const)('places the gateway %s instance of generation N at run/g<N>/targets/<stem>.sock, its lock beside it, and markers/g<N>/targets/<stem>/', (purpose, stem) => {
     expect(gateway(3, purpose, 'apple')).toEqual({
@@ -38,6 +35,15 @@ describe.skipIf(process.platform === 'win32')('the one rule for the place of an 
   it('gives two generations of one target two instances that share no socket, lock or marker directory (18.2.2)', () => {
     const first = gateway(1, 'serve', 'apple');
     const second = gateway(2, 'serve', 'apple');
+    expect(new Set([first.socketPath, second.socketPath]).size).toBe(2);
+    expect(new Set([first.lockPath, second.lockPath]).size).toBe(2);
+    expect(new Set([first.markerDirectory, second.markerDirectory]).size).toBe(2);
+  });
+
+  it('gives two incarnations of one target in one generation two instances named <target>-<k> that share no socket, lock or marker directory (design-settings-live 3.1)', () => {
+    const first = gateway(1, 'serve', 'apple', 1);
+    const second = gateway(1, 'serve', 'apple', 2);
+    expect(second.socketPath).toBe(path.join(paths.run, 'g1', 'targets', 'apple-2.sock'));
     expect(new Set([first.socketPath, second.socketPath]).size).toBe(2);
     expect(new Set([first.lockPath, second.lockPath]).size).toBe(2);
     expect(new Set([first.markerDirectory, second.markerDirectory]).size).toBe(2);

@@ -3,25 +3,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadUserModels } from '@momonga/config';
-import type { ServerRegistry } from '@momonga/config';
 import { momongaPaths } from '@momonga/foundation';
 import { NotAProbeableTarget, probeFm } from '../src/commands/gateway.ts';
 import { copyProbeRecord } from '../src/eval/context-effects.ts';
-import { processOutboundNetwork } from '../src/network.ts';
+import { withOutboundNetwork } from '../src/network.ts';
 import { nodeFiles } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
-import type { ManagedRecordSource } from '../src/eval/context-host.ts';
-
-type CopyProbeRecordFromRegistry = (
-  files: Parameters<typeof copyProbeRecord>[0],
-  from: string,
-  to: string,
-  source: ManagedRecordSource,
-  servers: ServerRegistry,
-  signal: AbortSignal,
-) => Promise<boolean>;
-
-const copyFromRegistry = copyProbeRecord as unknown as CopyProbeRecordFromRegistry;
 
 const roots: string[] = [];
 
@@ -79,13 +66,13 @@ describe('the CLI readers resolve a declared server through the registry of the 
     const to = path.join(temporary(), 'probe');
     const servers = loadUserModels({ home }).resolved.servers;
     if (servers === undefined) throw new Error('the loaded settings carry no server registry');
-    expect(await copyFromRegistry(nodeFiles, from, to, { target: 'workbench', server: 'loom', binary, model: 'fake-1' }, servers, AbortSignal.timeout(30_000))).toBe(false);
+    expect(await copyProbeRecord(nodeFiles, from, to, { target: 'workbench', server: 'loom', binary, model: 'fake-1' }, servers, process.platform, AbortSignal.timeout(30_000))).toBe(false);
     expect(fs.existsSync(to)).toBe(false);
   });
 
   it('the outbound network reader (R13, network.ts) loads settings that declare a server', async () => {
     const home = declaredHome('/opt/loom/bin/loom-server');
     const ports = { home, env: {}, stderr: sink(), files: nodeFiles } as unknown as CliPorts;
-    await expect(processOutboundNetwork(ports)).resolves.toMatchObject({ config: expect.anything() });
+    await expect(withOutboundNetwork(ports, new AbortController().signal, async (network) => network)).resolves.toMatchObject({ config: expect.anything() });
   });
 });

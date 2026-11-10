@@ -177,8 +177,7 @@ const probedOf = (report: ProbeReport, refusal: NeedsProbe | undefined, modeOf: 
 type Recorded = { report: ProbeReport | null; capabilities: Capabilities; isGuardrail: (body: unknown) => boolean };
 
 const keyText = (description: ManagedServerDescription, key: KnownProbeKey): string => {
-  const fields = JSON.parse(key.canonical) as Record<string, unknown>;
-  return description.identity.map((component) => `${probeKeyComponentLabel(component)} ${String(fields[component])}`).join(', ');
+  return description.identity.map((component) => `${probeKeyComponentLabel(component)} ${String(key.fields[component])}`).join(', ');
 };
 
 export const createManagedTarget = async (options: ManagedTargetOptions): Promise<ManagedTarget> => {

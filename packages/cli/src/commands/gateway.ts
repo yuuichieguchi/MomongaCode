@@ -6,7 +6,7 @@ import type { DialectDefinition, ProbeReportDialect } from '@momonga/protocol';
 import { ensureDaemon, stopDaemon } from '../daemon/ensure-daemon.ts';
 import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import type { CliPorts } from '../ports.ts';
-import { processOutboundNetwork } from '../network.ts';
+import { withOutboundNetwork } from '../network.ts';
 import { escapedLines } from '../terminal-writer.ts';
 
 type OllamaConfig = Extract<Awaited<ReturnType<typeof loadUserSettings>>['settings']['models']['targets'][string], { adapter: 'ollama' }>;
@@ -38,8 +38,8 @@ export const probeTarget = async (ports: CliPorts, paths: MomongaPaths, target: 
   const targets = settings.models.targets;
   const configured = targets[target];
   if (configured?.adapter === 'managed') return probeFm(ports, paths, target, options);
-  if (configured?.adapter === 'chat-completions') return probeChatCompletions(ports, paths, target, configured, options, settings.models.dialects, await processOutboundNetwork(ports));
-  if (configured?.adapter === 'ollama') return probeOllama(ports, paths, target, configured, options, settings.models.dialects, await processOutboundNetwork(ports));
+  if (configured?.adapter === 'chat-completions') return withOutboundNetwork(ports, options.interrupt, (network) => probeChatCompletions(ports, paths, target, configured, options, settings.models.dialects, network));
+  if (configured?.adapter === 'ollama') return withOutboundNetwork(ports, options.interrupt, (network) => probeOllama(ports, paths, target, configured, options, settings.models.dialects, network));
   throw new NotAProbeableTarget(target, targets);
 };
 
@@ -174,6 +174,7 @@ export const probeFm = async (ports: CliPorts, paths: MomongaPaths, target: stri
   if (description === undefined) throw new NotAProbeableTarget(target, targets);
   const { report, toolCalling, recordFile } = await probeManagedFm({
     paths,
+    platform: ports.platform,
     instance: managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', target }),
     description,
     target,

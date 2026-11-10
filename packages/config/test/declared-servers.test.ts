@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { loadSettings, loadUserSettings, managedServerDigest } from '@momonga/config';
+import { derivedInputsOf, loadSettings, loadUserSettings, managedServerDigest, settingsInputsDigest } from '@momonga/config';
+import type { ResolvedSettings } from '@momonga/config';
 import { FM_SERVER } from '@momonga/protocol';
 import type { ManagedServerDescription } from '@momonga/protocol';
-import { digestsOf, planRoles } from '@momonga/supervisor';
 import { localSettingsPath, makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 
 const COMMAND = '/opt/mine/bin/mine-server';
 const ARGS = ['run', '--socket', '{socket}'];
 const DECLARATION = { command: COMMAND, args: ARGS, readyPath: '/ready' };
+
+const gatewayInputsDigest = (settings: ResolvedSettings): string => settingsInputsDigest(derivedInputsOf('D1')(settings));
 
 const workbench = (server: string, extra: Record<string, unknown> = {}) => ({ workbench: { adapter: 'managed', server, ...extra } });
 
@@ -154,23 +156,19 @@ describe('a declaration outside the user settings is discarded with a warning (1
   });
 });
 
-describe('a change of a declared server replans the gateway through the models digest (19.5; R-S19-11)', () => {
-  it('gives a different models digest when only args change, so planRoles restarts the gateway', async () => {
+describe('a change of a declared server re-derives the gateway through its pinned inputs (design-settings-live 3.1 and its note on 19.5; R-S19-11)', () => {
+  it('gives different gateway inputs when only args change', async () => {
     const before = (await loadUser(declaring({ mine: DECLARATION }))).loaded.settings;
     const after = (await loadUser(declaring({ mine: { ...DECLARATION, args: ['run', '--verbose', '--socket', '{socket}'] } }))).loaded.settings;
-    const applied = digestsOf(before);
-    const current = digestsOf(after);
-    expect(current.models).not.toBe(applied.models);
-    expect(planRoles(current, { gateway: { models: applied.models, telemetry: applied.telemetry, network: applied.network } })).toEqual(['gateway']);
+    expect(gatewayInputsDigest(after)).not.toBe(gatewayInputsDigest(before));
   });
 
-  it('gives the same digest for the same declaration', async () => {
+  it('gives the same gateway inputs for the same declaration', async () => {
     const first = (await loadUser(declaring({ mine: DECLARATION }))).loaded.settings;
     const second = (await loadUser(declaring({ mine: DECLARATION }))).loaded.settings;
-    expect(digestsOf(second).models).toBe(digestsOf(first).models);
+    expect(gatewayInputsDigest(second)).toBe(gatewayInputsDigest(first));
   });
 });
-
 
 describe('the behaviour stamp of a description ignores what does not change the probe behaviour (19.4, 19.14 item 2; R-S19-12)', () => {
   it('keeps the stamp when only provider changes', () => {

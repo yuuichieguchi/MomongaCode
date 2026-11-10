@@ -13,24 +13,24 @@ export interface CredentialEntry {
 }
 
 export interface CredentialStore {
-  read(key: string): Promise<string | undefined>;
-  write(key: string, value: string): Promise<void>;
-  update(key: string, change: (current: string | undefined) => string): Promise<void>;
-  remove(key: string): Promise<void>;
-  withKey<T>(key: string, action: (entry: CredentialEntry) => Promise<T>): Promise<T>;
+  read(key: string, signal?: AbortSignal): Promise<string | undefined>;
+  write(key: string, value: string, signal?: AbortSignal): Promise<void>;
+  update(key: string, change: (current: string | undefined) => string, signal?: AbortSignal): Promise<void>;
+  remove(key: string, signal?: AbortSignal): Promise<void>;
+  withKey<T>(key: string, action: (entry: CredentialEntry) => Promise<T>, signal?: AbortSignal): Promise<T>;
 }
 
-type ScopedOperations = {
-  read(key: string): Promise<string | undefined>;
-  withKey<T>(key: string, action: (entry: CredentialEntry) => Promise<T>): Promise<T>;
+export type ScopedOperations = {
+  read(key: string, signal?: AbortSignal): Promise<string | undefined>;
+  withKey<T>(key: string, action: (entry: CredentialEntry) => Promise<T>, signal?: AbortSignal): Promise<T>;
 };
 
-const storeThroughScope = ({ read, withKey }: ScopedOperations): CredentialStore => ({
+export const storeThroughScope = ({ read, withKey }: ScopedOperations): CredentialStore => ({
   read,
   withKey,
-  write: (key, value) => withKey(key, (entry) => entry.write(value)),
-  update: (key, change) => withKey(key, async (entry) => entry.write(change(await entry.read()))),
-  remove: (key) => withKey(key, (entry) => entry.remove()),
+  write: (key, value, signal) => withKey(key, (entry) => entry.write(value), signal),
+  update: (key, change, signal) => withKey(key, async (entry) => entry.write(change(await entry.read())), signal),
+  remove: (key, signal) => withKey(key, (entry) => entry.remove(), signal),
 });
 
 export const createMemoryCredentialStore = (): CredentialStore => {
@@ -55,7 +55,7 @@ export const createMemoryCredentialStore = (): CredentialStore => {
 
 const FILE_MODE = 0o600;
 
-const fileFor = (directory: string, key: string): string => path.join(directory, `${createHash('sha256').update(key).digest('hex')}.json`);
+export const credentialFileFor = (directory: string, key: string): string => path.join(directory, `${createHash('sha256').update(key).digest('hex')}.json`);
 
 const readOwnerOnly = (file: string): Promise<string | undefined> => nodeFileSystem.readOwnerOnlyTextFile(file, `credential file ${file}`);
 
@@ -67,25 +67,29 @@ export const createFileCredentialStore = (directory: string, options: FileCreden
 
   const writeAtomically = async (key: string, value: string): Promise<void> => {
     await nodeFileSystem.mkdirPrivate(directory);
-    await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: ports.randomHex }, fileFor(directory, key), value, { mode: FILE_MODE });
+    await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: ports.randomHex }, credentialFileFor(directory, key), value, { mode: FILE_MODE });
   };
 
-  const locked = <T>(key: string, action: () => Promise<T>): Promise<T> =>
+  const locked = <T>(key: string, action: () => Promise<T>, signal: AbortSignal | undefined): Promise<T> =>
     serialized(key, async () => {
       const lockDirectory = `${directory}.locks`;
       await nodeFileSystem.mkdirPrivate(lockDirectory);
-      const lockPath = path.join(lockDirectory, `${path.basename(fileFor(directory, key))}.lock`);
-      return withFileLock(lockPath, action, { ports, ...(options.lockTimeoutMs === undefined ? {} : { timeoutMs: options.lockTimeoutMs }) });
+      const lockPath = path.join(lockDirectory, `${path.basename(credentialFileFor(directory, key))}.lock`);
+      return withFileLock(lockPath, action, {
+        ports,
+        ...(signal === undefined ? {} : { signal }),
+        ...(options.lockTimeoutMs === undefined ? {} : { timeoutMs: options.lockTimeoutMs }),
+      });
     });
 
   const entryOf = (key: string): CredentialEntry => ({
-    read: () => readOwnerOnly(fileFor(directory, key)),
+    read: () => readOwnerOnly(credentialFileFor(directory, key)),
     write: (value) => writeAtomically(key, value),
-    remove: () => nodeFileSystem.rm(fileFor(directory, key)),
+    remove: () => nodeFileSystem.rm(credentialFileFor(directory, key)),
   });
 
   return storeThroughScope({
-    read: (key) => readOwnerOnly(fileFor(directory, key)),
-    withKey: (key, action) => locked(key, () => action(entryOf(key))),
+    read: (key) => readOwnerOnly(credentialFileFor(directory, key)),
+    withKey: (key, action, signal) => locked(key, () => action(entryOf(key)), signal),
   });
 };

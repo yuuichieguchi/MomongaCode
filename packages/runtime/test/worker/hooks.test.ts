@@ -1,20 +1,23 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { STOP_HOOK_FEEDBACK_PREFIX } from '@momonga/protocol';
 import type { HooksSettings } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
 import { makeEnv } from './harness.ts';
 import { assistantMessage, callsStep, textStep } from './scripts.ts';
+import { fixedSandboxBindings } from '@momonga/runtime';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const hooks = (event: keyof HooksSettings, command: string, matcher?: string): HooksSettings => ({
   [event]: [{ ...(matcher === undefined ? {} : { matcher }), hooks: [{ type: 'command', command }] }],
 });
 
-const workerWithProcesses = (env: Awaited<ReturnType<typeof makeEnv>>) => env.worker('worker-1', { tools: { sandbox: createUnsandboxed({ killGraceMs: 200 }) } });
+const workerWithProcesses = (env: Awaited<ReturnType<typeof makeEnv>>) => env.worker('worker-1', { tools: { sandboxes: fixedSandboxBindings(createUnsandboxed({ killGraceMs: 200 })) } });
 
-describe('worker hooks', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('worker hooks', () => {
   it('fails the run with a typed code when a UserPromptSubmit hook blocks the prompt, without calling the model', async () => {
     const env = await makeEnv();
     env.settings.hooksValue = hooks('UserPromptSubmit', 'echo "no secrets in prompts" >&2; exit 2');

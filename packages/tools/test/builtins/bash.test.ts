@@ -2,14 +2,14 @@ import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { HAS_REAL_SANDBOX, keyFor, noneSandbox } from '../helpers.ts';
 import { approvalOf, isAlive, makeBuiltins, onCleanup, resultOf, trackGroup, trackPid, waitFor } from './fixtures.ts';
 import type { Builtins } from './fixtures.ts';
 import { bashTool, MAX_BACKGROUND_TIMEOUT_MS, MAX_TIMEOUT_MS } from '../../src/builtins/bash.ts';
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const bash = async (tools: Builtins, command: string, extra: Parameters<Builtins['run']>[2] = {}, callId?: string) =>
   tools.run('Bash', { command }, extra, 'allow_once', callId);
@@ -46,7 +46,7 @@ const processesWithArgument = (argument: string): number[] =>
     .filter((pid) => pid !== process.pid);
 
 describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
-  it('runs the command and returns its output without the cwd marker', PROCESS_TIMEOUT, async () => {
+  it('runs the command and returns its output without the cwd marker', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const result = resultOf(await bash(tools, 'echo hello'));
     expect(result.status).toBe('completed');
@@ -54,14 +54,14 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     expect(result.output).not.toContain('__MOMONGA_CWD_');
   });
 
-  it('captures stdout and stderr', PROCESS_TIMEOUT, async () => {
+  it('captures stdout and stderr', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const result = resultOf(await bash(tools, 'echo to-out; echo to-err 1>&2'));
     expect(result.output).toContain('to-out');
     expect(result.output).toContain('to-err');
   });
 
-  it('fails with the exit code for a non-zero exit', PROCESS_TIMEOUT, async () => {
+  it('fails with the exit code for a non-zero exit', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const result = resultOf(await bash(tools, 'echo before; exit 3'));
     expect(result.status).toBe('failed');
@@ -72,19 +72,19 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
   it.for([
     ['exit 0', 'completed', 0],
     ['exit 3', 'failed', 3],
-  ] as const)('reports the exit code of %s as a structured fact', PROCESS_TIMEOUT, async ([command, status, exitCode]) => {
+  ] as const)('reports the exit code of %s as a structured fact', async ([command, status, exitCode]) => {
     const tools = await makeBuiltins({ realSandbox: true });
     const result = resultOf(await bash(tools, command));
     expect(result).toMatchObject({ status, exitCode });
   });
 
-  it('reports the exit code the sandbox reports for a shell killed by a signal: none under Seatbelt, 128 + 9 from bubblewrap, which exits for its child', PROCESS_TIMEOUT, async () => {
+  it('reports the exit code the sandbox reports for a shell killed by a signal: none under Seatbelt, 128 + 9 from bubblewrap, which exits for its child', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const SIGKILL_EXIT_FROM_BUBBLEWRAP = 137;
     expect(resultOf(await bash(tools, 'kill -9 $$')).exitCode).toBe(process.platform === 'darwin' ? undefined : SIGKILL_EXIT_FROM_BUBBLEWRAP);
   });
 
-  it('fails with the signal name when the shell is killed by a signal', PROCESS_TIMEOUT, async () => {
+  it('fails with the signal name when the shell is killed by a signal', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const result = resultOf(await bash(tools, 'kill -9 $$'));
     expect(result.status).toBe('failed');
@@ -92,7 +92,7 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     expect(result.output.trimEnd().endsWith(reported)).toBe(true);
   });
 
-  it('runs in the session cwd', PROCESS_TIMEOUT, async () => {
+  it('runs in the session cwd', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const sub = path.join(tools.layout.project, 'sub');
     fs.mkdirSync(sub);
@@ -101,7 +101,7 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     expect(result.output.trimEnd()).toBe(sub);
   });
 
-  it('persists a cd inside the roots into the session cwd', PROCESS_TIMEOUT, async () => {
+  it('persists a cd inside the roots into the session cwd', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const sub = path.join(tools.layout.project, 'sub');
     fs.mkdirSync(sub);
@@ -111,7 +111,7 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     expect(next.output.trimEnd()).toBe(sub);
   });
 
-  it('resets a cd outside the roots and says so', PROCESS_TIMEOUT, async () => {
+  it('resets a cd outside the roots and says so', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const result = resultOf(await bash(tools, `cd ${tools.layout.outside}`));
     expect(tools.session.cwd).toBe(tools.layout.project);
@@ -119,21 +119,21 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     expect(result.output).not.toContain('__MOMONGA_CWD_');
   });
 
-  it('keeps the cwd when the shell dies before printing the marker', PROCESS_TIMEOUT, async () => {
+  it('keeps the cwd when the shell dies before printing the marker', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     fs.mkdirSync(path.join(tools.layout.project, 'sub'));
     resultOf(await bash(tools, 'cd sub; kill -9 $$'));
     expect(tools.session.cwd).toBe(tools.layout.project);
   });
 
-  it('says the cwd could not be determined when the command replaces the shell', PROCESS_TIMEOUT, async () => {
+  it('says the cwd could not be determined when the command replaces the shell', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const result = resultOf(await bash(tools, 'mkdir -p sub && cd sub && exec true'));
     expect(tools.session.cwd).toBe(tools.layout.project);
     expect(result.output).toContain('Shell cwd could not be determined and stays at .');
   });
 
-  it('does not let a fake marker printed by the command change the cwd', PROCESS_TIMEOUT, async () => {
+  it('does not let a fake marker printed by the command change the cwd', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const sub = path.join(tools.layout.project, 'sub');
     fs.mkdirSync(sub);
@@ -141,7 +141,7 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     expect(tools.session.cwd).toBe(tools.layout.project);
   });
 
-  it('builds the environment from ctx.env plus the git and pager overrides', PROCESS_TIMEOUT, async () => {
+  it('builds the environment from ctx.env plus the git and pager overrides', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const env = { PATH: '/usr/bin:/bin', MOMONGA_PROBE: 'probe-value', PAGER: 'less', CDPATH: '/tmp' };
     const result = resultOf(await bash(tools, 'env', { env }));
@@ -156,13 +156,13 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     expect(lines.some((line) => line.startsWith('USER='))).toBe(false);
   });
 
-  it('does not inherit stdin', PROCESS_TIMEOUT, async () => {
+  it('does not inherit stdin', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const result = resultOf(await bash(tools, 'if read -r -t 10 line; then echo "got:$line"; else echo "status:$?"; fi'));
     expect(result.output.trimEnd()).toBe('status:1');
   });
 
-  it('cannot write outside the roots', PROCESS_TIMEOUT, async () => {
+  it('cannot write outside the roots', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const target = path.join(tools.layout.outside, 'escape.txt');
     const result = resultOf(await bash(tools, `echo x > ${target}`, { mode: 'bypassPermissions' }));
@@ -170,7 +170,7 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     expect(fs.existsSync(target)).toBe(false);
   });
 
-  it('can write inside the roots and the configured tmp dir', PROCESS_TIMEOUT, async () => {
+  it('can write inside the roots and the configured tmp dir', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const inRoot = path.join(tools.layout.project, 'ok.txt');
     const inTmp = path.join(tools.tmpDir, 'ok.txt');
@@ -180,7 +180,7 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     expect(fs.readFileSync(inTmp, 'utf8')).toBe('b\n');
   });
 
-  it('is blocked by the sandbox from writing a protected path even after approval', PROCESS_TIMEOUT, async () => {
+  it('is blocked by the sandbox from writing a protected path even after approval', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     fs.mkdirSync(path.join(tools.layout.project, '.git', 'hooks'), { recursive: true });
     const hook = path.join(tools.layout.project, '.git', 'hooks', 'pre-commit');
@@ -189,7 +189,7 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     expect(fs.existsSync(hook)).toBe(false);
   });
 
-  it('cannot read readDenied paths', PROCESS_TIMEOUT, async () => {
+  it('cannot read readDenied paths', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const secret = path.join(tools.layout.home, '.momonga', 'token');
     fs.mkdirSync(path.dirname(secret));
@@ -199,7 +199,7 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     expect(result.output).not.toContain('top-secret-value');
   });
 
-  it('has no network access', PROCESS_TIMEOUT, async () => {
+  it('has no network access', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     let connections = 0;
     const server = net.createServer((socket) => {
@@ -215,7 +215,7 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     expect(connections).toBe(0);
   });
 
-  it('records the process group through attachProcess right after spawn', PROCESS_TIMEOUT, async () => {
+  it('records the process group through attachProcess right after spawn', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const callId = 'attach';
     const result = resultOf(await bash(tools, 'echo $$', {}, callId));
@@ -226,7 +226,7 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     if (process.platform !== 'darwin') expect(entries[0]?.pgid).not.toBe(innerPid);
   });
 
-  it('passes the process marker so the child holds it', PROCESS_TIMEOUT, async () => {
+  it('passes the process marker so the child holds it', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const callId = 'marker';
     const marker = path.join(tools.markerDir, keyFor('run-1', 1, callId));
@@ -249,7 +249,7 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     expect(resultOf(await running).output.trimEnd()).toBe('done');
   });
 
-  it('kills the whole process group on timeout', PROCESS_TIMEOUT, async () => {
+  it('kills the whole process group on timeout', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const childPidFile = path.join(tools.layout.project, 'child.pid');
     const command = `sleep 30 & echo $! > ${childPidFile}; wait`;
@@ -263,7 +263,7 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     expect(await waitFor(() => !isAlive(-(pgid as number)) && !isAlive(child), 5000)).toBe(true);
   });
 
-  it('kills the whole process group on cancel', PROCESS_TIMEOUT, async () => {
+  it('kills the whole process group on cancel', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const ready = path.join(tools.layout.project, 'ready');
     const controller = new AbortController();
@@ -281,7 +281,7 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     expect(await waitFor(() => !isAlive(-(pgid as number)) && !isAlive(child), 5000)).toBe(true);
   });
 
-  it('terminates an escaped setsid process that kept the marker and reports it', PROCESS_TIMEOUT, async () => {
+  it('terminates an escaped setsid process that kept the marker and reports it', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const ready = path.join(tools.layout.project, 'escaped');
     const script = `perl -e 'use POSIX; POSIX::setsid(); open(my $f, ">", $ARGV[0]); close $f; sleep 30' ${ready} >/dev/null 2>&1 & while [ ! -e ${ready} ]; do sleep 0.05; done; echo "pid:$!"`;
@@ -297,7 +297,7 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     expect(await waitFor(() => processesWithArgument(ready).length === 0, 5000)).toBe(true);
   });
 
-  it('known limitation: a setsid process that closed fd 3 outlives the command', PROCESS_TIMEOUT, async () => {
+  it('known limitation: a setsid process that closed fd 3 outlives the command', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const ready = path.join(tools.layout.project, 'escaped');
     const script = `perl -e 'use POSIX; POSIX::setsid(); open(my $f, ">", $ARGV[0]); close $f; sleep 30' ${ready} >/dev/null 2>&1 3>&- & while [ ! -e ${ready} ]; do sleep 0.05; done; echo "pid:$!"`;
@@ -312,7 +312,7 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     expect(await waitFor(() => processesWithArgument(ready).length === 0, 5000)).toBe(true);
   });
 
-  it('keeps large output bounded with a head, tail and omitted-bytes marker', PROCESS_TIMEOUT, async () => {
+  it('keeps large output bounded with a head, tail and omitted-bytes marker', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const result = resultOf(await bash(tools, 'echo FIRST-LINE; yes 0123456789 | head -c 10000000; echo LAST-LINE'));
     const full = [...tools.blobs.stored.values()].map((entry) => entry.text).find((text) => text.includes('FIRST-LINE'));
@@ -326,7 +326,7 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
   });
 
   describe('reconcile of an interrupted call', () => {
-    it('kills a surviving group that holds the marker and reports unknown without rerunning', PROCESS_TIMEOUT, async () => {
+    it('kills a surviving group that holds the marker and reports unknown without rerunning', async () => {
       const tools = await makeBuiltins({ realSandbox: true });
       const callId = 'interrupted';
       const key = keyFor('run-1', 1, callId);
@@ -355,7 +355,7 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
       expect(await waitFor(() => !isAlive(-pgid), 5000)).toBe(true);
     });
 
-    it('reports unknown when the record has no process group', PROCESS_TIMEOUT, async () => {
+    it('reports unknown when the record has no process group', async () => {
       const tools = await makeBuiltins({ realSandbox: true });
       const callId = 'never-attached';
       tools.idempotency.seed(keyFor('run-1', 1, callId), 'PENDING', { tool: 'Bash' });

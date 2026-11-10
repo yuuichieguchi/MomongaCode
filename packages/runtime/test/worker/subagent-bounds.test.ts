@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { CallToolResult, Tool } from '@modelcontextprotocol/client';
 import { createMcpToolSource } from '@momonga/mcp';
 import type { McpServerConnection } from '@momonga/mcp';
@@ -15,6 +15,8 @@ import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 import type { ScriptStep } from './fake-gateway.ts';
 import { keepAliveOnly, startRealGateway, within } from './keep-alive-gateway.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const MODEL_IDLE_MS = 300;
 const MCP_IDLE_MS = 150;
@@ -71,7 +73,7 @@ const untilTerminal = async (env: Env, worker: ReturnType<Env['worker']>, runId:
   throw new Error(`run ${runId} did not end: ${env.run(runId).status}`);
 };
 
-describe('G3: the subagent wait is bounded by the bounds of the child steps (R-G3)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('G3: the subagent wait is bounded by the bounds of the child steps (R-G3)', () => {
   it('test 1: a child whose model only sends keep-alives ends by the real gateway idle stop, and the parent wait ends with that failure', async () => {
     const env = await makeEnv({ maxAttempts: 1, maxTotalAttempts: 1 });
     writeAgent(env);

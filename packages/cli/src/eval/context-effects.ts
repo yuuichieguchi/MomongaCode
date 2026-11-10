@@ -39,12 +39,12 @@ const gone = async (ports: Pick<CliPorts, 'clock'>, pid: number, boundMs: number
 
 const PRIVATE_DIRECTORY_MODE = 0o700;
 
-export const copyProbeRecord = async (files: Pick<CliPorts['files'], 'readTextIfPresent' | 'writeText'>, from: string, to: string, source: ManagedRecordSource, servers: ServerRegistry, signal: AbortSignal): Promise<boolean> => {
+export const copyProbeRecord = async (files: Pick<CliPorts['files'], 'readTextIfPresent' | 'writeText'>, from: string, to: string, source: ManagedRecordSource, servers: ServerRegistry, platform: NodeJS.Platform, signal: AbortSignal): Promise<boolean> => {
   const { managedKeyReader, managedRecordPath } = await import('@momonga/gateway');
   const description = registeredServer(servers, source.server);
   if (description === undefined) throw new Error(`the target ${source.target} names the server ${source.server}, which the loaded settings do not declare`);
   const exec = createHostExec();
-  const key = await managedKeyReader({ description, binary: source.binary, model: source.model, exec, platform: process.platform, hashes: createBinaryHashCache() })(signal);
+  const key = await managedKeyReader({ description, binary: source.binary, model: source.model, exec, platform, hashes: createBinaryHashCache() })(signal);
   if (key.kind === 'unknown') return false;
   const text = await files.readTextIfPresent(managedRecordPath(from, key));
   if (text === undefined) return false;
@@ -129,7 +129,7 @@ export const nodeContextEffects = (ports: CliPorts, lock: KernelLockMechanism = 
     copyEndpointProbeRecord: async (probe, paths) => {
       await copyEndpointProbeRecord(ports.files, (await pathsOf(ports)).probe, paths.probe, probe);
     },
-    copyProbeRecord: async (source, paths) => void (await copyProbeRecord(ports.files, (await pathsOf(ports)).probe, paths.probe, source, loadUserModels({ home: ports.home }).resolved.servers, AbortSignal.timeout(STARTUP_TIMEOUT_MS))),
+    copyProbeRecord: async (source, paths) => void (await copyProbeRecord(ports.files, (await pathsOf(ports)).probe, paths.probe, source, loadUserModels({ home: ports.home }).resolved.servers, ports.platform, AbortSignal.timeout(STARTUP_TIMEOUT_MS))),
     listRoots: () => listEvalRoots(shortTempBase(ports.platform), ports.platform === 'win32' ? undefined : process.getuid?.()),
     readOwner: (root) => readEvalOwner(ports.files, root),
     sessionEnv: (root) => environmentSnapshot({ home: ports.home, env: caseEnvironment(ports.env, root, ports.platform) }),

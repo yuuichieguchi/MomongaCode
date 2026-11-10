@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { probeKeyOf } from '@momonga/config';
 import { FM_SERVER } from '@momonga/protocol';
@@ -12,6 +12,8 @@ import { OWNER_FILE, ROOT_PREFIX, caseEnvironment } from '../src/eval/context-ho
 import { endpointRecordFileName } from '@momonga/gateway';
 import { copyEndpointProbeRecord, copyProbeRecord, listEvalRoots, nodeContextEffects, readEvalOwner } from '../src/eval/context-effects.ts';
 import type { CliPorts } from '../src/ports.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const directories: string[] = [];
 
@@ -107,7 +109,7 @@ describe('the timer of a case', () => {
   });
 });
 
-describe('the environment of a session inside a case', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the environment of a session inside a case', () => {
   const portsWith = (home: string, env: Record<string, string>): CliPorts => ({ platform: 'linux', env, home, files: nodeFiles }) as unknown as CliPorts;
 
   const personEnv = {
@@ -202,7 +204,7 @@ describe('copyProbeRecord', () => {
     const name = recordNameFor(binary, 'system');
     const record = JSON.stringify({ key: 'k', descriptionDigest: 'd', report: { anything: true } });
     fs.writeFileSync(path.join(from, name), record);
-    expect(await copyProbeRecord(nodeFiles, from, to, { target: 'apple', server: 'fm', binary, model: 'system' }, { [FM_SERVER.id]: FM_SERVER }, new AbortController().signal)).toBe(true);
+    expect(await copyProbeRecord(nodeFiles, from, to, { target: 'apple', server: 'fm', binary, model: 'system' }, { [FM_SERVER.id]: FM_SERVER }, process.platform, new AbortController().signal)).toBe(true);
     expect(fs.readFileSync(path.join(to, name), 'utf8')).toBe(record);
     expect(fs.statSync(path.join(to, name)).mode & 0o777).toBe(0o600);
   });
@@ -210,7 +212,7 @@ describe('copyProbeRecord', () => {
   it('copies nothing when the person never probed the target, so the case sees the same answer', async () => {
     const from = temporary();
     const to = path.join(temporary(), 'probe');
-    expect(await copyProbeRecord(nodeFiles, from, to, { target: 'apple', server: 'fm', binary: binaryIn(temporary()), model: 'system' }, { [FM_SERVER.id]: FM_SERVER }, new AbortController().signal)).toBe(false);
+    expect(await copyProbeRecord(nodeFiles, from, to, { target: 'apple', server: 'fm', binary: binaryIn(temporary()), model: 'system' }, { [FM_SERVER.id]: FM_SERVER }, process.platform, new AbortController().signal)).toBe(false);
     expect(fs.existsSync(to)).toBe(false);
   });
 });

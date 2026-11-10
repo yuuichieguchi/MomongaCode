@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { createExecFn } from '../src/managed/fm-processes.ts';
 import { registerCleanup } from './gateway-helpers.ts';
 import { isAlive, makeHome, until } from './gateway-process-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 describe('createExecFn honours the abort signal', () => {
   it(
@@ -34,6 +36,5 @@ describe('createExecFn honours the abort signal', () => {
       expect(outcome).toBe('AbortError');
       await until(() => !isAlive(pid), 'the hung command exited');
     },
-    REAL_PROCESS_TEST_TIMEOUT_MS,
   );
 });

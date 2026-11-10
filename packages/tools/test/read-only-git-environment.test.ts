@@ -11,6 +11,8 @@ import { makeRealWorkspace } from './real-workspace.ts';
 import type { RealWorkspace } from './real-workspace.ts';
 import { CLEARED_GIT_VARIABLES, HAS_REAL_SANDBOX, REQUIRED_GIT_KEYS, configuredKeys, realSandbox, recordingSandbox, scratchRootOf } from './read-only-support.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const forced = vi.hoisted(() => ({ decision: { kind: 'allow', source: 'mode', reason: 'forced by the test', basis: 'read_only' } }));
 
 vi.mock('@momonga/policy', async (original) => ({ ...(await original<typeof import('@momonga/policy')>()), decide: () => forced.decision }));
@@ -200,7 +202,7 @@ const VARIABLE_ROWS: readonly Row[] = [
   { id: 'an inherited GIT_CONFIG_COUNT', plant: (_w, p) => ({ GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.fsmonitor', GIT_CONFIG_VALUE_0: p.script }), args: () => ['status'] },
 ];
 
-describe.runIf(HAS_REAL_SANDBOX)('rule 3: the environment of a read-only call, with decide forced to approve', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.runIf(HAS_REAL_SANDBOX)('rule 3: the environment of a read-only call, with decide forced to approve', () => {
   it('sets every key of the rule, optional locks off and prompts off', async () => {
     const env = await callEnvironment();
     expect(configuredKeys(env)).toEqual(expect.arrayContaining([...REQUIRED_GIT_KEYS]));

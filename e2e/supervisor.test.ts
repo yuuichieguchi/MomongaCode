@@ -91,6 +91,13 @@ const withChangedModel = (settings: Settings): Settings => {
   return { ...settings, models: { ...models, targets: { ...models.targets, primary: { ...primary, model: CHANGED_MODEL } } } };
 };
 
+const appliedModelOf = (home: E2eHome): unknown => {
+  const file = firstGeneration(home.paths).settingsApplied;
+  if (!fs.existsSync(file)) return undefined;
+  const record = JSON.parse(fs.readFileSync(file, 'utf8')) as { settings?: { models?: { targets?: Record<string, { model?: unknown }> } } };
+  return record.settings?.models?.targets?.['primary']?.model;
+};
+
 const trackExit = (supervisor: SpawnedSupervisor): (() => SupervisorExit | undefined) => {
   let settled: SupervisorExit | undefined;
   void supervisor.exited.then((exit) => {
@@ -365,33 +372,29 @@ describe('supervisor cases', () => {
     const before = await stack.client.health();
     const runtimePid = pidOf(before, 'runtime');
     const gatewayPid = pidOf(before, 'gateway');
+    const changedBefore = named(supervisorLog(home.paths, stack.ready.pid), 'settings.changed').length;
 
     editSettings(home, (settings) => ({ ...settings, sandbox: 'none' }));
-    const after = await until(async () => {
-      const health = await stack.client.health();
-      const child = childOf(health, 'runtime');
-      if (child.state !== 'ready' || child.pid === runtimePid) return undefined;
-      return (await runtime.health()).sandbox === 'none' ? health : undefined;
-    }, { deadlineMs: E2E_SETTINGS_RESTART_BOUND_MS, description: 'runtime restarted with sandbox none' });
+    await until(async () => {
+      await runtime.createSession();
+      return (await runtime.health()).sandbox === 'none' ? true : undefined;
+    }, {
+      deadlineMs: E2E_SETTINGS_SEEN_BOUND_MS,
+      description: 'the runtime to take sandbox none in place for the next operation',
+    });
+    await until(() => (named(supervisorLog(home.paths, stack.ready.pid), 'settings.changed').length === changedBefore + 1 ? true : undefined), {
+      deadlineMs: E2E_SETTINGS_SEEN_BOUND_MS,
+      description: 'the supervisor to log the sandbox change',
+    });
 
+    const after = await stack.client.health();
+    expect(pidOf(after, 'runtime')).toBe(runtimePid);
     expect(pidOf(after, 'gateway')).toBe(gatewayPid);
-    expect(childOf(after, 'gateway')).toMatchObject({ state: 'ready', restarts: 0 });
-    expect(childOf(after, 'runtime')).toMatchObject({ state: 'ready', restarts: 1, consecutiveFailures: 0 });
-    expect(childOf(after, 'runtime').lastExit?.reason).toBe('requested');
-
+    for (const role of ['runtime', 'gateway'] as const) expect(childOf(after, role)).toMatchObject({ state: 'ready', restarts: 0 });
     const records = supervisorLog(home.paths, stack.ready.pid);
-    expect(named(records, 'settings.changed')).toEqual([expect.objectContaining({ models: false, sandbox: true })]);
-    expect(named(records, 'settings.evaluated')).toEqual([expect.objectContaining({ modelsChanged: false, sandboxChanged: true, roles: 'runtime' })]);
-    expect(named(records, 'plan.begin')).toEqual([expect.objectContaining({ roles: 'runtime', planned: 1 })]);
-    const changed = indexOf(records, (record) => record.msg === 'settings.changed');
-    const evaluated = indexOf(records, (record) => record.msg === 'settings.evaluated');
-    const planned = indexOf(records, (record) => record.msg === 'plan.begin');
-    expect(changed).toBeLessThan(evaluated);
-    expect(evaluated).toBeLessThan(planned);
-    expect(ofChild(records, 'child.exit', 'runtime')).toEqual([expect.objectContaining({ childPid: runtimePid, reason: 'requested' })]);
-    expect(ofChild(records, 'child.spawn', 'runtime').map((record) => record.reason)).toEqual(['initial', 'plan']);
-    expect(ofChild(records, 'child.spawn', 'gateway')).toHaveLength(1);
-    expect(ofChild(records, 'child.exit', 'gateway')).toEqual([]);
+    expect(named(records, 'child.stop')).toEqual([]);
+    expect(named(records, 'child.exit')).toEqual([]);
+    for (const role of ['runtime', 'gateway'] as const) expect(ofChild(records, 'child.spawn', role).map((record) => record.reason)).toEqual(['initial']);
   });
 
   it(titleOf('s3'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
@@ -400,39 +403,26 @@ describe('supervisor cases', () => {
     const before = await stack.client.health();
     const runtimePid = pidOf(before, 'runtime');
     const gatewayPid = pidOf(before, 'gateway');
+    const changedBefore = named(supervisorLog(home.paths, stack.ready.pid), 'settings.changed').length;
 
     editSettings(home, withChangedModel);
-    const after = await until(async () => {
-      const health = await stack.client.health();
-      const runtime = childOf(health, 'runtime');
-      const gateway = childOf(health, 'gateway');
-      return runtime.state === 'ready' && gateway.state === 'ready' && runtime.pid !== runtimePid && gateway.pid !== gatewayPid ? health : undefined;
-    }, { deadlineMs: E2E_SETTINGS_RESTART_BOUND_MS, description: 'both daemons restarted after a models change' });
-    for (const role of ['runtime', 'gateway'] as const) {
-      expect(childOf(after, role)).toMatchObject({ state: 'ready', restarts: 1, consecutiveFailures: 0 });
-      expect(childOf(after, role).lastExit?.reason).toBe('requested');
-    }
-    const newRuntimePid = pidOf(after, 'runtime');
-    const newGatewayPid = pidOf(after, 'gateway');
+    await until(() => (appliedModelOf(home) === CHANGED_MODEL ? true : undefined), {
+      deadlineMs: E2E_SETTINGS_SEEN_BOUND_MS,
+      description: 'the supervisor to record the models change as applied',
+    });
+    await until(() => (named(supervisorLog(home.paths, stack.ready.pid), 'settings.changed').length === changedBefore + 1 ? true : undefined), {
+      deadlineMs: E2E_SETTINGS_SEEN_BOUND_MS,
+      description: 'the supervisor to log the models change',
+    });
 
     const records = supervisorLog(home.paths, stack.ready.pid);
-    expect(named(records, 'settings.changed')).toEqual([expect.objectContaining({ models: true, sandbox: false })]);
-    expect(named(records, 'settings.evaluated')).toEqual([expect.objectContaining({ modelsChanged: true, sandboxChanged: false, roles: 'runtime,gateway' })]);
-    expect(named(records, 'plan.begin')).toEqual([expect.objectContaining({ roles: 'runtime,gateway', planned: 2 })]);
-    const runtimeExit = indexOf(records, (record) => record.msg === 'child.exit' && record.child === 'runtime' && record.childPid === runtimePid);
-    const gatewayExit = indexOf(records, (record) => record.msg === 'child.exit' && record.child === 'gateway' && record.childPid === gatewayPid);
-    const gatewayReady = indexOf(records, (record) => record.msg === 'child.ready' && record.child === 'gateway' && record.childPid === newGatewayPid);
-    const runtimeReady = indexOf(records, (record) => record.msg === 'child.ready' && record.child === 'runtime' && record.childPid === newRuntimePid);
-    expect(runtimeExit).toBeLessThan(gatewayExit);
-    expect(gatewayExit).toBeLessThan(gatewayReady);
-    expect(gatewayReady).toBeLessThan(runtimeReady);
-    expect(indexOf(records, (record) => record.msg === 'child.spawn' && record.child === 'gateway' && record.childPid === newGatewayPid)).toBeLessThan(
-      indexOf(records, (record) => record.msg === 'child.spawn' && record.child === 'runtime' && record.childPid === newRuntimePid),
-    );
-    for (const role of ['runtime', 'gateway'] as const) {
-      expect(ofChild(records, 'child.spawn', role).map((record) => record.reason)).toEqual(['initial', 'plan']);
-      expect(ofChild(records, 'child.exit', role)).toEqual([expect.objectContaining({ reason: 'requested' })]);
-    }
+    expect(named(records, 'child.stop')).toEqual([]);
+    expect(named(records, 'child.exit')).toEqual([]);
+    for (const role of ['runtime', 'gateway'] as const) expect(ofChild(records, 'child.spawn', role).map((record) => record.reason)).toEqual(['initial']);
+    const after = await stack.client.health();
+    expect(pidOf(after, 'runtime')).toBe(runtimePid);
+    expect(pidOf(after, 'gateway')).toBe(gatewayPid);
+    for (const role of ['runtime', 'gateway'] as const) expect(childOf(after, role)).toMatchObject({ state: 'ready', restarts: 0, consecutiveFailures: 0 });
   });
 
   it(titleOf('s4'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
@@ -441,21 +431,16 @@ describe('supervisor cases', () => {
     const before = await stack.client.health();
     const runtimePid = pidOf(before, 'runtime');
     const gatewayPid = pidOf(before, 'gateway');
-    const initial = supervisorLog(home.paths, stack.ready.pid);
-    const evaluatedBefore = named(initial, 'settings.evaluated').length;
-    const changedBefore = named(initial, 'settings.changed').length;
-    const plansBefore = named(initial, 'plan.begin').length;
+    const changedBefore = named(supervisorLog(home.paths, stack.ready.pid), 'settings.changed').length;
 
     editSettings(home, (settings) => ({ ...settings, permissions: { allow: ['Read'] } }));
-    const evaluated = await until(() => {
-      const records = named(supervisorLog(home.paths, stack.ready.pid), 'settings.evaluated');
-      return records.length === evaluatedBefore + 1 ? records : undefined;
-    }, { deadlineMs: E2E_SETTINGS_SEEN_BOUND_MS, description: 'one more settings.evaluated after a permissions edit' });
+    const changed = await until(() => {
+      const records = named(supervisorLog(home.paths, stack.ready.pid), 'settings.changed');
+      return records.length === changedBefore + 1 ? records : undefined;
+    }, { deadlineMs: E2E_SETTINGS_SEEN_BOUND_MS, description: 'one more settings.changed after a permissions edit' });
 
-    expect(evaluated.at(-1)).toMatchObject({ level: 'info', service: 'supervisor', modelsChanged: false, sandboxChanged: false, roles: '' });
+    expect(changed.at(-1)).toMatchObject({ level: 'info', service: 'supervisor' });
     const records = supervisorLog(home.paths, stack.ready.pid);
-    expect(named(records, 'settings.changed')).toHaveLength(changedBefore);
-    expect(named(records, 'plan.begin')).toHaveLength(plansBefore);
     expect(named(records, 'child.stop')).toEqual([]);
     expect(named(records, 'child.exit')).toEqual([]);
     expect(named(records, 'child.spawn')).toHaveLength(2);

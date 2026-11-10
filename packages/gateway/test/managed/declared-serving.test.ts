@@ -1,19 +1,21 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, momongaPaths, socketPathLimit } from '@momonga/foundation';
 import { loadUserSettings, probeKeyOf } from '@momonga/config';
 import type { KnownProbeKey } from '@momonga/config';
 import { managedCurrencyOf, saveProbeRecord } from '@momonga/gateway';
 import { FM_SERVER } from '@momonga/protocol';
 import type { ManagedServerDescription } from '@momonga/protocol';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeFm, createFakeManagedServer, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeFm, createFakeManagedServer, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { makeDir, postJson, readJson, registerCleanup, userInput } from '../gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, until, writeSettings } from '../gateway-process-helpers.ts';
 import type { GatewayProcessOptions } from '../gateway-process-helpers.ts';
 import { makeReport } from '../report-fixture.ts';
 import { registryOf } from './declared-support.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 type DumpRecord = { argv: string[]; pid: number };
 
@@ -124,8 +126,8 @@ const served = async (kind: Kind, target: Record<string, unknown> = {}) => {
 
 const serves = (dumpFile: string, command: string): DumpRecord[] => readDump(dumpFile).filter((record) => record.argv[0] === command);
 
-describe.each(KINDS)('one mechanism serves $label with the five assertions of section 13.2 (design-managed-servers 19.8; R-S19-10, R-S19-24)', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, (kind) => {
-  it('starts and answers a request with no managedServers port, launched on run/g<N>/targets/<target>.sock', async () => {
+describe.each(KINDS)('one mechanism serves $label with the five assertions of section 13.2 (design-managed-servers 19.8; R-S19-10, R-S19-24)', (kind) => {
+  it('starts and answers a request with no managedServers port, launched on run/g<N>/targets/<target>-<k>.sock', async () => {
     const { home, dumpFile, saveRecord } = await served(kind);
     await saveRecord();
     const handle = await launch(home);
@@ -133,7 +135,7 @@ describe.each(KINDS)('one mechanism serves $label with the five assertions of se
     const runs = serves(dumpFile, kind.serveCommand);
     expect(runs).toHaveLength(1);
     const argv = (runs[0] as DumpRecord).argv;
-    expect(argv[argv.indexOf('--socket') + 1]).toBe(path.join(targetsDir(home), `${kind.target}.sock`));
+    expect(argv[argv.indexOf('--socket') + 1]).toBe(path.join(targetsDir(home), `${kind.target}-1.sock`));
   });
 
   it('refuses with 412 and the row-0 text when the executable is missing, before any launch', async () => {
@@ -190,11 +192,11 @@ describe.each(KINDS)('one mechanism serves $label with the five assertions of se
     expect((await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', ask()))).status).toBe(200);
     await handle.close();
     for (const record of serves(dumpFile, kind.serveCommand)) expect(isAlive(record.pid)).toBe(false);
-    expect(fs.readdirSync(targetMarkers(home, kind.target))).toEqual([]);
+    expect(fs.readdirSync(targetMarkers(home, `${kind.target}-1`))).toEqual([]);
   });
 });
 
-describe('a declared server whose command is missing answers the row-0 text, not a placeholder (19.4; R-S19-17)', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('a declared server whose command is missing answers the row-0 text, not a placeholder (19.4; R-S19-17)', () => {
   it('answers 412 naming the declared path', async () => {
     const home = makeHome();
     const missing = path.join(makeDir(), 'absent-server');
@@ -212,14 +214,14 @@ describe('a declared server whose command is missing answers the row-0 text, not
   });
 });
 
-describe.skipIf(process.platform === 'win32')('a declared server socket path too long for the platform refuses that target only (18.2.5; R-S19-18)', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.skipIf(process.platform === 'win32')('a declared server socket path too long for the platform refuses that target only (18.2.5; R-S19-18)', () => {
   it('answers 412 with the 18.2.5 text and creates no directory for the instance', async () => {
     const fake = await createFakeManagedServer({ dir: makeDir() });
     const home = makeHome();
     const limit = socketPathLimit(process.platform);
-    const prefix = Buffer.byteLength(path.join(targetsDir(home), 'x.sock')) - 1;
+    const prefix = Buffer.byteLength(path.join(targetsDir(home), 'x-1.sock')) - 1;
     const name = `t${'n'.repeat(limit + 1 - prefix - 1)}`;
-    const socket = path.join(targetsDir(home), `${name}.sock`);
+    const socket = path.join(targetsDir(home), `${name}-1.sock`);
     expect(Buffer.byteLength(socket)).toBe(limit + 1);
     writeSettings(home, {
       models: {
@@ -236,7 +238,7 @@ describe.skipIf(process.platform === 'win32')('a declared server socket path too
     expect(JSON.stringify(answered.body)).toContain(
       `the target \\"${name}\\": its server socket path is ${limit + 1} bytes, longer than the ${limit} bytes this platform allows; choose a shorter target name`,
     );
-    expect(fs.existsSync(targetMarkers(home, name))).toBe(false);
+    expect(fs.existsSync(targetMarkers(home, `${name}-1`))).toBe(false);
     expect(fs.existsSync(socket)).toBe(false);
   });
 });
@@ -258,7 +260,7 @@ const declaredFake = async () => {
   return { binary: fake.binaryPath, dumpFile, home, description: await descriptionIn(home, 'bench') };
 };
 
-describe('the probe of a declared server records under the key of 19.4 on the instance places of 18.2.1 (R-S19-20)', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the probe of a declared server records under the key of 19.4 on the instance places of 18.2.1 (R-S19-20)', () => {
   it('writes the record named by the digest of {subject, model, binarySha256, hostOsBuild}, probing on run/g<N>/targets/_probe-workbench.sock', async () => {
     const { binary, dumpFile, home, description } = await declaredFake();
     const handle = await launch(home);
@@ -269,11 +271,11 @@ describe('the probe of a declared server records under the key of 19.4 on the in
     const probeRuns = serves(dumpFile, 'run').map((record) => record.argv[record.argv.indexOf('--socket') + 1]);
     expect(probeRuns).toContain(path.join(targetsDir(home), '_probe-workbench.sock'));
     expect((await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', ask()))).status).toBe(200);
-    expect(serves(dumpFile, 'run').map((record) => record.argv[record.argv.indexOf('--socket') + 1])).toContain(path.join(targetsDir(home), 'workbench.sock'));
+    expect(serves(dumpFile, 'run').map((record) => record.argv[record.argv.indexOf('--socket') + 1])).toContain(path.join(targetsDir(home), 'workbench-1.sock'));
   });
 });
 
-describe('the running instance reads its record under the start key captured when its child started (19.11-a, 19.14 item 16b; R-S19-23)', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the running instance reads its record under the start key captured when its child started (19.11-a, 19.14 item 16b; R-S19-23)', () => {
   it('keeps answering from the start key record after the binary bytes change, and starts no probe of the new key', async () => {
     const { binary, home, description } = await declaredFake();
     const startKey = keyOf(description, binary, 'fake-1');
@@ -297,7 +299,7 @@ describe('the running instance reads its record under the start key captured whe
     await saveProbeRecord(probeDir(home), keyAtChildStart, makeReport(1, 1), managedCurrencyOf(description, { userDialects: {} }));
     const answered = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', ask()));
     expect(answered.status).toBe(200);
-    expect(serves(dumpFile, 'run').map((record) => record.argv[record.argv.indexOf('--socket') + 1])).toEqual([path.join(targetsDir(home), 'workbench.sock')]);
+    expect(serves(dumpFile, 'run').map((record) => record.argv[record.argv.indexOf('--socket') + 1])).toEqual([path.join(targetsDir(home), 'workbench-1.sock')]);
     expect(recordFiles(home)).toEqual([`${keyAtChildStart.digest}.json`]);
   });
 });

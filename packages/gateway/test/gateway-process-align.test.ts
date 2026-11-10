@@ -7,11 +7,13 @@ import { createJsonLogger, createUdsClient, inspectProcessLock, systemClock, FIR
 import type { TextStream } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS, createGateway, startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
-import { createFakeClock, createFakeTimers, createScriptedAdapter, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, createScriptedAdapter, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
 import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, postJson, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, until, writeSettings } from './gateway-process-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const control = vi.hoisted(() => ({
   createGatewayError: undefined as Error | undefined,

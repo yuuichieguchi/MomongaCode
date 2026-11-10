@@ -325,7 +325,7 @@ export type {
   SkillsResponse,
 } from './run-api.ts';
 export { assistantTextOf, jsonReplyOf } from './assistant-text.ts';
-export { ANATOMY_FLAT_LAYERS, ANATOMY_HISTORY_LAYERS, anatomyLayerEntries } from './token-anatomy.ts';
+export { ANATOMY_FLAT_LAYERS, ANATOMY_HISTORY_LAYERS, CACHE_READS_NOT_REPORTED, PRICE_NOT_RECORDED, UNPRICED_CODES, UNPRICED_CODE_TEXT, anatomyLayerEntries } from './token-anatomy.ts';
 export type {
   BilledDetail,
   BilledCallsCursorView,
@@ -336,11 +336,16 @@ export type {
   UnjoinedView,
   CostBreakdownView,
   ModelCost,
+  ModelPricing,
+  PriceNotRecorded,
   RoleBreakdownView,
   TimingSummaryView,
   TokenAnatomy,
   TokenAnatomyLayers,
   UnpricedCallView,
+  InconsistentUsageView,
+  UnpricedCode,
+  UnpricedOutcome,
 } from './token-anatomy.ts';
 export {
   DEFAULT_MEMORY_KIND,
@@ -468,7 +473,7 @@ export type {
   ModelRejectionReason,
   UsageChargePurpose,
 } from './run-types.ts';
-export { CHAT_REASONING_FIELDS, carriesOutput, ERROR_TYPES, OPEN_RESPONSES_STREAM_EVENT_TYPES, OPEN_RESPONSES_VERSION, TERMINAL_STREAM_EVENT_TYPES } from './open-responses.ts';
+export { cachedDetailOf, CHAT_REASONING_FIELDS, reportedCachedTokensOf, wireUsageOf, carriesOutput, ERROR_TYPES, OPEN_RESPONSES_STREAM_EVENT_TYPES, OPEN_RESPONSES_VERSION, TERMINAL_STREAM_EVENT_TYPES } from './open-responses.ts';
 export type {
   Annotation,
   CompactMomongaExtension,
@@ -543,7 +548,7 @@ export type {
   UsageSource,
   UsageTotals,
 } from './gateway-api.ts';
-export type { JsonReplyPath, MomongaResponseExtension } from './open-responses.ts';
+export type { JsonReplyPath, MomongaResponseExtension, WireUsage } from './open-responses.ts';
 export type {
   AdapterCompactRequest,
   AdapterCompactResult,

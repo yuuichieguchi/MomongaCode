@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/runtime';
 import type { ToolEnv } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
@@ -17,7 +17,7 @@ import {
 } from './cancel-fixture.ts';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks } from '@momonga/testkit';
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const BASH = { callId: 'call_b_1', name: 'Bash', kind: 'execute' as const, args: { command: 'sleep 30' } };
 const MARK = { callId: 'call_m_1', name: 'Mark', args: { value: 'one' } };
@@ -75,7 +75,7 @@ describe('cancel recovery fallback', () => {
     expect(errorNotices(env, run.id)).toEqual([]);
   });
 
-  it('a cancel where recoveryContextFor throws reaches CANCELLED, the process group is gone before CANCELLED, and the record is UNKNOWN', PROCESS_TIMEOUT, async () => {
+  it('a cancel where recoveryContextFor throws reaches CANCELLED, the process group is gone before CANCELLED, and the record is UNKNOWN', async () => {
     const env = await makeEnv();
     const { run, keys } = await seedStartedCalls(env, [BASH]);
     const key = keys[BASH.callId] as string;
@@ -108,7 +108,7 @@ describe('cancel recovery fallback', () => {
     expect(env.portCalls.abandon.map((call) => call.targets)).toEqual([[{ callId: BASH.callId, idemKey: key }]]);
   });
 
-  it('the process group is gone before CANCELLED, including a child that closed fd 3', PROCESS_TIMEOUT, async () => {
+  it('the process group is gone before CANCELLED, including a child that closed fd 3', async () => {
     const env = await makeEnv();
     const { run, keys } = await seedStartedCalls(env, [BASH]);
     const key = keys[BASH.callId] as string;
@@ -351,7 +351,7 @@ describe('cancel recovery fallback', () => {
     expect(env.store.idempotency.get(keys[REMOTE.callId] as string)?.s).toBe('PENDING');
   });
 
-  it('a fatal store error in cancel recovery reaches onFatal', PROCESS_TIMEOUT, async () => {
+  it('a fatal store error in cancel recovery reaches onFatal', async () => {
     const env = await makeEnv();
     const { run } = await seedStartedCalls(env, [MARK]);
     const fatal = fatalStoreError();
@@ -375,7 +375,7 @@ describe('cancel recovery fallback', () => {
     expect(env.run(run.id).status).toBe('CANCELLING');
   });
 
-  it('a fatal store error thrown by abandon reaches onFatal', PROCESS_TIMEOUT, async () => {
+  it('a fatal store error thrown by abandon reaches onFatal', async () => {
     const env = await makeEnv();
     const { run } = await seedStartedCalls(env, [REMOTE]);
     const fatal = fatalStoreError();

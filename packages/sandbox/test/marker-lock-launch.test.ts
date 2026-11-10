@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createLockCapability, createMarker, createProcessInspector, hostInspectorPorts } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
 import { launch } from '../src/process.ts';
 import type { LaunchOptions } from '../src/process.ts';
 import { makeTempDir } from './helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const BASE_ENV = { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' };
 
@@ -49,7 +51,7 @@ const waitForState = async (read: () => Promise<string>, wanted: string, attempt
 };
 
 describe.runIf(process.platform === 'darwin')('T3 (a) a real launch with a created-and-locked marker', () => {
-  it('reads held after the leader exits while an escaped grandchild keeps fd 3, and free once it exits, without any subprocess probe', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('reads held after the leader exits while an escaped grandchild keeps fd 3, and free once it exits, without any subprocess probe', async () => {
     const { root, markerDir, capability, inspector } = await setup();
     expect(await capability.of(markerDir)).toBe('proved');
     const marker = path.join(markerDir, 'call');

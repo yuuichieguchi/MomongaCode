@@ -1,5 +1,5 @@
 import { isRecord } from '@momonga/foundation';
-import { CHAT_REASONING_FIELDS } from '@momonga/protocol';
+import { CHAT_REASONING_FIELDS, cachedDetailOf } from '@momonga/protocol';
 import type { ChatReasoningField, Usage } from '@momonga/protocol';
 import { UpstreamProtocolError } from '../shared/failures.ts';
 import { parseUpstreamJson } from '../shared/upstream-json.ts';
@@ -38,11 +38,11 @@ const tokenCount = (value: unknown, what: string): number => {
   return value;
 };
 
-const optionalTokenCount = (container: unknown, key: string, what: string): number => {
-  if (container === undefined || container === null) return 0;
+const reportedTokenCount = (container: unknown, key: string, what: string): number | undefined => {
+  if (container === undefined || container === null) return undefined;
   if (!isRecord(container)) throw invalid(`${what} must be an object`);
   const value = container[key];
-  return value === undefined || value === null ? 0 : tokenCount(value, `${what}.${key}`);
+  return value === undefined || value === null ? undefined : tokenCount(value, `${what}.${key}`);
 };
 
 const usageOf = (value: unknown): Usage | undefined => {
@@ -54,9 +54,9 @@ const usageOf = (value: unknown): Usage | undefined => {
     input_tokens: input,
     output_tokens: output,
     total_tokens: input + output,
-    input_tokens_details: { cached_tokens: optionalTokenCount(value['prompt_tokens_details'], 'cached_tokens', 'usage.prompt_tokens_details') },
+    input_tokens_details: cachedDetailOf(reportedTokenCount(value['prompt_tokens_details'], 'cached_tokens', 'usage.prompt_tokens_details')),
     output_tokens_details: {
-      reasoning_tokens: optionalTokenCount(value['completion_tokens_details'], 'reasoning_tokens', 'usage.completion_tokens_details'),
+      reasoning_tokens: reportedTokenCount(value['completion_tokens_details'], 'reasoning_tokens', 'usage.completion_tokens_details') ?? 0,
     },
   };
 };

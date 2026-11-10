@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import type { Sandbox } from '@momonga/sandbox';
 import { HAS_REAL_SANDBOX, createHostSandbox } from '../helpers.ts';
 import { HAS_RG, RG_PATH, makeBuiltins, resultOf } from './fixtures.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const CONFIG_VARIABLE = 'RIPGREP_CONFIG_PATH';
 
@@ -42,19 +44,19 @@ describe.runIf(HAS_RG && HAS_REAL_SANDBOX)('the model glob in the file form has 
     return { status: result.status, output: result.output.split(tools.layout.project).join('<project>') };
   };
 
-  it.each(GLOBS)('gives the same answer for the glob %j as argv did', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async (glob) => {
+  it.each(GLOBS)('gives the same answer for the glob %j as argv did', async (glob) => {
     const sandbox = createHostSandbox({ tmpRoot, killGraceMs: 300 });
     const fileForm = await answerOf(sandbox, glob);
     const argv = await answerOf(argvForm(sandbox), glob);
     expect(fileForm).toEqual(argv);
   });
 
-  it('accepts a glob that ends in whitespace and matches what argv matched: the trim drops it', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('accepts a glob that ends in whitespace and matches what argv matched: the trim drops it', async () => {
     const answer = await answerOf(createHostSandbox({ tmpRoot, killGraceMs: 300 }), '*.txt ');
     expect(answer).toEqual({ status: 'completed', output: ' c.txt:1:secret\na.txt:1:secret' });
   });
 
-  it('carries an empty glob as argv did: nothing is filtered', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('carries an empty glob as argv did: nothing is filtered', async () => {
     const answer = await answerOf(createHostSandbox({ tmpRoot, killGraceMs: 300 }), '');
     expect(answer.status).toBe('completed');
     expect(answer.output.split('\n').length).toBe(6);

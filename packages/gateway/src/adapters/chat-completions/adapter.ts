@@ -218,7 +218,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
       const usage =
         collected.usage ??
         estimatedUsage(wireTokensOf(renderWire(summaryRequest, ctx.target, { reasoningOrigin: ctx.reasoningOrigin, capabilities }), capabilities.imageTokens), tokensForText(collected.summary));
-      return { summary: collected.summary, usage };
+      return { summary: collected.summary, usage, usageSource: collected.usage === null ? ('estimated' as const) : ('reported' as const) };
     }
     throw new StreamFailure('upstream_protocol_error', 'model_error', 'the upstream ended without a terminal event');
   };

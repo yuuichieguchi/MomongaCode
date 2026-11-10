@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createUserSettingsCache, loadSettings, loadUserModels, loadUserSettings, noKeptRecords } from '@momonga/config';
-import { digestsOf } from '@momonga/supervisor';
+import { createUserSettingsCache, derivedInputsOf, loadSettings, loadUserModels, loadUserSettings, noKeptRecords, settingsInputsDigest } from '@momonga/config';
 import { createFakeManagedServer } from '@momonga/testkit';
 import { makeDir, makeTree, trusting, userSettingsPath, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
@@ -46,13 +45,13 @@ describe('one registry for every reader of the user settings, built from the one
     expectWorkbench((await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).settings.models.targets['workbench'], command);
   });
 
-  it("the supervisor's models digest covers the declared server it resolved", async () => {
+  it("the gateway's pinned inputs cover the declared server it resolved", async () => {
     const { tree } = await declaredHome();
     const settings = (await loadUserSettings({ home: tree.home })).settings;
     const servers = settings.models.servers ?? {};
     const builtInOnly = Object.fromEntries(Object.entries(servers).filter(([id]) => id !== 'loom'));
     expect(Object.keys(servers).sort()).toEqual(['fm', 'loom']);
     const withoutDeclared = { ...settings, models: { ...settings.models, servers: builtInOnly } };
-    expect(digestsOf(settings).models).not.toBe(digestsOf(withoutDeclared).models);
+    expect(settingsInputsDigest(derivedInputsOf('D1')(settings))).not.toBe(settingsInputsDigest(derivedInputsOf('D1')(withoutDeclared)));
   });
 });

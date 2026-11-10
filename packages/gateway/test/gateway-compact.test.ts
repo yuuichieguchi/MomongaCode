@@ -49,10 +49,10 @@ describe('POST /v1/responses/compact', () => {
     expect(JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')).summary).toBe(SUMMARY);
   });
 
-  it('names the answering target in momonga.target even with no cost and no cache write (D17 section 7)', async () => {
+  it('names the answering target in momonga.target and the price outcome of a call with no price table (D17 section 7)', async () => {
     const { response } = await compactOnce();
     expect(response.status).toBe(200);
-    expect(response.body.momonga).toEqual({ target: 'primary' });
+    expect(response.body.momonga).toEqual({ target: 'primary', unpriced: { code: 'no_price_entry', reason: 'no price table' } });
     expect(validator.validate('CompactResource', response.body).errors).toEqual([]);
   });
 

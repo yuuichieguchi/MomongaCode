@@ -15,7 +15,7 @@ export type EndpointProbeKeyInput = { subject: 'endpoint'; endpoint: string; mod
 
 export type ProbeKeyInput = ManagedProbeKeyInput | EndpointProbeKeyInput;
 
-export type KnownProbeKey = { kind: 'known'; canonical: string; digest: string };
+export type KnownProbeKey = { kind: 'known'; fields: Readonly<Record<string, string | null>>; canonical: string; digest: string };
 
 export type UnknownProbeKey = { kind: 'unknown'; component: string; reason: string };
 
@@ -25,7 +25,7 @@ const NOT_READ_REASON = 'it was not read';
 
 export const knownKeyOf = (fields: Readonly<Record<string, string | null>>): KnownProbeKey => {
   const canonical = canonicalJson(fields);
-  return { kind: 'known', canonical, digest: sha256Hex(canonical).slice(0, PROBE_KEY_DIGEST_CHARS) };
+  return { kind: 'known', fields: { ...fields }, canonical, digest: sha256Hex(canonical).slice(0, PROBE_KEY_DIGEST_CHARS) };
 };
 
 const isEndpointInput = (input: ProbeKeyInput): input is EndpointProbeKeyInput => 'endpoint' in input;

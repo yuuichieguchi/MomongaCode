@@ -83,7 +83,7 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
   }
 
   if (settings.credentials !== undefined) {
-    warnings.push(`${source}: credentials is only honored in user settings; discarded`);
+    for (const key of Object.keys(settings.credentials)) warnings.push(`${source}: credentials.${key} is only honored in user settings; discarded`);
     delete restricted.credentials;
   }
 

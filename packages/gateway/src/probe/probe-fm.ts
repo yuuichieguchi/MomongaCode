@@ -44,7 +44,7 @@ export const managedKeyReader =
       model: options.model,
     });
 
-export const lockKeyOf = (key: Extract<ProbeKey, { kind: 'known' }>): ProbeLockKey => JSON.parse(key.canonical) as ProbeLockKey;
+export const lockKeyOf = (key: Extract<ProbeKey, { kind: 'known' }>): ProbeLockKey => key.fields;
 
 export const managedCurrencyOf = (description: ManagedServerDescription, options: { userDialects?: UserDialects; declaredDialect?: DialectId }): ManagedRecordCurrency => ({
   userDialects: options.userDialects ?? NO_USER_DIALECTS,
@@ -149,6 +149,7 @@ export const managedProbeSubject = (options: ManagedProbeSubjectOptions): ProbeS
 
 export type ProbeManagedOptions = {
   paths: MomongaPaths;
+  platform: NodeJS.Platform;
   instance: ManagedInstancePaths;
   description: ManagedServerDescription;
   target: string;
@@ -173,7 +174,7 @@ export const probeManagedFm = async (options: ProbeManagedOptions): Promise<Prob
   if (!(await options.isUsableBinary(options.binary))) throw targetNotReadyError(options.target, missingExecutableVerdict(options.target, options.binary));
   const childEnv = managedChildEnvOf(options.env);
   const exec = options.exec ?? createExecFn(childEnv);
-  const readKey = managedKeyReader({ description: options.description, binary: options.binary, model: options.model, exec, platform: process.platform, hashes: options.hashes });
+  const readKey = managedKeyReader({ description: options.description, binary: options.binary, model: options.model, exec, platform: options.platform, hashes: options.hashes });
   const subject = managedProbeSubject({
     target: options.target,
     precondition: managedPrecondition(options.description, options.target, options.binary, exec, options.isUsableBinary, DEFAULT_STEP_TIMEOUT_MS),
