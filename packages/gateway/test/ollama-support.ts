@@ -23,6 +23,7 @@ export const SHORT_TOOL_CALL = 'short-tool-call.ndjson';
 export const LONG_TEXT_THEN_TOOL_CALL = 'long-text-then-tool-call.ndjson';
 export const QWEN_NATIVE_THINKING = 'qwen-native-thinking.ndjson';
 export const OLLAMA_MODEL = 'devstral-small-2';
+export const OLLAMA_LISTED = `${OLLAMA_MODEL}:latest`;
 export const TRAINED_CONTEXT_LENGTH = 393216;
 export const RECORDED_SERVER_VERSION = '0.40.13';
 

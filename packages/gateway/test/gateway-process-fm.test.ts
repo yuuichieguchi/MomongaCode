@@ -161,7 +161,7 @@ describe('managed fm under startGatewayProcess', () => {
     expect(health.status).toBe(200);
     expect(health.body.ok).toBe(false);
     expect(health.body.state).toBe('running');
-    expect(health.body.targets.fm).toMatchObject({
+    expect(health.body.models['fm/system']).toMatchObject({
       ok: false,
       reason: 'precondition_failed',
       detail: `the model "fm": the executable was not found at ${missing}`,

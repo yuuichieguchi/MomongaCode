@@ -482,13 +482,13 @@ describe('O-R5-6 L3: the served account, the reported numbers and the output pol
     expect(refused.status).toBe(412);
     expect(refused.body.error).toEqual({ message: UNKNOWN_CAPABILITIES_TEXT, type: 'invalid_request', param: 'model', code: 'capabilities_unknown', plan: { profile: PROFILE_ID, account: ACCOUNT } });
     const healthBefore = await getJson(client, '/v1/momonga/health');
-    expect(healthBefore.body.targets.gpt).toMatchObject({ ok: false, reason: 'capabilities_unknown', detail: UNKNOWN_CAPABILITIES_TEXT });
+    expect(healthBefore.body.models['gpt/plan-model']).toMatchObject({ ok: false, reason: 'capabilities_unknown', detail: UNKNOWN_CAPABILITIES_TEXT });
     expect((await gateway.get(`${accountRoute(PLAN_ROUTES.accountModels, ACCOUNT)}?profile=${PROFILE_ID}&refresh=1`)).status).toBe(200);
     const first = await listedTarget(gateway);
     expect(first.contextWindow).toBe(200000);
     const healthAfter = await getJson(client, '/v1/momonga/health');
-    expect(healthAfter.body.targets.gpt.ok).toBe(true);
-    expect(healthAfter.body.targets.gpt.reason).toBeUndefined();
+    expect(healthAfter.body.models['gpt/plan-model'].ok).toBe(true);
+    expect(healthAfter.body.models['gpt/plan-model'].reason).toBeUndefined();
     listed.splice(0, listed.length, catalogEntry(100000));
     expect((await gateway.get(`${accountRoute(PLAN_ROUTES.accountModels, ACCOUNT)}?profile=${PROFILE_ID}&refresh=1`)).status).toBe(200);
     const second = await listedTarget(gateway);
@@ -562,7 +562,7 @@ describe('O-R5-6 L3: the served account, the reported numbers and the output pol
     const cause = `the active plan account file ${pointer} is not a JSON object`;
     await askDefault(gateway);
     const health = await getJson(clientFor(gateway.socketPath), '/v1/momonga/health');
-    expect(health.body.targets.gpt).toMatchObject({ ok: false, reason: 'store_unreadable', detail: cause });
+    expect(health.body.models['gpt/plan-model']).toMatchObject({ ok: false, reason: 'store_unreadable', detail: cause });
     await gateway.close();
   });
 

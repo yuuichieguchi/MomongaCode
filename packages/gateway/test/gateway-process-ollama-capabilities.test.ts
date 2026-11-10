@@ -4,7 +4,7 @@ import { endpointKeyOf, probeOllamaTarget } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { outputText, postJson, readJson, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
-import { OLLAMA_MODEL, chunkLine, doneLine, fixtureJson, startFakeOllama } from './ollama-support.ts';
+import { OLLAMA_LISTED, chunkLine, doneLine, fixtureJson, startFakeOllama } from './ollama-support.ts';
 import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -21,7 +21,7 @@ const gatewayOverProbedOllama = async (showCapabilities: readonly string[], repl
     models: modelsOf({
         local: {
           adapter: 'ollama',
-          model: OLLAMA_MODEL,
+          model: OLLAMA_LISTED,
           baseUrl: fake.origin,
           capabilities: { contextWindow: CONTEXT_WINDOW, maxOutputTokens: 2048, ...(declareImage ? { imageInput: true, imageTokens: IMAGE_TOKENS } : {}) },
         },
@@ -29,7 +29,7 @@ const gatewayOverProbedOllama = async (showCapabilities: readonly string[], repl
   });
   await probeOllamaTarget({
     probeRecordDir: momongaPaths(home, process.platform, {}).probe,
-    upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL,
+    upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_LISTED }, model: OLLAMA_LISTED,
     contextWindow: CONTEXT_WINDOW,
   });
   fake.requests.length = 0;
@@ -52,7 +52,7 @@ describe('a started gateway follows the probed Ollama capabilities (W2)', () => 
   it('sends an image to a target whose probe found no vision when the settings declare image input', async () => {
     const { fake, client } = await gatewayOverProbedOllama(['completion', 'tools'], [textReply('seen')]);
 
-    const response = await readJson(await postJson(client, '/v1/responses', { model: `local/${OLLAMA_MODEL}`, input: imageInput }));
+    const response = await readJson(await postJson(client, '/v1/responses', { model: `local/${OLLAMA_LISTED}`, input: imageInput }));
 
     expect(response.status).toBe(200);
     expect(outputText(response.body)).toBe('seen');
@@ -64,7 +64,7 @@ describe('a started gateway follows the probed Ollama capabilities (W2)', () => 
   it('refuses an image for a target that declares nothing and whose probe found no vision, without calling /api/chat', async () => {
     const { fake, client } = await gatewayOverProbedOllama(['completion', 'tools'], [textReply('never sent')], false);
 
-    const response = await readJson(await postJson(client, '/v1/responses', { model: `local/${OLLAMA_MODEL}`, input: imageInput }));
+    const response = await readJson(await postJson(client, '/v1/responses', { model: `local/${OLLAMA_LISTED}`, input: imageInput }));
 
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('capability_unsupported');
@@ -74,7 +74,7 @@ describe('a started gateway follows the probed Ollama capabilities (W2)', () => 
   it('sends an image to a target that declares nothing and whose probe found vision', async () => {
     const { fake, client } = await gatewayOverProbedOllama(['completion', 'tools', 'vision'], [textReply('seen')], false);
 
-    const response = await readJson(await postJson(client, '/v1/responses', { model: `local/${OLLAMA_MODEL}`, input: imageInput }));
+    const response = await readJson(await postJson(client, '/v1/responses', { model: `local/${OLLAMA_LISTED}`, input: imageInput }));
 
     expect(response.status).toBe(200);
     expect(fake.chatBodies()).toHaveLength(1);
@@ -83,7 +83,7 @@ describe('a started gateway follows the probed Ollama capabilities (W2)', () => 
   it('sends no think true for a reasoning effort to a target whose probe found no thinking', async () => {
     const { fake, client } = await gatewayOverProbedOllama(['completion', 'tools'], [textReply('hello')]);
 
-    const response = await readJson(await postJson(client, '/v1/responses', { model: `local/${OLLAMA_MODEL}`, input: userInput('hi'), reasoning: { effort: 'high' } }));
+    const response = await readJson(await postJson(client, '/v1/responses', { model: `local/${OLLAMA_LISTED}`, input: userInput('hi'), reasoning: { effort: 'high' } }));
 
     expect(response.status).toBe(200);
     expect(outputText(response.body)).toBe('hello');

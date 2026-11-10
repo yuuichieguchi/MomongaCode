@@ -114,8 +114,8 @@ describe('the live model catalog of a signed-in account (P7, M2a, I-M2)', () => 
     const reads = listReads(gateway);
     await gateway.restart();
     const health = await getJson(clientFor(gateway.socketPath), '/v1/momonga/health');
-    expect(health.body.targets['gpt'].ok).toBe(true);
-    expect(health.body.targets['gpt']).not.toHaveProperty('reason');
+    expect(health.body.models['gpt/plan-model'].ok).toBe(true);
+    expect(health.body.models['gpt/plan-model']).not.toHaveProperty('reason');
     const models = await getJson(clientFor(gateway.socketPath), '/v1/momonga/models');
     expect(models.status).toBe(200);
     expect(listedEntryOf(models.body, 'gpt/plan-model').capabilities['contextWindow']).toBe(200000);
@@ -130,7 +130,7 @@ describe('the live model catalog of a signed-in account (P7, M2a, I-M2)', () => 
     const reads = listReads(gateway);
     await gateway.restart();
     const health = await getJson(clientFor(gateway.socketPath), '/v1/momonga/health');
-    expect(health.body.targets['gpt']).toMatchObject({ ok: false, reason: 'capabilities_unknown' });
+    expect(health.body.models['gpt/plan-model']).toMatchObject({ ok: false, reason: 'capabilities_unknown' });
     expect(listReads(gateway)).toBe(reads);
     await gateway.close();
   });

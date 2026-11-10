@@ -6,7 +6,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { getJson, outputText, postJson, readJson, userInput, listedCountersOf } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import {
-  OLLAMA_MODEL,
+  OLLAMA_LISTED,
   DEVSTRAL_DIGEST,
   QWEN_DIGEST,
   chunkLine,
@@ -24,7 +24,7 @@ const CONTEXT_WINDOW = 12288;
 
 const ollamaTarget = (baseUrl: string) => ({
   adapter: 'ollama',
-  model: OLLAMA_MODEL,
+  model: OLLAMA_LISTED,
   baseUrl,
   capabilities: { contextWindow: CONTEXT_WINDOW, maxOutputTokens: 2048 },
 });
@@ -37,7 +37,7 @@ const probedHome = async (options: FakeOllamaOptions) => {
   writeSettings(home, { models: modelsOf({ local: ollamaTarget(fake.origin) }) });
   await probeOllamaTarget({
     probeRecordDir: momongaPaths(home, process.platform, {}).probe,
-    upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL,
+    upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_LISTED }, model: OLLAMA_LISTED,
     contextWindow: CONTEXT_WINDOW,
   });
   fake.requests.length = 0;
@@ -51,7 +51,7 @@ describe('an ollama target in a started gateway', () => {
     writeSettings(home, { models: modelsOf({ local: ollamaTarget(fake.origin) }) });
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, measureEndpoint: () => new Promise(() => undefined), measureOllama: () => new Promise(() => undefined) });
 
-    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: `local/${OLLAMA_MODEL}`, input: userInput('hi') }));
+    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: `local/${OLLAMA_LISTED}`, input: userInput('hi') }));
 
     expect(response.status).toBe(503);
     expect(response.body.error.code).toBe(TARGET_PROBING);
@@ -62,7 +62,7 @@ describe('an ollama target in a started gateway', () => {
     const { fake, home } = await probedHome({ chat: [textReply('hello')] });
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
 
-    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: `local/${OLLAMA_MODEL}`, input: userInput('hi'), max_output_tokens: 100 }));
+    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: `local/${OLLAMA_LISTED}`, input: userInput('hi'), max_output_tokens: 100 }));
 
     expect(response.status).toBe(200);
     expect(outputText(response.body)).toBe('hello');
@@ -78,11 +78,11 @@ describe('an ollama target in a started gateway', () => {
     const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
     const entry = models.body.data.find((model: { id: string }) => model.id === 'fast');
     const { settings } = await loadUserSettings({ home });
-    const target = settings.models.models.get(`local/${OLLAMA_MODEL}`);
+    const target = settings.models.models.get(`local/${OLLAMA_LISTED}`);
     if (target === undefined) throw new Error('the settings resolved no local target');
 
-    expect(listedCountersOf(models.body, `local/${OLLAMA_MODEL}`)).toEqual({
-      [`local/${OLLAMA_MODEL}`]: targetCounterOf({ target, codeDigest: await codeDigestOfRunningProcess(), upstreamIdentity: DEVSTRAL_DIGEST }),
+    expect(listedCountersOf(models.body, `local/${OLLAMA_LISTED}`)).toEqual({
+      [`local/${OLLAMA_LISTED}`]: targetCounterOf({ target, codeDigest: await codeDigestOfRunningProcess(), upstreamIdentity: DEVSTRAL_DIGEST }),
     });
   });
 
@@ -102,11 +102,11 @@ describe('an ollama target in a started gateway', () => {
     });
     digest = QWEN_DIGEST;
 
-    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: `local/${OLLAMA_MODEL}`, input: userInput('hi') }));
+    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: `local/${OLLAMA_LISTED}`, input: userInput('hi') }));
 
     expect(response.status).toBe(503);
     expect(response.body.error.code).toBe(TARGET_PROBING);
-    expect(measured).toEqual([{ endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }]);
+    expect(measured).toEqual([{ endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_LISTED }]);
     expect(fake.chatBodies()).toEqual([]);
   });
 });

@@ -14,7 +14,9 @@ export const FM_CURRENCY = managedCurrencyOf(FM_SERVER, { userDialects: {} });
 
 export type StartProbe = (key: KnownProbeKey) => Promise<Probing>;
 
-export const fmRecordKey = (binarySha256: string, osBuild: string = FAKE_OS_BUILD, model?: string): KnownProbeKey => {
+export const FAKE_FM_LISTED_MODEL = 'system';
+
+export const fmRecordKey = (binarySha256: string, osBuild: string = FAKE_OS_BUILD, model: string = FAKE_FM_LISTED_MODEL): KnownProbeKey => {
   const key = probeKeyOf({
     subject: FM_SERVER.id,
     identity: FM_SERVER.identity,
@@ -65,7 +67,7 @@ export const primed = async <Managed extends { capabilities: (target: { name: st
   return ready;
 };
 
-export const saveFakeFmRecord = async (home: string, binaryPath: string, report: ProbeReport = makeReport(1, 1), model?: string): Promise<void> => {
+export const saveFakeFmRecord = async (home: string, binaryPath: string, report: ProbeReport = makeReport(1, 1), model: string = FAKE_FM_LISTED_MODEL): Promise<void> => {
   const key = fmRecordKey(createHash('sha256').update(fs.readFileSync(binaryPath)).digest('hex'), FAKE_OS_BUILD, model);
   await saveProbeRecord(path.join(home, '.momonga', 'state', 'probe'), key, report, FM_CURRENCY);
 };
