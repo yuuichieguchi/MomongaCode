@@ -66,7 +66,9 @@ const twoGenerations = async (context: Parameters<typeof withTempDir>[0], role: 
   const g2 = await retiringStyleServer(generationLayout(home, 2).sockets[role], role);
   registerCleanup(context, () => g2.close());
   await publishCurrentGeneration(paths, { generation: 1, version: '1.0.0', sockets: generationLayout(home, 1).sockets });
-  const promote = (): Promise<void> => publishCurrentGeneration(paths, { generation: 2, version: '1.0.0', sockets: generationLayout(home, 2).sockets });
+  const promote = async (): Promise<void> => {
+    await publishCurrentGeneration(paths, { generation: 2, version: '1.0.0', sockets: generationLayout(home, 2).sockets });
+  };
   return { paths, g1, g2, promote };
 };
 

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import type { EntryIo } from '@momonga/foundation';
-import { SocketPathUnsupportedError } from '@momonga/foundation';
+import { FIRST_GENERATION, SocketPathUnsupportedError, generationLayout, momongaPaths, shortTempBase, socketPathLimit } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import type { DaemonEntries } from '../src/daemon/entries.ts';
 import { describeFailure } from '../src/failure.ts';
@@ -8,12 +9,21 @@ import { nodePorts } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
 import { nodePolicyVerifyHost } from '../src/verify/host.ts';
-import { testHostPath } from '@momonga/testkit';
+import { registerCleanup, testHostPath } from '@momonga/testkit';
 
-const LONG_HOME = `/${'h'.repeat(200)}`;
+const SUPERVISOR_SOCKET_SUFFIX = Buffer.byteLength(path.join('.momonga', 'run', `g${FIRST_GENERATION}`, 'supervisor.sock')) + 1;
 
-describe.skipIf(process.platform === 'win32')('daemon status on a home too long for the first generation sockets', () => {
-  it('refuses with SocketPathUnsupportedError, reported as the socket path refusal, before any directory is created or the daemon is reached', async () => {
+const homeWhoseFirstSupervisorSocketIs = (byteLength: number): string => {
+  const parent = fs.realpathSync.native(fs.mkdtempSync(path.join(shortTempBase(process.platform), 'mm-fit-')));
+  const home = path.join(parent, 'h'.repeat(byteLength - SUPERVISOR_SOCKET_SUFFIX - Buffer.byteLength(parent) - 1));
+  fs.mkdirSync(home);
+  return home;
+};
+
+describe.skipIf(process.platform === 'win32')('daemon start on a home too long for the sockets of a generation (20.19)', () => {
+  it('refuses with SocketPathUnsupportedError at the start of the generation, reported as the socket path refusal: no number is consumed and no supervisor is spawned', async (context) => {
+    const LONG_HOME = homeWhoseFirstSupervisorSocketIs(socketPathLimit(process.platform) + 1);
+    registerCleanup(context, () => fs.rmSync(path.dirname(LONG_HOME), { recursive: true, force: true }));
     const stdout: string[] = [];
     const codes: number[] = [];
     const spawned: unknown[] = [];
@@ -48,7 +58,7 @@ describe.skipIf(process.platform === 'win32')('daemon status on a home too long 
     );
     program.exitOverride();
 
-    const error = await program.parseAsync(['daemon', 'status'], { from: 'user' }).then(
+    const error = await program.parseAsync(['daemon', 'start'], { from: 'user' }).then(
       () => undefined,
       (caught: unknown) => caught,
     );
@@ -58,6 +68,8 @@ describe.skipIf(process.platform === 'win32')('daemon status on a home too long 
     expect(stdout.join('')).toBe('');
     expect(codes).toEqual([]);
     expect(spawned).toEqual([]);
-    expect(fs.existsSync(LONG_HOME)).toBe(false);
+    const paths = momongaPaths(LONG_HOME, process.platform, {});
+    expect(fs.existsSync(paths.generationCounter)).toBe(false);
+    expect(fs.existsSync(generationLayout(LONG_HOME, FIRST_GENERATION).dir)).toBe(false);
   });
 });

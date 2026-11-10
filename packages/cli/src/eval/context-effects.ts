@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { applyWorkspaceStep } from '@momonga/eval';
-import { STARTUP_TIMEOUT_MS, createBinaryHashCache, createHostExec, createOwnedDirectory, currentGenerationLock, ensureMomongaDirs, hostKernelLock, inspectProcessLock, isProcessAlive, shortTempBase } from '@momonga/foundation';
+import { STARTUP_TIMEOUT_MS, createBinaryHashCache, createHostExec, createOwnedDirectory, ensureMomongaDirs, generationLayout, hostKernelLock, inspectProcessLock, isProcessAlive, readCurrentGeneration, shortTempBase } from '@momonga/foundation';
 import type { KernelLockMechanism, OwnedDirectory } from '@momonga/foundation';
 import { loadUserModels, registeredServer } from '@momonga/config';
 import type { ServerRegistry } from '@momonga/config';
@@ -141,9 +141,11 @@ export const nodeContextEffects = (ports: CliPorts, lock: KernelLockMechanism = 
     },
     makeDirectory: (directory) => ports.files.mkdir(directory),
     canonical: (directory) => fs.realpath(directory),
-    startDaemon: async (root, paths, env) => (await ensureDaemon({ ...ports, home: root, env }, paths, { lifeline: true, onNotice: stderrStopNotice(ports) })).pid,
+    startDaemon: async (root, paths, env) => (await ensureDaemon({ ...ports, home: root, env }, paths, { lifeline: true, onNotice: stderrStopNotice(ports) })).health.pid,
     daemonHolder: async (paths) => {
-      const lock = await inspectProcessLock(await currentGenerationLock(paths, 'supervisor'));
+      const current = await readCurrentGeneration(paths);
+      if (current === undefined) return undefined;
+      const lock = await inspectProcessLock(generationLayout(path.dirname(paths.root), current.generation).locks.supervisor);
       return lock.state === 'held' ? lock.pid : undefined;
     },
     terminate: async (pid) => {

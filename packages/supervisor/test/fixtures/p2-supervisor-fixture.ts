@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import { FIRST_GENERATION } from '@momonga/foundation';
+import { prepareGenerationForTest } from '@momonga/testkit/first-generation';
 import { startSupervisor } from '../../src/start-supervisor.ts';
 import { createSpawnPort } from '../../src/spawn-port.ts';
 import type { SpawnPort } from '../../src/child-manager.ts';
@@ -22,9 +24,11 @@ const spawn: SpawnPort = process.argv.includes('--leak-marker-fd')
     }
   : realPort;
 
+prepareGenerationForTest(home, FIRST_GENERATION, '0.0.0-fixture');
 const supervisor = await startSupervisor({
   home,
   version: '0.0.0-fixture',
+  generation: FIRST_GENERATION,
   launcher: () => ({ command: process.execPath, args: [child] }),
   env: { PATH: process.env['PATH'] ?? '/usr/bin:/bin', HOME: home },
   spawn,

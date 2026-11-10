@@ -2,20 +2,17 @@ import type { UserSettingsCache, UserSettingsSnapshot } from '@momonga/config';
 import type { JsonLogger } from '@momonga/foundation';
 import type { ChildManager } from './child-manager.ts';
 import { orphansReaped, settingsReadFailed, writeEvent } from './log-events.ts';
-import { reapOrphans } from './orphans.ts';
-import type { OrphanReapOptions } from './orphans.ts';
 import { safeChangeKey } from './settings-watch.ts';
 import type { SettingsWatch } from './settings-watch.ts';
 
 export type LaunchTaskOptions = {
   signal: AbortSignal;
   logger: JsonLogger;
-  reap: OrphanReapOptions;
+  reapOwnMarkers(): Promise<{ reaped: number; kept: number }>;
   settings: UserSettingsCache;
   changeKey(): string;
   gateway: ChildManager;
   runtime: ChildManager;
-  enterRunning(): void;
   startWatch(initialKey: string): SettingsWatch | undefined;
   evaluate(): void;
 };
@@ -42,7 +39,7 @@ const readSettings = (options: LaunchTaskOptions): SettingsRead => {
 export const runLaunchTask = async (options: LaunchTaskOptions): Promise<void> => {
   const { signal, logger, gateway, runtime } = options;
   if (signal.aborted) return;
-  const reaped = await reapOrphans(options.reap);
+  const reaped = await options.reapOwnMarkers();
   writeEvent(logger, orphansReaped({ reaped: reaped.reaped, kept: reaped.kept }));
   if (signal.aborted) return;
 
@@ -56,7 +53,6 @@ export const runLaunchTask = async (options: LaunchTaskOptions): Promise<void> =
     gateway.spawnWith(read.snapshot, 'initial');
     runtime.spawnWith(read.snapshot, 'initial');
   }
-  options.enterRunning();
   if (signal.aborted) return;
 
   const watch = options.startWatch(read.initialKey);

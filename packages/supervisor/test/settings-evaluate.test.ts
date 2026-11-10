@@ -182,24 +182,19 @@ describe('supervisor-level settings evaluation', () => {
 
 describe('the first spawn and the settings read', () => {
   it('an edit made during the reap is picked up by the first spawn', async (context) => {
-    let holding = true;
+    const reap = Promise.withResolvers<{ reaped: number; kept: number }>();
     const h = await startHarness(context, {
       settings: validSettings({ sandbox: 'seatbelt' }),
-      prepare: (_home, paths) => {
-        fs.mkdirSync(paths.markers.daemons, { recursive: true, mode: 0o700 });
-        fs.writeFileSync(path.join(paths.markers.daemons, 'runtime-old'), '');
-      },
-      markerPorts: { findHolders: async () => (holding ? [999_999] : []) },
+      markerPorts: { reapMarkerDirectory: () => reap.promise },
       overrides: {
-        orphanGraceMs: 60_000,
         watchSettings: true,
         settingsWatch: fakeSettingsWatch().watch,
         env: { PATH: testHostPath('/usr/bin:/bin'), LANG: 'C', UPSTREAM_SECRET_NAME: 'value-for-test' },
       },
     });
-    await waitFor(() => h.markers.calls.findHolders.length > 0);
+    await waitFor(() => h.markers.calls.reapMarkerDirectory.length > 0);
     writeSettings(h.home, validSettings({ sandbox: 'none', apiKeyEnv: 'UPSTREAM_SECRET_NAME' }));
-    holding = false;
+    reap.resolve({ reaped: 0, kept: 0 });
     await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, maxMs: 5000 });
     await pump(h.timers, h.realWork, 10_000);
     expect(h.fake.spawnCount()).toBe(2);

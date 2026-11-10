@@ -36,6 +36,8 @@ export const HEALTH_BODY_MAX_BYTES = LINE_MAX_BYTES;
 
 const HEALTH_PATHS = { runtime: '/v1/health', gateway: '/v1/momonga/health' } as const satisfies Record<ChildRole, string>;
 
+const HEALTHY_STATES: ReadonlySet<unknown> = new Set(['running', 'retiring']);
+
 const UNREACHABLE_CODES: ReadonlySet<string> = new Set(['ECONNREFUSED', 'ENOENT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT']);
 
 const parseJsonObject = (text: string): Record<string, unknown> | undefined => {
@@ -51,7 +53,7 @@ const parseJsonObject = (text: string): Record<string, unknown> | undefined => {
 export const labelHealthResponse = (role: ChildRole, response: { status: number; body: string }): 'healthy' | 'unhealthy' => {
   if (response.status !== 200) return 'unhealthy';
   const body = parseJsonObject(response.body);
-  if (body === undefined || body['state'] !== 'running') return 'unhealthy';
+  if (body === undefined || !HEALTHY_STATES.has(body['state'])) return 'unhealthy';
   if (role === 'runtime' && body['status'] !== 'ok') return 'unhealthy';
   return 'healthy';
 };

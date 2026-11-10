@@ -80,6 +80,17 @@ export const nodeDescriptorWriterSync: DescriptorWriterSync = {
   chmod: (descriptor, mode) => fs.fchmodSync(descriptor, mode),
 };
 
+export const readFileHead = async (file: string, maxBytes: number): Promise<Uint8Array> => {
+  const handle = await fs.promises.open(file, 'r');
+  try {
+    const buffer = Buffer.alloc(maxBytes);
+    const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
+    return buffer.subarray(0, bytesRead);
+  } finally {
+    await handle.close();
+  }
+};
+
 export const nodeFileSystem: FileSystem = {
   descriptors: nodeDescriptorWriter,
   open: async (file, flags, mode) => {

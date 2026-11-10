@@ -4,6 +4,7 @@ export {
   DAEMON_MARKER_KILL_GRACE_MS,
   DEFAULT_INTERVALS,
   EXTERNAL_POLL_MS,
+  GENERATION_POLL_INTERVAL_MS,
   HELD_REASON_MAX_CHARS,
   HELD_RETRY_MS,
   KILL_CONFIRM_MS,
@@ -34,7 +35,7 @@ export { omitUndefined } from './omit-undefined.ts';
 export type { OmitUndefined } from './omit-undefined.ts';
 export { resolveStartTiming, startSupervisor, supervisorStartBoundMs } from './start-supervisor.ts';
 export type { SupervisorCloseResult, SupervisorOptions, SupervisorProcess, SupervisorStartTiming } from './start-supervisor.ts';
-export { runSupervisorEntry } from './entry.ts';
+export { GENERATION_FLAG_USAGE, SUPERVISE_ENTRY_FLAGS, generationOfFlag, runSupervisorEntry } from './entry.ts';
 export type { SupervisorEntryDeps } from './entry.ts';
 export { CHILD_ROLES, childStdio, contractArgs, resolveLaunch } from './launcher.ts';
 export type { ChildRole, GatewayTuning, LaunchSpec, Launcher, ResolvedLaunch, RuntimeTuning } from './launcher.ts';
@@ -56,6 +57,10 @@ export type {
   SpawnReason,
 } from './child-manager.ts';
 export { createSpawnPort } from './spawn-port.ts';
+export { createSuccessor } from './successor.ts';
+export type { Successor, SuccessorLauncher, SuccessorOptions, SuccessorOutcome } from './successor.ts';
+export { readChildCounts } from './child-counts.ts';
+export type { ChildCountsReader, GenerationCounts } from './child-counts.ts';
 export { createLineSplitter } from './line-splitter.ts';
 export type { LineSplitter } from './line-splitter.ts';
 export { DEFAULT_OUTPUT_LIMITS, captureStream, createOutputLimiter, truncateRaw } from './capture.ts';
@@ -90,6 +95,14 @@ export {
   childStop,
   childUnkillable,
   defineEvent,
+  generationEnded,
+  generationMany,
+  generationPromoted,
+  generationRetiring,
+  generationSuccessor,
+  startAbandoned,
+  startSuperseded,
+  startUnpromoted,
   orphansReaped,
   orphansReaping,
   orphansWaiting,

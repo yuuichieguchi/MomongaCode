@@ -553,52 +553,6 @@ describe('shutdown and settings changes', () => {
 });
 
 describe('shutdown during the orphan reap', () => {
-  const inPhase1 = (onFind?: (count: number) => void): HarnessOptions => {
-    let count = 0;
-    return {
-      prepare: (_home, paths) => void writeMarker(paths, 'runtime-old'),
-      markerPorts: {
-        findHolders: async () => {
-          count += 1;
-          onFind?.(count);
-          return [999_999];
-        },
-      },
-    };
-  };
-
-  it('shutdown during phase 1 of the reap spawns nothing, signals nothing and keeps the markers', async (context) => {
-    const h = await startHarness(context, inPhase1());
-    await pumpUntil(h.timers, () => h.markers.calls.findHolders.length >= 2, { realWork: h.realWork, maxMs: 5000 });
-    const closing = settledFlag(h.supervisor.close());
-    await waitFor(() => h.health().phase === 'draining');
-    expect(h.health().children.map((child) => child.state)).toEqual(['stopped', 'stopped']);
-    await pumpUntil(h.timers, () => closing.settled(), { realWork: h.realWork, maxMs: SHUTDOWN_RELEASE_BOUND_MS + 1000 });
-    expect(closing.value()).toEqual({ clean: true, killed: [], leaked: [] });
-    expect(h.markers.calls.reapMarkerDirectory).toEqual([]);
-    expect(h.markers.calls.reapMarkedProcesses).toEqual([]);
-    expect(fs.existsSync(`${h.paths.markers.daemons}/runtime-old`)).toBe(true);
-    expect(h.fake.spawnCount()).toBe(0);
-  });
-
-  it('an abort during the last findHolders of phase 1 calls neither the reap nor kill', async (context) => {
-    let trigger: (() => void) | undefined;
-    const h = await startHarness(context, {
-      ...inPhase1((count) => {
-        if (count === 2) trigger?.();
-      }),
-      overrides: { orphanGraceMs: 10_000 },
-    });
-    let closing: Promise<SupervisorCloseResult> | undefined;
-    trigger = () => {
-      closing = h.supervisor.close();
-    };
-    await pumpUntil(h.timers, () => closing !== undefined, { realWork: h.realWork, maxMs: 5000 });
-    await finish(h, closing ?? Promise.reject(new Error('no close')));
-    expect(h.markers.calls.reapMarkerDirectory).toEqual([]);
-    expect(h.fake.spawnCount()).toBe(0);
-  });
-
   const inPhase2 = (onReap: (options: ReapMarkerDirectoryOptions) => Promise<{ reaped: number; kept: number }>): HarnessOptions => ({
     prepare: (_home, paths) => void writeMarker(paths, 'runtime-old'),
     markerPorts: { findHolders: async () => [999_999], reapMarkerDirectory: onReap },
@@ -670,10 +624,13 @@ describe('shutdown during the orphan reap', () => {
   });
 
   it('a shutdown trigger between ready and the first launch step spawns nothing', async (context) => {
-    const h = await startHarness(context, inPhase1());
+    const h = await startHarness(context, {
+      markerPorts: {
+        reapMarkerDirectory: (options) => new Promise((resolve) => options.signal?.addEventListener('abort', () => resolve({ reaped: 0, kept: 0 }), { once: true })),
+      },
+    });
     const closing = h.supervisor.close();
     await finish(h, closing);
     expect(h.fake.spawnCount()).toBe(0);
-    expect(h.markers.calls.findHolders).toEqual([]);
   });
 });

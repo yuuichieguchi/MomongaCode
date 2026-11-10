@@ -2,9 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { TestContext } from 'vitest';
-import * as foundation from '@momonga/foundation';
-import { ensureMomongaDirs, generationLayout, momongaPaths, publishCurrentGeneration } from '@momonga/foundation';
-import type { KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
+import { EXIT_RETIRED, GENERATION_POLL_INTERVAL_MS, STARTUP_TIMEOUT_MS, SWEEP_INTERVAL_MS, claimGeneration, decideGenerationStart, ensureMomongaDirs, generationIsLive, generationLayout, momongaPaths, publishCurrentGeneration, starterOutcome } from '@momonga/foundation';
+import type { MomongaPaths } from '@momonga/foundation';
 import { createFakeKernelLock, withTempDir } from '@momonga/testkit';
 import { readManifest } from './formal/manifest.ts';
 
@@ -37,15 +36,10 @@ const range = (from: number, to: number): number[] => Array.from({ length: to - 
 const versionOf = (modelVersion: number): string => `0.0.${modelVersion}`;
 
 type Current = { generation: number; version: string };
-type StartDecision = { kind: string; generation?: number };
-type I3 = {
-  decideGenerationStart(view: { clientVersion: string; current?: Current; serving: boolean; starting: readonly Current[] }): StartDecision;
-  starterOutcome(view: { own: Current; current?: Current; currentHeld: boolean; currentDraining: boolean; ownSupervisorGone: boolean }): string;
-  generationIsLive(paths: MomongaPaths, generation: number, options: { lock: KernelLockMechanism }): Promise<boolean>;
-  claimGeneration(paths: MomongaPaths, generation: number, options: { version: string; lock: KernelLockMechanism }): Promise<{ kind: string }>;
-};
 
-const i3 = foundation as unknown as I3;
+const i3 = { decideGenerationStart, starterOutcome, generationIsLive, claimGeneration };
+
+const supervisorSource = (name: string): string => fs.readFileSync(path.resolve(import.meta.dirname, '..', 'packages', 'supervisor', 'src', name), 'utf8');
 
 const MAX_GEN = constantOf('MaxGen');
 const MAX_V = constantOf('MaxV');
@@ -58,9 +52,12 @@ const freshHome = async (context: TestContext): Promise<{ home: string; paths: M
 };
 
 describe('UpdateSwitch.tla and the start flow agree', () => {
-  it('every variant of the model has a configuration in the manifest', () => {
+  it('every variant of the model has a configuration in the manifest, and the manifest rows of UpdateSwitch are the configuration files on disk', () => {
     const configs = new Set(manifest.entries.map((entry) => entry.config));
     for (const variant of variants().filter((name) => name !== 'decided')) expect(configs, variant).toContain(`UpdateSwitch.${variant}`);
+    const onDisk = fs.readdirSync(specDir).filter((name) => /^UpdateSwitch(\..+)?\.cfg$/.test(name)).map((name) => name.slice(0, -'.cfg'.length)).sort();
+    const listed = manifest.entries.map((entry) => entry.config).filter((config) => config === 'UpdateSwitch' || config.startsWith('UpdateSwitch.')).sort();
+    expect(listed).toEqual(onDisk);
   });
 
   it('promotes exactly when the number is above run/current, for every pair the model checks (Promote)', async (context) => {
@@ -69,7 +66,8 @@ describe('UpdateSwitch.tla and the start flow agree', () => {
       for (const g of range(1, MAX_GEN)) {
         const { home, paths } = await freshHome(context);
         if (cur > 0) await publishCurrentGeneration(paths, { generation: cur, version: '0.0.1', sockets: generationLayout(home, cur).sockets });
-        await publishCurrentGeneration(paths, { generation: g, version: '0.0.1', sockets: generationLayout(home, g).sockets });
+        const outcome = await publishCurrentGeneration(paths, { generation: g, version: '0.0.1', sockets: generationLayout(home, g).sockets });
+        expect(outcome, `cur ${cur}, g ${g}`).toBe(g > cur ? 'published' : 'superseded');
         const published = (JSON.parse(fs.readFileSync(paths.current, 'utf8')) as Current).generation;
         expect(published, `cur ${cur}, g ${g}`).toBe(g > cur ? g : cur);
       }
@@ -82,7 +80,7 @@ describe('UpdateSwitch.tla and the start flow agree', () => {
       for (const starterHeld of [false, true]) {
         const { home, paths } = await freshHome(context);
         const lock = createFakeKernelLock({ inheritable: false });
-        const layout = generationLayout(home, 1) as foundation.GenerationLayout & { startingLock: string };
+        const layout = generationLayout(home, 1);
         fs.mkdirSync(layout.dir, { recursive: true });
         if (supervisorHeld) lock.holdExternally(layout.locks.supervisor, 5000);
         if (starterHeld) lock.holdExternally(layout.startingLock, 5001);
@@ -151,5 +149,48 @@ describe('UpdateSwitch.tla and the start flow agree', () => {
         }
       }
     }
+  });
+
+  it('restart always allocates and never joins; a child mismatch allocates or joins only above the serving version (RestartNow, ChildMismatch)', () => {
+    const restart = definitionOf('RestartNow');
+    expect(restart).toContain("ver' = [ver EXCEPT ![AllocNo] = curv]");
+    expect(restart).toContain('/\\ cv[c] = curv');
+    expect(restart).not.toContain('JoinOK');
+    const mismatch = definitionOf('ChildMismatch');
+    expect(mismatch).toContain('/\\ iv > curv');
+    expect(mismatch).toContain('~(\\E h \\in Starting : ver[h] >= iv)');
+    for (const curv of range(1, MAX_V)) {
+      const current = { generation: 1, version: versionOf(curv) };
+      for (const startingVersion of [undefined, ...range(1, MAX_V)]) {
+        const starting = startingVersion === undefined ? [] : [{ generation: 2, version: versionOf(startingVersion) }];
+        expect(i3.decideGenerationStart({ trigger: 'restart', clientVersion: versionOf(curv), current, serving: true, starting }).kind, `restart at ${curv}`).toBe('allocate');
+        for (const iv of range(1, MAX_V)) {
+          const decision = i3.decideGenerationStart({ trigger: 'childMismatch', clientVersion: versionOf(iv), current, serving: true, starting });
+          const expected = iv < curv ? 'below-floor' : iv === curv ? 'connect' : startingVersion !== undefined && startingVersion >= iv ? 'join' : 'allocate';
+          expect(decision.kind, `iv ${iv}, curv ${curv}, starting ${String(startingVersion)}`).toBe(expected);
+        }
+      }
+    }
+  });
+
+  it('gives up an unpromoted start at the start-up bound, by the tick the supervisor polls with (GiveUpPromotion)', () => {
+    const giveUp = definitionOf('GiveUpPromotion');
+    expect(giveUp).toContain('/\\ sup[g] /\\ ~prom[g] /\\ ~dr[g]');
+    expect(giveUp).toContain("/\\ sup' = [sup EXCEPT ![g] = FALSE]");
+    expect(giveUp).not.toContain("faulted'");
+    expect(giveUp).not.toContain("dir'");
+    expect(STARTUP_TIMEOUT_MS).toBe(60_000);
+    expect(supervisorSource('constants.ts')).toMatch(/import \{[^}]*\bSTARTUP_TIMEOUT_MS\b[^}]*\} from '@momonga\/foundation'/);
+    expect(supervisorSource('constants.ts')).toContain('generationPollMs: GENERATION_POLL_INTERVAL_MS');
+    expect(supervisorSource('start-supervisor.ts')).toContain('}, startupTimeoutMs);');
+  });
+
+  it('polls with one tick constant, and classifies the retire exit code apart from every other exit', async () => {
+    expect(GENERATION_POLL_INTERVAL_MS).toBe(1000);
+    expect(SWEEP_INTERVAL_MS).toBe(GENERATION_POLL_INTERVAL_MS);
+    const { classifyExit, decideAfterExit, DEFAULT_RESTART_POLICY } = await import('../packages/supervisor/src/restart-policy.ts');
+    const exit = classifyExit({ code: EXIT_RETIRED, signal: null, stop: undefined });
+    expect(exit.class).toBe('retired');
+    expect(decideAfterExit({ exit, consecutiveFailures: 0, policy: DEFAULT_RESTART_POLICY, random: () => 0 })).toEqual({ next: 'stopped' });
   });
 });

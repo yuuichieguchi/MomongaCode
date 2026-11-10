@@ -246,7 +246,8 @@ export {
 } from './mcp-http-fixture.ts';
 export type { FixtureNote, McpHttpFixture, McpHttpFixtureEra, McpHttpFixtureOptions, RecordedHttpRequest } from './mcp-http-fixture.ts';
 export { ENGINE_FAILURE_KEY, ENGINE_FAILURE_MESSAGE, engineFailureSchema, injectEngineFailure } from './engine-failure.ts';
-export { firstGeneration } from './first-generation.ts';
+export { firstGeneration, prepareGenerationForTest, startGenerationForTest } from './first-generation.ts';
+export type { StartedGenerationForTest } from './first-generation.ts';
 export { PROPERTY_TIMEOUT_MS } from './property-timeout.ts';
 export { TEST_SECRET_PROGRAMS_ENV, createFakeSecretPrograms, fakeSecretProgramsBin, installFakeSecretPrograms, removeFakeSecretPrograms, testHostPath } from './fake-secret-programs.ts';
 export { assertFakeSecretStoreEnv } from './secret-store-env-check.ts';
