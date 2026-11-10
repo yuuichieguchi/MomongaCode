@@ -1,4 +1,4 @@
-import { execFile, execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -13,7 +13,7 @@ import { buildSea } from './sea.ts';
 import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { RUNS_MACOS_ARM64_ARTIFACTS } from './support/host.ts';
-import { testHostPath } from '@momonga/testkit';
+import { productTestEnv, execProductFile, spawnProductSync } from '@momonga/testkit';
 
 const FIXTURE_REPO = 'acme/momonga';
 const PINNED_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl';
@@ -64,12 +64,12 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('self-update on built single execut
 
   const run = (file: string, args: readonly string[], home: string, env: Record<string, string> = {}): Promise<Outcome> =>
     new Promise((resolve, reject) => {
-      execFile(
+      execProductFile(
         file,
         [...args],
         {
           encoding: 'utf8',
-          env: { PATH: testHostPath('/usr/bin:/bin'), HOME: home, MOMONGA_FIXTURE_RELEASE_URL: server.endpoints.apiBaseUrl, MOMONGA_FIXTURE_RELEASE_PUBLIC_KEY: releaseKey.publicKey, ...env },
+          env: productTestEnv({ PATH: '/usr/bin:/bin', HOME: home, MOMONGA_FIXTURE_RELEASE_URL: server.endpoints.apiBaseUrl, MOMONGA_FIXTURE_RELEASE_PUBLIC_KEY: releaseKey.publicKey, ...env }),
         },
         (error, stdout, stderr) => {
           if (error === null) resolve({ code: 0, stdout, stderr });
@@ -308,7 +308,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('build-time update source', { timeo
     const configured = path.join(root, 'configured-run.mjs');
     await bundle({ entry: MAIN_ENTRY, outfile: configured, releaseRepo: 'acme/momonga', teamId: 'ABCDE12345', releasePublicKey: PINNED_KEY });
 
-    const result = spawnSync(process.execPath, [configured, 'update'], { encoding: 'utf8', env: { PATH: testHostPath('/usr/bin:/bin'), HOME: root } });
+    const result = spawnProductSync(process.execPath, [configured, 'update'], { encoding: 'utf8', env: productTestEnv({ PATH: '/usr/bin:/bin', HOME: root }) });
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('self-update only replaces a momonga single executable; this process is running from source under node');
@@ -318,7 +318,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('build-time update source', { timeo
     const binary = path.join(root, 'no-source');
     await buildSea({ entry: MAIN_ENTRY, output: binary, workDir: path.join(root, 'work-no-source') });
 
-    const result = spawnSync(binary, ['update'], { encoding: 'utf8', env: { PATH: testHostPath('/usr/bin:/bin'), HOME: root } });
+    const result = spawnProductSync(binary, ['update'], { encoding: 'utf8', env: productTestEnv({ PATH: '/usr/bin:/bin', HOME: root }) });
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('momonga: this build has no update source: it was built without MOMONGA_REPO');
@@ -329,7 +329,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('build-time update source', { timeo
     const binary = path.join(root, 'no-team');
     await buildSea({ entry: MAIN_ENTRY, output: binary, workDir: path.join(root, 'work-no-team'), releaseRepo: 'acme/momonga', releasePublicKey: PINNED_KEY });
 
-    const result = spawnSync(binary, ['update'], { encoding: 'utf8', env: { PATH: testHostPath('/usr/bin:/bin'), HOME: root } });
+    const result = spawnProductSync(binary, ['update'], { encoding: 'utf8', env: productTestEnv({ PATH: '/usr/bin:/bin', HOME: root }) });
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('built without MOMONGA_TEAM_ID');
@@ -339,7 +339,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('build-time update source', { timeo
     const binary = path.join(root, 'no-key');
     await buildSea({ entry: MAIN_ENTRY, output: binary, workDir: path.join(root, 'work-no-key'), releaseRepo: 'acme/momonga', teamId: 'ABCDE12345' });
 
-    const result = spawnSync(binary, ['update'], { encoding: 'utf8', env: { PATH: testHostPath('/usr/bin:/bin'), HOME: root } });
+    const result = spawnProductSync(binary, ['update'], { encoding: 'utf8', env: productTestEnv({ PATH: '/usr/bin:/bin', HOME: root }) });
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('built without MOMONGA_RELEASE_PUBLIC_KEY');

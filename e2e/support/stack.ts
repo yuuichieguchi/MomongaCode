@@ -9,7 +9,7 @@ import { MINIMAL_CHILD_PATH, parseReadyLine } from '@momonga/foundation';
 import type { ReadyFields } from '@momonga/foundation';
 import type { SupervisorChildState, SupervisorHealth, SupervisorPhase, TargetAnswers } from '@momonga/protocol';
 import type { ChildRole } from '@momonga/supervisor';
-import { startFakeChatCompletions, testHostPath } from '@momonga/testkit';
+import { assertFakeSecretStoreEnv, productTestEnv, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeRoute, FakeScriptedReply } from '@momonga/testkit';
 import { SUPERVISOR_APP_VERSION } from './app-version.ts';
 import { registerE2eCleanup } from './home.ts';
@@ -196,14 +196,15 @@ export const writeDepsFile = (home: E2eHome, deps: E2eDeps, stackNumber: number,
 
 export const supervisorArgv = (home: E2eHome): string[] => [`--home=${home.home}`, '--log-target=file'];
 
-export const supervisorEnv = (home: E2eHome, depsFile: string): Record<string, string> => ({
-  PATH: testHostPath(SUPERVISOR_ENV_PATH),
-  HOME: home.home,
-  TMPDIR: home.root,
-  LANG: 'C',
-  [E2E_RUN_ENV]: home.run,
-  [E2E_DEPS_ENV]: depsFile,
-});
+export const supervisorEnv = (home: E2eHome, depsFile: string): Record<string, string> =>
+  productTestEnv({
+    PATH: SUPERVISOR_ENV_PATH,
+    HOME: home.home,
+    TMPDIR: home.root,
+    LANG: 'C',
+    [E2E_RUN_ENV]: home.run,
+    [E2E_DEPS_ENV]: depsFile,
+  });
 
 const trimToUtf8Boundary = (bytes: Buffer): Buffer => {
   let start = 0;
@@ -216,8 +217,10 @@ const describeExit = (exit: SupervisorExit): string => `code ${exit.code}, signa
 export const spawnSupervisor = (options: SpawnSupervisorOptions): SpawnedSupervisor => {
   const { home, deps = DEFAULT_E2E_DEPS, stackNumber = 1, script = SUPERVISOR_MAIN_PATH, version } = options;
   const depsFile = writeDepsFile(home, deps, stackNumber, version);
+  const env = supervisorEnv(home, depsFile);
+  assertFakeSecretStoreEnv(env, script);
   const child = spawn(process.execPath, [script, ...supervisorArgv(home)], {
-    env: supervisorEnv(home, depsFile),
+    env,
     cwd: home.root,
     detached: true,
     stdio: ['pipe', 'pipe', 'pipe'],

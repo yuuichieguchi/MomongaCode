@@ -2,6 +2,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import type { ChildProcessByStdio } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { assertFakeSecretStoreEnv } from '@momonga/testkit';
 import { CLI_BUNDLE, CLI_FAKES_BUNDLE, cliEnv, fakePortsEnv } from './cli.ts';
 import { registerE2eCleanup } from './home.ts';
 import type { E2eHome } from './home.ts';
@@ -57,12 +58,14 @@ export const spawnPty = async (home: E2eHome, args: readonly string[], env: Read
   const transcript = path.join(home.root, `pty-output-${fifoCounter}`);
   const exitFile = path.join(home.root, `pty-exit-${fifoCounter}`);
   const command = `stty cols ${PTY_COLUMNS} rows ${PTY_ROWS}; ${shellQuote(process.execPath)} ${shellQuote(bundle)} ${args.map(shellQuote).join(' ')}; echo $? > ${shellQuote(exitFile)}`;
+  const ptyEnv = { ...cliEnv(home, childEnv), TERM: 'xterm-256color' };
+  assertFakeSecretStoreEnv(ptyEnv, bundle);
   const child: ChildProcessByStdio<null, null, null> = spawn(
     '/bin/sh',
     ['-c', SCRIPT_INVOCATION, 'sh', SCRIPT_BINARY, command, fifo, transcript],
     {
       cwd: home.project,
-      env: { ...cliEnv(home, childEnv), TERM: 'xterm-256color' },
+      env: ptyEnv,
       detached: true,
       stdio: ['ignore', 'ignore', 'ignore'],
     },

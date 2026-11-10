@@ -249,3 +249,4 @@ export { ENGINE_FAILURE_KEY, ENGINE_FAILURE_MESSAGE, engineFailureSchema, inject
 export { firstGeneration } from './first-generation.ts';
 export { PROPERTY_TIMEOUT_MS } from './property-timeout.ts';
 export { TEST_SECRET_PROGRAMS_ENV, fakeSecretProgramsBin, installFakeSecretPrograms, testHostPath } from './fake-secret-programs.ts';
+export { assertFakeSecretStoreEnv, execProductFile, productTestEnv, spawnProduct, spawnProductSync } from './product-spawn.ts';

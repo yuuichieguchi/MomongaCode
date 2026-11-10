@@ -4,7 +4,7 @@ import path from 'node:path';
 import { registerE2eCleanup } from './home.ts';
 import type { E2eHome } from './home.ts';
 import { CLI_BUNDLE, CLI_FAKES_BUNDLE } from './cli-bundles.ts';
-import { testHostPath } from '@momonga/testkit';
+import { assertFakeSecretStoreEnv, productTestEnv } from '@momonga/testkit';
 import { SESSION_PATH } from './runtime-client.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, withinBound } from './wait.ts';
 
@@ -17,20 +17,24 @@ export type CliResult = { readonly code: number | null; readonly signal: NodeJS.
 
 export type RunCliOptions = { env?: Readonly<Record<string, string>>; cwd?: string; boundMs?: number; bundle?: string };
 
-export const cliEnv = (home: E2eHome, extra: Readonly<Record<string, string>> = {}): Record<string, string> => ({
-  PATH: testHostPath(SESSION_PATH),
-  HOME: home.home,
-  TMPDIR: home.root,
-  LANG: 'C',
-  ...extra,
-});
+export const cliEnv = (home: E2eHome, extra: Readonly<Record<string, string>> = {}): Record<string, string> =>
+  productTestEnv({
+    PATH: SESSION_PATH,
+    HOME: home.home,
+    TMPDIR: home.root,
+    LANG: 'C',
+    ...extra,
+  });
 
 export type RunningCli = { readonly result: Promise<CliResult>; readonly pid: number; kill(signal: NodeJS.Signals): void; interrupt(): void; partialStdout(): string; partialStderr(): string };
 
 export const startCli = (home: E2eHome, args: readonly string[], options: RunCliOptions = {}): RunningCli => {
-  const child = spawn(process.execPath, [options.bundle ?? CLI_BUNDLE, ...args], {
+  const env = cliEnv(home, options.env);
+  const bundle = options.bundle ?? CLI_BUNDLE;
+  assertFakeSecretStoreEnv(env, bundle);
+  const child = spawn(process.execPath, [bundle, ...args], {
     cwd: options.cwd ?? home.project,
-    env: cliEnv(home, options.env),
+    env,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stdout = '';
