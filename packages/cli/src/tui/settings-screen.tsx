@@ -74,6 +74,7 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   enableAllProjectMcpServers: { label: 'Enable every server of .mcp.json', section: 'MCP', appliesNow: false },
   'mcp.toolIdleTimeoutMs': { label: 'Tool idle timeout (ms)', section: 'MCP', appliesNow: false },
   'mcp.toolTotalTimeoutMs': { label: 'Tool total timeout (ms)', section: 'MCP', appliesNow: false },
+  'mcp.connectTimeoutMs': { label: 'Connect timeout (ms)', section: 'MCP', appliesNow: false },
   'models.dialects': { label: 'Schema dialects', section: 'Models', appliesNow: false },
   env: { label: 'Environment variables', section: 'Environment variables', appliesNow: false },
   'credentials.env': { label: 'Variables treated as credentials', section: 'Credentials', appliesNow: false },
@@ -94,6 +95,8 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   autoUpdates: { label: 'Automatic updates', section: 'Updates', appliesNow: false },
   'gateway.closeGraceMs': { label: 'Close grace (ms)', section: 'Shutdown', appliesNow: false },
   'gateway.managedServerStopGraceMs': { label: 'Managed server stop grace (ms)', section: 'Shutdown', appliesNow: false },
+  'runtime.drainTimeoutMs': { label: 'Run drain timeout (ms)', section: 'Shutdown', appliesNow: false },
+  'mcp.closeGraceMs': { label: 'MCP server close grace (ms)', section: 'Shutdown', appliesNow: false },
 };
 
 export const SETTINGS_REACHED_BY_COMMAND: Readonly<Record<string, string>> = {

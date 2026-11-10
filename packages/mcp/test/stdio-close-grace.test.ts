@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createMcpPool, createStdioTransport } from '@momonga/mcp';
 import type { StdioTransport, StdioTransportOptions } from '@momonga/mcp';
 import { KILL_CONFIRM_MS, groupAlive, hostProcessGroupPort, terminateGroup } from '@momonga/foundation';
@@ -109,7 +109,9 @@ const closeWithinBound = async (server: Stubborn, mode: 'ignore-stdin' | 'ignore
   return server.timers.now() - startedAt;
 };
 
-describe('the real stdio transport closes within mcpPoolCloseBoundMs of the grace, on its injected timing (R4b)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
+describe('the real stdio transport closes within mcpPoolCloseBoundMs of the grace, on its injected timing (R4b)', () => {
   it.for([
     ['ignore-stdin', 0],
     ['ignore-stdin', 1000],
@@ -128,7 +130,7 @@ describe('the real stdio transport closes within mcpPoolCloseBoundMs of the grac
   });
 });
 
-describe('the grace of a close is an argument of that close', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the grace of a close is an argument of that close', () => {
   it('close(250) waits 250, not the grace the transport was created with', async () => {
     const server = await startStubborn('ignore-stdin', 30_000);
     const elapsed = await closeWithinBound(server, 'ignore-stdin', () => (server.transport.close as (graceMs?: number) => Promise<void>)(250), 250);

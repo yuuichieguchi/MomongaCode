@@ -13,6 +13,10 @@ const STDERR_TAIL_BYTES = 64 * 1024;
 export const DEFAULT_CLOSE_GRACE_MS = 2000;
 const NEWLINE = 0x0a;
 
+export type CloseGrace = number | (() => number);
+
+export const closeGraceOf = (grace: CloseGrace | undefined): number => (typeof grace === 'function' ? grace() : (grace ?? DEFAULT_CLOSE_GRACE_MS));
+
 export type McpMarkerOptions = { dir: string; onWarning(message: string): void };
 
 export interface StdioTransportOptions {
@@ -20,7 +24,7 @@ export interface StdioTransportOptions {
   config: McpStdioServerConfig;
   projectDir: string;
   baseEnv: Record<string, string>;
-  closeGraceMs?: number;
+  closeGraceMs?: CloseGrace;
   markers?: McpMarkerOptions;
   terminate?: (pgid: number, options: { graceMs: number; signal?: AbortSignal; timing?: GroupTiming }) => Promise<TerminateOutcome>;
   timing?: DeadlineTiming;
@@ -96,7 +100,6 @@ class StdioTransportImpl implements StdioTransport {
   private closing: Promise<void> | undefined;
   private closed = false;
   private deliveryStopped = false;
-  private readonly closeGraceMs: number;
   private markerPath: string | undefined;
 
   private readonly options: StdioTransportOptions;
@@ -105,7 +108,6 @@ class StdioTransportImpl implements StdioTransport {
 
   constructor(options: StdioTransportOptions) {
     this.options = options;
-    this.closeGraceMs = options.closeGraceMs ?? DEFAULT_CLOSE_GRACE_MS;
     const timing = options.timing ?? systemTiming;
     this.timing = timing;
     this.sleepTiming = {
@@ -206,7 +208,7 @@ class StdioTransportImpl implements StdioTransport {
     });
   }
 
-  close(graceMs: number = this.closeGraceMs): Promise<void> {
+  close(graceMs: number = closeGraceOf(this.options.closeGraceMs)): Promise<void> {
     this.deliveryStopped = true;
     return this.beginClose(false, graceMs);
   }
@@ -222,12 +224,12 @@ class StdioTransportImpl implements StdioTransport {
 
   private async drainThenClose(): Promise<void> {
     if (this.closing !== undefined) return;
-    await this.raceTimeout(this.stdoutEnded, this.closeGraceMs);
+    await this.raceTimeout(this.stdoutEnded, closeGraceOf(this.options.closeGraceMs));
     this.closeReportingErrors();
   }
 
   private closeReportingErrors(): void {
-    void this.beginClose(true, this.closeGraceMs);
+    void this.beginClose(true, closeGraceOf(this.options.closeGraceMs));
   }
 
   private async shutdown(graceMs: number): Promise<void> {

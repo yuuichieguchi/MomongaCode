@@ -1,14 +1,16 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_STOP_VALUES, EXIT_RETIRED, gatewayAbortBudgetMs, gatewayStopBudgetMs } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, EXIT_RETIRED, gatewayAbortBudgetMs, gatewayStopBudgetMs, runtimeAbortStopBudgetMs, runtimeStopBudgetMs } from '@momonga/foundation';
 import { afterMicrotasks, createFakeKernelLock, waitFor, firstGeneration } from '@momonga/testkit';
 import { DEFAULT_INTERVALS, HELD_RETRY_MS, KILL_CONFIRM_MS, STABLE_AFTER_MS, STARTUP_KILL_GRACE_MS, STARTUP_TIMEOUT_MS, STDIO_FLUSH_MS } from '../src/constants.ts';
 import { errnoError } from './support/p2-fake-spawn-port.ts';
 import { createManagerHarness, T0 } from './support/p2-manager-harness.ts';
 import type { ManagerHarness } from './support/p2-manager-harness.ts';
 
-const RUNTIME_SHUTDOWN_BUDGET_MS = 50_000;
-const RUNTIME_ABORT_BUDGET_MS = 20_000;
+const RUNTIME_SHUTDOWN_BUDGET_MS = runtimeStopBudgetMs(DEFAULT_STOP_VALUES);
+const RUNTIME_ABORT_BUDGET_MS = runtimeAbortStopBudgetMs(DEFAULT_STOP_VALUES);
+
+const stopLineWritten = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 const exitAndWait = async (harness: ManagerHarness, state: string, code: number | null, signal: NodeJS.Signals | null = null): Promise<void> => {
   harness.port.last().exit(code, signal);
@@ -36,6 +38,7 @@ describe('ready parsing', () => {
     harness.spawnInitial();
     harness.port.last().ready({ pid: 999_999 });
     await waitFor(() => harness.manager.state() === 'stopping');
+    await stopLineWritten();
     expect(harness.events('child.ready.mismatch')).toEqual([expect.objectContaining({ level: 'error', child: 'runtime', childPid: 41_000 })]);
     expect(harness.port.last().signals).toEqual(['SIGTERM']);
     expect(harness.events('child.ready')).toEqual([]);
@@ -167,6 +170,7 @@ describe('startup timeout', () => {
     harness.timers.advance(STARTUP_TIMEOUT_MS - 1);
     expect(harness.port.last().signals).toEqual([]);
     harness.timers.advance(1);
+    await stopLineWritten();
     expect(harness.port.last().signals).toEqual(['SIGTERM']);
     expect(harness.manager.state()).toBe('stopping');
     await exitAndWait(harness, 'backoff', 0);
@@ -178,6 +182,7 @@ describe('startup timeout', () => {
     const stubborn = createManagerHarness(context);
     stubborn.spawnInitial();
     stubborn.timers.advance(STARTUP_TIMEOUT_MS);
+    await stopLineWritten();
     stubborn.timers.advance(STARTUP_KILL_GRACE_MS - 1);
     expect(stubborn.port.last().groupKills).toBe(0);
     stubborn.timers.advance(1);
@@ -216,6 +221,7 @@ describe('exit classification in the manager', () => {
     const harness = createManagerHarness(context);
     harness.spawnInitial();
     harness.timers.advance(STARTUP_TIMEOUT_MS);
+    await stopLineWritten();
     expect(harness.port.last().signals).toEqual(['SIGTERM']);
     void harness.manager.stop('shutdown', 'term');
     expect(harness.port.last().signals).toEqual(['SIGTERM']);
@@ -287,6 +293,7 @@ describe('exit classification in the manager', () => {
     harness.spawnInitial();
     const first = harness.port.last();
     void harness.manager.stop('shutdown', 'term');
+    await stopLineWritten();
     harness.timers.advance(40_000);
     void harness.manager.stop('shutdown', 'int');
     expect(first.signals).toEqual(['SIGTERM', 'SIGINT']);
@@ -508,11 +515,13 @@ describe('stop', () => {
     const first = harness.manager.stop('shutdown', 'term');
     const second = harness.manager.stop('shutdown', 'term');
     expect(second).toBe(first);
+    await stopLineWritten();
     expect(harness.port.last().signals).toEqual(['SIGTERM']);
 
     const upgraded = createManagerHarness(context);
     upgraded.spawnInitial();
     upgraded.timers.advance(STARTUP_TIMEOUT_MS);
+    await stopLineWritten();
     expect(upgraded.port.last().signals).toEqual(['SIGTERM']);
     void upgraded.manager.stop('shutdown', 'term');
     expect(upgraded.port.last().signals).toEqual(['SIGTERM']);
@@ -531,10 +540,11 @@ describe('stop', () => {
     expect(harness.manager.health().lastExit?.reason).toBe('requested');
   });
 
-  it('stop escalation sends SIGINT once', (context) => {
+  it('stop escalation sends SIGINT once', async (context) => {
     const harness = createManagerHarness(context);
     harness.spawnInitial();
     void harness.manager.stop('shutdown', 'term');
+    await stopLineWritten();
     void harness.manager.stop('shutdown', 'int');
     void harness.manager.stop('shutdown', 'int');
     expect(harness.port.last().signals).toEqual(['SIGTERM', 'SIGINT']);
@@ -568,7 +578,7 @@ describe('stop', () => {
     expect(aborted.port.last().signals).toEqual([]);
     await new Promise((resolve) => setImmediate(resolve));
     expect(aborted.port.last().signals).toEqual(['SIGINT']);
-    aborted.timers.advance(23_000 - 1);
+    aborted.timers.advance(gatewayAbortBudgetMs(DEFAULT_STOP_VALUES) - 1);
     expect(aborted.port.last().groupKills).toBe(0);
     aborted.timers.advance(1);
     expect(aborted.port.last().groupKills).toBe(1);
@@ -596,6 +606,7 @@ describe('stop', () => {
     const harness = createManagerHarness(context);
     harness.spawnInitial();
     const stopped = harness.manager.stop('shutdown', 'term');
+    await stopLineWritten();
     void harness.manager.stop('shutdown', 'int');
     harness.timers.advance(RUNTIME_ABORT_BUDGET_MS);
     const child = harness.port.last();

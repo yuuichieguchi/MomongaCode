@@ -2,7 +2,7 @@ import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { REAP_POLL_INTERVAL_MS, createUninspectableRegistry, findHolders, groupAlive } from '@momonga/foundation';
+import { KILL_CONFIRM_MS, REAP_POLL_INTERVAL_MS, createUninspectableRegistry, defaultProcessInspector, findHolders, groupAlive } from '@momonga/foundation';
 import type { ProcessInspector, ReapTiming, SignalSender, UninspectableRegistry } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
@@ -92,6 +92,17 @@ const fakeTiming = (overlapTarget = 1): ReapTiming & { active: number; maxActive
     },
   };
   return timing;
+};
+
+const firstListingKept = (): ProcessInspector => {
+  const host = defaultProcessInspector();
+  let listed: ReturnType<ProcessInspector['holdersOf']> | undefined;
+  return {
+    startTimeOf: (pid, options) => host.startTimeOf(pid, options),
+    groupsOf: (pids, candidateGroups, options) => host.groupsOf(pids, candidateGroups, options),
+    markerState: (marker, options) => host.markerState(marker, options),
+    holdersOf: (marker, options, onUninspectable) => (listed ??= host.holdersOf(marker, options, onUninspectable)),
+  };
 };
 
 const harnessWith = (reap: { kill?: SignalSender; timing?: ReapTiming; killGraceMs?: number; inspector?: ProcessInspector; uninspectable?: UninspectableRegistry }): Harness =>
@@ -297,7 +308,7 @@ describe('executor abandon', () => {
       if (signal !== 0 && (pid === stubborn || pid === -stubborn)) return;
       process.kill(pid, signal);
     };
-    const harness = harnessWith({ kill, timing, killGraceMs: STUBBORN_GRACE_MS });
+    const harness = harnessWith({ kill, timing, killGraceMs: STUBBORN_GRACE_MS, inspector: firstListingKept() });
     const marker = markerOf(harness, KEY_A);
     stubborn = spawnHolder(marker, 'exec sleep 30');
     seedPending(harness, KEY_A, stubborn);
@@ -314,7 +325,7 @@ describe('executor abandon', () => {
       expect.arrayContaining([`tool marker ${marker} kept: process ${stubborn} still hold it after cleanup; the next start will retry`]),
     );
     expect(harness.idempotency.stateOf(KEY_A)).toBe('UNKNOWN');
-    expect(timing.sleeps).toBe((2 * STUBBORN_GRACE_MS) / REAP_POLL_INTERVAL_MS);
+    expect(timing.sleeps).toBe((STUBBORN_GRACE_MS + KILL_CONFIRM_MS) / REAP_POLL_INTERVAL_MS);
   });
 
   it('a target whose marker cannot be removed is a typed failure while the others are still reaped and every target is CAS-ed', async () => {
@@ -371,7 +382,7 @@ describe('executor reconcile of a PENDING call whose earlier attempt is still ru
       if (signal !== 0 && (pid === stubborn || pid === -stubborn)) return;
       process.kill(pid, signal);
     };
-    const harness = harnessWith({ kill, timing, killGraceMs: STUBBORN_GRACE_MS });
+    const harness = harnessWith({ kill, timing, killGraceMs: STUBBORN_GRACE_MS, inspector: firstListingKept() });
     const marker = markerOf(harness, KEY_A);
     stubborn = spawnHolder(marker, 'exec sleep 30');
     seedPending(harness, KEY_A, stubborn);

@@ -22,7 +22,7 @@ describe('HB8: the database wait and the lease, the lock wait and the previous c
   it('reads today the constants the proofs start from', () => {
     expect(DEFAULT_BUSY_TIMEOUT_MS).toBe(5000);
     expect(LOCK_WAIT_DEADLINE_MS).toBe(14_000);
-    expect(RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS).toBe(15_000);
+    expect(RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS).toBe(18_020);
     expect(DEFAULT_LEASE_MS / Number(HEARTBEAT_DIVISOR)).toBe(10_000);
   });
 

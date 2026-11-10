@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_STOP_VALUES, REAP_POLL_INTERVAL_MS, gatewayMaxCloseMs, managedServerStopBoundMs, reapMarkedProcesses } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, KILL_CONFIRM_MS, REAP_POLL_INTERVAL_MS, gatewayMaxCloseMs, managedServerStopBoundMs, reapMarkedProcesses } from '@momonga/foundation';
 import type { ProcessInspector } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS, createManagedServer } from '@momonga/gateway';
 import type { ManagedChild, ManagedServerTimers } from '@momonga/gateway';
@@ -110,7 +110,7 @@ describe('the gateway close bound against a gateway that holds an fm serve at th
     const closing = harness.gateway.close().finally(() => {
       closed = true;
     });
-    const waits = new Set([GATEWAY_CONFIG_DEFAULTS.closeGraceMs, DEFAULT_STOP_VALUES.managedServerStopGraceMs, REAP_POLL_INTERVAL_MS]);
+    const waits = new Set([GATEWAY_CONFIG_DEFAULTS.closeGraceMs, DEFAULT_STOP_VALUES.managedServerStopGraceMs, REAP_POLL_INTERVAL_MS, KILL_CONFIRM_MS]);
     while (!closed) await advanceToNextWait(harness.timers, waits, () => closed, 'the next wait of the close');
     await closing;
 

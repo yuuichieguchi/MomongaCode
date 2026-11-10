@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createManagedConnection } from '@momonga/mcp';
 import { KILL_CONFIRM_MS, isProcessAlive } from '@momonga/foundation';
 import type { DeadlineTiming } from '@momonga/foundation';
@@ -34,7 +34,9 @@ const spawnedPids = (pidFile: string): number[] =>
         .map(Number)
     : [];
 
-describe('a connection closed during its handshake (R5, R6)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
+describe('a connection closed during its handshake (R5, R6)', () => {
   it.for([0, 1000])('at grace %d, the abort settles the handshake at once, one transport is closed, and the close ends within mcpPoolCloseBoundMs', async (graceMs) => {
     const dir = tempDir();
     const pidFile = path.join(dir, 'pids');

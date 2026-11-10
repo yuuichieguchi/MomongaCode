@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import { DAEMON_MARKER_FD, LIFELINE_FD, isProcessAlive, FIRST_GENERATION } from '@momonga/foundation';
+import { DAEMON_MARKER_FD, DEFAULT_STOP_VALUES, LIFELINE_FD, isProcessAlive, FIRST_GENERATION, runtimeStopBudgetMs } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, registerCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import { childStdio, contractArgs, resolveLaunch } from '../src/launcher.ts';
 import { createManagerHarness } from './support/p2-manager-harness.ts';
@@ -231,7 +231,7 @@ describe('signals with real processes', () => {
     const childPid = port.spawned[0]?.pid as number;
     expect(processGroupOf(grandchild)).toBe(childPid);
     const stopped = harness.manager.stop('shutdown', 'term');
-    harness.timers.advance(50_000);
+    harness.timers.advance(runtimeStopBudgetMs(DEFAULT_STOP_VALUES));
     await pollUntil(() => !isProcessAlive(childPid) && !isProcessAlive(grandchild), 5000, 'child and grandchild are gone');
     await expect(stopped).resolves.toMatchObject({ killed: true, leaked: false });
   });

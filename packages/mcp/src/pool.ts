@@ -2,7 +2,7 @@ import type { CredentialRules, McpServerEntry } from '@momonga/config';
 import type { Clock } from '@momonga/foundation';
 import type { ToolSource } from '@momonga/tools';
 import type { McpRemotePorts } from './remote-ports.ts';
-import type { McpMarkerOptions } from './stdio-transport.ts';
+import type { CloseGrace, McpMarkerOptions } from './stdio-transport.ts';
 import type { McpTimers } from './timers.ts';
 import { createManagedConnection } from './connection.ts';
 import type { McpAuthProbe, McpServerDiagnostics } from './connection.ts';
@@ -24,7 +24,7 @@ export type McpPoolOptions = {
   connectTimeoutMs?: number;
   resetAfterMs?: number;
   markers?: McpMarkerOptions;
-  closeGraceMs?: number;
+  closeGraceMs?: CloseGrace;
 };
 
 export type McpPool = {

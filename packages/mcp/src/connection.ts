@@ -25,7 +25,8 @@ import { createSafeSchemaValidator } from './schema-validator.ts';
 import { createStdioTransport } from './stdio-transport.ts';
 import { createStoreScope, runInStoreScope, storeCallSignal, storeCallsSettled, storeUnderCallSignals } from './store-scope.ts';
 import type { StoreScope } from './store-scope.ts';
-import { DEFAULT_CLOSE_GRACE_MS } from './stdio-transport.ts';
+import { closeGraceOf } from './stdio-transport.ts';
+import type { CloseGrace } from './stdio-transport.ts';
 import type { McpMarkerOptions } from './stdio-transport.ts';
 import { McpInputSuspension } from './suspension.ts';
 import type { McpCheckpoint, McpResume } from './suspension.ts';
@@ -108,7 +109,7 @@ export type McpConnectionOptions = {
   connectTimeoutMs?: number;
   resetAfterMs?: number;
   markers?: McpMarkerOptions;
-  closeGraceMs?: number;
+  closeGraceMs?: CloseGrace;
   mrtrMaxRounds?: number;
   onNotice?: (message: string) => void;
   credentials?: CredentialRules;
@@ -399,7 +400,7 @@ class ManagedConnection implements McpServerConnection {
     return this.cancels.get(taskId);
   }
 
-  close(graceMs: number = this.options.closeGraceMs ?? DEFAULT_CLOSE_GRACE_MS): Promise<void> {
+  close(graceMs: number = closeGraceOf(this.options.closeGraceMs)): Promise<void> {
     this.closing ??= this.shutdown(graceMs);
     return this.closing;
   }

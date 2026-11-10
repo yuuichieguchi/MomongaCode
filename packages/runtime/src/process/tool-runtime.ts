@@ -212,7 +212,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
               timers,
               remote: mcpRemote,
               markers: { dir: paths.markers.mcp, onWarning: (message) => logger.warn(message) },
-              closeGraceMs: readCloseGraceMs(),
+              closeGraceMs: readCloseGraceMs,
               ...callBounds,
             }),
         });

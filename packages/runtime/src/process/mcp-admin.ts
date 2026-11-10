@@ -97,7 +97,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
       clock,
       timers: options.timers,
       remote,
-      closeGraceMs: options.readCloseGraceMs(),
+      closeGraceMs: options.readCloseGraceMs,
       ...connectTimeoutOf(options.readConnectTimeoutMs()),
       ...(options.markers === undefined ? {} : { markers: options.markers }),
     });
