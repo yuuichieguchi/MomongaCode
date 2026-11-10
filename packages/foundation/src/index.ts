@@ -424,3 +424,41 @@ export type { ProductSchema, ProductValidator, ProductVerdict } from './product-
 export { SHORT_TEMP_BASE, shortTempBase } from './short-temp-base.ts';
 export { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER } from './process-contract.ts';
 export { SETTINGS_APPLIED_ENV, SETTINGS_APPLIED_FILE } from './momonga-paths.ts';
+export { WINDOWS_KEEPER_BINARY_ASSET, WINDOWS_KEEPER_MANIFEST_ASSET, WindowsKeeperDistributionError, ensureBundledWindowsKeeper, parseWindowsKeeperManifest } from './platform/windows-keeper-asset.ts';
+export type { WindowsKeeperDistributionPorts, WindowsKeeperManifest } from './platform/windows-keeper-asset.ts';
+export {
+  KEEPER_EXIT_CODES,
+  KEEPER_FAILURE_REASONS,
+  KEEPER_JOB_PREFIX,
+  KEEPER_OWNER_LOSS,
+  KEEPER_PIPE_PREFIX,
+  KeeperLostError,
+  KeeperProtocolError,
+  attachKept,
+  confirmByAttach,
+  keeperExitName,
+  launchKept,
+  stopKeptGroup,
+} from './platform/windows-keeper.ts';
+export type {
+  CommandExitAnswer,
+  ConfirmByName,
+  KeeperConnection,
+  KeeperExitName,
+  KeeperFailureReason,
+  KeeperHost,
+  KeeperListener,
+  KeeperOwnerLoss,
+  KeeperRun,
+  KeptAttach,
+  KeptCommand,
+  KeptGroup,
+  KeptLaunch,
+  KeptLaunchRequest,
+  KeptStopOptions,
+  KeptStopOutcome,
+  MembersAnswer,
+  NameConfirmation,
+} from './platform/windows-keeper.ts';
+export { createNodeKeeperHost, listenForKeeper, startDetachedKeeper } from './platform/windows-keeper-host.ts';
+export type { NodeKeeperHostOptions } from './platform/windows-keeper-host.ts';
