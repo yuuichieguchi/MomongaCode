@@ -9,7 +9,7 @@ const userTui = async (tui: Record<string, unknown> | undefined) => {
   return (await loadUserSettings({ home: tree.home })).settings.tui;
 };
 
-const A11Y_OFF = { screenReader: false, reducedMotion: false };
+const A11Y_OFF = { screenReader: false, reducedMotion: false, screen: 'fullscreen', mouse: true, copyOnSelect: true, attachFileMentions: true };
 
 describe('tui.theme and tui.notify', () => {
   it('name the five sets and the two notification values', () => {
@@ -23,7 +23,7 @@ describe('tui.theme and tui.notify', () => {
 
   it('are described by the settings schema under one tui object', () => {
     const tui = SETTINGS_SCHEMA.properties['tui'] as { properties: Record<string, unknown> };
-    expect(Object.keys(tui.properties).sort()).toEqual(['notify', 'reducedMotion', 'screenReader', 'theme']);
+    expect(Object.keys(tui.properties).sort()).toEqual(['attachFileMentions', 'copyOnSelect', 'mouse', 'notify', 'reducedMotion', 'screen', 'screenReader', 'theme']);
   });
 
   it.each(TUI_THEMES)('accepts the theme %s', async (theme) => {
@@ -118,5 +118,24 @@ describe('tui.screenReader and tui.reducedMotion', () => {
     await writeTuiSetting(tree.home, file, 'screenReader', true);
     await writeTuiSetting(tree.home, file, 'reducedMotion', true);
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ tui: { theme: 'dark', screenReader: true, reducedMotion: true } });
+  });
+});
+
+describe('tui.attachFileMentions', () => {
+  it('is on by default and can be switched off in the settings file', async () => {
+    expect((await userTui(undefined)).attachFileMentions).toBe(true);
+    expect((await userTui({ attachFileMentions: false })).attachFileMentions).toBe(false);
+  });
+
+  it('refuses a value that is not a boolean', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { tui: { attachFileMentions: 'no' } });
+    await expect(loadUserSettings({ home: tree.home })).rejects.toThrow('/tui/attachFileMentions');
+  });
+
+  it('is written by the settings writer', async () => {
+    const tree = makeTree();
+    await writeTuiSetting(tree.home, userSettingsPath(tree), 'attachFileMentions', false);
+    expect((await loadUserSettings({ home: tree.home })).settings.tui.attachFileMentions).toBe(false);
   });
 });

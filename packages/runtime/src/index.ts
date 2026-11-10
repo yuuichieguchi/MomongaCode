@@ -1,5 +1,6 @@
 export { ConfigError } from '@momonga/config';
 export { buildSystemPrompt } from './system-prompt.ts';
+export { INIT_INSTRUCTION } from './prompts/init.ts';
 export { AUTO_CLASSIFIER_CODE } from './worker/auto-classifier.ts';
 export type { SystemPromptContext } from './system-prompt.ts';
 export { createWorker } from './worker/worker.ts';
@@ -7,6 +8,9 @@ export type { Worker, WorkerBlobs, WorkerDefaults, WorkerErrorContext, WorkerOpt
 export type {
   AgentSpanInput,
   AgentCatalogPort,
+  AttachTerms,
+  UserInputPort,
+  UserShellIo,
   AgentsPort,
   AppendedRule,
   Clock,
@@ -115,3 +119,5 @@ export { startRuntimeProcess } from './process/start-runtime-process.ts';
 export type { BundledRipgrepSource } from './process/start-runtime-process.ts';
 export type { RuntimeCloseResult, RuntimeProcess, StartRuntimeProcessOptions } from './process/start-runtime-process.ts';
 export { RUNTIME_ENTRY_FLAGS, runRuntimeEntry } from './process/entry.ts';
+export { createUserInputPort } from './process/user-input.ts';
+export type { UserInputOptions } from './process/user-input.ts';

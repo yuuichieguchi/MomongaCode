@@ -8,6 +8,7 @@ import type { TuiBackend } from './backend.ts';
 import { keyReported, needsReport, sentAsEscape, shownKey } from './keys/table.ts';
 import type { ActionId, KeyContext, KeySpec, KeyTable } from './keys/table.ts';
 import type { KeyBindingsScreen } from './commands/keybindings.ts';
+import type { OverlayPorts } from './picker.tsx';
 import type { NegotiationState } from './terminal/negotiation.ts';
 import type { ScreenMode } from './terminal/modes.ts';
 
@@ -42,6 +43,8 @@ export type SlashContext = ModeAvailability & {
   readonly negotiation: NegotiationState;
   readonly display: DisplayPort;
   readonly keyBindings: KeyBindingsScreen;
+  readonly overlays: Pick<OverlayPorts, 'choose' | 'promptText'>;
+  refusedWhileRunning(): boolean;
   status(): readonly string[];
   readonly sessions: SessionsPort;
 };
@@ -64,6 +67,8 @@ export const createSlashRegistry = (commands: readonly SlashCommand[]): SlashReg
   list: () => commands,
   find: (name) => commands.find((command) => command.name === name || command.aliases?.includes(name) === true),
 });
+
+export const NEEDS_SESSION_NOTE = 'This command needs a session. Connect a model first with /login.';
 
 export type ParsedSlash = { name: string; args: string };
 

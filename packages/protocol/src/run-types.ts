@@ -61,6 +61,20 @@ export type ImageMediaType = (typeof IMAGE_MEDIA_TYPES)[number];
 
 export type ImageAttachment = { mediaType: ImageMediaType; data: string };
 
+export type AttachedFilePart = { type: 'attached_file'; path: string; content: string; truncated: false };
+
+export type AttachmentNotePart = { type: 'attachment_note'; path: string; text: string; shown: string };
+
+export type MessageAttachment = AttachedFilePart | AttachmentNotePart;
+
+export const USER_SHELL_OUTPUT_BYTES = 64 * 1024;
+export const USER_SHELL_HEAD_BYTES = 16 * 1024;
+export const USER_SHELL_TAIL_BYTES = USER_SHELL_OUTPUT_BYTES - USER_SHELL_HEAD_BYTES;
+export const USER_SHELL_COMMAND_CHARS = 100_000;
+export const USER_SHELL_RUN_ACTIVE_CODE = 'run_active';
+
+export type UserShellRecord = { command: string; exitCode: number | null; output: string; include: boolean };
+
 export const INBOX_DELIVERIES = ['steer', 'queue'] as const;
 
 export type InboxDelivery = (typeof INBOX_DELIVERIES)[number];
@@ -152,7 +166,7 @@ export type InheritedCopyPayload = {
 };
 
 export type RunEventPayload =
-  | { type: 'user.message'; text: string; images?: ImageAttachment[]; source?: InboxDelivery }
+  | { type: 'user.message'; text: string; images?: ImageAttachment[]; source?: InboxDelivery; attachments?: MessageAttachment[]; shell?: UserShellRecord[] }
   | { type: 'run.started'; attempt: number; now: number; pins: Record<string, unknown>; mode?: PermissionMode }
   | { type: 'attempt.failed'; attempt: number; code: string; retryAt: number; limit: number }
   | { type: 'attempt.lost'; lastLiveAt: number }
@@ -309,7 +323,8 @@ export type RunEventPayload =
 export type SessionEventPayload =
   | { type: 'mode.changed'; mode: Stored<PermissionMode> }
   | { type: 'model.changed'; modelAlias: string; previousModelAlias: string }
-  | { type: 'inbox.changed'; pending: InboxRowView[] };
+  | { type: 'inbox.changed'; pending: InboxRowView[] }
+  | ({ type: 'user_shell' } & UserShellRecord);
 
 export type SessionEvent = SessionEventPayload & { id: number; sessionId: string; createdAt: number };
 

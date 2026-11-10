@@ -247,6 +247,9 @@ export const fakeRuntime = (): FakeRuntime => {
     inboxWithdraw: unexpected('inboxWithdraw'),
     inboxList: unexpected('inboxList'),
     runSuccessor: unexpected('runSuccessor'),
+    userShell: unexpected('userShell'),
+    stopUserShell: unexpected('stopUserShell'),
+    pendingUserShell: unexpected('pendingUserShell'),
     cancel: async (id) => {
       record(`cancel ${id}`);
       const failure = runtime.failures.get('cancel');

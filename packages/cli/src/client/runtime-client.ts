@@ -1,7 +1,7 @@
 import type { McpServerConfig } from '@momonga/config';
 import { createUdsClient, decodeSse, isRecord } from '@momonga/foundation';
 import type { SocketResolver, UdsResponse } from '@momonga/foundation';
-import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
@@ -19,6 +19,8 @@ import {
   checkInboxWithdraw,
   checkJobs,
   checkRunSuccessor,
+  checkUserShellFrame,
+  checkUserShellPending,
   checkMcpAuthorization,
   checkMcpServers,
   checkMemories,
@@ -87,7 +89,10 @@ export type CreateRunOptions = {
   skill?: string;
   timeoutMs?: number;
   images?: readonly ImageAttachment[];
+  attachMentions?: boolean;
 };
+
+export type UserShellEnd = { kind: 'refused'; reason: string } | { kind: 'exit'; record: UserShellRecord };
 
 export type MemoryFilter = { scope?: MemoryScope; state?: MemoryState; project?: string };
 
@@ -118,6 +123,9 @@ export type RuntimeClient = {
   inboxWithdraw(id: string): Promise<InboxWithdrawResponse>;
   inboxList(sessionId: string): Promise<InboxRowView[]>;
   runSuccessor(runId: string): Promise<RunView | undefined>;
+  userShell(sessionId: string, command: string, include: boolean, onOutput: (text: string) => void): Promise<UserShellEnd>;
+  stopUserShell(sessionId: string): Promise<void>;
+  pendingUserShell(sessionId: string): Promise<UserShellRecord[]>;
   cancel(id: string): Promise<{ status: 200 | 202; run: RunView }>;
   trace(runId: string): Promise<RunTraceView>;
   approvals(runId: string): Promise<ApprovalView[]>;
@@ -180,6 +188,7 @@ export const createRunBody = (input: string, options: CreateRunOptions = {}): Re
   ...(options.skill === undefined ? {} : { skill: options.skill }),
   ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
   ...(options.images === undefined || options.images.length === 0 ? {} : { images: options.images }),
+  ...(options.attachMentions === true ? { attachMentions: true } : {}),
 });
 
 const parsed = (text: string, description: string): unknown => {
@@ -642,6 +651,26 @@ export const createRuntimeClient = (options: { resolveSocket: SocketResolver }):
     inboxAdd,
     inboxWithdraw,
     inboxList,
+    userShell: async (sessionId, command, include, onOutput) => {
+      const path = `/v1/sessions/${sessionId}/user-shell`;
+      const description = `POST ${path}`;
+      const response = await http.request({ method: 'POST', path, headers: JSON_HEADERS, body: JSON.stringify({ command, include }) });
+      if (response.status !== 200) throw new RunApiError(description, response.status, await response.text());
+      for await (const event of decodeSse(response.body)) {
+        const frame = checkUserShellFrame(parsed(event.data, description), description);
+        if (frame.type === 'output') onOutput(frame.text);
+        else return frame.type === 'refused' ? { kind: 'refused', reason: frame.reason } : { kind: 'exit', record: frame.record };
+      }
+      throw new ContractViolation(description, 'the stream ended without an exit');
+    },
+    stopUserShell: async (sessionId) => {
+      await send('DELETE', `/v1/sessions/${sessionId}/user-shell`, [200]);
+    },
+    pendingUserShell: async (sessionId) => {
+      const path = `/v1/sessions/${sessionId}/user-shell`;
+      const { body } = await send('GET', path, [200]);
+      return checkUserShellPending(body, `GET ${path}`).pending;
+    },
     runSuccessor,
     getRun,
     cancel,

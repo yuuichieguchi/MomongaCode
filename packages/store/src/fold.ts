@@ -356,7 +356,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
   switch (event.type) {
     case 'user.message': {
       const { lastResponse: _answered, ...rest } = state;
-      const appended = appendItems(rest, [{ item: { type: 'message', role: 'user', content: userMessageContent(event.text, event.images) } }], event.seq);
+      const appended = appendItems(rest, [{ item: { type: 'message', role: 'user', content: userMessageContent(event.text, event.images, event) } }], event.seq);
       return {
         ...appended,
         stopHookContinuations: event.text.startsWith(STOP_HOOK_FEEDBACK_PREFIX) ? state.stopHookContinuations + 1 : state.stopHookContinuations,

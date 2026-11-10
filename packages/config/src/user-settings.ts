@@ -36,6 +36,8 @@ const userSettingsFrom = (home: string, read: JsonFile, planProfiles?: PlanProfi
   }
 };
 
+export const userDocumentWarnings = (home: string, document: unknown): string[] => userSettingsFrom(home, { found: true, value: document }).warnings;
+
 const loadUserSettingsSync = (home: string, planProfiles?: PlanProfiles): LoadUserSettingsResult => {
   const { settings, user, warnings } = userSettingsFrom(home, readUserJsonFile(home), planProfiles);
   return { settings, warnings, files: user.layer === undefined ? [] : [user.layer.source] };

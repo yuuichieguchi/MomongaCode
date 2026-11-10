@@ -21,7 +21,7 @@ import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from
 import type { SandboxBindings } from '../ports.ts';
 import type { RuntimeStore } from '@momonga/store';
 import { createBuiltinTools, createGitWorkTreeObserver, createHostRipgrepLocator, createMarkerOwners, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
-import type { BundledRipgrepResolver, MarkerOwners, ShellHost, ToolSet, WorkTreeObserver } from '@momonga/tools';
+import type { BundledRipgrepResolver, MarkerOwners, ShellHost, ToolSet, UserPolicy, WorkTreeObserver } from '@momonga/tools';
 import type { PolicyHostFilesystem } from '@momonga/policy';
 import type { ToolRuntimePort } from '../ports.ts';
 import type { RunNotifier } from '../service/notifier.ts';
@@ -69,6 +69,7 @@ export type ToolRuntimeOptions = {
 
 export type ToolRuntime = {
   port: ToolRuntimePort;
+  userPolicy: UserPolicy;
   mcpPools: McpPoolCache;
   mcpAdmin: McpAdmin;
   sessionStates: SessionStates;
@@ -251,5 +252,5 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     },
   };
 
-  return { port, mcpPools, mcpAdmin, sessionStates, jobs, owners, inspector };
+  return { port, userPolicy: executor, mcpPools, mcpAdmin, sessionStates, jobs, owners, inspector };
 };

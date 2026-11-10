@@ -23,7 +23,7 @@ const startWith = async (given: { settings?: Partial<ResolvedTuiSettings>; asked
   const terminal = fakeScreenTerminal(given.screen ?? { screen: 'scrollback', columns: 80, rows: 30 });
   const saved: Saved[] = [];
   const tuiSettings: TuiSettingsPort = {
-    initial: { theme: 'auto', notify: 'off', screenReader: false, reducedMotion: false, ...given.settings },
+    initial: { theme: 'auto', notify: 'off', screenReader: false, reducedMotion: false, screen: 'fullscreen', mouse: true, copyOnSelect: true, attachFileMentions: true, ...given.settings },
     save: async (name, value) => {
       saved.push({ name, value });
     },
@@ -276,7 +276,7 @@ describe('the two switches from inside the TUI', () => {
     await untilFrame(started.app, 'mode: manual');
     await command(started, '/config screen-reader maybe');
     await untilOutput(started.app, 'unknown screen-reader value maybe; available: on, off');
-    await command(started, '/config');
+    await command(started, '/config nothing');
     await untilOutput(started.app, 'usage: /config notify [off|bell]\n/config screen-reader [on|off]\n/config reduced-motion [on|off]');
     expect(started.saved).toEqual([]);
     started.app.unmount();

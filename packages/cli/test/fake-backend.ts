@@ -7,7 +7,11 @@ import type { RunView, SessionView, TrustView } from '../src/client/views.ts';
 import type { PlanGatewayClient } from '../src/client/gateway-client.ts';
 import { isTerminalStatus } from '../src/run/follow.ts';
 import { continuedSession, resolveSession } from '../src/run/resolve-session.ts';
-import type { FollowHandlers, StartRunOptions, TuiBackend } from '../src/tui/backend.ts';
+import type { FollowHandlers, StartRunOptions, TuiBackend, UserInputBackend } from '../src/tui/backend.ts';
+import type { ClipboardContent } from '../src/tui/screen/clipboard.ts';
+import type { UserShellRecord } from '@momonga/protocol';
+import { editSettings, readSettingsSnapshot } from '@momonga/config';
+import type { McpServerView } from '@momonga/protocol';
 
 export const SESSION: SessionView = {
   id: 'session-1',
@@ -84,6 +88,12 @@ export type FakeBackendOptions = {
   windows?: Readonly<Record<string, number>>;
   toolCalling?: Readonly<Record<string, ToolCallingState>>;
   conversations?: readonly FakeConversation[];
+  settingsPlace?: { home: string; projectDir: string };
+  files?: readonly string[];
+  clipboard?: ClipboardContent;
+  shell?: UserInputBackend['shell'];
+  pendingShell?: readonly UserShellRecord[];
+  mcpServers?: readonly McpServerView[];
 };
 
 export const capabilitiesOf = (overrides: CapabilityOverride = {}): Capabilities =>
@@ -123,7 +133,13 @@ const NO_PLAN: PlanGatewayClient = {
   addTarget: noPlanRoute('accounts/targets'),
 };
 
+export const FAKE_INIT_INSTRUCTION = 'Read this repository, then write AGENTS.md.';
+
 export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
+  const settingsPlace = (): { home: string; projectDir: string } => {
+    if (options.settingsPlace === undefined) throw new Error('the fake backend was given no settings place');
+    return options.settingsPlace;
+  };
   const calls: string[] = [];
   const started: { text: string; history: 'inherit' | 'fresh'; options?: StartRunOptions }[] = [];
   const elicitationAnswers: FakeBackend['elicitationAnswers'] = [];
@@ -276,6 +292,23 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     inboxRows,
     deliverInbox: (id) => void settleInbox(id, 'delivered'),
     succeed: (runId, next) => void successors.set(runId, next),
+    userInput: {
+      fileCandidates: async () => ({ entries: [...(options.files ?? [])], truncated: false }),
+      shell: async (command, include, onOutput) => {
+        record(`shell:${include ? '!' : '!!'}:${command}`);
+        if (options.shell !== undefined) return options.shell(command, include, onOutput);
+        onOutput(`out of ${command}\n`);
+        return { kind: 'exit', record: { command, exitCode: 0, output: `out of ${command}`, include } };
+      },
+      stopShell: async () => {
+        record('shell-stop');
+      },
+      pendingShell: async () => options.pendingShell ?? [],
+      readClipboard: async () => {
+        record('clipboard-read');
+        return options.clipboard ?? { kind: 'empty' };
+      },
+    },
     inbox: {
       add: async (delivery, text, images = []) => {
         record(`inbox:${delivery}:${text}`);
@@ -413,6 +446,10 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     },
     dismissedNotices: async () => ({}),
     dismissNotice: async () => undefined,
+    settings: async () => readSettingsSnapshot({ ...settingsPlace(), trusted: (options.trust?.decision ?? 'trusted') === 'trusted' }),
+    editSettings: (layer, operation, signal) => editSettings(settingsPlace(), layer, operation, { signal }),
+    mcpServers: async () => options.mcpServers ?? [],
+    initInstruction: async () => FAKE_INIT_INSTRUCTION,
     close: async () => {
       record('close');
     },

@@ -1,8 +1,11 @@
 import { A11Y_SETTINGS, SWITCH_WORDS, switchWordOf } from '../screen/a11y.ts';
 import { NOTIFY_MODES } from '../screen/notify.ts';
+import { THEME_IDS } from '../screen/theme.ts';
+import { SAVING_SETTING, runSettingsScreen } from '../settings-screen.tsx';
+import type { LiveSetting } from '../settings-screen.tsx';
 import type { SlashCommand, SlashContext } from '../slash.ts';
 
-export const SAVING_SETTING = 'saving the setting';
+export { SAVING_SETTING };
 
 type ConfigRow = {
   readonly name: string;
@@ -37,16 +40,30 @@ const a11yRows: readonly ConfigRow[] = A11Y_SETTINGS.map(({ name, setting, label
 
 export const CONFIG_ROWS: readonly ConfigRow[] = [notifyRow, ...a11yRows];
 
+const themeSetting: LiveSetting = {
+  name: 'theme',
+  store: async (context, value, signal) => {
+    const chosen = THEME_IDS.find((id) => id === value);
+    if (chosen !== undefined) await context.display.storeTheme(chosen, signal);
+  },
+};
+
+export const liveSettings = (): readonly LiveSetting[] => [...CONFIG_ROWS, themeSetting];
+
 const usageOf = (row: ConfigRow): string => `${row.name} [${row.values.join('|')}]`;
 
 export const CONFIG_USAGE = CONFIG_ROWS.map((row) => `/config ${usageOf(row)}`).join('\n');
 
 export const configCommand: SlashCommand = {
   name: 'config',
-  description: `show or change a setting; ${CONFIG_ROWS.map((row) => `${row.name}: ${row.label}`).join('; ')}`,
+  description: `open the settings screen, or show or change one setting by name; ${CONFIG_ROWS.map((row) => `${row.name}: ${row.label}`).join('; ')}`,
   usage: CONFIG_ROWS.map(usageOf).join(' | '),
   needsSession: false,
   run: async (args, context) => {
+    if (args.trim() === '') {
+      await runSettingsScreen(context, liveSettings());
+      return;
+    }
     const [name, value, ...rest] = args.split(/\s+/).filter((word) => word !== '');
     const row = CONFIG_ROWS.find((candidate) => candidate.name === name);
     if (row === undefined || rest.length > 0) {

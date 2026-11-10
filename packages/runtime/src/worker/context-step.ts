@@ -67,7 +67,7 @@ const sessionOf = (ctx: ClaimContext): HeldSession => heldSessionOf(ctx.options.
 export const taskOf = (ctx: ClaimContext): { content: ContentPart[]; text: string } => {
   const [first] = ctx.options.store.readRunEvents(ctx.run.id, 0, 1);
   if (first === undefined || first.type !== 'user.message') throw new Error(`run ${ctx.run.id} does not start with a user message`);
-  return { content: userMessageContent(first.text, first.images), text: first.text };
+  return { content: userMessageContent(first.text, first.images, first), text: first.text };
 };
 
 type GoverningScan = 'active' | 'live';

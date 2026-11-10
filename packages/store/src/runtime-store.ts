@@ -3,13 +3,13 @@ import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
 import { FIDELITY_FOLD_VERSION, INBOX_MAX_PENDING, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
-import type { CallTiming, ElicitationAnswerRecord, ElicitationRequestView, InboxDelivery, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
+import type { CallTiming, ElicitationAnswerRecord, ElicitationRequestView, InboxDelivery, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus, UserShellRecord } from '@momonga/protocol';
 import { createAppendRecords, columnsOf } from './append-records.ts';
 import { createVerdictWriter } from './fidelity-verdicts.ts';
 import { createApprovalStore } from './approvals.ts';
 import { blobDirectoryOf, createBlobStore, prepareBlobDirectory } from './blobs.ts';
 import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
-import { HISTORY_MODES, decodeContextOf, decodeKnownEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, decodeStoredEvent, encodeRunState } from './codec.ts';
+import { HISTORY_MODES, decodeContextOf, decodeKnownEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, decodeStoredEvent, encodeRunState, userShellRecordOf } from './codec.ts';
 import { createDerivedReads, createDerivedRepair } from './derived-repair.ts';
 import type { DerivedScope } from './derived-repair.ts';
 import { JournalThreadError, StalePreparation } from './journal-port.ts';
@@ -49,6 +49,7 @@ import type {
   InboxDeliverResult,
   InboxRow,
   InboxStore,
+  UserShellStore,
   InboxWithdrawResult,
   QueuedRunTerms,
   ElicitationView,
@@ -302,6 +303,11 @@ const prepareStatements = (db: DatabaseSync) => ({
   hasToolOffered: db.prepare("SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.offered' LIMIT 1"),
   modelChanges: db.prepare("SELECT * FROM events WHERE session_id = :sessionId AND type = 'model.changed' AND id > :after ORDER BY id"),
   sessionEvents: db.prepare('SELECT * FROM events WHERE session_id = :sessionId AND id > :after ORDER BY id LIMIT :limit'),
+  pendingUserShell: db.prepare(
+    `SELECT * FROM events WHERE session_id = :sessionId AND run_id IS NULL AND type = 'user_shell'
+       AND id > COALESCE((SELECT MAX(id) FROM events WHERE session_id = :sessionId AND type = 'user.message' AND seq = 1), 0)
+     ORDER BY id`,
+  ),
   listExhausted: db.prepare(`SELECT r.* FROM runs r WHERE ${CLAIMABLE} AND ${EXHAUSTED} ${CLAIM_ORDER}`),
   exhaustedById: db.prepare(`SELECT r.* FROM runs r WHERE r.id = :id AND ${CLAIMABLE} AND ${EXHAUSTED}`),
   listSweeperOwned: db.prepare(
@@ -644,6 +650,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return pending;
   };
 
+  const pendingUserShell = (sessionId: string): UserShellRecord[] =>
+    sql.pendingUserShell.all({ sessionId }).map((row) => {
+      const identity = String(row['id']);
+      return userShellRecordOf(identity, expectRecord('events', identity, 'payload_json', readerFor('events', identity, row).json('payload_json')));
+    });
+
   const insertRootRun = (sessionRow: Row, input: CreateRunInput, source?: InboxDelivery): Run => {
     const session = decodeSession(sessionRow, decodeContext);
     const sessionId = session.id;
@@ -651,6 +663,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     if (ordinalRow === undefined) throw new Error(`could not compute the next run ordinal for session ${sessionId}`);
     const ordinal = readerFor('runs', sessionId, ordinalRow).number('next');
     const previous = sql.latestRunOfSession.get({ sessionId });
+    const shell = pendingUserShell(sessionId);
     const id = uuidv7(clock);
     const now = clock.now();
     sql.insertRun.run({
@@ -672,7 +685,14 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       origin: originOf(session.cwd),
     });
     const inserted = appendPayloads(requireRun(id), [
-      { type: 'user.message', text: input.input, ...(input.images === undefined ? {} : { images: input.images }), ...(source === undefined ? {} : { source }) },
+      {
+        type: 'user.message',
+        text: input.input,
+        ...(input.images === undefined ? {} : { images: input.images }),
+        ...(source === undefined ? {} : { source }),
+        ...(input.attachments === undefined || input.attachments.length === 0 ? {} : { attachments: input.attachments }),
+        ...(shell.length === 0 ? {} : { shell }),
+      },
       ...(input.skill === undefined ? [] : [{ type: 'skill.activated' as const, name: input.skill.name, content: input.skill.content }]),
     ]);
     writeRun(inserted);
@@ -1108,6 +1128,17 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     if (events.some((event) => event.type === 'context.contribution')) {
       throw new Error('context.contribution is written only by the terminal transition of a run, never appended');
     }
+  };
+
+  const userShell: UserShellStore = {
+    record: (sessionId, record) =>
+      transaction<{ kind: 'recorded' } | { kind: 'not_found' }>(() => {
+        if (sql.selectSession.get({ id: sessionId }) === undefined) return { kind: 'not_found' };
+        insertEvent({ runId: null, sessionId, seq: null, step: null, leaseToken: null, createdAt: clock.now(), payload: { type: 'user_shell', ...record } });
+        return { kind: 'recorded' };
+      }),
+    pending: pendingUserShell,
+    runActive: (sessionId) => inboxTable.sessionHasOpenRun(sessionId),
   };
 
   const inbox: InboxStore = {
@@ -1725,6 +1756,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     blobs: createBlobStore(db, clock, blobDirectory),
     trust,
     inbox,
+    userShell,
     memories: { ...memories, save: (input) => derivedReads.write({ runId: input.runId }, () => memories.save(input)) },
     sessionTouched: {
       after: (sessionId, afterEventId, limit, afterPath) => derivedReads.read({ sessionId }, (view) => view.touchedAfter(sessionId, afterEventId, limit, afterPath)),

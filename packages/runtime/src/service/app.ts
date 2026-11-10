@@ -6,13 +6,16 @@ import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, stripCredenti
 import type { AutoFitKey, CredentialRules } from '@momonga/config';
 import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { AUTO_MODE_UNAVAILABLE, INBOX_FULL_CODE, NO_MODEL_TARGET, RUN_STATUSES, TARGET_PROBING_MESSAGE, agentReadiness, inboxFullMessage, readinessText } from '@momonga/protocol';
+import { AUTO_MODE_UNAVAILABLE, INBOX_FULL_CODE, NO_MODEL_TARGET, RUN_STATUSES, TARGET_PROBING_MESSAGE, agentReadiness, inboxFullMessage, outputReserveFor, readinessText } from '@momonga/protocol';
+import { mentionsOf } from '@momonga/context';
+import type { AttachedMentions } from '@momonga/context';
 import type { Capabilities, CostBreakdownView, GatewayCostReportView, PermissionMode, RunStatus, RunTraceView } from '@momonga/protocol';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
 import { JournalThreadError, inboxRowView, sameRunRequest } from '@momonga/store';
 import type { ContextCharge, Run, RuntimeStore, Session } from '@momonga/store';
 import { GatewayRequestError, ModelUnlistedError, isTargetProbing } from '../gateway-client.ts';
-import type { AgentCatalogPort, SkillsPort } from '../ports.ts';
+import type { AgentCatalogPort, SkillsPort, UserInputPort } from '../ports.ts';
+import { registerUserShellRoutes } from './user-shell-routes.ts';
 import type { SandboxKind } from '../process/sandbox-kind.ts';
 import {
   ApiError,
@@ -79,6 +82,7 @@ export type RunAppDeps = {
   sessionReadSettings: (cwd: string) => Promise<SessionCreateSettings>;
   skills: SkillsPort;
   agents: AgentCatalogPort;
+  userInput: UserInputPort;
   evidenceRun: (project: string) => EvidenceRun;
   isDraining(): boolean;
   beginDraining(): void;
@@ -335,15 +339,23 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return json({ agents: agents.agents.map(toAgentView), warnings: [...agents.warnings] });
   };
 
-  const requireImageInput = async (session: Session, images: readonly unknown[] | undefined, signal: AbortSignal): Promise<void> => {
-    if (images === undefined || images.length === 0) return;
-    let capabilities: Capabilities;
+  const capabilitiesOf = async (session: Session, signal: AbortSignal): Promise<Capabilities> => {
     try {
-      capabilities = await deps.modelCapabilities(session.modelAlias, signal);
+      return await deps.modelCapabilities(session.modelAlias, signal);
     } catch (error) {
       throw capabilitiesReadFailure(error);
     }
-    if (!capabilities.imageInput) throw imageInputUnsupported(session.modelAlias);
+  };
+
+  const requireImageInput = async (session: Session, images: readonly unknown[] | undefined, signal: AbortSignal): Promise<void> => {
+    if (images === undefined || images.length === 0) return;
+    if (!(await capabilitiesOf(session, signal)).imageInput) throw imageInputUnsupported(session.modelAlias);
+  };
+
+  const attachedTo = async (session: Session, body: CreateRunBody, signal: AbortSignal): Promise<AttachedMentions> => {
+    if (body.attachMentions !== true || mentionsOf(body.input).length === 0) return { attachments: [], images: [] };
+    const capabilities = await capabilitiesOf(session, signal);
+    return deps.userInput.attach(session, body.input, { ceiling: capabilities.contextWindow - outputReserveFor(capabilities), imageInput: capabilities.imageInput, signal });
   };
 
   const createRun: Handler = async (context) => {
@@ -372,6 +384,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     await sessionSettingsOf(session.cwd, context.req.raw.signal);
     const skill = body.skill === undefined ? undefined : await activationOf(session, body.skill);
     await requireImageInput(session, body.images, context.req.raw.signal);
+    const attached = await attachedTo(session, body, context.req.raw.signal);
+    const images = [...(body.images ?? []), ...attached.images];
     const drainedDuringChecks = replayWhileDraining();
     if (drainedDuringChecks !== undefined) return drainedDuringChecks;
     const result = store.createRunAndEnqueue(session.id, {
@@ -382,7 +396,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       pins: {},
       history: body.history ?? 'inherit',
       ...(skill === undefined ? {} : { skill }),
-      ...(body.images === undefined ? {} : { images: body.images }),
+      ...(images.length === 0 ? {} : { images }),
+      ...(attached.attachments.length === 0 ? {} : { attachments: attached.attachments }),
     });
     if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
     if (result.kind === 'key_reused') throw idempotencyKeyReused();
@@ -625,6 +640,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     closeSignal: deps.closeSignal,
   });
   registerMarkerRoutes(route, { home: deps.home, owners: deps.markerOwners, closeSignal: deps.closeSignal });
+  registerUserShellRoutes(route, { store, userInput: deps.userInput, maxBodyBytes: deps.maxBodyBytes, closeSignal: deps.closeSignal });
   registerInputRoutes(route, { store, mcp: deps.mcp, maxBodyBytes: deps.maxBodyBytes, closeSignal: deps.closeSignal });
 
   app.notFound(() => errorResponse(notFound('no such route')));

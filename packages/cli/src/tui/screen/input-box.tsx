@@ -100,9 +100,11 @@ export function PanelInputBox({ editor }: { editor: EditorState }) {
   );
 }
 
-export type InputBoxProps = { editor: EditorState; columns: number; rows: number | undefined; top: number | undefined; framed: boolean };
+export const CHAT_MARK = '>';
 
-export function InputBox({ editor, columns, rows, top, framed }: InputBoxProps) {
+export type InputBoxProps = { editor: EditorState; columns: number; rows: number | undefined; top: number | undefined; framed: boolean; mark: string };
+
+export function InputBox({ editor, columns, rows, top, framed, mark }: InputBoxProps) {
   const box = useRef<DOMElement>(null);
   const measured = useBoxMetrics(box);
   const { setCursorPosition } = useCursor();
@@ -113,7 +115,7 @@ export function InputBox({ editor, columns, rows, top, framed }: InputBoxProps) 
   return (
     <Box ref={box} flexDirection="column" {...(framed ? { borderStyle: 'round' as const, ...borderOf('border'), paddingX: 1 } : {})}>
       {layout.rows.slice(first, first + visible).map((row, index) => (
-        <Text key={first + index} wrap="truncate">{`${first + index === 0 ? FIRST_PREFIX : REST_PREFIX}${row.text}`}</Text>
+        <Text key={first + index} wrap="truncate">{`${first + index === 0 ? `${mark} ` : REST_PREFIX}${row.text}`}</Text>
       ))}
     </Box>
   );

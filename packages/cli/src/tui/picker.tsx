@@ -114,7 +114,9 @@ export function OverlayView({ overlay, editor, keys }: { overlay: PanelOverlay; 
           {(overlay.request.lines ?? []).map((line, index) => (
             <Text key={index}>{escapeTerminalLine(line)}</Text>
           ))}
-          <Text>{`> ${escapeTerminalLine(editor.text)}`}</Text>
+          {editor.text.split('\n').map((line, index) => (
+            <Text key={index}>{`${index === 0 ? '> ' : '  '}${escapeTerminalLine(line)}`}</Text>
+          ))}
           {overlay.error === undefined ? null : <Text color="red">{escapeTerminalLine(overlay.error)}</Text>}
           <Text dimColor>{textHint(keys)}</Text>
         </Box>

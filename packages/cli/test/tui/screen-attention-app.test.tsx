@@ -27,7 +27,7 @@ const until = async (met: () => boolean, what: string): Promise<void> => {
 const storedSettings = (initial: Partial<ResolvedTuiSettings> = {}) => {
   const saved: { name: string; value: string | boolean; aborted: boolean }[] = [];
   const port: TuiSettingsPort = {
-    initial: { theme: 'auto', notify: 'off', screenReader: false, reducedMotion: false, ...initial },
+    initial: { theme: 'auto', notify: 'off', screenReader: false, reducedMotion: false, screen: 'fullscreen', mouse: true, copyOnSelect: true, attachFileMentions: true, ...initial },
     save: async (name, value, signal) => {
       saved.push({ name, value, aborted: signal.aborted });
     },
@@ -214,7 +214,7 @@ describe('the notification switch', () => {
     const started = await ready();
     await submit(started, '/config notify osc9');
     await untilOutput(started.app, 'unknown notify value osc9; available: off, bell');
-    await submit(started, '/config');
+    await submit(started, '/config nothing');
     await untilOutput(started.app, 'usage: /config notify [off|bell]');
     expect(started.saved).toEqual([]);
     started.app.unmount();

@@ -1,5 +1,6 @@
 import { escapeTerminalLine } from '@momonga/protocol';
-import type { PermissionDenial, PermissionMode, PermissionOption, PublicRunEvent, ToolKind } from '@momonga/protocol';
+import type { PermissionDenial, PermissionMode, PermissionOption, PublicRunEvent, ToolKind, UserShellRecord } from '@momonga/protocol';
+import { attachedRow } from './attach.ts';
 import { startFlow } from '../elicit/flow.ts';
 import { mcpAuthorizationNotice } from '../mcp/messages.ts';
 import { selectableModes } from '../modes.ts';
@@ -136,6 +137,24 @@ const reportedText = (content: readonly unknown[]): string =>
     })
     .join('');
 
+export type UserToolStart = { id: string; name: string; title: string; startedAt: number };
+
+export const userToolStarted = (store: TranscriptStore, { id, name, title, startedAt }: UserToolStart): void => {
+  appendEntry(store, { kind: 'tool', callId: id, name, title, toolKind: 'execute', rawInput: undefined, status: 'running', calledAt: startedAt, shownAt: startedAt }, callKey(id));
+  store.update({ runningTools: [...store.state().runningTools, { callId: id, title, startedAt }] });
+};
+
+export const userToolOutput = (store: TranscriptStore, id: string, text: string, keptCharacters: number): void => {
+  updateTool(store, id, (tool) => withOutput(tool, `${tool.output ?? ''}${text}`.slice(-keptCharacters), tool.shownAt));
+};
+
+export type UserToolEnd = { status: Extract<ToolStatus, 'completed' | 'failed' | 'unknown'>; title: string; output: string | undefined; endedAt: number };
+
+export const userToolEnded = (store: TranscriptStore, id: string, { status, title, output, endedAt }: UserToolEnd): void => {
+  updateTool(store, id, (tool) => ({ ...(output === undefined ? { ...tool, shownAt: endedAt } : withOutput(tool, output, endedAt)), status, title }));
+  store.update({ runningTools: store.state().runningTools.filter((tool) => tool.callId !== id) });
+};
+
 export const tickRunningTools = (store: TranscriptStore, now: number): void => {
   for (const { callId } of store.state().runningTools) {
     updateTool(store, callId, (tool) => (tool.status !== 'running' || Math.floor((now - tool.calledAt) / 1000) === Math.floor((tool.shownAt - tool.calledAt) / 1000) ? tool : { ...tool, shownAt: now }));
@@ -185,6 +204,7 @@ const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
   switch (event.type) {
     case 'user.message':
       if (event.source !== undefined) appendEntry(store, { kind: 'user', text: event.text });
+      appendAttachments(store, event);
       return;
     case 'agent.thought.delta': {
       const key = thoughtKey(event.itemId);
@@ -408,9 +428,21 @@ export type PromptEvent = Extract<PublicRunEvent, { type: 'user.message' }>;
 
 export const isPrompt = (event: PublicRunEvent, firstSeq: number | undefined): event is PromptEvent => event.type === 'user.message' && event.seq === firstSeq;
 
-export const foldReplayedEvent = (store: TranscriptStore, event: PublicRunEvent, firstSeq: number | undefined): void => {
-  if (isPrompt(event, firstSeq)) appendEntry(store, { kind: 'user', text: event.text });
-  else foldEvent(store, event);
+const appendAttachments = (store: TranscriptStore, event: PromptEvent): void => {
+  for (const part of event.attachments ?? []) {
+    if (part.type === 'attached_file') appendEntry(store, { kind: 'info', text: attachedRow(part) });
+    else appendEntry(store, { kind: 'notice', level: 'warning', text: part.shown });
+  }
+};
+
+export const foldReplayedEvent = (store: TranscriptStore, event: PublicRunEvent, firstSeq: number | undefined, showShell: (record: UserShellRecord) => void): void => {
+  if (!isPrompt(event, firstSeq)) {
+    foldEvent(store, event);
+    return;
+  }
+  for (const record of event.shell ?? []) showShell(record);
+  appendEntry(store, { kind: 'user', text: event.text });
+  appendAttachments(store, event);
 };
 
 export const runCreated = (store: TranscriptStore, runId: string, startedAt: number): void => {

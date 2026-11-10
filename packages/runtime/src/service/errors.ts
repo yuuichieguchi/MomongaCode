@@ -45,7 +45,7 @@ export const methodNotAllowed = (allowed: readonly string[]): ApiError =>
   });
 
 export const conflict = (
-  code: 'approval_not_pending' | 'child_session' | 'duplicate_charge' | 'guideline_conflict' | 'inbox_full' | 'memory_state' | 'mode_unavailable' | 'run_cancelled' | 'skill_target' | 'value_unknown',
+  code: 'approval_not_pending' | 'child_session' | 'duplicate_charge' | 'guideline_conflict' | 'inbox_full' | 'memory_state' | 'mode_unavailable' | 'run_active' | 'run_cancelled' | 'skill_target' | 'user_shell_running' | 'value_unknown',
   message: string,
 ): ApiError =>
   new ApiError({ status: 409, type: 'conflict', code, message });

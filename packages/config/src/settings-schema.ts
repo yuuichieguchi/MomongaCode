@@ -6,7 +6,8 @@ export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const sat
 
 export const TUI_THEMES = ['auto', 'dark', 'light', 'dark-colorblind', 'light-colorblind'] as const;
 export const TUI_NOTIFY_MODES = ['off', 'bell'] as const;
-export const TUI_SETTING_VALUES = { theme: TUI_THEMES, notify: TUI_NOTIFY_MODES } as const;
+export const TUI_SCREEN_MODES = ['fullscreen', 'scrollback'] as const;
+export const TUI_SETTING_VALUES = { theme: TUI_THEMES, notify: TUI_NOTIFY_MODES, screen: TUI_SCREEN_MODES } as const;
 
 const STRING_ARRAY = { type: 'array', items: { type: 'string' } } as const;
 const NON_EMPTY_STRING_ARRAY = { type: 'array', items: { type: 'string', minLength: 1 } } as const;
@@ -529,7 +530,7 @@ export const SETTINGS_SCHEMA = {
     autoUpdates: { type: 'boolean' },
     tui: {
       type: 'object',
-      properties: { theme: { enum: [...TUI_THEMES] }, notify: { enum: [...TUI_NOTIFY_MODES] }, screenReader: { type: 'boolean' }, reducedMotion: { type: 'boolean' } },
+      properties: { theme: { enum: [...TUI_THEMES] }, notify: { enum: [...TUI_NOTIFY_MODES] }, screenReader: { type: 'boolean' }, reducedMotion: { type: 'boolean' }, screen: { enum: [...TUI_SCREEN_MODES] }, mouse: { type: 'boolean' }, copyOnSelect: { type: 'boolean' }, attachFileMentions: { type: 'boolean' } },
       additionalProperties: false,
     },
     gateway: {

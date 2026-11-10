@@ -100,6 +100,7 @@ export const KEYS = {
   ctrlO: '\u000f',
   ctrlR: '\u0012',
   ctrlU: '\u0015',
+  ctrlV: '\u0016',
   ctrlW: '\u0017',
   ctrlY: '\u0019',
   ctrlUnderscore: '\u001f',

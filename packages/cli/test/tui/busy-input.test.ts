@@ -16,17 +16,17 @@ const rebound = createKeyTable(
 );
 
 describe('the busy keys (design 5.3)', () => {
-  it('is one constant: Enter queues and Tab is the second key, as the two table rows', () => {
-    expect(BUSY_KEYS).toEqual({ enter: 'queue', second: 'tab' });
-    expect(DEFAULT_KEY_TABLE.keysFor('prompt.queue')).toEqual(['enter']);
-    expect(DEFAULT_KEY_TABLE.keysFor('prompt.steer')).toEqual(['tab']);
+  it('is one constant: Enter steers and Tab, the second key, queues, as the two table rows', () => {
+    expect(BUSY_KEYS).toEqual({ enter: 'steer', second: 'tab' });
+    expect(DEFAULT_KEY_TABLE.keysFor('prompt.queue')).toEqual(['tab']);
+    expect(DEFAULT_KEY_TABLE.keysFor('prompt.steer')).toEqual(['enter']);
     expect(KEYS.filter((entry) => entry.id === 'prompt.queue' || entry.id === 'prompt.steer').map((entry) => entry.context)).toEqual(['chat', 'chat']);
   });
 
   it('reads what a pressed action does while a run works from the table, so a rebinding moves it', () => {
     expect(DEFAULT_KEY_TABLE.actionOf(['chat'], named('enter'))).toBe('prompt.submit');
-    expect(DEFAULT_KEY_TABLE.actionOf(['chat'], named('tab'))).toBe('prompt.steer');
-    expect(busyDeliveryOf(DEFAULT_KEY_TABLE, 'prompt.submit')).toBe('queue');
+    expect(DEFAULT_KEY_TABLE.actionOf(['chat'], named('tab'))).toBe('prompt.queue');
+    expect(busyDeliveryOf(DEFAULT_KEY_TABLE, 'prompt.submit')).toBe('steer');
     expect(busyDeliveryOf(DEFAULT_KEY_TABLE, 'prompt.queue')).toBe('queue');
     expect(busyDeliveryOf(DEFAULT_KEY_TABLE, 'prompt.steer')).toBe('steer');
     expect(busyDeliveryOf(DEFAULT_KEY_TABLE, 'editor.up')).toBeUndefined();
@@ -36,12 +36,13 @@ describe('the busy keys (design 5.3)', () => {
     expect(rebound.actionOf(['chat'], named('tab'))).toBeUndefined();
     expect(busyDeliveryOf(rebound, 'prompt.submit')).toBeUndefined();
     expect(busyDeliveryOf(rebound, 'prompt.queue')).toBe('queue');
+    expect(busyDeliveryOf(rebound, 'prompt.steer')).toBe('steer');
   });
 
   it('writes the hint line from the table', () => {
-    expect(busyHint(DEFAULT_KEY_TABLE, false)).toBe('enter: queue for after this run · tab: steer after the next tool call · esc: stop');
-    expect(busyHint(DEFAULT_KEY_TABLE, true)).toBe('enter: queue for after this run · tab: steer after the next tool call · esc: stop · up: take back waiting messages');
-    expect(busyHint(rebound, false)).toBe('ctrl+q: queue for after this run · ctrl+s: steer after the next tool call · ctrl+x: stop');
+    expect(busyHint(DEFAULT_KEY_TABLE, false)).toBe('enter: steer after the next tool call · tab: queue for after this run · esc: stop');
+    expect(busyHint(DEFAULT_KEY_TABLE, true)).toBe('enter: steer after the next tool call · tab: queue for after this run · esc: stop · up: take back waiting messages');
+    expect(busyHint(rebound, false)).toBe('ctrl+s: steer after the next tool call · ctrl+q: queue for after this run · ctrl+x: stop');
     expect(completionHint(DEFAULT_KEY_TABLE)).toBe('tab: complete · esc: close the list');
     expect(INBOX_FULL_HINT).toBe(`${INBOX_MAX_PENDING} messages are already waiting`);
   });

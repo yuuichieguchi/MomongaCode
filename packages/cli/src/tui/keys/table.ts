@@ -10,12 +10,12 @@ export type KeySpec = string;
 
 export type KeyRow = { readonly id: string; readonly context: KeyContext; readonly default: readonly KeySpec[]; readonly description: string };
 
-export const BUSY_KEYS = { enter: 'queue', second: 'tab' } as const;
+export const BUSY_KEYS = { enter: 'steer', second: 'tab' } as const;
 
 export const KEYS = [
   { id: 'prompt.submit', context: 'chat', default: ['enter'], description: 'send the message or run the command' },
-  { id: 'prompt.queue', context: 'chat', default: ['enter'], description: 'while a run works: queue the message for after this run' },
-  { id: 'prompt.steer', context: 'chat', default: ['tab'], description: 'while a run works: steer the run with the message after the next tool call' },
+  { id: 'prompt.queue', context: 'chat', default: ['tab'], description: 'while a run works: queue the message for after this run' },
+  { id: 'prompt.steer', context: 'chat', default: ['enter'], description: 'while a run works: steer the run with the message after the next tool call' },
   { id: 'prompt.newline', context: 'chat', default: ['shift+enter', 'alt+enter', 'ctrl+j'], description: 'new line' },
   { id: 'editor.deleteBefore', context: 'chat', default: ['backspace'], description: 'delete before the caret' },
   { id: 'editor.deleteAfter', context: 'chat', default: ['delete'], description: 'delete after the caret' },
@@ -40,6 +40,9 @@ export const KEYS = [
   { id: 'run.stop', context: 'chat', default: ['escape'], description: 'stops the run' },
   { id: 'prompt.interrupt', context: 'chat', default: ['ctrl+c'], description: 'cancel the run or clear the input; twice on an empty input to exit' },
   { id: 'prompt.exit', context: 'chat', default: ['ctrl+d'], description: 'twice on an empty input to exit' },
+  { id: 'prompt.pasteImage', context: 'chat', default: ['ctrl+v', 'alt+v'], description: 'paste an image from the clipboard' },
+  { id: 'shell.run', context: 'shell', default: ['enter'], description: 'run the command' },
+  { id: 'shell.leave', context: 'shell', default: ['escape'], description: 'leave the shell mode' },
   { id: 'menu.up', context: 'menu', default: ['up'], description: 'move up in the menu' },
   { id: 'menu.down', context: 'menu', default: ['down'], description: 'move down in the menu' },
   { id: 'menu.complete', context: 'menu', default: ['tab'], description: 'complete the highlighted command' },

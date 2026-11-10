@@ -11,7 +11,7 @@ import type { RuntimeStore } from '@momonga/store';
 import { asError } from '../process/as-error.ts';
 import type { SandboxKind } from '../process/sandbox-kind.ts';
 import type { EvidenceRun } from '../memory/evidence.ts';
-import type { AgentCatalogPort, SkillsPort } from '../ports.ts';
+import type { AgentCatalogPort, SkillsPort, UserInputPort } from '../ports.ts';
 import { createRunApp } from './app.ts';
 import type { RunLimitDefaults, SessionCreateSettings } from './app.ts';
 import type { McpAdminPort } from './input-routes.ts';
@@ -48,6 +48,7 @@ export type RunServiceOptions = {
   sessionReadSettings: (cwd: string) => Promise<SessionCreateSettings>;
   skills: SkillsPort;
   agents: AgentCatalogPort;
+  userInput: UserInputPort;
   evidenceRun: (project: string) => EvidenceRun;
   defaults: { modelAlias: string; runTimeoutMs?: number; limits: RunLimitDefaults };
   timers?: ServiceTimers;
@@ -113,6 +114,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     sessionReadSettings: options.sessionReadSettings,
     skills: options.skills,
     agents: options.agents,
+    userInput: options.userInput,
     evidenceRun: options.evidenceRun,
     isDraining: () => draining,
     beginDraining: () => {

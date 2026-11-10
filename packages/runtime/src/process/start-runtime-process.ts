@@ -93,6 +93,7 @@ import { createSettingsComposition } from './settings-port.ts';
 import { createGovernancePort } from '../governance/governance-port.ts';
 import { createEvidenceRunner } from './evidence-run.ts';
 import { createHistoryPort } from './history-port.ts';
+import { createUserInputPort } from './user-input.ts';
 import { createMemoryPort } from './memory-port.ts';
 import { createAgentsPort } from './agents-port.ts';
 import { createChildRuns } from './child-runs.ts';
@@ -626,6 +627,15 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         sessionReadSettings: settingsComposition.sessionReadSettings,
         skills: skillsPort,
         agents: agentsPort,
+        userInput: createUserInputPort({
+          tools: toolRuntime.port,
+          policy: toolRuntime.userPolicy,
+          store,
+          settings: settingsComposition.settings,
+          clock,
+          home: canonicalHome,
+          unsandboxed: createUnsandboxed({ killGraceMs: SANDBOX_KILL_GRACE_MS }),
+        }),
         evidenceRun: evidenceRunFor,
         defaults: RUNTIME_DEFAULTS,
         timers,

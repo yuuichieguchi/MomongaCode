@@ -1,5 +1,3 @@
-import type { ScreenMode } from '../terminal/modes.ts';
-
 export const SWITCH_CHUNK_ROWS = 200;
 export const WHEEL_ROWS = 3;
 export const DOUBLE_CLICK_MS = 400;
@@ -9,7 +7,3 @@ export const MAX_FPS = 30;
 export const SUBAGENT_ROWS_MAX = 5;
 export const INPUT_BOX_FRAME_ROWS = 2;
 export const TAB_COLUMNS = 4;
-
-export type ScreenSettings = { screen: ScreenMode; mouse: boolean; copyOnSelect: boolean };
-
-export const SCREEN_SETTINGS: ScreenSettings = { screen: 'fullscreen', mouse: true, copyOnSelect: true };

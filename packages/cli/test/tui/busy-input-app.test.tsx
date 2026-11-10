@@ -8,7 +8,7 @@ import { frame, runStarted, start, type } from '../tui-harness.tsx';
 
 const READY = 'mode: manual (shift+tab)';
 const WIDE = { columns: 140, rows: 40 };
-const BUSY_HINT = 'enter: queue for after this run · tab: steer after the next tool call · esc: stop';
+const BUSY_HINT = 'enter: steer after the next tool call · tab: queue for after this run · esc: stop';
 const TAKE_BACK_HINT = `${BUSY_HINT} · up: take back waiting messages`;
 const COMPLETION_HINT = 'tab: complete · esc: close the list';
 const TASK_RUNNING = 'A task is running. Esc stops it.';
@@ -47,9 +47,9 @@ describe('typing while a run works (design 5.3)', () => {
     app.unmount();
   });
 
-  it('queues the draft at Enter, clears the input, and shows the waiting row and the take-back hint', async () => {
+  it('queues the draft at Tab, clears the input, and shows the waiting row and the take-back hint', async () => {
     const { backend, app } = await working();
-    const shown = await send(backend, app, KEYS.enter, 'two', 'queued  two');
+    const shown = await send(backend, app, KEYS.tab, 'two', 'queued  two');
     expect(backend.calls).toContain('inbox:queue:two');
     expect(backend.started).toHaveLength(1);
     expect(backend.recorded).toEqual(['one', 'two']);
@@ -58,10 +58,10 @@ describe('typing while a run works (design 5.3)', () => {
     app.unmount();
   });
 
-  it('steers the run with the draft at Tab, and shows the rows in the order typed', async () => {
+  it('steers the run with the draft at Enter, and shows the rows in the order typed', async () => {
     const { backend, app } = await working();
-    await send(backend, app, KEYS.tab, 'also the docs', 'steer   also the docs');
-    const shown = await send(backend, app, KEYS.enter, 'then release', 'queued  then release');
+    await send(backend, app, KEYS.enter, 'also the docs', 'steer   also the docs');
+    const shown = await send(backend, app, KEYS.tab, 'then release', 'queued  then release');
     expect(backend.calls.filter((call) => call.startsWith('inbox:'))).toEqual(['inbox:steer:also the docs', 'inbox:queue:then release']);
     expect(shown.indexOf('steer   also the docs')).toBeLessThan(shown.indexOf('queued  then release'));
     expect(shown.indexOf('queued  then release')).toBeLessThan(shown.indexOf('╭'));
@@ -78,7 +78,7 @@ describe('typing while a run works (design 5.3)', () => {
     app.unmount();
   });
 
-  it('completes at Tab while the slash menu is open and does not steer, and names the keys of the list in the hint', async () => {
+  it('completes at Tab while the slash menu is open and does not queue, and names the keys of the list in the hint', async () => {
     const { backend, app } = await working();
     await type(app, '/mod', '> /mod');
     const open = await untilFrame(app, COMPLETION_HINT);
@@ -89,7 +89,7 @@ describe('typing while a run works (design 5.3)', () => {
     app.unmount();
   });
 
-  it('closes the list at Esc without stopping the run, and never steers a draft that is a slash command', async () => {
+  it('closes the list at Esc without stopping the run, and never queues a draft that is a slash command', async () => {
     const { backend, app } = await working();
     await type(app, '/mod', '> /mod');
     await untilFrame(app, COMPLETION_HINT);
@@ -103,8 +103,8 @@ describe('typing while a run works (design 5.3)', () => {
 
   it('takes every waiting message back into the draft at Up on the first line, before the typed text, and keeps them in the history', async () => {
     const { backend, app } = await working();
-    await send(backend, app, KEYS.enter, 'one more', 'queued  one more');
-    await send(backend, app, KEYS.tab, 'and steer', 'steer   and steer');
+    await send(backend, app, KEYS.tab, 'one more', 'queued  one more');
+    await send(backend, app, KEYS.enter, 'and steer', 'steer   and steer');
     await type(app, 'draft', '> draft');
     app.stdin.write(KEYS.up);
     const shown = await untilFrame(app, (now) => inputLines(now).length === 3);
@@ -115,7 +115,7 @@ describe('typing while a run works (design 5.3)', () => {
     expect(shown).not.toContain('take back waiting messages');
     expect(backend.calls.filter((call) => call.startsWith('inbox-withdraw:'))).toEqual(['inbox-withdraw:row-1', 'inbox-withdraw:row-2']);
     expect(backend.inboxRows.map((row) => row.state)).toEqual(['withdrawn', 'withdrawn']);
-    app.stdin.write(KEYS.enter);
+    app.stdin.write(KEYS.tab);
     await untilFrame(app, 'queued  one more');
     expect(backend.calls.at(-1)).toBe('inbox:queue:one more\nand steer\ndraft');
     app.unmount();
@@ -123,8 +123,8 @@ describe('typing while a run works (design 5.3)', () => {
 
   it('does not restore a message that was delivered before the take-back', async () => {
     const { backend, app } = await working();
-    await send(backend, app, KEYS.tab, 'gone to the model', 'steer   gone to the model');
-    await send(backend, app, KEYS.enter, 'still waiting', 'queued  still waiting');
+    await send(backend, app, KEYS.enter, 'gone to the model', 'steer   gone to the model');
+    await send(backend, app, KEYS.tab, 'still waiting', 'queued  still waiting');
     backend.deliverInbox('row-1');
     app.stdin.write(KEYS.up);
     const shown = await untilFrame(app, '> still waiting');
@@ -146,7 +146,7 @@ describe('typing while a run works (design 5.3)', () => {
 
   it('shows a steered message in the transcript where the model received it, and takes its row away', async () => {
     const { backend, app } = await working();
-    await send(backend, app, KEYS.tab, 'also the docs', 'steer   also the docs');
+    await send(backend, app, KEYS.enter, 'also the docs', 'steer   also the docs');
     backend.deliverInbox('row-1');
     backend.emit(frame({ type: 'user.message', text: 'also the docs', source: 'steer' }));
     await untilOutput(app, '> also the docs');
@@ -156,7 +156,7 @@ describe('typing while a run works (design 5.3)', () => {
 
   it('follows the run a queued message became when the working run ends, and is idle after the last one', async () => {
     const { backend, app } = await working();
-    await send(backend, app, KEYS.enter, 'second task', 'queued  second task');
+    await send(backend, app, KEYS.tab, 'second task', 'queued  second task');
     backend.deliverInbox('row-1');
     backend.succeed('run-1', runView({ id: 'run-2', ordinal: 2, status: 'QUEUED', previousRunId: 'run-1' }));
     backend.emit(frame({ type: 'run.status', from: 'RUNNING', to: 'COMPLETED' }));

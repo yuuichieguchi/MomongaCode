@@ -15,8 +15,8 @@ import { AUTO_FIT_FAILED_BOUNDS, AUTO_FIT_MEASUREMENTS } from './auto-mode-gate.
 import { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
 import { RECOVERY_CAUSES, RECOVERY_OUTCOMES, REPORT_PAGE_ROWS } from './reliability.ts';
 import { FILE_ACCESSES } from './working-facts.ts';
-import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_MAX_PENDING, INBOX_STATES, JOB_STATUSES, isInheritedReference, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
-import type { ImageMediaType, InboxDelivery, InboxRowView, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent, SessionEventPayload } from './run-types.ts';
+import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_MAX_PENDING, INBOX_STATES, JOB_STATUSES, isInheritedReference, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES, USER_SHELL_COMMAND_CHARS } from './run-types.ts';
+import type { ImageMediaType, InboxDelivery, InboxRowView, MessageAttachment, UserShellRecord, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent, SessionEventPayload } from './run-types.ts';
 import type { ReflectionJobView } from './memory.ts';
 import { UNPRICED_CODES } from './token-anatomy.ts';
 import type { BilledDetail, TokenAnatomy, UnpricedCode } from './token-anatomy.ts';
@@ -85,6 +85,22 @@ const imageAttachment = closed(
 const imageSummary = closed({ mediaType: enumOf(IMAGE_MEDIA_TYPES), byteLength: nonNegativeInteger }, ['mediaType', 'byteLength']);
 
 const PROMPT_TEXT: JsonSchema = { type: 'string', minLength: 1, maxLength: 1_000_000 };
+
+const userShellRecord = closed({ command: string, exitCode: nullable(integer), output: string, include: boolean }, ['command', 'exitCode', 'output', 'include']);
+
+const attachmentSummary: JsonSchema = {
+  anyOf: [
+    closed({ type: constant('attached_file'), path: string, lines: nonNegativeInteger }, ['type', 'path', 'lines']),
+    closed({ type: constant('attachment_note'), path: string, shown: string }, ['type', 'path', 'shown']),
+  ],
+};
+
+export type AttachmentSummary = { type: 'attached_file'; path: string; lines: number } | { type: 'attachment_note'; path: string; shown: string };
+
+export const attachmentSummaryOf = (part: MessageAttachment): AttachmentSummary =>
+  part.type === 'attached_file'
+    ? { type: 'attached_file', path: part.path, lines: part.content === '' ? 0 : part.content.split('\n').length }
+    : { type: 'attachment_note', path: part.path, shown: part.shown };
 
 const inboxRowView = closed(
   {
@@ -301,7 +317,10 @@ type PayloadSchema<Type> = {
 };
 
 const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']]: PayloadSchema<Type> } = {
-  'user.message': { properties: { text: string, images: { type: 'array', items: imageSummary }, source: enumOf(INBOX_DELIVERIES) }, required: ['text'] },
+  'user.message': {
+    properties: { text: string, images: { type: 'array', items: imageSummary }, source: enumOf(INBOX_DELIVERIES), attachments: { type: 'array', items: attachmentSummary }, shell: { type: 'array', items: userShellRecord } },
+    required: ['text'],
+  },
   'run.started': { properties: { attempt: integer }, required: ['attempt'] },
   'attempt.failed': { properties: { attempt: integer, code: string, retryAt: integer, limit: integer }, required: ['attempt', 'code', 'retryAt', 'limit'] },
   'attempt.lost': { properties: { lastLiveAt: integer }, required: ['lastLiveAt'] },
@@ -514,6 +533,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
   'mode.changed': { properties: { mode: permissionMode }, required: ['mode'] },
   'model.changed': { properties: { modelAlias: { type: 'string', minLength: 1 }, previousModelAlias: { type: 'string', minLength: 1 } }, required: ['modelAlias', 'previousModelAlias'] },
   'inbox.changed': { properties: { pending: inboxPending }, required: ['pending'] },
+  user_shell: { properties: { command: string, exitCode: nullable(integer), output: string, include: boolean }, required: ['command', 'exitCode', 'output', 'include'] },
   'usage.updated': {
     properties: { inputTokens: nonNegativeInteger, outputTokens: nonNegativeInteger, totalTokens: nonNegativeInteger },
     required: ['inputTokens', 'outputTokens', 'totalTokens'],
@@ -610,7 +630,7 @@ const publicEventVariant = (type: keyof typeof PAYLOAD_SCHEMAS): JsonSchema => {
   const schema: PayloadSchema<typeof type> = PAYLOAD_SCHEMAS[type];
   const { properties, required } = schema;
   const exclusive = schema.exclusive === undefined ? {} : atMostOneOf(schema.exclusive);
-  if (type === 'mode.changed' || type === 'model.changed' || type === 'inbox.changed') {
+  if (type === 'mode.changed' || type === 'model.changed' || type === 'inbox.changed' || type === 'user_shell') {
     return closed(
       { id: integer, sessionId: string, createdAt: integer, type: constant(type), ...properties },
       ['id', 'sessionId', 'createdAt', 'type', ...required],
@@ -1193,6 +1213,12 @@ export type InboxWithdrawOutcome = (typeof INBOX_WITHDRAW_OUTCOMES)[number];
 
 export type InboxResponse = { pending: InboxRowView[] };
 
+export type UserShellRequest = { command: string; include: boolean };
+
+export type UserShellPendingResponse = { pending: UserShellRecord[] };
+
+export type UserShellFrame = { type: 'output'; text: string } | { type: 'refused'; reason: string } | { type: 'exit'; record: UserShellRecord };
+
 export type InboxAddResponse = { row: InboxRowView; pending: InboxRowView[] };
 
 export type InboxWithdrawResponse = { outcome: InboxWithdrawOutcome; row: InboxRowView; pending: InboxRowView[] };
@@ -1221,10 +1247,20 @@ export const RUN_API_SCHEMAS = {
         history: historyMode,
         skill: { type: 'string', minLength: 1 },
         images: { type: 'array', items: imageAttachment },
+        attachMentions: boolean,
       },
       ['input'],
     ),
   ),
+  UserShellRequest: root(closed({ command: { type: 'string', minLength: 1, maxLength: USER_SHELL_COMMAND_CHARS }, include: boolean }, ['command', 'include'])),
+  UserShellPendingResponse: root(closed({ pending: { type: 'array', items: userShellRecord } }, ['pending'])),
+  UserShellFrame: root({
+    anyOf: [
+      closed({ type: constant('output'), text: string }, ['type', 'text']),
+      closed({ type: constant('refused'), reason: string }, ['type', 'reason']),
+      closed({ type: constant('exit'), record: userShellRecord }, ['type', 'record']),
+    ],
+  }),
   ResolveApprovalRequest: root(closed({ optionId: { type: 'string', minLength: 1 } }, ['optionId'])),
   AddInboxRequest: root(closed({ delivery: enumOf(INBOX_DELIVERIES), text: PROMPT_TEXT, images: { type: 'array', items: imageAttachment } }, ['delivery', 'text'])),
   InboxRowView: root(inboxRowView),
@@ -1516,7 +1552,7 @@ type ReducedEventType =
 
 type PublicPayload =
   | Exclude<RunEventPayload, { type: ReducedEventType }>
-  | { type: 'user.message'; text: string; images?: { mediaType: ImageMediaType; byteLength: number }[]; source?: InboxDelivery }
+  | { type: 'user.message'; text: string; images?: { mediaType: ImageMediaType; byteLength: number }[]; source?: InboxDelivery; attachments?: AttachmentSummary[]; shell?: UserShellRecord[] }
   | { type: 'model.requested'; step: number; attempt: number; digest: string; anatomy?: TokenAnatomy; prefix?: Extract<RunEventPayload, { type: 'model.requested' }>['prefix'] }
   | { type: 'run.started'; attempt: number }
   | { type: 'context.compacted'; summary: string; replacedThroughSeq: number; source?: SummarySource; fidelity?: SummaryFidelity; guidelineVersion?: number }
@@ -1597,6 +1633,8 @@ const toPublicKnownEvent = (event: RunEvent | SessionEvent): PublicRunEvent => {
         text: event.text,
         ...(event.images === undefined ? {} : { images: event.images.map((image) => ({ mediaType: image.mediaType, byteLength: base64ByteLength(image.data) })) }),
         ...(event.source === undefined ? {} : { source: event.source }),
+        ...(event.attachments === undefined ? {} : { attachments: event.attachments.map(attachmentSummaryOf) }),
+        ...(event.shell === undefined ? {} : { shell: event.shell }),
       };
     case 'model.requested':
       return {

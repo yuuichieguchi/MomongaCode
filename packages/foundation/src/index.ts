@@ -27,6 +27,8 @@ export { SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, decodeSse, encodeSse } fro
 export { createBrowserOpener, openCommandFor } from './open-browser.ts';
 export type { BrowserOpenerPorts, LaunchProgram, OpenCommand, OpenUrl, ProgramEnd } from './open-browser.ts';
 export { findProgramOnPath } from './program-search.ts';
+export { FILE_CANDIDATE_LIMIT, directoryEntriesOf, listDirectoryEntries, listFileCandidates } from './file-candidates.ts';
+export type { FileCandidateOptions, FileCandidates } from './file-candidates.ts';
 export type { SseEvent } from './sse.ts';
 export { createUdsClient, fixedSocket, isUnixSocketLive, listenUnix } from './uds.ts';
 export type { SocketResolver, UdsClient, UdsClientOptions, UdsRequestOptions, UdsResponse } from './uds.ts';
@@ -273,7 +275,7 @@ export { gitlinksOfIndex } from './git-index.ts';
 export type { GitlinkRead } from './git-index.ts';
 export { programKeysOfConfig } from './git-config-programs.ts';
 export type { ConfigPrograms } from './git-config-programs.ts';
-export { EMPTY_PROTECTED_SET, MAX_POINTER_FILE_BYTES, commondirTarget, defaultProtectedPaths, gitFileTarget, isProtectedWrite, protectedSetFor } from './protected-set.ts';
+export { EMPTY_PROTECTED_SET, GIT_DIRECTORY_ENTRIES, MAX_POINTER_FILE_BYTES, WORKSPACE_CONTROL_NAMES, commondirTarget, defaultProtectedPaths, gitFileTarget, isProtectedWrite, protectedSetFor } from './protected-set.ts';
 export type { EntryRead, GitEntryReader, GitPointerIssue, PlaceholderForm, ProtectedSet, ProtectedSetPorts } from './protected-set.ts';
 export { anchorFormOf, checkExceptionGrammar, checkFilePatternGrammar, fileMatcherOf, parseExceptionPattern, parseFilePattern, testFileMatcher } from './file-pattern.ts';
 export type { Expression, FileMatcher, FilePattern, FilePatternContext, GlobSegment, MatcherForm } from './file-pattern.ts';

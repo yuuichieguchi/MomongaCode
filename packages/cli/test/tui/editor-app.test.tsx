@@ -218,10 +218,10 @@ describe('typed text while a run works', () => {
     await runStarted(backend, app, 'one');
     await type(app, 'two', '> two');
     app.stdin.write(KEYS.enter);
-    await backend.called('inbox:queue:two');
+    await backend.called('inbox:steer:two');
     await type(app, 'three', '> three');
     app.stdin.write(KEYS.tab);
-    await backend.called('inbox:steer:three');
+    await backend.called('inbox:queue:three');
     expect(app.lastFrame()).not.toContain(TASK_RUNNING);
     expect(backend.started).toHaveLength(1);
     app.unmount();

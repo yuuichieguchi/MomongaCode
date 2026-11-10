@@ -24,7 +24,10 @@ import { pickConversation } from './commands/resume.ts';
 import { skillCommands } from './commands/skills.ts';
 import { createReplayQueue } from './replay.ts';
 import type { ReplayQueue } from './replay.ts';
-import { applyAction, emptyEditor, enterOf, expandedText, insertPaste, insertText, isEditorAction, placeCaret, placeText, pushHistory, withHistory } from './editor.ts';
+import { applyAction, emptyEditor, enterOf, expandedText, insertPaste, insertSpan, insertText, isEditorAction, placeCaret, placeText, pushHistory, withHistory } from './editor.ts';
+import { hasMentionToken, imageSpanLabel, NO_CLIPBOARD_PROGRAM_HINT, NO_IMAGE_INPUT_HINT, useAtMenu } from './attach.ts';
+import type { AtAct } from './attach.ts';
+import { isShellDraft, SHELL_MARK, shellCommandOf, shellEnded, shellFailed, shellHint, shellLabel, shellOutput, shellStarted, showShellRecord, withoutShellMark } from './user-shell.ts';
 import { INBOX_FULL_HINT, busyDeliveryOf, busyHint, completionHint, draftOf, isInboxFull, onFirstLine, takenBack, waitingRows } from './busy-input.ts';
 import type { EditorState } from './editor.ts';
 import { editorUnsetHint } from './external-editor.ts';
@@ -35,14 +38,13 @@ import { chordPressOf, DEFAULT_KEY_TABLE, newlineKeyHint } from './keys/table.ts
 import type { ActionId, KeyContext, KeySpec, KeyTable } from './keys/table.ts';
 import { a11yOf, applyA11y, NOTHING_ASKED, statusLine, statusLines } from './screen/a11y.ts';
 import type { AskedA11y, StoredA11y } from './screen/a11y.ts';
-import { AttachmentLines } from './screen/attachments.tsx';
+import { AtList, AttachmentLines, heldAttachments } from './screen/attachments.tsx';
 import type { Attachment } from './screen/attachments.tsx';
-import { SCREEN_SETTINGS } from './screen/constants.ts';
 import { contextPercentOf, Footer, formatTokens, newlineHintText, planRowFits } from './screen/footer.tsx';
 import { HistoryView } from './screen/history-view.tsx';
-import { InputBox, inputContentRows, inputOffsetAt, inputRowsOf } from './screen/input-box.tsx';
+import { CHAT_MARK, InputBox, inputContentRows, inputOffsetAt, inputRowsOf } from './screen/input-box.tsx';
 import type { ScreenTerminal } from './screen/input.ts';
-import { allocate, panelRowsCap, regionAt } from './screen/layout.ts';
+import { allocate, menuRowsCap, panelRowsCap, regionAt } from './screen/layout.ts';
 import { isMenuAction, useSlashMenu } from './screen/menu.tsx';
 import { Screen } from './screen/screen.tsx';
 import { createTranscriptStore } from './screen/store.ts';
@@ -54,7 +56,7 @@ import { useTranscriptView } from './screen/use-transcript-view.ts';
 import type { ScreenTimers } from './screen/timers.ts';
 import { commandPhaseText, WaitingRow, waitingOf } from './screen/waiting-row.tsx';
 import type { Loading, WaitingPhase } from './screen/waiting-row.tsx';
-import { createSlashRegistry, parseSlash } from './slash.ts';
+import { createSlashRegistry, parseSlash, NEEDS_SESSION_NOTE } from './slash.ts';
 import type { AutoModePort, ShellPort, SlashCommand, SlashRegistry } from './slash.ts';
 import type { KeyEvent, TerminalEvent } from './terminal/events.ts';
 import type { ScreenMode } from './terminal/modes.ts';
@@ -126,6 +128,7 @@ export const exitHint = (key: string): string => `Press ${key} again to exit`;
 type ExitAction = Extract<ActionId, 'prompt.interrupt' | 'prompt.exit'>;
 
 const MENU_CONTEXTS: readonly KeyContext[] = ['menu'];
+const SHELL_CONTEXTS: readonly KeyContext[] = ['shell'];
 const EDITOR_CONTEXTS: readonly KeyContext[] = ['chat', 'global'];
 const VIEWPORT_CONTEXTS: readonly KeyContext[] = ['viewport'];
 const VIEWER_CONTEXTS: readonly KeyContext[] = ['viewer'];
@@ -136,7 +139,6 @@ type Phase = { kind: 'starting' } | { kind: 'trust'; path: string } | { kind: 'w
 
 const NO_MODEL_NOTE = 'No model is connected. Use /login to connect one.';
 const RESUBMIT_NOTICE = 'Signed in again. Retrying your last prompt.';
-const NEEDS_SESSION_NOTE = 'This command needs a session. Connect a model first with /login.';
 
 const PLAN_BLOCK_CODES: ReadonlySet<string> = new Set([PLAN_USE_NOT_ENABLED_CODE, PLAN_NOT_ELIGIBLE_CODE]);
 
@@ -198,6 +200,9 @@ export function App(props: AppProps) {
   const [notices, setNotices] = useState<readonly string[]>([]);
   const capabilities: AliasCapabilities | undefined = model === undefined || isNotListedCapabilities(model.capabilities) ? undefined : model.capabilities;
   const [attachments, setAttachmentsState] = useState<readonly Attachment[]>([]);
+  const [attachOn, setAttachOn] = useState(tuiSettings.initial.attachFileMentions);
+  const imageCount = useRef(0);
+  const shellRunning = useRef(false);
   const [reconnectingSince, setReconnectingSince] = useState<number | undefined>(undefined);
   const [measuringSince, setMeasuringSince] = useState<number | undefined>(undefined);
   const [commands, setCommands] = useState<readonly WaitingPhase[]>([]);
@@ -559,7 +564,7 @@ export function App(props: AppProps) {
             if (event.type === 'model.responded' && event.target !== undefined) setServedTarget(event.target);
             if (event.type === 'user.message' && event.source !== undefined) refreshInbox().catch(reportError);
             if (replay === undefined) foldEvent(store, event);
-            else foldReplayedEvent(store, event, first);
+            else foldReplayedEvent(store, event, first, (record) => showShellRecord(store, record, now()));
           },
           replay === undefined || seq === undefined ? undefined : replay.before + seq,
         );
@@ -623,6 +628,7 @@ export function App(props: AppProps) {
         before += run.lastSeq;
       }
       await queue.drained();
+      for (const record of await backend.userInput.pendingShell()) showShellRecord(store, record, now());
     } catch (error) {
       attention.runEnded('error');
       if (!exiting.current) reportError(error);
@@ -711,7 +717,7 @@ export function App(props: AppProps) {
   const sendWhileBusy = (delivery: InboxDelivery): void => {
     const draft = draftOf(editorRef.current);
     if (draft === undefined) return;
-    const sent = attachmentsRef.current;
+    const sent = heldAttachments(attachmentsRef.current, draft.text);
     replaceEditor(draft.state);
     setAttachments([]);
     backend.recordHistory(draft.text).catch(reportError);
@@ -747,12 +753,16 @@ export function App(props: AppProps) {
     disarmExit();
     attention.runEnded(undefined);
     signInFailedRun.current = undefined;
-    const sent = attachmentsRef.current;
+    const sent = heldAttachments(attachmentsRef.current, text);
     setAttachments([]);
     append({ kind: 'user', text });
     for (const attachment of sent) note(`attached ${describeAttachment(attachment.file, attachment.image)}`);
     try {
-      const runOptions: StartRunOptions = { ...options, ...(sent.length === 0 ? {} : { images: [...(options.images ?? []), ...sent.map((attachment) => attachment.image)] }) };
+      const runOptions: StartRunOptions = {
+        ...options,
+        ...(sent.length === 0 ? {} : { images: [...(options.images ?? []), ...sent.map((attachment) => attachment.image)] }),
+        ...(attachOn && hasMentionToken(text) ? { attachMentions: true } : {}),
+      };
       const runAlias = aliasRef.current;
       const started = await backend.startRun(text, 'inherit', runOptions);
       if (openedSession.current !== undefined) openedSession.current.hasRun = true;
@@ -830,6 +840,8 @@ export function App(props: AppProps) {
         pick: overlayPorts.pick,
       },
       keyBindings: { store: bindings, choose: overlayPorts.choose, captureKey: overlayPorts.captureKey },
+      overlays: { choose: overlayPorts.choose, promptText: overlayPorts.promptText },
+      refusedWhileRunning: refusedWhileWorking,
       status: () => statusLines(statusFacts()),
       setMode: async (chosen) => {
         const session = await backend.setMode(chosen);
@@ -927,6 +939,89 @@ export function App(props: AppProps) {
   const imageInput = capabilities?.imageInput === true;
 
   const slashMenu = useSlashMenu({ text: editor.text, commands: slash.list(), active: phase.kind === 'ready' || phase.kind === 'unconnected', height: rows });
+  const shellDraft = isShellDraft(editor.text);
+  const atMenu = useAtMenu({
+    editor,
+    active: phase.kind === 'ready' && !shellDraft,
+    attachOn,
+    rowsCap: menuRowsCap(rows),
+    keys,
+    candidates: (signal) => backend.userInput.fileCandidates(signal),
+    pause: () => new Promise<void>((resolve) => void timers.setTimeout(resolve, 0)),
+    reportError,
+  });
+
+  const toggleAttach = async (): Promise<void> => {
+    const next = !attachOn;
+    await tasks.run((signal) => tuiSettings.save('attachFileMentions', next, signal));
+    setAttachOn(next);
+  };
+
+  const applyAtAct = (act: AtAct): void => {
+    if (act.kind === 'place') replaceEditor(placeCaret(placeText(editorRef.current, act.text), act.cursor));
+    else if (act.kind === 'toggle') runFlow(toggleAttach);
+  };
+
+  const pasteFromClipboard = async (): Promise<void> => {
+    const content = await tasks.run((signal) => backend.userInput.readClipboard(signal));
+    if (content.kind === 'unsupported') setHint(NO_CLIPBOARD_PROGRAM_HINT);
+    else if (content.kind === 'text') replaceEditor(insertPaste(editorRef.current, content.text));
+    else if (content.kind === 'image' && !imageInput) setHint(NO_IMAGE_INPUT_HINT);
+    else if (content.kind === 'image') {
+      imageCount.current += 1;
+      const label = imageSpanLabel(imageCount.current);
+      replaceEditor(insertSpan(editorRef.current, label));
+      setAttachments([...attachmentsRef.current, { file: label, image: content.image, label }]);
+    }
+  };
+
+  const runShell = (): void => {
+    const outcome = enterOf(editorRef.current);
+    if (outcome.kind === 'blank') return;
+    if (outcome.kind === 'newline') {
+      replaceEditor(outcome.state);
+      return;
+    }
+    const asked = shellCommandOf(outcome.text);
+    if (asked === undefined) return;
+    if (phase.kind === 'starting') {
+      setHint(STILL_STARTING_HINT);
+      return;
+    }
+    if (busyRef.current || shellRunning.current) {
+      setHint(taskRunningHint(keys));
+      return;
+    }
+    if (alias === undefined) {
+      note(NEEDS_SESSION_NOTE);
+      return;
+    }
+    replaceEditor(outcome.state);
+    backend.recordHistory(outcome.text).catch(reportError);
+    const running = shellStarted(store, asked, now());
+    const command: WaitingPhase = { text: commandPhaseText(shellLabel(asked)), startedAt: now() };
+    shellRunning.current = true;
+    setCommands((before) => [...before, command]);
+    const work = async (signal: AbortSignal): Promise<void> => {
+      const stop = (): void => {
+        backend.userInput.stopShell().catch(reportError);
+      };
+      signal.addEventListener('abort', stop, { once: true });
+      try {
+        shellEnded(store, running, await backend.userInput.shell(asked.command, asked.include, (text) => shellOutput(store, running, text)), now());
+      } catch (error) {
+        shellFailed(store, running, now());
+        throw error;
+      } finally {
+        signal.removeEventListener('abort', stop);
+        shellRunning.current = false;
+        setCommands((before) => before.filter((other) => other !== command));
+      }
+    };
+    tasks.run(work).catch(reportError);
+  };
+
+  const leaveShell = (): void => replaceEditor(placeText(editorRef.current, withoutShellMark(editorRef.current.text)));
   const placeMenuText = (text: string): void => replaceEditor(placeText(editorRef.current, text));
 
   const invitationShown = prompts.invitation !== undefined && overlay === undefined && !busy && editor.text === '';
@@ -970,13 +1065,18 @@ export function App(props: AppProps) {
       return;
     }
     const command = outcome.text.trim().startsWith('/');
+    if (shellRunning.current && !command) {
+      setHint(taskRunningHint(keys));
+      return;
+    }
     if (phase.kind === 'starting') {
       setHint(STILL_STARTING_HINT);
       return;
     }
     if (!command && busyRef.current) {
-      if (busyDeliveryOf(keys, 'prompt.submit') === 'queue') sendWhileBusy('queue');
-      else setHint(taskRunningHint(keys));
+      const delivery = busyDeliveryOf(keys, 'prompt.submit');
+      if (delivery === undefined) setHint(taskRunningHint(keys));
+      else sendWhileBusy(delivery);
       return;
     }
     if (!command && alias === undefined) {
@@ -1012,6 +1112,7 @@ export function App(props: AppProps) {
     } else if (action === 'history.search') runFlow(searchHistory);
     else if (action === 'editor.external') runFlow(editExternally);
     else if (action === 'screen.repaint') writeThroughInk('');
+    else if (action === 'prompt.pasteImage') runFlow(pasteFromClipboard);
     else if (action === 'editor.deleteBefore' && current.text === '' && attachmentsRef.current.length > 0) setAttachments(attachmentsRef.current.slice(0, -1));
     else if (isEditorAction(action)) replaceEditor(applyAction(current, action));
     else if (action === undefined && typed !== undefined) replaceEditor(insertText(current, typed));
@@ -1042,7 +1143,19 @@ export function App(props: AppProps) {
       return;
     }
     if (prompts.runPromptKey(event, pressed)) return;
+    if (isShellDraft(editorRef.current.text)) {
+      const shellAction = pressed.actionOf(SHELL_CONTEXTS, event);
+      if (shellAction === 'shell.run') runShell();
+      else if (shellAction === 'shell.leave') leaveShell();
+      else if (action !== 'prompt.submit' && action !== 'prompt.queue' && action !== 'prompt.steer') onEditorAction(action, typed);
+      return;
+    }
     const menuAction = pressed.actionOf(MENU_CONTEXTS, event);
+    const atAct = isMenuAction(menuAction) ? atMenu.act(editorRef.current, menuAction) : undefined;
+    if (atAct !== undefined) {
+      applyAtAct(atAct);
+      return;
+    }
     const menuAct = isMenuAction(menuAction) ? slashMenu.act(editorRef.current.text, menuAction) : undefined;
     if (menuAct?.kind === 'handled') return;
     if (menuAct !== undefined) placeMenuText(menuAct.text);
@@ -1079,9 +1192,11 @@ export function App(props: AppProps) {
   const panel = prompts.panel(panelFacts);
   const shownPanel = fullscreen && panelRows === undefined ? undefined : panel;
   const inputShown = (phase.kind === 'starting' || phase.kind === 'ready' || phase.kind === 'unconnected') && shownPanel === undefined;
-  const menuShown = inputShown && (invitationShown || slashMenu.open);
+  const menuShown = inputShown && (invitationShown || slashMenu.open || atMenu.open);
+  const shownAttachments = heldAttachments(attachments, editor.text);
+  const shownEditor = shellDraft ? { ...editor, text: editor.text.slice(SHELL_MARK.length), cursor: Math.max(0, editor.cursor - SHELL_MARK.length) } : editor;
   const waitingLines = inputShown ? waitingRows(waitingMessages, columns) : [];
-  const busyHintRow = !busy || !inputShown || phase.kind !== 'ready' ? undefined : slashMenu.open ? completionHint(keys) : busyHint(keys, waitingMessages.length > 0);
+  const busyHintRow = !inputShown || phase.kind !== 'ready' ? undefined : shellDraft ? shellHint(keys) : !busy ? undefined : slashMenu.open || atMenu.open ? completionHint(keys) : busyHint(keys, waitingMessages.length > 0);
   const invitationInMenu = menuShown && phase.kind === 'ready' && invitationShown;
   const waiting = waitingOf({
     startingSince: phase.kind === 'starting' ? openedAt : undefined,
@@ -1095,11 +1210,11 @@ export function App(props: AppProps) {
   });
   const allocation = allocate(rows, {
     waiting: waiting === undefined || a11y.screenReader ? 0 : 1,
-    inputRows: inputRowsOf(editor, columns),
-    menu: !menuShown ? 0 : invitationInMenu ? prompts.invitationRows : slashMenu.rows,
+    inputRows: inputRowsOf(shownEditor, columns),
+    menu: !menuShown ? 0 : invitationInMenu ? prompts.invitationRows : atMenu.open ? atMenu.rows : slashMenu.rows,
     subagents: transcript.subagents.length,
     footerSecond: (!fullscreen || planRowFits(planRow, columns) ? (planRow === undefined ? 0 : 1) : 0) + (busyHintRow === undefined ? 0 : 1),
-    lines: inputShown ? attachments.length + waitingLines.length : 0,
+    lines: inputShown ? shownAttachments.length + waitingLines.length : 0,
     panel: shownPanel === undefined ? undefined : panelRows,
   });
   const busyHintRows = busyHintRow === undefined || (fullscreen && allocation.footer < 2) ? 0 : 1;
@@ -1110,7 +1225,7 @@ export function App(props: AppProps) {
     fullscreen: fullscreen && !switching,
     width: transcriptWidth,
     allocation,
-    copyOnSelect: props.copyOnSelect ?? SCREEN_SETTINGS.copyOnSelect,
+    copyOnSelect: props.copyOnSelect ?? tuiSettings.initial.copyOnSelect,
     now,
     copy: (text) => backend.copyToClipboard(text),
     openLink: (url) => backend.openUrl(url, undefined, (message) => reportError(new Error(message))),
@@ -1145,6 +1260,11 @@ export function App(props: AppProps) {
         prompts.invitationPress(row);
         return;
       }
+      if (atMenu.open) {
+        const atAct = atMenu.press(editorRef.current, row);
+        if (atAct !== undefined) applyAtAct(atAct);
+        return;
+      }
       const act = slashMenu.press(row, allocation.menu);
       if (act?.kind === 'complete') placeMenuText(act.text);
     },
@@ -1157,8 +1277,8 @@ export function App(props: AppProps) {
     if (event.type !== 'mouse' || event.kind !== 'press' || event.button !== 'left') return false;
     const hit = regionAt(allocation, event.row);
     if (hit?.region !== 'input') return false;
-    const offset = inputOffsetAt(editorRef.current, columns, inputContentRows(allocation.input), hit.row, event.col);
-    if (offset !== undefined) replaceEditor(placeCaret(editorRef.current, offset));
+    const offset = inputOffsetAt(shownEditor, columns, inputContentRows(allocation.input), hit.row, event.col);
+    if (offset !== undefined) replaceEditor(placeCaret(editorRef.current, offset + (shellDraft ? SHELL_MARK.length : 0)));
     return true;
   });
   useEffect(() => terminal.input.claim((event) => onInputPress(event)), [terminal]);
@@ -1240,11 +1360,11 @@ export function App(props: AppProps) {
         ) : (
           <HistoryView key={historyGeneration} store={store} source={view.source} />
         ),
-        menu: !menuShown ? null : invitationInMenu ? prompts.invitationView() : slashMenu.view(fullscreen ? allocation.menu : slashMenu.rows),
+        menu: !menuShown ? null : invitationInMenu ? prompts.invitationView() : atMenu.open ? <AtList labels={atMenu.labels} index={atMenu.index} /> : slashMenu.view(fullscreen ? allocation.menu : slashMenu.rows),
         waiting: waiting === undefined || a11y.screenReader ? null : <WaitingRow waiting={waiting} now={now} timers={timers} keys={keys} reducedMotion={a11y.reducedMotion} onTick={pollKeyFile} />,
         lines: inputShown ? (
           <>
-            <AttachmentLines attachments={attachments} keys={keys} />
+            <AttachmentLines attachments={shownAttachments} keys={keys} />
             {waitingLines.map((line, index) => (
               <Text key={index} dimColor wrap="truncate">
                 {line}
@@ -1252,7 +1372,7 @@ export function App(props: AppProps) {
             ))}
           </>
         ) : null,
-        input: inputShown ? <InputBox editor={editor} columns={columns} framed={!a11y.screenReader} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={fullscreen ? allocation.viewport + allocation.menu + allocation.waiting + allocation.lines : undefined} /> : null,
+        input: inputShown ? <InputBox editor={shownEditor} mark={shellDraft ? SHELL_MARK : CHAT_MARK} columns={columns} framed={!a11y.screenReader} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={fullscreen ? allocation.viewport + allocation.menu + allocation.waiting + allocation.lines : undefined} /> : null,
         footer: (
           <>
             <Footer facts={footerFacts} hint={a11y.screenReader ? undefined : hint} unconnected={phase.kind === 'unconnected'} planRow={a11y.screenReader ? undefined : planRow} width={columns} rows={fullscreen ? allocation.footer - busyHintRows : 2} keys={keys} />

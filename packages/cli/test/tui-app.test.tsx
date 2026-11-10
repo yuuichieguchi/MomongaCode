@@ -318,14 +318,14 @@ describe('App input', () => {
     app.unmount();
   });
 
-  it('queues a second message while a run is active and starts no run of its own', async () => {
+  it('steers the active run with a second message at Enter and starts no run of its own', async () => {
     const { backend, app } = await start();
     await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'one');
     await type(app, 'two', '> two');
     app.stdin.write(KEYS.enter);
-    await backend.called('inbox:queue:two');
-    const shown = await untilFrame(app, 'queued  two');
+    await backend.called('inbox:steer:two');
+    const shown = await untilFrame(app, 'steer   two');
     expect(shown).not.toContain('A task is running. Esc stops it.');
     expect(backend.started).toHaveLength(1);
     app.unmount();

@@ -43,6 +43,7 @@ const unusedDisplay: SlashContext['display'] = {
   pick: async () => undefined,
 };
 
+const unusedOverlays: SlashContext['overlays'] = { choose: async () => undefined, promptText: async () => undefined };
 const unusedKeyBindings: SlashContext['keyBindings'] = { store: fixedKeyBindings(DEFAULT_KEY_TABLE), choose: async () => undefined, captureKey: async () => undefined };
 
 const unusedAutoMode: SlashContext['autoMode'] = {
@@ -92,6 +93,8 @@ describe('built-in commands', () => {
       negotiation: 'unknown',
       display: unusedDisplay,
       keyBindings: unusedKeyBindings,
+      overlays: unusedOverlays,
+      refusedWhileRunning: () => false,
       status: () => [],
       ...overrides,
     };
@@ -209,6 +212,8 @@ const contextWith = (backendOptions: FakeBackendOptions = {}) => {
     negotiation: 'unknown',
     display: unusedDisplay,
     keyBindings: unusedKeyBindings,
+    overlays: unusedOverlays,
+    refusedWhileRunning: () => false,
     status: () => [],
   };
   return { context, infos, runs, backend };

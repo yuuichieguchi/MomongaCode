@@ -419,6 +419,11 @@ const unusedMcpAdmin: McpAdminPort = {
   },
 };
 
+const unusedUserInput: runtime.UserInputPort = {
+  attach: () => Promise.reject(new Error('this test configured no user input port')),
+  shell: () => Promise.reject(new Error('this test configured no user input port')),
+};
+
 export type ServiceOverrides = {
   timers?: FakeTimers;
   keepAliveMs?: number;
@@ -442,6 +447,7 @@ export type ServiceOverrides = {
   agents?: runtime.AgentCatalogPort;
   skillsTrusted?: () => boolean;
   mcp?: McpAdminPort;
+  userInput?: runtime.UserInputPort;
   evidenceRun?: (project: string) => EvidenceRun;
 };
 
@@ -514,6 +520,7 @@ export const serviceOptions = (
   agents: overrides.agents ?? diskAgentCatalog(base.home, overrides.skillsTrusted),
   evidenceRun: overrides.evidenceRun ?? unavailableEvidenceRun,
   mcp: overrides.mcp ?? unusedMcpAdmin,
+  userInput: overrides.userInput ?? unusedUserInput,
   defaults: { modelAlias: MODEL_ALIAS, runTimeoutMs: DEFAULT_TIMEOUT_MS, limits: { ...DEFAULT_LIMITS } },
   notifier: base.notifier,
   keepAliveMs: overrides.keepAliveMs ?? 600_000,

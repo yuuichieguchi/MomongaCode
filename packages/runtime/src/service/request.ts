@@ -22,6 +22,7 @@ export type CreateRunBody = {
   history?: 'inherit' | 'fresh';
   skill?: string;
   images?: ImageAttachment[];
+  attachMentions?: boolean;
 };
 
 export type ResolveApprovalBody = { optionId: string };
@@ -38,6 +39,7 @@ type RequestSchemaName =
   | 'CreateRunRequest'
   | 'ResolveApprovalRequest'
   | 'AddInboxRequest'
+  | 'UserShellRequest'
   | 'ResolveElicitationRequest'
   | 'PutTrustRequest'
   | 'AddRuleRequest'
@@ -54,6 +56,7 @@ const validators: Record<RequestSchemaName, ProductValidator<unknown>> = {
   CreateRunRequest: requestValidator(RUN_API_SCHEMAS.CreateRunRequest),
   ResolveApprovalRequest: requestValidator(RUN_API_SCHEMAS.ResolveApprovalRequest),
   AddInboxRequest: requestValidator(RUN_API_SCHEMAS.AddInboxRequest),
+  UserShellRequest: requestValidator(RUN_API_SCHEMAS.UserShellRequest),
   ResolveElicitationRequest: requestValidator(RUN_API_SCHEMAS.ResolveElicitationRequest),
   PutTrustRequest: requestValidator(RUN_API_SCHEMAS.PutTrustRequest),
   AddRuleRequest: requestValidator(RUN_API_SCHEMAS.AddRuleRequest),

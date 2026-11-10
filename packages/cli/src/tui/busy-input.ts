@@ -25,14 +25,16 @@ export const busyDeliveryOf = (keys: KeyTable, action: ActionId | undefined): In
   if (action === 'prompt.steer') return 'steer';
   if (action === 'prompt.queue') return 'queue';
   if (action !== 'prompt.submit') return undefined;
-  const queueKeys = keys.keysFor('prompt.queue');
-  return keys.keysFor('prompt.submit').some((spec) => queueKeys.includes(spec)) ? 'queue' : undefined;
+  const submitKeys = keys.keysFor('prompt.submit');
+  const sharesSubmitKey = (id: ActionId): boolean => keys.keysFor(id).some((spec) => submitKeys.includes(spec));
+  if (sharesSubmitKey('prompt.steer')) return 'steer';
+  return sharesSubmitKey('prompt.queue') ? 'queue' : undefined;
 };
 
 export const busyHint = (keys: KeyTable, waiting: boolean): string =>
   [
-    `${keys.keyHint('prompt.queue')}: queue for after this run`,
     `${keys.keyHint('prompt.steer')}: steer after the next tool call`,
+    `${keys.keyHint('prompt.queue')}: queue for after this run`,
     `${keys.keyHint('run.stop')}: stop`,
     ...(waiting ? [`${keys.keyHint('editor.up')}: take back waiting messages`] : []),
   ].join(HINT_SEPARATOR);

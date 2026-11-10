@@ -172,6 +172,8 @@ export const insertPaste = (state: EditorState, pasted: string): EditorState => 
   return { ...inserted(state, label, false), pastes: [...state.pastes, { label, text }], pasteCount: number };
 };
 
+export const insertSpan = (state: EditorState, label: string): EditorState => ({ ...inserted(state, label, false), pastes: [...state.pastes, { label, text: label }] });
+
 export const expandedText = (state: EditorState): string => state.pastes.reduce((text, paste) => text.replace(paste.label, () => paste.text), state.text);
 
 export const placeText = (state: EditorState, text: string): EditorState => edited(state, text, text.length);

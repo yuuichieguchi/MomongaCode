@@ -13,6 +13,8 @@ import type {
   ElicitationRequestView,
   JobStatus,
   ImageAttachment,
+  MessageAttachment,
+  UserShellRecord,
   InboxDelivery,
   InboxState,
   PermissionMode,
@@ -114,6 +116,13 @@ export type CreateRunInput = {
   history?: HistoryMode;
   skill?: { name: string; content: string };
   images?: ImageAttachment[];
+  attachments?: MessageAttachment[];
+};
+
+export type UserShellStore = {
+  record(sessionId: string, record: UserShellRecord): { kind: 'recorded' } | NotFound;
+  pending(sessionId: string): UserShellRecord[];
+  runActive(sessionId: string): boolean;
 };
 
 export type InboxRow = {
@@ -676,6 +685,7 @@ export type RuntimeStore = {
   blobs: BlobStore;
   trust: TrustStore;
   inbox: InboxStore;
+  userShell: UserShellStore;
   memories: RuntimeMemoryStore;
   sessionTouched: SessionTouchedStore;
   reflection: ReflectionStore;

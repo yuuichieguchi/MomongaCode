@@ -1,9 +1,10 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { currentSocketResolver, findProgramOnPath, systemTiming } from '@momonga/foundation';
+import { currentSocketResolver, findProgramOnPath, listFileCandidates, systemTiming } from '@momonga/foundation';
+import type { FileCandidates } from '@momonga/foundation';
 import { LOCAL_SERVER_CANDIDATES } from '@momonga/protocol';
-import type { AddRuleRequest, ElicitationAnswerRecord, LocalServerDetection, GatewayHealth, GoverningFactView, ImageAttachment, MemoryView, MomongaModelEntry, PermissionMode, RuleAddResponse, SkillsResponse } from '@momonga/protocol';
-import { addModelConnection, loadUserSettings } from '@momonga/config';
-import type { ModelConnection, WrittenConnection } from '@momonga/config';
+import type { AddRuleRequest, ElicitationAnswerRecord, LocalServerDetection, GatewayHealth, GoverningFactView, ImageAttachment, UserShellRecord, McpServerView, MemoryView, MomongaModelEntry, PermissionMode, RuleAddResponse, SkillsResponse } from '@momonga/protocol';
+import { addModelConnection, editSettings, loadUserSettings, readSettingsSnapshot } from '@momonga/config';
+import type { ModelConnection, SettingsLayer, SettingsOperation, SettingsSnapshot, WrittenConnection } from '@momonga/config';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import type { GatewayClient, PlanGatewayClient } from '../client/gateway-client.ts';
 import { withIdentityReadFetch } from '../network.ts';
@@ -12,7 +13,7 @@ import { loopbackSignInListener } from '../plan/sign-in.ts';
 import type { SandboxKind, SignInListener, SignInWaitTimers, StartSignInListener } from '../plan/sign-in.ts';
 import { dismissNotice, readDismissedNotices } from './dismissed-notices.ts';
 import type { DismissedNotices } from './dismissed-notices.ts';
-import type { MemoryFilter, RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
+import type { MemoryFilter, RunEventFrame, RuntimeClient, UserShellEnd } from '../client/runtime-client.ts';
 import type { RunView, SessionView, TrustView } from '../client/views.ts';
 import type { HistoryStore } from '../history-store.ts';
 import { daemonReadyBoundMs, ensureDaemon, restoreDaemon } from '../daemon/ensure-daemon.ts';
@@ -23,8 +24,8 @@ import type { BusyInbox } from './busy-input.ts';
 import type { NoticeSource } from './notices.ts';
 import { createClipboardPrograms } from './screen/clipboard-host.ts';
 import type { ClipboardPrograms } from './screen/clipboard-host.ts';
-import { copyThroughRoutes } from './screen/clipboard.ts';
-import type { CopyOutcome } from './screen/clipboard.ts';
+import { copyThroughRoutes, readClipboardThroughRoutes } from './screen/clipboard.ts';
+import type { ClipboardContent, CopyOutcome } from './screen/clipboard.ts';
 import { readImageAttachment } from '../images.ts';
 import { autoModeConfigured, connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import type { SessionOptions } from '../run/open-session.ts';
@@ -39,7 +40,15 @@ export type FollowHandlers = {
 
 export type ListedSession = { id: string; createdAt: number; runs: number; firstPrompt: string };
 
-export type StartRunOptions = { skill?: string; images?: readonly ImageAttachment[] };
+export type StartRunOptions = { skill?: string; images?: readonly ImageAttachment[]; attachMentions?: boolean };
+
+export type UserInputBackend = {
+  fileCandidates(signal: AbortSignal): Promise<FileCandidates>;
+  shell(command: string, include: boolean, onOutput: (text: string) => void): Promise<UserShellEnd>;
+  stopShell(): Promise<void>;
+  pendingShell(): Promise<readonly UserShellRecord[]>;
+  readClipboard(signal: AbortSignal): Promise<ClipboardContent>;
+};
 
 export type { SandboxKind, SignInListener, StartSignInListener };
 
@@ -60,6 +69,7 @@ export type TuiBackend = {
   follow(runId: string, handlers: FollowHandlers): Promise<RunView>;
   cancel(runId: string): Promise<void>;
   readonly inbox: BusyInbox;
+  readonly userInput: UserInputBackend;
   resolveApproval(approvalId: string, optionId: string): Promise<void>;
   resolveElicitation(inputId: string, responses: Readonly<Record<string, ElicitationAnswerRecord>>): Promise<void>;
   openUrl(url: URL, watch: AbortSignal | undefined, onFailure: (message: string) => void): void;
@@ -88,6 +98,10 @@ export type TuiBackend = {
   addModelConnection(connection: ModelConnection): Promise<WrittenConnection>;
   dismissedNotices(): Promise<DismissedNotices>;
   dismissNotice(key: string): Promise<void>;
+  settings(): Promise<SettingsSnapshot>;
+  editSettings(layer: SettingsLayer, operation: SettingsOperation, signal: AbortSignal): Promise<void>;
+  mcpServers(): Promise<readonly McpServerView[]>;
+  initInstruction(): Promise<string>;
   close(): Promise<void>;
 };
 
@@ -177,6 +191,10 @@ export const createTuiBackend = (
     addModelConnection: (connection) => addModelConnection(paths.home, paths.settingsFile, connection),
     dismissedNotices: () => readDismissedNotices(ports.files, paths.state, onNotice),
     dismissNotice: (key) => dismissNotice(ports.files, paths.state, key, new Date(ports.clock.now())),
+    settings: async () => readSettingsSnapshot({ home: paths.home, projectDir: ports.cwd, trusted: (await runtime().trust(ports.cwd)).decision === 'trusted' }),
+    editSettings: (layer, operation, signal) => editSettings({ home: paths.home, projectDir: ports.cwd }, layer, operation, { signal }),
+    mcpServers: () => runtime().mcpServers(current().id),
+    initInstruction: async () => (await import('@momonga/runtime')).INIT_INSTRUCTION,
     boot: async () => {
       await ensureDaemon(ports, paths, { signal: closing.signal, onNotice });
       client = connectRuntime(paths);
@@ -242,6 +260,13 @@ export const createTuiBackend = (
       withdraw: (id) => runtime().inboxWithdraw(id),
       list: () => runtime().inboxList(current().id),
       successor: (runId) => runtime().runSuccessor(runId),
+    },
+    userInput: {
+      fileCandidates: (signal) => listFileCandidates({ root: ports.cwd, env: ports.env, signal }),
+      shell: (command, include, onOutput) => runtime().userShell(current().id, command, include, onOutput),
+      stopShell: () => runtime().stopUserShell(current().id),
+      pendingShell: () => runtime().pendingUserShell(current().id),
+      readClipboard: (signal) => readClipboardThroughRoutes({ env: ports.env, findProgram: (name) => findProgramOnPath(name, ports.env), capture: clipboard.capture }, signal),
     },
     resolveApproval: async (approvalId, optionId) => {
       await runtime().resolveApproval(approvalId, optionId);

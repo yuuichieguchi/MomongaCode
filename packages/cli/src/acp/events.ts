@@ -193,6 +193,7 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
     case 'model.changed':
       return phase === 'live' ? [{ kind: 'model', modelAlias: event.modelAlias }] : [];
     case 'inbox.changed':
+    case 'user_shell':
       return [];
     case 'attempt.failed':
       state.lastFailure = event;

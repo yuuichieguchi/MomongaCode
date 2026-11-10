@@ -87,6 +87,16 @@ describe('a key-binding file resolved against the table', () => {
     expect(rejections(resolveBindings(file(['select', { enter: null }])))).toEqual(['select enter: select.decide would have no key']);
   });
 
+  it('keeps Enter on the pair that shares it in chat, submit when idle and steer while a run works, until a binding parts them', () => {
+    const untouched = resolveBindings(file());
+    expect(rejections(untouched)).toEqual([]);
+    expect([keysOf(untouched, 'prompt.submit'), keysOf(untouched, 'prompt.steer'), keysOf(untouched, 'prompt.queue')]).toEqual([['enter'], ['enter'], ['tab']]);
+    const parted = resolveBindings(file(['chat', { 'ctrl+s': 'prompt.steer', enter: 'prompt.submit' }]));
+    expect(rejections(parted)).toEqual([]);
+    expect([keysOf(parted, 'prompt.submit'), keysOf(parted, 'prompt.steer'), keysOf(parted, 'prompt.queue')]).toEqual([['enter'], ['ctrl+s'], ['tab']]);
+    expect(rejections(resolveBindings(file(['chat', { tab: 'prompt.steer' }])))).toEqual(['chat tab: prompt.queue would have no key']);
+  });
+
   it.each<[string, [string, Record<string, string | null>], string]>([
     ['an unknown context', ['editor', { 'ctrl+e': 'editor.lineEnd' }], 'editor ctrl+e: unknown context editor'],
     ['an unknown action', ['chat', { 'ctrl+e': 'editor.fly' }], 'chat ctrl+e: unknown action editor.fly'],

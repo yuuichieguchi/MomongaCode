@@ -72,6 +72,9 @@ export type {
 export { TOOL_VALIDATOR_FAILED_CODE, schemaIdentity, toolRefusalKey, validateToolInput } from './validate.ts';
 export type { ValidationResult } from './validate.ts';
 export { buildSandboxPolicy, createBuiltinTools } from './builtins/index.ts';
+export { runUserCommand } from './builtins/bash.ts';
+export type { UserCommandHost, UserCommandOutcome } from './builtins/bash.ts';
+export type { PolicyFacts, UserPolicy, UserPolicyFacts, UserSubject } from './executor.ts';
 export { readOnlyEnvironment, readOnlySandboxPolicy } from './read-only-call.ts';
 export type { SandboxPolicyOptions } from './builtins/index.ts';
 export { ShellNotFoundError, nodeShellHost, resolveBashPath } from './builtins/shell.ts';

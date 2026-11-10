@@ -22,7 +22,7 @@ const wheel = (button: 'wheel-up' | 'wheel-down'): TerminalEvent => ({ type: 'mo
 
 const linesOf = (text: string | undefined): string[] => (text ?? '').split('\n');
 
-const IDLE = /^(?![\s\S]*esc to cancel)(?![\s\S]*enter: queue)[\s\S]*mode: manual/;
+const IDLE = /^(?![\s\S]*esc to cancel)(?![\s\S]*enter: steer)[\s\S]*mode: manual/;
 
 const numbered = (count: number, word = 'line'): string => Array.from({ length: count }, (_, index) => `${word} ${index}`).join('\n');
 
@@ -88,7 +88,7 @@ describe('the layout of the full screen', () => {
     expect(lines[6]).toBe('⠋ waiting for the model 0s · esc to cancel');
     expect(lines[7]).toMatch(/^╭─+╮$/);
     expect(lines[10]).toContain('mode: manual');
-    expect(lines[11]).toBe('enter: queue for after this run · tab: steer after the next…');
+    expect(lines[11]).toBe('enter: steer after the next tool call · tab: queue for afte…');
     app.unmount();
   });
 
@@ -116,10 +116,10 @@ describe('the layout of the full screen', () => {
     backend.following().onChildStarted('tester', 'child-2');
     const lines = linesOf(await untilFrame(app, 'tester · starting · 0s'));
     expect(lines).toHaveLength(30);
-    expect(lines.slice(26)).toEqual([expect.stringContaining('mode: manual'), expect.stringContaining('enter: queue for after this run'), 'reviewer · starting · 12s', 'tester · starting · 0s']);
+    expect(lines.slice(26)).toEqual([expect.stringContaining('mode: manual'), expect.stringContaining('enter: steer after the next tool call'), 'reviewer · starting · 12s', 'tester · starting · 0s']);
     backend.following().onChildEnded('reviewer', 'child-1');
     const after = linesOf(await untilFrame(app, (shown) => !shown.includes('reviewer')));
-    expect(after.slice(27)).toEqual([expect.stringContaining('mode: manual'), expect.stringContaining('enter: queue for after this run'), 'tester · starting · 0s']);
+    expect(after.slice(27)).toEqual([expect.stringContaining('mode: manual'), expect.stringContaining('enter: steer after the next tool call'), 'tester · starting · 0s']);
     app.unmount();
   });
 
@@ -361,6 +361,7 @@ describe('the clipboard of the TUI backend', () => {
       const ports = { version: '1', env: { PATH: directory }, home: '/home/alice', cwd: '/home/alice', clock: { now: () => 0, sleep: async () => undefined }, stdout: capture, stderr: capture, terminal: { stdin: process.stdin, stdout: capture } } as unknown as CliPorts;
       const backend = createTuiBackend(ports, momongaPaths('/home/alice'), {}, { load: async () => [], append: async () => undefined }, [], {
         pipe: async (file, args, payload) => void piped.push({ file, args, payload }),
+        capture: async () => undefined,
         stop: () => undefined,
       });
       expect(await backend.copyToClipboard('héllo')).toEqual({ kind: 'copied', characters: 5 });

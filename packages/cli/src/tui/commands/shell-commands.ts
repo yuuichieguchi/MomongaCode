@@ -58,4 +58,12 @@ const commandOf = (entry: ShellSlash): SlashCommand => ({
   run: (args, context) => runShellCommand(entry.name, args, context, entry.longRunning(args.split(/\s+/).filter((part) => part !== ''))),
 });
 
-export const shellSlashCommands: readonly SlashCommand[] = SHELL_SLASH_COMMANDS.map(commandOf);
+export const SCREEN_COMMAND_NAMES: readonly string[] = ['mcp'];
+
+export const shellSlashCommands: readonly SlashCommand[] = SHELL_SLASH_COMMANDS.filter((entry) => !SCREEN_COMMAND_NAMES.includes(entry.name)).map(commandOf);
+
+export const shellFormOf = (name: string): SlashCommand => {
+  const entry = SHELL_SLASH_COMMANDS.find((candidate) => candidate.name === name);
+  if (entry === undefined) throw new Error(`no shell command is named ${name}`);
+  return commandOf(entry);
+};

@@ -27,7 +27,7 @@ import { a11yOf } from './screen/a11y.ts';
 import type { AskedA11y } from './screen/a11y.ts';
 import { shortenHome } from './startup.tsx';
 import { defaultNoticeSources } from './notices.ts';
-import { MAX_FPS, SCREEN_SETTINGS } from './screen/constants.ts';
+import { MAX_FPS } from './screen/constants.ts';
 import { createScreenInput } from './screen/input.ts';
 import { colorLevelOfDepth, noColorAsked } from './screen/theme.ts';
 import { TerminalFrame } from './terminal/frame.tsx';
@@ -71,9 +71,9 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
     input: terminal.stdin,
     output: hostTerminalOutput(terminal.stdout),
     process: hostProcess,
-    screen: readerAtStart ? 'scrollback' : SCREEN_SETTINGS.screen,
+    screen: readerAtStart ? 'scrollback' : tuiSettings.initial.screen,
     screenSetByUser: readerAtStart,
-    mouse: SCREEN_SETTINGS.mouse,
+    mouse: tuiSettings.initial.mouse,
     onEvents: input.push,
   });
   layer.start();
@@ -90,7 +90,7 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   try {
     const instance = render(
       <TerminalFrame layer={layer}>
-        <App backend={backend} terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, setTitle: layer.setTitle, bell: layer.bell, enable: layer.enable, disable: layer.disable, input }} tuiSettings={tuiSettings} keyBindings={keyBindings} a11y={asked} copyOnSelect={SCREEN_SETTINGS.copyOnSelect} now={() => ports.clock.now()} initialMode={options.permissionMode} startup={{ version: ports.version, home: ports.home, color: !noColor }} colour={{ noColor, level: colorLevelOfDepth(terminal.stdout.getColorDepth()) }} {...(options.prompt === undefined ? {} : { initialPrompt: options.prompt })}
+        <App backend={backend} terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, setTitle: layer.setTitle, bell: layer.bell, enable: layer.enable, disable: layer.disable, input }} tuiSettings={tuiSettings} keyBindings={keyBindings} a11y={asked} copyOnSelect={tuiSettings.initial.copyOnSelect} now={() => ports.clock.now()} initialMode={options.permissionMode} startup={{ version: ports.version, home: ports.home, color: !noColor }} colour={{ noColor, level: colorLevelOfDepth(terminal.stdout.getColorDepth()) }} {...(options.prompt === undefined ? {} : { initialPrompt: options.prompt })}
           {...(options.skill === undefined ? {} : { initialSkill: options.skill })}
           {...(options.images === undefined ? {} : { initialImages: options.images })}
           {...(options.reopen === undefined ? {} : { reopen: options.reopen })}

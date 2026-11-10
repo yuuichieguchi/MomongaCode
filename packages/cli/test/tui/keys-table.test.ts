@@ -58,8 +58,8 @@ describe('the key table', () => {
     expect(DEFAULT_KEY_TABLE.actionOf(['chat', 'global'], event)).toBe(action);
   });
 
-  it('gives Tab the steer action of a working run, and typed text no editor action', () => {
-    expect(DEFAULT_KEY_TABLE.actionOf(['chat', 'global'], named('tab'))).toBe('prompt.steer');
+  it('gives Tab the queue action of a working run, and typed text no editor action', () => {
+    expect(DEFAULT_KEY_TABLE.actionOf(['chat', 'global'], named('tab'))).toBe('prompt.queue');
     expect(DEFAULT_KEY_TABLE.actionOf(['chat', 'global'], text('x'))).toBeUndefined();
   });
 
@@ -82,10 +82,10 @@ describe('the key table', () => {
     }
   });
 
-  it('binds no key to two actions of one context, except Enter, which submits when idle and queues while a run works', () => {
-    expect(KEYS.find((row) => row.id === 'prompt.queue')).toMatchObject({ context: 'chat', default: KEYS.find((row) => row.id === 'prompt.submit')?.default });
+  it('binds no key to two actions of one context, except Enter, which submits when idle and steers while a run works', () => {
+    expect(KEYS.find((row) => row.id === 'prompt.steer')).toMatchObject({ context: 'chat', default: KEYS.find((row) => row.id === 'prompt.submit')?.default });
     for (const context of KEY_CONTEXTS) {
-      const keys = KEYS.filter((row) => row.context === context && row.id !== 'prompt.queue').flatMap((row) => [...row.default]);
+      const keys = KEYS.filter((row) => row.context === context && row.id !== 'prompt.steer').flatMap((row) => [...row.default]);
       expect(new Set(keys).size).toBe(keys.length);
     }
   });

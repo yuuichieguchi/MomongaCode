@@ -8,6 +8,8 @@ import type {
   ElicitationAnswerRecord,
   ElicitationRequestView,
   ImageAttachment,
+  MessageAttachment,
+  UserShellRecord,
   InheritedCopyPayload,
   InheritedReferencePayload,
   InputItem,
@@ -130,7 +132,7 @@ describe('run event payloads', () => {
   });
 
   it('defines the conversation and lifecycle payloads', () => {
-    expectTypeOf<Payload<'user.message'>>().toEqualTypeOf<{ type: 'user.message'; text: string; images?: ImageAttachment[]; source?: 'steer' | 'queue' }>();
+    expectTypeOf<Payload<'user.message'>>().toEqualTypeOf<{ type: 'user.message'; text: string; images?: ImageAttachment[]; source?: 'steer' | 'queue'; attachments?: MessageAttachment[]; shell?: UserShellRecord[] }>();
     expectTypeOf<Payload<'run.started'>>().toEqualTypeOf<{
       type: 'run.started';
       attempt: number;

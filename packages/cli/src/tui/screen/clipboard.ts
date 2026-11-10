@@ -1,3 +1,5 @@
+import { imageMediaTypeOf } from '@momonga/protocol';
+import type { ImageAttachment } from '@momonga/protocol';
 import { COPY_MAX_BYTES, OSC52_MAX_RAW_BYTES } from './constants.ts';
 
 export type ClipboardHost = {
@@ -45,6 +47,52 @@ export const chooseClipboardRoute = (host: ClipboardHost): ChosenRoute => {
     if (chosen !== undefined) return chosen;
   }
   throw new Error('the clipboard routes end with one that is always usable');
+};
+
+export const PASTE_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+
+export type ClipboardReadHost = {
+  env: Readonly<Record<string, string | undefined>>;
+  findProgram(name: string): string | undefined;
+  capture(file: string, args: readonly string[], maxBytes: number, signal: AbortSignal): Promise<Uint8Array | undefined>;
+};
+
+type ReadCommand = { program: string; args: readonly string[] };
+
+type ImageDecoding = 'raw' | 'applescript-data';
+
+export type ClipboardReadRoute = { needsEnv: readonly string[]; image: ReadCommand & { decoding: ImageDecoding }; text: ReadCommand };
+
+export const CLIPBOARD_READ_ROUTES: readonly ClipboardReadRoute[] = [
+  { needsEnv: [], image: { program: 'osascript', args: ['-e', 'get the clipboard as «class PNGf»'], decoding: 'applescript-data' }, text: { program: 'pbpaste', args: [] } },
+  { needsEnv: ['WAYLAND_DISPLAY'], image: { program: 'wl-paste', args: ['--type', 'image/png'], decoding: 'raw' }, text: { program: 'wl-paste', args: ['--no-newline'] } },
+  { needsEnv: ['DISPLAY'], image: { program: 'xclip', args: ['-selection', 'clipboard', '-t', 'image/png', '-o'], decoding: 'raw' }, text: { program: 'xclip', args: ['-selection', 'clipboard', '-o'] } },
+];
+
+export type ClipboardContent = { kind: 'image'; image: ImageAttachment } | { kind: 'text'; text: string } | { kind: 'empty' } | { kind: 'unsupported' };
+
+const APPLESCRIPT_DATA = /«data \w{4}([0-9A-Fa-f]*)»/;
+
+const decodedImage = (bytes: Uint8Array, decoding: ImageDecoding): Uint8Array => {
+  if (decoding === 'raw') return bytes;
+  const hex = APPLESCRIPT_DATA.exec(Buffer.from(bytes).toString('utf8'))?.[1];
+  return hex === undefined ? new Uint8Array() : Buffer.from(hex, 'hex');
+};
+
+export const readClipboardThroughRoutes = async (host: ClipboardReadHost, signal: AbortSignal): Promise<ClipboardContent> => {
+  for (const route of CLIPBOARD_READ_ROUTES) {
+    if (!route.needsEnv.every((name) => (host.env[name] ?? '') !== '')) continue;
+    const imageProgram = host.findProgram(route.image.program);
+    const textProgram = host.findProgram(route.text.program);
+    if (imageProgram === undefined || textProgram === undefined) continue;
+    const captured = await host.capture(imageProgram, route.image.args, PASTE_IMAGE_MAX_BYTES * (route.image.decoding === 'raw' ? 1 : 2) + 64, signal);
+    const bytes = captured === undefined ? new Uint8Array() : decodedImage(captured, route.image.decoding);
+    const mediaType = imageMediaTypeOf(bytes);
+    if (mediaType !== undefined) return { kind: 'image', image: { mediaType, data: Buffer.from(bytes).toString('base64') } };
+    const text = await host.capture(textProgram, route.text.args, PASTE_IMAGE_MAX_BYTES, signal);
+    return text === undefined || text.byteLength === 0 ? { kind: 'empty' } : { kind: 'text', text: Buffer.from(text).toString('utf8') };
+  }
+  return { kind: 'unsupported' };
 };
 
 export type CopyOutcome = { kind: 'copied'; characters: number } | { kind: 'failed'; cause: string } | { kind: 'too-large'; bytes: number; through: 'terminal' | 'any' };
