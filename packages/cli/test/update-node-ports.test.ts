@@ -9,7 +9,8 @@ import { registerCleanup, spawnTracked, withTempDir, testKernelLock } from '@mom
 import { describe, expect, it } from 'vitest';
 import { daemonReadyBoundMs } from '../src/daemon/ensure-daemon.ts';
 import type { CliPorts } from '../src/ports.ts';
-import { MAX_REDIRECTS, STAGING_PREFIX, UPDATE_TRANSFER_OPTIONS, leasedUpdateHttp, nodeDaemonProbe, nodeUpdateFs, nodeUpdateLock, nodeUpdatePorts, nodeUpdateState } from '../src/update/node-ports.ts';
+import { MAX_REDIRECTS, STAGING_PREFIX, leasedUpdateHttp, nodeDaemonProbe, nodeUpdateFs, nodeUpdateLock, nodeUpdatePorts, nodeUpdateState, transferOptionsOf } from '../src/update/node-ports.ts';
+import { DEFAULT_UPDATE_STALL_TIMEOUT_MS } from '@momonga/config';
 import { readyChildren, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 
 const ASIDE_ENTRY = path.join(import.meta.dirname, 'update-aside-entry.ts');
@@ -183,7 +184,7 @@ const DIRECT_NETWORK: OutboundNetwork = { config: { caFiles: [] }, trust: { sour
 
 const closeFailures: unknown[] = [];
 
-const directHttp = leasedUpdateHttp((_signal, use) => use(DIRECT_NETWORK), UPDATE_TRANSFER_OPTIONS, (error) => void closeFailures.push(error));
+const directHttp = leasedUpdateHttp((_signal, use) => use(DIRECT_NETWORK), transferOptionsOf(DEFAULT_UPDATE_STALL_TIMEOUT_MS), (error) => void closeFailures.push(error));
 
 describe('update http', () => {
   const serve = async (context: Parameters<typeof withTempDir>[0], handler: http.RequestListener): Promise<string> => {

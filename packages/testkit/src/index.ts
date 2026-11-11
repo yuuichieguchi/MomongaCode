@@ -297,3 +297,4 @@ export { SCRIPTED_MODEL, SCRIPTED_MODEL_ID, SCRIPTED_PROVIDER, modelSettings } f
 export type { ModelSettings, ModelSettingsConnection, ModelSettingsSpec, ModelSpec } from './model-settings.ts';
 export { testSecretLocations } from './secret-locations.ts';
 export { TEST_CHILD_UNPROTECTED, TEST_STDIO_LAUNCH } from './child-protection.ts';
+export { TEST_TOOL_LIMITS } from './tool-limits.ts';

@@ -16,7 +16,6 @@
     "required": ["number", "headSha"],
     "additionalProperties": false
   },
-  "timeoutMs": 60000,
   "observe": [{ "id": "pr", "via": { "forge": "getPullRequest", "args": { "number": "{input.number}" }, "shape": "one" } }],
   "require": [["before.pr.headSha", "input.headSha"]],
   "effect": { "forge": "mergePullRequest", "args": { "number": "{input.number}", "headSha": "{input.headSha}" } },

@@ -15,7 +15,6 @@
     "required": ["remote", "branch"],
     "additionalProperties": false
   },
-  "timeoutMs": 120000,
   "observe": [
     { "id": "remoteRef", "via": { "argv": ["git", "ls-remote", "--exit-code", "{call.destination}", "refs/heads/{input.branch}"], "network": "destination", "extract": "firstField", "each": "destinations" } },
     { "id": "trackingRef", "via": { "argv": ["git", "rev-parse", "--verify", "-q", "refs/remotes/{input.remote}/{input.branch}"], "extract": "trim", "emptyOnFailure": true } }
