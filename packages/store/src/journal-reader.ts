@@ -56,6 +56,7 @@ export type JournalReaderOptions = {
 export type JournalReader = {
   measure(hook: TerminalContribution, request: ContributionRequest): ContributionMeasured;
   eventsOfTypes(runId: string, types: readonly RunEventPayload['type'][], afterSeq?: number): RunEvent[];
+  latestSessionNotice(sessionId: string, code: string, key: string): RunEvent | undefined;
   visitRun(runId: string, types: readonly RunEventPayload['type'][], visit: (event: RunEvent) => void, throughSeq?: number): Run;
   walkRun(runId: string, types: readonly RunEventPayload['type'][], visit: RecordVisit, units: WalkUnits, range?: { throughSeq?: number; from?: number }): Promise<Run>;
   visitRecord: ReferenceReader['visitRecord'];
@@ -223,5 +224,16 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
       return contribution === undefined ? { lastSeq: run.lastSeq } : { lastSeq: run.lastSeq, contribution };
     });
 
-  return { measure, eventsOfTypes, visitRun, walkRun, visitRecord: reference.visitRecord, verdictRows: createVerdictReader(db).rowsOf, boundOf, planInheritance: reference.planInheritance, readInheritedWindow: reference.readInheritedWindow };
+  const latestNotice = db.prepare(
+    `SELECT * FROM events WHERE type = 'notice' AND run_id IN (SELECT id FROM runs WHERE session_id = :sessionId)
+       AND json_extract(payload_json, '$.code') = :code AND json_extract(payload_json, '$.key') = :key
+     ORDER BY id DESC LIMIT 1`,
+  );
+
+  const latestSessionNotice = (sessionId: string, code: string, key: string): RunEvent | undefined => {
+    const row = latestNotice.get({ sessionId, code, key });
+    return row === undefined ? undefined : decodeEach([row])[0];
+  };
+
+  return { measure, eventsOfTypes, latestSessionNotice, visitRun, walkRun, visitRecord: reference.visitRecord, verdictRows: createVerdictReader(db).rowsOf, boundOf, planInheritance: reference.planInheritance, readInheritedWindow: reference.readInheritedWindow };
 };

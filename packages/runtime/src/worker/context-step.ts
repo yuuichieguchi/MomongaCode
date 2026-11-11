@@ -525,6 +525,7 @@ const unrecordedNoticePayloads = (ctx: ClaimContext, notices: readonly ContextNo
     const identity = identityOf(notice.message, notice.code, notice.reduction);
     if (known.has(identity)) continue;
     known.add(identity);
+    if (notice.key !== undefined && ctx.options.store.latestSessionNotice(ctx.run.sessionId, notice.code, notice.key) !== undefined) continue;
     payloads.push({
       type: 'notice',
       level: 'warning',
