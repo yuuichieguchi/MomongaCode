@@ -77,24 +77,31 @@ const causeOf = async (pending: Promise<unknown>): Promise<unknown> => {
   return (error as Error).cause;
 };
 
-type HeldLookup = { lookup: LookupFunction; answer(address: string): void; asked: () => number };
+type HeldLookup = { lookup: LookupFunction; answer(address: string): void; asked: Promise<void> };
 
 const heldLookup = (): HeldLookup => {
   const waiting: Array<(...args: unknown[]) => void> = [];
-  const lookup = (_hostname: string, _options: { all?: boolean }, callback: (...args: unknown[]) => void): void => {
-    waiting.push(callback);
+  let held = false;
+  let markAsked: () => void = () => undefined;
+  const asked = new Promise<void>((resolve) => {
+    markAsked = resolve;
+  });
+  const lookup = (_hostname: string, options: { all?: boolean }, callback: (...args: unknown[]) => void): void => {
+    if (!held && options.all === true) {
+      held = true;
+      waiting.push(callback);
+      markAsked();
+      return;
+    }
+    queueMicrotask(() => callback(null, [{ address: '93.184.216.34', family: 4 }]));
   };
   return {
     lookup: lookup as unknown as LookupFunction,
     answer: (address) => {
       for (const callback of waiting.splice(0)) callback(null, [{ address, family: 4 }]);
     },
-    asked: () => waiting.length,
+    asked,
   };
-};
-
-const settledTurns = async (): Promise<void> => {
-  for (let turn = 0; turn < 20; turn += 1) await new Promise<void>((resolve) => setImmediate(resolve));
 };
 
 describe('C14: the site lookup of a request is raced against the signal of its asker', { timeout: TEST_TIMEOUT_MS }, () => {
@@ -110,12 +117,12 @@ describe('C14: the site lookup of a request is raced against the signal of its a
       () => 'answered',
       (error: unknown) => error,
     );
-    await settledTurns();
-    expect(held.asked()).toBe(1);
+    await held.asked;
     asker.abort(reason);
     expect(await outcome).toBe(reason);
     held.answer('93.184.216.34');
-    await settledTurns();
-    expect(proxy.connections()).toBe(0);
+    const later = await dispatcher.request({ origin: 'http://later.example.test:8080', path: '/', method: 'GET' });
+    expect(await later.body.text()).toBe('ok');
+    expect(proxy.connections()).toBe(1);
   });
 });
