@@ -4,10 +4,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { credentialFileFor, momongaLayout } from '@momonga/foundation';
 import { PLAN_ROUTES } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import { gatewayErrorOfCredential } from '../src/plan/api.ts';
+import { planRouteError } from '../src/plan/api.ts';
 import { PlanCredentialError } from '../src/plan/auth-source.ts';
 import { GatewayError, statusFor } from '../src/core/errors.ts';
-import { ACCOUNT, accountRoute, begin, browse, sessionsDirectory, signIn, startPlanGateway } from './plan-signin-support.ts';
+import { ACCOUNT, accountRoute, begin, browse, completeConfirmed, sessionsDirectory, signIn, startPlanGateway } from './plan-signin-support.ts';
 import type { PlanGateway } from './plan-signin-support.ts';
 import { CONDITION_WAIT, PROFILE_ID } from './plan-support.ts';
 
@@ -21,7 +21,7 @@ const signInAs = async (gateway: PlanGateway, account: string): Promise<void> =>
   const begun = await begin(gateway, { account });
   expect(begun.status).toBe(200);
   const callback = await browse(begun.body.authorizationUrl);
-  const completed = await gateway.post(PLAN_ROUTES.signInComplete, { attemptId: begun.body.attemptId, callbackUrl: callback.toString() });
+  const completed = await completeConfirmed(gateway, begun.body.attemptId, callback.toString());
   expect(completed.body).toMatchObject({ outcome: 'signed_in', account: { label: account } });
 };
 
@@ -278,7 +278,7 @@ describe('O-R5-6 L4: the load resumes an interrupted sign-out', () => {
 
 describe('admin routes translate a PlanCredentialError by the one status rule of M7 (O-R5-6 G 9)', () => {
   const translatedOf = (code: string, retryable: boolean): GatewayError => {
-    const translated = gatewayErrorOfCredential(new PlanCredentialError(code, `message of ${code}`, retryable));
+    const translated = planRouteError(new PlanCredentialError(code, `message of ${code}`, retryable));
     expect(translated).toBeInstanceOf(GatewayError);
     return translated as GatewayError;
   };

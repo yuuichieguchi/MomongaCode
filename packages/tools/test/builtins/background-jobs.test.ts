@@ -16,7 +16,7 @@ const view = (overrides: Partial<JobView> = {}): JobView => ({
   ...overrides,
 });
 
-type FakeJobs = BackgroundJobs & { started: BackgroundJobStart[]; reads: { runId: string; jobId: string; filter?: RegExp }[]; kills: string[]; current: JobView; output: string; known: boolean; killOutcome: 'stopped' | 'requested' };
+type FakeJobs = BackgroundJobs & { started: BackgroundJobStart[]; reads: { runId: string; jobId: string; filtered: boolean }[]; kills: string[]; current: JobView; output: string; known: boolean; killOutcome: 'stopped' | 'requested' };
 
 const fakeJobs = (): FakeJobs => {
   const jobs: FakeJobs = {
@@ -37,7 +37,7 @@ const fakeJobs = (): FakeJobs => {
       return jobs.current;
     },
     read: async (runId, jobId, options) => {
-      jobs.reads.push({ runId, jobId, ...(options.filter === undefined ? {} : { filter: options.filter }) });
+      jobs.reads.push({ runId, jobId, filtered: options.keep !== undefined });
       return { job: jobs.current, output: jobs.output };
     },
     kill: async (_runId, jobId) => {
@@ -139,11 +139,11 @@ describe('BashOutput', () => {
     });
   });
 
-  it('passes the filter to the registry as a regular expression and rejects an invalid one', async () => {
+  it('gives the registry a line filter only when the call names one', async () => {
     const jobs = fakeJobs();
+    await bashOutput.execute(input(), contextOf(jobs), { waitUntil: 0 });
     await bashOutput.execute(input({ filter: 'ERR(OR)?' }), contextOf(jobs), { waitUntil: 0 });
-    expect(jobs.reads[0]?.filter?.source).toBe('ERR(OR)?');
-    await expect(bashOutput.execute(input({ filter: '(' }), contextOf(jobs), { waitUntil: 0 })).rejects.toThrow('filter is not a valid regular expression');
+    expect(jobs.reads.map((read) => read.filtered)).toEqual([false, true]);
   });
 
   it('waits for a running job until the time it may wait until', async () => {

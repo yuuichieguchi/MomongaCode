@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
-import { canonicalJson, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, fixedRolePort, openDatabase, sha256Hex, EMPTY_PROTECTED_SET, systemRandom, nodeFileSystem } from '@momonga/foundation';
+import { canonicalJson, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, HOST_RULE_ENFORCEMENT, nodeFileSystem, openDatabase, sha256Hex, systemRandom } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { InstructionReader } from '@momonga/context';
 import { computeFileRules } from '@momonga/policy';
@@ -244,7 +244,10 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const toolbox: FakeToolbox = createFakeToolbox();
   const instructions = createFakeInstructions();
   const executorWarnings: string[] = [];
-  const realExecutor = createToolExecutor({ outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
+  const realExecutor = createToolExecutor({
+    shellHost: nodeShellHost(),
+    random: systemRandom,
+    files: nodeFileSystem, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
     idempotency: store.idempotency,
     blobs: store.blobs,
     clock,

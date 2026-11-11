@@ -1,9 +1,10 @@
-import fs from 'node:fs';
-import { DEFAULT_STOP_VALUES, answeredNow, canonicalJson, isTransientErrno, nodeFileSystemSync, syncPaths, systemRandom, writeFileAtomicallySync } from '@momonga/foundation';
-import type { StopValues } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, answeredLater, canonicalJson, createKeyedSerializer, isTransientErrno, sha256Hex, writeFileAtomically } from '@momonga/foundation';
+import type { FileSystem, PathAsking, Random, StopValues } from '@momonga/foundation';
+import { askerOf } from './asker.ts';
+import type { Asker } from './asker.ts';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
-import { readJsonFileSync } from './json-file.ts';
-import type { JsonFile } from './json-file.ts';
+import { isAbsentPathError, isMissingFileError, parsedJsonOf, readJsonText } from './json-file.ts';
+import type { JsonFile, JsonText } from './json-file.ts';
 import { createKeptSettings } from './kept-settings.ts';
 import type { KeptRecords, KeptSettings } from './kept-settings.ts';
 import { keptOrThrow } from './last-good.ts';
@@ -16,57 +17,63 @@ import type { ResolvedSettings } from './load-settings.ts';
 import type { PlanProfiles, ResolvedModels } from './models.ts';
 import type { SandboxSetting } from './settings.ts';
 
-export type LoadUserSettingsOptions = { home: string; planProfiles?: PlanProfiles };
+export type LoadUserSettingsOptions = { home: string; signal: AbortSignal; planProfiles?: PlanProfiles; files?: FileSystem };
 
 export type LoadUserSettingsResult = { settings: ResolvedSettings; warnings: string[]; files: string[] };
 
 type UserSettingsLoad = { settings: ResolvedSettings; user: UserLayer; warnings: string[] };
 
-const userSettingsFrom = (home: string, read: JsonFile, planProfiles?: PlanProfiles): UserSettingsLoad => {
+function* userSettingsFrom(home: string, read: JsonFile, planProfiles?: PlanProfiles): PathAsking<UserSettingsLoad> {
   try {
-    const user = userLayerFrom(home, read, planProfiles);
+    const user = yield* userLayerFrom(home, read, planProfiles);
     const warnings = [...user.warnings];
     const layers = user.layer === undefined ? [] : [user.layer];
     for (const layer of layers) parseLayerRules(layer, home, home, warnings);
-    const settings = answeredNow(mergingLayers(layers, user.models, home, home, warnings), syncPaths);
+    const settings = yield* mergingLayers(layers, user.models, home, home, warnings);
     return { settings, user, warnings };
   } catch (error) {
     rethrowIfTransient(error);
     throw toConfigError(error);
   }
-};
+}
 
-export const userDocumentWarnings = (home: string, document: unknown): string[] => userSettingsFrom(home, { found: true, value: document }).warnings;
+const userSettingsOf = (home: string, read: JsonFile, planProfiles: PlanProfiles | undefined, { paths, signal }: Asker): Promise<UserSettingsLoad> =>
+  answeredLater(userSettingsFrom(home, read, planProfiles), paths, signal);
 
-const loadUserSettingsSync = (home: string, planProfiles?: PlanProfiles): LoadUserSettingsResult => {
-  const { settings, user, warnings } = userSettingsFrom(home, readUserJsonFile(home), planProfiles);
+export const userDocumentWarnings = async (home: string, document: unknown, asker: Asker): Promise<string[]> =>
+  (await userSettingsOf(home, { found: true, value: document }, undefined, asker)).warnings;
+
+export const defaultUserSettings = async (home: string, asker: Asker): Promise<ResolvedSettings> => (await userSettingsOf(home, { found: false }, undefined, asker)).settings;
+
+export const loadUserSettings = async ({ home, signal, planProfiles, files }: LoadUserSettingsOptions): Promise<LoadUserSettingsResult> => {
+  const asker = askerOf(signal, files);
+  const { settings, user, warnings } = await userSettingsOf(home, await readUserJsonFile(home, asker), planProfiles, asker);
   return { settings, warnings, files: user.layer === undefined ? [] : [user.layer.source] };
 };
 
 export type UserModels = { resolved: ResolvedModels; sandbox?: SandboxSetting; autoModeClassifier?: string };
 
-export const loadUserModels = ({ home }: LoadUserSettingsOptions): UserModels => {
-  try {
-    const user = readUserLayer(home);
-    const sandbox = user.layer?.settings.sandbox;
-    const autoModeClassifier = user.models.classifier;
-    return {
-      resolved: user.models,
-      ...(sandbox === undefined ? {} : { sandbox }),
-      ...(autoModeClassifier === undefined ? {} : { autoModeClassifier }),
-    };
-  } catch (error) {
-    rethrowIfTransient(error);
-    throw toConfigError(error);
-  }
+export const loadUserModels = async ({ home, signal, files }: Omit<LoadUserSettingsOptions, 'planProfiles'>): Promise<UserModels> => {
+  const user = await readUserLayer(home, askerOf(signal, files));
+  const sandbox = user.layer?.settings.sandbox;
+  const autoModeClassifier = user.models.classifier;
+  return {
+    resolved: user.models,
+    ...(sandbox === undefined ? {} : { sandbox }),
+    ...(autoModeClassifier === undefined ? {} : { autoModeClassifier }),
+  };
 };
 
 export type AppliedRecordWrite = { kind: 'written'; seq: number } | { kind: 'unchanged'; seq: number } | { kind: 'invalid' };
 
 type AppliedRecord = { seq: number; settings: unknown };
 
-const appliedRecordOf = (file: string): AppliedRecord | undefined => {
-  const read = readJsonFileSync(file);
+const MISSING_KEY = 'missing';
+
+const contentKeyOf = (read: JsonText): string => (read.found ? sha256Hex(read.text) : MISSING_KEY);
+
+const appliedRecordOf = (file: string, text: JsonText): AppliedRecord | undefined => {
+  const read = parsedJsonOf(text, file);
   if (!read.found) return undefined;
   const { value } = read;
   if (typeof value !== 'object' || value === null) throw new ConfigError(`the applied settings record ${file} is not an object`);
@@ -75,69 +82,87 @@ const appliedRecordOf = (file: string): AppliedRecord | undefined => {
   return { seq, settings };
 };
 
-type AppliedRecordRead = { kind: 'absent' } | { kind: 'readable'; record: AppliedRecord } | { kind: 'unreadable'; reason: string };
+const UNREAD_IDENTITY = 'unread';
 
-const readAppliedRecord = (file: string): AppliedRecordRead => {
+type AppliedRecordRead = { kind: 'absent' } | { kind: 'readable'; record: AppliedRecord } | { kind: 'unreadable'; reason: string; identity: string };
+
+const readAppliedRecord = async (file: string, asker: Asker): Promise<AppliedRecordRead> => {
+  let identity = UNREAD_IDENTITY;
   try {
-    const record = appliedRecordOf(file);
+    const text = await readJsonText(file, isAbsentPathError, asker);
+    identity = contentKeyOf(text);
+    const record = appliedRecordOf(file, text);
     return record === undefined ? { kind: 'absent' } : { kind: 'readable', record };
   } catch (error) {
+    if (asker.signal.aborted) throw asker.signal.reason;
     rethrowIfTransient(error);
-    return { kind: 'unreadable', reason: error instanceof Error ? error.message : String(error) };
+    return { kind: 'unreadable', reason: error instanceof Error ? error.message : String(error), identity };
   }
 };
 
 const unreadableRecordText = (file: string, reason: string): string => `the applied settings record ${file} is unreadable and was ignored: ${reason}`;
 
-export const writeAppliedRecord = (home: string, record: string, lastWrittenSeq?: number): AppliedRecordWrite => {
+const APPLIED_RECORD_MODE = 0o600;
+
+export type AppliedRecordPorts = { signal: AbortSignal; random: Random; files?: FileSystem };
+
+export const writeAppliedRecord = async (home: string, record: string, lastWrittenSeq: number | undefined, { signal, random, files }: AppliedRecordPorts): Promise<AppliedRecordWrite> => {
+  const asker = askerOf(signal, files);
   let read: JsonFile;
   try {
-    read = readUserJsonFile(home);
-    userSettingsFrom(home, read);
+    read = await readUserJsonFile(home, asker);
+    await userSettingsOf(home, read, undefined, asker);
   } catch (error) {
     if (error instanceof ConfigError) return { kind: 'invalid' };
     throw error;
   }
   const settings = read.found ? read.value : {};
-  const previous = readAppliedRecord(record);
+  const previous = await readAppliedRecord(record, asker);
   if (previous.kind === 'readable' && canonicalJson(previous.record.settings) === canonicalJson(settings)) return { kind: 'unchanged', seq: previous.record.seq };
   const seq = (previous.kind === 'readable' ? previous.record.seq : (lastWrittenSeq ?? 0)) + 1;
-  writeFileAtomicallySync(nodeFileSystemSync, systemRandom, record, `${JSON.stringify({ seq, settings })}\n`, { mode: APPLIED_RECORD_MODE });
+  signal.throwIfAborted();
+  await writeFileAtomically(asker.files, random, record, `${JSON.stringify({ seq, settings })}\n`, { mode: APPLIED_RECORD_MODE });
   return { kind: 'written', seq };
 };
 
-const APPLIED_RECORD_MODE = 0o600;
-
-export const loadUserSettings = async ({ home, planProfiles }: LoadUserSettingsOptions): Promise<LoadUserSettingsResult> => loadUserSettingsSync(home, planProfiles);
-
-export type UserSettingsCacheOptions = { home: string; onWarning: (message: string) => void; keptRecords: KeptRecords; appliedRecord?: string; planProfiles?: PlanProfiles };
-
 export type UserSettingsLoaded = { settings: ResolvedSettings; user: UserLayer };
+
+export function* userSettingsOfText(home: string, text: string | undefined): PathAsking<UserSettingsLoaded> {
+  const file = userSettingsFile(home);
+  const { settings, user } = yield* userSettingsFrom(home, parsedJsonOf(text === undefined ? { found: false } : { found: true, text }, file));
+  return { settings, user };
+}
 
 export type UserSettingsSnapshot = UserSettingsLoaded | { error: ConfigError };
 
+export type UserSettingsCacheOptions = {
+  home: string;
+  onWarning: (message: string) => void;
+  keptRecords: KeptRecords;
+  appliedRecord?: string;
+  planProfiles?: PlanProfiles;
+  files?: FileSystem;
+  onLoaded?(loaded: UserSettingsLoaded): void;
+};
+
 export type UserSettingsCache = {
+  load(signal: AbortSignal): Promise<UserSettingsSnapshot>;
+  loadOrKeep(signal: AbortSignal): Promise<UserSettingsLoaded>;
   get(): ResolvedSettings;
   read(): UserSettingsLoaded;
   snapshot(): UserSettingsSnapshot;
   kept: KeptSettings;
 };
 
-const changeKeyOf = (file: string): string => {
-  try {
-    const stat = fs.statSync(file, { bigint: true });
-    return `${stat.mtimeNs}:${stat.size}:${stat.ino}`;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'missing';
-    throw error;
-  }
-};
+export const userSettingsChangeKey = async (home: string, signal: AbortSignal, files?: FileSystem): Promise<string> =>
+  contentKeyOf(await readJsonText(layoutOf(home).settingsFile, isMissingFileError, askerOf(signal, files)));
 
-export const userSettingsChangeKey = (home: string): string => changeKeyOf(layoutOf(home).settingsFile);
+const READ_BEFORE_FIRST_LOAD = 'the user settings were read before their first load';
 
-export const createUserSettingsCache = ({ home, onWarning, keptRecords, appliedRecord, planProfiles }: UserSettingsCacheOptions): UserSettingsCache => {
+export const createUserSettingsCache = ({ home, onWarning, keptRecords, appliedRecord, planProfiles, files, onLoaded }: UserSettingsCacheOptions): UserSettingsCache => {
   const file = userSettingsFile(home);
   const kept = createKeptSettings({ records: keptRecords, onWarning });
+  const oneAtATime = createKeyedSerializer();
   let latest: UserSettingsSnapshot | undefined;
   let lastGood: Kept<UserSettingsLoaded>;
   let seenKey: string | undefined;
@@ -146,15 +171,6 @@ export const createUserSettingsCache = ({ home, onWarning, keptRecords, appliedR
   let notedSeq: number | undefined;
   let reportedRecordKey: string | undefined;
 
-  const readableRecord = (): AppliedRecord | undefined => {
-    if (appliedRecord === undefined) return undefined;
-    const identity = changeKeyOf(appliedRecord);
-    const recorded = readAppliedRecord(appliedRecord);
-    if (recorded.kind === 'readable') return recorded.record;
-    if (recorded.kind === 'unreadable') reportUnreadable(appliedRecord, identity, recorded.reason);
-    return undefined;
-  };
-
   const reportUnreadable = (record: string, identity: string, reason: string): void => {
     const key = `${identity}\u0000${reason}`;
     if (reportedRecordKey === key) return;
@@ -162,21 +178,29 @@ export const createUserSettingsCache = ({ home, onWarning, keptRecords, appliedR
     onWarning(unreadableRecordText(record, reason));
   };
 
-  const noteRecordSeq = (): void => {
-    const recorded = readableRecord();
+  const readableRecord = async (asker: Asker): Promise<AppliedRecord | undefined> => {
+    if (appliedRecord === undefined) return undefined;
+    const recorded = await readAppliedRecord(appliedRecord, asker);
+    if (recorded.kind === 'readable') return recorded.record;
+    if (recorded.kind === 'unreadable') reportUnreadable(appliedRecord, recorded.identity, recorded.reason);
+    return undefined;
+  };
+
+  const noteRecordSeq = async (asker: Asker): Promise<void> => {
+    const recorded = await readableRecord(asker);
     if (recorded !== undefined) notedSeq = recorded.seq;
   };
 
-  const newerAppliedCopy = (): Kept<UserSettingsLoaded> => {
+  const newerAppliedCopy = async (asker: Asker): Promise<Kept<UserSettingsLoaded>> => {
     if (appliedRecord === undefined) return undefined;
-    const recorded = readableRecord();
+    const recorded = await readableRecord(asker);
     if (recorded === undefined || (notedSeq !== undefined && recorded.seq <= notedSeq)) return undefined;
     let rebuilt: UserSettingsLoad;
     try {
-      rebuilt = userSettingsFrom(home, { found: true, value: recorded.settings }, planProfiles);
+      rebuilt = await userSettingsOf(home, { found: true, value: recorded.settings }, planProfiles, asker);
     } catch (error) {
       if (!(error instanceof ConfigError)) throw error;
-      reportUnreadable(appliedRecord, changeKeyOf(appliedRecord), error.message);
+      reportUnreadable(appliedRecord, sha256Hex(canonicalJson(recorded.settings)), error.message);
       return undefined;
     }
     notedSeq = recorded.seq;
@@ -184,74 +208,92 @@ export const createUserSettingsCache = ({ home, onWarning, keptRecords, appliedR
     return lastGood;
   };
 
-  const keptCopy = (): Kept<UserSettingsLoaded> => {
-    const applied = newerAppliedCopy();
+  const keptCopy = async (asker: Asker): Promise<Kept<UserSettingsLoaded>> => {
+    const applied = await newerAppliedCopy(asker);
     if (applied !== undefined) return applied;
     if (lastGood !== undefined) return lastGood;
-    const recalled = kept.recall(file);
+    const recalled = await kept.recall(file, asker.signal);
     if (recalled === undefined) return undefined;
-    const rebuilt = userSettingsFrom(home, recalled.value, planProfiles);
+    const rebuilt = await userSettingsOf(home, recalled.value, planProfiles, asker);
     lastGood = { value: { settings: rebuilt.settings, user: rebuilt.user } };
     return lastGood;
   };
 
-  const failWith = (error: ConfigError, key: string | undefined): void => {
-    latest = { error };
+  const failWith = async (error: ConfigError, key: string | undefined, asker: Asker): Promise<UserSettingsSnapshot> => {
+    const failed = { error };
+    latest = failed;
     failedKey = key ?? '';
-    if (keptCopy() !== undefined) kept.report(file, { kind: 'invalid', error, identity: failedKey });
+    if ((await keptCopy(asker)) !== undefined) kept.report(file, { kind: 'invalid', error, identity: failedKey });
+    return failed;
   };
 
-  const refresh = (): UserSettingsSnapshot => {
-    let key: string;
+  const loadContent = async (text: JsonText, key: string, asker: Asker): Promise<UserSettingsSnapshot> => {
+    let current: UserSettingsLoaded;
     try {
-      key = userSettingsChangeKey(home);
+      const read = parsedJsonOf(text, file);
+      const loaded = await userSettingsOf(home, read, planProfiles, asker);
+      for (const warning of loaded.warnings) onWarning(warning);
+      await kept.remember(file, read, asker.signal);
+      await noteRecordSeq(asker);
+      current = { settings: loaded.settings, user: loaded.user };
     } catch (error) {
+      if (asker.signal.aborted) throw asker.signal.reason;
+      rethrowIfTransient(error);
+      const failed = await failWith(toConfigError(error), key, asker);
+      seenKey = key;
+      return failed;
+    }
+    latest = current;
+    lastGood = { value: current };
+    seenKey = key;
+    onLoaded?.(current);
+    return current;
+  };
+
+  const loadOnce = async (signal: AbortSignal): Promise<UserSettingsSnapshot> => {
+    const asker = askerOf(signal, files);
+    let text: JsonText;
+    try {
+      text = await readJsonText(file, isMissingFileError, asker);
+    } catch (error) {
+      if (signal.aborted) throw signal.reason;
       seenKey = undefined;
       rethrowIfTransient(error);
-      failWith(toConfigError(error), undefined);
-      return latest as UserSettingsSnapshot;
+      return failWith(toConfigError(error), undefined, asker);
     }
-    if (latest !== undefined && !('error' in latest) && key === seenKey) return latest;
-    seenKey = key;
-    try {
-      const read = readUserJsonFile(home);
-      const loaded = userSettingsFrom(home, read, planProfiles);
-      for (const warning of loaded.warnings) onWarning(warning);
-      kept.remember(file, read);
-      noteRecordSeq();
-      const current = { settings: loaded.settings, user: loaded.user };
-      latest = current;
-      lastGood = { value: current };
-    } catch (error) {
-      if (isTransientErrno(error)) seenKey = undefined;
-      rethrowIfTransient(error);
-      failWith(toConfigError(error), key);
-    }
-    return latest as UserSettingsSnapshot;
+    const key = contentKeyOf(text);
+    if (latest === undefined || key !== seenKey) return loadContent(text, key, asker);
+    if ('error' in latest) await keptCopy(asker);
+    return latest;
+  };
+
+  const load = (signal: AbortSignal): Promise<UserSettingsSnapshot> => oneAtATime(file, () => loadOnce(signal), signal);
+
+  const snapshot = (): UserSettingsSnapshot => {
+    if (latest === undefined) throw new Error(READ_BEFORE_FIRST_LOAD);
+    return latest;
   };
 
   const read = (): UserSettingsLoaded => {
-    let snapshot: UserSettingsSnapshot;
+    const current = snapshot();
+    if (!('error' in current)) return current;
+    const copy = keptOrThrow('read', lastGood, current.error);
+    const notice = kept.report(file, { kind: 'invalid', error: current.error, identity: failedKey });
+    return { settings: copy.settings, user: { ...copy.user, warnings: [...copy.user.warnings, notice] } };
+  };
+
+  const loadOrKeep = async (signal: AbortSignal): Promise<UserSettingsLoaded> => {
     try {
-      snapshot = refresh();
+      await load(signal);
     } catch (error) {
       if (!isTransientErrno(error)) throw error;
       return keptOrThrow('read', lastGood, error);
     }
-    if (!('error' in snapshot)) return snapshot;
-    const copy = keptOrThrow('read', keptCopy(), snapshot.error);
-    const notice = kept.report(file, { kind: 'invalid', error: snapshot.error, identity: failedKey });
-    return { settings: copy.settings, user: { ...copy.user, warnings: [...copy.user.warnings, notice] } };
+    return read();
   };
 
-  return {
-    get: () => read().settings,
-    read,
-    snapshot: refresh,
-    kept,
-  };
+  return { load, loadOrKeep, get: () => read().settings, read, snapshot, kept };
 };
-
 
 export const stopValuesOfSettings = ({ gateway, runtime, mcp }: Pick<ResolvedSettings, 'gateway' | 'runtime' | 'mcp'>): StopValues => ({
   ...gateway,
@@ -259,29 +301,43 @@ export const stopValuesOfSettings = ({ gateway, runtime, mcp }: Pick<ResolvedSet
   mcpCloseGraceMs: mcp.closeGraceMs ?? DEFAULT_STOP_VALUES.mcpCloseGraceMs,
 });
 
-export const readUserStopValues = (home: string): StopValues => stopValuesOfSettings(loadUserSettingsSync(home).settings);
+export const readUserStopValues = async (home: string, signal: AbortSignal, files?: FileSystem): Promise<StopValues> =>
+  stopValuesOfSettings((await loadUserSettings({ home, signal, ...(files === undefined ? {} : { files }) })).settings);
 
-export type StopValuesReaderOptions = { load(): StopValues; onNotice(message: string): void };
+export type StopNoticePort = { onNotice(message: string): void };
 
-export type StopValuesReader = { read(): StopValues; remember(values: StopValues): void };
+export type UserStopValuesOptions = StopNoticePort & { home: string; signal: AbortSignal; files?: FileSystem };
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-export const createStopValuesReader = ({ load, onNotice }: StopValuesReaderOptions): StopValuesReader => {
-  let lastValid: StopValues | undefined;
+export const readUserStopValuesOrDefault = async ({ home, signal, files, onNotice }: UserStopValuesOptions): Promise<StopValues> => {
+  try {
+    return await readUserStopValues(home, signal, files);
+  } catch (error) {
+    if (signal.aborted) throw signal.reason;
+    onNotice(`the stop values could not be read from the user settings (${messageOf(error)}); the default values were used`);
+    return DEFAULT_STOP_VALUES;
+  }
+};
+
+export type StopValuesReaderOptions = StopNoticePort;
+
+export type StopValuesReader = { read(): StopValues; remember(values: StopValues): void };
+
+const STOP_VALUES_NOT_LOADED = 'the stop values were not loaded from the user settings before the stop; the default values were used';
+
+export const createStopValuesReader = ({ onNotice }: StopValuesReaderOptions): StopValuesReader => {
+  let remembered: StopValues | undefined;
+  let noticed = false;
   return {
     read: () => {
-      try {
-        lastValid = load();
-        return lastValid;
-      } catch (error) {
-        const kept = lastValid;
-        onNotice(`the stop values could not be read from the user settings (${messageOf(error)}); ${kept === undefined ? 'the default values were used' : 'the values last read were used'}`);
-        return kept ?? DEFAULT_STOP_VALUES;
-      }
+      if (remembered !== undefined) return remembered;
+      if (!noticed) onNotice(STOP_VALUES_NOT_LOADED);
+      noticed = true;
+      return DEFAULT_STOP_VALUES;
     },
     remember: (values) => {
-      lastValid = values;
+      remembered = values;
     },
   };
 };

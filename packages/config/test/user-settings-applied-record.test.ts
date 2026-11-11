@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createUserSettingsCache, noKeptRecords } from '@momonga/config';
 import type { UserSettingsCacheOptions } from '@momonga/config';
 
+const NOT_ABORTED = new AbortController().signal;
+
 const cleanups: Array<() => void> = [];
 afterEach(() => {
   for (const cleanup of cleanups.splice(0).reverse()) cleanup();
@@ -43,45 +45,45 @@ const makeHome = () => {
 const cacheOf = (home: string, appliedRecord?: string) =>
   createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: noKeptRecords, ...(appliedRecord === undefined ? {} : { appliedRecord }) } as UserSettingsCacheOptions);
 
-const modelOf = (cache: ReturnType<typeof cacheOf>): string | undefined => servedModelOf(cache.get());
+const modelOf = async (cache: ReturnType<typeof cacheOf>): Promise<string | undefined> => servedModelOf((await cache.loadOrKeep(NOT_ABORTED)).settings);
 
 describe('S7: the settings cache reads the applied record only on an invalid file (design-settings-live 15.1)', () => {
-  it('a valid file is used directly even when the record holds other content', () => {
+  it('a valid file is used directly even when the record holds other content', async () => {
     const tree = makeHome();
     tree.write(JSON.stringify(settingsWithModel('from-file')));
     const cache = cacheOf(tree.home, tree.recordFor(1, 1, settingsWithModel('from-record')));
-    expect(modelOf(cache)).toBe('from-file');
+    expect(await modelOf(cache)).toBe('from-file');
   });
 
-  it('an invalid file with a record path given takes the record, even when this process never read that content', () => {
+  it('an invalid file with a record path given takes the record, even when this process never read that content', async () => {
     const tree = makeHome();
     tree.write(JSON.stringify(settingsWithModel('a')));
     const cache = cacheOf(tree.home, tree.recordFor(1, 1, settingsWithModel('a')));
-    expect(modelOf(cache)).toBe('a');
+    expect(await modelOf(cache)).toBe('a');
     tree.write(JSON.stringify(settingsWithModel('b')));
     tree.recordFor(1, 2, settingsWithModel('b'));
     tree.write('{ "models": ');
-    expect(modelOf(cache)).toBe('b');
+    expect(await modelOf(cache)).toBe('b');
   });
 
-  it('with no record path the cache keeps its own last read content', () => {
+  it('with no record path the cache keeps its own last read content', async () => {
     const tree = makeHome();
     tree.write(JSON.stringify(settingsWithModel('a')));
     tree.recordFor(1, 2, settingsWithModel('b'));
     const cache = cacheOf(tree.home);
-    expect(modelOf(cache)).toBe('a');
+    expect(await modelOf(cache)).toBe('a');
     tree.write('{ "models": ');
-    expect(modelOf(cache)).toBe('a');
+    expect(await modelOf(cache)).toBe('a');
   });
 
-  it('never reads the record of another generation', () => {
+  it('never reads the record of another generation', async () => {
     const tree = makeHome();
     tree.write(JSON.stringify(settingsWithModel('a')));
     tree.recordFor(1, 5, settingsWithModel('from-old-generation'));
     const cache = cacheOf(tree.home, tree.recordPathOf(2));
-    expect(modelOf(cache)).toBe('a');
+    expect(await modelOf(cache)).toBe('a');
     tree.recordFor(2, 1, settingsWithModel('b'));
     tree.write('{ "models": ');
-    expect(modelOf(cache)).toBe('b');
+    expect(await modelOf(cache)).toBe('b');
   });
 });

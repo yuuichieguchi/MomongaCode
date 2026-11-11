@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { HooksSettings, PermissionMode } from '@momonga/protocol';
-import { DEFAULT_SANDBOX_NETWORK, DEFAULT_STOP_VALUES, answeredLater, askedPaths, lexicallyWithin } from '@momonga/foundation';
-import type { PathAsking } from '@momonga/foundation';
+import { DEFAULT_SANDBOX_NETWORK, DEFAULT_STOP_VALUES, answeredLater, askedPaths } from '@momonga/foundation';
+import type { FileSystem, PathAsking } from '@momonga/foundation';
 import { askerOf } from './asker.ts';
 import type { Asker } from './asker.ts';
 import type { SandboxNetworkSetting, StopValues } from '@momonga/foundation';
@@ -81,6 +81,7 @@ export type LoadSettingsOptions = {
   signal: AbortSignal;
   user?: UserLayer;
   kept?: KeptLayers;
+  files?: FileSystem;
 };
 
 export type LoadSettingsResult = {
@@ -182,16 +183,25 @@ const readableMandates = (mandates: Record<string, MandateProfileSettings>, sour
     }),
   );
 
-function* resolveDirectory(directory: string, layer: Layer, home: string): PathAsking<string> {
+function* resolveDirectory(directory: string, layer: Layer, home: string, warnings: string[]): PathAsking<string | undefined> {
   const expanded = directory === '~' ? home : directory.startsWith('~/') ? path.join(home, directory.slice(2)) : directory;
   const resolved = yield* askedPaths.canonicalDirectory(path.resolve(layer.root, expanded));
-  if (!resolved.ok) throw new ConfigError(`${layer.source}: additionalDirectories entry ${JSON.stringify(directory)} ${resolved.reason}`);
-  return resolved.path;
+  if (resolved.ok) return resolved.path;
+  if (resolved.code !== 'missing') throw new ConfigError(`${layer.source}: additionalDirectories entry ${JSON.stringify(directory)} ${resolved.reason}`);
+  warnings.push(`${layer.source}: additionalDirectories entry ${JSON.stringify(directory)} ${resolved.reason}; skipped`);
+  return undefined;
 }
 
 const UNIX_SOCKET_ALLOW_UNSUPPORTED = 'unix socket allow-lists are not supported by the Linux sandbox; all Unix sockets are denied';
 
-const enforceableUnixSockets = ({ source, allow }: { source: string; allow: string[] }, sandbox: SandboxSetting, home: string, warnings: string[]): string[] => {
+function* ownedByProduct(entry: string, owned: readonly string[]): PathAsking<boolean> {
+  for (const directory of owned) {
+    if (yield* askedPaths.comparableContains(directory, entry)) return true;
+  }
+  return false;
+}
+
+function* enforceableUnixSockets({ source, allow }: { source: string; allow: string[] }, sandbox: SandboxSetting, home: string, warnings: string[]): PathAsking<string[]> {
   if (allow.length === 0) return [];
   if (sandbox === 'bubblewrap') {
     warnings.push(`${source}: ${UNIX_SOCKET_ALLOW_UNSUPPORTED}`);
@@ -199,12 +209,16 @@ const enforceableUnixSockets = ({ source, allow }: { source: string; allow: stri
   }
   const layout = layoutOf(home);
   const owned = [layout.root, layout.keychains];
-  return allow.filter((entry) => {
-    if (!owned.some((directory) => lexicallyWithin(entry, directory))) return true;
-    warnings.push(`${source}: sandboxUnixSockets.allow entry ${JSON.stringify(entry)} is inside a directory momonga owns; its sockets are always denied; discarded`);
-    return false;
-  });
-};
+  const enforceable: string[] = [];
+  for (const entry of allow) {
+    if (yield* ownedByProduct(entry, owned)) {
+      warnings.push(`${source}: sandboxUnixSockets.allow entry ${JSON.stringify(entry)} is inside a directory momonga owns; its sockets are always denied; discarded`);
+    } else {
+      enforceable.push(entry);
+    }
+  }
+  return enforceable;
+}
 
 export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: string, projectDir: string, warnings: string[]): PathAsking<ResolvedSettings> {
   let projectReal: string;
@@ -279,7 +293,8 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
     }
     for (const effect of EFFECTS) merged.permissions[effect].push(...(permissions?.[effect] ?? []));
     for (const directory of permissions?.additionalDirectories ?? []) {
-      const resolved = yield* resolveDirectory(directory, layer, home);
+      const resolved = yield* resolveDirectory(directory, layer, home, warnings);
+      if (resolved === undefined) continue;
       const repositoryControlled = layer.origin === 'project' || layer.origin === 'local';
       if (repositoryControlled && !(yield* askedPaths.comparableContains(projectReal, resolved))) {
         warnings.push(`${layer.source}: additionalDirectories entry ${JSON.stringify(directory)} is outside the project and only honored in user settings; discarded`);
@@ -318,15 +333,15 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
     if (forges !== undefined) merged.forges = forges;
     if (operations !== undefined) merged.operations = operations;
   }
-  if (unixSockets !== undefined) merged.sandboxUnixSockets = { allow: enforceableUnixSockets(unixSockets, merged.sandbox, home, warnings) };
+  if (unixSockets !== undefined) merged.sandboxUnixSockets = { allow: yield* enforceableUnixSockets(unixSockets, merged.sandbox, home, warnings) };
   return merged;
 }
 
 export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: string, projectDir: string, warnings: string[], { signal, paths }: Asker): Promise<ResolvedSettings> =>
   answeredLater(mergingLayers(layers, models, home, projectDir, warnings), paths, signal);
 
-export const loadSettings = async ({ home, projectDir, cli, trust, signal, user, kept }: LoadSettingsOptions): Promise<LoadSettingsResult> => {
-  const asker = askerOf(signal);
+export const loadSettings = async ({ home, projectDir, cli, trust, signal, user, kept, files }: LoadSettingsOptions): Promise<LoadSettingsResult> => {
+  const asker = askerOf(signal, files);
   const loaded = await loadLayers({ home, projectDir, trust, asker, ...(user === undefined ? {} : { user }), ...(kept === undefined ? {} : { kept }) });
   let cliSettings: Settings;
   const cliWarnings: string[] = [];

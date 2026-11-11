@@ -42,8 +42,18 @@ describe('a gateway error carries the plan account of the failing target to the 
     expect((failure as GatewayRequestError & { plan?: unknown }).plan).toEqual(PLAN);
   });
 
-  it('a malformed plan is dropped and the code, message and type are kept', async () => {
+  it('a plan with a profile and no account is kept as the profile alone', async () => {
     const failure = await cancelFailure({ ...USAGE_ERROR, plan: { profile: 'chatgpt' } });
+    expect(failure).toBeInstanceOf(GatewayRequestError);
+    expect((failure as GatewayRequestError & { plan?: unknown }).plan).toEqual({ profile: 'chatgpt' });
+  });
+
+  it.each([
+    ['an account that is not a label', { profile: 'chatgpt', account: 'not a label' }],
+    ['no profile', { account: 'work' }],
+    ['a profile that is not a label', { profile: '', account: 'work' }],
+  ])('a malformed plan (%s) is dropped and the code, message and type are kept', async (_name, plan) => {
+    const failure = await cancelFailure({ ...USAGE_ERROR, plan });
     expect(failure).toBeInstanceOf(GatewayRequestError);
     expect(failure).toMatchObject({ status: 429, type: 'too_many_requests', code: 'plan_usage_limit', message: 'Manage usage.' });
     expect('plan' in (failure as object)).toBe(false);

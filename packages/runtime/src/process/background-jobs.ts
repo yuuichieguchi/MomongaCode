@@ -4,7 +4,7 @@ import type { Clock, MarkerMode, MarkerState, ProcessGroupPort, Timing, RolePort
 import type { SandboxedProcess } from '@momonga/sandbox';
 import type { Job, JobResult, RuntimeStore } from '@momonga/store';
 import { RetiringYield, ToolExecutionError, createMarkerOwners, unnamedLivenessNotes } from '@momonga/tools';
-import type { BackgroundJobs, MarkerOwners } from '@momonga/tools';
+import type { BackgroundJobs, LineFilter, MarkerOwners } from '@momonga/tools';
 import { toJobView as viewOf } from '../service/views.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { asError } from './as-error.ts';
@@ -75,11 +75,7 @@ type LiveJob = {
 
 const jobKeyOf = (callKey: string): string => sha256Hex(canonicalJson([callKey, 'background']));
 
-const matching = (text: string, filter: RegExp): string =>
-  text
-    .split('\n')
-    .filter((line) => filter.test(line))
-    .join('\n');
+const matching = async (text: string, keep: LineFilter): Promise<string> => (await keep(text.split('\n'))).join('\n');
 
 export const createBackgroundJobs = (options: BackgroundJobsOptions): BackgroundJobRegistry => {
   const { store, clock, timers, markerDir, markerFiles, killGraceMs, reapTiming, onWarning, report } = options;
@@ -400,11 +396,11 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       return job === undefined ? undefined : viewOf(job);
     },
     status: (runId, jobId) => viewOf(authorize(runId, jobId)),
-    read: async (runId, jobId, { filter, call }) => {
+    read: async (runId, jobId, { keep, call }) => {
       const job = authorize(runId, jobId);
       const { text, omitted, total } = await readWindow(job, call);
+      const kept = keep === undefined ? text : await matching(text, keep);
       store.jobs.advanceRead(job.id, total, call);
-      const kept = filter === undefined ? text : matching(text, filter);
       const note = omitted > 0 ? `[… ${omitted} bytes omitted …]\n` : '';
       const current = store.jobs.get(job.id) ?? job;
       const shown = kept === '' ? note.trimEnd() : `${note}${kept}`.replace(/\n+$/, '');

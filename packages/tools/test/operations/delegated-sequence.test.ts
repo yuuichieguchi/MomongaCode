@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { supersededVerdictOf } from '@momonga/policy';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeForge, startFakeGitHttp } from '@momonga/testkit';
-import { COVERED_PROGRAMS, OPERATION_SPECS, createForgeAccess, createOperationTools, hostGitReader, loadForgeDescriptors, supersededForms } from '@momonga/tools';
+import { COVERED_PROGRAMS, OPERATION_SPECS, createForgeAccess, createOperationTools, loadForgeDescriptors, supersededForms } from '@momonga/tools';
 import type { CallOutcome, ResultOutcome } from '@momonga/tools';
 import { mintServerCertificate } from '../../../cli/test/minted-certificates.ts';
 import { call, makeHarness, toolSetOf } from '../harness.ts';
@@ -51,7 +51,6 @@ const setup = async () => {
   const runner = countingRunner();
   const tools = createOperationTools({
     runArgv: runner.run,
-    readGit: hostGitReader,
     forge: createForgeAccess({
       descriptors: [descriptor],
       instances: [{ id: 'local', descriptor: descriptor.id, host: gitServer.host, apiBaseUrl: forge.origin, credential: { env: 'FAKE_FORGE_TOKEN' } }],

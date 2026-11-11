@@ -106,9 +106,9 @@ export const benchRunApi = (client: BenchClient, env: Readonly<Record<string, st
 };
 
 const run = async (ports: CliPorts, paths: MomongaPaths, benchmarkFile: string, options: { model: string; report?: string }): Promise<number> => {
-  const model = pinnedModelOf(shellModelsOf(ports), options.model);
+  const model = pinnedModelOf(await shellModelsOf(ports, ports.interrupt), options.model);
   await ensureCurrentDaemon(ports, paths);
-  const env = await environmentSnapshot(ports);
+  const env = await environmentSnapshot(ports, ports.interrupt);
   const client = connectRuntime(ports, paths);
   const scratch = await createOwnedDirectory({ parent: ports.tmpdir, prefix: WORKSPACE_PREFIX });
   try {

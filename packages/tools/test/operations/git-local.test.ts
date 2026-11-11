@@ -35,6 +35,19 @@ describe('GitCommit', () => {
     expect(result.output).toContain(world.git(world.work, 'rev-parse', 'HEAD'));
   });
 
+  it('makes the first commit of a repository that has none, and answers not applied for an interrupted first commit that did not land', async () => {
+    const world = makeGitWorld();
+    world.write('a.txt', 'one\n');
+    world.git(world.work, 'add', 'a.txt');
+    const parts = partsOf(operationTool('GitCommit', { runArgv: countingRunner().run }), { message: 'First' }, contextFor(world.work, world.env));
+    const prepared = await parts.prepare();
+    expect((await parts.reconcile(prepared, Date.now())).outcome).toBe('not_applied');
+    const result = await parts.execute(prepared);
+    expect(result).toMatchObject({ status: 'completed', effect: { outcome: 'applied' } });
+    expect(commitCount(world)).toBe(1);
+    expect((await parts.reconcile(prepared, Date.now())).outcome).toBe('already_applied');
+  });
+
   it('finds the commit applied after a kill between the commit and complete, and does not commit again (crash c2/c3)', async () => {
     const { world } = stagedWorld();
     const runner = countingRunner();

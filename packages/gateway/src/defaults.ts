@@ -22,6 +22,7 @@ const PLAN_ATTEMPT_TIMEOUT_MS = 15_000;
 const PLAN_REVOCATION_TIMEOUT_MS = 10_000;
 const PLAN_SKEW_MS = 60_000;
 const planRetry = GATEWAY_CONFIG_DEFAULTS.retry;
+const PERSIST_ATTEMPTS_PER_ACCESS_LIFETIME = 4;
 const PLAN_REFRESH_BUDGET_MS = planRetry.maxAttempts * PLAN_ATTEMPT_TIMEOUT_MS + (planRetry.maxAttempts - 1) * planRetry.maxMs;
 
 export const PLAN_SESSION_DEFAULTS = {
@@ -33,6 +34,8 @@ export const PLAN_SESSION_DEFAULTS = {
   marginMs: PLAN_SKEW_MS + PLAN_REFRESH_BUDGET_MS,
   revocationBudgetMs: planRetry.maxAttempts * PLAN_REVOCATION_TIMEOUT_MS + planRetry.baseMs + 2 * planRetry.baseMs,
   persistRetryMs: GATEWAY_CONFIG_DEFAULTS.breaker.openMs,
+  persistRetryMaxMs: PLAN_ACCESS_LIFETIME_MS / PERSIST_ATTEMPTS_PER_ACCESS_LIFETIME,
+  replacedAccessTokensKept: 3,
 } as const;
 
 const KIB = 1024;

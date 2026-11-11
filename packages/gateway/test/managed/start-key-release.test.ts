@@ -86,7 +86,7 @@ const wired = async ({ spawnFails, afterChildStarting }: Wiring) => {
     binary: COMMAND,
     exec: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
     probeRecordDir: probeDir,
-    target: 'workbench',
+    serverName: 'workbench',
     requestLimitMs: 300_000,
     isUsableBinary: async () => true,
     readKey: async () => binary.key,

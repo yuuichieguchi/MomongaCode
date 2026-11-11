@@ -47,6 +47,13 @@ const ASYNCHRONOUS_FILES: readonly string[] = [
   'packages/config/src/project-mandate.ts',
   'packages/foundation/src/path-asking.ts',
   'packages/config/src/edit-user-settings.ts',
+  'packages/config/src/edit-settings.ts',
+  'packages/config/src/json-file.ts',
+  'packages/config/src/kept-settings.ts',
+  'packages/config/src/layers.ts',
+  'packages/config/src/local-settings.ts',
+  'packages/config/src/models.ts',
+  'packages/config/src/user-settings.ts',
   'packages/context/src/instructions.ts',
   'packages/verify/src/path-model.ts',
   'packages/sandbox/src/profile.ts',
@@ -65,9 +72,6 @@ const ASYNCHRONOUS_FILES: readonly string[] = [
 const SYNCHRONOUS_USERS: Readonly<Record<string, string>> = {
   'packages/foundation/src/sync-paths.ts': 'the synchronous driver of the one resolution algorithm',
   'packages/foundation/src/index.ts': 'exports the synchronous driver',
-  'packages/config/src/models.ts': 'the user settings are parsed under the synchronous user-settings cache, once per change of the file and once at the begin of a stop',
-  'packages/config/src/user-settings.ts': 'the synchronous user-settings cache: one parse per change of the file and one at the begin of a stop',
-  'packages/config/src/edit-settings.ts': 'the settings editor checks a document inside its synchronous edit under the settings lock',
   'packages/cli/src/tui/diff.ts': 'the terminal view words an approval once, synchronously, in the process of one terminal',
 };
 

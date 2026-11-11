@@ -106,7 +106,7 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
       await options.completeHeld;
       const begun = planCalls.find((call) => call.route === 'sign-in/begin')?.body as { account: string } | undefined;
       const answer: PlanSignInCompleteResponse = options.complete ?? { outcome: 'signed_in', account: account({ label: begun?.account ?? 'chatgpt' }), firstSignIn: false };
-      if (answer.outcome !== 'retry') accounts = [...accounts.filter((existing) => existing.label !== answer.account.label).map((existing) => ({ ...existing, active: false })), answer.account];
+      if (answer.outcome !== 'retry' && answer.outcome !== 'identity_unconfirmed') accounts = [...accounts.filter((existing) => existing.label !== answer.account.label).map((existing) => ({ ...existing, active: false })), answer.account];
       return answer;
     },
     signInCancel: async (request) => {

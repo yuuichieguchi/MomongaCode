@@ -1,22 +1,23 @@
-import fs from 'node:fs';
 import path from 'node:path';
-import { promisify } from 'node:util';
-import { isRecord, isTransientErrno } from '@momonga/foundation';
+import { answeredLater, isRecord, isTransientErrno } from '@momonga/foundation';
+import type { PathAsking } from '@momonga/foundation';
+import { asked } from './asker.ts';
 import type { Asker } from './asker.ts';
-import { HOOK_EVENTS, HOOK_MATCHER_EVENTS, hookMatcherError } from '@momonga/protocol';
+import { HOOK_EVENTS, HOOK_MATCHER_EVENTS, SERVER_KINDS, hookMatcherError } from '@momonga/protocol';
+import type { ServerKinds } from '@momonga/protocol';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import { looksLikeCredentialName } from './credential-env.ts';
-import { isAbsentPathError, readJsonFile, readJsonFileSync } from './json-file.ts';
+import { readJsonFile } from './json-file.ts';
 import type { KeptSettings } from './kept-settings.ts';
 import { keptOrThrow } from './last-good.ts';
 import type { SettingsUse } from './last-good.ts';
 import type { JsonFile } from './json-file.ts';
 import { layoutOf } from './layout.ts';
-import { resolveModels } from './models.ts';
+import { refusingOwnSockets, resolveModels } from './models.ts';
 import { PLAN_PROFILES } from './plan-profiles.ts';
 import { serverRegistryOf } from './server-registry.ts';
 import type { PlanProfiles, ResolvedModels } from './models.ts';
-import { localSettingsFile, worktreeRootOf } from './local-settings.ts';
+import { localSettingsFile, pathExists, worktreeRootOf } from './local-settings.ts';
 import type { RuleOrigin } from './rule.ts';
 import { assertSettings, KNOWN_SETTINGS_KEYS } from './settings.ts';
 import type { Settings } from './settings.ts';
@@ -229,15 +230,15 @@ const readLayer = async (
   confineTo?: string,
 ): Promise<Layer | undefined> => {
   try {
-    const read = await readJsonFile(file, confineTo === undefined ? {} : { confine: { to: confineTo, paths: asker.paths } });
+    const read = await readJsonFile(file, asker, confineTo === undefined ? {} : { confine: { to: confineTo, paths: asker.paths } });
     const layer = buildLayer(read, file, origin, root, root, true, warnings);
-    kept?.store.remember(file, read);
+    await kept?.store.remember(file, read, asker.signal);
     return layer;
   } catch (error) {
     if (asker.signal.aborted) throw asker.signal.reason;
     const failure = isTransientErrno(error) ? error : toConfigError(error);
     if (kept === undefined) throw failure;
-    const copy = keptOrThrow(kept.use, kept.store.recall(file), failure);
+    const copy = keptOrThrow(kept.use, await kept.store.recall(file, asker.signal), failure);
     if (failure instanceof ConfigError) warnings.push(kept.store.report(file, { kind: 'invalid', error: failure, identity: '' }));
     return buildLayer(copy, file, origin, root, root, true, warnings);
   }
@@ -250,82 +251,92 @@ export type UserLayer = { layer: Layer | undefined; models: ResolvedModels; warn
 
 export const userSettingsFile = (home: string): string => layoutOf(home).settingsFile;
 
-export const readUserJsonFile = (home: string): JsonFile => {
+export const readUserJsonFile = async (home: string, asker: Asker): Promise<JsonFile> => {
   try {
-    return readJsonFileSync(userSettingsFile(home));
+    return await readJsonFile(userSettingsFile(home), asker);
   } catch (error) {
+    if (asker.signal.aborted) throw asker.signal.reason;
     rethrowIfTransient(error);
     throw toConfigError(error);
   }
 };
 
-export const readUserLayer = (home: string): UserLayer => userLayerFrom(home, readUserJsonFile(home));
+export type UserModelsSource = { source: string; warnings: string[]; planProfiles?: PlanProfiles; kinds?: ServerKinds };
 
-export const userLayerFrom = (home: string, read: JsonFile, planProfiles: PlanProfiles = PLAN_PROFILES): UserLayer => {
+export const userModelsOf = (settings: Pick<Settings, 'models' | 'autoMode'> | undefined, { source, warnings, planProfiles = PLAN_PROFILES, kinds = SERVER_KINDS }: UserModelsSource): ResolvedModels => {
+  const declared = settings?.models;
+  return resolveModels(declared, { source, warnings, servers: serverRegistryOf(declared?.servers, source), planProfiles, classifier: settings?.autoMode?.classifier, kinds });
+};
+
+export function* userLayerFrom(home: string, read: JsonFile, planProfiles?: PlanProfiles): PathAsking<UserLayer> {
   try {
     const warnings: string[] = [];
     const file = userSettingsFile(home);
     const layer = buildLayer(read, file, 'user', home, path.dirname(file), false, warnings);
-    const declared = layer?.settings.models;
-    const models = resolveModels(declared, { source: file, home, warnings, servers: serverRegistryOf(declared?.servers, file), planProfiles, classifier: layer?.settings.autoMode?.classifier });
+    const models = userModelsOf(layer?.settings, { source: file, warnings, ...(planProfiles === undefined ? {} : { planProfiles }) });
+    yield* refusingOwnSockets(models, home, file);
     return { layer, models, warnings };
   } catch (error) {
     rethrowIfTransient(error);
     throw toConfigError(error);
   }
-};
+}
 
-export const exists = async (file: string): Promise<boolean> => {
+export const readUserLayer = async (home: string, asker: Asker): Promise<UserLayer> => answeredLater(userLayerFrom(home, await readUserJsonFile(home, asker)), asker.paths, asker.signal);
+
+const realpath = async (target: string, asker: Asker): Promise<string> => {
   try {
-    await fs.promises.access(file);
-    return true;
+    return await asked(asker, asker.files.realpath(target));
   } catch (error) {
-    if (isAbsentPathError(error)) return false;
+    if (asker.signal.aborted) throw asker.signal.reason;
     rethrowIfTransient(error);
     throw toConfigError(error);
   }
 };
 
-const nativeRealpath = promisify(fs.realpath.native);
-
-const realpath = async (target: string): Promise<string> => {
+export const exists = async (file: string, asker: Asker): Promise<boolean> => {
   try {
-    return await nativeRealpath(target);
+    return await pathExists(file, asker);
   } catch (error) {
+    if (asker.signal.aborted) throw asker.signal.reason;
     rethrowIfTransient(error);
     throw toConfigError(error);
   }
 };
 
 export const loadLayers = async ({ home, projectDir, trust, asker, user: snapshot, kept }: LayerOptions): Promise<LoadedLayers> => {
-  const user = snapshot ?? readUserLayer(home);
+  asker.signal.throwIfAborted();
+  const user = snapshot ?? (await readUserLayer(home, asker));
   const warnings = [...user.warnings];
   const layers: Layer[] = user.layer === undefined ? [] : [user.layer];
   const result = (): LoadedLayers => ({ layers, models: user.models, files: layers.map((layer) => layer.source), warnings });
 
-  if ((await realpath(projectDir)) === (await realpath(home))) return result();
+  if ((await realpath(projectDir, asker)) === (await realpath(home, asker))) return result();
 
   const projectFile = path.join(projectDir, '.momonga', 'settings.json');
   let localFile: string;
+  let localRoot: string;
   try {
-    localFile = await localSettingsFile(home, projectDir);
+    localFile = await localSettingsFile(home, projectDir, asker);
+    localRoot = await worktreeRootOf(home, projectDir, asker);
   } catch (error) {
+    if (asker.signal.aborted) throw asker.signal.reason;
     rethrowIfTransient(error);
     throw toConfigError(error);
   }
   const repositoryLocalFile = path.join(projectDir, '.momonga', 'settings.local.json');
 
-  if (await exists(repositoryLocalFile)) {
+  if (await exists(repositoryLocalFile, asker)) {
     warnings.push(`${repositoryLocalFile} is ignored; local settings now live in ${localFile}`);
   }
 
   if (await trust.isTrusted(projectDir, asker.signal)) {
     const project = await readLayer(projectFile, 'project', projectDir, warnings, kept, asker, projectDir);
     if (project !== undefined) layers.push(project);
-  } else if (await exists(projectFile)) {
+  } else if (await exists(projectFile, asker)) {
     warnings.push(`project ${projectDir} is not trusted; skipped settings files: ${projectFile}`);
   }
-  const local = await readLayer(localFile, 'local', await worktreeRootOf(home, projectDir), warnings, kept, asker);
+  const local = await readLayer(localFile, 'local', localRoot, warnings, kept, asker);
   if (local !== undefined) layers.push(local);
 
   return result();

@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { OPERATION_SPECS, OperationSpecError, evaluateClauses, parseOperationSpec, supersededForms } from '@momonga/tools';
-import type { Clause } from '@momonga/tools';
+import { OPERATION_SPECS, OperationSpecError, describeClause, evaluateClauses, failedClauses, parseOperationSpec, supersededForms } from '@momonga/tools';
+import type { Clause, ClauseItem } from '@momonga/tools';
 import { expectRejected } from './support.ts';
 
 const SPEC_DIR = path.resolve(import.meta.dirname, '../../src/operations/specs');
@@ -141,6 +141,36 @@ describe('the clause evaluator', () => {
 
   it('does not treat two missing values as equal', () => {
     expect(evaluateClauses([['after.missing', 'before.missing']], scope)).toBe(false);
+  });
+
+  it('does not treat two empty observations as equal', () => {
+    const empty = { before: { localSha: '', remoteRef: '' }, after: { remoteRef: '' } };
+    expect(evaluateClauses([['after.remoteRef', 'before.localSha']], empty)).toBe(false);
+    expect(evaluateClauses([['after.remoteRef', 'before.remoteRef']], empty)).toBe(false);
+  });
+
+  it('lets an empty observation equal only the empty literal a spec writes for an intended absence', () => {
+    const empty = { after: { remoteRef: '' } };
+    expect(evaluateClauses([['after.remoteRef', { literal: '' }]], empty)).toBe(true);
+    expect(evaluateClauses([['after.remoteRef', { literal: '' }]], { after: { remoteRef: 'abc' } })).toBe(false);
+    expect(evaluateClauses([['after.missing', { literal: '' }]], empty)).toBe(false);
+  });
+
+  it('holds an observed clause only for a value that was observed and is not empty, and describes it by its own text', () => {
+    const clause: Clause = { observed: 'before.localSha', otherwise: 'the local branch {input.branch} does not exist' };
+    const input = { branch: 'topic' };
+    expect(evaluateClauses([clause], { input, before: { localSha: 'abc' } })).toBe(true);
+    expect(evaluateClauses([clause], { input, before: { localSha: '' } })).toBe(false);
+    expect(evaluateClauses([clause], { input, before: {} })).toBe(false);
+    expect(failedClauses([clause], { input, before: {} }).map((failed) => describeClause(failed, { input, before: {} }))).toEqual(['the local branch topic does not exist']);
+  });
+
+  it('chooses the clauses of an ifObserved item by whether the value was observed', () => {
+    const unchanged: ClauseItem[] = [{ ifObserved: 'before.remoteRef', then: [['after.remoteRef', 'before.remoteRef']], else: [['after.remoteRef', { literal: '' }]] }];
+    expect(evaluateClauses(unchanged, { before: { remoteRef: 'abc' }, after: { remoteRef: 'abc' } })).toBe(true);
+    expect(evaluateClauses(unchanged, { before: { remoteRef: 'abc' }, after: { remoteRef: '' } })).toBe(false);
+    expect(evaluateClauses(unchanged, { before: { remoteRef: '' }, after: { remoteRef: '' } })).toBe(true);
+    expect(evaluateClauses(unchanged, { before: { remoteRef: '' }, after: { remoteRef: 'abc' } })).toBe(false);
   });
 
   it('gives the same answer for the same inputs, whatever the clause order', () => {

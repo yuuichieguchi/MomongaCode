@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ConfigError, loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, readUserStopValues, keptSettingsDirectory, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
-import type { ResolvedSettings } from '@momonga/config';
+import { ConfigError, loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, stopValuesOfSettings, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
+import type { ResolvedSettings, StopValuesReader } from '@momonga/config';
 import { installTrust, trustFailureText } from '@momonga/foundation';
 import {
   acquireProcessLock,
@@ -33,7 +33,6 @@ import {
   SETTINGS_APPLIED_ENV,
   systemClock,
   nodeFileSystem,
-  nodeFileSystemSync,
   systemRandom,
   runtimeTeardownBudgetMs,
 } from '@momonga/foundation';
@@ -141,6 +140,7 @@ export type StartRuntimeProcessOptions = {
   workerCount?: number;
   leaseMs?: number;
   signal?: AbortSignal;
+  stopValues?: StopValuesReader;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
   bundledRipgrep?: BundledRipgrepSource;
   ruleSolver?: RuleSolverSource;
@@ -206,7 +206,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   const platform = options.platform ?? process.platform;
   const reapTiming = reapTimingOf(clock, timers);
   const onWarning = (message: string): void => logger.warn(message);
-  const stopValuesReader = createStopValuesReader({ load: () => readUserStopValues(canonicalHome), onNotice: onWarning });
+  const stopValuesReader = options.stopValues ?? createStopValuesReader({ onNotice: onWarning });
   const valuesOfStop = (given: StopValues | undefined): StopValues => given ?? stopValuesReader.read();
   let stopMcpCloseGraceMs: number | undefined;
 
@@ -403,8 +403,14 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     };
     const { cache, settings } = await step('settings', async () => {
       const appliedRecord = process.env[SETTINGS_APPLIED_ENV];
-      const created = createUserSettingsCache({ home: canonicalHome, onWarning, keptRecords: diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(canonicalHome)), ...(appliedRecord === undefined ? {} : { appliedRecord }) });
-      const snapshot = created.snapshot();
+      const created = createUserSettingsCache({
+        home: canonicalHome,
+        onWarning,
+        keptRecords: diskKeptRecords(nodeFileSystem, systemRandom, keptSettingsDirectory(canonicalHome)),
+        onLoaded: (loaded) => stopValuesReader.remember(stopValuesOfSettings(loaded.settings)),
+        ...(appliedRecord === undefined ? {} : { appliedRecord }),
+      });
+      const snapshot = await created.load(startDeadlineSignal(signal));
       if ('error' in snapshot) throw snapshot.error;
       return { cache: created, settings: snapshot.settings };
     });
@@ -433,7 +439,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       if (kind === 'bubblewrap') {
         let shell: string;
         try {
-          shell = resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env: process.env });
+          shell = await resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env: process.env });
         } catch (error) {
           if (!(error instanceof ShellNotFoundError)) throw error;
           throw new ConfigError(error.message, { cause: error });

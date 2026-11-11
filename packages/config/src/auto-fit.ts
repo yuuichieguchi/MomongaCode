@@ -5,7 +5,7 @@ import type { BinaryHashCache, HeldHostReadings, HostExec } from '@momonga/found
 import type { AutoClassifierView } from '@momonga/protocol';
 import { registeredServer } from './server-registry.ts';
 import { AUTO_MODE_DATASET_TEXT } from './auto-mode-dataset.ts';
-import { ConfigError } from './config-error.ts';
+import { ConfigError, rethrowIfTransient } from './config-error.ts';
 import { isAbsentPathError, parseJsonText } from './json-file.ts';
 import { layoutOf } from './layout.ts';
 import type { ResolvedModel, ResolvedModels } from './models.ts';
@@ -178,16 +178,20 @@ const recordOf = (value: unknown, file: string): AutoFitRecord | undefined => {
   return typeof value['agentModel'] === 'string' ? (value as AutoFitRecord) : undefined;
 };
 
-export const readAutoFitRecord = async (directory: string, key: AutoFitKey): Promise<AutoFitRecord | undefined> => {
-  const file = fileOf(directory, key);
-  let text: string;
+const recordTextOf = async (file: string): Promise<string | undefined> => {
   try {
-    text = await fs.promises.readFile(file, 'utf8');
+    return await fs.promises.readFile(file, 'utf8');
   } catch (error) {
     if (isAbsentPathError(error)) return undefined;
-    throw error;
+    rethrowIfTransient(error);
+    throw new ConfigError(`${file}: the auto mode measurement record cannot be read: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
-  return recordOf(parseJsonText(text, file), file);
+};
+
+export const readAutoFitRecord = async (directory: string, key: AutoFitKey): Promise<AutoFitRecord | undefined> => {
+  const file = fileOf(directory, key);
+  const text = await recordTextOf(file);
+  return text === undefined ? undefined : recordOf(parseJsonText(text, file), file);
 };
 
 export const writeAutoFitRecord = async (directory: string, record: AutoFitRecord, randomHex: (bytes: number) => string): Promise<string> => {

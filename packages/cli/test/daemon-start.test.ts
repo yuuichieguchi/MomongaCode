@@ -5,7 +5,7 @@ import { registerCleanup, withTempDir } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { daemonStart } from '../src/commands/daemon.ts';
 import type { CliPorts } from '../src/ports.ts';
-import { createFakeWork, recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
+import { createFakeWork, installedProgram, recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 import type { FakeSupervisor } from './fake-supervisor.ts';
 
 describe('momonga daemon start', () => {
@@ -38,6 +38,7 @@ describe('momonga daemon start', () => {
       clock: virtualClock(work),
       self: { kind: 'single-binary', execPath: '/opt/momonga' },
       spawnDetached: spawn,
+      ...installedProgram('2.0.0').ports,
       stdout: { write: (text: string) => void written.push(text) },
     } as unknown as CliPorts;
 

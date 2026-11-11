@@ -1,6 +1,7 @@
 import { planAccountRefOf } from '@momonga/protocol';
-import type { AdapterTarget, ClassifiedError, ErrorBody, HealthResult, PlanAccountRef, ProviderAdapter, StreamEvent } from '@momonga/protocol';
+import type { AdapterTarget, ClassifiedError, ErrorBody, HealthResult, PlanAccountRef, ProviderAdapter, ResponseError, StreamEvent } from '@momonga/protocol';
 import { isRecord } from '@momonga/foundation';
+import { describeError } from './describe-error.ts';
 import { ClientDisconnectedError, GatewayError } from './errors.ts';
 import { sealedEventOf } from './sealed-events.ts';
 import type { Redactor } from './redaction.ts';
@@ -35,10 +36,8 @@ const shapedPlan = (plan: unknown): ShapedPlan => {
 const planUnchanged = (original: unknown, shaped: ShapedPlan): boolean =>
   shaped.plan === undefined ? original === undefined : isRecord(original) && Object.keys(original).length === Object.keys(shaped.plan).length;
 
-const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
-
 export const redactedError = (redactor: Redactor, error: unknown): Error => {
-  const redacted = new Error(redactor.text(messageOf(error)));
+  const redacted = new Error(redactor.text(describeError(error)));
   if (error instanceof Error) {
     redacted.name = error.name;
     if (error.stack !== undefined) redacted.stack = redactor.whole(error.stack);
@@ -111,21 +110,15 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
     if (event.type !== 'response.failed') return event;
     const { error } = event.response;
     if (typeof error !== 'object' || error === null) return event;
-    const rebuilt = {
-      ...event,
-      response: {
-        ...event.response,
-        error: {
-          code: namedCode(error.code),
-          type: error.type,
-          message: redactor.text(error.message),
-          param: 'param' in error ? shaped(error.param, PARAM_SHAPE) : null,
-          ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
-          ...shapedPlan(error.plan),
-        },
-      },
+    const guarded: ResponseError = {
+      code: namedCode(error.code),
+      ...(error.type === undefined ? {} : { type: error.type }),
+      message: redactor.text(error.message),
+      param: 'param' in error ? shaped(error.param, PARAM_SHAPE) : null,
+      ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
+      ...shapedPlan(error.plan),
     };
-    return rebuilt as unknown as StreamEvent;
+    return { ...event, response: { ...event.response, error: guarded } };
   };
 
   const converting = async <T>(step: () => Promise<T>): Promise<T> => {
@@ -168,7 +161,7 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
         ...(result.remediation === undefined ? {} : { remediation: redactor.text(result.remediation) }),
       };
     } catch (error) {
-      return { ok: false, reason: 'health_check_failed', detail: redactor.text(messageOf(error)) };
+      return { ok: false, reason: 'health_check_failed', detail: redactor.text(describeError(error)) };
     }
   };
 

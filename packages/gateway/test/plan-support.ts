@@ -5,7 +5,7 @@ import path from 'node:path';
 import { planProfileOf } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
 import { CredentialStoreError, createEncryptedCredentialStore, endedStoreCall, momongaLayout, nodeFileSystem } from '@momonga/foundation';
-import type { CredentialEntry, FileSystem, KernelLockMechanism, LimitTiming, ListableCredentialStore, SecretStore } from '@momonga/foundation';
+import type { CredentialEntry, FileSystem, KernelLockMechanism, LimitTiming, ListableCredentialStore, SecretBackend, SecretStore } from '@momonga/foundation';
 import { SIWC_RESOURCE, createFakeClock, siwcBrowse, startFakeSiwcAuth } from '@momonga/testkit';
 import type { FakeClock, SiwcAuth } from '@momonga/testkit';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
@@ -177,6 +177,9 @@ export type Harness = {
   holdNextRevoke(): Gate;
   holdNextBackoff(): ReachedGate;
   failNextOutbound(error: Error): void;
+  holdNextOutbound(): { reached: Promise<void>; fail(error: Error): void };
+  delayNextOutbound(): { reached: Promise<void>; release(): void };
+  another(options?: { accounts?: Array<{ profile: string; account: string }>; store?: ListableCredentialStore }): Promise<PlanSessions>;
   pendingBounds(): number[];
   fireLatestBound(ms: number): void;
   timing: LimitTiming;
@@ -201,7 +204,7 @@ const isRefreshPost = (url: string, init: RequestInit, tokenUrl: string): boolea
   url === tokenUrl && typeof init.body !== 'undefined' && new URLSearchParams(String(init.body)).get('grant_type') === 'refresh_token';
 
 export const startHarness = async (
-  options: { profile?: (auth: SiwcAuth) => PlanProfile; wrapFileSystem?: (base: FileSystem) => FileSystem; pointerSerial?: Serial; secretStore?: SecretStore } = {},
+  options: { profile?: (auth: SiwcAuth) => PlanProfile; wrapFileSystem?: (base: FileSystem) => FileSystem; pointerSerial?: Serial; secretStore?: SecretStore; wrapSleep?: (inner: PlanSleep) => PlanSleep; storeBackend?: SecretBackend } = {},
 ): Promise<Harness> => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'momonga-plan-'));
   const layout = momongaLayout(home);
@@ -223,6 +226,9 @@ export const startHarness = async (
   const backoffGates: ReachedGate[] = [];
   const backoffArrivals: Array<() => void> = [];
   const outboundFailures: Error[] = [];
+  const outboundHolds: Array<{ arrive(): void; failed: Promise<never> }> = [];
+  const outboundDelays: Array<{ arrive(): void; released: Promise<void> }> = [];
+  const others: PlanSessions[] = [];
   const warnings: string[] = [];
   const fetchUrls: string[] = [];
   const events: RecordedPlanEvent[] = [];
@@ -276,6 +282,7 @@ export const startHarness = async (
     openPlanSessions({
       ...(lock === undefined ? {} : { lock }),
       ...(options.pointerSerial === undefined ? {} : { pointerSerial: options.pointerSerial }),
+      ...(options.storeBackend === undefined ? {} : { storeBackend: options.storeBackend }),
       profiles: { [PROFILE_ID]: profile },
       paths,
       signal: NEVER_ENDED,
@@ -288,9 +295,17 @@ export const startHarness = async (
         const failure = outboundFailures.shift();
         if (failure !== undefined) return Promise.reject(failure);
         signal.throwIfAborted();
-        return use(fetchPort);
+        const hold = outboundHolds.shift();
+        if (hold !== undefined) {
+          hold.arrive();
+          return hold.failed;
+        }
+        const delay = outboundDelays.shift();
+        if (delay === undefined) return use(fetchPort);
+        delay.arrive();
+        return delay.released.then(() => use(fetchPort));
       },
-      sleep: (ms, signal) => {
+      sleep: (options.wrapSleep ?? ((inner: PlanSleep) => inner))((ms, signal) => {
         if (ms !== TOKEN_ATTEMPT_BOUND_MS && ms !== REVOCATION_ATTEMPT_BOUND_MS) {
           sleeps.push(ms);
           const backoff = backoffGates.shift();
@@ -313,7 +328,7 @@ export const startHarness = async (
             { once: true },
           );
         });
-      },
+      }),
       redact: (key, values) => {
         fed.set(key, [...values]);
         secrets.push(...values);
@@ -364,6 +379,35 @@ export const startHarness = async (
     failNextOutbound: (error) => {
       outboundFailures.push(error);
     },
+    holdNextOutbound: () => {
+      let arrive = (): void => undefined;
+      let fail = (_error: Error): void => undefined;
+      const reached = new Promise<void>((resolve) => {
+        arrive = resolve;
+      });
+      const failed = new Promise<never>((_resolve, reject) => {
+        fail = reject;
+      });
+      outboundHolds.push({ arrive, failed });
+      return { reached, fail };
+    },
+    delayNextOutbound: () => {
+      let arrive = (): void => undefined;
+      let release = (): void => undefined;
+      const reached = new Promise<void>((resolve) => {
+        arrive = resolve;
+      });
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      outboundDelays.push({ arrive, released });
+      return { reached, release };
+    },
+    another: async (anotherOptions = {}) => {
+      const opened = await open(anotherOptions.accounts ?? [], anotherOptions.store ?? store);
+      others.push(opened);
+      return opened;
+    },
     pendingBounds: () => bounds.map((bound) => bound.ms),
     fireLatestBound: (ms) => {
       const index = bounds.map((bound) => bound.ms).lastIndexOf(ms);
@@ -388,7 +432,7 @@ export const startHarness = async (
       return harness.sessions;
     },
     close: async () => {
-      await harness.sessions.close();
+      await Promise.all([harness.sessions, ...others.splice(0)].map((opened) => opened.close()));
       await auth.close();
       await fs.rm(home, { recursive: true, force: true });
     },

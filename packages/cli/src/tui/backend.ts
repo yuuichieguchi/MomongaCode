@@ -205,7 +205,7 @@ export const createTuiBackend = (
     storeSecret: (name, value, signal) => storeSecretValue(ports, name, value, AbortSignal.any([closing.signal, signal])),
     dismissedNotices: () => readDismissedNotices(ports.files, paths.state, onNotice),
     dismissNotice: (key) => dismissNotice(ports.files, paths.state, key, new Date(ports.clock.now()), closing.signal),
-    settings: async () => readSettingsSnapshot({ home: paths.home, projectDir: ports.cwd, trusted: (await runtime().trust(ports.cwd)).decision === 'trusted' }),
+    settings: async () => readSettingsSnapshot({ home: paths.home, projectDir: ports.cwd, trusted: (await runtime().trust(ports.cwd)).decision === 'trusted', signal: closing.signal }),
     editSettings: (layer, operation, signal) => editSettings({ home: paths.home, projectDir: ports.cwd }, layer, operation, { signal }),
     mcpServers: () => runtime().mcpServers(current().id),
     initInstruction: async () => (await import('@momonga/runtime')).INIT_INSTRUCTION,
@@ -222,7 +222,7 @@ export const createTuiBackend = (
       const chosenMode = permissionMode ?? options.permissionMode;
       const created = await runtime().createSession({
         cwd: ports.cwd,
-        env: await environmentSnapshot(ports),
+        env: await environmentSnapshot(ports, closing.signal),
         ...(chosenMode === undefined ? {} : { permissionMode: chosenMode }),
         ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
         ...(chosen === undefined ? {} : { model: chosen }),
@@ -248,7 +248,7 @@ export const createTuiBackend = (
       session = await runtime().setModel(current().id, model);
       return session;
     },
-    autoModeAvailable: () => autoModeConfigured(ports),
+    autoModeAvailable: () => autoModeConfigured(ports, closing.signal),
     startRun: async (text, history, runOptions = {}) =>
       (await runtime().createRun(current().id, text, { history, ...runOptions })).run,
     compact: (instructions) => runtime().compact(current().id, instructions),
