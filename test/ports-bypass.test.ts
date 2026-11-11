@@ -75,7 +75,7 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/foundation/src/platform/procfs.ts': { 'node:fs': 5 },
   'packages/foundation/src/platform/sqlite-lock.ts': { 'node:fs': 6, 'node:os': 1 },
   'packages/foundation/src/platform/windows-keeper-host.ts': { 'node:child_process': 1, 'node:net': 1 },
-  'packages/foundation/src/process-group.ts': { 'Date.now': 1, 'process.kill': 1, 'setTimeout': 1 },
+  'packages/foundation/src/process-group.ts': { 'process.kill': 1, 'setTimeout': 1 },
   'packages/foundation/src/process-lock.ts': { 'randomBytes': 1 },
   'packages/foundation/src/process-markers.ts': { 'node:fs': 5 },
   'packages/foundation/src/rotating-log.ts': { 'node:fs': 8 },

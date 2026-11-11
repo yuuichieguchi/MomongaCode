@@ -11,7 +11,6 @@ export type { CodeOrigin } from './code-digest.ts';
 export { systemClock } from './clock.ts';
 export type { Clock } from './clock.ts';
 export { Deadline } from './deadline.ts';
-export type { DeadlineTiming } from './deadline.ts';
 export { TOO_DEEP_PLACEHOLDER, isRecord, parseBoundedJson, spanValueOfJsonText } from './json.ts';
 export type { BoundedJson } from './json.ts';
 export { JsonDepthError, MAX_JSON_DEPTH, checkJsonDepth, parseOutsideJson } from './json-depth.ts';
@@ -84,7 +83,7 @@ export { systemRandom } from './system-random.ts';
 export { nodeDescriptorWriter, nodeDescriptorWriterSync, nodeFileSystem, nodeFileSystemSync } from './node-file-system.ts';
 export type { AccessCheck, DirectoryReader, FileSystem, FileSystemSync, RemoveOptions } from './node-file-system.ts';
 export { GroupNotStoppedError, forceKillGroup, groupAlive, groupTerminationBoundMs, realGroupTiming, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from './process-group.ts';
-export type { ForceKillGroupOptions, GroupTiming, ProcessSignalSender, TerminateGroupOptions, TerminateOutcome } from './process-group.ts';
+export type { ForceKillGroupOptions, ProcessSignalSender, TerminateGroupOptions, TerminateOutcome } from './process-group.ts';
 export { procGroupMembers } from './platform/group-members.ts';
 export type { GroupMember, GroupMembersReader, MemberStat } from './platform/group-members.ts';
 export {

@@ -1,6 +1,6 @@
 import http from 'node:http';
 import type { AddressInfo, Socket } from 'node:net';
-import type { DeadlineTiming } from './deadline.ts';
+import type { Timing } from './timing.ts';
 import { OAuthAuthorizationError } from './oauth-authorization-error.ts';
 
 export const LOOPBACK_REDIRECT_HOST = '127.0.0.1';
@@ -11,7 +11,7 @@ export type LoopbackRedirect = {
   close(): Promise<void>;
 };
 
-export type LoopbackRedirectOptions = { port: number; path: string; timers: Pick<DeadlineTiming, 'setTimeout' | 'clearTimeout'> };
+export type LoopbackRedirectOptions = { port: number; path: string; timers: Pick<Timing, 'setTimeout' | 'clearTimeout'> };
 
 const COMPLETION_PAGE = '<!doctype html><title>MomongaCode</title><p>Authorization finished. You can close this window.</p>';
 

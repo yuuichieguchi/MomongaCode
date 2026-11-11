@@ -695,7 +695,7 @@ class ManagedConnection implements McpServerConnection {
         baseEnv,
         ...(markers === undefined ? {} : { markers }),
         ...(closeGraceMs === undefined ? {} : { closeGraceMs }),
-        timing: { now: () => this.options.clock.now(), setTimeout: (callback, ms) => this.timers.setTimeout(callback, ms), clearTimeout: (handle) => this.timers.clearTimeout(handle) },
+        timing: { now: () => this.options.clock.now(), monotonicMs: () => this.options.clock.now(), setTimeout: (callback, ms) => this.timers.setTimeout(callback, ms), clearTimeout: (handle) => this.timers.clearTimeout(handle) },
       });
       return { transport: Object.assign(transport, { terminateSession: () => Promise.resolve(), toolCallsDelivered: () => 0 }), guarded: undefined };
     }

@@ -198,7 +198,6 @@ const NAMED_ONLY_BY_TESTS: readonly string[] = [
   'probeRemovesOpenFiles',
   'productSchemas',
   'readGenerationRole',
-  'realGroupTiming',
   'removeFilesThenRelease',
   'requirementOfStop',
   'resolveCanonicalPath',

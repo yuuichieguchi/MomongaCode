@@ -66,6 +66,8 @@ export type { RecordedRun } from './run-event-fixtures.ts';
 export { HOLD_UNTIL_SIGNALLED, HOLD_UNTIL_SIGNALLED_ARGV, drivenReapTiming, fakeReapTiming, pacedReapTiming } from './fake-reap-timing.ts';
 export type { PacedReapTiming } from './fake-reap-timing.ts';
 export { createFakeTimers } from './fake-timers.ts';
+export { createSteppingTiming } from './stepping-timing.ts';
+export type { SteppingTiming } from './stepping-timing.ts';
 export { DEFAULT_DRIVE_MAX_STEPS, driveFakeTime } from './drive-fake-time.ts';
 export type { DriveFakeTimeOptions } from './drive-fake-time.ts';
 export type { FakeTimers, PendingTimer } from './fake-timers.ts';

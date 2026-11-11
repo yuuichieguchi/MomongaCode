@@ -1,5 +1,5 @@
 import { realGroupTiming, waitForGroupGone } from '@momonga/foundation';
-import type { GroupTiming, ProcessGroupPort } from '@momonga/foundation';
+import type { ProcessGroupPort, Timing } from '@momonga/foundation';
 import type { ManifestEntry, Tier, TlcRun } from './manifest-reader.ts';
 import { RAN_REASONS, RECORD_FORMAT, keyOf, keyPartsOf, refusalOf, sealedRecord } from './reuse.ts';
 import type { JavaIdentity, RanReason, ResultStore, StoredFacts } from './reuse.ts';
@@ -18,7 +18,7 @@ export type CheckRequest = {
   limitMs: number;
   now: () => Date;
   groupPort?: ProcessGroupPort;
-  timing?: GroupTiming;
+  timing?: Timing;
 };
 
 export type CheckOutcome =
@@ -32,7 +32,7 @@ type FinishedRun = { readonly run: TlcRun; readonly problems: readonly string[] 
 const runAndJudge = async (request: CheckRequest, args: readonly string[]): Promise<FinishedRun> => {
   const { entry } = request;
   const timing = request.timing ?? realGroupTiming;
-  const deadline = timing.now() + request.limitMs;
+  const deadline = timing.monotonicMs() + request.limitMs;
   const run = await runTlc({ script: request.script, config: entry.config, args, budgetCpuSeconds: entry.budgetCpuSeconds });
   const groupGone = await waitForGroupGone(run.pid, deadline, request.groupPort, timing);
   return { run, problems: [...verdictProblems(entry, run), ...(groupGone ? [] : [`${entry.config}: process group ${run.pid} still has members after the run`])] };
