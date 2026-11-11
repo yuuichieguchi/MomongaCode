@@ -35,7 +35,7 @@ const setup = (context: Parameters<typeof withTempDir>[0], frames: readonly RunE
 };
 
 const watch = (s: ReturnType<typeof setup>, format: OutputFormat, after: number | undefined) =>
-  watchRun(s.ports, s.paths, { client: s.client, runId: 'run-1', format, verbose: false, interrupt: new AbortController().signal, ...(after === undefined ? {} : { after }) });
+  watchRun(s.ports, s.paths, { client: s.client, runId: 'run-1', format, verbose: false, interrupt: new AbortController().signal, onInterrupt: 'cancel', ...(after === undefined ? {} : { after }) });
 
 describe('a stream client continues after the last event it wrote (16.7, red test 19)', () => {
   it('writes no line twice in the text format', async (context) => {
@@ -87,7 +87,7 @@ describe('the quiet point and the record of a stream client (16.5, 16.7, O4)', (
         if (surface !== undefined) quietAtCheck.push(surface.quiet());
       },
     };
-    const watching = watchRun(s.ports, s.paths, { client: s.client, runId: 'run-1', format: 'stream-json', verbose: true, interrupt: new AbortController().signal, move: { mover, kind: 'headless', recordFile: (session) => `/run/handover/${session}.json` } });
+    const watching = watchRun(s.ports, s.paths, { client: s.client, runId: 'run-1', format: 'stream-json', verbose: true, interrupt: new AbortController().signal, onInterrupt: 'cancel', move: { mover, kind: 'headless', recordFile: (session) => `/run/handover/${session}.json` } });
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(quietAtCheck).toEqual([true, true, true, false, true]);
     const surface = surfaces[0];

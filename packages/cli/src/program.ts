@@ -1,5 +1,5 @@
 import { Command, CommanderError, InvalidArgumentError, Option } from 'commander';
-import { EXIT_FAILURE, EXIT_OK, EXIT_USAGE, HELPER_COMMAND, currentSocketResolver } from '@momonga/foundation';
+import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE, HELPER_COMMAND, currentSocketResolver } from '@momonga/foundation';
 import type { EntryIo } from '@momonga/foundation';
 import { PERMISSION_MODES, TRACE_CONTENT_PAGE_OPTION } from '@momonga/protocol';
 import type { Mandate, PermissionMode } from '@momonga/protocol';
@@ -108,8 +108,17 @@ const returnInsteadOfExit = (command: Command): void => {
   for (const sub of command.commands) returnInsteadOfExit(sub);
 };
 
-export const exitOfFailure = (error: unknown, stderr: { write(text: string): unknown }): number => {
+const isInterruption = (error: unknown, interrupt: AbortSignal | undefined): boolean => {
+  if (interrupt?.aborted !== true) return false;
+  for (let current = error; current !== undefined && current !== null; current = current instanceof Error ? current.cause : undefined) {
+    if (current === interrupt.reason) return true;
+  }
+  return false;
+};
+
+export const exitOfFailure = (error: unknown, stderr: { write(text: string): unknown }, interrupt?: AbortSignal): number => {
   if (error instanceof CommanderError) return error.exitCode === EXIT_OK ? EXIT_OK : EXIT_USAGE;
+  if (isInterruption(error, interrupt)) return EXIT_INTERRUPTED;
   stderr.write(`momonga: ${describeFailure(error)}\n`);
   return error instanceof UsageError ? EXIT_USAGE : EXIT_FAILURE;
 };

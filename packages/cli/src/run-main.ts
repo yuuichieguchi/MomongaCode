@@ -18,7 +18,7 @@ const registeredHelpers = async (): Promise<ExecutableHelpers> => (await import(
 
 export const runMain = async (version: string, overrides: Partial<CliPorts> = {}, helpers: () => Promise<ExecutableHelpers> = registeredHelpers): Promise<void> => {
   const interrupt = new AbortController();
-  process.once('SIGINT', () => interrupt.abort());
+  process.on('SIGINT', () => interrupt.abort());
 
   try {
     const ports: CliPorts = { ...nodePorts(version, interrupt.signal), ...overrides };
@@ -40,6 +40,6 @@ export const runMain = async (version: string, overrides: Partial<CliPorts> = {}
     program.hook('preAction', () => provideEmbeddedWindowsKeeper(ports));
     await program.parseAsync(helperCall === undefined ? given : [HELPER_COMMAND], { from: 'user' });
   } catch (error) {
-    process.exitCode = exitOfFailure(error, terminalSink(() => process.stderr));
+    process.exitCode = exitOfFailure(error, terminalSink(() => process.stderr), interrupt.signal);
   }
 };

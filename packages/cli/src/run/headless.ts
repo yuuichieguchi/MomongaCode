@@ -1,6 +1,6 @@
 import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_WAITING_FOR_APPROVAL, isRecord } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { TARGET_NOT_READY, agentReadiness, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
+import { TARGET_NOT_READY, WORDS, agentReadiness, attachRunCommand, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
 import type { BudgetExhausted, Mandate, MomongaModelEntry, PermissionMode, PlanAccountRef, PublicRunEvent, RunReport, Surface, UnknownEffectCall } from '@momonga/protocol';
 import { noTargetLines } from '../readiness.ts';
 import { RunApiError } from '../client/runtime-client.ts';
@@ -361,8 +361,11 @@ export type WatchOptions = {
   leaveWhenQuiescent?: boolean;
   after?: number;
   interrupt: AbortSignal;
+  onInterrupt: 'cancel' | 'detach';
   move?: StreamMove;
 };
+
+type Leaving = 'quiescent' | 'detached';
 
 export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: WatchOptions): Promise<number> => {
   const { client, runId } = options;
@@ -372,8 +375,15 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
       ports.stderr.write(noteText([`momonga: cancel failed: ${error instanceof Error ? error.message : String(error)}`]));
     });
   };
-  if (options.interrupt.aborted) cancelOnInterrupt();
-  else options.interrupt.addEventListener('abort', cancelOnInterrupt, { once: true });
+  const leave = new AbortController();
+  let leaving: Leaving | undefined;
+  const leaveAs = (reason: Leaving): void => {
+    leaving ??= reason;
+    leave.abort();
+  };
+  const onInterrupt = options.onInterrupt === 'cancel' ? cancelOnInterrupt : (): void => leaveAs('detached');
+  if (options.interrupt.aborted) onInterrupt();
+  else options.interrupt.addEventListener('abort', onInterrupt, { once: true });
   let cursor = options.after ?? 0;
   let session: string | undefined;
   const { move } = options;
@@ -397,13 +407,12 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
   const checkMove = (): void => {
     void move?.mover.check();
   };
-  const quiescent = new AbortController();
-  if (options.leaveWhenQuiescent === true) sink.onQuiescent(() => quiescent.abort());
+  if (options.leaveWhenQuiescent === true) sink.onQuiescent(() => leaveAs('quiescent'));
   let run: RunView;
   try {
     run = await followRun({
       client,
-      signal: quiescent.signal,
+      signal: leave.signal,
       clock: ports.clock,
       random: ports.random,
       runId,
@@ -426,16 +435,20 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
       onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the event stream, reconnecting (attempt ${attempt + 1})\n`),
     });
   } catch (error) {
-    if (!quiescent.signal.aborted) throw error;
-    options.interrupt.removeEventListener('abort', cancelOnInterrupt);
-    const waiting = await client.getRun(runId);
-    if (options.format !== 'text') ports.stdout.write(`${JSON.stringify(resultOf(waiting, sink.finalText()))}\n`);
+    if (leaving === undefined) throw error;
+    options.interrupt.removeEventListener('abort', onInterrupt);
+    const left = await client.getRun(runId);
+    if (options.format !== 'text') ports.stdout.write(`${JSON.stringify(resultOf(left, sink.finalText()))}\n`);
+    if (leaving === 'detached') {
+      ports.stderr.write(noteText([`momonga: detached from ${WORDS.run} ${runId}, which is ${left.status} and stays in the ${WORDS.daemon}; ${attachRunCommand(runId)} follows it again, and ${WORDS.command} cancel ${runId} ends it`]));
+      return EXIT_INTERRUPTED;
+    }
     ports.stderr.write(noteText([`momonga: run ${runId} stays in the daemon; it resumes when you answer (momonga approve <id> allow_once), and momonga attach ${runId} follows it`]));
     return EXIT_WAITING_FOR_APPROVAL;
   } finally {
     detach?.();
   }
-  options.interrupt.removeEventListener('abort', cancelOnInterrupt);
+  options.interrupt.removeEventListener('abort', onInterrupt);
   const text = sink.finalText();
   if (options.format === 'text') {
     if (text !== '' && !text.endsWith('\n')) ports.stdout.write('\n');
@@ -476,7 +489,7 @@ export const resumeStream = async (ports: CliPorts, paths: MomongaPaths, adopted
     await client.getRun(record.runId);
     ports.handover?.removeRecord(file);
     const move = streamMoveOf(ports, paths, record.kind);
-    return await watchRun(ports, paths, { client, runId: record.runId, format: record.output, verbose: record.verbose, after: record.lastSeq[record.runId] ?? 0, interrupt, ...(move === undefined ? {} : { move }) });
+    return await watchRun(ports, paths, { client, runId: record.runId, format: record.output, verbose: record.verbose, after: record.lastSeq[record.runId] ?? 0, interrupt, onInterrupt: record.kind === 'attach' ? 'detach' : 'cancel', ...(move === undefined ? {} : { move }) });
   } finally {
     await client.close();
   }
@@ -543,7 +556,7 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
         `${JSON.stringify({ type: 'system', subtype: 'init', session_id: sessionId, run_id: started.id, cwd: ports.cwd, permission_mode: session.created.session.permissionMode, stripped_env_keys: session.created.strippedEnvKeys })}\n`,
       );
     }
-    return await watchRun(ports, paths, { client: session.client, runId: started.id, format: options.format, verbose: options.verbose, leaveWhenQuiescent: options.mandate?.hold?.onQuiescent !== 'wait', interrupt: options.interrupt, ...(move === undefined ? {} : { move }) });
+    return await watchRun(ports, paths, { client: session.client, runId: started.id, format: options.format, verbose: options.verbose, leaveWhenQuiescent: options.mandate?.hold?.onQuiescent !== 'wait', interrupt: options.interrupt, onInterrupt: 'cancel', ...(move === undefined ? {} : { move }) });
   } finally {
     await session.close();
   }

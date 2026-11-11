@@ -34,6 +34,7 @@ export type EvalPorts = {
   open(golden: GoldenCase, runIndex: number): Promise<EvalRunScope>;
   model?: string;
   onTranscript?(transcript: RecordedRun): Promise<void>;
+  signal?: AbortSignal;
 };
 
 export class EvalError extends Error {
@@ -51,7 +52,22 @@ const optionIdFor = (event: Extract<PublicRunEvent, { type: 'tool.permission.req
 
 export type Driven = { events: PublicRunEvent[]; children: TranscriptChild[] };
 
-export const driveRun = async (api: Pick<EvalRunApi, 'events' | 'resolveApproval' | 'cancelRun'>, golden: Pick<GoldenCase, 'id' | 'onAsk' | 'mandate'>, rootRunId: string): Promise<Driven> => {
+const INTERRUPTED = Symbol('interrupted');
+
+const interruptionOf = (signal: AbortSignal | undefined): { arrived: Promise<typeof INTERRUPTED>; forget(): void } => {
+  const arrived = Promise.withResolvers<typeof INTERRUPTED>();
+  const arrive = (): void => arrived.resolve(INTERRUPTED);
+  if (signal?.aborted === true) arrive();
+  else signal?.addEventListener('abort', arrive, { once: true });
+  return { arrived: arrived.promise, forget: () => signal?.removeEventListener('abort', arrive) };
+};
+
+export const driveRun = async (
+  api: Pick<EvalRunApi, 'events' | 'resolveApproval' | 'cancelRun'>,
+  golden: Pick<GoldenCase, 'id' | 'onAsk' | 'mandate'>,
+  rootRunId: string,
+  signal?: AbortSignal,
+): Promise<Driven> => {
   const events: PublicRunEvent[] = [];
   const children: TranscriptChild[] = [];
   const followed = new Set<string>([rootRunId]);
@@ -103,8 +119,14 @@ export const driveRun = async (api: Pick<EvalRunApi, 'events' | 'resolveApproval
     for (let index = 0; index < following.length; index += 1) await following[index];
   };
   const everyRunEnded = followedToTheEnd();
-  await Promise.race([leftHeld.promise, everyRunEnded]);
+  const interruption = interruptionOf(signal);
+  const outcome = await Promise.race([leftHeld.promise, everyRunEnded, interruption.arrived]);
+  interruption.forget();
   ended = true;
+  if (outcome === INTERRUPTED) {
+    await api.cancelRun(rootRunId);
+    signal?.throwIfAborted();
+  }
   const [first, ...rest] = failures;
   if (rest.length > 0) {
     throw new EvalError(`case ${golden.id}: ${failures.length} failures: ${failures.map((failure) => (failure instanceof Error ? failure.message : String(failure))).join('; ')}`, {
@@ -130,7 +152,8 @@ const runOnce = async (ports: EvalPorts, golden: GoldenCase, runIndex: number): 
       ...(golden.limits === undefined ? {} : { limits: golden.limits }),
       ...(golden.completion === undefined && golden.mandate === undefined ? {} : { mandate: { ...golden.mandate, ...(golden.completion === undefined ? {} : { completion: golden.completion }) } }),
     });
-    const { events, children } = await driveRun(scope.api, golden, run.id);
+    const { events, children } = await driveRun(scope.api, golden, run.id, ports.signal);
+    ports.signal?.throwIfAborted();
     const oracle =
       golden.oracle === undefined || scope.oracle === undefined
         ? undefined
@@ -166,7 +189,10 @@ export const runDataset = async (dataset: GoldenDataset, ports: EvalPorts): Prom
   const results: CaseResult[] = [];
   for (const golden of dataset.cases) {
     const transcripts: RecordedRun[] = [];
-    for (let runIndex = 0; runIndex < golden.runs; runIndex += 1) transcripts.push(await runOnce(ports, golden, runIndex));
+    for (let runIndex = 0; runIndex < golden.runs; runIndex += 1) {
+      ports.signal?.throwIfAborted();
+      transcripts.push(await runOnce(ports, golden, runIndex));
+    }
     results.push(resultOf(golden, transcripts));
   }
   return buildReport(dataset, results);

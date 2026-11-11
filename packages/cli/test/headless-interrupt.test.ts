@@ -50,7 +50,7 @@ describe('an interrupt that arrives before the run is followed', () => {
     const interrupt = new AbortController();
     interrupt.abort();
 
-    const code = await watchRun(ports, paths, { client, runId: 'run-1', format: 'text', verbose: false, interrupt: interrupt.signal });
+    const code = await watchRun(ports, paths, { client, runId: 'run-1', format: 'text', verbose: false, interrupt: interrupt.signal, onInterrupt: 'cancel' });
 
     expect(cancelled).toEqual(['run-1']);
     expect(code).toBe(EXIT_INTERRUPTED);

@@ -119,6 +119,7 @@ export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoMode
         return { api: home.api, workspace: { cwd: home.cwd, env: home.env }, close: home.close };
       },
       onTranscript: async (run) => progress(run.caseId, run.runIndex),
+      signal,
     });
     const record = autoGateRecordOf(report, { key, agentModel: agent, recordedAt: new Date(ports.now()).toISOString(), version: ports.version });
     ports.write(`${formatReport(report)}\n`);
