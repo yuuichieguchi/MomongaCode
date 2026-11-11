@@ -528,7 +528,7 @@ const assertPlanAdapters = (value: unknown, source: string): void => {
     if (typeof profileId !== 'string' || !Object.hasOwn(PLAN_PROFILES, profileId)) return;
     const required = (PLAN_PROFILES[profileId] as NonNullable<(typeof PLAN_PROFILES)[string]>).adapter;
     if ((connection as Record<string, unknown>)['adapter'] !== required) {
-      throw new ConfigError(invalidSettingsMessage(source, `/models/connections/${index}/adapter`, `the plan profile ${profileId} requires adapter ${required}`));
+      throw new ConfigError(invalidSettingsMessage(source, `/models/connections/${index}/adapter`, `the plan ${profileId} requires adapter ${required}`));
     }
   });
 };
