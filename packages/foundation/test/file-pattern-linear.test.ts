@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { fileMatcherOf, parseFilePattern, testFileMatcher } from '@momonga/foundation';
-import type { FilePatternContext, MatcherForm } from '@momonga/foundation';
+import type { FilePatternContext } from '@momonga/foundation';
+
+type MatcherForm = Parameters<typeof fileMatcherOf>[2];
 
 const context: FilePatternContext = { roots: ['/w'], home: '/h', settingsRoot: '/s', effect: 'deny' };
 

@@ -200,7 +200,7 @@ const recordToolContent = (spans: ReadonlyMap<string, TraceSpan>, calls: readonl
   const call = calls.find((candidate) => candidate.callId === outcome.callId);
   if (call === undefined) return;
   spans.get(outcome.callId)?.recordToolContent({
-    arguments: typeof call.arguments === 'string' ? spanValueOfJsonText(call.arguments) : call.arguments,
+    arguments: typeof call.arguments === 'string' ? spanValueOfJsonText(call.arguments, 'arguments') : call.arguments,
     result: outcome.result.output,
   });
 };
