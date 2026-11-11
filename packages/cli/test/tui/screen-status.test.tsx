@@ -138,7 +138,7 @@ describe('a state that ends is not an entry (6.5)', () => {
 
 describe('the start screen without a model (6.4)', () => {
   it('says that no model is connected on its model line and keeps the footer wording', async () => {
-    const { app } = await startPlan({ models: [], accounts: [account({ state: 'needs_sign_in', active: false, pinnedBy: [] })] }, { startup: { version: '1.2.3', home: '/home/none', color: false } }, { columns: 100, rows: 16 });
+    const { app } = await startPlan({ models: [], accounts: [account({ state: 'needs_sign_in', active: false, pinnedBy: [] })] }, { startup: { version: '1.2.3', home: '/home/none' } }, { columns: 100, rows: 16 });
     const screen = await untilFrame(app, 'model: not connected  (use /login)');
     expect(screen).toContain('MomongaCode v1.2.3');
     expect(screen).toContain('no model connected · /login');

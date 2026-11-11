@@ -12,6 +12,8 @@ import { HELD_PANEL_LINE } from '../transcript.ts';
 import type { PendingApproval, PendingElicitation, ToolEntry } from '../transcript.ts';
 import { currentA11y } from './a11y.ts';
 import { EditorView } from './input-box.tsx';
+import { styleOf } from './theme.ts';
+import type { StyleToken } from './theme.ts';
 import { inertText } from './wrap.ts';
 
 export const TRUST_CHOICES = [
@@ -35,11 +37,11 @@ export const trustSpec = (path: string): SelectSpec => ({
 });
 
 const DIFF_STYLE = {
-  added: { color: 'green', first: '+ ' },
-  removed: { color: 'red', first: '- ' },
-  header: { color: 'cyan', first: '' },
+  added: { token: 'diff.added', first: '+ ' },
+  removed: { token: 'diff.removed', first: '- ' },
+  header: { token: 'accent', first: '' },
   context: { first: '  ' },
-} as const satisfies Record<DiffLine['kind'], { color?: string; first: string }>;
+} as const satisfies Record<DiffLine['kind'], { token?: StyleToken; first: string }>;
 
 const HUNK_LINE_KINDS: Readonly<Record<string, DiffLine['kind']>> = { '-': 'removed', '+': 'added', ' ': 'context' };
 
@@ -110,7 +112,7 @@ export const elicitationSpec = (elicitation: PendingElicitation, title: string, 
   const choices = decisionChoices(flow);
   return {
     title: elicitationTitle(elicitation, title, waiting),
-    lines: [request.message, ...(request.mode === 'url' ? [`URL: ${request.url}`] : []), ...(flow.error === undefined ? [] : [{ text: flow.error, color: 'red' }])],
+    lines: [request.message, ...(request.mode === 'url' ? [`URL: ${request.url}`] : []), ...(flow.error === undefined ? [] : [{ text: flow.error, token: 'error' as const }])],
     rows: choices.map((choice) => ({ label: choice.label, ...(choice.decision === 'accept' && request.mode === 'url' ? { opensBrowser: true } : {}) })),
     initial: 0,
     decideOn: 'immediate',
@@ -145,7 +147,7 @@ export function ElicitationFields({ elicitation, title, editor, columns, waiting
             ))}
           </Box>
         )}
-        {flow.error === undefined ? null : <Text color="red">{inertText(flow.error)}</Text>}
+        {flow.error === undefined ? null : <Text {...styleOf(['error'])}>{inertText(flow.error)}</Text>}
         <Text dimColor>{settling ? ' ' : fieldHint(keys)}</Text>
       </Box>
       <EditorView editor={editor} columns={columns} rows={undefined} hidden={false} framed={!currentA11y().screenReader} />

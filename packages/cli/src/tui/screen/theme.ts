@@ -106,6 +106,12 @@ export const noColorAsked = (env: Readonly<Record<string, string | undefined>>):
   return value !== undefined && value !== '';
 };
 
+export type ColourSwitch = { colourOff(): void };
+
+export const colourOffWhenAsked = (env: Readonly<Record<string, string | undefined>>, terminal: ColourSwitch): void => {
+  if (noColorAsked(env)) terminal.colourOff();
+};
+
 const COLOR_DEPTH_LEVELS: ReadonlyMap<number, ColorLevel> = new Map([
   [1, 0],
   [4, 1],

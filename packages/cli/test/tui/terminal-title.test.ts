@@ -38,11 +38,15 @@ const fakes = () => {
         processListeners.get(event)?.delete(listener);
       },
       kill: () => undefined,
+      deliverable: () => true,
     },
     timers: manualClock().timers,
     screen: 'scrollback',
     screenSetByUser: false,
     mouse: false,
+    onFailure: (error) => {
+      throw error;
+    },
     onEvents: () => undefined,
   });
   return {

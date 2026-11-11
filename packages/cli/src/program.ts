@@ -1,3 +1,4 @@
+import { colourOffWhenAsked } from './tui/screen/theme.ts';
 import { Command, CommanderError, InvalidArgumentError, Option } from 'commander';
 import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE, HELPER_COMMAND, SANDBOX_NETWORK_SETTINGS } from '@momonga/foundation';
 import type { EntryIo, SandboxNetworkSetting } from '@momonga/foundation';
@@ -211,6 +212,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
         const read = prompt === undefined ? '' : ` "${prompt}" is not the name of a command and was read as its first prompt;`;
         throw new Error(`the interactive session needs a terminal;${read} pass --print <prompt> to run without one`);
       }
+      colourOffWhenAsked(ports.env, ports.terminal);
       const { runInteractive } = await import('./tui/run-interactive.tsx');
       deps.complete(await runInteractive(ports, await pathsOf(ports), ports.terminal, { ...(prompt === undefined ? {} : { prompt }), ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...bounds, ...session, ...(reopen === undefined ? {} : { reopen }), screenReader: options.screenReader === true }, await deps.update(), createShellPort(given)));
     });

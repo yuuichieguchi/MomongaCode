@@ -39,7 +39,7 @@ const startOn = async (backgroundColor: string | undefined, colour: ColourHost |
     return shown as TerminalState;
   };
   const app = renderObservable(
-    <App backend={backend} terminal={{ ...terminal, state }} initialMode={undefined} now={Date.now} timers={systemTiming} startup={{ version: '1.2.3', home: '/home/none', color: true }} {...(colour === undefined ? {} : { colour })} onExit={() => undefined} />,
+    <App backend={backend} terminal={{ ...terminal, state }} initialMode={undefined} now={Date.now} timers={systemTiming} startup={{ version: '1.2.3', home: '/home/none' }} {...(colour === undefined ? {} : { colour })} onExit={() => undefined} />,
   );
   await untilFrame(app, 'mode: manual');
   await untilFrame(app, NOTICE);

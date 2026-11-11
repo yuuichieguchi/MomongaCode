@@ -5,11 +5,12 @@ import type { ActionId, KeyContext, KeyTable } from './keys/table.ts';
 import { currentA11y } from './screen/a11y.ts';
 import type { KeyEvent } from './terminal/events.ts';
 import { styleOf as styleOfTokens } from './screen/theme.ts';
+import type { StyleToken } from './screen/theme.ts';
 import { withoutTabs, wrapLine } from './screen/wrap.ts';
 
 export type SelectRow = { readonly label: string; readonly disabled?: boolean; readonly separator?: boolean; readonly opensBrowser?: boolean };
 
-export type SelectLine = string | { readonly text: string; readonly color?: string; readonly dim?: boolean; readonly bold?: boolean; readonly first?: string };
+export type SelectLine = string | { readonly text: string; readonly token?: StyleToken; readonly dim?: boolean; readonly bold?: boolean; readonly first?: string };
 
 export type SelectSpec = {
   readonly title?: string;
@@ -41,7 +42,7 @@ export type SelectStep = { readonly state: SelectState; readonly outcome?: Selec
 
 export type SelectFrame = { readonly width: number; readonly rows: number; readonly border: boolean };
 
-export type TextRow = { readonly text: string; readonly color?: string; readonly dim?: boolean; readonly bold?: boolean };
+export type TextRow = { readonly text: string; readonly token?: StyleToken; readonly dim?: boolean; readonly bold?: boolean };
 
 export type SelectLayout = {
   readonly text: readonly TextRow[];
@@ -268,8 +269,8 @@ export const detailCapacity = (frame: SelectFrame): number => Math.max(1, frame.
 
 export const detailTop = (text: readonly TextRow[], frame: SelectFrame, top: number): number => Math.max(0, Math.min(top, text.length - detailCapacity(frame)));
 
-const styleOf = (row: TextRow): { color?: string; dimColor?: boolean; bold?: boolean } => ({
-  ...(row.color === undefined ? {} : { color: row.color }),
+const styleOf = (row: TextRow) => ({
+  ...(row.token === undefined ? {} : styleOfTokens([row.token])),
   ...(row.dim === true ? { dimColor: true } : {}),
   ...(row.bold === true ? { bold: true } : {}),
 });

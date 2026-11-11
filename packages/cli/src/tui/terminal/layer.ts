@@ -30,11 +30,18 @@ export type ProcessSignal = (typeof EXIT_SIGNALS)[number] | 'SIGSTOP';
 
 export type ProcessEvent = (typeof EXIT_SIGNALS)[number] | 'SIGCONT' | 'exit' | 'uncaughtExceptionMonitor';
 
+export type DeliverableSignal = ProcessSignal | 'SIGCONT';
+
 export type ProcessPort = {
   on(event: ProcessEvent, listener: () => void): void;
   off(event: ProcessEvent, listener: () => void): void;
   kill(signal: ProcessSignal): void;
+  deliverable(signal: DeliverableSignal): boolean;
 };
+
+export type InkSuspension = { resume(): Promise<void> };
+
+export type InkTerminal = { suspendTerminal(): Promise<InkSuspension> };
 
 export type ScreenRequest = { type: 'notice'; text: string } | { type: 'redraw' };
 
@@ -59,6 +66,7 @@ export type TerminalLayerOptions = {
   screenSetByUser: boolean;
   mouse: boolean;
   onEvents(events: readonly TerminalEvent[]): void;
+  onFailure(error: unknown): void;
 };
 
 export type TerminalLayer = {
@@ -69,7 +77,8 @@ export type TerminalLayer = {
   close(): void;
   release(): void;
   suspend(): void;
-  leaveForProgram(): () => void;
+  leaveForProgram(): () => Promise<void>;
+  attachInk(ink: InkTerminal): () => void;
   enable(mode: TerminalModeName): void;
   disable(mode: TerminalModeName): void;
   setScreen(screen: ScreenMode): void;
@@ -148,7 +157,15 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     publish();
   };
 
-  const signalHandlers = EXIT_SIGNALS.map((signal) => ({
+  let ink: InkTerminal | undefined;
+
+  const holdInk = (): Promise<InkSuspension> | undefined => ink?.suspendTerminal();
+
+  const releaseInk = async (held: Promise<InkSuspension> | undefined): Promise<void> => {
+    if (held !== undefined) await (await held).resume();
+  };
+
+  const signalHandlers = EXIT_SIGNALS.filter((signal) => host.deliverable(signal)).map((signal) => ({
     signal,
     handler: (): void => {
       close();
@@ -164,20 +181,25 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     request({ type: 'redraw' });
   };
 
-  const resume = (saved: readonly TerminalModeName[]) => {
+  const resume = (saved: readonly TerminalModeName[], held: Promise<InkSuspension> | undefined) => {
     const onContinue = (): void => {
       host.off('SIGCONT', onContinue);
       reenter(saved);
+      releaseInk(held).catch(options.onFailure);
     };
     return onContinue;
   };
 
   let pendingContinue: (() => void) | undefined;
 
+  const canStop = (): boolean => host.deliverable('SIGSTOP') && host.deliverable('SIGCONT');
+
   const suspend = (): void => {
+    if (!canStop()) return;
+    const held = holdInk();
     const saved = inTableOrder(enabled);
     restore();
-    pendingContinue = resume(saved);
+    pendingContinue = resume(saved, held);
     host.on('SIGCONT', pendingContinue);
     host.kill('SIGSTOP');
   };
@@ -252,17 +274,20 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     publish();
   };
 
-  const leaveForProgram = (): (() => void) => {
+  const leaveForProgram = (): (() => Promise<void>) => {
+    const held = holdInk();
     const saved = inTableOrder(enabled);
     restore();
     stopKeySettle();
     input.off('data', onData);
     input.pause();
-    return () => {
-      if (!hooked) return;
-      input.on('data', onData);
-      input.resume();
-      reenter(saved);
+    return async () => {
+      if (hooked) {
+        input.on('data', onData);
+        input.resume();
+        reenter(saved);
+      }
+      await releaseInk(held);
     };
   };
 
@@ -306,7 +331,16 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     publish();
   };
 
+  let releasedInk: Promise<InkSuspension> | undefined;
+
+  const release = (): void => {
+    releasedInk = holdInk();
+    unhook();
+  };
+
   const adopt = (terminal: HandoverTerminal, state: NegotiationState): void => {
+    const held = releasedInk;
+    releasedInk = undefined;
     hook();
     setRaw(true);
     screen = terminal.screen;
@@ -314,6 +348,7 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     mouseAnswered = enabled.has('mouse');
     negotiation = negotiationFrom(state);
     publish();
+    releaseInk(held).catch(options.onFailure);
   };
 
   return {
@@ -322,9 +357,15 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     leaveEveryMode: () => output.writeSync(LEAVE_EVERY_MODE),
     restore,
     close,
-    release: unhook,
+    release,
     suspend,
     leaveForProgram,
+    attachInk: (next) => {
+      ink = next;
+      return () => {
+        if (ink === next) ink = undefined;
+      };
+    },
     enable: (mode) => {
       enter([mode]);
       publish();
