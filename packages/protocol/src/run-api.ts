@@ -1442,6 +1442,7 @@ export const RUN_API_SCHEMAS = {
         bypassAllowed: boolean,
         sandboxNetwork: enumOf(SESSION_SANDBOX_NETWORKS),
         mcpServers: sessionMcpServers,
+        terminalUi: boolean,
       },
       ['cwd', 'env'],
     ),

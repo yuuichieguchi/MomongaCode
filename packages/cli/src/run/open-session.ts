@@ -87,6 +87,7 @@ export const openSession = async (ports: DaemonPorts & Pick<CliPorts, 'cwd' | 's
     const created = await client.createSession({
       cwd: ports.cwd,
       env: await environmentSnapshot(ports, options.signal ?? ports.interrupt),
+      terminalUi: false,
       ...(options.permissionMode === undefined ? {} : { permissionMode: options.permissionMode }),
       ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
       ...(options.sandboxNetwork === undefined ? {} : { sandboxNetwork: options.sandboxNetwork }),
