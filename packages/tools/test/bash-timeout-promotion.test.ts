@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, pollUntil } from '@momonga/testkit';
 import type { Sandbox, SandboxExit, SandboxedProcess } from '@momonga/sandbox';
+import { systemRandom } from '@momonga/foundation';
 import { ToolExecutionError } from '@momonga/tools';
 import type { BackgroundJobAdopt, BackgroundJobs, ToolLimits } from '@momonga/tools';
 import type { ChildPorts } from '../src/ports.ts';
@@ -166,10 +167,14 @@ const adoptingJobs = (refusal?: string): { port: BackgroundJobs; adopted: Adopte
 
 const timedHost = (timers: ChildPorts) => ({ shellHost: { platform: process.platform, isExecutable: () => true, child: timers } });
 
+const NONCE = 'ab'.repeat(16);
+
+const fixedNonce = { ...systemRandom, hex: (bytes: number) => 'ab'.repeat(bytes) };
+
 const startBash = async (options: { limits?: ToolLimits; jobs?: BackgroundJobs; input?: Record<string, unknown>; deadlineMs?: number }) => {
   const timers = fakeTimers();
   const command = fakeCommand();
-  const tools = await makeBuiltins({ sandbox: command.sandbox, ...(options.jobs === undefined ? {} : { jobs: options.jobs }), executor: timedHost(timers.port) });
+  const tools = await makeBuiltins({ sandbox: command.sandbox, ...(options.jobs === undefined ? {} : { jobs: options.jobs }), executor: { ...timedHost(timers.port), random: fixedNonce } });
   const extra = { limits: options.limits ?? LIMITS, ...(options.deadlineMs === undefined ? {} : { deadlineAt: tools.clock.now() + options.deadlineMs }) };
   const running = tools.run('Bash', { command: 'long-command', ...options.input }, extra, 'allow_once');
   await pollUntil(command.spawned, { description: 'the command was spawned', boundMs: WAIT_BOUND_MS });
@@ -200,6 +205,21 @@ describe('a foreground Bash command that reaches its timeout', () => {
     adopted.stop.abort();
     expect(command.finished()).toMatchObject({ signal: 'SIGTERM' });
     await adopted.followDone;
+  });
+
+  it('keeps the working-directory record of the shell out of the job output', async () => {
+    const jobs = adoptingJobs();
+    const { timers, command, running } = await startBash({ jobs: jobs.port });
+    await pollUntil(() => armedMs(timers).includes(LIMITS.bash.defaultTimeoutMs), { description: 'the call timer is armed', boundMs: WAIT_BOUND_MS });
+    timers.fire(LIMITS.bash.defaultTimeoutMs);
+    resultOf(await running);
+    const [adopted] = jobs.adopted as [Adopted];
+    command.write('last line\n__MOMONGA_CW');
+    command.write(`D_${NONCE}__=/somewhere\n`);
+    await pollUntil(() => adopted.followed.join('').includes('last line'), { description: 'the job reads the last line', boundMs: WAIT_BOUND_MS });
+    command.finish({ code: 0, signal: null });
+    await adopted.followDone;
+    expect(adopted.followed.join('')).toBe('last line\n');
   });
 
   it('is killed when tools.bash.onTimeout is kill', async () => {

@@ -23,6 +23,49 @@ const CWD_NONCE_BYTES = 16;
 const trapScript = (nonce: string): string =>
   `trap 'status=$?; printf "\\n__MOMONGA_CWD_${nonce}__=%s\\n" "$(pwd -P)"; exit $status' EXIT`;
 
+const withoutCwdRecord = (nonce: string, sink: (chunk: Buffer) => void): { push(chunk: Buffer): void; flush(): void } => {
+  const record = Buffer.from(`__MOMONGA_CWD_${nonce}__=`);
+  let held = Buffer.alloc(0);
+  let dropping = false;
+  const heldFrom = (data: Buffer): number => {
+    for (let start = Math.max(0, data.length - record.length + 1); start < data.length; start += 1) {
+      if (record.subarray(0, data.length - start).equals(data.subarray(start))) return start;
+    }
+    return data.length;
+  };
+  const push = (chunk: Buffer): void => {
+    let data = Buffer.concat([held, chunk]);
+    held = Buffer.alloc(0);
+    for (;;) {
+      if (dropping) {
+        const end = data.indexOf(0x0a);
+        if (end === -1) return;
+        dropping = false;
+        data = data.subarray(end + 1);
+        continue;
+      }
+      const found = data.indexOf(record);
+      if (found !== -1) {
+        if (found > 0) sink(data.subarray(0, found));
+        dropping = true;
+        data = data.subarray(found + record.length);
+        continue;
+      }
+      const keep = heldFrom(data);
+      if (keep > 0) sink(data.subarray(0, keep));
+      held = Buffer.from(data.subarray(keep));
+      return;
+    }
+  };
+  return {
+    push,
+    flush: () => {
+      if (held.length > 0 && !dropping) sink(held);
+      held = Buffer.alloc(0);
+    },
+  };
+};
+
 const extractCwd = (output: string, nonce: string): { output: string; cwd: string | undefined } => {
   const prefix = `__MOMONGA_CWD_${nonce}__=`;
   const index = output.lastIndexOf(prefix);
@@ -285,8 +328,9 @@ export const bashTool = defineTool<BashInput>({
             output: {
               seen: Buffer.from(seen === '' ? '' : `${seen}\n`),
               follow: (sink) => {
-                forward = sink;
-                return pump.ended();
+                const filtered = withoutCwdRecord(nonce, sink);
+                forward = filtered.push;
+                return pump.ended().then(() => filtered.flush());
               },
             },
           });
