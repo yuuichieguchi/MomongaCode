@@ -33,7 +33,7 @@ import { blockedByHeldText, blockerOf, footprintOf } from './footprint.ts';
 import type { Footprint, HeldFootprint } from './footprint.ts';
 import { startsProcesses, ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
 import type { AnyTool, CallOutputFit, DisplayContext, GateFacts, OutputFit, SpawnMarker, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
-import { cleanFailureMessage } from '@momonga/foundation';
+import { cleanFailureMessage, groupPortOf } from '@momonga/foundation';
 import { toolRefusalKey, unavailable, validateToolInput } from './validate.ts';
 import type { ValidationResult } from './validate.ts';
 
@@ -535,6 +535,8 @@ const settleWithin = async (timers: ToolTimers, pending: Promise<unknown>, ms: n
   }
 };
 
+type StoredGroup = Pick<ToolIdempotencyRecord, 'pgid' | 'groupName'>;
+
 const NO_SANDBOX_REASON = 'no sandbox is available: file deny rules are checked on the command text only, so command execution requires approval';
 
 export const createToolExecutor = (options: ToolExecutorOptions): InspectableToolExecutor => {
@@ -560,6 +562,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     }
   };
   const activeKeys = new Map<string, number>();
+  const reapGroup = groupPortOf(options.reap?.groupPort, options.reap?.kill);
   const owners = options.owners ?? createMarkerOwners();
   const guard = createMarkerGuard({
     markerDir: options.processMarkerDir,
@@ -569,7 +572,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     killGraceMs: options.reap?.killGraceMs ?? ABANDON_KILL_GRACE_MS,
     timing: reapTiming,
     ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
-    ...(options.reap?.groupPort === undefined ? {} : { groupPort: options.reap.groupPort }),
+    groupPort: reapGroup,
     ...(options.reap?.inspector === undefined ? {} : { inspector: options.reap.inspector }),
     ...(options.reap?.uninspectable === undefined ? {} : { uninspectable: options.reap.uninspectable }),
   });
@@ -1038,7 +1041,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         onWarning: options.onWarning,
         ...(options.reap?.killGraceMs === undefined ? {} : { killGraceMs: options.reap.killGraceMs }),
         ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
-        ...(options.reap?.groupPort === undefined ? {} : { groupPort: options.reap.groupPort }),
+        groupPort: reapGroup,
         timing: reapTiming,
       });
       owners.remember(name, handle.mode);
@@ -1073,9 +1076,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       session: batch.session,
       attachProcess: (processInfo) => {
         processAttached = true;
-        if (!leaseLost() && !contextClosed) holding(ledger.attachProcess(key, processInfo));
+        const groupName = reapGroup.names?.nameOf(processInfo.pgid);
+        if (!leaseLost() && !contextClosed) holding(ledger.attachProcess(key, groupName === undefined ? processInfo : { ...processInfo, groupName }));
         if (callMarker === undefined) return Promise.resolve();
-        const recorded = recordMarkerGroup(attachingMarker, processInfo.pgid);
+        const recorded = recordMarkerGroup(attachingMarker, processInfo.pgid, { names: reapGroup.names });
         groupRecords.push(
           recorded.then(
             () => undefined,
@@ -1215,17 +1219,19 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     };
   };
 
-  const reapEarlierMarker = async (marker: string, key: string, pgid: number | undefined, signal: AbortSignal): Promise<boolean> => {
+  const reapEarlierMarker = async (marker: string, key: string, stored: StoredGroup, signal: AbortSignal): Promise<boolean> => {
     let reaped: ReapReport;
     try {
+      if (stored.pgid !== undefined && stored.groupName !== undefined) reapGroup.names?.recall(stored.pgid, stored.groupName);
       reaped = await reapMarkedProcessesWithReport({
         marker,
-        pgid,
+        pgid: stored.pgid,
         killGraceMs: options.reap?.killGraceMs ?? ABANDON_KILL_GRACE_MS,
         label: 'tool',
         onWarning: options.onWarning,
         timing: reapTiming,
         signal,
+        groupPort: reapGroup,
         ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
         ...(options.reap?.inspector === undefined ? {} : { inspector: options.reap.inspector }),
         ...(options.reap?.uninspectable === undefined ? {} : { uninspectable: options.reap.uninspectable }),
@@ -1249,12 +1255,12 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     return reaped.stopped;
   };
 
-  const reapEarlierAttempt = async (key: string, pgid: number | undefined, signal: AbortSignal): Promise<NonNullable<ReconcileContext['earlierAttempt']>> => {
-    let stopped = await reapEarlierMarker(path.join(options.processMarkerDir, key), key, pgid, signal);
+  const reapEarlierAttempt = async (key: string, stored: StoredGroup, signal: AbortSignal): Promise<NonNullable<ReconcileContext['earlierAttempt']>> => {
+    let stopped = await reapEarlierMarker(path.join(options.processMarkerDir, key), key, stored, signal);
     if (options.earlierMarkerDirs !== undefined) {
       for (const directory of await options.earlierMarkerDirs()) {
         if (directory === options.processMarkerDir) continue;
-        stopped = (await reapEarlierMarker(path.join(directory, key), key, pgid, signal)) || stopped;
+        stopped = (await reapEarlierMarker(path.join(directory, key), key, stored, signal)) || stopped;
       }
     }
     return { stopped };
@@ -1265,7 +1271,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   const reconcileAsHolder = async (scope: CallScope, callId: string, tool: AnyTool, input: unknown, record: ToolIdempotencyRecord): Promise<Resumed> => {
     if ((await scope.holdCall()) === 'aborted') return { kind: 'outcome', outcome: failedOutcome(callId, `${tool.name} was cancelled`) };
     if (!scope.holding(scope.ledger.authorise(record.key, 'reconcile'))) return { kind: 'outcome', outcome: scope.deferred };
-    const earlierAttempt = await reapEarlierAttempt(record.key, record.pgid, scope.controller.signal);
+    const earlierAttempt = await reapEarlierAttempt(record.key, record, scope.controller.signal);
     try {
       const ctx: ReconcileContext = { ...scope.reconcileCtx, earlierAttempt };
       return { kind: 'reconciled', result: await reconcileWithin(tool, input, record, ctx, () => scope.abortWith('timeout'), scope.closeContext) };
@@ -1764,11 +1770,11 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     });
   };
 
-  const stopEarlierAttempt = async (key: string, pgid: number | undefined, signal: AbortSignal): Promise<void> => {
+  const stopEarlierAttempt = async (key: string, stored: StoredGroup, signal: AbortSignal): Promise<void> => {
     const lock = await callLocks.acquire(key, signal);
     if (lock === 'aborted') throw signal.reason;
     try {
-      await reapEarlierAttempt(key, pgid, signal);
+      await reapEarlierAttempt(key, stored, signal);
     } finally {
       releaseCallLock(lock);
     }
@@ -1777,7 +1783,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   const abandonTarget = async (target: AbandonTarget, signal: AbortSignal): Promise<AbandonOutcome> => {
     const lookup = idempotency.get(target.idemKey);
     try {
-      if (lookup?.s === 'PENDING') await stopEarlierAttempt(target.idemKey, lookup.rec.pgid, signal);
+      if (lookup?.s === 'PENDING') await stopEarlierAttempt(target.idemKey, lookup.rec, signal);
     } finally {
       idempotency.markUnknownIfPending(target.idemKey);
     }
