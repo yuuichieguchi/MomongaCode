@@ -61,7 +61,7 @@ describe('the one text module of plan answers, for both surfaces (P-C8)', () => 
   });
 
   it('noBrowserHintLine names the --no-browser form of the command', () => {
-    expect(texts.noBrowserHintLine('chatgpt', 'work')).toBe(
+    expect(texts.noBrowserHintLine({ profile: 'chatgpt', account: 'work' }, false)).toBe(
       'If no browser window opens, press Ctrl-C and run momonga auth login chatgpt --account work --no-browser to get the sign-in URL.',
     );
   });

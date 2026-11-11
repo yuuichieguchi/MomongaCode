@@ -190,7 +190,7 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
             print(ports.stdout, sensitiveUrlLines(url));
             return;
           }
-          print(ports.stdout, [noBrowserHintLine(profile.id, account)]);
+          print(ports.stdout, [noBrowserHintLine({ profile: profile.id, account }, options.reconsent === true)]);
           ports.openUrl(url, waiting, (message) => {
             print(ports.stdout, sensitiveUrlLines(url));
             print(ports.stderr, [browserNotOpenedLine(message)]);

@@ -7,8 +7,8 @@ export const SENSITIVE_URL_LINE = 'Open this URL (it is sensitive: do not share 
 
 export const sensitiveUrlLines = (url: URL): string[] => [SENSITIVE_URL_LINE, url.href];
 
-export const noBrowserHintLine = (providerId: string, accountLabel: string): string =>
-  `If no browser window opens, press Ctrl-C and run ${signInCommandOf('cli', { profile: providerId, account: accountLabel })} --no-browser to get the sign-in URL.`;
+export const noBrowserHintLine = (plan: PlanAccountRef, reconsent: boolean): string =>
+  `If no browser window opens, press Ctrl-C and run ${reconsent ? reconsentCommand(plan) : signInCommandOf('cli', plan)} --no-browser to get the sign-in URL.`;
 
 export const signedInLine = (account: { label: string; email?: string }): string => `Signed in as ${account.label}${account.email === undefined ? '' : ` (${account.email})`}`;
 

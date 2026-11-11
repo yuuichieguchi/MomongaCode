@@ -127,3 +127,39 @@ describe('the gateway client never shows an answer that has a message as transpo
     expect((failure as GatewayAnswerError).answer).toEqual({ code: 'access_denied', message: 'Sign-in was cancelled in the browser.' });
   });
 });
+
+describe('the hint for a browser that does not open repeats the options the person gave (settlement N-B1)', () => {
+  it('names the command with the label and --no-browser', () => {
+    expect(texts.noBrowserHintLine({ profile: 'chatgpt', account: 'work' }, false)).toBe(
+      'If no browser window opens, press Ctrl-C and run momonga auth login chatgpt --account work --no-browser to get the sign-in URL.',
+    );
+  });
+
+  it('keeps --reconsent when the person gave it', () => {
+    expect(texts.noBrowserHintLine({ profile: 'chatgpt', account: 'work' }, true)).toBe(
+      'If no browser window opens, press Ctrl-C and run momonga auth login chatgpt --account work --reconsent --no-browser to get the sign-in URL.',
+    );
+  });
+
+  it('auth login --reconsent prints the hint with --reconsent', async () => {
+    const out = writer();
+    const err = writer();
+    const backend: FakePlanBackend = fakePlanBackend({ accounts: [] });
+    await authLogin(
+      {
+        stdout: out,
+        stderr: err,
+        plan: backend.plan,
+        startListener: backend.startSignInListener,
+        openUrl: () => Promise.resolve(),
+        sandbox: async () => 'seatbelt' as const,
+        signal: new AbortController().signal,
+        timers: systemTiming,
+        isTerminal: false,
+      },
+      { provider: 'chatgpt', reconsent: true },
+    );
+    expect(out.written.join('')).toContain('run momonga auth login chatgpt --account chatgpt --reconsent --no-browser to get the sign-in URL.');
+  });
+});
+
