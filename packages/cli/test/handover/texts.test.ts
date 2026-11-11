@@ -12,12 +12,14 @@ import { nodePolicyVerifyHost } from '../../src/verify/host.ts';
 import { NO_HELPER } from '../no-helper.ts';
 
 class Parsed extends Error {
-  constructor(
-    readonly command: string,
-    readonly operands: readonly string[],
-    readonly options: Record<string, unknown>,
-  ) {
+  readonly command: string;
+  readonly operands: readonly string[];
+  readonly options: Record<string, unknown>;
+  constructor(command: string, operands: readonly string[], options: Record<string, unknown>) {
     super('parsed');
+    this.command = command;
+    this.operands = operands;
+    this.options = options;
   }
 }
 
