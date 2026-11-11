@@ -527,7 +527,7 @@ async function* relaySteps(
     const { error } = classified;
     outcome.settle(classified.verdict ?? breakerVerdictOf(error.type, error.code));
     const billed = billedOf(upstream.usage, upstreamOutput, upstream.cacheWriteInputTokens);
-    opened.span.fail(error.type, new Error(error.message), error.message, billed);
+    opened.span.fail(error.type, new UpstreamFailure(classified), error.message, billed);
     progress.concluded = true;
     yield failedTerminal({ code: error.code ?? upstreamError.code, message: error.message, type: error.type }, upstreamOutput, classified.retryable, billed);
     return;

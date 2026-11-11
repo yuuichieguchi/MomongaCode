@@ -12,6 +12,14 @@ import type { ChatBilling, Telemetry } from '@momonga/observability';
 import { MOMONGA_ATTRIBUTES, MOMONGA_EVENTS } from '@momonga/protocol';
 import type { AdapterInputItem, UpstreamRoute, FallbackCause, FunctionTool, ItemField, Usage, UsageSource } from '@momonga/protocol';
 import { chatRequestContentOf, chatResponseMessagesOf } from './chat-content.ts';
+import { GatewayError } from './errors.ts';
+import { UpstreamFailure } from './retry.ts';
+
+const errorCodeOf = (error: unknown): string | null | undefined => {
+  if (error instanceof UpstreamFailure) return error.classified.error.code;
+  if (error instanceof GatewayError) return error.body.code;
+  return undefined;
+};
 
 export type TraceParent = ReturnType<Telemetry['propagation']['extract']>;
 
@@ -94,7 +102,7 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
   return {
     startedAtMs: input.startedAtMs,
     note: (name, message) => {
-      if (!ended) span.addEvent(name, { message });
+      if (!ended) span.addEvent(name, telemetry.captureMessageContent ? { message } : {});
     },
     route: (route) => {
       if (ended) return;
@@ -120,8 +128,14 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
     fail: (errorType, error, message, billed) => {
       if (ended) return;
       if (billed !== undefined) recordChatUsage(span, chatUsageOf(billed), billed.usageSource);
-      recordError(span, error, errorType, message);
-      recordChatFailure(span, message);
+      const code = errorCodeOf(error);
+      if (code !== undefined && code !== null) span.setAttribute(MOMONGA_ATTRIBUTES.errorCode, code);
+      if (telemetry.captureMessageContent) {
+        recordError(span, error, errorType, message);
+        recordChatFailure(span, message);
+      } else {
+        recordError(span, error, errorType);
+      }
       end();
     },
   };
