@@ -91,7 +91,7 @@ describe('cache-read figures over random mixes of reporting and billing', () => 
       expect(report.total.unpriced).toEqual(expectedUnpriced);
       expect(report.total.unknownBillingCalls).toBe(expectedUnpriced.unknown_billing ?? 0);
       expect(report.total.planCalls).toBe(expectedUnpriced.plan ?? 0);
-      expect(report.total.unpricedCalls).toBe(expectedUnpriced.unpriceable_usage ?? 0);
+      expect(report.total.unpricedCalls).toBe(Object.values(expectedUnpriced).reduce((total, count) => total + count, 0));
       const unpricedTotal = Object.values(expectedUnpriced).reduce((total, count) => total + count, 0);
       if (unpricedTotal === n) expect(report.total.amount).toBeNull();
       else expect(report.total.amount).not.toBeNull();

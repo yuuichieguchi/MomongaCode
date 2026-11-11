@@ -5,39 +5,43 @@ import type { Aggregate, CountedTask } from './aggregate.ts';
 
 export type CostAmount = { currency: typeof COST_CURRENCY; priceVersion: string; units: string };
 
-export type CostSide = { tasks: number; fullyPriced: number; calls: number; notPriced: number; tokens: number; priced: CostAmount[]; legacyPrecisionCalls?: number };
+export type CostSide = { tasks: number; fullyPriced: number; noData: number; calls: number; notPriced: number; tokens: number; priced: CostAmount[]; legacyPrecisionCalls?: number };
 
 export type CostIndicators = { successful: CostSide; unsuccessful: CostSide };
 
 export type CostGroups = { total: CostIndicators; groups: Record<string, CostIndicators> };
 
-type SideTally = { tasks: number; fullyPriced: number; calls: number; notPriced: number; legacyPrecisionCalls: number; tokens: number; units: Map<string, bigint> };
+type SideTally = { tasks: number; fullyPriced: number; noData: number; calls: number; notPriced: number; legacyPrecisionCalls: number; tokens: number; units: Map<string, bigint> };
 
 type Tally = { successful: SideTally; unsuccessful: SideTally };
 
-const emptySide = (): SideTally => ({ tasks: 0, fullyPriced: 0, calls: 0, notPriced: 0, legacyPrecisionCalls: 0, tokens: 0, units: new Map() });
+const emptySide = (): SideTally => ({ tasks: 0, fullyPriced: 0, noData: 0, calls: 0, notPriced: 0, legacyPrecisionCalls: 0, tokens: 0, units: new Map() });
 
 const emptyTally = (): Tally => ({ successful: emptySide(), unsuccessful: emptySide() });
 
 const addTask = (side: SideTally, task: CountedTask, costs: ReadonlyMap<string, RunCostView>): void => {
   let notPriced = 0;
+  let calls = 0;
   for (const runId of task.runIds) {
     const cost = costs.get(runId);
     if (cost === undefined) throw new RangeError(`the costs hold no entry for run ${runId} of task ${task.rootRunId}`);
-    side.calls += cost.calls;
+    calls += cost.calls;
     side.legacyPrecisionCalls += cost.legacyPrecisionCalls;
     notPriced += cost.notPriced;
     for (const amount of cost.priced) side.units.set(amount.priceVersion, (side.units.get(amount.priceVersion) ?? 0n) + BigInt(amount.units));
   }
   side.tasks += 1;
+  side.calls += calls;
   side.notPriced += notPriced;
-  if (notPriced === 0) side.fullyPriced += 1;
+  if (calls === 0) side.noData += 1;
+  else if (notPriced === 0) side.fullyPriced += 1;
   side.tokens += task.tokens;
 };
 
 const finishSide = (side: SideTally): CostSide => ({
   tasks: side.tasks,
   fullyPriced: side.fullyPriced,
+  noData: side.noData,
   calls: side.calls,
   notPriced: side.notPriced,
   tokens: side.tokens,
@@ -75,14 +79,17 @@ const amountText = (units: bigint): string => {
 const notPricedText = (side: CostSide): string =>
   `${side.notPriced} of ${side.calls} calls not priced${side.legacyPrecisionCalls === undefined ? '' : `, ${LEGACY_PRECISION_TEXT(side.legacyPrecisionCalls)}`}`;
 
+const noDataText = (side: CostSide): string[] => (side.noData === 0 ? [] : [`without cost data: ${side.noData}`]);
+
 const successfulLine = (side: CostSide): string => {
   if (side.tasks === 0) return 'Cost per Successful Task: not measurable: no successful task';
-  const tasks = BigInt(side.tasks);
+  const tasks = BigInt(side.tasks - side.noData);
   const amounts = side.priced.map((amount) => `${amountText(BigInt(amount.units) / tasks)} per task (price version ${amount.priceVersion}, total ${amountText(BigInt(amount.units))})`);
   return [
     `Cost per Successful Task: n=${side.tasks}`,
     amounts.length === 0 ? 'no priced call' : amounts.join(', '),
     notPricedText(side),
+    ...noDataText(side),
     ...(side.fullyPriced === side.tasks ? [] : [`partial: ${side.fullyPriced} of ${side.tasks} successful tasks fully priced`]),
     `tokens per successful task ${Math.round(side.tokens / side.tasks)}`,
   ].join('; ');
@@ -91,7 +98,7 @@ const successfulLine = (side: CostSide): string => {
 const unsuccessfulLine = (side: CostSide): string => {
   if (side.tasks === 0) return 'Cost of tasks that did not succeed: n=0';
   const amounts = side.priced.map((amount) => `${amountText(BigInt(amount.units))} (price version ${amount.priceVersion})`);
-  return [`Cost of tasks that did not succeed: n=${side.tasks}`, amounts.length === 0 ? 'no priced call' : `total ${amounts.join(', ')}`, notPricedText(side), `tokens ${side.tokens}`].join('; ');
+  return [`Cost of tasks that did not succeed: n=${side.tasks}`, amounts.length === 0 ? 'no priced call' : `total ${amounts.join(', ')}`, notPricedText(side), ...noDataText(side), `tokens ${side.tokens}`].join('; ');
 };
 
 export const costLines = (cost: CostIndicators): string[] => [successfulLine(cost.successful), unsuccessfulLine(cost.unsuccessful)];

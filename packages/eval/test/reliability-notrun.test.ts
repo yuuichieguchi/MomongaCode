@@ -14,7 +14,7 @@ const benchmark = (codeDigest: string, notRun: { id: string; reason: string }[] 
     aggregate: aggregate([], { groupBy: 'model' }),
     harness: harness(codeDigest),
     tasks: rows(3),
-    cost: { total: { successful: { tasks: 0, fullyPriced: 0, calls: 0, notPriced: 0, tokens: 0, priced: [] }, unsuccessful: { tasks: 0, fullyPriced: 0, calls: 0, notPriced: 0, tokens: 0, priced: [] } }, groups: {} },
+    cost: { total: { successful: { tasks: 0, fullyPriced: 0, noData: 0, calls: 0, notPriced: 0, tokens: 0, priced: [] }, unsuccessful: { tasks: 0, fullyPriced: 0, noData: 0, calls: 0, notPriced: 0, tokens: 0, priced: [] } }, groups: {} },
     notRun,
   });
 

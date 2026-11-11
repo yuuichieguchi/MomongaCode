@@ -50,7 +50,7 @@ describe('/cost counts a cost exclusion through the price outcome only', () => {
     const { report, totalLine } = await reportOf([{ input: 1000, cached: 800 }, { input: 1000 }]);
 
     expect(report.total.cacheReadUnpricedCalls).toBe(1);
-    expect(report.total.unpricedCalls).toBe(0);
+    expect(report.total.unpricedCalls).toBe(1);
     expect(report.total.unpriced).toEqual({ cache_read_not_reported: 1 });
     expect(report.total.amount).toBe(0.000816);
     expect(occurrences(totalLine, 'not complete: ')).toBe(1);

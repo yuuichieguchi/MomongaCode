@@ -169,6 +169,7 @@ const decodeCostSide = (value: unknown, path: string): CostSide => {
   return {
     tasks: countAt(fields, 'tasks', path),
     fullyPriced: countAt(fields, 'fullyPriced', path),
+    noData: countAt(fields, 'noData', path),
     calls: countAt(fields, 'calls', path),
     notPriced: countAt(fields, 'notPriced', path),
     tokens: countAt(fields, 'tokens', path),

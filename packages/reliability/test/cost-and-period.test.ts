@@ -127,6 +127,7 @@ describe('Cost per Successful Task (X6)', () => {
     expect(total.successful).toEqual({
       tasks: 2,
       fullyPriced: 1,
+      noData: 0,
       calls: 5,
       notPriced: 1,
       tokens: 4000,
@@ -135,7 +136,7 @@ describe('Cost per Successful Task (X6)', () => {
         { currency: 'USD', priceVersion: 'local', units: '0' },
       ],
     });
-    expect(total.unsuccessful).toEqual({ tasks: 1, fullyPriced: 1, calls: 3, notPriced: 0, tokens: 500, priced: [{ currency: 'USD', priceVersion: '2026-01', units: (USD / 4n).toString() }] });
+    expect(total.unsuccessful).toEqual({ tasks: 1, fullyPriced: 1, noData: 0, calls: 3, notPriced: 0, tokens: 500, priced: [{ currency: 'USD', priceVersion: '2026-01', units: (USD / 4n).toString() }] });
     expect(groups).toEqual({ 'apple/fm': total });
   });
 
