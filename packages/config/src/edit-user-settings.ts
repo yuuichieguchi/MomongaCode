@@ -2,7 +2,9 @@ import path from 'node:path';
 import { DEFAULT_LOCK_TIMEOUT_MS, createKeyedSerializer, hostPaths, isRecord, nodeFileSystem, systemFileLockPorts, systemRandom, withFileLock, writeFileAtomically } from '@momonga/foundation';
 import type { FileLockPorts, PathResolver } from '@momonga/foundation';
 import { settingsLockPath } from './file-lock.ts';
+import { ConfigError } from './config-error.ts';
 import { isAbsentPathError, readJsonFile } from './json-file.ts';
+import type { Confinement } from './json-file.ts';
 import { layoutOf } from './layout.ts';
 
 const SETTINGS_FILE_MODE = 0o600;
@@ -10,12 +12,12 @@ const PRIVATE_DIRECTORY_MODE = 0o700;
 
 const serializeInProcess = createKeyedSerializer();
 
-export type EditUserSettingsOptions = { ports?: FileLockPorts; lockTimeoutMs?: number; signal: AbortSignal };
+export type EditUserSettingsOptions = { ports?: FileLockPorts; lockTimeoutMs?: number; signal: AbortSignal; confine?: Confinement };
 
-const documentOf = async (settingsFile: string): Promise<Record<string, unknown>> => {
-  const read = await readJsonFile(settingsFile);
+const documentOf = async (settingsFile: string, confine: Confinement | undefined): Promise<Record<string, unknown>> => {
+  const read = await readJsonFile(settingsFile, confine === undefined ? {} : { confine });
   if (!read.found) return {};
-  if (!isRecord(read.value)) throw new Error(`${settingsFile}: settings must be a JSON object`);
+  if (!isRecord(read.value)) throw new ConfigError(`${settingsFile}: settings must be a JSON object`);
   return read.value;
 };
 
@@ -31,7 +33,7 @@ export const settingsWriteTarget = async (file: string, paths: Pick<PathResolver
   try {
     return await paths.realPath(file);
   } catch (error) {
-    if (isAbsentPathError(error)) throw new Error(`${file}: dangling symlink`, { cause: error });
+    if (isAbsentPathError(error)) throw new ConfigError(`${file}: dangling symlink`, { cause: error });
     throw error;
   }
 };
@@ -54,7 +56,7 @@ export const editUserSettings = async (
       withFileLock(
         lockPath,
         async () => {
-          const document = await documentOf(settingsFile);
+          const document = await documentOf(settingsFile, options.confine);
           if (!edit(document)) return;
           await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: ports.randomHex }, target, `${JSON.stringify(document, null, 2)}\n`, { mode: SETTINGS_FILE_MODE });
         },

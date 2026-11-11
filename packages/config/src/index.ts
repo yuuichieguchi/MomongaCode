@@ -1,4 +1,6 @@
 export { editUserSettings } from './edit-user-settings.ts';
+export { editProjectMandate } from './edit-project-file.ts';
+export type { EditProjectMandateOptions, ProjectMandateEdit } from './edit-project-file.ts';
 export type { EditUserSettingsOptions } from './edit-user-settings.ts';
 export { MODELS_SETTING_WRITERS, ModelsEditRefused, durationText, editModelsSettings, fieldLabel, fieldValueText, planModelsEdit, serverNameFromCommand, settableFieldPath } from './models-writers.ts';
 export type {
