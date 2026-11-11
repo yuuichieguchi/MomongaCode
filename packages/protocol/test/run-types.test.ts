@@ -269,6 +269,7 @@ describe('run event payloads', () => {
       removed?: number;
       diffOmitted?: string;
       effect?: { operation: string; target: string; outcome: 'applied' | 'already_applied' | 'failed' | 'unknown' };
+      held?: { approvalId: string };
     }>();
     expectTypeOf<Payload<'tool.permission.classified'>>().toEqualTypeOf<{
       type: 'tool.permission.classified';
@@ -294,6 +295,7 @@ describe('run event payloads', () => {
       added?: number;
       removed?: number;
       diffOmitted?: string;
+      held?: { approvalId: string };
     }>();
   });
 

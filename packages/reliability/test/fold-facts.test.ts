@@ -435,7 +435,9 @@ describe('the figures of mandate runs', () => {
   const mandated = (attempt: number): Timed[1] => ({ type: 'run.started', attempt, now: T0, pins: { model: 'fm', mandate: MANDATE } }) as Timed[1];
   const held = (callId: string): Timed[1] => ({ type: 'tool.held', callId, approvalId: `a-${callId}`, reason: 'ask', footprint: { reads: [], writes: [] } }) as Timed[1];
   const resolved = (callId: string, outcome: 'executed' | 'rejected' | 'withdrawn'): Timed[1] =>
-    ({ type: 'tool.held.resolved', callId, approvalId: `a-${callId}`, outcome, status: outcome === 'executed' ? 'completed' : 'failed', output: outcome }) as Timed[1];
+    (outcome === 'executed'
+      ? { type: 'tool.completed', callId, status: 'completed', output: outcome, held: { approvalId: `a-${callId}` } }
+      : { type: 'tool.held.resolved', callId, approvalId: `a-${callId}`, outcome, status: 'failed', output: outcome }) as Timed[1];
   const deniedByMandate = (callId: string): Timed[1] =>
     ({ type: 'tool.completed', callId, status: 'failed', output: 'Not run: outside the declared mandate', denial: { source: 'mandate', reason: 'outside the mandate' } }) as Timed[1];
   const quiescent: Timed[1] = { type: 'run.quiescent', held: [] } as Timed[1];

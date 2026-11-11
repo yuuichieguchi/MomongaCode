@@ -1,7 +1,7 @@
 import { parseRule } from '@momonga/config';
 import type { PermissionRule } from '@momonga/config';
 import { pinnedDelegationOf } from '@momonga/protocol';
-import type { HeldCall, HeldCallView, HeldOutcome, PinnedDelegation, RunState } from '@momonga/protocol';
+import type { HeldCall, HeldCallView, HeldLink, HeldOutcome, PinnedDelegation, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
 
 const MANDATE_SOURCE = 'the mandate of this run';
@@ -47,6 +47,13 @@ export const HELD_WITHDRAWN_OUTPUT = 'The request for approval was withdrawn bef
 
 export const heldViewsOf = (state: Pick<RunState, 'heldCalls'>): HeldCallView[] =>
   Object.entries(state.heldCalls ?? {}).map(([callId, held]) => ({ callId, approvalId: held.approvalId, tool: held.name, reason: held.reason, sinceSeq: held.sinceSeq }));
+
+export const heldLinkOf = (state: Pick<RunState, 'heldCalls'>, callId: string): HeldLink | undefined => {
+  const held = state.heldCalls?.[callId];
+  return held === undefined ? undefined : { approvalId: held.approvalId };
+};
+
+export const stepOfCall = (state: Pick<RunState, 'heldCalls' | 'step'>, callId: string): number => state.heldCalls?.[callId]?.step ?? state.step;
 
 export const hasHeld = (state: Pick<RunState, 'heldCalls'>): boolean => Object.keys(state.heldCalls ?? {}).length > 0;
 

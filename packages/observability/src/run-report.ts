@@ -1,4 +1,4 @@
-import { NOT_RUN_REASONS, RESIDUAL_RISK_CODES, completionMutates, conditionOwed, pinnedCompletionOf, reconciliationMutates } from '@momonga/protocol';
+import { NOT_RUN_REASONS, RESIDUAL_RISK_CODES, completionMutates, conditionOwed, heldEndOf, pinnedCompletionOf, reconciliationMutates } from '@momonga/protocol';
 import type { BudgetExhausted, ConditionResult, ConditionState, MutationFacts, NotRunReason, PinnedCompletion, ResidualRiskCode, OperationEffectRecord, RunBudgetReport, RunDeniedCallReport, RunOperationReport, RunEvent, RunEventPayload, RunHeldCallReport, RunReport } from '@momonga/protocol';
 
 type CallRecord = MutationFacts & { name: string; command: string | undefined; waitsOnRun: boolean; completedStatus: 'completed' | 'failed' | undefined };
@@ -82,7 +82,16 @@ export const createRunReportFold = (): RunReportFold => {
     return call;
   };
 
+  const endHold = (event: RunEvent): void => {
+    const ended = heldEndOf(event);
+    if (ended === undefined) return;
+    const open = held.get(ended.callId);
+    if (open === undefined) throw new Error(`${event.type} refers to tool call ${ended.callId}, which was not held`);
+    held.set(ended.callId, { ...open, outcome: ended.outcome, status: ended.status, resolvedSeq: event.seq });
+  };
+
   const add = (event: RunEvent): void => {
+    endHold(event);
     switch (event.type) {
       case 'run.started':
         pins ??= event.pins;
@@ -155,12 +164,6 @@ export const createRunReportFold = (): RunReportFold => {
       case 'tool.held':
         held.set(event.callId, { callId: event.callId, tool: requireCall(event.callId, event.type).name, reason: event.reason, heldSeq: event.seq });
         break;
-      case 'tool.held.resolved': {
-        const open = held.get(event.callId);
-        if (open === undefined) throw new Error(`${event.type} refers to tool call ${event.callId}, which was not held`);
-        held.set(event.callId, { ...open, outcome: event.outcome, status: event.status, resolvedSeq: event.seq });
-        break;
-      }
       case 'run.quiescent':
         quiescent = true;
         break;
