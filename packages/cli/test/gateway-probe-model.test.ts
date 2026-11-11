@@ -19,7 +19,7 @@ describe('momonga gateway probe <model>', () => {
     const at = homeWith(context, S3);
     const ports = { home: at.home } as unknown as CliPorts;
 
-    await expect(probeModel(ports, momongaLayout(at.home, process.platform, process.env), 'openai/gpt-5.5', { interrupt: new AbortController().signal, stepTimeoutMs: 120_000 })).rejects.toThrow(
+    await expect(probeModel(ports, momongaLayout(at.home, process.platform, process.env), 'openai/gpt-5.5', { interrupt: new AbortController().signal, stepTimeoutMs: 120_000, consented: false })).rejects.toThrow(
       'The model "openai/gpt-5.5" cannot be probed: it is not served by a managed server, an OpenAI-compatible server or an Ollama server. Configured models: chatgpt/gpt-5.5, openai/gpt-5.5.',
     );
   });

@@ -51,7 +51,7 @@ describe('the CLI readers resolve a declared server through the registry of the 
     const ports = { home, env: {}, stdout: sink(), stderr: sink(), files: nodeFiles } as unknown as CliPorts;
     const paths = momongaPaths(home, process.platform, {});
     await ensureMomongaDirs(paths);
-    const error = await probeModel(ports, paths, 'fake-1', { interrupt: AbortSignal.timeout(30_000), stepTimeoutMs: 120_000 }).then(
+    const error = await probeModel(ports, paths, 'fake-1', { interrupt: AbortSignal.timeout(30_000), stepTimeoutMs: 120_000, consented: false }).then(
       () => undefined,
       (caught: unknown) => caught,
     );

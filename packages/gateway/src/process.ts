@@ -101,11 +101,12 @@ import { NO_USER_DIALECTS } from './dialect/choice.ts';
 import type { UserDialects } from './dialect/choice.ts';
 import type { DialectCurrency } from './dialect/candidates.ts';
 import { resolveDialectId } from './dialect/resolve-id.ts';
-import { PROBE_METHOD_VERSION } from './probe/run-probe.ts';
+import { DEFAULT_SAMPLES, PROBE_METHOD_VERSION } from './probe/run-probe.ts';
 import { chatRecordOf, loadEndpointRecord, ollamaRecordOf, saveEndpointRecord } from './probe/endpoint-record.ts';
 import type { DeclaredCapabilities } from './probe/decide.ts';
 import { withImageDefault } from './probe/decide.ts';
 import type { ProbePorts } from './probe/client.ts';
+import { isMeteredTarget, meteredPrecondition } from './probe/consent.ts';
 import { createProbedEndpointTarget, endpointKeyOf, ollamaServerRefusal, probeEndpointOf, readEndpointIdentity } from './probe/endpoint-target.ts';
 import { answersAsOllama, readOllamaDigest } from './probe/ollama.ts';
 import { createProbedOllamaTarget } from './probe/ollama-target.ts';
@@ -150,7 +151,7 @@ import { createInstanceProbe } from './probe/instance-probe.ts';
 import { loadProbeRecord } from './probe/record.ts';
 import type { ManagedRecordCurrency, ManagedRecordKey } from './probe/record.ts';
 import { lockKeyOf, managedCurrencyOf, managedKeyReader, managedPrecondition, managedProbeSubject, measureManagedServer } from './probe/probe-fm.ts';
-import { endpointPrecondition, endpointProbeSubject, measureEndpoint } from './probe/probe-endpoint.ts';
+import { endpointPrecondition, endpointProbeSubject, measureEndpoint, meteredGateOf } from './probe/probe-endpoint.ts';
 import type { EndpointMeasurement } from './probe/probe-endpoint.ts';
 import { measureOllama, ollamaPrecondition, ollamaProbeSubject } from './probe/ollama.ts';
 import type { OllamaMeasurement } from './probe/ollama.ts';
@@ -580,17 +581,20 @@ const createAutoChatCompletionsAdapter = async (
   const loaded = await readRecord();
   const adapterTarget: AdapterTarget = { name: target.canon, display, model: target.model };
   const apiKeyNow = (signal: AbortSignal) => readKey(adapterTarget, signal);
+  const precondition = endpointPrecondition(display, upstream, probes.ports, target.model, apiKeyNow);
+  const metered = isMeteredTarget(target) ? { display, declaredContextWindow: target.capabilities.contextWindow } : undefined;
   const subject = endpointProbeSubject({
     target: endpointLockKeyOf(key).target,
     key,
     probeRecordDir,
     lock: probes.lock,
-    precondition: endpointPrecondition(display, upstream, probes.ports, target.model, apiKeyNow),
+    precondition: metered === undefined ? precondition : meteredPrecondition(precondition, probeRecordDir, key, metered, DEFAULT_SAMPLES),
     measure:
       (probes.measureEndpoint === undefined ? undefined : onRecordKey(probes.measureEndpoint)) ??
       (async (request) =>
         measureEndpoint({
           ports: probes.ports,
+          ...(metered === undefined ? {} : { metered: meteredGateOf(probeRecordDir, key, metered, DEFAULT_SAMPLES) }),
           upstream,
           model: target.model,
           apiKey: await apiKeyNow(request.signal),

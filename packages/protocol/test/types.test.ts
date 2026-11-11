@@ -93,7 +93,7 @@ describe('protocol capability types', () => {
       probedAt: string;
       health: HealthResult;
       modelId: string;
-      contextWindow: { value: number; method: 'reported' | 'searched'; overflowErrorShape?: unknown };
+      contextWindow: { value: number; method: 'reported' | 'searched' | 'declared'; overflowErrorShape?: unknown };
       streaming: { supported: boolean; doneSentinel: boolean; usageInStream: boolean };
       usageReported: boolean;
       nativeTools: { accepted: boolean; validRate: number; roundTripOk: boolean };

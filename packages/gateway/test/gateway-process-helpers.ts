@@ -155,6 +155,7 @@ export const ccTarget = (socketPath: string, extra: Record<string, unknown> = {}
   adapter: 'chat-completions',
   model: CC_MODEL,
   socketPath,
+  billing: 'local',
   capabilities: { contextWindow: 4096, maxOutputTokens: 1024 },
   ...extra,
 });

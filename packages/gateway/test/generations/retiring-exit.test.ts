@@ -6,6 +6,7 @@ import { EXIT_RETIRED, FIRST_GENERATION, SWEEP_INTERVAL_MS, inspectProcessLock }
 import type { RuntimeStanding } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, fakeExec, testKernelLock } from '@momonga/testkit';
 import { getJson, makeDir, postJson, readJson, registerCleanup, switchableRole, userInput } from '../gateway-helpers.ts';
+import { IDENTITY_READ_TIMEOUT_MS } from '../../src/probe/endpoint-target.ts';
 import { CC_MODEL, PROCESS_VERSION, baseEnv, ccTarget, clientFor, homePaths, launchGateway, makeHome, until, writeSettings, modelsOf } from '../gateway-process-helpers.ts';
 import type { GatewayProcessOptions } from '../gateway-process-helpers.ts';
 
@@ -63,7 +64,7 @@ const launch = async (target: Record<string, unknown>, extra: Partial<GatewayPro
     await until(() => timers.pending().some((timer) => timer.delayMs === SWEEP_INTERVAL_MS), 'the tick to finish and arm the next one');
   };
   const active = async (): Promise<number> => (await getJson(client, '/v1/momonga/health')).body.activeRequests;
-  return { home, handle, client, role, runtime, shutdowns, tick, active };
+  return { home, handle, client, role, runtime, shutdowns, tick, active, timers };
 };
 
 describe('a retiring gateway leaves only when it holds nothing and its runtime is gone or idle (design-update 18.1, 20.1, 20.52)', () => {
@@ -129,7 +130,10 @@ describe('a retiring gateway leaves only when it holds nothing and its runtime i
     const upstream = await holdingUpstream();
     const flight = Promise.withResolvers<never>();
     const gateway = await launch(ccTarget(upstream.socketPath, { toolCalling: 'auto' }), { measureEndpoint: () => flight.promise });
-    expect((await readJson(await postJson(gateway.client, '/v1/responses', ASK))).status).toBe(503);
+    const asked = postJson(gateway.client, '/v1/responses', ASK);
+    await until(() => gateway.timers.pending().some((timer) => timer.delayMs === IDENTITY_READ_TIMEOUT_MS), 'the precondition bound to be armed on the timer port');
+    await gateway.timers.advanceAsync(IDENTITY_READ_TIMEOUT_MS);
+    expect((await readJson(await asked)).status).toBe(503);
     expect(await gateway.active()).toBe(1);
     gateway.role.become('retiring');
 

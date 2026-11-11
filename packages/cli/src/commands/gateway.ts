@@ -27,7 +27,7 @@ export class NotAProbeableModel extends Error {
   }
 }
 
-export type ProbeOptions = { samples?: number; stepTimeoutMs: number; interrupt: AbortSignal };
+export type ProbeOptions = { samples?: number; stepTimeoutMs: number; consented: boolean; interrupt: AbortSignal };
 
 export type ProbeSubject = { canon: string; display: string; model: ProbeableModel };
 
@@ -155,13 +155,19 @@ const probeChatCompletions = async (
   userDialects: Record<string, DialectDefinition>,
   network: OutboundNetwork,
 ): Promise<number> => {
-  const { probeEndpointTarget, reachableEndpoint } = await import('@momonga/gateway');
-  const { report, toolCalling, key } = await probeEndpointTarget({
+  const { DEFAULT_SAMPLES, isMeteredTarget, measurementBoundOf, probeEndpointTarget, reachableEndpoint, saveMeasurementConsent } = await import('@momonga/gateway');
+  const key = endpointRecordKeyOf(subject, target);
+  const metered = isMeteredTarget(target) ? { display: subject.display, declaredContextWindow: target.capabilities.contextWindow } : undefined;
+  if (metered !== undefined && options.consented) {
+    await saveMeasurementConsent(paths.probe, key, measurementBoundOf(metered.declaredContextWindow, options.samples ?? DEFAULT_SAMPLES), resolveLayoutLocks(paths).mechanism);
+  }
+  const { report, toolCalling } = await probeEndpointTarget({
     probeRecordDir: paths.probe,
+    ...(metered === undefined ? {} : { metered }),
     ports: probePortsOf(ports),
     lock: resolveLayoutLocks(paths).mechanism,
     upstream: reachableEndpoint(upstreamEndpointOf(target), network),
-    key: endpointRecordKeyOf(subject, target),
+    key,
     model: target.model,
     ...(target.capabilities.schemaDialect === undefined ? {} : { declaredDialect: target.capabilities.schemaDialect }),
     userDialects,

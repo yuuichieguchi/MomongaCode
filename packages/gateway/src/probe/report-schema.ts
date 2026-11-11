@@ -68,7 +68,7 @@ const reportSchema = {
       required: ['value', 'method'],
       properties: {
         value: { type: 'integer', minimum: 1 },
-        method: { type: 'string', enum: ['reported', 'searched'] },
+        method: { type: 'string', enum: ['reported', 'searched', 'declared'] },
         overflowErrorShape: anyJson,
       },
     },

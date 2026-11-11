@@ -9,7 +9,7 @@ import { readFileTool, startFake } from './cc-support.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, until, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
-import { TARGET_PROBING } from '@momonga/protocol';
+import { TARGET_NOT_READY, TARGET_PROBING } from '@momonga/protocol';
 import { hostProbePorts } from './probe-ports-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -50,6 +50,20 @@ const probedSetup = async (models: () => Array<Record<string, unknown>>) => {
 };
 
 describe('chat-completions target with toolCalling auto', () => {
+  it('refuses to measure a metered model without the consent of the person, naming the command that gives it, and sends it nothing', async () => {
+    const fake = await startFake({ scenario: 'json-schema-only' });
+    const home = makeHome();
+    writeSettings(home, { models: modelsOf({ local: ccTarget(fake.socketPath, { toolCalling: 'auto', billing: 'metered' }) }) });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
+
+    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', request));
+
+    expect(response.status).toBe(412);
+    expect(response.body.error.code).toBe(TARGET_NOT_READY);
+    expect(response.body.error.message).toContain('momonga gateway probe system --yes');
+    expect(completions(fake)).toEqual([]);
+  });
+
   it('answers a call 503 target_probing and starts the probe when no record exists', async () => {
     const { home, fake } = await autoSetup();
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, measureEndpoint: () => new Promise(() => undefined), measureOllama: () => new Promise(() => undefined) });

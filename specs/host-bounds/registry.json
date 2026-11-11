@@ -348,7 +348,7 @@
       {"name":"FIRST_BUDGET_CHARS","file":"packages/tools/src/paging.ts","lacks":["row"]}
     ],
     "literalBounds": {
-      "packages/gateway/src/defaults.ts": 9,
+      "packages/gateway/src/defaults.ts": 7,
       "packages/protocol/src/managed-servers.ts": 2,
       "packages/runtime/src/process/defaults.ts": 2,
       "packages/tools/src/builtins/edit.ts": 1,

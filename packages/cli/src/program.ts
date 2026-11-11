@@ -303,11 +303,13 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
     .description('measure a model of a managed server, an OpenAI-compatible server or an Ollama server and record the result for the gateway (an Ollama server: trained context length, tools, vision, thinking and model digest; a managed or OpenAI-compatible server: tool calling, structured output, stop sequences, parallel calls, reasoning control, usage)')
     .option('--samples <count>', 'samples per measured rate', integerArgument(1))
     .option('--step-timeout <seconds>', 'the bound of each measuring step, in seconds', integerArgument(1), DEFAULT_PROBE_STEP_SECONDS)
-    .action(async (model: string, options: { samples?: number; stepTimeout: number }) => {
+    .option('--yes', 'consent to measure a model paid for by use, up to the bound of requests and tokens the measurement can send')
+    .action(async (model: string, options: { samples?: number; stepTimeout: number; yes?: true }) => {
       deps.complete(
         await probeModel(ports, await pathsOf(ports), model, {
           interrupt: deps.interrupt,
           stepTimeoutMs: probeStepBoundMs(options.stepTimeout),
+          consented: options.yes === true,
           ...(options.samples === undefined ? {} : { samples: options.samples }),
         }),
       );

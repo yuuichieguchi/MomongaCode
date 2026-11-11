@@ -41,6 +41,8 @@ import { assistantMessage, errorKindOf, expectStatus, failProbeStep, isAcceptedO
 import type { Chat, ChatResult, ProbeOutcome } from './probe-chat.ts';
 import { fillerText } from './filler.ts';
 import { JSON_MODE_PROBE_PROMPT, measureJsonMode } from './json-mode.ts';
+import { MeasurementBoundReachedError, isCount } from './consent.ts';
+import type { MeasurementBound, MeteredMeasurement } from './consent.ts';
 import type { JsonModeAnswer } from './json-mode.ts';
 import { field, firstOf, isRecord, listedEntryOf, parseJson, valueAtPath } from './json.ts';
 
@@ -60,11 +62,14 @@ export interface ProbeOptions {
   ports: ProbePorts;
   signal?: AbortSignal;
   stepTimeoutMs?: number;
+  metered?: { measurement: MeteredMeasurement; bound: MeasurementBound };
 }
 
 export const PROBE_METHOD_VERSION = 4;
 
 const MAX_RATE_LIMIT_RETRIES = 3;
+const MEASUREMENT_BASE_REQUESTS = 64;
+const MEASUREMENT_REQUESTS_PER_SAMPLE = 16;
 export const DEFAULT_SAMPLES = 10;
 const CONCURRENCY_ATTEMPTS = 8;
 const SEARCH_INITIAL_WORDS = 64;
@@ -131,8 +136,56 @@ const endpointOf = (options: ProbeOptions): ProbeEndpoint => {
   return { kind: 'tcp', baseUrl: baseUrl as string, network: options.network, ...(options.headers === undefined ? {} : { headers: options.headers }) };
 };
 
+export const measurementBoundOf = (contextWindow: number, samples: number): MeasurementBound => {
+  const requests = (MEASUREMENT_BASE_REQUESTS + MEASUREMENT_REQUESTS_PER_SAMPLE * samples) * (1 + MAX_RATE_LIMIT_RETRIES);
+  return { requests, inputTokens: requests * contextWindow, outputTokens: requests * maxOutputTokensFor(contextWindow) };
+};
+
+const requestedOutputOf = (body: unknown, contextWindow: number): number => {
+  if (isRecord(body)) {
+    for (const name of OUTPUT_BOUND_FIELDS) {
+      const value = body[name];
+      if (isCount(value)) return value;
+    }
+  }
+  return maxOutputTokensFor(contextWindow);
+};
+
+const meteredProbeClient = (client: ProbeClient, metered: MeteredMeasurement, bound: MeasurementBound): ProbeClient => {
+  let requests = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  const count = (body: unknown): void => {
+    const nextRequests = requests + 1;
+    const nextInput = inputTokens + tokensForText(JSON.stringify(body));
+    const nextOutput = outputTokens + requestedOutputOf(body, metered.declaredContextWindow);
+    if (nextRequests > bound.requests || nextInput > bound.inputTokens || nextOutput > bound.outputTokens) throw new MeasurementBoundReachedError(metered.display, bound);
+    requests = nextRequests;
+    inputTokens = nextInput;
+    outputTokens = nextOutput;
+  };
+  return {
+    hasHealthRoute: client.hasHealthRoute,
+    get: (route) => client.get(route),
+    post: async (route, body) => {
+      count(body);
+      return client.post(route, body);
+    },
+    request: async (method, requestPath, body) => {
+      if (method === 'POST') count(body);
+      return client.request(method, requestPath, body);
+    },
+    stream: async (route, body) => {
+      count(body);
+      return client.stream(route, body);
+    },
+    close: () => client.close(),
+  };
+};
+
 export const runProbe = async (options: ProbeOptions): Promise<ProbeReport> => {
-  const client = createProbeClient(endpointOf(options), options.signal, options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS, options.ports.timers, options.managed);
+  const unmetered = createProbeClient(endpointOf(options), options.signal, options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS, options.ports.timers, options.managed);
+  const client = options.metered === undefined ? unmetered : meteredProbeClient(unmetered, options.metered.measurement, options.metered.bound);
   try {
     return await probeWith(client, options);
   } finally {
@@ -183,7 +236,10 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   };
   const chat = retryingRateLimits(post);
 
-  const contextWindow = reportedWindowOf(modelsBody, model, healthResult.text) ?? (await searchContextWindow(chat, options.countTokens));
+  const contextWindow: ProbeReport['contextWindow'] =
+    options.metered === undefined
+      ? (reportedWindowOf(modelsBody, model, healthResult.text) ?? (await searchContextWindow(chat, options.countTokens)))
+      : { value: options.metered.measurement.declaredContextWindow, method: 'declared' };
   bound.tokens = maxOutputTokensFor(contextWindow.value);
 
   const plain = await chat({ messages: [{ role: 'user', content: PLAIN_PROMPT }] });

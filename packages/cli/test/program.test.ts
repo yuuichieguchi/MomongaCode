@@ -106,6 +106,12 @@ describe('root command', () => {
     }
   });
 
+  it('gateway probe lists --yes, the consent to measure a model paid for by use, in its help', async () => {
+    const { program, out } = withProbeOutput(harness());
+    await expect(run(program, 'gateway', 'probe', '--help')).rejects.toMatchObject({ code: 'commander.helpDisplayed' });
+    expect(out.join('')).toMatch(/--yes\s+[^\n]*paid for by use/);
+  });
+
   it('gateway probe lists its step bound with the default of 120 seconds in its help', async () => {
     const { program, out } = withProbeOutput(harness());
     await expect(run(program, 'gateway', 'probe', '--help')).rejects.toMatchObject({ code: 'commander.helpDisplayed' });
