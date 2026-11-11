@@ -23,15 +23,16 @@ const specProblems = (frames: Array<{ data: any }>): string[] =>
     return validator.validate(name, frame.data).errors.map((error) => `${frame.data.type}: ${error}`);
   });
 
+const QUESTION = [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'please use read_file' }] }];
+
 const roundTrip = async (fake: FakeChatCompletionsServer, toolCalling: 'native' | 'constrained') => {
   const { client } = await startCcGateway(fake, toolCalling);
   const first = await readSse(
     await postJson(client, '/v1/responses', {
       model: 'fm/system',
       stream: true,
-      store: true,
       tools: [readFileTool],
-      input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'please use read_file' }] }],
+      input: QUESTION,
     }),
   );
   expect(specProblems(first)).toEqual([]);
@@ -47,10 +48,8 @@ const roundTrip = async (fake: FakeChatCompletionsServer, toolCalling: 'native' 
     await postJson(client, '/v1/responses', {
       model: 'fm/system',
       stream: true,
-      store: true,
       tools: [readFileTool],
-      previous_response_id: firstTerminal.response.id,
-      input: [{ type: 'function_call_output', call_id: calls[0].call_id, output: 'file body' }],
+      input: [...QUESTION, ...firstTerminal.response.output, { type: 'function_call_output', call_id: calls[0].call_id, output: 'file body' }],
     }),
   );
   expect(specProblems(second)).toEqual([]);

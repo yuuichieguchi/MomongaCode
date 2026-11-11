@@ -61,6 +61,7 @@ export const asChildEvent = (event: PublicRunEvent, agent: string): PublicRunEve
     case 'usage.updated':
     case 'usage.charged':
     case 'context.compacted':
+    case 'context.inherited_compacted':
     case 'context.governing_loaded':
     case 'context.memories_loaded':
     case 'context.contribution':

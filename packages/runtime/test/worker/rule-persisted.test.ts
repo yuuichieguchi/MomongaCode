@@ -1,9 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { deferred } from './deferred.ts';
 import { LEASE_MS, makeEnv } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS, hookTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 describe('worker allow_always rule persistence across a crash', () => {
   it('appends the rule, the persisted event and the notice exactly once', async () => {

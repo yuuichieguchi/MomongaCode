@@ -1,7 +1,7 @@
 import type { ContentBlock, PermissionOption, SessionUpdate, ToolCall, ToolCallContent, ToolCallStatus, ToolCallUpdate } from '@agentclientprotocol/sdk';
 import { isRecord } from '@momonga/foundation';
-import { approvalShownLines, heldEndOf, unknownEffectLines, unknownEffectTitle } from '@momonga/protocol';
-import type { ElicitationRequestView, PublicRunEvent } from '@momonga/protocol';
+import { approvalShownLines, heldEndOf, isOpaqueEvent, unknownEffectLines, unknownEffectTitle } from '@momonga/protocol';
+import type { ElicitationRequestView, PublicRunEvent, PublicStreamEvent } from '@momonga/protocol';
 import { classificationLevel, describeClassification, describeDenial, describeHook, describeVerification, hookLevel, verificationLevel } from '../policy-messages.ts';
 import { describeRetryWait } from '../retry-wait.ts';
 import { asChildEvent } from '../run/child-events.ts';
@@ -34,11 +34,12 @@ export type MapperState = {
   readonly found: Map<string, string>;
   readonly firstSeq: Map<string, number>;
   readonly held: Map<string, { approvalId: string; reason: string }>;
+  readonly opaqueTypes: Set<string>;
   contextTokens: number | undefined;
   lastFailure: Extract<PublicRunEvent, { type: 'attempt.failed' }> | undefined;
 };
 
-export const createMapperState = (): MapperState => ({ calls: new Map(), found: new Map(), firstSeq: new Map(), held: new Map(), contextTokens: undefined, lastFailure: undefined });
+export const createMapperState = (): MapperState => ({ calls: new Map(), found: new Map(), firstSeq: new Map(), held: new Map(), opaqueTypes: new Set(), contextTokens: undefined, lastFailure: undefined });
 
 export class UnsupportedToolContent extends Error {
   constructor(detail: string) {
@@ -112,12 +113,24 @@ const heldUpdate = (toolCallId: string, held: { approvalId: string; reason: stri
 const awaitedText = (awaits: Extract<PublicRunEvent, { type: 'tool.waiting' }>['awaits']): string =>
   awaits.kind === 'run' ? `waiting for subagent ${awaits.agent}` : `waiting for job ${awaits.jobId}`;
 
-export const mapChildEvent = (event: PublicRunEvent, agent: string, state: MapperState, features: ClientFeatures): Effect[] => {
+const skipOpaque = (event: PublicStreamEvent, state: MapperState): event is Extract<PublicStreamEvent, { opaque: true }> => {
+  if (!isOpaqueEvent(event)) return false;
+  state.opaqueTypes.add(event.type);
+  return true;
+};
+
+export const mapChildEvent = (event: PublicStreamEvent, agent: string, state: MapperState, features: ClientFeatures): Effect[] => {
+  if (skipOpaque(event, state)) return [];
   const child = asChildEvent(event, agent);
   return child === undefined ? [] : mapRunEvent(child, 'live', state, features);
 };
 
-export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperState, features: ClientFeatures): Effect[] => {
+export const mapRunEvent = (event: PublicStreamEvent, phase: Phase, state: MapperState, features: ClientFeatures): Effect[] => {
+  if (skipOpaque(event, state)) return [];
+  return mapKnownEvent(event, phase, state, features);
+};
+
+const mapKnownEvent = (event: PublicRunEvent, phase: Phase, state: MapperState, features: ClientFeatures): Effect[] => {
   if ('seq' in event && !state.firstSeq.has(event.runId)) state.firstSeq.set(event.runId, event.seq);
   const ended = heldEndOf(event);
   if (ended !== undefined && 'runId' in event) state.held.delete(toolCallIdOf(event.runId, ended.callId));
@@ -234,6 +247,8 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
             },
           ]
         : [];
+    case 'context.inherited_compacted':
+      return [];
     case 'context.compaction_rejected':
       return features.compaction
         ? [

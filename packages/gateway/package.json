@@ -16,12 +16,10 @@
     "@momonga/protocol": "*",
     "eventsource-parser": "4.1.3",
     "hono": "4.13.16",
-    "undici": "8.12.3",
-    "ws": "8.22.1"
+    "undici": "8.12.3"
   },
   "devDependencies": {
     "@opentelemetry/sdk-trace": "3.0.0",
-    "@types/ws": "8.18.2",
     "ajv": "8.20.0"
   }
 }

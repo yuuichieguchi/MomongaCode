@@ -1,4 +1,3 @@
-import { provedRuleSolver } from './fake-rule-solver.ts';
 import type { RuleSolverSource } from '../../src/process/rule-verifier.ts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -94,7 +93,7 @@ const exported = <T>(name: string): T => {
 };
 
 export const startRuntimeProcessUnprepared = (options: StartRuntimeProcessOptions): Promise<RuntimeProcess> =>
-  exported<(options: StartRuntimeProcessOptions) => Promise<RuntimeProcess>>('startRuntimeProcess')({ role: fixedRolePort('serving'), ruleSolver: provedRuleSolver, locks: testLocks(), ...options });
+  exported<(options: StartRuntimeProcessOptions) => Promise<RuntimeProcess>>('startRuntimeProcess')({ role: fixedRolePort('serving'), locks: testLocks(), ...options });
 
 export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): Promise<RuntimeProcess> => {
   if (path.isAbsolute(options.home) && options.signal?.aborted !== true) {

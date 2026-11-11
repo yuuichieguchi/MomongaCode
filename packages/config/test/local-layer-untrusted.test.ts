@@ -41,7 +41,7 @@ describe('local settings in an untrusted project', () => {
     writeJson(userSettingsPath(tree), {});
     writeJson(localSettingsPath(tree), { enableAllProjectMcpServers: true });
     const file = writeJson(mcpJsonPath(tree), { mcpServers: { evil: { command: 'evil' } } });
-    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: distrusting(), env: {} });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: distrusting(), env: {}, referenceEnv: {} });
     expect(result.enabled).toEqual([]);
     expect(result.pendingApproval).toEqual([]);
     expect(result.warnings.some((w) => w.includes(file))).toBe(true);

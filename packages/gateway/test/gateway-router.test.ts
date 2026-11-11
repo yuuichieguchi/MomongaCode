@@ -102,21 +102,6 @@ describe('capability filter', () => {
     expect(response.body.momonga.fallbackFrom).toBeUndefined();
   });
 
-  it('applies the config capability override over the adapter declaration when filtering', async () => {
-    const declaredNative = createScriptedAdapter({ calls: [], capabilities: { toolCalling: 'native' } });
-    const { client } = await startGateway({
-      adapters: { 'scripted/model-o': declaredNative },
-      config: {
-        chains: { 'scripted/model-o': ['scripted/model-o'] },
-        targets: { 'scripted/model-o': { capabilities: { toolCalling: 'none' } } },
-      },
-    });
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/model-o', input: userInput('hi'), tools: TOOLS }));
-    expect(response.status).toBe(400);
-    expectErrorBody(response.body, { type: 'invalid_request', code: 'capability_unsupported', param: 'tools' });
-    expect(declaredNative.calls).toHaveLength(0);
-  });
-
   it('returns 400 capability_unsupported when no target of the alias supports tools', async () => {
     const plain = createScriptedAdapter({ calls: [], capabilities: { toolCalling: 'none' } });
     const { client } = await startGateway({

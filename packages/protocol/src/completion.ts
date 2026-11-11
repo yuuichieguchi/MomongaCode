@@ -191,6 +191,14 @@ export type RunDeniedCallReport = { callId: string; tool: string; source: 'manda
 
 export type RunOperationReport = { callId: string; operation: string; target: string; effect: OperationEffectRecord['outcome'] };
 
+export const REPORT_ANOMALY_CAUSES = ['unknown_call', 'not_held'] as const;
+
+export type ReportAnomalyCause = (typeof REPORT_ANOMALY_CAUSES)[number];
+
+export type RunReportAnomaly = { seq: number; type: string; callId: string; cause: ReportAnomalyCause };
+
+export type RunFailedCallReport = { callId: string; tool: string; seq: number };
+
 export type RunDelegationReport = { held: RunHeldCallReport[]; denied: RunDeniedCallReport[]; quiescent: boolean };
 
 export type RunReport = {
@@ -214,6 +222,8 @@ export type RunReport = {
   stoppedBy?: BudgetExhausted;
   delegation?: RunDelegationReport;
   operations?: RunOperationReport[];
+  failedCalls?: RunFailedCallReport[];
+  anomalies?: RunReportAnomaly[];
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);

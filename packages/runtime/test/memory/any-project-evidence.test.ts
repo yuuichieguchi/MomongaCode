@@ -30,8 +30,9 @@ const journalRecordingEveryPath = (store: RuntimeStore): RuntimeStore['journalFa
   evidence: async ({ paths }): Promise<EvidenceReply> => ({ lastSeq: 0, recorded: paths.map(() => ({ seq: 1, sha256: RECORDED })), check: null }),
 });
 
-const saveThroughTool = async (store: RuntimeStore, folder: string, scope: MemoryScope, paths?: string[]) => {
+const saveThroughTool = async (store: RuntimeStore, folder: string, scope: MemoryScope, paths?: string[], platform: NodeJS.Platform = 'darwin') => {
   const port = createMemoryPort({
+    platform,
     store: { memories: store.memories, trust: store.trust, journalFacts: journalRecordingEveryPath(store) },
     settings: { trusted: () => true, verification: async () => ({ commands: [] }) } as never,
     evidenceRun: () => gitAnsweringHead,
@@ -47,7 +48,8 @@ const saveThroughTool = async (store: RuntimeStore, folder: string, scope: Memor
   return tool.execute(input as never, { runId: run.id, step: 1, callId: 'call-1', signal: SIGNAL } as never, undefined);
 };
 
-const commandContext = (store: RuntimeStore) => ({
+const commandContext = (store: RuntimeStore, platform: NodeJS.Platform = 'darwin') => ({
+  platform,
   trusted: async (project: string) => (await store.trust.decisionAsked(project, NEVER_CANCELLED)).decision === 'trusted',
   evidenceRun: () => gitAnsweringHead,
   signal: SIGNAL,
@@ -105,5 +107,13 @@ describe('a project memory keeps its repository evidence on every path', () => {
     expect(evidence[0]).toMatchObject({ kind: 'file', project: folder, path: 'src/a.ts' });
     expect((evidence[0] as { sha256: string }).sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(evidence[1]).toEqual({ kind: 'commit', sha: HEAD });
+  });
+});
+
+describe('the platform given at the start decides how a memory path is read', () => {
+  it('stores a Windows path given through the tool with forward slashes when the start names win32', async () => {
+    const { store, folder } = await trustedGitFolder();
+    await saveThroughTool(store, folder, 'project', ['src\\a.ts'], 'win32');
+    expect(repositoryEvidenceOf(savedEvidence(store, 'project'))).toContainEqual({ kind: 'file', project: folder, path: 'src/a.ts', sha256: RECORDED });
   });
 });

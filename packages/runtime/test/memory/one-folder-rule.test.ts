@@ -36,6 +36,7 @@ const setup = async (evidence: (folderA: string) => MemoryEvidence[] = () => [{ 
 
 const statusSeenFrom = async (store: RuntimeStore, folder: string, ancestor: boolean): Promise<string> => {
   const port = createMemoryPort({
+    platform: process.platform,
     store,
     settings: {
       trusted: () => true,

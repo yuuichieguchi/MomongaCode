@@ -4,6 +4,8 @@ import type { Awaitable, Clock, MomongaPaths, VerdictSubject } from '@momonga/fo
 import { ShellNotFoundError, askedBy } from '@momonga/policy';
 import type { PolicyHostFilesystem } from '@momonga/policy';
 import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
+import { createPolicyFilesystem, resolveBashPath } from '@momonga/tools';
+import type { ShellHost } from '@momonga/tools';
 import type { RuleVerification, RuleVerifierPort } from '../ports.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { RULE_VERIFIER_THREAD_CODE } from './rule-verifier-thread-code.generated.ts';
@@ -93,3 +95,22 @@ export const createRuleVerifier = ({ host, fs: policyFilesystem, paths, timers, 
     verify: async (input, signal) => (await report(input, signal)).verdict,
   };
 };
+
+export type ProductRuleVerifierDeps = {
+  solver: RuleSolverSource | undefined;
+  paths: Pick<MomongaPaths, 'home' | 'root' | 'keychains' | 'executables'>;
+  timers: ServiceTimers;
+  shellHost: Pick<ShellHost, 'platform' | 'isExecutable'>;
+  env: NodeJS.ProcessEnv;
+  clock: Clock;
+};
+
+export const productRuleVerifier = ({ solver, paths, timers, shellHost, env, clock }: ProductRuleVerifierDeps): RuleVerifierPort =>
+  createRuleVerifier({
+    host: solver === undefined ? installedRuleSolver(import.meta.url) : solver(paths),
+    fs: createPolicyFilesystem(),
+    paths,
+    timers,
+    bashPath: () => resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env }),
+    clock,
+  });

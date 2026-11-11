@@ -231,7 +231,6 @@ describe('the merge is wire-only through the gateway', () => {
   const unmerged = {
     model: 'scripted/system',
     stream: true,
-    store: true,
     input: [
       { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'one' }] },
       { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'two' }] },

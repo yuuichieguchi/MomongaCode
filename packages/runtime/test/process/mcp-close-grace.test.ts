@@ -96,6 +96,7 @@ const adminSetup = async () => {
     report: makeReporter().report,
     settings: {
       envFor: async () => ({}),
+      referenceEnvFor: async () => ({}),
       admitUserSnapshot: async (signal) => {
         const snapshot = await cache.load(signal);
         if ('error' in snapshot) throw snapshot.error;

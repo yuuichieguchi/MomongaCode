@@ -56,7 +56,7 @@ describe('config names the directories under the home without an environment, an
   it('in loadMcpServers and appendPermissionRule', async () => {
     forget();
     const tree = makeTree();
-    await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
+    await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, referenceEnv: {} });
     await appendPermissionRule({ lock: testKernelLock(), ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow', signal: NEVER_ABORTED });
     expectNoEnvironmentOfItsOwn();
   });

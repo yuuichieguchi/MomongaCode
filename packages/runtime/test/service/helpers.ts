@@ -835,7 +835,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
       gateway,
       settings,
       skills: diskSkillsPort(env.layout.home),
-      memories: runtime.createMemoryPort({ store: env.store, settings, evidenceRun: unavailableEvidenceRun }),
+      memories: runtime.createMemoryPort({ platform: process.platform, store: env.store, settings, evidenceRun: unavailableEvidenceRun }),
       history: inertHistoryPort,
       governance: inertGovernancePort,
       tools,

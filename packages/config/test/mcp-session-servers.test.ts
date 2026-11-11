@@ -14,6 +14,7 @@ describe('loadMcpServers with session servers', () => {
       projectDir: tree.project,
       trust: trusting(tree),
       env: { NOT_EXPANDED: 'secret' },
+      referenceEnv: { NOT_EXPANDED: 'secret' },
       sessionServers: { editor: SESSION_STDIO, docs: SESSION_HTTP },
     });
 
@@ -26,7 +27,7 @@ describe('loadMcpServers with session servers', () => {
 
   it('enables session servers in a folder that is not trusted', async () => {
     const tree = makeTree();
-    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: distrusting(), env: {}, sessionServers: { editor: SESSION_STDIO } });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: distrusting(), env: {}, referenceEnv: {}, sessionServers: { editor: SESSION_STDIO } });
 
     expect(result.enabled.map((entry) => entry.scope)).toEqual(['session']);
   });
@@ -36,7 +37,7 @@ describe('loadMcpServers with session servers', () => {
     writeJson(userSettingsPath(tree), { mcpServers: { mine: { command: 'user-server' } } });
     writeJson(localSettingsPath(tree), { enableAllProjectMcpServers: true });
     writeJson(mcpJsonPath(tree), { mcpServers: { shared: { command: 'project-server' } } });
-    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, sessionServers: { editor: SESSION_STDIO } });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, referenceEnv: {}, sessionServers: { editor: SESSION_STDIO } });
 
     expect(result.enabled.map((entry) => [entry.name, entry.scope])).toEqual([
       ['mine', 'user'],
@@ -48,7 +49,7 @@ describe('loadMcpServers with session servers', () => {
   it('refuses a session server that reuses the name of a user server and keeps the user server', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { mcpServers: { editor: { command: 'user-server' } } });
-    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, sessionServers: { editor: SESSION_STDIO, other: SESSION_HTTP } });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, referenceEnv: {}, sessionServers: { editor: SESSION_STDIO, other: SESSION_HTTP } });
 
     expect(result.enabled.map((entry) => [entry.name, entry.scope])).toEqual([
       ['editor', 'user'],
@@ -61,7 +62,7 @@ describe('loadMcpServers with session servers', () => {
     const tree = makeTree();
     writeJson(localSettingsPath(tree), { enableAllProjectMcpServers: true });
     writeJson(mcpJsonPath(tree), { mcpServers: { editor: { command: 'project-server' } } });
-    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, sessionServers: { editor: SESSION_STDIO } });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, referenceEnv: {}, sessionServers: { editor: SESSION_STDIO } });
 
     expect(result.enabled.map((entry) => [entry.name, entry.scope])).toEqual([['editor', 'session']]);
     expect(result.warnings.join('\n')).toContain('"editor"');
@@ -71,7 +72,7 @@ describe('loadMcpServers with session servers', () => {
     const tree = makeTree();
 
     await expect(
-      loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, sessionServers: { editor: { nonsense: true } } }),
+      loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, referenceEnv: {}, sessionServers: { editor: { nonsense: true } } }),
     ).rejects.toThrow(/invalid MCP server "editor"/);
   });
 });

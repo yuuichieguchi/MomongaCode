@@ -83,13 +83,20 @@ export type FakePlanBackend = FakeBackend & {
 };
 
 export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend => {
-  const base = fakeBackend(options);
-  const writtenModels = base.models;
+  let models: string[] = [...(options.models ?? [SESSION.model])];
+  const base = fakeBackend({
+    ...options,
+    get models() {
+      return models;
+    },
+  });
+  const listedModels = base.models;
+  const listing = base.modelList;
+  const sessionModel = base.model;
   const planCalls: PlanCall[] = [];
   const dismissals: string[] = [];
   const listenerPaths: string[] = [];
   const clipboard: string[] = [];
-  let models: string[] = [...(options.models ?? [SESSION.model])];
   let accounts: PlanAccountView[] = [...(options.accounts ?? [])];
   const members = (): string[] => [...(options.chain ?? models)];
   const called = (route: string, body?: unknown): void => {
@@ -186,9 +193,12 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
       clipboard.push(text);
       return { kind: 'copied' as const, characters: [...text].length };
     },
-    models: async () => [...(await fakeBackend({ ...options, models }).models()).map(withBilling), ...(await writtenModels()).filter((entry) => !models.includes(entry.id))],
-    modelList: async () => ({ object: 'list' as const, data: await backend.models(), start: null, roles: {} }),
-    model: async () => withBilling(await fakeBackend(options).model()),
+    models: async () => (await listedModels()).map(withBilling),
+    modelList: async () => {
+      const listed = await listing();
+      return { ...listed, data: listed.data.map(withBilling) };
+    },
+    model: async () => withBilling(await sessionModel()),
     health: async (): Promise<GatewayHealth> => ({
       ok: true,
       models: Object.fromEntries(members().map((member) => [member, options.health?.[member] ?? { ok: true, breaker: 'closed' as const }])),

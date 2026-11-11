@@ -57,6 +57,7 @@ export type RunServiceOptions = {
   permissionRules: (session: Session, signal: AbortSignal) => Promise<readonly PermissionRule[]>;
   userInput: UserInputPort;
   evidenceRun: (project: string) => EvidenceRun;
+  platform: NodeJS.Platform;
   defaults: { runTimeoutMs?: number; limits: RunLimitDefaults };
   timers?: ServiceTimers;
   keepAliveMs?: number;
@@ -155,6 +156,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     permissionRules: options.permissionRules,
     userInput: options.userInput,
     evidenceRun: options.evidenceRun,
+    platform: options.platform,
     isDraining: () => draining,
     beginDraining: () => {
       draining = true;

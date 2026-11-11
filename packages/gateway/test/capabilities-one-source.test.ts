@@ -30,10 +30,7 @@ const TWO_AUTO = {
 
 const FILTER_OVERRIDE = { allowedTools: ['filter' as const] };
 
-const withoutAllowedTools = (capabilities: Capabilities): Capabilities => {
-  const { allowedTools: _dropped, ...rest } = capabilities;
-  return rest;
-};
+const withFilter = (capabilities: Capabilities): Capabilities => ({ ...capabilities, ...FILTER_OVERRIDE });
 
 const requestBody = (tools: unknown, toolChoice: unknown, model: string) => ({ model, input: userInput('hello'), tools, tool_choice: toolChoice });
 
@@ -42,7 +39,7 @@ const listedNames = (body: any): string[] => (body?.tools ?? []).map((tool: any)
 const systemText = (body: any): string =>
   (body?.messages ?? []).filter((message: any) => message.role === 'system').map((message: any) => message.content).join('\n');
 
-const remoteConfig = { chains: { 'scripted/upstream-model': ['scripted/upstream-model'] }, targets: { 'scripted/upstream-model': { kind: 'remote', capabilities: FILTER_OVERRIDE } } };
+const remoteConfig = { chains: { 'scripted/upstream-model': ['scripted/upstream-model'] }, targets: { 'scripted/upstream-model': { kind: 'remote' } } };
 
 const expectCountedAsSubset = async ({ client, model }: { client: Parameters<typeof postJson>[0]; model: string }) => {
   const filtered = await readJson(await postJson(client, '/v1/momonga/count_tokens', requestBody(TOOLS, TWO_AUTO, model)));
@@ -54,7 +51,7 @@ const expectCountedAsSubset = async ({ client, model }: { client: Parameters<typ
 
 describe('a probe-derived override reaches the send path as it reaches the count path', () => {
   it('anthropic: create and count_tokens send the same tools and tool_choice, both filtered as the router resolves', async () => {
-    const own = withoutAllowedTools(REMOTE_CAPABILITIES);
+    const own = withFilter(REMOTE_CAPABILITIES);
     const creating = await startAnthropicGateway({ capabilities: own, config: remoteConfig, script: [anthropicTextReply(['ok'])] });
     const counting = await startAnthropicGateway({ capabilities: own, config: remoteConfig, script: [anthropicCountTokensReply(42)] });
     const created = await readJson(await postJson(creating.client, '/v1/responses', requestBody(TOOLS, TWO_AUTO, creating.model)));
@@ -72,7 +69,7 @@ describe('a probe-derived override reaches the send path as it reaches the count
   });
 
   it('open-responses: create sends the filtered tools and count_tokens counts the same tools', async () => {
-    const gateway = await startOpenResponsesGateway({ capabilities: withoutAllowedTools(REMOTE_CAPABILITIES), config: remoteConfig, script: [openResponsesTextReply(['ok'])] });
+    const gateway = await startOpenResponsesGateway({ capabilities: withFilter(REMOTE_CAPABILITIES), config: remoteConfig, script: [openResponsesTextReply(['ok'])] });
     await expectCountedAsSubset(gateway);
     const created = await readJson(await postJson(gateway.client, '/v1/responses', requestBody(TOOLS, TWO_AUTO, gateway.model)));
     expect(created.body.error).toBeNull();
@@ -83,10 +80,10 @@ describe('a probe-derived override reaches the send path as it reaches the count
 
   it('ollama: create sends the filtered tools and count_tokens counts the same tools', async () => {
     const fake = await startFakeOllama({ chat: [{ kind: 'ndjson' as const, lines: [chunkLine({ content: 'ok' }), doneLine()] }] });
-    const adapter = makeOllamaAdapter(fake, { capabilities: async () => withoutAllowedTools(OLLAMA_CAPABILITIES) });
+    const adapter = makeOllamaAdapter(fake, { capabilities: async () => withFilter(OLLAMA_CAPABILITIES) });
     const gateway = await startGateway({
       adapters: { 'scripted/devstral-small-2': adapter },
-      config: { chains: { 'scripted/devstral-small-2': ['scripted/devstral-small-2'] }, targets: { 'scripted/devstral-small-2': { kind: 'local', capabilities: FILTER_OVERRIDE } } },
+      config: { chains: { 'scripted/devstral-small-2': ['scripted/devstral-small-2'] }, targets: { 'scripted/devstral-small-2': { kind: 'local' } } },
     });
     await expectCountedAsSubset(gateway);
     const created = await readJson(await postJson(gateway.client, '/v1/responses', requestBody(TOOLS, TWO_AUTO, gateway.model)));
@@ -101,10 +98,10 @@ describe('a probe-derived override reaches the send path as it reaches the count
       scenario,
       script: [{ kind: 'stream' as const, chunks: [{ delta: { role: 'assistant' as const, content: reply } }, { delta: {}, finishReason: 'stop' as const }] }],
     });
-    const adapter = makeAdapter(fake, { capabilities: async () => withoutAllowedTools({ ...CC_CAPABILITIES, toolCalling }) });
+    const adapter = makeAdapter(fake, { capabilities: async () => withFilter({ ...CC_CAPABILITIES, toolCalling }) });
     const gateway = await startGateway({
       adapters: { 'fm/system': adapter },
-      config: { chains: { 'fm/system': ['fm/system'] }, targets: { 'fm/system': { capabilities: FILTER_OVERRIDE } } },
+      config: { chains: { 'fm/system': ['fm/system'] }, targets: { 'fm/system': {} } },
     });
     return { fake, gateway };
   };
@@ -153,8 +150,8 @@ const sendAndCountSourceOf = (relative: string): string =>
 describe('compaction follows the capabilities the router resolves', () => {
   const BUDGET_REASONING = { control: 'thinking' as const, form: 'budget' as const, budgets: { low: 2048 } };
 
-  const compactedSummaryBody = async (own: Capabilities, override: Record<string, unknown> | undefined) => {
-    const target = { model: 'upstream-model', kind: 'remote', ...(override === undefined ? {} : { capabilities: override }) };
+  const compactedSummaryBody = async (own: Capabilities) => {
+    const target = { model: 'upstream-model', kind: 'remote' };
     const gateway = await startAnthropicGateway({
       capabilities: own,
       config: { chains: { 'scripted/upstream-model': ['scripted/upstream-model'] }, targets: { 'scripted/upstream-model': target } },
@@ -165,12 +162,11 @@ describe('compaction follows the capabilities the router resolves', () => {
     return gateway.fake.requests.filter((request) => request.path === '/v1/messages').at(-1)?.body as any;
   };
 
-  it('anthropic: a thinking form set only by the override reaches the summary request as if the adapter declared it', async () => {
-    const declared = await compactedSummaryBody({ ...withoutAllowedTools(REMOTE_CAPABILITIES), reasoning: BUDGET_REASONING }, undefined);
+  it('anthropic: a thinking form the adapter declares reaches the summary request', async () => {
+    const declared = await compactedSummaryBody({ ...withFilter(REMOTE_CAPABILITIES), reasoning: BUDGET_REASONING });
     expect(declared.thinking).toBeDefined();
-    const overridden = await compactedSummaryBody(withoutAllowedTools(REMOTE_CAPABILITIES), { reasoning: BUDGET_REASONING });
-    expect(overridden.thinking).toEqual(declared.thinking);
-    expect(overridden.max_tokens).toBe(declared.max_tokens);
+    const plain = await compactedSummaryBody(withFilter(REMOTE_CAPABILITIES));
+    expect(plain.thinking).toBeUndefined();
   });
 });
 

@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import WebSocket from 'ws';
 import { GENERATION_RETIRED_CODE } from '@momonga/foundation';
 import { createScriptedAdapter, textResponseEvents } from '@momonga/testkit';
 import { PRIMARY, getJson, postJson, readJson, startGateway, switchableRole, userInput } from '../gateway-helpers.ts';
@@ -7,17 +6,6 @@ import { PRIMARY, getJson, postJson, readJson, startGateway, switchableRole, use
 const RETIRED_MESSAGE = 'This gateway belongs to a replaced generation and takes no new requests. The request was not run; send it again.';
 
 const textCall = (text: string) => ({ events: textResponseEvents({ model: 'scripted-primary', chunks: [text] }) });
-
-const upgradeStatus = (socketPath: string): Promise<number | 'open'> =>
-  new Promise((resolve, reject) => {
-    const socket = new WebSocket(`ws+unix://${socketPath}:/v1/responses`);
-    socket.once('open', () => {
-      socket.close();
-      resolve('open');
-    });
-    socket.once('unexpected-response', (_request, response) => resolve(response.statusCode ?? 0));
-    socket.once('error', reject);
-  });
 
 const retiringGateway = async () => {
   const role = switchableRole('retiring');
@@ -42,48 +30,6 @@ describe('a retiring gateway refuses new calls and sends nothing upstream (desig
     expect(primary.calls).toEqual([]);
     expect(primary.compactCalls).toEqual([]);
     expect(primary.countCalls).toEqual([]);
-  });
-
-  it('refuses a WebSocket upgrade with 503 Service Unavailable', async () => {
-    const { socketPath } = await retiringGateway();
-
-    expect(await upgradeStatus(socketPath)).toBe(503);
-  });
-
-  it('refuses a new request on a WebSocket connection opened before retirement, and closes the connection', async () => {
-    const role = switchableRole('serving');
-    const primary = createScriptedAdapter({ calls: [textCall('never sent')] });
-    const { socketPath } = await startGateway({ adapters: { [PRIMARY]: primary }, role });
-    const socket = new WebSocket(`ws+unix://${socketPath}:/v1/responses`);
-    await new Promise<void>((resolve, reject) => {
-      socket.once('open', () => resolve());
-      socket.once('error', reject);
-    });
-    const answered = new Promise<Record<string, unknown>>((resolve) => socket.once('message', (data) => resolve(JSON.parse(data.toString()) as Record<string, unknown>)));
-    const closed = new Promise<number>((resolve) => socket.once('close', (code) => resolve(code)));
-
-    role.become('retiring');
-    socket.send(JSON.stringify({ type: 'response.create', model: PRIMARY, store: false, input: userInput('hi') }));
-
-    expect(await answered).toMatchObject({ type: 'error', status: 503, error: { code: GENERATION_RETIRED_CODE, message: RETIRED_MESSAGE } });
-    expect(await closed).toBe(1001);
-    expect(primary.calls).toEqual([]);
-  });
-
-  it('closes an idle WebSocket connection when the gateway releases its idle connections', async () => {
-    const role = switchableRole('serving');
-    const { gateway, socketPath } = await startGateway({ adapters: { [PRIMARY]: createScriptedAdapter({ calls: [] }) }, role });
-    const socket = new WebSocket(`ws+unix://${socketPath}:/v1/responses`);
-    await new Promise<void>((resolve, reject) => {
-      socket.once('open', () => resolve());
-      socket.once('error', reject);
-    });
-    const closed = new Promise<number>((resolve) => socket.once('close', (code) => resolve(code)));
-
-    role.become('retiring');
-    gateway.releaseIdleConnections();
-
-    expect(await closed).toBe(1001);
   });
 
   it('answers a cancel of an unknown id with 200 and cancelled false, as while serving', async () => {

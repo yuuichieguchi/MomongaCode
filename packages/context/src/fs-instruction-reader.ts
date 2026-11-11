@@ -39,7 +39,8 @@ const withRegularFile = async <T>(
   }
 };
 
-export const createFsInstructionReader = (signal: AbortSignal): InstructionReader => ({
+export const createFsInstructionReader = (signal: AbortSignal, platform: NodeJS.Platform): InstructionReader => ({
+  platform,
   contains: (directory, candidate) => hostPaths(signal).comparableContains(directory, candidate),
   read: (filePath) =>
     settledOrAborted(

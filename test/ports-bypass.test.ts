@@ -29,7 +29,6 @@ const SYNCHRONOUS_ADAPTERS: Readonly<Record<string, string>> = {
 };
 
 const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
-  'packages/cli/src/eval/workspace-probe.ts': { 'node:fs/promises': 3, 'setTimeout': 1 },
   'packages/cli/src/handover/replace-process.ts': { 'node:child_process': 1 },
   'packages/cli/src/ripgrep/host.ts': { 'randomBytes': 1 },
   'packages/cli/src/tui/run-interactive.tsx': { 'node:child_process': 1, 'node:os': 1 },
@@ -86,6 +85,7 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/runtime/src/worker/touched-paths.ts': { 'setImmediate': 1 },
   'packages/sandbox/src/bubblewrap.ts': { 'node:child_process': 1, 'node:fs': 7 },
   'packages/sandbox/src/placeholder-journal.ts': { 'node:fs': 16 },
+  'packages/sandbox/src/relay.ts': { 'node:child_process': 1, 'node:net': 3 },
   'packages/sandbox/src/scratch.ts': { 'node:fs': 1 },
   'packages/sandbox/src/seatbelt.ts': { 'node:fs': 1 },
   'packages/skills/src/file-system.ts': { 'node:fs/promises': 4 },

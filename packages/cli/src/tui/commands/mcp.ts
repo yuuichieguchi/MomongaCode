@@ -24,12 +24,14 @@ const needed = (what: string) => (text: string): string | undefined => (text.tri
 
 const words = (text: string): string[] => text.split(/\s+/).filter((word) => word !== '');
 
-const strings = (current: unknown): string[] => (Array.isArray(current) ? (current as unknown[]).filter((member): member is string => typeof member === 'string') : []);
+const entries = (current: unknown): unknown[] => (Array.isArray(current) ? (current as unknown[]) : []);
 
-const withName = (name: string) => (current: unknown): unknown => (strings(current).includes(name) ? current : [...strings(current), name]);
+const namesEntry = (name: string) => (member: unknown): boolean => member === name || (typeof member === 'object' && member !== null && (member as Record<string, unknown>)['name'] === name);
+
+const withEntry = (name: string, entry: unknown) => (current: unknown): unknown => [...entries(current).filter((member) => !namesEntry(name)(member)), entry];
 
 const withoutName = (name: string) => (current: unknown): unknown => {
-  const next = strings(current).filter((member) => member !== name);
+  const next = entries(current).filter((member) => !namesEntry(name)(member));
   return next.length === 0 ? undefined : next;
 };
 
@@ -67,9 +69,11 @@ const switchProjectServer = async (context: SlashContext, server: McpServerView)
   const choice = await context.overlays.choose({ title: server.name, rows: PROJECT_SERVER_ACTIONS.map((label) => ({ label })), decideOn: 'enter', escape: 'back', filter: false });
   if (choice === undefined) return 'left';
   const enable = PROJECT_SERVER_ACTIONS[choice.index] === 'Enable';
+  if (enable && server.approval === undefined) return 'left';
   const [joined, left] = enable ? ['enabledMcpjsonServers', 'disabledMcpjsonServers'] : ['disabledMcpjsonServers', 'enabledMcpjsonServers'];
+  const entry = server.approval === undefined || !enable ? server.name : { name: server.name, digest: server.approval.digest };
   const refusal = await writeSetting(context, 'user', { kind: 'update', path: [left], update: withoutName(server.name) });
-  return refusal ?? writeSetting(context, 'user', { kind: 'update', path: [joined], update: withName(server.name) });
+  return refusal ?? writeSetting(context, 'user', { kind: 'update', path: [joined], update: withEntry(server.name, entry) });
 };
 
 const actOnServer = async (context: SlashContext, server: McpServerView): Promise<Refusal | 'left' | undefined> => {

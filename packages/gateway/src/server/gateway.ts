@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { getRequestListener } from '@hono/node-server';
-import { HOST_READ_BOUND_MS, listenUnix, startDeadlineSignal } from '@momonga/foundation';
+import { HOST_READ_BOUND_MS, isLoopbackAddress, listenUnix, startDeadlineSignal } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
 import { createCompactionCodec } from '../core/compaction.ts';
 import { createReasoningOriginCodec } from '../core/reasoning-origin.ts';
@@ -17,11 +17,9 @@ import { createRequestValidator, createStoredDataChecks } from '../core/validati
 import type { DerivedModelsOptions, FixedModelsOptions, Gateway, GatewayEpochsShared, GatewayOptions } from '../types.ts';
 import { createErrorExit } from './error-exit.ts';
 import { createApp } from './app.ts';
-import { checkGatewayOptions, isLoopbackAddress, limitsOf } from './config-check.ts';
+import { checkGatewayOptions, debugListenAddress, limitsOf } from './config-check.ts';
 import { createRequestTracker } from './tracker.ts';
 import type { RequestTracker } from './tracker.ts';
-import { createWebSocketTransport } from './websocket.ts';
-import type { WebSocketTransport } from './websocket.ts';
 
 type FetchHandler = Parameters<typeof getRequestListener>[0];
 
@@ -126,7 +124,6 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
   const validator = createRequestValidator();
   const store = openGatewayStore(options.dbPath, createStoredDataChecks());
   const servers: http.Server[] = [];
-  const transports: WebSocketTransport[] = [];
   const closeController = new AbortController();
   const forceCloseController = new AbortController();
   try {
@@ -178,18 +175,8 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
     });
     const handler: FetchHandler = (request, env) => app.fetch(request, env);
 
-    const webSocket = createWebSocketTransport({
-      services,
-      responses,
-      tracker,
-      isRetiring,
-      connectionLimitMs: limits.websocketConnectionMs,
-      errors,
-    });
-    transports.push(webSocket);
     const unixServer = boundedHttpServer(getRequestListener(handler));
     countRequests(unixServer, tracker);
-    webSocket.attach(unixServer);
     servers.push(unixServer);
     await listenUnix(unixServer, options.socketPath, { mechanism: options.lock }, startDeadlineSignal(options.startSignal));
     if (options.onFatal !== undefined) watchServerErrors(unixServer, options.onFatal);
@@ -198,21 +185,10 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
     let tcpServer: http.Server | undefined;
     if (options.debugTcp !== undefined) {
       const { token } = options.debugTcp;
-      const tcpSockets = createWebSocketTransport({
-        services,
-        responses,
-        tracker,
-        isRetiring,
-        connectionLimitMs: limits.websocketConnectionMs,
-        authorize: (request) => tokenMatches(token, request.headers.authorization ?? null),
-        errors,
-      });
-      transports.push(tcpSockets);
       tcpServer = boundedHttpServer(getRequestListener(requireToken(token, handler)));
       countRequests(tcpServer, tracker);
-      tcpSockets.attach(tcpServer);
       servers.push(tcpServer);
-      tcpPort = await listenTcp(tcpServer, options.debugTcp.host, options.debugTcp.port);
+      tcpPort = await listenTcp(tcpServer, debugListenAddress(options.debugTcp.host), options.debugTcp.port);
       assertLoopbackBinding(tcpServer);
       if (options.onFatal !== undefined) watchServerErrors(tcpServer, options.onFatal);
     }
@@ -228,7 +204,6 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
         const reason = gatewayClosedError();
         closeController.abort(reason);
         responses.abortUnkeyed(reason);
-        for (const transport of transports) transport.beginClose();
         const closed = servers.map((server) => closeServer(server));
         for (const server of servers) server.closeIdleConnections();
         const graceMs = values === undefined ? limits.closeGraceMs : values.closeGraceMs;
@@ -248,7 +223,6 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
           responses.abortAll(reason);
           unary.abortAll(reason);
         }
-        for (const transport of transports) transport.terminateAll();
         for (const server of servers) server.closeAllConnections();
         await Promise.all(closed);
         try {
@@ -270,7 +244,6 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       addCredential: (credential) => redactor.add(credential),
       activeRequests,
       releaseIdleConnections: () => {
-        for (const transport of transports) transport.beginClose();
         for (const server of servers) server.closeIdleConnections();
       },
       close,

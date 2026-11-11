@@ -546,7 +546,7 @@ describe('architecture: a large-window target gets the whole tool set', () => {
         projectRoot: root,
         home: root,
       },
-      { meter, blobs, instructions: createFsInstructionReader(new AbortController().signal) },
+      { meter, blobs, instructions: createFsInstructionReader(new AbortController().signal, process.platform) },
     );
     expect(built.tools.map((tool) => tool.name).sort()).toEqual(registered.map((tool) => tool.name).sort());
     for (const tool of registered) expect(built.tools.find((entry) => entry.name === tool.name)?.description).toBe(tool.description);

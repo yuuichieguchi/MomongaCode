@@ -5,16 +5,17 @@ import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 const recordingBlobs = () => {
   const puts: Array<{ runId?: string }> = [];
   const reads: Array<{ runId: string } | undefined> = [];
-  const port = {
-    put: async (_data: string, options: { runId?: string }) => {
+  const read = async (_handle: string, _range: { lineStart: number; lineEnd: number } | { offset: number; length: number }, scope?: { runId: string }) => {
+    reads.push(scope);
+    return { text: 'x', totalLines: 1, totalBytes: 1, offset: 0, length: 1 };
+  };
+  const port: BlobPort = {
+    put: async (_data, options) => {
       puts.push(options);
       return { handle: 'ab'.repeat(32), sha256: 'ab'.repeat(32), byteLength: 1, lineCount: 1 };
     },
-    read: (_handle: string, _range: unknown, scope?: { runId: string }) => {
-      reads.push(scope);
-      return Promise.resolve({ text: 'x', totalLines: 1, totalBytes: 1 });
-    },
-  } as unknown as BlobPort;
+    read,
+  };
   return { port, puts, reads };
 };
 

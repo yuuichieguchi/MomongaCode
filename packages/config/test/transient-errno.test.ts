@@ -53,7 +53,7 @@ describe('config transient errno propagation', () => {
       const file = writeJson(mcpJsonPath(tree), { mcpServers: { demo: { command: '/bin/echo' } } });
       const injected = errnoError(code);
       failAsyncRead(file, injected);
-      const error = await rejectionOf(loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { PATH: '/usr/bin:/bin' } }));
+      const error = await rejectionOf(loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { PATH: '/usr/bin:/bin' }, referenceEnv: { PATH: '/usr/bin:/bin' } }));
       expect(error).toBe(injected);
     });
 

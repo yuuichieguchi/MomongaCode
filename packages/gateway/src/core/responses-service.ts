@@ -5,7 +5,6 @@ import { armDeadline } from './deadline.ts';
 import { gatewayClosedError, invalidRequest, runCancelledError } from './errors.ts';
 import { createIdempotencyRegistry, parseIdempotencyKey } from './idempotency.ts';
 import { normalizeInput } from './input.ts';
-import type { ConnectionResponses } from './input.ts';
 import { executeResponse } from './respond.ts';
 import type { ResponseJob } from './respond.ts';
 import { NEVER_EVICTED, startBufferedRun, startDirectRun } from './run.ts';
@@ -30,7 +29,7 @@ export type Submission = {
 };
 
 export type ResponsesService = {
-  submit(rawBody: unknown, headers: SubmitHeaders, signal: AbortSignal, connection?: ConnectionResponses): Promise<Submission>;
+  submit(rawBody: unknown, headers: SubmitHeaders, signal: AbortSignal): Promise<Submission>;
   cancel(idempotencyKey: string | undefined): boolean;
   abortUnkeyed(reason: unknown): void;
   abortAll(reason: unknown): void;
@@ -110,7 +109,6 @@ export const createResponsesService = (services: GatewayServices, validator: Req
     deadlineAt: number | undefined,
     headers: SubmitHeaders,
     signal: AbortSignal,
-    connection: ConnectionResponses | undefined,
   ): Submission => {
     const stream = body.stream === true;
 
@@ -144,7 +142,6 @@ export const createResponsesService = (services: GatewayServices, validator: Req
       idempotency: key === undefined || digest === undefined ? undefined : { key, digest },
       deadlineAt,
       parent,
-      ...(connection === undefined ? {} : { connection }),
       runId: body.metadata?.['run_id'],
       step: parseStep(body.metadata?.['step']),
       role: headers.role,
@@ -179,13 +176,13 @@ export const createResponsesService = (services: GatewayServices, validator: Req
   };
 
   return {
-    submit: async (rawBody, headers, signal, connection) => {
+    submit: async (rawBody, headers, signal) => {
       if (services.closeSignal.aborted) throw gatewayClosedError();
       const body = validator.parseCreate(rawBody);
       const deadlineAt = parseDeadlineHeader(headers.deadlineMs, services.clock.now());
       const lease = await services.epochs.acquire(signal);
       try {
-        return startSubmission(pinnedServices(services, lease.value), lease.release, rawBody, body, deadlineAt, headers, signal, connection);
+        return startSubmission(pinnedServices(services, lease.value), lease.release, rawBody, body, deadlineAt, headers, signal);
       } catch (error) {
         lease.release();
         throw error;

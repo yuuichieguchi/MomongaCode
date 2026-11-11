@@ -48,6 +48,11 @@ const row = (runId: string, overrides: Partial<RunFactsView> = {}): RunFactsView
   reconciledAlreadyApplied: 0,
   reconciledNotApplied: 0,
   reconciledUnknown: 0,
+  mutated: false,
+  owed: false,
+  verification: { rounds: 0, firstRoundPassed: null, failedRounds: 0, checkMs: 0, fixRoundTokens: 0 },
+  answers: { allowOnce: 0, allowAlways: 0, rejectOnce: 0, rejectAlways: 0 },
+  denials: { sandbox: 0, rule: 0, mode: 0, setting: 0, hook: 0, mandate: 0, superseded: 0, held: 0 },
   basis: { readOnly: 0, rule: 0, mode: 0, hook: 0, classifier: 0, person: 0 },
   declared: true,
   met: true,
@@ -75,11 +80,11 @@ describe('the period of a report (2.2, gap B)', () => {
     expect([...added.withinPeriod(paged, period(30)).tasks.keys()].sort()).toEqual(['run-edge', 'run-recent']);
   });
 
-  it('lists a task whose root row is not there as unavailable, beside an unavailable root that has no row', () => {
+  it('counts a task whose root row is not there and an unavailable root that has no row as not placed, and drops the unavailable root that ended outside the period', () => {
     const orphan = row('run-orphan-child', { rootRunId: 'run-orphan', endedAt: NOW - 90 * DAY });
     const windowed = added.withinPeriod(aggregate([orphan, old], { groupBy: 'model', unavailableRoots: ['poison', 'run-old'] }), period(30));
     const { buckets } = indicatorsOf(windowed).total;
-    expect(buckets).toMatchObject({ counted: 0, pendingFacts: 0, factsUnavailable: 2 });
+    expect(buckets).toMatchObject({ counted: 0, pendingFacts: 0, factsUnavailable: 0, notPlaced: 2 });
   });
 
   it('is printed in the population block of a real report and survives the codec', () => {
@@ -127,6 +132,7 @@ describe('Cost per Successful Task (X6)', () => {
     expect(total.successful).toEqual({
       tasks: 2,
       fullyPriced: 1,
+      noData: 0,
       calls: 5,
       notPriced: 1,
       tokens: 4000,
@@ -135,7 +141,7 @@ describe('Cost per Successful Task (X6)', () => {
         { currency: 'USD', priceVersion: 'local', units: '0' },
       ],
     });
-    expect(total.unsuccessful).toEqual({ tasks: 1, fullyPriced: 1, calls: 3, notPriced: 0, tokens: 500, priced: [{ currency: 'USD', priceVersion: '2026-01', units: (USD / 4n).toString() }] });
+    expect(total.unsuccessful).toEqual({ tasks: 1, fullyPriced: 1, noData: 0, calls: 3, notPriced: 0, tokens: 500, priced: [{ currency: 'USD', priceVersion: '2026-01', units: (USD / 4n).toString() }] });
     expect(groups).toEqual({ 'apple/fm': total });
   });
 

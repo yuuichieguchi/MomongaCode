@@ -1,5 +1,5 @@
 import type { ReportRecomputePage, RunCallView, RunFactsRecord, RunFactsView } from '@momonga/protocol';
-import { FactsRefusedError } from '@momonga/store';
+import { FactsRefusedError, settledEventIdOf } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import type { ServiceTimers } from './timers.ts';
 
@@ -62,7 +62,7 @@ export const startFactsSweeper = (options: FactsSweeperOptions): { close(): Prom
       if (batch.runIds.length > 0) {
         const { rows, calls, unavailable, processed } = await factsOfBatch(batch.runIds);
         if (processed === batch.runIds.length) store.runFacts.commit({ rows, calls, unavailable, throughEventId: batch.throughEventId });
-        else if (processed > 0) store.runFacts.commit({ rows, calls, unavailable, throughEventId: store.runFacts.nextBatch(processed).throughEventId });
+        else if (processed > 0) store.runFacts.commit({ rows, calls, unavailable, throughEventId: settledEventIdOf(batch, processed) });
       }
     } catch (error) {
       onError(error);

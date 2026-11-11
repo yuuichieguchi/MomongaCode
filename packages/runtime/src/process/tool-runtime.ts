@@ -71,7 +71,7 @@ export type ToolRuntimeOptions = {
   forgeFetch?: ForgeFetch;
   helperSelf?: HelperSelf;
   shellHost: ShellHost;
-  settings: Pick<SettingsComposition, 'envFor' | 'takeUserSnapshot' | 'userSnapshot' | 'admitUserSnapshot' | 'keptLayers' | 'loadSessionSettings' | 'trustOracle'>;
+  settings: Pick<SettingsComposition, 'envFor' | 'referenceEnvFor' | 'takeUserSnapshot' | 'userSnapshot' | 'admitUserSnapshot' | 'keptLayers' | 'loadSessionSettings' | 'trustOracle'>;
   reapTiming: Timing;
   leaseMs: number;
   heartbeatMs: number;
@@ -222,13 +222,14 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     let acquiredHere = false;
     try {
       const loaded = await settings.loadSessionSettings(session.cwd, snapshot, signal);
-      const mcp = await loadSessionMcpServers({ home, settings }, session, env, snapshot.user, 'read', signal);
+      const mcp = await loadSessionMcpServers({ home, settings }, session, env, snapshot, 'read', signal);
       const sources: McpPool['sources'] = [];
       if (mcp.enabled.length > 0) {
         const servers = mcp.enabled;
-        const { toolIdleTimeoutMs, toolTotalTimeoutMs, connectTimeoutMs } = loaded.settings.mcp;
+        const { toolIdleTimeoutNetworkMs, toolIdleTimeoutStdioMs, toolTotalTimeoutMs, connectTimeoutMs } = loaded.settings.mcp;
         const callBounds = {
-          ...(toolIdleTimeoutMs === undefined ? {} : { toolIdleTimeoutMs }),
+          ...(toolIdleTimeoutNetworkMs === undefined ? {} : { toolIdleTimeoutNetworkMs }),
+          ...(toolIdleTimeoutStdioMs === undefined ? {} : { toolIdleTimeoutStdioMs }),
           ...(toolTotalTimeoutMs === undefined ? {} : { toolTotalTimeoutMs }),
           ...(connectTimeoutMs === undefined ? {} : { connectTimeoutMs }),
         };

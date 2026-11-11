@@ -56,7 +56,7 @@ const gitRun = (commands: EvidenceCommand[]): EvidenceRun => async (command) => 
 const workerFor = (env: Env, id: string, run: EvidenceRun) =>
   env.worker(id, {
     toolList: () => [...env.toolbox.tools().filter((tool) => tool.name !== 'Bash'), readTool, bashTool],
-    memories: createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: () => run }),
+    memories: createMemoryPort({ platform: process.platform, store: env.store, settings: env.settings, evidenceRun: () => run }),
   });
 
 const writeFile = (env: Env, content: string): string => {
@@ -117,7 +117,7 @@ describe('MemorySave in a run', () => {
   it('hands recall a signal that follows the run: open while the run lives', async () => {
     const env = await trustedEnv();
     const given: AbortSignal[] = [];
-    const inner = createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: () => gitRun([]) });
+    const inner = createMemoryPort({ platform: process.platform, store: env.store, settings: env.settings, evidenceRun: () => gitRun([]) });
     env.gateway.script.push(textStep('Fine.'));
     await env.enqueue('Hello');
     await env.runOnce(
@@ -151,7 +151,7 @@ describe('MemorySave in a run', () => {
       env.settings.trustedValue = trusted;
       env.gateway.script.push(callsStep([{ callId: `call_${id}`, name: 'MemorySave', args }]), textStep('Done.'));
       const run = await env.enqueue(`Remember ${id}`, { history: 'fresh' });
-      await env.runOnce(env.worker(`w-${id}`, { memories: createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: () => gitRun([]) }) }));
+      await env.runOnce(env.worker(`w-${id}`, { memories: createMemoryPort({ platform: process.platform, store: env.store, settings: env.settings, evidenceRun: () => gitRun([]) }) }));
       return run;
     };
 
@@ -214,7 +214,7 @@ describe('MemorySave in a run', () => {
 
   it('shows a replaced note only with include all, and the status of each', async () => {
     const env = await trustedEnv();
-    const port = createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: () => gitRun([]) });
+    const port = createMemoryPort({ platform: process.platform, store: env.store, settings: env.settings, evidenceRun: () => gitRun([]) });
     env.gateway.script.push(
       callsStep([{ callId: 'call_m_1', name: 'MemorySave', args: { text: 'old shared note', scope: 'project' } }]),
       textStep('Saved.'),

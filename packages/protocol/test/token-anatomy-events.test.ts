@@ -64,7 +64,7 @@ describe('model.responded carries what the call cost', () => {
       accepts(
         respondedWith({
           usage: { ...LEGACY_USAGE, input_tokens_details: { cached_tokens: 200 }, output_tokens_details: { reasoning_tokens: 12 } },
-          momonga: { cacheWriteInputTokens: 60, cost: { amount: 0.0012, currency: 'USD', priceVersion: '2026-01-01' } },
+          momonga: { cacheWriteInputTokens: 60, cost: { amount: 0.0012, currency: 'USD', priceVersion: '2026-01-01', units: null } },
           timing: { firstEventMs: 150, durationMs: 400 },
         }),
       ),

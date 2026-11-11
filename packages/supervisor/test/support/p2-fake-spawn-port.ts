@@ -9,6 +9,7 @@ export type FakeChild = {
   readonly args: readonly string[];
   readonly options: SpawnPortOptions;
   readonly pid: number | undefined;
+  readonly commandPid: number | undefined;
   readonly stdout: PassThrough;
   readonly stderr: PassThrough;
   readonly lifeline: PassThrough;
@@ -19,6 +20,7 @@ export type FakeChild = {
   ready(overrides?: Partial<ReadyFields>): void;
   stdoutLine(line: string): void;
   stderrLine(line: string): void;
+  started(): void;
 };
 
 export type FakeSpawnPort = SpawnPort & {
@@ -32,7 +34,7 @@ export type FakeSpawnPort = SpawnPort & {
 
 export const errnoError = (code: string, message = code): NodeJS.ErrnoException => Object.assign(new Error(message), { code });
 
-export const createFakeSpawnPort = (options: { firstPid?: number; role?: string } = {}): FakeSpawnPort => {
+export const createFakeSpawnPort = (options: { firstPid?: number; role?: string; keptCommandPidOffset?: number } = {}): FakeSpawnPort => {
   let nextPid = options.firstPid ?? 41_000;
   const children: FakeChild[] = [];
   const calls: FakeSpawnPort['calls'] = [];
@@ -49,6 +51,10 @@ export const createFakeSpawnPort = (options: { firstPid?: number; role?: string 
     const stderr = new PassThrough();
     const lifeline = new PassThrough();
     const signals: NodeJS.Signals[] = [];
+    const kept = options.keptCommandPidOffset;
+    const commandPid = pid === undefined ? undefined : kept === undefined ? pid : pid + kept;
+    const commandPidListeners: ((pid: number) => void)[] = [];
+    let commandPidKnown = kept === undefined;
     let child: FakeChild;
     const handle: ChildHandle = {
       pid,
@@ -60,6 +66,11 @@ export const createFakeSpawnPort = (options: { firstPid?: number; role?: string 
       },
       onExit: (listener) => {
         exitListeners.push(listener);
+      },
+      onCommandPid: (listener) => {
+        if (commandPid === undefined) return;
+        if (commandPidKnown) listener(commandPid);
+        else commandPidListeners.push(listener);
       },
       kill: (signal) => {
         signals.push(signal);
@@ -76,6 +87,7 @@ export const createFakeSpawnPort = (options: { firstPid?: number; role?: string 
       args,
       options: spawnOptions,
       pid,
+      commandPid,
       stdout,
       stderr,
       lifeline,
@@ -97,7 +109,7 @@ export const createFakeSpawnPort = (options: { firstPid?: number; role?: string 
         announceReady(
           {
             service: options.role ?? 'runtime',
-            pid: pid ?? -1,
+            pid: commandPid ?? -1,
             version: '1.2.3',
             socketPath: '/fake/run/runtime.sock',
             startedAt: '2026-01-01T00:00:00.000Z',
@@ -111,6 +123,11 @@ export const createFakeSpawnPort = (options: { firstPid?: number; role?: string 
       },
       stderrLine: (line) => {
         stderr.write(`${line}\n`);
+      },
+      started: () => {
+        if (commandPid === undefined || commandPidKnown) return;
+        commandPidKnown = true;
+        for (const listener of commandPidListeners.splice(0)) listener(commandPid);
       },
     };
     children.push(child);

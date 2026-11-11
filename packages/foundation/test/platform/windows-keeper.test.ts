@@ -68,7 +68,7 @@ const fakePipe = (): FakePipe => {
 type FakeKeeper = {
   host: KeeperHost;
   pipe: FakePipe;
-  starts: Array<{ executable: string; args: readonly string[] }>;
+  starts: Array<{ executable: string; args: readonly string[]; verbatim?: boolean }>;
   listened: string[];
   listenerClosed(): boolean;
   connect(): void;
@@ -78,14 +78,14 @@ type FakeKeeper = {
 
 const fakeKeeper = (): FakeKeeper => {
   const pipe = fakePipe();
-  const starts: Array<{ executable: string; args: readonly string[] }> = [];
+  const starts: Array<{ executable: string; args: readonly string[]; verbatim?: boolean }> = [];
   const listened: string[] = [];
   let accept: ((connection: KeeperConnection) => void) | undefined;
   let exited: ((code: number) => void) | undefined;
   let closed = false;
   let serial = 0;
-  const start = (executable: string, args: readonly string[]): KeeperRun => {
-    starts.push({ executable, args });
+  const start = (executable: string, args: readonly string[], verbatim = false): KeeperRun => {
+    starts.push({ executable, args, ...(verbatim ? { verbatim } : {}) });
     return { exited: new Promise((resolve) => (exited = resolve)) };
   };
   return {
@@ -98,6 +98,7 @@ const fakeKeeper = (): FakeKeeper => {
     start,
     host: {
       executable: () => 'C:\\cache\\momonga-keeper.exe',
+      commandInterpreter: () => 'C:\\Windows\\System32\\cmd.exe',
       listen: (name) => {
         listened.push(name);
         return {
@@ -118,7 +119,7 @@ const fakeKeeper = (): FakeKeeper => {
 };
 
 const startedGroup = async (keeper: FakeKeeper = fakeKeeper()) => {
-  const pending = launchKept(keeper.host, { command: { file: 'cmd.exe', args: ['/c', 'echo a b'] }, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: live() });
+  const pending = launchKept(keeper.host, { command: { file: 'C:\\Windows\\System32\\where.exe', args: ['/c', 'echo a b'] }, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: live() });
   await turn();
   keeper.connect();
   await turn();
@@ -139,7 +140,7 @@ describe('the keeper protocol: names, arguments and exit codes', () => {
     const args = keeperLaunchArguments({ pipe: '\\\\.\\pipe\\momonga-keeper-00', job: 'Local\\momonga-11', onOwnerLoss: 'persist', marker: 'C:\\Users\\a b\\m é', descriptors: [3, 5], command: { file: 'C:\\Program Files\\x.exe', args: ['a b', '"q"'] } });
     expect(args).toEqual(['launch', '\\\\.\\pipe\\momonga-keeper-00', 'Local\\momonga-11', 'persist', Buffer.from('C:\\Users\\a b\\m é', 'utf8').toString('hex'), '3,5', '--', 'C:\\Program Files\\x.exe', 'a b', '"q"']);
     expect(args.slice(0, 7).every((word) => /^[A-Za-z0-9\\.,-]+$/.test(word))).toBe(true);
-    expect(keeperLaunchArguments({ pipe: 'p', job: 'j', onOwnerLoss: 'terminate', marker: undefined, descriptors: [], command: { file: 'x', args: [] } })).toEqual(['launch', 'p', 'j', 'terminate', '-', '-', '--', 'x']);
+    expect(keeperLaunchArguments({ pipe: 'p', job: 'j', onOwnerLoss: 'terminate', marker: undefined, descriptors: [], command: { file: 'C:\\x.exe', args: [] } })).toEqual(['launch', 'p', 'j', 'terminate', '-', '-', '--', 'C:\\x.exe']);
     expect(keeperAttachArguments({ pipe: 'p', job: 'j' })).toEqual(['attach', 'p', 'j']);
   });
 
@@ -195,16 +196,51 @@ describe('launching through the keeper', () => {
     const { keeper, launch } = await startedGroup();
     expect(keeper.listened).toEqual([`\\\\.\\pipe\\momonga-keeper-${'02'.repeat(16)}`]);
     expect(keeper.starts).toEqual([
-      { executable: 'C:\\cache\\momonga-keeper.exe', args: ['launch', `\\\\.\\pipe\\momonga-keeper-${'02'.repeat(16)}`, `Local\\momonga-${'01'.repeat(16)}`, 'terminate', '-', '-', '--', 'cmd.exe', '/c', 'echo a b'] },
+      { executable: 'C:\\cache\\momonga-keeper.exe', args: ['launch', `\\\\.\\pipe\\momonga-keeper-${'02'.repeat(16)}`, `Local\\momonga-${'01'.repeat(16)}`, 'terminate', '-', '-', '--', 'C:\\Windows\\System32\\where.exe', '/c', 'echo a b'] },
     ]);
     expect(launch.commandPid).toBe(4242);
     expect(launch.group.job).toBe(`Local\\momonga-${'01'.repeat(16)}`);
     expect(keeper.listenerClosed()).toBe(true);
   });
 
+  const startsOf = (command: { file: string; args: string[] }) => {
+    const keeper = fakeKeeper();
+    void launchKept(keeper.host, { command, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: live() }).catch(() => undefined);
+    return keeper.starts;
+  };
+
+  it('runs a command script through the command interpreter by the one quoting rule, its words given verbatim', () => {
+    const starts = startsOf({ file: 'C:\\Program Files\\nodejs\\npx.cmd', args: ['-y', 'some server'] });
+    expect(starts).toHaveLength(1);
+    expect(starts[0]?.verbatim).toBe(true);
+    expect(starts[0]?.args.slice(6)).toEqual(['--', '"C:\\Windows\\System32\\cmd.exe"', '/d', '/s', '/c', '""C:\\Program Files\\nodejs\\npx.cmd" "-y" "some server""']);
+  });
+
+  it('gives a program its words as they are, not verbatim', () => {
+    const starts = startsOf({ file: 'C:\\node\\node.exe', args: ['a b'] });
+    expect(starts[0]?.verbatim).toBeUndefined();
+    expect(starts[0]?.args.slice(6)).toEqual(['--', 'C:\\node\\node.exe', 'a b']);
+  });
+
+  it('refuses before any keeper starts an argument of a command script that the interpreter would change, naming it and the way forward', async () => {
+    const keeper = fakeKeeper();
+    await expect(launchKept(keeper.host, { command: { file: 'C:\\tools\\run.bat', args: ['ok', 'a&b'] }, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: live() })).rejects.toThrow(
+      'the argument "a&b" of C:\\tools\\run.bat holds a character that the Windows command interpreter changes (a double quote, a line break, or one of % ! ^ & | < > ( )), so the command was not started; pass the value through an environment variable or a file',
+    );
+    expect(keeper.starts).toEqual([]);
+  });
+
+  it('refuses a command that is not an absolute path before any keeper starts', async () => {
+    const keeper = fakeKeeper();
+    await expect(launchKept(keeper.host, { command: { file: 'npx.cmd', args: [] }, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: live() })).rejects.toThrow(
+      'the command npx.cmd is not an absolute path, so it was not started; give the full path of the program',
+    );
+    expect(keeper.starts).toEqual([]);
+  });
+
   const launchNaming = async (descriptors: readonly number[], firstWord: string) => {
     const keeper = fakeKeeper();
-    const outcome = launchKept(keeper.host, { command: { file: 'node.exe', args: [] }, onOwnerLoss: 'terminate', marker: undefined, descriptors, start: keeper.start, signal: live() }).catch((error: unknown) => error);
+    const outcome = launchKept(keeper.host, { command: { file: 'C:\\node\\node.exe', args: [] }, onOwnerLoss: 'terminate', marker: undefined, descriptors, start: keeper.start, signal: live() }).catch((error: unknown) => error);
     await turn();
     keeper.connect();
     await turn();
@@ -228,7 +264,7 @@ describe('launching through the keeper', () => {
 
   it('reports a refusal by its reason and never calls the command contained', async () => {
     const keeper = fakeKeeper();
-    const pending = launchKept(keeper.host, { command: { file: 'x', args: [] }, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: live() });
+    const pending = launchKept(keeper.host, { command: { file: 'C:\\x.exe', args: [] }, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: live() });
     await turn();
     keeper.connect();
     await turn();
@@ -238,7 +274,7 @@ describe('launching through the keeper', () => {
 
   it('fails with the exit code name when the keeper ends before it connects', async () => {
     const keeper = fakeKeeper();
-    const pending = launchKept(keeper.host, { command: { file: 'x', args: [] }, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: live() });
+    const pending = launchKept(keeper.host, { command: { file: 'C:\\x.exe', args: [] }, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: live() });
     const outcome = pending.catch((error: unknown) => error);
     await turn();
     keeper.exit(KEEPER_EXIT_CODES['pipe-unavailable']);
@@ -250,7 +286,7 @@ describe('launching through the keeper', () => {
 
   it('fails when the pipe closes before the first word', async () => {
     const keeper = fakeKeeper();
-    const outcome = launchKept(keeper.host, { command: { file: 'x', args: [] }, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: live() }).catch((error: unknown) => error);
+    const outcome = launchKept(keeper.host, { command: { file: 'C:\\x.exe', args: [] }, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: live() }).catch((error: unknown) => error);
     await turn();
     keeper.connect();
     await turn();
@@ -261,7 +297,7 @@ describe('launching through the keeper', () => {
   it("ends with the asker's reason when the asker stops waiting for a keeper that never connects, and closes the listener", async () => {
     const keeper = fakeKeeper();
     const asker = new AbortController();
-    const outcome = launchKept(keeper.host, { command: { file: 'x', args: [] }, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: asker.signal }).catch((error: unknown) => error);
+    const outcome = launchKept(keeper.host, { command: { file: 'C:\\x.exe', args: [] }, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: asker.signal }).catch((error: unknown) => error);
     await turn();
     const reason = new Error('the asker left');
     asker.abort(reason);
@@ -272,7 +308,7 @@ describe('launching through the keeper', () => {
   it("closes the pipe, which is the owner's loss to the keeper, when the asker stops waiting for the first word", async () => {
     const keeper = fakeKeeper();
     const asker = new AbortController();
-    const outcome = launchKept(keeper.host, { command: { file: 'x', args: [] }, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: asker.signal }).catch((error: unknown) => error);
+    const outcome = launchKept(keeper.host, { command: { file: 'C:\\x.exe', args: [] }, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: asker.signal }).catch((error: unknown) => error);
     await turn();
     keeper.connect();
     await turn();
@@ -399,22 +435,32 @@ describe('T-JO-4: stopping a kept group on a fake keeper and a fake pipe', () =>
     expect(keeper.pipe.written).toEqual(['members 1\n']);
   });
 
-  it('terminated: members are listed, one terminate is sent, and the empty event ends the wait with no poll', async () => {
+  it('terminated: members are listed, one terminate is sent, the keeper ends with its job (it is a member), and the name no longer opens', async () => {
     const { keeper, group } = await startedGroup();
     const timing = timers();
-    const stopping = stopKeptGroup(group, { graceMs: GRACE_MS, timing, signal: live(), confirm: never });
+    const asked: string[] = [];
+    const stopping = stopKeptGroup(group, {
+      graceMs: GRACE_MS,
+      timing,
+      signal: live(),
+      confirm: async (job) => {
+        asked.push(job);
+        return 'absent';
+      },
+    });
     await turn();
     keeper.pipe.say('members 1 4242 4300\n');
     await turn();
     expect(keeper.pipe.written).toEqual(['members 1\n', 'terminate\n']);
-    keeper.pipe.say('empty\n');
+    keeper.pipe.hangUp();
     expect(await stopping).toBe('terminated');
+    expect(asked).toEqual([group.job]);
     expect(keeper.pipe.written).toEqual(['members 1\n', 'terminate\n']);
     expect(timing.now()).toBe(0);
     expect(timing.pending()).toEqual([]);
   });
 
-  it('a closed pipe is read by the name: gone when the name no longer opens, unconfirmed while it still opens', async () => {
+  it('a pipe closed after the terminate is read by the name: terminated when the name no longer opens, unconfirmed while it still opens', async () => {
     const outcomes: string[] = [];
     for (const named of ['absent', 'present'] as const) {
       const { keeper, group } = await startedGroup();
@@ -435,7 +481,7 @@ describe('T-JO-4: stopping a kept group on a fake keeper and a fake pipe', () =>
       outcomes.push(await stopping);
       expect(asked).toEqual([group.job]);
     }
-    expect(outcomes).toEqual(['gone', 'unconfirmed']);
+    expect(outcomes).toEqual(['terminated', 'unconfirmed']);
   });
 
   it('a pipe that is already closed at the first question is read by the name too', async () => {

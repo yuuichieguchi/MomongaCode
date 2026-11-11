@@ -408,15 +408,18 @@ export type {
   RunCallView,
   RunFactsBasis,
   RunFactsRecord,
+  RunFactsAnswers,
   RunFactsDelegation,
+  RunFactsDenials,
   RunFactsLimits,
+  RunFactsVerification,
   RunFactsView,
   UnavailableRunView,
 } from './reliability.ts';
 export { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, MOMONGA_EVENTS, MOMONGA_REQUEST_FIELDS, MOMONGA_SPAN_NOTES, SPAN_ATTRIBUTE_RENAMES } from './trace-attributes.ts';
 export { EVENT_PAYLOAD_RENAMES, withCurrentNames } from './stored-names.ts';
 export type { StoredRenames } from './stored-names.ts';
-export { PERSON_CAPABILITY_HEADER, COMPLETION_DECLARATION_SCHEMA, MANDATE_BUDGET_SCHEMA, MANDATE_SCOPE_SCHEMA, DAEMON_CURRENT_EVENT, STREAM_FAILED_EVENT, EVENT_TYPES, RUN_API_SCHEMAS, SESSION_SANDBOX_NETWORKS, base64ByteLength, runApiSchemaName, toPublicRunEvent, MODEL_COST_SCHEMA } from './run-api.ts';
+export { PERSON_CAPABILITY_HEADER, COMPLETION_DECLARATION_SCHEMA, MANDATE_BUDGET_SCHEMA, MANDATE_SCOPE_SCHEMA, DAEMON_CURRENT_EVENT, STREAM_FAILED_EVENT, EVENT_TYPES, RUN_API_SCHEMAS, SESSION_SANDBOX_NETWORKS, base64ByteLength, isOpaqueEvent, PATTERN_RULES, runApiSchemaName, toPublicRunEvent, MODEL_COST_SCHEMA } from './run-api.ts';
 export type { DaemonCurrentFrame, StreamFailedFrame } from './run-api.ts';
 export { INBOX_WITHDRAW_OUTCOMES, MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES, MODEL_KINDS, attachmentSummaryOf, modelKindOf } from './run-api.ts';
 export type { AttachmentSummary, InboxAddResponse, InboxResponse, InboxWithdrawOutcome, InboxWithdrawResponse, ModelKind, UserShellFrame, UserShellPendingResponse, UserShellRequest, CompactSessionRequest } from './run-api.ts';
@@ -444,6 +447,7 @@ export type {
   McpServerView,
   OpaqueEvent,
   PublicOpaqueEvent,
+  PublicStreamEvent,
   PublicRunEvent,
   RunHealth,
   RunTraceCall,
@@ -602,6 +606,7 @@ export {
   readMandate,
   pinnedDelegationOf,
   QUIESCENT_BEHAVIOURS,
+  REPORT_ANOMALY_CAUSES,
   readPinnedCompletion,
   reconciliationMutates,
   verificationRequiredOf,
@@ -627,8 +632,11 @@ export type {
   NotRunReason,
   PinnedCompletion,
   PinnedCondition,
+  ReportAnomalyCause,
   ResidualRiskCode,
   RunBudgetReport,
+  RunFailedCallReport,
+  RunReportAnomaly,
   RunDelegationReport,
   RunOperationReport,
   RunDeniedCallReport,
