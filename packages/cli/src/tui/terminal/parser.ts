@@ -2,7 +2,7 @@ import { MAX_SEQUENCE_BYTES, PASTE_ABANDON_BYTES, PASTE_MAX_BYTES } from './cons
 import { MOUSE_BUTTONS, NO_MODIFIERS, WHEEL_BUTTONS } from './events.ts';
 import type { KeyEvent, KeyName, Modifiers, TerminalEvent } from './events.ts';
 
-export type InputParser = { push(bytes: Uint8Array): TerminalEvent[] };
+export type InputParser = { push(bytes: Uint8Array): TerminalEvent[]; holdsLoneEscape(): boolean; settle(): TerminalEvent[] };
 
 const ESC = '\u001b';
 const BEL = '\u0007';
@@ -357,9 +357,18 @@ export const createInputParser = (): InputParser => {
     return end + PASTE_END.length;
   };
 
+  const holdsLoneEscape = (): boolean => pending === ESC && readEndedWithEscape && paste === undefined;
+
+  const settle = (): TerminalEvent[] => {
+    if (!holdsLoneEscape()) return [];
+    pending = '';
+    readEndedWithEscape = false;
+    return [namedKey('escape', NO_MODIFIERS)];
+  };
+
   const push = (bytes: Uint8Array): TerminalEvent[] => {
     const events: TerminalEvent[] = [];
-    const heldEscape = pending === ESC && readEndedWithEscape && paste === undefined;
+    const heldEscape = holdsLoneEscape();
     const buffer = pending + decoder.decode(bytes, { stream: true });
     pending = '';
     let at = 0;
@@ -389,5 +398,5 @@ export const createInputParser = (): InputParser => {
     return events;
   };
 
-  return { push };
+  return { push, holdsLoneEscape, settle };
 };

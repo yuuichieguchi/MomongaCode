@@ -148,16 +148,34 @@ describe('UTF-8 across reads', () => {
 });
 
 describe('a lone ESC byte', () => {
-  it('is held at the end of a read and emitted when the next read is not a continuation', () => {
+  it('is held at the end of a read and emitted when the settle ends with no byte', () => {
+    const parser = createInputParser();
+    expect(parser.push(bytesOf(ESC))).toEqual([]);
+    expect(parser.holdsLoneEscape()).toBe(true);
+    expect(parser.settle()).toEqual([named('escape')]);
+    expect(parser.holdsLoneEscape()).toBe(false);
+    expect(parser.settle()).toEqual([]);
+  });
+
+  it('is no longer the start of a sequence once the settle ended', () => {
+    const parser = createInputParser();
+    parser.push(bytesOf(ESC));
+    expect(parser.settle()).toEqual([named('escape')]);
+    expect(parser.push(bytesOf('[A'))).toEqual(textOf('[A'));
+  });
+
+  it('is emitted before a next read within the settle that is not a continuation', () => {
     const parser = createInputParser();
     expect(parser.push(bytesOf(ESC))).toEqual([]);
     expect(parser.push(bytesOf('a'))).toEqual([named('escape'), text('a')]);
+    expect(parser.holdsLoneEscape()).toBe(false);
   });
 
   it('stays held across an empty read', () => {
     const parser = createInputParser();
     expect(parser.push(bytesOf(ESC))).toEqual([]);
     expect(parser.push(new Uint8Array(0))).toEqual([]);
+    expect(parser.holdsLoneEscape()).toBe(true);
     expect(parser.push(bytesOf(ESC))).toEqual([named('escape')]);
     expect(parser.push(bytesOf('\r'))).toEqual([named('escape'), named('enter')]);
   });
@@ -166,12 +184,37 @@ describe('a lone ESC byte', () => {
     ['a CSI sequence', '[A', [named('up')]],
     ['an SS3 sequence', 'OP', [named('f1')]],
     ['an OSC reply', ']11;rgb:0000/0000/0000\u0007', [{ type: 'report', kind: 'background-color', color: 'rgb:0000/0000/0000' }]],
-  ] as [string, string, TerminalEvent[]][])('is joined with a next read that begins %s', (_name, continuation, expected) => {
+  ] as [string, string, TerminalEvent[]][])('is joined with a next read within the settle that begins %s', (_name, continuation, expected) => {
     expect(parseText(ESC, continuation)).toEqual(expected);
   });
 
+  it('is an arrow with [A of the same read', () => {
+    expect(parseText(`${ESC}[A`)).toEqual([named('up')]);
+  });
+
   it('is Alt with the next character of the same read', () => {
-    expect(parseText(`${ESC}a`)).toEqual([text('a', { alt: true })]);
+    expect(parseText(`${ESC}x`)).toEqual([text('x', { alt: true })]);
+  });
+
+  it('is not held by the settle while a sequence is open, a paste is open, or a character is incomplete', () => {
+    const open = createInputParser();
+    open.push(bytesOf(`${ESC}[1`));
+    expect(open.holdsLoneEscape()).toBe(false);
+    expect(open.settle()).toEqual([]);
+    expect(open.push(bytesOf(';5C'))).toEqual([named('right', { ctrl: true })]);
+
+    const pasting = createInputParser();
+    pasting.push(bytesOf(`${ESC}[200~a${ESC}`));
+    expect(pasting.holdsLoneEscape()).toBe(false);
+    expect(pasting.settle()).toEqual([]);
+    expect(pasting.push(bytesOf(`b${ESC}[201~`))).toEqual([{ type: 'paste', text: `a${ESC}b`, overflow: false }]);
+
+    const partial = createInputParser();
+    const bytes = bytesOf(`${ESC}é`);
+    partial.push(bytes.subarray(0, 2));
+    expect(partial.holdsLoneEscape()).toBe(false);
+    expect(partial.settle()).toEqual([]);
+    expect(partial.push(bytes.subarray(2))).toEqual([text('é', { alt: true })]);
   });
 });
 

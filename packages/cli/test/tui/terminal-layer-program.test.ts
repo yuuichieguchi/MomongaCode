@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { TerminalEvent } from '../../src/tui/terminal/events.ts';
 import { createTerminalLayer } from '../../src/tui/terminal/layer.ts';
 import type { ScreenRequest } from '../../src/tui/terminal/layer.ts';
+import { manualClock } from './screen-clock.ts';
 
 const ESC = '\u001b';
 
@@ -22,6 +23,7 @@ const startLayer = () => {
     },
     output: { writeSync: (text) => written.push(text), size: () => ({ columns: 100, rows: 30 }), onResize: () => () => undefined },
     process: { on: () => undefined, off: () => undefined, kill: () => undefined },
+    timers: manualClock().timers,
     screen: 'fullscreen',
     screenSetByUser: true,
     mouse: false,

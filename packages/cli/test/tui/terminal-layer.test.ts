@@ -1,12 +1,13 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
-import { HANDOVER_TERMINAL_ENV, NO_FULLSCREEN_NOTICE, PASTE_MAX_BYTES, PASTE_TOO_LARGE_NOTICE } from '../../src/tui/terminal/constants.ts';
+import { HANDOVER_TERMINAL_ENV, KEY_SETTLE_MS, NO_FULLSCREEN_NOTICE, PASTE_MAX_BYTES, PASTE_TOO_LARGE_NOTICE } from '../../src/tui/terminal/constants.ts';
 import type { TerminalEvent } from '../../src/tui/terminal/events.ts';
 import { handoverTerminalValue, parseHandoverTerminal, startFromHandover } from '../../src/tui/terminal/handover.ts';
 import { createTerminalLayer } from '../../src/tui/terminal/layer.ts';
 import type { ProcessEvent, ProcessSignal, ScreenRequest, TerminalLayerOptions } from '../../src/tui/terminal/layer.ts';
 import { LEAVE_EVERY_MODE, TERMINAL_MODES } from '../../src/tui/terminal/modes.ts';
 import { NEWLINE_HINT } from '../../src/tui/terminal/negotiation.ts';
+import { manualClock } from './screen-clock.ts';
 
 const ESC = '\u001b';
 const START_QUERIES = `${ESC}[?u${ESC}[>7u${ESC}[?1049$p${ESC}[?1006$p${ESC}[?2004$p${ESC}[?2026$p${ESC}]11;?${ESC}\\${ESC}[c`;
@@ -34,7 +35,9 @@ const fakes = (given: Partial<Pick<TerminalLayerOptions, 'screen' | 'screenSetBy
   const delivered: TerminalEvent[] = [];
   const requests: ScreenRequest[] = [];
   const log: string[] = [];
+  const clock = manualClock();
   const layer = createTerminalLayer({
+    timers: clock.timers,
     input: {
       setRawMode: (on) => {
         rawModes.push(on);
@@ -76,6 +79,7 @@ const fakes = (given: Partial<Pick<TerminalLayerOptions, 'screen' | 'screenSetBy
   layer.subscribeScreen((request) => requests.push(request));
   return {
     layer,
+    clock,
     writes,
     rawModes,
     kills,
@@ -519,5 +523,60 @@ describe('the handover', () => {
     expect(HANDOVER_TERMINAL_ENV in env).toBe(false);
     expect(t.writes).toEqual([LEAVE_ALL, FULLSCREEN_START]);
     expect(t.layer.state()).toMatchObject({ negotiation: 'unknown', enabled: ['alt-screen', 'bracketed-paste', 'kitty-keys'] });
+  });
+});
+
+describe('a lone ESC and the key settle', () => {
+  const escape: TerminalEvent = { type: 'key', name: 'escape', ...plain };
+  const up: TerminalEvent = { type: 'key', name: 'up', ...plain };
+
+  it('has one written value', () => {
+    expect(KEY_SETTLE_MS).toBe(150);
+  });
+
+  it('delivers Escape when the settle ends with no byte, without a next key', () => {
+    const t = fakes();
+    t.layer.start();
+    t.feed(ESC);
+    expect(t.delivered).toEqual([]);
+    t.clock.advance(KEY_SETTLE_MS - 1);
+    expect(t.delivered).toEqual([]);
+    t.clock.advance(1);
+    expect(t.delivered).toEqual([escape]);
+    expect(t.clock.pending()).toBe(0);
+  });
+
+  it('reads an arrow whose bytes are split after the ESC within the settle, and waits for nothing more', () => {
+    const t = fakes();
+    t.layer.start();
+    t.feed(ESC);
+    t.clock.advance(KEY_SETTLE_MS - 1);
+    t.feed('[A');
+    expect(t.delivered).toEqual([up]);
+    expect(t.clock.pending()).toBe(0);
+    t.clock.advance(KEY_SETTLE_MS);
+    expect(t.delivered).toEqual([up]);
+  });
+
+  it('starts the settle again at each lone ESC', () => {
+    const t = fakes();
+    t.layer.start();
+    t.feed(ESC);
+    t.clock.advance(KEY_SETTLE_MS - 1);
+    t.feed(ESC);
+    expect(t.delivered).toEqual([escape]);
+    t.clock.advance(KEY_SETTLE_MS - 1);
+    expect(t.delivered).toEqual([escape]);
+    t.clock.advance(1);
+    expect(t.delivered).toEqual([escape, escape]);
+  });
+
+  it('does not wait for a settle after the terminal was released', () => {
+    const t = fakes();
+    t.layer.start();
+    t.feed(ESC);
+    t.layer.close();
+    expect(t.clock.pending()).toBe(0);
+    expect(t.delivered).toEqual([]);
   });
 });
