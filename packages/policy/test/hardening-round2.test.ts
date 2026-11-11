@@ -1,3 +1,4 @@
+import { testSecretLocations } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { decide } from '@momonga/policy';
 import type { PolicyTool } from '@momonga/policy';
@@ -12,7 +13,7 @@ type Spec = { allow?: string[]; ask?: string[]; deny?: string[]; mode?: Permissi
 const decision = async (command: string, spec: Spec = {}) => {
   const layout = makeLayout();
   const make = ruleIn(layout);
-  return decide({
+  return decide({ secretLocations: testSecretLocations(layout.home),
     tool: BASH,
     subject: { kind: 'command', tool: 'Bash', command },
     mode: spec.mode ?? 'manual',

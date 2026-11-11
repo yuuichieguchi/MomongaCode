@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { fakePolicyFilesystem, testProbes, NEVER_CANCELLED, testPaths, testKernelLock } from '@momonga/testkit';
+import { fakePolicyFilesystem, testProbes, NEVER_CANCELLED, testPaths, testKernelLock, testSecretLocations } from '@momonga/testkit';
 import { ConfigError, parseRule } from '@momonga/config';
 import type { PermissionRule } from '@momonga/config';
 import { computeFileRules, decide } from '@momonga/policy';
@@ -53,6 +53,7 @@ describe('createPolicyFor roots and the file rules', () => {
       rules,
       roots: [...policy.roots, policy.tmpDir],
       home: temp.home,
+      secretLocations: testSecretLocations(temp.home),
       cwd: temp.project,
       fileRules: policy.sandboxPolicy.fileRules,
       protectedSet: policy.sandboxPolicy.protectedSet,

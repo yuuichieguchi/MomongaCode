@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import * as config from '@momonga/config';
-import { fractionOf, proofArith } from '../../src/proofs/arith.ts';
-import type { ProofArith, ProofBool, ProofInt } from '../../src/proofs/arith.ts';
-import { expectRefuted, prove } from '../../src/proofs/prove.ts';
+import { fractionOf, proofArith } from '../support/proofs/arith.ts';
+import type { ProofArith, ProofBool, ProofInt } from '../support/proofs/arith.ts';
+import { expectRefuted, prove } from '../support/proofs/prove.ts';
 import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, useZ3 } from '../harness.ts';
 
 type Bounds = { falseAllowHigh: number; falseBlockHigh: number; unobservedMax: number; wilsonZ: number };

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { BUILTINS, type Definition } from '../src/dialect-model/definition.ts';
-import { isValidDefinition } from '../src/dialect-model/definition-gen.ts';
-import { instanceCandidates } from '../src/dialect-model/harness.ts';
-import type { Json } from '../src/dialect-model/json.ts';
-import { render } from '../src/dialect-model/render.ts';
-import { runSeed, SEEDS } from '../src/dialect-model/seeds.ts';
-import { runSubject, SUBJECTS } from '../src/dialect-model/subjects.ts';
+import { BUILTINS, type Definition } from './support/dialect-model/definition.ts';
+import { isValidDefinition } from './support/dialect-model/definition-gen.ts';
+import { instanceCandidates } from './support/dialect-model/harness.ts';
+import type { Json } from './support/dialect-model/json.ts';
+import { render } from './support/dialect-model/render.ts';
+import { runSeed, SEEDS } from './support/dialect-model/seeds.ts';
+import { runSubject, SUBJECTS } from './support/dialect-model/subjects.ts';
 
 const SCHEMAS_PER_SUBJECT = Number(process.env['DIALECT_MODEL_SCHEMAS'] ?? '300');
 const GATE_TIMEOUT_MS = 60 * 60 * 1000;

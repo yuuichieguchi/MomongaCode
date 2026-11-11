@@ -145,6 +145,7 @@ export {
   realProcessTestSignal,
 } from './test-support.ts';
 export type { CleanupContext, CleanupOwner, CleanupRegistrar, SettledBeforeCleanup, TempDirOptions, TrackedChild } from './test-support.ts';
+export { hostBuiltSocketGuard } from './linux-socket-guard.ts';
 export { createFakeEntryIo, parseJsonLines } from './fake-entry-io.ts';
 export type { FakeEntryIo, FakeEntryIoOptions, JsonLine } from './fake-entry-io.ts';
 export { DAEMON_BIN_EXIT_DEADLINE_MS, DAEMON_BIN_READY_DEADLINE_MS, readJsonLinesFile, startDaemonBin } from './daemon-bin.ts';
@@ -287,3 +288,4 @@ export { assertFakeSecretStoreEnv } from './secret-store-env-check.ts';
 export { productTestEnv } from './product-spawn.ts';
 export { SCRIPTED_MODEL, SCRIPTED_MODEL_ID, SCRIPTED_PROVIDER, modelSettings } from './model-settings.ts';
 export type { ModelSettings, ModelSettingsConnection, ModelSettingsSpec, ModelSpec } from './model-settings.ts';
+export { testSecretLocations } from './secret-locations.ts';

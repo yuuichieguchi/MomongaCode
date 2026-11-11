@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { loadSettings, parseGovernanceRule, parseRule } from '@momonga/config';
-import { hostPaths, ruleEnforcementOf, ruleFingerprint, sessionRootsOf } from '@momonga/foundation';
-import type { MomongaPaths } from '@momonga/foundation';
+import { hostPaths, mapAsync, ruleEnforcementOf, sessionRootsOf, verdictKey } from '@momonga/foundation';
+import type { MomongaPaths, PathResolver } from '@momonga/foundation';
 import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
 import type { PermissionMode, PolicyGovernanceResponse } from '@momonga/protocol';
 import { formatGovernanceVerification } from '../rule/format.ts';
@@ -58,7 +58,6 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
   const verifier = await host.loadVerifier();
   const fs = await host.loadPolicyFilesystem();
   const secretLocations = verifier.secretLocationsOf(
-    home,
     paths,
     options.secrets.map((text) => secretPathOf(home, text)),
   );
@@ -82,6 +81,8 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
     cwd,
     protectedSet: await verifier.protectedSetOf(roots, fs, signal),
     secretLocations,
+    deniedLocations: verifier.secretLocationsOf(paths, []),
+    exemptDirectory: null,
     enforcement: ruleEnforcementOf(loaded.settings.sandbox),
   };
   const engine = await host.openSolver(verifier);
@@ -90,7 +91,6 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
     report = await verifier.verifyPermissions(engine.api, {
       ...request,
       fs,
-      exemptDirectory: null,
       budgetMs: VERIFY_BUDGET_MS,
       signal,
       ...(catalogue === undefined ? {} : { supersededForms: catalogue.supersededForms, alwaysOperations: catalogue.alwaysOperations }),
@@ -109,7 +109,7 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
   const solverVersion = await host.solverVersion(verifier);
   const verdicts = connectRuntime(ports, paths);
   try {
-    await verdicts.putRuleVerdict(ruleFingerprint({ input: verifier.ruleVerifyInputOf(request), solverVersion }), verifier.verdictOfReport(report, solverVersion));
+    await verdicts.putRuleVerdict(verdictKey(verifier.ruleVerifyInputOf(request), solverVersion), verifier.verdictOfReport(report, solverVersion));
   } finally {
     await verdicts.close();
   }

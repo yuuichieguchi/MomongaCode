@@ -1738,7 +1738,6 @@ export const RUN_API_SCHEMAS = {
             verdict: enumOf(RULE_VERDICTS),
             solver: string,
             refuted: { type: 'array', items: closed({ property: string, subject: string, message: string, counterexample: string }, ['property', 'subject', 'message']) },
-            byModeDefault: { type: 'array', items: closed({ property: string, subject: string, message: string, counterexample: string }, ['property', 'subject', 'message']) },
             notes: {
               type: 'array',
               items: closed(
@@ -1753,6 +1752,7 @@ export const RUN_API_SCHEMAS = {
             },
             unknown: { type: 'array', items: closed({ property: string, reason: string }, ['property', 'reason']) },
             notProved: { type: 'array', items: string },
+            phases: { type: 'array', items: closed({ phase: string, ms: { type: 'number' } }, ['phase', 'ms']) },
           },
           ['verdict', 'solver', 'refuted', 'unknown', 'notProved'],
         ),

@@ -1,3 +1,4 @@
+import { testSecretLocations } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -14,7 +15,7 @@ describe('protected dangling link whose target has dotdot after a symlink', () =
     fs.mkdirSync(path.join(layout.project, 'sub', 'deep'), { recursive: true });
     fs.symlinkSync(path.join(layout.project, 'sub', 'deep'), path.join(layout.project, 's'));
     fs.symlinkSync('s/../evil', envrc);
-    const decision = await decide({
+    const decision = await decide({ secretLocations: testSecretLocations(layout.home),
       tool: WRITE,
       subject: { kind: 'path', tool: 'Write', paths: [path.join(layout.project, 'sub', 'evil')], access: 'write' },
       mode: 'acceptEdits',

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MIN_ITEM_CAP, MIN_ROOM_TOKENS } from '@momonga/context';
-import { proofArith } from '../../src/proofs/arith.ts';
-import { prove } from '../../src/proofs/prove.ts';
+import { proofArith } from '../support/proofs/arith.ts';
+import { prove } from '../support/proofs/prove.ts';
 import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, useZ3 } from '../harness.ts';
 import { anyCeiling, b7Goal, hypothesesSatisfiable, toolFloorOf, windowOf } from './budget-model.ts';
 

@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_STOP_VALUES, RUNTIME_ABORT_BUDGET_MS, RUNTIME_TEARDOWN_BUDGET_MS, runtimeMaxCloseMs } from '@momonga/foundation';
 import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation/sqlite';
 import { LOCK_WAIT_DEADLINE_MS } from '@momonga/supervisor';
-import { proofArith } from '../../src/proofs/arith.ts';
-import type { ProofArith } from '../../src/proofs/arith.ts';
-import { expectRefuted, prove } from '../../src/proofs/prove.ts';
+import { proofArith } from '../support/proofs/arith.ts';
+import type { ProofArith } from '../support/proofs/arith.ts';
+import { expectRefuted, prove } from '../support/proofs/prove.ts';
 import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, useZ3 } from '../harness.ts';
 
 const HEARTBEAT_DIVISOR = 3n;

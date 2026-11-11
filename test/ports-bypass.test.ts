@@ -76,6 +76,7 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/mcp/src/stdio-transport.ts': { 'node:fs': 6, 'randomUUID': 1 },
   'packages/mcp/src/timers.ts': { 'setTimeout': 1 },
   'packages/policy/src/glob-expansion.ts': { 'performance.now': 1 },
+  'packages/policy/src/host-filesystem.ts': { 'node:child_process': 1, 'setTimeout': 1 },
   'packages/runtime/src/memory/evidence.ts': { 'node:fs': 3 },
   'packages/runtime/src/memory/journal-thread-client.ts': { 'node:worker_threads': 4, 'setTimeout': 1 },
   'packages/runtime/src/memory/journal-thread.ts': { 'node:fs': 1, 'node:worker_threads': 8, 'performance.now': 2, 'setImmediate': 1 },
@@ -103,8 +104,6 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/supervisor/src/start-supervisor.ts': { 'Math.random': 1, 'setTimeout': 1 },
   'packages/tools/src/operations/askpass-client.ts': { 'node:net': 1 },
   'packages/tools/src/operations/git-credential.ts': { 'node:net': 1 },
-  'packages/verify/src/dialect-model/gate.ts': { 'Date.now': 4 },
-  'packages/verify/src/dialect-model/harness.ts': { 'Date.now': 3 },
   'packages/verify/src/distribution-files.ts': { 'node:fs/promises': 2 },
 };
 

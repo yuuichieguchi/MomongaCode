@@ -1,3 +1,4 @@
+import { testSecretLocations } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 
 import { EMPTY_PROTECTED_SET, syncPaths } from '@momonga/foundation';
@@ -16,7 +17,7 @@ type Case = { command?: string; network?: NetworkRequest; mode?: PermissionMode;
 const decideCall = async ({ command = 'npm install', network, mode = 'manual', setting, rules }: Case): Promise<Decision> => {
   const layout = makeLayout();
   const parsed = rules === undefined ? [] : rules(layout);
-  return await decide({
+  return await decide({ secretLocations: testSecretLocations(layout.home),
     tool: BASH,
     subject: { kind: 'command', tool: 'Bash', command, ...(network === undefined ? {} : { network }) },
     mode,
