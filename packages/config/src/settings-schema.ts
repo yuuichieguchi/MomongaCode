@@ -5,6 +5,8 @@ import type { CallRole, ManagedDeclarableField } from '@momonga/protocol';
 
 export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const satisfies readonly CallRole[];
 
+export const BASH_ON_TIMEOUT = ['background', 'kill'] as const;
+
 export const TUI_THEMES = ['auto', 'dark', 'light', 'dark-colorblind', 'light-colorblind'] as const;
 export const TUI_NOTIFY_MODES = ['off', 'bell'] as const;
 export const TUI_SCREEN_MODES = ['fullscreen', 'scrollback'] as const;
@@ -530,10 +532,28 @@ export const SETTINGS_SCHEMA = {
     },
     tools: {
       type: 'object',
-      properties: { deferral: { type: 'boolean' }, conciseDescriptions: { type: 'boolean' }, ripgrep: { type: 'string', minLength: 1 } },
+      properties: {
+        deferral: { type: 'boolean' },
+        conciseDescriptions: { type: 'boolean' },
+        ripgrep: { type: 'string', minLength: 1 },
+        bash: {
+          type: 'object',
+          properties: {
+            defaultTimeoutMs: { type: 'integer', minimum: 1 },
+            maxTimeoutMs: { type: 'integer', minimum: 1 },
+            onTimeout: { enum: [...BASH_ON_TIMEOUT] },
+            backgroundTimeoutMs: { type: 'integer', minimum: 1 },
+            maxBackgroundTimeoutMs: { type: 'integer', minimum: 1 },
+          },
+          additionalProperties: false,
+        },
+        search: { type: 'object', properties: { timeoutMs: { type: 'integer', minimum: 1 } }, additionalProperties: false },
+        operations: { type: 'object', properties: { timeoutMs: { type: 'integer', minimum: 1 } }, additionalProperties: false },
+      },
       additionalProperties: false,
     },
     autoUpdates: { type: 'boolean' },
+    update: { type: 'object', properties: { stallTimeoutMs: { type: 'integer', minimum: 1 } }, additionalProperties: false },
     tui: {
       type: 'object',
       properties: { theme: { enum: [...TUI_THEMES] }, notify: { enum: [...TUI_NOTIFY_MODES] }, screenReader: { type: 'boolean' }, reducedMotion: { type: 'boolean' }, screen: { enum: [...TUI_SCREEN_MODES] }, mouse: { type: 'boolean' }, copyOnSelect: { type: 'boolean' }, attachFileMentions: { type: 'boolean' } },

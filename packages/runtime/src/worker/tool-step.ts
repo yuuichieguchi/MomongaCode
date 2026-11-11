@@ -299,6 +299,7 @@ const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSes
   const refusal = policyRefusal(verdict);
   if (refusal !== undefined) return ctx.terminals.finish('FAILED', { error: refusal });
   const hookSettings = await options.settings.hooks(session, ctx.control.signal);
+  const { bash, search, operations } = await options.settings.tools(session, ctx.control.signal);
   const hasToolHooks = hookSettings.PreToolUse !== undefined || hookSettings.PostToolUse !== undefined;
   const toolHooks = hasToolHooks
     ? createToolHooks(
@@ -315,6 +316,7 @@ const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSes
     outcomes = await options.tools.executor.runBatch({
       calls,
       toolSet: ctx.toolSet,
+      limits: { bash, search, operations },
       ...(offered === undefined ? {} : { offered }),
       ...(ctx.delegation === undefined ? {} : { mandate: { supersededForms: SUPERSEDED_FORMS, coveredPrograms: COVERED_PROGRAMS }, hold: { blockers: blockersOf(ctx, calls) } }),
       fence: ctx.claim,

@@ -14,7 +14,6 @@
     "required": ["paths"],
     "additionalProperties": false
   },
-  "timeoutMs": 60000,
   "observe": [
     { "id": "indexTree", "via": { "argv": ["git", "write-tree"], "extract": "trim" } },
     { "id": "changes", "via": { "argv": ["git", "--no-optional-locks", "--literal-pathspecs", "status", "--porcelain", "--untracked-files=all", "--", { "each": "input.paths" }], "extract": "trim" } },

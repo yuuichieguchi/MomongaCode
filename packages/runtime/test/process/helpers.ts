@@ -11,7 +11,7 @@ import type { NetworkOf, RunNotifier, SettingsComposition, ToolRuntime } from '@
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
-import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, unconfiguredDerivedNetworkOf, createFakeClock, createFakeTimers, createTempDir, driveFakeTime, fakeReapTiming, killGroupsForCleanup, modelSettings, removeTempDir, NEVER_CANCELLED, testKernelLock, testLocks } from '@momonga/testkit';
+import { FAKE_LEASE, TEST_TOOL_LIMITS, UNBOUNDED_OUTPUT_FIT, unconfiguredDerivedNetworkOf, createFakeClock, createFakeTimers, createTempDir, driveFakeTime, fakeReapTiming, killGroupsForCleanup, modelSettings, removeTempDir, NEVER_CANCELLED, testKernelLock, testLocks } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { fixedSandboxBindings } from '@momonga/runtime';
@@ -354,6 +354,7 @@ export const runBashThroughPort = async (
   const outcomes = await port.executor.runBatch({
     calls: [{ callId: options.callId ?? `call-${Math.random().toString(16).slice(2)}`, name: 'Bash', arguments: JSON.stringify({ command }) }],
     toolSet,
+    limits: TEST_TOOL_LIMITS,
     fence: options.fence ?? fenceFor(f.store, runId),
     runId,
     step: 1,

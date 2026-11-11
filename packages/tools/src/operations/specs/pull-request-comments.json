@@ -15,7 +15,6 @@
     "required": ["number"],
     "additionalProperties": false
   },
-  "timeoutMs": 30000,
   "observe": [
     {
       "id": "review",

@@ -26,7 +26,7 @@ const isSwitch = (node: SchemaNode): boolean => node.type === 'boolean' || node.
 describe('every switch of the core sections is core and on, or named non-core (design core-on 3.5, test 6)', () => {
   it('names autoCompact as core and ripgrep, forgetAfterDays and reflection.maxTokens as non-core', () => {
     expect(CORE_SETTING_KEYS).toContain('context.autoCompact');
-    expect([...NON_CORE_SETTING_KEYS].sort()).toEqual(['memory.forgetAfterDays', 'memory.reflection.maxTokens', 'tools.ripgrep']);
+    expect([...NON_CORE_SETTING_KEYS].sort()).toEqual(['memory.forgetAfterDays', 'memory.reflection.maxTokens', 'tools.bash.backgroundTimeoutMs', 'tools.bash.defaultTimeoutMs', 'tools.bash.maxBackgroundTimeoutMs', 'tools.bash.maxTimeoutMs', 'tools.bash.onTimeout', 'tools.operations.timeoutMs', 'tools.ripgrep', 'tools.search.timeoutMs']);
   });
 
   it('names the eleven keys of the token policy overlay as core', () => {

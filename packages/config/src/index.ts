@@ -88,6 +88,7 @@ export { resolveNetwork, resolveNetworkSources } from './network.ts';
 export type { NetworkEnvironment, NetworkSources, ShownNetworkValue } from './network.ts';
 export {
   DEFAULT_FORGET_AFTER_DAYS,
+  DEFAULT_UPDATE_STALL_TIMEOUT_MS,
   DEFAULT_VERIFICATION_COMMANDS,
   DEFAULT_VERIFICATION_MANIFESTS,
   defaultContextSettings,

@@ -7,7 +7,8 @@ import { registerCleanup, withTempDir, testKernelLock } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { daemonReadyBoundMs } from '../src/daemon/ensure-daemon.ts';
 import type { CliPorts } from '../src/ports.ts';
-import { MAX_REDIRECTS, STAGING_PREFIX, nodeDaemonProbe, nodeUpdateFs, nodeUpdateLock, nodeUpdatePorts, nodeUpdateState, undiciUpdateHttp } from '../src/update/node-ports.ts';
+import { MAX_REDIRECTS, STAGING_PREFIX, nodeDaemonProbe, nodeUpdateFs, nodeUpdateLock, nodeUpdatePorts, nodeUpdateState, transferOptionsOf, undiciUpdateHttp } from '../src/update/node-ports.ts';
+import { DEFAULT_UPDATE_STALL_TIMEOUT_MS } from '@momonga/config';
 import { readyChildren, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 
 const unusedPort = (name: string): never =>
@@ -200,8 +201,8 @@ describe('undici update http', () => {
     });
     const signal = new AbortController().signal;
 
-    await expect(undiciUpdateHttp(DIRECT_NETWORK).get(`${origin}/0`, { headers: {}, signal })).rejects.toThrow();
-    const response = await undiciUpdateHttp(DIRECT_NETWORK).get(`${origin}/${MAX_REDIRECTS + 2}`, { headers: {}, signal });
+    await expect(undiciUpdateHttp(DIRECT_NETWORK, transferOptionsOf(DEFAULT_UPDATE_STALL_TIMEOUT_MS)).get(`${origin}/0`, { headers: {}, signal })).rejects.toThrow();
+    const response = await undiciUpdateHttp(DIRECT_NETWORK, transferOptionsOf(DEFAULT_UPDATE_STALL_TIMEOUT_MS)).get(`${origin}/${MAX_REDIRECTS + 2}`, { headers: {}, signal });
     expect(response.status).toBe(200);
   });
 
@@ -212,7 +213,7 @@ describe('undici update http', () => {
       response.end('ok');
     });
 
-    await undiciUpdateHttp(DIRECT_NETWORK).get(origin, { headers: { 'user-agent': 'momonga/1.0.0', accept: 'x/y' }, signal: new AbortController().signal });
+    await undiciUpdateHttp(DIRECT_NETWORK, transferOptionsOf(DEFAULT_UPDATE_STALL_TIMEOUT_MS)).get(origin, { headers: { 'user-agent': 'momonga/1.0.0', accept: 'x/y' }, signal: new AbortController().signal });
 
     expect(seen['user-agent']).toBe('momonga/1.0.0');
     expect(seen['accept']).toBe('x/y');

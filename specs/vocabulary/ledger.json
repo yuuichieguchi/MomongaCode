@@ -742,7 +742,7 @@
       },
       "packages/tools/src/builtins/bash.ts": {
         "directory": 2,
-        "job": 9,
+        "job": 8,
         "limit": 1
       },
       "packages/tools/src/builtins/edit.ts": {

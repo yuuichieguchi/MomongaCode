@@ -14,4 +14,15 @@ export const CORE_SETTING_KEYS = [
 
 export type CoreSettingKey = (typeof CORE_SETTING_KEYS)[number];
 
-export const NON_CORE_SETTING_KEYS: readonly string[] = ['tools.ripgrep', 'memory.forgetAfterDays', 'memory.reflection.maxTokens'];
+export const NON_CORE_SETTING_KEYS: readonly string[] = [
+  'tools.ripgrep',
+  'memory.forgetAfterDays',
+  'memory.reflection.maxTokens',
+  'tools.bash.defaultTimeoutMs',
+  'tools.bash.maxTimeoutMs',
+  'tools.bash.onTimeout',
+  'tools.bash.backgroundTimeoutMs',
+  'tools.bash.maxBackgroundTimeoutMs',
+  'tools.search.timeoutMs',
+  'tools.operations.timeoutMs',
+];

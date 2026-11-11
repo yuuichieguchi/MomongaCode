@@ -26,19 +26,18 @@ import { listLiveGenerations, retiringWorkOf } from '../daemon/generations.ts';
 import type { CliClock, CliPorts } from '../ports.ts';
 import type { DaemonProbe, StagedFile, UpdateFs, UpdateHttp, UpdateLock, UpdatePorts, UpdateStateStore } from './ports.ts';
 
-export const TRANSFER_STALL_TIMEOUT_MS = 30_000;
 export const MAX_REDIRECTS = 5;
 export const STAGING_PREFIX = '.momonga-update.';
 export const UPDATE_LOCK_FILE = 'update.lock';
 export const UPDATE_STATE_FILE = 'update.json';
 const UPDATE_STATE_MODE = 0o600;
 
-const TRANSFER_OPTIONS: OutboundOptions = { connectReplyTimeoutMs: TRANSFER_STALL_TIMEOUT_MS, headersTimeout: TRANSFER_STALL_TIMEOUT_MS, bodyTimeout: TRANSFER_STALL_TIMEOUT_MS };
+export const transferOptionsOf = (stallTimeoutMs: number): OutboundOptions => ({ connectReplyTimeoutMs: stallTimeoutMs, headersTimeout: stallTimeoutMs, bodyTimeout: stallTimeoutMs });
 
 const redirectingDispatcher = (network: OutboundNetwork, options: OutboundOptions): Dispatcher =>
   createOutboundDispatcher(network, options).compose(interceptors.redirect({ maxRedirections: MAX_REDIRECTS, throwOnMaxRedirect: true }));
 
-export const undiciUpdateHttp = (network: Promise<OutboundNetwork>, options: OutboundOptions = TRANSFER_OPTIONS): UpdateHttp => {
+export const undiciUpdateHttp = (network: Promise<OutboundNetwork>, options: OutboundOptions): UpdateHttp => {
   let dispatcher: Promise<Dispatcher> | undefined;
   const dispatcherOnce = (): Promise<Dispatcher> => {
     dispatcher ??= network.then((resolved) => redirectingDispatcher(resolved, options));
@@ -57,7 +56,8 @@ const leasedUpdateHttp = (ports: CliPorts): UpdateHttp => ({
     new Promise((resolve, reject) => {
       let answered = false;
       withOutboundNetwork(ports, signal, async (network) => {
-        const dispatcher = createOutboundDispatcher(network, TRANSFER_OPTIONS);
+        const { stallTimeoutMs } = (await loadUserSettings({ home: ports.home, signal })).settings.update;
+        const dispatcher = createOutboundDispatcher(network, transferOptionsOf(stallTimeoutMs));
         try {
           const response = await request(url, { method: 'GET', headers: { ...headers }, signal, dispatcher: dispatcher.compose(interceptors.redirect({ maxRedirections: MAX_REDIRECTS, throwOnMaxRedirect: true })) });
           const bodyClosed = new Promise<void>((closed) => response.body.once('close', () => closed()));

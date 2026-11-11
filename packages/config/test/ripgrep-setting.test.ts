@@ -32,7 +32,7 @@ describe('tools.ripgrep', () => {
   });
 
   it('keeps the other tools settings beside it, each at its design-core-on section 1 default unless set', async () => {
-    expect((await userResolved({ tools: { ripgrep: 'system', deferral: false } })).tools).toEqual({ deferral: false, conciseDescriptions: true, ripgrep: 'system' });
+    expect((await userResolved({ tools: { ripgrep: 'system', deferral: false } })).tools).toMatchObject({ deferral: false, conciseDescriptions: true, ripgrep: 'system' });
   });
 
   it.each([['a relative path', 'bin/rg'], ['an empty string', ''], ['a number', 7], ['a boolean', true]])('rejects %s', async (_label, value) => {

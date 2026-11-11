@@ -32,7 +32,7 @@ import type { WorkTreeMark, WorkTreeObserver } from './work-tree-observer.ts';
 import { blockedByHeldText, blockerOf, footprintOf } from './footprint.ts';
 import type { Footprint, HeldFootprint } from './footprint.ts';
 import { startsProcesses, ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
-import type { AnyTool, CallOutputFit, DisplayContext, GateFacts, OutputFit, PreconditionContext, ProbeContext, SpawnMarker, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
+import type { AnyTool, ToolLimits, CallOutputFit, DisplayContext, GateFacts, OutputFit, PreconditionContext, ProbeContext, SpawnMarker, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
 import { cleanFailureMessage, groupPortOf } from '@momonga/foundation';
 import { toolRefusalKey, unavailable, validateToolInput } from './validate.ts';
 import type { ValidationResult } from './validate.ts';
@@ -109,6 +109,7 @@ export type ExecutionBatchInput = BatchCore & {
   sandboxPolicy: SandboxPolicy;
   sandboxNetwork?: SandboxNetworkSetting;
   ripgrep: RipgrepLocator;
+  limits: ToolLimits;
   recoverOnly?: undefined;
 };
 
@@ -1018,7 +1019,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     reconcileCtx: ReconcileContext;
     abortReason(): AbortReason | undefined;
     abortWith(reason: AbortReason): void;
-    armTimer(bounds: { totalMs: number; idleMs: number | undefined }): void;
+    armTimer(bounds: { totalMs: number; idleMs: number | undefined; detach: boolean }): void;
+    expired: AbortSignal;
+    stopForTimeout(reason?: string): void;
+    relinquishMarker(): void;
     stop(): { bound: CallStop['bound']; ms: number };
     reportProgress(): void;
     disarmTimer(): void;
@@ -1052,13 +1056,26 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     let markerOwned = false;
     let processAttached = false;
     let noteAfterOutput: string | undefined;
+    const noteAfterOutputOf = (text: string): void => {
+      noteAfterOutput = noteAfterOutput === undefined ? text : `${noteAfterOutput}\n${text}`;
+    };
     let fixedTimer: unknown;
     let idleTimer: unknown;
     let bounds: { startedAt: number; totalMs: number; idleMs: number | undefined } | undefined;
     let fired: CallStop['bound'] = 'total';
+    const expiry = new AbortController();
+    let detachOnExpiry = false;
+    let markerRelinquished = false;
     const expire = (bound: CallStop['bound']): void => {
       if (abortReason !== undefined) return;
       fired = bound;
+      if (bound === 'total' && detachOnExpiry && !expiry.signal.aborted) {
+        expiry.abort();
+        timers.clearTimeout(idleTimer);
+        const now = clock.now();
+        fixedTimer = timers.setTimeout(() => expire('deadline'), Math.max(0, deadlineAt - now));
+        return;
+      }
       abortWith('timeout');
     };
     const armIdle = (): void => {
@@ -1153,12 +1170,23 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       reconcileCtx,
       abortReason: () => abortReason,
       abortWith,
-      armTimer: ({ totalMs, idleMs }) => {
+      armTimer: ({ totalMs, idleMs, detach }) => {
         const now = clock.now();
         bounds = { startedAt: now, totalMs, idleMs };
+        detachOnExpiry = detach;
         armIdle();
         const fixed = callStopOf({ startedAt: now, lastProgressAt: now, idleMs: undefined, totalMs, deadlineAt });
-        fixedTimer = timers.setTimeout(() => expire(fixed.bound), Math.max(0, fixed.at - now));
+        const bound = detach && fixed.bound === 'total' && fixed.at >= deadlineAt ? 'deadline' : fixed.bound;
+        fixedTimer = timers.setTimeout(() => expire(bound), Math.max(0, fixed.at - now));
+      },
+      expired: expiry.signal,
+      stopForTimeout: (reason) => {
+        if (reason !== undefined) noteAfterOutputOf(reason);
+        fired = 'total';
+        abortWith('timeout');
+      },
+      relinquishMarker: () => {
+        markerRelinquished = true;
       },
       stop: () => {
         const startedAt = bounds?.startedAt ?? clock.now();
@@ -1184,14 +1212,14 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         if (callMarker !== undefined && !callMarkerSpawned) {
           callMarkerSpawned = true;
           attachingMarker = processMarker;
-          return { file: processMarker, fd: callMarker.handle.fd, settle: callMarker.settle };
+          return { file: processMarker, fd: callMarker.handle.fd, mode: callMarker.handle.mode, settle: callMarker.settle };
         }
         const name = `${key}-${spawnMarkers.length + 1}`;
         const file = path.join(options.processMarkerDir, name);
         const opened = await openMarkerAt(file, name);
         spawnMarkers.push(opened);
         attachingMarker = file;
-        return { file, fd: opened.handle.fd, settle: opened.settle };
+        return { file, fd: opened.handle.fd, mode: opened.handle.mode, settle: opened.settle };
       },
       settleMarker: async () => {
         try {
@@ -1201,7 +1229,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
             await settle.state(controller.signal);
             await settle.remove();
           }
-          if (markerSettle === undefined || !recordCompleted) return;
+          if (markerSettle === undefined || !recordCompleted || markerRelinquished) return;
           if (!processAttached) {
             await markerSettle.discard();
             return;
@@ -1229,7 +1257,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         if (!leaseLost() && !contextClosed) holding(ledger.checkpoint(key, state));
       },
       noteAfterOutput: (text) => {
-        noteAfterOutput = text;
+        noteAfterOutputOf(text);
       },
       complete: (completed, reconciled, interrupted) => {
         if (leaseLost()) return deferred;
@@ -1422,7 +1450,18 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const performedFacts: { current: SubjectFacts } = { current: facts };
     const outboundNetwork = await options.outboundNetwork(batch.signal);
     const scope = openScope(batch, call, tool, key, fit, batch.deadlineAt, () => performedFacts.current);
-    const toolContext: ToolContext = { ...scope.reconcileCtx, sandbox: batch.sandbox, sandboxPolicy: batch.sandboxPolicy, outboundNetwork, ripgrep: batch.ripgrep, checkpoint: scope.checkpoint, reportProgress: scope.reportProgress };
+    const toolContext: ToolContext = {
+      ...scope.reconcileCtx,
+      sandbox: batch.sandbox,
+      sandboxPolicy: batch.sandboxPolicy,
+      outboundNetwork,
+      ripgrep: batch.ripgrep,
+      limits: batch.limits,
+      expired: scope.expired,
+      stopForTimeout: scope.stopForTimeout,
+      checkpoint: scope.checkpoint,
+      reportProgress: scope.reportProgress,
+    };
     const contextForBasis = (): ToolContext => {
       const readOnly = requireBasis(target) === 'read_only';
       const requested = requestedNetworkOf(target.subject);
@@ -1501,7 +1540,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           ...(resume === undefined ? {} : { resume }),
           ...(marker === undefined ? {} : { markerFd: marker.handle.fd, markerSettle: marker.settle, spawnMarker: scope.spawnMarker }),
         };
-        const requestedMs = typeof tool.timeoutMs === 'function' ? tool.timeoutMs(target.input) : tool.timeoutMs;
+        const requestedMs = typeof tool.timeoutMs === 'function' ? tool.timeoutMs(target.input, batch.limits) : tool.timeoutMs;
 
         const runTool = async (): Promise<ToolResult | ToolPending | ToolInputRequired> => {
           for (let attempt = 0; ; attempt += 1) {
@@ -1527,7 +1566,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           if (scope.controller.signal.aborted) resolve();
           else scope.controller.signal.addEventListener('abort', () => resolve(), { once: true });
         });
-        scope.armTimer({ totalMs: requestedMs, idleMs: tool.idleTimeoutMs });
+        scope.armTimer({ totalMs: requestedMs, idleMs: tool.idleTimeoutMs, detach: tool.expiry === 'detach' });
         const observation = observesCall(batch, tool) ? observationOf(batch) : undefined;
         const window = observation === undefined ? undefined : await openWindow(batch, observation);
         const running = runTool();
@@ -1542,6 +1581,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           if (result.status === 'pending') return scope.waiting(result);
           scope.disarmTimer();
           const { validatorFailure, ...settled } = result;
+          if (settled.detached === true) scope.relinquishMarker();
           if (validatorFailure !== undefined) announceValidatorFailure(batch, tool, validatorFailure);
           const hooked = await applyPostToolHooks(batch, call, tool, target.input, settled);
           const effects = observation === undefined || settled.detached === true ? {} : await closeWindow(batch, observation, window);

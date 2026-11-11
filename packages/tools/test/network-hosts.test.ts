@@ -228,7 +228,7 @@ describe('a background job that was granted named hosts', () => {
       kind: 'seatbelt',
       spawn: (command, policy) => {
         spawns.push({ command, policy });
-        return { pid: 1, pgid: 1, stdout: (async function* () {})(), stderr: (async function* () {})(), exited: new Promise((resolve) => (end = () => resolve({ code: 0, signal: null }))) };
+        return { pid: 1, pgid: 1, rebind: () => undefined, stdout: (async function* () {})(), stderr: (async function* () {})(), exited: new Promise((resolve) => (end = () => resolve({ code: 0, signal: null }))) };
       },
     };
     const tools = await makeBuiltins({ jobs, sandbox });
@@ -255,7 +255,7 @@ describe('a background job that was granted named hosts', () => {
         spawns.push({ command, policy });
         return {
           pid: 1,
-          pgid: 1,
+          pgid: 1, rebind: () => undefined,
           stdout: (async function* () {})(),
           stderr: (async function* () {
             yield Buffer.from('from the job\n');
