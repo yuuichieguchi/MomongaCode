@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { foldRunState, initialRunState } from '@momonga/store';
 import type { RunEvent } from '@momonga/protocol';
 import { finalTextOf } from '@momonga/runtime';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const envelope = (seq: number) => ({ id: seq, runId: 'r', sessionId: 's', seq, step: 1, leaseToken: 1, createdAt: 0 });
 
@@ -15,7 +16,7 @@ const responded = (seq: number, output: unknown[]): RunEvent => ({
 const message = (text: string) => ({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] });
 
 describe('the final text of a run', () => {
-  const fold = (events: RunEvent[]) => events.reduce(foldRunState, initialRunState({ runId: 'r', sessionId: 's' }));
+  const fold = (events: RunEvent[]) => events.reduce(foldRunState, initialRunState({ runId: 'r', sessionId: 's', fence: TEST_FENCE }));
 
   it('is the last assistant message, joined across its text parts', () => {
     const state = fold([

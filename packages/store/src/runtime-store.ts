@@ -237,10 +237,12 @@ const afterCursor = (cursor: string | null): { afterCreatedAt: number; afterId: 
   return { afterCreatedAt: Number(parts[1]), afterId: String(parts[2]) };
 };
 
+const FENCE_NONCE_BYTE_LENGTH = 16;
+
 const prepareStatements = (db: DatabaseSync) => ({
   insertSession: db.prepare(
-    `INSERT INTO sessions (id, cwd, env_json, permission_mode, model, bypass_allowed, sandbox_network, additional_directories_json, mcp_servers_json, created_at)
-     VALUES (:id, :cwd, :env, :permissionMode, :model, :bypassAllowed, :sandboxNetwork, :additionalDirectories, :mcpServers, :createdAt)`,
+    `INSERT INTO sessions (id, cwd, env_json, permission_mode, model, bypass_allowed, sandbox_network, additional_directories_json, mcp_servers_json, created_at, fence_nonce)
+     VALUES (:id, :cwd, :env, :permissionMode, :model, :bypassAllowed, :sandboxNetwork, :additionalDirectories, :mcpServers, :createdAt, :fenceNonce)`,
   ),
   updateSessionMcpServers: db.prepare('UPDATE sessions SET mcp_servers_json = :mcpServers WHERE id = :id'),
   updateSessionMode: db.prepare('UPDATE sessions SET permission_mode = :permissionMode WHERE id = :id'),
@@ -1329,6 +1331,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           additionalDirectories: canonicalJson(input.additionalDirectories ?? []),
           mcpServers: canonicalJson(input.mcpServers ?? {}),
           createdAt: clock.now(),
+          fenceNonce: random.hex(FENCE_NONCE_BYTE_LENGTH),
         });
         const row = sql.selectSession.get({ id });
         if (row === undefined) throw new Error(`session ${id} vanished during create`);

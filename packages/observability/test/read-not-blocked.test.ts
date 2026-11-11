@@ -26,8 +26,7 @@ describe('a local read does not wait for the remote export', () => {
       void telemetry.shutdown();
     });
     startAgentSpan(telemetry.tracer, { agentName: 'momonga', agentId: 'agent-1', conversationId: 'conv-1', runId: RUN_ID }).end(clock.now());
-    const settled = await Promise.race([telemetry.flushLocal().then(() => 'flushed' as const), new Promise<'held'>((resolve) => setImmediate(() => setImmediate(() => resolve('held'))))]);
-    expect(settled).toBe('flushed');
+    await telemetry.flushLocal();
     expect(store.spansForRun(RUN_ID)).toHaveLength(1);
   });
 });

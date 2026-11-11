@@ -4,6 +4,7 @@ import type { InputItem, MessageInputItem } from '@momonga/protocol';
 import { MIN_ROOM_TOKENS, PinnedRoomError, buildContext, capacityFor, createTokenMeter, inputCeilingFor, itemCapFor, measurePinned } from '@momonga/context';
 import type { BuildContextInput, BuildContextPorts, HistoryItem, MeterCount, TokenMeter } from '@momonga/context';
 import { HOME, RAW_OUTPUT_TOOL, MODEL, PROJECT, TASK, assistant, call, capabilitiesFor, fakeBlobs, fakeReader, output, shapeCounter, sourcesWith, tokensOfItem, truncatedMarker } from './helpers.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const WINDOW = 8192;
 const OUTPUT = 1024;
@@ -66,6 +67,7 @@ const inputWith = (history: HistoryItem[], systemPrompt?: string): BuildContextI
   harnessOutputTools: [RAW_OUTPUT_TOOL],
   keepRecentTurns: 1,
   observedCapacity: true,
+  fence: TEST_FENCE,
 });
 
 const portsOf = (meter: TokenMeter): BuildContextPorts => ({ meter, blobs: fakeBlobs(), instructions: fakeReader({}) });

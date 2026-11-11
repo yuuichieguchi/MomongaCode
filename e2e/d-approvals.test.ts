@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { sha256Hex } from '@momonga/foundation';
-import { envelopeOf } from '@momonga/protocol';
+import { TOOL_OUTPUT_TAG, fenceUntrusted } from '@momonga/protocol';
 import { titleOf } from './support/cases.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
@@ -11,6 +11,7 @@ import type { RunEventFrame, RuntimeClient } from './support/runtime-client.ts';
 import { startStack } from './support/stack.ts';
 import { chatCompletions, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
+import { fenceBoundaryIn } from '@momonga/testkit';
 
 const REJECTED_OUTPUT = 'The user rejected this tool call.';
 const WRITTEN_CONTENT = 'written by the model\n';
@@ -98,7 +99,7 @@ describe('d: approvals', () => {
       expect(calls).toHaveLength(2);
       const lastMessage = messagesOf(calls[1]).at(-1);
       expect(lastMessage?.role).toBe('tool');
-      expect(lastMessage?.content).toBe(envelopeOf({ content: REJECTED_OUTPUT, callId: String(lastMessage?.tool_call_id), tool: 'Write' }));
+      expect(lastMessage?.content).toBe(fenceUntrusted(TOOL_OUTPUT_TAG, { call: String(lastMessage?.tool_call_id), tool: 'Write' }, REJECTED_OUTPUT, fenceBoundaryIn(String(lastMessage?.content))));
     } finally {
       await runtime.close();
     }

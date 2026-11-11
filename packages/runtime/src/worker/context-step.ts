@@ -23,7 +23,7 @@ import { TRANSIENT_REQUEST_STATUSES, canonicalJson, sha256Hex } from '@momonga/f
 import { resolveGoverning } from '@momonga/memory';
 import type { Session } from '@momonga/store';
 import { harnessOutputToolsOf } from '@momonga/tools';
-import { BUDGET_EXCEEDED_CODE, DETERMINISTIC_SUMMARY_TEXT, LOWEST_REASONING_EFFORT, marginFloorFor, outputTokensFor, NOTHING_TO_COMPACT_CODE, NOTHING_TO_COMPACT_MESSAGE, compactionSummaryMessage, decodeCompactionSummary, tokensForText, includedShellTexts, userMessageContent } from '@momonga/protocol';
+import { BUDGET_EXCEEDED_CODE, sessionFenceOf, DETERMINISTIC_SUMMARY_TEXT, LOWEST_REASONING_EFFORT, marginFloorFor, outputTokensFor, NOTHING_TO_COMPACT_CODE, NOTHING_TO_COMPACT_MESSAGE, compactionSummaryMessage, decodeCompactionSummary, tokensForText, includedShellTexts, userMessageContent } from '@momonga/protocol';
 import { billedDetailOf } from './model-stream.ts';
 import type { Capabilities, CompactRequest, CompactResource, CompactionInputItem, ContentPart, FunctionTool, InputItem, MessageInputItem, NoticeReduction, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
 import { foldRunState } from '@momonga/store';
@@ -70,7 +70,8 @@ const sessionOf = (ctx: ClaimContext): HeldSession => heldSessionOf(ctx.options.
 export const taskOf = (ctx: ClaimContext): { content: ContentPart[]; text: string; shell: string[] } => {
   const [first] = ctx.options.store.readRunEvents(ctx.run.id, 0, 1);
   if (first === undefined || first.type !== 'user.message') throw new Error(`run ${ctx.run.id} does not start with a user message`);
-  return { content: userMessageContent(first.text, first.images, first), text: first.text, shell: includedShellTexts(first.shell) };
+  const fence = sessionFenceOf(sessionOf(ctx));
+  return { content: userMessageContent(first.text, first.images, first, fence), text: first.text, shell: includedShellTexts(first.shell, fence) };
 };
 
 type GoverningScan = 'active' | 'live';
@@ -223,6 +224,7 @@ const offeredInputOf = async (
       : {}),
     outputFormatters: ctx.token.outputFormatters,
     harnessOutputTools: harnessOutputToolsOf(ctx.toolSet.tools),
+    fence: sessionFenceOf(session),
   };
   return { input, offered, governing: governingKey, kinds, joined: joined.map((tool) => tool.name) };
 };

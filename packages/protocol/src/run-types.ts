@@ -500,6 +500,7 @@ export type NoticeReduction = { turn: number; from: number; to: number };
 export type RunState = {
   runId: string;
   sessionId: string;
+  fence: string;
   status: RunStatus;
   stopReason?: StopReason;
   step: number;

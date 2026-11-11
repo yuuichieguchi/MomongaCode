@@ -427,6 +427,7 @@ describe('RunState', () => {
     expectTypeOf<RunState>().toEqualTypeOf<{
       runId: string;
       sessionId: string;
+      fence: string;
       status: RunStatus;
       stopReason?: StopReason;
       step: number;

@@ -13,6 +13,7 @@ import { MIGRATIONS } from '../src/schema.ts';
 import { DEADLINE_MS, START_MS, callEvent, cancel, enqueue, harness, makeStoreDir, mustClaim, mustRun, newSession, openStoreAt, payloadOf, rawDb } from './helpers.ts';
 import { encodedRunState, foldedRunState } from './run-state-codec.ts';
 import { OPTIONS } from './approval-fixture.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const FOUND = 'An earlier attempt of Write was interrupted before it reported a result. Its effect is unknown; inspect the current state before retrying.';
 
@@ -25,7 +26,7 @@ const unknownCall = (callId: string): RunEventPayload[] => [
 const stateOf = (store: RuntimeStore, runId: string): RunState => {
   const run = mustRun(store, runId);
   const events: RunEvent[] = store.readRunEvents(runId, 0, 1000);
-  return events.reduce(foldRunState, initialRunState({ runId, sessionId: run.sessionId }));
+  return events.reduce(foldRunState, initialRunState({ runId, sessionId: run.sessionId, fence: store.getSession(run.sessionId)?.fenceNonce ?? '' }));
 };
 
 const typesOf = (store: RuntimeStore, runId: string): string[] => store.readRunEvents(runId, 0, 1000).map((event) => event.type);
@@ -59,7 +60,7 @@ describe('the fold of an unknown effect', () => {
   });
 
   it('starts empty', () => {
-    expect(initialRunState({ runId: 'r', sessionId: 's' }).unknownEffects).toEqual({});
+    expect(initialRunState({ runId: 'r', sessionId: 's', fence: TEST_FENCE }).unknownEffects).toEqual({});
   });
 
   it('follows the ask, the answer, and leaves the output of the call in the history', async () => {
@@ -181,7 +182,7 @@ describe('the snapshot of a run with an unknown effect', () => {
     const state = stateOf(store, runId);
     const encoded = encodedRunState(state);
     expect(encoded.read()).toEqual(state);
-    expect(SNAPSHOT_STATE_VERSION).toBe(23);
+    expect(SNAPSHOT_STATE_VERSION).toBe(24);
     encoded.mutate("json_remove(json_set(state_json, '$.stateVersion', 17), '$.unknownEffects')");
     expect(encoded.read()).toBeUndefined();
     expect(await foldedRunState(store, runId)).toEqual(state);
@@ -241,7 +242,7 @@ describe('migration 34: an approval may ask about an unknown effect, and a rule 
     expect(() => insert.run('unknown-2', 'call_10', START_MS + 1, START_MS, 'unknown_effect')).toThrow(/CHECK/);
     expect(() => insert.run('other-1', 'call_11', null, START_MS, 'something_else')).toThrow(/CHECK/);
     expect(() => insert.run('second-pending', 'call_9', null, START_MS, 'unknown_effect')).toThrow(/UNIQUE/);
-    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toEqual({ version: 46 });
+    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toEqual({ version: 47 });
   });
 
   it('creates rule_verdicts keyed by the fingerprint', () => {

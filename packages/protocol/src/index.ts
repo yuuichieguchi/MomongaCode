@@ -552,7 +552,7 @@ export type {
 } from './governance.ts';
 export { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
 export type { ContextChargePurpose, ContributionKind, SummaryFidelity, SummarySectionCoverage, SummarySource } from './context-record.ts';
-export { attachedFileText, attachmentText, imageDataUrl, includedShellTexts, userMessageContent, userShellText } from './user-content.ts';
+export { ATTACHED_FILE_TAG, TOOL_OUTPUT_TAG, USER_SHELL_TAG, attachedFileText, attachmentText, fenceUntrusted, imageDataUrl, includedShellTexts, sessionFenceOf, userMessageContent, userShellText } from './user-content.ts';
 export type { UserMessageExtras } from './user-content.ts';
 export { imageMediaTypeOf } from './image-media.ts';
 export { escapeXmlAttribute, escapeXmlText } from './xml.ts';
@@ -567,8 +567,6 @@ export {
 export type { ClassifierVerdict } from './auto-mode.ts';
 export { AUTO_FIT_FAILED_BOUNDS, AUTO_FIT_MEASUREMENTS, AUTO_MODE_CAVEAT, AUTO_MODE_CHECK_COMMANDS, autoModeNotice } from './auto-mode-gate.ts';
 export type { AutoClassifierFacts, AutoClassifierKey, AutoClassifierRefusal, AutoClassifierView, AutoModeSurface } from './auto-mode-gate.ts';
-export { TOOL_OUTPUT_TAG, boundaryOf, envelopeOf } from './tool-envelope.ts';
-export type { ToolOutputEnvelope } from './tool-envelope.ts';
 export {
   HOOK_BLOCKING_EXIT_CODE,
   HOOK_COMMAND_TYPE,

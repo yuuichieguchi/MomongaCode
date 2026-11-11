@@ -42,6 +42,7 @@ export type { WatchedKernelLock } from './test-locks.ts';
 export type { FakeKernelLock, FakeKernelLockOptions } from './fake-kernel-lock.ts';
 export { createFakeClock } from './fake-clock.ts';
 export { createFakeRandom } from './fake-random.ts';
+export { TEST_FENCE, fenceBoundaryIn } from './test-fence.ts';
 export { createFakeFileSystem } from './fake-file-system.ts';
 export type { FakeFileSystem } from './fake-file-system.ts';
 export type { FakeClock } from './fake-clock.ts';

@@ -3,6 +3,7 @@ import type { RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { SNAPSHOT_STATE_VERSION, decodeRunState, encodeRunState } from '../src/codec.ts';
 import { claimed, foldOf, task } from './inherit-fixtures.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 type Verification = { round: number; results: Record<string, { seq: number; outcome: string; mutationSeq: number; round?: number }>; lastFailure?: { round: number; mutationSeq: number }; failureBefore?: number };
 
@@ -37,7 +38,7 @@ const lead = [task('make it pass'), ...claimed()];
 
 describe('the initial run state', () => {
   it('starts with no mutation and no verification round', () => {
-    const fields = completionFields(initialRunState({ runId: 'r1', sessionId: 's1' }));
+    const fields = completionFields(initialRunState({ runId: 'r1', sessionId: 's1', fence: TEST_FENCE }));
     expect(fields.lastMutationSeq).toBe(0);
     expect(fields.verification).toEqual({ round: 0, results: {} });
   });
@@ -153,7 +154,7 @@ describe('the verification state', () => {
 
 describe('snapshots and the new state fields', () => {
   it('bumps the snapshot state version', () => {
-    expect(SNAPSHOT_STATE_VERSION).toBe(23);
+    expect(SNAPSHOT_STATE_VERSION).toBe(24);
   });
 
   it('discards an old snapshot without the new fields, so the run refolds from the journal', () => {

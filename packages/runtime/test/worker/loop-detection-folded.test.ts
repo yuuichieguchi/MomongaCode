@@ -5,6 +5,7 @@ import { foldRunState, initialRunState } from '@momonga/store';
 import { fixtureCompactionItem, materializeEvents, PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 import { isLoop } from '../../src/worker/loop-detection.ts';
 import { readRunLimits } from '../../src/worker/limits.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
@@ -101,7 +102,7 @@ describe('isLoop over folded loop groups', () => {
     let loops = 0;
     for (let index = 0; index < 300; index += 1) {
       const { payloads, items } = randomRun(random);
-      const state = materializeEvents(payloads, { runId: 'run-loop', sessionId: 'sess-loop' }).reduce(foldRunState, initialRunState({ runId: 'run-loop', sessionId: 'sess-loop' }) as RunState);
+      const state = materializeEvents(payloads, { runId: 'run-loop', sessionId: 'sess-loop' }).reduce(foldRunState, initialRunState({ runId: 'run-loop', sessionId: 'sess-loop', fence: TEST_FENCE }) as RunState);
       for (const threshold of [2, 3, 4]) {
         const expected = referenceIsLoop(items, threshold);
         if (expected) loops += 1;

@@ -7,6 +7,7 @@ import * as storeModule from '@momonga/store';
 import { materializeEvents } from '@momonga/testkit';
 import { mustRun } from './helpers.ts';
 import { FLOOR_TOKENS, UNBOUNDED_WINDOW, chainBuilder, ownState, referenceHarness, withReader } from './support/reference.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const OPTIONS: PermissionOption[] = [
   { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
@@ -64,7 +65,7 @@ describe('a run in which a held call was resolved is inherited by the next run o
 
 describe('the items of the history of a run come from one table', () => {
   const state = (payloads: readonly RunEventPayload[]): RunState =>
-    materializeEvents(payloads, { runId: 'run-1', sessionId: 'sess-1' }).reduce(foldRunState, initialRunState({ runId: 'run-1', sessionId: 'sess-1' }));
+    materializeEvents(payloads, { runId: 'run-1', sessionId: 'sess-1' }).reduce(foldRunState, initialRunState({ runId: 'run-1', sessionId: 'sess-1', fence: TEST_FENCE }));
 
   const CALL: RunEventPayload = { type: 'tool.call', callId: 'c1', providerCallId: 'provider-c1', name: 'Write', kind: 'edit', title: 'Write x.txt', rawInput: {} };
   const HELD: RunEventPayload[] = [

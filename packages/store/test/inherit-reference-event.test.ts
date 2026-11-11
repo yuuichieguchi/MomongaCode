@@ -10,6 +10,7 @@ import { rawDb } from './helpers.ts';
 import { MARKER_TEXT, NEXT_RUN, SESSION, SOURCE_RUN, assistantItem, inheritedEvent, markerEntry, modeChangedText, task, taskItem } from './inherit-fixtures.ts';
 import { FLOOR_TOKENS, UNBOUNDED_WINDOW, answeredRun, chainBuilder, referenceHarness, referenceOf, withReader } from './support/reference.ts';
 import type { ReferenceEvent, ReferenceHarness } from './support/reference.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: 600_000 });
 
@@ -29,7 +30,7 @@ const referenceDigestOf = (): ReferenceDigest => {
 };
 
 const foldChild = (payloads: readonly RunEventPayload[]): RunState =>
-  materializeEvents(payloads, { runId: NEXT_RUN, sessionId: SESSION }).reduce(foldRunState, initialRunState({ runId: NEXT_RUN, sessionId: SESSION }));
+  materializeEvents(payloads, { runId: NEXT_RUN, sessionId: SESSION }).reduce(foldRunState, initialRunState({ runId: NEXT_RUN, sessionId: SESSION, fence: TEST_FENCE }));
 
 const rawInheritedRow = (h: ReferenceHarness, runId: string): string => {
   const row = rawDb(h.dbPath).prepare("SELECT payload_json FROM events WHERE run_id = ? AND type = 'context.inherited'").get(runId) as { payload_json: string } | undefined;
@@ -223,8 +224,8 @@ describe('the shared item-count function (13.4 step 2)', () => {
 
 describe('the snapshot version and the public view (13.2, 13.7)', () => {
   it('SNAPSHOT_STATE_VERSION is 19, above the 16 that carries no reference fields, and a version-16 snapshot decodes to undefined', () => {
-    expect(SNAPSHOT_STATE_VERSION).toBe(23);
-    const state = initialRunState({ runId: NEXT_RUN, sessionId: SESSION });
+    expect(SNAPSHOT_STATE_VERSION).toBe(24);
+    const state = initialRunState({ runId: NEXT_RUN, sessionId: SESSION, fence: TEST_FENCE });
     expect(decodeRunState('run-next@1', { ...encodeRunState(state), stateVersion: 16 })).toBeUndefined();
     expect(decodeRunState('run-next@1', encodeRunState(state))).toEqual(state);
   });

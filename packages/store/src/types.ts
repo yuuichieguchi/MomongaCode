@@ -69,6 +69,7 @@ export type Session = {
   additionalDirectories: readonly string[];
   mcpServers: SessionMcpServers;
   createdAt: number;
+  fenceNonce: string;
 };
 
 export type SessionPageRequest = { cwd?: string; limit: number; cursor: string | null };

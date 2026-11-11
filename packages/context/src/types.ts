@@ -192,6 +192,7 @@ export type BuildContextInput = {
   renderedFull?: ReadonlySet<string>;
   outputFormatters?: readonly OutputFormatterName[] | undefined;
   harnessOutputTools?: readonly string[];
+  fence: string;
 };
 
 export type InstructionScope = 'user' | 'root' | 'nested';

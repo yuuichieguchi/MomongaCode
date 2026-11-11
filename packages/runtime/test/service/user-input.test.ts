@@ -65,7 +65,7 @@ describe('a command the person typed (design 5.9)', () => {
       { command: 'cat secret-notes', exitCode: 0, output: 'ran cat secret-notes', include: false },
     ]);
     const sent = userInputsOf(kit.gateway.streams[0]?.body ?? {}).join('\n');
-    expect(sent).toContain('<user_shell_command><command>make test</command><exit_code>0</exit_code><output>ran make test</output></user_shell_command>');
+    expect(sent).toMatch(/<user_shell_command command=\\"make test\\" exit_code=\\"0\\" boundary=\\"([0-9a-f]{32})\\">\\nran make test\\n<\/user_shell_command boundary=\\"\1\\">/);
     expect(sent).not.toContain('secret-notes');
     expect(sent.indexOf('user_shell_command')).toBeLessThan(sent.indexOf('why does it fail'));
     expect((await env.http('GET', `/v1/sessions/${session.id}/user-shell`)).json.pending).toEqual([]);
@@ -180,7 +180,7 @@ describe('files named with @ in a message (design 5.8)', () => {
     expect(seen[0]?.terms).toMatchObject({ ceiling: capabilities.contextWindow - outputReserveFor(capabilities), imageInput: false });
     expect(env.ofType(run.id, 'user.message')[0]).toMatchObject({ text: 'explain @src/app.tsx and @.env', attachments: [{ type: 'attached_file', path: 'src/app.tsx' }, { type: 'attachment_note', path: '.env' }] });
     const sent = userInputsOf(kit.gateway.streams[0]?.body ?? {}).join('\n');
-    expect(sent).toContain(JSON.stringify('<attached_file path="src/app.tsx">\n     1\tfirst\n     2\tsecond\n</attached_file>').slice(1, -1));
+    expect(sent).toMatch(/<attached_file path=\\"src\/app.tsx\\" boundary=\\"([0-9a-f]{32})\\">\\n     1\\tfirst\\n     2\\tsecond\\n<\/attached_file boundary=\\"\1\\">/);
     expect(sent).toContain('The user referenced .env, which cannot be attached (denied by a rule). Do not try to read it unless asked.');
     expect(sent.indexOf('explain @src/app.tsx')).toBeLessThan(sent.indexOf('attached_file'));
   });

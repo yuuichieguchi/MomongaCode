@@ -4,6 +4,7 @@ import type { Clock } from '@momonga/foundation';
 import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { decodeContextOf, decodeRun, decodeRunEvents } from './codec.ts';
 import { foldRunState, initialRunState } from './fold.ts';
+import { runFenceReader } from './session-fence.ts';
 import { createDerivedSnapshot } from './derived-repair.ts';
 import { createGoverningFactStore } from './governing.ts';
 import { copyDigestOf, isReferenceInherited } from './inherit.ts';
@@ -80,6 +81,7 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
   const decodeContext = decodeContextOf(db);
   const { memories, governing } = options.lookups ?? { memories: createMemoryStore(db, NO_CLOCK, decodeContext), governing: createGoverningFactStore(db, NO_CLOCK, decodeContext) };
   const selectRun = db.prepare('SELECT * FROM runs WHERE id = :id');
+  const fenceOfRun = runFenceReader(db);
   const reference = createReferenceReader(db, { unit, stepped, ...(options.onDecode === undefined ? {} : { onDecode: options.onDecode }), ...(options.onHop === undefined ? {} : { onHop: options.onHop }) });
   const derived = createDerivedSnapshot(db, decodeContext);
 
@@ -166,7 +168,7 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
       if (row === undefined) throw new Error(`unknown run ${runId}`);
       return decodeRun(row, decodeContext);
     });
-    let state = initialRunState({ runId: run.id, sessionId: run.sessionId });
+    let state = initialRunState({ runId: run.id, sessionId: run.sessionId, fence: fenceOfRun(run.id) });
     while (state.lastSeq < run.lastSeq) {
       const events = decodeEach(runEventsPage.iterate({ runId, after: state.lastSeq, through: Math.min(run.lastSeq, state.lastSeq + pageEvents) }));
       if (events.length === 0) throw new Error(`run ${runId} has no event after seq ${state.lastSeq}, below its last seq ${run.lastSeq}`);
@@ -193,7 +195,7 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
     const rest = decodeEach(rangedRows(run.id, run.lastSeq, readTypes, true));
     const unread = leading.filter((event) => !readEvents.includes(event) && event.type !== 'model.requested');
     const journal = [...readEvents.filter((event) => event.type !== 'model.requested'), ...rest, ...unread].sort((a, b) => a.seq - b.seq);
-    let state = initialRunState({ runId: run.id, sessionId: run.sessionId });
+    let state = initialRunState({ runId: run.id, sessionId: run.sessionId, fence: fenceOfRun(run.id) });
     for (const event of journal) {
       state = foldRunState(state, event);
       visit(state, event);
