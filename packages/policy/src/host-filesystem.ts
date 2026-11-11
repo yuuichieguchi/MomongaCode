@@ -2,11 +2,10 @@ import { spawn } from 'node:child_process';
 import type { EventEmitter } from 'node:events';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
-import { MAX_POINTER_FILE_BYTES, gitlinksOfIndex, hostPaths, nodeFileSystem, programKeysOfConfig, someAsync, unresolvableReasonOf } from '@momonga/foundation';
+import { MAX_POINTER_FILE_BYTES, gitlinksOfIndex, hostPaths, nodeFileSystem, programKeysOfConfig, programOnSearchPath, unresolvableReasonOf } from '@momonga/foundation';
 import type { Awaitable, ConfigPrograms, EntryRead, GitlinkRead, StepRead, Unresolved } from '@momonga/foundation';
 import { ShellNotFoundError } from './bash-path.ts';
-import type { GlobDeadline, GlobExpander, GlobExpansion, HeadRead, PolicyHostFilesystem, ProgramResolution, WritableCheck } from './filesystem.ts';
-import { systemProgramDirectories } from './platform-specs.ts';
+import type { GlobDeadline, GlobExpander, GlobExpansion, HeadRead, PolicyHostFilesystem } from './filesystem.ts';
 
 const NOT_THERE: ReadonlySet<string> = new Set(['ENOENT', 'ENOTDIR']);
 const MISSING: ReadonlySet<string> = new Set(['ENOENT']);
@@ -23,8 +22,6 @@ const isNotThere = (error: unknown): boolean => NOT_THERE.has(codeOf(error) ?? '
 
 const SKIPPED_ERRNO: ReadonlySet<string> = new Set(['ENOENT', 'ENOTDIR', 'EACCES', 'ELOOP', 'ENAMETOOLONG']);
 
-type Holder = { apple: boolean; exact: boolean; unsafe: boolean; program: string };
-
 const holdsProgram = async (directory: string, name: string): Promise<boolean> => {
   const file = path.join(directory, name);
   try {
@@ -35,41 +32,6 @@ const holdsProgram = async (directory: string, name: string): Promise<boolean> =
     if (SKIPPED_ERRNO.has(codeOf(error) ?? '')) return false;
     throw error;
   }
-};
-
-const holderAt = async (system: readonly string[], entry: string, cwd: string, name: string, isWritable: WritableCheck, unsafeBefore: boolean): Promise<Holder | undefined> => {
-  const directory = path.resolve(cwd, entry);
-  if (!(await holdsProgram(directory, name))) return undefined;
-  const absolute = path.isAbsolute(entry);
-  return {
-    apple: system.includes(directory),
-    exact: absolute && system.includes(entry),
-    unsafe: unsafeBefore || !absolute || (await isWritable(entry)),
-    program: path.join(directory, name),
-  };
-};
-
-const searchPathDelimiterOf = (platform: NodeJS.Platform): string => (platform === 'win32' ? path.win32.delimiter : path.posix.delimiter);
-
-const resolveProgram = (platform: NodeJS.Platform) => async (name: string, cwd: string, searchPath: string | undefined, isWritable: WritableCheck): Promise<ProgramResolution> => {
-  if (searchPath === undefined) return { none: true };
-  const system = systemProgramDirectories(platform);
-  const entries = searchPath.split(searchPathDelimiterOf(platform));
-  let unsafeBefore = false;
-  for (const [index, entry] of entries.entries()) {
-    const landing = await holderAt(system, entry, cwd, name, isWritable, unsafeBefore);
-    if (landing !== undefined) {
-      if (landing.apple) return landing.exact && !landing.unsafe ? { program: landing.program } : { none: true };
-      if (!landing.unsafe) return { program: landing.program };
-      const appleBehind = await someAsync(entries.slice(index + 1), async (later) => {
-        const holder = await holderAt(system, later, cwd, name, isWritable, true);
-        return holder !== undefined && holder.exact;
-      });
-      return appleBehind ? { none: true } : { program: landing.program };
-    }
-    unsafeBefore = unsafeBefore || !path.isAbsolute(entry) || (await isWritable(entry));
-  }
-  return { none: true };
 };
 
 const typedRead = async <T>(read: () => Promise<T>, notThere: ReadonlySet<string>, absent: T): Promise<T | Unresolved> => {
@@ -319,7 +281,7 @@ export const createHostFilesystem = (platform: NodeJS.Platform, bashPath: () => 
   canonicalise: (absolute, signal) => hostPaths(signal).resolveCanonicalPath(absolute),
   volumeProbe: (directory, signal) => hostPaths(signal).volumeIsCaseInsensitive(directory),
   locate: (absolute, signal) => hostPaths(signal).locate(absolute),
-  resolveProgram: resolveProgram(platform),
+  resolveProgram: programOnSearchPath(platform, holdsProgram),
   expandGlob: createHostGlobExpander(bashPath, env, globPorts),
   readEntry,
   readNoFollow,
