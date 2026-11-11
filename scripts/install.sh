@@ -69,7 +69,7 @@ ssh-keygen -Y verify -f "$staging/allowed_signers" -I "$SIGNATURE_NAMESPACE" -n 
   || fail "$CHECKSUMS_NAME is not signed by the pinned release key; nothing was installed"
 fetch "$base_url/$ASSET_NAME" "$staging/$ASSET_NAME"
 
-expected="$(awk -v asset="$ASSET_NAME" '$2 == asset { print $1 }' "$staging/$CHECKSUMS_NAME")"
+expected="$(awk -v asset="$ASSET_NAME" '{ name = $2; sub(/^\*/, "", name) } name == asset { print $1 }' "$staging/$CHECKSUMS_NAME")"
 case "$expected" in
   *[!0-9a-f]* | "") fail "$CHECKSUMS_NAME has no valid entry for $ASSET_NAME" ;;
 esac
@@ -85,6 +85,10 @@ if [ "$actual" != "$expected" ]; then
 fi
 
 chmod 755 "$staging/$ASSET_NAME"
+reported="$("$staging/$ASSET_NAME" --version)" || fail "the downloaded executable exited with code $? for --version; nothing was installed"
+if [ -n "${MOMONGA_VERSION:-}" ] && [ "$reported" != "$MOMONGA_VERSION" ]; then
+  fail "version $MOMONGA_VERSION was asked for, but the downloaded executable reports version $reported; nothing was installed"
+fi
 mv -f "$staging/$ASSET_NAME" "$target"
 printf 'installed momonga to %s\n' "$target"
 

@@ -52,15 +52,21 @@
     $expected = $null
     foreach ($line in Get-Content (Join-Path $staging $checksumsName)) {
       $fields = $line -split '\s+'
-      if ($fields.Count -ge 2 -and $fields[1].TrimStart('*') -eq $assetName) { $expected = $fields[0].ToLowerInvariant() }
+      if ($fields.Count -ge 2 -and ($fields[1] -replace '^\*', '') -eq $assetName) { $expected = $fields[0].ToLowerInvariant() }
     }
     if (-not $expected -or $expected -notmatch '^[0-9a-f]{64}$') { Fail "$checksumsName has no valid entry for $assetName" }
 
     $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $staging $assetName)).Hash.ToLowerInvariant()
     if ($actual -ne $expected) { Fail "sha256 mismatch for ${assetName}: expected $expected, got $actual; nothing was installed" }
 
+    $candidate = Join-Path $staging $assetName
+    $reported = & $candidate --version
+    if ($LASTEXITCODE -ne 0) { Fail "the downloaded executable exited with code $LASTEXITCODE for --version; nothing was installed" }
+    $reported = "$reported".Trim()
+    if ($env:MOMONGA_VERSION -and $reported -ne $env:MOMONGA_VERSION) { Fail "version $($env:MOMONGA_VERSION) was asked for, but the downloaded executable reports version $reported; nothing was installed" }
+
     $target = Join-Path $prefix 'momonga.exe'
-    Move-Item -Force -LiteralPath (Join-Path $staging $assetName) -Destination $target
+    Move-Item -Force -LiteralPath $candidate -Destination $target
     Write-Output "installed momonga to $target"
 
     $openShellLine = @"

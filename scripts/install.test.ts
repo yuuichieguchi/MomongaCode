@@ -169,6 +169,46 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
     expect(fs.readdirSync(path.join(prefix, 'bin'))).toEqual([]);
   });
 
+  const reportingVersion = (version: string): Buffer => Buffer.from(`#!/bin/sh\nif [ "$1" = "--version" ]; then echo ${version}; exit 0; fi\necho momonga-installed\n`);
+
+  it('refuses a signed release whose executable reports another version than the one asked for, and keeps the existing install', async () => {
+    fs.mkdirSync(path.dirname(target()), { recursive: true });
+    fs.writeFileSync(target(), 'old');
+    const older = reportingVersion('1.0.0');
+    serveRelease(older, older);
+    const outcome = await runInstall({ ...baseEnv(), MOMONGA_VERSION: '2.0.0' });
+    expect(outcome).toEqual({
+      code: 1,
+      stdout: '',
+      stderr: 'install.sh: version 2.0.0 was asked for, but the downloaded executable reports version 1.0.0; nothing was installed\n',
+    });
+    expect(fs.readFileSync(target(), 'utf8')).toBe('old');
+    expect(fs.readdirSync(path.join(prefix, 'bin'))).toEqual(['momonga']);
+  });
+
+  it('installs a release whose executable reports the version asked for', async () => {
+    const asked = reportingVersion('2.0.0');
+    serveRelease(asked, asked);
+    const outcome = await runInstall({ ...baseEnv(), MOMONGA_VERSION: '2.0.0' });
+    expect(outcome.code).toBe(0);
+    expect(fs.readFileSync(target())).toEqual(asked);
+  });
+
+  it('refuses a candidate that does not answer --version', async () => {
+    const broken = Buffer.from('#!/bin/sh\necho broken >&2\nexit 3\n');
+    serveRelease(broken, broken);
+    const outcome = await runInstall(baseEnv());
+    expect(outcome).toEqual({ code: 1, stdout: '', stderr: 'broken\ninstall.sh: the downloaded executable exited with code 3 for --version; nothing was installed\n' });
+    expect(fs.readdirSync(path.join(prefix, 'bin'))).toEqual([]);
+  });
+
+  it('reads a binary-mode line of SHA256SUMS, whose name carries a leading *', async () => {
+    served = { [`/${ASSET}`]: GOOD_BINARY, ...signedSums(`${sha256(GOOD_BINARY)} *${ASSET}\n`) };
+    const outcome = await runInstall(baseEnv());
+    expect(outcome.code).toBe(0);
+    expect(fs.readFileSync(target())).toEqual(GOOD_BINARY);
+  });
+
   it('refuses an unsupported operating system', async () => {
     const stubs = path.join(root, 'stubs');
     fs.mkdirSync(stubs, { recursive: true });
