@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import { AUTH_DOCUMENT_MAX_BYTES, isRecord, systemRandom, writeFileAtomically } from '@momonga/foundation';
 import type { FileSystem } from '@momonga/foundation';
 import { parsePlanJson } from './plan-json.ts';
+import { describeError } from './record-io.ts';
 
 export type HostIdentity = { hostId: string };
 
@@ -37,7 +38,7 @@ export const hostIdOf = (jwk: Readonly<Record<string, unknown>>): string => `${H
 const newHostFile = async (): Promise<{ hostId: string; text: string }> => {
   const { privateKey } = await generateKeyPairAsync('ec', { namedCurve: 'P-256' });
   const jwk: JsonWebKey = privateKey.export({ format: 'jwk' });
-  const hostId = hostIdOf(jwk as Record<string, unknown>);
+  const hostId = hostIdOf(jwk);
   return { hostId, text: JSON.stringify({ hostId, privateKey: jwk }) };
 };
 
@@ -47,7 +48,7 @@ const readHostFile = async (fileSystem: FileSystem, file: string): Promise<strin
   try {
     return await fileSystem.readOwnerOnlyTextFile(file, 'it', AUTH_DOCUMENT_MAX_BYTES);
   } catch (error) {
-    throw hostFileError(file, `cannot be read (${(error as Error).message})`);
+    throw hostFileError(file, `cannot be read (${describeError(error)})`);
   }
 };
 

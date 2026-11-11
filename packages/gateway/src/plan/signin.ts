@@ -14,8 +14,8 @@ import type { HostIdentity } from './host-identity.ts';
 import { createIdTokenVerifier, idTokenFacts } from './id-token.ts';
 import type { IdTokenFacts, IdTokenVerifier } from './id-token.ts';
 import type { PlanOutbound } from './outbound.ts';
-import { boundedSend, refreshRequiredFor, tokenResponseProblem } from './refresh.ts';
-import type { PlanFetch, PlanSleep, PlanTokenResponse } from './refresh.ts';
+import { boundedSend, refreshRequiredFor, tokenResponseOf } from './refresh.ts';
+import type { PlanFetch, PlanSleep, RefreshTokens } from './refresh.ts';
 import { createSerial } from './serial.ts';
 import { OAUTH_ACCESS_DENIED, OAUTH_INVALID_GRANT } from './oauth-wire.ts';
 import { ownEntry } from './own-entry.ts';
@@ -235,7 +235,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     return { attemptId: attempt.id, authorizationUrl: url.toString(), state: attempt.state, expiresAt: new Date(attempt.expiresAt).toISOString() };
   };
 
-  const exchange = async (fetch: PlanFetch, attempt: Attempt, clientId: string, code: string, progress: Progress): Promise<PlanTokenResponse | { outcome: typeof RETRY_OUTCOME; reason: typeof INVALID_GRANT_REASON }> => {
+  const exchange = async (fetch: PlanFetch, attempt: Attempt, clientId: string, code: string, progress: Progress): Promise<RefreshTokens | { outcome: typeof RETRY_OUTCOME; reason: typeof INVALID_GRANT_REASON }> => {
     const { profile } = attempt;
     const form = { grant_type: 'authorization_code', client_id: clientId, code, code_verifier: attempt.verifier, redirect_uri: attempt.redirectUri, resource: profile.oauth.resource };
     const answer = await boundedSend(
@@ -258,9 +258,9 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     }
     progress.endStep = STEP_TOKEN_RESPONSE;
     const scope = isRecord(body) ? body['scope'] : undefined;
-    const problem = tokenResponseProblem(body, { refreshRequired: typeof scope === 'string' && refreshRequiredFor(scope) });
-    if (problem !== undefined) throw signInFailure(PLAN_SIGN_IN_FAILURE.tokenResponseInvalid, profile, { reason: problem });
-    return body as PlanTokenResponse;
+    const reading = tokenResponseOf(body, { refreshRequired: typeof scope === 'string' && refreshRequiredFor(scope) });
+    if ('problem' in reading) throw signInFailure(PLAN_SIGN_IN_FAILURE.tokenResponseInvalid, profile, { reason: reading.problem });
+    return reading.tokens;
   };
 
   const signInEvent = (attempt: Attempt, progress: Progress, end: { outcome: (typeof PLAN_SIGN_IN_OUTCOMES)[number] } | { outcome: 'failed'; failure: string }): void => {

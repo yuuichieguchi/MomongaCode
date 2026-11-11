@@ -30,7 +30,7 @@ import { ownEntry } from './own-entry.ts';
 import { parsePlanJson } from './plan-json.ts';
 import { describeError, endedByOperation, recordAccess, storeReadFailure, storeWriteFailure, withRecord } from './record-io.ts';
 import { grantsScope, lazyRefreshMarginMs, refreshRequiredFor, sendRefresh, sendWasInterrupted, tokenResponseProblem } from './refresh.ts';
-import type { PlanFetch, PlanSleep, PlanTokenResponse, RefreshEnd } from './refresh.ts';
+import type { PlanFetch, PlanSleep, RefreshEnd, RefreshTokens } from './refresh.ts';
 import { revokeRefreshToken } from './revoke.ts';
 import { createSerial } from './serial.ts';
 import { startSharedCall } from './shared-call.ts';
@@ -47,7 +47,9 @@ type RecordState = Exclude<PlanAccountState, PlanStoreState>;
 
 const STORE_STATES: ReadonlySet<string> = new Set(PLAN_STORE_STATES);
 
-const RECORD_STATES: ReadonlySet<string> = new Set(PLAN_ACCOUNT_STATES.filter((state) => !STORE_STATES.has(state)));
+const RECORD_STATES: readonly RecordState[] = PLAN_ACCOUNT_STATES.filter((state): state is RecordState => !STORE_STATES.has(state));
+
+const recordStateOf = (state: string): RecordState | undefined => RECORD_STATES.find((known) => known === state);
 
 export type PlanRecord = {
   version: number;
@@ -96,7 +98,7 @@ export type OpenPlanSessionsOptions = {
 
 export type RegisterInput = { profile: string; account: string; clientId: string; hostId: string };
 
-export type InstallInput = RegisterInput & { subject: string; email?: string; idToken: string; tokens: PlanTokenResponse };
+export type InstallInput = RegisterInput & { subject: string; email?: string; idToken: string; tokens: RefreshTokens };
 
 export type Installed = { outcome: typeof SIGNED_IN_OUTCOME | typeof PLAN_DISABLED_STATE; firstSignIn: boolean };
 
@@ -189,7 +191,11 @@ export const planRecordKeyOfPlaintext = (text: string): string => {
   return recordKey(record.profile, record.account);
 };
 
-const optional = <K extends string, V>(name: K, value: V | undefined): { [P in K]?: V } => (value === undefined ? {} : ({ [name]: value } as { [P in K]?: V }));
+const optional = <K extends string, V>(name: K, value: V | undefined): { [P in K]?: V } => {
+  const field: { [P in K]?: V } = {};
+  if (value !== undefined) field[name] = value;
+  return field;
+};
 
 const stringField = (source: Record<string, unknown>, name: string): string | undefined => {
   const value = ownEntry(source, name);
@@ -245,15 +251,15 @@ const parseRecord = (text: string): PlanRecord => {
   if (!isRecord(value)) throw new Error('the plan record is not a JSON object');
   const version = numberField(value, 'version');
   if (version !== RECORD_VERSION) throw new Error(`the plan record has a version this build does not read; it reads version ${RECORD_VERSION}`);
-  const state = requiredString(value, 'state');
-  if (!RECORD_STATES.has(state)) throw new Error('the plan record has an unknown state');
+  const state = recordStateOf(requiredString(value, 'state'));
+  if (state === undefined) throw new Error('the plan record has an unknown state');
   const welcomeShown = ownEntry(value, 'welcomeShown');
   if (typeof welcomeShown !== 'boolean') throw new Error('the plan record has no welcomeShown');
   return {
     version,
     profile: labelField(value, 'profile'),
     account: labelField(value, 'account'),
-    state: state as RecordState,
+    state,
     client_id: requiredString(value, 'client_id'),
     ext_agent_host_id: requiredString(value, 'ext_agent_host_id'),
     welcomeShown,
@@ -332,9 +338,9 @@ const sweepTemporaries = async (fileSystem: FileSystem, directory: string, lock:
 };
 
 const waitFor = <T>(work: Promise<T>, signal: AbortSignal): Promise<T> => {
-  if (signal.aborted) return Promise.reject(signal.reason as Error);
+  if (signal.aborted) return Promise.reject(signal.reason);
   return new Promise<T>((resolve, reject) => {
-    const onAbort = (): void => reject(signal.reason as Error);
+    const onAbort = (): void => reject(signal.reason);
     signal.addEventListener('abort', onAbort, { once: true });
     work.then(
       (value) => {
@@ -343,7 +349,7 @@ const waitFor = <T>(work: Promise<T>, signal: AbortSignal): Promise<T> => {
       },
       (error: unknown) => {
         signal.removeEventListener('abort', onAbort);
-        reject(error as Error);
+        reject(error);
       },
     );
   });
@@ -1007,7 +1013,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
           subject: input.subject,
           ...optional('email', input.email),
           access_token: tokens.access_token,
-          refresh_token: tokens.refresh_token,
+          ...optional('refresh_token', tokens.refresh_token),
           id_token: input.idToken,
           expiresAt: clock.now() + lifetimeMs,
           lifetimeMs,

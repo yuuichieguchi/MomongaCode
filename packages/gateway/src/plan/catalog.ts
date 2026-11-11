@@ -20,6 +20,7 @@ import type { PlanOutbound } from './outbound.ts';
 import { ownEntry } from './own-entry.ts';
 import { parsePlanJson } from './plan-json.ts';
 import { recordAccess } from './record-io.ts';
+import { responseBytes } from './refresh.ts';
 import type { PlanFetch, PlanSleep } from './refresh.ts';
 
 export const NO_REPORTED_WINDOW = 'the server reports no context window for this model';
@@ -45,8 +46,6 @@ export type PlanCatalogOptions = { store: CredentialStore; clock: Clock; outboun
 async function* bytesOf(text: string): AsyncGenerator<Uint8Array> {
   yield new TextEncoder().encode(text);
 }
-
-async function* noBytes(): AsyncGenerator<Uint8Array> {}
 
 type ListAnswer = CompletionResponse & { text: string; truncated: boolean };
 
@@ -147,7 +146,7 @@ export const createPlanCatalog = (options: PlanCatalogOptions): PlanCatalog => {
     try {
       return await sendAuthorized(request.auth, signal, async (bearer) => {
         const response = await fetch(url, { method: 'GET', redirect: 'manual', signal, headers: { accept: 'application/json', ...(bearer === undefined ? {} : { authorization: `Bearer ${bearer}` }) } });
-        const read = await readTextLimited((response.body as AsyncIterable<Uint8Array> | null) ?? noBytes(), PLAN_SIGN_IN_DEFAULTS.authBodyBytes);
+        const read = await readTextLimited(responseBytes(response), PLAN_SIGN_IN_DEFAULTS.authBodyBytes);
         return { status: response.status, headers: Object.fromEntries(response.headers), body: bytesOf(read.text), text: read.text, truncated: read.truncated };
       });
     } finally {

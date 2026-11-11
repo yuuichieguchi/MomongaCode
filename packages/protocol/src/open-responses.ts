@@ -216,7 +216,7 @@ export const reportedCachedTokensOf = (
   extension: { cacheReadNotReported?: true } | undefined,
 ): number | undefined => (extension?.cacheReadNotReported === true ? undefined : usage.input_tokens_details?.cached_tokens);
 
-export type ResponseError = { code: string; message: string; type?: ErrorType; retryAfterMs?: number; plan?: PlanAccountRef };
+export type ResponseError = { code: string; message: string; type?: ErrorType; param?: string | null; retryAfterMs?: number; plan?: PlanAccountRef };
 
 export type FailedResponseResource = ResponseResource & { error: ResponseError };
 
