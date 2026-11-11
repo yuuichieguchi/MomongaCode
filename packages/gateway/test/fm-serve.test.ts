@@ -478,7 +478,7 @@ describe('createManagedServer socket ownership', () => {
     expect(await outcome).toMatchObject({
       name: 'ManagedServerError',
       reason: 'unhealthy',
-      message: 'the model "fm": the server was not ready before the request ended',
+      message: `the model "fm": the server was not ready within ${HEALTH_MS} ms of its start; readyTimeoutMs of the model in the settings sets this bound`,
     });
     expect(spawn).not.toHaveBeenCalled();
     expect(fs.statSync(socketPath).isSocket()).toBe(true);

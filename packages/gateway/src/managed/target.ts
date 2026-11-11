@@ -38,7 +38,7 @@ import { FULL_KEYWORD_SUPPORT } from '../dialect/keyword-support.ts';
 import { resolveDialectId } from '../dialect/resolve-id.ts';
 import type { EnvelopeShape } from '../probe/envelope.ts';
 import { valueAtPath, parseJson } from '../probe/json.ts';
-import { loadProbeRecord, resolveToolCalling } from '../probe/record.ts';
+import { loadProbeRecord, recordOfServedModel, resolveToolCalling } from '../probe/record.ts';
 import type { ManagedRecordCurrency } from '../probe/record.ts';
 import { targetProbingError } from '../probe/auto-probe.ts';
 import { modelIdChangedError } from '../probe/model-id-changed.ts';
@@ -190,7 +190,7 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
   const { description } = options;
   let recorded: Recorded | undefined;
   let servedId: string | undefined;
-  const modelName = (): string => managedModelName(options.serverName, { declared: options.declaredModel, listed: recorded?.report?.modelId ?? servedId });
+  const modelName = (): string => managedModelName(options.serverName, { declared: options.declaredModel, listed: servedId ?? recorded?.report?.modelId });
   const allowedTools: readonly AllowedToolsForm[] = description.toolForms;
   const declaredField = options.declaredOutputBoundField === undefined ? {} : { outputBoundField: options.declaredOutputBoundField };
   const declaredBounds = options.declaredCapabilities;
@@ -258,7 +258,7 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
       recorded = recordedOf(`the ${WORDS.model} "${modelName()}"`, ensured.report);
       return recorded;
     }
-    const report = await loadProbeRecord(options.probeRecordDir, key, options.currency, modelName());
+    const report = await loadProbeRecord(options.probeRecordDir, key, options.currency, modelName(), servedId);
     if (report === null) {
       if (declaredOnly !== undefined) return (recorded = declaredOnly);
       throw targetProbingError(await options.startProbe(key));
@@ -306,8 +306,6 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
     return listing;
   };
   const listedId = async (signal: AbortSignal): Promise<string> => {
-    const recordedModel = lastRecorded().report?.modelId;
-    if (recordedModel !== undefined) return recordedModel;
     const endpoint = await options.server.ensureRunning(signal);
     servedId = await (listedModel ?? sharedListing(endpoint.path)).join(signal);
     return servedId;
@@ -315,9 +313,10 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
   const upstreamModel = async (_target: AdapterTarget, signal: AbortSignal): Promise<string> => {
     const listed = await listedId(signal);
     const entry = options.declaredModel;
-    if (entry === undefined) return listed;
-    if (listed !== entry) throw modelIdChangedError({ server: options.serverName, model: modelName() }, listed, entry);
-    return entry;
+    if (entry !== undefined && listed !== entry) throw modelIdChangedError({ server: options.serverName, model: modelName() }, listed, entry);
+    const report = lastRecorded().report;
+    if (report !== null && recordOfServedModel(report, listed) === null) await readRecorded();
+    return listed;
   };
 
   const { tokenCount } = description;
