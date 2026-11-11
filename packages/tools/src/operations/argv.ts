@@ -37,7 +37,7 @@ export type ReconcileSandbox = { sandbox: Sandbox; sandboxPolicy: SandboxPolicy;
 export type SandboxedRunnerPorts = {
   reconcileSandbox(context: ProbeContext): Promise<ReconcileSandbox>;
   shellHost: ShellHost;
-  outboundNetwork: OutboundNetwork;
+  outboundNetwork(signal: AbortSignal): Promise<OutboundNetwork>;
   markerDir: string;
   credentialRoot: string;
   credentialHelper?: HelperSelf;
@@ -99,7 +99,7 @@ const runProbe = async (ports: SandboxedRunnerPorts, argv: readonly string[], op
   const held: ReconcileSandbox = await sandboxOf(ports, context);
   let network: GrantedNetwork;
   try {
-    network = await grantNetwork(options, argv, { outboundNetwork: ports.outboundNetwork, sandboxPolicy: held.sandboxPolicy });
+    network = await grantNetwork(options, argv, { outboundNetwork: await ports.outboundNetwork(context.signal), sandboxPolicy: held.sandboxPolicy });
   } catch (error) {
     held.release();
     throw error;

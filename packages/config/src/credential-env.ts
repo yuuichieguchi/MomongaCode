@@ -1,3 +1,6 @@
+import { credentialEnvNames } from './models.ts';
+import type { ResolvedModels } from './models.ts';
+
 export type CredentialRules = { env?: readonly string[]; keep?: readonly string[]; valuePatterns?: readonly string[] };
 
 const STRONG_WORD = /KEY|TOKEN|SECRET|PASSW(OR)?D|PASSPHRASE|CREDENTIAL|CREDS/i;
@@ -15,6 +18,13 @@ export const looksLikeCredentialName = (name: string): boolean => {
 };
 
 export const isCredentialEnvName = looksLikeCredentialName;
+
+export type CredentialNaming = { models: Pick<ResolvedModels, 'connections'>; forges?: readonly { credentialEnv?: string }[] | undefined };
+
+export const forgeCredentialNamesOf = (settings: Pick<CredentialNaming, 'forges'>): string[] =>
+  [...new Set((settings.forges ?? []).flatMap((forge) => (forge.credentialEnv === undefined ? [] : [forge.credentialEnv])))].sort();
+
+export const credentialNamesOf = (settings: CredentialNaming): string[] => [...new Set([...credentialEnvNames(settings.models), ...forgeCredentialNamesOf(settings)])].sort();
 
 const globOf = (glob: string): RegExp => new RegExp(`^${glob.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`);
 

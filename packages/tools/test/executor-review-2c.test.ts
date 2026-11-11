@@ -1,5 +1,5 @@
 import { nodeFileSystem, systemRandom } from '@momonga/foundation';
-import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, testProcessInspector } from '@momonga/testkit';
+import { unconfiguredNetworkOf, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, testProcessInspector } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -18,7 +18,7 @@ const boundedExecutor = (harness: Harness, capMs: number, graceMs: number) =>
     reap: { inspector: testProcessInspector() },
     shellHost: nodeShellHost(),
     random: systemRandom,
-    files: nodeFileSystem, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
+    files: nodeFileSystem, outboundNetwork: unconfiguredNetworkOf, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
     idempotency: harness.idempotency.port,
     blobs: harness.blobs.port,
     clock: harness.clock,

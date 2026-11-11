@@ -160,7 +160,7 @@ export type ToolExecutorOptions = {
   shellHost: ShellHost;
   random: Random;
   files: FileSystem;
-  outboundNetwork: OutboundNetwork;
+  outboundNetwork(signal: AbortSignal): Promise<OutboundNetwork>;
   idempotencyTtlMs?: number;
   readOnlyRetry?: { attempts: number; baseMs: number; maxMs: number };
   maxParallel?: number;
@@ -480,6 +480,18 @@ const deniedOutcome = (callId: string, denial: PermissionDenial): ResultOutcome 
   kind: 'result',
   result: { status: 'failed', output: permissionDeniedOutput(denial), denial },
 });
+
+export class ReconcileUndecidedError extends Error {
+  readonly toolName: string;
+  readonly idemKey: string;
+
+  constructor(toolName: string, idemKey: string, cause: unknown) {
+    super(`${toolName} could not be reconciled, so the run cannot go on: ${cause instanceof Error ? cause.message : String(cause)}; its record is kept for the next attempt`, { cause });
+    this.name = 'ReconcileUndecidedError';
+    this.toolName = toolName;
+    this.idemKey = idemKey;
+  }
+}
 
 const describeThrown = (toolName: string, error: unknown): string => {
   if (error instanceof ToolInputError || error instanceof ToolExecutionError || error instanceof TransientToolError) return error.message;
@@ -1297,7 +1309,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       const ctx: ReconcileContext = { ...scope.reconcileCtx, earlierAttempt };
       return { kind: 'reconciled', result: await reconcileWithin(tool, input, record, ctx, () => scope.abortWith('timeout'), scope.closeContext) };
     } catch (error) {
-      return { kind: 'outcome', outcome: failedOutcome(callId, describeThrown(tool.name, error)) };
+      if (scope.controller.signal.aborted) return { kind: 'outcome', outcome: failedOutcome(callId, describeThrown(tool.name, error)) };
+      throw new ReconcileUndecidedError(tool.name, record.key, error);
     }
   };
 
@@ -1386,8 +1399,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
 
     const facts = subjectFactsOf(gate.subject);
     const performedFacts: { current: SubjectFacts } = { current: facts };
+    const outboundNetwork = await options.outboundNetwork(batch.signal);
     const scope = openScope(batch, call, tool, key, fit, batch.deadlineAt, () => performedFacts.current);
-    const toolContext: ToolContext = { ...scope.reconcileCtx, sandbox: batch.sandbox, sandboxPolicy: batch.sandboxPolicy, outboundNetwork: options.outboundNetwork, ripgrep: batch.ripgrep, checkpoint: scope.checkpoint, reportProgress: scope.reportProgress };
+    const toolContext: ToolContext = { ...scope.reconcileCtx, sandbox: batch.sandbox, sandboxPolicy: batch.sandboxPolicy, outboundNetwork, ripgrep: batch.ripgrep, checkpoint: scope.checkpoint, reportProgress: scope.reportProgress };
     const contextForBasis = (): ToolContext => {
       const readOnly = requireBasis(target) === 'read_only';
       const requested = requestedNetworkOf(target.subject);
@@ -1617,7 +1631,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const { rec: record } = current;
     const reconciling = new AbortController();
     const ctx: ReconcileContext = { ...scope.reconcileCtx, signal: reconciling.signal, deadlineAt: clock.now() + reconcileCapMs + reconcileGraceMs };
-    const settled = await reconcileWithin(tool, input, record, ctx, () => reconciling.abort(), scope.closeContext);
+    const settled = await reconcileWithin(tool, input, record, ctx, () => reconciling.abort(), scope.closeContext).catch((error: unknown) => {
+      throw new ReconcileUndecidedError(tool.name, key, error);
+    });
     const status = settled.outcome === 'already_applied' ? 'completed' : 'failed';
     const output = await interruptedText(tool, reason, scope.stop(), record, settled);
     return scope.complete(await finalizeResult({ status, output, ...diffFieldsOf(settled) }, tool, limits.fit, limits.runId, limits.formatOutput), settled.outcome, reason);
