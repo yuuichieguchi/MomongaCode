@@ -81,6 +81,9 @@ describe('messageOf: one builder per message, which names the command of the sur
       noSessionToContinue: (surface) => messageOf('noSessionToContinue', surface, { folder: '/f' }),
       handoverFailed: (surface) => messageOf('handoverFailed', surface, { toVersion: '2', fromVersion: '1', reason: 'r', kept: { kind: 'run', runId: 'r1' } }),
       restoreRefused: (surface) => messageOf('restoreRefused', surface, { reason: 'r', kept: { kind: 'unnamed' } }),
+      aboutModel: (surface) => messageOf('aboutModel', surface, { model: 'fm/system', text: 'the server was stopped' }),
+      modelNotReady: (surface) => messageOf('modelNotReady', surface, { model: 'fm/system', reason: 'the executable is missing' }),
+      modelIdChanged: (surface) => messageOf('modelIdChanged', surface, { server: 'fm', model: 'fm/system', listed: 'renamed', entry: 'system' }),
     };
     expect(MESSAGE_KEYS.flatMap((key) => SURFACES.flatMap((surface) => bannedVariantsIn(samples[key](surface)).map((use) => `${key} on ${surface}: ${use.variant}`)))).toEqual([]);
   });

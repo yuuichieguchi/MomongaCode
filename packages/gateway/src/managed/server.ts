@@ -8,6 +8,7 @@ import { realTimers } from '../process-ports.ts';
 import { PreconditionFailedError, TargetNotReadyError } from '../adapters/shared/failures.ts';
 import { createExecFn, createGroupSpawn, reapStaleGroups } from './fm-processes.ts';
 import type { ChildEnv } from './fm-processes.ts';
+import { aboutModel } from './name.ts';
 import { notReadyText, runPreconditions } from './preconditions.ts';
 import type { ExecFn, RefusedVerdict } from './preconditions.ts';
 
@@ -128,12 +129,12 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     options.spawn ??
     (options.markerDirectory === undefined
       ? (): ManagedChild => {
-          throw new Error(`the model "${target}": the server has no marker directory, so it cannot be launched`);
+          throw new Error(aboutModel(target, 'the server has no marker directory, so it cannot be launched'));
         }
       : createGroupSpawn({ env: options.env, markerDirectory: options.markerDirectory, onWarning: options.onWarning }));
   const timers = options.timers ?? defaultTimers;
   const argv = argvOf(description, options.socketPath);
-  const said = (text: string): string => `the model "${target}": ${text}`;
+  const said = (text: string): string => aboutModel(target, text);
 
   let state: State = 'idle';
   let generation = 0;

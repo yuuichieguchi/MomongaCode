@@ -253,6 +253,9 @@ export type MessageInputs = {
   noSessionToContinue: [given: { readonly folder: string }];
   handoverFailed: [given: { readonly toVersion: string; readonly fromVersion: string; readonly reason: string; readonly kept: KeptWork }];
   restoreRefused: [given: { readonly reason: string; readonly kept: KeptWork }];
+  aboutModel: [given: { readonly model: string; readonly text: string }];
+  modelNotReady: [given: { readonly model: string; readonly reason: string }];
+  modelIdChanged: [given: { readonly server: string; readonly model: string; readonly listed: string; readonly entry: string }];
 };
 
 export type MessageKey = keyof MessageInputs;
@@ -272,6 +275,10 @@ const MESSAGES: { readonly [Key in MessageKey]: (surface: Surface, ...given: Mes
   handoverFailed: (surface, given) =>
     `Could not restart into v${given.toVersion} (${given.reason}). This ${WORDS.session} stays on v${given.fromVersion} and keeps working until that version finishes its ${WORDS.run}s.${keptRunsSentence(given.kept)}${UNSENT_INPUT_KEPT[surface]}`,
   restoreRefused: (_surface, given) => `Could not restore the ${WORDS.session} (${given.reason}).${keptSessionSentence(given.kept)}`,
+  aboutModel: (_surface, given) => `the ${WORDS.model} "${given.model}": ${given.text}`,
+  modelNotReady: (_surface, given) => `the ${WORDS.model} "${given.model}" is not ready: ${given.reason}`,
+  modelIdChanged: (_surface, given) =>
+    `The ${WORDS.server} ${given.server} of the ${WORDS.model} ${given.model} lists "${given.listed}", not "${given.entry}". Run /models add to add the ${WORDS.model} it serves now.`,
 };
 
 export const MESSAGE_KEYS = Object.keys(MESSAGES) as readonly MessageKey[];
