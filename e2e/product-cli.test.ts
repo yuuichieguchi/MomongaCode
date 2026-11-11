@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EXIT_WAITING_FOR_APPROVAL } from '@momonga/foundation';
+import { EXIT_USAGE, EXIT_WAITING_FOR_APPROVAL } from '@momonga/foundation';
 import { CACHE_READ_TEXT } from '@momonga/observability';
 import { CACHE_READS_NOT_REPORTED } from '@momonga/protocol';
 import { startMcpHttpFixture, startMcpOauthFixture } from '@momonga/testkit';
@@ -227,13 +227,13 @@ describe('momonga with MCP servers', () => {
       expect((await runCli(home, ['elicit', inputId])).stdout).toBe(listed.stdout);
 
       const missing = await runCli(home, ['elicit', inputId, '--accept']);
-      expect(missing.code).toBe(1);
+      expect(missing.code).toBe(EXIT_USAGE);
       expect(missing.stderr).toContain("must have required property 'name'");
       const unknownField = await runCli(home, ['elicit', inputId, '--accept', '--set', 'age=3']);
-      expect(unknownField.code).toBe(1);
+      expect(unknownField.code).toBe(EXIT_USAGE);
       expect(unknownField.stderr).toContain('unknown field age; the request asks for name');
       const conflicting = await runCli(home, ['elicit', inputId, '--accept', '--decline']);
-      expect(conflicting.code).toBe(1);
+      expect(conflicting.code).toBe(EXIT_USAGE);
       expect(conflicting.stderr).toContain('choose one of --accept, --decline, --cancel and --responses');
       expect(fixture.rpcRecords('tools/call')).toHaveLength(1);
 
