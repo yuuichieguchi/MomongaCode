@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RUNTIME_ABORT_BUDGET_MS, groupTerminationBoundMs } from '@momonga/foundation';
+import { POLL_INTERVAL_MS, RUNTIME_ABORT_BUDGET_MS, groupTerminationBoundMs } from '@momonga/foundation';
 import { SANDBOX_KILL_GRACE_MS, SANDBOX_STOP_BOUND_MS } from '@momonga/sandbox';
 import { heldCallWaitMs } from '@momonga/tools';
 import { proofArith } from '../../src/proofs/arith.ts';
@@ -8,10 +8,9 @@ import { expectRefuted, prove } from '../../src/proofs/prove.ts';
 import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, useZ3 } from '../harness.ts';
 
 const RETIRED_KILL_WAIT_FLOOR_MS = 1000;
-const TODAYS_POLL_INTERVAL_MS = 10;
 const DESIGNED_POLL_INTERVAL_MS = 25;
 const KILL_CONFIRM_PENDING_MS = 5_000;
-const GROUP_POLL_MS = 10;
+const GROUP_POLL_MS = POLL_INTERVAL_MS;
 const ABORT_SETTLE_LIMIT_MS = heldCallWaitMs(0) - SANDBOX_STOP_BOUND_MS;
 
 const satisfiable = async (arith: ProofArith): Promise<boolean> => {
@@ -30,7 +29,7 @@ describe('HB2: the bound of stopping a process group', () => {
   const z3 = useZ3();
 
   it('reads today the constants the proofs start from', () => {
-    expect(TODAYS_POLL_INTERVAL_MS).toBe(10);
+    expect(POLL_INTERVAL_MS).toBe(DESIGNED_POLL_INTERVAL_MS);
     expect(SANDBOX_KILL_GRACE_MS).toBe(1000);
     expect(ABORT_SETTLE_LIMIT_MS).toBe(2000);
     expect(RUNTIME_ABORT_BUDGET_MS).toBe(ABORT_SETTLE_LIMIT_MS + SANDBOX_KILL_GRACE_MS + KILL_CONFIRM_PENDING_MS + 2 * GROUP_POLL_MS);
