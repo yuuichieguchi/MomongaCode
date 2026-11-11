@@ -195,6 +195,7 @@ export {
   messageOf,
   reopenSessionCommand,
   serverCountText,
+  signOutCommand,
 } from './vocabulary.ts';
 export type { BannedUse, BannedVariant, Concept, KeptWork, MessageInput, MessageInputs, MessageKey, Surface, VocabularyRow } from './vocabulary.ts';
 export { FM_SERVER, MANAGED_DECLARABLE_FIELDS, MANAGED_ENDPOINT_FORMS, MANAGED_READY_LIMIT_MS, MANAGED_RESTART_POLICY, MANAGED_SERVERS, MANAGED_SERVER_ERROR_KINDS, PROBE_KEY_COMPONENTS, SOCKET_PLACEHOLDER, managedServerOf } from './managed-servers.ts';
