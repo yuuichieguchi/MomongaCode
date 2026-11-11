@@ -67,7 +67,7 @@ describe('editSettings', () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     await expect(editSettings(placeOf(tree), 'user', { kind: 'set', path: ['tui', 'theme'], value: 'solarized' }, UNABORTED)).rejects.toThrow(
-      `${file}: tui.theme must be one of auto, dark, light, dark-colorblind, light-colorblind; got "solarized"`,
+      `${file}: invalid settings at /tui/theme: must be one of auto, dark, light, dark-colorblind, light-colorblind; got "solarized"`,
     );
     await expect(editSettings(placeOf(tree), 'user', { kind: 'set', path: ['tools', 'ripgrep'], value: 'rg' }, UNABORTED)).rejects.toThrow(`${file}: tools.ripgrep must be "bundled", "system" or an absolute path; got "rg"`);
     expect(fs.existsSync(file)).toBe(false);
@@ -142,7 +142,7 @@ describe('editSettings on a file that does not load', () => {
     const before = fs.readFileSync(file, 'utf8');
     const refused = editSettings(placeOf(tree), 'user', { kind: 'set', path: ['autoUpdates'], value: true }, UNABORTED);
     await expect(refused).rejects.toBeInstanceOf(ConfigError);
-    await expect(refused).rejects.toThrow(`${file}: tui.theme must be one of`);
+    await expect(refused).rejects.toThrow(`${file}: invalid settings at /tui/theme: must be one of`);
     expect(fs.readFileSync(file, 'utf8')).toBe(before);
   });
 
@@ -218,7 +218,7 @@ describe('tui.screen, tui.mouse and tui.copyOnSelect', () => {
   it('refuses a screen mode that is not one of the two', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { tui: { screen: 'default' } });
-    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow(`${userSettingsPath(tree)}: tui.screen must be one of fullscreen, scrollback; got "default"`);
+    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow(`${userSettingsPath(tree)}: invalid settings at /tui/screen: must be one of fullscreen, scrollback; got "default"`);
   });
 
   it('cannot be set by a project or local file, which keeps its other tui keys', async () => {

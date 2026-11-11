@@ -153,7 +153,7 @@ describe('loadSettings security restrictions', () => {
     });
 
     it('refuses cleartext to a remote host', async () => {
-      await expect(load('http://collector.example')).rejects.toThrow(/telemetry\.otlp\.endpoint .*must use https/);
+      await expect(load('http://collector.example')).rejects.toThrow(/invalid settings at \/telemetry\/otlp\/endpoint: the address .*must use https/);
     });
 
     it('refuses userinfo without printing the password', async () => {

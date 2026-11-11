@@ -602,7 +602,7 @@ describe('a settings file that does not load can be edited, and only a result th
     const home = homeWith({ tui: { theme: 'bogus' }, models: { connections: [{ ...OLLAMA, models: [DEVSTRAL, QWEN] }] } });
     const refused = await refusalOfEdit(editModels(home, [op('setStart', { model: QWEN_MODEL })]));
     expect(refused.code).toBe('invalid_value');
-    expect(refused.message).toContain('tui.theme must be one of');
+    expect(refused.message).toContain('invalid settings at /tui/theme: must be one of');
   });
 });
 
