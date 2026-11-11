@@ -481,6 +481,9 @@ export const stopKeptGroup = async (group: KeptGroup, options: KeptStopOptions):
   if (probe.kind === 'expired') return 'unconfirmed';
   if (probe.value !== 'alive') return probe.value;
   group.terminate();
-  const end = await withinPhase(async (signal): Promise<KeptStopOutcome> => ((await group.ended(signal)) === 'empty' ? 'terminated' : byName(group, options, signal)), options);
+  const end = await withinPhase(async (signal): Promise<KeptStopOutcome> => {
+    if ((await group.ended(signal)) === 'empty') return 'terminated';
+    return (await byName(group, options, signal)) === 'gone' ? 'terminated' : 'unconfirmed';
+  }, options);
   return end.kind === 'expired' ? 'unconfirmed' : end.value;
 };

@@ -435,22 +435,32 @@ describe('T-JO-4: stopping a kept group on a fake keeper and a fake pipe', () =>
     expect(keeper.pipe.written).toEqual(['members 1\n']);
   });
 
-  it('terminated: members are listed, one terminate is sent, and the empty event ends the wait with no poll', async () => {
+  it('terminated: members are listed, one terminate is sent, the keeper ends with its job (it is a member), and the name no longer opens', async () => {
     const { keeper, group } = await startedGroup();
     const timing = timers();
-    const stopping = stopKeptGroup(group, { graceMs: GRACE_MS, timing, signal: live(), confirm: never });
+    const asked: string[] = [];
+    const stopping = stopKeptGroup(group, {
+      graceMs: GRACE_MS,
+      timing,
+      signal: live(),
+      confirm: async (job) => {
+        asked.push(job);
+        return 'absent';
+      },
+    });
     await turn();
     keeper.pipe.say('members 1 4242 4300\n');
     await turn();
     expect(keeper.pipe.written).toEqual(['members 1\n', 'terminate\n']);
-    keeper.pipe.say('empty\n');
+    keeper.pipe.hangUp();
     expect(await stopping).toBe('terminated');
+    expect(asked).toEqual([group.job]);
     expect(keeper.pipe.written).toEqual(['members 1\n', 'terminate\n']);
     expect(timing.now()).toBe(0);
     expect(timing.pending()).toEqual([]);
   });
 
-  it('a closed pipe is read by the name: gone when the name no longer opens, unconfirmed while it still opens', async () => {
+  it('a pipe closed after the terminate is read by the name: terminated when the name no longer opens, unconfirmed while it still opens', async () => {
     const outcomes: string[] = [];
     for (const named of ['absent', 'present'] as const) {
       const { keeper, group } = await startedGroup();
@@ -471,7 +481,7 @@ describe('T-JO-4: stopping a kept group on a fake keeper and a fake pipe', () =>
       outcomes.push(await stopping);
       expect(asked).toEqual([group.job]);
     }
-    expect(outcomes).toEqual(['gone', 'unconfirmed']);
+    expect(outcomes).toEqual(['terminated', 'unconfirmed']);
   });
 
   it('a pipe that is already closed at the first question is read by the name too', async () => {

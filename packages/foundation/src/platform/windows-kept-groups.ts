@@ -17,12 +17,20 @@ export type KeptExit = { kind: 'exit'; code: number } | { kind: 'lost' };
 
 export type KeptOpening<P extends KeptProcess> = { process: P; commandPid: Promise<number>; commandExit: Promise<KeptExit> };
 
+const REFUSAL_TEXT: Readonly<Record<KeeperFailureReason, string>> = {
+  'containment-unavailable': 'Windows refused to hold its processes in a group that can be ended as one',
+  'launch-failed': 'Windows refused to start it',
+  'marker-unavailable': 'its marker file could not be opened',
+  'name-taken': 'the name chosen for its group is already taken',
+  'job-absent': 'the group it was to join no longer exists',
+};
+
 export class GroupContainmentError extends Error {
   readonly reason: KeeperFailureReason;
   readonly systemError: number;
 
   constructor(reason: KeeperFailureReason, systemError: number) {
-    super(`the command was not started: its processes could not be held in a Job Object (${reason}, Windows error ${systemError})`);
+    super(`the command was not started: ${REFUSAL_TEXT[reason]} (Windows error ${systemError})`);
     this.name = 'GroupContainmentError';
     this.reason = reason;
     this.systemError = systemError;
