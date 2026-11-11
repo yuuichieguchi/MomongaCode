@@ -49,17 +49,22 @@ type Reconnector = { opened(): void; delivered(): void; reconnect(failure: unkno
 
 const createReconnector = (policy: ReconnectPolicy): Reconnector => {
   let attempt = 0;
-  let stalledSince: number | undefined;
+  let lostMs = 0;
+  let lostSince: number | undefined;
   return {
     opened: () => {
-      stalledSince = undefined;
+      if (lostSince === undefined) return;
+      lostMs += policy.clock.now() - lostSince;
+      lostSince = undefined;
     },
     delivered: () => {
       attempt = 0;
+      lostMs = 0;
+      lostSince = undefined;
     },
     reconnect: async (failure) => {
-      stalledSince ??= policy.clock.now();
-      if (policy.clock.now() - stalledSince >= policy.reconnectBoundMs) throw policy.boundExceeded(policy.reconnectBoundMs, failure);
+      lostSince ??= policy.clock.now();
+      if (lostMs + policy.clock.now() - lostSince >= policy.reconnectBoundMs) throw policy.boundExceeded(policy.reconnectBoundMs, failure);
       policy.onReconnecting?.(attempt);
       await policy.clock.sleep(
         computeBackoff({ attempt, baseMs: RECONNECT_FIRST_RETRY_MS, maxMs: RECONNECT_MAX_INTERVAL_MS, random: policy.random }),
