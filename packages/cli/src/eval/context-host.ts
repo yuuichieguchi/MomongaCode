@@ -122,13 +122,13 @@ export type ListedTargetCapabilities = Capabilities | ProbingCapabilities | Unav
 
 export type PlanRelay = { planRelaySocket: string; listed: Readonly<Record<string, ListedTargetCapabilities>> };
 
-export const readPlanRelay = async (planRelaySocket: string, signal: AbortSignal | undefined): Promise<PlanRelay> => {
+export const readPlanRelay = async (planRelaySocket: string, signal: AbortSignal): Promise<PlanRelay> => {
   const gateway = createGatewayClient({ resolveSocket: fixedSocket(planRelaySocket) });
   try {
     const entries = await gateway.models(signal);
     return { planRelaySocket, listed: Object.fromEntries(entries.flatMap((entry) => entry.chain.map((member) => [member.model, member.capabilities]))) };
   } catch (error) {
-    signal?.throwIfAborted();
+    signal.throwIfAborted();
     throw error;
   } finally {
     await gateway.close();
