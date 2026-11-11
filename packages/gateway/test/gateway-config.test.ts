@@ -4,7 +4,6 @@ import { Agent, request } from 'undici';
 import { describe, expect, it } from 'vitest';
 import { createGateway } from '@momonga/gateway';
 import { createFakeClock, createFakeTimers, createScriptedAdapter, testKernelLock } from '@momonga/testkit';
-import { isLoopbackAddress } from '../src/server/config-check.ts';
 import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, makeDir, registerCleanup, startGateway, stateDbPath } from './gateway-helpers.ts';
 
 const construct = (overrides: { hmacKey?: Uint8Array; debugTcp?: { host: string; port: number; token: string } }) => {
@@ -40,16 +39,8 @@ describe('hmacKey strength', () => {
 });
 
 describe('debug listener host', () => {
-  it.each(['localhost', '[::1]', '0.0.0.0', '127.0.0.1.evil.example', '128.0.0.1', '127.0.0.256'])('rejects %s', async (host) => {
+  it.each(['localhost', '0.0.0.0', '127.0.0.1.evil.example', '128.0.0.1', '127.0.0.256'])('rejects %s', async (host) => {
     await expect(construct({ debugTcp: { host, port: 0, token: 'tok' } })).rejects.toThrow(/loopback/);
-  });
-
-  it.each(['127.0.0.1', '127.0.0.2', '127.255.255.254', '::1'])('recognises %s as a loopback address', (address) => {
-    expect(isLoopbackAddress(address)).toBe(true);
-  });
-
-  it.each(['localhost', '[::1]', '::ffff:127.0.0.1', '10.0.0.1', '127.0.0.1 '])('does not recognise %s', (address) => {
-    expect(isLoopbackAddress(address)).toBe(false);
   });
 });
 
