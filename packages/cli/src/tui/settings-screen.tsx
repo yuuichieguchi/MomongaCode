@@ -213,9 +213,18 @@ const inLayer = (snapshot: SettingsSnapshot, layer: SettingsLayer, path: readonl
 
 const wordOf = (value: unknown): string => (typeof value === 'boolean' ? switchWordOf(value) : String(value));
 
+const entryNameOf = (member: unknown): string | undefined => {
+  if (typeof member === 'string') return member;
+  return isRecord(member) && typeof member['name'] === 'string' ? member['name'] : undefined;
+};
+
 export const shownValue = (value: unknown): string => {
   if (value === undefined) return NOT_SET;
-  if (Array.isArray(value)) return value.length === 0 ? NONE : value.every((member) => typeof member === 'string') ? value.join(', ') : `${value.length} entries`;
+  if (Array.isArray(value)) {
+    if (value.length === 0) return NONE;
+    const names = value.map(entryNameOf);
+    return names.every((name): name is string => name !== undefined) ? names.join(', ') : `${value.length} entries`;
+  }
   if (isRecord(value)) return Object.keys(value).length === 0 ? NONE : Object.keys(value).join(', ');
   return wordOf(value);
 };

@@ -178,6 +178,17 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
           ...(attempt === undefined ? {} : { authorization: { ...attempt.view } }),
         });
       }
+      for (const entry of loaded.pendingApproval) {
+        views.push({
+          name: entry.name,
+          scope: entry.scope,
+          transport: 'url' in entry.config ? 'http' : 'stdio',
+          ...('url' in entry.config ? { url: entry.config.url } : {}),
+          auth: 'not_applicable',
+          detail: entry.changed ? 'changed since it was approved' : 'not approved',
+          approval: { digest: entry.digest, changed: entry.changed },
+        });
+      }
       return views;
     } finally {
       releaseProbePool(key, held);
