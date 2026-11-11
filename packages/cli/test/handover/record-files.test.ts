@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { handoverLeftovers, handoverRecordOwner, momongaPaths, sweepLeftovers } from '@momonga/foundation';
+import { handoverLeftovers, handoverRecordOwner, isProcessAlive, momongaPaths, nodeFileSystem, pidNamespaceOf, sweepLeftovers } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { nodeRecordFiles } from '../../src/node-ports.ts';
 import { createMover } from '../../src/handover/mover.ts';
@@ -24,12 +24,13 @@ const pathsOf = (): MomongaPaths => {
 };
 
 const textOf = (pid: number): string => {
-  const encoded = encodeRecord(RECORD, pid);
+  const encoded = encodeRecord(RECORD, { writer: pid, reader: pid, namespace: 'single' });
   if (encoded.kind !== 'fits') throw new Error('the record of the test does not fit');
   return encoded.text;
 };
 
-const sweep = (paths: MomongaPaths) => sweepLeftovers({ directories: [handoverLeftovers(paths)], lock: testKernelLock() });
+const sweep = async (paths: MomongaPaths) =>
+  sweepLeftovers({ directories: [handoverLeftovers(paths, { files: nodeFileSystem, namespace: await pidNamespaceOf(nodeFileSystem), alive: (pid) => isProcessAlive(pid) })], lock: testKernelLock() });
 
 afterEach(() => {
   for (const home of homes.splice(0)) fs.rmSync(home, { recursive: true, force: true });
@@ -42,11 +43,11 @@ describe('16.8: the record names its owner and is held by its writer', () => {
     expect(parseRecord(text)).toEqual({ kind: 'record', record: RECORD });
   });
 
-  it('the mover writes the pid of its process into the record', async () => {
+  it('the mover writes the parties it is given into the record: the writer, the reader and the reader\'s pid namespace', async () => {
     const written: string[] = [];
     const mover = createMover({
       version: '1.2.3',
-      pid: 4242,
+      parties: async () => ({ writer: 4242, reader: 4343, namespace: 'pid:[4026531836]' }),
       write: (_file, text) => void written.push(text),
       remove: () => undefined,
       handOver: () => undefined,
@@ -67,6 +68,7 @@ describe('16.8: the record names its owner and is held by its writer', () => {
     });
     await mover.learned('1.2.4');
     expect(written.map(handoverRecordOwner)).toEqual([4242]);
+    expect(written.map((text): unknown => JSON.parse(text))).toEqual([expect.objectContaining({ pid: 4242, reader: 4343, namespace: 'pid:[4026531836]' })]);
   });
 
   it('a written record is kept by the sweep while its writer lives, whatever pid it names, and leaves no temporary', async () => {

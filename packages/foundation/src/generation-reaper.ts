@@ -11,7 +11,7 @@ import {
   generationMemberOf,
   generationOfDirectoryName,
   generationSpawnScratch,
-  leftoverDirectories,
+  runLeftovers,
 } from './momonga-paths.ts';
 import type { GenerationLayout, GenerationMember, MarkerKind, MomongaPaths } from './momonga-paths.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
@@ -340,7 +340,7 @@ export const reapDeadGenerations = async (options: GenerationReaperOptions): Pro
   const kept: number[] = [];
   if (options.signal.aborted) return { removed, kept, busy: false };
   await sweepLeftovers({
-    directories: leftoverDirectories(options.paths).filter((registered) => registered.directory === options.paths.run),
+    directories: [runLeftovers(options.paths)],
     lock: options.lock,
     files: pass.sweepFiles,
     warn: options.warn,

@@ -1,4 +1,5 @@
 import { orderVersions } from '@momonga/foundation';
+import type { HandoverRecordParties } from '@momonga/foundation';
 import type { KeptWork, Surface } from '@momonga/protocol';
 import type { HandoverTerminal } from '../tui/terminal/layer.ts';
 import { encodeRecord } from './record.ts';
@@ -21,7 +22,7 @@ export type MoveSurface = {
 
 export type MoverPorts = {
   version: string;
-  pid: number;
+  parties(): Promise<HandoverRecordParties>;
   write(file: string, text: string): void;
   remove(file: string): void;
   handOver(file: string): void;
@@ -61,9 +62,9 @@ export const createMover = (ports: MoverPorts): Mover => {
     on.say(recordTooLargeText({ toVersion: version, fromVersion: ports.version }));
   };
 
-  const replaceWith = async (on: MoveSurface, file: string, version: string): Promise<void> => {
+  const replaceWith = async (on: MoveSurface, file: string, version: string, parties: HandoverRecordParties): Promise<void> => {
     try {
-      const encoded = encodeRecord(on.snapshot(version), ports.pid);
+      const encoded = encodeRecord(on.snapshot(version), parties);
       if (encoded.kind !== 'fits') {
         on.resume();
         tooLarge(on, version);
@@ -90,7 +91,8 @@ export const createMover = (ports: MoverPorts): Mover => {
   };
 
   const attempt = async (on: MoveSurface, file: string, version: string): Promise<void> => {
-    if (encodeRecord(on.snapshot(version), ports.pid).kind !== 'fits') {
+    const parties = await ports.parties();
+    if (encodeRecord(on.snapshot(version), parties).kind !== 'fits') {
       tooLarge(on, version);
       return;
     }
@@ -100,7 +102,7 @@ export const createMover = (ports: MoverPorts): Mover => {
       return;
     }
     on.say(restartingText(version));
-    await replaceWith(on, file, version);
+    await replaceWith(on, file, version, parties);
   };
 
   const check = (): Promise<void> => {

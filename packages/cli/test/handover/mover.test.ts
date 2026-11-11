@@ -22,7 +22,7 @@ const setup = (faults: Faults = {}) => {
   const state = { quiet: true, padding: '', file: FILE as string | undefined };
   const mover = createMover({
     version: '1.2.3',
-    pid: 4242,
+    parties: async () => ({ writer: 4242, reader: 4242, namespace: 'single' }),
     write: (file, text) => {
       log.push('write');
       if (faults.write !== undefined) throw faults.write;

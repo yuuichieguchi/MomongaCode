@@ -32,7 +32,7 @@ const ATTACH: StreamRecord = { ...COMMON, kind: 'attach', runId: 'run-2', output
 const HEADLESS: StreamRecord = { ...COMMON, kind: 'headless', runId: 'run-1', output: 'json', verbose: false };
 
 const textOf = (record: TuiRecord | AcpRecord | StreamRecord): string => {
-  const encoded = encodeRecord(record, 4242);
+  const encoded = encodeRecord(record, { writer: 4242, reader: 4242, namespace: 'single' });
   if (encoded.kind !== 'fits') throw new Error('the record did not fit');
   return encoded.text;
 };
@@ -106,14 +106,14 @@ describe('the size bound (16.4, O2, red test 18)', () => {
 
   it('refuses to encode a record larger than the bound and drops nothing', () => {
     const large: TuiRecord = { ...TUI, input: { text: 'x'.repeat(HANDOVER_RECORD_MAX_BYTES), cursor: 0, historyIndex: null } };
-    const encoded = encodeRecord(large, 4242);
+    const encoded = encodeRecord(large, { writer: 4242, reader: 4242, namespace: 'single' });
     expect(encoded.kind).toBe('too-large');
     expect(large.input.text).toHaveLength(HANDOVER_RECORD_MAX_BYTES);
   });
 
   it('counts bytes, not characters', () => {
     const wide: TuiRecord = { ...TUI, input: { text: 'あ'.repeat(HANDOVER_RECORD_MAX_BYTES / 3), cursor: 0, historyIndex: null } };
-    expect(encodeRecord(wide, 4242).kind).toBe('too-large');
+    expect(encodeRecord(wide, { writer: 4242, reader: 4242, namespace: 'single' }).kind).toBe('too-large');
   });
 
   it('refuses to read a record larger than the bound', () => {

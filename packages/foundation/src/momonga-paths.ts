@@ -8,7 +8,8 @@ import { isAtomicWriteTemporary } from './atomic-file.ts';
 import { OPEN_FLAGS, nodeFileSystem } from './node-file-system.ts';
 import type { FileSystem, ReadHandle } from './node-file-system.ts';
 import { handoverLeftovers } from './handover-leftovers.ts';
-import type { LeftoverDirectory } from './leftover-sweep.ts';
+import type { HandoverLeftoverPorts } from './handover-leftovers.ts';
+import type { LeftoverDirectory, Retention } from './leftover-sweep.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 import { EntryLockHeldError, claimNewEntry } from './platform/lock-form.ts';
 import { SocketPathUnsupportedError, assertSocketPathLength, isPipePath, pipePathFor, refuseUnbindableUnixSocketPath } from './socket-path.ts';
@@ -345,9 +346,11 @@ const STORE_BLOBS_DIRECTORY = 'blobs';
 
 const everyName = (): boolean => true;
 
-const retainedByItsOwnersRule = (): boolean => true;
+const retainedByItsOwnersRule = async (): Promise<Retention> => ({ kind: 'kept' });
 
-export const leftoverDirectories = (paths: MomongaPaths): LeftoverDirectory[] => [
+export const runLeftovers = (paths: MomongaPaths): LeftoverDirectory => ({ directory: paths.run, isLeftover: isAtomicWriteTemporary });
+
+export const leftoverDirectories = (paths: MomongaPaths, handover: HandoverLeftoverPorts): LeftoverDirectory[] => [
   { directory: paths.planSessions, isLeftover: isAtomicWriteTemporary },
   { directory: paths.planCatalog, isLeftover: isAtomicWriteTemporary },
   { directory: path.dirname(paths.gatewayKey), isLeftover: isAtomicWriteTemporary },
@@ -355,8 +358,8 @@ export const leftoverDirectories = (paths: MomongaPaths): LeftoverDirectory[] =>
   { directory: paths.tmp.sessions, isLeftover: everyName, retain: retainedByItsOwnersRule },
   { directory: path.join(path.dirname(paths.databases.runtime), STORE_BLOBS_DIRECTORY), isLeftover: isAtomicWriteTemporary },
   { directory: paths.probe, isLeftover: isAtomicWriteTemporary },
-  { directory: paths.run, isLeftover: isAtomicWriteTemporary },
-  handoverLeftovers(paths),
+  runLeftovers(paths),
+  handoverLeftovers(paths, handover),
 ];
 
 export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPorts = {}): Promise<void> => {
