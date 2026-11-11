@@ -1,12 +1,13 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
+import { PERMISSION_MODES, RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
 import { createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
 import { createPolicyFilesystem } from '@momonga/tools';
 import { parseRule } from '@momonga/config';
 import { createRuleVerifier, installedRuleSolver } from '../../src/process/rule-verifier.ts';
 import type { RuleSolverHost } from '../../src/process/rule-verifier.ts';
 import { systemTimers } from '../../src/service/timers.ts';
+import { policyRefusal } from '../../src/worker/rule-verdict.ts';
 import { FAKE_SOLVER_VERSION, provedRuleSolver, provedVerifier } from './fake-rule-solver.ts';
 
 const SOLVER_GUARD_MS = 60 * 60 * 1000;
@@ -74,5 +75,35 @@ describe('the rule verifier with the installed solver, in the thread of the prod
     expect(proved.notProved.length).toBeGreaterThan(0);
     const refuted = await verifier.verify(await verifier.inputOf({ ...facts, rules: [ruleIn(root, 'Bash', 'allow'), ruleIn(root, 'Bash(git push:*)', 'deny')] }), new AbortController().signal);
     expect(refuted).toMatchObject({ verdict: 'refuted', refuted: expect.arrayContaining([expect.objectContaining({ property: 'bash-admission' })]) });
+  });
+
+  const homeIn = (context: Parameters<typeof withTempDir>[0]): { root: string; facts: { roots: string[]; home: string; cwd: string; enforcement: 'exact-paths' } } => {
+    const root = fs.realpathSync(withTempDir(context));
+    fs.mkdirSync(`${root}/work`);
+    fs.mkdirSync(`${root}/home/.ssh`, { recursive: true });
+    return { root, facts: { roots: [`${root}/work`], home: `${root}/home`, cwd: `${root}/work`, enforcement: 'exact-paths' } };
+  };
+
+  it.for(PERMISSION_MODES)('refuses no run in the %s mode when no rule is written: what the mode default alone opens is recorded as by the mode default', async (mode, context) => {
+    const { root, facts } = homeIn(context);
+    const verifier = verifierIn(root);
+    const verdict = await verifier.verify(await verifier.inputOf({ ...facts, mode, rules: [] }), new AbortController().signal);
+    expect(verdict.refuted).toEqual([]);
+    expect(verdict.verdict).not.toBe('refuted');
+    expect(policyRefusal({ fingerprint: 'f'.repeat(64), ...verdict })).toBeUndefined();
+    if (mode === 'bypassPermissions') {
+      expect(verdict.byModeDefault).toEqual(expect.arrayContaining([expect.objectContaining({ property: 'secret-reach', message: expect.stringContaining('by the mode default') })]));
+    } else {
+      expect(verdict).not.toHaveProperty('byModeDefault');
+    }
+  });
+
+  it.for(PERMISSION_MODES)('refuses the run in the %s mode when one rule opens a secret location, naming the rule', async (mode, context) => {
+    const { root, facts } = homeIn(context);
+    const verifier = verifierIn(root);
+    const verdict = await verifier.verify(await verifier.inputOf({ ...facts, mode, rules: [ruleIn(root, 'Read(~/**)', 'allow')] }), new AbortController().signal);
+    expect(verdict.verdict).toBe('refuted');
+    expect(verdict.refuted).toEqual(expect.arrayContaining([expect.objectContaining({ property: 'secret-reach', message: expect.stringContaining('Read(~/**)') })]));
+    expect(policyRefusal({ fingerprint: 'f'.repeat(64), ...verdict })).toMatchObject({ code: 'policy_refuted' });
   });
 });

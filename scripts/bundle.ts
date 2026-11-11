@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { build } from 'esbuild';
-import type { Plugin } from 'esbuild';
+import type { BuildOptions, Metafile, Plugin } from 'esbuild';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { REPO_PATTERN, RELEASE_PUBLIC_KEY_PATTERN, TEAM_ID_PATTERN } from '../packages/cli/src/update/source.ts';
@@ -112,47 +112,54 @@ export const writeThreadModules = async (): Promise<void> => {
   await writeRuleVerifierThreadModule();
 };
 
-export const bundle = async ({
+const bundleBuildOptions = ({
   entry,
-  outfile,
   releaseRepo,
   teamId,
   releasePublicKey,
   journalThreadModule: generatedModule = journalThreadModule,
   ruleVerifierThreadModule: generatedVerifierModule = ruleVerifierThreadModule,
-}: BundleOptions): Promise<void> => {
-  await writeJournalThreadModule(generatedModule);
-  await writeRuleVerifierThreadModule(generatedVerifierModule);
-  await build({
-    entryPoints: [entry],
-    outfile,
-    define: updateSourceDefines({
-      ...(releaseRepo === undefined ? {} : { releaseRepo }),
-      ...(teamId === undefined ? {} : { teamId }),
-      ...(releasePublicKey === undefined ? {} : { releasePublicKey }),
-    }),
-    platform: 'node',
-    format: 'esm',
-    target: 'node24',
-    bundle: true,
-    alias: { 'react-devtools-core': `${repoRoot}scripts/empty-module.ts` },
-    plugins: [
-      ...bundlePlugins,
-      {
-        name: 'journal-thread-generated-module',
-        setup: (build) => {
-          build.onResolve({ filter: /(^|\/)journal-thread-code\.generated(\.ts)?$/ }, () => ({ path: generatedModule }));
-          build.onResolve({ filter: /(^|\/)rule-verifier-thread-code\.generated(\.ts)?$/ }, () => ({ path: generatedVerifierModule }));
-        },
+}: Omit<BundleOptions, 'outfile'>): BuildOptions => ({
+  entryPoints: [entry],
+  define: updateSourceDefines({
+    ...(releaseRepo === undefined ? {} : { releaseRepo }),
+    ...(teamId === undefined ? {} : { teamId }),
+    ...(releasePublicKey === undefined ? {} : { releasePublicKey }),
+  }),
+  platform: 'node',
+  format: 'esm',
+  target: 'node24',
+  bundle: true,
+  alias: { 'react-devtools-core': `${repoRoot}scripts/empty-module.ts` },
+  plugins: [
+    ...bundlePlugins,
+    {
+      name: 'journal-thread-generated-module',
+      setup: (build) => {
+        build.onResolve({ filter: /(^|\/)journal-thread-code\.generated(\.ts)?$/ }, () => ({ path: generatedModule }));
+        build.onResolve({ filter: /(^|\/)rule-verifier-thread-code\.generated(\.ts)?$/ }, () => ({ path: generatedVerifierModule }));
       },
-    ],
-    banner: {
-      js: [
-        '#!/usr/bin/env node',
-        "import { createRequire as __momongaCreateRequire } from 'node:module'; const require = __momongaCreateRequire(import.meta.url);",
-      ].join('\n'),
     },
-  });
+  ],
+  banner: {
+    js: [
+      '#!/usr/bin/env node',
+      "import { createRequire as __momongaCreateRequire } from 'node:module'; const require = __momongaCreateRequire(import.meta.url);",
+    ].join('\n'),
+  },
+});
+
+export const bundle = async (options: BundleOptions): Promise<void> => {
+  await writeJournalThreadModule(options.journalThreadModule ?? journalThreadModule);
+  await writeRuleVerifierThreadModule(options.ruleVerifierThreadModule ?? ruleVerifierThreadModule);
+  await build({ ...bundleBuildOptions(options), outfile: options.outfile });
+};
+
+export type BundleInputs = Metafile['inputs'];
+
+export const bundleInputsOf = async (entry: string): Promise<BundleInputs> => {
+  const result = await build({ ...bundleBuildOptions({ entry }), absWorkingDir: repoRoot, outfile: `${repoRoot}.cache/bundle-inputs/main.js`, write: false, metafile: true, logLevel: 'error' });
+  return result.metafile.inputs;
 };
 
 if (import.meta.main) {

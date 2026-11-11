@@ -48,8 +48,8 @@ export const untilRunEnds = (pty: PtySession, mode: string): Promise<void> =>
 
 const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 
-export const spawnPty = async (home: E2eHome, args: readonly string[], env: Readonly<Record<string, string>> = {}, options: { fakes?: true } = {}): Promise<PtySession> => {
-  const bundle = options.fakes === true ? CLI_FAKES_BUNDLE : CLI_BUNDLE;
+export const spawnPty = async (home: E2eHome, args: readonly string[], env: Readonly<Record<string, string>> = {}, options: { fakes?: true; bundle?: string } = {}): Promise<PtySession> => {
+  const bundle = options.bundle ?? (options.fakes === true ? CLI_FAKES_BUNDLE : CLI_BUNDLE);
   const childEnv = options.fakes === true ? { ...fakePortsEnv(home), ...env } : env;
   fifoCounter += 1;
   const fifo = path.join(home.root, `pty-input-${fifoCounter}`);

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { formatReport } from '../src/index.ts';
+import { formatReport, verdictOfReport } from '../src/index.ts';
 import type { PropertyId, PropertyResult, VerificationReport } from '../src/index.ts';
 import { SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, makeLayout, rulesOf, sshLocation, useZ3, verifyScenario } from './harness.ts';
 import type { RuleSpec, VerifyOptions } from './harness.ts';
@@ -151,14 +151,17 @@ describe('rule sets with a known escape', () => {
     expect(report.mismatches).toEqual([]);
   }, SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS);
 
-  it('reports that the mode default, not a rule, reaches a secret when the workspace contains it', async () => {
+  it('lists a secret that the mode default, not a rule, reaches when the workspace contains it, and does not refute the rules', async () => {
     const layout = makeLayout();
     const report = await verifyScenario(z3.engine().api, layout, rulesOf(layout, []), { roots: [layout.home], secretLocations: [sshLocation(layout)] });
 
     const reach = resultOf(report, 'secret-reach');
-    expect(reach.verdict.status).toBe('refuted');
-    expect(findingsOf(reach)[0]?.counterexample?.cause).toContain('mode default');
-    expect(report.exitCode).toBe(1);
+    expect(reach.verdict.status).toBe('proved');
+    expect(reach.byModeDefault[0]?.counterexample?.cause).toContain('mode default');
+    expect(reach.byModeDefault[0]?.message).toContain('by the mode default');
+    expect(formatReport(report)).toContain('  by the mode default, not by a rule: ~/.ssh');
+    expect(verdictOfReport(report, 'z3 1')).toMatchObject({ verdict: 'proved', refuted: [], byModeDefault: expect.arrayContaining([expect.objectContaining({ property: 'secret-reach', subject: '~/.ssh (read)' })]) });
+    expect(report.exitCode).toBe(0);
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('proves a protected path cannot be written without approval even when an allow rule covers it', async () => {
@@ -167,12 +170,20 @@ describe('rule sets with a known escape', () => {
     expect(resultOf(report, 'secret-reach').verdict.status).toBe('proved');
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
-  it('shows that bypassPermissions leaves a secret open until a deny rule closes it', async () => {
+  it('shows that bypassPermissions leaves a secret open by its mode default until a deny rule closes it, and that an allow rule over it refutes the rules', async () => {
     const open = await run([], { mode: 'bypassPermissions' });
-    expect(resultOf(open.report, 'secret-reach').verdict.status).toBe('refuted');
+    expect(resultOf(open.report, 'secret-reach').verdict.status).toBe('proved');
+    expect(resultOf(open.report, 'secret-reach').byModeDefault.length).toBeGreaterThan(0);
+    expect(verdictOfReport(open.report, 'z3 1').verdict).toBe('proved');
 
     const closed = await run([['deny', 'Read(~/.ssh/**)']], { mode: 'bypassPermissions' });
     expect(resultOf(closed.report, 'secret-reach').verdict.status).toBe('proved');
+    expect(resultOf(closed.report, 'secret-reach').byModeDefault.filter((finding) => finding.subject.startsWith('~/.ssh') && finding.subject.includes('read'))).toEqual([]);
+
+    const opened = await run([['allow', 'Read(~/**)']], { mode: 'bypassPermissions' });
+    expect(resultOf(opened.report, 'secret-reach').verdict.status).toBe('refuted');
+    expect(findingsOf(resultOf(opened.report, 'secret-reach'))[0]?.counterexample?.cause).toContain('Read(~/**)');
+    expect(verdictOfReport(opened.report, 'z3 1').verdict).toBe('refuted');
   }, SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS);
 });
 

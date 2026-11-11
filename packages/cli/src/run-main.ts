@@ -19,7 +19,6 @@ export const runMain = async (version: string, overrides: Partial<CliPorts> = {}
 
   try {
     const ports: CliPorts = { ...nodePorts(version), interrupt: interrupt.signal, ...overrides };
-    await provideEmbeddedWindowsKeeper(ports);
     let update: UpdateWiring | undefined;
     const program = buildProgram({
       ports,
@@ -32,6 +31,7 @@ export const runMain = async (version: string, overrides: Partial<CliPorts> = {}
         process.exitCode = code;
       },
     });
+    program.hook('preAction', () => provideEmbeddedWindowsKeeper(ports));
     if (ports.handover === undefined) await program.parseAsync();
     else await program.parseAsync([...ports.handover.args], { from: 'user' });
   } catch (error) {

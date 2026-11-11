@@ -16,6 +16,8 @@ import type { ScreenTerminal } from './input.ts';
 import { regionAt } from './layout.ts';
 import type { RowAllocation } from './layout.ts';
 import { MARKDOWN_UNIT_BYTES } from './markdown.ts';
+import { ELLIPSIS } from './output-tail.ts';
+import type { OutputTail } from './output-tail.ts';
 import type { TranscriptStore } from './store.ts';
 import { every } from './timers.ts';
 import type { ScreenTimers } from './timers.ts';
@@ -25,15 +27,8 @@ import { SPINNER_FRAMES } from './waiting-row.tsx';
 import { displayWidth, segmentsOf, withoutTabs, wrapLine } from './wrap.ts';
 import type { Row } from './wrap.ts';
 
-export const OUTPUT_TAIL_MAX_BYTES = 8 * 1024;
-export const OUTPUT_TAIL_LINES = 5;
 export const VIEWER_UNIT_BYTES = MARKDOWN_UNIT_BYTES;
 export const TOOL_TICK_MS = 1000;
-
-const ELLIPSIS = '…';
-const LOW_SURROGATE = /^[\uDC00-\uDFFF]/;
-
-export type OutputTail = { lines: readonly string[]; hidden: number };
 
 export type RowFacts = { readonly keys: KeyTable; readonly a11y: A11y };
 
@@ -43,19 +38,6 @@ const CHAT_CONTEXTS: readonly KeyContext[] = ['chat'];
 export const expandRowText = (hidden: number, keys: KeyTable): string => {
   const key = keys.keyHint('transcript.detail');
   return `${ELLIPSIS} +${hidden} lines${key === '' ? '' : ` (${key} to expand)`}`;
-};
-
-export const tailOf = (output: string): OutputTail | undefined => {
-  const end = output.endsWith('\n') ? output.length - 1 : output.length;
-  if (end === 0) return undefined;
-  const start = Math.max(0, end - OUTPUT_TAIL_MAX_BYTES);
-  const from = LOW_SURROGATE.test(output.charAt(start)) ? start + 1 : start;
-  const within = output.slice(from, end).split('\n');
-  const kept = within.slice(-OUTPUT_TAIL_LINES);
-  let total = 1;
-  for (let at = output.indexOf('\n'); at !== -1 && at < end; at = output.indexOf('\n', at + 1)) total += 1;
-  const lines = from > 0 && kept.length === within.length ? [`${ELLIPSIS}${kept[0] ?? ''}`, ...kept.slice(1)] : kept;
-  return { lines, hidden: total - lines.length };
 };
 
 const inertLine = (line: string): string => withoutTabs(escapeTerminalBlock(line.endsWith('\r') ? line.slice(0, -1) : line));

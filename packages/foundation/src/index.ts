@@ -34,6 +34,7 @@ export type { SseEvent } from './sse.ts';
 export { createUdsClient, fixedSocket, isUnixSocketLive, listenUnix } from './uds.ts';
 export type { SocketResolver, UdsClient, UdsClientOptions, UdsRequestOptions, UdsResponse } from './uds.ts';
 export { uuidv7 } from './uuidv7.ts';
+export { CALL_ID_PREFIX, newCallId } from './call-id.ts';
 export { DEFAULT_LOCK_TIMEOUT_MS, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
 export type { FileLockOptions, FileLockPorts, KeyedSerializer } from './file-lock.ts';
 export { AUTH_DOCUMENT_MAX_BYTES, createFileCredentialStore, createMemoryCredentialStore, credentialFileFor } from './credential-store.ts';

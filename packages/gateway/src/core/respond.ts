@@ -1,4 +1,4 @@
-import { uuidv7 } from '@momonga/foundation';
+import { newCallId, uuidv7 } from '@momonga/foundation';
 import { redactedError } from './guarded-adapter.ts';
 import type {
   AdapterRequest,
@@ -344,7 +344,7 @@ async function* relaySteps(
     if (item.type !== 'function_call') return item;
     let callId = callIds.get(item.call_id);
     if (callId === undefined) {
-      callId = `call_${uuidv7(clock).replaceAll('-', '')}`;
+      callId = newCallId(clock);
       callIds.set(item.call_id, callId);
     }
     return { ...item, call_id: callId };

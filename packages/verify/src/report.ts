@@ -38,6 +38,7 @@ export type PropertyResult = {
   proves: string;
   doesNotProve: readonly string[];
   verdict: Verdict;
+  byModeDefault: readonly Finding[];
 };
 
 export type ModelMismatch = { property: PropertyId; subject: string; counterexample: Counterexample };
