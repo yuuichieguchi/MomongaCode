@@ -22,7 +22,9 @@ export const computeBackoff = ({ attempt, baseMs, maxMs, random, jitter = 'full'
 const HTTP_DATE = /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/;
 const DELTA_SECONDS = /^\d+$/;
 
-const safeDelay = (value: number): number | undefined => (Number.isSafeInteger(value) ? value : undefined);
+export const MAX_DATE_MS = 8.64e15;
+
+const safeDelay = (value: number): number | undefined => (Number.isInteger(value) && value <= MAX_DATE_MS ? value : undefined);
 
 export const parseRetryAfter = (value: string | null | undefined, nowMs: number): number | undefined => {
   if (value === undefined || value === null) return undefined;

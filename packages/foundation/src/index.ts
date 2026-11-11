@@ -1,4 +1,4 @@
-export { computeBackoff, parseRetryAfter } from './backoff.ts';
+export { MAX_DATE_MS, computeBackoff, parseRetryAfter } from './backoff.ts';
 export { TRANSIENT_REQUEST_STATUSES, isRetryableHttp, parseShouldRetry } from './http-retry.ts';
 export { canonicalJson, sha256Hex } from './canonical-json.ts';
 export { sessionRootsOf, verdictKey, verdictSubjectOf } from './rule-fingerprint.ts';
