@@ -22,7 +22,7 @@ import {
   sha256Hex,
   systemRandom,
 } from '@momonga/foundation';
-import type { Clock, CredentialSecretStore, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, OutboundNetwork, ProcessInspector, Timing, RolePort, RuleEnforcement, SecretStore, SessionScratch } from '@momonga/foundation';
+import type { Clock, CredentialSecretStore, HelperSelf, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, OutboundNetwork, ProcessInspector, Timing, RolePort, RuleEnforcement, SecretStore, SessionScratch } from '@momonga/foundation';
 import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/mcp';
 import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { SandboxBindings } from '../ports.ts';
@@ -69,6 +69,7 @@ export type ToolRuntimeOptions = {
   forgeSecretStore?: () => SecretStore;
   forgeEnvironment?: Readonly<Record<string, string | undefined>>;
   forgeFetch?: ForgeFetch;
+  helperSelf?: HelperSelf;
   shellHost: ShellHost;
   settings: Pick<SettingsComposition, 'envFor' | 'takeUserSnapshot' | 'userSnapshot' | 'admitUserSnapshot' | 'keptLayers' | 'loadSessionSettings' | 'trustOracle'>;
   reapTiming: Timing;
@@ -202,6 +203,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     ...(options.forgeSecretStore === undefined ? {} : { secretStore: options.forgeSecretStore }),
     ...(options.forgeEnvironment === undefined ? {} : { environment: options.forgeEnvironment }),
     ...(options.forgeFetch === undefined ? {} : { forgeFetch: options.forgeFetch }),
+    ...(options.helperSelf === undefined ? {} : { helperSelf: options.helperSelf }),
   });
 
   const toolSet: ToolRuntimePort['toolSet'] = async (runId, { signal, env, additionalTools, only }) => {

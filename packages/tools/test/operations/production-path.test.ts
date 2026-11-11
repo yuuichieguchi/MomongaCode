@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { REDACTED_MARKER } from '@momonga/foundation';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxCommand, SandboxPolicy } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, UNCONFIGURED_NETWORK } from '@momonga/testkit';
@@ -10,7 +11,7 @@ import type { CallOutcome, ResultOutcome } from '@momonga/tools';
 import { call, makeHarness, toolSetOf } from '../harness.ts';
 import { HAS_REAL_SANDBOX, createHostSandbox, makeLayout, policyFor, ruleFor, sessionTmpDirOf } from '../helpers.ts';
 import type { Layout } from '../helpers.ts';
-import { NO_FORGE, contextFor, makeGitWorld, onCleanup, recordOf } from './support.ts';
+import { ENTRY_AS_SCRIPT, NO_FORGE, contextFor, makeGitWorld, onCleanup, recordOf } from './support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -177,6 +178,28 @@ describe.skipIf(!HAS_REAL_SANDBOX)('the reconcile of an operation, which has no 
   });
 });
 
+describe('a process started without the executable that answers the prompt of git', () => {
+  it('refuses a call that carries a credential before anything runs, and says why', async () => {
+    const world = makeGitWorld();
+    const spawns: Spawn[] = [];
+    const sandbox = recordingSandbox(createUnsandboxed(), spawns);
+    const layout: Layout = { ...makeLayout(), root: world.base, home: world.home, project: world.work, outside: path.join(world.base, 'outside') };
+    const runArgv = createSandboxedArgvRunner({
+      reconcileSandbox: async () => ({ sandbox, sandboxPolicy: await policyFor({ layout, tmpDir: sessionTmpDirOf(layout) }), release: () => undefined }),
+      shellHost: nodeShellHost(),
+      outboundNetwork: UNCONFIGURED_NETWORK,
+      markerDir: world.base,
+      credentialRoot: world.base,
+    });
+    const ctx = contextFor(world.work, world.env);
+    const credentials = [{ origin: 'https://forge.example', username: 'x-access-token', password: 'fake-git-credential-for-tests' }];
+    await expect(runArgv(['git', 'version'], { cwd: world.work, env: world.env, signal: ctx.signal, network: 'none', context: ctx, effect: false, credentials })).rejects.toThrow(
+      'git was not run: this process was started without the executable that answers the credential prompt of git',
+    );
+    expect(spawns).toEqual([]);
+  });
+});
+
 describe.skipIf(!HAS_REAL_SANDBOX)('the credential of a git child inside the real sandbox', () => {
   const CREDENTIAL = 'fake-git-credential-for-tests';
 
@@ -199,13 +222,13 @@ describe.skipIf(!HAS_REAL_SANDBOX)('the credential of a git child inside the rea
     fs.mkdirSync(markerDir);
     const credentialRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-cred-')));
     onCleanup(() => fs.rmSync(credentialRoot, { recursive: true, force: true }));
-    const runArgv = createSandboxedArgvRunner({ reconcileSandbox: async () => ({ sandbox, sandboxPolicy: await policyFor({ layout, tmpDir }), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: UNCONFIGURED_NETWORK, markerDir, credentialRoot });
+    const runArgv = createSandboxedArgvRunner({ reconcileSandbox: async () => ({ sandbox, sandboxPolicy: await policyFor({ layout, tmpDir }), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: UNCONFIGURED_NETWORK, markerDir, credentialRoot, credentialHelper: ENTRY_AS_SCRIPT });
     const ctx = contextFor(world.work, world.env);
     const ask = `"$GIT_ASKPASS" "Password for 'https://x-access-token@forge.example': "`;
     const options = { cwd: world.work, env: world.env, signal: ctx.signal, network: 'none' as const, context: ctx, effect: false };
 
-    const answered = await runArgv(['/bin/sh', '-c', ask], { ...options, credentials: [{ host: 'forge.example', username: 'x-access-token', password: CREDENTIAL }] });
-    expect(answered).toMatchObject({ exitCode: 0, stdout: '[redacted]\n' });
+    const answered = await runArgv(['/bin/sh', '-c', ask], { ...options, credentials: [{ origin: 'https://forge.example', username: 'x-access-token', password: CREDENTIAL }] });
+    expect(answered).toMatchObject({ exitCode: 0, stdout: `${REDACTED_MARKER}\n` });
     const [spawn] = spawns;
     expect(spawn?.policy.unixSocketAllow?.some((entry) => entry.startsWith(credentialRoot))).toBe(true);
     expect(spawn?.argv.some((argument) => argument.includes(CREDENTIAL))).toBe(false);

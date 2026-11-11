@@ -8,12 +8,6 @@ const ADAPTERS: Readonly<Record<string, string>> = {
   'node-ports.ts': 'the one production adapter module of tools: the child-and-timer port, the shell host and the host-bound factories built from them',
 };
 
-const PROGRAM_TEXTS: Readonly<Record<string, string>> = {
-  'operations/askpass-client.ts': 'the text of the askpass client, a program another process runs; the module holds constants only',
-};
-
-const CONSTANTS_ONLY = /^(?:export const [A-Z_]+ = '[^'\n]*';\n)*\nexport const [A-Z_]+ = `[^`]*`;\n$/;
-
 const TOKENS: Readonly<Record<string, RegExp>> = {
   'node:child_process': /['"]node:child_process['"]/g,
   'node:fs': /['"]node:fs(?:\/promises)?['"]/g,
@@ -69,22 +63,18 @@ describe('tools reaches time, randomness, processes and the file system only thr
     expect(bypassesOf('a.ts', 'const nonce = ctx.random.hex(16);\nconst now = ctx.clock.now();')).toEqual([]);
   });
 
-  it('every listed adapter and program text exists and carries its reason', () => {
-    for (const [file, reason] of [...Object.entries(ADAPTERS), ...Object.entries(PROGRAM_TEXTS)]) {
+  it('every listed adapter exists and carries its reason', () => {
+    for (const [file, reason] of Object.entries(ADAPTERS)) {
       expect(fs.existsSync(path.join(SOURCE_ROOT, file)), file).toBe(true);
       expect(reason.trim()).not.toBe('');
     }
-  });
-
-  it('a program text module holds constants and nothing else', () => {
-    for (const file of Object.keys(PROGRAM_TEXTS)) expect(fs.readFileSync(path.join(SOURCE_ROOT, file), 'utf8'), file).toMatch(CONSTANTS_ONLY);
   });
 
   it('no module outside the adapter uses the host directly', () => {
     const found = Object.fromEntries(
       sourceFiles(SOURCE_ROOT)
         .map((file) => [relativeOf(file), file] as const)
-        .filter(([relative]) => !(relative in ADAPTERS) && !(relative in PROGRAM_TEXTS))
+        .filter(([relative]) => !(relative in ADAPTERS))
         .map(([relative, file]) => [relative, bypassesOf(relative, fs.readFileSync(file, 'utf8'))] as const)
         .filter(([, tokens]) => tokens.length > 0),
     );

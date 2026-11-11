@@ -1,7 +1,7 @@
 import { ConfigError, createStopValuesReader } from '@momonga/config';
 import type { StopValuesReader } from '@momonga/config';
 import { CHILD_ENTRY_FLAGS, generationLayout, momongaPaths, runDaemonEntry, runtimeMaxCloseMs } from '@momonga/foundation';
-import type { EntryIo, FlagSpec, JsonLogger } from '@momonga/foundation';
+import type { EntryIo, FlagSpec, HelperSelf, JsonLogger } from '@momonga/foundation';
 import { installOtelErrorHandler } from '@momonga/observability';
 import { startRuntimeProcess } from './start-runtime-process.ts';
 import type { BundledRipgrepSource, StartRuntimeProcessOptions } from './start-runtime-process.ts';
@@ -14,7 +14,7 @@ export const RUNTIME_ENTRY_FLAGS = {
   'sandbox-exec-path': { kind: 'string' },
 } as const satisfies FlagSpec;
 
-export type RuntimeEntryDeps = { version: string; bundledRipgrep?: BundledRipgrepSource; ruleSolver?: RuleSolverSource };
+export type RuntimeEntryDeps = { version: string; bundledRipgrep?: BundledRipgrepSource; ruleSolver?: RuleSolverSource; helperSelf?: HelperSelf };
 
 export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<number> => {
   let stopValues: StopValuesReader | undefined;
@@ -51,6 +51,7 @@ export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<nu
         ...tuning,
         ...(deps.bundledRipgrep === undefined ? {} : { bundledRipgrep: deps.bundledRipgrep }),
         ...(deps.ruleSolver === undefined ? {} : { ruleSolver: deps.ruleSolver }),
+        ...(deps.helperSelf === undefined ? {} : { helperSelf: deps.helperSelf }),
       });
       return { close: handle.close, abort: handle.abort, fatal: handle.fatal };
     },
