@@ -7,7 +7,7 @@ import { callsStep } from './scripts.ts';
 
 const startWait = async (env: Env) => {
   env.gateway.script.push(callsStep([{ callId: 'call_wait_1', name: 'Wait', args: { value: 'forever' } }]));
-  const run = env.enqueue('Wait for a long time');
+  const run = await env.enqueue('Wait for a long time');
   const running = env.runOnce(env.worker('worker-a', { heartbeatMs: 10 }));
   await within(env.toolbox.waitStarted.promise, 5_000, 'the long tool to start');
   return { run, running, key: toolKey(run.id, 1, env.gateway.callId('call_wait_1')) };
@@ -49,7 +49,7 @@ describe('worker lease fencing of approval writes', () => {
     const env = await makeEnv();
     const target = path.join(env.project, 'out.txt');
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'approved' } }]));
-    const run = env.enqueue('Write the file');
+    const run = await env.enqueue('Write the file');
     await env.runOnce(env.worker('worker-1'));
     await env.resolveApproval(run.id, 'allow_always');
     const gate = deferred<void>();
@@ -85,7 +85,7 @@ describe('worker lease fencing of approval writes', () => {
       reached.resolve();
       await gate.promise;
     };
-    const run = env.enqueue('Write the file');
+    const run = await env.enqueue('Write the file');
 
     const running = env.runOnce(env.worker('worker-1'));
     await within(reached.promise, 5_000, 'the batch to read the rules');

@@ -17,7 +17,7 @@ describe('worker re-reads session mode and rules for every batch', () => {
       callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'edited' } }]),
       textStep('Done.'),
     );
-    const run = env.enqueue('Switch mode then write');
+    const run = await env.enqueue('Switch mode then write');
 
     await env.runOnce(env.worker());
 
@@ -37,7 +37,7 @@ describe('worker re-reads session mode and rules for every batch', () => {
       callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'blocked' } }]),
       textStep('Done.'),
     );
-    const run = env.enqueue('Deny then write');
+    const run = await env.enqueue('Deny then write');
 
     await env.runOnce(env.worker());
 
@@ -55,7 +55,7 @@ describe('worker output fit per batch', () => {
     const capabilities = capabilitiesFor(contextWindow);
     const env = await makeEnv({ capabilities });
     env.gateway.script.push(callsStep([{ callId: 'call_p_1', name: 'Probe', args: { value: 'budget' } }]), textStep('Probed.'));
-    const run = env.enqueue('Probe');
+    const run = await env.enqueue('Probe');
 
     await env.runOnce(env.worker());
 

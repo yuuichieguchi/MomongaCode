@@ -11,7 +11,7 @@ const EXPIRES_MS = START_MS + 60_000;
 
 const asking = async (store: RuntimeStore, end: 'running' | 'waiting' = 'waiting'): Promise<{ runId: string; claim: Claim; id: string }> => {
   const session = newSession(store);
-  const run = enqueue(store, session.id);
+  const run = await enqueue(store, session.id);
   const claim = mustClaim(store, 'worker-1');
   const appended = store.append(claim, [callEvent('call_1')]);
   if (appended.kind !== 'ok') throw new Error('expected the call to be appended');
@@ -88,7 +88,7 @@ describe('elicitation gates', () => {
 describe('idempotency checkpoint', () => {
   it('stores, replaces and clears the checkpoint of a pending key', async () => {
     const { store } = harness();
-    enqueue(store, newSession(store).id);
+    await enqueue(store, newSession(store).id);
     const ledger = store.idempotency.holding(mustClaim(store, 'worker-1'));
     ledger.begin('k', { expiresAt: START_MS + 1000, meta: { tool: 't' } });
     ledger.checkpoint('k', { kind: 'task', taskId: 'a' });
@@ -101,7 +101,7 @@ describe('idempotency checkpoint', () => {
 
   it('refuses a checkpoint for a key that is not pending', async () => {
     const { store } = harness();
-    enqueue(store, newSession(store).id);
+    await enqueue(store, newSession(store).id);
     const ledger = store.idempotency.holding(mustClaim(store, 'worker-1'));
     ledger.begin('k', { expiresAt: START_MS + 1000, meta: {} });
     ledger.complete('k', { ok: true });

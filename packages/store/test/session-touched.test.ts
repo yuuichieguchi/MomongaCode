@@ -34,7 +34,7 @@ describe('session_touched, the per-session record of declared locations', () => 
   it('a tool.call appends each declared location once per session', async () => {
     const { store, dbPath } = harness();
     const session = newSession(store, CWD);
-    enqueue(store, session.id);
+    await enqueue(store, session.id);
     appendAll(store, 'w1', [toolCall('c1', 'Read', ['/work/a/x.ts', '/work/a/y.ts']), toolCall('c2', 'Edit', ['/work/a/x.ts', '/work/a/z.ts'])]);
     const entries = await store.sessionTouched.after(session.id, 0, 1000);
     expect(entries.map((entry) => entry.path)).toEqual(['/work/a/x.ts', '/work/a/y.ts', '/work/a/z.ts']);
@@ -48,7 +48,7 @@ describe('session_touched, the per-session record of declared locations', () => 
   it('a tool that declares no location appends nothing, and a tool added later that declares one (an MCP tool in the test) contributes without any list being edited', async () => {
     const { store } = harness();
     const session = newSession(store, CWD);
-    enqueue(store, session.id);
+    await enqueue(store, session.id);
     appendAll(store, 'w1', [toolCall('c1', 'Read'), toolCall('c2', 'mcp__docs__open_page', ['/work/a/docs/guide.md'])]);
     expect(await pathsOf(store, session.id)).toEqual(['/work/a/docs/guide.md']);
   });
@@ -56,7 +56,7 @@ describe('session_touched, the per-session record of declared locations', () => 
   it('newest returns the newest first-seen paths first, bounded by its limit', async () => {
     const { store } = harness();
     const session = newSession(store, CWD);
-    enqueue(store, session.id);
+    await enqueue(store, session.id);
     const claim = appendAll(store, 'w1', ['a', 'b', 'c', 'd'].map((name, index) => toolCall(`c${index}`, 'Read', [`/work/a/${name}.ts`])));
     expect(store.append(claim, [toolCall('c9', 'Read', ['/work/a/a.ts'])]).kind).toBe('ok');
     expect((await store.sessionTouched.newest(session.id, 2)).map((entry) => entry.path)).toEqual(['/work/a/d.ts', '/work/a/c.ts']);
@@ -65,7 +65,7 @@ describe('session_touched, the per-session record of declared locations', () => 
   it('after reads only paths first seen after the watermark, in pages', async () => {
     const { store } = harness();
     const session = newSession(store, CWD);
-    enqueue(store, session.id);
+    await enqueue(store, session.id);
     appendAll(store, 'w1', ['a', 'b', 'c'].map((name, index) => toolCall(`c${index}`, 'Read', [`/work/a/${name}.ts`])));
     const [first] = await store.sessionTouched.after(session.id, 0, 1);
     expect(first?.path).toBe('/work/a/a.ts');
@@ -76,10 +76,10 @@ describe('session_touched, the per-session record of declared locations', () => 
     const { store } = harness();
     const session = newSession(store, CWD);
     const other = newSession(store, '/work/b');
-    enqueue(store, session.id);
+    await enqueue(store, session.id);
     const claim = appendAll(store, 'w1', [toolCall('c1', 'Read', ['/work/a/x.ts'])]);
     expect((await store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
-    enqueue(store, session.id);
+    await enqueue(store, session.id);
     appendAll(store, 'w2', [toolCall('c2', 'Read', ['/work/a/x.ts', '/work/a/w.ts'])]);
     expect(await pathsOf(store, session.id)).toEqual(['/work/a/x.ts', '/work/a/w.ts']);
     expect(await pathsOf(store, other.id)).toEqual([]);
@@ -88,7 +88,7 @@ describe('session_touched, the per-session record of declared locations', () => 
   it('the record survives a compaction that replaced the call which declared the path', async () => {
     const { store } = harness();
     const session = newSession(store, CWD);
-    enqueue(store, session.id);
+    await enqueue(store, session.id);
     const claim = appendAll(store, 'w1', [toolCall('c1', 'Read', ['/work/a/legacy/a.ts'])]);
     const compacted: RunEventPayload = {
       type: 'context.compacted',

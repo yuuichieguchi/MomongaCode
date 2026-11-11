@@ -10,7 +10,7 @@ describe('a run resumed with a tool-set digest recorded before the fit order cha
     const env = await makeEnv();
     const target = path.join(env.project, 'out.txt');
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'one' } }]));
-    const run = env.enqueue('Write a file');
+    const run = await env.enqueue('Write a file');
     await env.runOnce(env.worker('worker-1'));
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
 

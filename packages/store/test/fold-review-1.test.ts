@@ -77,9 +77,9 @@ describe('fold: approval.rule.persisted', () => {
 });
 
 describe('snapshot codec: steps and loadedInstructions', () => {
-  const snapshotWith = (patch: Record<string, unknown>) => {
+  const snapshotWith = async (patch: Record<string, unknown>) => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'worker-1');
     const appended = store.append(claim, [requested(1, 'auto'), { type: 'instructions.loaded', path: '/proj/AGENTS.md', content: 'v1' }]);
     if (appended.kind !== 'ok') throw new Error('expected the append to succeed');
@@ -89,8 +89,8 @@ describe('snapshot codec: steps and loadedInstructions', () => {
     return { store, runId: run.id, state };
   };
 
-  it('round-trips the folded steps and loaded instructions', () => {
-    const { store, runId, state } = snapshotWith({});
+  it('round-trips the folded steps and loaded instructions', async () => {
+    const { store, runId, state } = await snapshotWith({});
     const loaded = store.load(runId).snapshot?.state;
     expect(loaded?.steps).toEqual({ 1: { toolChoice: 'auto', summary: false } });
     expect(loaded?.loadedInstructions).toEqual([{ path: '/proj/AGENTS.md', textSha256: sha256Hex('v1'), seq: 3, content: 'v1' }]);
@@ -104,8 +104,8 @@ describe('snapshot codec: steps and loadedInstructions', () => {
     ['loadedInstructions that is not an array', { loadedInstructions: {} }],
     ['a loaded instruction without a path', { loadedInstructions: [{ textSha256: sha256Hex('v1') }] }],
     ['a loaded instruction without a digest', { loadedInstructions: [{ path: '/proj/AGENTS.md' }] }],
-  ])('rejects a snapshot holding %s', (_label, patch) => {
-    const { store, runId } = snapshotWith(patch);
+  ])('rejects a snapshot holding %s', async (_label, patch) => {
+    const { store, runId } = await snapshotWith(patch);
     expect(() => store.load(runId)).toThrow(/does not hold a RunState/);
   });
 });

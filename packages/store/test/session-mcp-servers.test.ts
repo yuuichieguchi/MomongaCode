@@ -16,7 +16,7 @@ describe('session mcpServers', () => {
 
     expect(created.mcpServers).toEqual(servers);
     expect(store.getSession(created.id)?.mcpServers).toEqual(servers);
-    expect(store.listSessions().map((session) => session.mcpServers)).toEqual([servers]);
+    expect(store.listSessions({ limit: 100, cursor: null }).sessions.map((session) => session.mcpServers)).toEqual([servers]);
   });
 
   it('defaults to no servers', () => {

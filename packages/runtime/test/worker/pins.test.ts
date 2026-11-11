@@ -7,7 +7,7 @@ import { callsStep, textStep } from './scripts.ts';
 
 const waitForApproval = async (env: Env) => {
   env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: path.join(env.project, 'out.txt'), content: 'x' } }]));
-  const run = env.enqueue('Write the file');
+  const run = await env.enqueue('Write the file');
   await env.runOnce(env.worker('worker-1'));
   expect(env.run(run.id).status).toBe('WAITING_HUMAN');
   await env.resolveApproval(run.id, 'allow_once');
@@ -30,7 +30,7 @@ describe('the recorded tool.call event', () => {
   it('carries the side effect the tool declares, independent of its kind', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: path.join(env.project, 'out.txt'), content: 'x' } }]));
-    const run = env.enqueue('Write the file');
+    const run = await env.enqueue('Write the file');
     await env.runOnce(env.worker('worker-1'));
     const [call] = env.events(run.id).filter((event) => event.type === 'tool.call');
     expect(call).toMatchObject({ name: 'Write', sideEffect: 'write' });
@@ -95,10 +95,10 @@ describe('worker pins across attempts', () => {
   it('pins the changed model in a run that starts after the change', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('First.'), textStep('Second.'));
-    const first = env.enqueue('First task');
+    const first = await env.enqueue('First task');
     await env.runOnce(env.worker('worker-1'));
     env.setModel('other-model');
-    const second = env.enqueue('Second task');
+    const second = await env.enqueue('Second task');
     await env.runOnce(env.worker('worker-1'));
 
     expect(env.run(first.id).status).toBe('COMPLETED');

@@ -32,7 +32,7 @@ describe('in-turn eviction', () => {
     const env = await makeEnv({ capabilities: W4000 });
     const letters = [...'abcdefgh'];
     env.gateway.script.push(...letters.map((letter, index) => bigStep(`k${index}`, { letter, size: 1800, pad: '' })), textStep('done'));
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 
@@ -64,7 +64,7 @@ describe('in-turn compaction', () => {
     const env = await makeEnv({ capabilities: W4000 });
     env.gateway.script.push(...sixPaddedSteps(), textStep('done'));
     env.gateway.compactSummaries.push('S1');
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 
@@ -95,7 +95,7 @@ describe('in-turn compaction', () => {
   it('states a recorded compaction in the budget stop notice and makes no model call when the wrap-up also overflows', async () => {
     const env = await makeEnv({ capabilities: W4000 });
     env.gateway.script.push(...sixPaddedSteps(), bigStep('huge', { letter: 'a', size: 0, pad: 'p'.repeat(12000) }), textStep('never sent'));
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 
@@ -119,7 +119,7 @@ describe('budget stop after in-turn evictions', () => {
       bigStep('huge', { letter: 'a', size: 0, pad: 'p'.repeat(12000) }),
       textStep('never sent'),
     );
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 
@@ -136,7 +136,7 @@ describe('budget stop with nothing compacted', () => {
   it('never says "after compaction" when no compaction was recorded or ran', async () => {
     const env = await makeEnv({ capabilities: W4000 });
     env.gateway.script.push(bigStep('huge', { letter: 'a', size: 0, pad: 'p'.repeat(12000) }), textStep('never sent'));
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 
@@ -163,7 +163,7 @@ describe('budget stop counts of the final attempt', () => {
       textStep('never sent'),
     );
     env.gateway.compactSummaries.push('T'.repeat(2400));
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 
@@ -180,7 +180,7 @@ describe('budget stop counts of the final attempt', () => {
     const env = await makeEnv({ capabilities: W4000 });
     env.gateway.script.push(...sixPaddedSteps(), bigStep('x', { letter: 'a', size: 0, pad: 'p'.repeat(5000) }), textStep('never sent'));
     env.gateway.compactSummaries.push('S1', 'T'.repeat(12000));
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 
@@ -198,7 +198,7 @@ describe('budget stop counts of the final attempt', () => {
     env.gateway.compactHook = async (request) => {
       if (hasCompactionItem(request.input)) throw gatewayError(400, 'invalid_request', 'invalid_compaction');
     };
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 
@@ -224,7 +224,7 @@ describe('forced compaction failure decided by code', () => {
       attemptedAt.push(env.events(run.id).length);
       throw error;
     };
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
     return { env, run, attemptedAt };
   };
@@ -289,7 +289,7 @@ describe('forced compaction failure decided by code', () => {
     env.gateway.compactHook = async () => {
       throw gatewayError(502, 'model_error', 'compaction_summary_too_long');
     };
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 
@@ -313,7 +313,7 @@ describe('proactive compaction failure', () => {
         throw gatewayError(400, 'invalid_request', 'compaction_summary_too_long');
       }
     };
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 
@@ -341,7 +341,7 @@ describe('compaction after a rejected model summary', () => {
       requestedAt.push(env.ofType(run.id, 'model.requested').length);
       if (requestedAt.length === 1) throw gatewayError(502, 'model_error', 'compaction_summary_too_long');
     };
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 
@@ -358,7 +358,7 @@ describe('minimum room at claim', () => {
   it('fails pinned_overflow with the minimum-room message when the prefix leaves fewer than 317 tokens', async () => {
     const env = await makeEnv({ capabilities: W4000 });
     env.instructions.files.set(`${env.project}/AGENTS.md`, 'r'.repeat(10372));
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 
@@ -374,7 +374,7 @@ describe('minimum room at claim', () => {
 
 describe('inherited history and loop detection across compaction', () => {
   const completeSeeded = async (env: Env, task: string, payloads: readonly RunEventPayload[]): Promise<void> => {
-    const run = env.enqueue(task);
+    const run = await env.enqueue(task);
     const claim = await env.seed(run.id, payloads, 'hold');
     expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
   };
@@ -391,7 +391,7 @@ describe('inherited history and loop detection across compaction', () => {
       },
     ]);
     env.gateway.script.push(...Array.from({ length: 7 }, (_unused, index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1550) })), textStep('done'));
-    const second = env.enqueue('Continue the work');
+    const second = await env.enqueue('Continue the work');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 
@@ -417,7 +417,7 @@ describe('inherited history and loop detection across compaction', () => {
     const env = await makeEnv({ capabilities: W4000 });
     const same = { letter: 'x', size: 1, pad: 'p'.repeat(5720) };
     env.gateway.script.push(bigStep('k0', same), bigStep('k1', same), bigStep('k2', same), textStep('never sent'));
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 

@@ -24,7 +24,7 @@ const checkedRun = (project: string, steps: number): RunEventPayload[] => [
 
 const threadFailure = (): Promise<never> => Promise.reject(new JournalThreadError('journal thread exited with code 1'));
 
-type Env = ReturnType<typeof factsStore>;
+type Env = Awaited<ReturnType<typeof factsStore>>;
 
 const memoryTools = async (env: Env) => {
   const port = createMemoryPort({
@@ -39,7 +39,7 @@ const memoryTools = async (env: Env) => {
     save.execute({ text: 'a.ts parses the config', scope: 'project', paths } as never, { runId, step: 1, callId: 'call_m_1', signal: SIGNAL } as never, undefined);
 };
 
-const reflectorFor = (env: Env, gateway: ReturnType<typeof createFakeGateway>) =>
+const reflectorFor = async (env: Env, gateway: ReturnType<typeof createFakeGateway>) =>
   createReflector({
     store: env.store,
     gateway,
@@ -59,7 +59,7 @@ const reflectorFor = (env: Env, gateway: ReturnType<typeof createFakeGateway>) =
 
 describe('isRunVerified reads the verdict from the journal thread (inventory row 6)', () => {
   it.each([15, 150])('decodes no journal row on the main thread for a verified run of %i checks', async (steps) => {
-    const env = factsStore();
+    const env = await factsStore();
     const run = await env.finished(checkedRun(env.project, steps));
 
     const { value, rows } = await env.decodedDuring(() => isRunVerified({ store: env.store, settings: { verification: async () => VERIFICATION } } as never, run.id));
@@ -69,7 +69,7 @@ describe('isRunVerified reads the verdict from the journal thread (inventory row
   });
 
   it('rejects with the JournalThreadError of a failed thread and answers no verdict of its own', async () => {
-    const env = factsStore({ verdict: threadFailure });
+    const env = await factsStore({ verdict: threadFailure });
     const run = await env.finished(checkedRun(env.project, 1));
 
     await expect(isRunVerified({ store: env.store, settings: { verification: async () => VERIFICATION } } as never, run.id)).rejects.toBeInstanceOf(JournalThreadError);
@@ -78,7 +78,7 @@ describe('isRunVerified reads the verdict from the journal thread (inventory row
 
 describe('MemorySave binds its evidence through the journal thread (inventory row 6)', () => {
   it.each([15, 150])('binds the recorded hash, the head commit and the latest check, decoding no journal row on the main thread, after %i checks', async (steps) => {
-    const env = factsStore();
+    const env = await factsStore();
     const run = await env.finished(checkedRun(env.project, steps));
     const events = env.allEvents(run.id);
     const save = await memoryTools(env);
@@ -95,7 +95,7 @@ describe('MemorySave binds its evidence through the journal thread (inventory ro
   });
 
   it('still refuses a path the run never read or wrote, from the thread facts, decoding no journal row on the main thread', async () => {
-    const env = factsStore();
+    const env = await factsStore();
     const run = await env.finished(checkedRun(env.project, 1));
     const save = await memoryTools(env);
 
@@ -113,7 +113,7 @@ describe('MemorySave binds its evidence through the journal thread (inventory ro
   });
 
   it('lets a JournalThreadError escape the tool unchanged, so the claim requeues by O2 instead of the model reading a tool failure', async () => {
-    const env = factsStore({ evidence: threadFailure });
+    const env = await factsStore({ evidence: threadFailure });
     const run = await env.finished(checkedRun(env.project, 1));
     const save = await memoryTools(env);
 
@@ -130,11 +130,11 @@ describe('MemorySave binds its evidence through the journal thread (inventory ro
 
 describe('the reflector reads verdict, facts, evidence and input from the journal thread (inventory row 6)', () => {
   const reflectedRows = async (steps: number) => {
-    const env = factsStore();
+    const env = await factsStore();
     const run = await env.finished(checkedRun(env.project, steps));
     const gateway = createFakeGateway(capabilitiesFor(100_000, { structuredOutput: 'json_schema' }));
     gateway.script.push(textStep(JSON.stringify({ candidates: [] })));
-    const { value, rows } = await env.decodedDuring(() => reflectorFor(env, gateway).runOne(SIGNAL));
+    const { value, rows } = await env.decodedDuring(async () => (await reflectorFor(env, gateway)).runOne(SIGNAL));
     return { value, rows, run, env };
   };
 
@@ -148,11 +148,11 @@ describe('the reflector reads verdict, facts, evidence and input from the journa
   });
 
   it('keeps the job for a retry with backoff when the thread fails, drops no candidate for evidence, and does not fail the job', async () => {
-    const env = factsStore({ verdict: threadFailure });
+    const env = await factsStore({ verdict: threadFailure });
     const run = await env.finished(checkedRun(env.project, 1));
     const gateway = createFakeGateway(capabilitiesFor(100_000, { structuredOutput: 'json_schema' }));
 
-    await expect(reflectorFor(env, gateway).runOne(SIGNAL)).rejects.toBeInstanceOf(JournalThreadError);
+    await expect((await reflectorFor(env, gateway)).runOne(SIGNAL)).rejects.toBeInstanceOf(JournalThreadError);
 
     const job = (env.store as unknown as { reflection: { get(runId: string): { state: string; attempts: number; dropped: unknown[] } | undefined } }).reflection.get(run.id);
     expect(job).toMatchObject({ attempts: 1, dropped: [] });

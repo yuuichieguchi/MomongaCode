@@ -14,7 +14,7 @@ describe('G1 test 7: a keep-alive-only upstream ends with the idle stop under th
     const env = await makeEnv();
     const real = await startRealGateway({ clock: env.clock, idleTimeoutMs: IDLE_MS, script: [keepAliveOnly, keepAliveOnly, keepAliveOnly, keepAliveOnly, answer('Answered.')] });
     const deadlineAt = env.clock.now() + 6 * 60 * 60 * 1000;
-    const run = env.enqueue('Work', { deadlineAt });
+    const run = await env.enqueue('Work', { deadlineAt });
     const worker = env.worker('worker-1', { gateway: real.client, random: () => 0.5 });
     const attempts: number[] = [];
     for (let cycle = 0; cycle < 4; cycle += 1) {

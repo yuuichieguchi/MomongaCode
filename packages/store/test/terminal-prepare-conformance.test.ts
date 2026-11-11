@@ -22,7 +22,7 @@ const contributionsOf = (store: RuntimeStore, runId: string): number => typesOf(
 describe('facts that specs/tla/TerminalPrepare.tla relies on', () => {
   it('CommitFresh: fences a commit by the lease token alone: a holder whose lease expired and who nobody reclaimed still commits, with its contribution', async () => {
     const h = harness();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
     h.clock.advance(LEASE_MS + 1);
 
@@ -34,7 +34,7 @@ describe('facts that specs/tla/TerminalPrepare.tla relies on', () => {
 
   it('CommitLost, FencedCommit: refuses the commit of a superseded holder before anything is written, so its prepared result cannot reach the journal', async () => {
     const h = harness();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const stale = mustClaim(h.store, 'w1');
     h.clock.advance(LEASE_MS + 1);
     const fresh = mustClaim(h.store, 'w2');
@@ -50,7 +50,7 @@ describe('facts that specs/tla/TerminalPrepare.tla relies on', () => {
 
   it('Stop, AtMostOneContribution: leaves a finished run with one contribution whatever finisher comes next: a holder, a service cancel and a second transition all find it terminal', async () => {
     const h = harness();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
     expect((await h.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     const settled = mustRun(h.store, run.id).lastSeq;
@@ -64,7 +64,7 @@ describe('facts that specs/tla/TerminalPrepare.tla relies on', () => {
 
   it('Cancel: lets a service cancel append to the journal of a running run without the lease, which moves lastSeq under a holder that is finishing', async () => {
     const h = harness();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
     const seen = mustRun(h.store, run.id).lastSeq;
 
@@ -79,7 +79,7 @@ describe('facts that specs/tla/TerminalPrepare.tla relies on', () => {
 
   it('CommitRefuseStale: a preparation of an older lastSeq refuses the commit, which writes nothing; the operation prepares again and commits once', async () => {
     const h = harness([{ kind: 'stale', id: 'old' }, { kind: 'fresh', id: 'new' }]);
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
     const before = typesOf(h.store, run.id);
     const journalAtSecondRead: string[][] = [];
@@ -124,7 +124,7 @@ describe('facts that specs/tla/TerminalPrepare.tla relies on', () => {
 
   it('Keepalive is absent: a heartbeat appends no event, which RePrepareBounded and Terminates need', async () => {
     const h = harness();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
     const before = mustRun(h.store, run.id).lastSeq;
     const typesBefore = typesOf(h.store, run.id);

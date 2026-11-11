@@ -12,9 +12,9 @@ const DIGEST = 'a'.repeat(64);
 const FOOTPRINT = { reads: [], writes: ['local:/work/out.txt'] };
 const REASON = 'approval required by rule';
 
-const claimWithCall = (store: RuntimeStore): { runId: string; claim: Claim } => {
+const claimWithCall = async (store: RuntimeStore): Promise<{ runId: string; claim: Claim }> => {
   const session = newSession(store);
-  const run = enqueue(store, session.id);
+  const run = await enqueue(store, session.id);
   const claim = mustClaim(store, 'worker-1');
   const appended = store.append(claim, [{ type: 'tool.call', callId: 'call_1', providerCallId: 'call_1', name: 'Write', kind: 'edit', title: 'Write', rawInput: {} }]);
   if (appended.kind !== 'ok') throw new Error('expected the append to succeed');
@@ -29,7 +29,7 @@ const typesAfterCall = (store: RuntimeStore, runId: string): string[] => {
 describe('store.requestApproval for a held call', () => {
   it('records the approval, the hold and the placeholder result in one write, so no stop can fall between them', async () => {
     const { store } = harness();
-    const { runId, claim } = claimWithCall(store);
+    const { runId, claim } = await claimWithCall(store);
 
     const result = await store.requestApproval(claim, {
       callId: 'call_1',
@@ -51,14 +51,14 @@ describe('store.requestApproval for a held call', () => {
 
   it('records the hold without a placeholder for a call whose result the model already has', async () => {
     const { store } = harness();
-    const { runId, claim } = claimWithCall(store);
+    const { runId, claim } = await claimWithCall(store);
     await store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: DIGEST, reason: REASON }, held: { footprint: FOOTPRINT } });
     expect(typesAfterCall(store, runId)).toEqual(['tool.permission.requested', 'tool.held']);
   });
 
   it('writes nothing a second time for the same request', async () => {
     const { store } = harness();
-    const { runId, claim } = claimWithCall(store);
+    const { runId, claim } = await claimWithCall(store);
     const input = { callId: 'call_1', options: OPTIONS, event: { subjectDigest: DIGEST, reason: REASON }, held: { footprint: FOOTPRINT, placeholder: (approvalId: string) => `waiting for ${approvalId}` } };
     await store.requestApproval(claim, input);
     await store.requestApproval(claim, input);
@@ -67,7 +67,7 @@ describe('store.requestApproval for a held call', () => {
 
   it('writes only the approval for a call that is not held, as before', async () => {
     const { store } = harness();
-    const { runId, claim } = claimWithCall(store);
+    const { runId, claim } = await claimWithCall(store);
     await store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: DIGEST, reason: REASON } });
     expect(typesAfterCall(store, runId)).toEqual(['tool.permission.requested']);
   });

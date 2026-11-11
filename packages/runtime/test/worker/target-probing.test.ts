@@ -17,7 +17,7 @@ describe('a target that the gateway is measuring', () => {
       if (measuring) throw probing();
     };
     env.gateway.script.push(textStep('Measured and done.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const worker = env.worker();
 
     expect(await env.runOnce(worker)).toBe('yielded');
@@ -41,7 +41,7 @@ describe('a target that the gateway is measuring', () => {
     env.gateway.capabilitiesHook = async () => {
       throw new GatewayRequestError({ status: 502, type: 'server_error', code: 'provider_unavailable', message: 'the upstream is unreachable' });
     };
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 

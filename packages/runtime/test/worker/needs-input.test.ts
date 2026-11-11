@@ -38,7 +38,7 @@ const askTool = (seen: Seen[], release?: Release): AnyTool =>
 
 const ask = async (env: Env, seen: Seen[], limits: Record<string, unknown> = {}, release?: Release) => {
   env.gateway.script.push(callsStep([{ callId: 'call_ask', name: 'Ask', args: {} }]));
-  const run = env.enqueue('Ask the user', { limits });
+  const run = await env.enqueue('Ask the user', { limits });
   const outcome = await env.runOnce(env.worker('worker-1', { toolList: () => [askTool(seen, release)] }));
   return { run, outcome };
 };
@@ -78,7 +78,7 @@ describe('worker input request', () => {
     const env = await makeEnv();
     const deadlineAt = START_MS + 60_000;
     env.gateway.script.push(callsStep([{ callId: 'call_ask', name: 'Ask', args: {} }]));
-    const run = env.enqueue('Ask the user', { deadlineAt });
+    const run = await env.enqueue('Ask the user', { deadlineAt });
 
     await env.runOnce(env.worker('worker-1', { toolList: () => [askTool([])] }));
 
@@ -121,7 +121,7 @@ describe('cancelling a run that waits for input', () => {
   const USAGE = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };
 
   const seedAwaiting = async (env: Env) => {
-    const run = env.enqueue('Ask the user');
+    const run = await env.enqueue('Ask the user');
     const key = toolKey(run.id, 1, 'call_ask');
     const claim = await env.seed(
       run.id,

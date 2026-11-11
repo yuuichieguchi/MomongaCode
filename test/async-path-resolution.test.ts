@@ -72,8 +72,6 @@ const ASYNCHRONOUS_FILES: readonly string[] = [
 const SYNCHRONOUS_USERS: Readonly<Record<string, string>> = {
   'packages/foundation/src/sync-paths.ts': 'the synchronous driver of the one resolution algorithm',
   'packages/foundation/src/index.ts': 'exports the synchronous driver',
-  'packages/store/src/trust.ts': 'the origin of a run is decided inside the transaction that creates it, and the trusted port of the settings answers synchronously',
-  'packages/store/src/runtime-store.ts': 'the store is opened synchronously, once at process start',
   'packages/cli/src/tui/diff.ts': 'the terminal view words an approval once, synchronously, in the process of one terminal',
 };
 

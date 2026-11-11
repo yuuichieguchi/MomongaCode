@@ -25,9 +25,9 @@ const answeredFirstBy = (step: ScriptStep, target: string): ScriptStep => ({
 const measuredAcrossRuns = async (): Promise<[number, number]> => {
   const measuring = await makeEnv({ capabilities: exactTarget() });
   measuring.gateway.script.push(textStep('Done.'), textStep('Again.'));
-  measuring.enqueue(FIRST_TASK);
+  await measuring.enqueue(FIRST_TASK);
   await measuring.runOnce(measuring.worker());
-  measuring.enqueue(SECOND_TASK);
+  await measuring.enqueue(SECOND_TASK);
   await measuring.runOnce(measuring.worker());
   return measuring.gateway.streams.map((stream) => inputTokensOf(stream.body)) as [number, number];
 };
@@ -42,10 +42,10 @@ describe('the model meter after the model moved to another first target', () => 
       answeredFirstBy(textStep('Again.', { usage: usageOf(secondCount, 5) }), 't2'),
     );
     env.gateway.chainsByModel[env.session.model] = ['t1'];
-    const one = env.enqueue(FIRST_TASK);
+    const one = await env.enqueue(FIRST_TASK);
     await env.runOnce(env.worker());
     env.gateway.chainsByModel[env.session.model] = ['t2'];
-    const two = env.enqueue(SECOND_TASK);
+    const two = await env.enqueue(SECOND_TASK);
     await env.runOnce(env.worker('worker-2'));
 
     expect(env.run(one.id).status).toBe('COMPLETED');

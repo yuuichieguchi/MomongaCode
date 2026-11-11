@@ -17,7 +17,7 @@ describe('a run under a mandate holds a call that needs approval and goes on', (
   it('runs the sibling call, gives the model a placeholder for the held one, and takes the next model step without waiting', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([write(env, 'call_w', 'out.txt'), echo('call_r', 'sibling')]), textStep('Waiting for the write.'));
-    const run = env.enqueue('Write and read', { mandate: mandateAsking(env, 'out.txt') });
+    const run = await env.enqueue('Write and read', { mandate: mandateAsking(env, 'out.txt') });
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -38,7 +38,7 @@ describe('a run under a mandate holds a call that needs approval and goes on', (
   it('does not complete on a final answer while a call is held: it reports why it waits and waits for a person', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([write(env, 'call_w', 'out.txt')]), textStep('Done except the write.'));
-    const run = env.enqueue('Write', { mandate: mandateAsking(env, 'out.txt') });
+    const run = await env.enqueue('Write', { mandate: mandateAsking(env, 'out.txt') });
 
     await env.runOnce(env.worker());
 
@@ -52,7 +52,7 @@ describe('a run under a mandate holds a call that needs approval and goes on', (
   it('runs the approved call once, shows its late result to the model, and completes', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([write(env, 'call_w', 'out.txt', 'approved content')]), textStep('Done except the write.'), textStep('All done.'));
-    const run = env.enqueue('Write', { mandate: mandateAsking(env, 'out.txt') });
+    const run = await env.enqueue('Write', { mandate: mandateAsking(env, 'out.txt') });
     await env.runOnce(env.worker());
 
     await env.resolveApproval(run.id, 'allow_once');
@@ -76,7 +76,7 @@ describe('a run under a mandate holds a call that needs approval and goes on', (
   it('does not run a rejected call, and tells the model so in a late result', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([write(env, 'call_w', 'out.txt')]), textStep('Done except the write.'), textStep('Understood.'));
-    const run = env.enqueue('Write', { mandate: mandateAsking(env, 'out.txt') });
+    const run = await env.enqueue('Write', { mandate: mandateAsking(env, 'out.txt') });
     await env.runOnce(env.worker());
 
     await env.resolveApproval(run.id, 'reject_once');
@@ -94,7 +94,7 @@ describe('a run under a mandate holds a call that needs approval and goes on', (
       callsStep([shell('call_same', 'cat out.txt'), echo('call_other', 'elsewhere')]),
       textStep('Waiting.'),
     );
-    const run = env.enqueue('Write then read', { mandate: mandateAsking(env, 'out.txt') });
+    const run = await env.enqueue('Write then read', { mandate: mandateAsking(env, 'out.txt') });
 
     await env.runOnce(env.worker());
 
@@ -111,7 +111,7 @@ describe('a call outside the mandate is not run and not asked about', () => {
   it('denies it with the reason, and the same call without a mandate asks as today', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([write(env, 'call_w', 'other.txt')]), textStep('I could not write it.'));
-    const run = env.enqueue('Write', { mandate: { scope: { allow: ['Read'] } } });
+    const run = await env.enqueue('Write', { mandate: { scope: { allow: ['Read'] } } });
 
     await env.runOnce(env.worker());
 
@@ -124,7 +124,7 @@ describe('a call outside the mandate is not run and not asked about', () => {
 
     const plain = await makeEnv();
     plain.gateway.script.push(callsStep([write(plain, 'call_w', 'other.txt')]));
-    const asked = plain.enqueue('Write');
+    const asked = await plain.enqueue('Write');
     await plain.runOnce(plain.worker());
     expect(plain.run(asked.id).status).toBe('WAITING_HUMAN');
     expect(plain.ofType(asked.id, 'tool.held')).toEqual([]);
@@ -133,7 +133,7 @@ describe('a call outside the mandate is not run and not asked about', () => {
   it('pins the scope and the hold of the mandate at the start of the run', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Hello.'));
-    const run = env.enqueue('Say hello', { mandate: { scope: { allow: ['Read'], deny: ['Bash(rm:*)'] }, hold: { onQuiescent: 'wait' } } });
+    const run = await env.enqueue('Say hello', { mandate: { scope: { allow: ['Read'], deny: ['Bash(rm:*)'] }, hold: { onQuiescent: 'wait' } } });
 
     await env.runOnce(env.worker());
 
@@ -145,7 +145,7 @@ describe('a run that ends with a call still held', () => {
   it('withdraws the approval when the run is cancelled', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([write(env, 'call_w', 'out.txt')]), textStep('Done except the write.'));
-    const run = env.enqueue('Write', { mandate: mandateAsking(env, 'out.txt') });
+    const run = await env.enqueue('Write', { mandate: mandateAsking(env, 'out.txt') });
     await env.runOnce(env.worker());
 
     await env.cancelToEnd(run.id);

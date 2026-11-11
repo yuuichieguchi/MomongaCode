@@ -5,10 +5,10 @@ import { enqueue, harness, mustClaim, newSession, rawDb } from './helpers.ts';
 const notices = (count: number): RunEventPayload[] => Array.from({ length: count }, (_, index) => ({ type: 'notice', level: 'info', message: `n${index}` }));
 
 describe('readModelChanges', () => {
-  it('returns exactly the model.changed events of the session after the given event id, among many unrelated events', () => {
+  it('returns exactly the model.changed events of the session after the given event id, among many unrelated events', async () => {
     const h = harness();
     const session = newSession(h.store);
-    enqueue(h.store, session.id);
+    await enqueue(h.store, session.id);
     const claim = mustClaim(h.store, 'w1');
     expect(h.store.append(claim, notices(300)).kind).toBe('ok');
     const before = h.store.sessionMaxEventId(session.id);

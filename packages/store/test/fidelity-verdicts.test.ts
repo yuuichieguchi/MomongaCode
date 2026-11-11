@@ -6,10 +6,10 @@ const KEY = ['run_id', 'cwd', 'fold_version', 'token'];
 
 const COLUMNS = [...KEY, 'inh', 'inh_deps', 'task_stated', 'stated_at', 'executed_at', 'own_deps', 'checked_through'];
 
-const withRun = () => {
+const withRun = async () => {
   const env = harness();
   const session = newSession(env.store);
-  const run = enqueue(env.store, session.id, 'task');
+  const run = await enqueue(env.store, session.id, 'task');
   return { ...env, session, run };
 };
 
@@ -25,8 +25,8 @@ const insertVerdict = (dbPath: string, runId: string, foldVersion: number): void
 const verdictCount = (dbPath: string): number => Number(rawDb(dbPath).prepare('SELECT COUNT(*) AS n FROM fidelity_verdicts').get()?.['n']);
 
 describe('the memo of attestation verdicts, fidelity_verdicts (decision 40 B, 13.12b)', () => {
-  it('has one row per (run_id, cwd, fold_version, token) and the fields 13.12b names', () => {
-    const { dbPath } = withRun();
+  it('has one row per (run_id, cwd, fold_version, token) and the fields 13.12b names', async () => {
+    const { dbPath } = await withRun();
     const columns = rawDb(dbPath).prepare('PRAGMA table_info(fidelity_verdicts)').all();
     expect(columns.map((column) => String(column['name'])).sort()).toEqual([...COLUMNS].sort());
     const key = columns
@@ -36,8 +36,8 @@ describe('the memo of attestation verdicts, fidelity_verdicts (decision 40 B, 13
     expect(key).toEqual(KEY);
   });
 
-  it('removes the rows of a session when the session is deleted', () => {
-    const { dbPath, session, run } = withRun();
+  it('removes the rows of a session when the session is deleted', async () => {
+    const { dbPath, session, run } = await withRun();
     insertVerdict(dbPath, run.id, 1);
     expect(verdictCount(dbPath)).toBe(1);
     const db = rawDb(dbPath);
@@ -46,8 +46,8 @@ describe('the memo of attestation verdicts, fidelity_verdicts (decision 40 B, 13
     expect(verdictCount(dbPath)).toBe(0);
   });
 
-  it('keeps at store open the rows of a lower fold version, and removes them when the prune is given a bound above them', () => {
-    const { dbPath, store, run } = withRun();
+  it('keeps at store open the rows of a lower fold version, and removes them when the prune is given a bound above them', async () => {
+    const { dbPath, store, run } = await withRun();
     insertVerdict(dbPath, run.id, -1);
     store.close();
     const reopened = openStoreAt(dbPath, createFakeClock(START_MS + 10));

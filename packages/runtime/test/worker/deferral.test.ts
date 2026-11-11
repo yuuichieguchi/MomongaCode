@@ -50,7 +50,7 @@ const warmWindow = async (env: Env, extra: readonly AnyTool[] = []): Promise<str
   const ids: string[] = [];
   for (let index = 0; index < TOOL_USAGE_WINDOW_RUNS; index += 1) {
     env.gateway.script.push(callsStep([{ callId: `warm-${index}`, name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
-    const run = env.enqueue(`warm ${index}`, { history: 'fresh' });
+    const run = await env.enqueue(`warm ${index}`, { history: 'fresh' });
     await env.runOnce(worker);
     expect(env.run(run.id).status).toBe('COMPLETED');
     ids.push(run.id);
@@ -60,7 +60,7 @@ const warmWindow = async (env: Env, extra: readonly AnyTool[] = []): Promise<str
 
 const runDeferred = async (env: Env, steps: Parameters<typeof env.gateway.script.push>, extra: readonly AnyTool[] = []) => {
   env.gateway.script.push(...steps);
-  const run = env.enqueue('Use the tools', { history: 'fresh' });
+  const run = await env.enqueue('Use the tools', { history: 'fresh' });
   await env.runOnce(env.worker('main', { toolList: workToolsOf(env, extra) }));
   return { run, requests: env.ofType(run.id, 'model.requested') };
 };

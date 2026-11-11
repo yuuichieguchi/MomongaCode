@@ -27,7 +27,7 @@ describe('worker tool runtime options', () => {
       callsStep([{ callId: 'call_e_2', name: 'Echo', args: { value: 'two' } }]),
       textStep('Done.'),
     );
-    const run = env.enqueue('Echo twice');
+    const run = await env.enqueue('Echo twice');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -44,7 +44,7 @@ describe('worker tool runtime options', () => {
   it('drive passes the claim signal to toolSet and cancel recovery passes its own signal to recoveryToolSet and the batch', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.gateway.script.push(callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'one' } }]), textStep('Done.'));
-    env.enqueue('Echo');
+    await env.enqueue('Echo');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -68,7 +68,7 @@ describe('worker tool runtime options', () => {
   it('tool-step and cancel recovery pass policy.env as BatchInput.env and never read session.env', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.gateway.script.push(callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'one' } }]), textStep('Done.'));
-    env.enqueue('Echo');
+    await env.enqueue('Echo');
     const stripped: ToolEnv = { PATH: '/usr/bin:/bin', FROM_ENV_FOR: '1' };
     const policyEnv: ToolEnv = { PATH: '/usr/bin:/bin', FROM_POLICY: '1' };
     const seen: Array<{ env: ToolEnv } | undefined> = [];
@@ -110,7 +110,7 @@ describe('worker tool runtime options', () => {
   it('a ConfigError from envFor fails the run with config_error', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('never sent'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const worker = env.worker('worker-1', {
       tools: {
         envFor: () => {

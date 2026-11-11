@@ -31,9 +31,9 @@ describe('the run events that back the waiting row in the journal (design-screen
     expect(decodeEvent(row(payload))).toEqual({ ...payload, ...ENVELOPE });
   });
 
-  it('the store writes them to the journal of a run and reads them back unchanged, in order', () => {
+  it('the store writes them to the journal of a run and reads them back unchanged, in order', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'worker-1');
 
     expect(store.append(claim, PAYLOADS).kind).toBe('ok');
@@ -43,9 +43,9 @@ describe('the run events that back the waiting row in the journal (design-screen
     for (const event of read) expect(Object.keys(event)).toEqual(expect.arrayContaining([...ENVELOPE_KEYS]));
   });
 
-  it('a compaction that starts does not advance the step of its run', () => {
+  it('a compaction that starts does not advance the step of its run', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'worker-1');
     const before = mustRun(store, run.id).step;
 

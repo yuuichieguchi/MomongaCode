@@ -90,7 +90,7 @@ describe('worker poll loop after stop', () => {
   it('does not sweep memories after stop() was called while pollOnce was in flight', async () => {
     const env = await makeEnv();
     env.gateway.script.push(gatewayClosed());
-    const requeued = env.enqueue('Requeued');
+    const requeued = await env.enqueue('Requeued');
     const worker = env.worker('worker-1', { random: () => 0.5, idlePollMs: 10 });
     await env.runOnce(worker);
     expect(env.run(requeued.id).status).toBe('QUEUED');
@@ -99,7 +99,7 @@ describe('worker poll loop after stop', () => {
 
     const blocked = gated(textStep('Finished.'));
     env.gateway.script.push(blocked);
-    env.enqueue('In flight');
+    await env.enqueue('In flight');
     worker.start();
     await within(blocked.gate.reached.promise, 10_000, 'the in-flight claim to reach the model');
 

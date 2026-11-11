@@ -2,7 +2,6 @@ import { canonicalJson, parseBoundedJson, sha256Hex } from '@momonga/foundation'
 import {
   LOOP_GROUPS_KEPT,
   STOP_HOOK_FEEDBACK_PREFIX,
-  RECORDED_DATA_MARKER,
   STOP_REASONS,
   completionMutates,
   emptyWorkingFacts,
@@ -10,8 +9,6 @@ import {
   initialVerificationState,
   nanoOfCost,
   reconciliationMutates,
-  recordedDataMessage,
-  userMessageContent,
   withCommand,
   withItemEvents,
   withMessage,
@@ -21,20 +18,11 @@ import {
   withVerificationStarted,
   withWritten,
 } from '@momonga/protocol';
-import type { HeldCall, HeldOutcome, InputItem, ReconciledOutcome, RunEvent, RunEventPayload, RunState, StopReason, ToolFile, WorkingFacts } from '@momonga/protocol';
+import type { HeldCall, InputItem, ReconciledOutcome, RunEvent, RunEventPayload, RunState, StopReason, ToolFile, WorkingFacts } from '@momonga/protocol';
 import { applyInheritance, applyReferenceInheritance, isReferenceInherited } from './inherit.ts';
+import { itemsOfEvent } from './history-items.ts';
+import type { ItemFacts, ProducedItem } from './history-items.ts';
 import { isRecord } from './rows.ts';
-
-export const LATE_RESULT_TAG = 'late_tool_result';
-
-const LATE_OUTCOME_TEXT: Record<HeldOutcome, string> = {
-  executed: 'a person approved it and it has now run',
-  rejected: 'a person rejected it, so it was not run',
-  withdrawn: 'the request for approval was withdrawn, so it was not run',
-};
-
-export const lateResultOrigin = (tool: string, callId: string, outcome: HeldOutcome): string =>
-  `${RECORDED_DATA_MARKER}: the result of the held call ${tool} (${callId}); ${LATE_OUTCOME_TEXT[outcome]}`;
 
 type PendingCall = RunState['pendingCalls'][string];
 type HistoryEntry = RunState['history'][number];
@@ -163,23 +151,16 @@ const withLoopItem = (state: RunState, item: InputItem): RunState => {
   return state;
 };
 
-const responseItemsOf = (event: Extract<RunEventPayload, { type: 'model.responded' }>): InputItem[] => event.response.output as InputItem[];
+const itemFactsOf = (state: RunState, eventType: string): ItemFacts => ({
+  providerCallIdOf: (callId) => requireCall(state, callId, eventType).providerCallId,
+  heldToolNameOf: (callId) => {
+    const held = state.heldCalls?.[callId];
+    if (held === undefined) throw new Error(`run ${state.runId}: ${eventType} refers to a call that is not held (${callId})`);
+    return held.name;
+  },
+});
 
-export const itemCountOf = (event: RunEventPayload): number => {
-  switch (event.type) {
-    case 'user.message':
-    case 'tool.completed':
-    case 'tool.reconciled':
-    case 'tool.held.resolved':
-      return 1;
-    case 'model.responded':
-      return responseItemsOf(event).length;
-    default:
-      return 0;
-  }
-};
-
-const appendItems = (state: RunState, items: readonly { item: InputItem; callId?: string }[], eventSeq: number, handle?: string): RunState =>
+const appendItems = (state: RunState, items: readonly ProducedItem[], eventSeq: number): RunState =>
   items.reduce<RunState>((folded, { item }) => withLoopItem(folded, item), {
     ...state,
     workingFacts: withItemEvents(
@@ -190,7 +171,7 @@ const appendItems = (state: RunState, items: readonly { item: InputItem; callId?
     history: [
       ...state.history,
       ...items.map(
-        ({ item, callId }, offset): HistoryEntry => ({
+        ({ item, callId, handle }, offset): HistoryEntry => ({
           seq: state.nextItemSeq + offset,
           item,
           ...(callId === undefined ? {} : { callId }),
@@ -201,18 +182,11 @@ const appendItems = (state: RunState, items: readonly { item: InputItem; callId?
     nextItemSeq: state.nextItemSeq + items.length,
   });
 
-const finishCall = (
-  state: RunState,
-  callId: string,
-  eventType: string,
-  status: PendingCall['status'],
-  output: string,
-  eventSeq: number,
-  handle?: string,
-): RunState => {
-  const call = requireCall(state, callId, eventType);
-  const settled = { ...state, pendingCalls: { ...state.pendingCalls, [callId]: { ...call, status } } };
-  return appendItems(settled, [{ item: functionCallOutput(call.providerCallId, output), callId }], eventSeq, handle);
+const withEventItems = (facts: RunState, event: RunEvent, state: RunState = facts): RunState => appendItems(state, itemsOfEvent(event, itemFactsOf(facts, event.type)), event.seq);
+
+const finishCall = (state: RunState, event: Extract<RunEvent, { type: 'tool.completed' | 'tool.reconciled' }>, status: PendingCall['status']): RunState => {
+  const call = requireCall(state, event.callId, event.type);
+  return withEventItems(state, event, { ...state, pendingCalls: { ...state.pendingCalls, [event.callId]: { ...call, status } } });
 };
 
 const wasNotRun = (call: PendingCall, event: Extract<RunEvent, { type: 'tool.completed' }>): boolean =>
@@ -250,7 +224,7 @@ const withReconciledFacts = (facts: WorkingFacts, event: Extract<RunEvent, { typ
 
 const reconcileCall = (state: RunState, event: Extract<RunEvent, { type: 'tool.reconciled' }>): RunState => {
   const call = requireCall(state, event.callId, event.type);
-  const finished = finishCall(state, event.callId, event.type, 'reconciled', event.output, event.seq);
+  const finished = finishCall(state, event, 'reconciled');
   const asks = event.outcome === 'unknown' && event.interrupted === undefined;
   return {
     ...finished,
@@ -269,7 +243,7 @@ const withUnknownAsk = (state: RunState, approvalId: string, change: (effect: Un
 
 const completeCall = (state: RunState, event: Extract<RunEvent, { type: 'tool.completed' }>): RunState => {
   const call = requireCall(state, event.callId, event.type);
-  const finished = finishCall(state, event.callId, event.type, 'completed', event.output, event.seq, event.handle);
+  const finished = finishCall(state, event, 'completed');
   return {
     ...finished,
     workingFacts: withToolFacts(finished.workingFacts, call, event),
@@ -281,12 +255,6 @@ const withoutInFlight = (state: RunState): RunState => {
   const { inFlightModelRequest: _removed, ...rest } = state;
   return rest;
 };
-
-const functionCallOutput = (providerCallId: string, output: string): InputItem => ({
-  type: 'function_call_output',
-  call_id: providerCallId,
-  output,
-});
 
 const withoutStreaming = (state: RunState): RunState => {
   const { streaming: _removed, ...rest } = state;
@@ -420,7 +388,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
   switch (event.type) {
     case 'user.message': {
       const { lastResponse: _answered, ...rest } = state;
-      const appended = appendItems(rest, [{ item: { type: 'message', role: 'user', content: userMessageContent(event.text, event.images, event) } }], event.seq);
+      const appended = withEventItems(rest, event);
       return {
         ...appended,
         stopHookContinuations: event.text.startsWith(STOP_HOOK_FEEDBACK_PREFIX) ? state.stopHookContinuations + 1 : state.stopHookContinuations,
@@ -453,11 +421,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       const settled = inFlight !== undefined && inFlight.step === event.step && inFlight.attempt === event.attempt;
       const base = withoutStreaming(settled ? withoutInFlight(state) : state);
       return {
-        ...appendItems(
-          base,
-          responseItemsOf(event).map((item) => ({ item })),
-          event.seq,
-        ),
+        ...withEventItems(base, event),
         lastResponse: {
           step: event.step,
           incomplete: event.response.status === 'incomplete',
@@ -659,12 +623,9 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       return { ...state, pendingCalls: { ...state.pendingCalls, [event.callId]: again ? { ...settled, status: 'completed' } : settled }, heldCalls: { ...state.heldCalls, [event.callId]: held } };
     }
     case 'tool.held.resolved': {
-      const held = state.heldCalls?.[event.callId];
-      if (held === undefined) throw new Error(`run ${state.runId}: ${event.type} refers to a call that is not held (${event.callId})`);
       const { [event.callId]: _settled, ...rest } = state.heldCalls ?? {};
       const { lastResponse: _answered, quiescent: _waiting, ...moving } = state;
-      const item = recordedDataMessage({ tag: LATE_RESULT_TAG, origin: lateResultOrigin(held.name, event.callId, event.outcome), text: event.output });
-      return appendItems({ ...moving, heldCalls: rest }, [{ item }], event.seq);
+      return withEventItems(state, event, { ...moving, heldCalls: rest });
     }
     case 'approval.rule.persisted': {
       const entry = Object.entries(state.pendingCalls).find(([, call]) => call.approvalId === event.approvalId);

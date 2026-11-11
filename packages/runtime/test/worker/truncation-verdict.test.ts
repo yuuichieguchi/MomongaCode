@@ -45,7 +45,7 @@ describe('a truncated input is decided in the append that records the response',
       callsStep([{ callId: 'call_low_1', name: 'Echo', args: { value: 'a' } }], usageOf(10, 5)),
       textStep('Done.'),
     );
-    const run = env.enqueue(TASK);
+    const run = await env.enqueue(TASK);
 
     await env.runOnce(env.worker('worker-1', { store: crashingAfterTheResponseIsRecorded(env, run.id) }));
     env.clock.advance(120_000);

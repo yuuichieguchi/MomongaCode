@@ -7,7 +7,7 @@ describe('run.started records the permission mode', () => {
   it('records the session mode of the claim', async () => {
     const env = await makeEnv({ mode: 'acceptEdits' });
     env.gateway.script.push(textStep('Done.'));
-    const run = env.enqueue();
+    const run = await env.enqueue();
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -19,7 +19,7 @@ describe('run.started records the permission mode', () => {
     const env = await makeEnv();
     const target = path.join(env.project, 'mode.txt');
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } }]), textStep('Written.'));
-    const run = env.enqueue('Write the file');
+    const run = await env.enqueue('Write the file');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');

@@ -18,7 +18,7 @@ const BIG_OUTPUT = Array.from({ length: 400 }, (_unused, index) => `line-${Strin
 describe('worker context: evictions', () => {
   it('appends context.truncated once for an oversized output not yet reflected in state', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(4000) });
-    const run = env.enqueue('Read the log');
+    const run = await env.enqueue('Read the log');
     await env.seed(
       run.id,
       [
@@ -53,7 +53,7 @@ describe('worker context: evictions', () => {
 describe('worker context: compaction', () => {
   it('compacts the rendered prefix through the boundary under the whole-body key, then appends context.compacted and rebuilds', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
-    const run = env.enqueue('Task one');
+    const run = await env.enqueue('Task one');
     const big = assistantMessage('msg_big', 'x'.repeat(100_000));
     await env.seed(
       run.id,
@@ -96,7 +96,7 @@ describe('worker context: compaction', () => {
 
   it('includes the prior summary item ahead of the compacted history', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
-    const run = env.enqueue('Task one');
+    const run = await env.enqueue('Task one');
     const prior = fixtureCompactionItem('cmp_0', 'S0');
     await env.seed(
       run.id,
@@ -130,7 +130,7 @@ describe('worker context: compaction', () => {
 
   it('fails the run with pinned_overflow when the pinned context cannot fit', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(600) });
-    const run = env.enqueue('x'.repeat(4000));
+    const run = await env.enqueue('x'.repeat(4000));
 
     await env.runOnce(env.worker());
 

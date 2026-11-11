@@ -22,7 +22,7 @@ const respondedPayload = (step: number, output: unknown[]): RunEventPayload => (
 });
 
 const completeSeeded = async (env: Env, task: string, payloads: readonly RunEventPayload[]): Promise<string> => {
-  const run = env.enqueue(task);
+  const run = await env.enqueue(task);
   const claim = await env.seed(run.id, payloads, 'hold');
   expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
   return run.id;
@@ -48,7 +48,7 @@ describe('eviction of inherited outputs', () => {
     ]);
     env.gateway.capabilitiesValue = capabilitiesFor(8000);
     env.gateway.script.push(textStep('Short answer.'));
-    const second = env.enqueue('Summarize');
+    const second = await env.enqueue('Summarize');
 
     expect((await settledWith(env, second.id)).status).toBe('COMPLETED');
 
@@ -83,7 +83,7 @@ describe('compaction of inherited history', () => {
     env.gateway.capabilitiesValue = capabilitiesFor(8000);
     env.gateway.compactSummaries.push('the first exchange');
     env.gateway.script.push(textStep('Compacted answer.'));
-    const second = env.enqueue('question four');
+    const second = await env.enqueue('question four');
 
     const settled = await settledWith(env, second.id);
     expect({ status: settled.status, error: settled.error }).toEqual({ status: 'COMPLETED', error: undefined });
@@ -103,7 +103,7 @@ describe('compaction of inherited history', () => {
     expect(compacted).toMatchObject({ summary: 'the first exchange', replacedThroughSeq: 2 });
 
     env.gateway.script.push(textStep('Third.'));
-    const third = env.enqueue('question five');
+    const third = await env.enqueue('question five');
     await settledWith(env, third.id);
     expect(inheritedEventOf(env, third.id).summary).toMatchObject({ summary: 'the first exchange', replacedThroughSeq: 2 });
     expect(inheritedEventOf(env, third.id).history[0]?.seq).toBe(3);
@@ -114,15 +114,15 @@ describe('pinned_overflow across runs', () => {
   it('replaces a step-0 pinned_overflow task by the dropped marker in the next run', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Hello there.'));
-    const first = env.enqueue('Say hello');
+    const first = await env.enqueue('Say hello');
     await settle(env, first.id);
-    const second = env.enqueue('x'.repeat(400_000));
+    const second = await env.enqueue('x'.repeat(400_000));
     expect(await settle(env, second.id)).toMatchObject({ status: 'FAILED', error: { code: 'pinned_overflow' } });
     expect(env.ofType(second.id, 'model.requested')).toEqual([]);
     env.gateway.script.splice(0);
 
     env.gateway.script.push(textStep('Third.'));
-    const third = env.enqueue('Smaller request');
+    const third = await env.enqueue('Smaller request');
     await settle(env, third.id);
 
     expect(firstConversation(env, third.id)).toEqual([
@@ -137,7 +137,7 @@ describe('pinned_overflow across runs', () => {
   it('keeps the task and items of a run whose AGENTS.md grew after its first response', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Hello there.'));
-    const first = env.enqueue('Say hello');
+    const first = await env.enqueue('Say hello');
     await settle(env, first.id);
     const agents = path.join(env.project, 'AGENTS.md');
     env.gateway.capabilitiesValue = capabilitiesFor(10_000);
@@ -145,7 +145,7 @@ describe('pinned_overflow across runs', () => {
       env.instructions.files.set(agents, 'rules '.repeat(10_000));
     };
     env.gateway.script.push(callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'grow' } }]), textStep('never sent'));
-    const second = env.enqueue('Grow the rules');
+    const second = await env.enqueue('Grow the rules');
     await env.runOnce(env.worker());
     expect(env.run(second.id).status).toBe('QUEUED');
     env.clock.advance(120_000);
@@ -157,7 +157,7 @@ describe('pinned_overflow across runs', () => {
     env.gateway.script.splice(0);
 
     env.gateway.script.push(textStep('Third.'));
-    const third = env.enqueue('After the growth');
+    const third = await env.enqueue('After the growth');
     await settle(env, third.id);
 
     expect(firstConversation(env, third.id)).toEqual([
@@ -191,7 +191,7 @@ describe('an inherited compaction item the gateway rejects', () => {
       }
     };
     env.gateway.script.push(textStep('Done.'));
-    const second = env.enqueue('question three');
+    const second = await env.enqueue('question three');
 
     expect((await settle(env, second.id)).status).toBe('COMPLETED');
 

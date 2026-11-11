@@ -55,7 +55,7 @@ const wrapped = (env: Env) => {
 describe('the loop reads no blob and builds no region for the fidelity check', () => {
   it('asks the journal thread with the tokens only and reads the 50 MB blob zero times on the loop', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
-    const run = env.enqueue('question one');
+    const run = await env.enqueue('question one');
     const { handle } = await env.store.blobs.put(`${'y'.repeat(BLOB_BYTES)} src/only/in-blob.ts`, { mediaType: 'text/plain', runId: run.id });
     await env.seed(run.id, journal(handle), 'release');
     env.gateway.compactSummaries.push(SUMMARY);

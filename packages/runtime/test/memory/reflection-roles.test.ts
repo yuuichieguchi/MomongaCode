@@ -2,7 +2,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS } from '@momonga/config';
 import type { RunEventPayload } from '@momonga/protocol';
-import { createFakeTimers, usageOf } from '@momonga/testkit';
+import { createFakeTimers, usageOf, NEVER_CANCELLED } from '@momonga/testkit';
 import type { RuntimeStore } from '@momonga/store';
 import { enqueue, harness, makeStoreDir, mustClaim, newSession } from '../../../store/test/helpers.ts';
 import { createFakeGateway } from '../worker/fake-gateway.ts';
@@ -32,16 +32,16 @@ const pinsWith = (roles: Record<string, string> | undefined): Record<string, unk
   ...(roles === undefined ? {} : { roles }),
 });
 
-const setup = () => {
+const setup = async () => {
   const opened = harness();
   const { clock } = opened;
   const store = withInProcessFacts(opened.store, opened.dbPath);
   const project = makeStoreDir();
-  store.trust.set(project, 'trusted');
+  await store.trust.setAsked(project, 'trusted', NEVER_CANCELLED);
   const session = newSession(store, project);
   const gateway = createFakeGateway(capabilitiesFor(100_000, { structuredOutput: 'json_schema' }));
   const settings = {
-    trusted: (target: { cwd: string }) => store.trust.decisionFor(target.cwd).decision === 'trusted',
+    trusted: async (target: { cwd: string }) => (await store.trust.decisionAsked(target.cwd, NEVER_CANCELLED)).decision === 'trusted',
     verification: async () => ({ commands: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] }),
     memory: async () => ({ reflection: { enabled: true }, forgetAfterDays: 90 }),
   };
@@ -60,7 +60,7 @@ const setup = () => {
     });
   const verified: RunEventPayload[] = [...fileTool('w1', 'Write', { path: path.join(project, 'src/a.ts'), sha256: SHA, access: 'write' }), ...checked('npm test', 0, 'ok')];
   const finishedRun = async (roles: Record<string, string> | undefined) => {
-    const run = enqueue(store, session.id, 'fix the bug');
+    const run = await enqueue(store, session.id, 'fix the bug');
     await finishClaimed(store, verified, 'COMPLETED', pinsWith(roles));
     return run;
   };
@@ -69,7 +69,7 @@ const setup = () => {
 
 describe('the reflection role', () => {
   it('guards a role that is ignored: the call, its capabilities and its charge go to the pinned reflection model', async () => {
-    const env = setup();
+    const env = await setup();
     env.gateway.capabilitiesByModel['cheap'] = capabilitiesFor(100_000, { structuredOutput: 'json_schema' });
     const run = await env.finishedRun({ reflection: 'cheap' });
     env.gateway.script.push(textStep(REPLY, { usage: usageOf(100, 20) }));
@@ -82,7 +82,7 @@ describe('the reflection role', () => {
   });
 
   it('guards a cap taken from the wrong model: the output cap follows the capabilities of the role model', async () => {
-    const env = setup();
+    const env = await setup();
     env.gateway.capabilitiesByModel['cheap'] = capabilitiesFor(8192, { structuredOutput: 'json_schema' });
     await env.finishedRun({ reflection: 'cheap' });
     env.gateway.script.push(textStep(REPLY));
@@ -91,7 +91,7 @@ describe('the reflection role', () => {
   });
 
   it('guards a default that moves: a run pinned with no reflection role reflects on the run model, whatever the settings say now', async () => {
-    const env = setup();
+    const env = await setup();
     await env.finishedRun({ compaction: 'cheap' });
     env.gateway.script.push(textStep(REPLY));
     await env.reflector().runOne(SIGNAL);
@@ -99,7 +99,7 @@ describe('the reflection role', () => {
   });
 
   it('guards a run recorded before roles existed: pins without roles reflect on the run model', async () => {
-    const env = setup();
+    const env = await setup();
     await env.finishedRun(undefined);
     env.gateway.script.push(textStep(REPLY));
     await env.reflector().runOne(SIGNAL);
@@ -107,7 +107,7 @@ describe('the reflection role', () => {
   });
 
   it('guards a charge spent on a target that cannot enforce the schema: a reflection target reporting no structured output is not called and ends done naming the role and the alias', async () => {
-    const env = setup();
+    const env = await setup();
     env.gateway.capabilitiesByModel['plain'] = capabilitiesFor(100_000, { structuredOutput: 'none' });
     const run = await env.finishedRun({ reflection: 'plain' });
     env.gateway.script.push(textStep(REPLY, { usage: usageOf(100, 20) }));
@@ -122,7 +122,7 @@ describe('the reflection role', () => {
   });
 
   it('guards a blanket skip: a reflection target reporting json_schema is still called and charged', async () => {
-    const env = setup();
+    const env = await setup();
     env.gateway.capabilitiesByModel['strict'] = capabilitiesFor(100_000, { structuredOutput: 'json_schema' });
     const run = await env.finishedRun({ reflection: 'strict' });
     env.gateway.script.push(textStep(REPLY, { usage: usageOf(100, 20) }));
@@ -135,8 +135,8 @@ describe('the reflection role', () => {
 
 describe('the reflection call is admitted by the budget of its run', () => {
   it('is not sent when the tokens left of the run do not pay for it, and the job ends done saying so', async () => {
-    const env = setup();
-    const created = env.store.createRunAndEnqueue(env.session.id, { input: 'fix the bug', timeoutMs: 600_000, limits: { maxSteps: 10, maxTotalTokens: 20 }, pins: { model: 'fm' } });
+    const env = await setup();
+    const created = await env.store.createRunAndEnqueue(env.session.id, { input: 'fix the bug', timeoutMs: 600_000, limits: { maxSteps: 10, maxTotalTokens: 20 }, pins: { model: 'fm' } });
     if (created.kind !== 'created') throw new Error(`expected a run, got ${created.kind}`);
     await finishClaimed(env.store, env.verified, 'COMPLETED', pinsWith(undefined));
     env.gateway.script.push(textStep(REPLY, { usage: usageOf(100, 20) }));

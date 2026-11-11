@@ -84,7 +84,7 @@ describe('session create validation (fake timers)', () => {
       body: { error: { type: 'invalid_request', code: 'invalid_request', param: 'cwd', message: expect.stringMatching(new RegExp(`^cwd ${loop} cannot be resolved: .+`)) } },
     });
     expectCwdRejected(await post(env, { cwd: locked }), `cwd ${locked} cannot be read`);
-    expect(env.store.listSessions()).toEqual([]);
+    expect(env.store.listSessions({ limit: 100, cursor: null }).sessions).toEqual([]);
     expect(env.ports.settingsCalls).toEqual([]);
   });
 
@@ -102,7 +102,7 @@ describe('session create validation (fake timers)', () => {
     expectCwdRejected(await post(env, { cwd: insideTmp }), `cwd ${insideTmp} is inside ${areas.tmpRoot} and cannot be a session root`);
     expectCwdRejected(await post(env, { cwd: areas.spawn }), `cwd ${areas.spawn} is inside ${areas.tmpRoot} and cannot be a session root`);
     expectCwdRejected(await post(env, { cwd: insideSpawn }), `cwd ${insideSpawn} is inside ${areas.tmpRoot} and cannot be a session root`);
-    expect(env.store.listSessions()).toEqual([]);
+    expect(env.store.listSessions({ limit: 100, cursor: null }).sessions).toEqual([]);
     expect(env.ports.settingsCalls).toEqual([]);
   });
 
@@ -159,7 +159,7 @@ describe('session create validation (fake timers)', () => {
       env.ports.settingsFailure.error = new ConfigError(message);
       expectConfigError(await post(env, { cwd: env.layout.project }), message);
     }
-    expect(env.store.listSessions()).toEqual([]);
+    expect(env.store.listSessions({ limit: 100, cursor: null }).sessions).toEqual([]);
   });
 
   it('422 with param additionalDirectories for an entry inside a protected area', async () => {
@@ -183,7 +183,7 @@ describe('session create validation (fake timers)', () => {
       `additionalDirectories entry ${inSpawn} is inside ${areas.tmpRoot} and cannot be a session root`,
       'additionalDirectories',
     );
-    expect(env.store.listSessions()).toEqual([]);
+    expect(env.store.listSessions({ limit: 100, cursor: null }).sessions).toEqual([]);
   });
 
   it('422 config_error when sessionCreateSettings throws ConfigError, and nothing is stored', async () => {
@@ -191,7 +191,7 @@ describe('session create validation (fake timers)', () => {
     const message = `${path.join(env.layout.momonga, 'settings.json')}: invalid JSON`;
     env.ports.settingsFailure.error = new ConfigError(message);
     expectConfigError(await post(env, { cwd: env.layout.project, env: { ...SESSION_ENV, ACME_ROUTE_VALUE: 'kept' } }), message);
-    expect(env.store.listSessions()).toEqual([]);
+    expect(env.store.listSessions({ limit: 100, cursor: null }).sessions).toEqual([]);
     expect(env.errors).toEqual([]);
   });
 
@@ -220,7 +220,7 @@ describe('session create validation (fake timers)', () => {
     env.ports.settingsFailure.error = failure;
     expectError(await post(env, { cwd: env.layout.project }), 500, 'internal_error');
     expect(env.errors).toEqual([failure]);
-    expect(env.store.listSessions()).toEqual([]);
+    expect(env.store.listSessions({ limit: 100, cursor: null }).sessions).toEqual([]);
   });
 
   it('503 gateway_unavailable with retry-after 1 for a transport error or a 5xx from the model listing', async () => {
@@ -244,7 +244,7 @@ describe('session create validation (fake timers)', () => {
     }
     expect(env.errors).toEqual([]);
     expect(env.ports.settingsCalls).toEqual([]);
-    expect(env.store.listSessions()).toEqual([]);
+    expect(env.store.listSessions({ limit: 100, cursor: null }).sessions).toEqual([]);
   });
 
   it('500 for a 4xx from the model listing', async () => {

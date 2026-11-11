@@ -24,7 +24,7 @@ describe('a run whose terminal transition failed', () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('the final answer'));
     env.gateway.script.push(textStep('a second, paid answer'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const { store, failures } = failing(env.store, 'COMPLETED', 1);
 
     expect(await env.runOnce(env.worker('worker-1', { store }))).toBe('yielded');
@@ -49,7 +49,7 @@ describe('a run whose terminal transition failed', () => {
   it('tries FAILED exactly twice in one claim at an attempt cap of 1 (once for the gateway failure, once for the journal thread failure that O2 requeues and the cap turns into FAILED), then escapes, keeps the lease until it expires, is not claimed again, and is dead-lettered by the sweep', async () => {
     const env = await makeEnv({ maxAttempts: 1, maxTotalAttempts: 1 });
     env.gateway.script.push(failedStep('upstream_unavailable'), textStep('never sent'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const { store, failures } = failing(env.store, 'FAILED', Number.POSITIVE_INFINITY);
 
     const first = env.worker('worker-1', { store }).runOnce();

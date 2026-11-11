@@ -9,9 +9,9 @@ const OPTIONS: PermissionOption[] = [
 ];
 const DIGEST = 'a'.repeat(64);
 
-const claimWithCall = (store: RuntimeStore): { runId: string; claim: Claim } => {
+const claimWithCall = async (store: RuntimeStore): Promise<{ runId: string; claim: Claim }> => {
   const session = newSession(store);
-  const run = enqueue(store, session.id);
+  const run = await enqueue(store, session.id);
   const claim = mustClaim(store, 'worker-1');
   const appended = store.append(claim, [
     { type: 'tool.call', callId: 'call_1', providerCallId: 'call_1', name: 'Write', kind: 'edit', title: 'Write', rawInput: {} },
@@ -23,7 +23,7 @@ const claimWithCall = (store: RuntimeStore): { runId: string; claim: Claim } => 
 describe('store.requestApproval', () => {
   it('creates the approval and appends tool.permission.requested in one call', async () => {
     const { store } = harness();
-    const { runId, claim } = claimWithCall(store);
+    const { runId, claim } = await claimWithCall(store);
 
     const result = await store.requestApproval(claim, {
       callId: 'call_1',
@@ -49,7 +49,7 @@ describe('store.requestApproval', () => {
 
   it('journals the reason the policy asked and reads it back on the event and on the approval view', async () => {
     const { store } = harness();
-    const { runId, claim } = claimWithCall(store);
+    const { runId, claim } = await claimWithCall(store);
     const reason = 'edit outside the workspace requires approval';
 
     const result = await store.requestApproval(claim, {
@@ -67,7 +67,7 @@ describe('store.requestApproval', () => {
 
   it('returns lease_lost for a stale claim, creating no approval and appending no event', async () => {
     const { clock, store } = harness();
-    const { runId, claim } = claimWithCall(store);
+    const { runId, claim } = await claimWithCall(store);
     clock.advance(LEASE_MS + 1);
     mustClaim(store, 'worker-2');
     const lastSeq = mustRun(store, runId).lastSeq;
@@ -82,7 +82,7 @@ describe('store.requestApproval', () => {
 
   it('renews the approval once the previous one for the call is resolved', async () => {
     const { store } = harness();
-    const { runId, claim } = claimWithCall(store);
+    const { runId, claim } = await claimWithCall(store);
     const first = await store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: DIGEST, reason: 'edits require approval' } });
     if (first.kind !== 'ok') throw new Error('expected the first approval');
     expect((await store.resolveApproval(first.approval.id, 'allow_once')).kind).toBe('ok');

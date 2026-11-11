@@ -132,7 +132,6 @@ describe('protocol/src/trace-attributes.ts', () => {
       attempt: 'momonga.attempt',
       retryOf: 'momonga.retry_of',
       billing: 'momonga.billing',
-      cacheWriteInputTokens: 'momonga.usage.cache_write_input_tokens',
       usageSource: 'momonga.usage_source',
       target: 'momonga.target',
       role: 'momonga.role',

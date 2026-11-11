@@ -231,7 +231,7 @@ const measureSize = async (steps: number): Promise<Measured> => {
 
 const bodyDecode = async (tokens: number): Promise<Measured> => {
   const env = await makeEnv({ mode: 'bypassPermissions' });
-  const run = env.enqueue('Read one body', { history: 'fresh' });
+  const run = await env.enqueue('Read one body', { history: 'fresh' });
   const half = (tokens * CHARS_PER_TOKEN) / 2;
   const content = `${'src/module/file.ts handler '.repeat(Math.ceil(half / 27)).slice(0, half)}${'設定ファイルの読み込みに失敗しました。'.repeat(Math.ceil(half / 19)).slice(0, half)}`;
   const request: RunEventPayload = { type: 'model.requested', step: 1, attempt: 1, digest: 'digest-1', body: { model: 'fm', input: [{ type: 'message', role: 'user', content }] } };

@@ -4,6 +4,7 @@ import { createUserSettingsCache, noKeptRecords } from '@momonga/config';
 import * as runtime from '@momonga/runtime';
 import { createRun, createSession, makeCache, makeRuntimeFixture, signalNever, writeInvalidUserSettings, writeProjectSettings, writeUserSettings } from './helpers.ts';
 import fs from 'node:fs';
+import { NEVER_CANCELLED } from '@momonga/testkit';
 
 const breakProjectFile = (project: string): void => {
   const file = path.join(project, '.momonga', 'settings.json');
@@ -15,7 +16,7 @@ describe('the last good copy survives a restart (SettingsHealth Persist, restart
   it('a recovered Run whose project file broke while the runtime was down reads the last good copy', async () => {
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, {});
-    f.store.trust.set(f.temp.project, 'trusted');
+    await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
     writeProjectSettings(f.temp.project, { permissions: { allow: ['Bash(ls)'] } });
     const session = createSession(f.store, f.temp.project, { env: { PLAIN: '1' } });
     expect((await f.composition.settings.rules(session)).map((rule) => rule.text)).toEqual(['Bash(ls)']);
@@ -37,10 +38,10 @@ describe('every settings file reports a kept copy the same way: one notice to th
   ])('the $name file: the tool set of a Run carries the notice that the file is invalid', async ({ fileOf, breakIt }) => {
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, {});
-    f.store.trust.set(f.temp.project, 'trusted');
+    await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
     writeProjectSettings(f.temp.project, {});
     const session = createSession(f.store, f.temp.project, { env: { PLAIN: '1' } });
-    const runId = createRun(f.store, session.id);
+    const runId = await createRun(f.store, session.id);
     await f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: Object.freeze({ PLAIN: '1' }) });
 
     breakIt(f);
@@ -52,7 +53,7 @@ describe('every settings file reports a kept copy the same way: one notice to th
   it('the project file writes one log line through the same sink as the user file, however many reads keep the copy', async () => {
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, {});
-    f.store.trust.set(f.temp.project, 'trusted');
+    await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
     writeProjectSettings(f.temp.project, {});
     const warnings: string[] = [];
     const cache = createUserSettingsCache({ home: f.temp.home, onWarning: (warning) => warnings.push(warning), keptRecords: noKeptRecords });

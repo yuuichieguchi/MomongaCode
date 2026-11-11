@@ -10,7 +10,7 @@ describe('file tool paths in the worker', () => {
     const env = await makeEnv({ mode: 'acceptEdits' });
     const target = path.join(env.project, 'notes.txt');
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: 'notes.txt', content: 'hi' } }]), textStep('Written.'));
-    const run = env.enqueue('Write notes');
+    const run = await env.enqueue('Write notes');
 
     await env.runOnce(env.worker('worker-1', { toolList: () => createBuiltinTools() }));
 
@@ -23,7 +23,7 @@ describe('file tool paths in the worker', () => {
     const env = await makeEnv({ mode: 'acceptEdits' });
     const target = path.join(env.project, 'src', 'a.txt');
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'a' } }]), textStep('Written.'));
-    const run = env.enqueue('Write a');
+    const run = await env.enqueue('Write a');
 
     await env.runOnce(env.worker('worker-1', { toolList: () => createBuiltinTools() }));
 

@@ -20,7 +20,7 @@ describe('worker snapshots', () => {
   it('writes no snapshot at a terminal transition: nothing reads the state of a run that ended (O14)', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Done.'));
-    const run = env.enqueue();
+    const run = await env.enqueue();
     await env.runOnce(env.worker());
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.store.load(run.id).snapshot).toBeUndefined();
@@ -30,7 +30,7 @@ describe('worker snapshots', () => {
     const env = await makeEnv();
     const target = path.join(env.project, 'snap.txt');
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } }]));
-    const run = env.enqueue();
+    const run = await env.enqueue();
     await env.runOnce(env.worker());
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
     expectSnapshotAtYield(env, run.id);
@@ -42,7 +42,7 @@ describe('worker snapshots', () => {
   it('writes the snapshot with state version 11, carrying the recorded mode, the task seq, the loop groups and the working facts', async (context) => {
     const env = await makeEnv({ mode: 'acceptEdits' });
     env.gateway.script.push(callsStep([{ callId: 'call_b_1', name: 'Bash', args: { command: 'echo $(date)' } }]));
-    const run = env.enqueue();
+    const run = await env.enqueue();
     await env.runOnce(env.worker());
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
     const db = new DatabaseSync(env.dbPath);
