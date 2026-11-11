@@ -112,7 +112,6 @@ const NAMED_ONLY_BY_TESTS: readonly string[] = [
   'StartOutcome',
   'StartupCancelled',
   'SyncPathResolver',
-  'TOO_DEEP_PLACEHOLDER',
   'UNRESOLVABLE_ERRNO_CODES',
   'URL_OPENER_PROGRAMS',
   'UnadoptedEnv',
