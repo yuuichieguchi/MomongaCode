@@ -4,7 +4,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, systemRandom } from '@momonga/foundation';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, heldMountPoints, startEgressProxy } from '@momonga/sandbox';
 import type { EgressProxy, Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testKernelLock } from '@momonga/testkit';
@@ -41,13 +41,13 @@ describe.runIf(HOSTS_HOST)('the hosts scope under the real platform sandbox', ()
   };
 
   const proxyFor = async (hosts: readonly string[]): Promise<EgressProxy> => {
-    const proxy = await startEgressProxy({ hosts, network: DIRECT });
+    const proxy = await startEgressProxy({ hosts, network: DIRECT, random: systemRandom });
     closers.push(() => proxy.close());
     return proxy;
   };
 
   const fetchThrough = async (proxy: EgressProxy, url: string): Promise<{ code: number | null; stdout: string }> => {
-    const script = `const r = require('node:http').request({ host: '127.0.0.1', port: ${proxy.port}, path: ${JSON.stringify(url)} }, (res) => { let b = ''; res.on('data', (c) => (b += c)); res.on('end', () => { process.stdout.write(res.statusCode + ' ' + b); }); }); r.on('error', (e) => { process.stdout.write('error ' + e.code); process.exitCode = 3; }); r.end();`;
+    const script = `const r = require('node:http').request({ host: '127.0.0.1', port: ${proxy.port}, path: ${JSON.stringify(url)}, headers: { 'proxy-authorization': ${JSON.stringify(proxy.authorization)} } }, (res) => { let b = ''; res.on('data', (c) => (b += c)); res.on('end', () => { process.stdout.write(res.statusCode + ' ' + b); }); }); r.on('error', (e) => { process.stdout.write('error ' + e.code); process.exitCode = 3; }); r.end();`;
     const policy: SandboxPolicy = {
       writableRoots: [work],
       writeDenied: [],
