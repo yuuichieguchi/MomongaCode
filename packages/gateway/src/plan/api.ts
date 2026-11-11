@@ -19,6 +19,7 @@ import type {
   PlanSignOutResponse,
 } from '@momonga/protocol';
 import { GatewayError, invalidRequest, notFound, statusFor } from '../core/errors.ts';
+import { retryAfterSeconds } from '../core/retry.ts';
 import { PlanCredentialError, credentialErrorType, statusOf } from './auth-source.ts';
 import { PLAN_OPERATION_LIMIT, limitFailureOf, withinRequestLimit } from './request-limit.ts';
 import type { AccountView } from './auth-source.ts';
@@ -90,7 +91,13 @@ export const planRouteError = (error: unknown): unknown => {
   const failure = error instanceof PlanCredentialError ? error : limitFailureOf(error);
   if (failure === undefined) return error;
   const type = credentialErrorType(failure.code);
-  return new GatewayError({ status: failure.retryable ? RETRYABLE_STATUS : statusFor(type, failure.code), type, code: failure.code, message: failure.message });
+  return new GatewayError({
+    status: failure.retryable ? RETRYABLE_STATUS : statusFor(type, failure.code),
+    type,
+    code: failure.code,
+    message: failure.message,
+    ...(failure.retryAfterMs === undefined ? {} : { headers: { 'retry-after': retryAfterSeconds(failure.retryAfterMs) } }),
+  });
 };
 
 const translated = async <T>(work: () => Promise<T>): Promise<T> => {

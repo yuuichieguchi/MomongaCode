@@ -28,6 +28,7 @@ import type { GenerationFlight } from './generation-flight.ts';
 import { ensureHostIdentity } from './host-identity.ts';
 import type { PlanOutbound } from './outbound.ts';
 import { ownEntry } from './own-entry.ts';
+import { isDateTime } from './pause-end.ts';
 import { parsePlanJson } from './plan-json.ts';
 import { planProfileNamed } from './profiles.ts';
 import { endedByOperation, isTransientStoreFailure, recordAccess, storeReadFailure, storeWriteFailure, withRecord } from './record-io.ts';
@@ -231,7 +232,7 @@ const parsePause = (value: unknown): PlanPause | undefined => {
   if (value === undefined) return undefined;
   if (!isRecord(value)) throw new Error('the plan record field paused is not an object');
   const until = numberField(value, 'until');
-  return until === undefined ? {} : { until };
+  return until === undefined || !isDateTime(until) ? {} : { until };
 };
 
 const parsePending = (value: unknown): PlanRecord['pendingRefresh'] => {
@@ -1142,9 +1143,10 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
         }),
       pause: async ({ untilMs, code }, signal) =>
         held(served(), async (account) => {
-          const changed = await applyChange(account, (record) => ({ ...record, paused: untilMs === undefined ? {} : { until: untilMs } }), signal);
+          const until = untilMs !== undefined && isDateTime(untilMs) ? untilMs : undefined;
+          const changed = await applyChange(account, (record) => ({ ...record, paused: until === undefined ? {} : { until } }), signal);
           if (changed === undefined) return;
-          events('plan.pause', { ...identityOf(account), code, saved: changed.saved, ...(untilMs === undefined ? {} : { until: new Date(untilMs).toISOString() }) });
+          events('plan.pause', { ...identityOf(account), code, saved: changed.saved, ...(until === undefined ? {} : { until: new Date(until).toISOString() }) });
         }),
       resume: async (signal) =>
         held(served(), async (account) => {
