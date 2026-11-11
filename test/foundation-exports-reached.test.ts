@@ -94,7 +94,6 @@ const NAMED_ONLY_BY_TESTS: readonly string[] = [
   'ReapMarkedProcessesOptions',
   'ReapMarkerDirectoryOptions',
   'RotatingLogFile',
-  'Route',
   'SECRET_BACKEND_ENV',
   'SECRET_PROGRAM_ENV',
   'SECRET_REFUSAL_ENV',
