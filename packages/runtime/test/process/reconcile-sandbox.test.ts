@@ -2,12 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { nodeFileSystem, systemRandom } from '@momonga/foundation';
-import { createSeatbeltSandbox } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, testKernelLock, testProcessInspector, unconfiguredNetworkOf } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, testProcessInspector, unconfiguredNetworkOf } from '@momonga/testkit';
 import { execFileSync } from '@momonga/testkit/child-process';
 import * as runtime from '@momonga/runtime';
 import { createPolicyFilesystem, createSandboxedArgvRunner, nodeShellHost } from '@momonga/tools';
-import { HAS_SEATBELT, inertSandbox, makeTempHome, signalNever } from './helpers.ts';
+import { HAS_REAL_SANDBOX, createHostSandbox } from '../../../tools/test/helpers.ts';
+import { inertSandbox, makeTempHome, signalNever } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -43,7 +43,7 @@ describe('the sandbox of a Git reconcile', () => {
   });
 });
 
-describe.runIf(HAS_SEATBELT)('a Git probe of a reconcile in the real sandbox', () => {
+describe.runIf(HAS_REAL_SANDBOX)('a Git probe of a reconcile in the real sandbox of the host (seatbelt on macOS, bubblewrap on Linux)', () => {
   it('runs on every attempt with the roots of the session, the session tmp dir among them', async () => {
     const temp = await makeTempHome();
     const project = fs.realpathSync(temp.project);
@@ -62,7 +62,7 @@ describe.runIf(HAS_SEATBELT)('a Git probe of a reconcile in the real sandbox', (
       reconcileSandbox: runtime.createReconcileSandbox({
         paths: temp.paths,
         home: temp.home,
-        sandboxes: runtime.fixedSandboxBindings(createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot: temp.paths.tmp.spawn, killGraceMs: 300 })),
+        sandboxes: runtime.fixedSandboxBindings(createHostSandbox({ tmpRoot: temp.paths.tmp.spawn, killGraceMs: 300 })),
         fs: createPolicyFilesystem(),
       }),
       shellHost: nodeShellHost(),
