@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CONTROL_PLANE_LAUNCH, hostProcessGroupPort, systemTiming } from '@momonga/foundation';
+import { CONTROL_PLANE_LAUNCH, hostProcessGroupPort, launchGroupLeader, systemTiming } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { createWorkspaceProbe, gradeChecks, nodeWorkspaceFiles } from '../src/index.ts';
 import type { CommandSandbox } from '../src/index.ts';
@@ -25,12 +25,14 @@ afterEach(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
+const launched = (file: string, args: readonly string[], cwd: string, env: Readonly<Record<string, string>>) => {
+  const { pgid, onExit } = launchGroupLeader({ file, args, cwd, env, stdio: ['ignore', 'ignore', 'ignore'], protection: CONTROL_PLANE_LAUNCH });
+  if (pgid === undefined) throw new Error(`${file} started with no process group`);
+  return { pgid, exited: new Promise<{ code: number | null }>((resolve, reject) => onExit(({ code }) => resolve({ code }), reject)) };
+};
+
 const writesOnlyIn = (allowed: (workspace: string) => string): CommandSandbox => ({
-  commandOf: async (command, workspace) => ({
-    file: '/bin/sh',
-    args: ['-c', command.includes(allowed(workspace)) ? command : `exit ${DENIED_EXIT}`],
-    protection: CONTROL_PLANE_LAUNCH,
-  }),
+  start: async (command, workspace, env) => launched('/bin/sh', ['-c', command.includes(allowed(workspace)) ? command : `exit ${DENIED_EXIT}`], workspace, env),
 });
 
 describe('the oracle commands run through the sandbox port', () => {

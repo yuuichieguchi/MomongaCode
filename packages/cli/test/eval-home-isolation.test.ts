@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { nodeWorkspaceFiles, parseDataset, treeDigest } from '@momonga/eval';
-import { CONTROL_PLANE_LAUNCH, hostProcessGroupPort } from '@momonga/foundation';
+import { CONTROL_PLANE_LAUNCH, hostProcessGroupPort, launchGroupLeader } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { createFakeKernelLock } from '@momonga/testkit';
@@ -20,7 +20,16 @@ const TEST = "const test = require('node:test');\nconst assert = require('node:a
 
 const created: string[] = [];
 
-const createWorkspaceProbe = nodeWorkspaceProbeOf({ commandOf: async (command) => ({ file: '/bin/sh', args: ['-c', command], protection: CONTROL_PLANE_LAUNCH }) }, hostProcessGroupPort());
+const createWorkspaceProbe = nodeWorkspaceProbeOf(
+  {
+    start: async (command, cwd, env) => {
+      const { pgid, onExit } = launchGroupLeader({ file: '/bin/sh', args: ['-c', command], cwd, env, stdio: ['ignore', 'ignore', 'ignore'], protection: CONTROL_PLANE_LAUNCH });
+      if (pgid === undefined) throw new Error('the command started with no process group');
+      return { pgid, exited: new Promise((resolve, reject) => onExit(({ code }) => resolve({ code }), reject)) };
+    },
+  },
+  hostProcessGroupPort(),
+);
 afterEach(() => {
   for (const dir of created.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
