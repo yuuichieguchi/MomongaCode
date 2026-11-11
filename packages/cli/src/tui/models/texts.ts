@@ -129,7 +129,6 @@ export const startingModelSetText = (display: string): string => `Starting model
 export const notConfiguredAnyMoreText = (stored: string): string => `The model "${stored}" of this session is not configured any more. Choose another with /model.`;
 
 export const START_ONE_TEXT = 'Start one, or add it with /models add.';
-export const ADD_WITH_MODELS_ADD = 'Add the model with /models add.';
 
 export const configuredSwitchText = (display: string): string => `${display} is configured; /model switches to it`;
 
