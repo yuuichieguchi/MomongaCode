@@ -34,7 +34,7 @@ import { createRunFactsStore } from './run-facts.ts';
 import { createSearchStore } from './search.ts';
 import { createTrustStore } from './trust.ts';
 import { createRuleVerdictStore } from './rule-verdicts.ts';
-import { createInboxTable, inboxRowView } from './inbox.ts';
+import { createInboxTable, inboxChangeRow } from './inbox.ts';
 import type {
   Approval,
   ApprovalView,
@@ -689,7 +689,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
   const announceInbox = (sessionId: string): InboxRow[] => {
     const pending = inboxTable.pending(sessionId);
-    insertEvent({ runId: null, sessionId, seq: null, step: null, leaseToken: null, createdAt: clock.now(), payload: { type: 'inbox.changed', pending: pending.map(inboxRowView) } });
+    insertEvent({ runId: null, sessionId, seq: null, step: null, leaseToken: null, createdAt: clock.now(), payload: { type: 'inbox.changed', pending: pending.map(inboxChangeRow) } });
     return pending;
   };
 

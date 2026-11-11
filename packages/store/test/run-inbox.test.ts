@@ -7,7 +7,7 @@ import { INBOX_MAX_PENDING } from '@momonga/protocol';
 import type { InboxDelivery } from '@momonga/protocol';
 import type { InboxRow, Run, RuntimeStore } from '@momonga/store';
 import { MIGRATIONS } from '../src/schema.ts';
-import { START_MS, TIMEOUT_MS, cancelToEnd, enqueue, harness, makeStoreDir, mustClaim, mustRun, newSession, openStoreAt, rawDb } from './helpers.ts';
+import { START_MS, TIMEOUT_MS, cancelToEnd, dbPathOf, enqueue, harness, makeStoreDir, mustClaim, mustRun, newSession, openStoreAt, rawDb } from './helpers.ts';
 
 const TERMS = { timeoutMs: TIMEOUT_MS, limits: { maxSteps: 10 }, pins: {} };
 
@@ -30,8 +30,19 @@ const runsOf = (store: RuntimeStore, sessionId: string): Run[] => store.listRuns
 const userMessages = (store: RuntimeStore, runId: string) =>
   store.readRunEvents(runId, 0, 1000).flatMap((event) => (event.type === 'user.message' ? [{ text: event.text, ...(event.source === undefined ? {} : { source: event.source }) }] : []));
 
-const inboxEvents = (store: RuntimeStore, sessionId: string): string[][] =>
-  store.readSessionEvents(sessionId, 0, 1000).flatMap((event) => (event.type === 'inbox.changed' ? [texts(event.pending)] : []));
+const textsById = (store: RuntimeStore): Map<string, string> => {
+  const db = rawDb(dbPathOf(store));
+  try {
+    return new Map(db.prepare('SELECT id, text FROM run_inbox').all().map((row) => [String(row['id']), String(row['text'])]));
+  } finally {
+    db.close();
+  }
+};
+
+const inboxEvents = (store: RuntimeStore, sessionId: string): string[][] => {
+  const stored = textsById(store);
+  return store.readSessionEvents(sessionId, 0, 1000).flatMap((event) => (event.type === 'inbox.changed' ? [event.pending.map((row) => `${row.delivery}:${stored.get(row.id)}`)] : []));
+};
 
 const busySession = async (store: RuntimeStore) => {
   const session = newSession(store);

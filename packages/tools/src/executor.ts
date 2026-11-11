@@ -8,7 +8,7 @@ import type { MarkerSettle } from './marker-settle.ts';
 import type { Awaitable, Clock, FileRuleProvenance, FileSystem, KernelLockMechanism, MarkerHandle, NetworkScope, OutboundNetwork, PathProbes, PathResolver, ProcessGroupPort, ProcessInspector, Random, ReapReport, Timing, SandboxNetworkSetting, SignalSender, UninspectableRegistry } from '@momonga/foundation';
 import { absoluteFrom, askedBy, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem, PolicyTool, CoveredProgram, SupersededForm } from '@momonga/policy';
-import { permissionDeniedOutput } from '@momonga/protocol';
+import { diffFieldsOf, permissionDeniedOutput } from '@momonga/protocol';
 import type { ApprovalBasis, ElicitationRequestView, PermissionDenial, PermissionMode, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
 import { SANDBOX_NETWORK_SCOPES, SANDBOX_STOP_BOUND_MS, SandboxPolicyError, canonicalParentForm } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
@@ -666,10 +666,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...(result.memories === undefined ? {} : { memories: result.memories }),
       ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
       ...(result.backend === undefined ? {} : { backend: result.backend }),
-      ...(result.hunks === undefined ? {} : { hunks: result.hunks }),
-      ...(result.added === undefined ? {} : { added: result.added }),
-      ...(result.removed === undefined ? {} : { removed: result.removed }),
-      ...(result.diffOmitted === undefined ? {} : { diffOmitted: result.diffOmitted }),
+      ...diffFieldsOf(result),
       ...(result.effect === undefined ? {} : { effect: result.effect }),
       ...('truncated' in truncated ? { truncated: truncated.truncated, handle: truncated.handle } : {}),
       ...(formatted === undefined ? {} : { formatted: formatted.formatted }),
@@ -1320,7 +1317,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return scope.complete(await finalizeResult({ status: 'failed', output: cancelledOutput(tool) }, tool, fitOfCall(fit, call), batch.runId), 'not_applied');
       }
       const status = reconcileOutcome.outcome === 'already_applied' ? 'completed' : 'failed';
-      return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output, ...(reconcileOutcome.effect === undefined ? {} : { effect: reconcileOutcome.effect }) }, tool, fitOfCall(fit, call), batch.runId), reconcileOutcome.outcome);
+      return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output, ...(reconcileOutcome.effect === undefined ? {} : { effect: reconcileOutcome.effect }), ...diffFieldsOf(reconcileOutcome) }, tool, fitOfCall(fit, call), batch.runId), reconcileOutcome.outcome);
     } finally {
       scope.release();
     }
@@ -1552,7 +1549,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return await execute('not_applied');
       }
       const status = reconcileOutcome.outcome === 'already_applied' ? 'completed' : 'failed';
-      return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output, ...(reconcileOutcome.effect === undefined ? {} : { effect: reconcileOutcome.effect }) }, tool, fitOfCall(fit, call), batch.runId), reconcileOutcome.outcome);
+      return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output, ...(reconcileOutcome.effect === undefined ? {} : { effect: reconcileOutcome.effect }), ...diffFieldsOf(reconcileOutcome) }, tool, fitOfCall(fit, call), batch.runId), reconcileOutcome.outcome);
     } finally {
       scope.release();
     }
@@ -1619,7 +1616,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const settled = await reconcileWithin(tool, input, record, ctx, () => reconciling.abort(), scope.closeContext);
     const status = settled.outcome === 'already_applied' ? 'completed' : 'failed';
     const output = await interruptedText(tool, reason, scope.stop(), record, settled);
-    return scope.complete(await finalizeResult({ status, output }, tool, limits.fit, limits.runId, limits.formatOutput), settled.outcome, reason);
+    return scope.complete(await finalizeResult({ status, output, ...diffFieldsOf(settled) }, tool, limits.fit, limits.runId, limits.formatOutput), settled.outcome, reason);
   };
 
   const reconcileInterrupted = async (
