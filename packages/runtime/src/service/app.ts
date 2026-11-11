@@ -773,6 +773,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     maxBodyBytes: deps.maxBodyBytes,
     closeSignal: deps.closeSignal,
     home: deps.home,
+    refuseWhileRetiring,
   });
   registerGuidelineRoutes(route, { store, maxBodyBytes: deps.maxBodyBytes });
   registerRuleRoutes(route, {
