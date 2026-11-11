@@ -120,8 +120,8 @@ export const recordPrefix = (ctx: ClaimContext, built: BuiltContext, wrapUp: boo
   if (previous === undefined) return undefined;
   const before = requestShapeOf(previous.body);
   const relation = prefixRelationOf(before, { input: built.input, tools: built.tools });
-  const events = store.readRunEventsOfTypes(ctx.run.id, [...BREAK_EVENT_TYPES]);
-  const causes = causesOf(events, previous.seq, wrapUp);
+  const between = store.readRunEventsOfTypes(ctx.run.id, [...BREAK_EVENT_TYPES], previous.seq);
+  const causes = causesOf(between, previous.seq, wrapUp);
   const prefix: Prefix = { ...relation, causes };
   if (!ctx.token.cachePrefix) return { prefix, notices: [] };
   const toolsChangingCause = causes.some((cause) => NOTHING_PRESERVED.includes(cause));
@@ -130,7 +130,6 @@ export const recordPrefix = (ctx: ClaimContext, built: BuiltContext, wrapUp: boo
   const zones = claimZones ?? marks?.zones;
   const claimKept = claimKeepsPrefix(marks, built);
   if (zones === undefined && !causes.includes('claim')) throw new Error(`run ${ctx.run.id} built a request without a claim event after its previous request, and no zones of that request are known`);
-  const between = events.filter((event) => event.seq > previous.seq);
   const allowed =
     zones === undefined
       ? 0

@@ -180,7 +180,7 @@ describe('the snapshot of a run with an unknown effect', () => {
     const state = stateOf(store, runId);
     expect(store.writeSnapshot(claim, state.lastSeq, state)).toEqual({ kind: 'ok' });
     expect(store.load(runId).snapshot?.state).toEqual(state);
-    expect(SNAPSHOT_STATE_VERSION).toBe(21);
+    expect(SNAPSHOT_STATE_VERSION).toBe(22);
     rawDb(dbPath).prepare("UPDATE snapshots SET state_json = json_remove(json_set(state_json, '$.stateVersion', 17), '$.unknownEffects') WHERE run_id = ?").run(runId);
     const loaded = store.load(runId);
     expect(loaded.snapshot).toBeUndefined();

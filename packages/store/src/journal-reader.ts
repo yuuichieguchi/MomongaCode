@@ -55,7 +55,7 @@ export type JournalReaderOptions = {
 
 export type JournalReader = {
   measure(hook: TerminalContribution, request: ContributionRequest): ContributionMeasured;
-  eventsOfTypes(runId: string, types: readonly RunEventPayload['type'][]): RunEvent[];
+  eventsOfTypes(runId: string, types: readonly RunEventPayload['type'][], afterSeq?: number): RunEvent[];
   visitRun(runId: string, types: readonly RunEventPayload['type'][], visit: (event: RunEvent) => void, throughSeq?: number): Run;
   walkRun(runId: string, types: readonly RunEventPayload['type'][], visit: RecordVisit, units: WalkUnits, range?: { throughSeq?: number; from?: number }): Promise<Run>;
   visitRecord: ReferenceReader['visitRecord'];
@@ -107,14 +107,14 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
     return decodeRun(row, decodeContext).lastSeq;
   };
 
-  function* rangedRows(runId: string, lastSeq: number, types: readonly string[], excluding: boolean): Generator<Row> {
+  function* rangedRows(runId: string, lastSeq: number, types: readonly string[], excluding: boolean, firstSeq = 1): Generator<Row> {
     const { list, bound } = typePlaceholders(types);
     const statement = db.prepare(
       excluding
         ? `SELECT * FROM events WHERE run_id = :runId AND seq >= :from AND seq < :until AND type NOT IN (${list}) ORDER BY seq`
         : `SELECT * FROM events WHERE run_id = :runId AND type IN (${list}) AND seq >= :from AND seq < :until`,
     );
-    for (let from = 1; from <= lastSeq; from += JOURNAL_SCAN_RANGE_ROWS) {
+    for (let from = firstSeq; from <= lastSeq; from += JOURNAL_SCAN_RANGE_ROWS) {
       const until = Math.min(from + JOURNAL_SCAN_RANGE_ROWS, lastSeq + 1);
       const rows = statement.all({ runId, from, until, ...bound });
       yield* excluding ? rows : rows.sort((a, b) => Number(a['seq']) - Number(b['seq']));
@@ -123,8 +123,8 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
     }
   }
 
-  const eventsOfTypes = (runId: string, types: readonly RunEventPayload['type'][]): RunEvent[] =>
-    types.length === 0 ? [] : decodeEach(rangedRows(runId, lastSeqOf(runId), types, false));
+  const eventsOfTypes = (runId: string, types: readonly RunEventPayload['type'][], afterSeq = 0): RunEvent[] =>
+    types.length === 0 ? [] : decodeEach(rangedRows(runId, lastSeqOf(runId), types, false, afterSeq + 1));
 
   const visitRun = (runId: string, types: readonly RunEventPayload['type'][], visit: (event: RunEvent) => void, throughSeq?: number): Run =>
     readTx(db, () => {
