@@ -1,6 +1,9 @@
 import path from 'node:path';
+import type { UserModels } from '@momonga/config';
 import {
   DEFAULT_DATASET_SEED,
+  caseSettingsFor,
+  failedWithCleanup,
   GATE_NAMES,
   buildContextReport,
   compareContextReports,
@@ -19,20 +22,17 @@ import {
   saveContextReport,
   saveTranscript,
 } from '@momonga/eval';
-import type { ContextDataset, EvalReport, GateName, GoldenCase, GoldenDataset, PolicyOverlay, RecordedRun, Transcript } from '@momonga/eval';
+import type { ContextDataset, EvalOracle, EvalReport, GateName, GoldenCase, GoldenDataset, PolicyOverlay, RecordedRun, Transcript } from '@momonga/eval';
 import { decodeReliabilityReport } from '@momonga/reliability';
 import type { ReliabilityReport } from '@momonga/reliability';
 import { codeDigestOfRunningProcess, createOwnedDirectory, currentSocketResolver, momongaPaths, resolveLayoutLocks } from '@momonga/foundation';
-import type { MomongaPaths, OwnedDirectory, KernelLockMechanism } from '@momonga/foundation';
-import { goldenRunApi } from '../client/golden-run-api.ts';
+import type { MomongaPaths, KernelLockMechanism } from '@momonga/foundation';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
-import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
 import { nodeWorkspaceProbe } from '../eval/workspace-probe.ts';
-import { pinnedModelOf, runContextLive, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
-import type { ContextHostEffects } from '../eval/context-host.ts';
+import { createHomes, liveSettingsFor, needsPlanRelay, pinnedModelOf, readCredentials, readPlanRelay, runContextLive, sweepStaleHomes, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
+import type { ContextHostEffects, ContextRuntime, HomeEffects, ReflectionBounds } from '../eval/context-host.ts';
 import type { CliPorts } from '../ports.ts';
-import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import { shellModelsOf } from '../plain-http.ts';
 import { UsageError } from '../usage-error.ts';
 import { pathsOf } from '../paths.ts';
@@ -46,7 +46,71 @@ export class EvaluateUsageError extends UsageError {
 
 export type EvaluateOptions = { record?: string; replay?: string; interrupt: AbortSignal };
 
-const WORKSPACE_PREFIX = 'momonga-eval-';
+const ORACLE_BASE_PREFIX = 'momonga-eval-';
+
+export type GoldenLiveInput = {
+  dataset: GoldenDataset;
+  models: UserModels;
+  reflection: ReflectionBounds;
+  interrupt: AbortSignal;
+  oracleOf(golden: GoldenCase, env: Readonly<Record<string, string>>): Promise<{ oracle: EvalOracle; dispose(): Promise<void> }>;
+  onTranscript?(run: RecordedRun): Promise<void>;
+  onUnreadableHomes?(count: number): void;
+  onUnownedHomes?(roots: readonly string[]): void;
+  planRelaySocket?(): Promise<string>;
+};
+
+const startModelOf = (models: UserModels): string => {
+  const { start } = models.resolved;
+  if (start === undefined) throw new EvaluateUsageError('eval runs every case on the start model of the settings, and the settings name none: choose one with momonga models use <model>');
+  return start;
+};
+
+export const runGoldenLive = async (effects: HomeEffects<ContextRuntime>, input: GoldenLiveInput): Promise<EvalReport> => {
+  const { interrupt } = input;
+  interrupt.throwIfAborted();
+  const model = startModelOf(input.models);
+  const relay = needsPlanRelay(input.models, [model]) && input.planRelaySocket !== undefined ? await readPlanRelay(await input.planRelaySocket(), interrupt) : undefined;
+  const settings = liveSettingsFor(input.models, [model], relay);
+  const credentialValues = await readCredentials(effects, settings.credentials, interrupt);
+  const swept = await sweepStaleHomes(effects);
+  if (swept.unreadable > 0) input.onUnreadableHomes?.(swept.unreadable);
+  if (swept.unowned.length > 0) input.onUnownedHomes?.(swept.unowned);
+  const homes = createHomes(effects, { credentialValues, reflection: input.reflection, managedTargets: settings.managedTargets, endpointProbes: settings.endpointProbes, interrupt });
+  const base = { models: settings.models, ...(settings.sandbox === undefined ? {} : { sandbox: settings.sandbox }) };
+  const { oracleOf, onTranscript } = input;
+  let report: EvalReport;
+  try {
+    report = await runDataset(input.dataset, {
+      model,
+      open: async (golden, runIndex) => {
+        const home = await homes.open({ label: `case ${golden.id} run ${runIndex}`, settings: caseSettingsFor(base, {}), ...(golden.files === undefined ? {} : { files: golden.files }) });
+        const scope = { api: home.api, workspace: { cwd: home.cwd, env: home.env } };
+        if (golden.oracle === undefined) return { ...scope, close: home.close };
+        const made = await oracleOf(golden, home.env);
+        return {
+          ...scope,
+          oracle: made.oracle,
+          close: async () => {
+            await home.close();
+            await made.dispose();
+          },
+        };
+      },
+      ...(onTranscript === undefined ? {} : { onTranscript }),
+      signal: interrupt,
+    });
+  } catch (error) {
+    try {
+      await homes.dispose();
+    } catch (cleanup) {
+      throw failedWithCleanup(error, cleanup, 'the dataset failed and its temporary homes were not fully released');
+    }
+    throw error;
+  }
+  await homes.dispose();
+  return report;
+};
 
 const populate = async (ports: CliPorts, directory: string, golden: GoldenCase): Promise<void> => {
   for (const [name, content] of Object.entries(golden.files ?? {})) {
@@ -56,41 +120,32 @@ const populate = async (ports: CliPorts, directory: string, golden: GoldenCase):
   }
 };
 
-const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenDataset, record: string | undefined, interrupt: AbortSignal): Promise<EvalReport> => {
-  await ensureCurrentDaemon(ports, paths);
+const runLive = async (
+  ports: CliPorts,
+  paths: MomongaPaths,
+  dataset: GoldenDataset,
+  record: string | undefined,
+  interrupt: AbortSignal,
+  hostEffects: (ports: CliPorts, lock: KernelLockMechanism) => ContextHostEffects,
+): Promise<EvalReport> => {
   const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } = await import('@momonga/runtime');
-  const env = await environmentSnapshot(ports, interrupt);
-  const client = connectRuntime(ports, paths);
-  const api = goldenRunApi(client, undefined, {
-    pendingBoundMs: REFLECTION_PICKUP_BOUND_MS,
-    attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS,
-    pollMs: REFLECTION_POLL_MS,
-    now: () => ports.clock.now(),
-    wait: (milliseconds, signal) => ports.clock.sleep(milliseconds, signal),
-    signal: interrupt,
-  });
-  const workspaces: OwnedDirectory[] = [];
+  const lock = resolveLayoutLocks(paths).mechanism;
   if (record !== undefined) await ports.files.mkdir(record);
-  try {
-    return await runDataset(dataset, {
-      open: async (golden) => {
-        const workspace = await createOwnedDirectory({ parent: ports.tmpdir, prefix: WORKSPACE_PREFIX, lock: resolveLayoutLocks(paths).mechanism });
-        workspaces.push(workspace);
-        const cwd = workspace.path;
-        await populate(ports, cwd, golden);
-        if (golden.oracle === undefined) return { api, workspace: { cwd, env }, close: async () => undefined };
-        const base = await createOwnedDirectory({ parent: ports.tmpdir, prefix: WORKSPACE_PREFIX, lock: resolveLayoutLocks(paths).mechanism });
-        workspaces.push(base);
-        await populate(ports, base.path, golden);
-        return { api, workspace: { cwd, env }, oracle: { base: base.path, probe: nodeWorkspaceProbe(env), files: ports.files }, close: async () => undefined };
-      },
-      ...(record === undefined ? {} : { onTranscript: async (run: RecordedRun) => void (await saveTranscript(ports.files, record, { ...run, policy: null, codeDigest: null })) }),
-      signal: interrupt,
-    });
-  } finally {
-    await Promise.all(workspaces.map((workspace) => workspace.dispose()));
-    await client.close();
-  }
+  return runGoldenLive(hostEffects(ports, lock), {
+    dataset,
+    models: await shellModelsOf(ports, interrupt),
+    reflection: { pendingBoundMs: REFLECTION_PICKUP_BOUND_MS, attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS, pollMs: REFLECTION_POLL_MS },
+    interrupt,
+    oracleOf: async (golden, env) => {
+      const base = await createOwnedDirectory({ parent: ports.tmpdir, prefix: ORACLE_BASE_PREFIX, lock });
+      await populate(ports, base.path, golden);
+      return { oracle: { base: base.path, probe: nodeWorkspaceProbe(env), files: ports.files }, dispose: () => base.dispose() };
+    },
+    ...(record === undefined ? {} : { onTranscript: async (run: RecordedRun) => void (await saveTranscript(ports.files, record, { ...run, policy: null, codeDigest: null })) }),
+    planRelaySocket: currentSocketResolver(paths, 'gateway'),
+    onUnreadableHomes: (count) => ports.stderr.write(unreadableHomesNotice(count)),
+    onUnownedHomes: (roots) => ports.stderr.write(unownedHomesNotice(roots)),
+  });
 };
 
 export type EvaluateContextOptions = {
@@ -211,12 +266,18 @@ export const compareContext = async (ports: CliPorts, baselineFile: string, cand
   return comparison.gate.passed ? 0 : 1;
 };
 
-export const evaluate = async (ports: CliPorts, paths: MomongaPaths, datasetFile: string, options: EvaluateOptions): Promise<number> => {
+export const evaluate = async (
+  ports: CliPorts,
+  paths: MomongaPaths,
+  datasetFile: string,
+  options: EvaluateOptions,
+  hostEffects: (ports: CliPorts, lock: KernelLockMechanism) => ContextHostEffects = nodeContextEffects,
+): Promise<number> => {
   if (options.record !== undefined && options.replay !== undefined) throw new EvaluateUsageError('--record and --replay cannot be combined');
   const dataset = await loadDataset(ports.files, path.resolve(ports.cwd, datasetFile));
   const report =
     options.replay === undefined
-      ? await runLive(ports, paths, dataset, options.record === undefined ? undefined : path.resolve(ports.cwd, options.record), options.interrupt)
+      ? await runLive(ports, paths, dataset, options.record === undefined ? undefined : path.resolve(ports.cwd, options.record), options.interrupt, hostEffects)
       : replayDataset(dataset, await loadTranscripts(ports.files, path.resolve(ports.cwd, options.replay)));
   ports.stdout.write(`${formatReport(report)}\n`);
   return report.passed ? 0 : 1;

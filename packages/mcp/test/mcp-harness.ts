@@ -114,7 +114,7 @@ export const makePool = (
 ): PoolHarness => {
   const clock = options.clock ?? createFakeClock(1_000_000);
   const projectDir = makeDir();
-  const pool = createMcpPool({
+  const pool = createMcpPool({ files: nodeFileSystem,
     clientVersion: '0.0.0-test',
     servers,
     projectDir,

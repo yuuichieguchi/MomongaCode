@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { SETTINGS_SCHEMA, loadSettings } from '@momonga/config';
 import { localSettingsPath, makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
-const FORGE = { id: 'work', descriptor: 'github', host: 'forge.example', apiBaseUrl: 'https://api.forge.example', credentialEnv: 'FORGE_TOKEN' };
+const FORGE = { id: 'work', descriptor: 'github', hosts: ['forge.example'], apiBaseUrl: 'https://api.forge.example', credential: { env: 'FORGE_TOKEN' } };
+
+const loadUser = async (user: unknown) => {
+  const tree = makeTree();
+  const file = writeJson(userSettingsPath(tree), user);
+  return { file, loading: loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
+};
 
 const settingsOf = async (files: { user?: unknown; project?: unknown; local?: unknown }) => {
   const tree = makeTree();
@@ -24,7 +30,7 @@ describe('forge instances in settings', () => {
   });
 
   it('accepts a credential kept in the secret store by name', async () => {
-    const forge = { id: 'work', descriptor: 'github', host: 'forge.example', apiBaseUrl: 'https://api.forge.example', credentialSecret: 'forge-work' };
+    const forge = { ...FORGE, credential: { secret: 'forge-work' } };
     const { settings } = await settingsOf({ user: { forges: [forge] } });
     expect(settings['forges']).toEqual([forge]);
   });
@@ -50,12 +56,34 @@ describe('forge instances in settings', () => {
   });
 
   it('refuses a forge with no credential reference and one with two', async () => {
-    const { credentialEnv: _reference, ...bare } = FORGE;
-    for (const forge of [bare, { ...FORGE, credentialSecret: 'forge-work' }]) {
+    const { credential: _reference, ...bare } = FORGE;
+    for (const forge of [bare, { ...FORGE, credential: { env: 'FORGE_TOKEN', secret: 'forge-work' } }, { ...FORGE, credential: {} }]) {
       const tree = makeTree();
       writeJson(userSettingsPath(tree), { forges: [forge] });
       await expect(loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow();
     }
+  });
+});
+
+describe('the shape of a forge entry', () => {
+  it('takes several hosts for one forge', async () => {
+    const forge = { ...FORGE, hosts: ['forge.example', 'GIT.forge.example'] };
+    const { settings } = await settingsOf({ user: { forges: [forge] } });
+    expect(settings['forges']).toEqual([forge]);
+  });
+
+  it.each(['not a url', '/api/v3', 'ftp://forge.example/api'])('refuses apiBaseUrl %s when the settings load, naming the file and the key', async (apiBaseUrl) => {
+    const { file, loading } = await loadUser({ forges: [{ ...FORGE, apiBaseUrl }] });
+    await expect(loading).rejects.toThrow(`${file}: invalid settings at /forges/0/apiBaseUrl`);
+  });
+
+  it.each([
+    ['a single host', { id: 'work', descriptor: 'github', host: 'forge.example', apiBaseUrl: 'https://api.forge.example', credential: { env: 'FORGE_TOKEN' } }],
+    ['a flat credential name', { id: 'work', descriptor: 'github', hosts: ['forge.example'], apiBaseUrl: 'https://api.forge.example', credentialEnv: 'FORGE_TOKEN' }],
+    ['no host', { ...FORGE, hosts: [] }],
+  ])('refuses %s', async (_name, forge) => {
+    const { loading } = await loadUser({ forges: [forge] });
+    await expect(loading).rejects.toThrow();
   });
 });
 

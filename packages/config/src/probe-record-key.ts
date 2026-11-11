@@ -1,5 +1,6 @@
 import { DEFAULT_ANTHROPIC_BASE_URL } from '@momonga/protocol';
 import { ConfigError } from './config-error.ts';
+import { ADAPTERS, isAdapterKind, measuringProbeOf, probeRecordKeyIn } from './adapters.ts';
 import type { ResolvedModelTarget } from './settings.ts';
 
 export type UpstreamEndpointKeyed = { kind: 'unix'; socketPath: string } | { kind: 'tcp'; baseUrl: string };
@@ -51,19 +52,18 @@ export const withDefaultAddress = <T extends WrittenAddress & { adapter: string 
   return { ...connection, ...DEFAULT_ADDRESS_OF_ADAPTER[connection.adapter] };
 };
 
-export const connectionAddressProblem = (connection: WrittenAddress & { adapter: string; plan?: unknown }): string | undefined =>
-  connection.adapter === 'managed' || connection.plan !== undefined ? undefined : addressProblem(withDefaultAddress(connection));
+const namesItsServerByAddress = (adapter: string): boolean => !isAdapterKind(adapter) || ADAPTERS[adapter].address === 'written';
 
-export const upstreamEndpointOf = (target: Exclude<ResolvedModelTarget, { adapter: 'managed' }>): UpstreamEndpointKeyed => {
+export const connectionAddressProblem = (connection: WrittenAddress & { adapter: string; plan?: unknown }): string | undefined =>
+  namesItsServerByAddress(connection.adapter) && connection.plan === undefined ? addressProblem(withDefaultAddress(connection)) : undefined;
+
+export const upstreamEndpointOf = (target: WrittenAddress & { readonly adapter: string }): UpstreamEndpointKeyed => {
   const reading = addressOf(target);
   if (reading.kind === 'problem') throw new ConfigError(`${target.adapter} target: ${reading.reason}`);
   return reading;
 };
 
-export const probeRecordKeyOf = (canon: string, target: ResolvedModelTarget): ProbeRecordKey | undefined => {
-  if (target.adapter === 'managed') return { kind: 'model', model: canon };
-  if (target.adapter === 'ollama' || (target.adapter === 'chat-completions' && target.toolCalling === 'auto')) {
-    return { kind: 'endpoint', key: { endpoint: endpointKeyOf(upstreamEndpointOf(target)), model: target.model } };
-  }
-  return undefined;
-};
+export const recordKeyOf = (canon: string, target: ResolvedModelTarget): ProbeRecordKey | undefined => probeRecordKeyIn(ADAPTERS)(canon, target);
+
+export const probeRecordKeyOf = (canon: string, target: ResolvedModelTarget): ProbeRecordKey | undefined =>
+  measuringProbeOf(target) === undefined ? undefined : recordKeyOf(canon, target);

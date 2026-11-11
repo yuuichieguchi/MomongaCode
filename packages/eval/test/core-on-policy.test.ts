@@ -164,14 +164,14 @@ describe('the report records the resolved policy (design core-on 3.2, test 8)', 
 });
 
 describe('the transcript format (design core-on 3.2)', () => {
-  it('is format 8 and refuses a format 7 transcript as retired', () => {
-    expect(TRANSCRIPT_FORMAT).toBe('momonga-transcript/8');
+  it('is format 9 and refuses a format 7 transcript as retired', () => {
+    expect(TRANSCRIPT_FORMAT).toBe('momonga-transcript/9');
     const transcript = { ...recorded('a-on', 0, []), policy: RESOLVED_ON as unknown as PolicyOverlay, codeDigest: RECORDED_CODE_DIGEST };
     const lines = encodeTranscript(transcript).split('\n');
     const header = JSON.parse(lines[0] ?? '{}') as Record<string, unknown>;
     const old = [JSON.stringify({ ...header, format: 'momonga-transcript/7' }), ...lines.slice(1)].join('\n');
     expect(() => decodeTranscript(old, 't.jsonl')).toThrow(TranscriptError);
-    expect(() => decodeTranscript(old, 't.jsonl')).toThrow(/momonga-transcript\/7.*momonga-transcript\/8/);
+    expect(() => decodeTranscript(old, 't.jsonl')).toThrow(/momonga-transcript\/7.*momonga-transcript\/9/);
     expect(() => decodeTranscript(old, 't.jsonl')).toThrow(/policy .*recorded relative to the old defaults/);
     expect(() => decodeTranscript(old, 't.jsonl')).toThrow(
       /momonga eval context <dataset> --model <model> --settings <base policy file> --report <base report>.*momonga eval context <dataset> --model <model> --report <candidate report>/,
@@ -182,6 +182,7 @@ describe('the transcript format (design core-on 3.2)', () => {
 const liveHarness = () => {
   const openCase = async (entry: { id: string }): Promise<ContextCaseHost> => {
     const api: EvalRunApi = {
+      costs: async () => [],
       createSession: async () => ({ id: `s-${entry.id}` }),
       createRun: async () => ({ id: `r-${entry.id}` }),
       events: async function* () {},

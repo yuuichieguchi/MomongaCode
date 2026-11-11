@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defineTool } from '@momonga/tools';
 import type { AnyTool } from '@momonga/tools';
+import { TOKEN_SETTINGS_OFF } from './fake-settings.ts';
 import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
@@ -35,7 +36,7 @@ const startJob = (env: Env, runId: string): void => {
 const bashDeniedEnv = async (cachePrefix: boolean): Promise<Env> => {
   const env = await makeEnv();
   env.settings.extraRules.push({ effect: 'deny', rule: 'Bash' });
-  env.settings.contextValue = { ...env.settings.contextValue, cachePrefix };
+  env.settings.contextValue = { ...TOKEN_SETTINGS_OFF, cachePrefix };
   env.gateway.script.push(callsStep([{ callId: 'echo-1', name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
   return env;
 };

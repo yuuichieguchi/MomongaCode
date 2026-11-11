@@ -65,6 +65,7 @@ const transcript = (caseId: string, status: 'COMPLETED' | 'FAILED' = 'COMPLETED'
   ({
     caseId,
     runIndex: 0,
+    costs: [],
     run: { id: `run-${caseId}`, status, step: 1, usage: { inputTokens: 9, outputTokens: 1, totalTokens: 10 } },
     events: caseId.endsWith('-on') ? compactionEvents(caseId) : [],
     children: [],
@@ -89,6 +90,8 @@ const harness = (failingOn: number = 0, answers: Answers = 'script') => {
     version: '9.9.9',
     home: freshHome(),
     cwd: '/w',
+    env: {},
+    platform: process.platform,
     terminal: undefined,
     stdout: { write: (text: string) => stdout.push(text) },
     files: {

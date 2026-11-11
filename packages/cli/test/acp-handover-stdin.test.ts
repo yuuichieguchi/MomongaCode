@@ -1,6 +1,6 @@
 import { Readable } from 'node:stream';
 import type { AnyMessage } from '@agentclientprotocol/sdk';
-import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
+import { MAX_JSON_DEPTH, ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import { withTempDir } from '@momonga/testkit';
 import { describe, expect, it, vi } from 'vitest';
 import { carriedStream } from '../src/acp/carried-input.ts';
@@ -236,6 +236,17 @@ describe('the message stream over the standard input', () => {
 
     expect((await reader.read()).value).toEqual(SET_MODE(8));
     expect(output.messages()).toEqual([{ jsonrpc: '2.0', id: null, error: expect.objectContaining({ code: -32700 }) }]);
+  });
+
+  it('refuses a line nested deeper than the one JSON depth bound with the reason of that bound, and reads on', async () => {
+    const input = scriptedInput();
+    const output = recordedOutput();
+    const carried = open(input, output.stream);
+    const reader = carried.stream.readable.getReader();
+    input.arrive(`${'['.repeat(MAX_JSON_DEPTH + 2)}${']'.repeat(MAX_JSON_DEPTH + 2)}\n${line(SET_MODE(9))}`);
+
+    expect((await reader.read()).value).toEqual(SET_MODE(9));
+    expect(output.messages()).toEqual([{ jsonrpc: '2.0', id: null, error: expect.objectContaining({ code: -32700, message: expect.stringContaining(`JSON depth exceeds the limit of ${MAX_JSON_DEPTH}`) }) }]);
   });
 
   it('gives the last line that has no line end when the input ends, then ends', async () => {

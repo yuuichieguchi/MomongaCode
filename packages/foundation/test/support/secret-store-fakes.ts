@@ -108,7 +108,7 @@ export const settlementOf = (attempt: Promise<unknown>): Settlement => {
   return { current: () => state };
 };
 
-export const turn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+export const rejectionsReported = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 const OBSERVATION_TURNS = 1000;
 

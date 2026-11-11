@@ -32,7 +32,7 @@ const searchOver = async () => {
     redactor,
     enforcement: () => ruleEnforcementOf('none'),
   });
-  const tools = (await port.load(session)).tools as AnyTool[];
+  const tools = (await port.load(session, new AbortController().signal)).tools as AnyTool[];
   const tool = tools.find((candidate) => candidate.name === 'HistorySearch');
   if (tool === undefined) throw new Error('no HistorySearch tool');
   const result = (await tool.execute({ query: 'needleterm' }, { runId: 'current', outputFit: UNBOUNDED_OUTPUT_FIT, signal: NEVER_CANCELLED } as unknown as ToolContext, undefined)) as ToolResult;

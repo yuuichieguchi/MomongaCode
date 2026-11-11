@@ -27,7 +27,7 @@ import {
   recordingFiles,
   rejection,
   settlementOf,
-  turn,
+  rejectionsReported,
   unhandledRejections,
   until,
 } from './support/secret-store-fakes.ts';
@@ -89,7 +89,6 @@ describe('a secret-store call ended by the limit of the operation that asked', (
     const attempt = store.read('k', signal);
     const settlement = settlementOf(attempt);
     await until(() => port.calls.length === 1, 'the readiness call started');
-    await turn();
     expect(settlement.current()).toBe('pending');
     pass();
     expectEndedCall(await rejection(attempt), 'read', signal.reason, READ_SENTENCE);
@@ -111,8 +110,7 @@ describe('a secret-store call ended by the limit of the operation that asked', (
       expectEndedCall(await rejection(attempt), 'read', signal.reason, READ_SENTENCE);
       if (late === 'resolves') stat.resolve({ isFile: () => true });
       else stat.reject(Object.assign(new Error('EIO: the mount came back'), { code: 'EIO' }));
-      await turn();
-      await turn();
+      await rejectionsReported();
       expect(fake.calls.map((call) => call.args)).toEqual([READINESS_ARGS]);
       expect(files.asked).toEqual([KEYCHAIN_PATH]);
       expect(unhandled.seen).toEqual([]);
@@ -135,7 +133,6 @@ describe('a secret-store call ended by the limit of the operation that asked', (
     if (point === 'readiness') await until(() => fake.calls.length === 1, 'the readiness call started');
     if (point === 'real call') await until(() => fake.calls.length === 2, 'the find call started');
     if (point === 'stat') await until(() => files.asked.length === 1, 'the existence check started');
-    await turn();
     expect(settlement.current()).toBe('pending');
     const reason = new Error('interrupted by the user');
     controller.abort(reason);

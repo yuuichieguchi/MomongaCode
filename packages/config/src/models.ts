@@ -20,6 +20,8 @@ import type { ChainMember } from './chain-room.ts';
 import { checkModelDialects, resolveDialects } from './dialects.ts';
 import { layoutOf } from './layout.ts';
 import { PLAN_PROFILES } from './plan-profiles.ts';
+import { ADAPTERS } from './adapters.ts';
+import type { AdapterKind, WireFacts } from './adapters.ts';
 import { addressProblem, withDefaultAddress } from './probe-record-key.ts';
 import type { PlanProfile } from './plan-profiles.ts';
 import { PROVIDER_NAME_RULE_TEXT, derivedNameProblem, isProviderName, providerNameOf, reservedNameProblem, serverKindOf } from './provider-name.ts';
@@ -174,9 +176,7 @@ type RemoteTargetInput = {
   admissionTimeoutMs?: number;
 };
 
-type CapabilityDefaults = Omit<TargetCapabilitiesCore, 'contextWindow' | 'maxOutputTokens' | 'imageInput' | 'imageTokens'>;
-
-const CHAT_COMPLETIONS_CAPABILITY_DEFAULTS: CapabilityDefaults = {
+const UNMEASURED_REMOTE_CAPABILITIES: Required<Pick<WireFacts, 'structuredOutput' | 'streaming' | 'stopSequences' | 'tokenCounting' | 'usageReported' | 'source'>> = {
   structuredOutput: 'none',
   streaming: true,
   stopSequences: true,
@@ -185,23 +185,7 @@ const CHAT_COMPLETIONS_CAPABILITY_DEFAULTS: CapabilityDefaults = {
   source: 'config',
 };
 
-const OPEN_RESPONSES_CAPABILITY_DEFAULTS: CapabilityDefaults = {
-  ...CHAT_COMPLETIONS_CAPABILITY_DEFAULTS,
-  stopSequences: false,
-};
-
-const ANTHROPIC_CAPABILITY_DEFAULTS: CapabilityDefaults = {
-  ...OPEN_RESPONSES_CAPABILITY_DEFAULTS,
-  parallelToolCalls: true,
-  tokenCounting: 'exact',
-  promptCache: { kind: 'breakpoints', maxBreakpoints: 4 },
-};
-
-const OLLAMA_CAPABILITY_DEFAULTS: CapabilityDefaults = {
-  ...CHAT_COMPLETIONS_CAPABILITY_DEFAULTS,
-  structuredOutput: 'json_schema',
-  stopSequences: false,
-};
+const capabilityBaseOf = (adapter: Exclude<AdapterKind, 'managed'>) => ({ ...UNMEASURED_REMOTE_CAPABILITIES, ...ADAPTERS[adapter].wire });
 
 const DEFAULT_REMOTE_MAX_CONCURRENCY = 4;
 const DEFAULT_REMOTE_BILLING: TargetBilling = 'metered';
@@ -218,7 +202,7 @@ const checkSamplingRange = (capabilities: Pick<TargetCapabilitiesCore, 'sampling
 
 const resolveRemote = (
   target: RemoteTargetInput,
-  defaults: CapabilityDefaults,
+  adapter: Exclude<AdapterKind, 'managed'>,
   { connection, entry: where }: Where,
   serving: { billing: TargetBilling; maxConcurrency: number } = REMOTE_SERVING,
 ) => {
@@ -229,7 +213,7 @@ const resolveRemote = (
   if (socketPath !== undefined) checkSocketPath(socketPath, connection);
   checkSamplingRange(target.capabilities, where);
   const maxConcurrency = target.maxConcurrency ?? serving.maxConcurrency;
-  const { imageInput, imageTokens, ...core } = { ...defaults, ...target.capabilities, maxConcurrency };
+  const { imageInput, imageTokens, ...core } = { ...capabilityBaseOf(adapter), ...target.capabilities, maxConcurrency };
   const capabilities = {
     ...core,
     ...declaredImageCapability(imageInput, imageTokens, where),
@@ -251,7 +235,7 @@ const resolveChatCompletions = (target: ChatCompletionsTarget, provider: string,
   model: target.model,
   toolCalling: target.toolCalling ?? 'native',
   provider,
-  ...resolveRemote(target, CHAT_COMPLETIONS_CAPABILITY_DEFAULTS, where),
+  ...resolveRemote(target, 'chat-completions', where),
 });
 
 const resolveOpenResponses = (target: OpenResponsesTarget, provider: string, where: Where): ResolvedOpenResponsesTarget => ({
@@ -259,7 +243,7 @@ const resolveOpenResponses = (target: OpenResponsesTarget, provider: string, whe
   model: target.model,
   toolCalling: target.toolCalling ?? 'native',
   provider,
-  ...resolveRemote(target, OPEN_RESPONSES_CAPABILITY_DEFAULTS, where),
+  ...resolveRemote(target, 'open-responses', where),
 });
 
 const resolvePlan = (target: PlanOpenResponsesTarget, provider: string, { connection: where, entry }: Where, profiles: PlanProfiles): ResolvedPlanTarget => {
@@ -285,7 +269,7 @@ const resolvePlan = (target: PlanOpenResponsesTarget, provider: string, { connec
   const declared = target.capabilities ?? {};
   checkSamplingRange(declared, entry);
   const maxConcurrency = target.maxConcurrency ?? DEFAULT_REMOTE_MAX_CONCURRENCY;
-  const { imageInput, imageTokens, ...core } = { ...OPEN_RESPONSES_CAPABILITY_DEFAULTS, ...profile.targetDefaults.capabilities, ...declared, maxConcurrency };
+  const { imageInput, imageTokens, ...core } = { ...capabilityBaseOf('open-responses'), ...profile.targetDefaults.capabilities, ...declared, maxConcurrency };
   return {
     adapter: 'open-responses',
     ...(target.answers === undefined ? {} : { answers: target.answers }),
@@ -335,25 +319,20 @@ const resolveAnthropic = (target: AnthropicTarget, place: Where, warnings: strin
     model: target.model,
     toolCalling: 'native',
     apiVersion,
-    ...resolveRemote(target, ANTHROPIC_CAPABILITY_DEFAULTS, place),
+    ...resolveRemote(target, 'anthropic', place),
   };
 };
 
 const resolveOllama = (target: OllamaTarget, where: Where): ResolvedOllamaTarget => ({
   adapter: 'ollama',
   model: target.model,
-  ...resolveRemote(target, OLLAMA_CAPABILITY_DEFAULTS, where, LOCAL_SERVER_DEFAULTS),
+  ...resolveRemote(target, 'ollama', where, LOCAL_SERVER_DEFAULTS),
 });
 
-const NATIVE_JSON_ONLY_FORM: Record<Exclude<ModelTarget['adapter'], 'managed'>, boolean> = {
-  'chat-completions': true,
-  'open-responses': true,
-  ollama: true,
-  anthropic: false,
-};
-
 const checkJsonMode = (target: ModelTarget, where: string): void => {
-  if (target.adapter === 'managed' || target.capabilities?.jsonMode !== 'json_object' || NATIVE_JSON_ONLY_FORM[target.adapter]) return;
+  const declared = target.capabilities;
+  const jsonMode = declared !== undefined && 'jsonMode' in declared ? declared.jsonMode : undefined;
+  if (jsonMode !== 'json_object' || ADAPTERS[target.adapter].jsonOnlyForm) return;
   throw new ConfigError(`${where}: capabilities.jsonMode is json_object, but the adapter ${target.adapter} has no JSON-only request form; declare jsonMode none or remove it`);
 };
 
@@ -402,7 +381,7 @@ const MANAGED_ONE_MODEL_TEXT = 'a managed server serves one model; list one entr
 
 const checkEntryCount = (connection: ModelConnection, where: string): void => {
   const count = connection.models?.length ?? 0;
-  if (connection.adapter !== 'managed') {
+  if (ADAPTERS[connection.adapter].models === 'many') {
     if (count === 0) throw new ConfigError(`${where}: ${NO_MODELS_TEXT}`);
     return;
   }

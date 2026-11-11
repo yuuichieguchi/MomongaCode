@@ -40,7 +40,7 @@ const setup = async (): Promise<Setup> => {
   const forge = (configured: boolean): ForgeAccess =>
     createForgeAccess({
       descriptors: [descriptor],
-      instances: configured ? [{ id: 'local', descriptor: descriptor.id, host: server.host, apiBaseUrl: 'http://127.0.0.1:9', credential: { env: 'FAKE_FORGE_TOKEN' } }] : [],
+      instances: configured ? [{ id: 'local', descriptor: descriptor.id, hosts: [server.host], apiBaseUrl: 'http://127.0.0.1:9', credential: { env: 'FAKE_FORGE_TOKEN' } }] : [],
       fetch: TEST_FETCH,
       readCredential: async (reference) => {
         credentialReads.push(JSON.stringify(reference));
@@ -97,7 +97,7 @@ describe('a credential is given only for the origin of a declared forge', () => 
     if (descriptor === undefined) throw new Error('no shipped forge descriptor');
     const forge = createForgeAccess({
       descriptors: [descriptor],
-      instances: [{ id: 'local', descriptor: descriptor.id, host, apiBaseUrl: 'http://127.0.0.1:9', credential: { env: 'FAKE_FORGE_TOKEN' } }],
+      instances: [{ id: 'local', descriptor: descriptor.id, hosts: [host], apiBaseUrl: 'http://127.0.0.1:9', credential: { env: 'FAKE_FORGE_TOKEN' } }],
       fetch: TEST_FETCH,
       readCredential: async (reference) => {
         reads.push(JSON.stringify(reference));
@@ -151,7 +151,7 @@ describe('a credential is given only for the origin of a declared forge', () => 
     const reads: string[] = [];
     const forge = createForgeAccess({
       descriptors: [descriptor],
-      instances: [{ id: 'local', descriptor: descriptor.id, host: server.host, apiBaseUrl: 'http://127.0.0.1:9', credential: { env: 'FAKE_FORGE_TOKEN' } }],
+      instances: [{ id: 'local', descriptor: descriptor.id, hosts: [server.host], apiBaseUrl: 'http://127.0.0.1:9', credential: { env: 'FAKE_FORGE_TOKEN' } }],
       fetch: TEST_FETCH,
       readCredential: async (reference) => {
         reads.push(JSON.stringify(reference));

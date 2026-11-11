@@ -34,7 +34,7 @@ describe('the generic runner, for any operation', () => {
     const runner = countingRunner();
     const access = createForgeAccess({
       descriptors: loadForgeDescriptors(),
-      instances: [{ id: 'local', descriptor: 'github', host: forge.host, apiBaseUrl: forge.origin, credential: { env: 'FAKE_FORGE_TOKEN' } }],
+      instances: [{ id: 'local', descriptor: 'github', hosts: [forge.host], apiBaseUrl: forge.origin, credential: { env: 'FAKE_FORGE_TOKEN' } }],
       fetch: TEST_FETCH,
     readCredential: async () => CREDENTIAL,
     });

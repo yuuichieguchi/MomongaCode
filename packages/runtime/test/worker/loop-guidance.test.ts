@@ -1,5 +1,6 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
+import { TOKEN_SETTINGS_OFF } from './fake-settings.ts';
 import { makeEnv } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 
@@ -20,7 +21,7 @@ const isGuidance = (item: Item): boolean => item.type === 'message' && item.role
 
 const guidedEnv = async (options: { cachePrefix?: boolean } = {}) => {
   const env = await makeEnv();
-  env.settings.contextValue = { ...env.settings.contextValue, loopGuidance: true, cachePrefix: options.cachePrefix ?? false };
+  env.settings.contextValue = { ...TOKEN_SETTINGS_OFF, loopGuidance: true, cachePrefix: options.cachePrefix ?? false };
   return env;
 };
 
@@ -155,6 +156,7 @@ describe('loop guidance (T5, context.loopGuidance)', () => {
 
   it('keeps the old rule with guidance off: no warning, and a stop before the t-th call runs', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...env.settings.contextValue, loopGuidance: false };
     env.gateway.script.push(...repeated('c', 'kx7same', 3), textStep('never sent'));
     const run = await env.enqueue('Loop');
 

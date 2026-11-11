@@ -13,7 +13,7 @@ import { createToolHooks, nodeShellHost } from '@momonga/tools';
 import type { HookRunContext } from '@momonga/tools';
 import { launch } from '../../sandbox/src/process.ts';
 import type { LaunchOptions } from '../../sandbox/src/process.ts';
-import { virtualTiming } from '../../foundation/test/support/probe-fakes.ts';
+import { virtualTiming, driveUntil } from '../../foundation/test/support/probe-fakes.ts';
 
 type MarkerGroupApi = { readMarkerGroup(marker: string): Promise<number | undefined> };
 
@@ -109,7 +109,7 @@ const runHook = async (survives: boolean) => {
     () => (done = true),
     () => (done = true),
   );
-  for (let step = 1; !done && step <= 1000; step += 1) await timing.advanceTo(step * KILL_GRACE_MS);
+  await driveUntil(timing, () => done, 1000 * KILL_GRACE_MS, 'the stop to end');
   let failure: unknown;
   try {
     await pending;

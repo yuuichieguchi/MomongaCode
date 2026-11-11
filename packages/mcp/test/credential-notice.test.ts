@@ -1,3 +1,4 @@
+import { nodeFileSystem } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import { createManagedConnection } from '@momonga/mcp';
 import type { McpServerConfig } from '@momonga/config';
@@ -17,7 +18,7 @@ const modernWithEnv = async (env: Record<string, string>) => {
 
 const noticesOfConstruction = (config: McpServerConfig): string[] => {
   const notices: string[] = [];
-  const connection = createManagedConnection({
+  const connection = createManagedConnection({ files: nodeFileSystem,
     clientVersion: '0.0.0-test',
     name: 'remote',
     config,

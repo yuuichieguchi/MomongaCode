@@ -39,10 +39,10 @@ describe('the liveness of a group another process recorded is asked by the name 
     expect(fake.keepers[0]?.args).toEqual(['attach', fake.listened[0], `${KEEPER_JOB_PREFIX}${NAME}`]);
   });
 
-  it('answers by the rule of the port when the marker names no job', async () => {
+  it('answers that the group may still run when the marker names no job and this process did not start the group', async () => {
     const groupPort = createProcessGroupPort('win32', { run: nodeCommandRunner, env: {}, kept: createKeptGroupControl(fakeKeeperHost().host) });
     const marker = markerHolding(`r00000\ng${String(PGID).padStart(10, '0')}\n`);
     const settle = createMarkerSettle({ marker, mode: 'listed', inspector: unusedInspector, groupPort, onWarning: () => undefined });
-    await expect(settle.groupAlive(PGID, new AbortController().signal)).rejects.toThrow(`no job is recorded for process group ${PGID}`);
+    expect(await settle.groupAlive(PGID, new AbortController().signal)).toBe(true);
   });
 });

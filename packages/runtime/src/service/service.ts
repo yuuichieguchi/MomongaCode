@@ -4,7 +4,7 @@ import { getRequestListener } from '@hono/node-server';
 import { SWEEP_INTERVAL_MS, encodeSse, hostPaths, listenUnix, startDeadlineSignal } from '@momonga/foundation';
 import { createMarkerOwners } from '@momonga/tools';
 import type { MarkerOwners } from '@momonga/tools';
-import type { Clock, Redactor, RolePort, KernelLockMechanism } from '@momonga/foundation';
+import type { Clock, FileSystem, Redactor, RolePort, KernelLockMechanism } from '@momonga/foundation';
 import { DAEMON_CURRENT_EVENT } from '@momonga/protocol';
 import type { Capabilities, CostBreakdownView, DaemonCurrentFrame, GatewayCostReportView, RunTraceView } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
@@ -74,7 +74,8 @@ export type RunServiceOptions = {
   mcp: McpAdminPort;
   role: RolePort;
   work: { steps(): number; jobs(): number };
-  ignorableMarkerDirectories: () => Promise<readonly string[]>;
+  ignorableMarkerDirectories: (signal: AbortSignal) => Promise<readonly string[]>;
+  files: FileSystem;
   onRequestEnd?: () => void;
   onError?: (error: unknown) => void;
   onFatal?: (error: Error) => void;
@@ -177,6 +178,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     mcp: options.mcp,
     markerOwners: options.markerOwners ?? createMarkerOwners(),
     ignorableMarkerDirectories: options.ignorableMarkerDirectories,
+    files: options.files,
     onError: report,
   });
   const listener = getRequestListener((request, env) => app.fetch(request, env));

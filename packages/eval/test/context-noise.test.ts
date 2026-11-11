@@ -34,6 +34,7 @@ const host = (
   const releases: (() => void)[] = [];
   let counter = 0;
   const api: EvalRunApi = {
+    costs: async () => [],
     createSession: async () => ({ id: 's' }),
     createRun: async (_session, input) => {
       counter += 1;
@@ -183,6 +184,7 @@ describe('a stopped run in a replay', () => {
   const stopped = (caseId: string): Transcript => ({
     caseId,
     runIndex: 0,
+    costs: [],
     run: { id: `stopped-${caseId}`, status: 'FAILED', step: 0, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } },
     events: [],
     children: [],

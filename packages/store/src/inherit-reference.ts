@@ -8,7 +8,7 @@ import { isFatalStoreError } from './fatal.ts';
 import { foldRunState, initialRunState } from './fold.ts';
 import { ITEM_EVENT_TYPES, itemsOfEvent } from './history-items.ts';
 import type { ItemFacts } from './history-items.ts';
-import { InheritanceError, isReferenceInherited, projectReference, rebaseOntoReference, referenceDigest, retractsTask, signReference } from './inherit.ts';
+import { InheritanceError, compactCommandOf, isReferenceInherited, projectReference, rebaseOntoReference, referenceDigest, retractsTask, signReference } from './inherit.ts';
 import type { InheritanceOutcome, UnaskedCommands } from './inherit.ts';
 import { createRecordWalker } from './record-walk.ts';
 import type { RecordVisit, WalkUnits } from './record-walk.ts';
@@ -152,19 +152,17 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
   const itemRows = db.prepare(
     `SELECT * FROM events INDEXED BY events_by_run_type WHERE run_id = :runId AND type IN (${WALKED_EVENT_TYPES.map((type) => `'${type}'`).join(', ')}) AND seq >= :from AND seq <= :to ORDER BY seq DESC`,
   );
-  const callName = db.prepare("SELECT tool_name FROM events INDEXED BY events_by_run_type WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId ORDER BY seq");
-  const itemFactsOf = (runId: string): ItemFacts => ({
-    providerCallIdOf: (callId) => callId,
-    heldToolNameOf: (callId) => {
-      const row = callName.get({ runId, callId });
-      const name = row?.['tool_name'];
-      if (typeof name !== 'string') throw inconsistent(`run ${runId}: the held call ${callId} has no tool.call record that names its tool`);
-      return name;
-    },
-  });
   const firstTask = db.prepare("SELECT * FROM events WHERE run_id = :runId AND type = 'user.message' AND seq <= :bound ORDER BY seq LIMIT 1");
   const latestCompacted = db.prepare("SELECT * FROM events WHERE run_id = :runId AND type = 'context.compacted' AND seq <= :bound ORDER BY seq DESC LIMIT 1");
   const derived = createDerivedSnapshot(db);
+  const itemFactsOf = (runId: string): ItemFacts => ({
+    providerCallIdOf: (callId) => callId,
+    heldToolNameOf: (callId) => {
+      const call = derived.read((view) => view.toolCallOf(runId, callId));
+      if (call?.type !== 'tool.call') throw inconsistent(`run ${runId}: the held call ${callId} has no tool.call record that names its tool`);
+      return call.name;
+    },
+  });
   const recordedTokens = db.prepare(
     `SELECT json_extract(payload_json, '$.tokens') AS tokens FROM events
      WHERE run_id = :runId AND type = 'context.truncated' AND json_extract(payload_json, '$.callId') = :callId
@@ -538,6 +536,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
     status: run.status,
     ...(run.stopReason === undefined ? {} : { stopReason: knownValue(run.stopReason, `the stop reason of run ${run.id}`) }),
     ...(run.error === undefined ? {} : { errorCode: run.error.code }),
+    ...compactCommandOf(run.pins),
   });
 
   const predecessorOf = (child: Run): Run => {

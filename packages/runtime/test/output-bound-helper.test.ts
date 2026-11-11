@@ -12,7 +12,7 @@ const sourceFiles = (directory: string): string[] =>
   fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(directory, entry.name);
     if (entry.isDirectory()) return sourceFiles(full);
-    return entry.name.endsWith('.ts') || entry.name.endsWith('.tsx') ? [full] : [];
+    return (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) && !entry.name.endsWith('.generated.ts') ? [full] : [];
   });
 
 describe('the runtime sends an output bound through one helper (P2 item 4)', () => {

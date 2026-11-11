@@ -56,6 +56,7 @@ const harness = (script: Script = {}) => {
     log.push(`open ${entry.id}`);
     const cwd = `/w/${entry.id}`;
     const api: EvalRunApi = {
+      costs: async () => [],
       createSession: async (input) => {
         sessions.push(input);
         return { id: `s-${entry.id}` };

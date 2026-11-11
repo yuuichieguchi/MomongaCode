@@ -45,7 +45,6 @@ const makeFifo = (dir: string, name: string): string => {
 
 const runWithin = async (tools: Builtins, name: string, args: unknown, extra: RunExtra, ms: number, onHang: () => void) => {
   const controller = new AbortController();
-  const started = Date.now();
   const running = tools.executor.runBatch(await tools.batch(name, args, { ...extra, signal: controller.signal }));
   let timer: NodeJS.Timeout | undefined;
   const hung = new Promise<'hung'>((resolve) => {
@@ -57,9 +56,9 @@ const runWithin = async (tools: Builtins, name: string, args: unknown, extra: Ru
     controller.abort();
     onHang();
     await running;
-    return { hung: true as const, elapsed: Date.now() - started };
+    return { hung: true as const };
   }
-  return { hung: false as const, elapsed: Date.now() - started, result: resultOf(first[0]) };
+  return { hung: false as const, result: resultOf(first[0]) };
 };
 
 describe('review 1: ripgrep excludes readDenied entries inside the search target', () => {

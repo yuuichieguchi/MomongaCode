@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createMcpPool, createStdioTransport } from '@momonga/mcp';
 import type { StdioTransport, StdioTransportOptions } from '@momonga/mcp';
-import { KILL_CONFIRM_MS, groupAlive, hostProcessGroupPort, terminateGroup } from '@momonga/foundation';
+import { KILL_CONFIRM_MS, groupAlive, hostProcessGroupPort, terminateGroup, nodeFileSystem } from '@momonga/foundation';
 import type { ProcessGroupPort, Timing } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, killGroupsForCleanup, waitFor } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
@@ -63,7 +63,7 @@ const startStubborn = async (mode: 'ignore-stdin' | 'ignore-term', creationGrace
   const timers = createFakeTimers(createFakeClock(1_000_000));
   const timing = recordingTiming(timers);
   const signals: NodeJS.Signals[] = [];
-  const transport = createStdioTransport({
+  const transport = createStdioTransport({ files: nodeFileSystem,
     name: 'stubborn',
     config: { command: process.execPath, args: [STUBBORN_SERVER, mode] },
     projectDir: projectDir(),
@@ -151,7 +151,7 @@ describe('the grace of a close is an argument of that close', () => {
     const timers = createFakeTimers(createFakeClock(1_000_000));
     const real = { now: () => timers.now(), setTimeout: (callback: () => void, ms: number) => setTimeout(callback, ms), clearTimeout: (handle: unknown) => clearTimeout(handle as NodeJS.Timeout) };
     const timing = recordingTiming(real);
-    const pool = createMcpPool({
+    const pool = createMcpPool({ files: nodeFileSystem,
       clientVersion: '0.0.0-test',
       servers: [entry('modern', modernConfig(makeRecordFile()))],
       projectDir: projectDir(),

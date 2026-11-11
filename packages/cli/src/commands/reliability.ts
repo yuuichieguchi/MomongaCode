@@ -5,6 +5,7 @@ import { REPORT_PAGE_ROWS, escapeTerminalLine } from '@momonga/protocol';
 import type { ReportPage, ReportRecomputePage, RunCostView, RunFactsView } from '@momonga/protocol';
 import { aggregate, buildReliabilityReport, costOf, countedRunIdsOf, encodeReliabilityReport, explainOf, formatReliabilityReport, merge, mergeVerifications, verifyFacts, withinPeriod } from '@momonga/reliability';
 import type { Aggregate, FactsVerification, Period, ReliabilityReport, RunGroupKey } from '@momonga/reliability';
+import { recordedCostsOf } from '../client/recorded-costs.ts';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
@@ -24,12 +25,6 @@ export type FactsPages = { reportFacts(request: { cursor: string | null; limit: 
 export type ReportClient = FactsPages & { reportCost(runIds: readonly string[]): Promise<RunCostView[]> };
 
 export type VerifyClient = FactsPages & { reportRecompute(runIds: readonly string[]): Promise<ReportRecomputePage> };
-
-const costsOfRuns = async (client: Pick<ReportClient, 'reportCost'>, runIds: readonly string[]): Promise<RunCostView[]> => {
-  const costs: RunCostView[] = [];
-  for (let start = 0; start < runIds.length; start += REPORT_PAGE_ROWS) costs.push(...(await client.reportCost(runIds.slice(start, start + REPORT_PAGE_ROWS))));
-  return costs;
-};
 
 const aggregateAllPages = async (client: FactsPages, groupBy: RunGroupKey): Promise<Aggregate> => {
   let total = aggregate([], { groupBy });
@@ -53,7 +48,7 @@ type BuiltReport = { report: ReliabilityReport; aggregated: Aggregate };
 const builtReport = async (client: ReportClient, options: Pick<ReliabilityOptions, 'groupBy' | 'days'>, now: number): Promise<BuiltReport> => {
   const period: Period = { days: options.days, fromMs: now - options.days * DAY_MS, toMs: now };
   const aggregated = withinPeriod(await aggregateAllPages(client, options.groupBy), period);
-  const cost = costOf(aggregated, await costsOfRuns(client, countedRunIdsOf(aggregated)));
+  const cost = costOf(aggregated, await recordedCostsOf(client, countedRunIdsOf(aggregated)));
   return { report: buildReliabilityReport({ kind: 'real', aggregate: aggregated, period, cost }), aggregated };
 };
 
