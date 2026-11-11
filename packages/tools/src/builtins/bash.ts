@@ -55,6 +55,27 @@ const requireJobs = (ctx: ReconcileContext): BackgroundJobs => {
   return ctx.jobs;
 };
 
+const withLateChunk = async function* (stream: AsyncIterable<Uint8Array>, late: Promise<Uint8Array | undefined>): AsyncGenerator<Uint8Array> {
+  const chunks = stream[Symbol.asyncIterator]();
+  let awaited: Promise<{ late: Uint8Array | undefined }> | undefined = late.then((chunk) => ({ late: chunk }));
+  let next = chunks.next();
+  for (;;) {
+    const first = await (awaited === undefined ? next : Promise.race([next, awaited]));
+    if ('late' in first) {
+      awaited = undefined;
+      if (first.late !== undefined) yield first.late;
+    } else if (first.done === true) {
+      break;
+    } else {
+      yield first.value;
+      next = chunks.next();
+    }
+  }
+  if (awaited === undefined) return;
+  const last = (await awaited).late;
+  if (last !== undefined) yield last;
+};
+
 const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<ToolResult> => {
   const jobs = requireJobs(ctx);
   const bash = await bashPathFor(ctx.shellHost, ctx.env);
@@ -80,12 +101,18 @@ const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<T
           signal,
           markerFd === undefined ? {} : { markerFd },
         );
-        return {
-          ...child,
-          exited: child.exited.finally(async () => {
+        const settled = child.exited.then(
+          async (exit) => ({ exit, refusals: await network.settle() }),
+          async (error: unknown) => {
             await network.settle();
-          }),
-        };
+            throw error;
+          },
+        );
+        const refusalText = settled.then(
+          ({ refusals }) => (refusals.length === 0 ? undefined : Buffer.from(`${refusals.join('\n')}\n`)),
+          () => undefined,
+        );
+        return { ...child, stderr: withLateChunk(child.stderr, refusalText), exited: settled.then(({ exit }) => exit) };
       },
     }));
   } catch (error) {
