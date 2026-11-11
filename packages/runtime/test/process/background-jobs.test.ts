@@ -13,6 +13,7 @@ import { JOB_END_PROBE_MS } from '../../src/process/constants.ts';
 import { createJobOutput } from '../../src/process/job-output.ts';
 import { createMarkerOwners, unsettledKeys } from '@momonga/tools';
 import { jobGenerationOptions } from './job-fixture.ts';
+import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
 const START_MS = 1_800_000_000_000;
 
@@ -80,7 +81,7 @@ const setup = (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}
   fs.mkdirSync(markerDir);
   const clock = createFakeClock(START_MS);
   const timers = createFakeTimers(clock);
-  const store: RuntimeStore = openRuntimeStore({ path: path.join(root, 'runtime.db'), home: root, clock, leaseMs: 1000, maxAttempts: 5, maxTotalAttempts: 50 });
+  const store: RuntimeStore = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS, path: path.join(root, 'runtime.db'), home: root, clock, leaseMs: 1000, maxAttempts: 5, maxTotalAttempts: 50 });
   const session = store.createSession({ cwd: root, env: {}, permissionMode: 'manual', model: 'fm' });
   const created = store.createRunAndEnqueue(session.id, { input: 'go', timeoutMs: 3_600_000, limits: {}, pins: {} });
   if (created.kind !== 'created') throw new Error('expected a run');

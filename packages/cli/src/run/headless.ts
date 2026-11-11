@@ -1,7 +1,7 @@
 import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_WAITING_FOR_APPROVAL, isRecord } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { TARGET_NOT_READY, agentReadiness, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
-import type { BudgetExhausted, Mandate, MomongaModelEntry, PermissionMode, PublicRunEvent, RunReport, UnknownEffectCall } from '@momonga/protocol';
+import type { BudgetExhausted, Mandate, MomongaModelEntry, PermissionMode, PlanAccountRef, PublicRunEvent, RunReport, UnknownEffectCall } from '@momonga/protocol';
 import { noTargetLines } from '../readiness.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
@@ -61,7 +61,7 @@ export type RunResult = {
   run_id: string;
   status: RunView['status'];
   stop_reason?: string;
-  error?: { code: string; message: string };
+  error?: { code: string; message: string; plan?: PlanAccountRef };
   num_turns: number;
   usage: RunView['usage'];
   cost_usd?: string;

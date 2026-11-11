@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { probeKeyOf } from '@momonga/config';
 import { FM_SERVER } from '@momonga/protocol';
-import { nodeFiles } from '../src/node-ports.ts';
+import { nodeClock, nodeFiles, nodeProcess } from '../src/node-ports.ts';
 import { ContextHostError, OWNER_FILE, ROOT_PREFIX, caseEnvironment, readCredentials } from '../src/eval/context-host.ts';
 import { endpointRecordFileName } from '@momonga/gateway';
 import { copyEndpointProbeRecord, copyProbeRecord, listEvalRoots, nodeContextEffects, readEvalOwner } from '../src/eval/context-effects.ts';
@@ -43,13 +43,13 @@ describe('the homes a sweep may consider', () => {
     fs.mkdirSync(path.join(base, 'unrelated'));
     fs.writeFileSync(path.join(base, `${ROOT_PREFIX}file`), '');
     fs.symlinkSync(own, path.join(base, `${ROOT_PREFIX}link`));
-    expect(await listEvalRoots(base, ownerUid)).toEqual([own]);
+    expect(await listEvalRoots(nodeFiles, base, ownerUid)).toEqual([own]);
   });
 
   it('skips a directory that another user owns', async () => {
     const base = temporary();
     fs.mkdirSync(path.join(base, `${ROOT_PREFIX}theirs`));
-    expect(await listEvalRoots(base, ownerUid + 1)).toEqual([]);
+    expect(await listEvalRoots(nodeFiles, base, ownerUid + 1)).toEqual([]);
   });
 
   it('reads the owner marker of a home, and says nothing when there is none', async () => {
@@ -89,7 +89,7 @@ describe('the homes a sweep may consider', () => {
 });
 
 describe('the timer of a case', () => {
-  const effects = (): ReturnType<typeof nodeContextEffects> => nodeContextEffects({ platform: 'linux', env: {}, home: '/home/person', files: nodeFiles } as unknown as CliPorts);
+  const effects = (): ReturnType<typeof nodeContextEffects> => nodeContextEffects({ platform: 'linux', env: {}, home: '/home/person', files: nodeFiles, clock: nodeClock, process: nodeProcess } as unknown as CliPorts);
 
   it('resolves when the time has passed', async () => {
     await expect(effects().after(1, new AbortController().signal)).resolves.toBeUndefined();
@@ -112,7 +112,7 @@ describe('the timer of a case', () => {
 });
 
 describe('the environment of a session inside a case', () => {
-  const portsWith = (home: string, env: Record<string, string>): CliPorts => ({ platform: 'linux', env, home, files: nodeFiles }) as unknown as CliPorts;
+  const portsWith = (home: string, env: Record<string, string>): CliPorts => ({ platform: 'linux', env, home, files: nodeFiles, process: nodeProcess }) as unknown as CliPorts;
 
   const personEnv = {
     PATH: process.env['PATH'] ?? '/usr/bin',
@@ -227,7 +227,7 @@ describe('the credentials a live run reads with the store of the person', () => 
   ];
 
   const effectsOver = (store: CliPorts['secretStore']): ReturnType<typeof nodeContextEffects> =>
-    nodeContextEffects({ platform: 'linux', env: {}, home: '/home/person', files: nodeFiles, secretStore: store } as unknown as CliPorts);
+    nodeContextEffects({ platform: 'linux', env: {}, home: '/home/person', files: nodeFiles, process: nodeProcess, secretStore: store } as unknown as CliPorts);
 
   it('readCredentials ends at the command limit for all secrets together', async () => {
     useLimitTimers();

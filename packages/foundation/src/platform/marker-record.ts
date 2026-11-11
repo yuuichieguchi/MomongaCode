@@ -118,8 +118,6 @@ export const parseRecordedGroup = (text: string): number | undefined => {
 
 export const parseRecordedGroupName = (text: string): string | undefined => GROUP_FORM.exec(text)?.[2];
 
-export const readMarkerGroupName = async (marker: string, { files = nodeRecordFiles }: { files?: RecordFiles } = {}): Promise<string | undefined> => parseRecordedGroupName(await files.read(marker));
-
 export const readMarkerGroup = async (marker: string, { files = nodeRecordFiles }: { files?: RecordFiles } = {}): Promise<number | undefined> => parseRecordedGroup(await files.read(marker));
 
 export const markIgnored = (marker: string, { files = nodeRecordFiles }: RecordOptions): Promise<void> =>

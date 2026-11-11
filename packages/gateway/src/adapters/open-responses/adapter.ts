@@ -5,7 +5,7 @@ import { unavailableError } from '../../core/unavailable.ts';
 import { resolveToolChoice } from '../../core/tool-choice.ts';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { boundedSseBytes } from '../shared/body-reading.ts';
-import { applyCredentialEffect, sendAuthorized } from '../shared/auth.ts';
+import { afterCredentialEffect, sendAuthorized } from '../shared/auth.ts';
 import { createUpstreamClassifier } from '../shared/classify.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { StreamFailure, UnsupportedInputError, UpstreamProtocolError } from '../shared/failures.ts';
@@ -36,8 +36,10 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
 
   const classify = createUpstreamClassifier(OPEN_RESPONSES_PROVIDER_LABEL, options.errorRules);
 
+  const failedEventError = (error: ResponseError): StreamFailure => new StreamFailure(error.code, error.type ?? 'server_error', error.message);
+
   const classifyFailedEvent = (error: ResponseError): ClassifiedError => {
-    const classified = classify(new StreamFailure(error.code, error.type ?? 'server_error', error.message));
+    const classified = classify(failedEventError(error));
     return error.retryAfterMs === undefined ? classified : { ...classified, retryAfterMs: error.retryAfterMs };
   };
 
@@ -57,6 +59,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
         ledger,
         jsonReply,
         carriesOutputBound: carriesResponsesOutputBound(capabilities),
+        output: capabilities,
         ...(capabilities.systemRole === undefined ? {} : { systemRole: capabilities.systemRole }),
         ...(capabilities.toolPlacement === undefined ? {} : { toolPlacement: capabilities.toolPlacement }),
         ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }),
@@ -84,8 +87,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
       );
       if (response.status !== 200) {
         const failure = await httpErrorOf(response, options.clock, nestedErrorDetail, CHAT_COMPLETIONS_VOCABULARY);
-        await applyCredentialEffect(auth, classify(failure), options.clock, ctx.signal);
-        throw failure;
+        throw await afterCredentialEffect(failure, auth, classify(failure), options.clock, ctx.signal);
       }
 
       watch = watchContent(options.liveness);
@@ -97,7 +99,10 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
           if (message.data === SSE_DONE_MARKER) break;
           for (const event of driver.accept(parseOpenResponsesEvent(message.data))) {
             ctx.signal.throwIfAborted();
-            if (event.type === 'response.failed') await applyCredentialEffect(auth, classifyFailedEvent(event.response.error), options.clock, ctx.signal);
+            if (event.type === 'response.failed') {
+              const failure = await afterCredentialEffect(failedEventError(event.response.error), auth, classifyFailedEvent(event.response.error), options.clock, ctx.signal);
+              if (failure.cause !== undefined) throw failure;
+            }
             yield event;
           }
           if (driver.terminated) return;
@@ -126,14 +131,14 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
     for await (const event of create(summaryRequest, ctx)) {
       const collected = summaryOfTerminal(event, cap);
       if (collected === undefined) continue;
-      const usage = collected.usage ?? estimatedUsage(wireTokensOf(buildResponsesBody(summaryRequest, ctx.reasoningOrigin), capabilities.imageTokens), tokensForText(collected.summary));
+      const usage = collected.usage ?? estimatedUsage(wireTokensOf(buildResponsesBody(summaryRequest, ctx.reasoningOrigin, { carriesOutputBound: carriesResponsesOutputBound(capabilities), output: capabilities }), capabilities.imageTokens), tokensForText(collected.summary));
       return { summary: collected.summary, usage, usageSource: collected.usage === null ? ('estimated' as const) : ('reported' as const) };
     }
     throw new StreamFailure('upstream_protocol_error', 'model_error', 'the upstream ended without a terminal event');
   };
 
   const renderCompactWire = (request: AdapterCompactRequest, _target: AdapterTarget, cap: number, origin: ReasoningOrigin, capabilities: Capabilities): Record<string, unknown> => {
-    const { model: _model, stream: _stream, store: _store, ...wire } = buildResponsesBody(summaryRequestOf(request, cap, origin), origin, { carriesOutputBound: carriesResponsesOutputBound(capabilities) });
+    const { model: _model, stream: _stream, store: _store, ...wire } = buildResponsesBody(summaryRequestOf(request, cap, origin), origin, { carriesOutputBound: carriesResponsesOutputBound(capabilities), output: capabilities });
     return wire;
   };
 

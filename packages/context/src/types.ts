@@ -148,6 +148,7 @@ export type BuildContextPorts = {
   fallbackMeters?: readonly TokenMeter[];
   blobs: BlobPort;
   instructions: InstructionReader;
+  compactionTarget?: () => Promise<Capabilities>;
 };
 
 export type Calibration = { tokenCounting: Capabilities['tokenCounting']; tokenErrorRatio?: number };
@@ -176,6 +177,7 @@ export type BuildContextInput = {
   pinnedTokens?: number;
   toolsFrozen?: true;
   compactNow?: true;
+  compactionFocus?: string;
   compactAt?: number;
   tools?: 'none';
   companions?: { hostOf: Readonly<Record<string, string>>; keepWithoutHost: boolean };
@@ -224,9 +226,17 @@ export type ProtectionLevel = { keepTurns: number; keepSteps: number };
 
 export type PinnedBreakdown = { systemPrompt: number; tools: number; instructions: number; governing: number; task: number };
 
-export type CompactionTokens = { input: number; replaced: number; workingStateGrowth: number };
+export type CompactionTokens = { input: number; replaced: number; workingStateGrowth: number; request: number };
 
-export type CompactionPlan = { throughSeq: number; input: InputItem[]; summaryTokenCap: number; pinnedText: string; notices: ContextNotice[]; tokens: CompactionTokens };
+export type CompactionPlan = {
+  throughSeq: number;
+  input: InputItem[];
+  summaryTokenCap: number;
+  focus?: string;
+  pinnedText: string;
+  notices: ContextNotice[];
+  tokens: CompactionTokens;
+};
 
 export type CompactionBlockReason =
   | 'no_step_boundary_outside_protection'

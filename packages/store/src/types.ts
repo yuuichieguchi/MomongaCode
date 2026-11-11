@@ -4,6 +4,7 @@ import type { Clock, Redactor } from '@momonga/foundation';
 import type { CANCEL_ORIGINS } from './transitions.ts';
 import type { PermissionReviewsStore } from './permission-reviews.ts';
 import type { InheritPlanReply, InheritPlanRequest, InheritedWindowReply, InheritedWindowRequest } from './inherit-reference.ts';
+import type { UnaskedCommands } from './inherit.ts';
 import type {
   CallFootprint,
   BilledDetail,
@@ -699,7 +700,6 @@ export type RuntimeStore = {
   dataVersion(): number;
   createChildRun(input: ChildRunInput): CreateChildRunResult;
   listChildRuns(runId: string): Run[];
-  treeTokens(runId: string): number;
   treeSpend(runId: string): TreeSpend & { runsRead: number };
   admitModelRequest(holder: LeaseFence | SettledRun, ask: AdmissionAsk): Admission | LeaseLost;
   releaseBudget(runId: string): void;
@@ -735,6 +735,7 @@ export type RuntimeStoreOptions = {
   generation?: number;
   onCommit?: (touched: { runId?: string; sessionId: string }[]) => void;
   preparer?: ContributionPreparer;
+  unaskedCommands: UnaskedCommands;
   onDecode?: (rows: number, bytes: number) => void;
   onEncode?: (kind: string, bytes: number) => void;
 };

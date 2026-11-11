@@ -6,7 +6,7 @@ import type { Readable, Stream, Writable } from 'node:stream';
 import { deserializeMessage, serializeMessage, type JSONRPCMessage, type Transport } from '@modelcontextprotocol/client';
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
-import { Deadline, claimRetry, groupTerminationBoundMs, launchGroupLeader, operationSignal, reapMarkedProcesses, recordMarkerGroup, systemTiming, terminateGroup, type DeadlineTiming, type GroupTiming, type GroupLaunch, type RetryKind, type TerminateOutcome } from '@momonga/foundation';
+import { Deadline, claimRetry, groupTerminationBoundMs, launchGroupLeader, operationSignal, reapMarkedProcesses, recordMarkerGroup, systemTiming, terminateGroup, type GroupLaunch, type ReapTiming, type RetryKind, type TerminateOutcome, type Timing } from '@momonga/foundation';
 
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 const STDERR_TAIL_BYTES = 64 * 1024;
@@ -27,8 +27,8 @@ export interface StdioTransportOptions {
   baseEnv: Record<string, string>;
   closeGraceMs?: CloseGrace;
   markers?: McpMarkerOptions;
-  terminate?: (pgid: number, options: { graceMs: number; signal?: AbortSignal; timing?: GroupTiming }) => Promise<TerminateOutcome>;
-  timing?: DeadlineTiming;
+  terminate?: (pgid: number, options: { graceMs: number; signal?: AbortSignal; timing?: Timing }) => Promise<TerminateOutcome>;
+  timing?: Timing;
 }
 
 export interface StdioTransportExit {
@@ -107,8 +107,8 @@ class StdioTransportImpl implements StdioTransport {
   private group: number | undefined;
 
   private readonly options: StdioTransportOptions;
-  private readonly timing: DeadlineTiming;
-  private readonly sleepTiming: GroupTiming;
+  private readonly timing: Timing;
+  private readonly sleepTiming: ReapTiming;
 
   constructor(options: StdioTransportOptions) {
     this.options = options;
@@ -242,7 +242,7 @@ class StdioTransportImpl implements StdioTransport {
         const stopBound = Deadline.after(groupTerminationBoundMs(graceMs), this.timing);
         let terminateFailure: { error: unknown } | undefined;
         try {
-          const outcome = await (this.options.terminate ?? terminateGroup)(group, { graceMs, signal: stopBound.signal, timing: this.sleepTiming });
+          const outcome = await (this.options.terminate ?? terminateGroup)(group, { graceMs, signal: stopBound.signal, timing: this.timing });
           if (outcome !== 'unconfirmed') await this.exitRecordedWithin(stopBound.signal);
         } catch (error) {
           terminateFailure = { error };

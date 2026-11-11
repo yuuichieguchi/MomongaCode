@@ -9,7 +9,7 @@ import { caseSensitiveFs, makeLayout, rulesOf, sshLocation, useZ3 } from './harn
 const z3 = useZ3();
 
 describe('rule-consistency when the last probe of a rule cannot be decided', () => {
-  it('reports unknown, never "matches no input", when only the reach probe is undecided', async () => {
+  it('notes the rule as not decided, never as matching no input, when only the reach probe is undecided', async () => {
     const layout = makeLayout();
     const roots = [layout.project];
     const fileSystem = caseSensitiveFs();
@@ -32,7 +32,7 @@ describe('rule-consistency when the last probe of a rule cannot be decided', () 
       return { status: 'unsat' };
     };
     const baseline = await checkRuleConsistency(context);
-    expect(baseline.verdict.status).toBe('refuted');
+    expect(baseline.verdict.status === 'noted' ? baseline.verdict.ruleNotes.map((note) => note.kind) : []).toEqual(['never-matches']);
 
     const lastCall = calls;
     let seen = 0;
@@ -42,6 +42,6 @@ describe('rule-consistency when the last probe of a rule cannot be decided', () 
     };
     const result = await checkRuleConsistency(context);
 
-    expect(result.verdict.status).toBe('unknown');
+    expect(result.verdict.status === 'noted' ? result.verdict.ruleNotes.map((note) => [note.kind, note.message]) : []).toEqual([['undecided', expect.stringContaining('budget spent at reach')]]);
   });
 });

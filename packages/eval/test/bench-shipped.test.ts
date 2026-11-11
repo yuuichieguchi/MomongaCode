@@ -1,6 +1,9 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { nodeWorkspaceFiles } from '@momonga/eval';
+import type { WorkspaceFiles } from '@momonga/eval';
 import { exported, nodeProbe } from './bench-fixtures.ts';
 import type { WorkspaceProbe } from './bench-fixtures.ts';
 
@@ -40,8 +43,8 @@ describe('the shipped benchmark (3.6, decision 20)', () => {
   });
 
   it('P12: every shipped task fails on its initial repository and passes with its reference', async () => {
-    const validate = exported<(benchmarkFile: string, probe: WorkspaceProbe) => Promise<{ tasks: { id: string; problems: string[] }[] }>>('validateBenchmark');
-    const result = await validate(BENCH_FILE, nodeProbe);
+    const validate = exported<(benchmarkFile: string, ports: { probe: WorkspaceProbe; files: WorkspaceFiles; tmpdir: string }) => Promise<{ tasks: { id: string; problems: string[] }[] }>>('validateBenchmark');
+    const result = await validate(BENCH_FILE, { probe: nodeProbe, files: nodeWorkspaceFiles, tmpdir: os.tmpdir() });
     expect(result.tasks.map((task) => task.id).sort()).toEqual(shipped().tasks.map((task) => task.id).sort());
     expect(result.tasks.filter((task) => task.problems.length > 0)).toEqual([]);
   }, 600_000);

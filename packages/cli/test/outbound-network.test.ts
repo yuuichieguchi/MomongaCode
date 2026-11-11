@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
+import { systemTiming } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { IDENTITY_READ_TIMEOUT_MS } from '@momonga/gateway';
 import { LOCAL_SERVER_CANDIDATES } from '@momonga/protocol';
@@ -27,6 +28,7 @@ const portsWith = (written: string[]): CliPorts => {
   return {
     home,
     env: {},
+    timers: systemTiming,
     files: { ...nodeFiles, exists: async () => false },
     exec: async (file: string) => {
       throw new Error(`this test runs no host program; asked to run ${file}`);

@@ -33,6 +33,7 @@ import type { FakeToolbox } from '../worker/fake-tools.ts';
 import { createFakeTracer } from '../worker/fake-tracer.ts';
 import { capabilitiesFor, createFakeInstructions, diskAgentCatalog, diskSkillsPort, fakeSandbox, inertGovernancePort, inertHistoryPort, testSystemPrompt, unavailableEvidenceRun } from '../worker/harness.ts';
 import { fixedSandboxBindings, fixedTracers } from '@momonga/runtime';
+import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
 export const START_MS = 1_800_000_000_000;
 export const LEASE_MS = 30_000;
@@ -497,7 +498,7 @@ export const openStore = (
   clock: FakeClock,
   extra: { notifier?: Notifier; maxAttempts?: number; preparer?: (dbPath: string, store: () => RuntimeStore) => ContributionPreparer; onDecode?: (rows: number, bytes: number) => void } = {},
 ): RuntimeStore => {
-  const store: RuntimeStore = openRuntimeStore({
+  const store: RuntimeStore = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home: path.dirname(dbPath),
     clock,

@@ -3,7 +3,7 @@ import type { CountTokensResult, InputItem, MessageInputItem, RunEvent, RunEvent
 import { GatewayRequestError } from '@momonga/runtime';
 import { fixtureCompactionContent } from '@momonga/testkit';
 import { budgetFor } from '@momonga/context';
-import { compactionSummaryMessage } from '@momonga/protocol';
+import { SUMMARY_PROMPT_TOKENS, compactionSummaryMessage, summaryInputLimitFor, summaryTokenCapFor, tokensForText } from '@momonga/protocol';
 import { bodyDigest, capabilitiesFor, compactKey, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import type { ScriptStep } from './fake-gateway.ts';
@@ -35,12 +35,12 @@ const compacted = (summary: string, replacedThroughSeq: number): RunEventPayload
   replacedThroughSeq,
 });
 
-const conversation = (sizes: { second?: number; fifth?: number } = {}): RunEventPayload[] => [
+const conversation = (sizes: { second?: number; third?: number; fifth?: number } = {}): RunEventPayload[] => [
   responded(1, 'answer one'),
   { type: 'user.message', text: 'question two' },
   responded(2, `answer two ${'x'.repeat(sizes.second ?? 0)}`),
   { type: 'user.message', text: 'question three' },
-  responded(3, 'answer three'),
+  responded(3, `answer three ${'t'.repeat(sizes.third ?? 0)}`),
   { type: 'user.message', text: 'question four' },
   responded(4, 'answer four'),
   { type: 'user.message', text: 'question five' },
@@ -262,5 +262,50 @@ describe('compaction item rejected by the model stream after recovery (site 3)',
     expect(requests.map((event) => event.step)).toEqual([2, 3]);
     expect((requests[1]!.body as { tool_choice: string }).tool_choice).toBe('none');
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'max_steps' });
+  });
+});
+
+describe('a compaction sent to a role model with a smaller window than the session model', () => {
+  const session = capabilitiesFor(200_000);
+  const role = capabilitiesFor(32_000, { maxOutputTokens: 1024 });
+  const largestSummary = Math.min(summaryTokenCapFor(role), role.maxOutputTokens);
+
+  const refusal = (code: string, message: string): GatewayRequestError => new GatewayRequestError({ status: 400, type: 'invalid_request', code, message });
+
+  const seeded = async () => {
+    const env = await makeEnv({ capabilities: session });
+    env.gateway.roles = { compaction: 'cheap' };
+    env.gateway.capabilitiesByModel['cheap'] = role;
+    const run = env.enqueue('question one');
+    await env.seed(run.id, conversation({ second: 60_000, third: 660_000 }), 'release');
+    env.gateway.compactHook = async (request) => {
+      const cap = request.momonga?.max_summary_tokens ?? largestSummary;
+      if (cap > largestSummary) throw refusal('invalid_summary_cap', 'the summary cap exceeds the largest summary the model accepts');
+      const transcript = (request.input as InputItem[]).reduce((sum, item) => sum + tokensForText(JSON.stringify(item)), 0);
+      if (transcript + SUMMARY_PROMPT_TOKENS > summaryInputLimitFor(role, cap, 0)) throw refusal('compaction_input_too_large', 'the conversation to summarise does not fit the context window of any target');
+    };
+    env.gateway.script.push(textStep('Done.'));
+    return { env, run };
+  };
+
+  it('plans the summary cap and the region for the role model, so the gateway refuses nothing and the model writes the summary', async () => {
+    const { env, run } = await seeded();
+
+    expect(await env.runOnce(env.worker())).toBe('yielded');
+
+    expect(env.ofType(run.id, 'notice').filter((notice) => notice.code === 'compaction_failed').map((notice) => notice.message)).toEqual([]);
+    expect(env.gateway.compacts).toHaveLength(1);
+    expect(env.gateway.compacts[0]?.request.model).toBe('cheap');
+    expect(env.gateway.compacts[0]?.request.momonga?.max_summary_tokens).toBeLessThanOrEqual(largestSummary);
+    expect(env.ofType(run.id, 'context.compacted').map((event) => event.source)).toEqual(['model']);
+    expect(env.run(run.id).status).toBe('COMPLETED');
+  });
+
+  it('asks the gateway for the capabilities of the role model once in the claim', async () => {
+    const { env } = await seeded();
+
+    expect(await env.runOnce(env.worker())).toBe('yielded');
+
+    expect(env.gateway.capabilitiesCalls.filter((call) => call.model === 'cheap')).toHaveLength(1);
   });
 });

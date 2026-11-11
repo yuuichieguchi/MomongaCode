@@ -2,8 +2,9 @@ import { editModelsSettings } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
 import { isRecord } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { PLAN_ACCOUNT_NOT_SELECTABLE_CODE } from '@momonga/protocol';
+import { PLAN_ACCOUNT_NOT_SELECTABLE_CODE, PLAN_LABEL_REFUSAL, isPlanLabel, RETRY_OUTCOME } from '@momonga/protocol';
 import type {
+  NamedPlanAccountRef,
   PlanAccountRef,
   PlanAccountView,
   PlanAccountsResponse,
@@ -23,12 +24,12 @@ import { limitFailureOf } from './request-limit.ts';
 import type { AccountView } from './auth-source.ts';
 import { NO_REPORTED_WINDOW } from './catalog.ts';
 import type { PlanCatalog } from './catalog.ts';
-import { PLAN_LABEL_PATTERN, isPlanLabel } from './label.ts';
+import { ownEntry } from './own-entry.ts';
 import { PlanAccountNotSelectableError } from './session.ts';
 import type { PlanSessions } from './session.ts';
 import type { PlanSignIn } from './signin.ts';
 
-export type PlanTargetRef = { name: string; profile: string; account?: string };
+export type PlanTargetRef = PlanAccountRef & { name: string };
 
 export type PlanApi = {
   accounts(targets: readonly PlanTargetRef[], signal: AbortSignal): Promise<PlanAccountsResponse>;
@@ -60,11 +61,11 @@ const stringField = (body: unknown, name: string): string => {
 };
 
 const accountLabelOf = (value: string): string => {
-  if (!isPlanLabel(value)) throw invalidRequest('invalid_account_label', `the account label must match ${PLAN_LABEL_PATTERN}`, 'account');
+  if (!isPlanLabel(value)) throw invalidRequest('invalid_account_label', PLAN_LABEL_REFUSAL, 'account');
   return value;
 };
 
-const accountRefOf = (body: unknown): PlanAccountRef => ({ profile: stringField(body, 'profile'), account: accountLabelOf(stringField(body, 'account')) });
+const accountRefOf = (body: unknown): NamedPlanAccountRef => ({ profile: stringField(body, 'profile'), account: accountLabelOf(stringField(body, 'account')) });
 
 const optionalBoolean = (body: unknown, name: string): boolean | undefined => {
   const value = isRecord(body) ? body[name] : undefined;
@@ -98,7 +99,7 @@ const translated = async <T>(work: () => Promise<T>): Promise<T> => {
   }
 };
 
-export const accountViewOf = (ref: PlanAccountRef, view: AccountView, active: boolean, pinnedBy: readonly string[], nowMs: number): PlanAccountView | undefined => {
+export const accountViewOf = (ref: NamedPlanAccountRef, view: AccountView, active: boolean, pinnedBy: readonly string[], nowMs: number): PlanAccountView | undefined => {
   const status = statusOf(view, nowMs);
   if (status.state === 'absent') return undefined;
   const email = view.kind === 'record' ? view.record.email : undefined;
@@ -118,7 +119,7 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
   const { sessions } = options;
 
   const profileOf = (id: string): PlanProfile => {
-    const profile = Object.hasOwn(options.profiles, id) ? options.profiles[id] : undefined;
+    const profile = ownEntry(options.profiles, id);
     if (profile === undefined) throw invalidRequest('plan_profile_unknown', `no plan profile is named ${JSON.stringify(id)}`, 'profile');
     return profile;
   };
@@ -131,9 +132,9 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
       }),
     );
 
-  const pinnedBy = (ref: PlanAccountRef, targets: readonly PlanTargetRef[]): string[] => targets.filter((target) => target.profile === ref.profile && target.account === ref.account).map((target) => target.name);
+  const pinnedBy = (ref: NamedPlanAccountRef, targets: readonly PlanTargetRef[]): string[] => targets.filter((target) => target.profile === ref.profile && target.account === ref.account).map((target) => target.name);
 
-  const viewNamed = async (ref: PlanAccountRef, targets: readonly PlanTargetRef[], signal: AbortSignal): Promise<PlanAccountView> => {
+  const viewNamed = async (ref: NamedPlanAccountRef, targets: readonly PlanTargetRef[], signal: AbortSignal): Promise<PlanAccountView> => {
     const active = activeLabels();
     await sessions.load(ref, signal);
     const found = (await sessions.known(signal)).find((entry) => entry.profile === ref.profile && entry.account === ref.account);
@@ -144,7 +145,7 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
 
   const accounts = async (targets: readonly PlanTargetRef[], signal: AbortSignal): Promise<PlanAccountsResponse> => {
     const active = activeLabels();
-    const referenced: PlanAccountRef[] = [
+    const referenced: NamedPlanAccountRef[] = [
       ...[...active].map(([profile, account]) => ({ profile, account })),
       ...targets.flatMap((target) => (target.account === undefined ? [] : [{ profile: target.profile, account: target.account }])),
     ];
@@ -189,7 +190,8 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
     translated(async () => {
       const ref = await signedInRef(stringField(body, 'profile'), account, signal);
       const slug = stringField(body, 'slug');
-      const entry = (await options.catalog.record(ref.profile.id, account, signal))?.models[slug];
+      const record = await options.catalog.record(ref.profile.id, account, signal);
+      const entry = record === undefined ? undefined : ownEntry(record.models, slug);
       if (entry === undefined) throw notFound('plan_model_unknown', `the ${ref.profile.messages.identityLabel} model list of ${account} has no model ${JSON.stringify(slug)}; momonga models catalog lists them`, 'slug');
       if ('unreported' in entry) throw invalidRequest('plan_model_unusable', `the model ${slug} cannot be added: ${NO_REPORTED_WINDOW}`, 'slug');
       return { model: await addedModelOf(ref.profile.id, slug, signal) };
@@ -214,7 +216,7 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
     complete: (body, targets, signal) =>
       translated(async () => {
         const end = await options.signIn.complete(stringField(body, 'attemptId'), stringField(body, 'callbackUrl'), signal);
-        if (end.outcome === 'retry') return end;
+        if (end.outcome === RETRY_OUTCOME) return end;
         return { outcome: end.outcome, account: await viewNamed(end.ref, targets, signal), firstSignIn: end.firstSignIn };
       }),
     cancel: (body) => ({ cancelled: options.signIn.cancel(stringField(body, 'attemptId')) }),

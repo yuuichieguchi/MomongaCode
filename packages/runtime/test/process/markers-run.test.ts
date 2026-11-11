@@ -9,6 +9,7 @@ import type { CleanupContext } from '@momonga/testkit';
 import { START_MS, createRun, createSession, trackGroup, writeUserSettings } from './helpers.ts';
 import { RUNTIME_VERSION, captureStream, failureOf, hookLogger, isLockFree, launchRuntime, modelSettings, prepareStack, readDb, startRuntimeProcess, stepsLogged, prepareGeneration, scopedPaths } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
+import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -60,7 +61,7 @@ const spawnHolder = (marker: string, content?: (pid: number) => string): number 
 
 const seedStore = async (temp: RunHome, seed: (store: ReturnType<typeof openRuntimeStore>) => void): Promise<void> => {
   await prepareGeneration(temp);
-  const store = openRuntimeStore({ path: temp.paths.databases.runtime, home: temp.home, clock: createFakeClock(SEED_MS), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
+  const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock: createFakeClock(SEED_MS), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
   try {
     seed(store);
   } finally {
@@ -199,7 +200,7 @@ type Seeded = { runId: string; pgid: number; lastClaimAt: number };
 const seedTakenOverRun = async (context: CleanupContext, temp: RunHome, deadLetterInSeed: boolean): Promise<Seeded> => {
   await prepareGeneration(temp);
   const clock = createFakeClock(SEED_MS);
-  const store = openRuntimeStore({ path: temp.paths.databases.runtime, home: temp.home, clock, leaseMs: LEASE_MS, maxAttempts: MAX_ATTEMPTS, maxTotalAttempts: 20 });
+  const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock, leaseMs: LEASE_MS, maxAttempts: MAX_ATTEMPTS, maxTotalAttempts: 20 });
   try {
     const session = createSession(store, temp.project);
     const runId = createRun(store, session.id);

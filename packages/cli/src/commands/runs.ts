@@ -38,7 +38,7 @@ export const attachRun = async (ports: CliPorts, paths: MomongaPaths, options: A
 
 export const cancelRun = async (ports: CliPorts, paths: MomongaPaths, runId: string | undefined): Promise<number> => {
   await ensureCurrentDaemon(ports, paths);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   try {
     const target = runId ?? (await activeRunIdOf(client, ports.cwd));
     const { status, run } = await client.cancel(target);
@@ -60,7 +60,7 @@ export const approvalLine = (depth: number, approvalId: string, title: string): 
 
 export const approve = async (ports: CliPorts, paths: MomongaPaths, approvalId: string | undefined, option: string | undefined): Promise<number> => {
   await ensureCurrentDaemon(ports, paths);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   try {
     if (approvalId === undefined) {
       const runId = await activeRunIdOf(client, ports.cwd);
@@ -99,7 +99,7 @@ const runLine = ({ run, depth }: { run: RunView; depth: number }): string =>
 
 export const showStatus = async (ports: CliPorts, paths: MomongaPaths, runId: string | undefined, json: boolean): Promise<number> => {
   await ensureCurrentDaemon(ports, paths);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   try {
     const tree = await runTreeOf(client, runId ?? (await latestRunIdOf(client, ports.cwd)));
     const pending = await Promise.all(

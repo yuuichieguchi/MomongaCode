@@ -17,7 +17,7 @@ const LIVE = { signal: new AbortController().signal };
 const portOf = (kept: KeptGroupControl): ProcessGroupPort => createProcessGroupPort('win32', { run: nodeCommandRunner, env: {}, kept });
 
 const opened = (fake: FakeKeeperHost, kept: KeptGroupControl, marker?: string) =>
-  kept.open({ command: { file: 'cmd.exe', args: ['/c', 'echo'] }, marker, start: (executable, args) => ({ ...fake.start(executable, args), pid: KEEPER_PID }) });
+  kept.open({ command: { file: 'cmd.exe', args: ['/c', 'echo'] }, marker, descriptors: [], start: (executable, args) => ({ ...fake.start(executable, args), pid: KEEPER_PID }) });
 
 const launchThen =
   (members: () => readonly number[], rest: (keeper: FakeKeeper, index: number) => void = () => undefined) =>
@@ -60,7 +60,7 @@ describe('a group launched through the keeper is the group of the keeper pid', (
     expect(args[2]).toMatch(/^Local\\momonga-[0-9a-f]{32}$/);
     expect(args[3]).toBe('terminate');
     expect(args[4]).toBe(Buffer.from('C:\\m\\marker', 'utf8').toString('hex'));
-    expect(args.slice(5)).toEqual(['--', 'cmd.exe', '/c', 'echo']);
+    expect(args.slice(5)).toEqual(['-', '--', 'cmd.exe', '/c', 'echo']);
     expect(`${KEEPER_JOB_PREFIX}${kept.nameOf(KEEPER_PID)}`).toBe(args[2]);
   });
 

@@ -21,7 +21,10 @@ const BORN_IN_JOB_TIMEOUT_MS = 1_800_000;
 const JOB_PREFIX = 'Local\\momonga-';
 const LONG_SLEEP = 'setInterval(() => undefined, 1000);';
 
-type Started = KeeperRun & { pid: number; output(): string };
+type Started = KeeperRun & { pid: number; output(): string; received(slot: number): string };
+
+const STANDARD_STDIO = ['ignore', 'pipe', 'pipe'] as const;
+const LIFELINE_SLOT = 3;
 
 const bounded = (): AbortSignal => AbortSignal.timeout(WAIT_MS);
 
@@ -56,15 +59,26 @@ describe.runIf(process.platform === 'win32')('the keeper on a Windows host', () 
     createNodeKeeperHost({ executable: () => keeper, random: { hex: (bytes) => names.shift() ?? systemRandom.hex(bytes) }, env: process.env });
 
   const startThrough =
-    (wrapper: string | undefined) =>
+    (wrapper: string | undefined, extraSlots: readonly 'pipe'[] = []) =>
     (executable: string, args: readonly string[]): Started => {
-      const child = spawn(wrapper ?? executable, wrapper === undefined ? [...args] : [executable, ...args], { detached: true, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      const child = spawn(wrapper ?? executable, wrapper === undefined ? [...args] : [executable, ...args], { detached: true, windowsHide: true, stdio: [...STANDARD_STDIO, ...extraSlots] });
       let output = '';
-      child.stdout.on('data', (chunk: Buffer) => (output += chunk.toString('utf8')));
-      child.stderr.on('data', (chunk: Buffer) => (output += chunk.toString('utf8')));
+      const received = new Map<number, string>();
+      child.stdout?.on('data', (chunk: Buffer) => (output += chunk.toString('utf8')));
+      child.stderr?.on('data', (chunk: Buffer) => (output += chunk.toString('utf8')));
+      extraSlots.forEach((_, index) => {
+        const slot = STANDARD_STDIO.length + index;
+        received.set(slot, '');
+        child.stdio[slot]?.on('data', (chunk: Buffer) => received.set(slot, `${received.get(slot)}${chunk.toString('utf8')}`));
+      });
       return {
         pid: child.pid as number,
         output: () => output,
+        received: (slot) => {
+          const text = received.get(slot);
+          if (text === undefined) throw new Error(`the keeper was started with no pipe at slot ${slot}`);
+          return text;
+        },
         exited: new Promise<number | undefined>((resolve, reject) => {
           child.once('error', reject);
           child.once('exit', (code) => resolve(code ?? undefined));
@@ -72,8 +86,18 @@ describe.runIf(process.platform === 'win32')('the keeper on a Windows host', () 
       };
     };
 
-  const launch = async (command: KeptCommand, options: { host?: KeeperHost; marker?: string; wrapper?: string } = {}): Promise<KeptLaunch<Started>> => {
-    const launched = await launchKept(options.host ?? hostWith(), { command, onOwnerLoss: 'terminate', marker: options.marker, start: startThrough(options.wrapper), signal: bounded() });
+  const launch = async (
+    command: KeptCommand,
+    options: { host?: KeeperHost; marker?: string; wrapper?: string; descriptors?: readonly number[]; extraSlots?: readonly 'pipe'[] } = {},
+  ): Promise<KeptLaunch<Started>> => {
+    const launched = await launchKept(options.host ?? hostWith(), {
+      command,
+      onOwnerLoss: 'terminate',
+      marker: options.marker,
+      descriptors: options.descriptors ?? [],
+      start: startThrough(options.wrapper, options.extraSlots),
+      signal: bounded(),
+    });
     if (launched.kind === 'started') groups.push(launched.group);
     return launched;
   };
@@ -126,6 +150,15 @@ describe.runIf(process.platform === 'win32')('the keeper on a Windows host', () 
       groupPort: createJobGroupPort(createKeptGroupControl(hostWith())),
       ...extra,
     });
+
+  it('T-JO-8: a descriptor the launch names reaches the command at its number, and one the keeper was not given fails the launch', async () => {
+    const writesToLifeline = `const lifeline = new (require('node:net').Socket)({ fd: ${LIFELINE_SLOT} }); lifeline.end('reached');`;
+    const launched = await launch(node(writesToLifeline), { descriptors: [LIFELINE_SLOT], extraSlots: ['pipe'] });
+    if (launched.kind !== 'started') throw new Error(`the keeper refused: ${launched.reason} (${launched.systemError})`);
+    await eventually(() => launched.process.received(LIFELINE_SLOT) === 'reached', `the command wrote to descriptor ${LIFELINE_SLOT}: ${launched.process.output()}`);
+    const withoutThePipe = await launch(node(writesToLifeline), { descriptors: [LIFELINE_SLOT] });
+    expect(withoutThePipe).toMatchObject({ kind: 'refused', reason: 'launch-failed' });
+  });
 
   it('T-JO-1: a command starts an intermediate that starts a grandchild and exits at once; stopping the command leaves no grandchild', async () => {
     const pidFile = path.join(root, 'jo1.pid');

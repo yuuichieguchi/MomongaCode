@@ -1,5 +1,5 @@
 import { canonicalJson, sha256Hex, uuidv7 } from '@momonga/foundation';
-import { COMPACTION_ROLE, LOWEST_REASONING_EFFORT, MOMONGA_REQUEST_FIELDS, outputTokensFor, summaryInputLimitFor, summaryTokenCapFor, wireUsageOf } from '@momonga/protocol';
+import { COMPACTION_ROLE, LOWEST_REASONING_EFFORT, MOMONGA_REQUEST_FIELDS, largestSummaryCapFor, outputTokensFor, summaryInputLimitFor, wireUsageOf } from '@momonga/protocol';
 import type {
   AdapterCompactRequest,
   Capabilities,
@@ -31,6 +31,7 @@ import { adapterTargetOf } from './router.ts';
 import type { Narrowed, TargetRuntime } from './router.ts';
 import { CandidateDropped, CandidateRefused, REFUSAL_STAGES, UnprobedTarget } from './candidate-refusal.ts';
 import type { Refusal } from './candidate-refusal.ts';
+import type { SharedWorkHold, WorkRegistry } from './run.ts';
 import { withPinnedServices } from './services.ts';
 import type { GatewayServices, Services } from './services.ts';
 import type { UnknownFields } from './unknown-fields.ts';
@@ -49,7 +50,6 @@ export type UnaryService = {
   ): Promise<CompactResource>;
   cancel(idempotencyKeyHeader: string | undefined): boolean;
   abortAll(reason: unknown): void;
-  settled(): Promise<void>;
   activeCount(): number;
 };
 
@@ -60,6 +60,7 @@ type InflightCompaction = {
   subscribers: number;
   detachTimer: unknown;
   settled: boolean;
+  work: SharedWorkHold;
 };
 
 const identifier = (services: Services, prefix: string): string => `${prefix}_${uuidv7(services.clock).replaceAll('-', '')}`;
@@ -265,7 +266,7 @@ const compactOnce = async (
     error: invalidRequest('compaction_input_too_large', 'the conversation to summarise does not fit the context window of any target', 'input'),
   };
   const capFor = (capabilities: Capabilities): number =>
-    request.momonga?.max_summary_tokens ?? Math.min(summaryTokenCapFor(capabilities), capabilities.maxOutputTokens);
+    request.momonga?.max_summary_tokens ?? largestSummaryCapFor(capabilities);
   const wireFor = (target: TargetRuntime, capabilities: Capabilities, cap: number): Record<string, unknown> | undefined => {
     const renderCompactWire = target.adapter.renderCompactWire;
     if (renderCompactWire === undefined) return undefined;
@@ -384,7 +385,7 @@ const compactOnce = async (
   };
 };
 
-export const createUnaryService = (services: GatewayServices, validator: RequestValidator): UnaryService => {
+export const createUnaryService = (services: GatewayServices, validator: RequestValidator, inFlight: WorkRegistry, admitNewCall: () => void): UnaryService => {
   const inflight = new Map<string, InflightCompaction>();
   const active = new Set<InflightCompaction>();
 
@@ -396,11 +397,13 @@ export const createUnaryService = (services: GatewayServices, validator: Request
 
   const attach = (entry: InflightCompaction): void => {
     entry.subscribers += 1;
+    entry.work.subscribers(entry.subscribers);
     clearDetachTimer(entry);
   };
 
   const detach = (entry: InflightCompaction): void => {
     entry.subscribers -= 1;
+    entry.work.subscribers(entry.subscribers);
     if (entry.subscribers > 0 || entry.settled || entry.controller.signal.aborted || entry.detachTimer !== undefined) return;
     entry.detachTimer = services.timers.setTimeout(() => {
       entry.detachTimer = undefined;
@@ -447,7 +450,7 @@ export const createUnaryService = (services: GatewayServices, validator: Request
     const request = validator.parseCompact(rawBody);
     const unknownFields = validator.unknownCompactFields(rawBody);
     const deadlineAt = parseDeadlineHeader(deadlineHeader, services.clock.now());
-    const digest = sha256Hex(canonicalJson(request));
+    const digest = sha256Hex(canonicalJson(request.momonga === undefined ? request : { ...request, momonga: withoutCeiling(request.momonga) }));
     const running = inflight.get(key);
     if (running !== undefined) {
       if (running.digest !== digest) throw reusedError(key);
@@ -459,6 +462,7 @@ export const createUnaryService = (services: GatewayServices, validator: Request
       else if (stored.digest !== digest) throw reusedError(key);
       else return Promise.resolve(stored.resource);
     }
+    admitNewCall();
     const controller = new AbortController();
     const entry: InflightCompaction = {
       digest,
@@ -466,6 +470,7 @@ export const createUnaryService = (services: GatewayServices, validator: Request
       subscribers: 0,
       detachTimer: undefined,
       settled: false,
+      work: inFlight.beginWork(),
       promise: Promise.resolve().then(async () => {
         try {
           const resource = await withPinnedServices(services, controller.signal, (pinned) => compactOnce(pinned, request, unknownFields, controller.signal, deadlineAt, trace));
@@ -475,6 +480,7 @@ export const createUnaryService = (services: GatewayServices, validator: Request
           return resource;
         } finally {
           entry.settled = true;
+          entry.work.end();
           clearDetachTimer(entry);
           active.delete(entry);
           if (inflight.get(key) === entry) inflight.delete(key);
@@ -494,10 +500,14 @@ export const createUnaryService = (services: GatewayServices, validator: Request
   };
 
   return {
-    countTokens: (rawBody, signal, deadlineHeader) => withPinnedServices(services, signal, (pinned) => countTokens(pinned, validator, rawBody, signal, deadlineHeader)),
+    countTokens: (rawBody, signal, deadlineHeader) => {
+      admitNewCall();
+      return withPinnedServices(services, signal, (pinned) => countTokens(pinned, validator, rawBody, signal, deadlineHeader));
+    },
     compact: (rawBody, signal, deadlineHeader, idempotencyKeyHeader, trace) => {
       const key = parseIdempotencyKey(idempotencyKeyHeader);
       if (key !== undefined) return compactKeyed(rawBody, key, signal, deadlineHeader, trace);
+      admitNewCall();
       const request = validator.parseCompact(rawBody);
       const unknownFields = validator.unknownCompactFields(rawBody);
       const deadlineAt = parseDeadlineHeader(deadlineHeader, services.clock.now());
@@ -515,9 +525,6 @@ export const createUnaryService = (services: GatewayServices, validator: Request
     },
     abortAll: (reason) => {
       for (const entry of active) entry.controller.abort(reason);
-    },
-    settled: async () => {
-      await Promise.all([...active].map((entry) => entry.promise.then(() => undefined, () => undefined)));
     },
     activeCount: () => active.size,
   };

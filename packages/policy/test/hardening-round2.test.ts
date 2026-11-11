@@ -38,6 +38,16 @@ const deniesEverywhere = async (command: string, deny: string[]): Promise<void> 
   expect(await kind(command, { deny, mode: 'bypassPermissions' })).toBe('deny');
 };
 
+const personDecidesOrNobodyRuns = async (command: string, deny: string[]): Promise<void> => {
+  const asked = await decision(command, { deny, allow: ['Bash'] });
+  expect(asked).toMatchObject({ kind: 'ask', humanOnly: true });
+  expect(asked.rule).toBeUndefined();
+  const unasked = await decision(command, { deny, mode: 'bypassPermissions' });
+  expect(unasked.kind).toBe('deny');
+  expect(unasked.rule).toBeUndefined();
+  expect(unasked.reason).toContain('could not be analysed');
+};
+
 describe('F1: wrapper option values are not the effective command', () => {
   it.each([
     'env -u echo rm -rf x',
@@ -62,9 +72,9 @@ describe('F1: wrapper option values are not the effective command', () => {
   });
 
   it.each(['sudo --frobnicate rm x', 'env --frobnicate rm x', 'timeout --frobnicate 5 rm x', 'xargs -Z rm x'])(
-    'an unknown wrapper option makes %j unanalysable and therefore denied',
+    'an unknown wrapper option makes %j unanalysable: a person decides, and it is denied where nobody is asked',
     async (command) => {
-      await deniesEverywhere(command, ['Bash(rm:*)']);
+      await personDecidesOrNobodyRuns(command, ['Bash(rm:*)']);
     },
   );
 
@@ -85,7 +95,7 @@ describe('F2: env -S carries a command line payload', () => {
   );
 
   it('treats a non-literal env -S payload as unanalysable', async () => {
-    await deniesEverywhere('env -S "$PAYLOAD"', ['Bash(rm:*)']);
+    await personDecidesOrNobodyRuns('env -S "$PAYLOAD"', ['Bash(rm:*)']);
   });
 });
 
@@ -262,8 +272,8 @@ describe('F6: readers and interpreters', () => {
     "awk '{print | \"sh\"}'",
     'awk -f prog.awk',
     'echo x | python3',
-  ])('interpreter payload %j is unanalysable and denied by Bash(rm:*)', async (command) => {
-    await deniesEverywhere(command, ['Bash(rm:*)']);
+  ])('interpreter payload %j is unanalysable under Bash(rm:*): a person decides, and it is denied where nobody is asked', async (command) => {
+    await personDecidesOrNobodyRuns(command, ['Bash(rm:*)']);
   });
 
   it.each(['python3 script.py', 'node app.js', 'awk "{print 1}" file', 'python3 -m pytest'])('%j is not denied', async (command) => {

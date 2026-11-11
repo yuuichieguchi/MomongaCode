@@ -1,5 +1,5 @@
 import type { StreamEvent } from '@momonga/protocol';
-import { StreamFailure, UpstreamProtocolError } from '../shared/failures.ts';
+import { MalformedOutputError, StreamFailure, UpstreamProtocolError } from '../shared/failures.ts';
 import { MAX_TOOL_CALLS } from '../shared/limits.ts';
 import type { ResponseEmitter } from '../shared/response-emitter.ts';
 import type { OpenResponsesStreamEvent, UpstreamItem, UpstreamTerminal } from './events.ts';
@@ -32,7 +32,7 @@ export class OpenResponsesStreamDriver {
     try {
       this.apply(event);
     } catch (error) {
-      if (!this.started || !(error instanceof UpstreamProtocolError)) throw error;
+      if (!this.started || !(error instanceof UpstreamProtocolError || error instanceof MalformedOutputError)) throw error;
       this.emitter.fail(error.code, error.errorType, error.message);
     }
     return this.emitter.take();

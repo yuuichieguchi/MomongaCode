@@ -66,6 +66,17 @@ describe('an error names the account of the part that served the request (P-PLAN
     }
   });
 
+  it('a target that serves the active account while none is active names its profile alone', async () => {
+    const gateway = await startPlanGateway({ pinned: false });
+    try {
+      const answered = await ask(gateway);
+      expect(answered.body.error.code).toBe('sign_in_required');
+      expect(answered.body.error.plan).toEqual({ profile: PROFILE_ID });
+    } finally {
+      await gateway.close();
+    }
+  });
+
   it('an adapter names its served account before any create', async () => {
     const adapter = await planAdapter(() => fakeAuth());
     expect(adapter.servedAccount?.({ name: 'plan', display: 'plan', model: 'plan-model' })).toEqual(RESOLVED_ACCOUNT);

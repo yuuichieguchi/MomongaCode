@@ -5,7 +5,7 @@ import path from 'node:path';
 import { onTestFinished } from 'vitest';
 import { GATEWAY_CONFIG_DEFAULTS, UPSTREAM_LIVENESS_DEFAULTS, createChatCompletionsAdapter, createGateway, unauthenticatedSource } from '@momonga/gateway';
 import type { FakeClock, FakeScriptedReply } from '@momonga/testkit';
-import { startFakeChatCompletions } from '@momonga/testkit';
+import { hostTimers, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import type { GatewayClient } from '../../src/gateway-client.ts';
@@ -32,6 +32,7 @@ export const BREAKER_STAYS_CLOSED_SO_EVERY_REQUEUED_ATTEMPT_REACHES_THE_ONE_TARG
 export const startRealGateway = async (options: { clock: FakeClock; idleTimeoutMs: number; script: FakeScriptedReply[] }): Promise<RealGateway> => {
   const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ka-'));
   fs.chmodSync(dir, 0o700);
+  fs.mkdirSync(path.join(dir, 'state'), { mode: 0o700 });
   const upstream = await startFakeChatCompletions({ scenario: 'tools-ok', script: options.script });
   const capabilities = capabilitiesFor(100_000);
   const adapter = createChatCompletionsAdapter({ authSource: unauthenticatedSource,
@@ -39,7 +40,7 @@ export const startRealGateway = async (options: { clock: FakeClock; idleTimeoutM
     capabilities: async () => capabilities,
     schemaDialect: () => capabilities.schemaDialect,
     clock: options.clock,
-    liveness: { ...UPSTREAM_LIVENESS_DEFAULTS, idleTimeoutMs: options.idleTimeoutMs },
+    liveness: { ...UPSTREAM_LIVENESS_DEFAULTS, idleTimeoutMs: options.idleTimeoutMs, timers: hostTimers },
   });
   const socketPath = path.join(dir, 'gw.sock');
   const gateway = await createGateway({
@@ -56,7 +57,8 @@ export const startRealGateway = async (options: { clock: FakeClock; idleTimeoutM
     adapters: { [TARGET]: adapter },
     credentials: [],
     clock: options.clock,
-    timers: { setTimeout: (callback, ms) => setTimeout(callback, ms), clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout) },
+    timers: hostTimers,
+    pid: process.pid,
     dbPath: path.join(dir, 'state', 'gateway.db'),
     hmacKey: Buffer.from('momonga-test-hmac-key-0001-padded-to-32-bytes', 'utf8'),
     socketPath,

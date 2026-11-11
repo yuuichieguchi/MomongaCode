@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { systemTiming } from '@momonga/foundation';
 import type { OutboundNetwork } from '@momonga/foundation';
 import type { CliPorts } from '../src/ports.ts';
 
@@ -32,6 +33,7 @@ const ports = (): CliPorts => {
   return {
     home,
     env: {},
+    timers: systemTiming,
     files: { readTextFile: () => Promise.reject(new Error('no file is read in this test')) },
     stdout: { write: () => undefined },
     stderr: { write: () => undefined },

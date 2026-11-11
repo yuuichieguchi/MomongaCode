@@ -1,21 +1,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { hostProcessGroupPort, parseAttemptRecord, readMarkerGroup, readMarkerGroupName, reapMarkerDirectory } from '@momonga/foundation';
+import { hostProcessGroupPort, readAttemptRecord, readMarkerGroup, reapMarkerDirectory, type AttemptRecord } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
 import { eventually, groupExists, makeDir, rawConfig, startRaw } from './raw-transport.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const control = vi.hoisted(() => ({ recordsAtReap: [] as string[] }));
+const control = vi.hoisted(() => ({ recordsAtReap: [] as AttemptRecord[] }));
 
 vi.mock('@momonga/foundation', async (importOriginal) => {
   const original = await importOriginal<typeof import('@momonga/foundation')>();
-  const nodeFs = await import('node:fs');
   return {
     ...original,
     reapMarkedProcesses: async (...args: Parameters<typeof original.reapMarkedProcesses>) => {
-      control.recordsAtReap.push(nodeFs.readFileSync(args[0].marker, 'utf8'));
+      control.recordsAtReap.push(await original.readAttemptRecord(args[0].marker));
       return original.reapMarkedProcesses(...args);
     },
   };
@@ -45,10 +44,11 @@ describe('the marker of an MCP stdio server is a group record written by the one
     const { pid } = (await request('pid')) as { pid: number };
     const marker = onlyMarkerIn(dir);
 
-    const record = parseAttemptRecord(fs.readFileSync(marker, 'utf8'));
+    const record = await readAttemptRecord(marker);
     expect(record).toEqual({ spent: { guard: false, sweep: false, startup: false, shutdown: false }, ignored: false });
     expect(await readMarkerGroup(marker)).toBe(pid);
-    expect(await readMarkerGroupName(marker)).toBe(hostProcessGroupPort().names?.nameOf(pid));
+    const name = hostProcessGroupPort().names?.nameOf(pid);
+    expect(fs.readFileSync(marker, 'utf8').split('\n')[2]).toBe(name === undefined ? '' : `j${name}`);
   });
 
   it('a marker left by the transport of a dead generation is reaped by the sweep occasion', async () => {
@@ -77,7 +77,7 @@ describe('the marker of an MCP stdio server is a group record written by the one
     await transport.close();
 
     expect(control.recordsAtReap).toHaveLength(1);
-    expect(parseAttemptRecord(control.recordsAtReap[0] as string).spent).toEqual({ guard: false, sweep: false, startup: false, shutdown: true });
+    expect(control.recordsAtReap[0]?.spent).toEqual({ guard: false, sweep: false, startup: false, shutdown: true });
     expect(fs.readdirSync(dir)).toEqual([]);
   });
 });

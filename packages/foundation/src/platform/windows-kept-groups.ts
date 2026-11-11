@@ -9,6 +9,7 @@ export type KeptProcess = KeeperRun & { readonly pid: number | undefined };
 export type KeptOpenRequest<P extends KeptProcess> = {
   command: KeptCommand;
   marker: string | undefined;
+  descriptors: readonly number[];
   start(executable: string, args: readonly string[]): P;
 };
 
@@ -103,9 +104,9 @@ export const createKeptGroupControl = (host: KeeperHost): KeptGroupControl => {
     });
 
   return {
-    open: <P extends KeptProcess>({ command, marker, start }: KeptOpenRequest<P>): KeptOpening<P> => {
+    open: <P extends KeptProcess>({ command, marker, descriptors, start }: KeptOpenRequest<P>): KeptOpening<P> => {
       const lifetime = new AbortController();
-      const opened = openKeptLaunch(host, { command, onOwnerLoss: 'terminate', marker, start, signal: lifetime.signal });
+      const opened = openKeptLaunch(host, { command, onOwnerLoss: 'terminate', marker, descriptors, start, signal: lifetime.signal });
       const entry: Entry = { job: opened.job, live: undefined, gone: false };
       const started = opened.launched.then((launch) => {
         if (launch.kind === 'refused') throw new GroupContainmentError(launch.reason, launch.systemError);

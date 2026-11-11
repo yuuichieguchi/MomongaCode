@@ -1,12 +1,19 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { systemTiming } from '@momonga/foundation';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import { EXIT_USAGE, systemTiming } from '@momonga/foundation';
+import { PLAN_LABEL_REFUSAL } from '@momonga/protocol';
+import type { PlanAccountRef } from '@momonga/protocol';
 import { authLogin, authLogout, authStatus, nextAccountLabel } from '../src/commands/auth.ts';
 import { describeRunError } from '../src/policy-messages.ts';
+import { exitOfFailure } from '../src/program.ts';
+import { UsageError } from '../src/usage-error.ts';
+import { resultOf } from '../src/run/headless.ts';
+import type { RunResult } from '../src/run/headless.ts';
 import { SHELL_SLASH_COMMANDS } from '../src/tui/commands/shell-commands.ts';
 import { nodeFiles } from '../src/node-ports.ts';
 import { dismissNotice, readDismissedNotices } from '../src/tui/dismissed-notices.ts';
+import { runView } from './fake-backend.ts';
 import { AUTHORIZATION_URL, LISTENER_PORT, account, fakePlanBackend } from './fake-plan-gateway.tsx';
 import { freshHome } from './fresh-home.ts';
 
@@ -83,6 +90,26 @@ describe('describeRunError names the command of the surface for plan errors', ()
     const lines = describeRunError({ ...expired, plan: { profile: 'chatgpt', account: 'chatgpt' } }, 'headless');
     expect(lines[0]).toBe('ChatGPT sign-in expired · Run momonga auth login chatgpt --account chatgpt to sign in again');
     expect(lines[1]).toContain('sign_in_required');
+  });
+
+  it('names momonga auth login with the profile alone when the plan names no account', () => {
+    const profileOnly = { profile: 'chatgpt' };
+    expect(describeRunError({ ...expired, plan: profileOnly }, 'headless')[0]).toBe('ChatGPT sign-in expired · Run momonga auth login chatgpt to sign in again');
+    expect(describeRunError({ code: 'plan_use_not_enabled', message: 'Plan use is not enabled.', plan: profileOnly }, 'headless')).toEqual([
+      'Plan use is not enabled. · Run momonga auth login chatgpt --reconsent to enable it',
+      'cause: plan_use_not_enabled',
+    ]);
+    expect(describeRunError({ code: 'plan_not_eligible', message: 'Not eligible.', plan: profileOnly }, 'headless')).toEqual([
+      'Not eligible.',
+      'cause: plan_not_eligible',
+      'Run momonga auth login chatgpt --account <new label> to use another account, or use an API key.',
+    ]);
+  });
+
+  it('the JSON result of momonga run declares and carries the plan of its error', () => {
+    expectTypeOf<NonNullable<RunResult['error']>>().toEqualTypeOf<{ code: string; message: string; plan?: PlanAccountRef }>();
+    const failed = runView({ status: 'FAILED', error: { code: 'sign_in_required', message: 'm', plan: { profile: 'chatgpt' } } });
+    expect(resultOf(failed, '').error).toEqual({ code: 'sign_in_required', message: 'm', plan: { profile: 'chatgpt' } });
   });
 
   it('names plain momonga auth login when the error carries no plan data', () => {
@@ -186,6 +213,21 @@ describe('momonga auth login', () => {
     const { ports } = loginPorts(backend, out, err);
     expect(await authLogin(ports, { provider: 'chatgpt', account: 'work' })).toBe(0);
     expect(backend.planCalls.find((call) => call.route === 'sign-in/begin')?.body).toEqual({ profile: 'chatgpt', account: 'work', port: LISTENER_PORT });
+  });
+
+  it.for(['team/work', 'wo rk', '', 'アカウント', 'q'.repeat(129)])('refuses --account %j with the label rule before it asks the gateway or binds its listener: exit 2', async (label) => {
+    const out = writer();
+    const err = writer();
+    const backend = fakePlanBackend({ accounts: [] });
+    const { ports, opened } = loginPorts(backend, out, err);
+    const refusal: unknown = await authLogin(ports, { provider: 'chatgpt', account: label }).catch((error: unknown) => error);
+    expect(refusal).toBeInstanceOf(UsageError);
+    expect(exitOfFailure(refusal, err)).toBe(EXIT_USAGE);
+    expect(err.written.join('')).toBe(`momonga: ${PLAN_LABEL_REFUSAL}\n`);
+    expect(out.written).toEqual([]);
+    expect(backend.planCalls).toEqual([]);
+    expect(backend.listenerPaths).toEqual([]);
+    expect(opened).toEqual([]);
   });
 
   it('prints the first-sign-in text and the usage URL once when complete answers firstSignIn', async () => {

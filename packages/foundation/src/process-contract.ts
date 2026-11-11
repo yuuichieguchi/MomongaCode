@@ -161,8 +161,6 @@ export const runtimeAbortStopBudgetMs = (values: StopValues): number => RUNTIME_
 
 export const orphanReapGraceMs = (values: StopValues): number => RUNTIME_ABORT_BUDGET_MS + runtimeTeardownBudgetMs(values.mcpCloseGraceMs);
 
-export const requirementOfStop = (values: StopValues): number => runtimeMaxCloseMs(values) + orphanReapGraceMs(values);
-
 export const gatewayMaxCloseMs = (values: StopValues): number => values.closeGraceMs + managedServerStopBoundMs(values.managedServerStopGraceMs);
 
 export const gatewayStopBudgetMs = (values: StopValues): number => gatewayMaxCloseMs(values) + SHUTDOWN_MARGIN_MS;

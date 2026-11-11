@@ -209,4 +209,29 @@ describe('accounts/{account}/targets adds a model of the plan through the one se
     expect(unknown.body.error).toMatchObject({ type: 'not_found', code: 'plan_model_unknown' });
     await gateway.close();
   });
+
+  it.for(['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf'])('a slug that is only an inherited name, %s, is an unknown model and changes no settings', async (slug) => {
+    const gateway = await startPlanGateway({ models: LISTED });
+    await signIn(gateway);
+    await gateway.get(modelsRoute());
+    const unknown = await add(gateway, 'no-such-model');
+    const before = fs.readFileSync(path.join(gateway.home, '.momonga', 'settings.json'), 'utf8');
+    const inherited = await add(gateway, slug);
+    expect(inherited.status).toBe(404);
+    expect(inherited.body.error).toEqual({ ...unknown.body.error, message: unknown.body.error.message.replace('"no-such-model"', JSON.stringify(slug)) });
+    expect(fs.readFileSync(path.join(gateway.home, '.momonga', 'settings.json'), 'utf8')).toBe(before);
+    await gateway.close();
+  });
+
+  it('a model the server lists under an inherited name is that model, added like any other', async () => {
+    const gateway = await startPlanGateway({ models: [...LISTED, { slug: 'constructor', display_name: 'Constructor', visibility: 'list', context_window: 64000 }, { slug: '__proto__', display_name: 'Proto', visibility: 'list', context_window: 32000 }] });
+    await signIn(gateway);
+    const listed = await gateway.get(modelsRoute());
+    expect(listed.body.models.map((entry: { slug: string }) => entry.slug)).toEqual(['reported-model', 'silent-model', 'constructor', '__proto__']);
+    expect((await add(gateway, 'constructor')).body).toEqual({ model: 'chatgpt/constructor' });
+    const missing = await add(gateway, 'contextWindow');
+    expect(missing.status).toBe(404);
+    expect(missing.body.error).toMatchObject({ code: 'plan_model_unknown' });
+    await gateway.close();
+  });
 });

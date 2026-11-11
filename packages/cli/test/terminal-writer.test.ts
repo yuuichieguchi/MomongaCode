@@ -7,6 +7,7 @@ import { terminalPorts, terminalSink } from '../src/terminal-writer.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
 import { nodePolicyVerifyHost } from '../src/verify/host.ts';
+import { NO_HELPER } from './no-helper.ts';
 
 const HOSTILE = 'x\u001b]0;pwn\u0007\u009b2J‮y';
 const ESCAPED = 'x\\u001b]0;pwn\\u0007\\u009b2J\\u202ey';
@@ -52,6 +53,7 @@ describe('the program hands its commands only the terminal writer', () => {
       entries,
       update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
       interrupt: new AbortController().signal,
+      helper: NO_HELPER,
       entryIo: (args) => ({ name: 'io', argv: [...args] }) as unknown as EntryIo,
       complete: () => undefined,
     });

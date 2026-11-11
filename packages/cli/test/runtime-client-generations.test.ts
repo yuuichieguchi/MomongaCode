@@ -43,7 +43,7 @@ const listen = async (context: TestContext, name: string, seen: Seen[], reply: (
 
 const clientOver = (context: TestContext, resolveSocket: () => Promise<string>): { client: RuntimeClient; sleeps: number[] } => {
   const sleeps: number[] = [];
-  const client = createRuntimeClient({ resolveSocket, sleep: async (ms) => void sleeps.push(ms) });
+  const client = createRuntimeClient({ resolveSocket, clock: { now: () => Date.now(), sleep: async (ms) => void sleeps.push(ms) } });
   registerCleanup(context, () => client.close());
   return { client, sleeps };
 };
@@ -86,7 +86,7 @@ describe('a request answered moved (20.33)', () => {
     const ended = new Error('momonga was updated to v1.2.4; reopen this session.');
     const client = createRuntimeClient({
       resolveSocket: async () => retiring,
-      sleep: async (ms) => void sleeps.push(ms),
+      clock: { now: () => Date.now(), sleep: async (ms) => void sleeps.push(ms) },
       onMoved: async () => {
         throw ended;
       },

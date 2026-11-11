@@ -10,10 +10,21 @@ export type RuleVerdictKind = (typeof RULE_VERDICTS)[number];
 
 export type RuleRefutation = { property: string; subject: string; message: string; counterexample?: string };
 
+export const REFUSING_PROPERTIES = ['secret-reach', 'superseded-forms', 'mandate-holds'] as const;
+
+export const RULE_NOTE_KINDS = ['duplicate', 'no-effect', 'never-matches', 'implied-by-mode', 'undecided'] as const;
+
+export type RuleNoteKind = (typeof RULE_NOTE_KINDS)[number];
+
+export type RuleNoteRule = { text: string; origin: string; source: string };
+
+export type RuleNote = { kind: RuleNoteKind; rules: RuleNoteRule[]; modes: string[]; message: string };
+
 export type RuleVerdict = {
   verdict: RuleVerdictKind;
   solver: string;
   refuted: RuleRefutation[];
+  notes?: RuleNote[];
   byModeDefault?: RuleRefutation[];
   unknown: { property: string; reason: string }[];
   notProved: string[];
@@ -40,11 +51,24 @@ const isRefutations = (value: unknown): value is RuleRefutation[] =>
       (entry['counterexample'] === undefined || typeof entry['counterexample'] === 'string'),
   );
 
+const isRuleNotes = (value: unknown): value is RuleNote[] =>
+  Array.isArray(value) &&
+  value.every(
+    (entry) =>
+      isObject(entry) &&
+      RULE_NOTE_KINDS.some((kind) => kind === entry['kind']) &&
+      Array.isArray(entry['rules']) &&
+      entry['rules'].every((rule) => isObject(rule) && typeof rule['text'] === 'string' && typeof rule['origin'] === 'string' && typeof rule['source'] === 'string') &&
+      isStrings(entry['modes']) &&
+      typeof entry['message'] === 'string',
+  );
+
 export const isRuleVerdict = (value: unknown): value is RuleVerdict =>
   isObject(value) &&
   RULE_VERDICTS.some((kind) => kind === value['verdict']) &&
   typeof value['solver'] === 'string' &&
   isRefutations(value['refuted']) &&
+  (value['notes'] === undefined || isRuleNotes(value['notes'])) &&
   (value['byModeDefault'] === undefined || isRefutations(value['byModeDefault'])) &&
   Array.isArray(value['unknown']) &&
   value['unknown'].every((entry) => isObject(entry) && typeof entry['property'] === 'string' && typeof entry['reason'] === 'string') &&
@@ -55,8 +79,11 @@ export const isPinnedRuleVerdict = (value: unknown): value is PinnedRuleVerdict 
 const refutationText = (refutation: RuleRefutation): string =>
   `${refutation.property} (${refutation.subject}): ${refutation.message}${refutation.counterexample === undefined ? '' : `; counterexample: ${refutation.counterexample}`}`;
 
+export const refusingRefutations = (verdict: Pick<RuleVerdict, 'refuted'>): RuleRefutation[] =>
+  verdict.refuted.filter((refutation) => REFUSING_PROPERTIES.some((property) => property === refutation.property));
+
 export const policyRefutedMessage = (verdict: RuleVerdict): string =>
-  `The permission rules were refuted, so the run was refused: ${verdict.refuted.map(refutationText).join(' | ')}. Change the rules; "momonga policy verify" prints the full report.`;
+  `The permission rules were refuted, so the run was refused: ${refusingRefutations(verdict).map(refutationText).join(' | ')}. Change the rules; "momonga policy verify" prints the full report.`;
 
 export const policyVerdictNotice = (verdict: PinnedRuleVerdict): string => {
   const head = `The permission rules changed during the run and were verified again (${verdict.solver}, fingerprint ${verdict.fingerprint}): ${verdict.verdict}.`;

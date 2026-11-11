@@ -118,7 +118,7 @@ const fakeKeeper = (): FakeKeeper => {
 };
 
 const startedGroup = async (keeper: FakeKeeper = fakeKeeper()) => {
-  const pending = launchKept(keeper.host, { command: { file: 'cmd.exe', args: ['/c', 'echo a b'] }, onOwnerLoss: 'terminate', marker: undefined, start: keeper.start, signal: live() });
+  const pending = launchKept(keeper.host, { command: { file: 'cmd.exe', args: ['/c', 'echo a b'] }, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: live() });
   await turn();
   keeper.connect();
   await turn();
@@ -136,10 +136,10 @@ describe('the keeper protocol: names, arguments and exit codes', () => {
   });
 
   it('puts every word of its own before -- in a form that needs no quoting, the marker path as hex of its UTF-8', () => {
-    const args = keeperLaunchArguments({ pipe: '\\\\.\\pipe\\momonga-keeper-00', job: 'Local\\momonga-11', onOwnerLoss: 'persist', marker: 'C:\\Users\\a b\\m é', command: { file: 'C:\\Program Files\\x.exe', args: ['a b', '"q"'] } });
-    expect(args).toEqual(['launch', '\\\\.\\pipe\\momonga-keeper-00', 'Local\\momonga-11', 'persist', Buffer.from('C:\\Users\\a b\\m é', 'utf8').toString('hex'), '--', 'C:\\Program Files\\x.exe', 'a b', '"q"']);
-    expect(args.slice(0, 6).every((word) => /^[A-Za-z0-9\\.-]+$/.test(word))).toBe(true);
-    expect(keeperLaunchArguments({ pipe: 'p', job: 'j', onOwnerLoss: 'terminate', marker: undefined, command: { file: 'x', args: [] } })).toEqual(['launch', 'p', 'j', 'terminate', '-', '--', 'x']);
+    const args = keeperLaunchArguments({ pipe: '\\\\.\\pipe\\momonga-keeper-00', job: 'Local\\momonga-11', onOwnerLoss: 'persist', marker: 'C:\\Users\\a b\\m é', descriptors: [3, 5], command: { file: 'C:\\Program Files\\x.exe', args: ['a b', '"q"'] } });
+    expect(args).toEqual(['launch', '\\\\.\\pipe\\momonga-keeper-00', 'Local\\momonga-11', 'persist', Buffer.from('C:\\Users\\a b\\m é', 'utf8').toString('hex'), '3,5', '--', 'C:\\Program Files\\x.exe', 'a b', '"q"']);
+    expect(args.slice(0, 7).every((word) => /^[A-Za-z0-9\\.,-]+$/.test(word))).toBe(true);
+    expect(keeperLaunchArguments({ pipe: 'p', job: 'j', onOwnerLoss: 'terminate', marker: undefined, descriptors: [], command: { file: 'x', args: [] } })).toEqual(['launch', 'p', 'j', 'terminate', '-', '-', '--', 'x']);
     expect(keeperAttachArguments({ pipe: 'p', job: 'j' })).toEqual(['attach', 'p', 'j']);
   });
 
@@ -156,7 +156,8 @@ describe('the keeper protocol: names, arguments and exit codes', () => {
 
 describe('the keeper protocol: lines', () => {
   it('parses every line the keeper sends', () => {
-    expect(parseKeeperLine('started 4242')).toEqual({ kind: 'started', pid: 4242 });
+    expect(parseKeeperLine('started 4242')).toEqual({ kind: 'started', pid: 4242, descriptors: [] });
+    expect(parseKeeperLine('started 4242 3 5')).toEqual({ kind: 'started', pid: 4242, descriptors: [3, 5] });
     expect(parseKeeperLine('attached')).toEqual({ kind: 'attached' });
     expect(parseKeeperLine('failed name-taken 183')).toEqual({ kind: 'failed', reason: 'name-taken', systemError: 183 });
     expect(parseKeeperLine('failed containment-unavailable 5')).toEqual({ kind: 'failed', reason: 'containment-unavailable', systemError: 5 });
@@ -166,7 +167,7 @@ describe('the keeper protocol: lines', () => {
     expect(parseKeeperLine('empty')).toEqual({ kind: 'empty' });
   });
 
-  it.each(['', 'hello', 'started', 'started x', 'started 1 2', 'failed unknown-reason 1', 'failed name-taken', 'members', 'members x', 'members 1 -2', 'members 1 2.5', 'empty now', 'exit', 'attached 1', 'started 4294967296'])(
+  it.each(['', 'hello', 'started', 'started x', 'started 1 x', 'started 1 -3', 'failed unknown-reason 1', 'failed name-taken', 'members', 'members x', 'members 1 -2', 'members 1 2.5', 'empty now', 'exit', 'attached 1', 'started 4294967296'])(
     'refuses the line %j',
     (line) => {
       expect(() => parseKeeperLine(line)).toThrow(KeeperProtocolError);
@@ -194,16 +195,40 @@ describe('launching through the keeper', () => {
     const { keeper, launch } = await startedGroup();
     expect(keeper.listened).toEqual([`\\\\.\\pipe\\momonga-keeper-${'02'.repeat(16)}`]);
     expect(keeper.starts).toEqual([
-      { executable: 'C:\\cache\\momonga-keeper.exe', args: ['launch', `\\\\.\\pipe\\momonga-keeper-${'02'.repeat(16)}`, `Local\\momonga-${'01'.repeat(16)}`, 'terminate', '-', '--', 'cmd.exe', '/c', 'echo a b'] },
+      { executable: 'C:\\cache\\momonga-keeper.exe', args: ['launch', `\\\\.\\pipe\\momonga-keeper-${'02'.repeat(16)}`, `Local\\momonga-${'01'.repeat(16)}`, 'terminate', '-', '-', '--', 'cmd.exe', '/c', 'echo a b'] },
     ]);
     expect(launch.commandPid).toBe(4242);
     expect(launch.group.job).toBe(`Local\\momonga-${'01'.repeat(16)}`);
     expect(keeper.listenerClosed()).toBe(true);
   });
 
+  const launchNaming = async (descriptors: readonly number[], firstWord: string) => {
+    const keeper = fakeKeeper();
+    const outcome = launchKept(keeper.host, { command: { file: 'node.exe', args: [] }, onOwnerLoss: 'terminate', marker: undefined, descriptors, start: keeper.start, signal: live() }).catch((error: unknown) => error);
+    await turn();
+    keeper.connect();
+    await turn();
+    keeper.pipe.say(firstWord);
+    return { keeper, outcome: await outcome };
+  };
+
+  it('names the descriptors of the command in the words of the keeper, and returns the group when the keeper says it passed each of them', async () => {
+    const { keeper, outcome } = await launchNaming([3, 5], 'started 4242 3 5\n');
+    expect(keeper.starts[0]?.args.slice(5, 7)).toEqual(['3,5', '--']);
+    expect(outcome).toMatchObject({ kind: 'started', commandPid: 4242 });
+    expect(keeper.pipe.closedByClient()).toBe(false);
+  });
+
+  it('fails the launch and closes the pipe when the keeper started the command without a descriptor it was told to pass', async () => {
+    const { keeper, outcome } = await launchNaming([3, 5], 'started 4242 5\n');
+    expect(outcome).toBeInstanceOf(KeeperProtocolError);
+    expect((outcome as KeeperProtocolError).message).toBe('the keeper started command 4242 without descriptor 3, which the launch named');
+    expect(keeper.pipe.closedByClient()).toBe(true);
+  });
+
   it('reports a refusal by its reason and never calls the command contained', async () => {
     const keeper = fakeKeeper();
-    const pending = launchKept(keeper.host, { command: { file: 'x', args: [] }, onOwnerLoss: 'terminate', marker: undefined, start: keeper.start, signal: live() });
+    const pending = launchKept(keeper.host, { command: { file: 'x', args: [] }, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: live() });
     await turn();
     keeper.connect();
     await turn();
@@ -213,7 +238,7 @@ describe('launching through the keeper', () => {
 
   it('fails with the exit code name when the keeper ends before it connects', async () => {
     const keeper = fakeKeeper();
-    const pending = launchKept(keeper.host, { command: { file: 'x', args: [] }, onOwnerLoss: 'terminate', marker: undefined, start: keeper.start, signal: live() });
+    const pending = launchKept(keeper.host, { command: { file: 'x', args: [] }, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: live() });
     const outcome = pending.catch((error: unknown) => error);
     await turn();
     keeper.exit(KEEPER_EXIT_CODES['pipe-unavailable']);
@@ -225,7 +250,7 @@ describe('launching through the keeper', () => {
 
   it('fails when the pipe closes before the first word', async () => {
     const keeper = fakeKeeper();
-    const outcome = launchKept(keeper.host, { command: { file: 'x', args: [] }, onOwnerLoss: 'terminate', marker: undefined, start: keeper.start, signal: live() }).catch((error: unknown) => error);
+    const outcome = launchKept(keeper.host, { command: { file: 'x', args: [] }, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: live() }).catch((error: unknown) => error);
     await turn();
     keeper.connect();
     await turn();
@@ -236,7 +261,7 @@ describe('launching through the keeper', () => {
   it("ends with the asker's reason when the asker stops waiting for a keeper that never connects, and closes the listener", async () => {
     const keeper = fakeKeeper();
     const asker = new AbortController();
-    const outcome = launchKept(keeper.host, { command: { file: 'x', args: [] }, onOwnerLoss: 'terminate', marker: undefined, start: keeper.start, signal: asker.signal }).catch((error: unknown) => error);
+    const outcome = launchKept(keeper.host, { command: { file: 'x', args: [] }, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: asker.signal }).catch((error: unknown) => error);
     await turn();
     const reason = new Error('the asker left');
     asker.abort(reason);
@@ -247,7 +272,7 @@ describe('launching through the keeper', () => {
   it("closes the pipe, which is the owner's loss to the keeper, when the asker stops waiting for the first word", async () => {
     const keeper = fakeKeeper();
     const asker = new AbortController();
-    const outcome = launchKept(keeper.host, { command: { file: 'x', args: [] }, onOwnerLoss: 'terminate', marker: undefined, start: keeper.start, signal: asker.signal }).catch((error: unknown) => error);
+    const outcome = launchKept(keeper.host, { command: { file: 'x', args: [] }, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: asker.signal }).catch((error: unknown) => error);
     await turn();
     keeper.connect();
     await turn();

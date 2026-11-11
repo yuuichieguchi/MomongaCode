@@ -4,7 +4,7 @@ import type { PlanApi } from './plan/api.ts';
 import type { GatewayEpochs } from './core/services.ts';
 import type { ReasoningOriginCodec } from './core/reasoning-origin.ts';
 import type { Redactor } from './core/redaction.ts';
-import type { BilledCallsCursorView, BilledCallsPageView, CapabilityOverride, GatewayCostReportView, MomongaModelRoles, ProviderAdapter, TargetAnswers, TargetBilling, TraceContentPage } from '@momonga/protocol';
+import type { BilledCallsCursorView, BilledCallsPageView, CapabilityOverride, GatewayCostReportView, MomongaModelRoles, PlanAccountRef, ProviderAdapter, TargetAnswers, TargetBilling, TraceContentPage } from '@momonga/protocol';
 
 export type GatewayTargetConfig = {
   kind: string;
@@ -18,7 +18,7 @@ export type GatewayTargetConfig = {
   counter: string;
   idempotencyKeyHeader?: string;
   capabilities?: CapabilityOverride;
-  plan?: { profile: string; account?: string };
+  plan?: PlanAccountRef;
   keyGroup?: string;
 };
 
@@ -45,6 +45,7 @@ export type GatewayConfig = {
 export type GatewayTimers = {
   setTimeout(callback: () => void, ms: number): unknown;
   clearTimeout(handle: unknown): void;
+  timeoutSignal(ms: number): AbortSignal;
 };
 
 export type DebugTcpOptions = { host: string; port: number; token: string };
@@ -75,6 +76,7 @@ export type GatewayCommonOptions = {
   traceContent?: (runId: string, after: number, limit: number, signal: AbortSignal) => Promise<TraceContentPage>;
   debugTcp?: DebugTcpOptions;
   random: () => number;
+  pid: number;
   version: string;
   onError?: (error: unknown) => void;
   plan?: PlanApi;

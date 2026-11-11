@@ -6,6 +6,7 @@ import type { Env } from './harness.ts';
 import { textStep } from './scripts.ts';
 import { envNeutralJson, firstConversation, firstRequestInput, settle } from './inheritance-support.ts';
 import { builderOf, newFactsTrace, plantOldShapeChild, referenceFactsOf, tracedStore } from './inherit-reference-support.ts';
+import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
 const answered = async (env: Env, task: string, answer: string): Promise<string> => {
   env.gateway.script.push(textStep(answer));
@@ -108,7 +109,7 @@ describe('13.6: crash during inherit_plan', () => {
     await env.runOnce(env.worker('worker-a', { store: failing }));
     expect(inheritedEvents(env, second.id)).toEqual([]);
     expect(env.ofType(second.id, 'model.requested')).toEqual([]);
-    expect(trace.plans).toEqual([{ runId: second.id, mode: 'manual' }]);
+    expect(trace.plans).toEqual([{ runId: second.id, mode: 'manual', unasked: UNASKED_COMMANDS }]);
 
     env.clock.advance(120_000);
     await settle(env, second.id, env.worker('worker-b', { store: failing }));
@@ -127,9 +128,9 @@ describe('13.6: a resent thread request', () => {
     const b = builderOf(env);
     const queued = b.createRun('Not yet claimed');
     const facts = referenceFactsOf(env.store);
-    const plan = await facts.inheritPlan({ runId: queued.id, mode: 'manual' });
+    const plan = await facts.inheritPlan({ runId: queued.id, mode: 'manual', unasked: UNASKED_COMMANDS });
     expect(plan).toMatchObject({ kind: 'ready', payload: { form: 'reference' } });
-    expect(await facts.inheritPlan({ runId: queued.id, mode: 'manual' })).toEqual(plan);
+    expect(await facts.inheritPlan({ runId: queued.id, mode: 'manual', unasked: UNASKED_COMMANDS })).toEqual(plan);
     expect(inheritedEvents(env, queued.id)).toEqual([]);
 
     env.gateway.script.push(textStep('Answer.'));
