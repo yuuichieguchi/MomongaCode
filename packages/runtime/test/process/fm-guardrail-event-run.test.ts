@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { probeManagedFm, startGatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup, registerOwned } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup, registerOwned, testProcessInspector, testLocks, testKernelLock } from '@momonga/testkit';
 import { onCleanup, writeUserSettings } from './helpers.ts';
 import { GATEWAY_VERSION, launchRuntime, makeRunHome, prepareGeneration, readDb, sessionEnvFor, waitForCondition } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
@@ -38,6 +38,8 @@ const startFmGateway = async (temp: RunHome): Promise<void> => {
   onCleanup(() => killGroupsForCleanup(servePids(dumpFile)));
   writeUserSettings(temp.home, { sandbox: 'none', models: { connections: [{ adapter: 'managed', server: 'fm', provider: 'fm', binary: fm.binaryPath, models: [{ id: 'system', toolCalling: 'native' }] }] } });
   await probeManagedFm({
+    inspector: testProcessInspector(),
+    lock: testKernelLock(),
     platform: process.platform,
     paths: temp.paths,
     instance: managedInstancePaths(temp.paths, { owner: 'cli', purpose: 'probe', provider: 'fm' } as Parameters<typeof managedInstancePaths>[1]),
@@ -58,7 +60,7 @@ const startFmGateway = async (temp: RunHome): Promise<void> => {
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
   try {
     await prepareGeneration(temp);
-    const gateway = await registerOwned(onCleanup, () => startGatewayProcess({ generation: FIRST_GENERATION, home: temp.home, env: sessionEnvFor(temp.home), version: GATEWAY_VERSION, exec: fakeExec }));
+    const gateway = await registerOwned(onCleanup, () => startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home: temp.home, env: sessionEnvFor(temp.home), version: GATEWAY_VERSION, exec: fakeExec }));
     onCleanup(async () => {
       await gateway.close();
     });

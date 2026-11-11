@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createManagedTarget, saveProbeRecord } from '@momonga/gateway';
 import type { ManagedServer } from '@momonga/gateway';
 import type { KnownProbeKey } from '@momonga/config';
-import { FAKE_GUARDRAIL_ERROR } from '@momonga/testkit';
+import { FAKE_GUARDRAIL_ERROR, testKernelLock } from '@momonga/testkit';
 import { makeDir } from './gateway-helpers.ts';
 import { TARGET, collect, makeAdapter, startFake, userText } from './cc-support.ts';
 import { makeReport } from './report-fixture.ts';
@@ -20,7 +20,7 @@ const idleServe: ManagedServer = {
 
 const managedWith = async (guardrail: unknown | undefined) => {
   const dir = makeDir();
-  await saveProbeRecord(dir, RECORD_KEY, { ...makeReport(1, 1), guardrail: guardrail === undefined ? {} : { errorShape: guardrail } }, FM_CURRENCY);
+  await saveProbeRecord(dir, RECORD_KEY, { ...makeReport(1, 1), guardrail: guardrail === undefined ? {} : { errorShape: guardrail } }, FM_CURRENCY, testKernelLock());
   return primed(createManagedTarget({
     ...fmTargetBase(),
     server: idleServe,

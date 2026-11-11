@@ -4,13 +4,14 @@ import { describe, expect, it } from 'vitest';
 import { ConfigError, PROJECT_MANDATE_FILE, editProjectMandate, loadProjectMandate, settingsFileLock, systemFileLockPorts } from '@momonga/config';
 import { distrusting, makeDir, makeTree, trusting, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const signal = new AbortController().signal;
 
 type Edit = (document: Record<string, unknown>) => boolean;
 type Trust = { isTrusted(directory: string, signal: AbortSignal): boolean | Promise<boolean> };
 
-const optionsOf = (tree: Tree, trust: Trust) => ({ trust, lock: settingsFileLock(tree.home), random: systemFileLockPorts.random, signal });
+const optionsOf = (tree: Tree, trust: Trust) => ({ trust, mechanism: testKernelLock(), lock: settingsFileLock(tree.home, { lock: testKernelLock() }), random: systemFileLockPorts.random, signal });
 
 const mandateFile = (tree: Tree): string => path.join(tree.project, PROJECT_MANDATE_FILE);
 

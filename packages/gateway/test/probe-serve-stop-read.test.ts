@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { FM_SERVER } from '@momonga/protocol';
-import { withTempDir } from '@momonga/testkit';
+import { withTempDir, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import { measureManagedServer } from '../src/probe/probe-fm.ts';
 
 const FILE_GRACE_MS = 70;
@@ -14,6 +14,8 @@ describe('the probe server stop reads the stop grace at its begin (design 3.2)',
     fs.mkdirSync(markerDirectory, { mode: 0o700 });
     const events: string[] = [];
     const probe = measureManagedServer({
+      inspector: testProcessInspector(),
+      lock: testKernelLock(),
       description: FM_SERVER,
       target: 'apple',
       binary: '/usr/bin/fm',

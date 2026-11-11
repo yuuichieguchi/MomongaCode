@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { compileFileRuleSet, EMPTY_PROTECTED_SET, groupAlive, HOST_FLAVOUR, nodeFileSystem, ruleEnforcementOf, syncPaths, systemRandom } from '@momonga/foundation';
+import { compileFileRuleSet, EMPTY_PROTECTED_SET, groupAlive, HOST_FLAVOUR, nodeFileSystem, ruleEnforcementOf, syncPaths, systemRandom, momongaLayout } from '@momonga/foundation';
 
 import os from 'node:os';
 import path from 'node:path';
@@ -17,7 +17,7 @@ import { createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/
 
 
 import type { BlobPort, ExecutionBatchInput, IdempotencyPort, LeasedBegin, ToolCall, ToolIdempotencyRecord, ToolSet } from '@momonga/tools';
-import { UNCONFIGURED_NETWORK, MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, createFakeClock, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, killPidsForCleanup, UNBOUNDED_OUTPUT_FIT, type FakeClock, type ModernFixtureRecord, pollUntil } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, createFakeClock, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, killPidsForCleanup, UNBOUNDED_OUTPUT_FIT, type FakeClock, type ModernFixtureRecord, pollUntil, testProcessInspector } from '@momonga/testkit';
 
 
 
@@ -212,6 +212,8 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000), onWa
   const callLocks = path.join(root, 'call-locks');
   fs.mkdirSync(callLocks, { mode: 0o700 });
   const executor = createToolExecutor({
+    layout: momongaLayout(home, process.platform, process.env),
+    reap: { inspector: testProcessInspector() },
     shellHost: nodeShellHost(),
     random: systemRandom,
     files: nodeFileSystem, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,

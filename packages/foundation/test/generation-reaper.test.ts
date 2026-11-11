@@ -9,14 +9,13 @@ import {
   generationLayout,
   generationMarkerDirectories,
   generationSpawnScratch,
-  hostKernelLock,
   momongaPaths,
   nodeGenerationReaperFiles,
   publishCurrentGeneration,
   reapDeadGenerations,
 } from '@momonga/foundation';
 import type { GenerationLayout, GenerationReaperFiles, GenerationReaperOptions, GenerationReaperResult, HeldKernelLock, KernelLockMechanism, MarkerKind, MomongaPaths } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, prepareGenerationForTest, startGenerationForTest, startLockHolder } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, prepareGenerationForTest, startGenerationForTest, startLockHolder, testKernelLock } from '@momonga/testkit';
 import type { TrackedChild } from '@momonga/testkit';
 import { exitOf } from './support/lock-processes.ts';
 import { seededRandom } from './seeded-random.ts';
@@ -95,7 +94,7 @@ type PassOverrides = Partial<Omit<GenerationReaperOptions, 'paths'>>;
 const passOf = (paths: MomongaPaths, warnings: string[], overrides: PassOverrides = {}): Promise<GenerationReaperResult> =>
   reapDeadGenerations({
     paths,
-    lock: hostKernelLock(),
+    lock: testKernelLock(),
     signal: new AbortController().signal,
     warn: (message) => warnings.push(message),
     reapMarkers: async () => undefined,
@@ -160,7 +159,7 @@ describe('T-L2-3 (14.5 step 1): a live generation is never touched', () => {
     const reaped: number[] = [];
     const result = await passOf(s.paths, [], {
       files: recordingFiles(log),
-      lock: recordingLock(log, hostKernelLock()),
+      lock: recordingLock(log, testKernelLock()),
       reapMarkers: async ({ generation }) => {
         reaped.push(generation);
       },
@@ -343,7 +342,7 @@ describe('T-L2-9 (14.4, 14.11 T6): a dial during and after a removal', () => {
     const s = setup();
     const dead = fillGeneration(s, 1);
     const live = s.prepare(2);
-    const lock = hostKernelLock();
+    const lock = testKernelLock();
     const held = await lock.claim(live.locks.supervisor);
     if (held.kind !== 'claimed') throw new Error('the test could not claim the live supervisor lock');
     const server = net.createServer((socket) => socket.destroy());
@@ -415,7 +414,7 @@ describe('T-L2-11 (18.2.7, 20.66): the reaper lists only generation directories'
 describe('T-L2-12 (15.4): run/current survives the reap of the generation it names', () => {
   it('leaves the file byte for byte, so its version stays the floor', async () => {
     const s = setup();
-    const lock = hostKernelLock();
+    const lock = testKernelLock();
     const layout = s.prepare(1);
     await publishCurrentGeneration(s.paths, { generation: 1, version: '2.0.0', sockets: layout.sockets }, { lock });
     const before = fs.readFileSync(s.paths.current);
@@ -607,7 +606,7 @@ describe('T-L2-14 (R2.6, 20.5): the pass works in bounded units', () => {
 describe('T-L2-19 (R06-71, 20.66): stray temporaries of the atomic writes in run/', () => {
   it('removes a crashed writer\'s temporary under its own claim and keeps one whose writer holds it', async () => {
     const s = setup();
-    const lock = hostKernelLock();
+    const lock = testKernelLock();
     const crashed = path.join(s.paths.run, '.current.0a1b2c.tmp');
     const inFlight = path.join(s.paths.run, '.generation.counter.3d4e5f.tmp');
     const abandoned = await lock.claim(crashed);

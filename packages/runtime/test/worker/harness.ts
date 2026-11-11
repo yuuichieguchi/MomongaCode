@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
-import { canonicalJson, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, HOST_RULE_ENFORCEMENT, nodeFileSystem, openDatabase, sha256Hex, systemRandom } from '@momonga/foundation';
+import { canonicalJson, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, HOST_RULE_ENFORCEMENT, nodeFileSystem, openDatabase, sha256Hex, systemRandom, BUSY_WAIT_LIMIT_MS, momongaLayout } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { InstructionReader } from '@momonga/context';
 import { computeFileRules } from '@momonga/policy';
@@ -16,7 +16,7 @@ import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import { blobDirectoryOf, createBlobStore, createJournalReader, foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
 import type { Claim, ContributionPreparer, ReportReply, Run, RuntimeStore, Session } from '@momonga/store';
-import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, driveFakeTime, testProbes, testPaths } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, driveFakeTime, testProbes, testPaths, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
@@ -152,7 +152,7 @@ export type Env = Awaited<ReturnType<typeof makeEnv>>;
 export type ContributionItems = Extract<RunEventPayload, { type: 'context.contribution' }>['items'];
 
 const inProcessFacts = (dbPath: string, handlerFor: (reader: ReturnType<typeof createJournalReader>) => JournalHandler) => async (request: object): Promise<never> => {
-  const db = openDatabase(dbPath);
+  const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
   try {
     return (await handlerFor(createJournalReader(db))(request as Record<string, unknown>, () => undefined)) as never;
   } finally {
@@ -161,11 +161,11 @@ const inProcessFacts = (dbPath: string, handlerFor: (reader: ReturnType<typeof c
 };
 
 const inProcessFidelity = (dbPath: string) => async (request: object): Promise<never> => {
-  const db = openDatabase(dbPath);
+  const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
   try {
     const handler = fidelityHandler({
       reader: createJournalReader(db),
-      blobs: createBlobStore(db, createFakeClock(START_MS), blobDirectoryOf(dbPath), { fileSystem: nodeFileSystem, random: systemRandom }),
+      blobs: createBlobStore(db, createFakeClock(START_MS), blobDirectoryOf(dbPath), { lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom }),
       current: { progress: undefined },
       gateFor: () => ({ unit: () => undefined }),
     });
@@ -183,7 +183,7 @@ export const journalReaderPreparer = (dbPath: string): ContributionPreparer => (
   reflectionInput: inProcessFacts(dbPath, reflectionInputHandler),
   fidelity: inProcessFidelity(dbPath),
   report: async (request) => {
-    const db = openDatabase(dbPath);
+    const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     try {
       return (await reportHandler(db, createJournalReader(db))(request, () => undefined)) as ReportReply;
     } finally {
@@ -191,7 +191,7 @@ export const journalReaderPreparer = (dbPath: string): ContributionPreparer => (
     }
   },
   measure: async (request) => {
-    const db = openDatabase(dbPath);
+    const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     try {
       return createJournalReader(db).measure(contributionAtTerminal, request);
     } finally {
@@ -219,7 +219,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const clock: FakeClock = createFakeClock(START_MS);
   const timers: FakeTimers = createFakeTimers(clock);
   const scriptedContributions = new Map<string, ContributionItems>();
-  const store: RuntimeStore = openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
+  const store: RuntimeStore = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home,
     clock,
@@ -245,6 +245,8 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const instructions = createFakeInstructions();
   const executorWarnings: string[] = [];
   const realExecutor = createToolExecutor({
+    layout: momongaLayout(home, process.platform, process.env),
+    reap: { inspector: testProcessInspector() },
     shellHost: nodeShellHost(),
     random: systemRandom,
     files: nodeFileSystem, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
@@ -307,6 +309,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   };
 
   const toolRuntime = (toolList: () => AnyTool[]): ToolRuntimePort => ({
+    inspector: testProcessInspector(),
     workTreeObserver: (target: Session) => createGitWorkTreeObserver({ storeDir: path.join(stateDir, 'observer'), workTree: target.cwd, trusted: false }),
     envFor: (target: Session) => {
       const env: ToolEnv = { ...target.env };

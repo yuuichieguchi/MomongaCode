@@ -8,6 +8,7 @@ import type { TextReplacement } from './applied-diff.ts';
 import { numberedLines, splitLines } from './format.ts';
 import { accessedPathOf, canonicalPathOf, resolvedPathOf, shownPath } from './paths.ts';
 import { parsePreparedWrite, reconcileWrite } from './prepared.ts';
+import type { PreparedWrite } from './prepared.ts';
 
 type EditInput = { file_path: string; old_string: string; new_string: string; replace_all?: boolean };
 
@@ -78,7 +79,9 @@ const editableTextOf = (files: Pick<FileSystem, 'readFile'>, file: string, shown
     throw error;
   });
 
-const planEdit = async (input: EditInput, ctx: PreconditionContext): Promise<{ path: string; preHash: string; postHash: string }> => {
+type PlannedEdit = { path: string; preHash: string; postHash: string; text: string; replacement: Replacement };
+
+const planEdit = async (input: EditInput, ctx: PreconditionContext): Promise<PlannedEdit> => {
   if (input.old_string === '') throw new ToolExecutionError('old_string must not be empty; use Write to create or replace a file');
   if (input.old_string === input.new_string) throw new ToolExecutionError('old_string and new_string are identical; nothing to change');
   const target = await canonicalPathOf(ctx, 'file_path', input.file_path);
@@ -92,7 +95,12 @@ const planEdit = async (input: EditInput, ctx: PreconditionContext): Promise<{ p
   const text = await editableTextOf(ctx.files, target, shown);
   const preHash = await assertReadAndUnchanged(ctx.files, ctx.session, target, shown);
   const replacement = computeReplacement(text, input, shown);
-  return { path: target, preHash, postHash: sha256Hex(replacement.updated) };
+  return { path: target, preHash, postHash: sha256Hex(replacement.updated), text, replacement };
+};
+
+const prepareEdit = async (input: EditInput, ctx: PreconditionContext): Promise<PreparedWrite> => {
+  const { path, preHash, postHash, text, replacement } = await planEdit(input, ctx);
+  return { path, preHash, postHash, diff: diffOfReplacements(text, replacement.replaced) };
 };
 
 export const editTool = defineTool<EditInput>({
@@ -126,7 +134,7 @@ export const editTool = defineTool<EditInput>({
   locations: (input, ctx) => [{ path: resolvedPathOf(ctx, input.file_path) }],
   subject: (input, ctx) => ({ kind: 'path', tool: 'Edit', paths: [resolvedPathOf(ctx, input.file_path)], access: 'write' }),
   precondition: async (input, ctx) => void (await planEdit(input, ctx)),
-  prepare: planEdit,
+  prepare: prepareEdit,
   execute: async (input, ctx, prepared) => {
     const plan = parsePreparedWrite(prepared);
     const requested = resolvedPathOf(ctx, input.file_path);
@@ -149,14 +157,14 @@ export const editTool = defineTool<EditInput>({
       requestedPath: requested,
       content: replacement.updated,
       mode: stat.mode & 0o777,
+      lock: ctx.kernelLock,
       onRenamed: () => updateLedgerAfterWrite(ctx.files, ctx.session, plan.path, plan.postHash),
     });
     return {
       status: 'completed',
       output: `The file ${shown} has been updated. Here is the result of running cat -n on a snippet of the edited file:\n${snippetOf(replacement)}${warning === undefined ? '' : `\n${warning}`}`,
-      content: [{ type: 'diff', path: plan.path, oldText: original, newText: replacement.updated }],
       files: [{ path: plan.path, sha256: plan.postHash, access: 'write' }],
-      ...diffOfReplacements(original, replacement.replaced),
+      ...plan.diff,
     };
   },
   reconcile: async (input, record, ctx) => reconcileWrite(record, 'Edit', ctx, resolvedPathOf(ctx, input.file_path)),

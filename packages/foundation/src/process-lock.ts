@@ -1,5 +1,4 @@
 import { LOCK_FD } from './process-contract.ts';
-import { hostKernelLock } from './platform/host-kernel-lock.ts';
 import { HOLDER_READ_MAX_BYTES, LockAdoptionError, writeHolderOrRelease } from './platform/kernel-lock.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 import type { Random } from './random.ts';
@@ -30,7 +29,7 @@ export const LOCK_NONCE_ENV = 'MOMONGA_LOCK_NONCE';
 const NONCE_BYTES = 16;
 const HANDOFF_PREFIX = 'handoff:';
 
-export type ProcessLockOptions = { mechanism?: KernelLockMechanism; random?: Random };
+export type ProcessLockOptions = { mechanism: KernelLockMechanism; random?: Random };
 
 export type InspectProcessLockOptions = ProcessLockOptions;
 
@@ -43,8 +42,8 @@ type RecordedHolder = { kind: 'pid'; pid: number } | { kind: 'unrecorded' };
 const holderOf = (text: string | undefined): RecordedHolder =>
   text !== undefined && /^[1-9]\d{0,9}$/.test(text) ? { kind: 'pid', pid: Number(text) } : { kind: 'unrecorded' };
 
-export const inspectProcessLock = async (lockPath: string, options: InspectProcessLockOptions = {}): Promise<ProcessLockInspection> => {
-  const mechanism = options.mechanism ?? hostKernelLock();
+export const inspectProcessLock = async (lockPath: string, options: InspectProcessLockOptions): Promise<ProcessLockInspection> => {
+  const mechanism = options.mechanism;
   if (!(await mechanism.isHeld(lockPath))) return { state: 'free' };
   const holder = holderOf(await mechanism.readHolder(lockPath));
   return holder.kind === 'pid' ? { state: 'held', pid: holder.pid } : { state: 'unreadable' };
@@ -57,17 +56,19 @@ const claimed = (held: HeldKernelLock): ProcessLock => {
   return lockOf(held);
 };
 
-export const acquireProcessLock = async (
-  lockPath: string,
-  describeHolder: DescribeHolder = async (pid) => `${lockPath} is held by ${pid === undefined ? 'another process' : `live process ${pid}`}`,
-  options: AcquireProcessLockOptions = {},
-): Promise<ProcessLock> => {
-  const mechanism = options.mechanism ?? hostKernelLock();
+const describeByPid =
+  (lockPath: string): DescribeHolder =>
+  async (pid) =>
+    `${lockPath} is held by ${pid === undefined ? 'another process' : `live process ${pid}`}`;
+
+export const acquireProcessLock = async (lockPath: string, describeHolder: DescribeHolder | undefined, options: AcquireProcessLockOptions): Promise<ProcessLock> => {
+  const mechanism = options.mechanism;
+  const describe = describeHolder ?? describeByPid(lockPath);
   const outcome = await mechanism.claim(lockPath);
   if (outcome.kind === 'claimed') return claimed(outcome.lock);
   const holder = holderOf(await mechanism.readHolder(lockPath));
   const holderPid = holder.kind === 'pid' ? holder.pid : undefined;
-  throw new ProcessLockHeldError(await describeHolder(holderPid), lockPath, holderPid);
+  throw new ProcessLockHeldError(await describe(holderPid), lockPath, holderPid);
 };
 
 export type LockHandoff = {
@@ -79,8 +80,8 @@ export type LockHandoff = {
 
 export type LockHandoffClaim = { kind: 'unsupported' } | { kind: 'held'; holderPid: number | undefined } | { kind: 'claimed'; handoff: LockHandoff };
 
-export const claimLockForChild = (lockPath: string, options: ProcessLockOptions = {}): LockHandoffClaim => {
-  const mechanism = options.mechanism ?? hostKernelLock();
+export const claimLockForChild = (lockPath: string, options: ProcessLockOptions): LockHandoffClaim => {
+  const mechanism = options.mechanism;
   if (mechanism.claimInheritable === undefined) return { kind: 'unsupported' };
   const outcome = mechanism.claimInheritable(lockPath);
   if (outcome.kind === 'held') {
@@ -118,12 +119,12 @@ export class UnadoptedEnv {
     return rest;
   }
 
-  adopt(lockPath: string, options: ProcessLockOptions = {}): ProcessLock {
+  adopt(lockPath: string, options: ProcessLockOptions): ProcessLock {
     const fdText = this.#env[LOCK_FD_ENV];
     const nonce = this.#env[LOCK_NONCE_ENV];
     if (fdText === undefined || nonce === undefined) throw new LockAdoptionError(`${LOCK_FD_ENV} and ${LOCK_NONCE_ENV} must be set together`);
     if (!/^[1-9]\d{0,5}$/.test(fdText)) throw new LockAdoptionError(`${LOCK_FD_ENV} is not a descriptor number: ${JSON.stringify(fdText)}`);
-    const mechanism = options.mechanism ?? hostKernelLock();
+    const mechanism = options.mechanism;
     if (mechanism.adoptInherited === undefined) throw new LockAdoptionError(`${mechanism.name} locks cannot be handed to a child process`);
     return lockOf(mechanism.adoptInherited({ lockPath, descriptor: Number(fdText), expectedHolder: `${HANDOFF_PREFIX}${nonce}`, newHolder: String(process.pid) }));
   }

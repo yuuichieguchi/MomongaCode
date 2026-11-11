@@ -1,6 +1,6 @@
 import { PinnedOverflowError, formatToolOutput, formattedHeader, readersOffered } from '@momonga/context';
 import { canonicalJson, hostPaths, parseBoundedJson, spanValueOfJsonText } from '@momonga/foundation';
-import { termsOf } from '@momonga/protocol';
+import { diffFieldsOf, termsOf } from '@momonga/protocol';
 import type { PermissionOption, RunEventPayload, RunState, ToolAwait } from '@momonga/protocol';
 import type { BatchOutputFormatter, CallOutcome, DisplayContext, NeedsApprovalOutcome, NeedsInputOutcome, ResultOutcome, ToolCall, WaitingOutcome } from '@momonga/tools';
 import { COVERED_PROGRAMS, OPERATION_SPECS, TOOL_VALIDATOR_FAILED_CODE, supersededForms, toolRefusalKey, validateToolInput } from '@momonga/tools';
@@ -80,10 +80,7 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
           ...(result.windowShared === undefined ? {} : { windowShared: result.windowShared }),
           ...(result.memories === undefined ? {} : { memories: result.memories }),
           ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
-          ...(result.hunks === undefined ? {} : { hunks: result.hunks }),
-          ...(result.added === undefined ? {} : { added: result.added }),
-          ...(result.removed === undefined ? {} : { removed: result.removed }),
-          ...(result.diffOmitted === undefined ? {} : { diffOmitted: result.diffOmitted }),
+          ...diffFieldsOf(result),
           ...(result.effect === undefined ? {} : { effect: result.effect }),
         }
       : {
@@ -95,6 +92,7 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
           ...(result.files === undefined ? {} : { files: result.files }),
           ...(result.command === undefined ? {} : { command: result.command }),
           ...(result.effect === undefined ? {} : { effect: result.effect }),
+          ...diffFieldsOf(result),
         };
   return [
     settled,

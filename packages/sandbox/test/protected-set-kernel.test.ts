@@ -3,9 +3,9 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, protectedSetFor } from '@momonga/foundation';
 import type { ProtectedSet } from '@momonga/foundation';
-import { buildSeatbeltProfile, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, heldMountPoints, planBubblewrap } from '@momonga/sandbox';
+import { buildSeatbeltProfile, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, heldMountPoints, planBubblewrap, nodeFilesystemPort } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, killGroupsForCleanup, NEVER_CANCELLED, testPaths } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, killGroupsForCleanup, NEVER_CANCELLED, testPaths, testKernelLock } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -16,9 +16,9 @@ const BASE_ENV = { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' };
 type Built = { roots: string[]; cwd: string };
 
 const createHostSandbox = (options: { tmpRoot: string; killGraceMs: number }): Sandbox =>
-  process.platform === 'darwin' ? createSeatbeltSandbox(options) : createBubblewrapSandbox({ ...options, journal: createPlaceholderJournal(`${options.tmpRoot}-journal`), holders: () => heldMountPoints() });
+  process.platform === 'darwin' ? createSeatbeltSandbox({ lock: testKernelLock(), ...options }) : createBubblewrapSandbox({ lock: testKernelLock(), ...options, journal: createPlaceholderJournal(`${options.tmpRoot}-journal`), holders: () => heldMountPoints() });
 
-const admits = async (policy: SandboxPolicy, cwd: string): Promise<unknown> => (process.platform === 'darwin' ? await buildSeatbeltProfile(policy, {}, testPaths()) : await planBubblewrap(policy, { cwd }, NEVER_CANCELLED));
+const admits = async (policy: SandboxPolicy, cwd: string): Promise<unknown> => (process.platform === 'darwin' ? await buildSeatbeltProfile(policy, {}, testPaths()) : await planBubblewrap(policy, { cwd }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock())));
 
 const startRefusal = async (policy: SandboxPolicy, cwd: string): Promise<unknown> => {
   try {

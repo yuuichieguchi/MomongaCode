@@ -20,7 +20,7 @@ import {
   writeProjectSettings,
   writeUserSettings,
 } from './helpers.ts';
-import { NEVER_CANCELLED } from '@momonga/testkit';
+import { NEVER_CANCELLED, testKernelLock } from '@momonga/testkit';
 
 const rejectionOf = async (promise: Promise<unknown>): Promise<unknown> => {
   try {
@@ -76,7 +76,7 @@ describe('settings composition hooks and auto mode', () => {
     const binary = path.join(makeDir(f.temp.home, 'bin'), 'fm');
     fs.writeFileSync(binary, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
     writeUserSettings(f.temp.home, { autoMode: { classifier: 'system' }, models: { connections: [{ adapter: 'managed', server: 'fm', binary, models: [{ id: 'system', toolCalling: 'native' }] }] } });
-    const composition = runtime.createSettingsComposition({ signal: new AbortController().signal, home: f.temp.home, platform: 'aix', cache: makeCache(f.temp.home), store: f.store });
+    const composition = runtime.createSettingsComposition({ lock: testKernelLock(), signal: new AbortController().signal, home: f.temp.home, platform: 'aix', cache: makeCache(f.temp.home), store: f.store });
     const created = await composition.sessionCreateSettings(f.temp.project, signalNever());
     expect(created.autoModeClassifier).toBe('apple/system');
     expect(created.autoModeKey).toBeUndefined();
@@ -326,7 +326,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     const temp = await makeTempHome();
     const { store } = openStore(temp);
 
-    const error = await thrownBy(() => runtime.createSettingsComposition({ signal: new AbortController().signal, home: 'relative/home', platform: process.platform, cache: makeCache(temp.home), store }));
+    const error = await thrownBy(() => runtime.createSettingsComposition({ lock: testKernelLock(), signal: new AbortController().signal, home: 'relative/home', platform: process.platform, cache: makeCache(temp.home), store }));
 
     expect(error).toBeInstanceOf(TypeError);
     expect((error as Error).message).toContain('relative/home');

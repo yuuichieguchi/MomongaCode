@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, GENERATION_ROLE_UNREADABLE_EVENT, SWEEP_INTERVAL_MS, createJsonLogger, generationLayout, momongaPaths, publishCurrentGeneration } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, testKernelLock } from '@momonga/testkit';
 import { getJson } from '../gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, until, writeSettings } from '../gateway-process-helpers.ts';
 
@@ -21,7 +21,7 @@ const launch = async () => {
   const paths = momongaPaths(home, process.platform, {});
   const pollArmed = (): boolean => timers.pending().some((timer) => timer.delayMs === SWEEP_INTERVAL_MS);
   const publish = async (generation: number): Promise<void> => {
-    expect(await publishCurrentGeneration(paths, { generation, version: PROCESS_VERSION, sockets: generationLayout(home, generation).sockets })).toBe('published');
+    expect(await publishCurrentGeneration(paths, { generation, version: PROCESS_VERSION, sockets: generationLayout(home, generation).sockets }, { lock: testKernelLock() })).toBe('published');
   };
   const poll = async (): Promise<void> => {
     timers.advance(SWEEP_INTERVAL_MS);

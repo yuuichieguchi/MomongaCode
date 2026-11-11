@@ -7,13 +7,14 @@ import { Deadline } from '../../src/deadline.ts';
 import { createProcessInspector, hostInspectorPorts } from '../../src/platform/process-inspector.ts';
 import { fixedCapability, pendingOrSettled, silentRunner, slowRunner, virtualTiming } from '../support/probe-fakes.ts';
 import type { RecordedCommand } from '../support/probe-fakes.ts';
+import { testLocks } from '@momonga/testkit';
 
 const SOURCE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'platform');
 
 const LSOF_TWO_HOLDERS = { exitCode: 0, stdout: '4242\n4243\n', stderr: '' };
 
 const darwinWith = (run: Parameters<typeof createDarwinInspector>[0]['run']) =>
-  createProcessInspector('darwin', { ...hostInspectorPorts(), run, capability: fixedCapability('unenforced') });
+  createProcessInspector('darwin', { ...hostInspectorPorts(testLocks().capability), run, capability: fixedCapability('unenforced') });
 
 describe('T1 the listing path does not depend on how long the listing takes', () => {
   it.for([110, 2100, 6000])('holdersOf answers the same holders when lsof takes %i ms', async (latencyMs) => {
@@ -28,7 +29,7 @@ describe('T1 the listing path does not depend on how long the listing takes', ()
 describe('T4 no private probe bound; every probe ends with the signal of its caller', () => {
   it('(a) darwin-inspector.ts carries no timeoutMs and the host ports carry no startTimeoutMs', () => {
     expect(fs.readFileSync(path.join(SOURCE, 'darwin-inspector.ts'), 'utf8')).not.toMatch(/timeoutMs|TimeoutMs/);
-    expect(Object.keys(hostInspectorPorts())).not.toContain('startTimeoutMs');
+    expect(Object.keys(hostInspectorPorts(testLocks().capability))).not.toContain('startTimeoutMs');
   });
 
   it('(b) a listing that never answers rejects exactly when the caller aborts at its deadline, and its child is killed', async () => {

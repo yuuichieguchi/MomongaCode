@@ -290,6 +290,10 @@ describe('run event payloads', () => {
       files?: { path: string; sha256?: string; access: 'read' | 'write' | 'remove' }[];
       command?: string;
       effect?: { operation: string; target: string; outcome: 'applied' | 'already_applied' | 'failed' | 'unknown' };
+      hunks?: { oldStart: number; newStart: number; lines: string[] }[];
+      added?: number;
+      removed?: number;
+      diffOmitted?: string;
     }>();
   });
 

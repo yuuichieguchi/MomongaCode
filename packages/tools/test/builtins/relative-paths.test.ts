@@ -233,7 +233,7 @@ describe('Write with a relative path', () => {
     const file = path.join(project(tools), 'sub', 'new.txt');
     const result = resultOf(await tools.run('Write', { file_path: 'sub/new.txt', content: 'x' }, { mode: 'acceptEdits' }));
     expect(result).toMatchObject({ status: 'completed', output: 'Created sub/new.txt (1 line)' });
-    expect(result.content).toEqual([{ type: 'diff', path: file, oldText: null, newText: 'x' }]);
+    expect(result).toMatchObject({ hunks: [{ oldStart: 1, newStart: 1, lines: ['+x'] }], added: 1, removed: 0 });
     expect(result.files).toEqual([{ path: file, sha256: sha256('x'), access: 'write' }]);
     expect(fs.readFileSync(file, 'utf8')).toBe('x');
     expect(fs.existsSync(path.join(project(tools), 'sub', 'sub', 'new.txt'))).toBe(false);
@@ -245,7 +245,7 @@ describe('Write with a relative path', () => {
     resultOf(await tools.run('Write', { file_path: 'sub/p.txt', content: 'one' }, { mode: 'acceptEdits' }));
     const metas = tools.idempotency.log.flatMap((entry) => (entry.op === 'begin' ? [entry.meta] : []));
     const resolved = path.join(project(tools), 'sub', 'p.txt');
-    expect(metas).toEqual([{ tool: 'Write', runId: 'run-1', prepared: { path: resolved, preHash: null, postHash: sha256('one') }, facts: { files: [{ path: resolved, access: 'write' }] } }]);
+    expect(metas).toEqual([{ tool: 'Write', runId: 'run-1', prepared: { path: resolved, preHash: null, postHash: sha256('one'), diff: { hunks: [{ oldStart: 1, newStart: 1, lines: ['+one'] }], added: 1, removed: 0 } }, facts: { files: [{ path: resolved, access: 'write' }] } }]);
   });
 
   it('reports an absolute path inside the working directory relative to it', async () => {
@@ -254,7 +254,7 @@ describe('Write with a relative path', () => {
     tools.markRead(file);
     const result = resultOf(await tools.run('Write', { file_path: file, content: 'a\nb' }, { mode: 'acceptEdits' }));
     expect(result).toMatchObject({ status: 'completed', output: 'Updated existing.txt (2 lines)' });
-    expect(result.content).toEqual([{ type: 'diff', path: file, oldText: 'old\n', newText: 'a\nb' }]);
+    expect(result).toMatchObject({ hunks: [{ oldStart: 1, newStart: 1, lines: ['-old', '+a', '+b'] }], added: 2, removed: 1 });
   });
 
   it('reports a file outside the working directory by its absolute path', async () => {
@@ -316,7 +316,7 @@ describe('Edit with a relative path', () => {
     const result = resultOf(await tools.run('Edit', { file_path: 'sub/a.txt', old_string: 'hello', new_string: 'bye' }, { mode: 'acceptEdits' }));
     expect(result.status).toBe('completed');
     expect(result.output).toBe('The file sub/a.txt has been updated. Here is the result of running cat -n on a snippet of the edited file:\n     1\tbye');
-    expect(result.content).toEqual([{ type: 'diff', path: file, oldText: 'hello\n', newText: 'bye\n' }]);
+    expect(result).toMatchObject({ hunks: [{ oldStart: 1, newStart: 1, lines: ['-hello', '+bye'] }], added: 1, removed: 1 });
     expect(result.files).toEqual([{ path: file, sha256: sha256('bye\n'), access: 'write' }]);
     expect(fs.readFileSync(file, 'utf8')).toBe('bye\n');
   });

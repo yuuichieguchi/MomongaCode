@@ -19,6 +19,7 @@ import type {
 } from '@momonga/store';
 import { INHERITANCE_ERROR_CODES, VERDICT_RANKS } from '@momonga/store';
 import { JOURNAL_THREAD_CODE } from './journal-thread-code.generated.ts';
+import type { KernelLockMechanism } from '@momonga/foundation';
 
 export type JournalThreadTimers = {
   setTimeout(callback: () => void, ms: number): unknown;
@@ -27,6 +28,8 @@ export type JournalThreadTimers = {
 
 export type JournalThreadOptions = {
   readonly databasePath: string;
+  readonly lock: KernelLockMechanism;
+  readonly busyTimeoutMs: number;
   readonly identity: { readonly dev: number; readonly ino: number };
   readonly silenceLimitMs: number;
   readonly code?: string;
@@ -334,7 +337,7 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
     const { port1, port2 } = new MessageChannel();
     let worker: Worker;
     try {
-      worker = new Worker(code, { eval: true, workerData: { databasePath, blobsDir: blobDirectoryOf(databasePath), port: port2 }, transferList: [port2] });
+      worker = new Worker(code, { eval: true, workerData: { databasePath, blobsDir: blobDirectoryOf(databasePath), lockName: options.lock.name, busyTimeoutMs: options.busyTimeoutMs, port: port2 }, transferList: [port2] });
     } catch (error) {
       port1.close();
       port2.close();

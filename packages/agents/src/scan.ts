@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { momongaLayout } from '@momonga/foundation';
+import { homeLayout } from '@momonga/foundation';
 import { attemptRead, describeUnreadable, parseSkillFile } from '@momonga/skills';
 import type { SkillFileSystem } from '@momonga/skills';
 import { AGENT_DIRECTORY_SEGMENTS, AGENT_FILE_SUFFIX, AGENT_NAME_MAX_LENGTH, INHERIT_MODEL, SUPPORTED_FIELDS } from './constants.ts';
@@ -109,7 +109,7 @@ export const scanAgents = async ({ home, projectRoot, trusted }: AgentScanReques
   const chosen = new Map<string, AgentDefinition>();
   const locations: { scope: AgentScope; directory: string }[] = [
     { scope: 'project', directory: path.join(projectRoot, AGENT_DIRECTORY_SEGMENTS) },
-    { scope: 'user', directory: momongaLayout(home).agents },
+    { scope: 'user', directory: homeLayout(home).agents },
   ];
   for (const { scope, directory } of locations) {
     const listing = await attemptRead(() => fileSystem.listDirectory(directory));

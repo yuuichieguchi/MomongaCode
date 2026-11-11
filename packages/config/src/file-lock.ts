@@ -1,5 +1,5 @@
 import { createKeyedSerializer, hostPaths, nodeFileSystem, sha256Hex, systemFileLockPorts, withFileLock } from '@momonga/foundation';
-import type { FileLockPorts, PathResolver, Random } from '@momonga/foundation';
+import type { FileLockPorts, KernelLockMechanism, PathResolver, Random } from '@momonga/foundation';
 import { layoutOf } from './layout.ts';
 
 const KEY_HEX_CHARS = 32;
@@ -10,25 +10,26 @@ export const settingsLockPath = async (home: string, file: string, paths: Pick<P
 
 export type SettingsLockPort = { locked<Result>(file: string, signal: AbortSignal, work: () => Promise<Result>): Promise<Result> };
 
-export type SettingsFileLockOptions = { ports?: FileLockPorts; lockTimeoutMs?: number };
+export type SettingsFileLockOptions = { lock: KernelLockMechanism; ports?: FileLockPorts; lockTimeoutMs?: number };
 
 const serializeInProcess = createKeyedSerializer();
 
-export const settingsFileLock = (home: string, { ports = systemFileLockPorts, lockTimeoutMs }: SettingsFileLockOptions = {}): SettingsLockPort => ({
+export const settingsFileLock = (home: string, { lock, ports = systemFileLockPorts, lockTimeoutMs }: SettingsFileLockOptions): SettingsLockPort => ({
   locked: async (file, signal, work) => {
     const paths = hostPaths(signal);
     await nodeFileSystem.mkdir(layoutOf(home).run, PRIVATE_DIRECTORY_MODE);
     const lockPath = await settingsLockPath(home, file, paths);
-    return serializeInProcess(await paths.comparablePath(file), () => withFileLock(lockPath, work, { ports, signal, ...(lockTimeoutMs === undefined ? {} : { timeoutMs: lockTimeoutMs }) }), signal);
+    return serializeInProcess(await paths.comparablePath(file), () => withFileLock(lockPath, work, { ports, mechanism: lock, signal, ...(lockTimeoutMs === undefined ? {} : { timeoutMs: lockTimeoutMs }) }), signal);
   },
 });
 
 export type SettingsWriterOptions = SettingsFileLockOptions & { signal: AbortSignal };
 
-export type SettingsWriterPorts = { lock: SettingsLockPort; random: Random; signal: AbortSignal };
+export type SettingsWriterPorts = { lock: SettingsLockPort; mechanism: KernelLockMechanism; random: Random; signal: AbortSignal };
 
-export const settingsWriterPorts = (home: string, { ports = systemFileLockPorts, lockTimeoutMs, signal }: SettingsWriterOptions): SettingsWriterPorts => ({
-  lock: settingsFileLock(home, { ports, ...(lockTimeoutMs === undefined ? {} : { lockTimeoutMs }) }),
+export const settingsWriterPorts = (home: string, { lock, ports = systemFileLockPorts, lockTimeoutMs, signal }: SettingsWriterOptions): SettingsWriterPorts => ({
+  mechanism: lock,
+  lock: settingsFileLock(home, { lock, ports, ...(lockTimeoutMs === undefined ? {} : { lockTimeoutMs }) }),
   random: ports.random,
   signal,
 });

@@ -26,7 +26,7 @@ const runScript = async (sandbox: Sandbox, policy: SandboxPolicy, cwd: string, t
 describe.runIf(HAS_REAL_SANDBOX)('the executables area under the cache base, on the real OS sandbox of this host', () => {
   const setup = async () => {
     const layout = makeLayout();
-    const paths = momongaLayout(layout.home);
+    const paths = momongaLayout(layout.home, process.platform, process.env);
     const area = path.join(paths.cacheBase, 'executables');
     const extracted = path.join(area, 'ripgrep-15.2.0-0123456789abcdef');
     fs.mkdirSync(extracted, { recursive: true });
@@ -36,7 +36,7 @@ describe.runIf(HAS_REAL_SANDBOX)('the executables area under the cache base, on 
     fs.mkdirSync(sandboxTmpRoot);
     const tmpDir = path.join(paths.tmp.sessions, 'own-session');
     fs.mkdirSync(tmpDir, { recursive: true, mode: 0o700 });
-    const policy = await buildSandboxPolicy({ roots: [layout.home], home: layout.home, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules: EMPTY_FILE_RULES, protectedSet: EMPTY_PROTECTED_SET, network: 'deny' }, NEVER_CANCELLED);
+    const policy = await buildSandboxPolicy({ layout: momongaLayout(layout.home, process.platform, process.env), roots: [layout.home], home: layout.home, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules: EMPTY_FILE_RULES, protectedSet: EMPTY_PROTECTED_SET, network: 'deny' }, NEVER_CANCELLED);
     const sandbox = createHostSandbox({ tmpRoot: sandboxTmpRoot, killGraceMs: 300 });
     return { layout, paths, area, extracted, rg, policy, sandbox, tmpDir };
   };

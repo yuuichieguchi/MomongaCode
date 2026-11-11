@@ -21,7 +21,7 @@ const BINARY = new TextEncoder().encode('MZ keeper bytes');
 const SHA = sha256Hex(BINARY);
 const MANIFEST = new TextEncoder().encode(JSON.stringify({ target: 'win-x64', binary: { asset: WINDOWS_KEEPER_BINARY_ASSET, sha256: SHA, size: BINARY.length, name: 'momonga-keeper.exe' } }));
 
-const portsOf = (home: string) => ({ home, platform: process.platform, interrupt: new AbortController().signal });
+const portsOf = (home: string) => ({ home, platform: process.platform, env: {}, interrupt: new AbortController().signal });
 
 describe('the composition root extracts the bundled keeper and provides it to the group port', () => {
   it('provides no embedded keeper outside a single executable and in a single executable that carries no keeper', async () => {

@@ -208,7 +208,7 @@ describe('process ledger: persistence', () => {
 describe('process ledger: sources', () => {
   it('collects from health, the supervisor lock, the supervisor logs, the database, the record files and the marker holders', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     fs.mkdirSync(path.dirname(paths.logFiles.supervisor), { recursive: true, mode: 0o700 });
     const logLine = (msg: string, childPid: number | null): string =>
       `${JSON.stringify({ ts: '2026-01-01T00:00:00.000Z', level: 'info', service: 'supervisor', pid: 1, msg, child: 'runtime', childPid })}\n`;
@@ -254,7 +254,7 @@ describe('process ledger: sources', () => {
     const home = withTempDir(context, { asHome: true });
     const world = fakeWorld({});
     const ledger = createProcessLedger({ pidsFile: pidsFileIn(context), ports: world.ports });
-    await expect(ledger.collect({ paths: momongaPaths(home), recordFiles: [path.join(home, 'mcp.rec'), path.join(home, 'gc.ready')] })).resolves.toBeUndefined();
+    await expect(ledger.collect({ paths: momongaPaths(home, process.platform, process.env), recordFiles: [path.join(home, 'mcp.rec'), path.join(home, 'gc.ready')] })).resolves.toBeUndefined();
     expect(ledger.entries()).toEqual([]);
   });
 });
@@ -267,7 +267,7 @@ type SourceFixture = { paths: ReturnType<typeof momongaPaths>; recordFile: strin
 
 const sourceFixture = (context: CleanupContext): SourceFixture => {
   const home = withTempDir(context, { asHome: true });
-  const paths = momongaPaths(home);
+  const paths = momongaPaths(home, process.platform, process.env);
   fs.mkdirSync(path.dirname(paths.logFiles.supervisor), { recursive: true, mode: 0o700 });
   fs.mkdirSync(toolMarkersOf(paths), { recursive: true, mode: 0o700 });
   const marker = path.join(toolMarkersOf(paths), 'tool-marker');

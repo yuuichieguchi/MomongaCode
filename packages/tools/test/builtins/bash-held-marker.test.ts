@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createProcessInspector, hostInspectorPorts, nodeCommandRunner } from '@momonga/foundation';
 import type { CommandOptions, CommandRunner } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testLocks } from '@momonga/testkit';
 import { HAS_REAL_SANDBOX, keyFor } from '../helpers.ts';
 import { makeBuiltins, resultOf, trackPid, waitFor } from './fixtures.ts';
 
@@ -43,7 +43,7 @@ const forbiddenLsof = (calls: Recorded[]): CommandRunner => async (file, args, o
 };
 
 const builtinsWith = (run: CommandRunner, capability: typeof notProved | typeof proved) =>
-  makeBuiltins({ realSandbox: true, executor: { reap: { inspector: createProcessInspector(process.platform, { ...hostInspectorPorts(), run, capability } as never) } } });
+  makeBuiltins({ realSandbox: true, executor: { reap: { inspector: createProcessInspector(process.platform, { ...hostInspectorPorts(testLocks().capability), run, capability } as never) } } });
 
 const isAlive = (pid: number): boolean => {
   try {

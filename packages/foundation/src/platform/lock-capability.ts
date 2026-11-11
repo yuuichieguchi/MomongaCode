@@ -1,30 +1,35 @@
-import os from 'node:os';
 import path from 'node:path';
 import { OPEN_FLAGS, nodeFileSystemSync } from '../node-file-system.ts';
-import type { DirectoryIdentity } from '../node-file-system.ts';
+import type { DirectoryIdentity, FileSystemSync } from '../node-file-system.ts';
 import type { Random } from '../random.ts';
 import { systemRandom } from '../system-random.ts';
-import { nodeFileLockOps } from './kernel-lock.ts';
-import type { FileLockOps } from './kernel-lock.ts';
+import { nodeFileLockOps, resolveKernelLock } from './kernel-lock.ts';
+import type { FileLockOps, KernelLockMechanism } from './kernel-lock.ts';
 
 export type LockCapability = 'proved' | 'unenforced' | 'unmeasured';
 
 export interface LockCapabilityProbe {
   of(dir: string): Promise<LockCapability>;
+  decide(dir: string): LockDecision;
   contradicted(dir: string): void;
 }
 
 export type { DirectoryIdentity };
+
+export type ProofDirectoryFiles = Pick<FileSystemSync, 'lstatSync'>;
 
 export type LockCapabilityOptions = {
   proofDir: string;
   ops?: FileLockOps;
   statDirectory?: (dir: string) => DirectoryIdentity;
   random?: Random;
+  files?: ProofDirectoryFiles;
+  uid?: () => number | undefined;
 };
 
 export const UNMEASURED_CAPABILITY: LockCapabilityProbe = {
   of: async () => 'unmeasured',
+  decide: () => 'unprovable',
   contradicted: () => undefined,
 };
 
@@ -121,106 +126,136 @@ const removeFreeLeftovers = (ops: FileLockOps, proofDir: string, own: string): v
   }
 };
 
-const prove = (ops: FileLockOps, random: Random, proofDir: string): 'proved' | 'unenforced' | 'unmeasured' => {
+type Proof = { kind: 'proved' } | { kind: 'unenforced' } | { kind: 'failed'; cause: unknown };
+
+const openFailure = (error: unknown): Proof => (NOT_ENFORCED_CODES.includes(codeOf(error) ?? '') ? { kind: 'unenforced' } : { kind: 'failed', cause: error });
+
+const prove = (ops: FileLockOps, random: Random, proofDir: string): Proof => {
   const file = path.join(proofDir, random.uuid());
   let creator: number | undefined;
   try {
     try {
       creator = createLockedFile(ops, file, OPEN_FLAGS.readOnly, PROOF_MODE);
     } catch (error) {
-      return NOT_ENFORCED_CODES.includes(codeOf(error) ?? '') ? 'unenforced' : 'unmeasured';
+      return openFailure(error);
     }
     let refused: boolean;
     try {
       refused = sharedOpenIsRefused(ops, file);
     } catch (error) {
-      return NOT_ENFORCED_CODES.includes(codeOf(error) ?? '') ? 'unenforced' : 'unmeasured';
+      return openFailure(error);
     }
-    if (!refused) return 'unenforced';
+    if (!refused) return { kind: 'unenforced' };
     ops.close(creator);
     creator = undefined;
-    try {
-      if (sharedOpenIsRefused(ops, file)) return 'unmeasured';
-    } catch {
-      return 'unmeasured';
-    }
+    if (sharedOpenIsRefused(ops, file)) return { kind: 'failed', cause: new Error(`${file} still refuses a shared lock after its only holder closed it`) };
     removeFreeLeftovers(ops, proofDir, file);
-    return 'proved';
-  } catch {
-    return 'unmeasured';
+    return { kind: 'proved' };
+  } catch (error) {
+    return { kind: 'failed', cause: error };
   } finally {
     if (creator !== undefined) ops.close(creator);
     nodeFileSystemSync.rmSync(file);
   }
 };
 
-type Cached = { identity: DirectoryIdentity; result: 'proved' | 'unenforced' };
+type Enforcement = 'proved' | 'unenforced';
 
-export const createLockCapability = ({ proofDir, ops = nodeFileLockOps, statDirectory = statIdentity, random = systemRandom }: LockCapabilityOptions): LockCapabilityProbe => {
+type Cached = { identity: DirectoryIdentity; result: Enforcement };
+
+type Measurement = { kind: Enforcement } | { kind: 'unprovable' } | { kind: 'failed'; cause: unknown };
+
+export type LockDecision = Enforcement | 'unprovable';
+
+export class LockProofFailedError extends Error {
+  readonly directory: string;
+  constructor(directory: string, proofDir: string, cause: unknown) {
+    super(`Whether ${directory} enforces file locks could not be measured in ${proofDir}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+    this.name = 'LockProofFailedError';
+    this.directory = directory;
+  }
+}
+
+const OTHER_ACCOUNTS_MODE = 0o077;
+
+const hostUid = (): number | undefined => process.getuid?.();
+
+const proofDirectoryIsPrivate = (files: ProofDirectoryFiles, proofDir: string, uid: number | undefined): boolean => {
+  const stat = files.lstatSync(proofDir);
+  const foreign = uid !== undefined && stat.uid !== uid;
+  return stat.isDirectory() && !stat.isSymbolicLink() && !foreign && (stat.mode & OTHER_ACCOUNTS_MODE) === 0;
+};
+
+export const createLockCapability = ({
+  proofDir,
+  ops = nodeFileLockOps,
+  statDirectory = statIdentity,
+  random = systemRandom,
+  files = nodeFileSystemSync,
+  uid = hostUid,
+}: LockCapabilityOptions): LockCapabilityProbe => {
   const cache = new Map<string, Cached>();
-  const inflight = new Map<string, Promise<LockCapability>>();
+  const inflight = new Map<string, Promise<Measurement>>();
 
-  const measure = (dir: string, identity: DirectoryIdentity): LockCapability => {
-    const proof = statDirectory(proofDir);
-    if (proof.dev !== identity.dev) return 'unmeasured';
-    const result = prove(ops, random, proofDir);
-    if (result !== 'unmeasured') cache.set(dir, { identity, result });
-    return result;
+  const proofDirectoryMeasures = (identity: DirectoryIdentity): boolean => proofDirectoryIsPrivate(files, proofDir, uid()) && statDirectory(proofDir).dev === identity.dev;
+
+  const measure = (dir: string, identity: DirectoryIdentity): Measurement => {
+    let usable: boolean;
+    try {
+      usable = proofDirectoryMeasures(identity);
+    } catch (error) {
+      return { kind: 'failed', cause: error };
+    }
+    if (!usable) return { kind: 'unprovable' };
+    const proof = prove(ops, random, proofDir);
+    if (proof.kind !== 'failed') cache.set(dir, { identity, result: proof.kind });
+    return proof;
   };
 
-  const resolve = (dir: string): LockCapability => {
+  const resolve = (dir: string): Measurement => {
     let identity: DirectoryIdentity;
     try {
       identity = statDirectory(dir);
-    } catch {
+    } catch (error) {
       cache.delete(dir);
-      return 'unmeasured';
+      return { kind: 'failed', cause: error };
     }
     const cached = cache.get(dir);
     if (cached !== undefined) {
-      if (cached.identity.dev === identity.dev && cached.identity.ino === identity.ino) return cached.result;
+      if (cached.identity.dev === identity.dev && cached.identity.ino === identity.ino) return { kind: cached.result };
       cache.delete(dir);
     }
     return measure(dir, identity);
   };
 
+  const measured = (dir: string): Promise<Measurement> => {
+    const running = inflight.get(dir);
+    if (running !== undefined) return running;
+    const started = Promise.resolve().then(() => resolve(dir));
+    inflight.set(dir, started);
+    const clear = (): void => void inflight.delete(dir);
+    started.then(clear, clear);
+    return started;
+  };
+
+  const decisionOf = (dir: string, measurement: Measurement): LockDecision => {
+    if (measurement.kind === 'failed') throw new LockProofFailedError(dir, proofDir, measurement.cause);
+    return measurement.kind;
+  };
+
   return {
-    of: (dir) => {
-      const running = inflight.get(dir);
-      if (running !== undefined) return running;
-      const started = Promise.resolve().then(() => resolve(dir));
-      inflight.set(dir, started);
-      const clear = (): void => void inflight.delete(dir);
-      started.then(clear, clear);
-      return started;
+    of: async (dir) => {
+      const measurement = await measured(dir);
+      return measurement.kind === 'proved' || measurement.kind === 'unenforced' ? measurement.kind : 'unmeasured';
     },
+    decide: (dir) => decisionOf(dir, resolve(dir)),
     contradicted: (dir) => void cache.delete(dir),
   };
 };
 
-const privateProofDirectory = (): string | undefined => {
-  const uid = process.getuid?.();
-  const directory = path.join(os.tmpdir(), `momonga-lock-proof-${uid ?? 'user'}`);
-  try {
-    nodeFileSystemSync.mkdirSync(directory, 0o700);
-  } catch (error) {
-    if (codeOf(error) !== 'EEXIST') return undefined;
-  }
-  const stat = nodeFileSystemSync.lstatSync(directory);
-  const foreign = uid !== undefined && stat.uid !== uid;
-  return stat.isDirectory() && !stat.isSymbolicLink() && !foreign && (stat.mode & 0o077) === 0 ? directory : undefined;
-};
+export type LayoutLocks = { capability: LockCapabilityProbe; mechanism: KernelLockMechanism };
 
-let hosted: LockCapabilityProbe | undefined;
-
-export const hostLockCapability: LockCapabilityProbe = {
-  of: async (dir) => {
-    if (hosted === undefined) {
-      const proofDir = privateProofDirectory();
-      if (proofDir === undefined) return 'unmeasured';
-      hosted = createLockCapability({ proofDir });
-    }
-    return hosted.of(dir);
-  },
-  contradicted: (dir) => hosted?.contradicted(dir),
+export const resolveLayoutLocks = (paths: { callLocks: string; lockProof: string }): LayoutLocks => {
+  const capability = createLockCapability({ proofDir: paths.lockProof });
+  return { capability, mechanism: resolveKernelLock(paths.callLocks, { capability }) };
 };

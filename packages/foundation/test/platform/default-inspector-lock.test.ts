@@ -3,9 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTempDir, removeTempDir } from '@momonga/testkit';
-import { createLockCapability } from '../../src/platform/lock-capability.ts';
+import { resolveLayoutLocks } from '../../src/platform/lock-capability.ts';
+import { layoutProcessInspector } from '../../src/platform/process-inspector.ts';
 import { createMarker } from '../../src/platform/marker-file.ts';
-import { defaultProcessInspector } from '../../src/platform/process-inspector.ts';
 import { ensureMomongaDirs, momongaLayout } from '../../src/momonga-paths.ts';
 
 const children: Array<ReturnType<typeof spawn>> = [];
@@ -22,11 +22,11 @@ afterEach(async () => {
   for (const home of homes.splice(0)) await removeTempDir(home);
 });
 
-describe.runIf(process.platform === 'darwin')('F: the default inspector carries the lock capability', () => {
+describe.runIf(process.platform === 'darwin')('F: the inspector of a layout carries the lock capability of that layout', () => {
   it('on a proved marker directory it answers from the lock: a process holding the file without the lock is not a holder', async () => {
     const paths = momongaLayout(makeSocketBindableHome(), process.platform, {}) as ReturnType<typeof momongaLayout> & { lockProof: string };
     await ensureMomongaDirs(paths);
-    const capability = createLockCapability({ proofDir: paths.lockProof });
+    const { capability } = resolveLayoutLocks(paths);
     expect(await capability.of(paths.markers.tools)).toBe('proved');
     const marker = path.join(paths.markers.tools, 'call');
     (await createMarker(marker, { capability })).close();
@@ -35,6 +35,6 @@ describe.runIf(process.platform === 'darwin')('F: the default inspector carries 
     children.push(child);
     fs.closeSync(plain);
     await new Promise((resolve) => child.once('spawn', resolve));
-    expect(await defaultProcessInspector().markerState(marker, { signal: new AbortController().signal })).toBe('free');
+    expect(await layoutProcessInspector(capability).markerState(marker, { signal: new AbortController().signal })).toBe('free');
   });
 });

@@ -16,7 +16,7 @@ import {
   SETTINGS_APPLIED_ENV,
   generationLayout,
 } from '@momonga/foundation';
-import type { Clock, JsonLogger, KernelLockMechanism, LockHandoff, LockHandoffClaim, MomongaPaths, ReadyFields, RoleEndpoint, StopValues } from '@momonga/foundation';
+import type { Clock, JsonLogger, KernelLockMechanism, LockHandoff, LockHandoffClaim, MomongaPaths, ReadyFields, RoleEndpoint, StopValues, ProcessInspector } from '@momonga/foundation';
 import type { SupervisorChildHealth, SupervisorChildState, SupervisorExitReason } from '@momonga/protocol';
 import { captureStream, createOutputLimiter } from './capture.ts';
 import { definedEnv, gatewayEnv, runtimeEnv, COLLIDING_CREDENTIAL_DETAIL } from './child-env.ts';
@@ -107,7 +107,8 @@ export type ChildManagerOptions = {
   startupTimeoutMs: number;
   heldRetryMs: number;
   lockWaitMs: number;
-  lockMechanism?: KernelLockMechanism;
+  lockMechanism: KernelLockMechanism;
+  inspector: ProcessInspector;
   markerPorts?: MarkerPorts;
   stopValues?: StopValuesReader;
   isDraining(): boolean;
@@ -308,7 +309,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       lockWatchIntervalMs: options.intervals.lockWatchIntervalMs,
       externalPollMs: options.intervals.externalPollMs,
       timers,
-      ...omitUndefined({ mechanism: options.lockMechanism }),
+      mechanism: options.lockMechanism,
       onFree: () => {
         if (isStale()) return;
         spawnFresh('lock-free');
@@ -517,7 +518,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
 
   const reapMarker = async (markerPath: string): Promise<void> => {
     unreaped.add(markerPath);
-    const reaping = reapDaemonMarker({ marker: markerPath, logger, ...omitUndefined({ markerPorts: options.markerPorts }) });
+    const reaping = reapDaemonMarker({ marker: markerPath, logger, inspector: options.inspector, ...omitUndefined({ markerPorts: options.markerPorts }) });
     inFlightReaps.set(markerPath, reaping);
     try {
       const result = await reaping;
@@ -540,6 +541,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
         occasion: 'shutdown',
         onWarning: (detail) => log(settingsWarning({ detail })),
         signal: reapStop.signal,
+        inspector: options.inspector,
       });
     } finally {
       options.timers.clearTimeout(bound);
@@ -613,7 +615,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     }
     let claim: LockHandoffClaim;
     try {
-      claim = claimLockForChild(options.endpoint.lockPath, omitUndefined({ mechanism: options.lockMechanism }));
+      claim = claimLockForChild(options.endpoint.lockPath, { mechanism: options.lockMechanism });
     } catch (error) {
       launches += 1;
       failWithoutProcess('spawn-failed', error);

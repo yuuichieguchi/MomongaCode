@@ -1,4 +1,5 @@
 import { forceKillGroup, generationLayout, inspectProcessLock, isProcessAlive, listGenerationNumbers, momongaPaths, systemWaitTiming } from '@momonga/foundation';
+import { testKernelLock } from './test-locks.ts';
 
 export const CLEANUP_KILL_DEADLINE_MS = 5000;
 const HOLDER_EXIT_POLL_MS = 20;
@@ -6,7 +7,7 @@ const HOLDER_EXIT_POLL_MS = 20;
 const isMissingProcess = (error: unknown): boolean => (error as NodeJS.ErrnoException).code === 'ESRCH';
 
 const stopHolderOf = async (lockPath: string): Promise<number | undefined> => {
-  const lock = await inspectProcessLock(lockPath);
+  const lock = await inspectProcessLock(lockPath, { mechanism: testKernelLock() });
   if (lock.state === 'free') return undefined;
   if (lock.state === 'unreadable') throw new Error(`the supervisor lock ${lockPath} is held by a process that cannot be identified`);
   const { pid } = lock;
@@ -19,7 +20,7 @@ const stopHolderOf = async (lockPath: string): Promise<number | undefined> => {
     if (!isMissingProcess(error)) throw error;
   }
   const deadline = systemWaitTiming.monotonicMs() + CLEANUP_KILL_DEADLINE_MS;
-  while (isProcessAlive(pid) || (await inspectProcessLock(lockPath)).state !== 'free') {
+  while (isProcessAlive(pid) || (await inspectProcessLock(lockPath, { mechanism: testKernelLock() })).state !== 'free') {
     if (Date.now() >= deadline) throw new Error(`the supervisor ${pid} holding ${lockPath} did not exit within ${CLEANUP_KILL_DEADLINE_MS} ms of SIGKILL`);
     await new Promise<void>((resolve) => setTimeout(resolve, HOLDER_EXIT_POLL_MS));
   }

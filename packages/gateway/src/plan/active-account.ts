@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { AUTH_DOCUMENT_MAX_BYTES, isRecord, systemRandom, writeFileAtomically } from '@momonga/foundation';
-import type { FileSystem } from '@momonga/foundation';
+import type { FileSystem, KernelLockMechanism } from '@momonga/foundation';
 import { PLAN_LABEL_PATTERN, isPlanLabel } from '@momonga/protocol';
 import { describeError } from '../core/describe-error.ts';
 import { parsePlanJson } from './plan-json.ts';
@@ -26,7 +26,7 @@ export const readActivePointer = async (fileSystem: FileSystem, file: string): P
   );
 };
 
-export const writeActivePointer = async (fileSystem: FileSystem, file: string, pointer: ActivePointer): Promise<void> => {
+export const writeActivePointer = async (fileSystem: FileSystem, file: string, pointer: ActivePointer, lock: KernelLockMechanism): Promise<void> => {
   await fileSystem.mkdirPrivate(path.dirname(file));
-  await writeFileAtomically(fileSystem, systemRandom, file, JSON.stringify(pointer), { mode: FILE_MODE });
+  await writeFileAtomically(fileSystem, systemRandom, file, JSON.stringify(pointer), { mode: FILE_MODE, lock });
 };

@@ -6,7 +6,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { afterEach, expect } from 'vitest';
-import { createRedactor, createUdsClient, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, fixedSocket, HOST_RULE_ENFORCEMENT, momongaLayout, momongaPaths, nodeFileSystem, systemRandom } from '@momonga/foundation';
+import { createRedactor, createUdsClient, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, fixedSocket, HOST_RULE_ENFORCEMENT, momongaLayout, momongaPaths, nodeFileSystem, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { RolePort, UdsClient } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import { computeFileRules } from '@momonga/policy';
@@ -18,7 +18,7 @@ import type { SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import { journalReaderPreparer } from '../worker/harness.ts';
 import type { Claim, ContributionPreparer, RuntimeStore, Session } from '@momonga/store';
-import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, createTempDir, pollUntil, removeTempDir, testProbes } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, createTempDir, pollUntil, removeTempDir, testProbes, testProcessInspector, testKernelLock } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
@@ -166,7 +166,7 @@ export const createFakePorts = (): FakePorts => {
 
 export const protectedAreasOf = (home: string): string[] => {
   const paths = momongaPaths(home, process.platform, {});
-  return [paths.root, momongaLayout(home).keychains, paths.tmp.root];
+  return [paths.root, momongaLayout(home, process.platform, process.env).keychains, paths.tmp.root];
 };
 
 const ajv = new Ajv2020.default({ strict: false, allErrors: true });
@@ -490,7 +490,7 @@ export const openStore = (
   clock: FakeClock,
   extra: { notifier?: Notifier; maxAttempts?: number; preparer?: (dbPath: string, store: () => RuntimeStore) => ContributionPreparer; onDecode?: (rows: number, bytes: number) => void } = {},
 ): RuntimeStore => {
-  const store: RuntimeStore = openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
+  const store: RuntimeStore = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home: path.dirname(dbPath),
     clock,
@@ -529,6 +529,7 @@ export const serviceOptions = (
   clock: base.clock,
   redactor: createRedactor({ credentials: [] }),
   home: base.home,
+  lock: testKernelLock(),
   version: SERVICE_VERSION,
   socketPath: base.socketPath,
   pid: SERVICE_PID,
@@ -573,7 +574,7 @@ export const serviceOptions = (
     })),
   role: overrides.role ?? fixedRolePort('serving'),
   work: overrides.work ?? { steps: () => 0, jobs: () => 0 },
-  ignorableMarkerDirectories: overrides.ignorableMarkerDirectories ?? (async () => [momongaLayout(base.home).markers.root]),
+  ignorableMarkerDirectories: overrides.ignorableMarkerDirectories ?? (async () => [momongaLayout(base.home, process.platform, process.env).markers.root]),
   ...(overrides.onRequestEnd === undefined ? {} : { onRequestEnd: overrides.onRequestEnd }),
   ...(overrides.delegation === undefined ? {} : { delegation: overrides.delegation }),
   onError: (error: unknown) => base.errors.push(error),
@@ -756,6 +757,8 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
   const toolbox = createFakeToolbox();
   const instructions = createFakeInstructions();
   const executor = createToolExecutor({
+    layout: momongaLayout(env.layout.home, process.platform, process.env),
+    reap: { inspector: testProcessInspector() },
     shellHost: nodeShellHost(),
     random: systemRandom,
     files: nodeFileSystem, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE, idempotency: env.store.idempotency, blobs: env.store.blobs, clock: env.clock, processMarkerDir: markers, callLockDir: callLocks, kernelLock: createFakeKernelLock({ inheritable: false }), onWarning: () => undefined });
@@ -784,6 +787,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
     return registry.snapshot(only === undefined ? {} : { only });
   };
   const tools: ToolRuntimePort = {
+    inspector: testProcessInspector(),
     workTreeObserver: (target: Session) => createGitWorkTreeObserver({ storeDir: path.join(env.layout.root, 'observer'), workTree: target.cwd, trusted: false }),
     envFor: (target: Session) => ({ ...target.env }),
     toolSet: async (_runId: string, toolSetOptions: { additionalTools?: readonly AnyTool[]; only?: readonly string[] }) =>

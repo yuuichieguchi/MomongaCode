@@ -3,9 +3,9 @@ import type { ChildProcess } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createJsonLogger, ensureMomongaDirs, hostKernelLock, momongaLayout, reapDeadGenerations, reapMarkerDirectory } from '@momonga/foundation';
+import { createJsonLogger, ensureMomongaDirs, momongaLayout, reapDeadGenerations, reapMarkerDirectory } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { withTempDir, sleepDrivenTiming } from '@momonga/testkit';
+import { withTempDir, sleepDrivenTiming, testProcessInspector, testKernelLock } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { reapOrphans } from '@momonga/supervisor';
 import { createMarkerOwners } from '@momonga/tools';
@@ -63,13 +63,14 @@ const recordingKill = () => {
 const sweepEverything = async (paths: MomongaPaths, kill: (target: number, signal: NodeJS.Signals | 0) => void): Promise<string[]> => {
   const warnings: string[] = [];
   const onWarning = (message: string): void => void warnings.push(message);
-  await reapToolMarkers({ event: 'startup', owners: createMarkerOwners(), dir: paths.markers.tools, store: { idempotency: { get: () => undefined }, getRun: () => undefined } as never, killGraceMs: 100, onWarning });
-  await reapToolMarkers({ event: 'sweep', owners: createMarkerOwners(), dir: paths.markers.tools, store: { idempotency: { get: () => undefined }, getRun: () => undefined } as never, killGraceMs: 100, onWarning });
+  await reapToolMarkers({ inspector: testProcessInspector(), event: 'startup', owners: createMarkerOwners(), dir: paths.markers.tools, store: { idempotency: { get: () => undefined }, getRun: () => undefined } as never, killGraceMs: 100, onWarning });
+  await reapToolMarkers({ inspector: testProcessInspector(), event: 'sweep', owners: createMarkerOwners(), dir: paths.markers.tools, store: { idempotency: { get: () => undefined }, getRun: () => undefined } as never, killGraceMs: 100, onWarning });
   for (const dir of [paths.markers.mcp, paths.markers.targets, paths.markers.daemons]) {
-    await reapMarkerDirectory({ dir, signal: new AbortController().signal, killGraceMs: 100, label: 'sweep', onWarning, kill: kill as never });
+    await reapMarkerDirectory({ inspector: testProcessInspector(), dir, signal: new AbortController().signal, killGraceMs: 100, label: 'sweep', onWarning, kill: kill as never });
   }
   const timers = { setTimeout: (callback: () => void, ms: number) => setTimeout(callback, ms), clearTimeout: (handle: unknown) => clearTimeout(handle as NodeJS.Timeout) };
   await reapOrphans({
+    inspector: testProcessInspector(),
     markersDir: paths.markers.daemons,
     orphanGraceMs: 100,
     orphanReapGraceMs: 100,
@@ -79,7 +80,7 @@ const sweepEverything = async (paths: MomongaPaths, kill: (target: number, signa
     logger: createJsonLogger({ service: 'supervisor', clock: { now: () => Date.now() }, stream: { write: () => true } as never } as never),
     reapTiming: sleepDrivenTiming({ now: () => Date.now(), sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }),
   });
-  await reapDeadGenerations({ paths, lock: hostKernelLock(), signal: new AbortController().signal, warn: onWarning, reapMarkers: async () => undefined });
+  await reapDeadGenerations({ paths, lock: testKernelLock(), signal: new AbortController().signal, warn: onWarning, reapMarkers: async () => undefined });
   return warnings;
 };
 

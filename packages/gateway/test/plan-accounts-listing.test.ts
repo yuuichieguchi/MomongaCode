@@ -137,7 +137,7 @@ describe('the accounts the gateway lists are the record files of plan-sessions (
     const gateway = await startPlanGateway();
     await signInAs(gateway, SPARE);
     await gateway.close();
-    const hostFile = momongaLayout(gateway.home).planHost;
+    const hostFile = momongaLayout(gateway.home, process.platform, process.env).planHost;
     expect(fs.existsSync(hostFile)).toBe(true);
     fs.rmSync(hostFile);
 
@@ -175,7 +175,7 @@ describe('the refusals answered by the routes themselves (O-R5-6 G 7 and 8)', ()
   it('host/reset while a sign-in attempt is pending is 409 plan_sign_in_pending and keeps the host', async () => {
     const gateway = await startPlanGateway();
     expect((await signIn(gateway)).completed.status).toBe(200);
-    const hostFile = momongaLayout(gateway.home).planHost;
+    const hostFile = momongaLayout(gateway.home, process.platform, process.env).planHost;
     const hostBefore = fs.readFileSync(hostFile, 'utf8');
     expect((await begin(gateway, { account: SPARE })).status).toBe(200);
 
@@ -320,7 +320,7 @@ describe('O-R5-6 (M) 8.2: the active pointer has one reader of its file, the ope
   it('the active pointer is read from the file once at open and every later reader uses the mirror', async () => {
     const gateway = await startPlanGateway({ plaintextTokenFiles: true });
     try {
-      const activeFile = momongaLayout(gateway.home).planActive;
+      const activeFile = momongaLayout(gateway.home, process.platform, process.env).planActive;
       const activeOf = async (): Promise<Record<string, boolean>> => {
         const listed = await gateway.get(PLAN_ROUTES.accounts);
         expect(listed.status).toBe(200);

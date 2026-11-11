@@ -225,8 +225,8 @@ describe('delivery by the worker and at the end of a run', () => {
     await env.createRun(session.id);
     const added = await addMessage(env, session.id, 'queue', 'one');
     await env.http('POST', `/v1/inbox/${added.row.id}/withdraw`);
-    const changes = env.store.readSessionEvents(session.id, 0, 100).flatMap((event) => (event.type === 'inbox.changed' ? [event.pending.map((row) => row.text)] : []));
-    expect(changes).toEqual([['one'], []]);
+    const changes = env.store.readSessionEvents(session.id, 0, 100).flatMap((event) => (event.type === 'inbox.changed' ? [event.pending] : []));
+    expect(changes).toEqual([[{ id: added.row.id, delivery: 'queue', state: 'pending', seq: 1 }], []]);
     for (const event of env.store.readSessionEvents(session.id, 0, 100)) if (event.type === 'inbox.changed') expectSchema('PublicRunEvent', event);
   });
 });
