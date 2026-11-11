@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { canonicalJson } from '@momonga/foundation';
-import { createReplayAdapter } from '@momonga/gateway';
+import { createReplayAdapter } from './support/replay-adapter.ts';
 import type { AdapterRequest, ProviderAdapter } from '@momonga/gateway';
 import type { StreamEvent } from '@momonga/protocol';
 import { DEFAULT_SCRIPTED_CAPABILITIES, createScriptedAdapter, textResponseEvents } from '@momonga/testkit';
