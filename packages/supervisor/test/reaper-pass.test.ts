@@ -81,6 +81,25 @@ describe('the reaper pass of the serving supervisor (20.61, 20.62)', () => {
     expect(supervisorConstants.DAEMON_MARKER_KILL_GRACE_MS).toBe(DAEMON_MARKER_KILL_GRACE_MS);
   });
 
+  it('writes the result of a reap once: the generations removed and kept, and nothing for a pass that found nothing', async (context) => {
+    const results = [
+      { removed: [], kept: [], busy: false },
+      { removed: [1], kept: [2], busy: false },
+      { removed: [], kept: [2], busy: false },
+      { removed: [], kept: [2], busy: false },
+      { removed: [], kept: [], busy: true },
+      { removed: [], kept: [], busy: false },
+    ];
+    const s = setup(context, { reapDeadGenerations: async () => results.shift() ?? { removed: [], kept: [], busy: false } });
+    const pass = createReaperPass(s.options);
+    while (results.length > 0) await pass({ signal: new AbortController().signal });
+    expect(s.log.withMsg('generation.reaped').map(({ removed, kept, busy, level }) => ({ removed, kept, busy, level }))).toEqual([
+      { removed: ['1'], kept: ['2'], busy: false, level: 'warn' },
+      { removed: [], kept: ['2'], busy: false, level: 'warn' },
+      { removed: [], kept: [], busy: true, level: 'info' },
+    ]);
+  });
+
   it('removes a dead generation and leaves a live one, through the real reaper', async (context) => {
     const s = setup(context);
     const dead = prepareGenerationForTest(s.home, 1, '1.2.3');

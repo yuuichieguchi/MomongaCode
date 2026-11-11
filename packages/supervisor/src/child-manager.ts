@@ -37,6 +37,7 @@ import {
   childVersionMismatch,
   childStop,
   childUnkillable,
+  orphansWarning,
   settingsReadFailed,
   settingsWarning,
   writeEvent,
@@ -539,6 +540,9 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
         onWarning: (detail) => log(settingsWarning({ detail })),
         signal: reapStop.signal,
       });
+    } catch (error) {
+      const failure = error instanceof Error ? error : new Error(String(error));
+      log(orphansWarning({ detail: `the managed servers of the gone gateway were not reaped: ${failure.message}` }, failure));
     } finally {
       options.timers.clearTimeout(bound);
     }

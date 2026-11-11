@@ -57,7 +57,7 @@ export type {
 } from './child-manager.ts';
 export { createSpawnPort } from './spawn-port.ts';
 export { createSuccessor } from './successor.ts';
-export type { Successor, SuccessorLauncher, SuccessorOptions, SuccessorOutcome } from './successor.ts';
+export type { Successor, SuccessorLaunch, SuccessorLauncher, SuccessorOptions, SuccessorOutcome } from './successor.ts';
 export { readChildCounts } from './child-counts.ts';
 export type { ChildCountsReader, GenerationCounts } from './child-counts.ts';
 export { createLineSplitter } from './line-splitter.ts';
@@ -96,6 +96,7 @@ export {
   defineEvent,
   generationEnded,
   generationMany,
+  generationReaped,
   generationPromoted,
   generationRetiring,
   generationSuccessor,

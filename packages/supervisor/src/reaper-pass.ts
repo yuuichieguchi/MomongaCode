@@ -1,10 +1,10 @@
 import path from 'node:path';
 import type { StopValuesReader } from '@momonga/config';
 import { ABANDON_KILL_GRACE_MS, GENERATION_MARKER_LABELS, GENERATION_REAPER_OCCASION, MAXIMUM_STOP_VALUES, generationLayout, hostKernelLock, momongaPaths, readStopRecord, reapDeadGenerations, reapMarkerDirectory, runtimeMaxCloseMs } from '@momonga/foundation';
-import type { Clock, GenerationMarkerReap, JsonLogger, KernelLockMechanism, MarkerKind, MomongaPaths, Timing } from '@momonga/foundation';
+import type { Clock, GenerationMarkerReap, GenerationReaperResult, JsonLogger, KernelLockMechanism, MarkerKind, MomongaPaths, Timing } from '@momonga/foundation';
 import { DAEMON_MARKER_KILL_GRACE_MS, resolveIntervals } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
-import { orphansWarning, writeEvent } from './log-events.ts';
+import { generationReaped, orphansWarning, writeEvent } from './log-events.ts';
 import { omitUndefined } from './omit-undefined.ts';
 import { reapOrphans } from './orphans.ts';
 import type { MarkerPorts } from './orphans.ts';
@@ -71,14 +71,26 @@ export const createReaperPass = (options: ReaperPassOptions): ReaperPass => {
     });
   };
 
+  let lastResult = '';
+  const recordResult = (result: GenerationReaperResult): void => {
+    const found = result.removed.length > 0 || result.kept.length > 0 || result.busy;
+    const payload = { removed: result.removed.map(String), kept: result.kept.map(String), busy: result.busy };
+    const key = found ? JSON.stringify(payload) : '';
+    if (key === lastResult) return;
+    lastResult = key;
+    if (found) writeEvent(options.logger, generationReaped(payload));
+  };
+
   return async ({ signal }) => {
-    await (options.reapDeadGenerations ?? reapDeadGenerations)({
-      paths: options.paths,
-      lock: options.lock,
-      signal,
-      warn,
-      reapMarkers: (request) => (request.kind === 'daemons' ? reapDaemons(request) : reapGeneric(request.kind, request)),
-    });
+    recordResult(
+      await (options.reapDeadGenerations ?? reapDeadGenerations)({
+        paths: options.paths,
+        lock: options.lock,
+        signal,
+        warn,
+        reapMarkers: (request) => (request.kind === 'daemons' ? reapDaemons(request) : reapGeneric(request.kind, request)),
+      }),
+    );
   };
 };
 
