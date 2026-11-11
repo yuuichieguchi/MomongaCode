@@ -1,3 +1,4 @@
+import { syncPaths } from '@momonga/foundation';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
@@ -358,7 +359,7 @@ export const nodePorts = (version: string, interrupt: AbortSignal, streams: Guar
     exec: createHostExec(minimalChildEnv(process.env)),
     probe: nodeWorkspaceProbeOf(nodeWorkspaceSandbox(settingsWorkspaceSandbox(home, process.cwd(), interrupt, (text) => streams.stderr.write(`${text}\n`))), hostProcessGroupPort()),
     openUrl: createBrowserOpener({ env: process.env, launch: launchProgram, files: nodeFileSystem }),
-    secretStore: () => createPlatformSecretStore(createExecWithStdin(undefined), process.env),
+    secretStore: () => createPlatformSecretStore(createExecWithStdin(undefined), process.env, { platform: process.platform, uid: process.getuid?.(), realPathOf: (file) => syncPaths.canonicalPath(file) }),
     personCapability: () => personCapabilityOf({ files: nodeFileSystem, random: systemRandom, lock: lock() }, home),
     acpStdio: () => ({ input: acpInputOf(process.stdin), output: Writable.toWeb(process.stdout) }),
   };

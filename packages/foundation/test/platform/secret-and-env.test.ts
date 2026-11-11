@@ -33,20 +33,20 @@ const windowsStore = (run: SecretProcessPort, env: Readonly<Record<string, strin
 describe('linux secret store (secret-tool lookup)', () => {
   it('looks the secret up by service and account', async () => {
     const { run, calls } = port({ exitCode: 0, stdout: 'fake-secret', stderr: '' });
-    expect(await createSecretServiceStore(run).read('anthropic', SIGNAL)).toBe('fake-secret');
+    expect(await createSecretServiceStore(run, SECRET_TOOL_BINARY).read('anthropic', SIGNAL)).toBe('fake-secret');
     expect(calls).toEqual([{ file: SECRET_TOOL_BINARY, args: ['lookup', 'service', 'momonga', 'account', 'anthropic'], stdin: '' }]);
   });
 
   it('names the Secret Service and the store command when the lookup fails', async () => {
     const { run } = port({ exitCode: 1, stdout: '', stderr: '' });
-    const error = await createSecretServiceStore(run).read('anthropic', SIGNAL).catch((e: unknown) => e);
+    const error = await createSecretServiceStore(run, SECRET_TOOL_BINARY).read('anthropic', SIGNAL).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(SecretUnavailableError);
     expect((error as Error).message).toContain('Secret Service');
     expect((error as Error).message).toContain('secret-tool store --label=momonga service momonga account anthropic');
   });
 
   it('rejects an empty secret and an invalid name', async () => {
-    const empty = createSecretServiceStore(port({ exitCode: 0, stdout: '\n', stderr: '' }).run);
+    const empty = createSecretServiceStore(port({ exitCode: 0, stdout: '\n', stderr: '' }).run, SECRET_TOOL_BINARY);
     await expect(empty.read('k', SIGNAL)).rejects.toBeInstanceOf(SecretEmptyError);
     await expect(empty.read('bad name', SIGNAL)).rejects.toBeInstanceOf(RangeError);
   });
@@ -55,7 +55,7 @@ describe('linux secret store (secret-tool lookup)', () => {
 describe('linux secret store write (secret-tool store)', () => {
   it('passes the value on stdin only', async () => {
     const { run, calls } = port({ exitCode: 0, stdout: '', stderr: '' });
-    await createSecretServiceStore(run).write('anthropic', 'fake-secret', SIGNAL);
+    await createSecretServiceStore(run, SECRET_TOOL_BINARY).write('anthropic', 'fake-secret', SIGNAL);
     expect(calls).toEqual([
       { file: SECRET_TOOL_BINARY, args: ['store', '--label=momonga', 'service', 'momonga', 'account', 'anthropic'], stdin: 'fake-secret' },
     ]);
