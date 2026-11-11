@@ -386,10 +386,13 @@ export {
   REPORT_SCHEMAS,
   TRACE_CONTENT_PAGE_OPTION,
   REVIEW_LABELS,
+  unreportedOutsideRuns,
 } from './reliability.ts';
 export type {
   PermissionReviewView,
   ReportCostPage,
+  PageCostAnswer,
+  CostTotals,
   ReportCostRequest,
   ReportRecomputePage,
   ReportRecomputeRequest,
