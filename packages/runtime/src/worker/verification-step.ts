@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { newCallId, reapMarkedProcesses } from '@momonga/foundation';
-import { VERIFICATION_FEEDBACK_PREFIX, conditionOwed } from '@momonga/protocol';
+import { VERIFICATION_FEEDBACK_PREFIX, conditionOwed, failureBeforeRound, openRoundOf } from '@momonga/protocol';
 import type { ConditionResult, PinnedCondition, RunEventPayload, VerificationOutcome } from '@momonga/protocol';
 import { EarlierAttemptNotStoppedError, MAX_COMMAND_TIMEOUT_MS, runSandboxedCommand, verificationMarkerName } from '@momonga/tools';
 import type { SandboxedCommandResult } from '@momonga/tools';
@@ -80,18 +80,27 @@ const reapStaleCheck = async (ctx: ClaimContext, marker: string): Promise<void> 
 
 type Round = { round: number; mutationSeq: number; commands: SessionCommands };
 
-const runCheck = async (ctx: ClaimContext, condition: PinnedCondition, attempt: number, round: Round): Promise<Checked | 'interrupted'> => {
+type Closing = (checked: Checked) => RunEventPayload[];
+
+const runCheck = async (ctx: ClaimContext, condition: PinnedCondition, attempt: number, round: Round, closing: Closing): Promise<Checked | 'interrupted'> => {
   const checkName = verificationMarkerName({ runId: ctx.run.id, round: round.round, conditionId: condition.id });
   const lock = await ctx.options.tools.executor.holdCall(checkName, ctx.control.signal);
   if (lock === 'aborted') return 'interrupted';
   try {
-    return await runHeldCheck(ctx, condition, attempt, round, checkName);
+    return await runHeldCheck(ctx, condition, attempt, round, checkName, closing);
   } finally {
     lock.release();
   }
 };
 
-const runHeldCheck = async (ctx: ClaimContext, condition: PinnedCondition, attempt: number, { round, mutationSeq, commands }: Round, checkName: string): Promise<Checked | 'interrupted'> => {
+const runHeldCheck = async (
+  ctx: ClaimContext,
+  condition: PinnedCondition,
+  attempt: number,
+  { round, mutationSeq, commands }: Round,
+  checkName: string,
+  closing: Closing,
+): Promise<Checked | 'interrupted'> => {
   const { clock, tools } = ctx.options;
   const marker = path.join(tools.markerDir, checkName);
   await reapStaleCheck(ctx, marker);
@@ -118,6 +127,7 @@ const runHeldCheck = async (ctx: ClaimContext, condition: PinnedCondition, attem
   const fits = await ctx.outputFit.fits(output, call);
   const handle = fits ? undefined : (await ctx.options.blobs.put(output, { mediaType: OUTPUT_MEDIA_TYPE, runId: ctx.run.id })).handle;
   const inline = handle === undefined ? output : await ctx.outputFit.fit(output, handle, call);
+  const checked: Checked = { condition, outcome, exitCode, output: inline };
   ctx.journal.append([
     {
       type: 'verification.completed',
@@ -131,9 +141,12 @@ const runHeldCheck = async (ctx: ClaimContext, condition: PinnedCondition, attem
       ...(handle === undefined ? {} : { truncated: true as const, handle }),
       mutationSeq,
     },
+    ...closing(checked),
   ]);
-  return { condition, outcome, exitCode, output: inline };
+  return checked;
 };
+
+type Decision = 'proceed' | 'timeout' | 'unmet' | 'continue';
 
 const verifyCompletion = async (ctx: ClaimContext): Promise<'proceed' | Flow> => {
   const { conditions, required } = ctx.completion;
@@ -150,42 +163,61 @@ const verifyCompletion = async (ctx: ClaimContext): Promise<'proceed' | Flow> =>
     ]);
     return stopped(ctx, 'conditions_unmet');
   }
-  const resultOf = (id: string): ConditionResult | undefined => ctx.journal.state.verification.results[id];
-  const owedNow = (): PinnedCondition[] => conditions.filter((condition) => conditionOwed(condition, lastMutationSeq, resultOf(condition.id)));
-  const owed = owedNow();
+  const { verification } = ctx.journal.state;
+  const owedGiven = (checked: readonly Checked[]): PinnedCondition[] =>
+    conditions.filter((condition) => {
+      const fresh = checked.find((entry) => entry.condition.id === condition.id);
+      const result: ConditionResult | undefined = fresh === undefined ? verification.results[condition.id] : { seq: 0, outcome: fresh.outcome, mutationSeq: lastMutationSeq };
+      return conditionOwed(condition, lastMutationSeq, result);
+    });
+  const owed = owedGiven([]);
   if (owed.length === 0) return 'proceed';
-  const { pending, lastFailedRoundMutationSeq } = ctx.journal.state.verification;
-  const toRun = owed.filter((condition) => resultOf(condition.id)?.mutationSeq !== lastMutationSeq || pending?.[condition.id] !== undefined);
+  const { pending } = verification;
+  const toRun = owed.filter((condition) => verification.results[condition.id]?.mutationSeq !== lastMutationSeq || pending?.[condition.id] !== undefined);
   if (toRun.length === 0) return stopped(ctx, 'conditions_unmet');
 
-  const openRounds = Object.values(pending ?? {}).map((check) => check.round);
-  const round = openRounds.length > 0 ? Math.max(...openRounds) : ctx.journal.state.verification.round + 1;
-
-  const checked = await withSessionCommands(ctx, async (commands): Promise<Checked[] | 'interrupted'> => {
-    const results: Checked[] = [];
-    for (const condition of toRun) {
-      const attempt = (pending?.[condition.id]?.attempt ?? 0) + 1;
-      const result = await runCheck(ctx, condition, attempt, { round, mutationSeq: lastMutationSeq, commands });
-      if (result === 'interrupted') return 'interrupted';
-      results.push(result);
+  const round = openRoundOf(verification, lastMutationSeq) ?? verification.round + 1;
+  const earlierFailure = failureBeforeRound(verification, round);
+  const changedSinceEarlierFailure = earlierFailure === undefined || lastMutationSeq > earlierFailure;
+  const results: Checked[] = [];
+  const decided: { value: Decision } = { value: 'proceed' };
+  const decide = (): RunEventPayload[] => {
+    const stillOwed = owedGiven(results);
+    if (stillOwed.length === 0) return [];
+    if (results.some((entry) => entry.outcome === 'timed_out') && ctx.options.clock.now() >= ctx.run.deadlineAt) {
+      decided.value = 'timeout';
+      return [];
     }
-    return results;
+    if (!changedSinceEarlierFailure) {
+      decided.value = 'unmet';
+      return [];
+    }
+    decided.value = 'continue';
+    const failures = results.filter((entry) => entry.outcome !== 'passed');
+    const unchecked = stillOwed.filter((condition) => !results.some((entry) => entry.condition.id === condition.id));
+    return [feedbackFor(failures, unchecked)];
+  };
+
+  const checked = await withSessionCommands(ctx, async (commands): Promise<'checked' | 'interrupted'> => {
+    for (const [index, condition] of toRun.entries()) {
+      const attempt = (pending?.[condition.id]?.attempt ?? 0) + 1;
+      const closesRound = index === toRun.length - 1;
+      const result = await runCheck(ctx, condition, attempt, { round, mutationSeq: lastMutationSeq, commands }, (entry) => {
+        results.push(entry);
+        return closesRound ? decide() : [];
+      });
+      if (result === 'interrupted') return 'interrupted';
+    }
+    return 'checked';
   });
   if (checked === 'interrupted') {
     const interrupted = await cancelIfInterrupted(ctx);
     if (interrupted === undefined) throw new Error(`a completion check of run ${ctx.run.id} was cancelled although the run was not interrupted`);
     return interrupted;
   }
-
-  const stillOwed = owedNow();
-  if (stillOwed.length === 0) return 'proceed';
-  if (checked.some((entry) => entry.outcome === 'timed_out') && ctx.options.clock.now() >= ctx.run.deadlineAt) return stopped(ctx, 'timeout');
-  const failures = checked.filter((entry) => entry.outcome !== 'passed');
-  const unchecked = stillOwed.filter((condition) => !checked.some((entry) => entry.condition.id === condition.id));
-  const changedSinceLastFailure = lastFailedRoundMutationSeq === undefined || lastMutationSeq > lastFailedRoundMutationSeq;
-  if (!changedSinceLastFailure) return stopped(ctx, 'conditions_unmet');
-  ctx.journal.append([feedbackFor(failures, unchecked)]);
-  return 'continue';
+  if (decided.value === 'timeout') return stopped(ctx, 'timeout');
+  if (decided.value === 'unmet') return stopped(ctx, 'conditions_unmet');
+  return decided.value;
 };
 
 export const stopGate = async (ctx: ClaimContext): Promise<'allow' | Flow> => {

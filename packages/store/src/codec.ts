@@ -444,11 +444,13 @@ const isVerificationState = (value: unknown): boolean =>
       isRecord(result) &&
       Number.isInteger(result['seq']) &&
       Number.isInteger(result['mutationSeq']) &&
+      (result['round'] === undefined || Number.isInteger(result['round'])) &&
       VERIFICATION_OUTCOMES.some((outcome) => outcome === result['outcome']),
   ) &&
   (value['pending'] === undefined ||
     (isRecord(value['pending']) && Object.values(value['pending']).every((check) => isRecord(check) && Number.isInteger(check['round']) && Number.isInteger(check['attempt'])))) &&
-  (value['lastFailedRoundMutationSeq'] === undefined || Number.isInteger(value['lastFailedRoundMutationSeq']));
+  (value['lastFailure'] === undefined || (isRecord(value['lastFailure']) && Number.isInteger(value['lastFailure']['round']) && Number.isInteger(value['lastFailure']['mutationSeq']))) &&
+  (value['failureBefore'] === undefined || Number.isInteger(value['failureBefore']));
 
 const isCountMap = (value: unknown): boolean => isRecord(value) && Object.values(value).every((count) => Number.isInteger(count));
 
@@ -532,7 +534,7 @@ const isWorkingFacts = (value: unknown): boolean =>
   isArrayOf(value['itemEvents'], (entry) => isRecord(entry) && Number.isInteger(entry['itemSeq']) && Number.isInteger(entry['eventSeq'])) &&
   (value['replacedThroughEventSeq'] === undefined || Number.isInteger(value['replacedThroughEventSeq']));
 
-export const SNAPSHOT_STATE_VERSION = 19;
+export const SNAPSHOT_STATE_VERSION = 20;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 

@@ -592,6 +592,8 @@ export {
   reconciliationMutates,
   verificationRequiredOf,
   withVerificationCompleted,
+  failureBeforeRound,
+  openRoundOf,
   withVerificationStarted,
 } from './completion.ts';
 export type {

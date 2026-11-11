@@ -4,7 +4,7 @@ import { foldRunState, initialRunState } from '@momonga/store';
 import { SNAPSHOT_STATE_VERSION, decodeRunState, encodeRunState } from '../src/codec.ts';
 import { claimed, foldOf, task } from './inherit-fixtures.ts';
 
-type Verification = { round: number; results: Record<string, { seq: number; outcome: string; mutationSeq: number }>; lastFailedRoundMutationSeq?: number };
+type Verification = { round: number; results: Record<string, { seq: number; outcome: string; mutationSeq: number; round?: number }>; lastFailure?: { round: number; mutationSeq: number }; failureBefore?: number };
 
 const completionFields = (state: RunState): { lastMutationSeq: unknown; verification: Verification } =>
   state as unknown as { lastMutationSeq: unknown; verification: Verification };
@@ -124,13 +124,25 @@ describe('the verification state', () => {
       verificationStarted(2, 'c1', 9),
       verificationCompleted(2, 'c1', 'passed', 9, 0),
     ]);
-    expect(completionFields(state).verification.results).toEqual({ c1: { seq: 10, outcome: 'passed', mutationSeq: 9 } });
+    expect(completionFields(state).verification.results).toEqual({ c1: { seq: 10, outcome: 'passed', mutationSeq: 9, round: 2 } });
     expect(completionFields(state).verification.round).toBe(2);
   });
 
-  it('remembers the mutation seq of the last round that did not pass', () => {
-    const state = foldOf([...lead, verificationStarted(1, 'c1', 0), verificationCompleted(1, 'c1', 'passed', 0, 0), verificationStarted(1, 'c2', 0), verificationCompleted(1, 'c2', 'failed', 0, 2)]);
-    expect(completionFields(state).verification.lastFailedRoundMutationSeq).toBe(0);
+  it('remembers the round and the mutation seq of the last failure, and the failure of the round before it', () => {
+    const first = foldOf([...lead, verificationStarted(1, 'c1', 0), verificationCompleted(1, 'c1', 'passed', 0, 0), verificationStarted(1, 'c2', 0), verificationCompleted(1, 'c2', 'failed', 0, 2)]);
+    expect(completionFields(first).verification).toMatchObject({ lastFailure: { round: 1, mutationSeq: 0 } });
+    expect(completionFields(first).verification.failureBefore).toBeUndefined();
+    const second = foldOf([
+      ...lead,
+      verificationStarted(1, 'c1', 0),
+      verificationCompleted(1, 'c1', 'failed', 0, 1),
+      call('w1', 'Write', 'edit', 'write'),
+      started('w1', 'rule'),
+      completed('w1'),
+      verificationStarted(2, 'c1', 9),
+      verificationCompleted(2, 'c1', 'failed', 9, 1),
+    ]);
+    expect(completionFields(second).verification).toMatchObject({ lastFailure: { round: 2, mutationSeq: 9 }, failureBefore: 0 });
   });
 
   it('is unchanged by a model-run command, which is never evidence', () => {
@@ -141,7 +153,7 @@ describe('the verification state', () => {
 
 describe('snapshots and the new state fields', () => {
   it('bumps the snapshot state version', () => {
-    expect(SNAPSHOT_STATE_VERSION).toBe(19);
+    expect(SNAPSHOT_STATE_VERSION).toBe(20);
   });
 
   it('discards an old snapshot without the new fields, so the run refolds from the journal', () => {
