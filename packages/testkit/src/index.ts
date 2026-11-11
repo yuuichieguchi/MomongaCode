@@ -37,7 +37,7 @@ export { CLAIM_HOLDER_MAIN, LOCK_HOLDER_MAIN, startClaimHolder, startLockHolder 
 export { LSOF_PATH } from './lsof.ts';
 export { EMPTY_SYMLINK_SUPPORTED } from './empty-symlink.ts';
 export { createFakeKernelLock } from './fake-kernel-lock.ts';
-export { expectedKernelLockOn, fixedLockCapability, testKernelLock, testLocks, testProcessInspector } from './test-locks.ts';
+export { LOCK_PROOF_ENV, LOCK_PROOF_PREFIX, expectedKernelLockOn, fixedLockCapability, testKernelLock, testLocks, testProcessInspector } from './test-locks.ts';
 export type { FakeKernelLock, FakeKernelLockOptions } from './fake-kernel-lock.ts';
 export { createFakeClock } from './fake-clock.ts';
 export { createFakeRandom } from './fake-random.ts';
