@@ -12,7 +12,6 @@ import { makeExecutor } from './mcp-harness.ts';
 
 const TOOL: Tool = { name: 'long_job', inputSchema: { type: 'object', properties: {} } };
 const DONE: CallToolResult = { content: [{ type: 'text', text: 'job done' }] };
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 type FakeCall = (input: McpCallToolInput) => Promise<CallToolResult>;
 
@@ -93,12 +92,21 @@ describe('G2: the call reports progress to the executor instead of extending its
   });
 
   it('test 1: completes an ordinary call whose server reports progress more often than the idle window, for longer than one window', async () => {
+    const progressEveryMs = 40;
+    const reports = 8;
+    let reported = 0;
+    let progressStarted: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      progressStarted = resolve;
+    });
     const connection = fakeConnection({
       transportKind: 'network',
       call: async (input) => {
-        for (let index = 0; index < 8; index += 1) {
-          await sleep(40);
+        progressStarted();
+        for (let index = 0; index < reports; index += 1) {
+          await new Promise((resolve) => setTimeout(resolve, progressEveryMs));
           input.onProgress?.();
+          reported += 1;
         }
         return DONE;
       },
@@ -106,8 +114,16 @@ describe('G2: the call reports progress to the executor instead of extending its
     const harness = makeExecutor();
     const registry = createToolRegistry();
     registry.addSource(createMcpToolSource({ server: 'jobs', connection, toolIdleTimeoutMs: 120 }));
-    const result = await harness.resultOf(await registry.snapshot(), 'mcp__jobs__long_job', {});
-    expect(result).toMatchObject({ status: 'completed', output: 'job done' });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const pending = harness.resultOf(await registry.snapshot(), 'mcp__jobs__long_job', {});
+      await started;
+      await vi.advanceTimersByTimeAsync(reports * progressEveryMs);
+      expect(reported).toBe(reports);
+      expect(await pending).toMatchObject({ status: 'completed', output: 'job done' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('test 2: ends a call with no progress at the idle window, with the idle text', async () => {

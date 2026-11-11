@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createKeyedSerializer } from '@momonga/foundation';
-import { deferred, settlementOf, turn } from './support/secret-store-fakes.ts';
+import { deferred, rejection, settlementOf } from './support/secret-store-fakes.ts';
 
 const NEVER_ABORTED = new AbortController().signal;
 
@@ -27,16 +27,14 @@ describe('the keyed serializer under the signal of each requester', () => {
       controller.signal,
     );
     const settlement = settlementOf(waiter);
-    await turn();
     expect(settlement.current()).toBe('pending');
     const reason = new Error('the requester left');
     controller.abort(reason);
-    await turn();
-    expect(settlement.current()).toEqual({ rejected: reason });
+    expect(await rejection(waiter)).toBe(reason);
     held.resolve();
     await predecessor;
-    await turn();
-    expect(events).toEqual(['predecessor:start', 'predecessor:end']);
+    await serialized('k', async () => void events.push('next:start'), NEVER_ABORTED);
+    expect(events).toEqual(['predecessor:start', 'predecessor:end', 'next:start']);
   });
 
   it('a requester whose signal is already aborted never starts its task', async () => {
@@ -45,17 +43,14 @@ describe('the keyed serializer under the signal of each requester', () => {
     const reason = new Error('already gone');
     controller.abort(reason);
     let started = false;
-    const settlement = settlementOf(
-      serialized(
-        'k',
-        async () => {
-          started = true;
-        },
-        controller.signal,
-      ),
+    const attempt = serialized(
+      'k',
+      async () => {
+        started = true;
+      },
+      controller.signal,
     );
-    await turn();
-    expect(settlement.current()).toEqual({ rejected: reason });
+    expect(await rejection(attempt)).toBe(reason);
     expect(started).toBe(false);
   });
 
@@ -89,9 +84,9 @@ describe('the keyed serializer under the signal of each requester', () => {
       },
       NEVER_ABORTED,
     );
-    controller.abort(new Error('the requester left'));
-    await turn();
-    await turn();
+    const reason = new Error('the requester left');
+    controller.abort(reason);
+    expect(await rejection(leaver)).toBe(reason);
     expect(events).toEqual(['predecessor:start']);
     held.resolve();
     expect(await next).toBe('done');
