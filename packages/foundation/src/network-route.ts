@@ -115,6 +115,29 @@ export const matchesNoProxy = (list: string, host: string, port: number): boolea
     });
 };
 
+const ESCAPE = /^%[0-9A-Fa-f]{2}/;
+
+const tolerantlyDecoded = (text: string): string => {
+  const bytes: number[] = [];
+  let index = 0;
+  while (index < text.length) {
+    if (ESCAPE.test(text.slice(index, index + 3))) {
+      bytes.push(parseInt(text.slice(index + 1, index + 3), 16));
+      index += 3;
+      continue;
+    }
+    const point = text.codePointAt(index) as number;
+    const character = String.fromCodePoint(point);
+    bytes.push(...Buffer.from(character, 'utf8'));
+    index += character.length;
+  }
+  return Buffer.from(bytes).toString('utf8');
+};
+
+export type ProxyCredentials = { readonly username: string; readonly password: string };
+
+export const proxyCredentialsOf = (url: URL): ProxyCredentials => ({ username: tolerantlyDecoded(url.username), password: tolerantlyDecoded(url.password) });
+
 const proxyRoute = ({ value, source }: SourcedValue): Route => {
   if (!URL.canParse(value)) {
     return { kind: 'unsupported', reason: 'malformed', display: '<unparseable proxy URL>', message: `${source} is not a valid proxy URL; ${UNSUPPORTED_TEXT}`, source };

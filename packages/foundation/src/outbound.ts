@@ -10,7 +10,7 @@ import type { RequestInit as UndiciRequestInit, Response as UndiciResponse, buil
 import { isLoopbackAddress } from './global-address.ts';
 import { claimsLoopback, isLoopbackName } from './loopback.ts';
 import type { FileSystem } from './node-file-system.ts';
-import { routeOf } from './network-route.ts';
+import { proxyCredentialsOf, routeOf } from './network-route.ts';
 import type { NetworkConfig, NetworkSource, Route } from './network-route.ts';
 
 export type TrustSource =
@@ -213,11 +213,23 @@ export const trustFailureText = (failure: TrustFailure): string =>
 
 const caSourceNames = (trust: TrustReport): string[] => trust.sources.map((entry) => ('file' in entry ? `${entry.source} ${entry.file}` : entry.source));
 
+const basicTokenOf = (proxy: URL): string | undefined => {
+  const { username, password } = proxyCredentialsOf(proxy);
+  return username === '' ? undefined : Buffer.from(`${username}:${password}`, 'utf8').toString('base64');
+};
+
+const proxyAuthorization = (proxy: URL): Record<string, string> => {
+  const token = basicTokenOf(proxy);
+  return token === undefined ? {} : { 'proxy-authorization': `Basic ${token}` };
+};
+
 export const proxyPasswordsOf = (config: NetworkConfig): Array<{ readonly source: NetworkSource; readonly password: string }> =>
   [config.httpProxy, config.httpsProxy].flatMap((proxy) => {
     if (proxy === undefined || !URL.canParse(proxy.value)) return [];
-    const password = new URL(proxy.value).password;
-    return password === '' ? [] : [{ source: proxy.source, password: decodeURIComponent(password) }];
+    const url = new URL(proxy.value);
+    const { password } = proxyCredentialsOf(url);
+    const token = basicTokenOf(url);
+    return [...(password === '' ? [] : [password]), ...(token === undefined || password === '' ? [] : [token])].map((value) => ({ source: proxy.source, password: value }));
   });
 
 export type OutboundOptions = {
@@ -455,9 +467,6 @@ export type OutboundTunnelTarget = { readonly host: string; readonly address: st
 
 export type OutboundTunnelOptions = { readonly connectReplyTimeoutMs: number; readonly signal?: AbortSignal };
 
-const proxyAuthorization = (proxy: URL): Record<string, string> =>
-  proxy.username === '' || proxy.password === '' ? {} : { 'proxy-authorization': `Basic ${Buffer.from(`${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`).toString('base64')}` };
-
 const dialed = (address: string, port: number, signal: AbortSignal | undefined): Promise<Duplex> =>
   new Promise((resolve, reject) => {
     const socket = net.connect({ host: address, port, ...(signal === undefined ? {} : { signal }) });
@@ -622,8 +631,10 @@ class OutboundDispatcher extends Dispatcher {
     const { connectReplyTimeoutMs } = this.#options;
     const timeouts = siteTimeouts(this.#options);
     const proxyOrigin = route.url.origin;
+    const token = basicTokenOf(route.url);
     const agent = new ProxyAgent({
-      uri: route.url.href,
+      uri: route.url.origin,
+      ...(token === undefined ? {} : { token: `Basic ${token}` }),
       ...timeouts,
       clientFactory: (origin, clientOptions) => tunnelClient(origin, clientOptions, connectReplyTimeoutMs),
       factory: (origin, poolOptions) => {
