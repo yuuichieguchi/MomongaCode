@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { CACHE_READ_TEXT } from '@momonga/observability';
+import { CACHE_READS_NOT_REPORTED } from '@momonga/protocol';
 import { startMcpHttpFixture, startMcpOauthFixture } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
 import { OPEN_LOG_FILE_NAME, runCli, runCliWithFakes, startCli, startCliWithFakes } from './support/cli.ts';
@@ -110,7 +112,7 @@ describe('momonga models, cost and memory', () => {
     const text = await runCli(home, ['cost', '--all']);
     expect(text.code).toBe(0);
     expect(text.stdout).toContain('cost report');
-    expect(text.stdout).toContain(`total: 2 call(s), ${inputTokens} input (0 cached) + 10 output tokens`);
+    expect(text.stdout).toContain(`total: 2 call(s), ${CACHE_READ_TEXT.inputClause({ calls: 2, notReported: 2, inputTokens, cachedInputTokens: null })} + 10 output tokens, not complete: ${CACHE_READS_NOT_REPORTED} in 2 call(s)\n`);
     const mixed = await runCli(home, ['cost', secondRun.run_id, '--all']);
     expect(mixed.code).toBe(1);
     expect(mixed.stderr).toContain('choose one of a run id, --session and --all');

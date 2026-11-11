@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createKeychainSecretStore, nodeEntryIo, parseFlags } from '@momonga/foundation';
+import { SECURITY_BINARY, createKeychainSecretStore, nodeEntryIo, parseFlags } from '@momonga/foundation';
 import { GATEWAY_ENTRY_FLAGS, runGatewayEntry } from '@momonga/gateway';
-import { createFakeSecurityPort } from '@momonga/testkit';
+import { FAKE_KEYCHAIN_PATH, createFakeSecretFiles, createFakeSecurityPort } from '@momonga/testkit';
 import { SUPERVISOR_APP_VERSION } from './app-version.ts';
 
 export const E2E_SECRETS_FILE_NAME = 'e2e-secrets.json';
@@ -26,5 +26,5 @@ const readSecrets = (file: string): Record<string, string> => {
 
 if (import.meta.main) {
   const file = secretsFileOf(process.argv.slice(2));
-  void runGatewayEntry(nodeEntryIo(), { version: SUPERVISOR_APP_VERSION, secretStore: createKeychainSecretStore(createFakeSecurityPort(() => readSecrets(file))) });
+  void runGatewayEntry(nodeEntryIo(), { version: SUPERVISOR_APP_VERSION, secretStore: createKeychainSecretStore(createFakeSecurityPort(() => readSecrets(file)), SECURITY_BINARY, createFakeSecretFiles(() => new Set([FAKE_KEYCHAIN_PATH]))) });
 }
