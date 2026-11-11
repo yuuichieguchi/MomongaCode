@@ -190,6 +190,10 @@ export const diffFieldsOf = ({ hunks, added, removed, diffOmitted }: AppliedDiff
   ...(diffOmitted === undefined ? {} : { diffOmitted }),
 });
 
+export type HeldLink = { approvalId: string };
+
+export type HeldEnd = { callId: string; approvalId: string; outcome: HeldOutcome; status: 'completed' | 'failed' };
+
 export type ToolAwait = { kind: 'run'; runId: string; sessionId: string; agent: string } | { kind: 'job'; jobId: string };
 
 export type InheritedCopyPayload = {
@@ -294,6 +298,7 @@ export type RunEventPayload =
       exitCode?: number;
       formatted?: { formatter: string; version: number };
       effect?: OperationEffectRecord;
+      held?: HeldLink;
     } & AppliedDiffFields)
   | { type: 'verification.started'; round: number; conditionId: string; command: string; mutationSeq: number; attempt: number }
   | {
@@ -342,7 +347,7 @@ export type RunEventPayload =
       tokenErrorRatio?: number;
       tokenCounting: 'exact' | 'calibrated' | 'estimated';
     }
-  | ({ type: 'tool.reconciled'; callId: string; outcome: 'already_applied' | 'not_applied' | 'unknown'; output: string; interrupted?: 'timeout' | 'cancelled'; files?: ToolFile[]; command?: string; effect?: OperationEffectRecord } & AppliedDiffFields)
+  | ({ type: 'tool.reconciled'; callId: string; outcome: 'already_applied' | 'not_applied' | 'unknown'; output: string; interrupted?: 'timeout' | 'cancelled'; files?: ToolFile[]; command?: string; effect?: OperationEffectRecord; held?: HeldLink } & AppliedDiffFields)
   | { type: 'tool.waiting'; callId: string; awaits: ToolAwait; wakeAt?: number }
   | { type: 'job.finished'; jobId: string; status: Exclude<JobStatus, 'running'>; exitCode?: number; signal?: string }
   | {
@@ -435,6 +440,19 @@ export type RunEventEnvelope = {
 };
 
 export type RunEvent = RunEventPayload extends infer Payload ? (Payload extends unknown ? Payload & RunEventEnvelope : never) : never;
+
+type HoldEndingPayload = Extract<RunEventPayload, { type: 'tool.completed' | 'tool.reconciled' | 'tool.held.resolved' }>;
+
+const isHoldEnding = (event: { type: string }): event is HoldEndingPayload =>
+  event.type === 'tool.completed' || event.type === 'tool.reconciled' || event.type === 'tool.held.resolved';
+
+export const heldEndOf = (event: { type: string }): HeldEnd | undefined => {
+  if (!isHoldEnding(event)) return undefined;
+  if (event.type === 'tool.held.resolved') return { callId: event.callId, approvalId: event.approvalId, outcome: event.outcome, status: event.status };
+  if (event.held === undefined) return undefined;
+  const status = event.type === 'tool.completed' ? event.status : event.outcome === 'already_applied' ? 'completed' : 'failed';
+  return { callId: event.callId, approvalId: event.held.approvalId, outcome: 'executed', status };
+};
 
 export type HeldCall = {
   name: string;

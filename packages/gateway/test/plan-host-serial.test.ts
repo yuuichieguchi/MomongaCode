@@ -5,6 +5,7 @@ import { PLAN_HOST_IDENTITY_UNAVAILABLE_CODE, PLAN_SIGN_IN_PENDING_CODE } from '
 import { createPlanSignIn } from '../src/plan/signin.ts';
 import { PROFILE_ID, createGatedFileSystem, realSleep, startHarness } from './plan-support.ts';
 import type { GatedFileSystem, Harness } from './plan-support.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const harnesses: Harness[] = [];
 
@@ -19,6 +20,7 @@ const setup = async () => {
   harnesses.push(h);
   const gated: GatedFileSystem = createGatedFileSystem(nodeFileSystem);
   const signIn = createPlanSignIn({
+    lock: testKernelLock(),
     profiles: { [PROFILE_ID]: h.profile },
     sessions: h.sessions,
     clock: h.clock,

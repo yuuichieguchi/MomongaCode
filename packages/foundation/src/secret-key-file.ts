@@ -1,10 +1,9 @@
 import path from 'node:path';
 import { writeFileAtomicallySync } from './atomic-file.ts';
-import { nodeFileSystemSync } from './node-file-system.ts';
 import type { FileSystemSync } from './node-file-system.ts';
 import { assertPrivateRegularFile } from './platform/privacy.ts';
+import type { KernelLockMechanism } from './platform/kernel-lock.ts';
 import type { Random } from './random.ts';
-import { systemRandom } from './system-random.ts';
 
 export interface SecretKeyFileOptions {
   bytes?: number;
@@ -16,7 +15,7 @@ const KEY_FILE_MODE = 0o600;
 
 export type SecretKeyFile = (keyPath: string, options?: SecretKeyFileOptions) => Uint8Array;
 
-export const createSecretKeyFile = (fs: FileSystemSync, random: Random): SecretKeyFile => {
+export const createSecretKeyFile = (fs: FileSystemSync, random: Random, lock: KernelLockMechanism): SecretKeyFile => {
   const readKey = (keyPath: string, bytes: number): Uint8Array | undefined => {
     let handle: number;
     try {
@@ -39,7 +38,7 @@ export const createSecretKeyFile = (fs: FileSystemSync, random: Random): SecretK
 
   const createKey = (keyPath: string, bytes: number): Uint8Array => {
     const key = random.bytes(bytes);
-    if (writeFileAtomicallySync(fs, random, keyPath, key, { mode: KEY_FILE_MODE, publish: 'create' }).created) return key;
+    if (writeFileAtomicallySync(fs, random, keyPath, key, { mode: KEY_FILE_MODE, publish: 'create', lock }).created) return key;
     const winner = readKey(keyPath, bytes);
     if (winner === undefined) throw new Error(`Key file ${keyPath} disappeared while it was being created`);
     return winner;
@@ -58,5 +57,3 @@ export const createSecretKeyFile = (fs: FileSystemSync, random: Random): SecretK
     return createKey(keyPath, bytes);
   };
 };
-
-export const secretKeyFile = createSecretKeyFile(nodeFileSystemSync, systemRandom);

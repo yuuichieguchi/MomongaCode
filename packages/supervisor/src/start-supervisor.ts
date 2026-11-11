@@ -4,33 +4,29 @@ import { createStopValuesReader, createUserSettingsCache, noKeptRecords, stopVal
 import type { StopValuesReader } from '@momonga/config';
 import {
   GenerationDirectoryMissingError,
-  MAXIMUM_STOP_VALUES,
   acquireProcessLock,
   announceReady,
   claimGeneration,
   createJsonLogger,
   daemonStopBoundMs,
   generationLayout,
-  hostKernelLock,
   hostPaths,
   listGenerations,
   momongaPaths,
-  orphanReapGraceMs,
   publishCurrentGeneration,
   readCurrentGeneration,
   reapMarkerDirectory,
   requireGenerationDirs,
   roleEndpoint,
-  runtimeMaxCloseMs,
   scopeToGeneration,
   startDeadlineSignal,
   systemClock,
   systemRandom,
   writeStopRecord,
 } from '@momonga/foundation';
-import type { AbandonReason, AtomicWriteFileSystem, Clock, GenerationRole, JsonLogger, KernelLockMechanism, ProcessLock, ReadyFields, StopValues, Timing, TextStream } from '@momonga/foundation';
+import type { AbandonReason, AtomicWriteFileSystem, Clock, GenerationRole, JsonLogger, KernelLockMechanism, ProcessLock, ReadyFields, StopValues, Timing, TextStream, ProcessInspector } from '@momonga/foundation';
 import type { SupervisorHealth, SupervisorPhase } from '@momonga/protocol';
-import { FIDELITY_FOLD_VERSION, SUPERVISOR_API_VERSION } from '@momonga/protocol';
+import { FIDELITY_FOLD_VERSION } from '@momonga/protocol';
 import { readChildCounts } from './child-counts.ts';
 import type { ChildCountsReader, GenerationCounts } from './child-counts.ts';
 import { createChildManager } from './child-manager.ts';
@@ -84,8 +80,6 @@ export type SupervisorOptions = {
   gateway?: GatewayTuning;
   startupTimeoutMs?: number;
   lockWaitMs?: number;
-  orphanGraceMs?: number;
-  orphanReapGraceMs?: number;
   heldRetryMs?: number;
   restart?: Partial<RestartPolicy>;
   intervals?: Partial<SupervisorIntervals>;
@@ -97,7 +91,8 @@ export type SupervisorOptions = {
   logger?: JsonLogger;
   droppedLogLines?: () => number;
   reapTiming?: Timing;
-  lockMechanism?: KernelLockMechanism;
+  lockMechanism: KernelLockMechanism;
+  inspector: ProcessInspector;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
   markerPorts?: MarkerPorts;
   currentFileSystem?: AtomicWriteFileSystem;
@@ -106,22 +101,13 @@ export type SupervisorOptions = {
   signal?: AbortSignal;
   stopValues?: StopValuesReader;
   onShutdownRequested?: (values?: StopValues) => void;
-  predecessorStopValues?: StopValues | undefined;
 };
 
-export type SupervisorStartTiming = { startupTimeoutMs: number; orphanGraceMs: number; orphanReapGraceMs: number; orphanPollMs: number };
+export type SupervisorStartTiming = { startupTimeoutMs: number };
 
-export const resolveStartTiming = (
-  options: Pick<SupervisorOptions, 'startupTimeoutMs' | 'orphanGraceMs' | 'orphanReapGraceMs' | 'intervals' | 'predecessorStopValues'>,
-): SupervisorStartTiming => {
-  const predecessor = options.predecessorStopValues ?? MAXIMUM_STOP_VALUES;
-  return {
-    startupTimeoutMs: options.startupTimeoutMs ?? STARTUP_TIMEOUT_MS,
-    orphanGraceMs: options.orphanGraceMs ?? runtimeMaxCloseMs(predecessor),
-    orphanReapGraceMs: options.orphanReapGraceMs ?? orphanReapGraceMs(predecessor),
-    orphanPollMs: resolveIntervals(options.intervals).orphanPollMs,
-  };
-};
+export const resolveStartTiming = (options: Pick<SupervisorOptions, 'startupTimeoutMs'>): SupervisorStartTiming => ({
+  startupTimeoutMs: options.startupTimeoutMs ?? STARTUP_TIMEOUT_MS,
+});
 
 export const supervisorStartBoundMs = (timing: SupervisorStartTiming): number => timing.startupTimeoutMs;
 
@@ -154,7 +140,6 @@ const abandonedStart = (options: SupervisorOptions, own: { sockets: { supervisor
     health: () => ({
       status: 'ok',
       version: options.version,
-      apiVersion: SUPERVISOR_API_VERSION,
       pid: process.pid,
       startedAt,
       phase: 'draining',
@@ -182,13 +167,12 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
   const intervals = resolveIntervals(options.intervals);
   const restart = resolveRestartPolicy(options.restart);
   const canonicalHome = await hostPaths(startDeadlineSignal(options.signal)).canonicalPath(options.home);
-  const startTiming = resolveStartTiming(options);
-  const { startupTimeoutMs } = startTiming;
-  const homePaths = momongaPaths(canonicalHome, process.platform, {});
-  const paths = scopeToGeneration(homePaths, options.generation);
+  const { startupTimeoutMs } = resolveStartTiming(options);
   const env = { ...(options.env ?? process.env) };
-  const lockOptions = omitUndefined({ mechanism: options.lockMechanism });
-  const lockMechanism = options.lockMechanism ?? hostKernelLock();
+  const homePaths = momongaPaths(canonicalHome, process.platform, env);
+  const paths = scopeToGeneration(homePaths, options.generation);
+  const { lockMechanism, inspector } = options;
+  const lockOptions = { mechanism: lockMechanism };
   const processStartedAt = clock.now();
   const startedAt = new Date(processStartedAt).toISOString();
   const log = writeEvent.bind(undefined, logger);
@@ -230,6 +214,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     let ended = false;
     let promoting = false;
     let draining = false;
+    let superseded = false;
     let lastEvaluatedKey: string | undefined;
     let lastReadFailure: string | undefined;
     let launchPromise: Promise<void> = Promise.resolve();
@@ -346,6 +331,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         env,
         spawn: options.spawn,
         settings,
+        signal: lifetime.signal,
         logger,
         clock,
         timers,
@@ -364,7 +350,9 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         onReady: () => promoteOnceAllReady(),
         onBackgroundError: reportBackground,
         onTransientError: reportTransient,
-        ...omitUndefined({ runtime: options.runtime, gateway: options.gateway, lockMechanism: options.lockMechanism, markerPorts: options.markerPorts }),
+        lockMechanism,
+        inspector,
+        ...omitUndefined({ runtime: options.runtime, gateway: options.gateway, markerPorts: options.markerPorts }),
       });
 
     const gateway = createManager('gateway');
@@ -389,6 +377,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       );
       if (outcome === 'busy' || draining || ended) return;
       if (outcome === 'superseded') {
+        superseded = true;
         log(startSuperseded({ generation: own.generation, current: (await readCurrentGeneration(homePaths))?.generation ?? own.generation }));
         endByItself();
         return;
@@ -442,6 +431,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       if (draining || ended) return;
       if (role === 'starting') {
         if (current !== undefined && current > own.generation) {
+          superseded = true;
           log(startSuperseded({ generation: own.generation, current }));
           endByItself();
           return;
@@ -475,7 +465,6 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     const health = (): SupervisorHealth => ({
       status: 'ok',
       version: options.version,
-      apiVersion: SUPERVISOR_API_VERSION,
       pid: process.pid,
       startedAt,
       phase,
@@ -492,7 +481,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     let lastWrittenSeq: number | undefined;
     const recordApplied = async (key: string | undefined): Promise<void> => {
       try {
-        const written = await writeAppliedRecord(canonicalHome, own.settingsApplied, lastWrittenSeq, { signal: lifetime.signal, random: systemRandom });
+        const written = await writeAppliedRecord(canonicalHome, own.settingsApplied, lastWrittenSeq, { signal: lifetime.signal, random: systemRandom, lock: lockMechanism });
         if (written.kind !== 'invalid') lastWrittenSeq = written.seq;
       } catch (error) {
         if (lifetime.signal.aborted || key === recordFailedKey) return;
@@ -562,8 +551,13 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       gateway,
       timers,
       logger,
-      recordStop: (values) => writeStopRecord(own.stopRecord, own.generation, values),
+      recordStop: (values) => writeStopRecord(own.stopRecord, own.generation, values, lockMechanism),
+      inspector,
       ...omitUndefined({ markerPorts: options.markerPorts }),
+      stopReason: () => {
+        if (role !== 'starting') return 'shutdown';
+        return superseded ? 'superseded' : 'unpromoted';
+      },
       beginDraining: () => {
         if (role === 'starting' && !ended) log(startUnpromoted({ generation: own.generation, reason: 'stopped' }));
         draining = true;
@@ -578,7 +572,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         promotionBoundTimer = undefined;
       },
       awaitBackground: async () => {
-        await Promise.all([launchPromise, publishPromise, pollPromise, reaperPromise]);
+        await Promise.all([launchPromise, publishPromise, pollPromise, reaperPromise, settingsWatcher?.idle()]);
       },
       closeControl: async () => {
         await server?.close();
@@ -613,9 +607,13 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       socketPath: own.sockets.supervisor,
       timers,
       health,
-      credential: (name, capability) => {
+      credential: async (name, capability, signal) => {
         if (capability === undefined || !gateway.holdsCapability(capability)) return { kind: 'refused' };
-        if (!handedCredentialNames(settings.read().settings).includes(name)) return { kind: 'refused' };
+        const loaded = await settings.loadOrKeep(signal).catch((error: unknown) => {
+          if (!signal.aborted) reportReadFailure(error);
+          throw error;
+        });
+        if (!handedCredentialNames(loaded.settings).includes(name)) return { kind: 'refused' };
         const value = env[name];
         return value === undefined || value === '' ? { kind: 'unset' } : { kind: 'value', value };
       },
@@ -637,6 +635,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         onWarning: (detail) => log(orphansWarning({ detail })),
         signal: launchSignal,
         timing: reapTiming,
+        inspector,
       });
 
     promotionBoundTimer = timers.setTimeout(() => {

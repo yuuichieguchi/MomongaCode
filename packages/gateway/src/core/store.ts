@@ -1,5 +1,5 @@
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
-import { immediateTx, migrate, openDatabase } from '@momonga/foundation';
+import { immediateTx, migrate, openDatabase, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { Migration } from '@momonga/foundation';
 import type { CompactResource, InputItem, ItemField, StreamEvent } from '@momonga/protocol';
 import type { StoredDataChecks } from './validation.ts';
@@ -174,7 +174,7 @@ const prepare = (db: DatabaseSync): Statements => ({
 });
 
 export const openGatewayStore = (dbPath: string, checks: StoredDataChecks): GatewayStore => {
-  const db = openDatabase(dbPath);
+  const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
   try {
     migrate(db, MIGRATIONS);
     const statements = prepare(db);

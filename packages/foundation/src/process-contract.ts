@@ -38,6 +38,8 @@ export const CREDENTIAL_CAPABILITY_ENV = 'MOMONGA_CREDENTIAL_CAPABILITY';
 export const CREDENTIAL_CAPABILITY_HEADER = 'momonga-credential-capability';
 
 export const KILL_CONFIRM_MS = 5000;
+export const DAEMON_MARKER_KILL_GRACE_MS = 2000;
+export const ABANDON_KILL_GRACE_MS = 2000;
 export const ABORT_SETTLE_LIMIT_MS = 2000;
 export const SANDBOX_KILL_GRACE_MS = 1000;
 export const RUNTIME_ABORT_BUDGET_MS = ABORT_SETTLE_LIMIT_MS + SANDBOX_KILL_GRACE_MS + KILL_CONFIRM_MS + 2 * POLL_INTERVAL_MS;
@@ -157,8 +159,6 @@ export const runtimeMaxCloseMs = (values: StopValues): number => values.drainTim
 export const runtimeStopBudgetMs = (values: StopValues): number => runtimeMaxCloseMs(values) + SHUTDOWN_MARGIN_MS;
 
 export const runtimeAbortStopBudgetMs = (values: StopValues): number => RUNTIME_ABORT_BUDGET_MS + runtimeTeardownBudgetMs(values.mcpCloseGraceMs) + SHUTDOWN_MARGIN_MS;
-
-export const orphanReapGraceMs = (values: StopValues): number => RUNTIME_ABORT_BUDGET_MS + runtimeTeardownBudgetMs(values.mcpCloseGraceMs);
 
 export const gatewayMaxCloseMs = (values: StopValues): number => values.closeGraceMs + managedServerStopBoundMs(values.managedServerStopGraceMs);
 

@@ -11,6 +11,7 @@ import type { A11y } from './a11y.ts';
 import { createRowCache, rowRenderersOf } from './row-cache.ts';
 import { createClickCounter, extractSelection, indexRangeOf, lineSelection, samePoint, wordSelection } from './selection.ts';
 import type { Point, Selection } from './selection.ts';
+import type { ScreenTimers } from './timers.ts';
 import { toggleThought } from '../transcript.ts';
 import type { TranscriptStore } from './store.ts';
 import { clamped, FOLLOWING, moved, sourceOf, VIEWPORT_CONTEXTS, viewportMoveOf, viewportMoveOfAction, windowOf } from './viewport.ts';
@@ -33,6 +34,7 @@ export type TranscriptViewHost = {
   keyFacts(): ViewportKeyFacts;
   keys: KeyTable;
   a11y: A11y;
+  timers: ScreenTimers;
 };
 
 export type TranscriptViewState = { source: ViewSource; window: ViewWindow; position: Position; selection: Selection | undefined; toast: string | undefined; showToast(text: string): void; act(action: ActionId): boolean; place(position: Position): void };
@@ -46,10 +48,15 @@ export const useTranscriptView = (host: TranscriptViewHost): TranscriptViewState
   const height = allocation.viewport;
   const { keys } = host;
   const { screenReader, reducedMotion } = host.a11y;
-  const cache = useMemo(() => createRowCache(rowRenderersOf({ keys, a11y: { screenReader, reducedMotion } })), [keys, screenReader, reducedMotion]);
+  const [, redraw] = useReducer((count: number) => count + 1, 0);
+  const { timers } = host;
+  const cache = useMemo(
+    () => createRowCache(rowRenderersOf({ keys, a11y: { screenReader, reducedMotion } }), { defer: (run) => void timers.setTimeout(run, 0), onRows: redraw }),
+    [keys, screenReader, reducedMotion, timers],
+  );
+  useEffect(() => () => cache.close(), [cache]);
   const [held] = useState<Held>(() => ({ position: FOLLOWING, selection: undefined, toast: undefined, drag: undefined }));
   const [clicks] = useState(() => createClickCounter(host.now));
-  const [, redraw] = useReducer((count: number) => count + 1, 0);
   const source = sourceOf(store, cache, width);
   const position = clamped(source, held.position);
   const window = windowOf(source, position, height);

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { migrate, openDatabase } from '@momonga/foundation';
+import { migrate, openDatabase, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { definePriceTable, formatCostReport, openTraceStore } from '@momonga/observability';
 import { createFakeClock } from '@momonga/testkit';
 import { TRACE_STORE_MIGRATIONS } from '../src/trace-store.ts';
@@ -15,7 +15,7 @@ const insertSpan = (db: ReturnType<typeof openDatabase>, spanId: string, name: s
 describe('the chat-span billing migration of the trace store', () => {
   it('records earlier chat spans of any provider as unknown, and the cost report counts them as price not recorded without pricing them', () => {
     const file = path.join(makeDir(), 'traces.db');
-    const legacy = openDatabase(file);
+    const legacy = openDatabase(file, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     migrate(legacy, TRACE_STORE_MIGRATIONS.slice(0, 1));
     const chatAttributes = (provider: string) => ({
       'gen_ai.operation.name': 'chat',
@@ -29,7 +29,7 @@ describe('the chat-span billing migration of the trace store', () => {
     insertSpan(legacy, 'tool-1', 'execute_tool Read', { 'gen_ai.operation.name': 'execute_tool' });
     legacy.close();
 
-    const store = openTraceStore({ path: file, clock: createFakeClock(START_MS) });
+    const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file, clock: createFakeClock(START_MS) });
     registerCleanup(() => store.close());
     const spans = store.spansForRun(RUN_ID);
     const billingOf = (spanId: string) => spans.find((span) => span.spanId === spanId)?.attributes['momonga.billing'];

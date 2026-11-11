@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, testPaths } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testPaths, testKernelLock } from '@momonga/testkit';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { SandboxPolicyError, buildSeatbeltProfile, createSeatbeltSandbox } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
@@ -83,7 +83,7 @@ describe('SandboxPolicyError codes from buildSeatbeltProfile', () => {
 describe.runIf(process.platform === 'darwin')('SandboxPolicyError codes from the seatbelt spawn', () => {
   it('writable_root_missing for a writable root that does not exist', async () => {
     const dirs = base();
-    const sandbox = createSeatbeltSandbox({ tmpRoot: dirs.spawnTmp, killGraceMs: 300 });
+    const sandbox = createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot: dirs.spawnTmp, killGraceMs: 300 });
     const missing = path.join(dirs.root, 'missing');
     expect(
       await codeOf(async () => await sandbox.spawn({ argv: ['/usr/bin/true'], cwd: dirs.root, env: {} }, policyOf({ writableRoots: [missing] }), new AbortController().signal)),
@@ -92,7 +92,7 @@ describe.runIf(process.platform === 'darwin')('SandboxPolicyError codes from the
 
   it('writable_root_not_absolute for a relative writable root', async () => {
     const dirs = base();
-    const sandbox = createSeatbeltSandbox({ tmpRoot: dirs.spawnTmp, killGraceMs: 300 });
+    const sandbox = createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot: dirs.spawnTmp, killGraceMs: 300 });
     expect(
       await codeOf(async () => await sandbox.spawn({ argv: ['/usr/bin/true'], cwd: dirs.root, env: {} }, policyOf({ writableRoots: ['relative/root'] }), new AbortController().signal)),
     ).toBe('writable_root_not_absolute');

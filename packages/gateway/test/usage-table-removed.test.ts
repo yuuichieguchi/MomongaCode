@@ -2,7 +2,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { createScriptedAdapter, textResponseEvents, usageOf } from '@momonga/testkit';
-import { migrate, openDatabase } from '@momonga/foundation';
+import { BUSY_WAIT_LIMIT_MS, migrate, openDatabase } from '@momonga/foundation';
 import { MIGRATIONS, openGatewayStore } from '../src/core/store.ts';
 import { createStoredDataChecks } from '../src/core/validation.ts';
 import { PRIMARY, getJson, makeDir, postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
@@ -19,7 +19,7 @@ const tablesOf = (dbPath: string): string[] => {
 const USAGE_TABLE_REMOVED_IN = 4;
 
 const writeDatabaseOfAnEarlierBuild = (dbPath: string): void => {
-  const db = openDatabase(dbPath);
+  const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
   try {
     migrate(db, MIGRATIONS.filter((migration) => migration.version < USAGE_TABLE_REMOVED_IN));
     db.exec(`

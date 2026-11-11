@@ -213,11 +213,13 @@ const ROOT_SESSION = 'NOT EXISTS (SELECT 1 FROM runs child WHERE child.session_i
 
 export const SESSION_PAGE_ROWS = REPORT_PAGE_ROWS;
 
+const LISTED_SESSION_COLUMNS = `s.*,
+       (SELECT r.id FROM runs r WHERE r.session_id = s.id AND r.ordinal = (SELECT MIN(a.ordinal) FROM runs a WHERE a.session_id = s.id AND a.status NOT IN (${TERMINAL_LIST}))) AS active_run_id,
+       (SELECT r.id FROM runs r WHERE r.session_id = s.id AND r.ordinal = (SELECT MAX(l.ordinal) FROM runs l WHERE l.session_id = s.id)) AS latest_run_id`;
+
 const sessionPageOf = (db: DatabaseSync, index: string, folder: string) =>
   db.prepare(
-    `SELECT s.*,
-       (SELECT r.id FROM runs r WHERE r.session_id = s.id AND r.ordinal = (SELECT MIN(a.ordinal) FROM runs a WHERE a.session_id = s.id AND a.status NOT IN (${TERMINAL_LIST}))) AS active_run_id,
-       (SELECT r.id FROM runs r WHERE r.session_id = s.id AND r.ordinal = (SELECT MAX(l.ordinal) FROM runs l WHERE l.session_id = s.id)) AS latest_run_id
+    `SELECT ${LISTED_SESSION_COLUMNS}
      FROM sessions s INDEXED BY ${index}
      WHERE ${folder}${ROOT_SESSION} AND (s.created_at, s.id) > (:afterCreatedAt, :afterId)
      ORDER BY s.created_at, s.id LIMIT :fetch`,
@@ -244,6 +246,7 @@ const prepareStatements = (db: DatabaseSync) => ({
   updateSessionModel: db.prepare('UPDATE sessions SET model = :model WHERE id = :id'),
   sessionMaxEventId: db.prepare('SELECT COALESCE(MAX(id), 0) AS max_id FROM events WHERE session_id = :sessionId'),
   selectSession: db.prepare('SELECT * FROM sessions WHERE id = :id'),
+  selectListedSession: db.prepare(`SELECT ${LISTED_SESSION_COLUMNS} FROM sessions s WHERE s.id = :id`),
   sessionPage: sessionPageOf(db, 'sessions_by_created', ''),
   sessionPageByCwd: sessionPageOf(db, 'sessions_by_cwd_created', 'cwd = :cwd AND '),
   childRuns: db.prepare('SELECT * FROM runs WHERE parent_run_id = :runId ORDER BY created_at, rowid'),
@@ -442,8 +445,8 @@ const assertPositiveInteger = (name: string, value: number): void => {
   if (!Number.isInteger(value) || value < 1) throw new RangeError(`openRuntimeStore: ${name} must be a positive integer, got ${value}`);
 };
 
-export const migrateRuntimeDatabase = (file: string): void => {
-  const db = openDatabase(file);
+export const migrateRuntimeDatabase = (file: string, busyTimeoutMs: number): void => {
+  const db = openDatabase(file, { busyTimeoutMs });
   try {
     migrate(db, MIGRATIONS);
   } finally {
@@ -462,7 +465,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   }
   if (typeof options.home !== 'string') throw new TypeError('openRuntimeStore: home is required');
   const { clock, leaseMs, maxAttempts, maxTotalAttempts, home, fileSystem, random } = options;
-  const { db, identity } = openDatabaseWithIdentity(options.path);
+  const { db, identity } = openDatabaseWithIdentity(options.path, { busyTimeoutMs: options.busyTimeoutMs });
   let statements: Statements;
   try {
     migrate(db, MIGRATIONS);
@@ -473,7 +476,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   }
   const sql = statements;
   const lifetime = new AbortController();
-  const blobs = createBlobStore(db, clock, blobDirectoryOf(options.path), { fileSystem, random });
+  const blobs = createBlobStore(db, clock, blobDirectoryOf(options.path), { fileSystem, random, lock: options.lock });
   const decodeContext = decodeContextOf(db);
   const approvalOps = createApprovalStore(db, clock, decodeContext);
   const memories = createMemoryStore(db, clock, decodeContext);
@@ -586,6 +589,11 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       : approval.kind === 'unknown_effect'
         ? { type: 'tool.unknown.cancelled', approvalId: approval.id, reason }
         : { type: 'tool.permission.cancelled', approvalId: approval.id, reason };
+
+  const listedSessionOf = (row: Row): ListedSession => {
+    const reader = readerFor('sessions', String(row['id']), row);
+    return { ...decodeSession(row, decodeContext), activeRunId: reader.nullableString('active_run_id'), latestRunId: reader.nullableString('latest_run_id') };
+  };
 
   const requireRun = (runId: string): Run => {
     const row = sql.selectRun.get({ id: runId });
@@ -1337,13 +1345,15 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return row === undefined ? undefined : decodeSession(row, decodeContext);
     },
 
+    getListedSession: (id) => {
+      const row = sql.selectListedSession.get({ id });
+      return row === undefined ? undefined : listedSessionOf(row);
+    },
+
     listSessions: ({ cwd, limit, cursor }) => {
       const bounds = { ...afterCursor(cursor), fetch: limit + 1 };
       const rows = readTx(db, () => (cwd === undefined ? sql.sessionPage.all(bounds) : sql.sessionPageByCwd.all({ ...bounds, cwd })));
-      const sessions = rows.slice(0, limit).map((row): ListedSession => {
-        const reader = readerFor('sessions', String(row['id']), row);
-        return { ...decodeSession(row, decodeContext), activeRunId: reader.nullableString('active_run_id'), latestRunId: reader.nullableString('latest_run_id') };
-      });
+      const sessions = rows.slice(0, limit).map(listedSessionOf);
       const last = sessions.at(-1);
       return { sessions, next: rows.length > limit && last !== undefined ? sessionCursorOf(last) : null };
     },

@@ -49,7 +49,7 @@ describe('a run under a mandate holds a call that needs approval and goes on', (
     expect(env.fold(run.id).quiescent).toBe(true);
   });
 
-  it('runs the approved call once, shows its late result to the model, and completes', async () => {
+  it('runs the approved call once, shows its late result to the model, and counts its change: with no declared condition the run stops as unverified', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([write(env, 'call_w', 'out.txt', 'approved content')]), textStep('Done except the write.'), textStep('All done.'));
     const run = await env.enqueue('Write', { mandate: mandateAsking(env, 'out.txt') });
@@ -59,16 +59,20 @@ describe('a run under a mandate holds a call that needs approval and goes on', (
     expect(env.run(run.id).status).toBe('QUEUED');
     await env.runOnce(env.worker('worker-2'));
 
-    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'conditions_unmet' });
+    expect(env.fold(run.id).notes.some((note) => note.code === 'conditions_not_declared')).toBe(true);
     expect(fs.readFileSync(path.join(env.project, 'out.txt'), 'utf8')).toBe('approved content');
-    const resolved = env.ofType(run.id, 'tool.held.resolved');
-    expect(resolved).toEqual([expect.objectContaining({ callId: env.gateway.callId('call_w'), outcome: 'executed', status: 'completed' })]);
+    const [held] = env.ofType(run.id, 'tool.held');
+    const ran = env.ofType(run.id, 'tool.completed').filter((event) => event.held !== undefined);
+    expect(ran).toEqual([expect.objectContaining({ callId: env.gateway.callId('call_w'), status: 'completed', held: { approvalId: held?.approvalId } })]);
+    expect(env.ofType(run.id, 'tool.held.resolved')).toEqual([]);
     const state = env.fold(run.id);
     expect(state.heldCalls).toEqual({});
     const late = state.history.filter((entry) => textOf(entry.item).includes('late_tool_result'));
     expect(late).toHaveLength(1);
     expect(textOf(late[0]?.item)).toContain('a person approved it and it has now run');
-    expect(env.ofType(run.id, 'tool.completed').filter((event) => event.callId === env.gateway.callId('call_w'))).toHaveLength(1);
+    expect(env.ofType(run.id, 'tool.completed').filter((event) => event.callId === env.gateway.callId('call_w'))).toHaveLength(2);
+    expect(state.history.filter((entry) => entry.item.type === 'function_call_output')).toHaveLength(1);
     const lastBody = JSON.stringify(env.ofType(run.id, 'model.requested').at(-1)?.body);
     expect(lastBody).toContain('late_tool_result');
   });

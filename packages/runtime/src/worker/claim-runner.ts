@@ -365,11 +365,11 @@ const drive = async (
   const systemPrompt = agentPin === undefined ? basePrompt : agentSystemPrompt(basePrompt, agentPin);
   const systemPromptDigest = sha256Hex(systemPrompt);
   const env = await tools.envFor(session, control.signal);
-  const skills = await options.skills.load(session);
+  const skills = await options.skills.load(session, control.signal);
   const admit = createSkillAdmission(() => ctx);
   const activationTool = skills.activationTool({ isActive: (name) => journal.state.activatedSkills.some((skill) => skill.name === name), admit });
   const recalled = await options.memories.load(session, signalUntil(run.deadlineAt, clock.now(), control.signal));
-  const agentSet = run.parentRunId === null && options.agents !== undefined ? await options.agents.load(session) : undefined;
+  const agentSet = run.parentRunId === null && options.agents !== undefined ? await options.agents.load(session, control.signal) : undefined;
   const agentTool = options.agents === undefined ? undefined : agentSet?.tool(options.agents.runs);
   const toolSet = await tools.toolSet(run.id, {
     signal: control.signal,

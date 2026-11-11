@@ -155,6 +155,15 @@ export const parseIdempotencyKey = (header: string | null): string | undefined =
   return key;
 };
 
+export const integerQueryOf = (raw: string | undefined, name: string, bounds: { from: number; to: number }): number | undefined => {
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < bounds.from || value > bounds.to) throw invalidRequest(`${name} must be an integer from ${bounds.from} to ${bounds.to}`, name);
+  return value;
+};
+
+export const pageLimitOf = (raw: string | undefined, pageRows: number): number => integerQueryOf(raw, 'limit', { from: 1, to: pageRows }) ?? pageRows;
+
 const CURSOR = /^(?:0|[1-9][0-9]*)$/;
 
 export const parseCursor = (request: Request, max: number): number => {

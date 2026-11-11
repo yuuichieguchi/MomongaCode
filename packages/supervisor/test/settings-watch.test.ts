@@ -38,7 +38,7 @@ const fakeWatch = (options: { throws?: boolean } = {}) => {
   return { watch, watchers, directories, fire };
 };
 
-const setup = (options: { initialKey?: string; key?: () => string; throws?: boolean; debounceMs?: number; pollMs?: number; onChange?: () => void } = {}) => {
+const setup = (options: { initialKey?: string; key?: () => string; throws?: boolean; debounceMs?: number; pollMs?: number; onChange?: () => void | Promise<void> } = {}) => {
   const clock = createFakeClock(0);
   const timers = createFakeTimers(clock);
   const fake = fakeWatch({ ...(options.throws === undefined ? {} : { throws: options.throws }) });
@@ -55,7 +55,7 @@ const setup = (options: { initialKey?: string; key?: () => string; throws?: bool
     initialKey: options.initialKey ?? 'k1',
     onChange: () => {
       calls += 1;
-      options.onChange?.();
+      return options.onChange?.();
     },
     onWarning: (error) => void warnings.push(error),
     onError: (error) => void errors.push(error),
@@ -256,5 +256,30 @@ describe('watchSettings', () => {
     await pollUntil(() => calls > 0, 8000, 'onChange after rename');
     expect(calls).toBe(1);
     expect(errors).toEqual([]);
+  });
+});
+
+describe('the work of the watch that is in flight', () => {
+  it('idle settles at once when nothing is in flight, and only after an evaluation in flight has ended', async () => {
+    const evaluation = Promise.withResolvers<void>();
+    const s = setup({ onChange: () => evaluation.promise });
+    await s.watcher.idle();
+    s.fake.fire('settings.json');
+    s.timers.advance(200);
+    await afterMicrotasks();
+    expect(s.calls()).toBe(1);
+    let idle = false;
+    void s.watcher.idle().then(() => {
+      idle = true;
+    });
+    await afterMicrotasks();
+    expect(idle).toBe(false);
+    s.watcher.stop();
+    await afterMicrotasks();
+    expect(idle).toBe(false);
+    evaluation.resolve();
+    await s.watcher.idle();
+    expect(idle).toBe(true);
+    expect(s.errors).toEqual([]);
   });
 });

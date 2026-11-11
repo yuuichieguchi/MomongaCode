@@ -40,6 +40,7 @@ export {
   failedBoundOf,
   measurement,
   readAutoFitRecord,
+  readAutoFitView,
   readClassifierProbeKeys,
   writeAutoFitRecord,
 } from './auto-fit.ts';

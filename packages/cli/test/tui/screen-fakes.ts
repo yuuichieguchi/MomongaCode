@@ -13,6 +13,7 @@ import type { Key } from 'ink';
 import { DEFAULT_KEY_TABLE } from '../../src/tui/keys/table.ts';
 import { NO_A11Y } from '../../src/tui/screen/a11y.ts';
 import { rowRenderersOf } from '../../src/tui/screen/row-cache.ts';
+import type { ParseSchedule } from '../../src/tui/screen/row-cache.ts';
 import type { RowFacts } from '../../src/tui/screen/tool-view.ts';
 import type { KeyEvent, KeyName } from '../../src/tui/terminal/events.ts';
 
@@ -160,3 +161,27 @@ export const seeded = (seed: number): (() => number) => {
 const ALPHABET = ['a', 'b', 'c', ' ', ' ', '\n', '漢', '字', 'é', '👍', 'x', 'y', 'z', '-', 'é'];
 
 export const randomText = (random: () => number, length: number): string => Array.from({ length }, () => ALPHABET[Math.floor(random() * ALPHABET.length)]).join('');
+
+export type ManualSchedule = { schedule: ParseSchedule; waiting(): number; turn(): void; drain(): number; rowsChanged(): number };
+
+export const manualSchedule = (): ManualSchedule => {
+  const deferred: (() => void)[] = [];
+  let changed = 0;
+  const turn = (): void => {
+    const next = deferred.shift();
+    if (next !== undefined) next();
+  };
+  return {
+    schedule: { defer: (run) => void deferred.push(run), onRows: () => void (changed += 1) },
+    waiting: () => deferred.length,
+    turn,
+    drain: () => {
+      let turns = 0;
+      for (; deferred.length > 0; turns += 1) turn();
+      return turns;
+    },
+    rowsChanged: () => changed,
+  };
+};
+
+export const ROW_SCHEDULE = manualSchedule().schedule;

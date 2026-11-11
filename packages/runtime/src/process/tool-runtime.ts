@@ -5,21 +5,18 @@ import {
   canonicalJson,
   createEncryptedCredentialStore,
   createExecWithStdin,
-  createLockCapability,
   givenCredentialSecretStore,
   givenSecretStoreChildEnv,
   minimalChildEnv,
-  hostProcessInspector,
-  ensureSessionTmpDir as defaultEnsureSessionTmpDir,
   generationMarkerDirectories,
   inspectProcessLock,
   generationLayout,
   generationOfDirectoryName,
   nodeFileSystem,
   releaseSessionScratch,
-  hostInspectorPorts,
   ruleEnforcementOf,
   sha256Hex,
+  layoutProcessInspector,
   systemRandom,
 } from '@momonga/foundation';
 import type { Clock, CredentialSecretStore, HelperSelf, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, OutboundNetwork, ProcessInspector, Timing, RolePort, RuleEnforcement, SecretStore, SessionScratch } from '@momonga/foundation';
@@ -49,8 +46,8 @@ import { createPolicyFor, createRecoveryContextFor } from './tool-policy.ts';
 import type { EnforcedPolicyFor } from './tool-policy.ts';
 
 export type ToolRuntimeOptions = {
-  lockCapability?: LockCapabilityProbe;
-  kernelLock?: KernelLockMechanism;
+  lockCapability: LockCapabilityProbe;
+  kernelLock: KernelLockMechanism;
   paths: MomongaPaths;
   sharedPaths: MomongaPaths;
   generation: number;
@@ -109,16 +106,16 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
       stateDirectory: paths.state,
       secretStore: options.credentialSecretStore ?? givenCredentialSecretStore(createExecWithStdin({ ...minimalChildEnv(process.env), ...givenSecretStoreChildEnv(process.env) }), process.env),
       plaintextTokenFiles: () => settings.takeUserSnapshot().settings.credentials.plaintextTokenFiles,
+      lock: options.kernelLock,
     }),
     randomToken: () => randomBytes(32).toString('base64url'),
     network: options.network,
     openAuthorizationUrl: () => Promise.reject(new Error('the daemon never opens a browser; authorization URLs are handed to the client through the Run API')),
   };
-  const ensureSessionTmpDir = options.ensureSessionTmpDir ?? defaultEnsureSessionTmpDir;
 
   const policyFilesystem = options.policyFilesystem ?? createPolicyFilesystem();
-  const lockCapability = options.lockCapability ?? createLockCapability({ proofDir: paths.lockProof });
-  const inspector = hostProcessInspector({ ...hostInspectorPorts(), capability: lockCapability });
+  const { lockCapability, kernelLock } = options;
+  const inspector = layoutProcessInspector(lockCapability);
   const owners = options.owners ?? createMarkerOwners();
   const jobs = createBackgroundJobs({
     store,
@@ -132,8 +129,9 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     ...(options.onJobSettled === undefined ? {} : { onSettled: options.onJobSettled }),
     markerDirOf: (ownerGeneration) => generationMarkerDirectories(options.sharedPaths, ownerGeneration).tools,
     ownerAlive: async (ownerGeneration) =>
-      (await inspectProcessLock(generationLayout(home, ownerGeneration).locks.runtime, options.kernelLock === undefined ? {} : { mechanism: options.kernelLock })).state !== 'free',
+      (await inspectProcessLock(generationLayout(home, ownerGeneration).locks.runtime, { mechanism: kernelLock })).state !== 'free',
     markerFiles: createNodeJobMarkerFiles(lockCapability),
+    inspector,
     killGraceMs: SANDBOX_KILL_GRACE_MS,
     reapTiming,
     onWarning: (message) => logger.warn(message),
@@ -159,7 +157,8 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
         .map((generation) => generationMarkerDirectories(options.sharedPaths, generation).tools),
     owners,
     callLockDir: paths.callLocks,
-    ...(options.kernelLock === undefined ? {} : { kernelLock: options.kernelLock }),
+    layout: paths,
+    kernelLock,
     onWarning: (message) => logger.warn(message),
     reap: { timing: reapTiming, inspector },
   });
@@ -177,12 +176,12 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     clientVersion: options.version,
     readCloseGraceMs,
     readConnectTimeoutMs: () => settings.takeUserSnapshot().settings.mcp.connectTimeoutMs,
-    markers: { dir: paths.markers.mcp, onWarning: (message) => logger.warn(message) },
+    markers: { dir: paths.markers.mcp, inspector, onWarning: (message) => logger.warn(message) },
     ...(options.onAuthorizationEnded === undefined ? {} : { onAuthorizationEnded: options.onAuthorizationEnded }),
   });
   const mcpPools = createMcpPoolCache({ store, notifier, timers, logger, report, readCloseGraceMs });
   const sessionStates = createSessionStates({ clock, store, logger, releaseScratch: (sessionId) => releaseSessionScratch(path.join(paths.tmp.sessions, sessionId)) });
-  const policyOptions = { paths, home, fs: policyFilesystem, sessionStates, ensureSessionTmpDir };
+  const policyOptions = { paths, home, fs: policyFilesystem, sessionStates, lock: kernelLock, ...(options.ensureSessionTmpDir === undefined ? {} : { ensureSessionTmpDir: options.ensureSessionTmpDir }) };
   const policyBuilders = new Map<RuleEnforcement, EnforcedPolicyFor>();
   const policyFor: ToolRuntimePort['policyFor'] = async (session, request) => {
     const builder = policyBuilders.get(request.ruleEnforcement) ?? createPolicyFor({ ...policyOptions, ruleEnforcement: request.ruleEnforcement });
@@ -243,7 +242,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
               credentialNames,
               timers,
               remote: mcpRemote,
-              markers: { dir: paths.markers.mcp, onWarning: (message) => logger.warn(message) },
+              markers: { dir: paths.markers.mcp, inspector, onWarning: (message) => logger.warn(message) },
               closeGraceMs: readCloseGraceMs,
               ...callBounds,
             }),

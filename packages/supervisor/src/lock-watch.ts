@@ -3,9 +3,8 @@ import type { KernelLockMechanism, ProcessLockInspection } from '@momonga/founda
 import { LINE_MAX_BYTES } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
 import type { ChildRole } from './launcher.ts';
-import { omitUndefined } from './omit-undefined.ts';
 
-export type ExternalProbe = 'pending' | 'healthy' | 'unhealthy' | 'unreachable';
+export type ExternalProbe = 'pending' | 'healthy' | 'unhealthy' | 'unresponsive' | 'unreachable';
 
 export type ProbeOutcome = Exclude<ExternalProbe, 'pending'>;
 
@@ -19,7 +18,7 @@ export type LockWatchOptions = {
   lockWatchIntervalMs: number;
   externalPollMs: number;
   timers: SupervisorTimers;
-  mechanism?: KernelLockMechanism;
+  mechanism: KernelLockMechanism;
   inspect?: typeof inspectProcessLock;
   probe?: HealthProbe;
   onFree(): void;
@@ -38,7 +37,12 @@ const HEALTH_PATHS = { runtime: '/v1/health', gateway: '/v1/momonga/health' } as
 
 const HEALTHY_STATES: ReadonlySet<unknown> = new Set(['running', 'retiring']);
 
-const UNREACHABLE_CODES: ReadonlySet<string> = new Set(['ECONNREFUSED', 'ENOENT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT']);
+const OUTCOME_OF_FAILURE_CODE: ReadonlyMap<string, 'unresponsive' | 'unreachable'> = new Map([
+  ['ECONNREFUSED', 'unreachable'],
+  ['ENOENT', 'unreachable'],
+  ['UND_ERR_HEADERS_TIMEOUT', 'unresponsive'],
+  ['UND_ERR_BODY_TIMEOUT', 'unresponsive'],
+]);
 
 const parseJsonObject = (text: string): Record<string, unknown> | undefined => {
   let parsed: unknown;
@@ -79,8 +83,9 @@ export const createExternalHealthProbe = (timeoutMs: number): HealthProbe => asy
     return body === undefined ? 'unhealthy' : labelHealthResponse(role, { status: response.status, body });
   } catch (error) {
     const code = codeOf(error);
-    if (code !== undefined && UNREACHABLE_CODES.has(code)) return 'unreachable';
-    throw error;
+    const outcome = code === undefined ? undefined : OUTCOME_OF_FAILURE_CODE.get(code);
+    if (outcome === undefined) throw error;
+    return outcome;
   } finally {
     await client.destroy();
   }
@@ -163,7 +168,7 @@ export const watchLock = (options: LockWatchOptions): LockWatch => {
   const poll = async (): Promise<void> => {
     let inspection: ProcessLockInspection;
     try {
-      inspection = await inspect(options.lockPath, omitUndefined({ mechanism: options.mechanism }));
+      inspection = await inspect(options.lockPath, { mechanism: options.mechanism });
     } catch (error) {
       if (stopped) return;
       report(error, 'lock-poll');

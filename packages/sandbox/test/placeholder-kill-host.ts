@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { createBubblewrapSandbox, createPlaceholderJournal } from '@momonga/sandbox';
+import { testKernelLock } from '@momonga/testkit';
 
 const KILL_GRACE_MS = 300;
 
@@ -13,6 +14,7 @@ const killSelf = (): never => {
 };
 
 const sandbox = createBubblewrapSandbox({
+  lock: testKernelLock(),
   bwrapPath: bwrap,
   tmpRoot,
   killGraceMs: KILL_GRACE_MS,

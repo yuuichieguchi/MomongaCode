@@ -4,7 +4,7 @@ import type { ForgeOperationName } from '../operations/spec.ts';
 import { callForge } from './http.ts';
 import type { ForgeAnswer, ForgeFetch, ForgeFields } from './http.ts';
 import type { ForgeDescriptor } from './descriptor.ts';
-import { parseRemoteUrl, splitRepository } from './remote.ts';
+import { hostedRemoteOf, parseRemoteUrl, splitRepository } from './remote.ts';
 
 export type ForgeCredentialReference = { readonly env: string } | { readonly secret: string };
 
@@ -33,6 +33,7 @@ export type ForgeRequest = {
 export type ForgeGitCredential = { origin: string; username: string; password: string };
 
 const GIT_TRANSPORT_SCHEME = 'https';
+const GIT_REPOSITORY_ENDING = '.git';
 const URL_FORM = /^[a-z][a-z0-9+.-]*:\/\//i;
 
 export const gitOriginOf = (instance: Pick<ForgeInstance, 'host'>): string => new URL(`${GIT_TRANSPORT_SCHEME}://${instance.host}`).origin;
@@ -45,6 +46,7 @@ const originOfRemote = (remoteUrl: string): string | undefined => {
 export type ForgeAccess = {
   request(request: ForgeRequest): Promise<ForgeAnswer>;
   gitCredential(remoteUrl: string, signal: AbortSignal): Promise<ForgeGitCredential | undefined>;
+  gitDestination(remoteUrl: string): string | undefined;
 };
 
 export type ForgeAccessOptions = {
@@ -61,6 +63,12 @@ export const createForgeAccess = (options: ForgeAccessOptions): ForgeAccess => {
     return descriptor;
   };
   return {
+    gitDestination: (remoteUrl) => {
+      const hosted = hostedRemoteOf(remoteUrl);
+      const instance = hosted === undefined ? undefined : options.instances.find((candidate) => new URL(gitOriginOf(candidate)).hostname === hosted.hostname);
+      if (hosted === undefined || instance === undefined) return undefined;
+      return `${gitOriginOf(instance)}/${hosted.repo.split('/').map(encodeURIComponent).join('/')}${GIT_REPOSITORY_ENDING}`;
+    },
     gitCredential: async (remoteUrl, signal) => {
       const origin = originOfRemote(remoteUrl);
       const instance = origin === undefined ? undefined : options.instances.find((candidate) => gitOriginOf(candidate) === origin);

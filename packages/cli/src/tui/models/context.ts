@@ -85,7 +85,7 @@ export const refusedSentence = async <T>(context: ModelsFlowContext, work: () =>
 export const writeConfirmed = async ({ host }: Opened, context: ModelsFlowContext, proposal: ModelsProposal, before: () => Promise<void> = async () => undefined): Promise<ModelsEditResult | undefined> => {
   const written = await refusedSentence(context, async () => {
     await before();
-    return context.wait(SAVING_PHASE, (signal) => editModelsSettings(host.home, host.settingsFile, proposal.operations, { signal }));
+    return context.wait(SAVING_PHASE, (signal) => editModelsSettings(host.home, host.settingsFile, proposal.operations, { lock: host.lock(), signal }));
   });
   if (written === undefined) return undefined;
   context.info(written.value.summaries.join('\n'));

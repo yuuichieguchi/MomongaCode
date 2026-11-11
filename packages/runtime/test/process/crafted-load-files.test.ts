@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createSkillLoader, createNodeSkillFileSystem } from '@momonga/skills';
 import { createAgentsPort, createSkillsPort } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
+import { NEVER_CANCELLED } from '@momonga/testkit';
 
 const roots: string[] = [];
 
@@ -84,7 +85,7 @@ describe('the runtime skill load path with crafted files', () => {
     const { home, project } = workspace();
     write(path.join(project, '.momonga', 'skills', 'bomb', 'SKILL.md'), `---\nname: bomb\ndescription: Bomb\n${ALIAS_BOMB}\n---\nBody\n`);
     write(path.join(project, '.momonga', 'skills', 'good', 'SKILL.md'), goodSkill('good'));
-    const set = await skillPortFor(home).load(sessionAt(project));
+    const set = await skillPortFor(home).load(sessionAt(project), NEVER_CANCELLED);
     expect(set.skills.map((skill) => skill.name)).toEqual(['good']);
     expect(set.warnings.join('\n')).toMatch(/bomb.*SKILL\.md was skipped: the frontmatter is not valid YAML/);
   });
@@ -94,7 +95,7 @@ describe('the runtime skill load path with crafted files', () => {
     const skills = path.join(project, '.momonga', 'skills');
     write(path.join(skills, 'good', 'SKILL.md'), goodSkill('good'));
     fs.symlinkSync(path.join(skills, 'loop'), path.join(skills, 'loop'));
-    const set = await skillPortFor(home).load(sessionAt(project));
+    const set = await skillPortFor(home).load(sessionAt(project), NEVER_CANCELLED);
     expect(set.skills.map((skill) => skill.name)).toEqual(['good']);
   });
 
@@ -104,7 +105,7 @@ describe('the runtime skill load path with crafted files', () => {
     write(path.join(skills, 'good', 'SKILL.md'), goodSkill('good'));
     fs.mkdirSync(path.join(skills, 'looping'));
     fs.symlinkSync(path.join(skills, 'looping', 'SKILL.md'), path.join(skills, 'looping', 'SKILL.md'));
-    const set = await skillPortFor(home).load(sessionAt(project));
+    const set = await skillPortFor(home).load(sessionAt(project), NEVER_CANCELLED);
     expect(set.skills.map((skill) => skill.name)).toEqual(['good']);
   });
 
@@ -116,7 +117,7 @@ describe('the runtime skill load path with crafted files', () => {
     lock(path.join(skills, 'locked-file', 'SKILL.md'));
     fs.mkdirSync(path.join(skills, 'locked-dir'));
     lock(path.join(skills, 'locked-dir'));
-    const set = await skillPortFor(home).load(sessionAt(project));
+    const set = await skillPortFor(home).load(sessionAt(project), NEVER_CANCELLED);
     expect(set.skills.map((skill) => skill.name)).toEqual(['good']);
     expect(set.warnings.join('\n')).toContain('EACCES');
   });
@@ -130,7 +131,7 @@ describe('skill activation with crafted resources', () => {
     write(path.join(skill, 'notes', 'a.txt'), 'a');
     fs.mkdirSync(path.join(skill, 'secret'));
     lock(path.join(skill, 'secret'));
-    const set = await skillPortFor(home).load(sessionAt(project));
+    const set = await skillPortFor(home).load(sessionAt(project), NEVER_CANCELLED);
     const activated = await set.activate('good');
     expect(activated.content).toContain('<skill_resources complete="false">');
     expect(activated.content).toContain('<file>notes/a.txt</file>');
@@ -143,7 +144,7 @@ describe('the runtime agent load path with crafted files', () => {
     const agents = path.join(project, '.momonga', 'agents');
     write(path.join(agents, 'bomb.md'), `---\nname: bomb\ndescription: Bomb\n${ALIAS_BOMB}\n---\nWork.\n`);
     write(path.join(agents, 'good.md'), goodAgent('good'));
-    const set = await agentPortFor(home).load(sessionAt(project));
+    const set = await agentPortFor(home).load(sessionAt(project), NEVER_CANCELLED);
     expect(set.agents.map((agent) => agent.name)).toEqual(['good']);
     expect(set.warnings.join('\n')).toMatch(/bomb\.md was skipped: the frontmatter is not valid YAML/);
   });
@@ -155,7 +156,7 @@ describe('the runtime agent load path with crafted files', () => {
     fs.symlinkSync(path.join(agents, 'loop.md'), path.join(agents, 'loop.md'));
     write(path.join(agents, 'locked.md'), goodAgent('locked'));
     lock(path.join(agents, 'locked.md'));
-    const set = await agentPortFor(home).load(sessionAt(project));
+    const set = await agentPortFor(home).load(sessionAt(project), NEVER_CANCELLED);
     expect(set.agents.map((agent) => agent.name)).toEqual(['good']);
     expect(set.warnings.join('\n')).toContain('locked.md');
   });
@@ -165,7 +166,7 @@ describe('the runtime agent load path with crafted files', () => {
     const agents = path.join(project, '.momonga', 'agents');
     fs.mkdirSync(agents, { recursive: true });
     lock(agents);
-    const set = await agentPortFor(home).load(sessionAt(project));
+    const set = await agentPortFor(home).load(sessionAt(project), NEVER_CANCELLED);
     expect(set.agents).toEqual([]);
     expect(set.warnings.join('\n')).toContain('EACCES');
   });

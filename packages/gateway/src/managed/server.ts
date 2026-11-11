@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { KILL_CONFIRM_MS, ProcessLockHeldError, acquireProcessLock, createUdsClient, fixedSocket, isPipePath, isUnixSocketLive, socketBindRefusalOf, startSharedCall, systemClock } from '@momonga/foundation';
-import type { GenerationRole, ProcessLock, SharedCall, UdsClient } from '@momonga/foundation';
+import type { GenerationRole, ProcessLock, SharedCall, UdsClient, ProcessInspector, KernelLockMechanism } from '@momonga/foundation';
 import { SOCKET_PLACEHOLDER, WORDS, messageOf } from '@momonga/protocol';
 import type { HealthResult, ManagedEndpointForm, ManagedServerDescription } from '@momonga/protocol';
 import { realTimers } from '../process-ports.ts';
@@ -33,6 +33,8 @@ export type ManagedServerOptions = {
   binary: string;
   socketPath: string;
   lockPath: string;
+  lock: KernelLockMechanism;
+  inspector: ProcessInspector;
   markerDirectory?: string;
   readyTimeoutMs: number;
   env?: ChildEnv;
@@ -131,7 +133,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
       ? (): ManagedChild => {
           throw new Error(aboutModel(target, 'the server has no marker directory, so it cannot be launched'));
         }
-      : createGroupSpawn({ env: options.env, markerDirectory: options.markerDirectory, onWarning: options.onWarning }));
+      : createGroupSpawn({ env: options.env, markerDirectory: options.markerDirectory, onWarning: options.onWarning, inspector: options.inspector }));
   const timers = options.timers ?? defaultTimers;
   const argv = argvOf(description, options.socketPath);
   const said = (text: string): string => aboutModel(target, text);
@@ -217,7 +219,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     for (;;) {
       signal.throwIfAborted();
       try {
-        return await acquireProcessLock(options.lockPath);
+        return await acquireProcessLock(options.lockPath, undefined, { mechanism: options.lock });
       } catch (error) {
         if (!(error instanceof ProcessLockHeldError)) throw error;
       }
@@ -247,7 +249,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     try {
       if (options.markerDirectory !== undefined) {
         await fs.promises.mkdir(options.markerDirectory, { recursive: true, mode: LOCK_DIRECTORY_MODE });
-        await reapStaleGroups({ markerDirectory: options.markerDirectory, graceMs: options.readStopGraceMs(), onWarning: options.onWarning, signal });
+        await reapStaleGroups({ markerDirectory: options.markerDirectory, graceMs: options.readStopGraceMs(), onWarning: options.onWarning, signal, inspector: options.inspector });
       }
       await waitForFreeSocket(signal);
       return lock;

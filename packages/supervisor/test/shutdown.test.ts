@@ -4,7 +4,7 @@ import net from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
 import { ENTRY_HARD_EXIT_MARGIN_MS, DEFAULT_STOP_VALUES, gatewayAbortBudgetMs, gatewayMaxCloseMs, gatewayStopBudgetMs, RUNTIME_ABORT_BUDGET_MS, SHUTDOWN_MARGIN_MS, runtimeMaxCloseMs, runtimeTeardownBudgetMs, supervisorMaxCloseMs, inspectProcessLock, sleep } from '@momonga/foundation';
 import type { ReapMarkerDirectoryOptions, StopValues } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, registerCleanup, spawnTracked, waitFor, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, registerCleanup, spawnTracked, waitFor, firstGeneration, testKernelLock } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { KILL_CONFIRM_MS, SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS, STDIO_FLUSH_MS } from '../src/constants.ts';
 import { childCloseBudgetMs } from '../src/shutdown.ts';
@@ -37,6 +37,7 @@ const running = async (context: CleanupContext, options: HarnessOptions = {}): P
   const h = await startHarness(context, options);
   await h.waitForState('gateway', 'ready', 10_000);
   await h.waitForState('runtime', 'ready', 10_000);
+  await pumpUntil(h.timers, () => h.supervisor.role() === 'serving', { realWork: h.realWork, maxMs: 5000, description: 'the generation to serve' });
   return h;
 };
 
@@ -214,12 +215,12 @@ describe('shutdown order and bounds', () => {
 
   it('supervisor.lock and the control socket are gone after close', async (context) => {
     const h = await running(context);
-    expect(await inspectProcessLock(firstGeneration(h.paths).locks.supervisor)).toEqual({ state: 'held', pid: process.pid });
+    expect(await inspectProcessLock(firstGeneration(h.paths).locks.supervisor, { mechanism: testKernelLock() })).toEqual({ state: 'held', pid: process.pid });
     expect(fs.existsSync(firstGeneration(h.paths).sockets.supervisor)).toBe(true);
     await finish(h, h.supervisor.close());
-    expect(await inspectProcessLock(firstGeneration(h.paths).locks.supervisor)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(firstGeneration(h.paths).locks.supervisor, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
     expect(fs.existsSync(firstGeneration(h.paths).sockets.supervisor)).toBe(false);
-    expect(await inspectProcessLock(`${firstGeneration(h.paths).sockets.supervisor}.lock`)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(`${firstGeneration(h.paths).sockets.supervisor}.lock`, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
   });
 
   it('restart timers are cleared', async (context) => {
@@ -499,7 +500,7 @@ describe('shutdown and marker reaps', () => {
     expect(h.clock.now() - stepFiveAt).toBeGreaterThanOrEqual(SHUTDOWN_RELEASE_BOUND_MS);
     expect(h.clock.now() - stepFiveAt).toBeLessThanOrEqual(SHUTDOWN_RELEASE_BOUND_MS + 100);
     expect(h.log.withMsg('shutdown.step').filter((line) => line['detail'] === 'step 5 bound reached')).toEqual([expect.objectContaining({ level: 'warn' })]);
-    expect(await inspectProcessLock(firstGeneration(h.paths).locks.supervisor)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(firstGeneration(h.paths).locks.supervisor, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
     expect(result.killed).toEqual([]);
     expect(result.leaked).toEqual([]);
   });
@@ -515,7 +516,7 @@ describe('shutdown and marker reaps', () => {
     const result = await finish(h, h.supervisor.close(), 120_000);
     expect(result.clean).toBe(true);
     expect(fs.existsSync(firstGeneration(h.paths).sockets.supervisor)).toBe(false);
-    expect(await inspectProcessLock(`${firstGeneration(h.paths).sockets.supervisor}.lock`)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(`${firstGeneration(h.paths).sockets.supervisor}.lock`, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
     expect(h.log.withMsg('shutdown.begin')).toHaveLength(1);
   });
 });
@@ -544,7 +545,6 @@ describe('shutdown during the orphan reap', () => {
   const inPhase2 = (onReap: (options: ReapMarkerDirectoryOptions) => Promise<{ reaped: number; kept: number }>): HarnessOptions => ({
     prepare: (_home, paths) => void writeMarker(paths, 'runtime-old'),
     markerPorts: { findHolders: async () => [999_999], reapMarkerDirectory: onReap },
-    overrides: { orphanGraceMs: 250 },
   });
 
   const untilAborted = (options: ReapMarkerDirectoryOptions, seen: { aborted?: boolean }): Promise<{ reaped: number; kept: number }> => {
@@ -581,7 +581,6 @@ describe('shutdown during the orphan reap', () => {
         if (options.timing !== undefined) await sleep(options.timing, options.killGraceMs);
         return { reaped: 0, kept: 1 };
       }),
-      overrides: { orphanGraceMs: 250, orphanReapGraceMs: 200 },
     });
     await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, maxMs: 5000 });
     const triggerAt = h.clock.now();
@@ -598,7 +597,6 @@ describe('shutdown during the orphan reap', () => {
     const seen: { aborted?: boolean } = {};
     const h = await startHarness(context, {
       ...inPhase2((options) => untilAborted(options, seen)),
-      overrides: { orphanGraceMs: 250, orphanReapGraceMs: 1000 },
     });
     await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, maxMs: 5000 });
     await pump(h.timers, h.realWork, 100);

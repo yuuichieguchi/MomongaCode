@@ -6,10 +6,10 @@ import type { TranscriptStore } from '../../src/tui/screen/store.ts';
 import { clamped, FOLLOWING, moved, sourceOf, thumbRow, viewportMoveOf as viewportMoveOfWith, windowOf } from '../../src/tui/screen/viewport.ts';
 import type { Position } from '../../src/tui/screen/viewport.ts';
 import { appendEntry } from '../../src/tui/transcript.ts';
-import { ROW_RENDERERS } from './screen-fakes.ts';
+import { ROW_RENDERERS, ROW_SCHEDULE } from './screen-fakes.ts';
 import { DEFAULT_KEY_TABLE } from '../../src/tui/keys/table.ts';
 
-const createRowCache = (renderers: Parameters<typeof createRowCacheWith>[0] = ROW_RENDERERS) => createRowCacheWith(renderers);
+const createRowCache = (renderers: Parameters<typeof createRowCacheWith>[0] = ROW_RENDERERS) => createRowCacheWith(renderers, ROW_SCHEDULE);
 const viewportMoveOf = (event: Parameters<typeof viewportMoveOfWith>[0], height: number) => viewportMoveOfWith(event, height, DEFAULT_KEY_TABLE);
 
 const filled = (count: number, text = (index: number) => `line ${index}`): TranscriptStore => {

@@ -4,8 +4,9 @@ import * as protocol from '@momonga/protocol';
 type View = {
   model: string;
   key: { classifier: string; codeDigest: string; datasetDigest: string };
-  measurement: 'passed' | 'did_not_pass' | 'not_measured';
+  measurement: 'passed' | 'did_not_pass' | 'not_measured' | 'unreadable';
   facts?: { recordedAt: string; falseAllows: number; total: number; upperBound: number; failedBound?: string };
+  refusal?: { file: string; reason: string };
 };
 
 const render = (view: View, surface: 'tui' | 'cli'): string => {
@@ -30,6 +31,12 @@ describe('autoModeNotice renders the view for the client surface', () => {
     expect(line.startsWith('auto: classifier guard measured on 2026-11-06: did not pass (')).toBe(true);
     expect(line).toContain(`; run ${COMMAND[surface]} for the report`);
     expect(line.endsWith(CAVEAT)).toBe(true);
+  });
+
+  it.each(['tui', 'cli'] as const)('states a record that cannot be read with its file and reason, and names the command that measures again (%s)', (surface) => {
+    const reason = '/state/auto-fit/ab.json: not an auto mode measurement record';
+    const line = render({ model: 'guard', key: KEY, measurement: 'unreadable', refusal: { file: '/state/auto-fit/ab.json', reason } }, surface);
+    expect(line).toBe(`auto: the measurement record of classifier guard cannot be used (${reason}); run ${COMMAND[surface]} to measure again. ${CAVEAT}`);
   });
 
   it.each(['tui', 'cli'] as const)('states a missing measurement and names the command of the surface (%s)', (surface) => {

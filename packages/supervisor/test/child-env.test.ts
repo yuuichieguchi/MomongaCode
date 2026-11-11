@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { stripCredentialEnv } from '@momonga/config';
 import { MINIMAL_CHILD_PATH, NETWORK_ENV_NAMES, SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV, SECRET_REFUSAL_ENV, secretStoreEnvFor } from '@momonga/foundation';
-import { waitFor } from '@momonga/testkit';
+import { afterMicrotasks, waitFor } from '@momonga/testkit';
 import { COLLIDING_CREDENTIAL_DETAIL, definedEnv, gatewayEnv, runtimeEnv } from '../src/child-env.ts';
 import type { CredentialSettings } from '../src/child-env.ts';
 import { HELD_RETRY_MS } from '../src/constants.ts';
@@ -225,12 +225,14 @@ describe('settings at every spawn', () => {
     harness.port.last().exit(1);
     await waitFor(() => harness.manager.state() === 'backoff');
     harness.timers.advance(250);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(2);
     writeInvalidSettings(harness.home);
     harness.port.last().exit(1);
     await waitFor(() => harness.manager.state() === 'backoff');
     harness.timers.advance(500);
     await waitFor(() => harness.manager.state() === 'held-config');
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(2);
     expect(harness.settings.getCalls).toBe(0);
     expect(harness.settings.snapshotCalls).toBe(3);
@@ -245,6 +247,7 @@ describe('settings at every spawn', () => {
       harness.port.last().exit(1);
       await waitFor(() => harness.manager.state() === 'backoff');
       harness.timers.advance(250);
+      await afterMicrotasks();
       expect(harness.spawnCount()).toBe(2);
       expect(harness.port.last().options.env['UPSTREAM_X']).toBe(role === 'runtime' ? undefined : 'upstream-value');
     }
@@ -259,6 +262,7 @@ describe('settings at every spawn', () => {
     await waitFor(() => harness.manager.state() === 'backoff');
     harness.timers.advance(250);
     await waitFor(() => harness.manager.state() === 'held-config');
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(1);
     expect(harness.manager.health().heldReason).toBe(message);
     expect(harness.events('child.held')).toEqual([expect.objectContaining({ child: 'runtime', source: 'settings', heldReason: message })]);
@@ -274,6 +278,7 @@ describe('settings at every spawn', () => {
     };
     harness.timers.advance(500);
     await waitFor(() => harness.manager.state() === 'backoff');
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(1);
     const health = harness.manager.health();
     expect(health.lastExit).toMatchObject({ code: null, signal: null, reason: 'settings-read-failed' });
@@ -281,8 +286,10 @@ describe('settings at every spawn', () => {
     expect(health.heldReason).toBeUndefined();
     harness.settings.script = undefined;
     harness.timers.advance(249);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(1);
     harness.timers.advance(1);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(2);
     expect(harness.timers.pending().some((timer) => timer.delayMs === HELD_RETRY_MS)).toBe(false);
   });

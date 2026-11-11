@@ -3,7 +3,9 @@ import type { HeldStart, JsonLogger, KernelLockMechanism, MomongaPaths } from '@
 import type { SupervisorTimers } from './constants.ts';
 import { generationSuccessor, writeEvent } from './log-events.ts';
 
-export type SuccessorLauncher = { launch(generation: number): { pid: number | undefined } };
+export type SuccessorLaunch = { pid: number | undefined; exit?: Promise<unknown> };
+
+export type SuccessorLauncher = { launch(generation: number): SuccessorLaunch };
 
 export type SuccessorOutcome = 'started' | 'joined' | 'below-floor' | 'already-tried' | 'no-launcher' | 'busy' | 'not-needed' | 'spawn-failed' | 'prepare-failed';
 
@@ -56,7 +58,7 @@ export const createSuccessor = (options: SuccessorOptions): Successor => {
   const holdUntilClaimed = async (successor: number, start: HeldStart): Promise<void> => {
     const supervisorLock = generationLayout(options.home, successor).locks.supervisor;
     try {
-      for (let waited = 0; waited < options.boundMs && !stopped; waited += options.pollMs) {
+      for (let waited = 0; waited < options.boundMs && !stopped && held.has(start); waited += options.pollMs) {
         if (await lockReadsHeld(supervisorLock, { lock: options.lock })) return;
         await sleep(options.pollMs);
       }
@@ -89,16 +91,22 @@ export const createSuccessor = (options: SuccessorOptions): Successor => {
     if (outcome.kind === 'busy') return report(undefined, installedVersion, 'busy');
     if (outcome.kind === 'joined') return report(outcome.generation, installedVersion, 'joined');
     if (outcome.kind !== 'allocated') return report(undefined, installedVersion, outcome.kind === 'below-floor' ? 'below-floor' : 'not-needed');
-    held.add(outcome.starting);
-    try {
-      launcher.launch(outcome.generation);
-    } catch (error) {
-      releaseStart(outcome.starting);
+    const { generation: successor, starting } = outcome;
+    const spawnFailed = (error: unknown): SuccessorOutcome => {
+      releaseStart(starting);
       options.onError(error);
-      return report(outcome.generation, installedVersion, 'spawn-failed');
+      return report(successor, installedVersion, 'spawn-failed');
+    };
+    held.add(starting);
+    let launched: SuccessorLaunch;
+    try {
+      launched = launcher.launch(successor);
+    } catch (error) {
+      return spawnFailed(error);
     }
-    void holdUntilClaimed(outcome.generation, outcome.starting).catch(options.onError);
-    return report(outcome.generation, installedVersion, 'started');
+    void launched.exit?.then(undefined, spawnFailed);
+    void holdUntilClaimed(successor, starting).catch(options.onError);
+    return report(successor, installedVersion, 'started');
   };
 
   return {

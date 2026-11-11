@@ -122,13 +122,13 @@ export type ListedTargetCapabilities = Capabilities | ProbingCapabilities | Unav
 
 export type PlanRelay = { planRelaySocket: string; listed: Readonly<Record<string, ListedTargetCapabilities>> };
 
-export const readPlanRelay = async (planRelaySocket: string, signal: AbortSignal | undefined): Promise<PlanRelay> => {
+export const readPlanRelay = async (planRelaySocket: string, signal: AbortSignal): Promise<PlanRelay> => {
   const gateway = createGatewayClient({ resolveSocket: fixedSocket(planRelaySocket) });
   try {
     const entries = await gateway.models(signal);
     return { planRelaySocket, listed: Object.fromEntries(entries.flatMap((entry) => entry.chain.map((member) => [member.model, member.capabilities]))) };
   } catch (error) {
-    signal?.throwIfAborted();
+    signal.throwIfAborted();
     throw error;
   } finally {
     await gateway.close();
@@ -188,12 +188,12 @@ const describedEntryOf = (display: string, canon: string, relay: PlanRelay): Cap
 
 const relayedCapabilitiesOf = (display: string, resolved: ResolvedModel & ResolvedPlanTarget, relay: PlanRelay): RelayedCapabilities => {
   const entry = describedEntryOf(display, resolved.canon, relay);
-  const { maxConcurrency: _maxConcurrency, contextWindow: _contextWindow, maxOutputTokens: _maxOutputTokens, imageInput, imageTokens, ...core } = resolved.capabilities;
+  const { maxConcurrency: _maxConcurrency, contextWindow: _contextWindow, maxOutputTokens: _maxOutputTokens, imageInput: _imageInput, imageTokens: _imageTokens, ...core } = resolved.capabilities;
   const capabilities: RelayedCapabilities = {
     ...core,
     contextWindow: entry.contextWindow,
     maxOutputTokens: entry.maxOutputTokens,
-    ...imagePairOf(entry.imageInput === undefined ? { imageInput, imageTokens } : { imageInput: entry.imageInput, imageTokens: entry.imageTokens }),
+    ...imagePairOf({ imageInput: entry.imageInput, imageTokens: entry.imageTokens }),
   };
   const listed: Partial<Pick<RelayedCapabilities, ListedField>> = entry;
   for (const field of Object.keys(LISTED_FIELDS).filter(isListedField)) {
@@ -375,7 +375,7 @@ export const sweepStaleHomes = async (effects: ContextHostEffects): Promise<Swee
     const claim = await effects.lock.claim(claimPathOf(effects.lock, root, 'sidecar'));
     if (claim.kind === 'held') continue;
     try {
-      await effects.terminate(momongaLayout(root, effects.platform, {}));
+      await effects.terminate(momongaLayout(root, effects.platform, caseEnvironment(effects.env, root, effects.platform)));
       await effects.remove(root);
     } catch (error) {
       claim.lock.release();
@@ -446,10 +446,10 @@ export const createHomes = <Runtime extends ContextRuntime = ContextRuntime>(eff
   const prepared = async (spec: HomeSpec, record: CaseRecord): Promise<OpenedHome<Runtime>> => {
     const { root } = record;
     await effects.writeFile(path.join(root, OWNER_FILE), ownerRecord({ pid: effects.ownerPid, home: effects.ownerHome }));
-    const paths = momongaLayout(root, effects.platform, {});
+    const paths = momongaLayout(root, effects.platform, caseEnvironment(effects.env, root, effects.platform));
     record.paths = paths;
     await effects.prepare(paths);
-    await assertSocketsFit(momongaLayout(await effects.canonical(root), effects.platform, {}), effects.refuseUnfitSockets);
+    await assertSocketsFit(momongaLayout(await effects.canonical(root), effects.platform, caseEnvironment(effects.env, root, effects.platform)), effects.refuseUnfitSockets);
     await effects.writeFile(paths.settingsFile, `${JSON.stringify(spec.settings, null, 2)}\n`);
     for (const source of options.managedTargets) await effects.copyProbeRecord(source, paths, options.interrupt);
     for (const probe of options.endpointProbes) await effects.copyEndpointProbeRecord(probe, paths);

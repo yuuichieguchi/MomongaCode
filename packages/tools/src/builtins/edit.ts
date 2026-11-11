@@ -157,6 +157,7 @@ export const editTool = defineTool<EditInput>({
       requestedPath: requested,
       content: replacement.updated,
       mode: stat.mode & 0o777,
+      lock: ctx.kernelLock,
       onRenamed: () => updateLedgerAfterWrite(ctx.files, ctx.session, plan.path, plan.postHash),
     });
     return {

@@ -4,7 +4,7 @@ import { getRequestListener } from '@hono/node-server';
 import { SWEEP_INTERVAL_MS, encodeSse, hostPaths, listenUnix, startDeadlineSignal } from '@momonga/foundation';
 import { createMarkerOwners } from '@momonga/tools';
 import type { MarkerOwners } from '@momonga/tools';
-import type { Clock, Redactor, RolePort } from '@momonga/foundation';
+import type { Clock, Redactor, RolePort, KernelLockMechanism } from '@momonga/foundation';
 import { DAEMON_CURRENT_EVENT } from '@momonga/protocol';
 import type { Capabilities, CostBreakdownView, DaemonCurrentFrame, GatewayCostReportView, RunTraceView } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
@@ -39,6 +39,7 @@ export type RunServiceOptions = {
   clock: Clock;
   redactor: Redactor;
   home: string;
+  lock: KernelLockMechanism;
   version: string;
   socketPath: string;
   pid: number;
@@ -53,7 +54,7 @@ export type RunServiceOptions = {
   sessionReadSettings: (cwd: string, signal: AbortSignal) => Promise<SessionCreateSettings>;
   skills: SkillsPort;
   agents: AgentCatalogPort;
-  permissionRules: (session: Session) => Promise<readonly PermissionRule[]>;
+  permissionRules: (session: Session, signal: AbortSignal) => Promise<readonly PermissionRule[]>;
   userInput: UserInputPort;
   evidenceRun: (project: string) => EvidenceRun;
   defaults: { runTimeoutMs?: number; limits: RunLimitDefaults };
@@ -64,7 +65,7 @@ export type RunServiceOptions = {
   maxBodyBytes?: number;
   cancelUpstream?: (runId: string, signal: AbortSignal) => Promise<void>;
   releaseStopped(runId: string, signal: AbortSignal): Promise<void>;
-  runTrace: (runId: string) => Promise<RunTraceView | undefined>;
+  runTrace: (runId: string, signal: AbortSignal) => Promise<RunTraceView | undefined>;
   runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>;
   runCostBreakdown: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ breakdown: CostBreakdownView; text: string }>;
   reportCost: ReportRouteDeps['reportCost'];
@@ -199,7 +200,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     }
     void listener(request, response);
   });
-  await listenUnix(server, options.socketPath, undefined, startSignal);
+  await listenUnix(server, options.socketPath, { mechanism: options.lock }, startSignal);
 
   type Sweepers = { approval: { close(): Promise<void> }; terminal: { close(): Promise<void> }; search: { close(): Promise<void> } };
   let sweepers: Sweepers | undefined;

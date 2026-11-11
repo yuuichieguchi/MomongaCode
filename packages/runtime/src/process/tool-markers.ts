@@ -24,7 +24,7 @@ export type ReapToolMarkersOptions = {
   timing?: Timing;
   reap?: typeof reapMarkedProcesses;
   files?: RuntimeFiles;
-  inspector?: ProcessInspector;
+  inspector: ProcessInspector;
   uninspectable?: UninspectableRegistry;
 };
 
@@ -63,7 +63,7 @@ export const reapToolMarkers = async ({
     const planOf = async (name: string): Promise<Plan | undefined> => {
       const marker = path.join(dir, name);
       const mode = owners.modeOf(name) ?? 'listed';
-      const settle = createMarkerSettle({ marker, mode, onWarning, killGraceMs, ...(inspector === undefined ? {} : { inspector }), ...(timing === undefined ? {} : { timing }) });
+      const settle = createMarkerSettle({ marker, mode, onWarning, killGraceMs, inspector, ...(timing === undefined ? {} : { timing }) });
       let state: MarkerState;
       try {
         state = await settle.state(signal);
@@ -104,7 +104,7 @@ export const reapToolMarkers = async ({
         signal,
         markerMode: mode,
         ...(timing === undefined ? {} : { timing }),
-        ...(inspector === undefined ? {} : { inspector }),
+        inspector,
         ...(uninspectable === undefined ? {} : { uninspectable }),
       });
       return true;

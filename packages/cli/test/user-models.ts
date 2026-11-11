@@ -11,7 +11,7 @@ export const userModelsOf = (models: unknown, extra: Omit<UserModels, 'resolved'
 };
 
 export const userModelsAt = (home: string): UserModels => {
-  const file = momongaLayout(home).settingsFile;
+  const file = momongaLayout(home, process.platform, process.env).settingsFile;
   const written: unknown = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
   return userModelsOf(isRecord(written) && isRecord(written['models']) ? written['models'] : {});
 };

@@ -16,6 +16,9 @@
       },
       "packages/eval/src/context-report.ts": {
         "cap": 1
+      },
+      "packages/runtime/src/process/background-jobs.ts": {
+        "job": 10
       }
     },
     "burnDown": {
@@ -544,9 +547,6 @@
       },
       "packages/runtime/src/memory/views.ts": {
         "project": 2
-      },
-      "packages/runtime/src/process/background-jobs.ts": {
-        "job": 10
       },
       "packages/runtime/src/process/history-port.ts": {
         "project": 1

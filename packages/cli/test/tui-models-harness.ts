@@ -80,6 +80,7 @@ export const flowOf = (context: TestContext, settings: unknown | undefined, step
       modelsHost: (signal) => ({
         home: harness.shell.home,
         settingsFile: harness.shell.settingsFile,
+        lock: harness.shell.lock,
         platform: harness.shell.platform,
         files: harness.shell.files,
         interrupt: signal,

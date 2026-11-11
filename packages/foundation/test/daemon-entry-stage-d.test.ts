@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { COMMON_ENTRY_FLAGS, DEFAULT_STOP_VALUES, nodeEntryIo, runDaemonEntry, hostPaths } from '@momonga/foundation';
 import type { DaemonCloseResult, DaemonDefinition, DaemonHandle, EntryIo, EntrySignal, RotatingLogFile } from '@momonga/foundation';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, testLocks } from '@momonga/testkit';
 
 const HOME = '/Users/alice';
 const LOG_PATH = path.join(HOME, '.momonga', 'logs', 'runtime.log');
@@ -52,6 +52,7 @@ const fakeIo = (argv: readonly string[]) => {
     argv,
     env: { HOME },
     home: HOME,
+    locks: testLocks,
     paths: hostPaths,
     stdout: { write: (chunk) => (stdoutChunks.push(chunk), true) },
     stderr: { write: (chunk) => (stderrChunks.push(chunk), true) },
@@ -257,7 +258,7 @@ describe('A1(c): nodeEntryIo', () => {
   it('a full entry run leaves no pending timer and listener counts return to baseline', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     const { host, asProcess, exit, exited } = fakeHost(['--log-target=stderr']);
-    const io = nodeEntryIo(asProcess);
+    const io = { ...nodeEntryIo(asProcess), locks: testLocks };
     const baselineTimers = vi.getTimerCount();
     const baselineSigterm = host.listenerCount('SIGTERM');
     const baselineSigint = host.listenerCount('SIGINT');

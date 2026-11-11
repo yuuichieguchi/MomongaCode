@@ -1,11 +1,11 @@
 import path from 'node:path';
-import { ABORT_SETTLE_LIMIT_MS, NO_NETWORK, UNMEASURED_CAPABILITY, canonicalJson, comparableFromParts, containsByComponents, computeBackoff, createMarker, defaultProcessInspector, describeNetworkScope, displayToolPath, enforcedNetworkScope, fileRuleFingerprint, findAsync, hostKernelLock, hostPaths, systemWaitTiming, lexicallyWithin, mapAsync, momongaLayout, networkScopeOfRequest, reapMarkedProcessesWithReport, recordMarkerGroup, settledOrAborted, sha256Hex, someAsync, writableAreaOf, writableCheckOf } from '@momonga/foundation';
+import { ABANDON_KILL_GRACE_MS, ABORT_SETTLE_LIMIT_MS, NO_NETWORK, UNMEASURED_CAPABILITY, canonicalJson, comparableFromParts, containsByComponents, computeBackoff, createMarker, describeNetworkScope, displayToolPath, enforcedNetworkScope, fileRuleFingerprint, findAsync, hostPaths, systemWaitTiming, lexicallyWithin, mapAsync, momongaLayout, networkScopeOfRequest, reapMarkedProcessesWithReport, recordMarkerGroup, settledOrAborted, sha256Hex, someAsync, writableAreaOf, writableCheckOf } from '@momonga/foundation';
 import { createMarkerGuard } from './marker-guard.ts';
 import { createMarkerOwners } from './marker-owners.ts';
 import type { MarkerOwners } from './marker-owners.ts';
 import { createMarkerSettle } from './marker-settle.ts';
 import type { MarkerSettle } from './marker-settle.ts';
-import type { Awaitable, Clock, FileRuleProvenance, FileSystem, KernelLockMechanism, MarkerHandle, NetworkScope, OutboundNetwork, PathProbes, PathResolver, ProcessGroupPort, ProcessInspector, Random, ReapReport, Timing, SandboxNetworkSetting, SignalSender, UninspectableRegistry } from '@momonga/foundation';
+import type { Awaitable, Clock, FileRuleProvenance, FileSystem, KernelLockMechanism, MarkerHandle, NetworkScope, OutboundNetwork, PathProbes, PathResolver, ProcessGroupPort, ProcessInspector, Random, ReapReport, Timing, SandboxNetworkSetting, SignalSender, UninspectableRegistry, MomongaPaths } from '@momonga/foundation';
 import { absoluteFrom, askedBy, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem, PolicyTool, CoveredProgram, SupersededForm } from '@momonga/policy';
 import { diffFieldsOf, permissionDeniedOutput } from '@momonga/protocol';
@@ -48,7 +48,6 @@ export const heldCallWaitMs = (heartbeatMs: number): number => heartbeatMs + ABO
 
 const DEFAULT_RECONCILE_GRACE_MS = 2000;
 const DEFAULT_RECONCILE_CAP_MS = 30_000;
-const ABANDON_KILL_GRACE_MS = 2000;
 const UNKNOWN_EFFECTS_NOTICE = 'Its side effects are unknown; inspect the current state before retrying.';
 
 export type ToolCall = {
@@ -170,14 +169,15 @@ export type ToolExecutorOptions = {
   earlierMarkerDirs?: () => Promise<readonly string[]>;
   owners?: MarkerOwners;
   callLockDir: string;
-  kernelLock?: KernelLockMechanism;
+  layout: GuardedLayout;
+  kernelLock: KernelLockMechanism;
   fs: PolicyHostFilesystem;
   leaseMs: number;
   heartbeatMs: number;
   reconcileCapMs?: number;
   reconcileGraceMs?: number;
   onWarning(message: string): void;
-  reap?: { kill?: SignalSender; groupPort?: ProcessGroupPort; timing?: Timing; killGraceMs?: number; inspector?: ProcessInspector; uninspectable?: UninspectableRegistry };
+  reap: { kill?: SignalSender; groupPort?: ProcessGroupPort; timing?: Timing; killGraceMs?: number; inspector: ProcessInspector; uninspectable?: UninspectableRegistry };
 };
 
 export type AbandonTarget = { callId: string; idemKey: string };
@@ -339,11 +339,12 @@ const requireResolvable = async (files: Pick<FileSystem, 'lstat'>, entry: string
 
 type AccessFacts = Pick<ExecutionBatchInput, 'sandboxPolicy' | 'home' | 'tmpDir' | 'signal'>;
 
+export type GuardedLayout = Pick<MomongaPaths, 'root' | 'keychains'>;
+
 type WriteGuard = (subject: PermissionSubject, cwd: string) => Promise<string | undefined>;
 
-const createWriteGuard = async (files: Pick<FileSystem, 'lstat'>, batch: AccessFacts, paths: PathResolver): Promise<WriteGuard> => {
+const createWriteGuard = async (files: Pick<FileSystem, 'lstat'>, batch: AccessFacts, paths: PathResolver, layout: GuardedLayout): Promise<WriteGuard> => {
   for (const root of batch.sandboxPolicy.writableRoots) await paths.canonicalPath(root);
-  const layout = momongaLayout(batch.home);
   const homeGuards = new Set([layout.root, layout.keychains]);
   const approvalGated = new Set(batch.sandboxPolicy.protectedSet.paths);
   const entries = batch.sandboxPolicy.writeDenied.filter((entry) => homeGuards.has(entry) || !approvalGated.has(entry));
@@ -378,11 +379,11 @@ type BatchAccess = ReadAccessMatcher & {
   isWritable: (absolute: string) => Promise<boolean>;
 };
 
-const accessOf = async (files: Pick<FileSystem, 'lstat'>, facts: AccessFacts): Promise<BatchAccess> => {
+const accessOf = async (files: Pick<FileSystem, 'lstat'>, facts: AccessFacts, layout: GuardedLayout): Promise<BatchAccess> => {
   const paths = hostPaths(facts.signal);
   const { writableRoots } = facts.sandboxPolicy;
   const isWritable = writableCheckOf(writableAreaOf({ writableRoots, entries: facts.sandboxPolicy.fileRules.entries }), paths);
-  return { ...(await createReadAccessMatcher(facts.sandboxPolicy, paths)), writeDeniedPath: await createWriteGuard(files, facts, paths), isWritable };
+  return { ...(await createReadAccessMatcher(facts.sandboxPolicy, paths)), writeDeniedPath: await createWriteGuard(files, facts, paths, layout), isWritable };
 };
 
 const unlessCancelled = async <T, C>(signal: AbortSignal, action: () => Promise<T>, cancelled: C): Promise<T | C> => {
@@ -547,10 +548,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   const maxParallel = options.maxParallel ?? DEFAULT_MAX_PARALLEL;
   const reconcileCapMs = options.reconcileCapMs ?? DEFAULT_RECONCILE_CAP_MS;
   const reconcileGraceMs = options.reconcileGraceMs ?? DEFAULT_RECONCILE_GRACE_MS;
-  const reapTiming = options.reap?.timing ?? systemWaitTiming;
+  const reapTiming = options.reap.timing ?? systemWaitTiming;
   const callLocks = createCallLocks({
     dir: options.callLockDir,
-    mechanism: options.kernelLock ?? hostKernelLock(),
+    mechanism: options.kernelLock,
     timing: reapTiming,
     waitMs: heldCallWaitMs(options.heartbeatMs),
   });
@@ -569,12 +570,12 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     owners,
     ledgerRow: (name) => ({ settled: idempotency.get(name)?.s === 'COMPLETED' }),
     onWarning: options.onWarning,
-    killGraceMs: options.reap?.killGraceMs ?? ABANDON_KILL_GRACE_MS,
+    killGraceMs: options.reap.killGraceMs ?? ABANDON_KILL_GRACE_MS,
     timing: reapTiming,
-    ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
+    ...(options.reap.kill === undefined ? {} : { kill: options.reap.kill }),
     groupPort: reapGroup,
-    ...(options.reap?.inspector === undefined ? {} : { inspector: options.reap.inspector }),
-    ...(options.reap?.uninspectable === undefined ? {} : { uninspectable: options.reap.uninspectable }),
+    inspector: options.reap.inspector,
+    ...(options.reap.uninspectable === undefined ? {} : { uninspectable: options.reap.uninspectable }),
   });
 
   const isRefused = (batch: BatchCore, tool: AnyTool): boolean => batch.toolUnavailable?.(toolRefusalKey(tool)) === true;
@@ -1048,7 +1049,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       controller.abort();
     };
     const openMarkerAt = async (file: string, name: string): Promise<{ handle: MarkerHandle; settle: MarkerSettle }> => {
-      const inspector = options.reap?.inspector ?? defaultProcessInspector();
+      const { inspector } = options.reap;
       owners.register(name, { alive: () => markerOwned });
       const handle = await createMarker(file, { capability: inspector.capability ?? UNMEASURED_CAPABILITY });
       const settle = createMarkerSettle({
@@ -1056,8 +1057,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         mode: handle.mode,
         inspector,
         onWarning: options.onWarning,
-        ...(options.reap?.killGraceMs === undefined ? {} : { killGraceMs: options.reap.killGraceMs }),
-        ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
+        ...(options.reap.killGraceMs === undefined ? {} : { killGraceMs: options.reap.killGraceMs }),
+        ...(options.reap.kill === undefined ? {} : { kill: options.reap.kill }),
         groupPort: reapGroup,
         timing: reapTiming,
       });
@@ -1078,6 +1079,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       callId,
       idemKey: key,
       outputFit: fitOfCall(fit, call),
+      kernelLock: options.kernelLock,
+      inspector: options.reap.inspector,
       ...(startsProcesses(tool) ? { processMarker } : {}),
       ...(trace === undefined ? {} : { traceparent: trace.traceparent }),
       ...(trace?.tracestate === undefined ? {} : { tracestate: trace.tracestate }),
@@ -1243,15 +1246,15 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       reaped = await reapMarkedProcessesWithReport({
         marker,
         pgid: stored.pgid,
-        killGraceMs: options.reap?.killGraceMs ?? ABANDON_KILL_GRACE_MS,
+        killGraceMs: options.reap.killGraceMs ?? ABANDON_KILL_GRACE_MS,
         label: 'tool',
         onWarning: options.onWarning,
         timing: reapTiming,
         signal,
         groupPort: reapGroup,
-        ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
-        ...(options.reap?.inspector === undefined ? {} : { inspector: options.reap.inspector }),
-        ...(options.reap?.uninspectable === undefined ? {} : { uninspectable: options.reap.uninspectable }),
+        ...(options.reap.kill === undefined ? {} : { kill: options.reap.kill }),
+        inspector: options.reap.inspector,
+        ...(options.reap.uninspectable === undefined ? {} : { uninspectable: options.reap.uninspectable }),
       });
     } catch (error) {
       throw new EarlierAttemptNotStoppedError(
@@ -1639,7 +1642,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     if (given.sandboxPolicy.fileRules.fingerprint !== expected) {
       throw new SandboxPolicyError('file_rules_stale', 'the sandbox policy was built from different permission rules, roots or session tmp dir than this batch');
     }
-    return { batch: given, access: await unlessCancelled(given.signal, () => accessOf(options.files, given), undefined) };
+    return { batch: given, access: await unlessCancelled(given.signal, () => accessOf(options.files, given, options.layout), undefined) };
   };
 
   const userRefusal: UserPolicy['userRefusal'] = async (subject, facts) => {
@@ -1647,7 +1650,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       { callId: USER_CALL_ID },
       USER_TOOLS[subject.tool],
       subject.tool === 'Read' ? { kind: 'path', tool: subject.tool, paths: [subject.path], access: 'read' } : { kind: 'command', tool: subject.tool, command: subject.command },
-      await accessOf(options.files, facts),
+      await accessOf(options.files, facts, options.layout),
       { ...facts, mode: USER_MODE },
     );
     if ('outcome' in verdict) return verdict.outcome.result.denial?.reason ?? verdict.outcome.result.output;

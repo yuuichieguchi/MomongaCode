@@ -21,6 +21,7 @@ import {
   waitFor,
   withTempDir,
   registerOwned,
+  testLocks,
 } from '@momonga/testkit';
 import type { CleanupContext, FakeChatCompletionsServer, FakeScriptedReply, OtlpCollector } from '@momonga/testkit';
 import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, modelsOf, prepareHome } from './gateway-process-helpers.ts';
@@ -58,6 +59,7 @@ const startStack = async (context: CleanupContext, settings: unknown, env: Recor
   replaceSettings(home, settings);
   const chunks: string[] = [];
   const handle = await registerOwned(context, () => startGatewayProcess({
+    locks: testLocks(),
     generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, env),
@@ -403,7 +405,7 @@ const startKeyedStack = async (context: CleanupContext, fake: FakeChatCompletion
   prepareHome(home);
   await beforeStart(home);
   replaceSettings(home, keyedTarget(fake));
-  const handle = await registerOwned(context, () => startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home, env), version: PROCESS_VERSION, stdout: { write: () => true } }));
+  const handle = await registerOwned(context, () => startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home, env), version: PROCESS_VERSION, stdout: { write: () => true } }));
   registerCleanup(context, async () => {
     await handle.close(NO_GRACE);
   });
@@ -473,6 +475,7 @@ describe('S8 gateway: every supervisor reply that is not a value is unset, and i
     replaceSettings(home, keyedTarget(a));
     const chunks: string[] = [];
     const handle = await registerOwned(context, () => startGatewayProcess({
+      locks: testLocks(),
       generation: FIRST_GENERATION,
       home,
       env: baseEnv(home, { [CREDENTIAL_CAPABILITY_ENV]: CAPABILITY }),

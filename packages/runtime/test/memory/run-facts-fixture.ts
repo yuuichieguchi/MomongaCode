@@ -4,14 +4,14 @@ import { afterEach } from 'vitest';
 import { openRuntimeStore } from '@momonga/store';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
 import type { RuntimeStore, RuntimeStoreOptions } from '@momonga/store';
-import { createFakeClock, NEVER_CANCELLED } from '@momonga/testkit';
+import { createFakeClock, NEVER_CANCELLED, testKernelLock } from '@momonga/testkit';
 import { startJournalThread } from '../../src/memory/journal-thread-client.ts';
 import type { JournalThreadClient } from '../../src/memory/journal-thread-client.ts';
 import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../../src/memory/journal-thread-limits.ts';
 import { START_MS, enqueue, makeStoreDir, newSession, registerCleanup } from '../../../store/test/helpers.ts';
 import { finishClaimed } from './reflection-fixture.ts';
 import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
-import { nodeFileSystem, systemRandom } from '@momonga/foundation';
+import { nodeFileSystem, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
 export const SHA = 'a'.repeat(64);
 
@@ -43,7 +43,7 @@ export const lazyThread = (dbPath: () => string, override: ThreadOverride = {}) 
     started ??= (() => {
       const databasePath = dbPath();
       const { dev, ino } = fs.statSync(databasePath);
-      return startJournalThread({ databasePath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS }) as Promise<RunFactsClient>;
+      return startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS }) as Promise<RunFactsClient>;
     })();
     return started;
   };
@@ -72,7 +72,7 @@ export const factsStore = async (override: ThreadOverride = {}) => {
   const clock = createFakeClock(START_MS);
   const decoded = { rows: 0, bytes: 0 };
   const thread = lazyThread(() => dbPath, override);
-  const store: RuntimeStore = openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
+  const store: RuntimeStore = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home: dir,
     clock,

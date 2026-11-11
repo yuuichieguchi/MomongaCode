@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import type { SupervisorTimers } from './constants.ts';
 
-export type SettingsWatch = { stop(): void };
+export type SettingsWatch = { stop(): void; idle(): Promise<void> };
 
 export type WatchSettingsOptions = {
   directory: string;
@@ -43,6 +43,7 @@ export const watchSettings = (options: WatchSettingsOptions): SettingsWatch => {
   let watcherClosed = false;
 
   let fallbackReported = false;
+  const inFlight = new Set<Promise<void>>();
 
   const asError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
@@ -71,10 +72,17 @@ export const watchSettings = (options: WatchSettingsOptions): SettingsWatch => {
     }
   };
 
+  const track = (work: () => Promise<void>): void => {
+    const running = work()
+      .catch((error: unknown) => options.onError(asError(error)))
+      .finally(() => inFlight.delete(running));
+    inFlight.add(running);
+  };
+
   const scheduleEvaluation = (): void => {
     if (stopped) return;
     if (debounceTimer !== undefined) timers.clearTimeout(debounceTimer);
-    debounceTimer = timers.setTimeout(() => void fire(), options.debounceMs);
+    debounceTimer = timers.setTimeout(() => track(fire), options.debounceMs);
   };
 
   const poll = async (): Promise<void> => {
@@ -90,7 +98,7 @@ export const watchSettings = (options: WatchSettingsOptions): SettingsWatch => {
   };
 
   function armPoll(): void {
-    pollTimer = timers.setTimeout(() => void poll(), options.pollMs);
+    pollTimer = timers.setTimeout(() => track(poll), options.pollMs);
   }
 
   try {
@@ -115,6 +123,9 @@ export const watchSettings = (options: WatchSettingsOptions): SettingsWatch => {
       debounceTimer = undefined;
       pollTimer = undefined;
       closeWatcher();
+    },
+    idle: async () => {
+      await Promise.all(inFlight);
     },
   };
 };

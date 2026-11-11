@@ -5,6 +5,7 @@ import { registerOwned } from '@momonga/testkit/test-support';
 import { startSupervisor } from '../../src/start-supervisor.ts';
 import { createSpawnPort } from '../../src/spawn-port.ts';
 import type { SpawnPort } from '../../src/child-manager.ts';
+import { testKernelLock, testProcessInspector } from '@momonga/testkit';
 
 const flag = (name: string): string | undefined =>
   process.argv
@@ -33,6 +34,8 @@ const closeOnSigterm = (close: () => Promise<void>): void => {
 };
 
 await registerOwned(closeOnSigterm, () => startSupervisor({
+  inspector: testProcessInspector(),
+  lockMechanism: testKernelLock(),
   home,
   version: '0.0.0-fixture',
   generation: FIRST_GENERATION,
@@ -41,5 +44,4 @@ await registerOwned(closeOnSigterm, () => startSupervisor({
   spawn,
   stdout: process.stdout,
   watchSettings: false,
-  orphanReapGraceMs: 200,
 }));

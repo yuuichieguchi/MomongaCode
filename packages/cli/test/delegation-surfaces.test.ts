@@ -41,7 +41,7 @@ describe('headless output of a run under a mandate', () => {
   });
 
   it('says how a held call ended', () => {
-    const { lines } = headless([CALL, { type: 'tool.held.resolved', callId: 'c1', approvalId: 'ap-1', outcome: 'executed', status: 'completed', output: 'merged' }, { type: 'tool.held.resolved', callId: 'c1', approvalId: 'ap-1', outcome: 'rejected', status: 'failed', output: 'x' }]);
+    const { lines } = headless([CALL, { type: 'tool.completed', callId: 'c1', status: 'completed', output: 'merged', held: { approvalId: 'ap-1' } }, { type: 'tool.held.resolved', callId: 'c1', approvalId: 'ap-1', outcome: 'rejected', status: 'failed', output: 'x' }]);
     expect(lines).toEqual(['momonga: held call Merge pull request #7 was approved and has run (completed)', 'momonga: held call Merge pull request #7 was rejected and was not run']);
   });
 

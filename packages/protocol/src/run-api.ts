@@ -48,6 +48,7 @@ const autoClassifierView = closed(
       { recordedAt: string, falseAllows: nonNegativeInteger, total: nonNegativeInteger, upperBound: { type: 'number', minimum: 0, maximum: 1 }, failedBound: enumOf(AUTO_FIT_FAILED_BOUNDS) },
       ['recordedAt', 'falseAllows', 'total', 'upperBound'],
     ),
+    refusal: closed({ file: string, reason: string }, ['file', 'reason']),
   },
   ['model', 'key', 'measurement'],
 );
@@ -129,6 +130,8 @@ const elicitationAnswer = {
     closed({ action: constant('cancel') }, ['action']),
   ],
 } as const satisfies JsonSchema;
+
+const heldLink = closed({ approvalId: string }, ['approvalId']);
 
 const heldCallView = closed({ callId: string, approvalId: string, tool: string, reason: string, sinceSeq: nonNegativeInteger }, ['callId', 'approvalId', 'tool', 'reason', 'sinceSeq']);
 
@@ -597,6 +600,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       formatted: closed({ formatter: string, version: integer }, ['formatter', 'version']),
       ...appliedDiffFields,
       effect: operationEffect,
+      held: heldLink,
     },
     required: ['callId', 'status', 'output'],
   },
@@ -659,7 +663,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     required: ['target', 'counter', 'fallback', 'inputDigest', 'itemCount', 'counted', 'reported', 'kept', 'known', 'uncounted', 'miss', 'contextWindow', 'tokenCounting'],
   },
   'tool.reconciled': {
-    properties: { callId: string, outcome: enumOf(['already_applied', 'not_applied', 'unknown']), output: string, interrupted: enumOf(['timeout', 'cancelled']), files: toolFiles, command: string, effect: operationEffect, ...appliedDiffFields },
+    properties: { callId: string, outcome: enumOf(['already_applied', 'not_applied', 'unknown']), output: string, interrupted: enumOf(['timeout', 'cancelled']), files: toolFiles, command: string, effect: operationEffect, held: heldLink, ...appliedDiffFields },
     required: ['callId', 'outcome', 'output'],
   },
   'tool.waiting': {

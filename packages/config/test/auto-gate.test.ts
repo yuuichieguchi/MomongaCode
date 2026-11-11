@@ -188,6 +188,21 @@ describe('the record file', () => {
     expect((await fit().readAutoFitRecord(directory, KEY))?.recordedAt).toBe('2026-11-07T00:00:00.000Z');
   });
 
+  it('reads a damaged record as the view that names its file and the reason, and a missing one as not measured', async () => {
+    const directory = fit().autoFitDirectoryOf(freshHome());
+    const file = path.join(directory, `${sha256Hex(canonicalJson(KEY))}.json`);
+    expect(await config.readAutoFitView(directory, 'guard', KEY)).toEqual({ model: 'guard', key: KEY, measurement: 'not_measured' });
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(file, '{"key":1}');
+
+    expect(await config.readAutoFitView(directory, 'guard', KEY)).toEqual({
+      model: 'guard',
+      key: KEY,
+      measurement: 'unreadable',
+      refusal: { file, reason: `${file}: not an auto mode measurement record` },
+    });
+  });
+
   it('reads nothing for a key that has no file', async () => {
     expect(await fit().readAutoFitRecord(fit().autoFitDirectoryOf(freshHome()), KEY)).toBeUndefined();
   });

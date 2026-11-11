@@ -73,7 +73,7 @@ const reapStaleCheck = async (ctx: ClaimContext, marker: string): Promise<void> 
     label: 'completion check',
     onWarning: (message) => warnings.push(message),
     signal: ctx.control.signal,
-    ...(ctx.options.tools.inspector === undefined ? {} : { inspector: ctx.options.tools.inspector }),
+    inspector: ctx.options.tools.inspector,
   });
   if (!removed) throw new Error(`a completion check of run ${ctx.run.id} left by an earlier attempt could not be stopped: ${warnings.join('; ')}`);
 };
@@ -98,7 +98,7 @@ const runCheck = async (ctx: ClaimContext, condition: PinnedCondition, attempt: 
     signal: ctx.control.signal,
     timeoutMs: Math.min(condition.timeoutMs ?? MAX_COMMAND_TIMEOUT_MS, ctx.run.deadlineAt - clock.now()),
     tmpDir: commands.policy.tmpDir,
-    ...(tools.inspector === undefined ? {} : { inspector: tools.inspector }),
+    inspector: tools.inspector,
     ...(tools.owners === undefined ? {} : { owners: tools.owners }),
   });
   if (result.kind === 'cancelled') return 'interrupted';

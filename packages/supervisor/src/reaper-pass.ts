@@ -1,23 +1,21 @@
 import path from 'node:path';
 import type { StopValuesReader } from '@momonga/config';
-import { GENERATION_MARKER_LABELS, GENERATION_REAPER_OCCASION, generationLayout, hostKernelLock, momongaPaths, readStopRecord, reapDeadGenerations, reapMarkerDirectory } from '@momonga/foundation';
-import type { Clock, GenerationMarkerReap, JsonLogger, KernelLockMechanism, MarkerKind, MomongaPaths, Timing } from '@momonga/foundation';
-import { DAEMON_MARKER_KILL_GRACE_MS } from './constants.ts';
+import { ABANDON_KILL_GRACE_MS, GENERATION_MARKER_LABELS, GENERATION_REAPER_OCCASION, MAXIMUM_STOP_VALUES, generationLayout, momongaPaths, readStopRecord, reapDeadGenerations, reapMarkerDirectory, runtimeMaxCloseMs } from '@momonga/foundation';
+import type { Clock, GenerationMarkerReap, GenerationReaperResult, JsonLogger, KernelLockMechanism, LayoutEnvironment, MarkerKind, MomongaPaths, ProcessInspector, Timing } from '@momonga/foundation';
+import { DAEMON_MARKER_KILL_GRACE_MS, resolveIntervals } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
-import { orphansWarning, writeEvent } from './log-events.ts';
+import { generationReaped, orphansWarning, writeEvent } from './log-events.ts';
 import { omitUndefined } from './omit-undefined.ts';
 import { reapOrphans } from './orphans.ts';
 import type { MarkerPorts } from './orphans.ts';
-import { resolveStartTiming } from './start-supervisor.ts';
 import type { SupervisorOptions } from './start-supervisor.ts';
-
-export const DEAD_GENERATION_MARKER_KILL_GRACE_MS = 2000;
 
 export type ReaperPass = NonNullable<SupervisorOptions['reaperPass']>;
 
 export type ReaperPassOptions = {
   paths: MomongaPaths;
   lock: KernelLockMechanism;
+  inspector: ProcessInspector;
   logger: JsonLogger;
   timers: SupervisorTimers;
   reapTiming: Timing;
@@ -32,8 +30,8 @@ export type ReaperPassOptions = {
 type GenericMarkerKind = Exclude<MarkerKind, 'daemons'>;
 
 const GENERIC_KILL_GRACE_MS: Readonly<Record<GenericMarkerKind, (options: ReaperPassOptions) => number>> = {
-  mcp: () => DEAD_GENERATION_MARKER_KILL_GRACE_MS,
-  tools: () => DEAD_GENERATION_MARKER_KILL_GRACE_MS,
+  mcp: () => ABANDON_KILL_GRACE_MS,
+  tools: () => ABANDON_KILL_GRACE_MS,
   targets: (options) => options.managedServerStopGraceMs(),
 };
 
@@ -56,6 +54,7 @@ export const createReaperPass = (options: ReaperPassOptions): ReaperPass => {
       signal,
       logger: options.logger,
       reapTiming: options.reapTiming,
+      inspector: options.inspector,
       occasion: GENERATION_REAPER_OCCASION,
       predecessorStopValues,
       ...omitUndefined({ markerPorts: options.markerPorts }),
@@ -67,6 +66,7 @@ export const createReaperPass = (options: ReaperPassOptions): ReaperPass => {
       dir: directory,
       killGraceMs: GENERIC_KILL_GRACE_MS[kind](options),
       label: GENERATION_MARKER_LABELS[kind],
+      inspector: options.inspector,
       occasion: GENERATION_REAPER_OCCASION,
       onWarning: warn,
       signal,
@@ -74,39 +74,53 @@ export const createReaperPass = (options: ReaperPassOptions): ReaperPass => {
     });
   };
 
+  let lastResult = '';
+  const recordResult = (result: GenerationReaperResult): void => {
+    const found = result.removed.length > 0 || result.kept.length > 0 || result.busy;
+    const payload = { removed: result.removed.map(String), kept: result.kept.map(String), busy: result.busy };
+    const key = found ? JSON.stringify(payload) : '';
+    if (key === lastResult) return;
+    lastResult = key;
+    if (found) writeEvent(options.logger, generationReaped(payload));
+  };
+
   return async ({ signal }) => {
-    await (options.reapDeadGenerations ?? reapDeadGenerations)({
-      paths: options.paths,
-      lock: options.lock,
-      signal,
-      warn,
-      reapMarkers: (request) => (request.kind === 'daemons' ? reapDaemons(request) : reapGeneric(request.kind, request)),
-    });
+    recordResult(
+      await (options.reapDeadGenerations ?? reapDeadGenerations)({
+        paths: options.paths,
+        lock: options.lock,
+        signal,
+        warn,
+        reapMarkers: (request) => (request.kind === 'daemons' ? reapDaemons(request) : reapGeneric(request.kind, request)),
+      }),
+    );
   };
 };
 
 export type EntryReaperValues = {
   home: string;
+  env: LayoutEnvironment;
   clock: Clock;
   timers: SupervisorTimers;
   logger: JsonLogger;
   stopValues: StopValuesReader;
 };
 
-type EntryReaperDeps = Pick<SupervisorOptions, 'startupTimeoutMs' | 'orphanGraceMs' | 'intervals' | 'reapTiming' | 'lockMechanism' | 'markerPorts'>;
+export type EntryReaperOptions = Partial<Pick<ReaperPassOptions, 'orphanGraceMs'>>;
 
-export const entryReaperPass = (deps: EntryReaperDeps, values: EntryReaperValues): ReaperPass => {
-  const timing = resolveStartTiming(deps);
-  return createReaperPass({
-    paths: momongaPaths(values.home, process.platform, {}),
-    lock: deps.lockMechanism ?? hostKernelLock(),
+type EntryReaperDeps = Pick<SupervisorOptions, 'intervals' | 'reapTiming' | 'lockMechanism' | 'inspector' | 'markerPorts'> & { reaper?: EntryReaperOptions };
+
+export const entryReaperPass = (deps: EntryReaperDeps, values: EntryReaperValues): ReaperPass =>
+  createReaperPass({
+    paths: momongaPaths(values.home, process.platform, values.env),
+    lock: deps.lockMechanism,
+    inspector: deps.inspector,
     logger: values.logger,
     timers: values.timers,
     reapTiming: deps.reapTiming ?? { now: () => values.clock.now(), monotonicMs: () => values.clock.now(), setTimeout: (callback, ms) => values.timers.setTimeout(callback, ms), clearTimeout: (handle) => values.timers.clearTimeout(handle) },
-    orphanGraceMs: timing.orphanGraceMs,
+    orphanGraceMs: deps.reaper?.orphanGraceMs ?? runtimeMaxCloseMs(MAXIMUM_STOP_VALUES),
     orphanReapGraceMs: DAEMON_MARKER_KILL_GRACE_MS,
-    orphanPollMs: timing.orphanPollMs,
+    orphanPollMs: resolveIntervals(deps.intervals).orphanPollMs,
     managedServerStopGraceMs: () => values.stopValues.read().managedServerStopGraceMs,
     ...omitUndefined({ markerPorts: deps.markerPorts }),
   });
-};

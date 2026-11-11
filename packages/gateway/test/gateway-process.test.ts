@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/config';
 import { GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
-import { FAKE_DETERMINISTIC_REPLY, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, startLockHolder } from '@momonga/testkit';
+import { FAKE_DETERMINISTIC_REPLY, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, startLockHolder, testKernelLock } from '@momonga/testkit';
 import { START_MS, expectErrorBody, getJson, outputText, postJson, readJson, userInput } from './gateway-helpers.ts';
 import { startFake } from './cc-support.ts';
 import {
@@ -82,7 +82,7 @@ describe('startGatewayProcess', () => {
       (error: unknown) => error,
     );
     expect(failure).toBeInstanceOf(ConfigError);
-    expect((await inspectProcessLock(paths.lock)).state).toBe('free');
+    expect((await inspectProcessLock(paths.lock, { mechanism: testKernelLock() })).state).toBe('free');
     expect(fs.existsSync(paths.db)).toBe(false);
     expect(fs.existsSync(paths.key)).toBe(false);
   });
@@ -111,7 +111,7 @@ describe('startGatewayProcess', () => {
       `gateway.db exists but gateway.key is missing at ${paths.key}; stored compaction items can no longer be verified. Move ${paths.db} aside to start fresh.`,
     );
     expect(fs.existsSync(paths.key)).toBe(false);
-    expect((await inspectProcessLock(paths.lock)).state).toBe('free');
+    expect((await inspectProcessLock(paths.lock, { mechanism: testKernelLock() })).state).toBe('free');
   });
 
   it('close() releases the lock and removes the socket, and is idempotent', async () => {
@@ -121,7 +121,7 @@ describe('startGatewayProcess', () => {
     expect(fs.existsSync(paths.lock)).toBe(true);
     expect(fs.readFileSync(paths.lock, 'utf8').trim()).toBe(String(process.pid));
     await handle.close();
-    expect((await inspectProcessLock(paths.lock)).state).toBe('free');
+    expect((await inspectProcessLock(paths.lock, { mechanism: testKernelLock() })).state).toBe('free');
     expect(fs.existsSync(paths.socket)).toBe(false);
     await handle.close();
     const again = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });

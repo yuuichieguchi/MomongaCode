@@ -1,6 +1,6 @@
 import type { RuleVerdictStore } from './rule-verdicts.ts';
 import type { Stored, UNKNOWN_VALUE } from './rows.ts';
-import type { Clock, FileSystem, Random, Redactor } from '@momonga/foundation';
+import type { Clock, FileSystem, Random, Redactor, KernelLockMechanism } from '@momonga/foundation';
 import type { CANCEL_ORIGINS } from './transitions.ts';
 import type { PermissionReviewsStore } from './permission-reviews.ts';
 import type { InheritPlanReply, InheritPlanRequest, InheritedWindowReply, InheritedWindowRequest } from './inherit-reference.ts';
@@ -627,6 +627,7 @@ export type GuidelineStore = {
 export type RuntimeStore = {
   createSession(input: CreateSessionInput): Session;
   getSession(id: string): Session | undefined;
+  getListedSession(id: string): ListedSession | undefined;
   listSessions(request: SessionPageRequest): SessionPage;
   createRunAndEnqueue(sessionId: string, input: CreateRunInput): Promise<CreateRunResult>;
   findRunByIdempotencyKey(sessionId: string, key: string): { run: Run; requestDigest: string | null } | undefined;
@@ -732,6 +733,8 @@ export type RuntimeStore = {
 export type RuntimeStoreOptions = {
   path: string;
   home: string;
+  lock: KernelLockMechanism;
+  busyTimeoutMs: number;
   clock: Clock;
   fileSystem: FileSystem;
   random: Random;

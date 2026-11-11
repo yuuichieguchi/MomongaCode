@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { EXIT_RETIRED, FIRST_GENERATION, createRolePort, generationLayout, hostKernelLock, momongaLayout, publishCurrentGeneration, scopeToGeneration } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { EXIT_RETIRED, FIRST_GENERATION, createRolePort, generationLayout, momongaLayout, publishCurrentGeneration, scopeToGeneration } from '@momonga/foundation';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testKernelLock } from '@momonga/testkit';
 import { mutableRole } from '../shared/mutable-role.ts';
 import { makeLogger } from '../process/helpers.ts';
 import { RUNTIME_VERSION, launchRuntime, prepareGeneration, readDb, scopedPaths, startStack, waitForCondition, waitForStatus } from '../process/run-helpers.ts';
@@ -13,7 +13,7 @@ vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 const MOVED_TEXT = 'This daemon has been replaced by a newer version and accepts no new work. The request was not run; send it again.';
 
 const publish = async (temp: RunHome, generation: number): Promise<void> => {
-  expect(await publishCurrentGeneration(temp.paths, { generation, version: RUNTIME_VERSION, sockets: generationLayout(temp.home, generation).sockets })).toBe('published');
+  expect(await publishCurrentGeneration(temp.paths, { generation, version: RUNTIME_VERSION, sockets: generationLayout(temp.home, generation).sockets }, { lock: testKernelLock() })).toBe('published');
 };
 
 const runRow = (temp: RunHome, runId: string) =>
@@ -61,7 +61,11 @@ describe('the role of a runtime from run/current (17.1, 20.2)', () => {
     expect(launched.handle.role()).toBe('starting');
     expect((await launched.http('GET', '/v1/health')).json).toMatchObject({ state: 'running', role: 'starting', steps: 0, jobs: 0 });
     const refused = await launched.http('POST', '/v1/sessions', { body: { cwd: stack.temp.project, env: {} } });
-    expect({ status: refused.status, code: refused.json.error.code, message: refused.json.error.message }).toEqual({ status: 503, code: 'moved', message: MOVED_TEXT });
+    expect({ status: refused.status, code: refused.json.error.code, message: refused.json.error.message }).toEqual({
+      status: 503,
+      code: 'starting',
+      message: 'The daemon is still starting and accepts no new work yet. The request was not run; send it again.',
+    });
 
     await publish(stack.temp, FIRST_GENERATION);
     await waitForCondition(() => launched.handle.role() === 'serving', 'the role tick to read run/current naming this generation');
@@ -168,7 +172,7 @@ describe('the start of a runtime beside other generations (20.35, 20.49)', () =>
     fs.writeFileSync(foreignMarker, '');
     const heldLock = path.join(stack.temp.paths.callLocks, 'held.lock');
     const staleLock = path.join(stack.temp.paths.callLocks, 'stale.lock');
-    const held = await hostKernelLock().claim(heldLock);
+    const held = await testKernelLock().claim(heldLock);
     if (held.kind !== 'claimed') throw new Error('the test could not claim its call lock');
     fs.writeFileSync(staleLock, '');
     const gatewaySocketPath = generationLayout(stack.temp.home, FIRST_GENERATION).sockets.gateway;

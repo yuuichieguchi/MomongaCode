@@ -66,6 +66,7 @@ export const generationRetiring = defineEvent<{ generation: number; current: num
 export const generationEnded = defineEvent<{ generation: number; liveMs: number }>('generation.ended', 'info');
 export const generationSuccessor = defineEvent<{ generation: number; successor: number | null; version: string; outcome: string }>('generation.successor', (payload) => (payload.outcome === 'started' || payload.outcome === 'joined' ? 'info' : 'warn'));
 export const generationMany = defineEvent<{ live: number }>('generation.many', 'warn');
+export const generationReaped = defineEvent<{ removed: readonly string[]; kept: readonly string[]; busy: boolean }>('generation.reaped', (payload) => (payload.kept.length > 0 ? 'warn' : 'info'));
 export const shutdownBegin = defineEvent<{ mode: 'close' | 'abort' }>('shutdown.begin', 'info');
 export const shutdownStep = defineEvent<{ shutdownStep: number; detail: string }>('shutdown.step', 'info');
 export const shutdownStepBound = defineEvent<{ shutdownStep: number; detail: string }>('shutdown.step', 'warn');
@@ -108,6 +109,7 @@ export const SUPERVISOR_EVENTS = {
   'generation.ended': generationEnded,
   'generation.successor': generationSuccessor,
   'generation.many': generationMany,
+  'generation.reaped': generationReaped,
   'shutdown.begin': shutdownBegin,
   'shutdown.step': shutdownStep,
   'shutdown.end': shutdownEnd,

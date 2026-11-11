@@ -3,8 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { CommandResult } from '../../src/platform/command-runner.ts';
 import { createDarwinInspector } from '../../src/platform/darwin-inspector.ts';
-import { defaultProcessInspector } from '../../src/platform/process-inspector.ts';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, spawnTracked, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, spawnTracked, withTempDir, testProcessInspector } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -135,22 +134,22 @@ describe.skipIf(process.platform !== 'darwin')('darwin inspector against the rea
   it('finds the holder of a marker, finds no holder once it is gone, and calls a missing marker gone', async (context) => {
     const marker = path.join(withTempDir(context), 'marker');
     fs.writeFileSync(marker, '');
-    expect(await defaultProcessInspector().holdersOf(marker, LIVE)).toEqual({ kind: 'value', value: [] });
+    expect(await testProcessInspector().holdersOf(marker, LIVE)).toEqual({ kind: 'value', value: [] });
     const child = holder(context, marker);
-    expect(await defaultProcessInspector().holdersOf(marker, LIVE)).toEqual({ kind: 'value', value: [child.pid] });
+    expect(await testProcessInspector().holdersOf(marker, LIVE)).toEqual({ kind: 'value', value: [child.pid] });
     child.kill('SIGKILL');
     await new Promise<void>((resolve) => child.once('exit', () => resolve()));
-    expect(await defaultProcessInspector().holdersOf(marker, LIVE)).toEqual({ kind: 'value', value: [] });
+    expect(await testProcessInspector().holdersOf(marker, LIVE)).toEqual({ kind: 'value', value: [] });
     fs.rmSync(marker);
-    expect(await defaultProcessInspector().holdersOf(marker, LIVE)).toEqual({ kind: 'gone' });
+    expect(await testProcessInspector().holdersOf(marker, LIVE)).toEqual({ kind: 'gone' });
   });
 
   it('reads the start time of a live process and calls a dead pid gone', async (context) => {
     const child = spawnTracked(context, process.execPath, ['-e', 'setInterval(() => undefined, 60000)'], { stdio: 'ignore' });
-    const live = await defaultProcessInspector().startTimeOf(child.pid, LIVE);
+    const live = await testProcessInspector().startTimeOf(child.pid, LIVE);
     expect(live.kind).toBe('value');
     child.kill('SIGKILL');
     await new Promise<void>((resolve) => child.once('exit', () => resolve()));
-    expect(await defaultProcessInspector().startTimeOf(child.pid, LIVE)).toEqual({ kind: 'gone' });
+    expect(await testProcessInspector().startTimeOf(child.pid, LIVE)).toEqual({ kind: 'gone' });
   });
 });

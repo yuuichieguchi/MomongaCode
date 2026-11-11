@@ -18,7 +18,7 @@ const delta = (seq: number, itemId: string, text: string): RunEventFrame => fram
 const FRAMES = [frame(1, { type: 'user.message', text: 'go' }), delta(2, 'm1', 'one\n'), delta(3, 'm1', 'two\n'), delta(4, 'm1', 'three\n'), delta(5, 'm2', 'four\n')];
 
 const setup = (context: Parameters<typeof withTempDir>[0], frames: readonly RunEventFrame[], gate?: Promise<void>) => {
-  const paths = momongaPaths(withTempDir(context, { asHome: true }));
+  const paths = momongaPaths(withTempDir(context, { asHome: true }), process.platform, process.env);
   const stdout: string[] = [];
   const stderr: string[] = [];
   const client = {

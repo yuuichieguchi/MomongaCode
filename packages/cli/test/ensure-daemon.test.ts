@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ensureMomongaDirs, fixedSocket, hostKernelLock, momongaPaths } from '@momonga/foundation';
-import { firstGeneration, registerCleanup, withTempDir } from '@momonga/testkit';
+import { ensureMomongaDirs, fixedSocket, momongaPaths } from '@momonga/foundation';
+import { firstGeneration, registerCleanup, withTempDir, testKernelLock } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { describe, expect, it } from 'vitest';
 import { DaemonStartError, ensureDaemon, probeSupervisor, restoreDaemon, stopDaemon } from '../src/daemon/ensure-daemon.ts';
@@ -17,7 +17,7 @@ const SELF: SelfExecutable = { kind: 'script', execPath: '/opt/node', script: '/
 
 const setup = async (context: TestContext) => {
   const home = withTempDir(context, { asHome: true });
-  const paths = momongaPaths(home);
+  const paths = momongaPaths(home, process.platform, process.env);
   await ensureMomongaDirs(paths);
   const work = createFakeWork();
   const running: FakeSupervisor[] = [];
@@ -238,7 +238,7 @@ describe('ensureDaemon', () => {
     expect((failure as DaemonStartError).message).toBe(
       `The new daemon (v${VERSION}) did not start (the installed momonga is another version than this one). Run the command again.`,
     );
-    expect(await hostKernelLock().isHeld(firstGeneration(paths).startingLock)).toBe(false);
+    expect(await testKernelLock().isHeld(firstGeneration(paths).startingLock)).toBe(false);
   });
 
   it('names a program that could not be run, with the host error and the way forward', async (context) => {

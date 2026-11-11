@@ -138,6 +138,7 @@ describe('a run under a mandate does the whole job through operations, with no p
     ['git push origin feature/x', 'GitPush'],
     ['gh pr create --fill', 'PullRequestCreate'],
     ['gh pr view 1', 'PullRequestStatus'],
+    ['gh pr checks 1', 'PullRequestStatus'],
   ])('names the operation that replaces the Bash form %s', (command, operation) => {
     expect(supersededVerdictOf(command, FORMS, undefined, COVERED_PROGRAMS)).toMatchObject({ kind: 'superseded', form: { operation } });
   });

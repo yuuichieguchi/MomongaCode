@@ -1,7 +1,7 @@
 import { ModelsEditRefused, durationText, editModelsSettings, fieldLabel, fieldValueText, loadUserModels, loadUserSettings, planModelsEdit, providerNameOf, registeredServer, serverKindOf, serverNameFromCommand, serverRegistryOf, settableFieldPath } from '@momonga/config';
 import type { ConnectionDraft, ModelEntry, ModelsEditPlan, ModelsEditPorts, ModelsOperation, ModelsOperations, ModelsReference, ProviderNameInput, ResolvedModels } from '@momonga/config';
-import { EXIT_FAILURE, EXIT_USAGE, createBinaryHashCache, currentSocketResolver, isRecord, parseOutsideJson } from '@momonga/foundation';
-import type { MomongaPaths, OutboundFetch } from '@momonga/foundation';
+import { EXIT_FAILURE, EXIT_USAGE, createBinaryHashCache, currentSocketResolver, isRecord, parseOutsideJson, resolveLayoutLocks, layoutProcessInspector } from '@momonga/foundation';
+import type { MomongaPaths, OutboundFetch, KernelLockMechanism } from '@momonga/foundation';
 import {
   GENERIC_SERVER_KIND,
   LOCAL_SERVER_CANDIDATES,
@@ -49,6 +49,7 @@ export type ModelsShell = {
   stderr: Writer;
   home: string;
   settingsFile: string;
+  lock(): KernelLockMechanism;
   platform: NodeJS.Platform;
   interrupt: AbortSignal;
   files: Pick<CliFiles, 'readText' | 'readTextIfPresent'>;
@@ -788,7 +789,7 @@ const proposeAndWrite = async (shell: ModelsShell, edit: ModelsEdit, proposal: M
     print(shell.stderr, [RUN_AGAIN_WITH_YES_TEXT]);
     return EXIT_USAGE;
   }
-  const result = await editModelsSettings(shell.home, shell.settingsFile, proposal.operations, { signal: shell.interrupt });
+  const result = await editModelsSettings(shell.home, shell.settingsFile, proposal.operations, { lock: shell.lock(), signal: shell.interrupt });
   print(shell.stdout, result.summaries);
   return 0;
 };
@@ -830,8 +831,11 @@ export const programModelOf = async (ports: CliPorts, paths: MomongaPaths, progr
   const declared = 'builtIn' in program ? undefined : { [program.id]: { command: program.command, args: [...program.args], readyPath: program.readyPath } };
   const description = registeredServer(serverRegistryOf(declared, paths.settingsFile), program.id);
   if (description === undefined) throw new TypeError(`the server program ${program.id} is not in the registry of server programs`);
+  const locks = resolveLayoutLocks(paths);
   const { report } = await probeManagedFm({
     paths,
+    lock: locks.mechanism,
+    inspector: layoutProcessInspector(locks.capability),
     platform: ports.platform,
     instance: cliProbeInstance(paths, program.id),
     description,
@@ -862,6 +866,7 @@ export const modelsShellOf = (ports: CliPorts, paths: MomongaPaths, interrupt: A
   stderr: ports.stderr,
   home: ports.home,
   settingsFile: paths.settingsFile,
+  lock: () => resolveLayoutLocks(paths).mechanism,
   platform: ports.platform,
   interrupt,
   files: ports.files,

@@ -1,16 +1,17 @@
-import { AUTO_MODE_DATASET_TEXT, autoFitDirectoryOf, autoFitKeyOf, autoFitViewOf, autoGatePasses, readAutoFitRecord, readClassifierProbeKeys, systemFileLockPorts, writeAutoFitRecord } from '@momonga/config';
+import { AUTO_MODE_DATASET_TEXT, autoFitDirectoryOf, autoFitKeyOf, autoGatePasses, readAutoFitView, readClassifierProbeKeys, systemFileLockPorts, writeAutoFitRecord } from '@momonga/config';
 import type { AutoFitKey, UserModels } from '@momonga/config';
-import { createBinaryHashCache, createHostExec, currentSocketResolver, momongaPaths, probeKeyComponentLabel } from '@momonga/foundation';
+import { createBinaryHashCache, createHostExec, currentSocketResolver, momongaPaths, probeKeyComponentLabel, resolveLayoutLocks } from '@momonga/foundation';
 import { autoGateRecordOf, caseSettingsFor, formatReport, parseDataset, runDataset } from '@momonga/eval';
 import type { GoldenDataset } from '@momonga/eval';
 import { autoModeNotice, displayMapOf, messageOf, modelRefErrorOf, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
-import type { AutoModeSurface } from '@momonga/protocol';
+import type { AutoClassifierView, AutoModeSurface } from '@momonga/protocol';
 import { withinCommandLimit } from '../command-limit.ts';
 import { createHomes, liveSettingsFor, needsPlanRelay, readCredentials, readPlanRelay, sweepStaleHomes, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects, ReflectionBounds } from '../eval/context-host.ts';
 import type { CliPorts } from '../ports.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
 import { shellModelsOf } from '../plain-http.ts';
+import { pathsOf } from '../paths.ts';
 
 export class AutoModeCheckError extends Error {
   constructor(message: string) {
@@ -39,7 +40,7 @@ export type AutoModeStatusPorts = { models: UserModels; configuredClassifier: st
 
 export type AutoModeStatusOptions = { classifier?: string; surface: AutoModeSurface; signal: AbortSignal };
 
-export type AutoModeStatusOutcome = { measurement: 'passed' | 'did_not_pass' | 'not_measured' };
+export type AutoModeStatusOutcome = { measurement: AutoClassifierView['measurement'] };
 
 const typedModelOf = (models: UserModels, text: string): string => {
   const { views } = models.resolved;
@@ -90,7 +91,7 @@ export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoMode
   const dataset = parseDataset(AUTO_MODE_DATASET_TEXT, 'auto-mode.json');
   const key = await classifierKeyOf(ports.models, classifier, ports.effects.platform, signal);
   const pinned = [agent, classifier];
-  const relay = needsPlanRelay(ports.models, pinned) ? await readPlanRelay(await currentSocketResolver(momongaPaths(ports.home), 'gateway')(), signal) : undefined;
+  const relay = needsPlanRelay(ports.models, pinned) ? await readPlanRelay(await currentSocketResolver(momongaPaths(ports.home, ports.effects.platform, ports.effects.env), 'gateway')(), signal) : undefined;
   const settings = liveSettingsFor(ports.models, pinned, relay);
   const credentialValues = await readCredentials(ports.effects, settings.credentials, signal);
   const swept = await sweepStaleHomes(ports.effects);
@@ -127,7 +128,7 @@ export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoMode
       ports.write('the measurement could not be made: no decision of a labelled kind was observed, so no record was written\n');
       return { measurement: 'unmeasurable' };
     }
-    await writeAutoFitRecord(autoFitDirectoryOf(ports.home), record, ports.randomHex);
+    await writeAutoFitRecord(autoFitDirectoryOf(ports.home), record, ports.randomHex, ports.effects.lock);
     const passed = autoGatePasses(record);
     ports.write(
       passed
@@ -143,7 +144,7 @@ export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoMode
 export const autoModeStatus = async (ports: AutoModeStatusPorts, options: AutoModeStatusOptions): Promise<AutoModeStatusOutcome> => {
   const classifier = classifierOf(ports.models, ports.configuredClassifier, options.classifier);
   const key = await classifierKeyOf(ports.models, classifier, ports.platform, options.signal);
-  const view = autoFitViewOf(classifier, key, await readAutoFitRecord(autoFitDirectoryOf(ports.home), key));
+  const view = await readAutoFitView(autoFitDirectoryOf(ports.home), classifier, key);
   ports.write(`${autoModeNotice({ view, surface: options.surface })}\n`);
   return { measurement: view.measurement };
 };
@@ -152,7 +153,7 @@ export const autoModeCheckPortsOf = async (ports: CliPorts, write: (text: string
   const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } = await import('@momonga/runtime');
   const models = await shellModelsOf(ports, signal);
   return {
-    effects: nodeContextEffects(ports),
+    effects: nodeContextEffects(ports, resolveLayoutLocks(await pathsOf(ports)).mechanism),
     models,
     configuredClassifier: models.autoModeClassifier,
     home: ports.home,

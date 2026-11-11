@@ -4,7 +4,7 @@ import { ConfigError, createKeptSettings, noKeptRecords, userSettingsOfText } fr
 import type { UserSettingsCache, UserSettingsSnapshot } from '@momonga/config';
 import { FIRST_GENERATION, answeredNow, createJsonLogger, generationLayout, momongaPaths, roleEndpoint, syncPaths } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { createFakeClock, createFakeKernelLock, createFakeTimers, parseJsonLines, withTempDir } from '@momonga/testkit';
+import { createFakeClock, createFakeKernelLock, createFakeTimers, parseJsonLines, withTempDir, testProcessInspector } from '@momonga/testkit';
 import type { CleanupContext, FakeClock, FakeKernelLock, FakeTimers, JsonLine } from '@momonga/testkit';
 import { DEFAULT_INTERVALS, HELD_RETRY_MS, STARTUP_TIMEOUT_MS } from '../../src/constants.ts';
 import { createChildManager } from '../../src/child-manager.ts';
@@ -170,6 +170,7 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
   } as ManagerHarness;
   const launcher: Launcher = options.launcher ?? (() => ({ command: process.execPath, args: [FIXTURE_BIN] }));
   const managerOptions: ChildManagerOptions = {
+    inspector: testProcessInspector(),
     role,
     version: '1.2.3',
     onVersionMismatch: (mismatch) => {
@@ -187,6 +188,7 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
     env: options.env ?? { PATH: testHostPath('/usr/bin:/bin'), HOME: home, FOO: 'foo' },
     spawn: options.port ?? port,
     settings,
+    signal: new AbortController().signal,
     logger,
     clock,
     timers,

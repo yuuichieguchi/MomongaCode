@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { nodeFileSystem } from '@momonga/foundation';
 import { PLAN_STORE_UNREADABLE_CODE, PLAN_STORE_UNWRITABLE_CODE } from '@momonga/protocol';
-import { siwcBrowse } from '@momonga/testkit';
+import { siwcBrowse, testKernelLock } from '@momonga/testkit';
 import { readActivePointer } from '../src/plan/active-account.ts';
 import { createPlanSignIn } from '../src/plan/signin.ts';
 import type { PlanSessions } from '../src/plan/session.ts';
@@ -57,6 +57,7 @@ const currentSessions = (h: Harness): PlanSessions =>
 
 const signInFor = (h: Harness) =>
   createPlanSignIn({
+    lock: testKernelLock(),
     profiles: { [PROFILE_ID]: h.profile },
     sessions: currentSessions(h),
     clock: h.clock,

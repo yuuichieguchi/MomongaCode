@@ -7,7 +7,7 @@ import {
   formatStopMessage,
   gatewayAbortBudgetMs,
   gatewayStopBudgetMs,
-  managedServerStopBoundMs,
+  managedServerReapBoundMs,
   parseReadyLine,
   reapMarkerDirectory,
   runtimeAbortStopBudgetMs,
@@ -16,7 +16,7 @@ import {
   SETTINGS_APPLIED_ENV,
   generationLayout,
 } from '@momonga/foundation';
-import type { Clock, JsonLogger, KernelLockMechanism, LockHandoff, LockHandoffClaim, MomongaPaths, ReadyFields, RoleEndpoint, StopValues } from '@momonga/foundation';
+import type { Clock, JsonLogger, KernelLockMechanism, LockHandoff, LockHandoffClaim, MomongaPaths, ReadyFields, RoleEndpoint, StopValues, ProcessInspector } from '@momonga/foundation';
 import type { SupervisorChildHealth, SupervisorChildState, SupervisorExitReason } from '@momonga/protocol';
 import { captureStream, createOutputLimiter } from './capture.ts';
 import { definedEnv, gatewayEnv, runtimeEnv, COLLIDING_CREDENTIAL_DETAIL } from './child-env.ts';
@@ -37,6 +37,7 @@ import {
   childVersionMismatch,
   childStop,
   childUnkillable,
+  orphansWarning,
   settingsReadFailed,
   settingsWarning,
   writeEvent,
@@ -47,7 +48,7 @@ import { openDaemonMarker, reapDaemonMarker } from './orphans.ts';
 import type { DaemonMarker, MarkerPorts } from './orphans.ts';
 import { watchLock } from './lock-watch.ts';
 import type { ExternalProbe, LockWatch } from './lock-watch.ts';
-import { classifyExit, decideAfterExit, failureWithoutProcess, stopReasonRank } from './restart-policy.ts';
+import { classifyExit, decideAfterExit, failureWithoutProcess, stopReasonRank, stopsAStart } from './restart-policy.ts';
 import type { ExitClassification, ExitDecision, RestartPolicy, StopMode, StopReason } from './restart-policy.ts';
 
 export type ChildExit = { code: number | null; signal: NodeJS.Signals | null };
@@ -98,6 +99,7 @@ export type ChildManagerOptions = {
   gateway?: GatewayTuning;
   spawn: SpawnPort;
   settings: UserSettingsCache;
+  signal: AbortSignal;
   logger: JsonLogger;
   clock: Clock;
   timers: SupervisorTimers;
@@ -107,7 +109,8 @@ export type ChildManagerOptions = {
   startupTimeoutMs: number;
   heldRetryMs: number;
   lockWaitMs: number;
-  lockMechanism?: KernelLockMechanism;
+  lockMechanism: KernelLockMechanism;
+  inspector: ProcessInspector;
   markerPorts?: MarkerPorts;
   stopValues?: StopValuesReader;
   isDraining(): boolean;
@@ -173,8 +176,6 @@ type LastExit = { code: number | null; signal: string | null; at: string; reason
 
 type External = { pid?: number; probe: ExternalProbe };
 
-const isStartupReason = (reason: StopReason): boolean => stopReasonRank(reason) === 1;
-
 export const createChildManager = (options: ChildManagerOptions): ChildManager => {
   const { role, timers, clock, logger } = options;
   const stopValuesReader =
@@ -202,6 +203,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   const leaveWaiters = new Set<{ from: ChildState; settle: () => void }>();
   let lastSkippedNames = '';
   let heldForVersion = false;
+  let freshSpawns = 0;
 
   const startsNothing = (): boolean => options.isDraining() || options.isRetiring() || heldForVersion;
 
@@ -308,7 +310,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       lockWatchIntervalMs: options.intervals.lockWatchIntervalMs,
       externalPollMs: options.intervals.externalPollMs,
       timers,
-      ...omitUndefined({ mechanism: options.lockMechanism }),
+      mechanism: options.lockMechanism,
       onFree: () => {
         if (isStale()) return;
         spawnFresh('lock-free');
@@ -517,7 +519,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
 
   const reapMarker = async (markerPath: string): Promise<void> => {
     unreaped.add(markerPath);
-    const reaping = reapDaemonMarker({ marker: markerPath, logger, ...omitUndefined({ markerPorts: options.markerPorts }) });
+    const reaping = reapDaemonMarker({ marker: markerPath, logger, inspector: options.inspector, ...omitUndefined({ markerPorts: options.markerPorts }) });
     inFlightReaps.set(markerPath, reaping);
     try {
       const result = await reaping;
@@ -531,7 +533,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     if (!runsManagedServers(role)) return;
     const values = life.stopValues ?? stopValuesReader.read();
     const reapStop = new AbortController();
-    const bound = options.timers.setTimeout(() => reapStop.abort(), managedServerStopBoundMs(values.managedServerStopGraceMs));
+    const bound = options.timers.setTimeout(() => reapStop.abort(), managedServerReapBoundMs(values));
     try {
       await (options.markerPorts?.reapMarkerDirectory ?? reapMarkerDirectory)({
         dir: options.paths.markers.targets,
@@ -540,7 +542,11 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
         occasion: 'shutdown',
         onWarning: (detail) => log(settingsWarning({ detail })),
         signal: reapStop.signal,
+        inspector: options.inspector,
       });
+    } catch (error) {
+      const failure = error instanceof Error ? error : new Error(String(error));
+      log(orphansWarning({ detail: `the managed servers of the child that ended were not reaped: ${failure.message}` }, failure));
     } finally {
       options.timers.clearTimeout(bound);
     }
@@ -613,7 +619,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     }
     let claim: LockHandoffClaim;
     try {
-      claim = claimLockForChild(options.endpoint.lockPath, omitUndefined({ mechanism: options.lockMechanism }));
+      claim = claimLockForChild(options.endpoint.lockPath, { mechanism: options.lockMechanism });
     } catch (error) {
       launches += 1;
       failWithoutProcess('spawn-failed', error);
@@ -675,15 +681,23 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
 
   function spawnFresh(reason: SpawnReason): void {
     if (startsNothing()) return;
-    let snapshot: UserSettingsSnapshot;
-    try {
-      snapshot = options.settings.snapshot();
-    } catch (error) {
-      beginAttempt();
-      failWithoutProcess('settings-read-failed', error);
-      return;
-    }
-    launch(snapshot, reason);
+    freshSpawns += 1;
+    const asked = freshSpawns;
+    const askedGeneration = generation;
+    const overtaken = (): boolean => startsNothing() || asked !== freshSpawns || generation !== askedGeneration;
+    options.settings
+      .load(options.signal)
+      .then(
+        (snapshot) => {
+          if (!overtaken()) launch(snapshot, reason);
+        },
+        (error: unknown) => {
+          if (overtaken()) return;
+          beginAttempt();
+          failWithoutProcess('settings-read-failed', error);
+        },
+      )
+      .catch((error: unknown) => options.onBackgroundError(error, 'spawn-fresh'));
   }
 
   const declareUnkillable = (life: Life): void => {
@@ -719,7 +733,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   };
 
   const budgetFor = (reason: StopReason, mode: StopMode, values: StopValues): number =>
-    isStartupReason(reason) && mode === 'term' ? options.restart.startupKillGraceMs : stopBudgetMs(role, mode, values);
+    stopsAStart(reason) && mode === 'term' ? options.restart.startupKillGraceMs : stopBudgetMs(role, mode, values);
 
   const signalOf = (mode: StopMode): NodeJS.Signals => (mode === 'int' ? 'SIGINT' : 'SIGTERM');
 

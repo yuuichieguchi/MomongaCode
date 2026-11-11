@@ -6,7 +6,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildSeatbeltProfile, createSeatbeltSandbox } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, testPaths } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, testPaths, testKernelLock } from '@momonga/testkit';
 import { isAlive, makeTempDir, run, waitUntilDead } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -56,7 +56,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox hardening (real 
   beforeEach(async () => {
     root = await tempDir();
     outside = await tempDir();
-    sandbox = createSeatbeltSandbox({ tmpRoot: await tempDir(), killGraceMs: KILL_GRACE_MS });
+    sandbox = createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot: await tempDir(), killGraceMs: KILL_GRACE_MS });
   });
 
   afterEach(async () => {

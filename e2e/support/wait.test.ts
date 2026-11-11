@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_STOP_VALUES, ENTRY_HARD_EXIT_MARGIN_MS, gatewayMaxCloseMs, orphanReapGraceMs, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, ENTRY_HARD_EXIT_MARGIN_MS, gatewayMaxCloseMs, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import { SETTINGS_DEBOUNCE_MS, SETTINGS_POLL_MS, SHUTDOWN_RELEASE_BOUND_MS } from '@momonga/supervisor';
 import { CANCEL_UPSTREAM_SETTLE_MS, GATEWAY_CANCEL_TIMEOUT_MS, SANDBOX_KILL_GRACE_MS } from '../../packages/runtime/src/process/constants.ts';
 import {
@@ -34,7 +34,7 @@ import {
   until,
   withinBound,
 } from './wait.ts';
-import { STARTUP_TIMEOUT_MS, STDIO_FLUSH_MS, childRestartBoundMs, orphanPhaseOneBoundMs, resolveRestartPolicy, resolveStartTiming } from '@momonga/supervisor';
+import { ORPHAN_POLL_MS, STARTUP_TIMEOUT_MS, STDIO_FLUSH_MS, childRestartBoundMs, orphanPhaseOneBoundMs, resolveRestartPolicy } from '@momonga/supervisor';
 import { DEFAULT_E2E_DEPS } from './stack.ts';
 
 const UNTIL_TEST_DEADLINE_MS = 200;
@@ -54,7 +54,7 @@ describe('wait constants', () => {
     expect(E2E_CANCEL_KILL_BOUND_MS).toBe(SANDBOX_KILL_GRACE_MS + E2E_MARGIN_MS);
     expect(E2E_CANCEL_STREAM_BOUND_MS).toBe(GATEWAY_CANCEL_TIMEOUT_MS + CANCEL_UPSTREAM_SETTLE_MS + E2E_MARGIN_MS);
     expect(E2E_RESTART_POLICY).toEqual({ baseMs: E2E_RESTART_BACKOFF_MS, maxMs: E2E_RESTART_BACKOFF_MS, minMs: E2E_RESTART_BACKOFF_MS });
-    expect(E2E_REAP_TO_RUNNING_BOUND_MS).toBe(e2eStartBoundMs({ ...DEFAULT_E2E_DEPS, orphanGraceMs: E2E_ORPHAN_GRACE_MS }));
+    expect(E2E_REAP_TO_RUNNING_BOUND_MS).toBe(e2eStartBoundMs(DEFAULT_E2E_DEPS));
   });
 
   it('wait for a restarted child exactly as long as the supervisor of the e2e stack promises', () => {
@@ -67,7 +67,7 @@ describe('wait constants', () => {
   });
 
   it('wait for phase 2 of the orphan reap exactly as long as phase 1 of the short-grace e2e supervisor lasts, plus the observer margin', () => {
-    expect(E2E_PHASE2_REACHED_BOUND_MS).toBe(orphanPhaseOneBoundMs(resolveStartTiming({ ...DEFAULT_E2E_DEPS, orphanGraceMs: E2E_ORPHAN_GRACE_MS })) + E2E_MARGIN_MS);
+    expect(E2E_PHASE2_REACHED_BOUND_MS).toBe(orphanPhaseOneBoundMs({ orphanGraceMs: E2E_ORPHAN_GRACE_MS, orphanPollMs: ORPHAN_POLL_MS, predecessorStopValues: E2E_STOP_VALUES }) + E2E_MARGIN_MS);
   });
 
   it('give a test the sum of the bounds it waits on in sequence, plus the observer margin', () => {
@@ -83,9 +83,8 @@ describe('wait constants', () => {
     for (const [name, boundMs] of Object.entries(E2E_TEST_WAIT_BOUNDS_MS)) expect(boundMs, name).toBeLessThan(E2E_TEST_TIMEOUT_MS);
   });
 
-  it('keep the dispose budget below the hook timeout and the reap bound below the reap grace', () => {
+  it('keep the dispose budget below the hook timeout', () => {
     expect(E2E_DISPOSE_BOUND_MS).toBeLessThan(E2E_HOOK_TIMEOUT_MS);
-    expect(E2E_REAP_CLOSE_BOUND_MS).toBeLessThan(orphanReapGraceMs(E2E_STOP_VALUES));
   });
 });
 

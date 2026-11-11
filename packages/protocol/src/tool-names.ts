@@ -2,7 +2,7 @@ export const PATH_TOOL_NAMES = ['Read', 'Write', 'Edit', 'Glob', 'Grep'] as cons
 
 export const COMMAND_TOOL_NAME = 'Bash';
 
-export const OPERATION_RULE_TOOLS = ['GitBranch', 'GitStage', 'GitCommit', 'GitFetch', 'GitUpdate', 'GitPush', 'PullRequestStatus', 'PullRequestCreate', 'PullRequestMerge', 'PullRequestComment'] as const;
+export const OPERATION_RULE_TOOLS = ['GitBranch', 'GitStage', 'GitCommit', 'GitFetch', 'GitUpdate', 'GitPush', 'PullRequestStatus', 'PullRequestComments', 'PullRequestCreate', 'PullRequestMerge', 'PullRequestComment'] as const;
 
 export const BUILTIN_TOOL_NAMES = [...PATH_TOOL_NAMES, COMMAND_TOOL_NAME, 'BashOutput', 'KillBash', 'ReadOutput', 'UpdatePlan'] as const;
 

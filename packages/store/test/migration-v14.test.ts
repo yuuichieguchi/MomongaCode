@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { canonicalJson, migrate, openDatabase } from '@momonga/foundation';
+import { canonicalJson, migrate, openDatabase, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
 import { createJournalReader } from '@momonga/store';
 import { createFakeClock } from '@momonga/testkit';
@@ -76,7 +76,7 @@ describe('an upgrade from version 13 over rows that already exist', () => {
     const seen: RunEvent[][] = [];
     const dbPath = versionThirteen();
     openStoreAt(dbPath, createFakeClock(START_MS + 10));
-    const reader = openDatabase(dbPath);
+    const reader = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     registerCleanup(() => reader.close());
 
     createJournalReader(reader).measure(

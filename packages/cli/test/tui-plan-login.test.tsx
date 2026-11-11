@@ -93,17 +93,21 @@ describe('choosing a saved account in the picker', () => {
     app.unmount();
   });
 
-  it('an account whose record is unreadable starts nothing', async () => {
+  it('an account whose record is unreadable shows its cause and what replaces or forgets it, then the sentence screen; nothing starts before the person chooses', async () => {
     const { app, backend } = await startPlan({ accounts: [account({ label: 'work', email: 'w@example.com', state: 'store_unreadable', cause: 'bad tag' })] });
     await ready(app);
     await submitLine(app, '/login chatgpt');
     const picker = await untilFrame(app, 'work · w@example.com · record unreadable');
     expect(picker).not.toContain('sign-in required');
     await choose(app, 'work · w@example.com');
+    const shown = (await untilFrame(app, SENTENCE)).replace(/\s+/g, ' ');
+    expect(shown).toContain('The saved record of work cannot be read (bad tag). Run /login to replace it with a new sign-in, or /logout to forget it on this computer; forgetting it does not revoke the session at the provider.');
     await quiet();
     expect(routesOf(backend).filter((route) => route !== 'accounts')).toEqual([]);
     expect(backend.listenerPaths).toEqual([]);
-    expect(app.lastFrame()).not.toContain(SENTENCE);
+    await choose(app, 'Continue with ChatGPT');
+    await eventually(() => routesOf(backend).includes('sign-in/begin'), 'the sign-in start');
+    expect(bodyOf(backend, 'sign-in/begin')).toMatchObject({ profile: 'chatgpt', account: 'work' });
     app.unmount();
   });
 });

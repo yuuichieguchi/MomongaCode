@@ -17,6 +17,7 @@ const NETWORK_COMMANDS: readonly string[] = ['ls-remote', 'push', 'fetch'];
 const HANDS_OUT_A_CREDENTIAL: ForgeAccess = {
   request: async () => Promise.reject(new Error('no forge request is expected')),
   gitCredential: async (remoteUrl) => ({ origin: URL.canParse(remoteUrl) ? new URL(remoteUrl).origin : 'https://forge.example', username: 'x-access-token', password: 'fake-git-credential-for-tests' }),
+  gitDestination: () => undefined,
 };
 
 type Planted = { world: GitWorld; fired: string; marker: string };
@@ -203,10 +204,16 @@ describe('the one table of the settings a repository may carry into a fetch or a
   it('is where the environment of a network git process takes every value it sets over the repository', () => {
     const world = makeGitWorld();
     const destination = 'https://forge.example/acme/widgets.git';
-    const env = gitEnvironment(world.env, { mode: 'network', destinations: [destination] });
+    const env = gitEnvironment(world.env, { mode: 'network', destinations: [destination], rewrites: [] });
     const count = Number(env['GIT_CONFIG_COUNT']);
     const set = Array.from({ length: count }, (_, index) => [env[`GIT_CONFIG_KEY_${index}`], env[`GIT_CONFIG_VALUE_${index}`]] as const);
-    for (const [key, value] of set) {
+    const isRewrite = (key: string | undefined): boolean => (key ?? '').startsWith('url.');
+    expect(set.filter(([key]) => isRewrite(key))).toEqual([
+      [`url.${destination}.insteadOf`, destination],
+      [`url.${destination}.pushInsteadOf`, destination],
+    ]);
+    for (const [key] of set.filter(([name]) => isRewrite(name))) expect(repositoryKeyRuleOf((key ?? '').replace(destination, 'x').toLowerCase())?.verdict, key).toBe('refused');
+    for (const [key, value] of set.filter(([name]) => !isRewrite(name))) {
       const rule = repositoryKeyRuleOf((key ?? '').replace(destination, 'x').toLowerCase());
       expect(rule?.verdict, key).toBe('overridden');
       if (rule?.verdict === 'overridden' && !(key ?? '').startsWith('protocol.')) expect(value, key).toBe(rule.set[1]);

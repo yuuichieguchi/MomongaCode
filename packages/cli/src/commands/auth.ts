@@ -1,25 +1,23 @@
 import { PLAN_LABEL_REFUSAL, displayMapOf, messageOf, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
-import type { MomongaModelList, PlanAccountView, PlanAccountsResponse, PlanProfileView, PlanSignInCompleteResponse, TargetBilling } from '@momonga/protocol';
+import type { MomongaModelList, PlanAccountView, PlanAccountsResponse, PlanProfileView, PlanSignInCompleteResponse, PlanSignInIdentity, TargetBilling } from '@momonga/protocol';
 import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE } from '@momonga/foundation';
 import type { OpenUrl } from '@momonga/foundation';
-import { couldNotOpenBrowser } from '../browser-text.ts';
 import { listingViewsOf } from '../client/gateway-client.ts';
+import { describeFailure } from '../failure.ts';
 import type { PlanGatewayClient } from '../client/gateway-client.ts';
 import { listedModelOf } from './models.ts';
 import { createInterface } from 'node:readline';
 import { SANDBOX_OFF_NOTICE, accountStateWord, accountsOf, nextAccountLabel, profileOf, savedAccountAction } from '../plan/accounts.ts';
 import {
   PASTE_LABEL,
-  SignInAttemptNotFoundError,
-  SignInExpiredError,
-  SignInGatewayStoppedError,
   SignInListenerError,
   SignInListenerFailedError,
+  SignInNotFinishedError,
   pastedCallbackProblem,
   signIn,
 } from '../plan/sign-in.ts';
 import type { SandboxKind, SignInWaitTimers, StartSignInListener } from '../plan/sign-in.ts';
-import { codeNotAcceptedLine, listProblemLine, noBrowserHintLine, planDisabledLines, resumeLine, sensitiveUrlLines, signedInLine, signedOutLines, tryAgainLine } from '../plan/texts.ts';
+import { IDENTITY_CHOICES, IDENTITY_SAVE, SIGN_IN_WORD, browserNotOpenedLine, cancelledLine, codeNotAcceptedLine, identityNotConfirmedLine, identityQuestion, NO_ACCOUNT_SAVED_TEXT, NO_PROVIDER_TEXT, SIGN_OUT_LABEL_NEEDED_LINE, listProblemLine, noBrowserHintLine, planDisabledLines, recordUnreadableLine, resumeLine, sensitiveUrlLines, resetHostWarning, signInFailureLine, signedInLine, signedOutLines } from '../plan/texts.ts';
 import { escapedLines } from '../terminal-writer.ts';
 import { UsageError } from '../usage-error.ts';
 
@@ -48,12 +46,18 @@ export const modelLineOf = (listing: MomongaModelList, named: string | undefined
 
 export const modelLineText = (line: ModelLine): string => (line === null ? `model: none (${messageOf('noModelConnected', 'cli')})` : `model: ${line.name} (${line.billing})`);
 
+type ModelRead = { kind: 'read'; model: ModelLine } | { kind: 'unknown'; cause: string };
+
 export const authStatus = async (ports: AuthStatusPorts, options: { json: boolean; model?: string }): Promise<number> => {
   const listed = await ports.plan.accounts();
-  const model = modelLineOf(await ports.listing(), options.model);
+  const read: ModelRead = await ports.listing().then(
+    (listing) => ({ kind: 'read', model: modelLineOf(listing, options.model) }),
+    (error: unknown) => ({ kind: 'unknown', cause: describeFailure(error) }),
+  );
+  const code = read.kind === 'read' ? EXIT_OK : EXIT_FAILURE;
   if (options.json) {
-    ports.stdout.write(`${JSON.stringify({ ...listed, model })}\n`);
-    return 0;
+    ports.stdout.write(`${JSON.stringify(read.kind === 'read' ? { ...listed, model: read.model } : { ...listed, model: null, modelUnknown: read.cause })}\n`);
+    return code;
   }
   const lines = listed.profiles.flatMap((profile) => {
     const accounts = [...accountsOf(profile.id, listed.accounts)].sort((left, right) => left.label.localeCompare(right.label));
@@ -64,14 +68,14 @@ export const authStatus = async (ports: AuthStatusPorts, options: { json: boolea
     ];
   });
   print(ports.stdout, [
-    ...(lines.length === 0 ? ['no subscription provider is available'] : lines),
+    ...(lines.length === 0 ? [NO_PROVIDER_TEXT] : lines),
     ...(listed.listProblems ?? []).map((problem) => `  ${listProblemLine(problem)}`),
-    modelLineText(model),
+    read.kind === 'read' ? modelLineText(read.model) : `model: unknown (${read.cause})`,
   ]);
-  return 0;
+  return code;
 };
 
-type Choose = (question: string, choices: readonly string[]) => Promise<number | undefined>;
+type Choose = (question: string, choices: readonly string[], until?: AbortSignal) => Promise<number | undefined>;
 
 type TerminalPorts = { isTerminal: false } | { isTerminal: true; choose: Choose };
 
@@ -119,16 +123,15 @@ const pastedLine =
     }
   };
 
-const unfixableAccount = (listed: PlanAccountsResponse, profile: string, label: string): PlanAccountView | undefined =>
-  accountsOf(profile, listed.accounts).find((account) => account.label === label && savedAccountAction(account) === 'none');
+const savedUnder = (listed: PlanAccountsResponse, profile: string, label: string): PlanAccountView | undefined => accountsOf(profile, listed.accounts).find((account) => account.label === label);
 
-export type AuthLoginOptions = { provider?: string; account?: string; reconsent?: boolean; browser?: boolean };
+export type AuthLoginOptions = { provider?: string; account?: string; reconsent?: boolean; browser?: boolean; yes?: boolean };
 
 const chosenProfile = async (ports: AuthLoginPorts, listed: PlanAccountsResponse, provider: string | undefined): Promise<PlanProfileView | undefined> => {
   if (provider !== undefined) return profileOf(listed.profiles, provider);
   const [only, ...others] = listed.profiles;
   if (only !== undefined && others.length === 0) return only;
-  if (!ports.isTerminal || only === undefined) {
+  if (!ports.isTerminal) {
     print(ports.stderr, [`name the provider to sign in to: momonga auth login <provider>; the providers are ${listed.profiles.map((profile) => profile.id).join(', ')}`]);
     return undefined;
   }
@@ -141,31 +144,40 @@ const outcomeLines = (profile: PlanProfileView, account: string, answer: PlanSig
     case RETRY_OUTCOME:
       return [codeNotAcceptedLine('cli', profile, account)];
     case IDENTITY_UNCONFIRMED_OUTCOME:
-      return [`${account}: the sign-in as ${answer.identity.email ?? answer.identity.subject} was not saved, because the account identity was not confirmed.`];
+      return [identityNotConfirmedLine('cli', { profile: profile.id, account }, answer.identity)];
     case PLAN_DISABLED_STATE:
       return planDisabledLines('cli', profile, answer.account.label);
-    case SIGNED_IN_OUTCOME:
+    case SIGNED_IN_OUTCOME: {
+      const inUse = answer.account.pinnedBy.length > 0;
       return [
         signedInLine(answer.account),
-        ...(answer.firstSignIn ? [profile.messages.firstSignIn.title, profile.messages.firstSignIn.body, `${profile.messages.manageUsageLabel}: ${profile.usageUrl}`] : []),
+        ...(inUse ? [] : [messageOf('accountWithoutModel', 'cli', { provider: profile.id, account: answer.account.label })]),
+        ...(answer.firstSignIn && inUse ? [profile.messages.firstSignIn.title, profile.messages.firstSignIn.body] : []),
+        ...(answer.firstSignIn ? [`${profile.messages.manageUsageLabel}: ${profile.usageUrl}`] : []),
       ];
+    }
   }
 };
 
 export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions): Promise<number> => {
   if (options.account !== undefined && !isPlanLabel(options.account)) throw new UsageError(PLAN_LABEL_REFUSAL);
   const listed = await ports.plan.accounts();
+  if (listed.profiles.length === 0) {
+    print(ports.stderr, [NO_PROVIDER_TEXT]);
+    return EXIT_FAILURE;
+  }
   const profile = await chosenProfile(ports, listed, options.provider);
   if (profile === undefined) return EXIT_USAGE;
   const account = options.account ?? nextAccountLabel(profile.id, listed.accounts);
-  const unfixable = unfixableAccount(listed, profile.id, account);
-  if (unfixable !== undefined) {
-    print(ports.stderr, [`${unfixable.label}: ${accountStateWord(unfixable)}`, ...(unfixable.cause === undefined ? [] : [`cause: ${unfixable.cause}`])]);
+  const saved = savedUnder(listed, profile.id, account);
+  const savedAction = saved === undefined ? undefined : savedAccountAction(saved);
+  if (saved !== undefined && savedAction === 'none') {
+    print(ports.stderr, [`${saved.label}: ${accountStateWord(saved)}`, ...(saved.cause === undefined ? [] : [`cause: ${saved.cause}`])]);
     return EXIT_FAILURE;
   }
+  if (saved !== undefined && savedAction === 'replace') print(ports.stderr, [recordUnreadableLine('cli', saved)]);
   if ((await ports.sandbox()) === 'none') print(ports.stderr, SANDBOX_OFF_NOTICE);
   print(ports.stdout, [profile.messages.description]);
-  const tryAgain = tryAgainLine('cli', { profile: profile.id, account });
   const pasted =
     ports.isTerminal
       ? (state: string, signal: AbortSignal): Promise<string> => {
@@ -173,6 +185,11 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
           return pastedLine(ports.terminal, ports.stderr)(state, signal);
         }
       : (_state: string, signal: AbortSignal): Promise<string> => waitForAbort(signal);
+  const confirmIdentity = async (identity: PlanSignInIdentity, waiting: AbortSignal): Promise<boolean> => {
+    if (options.yes === true) return true;
+    if (!ports.isTerminal) return false;
+    return (await ports.choose(identityQuestion('cli', profile, account, identity), IDENTITY_CHOICES, waiting)) === IDENTITY_SAVE;
+  };
   let answer: PlanSignInCompleteResponse;
   try {
     answer = await signIn(
@@ -182,15 +199,16 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
         signal: ports.signal,
         timers: ports.timers,
         pasted,
+        confirmIdentity,
         authorize: async ({ url }, waiting) => {
           if (options.browser === false) {
             print(ports.stdout, sensitiveUrlLines(url));
             return;
           }
-          print(ports.stdout, [noBrowserHintLine(profile.id, account)]);
+          print(ports.stdout, [noBrowserHintLine({ profile: profile.id, account }, options.reconsent === true)]);
           ports.openUrl(url, waiting, (message) => {
             print(ports.stdout, sensitiveUrlLines(url));
-            print(ports.stderr, [`${couldNotOpenBrowser(message)} Open the URL above to continue.`]);
+            print(ports.stderr, [browserNotOpenedLine(message)]);
           });
         },
       },
@@ -198,21 +216,22 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
     );
   } catch (error) {
     if (ports.signal.aborted && error === ports.signal.reason) {
-      print(ports.stderr, ['momonga: sign-in cancelled']);
+      print(ports.stderr, [cancelledLine(SIGN_IN_WORD)]);
       return EXIT_INTERRUPTED;
     }
-    if (error instanceof SignInExpiredError || error instanceof SignInAttemptNotFoundError) {
-      print(ports.stderr, [`${error.message} ${tryAgain}`]);
+    if (error instanceof SignInNotFinishedError) {
+      print(ports.stderr, [signInFailureLine('cli', { profile: profile.id, account }, error)]);
       return EXIT_FAILURE;
     }
-    if (error instanceof SignInListenerError || error instanceof SignInListenerFailedError || error instanceof SignInGatewayStoppedError) {
+    if (error instanceof SignInListenerError || error instanceof SignInListenerFailedError) {
       print(ports.stderr, [error.message]);
       return EXIT_FAILURE;
     }
     throw error;
   }
-  print(ports.stdout, outcomeLines(profile, account, answer));
-  return answer.outcome === SIGNED_IN_OUTCOME ? EXIT_OK : EXIT_FAILURE;
+  const signedIn = answer.outcome === SIGNED_IN_OUTCOME;
+  print(signedIn ? ports.stdout : ports.stderr, outcomeLines(profile, account, answer));
+  return signedIn ? EXIT_OK : EXIT_FAILURE;
 };
 
 export type AuthLogoutPorts = { stdout: Writer; stderr: Writer; plan: PlanGatewayClient } & TerminalPorts;
@@ -230,8 +249,11 @@ export const authLogout = async (ports: AuthLogoutPorts, options: { account?: st
   let chosen: PlanAccountView;
   if (options.account !== undefined) chosen = accountNamed(listed.accounts, options.account);
   else if (!ports.isTerminal) {
-    print(ports.stderr, ['momonga auth logout needs the account label when it does not run in a terminal: momonga auth logout <account>']);
+    print(ports.stderr, [SIGN_OUT_LABEL_NEEDED_LINE]);
     return EXIT_USAGE;
+  } else if (listed.accounts.length === 0) {
+    print(ports.stderr, [NO_ACCOUNT_SAVED_TEXT]);
+    return EXIT_FAILURE;
   } else {
     const index = await ports.choose('Sign out which account?', listed.accounts.map((account) => `${account.label} · ${account.email ?? ''} · ${accountStateWord(account)}`));
     const picked = index === undefined ? undefined : listed.accounts[index];
@@ -241,25 +263,18 @@ export const authLogout = async (ports: AuthLogoutPorts, options: { account?: st
   const report = await ports.plan.signOut({ profile: chosen.profile, account: chosen.label });
   const profile = profileOf(listed.profiles, chosen.profile);
   print(ports.stdout, signedOutLines(profile, chosen.label, report));
-  return 0;
+  return EXIT_OK;
 };
 
 export type AuthResumePorts = { stdout: Writer; stderr: Writer; plan: PlanGatewayClient };
 
 export const authResume = async (ports: AuthResumePorts, options: { account: string }): Promise<number> => {
   const listed = await ports.plan.accounts();
-  if (!listed.accounts.some((account) => account.label === options.account)) {
-    print(ports.stderr, [`no saved account is labelled ${JSON.stringify(options.account)}; momonga auth status lists them`]);
-    return EXIT_FAILURE;
-  }
   const chosen = accountNamed(listed.accounts, options.account);
   const answer = await ports.plan.resume(chosen.label, { profile: chosen.profile });
   print(ports.stdout, [resumeLine(chosen.label, answer.resumed)]);
-  return 0;
+  return EXIT_OK;
 };
-
-export const RESET_HOST_WARNING =
-  'This computer will be registered as a new host with ChatGPT. Saved accounts keep their records; whether ChatGPT accepts them under the new host is not documented, so sign in again if one stops working.';
 
 const RESET_HOST_CONFIRM = 'Register this computer as a new host';
 
@@ -272,12 +287,17 @@ export const authResetHost = async (ports: AuthResetHostPorts, options: { yes: b
     print(ports.stderr, ['momonga auth reset-host needs --yes when it does not run in a terminal']);
     return EXIT_USAGE;
   }
-  print(ports.stdout, [RESET_HOST_WARNING]);
+  const { profiles } = await ports.plan.accounts();
+  if (profiles.length === 0) {
+    print(ports.stderr, [NO_PROVIDER_TEXT]);
+    return EXIT_FAILURE;
+  }
+  print(ports.stdout, [resetHostWarning(profiles)]);
   if (!options.yes && ports.isTerminal) {
     const chosen = await ports.choose('Reset the host identity?', RESET_HOST_CHOICES);
     if (chosen === undefined || RESET_HOST_CHOICES[chosen] !== RESET_HOST_CONFIRM) return EXIT_USAGE;
   }
   const reset = await ports.plan.resetHost();
   print(ports.stdout, [`This computer is now the host ${reset.hostId}`]);
-  return 0;
+  return EXIT_OK;
 };

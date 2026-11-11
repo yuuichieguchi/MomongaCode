@@ -190,7 +190,7 @@ describe('daemon markers at child exit', () => {
       expect(String(harness.events('orphans.warning')[0]?.['detail'])).toContain(error.message);
       expect(harness.manager.unreapedMarkers()).toEqual([marker]);
       harness.timers.advance(250);
-      expect(harness.spawnCount()).toBe(2);
+      await waitFor(() => harness.spawnCount() === 2, { description: 'the role to be spawned again' });
     }
     await afterMicrotasks();
     expect(rejections).toEqual([]);

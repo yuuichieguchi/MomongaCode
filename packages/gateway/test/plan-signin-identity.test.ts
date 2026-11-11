@@ -62,7 +62,7 @@ describe('the first sign-in of an account is confirmed before it is saved (found
       expiresAt: expect.any(String),
     });
     expect(await statesOf(gateway)).toEqual(['registered']);
-    expect(fs.existsSync(momongaLayout(gateway.home).planActive)).toBe(false);
+    expect(fs.existsSync(momongaLayout(gateway.home, process.platform, process.env).planActive)).toBe(false);
     await gateway.close();
   });
 

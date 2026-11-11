@@ -12,7 +12,6 @@ vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 const healthNaming = (pid: number): SupervisorHealth => ({
   status: 'ok',
   version: '9.9.9-test',
-  apiVersion: 1,
   pid: process.pid,
   startedAt: '2026-01-01T00:00:00.000Z',
   phase: 'running',

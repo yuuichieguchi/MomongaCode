@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { nodeFileSystem, systemRandom } from '@momonga/foundation';
+import { nodeFileSystem, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { FileSystem } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { createFakeClock } from '@momonga/testkit';
+import { createFakeClock, testKernelLock } from '@momonga/testkit';
 import { LEASE_MS, START_MS, TIMEOUT_MS, UNASKED_COMMANDS, makeStoreDir, rawDb, registerCleanup } from './helpers.ts';
 
 const never = new AbortController().signal;
@@ -44,7 +44,7 @@ const open = (): Opened => {
       return nodeFileSystem.realpath(file);
     },
   };
-  const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS, path: dbPath, home: root, clock: createFakeClock(START_MS), leaseMs: LEASE_MS, maxAttempts: 5, maxTotalAttempts: 1000, fileSystem, random: systemRandom });
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS, path: dbPath, home: root, clock: createFakeClock(START_MS), leaseMs: LEASE_MS, maxAttempts: 5, maxTotalAttempts: 1000, fileSystem, random: systemRandom });
   registerCleanup(() => store.close());
   return { store, dbPath, project, gate };
 };

@@ -1,11 +1,11 @@
 import { TUI_THEMES } from '@momonga/config';
 import type { TuiTheme } from '@momonga/config';
 
-export type TextStyle = { color?: string; bold?: boolean; dimColor?: boolean; inverse?: boolean; underline?: boolean };
+export type TextStyle = { color?: string; bold?: boolean; dimColor?: boolean; italic?: boolean; inverse?: boolean; underline?: boolean };
 
 export type Paint = { truecolor: string; ansi256: number };
 
-export type Attrs = { bold?: true; dim?: true; underline?: true; inverse?: true };
+export type Attrs = { bold?: true; dim?: true; italic?: true; underline?: true; inverse?: true };
 
 export type TokenStyle = { dark?: Paint; light?: Paint; ansi16?: string; attrs: Attrs };
 
@@ -25,6 +25,7 @@ export const STYLE = {
   text: { attrs: NONE },
   dim: { attrs: { dim: true } },
   bold: { attrs: { bold: true } },
+  italic: { attrs: { italic: true } },
   user: USER,
   accent: ACCENT,
   error: ERROR,
@@ -177,6 +178,7 @@ export const styleOfToken = (token: StyleToken, appearance: Appearance, theme: T
     ...(color === undefined ? {} : { color }),
     ...(style.attrs.bold === true ? { bold: true } : {}),
     ...(style.attrs.dim === true ? { dimColor: true } : {}),
+    ...(style.attrs.italic === true ? { italic: true } : {}),
     ...(style.attrs.inverse === true ? { inverse: true } : {}),
     ...(style.attrs.underline === true ? { underline: true } : {}),
   };

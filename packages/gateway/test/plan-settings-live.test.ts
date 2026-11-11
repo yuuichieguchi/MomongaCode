@@ -9,7 +9,7 @@ import { DEFAULT_STOP_VALUES, FIRST_GENERATION, createFileCredentialStore, creat
 import type { UdsClient } from '@momonga/foundation';
 import { saveEndpointRecord, startGatewayProcess } from '@momonga/gateway';
 import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretStore, openResponsesTextReply, registerCleanup, startFakeSiwcAuth, waitFor, withTempDir, registerOwned } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretStore, openResponsesTextReply, registerCleanup, startFakeSiwcAuth, waitFor, withTempDir, registerOwned, testLocks, testKernelLock } from '@momonga/testkit';
 import type { CleanupContext, SiwcAuth } from '@momonga/testkit';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
 import { getJson, userInput, listedEntryOf, listedMembersOf, listedCountersOf } from './gateway-helpers.ts';
@@ -143,14 +143,15 @@ const startRemoteStack = async (
 ): Promise<Stack> => {
   const home = withTempDir(context, { asHome: true });
   prepareHome(home);
-  const layout = momongaLayout(home);
+  const layout = momongaLayout(home, process.platform, process.env);
   fs.mkdirSync(layout.planSessions, { recursive: true, mode: 0o700 });
-  const { hostId } = await ensureHostIdentity(nodeFileSystem, layout.planHost, { accountsExist: false });
-  const store = createFileCredentialStore(layout.planSessions);
+  const { hostId } = await ensureHostIdentity(nodeFileSystem, layout.planHost, { lock: testKernelLock(), accountsExist: false });
+  const store = createFileCredentialStore(layout.planSessions, { lock: testKernelLock() });
   for (const record of options.records?.(hostId) ?? []) await store.write(`plan/${PROFILE_ID}/${String(record['account'])}`, JSON.stringify(record), new AbortController().signal);
   const settingsWith = (network: Record<string, unknown>) => ({ credentials: { plaintextTokenFiles: true }, models: pinnedTargets(options.accounts), network });
   replaceSettings(home, settingsWith(options.network));
   const handle = await registerOwned(context, () => startGatewayProcess({
+    locks: testLocks(),
     generation: FIRST_GENERATION,
     home,
     env: baseEnv(home),
@@ -514,7 +515,7 @@ describe('O-R5-6 L3: the served account, the reported numbers and the output pol
     const home = makeHome();
     const models = modelsOf({ probed: ccTarget(fake.socketPath, { toolCalling: 'auto' }), keyed: ccTarget(fake.socketPath, { toolCalling: 'native' }) });
     writeSettings(home, { models, context: { unboundedOutputReserve: false } });
-    await saveEndpointRecord(path.join(homePaths(home).root, 'state', 'probe'), { endpoint: `unix:${fake.socketPath}`, model: 'system' }, 'identity-one', ['id', 'object', 'owned_by'], makeReport(1, 1) as never, CURRENT_DIALECTS);
+    await saveEndpointRecord(path.join(homePaths(home).root, 'state', 'probe'), { endpoint: `unix:${fake.socketPath}`, model: 'system' }, 'identity-one', ['id', 'object', 'owned_by'], makeReport(1, 1) as never, CURRENT_DIALECTS, testKernelLock());
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     const countersOf = async (): Promise<Record<string, string>> => {
       const listed = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
@@ -533,7 +534,7 @@ describe('O-R5-6 L3: the served account, the reported numbers and the output pol
     const gateway = await startPlanGateway({ plaintextTokenFiles: true });
     await signInAs(gateway, ACCOUNT);
     await gateway.close();
-    const pointer = momongaLayout(gateway.home).planActive;
+    const pointer = momongaLayout(gateway.home, process.platform, process.env).planActive;
     fs.writeFileSync(pointer, '"x"');
     await expect(gateway.restart()).resolves.toBeUndefined();
     replaceSettings(gateway.home, unpinnedSettings(true));
@@ -553,7 +554,7 @@ describe('O-R5-6 L3: the served account, the reported numbers and the output pol
     const gateway = await startPlanGateway({ plaintextTokenFiles: true });
     await signInAs(gateway, ACCOUNT);
     await gateway.close();
-    const pointer = momongaLayout(gateway.home).planActive;
+    const pointer = momongaLayout(gateway.home, process.platform, process.env).planActive;
     fs.writeFileSync(pointer, '"x"');
     await gateway.restart();
     replaceSettings(gateway.home, unpinnedSettings(true));
@@ -568,7 +569,7 @@ describe('O-R5-6 L3: the served account, the reported numbers and the output pol
     const gateway = await startPlanGateway({ plaintextTokenFiles: true, respond: () => openResponsesTextReply(['hi']) });
     await signInAs(gateway, ACCOUNT);
     await gateway.close();
-    const pointer = momongaLayout(gateway.home).planActive;
+    const pointer = momongaLayout(gateway.home, process.platform, process.env).planActive;
     fs.writeFileSync(pointer, '"x"');
     await gateway.restart();
     replaceSettings(gateway.home, unpinnedSettings(true));

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { immediateTx, modeIsPrivate, sha256Hex, writeFileAtomically } from '@momonga/foundation';
-import type { Clock, FileSystem, Random } from '@momonga/foundation';
+import type { Clock, FileSystem, KernelLockMechanism, Random } from '@momonga/foundation';
 import { readerFor } from './rows.ts';
 import type { BlobByteRange, BlobByteSlice, BlobLineRange, BlobRef, BlobScope, BlobSlice, BlobStore } from './types.ts';
 
@@ -14,7 +14,7 @@ const READ_PAGE_BYTES = 64 * 1024;
 
 export type BlobFileSystem = Pick<FileSystem, 'mkdir' | 'stat' | 'readFile' | 'readRange' | 'open' | 'descriptors' | 'rename' | 'link' | 'rm'>;
 
-export type BlobPorts = { fileSystem: BlobFileSystem; random: Random };
+export type BlobPorts = { fileSystem: BlobFileSystem; random: Random; lock: KernelLockMechanism };
 
 export const prepareBlobDirectory = async (fileSystem: Pick<FileSystem, 'mkdir' | 'stat'>, dir: string): Promise<void> => {
   await fileSystem.mkdir(dir, BLOB_DIRECTORY_MODE);
@@ -76,7 +76,7 @@ const assertNonNegativeInteger = (name: string, value: number): void => {
 
 export const blobDirectoryOf = (databasePath: string): string => path.join(path.dirname(databasePath), 'blobs');
 
-export const createBlobStore = (db: DatabaseSync, clock: Clock, dir: string, { fileSystem, random }: BlobPorts): BlobStore => {
+export const createBlobStore = (db: DatabaseSync, clock: Clock, dir: string, { fileSystem, random, lock }: BlobPorts): BlobStore => {
   let directoryPrepared: Promise<void> | undefined;
   const prepare = (): Promise<void> => {
     directoryPrepared ??= prepareBlobDirectory(fileSystem, dir).catch((error: unknown) => {
@@ -187,7 +187,7 @@ export const createBlobStore = (db: DatabaseSync, clock: Clock, dir: string, { f
       const target = path.join(dir, sha256);
       await prepare();
       if (!(await holdsContent(target, sha256, bytes.length))) {
-        await writeFileAtomically(fileSystem, random, target, bytes, { mode: BLOB_FILE_MODE });
+        await writeFileAtomically(fileSystem, random, target, bytes, { mode: BLOB_FILE_MODE, lock });
       }
       const lineCount = countLines(bytes);
       immediateTx(db, () => {

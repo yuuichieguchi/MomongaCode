@@ -1,5 +1,5 @@
 import type { CallStop } from './call-stop.ts';
-import type { Awaitable, Clock, FileSystem, NetworkScope, OutboundNetwork, PathResolver, Random } from '@momonga/foundation';
+import type { Awaitable, Clock, FileSystem, KernelLockMechanism, NetworkScope, OutboundNetwork, PathResolver, ProcessInspector, Random } from '@momonga/foundation';
 import type { ShellHost } from './builtins/shell.ts';
 import type { MarkerSettle } from './marker-settle.ts';
 import type { PermissionSubject } from '@momonga/policy';
@@ -104,6 +104,8 @@ export type ReconcileContext = SubjectContext & {
   idemKey: string;
   outputFit: CallOutputFit;
   tmpDir?: string;
+  kernelLock: KernelLockMechanism;
+  inspector: ProcessInspector;
   processMarker?: string;
   earlierAttempt?: { stopped: boolean };
   traceparent?: string;

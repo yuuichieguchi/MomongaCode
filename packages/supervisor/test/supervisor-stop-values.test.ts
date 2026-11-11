@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, formatStopMessage, generationLayout, readStopRecord } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, waitFor, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, waitFor, withTempDir, testKernelLock } from '@momonga/testkit';
 import { startControlServer } from '../src/control-server.ts';
 import { writeSettings } from './support/p2-manager-harness.ts';
 import { startSupervisorHarness } from './support/p2-supervisor-harness.ts';
@@ -98,12 +98,13 @@ describe('POST /v1/shutdown carries the four requester values', () => {
     const socketPath = path.join(dir, 's.sock');
     const requested: unknown[] = [];
     const server = await startControlServer({
+      mechanism: testKernelLock(),
       socketPath,
       timers: { setTimeout: (callback, ms) => setTimeout(callback, ms), clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout) },
       health: () => {
         throw new Error('health is not read here');
       },
-      credential: () => ({ kind: 'refused' }),
+      credential: async () => ({ kind: 'refused' }),
       onShutdownRequested: (values?: StopValues) => requested.push(values),
       onError: () => undefined,
     });

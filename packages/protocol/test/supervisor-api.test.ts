@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { SUPERVISOR_API_VERSION } from '@momonga/protocol';
+import * as protocol from '@momonga/protocol';
 import type {
   SupervisorChildHealth,
   SupervisorChildState,
@@ -10,9 +10,8 @@ import type {
 } from '@momonga/protocol';
 
 describe('supervisor control API wire types', () => {
-  it('pins the API version', () => {
-    expect(SUPERVISOR_API_VERSION).toBe(1);
-    expectTypeOf<typeof SUPERVISOR_API_VERSION>().toEqualTypeOf<1>();
+  it('carries no API version of the supervisor socket, which no reader compares', () => {
+    expect(Object.keys(protocol)).not.toContain('SUPERVISOR_API_VERSION');
   });
 
   it('defines the child states including pending', () => {
@@ -54,7 +53,7 @@ describe('supervisor control API wire types', () => {
       nextAttemptAt?: string;
       lastExit?: { code: number | null; signal: string | null; at: string; reason: SupervisorExitReason };
       heldReason?: string;
-      external?: { pid?: number; probe: 'pending' | 'healthy' | 'unhealthy' | 'unreachable' };
+      external?: { pid?: number; probe: 'pending' | 'healthy' | 'unhealthy' | 'unresponsive' | 'unreachable' };
     }>();
   });
 
@@ -62,7 +61,6 @@ describe('supervisor control API wire types', () => {
     expectTypeOf<SupervisorHealth>().toEqualTypeOf<{
       status: 'ok';
       version: string;
-      apiVersion: 1;
       pid: number;
       startedAt: string;
       phase: SupervisorPhase;

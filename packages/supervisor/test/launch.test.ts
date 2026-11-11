@@ -96,7 +96,7 @@ const setup = (_context: CleanupContext, options: SetupOptions = {}) => {
     runtime: fakeManager('runtime', calls, snapshots, options.onSpawn),
     startWatch: (initialKey) => {
       calls.push(`startWatch:${initialKey}`);
-      return { stop: () => void calls.push('watchStop') };
+      return { stop: () => void calls.push('watchStop'), idle: async () => undefined };
     },
     evaluate: async () => void calls.push('evaluate'),
   };

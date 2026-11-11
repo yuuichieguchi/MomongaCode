@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { nodeFileSystem, systemRandom } from '@momonga/foundation';
+import { nodeFileSystem, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { FileSystem } from '@momonga/foundation';
 import { StoreIdentityError, isFatalStoreError, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { createFakeClock } from '@momonga/testkit';
+import { createFakeClock, testKernelLock } from '@momonga/testkit';
 import { LEASE_MS, START_MS, UNASKED_COMMANDS, harness, makeStoreDir, newSession, registerCleanup } from './helpers.ts';
 
 const thrownBy = async (action: () => Promise<unknown>): Promise<unknown> => {
@@ -26,7 +26,7 @@ const storeWhoseStatFails = (failure: unknown): RuntimeStore => {
       return nodeFileSystem.stat(file);
     },
   };
-  const store = openRuntimeStore({ fileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: dbPath, home: path.dirname(dbPath), clock: createFakeClock(START_MS), leaseMs: LEASE_MS, maxAttempts: 5, maxTotalAttempts: 1000 });
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: dbPath, home: path.dirname(dbPath), clock: createFakeClock(START_MS), leaseMs: LEASE_MS, maxAttempts: 5, maxTotalAttempts: 1000 });
   registerCleanup(() => store.close());
   return store;
 };

@@ -116,6 +116,21 @@ describe('sessions', () => {
     expect(`${seen[0]?.method} ${seen[0]?.url}`).toBe('GET /v1/sessions/session-1');
   });
 
+  it('lists the sessions of a folder page by page until the API names no next page', async (context) => {
+    const { client, seen } = await serve(context, (entry) =>
+      entry.url.includes('cursor=') ? json(200, { sessions: [{ ...SESSION, id: 'session-2' }], next: null }) : json(200, { sessions: [SESSION], next: '5:abc' }),
+    );
+
+    expect((await client.listSessions('/work dir')).map((session) => session.id)).toEqual(['session-1', 'session-2']);
+    expect(seen.map((entry) => entry.url)).toEqual(['/v1/sessions?cwd=%2Fwork+dir', '/v1/sessions?cwd=%2Fwork+dir&cursor=5%3Aabc']);
+  });
+
+  it('refuses a list of sessions that does not say whether a page follows', async (context) => {
+    const { client } = await serve(context, () => json(200, { sessions: [SESSION] }));
+
+    await expect(client.listSessions()).rejects.toThrow('missing next');
+  });
+
   it('lists the runs of a session in the order the API gives them', async (context) => {
     const { client, seen } = await serve(context, () => json(200, { runs: [runView({ id: 'run-1', ordinal: 1 }), runView({ id: 'run-2', ordinal: 2 })] }));
 

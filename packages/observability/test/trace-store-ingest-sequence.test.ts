@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { migrate, openDatabase } from '@momonga/foundation';
+import { migrate, openDatabase, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { definePriceTable, openTraceStore, pageBilledCalls } from '@momonga/observability';
 import type { SpanRecord } from '@momonga/observability';
 import { createFakeClock } from '@momonga/testkit';
@@ -24,7 +24,7 @@ const chat = (spanId: string, runId: string | null, input: number, startMs = STA
 });
 
 const openFresh = () => {
-  const store = openTraceStore({ path: path.join(makeDir(), 'traces.db'), clock: createFakeClock(START_MS) });
+  const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: path.join(makeDir(), 'traces.db'), clock: createFakeClock(START_MS) });
   registerCleanup(() => store.close());
   return store;
 };
@@ -32,7 +32,7 @@ const openFresh = () => {
 describe('the ingest sequence of the trace store', () => {
   it('gives the spans of a version 2 database ascending sequence numbers in the order they were stored, and the next span the maximum plus one', () => {
     const file = path.join(makeDir(), 'traces.db');
-    const legacy = openDatabase(file);
+    const legacy = openDatabase(file, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     migrate(legacy, TRACE_STORE_MIGRATIONS.slice(0, 2));
     const insert = legacy.prepare(
       'INSERT INTO spans (trace_id, span_id, parent_span_id, name, kind, start_ms, end_ms, status, attributes_json, events_json, run_id) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -43,7 +43,7 @@ describe('the ingest sequence of the trace store', () => {
     }
     legacy.close();
 
-    const store = openTraceStore({ path: file, clock: createFakeClock(START_MS) });
+    const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file, clock: createFakeClock(START_MS) });
     registerCleanup(() => store.close());
     expect(store.billedChatSpansAfter(RUN_ID, 0, 10).map((entry) => [entry.span.spanId, entry.seq])).toEqual([['late', 1], ['early', 2], ['middle', 3]]);
 
