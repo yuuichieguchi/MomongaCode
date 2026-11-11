@@ -453,7 +453,7 @@ describe('the figures of mandate runs', () => {
       [T0 + 31, resolved('c2', 'withdrawn')],
       [T0 + 40, terminal('COMPLETED')],
     ]);
-    expect(facts.delegation).toEqual({ held: 2, resolvedByPerson: 1, denied: 1, waited: true });
+    expect(facts.delegation).toMatchObject({ held: 2, resolvedByPerson: 1, denied: 1, waited: true });
     expect(fold('plain', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]]).delegation).toBeUndefined();
   });
 
@@ -464,7 +464,7 @@ describe('the figures of mandate runs', () => {
       fold('stopped', [[T0, mandated(1)], [T0 + 1, held('c1')], [T0 + 9, terminal('STOPPED')]], { status: 'STOPPED', stopReason: 'timeout' }),
       fold('plain', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]]),
     ];
-    expect(totalOf(rows).delegation).toEqual({ n: 3, intervened: 1, unattended: 1, waited: 1, held: 2, denied: 1 });
+    expect(totalOf(rows).delegation).toMatchObject({ n: 3, intervened: 1, unattended: 1, waited: 1, held: 2, denied: 1 });
   });
 });
 

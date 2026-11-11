@@ -247,6 +247,8 @@ const mapKnownEvent = (event: PublicRunEvent, phase: Phase, state: MapperState, 
             },
           ]
         : [];
+    case 'context.inherited_compacted':
+      return [];
     case 'context.compaction_rejected':
       return features.compaction
         ? [

@@ -57,7 +57,7 @@ export const measurement = (key: AutoFitKey, records: readonly AutoFitRecord[]):
   return autoGatePasses(record) ? 'passed' : 'did_not_pass';
 };
 
-export const autoFitViewOf = (model: string, key: AutoFitKey, record: AutoFitRecord | undefined): AutoClassifierView => {
+const autoFitViewOf = (model: string, key: AutoFitKey, record: AutoFitRecord | undefined): AutoClassifierView => {
   const state = measurement(key, record === undefined ? [] : [record]);
   if (record === undefined || state === 'not_measured') return { model, key, measurement: 'not_measured' };
   const failedBound = failedBoundOf(record);

@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import * as foundation from '@momonga/foundation';
 import type { FileLockPorts, SecretStore } from '@momonga/foundation';
+import { SecretNotFoundError } from '@momonga/foundation/secret-store';
 import type { SecretBackend } from '@momonga/foundation/secret-store';
 
 export const FAKE_KEY_STORE_ADVICE = 'the fake key store may be waiting for an answer';
@@ -14,6 +15,7 @@ export const FAKE_KEY_STORE_BACKEND: SecretBackend = {
   storeCommand: (secretName) => `fake-key-store add ${secretName}`,
   unansweredAdvice: FAKE_KEY_STORE_ADVICE,
   readiness: undefined,
+  notFound: () => false,
 };
 
 export type FakeKeyStore = SecretStore & {
@@ -53,7 +55,7 @@ export const createFakeKeyStore = (initial: Readonly<Record<string, string>> = {
       reads.push(name);
       if (store.hang) return neverAnswered<string>('read', name, signal);
       const value = items.get(name);
-      if (value === undefined) throw new Error(`the fake key store has no item ${name}`);
+      if (value === undefined) throw new SecretNotFoundError(name, 1, 'the fake key store has no such item', FAKE_KEY_STORE_BACKEND);
       return value;
     },
     write: async (name, value, signal) => {

@@ -21,7 +21,7 @@ import { START_MS, getJson, makeDir, postJson, readJson, registerCleanup, startG
 import { TARGET, collect, outputTextOf, userText } from './cc-support.ts';
 import { makeReport } from './report-fixture.ts';
 import { PROBE_METHOD_VERSION } from '../src/probe/run-probe.ts';
-import { FM_CURRENCY, fmRecordKey, fmTargetBase, probingAnswer, recordKeyOptions } from './fm-record-support.ts';
+import { FM_CURRENCY, fmRecordKey, fmModelBase, probingAnswer, recordKeyOptions } from './fm-record-support.ts';
 import type { Probing } from '@momonga/protocol';
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 import type { KnownProbeKey } from '@momonga/config';
@@ -145,7 +145,7 @@ const setup = async (config: Setup = {}) => {
       : { exitCode: config.countExitCode, stdout: '', stderr: LICENSE_NOTICE };
   };
   const managed: ManagedTarget = await createManagedTarget({
-    ...fmTargetBase(),
+    ...fmModelBase(),
     server: fmServe,
     binary: BINARY,
     exec,

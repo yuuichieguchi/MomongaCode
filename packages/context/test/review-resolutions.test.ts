@@ -150,7 +150,7 @@ describe('fs reader rejects non-regular files', () => {
     const fifo = path.join(dir, 'AGENTS.md');
     const { execFileSync } = await import('@momonga/testkit/child-process');
     execFileSync('mkfifo', [fifo]);
-    const reader = createFsInstructionReader(NEVER_CANCELLED);
+    const reader = createFsInstructionReader(NEVER_CANCELLED, process.platform);
     expect(await reader.read(fifo)).toBeUndefined();
   });
 
@@ -161,7 +161,7 @@ describe('fs reader rejects non-regular files', () => {
     const server = net.createServer();
     await new Promise<void>((resolve) => server.listen(socketPath, resolve));
     try {
-      expect(await createFsInstructionReader(NEVER_CANCELLED).read(socketPath)).toBeUndefined();
+      expect(await createFsInstructionReader(NEVER_CANCELLED, process.platform).read(socketPath)).toBeUndefined();
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
@@ -173,7 +173,7 @@ describe('fs reader rejects non-regular files', () => {
     fs.writeFileSync(file, 'x');
     const link = path.join(dir, 'link.md');
     fs.symlinkSync(file, link);
-    const reader = createFsInstructionReader(NEVER_CANCELLED);
+    const reader = createFsInstructionReader(NEVER_CANCELLED, process.platform);
     expect(await reader.exists(file)).toBe(true);
     expect(await reader.exists(path.join(dir, 'missing.md'))).toBe(false);
     expect(await reader.realpath(link)).toBe(file);
@@ -198,7 +198,7 @@ describe('symlinked project root', () => {
         home: makeDir(),
         touchedPaths: [touchedFile(path.join(linkedRoot, 'src', 'a.ts'))],
       }),
-      { ...ports, instructions: createFsInstructionReader(NEVER_CANCELLED) },
+      { ...ports, instructions: createFsInstructionReader(NEVER_CANCELLED, process.platform) },
     );
     const texts = developerTexts(result.input);
     expect(texts.some((text) => text.includes('linked root rules'))).toBe(true);

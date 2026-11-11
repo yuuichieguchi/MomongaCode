@@ -1,4 +1,5 @@
-import { COMMAND_PREFIX_SUFFIX, hasBalancedParentheses } from '@momonga/config';
+import { COMMAND_PREFIX_SUFFIX, NETWORK_RULE_SUBJECT, hasBalancedParentheses } from '@momonga/config';
+import { normalizedHosts } from '@momonga/foundation';
 import type { PathProbes } from '@momonga/foundation';
 import { analyzeCommand } from './shell.ts';
 import { absoluteFrom } from './path-match.ts';
@@ -32,7 +33,7 @@ export const suggestAllowRule = async (
 ): Promise<string | undefined> => {
   switch (subject.kind) {
     case 'command':
-      return subject.network === undefined ? suggestForCommand(subject.command) : undefined;
+      return suggestForCommand(subject.command);
     case 'path':
       return suggestForPath(tool, subject, cwd, canonicalise);
     case 'mcp':
@@ -47,4 +48,11 @@ export const suggestAllowRule = async (
     case 'none':
       return tool.name;
   }
+};
+
+export const suggestNetworkRule = (subject: PermissionSubject): string | undefined => {
+  if (subject.kind !== 'command' || subject.network === undefined || subject.network === 'open') return undefined;
+  const hosts = normalizedHosts(subject.network.hosts);
+  const [host] = hosts;
+  return hosts.length === 1 && host !== undefined ? `${NETWORK_RULE_SUBJECT}(${host})` : undefined;
 };

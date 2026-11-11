@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createStdioTransport } from '@momonga/mcp';
 import type { TerminateOutcome } from '@momonga/foundation';
-import { MCP_RAW_STDIO_SERVER_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
+import { MCP_RAW_STDIO_SERVER_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, TEST_STDIO_LAUNCH } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -22,7 +22,7 @@ describe('mcp close bounds terminateGroup by its close signal (G.1 call-site tab
     const projectDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-mcp-close-')));
     dirs.push(projectDir);
     const seen: Array<{ graceMs: number; signal?: AbortSignal }> = [];
-    const transport = createStdioTransport({ files: nodeFileSystem,
+    const transport = createStdioTransport({ launch: TEST_STDIO_LAUNCH, files: nodeFileSystem,
       name: 'raw',
       config: { command: process.execPath, args: [MCP_RAW_STDIO_SERVER_PATH] },
       projectDir,

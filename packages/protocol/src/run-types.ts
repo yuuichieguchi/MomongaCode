@@ -404,6 +404,16 @@ export type RunEventPayload =
       tokensAfter?: number;
       tokensAfterEstimated?: true;
     }
+  | {
+      type: 'context.inherited_compacted';
+      fromRunId: string;
+      item: CompactionInputItem | MessageInputItem;
+      summary: string;
+      replacedThroughSeq: number;
+      tokensBefore?: number;
+      tokensAfter?: number;
+      tokensAfterEstimated?: true;
+    }
   | { type: 'context.governing_loaded'; active: { id: string; textSha256: string }[]; conflicts: { target: string; ids: string[] }[] }
   | { type: 'context.memories_loaded'; memories: { id: string; status: MemoryStatus }[] }
   | { type: 'context.contribution'; items: { kind: ContributionKind; id: string; contributed: boolean }[] }
@@ -573,6 +583,7 @@ export type RunState = {
     itemCount?: number;
   };
   ownCompactionEventSeq?: number;
+  inheritedCompactionRecorded?: true;
   inheritedSummaryItem?: MessageInputItem;
   inheritedTruncations?: { callId: string; handle: string; kind: 'omitted' | 'truncated' | 'reference' }[];
   lastSeq: number;

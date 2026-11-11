@@ -1,4 +1,4 @@
-import type { PermissionMode, RunFactsLimits, RunFactsView, RunStatus, StopReason } from '@momonga/protocol';
+import type { PermissionMode, RunFactsAnswers, RunFactsBasis, RunFactsDenials, RunFactsLimits, RunFactsView, RunStatus, StopReason } from '@momonga/protocol';
 
 export type RunFacts = RunFactsView;
 
@@ -36,6 +36,8 @@ export type TaskLabels = Record<TaskLabelKey, string>;
 
 export type Rate = { k: number; n: number };
 
+export type PermissionFigures = { basis: RunFactsBasis; asks: number; answers: RunFactsAnswers; denials: RunFactsDenials };
+
 export type Indicators = {
   buckets: { counted: number; cancelled: number; pendingFacts: number; factsUnavailable: number; unknownValues: number; notPlaced: number };
   completion: { k: number; n: number; undeclared: number };
@@ -44,8 +46,20 @@ export type Indicators = {
   duplicates: { journal: Rate; prevented: number; unknown: number };
   intervention: Rate;
   overrun: { k: number; n: number; budgetStops: number; money: Rate };
-  delegation: { n: number; intervened: number; unattended: number; waited: number; held: number; denied: number };
+  delegation: {
+    n: number;
+    intervened: number;
+    unattended: number;
+    waited: number;
+    held: number;
+    denied: number;
+    resolvedHolds: number;
+    holdLatencyMs: number;
+    workDuringHolds: { modelSteps: number; toolCalls: number };
+  };
   time: { n: number; meanActiveMs: number | null; meanElapsedMs: number | null };
+  permissions: Record<string, PermissionFigures>;
+  verification: { firstRoundPassed: Rate; failedRound: Rate; coverage: Rate; checkMs: number; elapsedMs: number; fixRoundTokens: number };
 };
 
 export type IndicatorGroups = { total: Indicators; groups: Record<string, Indicators> };

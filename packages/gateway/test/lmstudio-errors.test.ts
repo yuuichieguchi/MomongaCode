@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { CHAT_COMPLETIONS_VOCABULARY, runProbe } from '@momonga/gateway';
 import { countFakeRequestTokens, startFakeChatCompletions, type FakeChatCompletionsServer } from '@momonga/testkit';
 import { FM_PROBE_ROUTES } from './fm-record-support.ts';
+import { hostProbePorts } from './probe-ports-support.ts';
 
 const LMSTUDIO_OVERFLOW_TEXT =
   'The number of tokens to keep from the initial prompt is greater than the context length. Try to load the model with a larger context length, or provide a shorter input';
@@ -62,7 +63,7 @@ describe('the probe of an LM Studio server', () => {
     });
     servers.push(fake);
 
-    const report = await runProbe({ socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, samples: 2 });
+    const report = await runProbe({ ports: hostProbePorts, socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, samples: 2 });
 
     expect(report.contextWindow.method).toBe('searched');
     expect(Math.abs(report.contextWindow.value - window)).toBeLessThanOrEqual(window * 0.02);

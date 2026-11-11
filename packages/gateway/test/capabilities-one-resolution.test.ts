@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { CapabilityOverride, Capabilities, ToolCallingMode } from '@momonga/protocol';
+import type { Capabilities, ToolCallingMode } from '@momonga/protocol';
 import type { FakeChatCompletionsServer, FakeScriptedReply } from '@momonga/testkit';
 import { postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
 import { CC_CAPABILITIES, completionBodies, makeAdapter, readFileTool, startFake } from './cc-support.ts';
 import { textReply } from './cc-compact-support.ts';
-
-const ENVELOPE_FINAL = '{"kind":"final","text":"ok"}';
 
 const toolNamed = (name: string) => ({
   type: 'function' as const,
@@ -36,7 +34,6 @@ const declared = (mode: ToolCallingMode): Declaration => async () => ({ ...CC_CA
 const startCc = async (options: {
   own: ToolCallingMode;
   capabilities?: Declaration;
-  override?: CapabilityOverride;
   scenario: 'tools-ok' | 'json-schema-only';
   script: FakeScriptedReply[];
 }): Promise<{ fake: FakeChatCompletionsServer; client: Awaited<ReturnType<typeof startGateway>>['client'] }> => {
@@ -44,7 +41,7 @@ const startCc = async (options: {
   const adapter = makeAdapter(fake, { capabilities: options.capabilities ?? declared(options.own) });
   const { client } = await startGateway({
     adapters: { 'scripted/system': adapter },
-    config: { chains: { 'scripted/system': ['scripted/system'] }, targets: { 'scripted/system': { ...(options.override === undefined ? {} : { capabilities: options.override }) } } },
+    config: { chains: { 'scripted/system': ['scripted/system'] }, targets: { 'scripted/system': {} } },
   });
   return { fake, client };
 };
@@ -54,45 +51,6 @@ const expectCompleted = (response: { status: number; body: any }) => {
   expect(response.body.status).toBe('completed');
   expect(response.status).toBe(200);
 };
-
-const countOf = async (client: Awaited<ReturnType<typeof startGateway>>['client']): Promise<number> => {
-  const counted = await readJson(await postJson(client, '/v1/momonga/count_tokens', withReadFile));
-  expect(counted.status).toBe(200);
-  return counted.body.input_tokens;
-};
-
-describe('chat-completions takes its tool-calling mode from the router-resolved capabilities', () => {
-  it('a native declaration overridden to constrained sends the constrained body and counts that body', async () => {
-    const { fake, client } = await startCc({ own: 'native', override: { toolCalling: 'constrained' }, scenario: 'json-schema-only', script: [textReply(ENVELOPE_FINAL)] });
-    expectCompleted(await readJson(await postJson(client, '/v1/responses', withReadFile)));
-    const sent = completionBodies(fake)[0];
-    expect(sent.response_format?.type).toBe('json_schema');
-    expect(sent.tools).toBeUndefined();
-
-    const constrainedReference = await startCc({ own: 'constrained', scenario: 'json-schema-only', script: [] });
-    const nativeReference = await startCc({ own: 'native', scenario: 'tools-ok', script: [] });
-    const constrainedCount = await countOf(constrainedReference.client);
-    expect(constrainedCount).not.toBe(await countOf(nativeReference.client));
-    expect(await countOf(client)).toBe(constrainedCount);
-  });
-
-  it('a native declaration overridden to none refuses a request with tools at narrowing and sends nothing', async () => {
-    const { fake, client } = await startCc({ own: 'native', override: { toolCalling: 'none' }, scenario: 'tools-ok', script: [textReply('never')] });
-    const response = await readJson(await postJson(client, '/v1/responses', withReadFile));
-    expect(response.status).toBe(400);
-    expect(response.body.error.code).toBe('capability_unsupported');
-    expect(response.body.error.param).toBe('tools');
-    expect(completionBodies(fake)).toHaveLength(0);
-  });
-
-  it('a constrained declaration overridden to native sends the native body', async () => {
-    const { fake, client } = await startCc({ own: 'constrained', override: { toolCalling: 'native' }, scenario: 'tools-ok', script: [textReply(ENVELOPE_FINAL)] });
-    expectCompleted(await readJson(await postJson(client, '/v1/responses', withReadFile)));
-    const sent = completionBodies(fake)[0];
-    expect(listedNames(sent)).toEqual(['read_file']);
-    expect(sent.response_format).toBeUndefined();
-  });
-});
 
 const countingDeclaration = (answers: (call: number) => Capabilities) => {
   let calls = 0;
@@ -152,17 +110,17 @@ describe('a request resolves the capabilities of each target it tries exactly on
 });
 
 describe('a fallback attempt carries the capabilities of the target it falls back to', () => {
-  it('the second target body uses the output bound field of the second target override', async () => {
+  it('the second target body uses the output bound field the second target declares', async () => {
     const firstFake = await startFake({ scenario: 'tools-ok', script: [{ kind: 'error', status: 503, body: { error: { message: 'first is down' } } }] });
     const secondFake = await startFake({ scenario: 'tools-ok', script: [textReply('from second')] });
     const { client } = await startGateway({
-      adapters: { 'first/system': makeAdapter(firstFake), 'second/system': makeAdapter(secondFake) },
+      adapters: {
+        'first/system': makeAdapter(firstFake, { capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: 'native', outputBoundField: 'max_tokens' }) }),
+        'second/system': makeAdapter(secondFake, { capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: 'native', outputBoundField: 'max_completion_tokens' }) }),
+      },
       config: {
         chains: { 'first/system': ['first/system', 'second/system'] },
-        targets: {
-          'first/system': { capabilities: { outputBoundField: 'max_tokens' } },
-          'second/system': { capabilities: { outputBoundField: 'max_completion_tokens' } },
-        },
+        targets: { 'first/system': {}, 'second/system': {} },
         retry: { maxAttempts: 1, totalWaitMs: 1 },
       },
     });

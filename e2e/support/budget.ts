@@ -468,10 +468,10 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
       gateway,
       systemPrompt: buildSystemPrompt,
       home: plan.home.home,
-      instructionReaderFor: createFsInstructionReader,
+      instructionReaderFor: (signal) => createFsInstructionReader(signal, process.platform),
       defaults: RUNTIME_DEFAULTS.limits,
       toolList: () => [...createBuiltinTools(), ...createOperationTools({ runArgv: noOperationRuns, forge: NO_FORGE, settings: {} })],
-      memories: createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }),
+      memories: createMemoryPort({ platform: process.platform, store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }),
       history: createHistoryPort({
         store: env.store,
         settings: env.settings,

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { NETWORK_SCOPE_KINDS, NO_NETWORK, OPEN_NETWORK, enforcedNetworkScope, networkScopeWithin } from '@momonga/foundation';
 import type { NetworkScope, NetworkScopeKind } from '@momonga/foundation';
-import { SANDBOX_NETWORK_SCOPES } from '@momonga/sandbox';
+import { SANDBOX_NETWORK_SCOPES, tunnelOpeningAdmits } from '@momonga/sandbox';
+import type { TunnelOpening } from '@momonga/sandbox';
 import { proofArith } from '../support/proofs/arith.ts';
 import type { ProofArith, ProofBool, ProofInt } from '../support/proofs/arith.ts';
 import { expectRefuted, prove } from '../support/proofs/prove.ts';
@@ -122,6 +123,103 @@ describe('the network scope the kernel enforces for a call', () => {
             expect(networkScopeWithin(probe, kernel)).toBe(modelReaches && networkScopeWithin(probe, requested) && networkScopeWithin(probe, granted));
           }
         }
+      }
+    }
+  });
+});
+
+type Answer = { address: ProofInt; acceptable: ProofBool };
+
+const answerOf = (arith: ProofArith, name: string): Answer => {
+  const address = arith.int(`${name}.address`);
+  const publicAddress = arith.int(`${name}.public`);
+  const grantedAddress = arith.int(`${name}.granted`);
+  arith.given(publicAddress.ge(0n), publicAddress.le(1n), grantedAddress.ge(0n), grantedAddress.le(1n));
+  return { address, acceptable: arith.ctx.Or(publicAddress.eq(1n), grantedAddress.eq(1n)) };
+};
+
+const sameAddressSameFacts = (arith: ProofArith, first: Answer, second: Answer): void => {
+  arith.given(arith.ctx.Implies(first.address.eq(second.address), first.acceptable.eq(second.acceptable)));
+};
+
+type Tunnel = { carried: ProofBool; dialed: ProofInt; dialedAcceptable: ProofBool; presented: ProofInt; granted: ProofInt };
+
+const tunnelOf = (arith: ProofArith, answers: readonly [Answer, Answer], dial: Answer, nameChecked: boolean): Tunnel => {
+  const { ctx } = arith;
+  const [first, second] = answers;
+  const presented = arith.int('opening.name');
+  const granted = arith.int('connect.name');
+  const admitted = ctx.Or(first.acceptable, second.acceptable);
+  const carried = nameChecked ? ctx.And(admitted, presented.eq(granted)) : admitted;
+  return { carried, dialed: dial.address, dialedAcceptable: dial.acceptable, presented, granted };
+};
+
+const judgedDial = (arith: ProofArith, [first, second]: readonly [Answer, Answer]): Answer => ({
+  address: arith.ctx.If(first.acceptable, first.address, second.address) as ProofInt,
+  acceptable: arith.ctx.If(first.acceptable, first.acceptable, second.acceptable) as ProofBool,
+});
+
+const carriedGoal = (arith: ProofArith, answers: readonly [Answer, Answer], tunnel: Tunnel): ProofBool => {
+  const { ctx } = arith;
+  return ctx.Implies(
+    tunnel.carried,
+    ctx.And(ctx.Or(...answers.map((answer) => tunnel.dialed.eq(answer.address))), tunnel.dialedAcceptable, tunnel.presented.eq(tunnel.granted)),
+  );
+};
+
+describe('a granted tunnel reaches the address the proxy judged, for the name it was granted (DECISION-2)', () => {
+  const z3 = useZ3();
+
+  it(
+    'I4.6 proves a carried tunnel is dialed to an acceptable address of the one lookup the proxy made, and names the granted name; the lookup step is the proxy test "resolves a name once for a direct connection, and connects to that answer"',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'I4.6');
+      const answers = [answerOf(arith, 'answer1'), answerOf(arith, 'answer2')] as const;
+      sameAddressSameFacts(arith, answers[0], answers[1]);
+      const tunnel = tunnelOf(arith, answers, judgedDial(arith, answers), true);
+      expect(await prove(arith, carriedGoal(arith, answers, tunnel))).toEqual({ status: 'proved' });
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'refutes the claim for a dial that looks the name up again, as a proxy that hands the name to the connection would',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'I4.6w1');
+      const answers = [answerOf(arith, 'answer1'), answerOf(arith, 'answer2')] as const;
+      const tunnel = tunnelOf(arith, answers, answerOf(arith, 'second'), true);
+      await expectRefuted(arith, carriedGoal(arith, answers, tunnel));
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'refutes the claim for a tunnel that carries any bytes once the CONNECT name is granted',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'I4.6w2');
+      const answers = [answerOf(arith, 'answer1'), answerOf(arith, 'answer2')] as const;
+      const tunnel = tunnelOf(arith, answers, judgedDial(arith, answers), false);
+      const model = await expectRefuted(arith, carriedGoal(arith, answers, tunnel));
+      expect(model['opening.name']).not.toBe(model['connect.name']);
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it('finds the code that judges the first bytes of a tunnel equal to the model on a small universe', () => {
+    const names = ['a.test', 'A.test', 'b.test', '127.0.0.1'];
+    const openings: TunnelOpening[] = [
+      { kind: 'other' },
+      { kind: 'tls', name: undefined },
+      { kind: 'http', host: undefined },
+      ...names.flatMap((name): TunnelOpening[] => [{ kind: 'tls', name }, { kind: 'http', host: name }, { kind: 'http', host: `${name}:8080` }]),
+    ];
+    for (const granted of ['a.test', '127.0.0.1']) {
+      for (const opening of openings) {
+        const presented = opening.kind === 'tls' ? opening.name : opening.kind === 'http' ? opening.host?.replace(/:8080$/, '').toLowerCase() : undefined;
+        const address = granted === '127.0.0.1';
+        const modelCarries =
+          opening.kind === 'http' ? presented === granted : opening.kind === 'tls' ? (address ? presented === undefined : presented?.toLowerCase() === granted) : false;
+        expect(tunnelOpeningAdmits(granted, opening)).toBe(modelCarries);
       }
     }
   });

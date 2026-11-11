@@ -184,29 +184,9 @@ static void say_members(DWORD request) {
   release(list);
 }
 
-static void freeze_membership(void) {
-  JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits;
-  ZeroMemory(&limits, sizeof limits);
-  limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
-  limits.BasicLimitInformation.ActiveProcessLimit = 1;
-  SetInformationJobObject(g_job, JobObjectExtendedLimitInformation, &limits, sizeof limits);
-}
-
-static void terminate_others(void) {
-  JOBOBJECT_BASIC_PROCESS_ID_LIST *list = list_members();
-  DWORD self = GetCurrentProcessId();
-  DWORD index;
-  for (index = 0; index < list->NumberOfProcessIdsInList; index += 1) {
-    DWORD pid = (DWORD)list->ProcessIdList[index];
-    HANDLE process;
-    BOOL member = FALSE;
-    if (pid == self) continue;
-    process = OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-    if (process == NULL) continue;
-    if (IsProcessInJob(process, g_job, &member) && member) TerminateProcess(process, EXIT_TERMINATED);
-    CloseHandle(process);
-  }
-  release(list);
+static void terminate_job(void) {
+  if (!TerminateJobObject(g_job, EXIT_TERMINATED)) ExitProcess(EXIT_CONTAINMENT_UNAVAILABLE);
+  ExitProcess(EXIT_TERMINATED);
 }
 
 static BOOL parse_number(const char *text, DWORD length, DWORD *value) {
@@ -281,17 +261,13 @@ static DWORD WINAPI wait_for_command(LPVOID command) {
 
 static DWORD serve(BOOL member, BOOL terminate_on_owner_loss, BOOL command_exited) {
   DWORD command_code = 0;
-  BOOL terminating = FALSE;
   for (;;) {
     DWORD value = 0;
     ULONG_PTR key = 0;
     LPOVERLAPPED overlapped = NULL;
     if (GetQueuedCompletionStatus(g_port, &value, &key, &overlapped, RECHECK_MS)) {
       if (key == KEY_MEMBERS) say_members(value);
-      if (key == KEY_TERMINATE && !terminating) {
-        terminating = TRUE;
-        freeze_membership();
-      }
+      if (key == KEY_TERMINATE) terminate_job();
       if (key == KEY_COMMAND_EXIT) {
         command_exited = TRUE;
         command_code = value;
@@ -306,7 +282,6 @@ static DWORD serve(BOOL member, BOOL terminate_on_owner_loss, BOOL command_exite
         }
       }
     }
-    if (terminating) terminate_others();
     if (command_exited && count_others() == 0) {
       say("empty");
       if (g_pipe_open) FlushFileBuffers(g_pipe);
@@ -352,7 +327,7 @@ static void connect_pipe(const WCHAR *name) {
   if (g_pipe == INVALID_HANDLE_VALUE) ExitProcess(EXIT_PIPE_UNAVAILABLE);
   g_pipe_open = TRUE;
   g_port = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1);
-  if (g_port == NULL) fail("containment-unavailable", EXIT_CONTAINMENT_UNAVAILABLE, GetLastError());
+  if (g_port == NULL) fail("launch-failed", EXIT_LAUNCH_FAILED, GetLastError());
 }
 
 static PSECURITY_DESCRIPTOR owner_only_descriptor(void) {
@@ -362,18 +337,18 @@ static PSECURITY_DESCRIPTOR owner_only_descriptor(void) {
   LPWSTR sid = NULL;
   WCHAR text[512];
   PSECURITY_DESCRIPTOR descriptor = NULL;
-  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) fail("containment-unavailable", EXIT_CONTAINMENT_UNAVAILABLE, GetLastError());
+  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) fail("launch-failed", EXIT_LAUNCH_FAILED, GetLastError());
   GetTokenInformation(token, TokenUser, NULL, 0, &size);
   user = allocate(size);
-  if (!GetTokenInformation(token, TokenUser, user, size, &size)) fail("containment-unavailable", EXIT_CONTAINMENT_UNAVAILABLE, GetLastError());
-  if (!ConvertSidToStringSidW(user->User.Sid, &sid)) fail("containment-unavailable", EXIT_CONTAINMENT_UNAVAILABLE, GetLastError());
-  if (lstrlenW(sid) > 256) fail("containment-unavailable", EXIT_CONTAINMENT_UNAVAILABLE, ERROR_INVALID_SID);
+  if (!GetTokenInformation(token, TokenUser, user, size, &size)) fail("launch-failed", EXIT_LAUNCH_FAILED, GetLastError());
+  if (!ConvertSidToStringSidW(user->User.Sid, &sid)) fail("launch-failed", EXIT_LAUNCH_FAILED, GetLastError());
+  if (lstrlenW(sid) > 256) fail("launch-failed", EXIT_LAUNCH_FAILED, ERROR_INVALID_SID);
   lstrcpyW(text, L"O:");
   lstrcatW(text, sid);
   lstrcatW(text, L"D:P(A;;GA;;;");
   lstrcatW(text, sid);
   lstrcatW(text, L")");
-  if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(text, SDDL_REVISION_1, &descriptor, NULL)) fail("containment-unavailable", EXIT_CONTAINMENT_UNAVAILABLE, GetLastError());
+  if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(text, SDDL_REVISION_1, &descriptor, NULL)) fail("launch-failed", EXIT_LAUNCH_FAILED, GetLastError());
   LocalFree(sid);
   release(user);
   CloseHandle(token);
@@ -510,6 +485,33 @@ static void put_descriptor(BYTE *block, DWORD count, DWORD descriptor, BYTE flag
   CopyMemory(slots + (SIZE_T)descriptor * sizeof handle, &handle, sizeof handle);
 }
 
+static BOOL is_absolute(const WCHAR *path) {
+  BOOL drive = ((path[0] >= L'A' && path[0] <= L'Z') || (path[0] >= L'a' && path[0] <= L'z')) && path[1] == L':' && path[2] == L'\\';
+  BOOL share = path[0] == L'\\' && path[1] == L'\\';
+  return drive || share;
+}
+
+static WCHAR *absolute_program(const WCHAR *command_line) {
+  const WCHAR *start = command_line;
+  const WCHAR *end;
+  WCHAR *program;
+  SIZE_T length;
+  if (*start == L'"') {
+    start += 1;
+    end = start;
+    while (*end != 0 && *end != L'"') end += 1;
+  } else {
+    end = start;
+    while (*end != 0 && *end != L' ' && *end != L'\t') end += 1;
+  }
+  length = (SIZE_T)(end - start);
+  program = allocate((length + 1) * sizeof(WCHAR));
+  CopyMemory(program, start, length * sizeof(WCHAR));
+  program[length] = 0;
+  if (!is_absolute(program)) fail("launch-failed", EXIT_LAUNCH_FAILED, ERROR_BAD_PATHNAME);
+  return program;
+}
+
 static HANDLE start_command(WCHAR *command_line, HANDLE marker, const DWORD *descriptors, DWORD descriptor_count, DWORD *pid) {
   STARTUPINFOEXW startup;
   PROCESS_INFORMATION started;
@@ -517,6 +519,7 @@ static HANDLE start_command(WCHAR *command_line, HANDLE marker, const DWORD *des
   HANDLE *handles = allocate((STANDARD_DESCRIPTORS + 1 + (SIZE_T)descriptor_count) * sizeof(HANDLE));
   HANDLE standard[STANDARD_DESCRIPTORS];
   BYTE *block = NULL;
+  WCHAR *program;
   DWORD block_size = 0;
   DWORD count = 0;
   DWORD index;
@@ -561,7 +564,9 @@ static HANDLE start_command(WCHAR *command_line, HANDLE marker, const DWORD *des
     if (!InitializeProcThreadAttributeList(startup.lpAttributeList, 1, 0, &size)) fail("launch-failed", EXIT_LAUNCH_FAILED, GetLastError());
     if (!UpdateProcThreadAttribute(startup.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, handles, count * sizeof(HANDLE), NULL, NULL)) fail("launch-failed", EXIT_LAUNCH_FAILED, GetLastError());
   }
-  if (!CreateProcessW(NULL, command_line, NULL, NULL, count > 0, EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW, NULL, NULL, &startup.StartupInfo, &started)) fail("launch-failed", EXIT_LAUNCH_FAILED, GetLastError());
+  program = absolute_program(command_line);
+  if (!CreateProcessW(program, command_line, NULL, NULL, count > 0, EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW, NULL, NULL, &startup.StartupInfo, &started)) fail("launch-failed", EXIT_LAUNCH_FAILED, GetLastError());
+  release(program);
   CloseHandle(started.hThread);
   for (index = 0; index < descriptor_count; index += 1) CloseHandle(descriptor_handle(&own, descriptors[index]));
   if (startup.lpAttributeList != NULL) {
@@ -619,7 +624,7 @@ static DWORD attach(WCHAR *cursor) {
   g_job = OpenJobObjectW(JOB_OBJECT_QUERY | JOB_OBJECT_TERMINATE | JOB_OBJECT_SET_ATTRIBUTES, FALSE, job);
   error = GetLastError();
   if (g_job == NULL && error == ERROR_FILE_NOT_FOUND) fail("job-absent", EXIT_JOB_ABSENT, error);
-  if (g_job == NULL) fail("containment-unavailable", EXIT_CONTAINMENT_UNAVAILABLE, error);
+  if (g_job == NULL) fail("launch-failed", EXIT_LAUNCH_FAILED, error);
   say("attached");
   start_thread(read_requests, NULL);
   return serve(FALSE, FALSE, TRUE);

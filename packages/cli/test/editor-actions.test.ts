@@ -157,3 +157,39 @@ describe('placing text', () => {
     expect(act(placeCaret(state, 0), 'editor.up', 'editor.down').text).toBe('typed early');
   });
 });
+
+describe('spans by their place in the buffer', () => {
+  const five = 'e\nf\ng\nh\ni';
+
+  it('expands only the real span when the same label is also typed', () => {
+    const typedLabel = pastedLabel(2, 5);
+    const first = insertPaste(typed(`${typedLabel} `), 'a\nb\nc\nd');
+    const state = insertPaste(typed(' ', first), five);
+    expect(state.text).toBe(`${typedLabel} [Pasted text #1 +4 lines] ${typedLabel}`);
+    expect(expandedText(state)).toBe(`${typedLabel} a\nb\nc\nd ${five}`);
+  });
+
+  it('keeps a span when text is typed before it, and drops it when its label is cut', () => {
+    const pasted = insertPaste(emptyEditor(), five);
+    const before = typed('x', placeCaret(pasted, 0));
+    expect(expandedText(before)).toBe(`x${five}`);
+    const cut = act(placeCaret(before, 1), 'editor.killLineEnd');
+    expect(cut.pastes).toEqual([]);
+    expect(expandedText(act(cut, 'editor.yank'))).toBe(`x${pastedLabel(1, 5)}`);
+  });
+
+  it('brings a span back with its text on undo', () => {
+    const pasted = insertPaste(typed('a'), five);
+    const removed = act(pasted, 'editor.deleteBefore');
+    expect(expandedText(act(removed, 'editor.undo'))).toBe(`a${five}`);
+  });
+});
+
+describe('vertical movement by grapheme', () => {
+  it('keeps the column in characters, so Up onto an emoji line lands between two emoji', () => {
+    const state = typed('👍👍👍👍\nabc');
+    const up = act(state, 'editor.up');
+    expect(up.cursor).toBe(6);
+    expect(act(up, 'editor.down').cursor).toBe(state.text.length);
+  });
+});

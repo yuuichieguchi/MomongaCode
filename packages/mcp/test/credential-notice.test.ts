@@ -2,7 +2,7 @@ import { nodeFileSystem } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import { createManagedConnection } from '@momonga/mcp';
 import type { McpServerConfig } from '@momonga/config';
-import { createFakeClock } from '@momonga/testkit';
+import { createFakeClock, TEST_STDIO_LAUNCH } from '@momonga/testkit';
 import { BASE_ENV, entry, makeDir, makeExecutor, makePool, makeRecordFile, modernConfig } from './mcp-harness.ts';
 
 const WEAK = /could be guessed/i;
@@ -18,7 +18,7 @@ const modernWithEnv = async (env: Record<string, string>) => {
 
 const noticesOfConstruction = (config: McpServerConfig): string[] => {
   const notices: string[] = [];
-  const connection = createManagedConnection({ files: nodeFileSystem,
+  const connection = createManagedConnection({ launch: TEST_STDIO_LAUNCH, files: nodeFileSystem,
     clientVersion: '0.0.0-test',
     name: 'remote',
     config,

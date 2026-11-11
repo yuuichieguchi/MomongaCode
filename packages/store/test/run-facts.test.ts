@@ -48,6 +48,11 @@ const factsRow = (runId: string, recoveries: RunFactsView['recoveries'] = []): R
   reconciledAlreadyApplied: 0,
   reconciledNotApplied: 0,
   reconciledUnknown: 0,
+  mutated: false,
+  owed: false,
+  verification: { rounds: 0, firstRoundPassed: null, failedRounds: 0, checkMs: 0, fixRoundTokens: 0 },
+  answers: { allowOnce: 0, allowAlways: 0, rejectOnce: 0, rejectAlways: 0 },
+  denials: { sandbox: 0, rule: 0, mode: 0, setting: 0, hook: 0, mandate: 0, superseded: 0, held: 0 },
   basis: { readOnly: 0, rule: 0, mode: 0, hook: 0, classifier: 0, person: 0 },
   declared: false,
   met: true,
@@ -161,7 +166,7 @@ describe('migration 38: the money and the mandate figures of a run', () => {
     const mandated = await completeRun(store, session.id);
     const plain = await completeRun(store, session.id);
     const batch = factsOf(store).nextBatch(10);
-    const withMandate: RunFactsView = { ...factsRow(mandated), costNano: 4200, limits: { maxCostNano: 5000 }, delegation: { held: 2, resolvedByPerson: 1, denied: 3, waited: true } };
+    const withMandate: RunFactsView = { ...factsRow(mandated), costNano: 4200, limits: { maxCostNano: 5000 }, delegation: { held: 2, resolvedByPerson: 1, denied: 3, waited: true, holdLatencyMs: 700, workDuringHolds: { modelSteps: 2, toolCalls: 1 } } };
 
     factsOf(store).commit({ calls: [], rows: [withMandate, factsRow(plain)], unavailable: [], throughEventId: batch.throughEventId });
 

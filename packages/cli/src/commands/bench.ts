@@ -2,7 +2,7 @@ import path from 'node:path';
 import type { UserModels } from '@momonga/config';
 import { caseSettingsFor, failedWithCleanup, refuseExistingOutput, runBenchmark, validateBenchmark } from '@momonga/eval';
 import type { BenchProblem, BenchRunApi, BenchRunResult, TaskValidation, WorkspaceFiles, WorkspaceProbe } from '@momonga/eval';
-import { EXIT_FAILURE, EXIT_OK, codeDigestOfRunningProcess, currentSocketResolver, resolveLayoutLocks } from '@momonga/foundation';
+import { EXIT_FAILURE, EXIT_OK, codeDigestOfRunningProcess, currentSocketResolver, minimalChildEnv, resolveLayoutLocks } from '@momonga/foundation';
 import type { KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
 import { MAIN_AGENT, isOpaqueEvent } from '@momonga/protocol';
 import type { PublicRunEvent } from '@momonga/protocol';
@@ -41,8 +41,8 @@ const validationLine = (task: TaskValidation): string => {
   return `Task ${task.id}: ${verdict}; labelled ${task.difficulty} by ${task.labelledBy} on ${task.labelledAt}; the reference changes ${countText(files, 'file', 'files')}, ${countText(linesAdded, 'line', 'lines')} added and ${linesRemoved} removed\n`;
 };
 
-const validate = async (ports: Pick<CliPorts, 'stdout' | 'probe' | 'files' | 'tmpdir'>, paths: MomongaPaths, benchmarkFile: string): Promise<number> => {
-  const { name, tasks } = await validateBenchmark(benchmarkFile, { probe: ports.probe, files: ports.files, tmpdir: ports.tmpdir, lock: resolveLayoutLocks(paths).mechanism });
+const validate = async (ports: Pick<CliPorts, 'stdout' | 'probe' | 'files' | 'tmpdir' | 'env'>, paths: MomongaPaths, benchmarkFile: string): Promise<number> => {
+  const { name, tasks } = await validateBenchmark(benchmarkFile, { probe: ports.probe(minimalChildEnv(ports.env)), files: ports.files, tmpdir: ports.tmpdir, lock: resolveLayoutLocks(paths).mechanism });
   for (const task of tasks) ports.stdout.write(validationLine(task));
   const wrong = tasks.filter((task) => task.problems.length > 0).length;
   if (wrong === 0) {
@@ -185,7 +185,7 @@ const run = async (
     benchmarkFile,
     model: pinnedModelOf(models, options.model),
     models,
-    probe: ports.probe,
+    probe: ports.probe(minimalChildEnv(ports.env)),
     files: ports.files,
     codeDigest: await codeDigestOfRunningProcess(),
     groupBy: options.groupBy,

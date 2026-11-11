@@ -12,6 +12,7 @@ import { makeReport } from '../report-fixture.ts';
 import { loadedDeclaration, writeExecutable } from './declared-support.ts';
 import { FakeChild, createManagedServer, createManualTimers, makeShortDir } from './managed-support.ts';
 import type { ManagedServerHandle } from './managed-support.ts';
+import { hostTimers } from '@momonga/testkit';
 
 const dirs: string[] = [];
 const children: FakeChild[] = [];
@@ -103,6 +104,7 @@ describe('a declared server whose binary exists but cannot be read for its hash 
       probeRecordDir,
       serverName: 'workbench',
       requestLimitMs: 300_000,
+      timeoutSignal: hostTimers.timeoutSignal,
       isUsableBinary: async () => true,
       readKey,
       onInstanceEnd: () => undefined,

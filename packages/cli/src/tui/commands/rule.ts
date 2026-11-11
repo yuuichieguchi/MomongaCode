@@ -13,7 +13,7 @@ export const ruleCommand: SlashCommand = {
   run: async (args, context) => {
     const text = args.trim();
     if (/^add\s/.test(text) && /\s--\S/.test(text)) {
-      await runShellCommand('rule', text, context, false);
+      await runShellCommand('rule', text, context);
       return;
     }
     const added = ADD.exec(text);

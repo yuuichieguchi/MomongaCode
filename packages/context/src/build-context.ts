@@ -474,12 +474,12 @@ const instructionArrivalOf = (file: LoadedInstructionFile): ArrivalEntry => ({
 });
 
 const journalArrivalsOf = (input: BuildContextInput, discovered: DiscoveredInstructions): ArrivalEntry[] => {
-  const pinnedPaths = new Set([`${input.home}/.momonga/AGENTS.md`, `${input.projectRoot.replace(/\/+$/, '')}/AGENTS.md`]);
+  const pinnedPaths = new Set(discovered.pinnedPaths);
   return (input.arrivals ?? []).flatMap((arrival) => {
     if (arrival.kind === 'skill') return [skillArrivalOf(arrival.name, arrival.content)];
     if (pinnedPaths.has(arrival.path)) return [];
     const live = discovered.nested.find((file) => file.instruction.path === arrival.path);
-    return [instructionArrivalOf(live ?? recordedNestedFile(arrival.path, arrival.content))];
+    return [instructionArrivalOf(live ?? recordedNestedFile(discovered.platform, arrival.path, arrival.content))];
   });
 };
 

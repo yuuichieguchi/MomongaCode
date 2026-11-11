@@ -11,7 +11,7 @@ import type { NetworkOf, RunNotifier, SettingsComposition, ToolRuntime } from '@
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
-import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, unconfiguredDerivedNetworkOf, createFakeClock, createFakeTimers, createTempDir, driveFakeTime, fakeReapTiming, killGroupsForCleanup, modelSettings, removeTempDir, NEVER_CANCELLED, testKernelLock, testLocks } from '@momonga/testkit';
+import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, unconfiguredDerivedNetworkOf, createFakeClock, createFakeTimers, createTempDir, driveFakeTime, fakeReapTiming, killGroupsForCleanup, modelSettings, removeTempDir, NEVER_CANCELLED, testKernelLock, testLocks, TEST_STDIO_LAUNCH } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { fixedSandboxBindings } from '@momonga/runtime';
@@ -269,7 +269,7 @@ export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): P
   const reapTiming = recordingReapTiming(fixture.clock, fixture.timers);
   const composition = runtime.createSettingsComposition({ lock: testKernelLock(), home: temp.home, platform: process.platform, cache, store: fixture.store });
   fs.mkdirSync(temp.paths.jobs, { recursive: true, mode: 0o700 });
-  const toolRuntime = runtime.createToolRuntime({
+  const toolRuntime = runtime.createToolRuntime({ mcpLaunch: TEST_STDIO_LAUNCH,
     kernelLock: testKernelLock(),
     lockCapability: testLocks().capability,
     version: FIXTURE_RUNTIME_VERSION,

@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { PROJECT_MANDATE_FILE, approvalDigestOf, loadMcpServers, loadProjectMandate, loadSettings, readAutoFitRecord, writeAutoFitRecord } from '@momonga/config';
+import { PROJECT_MANDATE_FILE, approvalDigestOf, loadMcpServers, loadProjectMandate, loadSettings, writeAutoFitRecord } from '@momonga/config';
+import { readAutoFitRecord } from '../src/auto-fit.ts';
 import type { AutoFitKey, AutoFitRecord } from '@momonga/config';
 import { makeDir, makeTree, mcpJsonPath, trusting, userSettingsPath, writeText } from './helpers.ts';
 import { testKernelLock } from '@momonga/testkit';

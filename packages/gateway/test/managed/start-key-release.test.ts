@@ -10,6 +10,7 @@ import { FAKE_OS_BUILD, REAL_PROCESS_TEST_TIMEOUT_MS, testKernelLock } from '@mo
 import { makeReport } from '../report-fixture.ts';
 import { declaredForm } from './declared-support.ts';
 import { FakeChild, createManagedServer, makeShortDir } from './managed-support.ts';
+import { hostTimers } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -88,6 +89,7 @@ const wired = async ({ spawnFails, afterChildStarting }: Wiring) => {
     probeRecordDir: probeDir,
     serverName: 'workbench',
     requestLimitMs: 300_000,
+    timeoutSignal: hostTimers.timeoutSignal,
     isUsableBinary: async () => true,
     readKey: async () => binary.key,
     onInstanceEnd: () => undefined,

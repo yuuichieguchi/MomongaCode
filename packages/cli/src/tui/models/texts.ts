@@ -100,8 +100,8 @@ export const headersWaitRow = (shown: string): string => `Wait for the first rep
 
 export const idleWaitRow = (shown: string): string => `Wait without any data: ${shown}`;
 
-export const MINUTES_PROMPT = 'Minutes (0: never cut):';
-export const MINUTES_PROBLEM = 'Write a whole number of minutes, 0 or more.';
+export const MINUTES_PROMPT = 'Minutes (a whole number, 1 or more):';
+export const MINUTES_PROBLEM = 'Write a whole number of minutes, 1 or more.';
 
 export const SERVER_NAME_PROMPT = 'Name (lower-case letters, digits, . _ - ; Enter to remove it):';
 
@@ -129,7 +129,6 @@ export const startingModelSetText = (display: string): string => `Starting model
 export const notConfiguredAnyMoreText = (stored: string): string => `The model "${stored}" of this session is not configured any more. Choose another with /model.`;
 
 export const START_ONE_TEXT = 'Start one, or add it with /models add.';
-export const ADD_WITH_MODELS_ADD = 'Add the model with /models add.';
 
 export const configuredSwitchText = (display: string): string => `${display} is configured; /model switches to it`;
 

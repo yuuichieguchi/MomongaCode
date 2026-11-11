@@ -1,4 +1,5 @@
 import { isRecord } from '@momonga/foundation';
+import { field } from './reply.ts';
 import type { DialectId, OllamaProbeReport } from '@momonga/protocol';
 import { NO_USER_DIALECTS } from '../dialect/choice.ts';
 import type { UserDialects } from '../dialect/choice.ts';
@@ -7,18 +8,20 @@ import { buildOllamaChatBody } from '../adapters/ollama/request.ts';
 import { NO_REASONING_IS_OWN } from '../adapters/shared/reasoning-origin.ts';
 import { StreamFailure, UpstreamHttpError } from '../adapters/shared/failures.ts';
 import { ProbeTimeoutError, createProbeClient } from './client.ts';
+import type { ProbePorts } from './client.ts';
 import type { HttpResult, ProbeClient } from './client.ts';
 import { saveEndpointRecord } from './endpoint-record.ts';
 import type { EndpointKey } from './endpoint-record.ts';
 import { IDENTITY_READ_TIMEOUT_MS, probeEndpointOf } from './endpoint-target.ts';
 import { cachedCountOf } from './cached-count.ts';
 import { maxOutputTokensFor } from './decide.ts';
-import { DEFAULT_SAMPLES, PROBE_METHOD_VERSION } from './run-probe.ts';
+import { CACHE_PROBE_WORDS, DEFAULT_SAMPLES, DEFAULT_STEP_TIMEOUT_MS, PROBE_METHOD_VERSION } from './run-probe.ts';
 import { messagesOf, selectDialect } from './select-dialect.ts';
 import type { SelectionTransport } from './select-dialect.ts';
 import { IMAGE_PROMPT, measureImageTokens } from './image-tokens.ts';
 import type { ImageCostProbe } from './image-tokens.ts';
-import { parseJson } from './json.ts';
+import { parseExternalJson } from '../adapters/shared/json.ts';
+import { usableUpstreamJson } from '../adapters/shared/upstream-json.ts';
 import { JSON_MODE_PROBE_REQUEST, measureJsonMode } from './json-mode.ts';
 import type { JsonModeAnswer } from './json-mode.ts';
 import { jsonReplyPlanOf } from '../adapters/shared/json-reply.ts';
@@ -31,6 +34,8 @@ import type { DialectCurrency } from '../dialect/candidates.ts';
 import type { KernelLockMechanism } from '@momonga/foundation';
 
 export type ProbeOllamaTargetOptions = {
+  ports: ProbePorts;
+  stepTimeoutMs?: number;
   probeRecordDir: string;
   lock: KernelLockMechanism;
   upstream: UpstreamEndpoint;
@@ -46,20 +51,19 @@ export type ProbeOllamaTargetOptions = {
 export type ProbeOllamaTargetResult = { report: OllamaProbeReport; key: EndpointKey; identity: string };
 
 const CHAT_PATH = '/api/chat';
-const CACHE_PROBE_WORDS = 1536;
 const CACHE_PROBE_OUTPUT_TOKENS = 1;
-const CACHE_PROBE_TIMEOUT_MS = 120_000;
 const VERSION_PATH = '/api/version';
 const SHOW_PATH = '/api/show';
 const TAGS_PATH = '/api/tags';
 
 const withClient = async <T>(
   upstream: UpstreamEndpoint,
+  ports: ProbePorts,
   signal: AbortSignal,
   use: (client: ProbeClient) => Promise<T>,
   timeoutMs: number = IDENTITY_READ_TIMEOUT_MS,
 ): Promise<T> => {
-  const client = createProbeClient(probeEndpointOf(upstream, undefined), signal, timeoutMs);
+  const client = createProbeClient(probeEndpointOf(upstream, undefined), signal, timeoutMs, ports.timers);
   try {
     return await use(client);
   } catch (error) {
@@ -75,7 +79,7 @@ const withClient = async <T>(
 const jsonOf = async (client: ProbeClient, method: 'GET' | 'POST', path: string, body?: unknown): Promise<unknown> => {
   const result = await client.request(method, path, body);
   if (result.status !== 200) throw new UpstreamHttpError(result.status, null, `${method} ${path} was refused: ${result.text}`, undefined, false);
-  return parseJson(result.text);
+  return parseExternalJson(result.text);
 };
 
 const versionOf = (body: unknown): string | undefined => {
@@ -83,10 +87,10 @@ const versionOf = (body: unknown): string | undefined => {
   return typeof version === 'string' ? version : undefined;
 };
 
-export const answersAsOllama = (upstream: UpstreamEndpoint, signal: AbortSignal): Promise<boolean> =>
-  withClient(upstream, signal, async (client) => {
+export const answersAsOllama = (upstream: UpstreamEndpoint, ports: ProbePorts, signal: AbortSignal): Promise<boolean> =>
+  withClient(upstream, ports, signal, async (client) => {
     const result = await client.request('GET', VERSION_PATH);
-    return result.status === 200 && versionOf(parseJson(result.text)) !== undefined;
+    return result.status === 200 && versionOf(usableUpstreamJson(result.text)) !== undefined;
   });
 
 const tagMatches = (listed: string, model: string): boolean => listed === model || (!model.includes(':') && listed === `${model}:latest`);
@@ -101,8 +105,8 @@ const digestIn = (tags: unknown, model: string): string | undefined => {
   return digest;
 };
 
-export const readOllamaDigest = (upstream: UpstreamEndpoint, model: string, signal: AbortSignal): Promise<string | undefined> =>
-  withClient(upstream, signal, async (client) => digestIn(await jsonOf(client, 'GET', TAGS_PATH), model));
+export const readOllamaDigest = (upstream: UpstreamEndpoint, ports: ProbePorts, model: string, signal: AbortSignal): Promise<string | undefined> =>
+  withClient(upstream, ports, signal, async (client) => digestIn(await jsonOf(client, 'GET', TAGS_PATH), model));
 
 export const trainedContextOf = (show: unknown, model: string): number => {
   const info = isRecord(show) ? show['model_info'] : undefined;
@@ -152,13 +156,13 @@ const imageCostProbeOf = (client: ProbeClient, model: string, contextWindow: num
     baseline: async () => {
       const result = await send(undefined);
       if (result.status !== 200) throw new UpstreamHttpError(result.status, null, `POST ${CHAT_PATH} was refused for the image token baseline: ${result.text}`, undefined, false);
-      return promptEvalCountOf(parseJson(result.text));
+      return promptEvalCountOf(parseExternalJson(result.text));
     },
     cost: async (imageUrl) => {
       const result = await send(imageUrl);
       if (result.status === 400) return { rejected: true };
       if (result.status !== 200) throw new UpstreamHttpError(result.status, null, `POST ${CHAT_PATH} was refused for an image token measurement: ${result.text}`, undefined, false);
-      return { rejected: false, promptTokens: promptEvalCountOf(parseJson(result.text)) };
+      return { rejected: false, promptTokens: promptEvalCountOf(parseExternalJson(result.text)) };
     },
   };
 };
@@ -183,7 +187,7 @@ const askJsonOnly = async (client: ProbeClient, model: string, contextWindow: nu
     jsonReply: jsonReplyPlanOf(request, { structuredOutput: 'none', jsonMode: 'json_object' }),
   });
   const result = await client.request('POST', CHAT_PATH, body);
-  const parsed = parseJson(result.text);
+  const parsed = usableUpstreamJson(result.text);
   if (result.status !== 200) return OLLAMA_VOCABULARY.kindOf(result.status, parsed) === 'unsupported' ? { kind: 'unsupported' } : { kind: 'failure' };
   if (!isRecord(parsed) || parsed['done_reason'] !== 'stop') return { kind: 'failure' };
   const message = parsed['message'];
@@ -208,7 +212,7 @@ const ollamaTransport = (client: ProbeClient, model: string, contextWindow: numb
     if (ABSENT_STATUSES.includes(result.status)) return { kind: 'absent' };
     if (result.status >= 400 && result.status < 500) return { kind: 'refused', detail: result.text.slice(0, 500) };
     if (result.status !== 200) throw new UpstreamHttpError(result.status, null, `POST ${CHAT_PATH} was refused for the dialect step: ${result.text}`, undefined, false);
-    const message = (parseJson(result.text) as { message?: unknown } | undefined)?.message;
+    const message = field(parseExternalJson(result.text), 'message');
     const content = isRecord(message) ? message['content'] : undefined;
     return { kind: 'ok', content: typeof content === 'string' ? content : undefined };
   },
@@ -222,7 +226,7 @@ export const measureOllama =
   (options: MeasureOllamaOptions): MeasureProbe<EndpointLockKey, OllamaMeasurement> =>
   async ({ key, signal }) => {
     const { model, upstream } = options;
-    const { version, show, tags } = await withClient(upstream, signal, async (client) => ({
+    const { version, show, tags } = await withClient(upstream, options.ports, signal, async (client) => ({
       version: await jsonOf(client, 'GET', VERSION_PATH),
       show: await jsonOf(client, 'POST', SHOW_PATH, { model }),
       tags: await jsonOf(client, 'GET', TAGS_PATH),
@@ -238,13 +242,14 @@ export const measureOllama =
     const capabilities = capabilitiesOf(show, model);
     const imageInputAccepted = capabilities.includes('vision');
     const imageTokens = imageInputAccepted
-      ? await withClient(upstream, signal, (client) => measureImageTokens(imageCostProbeOf(client, model, options.contextWindow)), CACHE_PROBE_TIMEOUT_MS)
+      ? await withClient(upstream, options.ports, signal, (client) => measureImageTokens(imageCostProbeOf(client, model, options.contextWindow)), options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS)
       : undefined;
-    const promptCache = await withClient(upstream, signal, (client) => measurePromptCache(client, model, options.contextWindow), CACHE_PROBE_TIMEOUT_MS);
-    const jsonMode = await measureJsonMode(() => withClient(upstream, signal, (client) => askJsonOnly(client, model, options.contextWindow), CACHE_PROBE_TIMEOUT_MS), signal);
+    const promptCache = await withClient(upstream, options.ports, signal, (client) => measurePromptCache(client, model, options.contextWindow), options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS);
+    const jsonMode = await measureJsonMode(() => withClient(upstream, options.ports, signal, (client) => askJsonOnly(client, model, options.contextWindow), options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS));
     const userDialects = options.userDialects ?? NO_USER_DIALECTS;
     const selection = await withClient(
       upstream,
+      options.ports,
       signal,
       (client) =>
         selectDialect({
@@ -253,11 +258,11 @@ export const measureOllama =
           userDialects,
           declaredDialect: options.declaredDialect,
         }),
-      CACHE_PROBE_TIMEOUT_MS,
+      options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS,
     );
     const report: OllamaProbeReport = {
       kind: 'ollama',
-      probedAt: new Date().toISOString(),
+      probedAt: new Date(options.ports.clock.now()).toISOString(),
       serverVersion,
       modelId: model,
       contextWindow: { value: trained, method: 'reported' },
@@ -272,10 +277,10 @@ export const measureOllama =
     return { report, identity };
   };
 
-export const ollamaPrecondition = (upstream: UpstreamEndpoint, model: string): ProbePrecondition => ({
+export const ollamaPrecondition = (upstream: UpstreamEndpoint, ports: ProbePorts, model: string): ProbePrecondition => ({
   boundMs: IDENTITY_READ_TIMEOUT_MS,
   check: async (signal) => {
-    const tags = await withClient(upstream, signal, (client) => jsonOf(client, 'GET', TAGS_PATH));
+    const tags = await withClient(upstream, ports, signal, (client) => jsonOf(client, 'GET', TAGS_PATH));
     if (digestIn(tags, model) !== undefined) return { kind: 'met' };
     return { kind: 'refused', message: `the Ollama server does not list the model "${model}"`, detail: `GET ${TAGS_PATH} has no entry for it`, remedy: `ollama pull ${model}` };
   },
@@ -305,7 +310,7 @@ export const probeOllamaTarget = async (options: ProbeOllamaTargetOptions): Prom
     key: options.key,
     probeRecordDir: options.probeRecordDir,
     lock: options.lock,
-    precondition: ollamaPrecondition(options.upstream, options.model),
+    precondition: ollamaPrecondition(options.upstream, options.ports, options.model),
     measure: measureOllama(options),
     currency: {
       userDialects: options.userDialects ?? NO_USER_DIALECTS,
@@ -313,6 +318,6 @@ export const probeOllamaTarget = async (options: ProbeOllamaTargetOptions): Prom
       ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
     },
   });
-  const { report: measured } = await recordProbe(subject, options.probeRecordDir, options.lock, options.signal ?? new AbortController().signal);
+  const { report: measured } = await recordProbe(subject, options.probeRecordDir, options.lock, options.ports.timers, options.signal ?? new AbortController().signal);
   return { report: measured.report, key: options.key, identity: measured.identity };
 };

@@ -123,13 +123,13 @@ export const MCP_CONNECT_TIMEOUT_LIMITS = { min: 1, max: 3_600_000, default: 30_
 export const mcpConnectTimeoutProblem = (value: unknown): string | undefined => {
   const { min, max } = MCP_CONNECT_TIMEOUT_LIMITS;
   if (typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max) return undefined;
-  return `mcp.connectTimeoutMs must be an integer from ${min} to ${max} milliseconds; got ${JSON.stringify(value)}`;
+  return `must be an integer from ${min} to ${max} milliseconds; got ${JSON.stringify(value)}`;
 };
 
-export const stopValueProblem = (name: StopValueName, value: unknown, label: string = name): string | undefined => {
+export const stopValueProblem = (name: StopValueName, value: unknown): string | undefined => {
   const { min, max } = SHUTDOWN_SETTING_LIMITS[name];
   if (typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max) return undefined;
-  return `${label} must be an integer from ${min} to ${max} milliseconds; got ${JSON.stringify(value)}`;
+  return `must be an integer from ${min} to ${max} milliseconds; got ${JSON.stringify(value)}`;
 };
 
 export type StopValuesParse = { kind: 'values'; values: StopValues } | { kind: 'invalid'; reason: string };
@@ -141,7 +141,7 @@ export const parseStopValues = (input: unknown): StopValuesParse => {
   for (const name of STOP_VALUE_NAMES) {
     const value = record[name];
     const problem = stopValueProblem(name, value);
-    if (problem !== undefined) return { kind: 'invalid', reason: problem };
+    if (problem !== undefined) return { kind: 'invalid', reason: `${name} ${problem}` };
     checked[name] = value as number;
   }
   return { kind: 'values', values: stopValuesOf((name) => checked[name] as number) };

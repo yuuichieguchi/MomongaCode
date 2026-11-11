@@ -1,5 +1,4 @@
-import net from 'node:net';
-import { FileRuleError, checkExceptionGrammar, checkFilePatternGrammar, parseHostEntry } from '@momonga/foundation';
+import { FileRuleError, checkExceptionGrammar, checkFilePatternGrammar, HOST_SUFFIX_PREFIX, parseHostEntry, parseHostPattern } from '@momonga/foundation';
 import type { FileRuleAccess, FileRuleSpec } from '@momonga/foundation';
 import { COMMAND_TOOL_NAME, OPERATION_RULE_TOOLS, TOOL_NAMES } from '@momonga/protocol';
 import type { PATH_TOOL_NAMES } from '@momonga/protocol';
@@ -66,9 +65,6 @@ export { OPERATION_RULE_TOOLS };
 
 export const NETWORK_RULE_SUBJECT = 'Network';
 
-export const NETWORK_RULE_NOT_ENFORCED = 'Network rules are read but not enforced yet; this rule changes nothing';
-
-const NETWORK_SUFFIX_PREFIX = '*.';
 
 const MCP_TOOL_PREFIX = 'mcp__';
 
@@ -104,11 +100,10 @@ const mcpToolOf = (text: string, tool: string): string => {
 };
 
 const networkSpecifierProblem = (specifier: string): string | undefined => {
-  const suffixed = specifier.startsWith(NETWORK_SUFFIX_PREFIX);
-  const entry = parseHostEntry(suffixed ? specifier.slice(NETWORK_SUFFIX_PREFIX.length) : specifier);
-  if (entry === undefined) return `not a host name or an IP address, optionally followed by :port, or ${NETWORK_SUFFIX_PREFIX}<suffix> for the names under a suffix`;
-  if (suffixed && (net.isIP(entry.host) !== 0 || entry.port !== undefined)) return `${NETWORK_SUFFIX_PREFIX}<suffix> takes a host name without a port`;
-  return undefined;
+  if (parseHostPattern(specifier) !== undefined) return undefined;
+  const suffixed = specifier.startsWith(HOST_SUFFIX_PREFIX);
+  if (suffixed && parseHostEntry(specifier.slice(HOST_SUFFIX_PREFIX.length)) !== undefined) return `${HOST_SUFFIX_PREFIX}<suffix> takes a host name without a port`;
+  return `not a host name or an IP address, optionally followed by :port, or ${HOST_SUFFIX_PREFIX}<suffix> for the names under a suffix`;
 };
 
 const validateSpecifier = (text: string, tool: string, specifier: string): void => {
@@ -154,7 +149,7 @@ export const checkRuleText = (text: string): { tool: string; specifier: string |
     return { tool, specifier };
   }
   if (written === NETWORK_RULE_SUBJECT) {
-    if (specifier === undefined) throw new RuleParseError(text, `a ${NETWORK_RULE_SUBJECT} rule names a host: ${NETWORK_RULE_SUBJECT}(<host>) or ${NETWORK_RULE_SUBJECT}(${NETWORK_SUFFIX_PREFIX}<suffix>)`);
+    if (specifier === undefined) throw new RuleParseError(text, `a ${NETWORK_RULE_SUBJECT} rule names a host: ${NETWORK_RULE_SUBJECT}(<host>) or ${NETWORK_RULE_SUBJECT}(${HOST_SUFFIX_PREFIX}<suffix>)`);
   } else if (!TOOL_NAMES.includes(written)) {
     throw new RuleParseError(text, 'unknown tool');
   }

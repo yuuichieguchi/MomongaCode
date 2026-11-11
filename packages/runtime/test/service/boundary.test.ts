@@ -24,11 +24,12 @@ const quote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 
 describe.skipIf(!fs.existsSync(SANDBOX_EXEC))('run API boundary under real Seatbelt', () => {
   it.each([
-    { network: 'allow' as const, controlLine: 'control-ok control=0', controlRequests: ['GET /control'] },
-    { network: 'deny' as const, controlLine: ' control=7', controlRequests: [] },
+    { network: 'allow' as const, named: true, controlLine: 'control-ok control=0', controlRequests: ['GET /control'] },
+    { network: 'allow' as const, named: false, controlLine: ' control=7', controlRequests: [] },
+    { network: 'deny' as const, named: false, controlLine: ' control=7', controlRequests: [] },
   ])(
-    'keeps a sandboxed shell with network $network from reaching the run socket',
-    async ({ network, controlLine, controlRequests: expectedControlRequests }) => {
+    'keeps a sandboxed shell with network $network (a socket of the workspace named: $named) from reaching the run socket',
+    async ({ network, named, controlLine, controlRequests: expectedControlRequests }) => {
       const env = await startService();
       const session = await env.createSession();
       const run = await env.createRun(session.id);
@@ -52,7 +53,7 @@ describe.skipIf(!fs.existsSync(SANDBOX_EXEC))('run API boundary under real Seatb
       fs.mkdirSync(tmpDir, { recursive: true, mode: 0o700 });
       fs.mkdirSync(sandboxTmp);
       const sandbox = createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot: sandboxTmp, killGraceMs: 300 });
-      const policy = await buildSandboxPolicy({ layout: momongaLayout(env.layout.home, process.platform, process.env), protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [env.layout.projectReal], home: env.layout.home, tmpDir, sessionsTmpRoot, network }, NEVER_CANCELLED);
+      const policy = await buildSandboxPolicy({ layout: momongaLayout(env.layout.home, process.platform, process.env), protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [env.layout.projectReal], home: env.layout.home, tmpDir, sessionsTmpRoot, network, ...(named ? { unixSocketAllow: [controlSocket] } : {}) }, NEVER_CANCELLED);
       const marker = path.join(env.layout.projectReal, 'ran.txt');
       const runSocket = env.layout.socketPath;
       const script = [

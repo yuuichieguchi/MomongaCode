@@ -6,7 +6,7 @@ import { FAKE_GUARDRAIL_ERROR, testKernelLock } from '@momonga/testkit';
 import { makeDir } from './gateway-helpers.ts';
 import { TARGET, collect, makeAdapter, startFake, userText } from './cc-support.ts';
 import { makeReport } from './report-fixture.ts';
-import { FM_CURRENCY, fmRecordKey, fmTargetBase, primed, recordKeyOptions } from './fm-record-support.ts';
+import { FM_CURRENCY, fmRecordKey, fmModelBase, primed, recordKeyOptions } from './fm-record-support.ts';
 
 const RECORD_KEY: KnownProbeKey = fmRecordKey('cd'.repeat(32), '25A100');
 
@@ -22,7 +22,7 @@ const managedWith = async (guardrail: unknown | undefined) => {
   const dir = makeDir();
   await saveProbeRecord(dir, RECORD_KEY, { ...makeReport(1, 1), guardrail: guardrail === undefined ? {} : { errorShape: guardrail } }, FM_CURRENCY, testKernelLock());
   return primed(createManagedTarget({
-    ...fmTargetBase(),
+    ...fmModelBase(),
     server: idleServe,
     binary: '/usr/bin/fm',
     exec: async () => ({ exitCode: 0, stdout: '1\n', stderr: '' }),

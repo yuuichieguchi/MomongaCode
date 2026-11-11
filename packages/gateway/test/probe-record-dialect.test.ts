@@ -55,8 +55,8 @@ const rewrite = (file: string, change: (stored: Record<string, unknown>) => Reco
 };
 
 describe('record invalidation of the fm record (rule 7)', () => {
-  it('is at probe method 3, the JSON-only mode step added after the compaction step of method 2', () => {
-    expect(PROBE_METHOD_VERSION).toBe(3);
+  it('is at probe method 4, the max concurrency recorded only from a refusal after the JSON-only mode step of method 3', () => {
+    expect(PROBE_METHOD_VERSION).toBe(4);
   });
 
   it('reads a record stored under probe method 1 as no record', async () => {
@@ -121,7 +121,7 @@ describe('record invalidation of the endpoint record (rule 7)', () => {
   const saveEndpoint = (dir: string, report: ProbeReport, currency: Currency) =>
     saveEndpointRecord(dir, endpointKey, 'identity', ['id'], report, currency, testKernelLock());
   const loadEndpoint = (dir: string, currency: Currency) =>
-    loadEndpointRecord(dir, endpointKey, currency);
+    loadEndpointRecord(dir, endpointKey, currency, 'the-model');
   const fileOf = (dir: string) => path.join(dir, endpointRecordFileName(endpointKey));
 
   it('writes both fields and loads the record back', async () => {

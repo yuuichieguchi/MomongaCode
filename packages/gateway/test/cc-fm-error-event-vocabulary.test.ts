@@ -8,7 +8,7 @@ import type { FakeChatCompletionsServer, FakeScriptedReply } from '@momonga/test
 import { START_MS, makeDir, postJson, readJson, readSse, registerCleanup, startGateway } from './gateway-helpers.ts';
 import { collect, makeAdapter, userText } from './cc-support.ts';
 import { makeReport } from './report-fixture.ts';
-import { FM_CURRENCY, fmRecordKey, fmTargetBase, primed, recordKeyOptions } from './fm-record-support.ts';
+import { FM_CURRENCY, fmRecordKey, fmModelBase, primed, recordKeyOptions } from './fm-record-support.ts';
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 import type { KnownProbeKey } from '@momonga/config';
 import { FM_SERVER } from '@momonga/protocol';
@@ -33,7 +33,7 @@ const fmAdapter = async (fake: FakeChatCompletionsServer, report?: ProbeReport) 
   const probeRecordDir = path.join(makeDir(), 'probe');
   await saveProbeRecord(probeRecordDir, RECORD_KEY, report ?? makeReport(1, 1), FM_CURRENCY, testKernelLock());
   const managed = await primed(createManagedTarget({
-    ...fmTargetBase(),
+    ...fmModelBase(),
     server: fmServe,
     binary: '/opt/fake/fm',
     exec: async (): Promise<ExecResult> => ({ exitCode: 0, stdout: '5\n', stderr: '' }),

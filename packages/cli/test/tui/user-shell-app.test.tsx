@@ -55,6 +55,26 @@ describe('the shell mode of the prompt (design 5.9)', () => {
     app.unmount();
   });
 
+  it('is not entered by a paste that starts with !: the pasted text is a message', async () => {
+    const { app, backend } = await ready();
+    app.stdin.write(`${KEYS.pasteStart}!important${KEYS.pasteEnd}`);
+    const shown = await untilFrame(app, '> !important');
+    expect(shown).not.toContain(SHELL_HINT);
+    app.stdin.write(KEYS.enter);
+    await backend.called('openSession');
+    expect(backend.started.map((run) => run.text)).toEqual(['!important']);
+    expect(shellCalls(backend.calls)).toEqual([]);
+    app.unmount();
+  });
+
+  it('is not entered by a pasted image link', async () => {
+    const { app } = await ready();
+    app.stdin.write(`${KEYS.pasteStart}![alt](https://example.com/a.png)${KEYS.pasteEnd}`);
+    const shown = await untilFrame(app, '> ![alt](https://example.com/a.png)');
+    expect(shown).not.toContain(SHELL_HINT);
+    app.unmount();
+  });
+
   it('is not entered by a ! later in a draft', async () => {
     const { app } = await ready();
     await type(app, 'wow!', '> wow!');
@@ -127,7 +147,7 @@ describe('running a command the person typed', () => {
 
   it('stops the running command at Esc and shows it as interrupted; a message typed meanwhile waits', async () => {
     const ended = Promise.withResolvers<UserShellEnd>();
-    const { app, backend } = await ready({ shell: (_command, _include, onOutput) => (onOutput('started\n'), ended.promise) });
+    const { app, backend } = await ready({ shell: (_command, _include, io) => (io.onOutput('started\n'), ended.promise) });
     await type(app, '!sleep 600', '! sleep 600');
     app.stdin.write(KEYS.enter);
     const running = await untilFrame(app, (now) => now.includes('! sleep 600') && now.includes('started') && now.includes('running ! sleep 600'));
@@ -145,14 +165,32 @@ describe('running a command the person typed', () => {
     app.unmount();
   });
 
-  it('recalls the command from the history with its mark', async () => {
-    const { app } = await ready();
+  it('recalls the command from the history as text: a recalled !ls is a message, not a command', async () => {
+    const { app, backend } = await ready();
     await type(app, '!ls', '! ls');
     app.stdin.write(KEYS.enter);
     await untilFrame(app, '✓ ! ls');
     app.stdin.write(KEYS.up);
-    const shown = await untilFrame(app, SHELL_HINT);
-    expect(inputLines(shown)[0]).toBe('! ls');
+    const shown = await untilFrame(app, (now) => inputLines(now)[0] === '> !ls');
+    expect(shown).not.toContain(SHELL_HINT);
+    app.stdin.write(KEYS.enter);
+    await backend.called('openSession');
+    expect(backend.started.map((run) => run.text)).toEqual(['!ls']);
+    expect(shellCalls(backend.calls)).toEqual(['shell:!:ls']);
+    app.unmount();
+  });
+
+  it('shows the sentence of an unprotected command on the screen', async () => {
+    const reason = 'With sandbox none, commands can read and change the product home at /h (its sockets, credentials and stores), because bubblewrap is not installed: install bubblewrap (bwrap) to protect it.';
+    const { app } = await ready({
+      shell: async (command, include, io) => {
+        io.onUnprotected(reason);
+        return { kind: 'exit', record: { command, exitCode: 0, output: '', include } };
+      },
+    });
+    await type(app, '!ls', '! ls');
+    app.stdin.write(KEYS.enter);
+    await untilFrame(app, (now) => now.includes('✓ ! ls') && now.replace(/[│\s]+/g, ' ').includes('because bubblewrap is not installed: install bubblewrap (bwrap) to protect it.'));
     app.unmount();
   });
 });

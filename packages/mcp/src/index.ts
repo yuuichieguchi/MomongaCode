@@ -13,6 +13,7 @@ export type { McpAuthorizingPool, McpPool, McpPoolOptions } from './pool.ts';
 export { createMcpToolSource } from './source.ts';
 export type { McpToolSourceOptions } from './source.ts';
 export { createStdioTransport, inheritedEnvOf } from './stdio-transport.ts';
+export type { StdioLaunch } from './stdio-transport.ts';
 export type { McpMarkerOptions, StdioTransport, StdioTransportDiagnostics, StdioTransportExit, StdioTransportOptions } from './stdio-transport.ts';
 export { MRTR_MAX_ROUNDS, MRTR_STATE_ONLY_PACING_MS, TASKS_EXTENSION } from './connection.ts';
 export { McpElicitationAnswerError, McpInputProtocolError, parseElicitationAnswer, parseElicitationAnswers, parseInputRequests } from './input-requests.ts';

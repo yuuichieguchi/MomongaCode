@@ -1,5 +1,4 @@
-import path from 'node:path';
-import { nestedInstructionCandidates } from '@momonga/context';
+import { instructionPathsOf, nestedInstructionCandidates, projectRootOf } from '@momonga/context';
 import type { InstructionReader, TouchedPath } from '@momonga/context';
 import { isLiveFact, pathScopeMatcherOf } from '@momonga/memory';
 import type { PathScopeMatcher } from '@momonga/memory';
@@ -76,7 +75,7 @@ export type InstructionProbes = {
 
 export const createInstructionProbes = (options: { reader: InstructionReader; projectRoot: string; source: TouchedSource; pageRows: number }): InstructionProbes => {
   const { reader, source, pageRows } = options;
-  const projectRoot = path.posix.normalize(options.projectRoot).replace(/\/+$/, '');
+  const projectRoot = projectRootOf(reader.platform, options.projectRoot);
   const probed = new Set<string>();
   const present = new Set<string>();
   let roots: readonly string[] | undefined;
@@ -93,7 +92,7 @@ export const createInstructionProbes = (options: { reader: InstructionReader; pr
       const known = await rootsOf();
       watermark = await readFrom(source, watermark, pageRows, async (page) => {
         for (const entry of page) {
-          for (const candidate of nestedInstructionCandidates(known, projectRoot, [{ path: entry.path, kind: 'directory' }])) {
+          for (const candidate of nestedInstructionCandidates(known, projectRoot, [{ path: entry.path, kind: 'directory' }], reader.platform)) {
             if (probed.has(candidate)) continue;
             probed.add(candidate);
             if (await reader.exists(candidate)) present.add(candidate);
@@ -101,7 +100,7 @@ export const createInstructionProbes = (options: { reader: InstructionReader; pr
         }
       });
     },
-    witnesses: () => [...present].map((file): TouchedPath => ({ path: path.posix.dirname(file), kind: 'directory' })),
+    witnesses: () => [...present].map((file): TouchedPath => ({ path: instructionPathsOf(reader.platform).dirname(file), kind: 'directory' })),
   };
 };
 
