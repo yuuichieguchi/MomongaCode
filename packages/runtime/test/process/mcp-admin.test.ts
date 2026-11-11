@@ -5,7 +5,7 @@ import { McpAuthorizationError } from '@momonga/mcp';
 import type { McpAuthProbe, McpAuthorizingPool, McpPoolOptions } from '@momonga/mcp';
 import { createMcpAdmin } from '@momonga/runtime';
 import type { McpAdmin } from '@momonga/runtime';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, unconfiguredDerivedNetworkOf } from '@momonga/testkit';
 import { POOL_IDLE_CLOSE_MS, START_MS, createSession, makeCache, makeLogger, makeReporter, makeTempHome, openStore, writeUserSettings } from './helpers.ts';
 
 const REMOTE_URL = 'https://mcp.example.test/mcp';
@@ -97,6 +97,7 @@ const setup = async () => {
       keptLayers: (use) => ({ store: cache.kept, use }),
     },
     remote: { openAuthorizationUrl: () => Promise.reject(new Error('the admin must supply its own opener')) } as never,
+    network: unconfiguredDerivedNetworkOf,
     clientVersion: ADMIN_CLIENT_VERSION,
     createPool: (options) => {
       created.push(options);

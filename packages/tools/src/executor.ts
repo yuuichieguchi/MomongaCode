@@ -160,7 +160,7 @@ export type ToolExecutorOptions = {
   shellHost: ShellHost;
   random: Random;
   files: FileSystem;
-  outboundNetwork: OutboundNetwork;
+  outboundNetwork(signal: AbortSignal): Promise<OutboundNetwork>;
   idempotencyTtlMs?: number;
   readOnlyRetry?: { attempts: number; baseMs: number; maxMs: number };
   maxParallel?: number;
@@ -1385,8 +1385,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
 
     const facts = subjectFactsOf(gate.subject);
     const performedFacts: { current: SubjectFacts } = { current: facts };
+    const outboundNetwork = await options.outboundNetwork(batch.signal);
     const scope = openScope(batch, call, tool, key, fit, batch.deadlineAt, () => performedFacts.current);
-    const toolContext: ToolContext = { ...scope.reconcileCtx, sandbox: batch.sandbox, sandboxPolicy: batch.sandboxPolicy, outboundNetwork: options.outboundNetwork, ripgrep: batch.ripgrep, checkpoint: scope.checkpoint, reportProgress: scope.reportProgress };
+    const toolContext: ToolContext = { ...scope.reconcileCtx, sandbox: batch.sandbox, sandboxPolicy: batch.sandboxPolicy, outboundNetwork, ripgrep: batch.ripgrep, checkpoint: scope.checkpoint, reportProgress: scope.reportProgress };
     const contextForBasis = (): ToolContext => {
       const readOnly = requireBasis(target) === 'read_only';
       const requested = requestedNetworkOf(target.subject);

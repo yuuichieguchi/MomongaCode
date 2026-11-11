@@ -1,10 +1,11 @@
 import { createExecWithStdin, createGivenSecretStore, createOutboundDispatcher, findOutboundError, givenSecretStoreChildEnv, minimalChildEnv, outboundFetch, protectedSetFor } from '@momonga/foundation';
-import type { HelperSelf, MomongaPaths, OutboundNetwork, ProcessInspector, SecretStore } from '@momonga/foundation';
+import type { HelperSelf, MomongaPaths, ProcessInspector, SecretStore } from '@momonga/foundation';
 import { askedBy, computeFileRules } from '@momonga/policy';
 import type { PolicyHostPorts } from '@momonga/policy';
 import { buildSandboxPolicy, createForgeAccess, createOperationTools, createSandboxedArgvRunner, forgeCredentialOf, loadForgeDescriptors } from '@momonga/tools';
 import type { AnyTool, ForgeCredentialReference, ForgeFetch, MarkerOwners, ProbeContext, ReconcileSandbox, ShellHost } from '@momonga/tools';
 import type { SandboxBindings } from '../ports.ts';
+import type { NetworkOf } from './network-derivation.ts';
 import type { UserSnapshot } from './settings-port.ts';
 
 export type OperationToolsOptions = {
@@ -12,7 +13,7 @@ export type OperationToolsOptions = {
   home: string;
   sandboxes: SandboxBindings;
   fs: PolicyHostPorts;
-  network: OutboundNetwork;
+  network: NetworkOf;
   shellHost: ShellHost;
   owners: MarkerOwners;
   inspector: ProcessInspector;
@@ -22,10 +23,11 @@ export type OperationToolsOptions = {
   helperSelf?: HelperSelf;
 };
 
-const outboundForgeFetch =
-  (network: OutboundNetwork): ForgeFetch =>
+export const outboundForgeFetch =
+  (networkOf: NetworkOf): ForgeFetch =>
   async (url, { boundMs, ...init }) => {
-    const dispatcher = createOutboundDispatcher(network, { connectReplyTimeoutMs: boundMs });
+    const { outbound } = await networkOf(init.signal);
+    const dispatcher = createOutboundDispatcher(outbound, { connectReplyTimeoutMs: boundMs });
     try {
       const response = await outboundFetch(dispatcher)(url, init);
       const body = await response.arrayBuffer();
@@ -71,7 +73,7 @@ export const createOperationToolSource = (options: OperationToolsOptions): ((sna
   const runArgv = createSandboxedArgvRunner({
     reconcileSandbox,
     shellHost: options.shellHost,
-    outboundNetwork: options.network,
+    outboundNetwork: async (signal) => (await options.network(signal)).outbound,
     markerDir: options.paths.markers.tools,
     credentialRoot: options.paths.tmp.spawn,
     ...(options.helperSelf === undefined ? {} : { credentialHelper: options.helperSelf }),

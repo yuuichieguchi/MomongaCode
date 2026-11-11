@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ConfigError, loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, stopValuesOfSettings, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
+import { ConfigError, loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, stopValuesOfSettings, resolveTelemetrySettings } from '@momonga/config';
 import type { ResolvedSettings, StopValuesReader } from '@momonga/config';
-import { installTrust, settledOrAborted, trustFailureText, layoutProcessInspector, busyTimeoutMs } from '@momonga/foundation';
+import { installTrust, settledOrAborted, layoutProcessInspector, busyTimeoutMs } from '@momonga/foundation';
 import {
   acquireProcessLock,
   announceReady,
@@ -119,6 +119,7 @@ import { runTeardown } from './teardown.ts';
 import type { TeardownStep } from './teardown.ts';
 import { sweepSessionTmp, sweepSpawnTmp } from './tmp-sweep.ts';
 import { reapToolMarkers } from './tool-markers.ts';
+import { createNetworkDerivation } from './network-derivation.ts';
 import { createToolRuntime } from './tool-runtime.ts';
 import type { ToolRuntime, ToolRuntimeOptions } from './tool-runtime.ts';
 
@@ -403,12 +404,6 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
     cleanups.push({ name: 'lock', run: () => lock.release() });
 
-    const outboundNetworkOf = async (section: ResolvedSettings['network'], installSignal: AbortSignal): Promise<OutboundNetwork> => {
-      const networkConfig = resolveNetwork(section, process.env);
-      const trust = await installTrust(networkConfig, nodeFileSystem, { signal: installSignal });
-      for (const failure of trust.failures) logger.warn(trustFailureText(failure));
-      return { config: networkConfig, trust };
-    };
     const { cache, settings } = await step('settings', async () => {
       const appliedRecord = process.env[SETTINGS_APPLIED_ENV];
       const created = createUserSettingsCache({
@@ -554,6 +549,14 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     };
     cleanups.push({ name: 'body-purge', run: () => bodyPurge?.stop() });
 
+    const networks = createNetworkDerivation({
+      cache,
+      signal: lifetime.signal,
+      env: process.env,
+      install: (config, installSignal) => installTrust(config, nodeFileSystem, { signal: installSignal }),
+      onWarning: (message) => logger.warn(message),
+    });
+
     type TracedTelemetry = { telemetry: Telemetry; tracer: TracerPort };
     const telemetries = createPinnedDerivation<TracedTelemetry>({
       cache,
@@ -561,7 +564,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       inputsOf: derivedInputsOf('D2'),
       derive: async (current, _previous, deriveSignal) => {
         const resolved = resolveTelemetrySettings(current.telemetry);
-        const outbound = await outboundNetworkOf(current.network, deriveSignal);
+        const { outbound } = await networks.networkOf(deriveSignal);
         const telemetry = createTelemetry({
           serviceName: 'momonga-runtime',
           serviceVersion: version,
@@ -606,14 +609,13 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
     const ports = await step('ports', async () => {
       const composition = createSettingsComposition({ home: canonicalHome, platform, cache, store, lock: kernelLock, signal: lifetime.signal });
-      const mcpNetwork = await outboundNetworkOf(settings.network, startDeadlineSignal(undefined));
       const runtime: ToolRuntime = createToolRuntime({
         version,
         owners: markerOwners,
         lockCapability,
         kernelLock,
         paths,
-        network: mcpNetwork,
+        network: networks.networkOf,
         sharedPaths,
         generation: options.generation,
         role: rolePort,

@@ -11,6 +11,7 @@ import { invalidRequest, notFound } from '../service/errors.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { asError } from './as-error.ts';
 import { POOL_IDLE_CLOSE_MS } from './constants.ts';
+import type { NetworkOf } from './network-derivation.ts';
 import type { SettingsComposition } from './settings-port.ts';
 
 export type McpAdmin = {
@@ -30,7 +31,8 @@ export type McpAdminOptions = {
   logger: JsonLogger;
   report(error: unknown): void;
   settings: Pick<SettingsComposition, 'envFor' | 'admitUserSnapshot' | 'keptLayers' | 'trustOracle'>;
-  remote: McpRemotePorts;
+  remote: Omit<McpRemotePorts, 'network'>;
+  network: NetworkOf;
   createPool(options: McpPoolOptions): McpAuthorizingPool;
   clientVersion: string;
   readCloseGraceMs(): number;
@@ -143,8 +145,9 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
     const { user } = await options.settings.admitUserSnapshot(signal);
     const env = await options.settings.envFor(session, signal);
     const loaded = await loadSessionMcpServers(options, session, env, user, 'admit', signal);
-    const key = sha256Hex(canonicalJson({ session: session.id, cwd: session.cwd, servers: loaded.enabled }));
-    const held = acquireProbePool(key, () => poolFor(loaded.enabled, session, env, options.remote));
+    const network = await options.network(signal);
+    const key = sha256Hex(canonicalJson({ session: session.id, cwd: session.cwd, servers: loaded.enabled, network: network.identity }));
+    const held = acquireProbePool(key, () => poolFor(loaded.enabled, session, env, { ...options.remote, network: network.outbound }));
     const { pool } = held;
     try {
       const views: McpServerView[] = [];
@@ -183,8 +186,10 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
     const surfaced = new Promise<void>((resolve) => {
       surface = resolve;
     });
+    const network = await options.network(signal);
     const pool = poolFor([entry], session, await options.settings.envFor(session, signal), {
       ...options.remote,
+      network: network.outbound,
       openAuthorizationUrl: (url) => {
         view.url = url.href;
         surface();
