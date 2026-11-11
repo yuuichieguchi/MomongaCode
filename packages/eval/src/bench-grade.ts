@@ -6,13 +6,14 @@ import { diffLines } from './context-improve.ts';
 import type { WorkspaceFiles } from './files.ts';
 import { filesUnder, gradeChecks } from './oracle-grade.ts';
 import type { TrialGrade, WorkspaceProbe } from './oracle-grade.ts';
+import type { KernelLockMechanism } from '@momonga/foundation';
 
 export type GradeInput = { task: BenchTask; workspace: string; base: string; probe: WorkspaceProbe; files: WorkspaceFiles };
 
 export const gradeTrial = ({ task, workspace, base, probe, files }: GradeInput): Promise<TrialGrade> =>
   gradeChecks({ checks: task.oracle, graderFiles: task.graderFiles, workspace, base, probe, files });
 
-export type ValidationPorts = { probe: WorkspaceProbe; files: WorkspaceFiles; tmpdir: string };
+export type ValidationPorts = { probe: WorkspaceProbe; files: WorkspaceFiles; tmpdir: string; lock: KernelLockMechanism };
 
 export const BENCH_PROBLEMS = ['digest_mismatch', 'grader_file_in_repository', 'setup_failed', 'already_passing', 'unsolvable'] as const;
 export type BenchProblem = (typeof BENCH_PROBLEMS)[number];
@@ -103,7 +104,7 @@ const validateTask = async (task: BenchTask, root: string, repository: { directo
 export const validateBenchmark = async (benchmarkFile: string, ports: ValidationPorts): Promise<Validation> => {
   const benchmark = parseBenchmark(await ports.files.readTextFile(benchmarkFile), benchmarkFile);
   const root = path.dirname(path.resolve(benchmarkFile));
-  const owned = await createOwnedDirectory({ parent: ports.tmpdir, prefix: 'momonga-bench-validate-' });
+  const owned = await createOwnedDirectory({ parent: ports.tmpdir, prefix: 'momonga-bench-validate-', lock: ports.lock });
   const scratch = owned.path;
   try {
     const tasks: TaskValidation[] = [];

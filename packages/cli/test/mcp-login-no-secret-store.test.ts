@@ -21,7 +21,7 @@ describe('momonga mcp login with no OS secret store and credentials.plaintextTok
   it('is refused with exactly the refusal text, and no browser is opened', async () => {
     const openUrl = vi.fn();
     const ports = { openUrl, stdout: { write: () => true }, stderr: { write: () => true }, clock: { now: () => 0 } } as unknown as CliPorts;
-    const attempt = mcpLogin(ports, momongaLayout('/home/u'), 'docs', { openBrowser: true, interrupt: new AbortController().signal });
+    const attempt = mcpLogin(ports, momongaLayout('/home/u', process.platform, process.env), 'docs', { openBrowser: true, interrupt: new AbortController().signal });
     const failure = await attempt.then(
       () => undefined,
       (error: unknown) => error,

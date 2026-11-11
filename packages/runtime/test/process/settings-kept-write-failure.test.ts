@@ -4,7 +4,7 @@ import { createUserSettingsCache } from '@momonga/config';
 import type { KeptRecords } from '@momonga/config';
 import * as runtime from '@momonga/runtime';
 import { createSession, makeRuntimeFixture, writeProjectSettings, writeUserSettings } from './helpers.ts';
-import { NEVER_CANCELLED } from '@momonga/testkit';
+import { NEVER_CANCELLED, testKernelLock } from '@momonga/testkit';
 
 const failingRecords = (): KeptRecords => ({
   load: async () => undefined,
@@ -38,7 +38,7 @@ describe('a failed write of the kept copy never fails the read that triggered it
     writeProjectSettings(f.temp.project, { permissions: { allow: ['Bash(ls)'] } });
     const warnings: string[] = [];
     const cache = createUserSettingsCache({ home: f.temp.home, onWarning: (warning) => warnings.push(warning), keptRecords: failingRecords() });
-    const composition = runtime.createSettingsComposition({ signal: new AbortController().signal, home: f.temp.home, platform: process.platform, cache, store: f.store });
+    const composition = runtime.createSettingsComposition({ lock: testKernelLock(), signal: new AbortController().signal, home: f.temp.home, platform: process.platform, cache, store: f.store });
     const session = createSession(f.store, f.temp.project, { env: { PLAIN: '1' } });
 
     expect((await composition.settings.rules(session)).map((rule) => rule.text)).toEqual(['Bash(ls)']);

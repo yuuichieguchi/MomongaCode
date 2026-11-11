@@ -1,7 +1,6 @@
 import path from 'node:path';
 import { writeFileAtomically } from './atomic-file.ts';
 import type { AtomicWriteFileSystem } from './atomic-file.ts';
-import { hostKernelLock } from './platform/host-kernel-lock.ts';
 import type { KernelLockMechanism } from './platform/kernel-lock.ts';
 import { parseOutsideJson } from './json-depth.ts';
 import { listGenerations } from './generation-registry.ts';
@@ -63,12 +62,12 @@ export const readCurrentGeneration = async (paths: MomongaPaths): Promise<Curren
 
 export type PublishOutcome = 'published' | 'superseded' | 'busy';
 
-export type PublishOptions = { lock?: KernelLockMechanism; fs?: AtomicWriteFileSystem };
+export type PublishOptions = { lock: KernelLockMechanism; fs?: AtomicWriteFileSystem };
 
 export const formatCurrentGeneration = (record: CurrentGeneration): string => `${JSON.stringify({ generation: record.generation, version: record.version, sockets: record.sockets })}\n`;
 
-export const publishCurrentGeneration = async (paths: MomongaPaths, record: CurrentGeneration, options: PublishOptions = {}): Promise<PublishOutcome> => {
-  const lock = options.lock ?? hostKernelLock();
+export const publishCurrentGeneration = async (paths: MomongaPaths, record: CurrentGeneration, options: PublishOptions): Promise<PublishOutcome> => {
+  const lock = options.lock;
   const claim = await lock.claim(paths.generationLock);
   if (claim.kind === 'held') return 'busy';
   try {

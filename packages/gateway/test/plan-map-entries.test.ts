@@ -6,6 +6,7 @@ import { createGenerationFlight } from '../src/plan/generation-flight.ts';
 import { createPlanSignIn } from '../src/plan/signin.ts';
 import { NEVER_ENDED, PROFILE_ID, planError, realSleep, recordKey, signInAtFake, startHarness } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const harnesses: Harness[] = [];
 
@@ -102,6 +103,7 @@ describe('an expired sign-in attempt is removed at every begin, waiting and comp
   const setup = async () => {
     const h = await harness();
     const signIn = createPlanSignIn({
+      lock: testKernelLock(),
       profiles: { [PROFILE_ID]: h.profile },
       sessions: h.sessions,
       clock: h.clock,

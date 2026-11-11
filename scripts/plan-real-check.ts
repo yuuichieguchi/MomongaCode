@@ -4,7 +4,7 @@ import path from 'node:path';
 import { editModelsSettings, loadUserModels } from '@momonga/config';
 import type { ModelsOperation, ModelsOperations } from '@momonga/config';
 import { CONTEXT_REPORT_FORMAT } from '@momonga/eval';
-import { NoCurrentGenerationError, createUdsClient, currentSocketResolver, fixedSocket, isRecord, momongaLayout } from '@momonga/foundation';
+import { NoCurrentGenerationError, createUdsClient, currentSocketResolver, fixedSocket, isRecord, momongaLayout, resolveLayoutLocks } from '@momonga/foundation';
 import type { MomongaPaths, UdsClient } from '@momonga/foundation';
 import { SIGNED_IN_OUTCOME, WORKSPACE_USAGE_LIMIT_CODE, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
 
@@ -462,8 +462,9 @@ const capabilityOf = (model: PlanModel, field: 'promptCache' | 'reasoning', valu
 });
 
 const changeSettings = async (paths: MomongaPaths, operations: ModelsOperations, signal: AbortSignal): Promise<void> => {
+  const lock = resolveLayoutLocks(paths).mechanism;
   try {
-    await editModelsSettings(paths.home, paths.settingsFile, operations, { signal });
+    await editModelsSettings(paths.home, paths.settingsFile, operations, { lock, signal });
   } catch (error) {
     throw new Refusal(`the settings file ${paths.settingsFile} could not be changed: ${causeText(error)}`);
   }
@@ -607,7 +608,7 @@ const checked = async (argv: readonly string[]): Promise<number> => {
     process.stderr.write(`${OWN_HOME_REFUSAL}\n`);
     return EXIT_USAGE;
   }
-  const paths = momongaLayout(path.resolve(args.home));
+  const paths = momongaLayout(path.resolve(args.home), process.platform, process.env);
   const steps = args.command === 'collect' ? collect(readEvents(paths), args) : await throughGateway(args.command, paths, args.model ?? '');
   const report: Report = { format: REPORT_FORMAT, generatedAt: new Date().toISOString(), account: accountOf(readEvents(paths)), steps };
   const leak = leakOf(report, args.allowLong);

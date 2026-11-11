@@ -3,7 +3,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { GENERATION_RETIRED_CODE, momongaPaths, publishCurrentGeneration } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { registerCleanup, withTempDir } from '@momonga/testkit';
+import { registerCleanup, testKernelLock, withTempDir } from '@momonga/testkit';
 import { describe, expect, it, vi } from 'vitest';
 import type { TestContext } from 'vitest';
 import { runAuthResetHost } from '../src/commands/auth-wiring.ts';
@@ -44,12 +44,12 @@ const gateway = async (context: TestContext, name: string, answerOf: (request: s
 };
 
 const publish = async (paths: MomongaPaths, generation: number, gatewaySocket: string): Promise<void> => {
-  expect(await publishCurrentGeneration(paths, { generation, version: '1.0.0', sockets: { gateway: gatewaySocket, runtime: `${gatewaySocket}.runtime`, supervisor: `${gatewaySocket}.supervisor` } })).toBe('published');
+  expect(await publishCurrentGeneration(paths, { generation, version: '1.0.0', sockets: { gateway: gatewaySocket, runtime: `${gatewaySocket}.runtime`, supervisor: `${gatewaySocket}.supervisor` } }, { lock: testKernelLock() })).toBe('published');
 };
 
 describe('the auth commands reach the gateway of the current generation (gateway-accounts C44, P-242)', () => {
   it('auth reset-host that meets a generation retired under it resolves the current generation again, and every later request of the command goes to the gateway that serves now', async (context) => {
-    const paths = momongaPaths(freshHome());
+    const paths = momongaPaths(freshHome(), process.platform, {});
     fs.mkdirSync(path.dirname(paths.generationLock), { recursive: true });
     fs.mkdirSync(path.dirname(paths.current), { recursive: true });
     const serving = await gateway(context, 'second.sock', async (request) =>

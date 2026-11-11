@@ -4,9 +4,10 @@ import type { MomongaPaths, ProcessPort } from '@momonga/foundation';
 import { shortTempBase } from '@momonga/foundation';
 import { nodeContextEffects } from '../src/eval/context-effects.ts';
 import { ROOT_PREFIX } from '../src/eval/context-host.ts';
-import { nodeClock, nodeFiles } from '../src/node-ports.ts';
+import { nodeClock, nodeFilesLockedBy } from '../src/node-ports.ts';
 import type { CliClock, CliPorts } from '../src/ports.ts';
 import { setupGenerations } from './generations-harness.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 type Sent = { pid: number; signal: NodeJS.Signals };
 
@@ -44,7 +45,7 @@ const jumpingClock = (): CliClock & { slept: number[] } => {
   };
 };
 
-const portsOf = (given: Partial<CliPorts>): CliPorts => ({ platform: 'linux', env: {}, home: '/home/person', files: nodeFiles, clock: jumpingClock(), process: fakeProcess(new Set()).port, ...given }) as CliPorts;
+const portsOf = (given: Partial<CliPorts>): CliPorts => ({ platform: 'linux', env: {}, home: '/home/person', files: nodeFilesLockedBy(testKernelLock), clock: jumpingClock(), process: fakeProcess(new Set()).port, ...given }) as CliPorts;
 
 afterEach(() => {
   vi.useRealTimers();
@@ -52,13 +53,13 @@ afterEach(() => {
 
 describe('the host effects of an eval reach the process only through the process port', () => {
   it('names the pid of the process port as the owner of a case home', () => {
-    expect(nodeContextEffects(portsOf({})).ownerPid).toBe(FAKE_PID);
+    expect(nodeContextEffects(portsOf({}), testKernelLock()).ownerPid).toBe(FAKE_PID);
   });
 
   it('lists the case homes of the user the process port names, read through the file port', async () => {
     const listed: string[] = [];
     const files = {
-      ...nodeFiles,
+      ...nodeFilesLockedBy(testKernelLock),
       readdir: async (directory: string) => {
         listed.push(directory);
         return [`${ROOT_PREFIX}mine`, `${ROOT_PREFIX}theirs`, 'unrelated'];
@@ -66,22 +67,22 @@ describe('the host effects of an eval reach the process only through the process
       lstat: async (file: string) => ({ isDirectory: () => true, uid: file.endsWith('mine') ? 777 : 778 }) as fs.Stats,
     };
 
-    const roots = await nodeContextEffects(portsOf({ files, process: fakeProcess(new Set(), 777).port })).listRoots();
+    const roots = await nodeContextEffects(portsOf({ files, process: fakeProcess(new Set(), 777).port }), testKernelLock()).listRoots();
 
     expect(listed).toEqual([shortTempBase('linux')]);
     expect(roots.map((root) => root.slice(root.lastIndexOf(ROOT_PREFIX)))).toEqual([`${ROOT_PREFIX}mine`]);
   });
 
   it('resolves a directory through the file port', async () => {
-    const files = { ...nodeFiles, realpath: async (file: string) => `/real${file}` };
+    const files = { ...nodeFilesLockedBy(testKernelLock), realpath: async (file: string) => `/real${file}` };
 
-    expect(await nodeContextEffects(portsOf({ files })).canonical('/case/home')).toBe('/real/case/home');
+    expect(await nodeContextEffects(portsOf({ files }), testKernelLock()).canonical('/case/home')).toBe('/real/case/home');
   });
 
   it('waits through the clock port', async () => {
     const clock = jumpingClock();
 
-    await nodeContextEffects(portsOf({ clock })).after(250, new AbortController().signal);
+    await nodeContextEffects(portsOf({ clock }), testKernelLock()).after(250, new AbortController().signal);
 
     expect(clock.slept).toEqual([250]);
   });
@@ -93,7 +94,7 @@ describe('the teardown of a case home signals through the process port', () => {
     await start({ version: '1.2.4', generation: 1 });
     const fake = fakeProcess(new Set([process.pid]));
 
-    await nodeContextEffects(portsOf({ process: fake.port })).terminate(paths as MomongaPaths);
+    await nodeContextEffects(portsOf({ process: fake.port }), testKernelLock()).terminate(paths as MomongaPaths);
 
     expect(fake.sent).toEqual([{ pid: process.pid, signal: 'SIGTERM' }]);
   });

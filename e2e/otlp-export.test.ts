@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { systemClock } from '@momonga/foundation';
+import { systemClock, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { GENAI_SEMCONV, buildCostReport, definePriceTable, formatCostReport, openTraceStore } from '@momonga/observability';
 import { OTLP_SPAN_KIND, decodeOtlpSpans, modelSettings, startOtlpCollector } from '@momonga/testkit';
 import type { DecodedOtlpSpan, OtlpCollector } from '@momonga/testkit';
@@ -126,7 +126,7 @@ describe('OTLP export through real processes', () => {
     }
     await shutdownBarrier(stack);
 
-    const store = openTraceStore({ path: home.paths.traces.gateway, clock: systemClock });
+    const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: home.paths.traces.gateway, clock: systemClock });
     try {
       const report = buildCostReport(store, [{ runId, sessionId }], { table: definePriceTable(UPSTREAM_PRICES) });
       console.log(formatCostReport(report));

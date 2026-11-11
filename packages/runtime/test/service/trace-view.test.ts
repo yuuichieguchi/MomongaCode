@@ -4,6 +4,7 @@ import { openTraceStore } from '@momonga/observability';
 import type { SpanRecord } from '@momonga/observability';
 import { createFakeClock, registerCleanup, withTempDir } from '@momonga/testkit';
 import { runTraceOf } from '../../src/service/trace-view.ts';
+import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
 const span = (overrides: Partial<SpanRecord>): SpanRecord => ({
   traceId: 't1',
@@ -22,7 +23,7 @@ const span = (overrides: Partial<SpanRecord>): SpanRecord => ({
 
 describe('runTraceOf', () => {
   it('summarises the spans recorded for the run and lists them without their events', (context) => {
-    const store = openTraceStore({ path: path.join(withTempDir(context), 'traces.db'), clock: createFakeClock(1000) });
+    const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: path.join(withTempDir(context), 'traces.db'), clock: createFakeClock(1000) });
     registerCleanup(context, () => store.close());
     store.writeSpans([
       span({}),
@@ -49,7 +50,7 @@ describe('runTraceOf', () => {
   });
 
   it('has no trace for a run without spans', (context) => {
-    const store = openTraceStore({ path: path.join(withTempDir(context), 'traces.db'), clock: createFakeClock(1000) });
+    const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: path.join(withTempDir(context), 'traces.db'), clock: createFakeClock(1000) });
     registerCleanup(context, () => store.close());
 
     expect(runTraceOf(store, 'run-1')).toBeUndefined();

@@ -5,6 +5,7 @@ import { DEFAULT_INTERVALS, HELD_RETRY_MS, STARTUP_TIMEOUT_MS } from '../../src/
 import { createChildManager } from '../../src/child-manager.ts';
 import { DEFAULT_RESTART_POLICY } from '../../src/restart-policy.ts';
 import { createSpawnPort } from '../../src/spawn-port.ts';
+import { testKernelLock, testProcessInspector } from '@momonga/testkit';
 
 const flag = (name: string): string[] =>
   process.argv
@@ -22,6 +23,8 @@ const logger = createJsonLogger({ service: 'supervisor', clock: systemClock, str
 const settings = createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: noKeptRecords });
 await settings.load(new AbortController().signal);
 const manager = createChildManager({
+  inspector: testProcessInspector(),
+  lockMechanism: testKernelLock(),
   role: 'runtime',
   version: '0.0.0-fixture',
   onVersionMismatch: (mismatch) => {

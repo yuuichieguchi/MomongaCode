@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { daemonStatus } from '../src/commands/daemon.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { setupGenerations } from './generations-harness.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const STARTED = '2026-01-01T00:00:00.000Z';
 const CHILD_LINES = '  gateway: ready (pid 101)\n  runtime: ready (pid 102)\n';
@@ -37,7 +38,7 @@ describe('momonga daemon status shows the values of the last stop (close-grace d
   it('shows the values of the last stop alone when the settings file holds the same values', async (context) => {
     const { home, paths, start, ports, stdout } = await setupGenerations(context, '1.2.4');
     await start({ version: '1.2.4', generation: 2, pid: 4002 });
-    await writeStopRecord(generationLayout(home, 2).stopRecord, 2, STOP_VALUES);
+    await writeStopRecord(generationLayout(home, 2).stopRecord, 2, STOP_VALUES, testKernelLock());
     writeUserSettings(home, settingsOf(STOP_VALUES));
 
     expect(await daemonStatus({ ...ports, interrupt: new AbortController().signal } as unknown as CliPorts, paths)).toBe(0);
@@ -47,7 +48,7 @@ describe('momonga daemon status shows the values of the last stop (close-grace d
   it('shows the current values of the settings file under the last stop when they differ', async (context) => {
     const { home, paths, start, ports, stdout } = await setupGenerations(context, '1.2.4');
     await start({ version: '1.2.4', generation: 2, pid: 4002 });
-    await writeStopRecord(generationLayout(home, 2).stopRecord, 2, STOP_VALUES);
+    await writeStopRecord(generationLayout(home, 2).stopRecord, 2, STOP_VALUES, testKernelLock());
 
     expect(await daemonStatus({ ...ports, interrupt: new AbortController().signal } as unknown as CliPorts, paths)).toBe(0);
     expect(stdout.chunks.join('')).toBe(`${SERVING}  last stop: ${STOP_VALUES_TEXT}\n  settings now: ${DEFAULTS_TEXT}\n`);
@@ -57,7 +58,7 @@ describe('momonga daemon status shows the values of the last stop (close-grace d
     const { home, paths, start, ports, stdout } = await setupGenerations(context, '1.2.4');
     await start({ version: '1.2.3', generation: 1, pid: 4001, reports: { steps: 1, jobs: 0, calls: 0 } });
     await start({ version: '1.2.4', generation: 2, pid: 4002 });
-    await writeStopRecord(generationLayout(home, 1).stopRecord, 1, STOP_VALUES);
+    await writeStopRecord(generationLayout(home, 1).stopRecord, 1, STOP_VALUES, testKernelLock());
     writeUserSettings(home, settingsOf(STOP_VALUES));
 
     expect(await daemonStatus({ ...ports, interrupt: new AbortController().signal } as unknown as CliPorts, paths)).toBe(0);
@@ -69,7 +70,7 @@ describe('momonga daemon status shows the values of the last stop (close-grace d
   it('shows no stop for a record that names another generation', async (context) => {
     const { home, paths, start, ports, stdout } = await setupGenerations(context, '1.2.4');
     await start({ version: '1.2.4', generation: 2, pid: 4002 });
-    await writeStopRecord(generationLayout(home, 2).stopRecord, 1, STOP_VALUES);
+    await writeStopRecord(generationLayout(home, 2).stopRecord, 1, STOP_VALUES, testKernelLock());
 
     expect(await daemonStatus({ ...ports, interrupt: new AbortController().signal } as unknown as CliPorts, paths)).toBe(0);
     expect(stdout.chunks.join('')).toBe(SERVING);

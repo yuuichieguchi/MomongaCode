@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { TestContext } from 'vitest';
 import { GenerationPrepareError, beginGenerationStart, ensureMomongaDirs, generationLayout, momongaPaths, nodeGenerationStartFiles, publishCurrentGeneration } from '@momonga/foundation';
 import type { GenerationStartFiles, MomongaPaths } from '@momonga/foundation';
-import { PROPERTY_TIMEOUT_MS, createFakeKernelLock, withTempDir } from '@momonga/testkit';
+import { PROPERTY_TIMEOUT_MS, createFakeKernelLock, withTempDir, testKernelLock } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
@@ -18,7 +18,7 @@ const seeded = (seed: number): ((bound: number) => number) => {
 
 const setup = async (context: TestContext): Promise<{ home: string; paths: MomongaPaths }> => {
   const home = withTempDir(context, { asHome: true });
-  const paths = momongaPaths(home);
+  const paths = momongaPaths(home, process.platform, process.env);
   await ensureMomongaDirs(paths);
   return { home, paths };
 };
@@ -35,7 +35,7 @@ describe('run/current only moves up (CurrentOnlyByPromotion, CurVersionMonotone)
       let highest = 0;
       for (let step = 0, steps = 1 + next(20); step < steps; step += 1) {
         const generation = 1 + next(6);
-        const outcome = await publishCurrentGeneration(paths, { generation, version: `1.0.${generation}`, sockets: generationLayout(home, generation).sockets });
+        const outcome = await publishCurrentGeneration(paths, { generation, version: `1.0.${generation}`, sockets: generationLayout(home, generation).sockets }, { lock: testKernelLock() });
         expect(outcome).toBe(generation > highest ? 'published' : 'superseded');
         highest = Math.max(highest, generation);
         expect(JSON.parse(fs.readFileSync(paths.current, 'utf8'))).toMatchObject({ generation: highest, version: `1.0.${highest}` });

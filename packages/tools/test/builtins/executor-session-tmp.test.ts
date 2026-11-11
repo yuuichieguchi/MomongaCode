@@ -22,7 +22,7 @@ const fixture = async () => {
     ...ACCEPT,
     roots: [project],
     tmpDir,
-    sandboxPolicy: await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: await computeFileRules([], [project], tmpDir, ruleEnforcementOf('none'), testProbes()), roots: [project], home, tmpDir, sessionsTmpRoot: sessions }, NEVER_CANCELLED),
+    sandboxPolicy: await buildSandboxPolicy({ layout: momongaLayout(home, process.platform, process.env), protectedSet: EMPTY_PROTECTED_SET, fileRules: await computeFileRules([], [project], tmpDir, ruleEnforcementOf('none'), testProbes()), roots: [project], home, tmpDir, sessionsTmpRoot: sessions }, NEVER_CANCELLED),
   };
   return { tools, sessions, tmpDir, sibling, extra };
 };

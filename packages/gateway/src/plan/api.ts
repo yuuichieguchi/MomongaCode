@@ -1,7 +1,7 @@
 import { ModelsEditRefused, editModelsSettings } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
 import { isRecord } from '@momonga/foundation';
-import type { Clock, LimitTiming } from '@momonga/foundation';
+import type { Clock, KernelLockMechanism, LimitTiming } from '@momonga/foundation';
 import { PLAN_ACCOUNT_NOT_FOUND_CODE, PLAN_ACCOUNT_NOT_SELECTABLE_CODE, PLAN_LABEL_REFUSAL, isPlanLabel, RETRY_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
 import type {
   NamedPlanAccountRef,
@@ -55,6 +55,7 @@ export type PlanApiOptions = {
   catalog: PlanCatalog;
   home: string;
   settingsFile: string;
+  lock: KernelLockMechanism;
 };
 
 const stringField = (body: unknown, name: string): string => {
@@ -184,7 +185,7 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
 
   const addedModelOf = async (profile: string, slug: string, signal: AbortSignal): Promise<string> => {
     const connection = { adapter: 'open-responses' as const, plan: { profile } };
-    const { model } = await editModelsSettings(options.home, options.settingsFile, [{ kind: 'addModel', choice: { connection, model: { id: slug } } }], { signal, planProfiles: options.profiles });
+    const { model } = await editModelsSettings(options.home, options.settingsFile, [{ kind: 'addModel', choice: { connection, model: { id: slug } } }], { lock: options.lock, signal, planProfiles: options.profiles });
     if (model === undefined) throw new TypeError(`the settings writer added the plan model ${slug} without naming it`);
     return model;
   };

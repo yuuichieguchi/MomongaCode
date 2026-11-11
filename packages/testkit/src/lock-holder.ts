@@ -1,5 +1,6 @@
 import path from 'node:path';
 import type { Readable } from 'node:stream';
+import type { KernelLockMechanism } from '@momonga/foundation';
 import { spawnTracked } from './test-support.ts';
 import type { CleanupContext, TrackedChild } from './test-support.ts';
 
@@ -7,9 +8,9 @@ export const LOCK_HOLDER_MAIN = path.join(import.meta.dirname, 'lock-holder-main
 
 export const CLAIM_HOLDER_MAIN = path.join(import.meta.dirname, 'claim-holder-main.ts');
 
-const startHolderOf = (main: string) => (context: CleanupContext, lockPath: string, mechanismPlatform?: NodeJS.Platform): Promise<TrackedChild> =>
+const startHolderOf = (main: string) => (context: CleanupContext, lockPath: string, mechanismName?: KernelLockMechanism['name']): Promise<TrackedChild> =>
   new Promise((resolve, reject) => {
-    const child = spawnTracked(context, process.execPath, [main, lockPath, ...(mechanismPlatform === undefined ? [] : [mechanismPlatform])], {
+    const child = spawnTracked(context, process.execPath, [main, lockPath, ...(mechanismName === undefined ? [] : [mechanismName])], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';

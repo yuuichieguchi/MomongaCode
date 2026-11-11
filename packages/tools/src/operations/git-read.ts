@@ -46,16 +46,18 @@ export const resolveDestinations = async (read: GitReader, remote: string, optio
 export const sameList = (left: readonly unknown[], right: readonly unknown[]): boolean => left.length === right.length && left.every((value, index) => value === right[index]);
 
 const REPOSITORY_SCOPES: readonly string[] = ['local', 'worktree'];
-const TRUST_KEYS = '^http\\.(.*\\.)?(sslcainfo|sslcapath)$';
-const NO_MATCH_EXIT = 1;
 
-export const repositoryTrustKeys = async (read: GitReader, options: GitReadOptions): Promise<string[]> => {
-  const result = await read(['config', '--show-scope', '--name-only', '--get-regexp', TRUST_KEYS], options);
-  if (result.exitCode === NO_MATCH_EXIT && result.stdout.trim() === '') return [];
+export type RepositoryKey = { scope: string; key: string };
+
+export const repositoryOwnKeys = async (read: GitReader, options: GitReadOptions): Promise<RepositoryKey[]> => {
+  const result = await read(['config', '--list', '--show-scope', '--name-only', '-z'], options);
   if (result.exitCode !== 0) throw new ToolExecutionError(`the configuration of the repository could not be read: ${result.stderr.trim()}`);
-  return result.stdout
-    .split('\n')
-    .map((line) => line.split('\t'))
-    .filter(([scope, key]) => key !== undefined && REPOSITORY_SCOPES.includes(scope ?? ''))
-    .map(([, key]) => key as string);
+  const fields = result.stdout.split('\0');
+  const keys = new Map<string, RepositoryKey>();
+  for (let index = 0; index + 1 < fields.length; index += 2) {
+    const scope = fields[index];
+    const key = fields[index + 1];
+    if (scope !== undefined && key !== undefined && REPOSITORY_SCOPES.includes(scope)) keys.set(`${scope} ${key}`, { scope, key });
+  }
+  return [...keys.values()];
 };

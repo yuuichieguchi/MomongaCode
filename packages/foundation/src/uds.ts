@@ -138,7 +138,7 @@ const listenPipe = async (server: net.Server, pipePath: string): Promise<void> =
   }
 };
 
-export const listenUnix = async (server: net.Server, socketPath: string, lockOptions: AcquireProcessLockOptions | undefined, signal: AbortSignal): Promise<void> => {
+export const listenUnix = async (server: net.Server, socketPath: string, lockOptions: AcquireProcessLockOptions, signal: AbortSignal): Promise<void> => {
   if (!(signal instanceof AbortSignal)) throw new TypeError(`listening on ${socketPath} needs the signal of the operation that asked for it`);
   assertSocketPathLength(socketPath);
   if (isPipePath(socketPath)) return listenPipe(server, socketPath);

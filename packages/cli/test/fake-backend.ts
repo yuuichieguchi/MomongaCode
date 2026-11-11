@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { applyCapabilityOverride, INBOX_FULL_CODE, INBOX_MAX_PENDING, inboxFullMessage, parseCanon } from '@momonga/protocol';
-import { SCRIPTED_MODEL, SCRIPTED_PROVIDER, createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { SCRIPTED_MODEL, SCRIPTED_PROVIDER, createFakeClock, createFakeTimers, testKernelLock } from '@momonga/testkit';
 import type { Capabilities, CapabilityOverride, LocalServerDetection, MomongaModelEntry, ToolCallingState, ElicitationAnswerRecord, GoverningFactView, ImageAttachment, MemoryView, PermissionMode, SkillView, InboxRowView, RunStatus } from '@momonga/protocol';
 import type { RunEventFrame } from '../src/client/runtime-client.ts';
 import type { RunView, SessionView, TrustView } from '../src/client/views.ts';
@@ -317,6 +317,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     modelsHost: (signal) => ({
       home: homeOfModels(),
       settingsFile: modelsFile(),
+      lock: testKernelLock,
       platform: 'linux',
       interrupt: signal,
       files: {
@@ -519,7 +520,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     dismissedNotices: async () => ({}),
     dismissNotice: async () => undefined,
     settings: async () => readSettingsSnapshot({ ...settingsPlace(), trusted: (options.trust?.decision ?? 'trusted') === 'trusted', signal: new AbortController().signal }),
-    editSettings: (layer, operation, signal) => editSettings(settingsPlace(), layer, operation, { signal }),
+    editSettings: (layer, operation, signal) => editSettings(settingsPlace(), layer, operation, { lock: testKernelLock(), signal }),
     mcpServers: async () => options.mcpServers ?? [],
     initInstruction: async () => FAKE_INIT_INSTRUCTION,
     close: async () => {

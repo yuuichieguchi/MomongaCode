@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { EXIT_ALREADY_RUNNING, FIRST_GENERATION, STARTUP_TIMEOUT_MS, ensureMomongaDirs, generationLayout, momongaPaths, publishCurrentGeneration } from '@momonga/foundation';
 import type { SupervisorChildHealth } from '@momonga/protocol';
-import { registerCleanup, withTempDir } from '@momonga/testkit';
+import { registerCleanup, withTempDir, testKernelLock } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { describe, expect, it } from 'vitest';
 import { DaemonStartError, ensureDaemon } from '../src/daemon/ensure-daemon.ts';
@@ -27,7 +27,7 @@ const heldChildren = (): SupervisorChildHealth[] => [
 
 const setup = async (context: TestContext) => {
   const home = withTempDir(context, { asHome: true });
-  const paths = momongaPaths(home);
+  const paths = momongaPaths(home, process.platform, process.env);
   await ensureMomongaDirs(paths);
   const running: FakeSupervisor[] = [];
   registerCleanup(context, async () => {
@@ -98,7 +98,7 @@ describe('the client that starts a generation watches that generation, not run/c
 
     expect((await ensureDaemon(ports, paths, { bounds })).health.pid).toBe(STARTING_PID);
     await start({ version: VERSION, pid: SECOND_GENERATION_PID, generation: 2, children: readyChildren() });
-    await publishCurrentGeneration(paths, { generation: 2, version: VERSION, sockets: generationLayout(home, 2).sockets });
+    await publishCurrentGeneration(paths, { generation: 2, version: VERSION, sockets: generationLayout(home, 2).sockets }, { lock: testKernelLock() });
 
     const spawnsBefore = spawned.length;
     expect((await ensureDaemon(ports, paths, { bounds })).health.pid).toBe(SECOND_GENERATION_PID);

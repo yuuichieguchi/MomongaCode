@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { PlanProfile } from '@momonga/config';
-import { HOST_READ_BOUND_MS, endedStoreCall, hostKernelLock, isAtomicWriteTemporary, isRecord, operationLimit, sweepLeftovers, systemRandom } from '@momonga/foundation';
+import { HOST_READ_BOUND_MS, endedStoreCall, isAtomicWriteTemporary, isRecord, operationLimit, sweepLeftovers, systemRandom } from '@momonga/foundation';
 import type { Clock, CredentialEntry, FileSystem, KernelLockMechanism, LimitTiming, ListableCredentialStore, SecretBackend } from '@momonga/foundation';
 import { PLAN_ACCOUNT_STATES, PLAN_DISABLED_STATE, PLAN_LABEL_PATTERN, PLAN_REVOCATION_CONFIRMED, PLAN_REVOCATION_NONE, PLAN_REVOCATION_UNCONFIRMED, PLAN_SIGN_IN_FAILURE, PLAN_STORE_STATES, SIGNED_IN_OUTCOME, isPlanLabel } from '@momonga/protocol';
 import type { NamedPlanAccountRef, PlanAccountRef, PlanAccountState, PlanListProblem, PlanRevocation, PlanRevocationAnswer, PlanStoreState } from '@momonga/protocol';
@@ -94,7 +94,7 @@ export type OpenPlanSessionsOptions = {
   timing?: LimitTiming;
   redact(key: string, values: readonly string[]): void;
   warn(message: string): void;
-  lock?: KernelLockMechanism;
+  lock: KernelLockMechanism;
   random?: () => number;
   events?: PlanEvents;
   pointerSerial?: Serial;
@@ -655,7 +655,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   const ensureHost = async (): Promise<void> => {
     if (hostKnown) return;
     try {
-      await ensureHostIdentity(fileSystem, paths.host, { accountsExist: true });
+      await ensureHostIdentity(fileSystem, paths.host, { accountsExist: true, lock: options.lock });
     } catch (error) {
       throw hostIdentityFailure(error);
     }
@@ -1075,7 +1075,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       }
       const next: ActivePointer = { ...written, [ref.profile]: ref.account };
       try {
-        await writeActivePointer(fileSystem, paths.active, next);
+        await writeActivePointer(fileSystem, paths.active, next, options.lock);
       } catch (error) {
         throw storeWriteFailure(pointerFile, error);
       }
@@ -1282,7 +1282,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     };
   };
 
-  await sweepTemporaries(fileSystem, paths.sessions, options.lock ?? hostKernelLock(), options.warn);
+  await sweepTemporaries(fileSystem, paths.sessions, options.lock, options.warn);
   const listing = await store.listKeys(options.signal);
   const recordProblems: PlanListProblem[] = [...listing.problems];
   const listProblems = (): readonly PlanListProblem[] => (pointerProblem === undefined ? recordProblems : [...recordProblems, { file: path.basename(paths.active), cause: pointerProblem }]);

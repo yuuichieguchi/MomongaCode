@@ -1,5 +1,5 @@
 import { DEFAULT_STOP_VALUES, answeredLater, canonicalJson, createKeyedSerializer, isTransientErrno, sha256Hex, writeFileAtomically } from '@momonga/foundation';
-import type { FileSystem, PathAsking, Random, StopValues } from '@momonga/foundation';
+import type { FileSystem, PathAsking, Random, StopValues, KernelLockMechanism } from '@momonga/foundation';
 import { askerOf } from './asker.ts';
 import type { Asker } from './asker.ts';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
@@ -104,9 +104,9 @@ const unreadableRecordText = (file: string, reason: string): string => `the appl
 
 const APPLIED_RECORD_MODE = 0o600;
 
-export type AppliedRecordPorts = { signal: AbortSignal; random: Random; files?: FileSystem };
+export type AppliedRecordPorts = { signal: AbortSignal; random: Random; lock: KernelLockMechanism; files?: FileSystem };
 
-export const writeAppliedRecord = async (home: string, record: string, lastWrittenSeq: number | undefined, { signal, random, files }: AppliedRecordPorts): Promise<AppliedRecordWrite> => {
+export const writeAppliedRecord = async (home: string, record: string, lastWrittenSeq: number | undefined, { signal, random, lock, files }: AppliedRecordPorts): Promise<AppliedRecordWrite> => {
   const asker = askerOf(signal, files);
   let read: JsonFile;
   try {
@@ -121,7 +121,7 @@ export const writeAppliedRecord = async (home: string, record: string, lastWritt
   if (previous.kind === 'readable' && canonicalJson(previous.record.settings) === canonicalJson(settings)) return { kind: 'unchanged', seq: previous.record.seq };
   const seq = (previous.kind === 'readable' ? previous.record.seq : (lastWrittenSeq ?? 0)) + 1;
   signal.throwIfAborted();
-  await writeFileAtomically(asker.files, random, record, `${JSON.stringify({ seq, settings })}\n`, { mode: APPLIED_RECORD_MODE });
+  await writeFileAtomically(asker.files, random, record, `${JSON.stringify({ seq, settings })}\n`, { mode: APPLIED_RECORD_MODE, lock });
   return { kind: 'written', seq };
 };
 

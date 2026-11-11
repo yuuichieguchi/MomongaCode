@@ -5,6 +5,7 @@ import { nodeFileSystem } from './node-file-system.ts';
 import { parseOutsideJson } from './json-depth.ts';
 import { parseStopValues } from './process-contract.ts';
 import type { StopValues } from './process-contract.ts';
+import type { KernelLockMechanism } from './platform/kernel-lock.ts';
 import { systemRandom } from './system-random.ts';
 
 const STOP_RECORD_MODE = 0o600;
@@ -13,8 +14,8 @@ const GENERATION_DIRECTORY = /^g([1-9]\d*)$/;
 
 const RECORD_FIELDS = ['generation', 'values'];
 
-export const writeStopRecord = async (file: string, generation: number, values: StopValues): Promise<void> => {
-  await writeFileAtomically(nodeFileSystem, systemRandom, file, `${JSON.stringify({ generation, values })}\n`, { mode: STOP_RECORD_MODE });
+export const writeStopRecord = async (file: string, generation: number, values: StopValues, lock: KernelLockMechanism): Promise<void> => {
+  await writeFileAtomically(nodeFileSystem, systemRandom, file, `${JSON.stringify({ generation, values })}\n`, { mode: STOP_RECORD_MODE, lock });
 };
 
 const generationOfDirectory = (file: string): number | undefined => {

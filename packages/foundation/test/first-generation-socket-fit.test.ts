@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FIRST_GENERATION, SocketPathUnsupportedError, beginGenerationStart, ensureMomongaDirs, generationLayout, hostKernelLock, momongaPaths, shortTempBase } from '@momonga/foundation';
-import { firstRefusedSocketPathBytes } from '@momonga/testkit';
+import { FIRST_GENERATION, SocketPathUnsupportedError, beginGenerationStart, ensureMomongaDirs, generationLayout, momongaPaths, shortTempBase } from '@momonga/foundation';
+import { firstRefusedSocketPathBytes, testKernelLock } from '@momonga/testkit';
 
 const SUPERVISOR_SOCKET_SUFFIX = Buffer.byteLength(path.join('.momonga', 'run', `g${FIRST_GENERATION}`, 'supervisor.sock')) + 1;
 
@@ -21,7 +21,7 @@ describe.skipIf(process.platform === 'win32')('the start of a generation measure
       expect(Buffer.byteLength(supervisorSocket)).toBe(byteLength);
       const paths = momongaPaths(home, process.platform, {});
       await ensureMomongaDirs(paths);
-      const error = await beginGenerationStart(paths, { version: '1.2.3', foldVersion: 1, lock: hostKernelLock() }).catch((caught: unknown) => caught);
+      const error = await beginGenerationStart(paths, { version: '1.2.3', foldVersion: 1, lock: testKernelLock() }).catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(SocketPathUnsupportedError);
       expect((error as Error).message).toMatch(/^Unix socket path .* must be shorter than \d+ bytes/);
       expect((error as Error).message).toContain(supervisorSocket);
@@ -38,7 +38,7 @@ describe.skipIf(process.platform === 'win32')('the start of a generation measure
     try {
       const paths = momongaPaths(home, process.platform, {});
       await ensureMomongaDirs(paths);
-      const outcome = await beginGenerationStart(paths, { version: '1.2.3', foldVersion: 1, lock: hostKernelLock() });
+      const outcome = await beginGenerationStart(paths, { version: '1.2.3', foldVersion: 1, lock: testKernelLock() });
       expect(outcome).toMatchObject({ kind: 'allocated', generation: FIRST_GENERATION });
       if (outcome.kind === 'allocated') outcome.starting.release();
     } finally {

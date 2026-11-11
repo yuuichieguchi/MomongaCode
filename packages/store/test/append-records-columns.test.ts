@@ -2,11 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { canonicalJson, migrate, systemRandom, nodeFileSystem } from '@momonga/foundation';
+import { canonicalJson, migrate, systemRandom, nodeFileSystem, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { RunEventPayload } from '@momonga/protocol';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { createFakeClock } from '@momonga/testkit';
+import { createFakeClock, testKernelLock } from '@momonga/testkit';
 import { MIGRATIONS } from '../src/schema.ts';
 import { LEASE_MS, START_MS, callEvent, enqueue, makeStoreDir, mustClaim, newSession, openStoreAt, rawDb, registerCleanup, UNASKED_COMMANDS } from './helpers.ts';
 
@@ -15,7 +15,7 @@ type Decoded = { rows: number; bytes: number };
 type CallSeqStore = RuntimeStore & { toolCallSeq(runId: string, callId: string): number | undefined };
 
 const countingStore = (dbPath: string, decoded: Decoded): CallSeqStore => {
-  const store = openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home: path.dirname(dbPath),
     clock: createFakeClock(START_MS),

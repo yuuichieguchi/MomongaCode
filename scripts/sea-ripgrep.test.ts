@@ -56,7 +56,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('the built executable runs its embe
     root = createTempRoot({ asHome: true });
     binary = path.join(root, 'bin', 'momonga');
     project = path.join(root, 'p');
-    paths = momongaLayout(root);
+    paths = momongaLayout(root, process.platform, process.env);
     fs.mkdirSync(project);
     fs.writeFileSync(path.join(project, 'needle.txt'), `${NEEDLE}\n`);
     const script = [

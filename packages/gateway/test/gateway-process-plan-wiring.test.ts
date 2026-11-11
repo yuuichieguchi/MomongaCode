@@ -12,7 +12,8 @@ import {
   startFakeOpenResponses,
   startFakePlanResponses,
   startFakeSiwcAuth,
-} from '@momonga/testkit';
+  testKernelLock,
+  } from '@momonga/testkit';
 import { openPlanSessions } from '../src/plan/session.ts';
 import { outputText, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
@@ -48,7 +49,7 @@ const TOKEN_PREFIX_CHARS = 64;
 describe('plan tokens are redacted in every generation (M6, I-C1)', () => {
   it('keeps the loaded and the refreshed token, each echoed by the upstream in an error body after the refresh, out of the response, the log and every file under the home', async () => {
     const home = makeHome();
-    const layout = momongaLayout(home);
+    const layout = momongaLayout(home, process.platform, process.env);
     const secretStore = createFakeSecretStore({});
     const installed = new Set<string>();
     const echoes: Array<(request: RecordedUpstreamRequest) => string> = [() => [...installed].join(' '), (request) => bearerOf(request)];
@@ -64,13 +65,14 @@ describe('plan tokens are redacted in every generation (M6, I-C1)', () => {
     const profile: PlanProfile = { ...shipped, oauth: { ...shipped.oauth, resource: loopback }, targetDefaults: { ...shipped.targetDefaults, baseUrl: loopback } };
     fs.mkdirSync(layout.planSessions, { recursive: true, mode: 0o700 });
     const store = createEncryptedCredentialStore({
+      lock: testKernelLock(),
       directory: layout.planSessions,
       stateDirectory: path.dirname(layout.planSessions),
       secretStore: { kind: 'available', store: secretStore },
       plaintextTokenFiles: () => false,
     });
     const clock = createFakeClock(Date.now());
-    const sessions = await openPlanSessions({ signal: new AbortController().signal,
+    const sessions = await openPlanSessions({ lock: testKernelLock(), signal: new AbortController().signal,
       profiles: { [PROFILE_ID]: profile },
       paths: { sessions: layout.planSessions, host: layout.planHost, active: layout.planActive },
       store,

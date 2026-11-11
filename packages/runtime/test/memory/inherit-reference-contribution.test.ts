@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { openDatabase } from '@momonga/foundation';
+import { openDatabase, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { RunEventPayload } from '@momonga/protocol';
 import { createJournalReader } from '@momonga/store';
 import { contributionAtTerminal } from '@momonga/runtime';
@@ -33,7 +33,7 @@ describe('11d: the contribution hook resolves inherited segments through the rea
     );
     expect(referenceOf(h.store, child.id)).toMatchObject({ form: 'reference' });
 
-    const db = openDatabase(h.dbPath);
+    const db = openDatabase(h.dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     try {
       const reader = createJournalReader(db, {
         lookups: {
@@ -57,7 +57,7 @@ type Shape = (h: ReferenceHarness, b: ChainBuilder, oldShape: boolean) => Promis
 const LOADED: RunEventPayload = { type: 'context.memories_loaded', memories: [{ id: 'm1', status: 'unbound' }, { id: 'm2', status: 'unbound' }] };
 
 const measuredOf = (h: ReferenceHarness, runId: string) => {
-  const db = openDatabase(h.dbPath);
+  const db = openDatabase(h.dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
   try {
     const reader = createJournalReader(db, {
       lookups: {

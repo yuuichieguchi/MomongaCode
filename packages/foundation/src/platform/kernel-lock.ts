@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import { OPEN_FLAGS, nodeFileSystemSync } from '../node-file-system.ts';
 import { HOLDER_READ_MAX_BYTES, readHolderFile, readHolderFileSync, readHolderFromDescriptor, removeFilesThenRelease, rewriteHolderThroughDescriptor } from './holder-file.ts';
 import { fstatIdentity, lstatIdentity, sameFile } from './file-identity.ts';
 import type { LockFileIdentity } from './file-identity.ts';
@@ -50,6 +50,7 @@ const O_SHLOCK = 0x10;
 const O_EXLOCK = 0x20;
 
 const WOULD_BLOCK = 'EAGAIN';
+const LOCK_FILE_MODE = 0o600;
 
 export type FileLockOps = {
   open(lockPath: string, flags: number, mode?: number): number;
@@ -59,18 +60,20 @@ export type FileLockOps = {
 };
 
 export const nodeFileLockOps: FileLockOps = {
-  open: (lockPath, flags, mode) => fs.openSync(lockPath, flags, mode),
-  close: (descriptor) => fs.closeSync(descriptor),
+  open: (lockPath, flags, mode) => nodeFileSystemSync.openDescriptorSync(lockPath, flags, mode),
+  close: (descriptor) => nodeFileSystemSync.closeSync(descriptor),
   fstat: fstatIdentity,
   lstat: lstatIdentity,
 };
 
-const SHARED_PROBE_FLAGS = fs.constants.O_RDONLY | O_SHLOCK | fs.constants.O_NONBLOCK | fs.constants.O_NOFOLLOW;
+const sharedProbeFlags = (): number => OPEN_FLAGS.readOnly | O_SHLOCK | OPEN_FLAGS.nonBlocking | OPEN_FLAGS.noFollow;
+
+const exclusiveClaimFlags = (): number => OPEN_FLAGS.readWrite | OPEN_FLAGS.create | O_EXLOCK | OPEN_FLAGS.nonBlocking | OPEN_FLAGS.noFollow;
 
 const holdsExclusively = (ops: FileLockOps, lockPath: string): boolean => {
   let descriptor: number;
   try {
-    descriptor = ops.open(lockPath, SHARED_PROBE_FLAGS);
+    descriptor = ops.open(lockPath, sharedProbeFlags());
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === WOULD_BLOCK) return true;
     throw error;
@@ -107,11 +110,10 @@ const probeFile = (ops: FileLockOps, lockPath: string): boolean => {
 const claimFile =
   (ops: FileLockOps) =>
   (lockPath: string): ClaimOutcome => {
-    const { O_RDWR, O_CREAT, O_NONBLOCK, O_NOFOLLOW } = fs.constants;
     for (;;) {
       let descriptor: number;
       try {
-        descriptor = ops.open(lockPath, O_RDWR | O_CREAT | O_EXLOCK | O_NONBLOCK | O_NOFOLLOW, 0o600);
+        descriptor = ops.open(lockPath, exclusiveClaimFlags(), LOCK_FILE_MODE);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== WOULD_BLOCK) throw error;
         if (probeFile(ops, lockPath)) return { kind: 'held' };
@@ -125,14 +127,15 @@ const claimFile =
 const adoptFile =
   (ops: FileLockOps) =>
   ({ lockPath, descriptor, expectedHolder, newHolder }: InheritedLockRequest): HeldKernelLock => {
-    let inherited: fs.BigIntStats;
+    let inherited: LockFileIdentity;
+    let inheritedIsFile: boolean;
     try {
-      inherited = fs.fstatSync(descriptor, { bigint: true });
+      inherited = ops.fstat(descriptor);
+      inheritedIsFile = nodeFileSystemSync.fstatSync(descriptor).isFile();
     } catch (error) {
       throw new LockAdoptionError(`descriptor ${descriptor} is not open: ${(error as Error).message}`);
     }
-    const named = fs.statSync(lockPath, { bigint: true });
-    if (!inherited.isFile() || inherited.dev !== named.dev || inherited.ino !== named.ino) {
+    if (!inheritedIsFile || !sameFile(inherited, nodeFileSystemSync.identitySync(lockPath))) {
       throw new LockAdoptionError(`descriptor ${descriptor} is not ${lockPath}`);
     }
     if (readHolderFromDescriptor(descriptor) !== expectedHolder) {
@@ -156,5 +159,7 @@ export const createFileLock = (ops: FileLockOps): KernelLockMechanism => ({
 
 export const bsdFileLock: KernelLockMechanism = createFileLock(nodeFileLockOps);
 
-export const resolveKernelLock = async (dir: string, { capability }: { capability: LockCapabilityProbe }): Promise<KernelLockMechanism> =>
-  (await capability.of(dir)) === 'proved' ? bsdFileLock : sqliteFileLock;
+export const kernelLockNamed = (name: KernelLockMechanism['name']): KernelLockMechanism => (name === 'file-lock' ? bsdFileLock : sqliteFileLock);
+
+export const resolveKernelLock = (dir: string, { capability }: { capability: LockCapabilityProbe }): KernelLockMechanism =>
+  kernelLockNamed(capability.decide(dir) === 'proved' ? 'file-lock' : 'sqlite-lock');
