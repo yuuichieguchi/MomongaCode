@@ -1,5 +1,5 @@
 import type { Segment, WrapRecord } from '@momonga/protocol';
-import { parseJson } from '../probe/json.ts';
+import { MalformedJsonError, parseExternalJson } from '../adapters/shared/json.ts';
 import { isRecord } from './schema.ts';
 
 const reach = (value: unknown, path: readonly Segment[]): unknown[] => {
@@ -13,9 +13,19 @@ const reach = (value: unknown, path: readonly Segment[]): unknown[] => {
   return nodes;
 };
 
+const readableReplyOf = (text: string): unknown => {
+  try {
+    return parseExternalJson(text);
+  } catch (error) {
+    if (error instanceof MalformedJsonError) return undefined;
+    throw error;
+  }
+};
+
 export const invertReply = (record: WrapRecord, text: string): string => {
   if (record.wrapped.length === 0) return text;
-  const parsed = parseJson(text);
+  const parsed = readableReplyOf(text);
+  if (parsed === undefined) return text;
   let changed = false;
   for (const { at, property } of record.wrapped) {
     for (const node of reach(parsed, at)) {

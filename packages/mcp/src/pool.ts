@@ -1,5 +1,5 @@
 import type { CredentialRules, McpServerEntry } from '@momonga/config';
-import type { Clock } from '@momonga/foundation';
+import type { Clock, FileSystem } from '@momonga/foundation';
 import type { ToolSource } from '@momonga/tools';
 import type { McpRemotePorts } from './remote-ports.ts';
 import type { CloseGrace, McpMarkerOptions } from './stdio-transport.ts';
@@ -12,6 +12,7 @@ export type McpPoolOptions = {
   servers: readonly McpServerEntry[];
   projectDir: string;
   baseEnv: Record<string, string>;
+  files: FileSystem;
   clock: Clock;
   clientVersion: string;
   credentials?: CredentialRules;
@@ -50,6 +51,7 @@ export const createMcpPool = (options: McpPoolOptions): McpAuthorizingPool => {
       scope: entry.scope,
       projectDir,
       baseEnv,
+      files: options.files,
       clock,
       clientVersion,
       ...(options.credentials === undefined ? {} : { credentials: options.credentials }),

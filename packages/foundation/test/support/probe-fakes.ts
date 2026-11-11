@@ -3,49 +3,14 @@ import type { CommandOptions, CommandResult, CommandRunner } from '../../src/pla
 import type { FileLockOps } from '../../src/platform/kernel-lock.ts';
 import { nodeFileLockOps } from '../../src/platform/kernel-lock.ts';
 import type { LockCapability, LockCapabilityProbe } from '../../src/platform/lock-capability.ts';
-import type { Timing } from '../../src/timing.ts';
+import { createFakeClock, createFakeTimers, driveFakeTime } from '@momonga/testkit';
+import type { FakeTimers } from '@momonga/testkit';
 
 export const LOCK_FLAG_BITS = 0x10 | 0x20;
 
-export type VirtualTiming = Timing & {
-  advanceTo(time: number): Promise<void>;
-};
+export type VirtualTiming = FakeTimers;
 
-export const flushAsync = async (rounds = 20): Promise<void> => {
-  for (let round = 0; round < rounds; round += 1) await new Promise<void>((resolve) => setImmediate(resolve));
-};
-
-export const virtualTiming = (): VirtualTiming => {
-  let current = 0;
-  const waiters: Array<{ at: number; wake: () => void }> = [];
-  const wakeAfter = (ms: number, wake: () => void): { at: number; wake: () => void } => {
-    const waiter = { at: current + ms, wake };
-    waiters.push(waiter);
-    return waiter;
-  };
-  return {
-    now: () => current,
-    monotonicMs: () => current,
-    setTimeout: (callback, ms) => wakeAfter(ms, callback),
-    clearTimeout: (handle) => {
-      const index = waiters.findIndex((waiter) => waiter === handle);
-      if (index >= 0) waiters.splice(index, 1);
-    },
-    advanceTo: async (time) => {
-      for (;;) {
-        await flushAsync();
-        waiters.sort((left, right) => left.at - right.at);
-        const next = waiters[0];
-        if (next === undefined || next.at > time) break;
-        waiters.shift();
-        current = next.at;
-        next.wake();
-      }
-      current = time;
-      await flushAsync();
-    },
-  };
-};
+export const virtualTiming = (): VirtualTiming => createFakeTimers(createFakeClock(0));
 
 export type RecordedCommand = { file: string; args: readonly string[]; options: CommandOptions; killed: boolean };
 
@@ -149,13 +114,23 @@ export const exclusiveProbeIsRefused = (file: string): boolean => {
   }
 };
 
-export const pendingOrSettled = async <T>(promise: Promise<T>): Promise<{ state: 'pending' } | { state: 'resolved'; value: T } | { state: 'rejected'; reason: unknown }> => {
-  const outcome = promise.then(
-    (value) => ({ state: 'resolved' as const, value }),
-    (reason: unknown) => ({ state: 'rejected' as const, reason }),
+export type Settled<T> = { state: 'pending' } | { state: 'resolved'; value: T } | { state: 'rejected'; reason: unknown };
+
+export type Settlement<T> = { current(): Settled<T> };
+
+export const settlementOf = <T>(promise: Promise<T>): Settlement<T> => {
+  let current: Settled<T> = { state: 'pending' };
+  promise.then(
+    (value) => void (current = { state: 'resolved', value }),
+    (reason: unknown) => void (current = { state: 'rejected', reason }),
   );
-  return Promise.race([outcome, flushAsync().then(() => ({ state: 'pending' as const }))]);
+  return { current: () => current };
 };
+
+export const driveUntil = (timing: VirtualTiming, done: () => boolean, horizonAt: number, description: string): Promise<void> => driveFakeTime(timing, { done, horizonAt, description });
+
+export const driveUntilSettled = <T>(timing: VirtualTiming, settlement: Settlement<T>, horizonAt: number): Promise<void> =>
+  driveUntil(timing, () => settlement.current().state !== 'pending', horizonAt, 'the settlement of the promise');
 
 export type ProbeSighting = 'absent' | 'held' | 'unlocked';
 

@@ -32,7 +32,7 @@ export const pinnedStart = (): RunEventPayload => ({
   mode: 'manual',
 });
 
-export type StartedCall = { callId: string; name: string; kind?: ToolKind; args?: Record<string, unknown> };
+export type StartedCall = { callId: string; name: string; kind?: ToolKind; args?: Record<string, unknown>; facts?: Record<string, unknown> };
 
 export const seedStartedCalls = async (env: Env, calls: readonly StartedCall[], options: { cancel?: boolean } = {}) => {
   const run = await env.enqueue('Work');
@@ -52,7 +52,7 @@ export const seedStartedCalls = async (env: Env, calls: readonly StartedCall[], 
     ]),
   ];
   await env.seed(run.id, payloads, 'crash');
-  for (const call of calls) env.store.idempotency.begin(keys[call.callId] as string, { expiresAt: START_MS + 86_400_000, meta: { tool: call.name } });
+  for (const call of calls) env.store.idempotency.begin(keys[call.callId] as string, { expiresAt: START_MS + 86_400_000, meta: { tool: call.name, ...(call.facts === undefined ? {} : { facts: call.facts }) } });
   if (options.cancel !== false && (await env.cancel(run.id)).status !== 'CANCELLING') throw new Error('expected the run to be CANCELLING');
   return { run, keys };
 };

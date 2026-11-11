@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { systemTiming } from '@momonga/foundation';
 import type { OutboundNetwork } from '@momonga/foundation';
 import type { CliPorts } from '../src/ports.ts';
+import { waitFor } from '@momonga/testkit';
 
 const reader = vi.hoisted(() => ({
   read: (): Promise<readonly string[]> => new Promise<readonly string[]>(() => undefined),
@@ -46,10 +47,6 @@ const freshNetwork = async (): Promise<typeof import('../src/network.ts')> => {
   return import('../src/network.ts');
 };
 
-const flush = async (): Promise<void> => {
-  for (let turn = 0; turn < 20; turn += 1) await new Promise<void>((resolve) => setImmediate(resolve));
-};
-
 describe('the CLI reads the trust store under the one CLI host-read bound', () => {
   it('foundation exports HOST_READ_BOUND_MS as 300 000 ms', async () => {
     const foundation = (await import('@momonga/foundation')) as Record<string, unknown>;
@@ -67,16 +64,16 @@ describe('the CLI reads the trust store under the one CLI host-read bound', () =
     void withOutboundNetwork(ports(), new AbortController().signal, async (network) => {
       settled = network;
     });
-    while (reader.signals.length === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+    await waitFor(() => reader.signals.length > 0, { description: 'the read of the trust store' });
     const signal = reader.signals[0];
     vi.advanceTimersByTime(HOST_READ_BOUND_MS - 1);
-    await flush();
 
     expect(signal?.aborted).toBe(false);
     expect(settled).toBeUndefined();
 
     vi.advanceTimersByTime(1);
-    while (settled === undefined) await new Promise<void>((resolve) => setImmediate(resolve));
+    await waitFor(() => settled !== undefined, { description: 'the network admitted after the bound' });
+    if (settled === undefined) throw new Error('the network was not admitted');
 
     expect(signal?.aborted).toBe(true);
     expect(settled.trust.sources.find((entry) => entry.source === 'system')).toEqual({ source: 'system', certificates: 0 });

@@ -19,7 +19,7 @@ const HARNESS: Harness = {
 const rows = [foldFacts(eventsOf('r1', [[T0, started(1, { declared: true })], [T0 + 100, terminal('COMPLETED')]]), runInfo({ runId: 'r1', status: 'COMPLETED' }))];
 
 const build = (kind: ReportKind, harness: Harness | null): ReliabilityReport =>
-  (buildReliabilityReport as (input: unknown) => ReliabilityReport)({ kind, aggregate: aggregate(rows, { groupBy: 'model' }), harness });
+  (buildReliabilityReport as (input: unknown) => ReliabilityReport)({ kind, aggregate: aggregate(rows, { groupBy: 'model' }), harness, ...(kind === 'benchmark' ? { notRun: [] } : {}) });
 
 const encodedWith = (kind: ReportKind, harness: unknown): string => {
   const encoded = JSON.parse(encodeReliabilityReport(build('real', null))) as Record<string, unknown>;
@@ -87,7 +87,7 @@ describe('3.3 item 4 and 4.3: per-task rows, per-scenario rows and X3 witnessed'
   const WITNESSED = { k: 1, n: 3 };
 
   const buildWith = (kind: ReportKind, extra: Record<string, unknown>): ReliabilityReport =>
-    (buildReliabilityReport as (input: unknown) => ReliabilityReport)({ kind, aggregate: aggregate(rows, { groupBy: 'model' }), harness: HARNESS, ...extra });
+    (buildReliabilityReport as (input: unknown) => ReliabilityReport)({ kind, aggregate: aggregate(rows, { groupBy: 'model' }), harness: HARNESS, ...(kind === 'benchmark' ? { notRun: [] } : {}), ...extra });
 
   it('a benchmark report carries its per-task rows through the round trip', () => {
     const report = buildWith('benchmark', { tasks: TASKS });
@@ -109,9 +109,9 @@ describe('3.3 item 4 and 4.3: per-task rows, per-scenario rows and X3 witnessed'
     expect(formatReliabilityReport(report)).toContain('Not run: disk-full: linux-container');
   });
 
-  it('the decoder refuses a population block on a benchmark report', () => {
-    const encoded = JSON.parse(encodeReliabilityReport(buildWith('benchmark', { tasks: TASKS }))) as Record<string, unknown>;
-    expect(() => decodeReliabilityReport(JSON.stringify({ ...encoded, population: { notRun: [] } }))).toThrow(/population/);
+  it('a benchmark report carries the trials that did not run through the round trip', () => {
+    const report = buildWith('benchmark', { tasks: TASKS, notRun: [{ id: 'task t trial 0', reason: 'its setup did not exit 0' }] });
+    expect(decodeReliabilityReport(encodeReliabilityReport(report)).population).toEqual({ notRun: [{ id: 'task t trial 0', reason: 'its setup did not exit 0' }] });
   });
 
   it('the decoder refuses a per-task row whose met exceeds its trials', () => {

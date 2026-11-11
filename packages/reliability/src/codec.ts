@@ -223,7 +223,7 @@ export const decodeReliabilityReport = (text: string): ReliabilityReport => {
   rowsOnlyFor('tasks', 'benchmark');
   rowsOnlyFor('scenarios', 'injection');
   rowsOnlyFor('witnessed', 'injection');
-  rowsOnlyFor('population', 'injection');
+  rowsOnlyFor('population', 'injection', 'benchmark');
   rowsOnlyFor('period', 'real');
   rowsOnlyFor('cost', 'real', 'benchmark');
   return {

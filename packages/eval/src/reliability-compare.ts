@@ -16,6 +16,7 @@ type Term = (pairing: Pairing) => GateCheck;
 
 type KindRow = {
   unit: string;
+  size: string;
   requireModel: boolean;
   unitsOf(report: ReliabilityReport): readonly Unit[];
   terms: readonly Term[];
@@ -53,6 +54,18 @@ const witnessedTerm: Term = ({ candidate }) => {
   return { name, passed: witnessed.k === 0, detail: `${witnessed.k} of ${witnessed.n} witnessed trials of the candidate duplicated an effect; the candidate must have none` };
 };
 
+const notRunTerm: Term = ({ baseline, candidate }) => {
+  const missing = [
+    ...(baseline.report.population?.notRun ?? []).map((entry) => `baseline ${entry.id} (${entry.reason})`),
+    ...(candidate.report.population?.notRun ?? []).map((entry) => `candidate ${entry.id} (${entry.reason})`),
+  ];
+  return {
+    name: 'notRun',
+    passed: missing.length === 0,
+    detail: missing.length === 0 ? 'every unit of both reports ran' : `${missing.length} unit(s) did not run, so the reports do not measure the whole suite: ${missing.join('; ')}`,
+  };
+};
+
 const taskUnits: KindRow['unitsOf'] = (report) =>
   unitsOrRefuse(report.tasks, 'per-task rows', 'benchmark').map((row) => ({ id: row.task, numerator: row.met, denominator: row.trials }));
 
@@ -60,8 +73,8 @@ const scenarioUnits: KindRow['unitsOf'] = (report) =>
   unitsOrRefuse(report.scenarios, 'per-scenario rows', 'injection').map((row) => ({ id: row.scenario, numerator: row.recovered, denominator: row.episodes }));
 
 const KIND_ROWS: Record<Exclude<ReportKind, 'real'>, KindRow> = {
-  benchmark: { unit: 'task', requireModel: true, unitsOf: taskUnits, terms: [rateTerm('completionRate', 'task', taskUnits)] },
-  injection: { unit: 'scenario', requireModel: false, unitsOf: scenarioUnits, terms: [rateTerm('recoveryRate', 'scenario', scenarioUnits), witnessedTerm] },
+  benchmark: { unit: 'task', size: 'trials', requireModel: true, unitsOf: taskUnits, terms: [rateTerm('completionRate', 'task', taskUnits)] },
+  injection: { unit: 'scenario', size: 'episodes', requireModel: false, unitsOf: scenarioUnits, terms: [rateTerm('recoveryRate', 'scenario', scenarioUnits), witnessedTerm] },
 };
 
 export type ReliabilityComparison = {
@@ -93,6 +106,12 @@ const assertPaired = (row: KindRow, baseline: ReliabilityReport, candidate: Reli
     ...[...after].filter((id) => !before.has(id)).map((id) => `${row.unit} ${id} is missing from the baseline report`),
   ];
   if (missing.length > 0) throw new EvalError(`${missing.join('; ')}, so the reports cannot be paired`);
+  const sizes = new Map(row.unitsOf(baseline).map((unit) => [unit.id, unit.denominator]));
+  const unequal = row.unitsOf(candidate).flatMap((unit) => {
+    const size = sizes.get(unit.id);
+    return size === undefined || size === unit.denominator ? [] : [`${row.unit} ${unit.id} has ${size} ${row.size} in the baseline report and ${unit.denominator} in the candidate report`];
+  });
+  if (unequal.length > 0) throw new EvalError(`${unequal.join('; ')}, so the paired rates are not of equal size and the reports cannot be compared`);
 };
 
 export const compareReliability = (baseline: ReliabilityReport, candidate: ReliabilityReport, options: { seed: number }): ReliabilityComparison => {
@@ -112,7 +131,7 @@ export const compareReliability = (baseline: ReliabilityReport, candidate: Relia
   assertUnique(row, 'candidate', candidate);
   assertPaired(row, baseline, candidate);
   const pairing: Pairing = { baseline: before, candidate: after, seed: options.seed };
-  const checks = [answererTerm(before.harness, after.harness, row.requireModel), ...row.terms.map((term) => term(pairing))];
+  const checks = [answererTerm(before.harness, after.harness, row.requireModel), notRunTerm(pairing), ...row.terms.map((term) => term(pairing))];
   return { gateName: 'reliability', kind, baseline: before.harness, candidate: after.harness, gate: { passed: checks.every((check) => check.passed), checks } };
 };
 

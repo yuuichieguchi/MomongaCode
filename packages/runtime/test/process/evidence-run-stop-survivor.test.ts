@@ -10,7 +10,7 @@ import type { Sandbox } from '@momonga/sandbox';
 import { fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
 import { launch } from '../../../sandbox/src/process.ts';
 import type { LaunchOptions } from '../../../sandbox/src/process.ts';
-import { virtualTiming } from '../../../foundation/test/support/probe-fakes.ts';
+import { virtualTiming, driveUntil } from '../../../foundation/test/support/probe-fakes.ts';
 import { createEvidenceRunner } from '../../src/process/evidence-run.ts';
 import type { EvidenceRunnerOptions } from '../../src/process/evidence-run.ts';
 import { fixedSandboxBindings } from '@momonga/runtime';
@@ -87,7 +87,7 @@ const runEvidence = async (context: Parameters<typeof withTempDir>[0], survives:
     () => (done = true),
     () => (done = true),
   );
-  for (let step = 1; !done && step <= 1000; step += 1) await timing.advanceTo(step * KILL_GRACE_MS);
+  await driveUntil(timing, () => done, 1000 * KILL_GRACE_MS, 'the stop to end');
   const result = await pending;
   return { result, markers: fs.readdirSync(paths.markers.tools), dir: paths.markers.tools };
 };

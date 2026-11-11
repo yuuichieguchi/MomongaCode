@@ -20,13 +20,13 @@ const sandbox = createBubblewrapSandbox({
   killGraceMs: KILL_GRACE_MS,
   holders: () => new Set(),
   journal: {
-    intend: (target, intentMs) => {
+    intend: async (target, intentMs) => {
       if (killAt === 'before-intend') killSelf();
-      inner.intend(target, intentMs);
+      await inner.intend(target, intentMs);
     },
-    complete: (target, identity) => {
+    complete: async (target, identity) => {
       if (killAt === 'before-complete') killSelf();
-      inner.complete(target, identity);
+      await inner.complete(target, identity);
       if (killAt === 'after-complete') killSelf();
     },
     forget: (target) => inner.forget(target),

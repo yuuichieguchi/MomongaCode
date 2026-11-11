@@ -1,7 +1,7 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { AnsweredByView, RunCostView, RunFactsView } from '@momonga/protocol';
 import { aggregate, buildReliabilityReport, costOf } from '@momonga/reliability';
-import type { GroupKey, ReliabilityReport, TaskLabels, TaskRow } from '@momonga/reliability';
+import type { GroupKey, NotRun, ReliabilityReport, TaskLabels, TaskRow } from '@momonga/reliability';
 import type { Benchmark, BenchTask } from './bench.ts';
 import { uniqueAnswerers } from './context-report.ts';
 import { EvalError } from './runner.ts';
@@ -11,6 +11,7 @@ export type BenchmarkTrial = { taskId: string; trial: number; facts: RunFactsVie
 export type BuildBenchmarkReportInput = {
   benchmark: Benchmark;
   trials: readonly BenchmarkTrial[];
+  notRun: readonly NotRun[];
   answeredBy: readonly AnsweredByView[];
   unrecordedAnswers: number;
   codeDigest: string;
@@ -64,6 +65,7 @@ export const buildBenchmarkReport = (input: BuildBenchmarkReportInput): Reliabil
     kind: 'benchmark',
     aggregate: aggregated,
     cost: costOf(aggregated, input.trials.flatMap((trial) => trial.costs)),
+    notRun: [...input.notRun],
     harness: {
       suite: { name: benchmark.name, digest: suiteDigestOf(benchmark) },
       answeredBy: uniqueAnswerers(input.answeredBy),

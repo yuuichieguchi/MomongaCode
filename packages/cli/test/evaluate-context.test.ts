@@ -101,6 +101,7 @@ const harness = (failingOn: number = 0, answers: Answers = 'script') => {
         return text;
       },
       writeText: async (file: string, text: string) => void stored.set(file, text),
+      exists: async (file: string) => stored.has(file) || [...stored.keys()].some((key) => key.startsWith(`${file}/`)),
       listFiles: async (directory: string) => [...stored.keys()].filter((file) => file.startsWith(`${directory}/`)).sort(),
     },
     interrupt: new AbortController().signal,

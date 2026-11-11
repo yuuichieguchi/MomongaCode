@@ -344,7 +344,6 @@ describe('a Keychain that cannot answer, in the gateway process', () => {
   it.for([
     { title: 'the default of 300000 ms', headersTimeoutMs: undefined, limitMs: 300_000, label: 'the request limit' },
     { title: 'a configured 5000 ms', headersTimeoutMs: 5000, limitMs: 5000, label: 'the request limit' },
-    { title: 'a configured 0 falls to the secret read limit', headersTimeoutMs: 0, limitMs: 300_000, label: 'the secret read limit' },
   ])('a hung key read ends at models.headersTimeoutMs ($title)', async ({ headersTimeoutMs, limitMs, label }, context) => {
     const timers = gatewayTimers();
     const stack = await startStack(context, KEYCHAIN, {

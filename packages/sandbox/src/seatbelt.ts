@@ -25,9 +25,9 @@ export function createSeatbeltSandbox(options: SeatbeltSandboxOptions): Sandbox 
     kind: 'seatbelt',
     async spawn(command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal, descriptors?: SandboxDescriptors): Promise<SandboxedProcess> {
       const paths = hostPaths(signal);
-      for (const root of policy.writableRoots) assertExistingDirectory(root);
+      for (const root of policy.writableRoots) await assertExistingDirectory(root);
       if (command.tmpDir !== undefined) {
-        assertExistingDirectory(command.tmpDir);
+        await assertExistingDirectory(command.tmpDir);
         const { profile, params } = await buildSeatbeltProfile(policy, { tmpDir: command.tmpDir }, paths);
         return launch({
           file: sandboxExecPath,

@@ -323,7 +323,7 @@
         "job": 1
       },
       "packages/foundation/src/platform/windows-kept-groups.ts": {
-        "job": 3
+        "job": 2
       },
       "packages/foundation/src/schema-reference-cycles.ts": {
         "target": 1
@@ -413,7 +413,7 @@
         "target": 1
       },
       "packages/gateway/src/key-read-limit.ts": {
-        "limit": 2
+        "limit": 1
       },
       "packages/gateway/src/managed/server.ts": {
         "directory": 1

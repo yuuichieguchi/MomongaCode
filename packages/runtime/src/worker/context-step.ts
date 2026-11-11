@@ -129,13 +129,7 @@ const offeredKeyOf = (tools: readonly FunctionTool[], companions: Companions): s
 const admittedFloors = new WeakMap<ClaimContext, AdmittedFloor>();
 
 const recordedReferencesOf = (ctx: ClaimContext): ReadonlySet<string> =>
-  ctx.token.outputFormatters.includes('identicalOutput')
-    ? new Set(
-        ctx.options.store
-          .readRunEventsOfTypes(ctx.run.id, ['context.truncated'])
-          .flatMap((event) => (event.type === 'context.truncated' && event.kind === 'reference' ? [event.callId] : [])),
-      )
-    : new Set<string>();
+  new Set(ctx.token.outputFormatters.includes('identicalOutput') ? (ctx.journal.state.referencedOutputs ?? []) : []);
 
 type OfferedInput = { input: BuildContextInput; offered: string; governing: string; kinds: string; joined: string[] };
 
@@ -794,7 +788,7 @@ const nothingToCompactMessage = (ctx: ClaimContext, block: CompactionBlock | und
 };
 
 export const compactOnly = async (ctx: ClaimContext, focus: string | undefined): Promise<void> => {
-  if (ctx.options.store.readRunEventsOfTypes(ctx.run.id, ['context.compacted']).length > 0) {
+  if (ctx.journal.state.ownCompactionEventSeq !== undefined) {
     await ctx.terminals.finish('COMPLETED');
     return;
   }

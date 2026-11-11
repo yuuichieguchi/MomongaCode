@@ -3,7 +3,7 @@ import { runView } from './fake-backend.ts';
 import { untilFrame, untilOutput } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
 import { runStarted } from './tui-harness.tsx';
-import { CHATGPT, LISTENER_PORT, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, quiet, rowNumberOf, startPlan, submitLine, untilRow } from './fake-plan-gateway.tsx';
+import { CHATGPT, LISTENER_PORT, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, rowNumberOf, startPlan, submitLine, untilRow, untilTypedAfter } from './fake-plan-gateway.tsx';
 import type { FakePlanBackend } from './fake-plan-gateway.tsx';
 
 vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
@@ -105,7 +105,7 @@ describe('a sign-in listener that cannot start (O-R5-6 A)', () => {
     await submitLine(app, '/login chatgpt');
     await choose(app, CHATGPT.loginLabel);
     await untilOutput(app, 'Could not start the local sign-in listener (bind refused). Nothing was changed.');
-    await quiet();
+    await untilTypedAfter(app);
     expect(backend.planCalls.map((call) => call.route)).not.toContain('sign-in/begin');
     app.unmount();
   });

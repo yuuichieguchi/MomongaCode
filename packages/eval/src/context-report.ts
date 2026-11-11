@@ -181,6 +181,18 @@ const measureRun = (entry: ExpandedCase, transcript: Transcript): RunMeasure => 
   };
 };
 
+const UNMEASURED_PREFIX = 'could not be measured';
+
+const measuredTranscript = (entry: ExpandedCase, transcript: Transcript): { transcript: Transcript; measure: RunMeasure } => {
+  try {
+    return { transcript, measure: measureRun(entry, transcript) };
+  } catch (error) {
+    if (!(error instanceof EvalError)) throw error;
+    const unmeasured: Transcript = { ...transcript, events: [], children: [], stopped: `${UNMEASURED_PREFIX}: ${error.message}` };
+    return { transcript: unmeasured, measure: measureRun(entry, unmeasured) };
+  }
+};
+
 const caseReportOf = (entry: ExpandedCase, measures: readonly RunMeasure[]): ContextCaseReport => {
   const passedRuns = measures.filter((measure) => measure.passed).length;
   const passRate = proportionOrUndefined(passedRuns, measures.length);
@@ -325,11 +337,10 @@ const answeredByOf = (transcripts: readonly Transcript[]): Answerer[] => uniqueA
 export const buildContextReport = (input: BuildContextReportInput): ContextReport => {
   const datasetSeed = input.datasetSeed ?? DEFAULT_DATASET_SEED;
   const expanded = expandContextDataset(input.dataset, datasetSeed);
-  const measured: MeasuredCase[] = transcriptsByCase(expanded.cases, input.transcripts).map(({ golden, recorded }) => ({
-    entry: golden,
-    measures: recorded.map((transcript) => measureRun(golden, transcript)),
-    transcripts: recorded,
-  }));
+  const measured: MeasuredCase[] = transcriptsByCase(expanded.cases, input.transcripts).map(({ golden, recorded }) => {
+    const runs = recorded.map((transcript) => measuredTranscript(golden, transcript));
+    return { entry: golden, measures: runs.map((run) => run.measure), transcripts: runs.map((run) => run.transcript) };
+  });
   const cases = measured.map(({ entry, measures }) => caseReportOf(entry, measures));
   const measures = measured.flatMap((item) => item.measures);
   const transcripts = measured.flatMap((item) => item.transcripts);

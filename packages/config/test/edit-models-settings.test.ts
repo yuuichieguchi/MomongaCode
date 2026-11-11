@@ -8,7 +8,7 @@ import { settingsLockPath } from '../src/file-lock.ts';
 import { S1_FILE, S2, S2_LMSTUDIO, S3_PLAN, S4, S4_SERVER } from './model-fixtures.ts';
 import { connectionsOf, documentOf, editModels, homeWith, idsOf, modelsOf, op, planModels, refusalOfEdit, textOf } from './models-edit.ts';
 import type { Home, Operation, Planned } from './models-edit.ts';
-import { testPaths, testKernelLock } from '@momonga/testkit';
+import { testPaths, testKernelLock, waitFor, watchedKernelLock } from '@momonga/testkit';
 import type { KernelLockMechanism } from '@momonga/foundation';
 
 const OLLAMA = { adapter: 'ollama', baseUrl: 'http://127.0.0.1:11434' };
@@ -74,11 +74,19 @@ const heldLock = async (home: Home) => {
   });
   const lockPath = await settingsLockPath(home.tree.home, home.file, testPaths());
   fs.mkdirSync(path.dirname(lockPath), { recursive: true, mode: 0o700 });
-  const holder = withFileLock(lockPath, () => released, { mechanism: testKernelLock(), ports: systemFileLockPorts });
-  return { release, holder };
+  const held = Promise.withResolvers<void>();
+  const holder = withFileLock(
+    lockPath,
+    () => {
+      held.resolve();
+      return released;
+    },
+    { mechanism: testKernelLock(), ports: systemFileLockPorts },
+  );
+  await held.promise;
+  return { release, holder, lockPath };
 };
 
-const turn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -378,13 +386,14 @@ describe('server programs, wait limits and dialects', () => {
     expect(textOf(home)).toBe(before);
   });
 
-  it('setTimeouts writes milliseconds, accepts 0 as never cut, and says the values in force', async () => {
+  it('setTimeouts writes milliseconds, refuses 0, and says the values in force', async () => {
     const home = homeWith(BASE);
     expect((await editModels(home, [op('setTimeouts', { headersTimeoutMs: 600000 })])).summaries).toEqual(['Waits saved: first reply 10 min, no data 5 min.']);
     expect(modelsOf(home)).toMatchObject({ headersTimeoutMs: 600000 });
     expect(modelsOf(home)).not.toHaveProperty('idleTimeoutMs');
-    expect((await editModels(home, [op('setTimeouts', { headersTimeoutMs: 0, idleTimeoutMs: 90000 })])).summaries).toEqual(['Waits saved: first reply never cut, no data 90 s.']);
-    expect(modelsOf(home)).toMatchObject({ headersTimeoutMs: 0, idleTimeoutMs: 90000 });
+    expect((await editModels(home, [op('setTimeouts', { headersTimeoutMs: 1500, idleTimeoutMs: 90000 })])).summaries).toEqual(['Waits saved: first reply 1500 ms, no data 90 s.']);
+    expect(modelsOf(home)).toMatchObject({ headersTimeoutMs: 1500, idleTimeoutMs: 90000 });
+    expect((await refusalOfEdit(editModels(home, [op('setTimeouts', { headersTimeoutMs: 0 })]))).code).toBe('invalid_value');
     expect((await refusalOfEdit(editModels(home, [op('setTimeouts', { idleTimeoutMs: -1 })]))).code).toBe('invalid_value');
   });
 
@@ -446,7 +455,7 @@ describe('what the writer never does', () => {
     ['declareServer', op('declareServer', { id: 'second-server', command: '/opt/second/bin/serve', args: ['{socket}'], readyPath: '/health' }), 'Declared the server program second-server.'],
     ['setServerField', op('setServerField', { id: 'llama-server', field: 'command', value: '/usr/local/bin/llama-server' }), 'Set command of llama-server.'],
     ['forgetServer', op('forgetServer', { id: 'spare-server' }), 'Forgot the server program spare-server.'],
-    ['setTimeouts', op('setTimeouts', { headersTimeoutMs: 600000, idleTimeoutMs: 0 }), 'Waits saved: first reply 10 min, no data never cut.'],
+    ['setTimeouts', op('setTimeouts', { headersTimeoutMs: 600000, idleTimeoutMs: 30000 }), 'Waits saved: first reply 10 min, no data 30 s.'],
     ['setDialects', op('setDialects', { dialects: {} }), 'Schema dialects saved.'],
   ] as const)('the summary line of %s', async (_name, operation, summary) => {
     const home = homeWith(BASE);
@@ -473,12 +482,13 @@ describe('what the writer never does', () => {
 
   it('the edit is planned again on the file read under the lock', async () => {
     const home = homeWith(S1_FILE);
-    const { release, holder } = await heldLock(home);
-    const outcome = editModels(home, [op('setStart', { model: QWEN_MODEL })]).then(
+    const { release, holder, lockPath } = await heldLock(home);
+    const watched = watchedKernelLock();
+    const outcome = editModels(home, [op('setStart', { model: QWEN_MODEL })], new AbortController().signal, watched.mechanism).then(
       (result) => result.summaries,
       (error: unknown) => [error instanceof Error ? error.message : String(error)],
     );
-    await turn();
+    await waitFor(() => watched.refusals(lockPath) > 0, { description: 'the edit to be refused the held lock' });
     fs.writeFileSync(home.file, JSON.stringify({ models: { connections: [{ ...OLLAMA, models: [DEVSTRAL, QWEN] }] } }), { mode: 0o600 });
     release();
     await holder;

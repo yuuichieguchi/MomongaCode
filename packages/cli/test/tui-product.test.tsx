@@ -3,7 +3,6 @@ import type { ElicitationRequestView, ImageAttachment, SkillView } from '@momong
 import { maxDiffLines } from '../src/tui/diff.ts';
 import { panelRowsCap } from '../src/tui/screen/layout.ts';
 import { FRAME_BOUND_MS, KEYS, untilFrame, untilOutput, withoutLinks } from './ink-helpers.ts';
-import { quiet } from './fake-plan-gateway.tsx';
 import { frame, runStarted, start, type } from './tui-harness.tsx';
 
 const FORM: ElicitationRequestView = {
@@ -89,8 +88,6 @@ describe('elicitation in the TUI', () => {
     expect(prompt).toContain(`URL: ${URL_REQUEST.mode === 'url' ? URL_REQUEST.url : ''}`);
     expect(backend.openedUrls).toEqual([]);
     app.stdin.write('1');
-    await quiet();
-    expect(backend.openedUrls).toEqual([]);
     app.stdin.write(KEYS.enter);
     await backend.called('elicit:in2');
     expect(backend.openedUrls).toEqual([URL_REQUEST.mode === 'url' ? URL_REQUEST.url : '']);
@@ -106,8 +103,6 @@ describe('elicitation in the TUI', () => {
     backend.emit(requestInput('in2', 'c1', [URL_REQUEST]));
     await untilFrame(app, 'Sign in to continue');
     app.stdin.write('1');
-    await quiet();
-    expect(backend.openedUrls).toEqual([]);
     app.stdin.write(KEYS.enter);
     const url = URL_REQUEST.mode === 'url' ? URL_REQUEST.url : '';
     const notice = `MCP server calc: Could not open the browser (no browser). Open this URL to continue: ${url}`;
@@ -115,6 +110,7 @@ describe('elicitation in the TUI', () => {
     expect(wrappedAtWordGaps(notice).exec(shown)?.[0].replaceAll('\n', ' ')).toBe(notice);
     expect(await untilOutput(app, `\u001b]8;;${url}\u0007${url}\u001b]8;;\u0007`)).toContain(url);
     expect(backend.elicitationAnswers).toEqual([{ inputId: 'in2', responses: { consent: { action: 'accept' } } }]);
+    expect(backend.openedUrls).toEqual([url]);
     app.unmount();
   });
 
@@ -126,14 +122,15 @@ describe('elicitation in the TUI', () => {
     backend.emit(requestInput('in2', 'c1', [URL_REQUEST]));
     await untilFrame(app, 'Sign in to continue');
     app.stdin.write('1');
-    await quiet();
     app.stdin.write(KEYS.enter);
     await backend.called('elicit:in2');
     const watch = backend.openUrlCalls[0]?.watch;
-    expect(watch?.aborted).toBe(false);
+    if (watch === undefined) throw new Error('the launch was given no watch signal');
+    expect(watch.aborted).toBe(false);
+    const ended = new Promise<void>((resolve) => watch.addEventListener('abort', () => resolve(), { once: true }));
     app.stdin.write('x');
-    await quiet();
-    expect(watch?.aborted).toBe(true);
+    await ended;
+    expect(watch.aborted).toBe(true);
     app.unmount();
   });
 

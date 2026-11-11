@@ -33,10 +33,13 @@ export type KeptGroupControl = {
   open<P extends KeptProcess>(request: KeptOpenRequest<P>): KeptOpening<P>;
   nameOf(pgid: number): string | undefined;
   recall(pgid: number, name: string): void;
-  members(pgid: number, options: GroupProbeOptions): Promise<number[]>;
+  leads(pgid: number): boolean;
+  members(pgid: number, options: GroupProbeOptions): Promise<KeptMembers>;
   terminate(pgid: number, options: GroupProbeOptions): Promise<void>;
   ended(pgid: number, options: GroupProbeOptions): Promise<void>;
 };
+
+export type KeptMembers = { kind: 'members'; pids: number[] } | { kind: 'unknown' };
 
 type Entry = { job: string; live: Promise<KeptGroup | undefined> | undefined; gone: boolean };
 
@@ -64,18 +67,17 @@ export const createKeptGroupControl = (host: KeeperHost): KeptGroupControl => {
   const entries = new Map<number, Entry>();
   const unbounded = new AbortController().signal;
 
-  const entryOf = (pgid: number): Entry => {
-    const entry = entries.get(pgid);
-    if (entry === undefined) throw new Error(`no job is recorded for process group ${pgid}, so the keeper cannot be asked about it`);
-    return entry;
+  const ended = (pgid: number, entry: Entry): void => {
+    entry.gone = true;
+    if (entries.get(pgid) === entry) entries.delete(pgid);
   };
 
   const liveOf = async (entry: Entry, signal: AbortSignal): Promise<KeptGroup | undefined> => (entry.live === undefined ? undefined : within(entry.live, signal));
 
-  const byName = async <T>(entry: Entry, signal: AbortSignal, absent: T, use: (group: KeptGroup) => Promise<T>): Promise<T> => {
+  const byName = async <T>(pgid: number, entry: Entry, signal: AbortSignal, absent: T, use: (group: KeptGroup) => Promise<T>): Promise<T> => {
     const attach = await attachKept(host, entry.job, signal);
     if (attach.kind === 'absent') {
-      entry.gone = true;
+      ended(pgid, entry);
       return absent;
     }
     try {
@@ -90,14 +92,14 @@ export const createKeptGroupControl = (host: KeeperHost): KeptGroupControl => {
     return answer.kind === 'members' ? answer.pids : undefined;
   };
 
-  const emptied = async (entry: Entry, live: KeptGroup, signal: AbortSignal): Promise<boolean> => {
+  const emptied = async (pgid: number, entry: Entry, live: KeptGroup, signal: AbortSignal): Promise<boolean> => {
     if ((await live.ended(signal)) !== 'empty') return false;
-    entry.gone = true;
+    ended(pgid, entry);
     return true;
   };
 
-  const membersByName = (entry: Entry, signal: AbortSignal): Promise<number[]> =>
-    byName(entry, signal, [], async (group) => {
+  const membersByName = (pgid: number, entry: Entry, signal: AbortSignal): Promise<number[]> =>
+    byName(pgid, entry, signal, [], async (group) => {
       const pids = await listed(group, signal);
       if (pids === undefined) throw new Error(`the keeper attached to ${entry.job} closed its pipe before it listed the members`);
       return pids;
@@ -112,10 +114,15 @@ export const createKeptGroupControl = (host: KeeperHost): KeptGroupControl => {
         if (launch.kind === 'refused') throw new GroupContainmentError(launch.reason, launch.systemError);
         return launch.group;
       });
+      const { pid } = opened.process;
+      const endEntry = (): void => {
+        if (pid === undefined) entry.gone = true;
+        else ended(pid, entry);
+      };
       entry.live = started.then(
         (group) => group,
         (error: unknown) => {
-          if (error instanceof GroupContainmentError || error instanceof KeeperLostError) entry.gone = true;
+          if (error instanceof GroupContainmentError || error instanceof KeeperLostError) endEntry();
           return undefined;
         },
       );
@@ -123,11 +130,10 @@ export const createKeptGroupControl = (host: KeeperHost): KeptGroupControl => {
         .then((group) => group.ended(lifetime.signal))
         .then(
           (end) => {
-            if (end === 'empty') entry.gone = true;
+            if (end === 'empty') endEntry();
           },
           () => undefined,
         );
-      const { pid } = opened.process;
       if (pid !== undefined) entries.set(pid, entry);
       const commandExit = started.then((group) => group.commandExit(lifetime.signal)).then((answer): KeptExit => (answer.kind === 'exit' ? answer : { kind: 'lost' }));
       return { process: opened.process, commandExit };
@@ -140,48 +146,54 @@ export const createKeptGroupControl = (host: KeeperHost): KeptGroupControl => {
       if (known !== undefined && (known.job === job || known.live !== undefined)) return;
       entries.set(pgid, { job, live: undefined, gone: false });
     },
+    leads: (pgid) => {
+      const entry = entries.get(pgid);
+      return entry !== undefined && entry.live !== undefined && !entry.gone;
+    },
     members: async (pgid, options) => {
-      const entry = entryOf(pgid);
+      const entry = entries.get(pgid);
+      if (entry === undefined) return { kind: 'unknown' };
       const signal = options.signal ?? unbounded;
-      if (entry.gone) return [];
+      const none: KeptMembers = { kind: 'members', pids: [] };
+      if (entry.gone) return none;
       const live = await liveOf(entry, signal);
       if (live !== undefined) {
         const pids = await listed(live, signal);
-        if (pids !== undefined) return pids;
-        if (await emptied(entry, live, signal)) return [];
+        if (pids !== undefined) return { kind: 'members', pids };
+        if (await emptied(pgid, entry, live, signal)) return none;
       }
-      if (entry.gone) return [];
-      return membersByName(entry, signal);
+      if (entry.gone) return none;
+      return { kind: 'members', pids: await membersByName(pgid, entry, signal) };
     },
     terminate: async (pgid, options) => {
-      const entry = entryOf(pgid);
+      const entry = entries.get(pgid);
+      if (entry === undefined || entry.gone) return;
       const signal = options.signal ?? unbounded;
-      if (entry.gone) return;
       const live = await liveOf(entry, signal);
       if (live !== undefined) {
         if ((await listed(live, signal)) !== undefined) {
           live.terminate();
           return;
         }
-        if (await emptied(entry, live, signal)) return;
+        if (await emptied(pgid, entry, live, signal)) return;
       }
       if (entry.gone) return;
-      await byName(entry, signal, undefined, async (group) => {
+      await byName(pgid, entry, signal, undefined, async (group) => {
         group.terminate();
         await group.ended(signal);
       });
     },
     ended: async (pgid, options) => {
-      const entry = entryOf(pgid);
+      const entry = entries.get(pgid);
+      if (entry === undefined || entry.gone) return;
       const signal = options.signal ?? unbounded;
-      if (entry.gone) return;
       const live = await liveOf(entry, signal);
       if (live !== undefined) {
-        await emptied(entry, live, signal);
+        await emptied(pgid, entry, live, signal);
         return;
       }
       if (entry.gone) return;
-      await byName(entry, signal, undefined, async (group) => {
+      await byName(pgid, entry, signal, undefined, async (group) => {
         await group.ended(signal);
       });
     },

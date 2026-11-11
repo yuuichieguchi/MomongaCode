@@ -17,7 +17,7 @@ const MODEL: AnsweredByView = { target: 'fm', adapter: 'fm', upstreamModel: 'fm-
 const SCRIPT: AnsweredByView = { target: 'script', adapter: 'script', upstreamModel: 'script', answers: 'script' };
 
 type Trial = { taskId: string; trial: number; facts: RunFactsView; children: RunFactsView[]; costs: { runId: string; calls: number; notPriced: number; legacyPrecisionCalls: number; priced: never[] }[] };
-type BenchmarkInput = { benchmark: unknown; trials: readonly Trial[]; answeredBy: readonly AnsweredByView[]; unrecordedAnswers: number; codeDigest: string; groupBy: 'model' };
+type BenchmarkInput = { benchmark: unknown; trials: readonly Trial[]; notRun: readonly { id: string; reason: string }[]; answeredBy: readonly AnsweredByView[]; unrecordedAnswers: number; codeDigest: string; groupBy: 'model' };
 
 const factsOf = (runId: string, overrides: Partial<RunFactsView> = {}): RunFactsView => ({
   runId,
@@ -73,6 +73,7 @@ const trialsWith = (third: Partial<RunFactsView>): Trial[] => [
 const inputOf = (benchmark: unknown, trials: readonly Trial[]): BenchmarkInput => ({
   benchmark,
   trials,
+  notRun: [],
   answeredBy: [MODEL],
   unrecordedAnswers: 0,
   codeDigest: 'c'.repeat(64),

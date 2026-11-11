@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_JSON_DEPTH, createMemoryCredentialStore } from '@momonga/foundation';
-import { createMcpPool } from '@momonga/mcp';
+import { MAX_JSON_DEPTH, createMemoryCredentialStore, nodeFileSystem } from '@momonga/foundation';
+import { createMcpPool, systemResolver } from '@momonga/mcp';
 import { createToolRegistry } from '@momonga/tools';
 import { UNCONFIGURED_NETWORK, createFakeClock } from '@momonga/testkit';
 import { boundedMessages } from '../src/connection.ts';
@@ -73,13 +73,14 @@ describe('a dropped notification reaches the notices of the tool source through 
     const fixture = await startHttpFixture({ era: 'modern', deepTools: {} });
     const clock = createFakeClock(1_000_000);
     const pool = createMcpPool({
+      files: nodeFileSystem,
       clientVersion: '0.0.0-test',
       servers: [entry('remote', { type: 'http', url: fixture.url })],
       projectDir: makeDir(),
       baseEnv: BASE_ENV,
       clock,
       random: () => 0,
-      remote: {
+      remote: { resolver: systemResolver,
         credentials: createMemoryCredentialStore(),
         network: UNCONFIGURED_NETWORK,
         randomToken: () => 'random',

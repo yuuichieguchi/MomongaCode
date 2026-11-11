@@ -12,6 +12,7 @@ import {
   loadContextDataset,
   outcomeFileOf,
   parseOutcomeFile,
+  refuseExistingOutput,
 } from '@momonga/eval';
 import type { BenchmarkResult, GuidelineCompletion, GuidelineCompletionRequest, ImproveInput, Transcript } from '@momonga/eval';
 import { codeDigestOfRunningProcess, currentSocketResolver, resolveLayoutLocks } from '@momonga/foundation';
@@ -141,6 +142,8 @@ export const contextImprove = async (
   options: ContextImproveOptions,
   hostEffects: (ports: CliPorts, lock: KernelLockMechanism) => ContextHostEffects = nodeContextEffects,
 ): Promise<number> => {
+  const outcomeFile = path.resolve(ports.cwd, options.outcome);
+  await refuseExistingOutput(ports.files, outcomeFile);
   const dataset = await loadContextDataset(ports.files, path.resolve(ports.cwd, options.dataset));
   await ensureCurrentDaemon(ports, paths);
   const client = connectRuntime(ports, paths);
@@ -189,9 +192,8 @@ export const contextImprove = async (
           },
         },
       );
-      const outcomeFile = path.resolve(ports.cwd, options.outcome);
-      await ports.files.writeText(outcomeFile, encodeOutcomeFile(outcomeFileOf(outcome, { name: dataset.name, digest: datasetDigestOf(dataset, options.seed) })));
       ports.stdout.write(`${formatImproveOutcome(outcome)}\n`);
+      await ports.files.writeText(outcomeFile, encodeOutcomeFile(outcomeFileOf(outcome, { name: dataset.name, digest: datasetDigestOf(dataset, options.seed) })));
       ports.stdout.write(`the outcome was written to ${outcomeFile}\n`);
       ports.stdout.write(
         outcome.winner === undefined

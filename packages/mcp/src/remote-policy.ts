@@ -83,9 +83,9 @@ export type GuardedFetch = { fetch: FetchLike; close(): Promise<void> };
 
 type Send = (url: URL, init: RequestInit | undefined) => Promise<Response>;
 
-export type GuardedFetchOptions = { scope: McpServerScope; network: OutboundNetwork; connectTimeoutMs: number; resolver?: HostResolver; send?: Send };
+export type GuardedFetchOptions = { scope: McpServerScope; network: OutboundNetwork; connectTimeoutMs: number; resolver: HostResolver; send?: Send };
 
-export const createGuardedFetch = ({ scope, network, connectTimeoutMs, resolver = systemResolver, send }: GuardedFetchOptions): GuardedFetch => {
+export const createGuardedFetch = ({ scope, network, connectTimeoutMs, resolver, send }: GuardedFetchOptions): GuardedFetch => {
   const dispatcher = createOutboundDispatcher(network, {
     connectReplyTimeoutMs: connectTimeoutMs,
     headersTimeout: 0,

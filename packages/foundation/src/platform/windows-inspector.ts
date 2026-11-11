@@ -9,7 +9,7 @@ import { holdersScript, powershellArgs, powershellPath, startTimeScript } from '
 export type WindowsInspectorPorts = {
   run: CommandRunner;
   env: Readonly<Record<string, string | undefined>>;
-  groups: Pick<KeptGroupControl, 'members'>;
+  groups: Pick<KeptGroupControl, 'members' | 'leads'>;
   alive(pid: number): boolean;
 };
 
@@ -68,12 +68,17 @@ export const createWindowsInspector = ({ run, env, groups, alive }: WindowsInspe
       }),
     groupsOf: (pids, candidateGroups, { signal }) =>
       guarded(async () => {
-        const jobs = await Promise.all(candidateGroups.map(async (candidate) => ({ candidate, members: new Set(await groups.members(candidate, { signal })) })));
+        const jobs = await Promise.all(
+          candidateGroups.map(async (candidate) => {
+            const answer = await groups.members(candidate, { signal });
+            return { candidate, members: new Set(answer.kind === 'members' ? answer.pids : []), leader: groups.leads(candidate) };
+          }),
+        );
         const value = new Map<number, number>();
         for (const pid of pids) {
-          const job = jobs.find(({ candidate, members }) => members.has(pid) || (candidate === pid && alive(pid)));
+          const job = jobs.find(({ candidate, members, leader }) => members.has(pid) || (candidate === pid && leader && alive(pid)));
           if (job !== undefined) value.set(pid, job.candidate);
-          else if (alive(pid)) value.set(pid, pid);
+          else if (alive(pid) && !candidateGroups.includes(pid)) value.set(pid, pid);
         }
         return { kind: 'value', value };
       }),

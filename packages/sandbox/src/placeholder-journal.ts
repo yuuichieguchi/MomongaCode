@@ -1,24 +1,24 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { PlaceholderForm } from '@momonga/foundation';
+import type { Awaitable, PlaceholderForm } from '@momonga/foundation';
 
-export type PlaceholderIdentity = { device: string; inode: string; birthMs: number };
+export type PlaceholderIdentity = { device: string; inode: string; changed: string };
 
 export type PlaceholderRecord = { path: string; intentMs: number; form: PlaceholderForm; identity: PlaceholderIdentity | null };
 
 export type PlaceholderJournal = {
-  intend(target: string, intentMs: number, form?: PlaceholderForm): void;
-  complete(target: string, identity: PlaceholderIdentity): void;
-  forget(target: string): void;
-  records(): PlaceholderRecord[];
+  intend(target: string, intentMs: number, form?: PlaceholderForm): Promise<void>;
+  complete(target: string, identity: PlaceholderIdentity): Promise<void>;
+  forget(target: string): Promise<void>;
+  records(): Promise<PlaceholderRecord[]>;
 };
 
-export type RecoveryPorts = { holders: () => ReadonlySet<string> };
+export type RecoveryPorts = { holders: () => Awaitable<ReadonlySet<string>> };
 
-export type RecoveryResult = { removed: string[]; kept: string[] };
+export type RecoveryResult = { removed: string[]; kept: string[]; unrecovered: string[] };
 
-export type ProcPort = { list(directory: string): string[]; read(file: string): string };
+export type ProcPort = { list(directory: string): Awaitable<string[]>; read(file: string): Awaitable<string> };
 
 const JOURNAL_FILE_MODE = 0o600;
 const JOURNAL_DIRECTORY_MODE = 0o700;
@@ -26,61 +26,65 @@ const RECORD_SUFFIX = '.json';
 const OCTAL_ESCAPE = /\\([0-7]{3})/g;
 const PROCESS_DIRECTORY = /^\d+$/;
 const MOUNT_POINT_FIELD = 4;
-const NS_PER_MS = 1e6;
 const VANISHED = new Set(['ENOENT', 'ESRCH', 'EINVAL']);
 const NOT_OURS = new Set(['EACCES', 'EPERM']);
 
-export const FILESYSTEM_TIMESTAMP_GRANULARITY_MS = 10;
-
 export const EMPTY_FILE_FORM: PlaceholderForm = { kind: 'file', bytes: '' };
 
-export const identityOf = (target: string): PlaceholderIdentity => {
-  const stat = fs.lstatSync(target, { bigint: true });
-  return { device: String(stat.dev), inode: String(stat.ino), birthMs: Number(stat.birthtimeNs) / NS_PER_MS };
+const isAbsent = (error: unknown): boolean => (error as NodeJS.ErrnoException).code === 'ENOENT';
+
+const lstatOrAbsent = async (target: string): Promise<fs.BigIntStats | undefined> => {
+  try {
+    return await fs.promises.lstat(target, { bigint: true });
+  } catch (error) {
+    if (isAbsent(error)) return undefined;
+    throw error;
+  }
 };
 
-const hasForm = (target: string, stat: fs.BigIntStats, form: PlaceholderForm): boolean => {
-  if (form.kind === 'directory') return stat.isDirectory() && fs.readdirSync(target).length === 0;
+export const identityOf = async (target: string): Promise<PlaceholderIdentity> => {
+  const stat = await fs.promises.lstat(target, { bigint: true });
+  return { device: String(stat.dev), inode: String(stat.ino), changed: String(stat.ctimeNs) };
+};
+
+const hasForm = async (target: string, stat: fs.BigIntStats, form: PlaceholderForm): Promise<boolean> => {
+  if (form.kind === 'directory') return stat.isDirectory() && (await fs.promises.readdir(target)).length === 0;
   const bytes = Buffer.from(form.bytes, 'latin1');
-  return stat.isFile() && stat.size === BigInt(bytes.length) && fs.readFileSync(target).equals(bytes);
+  return stat.isFile() && stat.size === BigInt(bytes.length) && (await fs.promises.readFile(target)).equals(bytes);
 };
 
-export const isStillThePlaceholder = (target: string, identity: PlaceholderIdentity, form: PlaceholderForm = EMPTY_FILE_FORM): boolean => {
-  const stat = fs.lstatSync(target, { bigint: true, throwIfNoEntry: false });
-  if (stat === undefined || !hasForm(target, stat, form)) return false;
-  return String(stat.dev) === identity.device && String(stat.ino) === identity.inode && Number(stat.birthtimeNs) / NS_PER_MS === identity.birthMs;
+export const isStillThePlaceholder = async (target: string, identity: PlaceholderIdentity, form: PlaceholderForm = EMPTY_FILE_FORM): Promise<boolean> => {
+  const stat = await lstatOrAbsent(target);
+  if (stat === undefined || !(await hasForm(target, stat, form))) return false;
+  const unchanged = form.kind === 'directory' || String(stat.ctimeNs) === identity.changed;
+  return String(stat.dev) === identity.device && String(stat.ino) === identity.inode && unchanged;
 };
 
-export const removePlaceholderEntry = (target: string, form: PlaceholderForm): void => {
-  if (form.kind === 'directory') fs.rmdirSync(target);
-  else fs.unlinkSync(target);
-};
-
-const wasBornAfterIntent = (target: string, intentMs: number, form: PlaceholderForm): boolean => {
-  const stat = fs.lstatSync(target, { bigint: true, throwIfNoEntry: false });
-  if (stat === undefined || !hasForm(target, stat, form)) return false;
-  const birthMs = Number(stat.birthtimeNs) / NS_PER_MS;
-  return birthMs > 0 && birthMs >= intentMs - FILESYSTEM_TIMESTAMP_GRANULARITY_MS;
+export const removePlaceholderEntry = async (target: string, form: PlaceholderForm): Promise<void> => {
+  if (form.kind === 'directory') await fs.promises.rmdir(target);
+  else await fs.promises.unlink(target);
 };
 
 const fileNameOf = (target: string): string => `${createHash('sha256').update(target).digest('hex').slice(0, 32)}${RECORD_SUFFIX}`;
 
-const syncDirectory = (directory: string): void => {
-  const descriptor = fs.openSync(directory, fs.constants.O_RDONLY);
+const syncDirectory = async (directory: string): Promise<void> => {
+  const handle = await fs.promises.open(directory, fs.constants.O_RDONLY);
   try {
-    fs.fsyncSync(descriptor);
+    await handle.sync();
   } finally {
-    fs.closeSync(descriptor);
+    await handle.close();
   }
 };
 
 const parseIdentity = (file: string, value: unknown): PlaceholderIdentity | null => {
   if (value === null) return null;
-  const { device, inode, birthMs } = (value ?? {}) as Record<string, unknown>;
-  if (typeof device !== 'string' || typeof inode !== 'string' || typeof birthMs !== 'number') {
-    throw new Error(`the placeholder record ${file} has an identity without a device, an inode or a birth time`);
+  const { device, inode, changed } = (value ?? {}) as Record<string, unknown>;
+  if (typeof device !== 'string' || typeof inode !== 'string') {
+    throw new Error(`the placeholder record ${file} has an identity without a device or an inode`);
   }
-  return { device, inode, birthMs };
+  if (changed === undefined) return null;
+  if (typeof changed !== 'string') throw new Error(`the placeholder record ${file} has an identity whose change time is not a string`);
+  return { device, inode, changed };
 };
 
 const parseForm = (file: string, value: unknown): PlaceholderForm => {
@@ -100,38 +104,53 @@ const parseRecord = (file: string, text: string): PlaceholderRecord => {
 };
 
 export const createPlaceholderJournal = (directory: string): PlaceholderJournal => {
-  fs.mkdirSync(directory, { recursive: true, mode: JOURNAL_DIRECTORY_MODE });
+  let made: Promise<void> | undefined;
+  const ready = (): Promise<void> => {
+    made ??= fs.promises.mkdir(directory, { recursive: true, mode: JOURNAL_DIRECTORY_MODE }).then(() => undefined);
+    return made;
+  };
   const fileOf = (target: string): string => path.join(directory, fileNameOf(target));
-  const write = (record: PlaceholderRecord): void => {
+  const write = async (record: PlaceholderRecord): Promise<void> => {
+    await ready();
     const file = fileOf(record.path);
     const temporary = `${file}.${process.pid}.tmp`;
-    const descriptor = fs.openSync(temporary, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC, JOURNAL_FILE_MODE);
+    const handle = await fs.promises.open(temporary, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC, JOURNAL_FILE_MODE);
     try {
-      fs.writeFileSync(descriptor, JSON.stringify(record));
-      fs.fsyncSync(descriptor);
+      await handle.writeFile(JSON.stringify(record));
+      await handle.sync();
     } finally {
-      fs.closeSync(descriptor);
+      await handle.close();
     }
-    fs.renameSync(temporary, file);
-    syncDirectory(directory);
+    await fs.promises.rename(temporary, file);
+    await syncDirectory(directory);
+  };
+  const readRecord = async (file: string): Promise<PlaceholderRecord | undefined> => {
+    try {
+      return parseRecord(file, await fs.promises.readFile(file, 'utf8'));
+    } catch (error) {
+      if (isAbsent(error)) return undefined;
+      throw error;
+    }
   };
   return {
     intend: (target, intentMs, form = EMPTY_FILE_FORM) => write({ path: target, intentMs, form, identity: null }),
-    complete: (target, identity) => {
-      const file = fileOf(target);
-      if (!fs.existsSync(file)) throw new Error(`the placeholder journal has no intent for ${target}`);
-      write({ ...parseRecord(file, fs.readFileSync(file, 'utf8')), identity });
+    complete: async (target, identity) => {
+      const record = await readRecord(fileOf(target));
+      if (record === undefined) throw new Error(`the placeholder journal has no intent for ${target}`);
+      await write({ ...record, identity });
     },
-    forget: (target) => {
-      fs.rmSync(fileOf(target), { force: true });
-      syncDirectory(directory);
+    forget: async (target) => {
+      await ready();
+      await fs.promises.rm(fileOf(target), { force: true });
+      await syncDirectory(directory);
     },
-    records: () =>
-      fs
-        .readdirSync(directory)
-        .filter((name) => name.endsWith(RECORD_SUFFIX))
-        .map((name) => parseRecord(name, fs.readFileSync(path.join(directory, name), 'utf8')))
-        .sort((left, right) => (left.path < right.path ? -1 : 1)),
+    records: async () => {
+      await ready();
+      const names = (await fs.promises.readdir(directory)).filter((name) => name.endsWith(RECORD_SUFFIX));
+      const records: PlaceholderRecord[] = [];
+      for (const name of names) records.push(parseRecord(name, await fs.promises.readFile(path.join(directory, name), 'utf8')));
+      return records.sort((left, right) => (left.path < right.path ? -1 : 1));
+    },
   };
 };
 
@@ -141,13 +160,13 @@ const mountPointsOf = (mountinfo: string): string[] =>
     .filter((line) => line !== '')
     .map((line) => (line.split(' ')[MOUNT_POINT_FIELD] as string).replace(OCTAL_ESCAPE, (_escape, code: string) => String.fromCharCode(Number.parseInt(code, 8))));
 
-const nodeProcPort: ProcPort = { list: (directory) => fs.readdirSync(directory), read: (file) => fs.readFileSync(file, 'utf8') };
+const nodeProcPort: ProcPort = { list: (directory) => fs.promises.readdir(directory), read: (file) => fs.promises.readFile(file, 'utf8') };
 
 type Read = { kind: 'text'; text: string } | { kind: 'gone' } | { kind: 'not-ours' };
 
-const readMountinfo = (port: ProcPort, file: string): Read => {
+const readMountinfo = async (port: ProcPort, file: string): Promise<Read> => {
   try {
-    return { kind: 'text', text: port.read(file) };
+    return { kind: 'text', text: await port.read(file) };
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code ?? '';
     if (VANISHED.has(code)) return { kind: 'gone' };
@@ -156,20 +175,22 @@ const readMountinfo = (port: ProcPort, file: string): Read => {
   }
 };
 
-const threadsOf = (port: ProcPort, pid: string): string[] => {
+const threadsOf = async (port: ProcPort, pid: string): Promise<string[]> => {
   try {
-    return port.list(`/proc/${pid}/task`);
+    return await port.list(`/proc/${pid}/task`);
   } catch (error) {
     if (VANISHED.has((error as NodeJS.ErrnoException).code ?? '')) return [];
     throw error;
   }
 };
 
-export const heldMountPoints = (port: ProcPort = nodeProcPort): ReadonlySet<string> => {
+export const heldMountPoints = async (port: ProcPort = nodeProcPort): Promise<ReadonlySet<string>> => {
   const held = new Set<string>();
-  for (const entry of port.list('/proc').filter((name) => PROCESS_DIRECTORY.test(name))) {
-    const leader = readMountinfo(port, `/proc/${entry}/mountinfo`);
-    const reads = leader.kind === 'gone' ? threadsOf(port, entry).map((tid) => readMountinfo(port, `/proc/${entry}/task/${tid}/mountinfo`)) : [leader];
+  for (const entry of (await port.list('/proc')).filter((name) => PROCESS_DIRECTORY.test(name))) {
+    const leader = await readMountinfo(port, `/proc/${entry}/mountinfo`);
+    const reads: Read[] = [];
+    if (leader.kind === 'gone') for (const tid of await threadsOf(port, entry)) reads.push(await readMountinfo(port, `/proc/${entry}/task/${tid}/mountinfo`));
+    else reads.push(leader);
     for (const read of reads) if (read.kind === 'text') for (const mountPoint of mountPointsOf(read.text)) held.add(mountPoint);
   }
   return held;
@@ -177,25 +198,27 @@ export const heldMountPoints = (port: ProcPort = nodeProcPort): ReadonlySet<stri
 
 const NODE_RECOVERY_PORTS: RecoveryPorts = { holders: () => heldMountPoints() };
 
-const isRecoverable = (record: PlaceholderRecord): boolean =>
-  record.identity === null ? wasBornAfterIntent(record.path, record.intentMs, record.form) : isStillThePlaceholder(record.path, record.identity, record.form);
-
-export const recoverPlaceholders = (journal: PlaceholderJournal, ports: RecoveryPorts = NODE_RECOVERY_PORTS): RecoveryResult => {
-  const result: RecoveryResult = { removed: [], kept: [] };
-  const records = journal.records();
+export const recoverPlaceholders = async (journal: PlaceholderJournal, ports: RecoveryPorts = NODE_RECOVERY_PORTS): Promise<RecoveryResult> => {
+  const result: RecoveryResult = { removed: [], kept: [], unrecovered: [] };
+  const records = await journal.records();
   if (records.length === 0) return result;
-  const holders = ports.holders();
+  const holders = await ports.holders();
   for (const record of records) {
-    if (!isRecoverable(record)) {
-      journal.forget(record.path);
+    if (record.identity === null) {
+      if ((await lstatOrAbsent(record.path)) !== undefined) result.unrecovered.push(record.path);
+      else await journal.forget(record.path);
+      continue;
+    }
+    if (!(await isStillThePlaceholder(record.path, record.identity, record.form))) {
+      await journal.forget(record.path);
       continue;
     }
     if (holders.has(record.path)) {
       result.kept.push(record.path);
       continue;
     }
-    removePlaceholderEntry(record.path, record.form);
-    journal.forget(record.path);
+    await removePlaceholderEntry(record.path, record.form);
+    await journal.forget(record.path);
     result.removed.push(record.path);
   }
   return result;

@@ -3,7 +3,7 @@ import type { CallToolResult, Implementation, JSONRPCMessage, ProtocolEra, Tool,
 import { stripCredentialEnv } from '@momonga/config';
 import type { CredentialRules, McpServerConfig, McpServerScope } from '@momonga/config';
 import { CircuitBreaker, CredentialStoreError, MCP_CONNECT_TIMEOUT_LIMITS, JsonDepthError, MIN_CREDENTIAL_CHARS, OperationLimitError, checkJsonDepth, computeBackoff, limitEndOf, limitEndText, operationLimit, routeOf, settledOrAborted } from '@momonga/foundation';
-import type { Clock, OperationLimit, OutboundNetwork } from '@momonga/foundation';
+import type { Clock, FileSystem, OperationLimit, OutboundNetwork } from '@momonga/foundation';
 import { authorizeMcpServer } from './authorize.ts';
 import { credentialNoticesOf } from './credential-strength.ts';
 import { CLOSE_LIMIT_LABEL, CONNECT_LIMIT_LABEL, CONNECT_SUBJECT, CREDENTIAL_STORE_WAIT, REQUEST_LIMIT_LABEL, REQUEST_SUBJECT } from './limit-texts.ts';
@@ -110,6 +110,7 @@ export type McpConnectionOptions = {
   scope: McpServerScope;
   projectDir: string;
   baseEnv: Record<string, string>;
+  files: FileSystem;
   clock: Clock;
   clientVersion: string;
   timers?: McpTimers;
@@ -355,7 +356,7 @@ class ManagedConnection implements McpServerConnection {
     const { config, scope, remote } = this.options;
     if (!('url' in config)) throw new Error(`MCP server "${this.name}" is not a remote server and has no authorization`);
     if (remote === undefined) throw new Error(`MCP server "${this.name}" has no credential store configured`);
-    const guarded = createGuardedFetch({ scope, network: remote.network, connectTimeoutMs: this.connectLimitMs(), ...(remote.resolver === undefined ? {} : { resolver: remote.resolver }) });
+    const guarded = createGuardedFetch({ scope, network: remote.network, connectTimeoutMs: this.connectLimitMs(), resolver: remote.resolver });
     try {
       await authorizeMcpServer({
         server: this.name,
@@ -741,6 +742,7 @@ class ManagedConnection implements McpServerConnection {
         config,
         projectDir,
         baseEnv,
+        files: this.options.files,
         ...(markers === undefined ? {} : { markers }),
         ...(closeGraceMs === undefined ? {} : { closeGraceMs }),
         timing: { now: () => this.options.clock.now(), monotonicMs: () => this.options.clock.now(), setTimeout: (callback, ms) => this.timers.setTimeout(callback, ms), clearTimeout: (handle) => this.timers.clearTimeout(handle) },
@@ -749,7 +751,7 @@ class ManagedConnection implements McpServerConnection {
     }
     if (remote === undefined) throw new Error(`MCP server "${this.name}" is remote but no credential store was configured`);
     this.lastRoute = connectionRouteOf(config.url, remote.network);
-    const guarded = createGuardedFetch({ scope, network: remote.network, connectTimeoutMs: this.connectLimitMs(), ...(remote.resolver === undefined ? {} : { resolver: remote.resolver }) });
+    const guarded = createGuardedFetch({ scope, network: remote.network, connectTimeoutMs: this.connectLimitMs(), resolver: remote.resolver });
     const staticAuthorization = Object.keys(config.headers ?? {}).some((header) => header.toLowerCase() === 'authorization');
     const authProvider: McpOAuthProvider | undefined = staticAuthorization
       ? undefined

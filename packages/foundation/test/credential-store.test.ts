@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createFileCredentialStore, createMemoryCredentialStore } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, sleepDrivenTiming, createFakeRandom, testKernelLock } from '@momonga/testkit';
-import { deferred, settlementOf, turn } from './support/secret-store-fakes.ts';
+import { deferred, rejection, settlementOf } from './support/secret-store-fakes.ts';
 import { makeTemporaryDirectory as makeDir } from './support/temporary-directory.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -145,15 +145,12 @@ describe.each([
     const controller = new AbortController();
     const queued = store.write('k', 'replaced', controller.signal);
     const settlement = settlementOf(queued);
-    await turn();
     expect(settlement.current()).toBe('pending');
     const reason = new Error('the requester left');
     controller.abort(reason);
-    await turn();
-    expect(settlement.current()).toEqual({ rejected: reason });
+    expect(await rejection(queued)).toBe(reason);
     held.resolve();
     await hung;
-    await turn();
     expect(await store.read('k', SIGNAL)).toBe('kept');
   });
 });

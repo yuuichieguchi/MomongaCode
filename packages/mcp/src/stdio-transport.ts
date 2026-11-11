@@ -1,5 +1,4 @@
 import type { ChildProcessByStdio } from 'node:child_process';
-import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { Readable, Stream, Writable } from 'node:stream';
@@ -7,7 +6,7 @@ import { deserializeMessage, serializeMessage, type JSONRPCMessage, type Transpo
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
 import { Deadline, SHUTDOWN_SETTING_LIMITS, claimRetry, groupTerminationBoundMs, launchGroupLeader, operationSignal, reapMarkedProcesses, recordMarkerGroup, systemTiming, terminateGroup, type GroupLaunch, type RetryKind, type TerminateOutcome, type Timing } from '@momonga/foundation';
-import type { ProcessInspector } from '@momonga/foundation';
+import type { FileSystem, ProcessInspector } from '@momonga/foundation';
 
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 const STDERR_TAIL_BYTES = 64 * 1024;
@@ -25,6 +24,7 @@ export interface StdioTransportOptions {
   config: McpStdioServerConfig;
   projectDir: string;
   baseEnv: Record<string, string>;
+  files: FileSystem;
   closeGraceMs?: CloseGrace;
   markers?: McpMarkerOptions;
   terminate?: (pgid: number, options: { graceMs: number; signal?: AbortSignal; timing?: Timing }) => Promise<TerminateOutcome>;
@@ -50,6 +50,7 @@ export interface StdioTransport extends Transport {
 type ServerProcess = ChildProcessByStdio<Writable, Readable, Readable>;
 
 const MARKER_SLOT = 3;
+const MARKER_FILE_MODE = 0o600;
 
 export function inheritedEnvOf(baseEnv: Readonly<Record<string, string>>): Record<string, string> {
   const env: Record<string, string> = {};
@@ -64,26 +65,29 @@ function composeEnv(baseEnv: Record<string, string>, overlay: Record<string, str
   return { ...inheritedEnvOf(baseEnv), ...overlay };
 }
 
-function isExecutableFile(candidate: string): boolean {
+const isProbeMiss = (error: unknown): boolean => error instanceof Error && 'code' in error && typeof error.code === 'string';
+
+async function isExecutableFile(files: FileSystem, candidate: string): Promise<boolean> {
   try {
-    if (!fs.statSync(candidate).isFile()) return false;
-    fs.accessSync(candidate, fs.constants.X_OK);
+    if (!(await files.stat(candidate)).isFile()) return false;
+    await files.access(candidate, 'execute');
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (isProbeMiss(error)) return false;
+    throw error;
   }
 }
 
-function resolveCommand(command: string, cwd: string, searchPath: string): string {
+async function resolveCommand(files: FileSystem, command: string, cwd: string, searchPath: string): Promise<string> {
   if (command.includes('/')) {
     const resolved = path.resolve(cwd, command);
-    if (!isExecutableFile(resolved)) throw new Error(`MCP server command "${command}" is not an executable file (resolved to ${resolved})`);
+    if (!(await isExecutableFile(files, resolved))) throw new Error(`MCP server command "${command}" is not an executable file (resolved to ${resolved})`);
     return resolved;
   }
   for (const directory of searchPath.split(path.delimiter)) {
     if (!path.isAbsolute(directory)) continue;
     const candidate = path.resolve(cwd, directory, command);
-    if (isExecutableFile(candidate)) return candidate;
+    if (await isExecutableFile(files, candidate)) return candidate;
   }
   throw new Error(`MCP server command "${command}" not found in PATH: ${searchPath}`);
 }
@@ -139,9 +143,9 @@ class StdioTransportImpl implements StdioTransport {
     const markerPath = this.options.markers === undefined ? undefined : path.join(this.options.markers.dir, randomUUID());
     let launched: GroupLaunch;
     try {
-      launched = this.spawnServer(config, cwd, env, markerPath);
+      launched = await this.spawnServer(config, cwd, env, markerPath);
     } catch (error) {
-      if (markerPath !== undefined) fs.rmSync(markerPath, { force: true });
+      if (markerPath !== undefined) await this.options.files.rm(markerPath);
       throw error;
     }
     const child = launched.child as ServerProcess;
@@ -158,7 +162,7 @@ class StdioTransportImpl implements StdioTransport {
       });
     } catch (error) {
       this.markerPath = undefined;
-      if (markerPath !== undefined) fs.rmSync(markerPath, { force: true });
+      if (markerPath !== undefined) await this.options.files.rm(markerPath);
       throw error;
     }
     if (markerPath !== undefined && launched.pgid !== undefined) await recordMarkerGroup(markerPath, launched.pgid);
@@ -182,11 +186,11 @@ class StdioTransportImpl implements StdioTransport {
     child.stderr.on('data', (chunk: Buffer) => this.onStderr(chunk));
   }
 
-  private spawnServer(config: McpStdioServerConfig, cwd: string, env: Record<string, string>, markerPath: string | undefined): GroupLaunch {
-    const file = resolveCommand(config.command, cwd, env['PATH'] ?? '');
+  private async spawnServer(config: McpStdioServerConfig, cwd: string, env: Record<string, string>, markerPath: string | undefined): Promise<GroupLaunch> {
+    const file = await resolveCommand(this.options.files, config.command, cwd, env['PATH'] ?? '');
     const args = config.args ?? [];
     if (markerPath === undefined) return launchGroupLeader({ file, args, cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
-    fs.closeSync(fs.openSync(markerPath, 'wx', 0o600));
+    await (await this.options.files.open(markerPath, 'wx', MARKER_FILE_MODE)).close();
     return launchGroupLeader({ file, args, cwd, env, stdio: ['pipe', 'pipe', 'pipe'], marker: { slot: MARKER_SLOT, file: markerPath } });
   }
 

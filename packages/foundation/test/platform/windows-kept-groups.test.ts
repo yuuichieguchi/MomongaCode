@@ -7,7 +7,7 @@ import type { KeptGroupControl } from '../../src/platform/windows-kept-groups.ts
 import { nodeCommandRunner } from '../../src/platform/command-runner.ts';
 import { answeringMembers, fakeKeeperHost, settle } from '../support/fake-keeper.ts';
 import type { FakeKeeper, FakeKeeperHost } from '../support/fake-keeper.ts';
-import { pendingOrSettled } from '../support/probe-fakes.ts';
+import { settlementOf } from '../support/probe-fakes.ts';
 
 const KEEPER_PID = 4100;
 const COMMAND_PID = 4242;
@@ -145,7 +145,9 @@ describe('a group launched through the keeper is the group of the keeper pid', (
     opened(fake, port.keeper as KeptGroupControl);
     await settle();
     const ended = (port.ended as NonNullable<ProcessGroupPort['ended']>)(KEEPER_PID, LIVE);
-    expect((await pendingOrSettled(ended)).state).toBe('pending');
+    const ending = settlementOf(ended);
+    await settle();
+    expect(ending.current().state).toBe('pending');
     const asked = fake.keepers[0]?.written.length;
     fake.keepers[0]?.say('exit 0\nempty\n');
     await ended;
@@ -158,8 +160,9 @@ describe('a group launched through the keeper is the group of the keeper pid', (
     opened(fake, port.keeper as KeptGroupControl);
     const controller = new AbortController();
     const asked = port.alive(KEEPER_PID, { signal: controller.signal });
+    const answer = settlementOf(asked);
     await settle();
-    expect((await pendingOrSettled(asked)).state).toBe('pending');
+    expect(answer.current().state).toBe('pending');
     controller.abort(new Error('the deadline passed'));
     await expect(asked).rejects.toThrow('the deadline passed');
   });
@@ -220,19 +223,48 @@ describe('a group read back from a record is proved by its name', () => {
     const port = portOf(createKeptGroupControl(fake.host));
     port.names?.recall(5000, NAME);
     const sent = port.signal(5000, 'SIGTERM', LIVE);
+    const signalled = settlementOf(sent);
     await settle();
     expect(fake.keepers[0]?.written).toContain('terminate\n');
-    expect((await pendingOrSettled(sent)).state).toBe('pending');
+    expect(signalled.current().state).toBe('pending');
     expect(fake.keepers[0]?.closedByClient()).toBe(false);
     fake.keepers[0]?.say('empty\n');
     await sent;
     expect(fake.keepers[0]?.closedByClient()).toBe(true);
   });
 
-  it('does not answer for a group that has no job on record', async () => {
-    const port = portOf(createKeptGroupControl(fakeKeeperHost().host));
-    await expect(port.alive(6000, LIVE)).rejects.toThrow(/no job/);
-    await expect(port.signal(6000, 'SIGTERM', LIVE)).rejects.toThrow(/no job/);
+  it('answers unknown for a group that has no job on record, starts no keeper and never throws', async () => {
+    const fake = fakeKeeperHost();
+    const kept = createKeptGroupControl(fake.host);
+    const port = portOf(kept);
+    expect(await kept.members(6000, LIVE)).toEqual({ kind: 'unknown' });
+    expect(await port.alive(6000, LIVE)).toBe(false);
+    await expect(port.signal(6000, 'SIGTERM', LIVE)).resolves.toBeUndefined();
+    await expect(port.ended?.(6000, LIVE)).resolves.toBeUndefined();
+    expect(fake.keepers).toHaveLength(0);
+  });
+
+  it('deletes the entry of a launched group when the group ends', async () => {
+    const fake = fakeKeeperHost(launchThen(() => [COMMAND_PID]));
+    const kept = createKeptGroupControl(fake.host);
+    opened(fake, kept);
+    await settle();
+    expect(kept.nameOf(KEEPER_PID)).toBeDefined();
+    expect(kept.leads(KEEPER_PID)).toBe(true);
+    fake.keepers[0]?.say('exit 0\nempty\n');
+    await settle();
+    expect(kept.nameOf(KEEPER_PID)).toBeUndefined();
+    expect(kept.leads(KEEPER_PID)).toBe(false);
+    expect(await kept.members(KEEPER_PID, LIVE)).toEqual({ kind: 'unknown' });
+  });
+
+  it('deletes the entry of a recalled group once its name no longer opens', async () => {
+    const fake = fakeKeeperHost((keeper) => keeper.say('failed job-absent 2\n'));
+    const kept = createKeptGroupControl(fake.host);
+    kept.recall(5000, NAME);
+    expect(kept.leads(5000)).toBe(false);
+    expect(await kept.members(5000, LIVE)).toEqual({ kind: 'members', pids: [] });
+    expect(kept.nameOf(5000)).toBeUndefined();
   });
 
   it('a record never replaces a group this process launched under the same number', async () => {

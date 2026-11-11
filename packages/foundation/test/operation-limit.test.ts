@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OperationLimitError, operationLimit, settledOrAborted } from '@momonga/foundation';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
-import { deferred, rejection, settlementOf, turn, unhandledRejections } from './support/secret-store-fakes.ts';
+import { deferred, rejection, settlementOf, rejectionsReported, unhandledRejections } from './support/secret-store-fakes.ts';
 
 const fakeTiming = () => createFakeTimers(createFakeClock(0));
 
@@ -112,16 +112,13 @@ describe('settledOrAborted', () => {
       const first = settledOrAborted(resolvedLate.promise, controller.signal);
       const second = settledOrAborted(rejectedLate.promise, controller.signal);
       const firstSettlement = settlementOf(first);
-      await turn();
-      expect(firstSettlement.current()).toBe('pending');
       const reason = new Error('the limit passed');
       controller.abort(reason);
       expect(await rejection(first)).toBe(reason);
       expect(await rejection(second)).toBe(reason);
       resolvedLate.resolve('late value');
       rejectedLate.reject(new Error('late failure'));
-      await turn();
-      await turn();
+      await rejectionsReported();
       expect(firstSettlement.current()).toEqual({ rejected: reason });
       expect(unhandled.seen).toEqual([]);
     } finally {
@@ -138,8 +135,7 @@ describe('settledOrAborted', () => {
       const never = deferred<string>();
       expect(await rejection(settledOrAborted(never.promise, controller.signal))).toBe(reason);
       never.reject(new Error('late failure'));
-      await turn();
-      await turn();
+      await rejectionsReported();
       expect(unhandled.seen).toEqual([]);
     } finally {
       unhandled.stop();

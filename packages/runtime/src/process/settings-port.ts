@@ -27,7 +27,7 @@ export type SettingsComposition = {
   sessionCreateSettings(cwd: string, signal: AbortSignal): Promise<SessionCreateSettings>;
   sessionReadSettings(cwd: string, signal: AbortSignal): Promise<SessionCreateSettings>;
   keptLayers(use: SettingsUse): KeptLayers;
-  envFor(session: Pick<Session, 'env'>, signal: AbortSignal): Promise<ToolEnv>;
+  envFor(session: Pick<Session, 'env' | 'cwd'>, signal: AbortSignal): Promise<ToolEnv>;
   takeUserSnapshot(): UserSnapshot;
   userSnapshot(signal: AbortSignal): Promise<UserSnapshot>;
   admitUserSnapshot(signal: AbortSignal): Promise<UserSnapshot>;
@@ -108,9 +108,11 @@ export const createSettingsComposition = ({ home, platform, cache, store, lock }
     return sessionSettingsFrom(snapshot, await settingsFor(cwd, snapshot, 'read', signal), signal);
   };
 
-  const envFor = async (session: Pick<Session, 'env'>, signal: AbortSignal): Promise<ToolEnv> => {
-    const { settings: userSettings } = await userSnapshot(signal);
-    return Object.freeze(stripCredentialEnv(session.env, credentialNamesOf(userSettings), userSettings.credentials).env);
+  const envFor = async (session: Pick<Session, 'env' | 'cwd'>, signal: AbortSignal): Promise<ToolEnv> => {
+    const snapshot = await settledOrAborted(userSnapshot(signal), signal);
+    const { settings: sessionSettings } = await loadSessionSettings(session.cwd, snapshot, signal);
+    const { settings: userSettings } = snapshot;
+    return Object.freeze(stripCredentialEnv({ ...session.env, ...sessionSettings.env }, credentialNamesOf(userSettings), userSettings.credentials).env);
   };
 
   const settings: SettingsPort = {

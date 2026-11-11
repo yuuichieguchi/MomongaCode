@@ -396,6 +396,11 @@ const withForm = (state: RunState, event: Extract<RunEvent, { type: 'context.tru
   return state;
 };
 
+const withReference = (state: RunState, event: Extract<RunEvent, { type: 'context.truncated' }>): RunState =>
+  event.kind !== 'reference' || state.referencedOutputs?.includes(event.callId) === true
+    ? state
+    : { ...state, referencedOutputs: [...(state.referencedOutputs ?? []), event.callId].sort() };
+
 const withHookCompleted = (state: RunState, event: Extract<RunEvent, { type: 'hook.completed' }>): RunState => ({
   ...state,
   hookCompletions: { ...state.hookCompletions, [event.hookEvent]: (state.hookCompletions[event.hookEvent] ?? 0) + 1 },
@@ -589,7 +594,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
     case 'context.inherited':
       return isReferenceInherited(event) ? applyReferenceInheritance(state, event) : applyInheritance(state, event);
     case 'context.truncated':
-      return withForm(truncate(state, event), event);
+      return withReference(withForm(truncate(state, event), event), event);
     case 'notice':
       return { ...state, notes: [...state.notes, { level: event.level, message: event.message, ...(event.code === undefined ? {} : { code: event.code }), ...(event.toolKey === undefined ? {} : { toolKey: event.toolKey }), ...(event.reduction === undefined ? {} : { reduction: event.reduction }) }] };
     case 'agent.message.delta':

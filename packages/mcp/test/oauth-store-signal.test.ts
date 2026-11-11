@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { OperationLimitError, SHUTDOWN_SETTING_LIMITS, StoreCallEndedError, createFileCredentialStore } from '@momonga/foundation';
+import { OperationLimitError, SHUTDOWN_SETTING_LIMITS, StoreCallEndedError, createFileCredentialStore, nodeFileSystem } from '@momonga/foundation';
 import { DEFAULT_LOCK_TIMEOUT_MS } from '../../foundation/src/file-lock.ts';
 import type { FileLockPorts } from '@momonga/foundation';
 import { McpInputSuspension, MIN_TASK_POLL_MS, createManagedConnection } from '@momonga/mcp';
@@ -13,7 +13,7 @@ import { createMcpOAuthProvider, credentialKey } from '../src/mcp-oauth.ts';
 import type * as RemoteTransportModule from '../src/remote-transport.ts';
 import { currentStoreScope } from '../src/store-scope.ts';
 import type { StoreScope } from '../src/store-scope.ts';
-import { KEYCHAIN_UNANSWERED_ADVICE, afterPendingIo, controlledCredentialStore, keyReadLimitSentence, outcomeOf, settledAfter, stillPendingAfter, useLimitTimers } from './credential-store-fakes.ts';
+import { KEYCHAIN_UNANSWERED_ADVICE, limitArmed, controlledCredentialStore, keyReadLimitSentence, outcomeOf, settledAfter, stillPendingAfter, useLimitTimers } from './credential-store-fakes.ts';
 import type { ControlledCredentialStore, Outcome, StoreCallRecord } from './credential-store-fakes.ts';
 import { BASE_ENV, NEVER_ABORTED, makeDir, onCleanup } from './mcp-harness.ts';
 import { browserThatFollowsRedirect, makeRemoteConnection, observedTimers, startHttpFixture, startOauthFixture } from './remote-harness.ts';
@@ -257,7 +257,7 @@ describe('the store calls the MCP SDK makes for an operation of a connection', (
   });
 
   it('listTools has the request limit when the request hangs outside the store', async () => {
-    const connection = createManagedConnection({
+    const connection = createManagedConnection({ files: nodeFileSystem,
       clientVersion: '0.0.0-test',
       name: 's',
       config: { command: process.execPath, args: ['-e', SERVER_THAT_NEVER_ANSWERS_A_LISTING] },
@@ -272,7 +272,7 @@ describe('the store calls the MCP SDK makes for an operation of a connection', (
     useLimitTimers();
 
     const requesting = outcomeOf(connection.listTools());
-    while (vi.getTimerCount() === 0) await afterPendingIo();
+    await limitArmed();
     await stillPendingAfter(requesting, REQUEST_LIMIT_MS - 1);
     await vi.advanceTimersByTimeAsync(1);
     await settledAfter(requesting);
@@ -297,7 +297,7 @@ describe('the store calls the MCP SDK makes for an operation of a connection', (
     const requesting = outcomeOf(connection.releaseCheckpoint(checkpoint));
     await fixture.until(() => fixture.notes.some((note) => note.type === 'task_cancel_held'));
     timers.advance(REQUEST_LIMIT_MS - 1);
-    await afterPendingIo();
+    expect(timers.nextDueAt()).toBe(timers.monotonicMs() + 1);
     expect(requesting.state()).toBe('pending');
     timers.advance(1);
     await settledAfter(requesting);
@@ -328,11 +328,10 @@ describe('the store calls the MCP SDK makes for an operation of a connection', (
     expect(observedAt(read).scope).toBe(observedAt(credentials.calls[0]).scope);
     expect(observedAt(read).scope?.live).toBe(false);
     await vi.advanceTimersByTimeAsync(CONNECT_LIMIT_MS - 1);
-    await afterPendingIo();
     expect(read.signal.aborted).toBe(false);
     expect(read.rejection).toBeUndefined();
     await vi.advanceTimersByTimeAsync(1);
-    await afterPendingIo();
+    await read.left;
 
     expectEndedAtTheConnectLimit(read);
   });
@@ -443,7 +442,7 @@ describe('a signed-in connection against its store after an operation was stoppe
     const closing = outcomeOf(server.connection.close());
     await server.credentials.arrived(1, 'hang');
     server.timers.advance(graceMs - 1);
-    await afterPendingIo();
+    expect(server.timers.nextDueAt()).toBe(server.timers.monotonicMs() + 1);
     expect(closing.state()).toBe('pending');
     server.timers.advance(1);
     await settledAfter(closing);

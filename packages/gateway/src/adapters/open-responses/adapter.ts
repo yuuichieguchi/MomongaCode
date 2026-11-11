@@ -2,6 +2,7 @@ import { decodeSse } from '@momonga/foundation';
 import { agentReadiness, isUnavailableCapabilities, readinessText, summaryTokenCapFor } from '@momonga/protocol';
 import type { ClassifiedError, ResponseError, Capabilities, ToolChoiceWire, AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
 import { unavailableError } from '../../core/unavailable.ts';
+import { carryRefusalOfRender } from '../../core/unsupported-input.ts';
 import { resolveToolChoice } from '../../core/tool-choice.ts';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { boundedSseBytes } from '../shared/body-reading.ts';
@@ -43,10 +44,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
     return error.retryAfterMs === undefined ? classified : { ...classified, retryAfterMs: error.retryAfterMs };
   };
 
-  async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
-    if (closed) throw new Error('the open-responses adapter is closed');
-    const capabilities = ctx.capabilities;
-    if (isUnavailableCapabilities(capabilities)) throw unavailableError(capabilities.toolCalling);
+  const planOf = (request: AdapterRequest, target: AdapterTarget, capabilities: Capabilities, origin: ReasoningOrigin) => {
     const readiness = agentReadiness(capabilities);
     if (readiness.state === 'no_tools' && (request.tools ?? []).length > 0) {
       throw new UnsupportedInputError('capability_unsupported', readinessText(readiness), 'tools');
@@ -54,7 +52,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
     const ledger = new RenderLedger();
     const jsonReply = jsonReplyPlanOf(request, capabilities);
     const body = {
-      ...buildResponsesBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.display, OPEN_RESPONSES_TOOL_CHOICE), ctx.reasoningOrigin, {
+      ...buildResponsesBody(resolveToolChoice(request, capabilities.allowedTools, target.display, OPEN_RESPONSES_TOOL_CHOICE), origin, {
         schemaDialect: capabilities.schemaDialect,
         ledger,
         jsonReply,
@@ -66,6 +64,14 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
       }),
       ...(capabilities.promptCache?.kind === 'key' && request.promptCacheKey !== undefined ? { prompt_cache_key: request.promptCacheKey } : {}),
     };
+    return { ledger, jsonReply, body };
+  };
+
+  async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
+    if (closed) throw new Error('the open-responses adapter is closed');
+    const capabilities = ctx.capabilities;
+    if (isUnavailableCapabilities(capabilities)) throw unavailableError(capabilities.toolCalling);
+    const { ledger, jsonReply, body } = planOf(request, ctx.target, capabilities, ctx.reasoningOrigin);
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     let watch: ContentWatch | undefined;
@@ -151,6 +157,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
     compact,
     renderCompactWire,
     toolChoiceWire: () => OPEN_RESPONSES_TOOL_CHOICE,
+    carryRefusalOf: (request, target, capabilities, origin) => carryRefusalOfRender(() => planOf(request, target, capabilities, origin)),
     classify,
     servedAccount: (target: AdapterTarget) => options.authSource(target).resolvedAccount(),
     ...(health === undefined ? {} : { health: (target: AdapterTarget) => health(target) }),

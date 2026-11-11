@@ -1,6 +1,7 @@
 import { decodeSse } from '@momonga/foundation';
 import { EXACT_ERROR_SHAPE, anthropicVersionSamplingBound, countReplyOf, summaryTokenCapFor } from '@momonga/protocol';
-import type { ToolChoiceWire, AdapterCompactRequest, AdapterSampling, AdapterCompactResult, AdapterContext, AdapterCountTokensResult, AdapterInputItem, AdapterRequest, AdapterTarget, CountTokensRequest, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
+import type { ToolChoiceWire, AdapterCompactRequest, AdapterSampling, AdapterCompactResult, AdapterContext, AdapterCountTokensResult, AdapterInputItem, AdapterRequest, AdapterTarget, Capabilities, CountTokensRequest, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
+import { carryRefusalOfRender } from '../../core/unsupported-input.ts';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { normalizeInput } from '../../core/input.ts';
 import { resolveToolChoice } from '../../core/tool-choice.ts';
@@ -98,13 +99,18 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     }
   }
 
-  async function* stream(request: AdapterRequest, ctx: AdapterContext, cache: CachePlan | undefined): AsyncGenerator<StreamEvent> {
-    if (closed) throw new Error('the anthropic adapter is closed');
-    const capabilities = ctx.capabilities;
+  const planOf = (request: AdapterRequest, target: AdapterTarget, capabilities: Capabilities, origin: ReasoningOrigin, cache: CachePlan | undefined) => {
     const ledger = new RenderLedger();
     const dialect = resolveDialect(capabilities.schemaDialect, options.userDialects ?? NO_USER_DIALECTS);
     const jsonReply = jsonReplyPlanOf(request, capabilities);
-    const base = buildMessagesBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.display, ANTHROPIC_TOOL_CHOICE), capabilities.maxOutputTokens, { cache, reasoning: capabilities.reasoning, dialect, ledger, jsonReply }, ctx.reasoningOrigin);
+    const base = buildMessagesBody(resolveToolChoice(request, capabilities.allowedTools, target.display, ANTHROPIC_TOOL_CHOICE), capabilities.maxOutputTokens, { cache, reasoning: capabilities.reasoning, dialect, ledger, jsonReply }, origin);
+    return { ledger, jsonReply, base };
+  };
+
+  async function* stream(request: AdapterRequest, ctx: AdapterContext, cache: CachePlan | undefined): AsyncGenerator<StreamEvent> {
+    if (closed) throw new Error('the anthropic adapter is closed');
+    const capabilities = ctx.capabilities;
+    const { ledger, jsonReply, base } = planOf(request, ctx.target, capabilities, ctx.reasoningOrigin, cache);
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     let watch: ContentWatch | undefined;
@@ -255,6 +261,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     compact,
     renderCompactWire,
     toolChoiceWire: () => ANTHROPIC_TOOL_CHOICE,
+    carryRefusalOf: (request, target, capabilities, origin) => carryRefusalOfRender(() => planOf(request, target, capabilities, origin, undefined)),
     classify: createUpstreamClassifier(ANTHROPIC_PROVIDER_LABEL),
     ...(health === undefined ? {} : { health: (target: AdapterTarget) => health(target) }),
     close: () => {

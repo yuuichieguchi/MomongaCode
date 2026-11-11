@@ -36,7 +36,7 @@ export type GateName = (typeof GATE_NAMES)[number];
 export const TOKEN_PRIMARY_METRICS = ['costPerSuccess', 'uncachedInputPerSuccess'] as const;
 export type TokenPrimaryMetric = (typeof TOKEN_PRIMARY_METRICS)[number];
 
-export type GateCheckName = (typeof GATE_CHECKS)[number] | 'passRate' | TokenPrimaryMetric | QualityMetricName | 'completionRate' | 'recoveryRate' | 'witnessedDuplicates';
+export type GateCheckName = (typeof GATE_CHECKS)[number] | 'passRate' | TokenPrimaryMetric | QualityMetricName | 'completionRate' | 'recoveryRate' | 'witnessedDuplicates' | 'notRun';
 
 export type GateCheck = { name: GateCheckName; passed: boolean; detail: string };
 

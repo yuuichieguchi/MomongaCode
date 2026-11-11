@@ -20,7 +20,7 @@ import {
   systemRandom,
 } from '@momonga/foundation';
 import type { Clock, CredentialSecretStore, HelperSelf, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, ProcessInspector, Timing, RolePort, RuleEnforcement, SandboxNetworkSetting, SecretStore, SessionScratch } from '@momonga/foundation';
-import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/mcp';
+import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory, systemResolver } from '@momonga/mcp';
 import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { SandboxBindings } from '../ports.ts';
 import type { RuntimeStore, Session } from '@momonga/store';
@@ -112,6 +112,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     }),
     randomToken: () => randomBytes(32).toString('base64url'),
     openAuthorizationUrl: () => Promise.reject(new Error('the daemon never opens a browser; authorization URLs are handed to the client through the Run API')),
+    resolver: systemResolver,
   };
 
   const policyFilesystem = options.policyFilesystem ?? createPolicyFilesystem();
@@ -239,6 +240,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
               servers,
               projectDir: session.cwd,
               baseEnv: env,
+              files: nodeFileSystem,
               clock,
               clientVersion: options.version,
               credentials,

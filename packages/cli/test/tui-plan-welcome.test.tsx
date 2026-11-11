@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { LocalServerDetection, PlanAccountState } from '@momonga/protocol';
 import { SESSION } from './fake-backend.ts';
 import { KEYS, untilFrame, untilOutput } from './ink-helpers.ts';
-import { LISTENER_PORT, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, quiet, rowNumberOf, startPlan, submitLine } from './fake-plan-gateway.tsx';
+import type { Instance } from './ink-helpers.ts';
+import { LISTENER_PORT, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, rowNumberOf, startPlan, submitLine, untilTypedAfter } from './fake-plan-gateway.tsx';
 import type { FakePlanBackend } from './fake-plan-gateway.tsx';
 
 vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
@@ -12,9 +13,8 @@ const NO_MODEL = 'No model is connected. Use /login to connect one.';
 const NEEDS_SESSION = 'This command needs a session. Connect a model first with /login.';
 const UNCONNECTED_FOOTER = 'no model connected · /login';
 
-const accountsRead = async (backend: FakePlanBackend): Promise<void> => {
-  await eventually(() => backend.planCalls.some((call) => call.route === 'accounts'), 'the accounts read');
-  await quiet();
+const sessionShown = async (app: Instance): Promise<void> => {
+  await untilFrame(app, 'mode: manual');
 };
 
 describe('the welcome screen predicate: no model and no plan account record in any state', () => {
@@ -43,7 +43,7 @@ describe('the welcome screen predicate: no model and no plan account record in a
   it('does not show the welcome when a model exists, even with no account, and opens the session', async () => {
     const { app, backend } = await startPlan({ accounts: [] });
     await backend.called('openSession');
-    await accountsRead(backend);
+    await sessionShown(app);
     expect(app.lastFrame()).not.toContain('Use a local server');
     expect(app.lastFrame()).not.toContain(UNCONNECTED_FOOTER);
     app.unmount();
@@ -52,7 +52,7 @@ describe('the welcome screen predicate: no model and no plan account record in a
   it('counts a configured model whose health is not ok as connected', async () => {
     const { app, backend } = await startPlan({ accounts: [], health: { [SESSION.model]: { ok: false, breaker: 'open', reason: 'not_running' } } });
     await backend.called('openSession');
-    await accountsRead(backend);
+    await sessionShown(app);
     expect(app.lastFrame()).not.toContain('Use a local server');
     app.unmount();
   });
@@ -219,15 +219,14 @@ describe('the invitation banner', () => {
     await eventually(() => backend.dismissals.length > 0, 'the dismissal');
     expect(backend.dismissals).toEqual(['invite:chatgpt']);
     await untilFrame(app, (shown) => !shown.includes('Not now'));
-    await quiet();
-    expect(app.lastFrame()).not.toContain('Use your ChatGPT plan in this app.');
+    expect(await untilTypedAfter(app)).not.toContain('Use your ChatGPT plan in this app.');
     app.unmount();
   });
 
   it('is not shown once dismissed', async () => {
     const { app, backend } = await startPlan({ accounts: [], dismissed: { 'invite:chatgpt': '2026-11-01T00:00:00.000Z' } });
     await backend.called('openSession');
-    await accountsRead(backend);
+    await sessionShown(app);
     expect(app.frames.join('\n')).not.toContain('Use your ChatGPT plan in this app.');
     app.unmount();
   });
@@ -235,7 +234,7 @@ describe('the invitation banner', () => {
   it('is not shown to a home that has an account, even a signed-out one', async () => {
     const { app, backend } = await startPlan({ accounts: [account({ state: 'registered', active: false })] });
     await backend.called('openSession');
-    await accountsRead(backend);
+    await sessionShown(app);
     expect(app.frames.join('\n')).not.toContain('Use your ChatGPT plan in this app.');
     app.unmount();
   });

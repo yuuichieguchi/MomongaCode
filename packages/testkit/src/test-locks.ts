@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { kernelLockNamed, layoutProcessInspector, resolveLayoutLocks } from '@momonga/foundation';
-import type { KernelLockMechanism, LayoutLocks, LockCapability, LockCapabilityProbe, ProcessInspector } from '@momonga/foundation';
+import type { ClaimOutcome, KernelLockMechanism, LayoutLocks, LockCapability, LockCapabilityProbe, ProcessInspector } from '@momonga/foundation';
 
 export const LOCK_PROOF_PREFIX = 'momonga-test-lock-proof-';
 
@@ -21,6 +21,30 @@ const proveInRunFolder = (): LayoutLocks => {
 export const testLocks = (): LayoutLocks => (resolved ??= proveInRunFolder());
 
 export const testKernelLock = (): KernelLockMechanism => testLocks().mechanism;
+
+export type WatchedKernelLock = { mechanism: KernelLockMechanism; refusals(lockPath: string): number };
+
+export const watchedKernelLock = (base: KernelLockMechanism = testKernelLock()): WatchedKernelLock => {
+  const refused = new Map<string, number>();
+  const counted = (lockPath: string, outcome: ClaimOutcome): ClaimOutcome => {
+    if (outcome.kind === 'held') refused.set(lockPath, (refused.get(lockPath) ?? 0) + 1);
+    return outcome;
+  };
+  const claimSync = base.claimSync;
+  return {
+    mechanism: {
+      name: base.name,
+      claim: async (lockPath) => counted(lockPath, await base.claim(lockPath)),
+      ...(claimSync === undefined ? {} : { claimSync: (lockPath: string) => counted(lockPath, claimSync(lockPath)) }),
+      isHeld: (lockPath) => base.isHeld(lockPath),
+      readHolder: (lockPath) => base.readHolder(lockPath),
+      readHolderSync: (lockPath) => base.readHolderSync(lockPath),
+      claimInheritable: base.claimInheritable,
+      adoptInherited: base.adoptInherited,
+    },
+    refusals: (lockPath) => refused.get(lockPath) ?? 0,
+  };
+};
 
 export const testProcessInspector = (): ProcessInspector => (inspector ??= layoutProcessInspector(testLocks().capability));
 
