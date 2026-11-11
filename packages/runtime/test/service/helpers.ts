@@ -457,6 +457,7 @@ export type ServiceOverrides = {
   capabilitiesOf?: (model: string) => Promise<unknown>;
   runCost?: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<unknown>;
   reportCost?: (runIds: readonly string[], signal: AbortSignal) => Promise<unknown>;
+  recomputeFacts?: (runIds: readonly string[], signal: AbortSignal) => Promise<unknown>;
   runTraceContent?: (runId: string, after: number, limit: number) => Promise<unknown>;
   onFatal?: boolean;
   sandboxKind?: 'seatbelt' | 'none';
@@ -569,6 +570,7 @@ export const serviceOptions = (
   releaseStopped: overrides.releaseStopped ?? (async () => undefined),
   runTrace: overrides.runTrace ?? (async () => undefined),
   reportCost: overrides.reportCost ?? (async () => []),
+  recomputeFacts: overrides.recomputeFacts ?? (async () => ({ rows: [], refused: [] })),
   runTraceContent: overrides.runTraceContent ?? (async () => ({ bodies: [], next: null })),
   runCost:
     overrides.runCost ??

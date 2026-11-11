@@ -1,7 +1,7 @@
 import type { CredentialSecretStore } from './encrypted-credential-store.ts';
-import { nodeFileSystem } from './node-file-system.ts';
+import { nodeFileSystem, nodeFileSystemSync } from './node-file-system.ts';
 import { settledOrAborted } from './operation-limit.ts';
-import { findProgramOnPath } from './program-search.ts';
+import { findProgramOnPathSync } from './program-search.ts';
 import { declaredChildEnv } from './process-contract.ts';
 import { powershellArgs, powershellPath } from './platform/windows-scripts.ts';
 import { SecretStoreAbsentError, SecretStoreAnswerError, endedStoreCall } from './secret-store-failures.ts';
@@ -341,13 +341,13 @@ const searchedAs = (backend: SecretBackend): string => `${backend.searchedProgra
 const notOnPath = (backend: SecretBackend): string => `${searchedAs(backend)} is not on PATH`;
 
 const chooseSecretBackend = (env: SecretEnv): ChosenSecretStore => {
-  const security = findProgramOnPath(KEYCHAIN_BACKEND.searchedProgram, env);
+  const security = findProgramOnPathSync(KEYCHAIN_BACKEND.searchedProgram, env, nodeFileSystemSync);
   if (security !== undefined) return { kind: 'chosen', id: 'keychain', program: security };
-  const secretTool = findProgramOnPath(SECRET_SERVICE_BACKEND.searchedProgram, env);
+  const secretTool = findProgramOnPathSync(SECRET_SERVICE_BACKEND.searchedProgram, env, nodeFileSystemSync);
   const busAddress = env['DBUS_SESSION_BUS_ADDRESS'];
   const hasSession = busAddress !== undefined && busAddress !== '';
   if (secretTool !== undefined && hasSession) return { kind: 'chosen', id: 'secret-service', program: secretTool };
-  if (findProgramOnPath(CREDENTIAL_MANAGER_BACKEND.searchedProgram, env) !== undefined) return { kind: 'chosen', id: 'credential-manager', program: powershellPath(env) };
+  if (findProgramOnPathSync(CREDENTIAL_MANAGER_BACKEND.searchedProgram, env, nodeFileSystemSync) !== undefined) return { kind: 'chosen', id: 'credential-manager', program: powershellPath(env) };
   const secretServiceState =
     secretTool === undefined ? notOnPath(SECRET_SERVICE_BACKEND) : `${searchedAs(SECRET_SERVICE_BACKEND)} is on PATH at ${secretTool}, but no D-Bus session is set (DBUS_SESSION_BUS_ADDRESS is empty)`;
   return { kind: 'none', reason: `${notOnPath(KEYCHAIN_BACKEND)}; ${secretServiceState}; ${notOnPath(CREDENTIAL_MANAGER_BACKEND)}` };

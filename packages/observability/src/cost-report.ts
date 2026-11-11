@@ -31,6 +31,7 @@ export type RoleCost = {
   priceVersions: string[];
   unpriced: Partial<Record<UnpricedCode, number>>;
   priceNotRecordedCalls: number;
+  legacyPrecisionCalls: number;
 };
 
 export type CostTotals = RoleCost & { roles: Record<string, RoleCost> };
@@ -46,6 +47,7 @@ type Accumulator = {
   localCalls: number;
   unpriced: Partial<Record<UnpricedCode, number>>;
   priceNotRecordedCalls: number;
+  legacyPrecisionCalls: number;
   cacheReadNotReportedCalls: number;
   planInputTokens: number;
   planOutputTokens: number;
@@ -65,6 +67,7 @@ const emptyAccumulator = (): Accumulator => ({
   localCalls: 0,
   unpriced: {},
   priceNotRecordedCalls: 0,
+  legacyPrecisionCalls: 0,
   cacheReadNotReportedCalls: 0,
   planInputTokens: 0,
   planOutputTokens: 0,
@@ -86,6 +89,7 @@ const merge = (target: Accumulator, source: Accumulator): void => {
   target.localCalls += source.localCalls;
   for (const [code, count] of Object.entries(source.unpriced) as [UnpricedCode, number][]) addUnpriced(target, code, count);
   target.priceNotRecordedCalls += source.priceNotRecordedCalls;
+  target.legacyPrecisionCalls += source.legacyPrecisionCalls;
   target.cacheReadNotReportedCalls += source.cacheReadNotReportedCalls;
   target.planInputTokens += source.planInputTokens;
   target.planOutputTokens += source.planOutputTokens;
@@ -121,6 +125,7 @@ const moneyTallyOfAccumulator = (accumulator: Accumulator): MoneyTally => ({
   priceNotRecorded: accumulator.priceNotRecordedCalls,
   amount: amountOfUnits(accumulator.units),
   meteredPriceVersions: [...accumulator.priceVersions].sort(),
+  legacyPrecisionCalls: accumulator.legacyPrecisionCalls,
 });
 
 const roleTotalsOf = (accumulator: Accumulator): RoleCost => ({
@@ -142,6 +147,7 @@ const roleTotalsOf = (accumulator: Accumulator): RoleCost => ({
   priceVersions: [...accumulator.priceVersions].sort(),
   unpriced: { ...accumulator.unpriced },
   priceNotRecordedCalls: accumulator.priceNotRecordedCalls,
+  legacyPrecisionCalls: accumulator.legacyPrecisionCalls,
 });
 
 const totalsOf = (accumulator: Accumulator): CostTotals => ({
@@ -167,6 +173,7 @@ const addCall = (accumulator: Accumulator, call: PricedBilledCall): void => {
     accumulator.priceNotRecordedCalls += 1;
   } else if (price.kind === 'priced') {
     accumulator.units += price.units;
+    if ('legacyPrecision' in price) accumulator.legacyPrecisionCalls += 1;
     if (price.priceVersion !== LOCAL_PRICE_VERSION) accumulator.priceVersions.add(price.priceVersion);
   } else {
     addUnpriced(accumulator, price.code, 1);
@@ -224,7 +231,7 @@ const describeTotals = (totals: RoleCost): string => {
     (entry) =>
       `, ${entry.calls} of ${totals.calls} call(s) were answered by the fallback model ${entry.answeredBy} after ${entry.failed.map(describeFallbackCause).join('; ')}`,
   );
-  const money = describeMoney({ calls: totals.calls, unpriced: totals.unpriced, priceNotRecorded: totals.priceNotRecordedCalls, amount: totals.amount, meteredPriceVersions: totals.priceVersions });
+  const money = describeMoney({ calls: totals.calls, unpriced: totals.unpriced, priceNotRecorded: totals.priceNotRecordedCalls, amount: totals.amount, meteredPriceVersions: totals.priceVersions, legacyPrecisionCalls: totals.legacyPrecisionCalls });
   return `${totals.calls} call(s), ${CACHE_READ_TEXT.inputClause({ calls: totals.calls, notReported: totals.cacheReadNotReportedCalls, inputTokens: totals.inputTokens, cachedInputTokens: totals.cachedInputTokens })} + ${totals.outputTokens} output tokens, ${money}${fallback.join('')}`;
 };
 

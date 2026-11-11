@@ -59,7 +59,7 @@ describe('the cost report reads the recorded cost of a call', () => {
 
   it('reads the units of a recorded cost exactly, and the amount of a record written before units', () => {
     expect(callPriceOf(TWO_USD)).toEqual({ kind: 'priced', units: 2_000_000_000_000_000n, currency: 'USD', priceVersion: '2026-01-01' });
-    expect(callPriceOf({ kind: 'priced', cost: { amount: 0.000062, currency: 'USD', priceVersion: '2026-01-01' } })).toMatchObject({ kind: 'priced', units: 62_000_000_000n });
+    expect(callPriceOf({ kind: 'priced', cost: { amount: 0.000062, units: null, currency: 'USD', priceVersion: '2026-01-01' } })).toEqual({ kind: 'priced', units: 62_000_000_000n, currency: 'USD', priceVersion: '2026-01-01', legacyPrecision: true });
     expect(callPriceOf({ kind: 'unpriced', code: 'plan', reason: 'plan' })).toEqual({ kind: 'unpriced', code: 'plan', reason: 'plan' });
   });
 });

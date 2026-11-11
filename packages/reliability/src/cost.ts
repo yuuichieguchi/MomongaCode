@@ -1,21 +1,21 @@
-import { COST_CURRENCY, COST_UNIT_DIGITS } from '@momonga/protocol';
+import { COST_CURRENCY, COST_UNIT_DIGITS, LEGACY_PRECISION_TEXT } from '@momonga/protocol';
 import type { RunCostView } from '@momonga/protocol';
 import { countedTasksOf } from './aggregate.ts';
 import type { Aggregate, CountedTask } from './aggregate.ts';
 
 export type CostAmount = { currency: typeof COST_CURRENCY; priceVersion: string; units: string };
 
-export type CostSide = { tasks: number; fullyPriced: number; calls: number; notPriced: number; tokens: number; priced: CostAmount[] };
+export type CostSide = { tasks: number; fullyPriced: number; calls: number; notPriced: number; tokens: number; priced: CostAmount[]; legacyPrecisionCalls?: number };
 
 export type CostIndicators = { successful: CostSide; unsuccessful: CostSide };
 
 export type CostGroups = { total: CostIndicators; groups: Record<string, CostIndicators> };
 
-type SideTally = { tasks: number; fullyPriced: number; calls: number; notPriced: number; tokens: number; units: Map<string, bigint> };
+type SideTally = { tasks: number; fullyPriced: number; calls: number; notPriced: number; legacyPrecisionCalls: number; tokens: number; units: Map<string, bigint> };
 
 type Tally = { successful: SideTally; unsuccessful: SideTally };
 
-const emptySide = (): SideTally => ({ tasks: 0, fullyPriced: 0, calls: 0, notPriced: 0, tokens: 0, units: new Map() });
+const emptySide = (): SideTally => ({ tasks: 0, fullyPriced: 0, calls: 0, notPriced: 0, legacyPrecisionCalls: 0, tokens: 0, units: new Map() });
 
 const emptyTally = (): Tally => ({ successful: emptySide(), unsuccessful: emptySide() });
 
@@ -25,6 +25,7 @@ const addTask = (side: SideTally, task: CountedTask, costs: ReadonlyMap<string, 
     const cost = costs.get(runId);
     if (cost === undefined) throw new RangeError(`the costs hold no entry for run ${runId} of task ${task.rootRunId}`);
     side.calls += cost.calls;
+    side.legacyPrecisionCalls += cost.legacyPrecisionCalls;
     notPriced += cost.notPriced;
     for (const amount of cost.priced) side.units.set(amount.priceVersion, (side.units.get(amount.priceVersion) ?? 0n) + BigInt(amount.units));
   }
@@ -41,6 +42,7 @@ const finishSide = (side: SideTally): CostSide => ({
   notPriced: side.notPriced,
   tokens: side.tokens,
   priced: [...side.units].sort(([left], [right]) => (left < right ? -1 : 1)).map(([priceVersion, units]) => ({ currency: COST_CURRENCY, priceVersion, units: units.toString() })),
+  ...(side.legacyPrecisionCalls === 0 ? {} : { legacyPrecisionCalls: side.legacyPrecisionCalls }),
 });
 
 const finishTally = (tally: Tally): CostIndicators => ({ successful: finishSide(tally.successful), unsuccessful: finishSide(tally.unsuccessful) });
@@ -70,7 +72,8 @@ const amountText = (units: bigint): string => {
   return `${COST_CURRENCY} ${units / UNIT_DIVISOR}${fraction === '' ? '' : `.${fraction}`}`;
 };
 
-const notPricedText = (side: CostSide): string => `${side.notPriced} of ${side.calls} calls not priced`;
+const notPricedText = (side: CostSide): string =>
+  `${side.notPriced} of ${side.calls} calls not priced${side.legacyPrecisionCalls === undefined ? '' : `, ${LEGACY_PRECISION_TEXT(side.legacyPrecisionCalls)}`}`;
 
 const successfulLine = (side: CostSide): string => {
   if (side.tasks === 0) return 'Cost per Successful Task: not measurable: no successful task';

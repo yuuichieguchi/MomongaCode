@@ -54,11 +54,22 @@ const decodeUsage = (identity: string, value: unknown): Run['usage'] => {
   if (typeof inputTokens !== 'number' || typeof outputTokens !== 'number' || typeof totalTokens !== 'number') {
     throw corrupt('runs', identity, 'column usage_json must hold numeric inputTokens, outputTokens and totalTokens');
   }
-  const { costNano, unpricedCalls } = record;
-  if ((costNano !== undefined && typeof costNano !== 'number') || (unpricedCalls !== undefined && typeof unpricedCalls !== 'number')) {
-    throw corrupt('runs', identity, 'column usage_json must hold numeric costNano and unpricedCalls when it holds them');
+  const { costNano, unpricedCalls, legacyPrecisionCalls } = record;
+  if (
+    (costNano !== undefined && typeof costNano !== 'number') ||
+    (unpricedCalls !== undefined && typeof unpricedCalls !== 'number') ||
+    (legacyPrecisionCalls !== undefined && typeof legacyPrecisionCalls !== 'number')
+  ) {
+    throw corrupt('runs', identity, 'column usage_json must hold numeric costNano, unpricedCalls and legacyPrecisionCalls when it holds them');
   }
-  return { inputTokens, outputTokens, totalTokens, ...(costNano === undefined ? {} : { costNano }), ...(unpricedCalls === undefined ? {} : { unpricedCalls }) };
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    ...(costNano === undefined ? {} : { costNano }),
+    ...(unpricedCalls === undefined ? {} : { unpricedCalls }),
+    ...(legacyPrecisionCalls === undefined ? {} : { legacyPrecisionCalls }),
+  };
 };
 
 const decodeCancelOrigin = (context: DecodeContext, identity: string, value: string | null): Run['cancelOrigin'] =>
@@ -219,6 +230,15 @@ const assertInheritedForm = (identity: string, payload: Record<string, unknown>)
   for (const key of REFERENCE_LISTS) if (!Array.isArray(payload[key])) refuse(`is a reference without the list ${key}`);
 };
 
+const withRecordedCostField = (billed: Record<string, unknown>): Record<string, unknown> =>
+  isRecord(billed['cost']) ? { ...billed, cost: { ...billed['cost'], units: billed['cost']['units'] ?? null } } : billed;
+
+const withRecordedCosts = (type: string, payload: Record<string, unknown>): Record<string, unknown> => {
+  if (type === 'usage.charged') return withRecordedCostField(payload);
+  if (type !== 'model.responded' || !isRecord(payload['response']) || !isRecord(payload['response']['momonga'])) return payload;
+  return { ...payload, response: { ...payload['response'], momonga: withRecordedCostField(payload['response']['momonga']) } };
+};
+
 const decodeRunEvent = (row: Row, identity: string, type: string, payload: Record<string, unknown>): RunEvent => {
   const reader = readerFor('events', identity, row);
   if (type === 'tool.completed' || type === 'tool.reconciled') assertToolFacts(identity, payload);
@@ -233,7 +253,7 @@ const decodeRunEvent = (row: Row, identity: string, type: string, payload: Recor
     createdAt: reader.number('created_at'),
   };
   const renames = Object.hasOwn(EVENT_PAYLOAD_RENAMES, type) ? EVENT_PAYLOAD_RENAMES[type as RunEventPayload['type']] : undefined;
-  return { ...(renames === undefined ? payload : withCurrentNames(payload, renames)), ...envelope } as RunEvent;
+  return { ...withRecordedCosts(type, renames === undefined ? payload : withCurrentNames(payload, renames)), ...envelope } as RunEvent;
 };
 
 const inboxChangeRowOf = (context: DecodeContext, identity: string, value: unknown): InboxChangeRow => {
@@ -534,7 +554,7 @@ const isWorkingFacts = (value: unknown): boolean =>
   isArrayOf(value['itemEvents'], (entry) => isRecord(entry) && Number.isInteger(entry['itemSeq']) && Number.isInteger(entry['eventSeq'])) &&
   (value['replacedThroughEventSeq'] === undefined || Number.isInteger(value['replacedThroughEventSeq']));
 
-export const SNAPSHOT_STATE_VERSION = 20;
+export const SNAPSHOT_STATE_VERSION = 21;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 
@@ -593,6 +613,7 @@ export const decodeRunState = (identity: string, value: unknown): RunState | und
     isArrayOf(state['loadedTools'], (name) => typeof name === 'string') &&
     (state['offeredTools'] === undefined || isArrayOf(state['offeredTools'], (name) => typeof name === 'string')) &&
     (state['loopWarned'] === undefined || isLoopWarned(state['loopWarned'])) &&
+    (state['rejectedCalls'] === undefined || isArrayOf(state['rejectedCalls'], (digest) => typeof digest === 'string')) &&
     (state['streaming'] === undefined || isStreaming(state['streaming'])) &&
     (state['mode'] === undefined || PERMISSION_MODES.some((mode) => mode === state['mode'])) &&
     Number.isInteger(state['taskSeq']) &&

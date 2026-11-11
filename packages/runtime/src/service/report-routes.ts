@@ -1,7 +1,7 @@
 import { defineProductSchema, productErrorsText } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
 import { MAX_TRACE_CONTENT_PAGE, REPORT_PAGE_ROWS, REPORT_SCHEMAS } from '@momonga/protocol';
-import type { ReportCostPage, ReportCostRequest, RunCostView, StoreReviewRequest, StoreReviewResponse, TraceContentPage } from '@momonga/protocol';
+import type { ReportCostPage, ReportCostRequest, ReportRecomputePage, ReportRecomputeRequest, RunCostView, StoreReviewRequest, StoreReviewResponse, TraceContentPage } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { invalidRequest, notFound } from './errors.ts';
 import { JSON_MEDIA_TYPES, integerQueryOf, pageLimitOf, readJson } from './request.ts';
@@ -13,6 +13,7 @@ export type ReportRouteDeps = {
   maxBodyBytes: number;
   reportCost: (runIds: readonly string[], signal: AbortSignal) => Promise<RunCostView[]>;
   runTraceContent: (runId: string, after: number, limit: number, signal: AbortSignal) => Promise<TraceContentPage>;
+  recomputeFacts: (runIds: readonly string[], signal: AbortSignal) => Promise<ReportRecomputePage>;
 };
 
 const limitOf = (raw: string | undefined): number => pageLimitOf(raw, REPORT_PAGE_ROWS);
@@ -25,6 +26,7 @@ const bodyOf = <T>(validate: ProductValidator<T>, value: unknown): T => {
 
 const validateStoreReview: ProductValidator<StoreReviewRequest> = defineProductSchema('report/StoreReviewRequest', REPORT_SCHEMAS.StoreReviewRequest);
 const validateReportCost: ProductValidator<ReportCostRequest> = defineProductSchema('report/ReportCostRequest', REPORT_SCHEMAS.ReportCostRequest);
+const validateReportRecompute: ProductValidator<ReportRecomputeRequest> = defineProductSchema('report/ReportRecomputeRequest', REPORT_SCHEMAS.ReportRecomputeRequest);
 
 const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
@@ -58,6 +60,11 @@ export const registerReportRoutes = (route: RouteRegistrar, deps: ReportRouteDep
     return json(page);
   };
 
+  const recompute: Handler = async (context) => {
+    const { runIds } = bodyOf(validateReportRecompute, await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
+    return json(await deps.recomputeFacts(runIds, context.req.raw.signal));
+  };
+
   const traceContent: Handler = async (context) => {
     const id = context.req.param('id') ?? '';
     if (deps.store.getRun(id) === undefined) throw notFound(`run ${id} does not exist`);
@@ -69,5 +76,6 @@ export const registerReportRoutes = (route: RouteRegistrar, deps: ReportRouteDep
   route('/v1/report/facts', { GET: facts });
   route('/v1/report/reviews', { GET: reviews, POST: storeReview });
   route('/v1/report/cost', { POST: cost });
+  route('/v1/report/recompute', { POST: recompute });
   route('/v1/runs/:id/trace/content', { GET: traceContent });
 };

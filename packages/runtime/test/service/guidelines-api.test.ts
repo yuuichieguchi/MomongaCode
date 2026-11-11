@@ -98,7 +98,7 @@ describe('the context charge route', () => {
 
   it('records the billed detail of a guideline call: response id, cached input, cost and timing', async () => {
     const env = await startService();
-    const detail = { responseId: 'resp_1', cachedInputTokens: 2, cost: { amount: 0.25, currency: 'USD', priceVersion: '2026-01-01' }, timing: { firstEventMs: 4, durationMs: 61_000 } };
+    const detail = { responseId: 'resp_1', cachedInputTokens: 2, cost: { amount: 0.25, units: '250000000000000', currency: 'USD', priceVersion: '2026-01-01' }, timing: { firstEventMs: 4, durationMs: 61_000 } };
     const body = { purpose: 'guideline', project: env.layout.project, model: 'opus', inputTokens: 7, outputTokens: 3, totalTokens: 10, detail };
     const recorded = await env.http('POST', '/v1/context-charges', { body });
     expect(recorded.status).toBe(201);

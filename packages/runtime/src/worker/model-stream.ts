@@ -1,5 +1,5 @@
 import { isFatalStoreError } from '@momonga/store';
-import type { BilledDetail, CallTiming, CreateResponseBody, ModelCost, PlanAccountRef, ResponseResource, StreamEvent, UnpricedOutcome, Usage } from '@momonga/protocol';
+import type { NewBilledDetail, CallTiming, CreateResponseBody, ModelCost, PlanAccountRef, ResponseResource, StreamEvent, UnpricedOutcome, Usage } from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
 import { carriesOutput, planAccountRefOf, reportedCachedTokensOf } from '@momonga/protocol';
 import type { ClaimContext } from './claim-context.ts';
@@ -113,7 +113,7 @@ export const priceOutcomeOf = (extension: BilledExtension | undefined): { cost: 
   return {};
 };
 
-export const billedDetailOf = (usage: Usage | null, extension: BilledExtension | undefined, timing: CallTiming, responseId: string): BilledDetail => ({
+export const billedDetailOf = (usage: Usage | null, extension: BilledExtension | undefined, timing: CallTiming, responseId: string): NewBilledDetail => ({
   responseId,
   ...(usage === null ? {} : cachedInputOf(usage, extension)),
   ...(extension?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: extension.cacheWriteInputTokens }),

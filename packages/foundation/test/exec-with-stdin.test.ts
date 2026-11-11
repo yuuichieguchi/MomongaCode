@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createExecWithStdin } from '@momonga/foundation';
+import { ProgramSignalledError } from '../src/exec-with-stdin.ts';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, productTestEnv, waitFor } from '@momonga/testkit';
 import { rejection } from './support/secret-store-fakes.ts';
 import { makeTemporaryDirectory as makeDir } from './support/temporary-directory.ts';
@@ -86,5 +87,13 @@ describe('createExecWithStdin under the signal of the operation', () => {
   it('answers with the exit code, stdout and stderr of a child that ends by itself', async () => {
     const result = await run()(process.execPath, ['-e', "process.stdin.on('data', (chunk) => process.stdout.write(chunk)); process.stdin.on('end', () => { process.stderr.write('done'); process.exitCode = 3; })"], 'given', new AbortController().signal);
     expect(result).toEqual({ exitCode: 3, stdout: 'given', stderr: 'done' });
+  });
+
+  it('rejects with a ProgramSignalledError that names the signal when the program is ended by SIGKILL, never an exit code', async () => {
+    const attempt = run()(process.execPath, ['-e', "process.kill(process.pid, 'SIGKILL')"], '', new AbortController().signal);
+    const error = await rejection(attempt);
+    expect(error).toBeInstanceOf(ProgramSignalledError);
+    expect(error).toMatchObject({ file: process.execPath, signal: 'SIGKILL' });
+    expect((error as Error).message).toContain('SIGKILL');
   });
 });

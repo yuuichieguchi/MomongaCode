@@ -2,7 +2,7 @@ import { GENAI_SEMCONV, MOMONGA_ATTRIBUTES, OPERATIONS, UNKNOWN_BILLING } from '
 import type { CallBilling } from './cost.ts';
 import type { CallPrice } from './money-line.ts';
 import type { SpanRecord, TraceStore } from './trace-store.ts';
-import { SPAN_ATTRIBUTE_RENAMES, isFallbackCauseList, unitsOfCost, withCurrentNames } from '@momonga/protocol';
+import { SPAN_ATTRIBUTE_RENAMES, isFallbackCauseList, isLegacyPrecisionCost, unitsOfCost, withCurrentNames } from '@momonga/protocol';
 import type { FallbackCause, RecordedPrice } from '@momonga/protocol';
 
 const A = GENAI_SEMCONV.attributes;
@@ -26,8 +26,11 @@ export type BilledCallWire = Omit<BilledCall, 'spanId'>;
 
 export type PricedBilledCall = BilledCallWire & { price: CallPrice };
 
-export const callPriceOf = (recorded: RecordedPrice): CallPrice =>
-  recorded.kind === 'priced' ? { kind: 'priced', units: unitsOfCost(recorded.cost), currency: recorded.cost.currency, priceVersion: recorded.cost.priceVersion } : recorded;
+export const callPriceOf = (recorded: RecordedPrice): CallPrice => {
+  if (recorded.kind !== 'priced') return recorded;
+  const priced = { kind: 'priced', units: unitsOfCost(recorded.cost), currency: recorded.cost.currency, priceVersion: recorded.cost.priceVersion } as const;
+  return isLegacyPrecisionCost(recorded.cost) ? { ...priced, legacyPrecision: true } : priced;
+};
 
 export type BilledCallsCursor = { run: number; after: number };
 

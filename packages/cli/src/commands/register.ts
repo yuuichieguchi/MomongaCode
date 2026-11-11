@@ -1,12 +1,13 @@
 import type { Command } from 'commander';
 import { InvalidArgumentError, Option } from 'commander';
 import { DEFAULT_DATASET_SEED, GATE_NAMES, MAX_DATASET_SEED } from '@momonga/eval';
-import { GROUP_KEYS } from '@momonga/reliability';
-import type { GroupKey } from '@momonga/reliability';
+import { GROUP_KEYS, RUN_GROUP_KEYS } from '@momonga/reliability';
+import type { GroupKey, RunGroupKey } from '@momonga/reliability';
 import { GOVERNING_KINDS, MEMORY_KINDS, MEMORY_SCOPES, PERMISSION_MODES, REVIEW_LABELS, REVIEW_SAMPLE_SIZE } from '@momonga/protocol';
 import type { GoverningEnforcement, GoverningKind, MemoryKind, MemoryScope, PermissionMode } from '@momonga/protocol';
 import { pathsOf } from '../paths.ts';
 import type { ProgramDeps } from '../program-deps.ts';
+import { UsageError } from '../usage-error.ts';
 import { runAuthLogin, runAuthLogout, runAuthResetHost, runAuthResume, runAuthStatus, runModelsCatalog } from './auth-wiring.ts';
 import { contextImprove, guidelineAdopt, guidelineList, guidelineRollback } from './context.ts';
 import { showCost } from './cost.ts';
@@ -21,7 +22,7 @@ import { listJobs } from './jobs.ts';
 import { checkModels, detectModels, listModels, modelsShellOf, runModelsForm } from './models.ts';
 import type { FormOption, ModelsForm, ModelsShell } from './models.ts';
 import { policyVerify } from './policy.ts';
-import { DEFAULT_REPORT_DAYS, showReliability } from './reliability.ts';
+import { DEFAULT_REPORT_DAYS, MAX_REPORT_DAYS, showReliability, showReliabilityVerification } from './reliability.ts';
 import { evaluateBench } from './bench.ts';
 import { reviewPermissions } from './review.ts';
 import type { ReviewOptions } from './review.ts';
@@ -309,19 +310,45 @@ const registerCost: CommandGroup = (program, deps) => {
 
 const daysArgument = (text: string): number => {
   const value = Number(text);
-  if (!Number.isSafeInteger(value) || value < 1) throw new InvalidArgumentError('expected a positive integer');
+  if (!Number.isSafeInteger(value) || value < 1 || value > MAX_REPORT_DAYS) throw new InvalidArgumentError(`expected an integer from 1 to ${MAX_REPORT_DAYS}, the most days whose period starts at a date`);
   return value;
+};
+
+type ReliabilityFlags = { groupBy: RunGroupKey; days: number; explain?: true; json?: true; out?: string; verify?: true };
+
+const refuseCombined = (flags: ReliabilityFlags): void => {
+  if (flags.verify === true && (flags.json === true || flags.out !== undefined || flags.explain === true)) {
+    throw new UsageError('--verify checks the stored facts and builds no report, so it takes none of --json, --out and --explain');
+  }
+  if (flags.json === true && flags.explain === true) throw new UsageError('--explain adds run ids to the text report, so it does not combine with --json');
 };
 
 const registerReliability: CommandGroup = (program, deps) => {
   program
     .command('reliability')
     .description('report the completion, recovery, duplicate, intervention, budget, time and cost indicators of the terminal tasks of the period')
-    .addOption(new Option('--group-by <key>', 'the key the indicators are grouped by').choices(GROUP_KEYS).default('model'))
+    .addOption(new Option('--group-by <key>', 'the key the indicators are grouped by').choices(RUN_GROUP_KEYS).default('model'))
     .option('--days <n>', 'the period: the tasks whose root run ended in the last n days', daysArgument, DEFAULT_REPORT_DAYS)
     .option('--explain', 'list the run ids behind each count')
-    .action(async (options: { groupBy: GroupKey; days: number; explain?: true }) => {
-      deps.complete(await showReliability(deps.ports, await pathsOf(deps.ports), { groupBy: options.groupBy, days: options.days, explain: options.explain === true }));
+    .option('--json', 'print the report as one JSON document')
+    .option('--out <file>', 'also store the report as JSON in the file')
+    .option('--verify', 'fold the journal of every stored facts row again and list the runs whose stored facts differ')
+    .action(async (flags: ReliabilityFlags) => {
+      refuseCombined(flags);
+      const paths = await pathsOf(deps.ports);
+      if (flags.verify === true) {
+        deps.complete(await showReliabilityVerification(deps.ports, paths));
+        return;
+      }
+      deps.complete(
+        await showReliability(deps.ports, paths, {
+          groupBy: flags.groupBy,
+          days: flags.days,
+          explain: flags.explain === true,
+          json: flags.json === true,
+          ...(flags.out === undefined ? {} : { out: flags.out }),
+        }),
+      );
     });
 };
 
@@ -388,10 +415,12 @@ const registerEvaluate: CommandGroup = (program, deps) => {
     .option('--validate', 'check that every task fails on its repository, passes with its reference solution, keeps its grader files out of the repository and names the digest of its repository, and print beside the label of each task the files and lines its reference changes')
     .option('--model <model>', 'the model every task runs on')
     .option('--report <file>', 'store the report as JSON for eval compare --gate reliability')
-    .action(async (directory: string, options: { validate?: true; model?: string; report?: string }) => {
+    .addOption(new Option('--group-by <key>', 'the key the indicators are grouped by; taskType and difficulty are the labels of the declarations').choices(GROUP_KEYS).default('model'))
+    .action(async (directory: string, options: { validate?: true; model?: string; report?: string; groupBy: GroupKey }) => {
       deps.complete(
         await evaluateBench(deps.ports, await pathsOf(deps.ports), directory, {
           validate: options.validate === true,
+          groupBy: options.groupBy,
           interrupt: deps.interrupt,
           ...(options.model === undefined ? {} : { model: options.model }),
           ...(options.report === undefined ? {} : { report: options.report }),

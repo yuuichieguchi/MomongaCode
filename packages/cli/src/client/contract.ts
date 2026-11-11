@@ -2,7 +2,7 @@ import { defineProductSchema, productErrorsText } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
 import { REPORT_SCHEMAS, RUN_API_SCHEMAS, runApiSchemaName } from '@momonga/protocol';
 import type { ReportCostPage, ReviewPage, StoreReviewResponse, TraceContentPage } from '@momonga/protocol';
-import type { AgentsResponse, ContextChargeResponse, InboxAddResponse, InboxResponse, InboxWithdrawResponse, CostBreakdownView, CostReportView, GuidelineResponse, GuidelinesResponse, JobsResponse, JsonSchema, MemoriesResponse, MemoryResponse, McpAuthorizationView, McpServerView, PolicyGovernanceResponse, PromoteMemoryResponse, PublicRunEvent, ReflectionResponse, ReportPage, RuleAddResponse, RuleResponse, RulesResponse, RunAnsweredByView, RunHealth, RunReflectionView, RunTraceView, SkillsResponse, UserShellFrame, UserShellPendingResponse } from '@momonga/protocol';
+import type { AgentsResponse, ContextChargeResponse, InboxAddResponse, InboxResponse, InboxWithdrawResponse, CostBreakdownView, CostReportView, GuidelineResponse, GuidelinesResponse, JobsResponse, JsonSchema, MemoriesResponse, MemoryResponse, McpAuthorizationView, McpServerView, PolicyGovernanceResponse, PromoteMemoryResponse, PublicRunEvent, ReflectionResponse, ReportPage, ReportRecomputePage, RuleAddResponse, RuleResponse, RulesResponse, RunAnsweredByView, RunHealth, RunReflectionView, RunTraceView, SkillsResponse, UserShellFrame, UserShellPendingResponse } from '@momonga/protocol';
 import type { ApprovalView, ElicitationView, ErrorBody, RunView, SessionView, TrustView } from './views.ts';
 
 export class ContractViolation extends Error {
@@ -44,6 +44,7 @@ export const checkRule = guard<RuleResponse>(RUN_API_SCHEMAS.RuleResponse);
 export const checkRules = guard<RulesResponse>(RUN_API_SCHEMAS.RulesResponse);
 export const checkPolicyGovernance = guard<PolicyGovernanceResponse>(RUN_API_SCHEMAS.PolicyGovernanceResponse);
 export const checkReportPage = guard<ReportPage>(RUN_API_SCHEMAS.ReportPage);
+export const checkReportRecompute = guard<ReportRecomputePage>(RUN_API_SCHEMAS.ReportRecomputePage);
 
 const reportGuard = <T>(name: keyof typeof REPORT_SCHEMAS): ((value: unknown, description: string) => T) => {
   const validate: ProductValidator<T> = defineProductSchema(`report/${name}`, REPORT_SCHEMAS[name]);

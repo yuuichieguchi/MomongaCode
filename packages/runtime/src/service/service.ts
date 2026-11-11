@@ -70,6 +70,7 @@ export type RunServiceOptions = {
   runCostBreakdown: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ breakdown: CostBreakdownView; text: string }>;
   reportCost: ReportRouteDeps['reportCost'];
   runTraceContent: ReportRouteDeps['runTraceContent'];
+  recomputeFacts: ReportRouteDeps['recomputeFacts'];
   mcp: McpAdminPort;
   role: RolePort;
   work: { steps(): number; jobs(): number };
@@ -172,6 +173,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     runCostBreakdown: options.runCostBreakdown,
     reportCost: options.reportCost,
     runTraceContent: options.runTraceContent,
+    recomputeFacts: options.recomputeFacts,
     mcp: options.mcp,
     markerOwners: options.markerOwners ?? createMarkerOwners(),
     ignorableMarkerDirectories: options.ignorableMarkerDirectories,

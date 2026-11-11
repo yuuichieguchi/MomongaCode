@@ -68,8 +68,8 @@ describe('HB8: the database wait and the lease, the lock wait and the previous c
       const drain = arith.int('d');
       arith.given(drain.ge(0));
       const close = drain.add(RUNTIME_ABORT_BUDGET_MS).add(RUNTIME_TEARDOWN_BUDGET_MS);
-      expect(runtimeMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 0, mcpCloseGraceMs: 0 })).toBe(28_125);
-      expect(runtimeMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 7, mcpCloseGraceMs: 0 })).toBe(28_132);
+      expect(runtimeMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 0, mcpCloseGraceMs: 0 })).toBe(28_175);
+      expect(runtimeMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 7, mcpCloseGraceMs: 0 })).toBe(28_182);
       expect(await satisfiable(arith)).toBe(true);
       expect(await prove(arith, close.ge(15_000))).toEqual({ status: 'proved' });
     },

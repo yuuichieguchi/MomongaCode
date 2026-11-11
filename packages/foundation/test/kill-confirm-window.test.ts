@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { KILL_CONFIRM_MS, groupTerminationBoundMs, terminateGroup } from '@momonga/foundation';
+import { KILL_CONFIRM_MS, POLL_INTERVAL_MS, groupTerminationBoundMs, terminateGroup } from '@momonga/foundation';
 import type { ProcessGroupPort, Timing } from '@momonga/foundation';
 import { createFakeClock, createSteppingTiming } from '@momonga/testkit';
 
@@ -48,7 +48,32 @@ describe('terminateGroup confirms a SIGKILL in its own window K = KILL_CONFIRM_M
     expect(afterKill).toBeLessThanOrEqual(KILL_CONFIRM_MS + POLL_MS);
   });
 
-  it.each(GRACES)('grace %i: groupTerminationBoundMs is the grace plus K', (graceMs) => {
-    expect(groupTerminationBoundMs(graceMs)).toBe(graceMs + KILL_CONFIRM_MS);
+  it.each(GRACES)('grace %i: groupTerminationBoundMs is the grace plus K plus the two polls that see the group gone', (graceMs) => {
+    expect(groupTerminationBoundMs(graceMs)).toBe(graceMs + KILL_CONFIRM_MS + 2 * POLL_INTERVAL_MS);
+  });
+
+  it.each([95, ...GRACES])('grace %i: under a stop bound of groupTerminationBoundMs started before the identifying poll, a group whose kill is confirmed at the last poll of K is killed (P-366)', async (graceMs) => {
+    const clock = createFakeClock(0);
+    const bound = new AbortController();
+    const boundEndsAt = groupTerminationBoundMs(graceMs);
+    let killedAt: number | undefined;
+    let identified = false;
+    const port: ProcessGroupPort = {
+      signal: async (_pgid, signal, options) => {
+        if (options?.signal?.aborted === true) throw new Error('stop bound ended');
+        if (signal === 'SIGKILL') killedAt ??= clock.monotonicMs();
+      },
+      alive: async (_pgid, options) => {
+        if (!identified) {
+          identified = true;
+          clock.advance(POLL_INTERVAL_MS);
+        }
+        if (clock.monotonicMs() >= boundEndsAt) bound.abort();
+        if (options?.signal?.aborted === true) throw new Error('stop bound ended');
+        return killedAt === undefined || clock.monotonicMs() < killedAt + KILL_CONFIRM_MS;
+      },
+    };
+    expect(await terminateGroup(PGID, { graceMs, port, timing: createSteppingTiming(clock), signal: bound.signal })).toBe('killed');
+    expect(killedAt).toBe(POLL_INTERVAL_MS + graceMs);
   });
 });

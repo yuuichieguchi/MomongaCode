@@ -1,5 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { findProgramOnPath, resolveLayoutLocks } from '@momonga/foundation';
+import { findProgramOnPathSync, nodeFileSystemSync, resolveLayoutLocks } from '@momonga/foundation';
 import type { FileCandidates } from '@momonga/foundation';
 import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView } from '@momonga/protocol';
 import { editSettings, readSettingsSnapshot } from '@momonga/config';
@@ -78,7 +78,7 @@ export type TuiBackend = {
   readonly userInput: UserInputBackend;
   resolveApproval(approvalId: string, optionId: string): Promise<void>;
   resolveElicitation(inputId: string, responses: Readonly<Record<string, ElicitationAnswerRecord>>): Promise<void>;
-  openUrl(url: URL, watch: AbortSignal | undefined, onFailure: (message: string) => void): void;
+  openUrl(url: URL, watch: AbortSignal, onFailure: (message: string) => void): void;
   copyToClipboard(text: string): Promise<CopyOutcome>;
   skills(): Promise<SkillsResponse>;
   memories(filter?: MemoryFilter): Promise<MemoryView[]>;
@@ -264,7 +264,7 @@ export const createTuiBackend = (
       shell: (command, include, onOutput) => runtime().userShell(current().id, command, include, onOutput),
       stopShell: () => runtime().stopUserShell(current().id),
       pendingShell: () => runtime().pendingUserShell(current().id),
-      readClipboard: (signal) => readClipboardThroughRoutes({ env: ports.env, findProgram: (name) => findProgramOnPath(name, ports.env), capture: clipboard.capture }, signal),
+      readClipboard: (signal) => readClipboardThroughRoutes({ env: ports.env, findProgram: (name) => findProgramOnPathSync(name, ports.env, nodeFileSystemSync), capture: clipboard.capture }, signal),
     },
     resolveApproval: async (approvalId, optionId) => {
       await runtime().resolveApproval(approvalId, optionId);
@@ -272,11 +272,11 @@ export const createTuiBackend = (
     resolveElicitation: async (inputId, responses) => {
       await runtime().resolveElicitation(inputId, responses);
     },
-    openUrl: (url, watch, onFailure) => ports.openUrl(url, watch === undefined ? closing.signal : AbortSignal.any([closing.signal, watch]), onFailure),
+    openUrl: (url, watch, onFailure) => ports.openUrl(url, AbortSignal.any([closing.signal, watch]), onFailure),
     copyToClipboard: async (text) => {
       const terminal = ports.terminal;
       if (terminal === undefined) throw new Error('the clipboard request needs a terminal');
-      return copyThroughRoutes({ env: ports.env, findProgram: (name) => findProgramOnPath(name, ports.env), pipe: clipboard.pipe, writeTerminal: (sequence) => void terminal.stdout.write(sequence) }, text);
+      return copyThroughRoutes({ env: ports.env, findProgram: (name) => findProgramOnPathSync(name, ports.env, nodeFileSystemSync), pipe: clipboard.pipe, writeTerminal: (sequence) => void terminal.stdout.write(sequence) }, text);
     },
     skills: () => runtime().skills(current().id),
     memories: (filter) => runtime().memories(filter),

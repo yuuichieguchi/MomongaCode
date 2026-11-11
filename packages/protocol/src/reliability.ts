@@ -98,11 +98,15 @@ export type StoreReviewResponse = { review: PermissionReviewView };
 export const COST_CURRENCY = 'USD';
 export const COST_UNIT_DIGITS = 15;
 
-export type RunCostView = { runId: string; calls: number; notPriced: number; priced: { currency: typeof COST_CURRENCY; priceVersion: string; units: string }[] };
+export type RunCostView = { runId: string; calls: number; notPriced: number; legacyPrecisionCalls: number; priced: { currency: typeof COST_CURRENCY; priceVersion: string; units: string }[] };
 
 export type ReportCostRequest = { runIds: string[] };
 
 export type ReportCostPage = { costs: RunCostView[] };
+
+export type ReportRecomputeRequest = { runIds: string[] };
+
+export type ReportRecomputePage = { rows: RunFactsView[]; refused: string[] };
 
 export const MAX_TRACE_CONTENT_PAGE = 50;
 
@@ -148,6 +152,7 @@ export const REPORT_SCHEMAS = {
   StoreReviewRequest: closedRequiringAll({ runId: nonEmptyString, callId: nonEmptyString, label: { enum: [...REVIEW_LABELS] } }),
   StoreReviewResponse: closedRequiringAll({ review }),
   ReportCostRequest: closedRequiringAll({ runIds: { type: 'array', maxItems: REPORT_PAGE_ROWS, uniqueItems: true, items: nonEmptyString } }),
+  ReportRecomputeRequest: closedRequiringAll({ runIds: { type: 'array', maxItems: REPORT_PAGE_ROWS, uniqueItems: true, items: nonEmptyString } }),
   ReportCostPage: closedRequiringAll({
     costs: {
       type: 'array',
@@ -155,6 +160,7 @@ export const REPORT_SCHEMAS = {
         runId: nonEmptyString,
         calls: nonNegativeInteger,
         notPriced: nonNegativeInteger,
+        legacyPrecisionCalls: nonNegativeInteger,
         priced: { type: 'array', items: closedRequiringAll({ currency: { const: COST_CURRENCY }, priceVersion: nonEmptyString, units: { type: 'string', pattern: '^[0-9]+$' } }) },
       }),
     },

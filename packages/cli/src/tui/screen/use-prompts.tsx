@@ -19,6 +19,7 @@ import type { KeyEvent, TerminalEvent } from '../terminal/events.ts';
 import { promptTakesFocus, toolOf, withElicitationFlow } from '../transcript.ts';
 import type { Entry, PendingApproval, PendingElicitation } from '../transcript.ts';
 import { WHEEL_ROWS } from './constants.ts';
+import { untilNextKey } from './input.ts';
 import type { ScreenTerminal } from './input.ts';
 import { regionAt } from './layout.ts';
 import type { RowAllocation } from './layout.ts';
@@ -448,7 +449,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     const request = currentRequest(flow);
     if (decision === 'accept' && request.mode === 'url') {
       decide(flow, decision).then((next) => {
-        backend.openUrl(new URL(request.url), undefined, (message) => {
+        backend.openUrl(new URL(request.url), untilNextKey(terminal.input), (message) => {
           host.append({ kind: 'notice', level: 'warning', text: escapeTerminalLine(`MCP server ${cleanFailureMessage(pending.server)}: ${couldNotOpenBrowser(message)} Open this URL to continue: ${request.url}`) });
         });
         proceedFlow(pending, next);

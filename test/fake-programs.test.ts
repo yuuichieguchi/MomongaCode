@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MINIMAL_CHILD_PATH, SECRET_STORE_SEARCHED_PROGRAMS, URL_OPENER_PROGRAMS, createBrowserOpener, findProgramOnPath, openCommandFor, urlOpenerFileFor } from '@momonga/foundation';
+import { MINIMAL_CHILD_PATH, SECRET_STORE_SEARCHED_PROGRAMS, URL_OPENER_PROGRAMS, createBrowserOpener, findProgramOnPath, nodeFileSystem, openCommandFor, urlOpenerFileFor } from '@momonga/foundation';
 import {
   REAL_PROCESS_TEST_TIMEOUT_MS,
   TEST_OPENER_RECORD_ENV,
@@ -60,18 +60,18 @@ describe('the stand-ins for the programs that open a URL', () => {
     return programs;
   };
 
-  it('the run installs one for every program the product looks for, beside the fake secret programs, and BROWSER names one', () => {
+  it('the run installs one for every program the product looks for, beside the fake secret programs, and BROWSER names one', async () => {
     const bin = fakeSecretProgramsBin();
     expect(URL_OPENER_PROGRAMS).toEqual(['xdg-open', 'open', 'rundll32']);
-    for (const program of [...URL_OPENER_PROGRAMS, ...SECRET_STORE_SEARCHED_PROGRAMS]) expect(findProgramOnPath(program, process.env)).toBe(path.join(bin, program));
+    for (const program of [...URL_OPENER_PROGRAMS, ...SECRET_STORE_SEARCHED_PROGRAMS]) expect(await findProgramOnPath(program, process.env, nodeFileSystem)).toBe(path.join(bin, program));
     expect(process.env['BROWSER']).toBe(fakeBrowserOf(bin));
     expect(fs.readdirSync(bin).sort()).toEqual([...STAND_INS, ...SECRET_STORE_SEARCHED_PROGRAMS].sort());
   });
 
-  it('what the product chooses in the worker, with and without BROWSER, is a stand-in', () => {
-    expect(openCommandFor(URL_TO_OPEN, process.env)).toEqual({ file: fakeBrowserOf(fakeSecretProgramsBin()), args: [URL_TO_OPEN.toString()] });
-    expectStandIn(urlOpenerFileFor(process.env));
-    expectStandIn(urlOpenerFileFor({ ...process.env, BROWSER: undefined }));
+  it('what the product chooses in the worker, with and without BROWSER, is a stand-in', async () => {
+    expect(await openCommandFor(URL_TO_OPEN, process.env, nodeFileSystem)).toEqual({ file: fakeBrowserOf(fakeSecretProgramsBin()), args: [URL_TO_OPEN.toString()] });
+    expectStandIn(await urlOpenerFileFor(process.env, nodeFileSystem));
+    expectStandIn(await urlOpenerFileFor({ ...process.env, BROWSER: undefined }, nodeFileSystem));
   });
 
   it('the directory of the run and everything a program in it could be replaced through is writable by its owner only', () => {
@@ -103,12 +103,12 @@ describe('the stand-ins for the programs that open a URL', () => {
     expect(fs.readdirSync(programs.root).sort()).toEqual(['.momonga-fake-secret-programs', 'bin', 'items']);
   });
 
-  it('a simulated Windows PATHEXT lookup resolves every stand-in in the directory', () => {
+  it('a simulated Windows PATHEXT lookup resolves every stand-in in the directory', async () => {
     const programs = privatePrograms();
     const windows = path.join(programs.root, 'items', 'windows');
     fs.mkdirSync(windows);
     const bin = installFakePrograms(windows, 'win32');
-    for (const program of URL_OPENER_PROGRAMS) expect(findProgramOnPath(program, { PATH: bin, PATHEXT: '.COM;.EXE;.BAT;.CMD' })).toBe(path.join(bin, `${program}.cmd`));
+    for (const program of URL_OPENER_PROGRAMS) expect(await findProgramOnPath(program, { PATH: bin, PATHEXT: '.COM;.EXE;.BAT;.CMD' }, nodeFileSystem)).toBe(path.join(bin, `${program}.cmd`));
   });
 
   it('the one line the install script prints sets PATH and BROWSER for a POSIX shell', () => {
@@ -122,22 +122,22 @@ describe('the stand-ins for the programs that open a URL', () => {
 const homeAt = (root: string): E2eHome => ({ run: '0000', tmpRoot: root, root, home: path.join(root, 'home'), project: path.join(root, 'project'), sessionTmp: path.join(root, 'tmp') }) as unknown as E2eHome;
 
 describe('every environment a test gives a product process chooses a stand-in', () => {
-  it('productTestEnv, whatever PATH and BROWSER it is given', () => {
-    expectStandIn(urlOpenerFileFor(productTestEnv()));
-    expectStandIn(urlOpenerFileFor(productTestEnv({ PATH: '/usr/bin:/bin' })));
+  it('productTestEnv, whatever PATH and BROWSER it is given', async () => {
+    expectStandIn(await urlOpenerFileFor(productTestEnv(), nodeFileSystem));
+    expectStandIn(await urlOpenerFileFor(productTestEnv({ PATH: '/usr/bin:/bin' }), nodeFileSystem));
     expect(productTestEnv({ PATH: '/usr/bin:/bin', BROWSER: '/usr/bin/open' })['BROWSER']).toBe(fakeBrowserOf(fakeSecretProgramsBin()));
   });
 
-  it('the e2e harness gives the supervisor, the CLI and the pty a stand-in and a record under the home of the test', (context) => {
+  it('the e2e harness gives the supervisor, the CLI and the pty a stand-in and a record under the home of the test', async (context) => {
     const home = homeAt(withTempDir(context));
-    expectStandIn(urlOpenerFileFor(supervisorEnv(home, path.join(home.root, 'deps-1.json'))));
-    expectStandIn(urlOpenerFileFor(cliEnv(home)));
-    expectStandIn(urlOpenerFileFor(cliEnv(home, { BROWSER: '/usr/bin/open' })));
+    expectStandIn(await urlOpenerFileFor(supervisorEnv(home, path.join(home.root, 'deps-1.json')), nodeFileSystem));
+    expectStandIn(await urlOpenerFileFor(cliEnv(home), nodeFileSystem));
+    expectStandIn(await urlOpenerFileFor(cliEnv(home, { BROWSER: '/usr/bin/open' }), nodeFileSystem));
     expect(cliEnv(home)[TEST_OPENER_RECORD_ENV]).toBe(path.join(home.root, 'opened-by-stand-in.log'));
   });
 });
 
-const PRINT_OPENER = `import { urlOpenerFileFor } from ${JSON.stringify(path.resolve(import.meta.dirname, '../packages/foundation/src/open-browser.ts'))}; process.stdout.write(JSON.stringify({ opener: urlOpenerFileFor(process.env) ?? null }) + '\\n');`;
+const PRINT_OPENER = `import { urlOpenerFileFor } from ${JSON.stringify(path.resolve(import.meta.dirname, '../packages/foundation/src/open-browser.ts'))}; import { nodeFileSystem } from ${JSON.stringify(path.resolve(import.meta.dirname, '../packages/foundation/src/node-file-system.ts'))}; process.stdout.write(JSON.stringify({ opener: (await urlOpenerFileFor(process.env, nodeFileSystem)) ?? null }) + '\\n');`;
 const PRINT_ARGS = ['--input-type=module', '-e', PRINT_OPENER];
 
 const openerPrintedIn = (stdout: string | Buffer): string | undefined => {
@@ -298,7 +298,7 @@ describe('the worker guard refuses a child that could reach a real program that 
         ended.resolve(end);
         return end;
       };
-      createBrowserOpener({ env: process.env, launch })(URL_TO_OPEN, new AbortController().signal, (message) => failures.push(message));
+      createBrowserOpener({ env: process.env, launch, files: nodeFileSystem })(URL_TO_OPEN, new AbortController().signal, (message) => failures.push(message));
       expect(await ended.promise).toEqual({ exitCode: 0, signal: null });
     } finally {
       vi.unstubAllEnvs();

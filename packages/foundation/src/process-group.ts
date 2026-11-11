@@ -1,4 +1,4 @@
-import { groupSignalsOf, hostProcessGroupPort } from './platform/group-port.ts';
+import { groupSignalsOf, hostProcessGroupPort, hostSignalSender } from './platform/group-port.ts';
 import type { ProcessGroupPort } from './platform/group-port.ts';
 import type { GroupMembersReader } from './platform/group-members.ts';
 import { KILL_CONFIRM_MS } from './process-contract.ts';
@@ -30,9 +30,8 @@ export async function signalGroup(pgid: number, signal: NodeJS.Signals, port: Pr
 
 export type ProcessSignalSender = (pid: number, signal: NodeJS.Signals) => void;
 
-const sendToProcess: ProcessSignalSender = (pid, signal) => void process.kill(pid, signal);
 
-export function signalGroupExceptLeader(pgid: number, signal: NodeJS.Signals, reader: GroupMembersReader, send: ProcessSignalSender = sendToProcess): number {
+export function signalGroupExceptLeader(pgid: number, signal: NodeJS.Signals, reader: GroupMembersReader, send: ProcessSignalSender = hostSignalSender): number {
   assertSignalableGroup(pgid);
   let signalled = 0;
   for (const { pid, startTicks } of reader.members(pgid)) {
@@ -77,10 +76,14 @@ const pushedEnd = async (pgid: number, deadline: number, port: ProcessGroupPort,
   const leave = (): void => wait.abort(stop?.reason);
   stop?.addEventListener('abort', leave, { once: true });
   try {
-    await Promise.race([
-      ended.call(port, pgid, { signal: wait.signal }).catch(() => undefined),
-      sleep(timing, Math.max(0, deadline - timing.monotonicMs()), wait.signal),
-    ]);
+    const pushed = ended.call(port, pgid, { signal: wait.signal }).then(
+      () => undefined,
+      (error: unknown) => {
+        if (wait.signal.aborted) return undefined;
+        throw error;
+      },
+    );
+    await Promise.race([pushed, sleep(timing, Math.max(0, deadline - timing.monotonicMs()), wait.signal)]);
   } finally {
     stop?.removeEventListener('abort', leave);
     wait.abort();

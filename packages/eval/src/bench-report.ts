@@ -1,7 +1,7 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { AnsweredByView, RunFactsView } from '@momonga/protocol';
 import { aggregate, buildReliabilityReport } from '@momonga/reliability';
-import type { GroupKey, ReliabilityReport, TaskRow } from '@momonga/reliability';
+import type { GroupKey, ReliabilityReport, TaskLabels, TaskRow } from '@momonga/reliability';
 import type { Benchmark, BenchTask } from './bench.ts';
 import { uniqueAnswerers } from './context-report.ts';
 import { EvalError } from './runner.ts';
@@ -44,10 +44,12 @@ export const buildBenchmarkReport = (input: BuildBenchmarkReportInput): Reliabil
   const { benchmark } = input;
   const tasksById = new Map(benchmark.tasks.map((task) => [task.id, task]));
   const trialsByTask = new Map<string, BenchmarkTrial[]>();
+  const labels = new Map<string, TaskLabels>();
   for (const trial of input.trials) {
     const task = tasksById.get(trial.taskId);
     if (task === undefined) throw new EvalError(`trial ${trial.trial} (run ${trial.facts.runId}) names the task ${trial.taskId}, which the benchmark does not hold`);
     assertRecordedAsDeclared(trial, task);
+    labels.set(trial.facts.rootRunId, { taskType: task.taskType, difficulty: task.difficulty });
     trialsByTask.set(task.id, [...(trialsByTask.get(task.id) ?? []), trial]);
   }
   const tasks = benchmark.tasks.flatMap((task) => {
@@ -58,7 +60,7 @@ export const buildBenchmarkReport = (input: BuildBenchmarkReportInput): Reliabil
     kind: 'benchmark',
     aggregate: aggregate(
       input.trials.flatMap((trial) => [trial.facts, ...trial.children]),
-      { groupBy: input.groupBy },
+      { groupBy: input.groupBy, labels },
     ),
     harness: {
       suite: { name: benchmark.name, digest: suiteDigestOf(benchmark) },
