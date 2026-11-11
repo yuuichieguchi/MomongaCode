@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { FIXTURE_RUN_ID, FIXTURE_SESSION_ID, fixtureCompactionItem, materializeEvents } from '@momonga/testkit';
+import { TEST_FENCE } from '@momonga/testkit';
 
-const start = (): RunState => initialRunState({ runId: FIXTURE_RUN_ID, sessionId: FIXTURE_SESSION_ID });
+const start = (): RunState => initialRunState({ runId: FIXTURE_RUN_ID, sessionId: FIXTURE_SESSION_ID, fence: TEST_FENCE });
 const foldAll = (events: readonly RunEvent[], from: RunState = start()): RunState => events.reduce(foldRunState, from);
 const foldPayloads = (payloads: readonly RunEventPayload[]): RunState => foldAll(materializeEvents(payloads));
 

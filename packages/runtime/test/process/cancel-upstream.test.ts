@@ -7,6 +7,7 @@ import type { Run } from '@momonga/store';
 import { afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { createCancelUpstream } from '../../src/process/cancel-upstream.ts';
 import { START_MS } from './helpers.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 type LoadedRun = { snapshot?: { seq: number; state: RunState }; tail: RunEvent[] };
 
@@ -57,7 +58,7 @@ const fakeStore = (runs: Record<string, LoadedRun>) => {
       loads.push(id);
       const loaded = runs[id];
       if (loaded === undefined) throw new Error(`no run ${id}`);
-      const state = loaded.tail.reduce(foldRunState, loaded.snapshot?.state ?? initialRunState({ runId: id, sessionId: SESSION_ID }));
+      const state = loaded.tail.reduce(foldRunState, loaded.snapshot?.state ?? initialRunState({ runId: id, sessionId: SESSION_ID, fence: TEST_FENCE }));
       return state.inFlightModelRequest === undefined ? undefined : { step: state.inFlightModelRequest.step, attempt: state.inFlightModelRequest.attempt };
     },
   };
@@ -118,7 +119,7 @@ describe('createCancelUpstream (fake timers, fake store and fake gateway client)
 
   it('folds the snapshot and the whole tail', async () => {
     const snapshotState: RunState = {
-      ...initialRunState({ runId: RUN_ID, sessionId: SESSION_ID }),
+      ...initialRunState({ runId: RUN_ID, sessionId: SESSION_ID, fence: TEST_FENCE }),
       inFlightModelRequest: { step: 1, attempt: 1, digest: 'digest-1-1', body: {}, requestedSeq: 5 },
       lastSeq: 5,
     };
@@ -133,7 +134,7 @@ describe('createCancelUpstream (fake timers, fake store and fake gateway client)
 
   it('a snapshot with an in-flight request and an empty tail cancels that request', async () => {
     const snapshotState: RunState = {
-      ...initialRunState({ runId: RUN_ID, sessionId: SESSION_ID }),
+      ...initialRunState({ runId: RUN_ID, sessionId: SESSION_ID, fence: TEST_FENCE }),
       inFlightModelRequest: { step: 2, attempt: 3, digest: 'digest-2-3', body: {}, requestedSeq: 9 },
       lastSeq: 9,
     };

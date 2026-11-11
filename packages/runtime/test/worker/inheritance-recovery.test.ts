@@ -10,6 +10,7 @@ import type { Env } from './harness.ts';
 import { gated, textStep } from './scripts.ts';
 import { envNeutralJson, firstConversation, inheritedEventOf, settle } from './inheritance-support.ts';
 import { newFactsTrace, referenceFactsOf, tracedStore } from './inherit-reference-support.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 type Reads = { inheritContext: number; loadPrevious: number; readPrevious: number };
 
@@ -119,7 +120,7 @@ describe('recovery of an inheriting run killed during its first model call', () 
     const env = await makeEnv();
     await answered(env, 'Say hello', 'Hello there.');
     const second = await answered(env, 'And again', 'Again.');
-    const initial = initialRunState({ runId: second, sessionId: env.session.id });
+    const initial = initialRunState({ runId: second, sessionId: env.session.id, fence: env.session.fenceNonce });
     const before = (await env.store.load(second, NEVER_CANCELLED)).state;
     expect(before.inherited).toMatchObject({ form: 'reference', fromNextItemSeq: 3, itemCount: 2 });
     expect(before.taskSeq).toBe(3);

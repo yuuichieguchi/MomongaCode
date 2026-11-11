@@ -160,7 +160,7 @@ describe('reading memories when the evidence process cannot start', () => {
       kind: 'none',
       spawn: () => ({
         pid: 1,
-        pgid: 1,
+        pgid: 1, rebind: () => undefined,
         stdout: (async function* (): AsyncGenerator<Uint8Array> {
           throw new TypeError('reading the output failed');
         })(),

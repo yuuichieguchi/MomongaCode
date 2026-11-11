@@ -12,6 +12,7 @@ import { deferred } from './deferred.ts';
 import { LEASE_MS, bodyDigest, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { MODEL_ID, textStep } from './scripts.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const ITEM_ID = 'msg_partial';
 
@@ -191,7 +192,7 @@ describe('partial assistant text on an interrupted stream', () => {
     const events = env.events(run.id);
     const restartIndex = events.findIndex((event) => event.type === 'model.stream.restarted');
     expect(restartIndex).toBeGreaterThan(0);
-    const initial = initialRunState({ runId: run.id, sessionId: run.sessionId });
+    const initial = initialRunState({ runId: run.id, sessionId: run.sessionId, fence: TEST_FENCE });
     const beforeRestart = events.slice(0, restartIndex).reduce(foldRunState, initial);
     const atRestart = events.slice(0, restartIndex + 1).reduce(foldRunState, initial);
     expect(beforeRestart.streaming).toEqual({ step: 1, attempt: 1, seen: true, items: [{ itemId: ITEM_ID, text: 'stale partial' }] });

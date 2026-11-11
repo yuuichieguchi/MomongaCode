@@ -5,6 +5,7 @@ import type { BuildContextInput, HistoryItem, TokenMeter } from '@momonga/contex
 import type { MessageInputItem } from '@momonga/protocol';
 import { HOME, PROJECT, capabilitiesFor, fakeBlobs, fakeReader, sourcesWith } from './helpers.ts';
 import { ESTIMATED, meterOf, piece, pieceCounter } from './meter-fixtures.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const WINDOW = 4096;
 const OUTPUT = 1024;
@@ -30,6 +31,7 @@ const inputWith = (history: HistoryItem[]): BuildContextInput => ({
   trusted: true,
   projectRoot: PROJECT,
   home: HOME,
+  fence: TEST_FENCE,
 });
 
 const build = (meter: TokenMeter, history: HistoryItem[]) => buildContext(inputWith(history), { meter, blobs: fakeBlobs(), instructions: fakeReader({}) });

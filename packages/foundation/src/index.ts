@@ -10,7 +10,7 @@ export { CircuitBreaker } from './circuit-breaker.ts';
 export { codeDigestOf, codeDigestOfRunningProcess } from './code-digest.ts';
 export type { Clock } from './clock.ts';
 export { Deadline } from './deadline.ts';
-export { TOO_DEEP_PLACEHOLDER, isRecord, parseBoundedJson, spanValueOfJsonText } from './json.ts';
+export { isRecord, parseBoundedJson, spanValueOfJsonText } from './json.ts';
 export { JsonDepthError, MAX_JSON_DEPTH, checkJsonDepth, parseOutsideJson } from './json-depth.ts';
 export { describeFirstError, jsonReplyInstructions, readJsonReply } from './json-reply.ts';
 export type { JsonReplyInput } from './json-reply.ts';
@@ -21,7 +21,7 @@ export { HISTORY_OUTPUT_HEAD_CHARS, HISTORY_OUTPUT_TAIL_CHARS, cutToChars, keepi
 export { OUTPUT_READER_TOOL, TRUNCATION_MARKER_SOURCE, truncationMarker } from './output-marker.ts';
 export { BUSY_WAIT_LIMIT_MS, busyTimeoutMs, highestAppliedMigration, immediateTx, joinedTx, migrate, openDatabase, openDatabaseWithIdentity, readTx } from './sqlite.ts';
 export type { DatabaseFileIdentity, Migration } from './sqlite.ts';
-export { SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, decodeSse, encodeSse } from './sse.ts';
+export { SSE_EVENT_MAX_BYTES, SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, SseEventTooLargeError, decodeSse, encodeSse } from './sse.ts';
 export { URL_OPENER_PROGRAMS, createBrowserOpener, openCommandFor, urlOpenerFileFor } from './open-browser.ts';
 export type { LaunchProgram, OpenUrl, ProgramEnd } from './open-browser.ts';
 export { findProgramOnPath, findProgramOnPathSync } from './program-search.ts';

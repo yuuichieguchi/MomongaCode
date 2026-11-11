@@ -4,6 +4,8 @@ import { foldRunState, initialRunState } from '@momonga/store';
 import { fixtureCompactionItem, materializeEvents } from '@momonga/testkit';
 import { enqueue, harness, mustClaim, newSession, openStoreAt, rawDb } from './helpers.ts';
 import { encodedRunState, foldedRunState } from './run-state-codec.ts';
+import { TEST_FENCE } from '@momonga/testkit';
+import type { RuntimeStore } from '../src/types.ts';
 
 const STOP_FEEDBACK = '[Stop hook feedback]\n';
 const USAGE = { input_tokens: 10, output_tokens: 2, total_tokens: 12 };
@@ -61,7 +63,7 @@ const JOURNAL: RunEventPayload[] = [
 
 const COMPACTED: RunEventPayload = { type: 'context.compacted', item: fixtureCompactionItem('cmp-1', 'summary'), summary: 'summary', replacedThroughSeq: 6 };
 
-const foldAll = (events: readonly RunEvent[], ids = { runId: 'run-fixture', sessionId: 'session-fixture' }): RunState => events.reduce(foldRunState, initialRunState(ids));
+const foldAll = (events: readonly RunEvent[], ids = { runId: 'run-fixture', sessionId: 'session-fixture', fence: TEST_FENCE }): RunState => events.reduce(foldRunState, initialRunState(ids));
 
 const folded = (payloads: readonly RunEventPayload[]): RunState => foldAll(materializeEvents(payloads, { runId: 'run-fixture', sessionId: 'session-fixture' }));
 
@@ -90,7 +92,7 @@ const recordsOf = (state: RunState): Records => {
 
 describe('the facts a reader needs are kept in RunState when their events are appended (rows 5, 8c, 8e, 21)', () => {
   it('starts every record empty', () => {
-    expect(recordsOf(initialRunState({ runId: 'r', sessionId: 's' }))).toEqual({
+    expect(recordsOf(initialRunState({ runId: 'r', sessionId: 's', fence: TEST_FENCE }))).toEqual({
       hookCompletions: {},
       stopHookRanSinceResponse: false,
       stopHookContinuations: 0,
@@ -151,7 +153,7 @@ describe('the facts a reader needs are kept in RunState when their events are ap
   });
 });
 
-const idsOf = (run: { id: string; sessionId: string }) => ({ runId: run.id, sessionId: run.sessionId });
+const idsOf = (run: { id: string; sessionId: string }, store: Pick<RuntimeStore, 'getSession'>) => ({ runId: run.id, sessionId: run.sessionId, fence: store.getSession(run.sessionId)?.fenceNonce ?? '' });
 
 const storedRun = async () => {
   const { dbPath, clock, store } = harness();
@@ -165,17 +167,17 @@ describe('recovery: the records survive a snapshot and a crash, and agree with a
     const { store, run, claim } = await storedRun();
     expect(store.append(claim, JOURNAL.slice(1)).kind).toBe('ok');
     const events = store.readRunEvents(run.id, 0, 1000);
-    expect(encodedRunState(foldAll(events, idsOf(run))).json()['stateVersion']).toBeGreaterThan(13);
+    expect(encodedRunState(foldAll(events, idsOf(run, store))).json()['stateVersion']).toBeGreaterThan(13);
   });
 
   it('treats a version 13 snapshot, written before the records, as absent so that the records are folded from the journal', async () => {
     const { store, run, claim } = await storedRun();
     expect(store.append(claim, JOURNAL.slice(1)).kind).toBe('ok');
     const events = store.readRunEvents(run.id, 0, 1000);
-    const encoded = encodedRunState(foldAll(events, idsOf(run)));
+    const encoded = encodedRunState(foldAll(events, idsOf(run, store)));
     encoded.mutate("json_set(state_json, '$.stateVersion', 13)");
     expect(encoded.read()).toBeUndefined();
-    expect(recordsOf(await foldedRunState(store, run.id))).toEqual(recordsOf(foldAll(events, idsOf(run))));
+    expect(recordsOf(await foldedRunState(store, run.id))).toEqual(recordsOf(foldAll(events, idsOf(run, store))));
   });
 
   it('after a crash between a snapshot and later appends, snapshot plus tail gives the same records as a fold of the whole journal', async () => {
@@ -183,13 +185,13 @@ describe('recovery: the records survive a snapshot and a crash, and agree with a
     const split = 12;
     expect(store.append(claim, JOURNAL.slice(1, split)).kind).toBe('ok');
     const early = store.readRunEvents(run.id, 0, 1000);
-    const encodedEarly = encodedRunState(foldAll(early, idsOf(run)));
+    const encodedEarly = encodedRunState(foldAll(early, idsOf(run, store)));
     expect(store.append(claim, [...JOURNAL.slice(split), COMPACTED, hook('Stop')]).kind).toBe('ok');
 
     const reopened = openStoreAt(dbPath, clock);
     const recovered = reopened.readRunEvents(run.id, early.at(-1)!.seq, 1000).reduce(foldRunState, encodedEarly.read() as RunState);
-    expect(await foldedRunState(reopened, run.id)).toEqual(foldAll(reopened.readRunEvents(run.id, 0, 1000), idsOf(run)));
-    const whole = foldAll(reopened.readRunEvents(run.id, 0, 1000), idsOf(run));
+    expect(await foldedRunState(reopened, run.id)).toEqual(foldAll(reopened.readRunEvents(run.id, 0, 1000), idsOf(run, store)));
+    const whole = foldAll(reopened.readRunEvents(run.id, 0, 1000), idsOf(run, store));
     expect(recordsOf(recovered)).toEqual(recordsOf(whole));
     expect(recordsOf(recovered)).toEqual({
       hookCompletions: { SessionStart: 1, UserPromptSubmit: 1, Stop: 2 },

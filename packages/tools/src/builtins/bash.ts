@@ -4,6 +4,7 @@ import { groupRecordOutcome, hostEntryProblem, normalizedHosts, reconcileProcess
 import type { NetworkRequest, NetworkScopeKind } from '@momonga/foundation';
 import { SANDBOX_NETWORK_SCOPES } from '@momonga/sandbox';
 import { defineTool, ToolExecutionError, ToolInputError } from '../types.ts';
+import type { BashLimits } from '../types.ts';
 import { USER_SHELL_HEAD_BYTES, USER_SHELL_TAIL_BYTES } from '@momonga/protocol';
 import type { SandboxCommand, SandboxExit, SandboxedProcess } from '@momonga/sandbox';
 import type { BackgroundJobs } from '../ports.ts';
@@ -18,10 +19,6 @@ import type { ShellHost } from './shell.ts';
 
 type BashInput = { command: string; timeout?: number; description?: string; run_in_background?: boolean; network?: NetworkRequest };
 
-export const DEFAULT_TIMEOUT_MS = 120_000;
-export const MAX_TIMEOUT_MS = 600_000;
-export const DEFAULT_BACKGROUND_TIMEOUT_MS = 1_800_000;
-export const MAX_BACKGROUND_TIMEOUT_MS = 7_200_000;
 const CWD_NONCE_BYTES = 16;
 const trapScript = (nonce: string): string =>
   `trap 'status=$?; printf "\\n__MOMONGA_CWD_${nonce}__=%s\\n" "$(pwd -P)"; exit $status' EXIT`;
@@ -76,8 +73,31 @@ const withLateChunk = async function* (stream: AsyncIterable<Uint8Array>, late: 
   if (last !== undefined) yield last;
 };
 
+const clamped = (requested: number, maximum: number): { ms: number; note: string | undefined } =>
+  requested > maximum ? { ms: maximum, note: `timeout reduced to the configured maximum of ${maximum} ms` } : { ms: requested, note: undefined };
+
+const foregroundTimeoutOf = (input: BashInput, limits: BashLimits): { ms: number; note: string | undefined } => clamped(input.timeout ?? limits.defaultTimeoutMs, limits.maxTimeoutMs);
+
+const backgroundTimeoutOf = (input: BashInput, limits: BashLimits): { ms: number; note: string | undefined } => clamped(input.timeout ?? limits.backgroundTimeoutMs, limits.maxBackgroundTimeoutMs);
+
+const withLine = (output: string, line: string | undefined): string => (line === undefined ? output : `${output}${output === '' ? '' : '\n'}${line}`);
+
+const signalled = (signal: AbortSignal): { fired: Promise<void>; dispose(): void } => {
+  let onAbort: (() => void) | undefined;
+  const fired = new Promise<void>((resolve) => {
+    onAbort = () => resolve();
+    if (signal.aborted) resolve();
+    else signal.addEventListener('abort', onAbort, { once: true });
+  });
+  return { fired, dispose: () => onAbort !== undefined && signal.removeEventListener('abort', onAbort) };
+};
+
+const movedText = (jobId: string, timeoutMs: number): string =>
+  `The command did not complete within its timeout of ${timeoutMs} ms and was moved to the background as ${jobId}. Read its output with BashOutput (bash_id ${jobId}) and stop it with KillBash (shell_id ${jobId}).`;
+
 const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<ToolResult> => {
   const jobs = requireJobs(ctx);
+  const timeout = backgroundTimeoutOf(input, ctx.limits.bash);
   const bash = await bashPathFor(ctx.shellHost, ctx.env);
   const network = await openGrantedNetwork(ctx);
   let jobId: string;
@@ -87,7 +107,7 @@ const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<T
       callKey: ctx.idemKey,
       callId: ctx.callId,
       command: input.command,
-      timeoutMs: input.timeout ?? DEFAULT_BACKGROUND_TIMEOUT_MS,
+      timeoutMs: timeout.ms,
       spawn: async (markerFile, signal, markerFd) => {
         const child = await ctx.sandbox.spawn(
           {
@@ -121,7 +141,7 @@ const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<T
   }
   return {
     status: 'completed',
-    output: `Started background job ${jobId}. Read its output with BashOutput (bash_id ${jobId}) and stop it with KillBash (shell_id ${jobId}).`,
+    output: withLine(`Started background job ${jobId}. Read its output with BashOutput (bash_id ${jobId}) and stop it with KillBash (shell_id ${jobId}).`, timeout.note),
     detached: true,
   };
 };
@@ -130,9 +150,9 @@ export const shellCommandSubject = (command: string): { kind: 'command'; tool: s
 
 const PLATFORM_SANDBOX_SCOPES: readonly NetworkScopeKind[] = [...new Set([...SANDBOX_NETWORK_SCOPES.seatbelt, ...SANDBOX_NETWORK_SCOPES.bubblewrap])];
 
-const BASH_DESCRIPTION_HEAD = `Runs a shell command with /bin/bash inside a sandbox, in the current working directory. Output combines stdout and stderr. A cd that stays inside the workspace persists to later calls. timeout is in milliseconds (default ${DEFAULT_TIMEOUT_MS}, maximum ${MAX_TIMEOUT_MS}). No process started by the command outlives it. With run_in_background the command starts as a background job and the call returns its job id at once; read its output with BashOutput and stop it with KillBash. For a background job timeout is the time the job may run (default ${DEFAULT_BACKGROUND_TIMEOUT_MS}, maximum ${MAX_BACKGROUND_TIMEOUT_MS}); a job ends with its command, with KillBash, at its time limit, or when MomongaCode stops.`;
+const BASH_DESCRIPTION_HEAD = `Runs a shell command with /bin/bash inside a sandbox, in the current working directory. Output combines stdout and stderr. A cd that stays inside the workspace persists to later calls. timeout is in milliseconds; its default and its maximum are the person's settings tools.bash.defaultTimeoutMs and tools.bash.maxTimeoutMs (120000 and 600000 unless changed), and a larger value is reduced to the maximum. No process started by the command outlives it, except that a command that exceeds its timeout is moved to the background (unless the setting tools.bash.onTimeout is kill). With run_in_background the command starts as a background job and the call returns its job id at once; read its output with BashOutput and stop it with KillBash. For a background job timeout is the time the job may run (tools.bash.backgroundTimeoutMs and tools.bash.maxBackgroundTimeoutMs, 1800000 and 7200000 unless changed); a job ends with its command, with KillBash, at its time limit, or when MomongaCode stops.`;
 
-const BASH_CONCISE_HEAD = `Runs a bash command in a sandbox in the working directory; output is stdout and stderr. timeout is in milliseconds (default ${DEFAULT_TIMEOUT_MS}, maximum ${MAX_TIMEOUT_MS}). With run_in_background it returns a job id; use BashOutput and KillBash. A background job's timeout defaults to ${DEFAULT_BACKGROUND_TIMEOUT_MS}, maximum ${MAX_BACKGROUND_TIMEOUT_MS}.`;
+const BASH_CONCISE_HEAD = `Runs a bash command in a sandbox in the working directory; output is stdout and stderr. timeout is in milliseconds, default and maximum from the settings tools.bash (120000 and 600000 unless changed); a command past its timeout moves to the background. With run_in_background it returns a job id; use BashOutput and KillBash.`;
 
 export const bashDescriptionOf = (scopes: readonly NetworkScopeKind[]): { description: string; conciseDescription: string } =>
   scopes.includes('hosts')
@@ -165,8 +185,7 @@ export const bashTool = defineTool<BashInput>({
       timeout: {
         type: 'integer',
         minimum: 1,
-        maximum: MAX_BACKGROUND_TIMEOUT_MS,
-        description: `Timeout in milliseconds. Maximum ${MAX_TIMEOUT_MS}; with run_in_background maximum ${MAX_BACKGROUND_TIMEOUT_MS}`,
+        description: 'Timeout in milliseconds; a value above the configured maximum is reduced to it',
       },
       description: { type: 'string', description: 'Short description of what the command does' },
       run_in_background: { type: 'boolean', description: 'Run the command as a background job and return its job id immediately' },
@@ -181,20 +200,25 @@ export const bashTool = defineTool<BashInput>({
     required: ['command'],
     additionalProperties: false,
   },
-  timeoutMs: (input) => (input.run_in_background === true ? DEFAULT_TIMEOUT_MS : (input.timeout ?? DEFAULT_TIMEOUT_MS)),
-  prepare: async (input) => {
-    if (input.run_in_background !== true && input.timeout !== undefined && input.timeout > MAX_TIMEOUT_MS) {
-      throw new ToolInputError(`timeout ${input.timeout} exceeds the maximum of ${MAX_TIMEOUT_MS} ms for a foreground command; use run_in_background for a longer one (maximum ${MAX_BACKGROUND_TIMEOUT_MS} ms)`);
-    }
-    return {};
-  },
+  timeoutMs: (input, limits) => (input.run_in_background === true ? limits.bash.defaultTimeoutMs : foregroundTimeoutOf(input, limits.bash).ms),
+  expiry: 'detach',
   title: (input) => input.command,
   approval: async (input) => ({ effect: input.command, ...(input.description === undefined ? {} : { claim: input.description }) }),
   subject: (input) => ({ ...shellCommandSubject(input.command), ...(input.network === undefined ? {} : { network: networkRequestOf(input.network) }) }),
   locations: (input, ctx) => readPathsOfCommand(input.command, commandSpecsFor(process.platform)).map((target) => ({ path: resolveToolPath(ctx.cwd, target) })),
   execute: async (input, ctx) => {
-    if (input.run_in_background === true) return startBackgroundJob(input, ctx);
-    const { file: marker, fd: markerFd, settle } = await requireSpawnMarker(ctx, 'Bash');
+    if (input.run_in_background === true) {
+      const started = startBackgroundJob(input, ctx);
+      const expiry = signalled(ctx.expired);
+      try {
+        await Promise.race([started, expiry.fired.then(() => ctx.stopForTimeout())]);
+      } finally {
+        expiry.dispose();
+      }
+      return await started;
+    }
+    const timeout = foregroundTimeoutOf(input, ctx.limits.bash);
+    const { file: marker, fd: markerFd, mode: markerMode, settle } = await requireSpawnMarker(ctx, 'Bash');
     const nonce = ctx.random.hex(CWD_NONCE_BYTES);
     const script = `${trapScript(nonce)}\n${input.command}`;
     const network = await openGrantedNetwork(ctx);
@@ -219,13 +243,66 @@ export const bashTool = defineTool<BashInput>({
     const attached = groupRecordOutcome(ctx.attachProcess({ pgid: child.pgid, startedAt: ctx.clock.now() }), marker);
 
     const capture = createCapture();
-    const pump = pumpOutput([child.stdout, child.stderr], (_index, chunk) => capture.push(chunk), ctx.shellHost.child);
+    let forward: ((chunk: Buffer) => void) | undefined;
+    const pump = pumpOutput(
+      [child.stdout, child.stderr],
+      (_index, chunk) => {
+        if (forward === undefined) capture.push(chunk);
+        else forward(chunk);
+      },
+      ctx.shellHost.child,
+    );
+    const finished = Promise.all([child.exited, attached]);
+    const expiry = signalled(ctx.expired);
+    let expired: boolean;
+    try {
+      expired = await Promise.race([finished.then(() => false), expiry.fired.then(() => true)]);
+    } finally {
+      expiry.dispose();
+    }
+    if (expired) {
+      const jobs = ctx.jobs;
+      if (ctx.limits.bash.onTimeout === 'kill' || jobs === undefined) ctx.stopForTimeout();
+      else {
+        const groupNotice = await attached;
+        const seen = withLine(capture.text().replace(/\n+$/, ''), groupNotice);
+        try {
+          const { jobId } = await jobs.adopt({
+            runId: ctx.runId,
+            callKey: ctx.idemKey,
+            callId: ctx.callId,
+            command: input.command,
+            timeoutMs: ctx.limits.bash.backgroundTimeoutMs,
+            process: {
+              ...child,
+              exited: child.exited.then(async (exit) => {
+                const refusals = await network.settle();
+                if (refusals.length > 0) forward?.(Buffer.from(`${refusals.join('\n')}\n`));
+                return exit;
+              }),
+            },
+            marker: { file: marker, mode: markerMode },
+            output: {
+              seen: Buffer.from(seen === '' ? '' : `${seen}\n`),
+              follow: (sink) => {
+                forward = sink;
+                return pump.ended();
+              },
+            },
+          });
+          return { status: 'completed', output: withLine(withLine(seen, timeout.note), movedText(jobId, timeout.ms)), detached: true };
+        } catch (error) {
+          if (!(error instanceof ToolExecutionError)) throw error;
+          ctx.stopForTimeout(error.message);
+        }
+      }
+    }
     let exit: SandboxExit;
     const notes: string[] = [];
     let refusals: string[];
     try {
       let groupNotice: string | undefined;
-      [exit, groupNotice] = await Promise.all([child.exited, attached]);
+      [exit, groupNotice] = await finished;
       if (groupNotice !== undefined) notes.push(groupNotice);
       notes.push(...(await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal: ctx.signal })));
       await pump.settle();
@@ -249,6 +326,7 @@ export const bashTool = defineTool<BashInput>({
       output += `${output === '' ? '' : '\n'}Shell cwd could not be determined and stays at ${await shownPath(ctx, ctx.session.cwd)}`;
     }
     for (const note of notes) output += `${output === '' ? '' : '\n'}${note}`;
+    output = withLine(output, timeout.note);
     if (exit.signal !== null) return { status: 'failed', output: `${output}${output === '' ? '' : '\n'}[terminated by ${exit.signal}]` };
     const exitCode = exit.code === null ? {} : { exitCode: exit.code };
     if (exit.code !== 0) return { status: 'failed', output: `${output}${output === '' ? '' : '\n'}[exit code ${exit.code}]`, ...exitCode };
@@ -262,6 +340,10 @@ export const bashTool = defineTool<BashInput>({
         outcome: 'already_applied',
         output: `Started background job ${job.id}. The call was interrupted after the job started, so ${describeJobStatus(job)}.`,
       };
+    }
+    const promoted = ctx.jobs?.byCall(ctx.idemKey);
+    if (promoted !== undefined) {
+      return { outcome: 'unknown', output: `The command was being moved to the background as ${promoted.id} when the call was interrupted, so ${describeJobStatus(promoted)}.` };
     }
     if (ctx.earlierAttempt?.stopped === true) return stoppedCommandResult();
     if (record.pgid !== undefined && ctx.processMarker !== undefined) {

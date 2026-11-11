@@ -2,6 +2,7 @@ import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { InheritedCopyPayload, InputItem, PermissionMode, RunEventPayload, RunState, StopReason } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { materializeEvents } from '@momonga/testkit';
+import { TEST_FENCE } from '@momonga/testkit';
 
 export const SOURCE_RUN = 'run-source';
 export const NEXT_RUN = 'run-next';
@@ -14,7 +15,7 @@ type HistoryEntry = RunState['history'][number];
 export type InheritedEvent = Omit<InheritedCopyPayload, 'form'>;
 
 export const foldOf = (payloads: readonly RunEventPayload[], runId = SOURCE_RUN): RunState =>
-  materializeEvents(payloads, { runId, sessionId: SESSION }).reduce(foldRunState, initialRunState({ runId, sessionId: SESSION }));
+  materializeEvents(payloads, { runId, sessionId: SESSION }).reduce(foldRunState, initialRunState({ runId, sessionId: SESSION, fence: TEST_FENCE }));
 
 export const task = (text: string): RunEventPayload => ({ type: 'user.message', text });
 

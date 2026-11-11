@@ -7,6 +7,7 @@ import {
   ERROR_TYPES,
   INPUT_CONTENT_KINDS,
   REQUEST_TOOL_KINDS,
+  SIGN_IN_COMMAND,
   SYSTEM_ROLES,
   TOOL_PLACEMENTS,
 } from '@momonga/protocol';
@@ -88,6 +89,7 @@ const ERROR_RULE_SCHEMA = {
     credential: { enum: [...CREDENTIAL_EFFECTS] },
     keepParam: { const: true },
     message: NON_EMPTY_STRING,
+    cause: NON_EMPTY_STRING,
   },
   required: ['match', 'type', 'code', 'retryable', 'verdict', 'fallback', 'credential', 'message'],
   additionalProperties: false,
@@ -261,7 +263,7 @@ const CHATGPT_PROFILE_DATA = {
       verdict: 'neutral',
       fallback: 'stop',
       credential: 'pause',
-      message: 'Manage usage',
+      message: 'This account has reached the usage its plan allows for now. Wait for the usage to reset, or manage the usage in the ChatGPT settings',
     },
     {
       match: { kind: 'code', codes: ['subscription_sharing_workplace_individual_usage_limit_exceeded'] },
@@ -271,7 +273,7 @@ const CHATGPT_PROFILE_DATA = {
       verdict: 'neutral',
       fallback: 'stop',
       credential: 'pause',
-      message: 'Ask the workspace admin to raise the limit',
+      message: 'This account has reached the usage its workspace allows. Ask the workspace admin to allow more',
     },
     {
       match: { kind: 'code', codes: ['subscription_sharing_usage_unavailable'] },
@@ -301,7 +303,7 @@ const CHATGPT_PROFILE_DATA = {
       verdict: 'failure',
       fallback: 'stop',
       credential: 'keep',
-      message: 'Use another account or an API-key target',
+      message: 'This account cannot use its plan here. Sign in with another account, or use a model with an API key',
     },
     {
       match: { kind: 'code', codes: ['subscription_sharing_unsupported_capability'] },
@@ -312,7 +314,8 @@ const CHATGPT_PROFILE_DATA = {
       fallback: 'stop',
       credential: 'keep',
       keepParam: true,
-      message: 'The route does not carry the named parameter',
+      message: 'The plan does not accept a setting of this request',
+      cause: 'The route does not carry the named parameter',
     },
     {
       match: { kind: 'code', codes: ['subscription_sharing_route_not_supported'] },
@@ -322,7 +325,8 @@ const CHATGPT_PROFILE_DATA = {
       verdict: 'neutral',
       fallback: 'stop',
       credential: 'keep',
-      message: 'The route is POST /v1/responses',
+      message: 'The plan does not accept this kind of request',
+      cause: 'The route is POST /v1/responses',
     },
     {
       match: { kind: 'code', codes: ['subscription_sharing_invalid_user'] },
@@ -332,7 +336,8 @@ const CHATGPT_PROFILE_DATA = {
       verdict: 'failure',
       fallback: 'stop',
       credential: 'rejected',
-      message: 'Sign in again only after a confirmed revocation or a terminal refresh error',
+      message: `The sign-in of this account has expired. Run ${SIGN_IN_COMMAND} to sign in again`,
+      cause: 'The upstream refused the credential after a forced refresh',
     },
     {
       match: { kind: 'code', codes: ['chatpass_v2_scope_not_authorized', 'chatpass_v2_invalid_authorization_context'] },
@@ -342,7 +347,8 @@ const CHATGPT_PROFILE_DATA = {
       verdict: 'failure',
       fallback: 'stop',
       credential: 'keep',
-      message: 'Check the client and the grant',
+      message: 'The plan did not authorize this sign-in for MomongaCode. Sign out of this account and sign in again',
+      cause: 'Check the client and the grant',
     },
     {
       match: { kind: 'status', status: 401 },
@@ -352,7 +358,8 @@ const CHATGPT_PROFILE_DATA = {
       verdict: 'failure',
       fallback: 'stop',
       credential: 'rejected',
-      message: 'Sign in again only after a confirmed revocation or a terminal refresh error',
+      message: `The sign-in of this account has expired. Run ${SIGN_IN_COMMAND} to sign in again`,
+      cause: 'The upstream refused the credential after a forced refresh',
     },
     {
       match: { kind: 'status', status: 403 },

@@ -15,7 +15,7 @@ const empty = async function* (): AsyncGenerator<Uint8Array> {};
 
 const noMatchSandbox: Sandbox = {
   kind: 'none',
-  spawn: () => ({ pid: SEARCH_GROUP, pgid: SEARCH_GROUP, stdout: empty(), stderr: empty(), exited: Promise.resolve({ code: 1, signal: null }) }),
+  spawn: () => ({ pid: SEARCH_GROUP, pgid: SEARCH_GROUP, rebind: () => undefined, stdout: empty(), stderr: empty(), exited: Promise.resolve({ code: 1, signal: null }) }),
 };
 
 const runner = makeTool('Runner', { sideEffect: 'exec', subjectKind: 'none', execute: async () => ({ status: 'completed', output: 'ran' }) });

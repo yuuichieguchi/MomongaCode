@@ -12,6 +12,7 @@ import type { SandboxNetworkSetting, StopValues } from '@momonga/foundation';
 export type GatewayStopValues = Pick<StopValues, 'closeGraceMs' | 'managedServerStopGraceMs'>;
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import {
+  DEFAULT_UPDATE_STALL_TIMEOUT_MS,
   defaultContextSettings,
   defaultMemorySettings,
   defaultToolsSettings,
@@ -57,6 +58,7 @@ export type ResolvedSettings = {
   mcp: McpSettings;
   models: ResolvedModels;
   autoUpdates: boolean;
+  update: { stallTimeoutMs: number };
   tui: ResolvedTuiSettings;
   gateway: GatewayStopValues;
   runtime: RuntimeSettings;
@@ -241,6 +243,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
     mcp: {},
     models,
     autoUpdates: true,
+    update: { stallTimeoutMs: DEFAULT_UPDATE_STALL_TIMEOUT_MS },
     tui: defaultTuiSettings(),
     gateway: { closeGraceMs: DEFAULT_STOP_VALUES.closeGraceMs, managedServerStopGraceMs: DEFAULT_STOP_VALUES.managedServerStopGraceMs },
     runtime: {},
@@ -275,6 +278,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
       mcpServers,
       mcp,
       autoUpdates,
+      update,
       tui,
       gateway,
       runtime,
@@ -335,6 +339,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
     Object.assign(merged.mcpServers, mcpServers);
     Object.assign(merged.mcp, mcp);
     if (autoUpdates !== undefined) merged.autoUpdates = autoUpdates;
+    if (update !== undefined) merged.update = { ...merged.update, ...update };
     if (tui !== undefined) merged.tui = { ...merged.tui, ...tui };
     if (gateway !== undefined) merged.gateway = { ...merged.gateway, ...gateway };
     if (runtime !== undefined) merged.runtime = { ...merged.runtime, ...runtime };

@@ -30,9 +30,10 @@ import { isRecord } from './rows.ts';
 type PendingCall = RunState['pendingCalls'][string];
 type HistoryEntry = RunState['history'][number];
 
-export const initialRunState = (ids: { runId: string; sessionId: string }): RunState => ({
+export const initialRunState = (ids: { runId: string; sessionId: string; fence: string }): RunState => ({
   runId: ids.runId,
   sessionId: ids.sessionId,
+  fence: ids.fence,
   status: 'QUEUED',
   step: 0,
   attempt: 0,
@@ -163,6 +164,7 @@ const withLoopItem = (state: RunState, item: InputItem): RunState => {
 };
 
 const itemFactsOf = (state: RunState, eventType: string): ItemFacts => ({
+  fence: state.fence,
   providerCallIdOf: (callId) => requireCall(state, callId, eventType).providerCallId,
   heldToolNameOf: (callId) => {
     const held = state.heldCalls?.[callId];
@@ -595,6 +597,8 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       return isReferenceInherited(event) ? applyReferenceInheritance(state, event) : applyInheritance(state, event);
     case 'context.truncated':
       return withReference(withForm(truncate(state, event), event), event);
+    case 'user.compact':
+      return state;
     case 'notice':
       return { ...state, notes: [...state.notes, { level: event.level, message: event.message, ...(event.code === undefined ? {} : { code: event.code }), ...(event.toolKey === undefined ? {} : { toolKey: event.toolKey }), ...(event.reduction === undefined ? {} : { reduction: event.reduction }) }] };
     case 'agent.message.delta':

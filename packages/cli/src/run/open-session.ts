@@ -1,7 +1,7 @@
 import { credentialEnvNames, loadUserSettings, stripCredentialEnv } from '@momonga/config';
 import { currentSocketResolver } from '@momonga/foundation';
 import type { MomongaPaths, SandboxNetworkSetting } from '@momonga/foundation';
-import { NO_MODEL_TARGET, TARGET_NOT_READY, agentReadiness, messageOf, startModelOf } from '@momonga/protocol';
+import { TARGET_NOT_READY, messageOf, startModelOf } from '@momonga/protocol';
 import type { Mandate, MomongaModelList, PermissionMode } from '@momonga/protocol';
 import { createRuntimeClient } from '../client/runtime-client.ts';
 import type { CreatedSession, RuntimeClient } from '../client/runtime-client.ts';
@@ -31,7 +31,7 @@ export class NoModelConnected extends Error {
   readonly reason: string;
 
   constructor() {
-    const { message } = agentReadiness({ unavailable: NO_MODEL_TARGET });
+    const message = messageOf('noModelConnected', 'cli');
     super(message);
     this.name = 'NoModelConnected';
     this.reason = message;

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { createReplayAdapter } from '@momonga/gateway';
+import { createReplayAdapter } from './support/replay-adapter.ts';
 import { createScriptedAdapter, textResponseEvents } from '@momonga/testkit';
 import { makeDir, postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
 

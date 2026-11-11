@@ -5,6 +5,7 @@ import type { FileSystem } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import { statIfExists } from './files.ts';
 import { canonicalPathOf, resolvedPathOf, shownPath } from './paths.ts';
+import { partialSearchNote } from './grep.ts';
 import { walkFiles } from './walk.ts';
 
 type GlobInput = { pattern: string; path?: string };
@@ -37,7 +38,8 @@ export const globTool = defineTool<GlobInput>({
     required: ['pattern'],
     additionalProperties: false,
   },
-  timeoutMs: 60_000,
+  timeoutMs: (_input, limits) => limits.search.timeoutMs,
+  expiry: 'detach',
   title: (input) => `Glob ${input.pattern}`,
   locations: (input, ctx) => [{ path: resolvedPathOf(ctx, input.path ?? '.') }],
   subject: (input, ctx) => ({
@@ -54,7 +56,8 @@ export const globTool = defineTool<GlobInput>({
     if (!stat.isDirectory()) throw new ToolExecutionError(`${shown} is not a directory`);
     const isMatch = picomatch(input.pattern, { dot: true });
     const matches: string[] = [];
-    for await (const entry of walkFiles({
+    const walking = AbortSignal.any([ctx.signal, ctx.expired]);
+    const entries = walkFiles({
       files: ctx.files,
       root,
       readDenied: ctx.sandboxPolicy.readDenied,
@@ -62,15 +65,31 @@ export const globTool = defineTool<GlobInput>({
       fileRules: ctx.sandboxPolicy.fileRules,
       tool: 'Glob',
       includeSymlinkedFiles: true,
-      signal: ctx.signal,
+      signal: walking,
       onUnreadable: () => undefined,
       onRuleBlocked: () => undefined,
-    })) {
-      if (isMatch(entry.relative)) matches.push(path.join(root, entry.relative));
+    })[Symbol.asyncIterator]();
+    const expired = new Promise<'expired'>((resolve) => {
+      if (walking.aborted) resolve('expired');
+      else walking.addEventListener('abort', () => resolve('expired'), { once: true });
+    });
+    for (;;) {
+      const pending = entries.next();
+      const next = await Promise.race([pending, expired]);
+      if (next === 'expired') {
+        void pending.then(undefined, (error: unknown) => {
+          if (!walking.aborted) throw error;
+        });
+        break;
+      }
+      if (next.done === true) break;
+      if (isMatch(next.value.relative)) matches.push(path.join(root, next.value.relative));
     }
-    if (matches.length === 0) return { status: 'completed', output: 'No files found' };
+    ctx.signal.throwIfAborted();
+    const partial = ctx.expired.aborted ? [partialSearchNote(ctx.limits.search.timeoutMs, 'entries')] : [];
+    if (matches.length === 0) return { status: 'completed', output: ['No files found', ...partial].join('\n') };
     const sorted = await sortByMtimeThenPath(ctx.files, matches);
     const listed = await mapAsync(sorted.slice(0, MAX_GLOB_RESULTS), (file) => shownPath(ctx, file));
-    return { status: 'completed', output: [...listed, ...(sorted.length > MAX_GLOB_RESULTS ? [TRUNCATION_NOTICE] : [])].join('\n') };
+    return { status: 'completed', output: [...listed, ...(sorted.length > MAX_GLOB_RESULTS ? [TRUNCATION_NOTICE] : []), ...partial].join('\n') };
   },
 });

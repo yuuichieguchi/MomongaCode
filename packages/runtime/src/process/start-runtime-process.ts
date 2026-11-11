@@ -753,7 +753,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         cancelUpstream: tracker.cancel,
         releaseStopped: createStoppedRunReleaser({ store, tools: toolRuntime.port }),
         runTrace: async (runId, requestSignal) => {
-          await settledOrAborted(telemetries.current().telemetry.forceFlush(), requestSignal);
+          await settledOrAborted(telemetries.current().telemetry.flushLocal(), requestSignal);
           const trace = runTraceOf(traceStore, runId);
           return trace === undefined
             ? undefined
@@ -778,7 +778,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         recomputeFacts: (runIds, signal) => recomputeFactsOf(journalThread, runIds, signal),
         reportCost: async (runIds) => reportCostOf(store, runIds),
         runTraceContent: async (runId, after, limit, requestSignal) => {
-          await settledOrAborted(telemetries.current().telemetry.forceFlush(), requestSignal);
+          await settledOrAborted(telemetries.current().telemetry.flushLocal(), requestSignal);
           return pageRunBodies(traceStore, runId, after, limit);
         },
         mcp: toolRuntime.mcpAdmin,
