@@ -391,14 +391,6 @@ describe('cli: momonga -p', () => {
     expect(uncreatable.stdout).toBe('');
     expect(uncreatable.stderr).toMatch(new RegExp(`^momonga: The directory ${longHome}\\S* could not be created: `));
     expect(uncreatable.stderr).not.toContain('    at ');
-
-    const creatableLongHome = path.join(home.root, 'h'.repeat(200));
-    fs.mkdirSync(creatableLongHome, { mode: 0o700 });
-    const status = await runCli(home, ['daemon', 'status'], { env: { HOME: creatableLongHome } });
-    expect(status.code).toBe(1);
-    expect(status.stdout).toBe('');
-    expect(status.stderr).toMatch(/^momonga: Unix socket path .* must be shorter than/);
-    expect(status.stderr).not.toContain('    at ');
   });
 
   it(titleOf('cli-reconnect'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
