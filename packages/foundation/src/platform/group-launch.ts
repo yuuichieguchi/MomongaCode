@@ -1,3 +1,4 @@
+import type { LaunchProtection } from '../child-protection.ts';
 import { spawn } from 'node:child_process';
 import type { ChildProcess, StdioOptions } from 'node:child_process';
 import { closeDescriptorSync, openReadOnlySync } from '../node-file-system.ts';
@@ -18,6 +19,7 @@ export type GroupLaunchRequest = {
   marker?: GroupLaunchMarker;
   port?: ProcessGroupPort;
   spawnProcess?: typeof spawn;
+  protection: LaunchProtection;
 };
 
 export type LeaderExit = { code: number | null; signal: NodeJS.Signals | null };

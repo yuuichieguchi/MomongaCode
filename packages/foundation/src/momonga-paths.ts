@@ -4,6 +4,7 @@ import util from 'node:util';
 import { ensureWindowsPrivateTree, modeIsPrivate, noFollowFlag, directoryFlag, ownerProblem } from './platform/privacy.ts';
 import { nodeCommandRunner } from './platform/command-runner.ts';
 import type { CommandRunner } from './platform/command-runner.ts';
+import type { PathResolver } from './path-compare.ts';
 import { isAtomicWriteTemporary } from './atomic-file.ts';
 import { OPEN_FLAGS, nodeFileSystem } from './node-file-system.ts';
 import type { FileSystem, ReadHandle } from './node-file-system.ts';
@@ -250,6 +251,10 @@ export const managedInstancePaths = (paths: MomongaPaths, instance: ManagedInsta
 };
 
 export const rotatedLogPath = (file: string, generation: number): string => `${file}.${generation}`;
+
+export const canonicalHomeOf = async (home: string, paths: PathResolver): Promise<string> => paths.canonicalPath(home);
+
+export const protectedAreasOf = (paths: MomongaPaths): string[] => [paths.root, paths.keychains, paths.executables, paths.tmp.root];
 
 export const momongaPaths = (home: string, platform: NodeJS.Platform, env: LayoutEnvironment): MomongaPaths => momongaLayout(home, platform, env);
 

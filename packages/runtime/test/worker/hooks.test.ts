@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { STOP_HOOK_FEEDBACK_PREFIX } from '@momonga/protocol';
 import type { HooksSettings } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
@@ -15,7 +15,7 @@ const hooks = (event: keyof HooksSettings, command: string, matcher?: string): H
   [event]: [{ ...(matcher === undefined ? {} : { matcher }), hooks: [{ type: 'command', command }] }],
 });
 
-const workerWithProcesses = (env: Awaited<ReturnType<typeof makeEnv>>) => env.worker('worker-1', { tools: { sandboxes: fixedSandboxBindings(createUnsandboxed({ killGraceMs: 200 })) } });
+const workerWithProcesses = (env: Awaited<ReturnType<typeof makeEnv>>) => env.worker('worker-1', { tools: { sandboxes: fixedSandboxBindings(createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 200 })) } });
 
 describe('worker hooks', () => {
   it('fails the run with a typed code when a UserPromptSubmit hook blocks the prompt, without calling the model', async () => {

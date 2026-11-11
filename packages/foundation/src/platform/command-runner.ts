@@ -1,5 +1,6 @@
 import { systemWaitTiming } from '../system-timing.ts';
 import { launchGroupLeader } from './group-launch.ts';
+import { CONTROL_PLANE_LAUNCH } from '../child-protection.ts';
 import type { LeaderExit } from './group-launch.ts';
 
 type CommandInputs = { env: Readonly<Record<string, string>> | undefined; input?: string; signal?: AbortSignal | undefined };
@@ -44,7 +45,7 @@ const run = (file: string, args: readonly string[], options: CommandInputs, time
   new Promise((resolve, reject) => {
     const { signal } = options;
     signal?.throwIfAborted();
-    const launch = launchGroupLeader({ file, args, ...(options.env === undefined ? {} : { env: options.env }), stdio: ['pipe', 'pipe', 'pipe'] });
+    const launch = launchGroupLeader({ file, args, ...(options.env === undefined ? {} : { env: options.env }), stdio: ['pipe', 'pipe', 'pipe'], protection: CONTROL_PLANE_LAUNCH });
     const { child } = launch;
     const stdin = child.stdin;
     const stdoutStream = child.stdout;

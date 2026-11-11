@@ -1,3 +1,4 @@
+import { TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
@@ -23,7 +24,7 @@ describe('the reap after the leader exits is bounded by its own stop bound, not 
     };
     const child = Object.assign(new EventEmitter(), { pid: FAKE_PID, stdout: new PassThrough(), stderr: new PassThrough(), stdin: null });
     const controller = new AbortController();
-    const launched = launch({
+    const launched = launch({ protection: TEST_CHILD_UNPROTECTED,
       file: '/bin/sh',
       args: [],
       cwd: '/',

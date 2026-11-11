@@ -1,6 +1,6 @@
 import type { spawn } from 'node:child_process';
 import { Deadline, SANDBOX_KILL_GRACE_MS, closeMarkerDescriptor, groupSignalsOf, groupTerminationBoundMs, hostProcessGroupPort, launchGroupLeader, signalGroup, sleep, systemTiming, systemWaitTiming, terminateGroup } from '@momonga/foundation';
-import type { GroupLaunch, GroupLaunchMarker, ProcessGroupPort, TerminateOutcome, Timing } from '@momonga/foundation';
+import type { GroupLaunch, GroupLaunchMarker, LaunchProtection, ProcessGroupPort, TerminateOutcome, Timing } from '@momonga/foundation';
 import type { SandboxExit, SandboxedProcess } from './types.ts';
 
 export { SANDBOX_KILL_GRACE_MS };
@@ -23,6 +23,7 @@ export interface LaunchOptions {
   signal: AbortSignal;
   killGraceMs: number;
   afterExit: () => void | Promise<void>;
+  protection: LaunchProtection;
   markerFile?: string;
   markerFd?: number;
   stdin?: string;
@@ -52,6 +53,7 @@ export function launch(options: LaunchOptions): SandboxedProcess {
     launched = launchGroupLeader({
       file: options.file,
       args: options.args,
+      protection: options.protection,
       cwd: options.cwd,
       env: options.env,
       stdio: [stdinMode, 'pipe', 'pipe', ...(options.socketFilter === undefined ? [] : STDIO_THROUGH_SOCKET_FILTER)],

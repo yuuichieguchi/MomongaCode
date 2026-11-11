@@ -1,8 +1,11 @@
+import type { LaunchProtection } from '@momonga/foundation';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { WorkspaceProbe } from '@momonga/eval';
 import { groupSignalsOf, hostProcessGroupPort, launchGroupLeader, signalGroup } from '@momonga/foundation';
+
+const WORKSPACE_PROBE_LAUNCH: LaunchProtection = { kind: 'unprotected', reason: 'an eval workspace probe is started without the protection of the home' };
 
 const absentOnMissing = (error: NodeJS.ErrnoException): undefined => {
   if (error.code === 'ENOENT') return undefined;
@@ -30,7 +33,7 @@ const strongestSignal = (): NodeJS.Signals => {
 
 const runShell = (env: Readonly<Record<string, string>>, command: string, timeoutMs: number, cwd: string): Promise<{ exitCode: number | null; timedOut: boolean }> =>
   new Promise((resolve, reject) => {
-    const { child, pgid } = launchGroupLeader({ file: '/bin/sh', args: ['-c', command], cwd, env, stdio: ['ignore', 'ignore', 'ignore'] });
+    const { child, pgid } = launchGroupLeader({ file: '/bin/sh', args: ['-c', command], cwd, env, stdio: ['ignore', 'ignore', 'ignore'], protection: WORKSPACE_PROBE_LAUNCH });
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;

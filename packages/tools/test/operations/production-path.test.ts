@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { REDACTED_MARKER } from '@momonga/foundation';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxCommand, SandboxPolicy } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, unconfiguredNetworkOf, testProcessInspector } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, unconfiguredNetworkOf, testProcessInspector, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { createOperationTools, createSandboxedArgvRunner, networkScopeOfDestinations, nodeShellHost } from '@momonga/tools';
 import type { CallOutcome, ResultOutcome } from '@momonga/tools';
 import { call, makeHarness, toolSetOf } from '../harness.ts';
@@ -38,7 +38,7 @@ const setup = async (options: { realSandbox: boolean; origin?: string }) => {
   const tmpDir = sessionTmpDirOf(layout);
   const harness = makeHarness();
   const spawns: Spawn[] = [];
-  let hostSandbox: Sandbox = createUnsandboxed();
+  let hostSandbox: Sandbox = createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform });
   if (options.realSandbox) {
     const sandboxTmp = path.join(world.base, 'sandbox-tmp');
     fs.mkdirSync(sandboxTmp);
@@ -182,7 +182,7 @@ describe('a process started without the executable that answers the prompt of gi
   it('refuses a call that carries a credential before anything runs, and says why', async () => {
     const world = makeGitWorld();
     const spawns: Spawn[] = [];
-    const sandbox = recordingSandbox(createUnsandboxed(), spawns);
+    const sandbox = recordingSandbox(createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform }), spawns);
     const layout: Layout = { ...makeLayout(), root: world.base, home: world.home, project: world.work, outside: path.join(world.base, 'outside') };
     const runArgv = createSandboxedArgvRunner({
       inspector: testProcessInspector(),

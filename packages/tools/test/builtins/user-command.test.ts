@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { parseRule } from '@momonga/policy';
 import type { PermissionRule } from '@momonga/policy';
 import { USER_SHELL_OUTPUT_BYTES } from '@momonga/protocol';
@@ -18,7 +18,7 @@ type Ran = { outcome: UserCommandOutcome; streamed: string; groups: number[] };
 
 const runAsUser = async (tools: Builtins, command: string, rules: PermissionRule[] = [], signal: AbortSignal = new AbortController().signal, onText: (text: string) => void = () => undefined): Promise<Ran> => {
   const facts = tools.batch('Bash', { command }, { rules });
-  const unsandboxed = createUnsandboxed({ killGraceMs: 300 });
+  const unsandboxed = createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 300 });
   const groups: number[] = [];
   let streamed = '';
   const outcome = await runUserCommand({

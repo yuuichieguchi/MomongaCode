@@ -8,7 +8,7 @@ import { createUnsandboxed } from '@momonga/sandbox';
 import { fixedSandboxBindings } from '@momonga/runtime';
 import type { Run } from '@momonga/store';
 import * as tools from '@momonga/tools';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, waitFor, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { spawn } from '@momonga/testkit/child-process';
 import { groupExists } from './cancel-fixture.ts';
 
@@ -40,7 +40,7 @@ const verificationMarkerName = (key: { runId: string; round: number; conditionId
   return (found as (value: typeof key) => string)(key);
 };
 
-const workerOf = (env: Env, id = 'worker-2') => env.worker(id, { tools: { sandboxes: fixedSandboxBindings(createUnsandboxed({ killGraceMs: 200 })) } });
+const workerOf = (env: Env, id = 'worker-2') => env.worker(id, { tools: { sandboxes: fixedSandboxBindings(createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 200 })) } });
 
 const enqueueWith = async (env: Env, command: string, deadlineAt = DEADLINE_MS): Promise<Run> =>
   createdRun(
@@ -246,7 +246,7 @@ describe('the decision after a verification round is read from the journal only'
       },
     });
 
-    await env.runOnce(env.worker('worker-1', { store: losesTheFeedback, tools: { sandboxes: fixedSandboxBindings(createUnsandboxed({ killGraceMs: 200 })) } }));
+    await env.runOnce(env.worker('worker-1', { store: losesTheFeedback, tools: { sandboxes: fixedSandboxBindings(createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 200 })) } }));
     expect(dropped).toBe(true);
     env.gateway.script.push(textStep('still done'));
     await env.runOnce(workerOf(env));
