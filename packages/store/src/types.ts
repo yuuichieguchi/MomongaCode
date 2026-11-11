@@ -695,6 +695,7 @@ export type RuntimeStore = {
   deadLetterExhausted(onError: SweepErrorSink): Promise<string[]>;
   terminalRunIdsWithCheckpoint(): string[];
   hasActiveRun(): boolean;
+  catchUpDerived(pages: number): Promise<boolean>;
   approvalView(approvalId: string): Promise<ApprovalView | undefined>;
   pendingApprovalViews(runId: string): Promise<ApprovalView[]>;
   inheritContext(claim: Claim, options: { mode: PermissionMode; facts?: Pick<JournalFacts, 'inheritPlan'> }): Promise<InheritContextResult>;

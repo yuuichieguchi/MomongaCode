@@ -737,7 +737,7 @@
         "task": 2
       },
       "packages/store/src/search.ts": {
-        "limit": 5,
+        "limit": 4,
         "project": 5
       },
       "packages/supervisor/src/shutdown.ts": {

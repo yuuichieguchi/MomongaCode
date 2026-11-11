@@ -39,7 +39,7 @@ import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, 
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
 import { unaskedCommandsFor } from '@momonga/policy';
-import { FIDELITY_PRUNE_BATCH_ROWS, isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
+import { DERIVED_CATCH_UP_PAGES, FIDELITY_PRUNE_BATCH_ROWS, isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import { createRuleVerifier, installedRuleSolver } from './rule-verifier.ts';
 import type { RuleSolverSource } from './rule-verifier.ts';
@@ -979,6 +979,11 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
               await sweepCallLocks({ dir: paths.callLocks, mechanism: kernelLock });
               return 'done';
             },
+          },
+          {
+            name: 'derived-catch-up',
+            intervalMs: IDEMPOTENCY_PURGE_MS,
+            run: async (): Promise<ServingTaskOutcome> => ((await store.catchUpDerived(DERIVED_CATCH_UP_PAGES)) ? 'done' : 'again'),
           },
           {
             name: 'fidelity-prune',
