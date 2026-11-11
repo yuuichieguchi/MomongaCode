@@ -157,7 +157,7 @@ const watchHarness = (overrides: Partial<LockWatchOptions> = {}) => {
 };
 
 describe('watchLock', () => {
-  it('exit 75 waits on the lock and fires onFree when it frees', async () => {
+  it('exit 77 waits on the lock and fires onFree when it frees', async () => {
     const h = watchHarness({ lockWaitMs: 3_600_000 });
     await pump(h.timers, h.realWork, 5 * 60_000);
     expect(h.events.filter((event) => event.startsWith('free'))).toEqual([]);
@@ -394,17 +394,17 @@ describe('watchLock with the real kernel lock', () => {
 describe('a held lock through the supervisor', () => {
   const EXTERNAL_PID = 4242;
 
-  it('on a platform without descriptor hand-off, exit 75 waits on the lock, is not a failure, and spawns when it frees', async (context) => {
+  it('on a platform without descriptor hand-off, exit 77 waits on the lock, is not a failure, and spawns when it frees', async (context) => {
     const lock = createFakeKernelLock({ inheritable: false });
     const h = await startHarness(context, { overrides: { lockMechanism: lock, lockWaitMs: 3_600_000 } });
     await h.waitForState('runtime', 'ready');
     lock.holdExternally(firstGeneration(h.paths).locks.runtime, EXTERNAL_PID);
-    h.fake.latest('runtime').exit(75);
+    h.fake.latest('runtime').exit(77);
     await h.waitForState('runtime', 'waiting-lock');
     await pump(h.timers, h.realWork, 5 * 60_000);
     expect(h.fake.spawnCount('runtime')).toBe(1);
     expect(h.child('runtime')).toMatchObject({ state: 'waiting-lock', consecutiveFailures: 0 });
-    expect(h.child('runtime').lastExit).toMatchObject({ code: 75, reason: 'lock-held' });
+    expect(h.child('runtime').lastExit).toMatchObject({ code: 77, reason: 'lock-held' });
     lock.releaseExternally(firstGeneration(h.paths).locks.runtime);
     await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2, { realWork: h.realWork, maxMs: 10_000, description: 'respawn after the lock frees' });
     expect(h.log.withMsg('child.spawn').at(-1)).toMatchObject({ child: 'runtime', reason: 'lock-free' });

@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import os from 'node:os';
+import { EXIT_SIGNAL_BASE } from '@momonga/foundation';
 
 export type ReplaceTarget = { file: string; args: readonly string[]; env: NodeJS.ProcessEnv };
 
@@ -23,9 +24,7 @@ export type ReplaceHost = {
 
 export type ReplaceHooks = { release(): void };
 
-const SIGNAL_EXIT_BASE = 128;
-
-const exitCodeOf = (code: number | null, signal: NodeJS.Signals | null): number => code ?? SIGNAL_EXIT_BASE + (signal === null ? 0 : os.constants.signals[signal]);
+const exitCodeOf = (code: number | null, signal: NodeJS.Signals | null): number => code ?? EXIT_SIGNAL_BASE + (signal === null ? 0 : os.constants.signals[signal]);
 
 const relay = (target: ReplaceTarget, host: ReplaceHost, hooks: ReplaceHooks): Promise<'relayed'> =>
   new Promise((resolve, reject) => {

@@ -64,8 +64,6 @@ export const HELD_OUTCOMES = ['executed', 'rejected', 'withdrawn'] as const;
 
 export type HeldOutcome = (typeof HELD_OUTCOMES)[number];
 
-export const QUIESCENT_EXIT_CODE = 75;
-
 export const PRICE_UNITS_PER_NANO = 1_000_000n;
 
 export type TokenPrice = { inUnits: bigint; outUnits: bigint };

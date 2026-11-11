@@ -1,6 +1,6 @@
-import { isRecord } from '@momonga/foundation';
+import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_WAITING_FOR_APPROVAL, isRecord } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { QUIESCENT_EXIT_CODE, TARGET_NOT_READY, agentReadiness, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
+import { TARGET_NOT_READY, agentReadiness, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
 import type { BudgetExhausted, Mandate, MomongaModelEntry, PermissionMode, PublicRunEvent, RunReport, UnknownEffectCall } from '@momonga/protocol';
 import { noTargetLines } from '../readiness.ts';
 import { RunApiError } from '../client/runtime-client.ts';
@@ -18,7 +18,7 @@ import { describeRetryWait } from '../retry-wait.ts';
 import type { AttemptFailed } from '../retry-wait.ts';
 import { describeClassification, describeDenial, describeHook, describeRunError, describeVerification, unmetConditionLines } from '../policy-messages.ts';
 import type { MessageSurface } from '../policy-messages.ts';
-import { asChildEvent } from './child-events.ts';
+import { asChildEvent, noEventTypeLeft } from './child-events.ts';
 import { followRun } from './follow.ts';
 import { adoptionOf, refuseStart } from '../handover/start.ts';
 import { newerListenerOf, streamMoveOf, streamSurface } from '../handover/stream.ts';
@@ -35,9 +35,6 @@ import type { OutputFormat } from './output-format.ts';
 
 export { OUTPUT_FORMATS };
 export type { OutputFormat };
-
-export const EXIT_RUN_FAILED = 1;
-export const EXIT_CANCELLED = 130;
 
 export type HeadlessOptions = {
   prompt: string;
@@ -162,8 +159,6 @@ const BUDGET_CAUSE_WORDS = { limit: 'the limit is reached', unpriced: 'a model c
 
 const budgetFigure = (dimension: string, value: number): string => (dimension === 'cost' ? `${usdOfNano(value)} USD` : `${value} ${dimension}`);
 
-export const EXIT_WAITING_FOR_APPROVAL = QUIESCENT_EXIT_CODE;
-
 export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, format: OutputFormat, verbose: boolean): FrameSink => {
   const items = new Map<string, string>();
   const titles = new Map<string, string>();
@@ -272,8 +267,52 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
       case 'run.status':
         if (event.to === 'QUEUED' && lastFailure !== undefined) note([`momonga: ${describeRetryWait(lastFailure)}`]);
         break;
-      default:
+      case 'user.message':
+      case 'run.started':
+      case 'attempt.lost':
+      case 'model.requested':
+      case 'model.responded':
+      case 'agent.message.delta':
+      case 'agent.thought.delta':
+      case 'model.stream.restarted':
+      case 'tool.permission.classifying':
+      case 'hook.started':
+      case 'tool.permission.resolved':
+      case 'tool.permission.cancelled':
+      case 'tool.unknown.resolved':
+      case 'tool.unknown.cancelled':
+      case 'tool.elicitation.resolved':
+      case 'tool.elicitation.cancelled':
+      case 'tool.started':
+      case 'tool.updated':
+      case 'verification.started':
+      case 'tool.loaded':
+      case 'tool.offered':
+      case 'loop.warned':
+      case 'model.rejected':
+      case 'meter.observed':
+      case 'job.finished':
+      case 'plan.updated':
+      case 'mode.changed':
+      case 'model.changed':
+      case 'inbox.changed':
+      case 'user_shell':
+      case 'usage.updated':
+      case 'usage.charged':
+      case 'context.compacted':
+      case 'context.governing_loaded':
+      case 'context.memories_loaded':
+      case 'context.contribution':
+      case 'context.compacting':
+      case 'context.compaction_rejected':
+      case 'context.inherited':
+      case 'context.truncated':
+      case 'instructions.loaded':
+      case 'skill.activated':
+      case 'approval.rule.persisted':
         break;
+      default:
+        noEventTypeLeft(event);
     }
   };
 
@@ -404,9 +443,9 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
   } else {
     ports.stdout.write(`${JSON.stringify(resultOf(run, text))}\n`);
   }
-  if (run.status === 'COMPLETED') return 0;
+  if (run.status === 'COMPLETED') return EXIT_OK;
   ports.stderr.write(`${describeEnd(run)}\n`);
-  return run.status === 'CANCELLED' ? EXIT_CANCELLED : EXIT_RUN_FAILED;
+  return run.status === 'CANCELLED' ? EXIT_INTERRUPTED : EXIT_FAILURE;
 };
 
 const openInterruptibleSession = async (ports: CliPorts, paths: MomongaPaths, options: HeadlessOptions): Promise<CliSession | undefined> => {
@@ -452,7 +491,7 @@ const refuse = (ports: CliPorts, paths: MomongaPaths, format: OutputFormat, erro
     const refused: RefusedResult = { type: 'result', subtype: 'error', is_error: true, result: '', error: { code: TARGET_NOT_READY, message: error.reason } };
     ports.stdout.write(`${JSON.stringify(refused)}\n`);
   }
-  return EXIT_RUN_FAILED;
+  return EXIT_FAILURE;
 };
 
 const MODEL_PARAM = 'model';
@@ -472,11 +511,11 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
     if (error instanceof RunApiError && error.code === TARGET_NOT_READY) return refuse(ports, paths, options.format, error);
     if (error instanceof RunApiError && isModelRefusal(error)) {
       ports.stderr.write(`${escapedLines([`momonga: ${error.reason}`])}\n`);
-      return EXIT_RUN_FAILED;
+      return EXIT_FAILURE;
     }
     throw error;
   }
-  if (session === undefined) return EXIT_CANCELLED;
+  if (session === undefined) return EXIT_INTERRUPTED;
   try {
     const readiness = agentReadiness(await options.capabilitiesOf(session.created.session.model));
     if (readiness.state === 'probing') ports.stderr.write(`${escapedLines([`momonga: ${readiness.message}`])}\n`);
@@ -487,13 +526,13 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
         const refused: RefusedResult = { type: 'result', subtype: 'error', is_error: true, result: '', error: { code: TARGET_NOT_READY, message } };
         ports.stdout.write(`${JSON.stringify(refused)}\n`);
       }
-      return EXIT_RUN_FAILED;
+      return EXIT_FAILURE;
     }
     if (readiness.state === 'no_tools') ports.stderr.write(`${escapedLines(leadWith('momonga: warning: ', readinessShownText(readiness, 'shell').split('\n')))}\n`);
     const sessionId = session.created.session.id;
     const invocation = await resolveSkillInvocation(session.client, sessionId, options.prompt, options.skill);
     const images = await Promise.all((options.images ?? []).map((file) => readImageAttachment(ports.files, ports.cwd, file)));
-    if (options.interrupt.aborted) return EXIT_CANCELLED;
+    if (options.interrupt.aborted) return EXIT_INTERRUPTED;
     const { run: started } = await session.client.createRun(sessionId, invocation.input, {
       ...(invocation.skill === undefined ? {} : { skill: invocation.skill }),
       ...(images.length === 0 ? {} : { images }),

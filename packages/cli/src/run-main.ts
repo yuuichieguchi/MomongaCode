@@ -1,11 +1,10 @@
 import { nodeEntryIo } from '@momonga/foundation';
 import { daemonEntries } from './daemon/entries.ts';
-import { describeFailure } from './failure.ts';
 import { provideEmbeddedWindowsKeeper } from './keeper/host.ts';
 import { nodePorts } from './node-ports.ts';
 import type { CliPorts } from './ports.ts';
 import { pathsOf } from './paths.ts';
-import { buildProgram } from './program.ts';
+import { buildProgram, exitOfFailure } from './program.ts';
 import { terminalSink } from './terminal-writer.ts';
 import type { UpdateWiring } from './update/background.ts';
 import { nodeUpdateWiring } from './update/wiring.ts';
@@ -35,7 +34,6 @@ export const runMain = async (version: string, overrides: Partial<CliPorts> = {}
     if (ports.handover === undefined) await program.parseAsync();
     else await program.parseAsync([...ports.handover.args], { from: 'user' });
   } catch (error) {
-    terminalSink(() => process.stderr).write(`momonga: ${describeFailure(error)}\n`);
-    process.exitCode = 1;
+    process.exitCode = exitOfFailure(error, terminalSink(() => process.stderr));
   }
 };
