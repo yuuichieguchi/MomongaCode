@@ -10,7 +10,9 @@ import { supervisorEnv } from '../e2e/support/stack.ts';
 
 const TEST_TEMP_ROOT = fs.realpathSync(os.tmpdir());
 
-const chosenSecretProgram = (env: Readonly<Record<string, string | undefined>>): string | undefined => secretStoreEnvFor(env)[SECRET_PROGRAM_ENV];
+const HOST = { platform: process.platform, uid: process.getuid?.() };
+
+const chosenSecretProgram = (env: Readonly<Record<string, string | undefined>>): string | undefined => secretStoreEnvFor(env, HOST)[SECRET_PROGRAM_ENV];
 
 const expectFakeSecretProgram = (env: Readonly<Record<string, string | undefined>>): void => {
   const program = chosenSecretProgram(env);
@@ -27,8 +29,8 @@ describe('no process of a test run can reach the OS secret store', () => {
   });
 
   it('the fake program a product process is given keeps what it writes and reads it back like the Keychain', async () => {
-    const given = givenCredentialSecretStore(createExecWithStdin({ PATH: '/usr/bin:/bin' }), secretStoreEnvFor(process.env));
-    expect(secretStoreEnvFor(process.env)[SECRET_BACKEND_ENV]).toBe('keychain');
+    const given = givenCredentialSecretStore(createExecWithStdin({ PATH: '/usr/bin:/bin' }), secretStoreEnvFor(process.env, HOST));
+    expect(secretStoreEnvFor(process.env, HOST)[SECRET_BACKEND_ENV]).toBe('keychain');
     if (given.kind !== 'available') throw new Error(`no fake store was given: ${given.reason}`);
     const name = `momonga-isolation-${process.pid}`;
     await given.store.write(name, 'kept value', new AbortController().signal);

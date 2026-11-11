@@ -215,7 +215,7 @@ describe('backends that declare no readiness question', () => {
   ] as const)('backends without readiness run one process per call (%s)', async ([, kind, action]) => {
     const fake = perCommandPort({ call: answering({ exitCode: 0, stdout: action === 'read' ? 'held' : '', stderr: '' }) });
     const files = recordingFiles(aFile);
-    const store = kind === 'secret-service' ? createSecretServiceStore(fake.port) : createCredentialManagerStore(fake.port, powershell);
+    const store = kind === 'secret-service' ? createSecretServiceStore(fake.port, SECRET_TOOL_BINARY) : createCredentialManagerStore(fake.port, powershell);
     if (action === 'read') expect(await store.read('k', SIGNAL)).toBe('held');
     else await store.write('k', 'v', SIGNAL);
     expect(fake.calls).toHaveLength(1);
@@ -226,7 +226,7 @@ describe('backends that declare no readiness question', () => {
 
   it('a secret-tool failure stays a SecretUnavailableError', async () => {
     const fake = perCommandPort({ call: answering({ exitCode: 1, stdout: '', stderr: 'Cannot autolaunch D-Bus' }) });
-    const error = await rejection(createSecretServiceStore(fake.port).read('k', SIGNAL));
+    const error = await rejection(createSecretServiceStore(fake.port, SECRET_TOOL_BINARY).read('k', SIGNAL));
     expect(error).toBeInstanceOf(SecretUnavailableError);
     expect((error as Error).name).toBe('SecretUnavailableError');
     expect((error as Error).message.endsWith('the gateway reads a missing secret again on the next request')).toBe(true);
@@ -235,7 +235,7 @@ describe('backends that declare no readiness question', () => {
 
   it('a secret-tool write failure stays a SecretWriteError', async () => {
     const fake = perCommandPort({ call: answering({ exitCode: 1, stdout: '', stderr: 'no collection' }) });
-    const error = await rejection(createSecretServiceStore(fake.port).write('k', 'v', SIGNAL));
+    const error = await rejection(createSecretServiceStore(fake.port, SECRET_TOOL_BINARY).write('k', 'v', SIGNAL));
     expect((error as Error).name).toBe('SecretWriteError');
     expect(fake.calls).toHaveLength(1);
   });
@@ -277,7 +277,7 @@ describe('no OS store at all', () => {
     ['the given store writing', 'given', 'write', R_NOT_GIVEN],
   ] as const)('no OS store on PATH is the same error class (%s)', async ([, kind, action, reason]) => {
     const fake = neverCalled();
-    const store = kind === 'platform' ? createPlatformSecretStore(fake.port, { PATH: makeDir() }) : createGivenSecretStore(fake.port, {});
+    const store = kind === 'platform' ? createPlatformSecretStore(fake.port, { PATH: makeDir() }, { platform: 'darwin', uid: process.getuid?.() }) : createGivenSecretStore(fake.port, {});
     const error = await rejection(action === 'read' ? store.read('k', SIGNAL) : store.write('k', 'v', SIGNAL));
     expect((error as Error).name).toBe('SecretStoreAbsentError');
     expect(error).toBeInstanceOf(SecretStoreAbsentError);

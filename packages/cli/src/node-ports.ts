@@ -389,7 +389,7 @@ export const nodePorts = (version: string, interrupt: AbortSignal, streams: Guar
     exec: createHostExec(minimalChildEnv(process.env)),
     probe: createWorkspaceProbe(minimalChildEnv(process.env)),
     openUrl: createBrowserOpener({ env: process.env, launch: launchProgram, files: nodeFileSystem }),
-    secretStore: () => createPlatformSecretStore(createExecWithStdin(undefined), process.env),
+    secretStore: () => createPlatformSecretStore(createExecWithStdin(undefined), process.env, { platform: process.platform, uid: process.getuid?.() }),
     acpStdio: () => ({ input: acpInputOf(process.stdin), output: Writable.toWeb(process.stdout) }),
   };
 };

@@ -12,7 +12,7 @@ export const UNKNOWN: SecretProcessResult = { exitCode: 0, stdout: 'garbage\n', 
 
 export const R_ND = 'security reports no default keychain (SecKeychainCopyDefault: A default keychain could not be found.)';
 export const R_FG = 'the default keychain /Users/x/Library/Keychains/login.keychain-db does not exist';
-export const R_PATH = 'security (Keychain) is not on PATH; secret-tool (Secret Service) is not on PATH; cmdkey (Credential Manager) is not on PATH';
+export const R_PATH = 'security (Keychain) is not on PATH';
 export const R_NOT_GIVEN = 'no secret store was given to this process (MOMONGA_SECRET_BACKEND and MOMONGA_SECRET_PROGRAM are not set)';
 
 export const KEYCHAIN_UNANSWERED_ADVICE = 'the Keychain may be waiting for an answer in a window on your screen: answer it or unlock the login keychain';

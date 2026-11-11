@@ -7,6 +7,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { gatewayEnv, runtimeEnv } from '../src/child-env.ts';
 
+const HOST = { platform: process.platform, uid: process.getuid?.() };
+
 const CAPABILITIES = { contextWindow: 200000, maxOutputTokens: 8192 };
 const ANTHROPIC_VALUE = 'anthropic-env-value-0001';
 const OPEN_RESPONSES_VALUE = 'open-responses-env-value-0002';
@@ -45,18 +47,18 @@ const SOURCE = {
 describe('credential environment separation for the provider adapters', () => {
   it('hands the declared apiKeyEnv of anthropic and open-responses targets to the gateway only', async () => {
     const settings = await settingsWithProviders();
-    const gateway = gatewayEnv(SOURCE, settings, '/canonical/home');
+    const gateway = gatewayEnv(SOURCE, settings, '/canonical/home', secretStoreEnvFor(SOURCE, HOST));
     expect(gateway).toMatchObject({ PROVIDER_ENV_ANTHROPIC: ANTHROPIC_VALUE, PROVIDER_ENV_ROUTER: OPEN_RESPONSES_VALUE });
     expect(gateway).not.toHaveProperty('UNRELATED');
 
-    const runtime = runtimeEnv(SOURCE, settings);
-    expect(runtime.env).toEqual({ PATH: '/usr/bin', HOME: '/Users/u', UNRELATED: 'kept-for-runtime', ...secretStoreEnvFor(SOURCE) });
+    const runtime = runtimeEnv(SOURCE, settings, secretStoreEnvFor(SOURCE, HOST));
+    expect(runtime.env).toEqual({ PATH: '/usr/bin', HOME: '/Users/u', UNRELATED: 'kept-for-runtime', ...secretStoreEnvFor(SOURCE, HOST) });
     expect(runtime.removed).toEqual(['PROVIDER_ENV_ANTHROPIC', 'PROVIDER_ENV_ROUTER']);
   });
 
   it('puts no variable in the gateway environment for a target that references a stored secret', async () => {
     const settings = await settingsWithProviders();
-    const gateway = gatewayEnv({ ...SOURCE, [STORED_SECRET_NAME]: 'must-not-be-read' }, settings, '/canonical/home');
+    const gateway = gatewayEnv({ ...SOURCE, [STORED_SECRET_NAME]: 'must-not-be-read' }, settings, '/canonical/home', secretStoreEnvFor({ ...SOURCE, [STORED_SECRET_NAME]: 'must-not-be-read' }, HOST));
     expect(Object.keys(gateway)).not.toContain(STORED_SECRET_NAME);
     expect(Object.values(gateway)).not.toContain('must-not-be-read');
   });

@@ -1,3 +1,4 @@
+import { secretStoreEnvFor } from '@momonga/foundation';
 import { createUserSettingsCache, noKeptRecords } from '@momonga/config';
 import { FIRST_GENERATION, createJsonLogger, momongaPaths, roleEndpoint, scopeToGeneration, systemClock } from '@momonga/foundation';
 import { prepareGenerationForTest } from '@momonga/testkit/first-generation';
@@ -39,6 +40,7 @@ const manager = createChildManager({
   onReady: () => undefined,
   launcher: () => ({ command: process.execPath, args: [child, ...flag('child-arg')] }),
   env: { PATH: process.env['PATH'] ?? '/usr/bin:/bin', HOME: home },
+  secretStoreEnv: secretStoreEnvFor({ PATH: process.env['PATH'] ?? '/usr/bin:/bin', HOME: home }, { platform: process.platform, uid: process.getuid?.() }),
   spawn: createSpawnPort(),
   settings,
   signal: new AbortController().signal,

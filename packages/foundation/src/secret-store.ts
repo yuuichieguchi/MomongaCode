@@ -1,7 +1,7 @@
 import type { CredentialSecretStore } from './encrypted-credential-store.ts';
 import { nodeFileSystem, nodeFileSystemSync } from './node-file-system.ts';
 import { settledOrAborted } from './operation-limit.ts';
-import { findProgramOnPathSync } from './program-search.ts';
+import { findProgramOnPathSync, programOwnerProblemSync } from './program-search.ts';
 import { declaredChildEnv } from './process-contract.ts';
 import { powershellArgs, powershellPath } from './platform/windows-scripts.ts';
 import { SecretStoreAbsentError, SecretStoreAnswerError, endedStoreCall } from './secret-store-failures.ts';
@@ -248,7 +248,7 @@ const createCommandSecretStore = (
 export const keychainWriteCommand = (name: string, value: string): string =>
   `add-generic-password -U -s ${KEYCHAIN_SERVICE} -a ${name} -X ${Buffer.from(value, 'utf8').toString('hex')}\n`;
 
-export const createKeychainSecretStore = (run: SecretProcessPort, security: string = SECURITY_BINARY, files: SecretStoreFiles = nodeSecretStoreFiles): SecretStore =>
+export const createKeychainSecretStore = (run: SecretProcessPort, security: string, files: SecretStoreFiles = nodeSecretStoreFiles): SecretStore =>
   createCommandSecretStore(
     { run, program: security, backend: KEYCHAIN_BACKEND, files },
     {
@@ -257,7 +257,7 @@ export const createKeychainSecretStore = (run: SecretProcessPort, security: stri
     },
   );
 
-export const createSecretServiceStore = (run: SecretProcessPort, secretTool: string = SECRET_TOOL_BINARY, files: SecretStoreFiles = nodeSecretStoreFiles): SecretStore =>
+export const createSecretServiceStore = (run: SecretProcessPort, secretTool: string, files: SecretStoreFiles = nodeSecretStoreFiles): SecretStore =>
   createCommandSecretStore(
     { run, program: secretTool, backend: SECRET_SERVICE_BACKEND, files },
     {
@@ -355,7 +355,7 @@ export const SECRET_REFUSAL_ENV = 'MOMONGA_SECRET_REFUSAL';
 
 type SecretBackendKind = { backend: SecretBackend; create(run: SecretProcessPort, program: string, files: SecretStoreFiles): SecretStore };
 
-const SECRET_BACKENDS: Readonly<Record<string, SecretBackendKind>> = {
+const SECRET_BACKENDS: Readonly<Record<BackendId, SecretBackendKind>> = {
   keychain: { backend: KEYCHAIN_BACKEND, create: (run, program, files) => createKeychainSecretStore(run, program, files) },
   'secret-service': { backend: SECRET_SERVICE_BACKEND, create: (run, program, files) => createSecretServiceStore(run, program, files) },
   'credential-manager': { backend: CREDENTIAL_MANAGER_BACKEND, create: (run, program, files) => createCredentialManagerStore(run, { file: program, args: powershellArgs }, files) },
@@ -369,23 +369,47 @@ const searchedAs = (backend: SecretBackend): string => `${backend.searchedProgra
 
 const notOnPath = (backend: SecretBackend): string => `${searchedAs(backend)} is not on PATH`;
 
-const chooseSecretBackend = (env: SecretEnv): ChosenSecretStore => {
-  const security = findProgramOnPathSync(KEYCHAIN_BACKEND.searchedProgram, env, nodeFileSystemSync);
-  if (security !== undefined) return { kind: 'chosen', id: 'keychain', program: security };
-  const secretTool = findProgramOnPathSync(SECRET_SERVICE_BACKEND.searchedProgram, env, nodeFileSystemSync);
-  const busAddress = env['DBUS_SESSION_BUS_ADDRESS'];
-  const hasSession = busAddress !== undefined && busAddress !== '';
-  if (secretTool !== undefined && hasSession) return { kind: 'chosen', id: 'secret-service', program: secretTool };
-  if (findProgramOnPathSync(CREDENTIAL_MANAGER_BACKEND.searchedProgram, env, nodeFileSystemSync) !== undefined) return { kind: 'chosen', id: 'credential-manager', program: powershellPath(env) };
-  const secretServiceState =
-    secretTool === undefined ? notOnPath(SECRET_SERVICE_BACKEND) : `${searchedAs(SECRET_SERVICE_BACKEND)} is on PATH at ${secretTool}, but no D-Bus session is set (DBUS_SESSION_BUS_ADDRESS is empty)`;
-  return { kind: 'none', reason: `${notOnPath(KEYCHAIN_BACKEND)}; ${secretServiceState}; ${notOnPath(CREDENTIAL_MANAGER_BACKEND)}` };
+export type SecretHost = { readonly platform: NodeJS.Platform; readonly uid: number | undefined };
+
+type BackendId = 'keychain' | 'secret-service' | 'credential-manager';
+
+const PLATFORM_BACKENDS: Readonly<Partial<Record<NodeJS.Platform, BackendId>>> = {
+  darwin: 'keychain',
+  linux: 'secret-service',
+  freebsd: 'secret-service',
+  openbsd: 'secret-service',
+  netbsd: 'secret-service',
+  win32: 'credential-manager',
 };
 
-const backendKindOf = (id: string): SecretBackendKind | undefined => (Object.hasOwn(SECRET_BACKENDS, id) ? SECRET_BACKENDS[id] : undefined);
+const trusted = (program: string, host: SecretHost): ChosenSecretStore | undefined => {
+  if (host.uid === undefined) return undefined;
+  const problem = programOwnerProblemSync(program, nodeFileSystemSync, host.uid);
+  return problem === undefined ? undefined : { kind: 'none', reason: problem };
+};
 
-export const secretStoreEnvFor = (hostEnv: SecretEnv): Record<string, string> => {
-  const chosen = chooseSecretBackend(hostEnv);
+const chosenProgram = (id: BackendId, program: string, host: SecretHost): ChosenSecretStore => trusted(program, host) ?? { kind: 'chosen', id, program };
+
+const chooseSecretBackend = (env: SecretEnv, host: SecretHost): ChosenSecretStore => {
+  const id = PLATFORM_BACKENDS[host.platform];
+  if (id === undefined) return { kind: 'none', reason: `MomongaCode knows no secret store of the platform ${host.platform}` };
+  if (id === 'credential-manager') return chosenProgram(id, powershellPath(env), host);
+  const backend = SECRET_BACKENDS[id].backend;
+  const program = findProgramOnPathSync(backend.searchedProgram, env, nodeFileSystemSync);
+  if (program === undefined) return { kind: 'none', reason: notOnPath(backend) };
+  if (id === 'secret-service') {
+    const busAddress = env['DBUS_SESSION_BUS_ADDRESS'];
+    if (busAddress === undefined || busAddress === '') {
+      return { kind: 'none', reason: `${searchedAs(backend)} is on PATH at ${program}, but no D-Bus session is set (DBUS_SESSION_BUS_ADDRESS is empty)` };
+    }
+  }
+  return chosenProgram(id, program, host);
+};
+
+const backendKindOf = (id: string): SecretBackendKind | undefined => (Object.hasOwn(SECRET_BACKENDS, id) ? SECRET_BACKENDS[id as BackendId] : undefined);
+
+export const secretStoreEnvFor = (hostEnv: SecretEnv, host: SecretHost): Record<string, string> => {
+  const chosen = chooseSecretBackend(hostEnv, host);
   if (chosen.kind === 'none') return { [SECRET_REFUSAL_ENV]: chosen.reason };
   const kind = backendKindOf(chosen.id) as SecretBackendKind;
   return { [SECRET_BACKEND_ENV]: chosen.id, [SECRET_PROGRAM_ENV]: chosen.program, ...declaredChildEnv(hostEnv, kind.backend.childEnvNames) };
@@ -428,13 +452,13 @@ export const createGivenSecretStore = (run: SecretProcessPort, givenEnv: SecretE
   };
 };
 
-const chosenStoreFor = (run: SecretProcessPort, env: SecretEnv, files: SecretStoreFiles, call: NamedSecretCall): SecretStore => {
-  const chosen = chooseSecretBackend(env);
+const chosenStoreFor = (run: SecretProcessPort, env: SecretEnv, host: SecretHost, files: SecretStoreFiles, call: NamedSecretCall): SecretStore => {
+  const chosen = chooseSecretBackend(env, host);
   if (chosen.kind === 'none') throw new SecretStoreAbsentError({ reason: chosen.reason, call });
   return (backendKindOf(chosen.id) as SecretBackendKind).create(run, chosen.program, files);
 };
 
-export const createPlatformSecretStore = (run: SecretProcessPort, env: SecretEnv, files: SecretStoreFiles = nodeSecretStoreFiles): SecretStore => ({
-  read: async (name, signal) => chosenStoreFor(run, env, files, { action: 'read', name }).read(name, signal),
-  write: async (name, value, signal) => chosenStoreFor(run, env, files, { action: 'write', name }).write(name, value, signal),
+export const createPlatformSecretStore = (run: SecretProcessPort, env: SecretEnv, host: SecretHost, files: SecretStoreFiles = nodeSecretStoreFiles): SecretStore => ({
+  read: async (name, signal) => chosenStoreFor(run, env, host, files, { action: 'read', name }).read(name, signal),
+  write: async (name, value, signal) => chosenStoreFor(run, env, host, files, { action: 'write', name }).write(name, value, signal),
 });
