@@ -366,7 +366,7 @@
       "packages/cli/src/client/gateway-client.ts": 1,
       "packages/cli/src/client/runtime-client.ts": 1,
       "packages/foundation/src/outbound.ts": 5,
-      "packages/foundation/src/uds.ts": 2,
+      "packages/foundation/src/uds.ts": 1,
       "packages/gateway/src/managed/server.ts": 1,
       "packages/gateway/src/managed/target.ts": 1,
       "packages/gateway/src/probe/client.ts": 1,

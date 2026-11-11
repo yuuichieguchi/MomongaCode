@@ -272,7 +272,7 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
   };
 
   const listedModelId = async (socketPath: string, signal: AbortSignal): Promise<string> => {
-    const client = createUdsClient(fixedSocket(socketPath));
+    const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0 });
     try {
       const response = await client.request({ method: 'GET', path: description.models.listPath, signal });
       const text = await response.text();

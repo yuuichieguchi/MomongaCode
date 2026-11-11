@@ -540,10 +540,18 @@ class OutboundDispatcher extends Dispatcher {
     return causeChain(error).some((entry) => typeof entry === 'object' && entry !== null && this.#siteRefusals.has(entry));
   }
 
-  #checkedBySite(lookup: LookupFunction, destination: URL): Promise<URL> {
+  #checkedBySite(lookup: LookupFunction, destination: URL, signal: unknown): Promise<URL> {
     const hostname = unbracketed(destination.hostname);
+    const asker = signal instanceof AbortSignal ? signal : undefined;
     return new Promise((resolve, reject) => {
+      if (asker?.aborted === true) {
+        reject(asker.reason);
+        return;
+      }
+      const onAbort = (): void => reject(asker?.reason);
+      asker?.addEventListener('abort', onAbort, { once: true });
       lookup(hostname, { all: true }, (error, answered) => {
+        asker?.removeEventListener('abort', onAbort);
         if (error !== null) {
           reject(error);
           return;
@@ -566,7 +574,7 @@ class OutboundDispatcher extends Dispatcher {
     if (plan.route.kind !== 'proxy') return this.#direct.dispatch(options, labelled);
     const named = plan.route;
     if (this.#siteLookup === undefined || isIP(unbracketed(destination.hostname)) !== 0) return this.#proxyFor(named).dispatch(options, labelled);
-    void this.#checkedBySite(this.#siteLookup, destination)
+    void this.#checkedBySite(this.#siteLookup, destination, signal)
       .then((checked) => {
         const route = routeToChecked(named, checked, this.#network.config);
         const bound = dispatchToChecked(options, destination, checked);

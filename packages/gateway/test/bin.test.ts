@@ -42,7 +42,7 @@ describe('gateway bin (real process, §5.3)', () => {
     const { home, paths, env } = prepare(context);
     const daemon = startDaemonBin(context, BIN, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=file'], env);
     await daemon.waitForReady();
-    const client = createUdsClient(fixedSocket(firstGeneration(paths).sockets.gateway));
+    const client = createUdsClient(fixedSocket(firstGeneration(paths).sockets.gateway), { connectTimeoutMs: 0 });
     registerCleanup(context, () => client.close());
 
     const response = await client.request({ method: 'GET', path: '/v1/momonga/health' });

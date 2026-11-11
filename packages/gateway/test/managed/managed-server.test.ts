@@ -271,7 +271,7 @@ describe('the second kind runs as a real process through the same mechanism (des
     });
     servers.push(server);
     const endpoint = await server.start(AbortSignal.timeout(REAL_PROCESS_TEST_TIMEOUT_MS));
-    const client = createUdsClient(fixedSocket(endpoint.path));
+    const client = createUdsClient(fixedSocket(endpoint.path), { connectTimeoutMs: 0 });
     try {
       const response = await client.request({ method: 'GET', path: '/models', signal: AbortSignal.timeout(REAL_PROCESS_TEST_TIMEOUT_MS) });
       expect(response.status).toBe(200);

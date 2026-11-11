@@ -44,7 +44,7 @@ const declareTargetsWithKeys = async (h: Watched, ...names: string[]): Promise<v
 
 const requestCredential = (context: CleanupContext, h: Watched, name: string, capability: string | undefined): Promise<SimpleResponse> =>
   h.realWork.run(async () => {
-    const client = createUdsClient(fixedSocket(firstGeneration(h.paths).sockets.supervisor), { headersTimeoutMs: 5000 });
+    const client = createUdsClient(fixedSocket(firstGeneration(h.paths).sockets.supervisor), { connectTimeoutMs: 0, headersTimeoutMs: 5000 });
     registerCleanup(context, () => client.destroy());
     const response = await client.request({ method: 'GET', path: `${CREDENTIAL_ROUTE}${name}`, ...(capability === undefined ? {} : { headers: { [CREDENTIAL_CAPABILITY_HEADER]: capability } }) });
     const text = await response.text();

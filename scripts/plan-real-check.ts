@@ -527,7 +527,7 @@ const throughGateway = async (command: Exclude<Command, 'collect'>, paths: Momon
   const interrupt = new AbortController();
   const model = await planModelOf(paths, typed, interrupt.signal);
   if (model === undefined) return steps.map((step) => notRun(step, notOnePlanModel(typed)));
-  const client = createUdsClient(fixedSocket(socketPath));
+  const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0 });
   try {
     return command === 'carriage' ? await carriage(client, paths, model, interrupt.signal) : await requestSize(client, model);
   } finally {

@@ -33,7 +33,7 @@ import { firstGeneration } from '@momonga/testkit';
 type Json = Record<string, any>;
 
 const rawGet = async (home: E2eHome, target: string): Promise<{ status: number; json: Json }> => {
-  const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime));
+  const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime), { connectTimeoutMs: 0 });
   try {
     const response = await client.request({ method: 'GET', path: target });
     const text = await response.text();
@@ -44,7 +44,7 @@ const rawGet = async (home: E2eHome, target: string): Promise<{ status: number; 
 };
 
 const trustProject = async (home: E2eHome): Promise<void> => {
-  const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime));
+  const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime), { connectTimeoutMs: 0 });
   try {
     const response = await client.request({
       method: 'PUT',

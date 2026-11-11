@@ -37,7 +37,7 @@ const tcpPathsOf = (baseUrl: string): Record<ProbeRoute, string> => {
 };
 
 const transportOf = (endpoint: ProbeEndpoint, stepTimeoutMs: number): { uds: UdsClient; paths: Record<ProbeRoute, string>; headers: Record<string, string> } => {
-  if (endpoint.kind === 'unix') return { uds: createUdsClient(fixedSocket(endpoint.socketPath)), paths: UNIX_PATHS, headers: {} };
+  if (endpoint.kind === 'unix') return { uds: createUdsClient(fixedSocket(endpoint.socketPath), { connectTimeoutMs: stepTimeoutMs }), paths: UNIX_PATHS, headers: {} };
   return { uds: createTcpClient(new URL(endpoint.baseUrl).origin, endpoint.network, stepTimeoutMs), paths: tcpPathsOf(endpoint.baseUrl), headers: endpoint.headers ?? {} };
 };
 

@@ -160,7 +160,7 @@ const startRemoteStack = async (
     secretStore: createFakeSecretStore({}),
     planProfiles: { [PROFILE_ID]: options.profile },
   }), (started) => started.close(NO_GRACE));
-  const client = createUdsClient(fixedSocket(handle.socketPath));
+  const client = createUdsClient(fixedSocket(handle.socketPath), { connectTimeoutMs: 0 });
   registerCleanup(context, () => client.destroy());
   return { home, client, settingsWith };
 };
@@ -440,7 +440,7 @@ describe('O-R5-6 L3: the served account, the reported numbers and the output pol
         return answered === 1 ? { kind: 'hang' } : openResponsesTextReply(['hi']);
       },
     });
-    const heldClient = createUdsClient(fixedSocket(gateway.socketPath));
+    const heldClient = createUdsClient(fixedSocket(gateway.socketPath), { connectTimeoutMs: 0 });
     try {
       await signInAs(gateway, ACCOUNT);
       await signInAs(gateway, SPARE);
