@@ -19,7 +19,7 @@ export const INBOX_FULL_HINT = inboxFullMessage();
 
 const HINT_SEPARATOR = ' · ';
 const ELLIPSIS = '…';
-const ROW_LABELS: Readonly<Record<InboxDelivery, string>> = { queue: 'queued  ', steer: 'steer   ' };
+const ROW_LABELS: Readonly<Record<InboxRowView['delivery'], string>> = { queue: 'queued  ', steer: 'steer   ', unknown: 'unknown ' };
 
 export const busyDeliveryOf = (keys: KeyTable, action: ActionId | undefined): InboxDelivery | undefined => {
   if (action === 'prompt.steer') return 'steer';

@@ -6,7 +6,7 @@ import { DATABASE_NOT_NEWER } from './decode-context.ts';
 import type { DecodeContext } from './decode-context.ts';
 import { hasConsistentSeqs } from './seqs.ts';
 import { CANCEL_ORIGINS } from './transitions.ts';
-import { corrupt, expectOneOf, storedOneOf, expectRecord, expectStringRecord, isRecord, readerFor } from './rows.ts';
+import { UNKNOWN_VALUE, corrupt, expectOneOf, storedOneOf, expectRecord, expectStringRecord, isRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
 import type { Run, RunError, Session, SessionMcpServers } from './types.ts';
 
@@ -243,8 +243,8 @@ const isInboxRowView = (value: unknown): value is InboxRowView =>
   Number.isInteger(value['seq']) &&
   Number.isInteger(value['createdAt']) &&
   (value['settledAt'] === null || Number.isInteger(value['settledAt'])) &&
-  INBOX_DELIVERIES.some((delivery) => delivery === value['delivery']) &&
-  INBOX_STATES.some((state) => state === value['state']);
+  [...INBOX_DELIVERIES, UNKNOWN_VALUE].some((delivery) => delivery === value['delivery']) &&
+  [...INBOX_STATES, UNKNOWN_VALUE].some((state) => state === value['state']);
 
 export const userShellRecordOf = (identity: string, payload: Record<string, unknown>): UserShellRecord => {
   const { command, exitCode, output, include } = payload;

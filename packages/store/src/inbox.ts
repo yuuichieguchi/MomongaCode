@@ -3,7 +3,8 @@ import { canonicalJson } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_STATES, TERMINAL_STATUSES, base64ByteLength } from '@momonga/protocol';
 import type { ImageAttachment, InboxDelivery, InboxRowView, InboxState } from '@momonga/protocol';
-import { corrupt, isRecord, readerFor } from './rows.ts';
+import type { DecodeContext } from './decode-context.ts';
+import { corrupt, isRecord, readerFor, storedOneOf } from './rows.ts';
 import type { Row } from './rows.ts';
 import type { InboxRow } from './types.ts';
 
@@ -11,18 +12,14 @@ const TABLE = 'run_inbox';
 
 const TERMINAL_LIST = TERMINAL_STATUSES.map((status) => `'${status}'`).join(', ');
 
-const memberOf = <T extends string>(identity: string, column: string, known: readonly T[], value: string): T => {
-  const found = known.find((candidate) => candidate === value);
-  if (found === undefined) throw corrupt(TABLE, identity, `${column} holds the unknown value ${JSON.stringify(value)}`);
-  return found;
-};
-
 const imageOf = (identity: string, value: unknown): ImageAttachment => {
   if (!isRecord(value) || typeof value['data'] !== 'string' || typeof value['mediaType'] !== 'string') throw corrupt(TABLE, identity, 'attachments must hold mediaType and data entries');
-  return { mediaType: memberOf(identity, 'attachments', IMAGE_MEDIA_TYPES, value['mediaType']), data: value['data'] };
+  const mediaType = IMAGE_MEDIA_TYPES.find((candidate) => candidate === value['mediaType']);
+  if (mediaType === undefined) throw corrupt(TABLE, identity, `attachments holds the unknown media type ${JSON.stringify(value['mediaType'])}`);
+  return { mediaType, data: value['data'] };
 };
 
-const decodeRow = (row: Row): InboxRow => {
+const decodeRow = (row: Row, context: DecodeContext): InboxRow => {
   const identity = String(row['id']);
   const reader = readerFor(TABLE, identity, row);
   const attachments = reader.json('attachments');
@@ -30,11 +27,11 @@ const decodeRow = (row: Row): InboxRow => {
   return {
     id: reader.string('id'),
     sessionId: reader.string('session_id'),
-    delivery: memberOf<InboxDelivery>(identity, 'delivery', INBOX_DELIVERIES, reader.string('delivery')),
+    delivery: storedOneOf(context, TABLE, identity, 'delivery', INBOX_DELIVERIES, reader.string('delivery')),
     text: reader.string('text'),
     ...(attachments.length === 0 ? {} : { images: attachments.map((entry) => imageOf(identity, entry)) }),
     seq: reader.number('seq'),
-    state: memberOf<InboxState>(identity, 'state', INBOX_STATES, reader.string('state')),
+    state: storedOneOf(context, TABLE, identity, 'state', INBOX_STATES, reader.string('state')),
     createdAt: reader.number('created_at'),
     settledAt: reader.nullableNumber('settled_at'),
   };
@@ -51,14 +48,14 @@ export type InboxTable = {
   pending(sessionId: string): InboxRow[];
   pendingCount(sessionId: string): number;
   pendingSteer(sessionId: string): InboxRow[];
-  firstPending(sessionId: string): InboxRow | undefined;
+  firstQueued(sessionId: string): InboxRow | undefined;
   settle(id: string, state: Exclude<InboxState, 'pending'>): boolean;
   queuePendingSteer(sessionId: string): number;
   sessionHasOpenRun(sessionId: string): boolean;
   nextRunAfter(runId: string): Row | undefined;
 };
 
-export const createInboxTable = (db: DatabaseSync, clock: Clock): InboxTable => {
+export const createInboxTable = (db: DatabaseSync, clock: Clock, context: DecodeContext): InboxTable => {
   const sql = {
     nextSeq: db.prepare(`SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM ${TABLE} WHERE session_id = :sessionId`),
     insert: db.prepare(
@@ -69,7 +66,7 @@ export const createInboxTable = (db: DatabaseSync, clock: Clock): InboxTable => 
     pending: db.prepare(`SELECT * FROM ${TABLE} WHERE session_id = :sessionId AND state = 'pending' ORDER BY seq`),
     pendingCount: db.prepare(`SELECT COUNT(*) AS pending FROM ${TABLE} WHERE session_id = :sessionId AND state = 'pending'`),
     pendingSteer: db.prepare(`SELECT * FROM ${TABLE} WHERE session_id = :sessionId AND state = 'pending' AND delivery = 'steer' ORDER BY seq`),
-    firstPending: db.prepare(`SELECT * FROM ${TABLE} WHERE session_id = :sessionId AND state = 'pending' ORDER BY seq LIMIT 1`),
+    firstQueued: db.prepare(`SELECT * FROM ${TABLE} WHERE session_id = :sessionId AND state = 'pending' AND delivery = 'queue' ORDER BY seq LIMIT 1`),
     settle: db.prepare(`UPDATE ${TABLE} SET state = :state, settled_at = :settledAt WHERE id = :id AND state = 'pending'`),
     queuePendingSteer: db.prepare(`UPDATE ${TABLE} SET delivery = 'queue' WHERE session_id = :sessionId AND state = 'pending' AND delivery = 'steer'`),
     openRun: db.prepare(`SELECT EXISTS (SELECT 1 FROM runs WHERE session_id = :sessionId AND status NOT IN (${TERMINAL_LIST})) AS open`),
@@ -81,7 +78,7 @@ export const createInboxTable = (db: DatabaseSync, clock: Clock): InboxTable => 
 
   const get = (id: string): InboxRow | undefined => {
     const row = sql.byId.get({ id });
-    return row === undefined ? undefined : decodeRow(row);
+    return row === undefined ? undefined : decodeRow(row, context);
   };
 
   const numberOf = (row: Row | undefined, sessionId: string, column: string): number => {
@@ -105,12 +102,12 @@ export const createInboxTable = (db: DatabaseSync, clock: Clock): InboxTable => 
       return row;
     },
     get,
-    pending: (sessionId) => sql.pending.all({ sessionId }).map(decodeRow),
+    pending: (sessionId) => sql.pending.all({ sessionId }).map((row) => decodeRow(row, context)),
     pendingCount: (sessionId) => numberOf(sql.pendingCount.get({ sessionId }), sessionId, 'pending'),
-    pendingSteer: (sessionId) => sql.pendingSteer.all({ sessionId }).map(decodeRow),
-    firstPending: (sessionId) => {
-      const row = sql.firstPending.get({ sessionId });
-      return row === undefined ? undefined : decodeRow(row);
+    pendingSteer: (sessionId) => sql.pendingSteer.all({ sessionId }).map((row) => decodeRow(row, context)),
+    firstQueued: (sessionId) => {
+      const row = sql.firstQueued.get({ sessionId });
+      return row === undefined ? undefined : decodeRow(row, context);
     },
     settle: (id, state) => Number(sql.settle.run({ id, state, settledAt: clock.now() }).changes) === 1,
     queuePendingSteer: (sessionId) => Number(sql.queuePendingSteer.run({ sessionId }).changes),

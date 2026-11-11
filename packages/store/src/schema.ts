@@ -1180,6 +1180,10 @@ INSERT INTO derived_through (run_id, derivation, through_seq)
 SELECT r.id, 36, r.last_seq FROM runs r WHERE EXISTS (SELECT 1 FROM search_docs d WHERE d.run_id = r.id AND d.level = 'run');
 `;
 
+const STORED_SETS_RECORDED = `
+SELECT 'event type: user_shell; inbox delivery: steer, queue; inbox state: pending, delivered, withdrawn';
+`;
+
 const MODEL_BY_ITS_OWN_NAME_MIGRATION: Migration = {
   version: 33,
   name: 'call the model of a session and of a run by its own name',
@@ -1367,5 +1371,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 39,
     name: 'remove what served the delete of a memory, which the database refuses: the trigger that cleared its index row and the cascades of memory_replacements and memory_evidence, by rebuilding the two tables with every row kept',
     sql: MEMORY_ROWS_WITHOUT_DELETE_RULES,
+  },
+  {
+    version: 40,
+    name: 'record that this build writes the session event type user_shell and the deliveries and states of the inbox, so that a build without this migration reads them with tolerance: no table changes',
+    sql: STORED_SETS_RECORDED,
   },
 ];

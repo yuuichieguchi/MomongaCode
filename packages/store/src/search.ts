@@ -332,7 +332,7 @@ export const createSearchStore = (db: DatabaseSync, context: DecodeContext, read
         taken += 1;
       }
       const next = rows[taken];
-      const events = decodeRunEvents(rows.slice(0, taken));
+      const events = decodeRunEvents(rows.slice(0, taken), context);
       return {
         kind: 'ok',
         runId: request.runId,

@@ -661,7 +661,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return [{ type: 'context.contribution', items: contribution.items }];
   };
 
-  const inboxTable = createInboxTable(db, clock);
+  const inboxTable = createInboxTable(db, clock, decodeContext);
 
   const announceInbox = (sessionId: string): InboxRow[] => {
     const pending = inboxTable.pending(sessionId);
@@ -723,8 +723,9 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     const sessionRow = sql.selectSession.get({ id: sessionId });
     if (sessionRow === undefined) throw new Error(`session ${sessionId} of a waiting message does not exist`);
     inboxTable.queuePendingSteer(sessionId);
-    const head = inboxTable.firstPending(sessionId);
-    if (head === undefined || !inboxTable.settle(head.id, 'delivered')) throw new Error(`the first waiting message of session ${sessionId} could not be delivered`);
+    const head = inboxTable.firstQueued(sessionId);
+    if (head === undefined) return;
+    if (!inboxTable.settle(head.id, 'delivered')) throw new Error(`the first waiting message of session ${sessionId} could not be delivered`);
     insertRootRun(sessionRow, { input: head.text, ...(head.images === undefined ? {} : { images: head.images }), timeoutMs: terms.timeoutMs, limits: terms.limits, pins: {}, history: 'inherit' }, origin, 'queue');
     announceInbox(sessionId);
   };
@@ -1237,6 +1238,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       transaction<InboxWithdrawResult>(() => {
         const found = inboxTable.get(id);
         if (found === undefined) return { kind: 'not_found' };
+        if (found.state === UNKNOWN_VALUE) throw new Error(`inbox row ${id} has a state this build does not know; it is left as it is`);
         const changed = inboxTable.settle(id, 'withdrawn');
         if (changed) announceInbox(found.sessionId);
         const row = inboxTable.get(id);

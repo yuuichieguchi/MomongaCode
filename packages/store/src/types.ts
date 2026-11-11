@@ -139,11 +139,11 @@ export type UserShellStore = {
 export type InboxRow = {
   id: string;
   sessionId: string;
-  delivery: InboxDelivery;
+  delivery: Stored<InboxDelivery>;
   text: string;
   images?: ImageAttachment[];
   seq: number;
-  state: InboxState;
+  state: Stored<InboxState>;
   createdAt: number;
   settledAt: number | null;
 };
