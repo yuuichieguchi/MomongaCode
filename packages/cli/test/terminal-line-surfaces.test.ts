@@ -59,7 +59,6 @@ describe('a value a person did not write stays on its own line in command output
     const health = {
       status: 'ok',
       version: '1',
-      apiVersion: 1,
       pid: 1,
       startedAt: 's',
       phase: 'ready',

@@ -22,7 +22,6 @@ const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const SAMPLE_HEALTH: SupervisorHealth = {
   status: 'ok',
   version: '9.9.9-test',
-  apiVersion: 1,
   pid: process.pid,
   startedAt: '2026-01-01T00:00:00.000Z',
   phase: 'running',
@@ -294,8 +293,8 @@ describe('control API through the supervisor', () => {
     expect(response.status).toBe(200);
     const body = JSON.parse(response.text) as Record<string, unknown> & SupervisorHealth;
     expect(body).not.toHaveProperty('state');
-    expect(Object.keys(body).sort()).toEqual(['apiVersion', 'children', 'env', 'generation', 'logs', 'phase', 'pid', 'role', 'startedAt', 'status', 'version']);
-    expect(body).toMatchObject({ status: 'ok', version: '9.9.9-test', apiVersion: 1, pid: process.pid, phase: 'running', env: 'frozen at supervisor start', logs: { droppedLines: 0 }, generation: 1 });
+    expect(Object.keys(body).sort()).toEqual(['children', 'env', 'generation', 'logs', 'phase', 'pid', 'role', 'startedAt', 'status', 'version']);
+    expect(body).toMatchObject({ status: 'ok', version: '9.9.9-test', pid: process.pid, phase: 'running', env: 'frozen at supervisor start', logs: { droppedLines: 0 }, generation: 1 });
     expect(body.startedAt).toMatch(ISO);
     expect(body.children.map((child) => child.role)).toEqual(['gateway', 'runtime']);
     for (const child of body.children) {

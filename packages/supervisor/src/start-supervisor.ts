@@ -27,7 +27,7 @@ import {
 } from '@momonga/foundation';
 import type { AbandonReason, AtomicWriteFileSystem, Clock, GenerationRole, JsonLogger, KernelLockMechanism, ProcessLock, ReadyFields, StopValues, Timing, TextStream } from '@momonga/foundation';
 import type { SupervisorHealth, SupervisorPhase } from '@momonga/protocol';
-import { FIDELITY_FOLD_VERSION, SUPERVISOR_API_VERSION } from '@momonga/protocol';
+import { FIDELITY_FOLD_VERSION } from '@momonga/protocol';
 import { readChildCounts } from './child-counts.ts';
 import type { ChildCountsReader, GenerationCounts } from './child-counts.ts';
 import { createChildManager } from './child-manager.ts';
@@ -140,7 +140,6 @@ const abandonedStart = (options: SupervisorOptions, own: { sockets: { supervisor
     health: () => ({
       status: 'ok',
       version: options.version,
-      apiVersion: SUPERVISOR_API_VERSION,
       pid: process.pid,
       startedAt,
       phase: 'draining',
@@ -463,7 +462,6 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     const health = (): SupervisorHealth => ({
       status: 'ok',
       version: options.version,
-      apiVersion: SUPERVISOR_API_VERSION,
       pid: process.pid,
       startedAt,
       phase,

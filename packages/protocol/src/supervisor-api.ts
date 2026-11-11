@@ -1,5 +1,3 @@
-export const SUPERVISOR_API_VERSION = 1;
-
 export type SupervisorChildState =
   | 'pending'
   | 'starting'
@@ -47,7 +45,6 @@ export type SupervisorChildHealth = {
 export type SupervisorHealth = {
   status: 'ok';
   version: string;
-  apiVersion: 1;
   pid: number;
   startedAt: string;
   phase: SupervisorPhase;
