@@ -48,7 +48,6 @@ const BURN_DOWN: Readonly<Record<string, BurnDown>> = {
   'packages/gateway/test/gateway-process-helpers.ts': { kinds: { 'timer wait': 1 }, owner: 'gateway-accounts: the negatives of fm-groups (a survivor still alive, a marker still there) and of auto-probe-endpoints (the probe waits at the record lock) pause; the reap and the lock wait show no event' },
   'packages/gateway/test/managed/managed-server.test.ts': { kinds: { 'timer wait': 1 }, owner: 'gateway-accounts: the second start that waits at the lock of the first shows no event' },
   'packages/gateway/test/settings-live-gateway.test.ts': { kinds: { 'timer wait': 2 }, owner: 'gateway: a request waiting at the carried gate shows no event; the gate has no count of waiters a test can read' },
-  'packages/mcp/test/credential-store-fakes.ts': { kinds: { 'timer wait': 1 }, owner: 'tests-W4: the fake store answers after a turn of the real setImmediate beside faked timeouts; it answers when the product asked' },
   'packages/runtime/test/process/cancel-recovery.test.ts': { kinds: { 'holder that ends by itself': 2 }, owner: 'tests-W4: the holders run through the product sandbox, which ends them' },
   'packages/testkit/test/fake-chat-completions-hold.test.ts': { kinds: { 'timer wait': 1 }, owner: 'tests-W7 (fake-chat-completions): a held request is shown pending by twenty turns' },
   'packages/testkit/test/fake-chat-completions-routes.test.ts': { kinds: { 'timer wait': 2 }, owner: 'tests-W7 (fake-chat-completions): a held request is shown pending by twenty turns' },

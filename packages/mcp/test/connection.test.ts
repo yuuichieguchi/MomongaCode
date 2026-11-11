@@ -3,7 +3,7 @@ import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { CredentialStoreError } from '@momonga/foundation';
 import { McpUnavailableError, McpUnknownToolError, connectMcpServer, createManagedConnection, type McpServerConnection } from '@momonga/mcp';
 import type { McpCallToolInput } from '../src/connection.ts';
-import { LIMIT_TEST, NO_STORE_REFUSAL, afterPendingIo, controlledCredentialStore, keyReadLimitSentence, outcomeOf, settledAfter, stillPendingAfter, useLimitTimers } from './credential-store-fakes.ts';
+import { LIMIT_TEST, NO_STORE_REFUSAL, limitArmed, controlledCredentialStore, keyReadLimitSentence, outcomeOf, settledAfter, stillPendingAfter, useLimitTimers } from './credential-store-fakes.ts';
 import { makeRemoteConnection, startHttpFixture } from './remote-harness.ts';
 import type { McpServerConfig } from '@momonga/config';
 import {
@@ -253,7 +253,7 @@ describe('the connect of a server against the limit of the connect', () => {
     useLimitTimers();
 
     const attempt = outcomeOf(connection.connect());
-    while (vi.getTimerCount() === 0) await afterPendingIo();
+    await limitArmed();
     await stillPendingAfter(attempt, 29_999);
     await vi.advanceTimersByTimeAsync(1);
     await settledAfter(attempt);

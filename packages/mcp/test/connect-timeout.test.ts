@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createManagedConnection } from '@momonga/mcp';
 import { createFakeClock } from '@momonga/testkit';
-import { LIMIT_TEST, afterPendingIo, outcomeOf, settledAfter, stillPendingAfter, useLimitTimers } from './credential-store-fakes.ts';
+import { LIMIT_TEST, limitArmed, outcomeOf, settledAfter, stillPendingAfter, useLimitTimers } from './credential-store-fakes.ts';
 import { BASE_ENV, makeDir, onCleanup } from './mcp-harness.ts';
 
 const NEVER_ANSWERS = { command: process.execPath, args: ['-e', 'setInterval(() => {}, 1000)'] };
@@ -32,7 +32,7 @@ describe('mcp.connectTimeoutMs bounds the connect of a server that never answers
     useLimitTimers();
 
     const attempt = outcomeOf(connection.connect());
-    while (vi.getTimerCount() === 0) await afterPendingIo();
+    await limitArmed();
     await stillPendingAfter(attempt, connectTimeoutMs - 1);
     await vi.advanceTimersByTimeAsync(1);
     await settledAfter(attempt);
@@ -48,7 +48,7 @@ describe('mcp.connectTimeoutMs bounds the connect of a server that never answers
 
     for (const _attempt of [1, 2]) {
       const attempt = outcomeOf(connection.connect());
-      while (vi.getTimerCount() === 0) await afterPendingIo();
+      await limitArmed();
       await stillPendingAfter(attempt, 4999);
       await vi.advanceTimersByTimeAsync(1);
       await settledAfter(attempt);

@@ -3,7 +3,7 @@ import { McpUnavailableError, createManagedConnection } from '@momonga/mcp';
 import type { McpServerConnection } from '@momonga/mcp';
 import { LEGACY_FIXTURE_PROTOCOL_VERSION, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
-import { afterPendingIo, outcomeOf, settledAfter } from './credential-store-fakes.ts';
+import { outcomeOf, settledAfter } from './credential-store-fakes.ts';
 import type { McpTimers } from '../src/timers.ts';
 import { BASE_ENV, makeDir, onCleanup, waitUntil } from './mcp-harness.ts';
 
@@ -163,7 +163,7 @@ describe('every wait inside an MCP tool call takes the signal of that call', () 
     const call = outcomeOf(connection.callTool({ name: 'echo', arguments: {}, signal: controller.signal }));
     await waitUntil(() => held.armed(CONNECT_LIMIT_MS) >= 1, 'the connect to be pending under its limit');
     controller.abort(reason);
-    for (let turn = 0; turn < 20; turn += 1) await afterPendingIo();
+    await settledAfter(call);
 
     expect(call.state()).toBe('rejected');
     expect(call.error()).toBe(reason);
