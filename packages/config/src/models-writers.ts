@@ -12,6 +12,7 @@ import {
   withDefaultTag,
 } from '@momonga/protocol';
 import type { ModelView, ModelViews, ServerKinds, TargetBilling } from '@momonga/protocol';
+import { ConfigError } from './config-error.ts';
 import { editUserSettings } from './edit-user-settings.ts';
 import { userModelsOf } from './layers.ts';
 import type { PlanProfiles, ResolvedModels } from './models.ts';
@@ -75,10 +76,7 @@ const SOURCE_PREFIX = `${SOURCE}: `;
 const NOT_SAVED = 'Not saved: ';
 const NAME_RULE_TEXT = 'Use lower-case letters, digits, . _ - and start with a lower-case letter.';
 
-const sentenceOf = (error: unknown): string => {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.startsWith(SOURCE_PREFIX) ? message.slice(SOURCE_PREFIX.length) : message;
-};
+const sentenceOf = (message: string): string => (message.startsWith(SOURCE_PREFIX) ? message.slice(SOURCE_PREFIX.length) : message);
 
 type Json = Record<string, unknown>;
 
@@ -120,14 +118,16 @@ const loadedOf = (document: Json, ports: ModelsEditPorts): Loaded => {
     settings = assertSettings(document, SOURCE);
     serverRegistryOf(settings.models?.servers, SOURCE);
   } catch (error) {
-    return refuse('invalid_value', sentenceOf(error));
+    if (!(error instanceof ConfigError)) throw error;
+    return refuse('invalid_value', sentenceOf(error.message));
   }
   const warnings: string[] = [];
   try {
     const resolved = userModelsOf(settings, { source: SOURCE, home: ports.home, warnings, kinds: ports.kinds, ...(ports.planProfiles === undefined ? {} : { planProfiles: ports.planProfiles }) });
     return { resolved, warnings: warnings.map(sentenceOf) };
   } catch (error) {
-    return refuse('would_not_load', `${NOT_SAVED}${sentenceOf(error)}`);
+    if (!(error instanceof ConfigError)) throw error;
+    return refuse('would_not_load', `${NOT_SAVED}${sentenceOf(error.message)}`);
   }
 };
 
@@ -161,8 +161,9 @@ const writtenNameOf = (connection: unknown, kinds: ServerKinds): string | undefi
   if (input === undefined) return undefined;
   try {
     return providerNameOf(input, kinds);
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (error instanceof ConfigError) return undefined;
+    throw error;
   }
 };
 
@@ -290,8 +291,9 @@ const withoutDerivableProvider = (draft: Json, kinds: ServerKinds): Json => {
   if (provider === undefined) return unnamed;
   try {
     return providerNameOf(unnamed as Parameters<typeof providerNameOf>[0], kinds) === provider ? unnamed : draft;
-  } catch {
-    return draft;
+  } catch (error) {
+    if (error instanceof ConfigError) return draft;
+    throw error;
   }
 };
 

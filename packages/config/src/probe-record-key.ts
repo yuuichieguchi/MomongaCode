@@ -1,3 +1,4 @@
+import { ConfigError } from './config-error.ts';
 import type { ResolvedModelTarget } from './settings.ts';
 
 export type UpstreamEndpointKeyed = { kind: 'unix'; socketPath: string } | { kind: 'tcp'; baseUrl: string };
@@ -30,7 +31,7 @@ export const connectionAddressProblem = (connection: WrittenAddress & { adapter:
 
 export const upstreamEndpointOf = (target: Exclude<ResolvedModelTarget, { adapter: 'managed' }>): UpstreamEndpointKeyed => {
   const reading = addressOf(target);
-  if (reading.kind === 'problem') throw new Error(`${target.adapter} target: ${reading.reason}`);
+  if (reading.kind === 'problem') throw new ConfigError(`${target.adapter} target: ${reading.reason}`);
   return reading;
 };
 
