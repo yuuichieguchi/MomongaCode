@@ -110,6 +110,7 @@ const NAMED_ONLY_BY_TESTS: readonly string[] = [
   'SecretProcessResult',
   'SecretWriteError',
   'SessionTmpDirError',
+  'SocketPathUnmeasuredError',
   'SqliteLockOps',
   'StartOutcome',
   'StartupCancelled',

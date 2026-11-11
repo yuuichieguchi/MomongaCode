@@ -13,7 +13,7 @@ import type { HandoverLeftoverPorts } from './handover-leftovers.ts';
 import type { LeftoverDirectory, Retention } from './leftover-sweep.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 import { EntryLockHeldError, claimNewEntry } from './platform/lock-form.ts';
-import { SocketPathUnsupportedError, assertSocketPathLength, isPipePath, pipePathFor, refuseUnbindableUnixSocketPath } from './socket-path.ts';
+import { SocketPathUnmeasuredError, SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, isPipePath, pipePathFor } from './socket-path.ts';
 
 export interface MomongaPaths {
   home: string;
@@ -384,9 +384,10 @@ export const refuseUnfitGenerationSocketsBeforeCreation = async (paths: MomongaP
   const fillerLength = Buffer.byteLength(longest) - Buffer.byteLength(paths.run) - 1;
   const standIn = path.join(paths.run, 'g'.repeat(Math.max(1, fillerLength)));
   try {
-    await refuseUnbindableUnixSocketPath(standIn);
+    await assertUnixSocketPathFits(standIn);
   } catch (error) {
     if (error instanceof SocketPathUnsupportedError) throw new SocketPathUnsupportedError(error.message.replace(standIn, longest), { cause: error });
+    if (error instanceof SocketPathUnmeasuredError) throw new SocketPathUnmeasuredError(error.message.replace(standIn, longest), { cause: error });
     throw error;
   }
 };
