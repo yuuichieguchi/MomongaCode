@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { defineTool } from '@momonga/tools';
-import { makeEnv, textOf } from './harness.ts';
+import { capabilitiesFor, makeEnv, textOf } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 
@@ -139,3 +139,23 @@ describe('worker pins across attempts', () => {
     expect(Array.isArray(first) && first.some((item) => textOf(item).includes('Rule one: be careful.'))).toBe(true);
   });
 });
+
+describe('the output of ! commands on a small window', () => {
+  it('is not pinned: three large outputs raise no pinned_overflow and reach the model through the history, each within the item limit', async () => {
+    const env = await makeEnv({ capabilities: capabilitiesFor(8192, { maxOutputTokens: 1024 }) });
+    for (const index of [1, 2, 3]) {
+      env.store.userShell.record(env.session.id, { command: `make step${index}`, exitCode: 0, output: `out${index} ${'z'.repeat(20_000)}`, include: true });
+    }
+    env.gateway.script.push(textStep('Done.'));
+    const run = await env.enqueue('why does it fail');
+
+    await env.runOnce(env.worker());
+
+    expect(env.run(run.id).error?.code).not.toBe('pinned_overflow');
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    const sent = JSON.stringify(env.gateway.streams[0]?.body.input);
+    for (const index of [1, 2, 3]) expect(sent).toContain(`<command>make step${index}</command>`);
+    expect(sent).not.toContain('z'.repeat(20_000));
+  });
+});
+

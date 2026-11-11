@@ -1657,6 +1657,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       fillPage(afterSeq, limit, (after, wanted) => sql.runEvents.all({ runId, after, limit: wanted }), (row) => readerFor('events', runId, row).number('seq'), decodeEvents),
 
     readRunEventsOfTypes: (runId, types, afterSeq) => journalReader.eventsOfTypes(runId, types, afterSeq),
+    latestSessionNotice: (sessionId, code, key) => journalReader.latestSessionNotice(sessionId, code, key),
 
     readLatestRunEventBefore: <T extends RunEventPayload['type']>(runId: string, type: T, beforeSeq: number) => {
       if (type === 'model.requested') return readLatestRequest(runId, beforeSeq) as Extract<RunEvent, { type: T }> | undefined;
