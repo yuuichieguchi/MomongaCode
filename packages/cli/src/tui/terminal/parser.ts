@@ -319,6 +319,7 @@ export const createInputParser = (): InputParser => {
   let pending = '';
   let readEndedWithEscape = false;
   let paste: OpenPaste | undefined;
+  let cutBySettle: string | undefined;
 
   const closed = (open: OpenPaste): TerminalEvent => (open.overflow ? OVERFLOWED_PASTE : { type: 'paste', text: open.pieces.join(''), overflow: false });
 
@@ -364,11 +365,13 @@ export const createInputParser = (): InputParser => {
   const settle = (): TerminalEvent[] => {
     if (holdsAbandonedPaste()) {
       paste = undefined;
+      cutBySettle = pending === '' ? undefined : pending;
       pending = '';
       return [];
     }
     if (holdsBareIntroducer()) {
       const key = plainKey(pending.charCodeAt(1), true);
+      cutBySettle = pending;
       pending = '';
       return [key];
     }
@@ -378,10 +381,26 @@ export const createInputParser = (): InputParser => {
     return [namedKey('escape', NO_KEY_MODIFIERS)];
   };
 
+  const continuesCut = (cut: string, read: string): boolean => {
+    const joined = cut + read;
+    if (joined.startsWith(PASTE_END)) return true;
+    const sequence = INTRODUCERS[cut.charAt(1)];
+    if (cut.length !== 2 || sequence === undefined) return false;
+    const step = sequence(joined, 0);
+    return step !== 'incomplete' && step.next > cut.length + 1 && (step.pasteStarts || step.events.length > 0);
+  };
+
+  const resumed = (read: string): string => {
+    if (read === '' || cutBySettle === undefined) return read;
+    const cut = cutBySettle;
+    cutBySettle = undefined;
+    return continuesCut(cut, read) ? cut + read : read;
+  };
+
   const push = (bytes: Uint8Array): TerminalEvent[] => {
     const events: TerminalEvent[] = [];
     const heldEscape = holdsLoneEscape();
-    const buffer = pending + decoder.decode(bytes, { stream: true });
+    const buffer = pending + resumed(decoder.decode(bytes, { stream: true }));
     pending = '';
     let at = 0;
     while (at < buffer.length) {

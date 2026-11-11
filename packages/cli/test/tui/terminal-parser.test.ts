@@ -224,6 +224,38 @@ describe('a lone ESC byte', () => {
     expect(parser.push(bytesOf('A'))).toEqual([text('A')]);
   });
 
+  it('with [ whose settle ended is still the start of the paste marker that the next read completes: the paste is one paste and none of its text is a key', () => {
+    const parser = createInputParser();
+    parser.push(bytesOf(`${ESC}[`));
+    expect(parser.settle()).toEqual([text('[', { alt: true })]);
+    expect(parser.push(bytesOf(`200~rm -rf x\r1\r${ESC}[201~z`))).toEqual([{ type: 'paste', text: 'rm -rf x\r1\r', overflow: false }, text('z')]);
+  });
+
+  it('with [ whose settle ended is still the start of a sequence with parameters that the next read completes', () => {
+    const parser = createInputParser();
+    parser.push(bytesOf(`${ESC}[`));
+    parser.settle();
+    expect(parser.push(bytesOf('1;5Cx'))).toEqual([named('right', { ctrl: true }), text('x')]);
+  });
+
+  it('with [ whose settle ended is the Alt key of a legacy terminal, and what is typed later is typed keys', () => {
+    for (const typed of ['A', 'a', '2', '~', '2x']) {
+      const parser = createInputParser();
+      parser.push(bytesOf(`${ESC}[`));
+      expect(parser.settle()).toEqual([text('[', { alt: true })]);
+      expect(parser.push(bytesOf(typed)), typed).toEqual(textOf(typed));
+      expect(parser.push(bytesOf('b'))).toEqual([text('b')]);
+    }
+  });
+
+  it('reads only the very next read as the continuation of an introducer whose settle ended', () => {
+    const parser = createInputParser();
+    parser.push(bytesOf(`${ESC}[`));
+    parser.settle();
+    parser.push(bytesOf('a'));
+    expect(parser.push(bytesOf('200~'))).toEqual(textOf('200~'));
+  });
+
   it('with [ is still the start of a sequence when its next byte arrives within the settle', () => {
     const parser = createInputParser();
     parser.push(bytesOf(`${ESC}[`));
@@ -371,6 +403,15 @@ describe('bracketed paste', () => {
     expect(parser.settle()).toEqual([]);
     expect(parser.holdsOpen()).toBe(false);
     expect(parser.push(bytesOf(`a${ESC}[A`))).toEqual([text('a'), named('up')]);
+  });
+
+  it('swallows the end marker of an abandoned paste that the settle cut after its first bytes', () => {
+    for (const cut of [1, 2, 3, 5]) {
+      const parser = createInputParser();
+      parser.push(bytesOf(`${START}${'x'.repeat(PASTE_ABANDON_BYTES)}${END.slice(0, cut)}`));
+      expect(parser.settle(), `cut ${cut}`).toEqual([]);
+      expect(parser.push(bytesOf(`${END.slice(cut)}a`)), `cut ${cut}`).toEqual([text('a')]);
+    }
   });
 
   it('keeps a paste under the limit open however long the input is idle', () => {
