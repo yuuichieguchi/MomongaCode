@@ -10,12 +10,13 @@ export type StartupBanner = { config: StartupConfig; model: string | undefined; 
 type ArtPart = { text: string; token?: StyleToken };
 
 const ART: readonly (readonly ArtPart[])[] = [
-  [{ text: '      ' }, { text: '∩   ∩', token: 'banner.fur' }],
-  [{ text: '  ' }, { text: '╭───', token: 'banner.membrane' }, { text: '(', token: 'banner.fur' }, { text: '•ᴥ•', token: 'banner.face' }, { text: ')', token: 'banner.fur' }, { text: '───╮', token: 'banner.membrane' }],
-  [{ text: ' ' }, { text: '╭╯░░░░░░░░░░░╰╮', token: 'banner.membrane' }],
-  [{ text: ' ' }, { text: '╰╮░░░░░░░░░░░╭╯', token: 'banner.membrane' }],
-  [{ text: '  ' }, { text: '╰─╯ ╰─', token: 'banner.membrane' }, { text: '┬', token: 'banner.fur' }, { text: '─╯ ╰─╯', token: 'banner.membrane' }],
-  [{ text: '        ' }, { text: '╰╮', token: 'banner.fur' }],
+  [{ text: '     ' }, { text: '∩   ∩', token: 'banner.fur' }],
+  [{ text: '╭────', token: 'banner.membrane' }, { text: '(', token: 'banner.fur' }, { text: '•ᴥ•', token: 'banner.face' }, { text: ')', token: 'banner.fur' }, { text: '────╮', token: 'banner.membrane' }],
+  [{ text: '╰╮░░░░░░░░░░░╭╯', token: 'banner.membrane' }],
+  [{ text: ' ' }, { text: '╰─╮░░░░░░░╭─╯', token: 'banner.membrane' }],
+  [{ text: '   ' }, { text: '╰─╮░░░╭─╯', token: 'banner.membrane' }],
+  [{ text: '     ' }, { text: '╰─', token: 'banner.membrane' }, { text: '┬', token: 'banner.fur' }, { text: '─╯', token: 'banner.membrane' }],
+  [{ text: '       ' }, { text: '╰─╮', token: 'banner.fur' }],
 ];
 
 const lengthOfRow = (row: readonly { text: string }[]): number => row.reduce((total, part) => total + [...part.text].length, 0);

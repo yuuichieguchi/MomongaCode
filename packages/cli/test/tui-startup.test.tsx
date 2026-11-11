@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ART_GAP, ART_WIDTH, artFits, shortenHome, textLines } from '../src/tui/startup.tsx';
+import { ART_GAP, ART_WIDTH, artFits, bannerRows, shortenHome, textLines } from '../src/tui/startup.tsx';
 import type { StartupConfig } from '../src/tui/startup.tsx';
+import type { Row } from '../src/tui/screen/wrap.ts';
 import { SCROLLBAR_COLUMNS } from '../src/tui/screen/transcript-view.tsx';
 import { untilFrame } from './ink-helpers.ts';
 import { start } from './tui-harness.tsx';
@@ -13,7 +14,60 @@ const COLORED = /\u001b\[(?:3[0-7]|9[0-7]|38;)/;
 
 const config = (overrides: Partial<StartupConfig> = {}): StartupConfig => ({ version: '1.2.3', home: '/Users/ada', color: true, ...overrides });
 
-const bannerRows = (output: string): string[] => output.split('\n').filter((row) => /[∩•░┬]/.test(row));
+const figureRowsOf = (output: string): string[] => output.split('\n').filter((row) => /[∩•░┬]/.test(row));
+
+const FIGURE = [
+  '     ∩   ∩',
+  '╭────(•ᴥ•)────╮',
+  '╰╮░░░░░░░░░░░╭╯',
+  ' ╰─╮░░░░░░░╭─╯',
+  '   ╰─╮░░░╭─╯',
+  '     ╰─┬─╯',
+  '       ╰─╮',
+];
+
+const FIGURE_TOKENS = [
+  '     f   f',
+  'mmmmmfaaafmmmmm',
+  'mmmmmmmmmmmmmmm',
+  ' mmmmmmmmmmmmm',
+  '   mmmmmmmmm',
+  '     mmfmm',
+  '       fff',
+];
+
+const TOKEN_LETTERS: Readonly<Record<string, string>> = { 'banner.fur': 'f', 'banner.face': 'a', 'banner.membrane': 'm' };
+
+const FIGURE_LEFT = 2;
+
+const CENTRE_COLUMN = 7;
+
+const TAIL_ROW = FIGURE.length - 1;
+
+const drawnBanner = (color: boolean): Row[] => bannerRows({ config: config({ color }), model: 'scripted-model', cwd: '/Users/ada/p', notices: [] }, 80);
+
+const figureOf = (rows: readonly Row[]): string[] => rows.slice(1, -1).map((row) => row.text.slice(FIGURE_LEFT, FIGURE_LEFT + ART_WIDTH).trimEnd());
+
+const tokenLetterAt = (row: Row, column: number): string => {
+  const span = row.spans.find(([from, to]) => column >= from && column < to);
+  if (span === undefined) return ' ';
+  const letter = TOKEN_LETTERS[span[2]];
+  if (letter === undefined) throw new Error(`the figure uses an unexpected token: ${span[2]}`);
+  return letter;
+};
+
+const figureTokensOf = (rows: readonly Row[]): string[] =>
+  rows.slice(1, -1).map((row, index) =>
+    [...(figureOf(rows)[index] ?? '')].map((character, column) => (character === ' ' ? ' ' : tokenLetterAt(row, FIGURE_LEFT + column))).join(''),
+  );
+
+const extentOf = (row: string): { first: number; last: number; width: number } => {
+  const first = row.search(/\S/);
+  const last = row.trimEnd().length - 1;
+  return { first, last, width: last - first + 1 };
+};
+
+const gapsInside = (row: string): number => row.trim().split(/ +/).length - 1;
 
 describe('startup screen', () => {
   it('shows the squirrel, the version, the model by its name and the shortened folder side by side, and no mode line', async () => {
@@ -44,6 +98,32 @@ describe('startup screen', () => {
     app.unmount();
   });
 
+  it('draws the gliding momonga in exactly seven rows inside a box of nine rows', () => {
+    const rows = drawnBanner(true);
+    expect(figureOf(rows)).toEqual(FIGURE);
+    expect(rows).toHaveLength(FIGURE.length + 2);
+    expect(ART_WIDTH).toBe(15);
+  });
+
+  it('paints the ears, the parentheses of the head, the tail joint and the tail as fur, the face as face and the outline and the membrane as membrane', () => {
+    expect(figureTokensOf(drawnBanner(true))).toEqual(FIGURE_TOKENS);
+  });
+
+  it('keeps the shape of a glide: the body tapers around one centre column down to the tail and no row has more than one gap', () => {
+    const figure = figureOf(drawnBanner(false));
+    const extents = figure.map(extentOf);
+    for (let index = 2; index < figure.length; index += 1) {
+      expect(extents[index]?.width).toBeLessThanOrEqual(extents[index - 1]?.width ?? 0);
+    }
+    for (let index = 1; index < TAIL_ROW; index += 1) {
+      expect((extents[index]?.first ?? 0) + (extents[index]?.last ?? 0)).toBe(2 * CENTRE_COLUMN);
+    }
+    expect(figure[TAIL_ROW - 1]?.[CENTRE_COLUMN]).toBe('┬');
+    expect(extents[TAIL_ROW]?.first).toBe(CENTRE_COLUMN);
+    for (const row of figure) expect(gapsInside(row)).toBeLessThanOrEqual(1);
+    for (const row of figure.slice(1)) expect(gapsInside(row)).toBe(0);
+  });
+
   it('says that no model is connected on the model line', () => {
     expect(textLines(config(), undefined, '/Users/ada/p')).toEqual(['MomongaCode v1.2.3', 'model: not connected  (use /login)', '~/p']);
   });
@@ -51,6 +131,7 @@ describe('startup screen', () => {
   it('drops the art, rather than wrapping it, below the width its own size and the text need', async () => {
     const lines = textLines(config(), 'scripted-model', '/Users/ada/p');
     const needed = ART_WIDTH + ART_GAP + Math.max(...lines.map((line) => line.length)) + 4;
+    expect(needed).toBe(42);
     expect(artFits(needed, lines)).toBe(true);
     expect(artFits(needed - 1, lines)).toBe(false);
 
@@ -85,12 +166,12 @@ describe('startup screen', () => {
   it('paints in colour unless NO_COLOR asks for none', async () => {
     const coloured = await start({}, { startup: config() });
     await untilFrame(coloured.app, 'MomongaCode v1.2.3');
-    expect(bannerRows(coloured.app.frames.join('\n')).join('\n')).toMatch(COLORED);
+    expect(figureRowsOf(coloured.app.frames.join('\n')).join('\n')).toMatch(COLORED);
     coloured.app.unmount();
 
     const plain = await start({}, { startup: config({ color: false }) });
     await untilFrame(plain.app, 'MomongaCode v1.2.3');
-    expect(bannerRows(plain.app.frames.join('\n')).join('\n')).not.toMatch(COLORED);
+    expect(figureRowsOf(plain.app.frames.join('\n')).join('\n')).not.toMatch(COLORED);
     plain.app.unmount();
   });
 });
