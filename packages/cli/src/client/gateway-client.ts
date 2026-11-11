@@ -1,5 +1,5 @@
 import { GENERATION_RETIRED_CODE, JsonDepthError, createUdsClient, isRecord, parseOutsideJson } from '@momonga/foundation';
-import type { SocketResolver } from '@momonga/foundation';
+import type { SocketResolver, UdsClient } from '@momonga/foundation';
 import { checkTraceContent } from './contract.ts';
 import { JSON_MODES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_REVOCATIONS, PLAN_ROUTES, TARGET_ANSWERS, TARGET_BILLINGS, TARGET_HEALTH_REASONS, displayMapOf, isNotListedCapabilities, isToolCallingState, notListedMessage, planAccountRefOf, INVALID_GRANT_REASON, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
 import type {
@@ -286,11 +286,13 @@ const MODEL_LIST_KIND = 'a model list';
 const USAGE_REPORT_KIND = 'a usage report';
 
 export const createGatewayClient = (options: { resolveSocket: SocketResolver }): GatewayClient => {
-  let http = createUdsClient(options.resolveSocket);
+  const dial = (): UdsClient => createUdsClient(options.resolveSocket);
+
+  let http = dial();
 
   const leaveRetiredGeneration = async (): Promise<void> => {
     const retired = http;
-    http = createUdsClient(options.resolveSocket);
+    http = dial();
     await retired.close();
   };
 
