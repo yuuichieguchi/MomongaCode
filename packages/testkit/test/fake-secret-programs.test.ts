@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
-import { SECRET_STORE_SEARCHED_PROGRAMS, createExecWithStdin, createSecretServiceStore, findProgramOnPath } from '@momonga/foundation';
+import { SECRET_STORE_SEARCHED_PROGRAMS, createExecWithStdin, createSecretServiceStore, findProgramOnPathSync, nodeFileSystemSync } from '@momonga/foundation';
 import {
   createFakePrograms,
   fakeSecretProgramsBin,
@@ -36,12 +36,12 @@ const WINDOWS_PATHEXT = '.COM;.EXE;.BAT;.CMD';
 describe('installFakePrograms', () => {
   it.each(SECRET_STORE_SEARCHED_PROGRAMS)('installs a fake %s that the PATH lookup of this host finds in the fake directory', (program) => {
     const bin = installFakePrograms(freshRoot());
-    expect(findProgramOnPath(program, { PATH: `${bin}${path.delimiter}/usr/bin${path.delimiter}/bin` })).toBe(path.join(bin, program));
+    expect(findProgramOnPathSync(program, { PATH: `${bin}${path.delimiter}/usr/bin${path.delimiter}/bin` }, nodeFileSystemSync)).toBe(path.join(bin, program));
   });
 
   it.each(SECRET_STORE_SEARCHED_PROGRAMS)('installs a fake %s.cmd that a simulated Windows PATHEXT lookup resolves in the fake directory; starting it is not verified on a Windows host', (program) => {
     const bin = installFakePrograms(freshRoot(), 'win32');
-    const found = findProgramOnPath(program, { PATH: bin, PATHEXT: WINDOWS_PATHEXT });
+    const found = findProgramOnPathSync(program, { PATH: bin, PATHEXT: WINDOWS_PATHEXT }, nodeFileSystemSync);
     expect(found).toBe(path.join(bin, `${program}.cmd`));
     expect(fs.readFileSync(found as string, 'utf8')).toContain(JSON.stringify(process.execPath).slice(1, -1));
   });

@@ -47,6 +47,7 @@ import { contextPercentOf, Footer, newlineHintText, planRowFits } from './screen
 import { formatTokens } from '../format-tokens.ts';
 import { HistoryView } from './screen/history-view.tsx';
 import { CHAT_MARK, InputBox, inputContentRows, inputOffsetAt, inputRowsOf } from './screen/input-box.tsx';
+import { untilNextKey } from './screen/input.ts';
 import type { ScreenTerminal } from './screen/input.ts';
 import type { RowRequests } from './screen/layout.ts';
 import { allocate, drawnTranscriptRows, inputTopOf, menuRowsCap, naturalRows, panelRowsCap, regionAt } from './screen/layout.ts';
@@ -613,7 +614,7 @@ export function App(props: AppProps) {
     await runPrompt(kept.text, kept.options);
   };
 
-  const flows: PlanFlows = createPlanFlows({ ...overlayPorts, backend, info: note, toast: (text) => view.showToast(text), connected: connectModel, refreshConnection, signedIn: resubmitAfterSignIn, found, model: () => sessionModelRef.current, wait: waitFor, invitationAnswered: () => prompts.dismissInvitation() });
+  const flows: PlanFlows = createPlanFlows({ ...overlayPorts, backend, info: note, toast: (text) => view.showToast(text), connected: connectModel, refreshConnection, signedIn: resubmitAfterSignIn, found, model: () => sessionModelRef.current, wait: waitFor, invitationAnswered: () => prompts.dismissInvitation(), untilNextKey: () => untilNextKey(terminal.input) });
 
   const showUsageLimit = async (code: string, plan: PlanAccountRef): Promise<void> => {
     const listed = await backend.plan.accounts();
@@ -1501,7 +1502,7 @@ export function App(props: AppProps) {
     copyOnSelect: props.copyOnSelect ?? tuiSettings.initial.copyOnSelect,
     now,
     copy: (text) => backend.copyToClipboard(text),
-    openLink: (url) => backend.openUrl(url, undefined, (message) => reportError(new Error(message))),
+    openLink: (url) => backend.openUrl(url, untilNextKey(terminal.input), (message) => reportError(new Error(message))),
     reportError,
     keyFacts: () => ({ panelOpen: panel !== undefined || toolView.shown, menuOpen: completionOpen, inputEmpty: editorRef.current.text === '' }),
     keys,
