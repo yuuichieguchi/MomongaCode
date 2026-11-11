@@ -25,14 +25,18 @@ const connection = {
   close: async () => undefined,
 } as unknown as McpServerConnection;
 
-describe('T8 the guard applies to MCP tools by their sideEffect (mcp/src/source.ts readOnlyHint and destructiveHint)', () => {
-  it('while a marker is unsettled, a readOnlyHint tool runs and a tool without it, or with destructiveHint, is refused', async () => {
+describe('T8 the guard applies to every MCP tool as to a tool that changes things: a hint of its server never sets the safety class', () => {
+  it('while a marker is unsettled, a tool is refused with a readOnlyHint, without one, and with a destructiveHint', async () => {
     const mcpTools = await createMcpToolSource({ server: 'srv', connection }).list();
     const h = world('held');
     await runOne(h, 'Leaver', 'first');
     const name = keyFor('run-1', 1, 'first');
-    expect(resultOf(await runOne(h, 'mcp__srv__look', 'look', mcpTools)).status).toBe('completed');
-    for (const [tool, callId] of [['mcp__srv__change', 'change'], ['mcp__srv__erase', 'erase']] as const) {
+    expect(mcpTools.map((tool) => [tool.name, tool.kind, tool.sideEffect])).toEqual([
+      ['mcp__srv__look', 'other', 'write'],
+      ['mcp__srv__change', 'other', 'write'],
+      ['mcp__srv__erase', 'other', 'write'],
+    ]);
+    for (const [tool, callId] of [['mcp__srv__look', 'look'], ['mcp__srv__change', 'change'], ['mcp__srv__erase', 'erase']] as const) {
       const refused = resultOf(await runOne(h, tool, callId, mcpTools));
       expect({ tool, status: refused.status, names: refused.output.includes(`marker ${name}`) }).toEqual({ tool, status: 'failed', names: true });
     }

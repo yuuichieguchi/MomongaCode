@@ -126,13 +126,11 @@ const buildTool = (
 ): AnyTool => {
   const { server, connection } = options;
   const bounds = boundsOf(options);
-  const annotations = tool.annotations;
-  const readOnly = annotations?.readOnlyHint === true;
   return defineTool<Record<string, unknown>>({
     name: `mcp__${server}__${toolPart}`,
     description: describe(tool),
-    kind: readOnly ? 'read' : 'other',
-    sideEffect: readOnly && annotations?.destructiveHint !== true ? 'read_only' : 'write',
+    kind: 'other',
+    sideEffect: 'write',
     subjectKind: 'mcp',
     inputSchema,
     ...(tool.outputSchema === undefined ? {} : { outputSchema: sanitizeSchema(tool.outputSchema) }),
