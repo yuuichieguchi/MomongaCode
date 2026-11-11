@@ -3,6 +3,7 @@ import { KEYS, untilFrame, untilOutput } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
 import { AUTHORIZATION_URL, PLAN_TEST_TIMEOUT_MS, choose, eventually, quiet, startPlan, submitLine } from './fake-plan-gateway.tsx';
 import type { FakePlanBackend } from './fake-plan-gateway.tsx';
+import { GatewayAnswerError } from '../src/client/gateway-client.ts';
 
 vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
 
@@ -19,7 +20,7 @@ const bodiesOf = (backend: FakePlanBackend, route: string): unknown[] => backend
 const HINT = 'enter submits the pasted URL · ctrl+y copies the sign-in URL · esc cancels';
 const CTRL_Y = '\u0019';
 
-const waitingScreen = async (options: { completeHeld?: Promise<void> } = {}) => {
+const waitingScreen = async (options: { completeHeld?: Promise<void>; completeFails?: Error } = {}) => {
   const started = await startPlan({ accounts: [], callbackArrives: false, ...options });
   await untilFrame(started.app, 'mode: manual');
   await submitLine(started.app, '/login chatgpt');
@@ -182,5 +183,67 @@ describe('the paste box of the sign-in waiting screen (P6.6, D11, O-R5-4 S2)', (
     expect(backend.clipboard).toEqual([new URL(AUTHORIZATION_URL).href]);
     app.unmount();
   });
-});
 
+  it('after delivery Ctrl-Y, Enter and a paste change nothing: no copy, no second completion, no cancel (C-06, C-07)', async () => {
+    const held = new Promise<void>(() => undefined);
+    const { app, backend } = await waitingScreen({ completeHeld: held });
+    const valid = 'https://localhost:1/anything?code=pasted-code&state=st-1';
+    await paste(app, valid);
+    await untilFrame(app, 'Finishing the sign-in…');
+    app.stdin.write(CTRL_Y);
+    await quiet();
+    app.stdin.write(KEYS.enter);
+    await quiet();
+    await paste(app, 'https://localhost:1/anything?code=second-code&state=st-1');
+    await quiet();
+    expect(backend.clipboard).toEqual([]);
+    expect(bodiesOf(backend, 'sign-in/complete')).toEqual([{ attemptId: 'attempt-1', callbackUrl: valid }]);
+    expect(routesOf(backend)).not.toContain('sign-in/cancel');
+    const frame = app.lastFrame() ?? '';
+    expect(frame).toContain('Finishing the sign-in…');
+    expect(frame).not.toContain('second-code');
+    app.unmount();
+  });
+
+  it('a pasted redirect is echoed as typed before it is submitted (N-B3, B-11)', async () => {
+    const { app } = await waitingScreen();
+    app.stdin.write('https://localhost:1/x?code=pasted-code&state=st-1');
+    const frame = await untilFrame(app, 'code=pasted-code');
+    expect(frame.replace(/\s+/g, '')).toContain('>https://localhost:1/x?code=pasted-code&state=st-1');
+    app.unmount();
+  });
+
+  it('a pasted redirect that carries error= is sent whole, and the refusal of the answer is shown with the way forward (E-04)', async () => {
+    const refused = new GatewayAnswerError('POST /v1/momonga/plan/sign-in/complete answered 400', 400, { code: 'access_denied', message: 'Sign-in was cancelled in the browser.' });
+    const { app, backend } = await waitingScreen({ completeFails: refused });
+    const denied = 'https://localhost:1/anything?error=access_denied&state=st-1';
+    await paste(app, denied);
+    const shown = (await untilFrame(app, 'Sign-in was cancelled in the browser.')).replace(/\s+/g, ' ');
+    expect(shown).toContain('Sign-in was cancelled in the browser. Run /login to try again.');
+    expect(bodiesOf(backend, 'sign-in/complete')).toEqual([{ attemptId: 'attempt-1', callbackUrl: denied }]);
+    for (const sentence of [TOO_LONG, NOT_REDIRECT, OTHER_SIGN_IN]) expect(shown).not.toContain(sentence);
+    app.unmount();
+  });
+
+  it.each([
+    ['a cancelled sign-in', async (app: Instance) => {
+      app.stdin.write(KEYS.escape);
+      await untilOutput(app, 'sign-in cancelled');
+    }],
+    ['a finished sign-in', async (app: Instance) => {
+      await paste(app, 'https://localhost:1/anything?code=pasted-code&state=st-1');
+      await untilFrame(app, 'Signed in as chatgpt');
+    }],
+  ] as const)('after %s the screen holds neither the sign-in URL nor the pasted redirect, and the input history does not bring them back (B)', async (_name, end) => {
+    const { app } = await waitingScreen();
+    await end(app);
+    await quiet();
+    app.stdin.write(KEYS.up);
+    await quiet();
+    const frame = (app.lastFrame() ?? '').replace(/\s+/g, '');
+    expect(frame).not.toContain('auth.openai.com/api/accounts/authorize');
+    expect(frame).not.toContain('pasted-code');
+    expect(frame).not.toContain('state=st-1');
+    app.unmount();
+  });
+});
