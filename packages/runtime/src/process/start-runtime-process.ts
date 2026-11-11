@@ -41,7 +41,7 @@ import type { Sandbox } from '@momonga/sandbox';
 import { unaskedCommandsFor } from '@momonga/policy';
 import { FIDELITY_PRUNE_BATCH_ROWS, isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { createRuleVerifier, installedRuleSolver } from './rule-verifier.ts';
+import { productRuleVerifier } from './rule-verifier.ts';
 import type { RuleSolverSource } from './rule-verifier.ts';
 import { RetiringYield, ShellNotFoundError, createMarkerOwners, createPolicyFilesystem, nodeShellHost, resolveBashPath, sweepCallLocks } from '@momonga/tools';
 import type { BundledRipgrepResolver, ShellHost } from '@momonga/tools';
@@ -820,14 +820,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     service = runService;
     cleanups.push({ name: 'service', run: () => (retireFrame === undefined ? runService.close() : runService.retire(retireFrame.current)) });
 
-    const ruleVerifier = createRuleVerifier({
-      host: options.ruleSolver === undefined ? installedRuleSolver(import.meta.url) : options.ruleSolver(paths),
-      fs: createPolicyFilesystem(),
-      paths,
-      timers,
-      bashPath: () => resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env: process.env }),
-      clock,
-    });
+    const ruleVerifier = productRuleVerifier({ solver: options.ruleSolver, paths, timers, shellHost, env: process.env, clock });
     await step('workers', () => {
       for (let index = 0; index < workerCount; index += 1) {
         const id = `runtime-${process.pid}-${startedAtMs}-${index}`;

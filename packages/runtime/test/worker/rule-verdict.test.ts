@@ -5,6 +5,8 @@ import type { RuleVerdict } from '@momonga/protocol';
 import { makeEnv as makeBareEnv } from './harness.ts';
 import type { Env, EnvOptions } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
+import { createFakeRuleVerifier } from './fake-rule-verifier.ts';
+import type { FakeRuleVerifier } from './fake-rule-verifier.ts';
 
 const SOLVER = 'fake-solver 1';
 const NOT_PROVED = ['What an arbitrary shell command does when it runs.'];
@@ -38,15 +40,18 @@ const storedVerdicts = (env: Env, runId: string) => {
   return env.store.ruleVerdicts.get(pinned.fingerprint);
 };
 
-const makeEnv = async (options?: EnvOptions): Promise<Env> => {
-  const env = await makeBareEnv(options);
+type FakeVerdictEnv = Env & { ruleVerifier: FakeRuleVerifier };
+
+const makeEnv = async (options?: EnvOptions): Promise<FakeVerdictEnv> => {
+  const ruleVerifier = createFakeRuleVerifier();
+  const env = await makeBareEnv({ ...options, ruleVerifier });
   env.settings.extraRules.push({ effect: 'allow', rule: 'Read(src/**)' });
-  return env;
+  return { ...env, ruleVerifier };
 };
 
 const verdictEvents = (env: Env, runId: string) => env.ofType(runId, 'notice').filter((notice) => notice.code === 'policy_verdict');
 
-describe('the verdict of the permission rules before a run', () => {
+describe('the verdict of the permission rules before a run, with a fake verifier that answers what each test names', () => {
   it('a refuted rule set ends the run FAILED with policy_refuted, naming the property and the counterexample, before any model request', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.ruleVerifier.answer = () => refuted;
@@ -100,7 +105,8 @@ describe('the verdict of the permission rules before a run', () => {
   });
 
   it('a rule set with no allow rule starts no verification: the run reaches the model at once and its pinned verdict says none was needed', async () => {
-    const env = await makeBareEnv();
+    const env = await makeEnv();
+    env.settings.extraRules.length = 0;
     env.settings.extraRules.push({ effect: 'deny', rule: 'Read(.env)' }, { effect: 'ask', rule: 'Write' });
     env.ruleVerifier.answer = () => new Promise<RuleVerdict>(() => undefined);
     env.gateway.script.push(textStep('Hello.'));
