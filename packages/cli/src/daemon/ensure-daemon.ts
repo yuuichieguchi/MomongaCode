@@ -30,8 +30,9 @@ import type { SupervisorClient } from '../client/supervisor-client.ts';
 import { DAEMON_POLL_INTERVAL_MS } from '../constants.ts';
 import { PollTimeout, pollUntil } from '../poll.ts';
 import type { CliPorts, DetachedExit } from '../ports.ts';
-import { superviseInvocation } from './launcher.ts';
-import { startFailureText } from './start-failure.ts';
+import { CANDIDATE_CHECK_TIMEOUT_MS } from '../update/install.ts';
+import { reportVersionInvocation, superviseInvocation } from './launcher.ts';
+import { anotherVersionInstalledText, installedVersionUnreportedText, startFailureText } from './start-failure.ts';
 import type { StartFailure } from './start-failure.ts';
 import type { StopNotice } from './stop-notice.ts';
 
@@ -45,7 +46,7 @@ export class DaemonStartError extends Error {
   }
 }
 
-export type DaemonPorts = Pick<CliPorts, 'version' | 'env' | 'home' | 'clock' | 'self' | 'spawnDetached'>;
+export type DaemonPorts = Pick<CliPorts, 'version' | 'env' | 'home' | 'clock' | 'self' | 'spawnDetached' | 'exec' | 'timers'>;
 
 export type DaemonConnection = { health: SupervisorHealth; clientIsOlder: boolean };
 
@@ -280,9 +281,70 @@ const startFailureOf = async (paths: MomongaPaths, own: OwnStart, olderStartedFi
   return abandonFailureOf(paths, own, lock);
 };
 
-const startFailure = async (paths: MomongaPaths, own: OwnStart, current: CurrentGeneration | undefined, currentHeld: boolean, lock: KernelLockMechanism): Promise<Error> => {
+const notPointingAtLog = { pointsAtLog: false };
+
+export class NewerProgramInstalledError extends DaemonStartError {
+  readonly installedVersion: string;
+
+  constructor(installedVersion: string, logFile: string) {
+    super(olderCommandMessage(installedVersion), logFile, notPointingAtLog);
+    this.name = 'NewerProgramInstalledError';
+    this.installedVersion = installedVersion;
+  }
+}
+
+type InstalledProbe = Pick<DaemonPorts, 'self' | 'exec' | 'timers'>;
+
+const answeredWithinBound = async <T>(ports: Pick<DaemonPorts, 'timers'>, boundMs: number, signal: AbortSignal | undefined, operation: (signal: AbortSignal) => Promise<T>, onBound: () => Error): Promise<T> => {
+  const bound = new AbortController();
+  const expiry = ports.timers.setTimeout(() => bound.abort(), boundMs);
+  try {
+    return await operation(signal === undefined ? bound.signal : AbortSignal.any([bound.signal, signal]));
+  } catch (error) {
+    if (bound.signal.aborted && signal?.aborted !== true) throw onBound();
+    throw error;
+  } finally {
+    ports.timers.clearTimeout(expiry);
+  }
+};
+
+const installedVersionOf = async (ports: InstalledProbe, paths: MomongaPaths, signal: AbortSignal | undefined): Promise<string> => {
+  const invocation = reportVersionInvocation(ports.self);
+  const unreported = (condition: string): DaemonStartError => new DaemonStartError(installedVersionUnreportedText(ports.self.execPath, condition), paths.logFiles.supervisor, notPointingAtLog);
+  const answer = await answeredWithinBound(
+    ports,
+    CANDIDATE_CHECK_TIMEOUT_MS,
+    signal,
+    (bounded) => ports.exec(invocation.command, invocation.args, { signal: bounded }),
+    () => unreported(`no answer within ${CANDIDATE_CHECK_TIMEOUT_MS / 1000} s`),
+  );
+  if (answer.exitCode !== 0) throw unreported(`exit code ${answer.exitCode}: ${answer.stderr.trim()}`);
+  return answer.stdout.trim();
+};
+
+const refuseAnotherInstalledVersion = async (ports: InstalledProbe & Pick<DaemonPorts, 'version'>, paths: MomongaPaths, signal: AbortSignal | undefined): Promise<void> => {
+  const installed = await installedVersionOf(ports, paths, signal);
+  const order = orderVersions(ports.version, installed);
+  if (order === 'same') return;
+  if (order === 'older') throw new NewerProgramInstalledError(installed, paths.logFiles.supervisor);
+  throw new DaemonStartError(anotherVersionInstalledText(installed, ports.version), paths.logFiles.supervisor, notPointingAtLog);
+};
+
+const startFailure = async (
+  ports: InstalledProbe & Pick<DaemonPorts, 'version'>,
+  paths: MomongaPaths,
+  own: OwnStart,
+  current: CurrentGeneration | undefined,
+  currentHeld: boolean,
+  lock: KernelLockMechanism,
+  signal: AbortSignal | undefined,
+): Promise<Error> => {
   const serving = current !== undefined && currentHeld ? current : undefined;
   const { cause, ...failure } = await startFailureOf(paths, own, serving !== undefined && serving.generation > own.ref.generation ? serving : undefined, lock);
+  if (failure.reason === 'version-differs') {
+    const installed = await installedVersionOf(ports, paths, signal);
+    if (orderVersions(ports.version, installed) === 'older') return new DaemonStartError(belowFloorMessage(ports.version, installed), paths.logFiles.supervisor, notPointingAtLog);
+  }
   return new DaemonStartError(startFailureText({ version: own.ref.version, failure, serving: serving?.version, logFile: paths.logFiles.supervisor }), paths.logFiles.supervisor, {
     pointsAtLog: false,
     ...(cause === undefined ? {} : { cause }),
@@ -325,6 +387,7 @@ export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, opti
   const lock = options.lock ?? hostKernelLock();
   const start: { own: OwnStart | undefined } = { own: undefined };
   let draining: number | undefined;
+  let allocation: 'allowed' | 'withheld' = 'withheld';
 
   const decide = async (): Promise<DaemonConnection | undefined> => {
     const outcome = await beginGenerationStart(paths, {
@@ -332,11 +395,16 @@ export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, opti
       foldVersion: FIDELITY_FOLD_VERSION,
       lock,
       trigger: options.trigger ?? 'client',
+      allocation,
       ...(draining === undefined ? {} : { draining }),
     });
     switch (outcome.kind) {
       case 'busy':
         return undefined;
+      case 'unallocated':
+        await refuseAnotherInstalledVersion(ports, paths, signal);
+        allocation = 'allowed';
+        return decide();
       case 'serving': {
         const health = await healthAt(supervisorSocketOf(paths, outcome.generation));
         if (health === undefined) return undefined;
@@ -387,7 +455,7 @@ export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, opti
       ownDirectoryGone: await directoryGone(generationLayout(homeOf(paths), started.ref.generation).dir),
     });
     if (outcome === 'success' && currentHealth !== undefined) return { health: currentHealth, clientIsOlder: orderVersions(ports.version, currentHealth.version) === 'older' };
-    if (outcome === 'failed') throw await startFailure(paths, started, current, currentHeld, lock);
+    if (outcome === 'failed') throw await startFailure(ports, paths, started, current, currentHeld, lock, signal);
     const ownHealth = current?.generation === started.ref.generation ? currentHealth : await healthAt(supervisorSocketOf(paths, started.ref.generation));
     if (ownHealth !== undefined) {
       started.sawSupervisor = true;
@@ -416,8 +484,6 @@ export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, opti
   }
 };
 
-const notPointingAtLog = { pointsAtLog: false };
-
 export const ensureCurrentDaemon = async (ports: DaemonPorts, paths: MomongaPaths, options: EnsureDaemonOptions = {}): Promise<SupervisorHealth> => {
   const connection = await ensureDaemon(ports, paths, options);
   if (connection.clientIsOlder) throw new DaemonStartError(olderCommandMessage(connection.health.version), paths.logFiles.supervisor, notPointingAtLog);
@@ -428,13 +494,23 @@ export type NewerListener = (version: string) => Promise<void>;
 
 export type EnsureSessionOptions = EnsureDaemonOptions & { onNewer?: NewerListener };
 
+const newerVersionOf = async (ports: DaemonPorts, paths: MomongaPaths, options: EnsureDaemonOptions): Promise<string | undefined> => {
+  try {
+    const connection = await ensureDaemon(ports, paths, options);
+    return connection.clientIsOlder ? connection.health.version : undefined;
+  } catch (error) {
+    if (error instanceof NewerProgramInstalledError) return error.installedVersion;
+    throw error;
+  }
+};
+
 export const ensureSessionDaemon = async (ports: DaemonPorts, paths: MomongaPaths, options: EnsureSessionOptions = {}): Promise<void> => {
   const { onNewer, ...daemonOptions } = options;
-  const connection = await ensureDaemon(ports, paths, daemonOptions);
-  if (!connection.clientIsOlder) return;
-  await onNewer?.(connection.health.version);
+  const newer = await newerVersionOf(ports, paths, daemonOptions);
+  if (newer === undefined) return;
+  await onNewer?.(newer);
   const own = await resolveGenerationFor(paths, ports.version, { lock: options.lock ?? hostKernelLock() });
-  if (own === undefined) throw new DaemonStartError(reopenSessionMessage(connection.health.version), paths.logFiles.supervisor, notPointingAtLog);
+  if (own === undefined) throw new DaemonStartError(reopenSessionMessage(newer), paths.logFiles.supervisor, notPointingAtLog);
 };
 
 export const restoreDaemon =

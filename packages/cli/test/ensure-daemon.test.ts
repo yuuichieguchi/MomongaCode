@@ -8,7 +8,7 @@ import { DaemonStartError, ensureDaemon, probeSupervisor, restoreDaemon, stopDae
 import type { DaemonPorts } from '../src/daemon/ensure-daemon.ts';
 import { createSupervisorClient } from '../src/client/supervisor-client.ts';
 import type { SelfExecutable } from '../src/ports.ts';
-import { createFakeWork, readyChildren, recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
+import { createFakeWork, readyChildren, installedProgram, recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 import type { FakeSupervisor } from './fake-supervisor.ts';
 
 const VERSION = '1.2.3';
@@ -30,7 +30,7 @@ const setup = async (context: TestContext) => {
     running.push(supervisor);
     return supervisor;
   };
-  const portsWith = (spawn: DaemonPorts['spawnDetached']): DaemonPorts => ({ version: VERSION, env: { PATH: '/usr/bin' }, home, clock: virtualClock(work), self: SELF, spawnDetached: spawn });
+  const portsWith = (spawn: DaemonPorts['spawnDetached']): DaemonPorts => ({ version: VERSION, env: { PATH: '/usr/bin' }, home, clock: virtualClock(work), self: SELF, spawnDetached: spawn, ...installedProgram(VERSION).ports });
   return { home, paths, start, portsWith };
 };
 

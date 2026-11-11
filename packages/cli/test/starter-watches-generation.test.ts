@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { DaemonStartError, ensureDaemon } from '../src/daemon/ensure-daemon.ts';
 import type { DaemonPorts } from '../src/daemon/ensure-daemon.ts';
 import type { CliClock, SelfExecutable } from '../src/ports.ts';
-import { readyChildren, recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
+import { readyChildren, installedProgram, recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 import type { FakeSupervisor } from './fake-supervisor.ts';
 
 const VERSION = '1.2.3';
@@ -38,7 +38,7 @@ const setup = async (context: TestContext) => {
     running.push(supervisor);
     return supervisor;
   };
-  const portsWith = (spawn: DaemonPorts['spawnDetached'], clock: CliClock): DaemonPorts => ({ version: VERSION, env: { PATH: '/usr/bin' }, home, clock, self: SELF, spawnDetached: spawn });
+  const portsWith = (spawn: DaemonPorts['spawnDetached'], clock: CliClock): DaemonPorts => ({ version: VERSION, env: { PATH: '/usr/bin' }, home, clock, self: SELF, spawnDetached: spawn, ...installedProgram(VERSION).ports });
   return { home, paths, start, portsWith };
 };
 

@@ -162,6 +162,7 @@ export type HeldStart = { release(): void };
 
 export type StartOutcome =
   | { kind: 'allocated'; generation: number; starting: HeldStart }
+  | { kind: 'unallocated' }
   | { kind: 'joined'; generation: number }
   | { kind: 'serving'; generation: number; version: string }
   | { kind: 'older'; version: string }
@@ -173,6 +174,7 @@ export type BeginGenerationStartOptions = {
   foldVersion: number;
   lock: KernelLockMechanism;
   trigger?: StartTrigger;
+  allocation?: 'allowed' | 'withheld';
   draining?: number;
   files?: GenerationStartFiles;
   onProbeFailure?: LockProbeOptions['onProbeFailure'];
@@ -201,10 +203,11 @@ const allocate = async (
   options: BeginGenerationStartOptions,
   files: GenerationStartFiles,
   floor: number,
-): Promise<Extract<StartOutcome, { kind: 'allocated' }>> => {
+): Promise<Extract<StartOutcome, { kind: 'allocated' | 'unallocated' }>> => {
   const generation = ((await readGenerationCounter(paths, files)) ?? floor) + 1;
   if (!Number.isSafeInteger(generation)) throw new GenerationCounterError(paths.generationCounter, 'it is larger than a safe integer');
   await refuseUnfitGenerationSocketsBeforeCreation(paths, generation);
+  if (options.allocation === 'withheld') return { kind: 'unallocated' };
   try {
     await writeFileAtomically(files.atomic, systemRandom, paths.generationCounter, `${generation}\n`, { mode: GENERATION_COUNTER_MODE, lock: options.lock });
     await files.createGenerationDirs(paths, generation);

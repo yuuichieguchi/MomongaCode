@@ -16,6 +16,8 @@ const RUN_AGAIN = 'Run the command again.';
 
 const reasonIsIn = (logFile: string): string => `The reason is in ${logFile}.`;
 
+const INSTALLATION_CHECK = `Check that ${WORDS.command} is still installed, then run the command again.`;
+
 type PublicText = { readonly condition: (detail: string) => string; readonly wayForward: (logFile: string) => string };
 
 const PUBLIC_TEXTS: Readonly<Record<StartFailureReason, PublicText>> = {
@@ -26,9 +28,13 @@ const PUBLIC_TEXTS: Readonly<Record<StartFailureReason, PublicText>> = {
   'lock-held': { condition: () => 'another process holds its lock', wayForward: () => `Run \`${WORDS.command} ${WORDS.daemon} stop\`, then run the command again.` },
   'stopped-before-ready': { condition: () => 'it stopped before it was ready', wayForward: reasonIsIn },
   'exited-before-ready': { condition: (detail) => `it stopped with ${detail} before it was ready`, wayForward: reasonIsIn },
-  'launch-failed': { condition: (detail) => `its program could not be run: ${detail}`, wayForward: () => `Check that ${WORDS.command} is still installed, then run the command again.` },
+  'launch-failed': { condition: (detail) => `its program could not be run: ${detail}`, wayForward: () => INSTALLATION_CHECK },
   'older-started-first': { condition: (detail) => `a ${WORDS.daemon} of v${detail} started at the same time`, wayForward: () => RUN_AGAIN },
 };
+
+export const installedVersionUnreportedText = (program: string, condition: string): string => `The installed ${WORDS.command} (${program}) did not report its version (${condition}). ${INSTALLATION_CHECK}`;
+
+export const anotherVersionInstalledText = (installed: string, client: string): string => `The installed ${WORDS.command} is v${installed} and this command runs v${client}; run the command again.`;
 
 export type StartFailureGiven = { version: string; failure: StartFailure; serving: string | undefined; logFile: string };
 

@@ -11,7 +11,7 @@ import type { DaemonPorts } from '../src/daemon/ensure-daemon.ts';
 import { DAEMON_POLL_INTERVAL_MS } from '../src/constants.ts';
 import { PollTimeout } from '../src/poll.ts';
 import type { CliClock, SelfExecutable } from '../src/ports.ts';
-import { createFakeWork, recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
+import { createFakeWork, installedProgram, recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 import type { FakeSupervisor, SpawnedProcess } from './fake-supervisor.ts';
 
 const VERSION = '1.2.3';
@@ -33,7 +33,7 @@ const setup = async (context: TestContext) => {
     running.push(supervisor);
     return supervisor;
   };
-  const portsWith = (spawn: DaemonPorts['spawnDetached'], version = VERSION): DaemonPorts => ({ version, env: { PATH: '/usr/bin' }, home, clock: virtualClock(work), self: SELF, spawnDetached: spawn });
+  const portsWith = (spawn: DaemonPorts['spawnDetached'], version = VERSION): DaemonPorts => ({ version, env: { PATH: '/usr/bin' }, home, clock: virtualClock(work), self: SELF, spawnDetached: spawn, ...installedProgram(version).ports });
   const counter = path.join(paths.run, 'generation.counter');
   return { home, paths, start, portsWith, counter };
 };
