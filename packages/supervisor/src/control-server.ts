@@ -92,9 +92,36 @@ const parseShutdownBody = (body: string): ShutdownBody => {
   return values.kind === 'values' ? { kind: 'values', values: values.values } : { kind: 'invalid', reason: values.reason };
 };
 
+const REQUEST_TARGET_BASE = 'http://localhost';
+
+export type RequestTarget = { kind: 'parsed'; pathname: string; credentialName: string | undefined } | { kind: 'invalid'; reason: string };
+
+const decodedNameOf = (encoded: string): string | undefined => {
+  try {
+    return decodeURIComponent(encoded);
+  } catch (error) {
+    if (error instanceof URIError) return undefined;
+    throw error;
+  }
+};
+
+export const parseRequestTarget = (target: string | undefined): RequestTarget => {
+  if (target === undefined || !URL.canParse(target, REQUEST_TARGET_BASE)) return { kind: 'invalid', reason: 'the request line names no path' };
+  const { pathname } = new URL(target, REQUEST_TARGET_BASE);
+  if (!pathname.startsWith(CREDENTIALS_PATH)) return { kind: 'parsed', pathname, credentialName: undefined };
+  const credentialName = decodedNameOf(pathname.slice(CREDENTIALS_PATH.length));
+  if (credentialName === undefined) return { kind: 'invalid', reason: 'the credential name is not percent-encoded UTF-8' };
+  return { kind: 'parsed', pathname, credentialName };
+};
+
 export const createControlRequestHandler = (options: ControlHandlerOptions): ((request: IncomingMessage, response: ServerResponse) => void) => {
   return (request, response) => {
-    const pathname = new URL(request.url ?? '/', 'http://localhost').pathname;
+    const target = parseRequestTarget(request.url);
+    if (target.kind === 'invalid') {
+      respondError(request, response, 400, { message: target.reason, type: 'invalid_request', code: 'invalid_request' });
+      return;
+    }
+    const { pathname } = target;
     const method = request.method ?? 'GET';
     if (pathname === '/v1/health') {
       if (method === 'GET' || method === 'HEAD') {
@@ -104,12 +131,12 @@ export const createControlRequestHandler = (options: ControlHandlerOptions): ((r
       respondError(request, response, 405, { message: `${method} is not allowed on ${pathname}`, type: 'invalid_request', code: 'method_not_allowed' }, { allow: 'GET, HEAD' });
       return;
     }
-    if (pathname.startsWith(CREDENTIALS_PATH)) {
+    if (target.credentialName !== undefined) {
       if (method !== 'GET') {
         respondError(request, response, 405, { message: `${method} is not allowed on ${pathname}`, type: 'invalid_request', code: 'method_not_allowed' }, { allow: 'GET' });
         return;
       }
-      const name = decodeURIComponent(pathname.slice(CREDENTIALS_PATH.length));
+      const name = target.credentialName;
       const given = request.headers[CREDENTIAL_CAPABILITY_HEADER];
       const answer = options.credential(name, typeof given === 'string' ? given : undefined);
       if (answer.kind === 'value') {

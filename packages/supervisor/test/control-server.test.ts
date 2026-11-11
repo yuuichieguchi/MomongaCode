@@ -107,6 +107,17 @@ const startServer = async (
 
 const envelopeOf = (text: string): unknown => JSON.parse(text);
 
+const rawExchange = (context: CleanupContext, socketPath: string, request: string): Promise<string> =>
+  new Promise<string>((resolve, reject) => {
+    const raw = net.connect(socketPath);
+    registerCleanup(context, () => void raw.destroy());
+    const chunks: Buffer[] = [];
+    raw.on('data', (chunk: Buffer) => chunks.push(chunk));
+    raw.once('error', reject);
+    raw.once('close', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    raw.once('connect', () => raw.write(request));
+  });
+
 describe('startControlServer', () => {
   it('GET /v1/health answers the health snapshot', async (context) => {
     const { socketPath } = await startServer(context);
@@ -140,6 +151,19 @@ describe('startControlServer', () => {
     expect(getShutdown.status).toBe(405);
     expect(getShutdown.headers['allow']).toBe('POST');
     expect(envelopeOf(getShutdown.text)).toMatchObject({ error: { code: 'method_not_allowed' } });
+  });
+
+  it.for([
+    ['a request target that is no path', 'GET // HTTP/1.1'],
+    ['a credential name with a broken percent escape', 'GET /v1/credentials/% HTTP/1.1'],
+    ['a credential name whose escape is not UTF-8', 'GET /v1/credentials/%E0%A4%A HTTP/1.1'],
+  ] as const)('%s is refused with 400 invalid_request, and the server keeps answering', async ([, requestLine], context) => {
+    const { socketPath, realWork, errors } = await startServer(context);
+    const answer = await realWork.run(() => rawExchange(context, socketPath, `${requestLine}\r\nHost: localhost\r\nConnection: close\r\n\r\n`));
+    expect(answer.split('\r\n')[0]).toBe('HTTP/1.1 400 Bad Request');
+    expect(envelopeOf(answer.slice(answer.indexOf('\r\n\r\n') + 4))).toEqual({ error: { message: expect.any(String), type: 'invalid_request', param: null, code: 'invalid_request' } });
+    expect((await httpOver(context, socketPath, 'GET', '/v1/health')).status).toBe(200);
+    expect(errors).toEqual([]);
   });
 
   it('shutdown request body', async (context) => {
