@@ -1,4 +1,4 @@
-import type { DiffHunk } from '@momonga/protocol';
+import type { AppliedDiffFields, DiffHunk } from '@momonga/protocol';
 
 export const DIFF_CONTEXT_LINES = 3;
 export const DIFF_MAX_BYTES = 256 * 1024;
@@ -6,7 +6,33 @@ export const DIFF_HUNK_TEXT_MAX_BYTES = 64 * 1024;
 export const DIFF_FILE_TOO_LARGE = 'file larger than 256 KiB';
 export const DIFF_TOO_LARGE = 'diff larger than 64 KiB';
 
-export type AppliedDiff = { hunks?: DiffHunk[]; added?: number; removed?: number; diffOmitted?: string };
+export type AppliedDiff = AppliedDiffFields;
+
+const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0;
+
+const isHunk = (value: unknown): value is DiffHunk => {
+  if (typeof value !== 'object' || value === null) return false;
+  const { oldStart, newStart, lines } = value as Record<string, unknown>;
+  return isCount(oldStart) && isCount(newStart) && Array.isArray(lines) && lines.every((line) => typeof line === 'string');
+};
+
+const isOptional = <T>(value: unknown, holds: (given: unknown) => given is T): value is T | undefined => value === undefined || holds(value);
+
+const isHunks = (value: unknown): value is DiffHunk[] => Array.isArray(value) && value.every(isHunk);
+
+const isText = (value: unknown): value is string => typeof value === 'string';
+
+export const appliedDiffOf = (value: unknown): AppliedDiff | undefined => {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const { hunks, added, removed, diffOmitted } = value as Record<string, unknown>;
+  if (!isOptional(hunks, isHunks) || !isOptional(added, isCount) || !isOptional(removed, isCount) || !isOptional(diffOmitted, isText)) return undefined;
+  return {
+    ...(hunks === undefined ? {} : { hunks }),
+    ...(added === undefined ? {} : { added }),
+    ...(removed === undefined ? {} : { removed }),
+    ...(diffOmitted === undefined ? {} : { diffOmitted }),
+  };
+};
 
 export type LineChange = { oldIndex: number; removed: readonly string[]; added: readonly string[] };
 
