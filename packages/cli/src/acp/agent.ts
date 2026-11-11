@@ -117,8 +117,6 @@ export type AcpBridge = {
   onActivity(listener: () => void): void;
 };
 
-export const createAcpAgent = (deps: AcpDeps): AgentApp => createAcpBridge(deps).app;
-
 export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
   const app = agent({ name: 'momonga' });
   const sessions = new Map<string, BridgeSession>();
