@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createFileCredentialStore, credentialFileFor, momongaLayout } from '@momonga/foundation';
 import { PLAN_ROUTES } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, testKernelLock } from '@momonga/testkit';
 import { getJson, listedEntryOf } from './gateway-helpers.ts';
 import { clientFor } from './gateway-process-helpers.ts';
 import { ACCOUNT, accountRoute, recordingLogger, signIn, startPlanGateway } from './plan-signin-support.ts';
@@ -23,10 +23,10 @@ const NO_WINDOW = 'the server reports no context window for this model';
 const ACCESS_LIFETIME_MS = 3_600_000;
 const RECORD_KEY = `chatgpt/${ACCOUNT}`;
 
-const catalogDirectory = (gateway: PlanGateway): string => (momongaLayout(gateway.home) as unknown as { planCatalog: string }).planCatalog;
+const catalogDirectory = (gateway: PlanGateway): string => (momongaLayout(gateway.home, process.platform, process.env) as unknown as { planCatalog: string }).planCatalog;
 
 const readRecord = async (gateway: PlanGateway): Promise<any> => {
-  const raw = await createFileCredentialStore(catalogDirectory(gateway)).read(RECORD_KEY, new AbortController().signal);
+  const raw = await createFileCredentialStore(catalogDirectory(gateway), { lock: testKernelLock() }).read(RECORD_KEY, new AbortController().signal);
   return raw === undefined ? undefined : JSON.parse(raw);
 };
 
@@ -101,7 +101,7 @@ describe('the live model catalog of a signed-in account (P7, M2a, I-M2)', () => 
     await signIn(gateway);
     await gateway.get(modelsRoute());
     const record = await readRecord(gateway);
-    await createFileCredentialStore(catalogDirectory(gateway)).write(RECORD_KEY, JSON.stringify({ ...record, readAt: new Date(Date.now() + 86_400_000).toISOString() }), new AbortController().signal);
+    await createFileCredentialStore(catalogDirectory(gateway), { lock: testKernelLock() }).write(RECORD_KEY, JSON.stringify({ ...record, readAt: new Date(Date.now() + 86_400_000).toISOString() }), new AbortController().signal);
     await gateway.get(modelsRoute());
     expect(listReads(gateway)).toBe(2);
     await gateway.close();

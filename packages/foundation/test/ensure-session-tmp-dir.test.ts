@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SessionTmpDirError, ensureMomongaDirs, ensureSessionTmpDir, momongaPaths } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { createTempDir, removeTempDir } from '@momonga/testkit';
+import { createTempDir, removeTempDir, testKernelLock } from '@momonga/testkit';
 import type { TempDirOptions } from '@momonga/testkit';
 
 const tempDirs: string[] = [];
@@ -32,7 +32,7 @@ const preparedPaths = async (): Promise<MomongaPaths> => {
 describe('ensureSessionTmpDir', () => {
   it('creates the session dir under tmp.sessions with mode 0700 and returns it', async () => {
     const paths = await preparedPaths();
-    const { dir } = await ensureSessionTmpDir(paths, 'session-1');
+    const { dir } = await ensureSessionTmpDir(paths, 'session-1', { lock: testKernelLock() });
     const expected = path.join(paths.tmp.sessions, 'session-1');
     expect(fs.realpathSync(dir)).toBe(fs.realpathSync(expected));
     const stat = fs.lstatSync(expected);
@@ -42,9 +42,9 @@ describe('ensureSessionTmpDir', () => {
 
   it('is idempotent and keeps existing contents', async () => {
     const paths = await preparedPaths();
-    const { dir: first } = await ensureSessionTmpDir(paths, 'session-1');
+    const { dir: first } = await ensureSessionTmpDir(paths, 'session-1', { lock: testKernelLock() });
     fs.writeFileSync(path.join(first, 'keep'), 'kept');
-    const { dir: second } = await ensureSessionTmpDir(paths, 'session-1');
+    const { dir: second } = await ensureSessionTmpDir(paths, 'session-1', { lock: testKernelLock() });
     expect(second).toBe(first);
     expect(fs.readFileSync(path.join(second, 'keep'), 'utf8')).toBe('kept');
   });
@@ -54,34 +54,34 @@ describe('ensureSessionTmpDir', () => {
     const outside = makeDir();
     fs.chmodSync(outside, 0o755);
     fs.symlinkSync(outside, path.join(paths.tmp.sessions, 'session-1'));
-    await expect(ensureSessionTmpDir(paths, 'session-1')).rejects.toThrow();
+    await expect(ensureSessionTmpDir(paths, 'session-1', { lock: testKernelLock() })).rejects.toThrow();
     expect(fs.statSync(outside).mode & 0o777).toBe(0o755);
     expect(fs.readdirSync(outside)).toEqual([]);
   });
 
   it('refuses a session id that escapes the sessions root', async () => {
     const paths = await preparedPaths();
-    await expect(ensureSessionTmpDir(paths, '../escaped')).rejects.toThrow();
+    await expect(ensureSessionTmpDir(paths, '../escaped', { lock: testKernelLock() })).rejects.toThrow();
     expect(fs.existsSync(path.join(paths.tmp.root, 'escaped'))).toBe(false);
   });
 
   it('refuses a session id that names a nested path', async () => {
     const paths = await preparedPaths();
-    await expect(ensureSessionTmpDir(paths, 'a/b')).rejects.toThrow();
+    await expect(ensureSessionTmpDir(paths, 'a/b', { lock: testKernelLock() })).rejects.toThrow();
     expect(fs.existsSync(path.join(paths.tmp.sessions, 'a'))).toBe(false);
   });
 
   it('refuses the sessions root itself', async () => {
     const paths = await preparedPaths();
-    await expect(ensureSessionTmpDir(paths, '.')).rejects.toThrow();
-    await expect(ensureSessionTmpDir(paths, '')).rejects.toThrow();
+    await expect(ensureSessionTmpDir(paths, '.', { lock: testKernelLock() })).rejects.toThrow();
+    await expect(ensureSessionTmpDir(paths, '', { lock: testKernelLock() })).rejects.toThrow();
   });
 
   it('refuses a session dir whose canonical path leaves the canonical sessions root through a symlinked parent', async () => {
     const paths = await preparedPaths();
     const outside = makeDir();
     fs.symlinkSync(outside, path.join(paths.tmp.sessions, 'link'));
-    await expect(ensureSessionTmpDir(paths, 'link/session-1')).rejects.toThrow();
+    await expect(ensureSessionTmpDir(paths, 'link/session-1', { lock: testKernelLock() })).rejects.toThrow();
     expect(fs.readdirSync(outside)).toEqual([]);
   });
 
@@ -90,7 +90,7 @@ describe('ensureSessionTmpDir', () => {
     const outside = makeDir();
     fs.rmSync(paths.tmp.sessions, { recursive: true });
     fs.symlinkSync(outside, paths.tmp.sessions);
-    await expect(ensureSessionTmpDir(paths, 'session-1')).rejects.toThrow();
+    await expect(ensureSessionTmpDir(paths, 'session-1', { lock: testKernelLock() })).rejects.toThrow();
     expect(fs.readdirSync(outside)).toEqual([]);
   });
 
@@ -99,7 +99,7 @@ describe('ensureSessionTmpDir', () => {
     const dir = path.join(paths.tmp.sessions, 'session-1');
     fs.mkdirSync(dir, { mode: 0o755 });
     fs.chmodSync(dir, 0o755);
-    await ensureSessionTmpDir(paths, 'session-1');
+    await ensureSessionTmpDir(paths, 'session-1', { lock: testKernelLock() });
     expect(fs.lstatSync(dir).mode & 0o777).toBe(0o700);
   });
 });
@@ -118,7 +118,7 @@ describe('ensureSessionTmpDir error classes', () => {
     const paths = await preparedPaths();
     const outside = makeDir();
     fs.symlinkSync(outside, path.join(paths.tmp.sessions, 'session-1'));
-    const error = await rejectionOf(ensureSessionTmpDir(paths, 'session-1'));
+    const error = await rejectionOf(ensureSessionTmpDir(paths, 'session-1', { lock: testKernelLock() }));
     expect(error).toBeInstanceOf(SessionTmpDirError);
     expect(fs.readdirSync(outside)).toEqual([]);
   });
@@ -128,7 +128,7 @@ describe('ensureSessionTmpDir error classes', () => {
     const outside = makeDir();
     fs.rmSync(paths.tmp.sessions, { recursive: true });
     fs.symlinkSync(outside, paths.tmp.sessions);
-    const error = await rejectionOf(ensureSessionTmpDir(paths, 'session-1'));
+    const error = await rejectionOf(ensureSessionTmpDir(paths, 'session-1', { lock: testKernelLock() }));
     expect(error).toBeInstanceOf(SessionTmpDirError);
     expect(fs.readdirSync(outside)).toEqual([]);
   });
@@ -136,7 +136,7 @@ describe('ensureSessionTmpDir error classes', () => {
   it('a session dir replaced by a file throws SessionTmpDirError', async () => {
     const paths = await preparedPaths();
     fs.writeFileSync(path.join(paths.tmp.sessions, 'session-1'), 'x');
-    const error = await rejectionOf(ensureSessionTmpDir(paths, 'session-1'));
+    const error = await rejectionOf(ensureSessionTmpDir(paths, 'session-1', { lock: testKernelLock() }));
     expect(error).toBeInstanceOf(SessionTmpDirError);
   });
 
@@ -150,7 +150,7 @@ describe('ensureSessionTmpDir error classes', () => {
     const realRealpath = fsp.realpath;
     vi.spyOn(fsp, 'realpath').mockImplementation((async (target: fs.PathLike, options?: unknown) =>
       String(target) === directory ? alias : realRealpath(target, options as never)) as typeof fsp.realpath);
-    const error = await rejectionOf(ensureSessionTmpDir(paths, 'session-1'));
+    const error = await rejectionOf(ensureSessionTmpDir(paths, 'session-1', { lock: testKernelLock() }));
     expect(error).toBeInstanceOf(SessionTmpDirError);
     expect((error as Error).message).toBe(`${directory} does not live directly in the sessions root ${paths.tmp.sessions}`);
   });
@@ -159,14 +159,14 @@ describe('ensureSessionTmpDir error classes', () => {
     const paths = await preparedPaths();
     fs.chmodSync(paths.tmp.sessions, 0o000);
     lockedDirs.push(paths.tmp.sessions);
-    const error = await rejectionOf(ensureSessionTmpDir(paths, 'session-1'));
+    const error = await rejectionOf(ensureSessionTmpDir(paths, 'session-1', { lock: testKernelLock() }));
     expect(error).not.toBeInstanceOf(SessionTmpDirError);
     expect((error as NodeJS.ErrnoException).code).toBe('EACCES');
   });
 
   it('an invalid session id throws a plain Error, not SessionTmpDirError', async () => {
     const paths = await preparedPaths();
-    const error = await rejectionOf(ensureSessionTmpDir(paths, '../escaped'));
+    const error = await rejectionOf(ensureSessionTmpDir(paths, '../escaped', { lock: testKernelLock() }));
     expect(error).toBeInstanceOf(Error);
     expect(error).not.toBeInstanceOf(SessionTmpDirError);
     expect((error as Error).message).toBe('invalid session id: "../escaped"');

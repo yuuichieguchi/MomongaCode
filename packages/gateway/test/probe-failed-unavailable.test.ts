@@ -3,7 +3,7 @@ import { TARGET_PROBE_FAILED, TARGET_PROBING_MESSAGE } from '@momonga/protocol';
 import type { Capabilities, ProviderAdapter } from '@momonga/protocol';
 import { createAutoProbe, createInstanceProbe } from '@momonga/gateway';
 import type { ProbeSubject } from '@momonga/gateway';
-import { createFakeClock, createScriptedAdapter } from '@momonga/testkit';
+import { createFakeClock, createScriptedAdapter, testKernelLock } from '@momonga/testkit';
 import { targetProbingError } from '../src/probe/auto-probe.ts';
 import { START_MS, getJson, makeDir, startGateway } from './gateway-helpers.ts';
 import { until } from './gateway-process-helpers.ts';
@@ -39,7 +39,7 @@ const lantern = () => {
 const setupAuto = () => {
   const clock = createFakeClock(START_MS);
   const events: string[] = [];
-  const autoProbe = createAutoProbe({ dir: makeDir(), clock, retryAfterMs: RETRY_AFTER_MS, onEvent: (event) => events.push(event.kind) });
+  const autoProbe = createAutoProbe({ lock: testKernelLock(), dir: makeDir(), clock, retryAfterMs: RETRY_AFTER_MS, onEvent: (event) => events.push(event.kind) });
   return { clock, events, autoProbe, ...lantern() };
 };
 
@@ -221,7 +221,7 @@ describe('the models listing of a model whose measurement failed (design-screens
   it('lists it probing while measured, unavailable with the cause and code after the failure and during the back-off, probing at the retry and measured after it', async () => {
     const clock = createFakeClock(START_MS);
     const events: string[] = [];
-    const autoProbe = createAutoProbe({ dir: makeDir(), clock, retryAfterMs: RETRY_AFTER_MS, onEvent: (event) => events.push(event.kind) });
+    const autoProbe = createAutoProbe({ lock: testKernelLock(), dir: makeDir(), clock, retryAfterMs: RETRY_AFTER_MS, onEvent: (event) => events.push(event.kind) });
     const { state, subject } = lantern();
     const measured: ProviderAdapter = {
       ...createScriptedAdapter({ calls: [], capabilities: AVAILABLE }),

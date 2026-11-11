@@ -6,7 +6,7 @@ import { planProfileOf } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
 import { CredentialStoreError, createEncryptedCredentialStore, endedStoreCall, momongaLayout, nodeFileSystem } from '@momonga/foundation';
 import type { CredentialEntry, FileSystem, KernelLockMechanism, LimitTiming, ListableCredentialStore, SecretBackend, SecretStore } from '@momonga/foundation';
-import { SIWC_RESOURCE, createFakeClock, siwcBrowse, startFakeSiwcAuth } from '@momonga/testkit';
+import { SIWC_RESOURCE, createFakeClock, siwcBrowse, startFakeSiwcAuth, testKernelLock } from '@momonga/testkit';
 import type { FakeClock, SiwcAuth } from '@momonga/testkit';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
 import { openPlanSessions, planRecordKeyOfPlaintext } from '../src/plan/session.ts';
@@ -207,12 +207,13 @@ export const startHarness = async (
   options: { profile?: (auth: SiwcAuth) => PlanProfile; wrapFileSystem?: (base: FileSystem) => FileSystem; pointerSerial?: Serial; secretStore?: SecretStore; wrapSleep?: (inner: PlanSleep) => PlanSleep; storeBackend?: SecretBackend } = {},
 ): Promise<Harness> => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'momonga-plan-'));
-  const layout = momongaLayout(home);
+  const layout = momongaLayout(home, process.platform, process.env);
   const paths = { sessions: layout.planSessions, host: layout.planHost, active: layout.planActive };
   const clock = createFakeClock(START_MS);
   const auth = await startFakeSiwcAuth({ now: clock.now });
   const profile = (options.profile ?? profileFor)(auth);
   const store = createEncryptedCredentialStore({
+    lock: testKernelLock(),
     directory: paths.sessions,
     stateDirectory: layout.state,
     secretStore: options.secretStore === undefined ? { kind: 'none', reason: 'the harness keeps plaintext records' } : { kind: 'available', store: options.secretStore },
@@ -280,7 +281,7 @@ export const startHarness = async (
   };
   const open = (accounts: Array<{ profile: string; account: string }> = [], chosenStore: ListableCredentialStore = store, lock?: KernelLockMechanism): Promise<PlanSessions> =>
     openPlanSessions({
-      ...(lock === undefined ? {} : { lock }),
+      lock: lock ?? testKernelLock(),
       ...(options.pointerSerial === undefined ? {} : { pointerSerial: options.pointerSerial }),
       ...(options.storeBackend === undefined ? {} : { storeBackend: options.storeBackend }),
       profiles: { [PROFILE_ID]: profile },
@@ -448,7 +449,7 @@ const pkce = (): { verifier: string; challenge: string } => {
 export type FakeSignIn = { clientId: string; hostId: string; idToken: string; subject: string; email: string; tokens: PlanTokenResponse };
 
 export const signInAtFake = async (h: Harness, options: { clientId?: string; resource?: string } = {}): Promise<FakeSignIn> => {
-  const host = await ensureHostIdentity(nodeFileSystem, h.paths.host, { accountsExist: false });
+  const host = await ensureHostIdentity(nodeFileSystem, h.paths.host, { lock: testKernelLock(), accountsExist: false });
   const { verifier, challenge } = pkce();
   const redirectUri = 'http://127.0.0.1:49152/auth/callback';
   const resource = options.resource ?? SIWC_RESOURCE;

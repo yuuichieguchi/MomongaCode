@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createManagedConnection, createMcpPool, createMcpToolSource } from '@momonga/mcp';
 import type { McpConnectionOptions, McpPoolOptions, McpServerConnection } from '@momonga/mcp';
-import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_TOOL_NAMES, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
+import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_TOOL_NAMES, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, testProcessInspector } from '@momonga/testkit';
 import { BASE_ENV, groupExists, makeDir, onCleanup } from './raw-transport.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -97,7 +97,7 @@ describe('MCP listTools signal', () => {
       clock: createFakeClock(1_000_000),
       random: () => 0,
       closeGraceMs: 1234,
-      markers: { dir: markerDir, onWarning },
+      markers: { dir: markerDir, inspector: testProcessInspector(), onWarning },
     } as McpPoolOptions);
     onCleanup(() => pool.close());
 
@@ -112,7 +112,7 @@ describe('MCP listTools signal', () => {
     fs.mkdirSync(markerDir, { mode: 0o700 });
     const onWarning = (): void => undefined;
     transportCalls.length = 0;
-    const connection = connectionFor({ closeGraceMs: 777, markers: { dir: markerDir, onWarning } } as Partial<McpConnectionOptions>);
+    const connection = connectionFor({ closeGraceMs: 777, markers: { dir: markerDir, inspector: testProcessInspector(), onWarning } } as Partial<McpConnectionOptions>);
 
     await connection.listTools();
 

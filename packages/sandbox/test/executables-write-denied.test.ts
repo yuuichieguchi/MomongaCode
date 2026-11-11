@@ -2,14 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, momongaLayout, syncPaths } from '@momonga/foundation';
-import { alwaysWriteDenied, buildSeatbeltProfile, planBubblewrap } from '@momonga/sandbox';
+import { alwaysWriteDenied, buildSeatbeltProfile, planBubblewrap, nodeFilesystemPort } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
-import { withTempDir, NEVER_CANCELLED, testPaths } from '@momonga/testkit';
+import { withTempDir, NEVER_CANCELLED, testPaths, testKernelLock } from '@momonga/testkit';
 
-const executablesOf = (home: string): string => (momongaLayout(home) as unknown as { executables: string }).executables;
+const executablesOf = (home: string): string => (momongaLayout(home, process.platform, process.env) as unknown as { executables: string }).executables;
 
 const policyFor = async (home: string): Promise<SandboxPolicy> => {
-  const denied = await alwaysWriteDenied(home, NEVER_CANCELLED);
+  const denied = await alwaysWriteDenied(momongaLayout(home, process.platform, process.env), NEVER_CANCELLED);
   return {
     writableRoots: [home],
     writeDenied: [...denied.subtrees],
@@ -24,8 +24,8 @@ const policyFor = async (home: string): Promise<SandboxPolicy> => {
 describe('the executables area is always write-denied, like ~/.momonga, and stays readable', () => {
   it('lists the area beside the momonga root and the keychains, and neither the cache base nor its tmp area', async (context) => {
     const home = fs.realpathSync(withTempDir(context));
-    const layout = momongaLayout(home);
-    const denied = await alwaysWriteDenied(home, NEVER_CANCELLED);
+    const layout = momongaLayout(home, process.platform, process.env);
+    const denied = await alwaysWriteDenied(momongaLayout(home, process.platform, process.env), NEVER_CANCELLED);
     expect(denied.subtrees).toContain(layout.root);
     expect(denied.subtrees).toContain(layout.keychains);
     expect(denied.subtrees).toContain(executablesOf(home));
@@ -35,7 +35,7 @@ describe('the executables area is always write-denied, like ~/.momonga, and stay
 
   it('puts the area directly under the cache base, beside the tmp area', (context) => {
     const home = fs.realpathSync(withTempDir(context));
-    const layout = momongaLayout(home);
+    const layout = momongaLayout(home, process.platform, process.env);
     expect(executablesOf(home)).toBe(path.join(layout.cacheBase, 'executables'));
     expect(path.dirname(layout.tmp.root)).toBe(layout.cacheBase);
   });
@@ -54,7 +54,7 @@ describe('the executables area is always write-denied, like ~/.momonga, and stay
     const home = fs.realpathSync(withTempDir(context));
     const area = syncPaths.canonicalPath(executablesOf(home));
     fs.mkdirSync(area, { recursive: true });
-    const { args } = await planBubblewrap(await policyFor(home), { cwd: home }, NEVER_CANCELLED);
+    const { args } = await planBubblewrap(await policyFor(home), { cwd: home }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     const triples = args.flatMap((value, index) => (value === '--ro-bind' ? [args.slice(index, index + 3).join(' ')] : []));
     expect(triples).toContain(`--ro-bind ${area} ${area}`);
     expect(args.flatMap((value, index) => (value === '--tmpfs' ? [args[index + 1]] : []))).not.toContain(area);

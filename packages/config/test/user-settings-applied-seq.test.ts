@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createUserSettingsCache, noKeptRecords, writeAppliedRecord } from '@momonga/config';
 import type { UserSettingsCacheOptions } from '@momonga/config';
 import { systemRandom } from '@momonga/foundation';
+import { testKernelLock } from '@momonga/testkit';
 
 const NOT_ABORTED = new AbortController().signal;
 
@@ -75,7 +76,7 @@ describe('S7: the applied record is ordered by seq (design-settings-live 15.1, N
     tree.write('{ "models": ');
     const cache = cacheOf(tree.home, tree.record);
     expect(await modelOf(cache)).toBe('b');
-    expect(await writeAppliedRecord(tree.home, tree.record, undefined, { signal: NOT_ABORTED, random: systemRandom })).toEqual({ kind: 'invalid' });
+    expect(await writeAppliedRecord(tree.home, tree.record, undefined, { signal: NOT_ABORTED, random: systemRandom, lock: testKernelLock() })).toEqual({ kind: 'invalid' });
     expect(fs.readFileSync(tree.record).equals(before)).toBe(true);
   });
 });

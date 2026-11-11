@@ -1,9 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { hostKernelLock } from '@momonga/foundation';
 import type { Timing } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, withTempDir, sleepDrivenTiming } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, withTempDir, sleepDrivenTiming, testProcessInspector, testKernelLock } from '@momonga/testkit';
 import { heldCallWaitMs, sweepCallLocks } from '@momonga/tools';
 import { createCallLocks } from '../src/call-lock.ts';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
@@ -93,7 +92,7 @@ const reconcilingTool = (name: string, sideEffect: 'write' | 'exec', trace: Trac
 describe('the per-call lock of the executor', () => {
   it('does not reconcile while another attempt holds the call lock, and reconciles once it is released', async () => {
     const waiting = gatedFirstPoll();
-    const harness = makeHarness({ executor: { reap: { timing: waiting.timing } } });
+    const harness = makeHarness({ executor: { reap: { inspector: testProcessInspector(), timing: waiting.timing } } });
     const trace = makeTrace();
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Edit' });
     harness.kernelLock.holdExternally(lockPathOf(harness), HOLDER_PID);
@@ -113,7 +112,7 @@ describe('the per-call lock of the executor', () => {
   });
 
   it('fails with a typed error naming the holder when the lock stays held for the wait derived from the heartbeat, and neither reconciles nor executes', async () => {
-    const harness = makeHarness({ executor: { reap: { timing: advancingTiming() }, heartbeatMs: HEARTBEAT_MS } });
+    const harness = makeHarness({ executor: { reap: { inspector: testProcessInspector(), timing: advancingTiming() }, heartbeatMs: HEARTBEAT_MS } });
     const trace = makeTrace();
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Edit' });
     harness.kernelLock.holdExternally(lockPathOf(harness), HOLDER_PID);
@@ -131,7 +130,7 @@ describe('the per-call lock of the executor', () => {
 
   it('takes the lock for a fresh execution too, so an earlier attempt cannot start its effect after this one begins', async () => {
     const waiting = gatedFirstPoll();
-    const harness = makeHarness({ executor: { reap: { timing: waiting.timing } } });
+    const harness = makeHarness({ executor: { reap: { inspector: testProcessInspector(), timing: waiting.timing } } });
     const trace = makeTrace();
     harness.kernelLock.holdExternally(lockPathOf(harness), HOLDER_PID);
 
@@ -169,7 +168,7 @@ describe('the per-call lock of the executor', () => {
   it('excludes a second acquisition inside one process through the host kernel mechanism, until the first lock is released', async (context) => {
     const dir = withTempDir(context);
     const polling = hostPollingTiming();
-    const locks = createCallLocks({ dir, mechanism: hostKernelLock(), timing: polling.timing, waitMs: 60_000 });
+    const locks = createCallLocks({ dir, mechanism: testKernelLock(), timing: polling.timing, waitMs: 60_000 });
     const none = new AbortController().signal;
     const first = await locks.acquire(KEY, none);
     if (first === 'aborted') throw new Error('the first acquisition was aborted');
@@ -191,7 +190,7 @@ describe('the per-call lock of the executor', () => {
 
   it('stops waiting for the lock when the call is aborted', async () => {
     const waiting = gatedFirstPoll();
-    const harness = makeHarness({ executor: { reap: { timing: waiting.timing } } });
+    const harness = makeHarness({ executor: { reap: { inspector: testProcessInspector(), timing: waiting.timing } } });
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Edit' });
     harness.kernelLock.holdExternally(lockPathOf(harness), HOLDER_PID);
     const trace = makeTrace();
@@ -225,7 +224,7 @@ describe('the per-call lock of the executor', () => {
 
   it('the sweep leaves a lock held through the host kernel mechanism by this process in place', async (context) => {
     const dir = withTempDir(context);
-    const mechanism = hostKernelLock();
+    const mechanism = testKernelLock();
     const held = await mechanism.claim(path.join(dir, 'live.lock'));
     if (held.kind !== 'claimed') throw new Error('the first claim of a fresh lock file was refused');
     fs.writeFileSync(path.join(dir, 'stale.lock'), '');
@@ -270,7 +269,7 @@ describe('the per-call lock of the executor', () => {
     ['Bash', 'exec'],
   ] as const)('%s: an older attempt of the same process whose effect is still running ends its effect before the new owner reconciles', async (name, sideEffect) => {
     const waiting = gatedFirstPoll();
-    const harness = makeHarness({ executor: { reap: { timing: waiting.timing } } });
+    const harness = makeHarness({ executor: { reap: { inspector: testProcessInspector(), timing: waiting.timing } } });
     const trace = makeTrace();
     const effectRunning = deferred<void>();
     const effectMayEnd = deferred<void>();
@@ -314,7 +313,7 @@ describe('the per-call lock of the executor', () => {
 
   it('waits for a process that holds the call lock through the kernel and reconciles only after that process is killed', async (context) => {
     const polling = hostPollingTiming();
-    const harness = makeHarness({ executor: { kernelLock: hostKernelLock(), reap: { timing: polling.timing } } });
+    const harness = makeHarness({ executor: { kernelLock: testKernelLock(), reap: { inspector: testProcessInspector(), timing: polling.timing } } });
     const trace = makeTrace();
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Edit' });
     const holder = await startLockHolder(context, lockPathOf(harness));

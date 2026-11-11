@@ -5,6 +5,7 @@ import { PRIVATE_MODE, assertPrivateRegularFile, noFollowFlag } from './platform
 export const OPEN_FLAGS = {
   readOnly: fs.constants.O_RDONLY,
   readWrite: fs.constants.O_RDWR,
+  writeOnly: fs.constants.O_WRONLY,
   create: fs.constants.O_CREAT,
   exclusive: fs.constants.O_EXCL,
   nonBlocking: fs.constants.O_NONBLOCK,
@@ -19,7 +20,7 @@ export type DirectoryReader = { read(): Promise<string | null>; close(): Promise
 
 export type RemoveOptions = { readonly recursive: boolean };
 
-export type ReadHandle = { stat(): Promise<fs.Stats>; read(page: Uint8Array): Promise<number>; close(): Promise<void> };
+export type ReadHandle = { stat(): Promise<fs.Stats>; chmod(mode: number): Promise<void>; read(page: Uint8Array): Promise<number>; close(): Promise<void> };
 
 export interface FileSystem extends AtomicWriteFileSystem {
   rm(file: string, options?: RemoveOptions): Promise<void>;
@@ -31,6 +32,7 @@ export interface FileSystem extends AtomicWriteFileSystem {
   readTextFile(file: string): Promise<string>;
   mkdir(directory: string, mode?: number): Promise<void>;
   mkdirPrivate(directory: string): Promise<void>;
+  chmod(target: string, mode: number): Promise<void>;
   readOwnerOnlyTextFile(file: string, description: string, maxBytes?: number): Promise<string | undefined>;
   writeFile(file: string, content: FileContent): Promise<void>;
   access(file: string, check?: AccessCheck): Promise<void>;
@@ -39,7 +41,7 @@ export interface FileSystem extends AtomicWriteFileSystem {
   readStart(file: string, bytes: number): Promise<Uint8Array>;
   readRange(file: string, position: number, length: number): Promise<Uint8Array>;
   openRead(file: string, flags: number): Promise<ReadHandle>;
-  makeDirectory(directory: string): Promise<void>;
+  makeDirectory(directory: string, mode?: number): Promise<void>;
   removeEmptyDirectory(directory: string): Promise<void>;
   realpath(file: string): Promise<string>;
   openDirectory(directory: string): Promise<DirectoryReader>;
@@ -130,6 +132,7 @@ export const nodeFileSystem: FileSystem = {
   readFile: async (file) => new Uint8Array(await fs.promises.readFile(file)),
   readTextFile: (file) => fs.promises.readFile(file, 'utf8'),
   mkdir: async (directory, mode) => void (await fs.promises.mkdir(directory, { recursive: true, ...(mode === undefined ? {} : { mode }) })),
+  chmod: (target, mode) => fs.promises.chmod(target, mode),
   mkdirPrivate: async (directory) => {
     await fs.promises.mkdir(directory, { recursive: true, mode: PRIVATE_MODE.directory });
     await fs.promises.chmod(directory, PRIVATE_MODE.directory);
@@ -184,11 +187,12 @@ export const nodeFileSystem: FileSystem = {
     const handle = await fs.promises.open(file, flags);
     return {
       stat: () => handle.stat(),
+      chmod: (mode) => handle.chmod(mode),
       read: async (page) => (await handle.read(page, 0, page.length, null)).bytesRead,
       close: () => handle.close(),
     };
   },
-  makeDirectory: async (directory) => void (await fs.promises.mkdir(directory)),
+  makeDirectory: async (directory, mode) => void (await fs.promises.mkdir(directory, mode === undefined ? {} : { mode })),
   removeEmptyDirectory: (directory) => fs.promises.rmdir(directory),
   realpath: (file) => fs.promises.realpath(file),
   openDirectory: async (directory) => {

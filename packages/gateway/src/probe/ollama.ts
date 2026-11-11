@@ -28,9 +28,11 @@ import type { MeasureProbe, ProbePrecondition, ProbeSubject } from './auto-probe
 import { endpointKeyOfLock, endpointLockKeyOf } from './endpoint-record.ts';
 import type { EndpointLockKey } from './endpoint-record.ts';
 import type { DialectCurrency } from '../dialect/candidates.ts';
+import type { KernelLockMechanism } from '@momonga/foundation';
 
 export type ProbeOllamaTargetOptions = {
   probeRecordDir: string;
+  lock: KernelLockMechanism;
   upstream: UpstreamEndpoint;
   key: EndpointKey;
   model: string;
@@ -214,7 +216,7 @@ const ollamaTransport = (client: ProbeClient, model: string, contextWindow: numb
 
 export type OllamaMeasurement = { report: OllamaProbeReport; identity: string };
 
-export type MeasureOllamaOptions = Omit<ProbeOllamaTargetOptions, 'probeRecordDir' | 'key' | 'signal'>;
+export type MeasureOllamaOptions = Omit<ProbeOllamaTargetOptions, 'probeRecordDir' | 'lock' | 'key' | 'signal'>;
 
 export const measureOllama =
   (options: MeasureOllamaOptions): MeasureProbe<EndpointLockKey, OllamaMeasurement> =>
@@ -283,6 +285,7 @@ export type OllamaProbeSubjectOptions = {
   target: string;
   key: EndpointKey;
   probeRecordDir: string;
+  lock: KernelLockMechanism;
   precondition: ProbePrecondition;
   measure: MeasureProbe<EndpointLockKey, OllamaMeasurement>;
   currency: DialectCurrency;
@@ -293,7 +296,7 @@ export const ollamaProbeSubject = (options: OllamaProbeSubjectOptions): ProbeSub
   readKey: async () => endpointLockKeyOf(options.key),
   precondition: options.precondition,
   measure: options.measure,
-  save: (key, measured) => saveEndpointRecord(options.probeRecordDir, endpointKeyOfLock(key), measured.identity, [], measured.report, options.currency),
+  save: (key, measured) => saveEndpointRecord(options.probeRecordDir, endpointKeyOfLock(key), measured.identity, [], measured.report, options.currency, options.lock),
 });
 
 export const probeOllamaTarget = async (options: ProbeOllamaTargetOptions): Promise<ProbeOllamaTargetResult> => {
@@ -301,6 +304,7 @@ export const probeOllamaTarget = async (options: ProbeOllamaTargetOptions): Prom
     target: endpointLockKeyOf(options.key).target,
     key: options.key,
     probeRecordDir: options.probeRecordDir,
+    lock: options.lock,
     precondition: ollamaPrecondition(options.upstream, options.model),
     measure: measureOllama(options),
     currency: {
@@ -309,6 +313,6 @@ export const probeOllamaTarget = async (options: ProbeOllamaTargetOptions): Prom
       ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
     },
   });
-  const { report: measured } = await recordProbe(subject, options.probeRecordDir, options.signal ?? new AbortController().signal);
+  const { report: measured } = await recordProbe(subject, options.probeRecordDir, options.lock, options.signal ?? new AbortController().signal);
   return { report: measured.report, key: options.key, identity: measured.identity };
 };

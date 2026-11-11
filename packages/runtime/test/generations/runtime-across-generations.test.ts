@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { EXIT_RETIRED, FIRST_GENERATION, createRolePort, generationLayout, hostKernelLock, momongaLayout, publishCurrentGeneration, scopeToGeneration } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { EXIT_RETIRED, FIRST_GENERATION, createRolePort, generationLayout, momongaLayout, publishCurrentGeneration, scopeToGeneration } from '@momonga/foundation';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testKernelLock } from '@momonga/testkit';
 import { mutableRole } from '../shared/mutable-role.ts';
 import { makeLogger } from '../process/helpers.ts';
 import { RUNTIME_VERSION, launchRuntime, prepareGeneration, readDb, scopedPaths, startStack, waitForCondition, waitForStatus } from '../process/run-helpers.ts';
@@ -13,7 +13,7 @@ vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 const MOVED_TEXT = 'This daemon has been replaced by a newer version and accepts no new work. The request was not run; send it again.';
 
 const publish = async (temp: RunHome, generation: number): Promise<void> => {
-  expect(await publishCurrentGeneration(temp.paths, { generation, version: RUNTIME_VERSION, sockets: generationLayout(temp.home, generation).sockets })).toBe('published');
+  expect(await publishCurrentGeneration(temp.paths, { generation, version: RUNTIME_VERSION, sockets: generationLayout(temp.home, generation).sockets }, { lock: testKernelLock() })).toBe('published');
 };
 
 const runRow = (temp: RunHome, runId: string) =>
@@ -168,7 +168,7 @@ describe('the start of a runtime beside other generations (20.35, 20.49)', () =>
     fs.writeFileSync(foreignMarker, '');
     const heldLock = path.join(stack.temp.paths.callLocks, 'held.lock');
     const staleLock = path.join(stack.temp.paths.callLocks, 'stale.lock');
-    const held = await hostKernelLock().claim(heldLock);
+    const held = await testKernelLock().claim(heldLock);
     if (held.kind !== 'claimed') throw new Error('the test could not claim its call lock');
     fs.writeFileSync(staleLock, '');
     const gatewaySocketPath = generationLayout(stack.temp.home, FIRST_GENERATION).sockets.gateway;

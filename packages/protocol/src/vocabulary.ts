@@ -251,6 +251,7 @@ export type MessageInputs = {
   sessionAmbiguous: [given: { readonly id: string; readonly matches: readonly string[] }];
   sessionInOtherFolder: [given: { readonly id: string; readonly folder: string }];
   noSessionToContinue: [given: { readonly folder: string }];
+  notAnId: [given: { readonly value: string }];
   handoverFailed: [given: { readonly toVersion: string; readonly fromVersion: string; readonly reason: string; readonly kept: KeptWork }];
   restoreRefused: [given: { readonly reason: string; readonly kept: KeptWork }];
   aboutModel: [given: { readonly model: string; readonly text: string }];
@@ -273,6 +274,7 @@ const MESSAGES: { readonly [Key in MessageKey]: (surface: Surface, ...given: Mes
   sessionIdTooShort: (_surface, given) => `No ${WORDS.session} has the id ${given.id}. A shortened id needs at least ${given.minimum} characters.`,
   sessionAmbiguous: (_surface, given) => `${given.id} matches more than one ${WORDS.session}: ${given.matches.join(', ')}`,
   sessionInOtherFolder: (_surface, given) => `That ${WORDS.session} belongs to the ${WORDS.folder} ${given.folder}. Run: cd ${given.folder} && ${reopenSessionCommand(given.id)}`,
+  notAnId: (_surface, given) => `${JSON.stringify(given.value)} is not an id.`,
   noSessionToContinue: (_surface, given) => `No ${WORDS.session} to continue in the ${WORDS.folder} ${given.folder}.`,
   handoverFailed: (surface, given) =>
     `Could not restart into v${given.toVersion} (${given.reason}). This ${WORDS.session} stays on v${given.fromVersion} and keeps working until that version finishes its ${WORDS.run}s.${keptRunsSentence(given.kept)}${UNSENT_INPUT_KEPT[surface]}`,

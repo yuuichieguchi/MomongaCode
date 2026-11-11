@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createScriptedAdapter, textResponseEvents, waitFor } from '@momonga/testkit';
+import { createScriptedAdapter, textResponseEvents, waitFor, testKernelLock } from '@momonga/testkit';
 import type { ScriptedAdapter } from '@momonga/testkit';
 import { createGateway } from '../src/index.ts';
 import { createRouter } from '../src/core/router.ts';
@@ -235,6 +235,7 @@ describe('the model of a request is typed text, resolved once by the leased rout
     const socketPath = path.join(dir, 'gw.sock');
     const { retry, breaker, limits, idempotency, closeGraceMs, sseKeepAliveMs, detachedMaxMs, websocketConnectionMs } = buildConfig({ retry: { maxAttempts: 1, totalWaitMs: 1 } });
     const gateway = await createGateway({
+      lock: testKernelLock(),
       limits: { retry, breaker, limits, idempotency, closeGraceMs, sseKeepAliveMs, detachedMaxMs, websocketConnectionMs },
       epochs: {
         acquire: async () => {

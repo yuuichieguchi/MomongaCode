@@ -7,6 +7,7 @@ import { deserializeMessage, serializeMessage, type JSONRPCMessage, type Transpo
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
 import { Deadline, SHUTDOWN_SETTING_LIMITS, claimRetry, groupTerminationBoundMs, launchGroupLeader, operationSignal, reapMarkedProcesses, recordMarkerGroup, systemTiming, terminateGroup, type GroupLaunch, type RetryKind, type TerminateOutcome, type Timing } from '@momonga/foundation';
+import type { ProcessInspector } from '@momonga/foundation';
 
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 const STDERR_TAIL_BYTES = 64 * 1024;
@@ -17,7 +18,7 @@ export type CloseGrace = number | (() => number);
 
 export const closeGraceOf = (grace: CloseGrace | undefined): number => (typeof grace === 'function' ? grace() : (grace ?? SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.default));
 
-export type McpMarkerOptions = { dir: string; onWarning(message: string): void };
+export type McpMarkerOptions = { dir: string; inspector: ProcessInspector; onWarning(message: string): void };
 
 export interface StdioTransportOptions {
   name: string;
@@ -253,6 +254,7 @@ class StdioTransportImpl implements StdioTransport {
                 pgid: group,
                 killGraceMs: graceMs,
                 label: 'mcp',
+                inspector: this.options.markers.inspector,
                 onWarning: this.options.markers.onWarning,
                 timing: this.timing,
                 signal: sweep.signal,

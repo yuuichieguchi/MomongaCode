@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { APPROVAL_BASES, SIDE_EFFECTS, VERIFICATION_OUTCOMES, FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, STORED_MODEL_KEYS, EVENT_PAYLOAD_RENAMES, withCurrentNames, decodeStoredModel, planAccountRefOf, INBOX_DELIVERIES, INBOX_STATES } from '@momonga/protocol';
-import type { OpaqueEvent, RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload, InboxRowView, UserShellRecord } from '@momonga/protocol';
+import type { OpaqueEvent, RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload, InboxChangeRow, UserShellRecord } from '@momonga/protocol';
 import { InheritanceError } from './inherit.ts';
 import { DATABASE_NOT_NEWER } from './decode-context.ts';
 import type { DecodeContext } from './decode-context.ts';
@@ -236,16 +236,19 @@ const decodeRunEvent = (row: Row, identity: string, type: string, payload: Recor
   return { ...(renames === undefined ? payload : withCurrentNames(payload, renames)), ...envelope } as RunEvent;
 };
 
-const isInboxRowView = (value: unknown): value is InboxRowView =>
-  isRecord(value) &&
-  typeof value['id'] === 'string' &&
-  typeof value['sessionId'] === 'string' &&
-  typeof value['text'] === 'string' &&
-  Number.isInteger(value['seq']) &&
-  Number.isInteger(value['createdAt']) &&
-  (value['settledAt'] === null || Number.isInteger(value['settledAt'])) &&
-  [...INBOX_DELIVERIES, UNKNOWN_VALUE].some((delivery) => delivery === value['delivery']) &&
-  [...INBOX_STATES, UNKNOWN_VALUE].some((state) => state === value['state']);
+const inboxChangeRowOf = (context: DecodeContext, identity: string, value: unknown): InboxChangeRow => {
+  if (!isRecord(value)) throw corrupt('events', identity, 'payload_json pending must hold inbox rows');
+  const { id, delivery, state, seq } = value;
+  if (typeof id !== 'string' || typeof delivery !== 'string' || typeof state !== 'string' || typeof seq !== 'number' || !Number.isInteger(seq)) {
+    throw corrupt('events', identity, 'payload_json pending must hold inbox rows with id, delivery, state and seq');
+  }
+  return {
+    id,
+    delivery: storedOneOf(context, 'events', identity, 'payload_json', INBOX_DELIVERIES, delivery),
+    state: storedOneOf(context, 'events', identity, 'payload_json', INBOX_STATES, state),
+    seq,
+  };
+};
 
 export const userShellRecordOf = (identity: string, payload: Record<string, unknown>): UserShellRecord => {
   const { command, exitCode, output, include } = payload;
@@ -268,8 +271,8 @@ const decodeSessionEvent = (row: Row, identity: string, type: string, payload: R
   }
   if (type === 'inbox.changed') {
     const { pending } = payload;
-    if (!Array.isArray(pending) || !pending.every(isInboxRowView)) throw corrupt('events', identity, 'payload_json pending must hold inbox rows');
-    return { type: 'inbox.changed', pending, ...envelope };
+    if (!Array.isArray(pending)) throw corrupt('events', identity, 'payload_json pending must hold inbox rows');
+    return { type: 'inbox.changed', pending: pending.map((row) => inboxChangeRowOf(context, identity, row)), ...envelope };
   }
   if (type === 'user_shell') return { type: 'user_shell', ...userShellRecordOf(identity, payload), ...envelope };
   const mode = payload['mode'];

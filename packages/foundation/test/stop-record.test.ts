@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_STOP_VALUES, generationLayout, generationMemberOf, readStopRecord, writeStopRecord } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
-import { withTempDir } from '@momonga/testkit';
+import { withTempDir, testKernelLock } from '@momonga/testkit';
 
 const VALUES: StopValues = { closeGraceMs: 1200, managedServerStopGraceMs: 300, drainTimeoutMs: 4500, mcpCloseGraceMs: 60 };
 
@@ -33,7 +33,7 @@ describe('the stop record of a generation', () => {
   it('is one line of JSON holding the generation and the four values, mode 0600, with no temporary file left beside it', async (context) => {
     const home = homeWithGeneration(context, 3);
     const layout = generationLayout(home, 3);
-    await writeStopRecord(layout.stopRecord, 3, VALUES);
+    await writeStopRecord(layout.stopRecord, 3, VALUES, testKernelLock());
     const text = fs.readFileSync(layout.stopRecord, 'utf8');
     expect(text.trimEnd()).toBe('{"generation":3,"values":{"closeGraceMs":1200,"managedServerStopGraceMs":300,"drainTimeoutMs":4500,"mcpCloseGraceMs":60}}');
     expect(text.trimEnd().includes('\n')).toBe(false);
@@ -44,15 +44,15 @@ describe('the stop record of a generation', () => {
   it('round-trips the four values its stop read', async (context) => {
     const home = homeWithGeneration(context, 1);
     const layout = generationLayout(home, 1);
-    await writeStopRecord(layout.stopRecord, 1, VALUES);
+    await writeStopRecord(layout.stopRecord, 1, VALUES, testKernelLock());
     expect(await readStopRecord(layout.stopRecord)).toEqual(VALUES);
   });
 
   it('a later write of the same stop record replaces the earlier values', async (context) => {
     const home = homeWithGeneration(context, 1);
     const layout = generationLayout(home, 1);
-    await writeStopRecord(layout.stopRecord, 1, VALUES);
-    await writeStopRecord(layout.stopRecord, 1, DEFAULT_STOP_VALUES);
+    await writeStopRecord(layout.stopRecord, 1, VALUES, testKernelLock());
+    await writeStopRecord(layout.stopRecord, 1, DEFAULT_STOP_VALUES, testKernelLock());
     expect(await readStopRecord(layout.stopRecord)).toEqual(DEFAULT_STOP_VALUES);
   });
 

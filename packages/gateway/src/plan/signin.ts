@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { PlanProfile } from '@momonga/config';
 import { CLIENT_NAME, isRecord, parseOutsideJson, systemRandom } from '@momonga/foundation';
-import type { Clock, FileSystem } from '@momonga/foundation';
+import type { Clock, FileSystem, KernelLockMechanism } from '@momonga/foundation';
 import { PLAN_SIGN_IN_FAILURES, PLAN_SIGN_IN_FAILURE_RULES, PLAN_SIGN_IN_PENDING_CODE, PLAN_SIGN_OUT_IN_PROGRESS_CODE, PLAN_DISABLED_STATE, PLAN_SIGN_IN_FAILURE, PLAN_SIGN_IN_OUTCOMES, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME, INVALID_GRANT_REASON } from '@momonga/protocol';
 import type { NamedPlanAccountRef, PlanSignInBeginRequest, PlanSignInBeginResponse, PlanSignInFailure, PlanSignInIdentityUnconfirmed } from '@momonga/protocol';
 import { GatewayError, invalidRequest } from '../core/errors.ts';
@@ -43,6 +43,7 @@ export type PlanSignInOptions = {
   lifetime: AbortSignal;
   sleep: PlanSleep;
   fileSystem: FileSystem;
+  lock: KernelLockMechanism;
   hostFile: string;
   events?: PlanEvents;
 };
@@ -175,7 +176,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     const saved = await options.sessions.registration({ profile: profile.id, account: request.account }, signal);
     if (saved?.state === 'signing_out') throw invalidRequest(PLAN_SIGN_OUT_IN_PROGRESS_CODE, `${request.account} is still signing out. Try again in a moment.`, null, CONFLICT_STATUS);
     const accountsExist = saved !== undefined || (await options.sessions.known(signal)).length > 0;
-    const { hostId } = await ensureHostIdentity(options.fileSystem, options.hostFile, { accountsExist }).catch((error: unknown) => {
+    const { hostId } = await ensureHostIdentity(options.fileSystem, options.hostFile, { accountsExist, lock: options.lock }).catch((error: unknown) => {
       throw hostIdentityFailure(error);
     });
     removeExpired();
@@ -205,7 +206,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
   const resetHost = (): Promise<HostIdentity> =>
     hostGate.run(async () => {
       if (waiting()) throw invalidRequest(PLAN_SIGN_IN_PENDING_CODE, 'A sign-in is waiting for the browser. Finish or cancel it, then reset the host.', null, CONFLICT_STATUS);
-      return resetHostIdentity(options.fileSystem, options.hostFile).catch((error: unknown) => {
+      return resetHostIdentity(options.fileSystem, options.hostFile, options.lock).catch((error: unknown) => {
         throw hostIdentityFailure(error);
       });
     });

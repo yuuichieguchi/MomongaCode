@@ -3,13 +3,14 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { AUTH_DOCUMENT_MAX_BYTES, createFileCredentialStore, credentialFileFor } from '@momonga/foundation';
 import { makeTemporaryDirectory } from './support/temporary-directory.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const SIGNAL = new AbortController().signal;
 
 describe('the file credential store reads a credential with the size cap of an auth document', () => {
   it('refuses a credential file over the cap with the cap text, from read and from the entry of withKey', async () => {
     const directory = path.join(makeTemporaryDirectory(), 'creds');
-    const store = createFileCredentialStore(directory);
+    const store = createFileCredentialStore(directory, { lock: testKernelLock() });
     await store.write('k', 'small', SIGNAL);
     const file = credentialFileFor(directory, 'k');
     fs.writeFileSync(file, 'x'.repeat(AUTH_DOCUMENT_MAX_BYTES + 1), { mode: 0o600 });
@@ -20,7 +21,7 @@ describe('the file credential store reads a credential with the size cap of an a
 
   it('reads a credential file of exactly the cap in full', async () => {
     const directory = path.join(makeTemporaryDirectory(), 'creds');
-    const store = createFileCredentialStore(directory);
+    const store = createFileCredentialStore(directory, { lock: testKernelLock() });
     const value = 'x'.repeat(AUTH_DOCUMENT_MAX_BYTES);
     await store.write('k', value, SIGNAL);
     expect(await store.read('k', SIGNAL)).toBe(value);

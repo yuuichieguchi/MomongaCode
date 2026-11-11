@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { openRuntimeStore } from '@momonga/store';
-import { createFakeClock } from '@momonga/testkit';
+import { createFakeClock, testKernelLock } from '@momonga/testkit';
 import { START_MS, enqueue, harness, makeStoreDir, newSession, openStoreAt, rawDb, UNASKED_COMMANDS } from './helpers.ts';
-import { nodeFileSystem, systemRandom } from '@momonga/foundation';
+import { nodeFileSystem, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
 const fileMode = (file: string) => fs.statSync(file).mode & 0o777;
 
@@ -125,7 +125,7 @@ describe('openRuntimeStore', () => {
   it('rejects a store directory that is not 0700, naming it and the fix', () => {
     const dir = makeStoreDir(0o755);
     const open = () =>
-      openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: path.join(dir, 'runtime.db'), home: dir, clock: createFakeClock(START_MS), leaseMs: 1000, maxAttempts: 3, maxTotalAttempts: 100 });
+      openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: path.join(dir, 'runtime.db'), home: dir, clock: createFakeClock(START_MS), leaseMs: 1000, maxAttempts: 3, maxTotalAttempts: 100 });
     expect(open).toThrow(dir);
     expect(open).toThrow(/chmod 700/);
     expect(fs.existsSync(path.join(dir, 'runtime.db'))).toBe(false);
@@ -137,7 +137,7 @@ describe('openRuntimeStore', () => {
     const db = rawDb(dbPath);
     db.prepare("UPDATE schema_migrations SET checksum = 'tampered' WHERE version = 1").run();
     db.close();
-    const reopen = () => openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: dbPath, home: path.dirname(dbPath), clock: createFakeClock(START_MS), leaseMs: 1000, maxAttempts: 3, maxTotalAttempts: 100 });
+    const reopen = () => openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: dbPath, home: path.dirname(dbPath), clock: createFakeClock(START_MS), leaseMs: 1000, maxAttempts: 3, maxTotalAttempts: 100 });
     expect(reopen).toThrow(/version 1/);
     expect(reopen).toThrow(/different build/);
   });
@@ -145,7 +145,7 @@ describe('openRuntimeStore', () => {
   it('rejects maxTotalAttempts below maxAttempts', () => {
     const dir = makeStoreDir();
     expect(() =>
-      openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: path.join(dir, 'runtime.db'), home: dir, clock: createFakeClock(START_MS), leaseMs: 1000, maxAttempts: 3, maxTotalAttempts: 2 }),
+      openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: path.join(dir, 'runtime.db'), home: dir, clock: createFakeClock(START_MS), leaseMs: 1000, maxAttempts: 3, maxTotalAttempts: 2 }),
     ).toThrow(RangeError);
     expect(fs.existsSync(path.join(dir, 'runtime.db'))).toBe(false);
   });

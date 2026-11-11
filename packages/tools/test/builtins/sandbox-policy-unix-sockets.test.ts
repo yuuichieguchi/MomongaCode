@@ -1,4 +1,4 @@
-import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, momongaLayout } from '@momonga/foundation';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -26,6 +26,7 @@ afterEach(() => {
 const build = (unixSocketAllow?: readonly string[]) => {
   const { home, project } = makeHome();
   return buildSandboxPolicy({
+    layout: momongaLayout(home, process.platform, process.env),
     roots: [project],
     home,
     sessionsTmpRoot: path.join(home, 'tmp-sessions'),

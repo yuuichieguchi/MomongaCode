@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createFakeClock, createFakeTimers, driveFakeTime, waitFor } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, driveFakeTime, waitFor, testProcessInspector } from '@momonga/testkit';
 import type { ChildManager } from '../src/child-manager.ts';
 import { DEFAULT_STOP_VALUES, SHUTDOWN_DRAIN_BOUND_MS, killedChildSettleMs, managedServerReapBoundMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import { stopBudgetMs } from '../src/child-manager.ts';
@@ -59,6 +59,7 @@ const setup = (options: {
   const controllerOptions: ShutdownControllerOptions = {
     runtime: options.runtime,
     gateway: options.gateway,
+    inspector: testProcessInspector(),
     recordStop: async () => undefined,
     timers,
     logger: log.logger,
@@ -149,6 +150,7 @@ describe('shutdown step 1 bound and the sum of every wait', () => {
         }),
     });
     const controller = createShutdownController({
+      inspector: testProcessInspector(),
       runtime: slowManager('runtime'),
       gateway: slowManager('gateway'),
       recordStop: async () => undefined,

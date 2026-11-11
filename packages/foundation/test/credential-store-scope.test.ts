@@ -2,6 +2,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createFileCredentialStore, createMemoryCredentialStore } from '@momonga/foundation';
 import { makeTemporaryDirectory as makeDir } from './support/temporary-directory.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const SIGNAL = new AbortController().signal;
 
@@ -15,7 +16,7 @@ const deferred = (): { promise: Promise<void>; resolve(): void } => {
 
 describe.each([
   ['memory', () => createMemoryCredentialStore()],
-  ['file', () => createFileCredentialStore(path.join(makeDir(), 'creds'))],
+  ['file', () => createFileCredentialStore(path.join(makeDir(), 'creds'), { lock: testKernelLock() })],
 ] as const)('%s credential store: the keyed scope held across an asynchronous function', (_name, make) => {
   it('reads, writes and removes inside the scope and returns what the function returns', async () => {
     const store = make();
@@ -103,8 +104,8 @@ describe.each([
 describe('file credential store: the keyed scope across two stores on one directory', () => {
   it('serializes scopes on one key through the file lock', async () => {
     const directory = path.join(makeDir(), 'creds');
-    const one = createFileCredentialStore(directory);
-    const two = createFileCredentialStore(directory);
+    const one = createFileCredentialStore(directory, { lock: testKernelLock() });
+    const two = createFileCredentialStore(directory, { lock: testKernelLock() });
     const events: string[] = [];
     const held = deferred();
     const started = deferred();

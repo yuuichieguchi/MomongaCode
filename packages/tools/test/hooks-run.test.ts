@@ -8,7 +8,7 @@ import { createUnsandboxed } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { createToolHooks, nodeShellHost, runStop, runUserPromptSubmit, runSessionStart } from '@momonga/tools';
 import type { HookRunContext } from '@momonga/tools';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -41,6 +41,7 @@ const contextFor = (hooks: HooksSettings, overrides: Partial<HookRunContext> = {
   fs.mkdirSync(markerDir, { recursive: true });
   const executions: HookExecution[] = [];
   const context: HookRunContext = {
+    inspector: testProcessInspector(),
     hooks,
     sandbox: createUnsandboxed({ killGraceMs: 200 }),
     sandboxPolicy: policy(),
@@ -268,7 +269,7 @@ describe('updated input, halting and process markers', () => {
     }
     const pid = Number(fs.readFileSync(pidFile, 'utf8').trim());
     const markerDir = path.join(dir, 'markers');
-    await reapMarkerDirectory({ dir: markerDir, signal: new AbortController().signal, killGraceMs: 200, label: 'tool', onWarning: (message) => { throw new Error(message); } });
+    await reapMarkerDirectory({ inspector: testProcessInspector(), dir: markerDir, signal: new AbortController().signal, killGraceMs: 200, label: 'tool', onWarning: (message) => { throw new Error(message); } });
     await expect((async () => process.kill(pid, 0))()).rejects.toThrow();
     controller.abort();
     await pending;

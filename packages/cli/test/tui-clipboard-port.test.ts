@@ -19,7 +19,7 @@ describe('the clipboard port of the TUI backend (O-R5-6 C)', () => {
       stderr: capture(written),
       terminal: { stdin: process.stdin, stdout: capture(written) },
     } as unknown as CliPorts;
-    const backend = createTuiBackend(ports, momongaPaths('/home/alice'), {}, { load: async () => [], append: async () => undefined }, []);
+    const backend = createTuiBackend(ports, momongaPaths('/home/alice', process.platform, process.env), {}, { load: async () => [], append: async () => undefined }, []);
     const href = new URL(AUTHORIZATION_URL).href;
 
     await (backend as unknown as { copyToClipboard(text: string): void | Promise<void> }).copyToClipboard(href);

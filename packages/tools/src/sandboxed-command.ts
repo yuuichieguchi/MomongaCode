@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { UNMEASURED_CAPABILITY, canonicalJson, createMarker, defaultProcessInspector, groupRecordOutcome, recordMarkerGroup, sha256Hex } from '@momonga/foundation';
+import { UNMEASURED_CAPABILITY, canonicalJson, createMarker, groupRecordOutcome, recordMarkerGroup, sha256Hex } from '@momonga/foundation';
 import type { Clock, ProcessGroupPort, ProcessInspector } from '@momonga/foundation';
 import type { Sandbox, SandboxExit, SandboxPolicy } from '@momonga/sandbox';
 import { createCapture, pumpOutput } from './capture.ts';
@@ -23,7 +23,7 @@ export type SandboxedCommandRequest = SandboxedCommandLine & {
   timeoutMs: number;
   stdin?: string;
   tmpDir?: string;
-  inspector?: ProcessInspector;
+  inspector: ProcessInspector;
   groupPort?: ProcessGroupPort;
   owners?: MarkerOwners;
 };
@@ -53,7 +53,7 @@ export const runSandboxedCommand = async (request: SandboxedCommandRequest): Pro
     timedOut = true;
     controller.abort();
   });
-  const inspector = request.inspector ?? defaultProcessInspector();
+  const { inspector } = request;
   let handle: Awaited<ReturnType<typeof createMarker>> | undefined;
   let settle: ReturnType<typeof createMarkerSettle> | undefined;
   let spawned = false;

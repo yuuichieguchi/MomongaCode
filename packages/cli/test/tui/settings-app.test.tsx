@@ -8,6 +8,7 @@ import type { TuiSettingsPort } from '../../src/tui/screen/notify.ts';
 import { KEYS, untilOutput } from '../ink-helpers.ts';
 import { command, freshPlace, localFileOf, outputHolds, press, startAt, stored, typeInto, unwrapped, writeSettings } from './settings-harness.tsx';
 import type { Place, Started } from './settings-harness.tsx';
+import { testKernelLock } from '@momonga/testkit';
 
 const CLEAR = `${KEYS.ctrlA}${KEYS.ctrlK}`;
 
@@ -20,7 +21,7 @@ const openRow = async (started: Started, label: string, shown: string | RegExp):
 
 const realPort = async (place: Place): Promise<TuiSettingsPort> => ({
   initial: (await loadUserSettings({ home: place.home, signal: new AbortController().signal })).settings.tui,
-  save: (name, value, signal) => writeTuiSetting(place.home, place.userFile, name, value, { signal }),
+  save: (name, value, signal) => writeTuiSetting(place.home, place.userFile, name, value, { lock: testKernelLock(), signal }),
 });
 
 describe('/config, the settings screen', () => {

@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createKernelLockMechanism, hostKernelLock } from '@momonga/foundation';
 import type { HeldKernelLock, KernelLockMechanism } from '@momonga/foundation';
 import { startHarness } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
+import { expectedKernelLockOn, testKernelLock } from '@momonga/testkit';
 
 const harnesses: Harness[] = [];
 const held: HeldKernelLock[] = [];
@@ -22,7 +22,7 @@ const makeLeftover = async (lock: KernelLockMechanism, entry: string): Promise<v
 };
 
 const holdEntry = async (entry: string): Promise<void> => {
-  const outcome = await hostKernelLock().claim(entry);
+  const outcome = await testKernelLock().claim(entry);
   if (outcome.kind !== 'claimed') throw new Error(`${entry} could not be claimed by the test`);
   held.push(outcome.lock);
   if (!fs.existsSync(entry)) fs.writeFileSync(entry, 'in flight', { mode: 0o600 });
@@ -41,7 +41,7 @@ describe('session.ts:229-237: the gateway start never removes a temporary whose 
 
   for (const platform of ['darwin', 'linux'] as const) {
     it(`${platform} mechanism: removes a temporary whose lock no one holds, with its sidecar, at the same start`, async () => {
-      const lock = createKernelLockMechanism(platform);
+      const lock = expectedKernelLockOn(platform);
       const h = await startHarness();
       harnesses.push(h);
       fs.mkdirSync(h.paths.sessions, { recursive: true });
@@ -59,7 +59,7 @@ describe('S7: a host condition on one leftover never stops the gateway start', (
     harnesses.push(h);
     fs.mkdirSync(h.paths.sessions, { recursive: true });
     const stuck = path.join(h.paths.sessions, '.work.json.0a1b2c3d4e5f.tmp');
-    await makeLeftover(hostKernelLock(), stuck);
+    await makeLeftover(testKernelLock(), stuck);
     const warningsBefore = h.warnings.length;
     fs.chmodSync(h.paths.sessions, 0o500);
     try {

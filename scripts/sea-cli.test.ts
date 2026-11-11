@@ -61,7 +61,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('single executable built from the r
     root = createTempRoot({ asHome: true });
     binary = path.join(root, 'bin', 'momonga');
     project = path.join(root, 'p');
-    paths = momongaLayout(root);
+    paths = momongaLayout(root, process.platform, process.env);
     fs.mkdirSync(project);
     fs.writeFileSync(path.join(project, 'config.toml'), ORIGINAL);
     const target = path.join(project, 'config.toml');

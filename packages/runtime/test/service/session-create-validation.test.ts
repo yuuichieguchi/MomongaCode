@@ -40,7 +40,7 @@ const expectConfigError = (response: JsonResponse, message: string, param?: stri
 
 const areasOf = (env: ServiceEnv) => {
   const paths = momongaPaths(env.layout.home, process.platform, {});
-  return { momonga: paths.root, keychains: momongaLayout(env.layout.home).keychains, tmpRoot: paths.tmp.root, spawn: paths.tmp.spawn };
+  return { momonga: paths.root, keychains: momongaLayout(env.layout.home, process.platform, process.env).keychains, tmpRoot: paths.tmp.root, spawn: paths.tmp.spawn };
 };
 
 describe('session create validation (fake timers)', () => {

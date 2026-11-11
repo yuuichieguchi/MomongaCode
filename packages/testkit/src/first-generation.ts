@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { FIRST_GENERATION, MARKER_KINDS, STARTUP_TIMEOUT_MS, beginGenerationStart, ensureMomongaDirs, formatStartRecord, generationLayout, hostKernelLock, momongaPaths, scopeToGeneration } from '@momonga/foundation';
+import { FIRST_GENERATION, MARKER_KINDS, STARTUP_TIMEOUT_MS, beginGenerationStart, ensureMomongaDirs, formatStartRecord, generationLayout, momongaPaths, scopeToGeneration } from '@momonga/foundation';
 import type { GenerationLayout, KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
 import { FIDELITY_FOLD_VERSION } from '@momonga/protocol';
 import { canonicalPathSync } from './canonical-path-sync.ts';
+import { testKernelLock } from './test-locks.ts';
 
 export const firstGeneration = (paths: MomongaPaths): GenerationLayout => generationLayout(path.dirname(paths.root), FIRST_GENERATION);
 
@@ -15,6 +16,7 @@ export const prepareGenerationForTest = (home: string, generation: number, versi
   const layout = generationLayout(canonicalHome, generation);
   const scoped = scopeToGeneration(momongaPaths(canonicalHome, process.platform, {}), generation);
   fs.mkdirSync(layout.dir, PRIVATE_DIRECTORY);
+  for (const directory of [scoped.callLocks, scoped.lockProof]) fs.mkdirSync(directory, PRIVATE_DIRECTORY);
   for (const kind of MARKER_KINDS) fs.mkdirSync(scoped.markers[kind], PRIVATE_DIRECTORY);
   fs.writeFileSync(layout.startRecord, formatStartRecord({ version, foldVersion: FIDELITY_FOLD_VERSION }), { mode: 0o600 });
   return layout;
@@ -28,7 +30,7 @@ export const startGenerationForTest = async (home: string, options: { version: s
   const canonicalHome = canonicalPathSync(home);
   const paths = momongaPaths(canonicalHome, process.platform, {});
   await ensureMomongaDirs(paths);
-  const lock = options.lock ?? hostKernelLock();
+  const lock = options.lock ?? testKernelLock();
   for (let waited = 0; waited <= STARTUP_TIMEOUT_MS; waited += START_RETRY_MS) {
     const outcome = await beginGenerationStart(paths, { version: options.version, foldVersion: FIDELITY_FOLD_VERSION, lock, trigger: 'restart' });
     if (outcome.kind === 'allocated') return { generation: outcome.generation, layout: generationLayout(canonicalHome, outcome.generation), release: outcome.starting.release };

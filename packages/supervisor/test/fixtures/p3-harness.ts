@@ -6,7 +6,7 @@ import { PassThrough } from 'node:stream';
 import { createJsonLogger, momongaPaths, fixedSocket } from '@momonga/foundation';
 import type { JsonLogger, MomongaPaths, TextStream } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { createFakeClock, createFakeTimers, createRealWorkScope, driveFakeTime, prepareGenerationForTest, quiesce, registerCleanup, registerOwned, settleRealWork, waitFor, withTempDir } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createRealWorkScope, driveFakeTime, prepareGenerationForTest, quiesce, registerCleanup, registerOwned, settleRealWork, waitFor, withTempDir, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import type { CleanupContext, FakeClock, FakeTimers, JsonLine, RealWorkScope } from '@momonga/testkit';
 
 export { createRealWorkScope, quiesce };
@@ -433,12 +433,12 @@ export type HarnessOptions = {
 
 export const prepareHome = (context: CleanupContext): { home: string; paths: MomongaPaths } => {
   const home = withTempDir(context, { asHome: true });
-  return { home, paths: momongaPaths(home) };
+  return { home, paths: momongaPaths(home, process.platform, process.env) };
 };
 
 export const startHarness = async (context: CleanupContext, options: HarnessOptions = {}): Promise<Harness> => {
   const home = options.home ?? withTempDir(context, { asHome: true });
-  const paths = momongaPaths(home);
+  const paths = momongaPaths(home, process.platform, process.env);
   if (options.settingsText !== undefined) writeSettingsText(home, options.settingsText);
   else writeSettings(home, options.settings ?? validSettings());
   const generation = options.generation ?? HARNESS_GENERATION;
@@ -462,6 +462,8 @@ export const startHarness = async (context: CleanupContext, options: HarnessOpti
     await pumpUntil(timers, () => closing.settled(), { realWork, maxMs: HARNESS_CLOSE_BOUND_MS, description: 'harness abort settles' });
   };
   const started = await registerOwned(context, () => realWork.run(() => startSupervisor({
+    lockMechanism: testKernelLock(),
+    inspector: testProcessInspector(),
     home,
     version: TEST_VERSION,
     generation,

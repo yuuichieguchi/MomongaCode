@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { migrate, openDatabase } from '@momonga/foundation';
+import { migrate, openDatabase, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { openTraceStore } from '@momonga/observability';
 import { createFakeClock } from '@momonga/testkit';
 import { TRACE_STORE_MIGRATIONS } from '../src/trace-store.ts';
@@ -11,12 +11,12 @@ describe('the run ingest index of the trace store', () => {
     expect(TRACE_STORE_MIGRATIONS.map((migration) => migration.version)).toEqual([1, 2, 3, 4, 5]);
 
     const file = path.join(makeDir(), 'traces.db');
-    const legacy = openDatabase(file);
+    const legacy = openDatabase(file, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     migrate(legacy, TRACE_STORE_MIGRATIONS.slice(0, 3));
     legacy.close();
-    openTraceStore({ path: file, clock: createFakeClock(START_MS) }).close();
+    openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file, clock: createFakeClock(START_MS) }).close();
 
-    const db = openDatabase(file);
+    const db = openDatabase(file, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     registerCleanup(() => db.close());
     const columns = db.prepare("SELECT name FROM pragma_index_info('spans_by_run_ingest') ORDER BY seqno").all();
     expect(columns.map((column) => column['name'])).toEqual(['run_id', 'ingest_seq']);

@@ -5,8 +5,10 @@ import path from 'node:path';
 import { spawnSync } from '@momonga/testkit/child-process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import { secretKeyFile } from '@momonga/foundation';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testKernelLock } from '@momonga/testkit';
+import { createSecretKeyFile, nodeFileSystemSync, systemRandom } from '@momonga/foundation';
+
+const secretKeyFile = createSecretKeyFile(nodeFileSystemSync, systemRandom, testKernelLock());
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -29,7 +31,7 @@ const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString('hex');
 
 const createInChild = (keyPath: string): Promise<string> =>
   new Promise((resolve, reject) => {
-    const script = `const { secretKeyFile } = await import(${JSON.stringify(FOUNDATION_ENTRY)}); process.stdout.write(Buffer.from(secretKeyFile(${JSON.stringify(keyPath)})).toString('hex'));`;
+    const script = `const { createSecretKeyFile, kernelLockNamed, nodeFileSystemSync, systemRandom } = await import(${JSON.stringify(FOUNDATION_ENTRY)}); process.stdout.write(Buffer.from(createSecretKeyFile(nodeFileSystemSync, systemRandom, kernelLockNamed(${JSON.stringify(testKernelLock().name)}))(${JSON.stringify(keyPath)})).toString('hex'));`;
     const child = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';

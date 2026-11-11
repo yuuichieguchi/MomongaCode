@@ -3,7 +3,7 @@ import type { KnownProbeKey } from '@momonga/config';
 import { MODEL_NOT_LISTED_YET, createManagedTarget, managedConnectionPlace, managedModelName, saveProbeRecord } from '@momonga/gateway';
 import type { ManagedServer } from '@momonga/gateway';
 import { MODEL_ID_CHANGED_CODE, messageOf } from '@momonga/protocol';
-import { startFakeChatCompletions, type FakeChatCompletionsServer } from '@momonga/testkit';
+import { startFakeChatCompletions, type FakeChatCompletionsServer, testKernelLock } from '@momonga/testkit';
 import { makeDir } from '../gateway-helpers.ts';
 import { makeReport } from '../report-fixture.ts';
 import { FM_CURRENCY, NO_AUTO_PROBE, fmRecordKey, fmTargetBase, recordKeyOptions } from '../fm-record-support.ts';
@@ -26,7 +26,7 @@ const servingFake = async (modelId: string): Promise<ManagedServer> => {
 
 const targetOf = async (server: ManagedServer, extra: { declaredModel?: string; recordedModel?: string; exitCode?: number }) => {
   const probeRecordDir = makeDir();
-  if (extra.recordedModel !== undefined) await saveProbeRecord(probeRecordDir, RECORD_KEY, { ...makeReport(1, 1), modelId: extra.recordedModel }, FM_CURRENCY);
+  if (extra.recordedModel !== undefined) await saveProbeRecord(probeRecordDir, RECORD_KEY, { ...makeReport(1, 1), modelId: extra.recordedModel }, FM_CURRENCY, testKernelLock());
   return createManagedTarget({
     ...fmTargetBase('apple'),
     server,
