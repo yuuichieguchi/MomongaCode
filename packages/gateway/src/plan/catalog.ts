@@ -3,7 +3,7 @@ import { JsonDepthError, isRecord, parseOutsideJson } from '@momonga/foundation'
 import type { Clock, CredentialStore, EventPayload } from '@momonga/foundation';
 import { maxOutputTokensFor } from '@momonga/protocol';
 import type { PlanCatalogEntry, PlanModelsResponse } from '@momonga/protocol';
-import { applyCredentialEffect, sendAuthorized } from '../adapters/shared/auth.ts';
+import { afterCredentialEffect, sendAuthorized } from '../adapters/shared/auth.ts';
 import { readTextLimited } from '../adapters/shared/body-reading.ts';
 import { createUpstreamClassifier } from '../adapters/shared/classify.ts';
 import { nestedErrorDetail, requestIdsOf, retryAfterOf } from '../adapters/shared/http-error.ts';
@@ -177,9 +177,9 @@ export const createPlanCatalog = (options: PlanCatalogOptions): PlanCatalog => {
     try {
       if (response.status !== SUCCESS_STATUS) {
         const classified = classify(listErrorOf(response, options.clock));
-        await applyCredentialEffect(request.auth, classified, options.clock, request.signal);
+        const failure = await afterCredentialEffect(gatewayErrorFromBody(classified.error), request.auth, classified, options.clock, request.signal);
         end({ outcome: classified.error.code ?? UNCLASSIFIED, requestIdHeaders });
-        throw gatewayErrorFromBody(classified.error);
+        throw failure;
       }
       if (response.truncated) {
         end({ outcome: 'list_invalid', requestIdHeaders });
