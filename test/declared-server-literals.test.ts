@@ -8,7 +8,7 @@ const packagesDir = path.join(root, 'packages');
 const DESCRIPTION_FILE = path.join('packages', 'protocol', 'src', 'managed-servers.ts');
 const TEST_FIXTURE_SOURCES = path.join('packages', 'testkit', 'src') + path.sep;
 
-const DECLARED_TEST_IDS = ['mine', 'loom', 'bench', 'kiln'];
+const DECLARED_TEST_IDS = ['mine', 'loom', 'anvil', 'kiln'];
 
 const sourceFilesUnder = (dir: string): string[] =>
   fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

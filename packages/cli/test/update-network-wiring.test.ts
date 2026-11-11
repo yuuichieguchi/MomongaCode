@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import { momongaLayout } from '@momonga/foundation';
+import { momongaLayout, systemTiming } from '@momonga/foundation';
 import { nodeFiles } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { nodeUpdatePorts } from '../src/update/node-ports.ts';
@@ -46,6 +46,7 @@ describe('the update ports of the CLI', { timeout: TEST_TIMEOUT_MS }, () => {
       home,
       env: {},
       files: nodeFiles,
+      timers: systemTiming,
       version: '1.0.0',
       platform: process.platform,
       stdout: { write: (text: string) => void written.push(text) },
