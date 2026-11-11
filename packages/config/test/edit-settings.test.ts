@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ConfigError, SETTINGS_SCHEMA, TUI_SCREEN_MODES, editSettings, loadSettings, loadUserSettings, readSettingsSnapshot } from '@momonga/config';
-import { localSettingsPath, makeTree, mcpJsonPath, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
+import { distrusting, localSettingsPath, makeTree, mcpJsonPath, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 import { testKernelLock } from '@momonga/testkit';
 const UNABORTED = { lock: testKernelLock(), signal: new AbortController().signal };
@@ -181,12 +181,21 @@ describe('readSettingsSnapshot', () => {
     expect(snapshot.mcpFile).toBe(mcpJsonPath(tree));
   });
 
-  it('offers only the user file for a project that is not trusted and does not read its project file', async () => {
+  it('offers the user file and the local file for a project that is not trusted, every layer it shows, and does not read its project file', async () => {
     const tree = makeTree();
     writeJson(projectSettingsPath(tree), { context: { loopGuidance: false } });
     const snapshot = await readSettingsSnapshot({ ...placeOf(tree), trusted: false, ...UNABORTED });
     expect(snapshot.layers.map((view) => view.layer)).toEqual(['user', 'local']);
-    expect(snapshot.targets).toEqual(['user']);
+    expect(snapshot.targets).toEqual(['user', 'local']);
+  });
+
+  it('lets an edit of the local file win over the user file in a project that is not trusted', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { context: { loopGuidance: true } });
+    writeJson(localSettingsPath(tree), { context: { loopGuidance: true } });
+    await editSettings(placeOf(tree), 'local', { kind: 'set', path: ['context', 'loopGuidance'], value: false }, UNABORTED);
+    const { settings } = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: distrusting() });
+    expect(settings.context.loopGuidance).toBe(false);
   });
 });
 
