@@ -12,7 +12,7 @@ export const foldedThoughtText = (startedAt: number, endedAt: number): string =>
 
 export const earlierLinesText = (count: number): string => `… ${count} earlier lines`;
 
-const textRows = (text: string, width: number): Row[] => wrapText(inertText(text), width, { token: 'dim', links: false });
+const textRows = (text: string, width: number): Row[] => wrapText(inertText(text), width, { token: 'dim', links: false }).map((row): Row => ({ ...row, spans: [...row.spans, [0, row.text.length, 'italic']] }));
 
 const dimRow = (text: string, width: number): Row[] => wrapText(text, width, { token: 'dim', links: false });
 

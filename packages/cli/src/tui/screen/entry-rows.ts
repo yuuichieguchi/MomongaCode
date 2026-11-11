@@ -1,4 +1,5 @@
 import { escapeTerminalLine } from '@momonga/protocol';
+import { FAILURE_DETAIL_LINE, FAILURE_REMEDY_LINE } from '../../failure.ts';
 import { describeDenial } from '../../policy-messages.ts';
 import { bannerRows, textLines } from '../startup.tsx';
 import type { Entry, ToolEntry } from '../transcript.ts';
@@ -32,6 +33,14 @@ export const toolMark = (status: ToolEntry['status']): string => {
 };
 
 const NOTICE_TOKENS: Readonly<Record<Extract<Entry, { kind: 'notice' }>['level'], StyleToken>> = { error: 'error', warning: 'warning', info: 'notice' };
+
+const errorLineToken = (line: string, index: number): StyleToken => {
+  if (index === 0) return 'error';
+  if (line.startsWith(FAILURE_DETAIL_LINE)) return 'dim';
+  return line.startsWith(FAILURE_REMEDY_LINE) ? 'accent' : 'error';
+};
+
+const errorRows = (text: string, width: number): Row[] => text.split('\n').flatMap((line, index) => wrapText(shown(line), width, { token: errorLineToken(line, index) }));
 
 const ENDED: readonly ToolEntry['status'][] = ['completed', 'failed', 'unknown'];
 
@@ -77,6 +86,8 @@ export const rowsOfEntry = (entry: Entry, width: number, facts: RowFacts): Row[]
       return entry.entries.flatMap((item) => wrapText(shown(`${item.status === 'completed' ? '[x]' : item.status === 'in_progress' ? '[~]' : '[ ]'} ${item.content}`), width));
     case 'notice':
       return wrapText(shown(entry.text), width, { token: NOTICE_TOKENS[entry.level] });
+    case 'error':
+      return errorRows(entry.text, width);
     case 'info':
       return wrapText(shown(entry.text), width, { token: 'dim' });
     case 'retired':

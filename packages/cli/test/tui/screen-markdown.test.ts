@@ -25,13 +25,13 @@ describe('markdown text styles', () => {
   it('shows a heading without its marks, in bold', () => {
     const rows = markdownRows('# Title\n### Sub *part* ##', 40);
     expect(texts(rows)).toEqual(['Title', 'Sub part']);
-    expect(spans(rows)).toEqual([[[0, 5, 'bold']], [[4, 8, 'bold'], [0, 8, 'bold']]]);
+    expect(spans(rows)).toEqual([[[0, 5, 'bold']], [[4, 8, 'italic'], [0, 8, 'bold']]]);
   });
 
   it('removes the marks of strong, emphasis and inline code, gives code its token and keeps what is inside a code span literal', () => {
     const rows = markdownRows('a **b** *c* __d__ _e_ `**f**` snake_case_name 2 * 3 * 4', 80);
     expect(texts(rows)).toEqual(['a b c d e **f** snake_case_name 2 * 3 * 4']);
-    expect(spans(rows)).toEqual([[[2, 3, 'bold'], [4, 5, 'bold'], [6, 7, 'bold'], [8, 9, 'bold'], [10, 15, 'code']]]);
+    expect(spans(rows)).toEqual([[[2, 3, 'bold'], [4, 5, 'italic'], [6, 7, 'bold'], [8, 9, 'italic'], [10, 15, 'code']]]);
   });
 
   it('keeps an unclosed mark, an escaped mark and raw HTML as text', () => {
@@ -74,7 +74,7 @@ describe('markdown blocks', () => {
   it('puts the quote gutter in front of every row of a quoted line', () => {
     const rows = markdownRows('> alpha *beta* gamma\n>> deep', 11);
     expect(texts(rows)).toEqual(['│ alpha ', '│ beta ', '│ gamma', '│ │ deep']);
-    expect(spans(rows)).toEqual([[[0, 2, 'dim']], [[0, 2, 'dim'], [2, 6, 'bold']], [[0, 2, 'dim']], [[0, 4, 'dim']]]);
+    expect(spans(rows)).toEqual([[[0, 2, 'dim']], [[0, 2, 'dim'], [2, 6, 'italic']], [[0, 2, 'dim']], [[0, 4, 'dim']]]);
     expect(rows.map((row) => row.prefixCols)).toEqual([2, 2, 2, 4]);
   });
 

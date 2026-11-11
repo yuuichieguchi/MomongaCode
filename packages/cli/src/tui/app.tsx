@@ -392,7 +392,7 @@ export function App(props: AppProps) {
   };
 
   const reportError = (error: unknown): void => {
-    append({ kind: 'notice', level: 'error', text: describeFailure(error) });
+    append({ kind: 'error', text: describeFailure(error) });
   };
 
   const shownModel = (stored: string): string => displaysRef.current.get(stored) ?? stored;
@@ -736,7 +736,8 @@ export function App(props: AppProps) {
     const plan = stopped?.plan;
     if (stopped !== undefined && plan !== undefined && isUsageLimitCode(stopped.code)) runFlow(() => showUsageLimit(stopped.code, plan));
     else if (stopped !== undefined && plan !== undefined && PLAN_BLOCK_CODES.has(stopped.code)) runFlow(() => showPlanBlock(stopped, plan));
-    else if (run.status !== 'COMPLETED') append({ kind: 'notice', level: run.status === 'CANCELLED' ? 'info' : 'error', text: describeRunEnd(run, 'tui') });
+    else if (run.status === 'CANCELLED') append({ kind: 'notice', level: 'info', text: describeRunEnd(run, 'tui') });
+    else if (run.status !== 'COMPLETED') append({ kind: 'error', text: describeRunEnd(run, 'tui') });
   };
 
   const endReading = (): void => {

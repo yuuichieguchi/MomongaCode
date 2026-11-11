@@ -14,7 +14,7 @@ const BULLET = '•';
 const MARKDOWN_STYLE = {
   heading: 'bold',
   strong: 'bold',
-  emphasis: 'bold',
+  emphasis: 'italic',
   code: 'code',
   language: 'dim',
   gutter: 'dim',

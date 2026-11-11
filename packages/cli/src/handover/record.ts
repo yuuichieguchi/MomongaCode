@@ -23,7 +23,7 @@ export type EventKey = { runId: string; seq: number };
 
 export type EntryKey = EventKey & { index: number };
 
-export type HandoverNote = { anchor: EventKey | null; kind: 'info' | 'notice'; level: 'info' | 'warning' | 'error'; text: string };
+export type HandoverNote = { anchor: EventKey | null; kind: 'info' | 'notice' | 'error'; level: 'info' | 'warning' | 'error'; text: string };
 
 export type HandoverView = { key: EntryKey | null; rowOffset: number; following: boolean };
 
@@ -135,7 +135,7 @@ const commonOf = (fields: Fields): Common => ({
 
 const noteOf = (fields: Fields): HandoverNote => ({
   anchor: fields['anchor'] === null ? null : eventKeyOf(objectOf(fields, 'anchor')),
-  kind: oneOf(fields, 'kind', ['info', 'notice']),
+  kind: oneOf(fields, 'kind', ['info', 'notice', 'error']),
   level: oneOf(fields, 'level', ['info', 'warning', 'error']),
   text: textOf(fields, 'text'),
 });
