@@ -31,7 +31,7 @@ const SYNCHRONOUS_ADAPTERS: Readonly<Record<string, string>> = {
 const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/cli/src/handover/replace-process.ts': { 'node:child_process': 1 },
   'packages/cli/src/ripgrep/host.ts': { 'randomBytes': 1 },
-  'packages/cli/src/tui/run-interactive.tsx': { 'node:child_process': 1, 'node:os': 1 },
+  'packages/cli/src/tui/run-interactive.tsx': { 'node:child_process': 1 },
   'packages/cli/src/tui/screen/clipboard-host.ts': { 'node:child_process': 2 },
   'packages/cli/src/tui/screen/history-view.tsx': { 'setImmediate': 1 },
   'packages/config/src/auto-fit.ts': { 'node:fs': 2 },

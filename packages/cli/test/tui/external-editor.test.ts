@@ -52,6 +52,12 @@ describe('the external editor', () => {
     expect(launched).toEqual([['/Applications/My Editor/bin/edit', '--wait', '/tmp/draft-1/value.json']]);
   });
 
+  it('opens a named file in place, between leaving and re-entering the screen', async () => {
+    const { host, steps } = hostOf({ EDITOR: 'vi' });
+    expect(await createExternalEditor(host).open('/h/.momonga/settings.json')).toEqual({ kind: 'opened' });
+    expect(steps).toEqual(['leave the screen', 'launch vi /h/.momonga/settings.json', 'return to the screen']);
+  });
+
   it('uses $EDITOR when $VISUAL is not set', async () => {
     const { host, steps } = hostOf({ EDITOR: 'vi' });
     await createExternalEditor(host).edit('x', 'draft');

@@ -282,6 +282,7 @@ describe('/config, the settings screen', () => {
         edited.push(`${kind}:${draft}`);
         return { kind: 'edited', text: '{"fromEditor": {}}' };
       },
+      open: () => Promise.reject(new Error('no file is opened in this test')),
     };
     const started = await startAt(place, {}, undefined, { externalEditor });
     await open(started);
@@ -306,7 +307,7 @@ describe('/config, the settings screen', () => {
   it('lists the check commands by folder and edits the map as JSON in the structured editor, written to the user file', async () => {
     const place = freshPlace();
     writeSettings(place.userFile, { projectChecks: { '/work/a': { commands: ['npm test'] }, '/work/b': { declined: true } } });
-    const externalEditor: ExternalEditorPort = { edit: async () => ({ kind: 'edited', text: '{"/work/a": {"commands": ["npm run check"]}}' }) };
+    const externalEditor: ExternalEditorPort = { edit: async () => ({ kind: 'edited', text: '{"/work/a": {"commands": ["npm run check"]}}' }), open: () => Promise.reject(new Error('no file is opened in this test')) };
     const started = await startAt(place, {}, undefined, { externalEditor });
     const listed = await open(started);
     expect(listed).toContain('Check commands by folder  /work/a, /work/b  user');

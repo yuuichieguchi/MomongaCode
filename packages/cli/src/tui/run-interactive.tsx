@@ -1,10 +1,9 @@
 import { render } from 'ink';
 import { spawn } from 'node:child_process';
-import os from 'node:os';
 import path from 'node:path';
 import { systemTiming, resolveLayoutLocks } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { loadUserSettings, writeTuiSetting } from '@momonga/config';
+import { writeTuiSetting } from '@momonga/config';
 import { TARGET_NOT_READY, reopenSessionCommand } from '@momonga/protocol';
 import { RunApiError } from '../client/runtime-client.ts';
 import { describeFailure } from '../failure.ts';
@@ -33,6 +32,12 @@ import { TerminalFrame } from './terminal/frame.tsx';
 import { hostProcessOn, hostTerminalOutput, NO_DESCRIPTOR_TEXT } from './terminal/host.ts';
 import { createInkStdin } from './terminal/ink-stdin.ts';
 import { createTerminalLayer } from './terminal/layer.ts';
+import type { TerminalOutputPort } from './terminal/layer.ts';
+import { RepairFlow } from './screen/repair.tsx';
+import type { RepairOutcome } from './screen/repair.tsx';
+import { readTuiStart, setByPerson } from './tui-start-settings.ts';
+import type { TuiStart } from './tui-start-settings.ts';
+import { DEFAULT_KEY_TABLE } from './keys/table.ts';
 import type { HandoverTerminal, TerminalLayer } from './terminal/layer.ts';
 import type { NegotiationState } from './terminal/negotiation.ts';
 import { startWithHandoverTerminal } from './terminal/handover.ts';
@@ -140,8 +145,15 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   const onExit = (result: TuiOutcome): void => {
     outcome = result;
   };
+  const readStart = (): Promise<TuiStart> => readTuiStart({ home: paths.home, projectDir: ports.cwd, userFile: paths.settingsFile, signal: ports.interrupt });
+  const firstStart = await readStart();
+  const start = firstStart.kind === 'loaded' ? firstStart : await repairedStart(ports, terminal, output.port, firstStart, readStart);
+  if (start === undefined) {
+    ports.stderr.write(`momonga: ${firstStart.kind === 'broken' ? firstStart.message : ''}\n`);
+    return 1;
+  }
   const tuiSettings: TuiSettingsPort = {
-    initial: (await loadUserSettings({ home: paths.home, signal: ports.interrupt })).settings.tui,
+    initial: start.settings,
     save: (name, value, signal) => writeTuiSetting(paths.home, paths.settingsFile, name, value, { lock: resolveLayoutLocks(paths).mechanism, signal }),
   };
   const asked: AskedA11y = { screenReaderFlag: options.screenReader === true, env: ports.env };
@@ -165,7 +177,7 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
     process: hostProcessOn(ports.platform),
     timers: systemTiming,
     screen: readerAtStart ? 'scrollback' : tuiSettings.initial.screen,
-    screenSetByUser: readerAtStart,
+    screenSetByUser: readerAtStart || setByPerson(start, 'screen'),
     mouse: tuiSettings.initial.mouse,
     onEvents: input.push,
     onFailure: (error) => moveFailures.push(error),
@@ -176,7 +188,7 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   const adopted: { adoption?: TuiAdoption } = adoption.kind === 'record' ? { adoption: { record: adoption.record, attached: () => ports.handover?.removeRecord(adoption.file) } } : {};
   const externalEditor = createExternalEditor({
     env: ports.env,
-    temporaryDirectory: () => ports.files.mkdtemp(path.join(os.tmpdir(), 'momonga-draft-')),
+    temporaryDirectory: () => ports.files.mkdtemp(path.join(ports.tmpdir, 'momonga-draft-')),
     writePrivate: (file, text) => ports.files.writeTextAtomically(file, text, 0o600),
     read: (file) => ports.files.readText(file),
     remove: (directory) => ports.files.rm(directory, { recursive: true }),
@@ -213,6 +225,39 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   const exitCode = exitCodeOf(ports, refusalOf(outcome, paths));
   writeReopenLine(ports, outcome);
   return exitCode;
+};
+
+const repairedStart = async (ports: CliPorts, terminal: Terminal, output: TerminalOutputPort, first: Extract<TuiStart, { kind: 'broken' }>, reread: () => Promise<TuiStart>): Promise<Extract<TuiStart, { kind: 'loaded' }> | undefined> => {
+  const failures: unknown[] = [];
+  const input = createScreenInput();
+  const layer = createTerminalLayer({ input: terminal.stdin, output, process: hostProcessOn(ports.platform), timers: systemTiming, screen: 'scrollback', screenSetByUser: true, mouse: false, onEvents: input.push, onFailure: (error) => failures.push(error) });
+  layer.start();
+  const editor = createExternalEditor({
+    env: ports.env,
+    temporaryDirectory: () => ports.files.mkdtemp(path.join(ports.tmpdir, 'momonga-draft-')),
+    writePrivate: (file, text) => ports.files.writeTextAtomically(file, text, 0o600),
+    read: (file) => ports.files.readText(file),
+    remove: (directory) => ports.files.rm(directory, { recursive: true }),
+    leaveScreen: layer.leaveForProgram,
+    launch: launchOnTerminal,
+  });
+  const outcome = Promise.withResolvers<RepairOutcome>();
+  try {
+    const instance = render(
+      <TerminalFrame layer={layer}>
+        <RepairFlow first={first} input={input} keys={DEFAULT_KEY_TABLE} open={editor.open} reread={reread} done={outcome.resolve} failed={outcome.reject} />
+      </TerminalFrame>,
+      { stdin: createInkStdin().stream, stdout: terminal.stdout, exitOnCtrlC: false, maxFps: MAX_FPS },
+    );
+    const answer = await outcome.promise;
+    instance.unmount();
+    await instance.waitUntilExit();
+    const [failure] = failures;
+    if (failure !== undefined) throw failure;
+    return answer.kind === 'loaded' ? answer.start : undefined;
+  } finally {
+    layer.close();
+  }
 };
 
 const launchOnTerminal = (argv: readonly string[]): Promise<void> =>

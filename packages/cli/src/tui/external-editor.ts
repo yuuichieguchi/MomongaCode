@@ -13,7 +13,9 @@ export type ExternalEdit = { kind: 'edited'; text: string } | { kind: 'unset' };
 
 export type EditedText = 'draft' | 'json';
 
-export type ExternalEditorPort = { edit(draft: string, kind: EditedText): Promise<ExternalEdit> };
+export type ExternalOpen = { kind: 'opened' } | { kind: 'unset' };
+
+export type ExternalEditorPort = { edit(draft: string, kind: EditedText): Promise<ExternalEdit>; open(file: string): Promise<ExternalOpen> };
 
 export type ExternalEditorHost = {
   env: Readonly<Record<string, string | undefined>>;
@@ -38,7 +40,22 @@ const commandOf = (env: ExternalEditorHost['env']): readonly string[] | undefine
   return undefined;
 };
 
+const launchedOn = async (host: ExternalEditorHost, command: readonly string[], file: string): Promise<void> => {
+  const returnToScreen = host.leaveScreen();
+  try {
+    await host.launch([...command, file]);
+  } finally {
+    await returnToScreen();
+  }
+};
+
 export const createExternalEditor = (host: ExternalEditorHost): ExternalEditorPort => ({
+  open: async (file) => {
+    const command = commandOf(host.env);
+    if (command === undefined) return { kind: 'unset' };
+    await launchedOn(host, command, file);
+    return { kind: 'opened' };
+  },
   edit: async (draft, kind) => {
     const command = commandOf(host.env);
     if (command === undefined) return { kind: 'unset' };
@@ -46,12 +63,7 @@ export const createExternalEditor = (host: ExternalEditorHost): ExternalEditorPo
     try {
       const file = path.join(directory, EDITED_FILES[kind]);
       await host.writePrivate(file, draft);
-      const returnToScreen = host.leaveScreen();
-      try {
-        await host.launch([...command, file]);
-      } finally {
-        await returnToScreen();
-      }
+      await launchedOn(host, command, file);
       return { kind: 'edited', text: (await host.read(file)).replace(/\n$/, '') };
     } finally {
       await host.remove(directory);

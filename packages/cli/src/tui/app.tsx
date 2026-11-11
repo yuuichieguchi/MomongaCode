@@ -130,9 +130,14 @@ const unavailableShell: ShellPort = {
   },
 };
 
+const EXTERNAL_EDITOR_UNAVAILABLE = 'the external editor is not available in this interface';
+
 const unavailableExternalEditor: ExternalEditorPort = {
   edit() {
-    return Promise.reject(new Error('the external editor is not available in this interface'));
+    return Promise.reject(new Error(EXTERNAL_EDITOR_UNAVAILABLE));
+  },
+  open() {
+    return Promise.reject(new Error(EXTERNAL_EDITOR_UNAVAILABLE));
   },
 };
 
