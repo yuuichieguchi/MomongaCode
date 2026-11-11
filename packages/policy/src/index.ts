@@ -3,7 +3,8 @@ export type { ParseRuleOptions, PermissionRule, RuleEffect, RuleOrigin } from '@
 export { decide, decidePrimary, denyingRuleFor, isGoverningRule } from './decide.ts';
 export type { DecideInput, Decision } from './decide.ts';
 export { foldedKey } from './fold.ts';
-export { matchPathlessRule, matchRule, ruleCoversSubject, wildcardMatches } from './match-rule.ts';
+export { matchPathlessRule, matchRule, ruleCoversSubject } from './match-rule.ts';
+export { wildcardMatches } from './wildcard.ts';
 export type { RuleResolution } from './match-rule.ts';
 export { supersededFormOf, supersededVerdictOf } from './superseded.ts';
 export type { CoveredProgram, SupersededForm, SupersededVerdict } from './superseded.ts';

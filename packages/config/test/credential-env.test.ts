@@ -38,6 +38,16 @@ const NAMES: Row[] = [
   { name: 'PRIVATE_DIR', withheld: true, why: 'weak PRIVATE as the first word' },
   { name: 'SSH_AUTH_SOCK_X', withheld: true, why: 'weak AUTH as a whole word inside a longer name' },
   { name: 'github_token', withheld: true, why: 'strong TOKEN in lower case' },
+  { name: 'DATABASE_URL', withheld: true, why: 'weak URL as a whole word' },
+  { name: 'GITHUB_PAT', withheld: true, why: 'weak PAT as a whole word' },
+  { name: 'DB_CONN', withheld: true, why: 'weak CONN as a whole word' },
+  { name: 'SENTRY_DSN', withheld: true, why: 'weak DSN as a whole word' },
+  { name: 'SESSION_COOKIE', withheld: true, why: 'weak SESSION and COOKIE as whole words' },
+  { name: 'GOPATH', withheld: false, why: 'PAT is not a delimited word of GOPATH' },
+  { name: 'PYTHONPATH', withheld: false, why: 'PAT is not a delimited word of PYTHONPATH' },
+  { name: 'NODE_PATH', withheld: false, why: 'PATH is not the word PAT' },
+  { name: 'CONNECT_TIMEOUT', withheld: false, why: 'CONNECT is not the word CONN' },
+  { name: 'CURLOPT_URLS', withheld: false, why: 'URLS is not the word URL' },
   { name: 'PWD', withheld: false, why: 'PWD alone is not the last word of a longer name' },
   { name: 'OLDPWD', withheld: false, why: 'PWD is not a delimited word of OLDPWD' },
   { name: 'XPWD', withheld: false, why: 'PWD is not a delimited word of XPWD' },
@@ -74,8 +84,8 @@ describe('values carry no vendor knowledge', () => {
   });
 
   it('withholds a URL carrying a password in its authority, and keeps one without', () => {
-    const env = { DATABASE_URL: 'postgres://app:hunter2@db.local:5432/app', DATABASE_URL_RO: 'postgres://app@db.local/app' };
-    expect(strip(env, [])).toEqual({ env: { DATABASE_URL_RO: 'postgres://app@db.local/app' }, removed: ['DATABASE_URL'] });
+    const env = { DATABASE_PLACE: 'postgres://app:hunter2@db.local:5432/app', DATABASE_PLACE_RO: 'postgres://app@db.local/app' };
+    expect(strip(env, [])).toEqual({ env: { DATABASE_PLACE_RO: 'postgres://app@db.local/app' }, removed: ['DATABASE_PLACE'] });
   });
 });
 
@@ -129,7 +139,7 @@ describe('user declarations', () => {
 });
 
 const STRONG = ['KEY', 'TOKEN', 'SECRET', 'PASSWORD', 'PASSWD', 'PASSPHRASE', 'CREDENTIAL', 'CREDS'];
-const WEAK = ['AUTH', 'COOKIE', 'SESSION', 'PRIVATE', 'PASS'];
+const WEAK = ['AUTH', 'COOKIE', 'SESSION', 'PRIVATE', 'PASS', 'URL', 'DSN', 'CONN', 'PAT'];
 
 const referenceVocabulary = (name: string): boolean => {
   const upper = name.toUpperCase();
@@ -165,7 +175,7 @@ const seeded = (seed: number) => {
   };
 };
 
-const NAME_PARTS = ['DB', 'MY', 'SSH', 'AUTH', 'AUTHOR', 'SESSION', 'SESSIONID', 'KEY', 'MONKEY', 'TOKEN', 'PASS', 'PASSAGE', 'PWD', 'OLDPWD', 'COOKIE', 'PRIVATE', 'SECRET', 'CREDS', 'PATH', 'HOME', 'GIT', 'NAME', 'ID', 'TTY'];
+const NAME_PARTS = ['DB', 'MY', 'SSH', 'AUTH', 'AUTHOR', 'SESSION', 'SESSIONID', 'KEY', 'MONKEY', 'TOKEN', 'PASS', 'PASSAGE', 'PWD', 'OLDPWD', 'COOKIE', 'PRIVATE', 'SECRET', 'CREDS', 'PATH', 'GOPATH', 'PAT', 'URL', 'URLS', 'DSN', 'CONN', 'CONNECT', 'HOME', 'GIT', 'NAME', 'ID', 'TTY'];
 const VALUES = ['/usr/bin', 'en_US.UTF-8', 'postgres://u:pw@h/db', 'postgres://u@h/db', GITHUB_STYLE_VALUE, 'alpha-1', 'beta-2', 'gamma-3', 'delta-4'];
 
 const generatedCase = (random: () => number) => {

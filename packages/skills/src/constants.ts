@@ -17,6 +17,6 @@ export const NAME_MAX_LENGTH = 64;
 
 export const DESCRIPTION_MAX_LENGTH = 1024;
 
-export const ACTIVATE_SKILL_TOOL_NAME = 'activate_skill';
+export { ACTIVATE_SKILL_TOOL_NAME } from '@momonga/protocol';
 
 export const ACTIVATE_SKILL_TIMEOUT_MS = 10_000;
