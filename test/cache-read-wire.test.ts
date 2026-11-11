@@ -1,9 +1,9 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { describe, expect, it } from 'vitest';
-import { billedCallsOfRun, buildCostBreakdown, buildCostReport, summarizeRun } from '@momonga/observability';
+import { buildCostBreakdown, buildCostReport, summarizeRun } from '@momonga/observability';
 import { RUN_API_SCHEMAS } from '@momonga/protocol';
-import { harness } from '../packages/observability/test/helpers.ts';
+import { harness, billedCallsOfRun } from '../packages/observability/test/helpers.ts';
 import { TABLE, asBreakdownCall, recordCalls } from '../packages/observability/test/cache-read-fixtures.ts';
 import type { CallSpec } from '../packages/observability/test/cache-read-fixtures.ts';
 

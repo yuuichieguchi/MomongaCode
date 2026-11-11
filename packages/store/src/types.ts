@@ -699,7 +699,6 @@ export type RuntimeStore = {
   dataVersion(): number;
   createChildRun(input: ChildRunInput): CreateChildRunResult;
   listChildRuns(runId: string): Run[];
-  treeTokens(runId: string): number;
   treeSpend(runId: string): TreeSpend & { runsRead: number };
   admitModelRequest(holder: LeaseFence | SettledRun, ask: AdmissionAsk): Admission | LeaseLost;
   releaseBudget(runId: string): void;

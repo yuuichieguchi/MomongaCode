@@ -231,10 +231,6 @@ const prepareStatements = (db: DatabaseSync) => ({
     `WITH RECURSIVE tree(id) AS (SELECT id FROM runs WHERE session_id = :sessionId UNION SELECT c.id FROM runs c JOIN tree t ON c.parent_run_id = t.id)
      SELECT r.session_id AS session_id FROM runs r JOIN tree t ON r.id = t.id WHERE r.session_id <> :sessionId AND r.status NOT IN (${TERMINAL_LIST})`,
   ),
-  treeTokens: db.prepare(
-    `WITH RECURSIVE tree(id) AS (SELECT :rootId UNION ALL SELECT r.id FROM runs r JOIN tree t ON r.parent_run_id = t.id)
-     SELECT COALESCE(SUM(json_extract(r.usage_json, '$.totalTokens')), 0) AS total FROM runs r JOIN tree t ON r.id = t.id`,
-  ),
   treeSpend: db.prepare(
     `WITH RECURSIVE tree(id) AS (SELECT :rootId UNION ALL SELECT r.id FROM runs r JOIN tree t ON r.parent_run_id = t.id)
      SELECT COALESCE(SUM(json_extract(r.usage_json, '$.totalTokens')), 0) AS total_tokens,
@@ -1425,12 +1421,6 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     releaseBudget: (runId) => {
       sql.reserveBudget.run({ id: runId, tokens: 0, nano: 0 });
-    },
-
-    treeTokens: (runId) => {
-      const row = sql.treeTokens.get({ rootId: rootRunIdOf(runId) });
-      if (row === undefined) throw new Error(`could not compute the token usage of the run tree of ${runId}`);
-      return readerFor('runs', runId, row).number('total');
     },
 
     rootSessionId: rootSessionIdOf,

@@ -7,12 +7,12 @@ export { RUN_REPORT_EVENT_TYPES, buildRunReport, createRunReportFold } from './r
 export type { RunReportFold, RunReportSpan } from './run-report.ts';
 export { buildCostBreakdown, formatCostBreakdown } from './cost-breakdown.ts';
 export type { BreakdownAnatomy, BreakdownCall, BreakdownPrefix, CauseCounts, CostBreakdown, CostBreakdownOptions, InconsistentUsage, TimingSummary, UnjoinedRecord, UnpricedCall } from './cost-breakdown.ts';
-export { MAX_BILLED_CALLS_PAGE, RUNLESS, billedCallsOfRun, billedUsageOf, pageBilledCalls } from './billed-calls.ts';
+export { MAX_BILLED_CALLS_PAGE, RUNLESS, billedUsageOf, pageBilledCalls } from './billed-calls.ts';
 export { CACHE_READ_TEXT, isCacheReadReported } from './cache-reads.ts';
 export type { CacheReadTally, CacheReadUsage, InputClause, SplitLine } from './cache-reads.ts';
 export type { BilledCall, BilledCallWire, BilledCallsCursor, BilledCallsPage } from './billed-calls.ts';
 export { UNPRICED_CODE_TEXT } from '@momonga/protocol';
-export { describeMoney, moneyAmountOf, moneyLine, moneyTallyOf, unpricedCallsOf } from './money-line.ts';
+export { describeMoney, moneyAmountOf, moneyTallyOf, unpricedCallsOf } from './money-line.ts';
 export type { CallPrice, MoneyTally } from './money-line.ts';
 export { LOCAL_PRICE_VERSION, amountOfUnits, definePriceTable, findPriceEntry, priceCall, quoteChain, runCostsOf } from './cost.ts';
 export type { QuotedMember } from './cost.ts';

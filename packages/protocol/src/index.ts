@@ -388,7 +388,6 @@ export type {
   CostTotalsView,
   RoleCostView,
   GatewayCostReportView,
-  JsonSchema,
   McpAuthState,
   McpAuthorizationView,
   McpServerView,
@@ -739,3 +738,4 @@ export type {
 export { BILLING_CHANGE_ALLOWED, BILLING_CHANGE_REASONS, BILLING_CHANGE_REFUSED, describeFallbackCause, fallbackCauseName, isFallbackCause, isFallbackCauseList } from './fallback-cause.ts';
 export type { BillingChangeReason, BillingChangeRecord, FallbackCause } from './fallback-cause.ts';
 export { planAccountRefOf } from './plan-account.ts';
+export type { JsonSchema } from './schema-helpers.ts';
