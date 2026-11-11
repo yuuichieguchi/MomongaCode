@@ -29,6 +29,12 @@ import type { BilledDetail, TokenAnatomy, UnpricedCode } from './token-anatomy.t
 
 const DAY_MS = 86_400_000;
 const operationEffect: JsonSchema = closed({ operation: string, target: string, outcome: enumOf(OPERATION_EFFECT_OUTCOMES) }, ['operation', 'target', 'outcome']);
+const appliedDiffFields = {
+  hunks: { type: 'array', items: closed({ oldStart: integer, newStart: integer, lines: { type: 'array', items: string } }, ['oldStart', 'newStart', 'lines']) },
+  added: integer,
+  removed: integer,
+  diffOmitted: string,
+} as const satisfies Record<string, JsonSchema>;
 const toolFiles: JsonSchema = { type: 'array', items: closed({ path: string, sha256: string, access: enumOf(FILE_ACCESSES) }, ['path', 'access']) };
 
 const permissionMode = enumOf(PERMISSION_MODES);
@@ -101,6 +107,8 @@ const inboxRowView = closed(
 );
 
 const inboxPending: JsonSchema = { type: 'array', items: inboxRowView, maxItems: INBOX_MAX_PENDING };
+
+const inboxChangeRow = closed({ id: string, delivery: storedEnumOf(INBOX_DELIVERIES), state: storedEnumOf(INBOX_STATES), seq: { type: 'integer', minimum: 1 } }, ['id', 'delivery', 'state', 'seq']);
 
 export const base64ByteLength = (data: string): number => {
   const padding = data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0;
@@ -587,10 +595,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       memories: { type: 'array', items: string },
       exitCode: integer,
       formatted: closed({ formatter: string, version: integer }, ['formatter', 'version']),
-      hunks: { type: 'array', items: closed({ oldStart: integer, newStart: integer, lines: { type: 'array', items: string } }, ['oldStart', 'newStart', 'lines']) },
-      added: integer,
-      removed: integer,
-      diffOmitted: string,
+      ...appliedDiffFields,
       effect: operationEffect,
     },
     required: ['callId', 'status', 'output'],
@@ -654,7 +659,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     required: ['target', 'counter', 'fallback', 'inputDigest', 'itemCount', 'counted', 'reported', 'kept', 'known', 'uncounted', 'miss', 'contextWindow', 'tokenCounting'],
   },
   'tool.reconciled': {
-    properties: { callId: string, outcome: enumOf(['already_applied', 'not_applied', 'unknown']), output: string, interrupted: enumOf(['timeout', 'cancelled']), files: toolFiles, command: string, effect: operationEffect },
+    properties: { callId: string, outcome: enumOf(['already_applied', 'not_applied', 'unknown']), output: string, interrupted: enumOf(['timeout', 'cancelled']), files: toolFiles, command: string, effect: operationEffect, ...appliedDiffFields },
     required: ['callId', 'outcome', 'output'],
   },
   'tool.waiting': {
@@ -683,7 +688,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
   },
   'mode.changed': { properties: { mode: storedPermissionMode }, required: ['mode'] },
   'model.changed': { properties: { model: { type: 'string', minLength: 1 }, previousModel: { type: 'string', minLength: 1 } }, required: ['model', 'previousModel'] },
-  'inbox.changed': { properties: { pending: inboxPending }, required: ['pending'] },
+  'inbox.changed': { properties: { pending: { type: 'array', items: inboxChangeRow, maxItems: INBOX_MAX_PENDING } }, required: ['pending'] },
   user_shell: { properties: { command: string, exitCode: nullable(integer), output: string, include: boolean }, required: ['command', 'exitCode', 'output', 'include'] },
   'usage.updated': {
     properties: { inputTokens: nonNegativeInteger, outputTokens: nonNegativeInteger, totalTokens: nonNegativeInteger },

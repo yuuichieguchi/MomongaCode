@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { openDatabase } from '@momonga/foundation';
+import { openDatabase, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { contributionAtTerminal } from '@momonga/runtime';
 import { createJournalReader } from '@momonga/store';
 import type { ContributionPreparer, RuntimeStore } from '@momonga/store';
@@ -17,7 +17,7 @@ type Path = 'thread' | 'inline';
 const threadDouble = (dbPath: () => string): ContributionPreparer => ({
   ...noJournalFacts,
   measure: async (request) => {
-    const db = openDatabase(dbPath());
+    const db = openDatabase(dbPath(), { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     try {
       return createJournalReader(db).measure(contributionAtTerminal, request);
     } finally {

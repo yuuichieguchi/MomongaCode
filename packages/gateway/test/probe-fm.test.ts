@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createBinaryHashCache, managedInstancePaths, momongaPaths } from '@momonga/foundation';
 import { loadProbeRecord, managedRecordPath, probeManagedFm } from '@momonga/gateway';
 import { FM_SERVER } from '@momonga/protocol';
-import { FAKE_OS_BUILD, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
+import { FAKE_OS_BUILD, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import { makeHome } from './gateway-process-helpers.ts';
 import { FAKE_FM_LISTED_MODEL, FM_CURRENCY, fmRecordKey } from './fm-record-support.ts';
 
@@ -33,6 +33,8 @@ const options = (context: Awaited<ReturnType<typeof setup>>, warnings: string[] 
   signal: AbortSignal.timeout(REAL_PROCESS_TEST_TIMEOUT_MS),
   exec: fakeExec,
   hashes: createBinaryHashCache(),
+  lock: testKernelLock(),
+  inspector: testProcessInspector(),
   isUsableBinary: async (binary: string) => fs.existsSync(binary),
   readStopGraceMs: () => 1_000,
   onWarning: (message: string) => void warnings.push(message),

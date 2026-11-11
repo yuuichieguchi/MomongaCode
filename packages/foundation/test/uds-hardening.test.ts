@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { listenUnix } from '@momonga/foundation';
-import { realProcessTestSignal } from '@momonga/testkit';
+import { realProcessTestSignal, testKernelLock } from '@momonga/testkit';
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -45,7 +45,7 @@ describe('listenUnix directory hardening', () => {
     fs.symlinkSync(real, link);
     const target = server();
 
-    await expect(listenUnix(target, path.join(link, 's.sock'), undefined, realProcessTestSignal())).rejects.toThrow(/symlink/i);
+    await expect(listenUnix(target, path.join(link, 's.sock'), { mechanism: testKernelLock() }, realProcessTestSignal())).rejects.toThrow(/symlink/i);
 
     expect(target.listening).toBe(false);
     expect(fs.readdirSync(real)).toEqual([]);
@@ -61,7 +61,7 @@ describe('listenUnix directory hardening', () => {
     const socketPath = path.join(alias, 'd', 's.sock');
     const target = server();
 
-    await listenUnix(target, socketPath, undefined, realProcessTestSignal());
+    await listenUnix(target, socketPath, { mechanism: testKernelLock() }, realProcessTestSignal());
 
     expect(target.listening).toBe(true);
     expect(fs.statSync(socketPath).mode & 0o777).toBe(0o600);
@@ -74,7 +74,7 @@ describe('listenUnix directory hardening', () => {
     vi.spyOn(process, 'getuid').mockReturnValue(uid + 1);
     const target = server();
 
-    await expect(listenUnix(target, path.join(root, 's.sock'), undefined, realProcessTestSignal())).rejects.toThrow(/own/i);
+    await expect(listenUnix(target, path.join(root, 's.sock'), { mechanism: testKernelLock() }, realProcessTestSignal())).rejects.toThrow(/own/i);
 
     expect(target.listening).toBe(false);
     expect(fs.readdirSync(root)).toEqual([]);
@@ -86,6 +86,6 @@ describe('listenUnix directory hardening', () => {
     fs.mkdirSync(loose);
     fs.chmodSync(loose, 0o710);
 
-    await expect(listenUnix(server(), path.join(loose, 's.sock'), undefined, realProcessTestSignal())).rejects.toThrow(/0700/);
+    await expect(listenUnix(server(), path.join(loose, 's.sock'), { mechanism: testKernelLock() }, realProcessTestSignal())).rejects.toThrow(/0700/);
   });
 });

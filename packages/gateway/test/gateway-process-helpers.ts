@@ -3,9 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { vi } from 'vitest';
 import { FIRST_GENERATION, SWEEP_INTERVAL_MS, createGivenSecretStore, createUdsClient, fixedSocket, generationLayout, momongaPaths, secretStoreEnvFor } from '@momonga/foundation';
-import type { SecretProcessPort, SecretStore, UdsClient } from '@momonga/foundation';
+import type { SecretProcessPort, SecretStore, UdsClient, LayoutLocks } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { killPidsForCleanup, modelSettings, FAKE_KEYCHAIN_PATH, createFakeSecretFiles, createTempDir, prepareGenerationForTest, removeTempDir, registerOwned } from '@momonga/testkit';
+import { killPidsForCleanup, modelSettings, FAKE_KEYCHAIN_PATH, createFakeSecretFiles, createTempDir, prepareGenerationForTest, removeTempDir, registerOwned, testLocks } from '@momonga/testkit';
 import type { ModelSettings, FakeSecurityPort, PendingTimer } from '@momonga/testkit';
 import { registerCleanup } from './gateway-helpers.ts';
 
@@ -14,7 +14,7 @@ export const MINIMAL_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 
 export const notTheRoleTick = (timer: PendingTimer): boolean => timer.delayMs !== SWEEP_INTERVAL_MS;
 
-export type GatewayProcessOptions = Parameters<typeof startGatewayProcess>[0];
+export type GatewayProcessOptions = Omit<Parameters<typeof startGatewayProcess>[0], 'locks'> & { locks?: LayoutLocks };
 export type GatewayProcessHandle = Awaited<ReturnType<typeof startGatewayProcess>>;
 
 export const makeHome = (): string => {
@@ -119,7 +119,7 @@ export const captureStdout = (): StdoutCapture => {
 };
 
 export const launchGateway = async (options: GatewayProcessOptions): Promise<GatewayProcessHandle> => {
-  return registerOwned(registerCleanup, () => startGatewayProcess(options));
+  return registerOwned(registerCleanup, () => startGatewayProcess({ locks: testLocks(), ...options }));
 };
 
 export const clientFor = (socketPath: string): UdsClient => {

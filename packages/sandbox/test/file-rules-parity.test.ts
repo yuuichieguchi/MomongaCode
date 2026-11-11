@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fileRuleBlocks, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testKernelLock } from '@momonga/testkit';
 import { PARITY_CANDIDATES, PARITY_SPECS } from '../../policy/test/parity-table.ts';
 import { fileRulesOf, fileSpec } from './file-rule-specs.ts';
 import { makeTempDir, run } from './helpers.ts';
@@ -40,7 +40,7 @@ describe.runIf(process.platform === 'darwin')('kernel parity with the exact matc
     const tmpRoot = path.join(base, 'spawn-tmp');
     fs.mkdirSync(tmpRoot);
     const policy = { writableRoots: [], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], readDenied: [], network: 'deny', fileRules } as SandboxPolicy;
-    const proc = createSeatbeltSandbox({ tmpRoot, killGraceMs: 300 }).spawn(
+    const proc = createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot, killGraceMs: 300 }).spawn(
       {
         argv: ['/bin/sh', '-c', 'for f in "$@"; do if cat -- "$f" >/dev/null 2>&1; then echo R; else echo D; fi; done', 'sh', ...targets],
         cwd: base,
@@ -73,7 +73,7 @@ describe.runIf(process.platform === 'darwin')('kernel parity with the exact matc
     const tmpRoot = path.join(base, 'spawn-tmp');
     fs.mkdirSync(tmpRoot);
     const policy = { writableRoots: [], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], readDenied: [], network: 'deny', fileRules } as SandboxPolicy;
-    const proc = createSeatbeltSandbox({ tmpRoot, killGraceMs: 300 }).spawn(
+    const proc = createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot, killGraceMs: 300 }).spawn(
       {
         argv: ['/bin/sh', '-c', 'for f in "$@"; do if cat -- "$f" >/dev/null 2>&1; then echo R; else echo D; fi; done', 'sh', ...targets],
         cwd: base,

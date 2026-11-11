@@ -4,9 +4,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect } from 'vitest';
 import { nodeFileSystem, systemRandom } from '@momonga/foundation';
+import type { HelperSelf } from '@momonga/foundation';
 import { ToolExecutionError, createOperationTools, nodeShellHost, openGitCredentialChannel } from '@momonga/tools';
 import type { AnyTool, ArgvRunner, ForgeAccess, ForgeFetch, OperationSettings, ReconcileContext, ReconcileResult, ToolContext, ToolIdempotencyRecord, ToolResult } from '@momonga/tools';
 import { testPaths } from '@momonga/testkit';
+
+export const PRODUCT_ENTRY = path.resolve(import.meta.dirname, '..', '..', '..', 'cli', 'src', 'main.ts');
+
+export const ENTRY_AS_SCRIPT: HelperSelf = { execPath: process.execPath, script: PRODUCT_ENTRY };
 
 const cleanups: Array<() => void | Promise<void>> = [];
 
@@ -122,7 +127,7 @@ export const countingRunner = (): CountingRunner => {
       environments.push(options.env);
       return execArgv(argv, options.cwd, options.env, options.signal, options.stdin);
     }
-    const channel = await openGitCredentialChannel(credentials, { root: os.tmpdir(), random: systemRandom, files: nodeFileSystem });
+    const channel = await openGitCredentialChannel(credentials, { root: fs.realpathSync(os.tmpdir()), random: systemRandom, files: nodeFileSystem, helper: ENTRY_AS_SCRIPT });
     try {
       const env = channel.environment(options.env);
       environments.push(env);

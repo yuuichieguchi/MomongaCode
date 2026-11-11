@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testKernelLock } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -69,7 +69,7 @@ describe.runIf(HAS_SEATBELT)('seatbelt session tmp dir (real sandbox-exec)', () 
     marker = path.join(work, 'ran');
     for (const dir of [work, mine, other, spawnTmpRoot]) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     fs.writeFileSync(path.join(other, 'secret'), 'other-session-secret');
-    sandbox = createSeatbeltSandbox({ tmpRoot: spawnTmpRoot, killGraceMs: KILL_GRACE_MS });
+    sandbox = createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot: spawnTmpRoot, killGraceMs: KILL_GRACE_MS });
   });
 
   it('sets TMPDIR to the command tmpDir and lets the command write there although its parent is write-denied', async () => {
@@ -145,7 +145,7 @@ describe.runIf(HAS_SEATBELT)('seatbelt rejects an invalid command tmpDir (real s
     const other = path.join(sessions, 'session-2');
     for (const dir of [momonga, work, mine, other, path.join(base, 'spawn-tmp')]) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     const policy: SandboxPolicy = { writableRoots: [work], writeDenied: [momonga, sessions], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES, readDenied: [momonga, sessions], readAllowed: [mine], network: 'deny' };
-    const sandbox = createSeatbeltSandbox({ tmpRoot: path.join(base, 'spawn-tmp'), killGraceMs: KILL_GRACE_MS });
+    const sandbox = createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot: path.join(base, 'spawn-tmp'), killGraceMs: KILL_GRACE_MS });
     return { base, home, work, sessions, other, policy, sandbox, marker: path.join(work, 'ran') };
   };
 

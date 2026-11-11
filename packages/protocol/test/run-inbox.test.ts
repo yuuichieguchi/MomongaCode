@@ -79,7 +79,7 @@ describe('the run inbox contract (design 5.3)', () => {
 
   it('has the session event inbox.changed with the rows pending after the change', () => {
     expect(EVENT_TYPES).toContain('inbox.changed');
-    const event: SessionEvent = { type: 'inbox.changed', pending: [row()], id: 4, sessionId: 'sess-1', createdAt: 1 };
+    const event: SessionEvent = { type: 'inbox.changed', pending: [{ id: 'row-1', delivery: 'queue', state: 'pending', seq: 1 }], id: 4, sessionId: 'sess-1', createdAt: 1 };
     expect(accepts('PublicRunEvent', event)).toBe(true);
     expect(toPublicRunEvent(event)).toEqual(event);
     expect(accepts('PublicRunEvent', { type: 'inbox.changed', id: 4, sessionId: 'sess-1', createdAt: 1 })).toBe(false);

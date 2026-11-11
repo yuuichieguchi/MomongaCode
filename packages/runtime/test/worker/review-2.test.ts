@@ -1,5 +1,5 @@
 import { nodeFileSystem, systemRandom } from '@momonga/foundation';
-import { UNCONFIGURED_NETWORK, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, testProcessInspector } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
 import type { GatewayPort } from '@momonga/runtime';
@@ -10,6 +10,7 @@ import { DEADLINE_MS, LEASE_MS, START_MS, makeEnv, toolKey, createdRun } from '.
 import { pinnedStart } from './cancel-fixture.ts';
 import type { Env } from './harness.ts';
 import { MODEL_ID, functionCallItem, requestedOffering, textStep } from './scripts.ts';
+import { momongaLayout } from '@momonga/foundation';
 
 const untilAborted = (signal: AbortSignal): Promise<void> =>
   new Promise<void>((resolve) => {
@@ -56,6 +57,8 @@ describe('worker cancel recovery with a hanging reconcile', () => {
     env.store.idempotency.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Stall' } });
     expect((await env.cancel(run.id)).status).toBe('CANCELLING');
     const executor = createToolExecutor({
+    layout: momongaLayout(env.home, process.platform, process.env),
+    reap: { inspector: testProcessInspector() },
     shellHost: nodeShellHost(),
     random: systemRandom,
     files: nodeFileSystem, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,

@@ -30,7 +30,7 @@ describe('readLog', () => {
 describe('supervisorLog', () => {
   it('keeps only the records of one supervisor, rotated file first', (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     fs.mkdirSync(path.dirname(paths.logFiles.supervisor), { recursive: true, mode: 0o700 });
     fs.writeFileSync(`${paths.logFiles.supervisor}.1`, `${line(100, 'child.spawn', { child: 'runtime' })}${line(200, 'orphans.waiting')}`);
     fs.writeFileSync(paths.logFiles.supervisor, `${line(100, 'child.exit')}${line(200, 'orphans.reaped')}${line(200, 'child.spawn', { child: 'gateway' })}`);
@@ -41,6 +41,6 @@ describe('supervisorLog', () => {
 
   it('returns no records before any log exists', (context) => {
     const home = withTempDir(context, { asHome: true });
-    expect(supervisorLog(momongaPaths(home), 1)).toEqual([]);
+    expect(supervisorLog(momongaPaths(home, process.platform, process.env), 1)).toEqual([]);
   });
 });

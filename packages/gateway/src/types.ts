@@ -1,4 +1,4 @@
-import type { Clock, RolePort, StopValues } from '@momonga/foundation';
+import type { Clock, RolePort, StopValues, KernelLockMechanism } from '@momonga/foundation';
 import type { PriceTable, Telemetry } from '@momonga/observability';
 import type { PlanApi } from './plan/api.ts';
 import type { GatewayEpochs } from './core/services.ts';
@@ -71,6 +71,7 @@ export type GatewayCommonOptions = {
   dbPath: string;
   hmacKey: Uint8Array;
   socketPath: string;
+  lock: KernelLockMechanism;
   costReport?: (runs: readonly { runId: string; sessionId: string }[], includeRunless: boolean, signal: AbortSignal) => Promise<{ report: GatewayCostReportView; text: string }>;
   billedCalls?: (runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean, signal: AbortSignal) => Promise<BilledCallsPageView>;
   traceContent?: (runId: string, after: number, limit: number, signal: AbortSignal) => Promise<TraceContentPage>;

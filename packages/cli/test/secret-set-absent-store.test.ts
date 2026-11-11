@@ -9,7 +9,7 @@ describe('momonga secret set on a host whose secret store is absent', () => {
     const keychain = keychainFixture({ control: { readiness: 'none' } });
     const { ports, stdout } = secretSetPorts(keychain.store, 'v\rv\r');
 
-    const failure: unknown = await secretSet(ports, momongaLayout('/home/u'), 'k', new AbortController().signal).then(
+    const failure: unknown = await secretSet(ports, momongaLayout('/home/u', process.platform, process.env), 'k', new AbortController().signal).then(
       () => undefined,
       (error: unknown) => error,
     );

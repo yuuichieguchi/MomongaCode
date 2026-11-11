@@ -32,7 +32,7 @@ const homeDeclaring = (context: CleanupContext, commandExists: boolean) => {
   fs.mkdirSync(bin, { recursive: true });
   const command = path.join(bin, 'serve');
   if (commandExists) fs.writeFileSync(command, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
-  const paths = momongaLayout(home);
+  const paths = momongaLayout(home, process.platform, process.env);
   fs.mkdirSync(path.dirname(paths.settingsFile), { recursive: true, mode: 0o700 });
   fs.writeFileSync(
     paths.settingsFile,

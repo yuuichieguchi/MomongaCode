@@ -8,12 +8,13 @@ import { approvalOf, makeBuiltins, resultOf, sha256 } from './fixtures.ts';
 const entriesOf = (dir: string): string[] => fs.readdirSync(dir).sort();
 
 describe('Write', () => {
-  it('creates a new file and reports its line count and a diff without old text', async () => {
+  it('creates a new file and reports its line count and a diff of added lines only', async () => {
     const tools = await makeBuiltins();
     const file = path.join(tools.layout.project, 'new.txt');
     const result = resultOf(await tools.run('Write', { file_path: file, content: 'a\nb\nc' }, { mode: 'acceptEdits' }));
     expect(result).toMatchObject({ status: 'completed', output: 'Created new.txt (3 lines)' });
-    expect(result.content).toEqual([{ type: 'diff', path: file, oldText: null, newText: 'a\nb\nc' }]);
+    expect(result.content).toBeUndefined();
+    expect(result).toMatchObject({ hunks: [{ oldStart: 1, newStart: 1, lines: ['+a', '+b', '+c'] }], added: 3, removed: 0 });
     expect(fs.readFileSync(file, 'utf8')).toBe('a\nb\nc');
     expect(tools.session.readLedger.get(file)).toEqual({ sha256: sha256('a\nb\nc'), mtimeMs: fs.statSync(file).mtimeMs });
   });
@@ -33,8 +34,8 @@ describe('Write', () => {
     resultOf(await tools.run('Write', { file_path: created, content: 'two' }, { mode: 'acceptEdits' }));
     const metas = tools.idempotency.log.flatMap((entry) => (entry.op === 'begin' ? [entry.meta] : []));
     expect(metas).toEqual([
-      { tool: 'Write', runId: 'run-1', prepared: { path: created, preHash: null, postHash: sha256('one') }, facts: { files: [{ path: created, access: 'write' }] } },
-      { tool: 'Write', runId: 'run-1', prepared: { path: created, preHash: sha256('one'), postHash: sha256('two') }, facts: { files: [{ path: created, access: 'write' }] } },
+      { tool: 'Write', runId: 'run-1', prepared: { path: created, preHash: null, postHash: sha256('one'), diff: { hunks: [{ oldStart: 1, newStart: 1, lines: ['+one'] }], added: 1, removed: 0 } }, facts: { files: [{ path: created, access: 'write' }] } },
+      { tool: 'Write', runId: 'run-1', prepared: { path: created, preHash: sha256('one'), postHash: sha256('two'), diff: { hunks: [{ oldStart: 1, newStart: 1, lines: ['-one', '+two'] }], added: 1, removed: 1 } }, facts: { files: [{ path: created, access: 'write' }] } },
     ]);
   });
 
@@ -66,13 +67,14 @@ describe('Write', () => {
     expect(fs.readFileSync(file, 'utf8')).toBe('changed by someone else');
   });
 
-  it('overwrites a file after Read and reports the old text in the diff', async () => {
+  it('overwrites a file after Read and reports the removed and the added lines in the diff', async () => {
     const tools = await makeBuiltins();
     const file = tools.write('existing.txt', 'old\n');
     resultOf(await tools.run('Read', { file_path: file }));
     const result = resultOf(await tools.run('Write', { file_path: file, content: 'new 1\nnew 2' }, { mode: 'acceptEdits' }));
     expect(result).toMatchObject({ status: 'completed', output: 'Updated existing.txt (2 lines)' });
-    expect(result.content).toEqual([{ type: 'diff', path: file, oldText: 'old\n', newText: 'new 1\nnew 2' }]);
+    expect(result.content).toBeUndefined();
+    expect(result).toMatchObject({ hunks: [{ oldStart: 1, newStart: 1, lines: ['-old', '+new 1', '+new 2'] }], added: 2, removed: 1 });
     expect(fs.readFileSync(file, 'utf8')).toBe('new 1\nnew 2');
     expect(tools.session.readLedger.get(file)?.sha256).toBe(sha256('new 1\nnew 2'));
   });
@@ -170,7 +172,7 @@ describe('Write', () => {
 
   it('is denied inside a readDenied path even with approval in bypass mode', async () => {
     const tools = await makeBuiltins();
-    const file = path.join(momongaLayout(tools.layout.home).keychains, 'login.keychain');
+    const file = path.join(momongaLayout(tools.layout.home, process.platform, process.env).keychains, 'login.keychain');
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const result = resultOf(await tools.run('Write', { file_path: file, content: 'x' }, { mode: 'bypassPermissions' }, 'allow_once'));
     expect(result).toEqual({ status: 'failed', output: `Permission denied: ${file} is blocked by the sandbox policy`, denial: { source: 'sandbox', reason: `${file} is blocked by the sandbox policy` } });

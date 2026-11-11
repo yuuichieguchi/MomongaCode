@@ -92,7 +92,7 @@ describe('the eval relay of a plan target written by the product (P6.10, K4)', (
       const { settings, capabilities } = relayedCapabilities(models, { [PLAN_TARGET]: { ...LISTED_PLAN, imageInput: true, imageTokens: IMAGE_TOKENS } });
       expect({ imageInput: capabilities['imageInput'], imageTokens: capabilities['imageTokens'] }).toEqual({ imageInput: true, imageTokens: IMAGE_TOKENS });
       const home = withTempDir(context, { asHome: true });
-      const file = momongaLayout(home).settingsFile;
+      const file = momongaLayout(home, process.platform, process.env).settingsFile;
       fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
       fs.writeFileSync(file, JSON.stringify({ models: settings.models }), { mode: 0o600 });
       const loaded = (await loadUserSettings({ home, signal: new AbortController().signal })).settings.models.models.get(PLAN_TARGET);
@@ -112,7 +112,7 @@ describe('the eval relay of a plan target written by the product (P6.10, K4)', (
   it('the relayed settings pass the real settings schema', async (context) => {
     const settings = relayed(productWrittenPlanModels(context), { [PLAN_TARGET]: LISTED_PLAN });
     const home = withTempDir(context, { asHome: true });
-    const file = momongaLayout(home).settingsFile;
+    const file = momongaLayout(home, process.platform, process.env).settingsFile;
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     fs.writeFileSync(file, JSON.stringify({ models: settings.models }), { mode: 0o600 });
     const loaded = await loadUserSettings({ home, signal: new AbortController().signal });

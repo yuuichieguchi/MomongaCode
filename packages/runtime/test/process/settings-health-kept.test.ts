@@ -4,7 +4,7 @@ import { createUserSettingsCache, noKeptRecords } from '@momonga/config';
 import * as runtime from '@momonga/runtime';
 import { createRun, createSession, makeCache, makeRuntimeFixture, signalNever, writeInvalidUserSettings, writeProjectSettings, writeUserSettings } from './helpers.ts';
 import fs from 'node:fs';
-import { NEVER_CANCELLED } from '@momonga/testkit';
+import { NEVER_CANCELLED, testKernelLock } from '@momonga/testkit';
 
 const breakProjectFile = (project: string): void => {
   const file = path.join(project, '.momonga', 'settings.json');
@@ -22,7 +22,7 @@ describe('the last good copy survives a restart (SettingsHealth Persist, restart
     expect((await f.composition.settings.rules(session)).map((rule) => rule.text)).toEqual(['Bash(ls)']);
 
     breakProjectFile(f.temp.project);
-    const restarted = runtime.createSettingsComposition({ signal: new AbortController().signal, home: f.temp.home, platform: process.platform, cache: makeCache(f.temp.home), store: f.store });
+    const restarted = runtime.createSettingsComposition({ lock: testKernelLock(), signal: new AbortController().signal, home: f.temp.home, platform: process.platform, cache: makeCache(f.temp.home), store: f.store });
 
     expect((await restarted.settings.rules(session)).map((rule) => rule.text)).toEqual(['Bash(ls)']);
   });
@@ -57,7 +57,7 @@ describe('every settings file reports a kept copy the same way: one notice to th
     writeProjectSettings(f.temp.project, {});
     const warnings: string[] = [];
     const cache = createUserSettingsCache({ home: f.temp.home, onWarning: (warning) => warnings.push(warning), keptRecords: noKeptRecords });
-    const composition = runtime.createSettingsComposition({ signal: new AbortController().signal, home: f.temp.home, platform: process.platform, cache, store: f.store });
+    const composition = runtime.createSettingsComposition({ lock: testKernelLock(), signal: new AbortController().signal, home: f.temp.home, platform: process.platform, cache, store: f.store });
     const session = createSession(f.store, f.temp.project, { env: { PLAIN: '1' } });
     await composition.settings.rules(session);
 

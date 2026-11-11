@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createStdioTransport } from '@momonga/mcp';
 import { systemTiming, type TerminateOutcome, type Timing } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector } from '@momonga/testkit';
 import { BASE_ENV, makeDir, onCleanup, rawConfig } from './raw-transport.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -31,7 +31,7 @@ describe('mcp close sweeps its marker under the close operation signal, not the 
       projectDir: makeDir(),
       baseEnv: BASE_ENV,
       closeGraceMs: 200,
-      markers: { dir, onWarning: (message) => void warnings.push(message) },
+      markers: { inspector: testProcessInspector(), dir, onWarning: (message) => void warnings.push(message) },
       timing: elapsedStopBound,
       terminate: async (_pgid, options): Promise<TerminateOutcome> => {
         if (options.signal !== undefined) terminateSignals.push(options.signal);

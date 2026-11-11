@@ -105,7 +105,7 @@ export const createE2eHome = async (options: CreateE2eHomeOptions = {}): Promise
   acquireLiveMarker(liveMarkerPath(tmpRoot, run));
   const root = fs.mkdtempSync(path.join(tmpRoot, e2eEntryPrefix(run)));
   if (root === os.userInfo().homedir) throw new Error(`refusing to use the user home ${root} as an e2e home`);
-  const paths = momongaPaths(root);
+  const paths = momongaPaths(root, process.platform, process.env);
   await ensureMomongaDirs(paths);
   const project = path.join(root, PROJECT_DIR_NAME);
   const sessionTmp = path.join(root, SESSION_TMP_DIR_NAME);

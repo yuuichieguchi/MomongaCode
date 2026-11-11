@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import * as gatewayModule from '@momonga/gateway';
 import { createGateway } from '@momonga/gateway';
-import { createFakeClock, createFakeTimers, createScriptedAdapter } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createScriptedAdapter, testKernelLock } from '@momonga/testkit';
 import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, makeDir, registerCleanup, stateDbPath } from './gateway-helpers.ts';
 
 describe('watchServerErrors is module-internal (B3)', () => {
@@ -24,6 +24,7 @@ describe('watchServerErrors is module-internal (B3)', () => {
     }) as typeof http.createServer);
     const seen: Error[] = [];
     const gateway = await createGateway({
+      lock: testKernelLock(),
       role: fixedRolePort('serving'),
       random: () => 0.5,
       credentials: [],

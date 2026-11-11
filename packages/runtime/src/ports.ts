@@ -152,7 +152,7 @@ export type ToolRuntimePort = {
   markerDir: string;
   owners?: MarkerOwners;
   lockCapability?: LockCapabilityProbe;
-  inspector?: ProcessInspector;
+  inspector: ProcessInspector;
   sessionState(session: Session): ToolSessionState;
   workTreeObserver(session: Session, trusted: boolean): WorkTreeObserver;
 };

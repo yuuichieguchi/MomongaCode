@@ -15,7 +15,7 @@ const escapeFixture = async (realSandbox: boolean) => {
   const tools = await makeBuiltins({ realSandbox });
   const { home, outside } = tools.layout;
   const momonga = path.join(home, '.momonga');
-  const keychains = momongaLayout(home).keychains;
+  const keychains = momongaLayout(home, process.platform, process.env).keychains;
   const sessions = momongaLayout(home, process.platform, {}).tmp.sessions;
   const mine = path.join(sessions, 'session-1');
   const other = path.join(sessions, 'session-2');
@@ -25,7 +25,7 @@ const escapeFixture = async (realSandbox: boolean) => {
     roots,
     home,
     session: { cwd, workingDirectory: cwd, readLedger: new Map() },
-    sandboxPolicy: await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: await computeFileRules([], roots, mine, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes()), roots, home, tmpDir: mine, sessionsTmpRoot: sessions }, NEVER_CANCELLED),
+    sandboxPolicy: await buildSandboxPolicy({ layout: momongaLayout(home, process.platform, process.env), protectedSet: EMPTY_PROTECTED_SET, fileRules: await computeFileRules([], roots, mine, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes()), roots, home, tmpDir: mine, sessionsTmpRoot: sessions }, NEVER_CANCELLED),
     tmpDir: mine,
   });
   return { tools, home, momonga, keychains, sessions, mine, other, markerFor, extraFor };

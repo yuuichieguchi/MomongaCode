@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createLockCapability, createMarker, createProcessInspector, hostInspectorPorts } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testLocks } from '@momonga/testkit';
 import { launch } from '../src/process.ts';
 import type { LaunchOptions } from '../src/process.ts';
 import { makeTempDir } from './helpers.ts';
@@ -21,10 +21,10 @@ const setup = async () => {
   const root = fs.realpathSync(makeTempDir());
   const proofDir = path.join(root, 'lock-proof');
   const markerDir = path.join(root, 'markers');
-  fs.mkdirSync(proofDir);
+  fs.mkdirSync(proofDir, { mode: 0o700 });
   fs.mkdirSync(markerDir);
   const capability = createLockCapability({ proofDir });
-  const inspector = createProcessInspector(process.platform, { ...hostInspectorPorts(), run: forbiddenRunner, capability });
+  const inspector = createProcessInspector(process.platform, { ...hostInspectorPorts(testLocks().capability), run: forbiddenRunner, capability });
   return { root, markerDir, capability, inspector };
 };
 

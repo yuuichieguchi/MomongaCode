@@ -1,10 +1,10 @@
 import { execFile } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ProbeFailedError, defaultProcessInspector, findHolders, generationLayout, generationOfDirectoryName, isProcessAlive, judgeProcessIdentity, listGenerationNumbers, rotatedLogPath, scopeToGeneration, valueOrThrow } from '@momonga/foundation';
+import { ProbeFailedError, findHolders, generationLayout, generationOfDirectoryName, isProcessAlive, judgeProcessIdentity, listGenerationNumbers, rotatedLogPath, scopeToGeneration, valueOrThrow } from '@momonga/foundation';
 import type { MomongaPaths, ProbeResult, StartTime } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { killGroupsForCleanup } from '@momonga/testkit';
+import { killGroupsForCleanup, testProcessInspector } from '@momonga/testkit';
 import { readDb } from './db.ts';
 import { readLog } from './log-reader.ts';
 import { appendHarnessFile } from './run-env.ts';
@@ -95,11 +95,11 @@ export const processGroupOf = (pid: number): Promise<number | undefined> =>
   });
 
 export const defaultLedgerPorts: LedgerPorts = {
-  startTimeOf: (pid) => defaultProcessInspector().startTimeOf(pid, { signal: new AbortController().signal }),
+  startTimeOf: (pid) => testProcessInspector().startTimeOf(pid, { signal: new AbortController().signal }),
   groupAlive: (pgid) => isProcessAlive(-pgid),
   pidAlive: (pid) => isProcessAlive(pid),
   killGroups: killGroupsForCleanup,
-  findHolders: (marker) => findHolders(marker, { signal: new AbortController().signal }),
+  findHolders: (marker) => findHolders(marker, { inspector: testProcessInspector(), signal: new AbortController().signal }),
   pgidOf: processGroupOf,
 };
 

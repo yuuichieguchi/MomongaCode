@@ -1,7 +1,7 @@
 import { ConfigError, createStopValuesReader } from '@momonga/config';
 import type { StopValuesReader } from '@momonga/config';
-import { CHILD_ENTRY_FLAGS, generationLayout, momongaPaths, runDaemonEntry, runtimeMaxCloseMs } from '@momonga/foundation';
-import type { EntryIo, FlagSpec, JsonLogger } from '@momonga/foundation';
+import { CHILD_ENTRY_FLAGS, generationLayout, momongaPaths, runDaemonEntry, runtimeMaxCloseMs, homeLayout } from '@momonga/foundation';
+import type { EntryIo, FlagSpec, HelperSelf, JsonLogger } from '@momonga/foundation';
 import { installOtelErrorHandler } from '@momonga/observability';
 import { startRuntimeProcess } from './start-runtime-process.ts';
 import type { BundledRipgrepSource, SocketGuardSource, StartRuntimeProcessOptions } from './start-runtime-process.ts';
@@ -14,7 +14,7 @@ export const RUNTIME_ENTRY_FLAGS = {
   'sandbox-exec-path': { kind: 'string' },
 } as const satisfies FlagSpec;
 
-export type RuntimeEntryDeps = { version: string; bundledRipgrep?: BundledRipgrepSource; ruleSolver?: RuleSolverSource; socketGuard?: SocketGuardSource };
+export type RuntimeEntryDeps = { version: string; bundledRipgrep?: BundledRipgrepSource; ruleSolver?: RuleSolverSource; helperSelf?: HelperSelf; socketGuard?: SocketGuardSource };
 
 export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<number> => {
   let stopValues: StopValuesReader | undefined;
@@ -29,9 +29,9 @@ export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<nu
     maxCloseMs: (_flags, values) => runtimeMaxCloseMs(values),
     readStopValues: ({ logger }) => stopValuesOf(logger).read(),
     ownLockPath: (home, flags) => generationLayout(home, flags.generation).locks.runtime,
-    logPath: (home) => momongaPaths(home, process.platform, {}).logFiles.runtime,
+    logPath: (home) => homeLayout(home, process.platform).logFiles.runtime,
     isConfigError: (error) => error instanceof ConfigError,
-    start: async ({ version, flags, home, signal, logger, stdout, acquireLock, requestShutdown }) => {
+    start: async ({ version, flags, home, signal, logger, stdout, locks, acquireLock, requestShutdown }) => {
       installOtelErrorHandler((error) => logger.warn('otel.error', { err: error }));
       const tuning: Partial<StartRuntimeProcessOptions> = {
         ...(flags['lease-ms'] === undefined ? {} : { leaseMs: flags['lease-ms'] }),
@@ -45,6 +45,7 @@ export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<nu
         logger,
         stdout,
         signal,
+        locks,
         acquireLock,
         requestShutdown: () => requestShutdown(),
         stopValues: stopValuesOf(logger),
@@ -52,6 +53,7 @@ export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<nu
         ...(deps.bundledRipgrep === undefined ? {} : { bundledRipgrep: deps.bundledRipgrep }),
         ...(deps.ruleSolver === undefined ? {} : { ruleSolver: deps.ruleSolver }),
         ...(deps.socketGuard === undefined ? {} : { socketGuard: deps.socketGuard }),
+        ...(deps.helperSelf === undefined ? {} : { helperSelf: deps.helperSelf }),
       });
       return { close: handle.close, abort: handle.abort, fatal: handle.fatal };
     },

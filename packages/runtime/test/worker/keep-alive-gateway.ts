@@ -5,7 +5,7 @@ import path from 'node:path';
 import { onTestFinished } from 'vitest';
 import { GATEWAY_CONFIG_DEFAULTS, UPSTREAM_LIVENESS_DEFAULTS, createChatCompletionsAdapter, createGateway, unauthenticatedSource } from '@momonga/gateway';
 import type { FakeClock, FakeScriptedReply } from '@momonga/testkit';
-import { hostTimers, startFakeChatCompletions } from '@momonga/testkit';
+import { hostTimers, startFakeChatCompletions, testKernelLock } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import type { GatewayClient } from '../../src/gateway-client.ts';
@@ -44,6 +44,7 @@ export const startRealGateway = async (options: { clock: FakeClock; idleTimeoutM
   });
   const socketPath = path.join(dir, 'gw.sock');
   const gateway = await createGateway({
+    lock: testKernelLock(),
     config: {
       ...GATEWAY_CONFIG_DEFAULTS,
       models: {

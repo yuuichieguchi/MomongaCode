@@ -8,6 +8,7 @@ import { PROBE_METHOD_VERSION } from '../src/probe/run-probe.ts';
 import { makeReport } from './report-fixture.ts';
 import type { KnownProbeKey } from '@momonga/config';
 import { FM_CURRENCY, fmRecordKey } from './fm-record-support.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -46,7 +47,7 @@ const NONE_OF_BUILTINS = reportSelecting(null, [
 const NONE_WITH_MINE = reportSelecting(null, [...NONE_OF_BUILTINS.schemaDialect.tried.map(({ id, result }) => ({ id, result: result as 'refused' })), { id: 'mine', result: 'refused' }]);
 
 const save = (dir: string, report: ProbeReport, currency: Currency) =>
-  saveProbeRecord(dir, key, report, managedCurrency(currency));
+  saveProbeRecord(dir, key, report, managedCurrency(currency), testKernelLock());
 const load = (dir: string, currency: Currency) => loadProbeRecord(dir, key, managedCurrency(currency), 'apple');
 
 const rewrite = (file: string, change: (stored: Record<string, unknown>) => Record<string, unknown>) => {
@@ -118,7 +119,7 @@ describe('record invalidation of the fm record (rule 7)', () => {
 
 describe('record invalidation of the endpoint record (rule 7)', () => {
   const saveEndpoint = (dir: string, report: ProbeReport, currency: Currency) =>
-    saveEndpointRecord(dir, endpointKey, 'identity', ['id'], report, currency);
+    saveEndpointRecord(dir, endpointKey, 'identity', ['id'], report, currency, testKernelLock());
   const loadEndpoint = (dir: string, currency: Currency) =>
     loadEndpointRecord(dir, endpointKey, currency);
   const fileOf = (dir: string) => path.join(dir, endpointRecordFileName(endpointKey));

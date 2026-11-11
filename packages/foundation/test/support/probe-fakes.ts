@@ -85,6 +85,7 @@ export const throwingRunner = (): CommandRunner => async (file) => {
 
 export const fixedCapability = (answer: LockCapability): LockCapabilityProbe => ({
   of: async () => answer,
+  decide: () => (answer === 'unmeasured' ? 'unprovable' : answer),
   contradicted: () => undefined,
 });
 

@@ -5,7 +5,7 @@ import { createTokenMeter } from '@momonga/context';
 import { momongaPaths, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import { probeOllamaTarget, startGatewayProcess } from '@momonga/gateway';
 import type { CountTokensRequest, CountTokensResult, FunctionTool, InputItem } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, modelSettings, startFakeChatCompletions, registerOwned, createTempDir, removeTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, modelSettings, startFakeChatCompletions, registerOwned, createTempDir, removeTempDir, testLocks, testKernelLock } from '@momonga/testkit';
 import type { ModelSpec } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import { OLLAMA_MODEL, startFakeOllama } from '../../../gateway/test/ollama-support.ts';
@@ -51,7 +51,7 @@ const launch = async (home: string) => {
   await prepareGatewayHome(home);
   const gateway = await registerOwned(
     (cleanup) => void closers.push(cleanup),
-    () => startGatewayProcess({ generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: '1.10.0-test' }),
+    () => startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: '1.10.0-test' }),
   );
   const client = createGatewayClient({ resolveSocket: fixedSocket(gateway.socketPath), clock: fakeClock(), version: CLIENT_VERSION });
   closers.push(() => client.destroy().catch(() => {}));
@@ -71,6 +71,7 @@ const ollamaClient = async () => {
   const home = makeHome();
   writeModel(home, { adapter: 'ollama', provider: OLLAMA_PROVIDER, id: OLLAMA_MODEL, baseUrl: fake.origin, capabilities: { contextWindow: CONTEXT_WINDOW, maxOutputTokens: 1024 } });
   await probeOllamaTarget({
+    lock: testKernelLock(),
     key: { endpoint: fake.origin, model: OLLAMA_OWN_NAME },
     probeRecordDir: momongaPaths(home, process.platform, {}).probe,
     upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK },

@@ -26,6 +26,7 @@ export const daemonEntries = (self: SelfExecutable, version: string, spawnDetach
     const socketGuard = hostSocketGuardSource();
     return runRuntimeEntry(io, {
       version,
+      helperSelf: self.kind === 'single-binary' ? { execPath: self.execPath } : { execPath: self.execPath, script: self.script },
       ...(bundledRipgrep === undefined ? {} : { bundledRipgrep }),
       ...(ruleSolver === undefined ? {} : { ruleSolver }),
       ...(socketGuard === undefined ? {} : { socketGuard }),

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { momongaPaths, ruleEnforcementOf } from '@momonga/foundation';
 import { SandboxPolicyError } from '@momonga/sandbox';
 import type { Sandbox } from '@momonga/sandbox';
-import { fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
+import { fakePolicyFilesystem, withTempDir, testProcessInspector } from '@momonga/testkit';
 import { memoryTextProblem } from '@momonga/tools';
 import { createEvidenceRunner } from '../../src/process/evidence-run.ts';
 import { expectError, expectSchema, startService } from './helpers.ts';
@@ -129,7 +129,7 @@ describe('reading memories when the evidence process cannot start', () => {
       const sandbox = failingSandbox(make());
       const env = await startService({
         fakeTimers: true,
-        evidenceRun: createEvidenceRunner({ paths: momongaPaths(home), home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} }),
+        evidenceRun: createEvidenceRunner({ reap: { inspector: testProcessInspector() }, paths: momongaPaths(home, process.platform, process.env), home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} }),
       });
       const { session, run } = await seedCalls(env);
       expect((await env.http('PUT', '/v1/trust', { body: { path: session.cwd, decision: 'trusted' } })).status).toBe(200);
@@ -170,7 +170,7 @@ describe('reading memories when the evidence process cannot start', () => {
     };
     const env = await startService({
       fakeTimers: true,
-      evidenceRun: createEvidenceRunner({ paths: momongaPaths(home), home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} }),
+      evidenceRun: createEvidenceRunner({ reap: { inspector: testProcessInspector() }, paths: momongaPaths(home, process.platform, process.env), home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} }),
     });
     const { session, run } = await seedCalls(env);
     expect((await env.http('PUT', '/v1/trust', { body: { path: session.cwd, decision: 'trusted' } })).status).toBe(200);

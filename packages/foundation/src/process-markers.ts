@@ -9,7 +9,6 @@ import { ProbeFailedError, valueOrThrow } from './platform/inspector-types.ts';
 import { noFollowFlag } from './platform/privacy.ts';
 import { operationSignal } from './platform/probe-timing.ts';
 import type { ProbeResult, ProcessInspector, StartTime, UninspectableProcess } from './platform/inspector-types.ts';
-import { defaultProcessInspector } from './platform/process-inspector.ts';
 import { defaultUninspectableRegistry } from './uninspectable-registry.ts';
 import type { UninspectableRegistry } from './uninspectable-registry.ts';
 import { KILL_CONFIRM_MS, markerReapClockBoundMs } from './process-contract.ts';
@@ -27,9 +26,9 @@ const asyncSenderOf = (kill: SignalSender | undefined): AsyncSignalSender =>
         kill(target, signal);
       };
 
-export type FindHoldersOptions = { signal: AbortSignal; inspector?: ProcessInspector; onUninspectable?: (process: UninspectableProcess) => void };
+export type FindHoldersOptions = { signal: AbortSignal; inspector: ProcessInspector; onUninspectable?: (process: UninspectableProcess) => void };
 
-export const findHolders = async (marker: string, { signal, inspector = defaultProcessInspector(), onUninspectable }: FindHoldersOptions): Promise<number[]> =>
+export const findHolders = async (marker: string, { signal, inspector, onUninspectable }: FindHoldersOptions): Promise<number[]> =>
   valueOrThrow(`listing the holders of ${marker}`, await inspector.holdersOf(marker, { signal }, onUninspectable), []).filter((pid) => pid !== process.pid);
 
 const uninspectableWarning = (context: string, processes: readonly UninspectableProcess[]): string =>
@@ -141,7 +140,7 @@ const holdersUntil = async (marker: string, listing: Listing, deadline: number, 
 export const holderGroups = async (
   holders: readonly number[],
   candidateGroups: readonly number[] = [],
-  { signal, inspector = defaultProcessInspector() }: { signal: AbortSignal; inspector?: ProcessInspector },
+  { signal, inspector }: { signal: AbortSignal; inspector: ProcessInspector },
 ): Promise<number[]> => [...(await groupsByHolder(holders, candidateGroups, inspector, signal)).values()];
 
 type ProvedTarget = { group: number | undefined; proof: readonly Identity[] };
@@ -303,7 +302,7 @@ export type ReconcileProcessGroupOptions = {
   groupPort?: ProcessGroupPort;
   timing?: Timing;
   signal?: AbortSignal | undefined;
-  inspector?: ProcessInspector;
+  inspector: ProcessInspector;
   unsettled?: Map<number, UninspectableProcess>;
   markerMode?: MarkerMode;
 };
@@ -330,7 +329,7 @@ export const recallMarkerGroup = async (group: ProcessGroupPort, marker: string,
 
 export const reconcileProcessGroup = async (
   recorded: { pgid: number; marker: string },
-  { killGraceMs = 2000, kill, groupPort, timing = systemWaitTiming, signal, inspector = defaultProcessInspector(), unsettled, markerMode }: ReconcileProcessGroupOptions = {},
+  { killGraceMs = 2000, kill, groupPort, timing = systemWaitTiming, signal, inspector, unsettled, markerMode }: ReconcileProcessGroupOptions,
 ): Promise<MarkerReconcileResult> => {
   const operation = operationSignal(signal);
   try {
@@ -440,7 +439,7 @@ export type ReapMarkedProcessesOptions = {
   groupPort?: ProcessGroupPort;
   timing?: Timing;
   signal?: AbortSignal | undefined;
-  inspector?: ProcessInspector;
+  inspector: ProcessInspector;
   uninspectable?: UninspectableRegistry;
   markerMode?: MarkerMode;
 };
@@ -509,10 +508,10 @@ export type ReapHoldersOptions = {
   kill?: SignalSender;
   timing?: Timing;
   signal?: AbortSignal | undefined;
-  inspector?: ProcessInspector;
+  inspector: ProcessInspector;
 };
 
-export const reapHolders = async ({ marker, killGraceMs, kill, timing = systemWaitTiming, signal, inspector = defaultProcessInspector() }: ReapHoldersOptions): Promise<{ signalled: boolean; unsignalled: number[]; uninspectable: UninspectableProcess[] }> => {
+export const reapHolders = async ({ marker, killGraceMs, kill, timing = systemWaitTiming, signal, inspector }: ReapHoldersOptions): Promise<{ signalled: boolean; unsignalled: number[]; uninspectable: UninspectableProcess[] }> => {
   const operation = operationSignal(signal);
   try {
     const unsettled = new Map<number, UninspectableProcess>();
@@ -529,7 +528,7 @@ const leftAloneWarning = (label: string, marker: string, pids: readonly number[]
   `${label} marker ${marker}: process ${joinPids(pids)} is still alive but could not be verified as belonging to this call, so it was left alone`;
 
 const reapWithin = async (options: ReapMarkedProcessesOptions, stop: AbortSignal): Promise<ReapReport> => {
-  const { marker, pgid, killGraceMs, label, onWarning, kill, timing = systemWaitTiming, inspector = defaultProcessInspector(), markerMode = 'listed' } = options;
+  const { marker, pgid, killGraceMs, label, onWarning, kill, timing = systemWaitTiming, inspector, markerMode = 'listed' } = options;
   const send = asyncSenderOf(kill);
   const ended = (stopped: boolean, uninspectable: UninspectableProcess[]): ReapReport => ({ removed: false, stopped, uninspectable });
   if (stop.aborted) return ended(false, []);
@@ -630,7 +629,7 @@ export type ReapMarkerDirectoryOptions = {
   kill?: SignalSender;
   timing?: Timing;
   signal: AbortSignal;
-  inspector?: ProcessInspector;
+  inspector: ProcessInspector;
   occasion?: RetryKind;
 };
 
@@ -707,7 +706,7 @@ export const reapMarkerDirectory = async ({
 }: ReapMarkerDirectoryOptions): Promise<{ reaped: number; kept: number }> => {
   const markers = await markerFilesUnder(dir);
   const reap: MarkerReap = (marker) =>
-    reapMarkedProcesses({ marker, killGraceMs, label, onWarning, ...(kill === undefined ? {} : { kill }), ...(timing === undefined ? {} : { timing }), signal, ...(inspector === undefined ? {} : { inspector }) });
+    reapMarkedProcesses({ marker, killGraceMs, label, onWarning, ...(kill === undefined ? {} : { kill }), ...(timing === undefined ? {} : { timing }), signal, inspector });
   const outcomes = await Promise.all(
     markers.map(async (marker): Promise<{ marker: string; removed: boolean } | { marker: string; failure: unknown }> => {
       try {

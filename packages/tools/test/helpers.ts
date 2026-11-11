@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
-import { EMPTY_PROTECTED_SET, canonicalJson, protectedSetFor, sha256Hex, ruleEnforcementOf } from '@momonga/foundation';
-import { fakePolicyFilesystem, hostBuiltSocketGuard, testProbes, NEVER_CANCELLED, testPaths } from '@momonga/testkit';
+import { EMPTY_PROTECTED_SET, canonicalJson, protectedSetFor, sha256Hex, ruleEnforcementOf, momongaLayout } from '@momonga/foundation';
+import { fakePolicyFilesystem, testProbes, NEVER_CANCELLED, testPaths, testKernelLock, hostBuiltSocketGuard } from '@momonga/testkit';
 import { computeFileRules, parseRule } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
 import type { LeaseFence, LeasedIdempotencyPort } from '@momonga/tools';
@@ -21,9 +21,7 @@ export const HOST_SANDBOX_KIND = process.platform === 'darwin' ? ('seatbelt' as 
 const hostSocketGuard = hostBuiltSocketGuard();
 
 export const createHostSandbox = (options: { tmpRoot: string; killGraceMs: number }): Sandbox =>
-  process.platform === 'darwin'
-    ? createSeatbeltSandbox(options)
-    : createBubblewrapSandbox({ ...options, journal: createPlaceholderJournal(`${options.tmpRoot}-journal`), holders: () => heldMountPoints(), socketGuard: hostSocketGuard });
+  process.platform === 'darwin' ? createSeatbeltSandbox({ lock: testKernelLock(), ...options }) : createBubblewrapSandbox({ lock: testKernelLock(), ...options, journal: createPlaceholderJournal(`${options.tmpRoot}-journal`), holders: () => heldMountPoints(), socketGuard: hostSocketGuard });
 
 const cleanups: Array<() => void> = [];
 
@@ -270,6 +268,7 @@ export const minimalPolicyFor = async ({ layout, rules = [], roots = [layout.pro
 
 export const policyFor = async ({ layout, rules = [], roots = [layout.project], tmpDir = sessionTmpDirOf(layout) }: PolicyInputs): Promise<SandboxPolicy> =>
   await buildSandboxPolicy({
+    layout: momongaLayout(layout.home, process.platform, process.env),
     roots: [...roots],
     home: layout.home,
     tmpDir,

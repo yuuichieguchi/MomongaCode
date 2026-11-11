@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { appendPermissionRule, editModelsSettings, editSettings, systemFileLockPorts, writeTuiSetting } from '@momonga/config';
 import { localSettingsPath, makeDir, makeTree, userSettingsPath, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const signal = new AbortController().signal;
 
@@ -15,25 +16,25 @@ const WRITERS: Writer[] = [
   {
     name: 'the settings editor of /config',
     fileOf: userSettingsPath,
-    write: (tree) => editSettings({ home: tree.home, projectDir: tree.project }, 'user', { kind: 'set', path: ['autoUpdates'], value: false }, { signal }),
+    write: (tree) => editSettings({ home: tree.home, projectDir: tree.project }, 'user', { kind: 'set', path: ['autoUpdates'], value: false }, { lock: testKernelLock(), signal }),
     expected: { kept: true, autoUpdates: false },
   },
   {
     name: 'the theme writer',
     fileOf: userSettingsPath,
-    write: (tree, file) => writeTuiSetting(tree.home, file, 'theme', 'dark', { signal }),
+    write: (tree, file) => writeTuiSetting(tree.home, file, 'theme', 'dark', { lock: testKernelLock(), signal }),
     expected: { kept: true, tui: { theme: 'dark' } },
   },
   {
     name: 'the models writer of /models and of sign-in',
     fileOf: userSettingsPath,
-    write: (tree, file) => editModelsSettings(tree.home, file, [{ kind: 'setTimeouts', headersTimeoutMs: 60_000 }], { signal }),
+    write: (tree, file) => editModelsSettings(tree.home, file, [{ kind: 'setTimeouts', headersTimeoutMs: 60_000 }], { lock: testKernelLock(), signal }),
     expected: { kept: true, models: { headersTimeoutMs: 60_000 } },
   },
   {
     name: 'the rule writer of "always allow"',
     fileOf: localSettingsPath,
-    write: (tree) => appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(npm test)', effect: 'allow', signal }),
+    write: (tree) => appendPermissionRule({ lock: testKernelLock(), ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(npm test)', effect: 'allow', signal }),
     expected: { kept: true, permissions: { allow: ['Bash(npm test)'] } },
   },
 ];

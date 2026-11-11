@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_STOP_VALUES, RUNTIME_ABORT_BUDGET_MS, RUNTIME_TEARDOWN_BUDGET_MS, runtimeMaxCloseMs } from '@momonga/foundation';
-import { DEFAULT_BUSY_TIMEOUT_MS } from '@momonga/foundation/sqlite';
+import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation/sqlite';
 import { LOCK_WAIT_DEADLINE_MS } from '@momonga/supervisor';
 import { proofArith } from '../support/proofs/arith.ts';
 import type { ProofArith } from '../support/proofs/arith.ts';
@@ -20,7 +20,7 @@ describe('HB8: the database wait and the lease, the lock wait and the previous c
   const z3 = useZ3();
 
   it('reads today the constants the proofs start from', () => {
-    expect(DEFAULT_BUSY_TIMEOUT_MS).toBe(5000);
+    expect(BUSY_WAIT_LIMIT_MS).toBe(5000);
     expect(LOCK_WAIT_DEADLINE_MS).toBe(14_000);
     expect(RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS).toBe(18_050);
     expect(DEFAULT_LEASE_MS / Number(HEARTBEAT_DIVISOR)).toBe(10_000);
@@ -33,14 +33,14 @@ describe('HB8: the database wait and the lease, the lock wait and the previous c
       const lease = arith.int('leaseMs');
       arith.given(lease.ge(3));
       const heartbeat = arith.floorDiv(lease, HEARTBEAT_DIVISOR);
-      const busy = arith.min(arith.ctx.Int.val(BigInt(DEFAULT_BUSY_TIMEOUT_MS)), heartbeat);
+      const busy = arith.min(arith.ctx.Int.val(BigInt(BUSY_WAIT_LIMIT_MS)), heartbeat);
       const { ctx } = arith;
       expect(await satisfiable(arith)).toBe(true);
       const goal = ctx.And(
         busy.le(heartbeat),
-        busy.le(DEFAULT_BUSY_TIMEOUT_MS),
+        busy.le(BUSY_WAIT_LIMIT_MS),
         heartbeat.add(busy).le(lease.sub(heartbeat)),
-        ctx.Implies(lease.eq(DEFAULT_LEASE_MS), busy.eq(DEFAULT_BUSY_TIMEOUT_MS)),
+        ctx.Implies(lease.eq(DEFAULT_LEASE_MS), busy.eq(BUSY_WAIT_LIMIT_MS)),
       );
       expect(await prove(arith, goal)).toEqual({ status: 'proved' });
     },
@@ -54,7 +54,7 @@ describe('HB8: the database wait and the lease, the lock wait and the previous c
       const lease = arith.int('leaseMs');
       arith.given(lease.ge(3));
       const heartbeat = arith.floorDiv(lease, HEARTBEAT_DIVISOR);
-      const busy = arith.ctx.Int.val(BigInt(DEFAULT_BUSY_TIMEOUT_MS));
+      const busy = arith.ctx.Int.val(BigInt(BUSY_WAIT_LIMIT_MS));
       const model = await expectRefuted(arith, busy.le(heartbeat));
       expect(BigInt(model.leaseMs as string)).toBeLessThan(15_000n);
     },

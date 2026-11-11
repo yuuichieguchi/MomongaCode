@@ -20,7 +20,7 @@ import {
   mergeVerificationSettings,
 } from './context-settings.ts';
 import type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from './context-settings.ts';
-import { layoutOf } from './layout.ts';
+import { keyStoreOf, layoutOf } from './layout.ts';
 import { loadLayers, normalizeHooks } from './layers.ts';
 import type { KeptLayers, Layer, TrustOracle, UserLayer } from './layers.ts';
 import { EDIT_TOOLS, NEGATION_PREFIX, NETWORK_RULE_NOT_ENFORCED, NETWORK_RULE_SUBJECT, checkRuleText, isPathTool, parseRule, RuleParseError } from './rule.ts';
@@ -201,8 +201,7 @@ function* ownedByProduct(entry: string, owned: readonly string[]): PathAsking<bo
 
 function* enforceableUnixSockets({ source, allow }: { source: string; allow: string[] }, home: string, warnings: string[]): PathAsking<string[]> {
   if (allow.length === 0) return [];
-  const layout = layoutOf(home);
-  const owned = [layout.root, layout.keychains];
+  const owned = [layoutOf(home).root, keyStoreOf(home)];
   const enforceable: string[] = [];
   for (const entry of allow) {
     if (yield* ownedByProduct(entry, owned)) {

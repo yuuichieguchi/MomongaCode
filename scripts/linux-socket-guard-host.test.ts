@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, heldMountPoints } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testKernelLock } from '@momonga/testkit';
 import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { LINUX_SOCKET_GUARD_SOURCE, LINUX_SOCKET_PROBE_SOURCE, compileLinuxProgram } from './linux-socket-guard.ts';
@@ -76,6 +76,7 @@ describe.runIf(HAS_BWRAP)('Unix sockets under the real Linux sandbox, with the s
     unlisted = folder('unlisted');
     owned = folder('owned');
     sandbox = createBubblewrapSandbox({
+      lock: testKernelLock(),
       tmpRoot: folder('tmp'),
       killGraceMs: KILL_GRACE_MS,
       journal: createPlaceholderJournal(folder('journal')),
@@ -264,7 +265,7 @@ describe.runIf(HAS_BWRAP)('Unix sockets under the real Linux sandbox, with the s
 
   describe('with a socket named and no guard given to the sandbox', () => {
     it('the command is not started, with the reason', async () => {
-      const bare = createBubblewrapSandbox({ tmpRoot: folder('tmp-bare'), killGraceMs: KILL_GRACE_MS, journal: createPlaceholderJournal(folder('journal-bare')), holders: heldMountPoints });
+      const bare = createBubblewrapSandbox({ lock: testKernelLock(), tmpRoot: folder('tmp-bare'), killGraceMs: KILL_GRACE_MS, journal: createPlaceholderJournal(folder('journal-bare')), holders: heldMountPoints });
 
       await expect(bare.spawn({ argv: ['/bin/true'], cwd: work, env: BASE_ENV }, policy({ unixSocketAllow: [listed] }), new AbortController().signal)).rejects.toMatchObject({ code: 'socket_guard_missing' });
     });

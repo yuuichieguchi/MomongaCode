@@ -14,8 +14,8 @@ import {
   parseOutcomeFile,
 } from '@momonga/eval';
 import type { BenchmarkResult, GuidelineCompletion, GuidelineCompletionRequest, ImproveInput, Transcript } from '@momonga/eval';
-import { codeDigestOfRunningProcess, currentSocketResolver } from '@momonga/foundation';
-import type { MomongaPaths } from '@momonga/foundation';
+import { codeDigestOfRunningProcess, currentSocketResolver, resolveLayoutLocks } from '@momonga/foundation';
+import type { MomongaPaths, KernelLockMechanism } from '@momonga/foundation';
 import { ESTIMATED_CHARACTERS_PER_TOKEN, LOWEST_REASONING_EFFORT, jsonReplyOf, summaryTokenCapFor } from '@momonga/protocol';
 import type { ChainCapabilities, CreateResponseBody, GuidelineView, GuidelinesResponse, ResponseResource, StreamEvent } from '@momonga/protocol';
 import type { RuntimeClient } from '../client/runtime-client.ts';
@@ -139,7 +139,7 @@ export const contextImprove = async (
   ports: CliPorts,
   paths: MomongaPaths,
   options: ContextImproveOptions,
-  hostEffects: (ports: CliPorts) => ContextHostEffects = nodeContextEffects,
+  hostEffects: (ports: CliPorts, lock: KernelLockMechanism) => ContextHostEffects = nodeContextEffects,
 ): Promise<number> => {
   const dataset = await loadContextDataset(ports.files, path.resolve(ports.cwd, options.dataset));
   await ensureCurrentDaemon(ports, paths);
@@ -166,7 +166,7 @@ export const contextImprove = async (
         improveInputFor({ seed: options.seed, analysis, tokenCap: options.tokenCap, current }),
         {
           benchmark: async (guideline): Promise<BenchmarkResult> => {
-            const transcripts = await runContextLive(hostEffects(ports), {
+            const transcripts = await runContextLive(hostEffects(ports, resolveLayoutLocks(paths).mechanism), {
               dataset,
               seed: options.seed,
               model: pinned,

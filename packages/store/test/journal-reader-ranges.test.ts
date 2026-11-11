@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { openDatabase } from '@momonga/foundation';
+import { openDatabase, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { RunEventPayload } from '@momonga/protocol';
 import { JOURNAL_SCAN_RANGE_ROWS, createJournalReader } from '@momonga/store';
 import type { TerminalContribution } from '@momonga/store';
@@ -24,7 +24,7 @@ const measuredRun = async (hook: TerminalContribution): Promise<Trace & { journa
   const claim = mustClaim(h.store, 'w1');
   expect(h.store.append(claim, [responded(1), ...Array.from({ length: DELTAS }, (_unused, index) => delta(index)), responded(2)]).kind).toBe('ok');
   const journalRows = mustRun(h.store, run.id).lastSeq;
-  const db = openDatabase(h.dbPath);
+  const db = openDatabase(h.dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
   registerCleanup(() => db.close());
   const trace: Trace = { maxRowsBetweenUnits: 0, rowsStepped: 0, units: 0 };
   let sinceUnit = 0;

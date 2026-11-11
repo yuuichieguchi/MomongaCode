@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
 import { codeDigestOfRunningProcess, momongaPaths, FIRST_GENERATION } from '@momonga/foundation';
 import { endpointKeyOf, probeOllamaTarget, targetCounterOf } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testKernelLock } from '@momonga/testkit';
 import { getJson, outputText, postJson, readJson, userInput, listedCountersOf } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import {
@@ -36,6 +36,7 @@ const probedHome = async (options: FakeOllamaOptions) => {
   const home = makeHome();
   writeSettings(home, { models: modelsOf({ local: ollamaTarget(fake.origin) }) });
   await probeOllamaTarget({
+    lock: testKernelLock(),
     probeRecordDir: momongaPaths(home, process.platform, {}).probe,
     upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_LISTED }, model: OLLAMA_LISTED,
     contextWindow: CONTEXT_WINDOW,

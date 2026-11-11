@@ -2,7 +2,7 @@ import { FIRST_GENERATION, fixedRolePort } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import type { McpAuthorizingPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
-import { FAKE_LEASE, UNCONFIGURED_NETWORK } from '@momonga/testkit';
+import { FAKE_LEASE, UNCONFIGURED_NETWORK, testLocks, testKernelLock } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import { createSession, inertSandbox, makeRuntimeFixture } from './helpers.ts';
 
@@ -15,6 +15,8 @@ describe('the MCP admin probe pool launches its servers with the MCP process mar
       return { sources: [], diagnostics: () => [], authState: async () => ({ state: 'authorized' }), authorize: async () => undefined, close: async () => undefined } as unknown as McpAuthorizingPool;
     };
     const toolRuntime = runtime.createToolRuntime({
+      kernelLock: testKernelLock(),
+      lockCapability: testLocks().capability,
       version: '0.0.0-test',
       network: UNCONFIGURED_NETWORK,
       paths: f.temp.paths,

@@ -59,7 +59,7 @@ type Answer = { status: number; body: unknown };
 
 const setup = async (context: TestContext, answer: (seen: Seen) => Answer) => {
   const home = withTempDir(context, { asHome: true });
-  const paths: MomongaPaths = momongaPaths(home);
+  const paths: MomongaPaths = momongaPaths(home, process.platform, process.env);
   await ensureMomongaDirs(paths);
   const project = fs.realpathSync(withTempDir(context));
   const supervisor = await startFakeSupervisor({ paths, version: VERSION });

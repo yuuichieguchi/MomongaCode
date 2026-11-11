@@ -4,9 +4,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
-import { SOCKET_FILTER_SLOT, SOCKET_GUARD_CHANNEL_SLOT, SandboxPolicyError, bubblewrapCommandOf, createBubblewrapSandbox, createPlaceholderJournal, planBubblewrap, socketFilter, socketFilterArchitectureOf } from '@momonga/sandbox';
+import { SOCKET_FILTER_SLOT, SOCKET_GUARD_CHANNEL_SLOT, SandboxPolicyError, bubblewrapCommandOf, createBubblewrapSandbox, createPlaceholderJournal, nodeFilesystemPort, planBubblewrap, socketFilter, socketFilterArchitectureOf } from '@momonga/sandbox';
 import type { BubblewrapPlan, SandboxPolicy } from '@momonga/sandbox';
-import { NEVER_CANCELLED, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { NEVER_CANCELLED, REAL_PROCESS_TEST_TIMEOUT_MS, testKernelLock } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -63,7 +63,7 @@ const PLAN: BubblewrapPlan = { args: ['--unshare-net', '--chdir', '/w'], placeho
 
 describe('the Unix socket rule of the Linux plan', () => {
   it('names no socket when the allow list is empty, and leaves the mounts as they were', async () => {
-    const plan = await planBubblewrap(policy({ unixSocketAllow: [] }), { cwd: work }, NEVER_CANCELLED);
+    const plan = await planBubblewrap(policy({ unixSocketAllow: [] }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
 
     expect(plan.sockets).toEqual({ kind: 'no-unix-sockets' });
     expect(plan.args.slice(-2)).toEqual(['--chdir', work]);
@@ -76,7 +76,7 @@ describe('the Unix socket rule of the Linux plan', () => {
     fs.mkdirSync(real);
     fs.mkdirSync(owned);
     fs.symlinkSync(real, path.join(base, 'link'));
-    const plan = await planBubblewrap(policy({ unixSocketAllow: [path.join(base, 'link'), real], readDenied: [owned] }), { cwd: work }, NEVER_CANCELLED);
+    const plan = await planBubblewrap(policy({ unixSocketAllow: [path.join(base, 'link'), real], readDenied: [owned] }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
 
     expect(plan.sockets).toEqual({ kind: 'named-unix-sockets', allowed: [real], denied: [owned] });
   });
@@ -147,6 +147,7 @@ describe('the socket filter reaches the program that installs it', () => {
   const architecture = socketFilterArchitectureOf(process.arch);
   const sandboxWith = (bwrapPath: string, socketGuard?: string) =>
     createBubblewrapSandbox({
+      lock: testKernelLock(),
       bwrapPath,
       tmpRoot: path.join(base, 'tmp'),
       killGraceMs: 300,
@@ -181,6 +182,7 @@ describe('the socket filter reaches the program that installs it', () => {
     const bwrap = executable('bwrap', '#!/bin/sh\nexit 3\n');
     const reset = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
     const sandbox = createBubblewrapSandbox({
+      lock: testKernelLock(),
       bwrapPath: bwrap,
       tmpRoot: path.join(base, 'tmp'),
       killGraceMs: 300,

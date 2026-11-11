@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { hostKernelLock, sqliteFileLock } from '@momonga/foundation';
+import { sqliteFileLock } from '@momonga/foundation';
 import type { Timing } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, startLockHolder, withTempDir, sleepDrivenTiming } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, startLockHolder, withTempDir, sleepDrivenTiming, testKernelLock } from '@momonga/testkit';
 import { createCallLocks } from '../src/call-lock.ts';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
@@ -68,14 +68,14 @@ describe('call lock files of the Linux and Windows mechanism', () => {
 
     await expect(locks.acquire('a', never())).rejects.toMatchObject({ code: 'earlier_attempt_not_stopped' });
 
-    await expect(startLockHolder(context, path.join(dir, 'a.lock'), 'linux')).rejects.toThrow(/exited \(code 1/);
+    await expect(startLockHolder(context, path.join(dir, 'a.lock'), 'sqlite-lock')).rejects.toThrow(/exited \(code 1/);
   });
 });
 
 describe('a call lock whose file cannot be removed', () => {
   it('still drops the kernel lock and keeps the removal error', async (context) => {
     const dir = withTempDir(context);
-    const mechanism = hostKernelLock();
+    const mechanism = testKernelLock();
     const lock = await acquired(createCallLocks({ dir, mechanism, timing: advancingTiming(), waitMs: 0 }).acquire('a', never()));
     seal(dir, context);
 

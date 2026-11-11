@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { currentSocketResolver, ensureGenerationDirs, ensureMomongaDirs, generationLayout, momongaPaths, publishCurrentGeneration } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { registerCleanup, withTempDir } from '@momonga/testkit';
+import { registerCleanup, withTempDir, testKernelLock } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { createGatewayClient } from '../src/client/gateway-client.ts';
 import { createRuntimeClient } from '../src/client/runtime-client.ts';
@@ -58,7 +58,7 @@ type Setup = { paths: MomongaPaths; g1: FakeGeneration; g2: FakeGeneration; prom
 
 const twoGenerations = async (context: Parameters<typeof withTempDir>[0], role: Role): Promise<Setup> => {
   const home = withTempDir(context, { asHome: true });
-  const paths = momongaPaths(home);
+  const paths = momongaPaths(home, process.platform, process.env);
   await ensureMomongaDirs(paths);
   await ensureGenerationDirs(paths, 1);
   await ensureGenerationDirs(paths, 2);
@@ -66,9 +66,9 @@ const twoGenerations = async (context: Parameters<typeof withTempDir>[0], role: 
   registerCleanup(context, () => g1.close());
   const g2 = await retiringStyleServer(generationLayout(home, 2).sockets[role], role);
   registerCleanup(context, () => g2.close());
-  await publishCurrentGeneration(paths, { generation: 1, version: '1.0.0', sockets: generationLayout(home, 1).sockets });
+  await publishCurrentGeneration(paths, { generation: 1, version: '1.0.0', sockets: generationLayout(home, 1).sockets }, { lock: testKernelLock() });
   const promote = async (): Promise<void> => {
-    await publishCurrentGeneration(paths, { generation: 2, version: '1.0.0', sockets: generationLayout(home, 2).sockets });
+    await publishCurrentGeneration(paths, { generation: 2, version: '1.0.0', sockets: generationLayout(home, 2).sockets }, { lock: testKernelLock() });
   };
   return { paths, g1, g2, promote };
 };

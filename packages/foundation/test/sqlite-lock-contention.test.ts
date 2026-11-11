@@ -24,7 +24,7 @@ describe('a held lock of the Linux and Windows mechanism, polled from its own pr
 
     expect((await sqliteFileLock.claim(lockPath)).kind).toBe('held');
 
-    await expect(startLockHolder(context, lockPath, 'linux')).rejects.toThrow(/exited \(code 1/);
+    await expect(startLockHolder(context, lockPath, 'sqlite-lock')).rejects.toThrow(/exited \(code 1/);
   });
 
   it('refuses a symlink in place of its database, whether or not the lock has been claimed before', async (context) => {

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { McpAuthorizationError, McpRemotePolicyError, authorizeMcpServer, createMcpOAuthProvider, createMcpToolSource, credentialKey } from '@momonga/mcp';
 import { createFileCredentialStore, createMemoryCredentialStore } from '@momonga/foundation';
 import type { FetchLike } from '@modelcontextprotocol/client';
-import { createFakeClock } from '@momonga/testkit';
+import { createFakeClock, testKernelLock } from '@momonga/testkit';
 import { createToolRegistry } from '@momonga/tools';
 import { browserThatFollowsRedirect, makeRemoteConnection, observedTimers, startHttpFixture, startOauthFixture, textOf } from './remote-harness.ts';
 import { NEVER_ABORTED, makeDir, makeExecutor } from './mcp-harness.ts';
@@ -312,7 +312,7 @@ describe('credentials never leave the connection', () => {
 
   it('keeps the file credential store owner-only and holds tokens nowhere else', async () => {
     const directory = path.join(makeDir(), 'mcp-credentials');
-    const { connection, oauth, fixture } = await setup({ store: createFileCredentialStore(directory) });
+    const { connection, oauth, fixture } = await setup({ store: createFileCredentialStore(directory, { lock: testKernelLock() }) });
     await connection.authorize(new AbortController().signal);
     const files = fs.readdirSync(directory);
     expect(files).toHaveLength(1);
@@ -325,7 +325,7 @@ describe('credentials never leave the connection', () => {
 
   it('refuses a credential file that is readable by others', async () => {
     const directory = path.join(makeDir(), 'mcp-credentials');
-    const store = createFileCredentialStore(directory);
+    const store = createFileCredentialStore(directory, { lock: testKernelLock() });
     await store.write('k', 'v', NEVER_ABORTED);
     const file = path.join(directory, fs.readdirSync(directory)[0] as string);
     fs.chmodSync(file, 0o644);
