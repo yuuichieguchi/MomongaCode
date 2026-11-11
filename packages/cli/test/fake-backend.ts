@@ -178,6 +178,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     return options.settingsPlace;
   };
   const calls: string[] = [];
+  let trustNow: TrustView | undefined;
   const started: { text: string; history: 'inherit' | 'fresh'; options?: StartRunOptions }[] = [];
   const elicitationAnswers: FakeBackend['elicitationAnswers'] = [];
   const openedUrls: string[] = [];
@@ -290,6 +291,12 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     },
     decideTrust: async (decision) => {
       record(`trust:${decision}`);
+      trustNow = { path: session.cwd, decision };
+    },
+    trust: async () => trustNow ?? options.trust ?? { path: session.cwd, decision: 'trusted' },
+    clearTrust: async () => {
+      record('trust:clear');
+      trustNow = { path: session.cwd, decision: null };
     },
     openSession: async (model, permissionMode) => {
       record('openSession');

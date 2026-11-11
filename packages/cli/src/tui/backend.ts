@@ -61,6 +61,8 @@ export type TuiBackend = {
   readonly cwd: string;
   boot(): Promise<TrustView>;
   decideTrust(decision: 'trusted' | 'untrusted'): Promise<void>;
+  trust(): Promise<TrustView>;
+  clearTrust(): Promise<void>;
   openSession(model?: string, permissionMode?: PermissionMode): Promise<SessionView>;
   resumeSession(id: string): Promise<SessionView>;
   continueSession(): Promise<SessionView>;
@@ -203,11 +205,17 @@ export const createTuiBackend = (
     decideTrust: async (decision) => {
       await runtime().setTrust(ports.cwd, decision);
     },
+    trust: () => runtime().trust(ports.cwd),
+    clearTrust: async () => {
+      const shown = await runtime().trust(ports.cwd);
+      await runtime().clearTrust(shown.inheritedFrom ?? shown.path);
+    },
     openSession: async (model, permissionMode) => {
       const chosen = model ?? options.model;
       const chosenMode = permissionMode ?? options.permissionMode;
       const created = await runtime().createSession({
         cwd: ports.cwd,
+        terminalUi: true,
         env: await environmentSnapshot(ports, closing.signal),
         ...(chosenMode === undefined ? {} : { permissionMode: chosenMode }),
         ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
