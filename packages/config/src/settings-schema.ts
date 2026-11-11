@@ -454,8 +454,8 @@ export const SETTINGS_SCHEMA = {
           additionalProperties: DECLARED_SERVER_SCHEMA,
         },
         dialects: { type: 'object', additionalProperties: DIALECT_DEFINITION_SCHEMA },
-        headersTimeoutMs: NON_NEGATIVE_INTEGER,
-        idleTimeoutMs: NON_NEGATIVE_INTEGER,
+        headersTimeoutMs: POSITIVE_INTEGER,
+        idleTimeoutMs: POSITIVE_INTEGER,
         billingChanges: {
           type: 'array',
           items: {

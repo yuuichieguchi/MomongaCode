@@ -586,7 +586,6 @@ const MINUTE_MS = 60_000;
 const SECOND_MS = 1000;
 
 export const durationText = (milliseconds: number): string => {
-  if (milliseconds === 0) return 'never cut';
   if (milliseconds % MINUTE_MS === 0) return `${milliseconds / MINUTE_MS} min`;
   return milliseconds % SECOND_MS === 0 ? `${milliseconds / SECOND_MS} s` : `${milliseconds} ms`;
 };

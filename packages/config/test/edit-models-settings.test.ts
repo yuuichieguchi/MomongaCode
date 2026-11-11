@@ -378,13 +378,14 @@ describe('server programs, wait limits and dialects', () => {
     expect(textOf(home)).toBe(before);
   });
 
-  it('setTimeouts writes milliseconds, accepts 0 as never cut, and says the values in force', async () => {
+  it('setTimeouts writes milliseconds, refuses 0, and says the values in force', async () => {
     const home = homeWith(BASE);
     expect((await editModels(home, [op('setTimeouts', { headersTimeoutMs: 600000 })])).summaries).toEqual(['Waits saved: first reply 10 min, no data 5 min.']);
     expect(modelsOf(home)).toMatchObject({ headersTimeoutMs: 600000 });
     expect(modelsOf(home)).not.toHaveProperty('idleTimeoutMs');
-    expect((await editModels(home, [op('setTimeouts', { headersTimeoutMs: 0, idleTimeoutMs: 90000 })])).summaries).toEqual(['Waits saved: first reply never cut, no data 90 s.']);
-    expect(modelsOf(home)).toMatchObject({ headersTimeoutMs: 0, idleTimeoutMs: 90000 });
+    expect((await editModels(home, [op('setTimeouts', { headersTimeoutMs: 1500, idleTimeoutMs: 90000 })])).summaries).toEqual(['Waits saved: first reply 1500 ms, no data 90 s.']);
+    expect(modelsOf(home)).toMatchObject({ headersTimeoutMs: 1500, idleTimeoutMs: 90000 });
+    expect((await refusalOfEdit(editModels(home, [op('setTimeouts', { headersTimeoutMs: 0 })]))).code).toBe('invalid_value');
     expect((await refusalOfEdit(editModels(home, [op('setTimeouts', { idleTimeoutMs: -1 })]))).code).toBe('invalid_value');
   });
 
@@ -446,7 +447,7 @@ describe('what the writer never does', () => {
     ['declareServer', op('declareServer', { id: 'second-server', command: '/opt/second/bin/serve', args: ['{socket}'], readyPath: '/health' }), 'Declared the server program second-server.'],
     ['setServerField', op('setServerField', { id: 'llama-server', field: 'command', value: '/usr/local/bin/llama-server' }), 'Set command of llama-server.'],
     ['forgetServer', op('forgetServer', { id: 'spare-server' }), 'Forgot the server program spare-server.'],
-    ['setTimeouts', op('setTimeouts', { headersTimeoutMs: 600000, idleTimeoutMs: 0 }), 'Waits saved: first reply 10 min, no data never cut.'],
+    ['setTimeouts', op('setTimeouts', { headersTimeoutMs: 600000, idleTimeoutMs: 30000 }), 'Waits saved: first reply 10 min, no data 30 s.'],
     ['setDialects', op('setDialects', { dialects: {} }), 'Schema dialects saved.'],
   ] as const)('the summary line of %s', async (_name, operation, summary) => {
     const home = homeWith(BASE);

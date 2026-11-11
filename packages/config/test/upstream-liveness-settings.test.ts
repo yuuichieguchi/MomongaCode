@@ -21,11 +21,6 @@ describe('the upstream liveness settings', () => {
     expect(settings.models).toMatchObject({ headersTimeoutMs: 1234, idleTimeoutMs: 5678 });
   });
 
-  it('accept 0 for each bound', async () => {
-    const { settings } = await load({ headersTimeoutMs: 0, idleTimeoutMs: 0 }).loaded;
-    expect(settings.models).toMatchObject({ headersTimeoutMs: 0, idleTimeoutMs: 0 });
-  });
-
   it.for([
     { key: 'headersTimeoutMs', value: -1 },
     { key: 'idleTimeoutMs', value: -1 },
