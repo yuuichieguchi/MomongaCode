@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { protectedSetFor, ruleEnforcementOf, standardSecretLocations } from '@momonga/foundation';
+import { momongaLayout, protectedSetFor, ruleEnforcementOf, standardSecretLocations as secretLocationsOfLayout } from '@momonga/foundation';
 import { PERMISSION_MODES } from '@momonga/protocol';
 import { hostFilesystemOf, NEVER_CANCELLED } from '@momonga/testkit';
-import { CREDENTIAL_PATHS, formatReport, secretLocationsOf, verdictOfReport } from '../src/index.ts';
+import { CREDENTIAL_PATHS, formatReport, secretLocationsOf as secretLocationsOfLayoutWith, verdictOfReport } from '../src/index.ts';
 import { predictDecision } from '../src/queries.ts';
 import { replayWitness } from '../src/replay.ts';
 import { buildQueryContext } from '../src/verify.ts';
@@ -12,6 +12,10 @@ import { SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS, caseSensitiveFs, makeLayout, rulesO
 import type { Layout } from './harness.ts';
 
 const z3 = useZ3();
+
+const standardSecretLocations = (home: string) => secretLocationsOfLayout(momongaLayout(home, process.platform, {}));
+
+const secretLocationsOf = (home: string, paths: { root: string; keychains: string }, extra: readonly string[]) => secretLocationsOfLayoutWith({ home, ...paths }, extra);
 
 const withSecrets = (): Layout => {
   const layout = makeLayout();
@@ -66,6 +70,7 @@ describe('a secret location that the workspace contains', () => {
       protectedSet: await protectedSetFor(roots, fileSystem),
       fs: hostFilesystemOf(fileSystem),
       secretLocations: standardSecretLocations(layout.home),
+      deniedLocations: standardSecretLocations(layout.home),
       exemptDirectory: null,
       enforcement: ruleEnforcementOf('none'),
       budgetMs: 120_000,

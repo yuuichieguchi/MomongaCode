@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_PROTECTED_SET, standardSecretLocations } from '@momonga/foundation';
+import { EMPTY_PROTECTED_SET, momongaLayout, standardSecretLocations as secretLocationsOfLayout } from '@momonga/foundation';
 import { decide } from '@momonga/policy';
 import type { Decision, PermissionSubject, PolicyTool } from '@momonga/policy';
 import { PERMISSION_MODES } from '@momonga/protocol';
@@ -17,6 +17,8 @@ type Rules = { allow?: string[]; ask?: string[] };
 
 type Extra = { roots?: (layout: Layout) => string[]; readRoots?: (layout: Layout) => string[] };
 
+const standardSecretLocations = (home: string) => secretLocationsOfLayout(momongaLayout(home, process.platform, {}));
+
 const decideIn = async (layout: Layout, tool: PolicyTool, subject: PermissionSubject, mode: PermissionMode, rules: Rules = {}, extra: Extra = {}): Promise<Decision> => {
   const make = ruleIn(layout);
   const parsed = [...(rules.allow ?? []).map((text) => make('allow', text)), ...(rules.ask ?? []).map((text) => make('ask', text))];
@@ -28,6 +30,7 @@ const decideIn = async (layout: Layout, tool: PolicyTool, subject: PermissionSub
     rules: parsed,
     roots,
     home: layout.home,
+    secretLocations: standardSecretLocations(layout.home),
     cwd: layout.project,
     fs: fakeFs(),
     searchPath: TEST_SEARCH_PATH,

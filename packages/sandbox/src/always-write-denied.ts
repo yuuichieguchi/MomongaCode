@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { hostPaths, isTransientErrno, nodeFileSystem, secretLocationsIn, settledOrAborted } from '@momonga/foundation';
+import { hostPaths, isTransientErrno, nodeFileSystem, settledOrAborted, standardSecretLocations } from '@momonga/foundation';
 import type { PathResolver, MomongaPaths } from '@momonga/foundation';
 
 const LAUNCHER_LINKS_MAX_BYTES = 64 * 1024;
@@ -80,7 +80,7 @@ export async function alwaysWriteDenied(paths: OwnedLayout, signal: AbortSignal)
     keychains: paths.keychains,
     executables: paths.executables,
     subtrees: [paths.root, paths.keychains, paths.executables],
-    readDenied: secretLocationsIn(paths.home, paths).map((location) => location.directory),
+    readDenied: standardSecretLocations(paths).map((location) => location.directory),
     literals: [...new Set(literals)],
     launcherLinks,
   };

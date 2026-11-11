@@ -1,4 +1,4 @@
-import { standardSecretLocations, systemClock } from '@momonga/foundation';
+import { systemClock } from '@momonga/foundation';
 import type { Clock, ProtectedSet, RuleEnforcement, SecretLocation } from '@momonga/foundation';
 import { askedBy, computeFileRules } from '@momonga/policy';
 import type { PermissionRule, PolicyHostFilesystem, SupersededForm } from '@momonga/policy';
@@ -24,6 +24,7 @@ export type VerifyRequest = {
   protectedSet: ProtectedSet;
   fs: PolicyHostFilesystem;
   secretLocations: readonly SecretLocation[];
+  deniedLocations: readonly SecretLocation[];
   exemptDirectory: string | null;
   enforcement: RuleEnforcement;
   budgetMs: number;
@@ -69,8 +70,9 @@ export const buildQueryContext = async (api: Z3Api, request: VerifyRequest): Pro
   const probes = askedBy(fs, signal);
   const fileRules = await computeFileRules(rules, roots, exemptDirectory, enforcement, probes);
   const locationTexts: string[] = [];
-  const deniedDirectories = standardSecretLocations(home).map((location) => location.directory);
-  for (const location of [...secretLocations, ...standardSecretLocations(home)]) {
+  const { deniedLocations } = request;
+  const deniedDirectories = deniedLocations.map((location) => location.directory);
+  for (const location of [...secretLocations, ...deniedLocations]) {
     const canonical = await probes.canonicalise(location.directory);
     locationTexts.push(location.directory, ...(canonical.ok ? [canonical.path] : []));
   }
@@ -92,7 +94,7 @@ export const buildQueryContext = async (api: Z3Api, request: VerifyRequest): Pro
   const models = { smt, paths, commands, rules, mode };
   return {
     models,
-    env: { rules, roots, mode, home, cwd, fileRules, protectedSet, fs, globBudgetMs: budgetMs, signal },
+    env: { rules, roots, mode, home, cwd, fileRules, protectedSet, secretLocations: deniedLocations, fs, globBudgetMs: budgetMs, signal },
     budget,
     subjects: buildSubjects(models),
     mismatches: [],

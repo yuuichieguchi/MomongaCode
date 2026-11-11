@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { DEFAULT_SANDBOX_NETWORK, EMPTY_FILE_RULES, describeNetworkScope, filterAsync, findAsync, isProtectedWrite, lexicallyWithin, networkScopeOfRequest, someAsync, standardSecretLocations } from '@momonga/foundation';
+import { DEFAULT_SANDBOX_NETWORK, EMPTY_FILE_RULES, describeNetworkScope, filterAsync, findAsync, isProtectedWrite, lexicallyWithin, networkScopeOfRequest, someAsync } from '@momonga/foundation';
 import type { FileRuleSet, ProtectedSet, SandboxNetworkSetting, SecretLocation, UnresolvableReason } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { ApprovalBasis, PermissionDenialSource, PermissionMode } from '@momonga/protocol';
@@ -31,6 +31,7 @@ export type DecideInput = {
   rules: PermissionRule[];
   roots: string[];
   readRoots?: readonly string[];
+  secretLocations: readonly SecretLocation[];
   home: string;
   cwd: string;
   fileRules: FileRuleSet;
@@ -166,7 +167,7 @@ const protectedDecision = async (input: DecideInput, subject: PermissionSubject)
 const secretLocationOf = async (input: DecideInput, target: string): Promise<SecretLocation | undefined> => {
   const real = await input.fs.canonicalise(absoluteFrom(target, input.cwd));
   if (!real.ok) return undefined;
-  return findAsync(standardSecretLocations(input.home), async (location) => {
+  return findAsync(input.secretLocations, async (location) => {
     const directory = await input.fs.canonicalise(location.directory);
     if (!directory.ok) return false;
     const fold = await input.fs.volumeProbe(directory.path);

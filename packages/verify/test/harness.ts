@@ -6,7 +6,7 @@ import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import { parseRule } from '@momonga/policy';
 import type { PermissionRule, PolicyFilesystem, RuleEffect } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, hostFilesystemOf, NEVER_CANCELLED } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, hostFilesystemOf, NEVER_CANCELLED, testSecretLocations } from '@momonga/testkit';
 import { openZ3, resolveInstalledZ3, verifyPermissions } from '../src/index.ts';
 import type { SecretLocation, VerificationReport, Z3Engine } from '../src/index.ts';
 
@@ -69,7 +69,7 @@ export type VerifyOptions = {
 export const verifyScenario = async (api: Z3Engine['api'], layout: Layout, rules: readonly PermissionRule[], options: VerifyOptions = {}): Promise<VerificationReport> => {
   const fileSystem = options.fileSystem ?? caseSensitiveFs();
   const roots = options.roots ?? [layout.project];
-  return verifyPermissions(api, { signal: NEVER_CANCELLED,
+  return verifyPermissions(api, { deniedLocations: testSecretLocations(layout.home), signal: NEVER_CANCELLED,
     rules,
     roots,
     mode: options.mode ?? 'manual',

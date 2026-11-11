@@ -8,7 +8,7 @@ import { describeWitness, isMismatch } from './report.ts';
 import type { Finding, VerificationReport } from './report.ts';
 import type { VerifyRequest } from './verify.ts';
 
-export type RuleVerifyInput = Pick<VerifyRequest, 'rules' | 'roots' | 'mode' | 'home' | 'cwd' | 'exemptDirectory' | 'enforcement' | 'protectedSet' | 'secretLocations'>;
+export type RuleVerifyInput = Pick<VerifyRequest, 'rules' | 'roots' | 'mode' | 'home' | 'cwd' | 'exemptDirectory' | 'enforcement' | 'protectedSet' | 'secretLocations' | 'deniedLocations'>;
 
 export const ruleVerifyInputOf = (facts: RuleVerifyInput): RuleVerifyInput => verdictSubjectOf(facts);
 

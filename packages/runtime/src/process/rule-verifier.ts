@@ -45,7 +45,7 @@ export const installedRuleSolver = (from: string): RuleSolverHost => {
 export type RuleVerifierDeps = {
   host: RuleSolverHost;
   fs: PolicyHostFilesystem;
-  paths: Pick<MomongaPaths, 'root' | 'keychains'>;
+  paths: Pick<MomongaPaths, 'home' | 'root' | 'keychains'>;
   timers: ServiceTimers;
   bashPath: () => Awaitable<string>;
   clock: Clock;
@@ -82,7 +82,8 @@ export const createRuleVerifier = ({ host, fs: policyFilesystem, paths, timers, 
       const input = verifier.ruleVerifyInputOf({
         ...request,
         protectedSet: await protectedSetFor(request.roots, askedBy(policyFilesystem, signal)),
-        secretLocations: verifier.secretLocationsOf(request.home, paths, []),
+        secretLocations: verifier.secretLocationsOf(paths, []),
+        deniedLocations: verifier.secretLocationsOf(paths, []),
       });
       prepared.add(input);
       return input;

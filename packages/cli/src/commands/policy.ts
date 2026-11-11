@@ -60,7 +60,6 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
   const fs = await host.loadPolicyFilesystem();
   const home = await resolver.canonicalPath(ports.home);
   const secretLocations = verifier.secretLocationsOf(
-    home,
     paths,
     options.secrets.map((text) => secretPathOf(home, text)),
   );
@@ -84,6 +83,7 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
     cwd: ports.cwd,
     protectedSet: await verifier.protectedSetOf(roots, fs, signal),
     secretLocations,
+    deniedLocations: verifier.secretLocationsOf(paths, []),
     exemptDirectory: null,
     enforcement: ruleEnforcementOf(loaded.settings.sandbox),
   };

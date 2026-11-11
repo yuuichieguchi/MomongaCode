@@ -1,10 +1,18 @@
-import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, standardSecretLocations, syncPaths } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, momongaLayout, standardSecretLocations as secretLocationsOfLayout, syncPaths } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
-import { alwaysWriteDenied, buildSeatbeltProfile, planBubblewrap } from '@momonga/sandbox';
-import type { SandboxPolicy } from '@momonga/sandbox';
-import { NEVER_CANCELLED, testPaths, withTempDir } from '@momonga/testkit';
+import { alwaysWriteDenied as alwaysWriteDeniedOfLayout, buildSeatbeltProfile, nodeFilesystemPort, planBubblewrap as planBubblewrapWithPort } from '@momonga/sandbox';
+import type { BubblewrapOptions, SandboxPolicy } from '@momonga/sandbox';
+import { NEVER_CANCELLED, testKernelLock, testPaths, withTempDir } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
+
+const layoutOf = (home: string) => momongaLayout(home, process.platform, {});
+
+const standardSecretLocations = (home: string) => secretLocationsOfLayout(layoutOf(home));
+
+const alwaysWriteDenied = (home: string, signal: AbortSignal) => alwaysWriteDeniedOfLayout(layoutOf(home), signal);
+
+const planBubblewrap = (policy: SandboxPolicy, options: BubblewrapOptions, signal: AbortSignal) => planBubblewrapWithPort(policy, options, signal, nodeFilesystemPort(testKernelLock()));
 
 const policyOf = async (home: string, root: string): Promise<SandboxPolicy> => {
   const denied = await alwaysWriteDenied(home, NEVER_CANCELLED);

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
-import { hostFilesystemOf, NEVER_CANCELLED } from '@momonga/testkit';
+import { hostFilesystemOf, NEVER_CANCELLED, testSecretLocations } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import type { PropertyId, PropertyResult, VerificationReport } from '../src/index.ts';
 import { checkDenyPrecedence, checkRuleConsistency, checkSecretReach } from '../src/properties.ts';
@@ -122,7 +122,7 @@ describe('round 2, finding 9: a query the solver cannot decide never leaves a pr
     const roots = [layout.project];
     const fileSystem = caseSensitiveFs();
     const contextFor = async (): Promise<QueryContext> =>
-      await buildQueryContext(z3.engine().api, { signal: NEVER_CANCELLED,
+      await buildQueryContext(z3.engine().api, { deniedLocations: testSecretLocations(layout.home), signal: NEVER_CANCELLED,
         rules: rulesOf(layout, rules),
         roots,
         mode: 'manual',

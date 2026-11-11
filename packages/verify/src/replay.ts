@@ -1,6 +1,6 @@
 import { EMPTY_GLOB_TABLE, createGlobDeadline, decide, decidePrimary, prepareGlobs, settleGlobs } from '@momonga/policy';
 import type { DecideInput, DecisionKind, PermissionRule, PermissionSubject, PolicyHostFilesystem, PolicyTool } from '@momonga/policy';
-import type { FileRuleSet, ProtectedSet } from '@momonga/foundation';
+import type { FileRuleSet, ProtectedSet, SecretLocation } from '@momonga/foundation';
 import type { PermissionMode } from '@momonga/protocol';
 import type { SubjectTool, Witness } from './decision-model.ts';
 import type { Replay } from './report.ts';
@@ -13,6 +13,7 @@ export type ReplayEnvironment = {
   cwd: string;
   fileRules: FileRuleSet;
   protectedSet: ProtectedSet;
+  secretLocations: readonly SecretLocation[];
   fs: PolicyHostFilesystem;
   globBudgetMs: number;
   signal: AbortSignal;
@@ -37,6 +38,7 @@ const inputFor = (env: ReplayEnvironment, tool: SubjectTool, witness: Witness): 
     cwd: env.cwd,
     fileRules: env.fileRules,
     protectedSet: env.protectedSet,
+    secretLocations: env.secretLocations,
     searchPath: undefined,
     isWritable: (): boolean => false,
   };

@@ -12,6 +12,7 @@ const facts = {
   enforcement: 'exact-paths',
   protectedSet: { paths: ['/work/.git'], lexicalPaths: [], literals: [] },
   secretLocations: [{ label: '~/.ssh', directory: '/home/u/.ssh' }],
+  deniedLocations: [{ label: '~/.ssh', directory: '/home/u/.ssh' }],
 } as const;
 
 describe('the subject of a verdict', () => {

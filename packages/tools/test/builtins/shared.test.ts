@@ -160,7 +160,7 @@ describe('buildSandboxPolicy', () => {
     expect({ ...policy, writeDenied: sortedWriteDenied(policy) }).toEqual({
       writableRoots: ['/w/a', '/w/b', '/s/sessions/one'],
       writeDenied: [...protectedSet.paths, '/Users/me/.momonga', momongaLayout('/Users/me', process.platform, process.env).keychains, momongaLayout('/Users/me', process.platform, process.env).executables, '/s/sessions'].sort(),
-      readDenied: [...standardSecretLocations('/Users/me').map((location) => location.directory), '/s/sessions'],
+      readDenied: [...standardSecretLocations(momongaLayout('/Users/me', process.platform, process.env)).map((location) => location.directory), '/s/sessions'],
       writeDeniedLiterals: ['/Users/me/.local/bin/momonga'],
       fileRules: EMPTY_FILE_RULES,
       protectedSet,
@@ -201,7 +201,7 @@ describe('buildSandboxPolicy', () => {
     expect({ ...policy, writeDenied: sortedWriteDenied(policy) }).toEqual({
       writableRoots: ['/w/a', '/s/sessions/one', '/cache'],
       writeDenied: [...defaultProtectedPaths('/w/a'), '/h/.momonga', momongaLayout('/h', process.platform, process.env).keychains, momongaLayout('/h', process.platform, process.env).executables, '/s/sessions'].sort(),
-      readDenied: [...standardSecretLocations('/h').map((location) => location.directory), '/s/sessions', '/h/.ssh'],
+      readDenied: [...standardSecretLocations(momongaLayout('/h', process.platform, process.env)).map((location) => location.directory), '/s/sessions', '/h/.ssh'],
       writeDeniedLiterals: ['/h/.local/bin/momonga'],
       fileRules: EMPTY_FILE_RULES,
       protectedSet,

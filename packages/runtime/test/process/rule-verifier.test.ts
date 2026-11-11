@@ -13,13 +13,13 @@ import { FAKE_SOLVER_VERSION, REPORTING_THREAD_CODE, provedRuleSolver, provedVer
 const SOLVER_GUARD_MS = 60 * 60 * 1000;
 
 const request = { rules: [], roots: ['/work'], mode: 'manual', home: '/home/u', cwd: '/work', exemptDirectory: '/home/u/.momonga/tmp/sessions/s1', enforcement: 'exact-paths' } as const;
-const paths = { root: '/home/u/.momonga', keychains: '/home/u/keys' } as never;
+const paths = { home: '/home/u', root: '/home/u/.momonga', keychains: '/home/u/keys' } as never;
 
 describe('the rule verifier of the runtime process', () => {
   it('prepares an input with the protected set and the secret locations, and starts no thread for it', async () => {
     const host: RuleSolverHost = {
       ...provedRuleSolver({ executables: '/x' }),
-      loadVerifier: async () => ({ ...provedVerifier, secretLocationsOf: (home: string) => [{ label: 'ssh', directory: `${home}/.ssh` }] }) as never,
+      loadVerifier: async () => ({ ...provedVerifier, secretLocationsOf: (layout: { home: string }) => [{ label: 'ssh', directory: `${layout.home}/.ssh` }] }) as never,
       threadCode: `throw new Error('no thread is expected')`,
     };
     const verifier = createRuleVerifier({ host, fs: createPolicyFilesystem(), paths, timers: systemTimers, bashPath: () => '/bin/bash', clock: createFakeClock(0) });
@@ -60,7 +60,7 @@ describe('the rule verifier of the runtime process', () => {
 
   it('refuses an input it did not prepare', async () => {
     const verifier = createRuleVerifier({ host: provedRuleSolver({ executables: '/x' }), fs: createPolicyFilesystem(), paths, timers: systemTimers, bashPath: () => '/bin/bash', clock: createFakeClock(0) });
-    await expect(verifier.verify({ ...request, protectedSet: {}, secretLocations: [] }, new AbortController().signal)).rejects.toThrow('the rule verifier was given an input it did not prepare');
+    await expect(verifier.verify({ ...request, protectedSet: {}, secretLocations: [], deniedLocations: [] }, new AbortController().signal)).rejects.toThrow('the rule verifier was given an input it did not prepare');
   });
 
   it('names the installed solver by the sha256 of its code, the form the bundled solver has, and reads the code once', async () => {
@@ -90,7 +90,7 @@ describe('the rule verifier of the runtime process', () => {
 describe('the rule verifier with the installed solver, in the thread of the product', () => {
   vi.setConfig({ testTimeout: SOLVER_GUARD_MS });
 
-  const verifierIn = (root: string) => createRuleVerifier({ host: installedRuleSolver(import.meta.url), fs: createPolicyFilesystem(), paths: { root: `${root}/home/.momonga`, keychains: `${root}/home/keys` } as never, timers: systemTimers, bashPath: () => '/bin/bash', clock: createFakeClock(0) });
+  const verifierIn = (root: string) => createRuleVerifier({ host: installedRuleSolver(import.meta.url), fs: createPolicyFilesystem(), paths: { home: `${root}/home`, root: `${root}/home/.momonga`, keychains: `${root}/home/keys` } as never, timers: systemTimers, bashPath: () => '/bin/bash', clock: createFakeClock(0) });
   const ruleIn = (root: string, text: string, effect: 'allow' | 'deny') => parseRule(text, { effect, origin: 'user', source: `${root}/home/.momonga/settings.json`, settingsRoot: `${root}/home`, home: `${root}/home`, cwd: `${root}/work` } as never);
 
   it('proves a rule set without a hole, an allow narrowed by a deny included, and refutes an allow that opens a secret location', async (context) => {

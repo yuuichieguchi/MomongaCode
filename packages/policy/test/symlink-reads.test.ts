@@ -1,3 +1,4 @@
+import { testSecretLocations } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -38,7 +39,7 @@ const buildLayout = (layout: Layout): void => {
 const decideLine = async (platform: Measured, line: SymlinkReadLine, filesystem?: (layout: Layout) => PolicyFilesystem): Promise<{ decision: Decision; layout: Layout }> => {
   const layout = makeLayout();
   buildLayout(layout);
-  const decision = await decide({
+  const decision = await decide({ secretLocations: testSecretLocations(layout.home),
     tool: BASH,
     subject: { kind: 'command', tool: 'Bash', command: commandOf(line) },
     mode: line.mode,

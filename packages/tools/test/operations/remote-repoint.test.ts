@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { EMPTY_GLOB_TABLE, computeFileRules, decide, settleGlobs, askedBy } from '@momonga/policy';
 import { discoverGitConfigFiles, protectedSetFor, ruleEnforcementOf, momongaLayout } from '@momonga/foundation';
-import { TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED } from '@momonga/testkit';
+import { TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED, testSecretLocations } from '@momonga/testkit';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { buildSandboxPolicy, createPolicyFilesystem } from '@momonga/tools';
 import { HAS_REAL_SANDBOX, HOST_SANDBOX_KIND, createHostSandbox } from '../helpers.ts';
@@ -107,7 +107,7 @@ describe.skipIf(!HAS_REAL_SANDBOX)('repointing the remote when the workspace roo
       return (await proc.exited).code;
     };
     const decision = async (tool: { name: string; kind: 'execute' | 'edit'; sideEffect: 'exec' | 'write'; subjectKind: 'command' | 'path' }, subject: Parameters<typeof decide>[0]['subject']) =>
-      await decide({ tool, subject, mode: 'manual', rules: [], roots, home, cwd: project, fileRules, protectedSet, fs: settleGlobs(filesystem, EMPTY_GLOB_TABLE, NEVER_CANCELLED), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor(roots) });
+      await decide({ secretLocations: testSecretLocations(home), tool, subject, mode: 'manual', rules: [], roots, home, cwd: project, fileRules, protectedSet, fs: settleGlobs(filesystem, EMPTY_GLOB_TABLE, NEVER_CANCELLED), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor(roots) });
     const bash = (command: string) => decision({ name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' }, { kind: 'command', tool: 'Bash', command });
     const write = (file: string) => decision({ name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' }, { kind: 'path', tool: 'Write', paths: [file], access: 'write' });
     return { home, project, included, inSandbox, bash, write, workspace };

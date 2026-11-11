@@ -20,7 +20,7 @@ export const createFakeRuleVerifier = (): FakeRuleVerifier => {
     },
     inputOf: async (request) => {
       fake.requests.push(request);
-      return { ...request, rules: request.rules.map((rule) => ({ text: rule.text, effect: rule.effect })), protectedSet: { paths: [], lexicalPaths: [], literals: [] }, secretLocations: [] };
+      return { ...request, rules: request.rules.map((rule) => ({ text: rule.text, effect: rule.effect })), protectedSet: { paths: [], lexicalPaths: [], literals: [] }, secretLocations: [], deniedLocations: [] };
     },
     verify: async (input, signal) => {
       fake.verified.push(input);

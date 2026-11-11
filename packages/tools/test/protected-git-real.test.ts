@@ -7,7 +7,7 @@ import { isProtectedWrite, protectedSetFor, ruleEnforcementOf, momongaLayout } f
 import type { ProtectedSet } from '@momonga/foundation';
 import { EMPTY_GLOB_TABLE, computeFileRules, decide, settleGlobs, askedBy } from '@momonga/policy';
 import type { SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED, testSecretLocations } from '@momonga/testkit';
 import { buildSandboxPolicy, createPolicyFilesystem } from '@momonga/tools';
 import { HOST_SANDBOX_KIND, createHostSandbox } from './helpers.ts';
 
@@ -195,7 +195,7 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
       set = await setFor(repositoryRoot);
       const innerConfig = path.join(repositoryRoot, 'inner', 'config');
       expect(await isProtectedWrite(set, innerConfig, probes())).toBe(true);
-      const decision = await decide({
+      const decision = await decide({ secretLocations: testSecretLocations(path.join(root, 'home')),
         tool: { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' },
         subject: { kind: 'path', tool: 'Write', paths: [innerConfig], access: 'write' },
         mode: 'manual',

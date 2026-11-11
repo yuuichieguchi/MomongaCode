@@ -56,7 +56,7 @@ describe('buildSandboxPolicy session tmp invariants', () => {
     const { layout, sessions, tmpDir } = fixture();
     const ssh = path.join(layout.home, '.ssh');
     const policy = await buildSandboxPolicy({ layout: momongaLayout(layout.home, process.platform, process.env), protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, extraReadDenied: [ssh] }, NEVER_CANCELLED);
-    expect(policy.readDenied).toEqual([...standardSecretLocations(layout.home).map((location) => location.directory), sessions, ssh]);
+    expect(policy.readDenied).toEqual([...standardSecretLocations(momongaLayout(layout.home, process.platform, process.env)).map((location) => location.directory), sessions, ssh]);
   });
 
   it('allows reading tmpDir without a readAllowed option', async () => {

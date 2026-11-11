@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
-import { hostFilesystemOf, NEVER_CANCELLED } from '@momonga/testkit';
+import { hostFilesystemOf, NEVER_CANCELLED, testSecretLocations } from '@momonga/testkit';
 import { formatReport, verdictOfReport, verifyPermissions } from '../src/index.ts';
 import { caseSensitiveFs, makeLayout, sshLocation, useZ3 } from './harness.ts';
 
@@ -18,7 +18,7 @@ describe('the time a verification spends per phase', () => {
     const fileSystem = caseSensitiveFs();
     const roots = [layout.project];
     let now = 0;
-    const report = await verifyPermissions(z3.engine().api, {
+    const report = await verifyPermissions(z3.engine().api, { deniedLocations: testSecretLocations(layout.home),
       rules: [],
       roots,
       mode: 'manual',
