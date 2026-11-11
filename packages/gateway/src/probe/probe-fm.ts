@@ -2,6 +2,7 @@ import { declaredChildEnv, minimalChildEnv, probeKeyComponentLabel, readProbeKey
 import type { BinaryHashCache, HeldHostReadings, ManagedInstancePaths, MomongaPaths, KernelLockMechanism, ProcessInspector } from '@momonga/foundation';
 import { knownKeyOf, managedServerDigest, probeKeyOf } from '@momonga/config';
 import type { ProbeKey } from '@momonga/config';
+import { WORDS } from '@momonga/protocol';
 import type { DialectId, ManagedServerDescription, ProbeReport, ToolCallingMode } from '@momonga/protocol';
 import { NO_USER_DIALECTS } from '../dialect/choice.ts';
 import type { UserDialects } from '../dialect/choice.ts';
@@ -19,6 +20,8 @@ import type { MeasureProbe, ProbeLockKey, ProbePrecondition, ProbeSubject } from
 import { managedRecordPath, saveProbeRecord } from './record.ts';
 import type { ManagedRecordCurrency } from './record.ts';
 import { DEFAULT_STEP_TIMEOUT_MS, PROBE_METHOD_VERSION, runProbe } from './run-probe.ts';
+import { createProbeClient } from './client.ts';
+import { parseJson, valueAtPath } from './json.ts';
 
 export const MANAGED_CHILD_ENV_NAMES: readonly string[] = [];
 
@@ -27,7 +30,7 @@ export const managedChildEnvOf = (env: Readonly<Record<string, string | undefine
 export type ManagedKeyReaderOptions = {
   description: ManagedServerDescription;
   binary: string;
-  model: string | undefined;
+  model: string;
   exec: ExecFn;
   platform: NodeJS.Platform;
   hashes: BinaryHashCache;
@@ -64,7 +67,7 @@ export type MeasureManagedServerOptions = {
   env: Readonly<Record<string, string>>;
   exec: ExecFn;
   execWithStdin: ExecWithStdinFn;
-  model?: string;
+  model: string;
   samples?: number;
   userDialects?: UserDialects;
   declaredDialect?: DialectId;
@@ -76,48 +79,60 @@ export type MeasureManagedServerOptions = {
   onWarning(message: string): void;
 };
 
+type ManagedServerRunOptions = Pick<
+  MeasureManagedServerOptions,
+  'description' | 'target' | 'binary' | 'instance' | 'lock' | 'inspector' | 'readyTimeoutMs' | 'env' | 'exec' | 'readStopGraceMs' | 'onWarning' | 'spawn' | 'timers' | 'servers'
+>;
+
+const onManagedServer = async <T>(options: ManagedServerRunOptions, signal: AbortSignal, use: (socketPath: string) => Promise<T>): Promise<T> => {
+  const { description } = options;
+  const server = createManagedServer({
+    description,
+    target: options.target,
+    binary: options.binary,
+    socketPath: options.instance.socketPath,
+    lockPath: options.instance.lockPath,
+    lock: options.lock,
+    inspector: options.inspector,
+    markerDirectory: options.instance.markerDirectory,
+    readyTimeoutMs: options.readyTimeoutMs,
+    env: options.env,
+    exec: options.exec,
+    readStopGraceMs: options.readStopGraceMs,
+    onWarning: options.onWarning,
+    ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
+    timers: options.timers,
+  });
+  options.servers?.add(server);
+  try {
+    const endpoint = await server.start(signal);
+    return await use(endpoint.path);
+  } finally {
+    await server.stop({ stopGraceMs: options.readStopGraceMs() });
+    options.servers?.delete(server);
+  }
+};
+
 export const measureManagedServer =
   (options: MeasureManagedServerOptions): MeasureProbe<ProbeLockKey, ProbeReport> =>
-  async ({ signal }) => {
+  ({ signal }) => {
     const { description } = options;
-    const server = createManagedServer({
-      description,
-      target: options.target,
-      binary: options.binary,
-      socketPath: options.instance.socketPath,
-      lockPath: options.instance.lockPath,
-      lock: options.lock,
-      inspector: options.inspector,
-      markerDirectory: options.instance.markerDirectory,
-      readyTimeoutMs: options.readyTimeoutMs,
-      env: options.env,
-      exec: options.exec,
-      readStopGraceMs: options.readStopGraceMs,
-      onWarning: options.onWarning,
-      ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
-      timers: options.timers,
-    });
-    options.servers?.add(server);
     const { tokenCount } = description;
-    try {
-      const endpoint = await server.start(signal);
-      return await runProbe({
-        socketPath: endpoint.path,
+    return onManagedServer(options, signal, (socketPath) =>
+      runProbe({
+        socketPath,
         managed: { readyPath: description.ready.path, listPath: description.models.listPath, idPath: description.models.idPath },
         vocabulary: vocabularyOf(description),
         ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }),
         ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
-        ...(options.model === undefined ? {} : { model: options.model }),
+        model: options.model,
         ...(tokenCount === 'estimated' ? {} : { countTokens: async (text: string) => parseCount(options.target, await options.execWithStdin(options.binary, tokenCount.argv, text, signal)) }),
         ...(options.samples === undefined ? {} : { samples: options.samples }),
         ports: { clock: options.timers, timers: options.timers },
         ...(options.stepTimeoutMs === undefined ? {} : { stepTimeoutMs: options.stepTimeoutMs }),
         signal,
-      });
-    } finally {
-      await server.stop({ stopGraceMs: options.readStopGraceMs() });
-      options.servers?.delete(server);
-    }
+      }),
+    );
   };
 
 export const managedPrecondition = (description: ManagedServerDescription, target: string, binary: string, exec: ExecFn, isUsableBinary: (binary: string) => Promise<boolean>, boundMs: number): ProbePrecondition => ({
@@ -166,7 +181,7 @@ export type ProbeManagedOptions = {
   binary: string;
   readyTimeoutMs: number;
   env: Readonly<Record<string, string | undefined>>;
-  model?: string;
+  model: string;
   samples?: number;
   userDialects?: UserDialects;
   declaredDialect?: DialectId;
@@ -181,6 +196,31 @@ export type ProbeManagedOptions = {
 };
 
 export type ProbeManagedResult = { report: ProbeReport; toolCalling: ToolCallingMode; recordFile: string };
+
+export type ListManagedModelOptions = Omit<ProbeManagedOptions, 'model' | 'samples' | 'userDialects' | 'declaredDialect' | 'hashes' | 'platform' | 'stepTimeoutMs'>;
+
+export const listManagedModel = async (options: ListManagedModelOptions): Promise<string> => {
+  if (!(await options.isUsableBinary(options.binary))) throw targetNotReadyError(options.target, missingExecutableVerdict(options.target, options.binary));
+  const childEnv = managedChildEnvOf(options.env);
+  const { description } = options;
+  const run = { ...options, env: childEnv, exec: options.exec ?? createExecFn(childEnv) };
+  return onManagedServer(run, options.signal, async (socketPath) => {
+    const client = createProbeClient({ kind: 'unix', socketPath }, options.signal, DEFAULT_STEP_TIMEOUT_MS, options.timers, {
+      readyPath: description.ready.path,
+      listPath: description.models.listPath,
+      idPath: description.models.idPath,
+    });
+    try {
+      const listing = await client.get('models');
+      if (listing.status !== 200) throw new Error(`the ${WORDS.server} ${description.id} answered GET ${description.models.listPath} with HTTP ${listing.status}`);
+      const id = valueAtPath(parseJson(listing.text), description.models.idPath);
+      if (typeof id !== 'string') throw new Error(`the ${WORDS.server} ${description.id} lists no ${WORDS.model} id at GET ${description.models.listPath}`);
+      return id;
+    } finally {
+      await client.close();
+    }
+  });
+};
 
 export const probeManagedFm = async (options: ProbeManagedOptions): Promise<ProbeManagedResult> => {
   if (!(await options.isUsableBinary(options.binary))) throw targetNotReadyError(options.target, missingExecutableVerdict(options.target, options.binary));
@@ -209,7 +249,7 @@ export const probeManagedFm = async (options: ProbeManagedOptions): Promise<Prob
       timers: options.timers,
       ...(options.stepTimeoutMs === undefined ? {} : { stepTimeoutMs: options.stepTimeoutMs }),
       onWarning: options.onWarning,
-      ...(options.model === undefined ? {} : { model: options.model }),
+      model: options.model,
       ...(options.samples === undefined ? {} : { samples: options.samples }),
       ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }),
       ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),

@@ -9,7 +9,7 @@ import { createManagedTarget, decideToolCalling, loadProbeRecord, managedCurrenc
 import type { ManagedServer } from '@momonga/gateway';
 import { FM_SERVER, TARGET_PROBING } from '@momonga/protocol';
 import type { ManagedServerDescription, ProbeReport } from '@momonga/protocol';
-import { FAKE_OS_BUILD, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeManagedServer, fakeExec, killGroupsForCleanup, testKernelLock, testProcessInspector } from '@momonga/testkit';
+import { FAKE_OS_BUILD, FAKE_SERVER_MODEL, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeManagedServer, fakeExec, killGroupsForCleanup, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import { makeDir, registerCleanup } from '../gateway-helpers.ts';
 import { makeHome } from '../gateway-process-helpers.ts';
 import { makeReport } from '../report-fixture.ts';
@@ -232,6 +232,7 @@ describe('a declared server follows the one generic declared-only rule (19.11-b,
       env: {},
       exec: fakeExec,
       execWithStdin: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
+      model: FAKE_SERVER_MODEL,
       samples: 2,
       readStopGraceMs: () => 1_000,
       onWarning: () => undefined,

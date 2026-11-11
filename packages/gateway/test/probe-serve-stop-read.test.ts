@@ -26,6 +26,7 @@ describe('the probe server stop reads the stop grace at its begin (design 3.2)',
       env: {},
       exec: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
       execWithStdin: async () => ({ exitCode: 0, stdout: '1\n', stderr: '' }),
+      model: 'apple-fm',
       onWarning: () => undefined,
       spawn: () => {
         events.push('spawn');

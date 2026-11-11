@@ -10,7 +10,7 @@ export type { ProbeEndpointTargetOptions, ProbeEndpointTargetResult } from './pr
 export { endpointKeyOf } from './probe/endpoint-target.ts';
 export { ProbeTimeoutError } from './probe/client.ts';
 export { runProbe } from './probe/run-probe.ts';
-export { UnreadableProbeKeyError, managedCurrencyOf, managedKeyReader, measureManagedServer, probeManagedFm } from './probe/probe-fm.ts';
+export { UnreadableProbeKeyError, managedCurrencyOf, listManagedModel, managedKeyReader, measureManagedServer, probeManagedFm } from './probe/probe-fm.ts';
 export { createInstanceProbe, unreadableKeyNotice } from './probe/instance-probe.ts';
 export type { InstanceProbe, InstanceProbeEnsured, InstanceProbeOptions } from './probe/instance-probe.ts';
 export { ProbeInProgressError, ProbeKeyChangedError, acquireProbeLock, createAutoProbe, probeLockPath } from './probe/auto-probe.ts';
