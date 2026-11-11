@@ -28,7 +28,7 @@ const record = (id: string, project: string, sha = SHA): MemoryRecord => ({
 const viewsWith = (exitCode: number | null) => {
   const commands: { project: string; command: EvidenceCommand; signal: AbortSignal }[] = [];
   const views = createRecordViews({
-    store: { trust: { decisionFor: () => ({ decision: 'trusted' }) }, memories: { observe: () => false } } as never,
+    store: { trust: { decisionAsked: async () => ({ decision: 'trusted' }) }, memories: { observe: () => false } } as never,
     evidenceRun: (project) => async (command, signal) => {
       commands.push({ project, command, signal });
       return { exitCode };

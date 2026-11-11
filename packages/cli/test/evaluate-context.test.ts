@@ -89,6 +89,8 @@ const harness = (failingOn: number = 0, answers: Answers = 'script') => {
     version: '9.9.9',
     home: freshHome(),
     cwd: '/w',
+    env: {},
+    platform: process.platform,
     terminal: undefined,
     stdout: { write: (text: string) => stdout.push(text) },
     files: {

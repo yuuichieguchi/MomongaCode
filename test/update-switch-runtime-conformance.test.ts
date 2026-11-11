@@ -56,7 +56,7 @@ describe('the runtime across generations and the UpdateSwitch model (17.8, 20.99
     expect(runtimeToolsSource).toContain('callLockDir: paths.callLocks');
     expect(runtimeToolsSource).toContain('earlierMarkerDirs');
     const hold = toolsSource.indexOf("if ((await scope.holdCall()) === 'aborted') return { kind: 'outcome'");
-    const reap = toolsSource.indexOf('const earlierAttempt = await reapEarlierAttempt(record.key, record.pgid, scope.controller.signal);');
+    const reap = toolsSource.indexOf('const earlierAttempt = await reapEarlierAttempt(record.key, record, scope.controller.signal);');
     expect(hold).toBeGreaterThan(-1);
     expect(reap).toBeGreaterThan(hold);
   });
