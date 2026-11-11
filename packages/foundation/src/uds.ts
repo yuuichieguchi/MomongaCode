@@ -5,7 +5,7 @@ import { Agent, buildConnector, request } from 'undici';
 import { acquireProcessLock } from './process-lock.ts';
 import type { AcquireProcessLockOptions } from './process-lock.ts';
 import { modeIsPrivate, ownerProblem } from './platform/privacy.ts';
-import { assertSocketPathLength, assertUnixSocketPathFits, isPipePath } from './socket-path.ts';
+import { assertScopedPipePath, assertSocketPathLength, assertUnixSocketPathFits, isPipePath } from './socket-path.ts';
 
 export interface UdsRequestOptions {
   method: string;
@@ -47,7 +47,10 @@ const dialResolved =
   (resolveSocket: SocketResolver, connectTimeoutMs: number): buildConnector.connector =>
   (connectOptions, callback) => {
     void resolveSocket()
-      .then((socketPath) => buildConnector({ socketPath, timeout: connectTimeoutMs })(connectOptions, callback))
+      .then((socketPath) => {
+        if (isPipePath(socketPath)) assertScopedPipePath(socketPath);
+        buildConnector({ socketPath, timeout: connectTimeoutMs })(connectOptions, callback);
+      })
       .catch((error: unknown) => callback(error instanceof Error ? error : new Error(String(error)), null));
   };
 
@@ -131,6 +134,7 @@ const listen = (server: net.Server, socketPath: string): Promise<void> =>
   });
 
 const listenPipe = async (server: net.Server, pipePath: string): Promise<void> => {
+  assertScopedPipePath(pipePath);
   try {
     await listen(server, pipePath);
   } catch (error) {

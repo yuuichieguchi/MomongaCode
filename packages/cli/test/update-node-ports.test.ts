@@ -5,11 +5,12 @@ import path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 import { ensureMomongaDirs, kernelLockNamed, momongaPaths, sidecarOf, systemTiming } from '@momonga/foundation';
 import type { OutboundNetwork } from '@momonga/foundation';
-import { registerCleanup, spawnTracked, withTempDir, testKernelLock } from '@momonga/testkit';
+import { registerCleanup, spawnTracked, testEndpointScope, withTempDir, testKernelLock } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { daemonReadyBoundMs } from '../src/daemon/ensure-daemon.ts';
 import type { CliPorts } from '../src/ports.ts';
-import { MAX_REDIRECTS, STAGING_PREFIX, UPDATE_TRANSFER_OPTIONS, leasedUpdateHttp, nodeDaemonProbe, nodeUpdateFs, nodeUpdateLock, nodeUpdatePorts, nodeUpdateState } from '../src/update/node-ports.ts';
+import { MAX_REDIRECTS, STAGING_PREFIX, leasedUpdateHttp, nodeDaemonProbe, nodeUpdateFs, nodeUpdateLock, nodeUpdatePorts, nodeUpdateState, transferOptionsOf } from '../src/update/node-ports.ts';
+import { DEFAULT_UPDATE_STALL_TIMEOUT_MS } from '@momonga/config';
 import { readyChildren, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 
 const ASIDE_ENTRY = path.join(import.meta.dirname, 'update-aside-entry.ts');
@@ -48,6 +49,7 @@ const cliPortsFor = (home: string): CliPorts =>
     probe: unusedPort('probe'),
     secretStore: unusedPort('secretStore'),
     personCapability: unusedPort('personCapability'),
+    endpointScope: testEndpointScope,
   }) satisfies CliPorts;
 
 describe('autoUpdates', () => {
@@ -141,7 +143,7 @@ describe('daemon probe', () => {
     const home = withTempDir(context, { asHome: true });
     const paths = momongaPaths(home, process.platform, process.env);
     fs.mkdirSync(paths.run, { recursive: true, mode: 0o700 });
-    const probe = nodeDaemonProbe(paths, virtualClock(), testKernelLock());
+    const probe = nodeDaemonProbe(paths, { clock: virtualClock(), endpointScope: testEndpointScope }, testKernelLock());
     expect(await probe.running()).toBe(false);
 
     const supervisor = await startFakeSupervisor({ paths, version: '1.0.0', children: readyChildren() });
@@ -158,7 +160,7 @@ describe('daemon probe', () => {
     const ended = await startFakeSupervisor({ paths, version: '1.1.0', generation: 2, children: readyChildren() });
     await ended.stop();
 
-    expect(await nodeDaemonProbe(paths, virtualClock(), testKernelLock()).running()).toBe(true);
+    expect(await nodeDaemonProbe(paths, { clock: virtualClock(), endpointScope: testEndpointScope }, testKernelLock()).running()).toBe(true);
   });
 
   it('sums the work of the live generations below the serving one, with their versions (20.72)', async (context) => {
@@ -170,12 +172,12 @@ describe('daemon probe', () => {
       registerCleanup(context, () => supervisor.stop());
     }
 
-    expect(await nodeDaemonProbe(paths, virtualClock(), testKernelLock()).retiring()).toEqual({ steps: 2, jobs: 1, versions: ['0.9.0', '1.0.0'] });
+    expect(await nodeDaemonProbe(paths, { clock: virtualClock(), endpointScope: testEndpointScope }, testKernelLock()).retiring()).toEqual({ steps: 2, jobs: 1, versions: ['0.9.0', '1.0.0'] });
   });
 
   it('gives the ready bound of the daemon as the wait of the start after an install (20.72)', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    expect(await nodeDaemonProbe(momongaPaths(home, process.platform, process.env), virtualClock(), testKernelLock()).readyBoundMs()).toBe(await daemonReadyBoundMs());
+    expect(await nodeDaemonProbe(momongaPaths(home, process.platform, process.env), { clock: virtualClock(), endpointScope: testEndpointScope }, testKernelLock()).readyBoundMs()).toBe(await daemonReadyBoundMs());
   });
 });
 
@@ -183,7 +185,7 @@ const DIRECT_NETWORK: OutboundNetwork = { config: { caFiles: [] }, trust: { sour
 
 const closeFailures: unknown[] = [];
 
-const directHttp = leasedUpdateHttp((_signal, use) => use(DIRECT_NETWORK), UPDATE_TRANSFER_OPTIONS, (error) => void closeFailures.push(error));
+const directHttp = leasedUpdateHttp((_signal, use) => use(DIRECT_NETWORK), transferOptionsOf(DEFAULT_UPDATE_STALL_TIMEOUT_MS), (error) => void closeFailures.push(error));
 
 describe('update http', () => {
   const serve = async (context: Parameters<typeof withTempDir>[0], handler: http.RequestListener): Promise<string> => {

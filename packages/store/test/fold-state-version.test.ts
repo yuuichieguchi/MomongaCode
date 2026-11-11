@@ -4,6 +4,7 @@ import { foldRunState, initialRunState } from '@momonga/store';
 import { SNAPSHOT_STATE_VERSION } from '../src/codec.ts';
 import { enqueue, harness, mustClaim, newSession, rawDb } from './helpers.ts';
 import { encodedRunState, foldedRunState } from './run-state-codec.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const USAGE = { input_tokens: 1, output_tokens: 1, total_tokens: 2 };
 
@@ -25,7 +26,7 @@ const stored = async () => {
   const claim = mustClaim(store, 'w1');
   expect(store.append(claim, journal).kind).toBe('ok');
   const events: RunEvent[] = store.readRunEvents(run.id, 0, 1000);
-  const state = events.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }) as RunState);
+  const state = events.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId, fence: store.getSession(run.sessionId)?.fenceNonce ?? '' }) as RunState);
   const encoded = encodedRunState(state);
   return { store, run, state, events, mutate: encoded.mutate, storedJson: encoded.json, read: encoded.read };
 };

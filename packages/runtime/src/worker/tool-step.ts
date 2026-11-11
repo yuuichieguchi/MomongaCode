@@ -1,6 +1,6 @@
 import { settingsLayerOfRule } from '@momonga/config';
 import { PinnedOverflowError, formatToolOutput, formattedHeader, readersOffered } from '@momonga/context';
-import { canonicalJson, hostPaths, parseBoundedJson, spanValueOfJsonText } from '@momonga/foundation';
+import { canonicalJson, hostPaths, unixSocketPolicyOf, parseBoundedJson, spanValueOfJsonText } from '@momonga/foundation';
 import { diffFieldsOf, termsOf } from '@momonga/protocol';
 import type { HeldLink, PermissionOption, RunEventPayload, RunState, ToolAwait } from '@momonga/protocol';
 import type { BatchOutputFormatter, CallOutcome, DisplayContext, NeedsApprovalOutcome, NeedsInputOutcome, ResultOutcome, ToolCall, WaitingOutcome } from '@momonga/tools';
@@ -294,12 +294,13 @@ const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSes
   const late = lateBatch !== undefined;
   const rules = await runRulesFor(options, session, ctx.delegation, ctx.control.signal);
   const policy = await options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories, ruleEnforcement: held.ruleEnforcement, signal: ctx.control.signal, discoverGitConfig: true });
-  const verdict = await ruleVerdictFor(ctx, session, { rules, roots: policy.roots, exemptDirectory: policy.tmpDir, enforcement: held.ruleEnforcement });
+  const verdict = await ruleVerdictFor(ctx, session, { rules, roots: policy.roots, exemptDirectory: policy.tmpDir, enforcement: held.ruleEnforcement, unixSockets: unixSocketPolicyOf(held.sandbox.kind, policy.sandboxPolicy.unixSocketAllow ?? []) });
   const laterVerdict = laterVerdictNotice(journal.state, ctx.policyFingerprint, verdict);
   if (laterVerdict.length > 0) journal.append(laterVerdict);
   const refusal = policyRefusal(verdict);
   if (refusal !== undefined) return ctx.terminals.finish('FAILED', { error: refusal });
   const hookSettings = await options.settings.hooks(session, ctx.control.signal);
+  const { bash, search, operations } = await options.settings.tools(session, ctx.control.signal);
   const hasToolHooks = hookSettings.PreToolUse !== undefined || hookSettings.PostToolUse !== undefined;
   const toolHooks = hasToolHooks
     ? createToolHooks(
@@ -316,6 +317,7 @@ const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSes
     outcomes = await options.tools.executor.runBatch({
       calls,
       toolSet: ctx.toolSet,
+      limits: { bash, search, operations },
       ...(offered === undefined ? {} : { offered }),
       ...(ctx.delegation === undefined ? {} : { mandate: { supersededForms: SUPERSEDED_FORMS, coveredPrograms: COVERED_PROGRAMS }, hold: { blockers: blockersOf(ctx, calls) } }),
       fence: ctx.claim,

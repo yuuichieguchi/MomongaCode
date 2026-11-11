@@ -69,6 +69,7 @@ export type Session = {
   additionalDirectories: readonly string[];
   mcpServers: SessionMcpServers;
   createdAt: number;
+  fenceNonce: string;
 };
 
 export type SessionPageRequest = { cwd?: string; limit: number; cursor: string | null };
@@ -724,11 +725,19 @@ export type RuntimeStore = {
   contextCharges: ContextChargeStore;
   guidelines: GuidelineStore;
   governing: GoverningFactStore;
+  issueWatch: IssueWatchStore;
   search: SearchStore;
   runFacts: RunFactsStore;
   permissionReviews: PermissionReviewsStore;
   readonly journalFacts: JournalFacts;
   close(): void;
+};
+
+export type IssueStart = { project: string; reference: string; startedRunId: string; createdAt: number };
+
+export type IssueWatchStore = {
+  recordIssueStart(project: string, reference: string, runId: string): boolean;
+  issueStartsOf(project: string): IssueStart[];
 };
 
 export type RuntimeStoreOptions = {

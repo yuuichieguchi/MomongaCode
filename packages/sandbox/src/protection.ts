@@ -13,15 +13,20 @@ export type ChildProtectionInput = {
   bubblewrap: boolean;
 };
 
-const unprotectedReason = (root: string, platform: NodeJS.Platform): string =>
-  platform === 'linux'
+type HomeLauncher = 'seatbelt' | 'bubblewrap';
+
+const HOME_LAUNCHERS: Readonly<Partial<Record<NodeJS.Platform, HomeLauncher>>> = { darwin: 'seatbelt', linux: 'bubblewrap' };
+
+const unprotectedReason = (root: string, launcher: HomeLauncher | undefined): string =>
+  launcher === 'bubblewrap'
     ? `With sandbox none, commands can read and change the product's home at ${root} (its sockets, credentials and stores), because bubblewrap is not installed: install bubblewrap (bwrap) to protect it.`
     : `With sandbox none, commands can read and change the product's home at ${root} (its sockets, credentials and stores), because this platform has no sandbox the product can use.`;
 
 export function childProtectionFor(input: ChildProtectionInput): ChildProtection {
   const layout = momongaLayout(input.home, input.platform, input.env);
-  const hasPlatformSandbox = input.platform === 'darwin' || (input.platform === 'linux' && input.bubblewrap);
-  if (input.sandbox === 'none' && !hasPlatformSandbox) return { kind: 'unprotected', reason: unprotectedReason(layout.root, input.platform) };
+  const launcher = HOME_LAUNCHERS[input.platform];
+  const hasPlatformSandbox = launcher === 'seatbelt' || (launcher === 'bubblewrap' && input.bubblewrap);
+  if (input.sandbox === 'none' && !hasPlatformSandbox) return { kind: 'unprotected', reason: unprotectedReason(layout.root, launcher) };
   return { kind: 'home-denied', home: input.home, denied: protectedAreasOf(layout) };
 }
 
@@ -39,16 +44,13 @@ export function protectionCommandOf(protection: ChildProtection, input: Protecti
   const [file, ...args] = input.argv;
   if (file === undefined) throw new Error('argv must not be empty');
   if (protection.kind === 'unprotected') return { file, args };
-  switch (input.platform) {
-    case 'darwin': {
-      const { profile, params } = buildProtectionProfile(protection.denied, input.scratch);
-      return { file: input.sandboxExecPath, args: ['-p', profile, ...paramArgsOf(params), '--', ...input.argv] };
-    }
-    case 'linux':
-      return { file: input.bwrapPath, args: [...planProtection(protection.denied, input.scratch), '--', ...input.argv] };
-    default:
-      throw new Error(`the home cannot be denied to a child on ${input.platform}`);
+  const launcher = HOME_LAUNCHERS[input.platform];
+  if (launcher === undefined) throw new Error(`the home cannot be denied to a child on ${input.platform}`);
+  if (launcher === 'seatbelt') {
+    const { profile, params } = buildProtectionProfile(protection.denied, input.scratch);
+    return { file: input.sandboxExecPath, args: ['-p', profile, ...paramArgsOf(params), '--', ...input.argv] };
   }
+  return { file: input.bwrapPath, args: [...planProtection(protection.denied, input.scratch), '--', ...input.argv] };
 }
 
 const ABSENT_LAUNCHER_CODES: ReadonlySet<string> = new Set(['ENOENT', 'EACCES', 'ENOTDIR']);

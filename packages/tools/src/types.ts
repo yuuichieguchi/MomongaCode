@@ -1,5 +1,5 @@
 import type { CallStop } from './call-stop.ts';
-import type { Awaitable, Clock, FileSystem, KernelLockMechanism, NetworkScope, OutboundNetwork, PathResolver, ProcessInspector, Random } from '@momonga/foundation';
+import type { Awaitable, MarkerMode, Clock, FileSystem, KernelLockMechanism, NetworkScope, OutboundNetwork, PathResolver, ProcessInspector, Random } from '@momonga/foundation';
 import type { ShellHost } from './builtins/shell.ts';
 import type { MarkerSettle } from './marker-settle.ts';
 import type { PermissionSubject } from '@momonga/policy';
@@ -66,9 +66,22 @@ export type ToolResume = {
   inputResponses: Record<string, unknown> | undefined;
 };
 
-export type SpawnMarker = { file: string; fd: number; settle: MarkerSettle };
+export type SpawnMarker = { file: string; fd: number; mode: MarkerMode; settle: MarkerSettle };
+
+export type BashLimits = {
+  defaultTimeoutMs: number;
+  maxTimeoutMs: number;
+  onTimeout: 'background' | 'kill';
+  backgroundTimeoutMs: number;
+  maxBackgroundTimeoutMs: number;
+};
+
+export type ToolLimits = { bash: BashLimits; search: { timeoutMs: number }; operations: { timeoutMs: number } };
 
 export type ToolContext = ReconcileContext & {
+  limits: ToolLimits;
+  expired: AbortSignal;
+  stopForTimeout(reason?: string): void;
   markerFd?: number;
   markerSettle?: MarkerSettle;
   spawnMarker?(): Promise<SpawnMarker>;
@@ -182,7 +195,8 @@ export type ToolBody<Input> = {
   outputSchema?: Record<string, unknown>;
   server?: string;
   validatorIdentity?: string;
-  timeoutMs: number | ((input: Input) => number);
+  timeoutMs: number | ((input: Input, limits: ToolLimits) => number);
+  expiry?: 'detach';
   idleTimeoutMs?: number;
   startsProcesses?: true;
   stopText?(stop: ToolStop): Promise<string>;

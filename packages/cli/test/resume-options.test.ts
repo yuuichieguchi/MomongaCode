@@ -2,7 +2,7 @@ import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { EXIT_FAILURE, EXIT_USAGE } from '@momonga/foundation';
-import { NO_MODEL_TARGET, TARGET_NOT_READY, agentReadiness } from '@momonga/protocol';
+import { TARGET_NOT_READY, messageOf } from '@momonga/protocol';
 import type { MomongaModelList } from '@momonga/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MODEL_ID, OTHER_MODEL_ID } from '../../runtime/test/service/helpers.ts';
@@ -123,7 +123,7 @@ describe('readiness is decided before a resume is resolved', () => {
     const failure = await reopened(runtime, 'ffffffff-no-such-session', {}, NOT_CONNECTED).catch((error: unknown) => error);
 
     expect(failure).not.toBeInstanceOf(SessionRefused);
-    expect(failure).toMatchObject({ code: TARGET_NOT_READY, reason: agentReadiness({ unavailable: NO_MODEL_TARGET }).message });
+    expect(failure).toMatchObject({ code: TARGET_NOT_READY, reason: messageOf('noModelConnected', 'cli') });
   });
 
   it('a headless --resume with no model connected reports that no model is ready, in both formats, and ends with a failure', async () => {
@@ -132,7 +132,7 @@ describe('readiness is decided before a resume is resolved', () => {
 
     expect(await runHeadless(runtime.ports, runtime.paths, options)).toBe(EXIT_FAILURE);
 
-    expect(runtime.stderr.join('')).toContain(agentReadiness({ unavailable: NO_MODEL_TARGET }).message);
+    expect(runtime.stderr.join('')).toContain(messageOf('noModelConnected', 'cli'));
     expect(runtime.stderr.join('')).not.toContain('No session has the id');
     expect(JSON.parse(runtime.stdout.join(''))).toMatchObject({ type: 'result', is_error: true, error: { code: TARGET_NOT_READY } });
   });

@@ -65,7 +65,6 @@ export type OperationSpec = {
   readonly subject: SubjectSpec;
   readonly approval: ApprovalClass;
   readonly input: Record<string, unknown>;
-  readonly timeoutMs: number;
   readonly observe: readonly Probe[];
   readonly require: readonly ClauseItem[];
   readonly effect?: ArgvCall | ForgeCall;
@@ -144,7 +143,6 @@ const SPEC_SCHEMA = {
     },
     approval: { enum: [...APPROVAL_CLASSES] },
     input: { type: 'object' },
-    timeoutMs: { type: 'integer', minimum: 1 },
     observe: {
       type: 'array',
       items: {
@@ -196,7 +194,7 @@ const SPEC_SCHEMA = {
     },
     report: { type: 'string', minLength: 1 },
   },
-  required: ['name', 'description', 'kind', 'sideEffect', 'title', 'subject', 'approval', 'input', 'timeoutMs', 'observe', 'applied', 'unchanged', 'supersedes', 'report'],
+  required: ['name', 'description', 'kind', 'sideEffect', 'title', 'subject', 'approval', 'input', 'observe', 'applied', 'unchanged', 'supersedes', 'report'],
   additionalProperties: false,
 } as const;
 

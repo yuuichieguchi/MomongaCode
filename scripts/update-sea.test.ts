@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { DEFAULT_TEST_TIMEOUT_MS, until } from '../e2e/support/wait.ts';
 import { CANDIDATE_CHECK_TIMEOUT_MS } from '../packages/cli/src/update/install.ts';
-import { TRANSFER_STALL_TIMEOUT_MS } from '../packages/cli/src/update/node-ports.ts';
+import { DEFAULT_UPDATE_STALL_TIMEOUT_MS } from '@momonga/config';
 import { startFakeReleaseServer, checksumListing } from '../packages/cli/test/fake-release-server.ts';
 import type { FakeReleaseServer } from '../packages/cli/test/fake-release-server.ts';
 import { repoRoot } from './bundle.ts';
@@ -20,7 +20,7 @@ const PINNED_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsa
 const ASSET = 'momonga-darwin-arm64';
 const BACKGROUND_INSTALL_REQUESTS = ['latest release', 'checksum listing', 'listing signature', 'release executable'] as const;
 const BACKGROUND_INSTALL_CHECKS = ['signature verification', 'known-answer signature control', 'codesign --verify', 'candidate --version'] as const;
-const BACKGROUND_INSTALL_BOUND_MS = BACKGROUND_INSTALL_REQUESTS.length * 2 * TRANSFER_STALL_TIMEOUT_MS + BACKGROUND_INSTALL_CHECKS.length * CANDIDATE_CHECK_TIMEOUT_MS;
+const BACKGROUND_INSTALL_BOUND_MS = BACKGROUND_INSTALL_REQUESTS.length * 2 * DEFAULT_UPDATE_STALL_TIMEOUT_MS + BACKGROUND_INSTALL_CHECKS.length * CANDIDATE_CHECK_TIMEOUT_MS;
 const MAIN_ENTRY = `${repoRoot}packages/cli/src/main.ts`;
 
 type Key = { privateKey: string; publicKey: string };

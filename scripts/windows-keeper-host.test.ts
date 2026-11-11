@@ -162,7 +162,7 @@ describe.runIf(process.platform === 'win32')('the keeper on a Windows host', () 
     stopCommand.abort();
     const exit = await launched.exited;
     expect(exit.killedBy).toBe('abort');
-    expect(exit.groupNotStopped).toBeUndefined();
+    expect(exit.stop).toBe('confirmed');
     await eventually(() => !isAlive(grandchild), 'the grandchild is gone');
   });
 
@@ -174,7 +174,7 @@ describe.runIf(process.platform === 'win32')('the keeper on a Windows host', () 
     const launched = productLaunch(node(command), new AbortController().signal);
     const exit = await launched.exited;
     expect(exit.code).toBe(7);
-    expect(exit.groupNotStopped).toBeUndefined();
+    expect(exit.stop).toBe('confirmed');
     const grandchild = Number(fs.readFileSync(pidFile, 'utf8'));
     await eventually(() => !isAlive(grandchild), 'the grandchild is gone');
   });

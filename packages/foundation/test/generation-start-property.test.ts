@@ -6,6 +6,8 @@ import { GenerationPrepareError, beginGenerationStart, ensureMomongaDirs, genera
 import type { GenerationStartFiles, MomongaPaths } from '@momonga/foundation';
 import { PROPERTY_TIMEOUT_MS, createFakeKernelLock, withTempDir, testKernelLock } from '@momonga/testkit';
 
+const UNIX_ENDPOINTS = { form: 'unix' } as const;
+
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const seeded = (seed: number): ((bound: number) => number) => {
@@ -56,14 +58,14 @@ describe('numbers are never reused (NoNumberReuse)', () => {
         const lock = createFakeKernelLock({ inheritable: false });
         const action = next(4);
         if (action === 0) {
-          const outcome = await beginGenerationStart(paths, { version: `1.0.${1 + next(3)}`, foldVersion: 1, lock, trigger: 'restart' });
+          const outcome = await beginGenerationStart(paths, { version: `1.0.${1 + next(3)}`, foldVersion: 1, lock, scope: UNIX_ENDPOINTS, trigger: 'restart' });
           if (outcome.kind !== 'allocated') throw new Error(`unexpected outcome ${outcome.kind}`);
           if (!counterRemoved) expect(outcome.generation).toBeGreaterThan(highest);
           expect(generationDirs(paths)).toContain(`g${outcome.generation}`);
           highest = Math.max(highest, outcome.generation);
           counterRemoved = false;
         } else if (action === 1) {
-          const failure = await beginGenerationStart(paths, { version: '1.0.1', foldVersion: 1, lock, trigger: 'restart', files: failingDirs }).catch((error: unknown) => error);
+          const failure = await beginGenerationStart(paths, { version: '1.0.1', foldVersion: 1, lock, scope: UNIX_ENDPOINTS, trigger: 'restart', files: failingDirs }).catch((error: unknown) => error);
           expect(failure).toBeInstanceOf(GenerationPrepareError);
           highest = Math.max(highest, counterOf(paths));
           counterRemoved = false;

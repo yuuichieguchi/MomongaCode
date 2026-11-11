@@ -15,13 +15,14 @@ export const RESOLVED_ACCOUNT: PlanAccountRef = { profile: 'chatgpt', account: '
 
 export const bearerOf = (generation: number): string => `plan-access-generation-${generation}`;
 
-export type FakeAuth = AuthSource & { resolvedAccount(): PlanAccountRef | undefined; rejectedCalls: number[]; pauses: Array<{ untilMs?: number; code: string }>; reads: number };
+export type FakeAuth = AuthSource & { resolvedAccount(): PlanAccountRef | undefined; rejectedCalls: number[]; pauses: Array<{ untilMs?: number; code: string }>; expiries: string[]; reads: number };
 
 export const fakeAuth = (options: { renew?: boolean; failRead?: PlanCredentialError; account?: PlanAccountRef } = {}): FakeAuth => {
   let generation = 1;
   const auth: FakeAuth = {
     rejectedCalls: [],
     pauses: [],
+    expiries: [],
     reads: 0,
     resolvedAccount: () => ({ ...(options.account ?? RESOLVED_ACCOUNT) }),
     read: async (): Promise<PlanRead> => {
@@ -37,6 +38,9 @@ export const fakeAuth = (options: { renew?: boolean; failRead?: PlanCredentialEr
     },
     pause: async (pause) => {
       auth.pauses.push(pause);
+    },
+    expire: async (code) => {
+      auth.expiries.push(code);
     },
     resume: async () => {},
     status: () => ({ state: 'active' }),

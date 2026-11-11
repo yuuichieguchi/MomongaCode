@@ -1,3 +1,4 @@
+import { testKernelLock } from '@momonga/testkit';
 import type { EntryIo } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import type { TestContext } from 'vitest';
@@ -32,7 +33,7 @@ const programFor = async (context: TestContext, options: HarnessOptions = {}) =>
   } as unknown as CliPorts;
   const program = buildProgram({
     ports: cli,
-    policyVerify: () => nodePolicyVerifyHost(cli, { executables: `${harness.ports.home}/cache/executables` }),
+    policyVerify: () => nodePolicyVerifyHost(cli, { executables: `${harness.ports.home}/cache/executables` }, testKernelLock()),
     entries,
     update: () => harness.wiring,
     interrupt: new AbortController().signal,

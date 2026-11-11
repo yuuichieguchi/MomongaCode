@@ -49,6 +49,7 @@ export const decodeSession = (row: Row, context: DecodeContext): Session => {
     additionalDirectories: expectAbsolutePaths('sessions', identity, 'additional_directories_json', reader.json('additional_directories_json')),
     mcpServers: expectServerRecords(identity, reader.json('mcp_servers_json')),
     createdAt: reader.number('created_at'),
+    fenceNonce: reader.string('fence_nonce'),
   };
 };
 
@@ -189,6 +190,7 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'meter.observed': true,
   'model.rejected': true,
   'approval.rule.persisted': true,
+  'user.compact': true,
   notice: true,
 };
 
@@ -561,7 +563,7 @@ const isWorkingFacts = (value: unknown): boolean =>
   isArrayOf(value['itemEvents'], (entry) => isRecord(entry) && Number.isInteger(entry['itemSeq']) && Number.isInteger(entry['eventSeq'])) &&
   (value['replacedThroughEventSeq'] === undefined || Number.isInteger(value['replacedThroughEventSeq']));
 
-export const SNAPSHOT_STATE_VERSION = 24;
+export const SNAPSHOT_STATE_VERSION = 25;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 

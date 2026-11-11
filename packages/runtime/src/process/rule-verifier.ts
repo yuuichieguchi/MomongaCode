@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { mapAsync, nodeFileSystem, protectedSetFor, sha256Hex } from '@momonga/foundation';
-import type { Awaitable, Clock, MomongaPaths, VerdictSubject } from '@momonga/foundation';
+import type { Awaitable, Clock, LayoutLocks, MomongaPaths, UnixSocketPolicy, VerdictSubject } from '@momonga/foundation';
 import { ShellNotFoundError, askedBy } from '@momonga/policy';
 import type { PolicyHostFilesystem } from '@momonga/policy';
 import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
@@ -22,7 +22,7 @@ export type RuleSolverHost = {
   threadCode?: string;
 };
 
-export type RuleSolverSource = (paths: Pick<MomongaPaths, 'executables'>) => RuleSolverHost;
+export type RuleSolverSource = (paths: Pick<MomongaPaths, 'executables'>, locks: LayoutLocks) => RuleSolverHost;
 
 export const RULE_VERIFY_LOAD_ALLOWANCE_MS = 10_000;
 
@@ -62,10 +62,15 @@ export const createRuleVerifier = ({ host, fs: policyFilesystem, paths, timers, 
       throw error;
     }
   };
-  const prepared = new WeakSet<object>();
+  const prepared = new WeakMap<object, UnixSocketPolicy>();
   const preparedInput = (input: VerdictSubject): RuleVerifyInput => {
     if (!prepared.has(input)) throw new Error('the rule verifier was given an input it did not prepare');
     return input as RuleVerifyInput;
+  };
+  const socketsOf = (input: VerdictSubject): UnixSocketPolicy => {
+    const sockets = prepared.get(input);
+    if (sockets === undefined) throw new Error('the rule verifier was given an input it did not prepare');
+    return sockets;
   };
   const report = async (input: VerdictSubject, signal: AbortSignal): Promise<RuleVerification> => {
     const request = preparedInput(input);
@@ -73,7 +78,7 @@ export const createRuleVerifier = ({ host, fs: policyFilesystem, paths, timers, 
     const verifier = await host.loadVerifier();
     return verifyInThread(
       { code: host.threadCode ?? RULE_VERIFIER_THREAD_CODE, timers, loadAllowanceMs: RULE_VERIFY_LOAD_ALLOWANCE_MS },
-      { input: request, solver: await host.recipe(verifier), solverVersion: await host.solverVersion(), budgetMs: RULE_VERIFY_BUDGET_MS, askedAtMs: clock.now(), platform: policyFilesystem.platform, bashPath: await foundBashPath() },
+      { input: request, unixSockets: socketsOf(input), solver: await host.recipe(verifier), solverVersion: await host.solverVersion(), budgetMs: RULE_VERIFY_BUDGET_MS, askedAtMs: clock.now(), platform: policyFilesystem.platform, bashPath: await foundBashPath() },
       signal,
     );
   };
@@ -87,7 +92,7 @@ export const createRuleVerifier = ({ host, fs: policyFilesystem, paths, timers, 
         secretLocations: verifier.secretLocationsOf(paths, []),
         deniedLocations: verifier.secretLocationsOf(paths, []),
       });
-      prepared.add(input);
+      prepared.set(input, request.unixSockets);
       return input;
     },
     needsVerdict: async (input) => (await host.loadVerifier()).needsVerdict(preparedInput(input)),
@@ -99,15 +104,16 @@ export const createRuleVerifier = ({ host, fs: policyFilesystem, paths, timers, 
 export type ProductRuleVerifierDeps = {
   solver: RuleSolverSource | undefined;
   paths: Pick<MomongaPaths, 'home' | 'root' | 'keychains' | 'executables'>;
+  locks: LayoutLocks;
   timers: ServiceTimers;
   shellHost: Pick<ShellHost, 'platform' | 'isExecutable'>;
   env: NodeJS.ProcessEnv;
   clock: Clock;
 };
 
-export const productRuleVerifier = ({ solver, paths, timers, shellHost, env, clock }: ProductRuleVerifierDeps): RuleVerifierPort =>
+export const productRuleVerifier = ({ solver, paths, locks, timers, shellHost, env, clock }: ProductRuleVerifierDeps): RuleVerifierPort =>
   createRuleVerifier({
-    host: solver === undefined ? installedRuleSolver(import.meta.url) : solver(paths),
+    host: solver === undefined ? installedRuleSolver(import.meta.url) : solver(paths, locks),
     fs: createPolicyFilesystem(),
     paths,
     timers,

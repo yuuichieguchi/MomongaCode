@@ -58,7 +58,7 @@ describe.runIf(process.platform === 'darwin' || process.platform === 'linux')('B
       sandbox: createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 300 }),
       sandboxPolicy: {},
       processMarker: marker,
-      spawnMarker: async () => ({ file: marker, fd: handle.fd, settle }),
+      spawnMarker: async () => ({ file: marker, fd: handle.fd, mode: handle.mode, settle }),
       attachProcess: async ({ pgid }: { pgid: number; startedAt: number }) => {
         attached.push(pgid);
         trackGroup(pgid);

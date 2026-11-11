@@ -6,6 +6,7 @@ import type { CurrentGeneration } from './current-generation.ts';
 import { START_RECORD_MODE, formatStartRecord, listGenerations, readStartRecord } from './generation-registry.ts';
 import type { ListedGeneration, LockProbeOptions } from './generation-registry.ts';
 import { createGenerationDirs, generationLayout, refuseUnfitGenerationSocketsBeforeCreation } from './momonga-paths.ts';
+import type { EndpointScope } from './socket-path.ts';
 import type { MomongaPaths } from './momonga-paths.ts';
 import { nodeFileSystem, readFileHead } from './node-file-system.ts';
 import type { KernelLockMechanism } from './platform/kernel-lock.ts';
@@ -173,6 +174,7 @@ export type BeginGenerationStartOptions = {
   version: string;
   foldVersion: number;
   lock: KernelLockMechanism;
+  scope: EndpointScope;
   trigger?: StartTrigger;
   allocation?: 'allowed' | 'withheld';
   draining?: number;
@@ -206,7 +208,7 @@ const allocate = async (
 ): Promise<Extract<StartOutcome, { kind: 'allocated' | 'unallocated' }>> => {
   const generation = ((await readGenerationCounter(paths, files)) ?? floor) + 1;
   if (!Number.isSafeInteger(generation)) throw new GenerationCounterError(paths.generationCounter, 'it is larger than a safe integer');
-  await refuseUnfitGenerationSocketsBeforeCreation(paths, generation);
+  await refuseUnfitGenerationSocketsBeforeCreation(paths, generation, options.scope);
   if (options.allocation === 'withheld') return { kind: 'unallocated' };
   try {
     await writeFileAtomically(files.atomic, systemRandom, paths.generationCounter, `${generation}\n`, { mode: GENERATION_COUNTER_MODE, lock: options.lock });

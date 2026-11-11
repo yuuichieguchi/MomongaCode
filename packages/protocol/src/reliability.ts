@@ -100,6 +100,12 @@ export type RunCallView = { runId: string; callId: string; basis: Stored<Approva
 
 export type RunFactsRecord = { facts: RunFactsView; calls: RunCallView[] };
 
+export const FACTS_SKIPPED_CANCELLED_BEFORE_START = 'cancelled_before_start';
+
+export type RunFactsSkipped = { skipped: typeof FACTS_SKIPPED_CANCELLED_BEFORE_START };
+
+export type RunFactsAnswer = RunFactsRecord | RunFactsSkipped;
+
 export type UnavailableRunView = { runId: string; rootRunId: string };
 
 export type ReportPage = { rows: RunFactsView[]; unavailable: UnavailableRunView[]; nextCursor: string | null };
@@ -119,6 +125,15 @@ export const COST_CURRENCY = 'USD';
 export const COST_UNIT_DIGITS = 15;
 
 export type RunCostView = { runId: string; calls: number; notPriced: number; legacyPrecisionCalls: number; priced: { currency: typeof COST_CURRENCY; priceVersion: string; units: string }[] };
+
+export type CostTotals = { calls: number; notPriced: number; priced: { currency: typeof COST_CURRENCY; units: string }[] };
+
+export type PageCostAnswer = { runs: RunCostView[]; totals: CostTotals; unreported: string[] };
+
+export const unreportedOutsideRuns = (answer: PageCostAnswer): string[] => {
+  const known = new Set(answer.runs.map((run) => run.runId));
+  return answer.unreported.filter((runId) => !known.has(runId));
+};
 
 export type ReportCostRequest = { runIds: string[] };
 
@@ -161,6 +176,16 @@ export type TraceContentView = { id: number; spanId: string; kind: string; conte
 
 export type TraceContentPage = { bodies: TraceContentView[]; next: number | null };
 
+const UNITS = { type: 'string', pattern: '^[0-9]+$' } as const;
+
+const runCost = closedRequiringAll({
+  runId: nonEmptyString,
+  calls: nonNegativeInteger,
+  notPriced: nonNegativeInteger,
+  legacyPrecisionCalls: nonNegativeInteger,
+  priced: { type: 'array', items: closedRequiringAll({ currency: { const: COST_CURRENCY }, priceVersion: nonEmptyString, units: UNITS }) },
+});
+
 const review = closedRequiringAll({ runId: nonEmptyString, callId: nonEmptyString, label: nonEmptyString, reviewedAt: nonNegativeInteger });
 
 export const REPORT_SCHEMAS = {
@@ -173,17 +198,11 @@ export const REPORT_SCHEMAS = {
   StoreReviewResponse: closedRequiringAll({ review }),
   ReportCostRequest: closedRequiringAll({ runIds: { type: 'array', maxItems: REPORT_PAGE_ROWS, uniqueItems: true, items: nonEmptyString } }),
   ReportRecomputeRequest: closedRequiringAll({ runIds: { type: 'array', maxItems: REPORT_PAGE_ROWS, uniqueItems: true, items: nonEmptyString } }),
-  ReportCostPage: closedRequiringAll({
-    costs: {
-      type: 'array',
-      items: closedRequiringAll({
-        runId: nonEmptyString,
-        calls: nonNegativeInteger,
-        notPriced: nonNegativeInteger,
-        legacyPrecisionCalls: nonNegativeInteger,
-        priced: { type: 'array', items: closedRequiringAll({ currency: { const: COST_CURRENCY }, priceVersion: nonEmptyString, units: { type: 'string', pattern: '^[0-9]+$' } }) },
-      }),
-    },
+  ReportCostPage: closedRequiringAll({ costs: { type: 'array', items: runCost } }),
+  PageCostAnswer: closedRequiringAll({
+    runs: { type: 'array', items: runCost },
+    totals: closedRequiringAll({ calls: nonNegativeInteger, notPriced: nonNegativeInteger, priced: { type: 'array', items: closedRequiringAll({ currency: { const: COST_CURRENCY }, units: UNITS }) } }),
+    unreported: { type: 'array', uniqueItems: true, items: nonEmptyString },
   }),
   TraceContentPage: closedRequiringAll({
     bodies: { type: 'array', items: closedRequiringAll({ id: nonNegativeInteger, spanId: nonEmptyString, kind: nonEmptyString, content: string, createdAtMs: nonNegativeInteger, expiresAtMs: nonNegativeInteger }) },
