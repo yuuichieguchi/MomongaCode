@@ -43,7 +43,8 @@ import { a11yOf, applyA11y, NOTHING_ASKED, statusLine, statusLines } from './scr
 import type { AskedA11y, StoredA11y } from './screen/a11y.ts';
 import { AtList, AttachmentLines, heldAttachments } from './screen/attachments.tsx';
 import type { Attachment } from './screen/attachments.tsx';
-import { contextPercentOf, Footer, formatTokens, newlineHintText, planRowFits } from './screen/footer.tsx';
+import { contextPercentOf, Footer, newlineHintText, planRowFits } from './screen/footer.tsx';
+import { formatTokens } from '../format-tokens.ts';
 import { HistoryView } from './screen/history-view.tsx';
 import { CHAT_MARK, InputBox, inputContentRows, inputOffsetAt, inputRowsOf } from './screen/input-box.tsx';
 import type { ScreenTerminal } from './screen/input.ts';

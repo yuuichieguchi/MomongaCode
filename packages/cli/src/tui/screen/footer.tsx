@@ -1,11 +1,10 @@
 import { Text } from 'ink';
 import { escapeTerminalLine } from '@momonga/protocol';
+import { formatTokens } from '../../format-tokens.ts';
 import type { KeyTable } from '../keys/table.ts';
 import { displayWidth } from './wrap.ts';
 
 export type FooterFacts = { mode: string; tokens: number; contextPercent: number | undefined; imageInput: boolean; answer: string | undefined; newline: string | undefined };
-
-export const formatTokens = (count: number): string => (count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count));
 
 export const contextPercentOf = (contextTokens: number, contextWindow: number | undefined): number | undefined => (contextWindow === undefined ? undefined : Math.round((contextTokens / contextWindow) * 100));
 

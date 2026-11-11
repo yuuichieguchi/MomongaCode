@@ -14,7 +14,7 @@ import { isRecord } from '@momonga/foundation';
 import { appliedDiffOf } from './screen/diff.ts';
 import type { AppliedDiff, DiffFields } from './screen/diff.ts';
 import { EMPTY_USAGE } from './screen/store.ts';
-import { formatTokens } from './screen/footer.tsx';
+import { formatTokens } from '../format-tokens.ts';
 import { tailOf } from './screen/output-tail.ts';
 import type { OutputTail } from './screen/output-tail.ts';
 import { isPrompt } from '../run/prompt-event.ts';
