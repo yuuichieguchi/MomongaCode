@@ -8,7 +8,7 @@ import { createUnsandboxed } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { createToolHooks, nodeShellHost, runStop, runUserPromptSubmit, runSessionStart } from '@momonga/tools';
 import type { HookRunContext } from '@momonga/tools';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector, pollUntil } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector, pollUntil, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -43,7 +43,7 @@ const contextFor = (hooks: HooksSettings, overrides: Partial<HookRunContext> = {
   const context: HookRunContext = {
     inspector: testProcessInspector(),
     hooks,
-    sandbox: createUnsandboxed({ killGraceMs: 200 }),
+    sandbox: createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 200 }),
     sandboxPolicy: policy(),
     env: { PATH: '/usr/bin:/bin' },
     shellHost: nodeShellHost(),

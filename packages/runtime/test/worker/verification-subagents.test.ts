@@ -6,7 +6,7 @@ import { createAgentsPort, createChildRuns } from '@momonga/runtime';
 import type { AgentsPort } from '@momonga/runtime';
 import { createUnsandboxed } from '@momonga/sandbox';
 import { fixedSandboxBindings } from '@momonga/runtime';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
@@ -32,7 +32,7 @@ const writeAgent = (env: Env, name: string, frontmatter: string): void => {
 
 const delegate = (callId: string, agent: string) => callsStep([{ callId, name: 'Agent', args: { description: 'fix', prompt: 'Fix it', subagent_type: agent } }]);
 
-const workerOf = (env: Env) => env.worker('w1', { agents: agentsPortOf(env), tools: { sandboxes: fixedSandboxBindings(createUnsandboxed({ killGraceMs: 200 })) } });
+const workerOf = (env: Env) => env.worker('w1', { agents: agentsPortOf(env), tools: { sandboxes: fixedSandboxBindings(createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 200 })) } });
 
 const completions = (env: Env, runId: string): VerificationCompleted[] => env.ofType(runId, 'verification.completed' as never) as unknown as VerificationCompleted[];
 

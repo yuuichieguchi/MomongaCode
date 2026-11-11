@@ -141,6 +141,7 @@ export {
   homeLayout,
   momongaLayout,
   momongaPaths,
+  protectedAreasOf,
   refuseUnfitGenerationSocketsBeforeCreation,
   requireGenerationDirs,
   roleEndpoint,
@@ -422,3 +423,5 @@ export type {
   KeptLaunch,
 } from './platform/windows-keeper.ts';
 export { createNodeKeeperHost, provideCheckedWindowsKeeper, provideWindowsKeeper } from './platform/windows-keeper-host.ts';
+export { CONTROL_PLANE_LAUNCH } from './child-protection.ts';
+export type { ChildProtection, LaunchProtection } from './child-protection.ts';

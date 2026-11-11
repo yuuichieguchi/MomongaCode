@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testKernelLock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testKernelLock, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -12,7 +12,7 @@ const BASE_ENV = { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' };
 
 const variants: Array<[string, (tmpRoot: string) => Sandbox]> = [
   ['seatbelt', (tmpRoot) => createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot, killGraceMs: 300 })],
-  ['unsandboxed', () => createUnsandboxed({ killGraceMs: 300 })],
+  ['unsandboxed', () => createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 300 })],
 ];
 
 describe.runIf(process.platform === 'darwin').each(variants)('stdin (%s)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, (_kind, make) => {

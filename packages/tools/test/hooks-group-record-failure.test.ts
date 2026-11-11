@@ -8,7 +8,7 @@ import { createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox } from '@momonga/sandbox';
 import { createToolHooks, nodeShellHost } from '@momonga/tools';
 import type { HookRunContext } from '@momonga/tools';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testLocks } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testLocks, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -64,7 +64,7 @@ describe.runIf(process.platform === 'darwin' || process.platform === 'linux')('a
     const hooks: HooksSettings = { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: `sleep 30 >/dev/null 2>&1 & echo $! > '${pidFile}'; sleep 0.2; exit 0` }] }] };
     const context = {
       hooks,
-      sandbox: markerCorruptingSandbox(createUnsandboxed({ killGraceMs: 200 }), corrupted),
+      sandbox: markerCorruptingSandbox(createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 200 }), corrupted),
       sandboxPolicy: { writableRoots: [dir], writeDenied: [], writeDeniedLiterals: [], readDenied: [], network: 'deny', fileRules: EMPTY_FILE_RULES, protectedSet: EMPTY_PROTECTED_SET },
       env: { PATH: '/usr/bin:/bin' },
       shellHost: nodeShellHost(),

@@ -5,7 +5,7 @@ import { createNodeSkillFileSystem } from '@momonga/skills';
 import { createAgentsPort, createChildRuns } from '@momonga/runtime';
 import type { AgentsPort } from '@momonga/runtime';
 import { createUnsandboxed } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, usageOf } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, usageOf, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { LEASE_MS, makeEnv, textOf } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
@@ -279,7 +279,7 @@ describe('worker subagents', () => {
     const counter = path.join(env.project, 'hook-runs.txt');
     const hook = (event: string) => [{ hooks: [{ type: 'command' as const, command: `echo ${event} >> ${counter}` }] }];
     env.settings.hooksValue = { SessionStart: hook('SessionStart'), UserPromptSubmit: hook('UserPromptSubmit'), Stop: hook('Stop') };
-    const worker = env.worker('w1', { agents: agentsPortOf(env), tools: { sandboxes: fixedSandboxBindings(createUnsandboxed({ killGraceMs: 200 })) } });
+    const worker = env.worker('w1', { agents: agentsPortOf(env), tools: { sandboxes: fixedSandboxBindings(createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 200 })) } });
     const parent = await env.enqueue('Review');
     env.gateway.script.push(delegate('call-a'), textStep('child verdict'), textStep('parent done'));
 

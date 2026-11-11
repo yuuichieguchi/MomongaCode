@@ -250,6 +250,8 @@ export const managedInstancePaths = (paths: MomongaPaths, instance: ManagedInsta
 
 export const rotatedLogPath = (file: string, generation: number): string => `${file}.${generation}`;
 
+export const protectedAreasOf = (paths: MomongaPaths): string[] => [paths.root, paths.keychains, paths.executables, paths.tmp.root];
+
 export const momongaPaths = (home: string, platform: NodeJS.Platform, env: LayoutEnvironment): MomongaPaths => momongaLayout(home, platform, env);
 
 export type PlatformDirectoryPorts = {

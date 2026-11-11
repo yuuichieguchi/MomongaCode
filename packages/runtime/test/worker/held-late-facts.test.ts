@@ -8,7 +8,7 @@ import type { RunEvent } from '@momonga/protocol';
 import { fixedSandboxBindings } from '@momonga/runtime';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { defineTool } from '@momonga/tools';
 import { START_MS, makeEnv, toolKey } from './harness.ts';
 import type { Env } from './harness.ts';
@@ -43,7 +43,7 @@ const reportingWrite = defineTool<Record<string, unknown>>({
   },
 });
 
-const spawning = (): Sandbox => ({ ...createUnsandboxed({ killGraceMs: 200 }), kind: 'seatbelt' });
+const spawning = (): Sandbox => ({ ...createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 200 }), kind: 'seatbelt' });
 
 const reporting = (env: Env, workerId: string) =>
   env.worker(workerId, { toolList: () => [...env.toolbox.tools().filter((tool) => tool.name !== 'Write'), reportingWrite], tools: { sandboxes: fixedSandboxBindings(spawning()) } });

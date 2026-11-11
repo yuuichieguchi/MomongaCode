@@ -35,7 +35,7 @@ import {
 import type { Clock, GenerationRole, HelperSelf, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, StopValues, TextStream, LayoutLocks } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore, pageRunBodies, startBodyPurge } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
-import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
+import { DEFAULT_BWRAP_PATH, bubblewrapPresent, childProtectionFor, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
 import { unaskedCommandsFor } from '@momonga/policy';
@@ -422,10 +422,13 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
 
     const journalDirectory = path.join(paths.state, PLACEHOLDER_JOURNAL_DIRECTORY);
+    const bubblewrap = platform === 'linux' && (await bubblewrapPresent(DEFAULT_BWRAP_PATH, (file) => nodeFileSystem.access(file, 'execute')));
+    const noneProtection = childProtectionFor({ sandbox: 'none', home: canonicalHome, platform, env: process.env, bubblewrap });
     const sandboxOf = async (kind: SandboxKind, deriveSignal: AbortSignal): Promise<Sandbox> => {
       if (kind === 'none') {
-        const unsandboxed = createUnsandboxed({ killGraceMs: SANDBOX_KILL_GRACE_MS });
+        const unsandboxed = createUnsandboxed({ killGraceMs: SANDBOX_KILL_GRACE_MS, protection: noneProtection, platform });
         logger.warn('sandbox is none: Bash asks before every command');
+        if (noneProtection.kind === 'unprotected') logger.warn(noneProtection.reason);
         return unsandboxed;
       }
       const required = kind === 'seatbelt' ? 'darwin' : 'linux';
@@ -769,7 +772,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           settings: settingsComposition.settings,
           clock,
           home: canonicalHome,
-          unsandboxed: createUnsandboxed({ killGraceMs: SANDBOX_KILL_GRACE_MS }),
+          unsandboxed: createUnsandboxed({ killGraceMs: SANDBOX_KILL_GRACE_MS, protection: noneProtection, platform }),
           files: nodeFileSystem,
         }),
         evidenceRun: evidenceRunFor,
