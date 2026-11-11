@@ -1,11 +1,11 @@
 import type { McpAuthorizationView, McpServerView } from '@momonga/protocol';
 import { McpElicitationAnswerError, parseElicitationAnswers } from '@momonga/mcp';
-import { cleanFailureMessage } from '@momonga/foundation';
+import { cleanFailureMessage, hostPaths } from '@momonga/foundation';
 import type { RuntimeStore } from '@momonga/store';
 import { conflict, invalidRequest, notFound } from './errors.ts';
 import type { Handler, RouteRegistrar } from './app.ts';
 import { JSON_MEDIA_TYPES, readJson, validateBody } from './request.ts';
-import type { ResolveElicitationBody } from './request.ts';
+import type { McpFolderBody, ResolveElicitationBody } from './request.ts';
 import { toRunView } from './views.ts';
 
 export type McpAdminPort = {
@@ -13,6 +13,10 @@ export type McpAdminPort = {
   startAuthorization(sessionId: string, name: string, signal: AbortSignal): Promise<McpAuthorizationView>;
   authorization(sessionId: string, name: string): McpAuthorizationView | undefined;
   cancelAuthorization(sessionId: string, name: string): boolean;
+  folderServers(folder: McpFolderBody, signal: AbortSignal): Promise<McpServerView[]>;
+  startFolderAuthorization(folder: McpFolderBody, name: string, signal: AbortSignal): Promise<McpAuthorizationView>;
+  folderAuthorization(cwd: string, name: string): McpAuthorizationView | undefined;
+  cancelFolderAuthorization(cwd: string, name: string): boolean;
 };
 
 export type InputRoutesDeps = {
@@ -100,6 +104,46 @@ export const registerInputRoutes = (route: RouteRegistrar, deps: InputRoutesDeps
     return new Response(null, { status: 204 });
   };
 
+  const realFolder = async (cwd: string, signal: AbortSignal): Promise<string> => {
+    const result = await hostPaths(signal).canonicalDirectory(cwd);
+    if (!result.ok) throw invalidRequest(`cwd ${cwd} ${result.reason}`, 'cwd');
+    return result.path;
+  };
+
+  const folderOfBody = async (request: Request): Promise<McpFolderBody> => {
+    const body = validateBody<McpFolderBody>('McpFolderRequest', await readJson(request, JSON_MEDIA_TYPES, deps.maxBodyBytes));
+    return { cwd: await realFolder(body.cwd, request.signal), env: body.env };
+  };
+
+  const folderOfQuery = (request: Request): Promise<string> => {
+    const cwd = new URL(request.url).searchParams.get('cwd');
+    if (cwd === null || cwd === '') throw invalidRequest('the cwd query parameter is required', 'cwd');
+    return realFolder(cwd, request.signal);
+  };
+
+  const listFolderServers: Handler = async (context) =>
+    json({ servers: await mcp.folderServers(await folderOfBody(context.req.raw), AbortSignal.any([deps.closeSignal, context.req.raw.signal])) });
+
+  const startFolderAuthorization: Handler = async (context) => {
+    deps.refuseWhileRetiring();
+    return json({ authorization: await mcp.startFolderAuthorization(await folderOfBody(context.req.raw), context.req.param('name') ?? '', context.req.raw.signal) }, 202);
+  };
+
+  const getFolderAuthorization: Handler = async (context) => {
+    const name = context.req.param('name') ?? '';
+    const authorization = mcp.folderAuthorization(await folderOfQuery(context.req.raw), name);
+    if (authorization === undefined) throw notFound(`no authorization was started for MCP server ${name}`);
+    return json({ authorization });
+  };
+
+  const cancelFolderAuthorization: Handler = async (context) => {
+    const name = context.req.param('name') ?? '';
+    if (!mcp.cancelFolderAuthorization(await folderOfQuery(context.req.raw), name)) throw notFound(`no authorization is waiting for MCP server ${name}`);
+    return new Response(null, { status: 204 });
+  };
+
+  route('/v1/mcp/servers', { POST: listFolderServers });
+  route('/v1/mcp/servers/:name/authorization', { GET: getFolderAuthorization, POST: startFolderAuthorization, DELETE: cancelFolderAuthorization });
   route('/v1/runs/:id/elicitations', { GET: runElicitations });
   route('/v1/elicitations/:id', { GET: getElicitation, POST: resolveElicitation });
   route('/v1/sessions/:id/mcp/servers', { GET: listServers });

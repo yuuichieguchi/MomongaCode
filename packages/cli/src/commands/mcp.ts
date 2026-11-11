@@ -7,7 +7,9 @@ import { AUTHORIZATION_POLL_INTERVAL_MS } from '../constants.ts';
 import { mcpLoginCommand } from '../mcp/messages.ts';
 import { pollUntil } from '../poll.ts';
 import type { CliPorts } from '../ports.ts';
-import { openSession } from '../run/open-session.ts';
+import type { McpFolder, RuntimeClient } from '../client/runtime-client.ts';
+import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
+import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import { escapedLines } from '../terminal-writer.ts';
 
 export class McpLoginFailed extends Error {
@@ -41,14 +43,27 @@ export const formatMcpServers = (servers: readonly McpServerView[]): string => {
   return [line({ name: 'NAME', scope: 'SCOPE', transport: 'TRANSPORT', auth: 'AUTH', detail: 'DETAIL' }), ...rows.map(line)].join('\n');
 };
 
-export const mcpList = async (ports: CliPorts, paths: MomongaPaths, json: boolean): Promise<number> => {
-  const session = await openSession(ports, paths, {});
+type FolderRuntime = { client: RuntimeClient; folder: McpFolder };
+
+const folderRuntime = async (ports: CliPorts, paths: MomongaPaths, signal: AbortSignal): Promise<FolderRuntime> => {
+  await ensureCurrentDaemon(ports, paths, { signal });
+  const client = connectRuntime(ports, paths);
   try {
-    const servers = await session.client.mcpServers(session.created.session.id);
+    return { client, folder: { cwd: ports.cwd, env: await environmentSnapshot(ports, signal) } };
+  } catch (error) {
+    await client.close();
+    throw error;
+  }
+};
+
+export const mcpList = async (ports: CliPorts, paths: MomongaPaths, json: boolean): Promise<number> => {
+  const { client, folder } = await folderRuntime(ports, paths, ports.interrupt);
+  try {
+    const servers = await client.folderMcpServers(folder);
     ports.stdout.write(`${json ? JSON.stringify(servers) : formatMcpServers(servers)}\n`);
     return 0;
   } finally {
-    await session.close();
+    await client.close();
   }
 };
 
@@ -62,10 +77,9 @@ const settled = (view: McpAuthorizationView): McpAuthorizationView => {
 };
 
 export const mcpLogin = async (ports: CliPorts, paths: MomongaPaths, server: string, options: McpLoginOptions): Promise<number> => {
-  const session = await openSession(ports, paths, {});
-  const sessionId = session.created.session.id;
+  const { client, folder } = await folderRuntime(ports, paths, options.interrupt);
   try {
-    const started = settled(await session.client.startMcpAuthorization(sessionId, server));
+    const started = settled(await client.startFolderMcpAuthorization(folder, server));
     if (started.status === 'completed') {
       ports.stdout.write(`${escapedLines([`MCP server ${server} is authorized`])}\n`);
       return 0;
@@ -83,7 +97,7 @@ export const mcpLogin = async (ports: CliPorts, paths: MomongaPaths, server: str
       finished = await pollUntil(
         ports.clock,
         async () => {
-          const view = await session.client.mcpAuthorization(sessionId, server);
+          const view = await client.folderMcpAuthorization(folder.cwd, server);
           return view.status === 'awaiting_user' ? undefined : view;
         },
         {
@@ -94,7 +108,7 @@ export const mcpLogin = async (ports: CliPorts, paths: MomongaPaths, server: str
         },
       );
     } catch (error) {
-      await session.client.cancelMcpAuthorization(sessionId, server);
+      await client.cancelFolderMcpAuthorization(folder.cwd, server);
       if (options.interrupt.aborted) {
         ports.stderr.write(`${escapedLines([`momonga: authorization of MCP server ${server} cancelled`])}\n`);
         return EXIT_INTERRUPTED;
@@ -107,6 +121,6 @@ export const mcpLogin = async (ports: CliPorts, paths: MomongaPaths, server: str
     ports.stdout.write(`${escapedLines([`MCP server ${server} is authorized`])}\n`);
     return 0;
   } finally {
-    await session.close();
+    await client.close();
   }
 };

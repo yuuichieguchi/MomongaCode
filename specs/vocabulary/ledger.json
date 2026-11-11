@@ -70,7 +70,7 @@
         "gateway": 1
       },
       "packages/cli/src/commands/jobs.ts": {
-        "job": 1
+        "job": 2
       },
       "packages/cli/src/commands/models.ts": {
         "conversation": 1,

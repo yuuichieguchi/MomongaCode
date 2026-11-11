@@ -6,13 +6,16 @@ const REFUSAL =
   'No secret store was found on this host (security (Keychain) is not on PATH). MomongaCode does not keep sign-in tokens in a plain file unless you ask: set credentials.plaintextTokenFiles to true in your user settings to keep them in a file only you can read.';
 
 const runtimeClient = {
-  startMcpAuthorization: vi.fn(async () => ({ server: 'docs', status: 'failed', startedAt: 0, expiresAt: 0, failure: { code: 'store_unwritable', message: REFUSAL } })),
-  mcpAuthorization: vi.fn(),
-  cancelMcpAuthorization: vi.fn(),
+  startFolderMcpAuthorization: vi.fn(async () => ({ server: 'docs', status: 'failed', startedAt: 0, expiresAt: 0, failure: { code: 'store_unwritable', message: REFUSAL } })),
+  folderMcpAuthorization: vi.fn(),
+  cancelFolderMcpAuthorization: vi.fn(),
 };
 
+vi.mock('../src/daemon/ensure-daemon.ts', async (original) => ({ ...(await original<object>()), ensureCurrentDaemon: async () => undefined }));
+
 vi.mock('../src/run/open-session.ts', () => ({
-  openSession: async () => ({ created: { session: { id: 'session-1' } }, client: runtimeClient, close: async () => undefined }),
+  connectRuntime: () => ({ ...runtimeClient, close: async () => undefined }),
+  environmentSnapshot: async () => ({}),
 }));
 
 const { mcpLogin, McpLoginFailed } = await import('../src/commands/mcp.ts');

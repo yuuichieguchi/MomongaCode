@@ -1546,6 +1546,7 @@ export const RUN_API_SCHEMAS = {
   TrustView: root(trustView),
   TrustResponse: root(closed({ trust: trustView }, ['trust'])),
   PutTrustRequest: root(closed({ path: { type: 'string', minLength: 1 }, decision: enumOf(['trusted', 'untrusted']) }, ['path', 'decision'])),
+  McpFolderRequest: root(closed({ cwd: { type: 'string', minLength: 1 }, env: { type: 'object', additionalProperties: string } }, ['cwd', 'env'])),
   RunView: root(runView),
   ApprovalView: root(
     closed(
