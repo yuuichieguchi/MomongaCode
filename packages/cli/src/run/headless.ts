@@ -321,6 +321,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
       case 'usage.updated':
       case 'usage.charged':
       case 'context.compacted':
+      case 'context.inherited_compacted':
       case 'context.governing_loaded':
       case 'context.memories_loaded':
       case 'context.contribution':

@@ -181,7 +181,7 @@ describe('the snapshot of a run with an unknown effect', () => {
     const state = stateOf(store, runId);
     const encoded = encodedRunState(state);
     expect(encoded.read()).toEqual(state);
-    expect(SNAPSHOT_STATE_VERSION).toBe(23);
+    expect(SNAPSHOT_STATE_VERSION).toBe(24);
     encoded.mutate("json_remove(json_set(state_json, '$.stateVersion', 17), '$.unknownEffects')");
     expect(encoded.read()).toBeUndefined();
     expect(await foldedRunState(store, runId)).toEqual(state);
