@@ -3763,10 +3763,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 5472,
-      "measuredSeconds": 2.6,
-      "measuredCpuSeconds": 5.76,
-      "budgetCpuSeconds": 15
+      "distinctStates": 9060,
+      "measuredSeconds": 5.26,
+      "measuredCpuSeconds": 6.36,
+      "budgetCpuSeconds": 16
     },
     {
       "config": "DerivedRepair.sessionWatermark",
@@ -3774,10 +3774,10 @@
       "expect": "holds",
       "args": [],
       "tier": "deep",
-      "distinctStates": 18168,
-      "measuredSeconds": 6.02,
-      "measuredCpuSeconds": 11.38,
-      "budgetCpuSeconds": 26
+      "distinctStates": 24166,
+      "measuredSeconds": 11.1,
+      "measuredCpuSeconds": 12.09,
+      "budgetCpuSeconds": 28
     },
     {
       "config": "DerivedRepair.today",
@@ -3788,9 +3788,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 31,
-      "measuredSeconds": 1.7,
-      "measuredCpuSeconds": 1.91,
+      "distinctStates": 8,
+      "measuredSeconds": 1.38,
+      "measuredCpuSeconds": 1.69,
       "budgetCpuSeconds": 7
     },
     {
@@ -3802,10 +3802,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 61,
-      "measuredSeconds": 1.72,
-      "measuredCpuSeconds": 2.02,
-      "budgetCpuSeconds": 8
+      "distinctStates": 25,
+      "measuredSeconds": 1.3,
+      "measuredCpuSeconds": 1.74,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "DerivedRepair.staleMark",
@@ -3816,10 +3816,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 335,
-      "measuredSeconds": 1.66,
-      "measuredCpuSeconds": 2.18,
-      "budgetCpuSeconds": 8
+      "distinctStates": 211,
+      "measuredSeconds": 1.25,
+      "measuredCpuSeconds": 1.86,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "DerivedRepair.advanceAtEnd",
@@ -3830,9 +3830,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 107,
-      "measuredSeconds": 1.61,
-      "measuredCpuSeconds": 1.93,
+      "distinctStates": 58,
+      "measuredSeconds": 1.72,
+      "measuredCpuSeconds": 1.88,
       "budgetCpuSeconds": 7
     },
     {
@@ -3844,9 +3844,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 684,
-      "measuredSeconds": 1.74,
-      "measuredCpuSeconds": 2.44,
+      "distinctStates": 452,
+      "measuredSeconds": 1.68,
+      "measuredCpuSeconds": 2.27,
       "budgetCpuSeconds": 8
     },
     {
@@ -4421,11 +4421,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 38432,
-      "measuredSeconds": 9.75,
-      "measuredCpuSeconds": 20.57,
-      "budgetCpuSeconds": 45,
-      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
+      "distinctStates": 6752,
+      "measuredSeconds": 4.38,
+      "measuredCpuSeconds": 6.34,
+      "budgetCpuSeconds": 16
     },
     {
       "config": "LeftoverCleanup.ageRemoval",
@@ -4436,11 +4435,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 172,
-      "measuredSeconds": 1.31,
-      "measuredCpuSeconds": 1.8,
-      "budgetCpuSeconds": 7,
-      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
+      "distinctStates": 116,
+      "measuredSeconds": 1.68,
+      "measuredCpuSeconds": 1.92,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "LeftoverCleanup.pidOnly",
@@ -4451,11 +4449,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 79,
-      "measuredSeconds": 1.37,
-      "measuredCpuSeconds": 1.8,
-      "budgetCpuSeconds": 7,
-      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
+      "distinctStates": 41,
+      "measuredSeconds": 2.29,
+      "measuredCpuSeconds": 2.32,
+      "budgetCpuSeconds": 8
     },
     {
       "config": "LeftoverCleanup.noTempLock",
@@ -4466,11 +4463,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 55,
-      "measuredSeconds": 1.26,
-      "measuredCpuSeconds": 1.66,
-      "budgetCpuSeconds": 7,
-      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
+      "distinctStates": 32,
+      "measuredSeconds": 1.43,
+      "measuredCpuSeconds": 1.72,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "LeftoverCleanup.splitCreate",
@@ -4481,11 +4477,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 201,
-      "measuredSeconds": 1.3,
-      "measuredCpuSeconds": 1.77,
-      "budgetCpuSeconds": 7,
-      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
+      "distinctStates": 120,
+      "measuredSeconds": 1.33,
+      "measuredCpuSeconds": 1.75,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "LeftoverCleanup.reapFirst",
@@ -4496,11 +4491,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 334,
-      "measuredSeconds": 1.29,
-      "measuredCpuSeconds": 1.85,
-      "budgetCpuSeconds": 7,
-      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
+      "distinctStates": 179,
+      "measuredSeconds": 1.66,
+      "measuredCpuSeconds": 2.17,
+      "budgetCpuSeconds": 8
     },
     {
       "config": "LeftoverCleanup.listingNumbers",
@@ -4511,11 +4505,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1767,
-      "measuredSeconds": 1.39,
-      "measuredCpuSeconds": 2.21,
-      "budgetCpuSeconds": 8,
-      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
+      "distinctStates": 3954,
+      "measuredSeconds": 1.45,
+      "measuredCpuSeconds": 2.51,
+      "budgetCpuSeconds": 9
     },
     {
       "config": "LeftoverCleanup.unlockedStart",
@@ -4526,11 +4519,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 277,
-      "measuredSeconds": 1.32,
-      "measuredCpuSeconds": 1.83,
-      "budgetCpuSeconds": 7,
-      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
+      "distinctStates": 74,
+      "measuredSeconds": 1.28,
+      "measuredCpuSeconds": 1.71,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "LeftoverCleanup.noClaimDirs",
@@ -4541,11 +4533,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 601,
-      "measuredSeconds": 1.31,
-      "measuredCpuSeconds": 1.88,
-      "budgetCpuSeconds": 7,
-      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
+      "distinctStates": 502,
+      "measuredSeconds": 1.29,
+      "measuredCpuSeconds": 1.9,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "LeftoverCleanup.sidecar",
@@ -4553,11 +4544,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 67256,
-      "measuredSeconds": 16.76,
-      "measuredCpuSeconds": 34.83,
-      "budgetCpuSeconds": 73,
-      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
+      "distinctStates": 11816,
+      "measuredSeconds": 6.92,
+      "measuredCpuSeconds": 9.2,
+      "budgetCpuSeconds": 22
     },
     {
       "config": "LeftoverCleanup.sidecarOrder",
@@ -4568,11 +4558,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 37569,
+      "distinctStates": 14989,
       "measuredSeconds": 4.41,
-      "measuredCpuSeconds": 9.4,
-      "budgetCpuSeconds": 22,
-      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
+      "measuredCpuSeconds": 6.33,
+      "budgetCpuSeconds": 16
     },
     {
       "config": "LeftoverCleanup.sidecarNoClaim",
@@ -4583,11 +4572,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 204,
-      "measuredSeconds": 1.75,
-      "measuredCpuSeconds": 2.22,
-      "budgetCpuSeconds": 8,
-      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
+      "distinctStates": 131,
+      "measuredSeconds": 1.32,
+      "measuredCpuSeconds": 1.85,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "LeftoverCleanup.threeWriters",
@@ -4595,11 +4583,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 192160,
-      "measuredSeconds": 5.43,
-      "measuredCpuSeconds": 10.37,
-      "budgetCpuSeconds": 24,
-      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
+      "distinctStates": 33760,
+      "measuredSeconds": 2.38,
+      "measuredCpuSeconds": 3.57,
+      "budgetCpuSeconds": 11
     },
     {
       "config": "SettingsSwap",
@@ -5667,11 +5654,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 856,
-      "measuredSeconds": 1.32,
-      "measuredCpuSeconds": 2.02,
-      "budgetCpuSeconds": 8,
-      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
+      "distinctStates": 500,
+      "measuredSeconds": 1.55,
+      "measuredCpuSeconds": 2.21,
+      "budgetCpuSeconds": 8
     },
     {
       "config": "UpdateSwitch.gateway",
@@ -6373,6 +6359,48 @@
       "measuredSeconds": 1.24,
       "measuredCpuSeconds": 1.5,
       "budgetCpuSeconds": 6
+    },
+    {
+      "config": "LeftoverCleanup.jobsIgnored",
+      "role": "evidence",
+      "expect": {
+        "violates": "JobsBlockRemoval",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1091,
+      "measuredSeconds": 1.54,
+      "measuredCpuSeconds": 2.22,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "LeftoverCleanup.markerRemoveLive",
+      "role": "evidence",
+      "expect": {
+        "violates": "MarkerRemovedDead",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 491,
+      "measuredSeconds": 1.49,
+      "measuredCpuSeconds": 2.06,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "DerivedRepair.dropEarly",
+      "role": "evidence",
+      "expect": {
+        "violates": "RepairNeverReadsDeleted",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 16,
+      "measuredSeconds": 1.98,
+      "measuredCpuSeconds": 2.18,
+      "budgetCpuSeconds": 8
     }
   ]
 }

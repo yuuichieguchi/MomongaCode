@@ -3,7 +3,7 @@ EXTENDS Naturals, FiniteSets
 
 CONSTANTS Writers, Sweepers, Starters, Insts, Foreign, MaxGen, MaxCrash, MaxGenCrash, Variant, LockForm
 
-ASSUME Variant \in {"decided", "ageRemoval", "pidOnly", "noTempLock", "splitCreate", "reapFirst", "listingNumbers", "unlockedStart", "noClaimDirs", "instanceNoClaim"}
+ASSUME Variant \in {"decided", "ageRemoval", "pidOnly", "noTempLock", "splitCreate", "reapFirst", "listingNumbers", "unlockedStart", "noClaimDirs", "instanceNoClaim", "jobsIgnored", "markerRemoveLive"}
 ASSUME Foreign \subseteq Writers
 ASSUME LockForm \in {"entry", "sidecar"}
 ASSUME MaxGen \in Nat \ {0}
@@ -15,12 +15,13 @@ Gens == 1..MaxGen
 WPhases == {"idle", "created", "locked", "published", "done", "failed", "crashed"}
 SPhases == {"idle", "reserved", "mkdir", "running", "done", "crashed"}
 
-VARIABLES wph, tmp, held, aged, sc, crashes, genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes, ilock, iex, iclm
+VARIABLES wph, tmp, held, aged, sc, crashes, genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes, ilock, iex, iclm, stl, jobs, mk, mkl, scr
 
 wvars == <<wph, tmp, held, aged, sc>>
 ivars == <<ilock, iex, iclm>>
-gvars == <<genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes, ivars>>
-vars == <<wph, tmp, held, aged, sc, crashes, genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes, ilock, iex, iclm>>
+ovars == <<stl, jobs, mk, mkl, scr>>
+gvars == <<genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes, ivars, ovars>>
+vars == <<wph, tmp, held, aged, sc, crashes, genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes, ilock, iex, iclm, stl, jobs, mk, mkl, scr>>
 
 Live(w) == wph[w] \in {"created", "locked", "published"}
 Units(w) == tmp[w] \/ sc[w] /= "none"
@@ -58,6 +59,11 @@ Init ==
     /\ ilock = [g \in Gens |-> [i \in Insts |-> "free"]]
     /\ iex = [g \in Gens |-> [i \in Insts |-> FALSE]]
     /\ iclm = [g \in Gens |-> [i \in Insts |-> FALSE]]
+    /\ stl = [g \in Gens |-> FALSE]
+    /\ jobs = [g \in Gens |-> FALSE]
+    /\ mk = [g \in Gens |-> FALSE]
+    /\ mkl = [g \in Gens |-> FALSE]
+    /\ scr = [g \in Gens |-> FALSE]
 
 CreateLocked(w) ==
     /\ Variant # "splitCreate"
@@ -160,7 +166,8 @@ StartReserve(s) ==
         /\ dir' = [dir EXCEPT ![n] = TRUE]
         /\ supLock' = [supLock EXCEPT ![n] = "held"]
         /\ alive' = [alive EXCEPT ![n] = TRUE]
-    /\ UNCHANGED <<ivars, wvars, crashes, reaping, deaths, gCrashes>>
+        /\ stl' = [stl EXCEPT ![n] = TRUE]
+    /\ UNCHANGED <<ivars, wvars, crashes, reaping, deaths, gCrashes, jobs, mk, mkl, scr>>
 
 StartRelease(s) ==
     /\ Variant # "unlockedStart"
@@ -168,7 +175,8 @@ StartRelease(s) ==
     /\ genHolder = s
     /\ genHolder' = "none"
     /\ sph' = [sph EXCEPT ![s] = "running"]
-    /\ UNCHANGED <<ivars, wvars, crashes, genCounter, uses, dir, supLock, alive, sN, reaping, deaths, gCrashes>>
+    /\ stl' = [stl EXCEPT ![sN[s]] = FALSE]
+    /\ UNCHANGED <<ivars, wvars, crashes, genCounter, uses, dir, supLock, alive, sN, reaping, deaths, gCrashes, jobs, mk, mkl, scr>>
 
 StartReserveUnlocked(s) ==
     /\ Variant = "unlockedStart"
@@ -179,14 +187,14 @@ StartReserveUnlocked(s) ==
         /\ sN' = [sN EXCEPT ![s] = n]
         /\ uses' = [uses EXCEPT ![n] = @ + 1]
         /\ genCounter' = n
-    /\ UNCHANGED <<ivars, wvars, crashes, dir, supLock, alive, genHolder, reaping, deaths, gCrashes>>
+    /\ UNCHANGED <<ivars, wvars, crashes, dir, supLock, alive, genHolder, reaping, deaths, gCrashes, ovars>>
 
 StartMkdirUnlocked(s) ==
     /\ Variant = "unlockedStart"
     /\ sph[s] = "reserved"
     /\ dir' = [dir EXCEPT ![sN[s]] = TRUE]
     /\ sph' = [sph EXCEPT ![s] = "mkdir"]
-    /\ UNCHANGED <<ivars, wvars, crashes, genCounter, uses, sN, supLock, alive, genHolder, reaping, deaths, gCrashes>>
+    /\ UNCHANGED <<ivars, wvars, crashes, genCounter, uses, sN, supLock, alive, genHolder, reaping, deaths, gCrashes, ovars>>
 
 StartLockUnlocked(s) ==
     /\ Variant = "unlockedStart"
@@ -195,74 +203,117 @@ StartLockUnlocked(s) ==
     /\ supLock' = [supLock EXCEPT ![sN[s]] = "held"]
     /\ alive' = [alive EXCEPT ![sN[s]] = TRUE]
     /\ sph' = [sph EXCEPT ![s] = "running"]
-    /\ UNCHANGED <<ivars, wvars, crashes, genCounter, uses, dir, sN, genHolder, reaping, deaths, gCrashes>>
+    /\ UNCHANGED <<ivars, wvars, crashes, genCounter, uses, dir, sN, genHolder, reaping, deaths, gCrashes, ovars>>
 
 GenExit(s) ==
     /\ sph[s] = "running"
     /\ sph' = [sph EXCEPT ![s] = "done"]
     /\ supLock' = [supLock EXCEPT ![sN[s]] = "free"]
     /\ deaths' = deaths + 1
-    /\ UNCHANGED <<ivars, wvars, crashes, genCounter, uses, dir, alive, sN, genHolder, reaping, gCrashes>>
+    /\ UNCHANGED <<ivars, wvars, crashes, genCounter, uses, dir, alive, sN, genHolder, reaping, gCrashes, ovars>>
 
 StarterCrash(s) ==
     /\ gCrashes < MaxGenCrash
     /\ sph[s] \in {"reserved", "mkdir", "running"}
     /\ sph' = [sph EXCEPT ![s] = "crashed"]
     /\ supLock' = [supLock EXCEPT ![sN[s]] = IF supLock[sN[s]] = "held" THEN "free" ELSE supLock[sN[s]]]
+    /\ stl' = [stl EXCEPT ![sN[s]] = FALSE]
     /\ genHolder' = IF genHolder = s THEN "none" ELSE genHolder
     /\ deaths' = deaths + 1
     /\ gCrashes' = gCrashes + 1
-    /\ UNCHANGED <<ivars, wvars, crashes, genCounter, uses, dir, alive, sN, reaping>>
+    /\ UNCHANGED <<ivars, wvars, crashes, genCounter, uses, dir, alive, sN, reaping, jobs, mk, mkl, scr>>
 
 ChildExit(g) ==
     /\ alive[g]
     /\ alive' = [alive EXCEPT ![g] = FALSE]
     /\ ilock' = [ilock EXCEPT ![g] = [i \in Insts |-> "free"]]
-    /\ UNCHANGED <<wvars, crashes, genCounter, uses, dir, supLock, sph, sN, genHolder, reaping, deaths, gCrashes, iex, iclm>>
+    /\ mkl' = [mkl EXCEPT ![g] = FALSE]
+    /\ UNCHANGED <<wvars, crashes, genCounter, uses, dir, supLock, sph, sN, genHolder, reaping, deaths, gCrashes, iex, iclm, stl, jobs, mk, scr>>
 
 ClaimDead(g) ==
     /\ dir[g]
     /\ ~reaping[g]
     /\ (Variant = "noClaimDirs" \/ supLock[g] # "held")
+    /\ ~stl[g]
     /\ (Variant = "unlockedStart" \/ genHolder = "none")
     /\ reaping' = [reaping EXCEPT ![g] = TRUE]
-    /\ UNCHANGED <<ivars, wvars, crashes, genCounter, uses, dir, supLock, alive, sph, sN, genHolder, deaths, gCrashes>>
+    /\ UNCHANGED <<ivars, wvars, crashes, genCounter, uses, dir, supLock, alive, sph, sN, genHolder, deaths, gCrashes, ovars>>
 
 ReapMarkers(g) ==
     /\ reaping[g]
     /\ alive[g]
     /\ alive' = [alive EXCEPT ![g] = FALSE]
     /\ ilock' = [ilock EXCEPT ![g] = [i \in Insts |-> "free"]]
-    /\ UNCHANGED <<wvars, crashes, genCounter, uses, dir, supLock, sph, sN, genHolder, reaping, deaths, gCrashes, iex, iclm>>
+    /\ mkl' = [mkl EXCEPT ![g] = FALSE]
+    /\ UNCHANGED <<wvars, crashes, genCounter, uses, dir, supLock, sph, sN, genHolder, reaping, deaths, gCrashes, iex, iclm, stl, jobs, mk, scr>>
+
+MakeMarker(g) ==
+    /\ dir[g] /\ alive[g]
+    /\ ~mk[g]
+    /\ mk' = [mk EXCEPT ![g] = TRUE]
+    /\ mkl' = [mkl EXCEPT ![g] = TRUE]
+    /\ UNCHANGED <<wvars, crashes, genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes, ivars, stl, jobs, scr>>
+
+RemoveMarkers(g) ==
+    /\ reaping[g] /\ mk[g]
+    /\ (~alive[g] \/ Variant = "markerRemoveLive")
+    /\ mk' = [mk EXCEPT ![g] = FALSE]
+    /\ UNCHANGED <<wvars, crashes, genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes, ivars, stl, jobs, mkl, scr>>
+
+SpawnScratch(g) ==
+    /\ dir[g] /\ alive[g]
+    /\ ~scr[g]
+    /\ scr' = [scr EXCEPT ![g] = TRUE]
+    /\ UNCHANGED <<wvars, crashes, genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes, ivars, stl, jobs, mk, mkl>>
+
+SweepScratch(g) ==
+    /\ reaping[g] /\ scr[g]
+    /\ ~alive[g]
+    /\ scr' = [scr EXCEPT ![g] = FALSE]
+    /\ UNCHANGED <<wvars, crashes, genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes, ivars, stl, jobs, mk, mkl>>
+
+JobStart(g) ==
+    /\ dir[g] /\ alive[g]
+    /\ ~jobs[g]
+    /\ jobs' = [jobs EXCEPT ![g] = TRUE]
+    /\ UNCHANGED <<wvars, crashes, genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes, ivars, stl, mk, mkl, scr>>
+
+JobEnd(g) ==
+    /\ jobs[g] /\ ~alive[g]
+    /\ jobs' = [jobs EXCEPT ![g] = FALSE]
+    /\ UNCHANGED <<wvars, crashes, genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes, ivars, stl, mk, mkl, scr>>
 
 MakeInstance(g, i) ==
     /\ dir[g] /\ alive[g]
     /\ ~iex[g][i] /\ ~iclm[g][i]
     /\ iex' = [iex EXCEPT ![g][i] = TRUE]
     /\ ilock' = [ilock EXCEPT ![g][i] = "held"]
-    /\ UNCHANGED <<wvars, crashes, genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes, iclm>>
+    /\ UNCHANGED <<wvars, crashes, genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes, iclm, ovars>>
 
 ClaimInstance(g, i) ==
     /\ reaping[g] /\ iex[g][i] /\ ilock[g][i] = "free" /\ ~iclm[g][i]
     /\ iclm' = [iclm EXCEPT ![g][i] = TRUE]
-    /\ UNCHANGED <<wvars, crashes, genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes, ilock, iex>>
+    /\ UNCHANGED <<wvars, crashes, genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes, ilock, iex, ovars>>
 
 RemoveInstance(g, i) ==
     /\ reaping[g] /\ iex[g][i]
     /\ (iclm[g][i] \/ Variant = "instanceNoClaim")
     /\ iex' = [iex EXCEPT ![g][i] = FALSE]
     /\ iclm' = [iclm EXCEPT ![g][i] = FALSE]
-    /\ UNCHANGED <<wvars, crashes, genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes, ilock>>
+    /\ UNCHANGED <<wvars, crashes, genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes, ilock, ovars>>
 
 RemoveDir(g) ==
     /\ reaping[g]
     /\ dir[g]
     /\ \A i \in Insts : ~iex[g][i]
     /\ (Variant = "reapFirst" \/ ~alive[g])
+    /\ ~mk[g]
+    /\ ~scr[g]
+    /\ (Variant = "jobsIgnored" \/ ~jobs[g])
     /\ dir' = [dir EXCEPT ![g] = FALSE]
     /\ supLock' = [supLock EXCEPT ![g] = IF supLock[g] = "held" THEN "held" ELSE "none"]
     /\ reaping' = [reaping EXCEPT ![g] = FALSE]
-    /\ UNCHANGED <<ivars, wvars, crashes, genCounter, uses, alive, sph, sN, genHolder, deaths, gCrashes>>
+    /\ UNCHANGED <<ivars, wvars, crashes, genCounter, uses, alive, sph, sN, genHolder, deaths, gCrashes, ovars>>
 
 WriterStep(w) ==
     \/ CreateLocked(w)
@@ -279,10 +330,13 @@ Next ==
     \/ \E s \in Starters : StartReserve(s) \/ StartRelease(s) \/ StartReserveUnlocked(s)
                           \/ StartMkdirUnlocked(s) \/ StartLockUnlocked(s) \/ GenExit(s) \/ StarterCrash(s)
     \/ \E g \in Gens : ChildExit(g) \/ ReapMarkers(g) \/ RemoveDir(g) \/ ClaimDead(g)
+                       \/ MakeMarker(g) \/ RemoveMarkers(g) \/ SpawnScratch(g) \/ SweepScratch(g)
+                       \/ JobStart(g) \/ JobEnd(g)
     \/ \E g \in Gens, i \in Insts : MakeInstance(g, i) \/ ClaimInstance(g, i) \/ RemoveInstance(g, i)
 
 TempFairness == \A w \in Writers : WF_vars(SweepTemp(w))
 DirFairness == \A g \in Gens : WF_vars(ClaimDead(g)) /\ WF_vars(ReapMarkers(g)) /\ WF_vars(RemoveDir(g))
+    /\ WF_vars(RemoveMarkers(g)) /\ WF_vars(SweepScratch(g)) /\ WF_vars(JobEnd(g))
     /\ \A i \in Insts : WF_vars(ClaimInstance(g, i)) /\ WF_vars(RemoveInstance(g, i))
 StartFairness == \A s \in Starters : WF_vars(StartRelease(s)) /\ WF_vars(StartLockUnlocked(s))
 
@@ -304,6 +358,11 @@ TypeOK ==
     /\ ilock \in [Gens -> [Insts -> {"free", "held"}]]
     /\ iex \in [Gens -> [Insts -> BOOLEAN]]
     /\ iclm \in [Gens -> [Insts -> BOOLEAN]]
+    /\ stl \in [Gens -> BOOLEAN]
+    /\ jobs \in [Gens -> BOOLEAN]
+    /\ mk \in [Gens -> BOOLEAN]
+    /\ mkl \in [Gens -> BOOLEAN]
+    /\ scr \in [Gens -> BOOLEAN]
 
 NoLiveStepFailed == \A w \in Writers : wph[w] # "failed"
 
@@ -316,6 +375,14 @@ NoNumberReuse == \A g \in Gens : uses[g] <= 1
 LiveStartStepOK == \A s \in Starters : sph[s] = "mkdir" => dir[sN[s]]
 
 LiveDialReachable == \A g \in Gens : supLock[g] = "held" => dir[g]
+
+JobsBlockRemoval == \A g \in Gens : ~dir[g] => ~jobs[g]
+
+MarkerRemovedDead == \A g \in Gens : ~mk[g] => ~mkl[g]
+
+ScratchBlocksRemoval == \A g \in Gens : ~dir[g] => ~scr[g]
+
+StartingBlocksReap == \A g \in Gens : stl[g] => ~reaping[g]
 
 Leftover(w) == Units(w) /\ ~held[w] /\ wph[w] = "crashed"
 
