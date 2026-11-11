@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-export const AGENT_TOOL_NAME = 'Agent';
+export { AGENT_TOOL_NAME } from '@momonga/protocol';
 
 export const AGENT_DIRECTORY_SEGMENTS = path.join('.momonga', 'agents');
 

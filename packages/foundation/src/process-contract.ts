@@ -1,5 +1,5 @@
 import type { Clock } from './clock.ts';
-import { REAP_POLL_INTERVAL_MS } from './platform/probe-timing.ts';
+import { POLL_INTERVAL_MS } from './wait-until.ts';
 import { parseOutsideJson } from './json-depth.ts';
 
 export const EXIT_CODES = {
@@ -40,15 +40,14 @@ export const CREDENTIAL_CAPABILITY_HEADER = 'momonga-credential-capability';
 export const KILL_CONFIRM_MS = 5000;
 export const ABORT_SETTLE_LIMIT_MS = 2000;
 export const SANDBOX_KILL_GRACE_MS = 1000;
-export const GROUP_POLL_INTERVAL_MS = 10;
-export const RUNTIME_ABORT_BUDGET_MS = ABORT_SETTLE_LIMIT_MS + SANDBOX_KILL_GRACE_MS + KILL_CONFIRM_MS + 2 * GROUP_POLL_INTERVAL_MS;
+export const RUNTIME_ABORT_BUDGET_MS = ABORT_SETTLE_LIMIT_MS + SANDBOX_KILL_GRACE_MS + KILL_CONFIRM_MS + 2 * POLL_INTERVAL_MS;
 export const RUNTIME_TEARDOWN_BUDGET_MS = 10_000;
 export const STARTUP_TIMEOUT_MS = 60_000;
 
 export const startDeadlineSignal = (given: AbortSignal | undefined): AbortSignal => given ?? AbortSignal.timeout(STARTUP_TIMEOUT_MS);
 export const groupTerminationBoundMs = (graceMs: number): number => graceMs + KILL_CONFIRM_MS;
 export const MARKER_REAP_GRACE_WINDOWS = 3;
-export const markerReapClockBoundMs = (killGraceMs: number): number => MARKER_REAP_GRACE_WINDOWS * (killGraceMs + REAP_POLL_INTERVAL_MS) + KILL_CONFIRM_MS;
+export const markerReapClockBoundMs = (killGraceMs: number): number => MARKER_REAP_GRACE_WINDOWS * (killGraceMs + POLL_INTERVAL_MS) + KILL_CONFIRM_MS;
 export const managedServerStopBoundMs = (stopGraceMs: number): number => stopGraceMs + KILL_CONFIRM_MS + markerReapClockBoundMs(stopGraceMs);
 export const ENTRY_HARD_EXIT_MARGIN_MS = 3000;
 export const SHUTDOWN_MARGIN_MS = 5000;

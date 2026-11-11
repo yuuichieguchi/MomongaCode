@@ -1,8 +1,9 @@
+import { LOAD_TOOLS_TOOL_NAME } from '@momonga/protocol';
 import type { FunctionTool } from '@momonga/protocol';
 import type { ToolSet } from '@momonga/tools';
 import { isRecord } from './json.ts';
 
-export const LOAD_TOOLS_TOOL_NAME = 'LoadTools';
+export { LOAD_TOOLS_TOOL_NAME };
 
 export type ToolOffer = { tools: FunctionTool[]; catalog: string[] };
 

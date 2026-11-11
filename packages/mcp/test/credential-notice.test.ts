@@ -18,6 +18,7 @@ const modernWithEnv = async (env: Record<string, string>) => {
 const noticesOfConstruction = (config: McpServerConfig): string[] => {
   const notices: string[] = [];
   const connection = createManagedConnection({
+    clientVersion: '0.0.0-test',
     name: 'remote',
     config,
     scope: 'user',

@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { uuidv7 } from '@momonga/foundation';
-import { createFakeClock } from '@momonga/testkit';
+import type { Random } from '@momonga/foundation';
+import { createFakeClock, createFakeRandom } from '@momonga/testkit';
 
 const FORMAT = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const zeros = (length: number) => new Uint8Array(length);
+const zeros: Random = { ...createFakeRandom(1), bytes: (length) => new Uint8Array(length) };
 
 describe('uuidv7', () => {
   it('follows the RFC 9562 layout with version 7 and variant 10', () => {

@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { hostKernelLock, sqliteFileLock } from '@momonga/foundation';
-import type { ReapTiming } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, startLockHolder, withTempDir } from '@momonga/testkit';
+import type { Timing } from '@momonga/foundation';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, startLockHolder, withTempDir, sleepDrivenTiming } from '@momonga/testkit';
 import { createCallLocks } from '../src/call-lock.ts';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
@@ -15,14 +15,14 @@ const KEY = keyFor('run-1', 1, 'c1');
 const READ_AND_ENTER_ONLY = 0o500;
 const PRIVATE_DIR = 0o700;
 
-const advancingTiming = (): ReapTiming => {
+const advancingTiming = (): Timing => {
   let current = 0;
-  return {
+  return sleepDrivenTiming({
     now: () => current,
     sleep: async (ms) => {
       current += ms;
     },
-  };
+  });
 };
 
 const never = (): AbortSignal => new AbortController().signal;

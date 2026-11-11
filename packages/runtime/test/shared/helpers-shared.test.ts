@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { momongaLayout, momongaPaths } from '@momonga/foundation';
+import { momongaLayout, momongaPaths, sleep } from '@momonga/foundation';
 import { RUNTIME_DEFAULTS, asError, protectedRootAreasOf, reapTimingOf } from '@momonga/runtime';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
 
@@ -51,7 +51,7 @@ describe('shared runtime helpers (system timers; reapTimingOf uses fake timers)'
     expect(timing.now()).toBe(START_MS + 25);
 
     let slept = false;
-    const sleeping = timing.sleep(500).then(() => {
+    const sleeping = sleep(timing, 500).then(() => {
       slept = true;
     });
     expect(timers.pending()).toEqual([{ id: 1, delayMs: 500, dueAt: START_MS + 525 }]);

@@ -238,14 +238,14 @@ describe('/help', () => {
   const help = (negotiation: Parameters<typeof helpText>[0]['negotiation'], screen: 'fullscreen' | 'scrollback' = 'fullscreen'): string[] => helpText({ commands, keys: DEFAULT_KEY_TABLE, negotiation, screen }).split('\n');
 
   it.each(['kitty', 'proven'] as const)('names shift+enter for a new line once the terminal reports it (%s)', (negotiation) => {
-    expect(newlineHelpLines(DEFAULT_KEY_TABLE, negotiation)).toEqual(['shift+enter or ctrl+j: new line', 'alt+enter: new line where the terminal sends Alt as Escape', '\\ then enter: new line']);
+    expect(newlineHelpLines(DEFAULT_KEY_TABLE, negotiation)).toEqual(['shift+enter or ctrl+j  new line', 'alt+enter  new line where the terminal sends Alt as Escape', '\\ then enter  new line']);
   });
 
   it.each(['unknown', 'plain', 'modify-other-keys'] as const)('names only ctrl+j while shift+enter is not proven (%s)', (negotiation) => {
     expect(newlineHelpLines(DEFAULT_KEY_TABLE, negotiation)).toEqual([
-      'ctrl+j: new line (shift+enter works only if this terminal reports it; this one has not)',
-      'alt+enter: new line where the terminal sends Alt as Escape',
-      '\\ then enter: new line',
+      'ctrl+j  new line (shift+enter works only if this terminal reports it; this one has not)',
+      'alt+enter  new line where the terminal sends Alt as Escape',
+      '\\ then enter  new line',
     ]);
   });
 
@@ -253,7 +253,7 @@ describe('/help', () => {
     const lines = help('unknown');
     expect(lines.filter((line) => !line.startsWith('  '))).toEqual(['Commands', 'Keys', 'Mouse']);
     expect(lines.slice(1, lines.indexOf('Keys'))).toEqual(commands.map((command) => `  /${command.name}${command.usage === undefined ? '' : ` ${command.usage}`}  ${command.description}`));
-    for (const line of ['  ctrl+c: cancel the run or clear the input; twice on an empty input to exit', '  ctrl+d: twice on an empty input to exit', '  ctrl+r: search the history', '  ctrl+g: edit the draft in $VISUAL or $EDITOR', '  ctrl+o: show or fold the detail', '  shift+tab: cycles the mode', '  esc: stops the run', '  pageup: scroll up half a screen', '  ctrl+home: go to the top', '  ctrl+l: repaint the screen'])
+    for (const line of ['  ctrl+c  cancel the run or clear the input; twice on an empty input to exit', '  ctrl+d  twice on an empty input to exit', '  ctrl+r  search the history', '  ctrl+g  edit the draft in $VISUAL or $EDITOR', '  ctrl+o  show or fold the detail', '  shift+tab  cycles the mode', '  esc  stops the run', '  pageup  scroll up half a screen', '  ctrl+home  go to the top', '  ctrl+l  repaint the screen'])
       expect(lines).toContain(line);
     expect(lines.join('\n')).not.toContain('backslash+enter');
   });
@@ -263,16 +263,16 @@ describe('/help', () => {
     const keyLines = lines.slice(lines.indexOf('Keys') + 1, lines.indexOf('Mouse'));
     const expected = DEFAULT_KEY_TABLE.rows().filter((row) => ['chat', 'viewport', 'global'].includes(row.context) && row.id !== 'prompt.newline');
     expect(keyLines).toHaveLength(expected.length + 3);
-    for (const row of expected) expect(keyLines).toContain(`  ${DEFAULT_KEY_TABLE.hintFor(row.id)}: ${row.description}`);
+    for (const row of expected) expect(keyLines).toContain(`  ${DEFAULT_KEY_TABLE.hintFor(row.id)}  ${row.description}`);
     expect(keyLines.join('\n')).not.toContain('complete the highlighted command');
   });
 
   it('lists the viewport keys and the mouse only in the full screen', () => {
     const lines = help('unknown', 'scrollback');
     expect(lines).not.toContain('Mouse');
-    expect(lines).not.toContain('  pageup: scroll up half a screen');
-    expect(help('unknown')).toContain('  wheel: scroll');
-    expect(help('unknown')).toContain('  click in the input: place the caret');
+    expect(lines).not.toContain('  pageup  scroll up half a screen');
+    expect(help('unknown')).toContain('  wheel  scroll');
+    expect(help('unknown')).toContain('  click in the input  place the caret');
   });
 
   it('is what the command prints', async () => {

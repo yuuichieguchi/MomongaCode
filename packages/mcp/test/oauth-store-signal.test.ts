@@ -3,10 +3,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_LOCK_TIMEOUT_MS, OperationLimitError, StoreCallEndedError, createFileCredentialStore } from '@momonga/foundation';
+import { DEFAULT_LOCK_TIMEOUT_MS, OperationLimitError, SHUTDOWN_SETTING_LIMITS, StoreCallEndedError, createFileCredentialStore } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
 import { McpInputSuspension, MIN_TASK_POLL_MS, createManagedConnection } from '@momonga/mcp';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, startLockHolder } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, startLockHolder, sleepDrivenTiming, createFakeRandom } from '@momonga/testkit';
 import type { McpOAuthProvider } from '../src/mcp-oauth.ts';
 import { createMcpOAuthProvider, credentialKey } from '../src/mcp-oauth.ts';
 import type * as RemoteTransportModule from '../src/remote-transport.ts';
@@ -36,12 +36,14 @@ const steppedPorts = (): FileLockPorts & { waitedMs(): number } => {
   const start = 1_000_000;
   let now = start;
   return {
-    clock: { now: () => now },
-    sleep: (ms) => {
-      now += ms;
-      return new Promise((resolve) => setImmediate(resolve));
-    },
-    randomHex: () => 'cafe0001',
+    timing: sleepDrivenTiming({
+      now: () => now,
+      sleep: (ms) => {
+        now += ms;
+        return new Promise((resolve) => setImmediate(resolve));
+      },
+    }),
+    random: { ...createFakeRandom(1), hex: () => 'cafe0001' },
     waitedMs: () => now - start,
   };
 };
@@ -255,6 +257,7 @@ describe('the store calls the MCP SDK makes for an operation of a connection', (
 
   it('listTools has the request limit when the request hangs outside the store', async () => {
     const connection = createManagedConnection({
+      clientVersion: '0.0.0-test',
       name: 's',
       config: { command: process.execPath, args: ['-e', SERVER_THAT_NEVER_ANSWERS_A_LISTING] },
       scope: 'user',
@@ -429,7 +432,7 @@ describe('a signed-in connection against its store after an operation was stoppe
   };
 
   it.for([
-    { title: 'the default of 2000 ms', closeGraceMs: undefined, graceMs: 2000 },
+    { title: 'the default of the setting', closeGraceMs: undefined, graceMs: SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.default },
     { title: 'a configured 500 ms', closeGraceMs: 500, graceMs: 500 },
   ])('close with a store that hangs ends at the close grace and names the store call ($title)', async ({ closeGraceMs, graceMs }) => {
     const server = await signedInServer(closeGraceMs === undefined ? {} : { closeGraceMs });

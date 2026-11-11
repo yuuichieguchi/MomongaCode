@@ -4,7 +4,7 @@ import { afterEach } from 'vitest';
 import { createUserSettingsCache, diskKeptRecords, keptSettingsDirectory } from '@momonga/config';
 import type { UserSettingsCache } from '@momonga/config';
 import { DEFAULT_STOP_VALUES, FIRST_GENERATION, mcpPoolCloseBoundMs, claimPathOf, ensureMomongaDirs, fixedRolePort, hostKernelLock, momongaPaths, nodeFileSystemSync } from '@momonga/foundation';
-import type { JsonLogger, LogFields, MomongaPaths, ReapTiming, RolePort, SessionScratch } from '@momonga/foundation';
+import type { JsonLogger, LogFields, MomongaPaths, Timing, RolePort, SessionScratch } from '@momonga/foundation';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
 import type { RunNotifier, SettingsComposition, ToolRuntime } from '@momonga/runtime';
@@ -210,15 +210,15 @@ export const makeFakePoolFactory = (): FakePoolFactory => {
   };
 };
 
-export const recordingReapTiming = (clock: FakeClock, timers: FakeTimers): ReapTiming & { sleeps: number[] } => {
+export const recordingReapTiming = (clock: FakeClock, timers: FakeTimers): Timing & { sleeps: number[] } => {
   const timing = fakeReapTiming(clock, timers);
   const sleeps: number[] = [];
   return {
+    ...timing,
     sleeps,
-    now: () => timing.now(),
-    sleep: (ms) => {
+    setTimeout: (callback, ms) => {
       sleeps.push(ms);
-      return timing.sleep(ms);
+      return timing.setTimeout(callback, ms);
     },
   };
 };
@@ -252,10 +252,12 @@ export type RuntimeFixtureOptions = {
   sandbox?: Sandbox;
   createPool?: (options: McpPoolOptions) => McpPool;
   ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<SessionScratch>;
-  reapTiming?: ReapTiming;
+  reapTiming?: Timing;
   role?: RolePort;
   generation?: number;
 };
+
+export const FIXTURE_RUNTIME_VERSION = '0.0.0-fixture';
 
 export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): Promise<RuntimeFixture> => {
   const temp = options.temp ?? (await makeTempHome());
@@ -268,6 +270,7 @@ export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): P
   const composition = runtime.createSettingsComposition({ signal: new AbortController().signal, home: temp.home, platform: process.platform, cache, store: fixture.store });
   fs.mkdirSync(temp.paths.jobs, { recursive: true, mode: 0o700 });
   const toolRuntime = runtime.createToolRuntime({
+    version: FIXTURE_RUNTIME_VERSION,
     network: UNCONFIGURED_NETWORK,
     paths: temp.paths,
     sharedPaths: temp.paths,

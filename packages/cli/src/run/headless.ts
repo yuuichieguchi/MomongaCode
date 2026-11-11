@@ -1,7 +1,7 @@
 import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_WAITING_FOR_APPROVAL, isRecord } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { TARGET_NOT_READY, agentReadiness, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
-import type { BudgetExhausted, Mandate, MomongaModelEntry, PermissionMode, PlanAccountRef, PublicRunEvent, RunReport, UnknownEffectCall } from '@momonga/protocol';
+import type { BudgetExhausted, Mandate, MomongaModelEntry, PermissionMode, PlanAccountRef, PublicRunEvent, RunReport, Surface, UnknownEffectCall } from '@momonga/protocol';
 import { noTargetLines } from '../readiness.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
@@ -17,7 +17,6 @@ import { mcpAuthorizationNotice } from '../mcp/messages.ts';
 import { describeRetryWait } from '../retry-wait.ts';
 import type { AttemptFailed } from '../retry-wait.ts';
 import { describeClassification, describeDenial, describeHook, describeRunError, describeVerification, unmetConditionLines } from '../policy-messages.ts';
-import type { MessageSurface } from '../policy-messages.ts';
 import { asChildEvent, noEventTypeLeft } from './child-events.ts';
 import { followRun } from './follow.ts';
 import { adoptionOf, refuseStart } from '../handover/start.ts';
@@ -120,15 +119,15 @@ export const resultOf = (run: RunView, result: string): RunResult => ({
   ...(run.report === undefined ? {} : { report: run.report }),
 });
 
-const endReasonLines = (run: RunView, surface: MessageSurface): string[] => {
+const endReasonLines = (run: RunView, surface: Surface): string[] => {
   if (run.error !== undefined) return describeRunError(run.error, surface);
   if (run.stopReason === undefined) return [];
   return run.stopReason === 'conditions_unmet' && run.report !== undefined ? [run.stopReason, ...unmetConditionLines(run.report)] : [run.stopReason];
 };
 
-export const describeEnd = (run: RunView): string => describeRunEnd(run, 'headless');
+export const describeEnd = (run: RunView): string => describeRunEnd(run, 'cli');
 
-export const describeRunEnd = (run: RunView, surface: MessageSurface): string => {
+export const describeRunEnd = (run: RunView, surface: Surface): string => {
   const head = `momonga: run ${run.id} ${run.status}`;
   const reason = endReasonLines(run, surface);
   if (reason.length === 0) return escapedLines([head]);

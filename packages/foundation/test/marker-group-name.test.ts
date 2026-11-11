@@ -1,3 +1,4 @@
+import { sleepDrivenTiming } from '@momonga/testkit';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -87,7 +88,7 @@ describe('a reconcile gives the recorded name to the port before it asks the por
       },
     };
     let now = 0;
-    const timing = { now: () => now, sleep: async (ms: number) => void (now += ms) };
+    const timing = sleepDrivenTiming({ now: () => now, sleep: async (ms: number) => void (now += ms) });
     await reconcileProcessGroup({ pgid: PGID, marker }, { killGraceMs: 10, groupPort: port, timing, inspector, signal: new AbortController().signal });
     expect(order).toEqual([`recall ${PGID} ${NAME}`, `alive ${PGID}`]);
     const unnamed: string[] = [];
@@ -111,7 +112,7 @@ describe('a reconcile gives the recorded name to the port before it asks the por
     let now = 0;
     await reconcileProcessGroup(
       { pgid: 9999, marker },
-      { killGraceMs: 10, groupPort: { names, signal: async () => undefined, alive: async () => false }, timing: { now: () => now, sleep: async (ms: number) => void (now += ms) }, inspector, signal: new AbortController().signal },
+      { killGraceMs: 10, groupPort: { names, signal: async () => undefined, alive: async () => false }, timing: sleepDrivenTiming({ now: () => now, sleep: async (ms: number) => void (now += ms) }), inspector, signal: new AbortController().signal },
     );
     expect(names.recalled).toEqual([]);
   });
@@ -135,7 +136,7 @@ describe('a reconcile gives the recorded name to the port before it asks the por
       alive: async () => false,
     };
     let now = 0;
-    const reaped = await reapMarkedProcesses({ marker, killGraceMs: 10, label: 'test', onWarning: () => undefined, groupPort, timing: { now: () => now, sleep: async (ms: number) => void (now += ms) }, inspector });
+    const reaped = await reapMarkedProcesses({ marker, killGraceMs: 10, label: 'test', onWarning: () => undefined, groupPort, timing: sleepDrivenTiming({ now: () => now, sleep: async (ms: number) => void (now += ms) }), inspector });
     expect(order.slice(0, 2)).toEqual([`recall ${PGID} ${NAME}`, `groups ${PGID}`]);
     expect(reaped).toEqual({ removed: true });
   });

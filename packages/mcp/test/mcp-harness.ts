@@ -121,6 +121,7 @@ export const makePool = (
   const clock = options.clock ?? createFakeClock(1_000_000);
   const projectDir = makeDir();
   const pool = createMcpPool({
+    clientVersion: '0.0.0-test',
     servers,
     projectDir,
     baseEnv: BASE_ENV,

@@ -26,7 +26,11 @@ export type ReportEvent =
 
 export type FocusEvent = { type: 'focus'; direction: 'in' | 'out' };
 
-export type TerminalEvent = KeyEvent | PasteEvent | MouseEvent | ReportEvent | FocusEvent;
+export type ReleaseEvent = { type: 'release' };
+
+export const KEY_RELEASED: ReleaseEvent = { type: 'release' };
+
+export type TerminalEvent = KeyEvent | ReleaseEvent | PasteEvent | MouseEvent | ReportEvent | FocusEvent;
 
 export const NO_MODIFIERS: Modifiers = { ctrl: false, alt: false, shift: false };
 

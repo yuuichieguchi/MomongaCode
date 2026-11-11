@@ -1,7 +1,8 @@
+import { sleepDrivenTiming } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { ReapTiming } from '@momonga/foundation';
+import type { Timing } from '@momonga/foundation';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
 import { keyFor } from './helpers.ts';
@@ -15,15 +16,15 @@ const FIXED_CAP_MS = 30_000;
 
 const lockPathOf = (harness: Harness): string => path.join(harness.callLockDir, `${KEY}.lock`);
 
-const advancingTiming = (onAdvance: (now: number) => void = () => undefined): ReapTiming => {
+const advancingTiming = (onAdvance: (now: number) => void = () => undefined): Timing => {
   let current = 0;
-  return {
+  return sleepDrivenTiming({
     now: () => current,
     sleep: async (ms) => {
       current += ms;
       onAdvance(current);
     },
-  };
+  });
 };
 
 const reconcilingEdit = () =>
@@ -66,6 +67,6 @@ describe('the wait for a held call lock', () => {
 
   it('receives the heartbeat of the configured lease in the runtime process', () => {
     expect(sourceOf('runtime/src/process/tool-runtime.ts')).toMatch(/createToolExecutor\(\{[^}]*heartbeatMs/s);
-    expect(sourceOf('runtime/src/process/start-runtime-process.ts')).toMatch(/createToolRuntime\(\{[^}]*heartbeatMs/s);
+    expect(sourceOf('runtime/src/process/start-runtime-process.ts')).toMatch(/createToolRuntime\(\{(?:(?!\n {6}\}\);).)*\n {8}heartbeatMs: heartbeatMsFor\(leaseMs\),/s);
   });
 });

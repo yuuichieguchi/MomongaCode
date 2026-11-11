@@ -75,7 +75,7 @@ export const failureWithoutProcess = (reason: 'spawn-failed' | 'settings-read-fa
 export const backoffDelay = (input: { consecutiveFailures: number; policy: RestartPolicy; random: () => number }): number =>
   Math.max(
     input.policy.minMs,
-    computeBackoff({ attempt: input.consecutiveFailures, baseMs: input.policy.baseMs, maxMs: input.policy.maxMs, random: input.random }),
+    computeBackoff({ attempt: input.consecutiveFailures, baseMs: input.policy.baseMs, maxMs: input.policy.maxMs, random: { float: input.random } }),
   );
 
 export const decideAfterExit = (input: { exit: ExitClassification; consecutiveFailures: number; policy: RestartPolicy; random: () => number }): ExitDecision => {

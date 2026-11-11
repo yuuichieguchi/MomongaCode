@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { ProcessGroupPort, ProcessInspector, SignalSender } from '@momonga/foundation';
+import { sleepDrivenTiming } from '@momonga/testkit';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { HarnessOptions } from './harness.ts';
 import { keyFor } from './helpers.ts';
@@ -45,7 +46,7 @@ const world = () => {
     },
   };
   let now = 0;
-  const harness = makeHarness({ executor: { reap: { inspector, kill, groupPort, timing: { now: () => now, sleep: async (ms: number) => void (now += ms) }, killGraceMs: 100 } } } as HarnessOptions);
+  const harness = makeHarness({ executor: { reap: { inspector, kill, groupPort, timing: sleepDrivenTiming({ now: () => now, sleep: async (ms: number) => void (now += ms) }), killGraceMs: 100 } } } as HarnessOptions);
   return { harness, sent, known, recalls, asked };
 };
 

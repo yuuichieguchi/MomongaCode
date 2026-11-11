@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createDarwinInspector } from '../../src/platform/darwin-inspector.ts';
-import { deadlineSignal } from '../../src/platform/probe-timing.ts';
+import { Deadline } from '../../src/deadline.ts';
 import { createProcessInspector, hostInspectorPorts } from '../../src/platform/process-inspector.ts';
 import { fixedCapability, pendingOrSettled, silentRunner, slowRunner, virtualTiming } from '../support/probe-fakes.ts';
 import type { RecordedCommand } from '../support/probe-fakes.ts';
@@ -35,7 +35,7 @@ describe('T4 no private probe bound; every probe ends with the signal of its cal
     const timing = virtualTiming();
     const calls: RecordedCommand[] = [];
     const inspector = darwinWith(silentRunner(calls));
-    const signal = deadlineSignal(timing, 5000);
+    const { signal } = Deadline.after(5000, timing);
     const listing = inspector.holdersOf('/m/marker', { signal });
     await timing.advanceTo(4999);
     expect((await pendingOrSettled(listing)).state).toBe('pending');
@@ -45,15 +45,6 @@ describe('T4 no private probe bound; every probe ends with the signal of its cal
     const settled = await pendingOrSettled(listing);
     expect(settled).toMatchObject({ state: 'resolved', value: { kind: 'failed' } });
     expect(calls[0]?.killed).toBe(true);
-  });
-
-  it('(b) deadlineSignal is aborted by the injected timing at exactly its deadline and not before', async () => {
-    const timing = virtualTiming();
-    const signal = deadlineSignal(timing, 300);
-    await timing.advanceTo(299);
-    expect(signal.aborted).toBe(false);
-    await timing.advanceTo(300);
-    expect(signal.aborted).toBe(true);
   });
 
   it('(b) startTimeOf and groupsOf pass the caller signal to the runner and stop when it aborts', async () => {

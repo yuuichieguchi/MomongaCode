@@ -1,6 +1,6 @@
 import { MEMORY_QUERY_MAX_CHARS, MEMORY_TEXT_MAX_CHARS, MEMORY_TOOL_TIMEOUT_MS } from '../memory/constants.ts';
 
-export const RULE_PROPOSE_TOOL_NAME = 'RulePropose';
+export { RULE_PROPOSE_TOOL_NAME } from '@momonga/protocol';
 
 export const RULE_PROPOSE_TEXT_MAX_CHARS = MEMORY_TEXT_MAX_CHARS;
 

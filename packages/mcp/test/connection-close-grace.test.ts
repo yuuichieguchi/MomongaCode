@@ -51,6 +51,7 @@ describe('a connection closed during its handshake (R5, R6)', () => {
       clearTimeout: ((handle: unknown) => timers.clearTimeout(handle)) as Timing['clearTimeout'],
     };
     const connection = createManagedConnection({
+      clientVersion: '0.0.0-test',
       name: 'stubborn',
       config: { command: process.execPath, args: [STUBBORN_SERVER, 'ignore-stdin', `--pid-file=${pidFile}`] },
       scope: 'user',

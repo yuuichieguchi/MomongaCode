@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { answeredByOf } from '../../src/service/answered-by.ts';
-import { expectSchema } from './helpers.ts';
+import { expectSchema, startService } from './helpers.ts';
 
 type FakeEvent = { type: string; [key: string]: unknown };
 
@@ -73,8 +73,15 @@ describe('what answered a run, from the per-run answerers record and its pins', 
     expect((await answeredBy([started(TARGETS)], [])).view).toEqual([]);
   });
 
-  it('refuses a run that pinned no targets instead of guessing what answered it', async () => {
-    await expect(answeredBy([{ type: 'run.started', attempt: 1, now: 0, pins: { model: 'default' } }], ['opus'])).rejects.toThrow(/pinned no targets/);
+  it('answers every recorded answerer of a run that pinned no targets as unknown, never as a model', async () => {
+    expect((await answeredBy([{ type: 'run.started', attempt: 1, now: 0, pins: { model: 'default' } }], ['opus', 'unknown'])).view).toStrictEqual([
+      { target: 'opus', answers: 'unknown' },
+      { target: 'unknown', answers: 'unknown' },
+    ]);
+  });
+
+  it('answers a run that has not started with no answerer', async () => {
+    expect((await answeredBy([], [])).view).toStrictEqual([]);
   });
 
   it('answers a recorded answerer that the pins do not list with its text and no adapter, as an old run recorded a name that is no key of its pins', async () => {
@@ -82,5 +89,31 @@ describe('what answered a run, from the per-run answerers record and its pins', 
       { target: 'ghost', answers: 'unknown' },
       { target: 'opus', adapter: TARGETS.opus.adapter, upstreamModel: TARGETS.opus.model, answers: TARGETS.opus.answers ?? 'unknown' },
     ]);
+  });
+});
+
+describe('GET /v1/runs/:id/answered-by answers a normal run state with its typed answer', () => {
+  it('a queued run has no answerer yet: 200 with an empty list, not 500', async () => {
+    const env = await startService();
+    const session = await env.createSession();
+    const run = await env.createRun(session.id);
+
+    const response = await env.http('GET', `/v1/runs/${run.id}/answered-by`);
+
+    expect(response.status).toBe(200);
+    expect(response.json).toEqual({ answeredBy: [] });
+    expectSchema('RunAnsweredBy', response.json);
+  });
+
+  it('a run cancelled before it started has no answerer: 200 with an empty list, not 500', async () => {
+    const env = await startService();
+    const session = await env.createSession();
+    const run = await env.createRun(session.id);
+    expect((await env.http('POST', `/v1/runs/${run.id}/cancel`)).status).toBe(202);
+
+    const response = await env.http('GET', `/v1/runs/${run.id}/answered-by`);
+
+    expect(response.status).toBe(200);
+    expect(response.json).toEqual({ answeredBy: [] });
   });
 });

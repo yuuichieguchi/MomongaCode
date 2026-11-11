@@ -169,7 +169,7 @@ const capabilitiesReadFailure = (error: unknown): unknown => {
 const requestedModelOf = (text: string, views: ModelViews): string => {
   const resolution = resolveTypedModelRef(typedModelText(text), views);
   if (resolution.kind === 'found') return resolution.model.canon;
-  throw invalidRequest(modelRefErrorOf(text, resolution, views).message, 'model');
+  throw invalidRequest(modelRefErrorOf(text, resolution, views, 'gateway').message, 'model');
 };
 
 const displayIn = (views: ModelViews, model: string): string => displayMapOf(views).get(model) ?? model;

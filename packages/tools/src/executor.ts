@@ -1,11 +1,11 @@
 import path from 'node:path';
-import { ABORT_SETTLE_LIMIT_MS, NO_NETWORK, UNMEASURED_CAPABILITY, canonicalJson, comparableFromParts, containsByComponents, computeBackoff, createMarker, defaultProcessInspector, describeNetworkScope, displayToolPath, enforcedNetworkScope, fileRuleFingerprint, findAsync, hostKernelLock, hostPaths, hostReapTiming, lexicallyWithin, mapAsync, momongaLayout, networkScopeOfRequest, reapMarkedProcessesWithReport, recordMarkerGroup, settledOrAborted, sha256Hex, someAsync, writableAreaOf, writableCheckOf } from '@momonga/foundation';
+import { ABORT_SETTLE_LIMIT_MS, NO_NETWORK, UNMEASURED_CAPABILITY, canonicalJson, comparableFromParts, containsByComponents, computeBackoff, createMarker, defaultProcessInspector, describeNetworkScope, displayToolPath, enforcedNetworkScope, fileRuleFingerprint, findAsync, hostKernelLock, hostPaths, systemWaitTiming, lexicallyWithin, mapAsync, momongaLayout, networkScopeOfRequest, reapMarkedProcessesWithReport, recordMarkerGroup, settledOrAborted, sha256Hex, someAsync, writableAreaOf, writableCheckOf } from '@momonga/foundation';
 import { createMarkerGuard } from './marker-guard.ts';
 import { createMarkerOwners } from './marker-owners.ts';
 import type { MarkerOwners } from './marker-owners.ts';
 import { createMarkerSettle } from './marker-settle.ts';
 import type { MarkerSettle } from './marker-settle.ts';
-import type { Awaitable, Clock, FileRuleProvenance, FileSystem, KernelLockMechanism, MarkerHandle, NetworkScope, OutboundNetwork, PathProbes, PathResolver, ProcessGroupPort, ProcessInspector, Random, ReapReport, ReapTiming, SandboxNetworkSetting, SignalSender, UninspectableRegistry } from '@momonga/foundation';
+import type { Awaitable, Clock, FileRuleProvenance, FileSystem, KernelLockMechanism, MarkerHandle, NetworkScope, OutboundNetwork, PathProbes, PathResolver, ProcessGroupPort, ProcessInspector, Random, ReapReport, Timing, SandboxNetworkSetting, SignalSender, UninspectableRegistry } from '@momonga/foundation';
 import { absoluteFrom, askedBy, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem, PolicyTool, CoveredProgram, SupersededForm } from '@momonga/policy';
 import { permissionDeniedOutput } from '@momonga/protocol';
@@ -177,7 +177,7 @@ export type ToolExecutorOptions = {
   reconcileCapMs?: number;
   reconcileGraceMs?: number;
   onWarning(message: string): void;
-  reap?: { kill?: SignalSender; groupPort?: ProcessGroupPort; timing?: ReapTiming; killGraceMs?: number; inspector?: ProcessInspector; uninspectable?: UninspectableRegistry };
+  reap?: { kill?: SignalSender; groupPort?: ProcessGroupPort; timing?: Timing; killGraceMs?: number; inspector?: ProcessInspector; uninspectable?: UninspectableRegistry };
 };
 
 export type AbandonTarget = { callId: string; idemKey: string };
@@ -547,7 +547,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   const maxParallel = options.maxParallel ?? DEFAULT_MAX_PARALLEL;
   const reconcileCapMs = options.reconcileCapMs ?? DEFAULT_RECONCILE_CAP_MS;
   const reconcileGraceMs = options.reconcileGraceMs ?? DEFAULT_RECONCILE_GRACE_MS;
-  const reapTiming = options.reap?.timing ?? hostReapTiming;
+  const reapTiming = options.reap?.timing ?? systemWaitTiming;
   const callLocks = createCallLocks({
     dir: options.callLockDir,
     mechanism: options.kernelLock ?? hostKernelLock(),
@@ -1468,7 +1468,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
                 !scope.controller.signal.aborted &&
                 batch.deadlineAt - clock.now() > 0;
               if (!retryable) return { status: 'failed', output: describeThrown(tool.name, error) };
-              await pause(timers, computeBackoff({ attempt, baseMs: retry.baseMs, maxMs: retry.maxMs, random: () => options.random.float() }), scope.controller.signal);
+              await pause(timers, computeBackoff({ attempt, baseMs: retry.baseMs, maxMs: retry.maxMs, random: options.random }), scope.controller.signal);
               if (scope.controller.signal.aborted) return { status: 'failed', output: describeThrown(tool.name, error) };
             }
           }
