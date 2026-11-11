@@ -334,8 +334,7 @@ export const createShellPort = (given: ProgramDeps): ShellPort => ({
     try {
       await program.parseAsync([...argv], { from: 'user' });
     } catch (error) {
-      if (error instanceof CommanderError) return exitOfFailure(error, sink);
-      throw error;
+      return exitOfFailure(error, sink, io.signal);
     }
     return code;
   },
