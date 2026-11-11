@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { DEFAULT_LOCK_TIMEOUT_MS, createKeyedSerializer, hostPaths, isRecord, nodeFileSystem, systemFileLockPorts, withFileLock, writeFileAtomically } from '@momonga/foundation';
-import type { FileLockPorts, PathResolver } from '@momonga/foundation';
+import type { FileLockPorts, PathResolver, KernelLockMechanism } from '@momonga/foundation';
 import { settingsLockPath } from './file-lock.ts';
 import { isAbsentPathError, readJsonFile } from './json-file.ts';
 import { layoutOf } from './layout.ts';
@@ -10,7 +10,7 @@ const PRIVATE_DIRECTORY_MODE = 0o700;
 
 const serializeInProcess = createKeyedSerializer();
 
-export type EditUserSettingsOptions = { ports?: FileLockPorts; lockTimeoutMs?: number; signal: AbortSignal };
+export type EditUserSettingsOptions = { lock: KernelLockMechanism; ports?: FileLockPorts; lockTimeoutMs?: number; signal: AbortSignal };
 
 const documentOf = async (settingsFile: string): Promise<Record<string, unknown>> => {
   const read = await readJsonFile(settingsFile);
@@ -56,9 +56,9 @@ export const editUserSettings = async (
         async () => {
           const document = await documentOf(settingsFile);
           if (!edit(document)) return;
-          await writeFileAtomically(nodeFileSystem, ports.random, target, `${JSON.stringify(document, null, 2)}\n`, { mode: SETTINGS_FILE_MODE });
+          await writeFileAtomically(nodeFileSystem, ports.random, target, `${JSON.stringify(document, null, 2)}\n`, { mode: SETTINGS_FILE_MODE, lock: options.lock });
         },
-        { ports, signal: options.signal, timeoutMs: options.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS },
+        { ports, mechanism: options.lock, signal: options.signal, timeoutMs: options.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS },
       ),
     options.signal,
   );

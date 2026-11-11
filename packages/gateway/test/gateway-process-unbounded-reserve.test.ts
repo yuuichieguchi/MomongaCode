@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION } from '@momonga/foundation';
 import { saveEndpointRecord } from '@momonga/gateway';
 import type { ProbeReport } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testKernelLock } from '@momonga/testkit';
 import { startFake } from './cc-support.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
 import { getJson } from './gateway-helpers.ts';
@@ -20,7 +20,7 @@ describe('the gateway reads context.unboundedOutputReserve from user settings pe
     const home = makeHome();
     const models = modelsOf({ primary: ccTarget(fake.socketPath, { toolCalling: 'auto' }) });
     writeSettings(home, { models });
-    await saveEndpointRecord(path.join(homePaths(home).root, 'state', 'probe'), { endpoint: `unix:${fake.socketPath}`, model: 'system' }, 'identity-one', ['id', 'object', 'owned_by'], honoursNoBound as never, CURRENT_DIALECTS);
+    await saveEndpointRecord(path.join(homePaths(home).root, 'state', 'probe'), { endpoint: `unix:${fake.socketPath}`, model: 'system' }, 'identity-one', ['id', 'object', 'owned_by'], honoursNoBound as never, CURRENT_DIALECTS, testKernelLock());
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     const listed = async () => {
       const response = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');

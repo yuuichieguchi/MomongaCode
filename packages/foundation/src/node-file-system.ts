@@ -8,6 +8,7 @@ export const OPEN_FLAGS = {
   create: fs.constants.O_CREAT,
   exclusive: fs.constants.O_EXCL,
   nonBlocking: fs.constants.O_NONBLOCK,
+  noFollow: (fs.constants as { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0,
 } as const;
 
 export type DirectoryIdentity = { dev: bigint; ino: bigint };

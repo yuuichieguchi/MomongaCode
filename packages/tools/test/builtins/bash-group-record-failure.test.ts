@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { UNMEASURED_CAPABILITY, createMarker, createProcessInspector, hostInspectorPorts, recordMarkerGroup } from '@momonga/foundation';
 import { createUnsandboxed } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, testPaths } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testPaths, testLocks } from '@momonga/testkit';
 import { createMarkerSettle } from '@momonga/tools';
 import type { ToolContext } from '@momonga/tools';
 import { bashTool } from '../../src/builtins/bash.ts';
@@ -34,7 +34,7 @@ describe.runIf(process.platform === 'darwin' || process.platform === 'linux')('B
     const handle = await createMarker(marker, { capability: UNMEASURED_CAPABILITY });
     fs.writeFileSync(marker, NOT_AN_ATTEMPT_RECORD);
     const warnings: string[] = [];
-    const inspector = createProcessInspector(process.platform, { ...hostInspectorPorts(), capability: UNMEASURED_CAPABILITY } as never);
+    const inspector = createProcessInspector(process.platform, { ...hostInspectorPorts(testLocks().capability), capability: UNMEASURED_CAPABILITY } as never);
     const settle = createMarkerSettle({ marker, mode: handle.mode, inspector, killGraceMs: 300, onWarning: (message) => void warnings.push(message) });
     const recordFailures: unknown[] = [];
     const attached: number[] = [];

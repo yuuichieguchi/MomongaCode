@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { ConfigError, UnreadableKeptCopyError, createKeptSettings, diskKeptRecords, keptSettingsDirectory } from '@momonga/config';
 import { MAX_JSON_DEPTH, nodeFileSystemSync, sha256Hex } from '@momonga/foundation';
 import type { KeptRecords } from '@momonga/config';
+import { testKernelLock } from '@momonga/testkit';
 
 const FILE = '/home/user/.momonga/settings.json';
 
@@ -43,7 +44,7 @@ const unusableLines = (content: string): { lines: string[]; record: string; firs
   const record = path.join(directory, `${sha256Hex(FILE)}.json`);
   fs.writeFileSync(record, content);
   const lines: string[] = [];
-  const kept = createKeptSettings({ records: diskKeptRecords(nodeFileSystemSync, directory), onWarning: (line) => lines.push(line) });
+  const kept = createKeptSettings({ records: diskKeptRecords(nodeFileSystemSync, directory, testKernelLock()), onWarning: (line) => lines.push(line) });
   const first = kept.recall(FILE);
   const second = kept.recall(FILE);
   fs.rmSync(home, { recursive: true, force: true });

@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createUserSettingsCache, noKeptRecords, writeAppliedRecord } from '@momonga/config';
+import { testKernelLock } from '@momonga/testkit';
 
 const cleanups: Array<() => void> = [];
 afterEach(() => {
@@ -61,7 +62,7 @@ describe('S7: an unreadable applied record is no newer copy (design-settings-liv
       const tree = makeTree();
       tree.write(JSON.stringify(settingsWithModel('c')));
       fs.writeFileSync(tree.record, text, { mode: 0o600 });
-      expect(() => writeAppliedRecord(tree.home, tree.record)).not.toThrow();
+      expect(() => writeAppliedRecord(tree.home, tree.record, testKernelLock())).not.toThrow();
       expect(JSON.parse(fs.readFileSync(tree.record, 'utf8'))).toMatchObject({ seq: expect.any(Number), settings: settingsWithModel('c') });
     });
   }

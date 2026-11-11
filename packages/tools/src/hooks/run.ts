@@ -22,7 +22,7 @@ export type HookRunContext = {
   projectDir: string;
   tmpDir?: string;
   markerDir: string;
-  inspector?: ProcessInspector;
+  inspector: ProcessInspector;
   groupPort?: ProcessGroupPort;
   owners?: MarkerOwners;
   runId: string;
@@ -93,7 +93,7 @@ const executeHook = async (
     timeoutMs,
     stdin,
     ...(ctx.tmpDir === undefined ? {} : { tmpDir: ctx.tmpDir }),
-    ...(ctx.inspector === undefined ? {} : { inspector: ctx.inspector }),
+    inspector: ctx.inspector,
     ...(ctx.groupPort === undefined ? {} : { groupPort: ctx.groupPort }),
     ...(ctx.owners === undefined ? {} : { owners: ctx.owners }),
   });

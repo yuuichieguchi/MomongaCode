@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Agent } from 'undici';
 import { createManagedServer, type ExecOptions, type ExecResult, type ManagedServer, type ManagedServerTimers } from '@momonga/gateway';
 import { KILL_CONFIRM_MS } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions, type FakeChatCompletionsServer } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions, type FakeChatCompletionsServer, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import { FM_SERVER } from '@momonga/protocol';
 import type { GenerationRole } from '@momonga/foundation';
 
@@ -206,6 +206,8 @@ const setup = (config: SetupConfig = {}) => {
   });
   const warnings: string[] = [];
   const server: ManagedServer = createManagedServer({
+    inspector: testProcessInspector(),
+    lock: testKernelLock(),
     description: { ...FM_SERVER, restart: { backoffMs: BACKOFF_MS, maxRestarts: config.maxRestarts ?? 3, windowMs: RESET_MS } },
     target: 'fm',
     lockPath: `${socketPath}.lock`,

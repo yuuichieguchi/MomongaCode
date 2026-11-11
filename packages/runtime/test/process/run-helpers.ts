@@ -5,13 +5,13 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { vi } from 'vitest';
 import { DEFAULT_STOP_VALUES, createUdsClient, ensureMomongaDirs, fixedRolePort, generationLayout, inspectProcessLock, momongaPaths, FIRST_GENERATION, fixedSocket, scopeToGeneration } from '@momonga/foundation';
-import type { Clock, GenerationRole, JsonLogger, MomongaPaths, ReadyFields, RolePort, StopValues, TextStream, UdsClient } from '@momonga/foundation';
+import type { Clock, GenerationRole, JsonLogger, MomongaPaths, ReadyFields, RolePort, StopValues, TextStream, UdsClient, LayoutLocks } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import * as runtime from '@momonga/runtime';
 import type { ServiceTimers } from '@momonga/runtime';
 import type { McpAuthorizingPool, McpPoolOptions } from '@momonga/mcp';
 import type { ShellHost } from '@momonga/tools';
-import { afterMicrotasks, driveFakeTime, fakeUsageOfRequest, modelSettings as settingsOfModels, startFakeChatCompletions, firstGeneration, createTempDir, prepareGenerationForTest, removeTempDir } from '@momonga/testkit';
+import { afterMicrotasks, driveFakeTime, fakeUsageOfRequest, modelSettings as settingsOfModels, startFakeChatCompletions, firstGeneration, createTempDir, prepareGenerationForTest, removeTempDir, testLocks, testKernelLock } from '@momonga/testkit';
 import type { ModelSpec } from '@momonga/testkit';
 
 import type { FakeChatCompletionsOptions, FakeChatCompletionsServer, FakeFixedUsage, FakeResponseHold, FakeTimers, FakeUsageOfRequest } from '@momonga/testkit';
@@ -67,6 +67,7 @@ export type RuntimeProcess = {
 
 export type StartRuntimeProcessOptions = {
   ruleSolver?: RuleSolverSource;
+  locks?: LayoutLocks;
   home: string;
   generation: number;
   version: string;
@@ -93,7 +94,7 @@ const exported = <T>(name: string): T => {
 };
 
 export const startRuntimeProcessUnprepared = (options: StartRuntimeProcessOptions): Promise<RuntimeProcess> =>
-  exported<(options: StartRuntimeProcessOptions) => Promise<RuntimeProcess>>('startRuntimeProcess')({ role: fixedRolePort('serving'), ruleSolver: provedRuleSolver, ...options });
+  exported<(options: StartRuntimeProcessOptions) => Promise<RuntimeProcess>>('startRuntimeProcess')({ role: fixedRolePort('serving'), ruleSolver: provedRuleSolver, locks: testLocks(), ...options });
 
 export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): Promise<RuntimeProcess> => {
   if (path.isAbsolute(options.home) && options.signal?.aborted !== true) {
@@ -175,6 +176,7 @@ export const startGateway = async (temp: RunHome, options: StartGatewayOptions =
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
   try {
     const gateway = await closedAtCleanup(startGatewayProcess({
+      locks: testLocks(),
       generation: FIRST_GENERATION,
       home: temp.home,
       env: { ...sessionEnvFor(temp.home), ...options.env },
@@ -339,7 +341,7 @@ export const failureOf = async (promise: Promise<unknown>): Promise<unknown> =>
     (error: unknown) => error,
   );
 
-export const isLockFree = async (lockPath: string): Promise<boolean> => (await inspectProcessLock(lockPath)).state === 'free';
+export const isLockFree = async (lockPath: string): Promise<boolean> => (await inspectProcessLock(lockPath, { mechanism: testKernelLock() })).state === 'free';
 
 export const readDb = <T>(dbPath: string, sql: string, ...params: (string | number)[]): T[] => {
   const db = new DatabaseSync(dbPath, { readOnly: true });

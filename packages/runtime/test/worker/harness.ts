@@ -16,7 +16,7 @@ import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import { blobDirectoryOf, createBlobStore, createJournalReader, foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
 import type { Claim, ContributionPreparer, ReportReply, Run, RuntimeStore, Session } from '@momonga/store';
-import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, testProbes, testPaths } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, testProbes, testPaths, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
@@ -166,7 +166,7 @@ const inProcessFidelity = (dbPath: string) => async (request: object): Promise<n
   try {
     const handler = fidelityHandler({
       reader: createJournalReader(db),
-      blobs: createBlobStore(db, createFakeClock(START_MS), blobDirectoryOf(dbPath)),
+      blobs: createBlobStore(db, createFakeClock(START_MS), blobDirectoryOf(dbPath), testKernelLock()),
       current: { progress: undefined },
       gateFor: () => ({ unit: () => undefined }),
     });
@@ -219,7 +219,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const dbPath = path.join(stateDir, 'runtime.db');
   const clock: FakeClock = createFakeClock(START_MS);
   const scriptedContributions = new Map<string, ContributionItems>();
-  const store: RuntimeStore = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
+  const store: RuntimeStore = openRuntimeStore({ lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home,
     clock,
@@ -244,7 +244,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const toolbox: FakeToolbox = createFakeToolbox();
   const instructions = createFakeInstructions();
   const executorWarnings: string[] = [];
-  const realExecutor = createToolExecutor({ outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
+  const realExecutor = createToolExecutor({ reap: { inspector: testProcessInspector() }, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
     idempotency: store.idempotency,
     blobs: store.blobs,
     clock,
@@ -304,6 +304,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   };
 
   const toolRuntime = (toolList: () => AnyTool[]): ToolRuntimePort => ({
+    inspector: testProcessInspector(),
     workTreeObserver: (target: Session) => createGitWorkTreeObserver({ storeDir: path.join(stateDir, 'observer'), workTree: target.cwd, trusted: false }),
     envFor: (target: Session) => {
       const env: ToolEnv = { ...target.env };

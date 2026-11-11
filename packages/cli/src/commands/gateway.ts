@@ -1,6 +1,6 @@
 import { loadUserSettings, probeRecordKeyOf, registeredServer, upstreamEndpointOf } from '@momonga/config';
 import type { EndpointProbeKey, ResolvedModel, ResolvedModels, ResolvedSettings } from '@momonga/config';
-import { createBinaryHashCache, managedInstancePaths } from '@momonga/foundation';
+import { createBinaryHashCache, managedInstancePaths, resolveLayoutLocks, layoutProcessInspector } from '@momonga/foundation';
 import type { ManagedInstancePaths, MomongaPaths, OutboundNetwork } from '@momonga/foundation';
 import { displayMapOf, modelRefErrorOf, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
 import type { DialectDefinition, ProbeReportDialect } from '@momonga/protocol';
@@ -147,6 +147,7 @@ const probeChatCompletions = async (
   const { probeEndpointTarget, reachableEndpoint } = await import('@momonga/gateway');
   const { report, toolCalling, key } = await probeEndpointTarget({
     probeRecordDir: paths.probe,
+    lock: resolveLayoutLocks(paths).mechanism,
     upstream: reachableEndpoint(upstreamEndpointOf(target), network),
     key: endpointRecordKeyOf(subject, target),
     model: target.model,
@@ -173,6 +174,7 @@ const probeOllama = async (
   const { probeOllamaTarget, reachableEndpoint } = await import('@momonga/gateway');
   const { report, key } = await probeOllamaTarget({
     probeRecordDir: paths.probe,
+    lock: resolveLayoutLocks(paths).mechanism,
     upstream: reachableEndpoint(upstreamEndpointOf(target), network),
     key: endpointRecordKeyOf(subject, target),
     model: target.model,
@@ -191,8 +193,11 @@ const probeManaged = async (ports: CliPorts, paths: MomongaPaths, subject: Probe
   const { probeManagedFm, systemProcessFiles } = await import('@momonga/gateway');
   const description = registeredServer(settings.models.servers, configured.server);
   if (description === undefined) throw new Error(`the model ${subject.display} names the managed server ${configured.server}, which is not registered`);
+  const locks = resolveLayoutLocks(paths);
   const { report, toolCalling, recordFile } = await probeManagedFm({
     paths,
+    lock: locks.mechanism,
+    inspector: layoutProcessInspector(locks.capability),
     platform: ports.platform,
     instance: cliProbeInstance(paths, configured.provider),
     description,

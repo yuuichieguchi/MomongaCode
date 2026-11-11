@@ -1,4 +1,4 @@
-import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, testProcessInspector } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -13,7 +13,7 @@ const CAP_MS = 20;
 const GRACE_MS = 20;
 
 const boundedExecutor = (harness: Harness) =>
-  createToolExecutor({ outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
+  createToolExecutor({ reap: { inspector: testProcessInspector() }, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
     idempotency: harness.idempotency.port,
     blobs: harness.blobs.port,
     clock: harness.clock,

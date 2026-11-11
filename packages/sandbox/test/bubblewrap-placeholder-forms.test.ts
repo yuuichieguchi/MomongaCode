@@ -5,7 +5,7 @@ import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, protectedSetFor } from '@momonga
 import type { PlaceholderForm } from '@momonga/foundation';
 import { createBubblewrapSandbox, createPlaceholderJournal, identityOf, nodeFilesystemPort, planBubblewrap } from '@momonga/sandbox';
 import type { PlaceholderJournal, SandboxPolicy } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, NEVER_CANCELLED } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, NEVER_CANCELLED, testKernelLock } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -52,7 +52,7 @@ const indexOfTriple = (args: readonly string[], flag: string, source: string, de
 describe('planBubblewrap mounts each placeholder on its own path, in its form', () => {
   it('reserves the .git of a root that is not a repository as an empty directory bound read-only onto itself', async () => {
     const git = path.join(work, '.git');
-    const plan = await planBubblewrap(await protectedPolicy(), { cwd: work }, NEVER_CANCELLED);
+    const plan = await planBubblewrap(await protectedPolicy(), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     expect(plan.placeholders).toContain(git);
     expect(plan.forms[git]).toEqual(DIRECTORY_FORM);
     expect(plan.forms[path.join(work, '.mcp.json')]).toEqual(EMPTY_FILE);
@@ -64,7 +64,7 @@ describe('planBubblewrap mounts each placeholder on its own path, in its form', 
     const git = path.join(work, '.git');
     fs.mkdirSync(git);
     const commondir = path.join(git, 'commondir');
-    const plan = await planBubblewrap(await protectedPolicy(), { cwd: work }, NEVER_CANCELLED);
+    const plan = await planBubblewrap(await protectedPolicy(), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     expect(plan.placeholders).toEqual(expect.arrayContaining([commondir, path.join(git, 'config.worktree')]));
     expect(plan.forms[commondir]).toEqual(COMMONDIR_FORM);
     expect(plan.forms[path.join(git, 'config.worktree')]).toEqual(EMPTY_FILE);
@@ -73,7 +73,7 @@ describe('planBubblewrap mounts each placeholder on its own path, in its form', 
 
   it('never mounts /dev/null over a placeholder', async () => {
     fs.mkdirSync(path.join(work, '.git'));
-    const plan = await planBubblewrap(await protectedPolicy(), { cwd: work }, NEVER_CANCELLED);
+    const plan = await planBubblewrap(await protectedPolicy(), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     expect(plan.placeholders.length).toBeGreaterThan(0);
     expect(plan.args).not.toContain('/dev/null');
     for (const placeholder of plan.placeholders) expect(indexOfTriple(plan.args, '--ro-bind', placeholder, placeholder)).toBeGreaterThan(0);
@@ -81,7 +81,7 @@ describe('planBubblewrap mounts each placeholder on its own path, in its form', 
 
   it('gives a path the protected set has no form for an empty file', async () => {
     const extra = path.join(work, 'deny-me');
-    const plan = await planBubblewrap({ ...(await protectedPolicy()), writeDeniedLiterals: [extra] }, { cwd: work }, NEVER_CANCELLED);
+    const plan = await planBubblewrap({ ...(await protectedPolicy()), writeDeniedLiterals: [extra] }, { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     expect(plan.forms[extra]).toEqual(EMPTY_FILE);
     expect(indexOfTriple(plan.args, '--ro-bind', extra, extra)).toBeGreaterThan(0);
   });
@@ -90,7 +90,7 @@ describe('planBubblewrap mounts each placeholder on its own path, in its form', 
     const git = path.join(work, '.git');
     fs.mkdirSync(git);
     const policy: SandboxPolicy = { ...(await protectedPolicy()), writeDenied: [], writeDeniedLiterals: [path.join(git, 'hooks')], protectedSet: EMPTY_PROTECTED_SET };
-    const plan = await planBubblewrap(policy, { cwd: work, heldPlaceholders: new Set([git]) }, NEVER_CANCELLED);
+    const plan = await planBubblewrap(policy, { cwd: work, heldPlaceholders: new Set([git]) }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     expect(plan.placeholders).toEqual([git]);
     expect(indexOfTriple(plan.args, '--ro-bind', git, git)).toBeGreaterThan(0);
     expect(indexOfTriple(plan.args, '--ro-bind', path.join(git, 'hooks'), path.join(git, 'hooks'))).toBe(-1);
@@ -100,7 +100,7 @@ describe('planBubblewrap mounts each placeholder on its own path, in its form', 
 describe('the host creates a placeholder in its form', () => {
   it('creates a directory form with mkdir, empty, and returns its identity', () => {
     const target = path.join(work, '.git');
-    const identity = nodeFilesystemPort.createPlaceholder(target, DIRECTORY_FORM);
+    const identity = nodeFilesystemPort(testKernelLock()).createPlaceholder(target, DIRECTORY_FORM);
     expect(fs.lstatSync(target).isDirectory()).toBe(true);
     expect(fs.readdirSync(target)).toEqual([]);
     expect(identity).toEqual(identityOf(target));
@@ -109,7 +109,7 @@ describe('the host creates a placeholder in its form', () => {
   it('creates a file form with exactly its bytes', () => {
     fs.mkdirSync(path.join(work, '.git'));
     const target = path.join(work, '.git', 'commondir');
-    const identity = nodeFilesystemPort.createPlaceholder(target, COMMONDIR_FORM);
+    const identity = nodeFilesystemPort(testKernelLock()).createPlaceholder(target, COMMONDIR_FORM);
     expect(fs.lstatSync(target).isFile()).toBe(true);
     expect(fs.readFileSync(target, 'latin1')).toBe('.\n');
     expect(identity).toEqual(identityOf(target));
@@ -118,7 +118,7 @@ describe('the host creates a placeholder in its form', () => {
   it('never takes a file of a person: an existing file stays as it was and creation fails', async () => {
     const target = path.join(work, '.mcp.json');
     fs.writeFileSync(target, '{"mine":true}');
-    await expect((async () => nodeFilesystemPort.createPlaceholder(target, COMMONDIR_FORM))()).rejects.toThrow(expect.objectContaining({ code: 'EEXIST' }));
+    await expect((async () => nodeFilesystemPort(testKernelLock()).createPlaceholder(target, COMMONDIR_FORM))()).rejects.toThrow(expect.objectContaining({ code: 'EEXIST' }));
     expect(fs.readFileSync(target, 'utf8')).toBe('{"mine":true}');
   });
 
@@ -126,7 +126,7 @@ describe('the host creates a placeholder in its form', () => {
     const target = path.join(work, '.git');
     fs.mkdirSync(target);
     fs.writeFileSync(path.join(target, 'HEAD'), 'ref: refs/heads/main\n');
-    await expect((async () => nodeFilesystemPort.createPlaceholder(target, DIRECTORY_FORM))()).rejects.toThrow(expect.objectContaining({ code: 'EEXIST' }));
+    await expect((async () => nodeFilesystemPort(testKernelLock()).createPlaceholder(target, DIRECTORY_FORM))()).rejects.toThrow(expect.objectContaining({ code: 'EEXIST' }));
     expect(fs.readdirSync(target)).toEqual(['HEAD']);
   });
 });
@@ -143,7 +143,7 @@ describe('a command holds placeholders in their form and release removes them (s
   });
 
   const start = async (script: string) =>
-    createBubblewrapSandbox({ bwrapPath: path.join(base, 'bwrap'), tmpRoot, killGraceMs: 300, journal, holders: () => new Set() }).spawn(
+    createBubblewrapSandbox({ lock: testKernelLock(), bwrapPath: path.join(base, 'bwrap'), tmpRoot, killGraceMs: 300, journal, holders: () => new Set() }).spawn(
       { argv: ['/bin/sh', '-c', script], cwd: work, env: { PATH: '/usr/bin:/bin' } },
       await protectedPolicy(),
       new AbortController().signal,

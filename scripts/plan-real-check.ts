@@ -4,7 +4,7 @@ import path from 'node:path';
 import { editModelsSettings, loadUserModels } from '@momonga/config';
 import type { ModelsOperation } from '@momonga/config';
 import { CONTEXT_REPORT_FORMAT } from '@momonga/eval';
-import { NoCurrentGenerationError, createUdsClient, currentSocketResolver, fixedSocket, isRecord, momongaLayout } from '@momonga/foundation';
+import { NoCurrentGenerationError, createUdsClient, currentSocketResolver, fixedSocket, isRecord, momongaLayout, resolveLayoutLocks } from '@momonga/foundation';
 import type { MomongaPaths, UdsClient } from '@momonga/foundation';
 import { SIGNED_IN_OUTCOME, WORKSPACE_USAGE_LIMIT_CODE, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
 
@@ -423,11 +423,11 @@ const capabilityOf = (model: PlanModel, field: 'promptCache' | 'reasoning', valu
 });
 
 const declareVariant = async (paths: MomongaPaths, model: PlanModel, variant: Variant, signal: AbortSignal): Promise<void> => {
-  await editModelsSettings(paths.home, paths.settingsFile, [capabilityOf(model, 'promptCache', variant.promptCache), capabilityOf(model, 'reasoning', variant.reasoning)], { signal });
+  await editModelsSettings(paths.home, paths.settingsFile, [capabilityOf(model, 'promptCache', variant.promptCache), capabilityOf(model, 'reasoning', variant.reasoning)], { lock: resolveLayoutLocks(paths).mechanism, signal });
 };
 
 const restoreDeclared = async (paths: MomongaPaths, model: PlanModel, signal: AbortSignal): Promise<void> => {
-  await editModelsSettings(paths.home, paths.settingsFile, [{ kind: 'setModelField', model: model.canon, path: ['capabilities'], value: model.declared }], { signal });
+  await editModelsSettings(paths.home, paths.settingsFile, [{ kind: 'setModelField', model: model.canon, path: ['capabilities'], value: model.declared }], { lock: resolveLayoutLocks(paths).mechanism, signal });
 };
 
 const variantRequests = async (client: UdsClient, paths: MomongaPaths, model: PlanModel, signal: AbortSignal): Promise<Step> => {

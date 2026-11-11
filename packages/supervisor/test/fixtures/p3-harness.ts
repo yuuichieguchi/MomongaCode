@@ -5,7 +5,7 @@ import { PassThrough } from 'node:stream';
 import { createJsonLogger, momongaPaths, fixedSocket } from '@momonga/foundation';
 import type { JsonLogger, MomongaPaths, TextStream } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { createFakeClock, createFakeTimers, createRealWorkScope, driveFakeTime, prepareGenerationForTest, quiesce, registerCleanup, settleRealWork, waitFor, withTempDir } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createRealWorkScope, driveFakeTime, prepareGenerationForTest, quiesce, registerCleanup, settleRealWork, waitFor, withTempDir, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import type { CleanupContext, FakeClock, FakeTimers, JsonLine, RealWorkScope } from '@momonga/testkit';
 
 export { createRealWorkScope, quiesce };
@@ -460,6 +460,8 @@ export const startHarness = async (context: CleanupContext, options: HarnessOpti
   });
   const markers = recordingMarkerPorts(options.markerPorts ?? {}, order);
   const started = await realWork.run(() => startSupervisor({
+    lockMechanism: testKernelLock(),
+    inspector: testProcessInspector(),
     home,
     version: TEST_VERSION,
     generation,

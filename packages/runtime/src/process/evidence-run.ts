@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { UNMEASURED_CAPABILITY, createMarker, hostPaths, defaultProcessInspector, nodeFileSystem, groupRecordOutcome, protectedSetFor, recordMarkerGroup, uuidv7 } from '@momonga/foundation';
+import { UNMEASURED_CAPABILITY, createMarker, hostPaths, nodeFileSystem, groupRecordOutcome, protectedSetFor, recordMarkerGroup, uuidv7 } from '@momonga/foundation';
 import type { MarkerHandle, MomongaPaths } from '@momonga/foundation';
 import { askedBy, computeFileRules } from '@momonga/policy';
 import type { PolicyHostPorts } from '@momonga/policy';
@@ -21,7 +21,7 @@ export type EvidenceRunnerOptions = {
   fs: PolicyHostPorts;
   sandboxes: SandboxBindings;
   env: Readonly<Record<string, string>>;
-  reap?: EvidenceReap;
+  reap: EvidenceReap;
   owners?: MarkerOwners;
   onWarning?(message: string): void;
   outputWindowBytes?: number;
@@ -38,13 +38,13 @@ const windowOf = async (stream: AsyncIterable<Uint8Array>, maxBytes: number): Pr
 };
 
 export const createEvidenceRunner =
-  ({ paths, home, fs, sandboxes, env, reap = {}, owners, onWarning = raiseWarning, outputWindowBytes = JOB_OUTPUT_WINDOW_BYTES }: EvidenceRunnerOptions) =>
+  ({ paths, home, fs, sandboxes, env, reap, owners, onWarning = raiseWarning, outputWindowBytes = JOB_OUTPUT_WINDOW_BYTES }: EvidenceRunnerOptions) =>
   (project: string): EvidenceRun =>
   async (command, signal) => {
     const root = await hostPaths(signal).canonicalDirectory(project);
     if (!root.ok) return { exitCode: null, notStarted: `${project} is not a folder` };
     const roots = [root.path];
-    const inspector = reap.inspector ?? defaultProcessInspector();
+    const { inspector } = reap;
     const marker = path.join(paths.markers.tools, `evidence-${uuidv7()}`);
     const name = path.basename(marker);
     let running = true;

@@ -8,7 +8,6 @@ import type { CommandRunner } from './platform/command-runner.ts';
 import { isAtomicWriteTemporary } from './atomic-file.ts';
 import { handoverLeftovers } from './handover-leftovers.ts';
 import type { LeftoverDirectory } from './leftover-sweep.ts';
-import { hostKernelLock } from './platform/host-kernel-lock.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 import { EntryLockHeldError, claimNewEntry } from './platform/lock-form.ts';
 import { SocketPathUnsupportedError, assertSocketPathLength, isPipePath, pipePathFor, refuseUnbindableUnixSocketPath } from './socket-path.ts';
@@ -254,7 +253,6 @@ export type PlatformDirectoryPorts = {
   run?: CommandRunner;
   env?: Readonly<Record<string, string | undefined>>;
   signal?: AbortSignal | undefined;
-  lock?: KernelLockMechanism;
 };
 
 export class MomongaDirectoryError extends Error {
@@ -547,11 +545,13 @@ const assertSessionsRootIsDirectory = async (root: string): Promise<void> => {
   }
 };
 
-export const ensureSessionTmpDir = async (paths: MomongaPaths, sessionId: string, ports: PlatformDirectoryPorts = {}): Promise<SessionScratch> => {
+export type SessionScratchPorts = PlatformDirectoryPorts & { lock: KernelLockMechanism };
+
+export const ensureSessionTmpDir = async (paths: MomongaPaths, sessionId: string, ports: SessionScratchPorts): Promise<SessionScratch> => {
   assertSessionId(sessionId);
   const directory = path.join(paths.tmp.sessions, sessionId);
   await assertSessionsRootIsDirectory(paths.tmp.sessions);
-  const { claimedNow, claim } = await claimSessionScratch(directory, ports.lock ?? hostKernelLock());
+  const { claimedNow, claim } = await claimSessionScratch(directory, ports.lock);
   try {
     return { dir: await ensureClaimedSessionTmpDir(paths, sessionId, ports), claim };
   } catch (error) {

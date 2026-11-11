@@ -5,7 +5,7 @@ import type { TestContext } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
 import { openDatabase } from '@momonga/foundation';
 import { JournalThreadError, openRuntimeStore } from '@momonga/store';
-import { createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, withTempDir, testKernelLock } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
 import * as clientModule from '../../src/memory/journal-thread-client.ts';
 import { startJournalThread } from '../../src/memory/journal-thread-client.ts';
@@ -27,7 +27,7 @@ type Fixture = { readonly databasePath: string; readonly identity: { dev: number
 const fixture = (context: TestContext): Fixture => {
   const dir = withTempDir(context);
   const databasePath = path.join(dir, 'runtime.db');
-  openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS, path: databasePath, home: dir, clock: createFakeClock(0), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 50 }).close();
+  openRuntimeStore({ lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS, path: databasePath, home: dir, clock: createFakeClock(0), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 50 }).close();
   const stat = fs.statSync(databasePath);
   return { databasePath, identity: { dev: stat.dev, ino: stat.ino }, dir, marker: path.join(dir, 'spawns') };
 };
@@ -123,7 +123,7 @@ describe('the one import path of JournalThreadError', () => {
 describe('journal thread start and handshake', () => {
   it('resolves start only after the embedded thread reports ready with the database identity', async (context) => {
     const { databasePath, identity } = fixture(context);
-    const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS });
+    const client = await started(context, { lock: testKernelLock(), databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS });
     expect(client.identity).toEqual(identity);
   });
 
@@ -133,7 +133,7 @@ describe('journal thread start and handshake', () => {
     db.exec('ALTER TABLE events RENAME TO events_moved_away');
     db.close();
 
-    const error = await rejectionOf(startJournalThread({ databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS }));
+    const error = await rejectionOf(startJournalThread({ lock: testKernelLock(), databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS }));
 
     expect(error).toBeInstanceOf(JournalThreadError);
     expect(String((error as Error).message) + String(((error as Error).cause as Error | undefined)?.message ?? '')).toMatch(/events/);
@@ -151,13 +151,13 @@ describe('journal thread start and handshake', () => {
 
   it('rejects start with JournalThreadError when the ready identity does not match the store file', async (context) => {
     const { databasePath, identity } = fixture(context);
-    const error = await rejectionOf(startJournalThread({ databasePath, identity: { dev: identity.dev, ino: identity.ino + 1 }, silenceLimitMs: GENEROUS_SILENCE_MS }));
+    const error = await rejectionOf(startJournalThread({ lock: testKernelLock(), databasePath, identity: { dev: identity.dev, ino: identity.ino + 1 }, silenceLimitMs: GENEROUS_SILENCE_MS }));
     expect(error).toBeInstanceOf(JournalThreadError);
   });
 
   it('rejects start with JournalThreadError when the thread cannot open the database', async (context) => {
     const { dir, identity } = fixture(context);
-    const error = await rejectionOf(startJournalThread({ databasePath: path.join(dir, 'missing', 'runtime.db'), identity, silenceLimitMs: GENEROUS_SILENCE_MS }));
+    const error = await rejectionOf(startJournalThread({ lock: testKernelLock(), databasePath: path.join(dir, 'missing', 'runtime.db'), identity, silenceLimitMs: GENEROUS_SILENCE_MS }));
     expect(error).toBeInstanceOf(JournalThreadError);
   });
 
@@ -181,27 +181,27 @@ describe('journal thread start and handshake', () => {
       '}',
     ].join('\n');
     const error = await rejectionOf(
-      startJournalThread({ databasePath, identity: { dev: replacementStat.dev, ino: replacementStat.ino }, silenceLimitMs: GENEROUS_SILENCE_MS, code: `${swapAfterOpen}\n${JOURNAL_THREAD_CODE}` }),
+      startJournalThread({ lock: testKernelLock(), databasePath, identity: { dev: replacementStat.dev, ino: replacementStat.ino }, silenceLimitMs: GENEROUS_SILENCE_MS, code: `${swapAfterOpen}\n${JOURNAL_THREAD_CODE}` }),
     );
     expect(error).toBeInstanceOf(JournalThreadError);
   });
 
   it('rejects start with JournalThreadError when the thread code does not compile', async (context) => {
     const { databasePath, identity } = fixture(context);
-    const error = await rejectionOf(startJournalThread({ databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code: 'this is not javascript' }));
+    const error = await rejectionOf(startJournalThread({ lock: testKernelLock(), databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code: 'this is not javascript' }));
     expect(error).toBeInstanceOf(JournalThreadError);
   });
 
   it('rejects start with JournalThreadError when the thread exits before ready', async (context) => {
     const { databasePath, identity } = fixture(context);
-    const error = await rejectionOf(startJournalThread({ databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code: 'process.exit(3);' }));
+    const error = await rejectionOf(startJournalThread({ lock: testKernelLock(), databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code: 'process.exit(3);' }));
     expect(error).toBeInstanceOf(JournalThreadError);
   });
 
   it('rejects start with JournalThreadError exactly when the silence limit passes without ready', async (context) => {
     const { databasePath, identity } = fixture(context);
     const timers = fakeTimers();
-    const start = tracked(startJournalThread({ databasePath, identity, silenceLimitMs: SILENCE_MS, timers, code: 'setInterval(() => {}, 1000);' }));
+    const start = tracked(startJournalThread({ lock: testKernelLock(), databasePath, identity, silenceLimitMs: SILENCE_MS, timers, code: 'setInterval(() => {}, 1000);' }));
     await until(() => timers.pending().length === 1);
     timers.advance(SILENCE_MS - 1);
     await turn();
@@ -214,7 +214,7 @@ describe('journal thread start and handshake', () => {
 describe('journal thread requests', () => {
   it('answers a ping from the embedded thread with the worker thread id', async (context) => {
     const { databasePath, identity } = fixture(context);
-    const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS });
+    const client = await started(context, { lock: testKernelLock(), databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS });
     const first = await client.ping();
     const second = await client.ping();
     expect(first.threadId).toBeGreaterThan(0);
@@ -223,7 +223,7 @@ describe('journal thread requests', () => {
 
   it('answers an unknown request kind with a request error naming the kind and keeps the embedded thread', async (context) => {
     const { databasePath, identity } = fixture(context);
-    const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS });
+    const client = await started(context, { lock: testKernelLock(), databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS });
     const before = await client.ping();
     const error = await rejectionOf(client.request({ kind: 'contribution' }));
     expect(error).toBeInstanceOf(JournalThreadError);
@@ -235,7 +235,7 @@ describe('journal thread requests', () => {
   it('matches each reply to its own request when several are in flight', async (context) => {
     const { databasePath, identity, marker } = fixture(context);
     const code = fakeThread(marker, "if (message.kind === 'slow') { setImmediate(() => port.postMessage({ id: message.id, ok: true, echo: 'slow' })); return; } port.postMessage({ id: message.id, ok: true, echo: 'fast' });");
-    const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code });
+    const client = await started(context, { lock: testKernelLock(), databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code });
     const replies = await Promise.all([client.request({ kind: 'slow' }), client.request({ kind: 'fast' })]);
     expect(replies.map((reply: Readonly<Record<string, unknown>>) => reply['echo'])).toEqual(['slow', 'fast']);
   });
@@ -246,7 +246,7 @@ describe('journal thread requests', () => {
       marker,
       `if (message.kind === 'fail') port.postMessage({ id: message.id, ok: false, error: { name: 'Error', message: 'injected context but has no user.message' } }); else ${PONG}`,
     );
-    const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code });
+    const client = await started(context, { lock: testKernelLock(), databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code });
     const before = await client.ping();
     const error = await rejectionOf(client.request({ kind: 'fail' }));
     expect(error).toBeInstanceOf(JournalThreadError);
@@ -261,7 +261,7 @@ describe('journal thread death and replacement', () => {
   it('rejects every request in flight with JournalThreadError when the thread exits', async (context) => {
     const { databasePath, identity, marker } = fixture(context);
     const code = fakeThread(marker, "if (message.kind === 'die') process.exit(7);");
-    const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code });
+    const client = await started(context, { lock: testKernelLock(), databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code });
     const waiting = rejectionOf(client.request({ kind: 'wait' }));
     const dying = rejectionOf(client.request({ kind: 'die' }));
     expect(await waiting).toBeInstanceOf(JournalThreadError);
@@ -271,7 +271,7 @@ describe('journal thread death and replacement', () => {
   it('rejects the request in flight with JournalThreadError when the thread throws an uncaught error', async (context) => {
     const { databasePath, identity, marker } = fixture(context);
     const code = fakeThread(marker, "throw new Error('thread broke');");
-    const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code });
+    const client = await started(context, { lock: testKernelLock(), databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code });
     expect(await rejectionOf(client.request({ kind: 'any' }))).toBeInstanceOf(JournalThreadError);
   });
 
@@ -279,7 +279,7 @@ describe('journal thread death and replacement', () => {
     const { databasePath, identity, dir, marker } = fixture(context);
     const received = path.join(dir, 'received');
     const code = fakeThread(marker, `fs.appendFileSync(${JSON.stringify(received)}, message.kind + '\\n'); if (message.kind === 'die') process.exit(7); ${PONG}`);
-    const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code });
+    const client = await started(context, { lock: testKernelLock(), databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code });
     const first = await client.ping();
     expect(await rejectionOf(client.request({ kind: 'die' }))).toBeInstanceOf(JournalThreadError);
     expect(spawnCountOf(marker)).toBe(1);
@@ -292,7 +292,7 @@ describe('journal thread death and replacement', () => {
   it('rejects the next request with JournalThreadError when the replacement fails its handshake', async (context) => {
     const { databasePath, identity, marker } = fixture(context);
     const code = [`if (require('node:fs').existsSync(${JSON.stringify(marker)})) process.exit(9);`, fakeThread(marker, "if (message.kind === 'die') process.exit(7);")].join('\n');
-    const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code });
+    const client = await started(context, { lock: testKernelLock(), databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code });
     expect(await rejectionOf(client.request({ kind: 'die' }))).toBeInstanceOf(JournalThreadError);
     expect(await rejectionOf(client.request({ kind: 'after' }))).toBeInstanceOf(JournalThreadError);
   });
@@ -303,7 +303,7 @@ describe('journal thread silence watchdog', () => {
     const { databasePath, identity, marker } = fixture(context);
     const timers = fakeTimers();
     const code = fakeThread(marker, `if (message.kind === 'hang') { Atomics.store(new Int32Array(message.gate), 1, 1); for (;;) {} } ${PONG}`);
-    const client = await started(context, { databasePath, identity, silenceLimitMs: SILENCE_MS, timers, code });
+    const client = await started(context, { lock: testKernelLock(), databasePath, identity, silenceLimitMs: SILENCE_MS, timers, code });
     const cells = new Int32Array(new SharedArrayBuffer(8));
     const hanging = tracked(client.request({ kind: 'hang', gate: cells.buffer }));
     await until(() => Atomics.load(cells, 1) === 1 && timers.pending().length === 1);
@@ -319,7 +319,7 @@ describe('journal thread silence watchdog', () => {
   it('keeps a thread that posts progress within each limit until it replies', async (context) => {
     const { databasePath, identity, marker } = fixture(context);
     const timers = fakeTimers();
-    const client = await started(context, { databasePath, identity, silenceLimitMs: SILENCE_MS, timers, code: fakeThread(marker, GATED_PROGRESS) });
+    const client = await started(context, { lock: testKernelLock(), databasePath, identity, silenceLimitMs: SILENCE_MS, timers, code: fakeThread(marker, GATED_PROGRESS) });
     const cells = new Int32Array(new SharedArrayBuffer(8));
     const reply = tracked(client.request({ kind: 'long', gate: cells.buffer }));
     for (let step = 1; step <= 2; step += 1) {
@@ -335,7 +335,7 @@ describe('journal thread silence watchdog', () => {
   it('judges silence by what the thread sent, not by what the stalled main thread has processed', async (context) => {
     const { databasePath, identity, marker } = fixture(context);
     const timers = fakeTimers();
-    const client = await started(context, { databasePath, identity, silenceLimitMs: SILENCE_MS, timers, code: fakeThread(marker, PROGRESS_ON_SIGNAL) });
+    const client = await started(context, { lock: testKernelLock(), databasePath, identity, silenceLimitMs: SILENCE_MS, timers, code: fakeThread(marker, PROGRESS_ON_SIGNAL) });
     const cells = new Int32Array(new SharedArrayBuffer(8));
     const reply = tracked(client.request({ kind: 'long', gate: cells.buffer }));
     await until(() => timers.pending().length === 1);
@@ -350,7 +350,7 @@ describe('journal thread silence watchdog', () => {
   it('arms no silence timer while no request is pending', async (context) => {
     const { databasePath, identity, marker } = fixture(context);
     const timers = fakeTimers();
-    const client = await started(context, { databasePath, identity, silenceLimitMs: SILENCE_MS, timers, code: fakeThread(marker, PONG) });
+    const client = await started(context, { lock: testKernelLock(), databasePath, identity, silenceLimitMs: SILENCE_MS, timers, code: fakeThread(marker, PONG) });
     const first = await client.ping();
     expect(timers.pending()).toEqual([]);
     timers.advance(SILENCE_MS * 3);
@@ -373,7 +373,7 @@ describe('journal thread shutdown', () => {
       '}',
     ].join('\n');
     const baseline = runningWorkerCount();
-    const client = await started(context, { databasePath, identity, silenceLimitMs: SILENCE_MS, timers, code });
+    const client = await started(context, { lock: testKernelLock(), databasePath, identity, silenceLimitMs: SILENCE_MS, timers, code });
     expect(await rejectionOf(client.request({ kind: 'die' }))).toBeInstanceOf(JournalThreadError);
     const respawning = tracked(client.ping());
     await until(() => spawnCountOf(marker) === 2);
@@ -388,7 +388,7 @@ describe('journal thread shutdown', () => {
 
   it('rejects a request in flight at close with JournalThreadError', async (context) => {
     const { databasePath, identity, marker } = fixture(context);
-    const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code: fakeThread(marker, '') });
+    const client = await started(context, { lock: testKernelLock(), databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code: fakeThread(marker, '') });
     const waiting = rejectionOf(client.request({ kind: 'wait' }));
     await client.close();
     expect(await waiting).toBeInstanceOf(JournalThreadError);
@@ -396,7 +396,7 @@ describe('journal thread shutdown', () => {
 
   it('rejects requests after close with JournalThreadError and spawns no new thread', async (context) => {
     const { databasePath, identity, marker } = fixture(context);
-    const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code: fakeThread(marker, PONG) });
+    const client = await started(context, { lock: testKernelLock(), databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code: fakeThread(marker, PONG) });
     await client.close();
     expect(await rejectionOf(client.ping())).toBeInstanceOf(JournalThreadError);
     expect(spawnCountOf(marker)).toBe(1);

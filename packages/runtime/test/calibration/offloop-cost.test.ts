@@ -13,6 +13,7 @@ import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../../src/memory/journal-thread
 import { journalReaderPreparer, makeEnv } from '../worker/harness.ts';
 import type { Env } from '../worker/harness.ts';
 import { foldedThrough, seedLargeRun } from '../worker/large-run.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const SIZES = [15, 50, 150, 1000] as const;
 const BODY_TOKENS = [100_000, 400_000, 1_000_000] as const;
@@ -69,7 +70,7 @@ const threadOf = (dbPath: () => string): { preparer: ContributionPreparer; clien
     started ??= (() => {
       const databasePath = dbPath();
       const { dev, ino } = fs.statSync(databasePath);
-      return startJournalThread({ databasePath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+      return startJournalThread({ lock: testKernelLock(), databasePath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
     })();
     return started;
   };
@@ -126,7 +127,7 @@ const measureSize = async (steps: number): Promise<Measured> => {
     const lastSeq = env.run(run.id).lastSeq;
     const spawn = await timed(async () => {
       const { dev, ino } = fs.statSync(env.dbPath);
-      return startJournalThread({ databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+      return startJournalThread({ lock: testKernelLock(), databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
     });
     await spawn.value.close();
 

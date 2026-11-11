@@ -2,7 +2,7 @@ import type { PlanProfile } from '@momonga/config';
 import { FIRST_GENERATION, createJsonLogger, generationLayout, momongaLayout, momongaPaths, publishCurrentGeneration } from '@momonga/foundation';
 import type { JsonLogger, ListableCredentialStore } from '@momonga/foundation';
 import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
-import { createFakeClock, createFakeSecretStore, startFakePlanResponses, startFakeSiwcAuth } from '@momonga/testkit';
+import { createFakeClock, createFakeSecretStore, startFakePlanResponses, startFakeSiwcAuth, testKernelLock } from '@momonga/testkit';
 import type { FakeClock, FakePlanResponses, FakeSecretStore, PlanResponsesOptions, SiwcAccessTokenForm, SiwcAuth } from '@momonga/testkit';
 import { getJson, postJson, readJson, registerCleanup } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
@@ -118,7 +118,7 @@ export const startPlanGateway = async (options: PlanGatewayOptions = {}): Promis
       generation: FIRST_GENERATION,
       version: PROCESS_VERSION,
       sockets: { ...generationLayout(home, FIRST_GENERATION).sockets, gateway: launched.socketPath },
-    });
+    }, { lock: testKernelLock() });
     return launched;
   };
   let handle = await launch();

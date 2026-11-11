@@ -18,7 +18,7 @@ import type { SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import { journalReaderPreparer } from '../worker/harness.ts';
 import type { Claim, ContributionPreparer, RuntimeStore, Session } from '@momonga/store';
-import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, createTempDir, removeTempDir, testProbes } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, createTempDir, removeTempDir, testProbes, testProcessInspector, testKernelLock } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
@@ -498,7 +498,7 @@ export const openStore = (
   clock: FakeClock,
   extra: { notifier?: Notifier; maxAttempts?: number; preparer?: (dbPath: string, store: () => RuntimeStore) => ContributionPreparer; onDecode?: (rows: number, bytes: number) => void } = {},
 ): RuntimeStore => {
-  const store: RuntimeStore = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
+  const store: RuntimeStore = openRuntimeStore({ lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home: path.dirname(dbPath),
     clock,
@@ -537,6 +537,7 @@ export const serviceOptions = (
   clock: base.clock,
   redactor: createRedactor({ credentials: [] }),
   home: base.home,
+  lock: testKernelLock(),
   version: SERVICE_VERSION,
   socketPath: base.socketPath,
   pid: SERVICE_PID,
@@ -762,7 +763,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
   const tracer = createFakeTracer();
   const toolbox = createFakeToolbox();
   const instructions = createFakeInstructions();
-  const executor = createToolExecutor({ outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE, idempotency: env.store.idempotency, blobs: env.store.blobs, clock: env.clock, processMarkerDir: markers, callLockDir: callLocks, kernelLock: createFakeKernelLock({ inheritable: false }), onWarning: () => undefined });
+  const executor = createToolExecutor({ reap: { inspector: testProcessInspector() }, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE, idempotency: env.store.idempotency, blobs: env.store.blobs, clock: env.clock, processMarkerDir: markers, callLockDir: callLocks, kernelLock: createFakeKernelLock({ inheritable: false }), onWarning: () => undefined });
   const sessionsTmpRoot = path.join(env.layout.root, 'sessions');
   const sessionTmpDir = path.join(sessionsTmpRoot, 'session-tmp');
   fs.mkdirSync(sessionTmpDir, { recursive: true, mode: 0o700 });
@@ -788,6 +789,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
     return registry.snapshot(only === undefined ? {} : { only });
   };
   const tools: ToolRuntimePort = {
+    inspector: testProcessInspector(),
     workTreeObserver: (target: Session) => createGitWorkTreeObserver({ storeDir: path.join(env.layout.root, 'observer'), workTree: target.cwd, trusted: false }),
     envFor: (target: Session) => ({ ...target.env }),
     toolSet: async (_runId: string, toolSetOptions: { additionalTools?: readonly AnyTool[]; only?: readonly string[] }) =>

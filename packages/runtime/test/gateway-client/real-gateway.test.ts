@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startGatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, modelSettings, startFakeChatCompletions, closeOnceStarted, createTempDir, removeTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, modelSettings, startFakeChatCompletions, closeOnceStarted, createTempDir, removeTempDir, testLocks } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import { CLIENT_VERSION, callOptions, collect, expectGatewayError, fakeClock, settle, streamBody, userInput } from './fixtures.ts';
@@ -50,7 +50,7 @@ beforeAll(async () => {
     { mode: 0o600 },
   );
   await prepareGatewayHome(home);
-  startedGateway = startGatewayProcess({ generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: GATEWAY_VERSION });
+  startedGateway = startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: GATEWAY_VERSION });
   const gateway = await startedGateway;
   expect(Buffer.byteLength(gateway.socketPath)).toBeLessThan(104);
   const client = createGatewayClient({ resolveSocket: fixedSocket(gateway.socketPath), clock: fakeClock(), version: CLIENT_VERSION });

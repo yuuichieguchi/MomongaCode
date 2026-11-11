@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, createFileCredentialStore, momongaLayout, nodeFileSystem } from '@momonga/foundation';
 import { PLAN_ROUTES } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretStore, startFakeSiwcAuth } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretStore, startFakeSiwcAuth, testKernelLock } from '@momonga/testkit';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
 import { getJson, registerCleanup } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
@@ -18,8 +18,8 @@ describe('O-R5-6 L1: the plan scope D5 is derived before the start loads an acco
     const home = makeHome();
     const layout = momongaLayout(home);
     fs.mkdirSync(layout.planSessions, { recursive: true, mode: 0o700 });
-    const { hostId } = await ensureHostIdentity(nodeFileSystem, layout.planHost, { accountsExist: false });
-    await createFileCredentialStore(layout.planSessions).write(
+    const { hostId } = await ensureHostIdentity(nodeFileSystem, layout.planHost, { lock: testKernelLock(), accountsExist: false });
+    await createFileCredentialStore(layout.planSessions, { lock: testKernelLock() }).write(
       `plan/${PROFILE_ID}/${ACCOUNT}`,
       JSON.stringify({
         version: 1,

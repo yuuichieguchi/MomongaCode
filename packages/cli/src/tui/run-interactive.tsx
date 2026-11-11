@@ -2,7 +2,7 @@ import { render } from 'ink';
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
-import { systemTiming } from '@momonga/foundation';
+import { systemTiming, resolveLayoutLocks } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { loadUserSettings, writeTuiSetting } from '@momonga/config';
 import { TARGET_NOT_READY, reopenSessionCommand } from '@momonga/protocol';
@@ -139,7 +139,7 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   };
   const tuiSettings: TuiSettingsPort = {
     initial: (await loadUserSettings({ home: paths.home })).settings.tui,
-    save: (name, value, signal) => writeTuiSetting(paths.home, paths.settingsFile, name, value, { signal }),
+    save: (name, value, signal) => writeTuiSetting(paths.home, paths.settingsFile, name, value, { lock: resolveLayoutLocks(paths).mechanism, signal }),
   };
   const asked: AskedA11y = { screenReaderFlag: options.screenReader === true, env: ports.env };
   const readerAtStart = a11yOf(tuiSettings.initial, asked).screenReader;

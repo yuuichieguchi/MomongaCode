@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { Sandbox, SandboxCommand, SandboxPolicy } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, UNCONFIGURED_NETWORK } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, UNCONFIGURED_NETWORK, testProcessInspector } from '@momonga/testkit';
 import { createOperationTools, createSandboxedArgvRunner, hostGitReader, networkScopeOfDestinations, nodeShellHost } from '@momonga/tools';
 import type { CallOutcome, ResultOutcome } from '@momonga/tools';
 import { call, makeHarness, toolSetOf } from '../harness.ts';
@@ -50,7 +50,7 @@ const setup = async (options: { realSandbox: boolean; origin?: string }) => {
   const markerDir = path.join(world.base, 'markers');
   fs.mkdirSync(markerDir);
   const tools = createOperationTools({
-    runArgv: createSandboxedArgvRunner({ reconcileSandbox: async () => ({ sandbox, sandboxPolicy: await policyForReconcile(), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: UNCONFIGURED_NETWORK, markerDir, credentialRoot: world.base }),
+    runArgv: createSandboxedArgvRunner({ inspector: testProcessInspector(), reconcileSandbox: async () => ({ sandbox, sandboxPolicy: await policyForReconcile(), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: UNCONFIGURED_NETWORK, markerDir, credentialRoot: world.base }),
     readGit: hostGitReader,
     forge: NO_FORGE,
     settings: { protectedRefs: ['release/*'] },
@@ -141,7 +141,7 @@ describe.skipIf(!HAS_REAL_SANDBOX)('the reconcile of an operation, which has no 
     const markerDir = path.join(world.base, 'markers');
     fs.mkdirSync(markerDir);
     const tools = createOperationTools({
-      runArgv: createSandboxedArgvRunner({ reconcileSandbox: async () => ({ sandbox, sandboxPolicy: reconcilePolicy, release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: UNCONFIGURED_NETWORK, markerDir, credentialRoot: world.base }),
+      runArgv: createSandboxedArgvRunner({ inspector: testProcessInspector(), reconcileSandbox: async () => ({ sandbox, sandboxPolicy: reconcilePolicy, release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: UNCONFIGURED_NETWORK, markerDir, credentialRoot: world.base }),
       readGit: hostGitReader,
       forge: NO_FORGE,
       settings: {},
@@ -182,7 +182,7 @@ describe.skipIf(!HAS_REAL_SANDBOX)('the credential of a git child inside the rea
     fs.mkdirSync(markerDir);
     const credentialRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-cred-')));
     onCleanup(() => fs.rmSync(credentialRoot, { recursive: true, force: true }));
-    const runArgv = createSandboxedArgvRunner({ reconcileSandbox: async () => ({ sandbox, sandboxPolicy: await policyFor({ layout, tmpDir }), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: UNCONFIGURED_NETWORK, markerDir, credentialRoot });
+    const runArgv = createSandboxedArgvRunner({ inspector: testProcessInspector(), reconcileSandbox: async () => ({ sandbox, sandboxPolicy: await policyFor({ layout, tmpDir }), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: UNCONFIGURED_NETWORK, markerDir, credentialRoot });
     const ctx = contextFor(world.work, world.env);
     const ask = `"$GIT_ASKPASS" "Password for 'https://x-access-token@forge.example': "`;
     const options = { cwd: world.work, env: world.env, signal: ctx.signal, network: 'none' as const, context: ctx, effect: false };

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { findHolders, recordMarkerGroup } from '@momonga/foundation';
 import type { ReapMarkedProcessesOptions } from '@momonga/foundation';
 import type { IdempotencyLookup, IdempotencyRecord, Run } from '@momonga/store';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, fakeReapTiming, killGroupsForCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, fakeReapTiming, killGroupsForCleanup, spawnTracked, waitFor, withTempDir, testProcessInspector } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { createMarkerOwners } from '@momonga/tools';
 import { reapToolMarkers } from '../../src/process/tool-markers.ts';
@@ -65,7 +65,7 @@ const holdMarker = async (marker: string): Promise<number> => {
     fs.closeSync(fd);
   }
   for (let attempt = 0; attempt < 200; attempt += 1) {
-    if ((await findHolders(marker, { signal: new AbortController().signal })).includes(pid)) return pid;
+    if ((await findHolders(marker, { inspector: testProcessInspector(), signal: new AbortController().signal })).includes(pid)) return pid;
   }
   throw new Error(`process ${pid} never showed up as a holder of ${marker}`);
 };
@@ -123,8 +123,8 @@ describe('reapToolMarkers on hook markers', () => {
     const marker = markerOf(temp, `hook-${keyOf(7)}`);
     const pid = await holdMarker(marker);
     const { store } = idempotencyOf({});
-    await reapToolMarkers({ event: 'startup', owners: createMarkerOwners(), dir: temp.paths.markers.tools, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning });
-    expect(await findHolders(marker, { signal: new AbortController().signal })).not.toContain(pid);
+    await reapToolMarkers({ inspector: testProcessInspector(), event: 'startup', owners: createMarkerOwners(), dir: temp.paths.markers.tools, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning });
+    expect(await findHolders(marker, { inspector: testProcessInspector(), signal: new AbortController().signal })).not.toContain(pid);
     expect(exists(marker)).toBe(false);
   });
 });
@@ -140,7 +140,7 @@ describe('reapToolMarkers (real processes, system timers, except where fake time
     const { store } = idempotencyOf({ [keyOf(1)]: { s: 'COMPLETED', result: {} }, [keyOf(2)]: failure });
     const reaper = recordingReap();
 
-    const outcome = reapToolMarkers({ event: 'startup', owners: createMarkerOwners(), dir: temp.paths.markers.tools, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
+    const outcome = reapToolMarkers({ inspector: testProcessInspector(), event: 'startup', owners: createMarkerOwners(), dir: temp.paths.markers.tools, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
 
     await expect(outcome).rejects.toBe(failure);
     expect(reaper.calls).toEqual([]);
@@ -159,7 +159,7 @@ describe('reapToolMarkers (real processes, system timers, except where fake time
     });
     const warned = warnings();
 
-    await reapToolMarkers({ event: 'startup', owners: createMarkerOwners(), dir: temp.paths.markers.tools, store, killGraceMs: KILL_GRACE_MS, onWarning: warned.onWarning, reap: reaper.reap as never });
+    await reapToolMarkers({ inspector: testProcessInspector(), event: 'startup', owners: createMarkerOwners(), dir: temp.paths.markers.tools, store, killGraceMs: KILL_GRACE_MS, onWarning: warned.onWarning, reap: reaper.reap as never });
 
     expect(reaper.calls.map((call) => call.marker).sort()).toEqual([failing, fine].sort());
     expect(warned.messages).toHaveLength(1);
@@ -184,7 +184,7 @@ describe('reapToolMarkers (real processes, system timers, except where fake time
       return { removed: true };
     });
 
-    const done = reapToolMarkers({ event: 'startup', owners: createMarkerOwners(), dir: temp.paths.markers.tools, store: idempotencyOf({}).store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, timing, reap: reaper.reap as never });
+    const done = reapToolMarkers({ inspector: testProcessInspector(), event: 'startup', owners: createMarkerOwners(), dir: temp.paths.markers.tools, store: idempotencyOf({}).store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, timing, reap: reaper.reap as never });
     await waitFor(() => releases.length === 2, { description: 'both reaps to be in flight' });
     expect(maxActive).toBe(2);
     for (const release of releases) release();
@@ -202,7 +202,7 @@ describe('reapToolMarkers (real processes, system timers, except where fake time
     const { store } = idempotencyOf({ [keyOf(1)]: { s: 'PENDING', rec: record(keyOf(1), 'PENDING', LEDGER_PGID) } });
     const reaper = recordingReap();
 
-    await reapToolMarkers({ event: 'startup', owners: createMarkerOwners(), dir: temp.paths.markers.tools, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
+    await reapToolMarkers({ inspector: testProcessInspector(), event: 'startup', owners: createMarkerOwners(), dir: temp.paths.markers.tools, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
 
     expect(reaper.calls).toHaveLength(1);
     expect(reaper.calls[0]).toMatchObject({ marker, pgid: 4321 });
@@ -220,7 +220,7 @@ describe('reapToolMarkers (real processes, system timers, except where fake time
     const reaper = recordingReap();
     const warned = warnings();
 
-    await reapToolMarkers({ event: 'startup', owners: createMarkerOwners(), dir: temp.paths.markers.tools, store, killGraceMs: KILL_GRACE_MS, onWarning: warned.onWarning, timing, reap: reaper.reap as never });
+    await reapToolMarkers({ inspector: testProcessInspector(), event: 'startup', owners: createMarkerOwners(), dir: temp.paths.markers.tools, store, killGraceMs: KILL_GRACE_MS, onWarning: warned.onWarning, timing, reap: reaper.reap as never });
 
     const byMarker = new Map(reaper.calls.map((call) => [call.marker, call]));
     expect([...byMarker.keys()].sort()).toEqual([completed, missing].sort());
@@ -243,7 +243,7 @@ describe('reapToolMarkers (real processes, system timers, except where fake time
     });
     const reaper = recordingReap();
 
-    await reapToolMarkers({ event: 'startup', owners: createMarkerOwners(), dir: temp.paths.markers.tools, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
+    await reapToolMarkers({ inspector: testProcessInspector(), event: 'startup', owners: createMarkerOwners(), dir: temp.paths.markers.tools, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
 
     const byMarker = new Map(reaper.calls.map((call) => [call.marker, call]));
     expect(byMarker.get(withGroup)?.pgid).toBe(98765);
@@ -262,7 +262,7 @@ describe('reapToolMarkers (real processes, system timers, except where fake time
     });
     const reaper = recordingReap();
 
-    await reapToolMarkers({ event: 'startup', owners: createMarkerOwners(), dir: temp.paths.markers.tools, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
+    await reapToolMarkers({ inspector: testProcessInspector(), event: 'startup', owners: createMarkerOwners(), dir: temp.paths.markers.tools, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
 
     expect([pending, unknown, odd].map(exists)).toEqual([false, false, false]);
     expect(asked).toEqual([]);
@@ -276,7 +276,7 @@ describe('reapToolMarkers (real processes, system timers, except where fake time
     const { store, asked } = idempotencyOf({});
     const reaper = recordingReap();
 
-    await reapToolMarkers({ event: 'startup', owners: createMarkerOwners(), dir: temp.paths.markers.tools, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
+    await reapToolMarkers({ inspector: testProcessInspector(), event: 'startup', owners: createMarkerOwners(), dir: temp.paths.markers.tools, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
 
     expect(asked).toEqual([]);
     expect(reaper.calls.map((call) => call.marker)).toEqual([marker]);
@@ -291,10 +291,10 @@ describe('reapToolMarkers (real processes, system timers, except where fake time
     const timing = fakeReapTiming(clock, timers);
     const { store } = idempotencyOf({ [keyOf(1)]: { s: 'COMPLETED', result: {} } });
 
-    await reapToolMarkers({ event: 'startup', owners: createMarkerOwners(), dir: temp.paths.markers.tools, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, timing });
+    await reapToolMarkers({ inspector: testProcessInspector(), event: 'startup', owners: createMarkerOwners(), dir: temp.paths.markers.tools, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, timing });
 
     expect(exists(marker)).toBe(false);
-    expect(await findHolders(marker, { signal: new AbortController().signal })).toEqual([]);
+    expect(await findHolders(marker, { inspector: testProcessInspector(), signal: new AbortController().signal })).toEqual([]);
     expect(timers.pending()).toEqual([]);
   });
 });
@@ -322,7 +322,7 @@ const trackedHolder = async (context: CleanupContext, marker: string): Promise<n
     fs.closeSync(fd);
   }
   const deadline = Date.now() + 10_000;
-  while (!(await findHolders(marker, { signal: new AbortController().signal })).includes(pid)) {
+  while (!(await findHolders(marker, { inspector: testProcessInspector(), signal: new AbortController().signal })).includes(pid)) {
     if (Date.now() > deadline) throw new Error(`process ${pid} never showed up as a holder of ${marker}`);
     await new Promise<void>((resolve) => setTimeout(resolve, 10));
   }
@@ -369,7 +369,7 @@ describe('reapToolMarkers dead-lettered runs, start scope (§8)', () => {
     const reaper = recordingReap();
     const warned = warnings();
 
-    await reapToolMarkers({ event: 'startup', owners: createMarkerOwners(), dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warned.onWarning, reap: reaper.reap as never });
+    await reapToolMarkers({ inspector: testProcessInspector(), event: 'startup', owners: createMarkerOwners(), dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warned.onWarning, reap: reaper.reap as never });
 
     expect(reaper.calls).toHaveLength(1);
     expect(reaper.calls[0]).toMatchObject({ marker, pgid, killGraceMs: KILL_GRACE_MS, label: 'tool' });
@@ -385,7 +385,7 @@ describe('reapToolMarkers dead-lettered runs, start scope (§8)', () => {
     const reaper = recordingReap();
     const warned = warnings();
 
-    await reapToolMarkers({ event: 'startup', owners: createMarkerOwners(), dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warned.onWarning, reap: reaper.reap as never });
+    await reapToolMarkers({ inspector: testProcessInspector(), event: 'startup', owners: createMarkerOwners(), dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warned.onWarning, reap: reaper.reap as never });
 
     expect(runsAsked).toEqual(['run-live']);
     expect(reaper.calls).toHaveLength(1);
@@ -400,7 +400,7 @@ describe('reapToolMarkers dead-lettered runs, start scope (§8)', () => {
     const { store, runsAsked } = deadLetterStore({ [key]: pendingFor(key, 'run-gone', pgid) }, []);
     const reaper = recordingReap();
 
-    await reapToolMarkers({ event: 'startup', owners: createMarkerOwners(), dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
+    await reapToolMarkers({ inspector: testProcessInspector(), event: 'startup', owners: createMarkerOwners(), dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
 
     expect(runsAsked).toEqual(['run-gone']);
     expect(reaper.calls).toHaveLength(1);
@@ -415,7 +415,7 @@ describe('reapToolMarkers dead-lettered runs, start scope (§8)', () => {
     const { store } = deadLetterStore({ [key]: pendingFor(key, 'run-cancelled', LEDGER_PGID) }, [{ id: 'run-cancelled', status: 'CANCELLED', deadLetter: false }]);
     const reaper = recordingReap();
 
-    await reapToolMarkers({ event: 'startup', owners: createMarkerOwners(), dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
+    await reapToolMarkers({ inspector: testProcessInspector(), event: 'startup', owners: createMarkerOwners(), dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
 
     expect(reaper.calls).toHaveLength(1);
     expect(reaper.calls[0]).toMatchObject({ marker, pgid });
@@ -433,7 +433,7 @@ describe('reapToolMarkers by event: the sweep reads the unowned markers only', (
     const reaper = recordingReap();
     const warned = warnings();
 
-    await reapToolMarkers({ event: 'sweep', owners: createMarkerOwners(), dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warned.onWarning, reap: reaper.reap as never });
+    await reapToolMarkers({ inspector: testProcessInspector(), event: 'sweep', owners: createMarkerOwners(), dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warned.onWarning, reap: reaper.reap as never });
 
     expect(reaper.calls).toHaveLength(1);
     expect(reaper.calls[0]).toMatchObject({ marker, pgid, killGraceMs: KILL_GRACE_MS, label: 'tool' });
@@ -451,7 +451,7 @@ describe('reapToolMarkers by event: the sweep reads the unowned markers only', (
     const reaper = recordingReap();
     holderProbe.findHolderCalls = 0;
 
-    await reapToolMarkers({ event: 'sweep', owners, dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
+    await reapToolMarkers({ inspector: testProcessInspector(), event: 'sweep', owners, dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
 
     expect(reaper.calls).toEqual([]);
     expect(holderProbe.findHolderCalls).toBe(0);
@@ -468,7 +468,7 @@ describe('reapToolMarkers by event: the sweep reads the unowned markers only', (
     const { store } = deadLetterStore({ [noRunId]: pendingFor(noRunId, undefined, 1), [unknownRun]: pendingFor(unknownRun, 'run-gone', 1) }, []);
     const reaper = recordingReap();
 
-    await reapToolMarkers({ event: 'sweep', owners: createMarkerOwners(), dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
+    await reapToolMarkers({ inspector: testProcessInspector(), event: 'sweep', owners: createMarkerOwners(), dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
 
     expect(reaper.calls.map((call) => call.marker).sort()).toEqual([...held].sort());
     expect(exists(recordless)).toBe(false);

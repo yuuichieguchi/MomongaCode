@@ -25,7 +25,7 @@ export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<nu
     ownLockPath: (home, flags) => generationLayout(home, flags.generation).locks.runtime,
     logPath: (home) => momongaPaths(home, process.platform, {}).logFiles.runtime,
     isConfigError: (error) => error instanceof ConfigError,
-    start: async ({ version, flags, home, signal, logger, stdout, acquireLock, requestShutdown }) => {
+    start: async ({ version, flags, home, signal, logger, stdout, locks, acquireLock, requestShutdown }) => {
       installOtelErrorHandler((error) => logger.warn('otel.error', { err: error }));
       const tuning: Partial<StartRuntimeProcessOptions> = {
         ...(flags['lease-ms'] === undefined ? {} : { leaseMs: flags['lease-ms'] }),
@@ -39,6 +39,7 @@ export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<nu
         logger,
         stdout,
         signal,
+        locks,
         acquireLock,
         requestShutdown: () => requestShutdown(),
         ...tuning,

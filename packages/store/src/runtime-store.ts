@@ -1878,7 +1878,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     idempotency: createIdempotencyStore(db, clock, (fence) => fenced(fence) !== undefined, decodeContext),
     approvals: approvalOps.store,
-    blobs: createBlobStore(db, clock, blobDirectory),
+    blobs: createBlobStore(db, clock, blobDirectory, options.lock),
     trust,
     ruleVerdicts,
     inbox,

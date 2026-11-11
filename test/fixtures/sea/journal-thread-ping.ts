@@ -4,6 +4,7 @@ import path from 'node:path';
 import { migrateRuntimeDatabase } from '@momonga/store';
 import { startJournalThread } from '../../../packages/runtime/src/memory/journal-thread-client.ts';
 import { JOURNAL_THREAD_CODE } from '../../../packages/runtime/src/memory/journal-thread-code.generated.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const PING_SILENCE_MS = 30_000;
 
@@ -12,7 +13,7 @@ if (directory === undefined) throw new Error('usage: journal-thread-ping <privat
 const databasePath = path.join(directory, 'runtime.db');
 migrateRuntimeDatabase(databasePath);
 const stat = fs.statSync(databasePath);
-const client = await startJournalThread({ databasePath, identity: { dev: stat.dev, ino: stat.ino }, silenceLimitMs: PING_SILENCE_MS });
+const client = await startJournalThread({ lock: testKernelLock(), databasePath, identity: { dev: stat.dev, ino: stat.ino }, silenceLimitMs: PING_SILENCE_MS });
 try {
   const pong = await client.ping();
   const codeSha256 = createHash('sha256').update(JOURNAL_THREAD_CODE).digest('hex');

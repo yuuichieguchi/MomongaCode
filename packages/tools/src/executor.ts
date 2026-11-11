@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ABORT_SETTLE_LIMIT_MS, NO_NETWORK, UNMEASURED_CAPABILITY, canonicalJson, comparableFromParts, containsByComponents, computeBackoff, createMarker, defaultProcessInspector, describeNetworkScope, displayToolPath, enforcedNetworkScope, fileRuleFingerprint, findAsync, hostKernelLock, hostPaths, systemWaitTiming, lexicallyWithin, mapAsync, momongaLayout, networkScopeOfRequest, nodeFileSystem, reapMarkedProcessesWithReport, recordMarkerGroup, settledOrAborted, sha256Hex, someAsync, writableAreaOf, writableCheckOf } from '@momonga/foundation';
+import { ABORT_SETTLE_LIMIT_MS, NO_NETWORK, UNMEASURED_CAPABILITY, canonicalJson, comparableFromParts, containsByComponents, computeBackoff, createMarker, describeNetworkScope, displayToolPath, enforcedNetworkScope, fileRuleFingerprint, findAsync, hostPaths, systemWaitTiming, lexicallyWithin, mapAsync, momongaLayout, networkScopeOfRequest, nodeFileSystem, reapMarkedProcessesWithReport, recordMarkerGroup, settledOrAborted, sha256Hex, someAsync, writableAreaOf, writableCheckOf } from '@momonga/foundation';
 import { createMarkerGuard } from './marker-guard.ts';
 import { createMarkerOwners } from './marker-owners.ts';
 import type { MarkerOwners } from './marker-owners.ts';
@@ -167,14 +167,14 @@ export type ToolExecutorOptions = {
   earlierMarkerDirs?: () => Promise<readonly string[]>;
   owners?: MarkerOwners;
   callLockDir: string;
-  kernelLock?: KernelLockMechanism;
+  kernelLock: KernelLockMechanism;
   fs: PolicyHostFilesystem;
   leaseMs: number;
   heartbeatMs: number;
   reconcileCapMs?: number;
   reconcileGraceMs?: number;
   onWarning(message: string): void;
-  reap?: { kill?: SignalSender; groupPort?: ProcessGroupPort; timing?: Timing; killGraceMs?: number; inspector?: ProcessInspector; uninspectable?: UninspectableRegistry };
+  reap: { kill?: SignalSender; groupPort?: ProcessGroupPort; timing?: Timing; killGraceMs?: number; inspector: ProcessInspector; uninspectable?: UninspectableRegistry };
 };
 
 export type AbandonTarget = { callId: string; idemKey: string };
@@ -539,10 +539,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   const maxParallel = options.maxParallel ?? DEFAULT_MAX_PARALLEL;
   const reconcileCapMs = options.reconcileCapMs ?? DEFAULT_RECONCILE_CAP_MS;
   const reconcileGraceMs = options.reconcileGraceMs ?? DEFAULT_RECONCILE_GRACE_MS;
-  const reapTiming = options.reap?.timing ?? systemWaitTiming;
+  const reapTiming = options.reap.timing ?? systemWaitTiming;
   const callLocks = createCallLocks({
     dir: options.callLockDir,
-    mechanism: options.kernelLock ?? hostKernelLock(),
+    mechanism: options.kernelLock,
     timing: reapTiming,
     waitMs: heldCallWaitMs(options.heartbeatMs),
   });
@@ -560,12 +560,12 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     owners,
     ledgerRow: (name) => ({ settled: idempotency.get(name)?.s === 'COMPLETED' }),
     onWarning: options.onWarning,
-    killGraceMs: options.reap?.killGraceMs ?? ABANDON_KILL_GRACE_MS,
+    killGraceMs: options.reap.killGraceMs ?? ABANDON_KILL_GRACE_MS,
     timing: reapTiming,
-    ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
-    ...(options.reap?.groupPort === undefined ? {} : { groupPort: options.reap.groupPort }),
-    ...(options.reap?.inspector === undefined ? {} : { inspector: options.reap.inspector }),
-    ...(options.reap?.uninspectable === undefined ? {} : { uninspectable: options.reap.uninspectable }),
+    ...(options.reap.kill === undefined ? {} : { kill: options.reap.kill }),
+    ...(options.reap.groupPort === undefined ? {} : { groupPort: options.reap.groupPort }),
+    inspector: options.reap.inspector,
+    ...(options.reap.uninspectable === undefined ? {} : { uninspectable: options.reap.uninspectable }),
   });
 
   const isRefused = (batch: BatchCore, tool: AnyTool): boolean => batch.toolUnavailable?.(toolRefusalKey(tool)) === true;
@@ -1021,7 +1021,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       controller.abort();
     };
     const openMarkerAt = async (file: string, name: string): Promise<{ handle: MarkerHandle; settle: MarkerSettle }> => {
-      const inspector = options.reap?.inspector ?? defaultProcessInspector();
+      const { inspector } = options.reap;
       owners.register(name, { alive: () => markerOwned });
       const handle = await createMarker(file, { capability: inspector.capability ?? UNMEASURED_CAPABILITY });
       const settle = createMarkerSettle({
@@ -1029,9 +1029,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         mode: handle.mode,
         inspector,
         onWarning: options.onWarning,
-        ...(options.reap?.killGraceMs === undefined ? {} : { killGraceMs: options.reap.killGraceMs }),
-        ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
-        ...(options.reap?.groupPort === undefined ? {} : { groupPort: options.reap.groupPort }),
+        ...(options.reap.killGraceMs === undefined ? {} : { killGraceMs: options.reap.killGraceMs }),
+        ...(options.reap.kill === undefined ? {} : { kill: options.reap.kill }),
+        ...(options.reap.groupPort === undefined ? {} : { groupPort: options.reap.groupPort }),
         timing: reapTiming,
       });
       owners.remember(name, handle.mode);
@@ -1051,6 +1051,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       callId,
       idemKey: key,
       outputFit: fitOfCall(fit, call),
+      kernelLock: options.kernelLock,
+      inspector: options.reap.inspector,
       ...(startsProcesses(tool) ? { processMarker } : {}),
       ...(trace === undefined ? {} : { traceparent: trace.traceparent }),
       ...(trace?.tracestate === undefined ? {} : { tracestate: trace.tracestate }),
@@ -1211,14 +1213,14 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       reaped = await reapMarkedProcessesWithReport({
         marker,
         pgid,
-        killGraceMs: options.reap?.killGraceMs ?? ABANDON_KILL_GRACE_MS,
+        killGraceMs: options.reap.killGraceMs ?? ABANDON_KILL_GRACE_MS,
         label: 'tool',
         onWarning: options.onWarning,
         timing: reapTiming,
         signal,
-        ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
-        ...(options.reap?.inspector === undefined ? {} : { inspector: options.reap.inspector }),
-        ...(options.reap?.uninspectable === undefined ? {} : { uninspectable: options.reap.uninspectable }),
+        ...(options.reap.kill === undefined ? {} : { kill: options.reap.kill }),
+        inspector: options.reap.inspector,
+        ...(options.reap.uninspectable === undefined ? {} : { uninspectable: options.reap.uninspectable }),
       });
     } catch (error) {
       throw new EarlierAttemptNotStoppedError(

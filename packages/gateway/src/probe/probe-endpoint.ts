@@ -11,9 +11,11 @@ import { listedEntryOf } from './json.ts';
 import type { EndpointKey, EndpointLockKey } from './endpoint-record.ts';
 import { IDENTITY_READ_TIMEOUT_MS, probeEndpointOf, readModelsListing } from './endpoint-target.ts';
 import { PROBE_METHOD_VERSION, runProbe } from './run-probe.ts';
+import type { KernelLockMechanism } from '@momonga/foundation';
 
 export type ProbeEndpointTargetOptions = {
   probeRecordDir: string;
+  lock: KernelLockMechanism;
   upstream: UpstreamEndpoint;
   key: EndpointKey;
   model: string;
@@ -34,7 +36,7 @@ export type ProbeEndpointTargetResult = {
 
 export type EndpointMeasurement = { report: ProbeReport; identity: string; identityFields: string[] };
 
-export type MeasureEndpointOptions = Omit<ProbeEndpointTargetOptions, 'probeRecordDir' | 'key' | 'signal'>;
+export type MeasureEndpointOptions = Omit<ProbeEndpointTargetOptions, 'probeRecordDir' | 'lock' | 'key' | 'signal'>;
 
 export const measureEndpoint =
   (options: MeasureEndpointOptions): MeasureProbe<EndpointLockKey, EndpointMeasurement> =>
@@ -73,6 +75,7 @@ export type EndpointProbeSubjectOptions = {
   target: string;
   key: EndpointKey;
   probeRecordDir: string;
+  lock: KernelLockMechanism;
   precondition: ProbePrecondition;
   measure: MeasureProbe<EndpointLockKey, EndpointMeasurement>;
   currency: DialectCurrency;
@@ -83,7 +86,7 @@ export const endpointProbeSubject = (options: EndpointProbeSubjectOptions): Prob
   readKey: async () => endpointLockKeyOf(options.key),
   precondition: options.precondition,
   measure: options.measure,
-  save: (key, measured) => saveEndpointRecord(options.probeRecordDir, endpointKeyOfLock(key), measured.identity, measured.identityFields, measured.report, options.currency),
+  save: (key, measured) => saveEndpointRecord(options.probeRecordDir, endpointKeyOfLock(key), measured.identity, measured.identityFields, measured.report, options.currency, options.lock),
 });
 
 export const probeEndpointTarget = async (options: ProbeEndpointTargetOptions): Promise<ProbeEndpointTargetResult> => {
@@ -91,6 +94,7 @@ export const probeEndpointTarget = async (options: ProbeEndpointTargetOptions): 
     target: endpointLockKeyOf(options.key).target,
     key: options.key,
     probeRecordDir: options.probeRecordDir,
+    lock: options.lock,
     precondition: endpointPrecondition(endpointLockKeyOf(options.key).target, options.upstream, options.model, async () => options.apiKey),
     measure: measureEndpoint(options),
     currency: {
@@ -99,6 +103,6 @@ export const probeEndpointTarget = async (options: ProbeEndpointTargetOptions): 
       ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
     },
   });
-  const { report: measured } = await recordProbe(subject, options.probeRecordDir, options.signal ?? new AbortController().signal);
+  const { report: measured } = await recordProbe(subject, options.probeRecordDir, options.lock, options.signal ?? new AbortController().signal);
   return { report: measured.report, toolCalling: decideToolCalling(measured.report).mode, key: options.key, identity: measured.identity, identityFields: measured.identityFields };
 };

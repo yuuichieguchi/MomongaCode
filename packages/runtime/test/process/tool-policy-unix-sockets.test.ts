@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fakePolicyFilesystem, NEVER_CANCELLED } from '@momonga/testkit';
+import { fakePolicyFilesystem, NEVER_CANCELLED, testKernelLock } from '@momonga/testkit';
 import * as runtime from '@momonga/runtime';
 import { createSession, makeLogger, makeTempHome, openStore } from './helpers.ts';
 
@@ -8,6 +8,7 @@ const setup = async () => {
   const { store, clock } = openStore(temp);
   const states = runtime.createSessionStates({ clock, store, logger: makeLogger(), releaseScratch: () => undefined });
   const policyFor = runtime.createPolicyFor({
+    lock: testKernelLock(),
     paths: temp.paths,
     home: temp.home,
     sessionStates: states,

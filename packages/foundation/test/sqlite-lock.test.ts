@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { LOCK_DATABASE_SUFFIX, ProcessLockHeldError, acquireProcessLock, createKernelLockMechanism, inspectProcessLock, sqliteFileLock } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, startLockHolder, withTempDir } from '@momonga/testkit';
+import { LOCK_DATABASE_SUFFIX, ProcessLockHeldError, acquireProcessLock, inspectProcessLock, kernelLockNamed, sqliteFileLock } from '@momonga/foundation';
+import { resolveKernelLock } from '../src/platform/kernel-lock.ts';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, startLockHolder, withTempDir, fixedLockCapability } from '@momonga/testkit';
 import { exitOf } from './support/lock-processes.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -13,10 +14,11 @@ const claimOrThrow = async (lockPath: string) => {
   return outcome.lock;
 };
 
-describe('the lock used on Linux and Windows', () => {
-  it('is one file-based mechanism for both platforms, not an address in a namespace shared by other users or scoped to a network namespace', () => {
-    expect(createKernelLockMechanism('linux')).toBe(sqliteFileLock);
-    expect(createKernelLockMechanism('win32')).toBe(sqliteFileLock);
+describe('the lock of a directory that does not enforce BSD locks', () => {
+  it('is one file-based mechanism, not an address in a namespace shared by other users or scoped to a network namespace', () => {
+    expect(resolveKernelLock('/unused', { capability: fixedLockCapability('unenforced') })).toBe(sqliteFileLock);
+    expect(resolveKernelLock('/unused', { capability: fixedLockCapability('unmeasured') })).toBe(sqliteFileLock);
+    expect(kernelLockNamed('sqlite-lock')).toBe(sqliteFileLock);
     expect(sqliteFileLock.name).toBe('sqlite-lock');
   });
 
@@ -72,7 +74,7 @@ describe('the lock used on Linux and Windows', () => {
 describe('the lock used on Linux and Windows, held by another process', () => {
   it('is held and names the holder while the process lives, and is free the moment a killed holder is gone', async (context) => {
     const lockPath = path.join(withTempDir(context), 'runtime.lock');
-    const holder = await startLockHolder(context, lockPath, 'linux');
+    const holder = await startLockHolder(context, lockPath, 'sqlite-lock');
     expect(await inspectProcessLock(lockPath, { mechanism: sqliteFileLock })).toEqual({ state: 'held', pid: holder.pid });
     const failure = await acquireProcessLock(lockPath, undefined, { mechanism: sqliteFileLock }).then(
       () => undefined,

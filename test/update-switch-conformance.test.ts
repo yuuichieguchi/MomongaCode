@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { TestContext } from 'vitest';
 import { EXIT_RETIRED, GENERATION_POLL_INTERVAL_MS, STARTUP_TIMEOUT_MS, SWEEP_INTERVAL_MS, claimGeneration, decideGenerationStart, ensureMomongaDirs, generationIsLive, generationLayout, momongaPaths, publishCurrentGeneration, starterOutcome } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { createFakeKernelLock, withTempDir } from '@momonga/testkit';
+import { createFakeKernelLock, withTempDir, testKernelLock } from '@momonga/testkit';
 import { readManifest } from './formal/manifest.ts';
 
 const specDir = path.resolve(import.meta.dirname, '..', 'specs', 'tla');
@@ -65,8 +65,8 @@ describe('UpdateSwitch.tla and the start flow agree', () => {
     for (const cur of range(0, MAX_GEN)) {
       for (const g of range(1, MAX_GEN)) {
         const { home, paths } = await freshHome(context);
-        if (cur > 0) await publishCurrentGeneration(paths, { generation: cur, version: '0.0.1', sockets: generationLayout(home, cur).sockets });
-        const outcome = await publishCurrentGeneration(paths, { generation: g, version: '0.0.1', sockets: generationLayout(home, g).sockets });
+        if (cur > 0) await publishCurrentGeneration(paths, { generation: cur, version: '0.0.1', sockets: generationLayout(home, cur).sockets }, { lock: testKernelLock() });
+        const outcome = await publishCurrentGeneration(paths, { generation: g, version: '0.0.1', sockets: generationLayout(home, g).sockets }, { lock: testKernelLock() });
         expect(outcome, `cur ${cur}, g ${g}`).toBe(g > cur ? 'published' : 'superseded');
         const published = (JSON.parse(fs.readFileSync(paths.current, 'utf8')) as Current).generation;
         expect(published, `cur ${cur}, g ${g}`).toBe(g > cur ? g : cur);

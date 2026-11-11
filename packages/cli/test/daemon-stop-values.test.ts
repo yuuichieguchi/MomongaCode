@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { STARTUP_TIMEOUT_MS, acquireProcessLock, momongaPaths } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { registerCleanup, withTempDir, firstGeneration } from '@momonga/testkit';
+import { registerCleanup, withTempDir, firstGeneration, testKernelLock } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { describe, expect, it } from 'vitest';
 import { STOP_WAIT_WHEN_UNKNOWN_MS, ensureDaemon, stopDaemon, stopWaitBoundMs } from '../src/daemon/ensure-daemon.ts';
@@ -40,7 +40,7 @@ const setup = async (context: TestContext) => {
     const supervisor = await startFakeSupervisor({ paths, holdsKernelLock: false, ...options });
     registerCleanup(context, () => supervisor.stop());
     if (holdsLock) {
-      const lock = await acquireProcessLock(firstGeneration(paths).locks.supervisor);
+      const lock = await acquireProcessLock(firstGeneration(paths).locks.supervisor, undefined, { mechanism: testKernelLock() });
       registerCleanup(context, () => lock.release());
     }
     return supervisor;

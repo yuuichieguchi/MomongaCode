@@ -9,7 +9,7 @@ import { DEFAULT_STOP_VALUES, FIRST_GENERATION, createFileCredentialStore, creat
 import type { UdsClient } from '@momonga/foundation';
 import { saveEndpointRecord, startGatewayProcess } from '@momonga/gateway';
 import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretStore, openResponsesTextReply, registerCleanup, startFakeSiwcAuth, waitFor, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretStore, openResponsesTextReply, registerCleanup, startFakeSiwcAuth, waitFor, withTempDir, testKernelLock, testLocks } from '@momonga/testkit';
 import type { CleanupContext, SiwcAuth } from '@momonga/testkit';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
 import { getJson, userInput, listedEntryOf, listedMembersOf, listedCountersOf } from './gateway-helpers.ts';
@@ -145,12 +145,13 @@ const startRemoteStack = async (
   prepareHome(home);
   const layout = momongaLayout(home);
   fs.mkdirSync(layout.planSessions, { recursive: true, mode: 0o700 });
-  const { hostId } = await ensureHostIdentity(nodeFileSystem, layout.planHost, { accountsExist: false });
-  const store = createFileCredentialStore(layout.planSessions);
+  const { hostId } = await ensureHostIdentity(nodeFileSystem, layout.planHost, { lock: testKernelLock(), accountsExist: false });
+  const store = createFileCredentialStore(layout.planSessions, { lock: testKernelLock() });
   for (const record of options.records?.(hostId) ?? []) await store.write(`plan/${PROFILE_ID}/${String(record['account'])}`, JSON.stringify(record), new AbortController().signal);
   const settingsWith = (network: Record<string, unknown>) => ({ credentials: { plaintextTokenFiles: true }, models: pinnedTargets(options.accounts), network });
   replaceSettings(home, settingsWith(options.network));
   const handle = await startGatewayProcess({
+    locks: testLocks(),
     generation: FIRST_GENERATION,
     home,
     env: baseEnv(home),
@@ -517,7 +518,7 @@ describe('O-R5-6 L3: the served account, the reported numbers and the output pol
     const home = makeHome();
     const models = modelsOf({ probed: ccTarget(fake.socketPath, { toolCalling: 'auto' }), keyed: ccTarget(fake.socketPath, { toolCalling: 'native' }) });
     writeSettings(home, { models, context: { unboundedOutputReserve: false } });
-    await saveEndpointRecord(path.join(homePaths(home).root, 'state', 'probe'), { endpoint: `unix:${fake.socketPath}`, model: 'system' }, 'identity-one', ['id', 'object', 'owned_by'], makeReport(1, 1) as never, CURRENT_DIALECTS);
+    await saveEndpointRecord(path.join(homePaths(home).root, 'state', 'probe'), { endpoint: `unix:${fake.socketPath}`, model: 'system' }, 'identity-one', ['id', 'object', 'owned_by'], makeReport(1, 1) as never, CURRENT_DIALECTS, testKernelLock());
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     const countersOf = async (): Promise<Record<string, string>> => {
       const listed = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');

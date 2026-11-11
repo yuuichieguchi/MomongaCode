@@ -6,7 +6,7 @@ import { canonicalJson, migrate } from '@momonga/foundation';
 import type { RunEventPayload } from '@momonga/protocol';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { createFakeClock } from '@momonga/testkit';
+import { createFakeClock, testKernelLock } from '@momonga/testkit';
 import { MIGRATIONS } from '../src/schema.ts';
 import { LEASE_MS, START_MS, enqueue, harness, makeStoreDir, mustClaim, newSession, openStoreAt, rawDb, registerCleanup, UNASKED_COMMANDS } from './helpers.ts';
 
@@ -182,7 +182,7 @@ describe('reading the answerers of a run does not grow with its journal', () => 
   const decodedReading = async (meterEvents: number): Promise<{ targets: string[]; rows: number }> => {
     const dbPath = path.join(makeStoreDir(), 'runtime.db');
     let rows = 0;
-    const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
+    const store = openRuntimeStore({ lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS,
       path: dbPath,
       home: path.dirname(dbPath),
       clock: createFakeClock(START_MS),

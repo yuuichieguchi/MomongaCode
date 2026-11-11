@@ -7,7 +7,7 @@ import { canonicalJson, openDatabase, sha256Hex } from '@momonga/foundation';
 import type { RunEventPayload } from '@momonga/protocol';
 import { JournalThreadError, createJournalReader, openRuntimeStore } from '@momonga/store';
 import type { Claim, ContributionPreparer, HistoryQueryResult, Run, RuntimeStore, RuntimeStoreOptions, TerminalContribution } from '@momonga/store';
-import { createFakeClock } from '@momonga/testkit';
+import { createFakeClock, testKernelLock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { UNASKED_COMMANDS } from './support/unasked.ts';
 
@@ -97,6 +97,7 @@ export const hookPreparer = (hook: TerminalContribution, dbPath: string): Contri
 
 export const openStoreAt =(dbPath: string, clock: FakeClock, options: StoreOptions = {}): RuntimeStore => {
   const store = openRuntimeStore({
+    lock: testKernelLock(),
     unaskedCommands: options.unaskedCommands ?? UNASKED_COMMANDS,
     path: dbPath,
     home: options.home ?? path.dirname(dbPath),

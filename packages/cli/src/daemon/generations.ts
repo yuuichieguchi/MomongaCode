@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { CONTROL_REQUEST_TIMEOUT_MS, generationLayout, hostKernelLock, inspectProcessLock, listGenerations, orderVersions, readCurrentGeneration, versionSocketResolver } from '@momonga/foundation';
+import { CONTROL_REQUEST_TIMEOUT_MS, generationLayout, inspectProcessLock, listGenerations, orderVersions, readCurrentGeneration, resolveLayoutLocks, versionSocketResolver } from '@momonga/foundation';
 import type { GenerationProcessRole, GenerationRole, KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { DAEMON_POLL_INTERVAL_MS } from '../constants.ts';
@@ -15,7 +15,7 @@ export type LiveGeneration = { generation: number; role: GenerationRole; health:
 export type GenerationListingOptions = { lock?: KernelLockMechanism };
 
 export const listLiveGenerations = async (ports: { clock: CliClock }, paths: MomongaPaths, options: GenerationListingOptions = {}): Promise<LiveGeneration[]> => {
-  const lock = options.lock ?? hostKernelLock();
+  const lock = options.lock ?? resolveLayoutLocks(paths).mechanism;
   const generations = await liveGenerationsUnderLock(ports, paths, lock, CONTROL_REQUEST_TIMEOUT_MS);
   const current = await readCurrentGeneration(paths);
   const roleOf = (generation: number): GenerationRole => {
@@ -43,7 +43,7 @@ export const retiringWorkOf = (live: readonly LiveGeneration[]): RetiringWork =>
 };
 
 export const sessionSocketResolver = (paths: MomongaPaths, version: string, role: GenerationProcessRole, options: GenerationListingOptions = {}): (() => Promise<string>) =>
-  versionSocketResolver(paths, version, role, { lock: options.lock ?? hostKernelLock() });
+  versionSocketResolver(paths, version, role, { lock: options.lock ?? resolveLayoutLocks(paths).mechanism });
 
 export const endSessionWhenMovedAway =
   (paths: MomongaPaths, version: string, onNewer?: NewerListener): (() => Promise<void>) =>
@@ -80,7 +80,7 @@ const stopSupervisor = async (effects: ProcessEffects, pid: number): Promise<voi
 };
 
 export const stopAllGenerations = async (effects: ProcessEffects, paths: MomongaPaths, options: GenerationListingOptions = {}): Promise<void> => {
-  const lock = options.lock ?? hostKernelLock();
+  const lock = options.lock ?? resolveLayoutLocks(paths).mechanism;
   const pids: number[] = [];
   for (const listed of await listGenerations(paths, { lock })) {
     if (!listed.supervisorHeld) continue;

@@ -42,7 +42,7 @@ export type MarkerGuardOptions = {
   owners: MarkerOwners;
   ledgerRow(name: string): MarkerLedgerRow;
   onWarning(message: string): void;
-  inspector?: ProcessInspector;
+  inspector: ProcessInspector;
   kill?: SignalSender;
   groupPort?: ProcessGroupPort;
   timing?: Timing;
@@ -66,7 +66,7 @@ export const createMarkerGuard = (guardOptions: MarkerGuardOptions): MarkerGuard
       marker,
       mode: owners.modeOf(path.basename(marker)) ?? 'listed',
       onWarning,
-      ...(inspector === undefined ? {} : { inspector }),
+      inspector,
       ...(kill === undefined ? {} : { kill }),
       ...(groupPort === undefined ? {} : { groupPort }),
       ...(timing === undefined ? {} : { timing }),
@@ -135,7 +135,7 @@ export const createMarkerGuard = (guardOptions: MarkerGuardOptions): MarkerGuard
       ...(timing === undefined ? {} : { timing }),
       ...(kill === undefined ? {} : { kill }),
       ...(groupPort === undefined ? {} : { groupPort }),
-      ...(inspector === undefined ? {} : { inspector }),
+      inspector,
       ...(uninspectable === undefined ? {} : { uninspectable }),
     });
     if (report.removed) return CLEAR;

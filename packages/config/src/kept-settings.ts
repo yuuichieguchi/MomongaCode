@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { canonicalJson, isRecord, sha256Hex, systemRandom, writeFileAtomicallySync } from '@momonga/foundation';
-import type { FileSystemSync } from '@momonga/foundation';
+import type { FileSystemSync, KernelLockMechanism } from '@momonga/foundation';
 import type { ConfigError } from './config-error.ts';
 import { isAbsentPathError, parseJsonText } from './json-file.ts';
 import type { JsonFile } from './json-file.ts';
@@ -32,7 +32,7 @@ export class UnreadableKeptCopyError extends Error {}
 const isJsonFile = (value: unknown): value is JsonFile =>
   isRecord(value) && (value['found'] === false || (value['found'] === true && Object.hasOwn(value, 'value')));
 
-export const diskKeptRecords = (fileSystem: FileSystemSync, directory: string): KeptRecords => {
+export const diskKeptRecords = (fileSystem: FileSystemSync, directory: string, lock: KernelLockMechanism): KeptRecords => {
   const recordOf = (file: string): string => path.join(directory, `${sha256Hex(file)}.json`);
   return {
     load: (file) => {
@@ -60,7 +60,7 @@ export const diskKeptRecords = (fileSystem: FileSystemSync, directory: string): 
     },
     save: (file, read) => {
       fileSystem.mkdirSync(directory, KEPT_DIRECTORY_MODE);
-      writeFileAtomicallySync(fileSystem, systemRandom, recordOf(file), `${JSON.stringify({ file, read })}\n`, { mode: KEPT_FILE_MODE });
+      writeFileAtomicallySync(fileSystem, systemRandom, recordOf(file), `${JSON.stringify({ file, read })}\n`, { mode: KEPT_FILE_MODE, lock });
     },
   };
 };

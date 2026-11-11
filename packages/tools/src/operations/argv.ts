@@ -38,7 +38,7 @@ export type SandboxedRunnerPorts = {
   markerDir: string;
   credentialRoot: string;
   owners?: MarkerOwners;
-  inspector?: ProcessInspector;
+  inspector: ProcessInspector;
 };
 
 const LOCAL_DESTINATION = /^(file:\/\/|\/)/;
@@ -103,7 +103,7 @@ const runProbe = async (ports: SandboxedRunnerPorts, argv: readonly string[], op
       signal: options.signal,
       timeoutMs: Math.max(0, context.deadlineAt - context.clock.now()),
       ...(context.tmpDir === undefined ? {} : { tmpDir: context.tmpDir }),
-      ...(ports.inspector === undefined ? {} : { inspector: ports.inspector }),
+      inspector: ports.inspector,
       ...(ports.owners === undefined ? {} : { owners: ports.owners }),
     });
     if (result.kind === 'exited') return { exitCode: result.exitCode, stdout: redact(result.stdout), stderr: redact(result.stderr) };

@@ -5,6 +5,8 @@ import * as protocol from '@momonga/protocol';
 import { MANAGED_SERVERS } from '@momonga/protocol';
 import { makeTree, userSettingsPath, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
+import { testKernelLock } from '@momonga/testkit';
+import type { KernelLockMechanism } from '@momonga/foundation';
 
 export type Operation = { kind: string } & Record<string, unknown>;
 export type EditResult = { wrote: boolean; summaries: string[]; model?: string };
@@ -30,7 +32,7 @@ export const homeWith = (document?: unknown): Home => {
 };
 
 export const editModels = (home: Home, operations: readonly Operation[], signal: AbortSignal = new AbortController().signal): Promise<EditResult> =>
-  exported<(home: string, file: string, operations: readonly Operation[], options: { signal: AbortSignal }) => Promise<EditResult>>('editModelsSettings')(home.tree.home, home.file, operations, { signal });
+  exported<(home: string, file: string, operations: readonly Operation[], options: { lock: KernelLockMechanism; signal: AbortSignal }) => Promise<EditResult>>('editModelsSettings')(home.tree.home, home.file, operations, { lock: testKernelLock(), signal });
 
 export const planModels = (document: unknown, operations: readonly Operation[]): Plan =>
   exported<(document: unknown, operations: readonly Operation[], ports: unknown) => Plan>('planModelsEdit')(document, operations, {

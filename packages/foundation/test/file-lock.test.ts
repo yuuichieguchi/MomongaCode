@@ -2,7 +2,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ProcessLockHeldError, acquireProcessLock, createKeyedSerializer, inspectProcessLock, withFileLock } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
-import { registerCleanup, withTempDir, sleepDrivenTiming, createFakeRandom } from '@momonga/testkit';
+import { registerCleanup, withTempDir, sleepDrivenTiming, createFakeRandom, testKernelLock } from '@momonga/testkit';
 
 const NEVER_ABORTED = new AbortController().signal;
 
@@ -29,7 +29,7 @@ describe('withFileLock', () => {
         runs += 1;
         throw new ProcessLockHeldError('held by someone else', '/elsewhere.lock', 4242);
       },
-      { ports: steppedPorts(), timeoutMs: 100 },
+      { mechanism: testKernelLock(), ports: steppedPorts(), timeoutMs: 100 },
     );
     await expect(failure).rejects.toBeInstanceOf(ProcessLockHeldError);
     expect(runs).toBe(1);
@@ -37,13 +37,13 @@ describe('withFileLock', () => {
 
   it('releases the lock after the task fails', async (context) => {
     const lockPath = path.join(withTempDir(context), 'task.lock');
-    await expect(withFileLock(lockPath, () => Promise.reject(new Error('boom')), { ports: steppedPorts() })).rejects.toThrow('boom');
-    expect(await inspectProcessLock(lockPath)).toEqual({ state: 'free' });
+    await expect(withFileLock(lockPath, () => Promise.reject(new Error('boom')), { mechanism: testKernelLock(), ports: steppedPorts() })).rejects.toThrow('boom');
+    expect(await inspectProcessLock(lockPath, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
   });
 
   it('gives up after the timeout, naming the lock and its holder', async (context) => {
     const lockPath = path.join(withTempDir(context), 'task.lock');
-    const held = await acquireProcessLock(lockPath);
+    const held = await acquireProcessLock(lockPath, undefined, { mechanism: testKernelLock() });
     registerCleanup(context, () => held.release());
     let runs = 0;
     const failure = withFileLock(
@@ -51,7 +51,7 @@ describe('withFileLock', () => {
       async () => {
         runs += 1;
       },
-      { ports: steppedPorts(), timeoutMs: 50 },
+      { mechanism: testKernelLock(), ports: steppedPorts(), timeoutMs: 50 },
     );
     await expect(failure).rejects.toThrow(/timed out after 50ms/);
     await expect(failure).rejects.toThrow(lockPath);

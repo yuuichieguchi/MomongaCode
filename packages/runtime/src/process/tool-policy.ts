@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { ConfigError } from '@momonga/config';
 import { discoverGitConfigFiles, ensureSessionTmpDir as defaultEnsureSessionTmpDir, filterAsync, hostPaths, isTransientErrno, protectedSetFor } from '@momonga/foundation';
-import type { MomongaPaths, RuleEnforcement, SessionScratch } from '@momonga/foundation';
+import type { MomongaPaths, RuleEnforcement, SessionScratch, KernelLockMechanism } from '@momonga/foundation';
 import { askedBy, computeFileRules } from '@momonga/policy';
 import type { PolicyHostPorts } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
@@ -13,6 +13,7 @@ export type RecoveryContextOptions = {
   home: string;
   fs: PolicyHostPorts;
   sessionStates: Pick<SessionStates, 'get'>;
+  lock: KernelLockMechanism;
   ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<SessionScratch>;
 };
 
@@ -23,7 +24,7 @@ const wrapperFor =
   (cause: unknown): ConfigError =>
     cause instanceof ConfigError ? cause : new ConfigError(`the tool policy for session ${sessionId} could not be built: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
 
-const contextBuilder = ({ paths, home, sessionStates, ensureSessionTmpDir = defaultEnsureSessionTmpDir }: RecoveryContextOptions) => {
+const contextBuilder = ({ paths, home, sessionStates, lock, ensureSessionTmpDir = (layout, sessionId) => defaultEnsureSessionTmpDir(layout, sessionId, { lock }) }: RecoveryContextOptions) => {
   if (!path.isAbsolute(home)) throw new TypeError(`home must be an absolute path, got ${home}`);
   return async (session: Parameters<ToolRuntimePort['policyFor']>[0], signal: AbortSignal): Promise<{ roots: string[]; tmpDir: string; wrap: (cause: unknown) => ConfigError }> => {
     const resolver = hostPaths(signal);

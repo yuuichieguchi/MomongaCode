@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_LOCK_TIMEOUT_MS, OperationLimitError, SHUTDOWN_SETTING_LIMITS, StoreCallEndedError, createFileCredentialStore } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
 import { McpInputSuspension, MIN_TASK_POLL_MS, createManagedConnection } from '@momonga/mcp';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, startLockHolder, sleepDrivenTiming, createFakeRandom } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, startLockHolder, sleepDrivenTiming, createFakeRandom, testKernelLock } from '@momonga/testkit';
 import type { McpOAuthProvider } from '../src/mcp-oauth.ts';
 import { createMcpOAuthProvider, credentialKey } from '../src/mcp-oauth.ts';
 import type * as RemoteTransportModule from '../src/remote-transport.ts';
@@ -52,10 +52,10 @@ describe('MCP OAuth provider store waits (N81)', () => {
   it('a record lock wait outlasts the default lock timeout and ends only on the signal of the operation', async (context) => {
     const directory = path.join(fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-oauth-'))), 'mcp-credentials');
     const url = 'https://mcp.example.com/mcp';
-    const store = createFileCredentialStore(directory, { ports: steppedPorts() });
+    const store = createFileCredentialStore(directory, { lock: testKernelLock(), ports: steppedPorts() });
     await store.write(credentialKey('remote', url), '{"version":1,"issuers":{}}', new AbortController().signal);
     const ports = steppedPorts();
-    const waiting = createFileCredentialStore(directory, { ports });
+    const waiting = createFileCredentialStore(directory, { lock: testKernelLock(), ports });
     const lockDirectory = `${directory}.locks`;
     const [lockName] = fs.readdirSync(lockDirectory);
     await startLockHolder(context, path.join(lockDirectory, lockName as string));

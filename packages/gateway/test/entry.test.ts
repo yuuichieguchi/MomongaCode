@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, createUdsClient, inspectProcessLock, momongaPaths, fixedSocket } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS, runGatewayEntry } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, startLockHolder, withTempDir, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, startLockHolder, withTempDir, firstGeneration, testKernelLock } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeEntryIo, JsonLine } from '@momonga/testkit';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
@@ -120,7 +120,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     expect(launched.io.exits).toEqual([0]);
     expect(launched.io.stdoutLines()).toHaveLength(1);
     expect(JSON.parse(launched.io.stdoutLines()[0] ?? '')).toMatchObject({ event: 'ready', service: 'gateway', version: VERSION, socketPath: firstGeneration(paths).sockets.gateway });
-    expect((await inspectProcessLock(firstGeneration(paths).locks.gateway)).state).toBe('free');
+    expect((await inspectProcessLock(firstGeneration(paths).locks.gateway, { mechanism: testKernelLock() })).state).toBe('free');
     expect(launched.io.logFilePaths).toEqual([paths.logFiles.gateway]);
     const log = parseJsonLines(launched.io.logLines(paths.logFiles.gateway));
     expect(log[0]).toMatchObject({ msg: 'entry.start', service: 'gateway' });

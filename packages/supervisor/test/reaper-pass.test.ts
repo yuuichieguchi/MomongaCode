@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_STOP_VALUES, MAXIMUM_STOP_VALUES, generationMarkerDirectories, momongaPaths, runtimeMaxCloseMs, writeStopRecord } from '@momonga/foundation';
 import type { GenerationReaperOptions, MarkerKind, ReapMarkerDirectoryOptions, StopValues } from '@momonga/foundation';
-import { createFakeClock, createFakeKernelLock, createFakeTimers, fakeReapTiming, prepareGenerationForTest, withTempDir } from '@momonga/testkit';
+import { createFakeClock, createFakeKernelLock, createFakeTimers, fakeReapTiming, prepareGenerationForTest, withTempDir, testProcessInspector, testKernelLock } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { DAEMON_MARKER_KILL_GRACE_MS } from '../src/constants.ts';
 import { DEAD_GENERATION_MARKER_KILL_GRACE_MS, createReaperPass, entryReaperPass } from '../src/reaper-pass.ts';
@@ -21,6 +21,7 @@ const setup = (context: CleanupContext, overrides: Partial<ReaperPassOptions> = 
   const log = captureLog(clock);
   const reaps: ReapMarkerDirectoryOptions[] = [];
   const options: ReaperPassOptions = {
+    inspector: testProcessInspector(),
     paths,
     lock: createFakeKernelLock({ inheritable: false }),
     logger: log.logger,
@@ -106,7 +107,7 @@ describe('the reaper pass of the serving supervisor (20.61, 20.62)', () => {
     const markers = generationMarkerDirectories(s.paths, 1);
     fs.writeFileSync(path.join(markers.daemons, 'gateway-old'), '', { mode: 0o600 });
     const pass = entryReaperPass(
-      { lockMechanism: s.options.lock, reapTiming: s.options.reapTiming, ...(s.options.markerPorts === undefined ? {} : { markerPorts: s.options.markerPorts }) },
+      { inspector: testProcessInspector(), lockMechanism: s.options.lock, reapTiming: s.options.reapTiming, ...(s.options.markerPorts === undefined ? {} : { markerPorts: s.options.markerPorts }) },
       {
         home: s.home,
         clock: createFakeClock(0),
@@ -154,7 +155,7 @@ describe('the wait of the reaper pass for a dead generation takes the values of 
   };
 
   it('waits the runtime close bound of the values the dead generation recorded when its stop began', async (context) => {
-    const reapedAt = await daemonReapTime(context, (stopRecord) => writeStopRecord(stopRecord, 1, PREDECESSOR));
+    const reapedAt = await daemonReapTime(context, (stopRecord) => writeStopRecord(stopRecord, 1, PREDECESSOR, testKernelLock()));
     expect(runtimeMaxCloseMs(PREDECESSOR)).toBe(7000 + 6 * 40 + 28_125);
     expect(reapedAt).toBeGreaterThanOrEqual(runtimeMaxCloseMs(PREDECESSOR));
     expect(reapedAt).toBeLessThanOrEqual(runtimeMaxCloseMs(PREDECESSOR) + ORPHAN_POLL_MS);
@@ -175,7 +176,7 @@ describe('the wait of the reaper pass for a dead generation takes the values of 
   it('removes the stop record with the directory of the dead generation, as one known entry of it', async (context) => {
     const s = setup(context);
     const layout = prepareGenerationForTest(s.home, 1, '1.2.3');
-    await writeStopRecord(layout.stopRecord, 1, PREDECESSOR);
+    await writeStopRecord(layout.stopRecord, 1, PREDECESSOR, testKernelLock());
     await createReaperPass(s.options)({ signal: new AbortController().signal });
     expect(s.log.withMsg('orphans.warning')).toEqual([]);
     expect(fs.existsSync(layout.dir)).toBe(false);

@@ -11,6 +11,7 @@ import { eventsOf } from '../../../store/test/support/reference.ts';
 import type { ReferenceHarness } from '../../../store/test/support/reference.ts';
 import { mustRun } from '../../../store/test/helpers.ts';
 import type { FidelityReply } from './fidelity-fixture.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const clients: JournalThreadClient[] = [];
 
@@ -32,7 +33,7 @@ const requestOf = (h: ReferenceHarness, request: FidelityRequest) => ({
 
 export const threadOf = async (h: ReferenceHarness): Promise<JournalThreadClient> => {
   const { dev, ino } = fs.statSync(h.dbPath);
-  const client = await startJournalThread({ databasePath: h.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS, blobsDir: blobDirectoryOf(h.dbPath) } as Parameters<typeof startJournalThread>[0]);
+  const client = await startJournalThread({ lock: testKernelLock(), databasePath: h.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS, blobsDir: blobDirectoryOf(h.dbPath) } as Parameters<typeof startJournalThread>[0]);
   clients.push(client);
   return client;
 };
@@ -55,7 +56,7 @@ export const directFidelity = async (h: ReferenceHarness, request: FidelityReque
         stepped += rows;
       },
     });
-    const handler = fidelityHandler({ reader, blobs: createBlobStore(db, NO_CLOCK, blobDirectoryOf(h.dbPath)), current: { progress: undefined }, gateFor: () => ({ unit: () => undefined }) });
+    const handler = fidelityHandler({ reader, blobs: createBlobStore(db, NO_CLOCK, blobDirectoryOf(h.dbPath), testKernelLock()), current: { progress: undefined }, gateFor: () => ({ unit: () => undefined }) });
     const reply = (await handler(requestOf(h, request), () => undefined)) as unknown as FidelityReply;
     return { reply, stepped };
   } finally {

@@ -8,7 +8,7 @@ import type { MemoryRecord } from '@momonga/protocol';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, heldMountPoints } from '@momonga/sandbox';
 import type { Sandbox } from '@momonga/sandbox';
 import type { RuntimeStore } from '@momonga/store';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeTimers, fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeTimers, fakePolicyFilesystem, withTempDir, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { enqueue, harness, newSession } from '../../../store/test/helpers.ts';
 import { createEvidenceRunner } from '../../src/process/evidence-run.ts';
@@ -27,9 +27,9 @@ const SIGNAL = new AbortController().signal;
 
 const realSandbox = (tmpRoot: string): Sandbox => {
   fs.mkdirSync(tmpRoot, { recursive: true });
-  if (process.platform === 'darwin') return createSeatbeltSandbox({ tmpRoot, killGraceMs: 300 });
+  if (process.platform === 'darwin') return createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot, killGraceMs: 300 });
   if (!fs.existsSync(DEFAULT_BWRAP_PATH)) throw new Error(`the evidence test needs real bwrap at ${DEFAULT_BWRAP_PATH}`);
-  return createBubblewrapSandbox({ tmpRoot, killGraceMs: 300, journal: createPlaceholderJournal(`${tmpRoot}-journal`), holders: () => heldMountPoints() });
+  return createBubblewrapSandbox({ lock: testKernelLock(), tmpRoot, killGraceMs: 300, journal: createPlaceholderJournal(`${tmpRoot}-journal`), holders: () => heldMountPoints() });
 };
 
 type Reflector = { runOne(signal: AbortSignal): Promise<string> };
@@ -66,7 +66,7 @@ const reflectInRepository = async (context: TestContext, options: { trusted: boo
     ...checked('npm test', 0, 'ok'),
   ]);
   expect(store.reflection.get(run.id)?.state).toBe('pending');
-  const evidenceRun = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(realSandbox(path.join(root, 'scratch'))), env: { PATH: '/usr/bin:/bin' } });
+  const evidenceRun = createEvidenceRunner({ reap: { inspector: testProcessInspector() }, paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(realSandbox(path.join(root, 'scratch'))), env: { PATH: '/usr/bin:/bin' } });
   const reflector = exported<(options: unknown) => Reflector>('createReflector')({ store, gateway, settings, clock, isIdle: () => true, evidenceRun, maxAttempts: 3, attemptTimeoutMs: 600_000, timers: createFakeTimers(clock), random: () => 0.5 });
   gateway.script.push(textStep(JSON.stringify({ candidates: [{ text: 'a.ts is the entry point', kind: 'fact', paths: ['a.ts'] }] })));
   expect(await reflector.runOne(SIGNAL)).toBe('ran');

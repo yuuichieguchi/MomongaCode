@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { DEFAULT_STOP_VALUES, answeredNow, canonicalJson, isTransientErrno, nodeFileSystemSync, syncPaths, systemRandom, writeFileAtomicallySync } from '@momonga/foundation';
-import type { StopValues } from '@momonga/foundation';
+import type { StopValues, KernelLockMechanism } from '@momonga/foundation';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import { readJsonFileSync } from './json-file.ts';
 import type { JsonFile } from './json-file.ts';
@@ -89,7 +89,7 @@ const readAppliedRecord = (file: string): AppliedRecordRead => {
 
 const unreadableRecordText = (file: string, reason: string): string => `the applied settings record ${file} is unreadable and was ignored: ${reason}`;
 
-export const writeAppliedRecord = (home: string, record: string, lastWrittenSeq?: number): AppliedRecordWrite => {
+export const writeAppliedRecord = (home: string, record: string, lock: KernelLockMechanism, lastWrittenSeq?: number): AppliedRecordWrite => {
   let read: JsonFile;
   try {
     read = readUserJsonFile(home);
@@ -102,7 +102,7 @@ export const writeAppliedRecord = (home: string, record: string, lastWrittenSeq?
   const previous = readAppliedRecord(record);
   if (previous.kind === 'readable' && canonicalJson(previous.record.settings) === canonicalJson(settings)) return { kind: 'unchanged', seq: previous.record.seq };
   const seq = (previous.kind === 'readable' ? previous.record.seq : (lastWrittenSeq ?? 0)) + 1;
-  writeFileAtomicallySync(nodeFileSystemSync, systemRandom, record, `${JSON.stringify({ seq, settings })}\n`, { mode: APPLIED_RECORD_MODE });
+  writeFileAtomicallySync(nodeFileSystemSync, systemRandom, record, `${JSON.stringify({ seq, settings })}\n`, { mode: APPLIED_RECORD_MODE, lock });
   return { kind: 'written', seq };
 };
 

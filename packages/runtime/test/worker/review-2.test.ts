@@ -1,4 +1,4 @@
-import { UNCONFIGURED_NETWORK, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, testProcessInspector } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
 import type { GatewayPort } from '@momonga/runtime';
@@ -54,7 +54,7 @@ describe('worker cancel recovery with a hanging reconcile', () => {
     await env.seed(run.id, payloads, 'crash');
     env.store.idempotency.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Stall' } });
     expect((await env.cancel(run.id)).status).toBe('CANCELLING');
-    const executor = createToolExecutor({ outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
+    const executor = createToolExecutor({ reap: { inspector: testProcessInspector() }, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
       idempotency: env.store.idempotency,
       blobs: env.store.blobs,
       clock: env.clock,

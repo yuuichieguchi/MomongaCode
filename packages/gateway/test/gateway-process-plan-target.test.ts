@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, createFileCredentialStore, momongaLayout } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretStore } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretStore, testKernelLock } from '@momonga/testkit';
 import { getJson } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 
@@ -32,7 +32,7 @@ describe('the gateway serves a plan target through the session engine (P5a-w)', 
     writeSettings(home, planSettings('work'));
     const sessions = momongaLayout(home).planSessions;
     fs.mkdirSync(sessions, { recursive: true, mode: 0o700 });
-    await createFileCredentialStore(sessions).write('plan/chatgpt/work', JSON.stringify({ version: 1, profile: 'chatgpt', account: 'work', state: 'registered' }), new AbortController().signal);
+    await createFileCredentialStore(sessions, { lock: testKernelLock() }).write('plan/chatgpt/work', JSON.stringify({ version: 1, profile: 'chatgpt', account: 'work', state: 'registered' }), new AbortController().signal);
     const health = await targetHealth(home);
     expect(health).toMatchObject({ ok: false, reason: 'store_unreadable' });
     expect(health.detail).toContain('is not encrypted');

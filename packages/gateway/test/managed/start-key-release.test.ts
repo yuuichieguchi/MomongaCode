@@ -6,7 +6,7 @@ import type { KnownProbeKey } from '@momonga/config';
 import { createManagedTarget, managedCurrencyOf, saveProbeRecord } from '@momonga/gateway';
 import type { ManagedServer, ManagedTarget } from '@momonga/gateway';
 import { TARGET_PROBING } from '@momonga/protocol';
-import { FAKE_OS_BUILD, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { FAKE_OS_BUILD, REAL_PROCESS_TEST_TIMEOUT_MS, testKernelLock } from '@momonga/testkit';
 import { makeReport } from '../report-fixture.ts';
 import { declaredForm } from './declared-support.ts';
 import { FakeChild, createManagedServer, makeShortDir } from './managed-support.ts';
@@ -46,7 +46,7 @@ const wired = async ({ spawnFails, afterChildStarting }: Wiring) => {
   const description = declaredForm('mine', DECLARATION);
   const currency = managedCurrencyOf(description, { userDialects: {} });
   const probeDir = path.join(dir, 'probe');
-  await saveProbeRecord(probeDir, KEY_A, makeReport(1, 1), currency);
+  await saveProbeRecord(probeDir, KEY_A, makeReport(1, 1), currency, testKernelLock());
   const binary = { key: KEY_A };
   const started: unknown[] = [];
   let spawns = 0;

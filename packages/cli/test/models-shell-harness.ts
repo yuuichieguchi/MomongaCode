@@ -5,7 +5,7 @@ import { loadUserModels } from '@momonga/config';
 import type { ResolvedModel } from '@momonga/config';
 import { momongaLayout } from '@momonga/foundation';
 import type { Capabilities, ChainMemberEntry, LocalServerDetection, MomongaModelEntry, MomongaModelList, UnavailableCapabilities } from '@momonga/protocol';
-import { withTempDir } from '@momonga/testkit';
+import { withTempDir, testKernelLock } from '@momonga/testkit';
 import type { DetectRequest, ModelsShell } from '../src/commands/models.ts';
 
 export const OLLAMA_ADDRESS = 'http://127.0.0.1:11434';
@@ -144,6 +144,7 @@ export const shellOf = ({ home, settingsFile }: ShellHome, fakes: ShellFakes = {
     stdout: { write: (text) => void stdout.push(text) },
     stderr: { write: (text) => void stderr.push(text) },
     home,
+    lock: testKernelLock(),
     settingsFile,
     platform: 'linux',
     interrupt: fakes.interrupt ?? new AbortController().signal,

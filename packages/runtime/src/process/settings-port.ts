@@ -6,6 +6,7 @@ import type { RuntimeStore, Session } from '@momonga/store';
 import type { SettingsPort, ToolEnv } from '../ports.ts';
 import type { SessionCreateSettings } from '../service/app.ts';
 import { AUTO_CLASSIFIER_CODE } from '../worker/auto-classifier.ts';
+import type { KernelLockMechanism } from '@momonga/foundation';
 
 const credentialRulesOf = ({ env, keep, valuePatterns }: ResolvedSettings['credentials']): CredentialRules => ({ env, keep, valuePatterns });
 
@@ -18,6 +19,7 @@ export type SettingsCompositionOptions = {
   platform: NodeJS.Platform;
   cache: UserSettingsCache;
   store: Pick<RuntimeStore, 'trust'>;
+  lock: KernelLockMechanism;
   signal: AbortSignal;
 };
 
@@ -34,7 +36,7 @@ export type SettingsComposition = {
   admitted<T>(admit: () => Promise<T> | T): Promise<T>;
 };
 
-export const createSettingsComposition = ({ home, platform, cache, store, signal: lifetime }: SettingsCompositionOptions): SettingsComposition => {
+export const createSettingsComposition = ({ home, platform, cache, store, lock, signal: lifetime }: SettingsCompositionOptions): SettingsComposition => {
   if (!path.isAbsolute(home)) throw new TypeError(`home must be an absolute path, got ${home}`);
 
   const trustOracle: TrustOracle = { isTrusted: async (dir, signal) => (await store.trust.decisionAsked(dir, signal)).decision === 'trusted' };
@@ -115,7 +117,7 @@ export const createSettingsComposition = ({ home, platform, cache, store, signal
     context: async (session) => (await loadSessionSettings(session.cwd, takeUserSnapshot())).settings.context,
     tools: async (session) => (await loadSessionSettings(session.cwd, takeUserSnapshot())).settings.tools,
     autoModeClassifier: () => takeUserSnapshot().settings.autoMode?.classifier,
-    appendRule: (session, { effect, rule }, signal) => appendPermissionRule({ ports: systemFileLockPorts, home, projectDir: session.cwd, rule, effect, signal }),
+    appendRule: (session, { effect, rule }, signal) => appendPermissionRule({ lock, ports: systemFileLockPorts, home, projectDir: session.cwd, rule, effect, signal }),
     trusted: (session) => store.trust.decisionFor(session.cwd).decision === 'trusted',
   };
 

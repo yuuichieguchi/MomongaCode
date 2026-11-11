@@ -4,7 +4,7 @@ import { afterEach } from 'vitest';
 import { openRuntimeStore } from '@momonga/store';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
 import type { RuntimeStore, RuntimeStoreOptions } from '@momonga/store';
-import { createFakeClock } from '@momonga/testkit';
+import { createFakeClock, testKernelLock } from '@momonga/testkit';
 import { startJournalThread } from '../../src/memory/journal-thread-client.ts';
 import type { JournalThreadClient } from '../../src/memory/journal-thread-client.ts';
 import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../../src/memory/journal-thread-limits.ts';
@@ -42,7 +42,7 @@ export const lazyThread = (dbPath: () => string, override: ThreadOverride = {}) 
     started ??= (() => {
       const databasePath = dbPath();
       const { dev, ino } = fs.statSync(databasePath);
-      return startJournalThread({ databasePath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS }) as Promise<RunFactsClient>;
+      return startJournalThread({ lock: testKernelLock(), databasePath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS }) as Promise<RunFactsClient>;
     })();
     return started;
   };
@@ -71,7 +71,7 @@ export const factsStore = (override: ThreadOverride = {}) => {
   const clock = createFakeClock(START_MS);
   const decoded = { rows: 0, bytes: 0 };
   const thread = lazyThread(() => dbPath, override);
-  const store: RuntimeStore = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
+  const store: RuntimeStore = openRuntimeStore({ lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home: dir,
     clock,

@@ -4,7 +4,7 @@ import net from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
 import { ENTRY_HARD_EXIT_MARGIN_MS, DEFAULT_STOP_VALUES, gatewayAbortBudgetMs, gatewayMaxCloseMs, gatewayStopBudgetMs, RUNTIME_ABORT_BUDGET_MS, SHUTDOWN_MARGIN_MS, runtimeMaxCloseMs, runtimeTeardownBudgetMs, supervisorMaxCloseMs, inspectProcessLock, sleep } from '@momonga/foundation';
 import type { ReapMarkerDirectoryOptions, StopValues } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, registerCleanup, spawnTracked, waitFor, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, registerCleanup, spawnTracked, waitFor, firstGeneration, testKernelLock } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { KILL_CONFIRM_MS, SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS, STDIO_FLUSH_MS } from '../src/constants.ts';
 import { childCloseBudgetMs } from '../src/shutdown.ts';
@@ -215,12 +215,12 @@ describe('shutdown order and bounds', () => {
 
   it('supervisor.lock and the control socket are gone after close', async (context) => {
     const h = await running(context);
-    expect(await inspectProcessLock(firstGeneration(h.paths).locks.supervisor)).toEqual({ state: 'held', pid: process.pid });
+    expect(await inspectProcessLock(firstGeneration(h.paths).locks.supervisor, { mechanism: testKernelLock() })).toEqual({ state: 'held', pid: process.pid });
     expect(fs.existsSync(firstGeneration(h.paths).sockets.supervisor)).toBe(true);
     await finish(h, h.supervisor.close());
-    expect(await inspectProcessLock(firstGeneration(h.paths).locks.supervisor)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(firstGeneration(h.paths).locks.supervisor, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
     expect(fs.existsSync(firstGeneration(h.paths).sockets.supervisor)).toBe(false);
-    expect(await inspectProcessLock(`${firstGeneration(h.paths).sockets.supervisor}.lock`)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(`${firstGeneration(h.paths).sockets.supervisor}.lock`, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
   });
 
   it('restart timers are cleared', async (context) => {
@@ -500,7 +500,7 @@ describe('shutdown and marker reaps', () => {
     expect(h.clock.now() - stepFiveAt).toBeGreaterThanOrEqual(SHUTDOWN_RELEASE_BOUND_MS);
     expect(h.clock.now() - stepFiveAt).toBeLessThanOrEqual(SHUTDOWN_RELEASE_BOUND_MS + 100);
     expect(h.log.withMsg('shutdown.step').filter((line) => line['detail'] === 'step 5 bound reached')).toEqual([expect.objectContaining({ level: 'warn' })]);
-    expect(await inspectProcessLock(firstGeneration(h.paths).locks.supervisor)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(firstGeneration(h.paths).locks.supervisor, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
     expect(result.killed).toEqual([]);
     expect(result.leaked).toEqual([]);
   });
@@ -516,7 +516,7 @@ describe('shutdown and marker reaps', () => {
     const result = await finish(h, h.supervisor.close(), 120_000);
     expect(result.clean).toBe(true);
     expect(fs.existsSync(firstGeneration(h.paths).sockets.supervisor)).toBe(false);
-    expect(await inspectProcessLock(`${firstGeneration(h.paths).sockets.supervisor}.lock`)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(`${firstGeneration(h.paths).sockets.supervisor}.lock`, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
     expect(h.log.withMsg('shutdown.begin')).toHaveLength(1);
   });
 });

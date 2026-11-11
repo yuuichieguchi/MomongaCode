@@ -23,6 +23,7 @@ import { serverRegistryOf } from './server-registry.ts';
 import { MODEL_ROLES } from './settings-schema.ts';
 import { assertSettings } from './settings.ts';
 import type { ConnectionDraft, ModelEntry, ModelRole } from './settings.ts';
+import type { KernelLockMechanism } from '@momonga/foundation';
 
 export type ModelsOperation =
   | { kind: 'addModel'; choice: { connection: ConnectionDraft; model: ModelEntry } }
@@ -693,7 +694,7 @@ export const planModelsEdit = (document: unknown, operations: ModelsOperations, 
 
 const BUILT_IN_SERVERS: Readonly<Record<string, ManagedServerDescription>> = Object.fromEntries(MANAGED_SERVERS.map((server) => [server.id, server]));
 
-export const editModelsSettings = async (home: string, settingsFile: string, operations: ModelsOperations, options: { signal: AbortSignal }): Promise<ModelsEditResult> => {
+export const editModelsSettings = async (home: string, settingsFile: string, operations: ModelsOperations, options: { lock: KernelLockMechanism; signal: AbortSignal }): Promise<ModelsEditResult> => {
   let result: ModelsEditResult | undefined;
   await editUserSettings(
     home,
@@ -708,7 +709,7 @@ export const editModelsSettings = async (home: string, settingsFile: string, ope
       Object.assign(document, plan.document);
       return true;
     },
-    { signal: options.signal },
+    { lock: options.lock, signal: options.signal },
   );
   if (result === undefined) throw new TypeError(`${settingsFile}: the settings writer ended without a result`);
   return result;

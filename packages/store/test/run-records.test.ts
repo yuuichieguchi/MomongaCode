@@ -7,7 +7,7 @@ import { assistantTextOf } from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
 import { foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { fixtureCompactionItem, materializeEvents, createFakeClock } from '@momonga/testkit';
+import { fixtureCompactionItem, materializeEvents, createFakeClock, testKernelLock } from '@momonga/testkit';
 import { MIGRATIONS } from '../src/schema.ts';
 import { LEASE_MS, START_MS, enqueue, harness, makeStoreDir, mustClaim, newSession, openStoreAt, registerCleanup, UNASKED_COMMANDS } from './helpers.ts';
 
@@ -96,7 +96,7 @@ const recordedFacts = async (store: RuntimeStore, runId: string): Promise<Facts>
 });
 
 const countingStore = (dbPath: string, decoded: { rows: number }): RuntimeStore => {
-  const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
+  const store = openRuntimeStore({ lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home: path.dirname(dbPath),
     clock: createFakeClock(START_MS),

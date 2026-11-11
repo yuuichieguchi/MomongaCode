@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { nodeFileSystem } from '@momonga/foundation';
 import { PLAN_ROUTES, PLAN_STORE_UNWRITABLE_CODE } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, siwcBrowse } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, siwcBrowse, testKernelLock } from '@momonga/testkit';
 import { PlanCredentialError } from '../src/plan/auth-source.ts';
 import { createPlanCatalog } from '../src/plan/catalog.ts';
 import { createPlanSignIn } from '../src/plan/signin.ts';
@@ -55,6 +55,7 @@ const boundSleep = (_ms: number, sleepSignal?: AbortSignal): Promise<void> =>
 
 const signInOver = (h: Harness, sessions: PlanSessions, fileSystem = nodeFileSystem) =>
   createPlanSignIn({
+    lock: testKernelLock(),
     profiles: { [PROFILE_ID]: h.profile },
     sessions,
     clock: h.clock,

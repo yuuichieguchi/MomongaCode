@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SandboxPolicyError, buildSeatbeltProfile, createSeatbeltSandbox } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, NEVER_CANCELLED, testPaths } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, NEVER_CANCELLED, testPaths, testKernelLock } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
 const created: string[] = [];
@@ -124,7 +124,7 @@ describe.runIf(process.platform === 'darwin')('the Unix socket allow list under 
     root = tempDir();
     outside = tempDir();
     hits = [];
-    sandbox = createSeatbeltSandbox({ tmpRoot: tempDir(), killGraceMs: 300 });
+    sandbox = createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot: tempDir(), killGraceMs: 300 });
   });
 
   afterEach(async () => {

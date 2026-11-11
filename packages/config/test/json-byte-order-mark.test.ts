@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { PROJECT_MANDATE_FILE, loadMcpServers, loadProjectMandate, loadSettings, readAutoFitRecord, writeAutoFitRecord } from '@momonga/config';
 import type { AutoFitKey, AutoFitRecord } from '@momonga/config';
 import { makeDir, makeTree, mcpJsonPath, trusting, userSettingsPath, writeText } from './helpers.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const BYTE_ORDER_MARK = '﻿';
 
@@ -50,7 +51,7 @@ describe('a JSON file that begins with a byte order mark', () => {
       version: '0.0.0',
       agentModel: 'ollama/devstral-small-2:latest',
     } as unknown as AutoFitRecord;
-    const file = await writeAutoFitRecord(directory, record, (bytes) => 'ab'.repeat(bytes));
+    const file = await writeAutoFitRecord(directory, record, (bytes) => 'ab'.repeat(bytes), testKernelLock());
     fs.writeFileSync(file, marked(record), { mode: 0o600 });
     expect(await readAutoFitRecord(directory, key)).toEqual(record);
   });

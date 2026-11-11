@@ -17,7 +17,7 @@ import {
   hostPaths,
 } from '@momonga/foundation';
 import type { DaemonCloseResult, DaemonDefinition, DaemonHandle, DaemonStartContext, EntryIo, EntrySignal, RotatingLogFile } from '@momonga/foundation';
-import { createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, withTempDir, testLocks } from '@momonga/testkit';
 
 const HOME = '/Users/alice';
 const OWN_LOCK = path.join(HOME, '.momonga', 'run', 'runtime.lock');
@@ -71,6 +71,7 @@ const fakeIo = (argv: readonly string[]) => {
     argv,
     env: { HOME },
     home: HOME,
+    locks: testLocks,
     paths: hostPaths,
     stdout: { write: (chunk) => (stdoutChunks.push(chunk), true) },
     stderr: { write: (chunk) => (stderrChunks.push(chunk), true) },

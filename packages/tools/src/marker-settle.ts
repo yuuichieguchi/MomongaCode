@@ -1,4 +1,4 @@
-import { UNNAMED_REASON, commandMayStillRun, refusedReason, defaultProcessInspector, groupAlive, groupPortOf, nodeFileSystem, findHolders, outlivedNotes, recallMarkerGroup, reconcileProcessGroup } from '@momonga/foundation';
+import { UNNAMED_REASON, commandMayStillRun, refusedReason, groupAlive, groupPortOf, nodeFileSystem, findHolders, outlivedNotes, recallMarkerGroup, reconcileProcessGroup } from '@momonga/foundation';
 import type { CommandLiveness, HolderListing, MarkerMode, MarkerReconcileResult, MarkerState, ProcessGroupPort, ProcessInspector, Timing, SignalSender, UninspectableProcess } from '@momonga/foundation';
 
 import { ToolExecutionError } from './types.ts';
@@ -20,7 +20,7 @@ export interface MarkerSettle {
 export type MarkerSettleOptions = {
   marker: string;
   mode: MarkerMode;
-  inspector?: ProcessInspector;
+  inspector: ProcessInspector;
   killGraceMs?: number;
   kill?: SignalSender;
   groupPort?: ProcessGroupPort;
@@ -36,7 +36,7 @@ export const removeMarkerFile = async (marker: string, onWarning: (message: stri
   }
 };
 
-export const createMarkerSettle = ({ marker, mode, inspector = defaultProcessInspector(), killGraceMs, kill, groupPort, timing, onWarning }: MarkerSettleOptions): MarkerSettle => {
+export const createMarkerSettle = ({ marker, mode, inspector, killGraceMs, kill, groupPort, timing, onWarning }: MarkerSettleOptions): MarkerSettle => {
   let cached: MarkerState | undefined;
   const group = groupPortOf(groupPort, kill);
   const removeFile = (): Promise<void> => removeMarkerFile(marker, onWarning);

@@ -219,7 +219,7 @@ export const bashTool = defineTool<BashInput>({
     }
     if (ctx.earlierAttempt?.stopped === true) return stoppedCommandResult();
     if (record.pgid !== undefined && ctx.processMarker !== undefined) {
-      return reconcileProcessGroup({ pgid: record.pgid, marker: ctx.processMarker }, { signal: ctx.signal });
+      return reconcileProcessGroup({ pgid: record.pgid, marker: ctx.processMarker }, { signal: ctx.signal, inspector: ctx.inspector });
     }
     return {
       outcome: 'unknown',

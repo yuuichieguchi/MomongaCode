@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { immediateTx, modeIsPrivate, nodeFileSystem, sha256Hex, systemRandom, writeFileAtomically } from '@momonga/foundation';
-import type { Clock } from '@momonga/foundation';
+import type { Clock, KernelLockMechanism } from '@momonga/foundation';
 import { readerFor } from './rows.ts';
 import type { BlobByteRange, BlobByteSlice, BlobLineRange, BlobRef, BlobScope, BlobSlice, BlobStore } from './types.ts';
 
@@ -127,7 +127,7 @@ const assertNonNegativeInteger = (name: string, value: number): void => {
 
 export const blobDirectoryOf = (databasePath: string): string => path.join(path.dirname(databasePath), 'blobs');
 
-export const createBlobStore = (db: DatabaseSync, clock: Clock, dir: string): BlobStore => {
+export const createBlobStore = (db: DatabaseSync, clock: Clock, dir: string, lock: KernelLockMechanism): BlobStore => {
   const insert = db.prepare(
     `INSERT INTO blobs (sha256, byte_length, line_count, media_type, created_at)
      VALUES (:sha256, :byteLength, :lineCount, :mediaType, :createdAt)
@@ -184,7 +184,7 @@ export const createBlobStore = (db: DatabaseSync, clock: Clock, dir: string): Bl
       const sha256 = handleOfBytes(bytes);
       const target = path.join(dir, sha256);
       if (!(await holdsContent(target, sha256, bytes.length))) {
-        await writeFileAtomically(nodeFileSystem, systemRandom, target, bytes, { mode: BLOB_FILE_MODE });
+        await writeFileAtomically(nodeFileSystem, systemRandom, target, bytes, { mode: BLOB_FILE_MODE, lock });
       }
       const lineCount = countLines(bytes);
       immediateTx(db, () => {

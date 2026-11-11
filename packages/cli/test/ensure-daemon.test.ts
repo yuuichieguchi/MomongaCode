@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ensureMomongaDirs, fixedSocket, hostKernelLock, momongaPaths } from '@momonga/foundation';
-import { firstGeneration, registerCleanup, withTempDir } from '@momonga/testkit';
+import { ensureMomongaDirs, fixedSocket, momongaPaths } from '@momonga/foundation';
+import { firstGeneration, registerCleanup, withTempDir, testKernelLock } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { describe, expect, it } from 'vitest';
 import { DaemonStartError, ensureDaemon, probeSupervisor, restoreDaemon, stopDaemon } from '../src/daemon/ensure-daemon.ts';
@@ -238,7 +238,7 @@ describe('ensureDaemon', () => {
     expect((failure as DaemonStartError).message).toBe(
       `The new daemon (v${VERSION}) did not start (its start was abandoned before it began: the installed program is another version).; see ${paths.logFiles.supervisor}`,
     );
-    expect(await hostKernelLock().isHeld(firstGeneration(paths).startingLock)).toBe(false);
+    expect(await testKernelLock().isHeld(firstGeneration(paths).startingLock)).toBe(false);
   });
 
   it('surfaces a spawn failure as it is', async (context) => {

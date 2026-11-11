@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { HOLD_UNTIL_SIGNALLED, HOLD_UNTIL_SIGNALLED_ARGV, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, spawnTracked, waitFor, withTempDir, sleepDrivenTiming } from '@momonga/testkit';
+import { HOLD_UNTIL_SIGNALLED, HOLD_UNTIL_SIGNALLED_ARGV, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, spawnTracked, waitFor, withTempDir, sleepDrivenTiming, testProcessInspector, testLocks } from '@momonga/testkit';
 import type { CleanupContext, TrackedChild } from '@momonga/testkit';
 import { MarkerReapError, createProcessInspector, hostInspectorPorts, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reconcileProcessGroup, sleep } from '@momonga/foundation';
 import type { CommandRunner, ProcessInspector, Timing } from '@momonga/foundation';
@@ -156,7 +156,7 @@ describe('reapMarkedProcesses', () => {
     const fake = fakeTiming();
     const { signals, kill } = recordingKill(fake.now);
     const warnings: string[] = [];
-    const result = await reapMarkedProcesses({ marker, killGraceMs: 10_000, label: 'tool', onWarning: (m) => warnings.push(m), kill, timing: fake.timing });
+    const result = await reapMarkedProcesses({ inspector: testProcessInspector(), marker, killGraceMs: 10_000, label: 'tool', onWarning: (m) => warnings.push(m), kill, timing: fake.timing });
     expect(result).toEqual({ removed: true });
     expect(fs.existsSync(marker)).toBe(false);
     expect(nonZero(signals)[0]).toEqual([-group.pgid, 'SIGTERM']);
@@ -175,7 +175,7 @@ describe('reapMarkedProcesses', () => {
     const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker });
     const fake = fakeTiming();
     const { signals, kill } = recordingKill(fake.now);
-    const result = await reapMarkedProcesses({ marker, pgid: group.pgid, killGraceMs: 10_000, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
+    const result = await reapMarkedProcesses({ inspector: testProcessInspector(), marker, pgid: group.pgid, killGraceMs: 10_000, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
     expect(result).toEqual({ removed: true });
     expect(nonZero(signals)[0]).toEqual([-group.pgid, 'SIGTERM']);
     expect(signals.some(({ pid }) => Math.abs(pid) === decoy.pgid)).toBe(false);
@@ -192,7 +192,7 @@ describe('reapMarkedProcesses', () => {
     expect(holders).toEqual([group.pgid]);
     const fake = fakeTiming();
     const { signals, kill } = recordingKill(fake.now);
-    const result = await reapMarkedProcesses({ marker, killGraceMs: 10_000, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
+    const result = await reapMarkedProcesses({ inspector: testProcessInspector(), marker, killGraceMs: 10_000, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
     expect(result).toEqual({ removed: true });
     expect(nonZero(signals)).toEqual([[group.pgid, 'SIGTERM']]);
     await group.leaderReaped;
@@ -212,7 +212,7 @@ describe('reapMarkedProcesses', () => {
     const pgid = pgidOf();
     const fake = fakeTiming();
     const { signals, kill } = recordingKill(fake.now);
-    const result = await reapMarkedProcesses({ marker, pgid, killGraceMs: 10_000, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
+    const result = await reapMarkedProcesses({ inspector: testProcessInspector(), marker, pgid, killGraceMs: 10_000, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
     expect(result).toEqual({ removed: true });
     expect(signals.length).toBeGreaterThan(0);
     expect(signals.every(({ pid }) => pid === holder)).toBe(true);
@@ -225,7 +225,7 @@ describe('reapMarkedProcesses', () => {
     fs.writeFileSync(marker, `${ownGroup()}\n`);
     const fake = fakeTiming();
     const { signals, kill } = recordingKill(fake.now);
-    await reapMarkedProcesses({ marker, killGraceMs: 10_000, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
+    await reapMarkedProcesses({ inspector: testProcessInspector(), marker, killGraceMs: 10_000, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
     expect(signals.length).toBeGreaterThan(0);
     expect(signals.every(({ pid }) => pid === holder)).toBe(true);
   });
@@ -236,7 +236,7 @@ describe('reapMarkedProcesses', () => {
     const group = await startGroup(dir, IGNORING_GROUP_SCRIPT, { fd3: marker });
     const fake = fakeTiming();
     const { signals, kill } = recordingKill(fake.now);
-    const result = await reapMarkedProcesses({ marker, pgid: group.pgid, killGraceMs: 600_000, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
+    const result = await reapMarkedProcesses({ inspector: testProcessInspector(), marker, pgid: group.pgid, killGraceMs: 600_000, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
     expect(result).toEqual({ removed: true });
     const term = signals.find(({ signal }) => signal === 'SIGTERM');
     const killed = signals.find(({ signal }) => signal === 'SIGKILL');
@@ -254,7 +254,7 @@ describe('reapMarkedProcesses', () => {
     const holder = await startHolder(marker, { ignoreTerm: true });
     const fake = fakeTiming();
     const { signals, kill } = recordingKill(fake.now);
-    const result = await reapMarkedProcesses({ marker, killGraceMs: 500, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
+    const result = await reapMarkedProcesses({ inspector: testProcessInspector(), marker, killGraceMs: 500, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
     expect(result).toEqual({ removed: true });
     expect(signals[0]).toEqual({ pid: holder, signal: 'SIGTERM', at: 0 });
     const killed = signals.find(({ signal }) => signal === 'SIGKILL');
@@ -272,7 +272,7 @@ describe('reapMarkedProcesses', () => {
     const fake = fakeTiming();
     const { signals, kill } = recordingKill(fake.now, (pid, signal) => pid === stubborn && signal !== 0);
     const warnings: string[] = [];
-    const result = await reapMarkedProcesses({ marker, killGraceMs: 200, label: 'tool', onWarning: (m) => warnings.push(m), kill, timing: fake.timing });
+    const result = await reapMarkedProcesses({ inspector: testProcessInspector(), marker, killGraceMs: 200, label: 'tool', onWarning: (m) => warnings.push(m), kill, timing: fake.timing });
     expect(result).toEqual({ removed: false });
     expect(fs.existsSync(marker)).toBe(true);
     expect(warnings).toEqual([`tool marker ${marker} kept: process ${stubborn} still hold it after cleanup; the next start will retry`]);
@@ -289,7 +289,7 @@ describe('reapMarkedProcesses', () => {
       const fake = fakeTiming();
       const { signals, kill } = recordingKill(fake.now);
       const warnings: string[] = [];
-      const result = await reapMarkedProcesses({ marker, pgid: group.pgid, killGraceMs: 200, label: 'mcp', onWarning: (m) => warnings.push(m), kill, timing: fake.timing });
+      const result = await reapMarkedProcesses({ inspector: testProcessInspector(), marker, pgid: group.pgid, killGraceMs: 200, label: 'mcp', onWarning: (m) => warnings.push(m), kill, timing: fake.timing });
       expect(result).toEqual({ removed: true });
       expect(warnings).toEqual([`mcp marker ${marker}: group ${group.pgid} is still alive but could not be verified as belonging to this call, so it was left alone`]);
       expect(signals).toEqual([]);
@@ -314,7 +314,7 @@ describe('reapMarkedProcesses', () => {
         return false;
       });
       const warnings: string[] = [];
-      const result = await reapMarkedProcesses({ marker, killGraceMs: 200, label: 'mcp', onWarning: (m) => warnings.push(m), kill, timing: fake.timing });
+      const result = await reapMarkedProcesses({ inspector: testProcessInspector(), marker, killGraceMs: 200, label: 'mcp', onWarning: (m) => warnings.push(m), kill, timing: fake.timing });
       expect(result).toEqual({ removed: false });
       expect(warnings).toContain(`mcp marker ${marker}: could not signal process ${blocked}`);
       expect(warnings).toContain(`mcp marker ${marker} kept: process ${blocked} still hold it after cleanup; the next start will retry`);
@@ -338,7 +338,7 @@ describe('reapMarkedProcesses', () => {
         return false;
       });
       const warnings: string[] = [];
-      await reapMarkedProcesses({ marker, ...(recordGroup ? { pgid: blocked } : {}), killGraceMs: 200, label: 'tool', onWarning: (m) => warnings.push(m), kill, timing: fake.timing });
+      await reapMarkedProcesses({ inspector: testProcessInspector(), marker, ...(recordGroup ? { pgid: blocked } : {}), killGraceMs: 200, label: 'tool', onWarning: (m) => warnings.push(m), kill, timing: fake.timing });
       expect(warnings.filter((m) => m.startsWith(`tool marker ${marker}: could not signal process `))).toHaveLength(1);
       expect(warnings.find((m) => m.includes('could not signal'))).toContain(String(blocked));
     });
@@ -353,7 +353,7 @@ describe('reapMarkedProcesses', () => {
         return false;
       });
       const warnings: string[] = [];
-      const result = await reapMarkedProcesses({ marker, ...(recordGroup ? { pgid: holder } : {}), killGraceMs: 200, label: 'tool', onWarning: (m) => warnings.push(m), kill, timing: fake.timing });
+      const result = await reapMarkedProcesses({ inspector: testProcessInspector(), marker, ...(recordGroup ? { pgid: holder } : {}), killGraceMs: 200, label: 'tool', onWarning: (m) => warnings.push(m), kill, timing: fake.timing });
       expect(result).toEqual({ removed: false });
       expect(warnings.some((m) => m.includes('could not signal'))).toBe(false);
       expect(warnings).toContain(`tool marker ${marker} kept: process ${holder} still hold it after cleanup; the next start will retry`);
@@ -369,7 +369,7 @@ describe('reapMarkedProcesses', () => {
         return false;
       });
       await expect(
-        reapMarkedProcesses({ marker, ...(recordGroup ? { pgid: holder } : {}), killGraceMs: 200, label: 'tool', onWarning: () => {}, kill, timing: fake.timing }),
+        reapMarkedProcesses({ inspector: testProcessInspector(), marker, ...(recordGroup ? { pgid: holder } : {}), killGraceMs: 200, label: 'tool', onWarning: () => {}, kill, timing: fake.timing }),
       ).rejects.toThrow(`kill EINVAL`);
     });
   });
@@ -382,7 +382,7 @@ describe('reapMarkedProcesses', () => {
     const fake = fakeTiming();
     const { signals, kill } = recordingKill(fake.now);
     const warnings: string[] = [];
-    const result = await reapMarkedProcesses({ marker, killGraceMs: 200, label: 'tool', onWarning: (m) => warnings.push(m), kill, timing: fake.timing });
+    const result = await reapMarkedProcesses({ inspector: testProcessInspector(), marker, killGraceMs: 200, label: 'tool', onWarning: (m) => warnings.push(m), kill, timing: fake.timing });
     expect(result).toEqual({ removed: true });
     expect(() => fs.lstatSync(marker)).toThrow(expect.objectContaining({ code: 'ENOENT' }));
     expect(fs.readFileSync(target, 'utf8')).toBe('keep me');
@@ -395,7 +395,7 @@ describe('reapMarkedProcesses', () => {
     const dir = makeDir();
     const fake = fakeTiming();
     const { signals, kill } = recordingKill(fake.now);
-    const result = await reapMarkedProcesses({ marker: path.join(dir, 'gone'), killGraceMs: 200, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
+    const result = await reapMarkedProcesses({ inspector: testProcessInspector(), marker: path.join(dir, 'gone'), killGraceMs: 200, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
     expect(result).toEqual({ removed: true });
     expect(signals).toEqual([]);
   });
@@ -404,7 +404,7 @@ describe('reapMarkedProcesses', () => {
     const dir = makeDir();
     const fake = fakeTiming();
     const { kill } = recordingKill(fake.now);
-    const result = await reapMarkedProcessesWithReport({ marker: path.join(dir, 'gone'), killGraceMs: 200, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
+    const result = await reapMarkedProcessesWithReport({ inspector: testProcessInspector(), marker: path.join(dir, 'gone'), killGraceMs: 200, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
     expect(result).toEqual({ removed: true, stopped: false, uninspectable: [] });
   });
 
@@ -415,7 +415,7 @@ describe('reapMarkedProcesses', () => {
     fs.writeFileSync(marker, `${group.pgid}\n`);
     const fake = fakeTiming();
     const { kill } = recordingKill(fake.now);
-    const result = await reapMarkedProcessesWithReport({ marker, killGraceMs: 10_000, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
+    const result = await reapMarkedProcessesWithReport({ inspector: testProcessInspector(), marker, killGraceMs: 10_000, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
     expect(result).toEqual({ removed: true, stopped: true, uninspectable: [] });
     await group.leaderReaped;
   });
@@ -424,7 +424,7 @@ describe('reapMarkedProcesses', () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const holder = await startHolder(marker, { ignoreTerm: false });
-    const result = await reapMarkedProcessesWithReport({ marker, killGraceMs: 300, label: 'tool', onWarning: () => {} });
+    const result = await reapMarkedProcessesWithReport({ inspector: testProcessInspector(), marker, killGraceMs: 300, label: 'tool', onWarning: () => {} });
     expect(result).toEqual({ removed: true, stopped: true, uninspectable: [] });
     expect(await waitUntil(() => !alive(holder))).toBe(true);
   });
@@ -436,7 +436,7 @@ describe('reapMarkedProcesses', () => {
     const fake = fakeTiming();
     const { signals, kill } = recordingKill(fake.now);
     const hour = 3_600_000;
-    const result = await reapMarkedProcesses({ marker, pgid: group.pgid, killGraceMs: hour, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
+    const result = await reapMarkedProcesses({ inspector: testProcessInspector(), marker, pgid: group.pgid, killGraceMs: hour, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
     expect(result).toEqual({ removed: true });
     expect(fake.sleeps.reduce((total, ms) => total + ms, 0)).toBeGreaterThanOrEqual(hour);
     expect(signals.find(({ signal }) => signal === 'SIGKILL')?.at).toBeGreaterThanOrEqual(hour);
@@ -447,7 +447,7 @@ describe('reapMarkedProcesses', () => {
     const marker = makeMarker(dir);
     const holder = await startHolder(marker, { ignoreTerm: true });
     const warnings: string[] = [];
-    const result = await reapMarkedProcesses({ marker, killGraceMs: 300, label: 'tool', onWarning: (m) => warnings.push(m) });
+    const result = await reapMarkedProcesses({ inspector: testProcessInspector(), marker, killGraceMs: 300, label: 'tool', onWarning: (m) => warnings.push(m) });
     expect(result).toEqual({ removed: true });
     expect(fs.existsSync(marker)).toBe(false);
     expect(await waitUntil(() => !alive(holder))).toBe(true);
@@ -497,7 +497,7 @@ describe('reapMarkerDirectory', () => {
       process.kill(pid, signal);
     };
     const warnings: string[] = [];
-    const result = await reapMarkerDirectory({ signal: new AbortController().signal, dir: markerDir, killGraceMs: 1000, label: 'tool', onWarning: (m) => warnings.push(m), kill, timing });
+    const result = await reapMarkerDirectory({ inspector: testProcessInspector(), signal: new AbortController().signal, dir: markerDir, killGraceMs: 1000, label: 'tool', onWarning: (m) => warnings.push(m), kill, timing });
     expect(released).toBe(true);
     expect(result).toEqual({ reaped: 3, kept: 0 });
     const firstKill = events.findIndex((event) => event.endsWith('SIGKILL'));
@@ -511,7 +511,7 @@ describe('reapMarkerDirectory', () => {
   it('reapMarkerDirectory on a missing directory reaps nothing', async () => {
     const dir = makeDir();
     const warnings: string[] = [];
-    const result = await reapMarkerDirectory({ signal: new AbortController().signal, dir: path.join(dir, 'missing'), killGraceMs: 200, label: 'tool', onWarning: (m) => warnings.push(m), timing: fakeTiming().timing });
+    const result = await reapMarkerDirectory({ inspector: testProcessInspector(), signal: new AbortController().signal, dir: path.join(dir, 'missing'), killGraceMs: 200, label: 'tool', onWarning: (m) => warnings.push(m), timing: fakeTiming().timing });
     expect(result).toEqual({ reaped: 0, kept: 0 });
     expect(warnings).toEqual([]);
   });
@@ -527,7 +527,7 @@ describe('reapMarkerDirectory', () => {
     const fake = fakeTiming();
     const { kill } = recordingKill(fake.now, (pid, signal) => pid === stubborn && signal !== 0);
     const warnings: string[] = [];
-    const result = await reapMarkerDirectory({ signal: new AbortController().signal, dir: markerDir, killGraceMs: 200, label: 'tool', onWarning: (m) => warnings.push(m), kill, timing: fake.timing });
+    const result = await reapMarkerDirectory({ inspector: testProcessInspector(), signal: new AbortController().signal, dir: markerDir, killGraceMs: 200, label: 'tool', onWarning: (m) => warnings.push(m), kill, timing: fake.timing });
     expect(result).toEqual({ reaped: 1, kept: 1 });
     expect(fs.readdirSync(markerDir)).toEqual(['kept']);
     expect(warnings).toEqual([`tool marker ${kept} kept: process ${stubborn} still hold it after cleanup; the next start will retry`]);
@@ -548,7 +548,7 @@ describe('reapMarkerDirectory', () => {
       if (pid === broken && signal !== 0) throw errnoError('EINVAL', pid);
       return false;
     });
-    const outcome = await reapMarkerDirectory({ signal: new AbortController().signal, dir: markerDir, killGraceMs: 200, label: 'tool', onWarning: () => undefined, kill, timing: fake.timing }).then(
+    const outcome = await reapMarkerDirectory({ inspector: testProcessInspector(), signal: new AbortController().signal, dir: markerDir, killGraceMs: 200, label: 'tool', onWarning: () => undefined, kill, timing: fake.timing }).then(
       () => undefined,
       (error: unknown) => error,
     );
@@ -564,7 +564,7 @@ describe('reapMarkerDirectory', () => {
   it('propagates a readdir error other than ENOENT', async () => {
     const dir = makeDir();
     const notADirectory = makeMarker(dir, 'file');
-    await expect(reapMarkerDirectory({ signal: new AbortController().signal, dir: notADirectory, killGraceMs: 200, label: 'tool', onWarning: () => undefined, timing: fakeTiming().timing })).rejects.toMatchObject({ code: 'ENOTDIR' });
+    await expect(reapMarkerDirectory({ inspector: testProcessInspector(), signal: new AbortController().signal, dir: notADirectory, killGraceMs: 200, label: 'tool', onWarning: () => undefined, timing: fakeTiming().timing })).rejects.toMatchObject({ code: 'ENOTDIR' });
   });
 });
 
@@ -668,7 +668,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
     const controller = new AbortController();
     const fake = abortableTiming({ controller, at: 100 });
     const { signals, kill } = signalRecorder(fake.now);
-    const result = await reapMarkedProcesses({ marker, killGraceMs: 1000, label: 'daemon', onWarning: () => undefined, kill, timing: fake.timing, signal: controller.signal });
+    const result = await reapMarkedProcesses({ inspector: testProcessInspector(), marker, killGraceMs: 1000, label: 'daemon', onWarning: () => undefined, kill, timing: fake.timing, signal: controller.signal });
     expect(signals).toEqual([{ pid: holder.child.pid, signal: 'SIGTERM', at: 0 }]);
     expect(fake.now()).toBeLessThanOrEqual(100 + SLICE_MS);
     expect(result).toEqual({ removed: false });
@@ -683,7 +683,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
     const controller = new AbortController();
     const fake = abortableTiming({ controller, at: 100 });
     const { signals, kill } = signalRecorder(fake.now);
-    const result = await reapMarkedProcesses({ marker, pgid, killGraceMs: 1000, label: 'daemon', onWarning: () => undefined, kill, timing: fake.timing, signal: controller.signal });
+    const result = await reapMarkedProcesses({ inspector: testProcessInspector(), marker, pgid, killGraceMs: 1000, label: 'daemon', onWarning: () => undefined, kill, timing: fake.timing, signal: controller.signal });
     expect(signals.map(({ pid, signal }) => [pid, signal])).toEqual([[-pgid, 'SIGTERM']]);
     expect(result).toEqual({ removed: false });
     expect(fs.existsSync(marker)).toBe(true);
@@ -693,7 +693,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
     const unsignalledGroup = await spawnOnMarker(context, unsignalledDir, unsignalledMarker, TERM_IGNORING_GROUP);
     const plain = abortableTiming(undefined);
     const plainRecorder = signalRecorder(plain.now);
-    await reapMarkedProcesses({ marker: unsignalledMarker, pgid: unsignalledGroup.child.pid, killGraceMs: 1000, label: 'daemon', onWarning: () => undefined, kill: plainRecorder.kill, timing: plain.timing, signal: new AbortController().signal });
+    await reapMarkedProcesses({ inspector: testProcessInspector(), marker: unsignalledMarker, pgid: unsignalledGroup.child.pid, killGraceMs: 1000, label: 'daemon', onWarning: () => undefined, kill: plainRecorder.kill, timing: plain.timing, signal: new AbortController().signal });
     expect(firstAt(plainRecorder.signals, 'SIGKILL')).toBe(1000);
   });
 
@@ -703,7 +703,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
     await spawnOnMarker(context, dir, marker, TERM_IGNORING_HOLDER);
     const fake = abortableTiming(undefined);
     const { signals, kill } = signalRecorder(fake.now);
-    const result = await reapMarkedProcesses({ marker, killGraceMs: 1000, label: 'daemon', onWarning: () => undefined, kill, timing: fake.timing, signal: AbortSignal.abort() });
+    const result = await reapMarkedProcesses({ inspector: testProcessInspector(), marker, killGraceMs: 1000, label: 'daemon', onWarning: () => undefined, kill, timing: fake.timing, signal: AbortSignal.abort() });
     expect(signals).toEqual([]);
     expect(result).toEqual({ removed: false });
     expect(fs.existsSync(marker)).toBe(true);
@@ -719,7 +719,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
       if (signal === 'SIGKILL') controller.abort();
       return pid === holder.child.pid && signal === 'SIGKILL';
     });
-    const result = await reapMarkedProcesses({ marker, killGraceMs: 500, label: 'daemon', onWarning: () => undefined, kill, timing: fake.timing, signal: controller.signal });
+    const result = await reapMarkedProcesses({ inspector: testProcessInspector(), marker, killGraceMs: 500, label: 'daemon', onWarning: () => undefined, kill, timing: fake.timing, signal: controller.signal });
     const killedAt = firstAt(signals, 'SIGKILL') ?? Number.NaN;
     expect(fake.now() - killedAt).toBeLessThanOrEqual(SLICE_MS);
     expect(result).toEqual({ removed: false });
@@ -735,7 +735,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
       const fake = abortableTiming(undefined);
       const { signals, kill } = signalRecorder(fake.now, (pid, signal) => pid === holder.child.pid && signal === 'SIGKILL');
       const warnings: string[] = [];
-      const result = await reapMarkedProcesses({ marker, killGraceMs: 300, label: 'daemon', onWarning: (message) => warnings.push(message), kill, timing: fake.timing, signal: controller.signal });
+      const result = await reapMarkedProcesses({ inspector: testProcessInspector(), marker, killGraceMs: 300, label: 'daemon', onWarning: (message) => warnings.push(message), kill, timing: fake.timing, signal: controller.signal });
       if (abortAfter) controller.abort();
       return { result, signals: signals.map(({ signal, at }) => [signal, at]), warnings: warnings.map((message) => message.replace(marker, '<marker>').replace(String(holder.child.pid), '<pid>')), end: fake.now() };
     };
@@ -749,7 +749,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
     const controller = new AbortController();
     const fake = abortableTiming({ controller, at: 100 });
     const { kill } = signalRecorder(fake.now);
-    await expect(reapMarkedProcesses({ marker, killGraceMs: 1000, label: 'daemon', onWarning: () => undefined, kill, timing: fake.timing, signal: controller.signal })).resolves.toEqual({ removed: false });
+    await expect(reapMarkedProcesses({ inspector: testProcessInspector(), marker, killGraceMs: 1000, label: 'daemon', onWarning: () => undefined, kill, timing: fake.timing, signal: controller.signal })).resolves.toEqual({ removed: false });
   });
 
   it.for([
@@ -800,7 +800,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
         if (variant === 'eio' && pid === holder.child.pid) throw errnoError('EIO', pid);
         return false;
       });
-      const reap = reapMarkedProcesses({ marker, killGraceMs: 1000, label: 'daemon', onWarning: () => undefined, kill, timing: fake.timing, signal: controller.signal });
+      const reap = reapMarkedProcesses({ inspector: testProcessInspector(), marker, killGraceMs: 1000, label: 'daemon', onWarning: () => undefined, kill, timing: fake.timing, signal: controller.signal });
       if (variant === 'eio') await expect(reap).rejects.toThrow('kill EIO');
       else await reap;
       expect(listeners(controller.signal)).toBe(0);
@@ -819,6 +819,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
       const fake = abortableTiming(withSignal ? { controller, at: 100 } : undefined);
       const { signals, kill } = signalRecorder(fake.now);
       const result = await reapMarkerDirectory({
+        inspector: testProcessInspector(),
         dir: markerDir,
         killGraceMs: 1500,
         label: 'daemon',
@@ -860,7 +861,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
       if (options.signal?.aborted === true) throw Object.assign(new Error('aborted'), { name: 'AbortError', code: 'ABORT_ERR' });
       return { exitCode: 1, stdout: '', stderr: '' };
     };
-    const inspector = createProcessInspector('darwin', { ...hostInspectorPorts(), run: slowListing });
+    const inspector = createProcessInspector('darwin', { ...hostInspectorPorts(testLocks().capability), run: slowListing });
     const { signals, kill } = signalRecorder(fake.now);
     const warnings: string[] = [];
     const result = await reapMarkerDirectory({ signal: new AbortController().signal, dir: markerDir, killGraceMs: 1000, label: 'tool', onWarning: (message) => warnings.push(message), kill, timing: fake.timing, inspector });
@@ -880,7 +881,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
       const holder = await spawnOnMarker(context, dir, marker, TERM_IGNORING_HOLDER);
       const fake = abortableTiming(undefined);
       const { signals, kill } = signalRecorder(fake.now);
-      const result = await reapMarkedProcesses({ marker, killGraceMs: 300, label: 'daemon', onWarning: () => undefined, kill, timing: fake.timing });
+      const result = await reapMarkedProcesses({ inspector: testProcessInspector(), marker, killGraceMs: 300, label: 'daemon', onWarning: () => undefined, kill, timing: fake.timing });
       expect(signals.map(({ pid, signal }) => [pid, signal])).toEqual([
         [holder.child.pid, 'SIGTERM'],
         [holder.child.pid, 'SIGKILL'],
@@ -896,7 +897,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
       const group = await spawnOnMarker(context, dir, marker, TERM_IGNORING_GROUP);
       const fake = abortableTiming(undefined);
       const { signals, kill } = signalRecorder(fake.now);
-      const result = await reconcileProcessGroup({ pgid: group.child.pid, marker }, { killGraceMs: 1000, kill, timing: fake.timing });
+      const result = await reconcileProcessGroup({ pgid: group.child.pid, marker }, { inspector: testProcessInspector(), killGraceMs: 1000, kill, timing: fake.timing });
       expect(fake.sleeps).toEqual([1000]);
       expect(signals.filter(({ signal }) => signal === 'SIGTERM')).toEqual([{ pid: -group.child.pid, signal: 'SIGTERM', at: 0 }]);
       const kills = signals.filter(({ signal }) => signal === 'SIGKILL');
@@ -910,7 +911,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
       const dir = withTempDir(context);
       const marker = markerFile(dir);
       const group = await spawnOnMarker(context, dir, marker, TERM_EXITING_GROUP);
-      const result = await reconcileProcessGroup({ pgid: group.child.pid, marker });
+      const result = await reconcileProcessGroup({ pgid: group.child.pid, marker }, { inspector: testProcessInspector() });
       await group.exited;
       expect(result.outcome).toBe('unknown');
       expect(result.output.startsWith('The interrupted command was stopped.')).toBe(true);

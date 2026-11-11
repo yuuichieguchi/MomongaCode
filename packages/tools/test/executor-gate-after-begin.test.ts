@@ -1,4 +1,4 @@
-import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, testProcessInspector } from '@momonga/testkit';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createToolExecutor } from '@momonga/tools';
@@ -18,7 +18,7 @@ const executorWhoseRecordVanishesAfterGet = (harness: Harness) => {
       return snapshot;
     },
   };
-  return createToolExecutor({ outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
+  return createToolExecutor({ reap: { inspector: testProcessInspector() }, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
     idempotency: vanishingPort,
     blobs: harness.blobs.port,
     clock: harness.clock,

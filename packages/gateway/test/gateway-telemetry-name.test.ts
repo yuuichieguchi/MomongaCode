@@ -6,7 +6,7 @@ import { postJson, readJson, userInput, closedAtCleanup } from './gateway-helper
 import { PROCESS_VERSION, baseEnv, captureStdout, ccTarget, clientFor, homePaths, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import { startGatewayProcess } from '../src/process.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testLocks } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -33,7 +33,7 @@ describe('gateway process telemetry name (system timers)', () => {
     const home = makeHome();
     writeSettings(home, { models: modelsOf({ primary: ccTarget(fake.socketPath) }) });
     captureStdout();
-    const handle = await closedAtCleanup(startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION }));
+    const handle = await closedAtCleanup(startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION }));
     const client = clientFor(handle.socketPath);
     const response = await readJson(await postJson(client, '/v1/responses', { model: 'primary/system', input: userInput('hi') }));
     expect(response.status).toBe(200);

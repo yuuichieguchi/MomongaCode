@@ -4,7 +4,7 @@ import { openDatabase } from '@momonga/foundation';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
 import { JOURNAL_SCAN_RANGE_ROWS, JournalThreadError, createJournalReader, openRuntimeStore } from '@momonga/store';
 import type { Run, RuntimeStore } from '@momonga/store';
-import { createFakeClock, PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+import { createFakeClock, PROPERTY_TIMEOUT_MS, testKernelLock } from '@momonga/testkit';
 import { START_MS, enqueue, harness, makeStoreDir, mustClaim, mustRun, newSession, registerCleanup, UNASKED_COMMANDS } from './helpers.ts';
 
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
@@ -110,7 +110,7 @@ describe('store.journalFacts: the main thread reaches the new kinds only through
     const calls: unknown[] = [];
     let decoded = 0;
     const answer = { lastSeq: 7, verified: true, facts: [] };
-    const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
+    const store = openRuntimeStore({ lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS,
       path: path.join(dir, 'runtime.db'),
       home: dir,
       clock: createFakeClock(START_MS),

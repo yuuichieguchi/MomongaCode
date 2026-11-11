@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createUserSettingsCache, noKeptRecords, writeAppliedRecord } from '@momonga/config';
 import type { UserSettingsCacheOptions } from '@momonga/config';
+import { testKernelLock } from '@momonga/testkit';
 
 const cleanups: Array<() => void> = [];
 afterEach(() => {
@@ -72,7 +73,7 @@ describe('S7: the applied record is ordered by seq (design-settings-live 15.1, N
     tree.write('{ "models": ');
     const cache = cacheOf(tree.home, tree.record);
     expect(modelOf(cache)).toBe('b');
-    expect(writeAppliedRecord(tree.home, tree.record)).toEqual({ kind: 'invalid' });
+    expect(writeAppliedRecord(tree.home, tree.record, testKernelLock())).toEqual({ kind: 'invalid' });
     expect(fs.readFileSync(tree.record).equals(before)).toBe(true);
   });
 });

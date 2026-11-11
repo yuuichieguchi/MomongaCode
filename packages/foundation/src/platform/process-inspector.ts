@@ -2,7 +2,6 @@ import { nodeCommandRunner } from './command-runner.ts';
 import type { CommandRunner } from './command-runner.ts';
 import { createDarwinInspector } from './darwin-inspector.ts';
 import type { ProcessInspector } from './inspector-types.ts';
-import { hostLockCapability } from './lock-capability.ts';
 import type { LockCapabilityProbe } from './lock-capability.ts';
 import { createLinuxInspector } from './linux-inspector.ts';
 import { withMarkerState } from './marker-state.ts';
@@ -38,7 +37,7 @@ const hostUid = (): number => {
   return process.getuid();
 };
 
-export const hostInspectorPorts = (): InspectorPorts => ({ run: nodeCommandRunner, procfs: nodeProcFs, env: process.env, uid: hostUid, capability: hostLockCapability, jobs: hostKeptGroups(), alive: (pid) => isProcessAlive(pid) });
+export const hostInspectorPorts = (capability: LockCapabilityProbe): InspectorPorts => ({ run: nodeCommandRunner, procfs: nodeProcFs, env: process.env, uid: hostUid, capability, jobs: hostKeptGroups(), alive: (pid) => isProcessAlive(pid) });
 
 export const createProcessInspector = (platform: NodeJS.Platform, ports: InspectorPorts): ProcessInspector => {
   switch (platform) {
@@ -55,9 +54,4 @@ export const createProcessInspector = (platform: NodeJS.Platform, ports: Inspect
 
 export const hostProcessInspector = (ports: InspectorPorts): ProcessInspector => createProcessInspector(process.platform, ports);
 
-let hostInspector: ProcessInspector | undefined;
-
-export const defaultProcessInspector = (): ProcessInspector => {
-  hostInspector ??= hostProcessInspector(hostInspectorPorts());
-  return hostInspector;
-};
+export const layoutProcessInspector = (capability: LockCapabilityProbe): ProcessInspector => hostProcessInspector(hostInspectorPorts(capability));

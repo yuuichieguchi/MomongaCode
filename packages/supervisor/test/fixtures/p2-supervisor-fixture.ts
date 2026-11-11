@@ -4,6 +4,7 @@ import { prepareGenerationForTest } from '@momonga/testkit/first-generation';
 import { startSupervisor } from '../../src/start-supervisor.ts';
 import { createSpawnPort } from '../../src/spawn-port.ts';
 import type { SpawnPort } from '../../src/child-manager.ts';
+import { testKernelLock, testProcessInspector } from '@momonga/testkit';
 
 const flag = (name: string): string | undefined =>
   process.argv
@@ -26,6 +27,8 @@ const spawn: SpawnPort = process.argv.includes('--leak-marker-fd')
 
 prepareGenerationForTest(home, FIRST_GENERATION, '0.0.0-fixture');
 const supervisor = await startSupervisor({
+  inspector: testProcessInspector(),
+  lockMechanism: testKernelLock(),
   home,
   version: '0.0.0-fixture',
   generation: FIRST_GENERATION,

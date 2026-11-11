@@ -45,7 +45,7 @@ export const runStartFlow = async (context: ModelsFlowContext): Promise<boolean>
 
 export const writeStart = async (context: Pick<ModelsFlowContext, 'backend' | 'info' | 'wait'>, model: string): Promise<void> => {
   const host = context.backend.modelsHost(new AbortController().signal, context.info);
-  await context.wait(SAVING_PHASE, (signal) => editModelsSettings(host.home, host.settingsFile, [{ kind: 'setStart', model }], { signal }));
+  await context.wait(SAVING_PHASE, (signal) => editModelsSettings(host.home, host.settingsFile, [{ kind: 'setStart', model }], { lock: host.lock, signal }));
 };
 
 export const sessionChainText = (edit: ModelsEdit, model: string | undefined): string | undefined => {

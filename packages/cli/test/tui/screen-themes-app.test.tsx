@@ -12,7 +12,8 @@ import { freshHome } from '../fresh-home.ts';
 import { KEYS, renderObservable, untilFrame, untilOutput } from '../ink-helpers.ts';
 import type { Instance } from '../ink-helpers.ts';
 import { fakeScreenTerminal } from './screen-fakes.ts';
-const UNABORTED = { signal: new AbortController().signal };
+import { testKernelLock } from '@momonga/testkit';
+const UNABORTED = { lock: testKernelLock(), signal: new AbortController().signal };
 
 
 vi.hoisted(() => {
@@ -43,7 +44,7 @@ const storedIn = (home: string): unknown => JSON.parse(fs.readFileSync(settingsF
 
 const portOf = async (home: string): Promise<TuiSettingsPort> => ({
   initial: (await loadUserSettings({ home })).settings.tui,
-  save: (name, value, signal) => writeTuiSetting(home, settingsFileOf(home), name, value, { signal }),
+  save: (name, value, signal) => writeTuiSetting(home, settingsFileOf(home), name, value, { lock: testKernelLock(), signal }),
 });
 
 const userRowOf = (app: Instance): string => (app.lastFrame() ?? '').split('\n').find((line) => line.includes('> hello there') && !line.includes('│')) ?? '';

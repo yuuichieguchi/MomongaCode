@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, testProbes, NEVER_CANCELLED } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, testProbes, NEVER_CANCELLED, testKernelLock } from '@momonga/testkit';
 import { ConfigError } from '@momonga/config';
 import { HOST_RULE_ENFORCEMENT, ensureSessionTmpDir, momongaLayout, protectedSetFor } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
@@ -22,6 +22,7 @@ const setup = async (options: { ensure?: EnsureTmpDir; sessionStates?: { get(ses
   const { store, clock } = openStore(temp);
   const states = runtime.createSessionStates({ clock, store, logger: makeLogger(), releaseScratch: () => undefined });
   const policyFor = runtime.createPolicyFor({
+    lock: testKernelLock(),
     paths: temp.paths,
     home: temp.home,
     fs: fakePolicyFilesystem(),
@@ -132,7 +133,7 @@ describe('policyFor (system timers, none used)', () => {
     const seen: boolean[] = [];
     const ensure: EnsureTmpDir = async (paths, sessionId) => {
       seen.push(states?.has(sessionId) === true);
-      return ensureSessionTmpDir(paths, sessionId);
+      return ensureSessionTmpDir(paths, sessionId, { lock: testKernelLock() });
     };
     const fixture = await setup({ ensure });
     states = fixture.states;
@@ -159,7 +160,7 @@ describe('policyFor (system timers, none used)', () => {
     it('Bash $TMPDIR persists between calls of a session', async () => {
       const { temp, store, policyFor } = await setup();
       const session = createSession(store, temp.project);
-      const sandbox = createSeatbeltSandbox({ tmpRoot: temp.paths.tmp.spawn, killGraceMs: 300 });
+      const sandbox = createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot: temp.paths.tmp.spawn, killGraceMs: 300 });
 
       const first = await policyFor(session, { signal: NEVER_CANCELLED, env: env(), rules: [] });
       const write = await runSandboxed(sandbox, first.sandboxPolicy, { script: 'printf kept > "$TMPDIR/note" && printf "%s" "$TMPDIR"', cwd: temp.project, env: BASE_ENV, tmpDir: first.tmpDir });
@@ -176,7 +177,7 @@ describe('policyFor (system timers, none used)', () => {
       const { temp, store, policyFor } = await setup();
       const mine = createSession(store, temp.project);
       const other = createSession(store, temp.project);
-      const sandbox = createSeatbeltSandbox({ tmpRoot: temp.paths.tmp.spawn, killGraceMs: 300 });
+      const sandbox = createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot: temp.paths.tmp.spawn, killGraceMs: 300 });
       const otherPolicy = await policyFor(other, { signal: NEVER_CANCELLED, env: env(), rules: [] });
       fs.writeFileSync(path.join(otherPolicy.tmpDir, 'secret.txt'), 'hidden');
       const minePolicy = await policyFor(mine, { signal: NEVER_CANCELLED, env: env(), rules: [] });
@@ -325,7 +326,7 @@ describe('policyFor (system timers, none used)', () => {
     const sessionStates = runtime.createSessionStates({ clock, store, logger: makeLogger(), releaseScratch: () => undefined });
     let error: unknown;
     try {
-      runtime.createPolicyFor({ paths: temp.paths, home: 'relative/home', sessionStates, fs: fakePolicyFilesystem(), ruleEnforcement: 'exact-paths' });
+      runtime.createPolicyFor({ lock: testKernelLock(), paths: temp.paths, home: 'relative/home', sessionStates, fs: fakePolicyFilesystem(), ruleEnforcement: 'exact-paths' });
     } catch (caught) {
       error = caught;
     }

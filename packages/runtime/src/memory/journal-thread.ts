@@ -17,6 +17,8 @@ import type { FidelityFold } from './fidelity-fold.ts';
 import { FIDELITY_SCAN_PAGE_BYTES, JOURNAL_PROGRESS_INTERVAL_MS } from './journal-thread-limits.ts';
 import { createProgressGate } from './progress-gate.ts';
 import { REFLECTION_INPUT_EVENT_TYPES, createReflectionInputFold } from './reflection-input.ts';
+import type { KernelLockMechanism } from '@momonga/foundation';
+import { kernelLockNamed } from '@momonga/foundation';
 
 export const openJournalConnection = (databasePath: string): ReturnType<typeof openDatabase> => {
   const db = openDatabase(databasePath);
@@ -76,11 +78,14 @@ export const serveJournalReader = (handlers: Readonly<Record<string, JournalHand
   });
 };
 
-type JournalThreadData = { readonly databasePath: string; readonly blobsDir: string; readonly port: MessagePort };
+type JournalThreadData = { readonly databasePath: string; readonly blobsDir: string; readonly lockName: KernelLockMechanism['name']; readonly port: MessagePort };
+
+const LOCK_NAMES: readonly KernelLockMechanism['name'][] = ['file-lock', 'sqlite-lock'];
 
 const isJournalThreadData = (value: unknown): value is JournalThreadData =>
   typeof value === 'object' && value !== null && typeof (value as { databasePath?: unknown }).databasePath === 'string' &&
   typeof (value as { blobsDir?: unknown }).blobsDir === 'string' &&
+  LOCK_NAMES.includes((value as { lockName?: unknown }).lockName as KernelLockMechanism['name']) &&
   (value as { port?: unknown }).port instanceof MessagePort;
 
 const identityOf = (databasePath: string): { readonly dev: number; readonly ino: number } => {
@@ -506,7 +511,7 @@ const serve = (data: JournalThreadData): void => {
   const current: { progress: (() => void) | undefined } = { progress: undefined };
   const gate = createProgressGate({ now: () => performance.now(), intervalMs: JOURNAL_PROGRESS_INTERVAL_MS, post: () => current.progress?.() });
   const reader = createJournalReader(db, { unit: gate.unit });
-  const blobs = createBlobStore(db, UNUSED_CLOCK, data.blobsDir);
+  const blobs = createBlobStore(db, UNUSED_CLOCK, data.blobsDir, kernelLockNamed(data.lockName));
   serveJournalReader(
     {
       ping: () => ({ threadId }),

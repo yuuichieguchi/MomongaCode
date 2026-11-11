@@ -24,7 +24,7 @@ import {
 } from '@momonga/foundation';
 import type { GenerationLayout, GenerationStartFiles, KernelLockMechanism, MomongaPaths, StartOutcome } from '@momonga/foundation';
 import type { FakeKernelLock } from '@momonga/testkit';
-import { createFakeKernelLock, prepareGenerationForTest, registerCleanup, withTempDir } from '@momonga/testkit';
+import { createFakeKernelLock, prepareGenerationForTest, registerCleanup, withTempDir, testKernelLock } from '@momonga/testkit';
 
 const FOLD_VERSION = 1;
 
@@ -58,7 +58,7 @@ const makeStartingGeneration = (home: string, generation: number, version: strin
 };
 
 const publish = async (home: string, paths: Paths, generation: number, version: string): Promise<string> =>
-  publishCurrentGeneration(paths, { generation, version, sockets: generationLayout(home, generation).sockets });
+  publishCurrentGeneration(paths, { generation, version, sockets: generationLayout(home, generation).sockets }, { lock: testKernelLock() });
 
 const start = (paths: Paths, lock: KernelLockMechanism, version = '1.2.3', extra: Partial<Parameters<typeof beginGenerationStart>[1]> = {}): Promise<StartOutcome> =>
   beginGenerationStart(paths, { version, foldVersion: FOLD_VERSION, lock, ...extra });

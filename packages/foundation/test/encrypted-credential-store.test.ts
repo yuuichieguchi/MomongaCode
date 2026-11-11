@@ -22,7 +22,7 @@ import {
 import type { CredentialEntry, CredentialStore, Random, SecretStore } from '@momonga/foundation';
 import { KEYCHAIN_BACKEND } from '@momonga/foundation/secret-store';
 import type { SecretBackend } from '@momonga/foundation/secret-store';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretFiles, createFakeSecurityPort, startLockHolder, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretFiles, createFakeSecurityPort, startLockHolder, waitFor, testKernelLock } from '@momonga/testkit';
 import type { FakeControl, FakeSecurityPort } from '@momonga/testkit';
 import type { ScopedOperations } from '../src/credential-store.ts';
 import { FAKE_KEY_STORE_ADVICE, createFakeKeyStore, recordFileOf, recordLockOf, steppedPorts } from './support/credential-key-fakes.ts';
@@ -45,6 +45,7 @@ const setup = (keys: FakeKeyStore = createFakeKeyStore()): Setup => {
 
 const storeOf = (given: Setup, options: { noSecretStore?: string; secretStore?: SecretStore; ports?: ReturnType<typeof steppedPorts> } = {}): CredentialStore =>
   createEncryptedCredentialStore({
+    lock: testKernelLock(),
     directory: given.directory,
     stateDirectory: given.stateDirectory,
     secretStore: options.noSecretStore === undefined ? { kind: 'available', store: options.secretStore ?? given.keys } : { kind: 'none', reason: options.noSecretStore },
@@ -220,7 +221,7 @@ describe('encrypted credential store: a marker whose key cannot be read (N81, Un
 describe('encrypted credential store: a record not in the envelope form (N81)', () => {
   it('is store_unreadable with the exact text naming the file', async () => {
     const given = setup();
-    await createFileCredentialStore(given.directory).write('plan/p/a', '{"access_token":"plain"}', SIGNAL);
+    await createFileCredentialStore(given.directory, { lock: testKernelLock() }).write('plan/p/a', '{"access_token":"plain"}', SIGNAL);
     const error = await rejection(storeOf(given).read('plan/p/a', SIGNAL));
     const file = recordFileOf(given.directory, 'plan/p/a');
     expect(error).toBeInstanceOf(CredentialStoreError);
@@ -341,7 +342,7 @@ describe('encrypted credential store: an OS store that is not ready (N81, readin
     expect(keychain.items.size).toBe(0);
     expect(fs.existsSync(recordFileOf(given.directory, 'plan/p/a'))).toBe(false);
     expect(fs.existsSync(markerOf(given))).toBe(false);
-    expect(await inspectProcessLock(keyLockOf(given))).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(keyLockOf(given), { mechanism: testKernelLock() })).toEqual({ state: 'free' });
   });
 
   it('an absent store refuses a read of an encrypted record', async () => {
@@ -441,7 +442,7 @@ describe('encrypted credential store: a store call ended by the limit of the ope
     limit.dispose();
     expect(fs.readFileSync(markerOf(given), 'utf8')).toBe(markerText);
     expect(fs.existsSync(recordFileOf(given.directory, 'plan/p/b'))).toBe(false);
-    expect(await inspectProcessLock(keyLockOf(given))).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(keyLockOf(given), { mechanism: testKernelLock() })).toEqual({ state: 'free' });
     given.keys.hang = false;
     await storeOf(given).write('plan/p/b', 'token-b', SIGNAL);
     expect(await store.read('plan/p/b', SIGNAL)).toBe('token-b');
@@ -465,7 +466,7 @@ describe('encrypted credential store: a store call ended by the limit of the ope
     expect(given.keys.items.has(orphan)).toBe(true);
     expect(fs.existsSync(markerOf(given))).toBe(false);
     expect(fs.existsSync(recordFileOf(given.directory, 'plan/p/a'))).toBe(false);
-    expect(await inspectProcessLock(keyLockOf(given))).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(keyLockOf(given), { mechanism: testKernelLock() })).toEqual({ state: 'free' });
     given.keys.hang = false;
     await storeOf(given).write('plan/p/a', 'token', SIGNAL);
     const names = createdKeyNames(given.keys);
@@ -496,7 +497,7 @@ describe('encrypted credential store: a store call ended by the limit of the ope
     expect(error).toBeInstanceOf(OperationLimitError);
     expect(error).toBe(signal.reason);
     limit.dispose();
-    expect(await inspectProcessLock(lockPath)).toEqual({ state: 'held', pid: holder.pid });
+    expect(await inspectProcessLock(lockPath, { mechanism: testKernelLock() })).toEqual({ state: 'held', pid: holder.pid });
     expect(given.keys.writes).toEqual([]);
     expect(fs.existsSync(recordFileOf(given.directory, 'plan/p/a'))).toBe(false);
     expect(fs.existsSync(markerOf(given))).toBe(false);
@@ -580,6 +581,7 @@ describe('O-R5-6 L8: the store takes its random bytes from the injected port', (
       secretStore: { kind: 'available', store: given.keys },
       plaintextTokenFiles: () => false,
       random,
+      lock: testKernelLock(),
     } as Parameters<typeof createEncryptedCredentialStore>[0]);
     await store.write('plan/chatgpt/work', 'the record', SIGNAL);
     const envelope = JSON.parse(fs.readFileSync(recordFileOf(given.directory, 'plan/chatgpt/work'), 'utf8')) as Record<string, string>;

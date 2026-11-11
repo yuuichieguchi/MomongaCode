@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { nodeFileSystem, sha256Hex, systemRandom, writeFileAtomically as writeFileAtomicallyThroughLock } from '@momonga/foundation';
-import type { AtomicWriteFileSystem } from '@momonga/foundation';
+import type { AtomicWriteFileSystem, KernelLockMechanism } from '@momonga/foundation';
 import type { ToolSessionState } from '../types.ts';
 import { ToolExecutionError } from '../types.ts';
 import { shownPath } from './paths.ts';
@@ -80,6 +80,7 @@ export type AtomicWrite = {
   requestedPath: string;
   content: string;
   mode: number;
+  lock: KernelLockMechanism;
   onRenamed(): Promise<string | undefined>;
 };
 
@@ -152,6 +153,7 @@ export const writeFileAtomically = async (write: AtomicWrite): Promise<string | 
   let ledgerWarning: string | undefined;
   await writeFileAtomicallyThroughLock(recordingDirectorySync(directory, directorySyncFailures), systemRandom, target, content, {
     mode,
+    lock: write.lock,
     beforePublish: () => assertResolvesTo(write.scope, write.requestedPath, directory),
     afterPublish: async () => {
       ledgerWarning = await write.onRenamed();

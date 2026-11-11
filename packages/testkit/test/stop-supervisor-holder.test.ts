@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, acquireProcessLock, ensureGenerationDirs, ensureMomongaDirs, generationLayout, inspectProcessLock, isProcessAlive, momongaPaths } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, firstGeneration, registerCleanup, startLockHolder, stopSupervisorHolders, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, firstGeneration, registerCleanup, startLockHolder, stopSupervisorHolders, withTempDir, testKernelLock } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -21,7 +21,7 @@ describe('stopSupervisorHolders', () => {
     expect(await stopSupervisorHolders(home)).toEqual([holder.pid]);
 
     expect(isProcessAlive(holder.pid)).toBe(false);
-    expect(await inspectProcessLock(lockPath)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(lockPath, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
   });
 
   it('kills the holder of the supervisor lock of every generation of a home (20.78)', async (context) => {
@@ -33,7 +33,7 @@ describe('stopSupervisorHolders', () => {
     expect(await stopSupervisorHolders(home)).toEqual(holders.map((holder) => holder.pid));
 
     for (const holder of holders) expect(isProcessAlive(holder.pid)).toBe(false);
-    expect(await inspectProcessLock(second.locks.supervisor)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(second.locks.supervisor, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
   });
 
   it('does nothing and reports nothing when no process holds a supervisor lock', async (context) => {
@@ -43,11 +43,11 @@ describe('stopSupervisorHolders', () => {
 
   it('never signals the calling process when the calling process holds the lock', async (context) => {
     const { home, lockPath } = await preparedHome(context);
-    const lock = await acquireProcessLock(lockPath);
+    const lock = await acquireProcessLock(lockPath, undefined, { mechanism: testKernelLock() });
     registerCleanup(context, () => lock.release());
 
     expect(await stopSupervisorHolders(home)).toEqual([]);
 
-    expect(await inspectProcessLock(lockPath)).toEqual({ state: 'held', pid: process.pid });
+    expect(await inspectProcessLock(lockPath, { mechanism: testKernelLock() })).toEqual({ state: 'held', pid: process.pid });
   });
 });

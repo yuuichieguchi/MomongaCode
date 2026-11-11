@@ -6,7 +6,7 @@ import { canonicalJson, ensureMomongaDirs, groupAlive, sha256Hex } from '@momong
 import type { McpPoolOptions } from '@momonga/mcp';
 import type { RunEventPayload } from '@momonga/protocol';
 import { openRuntimeStore } from '@momonga/store';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, MCP_MODERN_SERVER_PATH, createFakeClock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, MCP_MODERN_SERVER_PATH, createFakeClock, testKernelLock } from '@momonga/testkit';
 import { START_MS, trackGroup } from './helpers.ts';
 import { eventTypes, launchRuntime, readDb, sessionEnvFor, startStack, waitForStatus, prepareGeneration, scopedPaths } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
@@ -67,7 +67,7 @@ type SeedCall = { callId: string; name: string; args: Record<string, unknown>; k
 
 const openSeedStore = async (temp: RunHome) => {
   await prepareGeneration(temp);
-  return openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock: createFakeClock(SEED_MS), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
+  return openRuntimeStore({ lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock: createFakeClock(SEED_MS), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
 };
 
 const seedCancellingRun = async (temp: RunHome, call: SeedCall, holderScript?: string) => {

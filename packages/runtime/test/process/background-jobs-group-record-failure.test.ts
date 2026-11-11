@@ -8,7 +8,7 @@ import { createUninspectableRegistry } from '@momonga/foundation';
 import type { MarkerState, ProcessGroupPort } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { createFakeClock, createFakeTimers, sleepDrivenTiming } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, sleepDrivenTiming, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import { createBackgroundJobs, createNodeJobMarkerFiles } from '@momonga/runtime';
 import { launch } from '../../../sandbox/src/process.ts';
 import type { LaunchOptions } from '../../../sandbox/src/process.ts';
@@ -36,7 +36,7 @@ const runJob = async (survives: boolean) => {
   fs.mkdirSync(markerDir);
   const clock = createFakeClock(START_MS);
   const timers = createFakeTimers(clock);
-  const store: RuntimeStore = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS, path: path.join(root, 'runtime.db'), home: root, clock, leaseMs: 1000, maxAttempts: 5, maxTotalAttempts: 50 });
+  const store: RuntimeStore = openRuntimeStore({ lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS, path: path.join(root, 'runtime.db'), home: root, clock, leaseMs: 1000, maxAttempts: 5, maxTotalAttempts: 50 });
   const session = store.createSession({ cwd: root, env: {}, permissionMode: 'manual', model: 'fm' });
   const created = store.createRunAndEnqueue(session.id, { input: 'go', timeoutMs: 3_600_000, limits: {}, pins: {} });
   if (created.kind !== 'created') throw new Error('expected a run');
@@ -51,6 +51,7 @@ const runJob = async (survives: boolean) => {
   };
   const markerState: MarkerState = survives ? 'held' : 'free';
   const jobs = createBackgroundJobs({
+    inspector: testProcessInspector(),
     store,
     clock,
     timers,

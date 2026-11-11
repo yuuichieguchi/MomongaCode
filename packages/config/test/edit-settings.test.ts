@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { ConfigError, SETTINGS_SCHEMA, TUI_SCREEN_MODES, editSettings, loadSettings, loadUserSettings, readSettingsSnapshot } from '@momonga/config';
 import { localSettingsPath, makeTree, mcpJsonPath, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
-const UNABORTED = { signal: new AbortController().signal };
+import { testKernelLock } from '@momonga/testkit';
+const UNABORTED = { lock: testKernelLock(), signal: new AbortController().signal };
 
 
 const placeOf = (tree: Tree) => ({ home: tree.home, projectDir: tree.project });

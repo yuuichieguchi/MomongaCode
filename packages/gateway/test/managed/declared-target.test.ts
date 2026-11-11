@@ -9,7 +9,7 @@ import { createManagedTarget, decideToolCalling, loadProbeRecord, managedCurrenc
 import type { ManagedServer } from '@momonga/gateway';
 import { FM_SERVER, TARGET_PROBING } from '@momonga/protocol';
 import type { ManagedServerDescription, ProbeReport } from '@momonga/protocol';
-import { FAKE_OS_BUILD, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeManagedServer, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { FAKE_OS_BUILD, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeManagedServer, fakeExec, killGroupsForCleanup, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import { makeDir, registerCleanup } from '../gateway-helpers.ts';
 import { makeHome } from '../gateway-process-helpers.ts';
 import { makeReport } from '../report-fixture.ts';
@@ -53,7 +53,7 @@ const probingAnswer = { state: 'probing', message: 'probing', retryAfterSeconds:
 describe('a declared server record is current only for the description it was measured with (design-managed-servers 19.4; R-S19-12)', () => {
   const recordUnder = async (measured: typeof DECLARATION, current: typeof DECLARATION): Promise<ProbeReport | null> => {
     const dir = path.join(makeDir(), 'probe');
-    await saveProbeRecord(dir, KEY_A, makeReport(1, 1), managedCurrencyOf(await loadedDeclaration('mine', measured), { userDialects: {} }));
+    await saveProbeRecord(dir, KEY_A, makeReport(1, 1), managedCurrencyOf(await loadedDeclaration('mine', measured), { userDialects: {} }), testKernelLock());
     return loadProbeRecord(dir, KEY_A, managedCurrencyOf(await loadedDeclaration('mine', current), { userDialects: {} }), 'workbench');
   };
 
@@ -102,7 +102,7 @@ describe('a running instance keeps the key it started with (19.11-a, 19.14 item 
     const description = declaredForm('mine', DECLARATION);
     const currency = managedCurrencyOf(description, { userDialects: {} });
     const dir = path.join(makeDir(), 'probe');
-    await saveProbeRecord(dir, KEY_A, makeReport(1, 1), currency);
+    await saveProbeRecord(dir, KEY_A, makeReport(1, 1), currency, testKernelLock());
     const started: KnownProbeKey[] = [];
     const managed = await createManagedTarget({
       description,
@@ -217,6 +217,8 @@ describe('a declared server follows the one generic declared-only rule (19.11-b,
     const instance = managedInstancePaths(momongaPaths(home, process.platform, {}), { owner: 'cli', purpose: 'probe', provider: 'workbench' });
     fs.mkdirSync(instance.markerDirectory, { recursive: true, mode: 0o700 });
     const report = await measureManagedServer({
+      inspector: testProcessInspector(),
+      lock: testKernelLock(),
       description,
       target: 'workbench',
       binary: fake.binaryPath,

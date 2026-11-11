@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { isRecord } from '@momonga/foundation';
-import type { FileLockPorts } from '@momonga/foundation';
+import type { FileLockPorts, KernelLockMechanism } from '@momonga/foundation';
 import { editUserSettings } from './edit-user-settings.ts';
 import { localSettingsDirectory, reRootedRule, worktreeRootOf } from './local-settings.ts';
 import { parseRule } from './rule.ts';
@@ -10,6 +10,7 @@ import type { RuleEffect } from './rule.ts';
 export type AppendPermissionRuleOptions = {
   home: string;
   projectDir: string;
+  lock: KernelLockMechanism;
   ports: FileLockPorts;
   lockTimeoutMs?: number;
   rule: string;
@@ -29,12 +30,12 @@ const addRule = (document: Record<string, unknown>, file: string, rule: string, 
   return true;
 };
 
-export const appendPermissionRule = async ({ home, projectDir, rule, effect, ports, lockTimeoutMs, signal }: AppendPermissionRuleOptions): Promise<void> => {
+export const appendPermissionRule = async ({ home, projectDir, rule, effect, lock, ports, lockTimeoutMs, signal }: AppendPermissionRuleOptions): Promise<void> => {
   const directory = await localSettingsDirectory(home, projectDir);
   const file = path.join(directory, 'settings.local.json');
   const root = await worktreeRootOf(home, projectDir);
   const stored = reRootedRule(rule, await fs.promises.realpath(projectDir), root);
   parseRule(stored, { effect, origin: 'local', source: file, settingsRoot: root, home, cwd: projectDir });
 
-  await editUserSettings(home, file, (document) => addRule(document, file, stored, effect), { ports, signal, ...(lockTimeoutMs === undefined ? {} : { lockTimeoutMs }) });
+  await editUserSettings(home, file, (document) => addRule(document, file, stored, effect), { lock, ports, signal, ...(lockTimeoutMs === undefined ? {} : { lockTimeoutMs }) });
 };

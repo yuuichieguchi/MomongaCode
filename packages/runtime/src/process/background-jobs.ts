@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { POLL_INTERVAL_MS, sleep, canonicalJson, claimRetry, commandMayStillRun, defaultProcessInspector, findHolders, groupAlive, groupPortOf, groupRecordOutcome, markerReapClockBoundMs, outlivedNotes, reapMarkedProcesses, recordMarkerGroup, reconcileProcessGroup, reportUninspectableOnce, sha256Hex } from '@momonga/foundation';
-import type { Clock, MarkerMode, MarkerState, ProcessGroupPort, Timing, RolePort, UninspectableProcess, UninspectableRegistry } from '@momonga/foundation';
+import { POLL_INTERVAL_MS, sleep, canonicalJson, claimRetry, commandMayStillRun, findHolders, groupAlive, groupPortOf, groupRecordOutcome, markerReapClockBoundMs, outlivedNotes, reapMarkedProcesses, recordMarkerGroup, reconcileProcessGroup, reportUninspectableOnce, sha256Hex } from '@momonga/foundation';
+import type { Clock, MarkerMode, MarkerState, ProcessGroupPort, Timing, RolePort, UninspectableProcess, UninspectableRegistry, ProcessInspector } from '@momonga/foundation';
 import type { SandboxedProcess } from '@momonga/sandbox';
 import type { Job, JobResult, RuntimeStore } from '@momonga/store';
 import { RetiringYield, ToolExecutionError, createMarkerOwners, unnamedLivenessNotes } from '@momonga/tools';
@@ -27,6 +27,7 @@ export type BackgroundJobsOptions = {
   ownerAlive(ownerGeneration: number): Promise<boolean>;
   onSettled?: () => void;
   markerFiles: JobMarkerFiles;
+  inspector: ProcessInspector;
   owners?: MarkerOwners;
   killGraceMs: number;
   reapTiming: Timing;
@@ -82,10 +83,10 @@ const matching = (text: string, filter: RegExp): string =>
     .join('\n');
 
 export const createBackgroundJobs = (options: BackgroundJobsOptions): BackgroundJobRegistry => {
-  const { store, clock, timers, markerDir, markerFiles, killGraceMs, reapTiming, onWarning, report } = options;
+  const { store, clock, timers, markerDir, markerFiles, inspector, killGraceMs, reapTiming, onWarning, report } = options;
   const probes: ProcessProbes = {
     findHolders,
-    markerState: (marker, { signal, mode }) => defaultProcessInspector().markerState(marker, { signal, mode }),
+    markerState: (marker, { signal, mode }) => inspector.markerState(marker, { signal, mode }),
     reconcileProcessGroup,
     reapMarkedProcesses,
     ...options.probes,
@@ -144,18 +145,19 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     const reportOnce = reportUninspectableOnce(onWarning, `background job ${job.id}`, options.uninspectable);
     const holders = await probes.findHolders(marker, {
       signal,
+      inspector,
       onUninspectable: (unreadable) => {
         uninspectable.push(unreadable);
         reportOnce(unreadable);
       },
     });
     if (holders.length > 0) {
-      const reaped = await probes.reconcileProcessGroup({ pgid: process.pgid, marker }, { killGraceMs, timing: reapTiming, signal });
+      const reaped = await probes.reconcileProcessGroup({ pgid: process.pgid, marker }, { killGraceMs, timing: reapTiming, signal, inspector });
       const notes = outlivedNotes(reaped, 'job');
       if (notes.length > 0) entry.output.push(Buffer.from(`\n${notes.join('\n')}\n`));
     }
     const refused: UninspectableProcess[] = [];
-    const remaining = holders.length === 0 && uninspectable.length === 0 ? [] : await probes.findHolders(marker, { signal, onUninspectable: (unreadable) => void refused.push(unreadable) });
+    const remaining = holders.length === 0 && uninspectable.length === 0 ? [] : await probes.findHolders(marker, { signal, inspector, onUninspectable: (unreadable) => void refused.push(unreadable) });
     const markerState = await probes.markerState(marker, { signal, mode: owners.modeOf(job.idemKey) ?? 'listed' });
     const unnamed = markerState === 'held' && remaining.length === 0;
     const runnable = unnamed ? await groupAlive(process.pgid, groupPort, signal) : undefined;
@@ -254,6 +256,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
           onWarning,
           timing: reapTiming,
           signal: lifecycle,
+          inspector,
         });
       }
     } catch (error) {

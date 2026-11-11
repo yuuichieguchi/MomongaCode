@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { withTempDir } from '@momonga/testkit';
+import { withTempDir, testKernelLock } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AUTH_DOCUMENT_MAX_BYTES, createMemoryCredentialStore, nodeFileSystem } from '@momonga/foundation';
@@ -128,7 +128,7 @@ describe('each of the four stored plan files that fails the parser for any reaso
     { name: `nested ${DEPTH} deep`, text: DEEP },
   ])('the host identity: $name', async ({ text }, context) => {
     const file = privateFile(context, 'plan-host.json', text);
-    expect(messageOf(await rejectionOf(ensureHostIdentity(nodeFileSystem, file, { accountsExist: true })))).toBe(`the plan host identity file ${file} is not valid JSON; ${RESET_ADVICE}`);
+    expect(messageOf(await rejectionOf(ensureHostIdentity(nodeFileSystem, file, { lock: testKernelLock(), accountsExist: true })))).toBe(`the plan host identity file ${file} is not valid JSON; ${RESET_ADVICE}`);
   });
 });
 
@@ -140,7 +140,7 @@ describe("the pointer and the host identity are read with the store's size cap (
 
   it('a host identity over the cap is refused with the cap text', async (context) => {
     const file = privateFile(context, 'plan-host.json', OVER_CAP);
-    expect(messageOf(await rejectionOf(ensureHostIdentity(nodeFileSystem, file, { accountsExist: true })))).toBe(`the plan host identity file ${file} cannot be read (${CAP_TEXT}); ${RESET_ADVICE}`);
+    expect(messageOf(await rejectionOf(ensureHostIdentity(nodeFileSystem, file, { lock: testKernelLock(), accountsExist: true })))).toBe(`the plan host identity file ${file} cannot be read (${CAP_TEXT}); ${RESET_ADVICE}`);
   });
 
   it('a pointer that does not exist is an empty pointer, and one under the cap is read', async (context) => {

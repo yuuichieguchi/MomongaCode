@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
 import { SECURITY_BINARY, codeDigestOfRunningProcess, FIRST_GENERATION } from '@momonga/foundation';
 import { saveEndpointRecord, targetCounterOf } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecurityPort } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecurityPort, testKernelLock } from '@momonga/testkit';
 import { startFake } from './cc-support.ts';
 import { getJson, listedCountersOf } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, fakeSecretHost, homePaths, launchGateway, makeHome, portOnSecretHost, writeSettings, modelsOf } from './gateway-process-helpers.ts';
@@ -93,7 +93,7 @@ describe('the counters a started gateway lists', () => {
     const launchWithRecord = async (identity: string) => {
       const home = makeHome();
       writeSettings(home, settings);
-      await saveEndpointRecord(path.join(homePaths(home).root, 'state', 'probe'), key, identity, IDENTITY_FIELDS, makeReport(1, 1), CURRENT_DIALECTS);
+      await saveEndpointRecord(path.join(homePaths(home).root, 'state', 'probe'), key, identity, IDENTITY_FIELDS, makeReport(1, 1), CURRENT_DIALECTS, testKernelLock());
       const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
       const counters = await listedCounters(handle.socketPath);
       await handle.close();

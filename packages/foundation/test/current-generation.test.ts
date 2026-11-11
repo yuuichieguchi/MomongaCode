@@ -1,7 +1,7 @@
 import http from 'node:http';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createFakeKernelLock, createTempDir, removeTempDir } from '@momonga/testkit';
+import { createFakeKernelLock, createTempDir, removeTempDir, testKernelLock } from '@momonga/testkit';
 import {
   createUdsClient,
   currentSocketResolver,
@@ -42,7 +42,7 @@ describe('readCurrentGeneration', () => {
 
   it('reads back exactly the generation that was published', async () => {
     await withHome(async (home, paths) => {
-      await publishCurrentGeneration(paths, recordOf(home, 4, '2.0.1'));
+      await publishCurrentGeneration(paths, recordOf(home, 4, '2.0.1'), { lock: testKernelLock() });
       expect(await readCurrentGeneration(paths)).toEqual({
         generation: 4,
         version: '2.0.1',
@@ -57,8 +57,8 @@ describe('readCurrentGeneration', () => {
 
   it('reads the newer generation once it replaces the older one', async () => {
     await withHome(async (home, paths) => {
-      await publishCurrentGeneration(paths, recordOf(home, 1, '1.0.0'));
-      await publishCurrentGeneration(paths, recordOf(home, 2, '1.1.0'));
+      await publishCurrentGeneration(paths, recordOf(home, 1, '1.0.0'), { lock: testKernelLock() });
+      await publishCurrentGeneration(paths, recordOf(home, 2, '1.1.0'), { lock: testKernelLock() });
       expect(await readCurrentGeneration(paths)).toMatchObject({ generation: 2, version: '1.1.0' });
     });
   });
@@ -102,9 +102,9 @@ describe('currentSocketResolver', () => {
     await withHome(async (home, paths) => {
       const runtime = currentSocketResolver(paths, 'runtime');
       const supervisor = currentSocketResolver(paths, 'supervisor');
-      await publishCurrentGeneration(paths, recordOf(home, 1, '1.0.0'));
+      await publishCurrentGeneration(paths, recordOf(home, 1, '1.0.0'), { lock: testKernelLock() });
       expect(await runtime()).toBe(path.join(home, '.momonga', 'run', 'g1', 'runtime.sock'));
-      await publishCurrentGeneration(paths, recordOf(home, 2, '1.0.0'));
+      await publishCurrentGeneration(paths, recordOf(home, 2, '1.0.0'), { lock: testKernelLock() });
       expect(await runtime()).toBe(path.join(home, '.momonga', 'run', 'g2', 'runtime.sock'));
       expect(await supervisor()).toBe(path.join(home, '.momonga', 'run', 'g2', 'supervisor.sock'));
     });

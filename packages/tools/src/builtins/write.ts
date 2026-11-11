@@ -69,6 +69,7 @@ export const writeTool = defineTool<WriteInput>({
       requestedPath: requested,
       content: input.content,
       mode: stat === undefined ? newFileMode() : stat.mode & 0o777,
+      lock: ctx.kernelLock,
       onRenamed: () => updateLedgerAfterWrite(ctx.session, plan.path, plan.postHash),
     });
     const lines = pluralize(splitLines(input.content).length, 'line', 'lines');

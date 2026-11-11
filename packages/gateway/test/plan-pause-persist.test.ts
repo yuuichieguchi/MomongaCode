@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PlanProfile } from '@momonga/config';
 import { FIRST_GENERATION, createEncryptedCredentialStore, momongaLayout, nodeFileSystem } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeSecretStore, planErrorHttpReply, startFakePlanResponses, startFakeSiwcAuth } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeSecretStore, planErrorHttpReply, startFakePlanResponses, startFakeSiwcAuth, testKernelLock } from '@momonga/testkit';
 import { createPlanCatalog } from '../src/plan/catalog.ts';
 import { openPlanSessions } from '../src/plan/session.ts';
 import { postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
@@ -133,13 +133,14 @@ const usageLimitedGateway = async (planStore: (store: ListableCredentialStore) =
   const profile: PlanProfile = { ...shipped, oauth: { ...shipped.oauth, resource: loopback }, targetDefaults: { ...shipped.targetDefaults, baseUrl: loopback } };
   fs.mkdirSync(layout.planSessions, { recursive: true, mode: 0o700 });
   const store = createEncryptedCredentialStore({
+    lock: testKernelLock(),
     directory: layout.planSessions,
     stateDirectory: path.dirname(layout.planSessions),
     secretStore: { kind: 'available', store: secretStore },
     plaintextTokenFiles: () => false,
   });
   const clock = createFakeClock(Date.now());
-  const sessions = await openPlanSessions({ signal: new AbortController().signal,
+  const sessions = await openPlanSessions({ lock: testKernelLock(), signal: new AbortController().signal,
     profiles: { [PROFILE_ID]: profile },
     paths: { sessions: layout.planSessions, host: layout.planHost, active: layout.planActive },
     store,

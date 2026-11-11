@@ -28,7 +28,7 @@ export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps): Promise<nu
     ownLockPath: (home, flags) => generationLayout(home, flags.generation).locks.gateway,
     logPath: (home) => momongaPaths(home, process.platform, {}).logFiles.gateway,
     isConfigError: (error) => error instanceof ConfigError,
-    start: async ({ version, flags, home, env, signal, logger, stdout, acquireLock, requestShutdown }) => {
+    start: async ({ version, flags, home, env, signal, logger, stdout, locks, acquireLock, requestShutdown }) => {
       installOtelErrorHandler((error) => logger.warn('otel.error', { err: error }));
       const debugPort = flags['debug-tcp-port'];
       const debugTokenFile = flags['debug-tcp-token-file'];
@@ -43,6 +43,7 @@ export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps): Promise<nu
         logger,
         stdout,
         signal,
+        locks,
         acquireLock,
         requestShutdown: () => requestShutdown(),
         stopValues: stopValuesOf(home, logger),

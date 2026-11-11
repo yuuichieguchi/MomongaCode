@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore, RuntimeStoreOptions } from '@momonga/store';
-import { createFakeClock } from '@momonga/testkit';
+import { createFakeClock, testKernelLock } from '@momonga/testkit';
 import { START_MS, makeStoreDir, openStoreAt, rawDb, UNASKED_COMMANDS } from './helpers.ts';
 
 type TrustTree = { root: string; home: string; dbPath: string; store: RuntimeStore };
@@ -34,6 +34,7 @@ const caseInsensitiveVolume = (): boolean => {
 const CASE_INSENSITIVE = caseInsensitiveVolume();
 
 const openOptions = (dir: string, home: string): RuntimeStoreOptions => ({
+  lock: testKernelLock(),
   path: path.join(dir, 'runtime.db'),
   home,
   clock: createFakeClock(START_MS),

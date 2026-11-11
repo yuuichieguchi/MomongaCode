@@ -7,7 +7,7 @@ import type { GenerationRole } from '@momonga/foundation';
 import type { SandboxExit, SandboxedProcess } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { createFakeClock, createFakeTimers, pacedReapTiming } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, pacedReapTiming, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import type { FakeClock, PacedReapTiming } from '@momonga/testkit';
 import { RetiringYield, ToolExecutionError } from '@momonga/tools';
 import { createBackgroundJobs, createNodeJobMarkerFiles } from '@momonga/runtime';
@@ -82,7 +82,7 @@ const world = (): World => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-jobs-gen-')));
   roots.push(root);
   const clock = createFakeClock(START_MS);
-  const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS, path: path.join(root, 'runtime.db'), home: root, clock, leaseMs: 1000, maxAttempts: 5, maxTotalAttempts: 50 });
+  const store = openRuntimeStore({ lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS, path: path.join(root, 'runtime.db'), home: root, clock, leaseMs: 1000, maxAttempts: 5, maxTotalAttempts: 50 });
   const session = store.createSession({ cwd: root, env: {}, permissionMode: 'manual', model: 'fm' });
   const created = store.createRunAndEnqueue(session.id, { input: 'go', timeoutMs: 3_600_000, limits: {}, pins: {} });
   if (created.kind !== 'created') throw new Error('expected a run');
@@ -101,6 +101,7 @@ const generationOf = (w: World, generation: number, role: GenerationRole = 'serv
   const reaped: Generation['reaped'] = [];
   const settled = { count: 0 };
   const jobs = createBackgroundJobs({
+    inspector: testProcessInspector(),
     store: w.store,
     clock: w.clock,
     timers: createFakeTimers(w.clock),

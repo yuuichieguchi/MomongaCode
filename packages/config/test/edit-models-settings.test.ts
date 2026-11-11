@@ -8,7 +8,7 @@ import { settingsLockPath } from '../src/file-lock.ts';
 import { S1_FILE, S2, S2_LMSTUDIO, S3_PLAN, S4, S4_SERVER } from './model-fixtures.ts';
 import { connectionsOf, documentOf, editModels, homeWith, idsOf, modelsOf, op, planModels, refusalOfEdit, textOf } from './models-edit.ts';
 import type { Home, Operation, Planned } from './models-edit.ts';
-import { testPaths } from '@momonga/testkit';
+import { testPaths, testKernelLock } from '@momonga/testkit';
 
 const OLLAMA = { adapter: 'ollama', baseUrl: 'http://127.0.0.1:11434' };
 const DEVSTRAL = { id: 'devstral-small-2:latest', capabilities: { contextWindow: 131072, maxOutputTokens: 32768 } };
@@ -73,7 +73,7 @@ const heldLock = async (home: Home) => {
   });
   const lockPath = await settingsLockPath(home.tree.home, home.file, testPaths());
   fs.mkdirSync(path.dirname(lockPath), { recursive: true, mode: 0o700 });
-  const holder = withFileLock(lockPath, () => released, { ports: systemFileLockPorts });
+  const holder = withFileLock(lockPath, () => released, { mechanism: testKernelLock(), ports: systemFileLockPorts });
   return { release, holder };
 };
 

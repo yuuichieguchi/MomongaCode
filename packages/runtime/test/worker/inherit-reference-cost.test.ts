@@ -17,6 +17,7 @@ import { callsStep, textStep } from './scripts.ts';
 import { settle } from './inheritance-support.ts';
 import { builderOf, harnessOf, referenceFactsOf } from './inherit-reference-support.ts';
 import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: 600_000 });
 
@@ -33,7 +34,7 @@ afterEach(async () => {
 
 const threadOn = async (dbPath: string): Promise<ReferenceClient> => {
   const { dev, ino } = fs.statSync(dbPath);
-  const client = await startJournalThread({ databasePath: dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+  const client = await startJournalThread({ lock: testKernelLock(), databasePath: dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
   clients.push(client);
   const candidate = client as Partial<ReferenceClient>;
   if (typeof candidate.inheritedWindow !== 'function') throw new Error('the journal thread client has no inheritedWindow');

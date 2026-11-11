@@ -20,7 +20,7 @@ const drive = (name: KernelLockMechanism['name'], publish: 'replace' | 'create',
     if (operation.run === 'openClaimed' || operation.run === 'create') return open;
     return undefined;
   };
-  const work = atomicWriteSequence(mechanismOf(name), createFakeRandom(7), FILE, 'content', { mode: 0o600, publish });
+  const work = atomicWriteSequence(mechanismOf(name), createFakeRandom(7), FILE, 'content', { mode: 0o600, publish, lock: mechanismOf(name) });
   let failed = false;
   try {
     let turn = work.next();

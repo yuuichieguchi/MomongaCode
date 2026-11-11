@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { waitFor } from '@momonga/testkit';
+import { waitFor, testKernelLock } from '@momonga/testkit';
 import { startGateway, userInput } from './gateway-helpers.ts';
 import { bigTextEvents, createHangingAdapter, openUnreadStream } from './gateway-support.ts';
 import { inspectProcessLock } from '@momonga/foundation';
@@ -19,7 +19,7 @@ describe('close() with a non-reading client and an adapter that ignores its sign
 
     expect(primary.signals[0]?.aborted).toBe(true);
     expect(fs.existsSync(socketPath)).toBe(false);
-    expect((await inspectProcessLock(`${socketPath}.lock`)).state).toBe('free');
+    expect((await inspectProcessLock(`${socketPath}.lock`, { mechanism: testKernelLock() })).state).toBe('free');
     expect(timers.pending()).toEqual([]);
     expect(gateway.abandonedRuns).toBe(1);
   });

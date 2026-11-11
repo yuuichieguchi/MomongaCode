@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { runBenchmark, validateBenchmark } from '@momonga/eval';
 import type { BenchProblem, BenchRunApi, TaskValidation } from '@momonga/eval';
-import { codeDigestOfRunningProcess, createOwnedDirectory } from '@momonga/foundation';
+import { codeDigestOfRunningProcess, createOwnedDirectory, resolveLayoutLocks } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { MAIN_AGENT } from '@momonga/protocol';
 import type { PublicRunEvent } from '@momonga/protocol';
@@ -39,8 +39,8 @@ const validationLine = (task: TaskValidation): string => {
   return `Task ${task.id}: ${verdict}; labelled ${task.difficulty} by ${task.labelledBy} on ${task.labelledAt}; the reference changes ${countText(files, 'file', 'files')}, ${countText(linesAdded, 'line', 'lines')} added and ${linesRemoved} removed\n`;
 };
 
-const validate = async (ports: Pick<CliPorts, 'stdout' | 'probe' | 'files' | 'tmpdir'>, benchmarkFile: string): Promise<number> => {
-  const { name, tasks } = await validateBenchmark(benchmarkFile, { probe: ports.probe, files: ports.files, tmpdir: ports.tmpdir });
+const validate = async (ports: Pick<CliPorts, 'stdout' | 'probe' | 'files' | 'tmpdir'>, paths: MomongaPaths, benchmarkFile: string): Promise<number> => {
+  const { name, tasks } = await validateBenchmark(benchmarkFile, { probe: ports.probe, files: ports.files, tmpdir: ports.tmpdir, lock: resolveLayoutLocks(paths).mechanism });
   for (const task of tasks) ports.stdout.write(validationLine(task));
   const wrong = tasks.filter((task) => task.problems.length > 0).length;
   if (wrong === 0) {
@@ -110,7 +110,7 @@ const run = async (ports: CliPorts, paths: MomongaPaths, benchmarkFile: string, 
   await ensureCurrentDaemon(ports, paths);
   const env = await environmentSnapshot(ports);
   const client = connectRuntime(ports, paths);
-  const scratch = await createOwnedDirectory({ parent: ports.tmpdir, prefix: WORKSPACE_PREFIX });
+  const scratch = await createOwnedDirectory({ parent: ports.tmpdir, prefix: WORKSPACE_PREFIX, lock: resolveLayoutLocks(paths).mechanism });
   try {
     const { report, invalidSetup } = await runBenchmark(benchmarkFile, {
       api: benchRunApi(client, env),
@@ -135,7 +135,7 @@ export const evaluateBench = async (ports: CliPorts, paths: MomongaPaths, direct
   const benchmarkFile = path.join(path.resolve(ports.cwd, directory), BENCHMARK_FILE);
   if (options.validate) {
     if (options.model !== undefined || options.report !== undefined) throw new EvaluateUsageError('--validate runs no model and builds no report, so it takes neither --model nor --report');
-    return validate(ports, benchmarkFile);
+    return validate(ports, paths, benchmarkFile);
   }
   if (options.model === undefined) throw new EvaluateUsageError('--model <model> is required for a run of the benchmark: it names the model every task runs on');
   return run(ports, paths, benchmarkFile, { model: options.model, ...(options.report === undefined ? {} : { report: options.report }) });

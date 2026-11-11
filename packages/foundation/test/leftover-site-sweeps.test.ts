@@ -1,16 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createKernelLockMechanism, hostKernelLock, leftoverDirectories, momongaPaths, nodeFileLockOps, sweepLeftovers } from '@momonga/foundation';
+import { leftoverDirectories, momongaPaths, nodeFileLockOps, sweepLeftovers } from '@momonga/foundation';
 import type { FileLockOps, HeldKernelLock } from '@momonga/foundation';
 import { createLockedFile } from '../src/platform/lock-capability.ts';
 import { OPEN_FLAGS } from '../src/node-file-system.ts';
 import { makeTemporaryDirectory } from './support/temporary-directory.ts';
+import { expectedKernelLockOn, testKernelLock } from '@momonga/testkit';
 
 const PID_NO_PROCESS_HAS = 99_999_999;
 
 const holdEntry = async (entry: string): Promise<HeldKernelLock> => {
-  const outcome = await hostKernelLock().claim(entry);
+  const outcome = await testKernelLock().claim(entry);
   if (outcome.kind !== 'claimed') throw new Error(`${entry} could not be claimed by the test`);
   if (!fs.existsSync(entry)) fs.writeFileSync(entry, 'in flight', { mode: 0o600 });
   return outcome.lock;
@@ -19,7 +20,7 @@ const holdEntry = async (entry: string): Promise<HeldKernelLock> => {
 describe('secret-key-file.ts:41-49 replaced (S1): the gateway start sweeps dirname(gatewayKey) through the registered list, by lock alone', () => {
   for (const platform of ['darwin', 'linux'] as const) {
     it(`${platform} mechanism: keeps a held temporary whose name carries a pid the probe reports dead, and removes an unheld one, with its sidecar, named with this live pid`, async () => {
-      const lock = createKernelLockMechanism(platform);
+      const lock = expectedKernelLockOn(platform);
       const paths = momongaPaths(makeTemporaryDirectory());
       const directory = path.dirname(paths.gatewayKey);
       fs.mkdirSync(directory, { recursive: true });
@@ -122,7 +123,7 @@ describe('S8: every directory the product writes entries in is swept, including 
 
   for (const platform of ['darwin', 'linux'] as const) {
     it(`${platform} mechanism: one sweep removes a crashed blob temporary with its sidecar and keeps a held one`, async () => {
-      const lock = createKernelLockMechanism(platform);
+      const lock = expectedKernelLockOn(platform);
       const paths = momongaPaths(makeTemporaryDirectory());
       const blobs = blobsOf(paths);
       fs.mkdirSync(blobs, { recursive: true, mode: 0o700 });

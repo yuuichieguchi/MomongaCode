@@ -7,7 +7,7 @@ import { managedCurrencyOf, saveProbeRecord } from '@momonga/gateway';
 import type { ManagedServer, ManagedTargetOptions } from '@momonga/gateway';
 import { FM_SERVER, TARGET_PROBING_MESSAGE } from '@momonga/protocol';
 import type { Probing, ProbeReport } from '@momonga/protocol';
-import { FAKE_OS_BUILD } from '@momonga/testkit';
+import { FAKE_OS_BUILD, testKernelLock } from '@momonga/testkit';
 import { makeReport } from './report-fixture.ts';
 
 export const FM_CURRENCY = managedCurrencyOf(FM_SERVER, { userDialects: {} });
@@ -69,7 +69,7 @@ export const primed = async <Managed extends { capabilities: (target: { name: st
 
 export const saveFakeFmRecord = async (home: string, binaryPath: string, report: ProbeReport = makeReport(1, 1), model: string = FAKE_FM_LISTED_MODEL): Promise<void> => {
   const key = fmRecordKey(createHash('sha256').update(fs.readFileSync(binaryPath)).digest('hex'), FAKE_OS_BUILD, model);
-  await saveProbeRecord(path.join(home, '.momonga', 'state', 'probe'), key, report, FM_CURRENCY);
+  await saveProbeRecord(path.join(home, '.momonga', 'state', 'probe'), key, report, FM_CURRENCY, testKernelLock());
 };
 
 type Connection = Record<string, unknown> & { models?: Array<Record<string, unknown>> };

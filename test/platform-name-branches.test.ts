@@ -28,7 +28,6 @@ const KEPT: readonly Kept[] = [
 
 const BURN_DOWN: readonly BurnDown[] = [
   { file: 'foundation/src/file-rules.ts', rows: 'B7', owner: 'HB10b final deletion of HOST_RULE_ENFORCEMENT' },
-  { file: 'foundation/src/platform/host-kernel-lock.ts', rows: 'B3', owner: 'HB0' },
   { file: 'foundation/src/platform/process-inspector.ts', rows: 'B1', owner: 'HB10b' },
   { file: 'foundation/src/platform/privacy.ts', rows: 'B16', owner: 'wave 3, after hb0 and a84' },
   { file: 'tools/src/builtins/shell.ts', rows: 'B4', owner: 'HB10a B4 after the hb0 and a84 check' },

@@ -15,7 +15,7 @@ import {
 import type { ExecResult, ManagedServer, ManagedServerTimers, ManagedTarget } from '@momonga/gateway';
 import { ESTIMATED_ERROR_SHAPE, TARGET_PROBING, errorBoundOfShape } from '@momonga/protocol';
 import type { ProbeReport } from '@momonga/protocol';
-import { FAKE_DETERMINISTIC_REPLY, createFakeClock, startFakeChatCompletions } from '@momonga/testkit';
+import { FAKE_DETERMINISTIC_REPLY, createFakeClock, startFakeChatCompletions, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeClock } from '@momonga/testkit';
 import { START_MS, getJson, makeDir, postJson, readJson, registerCleanup, startGateway } from './gateway-helpers.ts';
 import { TARGET, collect, outputTextOf, userText } from './cc-support.ts';
@@ -99,7 +99,7 @@ const setup = async (config: Setup = {}) => {
   const socketPath = path.join(dir, 'fm.sock');
   const recordDir = path.join(dir, 'probe');
   const recorded = config.unprobed === true ? undefined : (config.report ?? UNCALIBRATED_REPORT);
-  if (recorded !== undefined) await saveProbeRecord(recordDir, RECORD_KEY, recorded, FM_CURRENCY);
+  if (recorded !== undefined) await saveProbeRecord(recordDir, RECORD_KEY, recorded, FM_CURRENCY, testKernelLock());
   const probeStarts: KnownProbeKey[] = [];
   const startProbe = async (key: KnownProbeKey): Promise<Probing> => {
     probeStarts.push(key);
@@ -118,6 +118,8 @@ const setup = async (config: Setup = {}) => {
       : { exitCode: 0, stdout: '', stderr: '' };
   const warnings: string[] = [];
   const fmServe: ManagedServer = createManagedServer({
+    inspector: testProcessInspector(),
+    lock: testKernelLock(),
     description: FM_SERVER,
     target: 'scripted/system',
     lockPath: `${socketPath}.lock`,

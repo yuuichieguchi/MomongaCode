@@ -6,7 +6,7 @@ import { canonicalJson, migrate } from '@momonga/foundation';
 import type { RunEventPayload } from '@momonga/protocol';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { createFakeClock } from '@momonga/testkit';
+import { createFakeClock, testKernelLock } from '@momonga/testkit';
 import { MIGRATIONS } from '../src/schema.ts';
 import { LEASE_MS, START_MS, callEvent, enqueue, makeStoreDir, mustClaim, newSession, openStoreAt, rawDb, registerCleanup, UNASKED_COMMANDS } from './helpers.ts';
 
@@ -15,7 +15,7 @@ type Decoded = { rows: number; bytes: number };
 type CallSeqStore = RuntimeStore & { toolCallSeq(runId: string, callId: string): number | undefined };
 
 const countingStore = (dbPath: string, decoded: Decoded): CallSeqStore => {
-  const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
+  const store = openRuntimeStore({ lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home: path.dirname(dbPath),
     clock: createFakeClock(START_MS),

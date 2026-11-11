@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createChatCompletionsAdapter, createManagedTarget, saveProbeRecord, unauthenticatedSource } from '@momonga/gateway';
 import type { ExecResult, ManagedServer } from '@momonga/gateway';
 import type { HealthResult } from '@momonga/protocol';
-import { FM_CONTEXT_OVERFLOW_ERROR, FM_UNSUPPORTED_GUIDE_ERROR, createFakeClock, startFakeSseUpstream } from '@momonga/testkit';
+import { FM_CONTEXT_OVERFLOW_ERROR, FM_UNSUPPORTED_GUIDE_ERROR, createFakeClock, startFakeSseUpstream, testKernelLock } from '@momonga/testkit';
 import type { FakeUpstreamServer } from '@momonga/testkit';
 import { START_MS, makeDir, postJson, readSse, registerCleanup, startGateway } from './gateway-helpers.ts';
 import { CC_CAPABILITIES, collect, terminalOf, userText } from './cc-support.ts';
@@ -47,7 +47,7 @@ const unprobedFmAdapter = async (upstream: FakeUpstreamServer) => {
   const countTokens = async (): Promise<ExecResult> => ({ exitCode: 0, stdout: '5\n', stderr: '' });
   const probeRecordDir = path.join(makeDir(), 'probe');
   const key: KnownProbeKey = fmRecordKey('ab'.repeat(32), '25A100');
-  await saveProbeRecord(probeRecordDir, key, makeReport(1, 1), FM_CURRENCY);
+  await saveProbeRecord(probeRecordDir, key, makeReport(1, 1), FM_CURRENCY, testKernelLock());
   const managed = await primed(
     createManagedTarget({
       ...fmTargetBase(),

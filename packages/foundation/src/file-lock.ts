@@ -1,6 +1,5 @@
 import { settledOrAborted } from './operation-limit.ts';
 import { claimWithin } from './platform/claim-within.ts';
-import { hostKernelLock } from './platform/host-kernel-lock.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 import type { Random } from './random.ts';
 import { systemRandom } from './system-random.ts';
@@ -13,7 +12,7 @@ export type FileLockPorts = { timing: Timing; random: Random };
 
 export const systemFileLockPorts: FileLockPorts = { timing: systemWaitTiming, random: systemRandom };
 
-export type FileLockOptions = { ports: FileLockPorts; mechanism?: KernelLockMechanism; signal?: AbortSignal; timeoutMs?: number };
+export type FileLockOptions = { ports: FileLockPorts; mechanism: KernelLockMechanism; signal?: AbortSignal; timeoutMs?: number };
 
 const NEVER_ABORTED = new AbortController().signal;
 
@@ -26,7 +25,7 @@ const acquireWithinTimeout = async (lockPath: string, options: FileLockOptions):
   const timeoutMs = waitBoundOf(options);
   const signal = options.signal ?? NEVER_ABORTED;
   const outcome = await claimWithin({
-    mechanism: options.mechanism ?? hostKernelLock(),
+    mechanism: options.mechanism,
     lockPath,
     holder: String(process.pid),
     timing: options.ports.timing,

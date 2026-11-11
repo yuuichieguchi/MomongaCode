@@ -11,7 +11,6 @@ import {
   createJsonLogger,
   daemonStopBoundMs,
   generationLayout,
-  hostKernelLock,
   hostPaths,
   listGenerations,
   momongaPaths,
@@ -27,7 +26,7 @@ import {
   systemClock,
   writeStopRecord,
 } from '@momonga/foundation';
-import type { AbandonReason, AtomicWriteFileSystem, Clock, GenerationRole, JsonLogger, KernelLockMechanism, ProcessLock, ReadyFields, StopValues, Timing, TextStream } from '@momonga/foundation';
+import type { AbandonReason, AtomicWriteFileSystem, Clock, GenerationRole, JsonLogger, KernelLockMechanism, ProcessLock, ReadyFields, StopValues, Timing, TextStream, ProcessInspector } from '@momonga/foundation';
 import type { SupervisorHealth, SupervisorPhase } from '@momonga/protocol';
 import { FIDELITY_FOLD_VERSION, SUPERVISOR_API_VERSION } from '@momonga/protocol';
 import { readChildCounts } from './child-counts.ts';
@@ -96,7 +95,8 @@ export type SupervisorOptions = {
   logger?: JsonLogger;
   droppedLogLines?: () => number;
   reapTiming?: Timing;
-  lockMechanism?: KernelLockMechanism;
+  lockMechanism: KernelLockMechanism;
+  inspector: ProcessInspector;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
   markerPorts?: MarkerPorts;
   currentFileSystem?: AtomicWriteFileSystem;
@@ -186,8 +186,8 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
   const homePaths = momongaPaths(canonicalHome, process.platform, {});
   const paths = scopeToGeneration(homePaths, options.generation);
   const env = { ...(options.env ?? process.env) };
-  const lockOptions = omitUndefined({ mechanism: options.lockMechanism });
-  const lockMechanism = options.lockMechanism ?? hostKernelLock();
+  const { lockMechanism, inspector } = options;
+  const lockOptions = { mechanism: lockMechanism };
   const processStartedAt = clock.now();
   const startedAt = new Date(processStartedAt).toISOString();
   const log = writeEvent.bind(undefined, logger);
@@ -366,7 +366,9 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         onReady: () => promoteOnceAllReady(),
         onBackgroundError: reportBackground,
         onTransientError: reportTransient,
-        ...omitUndefined({ runtime: options.runtime, gateway: options.gateway, lockMechanism: options.lockMechanism, markerPorts: options.markerPorts }),
+        lockMechanism,
+        inspector,
+        ...omitUndefined({ runtime: options.runtime, gateway: options.gateway, markerPorts: options.markerPorts }),
       });
 
     const gateway = createManager('gateway');
@@ -494,7 +496,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     let lastWrittenSeq: number | undefined;
     const recordApplied = (key: string | undefined): void => {
       try {
-        const written = writeAppliedRecord(canonicalHome, own.settingsApplied, lastWrittenSeq);
+        const written = writeAppliedRecord(canonicalHome, own.settingsApplied, lockMechanism, lastWrittenSeq);
         if (written.kind !== 'invalid') lastWrittenSeq = written.seq;
       } catch (error) {
         if (key === recordFailedKey) return;
@@ -564,7 +566,8 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       gateway,
       timers,
       logger,
-      recordStop: (values) => writeStopRecord(own.stopRecord, own.generation, values),
+      recordStop: (values) => writeStopRecord(own.stopRecord, own.generation, values, lockMechanism),
+      inspector,
       ...omitUndefined({ markerPorts: options.markerPorts }),
       beginDraining: () => {
         if (role === 'starting' && !ended) log(startUnpromoted({ generation: own.generation, reason: 'stopped' }));
@@ -639,6 +642,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         onWarning: (detail) => log(orphansWarning({ detail })),
         signal: launchSignal,
         timing: reapTiming,
+        inspector,
       });
 
     promotionBoundTimer = timers.setTimeout(() => {

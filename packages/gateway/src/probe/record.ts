@@ -8,6 +8,7 @@ import { decideToolCalling } from './decide.ts';
 import { isRecord } from './json.ts';
 import { preconditionOf } from './remedy.ts';
 import { isProbeReport } from './report-schema.ts';
+import type { KernelLockMechanism } from '@momonga/foundation';
 
 export const recordForIdentity = <Stored>(stored: Stored, storedIdentity: Readonly<Record<string, unknown>>, currentIdentity: Readonly<Record<string, unknown>>): Stored | null =>
   canonicalJson(storedIdentity) === canonicalJson(currentIdentity) ? stored : null;
@@ -28,9 +29,9 @@ export const ensurePrivateProbeDirectory = async (dir: string): Promise<void> =>
   }
 };
 
-export const writePrivateRecord = async (dir: string, file: string, content: string): Promise<void> => {
+export const writePrivateRecord = async (dir: string, file: string, content: string, lock: KernelLockMechanism): Promise<void> => {
   await ensurePrivateProbeDirectory(dir);
-  await writeFileAtomically(nodeFileSystem, systemRandom, file, content, { mode: PRIVATE_RECORD_MODE });
+  await writeFileAtomically(nodeFileSystem, systemRandom, file, content, { mode: PRIVATE_RECORD_MODE, lock });
 };
 
 export const currentStamp = (report: Pick<ProbeReport, 'schemaDialect'>, currency: DialectCurrency): { probeMethod: number; dialectsDigest: string | undefined } => ({
@@ -47,8 +48,8 @@ export const isCurrentRecord = (stored: Record<string, unknown>, currency: Diale
   return dialectsDigest({ selected }, currency) === stored['dialectsDigest'];
 };
 
-export const saveProbeRecord = async (dir: string, key: ManagedRecordKey, report: ProbeReport, currency: ManagedRecordCurrency): Promise<void> => {
-  await writePrivateRecord(dir, managedRecordPath(dir, key), JSON.stringify({ key: key.canonical, descriptionDigest: currency.descriptionDigest, ...currentStamp(report, currency), report }));
+export const saveProbeRecord = async (dir: string, key: ManagedRecordKey, report: ProbeReport, currency: ManagedRecordCurrency, lock: KernelLockMechanism): Promise<void> => {
+  await writePrivateRecord(dir, managedRecordPath(dir, key), JSON.stringify({ key: key.canonical, descriptionDigest: currency.descriptionDigest, ...currentStamp(report, currency), report }), lock);
 };
 
 const corruptRecord = (file: string, target: string, problem: string, cause: unknown): Error =>

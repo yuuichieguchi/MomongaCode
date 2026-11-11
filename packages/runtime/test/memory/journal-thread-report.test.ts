@@ -8,6 +8,7 @@ import { startJournalThread } from '../../src/memory/journal-thread-client.ts';
 import { reportHandler } from '../../src/memory/journal-thread.ts';
 import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../../src/memory/journal-thread-limits.ts';
 import { makeEnv } from '../worker/harness.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -38,7 +39,7 @@ describe('the report request of the journal thread', () => {
       },
     };
     const { dev, ino } = fs.statSync(env.dbPath);
-    const thread = await startJournalThread({ databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+    const thread = await startJournalThread({ lock: testKernelLock(), databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
 
     try {
       expect(await thread.report({ runId: run.id })).toEqual({ lastSeq: env.run(run.id).lastSeq, report: expected });

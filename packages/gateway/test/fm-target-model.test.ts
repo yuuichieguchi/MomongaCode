@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createManagedTarget, saveProbeRecord } from '@momonga/gateway';
 import type { ManagedServer } from '@momonga/gateway';
 import type { KnownProbeKey } from '@momonga/config';
-import { startFakeChatCompletions, type FakeChatCompletionsServer } from '@momonga/testkit';
+import { startFakeChatCompletions, type FakeChatCompletionsServer, testKernelLock } from '@momonga/testkit';
 import { makeDir } from './gateway-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 import { FM_CURRENCY, fmRecordKey, fmTargetBase, IDLE_AUTO_PROBE, NO_AUTO_PROBE, primed, recordKeyOptions } from './fm-record-support.ts';
@@ -36,7 +36,7 @@ const startListing = async (): Promise<{ fake: FakeChatCompletionsServer; fmServ
 
 const targetOf = async (fmServe: ManagedServer, extra: { declaredModel?: string; declaredOutputBoundField?: 'max_tokens' | 'max_completion_tokens'; report?: ReturnType<typeof makeReport>; unprobed?: true } = {}) => {
   const probeRecordDir = makeDir();
-  if (extra.unprobed !== true) await saveProbeRecord(probeRecordDir, RECORD_KEY, extra.report ?? makeReport(1, 1), FM_CURRENCY);
+  if (extra.unprobed !== true) await saveProbeRecord(probeRecordDir, RECORD_KEY, extra.report ?? makeReport(1, 1), FM_CURRENCY, testKernelLock());
   const managed = createManagedTarget({
     ...fmTargetBase(),
     server: fmServe,

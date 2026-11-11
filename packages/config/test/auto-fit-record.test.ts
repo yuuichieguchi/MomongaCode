@@ -7,6 +7,7 @@ import { makeDir } from './helpers.ts';
 import { loadModelsSection } from './load-models.ts';
 import type { LoadedModels } from './load-models.ts';
 import { chatConnection } from './model-fixtures.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 type KeyResult = { kind: 'known'; key: AutoFitKey } | { kind: 'unknown' };
 
@@ -25,7 +26,7 @@ const RECORD = {
 
 const randomHex = (bytes: number): string => 'ab'.repeat(bytes);
 
-const write = (directory: string, record: Record<string, unknown>): Promise<string> => writeAutoFitRecord(directory, record as unknown as AutoFitRecord, randomHex);
+const write = (directory: string, record: Record<string, unknown>): Promise<string> => writeAutoFitRecord(directory, record as unknown as AutoFitRecord, randomHex, testKernelLock());
 
 const exported = <T>(name: string): T => {
   const value = (config as Record<string, unknown>)[name];

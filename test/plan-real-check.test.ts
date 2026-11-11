@@ -7,7 +7,7 @@ import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { FIRST_GENERATION, createJsonLogger, generationLayout, momongaLayout, momongaPaths, publishCurrentGeneration } from '@momonga/foundation';
 import type { LogFields } from '@momonga/foundation';
 import { PLAN_ROUTES } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, openResponsesTextReply, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, openResponsesTextReply, withTempDir, testKernelLock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { userInput } from '../packages/gateway/test/gateway-helpers.ts';
 import { PROCESS_VERSION, clientFor, makeHome, modelsOf, writeSettings } from '../packages/gateway/test/gateway-process-helpers.ts';
@@ -305,7 +305,7 @@ const startStubGateway = async (options: { dropRequest?: number } = {}): Promise
     generation: FIRST_GENERATION,
     version: PROCESS_VERSION,
     sockets: { ...generationLayout(home, FIRST_GENERATION).sockets, gateway: socketPath },
-  });
+  }, { lock: testKernelLock() });
   return { home, settingsFile, seen, capabilitiesNow: () => planEntryOf(fs.readFileSync(settingsFile, 'utf8'))['capabilities'] };
 };
 

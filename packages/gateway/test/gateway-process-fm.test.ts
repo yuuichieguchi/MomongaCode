@@ -8,7 +8,7 @@ import { codeDigestOfRunningProcess, FIRST_GENERATION } from '@momonga/foundatio
 import { saveProbeRecord, targetCounterOf } from '@momonga/gateway';
 import { FM_SERVER, TARGET_PROBING_MESSAGE } from '@momonga/protocol';
 import { FM_CURRENCY, fmRecordKey, saveFakeFmRecord } from './fm-record-support.ts';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeFm, fakeExec, killGroupsForCleanup, testKernelLock } from '@momonga/testkit';
 import { getJson, makeDir, postJson, readJson, registerCleanup, userInput, listedCountersOf, listedEntryOf } from './gateway-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 import {
@@ -173,7 +173,7 @@ describe('managed fm under startGatewayProcess', () => {
     reapServeGroups(dumpFile);
     declareAutoFm(home, fm.binaryPath);
     const binarySha256 = createHash('sha256').update(fs.readFileSync(fm.binaryPath)).digest('hex');
-    await saveProbeRecord(path.join(homePaths(home).root, 'state', 'probe'), fmRecordKey(binarySha256, FAKE_OS_BUILD), makeReport(1, 1), FM_CURRENCY);
+    await saveProbeRecord(path.join(homePaths(home).root, 'state', 'probe'), fmRecordKey(binarySha256, FAKE_OS_BUILD), makeReport(1, 1), FM_CURRENCY, testKernelLock());
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
     const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
     const entry = listedEntryOf(models.body, 'fm/system');
@@ -210,7 +210,7 @@ describe('managed fm under startGatewayProcess', () => {
     const binarySha256 = createHash('sha256').update(fs.readFileSync(fm.binaryPath)).digest('hex');
     const probeDir = path.join(homePaths(home).root, 'state', 'probe');
     fs.rmSync(path.join(probeDir, `${fmRecordKey(binarySha256, FAKE_OS_BUILD).digest}.json`));
-    await saveProbeRecord(probeDir, fmRecordKey(binarySha256, `${FAKE_OS_BUILD}x`), makeReport(1, 1), FM_CURRENCY);
+    await saveProbeRecord(probeDir, fmRecordKey(binarySha256, `${FAKE_OS_BUILD}x`), makeReport(1, 1), FM_CURRENCY, testKernelLock());
     fm.configure({ envDumpFile: dumpFile, serve: { stallNativeSamples: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], stallMs: 600_000 } });
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
     const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');

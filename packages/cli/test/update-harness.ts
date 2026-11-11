@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { RELEASE_SIGNATURE_KNOWN_ANSWER, RELEASE_SIGNATURE_TOOL } from '@momonga/foundation';
 import type { CommandOptions, CommandResult } from '@momonga/foundation';
-import { registerCleanup, withTempDir } from '@momonga/testkit';
+import { registerCleanup, withTempDir, testKernelLock } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import type { DetachedSpawn, SelfExecutable } from '../src/ports.ts';
 import type { UpdateWiring } from '../src/update/background.ts';
@@ -106,7 +106,7 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
     env: { PATH: '/usr/bin' },
     clock: virtualClock(),
     http: undiciUpdateHttp(Promise.resolve({ config: { caFiles: [] }, trust: { sources: [], failures: [] } })),
-    fs: nodeUpdateFs(),
+    fs: nodeUpdateFs(testKernelLock()),
     run: async (file, args, options) => {
       if (file === RELEASE_SIGNATURE_TOOL) {
         if (control.signatureToolMissing) throw Object.assign(new Error(`spawn ${file} ENOENT`), { code: 'ENOENT' });

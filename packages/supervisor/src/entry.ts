@@ -8,6 +8,7 @@ import {
   momongaPaths,
   runDaemonEntry,
   supervisorMaxCloseMs,
+  layoutProcessInspector,
 } from '@momonga/foundation';
 import type { EntryIo, JsonLogger } from '@momonga/foundation';
 import { SUPERVISOR_SERVICE } from './constants.ts';
@@ -17,7 +18,7 @@ import type { SupervisorOptions } from './start-supervisor.ts';
 
 export type SupervisorEntryDeps = Omit<
   SupervisorOptions,
-  'home' | 'env' | 'logger' | 'droppedLogLines' | 'stdout' | 'signal' | 'onShutdownRequested' | 'stopValues' | 'generation'
+  'home' | 'env' | 'logger' | 'droppedLogLines' | 'stdout' | 'signal' | 'onShutdownRequested' | 'stopValues' | 'generation' | 'lockMechanism' | 'inspector'
 >;
 
 export const SUPERVISE_ENTRY_FLAGS = { ...COMMON_ENTRY_FLAGS, generation: { kind: 'string' } } as const;
@@ -53,9 +54,11 @@ export const runSupervisorEntry = (io: EntryIo, deps: SupervisorEntryDeps): Prom
       const clock = deps.clock ?? io.clock;
       const timers = deps.timers ?? io.timers;
       const logger = withLogData(context.logger, { generation: generationOfFlag(context.flags.generation) });
+      const lockMechanism = context.locks.mechanism;
+      const inspector = layoutProcessInspector(context.locks.capability);
       const supervisor = await startSupervisor({
         ...deps,
-        reaperPass: deps.reaperPass ?? entryReaperPass(deps, { home: context.home, clock, timers, logger, stopValues: stopValuesOf(context.home, context.logger) }),
+        reaperPass: deps.reaperPass ?? entryReaperPass({ ...deps, lockMechanism, inspector }, { home: context.home, clock, timers, logger, stopValues: stopValuesOf(context.home, context.logger) }),
         clock,
         timers,
         home: context.home,
@@ -68,6 +71,8 @@ export const runSupervisorEntry = (io: EntryIo, deps: SupervisorEntryDeps): Prom
         signal: context.signal,
         onShutdownRequested: context.requestShutdown,
         stopValues: stopValuesOf(context.home, context.logger),
+        lockMechanism,
+        inspector,
         acquireLock: context.acquireLock,
       });
       return { close: supervisor.close, abort: supervisor.abort, fatal: supervisor.fatal };

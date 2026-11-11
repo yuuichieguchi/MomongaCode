@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { getAssetKeys, getRawAsset, isSea } from 'node:sea';
-import { ProbeFailedError, defaultProcessInspector, nodeFileSystem } from '@momonga/foundation';
+import { ProbeFailedError, layoutProcessInspector, nodeFileSystem } from '@momonga/foundation';
 import type { ProbeOptions, ProcessInspector, StartTime } from '@momonga/foundation';
 
 type RuntimeEntry = typeof import('@momonga/runtime/entry');
@@ -26,14 +26,16 @@ const randomFraction = (): number => randomBytes(4).readUInt32BE(0) / 0x1_0000_0
 
 export const embeddedRipgrepSource = ({ RIPGREP_MANIFEST_ASSET, ensureBundledRipgrep }: Pick<RuntimeEntry, 'RIPGREP_MANIFEST_ASSET' | 'ensureBundledRipgrep'>): BundledRipgrepSource | undefined => {
   if (!isSea() || !getAssetKeys().includes(RIPGREP_MANIFEST_ASSET)) return undefined;
-  const inspector = defaultProcessInspector();
-  const ownerId = ownOwnerIdWith(inspector, process.pid);
-  return (paths) => async (signal) =>
-    ensureBundledRipgrep({
-      asset: (name) => new Uint8Array(getRawAsset(name)),
-      executablesRoot: paths.executables,
-      random: randomFraction,
-      ownerId: await ownerId({ signal }),
-      files: nodeFileSystem,
-    });
+  return (paths, locks) => {
+    const ownerId = ownOwnerIdWith(layoutProcessInspector(locks.capability), process.pid);
+    return async (signal) =>
+      ensureBundledRipgrep({
+        asset: (name) => new Uint8Array(getRawAsset(name)),
+        executablesRoot: paths.executables,
+        random: randomFraction,
+        ownerId: await ownerId({ signal }),
+        lock: locks.mechanism,
+        files: nodeFileSystem,
+      });
+  };
 };

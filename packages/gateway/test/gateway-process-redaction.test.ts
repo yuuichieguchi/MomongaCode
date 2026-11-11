@@ -5,7 +5,7 @@ import { DEFAULT_STOP_VALUES, createJsonLogger, gatewayMaxCloseMs, createUdsClie
 import type { TextStream, UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, ownedStart, createFakeFm, fakeExec, killGroupsForCleanup, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, ownedStart, createFakeFm, fakeExec, killGroupsForCleanup, registerCleanup, startFakeChatCompletions, withTempDir, testLocks } from '@momonga/testkit';
 import type { CleanupContext, FakeChatCompletionsServer, FakeScriptedReply } from '@momonga/testkit';
 import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, writeSettings, modelsOf, prepareHome } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
@@ -71,6 +71,7 @@ const startKeyedStack = async (
   });
   const log = captureLog();
   const handle = await ownedStart(context, startGatewayProcess({
+    locks: testLocks(),
     generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, { [TEST_API_KEY_ENV]: options.keyValue ?? TEST_API_KEY }),
@@ -308,6 +309,7 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
   });
   await placeFakeFm(home, fm.binaryPath);
   const handle = await ownedStart(context, startGatewayProcess({
+    locks: testLocks(),
     generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, { [TEST_API_KEY_ENV]: TEST_API_KEY }),

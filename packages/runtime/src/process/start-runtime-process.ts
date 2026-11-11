@@ -2,20 +2,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ConfigError, loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, readUserStopValues, keptSettingsDirectory, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
 import type { ResolvedSettings } from '@momonga/config';
-import { installTrust, trustFailureText } from '@momonga/foundation';
+import { installTrust, trustFailureText, layoutProcessInspector } from '@momonga/foundation';
 import {
   acquireProcessLock,
   announceReady,
   createJsonLogger,
   createRedactor,
-  createLockCapability,
   createRolePort,
   EXIT_RETIRED,
   fixedSocket,
   generationIsLive,
   generationLayout,
   generationOfDirectoryName,
-  hostKernelLock,
   inspectProcessLock,
   listGenerations,
   momongaPaths,
@@ -26,7 +24,6 @@ import {
   ProcessLockHeldError,
   markerReapClockBoundMs,
   reapMarkerDirectory,
-  resolveKernelLock,
   ruleEnforcementOf,
   hostPaths,
   startDeadlineSignal,
@@ -36,7 +33,7 @@ import {
   nodeFileSystemSync,
   runtimeTeardownBudgetMs,
 } from '@momonga/foundation';
-import type { Clock, GenerationRole, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, StopValues, TextStream } from '@momonga/foundation';
+import type { Clock, GenerationRole, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, StopValues, TextStream, LayoutLocks } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore, pageRunBodies, startBodyPurge } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
@@ -140,6 +137,7 @@ export type StartRuntimeProcessOptions = {
   workerCount?: number;
   leaseMs?: number;
   signal?: AbortSignal;
+  locks: LayoutLocks;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
   bundledRipgrep?: BundledRipgrepSource;
   ruleSolver?: RuleSolverSource;
@@ -148,7 +146,7 @@ export type StartRuntimeProcessOptions = {
   createAdminPool?: ToolRuntimeOptions['createAdminPool'];
 };
 
-export type BundledRipgrepSource = (paths: Pick<MomongaPaths, 'executables'>) => BundledRipgrepResolver;
+export type BundledRipgrepSource = (paths: Pick<MomongaPaths, 'executables'>, locks: LayoutLocks) => BundledRipgrepResolver;
 
 export type RuntimeCloseResult = {
   clean: boolean;
@@ -361,6 +359,9 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     return run();
   };
 
+  const { capability: lockCapability, mechanism: kernelLock } = options.locks;
+  const inspector = layoutProcessInspector(lockCapability);
+
   try {
     const sharedPaths = momongaPaths(canonicalHome, platform, {});
     const paths = await step('dirs', async () => {
@@ -377,14 +378,14 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       const directories = [paths.markers.root];
       for (const generation of (await nodeFileSystem.readdir(sharedPaths.markers.root)).map(generationOfDirectoryName)) {
         if (generation === undefined || generation === options.generation) continue;
-        if (!(await generationIsLive(sharedPaths, generation, { lock: hostKernelLock() }))) directories.push(scopeToGeneration(sharedPaths, generation).markers.root);
+        if (!(await generationIsLive(sharedPaths, generation, { lock: kernelLock }))) directories.push(scopeToGeneration(sharedPaths, generation).markers.root);
       }
       return directories;
     };
 
     const lock: ProcessLock = await step('lock', async () => {
       try {
-        return await (options.acquireLock ?? acquireProcessLock)(own.locks.runtime);
+        return await (options.acquireLock ?? ((lockPath: string) => acquireProcessLock(lockPath, undefined, { mechanism: kernelLock })))(own.locks.runtime);
       } catch (error) {
         if (error instanceof ProcessLockHeldError && error.lockPath === own.locks.runtime) {
           throw new RuntimeAlreadyRunningError(error.message, error.lockPath, error.holderPid);
@@ -402,7 +403,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     };
     const { cache, settings } = await step('settings', async () => {
       const appliedRecord = process.env[SETTINGS_APPLIED_ENV];
-      const created = createUserSettingsCache({ home: canonicalHome, onWarning, keptRecords: diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(canonicalHome)), ...(appliedRecord === undefined ? {} : { appliedRecord }) });
+      const created = createUserSettingsCache({ home: canonicalHome, onWarning, keptRecords: diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(canonicalHome), kernelLock), ...(appliedRecord === undefined ? {} : { appliedRecord }) });
       const snapshot = created.snapshot();
       if ('error' in snapshot) throw snapshot.error;
       return { cache: created, settings: snapshot.settings };
@@ -443,9 +444,9 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             `bwrap at ${launcherPath} cannot create a sandbox on this host: ${probe.stderr}; set "sandbox": "none" in ${paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
           );
         }
-        return createBubblewrapSandbox({ bwrapPath: launcherPath, tmpRoot: paths.tmp.spawn, killGraceMs: SANDBOX_KILL_GRACE_MS, journal: createPlaceholderJournal(journalDirectory), holders: () => heldMountPoints() });
+        return createBubblewrapSandbox({ bwrapPath: launcherPath, tmpRoot: paths.tmp.spawn, lock: kernelLock, killGraceMs: SANDBOX_KILL_GRACE_MS, journal: createPlaceholderJournal(journalDirectory), holders: () => heldMountPoints() });
       }
-      return createSeatbeltSandbox({ sandboxExecPath: launcherPath, tmpRoot: paths.tmp.spawn, killGraceMs: SANDBOX_KILL_GRACE_MS });
+      return createSeatbeltSandbox({ sandboxExecPath: launcherPath, tmpRoot: paths.tmp.spawn, lock: kernelLock, killGraceMs: SANDBOX_KILL_GRACE_MS });
     };
     const sandboxes = createPinnedDerivation<SandboxBinding>({
       cache,
@@ -468,7 +469,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       const bound = timers.setTimeout(() => reapStop.abort(), markerReapClockBoundMs(MARKER_REAP_KILL_GRACE_MS));
       const reapSignal = signal === undefined ? reapStop.signal : AbortSignal.any([signal, reapStop.signal]);
       try {
-        await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: MARKER_REAP_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming, signal: reapSignal, occasion: 'startup' });
+        await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: MARKER_REAP_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming, signal: reapSignal, inspector, occasion: 'startup' });
       } finally {
         timers.clearTimeout(bound);
       }
@@ -477,12 +478,13 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     const { notifier, store, journalThread } = await step('store', async () => {
       migrateRuntimeDatabase(paths.databases.runtime);
       const { dev, ino } = fs.statSync(paths.databases.runtime);
-      const startedThread = await startJournalThread({ databasePath: paths.databases.runtime, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+      const startedThread = await startJournalThread({ databasePath: paths.databases.runtime, lock: kernelLock, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
       const createdNotifier = createRunNotifier();
       try {
         const opened = openRuntimeStore({
           path: paths.databases.runtime,
           home: canonicalHome,
+          lock: kernelLock,
           clock,
           leaseMs,
           maxAttempts: STORE_MAX_ATTEMPTS,
@@ -509,11 +511,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       },
     });
 
-    const lockCapability = createLockCapability({ proofDir: paths.lockProof });
-    const kernelLock = await resolveKernelLock(paths.callLocks, { capability: lockCapability });
-
     await step('tool-markers', async () => {
-      await reapToolMarkers({ dir: paths.markers.tools, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming, signal, event: 'startup', owners: markerOwners });
+      await reapToolMarkers({ dir: paths.markers.tools, inspector, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming, signal, event: 'startup', owners: markerOwners });
       await sweepCallLocks({ dir: paths.callLocks, mechanism: kernelLock });
     });
 
@@ -583,7 +582,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     cleanups.push({ name: 'gateway-client', run: () => gatewayClient.destroy() });
 
     const ports = await step('ports', async () => {
-      const composition = createSettingsComposition({ home: canonicalHome, platform, cache, store, signal: lifetime.signal });
+      const composition = createSettingsComposition({ home: canonicalHome, platform, cache, store, lock: kernelLock, signal: lifetime.signal });
       const mcpNetwork = await outboundNetworkOf(settings.network, startDeadlineSignal(undefined));
       const runtime: ToolRuntime = createToolRuntime({
         version,
@@ -611,7 +610,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         reapTiming,
         leaseMs,
         heartbeatMs: heartbeatMsFor(leaseMs),
-        ...(options.bundledRipgrep === undefined ? {} : { bundledRipgrep: options.bundledRipgrep(paths) }),
+        ...(options.bundledRipgrep === undefined ? {} : { bundledRipgrep: options.bundledRipgrep(paths, options.locks) }),
       });
       const tracker: CancelUpstreamTracker = createCancelUpstream({ store, gatewayClient, timers });
       const skills = createSkillsPort({
@@ -667,7 +666,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         const stop = new AbortController();
         const handle = timers.setTimeout(() => stop.abort(), RUNTIME_TEARDOWN_BUDGET_MS);
         try {
-          await reapToolMarkers({ dir: paths.markers.tools, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming, signal: stop.signal, event: 'shutdown', owners: toolRuntime.owners });
+          await reapToolMarkers({ dir: paths.markers.tools, inspector, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming, signal: stop.signal, event: 'shutdown', owners: toolRuntime.owners });
         } finally {
           timers.clearTimeout(handle);
         }
@@ -690,6 +689,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         clock,
         redactor,
         home: canonicalHome,
+        lock: kernelLock,
         version,
         socketPath: own.sockets.runtime,
         pid: process.pid,
@@ -832,13 +832,13 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     const otherRuntimeLive = async (): Promise<boolean> => {
       for (const generation of (await nodeFileSystem.readdir(sharedPaths.run)).map(generationOfDirectoryName)) {
         if (generation === undefined || generation === options.generation) continue;
-        if ((await inspectProcessLock(generationLayout(canonicalHome, generation).locks.runtime)).state !== 'free') return true;
+        if ((await inspectProcessLock(generationLayout(canonicalHome, generation).locks.runtime, { mechanism: kernelLock })).state !== 'free') return true;
       }
       return false;
     };
     const fidelityBound = async (): Promise<number | undefined> => {
       let bound = FIDELITY_FOLD_VERSION;
-      for (const listed of await listGenerations(sharedPaths, { lock: hostKernelLock() })) {
+      for (const listed of await listGenerations(sharedPaths, { lock: kernelLock })) {
         if (!listed.live || listed.generation === options.generation) continue;
         if (listed.record.kind !== 'record') return undefined;
         bound = Math.min(bound, listed.record.record.foldVersion);
@@ -910,7 +910,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             name: 'session-scratch',
             intervalMs: SESSION_TMP_SWEEP_MS,
             run: async (): Promise<ServingTaskOutcome> => {
-              await sweepSessionTmp({ root: paths.tmp.sessions, store, now: clock.now(), onWarning });
+              await sweepSessionTmp({ root: paths.tmp.sessions, store, now: clock.now(), onWarning, lock: kernelLock });
               return 'done';
             },
           },
@@ -918,7 +918,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             name: 'spawn-scratch',
             intervalMs: SESSION_TMP_SWEEP_MS,
             run: async (): Promise<ServingTaskOutcome> => {
-              await sweepSpawnTmp({ dir: paths.tmp.spawn, onWarning });
+              await sweepSpawnTmp({ dir: paths.tmp.spawn, onWarning, lock: kernelLock });
               return 'done';
             },
           },
@@ -956,6 +956,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
               try {
                 await reapToolMarkers({
                   dir: paths.markers.tools,
+                  inspector,
                   store,
                   killGraceMs: MARKER_REAP_KILL_GRACE_MS,
                   onWarning,
