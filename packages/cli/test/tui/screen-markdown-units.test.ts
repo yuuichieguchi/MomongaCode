@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 import { createHistoryFeed } from '../../src/tui/screen/history-feed.ts';
-import { MARKDOWN_UNIT_BYTES, START_OF_TEXT, markdownRows, parseMarkdown } from '../../src/tui/screen/markdown.ts';
+import { MARKDOWN_UNIT_BYTES, NOTHING_SCANNED, START_OF_TEXT, markdownRows, parseMarkdown } from '../../src/tui/screen/markdown.ts';
 import { createRowCache } from '../../src/tui/screen/row-cache.ts';
 import type { RowRenderers } from '../../src/tui/screen/row-cache.ts';
 import { extractSelection } from '../../src/tui/screen/selection.ts';
@@ -98,7 +98,7 @@ describe('a markdown entry larger than one unit', () => {
     const rows: Row[] = [];
     let point = START_OF_TEXT;
     for (;;) {
-      const parsed = parseMarkdown(text.slice(0, 200_000), point, 47, { tables: 'grid', settled: true, unit: true });
+      const parsed = parseMarkdown(text.slice(0, 200_000), point, 47, { tables: 'grid', references: NOTHING_SCANNED.references, settled: true, unit: true });
       rows.push(...parsed.rows);
       point = parsed.point;
       if (parsed.tail !== undefined) {
@@ -229,7 +229,7 @@ describe('a table larger than one unit', () => {
     expect(rows.some((row) => row.text.includes('│'))).toBe(false);
     let point = START_OF_TEXT;
     for (;;) {
-      const parsed = parseMarkdown(table, point, 60, { tables: 'grid', settled: true, unit: true });
+      const parsed = parseMarkdown(table, point, 60, { tables: 'grid', references: NOTHING_SCANNED.references, settled: true, unit: true });
       expect(bytesOf(table.slice(point.characters, parsed.point.characters))).toBeLessThanOrEqual(MARKDOWN_UNIT_BYTES);
       point = parsed.point;
       if (parsed.tail !== undefined) break;

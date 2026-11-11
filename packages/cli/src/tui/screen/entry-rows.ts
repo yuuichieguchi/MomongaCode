@@ -4,7 +4,7 @@ import { describeDenial } from '../../policy-messages.ts';
 import { bannerRows, textLines } from '../startup.tsx';
 import type { Entry, ToolEntry } from '../transcript.ts';
 import { markdownRowsWith, parseMarkdown } from './markdown.ts';
-import type { Parsed, ParsePoint, TableDrawing } from './markdown.ts';
+import type { Parsed, ParsePoint, References, TableDrawing } from './markdown.ts';
 import type { StyleToken } from './tokens.ts';
 import { openThoughtRows, thoughtRows } from './thought.ts';
 import type { ThoughtEntry, ThoughtWrap } from './thought.ts';
@@ -57,7 +57,7 @@ const tablesOf = ({ a11y }: RowFacts): TableDrawing => (a11y.screenReader ? 'rec
 
 export const assistantTextRows = (text: string, width: number, facts: RowFacts): Row[] => markdownRowsWith(text, width, { tables: tablesOf(facts) });
 
-export type AnswerReading = { settled: boolean; unit: boolean };
+export type AnswerReading = { references: References; settled: boolean; unit: boolean };
 
 export const answerRowsFrom = (text: string, from: ParsePoint, width: number, reading: AnswerReading, facts: RowFacts): Parsed => parseMarkdown(text, from, width, { ...reading, tables: tablesOf(facts) });
 
