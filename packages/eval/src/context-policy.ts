@@ -122,5 +122,8 @@ export const parsePolicyOverlay = (text: string, source: string): PolicyOverlay 
   }
   const verdict = validatePolicyOverlay(value);
   if (!verdict.valid) throw new EvalError(`${source}: not a token policy overlay (${describeViolation(verdict.errors)})`);
+  if (verdict.value.context?.autoCompact !== undefined) {
+    throw new EvalError(`${source}: context.autoCompact is set by the compaction field of each case, so an overlay that sets it would be recorded as a policy the runs did not have; remove it from the overlay`);
+  }
   return verdict.value;
 };
