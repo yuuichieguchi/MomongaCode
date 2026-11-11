@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { commandSpecsFor } from './platform-specs.ts';
 import type { CommandSpecs } from './command-specs.ts';
-import { DARWIN_SED, pathEffectsOf } from './path-effects.ts';
+import { DARWIN_SED, globDirectory, pathEffectsOf } from './path-effects.ts';
 import type { ProgramEffects } from './path-effects.ts';
 import { escapeForGlob } from './glob-pattern.ts';
 import { ASSIGNMENT } from './shell-lexemes.ts';
@@ -591,16 +591,6 @@ export const allWriteTargets = (analysis: Analysis, resolveFor?: (segment: Segme
   executionSteps(analysis, resolveFor).flatMap((step) => step.writes);
 
 export const allReadTargets = (analysis: Analysis): Target[] => executionSteps(analysis).flatMap((step) => step.reads);
-
-const GLOB_METACHARACTER = /[*?[{]/;
-
-const globDirectory = (glob: string): string => {
-  const wildcard = glob.search(GLOB_METACHARACTER);
-  const literalPrefix = wildcard === -1 ? glob : glob.slice(0, wildcard);
-  const slash = literalPrefix.lastIndexOf('/');
-  if (slash === -1) return '.';
-  return slash === 0 ? '/' : literalPrefix.slice(0, slash);
-};
 
 export const readPathsOfCommand = (command: string, specs: CommandSpecs): string[] => {
   const analysis = analyzeCommand(command, specs);
