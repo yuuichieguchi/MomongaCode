@@ -48,3 +48,11 @@ describe('every command shown in the help has a description (cli-commands-C42)',
     expect(shown(program(), '').filter((command) => command.description === '').map((command) => command.name)).toEqual([]);
   });
 });
+
+describe('a flag help states the rule the code applies (cli-commands-C42)', () => {
+  it('models add --window says the flag wins over the window the server reports', () => {
+    const add = program().commands.find((command) => command.name() === 'models')?.commands.find((command) => command.name() === 'add');
+    const window = add?.options.find((option) => option.long === '--window');
+    expect(window?.description).toBe('the context window of the model; it wins over the window the server reports');
+  });
+});

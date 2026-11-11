@@ -603,7 +603,7 @@ const registerModels: CommandGroup = (program, deps) => {
       .description('add a model of a model server found on this computer, of a server at an address, or of a signed-in subscription account')
       .option('--address <url>', 'the address of the model server; without it this computer is searched')
       .option('--model <own name>', 'the model, as the server calls it')
-      .option('--window <tokens>', 'the context window of the model, when the server reports none')
+      .option('--window <tokens>', 'the context window of the model; it wins over the window the server reports')
       .option('--api <api>', 'the API of a server that is not recognised: ollama, openai, anthropic or responses')
       .option('--api-key-env <NAME>', 'the environment variable that holds the key of the server')
       .option('--api-key-secret <name>', 'the secret of momonga secret set that holds the key of the server')
