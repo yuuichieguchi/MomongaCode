@@ -172,7 +172,7 @@ export const parseJsonText = (written: string, source: string): unknown => {
       if (scanFailure instanceof JsonDepthError) throw new ConfigError(`${source}: ${scanFailure.message}`, { cause: scanFailure });
       throw scanFailure;
     }
-    if (offset === undefined) throw error;
+    if (offset === undefined) throw new ConfigError(`${source}: invalid JSON: ${(error as Error).message}`, { cause: error });
     const { line, column } = lineAndColumn(text, offset);
     throw new ConfigError(`${source}: invalid JSON at line ${line} column ${column}: ${(error as Error).message}`, { cause: error });
   }
