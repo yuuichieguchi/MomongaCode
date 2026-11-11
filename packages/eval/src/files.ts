@@ -22,7 +22,7 @@ export type EvalFiles = {
   exists(file: string): Promise<boolean>;
 };
 
-export type WorkspaceFiles = Pick<FileSystem, 'stat' | 'lstat' | 'readdir' | 'readdirEntries' | 'readFile' | 'readTextFile' | 'mkdir' | 'writeFile' | 'access' | 'realpath' | 'cp'> & {
+export type WorkspaceFiles = Pick<FileSystem, 'stat' | 'lstat' | 'readdir' | 'readdirEntries' | 'readFile' | 'readlink' | 'readTextFile' | 'mkdir' | 'writeFile' | 'access' | 'realpath' | 'cp'> & {
   removeExisting(file: string): Promise<void>;
 };
 
@@ -32,6 +32,7 @@ export const nodeWorkspaceFiles: WorkspaceFiles = {
   readdir: nodeFileSystem.readdir,
   readdirEntries: nodeFileSystem.readdirEntries,
   readFile: nodeFileSystem.readFile,
+  readlink: nodeFileSystem.readlink,
   readTextFile: nodeFileSystem.readTextFile,
   mkdir: nodeFileSystem.mkdir,
   writeFile: nodeFileSystem.writeFile,

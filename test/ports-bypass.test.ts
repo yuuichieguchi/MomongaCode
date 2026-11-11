@@ -29,7 +29,6 @@ const SYNCHRONOUS_ADAPTERS: Readonly<Record<string, string>> = {
 };
 
 const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
-  'packages/cli/src/eval/workspace-probe.ts': { 'node:fs/promises': 3, 'setTimeout': 1 },
   'packages/cli/src/handover/replace-process.ts': { 'node:child_process': 1 },
   'packages/cli/src/ripgrep/host.ts': { 'randomBytes': 1 },
   'packages/cli/src/tui/run-interactive.tsx': { 'node:child_process': 1, 'node:os': 1 },
