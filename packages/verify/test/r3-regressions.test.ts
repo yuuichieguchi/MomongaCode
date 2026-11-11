@@ -38,7 +38,7 @@ describe('finding 6: an unmodelled deny or ask rule never leaves a proof standin
 
     expect(await decideCommand(layout, rules, 'git -C . push origin~1 x')).toBe('allow');
     expect(statusOf(report, 'bash-admission')).toBe('unknown');
-    expect(statusOf(report, 'rule-consistency')).toBe('unknown');
+    expect(statusOf(report, 'rule-consistency')).toBe('noted');
     expect(report.exitCode).toBe(1);
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
@@ -46,8 +46,8 @@ describe('finding 6: an unmodelled deny or ask rule never leaves a proof standin
     const layout = makeLayout();
     const report = await verifyScenario(z3.engine().api, layout, rulesOf(layout, [['deny', 'Bash(git push origin~1:*)'], ['deny', 'Bash(git:*)']]));
 
-    expect(statusOf(report, 'rule-consistency')).toBe('unknown');
-    expect(report.exitCode).toBe(1);
+    expect(statusOf(report, 'rule-consistency')).toBe('noted');
+    expect(report.exitCode).toBe(0);
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('the outside-proof note no longer claims no proved result depends on the rule', async () => {
@@ -81,8 +81,8 @@ describe('finding 6: an unmodelled deny or ask rule never leaves a proof standin
     const layout = makeLayout();
     const report = await verifyScenario(z3.engine().api, layout, rulesOf(layout, [['deny', 'Bash(sudo:*)'], ['deny', 'Bash(sudo:*)']]));
 
-    expect(statusOf(report, 'rule-consistency')).not.toBe('proved');
-    expect(report.exitCode).toBe(1);
+    expect(statusOf(report, 'rule-consistency')).toBe('noted');
+    expect(report.exitCode).toBe(0);
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('a wrapper deny rule of several words leaves bash-admission unknown while an allow rule exists', async () => {
@@ -102,13 +102,13 @@ describe('finding 6: an unmodelled deny or ask rule never leaves a proof standin
     expect(report.exitCode).toBe(0);
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
-  it('a wrapper ask rule stays unknown and is named', async () => {
+  it('a wrapper ask rule is noted as not decided and is named', async () => {
     const layout = makeLayout();
     const report = await verifyScenario(z3.engine().api, layout, rulesOf(layout, [['ask', 'Bash(sudo:*)']]));
     const result = report.results.find((item) => item.id === 'rule-consistency');
 
-    expect(result?.verdict.status).toBe('unknown');
-    expect(result?.verdict.status === 'unknown' ? result.verdict.reason : '').toContain('Bash(sudo:*)');
+    expect(result?.verdict.status).toBe('noted');
+    expect(result?.verdict.status === 'noted' ? result.verdict.ruleNotes.map((note) => [note.kind, note.message]) : []).toEqual([['undecided', expect.stringContaining('Bash(sudo:*)')]]);
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('a tool-wide allow Bash is seen by bash-admission: allow Bash with deny git push is refuted', async () => {

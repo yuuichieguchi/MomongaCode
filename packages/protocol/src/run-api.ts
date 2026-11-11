@@ -2,7 +2,7 @@ import type { Stored } from './stored-value.ts';
 import { UNKNOWN_VALUE } from './stored-value.ts';
 import { CONDITION_SOURCES, CONDITION_STATES, CONDITION_WHENS, NOT_RUN_REASONS, QUIESCENT_BEHAVIOURS, RESIDUAL_RISK_CODES, VERIFICATION_OUTCOMES } from './completion.ts';
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
-import { RULE_VERDICTS } from './rule-verdict.ts';
+import { RULE_NOTE_KINDS, RULE_VERDICTS } from './rule-verdict.ts';
 import { GUIDELINE_TEXT_PATTERN } from './guideline-text.ts';
 import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts';
 import { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
@@ -1714,6 +1714,18 @@ export const RUN_API_SCHEMAS = {
             solver: string,
             refuted: { type: 'array', items: closed({ property: string, subject: string, message: string, counterexample: string }, ['property', 'subject', 'message']) },
             byModeDefault: { type: 'array', items: closed({ property: string, subject: string, message: string, counterexample: string }, ['property', 'subject', 'message']) },
+            notes: {
+              type: 'array',
+              items: closed(
+                {
+                  kind: enumOf(RULE_NOTE_KINDS),
+                  rules: { type: 'array', items: closed({ text: string, origin: string, source: string }, ['text', 'origin', 'source']) },
+                  modes: { type: 'array', items: string },
+                  message: string,
+                },
+                ['kind', 'rules', 'modes', 'message'],
+              ),
+            },
             unknown: { type: 'array', items: closed({ property: string, reason: string }, ['property', 'reason']) },
             notProved: { type: 'array', items: string },
           },

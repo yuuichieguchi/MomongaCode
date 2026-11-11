@@ -1,7 +1,7 @@
 import type { PermissionRule } from '@momonga/config';
 import { ruleFingerprint } from '@momonga/foundation';
 import type { RuleEnforcement } from '@momonga/foundation';
-import { POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, policyRefutedMessage, policyVerdictNotice } from '@momonga/protocol';
+import { POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, policyRefutedMessage, policyVerdictNotice, refusingRefutations } from '@momonga/protocol';
 import type { PinnedRuleVerdict, RunEventPayload, RunState } from '@momonga/protocol';
 import type { RunError } from '@momonga/store';
 import { permissionRulesFor } from '../governance/rules.ts';
@@ -47,7 +47,7 @@ export const ruleVerdictAtStart = async (sources: StartVerdictSources, session: 
 };
 
 export const policyRefusal = (verdict: PinnedRuleVerdict): RunError | undefined =>
-  verdict.verdict === 'refuted' ? { code: POLICY_REFUTED_CODE, message: policyRefutedMessage(verdict) } : undefined;
+  refusingRefutations(verdict).length > 0 ? { code: POLICY_REFUTED_CODE, message: policyRefutedMessage(verdict) } : undefined;
 
 const NOTICE_LEVELS = { proved: 'info', unknown: 'warning', refuted: 'error' } as const;
 
