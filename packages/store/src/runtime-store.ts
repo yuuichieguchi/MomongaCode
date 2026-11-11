@@ -9,7 +9,7 @@ import { createVerdictWriter } from './fidelity-verdicts.ts';
 import { createApprovalStore } from './approvals.ts';
 import { blobDirectoryOf, createBlobStore } from './blobs.ts';
 import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
-import { HISTORY_MODES, decodeContextOf, decodeKnownEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, decodeStoredEvent, encodeRunState, userShellRecordOf } from './codec.ts';
+import { HISTORY_MODES, decodeContextOf, decodeKnownEvent, decodeRun, decodeRunEvents, decodeSession, decodeStoredEvent, userShellRecordOf } from './codec.ts';
 import { createDerivedReads, createDerivedRepair } from './derived-repair.ts';
 import type { DerivedScope } from './derived-repair.ts';
 import { JournalThreadError, StalePreparation } from './journal-port.ts';
@@ -63,7 +63,6 @@ import type {
   JobStore,
   LeaseFence,
   LeaseLost,
-  LoadedRun,
   Run,
   RequestApprovalResult,
   RequestCancelResult,
@@ -403,12 +402,6 @@ const prepareStatements = (db: DatabaseSync) => ({
      WHERE id = :runId AND lease_token = :leaseToken AND lease_owner = :workerId`,
   ),
   inheritedEvent: db.prepare("SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'context.inherited' LIMIT 1"),
-  latestSnapshot: db.prepare('SELECT * FROM snapshots WHERE run_id = :runId ORDER BY seq DESC LIMIT 1'),
-  upsertSnapshot: db.prepare(
-    `INSERT INTO snapshots (run_id, seq, state_json, created_at) VALUES (:runId, :seq, :state, :createdAt)
-     ON CONFLICT (run_id, seq) DO UPDATE SET state_json = excluded.state_json, created_at = excluded.created_at`,
-  ),
-  pruneSnapshots: db.prepare('DELETE FROM snapshots WHERE run_id = :runId AND seq < :seq'),
 });
 
 type Statements = ReturnType<typeof prepareStatements>;
@@ -1105,19 +1098,6 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
   const hasInheritedEvent = (runId: string): boolean => sql.inheritedEvent.get({ runId }) !== undefined;
 
-  const loadInReadTx = (runId: string): LoadedRun => {
-    requireRun(runId);
-    const row: Row | undefined = sql.latestSnapshot.get({ runId });
-    if (row === undefined) return { tail: decodeEvents(sql.runEvents.all({ runId, after: 0, limit: -1 })) };
-    const identity = `${runId}@${String(row['seq'])}`;
-    const reader = readerFor('snapshots', identity, row);
-    const seq = reader.number('seq');
-    const state = decodeRunState(identity, reader.json('state_json'));
-    if (state === undefined) return { tail: decodeEvents(sql.runEvents.all({ runId, after: 0, limit: -1 })) };
-    if (state.runId !== runId) throw corrupt('snapshots', identity, `state belongs to run ${state.runId}`);
-    return { snapshot: { seq, state }, tail: decodeEvents(sql.runEvents.all({ runId, after: seq, limit: -1 })) };
-  };
-
   const writeInheritance = (claim: Claim, plan: Extract<InheritPlanReply, { kind: 'ready' }>): InheritContextResult =>
     transaction<InheritContextResult>(() => {
       const run = fenced(claim);
@@ -1732,7 +1712,11 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return readerFor('events', sessionId, row).number('max_id');
     },
 
-    load: (runId) => readTx(db, () => loadInReadTx(runId)),
+    load: async (runId, signal) => {
+      signal.throwIfAborted();
+      requireRun(runId);
+      return journalPreparer(preparer, 'run state').runState({ runId }, signal);
+    },
 
     inheritContext: async (claim, { mode, facts = store.journalFacts }) => {
       const run = requireRun(claim.runId);
@@ -1927,24 +1911,6 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     pendingApprovalViews: (runId) => derivedReads.read({ runId }, () => approvalOps.store.listPending(runId).filter((approval) => approval.kind === 'permission' || approval.kind === 'unknown_effect').map(viewOf)),
 
-    writeSnapshot: (claim, seq, state) =>
-      transaction(() => {
-        const run = fenced(claim);
-        if (run === undefined) return leaseLost;
-        if (state.runId !== run.id) throw new Error(`snapshot state belongs to run ${state.runId}, not ${run.id}`);
-        if (!Number.isInteger(seq) || seq < 0) throw new RangeError(`snapshot seq must be a non-negative integer, got ${seq}`);
-        if (seq > run.lastSeq) return conflict(`snapshot seq ${seq} is beyond run ${run.id} last seq ${run.lastSeq}`);
-        const latest = sql.latestSnapshot.get({ runId: run.id });
-        if (latest !== undefined && readerFor('snapshots', run.id, latest).number('seq') > seq) {
-          return conflict(`run ${run.id} already has a newer snapshot than seq ${seq}`);
-        }
-        const encoded = canonicalJson(encodeRunState(state));
-        onEncode?.('snapshot', Buffer.byteLength(encoded));
-        sql.upsertSnapshot.run({ runId: run.id, seq, state: encoded, createdAt: clock.now() });
-        sql.pruneSnapshots.run({ runId: run.id, seq });
-        return { kind: 'ok' } as const;
-      }),
-
     idempotency: createIdempotencyStore(db, clock, (fence) => fenced(fence) !== undefined, decodeContext),
     approvals: approvalOps.store,
     blobs,
@@ -1973,6 +1939,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       reflectionInput: async (request, signal) => journalPreparer(preparer, 'reflection input').reflectionInput(request, signal),
       fidelity: async (request, signal) => journalPreparer(preparer, 'fidelity check').fidelity(request, signal),
       report: async (request, signal) => journalPreparer(preparer, 'report').report(request, signal),
+      runState: async (request, signal) => journalPreparer(preparer, 'run state').runState(request, signal),
     },
 
     dataVersion: () => {

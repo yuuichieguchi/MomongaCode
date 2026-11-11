@@ -1,6 +1,7 @@
 export { MEMORY_MATCH_LIMIT, MEMORY_SCAN_LIMIT } from './memory-constants.ts';
 export { SESSION_PAGE_ROWS } from './runtime-store.ts';
 export { foldRunState, initialRunState, rejectionKeyOf } from './fold.ts';
+export { decodeRunState, encodeRunState } from './codec.ts';
 export { ITEM_EVENT_TYPES, itemCountOf, itemsOfEvent } from './history-items.ts';
 export type { ItemFacts, ProducedItem } from './history-items.ts';
 export { INHERITANCE_ERROR_CODES, InheritanceError, applyInheritance, applyReferenceInheritance, isReferenceInherited, projectInheritance, referenceDigest } from './inherit.ts';
@@ -26,7 +27,7 @@ export { FactsRefusedError, JournalThreadError, StalePreparation } from './journ
 export { JOURNAL_SCAN_RANGE_ROWS, createJournalReader } from './journal-reader.ts';
 export { blobDirectoryOf, createBlobStore, prepareBlobDirectory } from './blobs.ts';
 export type { BlobFileSystem, BlobPorts } from './blobs.ts';
-export type { JournalReader, JournalReaderOptions } from './journal-reader.ts';
+export type { JournalReader, JournalReaderOptions, RunStatePaging } from './journal-reader.ts';
 export type { RecordVisit, WalkUnits } from './record-walk.ts';
 export type { RecordHopRef } from './inherit-reference.ts';
 export { VERDICT_RANKS } from './types.ts';
@@ -85,7 +86,6 @@ export type {
   JobResult,
   JobStore,
   LeaseLost,
-  LoadedRun,
   AddGoverningFactInput,
   ContributionPayload,
   GoverningAdmission,
@@ -142,7 +142,6 @@ export type {
   SetModelResult,
   SetPermissionModeResult,
   SetSessionMcpServersResult,
-  SnapshotResult,
   StartJobInput,
   StatusPatch,
   TerminalContribution,
@@ -163,6 +162,8 @@ export type {
   ReflectionInputRequest,
   ReportReply,
   ReportRequest,
+  RunStateReply,
+  RunStateRequest,
   VerdictFact,
   VerdictReply,
   VerdictRequest,

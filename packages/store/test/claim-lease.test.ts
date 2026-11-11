@@ -454,7 +454,6 @@ describe('fencing across connections', () => {
     expect(workerA.append(claimA, [{ type: 'notice', level: 'info', message: 'stale' }])).toEqual({ kind: 'lease_lost' });
     expect(workerA.heartbeat(claimA)).toEqual({ kind: 'lease_lost' });
     expect(await workerA.transition(claimA, ['RUNNING'], 'COMPLETED')).toEqual({ kind: 'lease_lost' });
-    expect(workerA.writeSnapshot(claimA, 2, initialRunState({ runId: run.id, sessionId: run.sessionId }))).toEqual({ kind: 'lease_lost' });
     expect(await workerA.release(claimA, 'QUEUED')).toEqual({ kind: 'lease_lost' });
 
     expect(mustRun(workerB, run.id)).toEqual(before);

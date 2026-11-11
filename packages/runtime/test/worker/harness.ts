@@ -23,6 +23,7 @@ import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
 import type { AbandonTarget, AnyTool, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
 import { evidenceHandler, fidelityHandler, inheritPlanHandler, inheritedWindowHandler, reflectionInputHandler, reportHandler, verdictHandler } from '../../src/memory/journal-thread.ts';
 import type { JournalHandler } from '../../src/memory/journal-thread.ts';
+import { RUN_STATE_PAGE_EVENTS } from '../../src/memory/journal-thread-limits.ts';
 import { createFakeGateway } from './fake-gateway.ts';
 import type { FakeGateway } from './fake-gateway.ts';
 import { createFakeSettings } from './fake-settings.ts';
@@ -186,6 +187,15 @@ export const journalReaderPreparer = (dbPath: string): ContributionPreparer => (
     const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     try {
       return (await reportHandler(db, createJournalReader(db))(request, () => undefined)) as ReportReply;
+    } finally {
+      db.close();
+    }
+  },
+  runState: async (request, signal) => {
+    signal?.throwIfAborted();
+    const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
+    try {
+      return await createJournalReader(db).runState(request.runId, { pageEvents: RUN_STATE_PAGE_EVENTS, pause: async () => undefined });
     } finally {
       db.close();
     }

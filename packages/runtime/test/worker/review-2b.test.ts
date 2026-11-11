@@ -74,9 +74,9 @@ describe('worker reporter with a throwing onError hook', () => {
     env.gateway.script.push(textStep('Hello.'));
     const store: RuntimeStore = {
       ...env.store,
-      load: (runId) => {
+      load: (runId, signal) => {
         if (runId === failing.id) throw new Error('load exploded');
-        return env.store.load(runId);
+        return env.store.load(runId, signal);
       },
     };
     const unhandled: unknown[] = [];

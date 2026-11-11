@@ -1303,6 +1303,10 @@ DROP TABLE memory_evidence;
 ALTER TABLE memory_evidence_kept RENAME TO memory_evidence;
 `;
 
+const RECONCILED_CALL_IDS = `
+UPDATE events SET call_id = json_extract(payload_json, '$.callId') WHERE type = 'tool.reconciled' AND call_id IS NULL;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -1431,5 +1435,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 42,
     name: 'read the sessions a page at a time through an index in the order of the page, and keep with a waiting message the terms and the origin of the run it starts, so a queued run takes them from the request that queued it and never from the run that ended',
     sql: SESSION_PAGES_AND_QUEUED_TERMS,
+  },
+  {
+    version: 43,
+    name: 'record the call id of every tool.reconciled event in the call_id column of its row, so the reconciliation of a call is found through the index of call ids and not by reading the JSON of every reconciliation of the run',
+    sql: RECONCILED_CALL_IDS,
   },
 ];
