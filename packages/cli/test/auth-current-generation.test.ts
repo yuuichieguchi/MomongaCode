@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { TestContext } from 'vitest';
 import { runAuthResetHost } from '../src/commands/auth-wiring.ts';
 import type { CliPorts } from '../src/ports.ts';
+import { CHATGPT } from './fake-plan-gateway.tsx';
 import { freshHome } from './fresh-home.ts';
 
 vi.mock('../src/daemon/ensure-daemon.ts', async (importOriginal) => ({
@@ -47,11 +48,13 @@ const publish = async (paths: MomongaPaths, generation: number, gatewaySocket: s
 };
 
 describe('the auth commands reach the gateway of the current generation (gateway-accounts C44, P-242)', () => {
-  it('auth reset-host that meets a generation retired under it resolves the current generation again and is answered by the gateway that serves now', async (context) => {
+  it('auth reset-host that meets a generation retired under it resolves the current generation again, and every later request of the command goes to the gateway that serves now', async (context) => {
     const paths = momongaPaths(freshHome());
     fs.mkdirSync(path.dirname(paths.generationLock), { recursive: true });
     fs.mkdirSync(path.dirname(paths.current), { recursive: true });
-    const serving = await gateway(context, 'second.sock', async () => ({ status: 200, body: { hostId: 'host-2' } }));
+    const serving = await gateway(context, 'second.sock', async (request) =>
+      request.startsWith('GET ') ? { status: 200, body: { profiles: [CHATGPT], accounts: [] } } : { status: 200, body: { hostId: 'host-2' } },
+    );
     const retired = await gateway(context, 'first.sock', async () => {
       await publish(paths, 2, serving.socketPath);
       return RETIRED;
@@ -60,8 +63,8 @@ describe('the auth commands reach the gateway of the current generation (gateway
     const written: string[] = [];
     const ports = { stdout: { write: (text: string) => void written.push(text) }, stderr: { write: () => undefined }, terminal: undefined } as unknown as CliPorts;
     expect(await runAuthResetHost(ports, paths, true, new AbortController().signal)).toBe(0);
-    expect(retired.requests).toEqual(['POST /v1/momonga/plan/host/reset']);
-    expect(serving.requests).toEqual(['POST /v1/momonga/plan/host/reset']);
+    expect(retired.requests).toEqual(['GET /v1/momonga/plan/accounts']);
+    expect(serving.requests).toEqual(['GET /v1/momonga/plan/accounts', 'POST /v1/momonga/plan/host/reset']);
     expect(written.join('')).toContain('This computer is now the host host-2');
   });
 });

@@ -286,7 +286,13 @@ const MODEL_LIST_KIND = 'a model list';
 const USAGE_REPORT_KIND = 'a usage report';
 
 export const createGatewayClient = (options: { resolveSocket: SocketResolver }): GatewayClient => {
-  const http = createUdsClient(options.resolveSocket);
+  let http = createUdsClient(options.resolveSocket);
+
+  const leaveRetiredGeneration = async (): Promise<void> => {
+    const retired = http;
+    http = createUdsClient(options.resolveSocket);
+    await retired.close();
+  };
 
   type Sent = { status: number; text: string };
 
@@ -297,7 +303,9 @@ export const createGatewayClient = (options: { resolveSocket: SocketResolver }):
 
   const send = async (method: HttpMethod, path: string, body: unknown, signal: AbortSignal | undefined): Promise<Sent> => {
     const first = await sendOnce(method, path, body, signal);
-    return retiredRefusalOf(first.text) === undefined ? first : sendOnce(method, path, body, signal);
+    if (retiredRefusalOf(first.text) === undefined) return first;
+    await leaveRetiredGeneration();
+    return sendOnce(method, path, body, signal);
   };
 
   const getJson = async (path: string, what: string, signal?: AbortSignal): Promise<unknown> => {

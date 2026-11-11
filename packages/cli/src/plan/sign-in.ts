@@ -138,25 +138,25 @@ const completed = async (plan: PlanGatewayClient, request: PlanSignInCompleteReq
 
 const abandoned = (plan: PlanGatewayClient, attemptId: string): Promise<void> => plan.signInCancel({ attemptId }).catch(() => undefined);
 
-const confirmed = async (ports: SignInPorts, unconfirmed: PlanSignInIdentityUnconfirmed): Promise<PlanSignInCompleteResponse> => {
+const afterConfirmation = async (ports: SignInPorts, waitingAnswer: PlanSignInIdentityUnconfirmed): Promise<PlanSignInCompleteResponse> => {
   const expiry = new AbortController();
   const timer = ports.timers.setTimeout(() => expiry.abort(new SignInExpiredError()), AUTHORIZATION_WAIT_MS);
   let accepted: boolean;
   try {
     const waiting = AbortSignal.any([ports.signal, expiry.signal]);
-    accepted = await ports.confirmIdentity(unconfirmed.identity, waiting);
+    accepted = await ports.confirmIdentity(waitingAnswer.identity, waiting);
     waiting.throwIfAborted();
   } catch (error) {
-    await abandoned(ports.plan, unconfirmed.attemptId);
+    await abandoned(ports.plan, waitingAnswer.attemptId);
     throw error;
   } finally {
     ports.timers.clearTimeout(timer);
   }
   if (!accepted) {
-    await ports.plan.signInCancel({ attemptId: unconfirmed.attemptId });
-    return unconfirmed;
+    await ports.plan.signInCancel({ attemptId: waitingAnswer.attemptId });
+    return waitingAnswer;
   }
-  return completed(ports.plan, { attemptId: unconfirmed.attemptId, identityConfirmed: true });
+  return completed(ports.plan, { attemptId: waitingAnswer.attemptId, identityConfirmed: true });
 };
 
 export const signIn = async (ports: SignInPorts, request: SignInRequest): Promise<PlanSignInCompleteResponse> => {
@@ -186,7 +186,7 @@ export const signIn = async (ports: SignInPorts, request: SignInRequest): Promis
       ended.abort();
     }
     const answer = await completed(ports.plan, { attemptId: begun.attemptId, callbackUrl: value });
-    return answer.outcome === IDENTITY_UNCONFIRMED_OUTCOME ? await confirmed(ports, answer) : answer;
+    return answer.outcome === IDENTITY_UNCONFIRMED_OUTCOME ? await afterConfirmation(ports, answer) : answer;
   } finally {
     await listener.close();
   }
