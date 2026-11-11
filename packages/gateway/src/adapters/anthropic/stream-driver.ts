@@ -49,6 +49,7 @@ export class AnthropicStreamDriver {
   private stopReason: string | undefined;
   private segmentStarted = false;
   private pausedTurn = false;
+  private pausedBlocks: Record<string, unknown>[] = [];
 
   constructor(emitter: ResponseEmitter, continuation?: Continuation) {
     this.emitter = emitter;
@@ -74,7 +75,7 @@ export class AnthropicStreamDriver {
   }
 
   pausedContent(): Record<string, unknown>[] {
-    return this.recorder.content();
+    return this.pausedBlocks;
   }
 
   accumulatedUsage(): AnthropicUsageFields {
@@ -210,6 +211,7 @@ export class AnthropicStreamDriver {
         return;
       case 'pause_turn':
         if (this.recorder.unfinished > 0) throw new UpstreamProtocolError('the upstream paused the turn with a content block still open');
+        this.pausedBlocks = this.recorder.continuationContent();
         this.pausedTurn = true;
         return;
       case 'max_tokens':
