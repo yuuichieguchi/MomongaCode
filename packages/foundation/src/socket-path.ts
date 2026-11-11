@@ -28,11 +28,20 @@ const ENDPOINT_TOKEN_TEXT = /^[0-9a-f]{32}$/;
 
 export class EndpointScopeMissingError extends Error {}
 
+const PRODUCT_PIPE_PREFIX = `${PIPE_PREFIX}momonga-`;
+
+const SCOPED_PIPE = /^\\\\[.?]\\pipe\\momonga-[0-9a-f]{32}-/;
+
+const missingPart = (name: string): EndpointScopeMissingError =>
+  new EndpointScopeMissingError(`the named pipe ${name} needs the random part of this home (its token file in run/), so it is not served or dialled`);
+
 export const pipePathFor = (scope: EndpointScope | undefined, name: string): string => {
-  if (scope?.form !== 'pipe' || !ENDPOINT_TOKEN_TEXT.test(scope.token)) {
-    throw new EndpointScopeMissingError(`the named pipe ${name} needs the random part of this home (its token file in run/), so it is not served or dialled`);
-  }
-  return `${PIPE_PREFIX}momonga-${scope.token}-${name}`;
+  if (scope?.form !== 'pipe' || !ENDPOINT_TOKEN_TEXT.test(scope.token)) throw missingPart(name);
+  return `${PRODUCT_PIPE_PREFIX}${scope.token}-${name}`;
+};
+
+export const assertScopedPipePath = (pipePath: string): void => {
+  if (!SCOPED_PIPE.test(pipePath)) throw missingPart(pipePath);
 };
 
 export const assertSocketPathLength = (socketPath: string): void => {

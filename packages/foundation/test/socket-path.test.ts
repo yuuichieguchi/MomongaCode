@@ -1,9 +1,11 @@
+import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
+import type net from 'node:net';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FIRST_GENERATION, ENDPOINT_TOKEN_FILE, endpointScopeOf, ensureMomongaDirs, generationLayout, momongaPaths, nodeFileSystem, pipePathFor, systemRandom } from '@momonga/foundation';
+import { FIRST_GENERATION, ENDPOINT_TOKEN_FILE, createUdsClient, endpointScopeOf, ensureMomongaDirs, fixedSocket, generationLayout, listenUnix, momongaPaths, nodeFileSystem, pipePathFor, systemRandom } from '@momonga/foundation';
 import type { EndpointScope } from '@momonga/foundation';
-import { testKernelLock } from '@momonga/testkit';
+import { realProcessTestSignal, testKernelLock } from '@momonga/testkit';
 import { makeTemporaryDirectory } from './support/temporary-directory.ts';
 
 const TOKEN = '0123456789abcdef0123456789abcdef';
@@ -55,5 +57,41 @@ describe('C23: every local endpoint on Windows is a named pipe whose name carrie
     );
     const names = scopes.map((scope) => generationLayout(HOME, FIRST_GENERATION, 'win32', scope).sockets.supervisor);
     expect(names[0]).not.toBe(names[1]);
+  });
+});
+
+describe('C23: a named pipe without the random part is neither served nor dialled', () => {
+  const UNSCOPED = '\\\\.\\pipe\\momonga-0123456789abcdef-g1-runtime';
+
+  const listeningServer = (): { server: net.Server; listened: string[] } => {
+    const listened: string[] = [];
+    const emitter = new EventEmitter();
+    const server = Object.assign(emitter, {
+      listen: (name: string, callback: () => void) => {
+        listened.push(name);
+        callback();
+        return emitter;
+      },
+    }) as unknown as net.Server;
+    return { server, listened };
+  };
+
+  it('refuses to listen on a pipe name that carries no random part, and listens on one that does', async () => {
+    const refused = listeningServer();
+    await expect(listenUnix(refused.server, UNSCOPED, { mechanism: testKernelLock() }, realProcessTestSignal())).rejects.toThrow(/random part/);
+    expect(refused.listened).toEqual([]);
+    const served = listeningServer();
+    const scoped = pipePathFor(PIPES, 'g1-runtime');
+    await listenUnix(served.server, scoped, { mechanism: testKernelLock() }, realProcessTestSignal());
+    expect(served.listened).toEqual([scoped]);
+  });
+
+  it('refuses to dial a pipe name that carries no random part', async () => {
+    const client = createUdsClient(fixedSocket(UNSCOPED), { connectTimeoutMs: 1000 });
+    try {
+      await expect(client.request({ method: 'GET', path: '/health' })).rejects.toThrow(/random part/);
+    } finally {
+      await client.destroy();
+    }
   });
 });
