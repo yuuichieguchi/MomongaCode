@@ -3,7 +3,7 @@ import type { Context } from 'hono';
 import { MAX_TRACE_CONTENT_PAGE, QUOTE_ROUTE, ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
 import { MAX_BILLED_CALLS_PAGE } from '@momonga/observability';
 import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView, GatewayHealth, ModelList, MomongaModelList, TraceContentPage } from '@momonga/protocol';
-import { ClientDisconnectedError, GatewayError, gatewayClosedError, generationRetiredError, invalidRequest, notFound } from '../core/errors.ts';
+import { ClientDisconnectedError, GatewayError, gatewayClosedError, invalidRequest, notFound } from '../core/errors.ts';
 import type { ResponsesService, SubmitHeaders } from '../core/responses-service.ts';
 import type { PlanApi } from '../plan/api.ts';
 import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
@@ -17,17 +17,16 @@ import { listModel } from './capability-listing.ts';
 import type { ErrorExit } from './error-exit.ts';
 import { collectTerminalResource } from './response-body.ts';
 import { compactSseResponse, sseResponse } from './sse.ts';
-import type { RequestTracker } from './tracker.ts';
 
 export type AppDependencies = {
   services: GatewayServices;
   responses: ResponsesService;
   unary: UnaryService;
-  tracker: RequestTracker;
   isRetiring: () => boolean;
   activeRequests: () => number;
   startedAtSeconds: number;
   startedAt: string;
+  pid: number;
   version: string;
   costReport: ((runs: readonly { runId: string; sessionId: string }[], includeRunless: boolean, signal: AbortSignal) => Promise<{ report: GatewayCostReportView; text: string }>) | undefined;
   billedCalls: ((runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean, signal: AbortSignal) => Promise<BilledCallsPageView>) | undefined;
@@ -56,6 +55,8 @@ const submitHeadersOf = (context: Context): SubmitHeaders => ({
 
 const KEEP_ALIVES_PER_IDLE_BOUND = 3;
 
+const THIS_HEALTH_READ = 1;
+
 const streamIdleBoundOf = (value: string | undefined): number | undefined => {
   if (value === undefined) return undefined;
   if (!/^[1-9]\d{0,15}$/.test(value)) {
@@ -65,14 +66,17 @@ const streamIdleBoundOf = (value: string | undefined): number | undefined => {
 };
 
 export const createApp = (dependencies: AppDependencies): Hono => {
-  const { services, responses, unary, tracker } = dependencies;
+  const { services, responses, unary } = dependencies;
+  const readSignalOf = (context: Context): AbortSignal => AbortSignal.any([context.req.raw.signal, services.forceCloseSignal]);
   const requestSignalOf = (context: Context): AbortSignal => AbortSignal.any([context.req.raw.signal, services.closeSignal]);
   const keepAliveMsFor = (idleBoundMs: number): number =>
     Math.min(services.config.sseKeepAliveMs, Math.max(1, Math.floor(idleBoundMs / KEEP_ALIVES_PER_IDLE_BOUND)));
-  const app = new Hono();
-  const refuseWhileRetiring = (): void => {
-    if (dependencies.isRetiring()) throw generationRetiredError();
+  const jsonObjectBody = async (context: Context): Promise<Record<string, unknown>> => {
+    const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
+    if (!isRecord(raw)) throw invalidRequest('invalid_body', 'the request body must be a JSON object');
+    return raw;
   };
+  const app = new Hono();
 
   app.use(async (context, next) => {
     await next();
@@ -87,83 +91,54 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   });
 
   app.post('/v1/responses', async (context) => {
-    refuseWhileRetiring();
     const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
-    const release = tracker.begin();
-    let streaming = false;
+    const idleBoundMs = streamIdleBoundOf(context.req.header(STREAM_IDLE_HEADER));
+    const submission = await responses.submit(raw, submitHeadersOf(context), context.req.raw.signal);
+    const shownEvents = dependencies.errors.shownFrom(submission.events);
+    const streamOptions = {
+      timers: services.timers,
+      readerStallMs: services.config.limits.readerStallMs,
+      signal: AbortSignal.any([context.req.raw.signal, services.forceCloseSignal, submission.events.evicted]),
+      onError: dependencies.errors.report,
+    };
+    if (submission.stream && idleBoundMs !== undefined) return sseResponse(undefined, shownEvents, { ...streamOptions, keepAliveMs: keepAliveMsFor(idleBoundMs) });
+    const first = await shownEvents.next();
+    if (first.done === true) throw new ClientDisconnectedError();
+    if (submission.stream) return sseResponse(first.value, shownEvents, { ...streamOptions, keepAliveMs: services.config.sseKeepAliveMs });
     try {
-      const idleBoundMs = streamIdleBoundOf(context.req.header(STREAM_IDLE_HEADER));
-      const submission = await responses.submit(raw, submitHeadersOf(context), context.req.raw.signal);
-      const shownEvents = dependencies.errors.shownFrom(submission.events);
-      const streamOptions = {
-        timers: services.timers,
-        readerStallMs: services.config.limits.readerStallMs,
-        signal: AbortSignal.any([context.req.raw.signal, services.forceCloseSignal, submission.events.evicted]),
-        onEnd: release,
-        onError: dependencies.errors.report,
-      };
-      if (submission.stream && idleBoundMs !== undefined) {
-        streaming = true;
-        return sseResponse(undefined, shownEvents, { ...streamOptions, keepAliveMs: keepAliveMsFor(idleBoundMs) });
-      }
-      const first = await shownEvents.next();
-      if (first.done === true) throw new ClientDisconnectedError();
-      if (submission.stream) {
-        streaming = true;
-        return sseResponse(first.value, shownEvents, { ...streamOptions, keepAliveMs: services.config.sseKeepAliveMs });
-      }
-      try {
-        return context.json(await collectTerminalResource(first.value, shownEvents));
-      } finally {
-        await submission.events.return?.();
-      }
+      return context.json(await collectTerminalResource(first.value, shownEvents));
     } finally {
-      if (!streaming) release();
+      await submission.events.return?.();
     }
   });
 
   app.post('/v1/responses/compact', async (context) => {
-    refuseWhileRetiring();
     const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
-    const release = tracker.begin();
-    let streaming = false;
-    try {
-      const idleBoundMs = streamIdleBoundOf(context.req.header(STREAM_IDLE_HEADER));
-      const work = unary.compact(raw, context.req.raw.signal, context.req.header('momonga-deadline-ms'), context.req.header('idempotency-key'), {
-        runId: context.req.header(RUN_ID_HEADER),
-        traceparent: context.req.header('traceparent'),
-        tracestate: context.req.header('tracestate'),
-      });
-      if (idleBoundMs === undefined) return context.json(await work);
-      streaming = true;
-      const shownWork = work.catch((error: unknown) => {
-        throw dependencies.errors.shown(error);
-      });
-      return compactSseResponse(shownWork, {
-        timers: services.timers,
-        keepAliveMs: keepAliveMsFor(idleBoundMs),
-        signal: AbortSignal.any([context.req.raw.signal, services.forceCloseSignal]),
-        onEnd: release,
-        onError: dependencies.errors.report,
-      });
-    } finally {
-      if (!streaming) release();
-    }
+    const idleBoundMs = streamIdleBoundOf(context.req.header(STREAM_IDLE_HEADER));
+    const work = unary.compact(raw, context.req.raw.signal, context.req.header('momonga-deadline-ms'), context.req.header('idempotency-key'), {
+      runId: context.req.header(RUN_ID_HEADER),
+      traceparent: context.req.header('traceparent'),
+      tracestate: context.req.header('tracestate'),
+    });
+    if (idleBoundMs === undefined) return context.json(await work);
+    const shownWork = work.catch((error: unknown) => {
+      throw dependencies.errors.shown(error);
+    });
+    return compactSseResponse(shownWork, {
+      timers: services.timers,
+      keepAliveMs: keepAliveMsFor(idleBoundMs),
+      signal: AbortSignal.any([context.req.raw.signal, services.forceCloseSignal]),
+      onError: dependencies.errors.report,
+    });
   });
 
   app.post('/v1/momonga/count_tokens', async (context) => {
-    refuseWhileRetiring();
     const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
-    const release = tracker.begin();
-    try {
-      return context.json(await unary.countTokens(raw, requestSignalOf(context), context.req.header('momonga-deadline-ms')));
-    } finally {
-      release();
-    }
+    return context.json(await unary.countTokens(raw, requestSignalOf(context), context.req.header('momonga-deadline-ms')));
   });
 
   app.get('/v1/models', (context) =>
-    withPinnedServices(services, requestSignalOf(context), async ({ router }) => {
+    withPinnedServices(services, readSignalOf(context), async ({ router }) => {
       const list: ModelList = {
         object: 'list',
         data: router.views().map((view) => ({ id: view.canon, object: 'model', created: dependencies.startedAtSeconds, owned_by: view.provider })),
@@ -173,7 +148,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   );
 
   app.get('/v1/momonga/models', (context) => {
-    const signal = requestSignalOf(context);
+    const signal = readSignalOf(context);
     return withPinnedServices(services, signal, async ({ router }) => {
       const data = await Promise.all(router.models().map((model) => listModel(router, model, signal)));
       const list: MomongaModelList = { object: 'list', data, start: router.start(), roles: router.roles() };
@@ -182,25 +157,24 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   });
 
   app.get('/v1/momonga/health', (context) =>
-    withPinnedServices(services, requestSignalOf(context), async ({ router }) => {
+    withPinnedServices(services, readSignalOf(context), async ({ router }) => {
       const report: GatewayHealth = {
         ...(await router.health()),
         version: dependencies.version,
         apiVersion: 1,
-        pid: process.pid,
+        pid: dependencies.pid,
         startedAt: dependencies.startedAt,
         state: services.closeSignal.aborted ? 'draining' : dependencies.isRetiring() ? 'retiring' : 'running',
-        activeRequests: dependencies.activeRequests(),
+        activeRequests: dependencies.activeRequests() - THIS_HEALTH_READ,
       };
       return context.json(report);
     }),
   );
 
   app.post(QUOTE_ROUTE, async (context) => {
-    const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
-    const model = isRecord(raw) ? raw['model'] : undefined;
+    const { model } = await jsonObjectBody(context);
     if (typeof model !== 'string' || model === '') throw invalidRequest('invalid_body', 'model is required and must be a non-empty string', 'model');
-    return withPinnedServices(services, requestSignalOf(context), async ({ router, priceTable }) => context.json(quoteOf(router, model, priceTable, services.clock.now())));
+    return withPinnedServices(services, readSignalOf(context), async ({ router, priceTable }) => context.json(quoteOf(router, model, priceTable, services.clock.now())));
   });
 
   app.post('/v1/momonga/responses/cancel', (context) =>
@@ -219,23 +193,20 @@ export const createApp = (dependencies: AppDependencies): Hono => {
 
   app.post('/v1/momonga/cost', async (context) => {
     if (dependencies.costReport === undefined) throw notFound('cost_unavailable', 'this gateway keeps no trace store to price runs from');
-    const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
-    const runs = (raw as { runs?: unknown }).runs;
+    const { runs, includeRunless } = await jsonObjectBody(context);
     if (
       !Array.isArray(runs) ||
-      !runs.every((run): run is { runId: string; sessionId: string } => typeof run?.runId === 'string' && typeof run?.sessionId === 'string')
+      !runs.every((run): run is { runId: string; sessionId: string } => isRecord(run) && typeof run['runId'] === 'string' && typeof run['sessionId'] === 'string')
     ) {
       throw invalidRequest('invalid_body', 'runs must be a list of { runId, sessionId }', 'runs');
     }
-    const includeRunless = (raw as { includeRunless?: unknown }).includeRunless;
     if (typeof includeRunless !== 'boolean') throw invalidRequest('invalid_body', 'includeRunless must be a boolean', 'includeRunless');
-    return context.json(await dependencies.costReport(runs, includeRunless, requestSignalOf(context)));
+    return context.json(await dependencies.costReport(runs, includeRunless, readSignalOf(context)));
   });
 
   app.post('/v1/momonga/cost/calls', async (context) => {
     if (dependencies.billedCalls === undefined) throw notFound('cost_unavailable', 'this gateway keeps no trace store to price runs from');
-    const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
-    const { runIds, cursor, limit, includeRunless } = isRecord(raw) ? raw : { runIds: undefined, cursor: undefined, limit: undefined, includeRunless: undefined };
+    const { runIds, cursor, limit, includeRunless } = await jsonObjectBody(context);
     if (typeof includeRunless !== 'boolean') throw invalidRequest('invalid_body', 'includeRunless must be a boolean', 'includeRunless');
     if (!Array.isArray(runIds) || !runIds.every((runId): runId is string => typeof runId === 'string') || new Set(runIds).size !== runIds.length) {
       throw invalidRequest('invalid_body', 'runIds must be a list of distinct run ids', 'runIds');
@@ -246,7 +217,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     if (!isCount(limit) || limit < 1 || limit > MAX_BILLED_CALLS_PAGE) {
       throw invalidRequest('invalid_body', `limit must be an integer from 1 to ${MAX_BILLED_CALLS_PAGE}`, 'limit');
     }
-    return context.json(await dependencies.billedCalls(runIds, { run: cursor['run'], after: cursor['after'] }, limit, includeRunless, requestSignalOf(context)));
+    return context.json(await dependencies.billedCalls(runIds, { run: cursor['run'], after: cursor['after'] }, limit, includeRunless, readSignalOf(context)));
   });
 
   app.get('/v1/momonga/content', async (context) => {
@@ -257,7 +228,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     if (!isCount(after)) throw invalidRequest('invalid_query', 'after must be a non-negative integer', 'after');
     const limit = Number(context.req.query('limit') ?? String(MAX_TRACE_CONTENT_PAGE));
     if (!isCount(limit) || limit < 1 || limit > MAX_TRACE_CONTENT_PAGE) throw invalidRequest('invalid_query', `limit must be an integer from 1 to ${MAX_TRACE_CONTENT_PAGE}`, 'limit');
-    return context.json(await dependencies.traceContent(runId, after, limit, requestSignalOf(context)));
+    return context.json(await dependencies.traceContent(runId, after, limit, readSignalOf(context)));
   });
 
   const planRoute = (route: string): string => `${PLAN_API_PREFIX}${route}`;

@@ -2,14 +2,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createScriptedAdapter, textResponseEvents, waitFor } from '@momonga/testkit';
-import { outputText, postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
+import { makeDir, outputText, postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
+import { openGatewayStore } from '../src/core/store.ts';
+import { createStoredDataChecks } from '../src/core/validation.ts';
 import { inspectProcessLock } from '@momonga/foundation';
 
 describe('gateway persistence and lifecycle', () => {
-  it('creates the database directory 0700 and the database file 0600', async () => {
+  it('creates the database file 0600 in the directory it is given', async () => {
     const { dbPath } = await startGateway({ adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) } });
-    expect(fs.statSync(path.dirname(dbPath)).mode & 0o777).toBe(0o700);
     expect(fs.statSync(dbPath).mode & 0o777).toBe(0o600);
+  });
+
+  it('refuses a database directory that does not exist and does not create it', () => {
+    const missing = path.join(makeDir(), 'removed-home', 'state');
+
+    expect(() => openGatewayStore(path.join(missing, 'gateway.db'), createStoredDataChecks())).toThrow(`database directory ${missing} does not exist`);
+    expect(fs.existsSync(path.dirname(missing))).toBe(false);
   });
 
   it('closes idempotently, aborts in-flight adapter calls, clears timers, and releases the socket', async () => {

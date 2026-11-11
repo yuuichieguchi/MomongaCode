@@ -13,7 +13,6 @@ export type SseOptions = {
   keepAliveMs: number;
   readerStallMs: number;
   signal: AbortSignal;
-  onEnd: () => void;
   onError: (error: unknown) => void;
 };
 
@@ -48,7 +47,6 @@ export type CompactSseOptions = {
   timers: GatewayTimers;
   keepAliveMs: number;
   signal: AbortSignal;
-  onEnd: () => void;
   onError: (error: unknown) => void;
 };
 
@@ -68,7 +66,6 @@ export const compactSseResponse = (work: Promise<CompactResource>, options: Comp
     if (finished) return;
     finished = true;
     stopTimer();
-    options.onEnd();
   };
   const schedule = (): void => {
     timer = timers.setTimeout(() => {
@@ -136,7 +133,6 @@ export const sseResponse = (first: StreamEvent | undefined, rest: AsyncIterator<
     stopTimer();
     stopStallTimer();
     signal.removeEventListener('abort', onAbort);
-    options.onEnd();
   };
   const schedule = (): void => {
     timer = timers.setTimeout(() => {

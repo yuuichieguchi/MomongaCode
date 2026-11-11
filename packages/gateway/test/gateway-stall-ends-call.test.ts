@@ -10,12 +10,12 @@ import { REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
 import { createUpstreamClassifier } from '../src/adapters/shared/classify.ts';
 
 const STALL_MS = 50;
-const LIVENESS: UpstreamLiveness = { headersTimeoutMs: STALL_MS, idleTimeoutMs: STALL_MS };
 const BREAKER_OPENS_ON_ONE_FAILURE = { failureThreshold: 1 };
 
 const realTimers: FakeTimers = {
   setTimeout: (callback, ms) => setTimeout(callback, ms),
   clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout),
+  timeoutSignal: (ms) => AbortSignal.timeout(ms),
   advance: () => {
     throw new Error('real timers cannot be advanced');
   },
@@ -24,6 +24,8 @@ const realTimers: FakeTimers = {
   monotonicMs: () => performance.now(),
   nextDueAt: () => undefined,
 };
+
+const LIVENESS: UpstreamLiveness = { headersTimeoutMs: STALL_MS, idleTimeoutMs: STALL_MS, timers: realTimers };
 
 const noHeaders: FakeUpstreamReply = { kind: 'hang' };
 

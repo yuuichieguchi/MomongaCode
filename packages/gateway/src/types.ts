@@ -45,6 +45,7 @@ export type GatewayConfig = {
 export type GatewayTimers = {
   setTimeout(callback: () => void, ms: number): unknown;
   clearTimeout(handle: unknown): void;
+  timeoutSignal(ms: number): AbortSignal;
 };
 
 export type DebugTcpOptions = { host: string; port: number; token: string };
@@ -75,6 +76,7 @@ export type GatewayCommonOptions = {
   traceContent?: (runId: string, after: number, limit: number, signal: AbortSignal) => Promise<TraceContentPage>;
   debugTcp?: DebugTcpOptions;
   random: () => number;
+  pid: number;
   version: string;
   onError?: (error: unknown) => void;
   plan?: PlanApi;
