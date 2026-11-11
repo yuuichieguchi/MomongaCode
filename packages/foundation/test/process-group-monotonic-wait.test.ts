@@ -78,3 +78,28 @@ describe('the grace of a process group is measured on the monotonic clock', () =
     expect(sent).toEqual(['SIGTERM']);
   });
 });
+
+describe('the pushed end of a group keeps its failure', () => {
+  it('rejects the wait with the error of the pushed end, not a timeout after the bound', async () => {
+    const timers = createFakeTimers(createFakeClock(0));
+    const failure = Object.assign(new Error('EIO: the end of the group could not be watched'), { code: 'EIO' });
+    const port: ProcessGroupPort = { signal: async () => undefined, alive: async () => true, ended: async () => Promise.reject(failure) };
+    await expect(waitForGroupGone(GROUP, timers.monotonicMs() + 5000, port, timers)).rejects.toBe(failure);
+    expect(timers.pending()).toEqual([]);
+  });
+
+  it('a pushed end that rejects because its asker left is the leave, not a failure', async () => {
+    const timers = createFakeTimers(createFakeClock(0));
+    const asker = new AbortController();
+    const port: ProcessGroupPort = {
+      signal: async () => undefined,
+      alive: async () => true,
+      ended: (_pgid, { signal }) => new Promise((_resolve, reject) => signal?.addEventListener('abort', () => reject(signal.reason), { once: true })),
+    };
+    const gone = waitForGroupGone(GROUP, timers.monotonicMs() + 5000, port, timers, asker.signal);
+    await expect.poll(() => timers.pending().length).toBe(1);
+    asker.abort(new Error('the asker left'));
+    expect(await gone).toBe(false);
+    expect(timers.pending()).toEqual([]);
+  });
+});
