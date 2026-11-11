@@ -12,6 +12,7 @@ export type EditorState = {
   historyIndex: number | undefined;
   draft: string;
   draftPastes: readonly PastedSpan[];
+  draftShell: boolean;
   killed: string | undefined;
   pastes: readonly PastedSpan[];
   pasteCount: number;
@@ -50,7 +51,7 @@ export const UNDO_STEPS_MAX = 100;
 export const PASTE_COLLAPSE_LINES = 3;
 export const PASTE_COLLAPSE_CHARACTERS = 800;
 
-export const emptyEditor = (history: readonly string[] = []): EditorState => ({ text: '', cursor: 0, history, historyIndex: undefined, draft: '', draftPastes: [], killed: undefined, pastes: [], pasteCount: 0, shell: false, undo: [], typing: false });
+export const emptyEditor = (history: readonly string[] = []): EditorState => ({ text: '', cursor: 0, history, historyIndex: undefined, draft: '', draftPastes: [], draftShell: false, killed: undefined, pastes: [], pasteCount: 0, shell: false, undo: [], typing: false });
 
 const LINE_CONTINUATION = '\\';
 
@@ -155,7 +156,7 @@ const moveVertically = (state: EditorState, direction: -1 | 1): EditorState | un
   return movedTo(state, offsetAfterGraphemes(state.text, nextStart, lineEnd(state.text, nextStart), column));
 };
 
-type Kept = { readonly text: string; readonly pastes: readonly PastedSpan[] };
+type Kept = { readonly text: string; readonly pastes: readonly PastedSpan[]; readonly shell: boolean };
 
 const recalled = (state: EditorState, shown: Kept, historyIndex: number | undefined, draft: Kept): EditorState => ({
   ...state,
@@ -165,11 +166,12 @@ const recalled = (state: EditorState, shown: Kept, historyIndex: number | undefi
   historyIndex,
   draft: draft.text,
   draftPastes: draft.pastes,
-  shell: false,
+  draftShell: draft.shell,
+  shell: shown.shell,
   typing: false,
 });
 
-const entry = (text: string): Kept => ({ text, pastes: [] });
+const entry = (text: string): Kept => ({ text, pastes: [], shell: false });
 
 const recall = (state: EditorState, direction: -1 | 1): EditorState | undefined => {
   if (state.history.length === 0) return undefined;
@@ -177,11 +179,11 @@ const recall = (state: EditorState, direction: -1 | 1): EditorState | undefined 
     const index = state.historyIndex === undefined ? state.history.length - 1 : state.historyIndex - 1;
     const text = state.history[index];
     if (index < 0 || text === undefined) return undefined;
-    return recalled(state, entry(text), index, state.historyIndex === undefined ? { text: state.text, pastes: state.pastes } : { text: state.draft, pastes: state.draftPastes });
+    return recalled(state, entry(text), index, state.historyIndex === undefined ? { text: state.text, pastes: state.pastes, shell: state.shell } : { text: state.draft, pastes: state.draftPastes, shell: state.draftShell });
   }
   if (state.historyIndex === undefined) return undefined;
   const index = state.historyIndex + 1;
-  const draft = { text: state.draft, pastes: state.draftPastes };
+  const draft = { text: state.draft, pastes: state.draftPastes, shell: state.draftShell };
   if (index >= state.history.length) return recalled(state, draft, undefined, draft);
   const text = state.history[index];
   return text === undefined ? undefined : recalled(state, entry(text), index, draft);

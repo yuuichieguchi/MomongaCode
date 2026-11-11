@@ -31,7 +31,7 @@ export type HandoverToggles = { thoughts: Record<string, boolean> };
 
 export type HandoverPaste = { start: number; label: string; text: string };
 
-export type HandoverInput = { text: string; cursor: number; historyIndex: number | null; draft?: string; draftPastes?: HandoverPaste[]; pastes?: HandoverPaste[]; pasteCount?: number; shell?: boolean };
+export type HandoverInput = { text: string; cursor: number; historyIndex: number | null; draft?: string; draftPastes?: HandoverPaste[]; pastes?: HandoverPaste[]; pasteCount?: number; shell?: boolean; draftShell?: boolean };
 
 export type HandoverAttachment = { file: string; sha256: string };
 
@@ -168,6 +168,7 @@ const inputOf = (fields: Fields): HandoverInput => ({
   ...(fields['pastes'] === undefined ? {} : { pastes: listOf(fields, 'pastes', pasteOf) }),
   ...(fields['pasteCount'] === undefined ? {} : { pasteCount: countOf(fields, 'pasteCount') }),
   ...(fields['shell'] === undefined ? {} : { shell: flagOf(fields, 'shell') }),
+  ...(fields['draftShell'] === undefined ? {} : { draftShell: flagOf(fields, 'draftShell') }),
 });
 
 const tuiOf = (fields: Fields): TuiRecord => {

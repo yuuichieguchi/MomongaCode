@@ -100,8 +100,8 @@ export const headersWaitRow = (shown: string): string => `Wait for the first rep
 
 export const idleWaitRow = (shown: string): string => `Wait without any data: ${shown}`;
 
-export const MINUTES_PROMPT = 'Minutes (0: never cut):';
-export const MINUTES_PROBLEM = 'Write a whole number of minutes, 0 or more.';
+export const MINUTES_PROMPT = 'Minutes (a whole number, 1 or more):';
+export const MINUTES_PROBLEM = 'Write a whole number of minutes, 1 or more.';
 
 export const SERVER_NAME_PROMPT = 'Name (lower-case letters, digits, . _ - ; Enter to remove it):';
 

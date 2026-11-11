@@ -200,6 +200,19 @@ describe('the shell commands that have a slash form', () => {
     expect(seen?.aborted).toBe(true);
   });
 
+  it('lists the runs of /report under the waiting row, and esc stops the listing before anything runs', async () => {
+    const seen: string[][] = [];
+    const { context, backgrounds, controller } = slashContext();
+    const shell = { run: async (argv: readonly string[]) => (seen.push([...argv]), 0) };
+    const backend = { ...context.backend, runs: () => new Promise<never>(() => undefined) };
+    const ran = run('/report', { ...context, shell, backend } as unknown as SlashContext);
+    await Promise.resolve();
+    expect(backgrounds.map((entry) => entry.label)).toEqual(['/report']);
+    controller.abort();
+    await expect(ran).rejects.toThrow();
+    expect(seen).toEqual([]);
+  });
+
   it('refuses /auth login with the usage and the way to sign in, and runs nothing', async () => {
     const seen: string[][] = [];
     const { context, infos, backgrounds } = slashContext();

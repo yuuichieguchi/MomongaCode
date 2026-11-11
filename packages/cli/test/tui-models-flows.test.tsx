@@ -315,15 +315,15 @@ describe('the /models flows, one per row of 4.9.1', () => {
     expect(failing.bytes()).toBeUndefined();
   });
 
-  it('row 14: the wait limits are shown as they are in force and set in minutes', async (context) => {
-    const harness = flowOf(context, threeModels(), [{ pick: /^Wait for the first reply/ }, { type: 'soon' }, { type: '0' }, YES, { pick: /^Wait without any data/ }, { type: '10' }, YES]);
+  it('row 14: the wait limits are shown as they are in force and set in whole minutes, 1 or more', async (context) => {
+    const harness = flowOf(context, threeModels(), [{ pick: /^Wait for the first reply/ }, { type: 'soon' }, { type: '0' }, { type: '2' }, YES, { pick: /^Wait without any data/ }, { type: '10' }, YES]);
     await runTimeoutsFlow(harness.context);
     const lists = harness.picks().filter((pick) => pick.title === 'Wait limits');
     expect(lists[0]?.rows).toEqual(['Wait for the first reply: 5 min', 'Wait without any data: 5 min']);
-    expect(lists[1]?.rows).toEqual(['Wait for the first reply: never cut', 'Wait without any data: 5 min']);
-    expect(lists[2]?.rows).toEqual(['Wait for the first reply: never cut', 'Wait without any data: 10 min']);
-    expect(harness.prompts()[0]).toEqual({ kind: 'text', title: 'Minutes (0: never cut):', hidden: false, problems: ['Write a whole number of minutes, 0 or more.'] });
-    expect(writtenOf(harness).models).toMatchObject({ headersTimeoutMs: 0, idleTimeoutMs: 600000 });
+    expect(lists[1]?.rows).toEqual(['Wait for the first reply: 2 min', 'Wait without any data: 5 min']);
+    expect(lists[2]?.rows).toEqual(['Wait for the first reply: 2 min', 'Wait without any data: 10 min']);
+    expect(harness.prompts()[0]).toEqual({ kind: 'text', title: 'Minutes (a whole number, 1 or more):', hidden: false, problems: ['Write a whole number of minutes, 1 or more.', 'Write a whole number of minutes, 1 or more.'] });
+    expect(writtenOf(harness).models).toMatchObject({ headersTimeoutMs: 120000, idleTimeoutMs: 600000 });
   });
 
   it('row 15: the schema dialects of the settings screen are written by the one writer, which refuses an invalid object', async (context) => {
