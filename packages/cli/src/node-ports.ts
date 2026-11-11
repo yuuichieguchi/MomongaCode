@@ -28,7 +28,7 @@ import {
   writeFileAtomicallySync,
   launchApart,
 } from '@momonga/foundation';
-import type { HeldKernelLock, LaunchProgram, ProcessPort } from '@momonga/foundation';
+import type { HeldKernelLock, HelperHost, LaunchProgram, ProcessPort } from '@momonga/foundation';
 import { sourceBuiltWindowsKeeper } from './keeper/source.ts';
 import type { SourceKeeperFiles } from './keeper/source.ts';
 import { createHandoverHost } from './handover/host.ts';
@@ -136,6 +136,8 @@ const sleep = async (ms: number, signal?: AbortSignal): Promise<void> => {
 export const nodeClock: CliClock = { now: () => systemClock.now(), sleep };
 
 export const nodeProcess: ProcessPort = { pid: process.pid, uid: () => process.getuid?.(), kill: (pid, signal) => void process.kill(pid, signal) };
+
+export const nodeHelperHost = (): Omit<HelperHost, 'args'> => ({ env: process.env, stdin: process.stdin, stdout: process.stdout, stderr: process.stderr });
 
 export const nodeFiles: CliFiles = {
   ...nodeEvalFiles,

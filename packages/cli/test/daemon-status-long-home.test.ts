@@ -10,6 +10,7 @@ import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
 import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 import { firstRefusedSocketPathBytes, registerCleanup, testHostPath } from '@momonga/testkit';
+import { NO_HELPER } from './no-helper.ts';
 
 const SUPERVISOR_SOCKET_SUFFIX = Buffer.byteLength(path.join('.momonga', 'run', `g${FIRST_GENERATION}`, 'supervisor.sock')) + 1;
 
@@ -52,6 +53,7 @@ describe.skipIf(process.platform === 'win32')('daemon start on a home too long f
           throw new Error('the update wiring is not used by an embedded program');
         },
         interrupt: new AbortController().signal,
+        helper: NO_HELPER,
         entryIo: (entryArgs) => ({ argv: [...entryArgs] }) as unknown as EntryIo,
         complete: (code) => void codes.push(code),
       },
