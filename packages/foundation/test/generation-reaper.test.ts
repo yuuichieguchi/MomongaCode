@@ -21,6 +21,8 @@ import { exitOf } from './support/lock-processes.ts';
 import { seededRandom } from './seeded-random.ts';
 import { makeShortHomeDirectory } from './support/temporary-directory.ts';
 
+const UNIX_ENDPOINTS = { form: 'unix' } as const;
+
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const VERSION = '1.2.3';
@@ -420,7 +422,7 @@ describe('T-L2-12 (15.4): run/current survives the reap of the generation it nam
     const before = fs.readFileSync(s.paths.current);
     await expect(passOf(s.paths, [], { lock })).resolves.toEqual({ removed: [1], kept: [], busy: false });
     expect(fs.readFileSync(s.paths.current).equals(before)).toBe(true);
-    await expect(beginGenerationStart(s.paths, { version: '1.0.0', foldVersion: 1, lock })).resolves.toEqual({ kind: 'below-floor', floor: '2.0.0' });
+    await expect(beginGenerationStart(s.paths, { version: '1.0.0', foldVersion: 1, lock, scope: UNIX_ENDPOINTS })).resolves.toEqual({ kind: 'below-floor', floor: '2.0.0' });
   });
 });
 

@@ -36,8 +36,9 @@ import {
   hostProcessGroupPort,
   launchApart,
   personCapabilityOf,
+  endpointScopeOf,
 } from '@momonga/foundation';
-import type { GuardedStandardStreams, HeldKernelLock, HelperHost, LaunchProgram, ProcessGroupPort, SandboxNetworkSetting, ProcessPort, KernelLockMechanism } from '@momonga/foundation';
+import type { GuardedStandardStreams, HeldKernelLock, HelperHost, LaunchProgram, ProcessGroupPort, SandboxNetworkSetting, ProcessPort, KernelLockMechanism, EndpointScope } from '@momonga/foundation';
 import { sourceBuiltLinuxSocketGuard, sourceBuiltWindowsKeeper } from './keeper/source.ts';
 import type { SourceKeeperFiles } from './keeper/source.ts';
 import { createHandoverHost } from './handover/host.ts';
@@ -337,6 +338,7 @@ export const nodePorts = (version: string, interrupt: AbortSignal, streams: Guar
   const self = nodeSelf(process.argv, isSea);
   const home = process.env['HOME'] ?? os.homedir();
   const lock = layoutLockOf(home, process.platform, process.env);
+  const endpointScopes = new Map<string, Promise<EndpointScope>>();
   return {
     version,
     interrupt,
@@ -363,6 +365,13 @@ export const nodePorts = (version: string, interrupt: AbortSignal, streams: Guar
     openUrl: createBrowserOpener({ env: process.env, launch: launchProgram, files: nodeFileSystem }),
     secretStore: () => createPlatformSecretStore(createExecWithStdin(undefined), process.env, { platform: process.platform, uid: process.getuid?.(), realPathOf: (file) => syncPaths.canonicalPath(file) }),
     personCapability: () => personCapabilityOf({ files: nodeFileSystem, random: systemRandom, lock: lock() }, home),
+    endpointScope: (paths) => {
+      const known = endpointScopes.get(paths.run);
+      if (known !== undefined) return known;
+      const read = endpointScopeOf(paths, process.platform, { files: nodeFileSystem, random: systemRandom, lock: lock() });
+      endpointScopes.set(paths.run, read);
+      return read;
+    },
     acpStdio: () => ({ input: acpInputOf(process.stdin), output: Writable.toWeb(process.stdout) }),
   };
 };

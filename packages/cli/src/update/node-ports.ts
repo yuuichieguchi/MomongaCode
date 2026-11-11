@@ -189,9 +189,9 @@ export const nodeUpdateState = (paths: MomongaPaths, lock: KernelLockMechanism):
   };
 };
 
-export const nodeDaemonProbe = (paths: MomongaPaths, clock: CliClock, lock: KernelLockMechanism): DaemonProbe => ({
+export const nodeDaemonProbe = (paths: MomongaPaths, ports: Pick<CliPorts, 'clock' | 'endpointScope'>, lock: KernelLockMechanism): DaemonProbe => ({
   running: async () => (await listGenerations(paths, { lock })).some((listed) => listed.live),
-  retiring: async () => retiringWorkOf(await listLiveGenerations({ clock }, paths, { lock })),
+  retiring: async () => retiringWorkOf(await listLiveGenerations(ports, paths, { lock })),
   readyBoundMs: () => daemonReadyBoundMs(),
 });
 
@@ -211,7 +211,7 @@ export const nodeUpdatePorts = (ports: CliPorts, paths: MomongaPaths, lock: Kern
   run: nodeBoundedCommandRunner,
   lock: nodeUpdateLock(paths, lock),
   state: nodeUpdateState(paths, lock),
-  daemon: nodeDaemonProbe(paths, ports.clock, lock),
+  daemon: nodeDaemonProbe(paths, ports, lock),
   autoUpdates: async () => (await loadUserSettings({ home: ports.home, signal: ports.interrupt })).settings.autoUpdates,
   spawnDetached: ports.spawnDetached,
   stderr: ports.stderr,
