@@ -1,7 +1,6 @@
 import path from 'node:path';
 import { createStopValuesReader, readUserStopValues } from '@momonga/config';
 import {
-  ABANDON_REASON_TEXTS,
   CurrentGenerationUnreadableError,
   GenerationPrepareError,
   LIFELINE_FD,
@@ -23,7 +22,7 @@ import {
   starterOutcome,
   stopWaitBoundMs as largestStopBoundMs,
 } from '@momonga/foundation';
-import type { AbandonReason, CurrentGeneration, GenerationRef, HeldStart, KernelLockMechanism, MomongaPaths, StartTrigger, StopValues } from '@momonga/foundation';
+import type { CurrentGeneration, GenerationRef, HeldStart, KernelLockMechanism, MomongaPaths, StartTrigger, StopValues } from '@momonga/foundation';
 import { FIDELITY_FOLD_VERSION } from '@momonga/protocol';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
@@ -32,13 +31,15 @@ import { DAEMON_POLL_INTERVAL_MS } from '../constants.ts';
 import { PollTimeout, pollUntil } from '../poll.ts';
 import type { CliPorts, DetachedExit } from '../ports.ts';
 import { superviseInvocation } from './launcher.ts';
+import { startFailureText } from './start-failure.ts';
+import type { StartFailure } from './start-failure.ts';
 import type { StopNotice } from './stop-notice.ts';
 
 export class DaemonStartError extends Error {
   readonly logFile: string;
 
-  constructor(message: string, logFile: string, options: { pointsAtLog: boolean } = { pointsAtLog: true }) {
-    super(options.pointsAtLog ? `${message}; see ${logFile}` : message);
+  constructor(message: string, logFile: string, options: { pointsAtLog: boolean; cause?: unknown } = { pointsAtLog: true }) {
+    super(options.pointsAtLog ? `${message}; see ${logFile}` : message, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = 'DaemonStartError';
     this.logFile = logFile;
   }
@@ -103,7 +104,7 @@ const heldFailure = (health: SupervisorHealth): string | undefined => {
 
 const STOP_WAIT_DESCRIPTION = 'the daemon to stop';
 
-const exitDescription = (exit: DetachedExit): string => `code ${exit.code}, signal ${exit.signal}`;
+const exitDescription = (exit: DetachedExit): string => (exit.code === null ? `signal ${exit.signal}` : `exit code ${exit.code}`);
 
 export const waitForGenerationsGone = async (
   ports: Pick<DaemonPorts, 'clock'>,
@@ -249,13 +250,6 @@ export const reopenSessionMessage = (daemonVersion: string): string => `momonga 
 export const olderCommandMessage = (daemonVersion: string): string =>
   `momonga was updated to v${daemonVersion} while this command was running; run it again. Your tasks are not affected.`;
 
-const SUPERVISOR_STOPPED_UNPROMOTED = 'its supervisor stopped before it was promoted';
-
-const abandonedText = (reason: AbandonReason): string => `its start was abandoned before it began: ${ABANDON_REASON_TEXTS[reason]}`;
-
-const notStartedMessage = (version: string, reason: string, serving: GenerationRef | undefined): string =>
-  `The new daemon (v${version}) did not start (${reason}).${serving === undefined ? '' : ` v${serving.version} keeps running.`}`;
-
 const directoryGone = async (directory: string): Promise<boolean> => {
   try {
     await nodeFileSystem.lstat(directory);
@@ -266,30 +260,33 @@ const directoryGone = async (directory: string): Promise<boolean> => {
   }
 };
 
-const abandonReasonOf = async (paths: MomongaPaths, own: OwnStart, lock: KernelLockMechanism): Promise<string> => {
+const abandonFailureOf = async (paths: MomongaPaths, own: OwnStart, lock: KernelLockMechanism): Promise<StartFailure> => {
   const generation = own.ref.generation;
-  if (await directoryGone(generationLayout(homeOf(paths), generation).dir)) return abandonedText('directory-missing');
-  if (own.sawSupervisor) return SUPERVISOR_STOPPED_UNPROMOTED;
+  if (await directoryGone(generationLayout(homeOf(paths), generation).dir)) return { reason: 'directory-missing' };
+  if (own.sawSupervisor) return { reason: 'stopped-before-ready' };
   const record = await readStartRecord(paths, generation);
-  if (record.kind === 'missing') return abandonedText('record-missing');
-  if (record.kind === 'unreadable') return abandonedText('record-unreadable');
-  if (own.spawned === undefined) return SUPERVISOR_STOPPED_UNPROMOTED;
-  if (await lockReadsHeld(supervisorLockOf(paths, generation), { lock })) return abandonedText('lock-held');
-  return abandonedText('version-differs');
+  if (record.kind === 'missing') return { reason: 'record-missing' };
+  if (record.kind === 'unreadable') return { reason: 'record-unreadable' };
+  if (own.spawned === undefined) return { reason: 'stopped-before-ready' };
+  if (await lockReadsHeld(supervisorLockOf(paths, generation), { lock })) return { reason: 'lock-held' };
+  return { reason: 'version-differs' };
+};
+
+const startFailureOf = async (paths: MomongaPaths, own: OwnStart, olderStartedFirst: CurrentGeneration | undefined, lock: KernelLockMechanism): Promise<StartFailure & { cause?: unknown }> => {
+  const outcome = own.spawned?.();
+  if (outcome !== undefined && 'error' in outcome) return { reason: 'launch-failed', detail: outcome.error instanceof Error ? outcome.error.message : String(outcome.error), cause: outcome.error };
+  if (outcome !== undefined && outcome.exit.code !== 0) return { reason: 'exited-before-ready', detail: exitDescription(outcome.exit) };
+  if (olderStartedFirst !== undefined) return { reason: 'older-started-first', detail: olderStartedFirst.version };
+  return abandonFailureOf(paths, own, lock);
 };
 
 const startFailure = async (paths: MomongaPaths, own: OwnStart, current: CurrentGeneration | undefined, currentHeld: boolean, lock: KernelLockMechanism): Promise<Error> => {
-  const outcome = own.spawned?.();
-  if (outcome !== undefined && 'error' in outcome) return outcome.error instanceof Error ? outcome.error : new Error(String(outcome.error));
-  if (outcome !== undefined && outcome.exit.code !== 0) return new DaemonStartError(`the supervisor exited (${exitDescription(outcome.exit)}) before it was ready`, paths.logFiles.supervisor);
-  if (current !== undefined && current.generation > own.ref.generation && currentHeld) {
-    return new DaemonStartError(
-      `generation ${own.ref.generation} was replaced by an older version (v${current.version}) before it started; no daemon of v${own.ref.version} is running`,
-      paths.logFiles.supervisor,
-    );
-  }
-  const serving = current !== undefined && currentHeld ? { generation: current.generation, version: current.version } : undefined;
-  return new DaemonStartError(notStartedMessage(own.ref.version, await abandonReasonOf(paths, own, lock), serving), paths.logFiles.supervisor);
+  const serving = current !== undefined && currentHeld ? current : undefined;
+  const { cause, ...failure } = await startFailureOf(paths, own, serving !== undefined && serving.generation > own.ref.generation ? serving : undefined, lock);
+  return new DaemonStartError(startFailureText({ version: own.ref.version, failure, serving: serving?.version, logFile: paths.logFiles.supervisor }), paths.logFiles.supervisor, {
+    pointsAtLog: false,
+    ...(cause === undefined ? {} : { cause }),
+  });
 };
 
 export type EnsureDaemonOptions = {

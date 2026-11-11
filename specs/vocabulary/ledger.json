@@ -298,9 +298,6 @@
       "packages/foundation/src/file-rules.ts": {
         "directory": 2
       },
-      "packages/foundation/src/generation-start.ts": {
-        "directory": 1
-      },
       "packages/foundation/src/json-depth.ts": {
         "limit": 1
       },

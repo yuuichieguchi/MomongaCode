@@ -225,7 +225,7 @@ describe('ensureDaemon', () => {
     const { paths, portsWith } = await setup(context);
     const { spawn } = recordingSpawn(async () => ({ code: 78, signal: null }));
 
-    await expect(ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS })).rejects.toThrow(`the supervisor exited (code 78, signal null) before it was ready; see ${paths.logFiles.supervisor}`);
+    await expect(ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS })).rejects.toThrow(`The new daemon (v${VERSION}) did not start (it stopped with exit code 78 before it was ready). The reason is in ${paths.logFiles.supervisor}.`);
   });
 
   it('reports an abandoned start when the spawned supervisor exits 0 without ever claiming its generation', async (context) => {
@@ -236,16 +236,18 @@ describe('ensureDaemon', () => {
 
     expect(failure).toBeInstanceOf(DaemonStartError);
     expect((failure as DaemonStartError).message).toBe(
-      `The new daemon (v${VERSION}) did not start (its start was abandoned before it began: the installed program is another version).; see ${paths.logFiles.supervisor}`,
+      `The new daemon (v${VERSION}) did not start (the installed momonga is another version than this one). Run the command again.`,
     );
     expect(await hostKernelLock().isHeld(firstGeneration(paths).startingLock)).toBe(false);
   });
 
-  it('surfaces a spawn failure as it is', async (context) => {
+  it('names a program that could not be run, with the host error and the way forward', async (context) => {
     const { paths, portsWith } = await setup(context);
     const { spawn } = recordingSpawn(() => Promise.reject(new Error('spawn ENOENT')));
 
-    await expect(ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS })).rejects.toThrow('spawn ENOENT');
+    await expect(ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS })).rejects.toThrow(
+      `The new daemon (v${VERSION}) did not start (its program could not be run: spawn ENOENT). Check that momonga is still installed, then run the command again.`,
+    );
   });
 });
 
