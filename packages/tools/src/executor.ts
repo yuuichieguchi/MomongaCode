@@ -743,10 +743,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...(batch.sandboxNetwork === undefined ? {} : { sandboxNetwork: batch.sandboxNetwork }),
       ...(batch.mandate === undefined ? {} : { mandate: true as const, supersededForms: batch.mandate.supersededForms, coveredPrograms: batch.mandate.coveredPrograms }),
     });
-    if (decision.kind === 'deny') {
-      const source = decision.network === true ? 'sandbox' : decision.outside === true ? 'mandate' : decision.source === 'mode' ? 'mode' : 'rule';
-      return { outcome: deniedOutcome(call.callId, { source, reason: decision.reason }) };
-    }
+    if (decision.kind === 'deny') return { outcome: deniedOutcome(call.callId, { source: decision.denial, reason: decision.reason }) };
     return { decision };
   };
 

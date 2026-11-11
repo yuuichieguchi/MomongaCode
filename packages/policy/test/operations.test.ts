@@ -155,8 +155,8 @@ describe('Bash forms superseded by an operation', () => {
     const layout = makeLayout();
     const subject: PermissionSubject = { kind: 'command', tool: 'Bash', command };
     const decision = await decideWith(layout, BASH, subject, 'manual', [ruleIn(layout)('allow', 'Bash(git:*)'), ruleIn(layout)('allow', 'Bash(gh:*)')], { mandate: true, supersededForms: SUPERSEDED });
-    expect((await decision).kind).toBe('deny');
-    expect((await decision).reason).toContain(`use ${operation}`);
+    expect(decision).toMatchObject({ kind: 'deny', denial: 'superseded' });
+    expect(decision.reason).toContain(`use ${operation}`);
   });
 
   it.each([
@@ -337,13 +337,13 @@ describe('a decision the mode default would ask about, in a mandate run', () => 
   it('is denied as outside the mandate, and asked as today without one', async () => {
     const layout = makeLayout();
     const inMandate = await decideWith(layout, BASH, bash('npm install left-pad'), 'manual', [], { mandate: true });
-    expect(inMandate).toMatchObject({ kind: 'deny', source: 'mode', outside: true });
+    expect(inMandate).toMatchObject({ kind: 'deny', source: 'mode', denial: 'mandate' });
     expect((await inMandate).reason).toBe('Not run: outside the declared mandate (shell commands require approval). Continue with work inside it or report.');
     expect(await decideWith(layout, BASH, bash('npm install left-pad'), 'manual', [])).toMatchObject({ kind: 'ask', source: 'mode' });
   });
 
   it('is denied for an operation no rule of the mandate names', async () => {
-    expect(await decideWith(makeLayout(), CREATE_TOOL, CREATE, 'manual', [], { mandate: true })).toMatchObject({ kind: 'deny', outside: true });
+    expect(await decideWith(makeLayout(), CREATE_TOOL, CREATE, 'manual', [], { mandate: true })).toMatchObject({ kind: 'deny', denial: 'mandate' });
   });
 
   it('runs what an allow rule covers and keeps a read-only command allowed', async () => {
