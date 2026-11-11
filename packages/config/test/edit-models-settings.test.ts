@@ -121,6 +121,13 @@ describe('addModel: the one way a model enters the settings', () => {
     expect(textOf(home)).toBe(before);
   });
 
+  it('a server found at localhost and the same server written by hand at 127.0.0.1 are one connection', async () => {
+    const home = homeWith(S1_FILE);
+    const added = await editModels(home, [addModel({ ...OLLAMA, baseUrl: 'http://localhost:11434' }, QWEN)]);
+    expect(added.model).toBe(QWEN_MODEL);
+    expect(connectionsOf(home)).toEqual([{ ...OLLAMA, models: [DEVSTRAL, QWEN] }]);
+  });
+
   it('a recognised LM Studio server keeps the name the search gave it, at its own address and at another one', async () => {
     const home = homeWith(S1_FILE);
     const result = await editModels(home, [addModel(LMSTUDIO, { id: 'gemma-3-4b', capabilities: GEMMA_WINDOW })]);

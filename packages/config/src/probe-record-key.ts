@@ -7,8 +7,25 @@ export type EndpointProbeKey = { endpoint: string; model: string };
 
 export type ProbeRecordKey = { kind: 'model'; model: string } | { kind: 'endpoint'; key: EndpointProbeKey };
 
-export const endpointKeyOf = (upstream: UpstreamEndpointKeyed): string =>
-  upstream.kind === 'unix' ? `unix:${upstream.socketPath}` : upstream.baseUrl.replace(/\/+$/, '');
+const ONE_LOOPBACK_HOST = '127.0.0.1';
+const LOOPBACK_NAMES: ReadonlySet<string> = new Set([ONE_LOOPBACK_HOST, 'localhost', '::1']);
+
+const unbracketed = (host: string): string => (host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host);
+
+export const addressHostKeyOf = (host: string): string => (LOOPBACK_NAMES.has(unbracketed(host).toLowerCase()) ? ONE_LOOPBACK_HOST : host);
+
+const withoutTrailingSlashes = (address: string): string => address.replace(/\/+$/, '');
+
+const networkKeyOf = (baseUrl: string): string => {
+  if (!URL.canParse(baseUrl)) return withoutTrailingSlashes(baseUrl);
+  const url = new URL(baseUrl);
+  const host = addressHostKeyOf(url.hostname);
+  if (host === url.hostname) return withoutTrailingSlashes(baseUrl);
+  url.hostname = host;
+  return withoutTrailingSlashes(url.href);
+};
+
+export const endpointKeyOf = (upstream: UpstreamEndpointKeyed): string => (upstream.kind === 'unix' ? `unix:${upstream.socketPath}` : networkKeyOf(upstream.baseUrl));
 
 export type WrittenAddress = { baseUrl?: string | undefined; socketPath?: string | undefined };
 

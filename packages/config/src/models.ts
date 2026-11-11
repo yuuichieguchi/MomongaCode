@@ -21,7 +21,7 @@ import { layoutOf } from './layout.ts';
 import { PLAN_PROFILES } from './plan-profiles.ts';
 import { addressProblem } from './probe-record-key.ts';
 import type { PlanProfile } from './plan-profiles.ts';
-import { PROVIDER_NAME_RULE_TEXT, isProviderName, providerNameOf, reservedNameProblem, serverKindOf } from './provider-name.ts';
+import { PROVIDER_NAME_RULE_TEXT, derivedNameProblem, isProviderName, providerNameOf, reservedNameProblem, serverKindOf } from './provider-name.ts';
 import { registeredIds, registeredServer, requireOfferedEndpointForm } from './server-registry.ts';
 import type { ServerRegistry } from './server-registry.ts';
 import type {
@@ -424,7 +424,11 @@ const checkDuplicateIds = (connection: ModelConnection, ownNames: readonly strin
 
 const checkProviderName = (connection: ModelConnection, where: string, kinds: ServerKinds): void => {
   const { provider } = connection;
-  if (provider === undefined) return;
+  if (provider === undefined) {
+    const problem = derivedNameProblem(connection, kinds);
+    if (problem !== undefined) throw new ConfigError(`${where}: ${problem}`);
+    return;
+  }
   if (!isProviderName(provider)) throw new ConfigError(`${where}.provider: ${JSON.stringify(provider)} ${PROVIDER_NAME_RULE_TEXT}`);
   const reserved = reservedNameProblem(provider, connection.adapter, kinds);
   if (reserved !== undefined) throw new ConfigError(`${where}.provider: ${reserved}`);
