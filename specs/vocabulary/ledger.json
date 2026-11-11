@@ -529,7 +529,7 @@
       },
       "packages/reliability/src/report.ts": {
         "limit": 1,
-        "task": 7
+        "task": 6
       },
       "packages/runtime/src/gateway-client.ts": {
         "compact": 4,

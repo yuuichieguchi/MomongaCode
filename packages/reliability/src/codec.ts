@@ -57,6 +57,7 @@ const decodeIndicators = (value: unknown, path: string): Indicators => {
       pendingFacts: countAt(buckets, 'pendingFacts', `${path}.buckets`),
       factsUnavailable: countAt(buckets, 'factsUnavailable', `${path}.buckets`),
       unknownValues: countAt(buckets, 'unknownValues', `${path}.buckets`),
+      notPlaced: countAt(buckets, 'notPlaced', `${path}.buckets`),
     },
     completion: {
       ...rateOf(completion, `${path}.completion`),
@@ -168,6 +169,7 @@ const decodeCostSide = (value: unknown, path: string): CostSide => {
   return {
     tasks: countAt(fields, 'tasks', path),
     fullyPriced: countAt(fields, 'fullyPriced', path),
+    noData: countAt(fields, 'noData', path),
     calls: countAt(fields, 'calls', path),
     notPriced: countAt(fields, 'notPriced', path),
     tokens: countAt(fields, 'tokens', path),

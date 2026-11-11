@@ -1,6 +1,6 @@
 import type { MomongaPaths } from '@momonga/foundation';
 import { usdOfNano } from '@momonga/protocol';
-import type { BudgetExhausted, RunBudgetReport, RunDelegationReport, RunOperationReport, RunReport } from '@momonga/protocol';
+import type { BudgetExhausted, RunBudgetReport, RunDelegationReport, RunFailedCallReport, RunOperationReport, RunReport, RunReportAnomaly } from '@momonga/protocol';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import { CONDITION_STATE_WORDS, RESIDUAL_RISK_WORDS } from '../policy-messages.ts';
 import type { CliPorts } from '../ports.ts';
@@ -66,6 +66,18 @@ const operationLines = (operations: readonly RunOperationReport[]): string[] => 
   ...operations.map((entry) => `  ${entry.operation}  ${EFFECT_TEXT[entry.effect]}  ${entry.target}`),
 ];
 
+const ANOMALY_TEXT: Record<RunReportAnomaly['cause'], string> = {
+  unknown_call: 'names a call the run did not announce',
+  not_held: 'ends a hold the run did not open',
+};
+
+const failedCallLines = (calls: readonly RunFailedCallReport[]): string[] => ['failed calls:', ...calls.map((call) => `  ${call.tool}  ${call.callId}  (seq ${call.seq})`)];
+
+const anomalyLines = (anomalies: readonly RunReportAnomaly[]): string[] => [
+  'journal anomalies (the report shows the rest of the journal):',
+  ...anomalies.map((anomaly) => `  ${anomaly.type} at seq ${anomaly.seq} ${ANOMALY_TEXT[anomaly.cause]}: ${anomaly.callId}`),
+];
+
 export const renderReport = (report: RunReport): string => {
   const outcome = report.stopReason === undefined ? report.status : `${report.status} (${report.stopReason})`;
   return escapedLines([
@@ -81,6 +93,8 @@ export const renderReport = (report: RunReport): string => {
     ...(report.stoppedBy === undefined ? [] : [stoppedByLine(report.stoppedBy)]),
     ...(report.delegation === undefined ? [] : delegationLines(report.delegation)),
     ...(report.operations === undefined ? [] : operationLines(report.operations)),
+    ...(report.failedCalls === undefined ? [] : failedCallLines(report.failedCalls)),
+    ...(report.anomalies === undefined ? [] : anomalyLines(report.anomalies)),
   ]);
 };
 

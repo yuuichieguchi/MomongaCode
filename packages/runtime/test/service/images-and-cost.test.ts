@@ -108,3 +108,15 @@ describe('GET /v1/cost', () => {
     expectError(await env.http('GET', '/v1/cost?cwd=relative'), 400, 'invalid_request');
   });
 });
+
+describe('store-protocol-C35: unpadded base64 at admission', () => {
+  it('answers 400 naming images[0].data and the padding rule, and creates no run', async () => {
+    const env = await startService({ imageInput: true });
+    const session = await env.createSession();
+    const refused = await env.http('POST', `/v1/sessions/${session.id}/runs`, { body: { input: 'x', images: [{ mediaType: 'image/png', data: 'iVBORw' }] } });
+    expectError(refused, 400, 'invalid_request');
+    expect(JSON.stringify(refused.json)).toContain('images[0].data');
+    expect(JSON.stringify(refused.json)).toContain('padded base64');
+    expect(env.store.listRuns(session.id)).toEqual([]);
+  });
+});

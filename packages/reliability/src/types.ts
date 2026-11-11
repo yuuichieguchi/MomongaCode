@@ -37,7 +37,7 @@ export type TaskLabels = Record<TaskLabelKey, string>;
 export type Rate = { k: number; n: number };
 
 export type Indicators = {
-  buckets: { counted: number; cancelled: number; pendingFacts: number; factsUnavailable: number; unknownValues: number };
+  buckets: { counted: number; cancelled: number; pendingFacts: number; factsUnavailable: number; unknownValues: number; notPlaced: number };
   completion: { k: number; n: number; undeclared: number };
   recovery: { k: number; n: number; unknownEffect: number; failed: number; stopped: number };
   recoveryTime: { n: number; meanMs: number | null; medianMs: number | null; clockSkew: number };

@@ -4,7 +4,7 @@ import { caseSettingsFor, failedWithCleanup, refuseExistingOutput, runBenchmark,
 import type { BenchProblem, BenchRunApi, BenchRunResult, TaskValidation, WorkspaceFiles, WorkspaceProbe } from '@momonga/eval';
 import { EXIT_FAILURE, EXIT_OK, codeDigestOfRunningProcess, currentSocketResolver, resolveLayoutLocks } from '@momonga/foundation';
 import type { KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
-import { MAIN_AGENT } from '@momonga/protocol';
+import { MAIN_AGENT, isOpaqueEvent } from '@momonga/protocol';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { encodeReliabilityReport, formatReliabilityReport } from '@momonga/reliability';
 import type { GroupKey } from '@momonga/reliability';
@@ -62,6 +62,7 @@ export const benchRunApi = (client: BenchClient, env: Readonly<Record<string, st
       try {
         for await (const frame of client.streamEvents(runId, cursor === undefined ? {} : { lastEventId: cursor })) {
           cursor = frame.id;
+          if (isOpaqueEvent(frame.data)) continue;
           yield frame.data;
         }
         return;

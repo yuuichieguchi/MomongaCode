@@ -21,7 +21,7 @@ describe('run facts holding a value this build does not know (11.4)', () => {
     const rows = [counted('known'), withUnknown(recovered('strange'))];
     const aggregated = aggregate(rows, { groupBy: 'model' });
     const total = indicatorsOf(aggregated).total;
-    expect(total.buckets).toEqual({ counted: 1, cancelled: 0, pendingFacts: 0, factsUnavailable: 0, unknownValues: 1 });
+    expect(total.buckets).toEqual({ counted: 1, cancelled: 0, pendingFacts: 0, factsUnavailable: 0, unknownValues: 1, notPlaced: 0 });
     expect(total.recovery).toEqual({ k: 0, n: 0, unknownEffect: 0, failed: 0, stopped: 0 });
     expect(total.completion.n + total.completion.undeclared).toBe(1);
     expect(total.overrun.budgetStops).toBe(0);

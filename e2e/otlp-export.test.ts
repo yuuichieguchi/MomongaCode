@@ -134,7 +134,7 @@ describe('OTLP export through real processes', () => {
     expect(report.sessions).toMatchObject([{ sessionId, runIds: [runId], calls: 2 }]);
     expect(report.total).toMatchObject({
       calls: 2,
-      unpricedCalls: 0,
+      unpricedCalls: 2,
       priceNotRecordedCalls: 0,
       inputTokens: chatCompletions(stack.fake).reduce((sum, request) => sum + reportedTokensOfRequest(request.body), 0),
       outputTokens: 10,

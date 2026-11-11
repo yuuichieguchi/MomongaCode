@@ -2,7 +2,7 @@ import type { Stored } from './stored-value.ts';
 import { anything, boolean, boundedInteger, closed, constant, enumOf, integer, nonNegativeInteger, nullable, root, storedEnumOf, string } from './schema-helpers.ts';
 import type { JsonSchema } from './schema-helpers.ts';
 import { UNKNOWN_VALUE } from './stored-value.ts';
-import { CONDITION_SOURCES, CONDITION_STATES, CONDITION_WHENS, NOT_RUN_REASONS, QUIESCENT_BEHAVIOURS, RESIDUAL_RISK_CODES, VERIFICATION_OUTCOMES } from './completion.ts';
+import { CONDITION_SOURCES, CONDITION_STATES, CONDITION_WHENS, NOT_RUN_REASONS, QUIESCENT_BEHAVIOURS, REPORT_ANOMALY_CAUSES, RESIDUAL_RISK_CODES, VERIFICATION_OUTCOMES } from './completion.ts';
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
 import { RULE_NOTE_KINDS, RULE_VERDICTS } from './rule-verdict.ts';
 import { GUIDELINE_TEXT_PATTERN } from './guideline-text.ts';
@@ -66,7 +66,11 @@ const permissionOption = closed(
   ['optionId', 'name', 'kind'],
 );
 
-const BASE64_PATTERN = '^[A-Za-z0-9+/]+={0,2}$';
+const BASE64_PATTERN = '^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{4})$';
+
+const BASE64_RULE = 'padded base64 (a length that is a multiple of 4)';
+
+export const PATTERN_RULES: ReadonlyMap<string, string> = new Map([[BASE64_PATTERN, BASE64_RULE]]);
 
 const imageAttachment = closed(
   { mediaType: enumOf(IMAGE_MEDIA_TYPES), data: { type: 'string', minLength: 1, pattern: BASE64_PATTERN } },
@@ -114,7 +118,7 @@ const inboxChangeRow = closed({ id: string, delivery: storedEnumOf(INBOX_DELIVER
 
 export const base64ByteLength = (data: string): number => {
   const padding = data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0;
-  return (data.length / 4) * 3 - padding;
+  return Math.floor(((data.length - padding) * 3) / 4);
 };
 
 const elicitationRequest = {
@@ -253,6 +257,11 @@ const runReport = closed(
     operations: {
       type: 'array',
       items: closed({ callId: string, operation: string, target: string, effect: enumOf(OPERATION_EFFECT_OUTCOMES) }, ['callId', 'operation', 'target', 'effect']),
+    },
+    failedCalls: { type: 'array', items: closed({ callId: string, tool: string, seq: nonNegativeInteger }, ['callId', 'tool', 'seq']) },
+    anomalies: {
+      type: 'array',
+      items: closed({ seq: nonNegativeInteger, type: string, callId: string, cause: enumOf(REPORT_ANOMALY_CAUSES) }, ['seq', 'type', 'callId', 'cause']),
     },
   },
   ['runId', 'status', 'durationMs', 'declaration', 'changes', 'conditions', 'notRun', 'residualRisk', 'modelChecks'],
@@ -1870,6 +1879,10 @@ export type PublicOpaqueEvent = {
   createdAt: number;
   payload: Record<string, unknown>;
 };
+
+export type PublicStreamEvent = PublicRunEvent | PublicOpaqueEvent;
+
+export const isOpaqueEvent = (event: PublicStreamEvent): event is PublicOpaqueEvent => 'opaque' in event;
 
 const toPublicOpaqueEvent = (event: OpaqueEvent): PublicOpaqueEvent => {
   const { opaque, type, id, runId, sessionId, seq, step, createdAt, payload } = event;

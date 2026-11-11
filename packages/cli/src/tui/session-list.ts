@@ -1,3 +1,4 @@
+import { isOpaqueEvent } from '@momonga/protocol';
 import type { RuntimeClient } from '../client/runtime-client.ts';
 import { hasRun, newestFirst } from '../run/resolve-session.ts';
 import type { RunView, SessionView } from '../client/views.ts';
@@ -13,7 +14,7 @@ export const ownRunsOf = async (reads: Pick<SessionReads, 'listRuns'>, sessionId
 const firstPromptOf = async (reads: Pick<SessionReads, 'streamEvents'>, runId: string, signal: AbortSignal): Promise<string> => {
   const reading = new AbortController();
   try {
-    for await (const frame of reads.streamEvents(runId, { signal: AbortSignal.any([signal, reading.signal]) })) return frame.data.type === 'user.message' ? frame.data.text : '';
+    for await (const frame of reads.streamEvents(runId, { signal: AbortSignal.any([signal, reading.signal]) })) return !isOpaqueEvent(frame.data) && frame.data.type === 'user.message' ? frame.data.text : '';
     return '';
   } finally {
     reading.abort();
