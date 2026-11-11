@@ -65,7 +65,8 @@ describe('the run report lists the calls a mandate run held and denied', () => {
       held('m1'),
       call('m2', 'Bash'),
       held('m2'),
-      { type: 'tool.held.resolved', callId: 'm1', approvalId: 'ap-m1', outcome: 'executed', status: 'completed', output: 'merged' },
+      { type: 'tool.started', callId: 'm1', idemKey: 'k-m1', basis: 'person' },
+      { type: 'tool.completed', callId: 'm1', status: 'completed', output: 'merged', held: { approvalId: 'ap-m1' } },
       { type: 'tool.held.resolved', callId: 'm2', approvalId: 'ap-m2', outcome: 'withdrawn', status: 'failed', output: 'withdrawn' },
     ]);
 
@@ -76,7 +77,7 @@ describe('the run report lists the calls a mandate run held and denied', () => {
     });
     expect(buildRunReport(resolved).delegation).toEqual({
       held: [
-        { callId: 'm1', tool: 'PullRequestMerge', reason: 'merging needs a person', heldSeq: seqOf(resolved, 'tool.held', 'm1'), outcome: 'executed', status: 'completed', resolvedSeq: seqOf(resolved, 'tool.held.resolved', 'm1') },
+        { callId: 'm1', tool: 'PullRequestMerge', reason: 'merging needs a person', heldSeq: seqOf(resolved, 'tool.held', 'm1'), outcome: 'executed', status: 'completed', resolvedSeq: seqOf(resolved, 'tool.completed', 'm1') },
         { callId: 'm2', tool: 'Bash', reason: 'merging needs a person', heldSeq: seqOf(resolved, 'tool.held', 'm2'), outcome: 'withdrawn', status: 'failed', resolvedSeq: seqOf(resolved, 'tool.held.resolved', 'm2') },
       ],
       denied: [],

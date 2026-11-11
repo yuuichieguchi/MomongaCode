@@ -131,6 +131,8 @@ const elicitationAnswer = {
   ],
 } as const satisfies JsonSchema;
 
+const heldLink = closed({ approvalId: string }, ['approvalId']);
+
 const heldCallView = closed({ callId: string, approvalId: string, tool: string, reason: string, sinceSeq: nonNegativeInteger }, ['callId', 'approvalId', 'tool', 'reason', 'sinceSeq']);
 
 const usage = closed({ inputTokens: nonNegativeInteger, outputTokens: nonNegativeInteger, totalTokens: nonNegativeInteger, costNano: nonNegativeInteger, unpricedCalls: nonNegativeInteger }, [
@@ -598,6 +600,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       formatted: closed({ formatter: string, version: integer }, ['formatter', 'version']),
       ...appliedDiffFields,
       effect: operationEffect,
+      held: heldLink,
     },
     required: ['callId', 'status', 'output'],
   },
@@ -660,7 +663,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     required: ['target', 'counter', 'fallback', 'inputDigest', 'itemCount', 'counted', 'reported', 'kept', 'known', 'uncounted', 'miss', 'contextWindow', 'tokenCounting'],
   },
   'tool.reconciled': {
-    properties: { callId: string, outcome: enumOf(['already_applied', 'not_applied', 'unknown']), output: string, interrupted: enumOf(['timeout', 'cancelled']), files: toolFiles, command: string, effect: operationEffect, ...appliedDiffFields },
+    properties: { callId: string, outcome: enumOf(['already_applied', 'not_applied', 'unknown']), output: string, interrupted: enumOf(['timeout', 'cancelled']), files: toolFiles, command: string, effect: operationEffect, held: heldLink, ...appliedDiffFields },
     required: ['callId', 'outcome', 'output'],
   },
   'tool.waiting': {
