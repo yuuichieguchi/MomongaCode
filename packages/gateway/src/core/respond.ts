@@ -21,7 +21,7 @@ import type {
   UsageSource,
 } from '@momonga/protocol';
 import { modelCostOf, pricingFieldsOf } from './model-cost.ts';
-import { requireWithinCostCeiling } from './quote.ts';
+import { outputBoundWithinCostCeiling } from './quote.ts';
 import { MOMONGA_SPAN_NOTES, TERMINAL_STREAM_EVENT_TYPES, carriesOutput, isReasoningEffort, wireUsageOf } from '@momonga/protocol';
 import { startAttemptSpan } from './attempt-span.ts';
 import type { AttemptSpan, BilledUsage, TraceParent } from './attempt-span.ts';
@@ -81,6 +81,8 @@ type Interruption = {
   retryable: boolean;
 };
 
+const SMALLEST_ANSWER_TOKENS = 1;
+
 const OPENING_EVENT_TYPES: ReadonlySet<string> = new Set(['response.created', 'response.queued', 'response.in_progress']);
 const TERMINAL_TYPES: ReadonlySet<string> = new Set(TERMINAL_STREAM_EVENT_TYPES);
 
@@ -98,7 +100,7 @@ const cacheMarksFor = (job: ResponseJob, resolved: ResolvedInput): PromptCacheCo
   };
 };
 
-const adapterRequestFor = (job: ResponseJob, resolved: ResolvedInput, target: TargetRuntime): AdapterRequest => {
+const adapterRequestFor = (job: ResponseJob, resolved: ResolvedInput, target: TargetRuntime, visibleBound: number | undefined): AdapterRequest => {
   const { body } = job;
   const cacheMarks = cacheMarksFor(job, resolved);
   return {
@@ -110,7 +112,7 @@ const adapterRequestFor = (job: ResponseJob, resolved: ResolvedInput, target: Ta
     ...(body.parallel_tool_calls === undefined || body.parallel_tool_calls === null
       ? {}
       : { parallel_tool_calls: body.parallel_tool_calls }),
-    ...(body.max_output_tokens === undefined ? {} : { max_output_tokens: body.max_output_tokens }),
+    ...(visibleBound === undefined ? {} : { max_output_tokens: visibleBound }),
     ...(body.temperature === undefined ? {} : { temperature: body.temperature }),
     ...(body.top_p === undefined ? {} : { top_p: body.top_p }),
     ...(body.frequency_penalty === undefined ? {} : { frequency_penalty: body.frequency_penalty }),
@@ -161,12 +163,6 @@ const openAttempt = async (
   signal: AbortSignal,
   call: CallIdentity,
 ): Promise<Opened> => {
-  requireWithinCostCeiling(
-    { ceilingNano: job.body.momonga?.max_cost_nano, inputBound: job.body.momonga?.max_input_tokens, outputBound: job.body.max_output_tokens },
-    target,
-    services.priceTable,
-    services.clock.now(),
-  );
   const release = await target.gate.acquire(signal);
   const startSpan = (retryOf?: number): AttemptSpan =>
     startAttemptSpan({
@@ -175,7 +171,7 @@ const openAttempt = async (
       providerName: target.provider,
       billing: target.billing,
       requestModel: target.model,
-      maxTokens: job.body.max_output_tokens ?? undefined,
+      maxTokens: visibleBound,
       stream: job.body.stream === true,
       runId: job.runId,
       step: job.step,
@@ -187,22 +183,42 @@ const openAttempt = async (
       request: { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools },
     });
   const callKey = upstreamCallKey(call, target.name);
-  let capabilities: Capabilities;
-  let retryOfSeq: number | undefined;
-  try {
-    capabilities = await narrowed.capabilitiesOf(target);
-    retryOfSeq = services.store.recordSend({ callKey, target: target.name, runId: job.runId ?? null, step: job.step ?? null, sentAtMs: services.clock.now() }).retryOfSeq;
-  } catch (error) {
+  const failBeforeSend = (error: unknown): never => {
     release();
     if (error instanceof CandidateRefused || error instanceof CandidateDropped || error instanceof UnprobedTarget) throw error;
     const failure = failureFrom(target.adapter, error, signal);
-    const failed = startSpan();
-    failed.fail(errorTypeOf(failure), failure, describeError(failure));
+    startSpan().fail(errorTypeOf(failure), failure, describeError(failure));
     throw failure;
+  };
+  let visibleBound: number | undefined;
+  const capabilities = await narrowed.capabilitiesOf(target).catch(failBeforeSend);
+  try {
+    visibleBound = outputBoundWithinCostCeiling(
+      {
+        ceilingNano: job.body.momonga?.max_cost_nano,
+        inputBound: job.body.momonga?.max_input_tokens,
+        visible: job.body.max_output_tokens ?? undefined,
+        effort: isReasoningEffort(job.body.reasoning?.effort) ? job.body.reasoning.effort : undefined,
+        smallestAnswer: SMALLEST_ANSWER_TOKENS,
+      },
+      target,
+      capabilities,
+      services.priceTable,
+      services.clock.now(),
+    );
+  } catch (refusal) {
+    release();
+    throw refusal;
+  }
+  let retryOfSeq: number | undefined;
+  try {
+    retryOfSeq = services.store.recordSend({ callKey, target: target.name, runId: job.runId ?? null, step: job.step ?? null, sentAtMs: services.clock.now() }).retryOfSeq;
+  } catch (error) {
+    failBeforeSend(error);
   }
   const span = startSpan(retryOfSeq);
   try {
-    const stream = target.adapter.create(adapterRequestFor(job, resolved, target), adapterContextOf(services, target, capabilities, signal, attemptNumber, callKey));
+    const stream = target.adapter.create(adapterRequestFor(job, resolved, target, visibleBound), adapterContextOf(services, target, capabilities, signal, attemptNumber, callKey));
     const iterator = stream[Symbol.asyncIterator]();
     const held: StreamEvent[] = [];
     for (;;) {

@@ -1,5 +1,5 @@
 import { canonicalJson, sha256Hex, uuidv7 } from '@momonga/foundation';
-import { COMPACTION_ROLE, LOWEST_REASONING_EFFORT, MOMONGA_REQUEST_FIELDS, largestSummaryCapFor, outputTokensFor, summaryInputLimitFor, wireUsageOf } from '@momonga/protocol';
+import { COMPACTION_ROLE, LOWEST_REASONING_EFFORT, MIN_SUMMARY_TOKENS, MOMONGA_REQUEST_FIELDS, largestSummaryCapFor, outputTokensFor, summaryInputLimitFor, wireUsageOf } from '@momonga/protocol';
 import type {
   AdapterCompactRequest,
   Capabilities,
@@ -27,7 +27,7 @@ import { errorTypeOf } from './respond.ts';
 import { failureFrom, runWithRetry } from './retry.ts';
 import type { RetryOutcome } from './retry.ts';
 import { adapterContextOf, originOf } from './adapter-context.ts';
-import { requireWithinCostCeiling } from './quote.ts';
+import { outputBoundWithinCostCeiling } from './quote.ts';
 import { adapterTargetOf } from './router.ts';
 import type { Narrowed, TargetRuntime } from './router.ts';
 import { CandidateDropped, CandidateRefused, REFUSAL_STAGES, UnprobedTarget } from './candidate-refusal.ts';
@@ -313,10 +313,16 @@ const compactOnce = async (
     let cap: number;
     try {
       capabilities = await narrowed.capabilitiesOf(target);
-      cap = capFor(capabilities);
-      requireWithinCostCeiling(
-        { ceilingNano: request.momonga?.max_cost_nano, inputBound: request.momonga?.max_input_tokens, outputBound: outputTokensFor(capabilities, LOWEST_REASONING_EFFORT, cap) },
+      cap = outputBoundWithinCostCeiling(
+        {
+          ceilingNano: request.momonga?.max_cost_nano,
+          inputBound: request.momonga?.max_input_tokens,
+          visible: capFor(capabilities),
+          effort: LOWEST_REASONING_EFFORT,
+          smallestAnswer: MIN_SUMMARY_TOKENS,
+        },
         target,
+        capabilities,
         services.priceTable,
         services.clock.now(),
       );
