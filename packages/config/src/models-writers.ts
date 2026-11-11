@@ -191,7 +191,7 @@ const readState = (document: Json, kinds: ServerKinds): State => {
 
 const displayIn = (state: State, canon: string): string => state.displays.get(canon) ?? canon;
 
-const notConfigured = (state: State, canon: string): never => refuse('unresolved', modelRefErrorOf(canon, { kind: 'not_found' }, state.views).message);
+const notConfigured = (state: State, canon: string): never => refuse('unresolved', modelRefErrorOf(canon, { kind: 'not_found' }, state.views, 'gateway').message);
 
 const placeOf = (state: State, canon: string): Place => state.places.get(canon) ?? notConfigured(state, canon);
 

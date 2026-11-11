@@ -10,7 +10,7 @@ const signal = new AbortController().signal;
 type Edit = (document: Record<string, unknown>) => boolean;
 type Trust = { isTrusted(directory: string, signal: AbortSignal): boolean | Promise<boolean> };
 
-const optionsOf = (tree: Tree, trust: Trust) => ({ trust, lock: settingsFileLock(tree.home), randomHex: systemFileLockPorts.randomHex, signal });
+const optionsOf = (tree: Tree, trust: Trust) => ({ trust, lock: settingsFileLock(tree.home), random: systemFileLockPorts.random, signal });
 
 const mandateFile = (tree: Tree): string => path.join(tree.project, PROJECT_MANDATE_FILE);
 

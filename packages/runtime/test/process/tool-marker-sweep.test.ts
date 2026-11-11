@@ -31,9 +31,29 @@ vi.mock('@momonga/sandbox', async (importOriginal) => {
   };
 });
 
+const markerSweeps = vi.hoisted(() => ({ neverAnswers: false, signals: [] as AbortSignal[] }));
+
+vi.mock('../../src/process/tool-markers.ts', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../src/process/tool-markers.ts')>();
+  return {
+    ...original,
+    reapToolMarkers: (options: Parameters<typeof original.reapToolMarkers>[0]) => {
+      if (!markerSweeps.neverAnswers || options.event !== 'sweep') return original.reapToolMarkers(options);
+      const { signal } = options;
+      if (signal === undefined) throw new Error('the periodic sweep passed no signal');
+      markerSweeps.signals.push(signal);
+      return new Promise<void>((resolve) => {
+        signal.addEventListener('abort', () => resolve(), { once: true });
+      });
+    },
+  };
+});
+
 beforeEach(() => {
   sandboxSweeps.calls = 0;
   sandboxSweeps.failure = undefined;
+  markerSweeps.neverAnswers = false;
+  markerSweeps.signals = [];
 });
 
 const NON_SWEEP_LEASE_MS = 7000;
@@ -62,6 +82,27 @@ describe('tool marker sweep wiring (§8)', () => {
     expect(timers.pending()).toEqual([]);
   });
 
+  it('a sweep tick whose listing never answers is ended at the sweep interval, and the next tick starts', async (context) => {
+    markerSweeps.neverAnswers = true;
+    const temp = trackedRunHome(context);
+    const clock = createFakeClock(START_MS);
+    const timers = createFakeTimers(clock);
+    const launched = await launchRuntime(temp, { clock, fakeTimers: timers, leaseMs: NON_SWEEP_LEASE_MS });
+
+    await passServingTime(timers, TOOL_MARKER_SWEEP_MS, () => markerSweeps.signals.length === 1, 'the first sweep tick to start');
+    expect(markerSweeps.signals[0]?.aborted).toBe(false);
+    timers.advance(TOOL_MARKER_SWEEP_MS - 1);
+    expect(markerSweeps.signals[0]?.aborted).toBe(false);
+    await passServingTime(timers, 1, () => markerSweeps.signals.length === 2, 'the next sweep tick to start after the first was ended');
+    expect(markerSweeps.signals[0]?.aborted).toBe(true);
+    expect(markerSweeps.signals[1]?.aborted).toBe(false);
+    expect(entriesNamed(launched.logger, 'runtime error')).toEqual([]);
+
+    markerSweeps.neverAnswers = false;
+    expect(await launched.handle.close()).toEqual({ clean: true, abandoned: [], stragglers: [] });
+    expect(timers.pending()).toEqual([]);
+  });
+
   describe('the kept placeholders of the bubblewrap sandbox', () => {
     const bubblewrapHome = (context: CleanupContext): RunHome => {
       const temp = trackedRunHome(context);
@@ -83,6 +124,21 @@ describe('tool marker sweep wiring (§8)', () => {
       expect(sandboxSweeps.calls).toBe(0);
       await passServingTime(timers, TOOL_MARKER_SWEEP_MS, () => sandboxSweeps.calls === 1, 'the first sandbox sweep');
       await passServingTime(timers, TOOL_MARKER_SWEEP_MS, () => sandboxSweeps.calls === 2, 'the second sandbox sweep');
+    });
+
+    it('are swept at shutdown for the sandbox a settings change derived, not only for the one the runtime started with', async (context) => {
+      const temp = trackedRunHome(context);
+      const bwrap = path.join(temp.root, 'bwrap');
+      fs.writeFileSync(bwrap, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+      const launched = await launchRuntime(temp, { leaseMs: NON_SWEEP_LEASE_MS, platform: 'linux', sandboxExecPath: bwrap });
+      expect((await launched.http('GET', '/v1/health')).json).toMatchObject({ sandbox: 'none' });
+      writeUserSettings(temp.home, { sandbox: 'bubblewrap', ...modelSettings(path.join(temp.root, 'up.sock')) });
+      expect((await launched.http('GET', '/v1/health')).json).toMatchObject({ sandbox: 'bubblewrap' });
+      expect(sandboxSweeps.calls).toBe(0);
+
+      expect(await launched.handle.close()).toEqual({ clean: true, abandoned: [], stragglers: [] });
+
+      expect(sandboxSweeps.calls).toBe(1);
     });
 
     it('report a sweep that fails without stopping the runtime', async (context) => {

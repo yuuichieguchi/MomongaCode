@@ -72,7 +72,7 @@ type Print = (lines: readonly string[]) => void;
 export const listedModelOf = (entries: readonly MomongaModelEntry[], text: string): string => {
   const views = listingViewsOf(entries);
   const resolution = resolveTypedModelRef(typedModelText(text), views);
-  if (resolution.kind !== 'found') throw modelRefErrorOf(text, resolution, views);
+  if (resolution.kind !== 'found') throw modelRefErrorOf(text, resolution, views, 'cli');
   return resolution.model.canon;
 };
 
@@ -290,7 +290,7 @@ export const displayIn = (edit: ModelsEdit, canon: string): string => edit.displ
 
 const canonOfTyped = (edit: ModelsEdit, text: string): string => {
   const resolution = resolveTypedModelRef(typedModelText(text), edit.resolved.views);
-  if (resolution.kind !== 'found') throw modelRefErrorOf(text, resolution, edit.resolved.views);
+  if (resolution.kind !== 'found') throw modelRefErrorOf(text, resolution, edit.resolved.views, 'cli');
   return resolution.model.canon;
 };
 

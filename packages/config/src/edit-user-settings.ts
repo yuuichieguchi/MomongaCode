@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { hostPaths, isRecord, nodeFileSystem, systemRandom, writeFileAtomically } from '@momonga/foundation';
+import { hostPaths, isRecord, nodeFileSystem, writeFileAtomically } from '@momonga/foundation';
 import type { PathResolver } from '@momonga/foundation';
 import { ConfigError } from './config-error.ts';
 import type { SettingsWriterPorts } from './file-lock.ts';
@@ -35,12 +35,12 @@ export const settingsWriteTarget = async (file: string, paths: Pick<PathResolver
   }
 };
 
-export const editUserSettings = async (settingsFile: string, edit: (document: Record<string, unknown>) => boolean, { lock, randomHex, signal, confine }: EditUserSettingsOptions): Promise<void> => {
+export const editUserSettings = async (settingsFile: string, edit: (document: Record<string, unknown>) => boolean, { lock, random, signal, confine }: EditUserSettingsOptions): Promise<void> => {
   const target = await settingsWriteTarget(settingsFile, hostPaths(signal));
   await nodeFileSystem.mkdir(path.dirname(target), PRIVATE_DIRECTORY_MODE);
   await lock.locked(target, signal, async () => {
     const document = await documentOf(settingsFile, confine);
     if (!edit(document)) return;
-    await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: randomHex }, target, `${JSON.stringify(document, null, 2)}\n`, { mode: SETTINGS_FILE_MODE });
+    await writeFileAtomically(nodeFileSystem, random, target, `${JSON.stringify(document, null, 2)}\n`, { mode: SETTINGS_FILE_MODE });
   });
 };

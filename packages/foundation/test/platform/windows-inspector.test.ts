@@ -1,3 +1,4 @@
+import { sleepDrivenTiming } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { reconcileProcessGroup } from '../../src/process-markers.ts';
 import type { ProcessGroupPort } from '../../src/platform/group-port.ts';
@@ -184,7 +185,7 @@ describe('a Windows start time read that OpenProcess refuses (design 19.6 point 
     let now = 0;
     const result = await reconcileProcessGroup(
       { pgid: 4000, marker: 'C:\\Users\\a\\marker' },
-      { killGraceMs: 100, kill: (pid, signal) => void sent.push([pid, signal]), groupPort, timing: { now: () => now, sleep: async (ms) => void (now += ms) }, inspector, signal: new AbortController().signal },
+      { killGraceMs: 100, kill: (pid, signal) => void sent.push([pid, signal]), groupPort, timing: sleepDrivenTiming({ now: () => now, sleep: async (ms) => void (now += ms) }), inspector, signal: new AbortController().signal },
     );
     expect(sent.filter(([, signal]) => signal !== 0)).toEqual([]);
     expect(result.leftAlonePids).toEqual([4242]);

@@ -9,7 +9,7 @@ import type { ManagerHarness } from './support/p2-manager-harness.ts';
 
 const VALUES: StopValues = { closeGraceMs: 1200, managedServerStopGraceMs: 300, drainTimeoutMs: 4000, mcpCloseGraceMs: 50 };
 const TEARDOWN_MS = 10_000 + 6 * 50 + 10_075;
-const DERIVED_ABORT_BUDGET_MS = 2000 + 1000 + 5000 + 2 * 10;
+const DERIVED_ABORT_BUDGET_MS = 2000 + 1000 + 5000 + 2 * 25;
 const RUNTIME_TERM_BUDGET_MS = 4000 + DERIVED_ABORT_BUDGET_MS + TEARDOWN_MS + 5000;
 const RUNTIME_SIGINT_BUDGET_MS = DERIVED_ABORT_BUDGET_MS + TEARDOWN_MS + 5000;
 
@@ -42,13 +42,13 @@ const runtimeHarness = (context: Parameters<typeof createManagerHarness>[0]): { 
 describe('the stop budget of each child is derived from the four values of its stop', () => {
   it('a runtime under term has runtimeStopBudgetMs of the values: drain + abort + derived teardown + margin', () => {
     expect(stopBudgetMs('runtime', 'term', VALUES)).toBe(RUNTIME_TERM_BUDGET_MS);
-    expect(stopBudgetMs('runtime', 'term', { ...VALUES, drainTimeoutMs: 0, mcpCloseGraceMs: 0 })).toBe(8020 + 20_075 + 5000);
+    expect(stopBudgetMs('runtime', 'term', { ...VALUES, drainTimeoutMs: 0, mcpCloseGraceMs: 0 })).toBe(8050 + 20_075 + 5000);
   });
 
-  it('a runtime under int has the derived abort budget 8020 plus the derived teardown plus the margin, with no drain (design 2.6)', () => {
+  it('a runtime under int has the derived abort budget 8050 plus the derived teardown plus the margin, with no drain (design 2.6)', () => {
     expect(RUNTIME_ABORT_BUDGET_MS).toBe(DERIVED_ABORT_BUDGET_MS);
     expect(stopBudgetMs('runtime', 'int', VALUES)).toBe(RUNTIME_SIGINT_BUDGET_MS);
-    expect(stopBudgetMs('runtime', 'int', { ...VALUES, drainTimeoutMs: 300_000, mcpCloseGraceMs: 30_000 })).toBe(8020 + 200_075 + 5000);
+    expect(stopBudgetMs('runtime', 'int', { ...VALUES, drainTimeoutMs: 300_000, mcpCloseGraceMs: 30_000 })).toBe(8050 + 200_075 + 5000);
   });
 
   it('a gateway budget ignores the runtime values', () => {

@@ -1,19 +1,13 @@
 import { groupSignalsOf, hostProcessGroupPort } from './platform/group-port.ts';
 import type { ProcessGroupPort } from './platform/group-port.ts';
 import type { GroupMembersReader } from './platform/group-members.ts';
-import { GROUP_POLL_INTERVAL_MS, KILL_CONFIRM_MS } from './process-contract.ts';
-import { systemTiming } from './system-timing.ts';
+import { KILL_CONFIRM_MS } from './process-contract.ts';
+import { systemWaitTiming } from './system-timing.ts';
 import { sleep } from './timing.ts';
 import type { Timing } from './timing.ts';
+import { POLL_INTERVAL_MS, waitUntil } from './wait-until.ts';
 
 export { groupTerminationBoundMs } from './process-contract.ts';
-
-export const realGroupTiming: Timing = {
-  now: systemTiming.now,
-  monotonicMs: systemTiming.monotonicMs,
-  setTimeout: (callback, ms) => setTimeout(callback, ms),
-  clearTimeout: systemTiming.clearTimeout,
-};
 
 export type TerminateOutcome = 'terminated' | 'killed' | 'gone' | 'unconfirmed';
 
@@ -73,6 +67,11 @@ const probeGroup = async (pgid: number, port: ProcessGroupPort, stop: AbortSigna
   return stop?.aborted === true ? 'stopped' : 'alive';
 };
 
+const endOfGroup = async (pgid: number, port: ProcessGroupPort, stop: AbortSignal | undefined): Promise<Exclude<GroupProbe, 'alive'> | undefined> => {
+  const probe = await probeGroup(pgid, port, stop);
+  return probe === 'alive' ? undefined : probe;
+};
+
 const pushedEnd = async (pgid: number, deadline: number, port: ProcessGroupPort, ended: NonNullable<ProcessGroupPort['ended']>, timing: Timing, stop: AbortSignal | undefined): Promise<void> => {
   const wait = new AbortController();
   const leave = (): void => wait.abort(stop?.reason);
@@ -92,7 +91,7 @@ export async function waitForGroupGone(
   pgid: number,
   deadline: number,
   port: ProcessGroupPort = hostProcessGroupPort(),
-  timing: Timing = realGroupTiming,
+  timing: Timing = systemWaitTiming,
   stop?: AbortSignal,
 ): Promise<boolean> {
   if (port.ended !== undefined) {
@@ -102,12 +101,8 @@ export async function waitForGroupGone(
     await pushedEnd(pgid, deadline, port, port.ended, timing, stop);
     return (await probeGroup(pgid, port, stop)) === 'gone';
   }
-  for (;;) {
-    const probe = await probeGroup(pgid, port, stop);
-    if (probe !== 'alive') return probe === 'gone';
-    if (timing.monotonicMs() >= deadline) return false;
-    await sleep(timing, GROUP_POLL_INTERVAL_MS, stop);
-  }
+  const ended = await waitUntil(timing, () => endOfGroup(pgid, port, stop), { intervalMs: POLL_INTERVAL_MS, deadline, ...(stop === undefined ? {} : { signal: stop }) });
+  return ended.kind === 'found' && ended.value === 'gone';
 }
 
 export interface ForceKillGroupOptions {
@@ -117,21 +112,22 @@ export interface ForceKillGroupOptions {
   signal?: AbortSignal | undefined;
 }
 
-export async function forceKillGroup(pgid: number, { deadline, port = hostProcessGroupPort(), timing = realGroupTiming, signal }: ForceKillGroupOptions): Promise<boolean> {
+export async function forceKillGroup(pgid: number, { deadline, port = hostProcessGroupPort(), timing = systemWaitTiming, signal }: ForceKillGroupOptions): Promise<boolean> {
   const signals = groupSignalsOf(port);
   const last = signals[signals.length - 1] ?? signals[0];
-  for (;;) {
-    const probe = await probeGroup(pgid, port, signal);
-    if (probe !== 'alive') return probe === 'gone';
-    await signalGroup(pgid, last, port, signal);
-    if (timing.monotonicMs() >= deadline) return (await probeGroup(pgid, port, signal)) === 'gone';
-    await sleep(timing, GROUP_POLL_INTERVAL_MS, signal);
-  }
+  const endedOrKilledAgain = async (): Promise<Exclude<GroupProbe, 'alive'> | undefined> => {
+    const ended = await endOfGroup(pgid, port, signal);
+    if (ended === undefined) await signalGroup(pgid, last, port, signal);
+    return ended;
+  };
+  const ended = await waitUntil(timing, endedOrKilledAgain, { intervalMs: POLL_INTERVAL_MS, deadline, ...(signal === undefined ? {} : { signal }) });
+  if (ended.kind === 'found') return ended.value === 'gone';
+  return (await probeGroup(pgid, port, signal)) === 'gone';
 }
 
 export async function terminateGroup(pgid: number, options: TerminateGroupOptions): Promise<TerminateOutcome> {
   const port = options.port ?? hostProcessGroupPort();
-  const timing = options.timing ?? realGroupTiming;
+  const timing = options.timing ?? systemWaitTiming;
   const { signal } = options;
   const signals = groupSignalsOf(port);
   const first = await probeGroup(pgid, port, signal);

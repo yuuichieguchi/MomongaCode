@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { EXIT_USAGE, systemTiming } from '@momonga/foundation';
-import { PLAN_LABEL_REFUSAL } from '@momonga/protocol';
+import { PLAN_LABEL_REFUSAL, messageOf } from '@momonga/protocol';
 import type { PlanAccountRef } from '@momonga/protocol';
 import { authLogin, authLogout, authStatus, nextAccountLabel } from '../src/commands/auth.ts';
 import { describeRunError } from '../src/policy-messages.ts';
@@ -87,19 +87,19 @@ describe('describeRunError names the command of the surface for plan errors', ()
   });
 
   it('names momonga auth login with the profile and label from the error plan data in a headless run', () => {
-    const lines = describeRunError({ ...expired, plan: { profile: 'chatgpt', account: 'chatgpt' } }, 'headless');
+    const lines = describeRunError({ ...expired, plan: { profile: 'chatgpt', account: 'chatgpt' } }, 'cli');
     expect(lines[0]).toBe('ChatGPT sign-in expired · Run momonga auth login chatgpt --account chatgpt to sign in again');
     expect(lines[1]).toContain('sign_in_required');
   });
 
   it('names momonga auth login with the profile alone when the plan names no account', () => {
     const profileOnly = { profile: 'chatgpt' };
-    expect(describeRunError({ ...expired, plan: profileOnly }, 'headless')[0]).toBe('ChatGPT sign-in expired · Run momonga auth login chatgpt to sign in again');
-    expect(describeRunError({ code: 'plan_use_not_enabled', message: 'Plan use is not enabled.', plan: profileOnly }, 'headless')).toEqual([
+    expect(describeRunError({ ...expired, plan: profileOnly }, 'cli')[0]).toBe('ChatGPT sign-in expired · Run momonga auth login chatgpt to sign in again');
+    expect(describeRunError({ code: 'plan_use_not_enabled', message: 'Plan use is not enabled.', plan: profileOnly }, 'cli')).toEqual([
       'Plan use is not enabled. · Run momonga auth login chatgpt --reconsent to enable it',
       'cause: plan_use_not_enabled',
     ]);
-    expect(describeRunError({ code: 'plan_not_eligible', message: 'Not eligible.', plan: profileOnly }, 'headless')).toEqual([
+    expect(describeRunError({ code: 'plan_not_eligible', message: 'Not eligible.', plan: profileOnly }, 'cli')).toEqual([
       'Not eligible.',
       'cause: plan_not_eligible',
       'Run momonga auth login chatgpt --account <new label> to use another account, or use an API key.',
@@ -113,7 +113,7 @@ describe('describeRunError names the command of the surface for plan errors', ()
   });
 
   it('names plain momonga auth login when the error carries no plan data', () => {
-    const lines = describeRunError(expired, 'headless');
+    const lines = describeRunError(expired, 'cli');
     expect(lines[0]).toBe('ChatGPT sign-in expired · Run momonga auth login to sign in again');
     expect(lines[1]).toContain('sign_in_required');
   });
@@ -168,7 +168,7 @@ describe('momonga auth status', () => {
     expect(lines[brokenAt + 1]).toContain('bad tag');
     expect(out.written.join('').split('https://chatgpt.com/settings/usage')).toHaveLength(2);
     expect(out.written.join('')).toContain('https://chatgpt.com/settings/usage');
-    expect(lines.filter((line) => line.startsWith('model: '))).toEqual(['model: none (No model is connected. Use /login to connect one.)']);
+    expect(lines.filter((line) => line.startsWith('model: '))).toEqual([`model: none (${messageOf('noModelConnected', 'cli')})`]);
   });
 });
 

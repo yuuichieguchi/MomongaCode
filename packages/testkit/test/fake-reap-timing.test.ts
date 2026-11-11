@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
+import { sleep } from '@momonga/foundation';
 import { spawn } from '@momonga/testkit/child-process';
 import { HOLD_UNTIL_SIGNALLED_ARGV, createFakeClock, createFakeTimers, fakeReapTiming, pacedReapTiming } from '@momonga/testkit';
 
@@ -21,7 +22,7 @@ describe('fakeReapTiming (fake timers)', () => {
     timers.setTimeout(() => fired.push(clock.now()), 500);
     timers.setTimeout(() => fired.push(clock.now()), 501);
 
-    await timing.sleep(500);
+    await sleep(timing, 500);
 
     expect(fired).toEqual([1500]);
     expect(clock.now()).toBe(1500);
@@ -33,8 +34,8 @@ describe('fakeReapTiming (fake timers)', () => {
     const timers = createFakeTimers(clock);
     const timing = fakeReapTiming(clock, timers);
 
-    await timing.sleep(25);
-    await timing.sleep(25);
+    await sleep(timing, 25);
+    await sleep(timing, 25);
 
     expect(timing.now()).toBe(50);
   });
@@ -45,8 +46,8 @@ describe('pacedReapTiming (a fake clock paired with a real host operation)', () 
     const clock = createFakeClock(0);
     const timing = pacedReapTiming(clock);
 
-    await timing.sleep(25);
-    await timing.sleep(25);
+    await sleep(timing, 25);
+    await sleep(timing, 25);
 
     expect(timing.now()).toBe(50);
   });
@@ -70,7 +71,7 @@ describe('pacedReapTiming (a fake clock paired with a real host operation)', () 
     let polls = 0;
     while (!dead && timing.now() < deadline) {
       polls += 1;
-      await timing.sleep(25);
+      await sleep(timing, 25);
     }
 
     expect(dead).toBe(true);
@@ -83,8 +84,8 @@ describe('pacedReapTiming (a fake clock paired with a real host operation)', () 
     const timing = pacedReapTiming(clock);
     const read = timing.pairedWith(fs.promises.readFile('/nonexistent/paced-reap-timing'));
 
-    await timing.sleep(25);
-    await timing.sleep(25);
+    await sleep(timing, 25);
+    await sleep(timing, 25);
 
     await expect(read).rejects.toThrow(/ENOENT/);
     expect(timing.now()).toBe(50);

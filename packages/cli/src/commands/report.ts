@@ -2,6 +2,7 @@ import type { MomongaPaths } from '@momonga/foundation';
 import { usdOfNano } from '@momonga/protocol';
 import type { BudgetExhausted, RunBudgetReport, RunDelegationReport, RunOperationReport, RunReport } from '@momonga/protocol';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
+import { CONDITION_STATE_WORDS, RESIDUAL_RISK_WORDS } from '../policy-messages.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
 import { escapedLines } from '../terminal-writer.ts';
@@ -9,7 +10,7 @@ import { latestRunIdOf } from './targets.ts';
 
 const conditionLine = (condition: RunReport['conditions'][number]): string => {
   const exit = condition.last?.exitCode === undefined ? '' : `, exit code ${condition.last.exitCode}`;
-  return `  ${condition.state}  ${condition.command}  (${condition.rounds} ${condition.rounds === 1 ? 'round' : 'rounds'}${exit})`;
+  return `  ${CONDITION_STATE_WORDS[condition.state]}  ${condition.command}  (${condition.rounds} ${condition.rounds === 1 ? 'round' : 'rounds'}${exit})`;
 };
 
 const usd = (nano: number): string => `${usdOfNano(nano)} USD`;
@@ -74,7 +75,7 @@ export const renderReport = (report: RunReport): string => {
     ...(report.notRun.length === 0 ? [] : ['not run:', ...report.notRun.map((entry) => `  ${entry.what}  (${entry.reason})`)]),
     `changes: ${report.changes.mutatingCalls} mutating ${report.changes.mutatingCalls === 1 ? 'call' : 'calls'}`,
     ...report.changes.files.map((file) => `  ${file.path}${file.sha256 === undefined ? '' : `  ${file.sha256}`}`),
-    ...(report.residualRisk.length === 0 ? [] : ['residual risk:', ...report.residualRisk.map((risk) => `  ${risk.code}  ${risk.count}`)]),
+    ...(report.residualRisk.length === 0 ? [] : ['residual risk:', ...report.residualRisk.map((risk) => `  ${RESIDUAL_RISK_WORDS[risk.code]}  ${risk.count}`)]),
     ...(report.modelChecks.length === 0 ? [] : ['commands the model ran that equal a condition (informational, never evidence):', ...report.modelChecks.map((check) => `  ${check.command}  exit code ${check.exitCode}`)]),
     ...(report.budget === undefined ? [] : budgetLines(report.budget)),
     ...(report.stoppedBy === undefined ? [] : [stoppedByLine(report.stoppedBy)]),

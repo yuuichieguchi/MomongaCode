@@ -3,7 +3,7 @@ import type { AutoFitKey, UserModels } from '@momonga/config';
 import { createBinaryHashCache, createHostExec, currentSocketResolver, momongaPaths, probeKeyComponentLabel } from '@momonga/foundation';
 import { autoGateRecordOf, caseSettingsFor, formatReport, parseDataset, runDataset } from '@momonga/eval';
 import type { GoldenDataset } from '@momonga/eval';
-import { NO_MODEL_CONNECTED_TEXT, autoModeNotice, displayMapOf, modelRefErrorOf, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
+import { autoModeNotice, displayMapOf, messageOf, modelRefErrorOf, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
 import type { AutoModeSurface } from '@momonga/protocol';
 import { withinCommandLimit } from '../command-limit.ts';
 import { createHomes, liveSettingsFor, needsPlanRelay, readCredentials, readPlanRelay, sweepStaleHomes, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
@@ -44,7 +44,7 @@ export type AutoModeStatusOutcome = { measurement: 'passed' | 'did_not_pass' | '
 const typedModelOf = (models: UserModels, text: string): string => {
   const { views } = models.resolved;
   const resolution = resolveTypedModelRef(typedModelText(text), views);
-  if (resolution.kind !== 'found') throw modelRefErrorOf(text, resolution, views);
+  if (resolution.kind !== 'found') throw modelRefErrorOf(text, resolution, views, 'cli');
   return resolution.model.canon;
 };
 
@@ -56,7 +56,7 @@ const classifierOf = (models: UserModels, configured: string | undefined, named:
 
 const agentOf = (models: UserModels, named: string | undefined): string => {
   if (named !== undefined) return typedModelOf(models, named);
-  if (models.resolved.start === undefined) throw new AutoModeCheckError(NO_MODEL_CONNECTED_TEXT);
+  if (models.resolved.start === undefined) throw new AutoModeCheckError(messageOf('noModelConnected', 'cli'));
   return models.resolved.start;
 };
 
@@ -157,7 +157,7 @@ export const autoModeCheckPortsOf = async (ports: CliPorts, write: (text: string
     home: ports.home,
     version: ports.version,
     now: () => ports.clock.now(),
-    randomHex: systemFileLockPorts.randomHex,
+    randomHex: (bytes) => systemFileLockPorts.random.hex(bytes),
     reflection: { pendingBoundMs: REFLECTION_PICKUP_BOUND_MS, attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS, pollMs: REFLECTION_POLL_MS },
     write,
   };

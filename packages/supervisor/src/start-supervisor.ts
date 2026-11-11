@@ -27,7 +27,7 @@ import {
   systemClock,
   writeStopRecord,
 } from '@momonga/foundation';
-import type { AbandonReason, AtomicWriteFileSystem, Clock, GenerationRole, JsonLogger, KernelLockMechanism, ProcessLock, ReadyFields, ReapTiming, StopValues, TextStream } from '@momonga/foundation';
+import type { AbandonReason, AtomicWriteFileSystem, Clock, GenerationRole, JsonLogger, KernelLockMechanism, ProcessLock, ReadyFields, StopValues, Timing, TextStream } from '@momonga/foundation';
 import type { SupervisorHealth, SupervisorPhase } from '@momonga/protocol';
 import { FIDELITY_FOLD_VERSION, SUPERVISOR_API_VERSION } from '@momonga/protocol';
 import { readChildCounts } from './child-counts.ts';
@@ -95,7 +95,7 @@ export type SupervisorOptions = {
   random?: () => number;
   logger?: JsonLogger;
   droppedLogLines?: () => number;
-  reapTiming?: ReapTiming;
+  reapTiming?: Timing;
   lockMechanism?: KernelLockMechanism;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
   markerPorts?: MarkerPorts;
@@ -276,9 +276,11 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       log(phaseChange({ from, to: next }));
     };
 
-    const reapTiming: ReapTiming = options.reapTiming ?? {
+    const reapTiming: Timing = options.reapTiming ?? {
       now: () => clock.now(),
-      sleep,
+      monotonicMs: () => clock.now(),
+      setTimeout: (callback, ms) => timers.setTimeout(callback, ms),
+      clearTimeout: (handle) => timers.clearTimeout(handle),
     };
 
     const settings = createUserSettingsCache({ home: canonicalHome, onWarning: (detail) => log(settingsWarning({ detail })), keptRecords: noKeptRecords });

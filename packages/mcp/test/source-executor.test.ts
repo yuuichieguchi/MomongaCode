@@ -70,12 +70,10 @@ describe('MCP tools through createToolExecutor', () => {
     expect(result.output).toBe('42');
   });
 
-  it('shows only read-only MCP tools in plan mode and still asks before running them', async () => {
+  it('offers no MCP tool in plan mode, whatever read-only hint its server sends', async () => {
     const { set, recordFile } = await modernSet();
     const visible = set.forModel({ mode: 'plan', rules: [] }).map((tool) => tool.name);
-    expect(visible).toEqual(['mcp__modern__content_kinds', 'mcp__modern__read_only']);
-    const outcome = await makeExecutor().run(set, 'mcp__modern__read_only', {}, { mode: 'plan', rules: [] });
-    expect(outcome).toMatchObject({ kind: 'needs_approval', decision: { kind: 'ask', source: 'mode' }, toolKind: 'read' });
+    expect(visible).toEqual([]);
     expect(callRecords(recordFile, 'read_only')).toEqual([]);
   });
 });
@@ -150,10 +148,10 @@ describe('MCP tool definitions', () => {
 
   it.each([
     ['mcp__modern__echo', 'other', 'write'],
-    ['mcp__modern__read_only', 'read', 'read_only'],
-    ['mcp__modern__content_kinds', 'read', 'read_only'],
-    ['mcp__modern__patterned', 'read', 'write'],
-  ])('maps annotations of %s to kind %s and side effect %s', async (name, kind, sideEffect) => {
+    ['mcp__modern__read_only', 'other', 'write'],
+    ['mcp__modern__content_kinds', 'other', 'write'],
+    ['mcp__modern__patterned', 'other', 'write'],
+  ])('gives %s the class of a tool the product cannot classify (kind %s, side effect %s), whatever its annotations say', async (name, kind, sideEffect) => {
     const { set } = await modernSet();
     expect(set.get(name)).toMatchObject({ kind, sideEffect });
   });

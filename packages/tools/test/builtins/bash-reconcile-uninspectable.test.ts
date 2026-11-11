@@ -1,8 +1,9 @@
+import { sleepDrivenTiming } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createUninspectableRegistry } from '@momonga/foundation';
-import type { ProcessInspector, ReapTiming } from '@momonga/foundation';
+import type { ProcessInspector, Timing } from '@momonga/foundation';
 import { bashTool } from '../../src/builtins/bash.ts';
 import type { ReconcileContext } from '../../src/types.ts';
 import { call, makeHarness, makeTool, toolSetOf } from '../harness.ts';
@@ -24,7 +25,7 @@ const unreadableInspector: ProcessInspector = {
   markerState: async () => 'held',
 } as unknown as ProcessInspector;
 
-const timing: ReapTiming = { now: (() => { let now = 0; return () => (now += 25); })(), sleep: async () => undefined };
+const timing: Timing = sleepDrivenTiming({ now: (() => { let now = 0; return () => (now += 25); })(), sleep: async () => undefined });
 
 const recordingKill = () => {
   const sent: Array<[number, NodeJS.Signals | 0]> = [];

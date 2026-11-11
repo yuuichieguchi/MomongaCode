@@ -2,8 +2,8 @@ import { checkRuleText, RuleParseError } from '@momonga/config';
 import type { SettingsLayer, SettingsSnapshot } from '@momonga/config';
 import { GIT_DIRECTORY_ENTRIES, WORKSPACE_CONTROL_NAMES } from '@momonga/foundation';
 import { PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS } from '@momonga/protocol';
-import { APPLIES_NEXT_SESSION, APPLIES_NOW, chooseSaveTarget, currentOf, runCollection, writeSetting } from '../settings-screen.tsx';
-import type { Refusal } from '../settings-screen.tsx';
+import { APPLIES_NEXT_SESSION, APPLIES_NOW, REMOVE_ACTIONS, chooseSaveTarget, chosenAction, currentOf, removeQuestion, runCollection, writeSetting } from '../settings-screen.tsx';
+import type { Removal } from '../settings-screen.tsx';
 import type { SlashCommand, SlashContext } from '../slash.ts';
 
 export const PERMISSIONS_TITLE = 'Permissions';
@@ -27,13 +27,13 @@ export const PROTECTED_LINES: readonly string[] = [
 
 const START_MODE_PATH = ['permissions', 'defaultMode'] as const;
 
-type Held = { readonly layer: SettingsLayer; readonly text: string };
+type Held = { readonly layer: SettingsLayer; readonly file: string; readonly text: string };
 
 const heldAt = (snapshot: SettingsSnapshot, key: string): Held[] =>
   snapshot.layers.flatMap((view) => {
     const permissions = view.document['permissions'];
     const list = typeof permissions === 'object' && permissions !== null ? (permissions as Readonly<Record<string, unknown>>)[key] : undefined;
-    return Array.isArray(list) ? list.filter((text): text is string => typeof text === 'string').map((text) => ({ layer: view.layer, text })) : [];
+    return Array.isArray(list) ? list.filter((text): text is string => typeof text === 'string').map((text) => ({ layer: view.layer, file: view.file, text })) : [];
   });
 
 const removed = (text: string) => (current: unknown): unknown => {
@@ -41,8 +41,12 @@ const removed = (text: string) => (current: unknown): unknown => {
   return next.length === 0 ? undefined : next;
 };
 
-const remove = async (context: SlashContext, held: Held | undefined, key: string): Promise<Refusal | 'left' | undefined> =>
-  held === undefined ? 'left' : writeSetting(context, held.layer, { kind: 'update', path: ['permissions', key], update: removed(held.text) });
+const heldLine = (held: Held): string => `${held.text}  ${held.layer}`;
+
+const actionsOf = async (context: SlashContext, held: Held | undefined): Promise<'left' | 'remove'> => (held === undefined || (await chosenAction(context, heldLine(held), REMOVE_ACTIONS)) === undefined ? 'left' : 'remove');
+
+const removalOf = (held: Held | undefined, key: string): Removal | undefined =>
+  held === undefined ? undefined : { question: removeQuestion(`${held.text} from ${held.file}`), remove: (context) => writeSetting(context, held.layer, { kind: 'update', path: ['permissions', key], update: removed(held.text) }) };
 
 const ruleProblem = (text: string): string | undefined => {
   try {
@@ -58,7 +62,7 @@ const editRules = (context: SlashContext, kind: RuleKind): Promise<boolean> =>
   runCollection(context, {
     title: kind.row,
     applied: APPLIES_NOW,
-    entries: (snapshot) => heldAt(snapshot, kind.effect).map((held) => `${held.text}  ${held.layer}`),
+    entries: (snapshot) => heldAt(snapshot, kind.effect).map(heldLine),
     add: async (_context, snapshot) => {
       const rule = await context.overlays.promptText({ title: kind.row, lines: [`${kind.preview}: Bash(npm test:*)`], validate: ruleProblem });
       if (rule === undefined) return 'left';
@@ -68,14 +72,15 @@ const editRules = (context: SlashContext, kind: RuleKind): Promise<boolean> =>
       if (refusal === undefined) context.info(`${kind.preview}: ${rule}`);
       return refusal;
     },
-    act: (_context, snapshot, index) => remove(context, heldAt(snapshot, kind.effect)[index], kind.effect),
+    act: (_context, snapshot, index) => actionsOf(context, heldAt(snapshot, kind.effect)[index]),
+    removal: (snapshot, index) => removalOf(heldAt(snapshot, kind.effect)[index], kind.effect),
   });
 
 const editDirectories = (context: SlashContext): Promise<boolean> =>
   runCollection(context, {
     title: DIRECTORIES_ROW,
     applied: APPLIES_NOW,
-    entries: (snapshot) => heldAt(snapshot, 'additionalDirectories').map((held) => `${held.text}  ${held.layer}`),
+    entries: (snapshot) => heldAt(snapshot, 'additionalDirectories').map(heldLine),
     add: async (_context, snapshot) => {
       const directory = await context.overlays.promptText({ title: DIRECTORIES_ROW, validate: (text) => (text.trim() === '' ? 'expected a directory' : undefined) });
       if (directory === undefined) return 'left';
@@ -83,7 +88,8 @@ const editDirectories = (context: SlashContext): Promise<boolean> =>
       if (layer === undefined) return 'left';
       return writeSetting(context, layer, { kind: 'update', path: ['permissions', 'additionalDirectories'], update: (current) => [...(Array.isArray(current) ? (current as unknown[]) : []), directory] });
     },
-    act: (_context, snapshot, index) => remove(context, heldAt(snapshot, 'additionalDirectories')[index], 'additionalDirectories'),
+    act: (_context, snapshot, index) => actionsOf(context, heldAt(snapshot, 'additionalDirectories')[index]),
+    removal: (snapshot, index) => removalOf(heldAt(snapshot, 'additionalDirectories')[index], 'additionalDirectories'),
   });
 
 const editStartMode = async (context: SlashContext, snapshot: SettingsSnapshot): Promise<string | undefined> => {

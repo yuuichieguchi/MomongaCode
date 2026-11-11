@@ -1,4 +1,4 @@
-import { NO_MODEL_CONNECTED_TEXT, PLAN_LABEL_REFUSAL, displayMapOf, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME } from '@momonga/protocol';
+import { PLAN_LABEL_REFUSAL, displayMapOf, messageOf, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME } from '@momonga/protocol';
 import type { MomongaModelList, PlanAccountView, PlanAccountsResponse, PlanProfileView, PlanSignInCompleteResponse, TargetBilling } from '@momonga/protocol';
 import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE } from '@momonga/foundation';
 import type { OpenUrl } from '@momonga/foundation';
@@ -46,7 +46,7 @@ export const modelLineOf = (listing: MomongaModelList, named: string | undefined
   return { name: displayMapOf(listingViewsOf(listing.data)).get(entry.id) ?? entry.id, canon: entry.id, billing: entry.billing };
 };
 
-export const modelLineText = (line: ModelLine): string => (line === null ? `model: none (${NO_MODEL_CONNECTED_TEXT})` : `model: ${line.name} (${line.billing})`);
+export const modelLineText = (line: ModelLine): string => (line === null ? `model: none (${messageOf('noModelConnected', 'cli')})` : `model: ${line.name} (${line.billing})`);
 
 export const authStatus = async (ports: AuthStatusPorts, options: { json: boolean; model?: string }): Promise<number> => {
   const listed = await ports.plan.accounts();
@@ -139,9 +139,9 @@ const chosenProfile = async (ports: AuthLoginPorts, listed: PlanAccountsResponse
 const outcomeLines = (profile: PlanProfileView, account: string, answer: PlanSignInCompleteResponse): string[] => {
   switch (answer.outcome) {
     case RETRY_OUTCOME:
-      return [codeNotAcceptedLine('headless', profile, account)];
+      return [codeNotAcceptedLine('cli', profile, account)];
     case PLAN_DISABLED_STATE:
-      return planDisabledLines('headless', profile, answer.account.label);
+      return planDisabledLines('cli', profile, answer.account.label);
     case SIGNED_IN_OUTCOME:
       return [
         signedInLine(answer.account),
@@ -163,7 +163,7 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
   }
   if ((await ports.sandbox()) === 'none') print(ports.stderr, SANDBOX_OFF_NOTICE);
   print(ports.stdout, [profile.messages.description]);
-  const tryAgain = tryAgainLine('headless', { profile: profile.id, account });
+  const tryAgain = tryAgainLine('cli', { profile: profile.id, account });
   const pasted =
     ports.isTerminal
       ? (state: string, signal: AbortSignal): Promise<string> => {

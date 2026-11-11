@@ -163,7 +163,6 @@ export { GENERIC_SERVER_KIND, SERVER_ADAPTER_LABELS, SERVER_KINDS } from './serv
 export type { JsonCheck, ServerKind, ServerKindAdapter, ServerKindRead, ServerKindRecognise, ServerKinds } from './server-kinds.ts';
 export {
   ModelRefError,
-  NO_MODEL_CONNECTED_TEXT,
   PROVIDER_NAME_PATTERN,
   STORED_MODEL_KEYS,
   canonOf,
@@ -175,13 +174,29 @@ export {
   parseCanon,
   resolveStoredModelRef,
   resolveTypedModelRef,
-  serverCountText,
   shortOf,
   storedModelRef,
   typedModelText,
   withDefaultTag,
 } from './model-ref.ts';
 export type { ModelRefErrorCode, ModelView, ModelViews, StoredModelRef, TypedModelText, TypedResolution } from './model-ref.ts';
+export {
+  ADD_MODEL_COMMAND,
+  CHOOSE_SESSION_COMMAND,
+  CONCEPTS,
+  MESSAGE_KEYS,
+  SIGN_IN_COMMAND,
+  SURFACES,
+  TUI_SIGN_IN_COMMAND,
+  VOCABULARY,
+  WORDS,
+  attachRunCommand,
+  bannedVariantsIn,
+  messageOf,
+  reopenSessionCommand,
+  serverCountText,
+} from './vocabulary.ts';
+export type { BannedUse, BannedVariant, Concept, KeptWork, MessageInput, MessageInputs, MessageKey, Surface, VocabularyRow } from './vocabulary.ts';
 export { FM_SERVER, MANAGED_DECLARABLE_FIELDS, MANAGED_ENDPOINT_FORMS, MANAGED_READY_LIMIT_MS, MANAGED_RESTART_POLICY, MANAGED_SERVERS, MANAGED_SERVER_ERROR_KINDS, PROBE_KEY_COMPONENTS, SOCKET_PLACEHOLDER, managedServerOf } from './managed-servers.ts';
 export type { ManagedDeclarableField, ManagedEndpointForm, ManagedRecordedDefaults, ManagedServerDescription, ManagedServerErrorKind, ManagedTokenCount, Precondition, PreconditionRule, ProbeKeyComponent } from './managed-servers.ts';
 export {

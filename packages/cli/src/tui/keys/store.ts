@@ -73,6 +73,7 @@ export const createKeyBindings = ({ file, shownFile, files }: KeyBindingsOptions
   let seen: KeyFileStat | undefined;
   let statAt: number | undefined;
   let reading = false;
+  let polledWhileReading: number | undefined;
 
   const publish = (next: BindingReport): void => {
     report = next;
@@ -113,6 +114,24 @@ export const createKeyBindings = ({ file, shownFile, files }: KeyBindingsOptions
     if (changed(found)) await readAndTell(found);
   };
 
+  function poll(now: number): void {
+    if (reading) {
+      polledWhileReading = now;
+      return;
+    }
+    if (statAt !== undefined && now - statAt < KEY_FILE_STAT_MS) return;
+    statAt = now;
+    reading = true;
+    reload()
+      .catch((error: unknown) => onNotice(reloadFailed(shownFile, error)))
+      .finally(() => {
+        reading = false;
+        const waiting = polledWhileReading;
+        polledWhileReading = undefined;
+        if (waiting !== undefined) poll(waiting);
+      });
+  }
+
   return {
     shownFile,
     table: () => table,
@@ -131,16 +150,7 @@ export const createKeyBindings = ({ file, shownFile, files }: KeyBindingsOptions
       };
     },
     load: async () => readAndTell(await files.stat(file)),
-    poll: (now) => {
-      if (reading || (statAt !== undefined && now - statAt < KEY_FILE_STAT_MS)) return;
-      statAt = now;
-      reading = true;
-      reload()
-        .catch((error: unknown) => onNotice(reloadFailed(shownFile, error)))
-        .finally(() => {
-          reading = false;
-        });
-    },
+    poll,
     preview: (edit) => resolveBindings(edit(document)),
     change: async (edit) => {
       if (report.fileProblem !== undefined) throw new Error(`${shownFile} cannot be changed here (${report.fileProblem}); correct or remove the file first`);

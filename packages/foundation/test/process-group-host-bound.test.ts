@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GROUP_POLL_INTERVAL_MS, KILL_CONFIRM_MS, terminateGroup } from '@momonga/foundation';
+import { POLL_INTERVAL_MS, KILL_CONFIRM_MS, terminateGroup } from '@momonga/foundation';
 import type { ProcessGroupPort, Timing } from '@momonga/foundation';
 import { createSteppingTiming } from '@momonga/testkit';
 
@@ -47,6 +47,6 @@ describe('stopping a process group whose members stay visible after SIGKILL (the
     const port = groupThatSurvivesSigkillFor(Number.POSITIVE_INFINITY, clock);
     await expect(terminateGroup(4242, { graceMs: 100, port, timing: fakeTiming(clock) })).resolves.toBe('unconfirmed');
     expect(clock.ms).toBeGreaterThanOrEqual(100 + KILL_CONFIRM_MS);
-    expect(clock.ms).toBeLessThanOrEqual(100 + KILL_CONFIRM_MS + 2 * GROUP_POLL_INTERVAL_MS);
+    expect(clock.ms).toBeLessThanOrEqual(100 + KILL_CONFIRM_MS + 2 * POLL_INTERVAL_MS);
   });
 });
