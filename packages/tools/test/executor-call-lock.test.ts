@@ -8,6 +8,7 @@ import { createCallLocks } from '../src/call-lock.ts';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
 import { deferred, keyFor } from './helpers.ts';
+import { sleep, systemTiming } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -50,11 +51,10 @@ const hostPollingTiming = () => {
   const polled = deferred<void>();
   const timing: Timing = sleepDrivenTiming({
     now: () => Date.now(),
-    sleep: (ms) =>
-      new Promise<void>((resolve) => {
-        polled.resolve();
-        setTimeout(resolve, ms);
-      }),
+    sleep: async (ms) => {
+      polled.resolve();
+      await sleep(systemTiming, ms);
+    },
   });
   return { timing, polled: polled.promise };
 };

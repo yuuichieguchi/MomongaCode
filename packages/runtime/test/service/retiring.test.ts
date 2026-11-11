@@ -14,6 +14,18 @@ const expectMoved = (response: JsonResponse): void => {
   });
 };
 
+const STARTING_TEXT = 'The daemon is still starting and accepts no new work yet. The request was not run; send it again.';
+
+const expectStarting = (response: JsonResponse): void => {
+  expect({ status: response.status, body: response.json, retryAfter: response.headers['retry-after'] }).toEqual({
+    status: 503,
+    body: { error: { type: 'server_error', code: 'starting', message: STARTING_TEXT } },
+    retryAfter: '1',
+  });
+};
+
+const expectRefusedIn = { starting: expectStarting, retiring: expectMoved } as const;
+
 const ruleBody = (project: string) => ({ kind: 'constraint', target: 'production-database', text: 'never touch production', scope: { level: 'project', project, paths: [] } });
 
 const serviceIn = async (role: GenerationRole) => {
@@ -27,19 +39,19 @@ const serviceIn = async (role: GenerationRole) => {
 };
 
 describe.each(['starting', 'retiring'] as const)('a %s runtime refuses the requests that create work (17.1, 20.2, 20.33)', (role) => {
-  it('answers POST /v1/sessions with 503 moved, retry-after 1 and no sockets in the body, and creates nothing', async () => {
+  it('answers POST /v1/sessions with the 503 of its role (moved while retiring, starting while starting), retry-after 1 and no sockets in the body, and creates nothing', async () => {
     const { env } = await serviceIn(role);
     const before = env.store.listSessions({ limit: 100, cursor: null }).sessions.length;
 
-    expectMoved(await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: { PATH: '/usr/bin:/bin' } } }));
+    expectRefusedIn[role](await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: { PATH: '/usr/bin:/bin' } } }));
 
     expect(env.store.listSessions({ limit: 100, cursor: null }).sessions).toHaveLength(before);
   });
 
-  it('answers a new POST runs with 503 moved and stores no run', async () => {
+  it('answers a new POST runs with the 503 of its role and stores no run', async () => {
     const { env, session } = await serviceIn(role);
 
-    expectMoved(await env.http('POST', `/v1/sessions/${session.id}/runs`, { body: { input: 'new work' } }));
+    expectRefusedIn[role](await env.http('POST', `/v1/sessions/${session.id}/runs`, { body: { input: 'new work' } }));
 
     expect(env.store.listRuns(session.id)).toHaveLength(1);
   });
@@ -54,7 +66,7 @@ describe.each(['starting', 'retiring'] as const)('a %s runtime refuses the reque
     expect(replayed.json.run.id).toBe(stored.id);
   });
 
-  it('checks 404, 400 and 422 before moved, as draining does', async () => {
+  it('checks 404, 400 and 422 before the refusal of its role, as draining does', async () => {
     const { env, session } = await serviceIn(role);
 
     expect((await env.http('POST', '/v1/sessions/01900000-0000-7000-8000-00000000dead/runs', { body: { input: 'x' } })).status).toBe(404);

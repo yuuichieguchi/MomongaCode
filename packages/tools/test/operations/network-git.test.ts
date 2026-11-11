@@ -43,7 +43,7 @@ describe('the environment of a git process that reaches the network', () => {
 
   it('sets aside what the repository configures for the transport, for the exact destination and in general', () => {
     const world = hostileWorld();
-    const env = gitEnvironment(world.env, { mode: 'network', destinations: [DESTINATION] });
+    const env = gitEnvironment(world.env, { mode: 'network', destinations: [DESTINATION], rewrites: [] });
     expect(effective(world, env, '--get-urlmatch', 'http.sslVerify', DESTINATION)).toBe('true');
     expect(effective(world, env, '--get-urlmatch', 'http.extraHeader', DESTINATION)).toBe('');
     expect(effective(world, env, '--get-urlmatch', 'http.curloptResolve', DESTINATION)).toBe('');
@@ -57,13 +57,13 @@ describe('the environment of a git process that reaches the network', () => {
 
   it('allows only the protocol of each destination', () => {
     const world = makeGitWorld();
-    const remote = gitEnvironment(world.env, { mode: 'network', destinations: [DESTINATION] });
+    const remote = gitEnvironment(world.env, { mode: 'network', destinations: [DESTINATION], rewrites: [] });
     expect(effective(world, remote, 'protocol.allow')).toBe('never');
     expect(effective(world, remote, 'protocol.https.allow')).toBe('always');
     expect(effective(world, remote, 'protocol.file.allow')).toBe('never');
     expect(effective(world, remote, 'protocol.ssh.allow')).toBe('never');
     expect(effective(world, remote, 'protocol.ext.allow')).toBe('never');
-    const local = gitEnvironment(world.env, { mode: 'network', destinations: ['/srv/a.git', 'file:///srv/b.git'] });
+    const local = gitEnvironment(world.env, { mode: 'network', destinations: ['/srv/a.git', 'file:///srv/b.git'], rewrites: [] });
     expect(effective(world, local, 'protocol.file.allow')).toBe('always');
     expect(effective(world, local, 'protocol.https.allow')).toBe('never');
   });
@@ -72,7 +72,7 @@ describe('the environment of a git process that reaches the network', () => {
     const world = makeGitWorld();
     world.git(world.work, 'config', 'http.proxy', 'http://planted.invalid:9');
     world.git(world.work, 'config', `http.${DESTINATION}.proxy`, 'http://planted.invalid:9');
-    const env = gitProxyEnvironment(gitEnvironment(world.env, { mode: 'network', destinations: [DESTINATION] }), 'http://127.0.0.1:4000', [DESTINATION]);
+    const env = gitProxyEnvironment(gitEnvironment(world.env, { mode: 'network', destinations: [DESTINATION], rewrites: [] }), 'http://127.0.0.1:4000', [DESTINATION]);
     expect(effective(world, env, '--get-urlmatch', 'http.proxy', DESTINATION)).toBe('http://127.0.0.1:4000');
   });
 
@@ -121,7 +121,7 @@ describe('a network probe that carries the credential, in a repository that conf
     world.git(world.work, 'config', `http.${server.origin}/.extraHeader`, 'X-Planted: url');
     world.write('a.txt', 'one\n');
     world.commitAll('first');
-    const forge: ForgeAccess = { request: async () => Promise.reject(new Error('no forge request is expected')), gitCredential: async () => ({ origin: server.origin, username: 'x-access-token', password: 'fake-git-credential-for-tests' }) };
+    const forge: ForgeAccess = { request: async () => Promise.reject(new Error('no forge request is expected')), gitCredential: async () => ({ origin: server.origin, username: 'x-access-token', password: 'fake-git-credential-for-tests' }) , gitDestination: () => undefined };
     const runner = countingRunner();
     await settle(async () => {
       await partsOf(operationTool('GitPush', { runArgv: runner.run, forge }), PUSH, contextFor(world.work, world.env)).prepare();

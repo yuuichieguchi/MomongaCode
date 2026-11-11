@@ -1,6 +1,6 @@
 {
   "name": "PullRequestStatus",
-  "description": "Reads the state of a pull request: whether it is open or merged, its head commit, and its URL.",
+  "description": "Reads the state of a pull request: whether it is open or merged, its head commit, its URL, and every check of the head commit by name with its conclusion (a check that has not concluded shows its status). The comments of a pull request are read by PullRequestComments.",
   "kind": "fetch",
   "sideEffect": "read_only",
   "title": "Read pull request #{input.number}",
@@ -16,9 +16,12 @@
     "additionalProperties": false
   },
   "timeoutMs": 30000,
-  "observe": [{ "id": "pr", "via": { "forge": "getPullRequest", "args": { "number": "{input.number}" }, "shape": "one" } }],
+  "observe": [
+    { "id": "pr", "via": { "forge": "getPullRequest", "args": { "number": "{input.number}" }, "shape": "one" } },
+    { "id": "checks", "via": { "forge": "listChecks", "args": { "headSha": "{seen.pr.headSha}" }, "shape": "lines", "lines": ["{item.name}: {item.conclusion}", "{item.name}: {item.status}"] } }
+  ],
   "applied": [],
   "unchanged": [],
   "supersedes": [["gh", "pr", "view"], ["gh", "pr", "status"], ["gh", "pr", "checks"]],
-  "report": "Pull request #{input.number} is {after.pr.state}, merged {after.pr.merged}, head {after.pr.headSha}: {after.pr.url}"
+  "report": "Pull request #{input.number} is {after.pr.state}, merged {after.pr.merged}, head {after.pr.headSha}: {after.pr.url}\n{after.checks.count} checks on the head commit:\n{after.checks.text}"
 }

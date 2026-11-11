@@ -1,5 +1,6 @@
-import type { JsonLogger, StopValues, ProcessInspector } from '@momonga/foundation';
-import { SHUTDOWN_DRAIN_BOUND_MS, SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS } from '@momonga/foundation';
+import type { JsonLogger, ProcessInspector, StopValues } from '@momonga/foundation';
+import { SHUTDOWN_DRAIN_BOUND_MS, SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS, managedServerReapBoundMs } from '@momonga/foundation';
+import { DEFAULT_INTERVALS } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
 import { stopBudgetMs } from './child-manager.ts';
 import type { ChildManager, ChildStopResult } from './child-manager.ts';
@@ -8,7 +9,7 @@ import { orphansWarning, shutdownBegin, shutdownEnd, shutdownRecordFailed, shutd
 import { omitUndefined } from './omit-undefined.ts';
 import { reapDaemonMarker } from './orphans.ts';
 import type { MarkerPorts } from './orphans.ts';
-import type { StopMode } from './restart-policy.ts';
+import type { StopMode, StopReason } from './restart-policy.ts';
 import type { SupervisorCloseResult } from './start-supervisor.ts';
 
 export type ShutdownMode = 'idle' | 'closing' | 'aborting';
@@ -21,6 +22,7 @@ export type ShutdownControllerOptions = {
   logger: JsonLogger;
   inspector: ProcessInspector;
   markerPorts?: MarkerPorts;
+  stopReason(): StopReason;
   beginDraining(): void;
   awaitBackground(): Promise<void>;
   closeControl(): Promise<void>;
@@ -37,6 +39,22 @@ export type ShutdownController = {
 
 export const childCloseBudgetMs = (role: ChildRole, mode: StopMode, values: StopValues): number => stopBudgetMs(role, mode, values);
 
+export const shutdownStepBoundsMs = (values: StopValues): readonly number[] => {
+  const killedChildSettleMs = DEFAULT_INTERVALS.killConfirmMs + DEFAULT_INTERVALS.stdioFlushMs;
+  return [
+    SHUTDOWN_DRAIN_BOUND_MS,
+    stopBudgetMs('runtime', 'term', values),
+    killedChildSettleMs,
+    stopBudgetMs('gateway', 'term', values),
+    killedChildSettleMs,
+    managedServerReapBoundMs(values),
+    SHUTDOWN_REAP_BOUND_MS,
+    SHUTDOWN_RELEASE_BOUND_MS,
+  ];
+};
+
+type StepBound = { reached: Promise<'bound'>; clear(): void };
+
 const MAX_REAP_ATTEMPTS = 2;
 
 const failureOf = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
@@ -45,7 +63,7 @@ export const createShutdownController = (options: ShutdownControllerOptions): Sh
   const { runtime, gateway, timers, logger } = options;
   const managers = [runtime, gateway] as const;
   let mode: ShutdownMode = 'idle';
-  let begun: { values: StopValues; recorded: Promise<void> } | undefined;
+  let begun: { values: StopValues; recordSettled: Promise<void> } | undefined;
   let resolveClosed: (result: SupervisorCloseResult) => void = () => undefined;
   const closed = new Promise<SupervisorCloseResult>((resolve) => {
     resolveClosed = resolve;
@@ -59,7 +77,7 @@ export const createShutdownController = (options: ShutdownControllerOptions): Sh
     return begun.values;
   };
 
-  const stopManager = (manager: ChildManager): Promise<ChildStopResult> => manager.stop('shutdown', stopMode(), valuesOfStop());
+  const stopManager = (manager: ChildManager): Promise<ChildStopResult> => manager.stop(options.stopReason(), stopMode(), valuesOfStop());
 
   const reapStep = async (triedBefore: ReadonlyMap<ChildRole, ReadonlySet<string>>): Promise<void> => {
     let expired = false;
@@ -108,27 +126,31 @@ export const createShutdownController = (options: ShutdownControllerOptions): Sh
     }
   };
 
-  const drainBackground = async (): Promise<void> => {
-    let drainTimer: unknown;
-    const boundReached = new Promise<'bound'>((resolve) => {
-      drainTimer = timers.setTimeout(() => resolve('bound'), SHUTDOWN_DRAIN_BOUND_MS);
+  const stepBound = (ms: number): StepBound => {
+    let timer: unknown;
+    const reached = new Promise<'bound'>((resolve) => {
+      timer = timers.setTimeout(() => resolve('bound'), ms);
     });
+    return { reached, clear: () => timers.clearTimeout(timer) };
+  };
+
+  const drainBackground = async (stepOne: StepBound): Promise<void> => {
     try {
-      const outcome = await Promise.race([options.awaitBackground().then(() => 'drained' as const), boundReached]);
+      const outcome = await Promise.race([options.awaitBackground().then(() => 'drained' as const), stepOne.reached]);
       if (outcome === 'bound') log(shutdownStepBound({ shutdownStep: 1, detail: 'step 1 bound reached' }));
     } finally {
-      timers.clearTimeout(drainTimer);
+      stepOne.clear();
     }
   };
 
-  const run = async (recorded: Promise<void>): Promise<SupervisorCloseResult> => {
-    await recorded;
+  const run = async (recordSettled: Promise<void>, stepOne: StepBound): Promise<SupervisorCloseResult> => {
+    await recordSettled;
     log(shutdownBegin({ mode: mode === 'aborting' ? 'abort' : 'close' }));
     options.beginDraining();
     for (const manager of managers) manager.enterDraining();
     const triedBefore = new Map<ChildRole, ReadonlySet<string>>(managers.map((manager) => [manager.role, new Set(manager.unreapedMarkers())]));
     log(shutdownStep({ shutdownStep: 1, detail: 'draining' }));
-    await drainBackground();
+    await drainBackground(stepOne);
 
     const killed: ChildRole[] = [];
     const leaked: ChildRole[] = [];
@@ -189,9 +211,19 @@ export const createShutdownController = (options: ShutdownControllerOptions): Sh
   const begin = (next: 'closing' | 'aborting', values: StopValues | undefined): void => {
     if (values === undefined) throw new Error('a stop began with no stop values');
     mode = next;
-    const recorded = options.recordStop(values).catch((error: unknown) => log(shutdownRecordFailed({ detail: failureOf(error).message })));
-    begun = { values, recorded };
-    run(recorded).then(resolveClosed, (error: unknown) => {
+    const stepOne = stepBound(SHUTDOWN_DRAIN_BOUND_MS);
+    const recorded = options.recordStop(values).then(
+      () => 'recorded' as const,
+      (error: unknown) => {
+        log(shutdownRecordFailed({ detail: failureOf(error).message }));
+        return 'recorded' as const;
+      },
+    );
+    const recordSettled = Promise.race([recorded, stepOne.reached]).then((outcome) => {
+      if (outcome === 'bound') log(shutdownRecordFailed({ detail: `the stop record was not written within ${SHUTDOWN_DRAIN_BOUND_MS} ms` }));
+    });
+    begun = { values, recordSettled };
+    run(recordSettled, stepOne).then(resolveClosed, (error: unknown) => {
       const failure = failureOf(error);
       options.onFatal(failure);
       resolveClosed({ clean: false, killed: [], leaked: [], fatal: failure });
@@ -200,8 +232,8 @@ export const createShutdownController = (options: ShutdownControllerOptions): Sh
 
   const escalate = (): void => {
     const values = valuesOfStop();
-    void begun?.recorded.then(() => {
-      for (const manager of managers) void manager.stop('shutdown', 'int', values);
+    void begun?.recordSettled.then(() => {
+      for (const manager of managers) void manager.stop(options.stopReason(), 'int', values);
     });
   };
 

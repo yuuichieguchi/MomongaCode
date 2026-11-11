@@ -61,7 +61,11 @@ describe('the role of a runtime from run/current (17.1, 20.2)', () => {
     expect(launched.handle.role()).toBe('starting');
     expect((await launched.http('GET', '/v1/health')).json).toMatchObject({ state: 'running', role: 'starting', steps: 0, jobs: 0 });
     const refused = await launched.http('POST', '/v1/sessions', { body: { cwd: stack.temp.project, env: {} } });
-    expect({ status: refused.status, code: refused.json.error.code, message: refused.json.error.message }).toEqual({ status: 503, code: 'moved', message: MOVED_TEXT });
+    expect({ status: refused.status, code: refused.json.error.code, message: refused.json.error.message }).toEqual({
+      status: 503,
+      code: 'starting',
+      message: 'The daemon is still starting and accepts no new work yet. The request was not run; send it again.',
+    });
 
     await publish(stack.temp, FIRST_GENERATION);
     await waitForCondition(() => launched.handle.role() === 'serving', 'the role tick to read run/current naming this generation');

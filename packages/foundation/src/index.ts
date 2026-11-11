@@ -147,7 +147,7 @@ export {
 export type { GenerationLayout, GenerationProcessRole, ManagedInstance, ManagedInstancePaths, MarkerKind, RoleEndpoint } from './momonga-paths.ts';
 export { GENERATION_ROLE_UNREADABLE_EVENT, createRolePort, fixedRolePort, readGenerationRole, roleOfGeneration } from './generation-role.ts';
 export type { GenerationRole, RolePort } from './generation-role.ts';
-export { GENERATION_RETIRED_CODE, GENERATION_RETIRED_STATUS, MOVED_CODE } from './generation-codes.ts';
+export { GENERATION_RETIRED_CODE, GENERATION_RETIRED_STATUS, GENERATION_STARTING_CODE, MOVED_CODE } from './generation-codes.ts';
 export { formatStartRecord, generationIsLive, listGenerationNumbers, listGenerations, lockReadsHeld, probeGenerationLocks, readStartRecord } from './generation-registry.ts';
 export {
   CurrentGenerationUnreadableError,
@@ -248,7 +248,6 @@ export {
   mcpPoolCloseBoundMs,
   runtimeTeardownBudgetMs,
   runtimeAbortStopBudgetMs,
-  orphanReapGraceMs,
   STARTUP_TIMEOUT_MS,
   startDeadlineSignal,
   SHUTDOWN_SETTING_LIMITS,
@@ -281,6 +280,8 @@ export {
   STDIO_EXIT_FLUSH_MS,
   CHILD_STDIO_FLUSH_MS,
   KILL_CONFIRM_MS,
+  DAEMON_MARKER_KILL_GRACE_MS,
+  ABANDON_KILL_GRACE_MS,
   SHUTDOWN_DRAIN_BOUND_MS,
   SHUTDOWN_REAP_BOUND_MS,
   SHUTDOWN_RELEASE_BOUND_MS,

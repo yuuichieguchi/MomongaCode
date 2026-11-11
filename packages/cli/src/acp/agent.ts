@@ -1,6 +1,6 @@
 import { PROTOCOL_VERSION, RequestError, agent } from '@agentclientprotocol/sdk';
 import type { AgentApp, AgentConnection, RequestPermissionRequest, SessionConfigOption, SessionUpdate } from '@agentclientprotocol/sdk';
-import { readMandate, readinessShownText } from '@momonga/protocol';
+import { messageOf, readMandate, readinessShownText } from '@momonga/protocol';
 import type { ElicitationAnswerRecord, Mandate, ModelViews, Readiness, SkillsResponse } from '@momonga/protocol';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import { RunApiError } from '../client/runtime-client.ts';
@@ -158,9 +158,30 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
     session.queue.enqueue(() => peer().notify('session/update', { sessionId: session.id, update }));
   };
 
-  const contextWindowOf = (session: BridgeSession): Promise<number> => (session.contextWindow ??= deps.contextWindowOf(session.model));
+  const contextWindowOf = async (session: BridgeSession): Promise<number> => {
+    const reading = (session.contextWindow ??= deps.contextWindowOf(session.model));
+    try {
+      return await reading;
+    } catch (error) {
+      if (session.contextWindow === reading) session.contextWindow = undefined;
+      throw error;
+    }
+  };
 
   let readinessNotices = 0;
+
+  let contextWindowNotices = 0;
+
+  const usageUpdateOf = async (session: BridgeSession, used: number): Promise<SessionUpdate> => {
+    try {
+      return { sessionUpdate: 'usage_update', used, size: await contextWindowOf(session) };
+    } catch (error) {
+      session.lifetime.signal.throwIfAborted();
+      contextWindowNotices += 1;
+      const text = messageOf('aboutModel', 'acp', { model: session.model, text: `its context window could not be read (${describeFailure(error)}), so this usage update is not shown; the next one reads it again` });
+      return noticeUpdate(clientFeatures(), `${session.id}/context-window/${contextWindowNotices}`, 'warning', text);
+    }
+  };
 
   const announceReadiness = async (session: BridgeSession): Promise<void> => {
     const readiness = await deps.readinessOf(session.model);
@@ -266,8 +287,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
         return;
       case 'usage':
         session.queue.enqueue(async () => {
-          const size = await contextWindowOf(session);
-          await peer().notify('session/update', { sessionId: session.id, update: { sessionUpdate: 'usage_update', used: effect.used, size } });
+          await peer().notify('session/update', { sessionId: session.id, update: await usageUpdateOf(session, effect.used) });
         });
         return;
       case 'model':

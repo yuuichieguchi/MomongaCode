@@ -262,6 +262,38 @@ describe('a child of another version (A7, 15.6, 15.14 P4, 20.11, 20.12)', () => 
     expect(h.fake.spawnCount('runtime')).toBe(2);
   });
 
+  it('a successor whose spawn fails after the launch returned is a spawn-failed successor like one whose launch throws: its start is released and the generation keeps serving', async (context) => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => void unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    context.onTestFinished(() => void process.off('unhandledRejection', onUnhandled));
+    const launched: number[] = [];
+    const h = await startHarness(context, {
+      prepare: (_home, paths) => fs.writeFileSync(paths.generationCounter, '1\n'),
+      overrides: {
+        successorLauncher: {
+          launch: (generation) => {
+            launched.push(generation);
+            return { pid: undefined, exit: Promise.reject(Object.assign(new Error('spawn /gone/momonga ENOENT'), { code: 'ENOENT' })) };
+          },
+        },
+      },
+    });
+    await published(h, 1);
+    const fatal = settledFlag(h.supervisor.fatal);
+    await restartedWith(h, 'runtime', '9.9.10-replaced');
+    await pumpUntil(h.timers, () => h.log.withMsg('generation.successor').some((line) => line['outcome'] === 'spawn-failed'), { realWork: h.realWork, maxMs: 5000, description: 'the failed spawn of the successor to be reported' });
+    await quiesce(h.realWork);
+    expect(launched).toEqual([2]);
+    expect(h.log.withMsg('generation.successor').at(-1)).toMatchObject({ generation: 1, successor: 2, version: '9.9.10-replaced', outcome: 'spawn-failed', level: 'warn' });
+    expect(h.log.withMsg('supervisor.background_transient')).toMatchObject([{ source: 'successor', err: { message: 'spawn /gone/momonga ENOENT' } }]);
+    expect(await testKernelLock().isHeld(layoutOf(h.home, 2).startingLock)).toBe(false);
+    expect(h.supervisor.role()).toBe('serving');
+    expect(h.health().phase).toBe('running');
+    expect(fatal.settled()).toBe(false);
+    expect(unhandled).toEqual([]);
+  });
+
   it('releases the starting lock of its successor at the start-up bound when no supervisor claimed it', async (context) => {
     const h = await servingWithCounter(context);
     await restartedWith(h, 'runtime', '9.9.10-replaced');

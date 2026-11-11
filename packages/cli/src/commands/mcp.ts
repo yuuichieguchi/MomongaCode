@@ -2,7 +2,7 @@ import { EXIT_INTERRUPTED } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { escapeTerminalLine } from '@momonga/protocol';
 import type { McpAuthorizationView, McpServerView } from '@momonga/protocol';
-import { couldNotOpenBrowser } from '../browser-text.ts';
+import { browserNotOpenedLine, cancelledLine } from '../plan/texts.ts';
 import { AUTHORIZATION_POLL_INTERVAL_MS } from '../constants.ts';
 import { mcpLoginCommand } from '../mcp/messages.ts';
 import { pollUntil } from '../poll.ts';
@@ -91,7 +91,7 @@ export const mcpLogin = async (ports: CliPorts, paths: MomongaPaths, server: str
     try {
       if (options.openBrowser) {
         ports.openUrl(new URL(started.url), AbortSignal.any([options.interrupt, ended.signal]), (message) =>
-          ports.stderr.write(`${escapedLines([`${couldNotOpenBrowser(message)} Open the URL above to continue.`])}\n`),
+          ports.stderr.write(`${escapedLines([browserNotOpenedLine(message)])}\n`),
         );
       }
       finished = await pollUntil(
@@ -110,7 +110,7 @@ export const mcpLogin = async (ports: CliPorts, paths: MomongaPaths, server: str
     } catch (error) {
       await client.cancelFolderMcpAuthorization(folder.cwd, server);
       if (options.interrupt.aborted) {
-        ports.stderr.write(`${escapedLines([`momonga: authorization of MCP server ${server} cancelled`])}\n`);
+        ports.stderr.write(`${escapedLines([cancelledLine(`authorization of MCP server ${server}`)])}\n`);
         return EXIT_INTERRUPTED;
       }
       throw error;

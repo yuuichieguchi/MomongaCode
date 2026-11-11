@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { STARTUP_TIMEOUT_MS, acquireProcessLock, momongaPaths } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { registerCleanup, withTempDir, firstGeneration, testKernelLock } from '@momonga/testkit';
+import { registerCleanup, withTempDir, firstGeneration, testKernelLock, afterMicrotasks, waitFor } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { describe, expect, it } from 'vitest';
 import { STOP_WAIT_WHEN_UNKNOWN_MS, ensureDaemon, stopDaemon, stopWaitBoundMs } from '../src/daemon/ensure-daemon.ts';
@@ -21,7 +21,7 @@ const oversleepingClock = (after: Promise<unknown> = Promise.resolve()): CliCloc
     sleep: async () => {
       await after;
       now = Number.MAX_SAFE_INTEGER;
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      await afterMicrotasks();
     },
   };
 };
@@ -64,7 +64,7 @@ describe('daemon stop carries the values it read', () => {
     writeUserSettings({ gateway: { closeGraceMs: 2000, managedServerStopGraceMs: 500 }, runtime: { drainTimeoutMs: 7000 }, mcp: { closeGraceMs: 40 } });
     const supervisor = await start({ version: VERSION, keepsLock: true });
     const edited = (async () => {
-      while (supervisor.shutdownBodies.length === 0) await new Promise((resolve) => setImmediate(resolve));
+      await waitFor(() => supervisor.shutdownBodies.length > 0, { description: 'the shutdown request to reach the supervisor' });
       writeUserSettings({ gateway: { closeGraceMs: 0, managedServerStopGraceMs: 0 }, runtime: { drainTimeoutMs: 0 }, mcp: { closeGraceMs: 0 } });
     })();
     const stopping = stopDaemon({ ...ports, clock: oversleepingClock(edited) }, paths);
@@ -109,7 +109,6 @@ describe('daemon stop carries the values it read', () => {
 const healthReporting = (stopBoundMs: number | undefined): SupervisorHealth => ({
   status: 'ok',
   version: VERSION,
-  apiVersion: 1,
   pid: 1,
   startedAt: '2026-01-01T00:00:00.000Z',
   phase: 'draining',

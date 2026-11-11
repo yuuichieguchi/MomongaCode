@@ -2,6 +2,7 @@ import tls from 'node:tls';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { installTrust } from '../src/outbound.ts';
 import type { NetworkConfig } from '../src/network-route.ts';
+import { waitFor } from '@momonga/testkit';
 
 const workers = vi.hoisted(() => ({ started: [] as Array<{ terminated: number; exited: Promise<number>; online: Promise<void> }> }));
 
@@ -45,7 +46,7 @@ describe('the default worker reader is terminated when the signal aborts', () =>
     const controller = new AbortController();
 
     const pending = installTrust(noCaFiles, noFiles, { signal: controller.signal });
-    while (workers.started.length === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+    await waitFor(() => workers.started.length > 0, { description: 'the worker of the trust read to start' });
     await workers.started[0]?.online;
     controller.abort(new Error('the host read bound passed'));
     const report = await pending;

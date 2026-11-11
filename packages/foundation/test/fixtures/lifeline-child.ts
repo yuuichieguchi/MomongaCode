@@ -18,7 +18,7 @@ if (process.env['LIFELINE_GRANDCHILD'] === '1') {
 const keepAlive = setInterval(() => undefined, 60_000);
 
 const watch = watchLifeline(3, {
-  onLine: () => undefined,
+  onLine: (line) => report(`line ${line}`),
   onOverlongLine: () => undefined,
   onEnd: () => {
     calls += 1;

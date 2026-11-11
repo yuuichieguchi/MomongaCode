@@ -6,7 +6,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HOLD_UNTIL_SIGNALLED, HOLD_UNTIL_SIGNALLED_ARGV, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, killGroupsForCleanup, killPidsForCleanup, pacedReapTiming, spawnTracked, waitFor, withTempDir, testProcessInspector, testLocks } from '@momonga/testkit';
 import type { CleanupContext, FakeTimers, PacedReapTiming, TrackedChild } from '@momonga/testkit';
-import { KILL_CONFIRM_MS, MarkerReapError, createProcessInspector, hostInspectorPorts, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reconcileProcessGroup, sleep } from '@momonga/foundation';
+import { KILL_CONFIRM_MS, MarkerReapError, createProcessInspector, hostInspectorPorts, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reconcileProcessGroup, sleep, POLL_INTERVAL_MS, systemWaitTiming, waitUntil as foundationWaitUntil } from '@momonga/foundation';
 import type { CommandRunner, ProcessInspector } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: 4 * REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -48,13 +48,10 @@ const alive = (target: number): boolean => {
   }
 };
 
-const waitUntil = async (condition: () => boolean, attempts = 500): Promise<boolean> => {
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    if (condition()) return true;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  return condition();
-};
+const CONDITION_BOUND_MS = 10_000;
+
+const waitUntil = async (condition: () => boolean): Promise<boolean> =>
+  (await foundationWaitUntil(systemWaitTiming, async () => (condition() ? true : undefined), { intervalMs: POLL_INTERVAL_MS, deadline: systemWaitTiming.monotonicMs() + CONDITION_BOUND_MS })).kind === 'found';
 
 const makeDir = (): string => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-reap-')));

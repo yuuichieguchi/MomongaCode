@@ -15,7 +15,6 @@ import {
   managedServerReapBoundMs,
   markerReapClockBoundMs,
   mcpPoolCloseBoundMs,
-  orphanReapGraceMs,
   parseStopMessage,
   parseStopValues,
   runtimeMaxCloseMs,
@@ -69,22 +68,19 @@ describe('the derived MCP and runtime bounds (K = KILL_CONFIRM_MS = 5000, RUNTIM
     expect(runtimeTeardownBudgetMs(grace)).toBe(teardown);
   });
 
-  it('gives 64125, 69125 and 34125 at the defaults', () => {
+  it('gives 64125 and 69125 at the defaults', () => {
     expect(runtimeMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(64_125);
     expect(runtimeStopBudgetMs(DEFAULT_STOP_VALUES)).toBe(69_125);
-    expect(orphanReapGraceMs(DEFAULT_STOP_VALUES)).toBe(34_125);
   });
 
-  it('gives 508125 and 208125 at the maxima', () => {
+  it('gives 508125 at the maxima', () => {
     expect(runtimeMaxCloseMs(MAXIMA)).toBe(508_125);
-    expect(orphanReapGraceMs(MAXIMA)).toBe(208_125);
   });
 
   it('takes the drain and the MCP grace from the values, and neither gateway value', () => {
     const runtime = { drainTimeoutMs: 7, mcpCloseGraceMs: 3 };
     expect(runtimeMaxCloseMs({ closeGraceMs: 0, managedServerStopGraceMs: 0, ...runtime })).toBe(7 + 8050 + 10_000 + 18 + 10_075);
     expect(runtimeMaxCloseMs({ closeGraceMs: 300_000, managedServerStopGraceMs: 60_000, ...runtime })).toBe(7 + 8050 + 10_000 + 18 + 10_075);
-    expect(orphanReapGraceMs({ closeGraceMs: 0, managedServerStopGraceMs: 0, ...runtime })).toBe(8050 + 10_000 + 18 + 10_075);
   });
 
   it('gives 20075 teardown, 28125 runtime close and 33125 runtime stop at drain 0 and grace 0', () => {

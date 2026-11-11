@@ -1,10 +1,11 @@
+import { once } from 'node:events';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { InspectProcessLockOptions, ProcessLockInspection } from '@momonga/foundation';
 import { ProbeFailedError, probeFailed } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeKernelLock, createFakeTimers, registerCleanup, startLockHolder, waitFor, withTempDir, firstGeneration, testKernelLock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeKernelLock, createFakeTimers, registerCleanup, spawnTracked, startLockHolder, waitFor, withTempDir, firstGeneration, testKernelLock } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { PROBE_HEADERS_TIMEOUT_MS, createExternalHealthProbe, holderPidOf, labelHealthResponse, probeExternalHealth, watchLock } from '../src/lock-watch.ts';
 import type { ExternalProbe, LockWatchOptions, ProbeOutcome } from '../src/lock-watch.ts';
@@ -88,11 +89,35 @@ describe('probeExternalHealth', () => {
     await expect(probeExternalHealth('runtime', path.join(dir, 'nobody.sock'))).resolves.toBe('unreachable');
   });
 
-  it('a holder that never answers is unreachable after the injected timeout', async (context) => {
+  it('a holder that accepts the request and never answers is unresponsive at the probe\'s own bound, not unreachable (design D7)', async (context) => {
     const dir = withTempDir(context);
     const socket = path.join(dir, 'silent.sock');
-    await serveOn(context, socket, () => undefined);
-    await expect(createExternalHealthProbe(20)('gateway', socket)).resolves.toBe('unreachable');
+    const seen = await serveOn(context, socket, () => undefined);
+    await expect(createExternalHealthProbe(20)('gateway', socket)).resolves.toBe('unresponsive');
+    expect(seen).toEqual(['GET /v1/momonga/health']);
+  });
+
+  it('a holder that sends its headers and never ends the body is unresponsive', async (context) => {
+    const dir = withTempDir(context);
+    const socket = path.join(dir, 'half.sock');
+    await serveOn(context, socket, (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.write('{"state":');
+    });
+    await expect(createExternalHealthProbe(20)('runtime', socket)).resolves.toBe('unresponsive');
+  });
+
+  it('a socket file nobody listens on is unreachable', async (context) => {
+    const dir = withTempDir(context);
+    const socket = path.join(dir, 'left.sock');
+    const holder = spawnTracked(context, process.execPath, ['-e', `require('node:net').createServer().listen(${JSON.stringify(socket)}, () => console.log('listening'));`], { stdio: ['ignore', 'pipe', 'inherit'] });
+    if (holder.stdout === null) throw new Error('the holder has no standard output');
+    await once(holder.stdout, 'data');
+    const gone = once(holder, 'exit');
+    holder.kill('SIGKILL');
+    await gone;
+    expect(fs.existsSync(socket)).toBe(true);
+    await expect(probeExternalHealth('runtime', socket)).resolves.toBe('unreachable');
   });
 
   it('the production probe timeout stays within 2000 ms', () => {

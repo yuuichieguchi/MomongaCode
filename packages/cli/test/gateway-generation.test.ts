@@ -62,7 +62,7 @@ const CAPABILITIES = {
   source: 'declared',
 };
 
-const MODEL_LIST = { object: 'list', data: [{ id: 'local/m', provider: 'local', ownName: 'm', billing: 'local', capabilities: CAPABILITIES, chain: [] }], start: null, roles: {} };
+const MODEL_LIST = { object: 'list', data: [{ id: 'local/m', object: 'model', provider: 'local', ownName: 'm', billing: 'local', capabilities: CAPABILITIES, chain: [] }], start: null, roles: {} };
 
 const gatewayAnswering = async (context: TestContext, name: string, answers: Answer[]): Promise<{ socketPath: string; requests: string[] }> => {
   const socketPath = path.join(withTempDir(context), name);
@@ -143,7 +143,7 @@ describe('a headless run reads the capabilities of its model from the gateway of
     const entries: DaemonEntries = { supervise: entry, gateway: entry, runtime: entry };
     const sink = { write: () => true };
     const interrupt = new AbortController().signal;
-    const ports = { version: '9.9.9', interrupt, home: freshHome(), cwd: '/c', env: {}, platform: process.platform, stdout: sink, stderr: sink } as unknown as CliPorts;
+    const ports = { version: '9.9.9', interrupt, home: freshHome(), env: {}, platform: process.platform, cwd: '/c', stdout: sink, stderr: sink } as unknown as CliPorts;
     const program = buildProgram(
       {
         ports,

@@ -1,8 +1,9 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
 import { serveJournalReader } from '../../src/memory/journal-thread.ts';
+import { afterMicrotasks } from '@momonga/testkit';
 
-const turn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+const turn = afterMicrotasks;
 
 const fakeChannel = (): { incoming: EventEmitter; outgoing: { postMessage(message: unknown): void }; sent: unknown[] } => {
   const sent: unknown[] = [];

@@ -12,15 +12,11 @@ export type VerifiedSuccessInput = {
 
 type CallEvent = Extract<RunEvent, { type: 'tool.call' }>;
 
-type CallFacts = MutationFacts & { kind: string; command: string | undefined; paths: string[] };
+type CallFacts = MutationFacts & { kind: string; paths: string[] };
 
 const WRITING_KINDS: readonly string[] = ['edit', 'delete', 'move'];
 
-const commandOf = (call: CallEvent): string | undefined => {
-  if (call.name !== 'Bash' || !isRecord(call.rawInput)) return undefined;
-  const { command } = call.rawInput;
-  return typeof command === 'string' ? command : undefined;
-};
+const runsCommands = (call: CallFacts): boolean => call.sideEffect === 'exec' || call.kind === 'execute';
 
 const pathsNamedBy = (call: CallEvent): string[] => {
   const located = (call.locations ?? []).map((location) => location.path);
@@ -30,7 +26,6 @@ const pathsNamedBy = (call: CallEvent): string[] => {
 
 const factsOfCall = (call: CallEvent): CallFacts => ({
   kind: call.kind,
-  command: commandOf(call),
   paths: pathsNamedBy(call),
   rejected: false,
   ...(call.sideEffect === undefined ? {} : { sideEffect: call.sideEffect }),
@@ -70,13 +65,17 @@ export const createVerifiedSuccessFold = (input: Pick<VerifiedSuccessInput, 'com
   let completion: PinnedCompletion | undefined;
   let lastMutationSeq = 0;
   let manifestWritten = false;
-  const mutated = (seq: number, call: CallFacts, paths: readonly string[] | undefined): void => {
+  const mutated = (seq: number, call: CallFacts, command: string | undefined, paths: readonly string[] | undefined): void => {
     lastMutationSeq = seq;
-    if (call.command !== undefined) {
-      if (!input.commands.includes(call.command)) manifestWritten = true;
+    if (command !== undefined) {
+      if (!input.commands.includes(command)) manifestWritten = true;
       return;
     }
-    if (paths?.some((written) => manifests.has(path.basename(written))) === true) manifestWritten = true;
+    if (paths === undefined) {
+      if (runsCommands(call)) manifestWritten = true;
+      return;
+    }
+    if (paths.some((written) => manifests.has(path.basename(written)))) manifestWritten = true;
   };
   const add = (event: RunEvent): void => {
     switch (event.type) {
@@ -105,12 +104,12 @@ export const createVerifiedSuccessFold = (input: Pick<VerifiedSuccessInput, 'com
       }
       case 'tool.reconciled': {
         const call = calls.get(event.callId);
-        if (call !== undefined && reconciliationMutates(call, event.outcome)) mutated(event.seq, call, WRITING_KINDS.includes(call.kind) ? call.paths : undefined);
+        if (call !== undefined && reconciliationMutates(call, event.outcome)) mutated(event.seq, call, event.command, WRITING_KINDS.includes(call.kind) ? call.paths : undefined);
         return;
       }
       case 'tool.completed': {
         const call = calls.get(event.callId);
-        if (call !== undefined && completionMutates(call, event)) mutated(event.seq, call, writtenPaths(call, event));
+        if (call !== undefined && completionMutates(call, event)) mutated(event.seq, call, event.command, writtenPaths(call, event));
         return;
       }
       case 'verification.completed':

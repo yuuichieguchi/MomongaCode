@@ -11,11 +11,11 @@ import { repoRoot } from './bundle.ts';
 import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { WINDOWS_KEEPER_SOURCE, compileWindowsProgram } from './windows-keeper.ts';
+import { pollUntil } from '@momonga/testkit';
 
 const ZIG_TARGET = 'x86_64-windows-gnu';
 const WAIT_MS = 30_000;
 const GRACE_MS = 10_000;
-const POLL_MS = 50;
 const BORN_IN_JOB_LAUNCHES = 1000;
 const BORN_IN_JOB_TIMEOUT_MS = 1_800_000;
 const JOB_PREFIX = 'Local\\momonga-';
@@ -28,15 +28,7 @@ const LIFELINE_SLOT = 3;
 
 const bounded = (): AbortSignal => AbortSignal.timeout(WAIT_MS);
 
-const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-
-const eventually = async (holds: () => boolean | Promise<boolean>, what: string): Promise<void> => {
-  const deadline = Date.now() + WAIT_MS;
-  while (!(await holds())) {
-    if (Date.now() >= deadline) throw new Error(`not within ${WAIT_MS} ms: ${what}`);
-    await pause(POLL_MS);
-  }
-};
+const eventually = (holds: () => boolean | Promise<boolean>, what: string): Promise<void> => pollUntil(holds, { description: what, boundMs: WAIT_MS });
 
 const isAlive = (pid: number): boolean => {
   try {

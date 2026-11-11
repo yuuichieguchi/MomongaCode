@@ -1,4 +1,3 @@
-import path from 'node:path';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { MarkerOwners } from '@momonga/tools';
@@ -7,7 +6,7 @@ import type { ProjectMandate } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, PermissionRule } from '@momonga/config';
 import { denyingRuleFor } from '@momonga/policy';
 import { shellCommandSubject } from '@momonga/tools';
-import { canonicalJson, hostPaths, isTransientErrno, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, hostPaths, sha256Hex } from '@momonga/foundation';
 import type { Clock, GenerationRole, PathResolver } from '@momonga/foundation';
 import { AUTO_MODE_UNAVAILABLE, NO_MODEL_TARGET, RUN_STATUSES, TARGET_PROBING_MESSAGE, agentReadiness, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, USER_SHELL_RUN_ACTIVE_CODE, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
 import type { Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
@@ -39,13 +38,14 @@ import {
   notFound,
   serviceUnavailable,
   skillUnavailable,
+  starting,
   targetNotReady,
   unknownSkill,
 } from './errors.ts';
 import { STREAM_HEADERS, eventStreamResponse } from './event-stream.ts';
 import type { EventSource } from './event-stream.ts';
 import type { RunNotifier } from './notifier.ts';
-import { JSON_MEDIA_TYPES, PATCH_MEDIA_TYPES, parseCursor, parseIdempotencyKey, readJson, validateBody } from './request.ts';
+import { JSON_MEDIA_TYPES, PATCH_MEDIA_TYPES, pageLimitOf, parseCursor, parseIdempotencyKey, readJson, validateBody } from './request.ts';
 import { compactInputOf, compactPinOf } from '../worker/compact-pin.ts';
 import type { AddInboxBody, CreateRunBody, CreateSessionBody, PatchSessionBody, ResolveApprovalBody } from './request.ts';
 import { createRecordViews } from '../memory/views.ts';
@@ -57,13 +57,14 @@ import { registerMarkerRoutes } from './markers.ts';
 import { registerRuleRoutes } from './rules.ts';
 import { registerInputRoutes } from './input-routes.ts';
 import type { McpAdminPort } from './input-routes.ts';
+import { canonicalProject } from './project-query.ts';
 import { registerReportRoutes } from './report-routes.ts';
 import type { ReportRouteDeps } from './report-routes.ts';
 import { registerTrustRoutes } from './trust.ts';
 import type { ServiceTimers } from './timers.ts';
 import { answeredByOf } from './answered-by.ts';
 import { runTermsOf } from './delegation.ts';
-import type { DelegationPort } from './delegation.ts';
+import type { DelegationPort, RunTerms, RunTermsRequest } from './delegation.ts';
 
 const projectMandateOf = async (delegation: DelegationPort | undefined, cwd: string, signal: AbortSignal): Promise<ProjectMandate | undefined> => {
   if (delegation === undefined) return undefined;
@@ -104,7 +105,7 @@ export type RunAppDeps = {
   sessionReadSettings: (cwd: string, signal: AbortSignal) => Promise<SessionCreateSettings>;
   skills: SkillsPort;
   agents: AgentCatalogPort;
-  permissionRules: (session: Session) => Promise<readonly PermissionRule[]>;
+  permissionRules: (session: Session, signal: AbortSignal) => Promise<readonly PermissionRule[]>;
   userInput: UserInputPort;
   evidenceRun: (project: string) => EvidenceRun;
   isDraining(): boolean;
@@ -121,7 +122,7 @@ export type RunAppDeps = {
   closeSignal: AbortSignal;
   retireSignal: AbortSignal;
   retireFrame: () => Uint8Array | undefined;
-  runTrace: (runId: string) => Promise<RunTraceView | undefined>;
+  runTrace: (runId: string, signal: AbortSignal) => Promise<RunTraceView | undefined>;
   runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>;
   runCostBreakdown: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ breakdown: CostBreakdownView; text: string }>;
   reportCost: ReportRouteDeps['reportCost'];
@@ -140,16 +141,16 @@ export type RouteRegistrar = (routePath: string, handlers: Readonly<Record<strin
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
 
-const requireAbsolute = (value: string, label: string): void => {
-  if (!path.isAbsolute(value)) throw invalidRequest(`${label} must be an absolute path`, label);
-};
-
 const protectedAreaOf = async (areas: readonly string[], target: string, paths: PathResolver): Promise<string | undefined> => {
   for (const area of areas) {
     if (await paths.comparableContains(area, target)) return area;
   }
   return undefined;
 };
+
+const CLIENT_CLOSED_REQUEST_STATUS = 499;
+
+const isAbortOf = (error: unknown, signal: AbortSignal): boolean => signal.aborted && (error === signal.reason || (error instanceof Error && error.cause === signal.reason));
 
 const isGatewayUnavailable = (error: unknown): boolean =>
   error instanceof GatewayRequestError && (error.type === 'transport' || error.status >= 500);
@@ -246,7 +247,9 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
 
   const drainingError = () => serviceUnavailable('draining', 'the service is draining and accepts no new work');
 
-  const newWorkRefusal = (): ApiError | undefined => (deps.isDraining() ? drainingError() : deps.role() === 'serving' ? undefined : moved());
+  const refusalOfRole: Readonly<Record<GenerationRole, (() => ApiError) | undefined>> = { starting, serving: undefined, retiring: moved };
+
+  const newWorkRefusal = (): ApiError | undefined => (deps.isDraining() ? drainingError() : refusalOfRole[deps.role()]?.());
 
   const refuseNewWork = (): void => {
     const refusal = newWorkRefusal();
@@ -267,7 +270,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     }
   };
 
-  const settingsThrough = async (load: () => Promise<SessionCreateSettings>): Promise<SessionCreateSettings> => {
+  const settingsThrough = async <Loaded>(load: () => Promise<Loaded>): Promise<Loaded> => {
     try {
       return await load();
     } catch (error) {
@@ -280,8 +283,14 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
 
   const sessionReadSettingsOf = (cwd: string, signal: AbortSignal): Promise<SessionCreateSettings> => settingsThrough(() => deps.sessionReadSettings(cwd, signal));
 
+  const listedSessionOf = (id: string): ListedSession => {
+    const listed = store.getListedSession(id);
+    if (listed === undefined) throw notFound(`session ${id} does not exist`);
+    return listed;
+  };
+
   const sessionViewOf = async (session: Session, signal: AbortSignal, loaded?: SessionCreateSettings) => {
-    const view = toSessionView(store, session);
+    const view = toSessionView(store, listedSessionOf(session.id));
     if (session.permissionMode !== 'auto') return view;
     const settings = loaded ?? (await sessionReadSettingsOf(session.cwd, signal));
     if (settings.autoModeClassifier === undefined || settings.autoModeKey === undefined) return view;
@@ -337,18 +346,21 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return sessions;
   };
 
+  const sessionPageOf = (context: Context, filter: { cwd?: string }): Response => {
+    const limit = pageLimitOf(context.req.query('limit'), SESSION_PAGE_ROWS);
+    try {
+      const page = store.listSessions({ ...filter, limit, cursor: context.req.query('cursor') ?? null });
+      return json({ sessions: page.sessions.map((session) => toSessionView(store, session)), next: page.next });
+    } catch (error) {
+      if (error instanceof RangeError) throw invalidRequest(error.message, 'cursor');
+      throw error;
+    }
+  };
+
   const listSessions: Handler = async (context) => {
     const requested = context.req.query('cwd');
-    if (requested === undefined) return json({ sessions: everySession({}).map((session) => toSessionView(store, session)) });
-    requireAbsolute(requested, 'cwd');
-    let cwd: string;
-    try {
-      cwd = await hostPaths(context.req.raw.signal).canonicalPath(requested);
-    } catch (error) {
-      if (isTransientErrno(error)) throw error;
-      throw invalidRequest(`cwd ${requested} cannot be resolved: ${(error as Error).message}`, 'cwd');
-    }
-    return json({ sessions: everySession({ cwd }).map((session) => toSessionView(store, session)) });
+    if (requested === undefined) return sessionPageOf(context, {});
+    return sessionPageOf(context, { cwd: await canonicalProject(requested, 'cwd', context.req.raw.signal) });
   };
 
   const getSession: Handler = async (context) => json({ session: await sessionViewOf(requireSession(context.req.param('id') ?? ''), context.req.raw.signal) });
@@ -388,8 +400,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return json({ runs: store.listRuns(session.id, statuses).map(toRunView) });
   };
 
-  const activationOf = async (session: Session, name: string) => {
-    const skills = await deps.skills.load(session);
+  const activationOf = async (session: Session, name: string, signal: AbortSignal) => {
+    const skills = await deps.skills.load(session, signal);
     try {
       return await skills.activate(name);
     } catch (error) {
@@ -400,12 +412,12 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   };
 
   const listSkills: Handler = async (context) => {
-    const skills = await deps.skills.load(requireSession(context.req.param('id') ?? ''));
+    const skills = await deps.skills.load(requireSession(context.req.param('id') ?? ''), context.req.raw.signal);
     return json({ skills: skills.skills.map(toSkillView), warnings: [...skills.warnings] });
   };
 
   const listAgents: Handler = async (context) => {
-    const agents = await deps.agents.load(requireSession(context.req.param('id') ?? ''));
+    const agents = await deps.agents.load(requireSession(context.req.param('id') ?? ''), context.req.raw.signal);
     return json({ agents: agents.agents.map(toAgentView), warnings: [...agents.warnings] });
   };
 
@@ -428,10 +440,10 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return deps.userInput.attach(session, body.input, { ceiling: capabilities.contextWindow - outputReserveFor(capabilities), imageInput: capabilities.imageInput, signal });
   };
 
-  const refuseDeniedConditions = async (session: Session, mandate: Mandate | undefined): Promise<void> => {
+  const refuseDeniedConditions = async (session: Session, mandate: Mandate | undefined, signal: AbortSignal): Promise<void> => {
     const conditions = mandate?.completion?.conditions ?? [];
     if (conditions.length === 0) return;
-    const rules = await deps.permissionRules(session);
+    const rules = await deps.permissionRules(session, signal);
     for (const condition of conditions) {
       const rule = denyingRuleFor(rules, knownValue(session.permissionMode, `the permission mode of session ${session.id}`), shellCommandSubject(condition.command));
       if (rule !== undefined) {
@@ -440,7 +452,27 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     }
   };
 
-  const reportedView = async (run: Run, signal: AbortSignal) => ({ ...toRunView(run), report: (await store.journalFacts.report({ runId: run.id }, signal)).report });
+  const admittedTermsOf = async (session: Session, request: RunTermsRequest, signal: AbortSignal): Promise<RunTerms> => {
+    await sessionSettingsOf(session.cwd, signal);
+    const { views } = await gatewayListing(signal);
+    const sessionModel = resolveStoredModelRef(storedModelRef(session.model), views);
+    if (sessionModel === undefined) throw modelNotConfigured(sessionModelNotConfiguredText(session.model));
+    const { delegation } = deps;
+    const terms = await runTermsOf({
+      request,
+      defaults: deps.defaults,
+      settings: delegation === undefined ? {} : await settingsThrough(() => delegation.settings(signal)),
+      ...(delegation === undefined ? {} : { project: () => projectMandateOf(delegation, session.cwd, signal) }),
+      billing: async () => (delegation === undefined ? { metered: false, priced: false } : delegation.chainBilling(sessionModel.canon, signal)),
+    });
+    await refuseDeniedConditions(session, terms.mandate, signal);
+    return terms;
+  };
+
+  const reportedView = async (runId: string, signal: AbortSignal) => {
+    const { report } = await store.journalFacts.report({ runId }, signal);
+    return { ...toRunView(requireRun(runId)), report };
+  };
 
   const createRun: Handler = async (context) => {
     const session = requireSession(context.req.param('id') ?? '');
@@ -453,7 +485,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       const found = idempotency === undefined ? undefined : store.findRunByIdempotencyKey(session.id, idempotency.idempotencyKey);
       if (idempotency === undefined || found === undefined) return undefined;
       if (!sameRunRequest(found, idempotency.requestDigest)) throw idempotencyKeyReused();
-      return json({ run: await reportedView(found.run, context.req.raw.signal) }, 202, { location: `/v1/runs/${found.run.id}`, 'idempotent-replayed': 'true' });
+      return json({ run: await reportedView(found.run.id, context.req.raw.signal) }, 202, { location: `/v1/runs/${found.run.id}`, 'idempotent-replayed': 'true' });
     };
     const replayOf = async (refusal: ApiError): Promise<Response> => {
       const replayed = await replay();
@@ -468,25 +500,15 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     if (refused !== undefined) return refused;
     const replayed = await replay();
     if (replayed !== undefined) return replayed;
-    await sessionSettingsOf(session.cwd, context.req.raw.signal);
-    const { views } = await gatewayListing(context.req.raw.signal);
-    if (resolveStoredModelRef(storedModelRef(session.model), views) === undefined) throw modelNotConfigured(sessionModelNotConfiguredText(session.model));
-    const skill = body.skill === undefined ? undefined : await activationOf(session, body.skill);
+    const terms = await admittedTermsOf(
+      session,
+      { ...(body.mandate === undefined ? {} : { mandate: body.mandate }), ...(body.limits === undefined ? {} : { limits: body.limits }), ...(body.timeoutMs === undefined ? {} : { timeoutMs: body.timeoutMs }) },
+      context.req.raw.signal,
+    );
+    const skill = body.skill === undefined ? undefined : await activationOf(session, body.skill, context.req.raw.signal);
     await requireImageInput(session, body.images, context.req.raw.signal);
     const attached = await attachedTo(session, body, context.req.raw.signal);
     const images = [...(body.images ?? []), ...attached.images];
-    const sessionModel = resolveStoredModelRef(storedModelRef(session.model), views);
-    const terms = await runTermsOf({
-      request: { ...(body.mandate === undefined ? {} : { mandate: body.mandate }), ...(body.limits === undefined ? {} : { limits: body.limits }), ...(body.timeoutMs === undefined ? {} : { timeoutMs: body.timeoutMs }) },
-      defaults: deps.defaults,
-      settings: deps.delegation?.settings() ?? {},
-      ...(deps.delegation === undefined ? {} : { project: () => projectMandateOf(deps.delegation, session.cwd, context.req.raw.signal) }),
-      billing: async () => {
-        if (deps.delegation === undefined || sessionModel === undefined) return { metered: false, priced: false };
-        return deps.delegation.chainBilling(sessionModel.canon, context.req.raw.signal);
-      },
-    });
-    await refuseDeniedConditions(session, terms.mandate);
     const refusedDuringChecks = replayWhileRefusing();
     if (refusedDuringChecks !== undefined) return refusedDuringChecks;
     const result = await store.createRunAndEnqueue(session.id, {
@@ -503,7 +525,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     });
     if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
     if (result.kind === 'key_reused') throw idempotencyKeyReused();
-    return json({ run: await reportedView(result.run, context.req.raw.signal) }, 202, {
+    return json({ run: await reportedView(result.run.id, context.req.raw.signal) }, 202, {
       location: `/v1/runs/${result.run.id}`,
       ...(result.kind === 'existing' ? { 'idempotent-replayed': 'true' } : {}),
     });
@@ -514,12 +536,13 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     requireRootSession(session);
     refuseNewWork();
     const body = validateBody<CompactSessionRequest>('CompactSessionRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
+    const terms = await admittedTermsOf(session, {}, context.req.raw.signal);
     refuseNewWork();
     if (store.userShell.runActive(session.id)) throw conflict(USER_SHELL_RUN_ACTIVE_CODE, 'a run of this session is working; the compaction starts when it has ended');
     const result = await store.createRunAndEnqueue(session.id, {
       input: compactInputOf(body.instructions),
-      timeoutMs: deps.defaults.runTimeoutMs,
-      limits: { ...deps.defaults.limits },
+      timeoutMs: terms.timeoutMs,
+      limits: terms.limits,
       pins: compactPinOf(body.instructions),
       history: 'inherit',
     });
@@ -528,18 +551,24 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return json({ run: toRunView(result.run) }, 202, { location: `/v1/runs/${result.run.id}` });
   };
 
+  const refuseRunStartedByInbox = (session: Session): void => {
+    if (deps.isDraining()) throw drainingError();
+    if (!store.userShell.runActive(session.id)) refuseNewWork();
+  };
+
   const addInbox: Handler = async (context) => {
     const session = requireSession(context.req.param('id') ?? '');
     requireRootSession(session);
-    if (deps.isDraining()) throw drainingError();
+    refuseRunStartedByInbox(session);
     const body = validateBody<AddInboxBody>('AddInboxRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
     await requireImageInput(session, body.images, context.req.raw.signal);
-    if (deps.isDraining()) throw drainingError();
+    const terms = await admittedTermsOf(session, {}, context.req.raw.signal);
+    refuseRunStartedByInbox(session);
     const result = await store.inbox.add(session.id, {
       delivery: body.delivery,
       text: body.text,
       ...(body.images === undefined ? {} : { images: body.images }),
-      run: { timeoutMs: deps.defaults.runTimeoutMs, limits: { ...deps.defaults.limits }, pins: {} },
+      run: { timeoutMs: terms.timeoutMs, limits: terms.limits, pins: {} },
     });
     if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
     if (result.kind === 'full') throw conflict(INBOX_FULL_CODE, inboxFullMessage());
@@ -582,7 +611,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
 
   const runAnsweredBy: Handler = async (context) => json({ answeredBy: await answeredByOf(store, requireRun(context.req.param('id') ?? '').id) });
 
-  const getRun: Handler = async (context) => json({ run: await reportedView(requireRun(context.req.param('id') ?? ''), context.req.raw.signal) });
+  const getRun: Handler = async (context) => json({ run: await reportedView(requireRun(context.req.param('id') ?? '').id, context.req.raw.signal) });
 
   const cancelRun: Handler = async (context) => {
     const id = context.req.param('id') ?? '';
@@ -590,12 +619,12 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     if (result.kind === 'not_found') throw notFound(`run ${id} does not exist`);
     if (result.kind === 'status_unknown') throw conflict('value_unknown', `run ${id} has a status this build does not know, so it is not cancelled by this build`);
     const settled = isTerminalStatus(result.run.status) && !result.changed;
-    return json({ run: await reportedView(result.run, context.req.raw.signal) }, settled ? 200 : 202);
+    return json({ run: await reportedView(result.run.id, context.req.raw.signal) }, settled ? 200 : 202);
   };
 
   const runTrace: Handler = async (context) => {
     const run = requireRun(context.req.param('id') ?? '');
-    const trace = await deps.runTrace(run.id);
+    const trace = await deps.runTrace(run.id, context.req.raw.signal);
     if (trace === undefined) throw notFound(`run ${run.id} has no recorded trace`);
     return json(trace);
   };
@@ -617,14 +646,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       runs = runsOfSession(requireSession(sessionId).id);
       charges = store.contextCharges.list({ runIds: runs.map((run) => run.runId) });
     } else if (requestedCwd !== undefined) {
-      requireAbsolute(requestedCwd, 'cwd');
-      let cwd: string;
-      try {
-        cwd = await hostPaths(context.req.raw.signal).canonicalPath(requestedCwd);
-      } catch (error) {
-        if (isTransientErrno(error)) throw error;
-        throw invalidRequest(`cwd ${requestedCwd} cannot be resolved: ${(error as Error).message}`, 'cwd');
-      }
+      const cwd = await canonicalProject(requestedCwd, 'cwd', context.req.raw.signal);
       runs = everySession({ cwd }).flatMap((session) => runsOfSession(session.id));
       charges = store.contextCharges.list({ project: cwd });
     } else {
@@ -752,6 +774,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     maxBodyBytes: deps.maxBodyBytes,
     closeSignal: deps.closeSignal,
     home: deps.home,
+    refuseWhileRetiring,
   });
   registerGuidelineRoutes(route, { store, maxBodyBytes: deps.maxBodyBytes });
   registerRuleRoutes(route, {
@@ -760,7 +783,6 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     modelListing: deps.modelListing,
     modelCapabilities: deps.modelCapabilities,
     maxBodyBytes: deps.maxBodyBytes,
-    closeSignal: deps.closeSignal,
     refuseWhileRetiring,
   });
   registerMarkerRoutes(route, { markerDirectories: deps.ignorableMarkerDirectories, owners: deps.markerOwners, closeSignal: deps.closeSignal });
@@ -768,7 +790,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   registerInputRoutes(route, { store, mcp: deps.mcp, maxBodyBytes: deps.maxBodyBytes, closeSignal: deps.closeSignal, refuseWhileRetiring });
 
   app.notFound(() => errorResponse(notFound('no such route')));
-  app.onError((error) => {
+  app.onError((error, context) => {
+    if (isAbortOf(error, context.req.raw.signal)) return new Response(null, { status: CLIENT_CLOSED_REQUEST_STATUS });
     if (error instanceof ApiError) return errorResponse(error);
     if (error instanceof JournalThreadError) return errorResponse(contributionUnavailable(error.message));
     deps.onError(error);

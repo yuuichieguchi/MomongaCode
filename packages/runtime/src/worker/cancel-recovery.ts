@@ -1,10 +1,12 @@
 import { childToolResultOf } from '@momonga/agents';
+import type { RunState } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
 import type { Claim, Run } from '@momonga/store';
 import type { HeldSession } from './known.ts';
 import type { AbandonTarget, ResultOutcome, ToolCall } from '@momonga/tools';
 import type { ClaimControl } from './claim-control.ts';
 import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
+import { heldLinkOf, stepOfCall } from './held-calls.ts';
 import type { Journal } from './journal.ts';
 import { reconcileOutputFit } from './output-fit.ts';
 import { readPins } from './pins.ts';
@@ -26,6 +28,21 @@ const ABANDONED_OUTPUT =
   'The call was interrupted and could not be reconciled before the run was cancelled. Its effect is unknown; inspect the current state before retrying it.';
 
 type StartedCall = ToolCall & { idemKey?: string };
+
+type RecoveryGroup = { step: number; held: boolean; calls: StartedCall[] };
+
+const recoveryGroups = (state: Pick<RunState, 'heldCalls' | 'step'>, calls: readonly StartedCall[]): RecoveryGroup[] => {
+  const groups = new Map<string, RecoveryGroup>();
+  for (const call of calls) {
+    const step = stepOfCall(state, call.callId);
+    const held = heldLinkOf(state, call.callId) !== undefined;
+    const key = `${step}:${held}`;
+    const group = groups.get(key) ?? { step, held, calls: [] };
+    group.calls.push(call);
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+};
 
 const yieldsOrFails = (control: ClaimControl, error: unknown): boolean =>
   error instanceof LeaseLostError || error instanceof ShutdownError || control.leaseLost() || control.shuttingDown() || isFatalStoreError(error);
@@ -68,7 +85,7 @@ export const reconcileStartedCalls = async ({ options, claim, run, session, jour
     if (call.idemKey !== undefined && lookup !== undefined && lookup.s !== 'COMPLETED') {
       if (options.store.idempotency.holding(claim).complete(call.idemKey, outcome).kind === 'lease_lost') control.lost();
     }
-    journal.append(outcomePayloads(outcome));
+    journal.append(outcomePayloads(outcome, heldLinkOf(journal.state, callId)));
   }
   const started: StartedCall[] = startedEntries
     .filter(([, call]) => call.awaiting?.kind !== 'run')
@@ -90,7 +107,7 @@ export const reconcileStartedCalls = async ({ options, claim, run, session, jour
   try {
     const { tools } = options;
     const env = await tools.envFor(session, control.recoverySignal);
-    const recoveryTool = (await options.skills.load(session)).recoveryTool();
+    const recoveryTool = (await options.skills.load(session, control.recoverySignal)).recoveryTool();
     const toolSet = await tools.recoveryToolSet({
       signal: control.recoverySignal,
       ...(recoveryTool === undefined ? {} : { additionalTools: [recoveryTool] }),
@@ -101,32 +118,34 @@ export const reconcileStartedCalls = async ({ options, claim, run, session, jour
       const recorded = journal.state.pins;
       if (recorded === undefined) throw new Error(`run ${run.id} has started calls but no recorded pins`);
       const reconcileFit = reconcileOutputFit(readPins(recorded).capabilities);
-      await tools.executor.runBatch({
-        calls: recoverable.map(({ callId, name, arguments: args }) => ({ callId, name, arguments: args })),
-        toolSet,
-        fence: claim,
-        runId: run.id,
-        step: journal.state.step,
-        mode: session.permissionMode,
-        rules: [],
-        home: options.home,
-        roots: context.roots,
-        tmpDir: context.tmpDir,
-        env: context.env,
-        session: tools.sessionState(session),
-        deadlineAt: run.deadlineAt,
-        signal: control.recoverySignal,
-        recoverOnly: true,
-        outputFit: reconcileFit,
-        reconcileFit,
-        offered: offeredOfRequest(options.store, run.id, journal.state.lastSeq),
-        leaseLost: () => control.leaseLost() || control.shuttingDown(),
-        onLeaseLost: control.noteLeaseLost,
-        onOutcome: (outcome) => {
-          settled.add(outcome.callId);
-          journal.append(outcomePayloads(outcome));
-        },
-      });
+      for (const group of recoveryGroups(journal.state, recoverable)) {
+        await tools.executor.runBatch({
+          calls: group.calls.map(({ callId, name, arguments: args }) => ({ callId, name, arguments: args })),
+          toolSet,
+          fence: claim,
+          runId: run.id,
+          step: group.step,
+          mode: session.permissionMode,
+          rules: [],
+          home: options.home,
+          roots: context.roots,
+          tmpDir: context.tmpDir,
+          env: context.env,
+          session: tools.sessionState(session),
+          deadlineAt: run.deadlineAt,
+          signal: control.recoverySignal,
+          recoverOnly: true,
+          outputFit: reconcileFit,
+          reconcileFit,
+          ...(group.held ? {} : { offered: offeredOfRequest(options.store, run.id, journal.state.lastSeq) }),
+          leaseLost: () => control.leaseLost() || control.shuttingDown(),
+          onLeaseLost: control.noteLeaseLost,
+          onOutcome: (outcome) => {
+            settled.add(outcome.callId);
+            journal.append(outcomePayloads(outcome, heldLinkOf(journal.state, outcome.callId)));
+          },
+        });
+      }
     }
   } catch (error) {
     absorb(error);
@@ -155,11 +174,15 @@ export const reconcileStartedCalls = async ({ options, claim, run, session, jour
         hookFailure === undefined ? '' : ` (the error hook also failed: ${hookFailure})`
       }`,
     })),
-    ...unsettled.map((call) => ({
-      type: 'tool.reconciled' as const,
-      callId: call.callId,
-      outcome: 'unknown' as const,
-      output: ABANDONED_OUTPUT,
-    })),
+    ...unsettled.map((call) => {
+      const held = heldLinkOf(journal.state, call.callId);
+      return {
+        type: 'tool.reconciled' as const,
+        callId: call.callId,
+        outcome: 'unknown' as const,
+        output: ABANDONED_OUTPUT,
+        ...(held === undefined ? {} : { held }),
+      };
+    }),
   ]);
 };

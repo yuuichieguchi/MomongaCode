@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
+import { afterMicrotasks } from '@momonga/testkit';
 
 describe('batch failure propagation', () => {
   const listeners: Array<(reason: unknown) => void> = [];
@@ -26,7 +27,7 @@ describe('batch failure propagation', () => {
     const tool = makeTool('Read', { execute: async (_input, ctx) => ({ status: 'completed', output: ctx.callId === 'c1' ? 'x'.repeat(30_001) : 'small' }) });
     const set = await toolSetOf(tool);
     await expect(harness.executor.runBatch(await harness.input(set, [call('c1', 'Read'), call('c2', 'Read')]))).rejects.toBe(failure);
-    for (let round = 0; round < 5; round += 1) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    await afterMicrotasks();
     expect(unhandled).toEqual([]);
   });
 });
@@ -54,7 +55,7 @@ describe('blob handle contract', () => {
     const outcome = harness.executor.runBatch(await harness.input(set, [call('c1', 'Read')]));
     await expect(outcome).rejects.toThrow(/handle/i);
     await expect(outcome).rejects.toThrow(/64/);
-    for (let round = 0; round < 5; round += 1) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    await afterMicrotasks();
     expect(unhandled).toEqual([]);
   });
 });

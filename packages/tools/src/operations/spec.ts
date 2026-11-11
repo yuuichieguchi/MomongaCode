@@ -1,7 +1,7 @@
 import { defineProductSchema } from '@momonga/foundation';
 import type { ToolKind } from '@momonga/protocol';
 import { withRefNameRule } from './ref-name.ts';
-import { REFERENCE_PATTERN, isTruthy, lookup, renderTemplate } from './template.ts';
+import { REFERENCE_PATTERN, isTruthy, lookup, referencesIn, renderTemplate } from './template.ts';
 import type { Scope } from './template.ts';
 
 export class OperationSpecError extends Error {
@@ -18,7 +18,7 @@ export const OPERATION_CRASH_POINTS = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5'] as co
 export const APPROVAL_CLASSES = ['rule', 'always'] as const;
 export type ApprovalClass = (typeof APPROVAL_CLASSES)[number];
 
-export const FORGE_VOCABULARY = ['listPullRequests', 'getPullRequest', 'createPullRequest', 'mergePullRequest', 'getBranch', 'listChecks', 'listComments', 'createComment'] as const;
+export const FORGE_VOCABULARY = ['listPullRequests', 'getPullRequest', 'createPullRequest', 'mergePullRequest', 'getBranch', 'listChecks', 'listComments', 'listReviewComments', 'createComment'] as const;
 export type ForgeOperationName = (typeof FORGE_VOCABULARY)[number];
 
 export type Operand = string | { readonly literal: string };
@@ -40,7 +40,7 @@ export type ForgeCall = { readonly forge: ForgeOperationName; readonly args: Rea
 
 export type ProbeSource =
   | (ArgvCall & { readonly extract?: 'trim' | 'firstField'; readonly emptyOnFailure?: true; readonly each?: 'destinations' })
-  | (ForgeCall & { readonly shape: 'one' | 'list' | 'count'; readonly contains?: { readonly field: string; readonly value: string } });
+  | (ForgeCall & ({ readonly shape: 'one' | 'list' | 'count'; readonly contains?: { readonly field: string; readonly value: string } } | { readonly shape: 'lines'; readonly lines: readonly string[] }));
 
 export type Probe = { readonly id: string; readonly via: ProbeSource };
 
@@ -48,6 +48,8 @@ export type SubjectSpec =
   | { readonly kind: 'none' }
   | { readonly kind: 'repo'; readonly remote?: string; readonly refs?: readonly string[]; readonly alwaysWhen?: readonly string[]; readonly direction?: RemoteDirection }
   | { readonly kind: 'forge'; readonly pr?: string; readonly headSha?: string };
+
+export type RefusedForm = { readonly argv: readonly string[]; readonly word: string; readonly reason: string };
 
 export type PrePushHook = { readonly remote: string; readonly ref: string; readonly localSha: string; readonly remoteProbe: string; readonly delete: string };
 
@@ -69,6 +71,7 @@ export type OperationSpec = {
   readonly unchanged: readonly ClauseItem[];
   readonly guard?: Guard;
   readonly supersedes: ReadonlyArray<readonly string[]>;
+  readonly refuses: readonly RefusedForm[];
   readonly report: string;
 };
 
@@ -154,7 +157,8 @@ const SPEC_SCHEMA = {
                 properties: {
                   forge: FORGE_NAME,
                   args: STRING_MAP,
-                  shape: { enum: ['one', 'list', 'count'] },
+                  shape: { enum: ['one', 'list', 'count', 'lines'] },
+                  lines: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 },
                   contains: { type: 'object', properties: { field: { type: 'string' }, value: { type: 'string' } }, required: ['field', 'value'], additionalProperties: false },
                 },
                 required: ['forge', 'args', 'shape'],
@@ -174,13 +178,22 @@ const SPEC_SCHEMA = {
     unchanged: { type: 'array', items: CLAUSE_ITEM },
     guard: { enum: [...OPERATION_GUARDS] },
     supersedes: { type: 'array', items: { type: 'array', items: { type: 'string' }, minItems: 1 } },
+    refuses: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { argv: { type: 'array', items: { type: 'string' }, minItems: 1 }, word: { type: 'string', minLength: 1 }, reason: { type: 'string', minLength: 1 } },
+        required: ['argv', 'word', 'reason'],
+        additionalProperties: false,
+      },
+    },
     report: { type: 'string', minLength: 1 },
   },
   required: ['name', 'description', 'kind', 'sideEffect', 'title', 'subject', 'approval', 'input', 'timeoutMs', 'observe', 'applied', 'unchanged', 'supersedes', 'report'],
   additionalProperties: false,
 } as const;
 
-const validateSpec = defineProductSchema<OperationSpec & { require?: readonly ClauseItem[] }>('tools/operation-spec', SPEC_SCHEMA);
+const validateSpec = defineProductSchema<OperationSpec & { require?: readonly ClauseItem[]; refuses?: readonly RefusedForm[] }>('tools/operation-spec', SPEC_SCHEMA);
 
 const INPUT_REFERENCE = /\{(input\.[A-Za-z0-9_]+)\}/g;
 
@@ -223,6 +236,22 @@ const takesOptionalForgeRemote = (input: Record<string, unknown>): boolean => {
   return isString && !(Array.isArray(required) && required.includes(FORGE_REMOTE_INPUT));
 };
 
+const SEEN = 'seen';
+
+const checkForgeProbe = (name: string, probe: Probe, earlier: readonly Probe[]): void => {
+  const via = probe.via;
+  if (!('forge' in via)) return;
+  const givesLines = 'lines' in via;
+  if (via.shape === 'lines' && !givesLines) throw new OperationSpecError(`${name}: the probe ${probe.id} lists every item and must give the forms of a line in lines`);
+  if (via.shape !== 'lines' && givesLines) throw new OperationSpecError(`${name}: the probe ${probe.id} gives the forms of a line but does not list every item (shape lines)`);
+  for (const reference of Object.values(via.args).flatMap(referencesIn)) {
+    const [root, source] = reference.split('.');
+    if (root === SEEN && !earlier.some((candidate) => candidate.id === source)) {
+      throw new OperationSpecError(`${name}: the probe ${probe.id} reads ${reference}, but no probe named ${source} comes before it`);
+    }
+  }
+};
+
 export const parseOperationSpec = (value: unknown): OperationSpec => {
   const verdict = validateSpec(value);
   if (!verdict.valid) {
@@ -252,9 +281,10 @@ export const parseOperationSpec = (value: unknown): OperationSpec => {
     }
   }
   if (asksForge(spec) && !takesOptionalForgeRemote(spec.input)) throw new OperationSpecError(`${spec.name} asks a forge and must take the optional string input ${FORGE_REMOTE_INPUT}, which names the remote whose forge is asked`);
+  spec.observe.forEach((probe, index) => checkForgeProbe(spec.name, probe, spec.observe.slice(0, index)));
   const ids = spec.observe.map((probe) => probe.id);
   if (new Set(ids).size !== ids.length) throw new OperationSpecError(`${spec.name} declares a probe id twice`);
-  return { ...spec, input: withRefNameRule(spec.input), require: spec.require ?? [] };
+  return { ...spec, input: withRefNameRule(spec.input), require: spec.require ?? [], refuses: spec.refuses ?? [] };
 };
 
 const resolveOperand = (operand: Operand, scope: Scope): string | undefined => (typeof operand === 'string' ? lookup(scope, operand) : operand.literal);
@@ -295,7 +325,11 @@ export const describeClause = (clause: Clause, scope: Scope): string => {
   return `${side(clause[0])} should equal ${side(clause[1])}`;
 };
 
-export type SupersededForm = { operation: string; argv: readonly string[] };
+export type SupersededForm = { operation: string; argv: readonly string[]; refusal?: { readonly word: string; readonly reason: string } };
 
-export const supersededForms = (specs: readonly OperationSpec[]): SupersededForm[] =>
-  specs.flatMap((spec) => spec.supersedes.map((argv) => ({ operation: spec.name, argv })));
+export const replacedForms = (specs: readonly OperationSpec[]): SupersededForm[] => specs.flatMap((spec) => spec.supersedes.map((argv) => ({ operation: spec.name, argv })));
+
+export const supersededForms = (specs: readonly OperationSpec[]): SupersededForm[] => [
+  ...replacedForms(specs),
+  ...specs.flatMap((spec) => spec.refuses.map(({ argv, word, reason }) => ({ operation: spec.name, argv, refusal: { word, reason } }))),
+];

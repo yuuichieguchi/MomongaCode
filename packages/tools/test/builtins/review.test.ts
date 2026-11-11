@@ -234,7 +234,7 @@ describe('review 4: Bash stream errors', () => {
               releaseStderr = () => resolve({ done: true, value: undefined });
             }),
         ),
-        exited: new Promise((resolve) => setTimeout(() => resolve({ code: 0, signal: null }), 50)),
+        exited: afterMicrotasks().then(() => ({ code: 0, signal: null })),
       }),
     };
     const [outcome] = await tools.executor.runBatch(await tools.batch('Bash', { command: 'echo hi' }, { sandbox: failingSandbox }, 'allow_once'));

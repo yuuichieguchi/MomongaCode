@@ -334,8 +334,7 @@ describe('a Keychain that cannot answer, in the gateway process', () => {
   const answerAtLimit = async (stack: Stack, timers: FakeTimers, limitMs: number): Promise<{ status: number; text: string }> => {
     const answer = answerOf(post(stack.patient, request));
     await stack.security.arrived('find-generic-password');
-    timers.advance(limitMs - 1);
-    await new Promise<void>((resolve) => void setImmediate(resolve));
+    await timers.advanceAsync(limitMs - 1);
     expect(answer.state()).toBe('pending');
     timers.advance(1);
     await vi.waitFor(() => expect(answer.state()).toBe('fulfilled'), ANSWER_WAIT);

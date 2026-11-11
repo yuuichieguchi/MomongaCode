@@ -148,7 +148,6 @@ describe('the ledger of an e2e home', () => {
     await created.ledger.record({
       status: 'ok',
       version: 'e2e',
-      apiVersion: 1,
       pid: 1,
       startedAt: '2026-01-01T00:00:00.000Z',
       phase: 'running',

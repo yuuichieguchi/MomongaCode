@@ -23,11 +23,12 @@ const read = (id: string, path: string, content: string, range: { offset?: numbe
   started(id),
   done(id, content, 'completed', { files: [{ path, sha256: sha256Hex(content), access: 'read' }] }),
 ];
-const bash = (id: string, command: string, status: 'completed' | 'failed'): RunEventPayload[] => [
-  call(id, 'Bash', { command }),
+const commandThrough = (name: string, id: string, command: string, status: 'completed' | 'failed'): RunEventPayload[] => [
+  call(id, name, { command }),
   started(id),
-  done(id, status === 'failed' ? 'boom' : 'ok', status, { exitCode: status === 'failed' ? 1 : 0 }),
+  done(id, status === 'failed' ? 'boom' : 'ok', status, { exitCode: status === 'failed' ? 1 : 0, command }),
 ];
+const bash = (id: string, command: string, status: 'completed' | 'failed'): RunEventPayload[] => commandThrough('Bash', id, command, status);
 const denied = (id: string, input: unknown): RunEventPayload[] => [
   call(id, 'Write', input),
   done(id, 'Permission denied: x', 'failed', { denial: { source: 'rule', reason: 'x' } }),
@@ -137,6 +138,12 @@ describe('repeated_failure', () => {
 
   it('fires when the same command fails on both sides', () => {
     expect(kindsOf([...bash('a', 'npm test', 'failed'), compacted, ...bash('b', 'npm test', 'failed')])).toEqual(['repeated_failure']);
+  });
+
+  it('fires for a command run through a tool that is not named Bash, because the command is the one the boundary recorded', () => {
+    const SHELL = 'mcp__remote__shell';
+    expect(kindsOf([...commandThrough(SHELL, 'a', 'npm test', 'failed'), compacted, ...commandThrough(SHELL, 'b', 'npm test', 'failed')])).toEqual(['repeated_failure']);
+    expect(kindsOf([...commandThrough(SHELL, 'a', 'npm test', 'failed'), compacted, ...bash('b', 'npm test', 'failed')])).toEqual(['repeated_failure']);
   });
 
   it('ignores a different command', () => {

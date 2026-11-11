@@ -44,5 +44,4 @@ await registerOwned(closeOnSigterm, () => startSupervisor({
   spawn,
   stdout: process.stdout,
   watchSettings: false,
-  orphanReapGraceMs: 200,
 }));

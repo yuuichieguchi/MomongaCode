@@ -1,4 +1,4 @@
-import { sleepDrivenTiming, createFakeRandom } from '@momonga/testkit';
+import { sleepDrivenTiming, createFakeRandom, afterMicrotasks } from '@momonga/testkit';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import * as foundation from '@momonga/foundation';
@@ -80,7 +80,7 @@ export const steppedPorts = (): SteppedPorts => {
       now: () => now,
       sleep: (ms) => {
         now += ms;
-        return new Promise((resolve) => setImmediate(resolve));
+        return afterMicrotasks();
       },
     }),
     random: { ...createFakeRandom(1), hex: () => 'cafe0001' },

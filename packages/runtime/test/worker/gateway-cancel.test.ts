@@ -138,7 +138,7 @@ describe('worker gateway cancel wiring', () => {
     await env.cancel(run.id);
     const abortedAtSettle: boolean[] = [];
     env.gateway.cancelHook = async (_key, signal) => {
-      await new Promise<void>((resolve) => setTimeout(resolve, 1_500));
+      await new Promise<void>((resolve) => env.timers.setTimeout(resolve, 1_500));
       abortedAtSettle.push(signal?.aborted ?? true);
     };
 

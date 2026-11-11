@@ -14,8 +14,6 @@ const globalTimers: McpTimers = {
   clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout),
 };
 
-const pauseFor = (ms: number): Promise<void> => new Promise<void>((resolve) => void setTimeout(resolve, ms));
-
 type Browser = { opened: Promise<void>; open(url: URL): Promise<void> };
 
 const browserThat = (act: (url: URL) => Promise<void>): Browser => {
@@ -90,14 +88,16 @@ describe('the store phases of an MCP sign-in', () => {
     const FIRST_PHASE_MS = 600;
     const BROWSER_STEP_MS = 5000;
     const credentials = controlledCredentialStore();
+    const firstPhase = Promise.withResolvers<void>();
+    const browserStep = Promise.withResolvers<void>();
     let browserStepDone = false;
     credentials.mode = () => (browserStepDone ? 'hang' : 'answer');
     credentials.beforeAnswer = async () => {
-      if (credentials.calls.length === 1) await pauseFor(FIRST_PHASE_MS);
+      if (credentials.calls.length === 1) await firstPhase.promise;
     };
     const follow = browserThatFollowsRedirect();
     const browser = browserThat(async (url) => {
-      await pauseFor(BROWSER_STEP_MS);
+      await browserStep.promise;
       browserStepDone = true;
       await follow(url);
     });
@@ -107,8 +107,10 @@ describe('the store phases of an MCP sign-in', () => {
     cancels.push(cancel);
     await credentials.arrived(1, 'answer');
     await vi.advanceTimersByTimeAsync(FIRST_PHASE_MS);
+    firstPhase.resolve();
     await browser.opened;
     await vi.advanceTimersByTimeAsync(BROWSER_STEP_MS);
+    browserStep.resolve();
     await credentials.arrived(1, 'hang');
     await stillPendingAfter(attempt, STORE_LIMIT_MS - 1);
     await vi.advanceTimersByTimeAsync(1);

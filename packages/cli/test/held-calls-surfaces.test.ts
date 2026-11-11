@@ -19,7 +19,7 @@ const blocked = { type: 'tool.completed', callId: 'c2', status: 'failed', output
 const modelRequested = { type: 'model.requested', step: 2, attempt: 1, digest: 'd' };
 const quiescent = { type: 'run.quiescent', held: [{ callId: 'c1', approvalId: 'ap-1', tool: 'PullRequestMerge', reason: REASON, sinceSeq: 3 }] };
 const resolved = { type: 'tool.permission.resolved', approvalId: 'ap-1', optionId: 'o' };
-const executed = { type: 'tool.held.resolved', callId: 'c1', approvalId: 'ap-1', outcome: 'executed', status: 'completed', output: 'Pull request #7 is merged.' };
+const executed = { type: 'tool.completed', callId: 'c1', status: 'completed', output: 'Pull request #7 is merged.', held: { approvalId: 'ap-1' } };
 const rejected = { type: 'tool.held.resolved', callId: 'c1', approvalId: 'ap-1', outcome: 'rejected', status: 'failed', output: 'A person rejected this call, so it was not run.' };
 
 describe('a held call in the TUI', () => {

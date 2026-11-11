@@ -19,6 +19,8 @@ import {
   type ModernFixtureRecord,
 } from '@momonga/testkit';
 
+import { pollUntil } from '@momonga/testkit';
+
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const cleanups: Array<() => Promise<void> | void> = [];
@@ -57,14 +59,19 @@ const readRecords = (file: string): ModernFixtureRecord[] => {
     .map((line) => JSON.parse(line) as ModernFixtureRecord);
 };
 
+const RECORD_BOUND_MS = 10_000;
+
 const waitForRecord = async (file: string, predicate: (entry: ModernFixtureRecord) => boolean): Promise<ModernFixtureRecord> => {
-  const deadline = Date.now() + 10000;
-  for (;;) {
-    const found = readRecords(file).find(predicate);
-    if (found !== undefined) return found;
-    if (Date.now() > deadline) throw new Error(`record not observed in ${file}: ${fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''}`);
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
+  let found: ModernFixtureRecord | undefined;
+  await pollUntil(
+    () => {
+      found = readRecords(file).find(predicate);
+      return found !== undefined;
+    },
+    { description: `a record in ${file}`, boundMs: RECORD_BOUND_MS },
+  );
+  if (found === undefined) throw new Error(`record not observed in ${file}`);
+  return found;
 };
 
 const connect = async (
@@ -177,8 +184,7 @@ describe('mcp-modern-server fixture over the SDK StdioClientTransport', () => {
     });
     await client.listTools();
     await client.callTool({ name: 'trigger_list_changed', arguments: {} });
-    const deadline = Date.now() + 10000;
-    while (changed === undefined && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+    await pollUntil(() => changed !== undefined, { description: 'the notice of the changed tool list', boundMs: RECORD_BOUND_MS });
     expect(changed).toEqual([...MODERN_FIXTURE_TOOL_NAMES, 'added_later']);
     expect(textOf(await client.callTool({ name: 'added_later', arguments: {} }))).toBe('added later');
   });

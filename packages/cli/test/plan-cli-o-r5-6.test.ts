@@ -388,7 +388,6 @@ describe('momonga auth login shows the authorization URL only for --no-browser o
 describe('momonga auth login --account starts nothing for an account a sign-in cannot fix (O-R5-6 G 7)', () => {
   it.each([
     ['signing_out', 'signing out'],
-    ['store_unreadable', 'record unreadable'],
     ['store_unwritable', 'record not writable'],
   ] as const)('%s: prints the state word and the cause and exits 1', async (state, word) => {
     const h = harness({ terminal: true, accounts: [account({ label: 'work', state, active: false, cause: 'the cause of it' })] });

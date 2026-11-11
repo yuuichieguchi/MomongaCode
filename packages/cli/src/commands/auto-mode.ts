@@ -1,10 +1,10 @@
-import { AUTO_MODE_DATASET_TEXT, autoFitDirectoryOf, autoFitKeyOf, autoFitViewOf, autoGatePasses, readAutoFitRecord, readClassifierProbeKeys, systemFileLockPorts, writeAutoFitRecord } from '@momonga/config';
+import { AUTO_MODE_DATASET_TEXT, autoFitDirectoryOf, autoFitKeyOf, autoGatePasses, readAutoFitView, readClassifierProbeKeys, systemFileLockPorts, writeAutoFitRecord } from '@momonga/config';
 import type { AutoFitKey, UserModels } from '@momonga/config';
 import { createBinaryHashCache, createHostExec, currentSocketResolver, momongaPaths, probeKeyComponentLabel, resolveLayoutLocks } from '@momonga/foundation';
 import { autoGateRecordOf, caseSettingsFor, formatReport, parseDataset, runDataset } from '@momonga/eval';
 import type { GoldenDataset } from '@momonga/eval';
 import { autoModeNotice, displayMapOf, messageOf, modelRefErrorOf, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
-import type { AutoModeSurface } from '@momonga/protocol';
+import type { AutoClassifierView, AutoModeSurface } from '@momonga/protocol';
 import { withinCommandLimit } from '../command-limit.ts';
 import { createHomes, liveSettingsFor, needsPlanRelay, readCredentials, readPlanRelay, sweepStaleHomes, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects, ReflectionBounds } from '../eval/context-host.ts';
@@ -40,7 +40,7 @@ export type AutoModeStatusPorts = { models: UserModels; configuredClassifier: st
 
 export type AutoModeStatusOptions = { classifier?: string; surface: AutoModeSurface; signal: AbortSignal };
 
-export type AutoModeStatusOutcome = { measurement: 'passed' | 'did_not_pass' | 'not_measured' };
+export type AutoModeStatusOutcome = { measurement: AutoClassifierView['measurement'] };
 
 const typedModelOf = (models: UserModels, text: string): string => {
   const { views } = models.resolved;
@@ -144,7 +144,7 @@ export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoMode
 export const autoModeStatus = async (ports: AutoModeStatusPorts, options: AutoModeStatusOptions): Promise<AutoModeStatusOutcome> => {
   const classifier = classifierOf(ports.models, ports.configuredClassifier, options.classifier);
   const key = await classifierKeyOf(ports.models, classifier, ports.platform, options.signal);
-  const view = autoFitViewOf(classifier, key, await readAutoFitRecord(autoFitDirectoryOf(ports.home), key));
+  const view = await readAutoFitView(autoFitDirectoryOf(ports.home), classifier, key);
   ports.write(`${autoModeNotice({ view, surface: options.surface })}\n`);
   return { measurement: view.measurement };
 };

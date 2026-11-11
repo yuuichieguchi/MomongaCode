@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from '@momonga/testkit/child-process';
 import type { ChildProcess } from '@momonga/testkit/child-process';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, pollUntil } from '@momonga/testkit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RUN_LOCK_DEFAULT_WAIT_SECONDS } from '../../scripts/support/run-lock.ts';
 import config from '../../vitest.config.ts';
@@ -99,12 +99,15 @@ const startProcess = (command: string, args: string[], cwd: string, env: ChildEn
 const fixtureRun = (args: string[], extra: ChildEnv = {}): Started =>
   startProcess(process.execPath, [VITEST, 'run', '--config', 'vitest.config.mjs', ...args], fixture, baseEnv(extra));
 
-const until = async (condition: () => boolean, run: Started): Promise<void> => {
-  while (!condition()) {
-    if (run.child.exitCode !== null || run.child.signalCode !== null) throw new Error(`the process ended before the condition: ${run.output()}`);
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-};
+const until = (condition: () => boolean, run: Started): Promise<void> =>
+  pollUntil(
+    () => {
+      if (condition()) return true;
+      if (run.child.exitCode !== null || run.child.signalCode !== null) throw new Error(`the process ended before the condition: ${run.output()}`);
+      return false;
+    },
+    { description: 'the condition of the run lock case', boundMs: REAL_PROCESS_TEST_TIMEOUT_MS },
+  );
 
 const lockEntries = (): string[] => (fs.existsSync(path.join(state, 'run-lock')) ? fs.readdirSync(path.join(state, 'run-lock')).sort() : []);
 

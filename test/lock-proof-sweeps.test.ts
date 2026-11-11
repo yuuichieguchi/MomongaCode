@@ -3,7 +3,7 @@ import type { ChildProcess } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createJsonLogger, ensureMomongaDirs, momongaLayout, reapDeadGenerations, reapMarkerDirectory } from '@momonga/foundation';
+import { createJsonLogger, ensureMomongaDirs, momongaLayout, reapDeadGenerations, reapMarkerDirectory, sleep, systemTiming } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { withTempDir, sleepDrivenTiming, testProcessInspector, testKernelLock } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
@@ -78,7 +78,12 @@ const sweepEverything = async (paths: MomongaPaths, kill: (target: number, signa
     timers: timers as never,
     signal: new AbortController().signal,
     logger: createJsonLogger({ service: 'supervisor', clock: { now: () => Date.now() }, stream: { write: () => true } as never } as never),
-    reapTiming: sleepDrivenTiming({ now: () => Date.now(), sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }),
+    reapTiming: sleepDrivenTiming({
+      now: () => Date.now(),
+      sleep: async (ms) => {
+        await sleep(systemTiming, ms);
+      },
+    }),
   });
   await reapDeadGenerations({ paths, lock: testKernelLock(), signal: new AbortController().signal, warn: onWarning, reapMarkers: async () => undefined });
   return warnings;

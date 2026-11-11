@@ -7,7 +7,7 @@ import type { HookExecution } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
 import { createMarkerOwners, createToolHooks, nodeShellHost, unsettledKeys } from '@momonga/tools';
 import type { HookRunContext } from '@momonga/tools';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector, pollUntil } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -47,7 +47,7 @@ describe('T16 (c) a hook run in flight owns its marker', () => {
       inspector: testProcessInspector(),
     } as unknown as HookRunContext;
     const running = createToolHooks(context).preToolUse({ callId: 'c1', toolName: 'Bash', input: { command: 'ls' } });
-    for (let turn = 0; turn < 500 && !fs.existsSync(ready); turn += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+    await pollUntil(() => fs.existsSync(ready), { description: 'the hook to start', boundMs: REAL_PROCESS_TEST_TIMEOUT_MS });
     expect(fs.readdirSync(markerDir).filter((name) => name.startsWith('hook-'))).toHaveLength(1);
     expect(await unsettledKeys(markerDir, owners)).toEqual([]);
     fs.writeFileSync(go, '');

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, pollUntil } from '@momonga/testkit';
 import type { UninspectableProcess } from '../../src/platform/inspector-types.ts';
 import { BOOT_TIME_RESOLUTION_MS, createLinuxInspector } from '../../src/platform/linux-inspector.ts';
 import { nodeProcFs } from '../../src/platform/procfs.ts';
@@ -14,7 +14,6 @@ vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 const SSH_AGENT = '/usr/bin/ssh-agent';
 const PYTHON = '/usr/bin/python3';
 const ON_LINUX = process.platform === 'linux';
-const POLL_MS = 20;
 const DEADLINE_MS = 20_000;
 const OLDER_BY_MS = BOOT_TIME_RESOLUTION_MS + 500;
 const ZOMBIE_LEADER = [
@@ -25,13 +24,7 @@ const ZOMBIE_LEADER = [
   'ctypes.CDLL(None).pthread_exit(None)',
 ].join('\n');
 
-const until = async (condition: () => boolean, what: string): Promise<void> => {
-  const deadline = Date.now() + DEADLINE_MS;
-  while (!condition()) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
-    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
-  }
-};
+const until = (condition: () => boolean, what: string): Promise<void> => pollUntil(condition, { description: what, boundMs: DEADLINE_MS });
 
 describe.runIf(ON_LINUX)('the Linux inspector against real processes', () => {
   let directory = '';

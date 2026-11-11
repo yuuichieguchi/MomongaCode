@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { setImmediate as nextTurn } from 'node:timers/promises';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createBrowserOpener } from '@momonga/foundation';
 import type { LaunchProgram, ProgramEnd } from '@momonga/foundation';
+import { afterMicrotasks } from '@momonga/testkit';
 
 const URL_TO_OPEN = new URL('https://auth.example.com/authorize?client_id=a&state=b');
 
@@ -40,7 +40,7 @@ const settledOf = async (promise: Promise<unknown>): Promise<void> => {
     () => undefined,
     () => undefined,
   );
-  await nextTurn();
+  await afterMicrotasks();
 };
 
 const deferredEnd = () => {

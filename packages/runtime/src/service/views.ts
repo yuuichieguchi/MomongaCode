@@ -3,7 +3,7 @@ import type { AgentDefinition } from '@momonga/agents';
 import { TERMINAL_STATUSES } from '@momonga/protocol';
 import type { AgentView, JobView, RunStatus, SkillView, Stored } from '@momonga/protocol';
 import type { Skill } from '@momonga/skills';
-import type { Job, Run, RuntimeStore, Session } from '@momonga/store';
+import type { Job, ListedSession, Run, RuntimeStore } from '@momonga/store';
 
 const agentNameOf = (run: Run): { agent?: string } => {
   const pin = readAgentPin(run.pins);
@@ -47,26 +47,21 @@ export const toRunView = (run: Run) => ({
   ...agentNameOf(run),
 });
 
-export const toSessionView = (store: RuntimeStore, session: Session) => {
-  const runs = store.listRuns(session.id);
-  const active = runs.find((run) => !isTerminalStatus(run.status));
-  const latest = runs.at(-1);
-  return {
-    id: session.id,
-    cwd: session.cwd,
-    permissionMode: session.permissionMode,
-    model: session.model,
-    bypassAllowed: session.bypassAllowed,
-    createdAt: session.createdAt,
-    envKeys: Object.keys(session.env),
-    additionalDirectories: [...session.additionalDirectories],
-    activeRunId: active === undefined ? null : active.id,
-    activeRunAt: active === undefined ? null : active.createdAt,
-    latestRunId: latest === undefined ? null : latest.id,
-    latestRunAt: latest === undefined ? null : latest.createdAt,
-    lastEventId: store.sessionMaxEventId(session.id),
-  };
-};
+export const toSessionView = (store: Pick<RuntimeStore, 'sessionMaxEventId'>, session: ListedSession) => ({
+  id: session.id,
+  cwd: session.cwd,
+  permissionMode: session.permissionMode,
+  model: session.model,
+  bypassAllowed: session.bypassAllowed,
+  createdAt: session.createdAt,
+  envKeys: Object.keys(session.env),
+  additionalDirectories: [...session.additionalDirectories],
+  activeRunId: session.activeRunId,
+  activeRunAt: session.activeRunAt,
+  latestRunId: session.latestRunId,
+  latestRunAt: session.latestRunAt,
+  lastEventId: store.sessionMaxEventId(session.id),
+});
 
 export const toSkillView = (skill: Skill): SkillView => ({
   name: skill.name,

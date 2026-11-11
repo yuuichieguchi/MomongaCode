@@ -21,6 +21,7 @@
   "applied": [["after.branch", "input.name"]],
   "unchanged": [["after.branch", "before.branch"]],
   "guard": "compare_and_set",
-  "supersedes": [["git", "switch"]],
+  "supersedes": [["git", "switch"], ["git", "checkout"]],
+  "refuses": [{ "argv": ["git", "checkout"], "word": "--", "reason": "it overwrites files of the working tree with the content of the index or of a commit, which discards changes that no commit holds" }],
   "report": "The working tree is on branch {after.branch}."
 }

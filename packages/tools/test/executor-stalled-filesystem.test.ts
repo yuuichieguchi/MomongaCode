@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { PolicyHostFilesystem } from '@momonga/policy';
-import { fakePolicyFilesystem, hostFilesystemOf } from '@momonga/testkit';
+import { fakePolicyFilesystem, hostFilesystemOf, waitFor } from '@momonga/testkit';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 
 const neverAnswers = <T>(): Promise<T> => new Promise<T>(() => undefined);
@@ -57,13 +57,7 @@ describe('executor with a file system that never answers', () => {
         (outcomes) => settled.push({ outcomes }),
         (error: unknown) => settled.push({ error }),
       );
-    await new Promise<void>((resolve) => {
-      const poll = (): void => {
-        if (asked.length > 0 || settled.length > 0) resolve();
-        else setTimeout(poll, 0);
-      };
-      poll();
-    });
+    await waitFor(() => asked.length > 0 || settled.length > 0, { description: 'the stalled file system to be asked or the batch to end' });
     expect(asked.length).toBeGreaterThan(0);
     expect(settled).toEqual([]);
     controller.abort(new Error('the run was stopped'));

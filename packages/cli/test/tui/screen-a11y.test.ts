@@ -10,7 +10,7 @@ import { SPINNER_FRAMES, waitingRowText } from '../../src/tui/screen/waiting-row
 import { moreRowText, selectedText } from '../../src/tui/select.tsx';
 import { helpText } from '../../src/tui/slash.ts';
 import type { Entry } from '../../src/tui/transcript.ts';
-import { plainOf, storeOf } from './screen-fakes.ts';
+import { plainOf, storeOf, ROW_SCHEDULE } from './screen-fakes.ts';
 
 const READER: A11y = { screenReader: true, reducedMotion: true };
 const STILL: A11y = { screenReader: false, reducedMotion: true };
@@ -103,7 +103,7 @@ describe('the screen-reader display of the transcript', () => {
     const drawn = rowsFor({ kind: 'assistant', itemId: 'm1', text: table } as Entry, NO_A11Y);
     expect(drawn.some((row) => BOX.test(row))).toBe(true);
     const stored = storeOf([{ type: 'agent.message.delta', attempt: 0, itemId: 'm1', text: table }]);
-    const cached = createRowCache(rowRenderersOf({ keys: DEFAULT_KEY_TABLE, a11y: READER })).rowsOf(stored.at(0), 60);
+    const cached = createRowCache(rowRenderersOf({ keys: DEFAULT_KEY_TABLE, a11y: READER }), ROW_SCHEDULE).rowsOf(stored.at(0), 60);
     expect(cached.map((row) => row.text)).toEqual(reader);
   });
 
