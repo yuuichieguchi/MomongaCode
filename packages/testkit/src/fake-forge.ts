@@ -65,6 +65,33 @@ const routeOf = (shape: ForgeShape, method: string, pathname: string): Route | u
   return undefined;
 };
 
+export const FAKE_FORGE_DEFAULT_PAGE = 30;
+export const FAKE_FORGE_LARGEST_PAGE = 100;
+
+const pageSizeOf = (url: URL): number => {
+  const asked = Number(url.searchParams.get('per_page') ?? FAKE_FORGE_DEFAULT_PAGE);
+  return Number.isInteger(asked) && asked > 0 ? Math.min(asked, FAKE_FORGE_LARGEST_PAGE) : FAKE_FORGE_DEFAULT_PAGE;
+};
+
+type Page<T> = { entries: T[]; link: Record<string, string> };
+
+const pageOf = <T>(url: URL, origin: string, all: readonly T[]): Page<T> => {
+  const size = pageSizeOf(url);
+  const page = Math.max(1, Number(url.searchParams.get('page') ?? '1') || 1);
+  const entries = all.slice((page - 1) * size, page * size);
+  if (page * size >= all.length) return { entries, link: {} };
+  const next = new URL(url.pathname + url.search, origin);
+  next.searchParams.set('page', String(page + 1));
+  return { entries, link: { link: `<${next.href}>; rel="next"` } };
+};
+
+const validationFailed = (message: string): Record<string, unknown> => ({
+  message: 'Validation Failed',
+  errors: [{ resource: 'PullRequest', code: 'custom', message }],
+  documentation_url: 'https://docs.github.com/rest/pulls/pulls#create-a-pull-request',
+  status: '422',
+});
+
 const branchOf = (value: string | undefined): string => (value ?? '').replace(new RegExp(`^${OWNER}:`), '');
 
 export const startFakeForge = async (shape: ForgeShape, credential: string): Promise<FakeForge> => {
@@ -130,11 +157,8 @@ export const startFakeForge = async (shape: ForgeShape, credential: string): Pro
         const head = branchOf(shape === 'hub' ? url.searchParams.get('head') ?? undefined : url.searchParams.get('source_branch') ?? undefined);
         const baseRef = shape === 'hub' ? url.searchParams.get('base') : url.searchParams.get('target_branch');
         const wantOpen = shape === 'hub' ? url.searchParams.get('state') === 'open' : url.searchParams.get('state') === 'opened';
-        return sendJson(
-          res,
-          200,
-          pulls.filter((pull) => (head === '' || pull.head === head) && (baseRef === null || pull.base === baseRef) && (!wantOpen || pull.state === 'open')).map(view),
-        );
+        const page = pageOf(url, origin, pulls.filter((pull) => (head === '' || pull.head === head) && (baseRef === null || pull.base === baseRef) && (!wantOpen || pull.state === 'open')));
+        return sendJson(res, 200, page.entries.map(view), page.link);
       }
       case 'get': {
         const pull = pulls.find((candidate) => candidate.number === route.number);
@@ -144,8 +168,10 @@ export const startFakeForge = async (shape: ForgeShape, credential: string): Pro
         const head = branchOf(String(shape === 'hub' ? fields['head'] : fields['source_branch']));
         const baseRef = String(shape === 'hub' ? fields['base'] : fields['target_branch']);
         if (pulls.some((pull) => pull.head === head && pull.base === baseRef && pull.state === 'open')) {
-          return sendJson(res, shape === 'hub' ? 422 : 409, { message: 'A pull request already exists for this head and base' });
+          return shape === 'hub' ? sendJson(res, 422, validationFailed(`A pull request already exists for ${OWNER}:${head}.`)) : sendJson(res, 409, { message: ['Another open merge request already exists for this source branch'] });
         }
+        const headSha = branchSha.get(head);
+        if (shape === 'hub' && headSha !== undefined && headSha === branchSha.get(baseRef)) return sendJson(res, 422, validationFailed(`No commits between ${baseRef} and ${head}`));
         const pull: FakePullRequest = { number: pulls.length + 1, head, base: baseRef, headSha: branchSha.get(head) ?? '0'.repeat(40), title: String(fields['title']), state: 'open', merged: false };
         pulls.push(pull);
         return reply(shape === 'hub' ? 201 : 200, view(pull));
@@ -158,30 +184,36 @@ export const startFakeForge = async (shape: ForgeShape, credential: string): Pro
         pull.state = 'closed';
         return reply(200, shape === 'hub' ? { merged: true, sha: `m${pull.headSha.slice(1)}` } : { merge_commit_sha: `m${pull.headSha.slice(1)}` });
       }
-      case 'comments':
-        return sendJson(res, 200, (comments.get(route.number ?? 0) ?? []).map((entry, index) => ({ id: index + 1, body: entry })));
+      case 'comments': {
+        const page = pageOf(url, origin, (comments.get(route.number ?? 0) ?? []).map((entry, index) => ({ id: index + 1, body: entry })));
+        return sendJson(res, 200, page.entries, page.link);
+      }
       case 'comment': {
         const list = comments.get(route.number ?? 0) ?? [];
         list.push(String(fields['body']));
         comments.set(route.number ?? 0, list);
         return reply(shape === 'hub' ? 201 : 200, { id: list.length, body: fields['body'] });
       }
-      case 'reviewComments':
-        return sendJson(
-          res,
-          200,
+      case 'reviewComments': {
+        const page = pageOf(
+          url,
+          origin,
           (reviewComments.get(route.number ?? 0) ?? []).map((entry, index) =>
             shape === 'hub' ? { id: index + 1, path: entry.path, line: entry.line ?? null, body: entry.body } : { id: index + 1, file: entry.path, new_line: entry.line ?? null, note: entry.body },
           ),
         );
+        return sendJson(res, 200, page.entries, page.link);
+      }
       case 'checks': {
         const found = checks.get(route.sha ?? '') ?? [];
+        const page = pageOf(url, origin, found);
         return sendJson(
           res,
           200,
           shape === 'hub'
-            ? { total_count: found.length, check_runs: found.map((check) => ({ name: check.name, status: check.status, conclusion: check.conclusion ?? null })) }
-            : found.map((check) => ({ name: check.name, status: check.conclusion ?? check.status })),
+            ? { total_count: found.length, check_runs: page.entries.map((check) => ({ name: check.name, status: check.status, conclusion: check.conclusion ?? null })) }
+            : page.entries.map((check) => ({ name: check.name, status: check.conclusion ?? check.status })),
+          page.link,
         );
       }
     }
@@ -213,13 +245,15 @@ export const startFakeForge = async (shape: ForgeShape, credential: string): Pro
 export const LAB_DESCRIPTOR = {
   id: 'labforge-test',
   auth: { header: 'PRIVATE-TOKEN', prefix: '', gitUsername: 'oauth2' },
+  errorText: { message: 'message' },
   operations: {
     listPullRequests: {
       method: 'GET',
       path: '/api/v4/projects/{owner}/{name}/merge_requests',
-      query: { source_branch: '{head}', target_branch: '{base}', state: 'opened' },
+      query: { source_branch: '{head}', target_branch: '{base}', state: 'opened', per_page: '100' },
       success: [200],
       items: '',
+      paging: 'link',
       result: { number: 'iid', url: 'web_url', headSha: 'sha', state: 'state', merged: 'merged_flag' },
     },
     getPullRequest: {
@@ -233,7 +267,7 @@ export const LAB_DESCRIPTOR = {
       path: '/api/v4/projects/{owner}/{name}/merge_requests',
       body: { source_branch: '{head}', target_branch: '{base}', title: '{title}', description: '{body}' },
       success: [200],
-      alreadyExists: [409],
+      answers: [{ status: 409, outcome: 'already_exists' }],
       result: { number: 'iid', url: 'web_url', headSha: 'sha' },
     },
     mergePullRequest: {
@@ -241,7 +275,7 @@ export const LAB_DESCRIPTOR = {
       path: '/api/v4/projects/{owner}/{name}/merge_requests/{number}/merge',
       body: { sha: '{headSha}' },
       success: [200],
-      conflict: [406],
+      answers: [{ status: 406, outcome: 'conflict' }],
       result: { sha: 'merge_commit_sha' },
     },
     getBranch: {
@@ -253,22 +287,28 @@ export const LAB_DESCRIPTOR = {
     listChecks: {
       method: 'GET',
       path: '/api/v4/projects/{owner}/{name}/repository/commits/{headSha}/statuses',
+      query: { per_page: '100' },
       success: [200],
       items: '',
+      paging: 'link',
       result: { name: 'name', status: 'status' },
     },
     listComments: {
       method: 'GET',
       path: '/api/v4/projects/{owner}/{name}/merge_requests/{number}/notes',
+      query: { per_page: '100' },
       success: [200],
       items: '',
+      paging: 'link',
       result: { id: 'id', body: 'body' },
     },
     listReviewComments: {
       method: 'GET',
       path: '/api/v4/projects/{owner}/{name}/merge_requests/{number}/review_notes',
+      query: { per_page: '100' },
       success: [200],
       items: '',
+      paging: 'link',
       result: { id: 'id', path: 'file', line: 'new_line', body: 'note' },
     },
     createComment: {

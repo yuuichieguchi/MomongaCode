@@ -5,9 +5,14 @@ export type OverrideGroup = 'program' | 'protocol' | 'transport' | 'recursion' |
 export type RepositoryKeyRule =
   | { readonly key: string; readonly why: string; readonly verdict: 'inert' }
   | { readonly key: string; readonly why: string; readonly verdict: 'overridden'; readonly set: ConfigEntry; readonly group: OverrideGroup }
-  | { readonly key: string; readonly why: string; readonly verdict: 'refused' };
+  | { readonly key: string; readonly why: string; readonly verdict: 'refused'; readonly rewrite?: ConfigEntry };
+
+export type UrlRewrite = { readonly from: string; readonly to: string };
 
 export const DESTINATION_PLACE = '{destination}';
+
+const REWRITTEN_TO = '{to}';
+const REWRITTEN_FROM = '{from}';
 
 export const GIT_PROTOCOLS: readonly string[] = ['ext', 'file', 'ftp', 'ftps', 'git', 'http', 'https', 'ssh'];
 
@@ -80,7 +85,12 @@ export const REPOSITORY_KEY_RULES: readonly RepositoryKeyRule[] = [
     ['push.recurseSubmodules', 'no'],
   ]),
   ...refused('names a program git starts for the remote', ['remote.*.receivepack', 'remote.*.uploadpack', 'remote.*.vcs']),
-  ...refused('rewrites the destination', ['url.*.insteadof', 'url.*.pushinsteadof']),
+  ...['insteadOf', 'pushInsteadOf'].map((variable): RepositoryKeyRule => ({
+    key: `url.*.${variable.toLowerCase()}`,
+    why: 'rewrites the destination; the command names each destination it reaches, as written and as resolved',
+    verdict: 'refused',
+    rewrite: [`url.${REWRITTEN_TO}.${variable}`, REWRITTEN_FROM],
+  })),
   ...refused('changes who vouches for the remote and cannot be set aside for one command', ['http.sslcainfo', 'http.*.sslcainfo', 'http.sslcapath', 'http.*.sslcapath']),
   ...inert('the destination and the refs of a remote, which the operation reads, shows and names itself', [
     'remote.pushdefault',
@@ -215,6 +225,48 @@ export const overrideOf = (key: string): ConfigEntry => {
   const rule = repositoryKeyRuleOf(key);
   if (rule?.verdict !== 'overridden') throw new Error(`no value is given for the configuration key ${key}`);
   return rule.set;
+};
+
+const LOCAL_DESTINATION = /^(file:\/\/|\/)/;
+const URL_SCHEME = /^([a-z][a-z0-9+.-]*):\/\//i;
+const HTTP_PROTOCOLS: readonly string[] = ['http', 'https'];
+const ALLOWED = 'always';
+
+const protocolOf = (destination: string): string | undefined => (LOCAL_DESTINATION.test(destination) ? 'file' : URL_SCHEME.exec(destination)?.[1]?.toLowerCase());
+
+export const isHttpDestination = (destination: string): boolean => HTTP_PROTOCOLS.includes(protocolOf(destination) ?? '');
+
+export type ProductSetEntry = { readonly entry: ConfigEntry; readonly rule: RepositoryKeyRule };
+
+const ruleOfSet = (key: string): RepositoryKeyRule => {
+  const rule = repositoryKeyRuleOf(key);
+  if (rule === undefined) throw new Error(`the configuration key ${key} set for a network command has no rule`);
+  return rule;
+};
+
+const setFor = (rule: RepositoryKeyRule, destinations: readonly string[], rewrites: readonly UrlRewrite[], needed: ReadonlySet<string | undefined>): ConfigEntry[] => {
+  if (rule.verdict === 'refused') {
+    const { rewrite } = rule;
+    return rewrite === undefined ? [] : rewrites.map(({ from, to }): ConfigEntry => [rewrite[0].replace(REWRITTEN_TO, to), rewrite[1].replace(REWRITTEN_FROM, from)]);
+  }
+  if (rule.verdict === 'inert') return [];
+  const [key, value] = rule.set;
+  if (rule.group === 'protocol') return [[key, needed.has(key.split('.')[1]) ? ALLOWED : value]];
+  return key.includes(DESTINATION_PLACE) ? destinations.filter(isHttpDestination).map((destination): ConfigEntry => [key.replace(DESTINATION_PLACE, destination), value]) : [[key, value]];
+};
+
+const NETWORK_GROUPS: readonly OverrideGroup[] = ['program', 'protocol', 'transport', 'recursion', 'credential'];
+
+export const productSetEntriesOf = (destinations: readonly string[], rewrites: readonly UrlRewrite[]): ProductSetEntry[] => {
+  const needed = new Set(destinations.map(protocolOf));
+  const rewritten = [...destinations.filter(isHttpDestination).map((destination) => ({ from: destination, to: destination })), ...rewrites];
+  const byKey = new Map<string, ConfigEntry>();
+  const ordered = [
+    ...REPOSITORY_KEY_RULES.filter((rule) => rule.verdict === 'overridden' && NETWORK_GROUPS.includes(rule.group)),
+    ...REPOSITORY_KEY_RULES.filter((rule) => rule.verdict === 'refused'),
+  ];
+  for (const rule of ordered) for (const entry of setFor(rule, destinations, rewritten, needed)) byKey.set(`${entry[0]}\u0000${entry[1]}`, entry);
+  return [...byKey.values()].map((entry) => ({ entry, rule: ruleOfSet(entry[0]) }));
 };
 
 export const UNKNOWN_KEY_REASON = 'is not a setting momonga knows to be without effect on a fetch or a push';

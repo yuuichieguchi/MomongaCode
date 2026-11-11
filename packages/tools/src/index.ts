@@ -83,7 +83,7 @@ export type { UserCommandHost, UserCommandOutcome } from './builtins/bash.ts';
 export type { PolicyFacts, UserPolicy, UserPolicyFacts, UserSubject } from './executor.ts';
 export { gitEnvironment, gitProxyEnvironment, readOnlyEnvironment, readOnlySandboxPolicy } from './read-only-call.ts';
 export type { GitEnvironmentRequest } from './read-only-call.ts';
-export { REPOSITORY_KEY_RULES, repositoryKeyRuleOf } from './git-config-table.ts';
+export { REPOSITORY_KEY_RULES, productSetEntriesOf, repositoryKeyRuleOf } from './git-config-table.ts';
 export type { RepositoryKeyRule } from './git-config-table.ts';
 export { directoryEntriesOn, fileCandidatesOn } from './file-listing.ts';
 export type { FileListingOptions, FileListingPorts } from './file-listing.ts';
@@ -166,7 +166,7 @@ export { createGitReader, resolveDestinations, resolveRepository } from './opera
 export type { Destinations, GitRead, GitReadOptions, GitReader } from './operations/git-read.ts';
 export { ForgeDescriptorError, loadForgeDescriptors, parseForgeDescriptor } from './forge/descriptor.ts';
 export type { ForgeDescriptor, ForgeOperationDescriptor } from './forge/descriptor.ts';
-export { createForgeAccess, forgeCredentialOf } from './forge/instances.ts';
+export { createForgeAccess } from './forge/instances.ts';
 export type { ForgeAccess, ForgeAccessOptions, ForgeCredentialReference, ForgeInstance, ForgeRequest } from './forge/instances.ts';
 export type { ForgeFetch } from './forge/http.ts';
 export { EMPTY_FOOTPRINT, blockedByHeldText, blockerOf, footprintOf, footprintsConflict } from './footprint.ts';

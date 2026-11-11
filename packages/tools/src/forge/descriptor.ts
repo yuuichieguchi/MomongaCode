@@ -11,25 +11,35 @@ export class ForgeDescriptorError extends Error {
   }
 }
 
+export const FORGE_ANSWER_OUTCOMES = ['already_exists', 'conflict', 'failed'] as const;
+
+export type ForgeAnswerOutcome = (typeof FORGE_ANSWER_OUTCOMES)[number];
+
+export type ForgeStatusAnswer = { readonly status: number; readonly outcome: ForgeAnswerOutcome; readonly messageIncludes?: string };
+
+export type ForgeErrorText = { readonly message: string; readonly details?: string; readonly detail?: string };
+
 export type ForgeOperationDescriptor = {
   readonly method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   readonly path: string;
   readonly query?: Readonly<Record<string, string>>;
   readonly body?: Readonly<Record<string, string>>;
   readonly success: readonly number[];
-  readonly alreadyExists?: readonly number[];
-  readonly conflict?: readonly number[];
+  readonly answers?: readonly ForgeStatusAnswer[];
   readonly items?: string;
+  readonly paging?: 'link';
   readonly result: Readonly<Record<string, string>>;
 };
 
 export type ForgeDescriptor = {
   readonly id: string;
   readonly auth: { readonly header: string; readonly prefix: string; readonly gitUsername: string };
+  readonly errorText: ForgeErrorText;
   readonly operations: Readonly<Record<ForgeOperationName, ForgeOperationDescriptor>>;
 };
 
-const STATUSES = { type: 'array', items: { type: 'integer', minimum: 100, maximum: 599 } } as const;
+const STATUS = { type: 'integer', minimum: 100, maximum: 599 } as const;
+const STATUSES = { type: 'array', items: STATUS } as const;
 const TEMPLATE_MAP = { type: 'object', additionalProperties: { type: 'string' } } as const;
 const PATHS = { type: 'object', additionalProperties: { type: 'string', pattern: PATH_PATTERN } } as const;
 
@@ -41,9 +51,17 @@ const OPERATION_SCHEMA = {
     query: TEMPLATE_MAP,
     body: TEMPLATE_MAP,
     success: { ...STATUSES, minItems: 1 },
-    alreadyExists: STATUSES,
-    conflict: STATUSES,
+    answers: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { status: STATUS, outcome: { enum: [...FORGE_ANSWER_OUTCOMES] }, messageIncludes: { type: 'string', minLength: 1 } },
+        required: ['status', 'outcome'],
+        additionalProperties: false,
+      },
+    },
     items: { type: 'string', pattern: PATH_PATTERN },
+    paging: { enum: ['link'] },
     result: PATHS,
   },
   required: ['method', 'path', 'success', 'result'],
@@ -61,6 +79,12 @@ const DESCRIPTOR_SCHEMA = {
       required: ['header', 'prefix', 'gitUsername'],
       additionalProperties: false,
     },
+    errorText: {
+      type: 'object',
+      properties: { message: { type: 'string', pattern: PATH_PATTERN }, details: { type: 'string', pattern: PATH_PATTERN }, detail: { type: 'string', pattern: PATH_PATTERN } },
+      required: ['message'],
+      additionalProperties: false,
+    },
     operations: {
       type: 'object',
       properties: Object.fromEntries(FORGE_VOCABULARY.map((name) => [name, OPERATION_SCHEMA])),
@@ -68,7 +92,7 @@ const DESCRIPTOR_SCHEMA = {
       additionalProperties: false,
     },
   },
-  required: ['id', 'auth', 'operations'],
+  required: ['id', 'auth', 'errorText', 'operations'],
   additionalProperties: false,
 } as const;
 
