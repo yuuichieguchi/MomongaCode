@@ -266,7 +266,7 @@ describe('reaping on time that only the test drives', () => {
       await timers.advanceAsync(25);
       await waitFor(() => settled || timers.pending().length === 2, { description: 'the markers to poll again' });
     }
-    expect(await reaping).toEqual({ reaped: 0, kept: 2 });
+    expect(await reaping).toEqual({ reaped: 0, kept: 2, unreaped: [] });
     expect(warnings).toHaveLength(2);
     expect(fs.readdirSync(directory).sort()).toEqual(['a', 'b']);
   });

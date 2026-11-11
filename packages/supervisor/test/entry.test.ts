@@ -211,7 +211,7 @@ describe('runSupervisorEntry', () => {
   it('SIGTERM during the reap of its own markers exits 0 through close()', async (context) => {
     const run = startEntry(context, {
       markerPorts: {
-        reapMarkerDirectory: (options) => new Promise((resolve) => options.signal?.addEventListener('abort', () => resolve({ reaped: 0, kept: 0 }), { once: true })),
+        reapMarkerDirectory: (options) => new Promise((resolve) => options.signal?.addEventListener('abort', () => resolve({ reaped: 0, kept: 0, unreaped: [] }), { once: true })),
       },
     });
     await ready(run);
