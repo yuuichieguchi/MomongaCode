@@ -33,11 +33,18 @@ export const inertText = (text: string): string => withoutTabs(escapeTerminalBlo
 const BARE_URL = /https?:\/\/[^\s<>"'`\\]+/g;
 const TRAILING_PUNCTUATION = /[.,;:!?)\]}]+$/;
 
+const WEB_PROTOCOLS: readonly string[] = ['http:', 'https:'];
+
+export const parseWebUrl = (text: string): URL | undefined => {
+  const url = URL.parse(text);
+  return url !== null && WEB_PROTOCOLS.includes(url.protocol) ? url : undefined;
+};
+
 export const linksOf = (text: string): Link[] =>
-  Array.from(text.matchAll(BARE_URL), (match) => {
+  Array.from(text.matchAll(BARE_URL), (match): Link => {
     const url = match[0].replace(TRAILING_PUNCTUATION, '');
-    return [match.index, match.index + url.length, url] as const;
-  });
+    return [match.index, match.index + url.length, url];
+  }).filter(([, , url]) => parseWebUrl(url) !== undefined);
 
 export type WrapOptions = { first?: string; rest?: string; token?: StyleToken; links?: boolean };
 

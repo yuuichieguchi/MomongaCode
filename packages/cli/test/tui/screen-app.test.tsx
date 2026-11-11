@@ -263,6 +263,20 @@ describe('selection and copy on the screen', () => {
     expect(backend.calls.filter((call) => call.startsWith('copy:'))).toEqual([]);
     app.unmount();
   });
+
+  it('makes no link of text that starts like a URL and does not parse, and a click on it opens nothing and throws nothing', async () => {
+    const { app, terminal, backend } = await startWith({ columns: 60, rows: 12 }, 'see http://[ and https://example.test/page now');
+    expect(app.lastFrame()).toContain('see http://[ and ');
+    expect(app.lastFrame()).not.toContain('\u001b]8;;http://[');
+    expect(() => {
+      terminal.emit(mouse('press', 8, 2));
+      terminal.emit(mouse('release', 8, 2));
+    }).not.toThrow();
+    terminal.emit(mouse('press', 20, 2));
+    terminal.emit(mouse('release', 20, 2));
+    await vi.waitFor(() => expect(backend.openedUrls).toEqual(['https://example.test/page']));
+    app.unmount();
+  });
 });
 
 describe('the two screen modes', () => {

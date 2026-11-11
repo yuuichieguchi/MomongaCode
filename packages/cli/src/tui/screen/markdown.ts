@@ -1,5 +1,5 @@
 import type { StyleToken } from './tokens.ts';
-import { displayWidth, inertText, wrapLine } from './wrap.ts';
+import { displayWidth, inertText, parseWebUrl, wrapLine } from './wrap.ts';
 import type { Link, Row, Span } from './wrap.ts';
 
 export const MARKDOWN_UNIT_BYTES = 16 * 1024;
@@ -41,7 +41,6 @@ const MARKDOWN_LINK = /\[((?:\\.|[^[\]\\])*)\]\(\s*<?([^\s()<>]+)>?(?:\s+"[^"]*"
 const AUTOLINK = /<(https?:\/\/[^\s<>]+)>/y;
 const BARE_URL = /https?:\/\/[^\s<>"'`\\]+/y;
 const URL_TRAILING = /[.,;:!?)\]}*_~]+$/;
-const OPENABLE = /^https?:\/\//i;
 const WORD_CHARACTER = /[\p{L}\p{N}]/u;
 const SPACE = /\s/;
 
@@ -56,7 +55,7 @@ const styled = (out: Inline, role: Role, write: () => void): void => {
 const linked = (out: Inline, url: string, write: () => void): void => {
   const start = out.text.length;
   write();
-  if (OPENABLE.test(url) && out.text.length > start) out.links.push([start, out.text.length, url]);
+  if (parseWebUrl(url) !== undefined && out.text.length > start) out.links.push([start, out.text.length, url]);
 };
 
 const runLength = (source: string, position: number): number => {
