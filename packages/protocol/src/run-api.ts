@@ -818,6 +818,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     properties: { approvalId: string, effect: enumOf(['allow', 'deny']), rule: string },
     required: ['approvalId', 'effect', 'rule'],
   },
+  'user.compact': { properties: { instructions: string }, required: [] },
   notice: {
     properties: {
       level: enumOf(['info', 'warning', 'error']),

@@ -329,6 +329,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
       case 'context.truncated':
       case 'instructions.loaded':
       case 'skill.activated':
+      case 'user.compact':
       case 'approval.rule.persisted':
       case 'tool.held.resolved':
         break;

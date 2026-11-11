@@ -247,6 +247,8 @@ const mapKnownEvent = (event: PublicRunEvent, phase: Phase, state: MapperState, 
             },
           ]
         : [];
+    case 'user.compact':
+      return [];
     case 'context.compaction_rejected':
       return features.compaction
         ? [

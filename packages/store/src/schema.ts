@@ -1510,7 +1510,7 @@ export const MIGRATIONS: readonly Migration[] = [
   },
   {
     version: 48,
-    name: 'record for every folder the issues the issue watch has started, one row per issue reference written before its run starts, so a restart never starts an issue twice',
+    name: 'record for every folder the issues the issue watch has started, one row per issue reference written before its run starts, so a restart never starts an issue twice; and mark the build that writes the run event of a request for a compaction, which a compaction run writes first, so that a build without this migration reads it with tolerance',
     sql: ISSUE_WATCH,
   },
 ];

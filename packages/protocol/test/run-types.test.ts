@@ -118,6 +118,7 @@ describe('run event payloads', () => {
       | 'usage.charged'
       | 'context.compacted'
       | 'context.compaction_rejected'
+      | 'user.compact'
       | 'context.contribution'
       | 'context.governing_loaded'
       | 'context.inherited'

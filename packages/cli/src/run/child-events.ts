@@ -71,6 +71,7 @@ export const asChildEvent = (event: PublicRunEvent, agent: string): PublicRunEve
     case 'instructions.loaded':
     case 'skill.activated':
     case 'approval.rule.persisted':
+    case 'user.compact':
     case 'notice':
       return undefined;
     default:

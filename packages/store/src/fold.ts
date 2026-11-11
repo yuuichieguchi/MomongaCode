@@ -595,6 +595,8 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       return isReferenceInherited(event) ? applyReferenceInheritance(state, event) : applyInheritance(state, event);
     case 'context.truncated':
       return withReference(withForm(truncate(state, event), event), event);
+    case 'user.compact':
+      return state;
     case 'notice':
       return { ...state, notes: [...state.notes, { level: event.level, message: event.message, ...(event.code === undefined ? {} : { code: event.code }), ...(event.toolKey === undefined ? {} : { toolKey: event.toolKey }), ...(event.reduction === undefined ? {} : { reduction: event.reduction }) }] };
     case 'agent.message.delta':
