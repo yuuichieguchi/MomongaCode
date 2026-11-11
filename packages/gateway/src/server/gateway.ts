@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { getRequestListener } from '@hono/node-server';
-import { HOST_READ_BOUND_MS, listenUnix, startDeadlineSignal } from '@momonga/foundation';
+import { HOST_READ_BOUND_MS, isLoopbackAddress, listenUnix, startDeadlineSignal } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
 import { createCompactionCodec } from '../core/compaction.ts';
 import { createReasoningOriginCodec } from '../core/reasoning-origin.ts';
@@ -17,7 +17,7 @@ import { createRequestValidator, createStoredDataChecks } from '../core/validati
 import type { DerivedModelsOptions, FixedModelsOptions, Gateway, GatewayEpochsShared, GatewayOptions } from '../types.ts';
 import { createErrorExit } from './error-exit.ts';
 import { createApp } from './app.ts';
-import { checkGatewayOptions, isLoopbackAddress, limitsOf } from './config-check.ts';
+import { checkGatewayOptions, debugListenAddress, limitsOf } from './config-check.ts';
 import { createRequestTracker } from './tracker.ts';
 import type { RequestTracker } from './tracker.ts';
 import { createWebSocketTransport } from './websocket.ts';
@@ -212,7 +212,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       countRequests(tcpServer, tracker);
       tcpSockets.attach(tcpServer);
       servers.push(tcpServer);
-      tcpPort = await listenTcp(tcpServer, options.debugTcp.host, options.debugTcp.port);
+      tcpPort = await listenTcp(tcpServer, debugListenAddress(options.debugTcp.host), options.debugTcp.port);
       assertLoopbackBinding(tcpServer);
       if (options.onFatal !== undefined) watchServerErrors(tcpServer, options.onFatal);
     }

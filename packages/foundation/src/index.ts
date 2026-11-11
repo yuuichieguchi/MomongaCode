@@ -220,7 +220,7 @@ export {
 } from './secret-store.ts';
 export type { SecretBackend, SecretProcessPort, SecretProcessResult, SecretStore } from './secret-store.ts';
 export { isAcceptableAddress, isLoopbackAddress } from './global-address.ts';
-export { isLoopbackHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
+export { isLoopbackHost, normalizedHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
 export { matchesNoProxy, NETWORK_ENV_NAMES, routeOf } from './network-route.ts';
 export { HOST_READ_BOUND_MS } from './host-read-bound.ts';
 export { startSharedCall } from './shared-call.ts';
@@ -318,7 +318,7 @@ export { HELPER_COMMAND, helperCommandLine } from './executable-helper.ts';
 export type { ExecutableHelper, ExecutableHelpers, HelperHost, HelperSelf } from './executable-helper.ts';
 export { SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, endpointFormsOfSocket, endpointHostOf, isPipePath, setSocketBind, socketBindRefusalOf, pipePathFor } from './socket-path.ts';
 export { MAX_SYMLINK_HOPS, comparableFromParts, containsByComponents, createPathResolver, createSyncPathResolver, hostPaths, setCaseSensitivityProbe, walkPath } from './path-compare.ts';
-export { displayToolPathSync, syncPaths } from './sync-paths.ts';
+export { syncPaths } from './sync-paths.ts';
 export { answeredLater, answeredNow, askedPaths } from './path-asking.ts';
 export type { PathAsking } from './path-asking.ts';
 export type { EndpointForm, EndpointHost } from './socket-path.ts';
@@ -364,7 +364,7 @@ export { createProcessInspector, hostInspectorPorts, layoutProcessInspector } fr
 export { createJobGroupPort, createPosixGroupPort, createProcessGroupPort, groupPortOf, groupSignalsOf, hostProcessGroupPort } from './platform/group-port.ts';
 export { GroupContainmentError, createKeptGroupControl } from './platform/windows-kept-groups.ts';
 export { launchApart, launchGroupLeader } from './platform/group-launch.ts';
-export type { GroupLaunch, GroupLaunchMarker, GroupLaunchRequest } from './platform/group-launch.ts';
+export type { GroupLaunch, GroupLaunchMarker, GroupLaunchRequest, LaunchSlot } from './platform/group-launch.ts';
 export { canStillRun } from './platform/run-state.ts';
 export type { ProcessGroupPort } from './platform/group-port.ts';
 export { operationSignal } from './platform/probe-timing.ts';

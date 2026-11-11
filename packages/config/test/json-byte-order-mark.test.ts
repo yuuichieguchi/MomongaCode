@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { PROJECT_MANDATE_FILE, loadMcpServers, loadProjectMandate, loadSettings, readAutoFitRecord, writeAutoFitRecord } from '@momonga/config';
+import { PROJECT_MANDATE_FILE, approvalDigestOf, loadMcpServers, loadProjectMandate, loadSettings, readAutoFitRecord, writeAutoFitRecord } from '@momonga/config';
 import type { AutoFitKey, AutoFitRecord } from '@momonga/config';
 import { makeDir, makeTree, mcpJsonPath, trusting, userSettingsPath, writeText } from './helpers.ts';
 import { testKernelLock } from '@momonga/testkit';
@@ -26,7 +26,7 @@ describe('a JSON file that begins with a byte order mark', () => {
     const tree = makeTree();
     writeText(userSettingsPath(tree), JSON.stringify({ enableAllProjectMcpServers: true }));
     writeText(mcpJsonPath(tree), marked({ mcpServers: { docs: { command: 'docs-server' } } }));
-    const result = await loadMcpServers({ signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
+    const result = await loadMcpServers({ signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, referenceEnv: {} });
     expect(result.failed).toEqual([]);
     expect(result.enabled.map((entry) => entry.name)).toEqual(['docs']);
   });
@@ -34,7 +34,7 @@ describe('a JSON file that begins with a byte order mark', () => {
   it('loads as a project mandate file with its values', async () => {
     const tree = makeTree();
     writeText(path.join(tree.project, PROJECT_MANDATE_FILE), marked({ deny: ['Bash(curl:*)'], steps: 20 }));
-    expect(await loadProjectMandate({ signal, projectDir: tree.project, trusted: true })).toEqual({ deny: ['Bash(curl:*)'], steps: 20 });
+    expect(await loadProjectMandate({ signal, projectDir: tree.project, trusted: true, approvals: { [tree.project]: { mandate: approvalDigestOf({ deny: ['Bash(curl:*)'], steps: 20 }) } } })).toEqual({ deny: ['Bash(curl:*)'], steps: 20 });
   });
 
   it('loads as an auto mode measurement record', async () => {

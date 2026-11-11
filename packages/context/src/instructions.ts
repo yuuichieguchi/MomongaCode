@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { sha256Hex } from '@momonga/foundation';
+import { containsByComponents, homeLayout, sha256Hex } from '@momonga/foundation';
 import type { MessageInputItem } from '@momonga/protocol';
 import type {
   ContextNotice,
@@ -23,6 +23,8 @@ export type DiscoveredInstructions = {
   root: LoadedInstructionFile | undefined;
   nested: LoadedInstructionFile[];
   notices: ContextNotice[];
+  pinnedPaths: readonly string[];
+  platform: NodeJS.Platform;
 };
 
 export type DiscoverOptions = {
@@ -60,19 +62,28 @@ const loadedFile = (
   };
 };
 
-export const recordedNestedFile = (filePath: string, text: string): LoadedInstructionFile =>
-  loadedFile(filePath, filePath, 'nested', `${path.posix.dirname(filePath)}/**`, text);
+export const instructionPathsOf = (platform: NodeJS.Platform): path.PlatformPath => (platform === 'win32' ? path.win32 : path.posix);
 
-export const nestedInstructionCandidates = (roots: readonly string[], projectRoot: string, touchedPaths: readonly TouchedPath[]): string[] => {
+export const projectRootOf = (platform: NodeJS.Platform, projectRoot: string): string => instructionPathsOf(platform).resolve(projectRoot);
+
+const scopeOf = (paths: path.PlatformPath, directory: string): string => `${directory}${paths.sep}**`;
+
+export const recordedNestedFile = (platform: NodeJS.Platform, filePath: string, text: string): LoadedInstructionFile => {
+  const paths = instructionPathsOf(platform);
+  return loadedFile(filePath, filePath, 'nested', scopeOf(paths, paths.dirname(filePath)), text);
+};
+
+export const nestedInstructionCandidates = (roots: readonly string[], projectRoot: string, touchedPaths: readonly TouchedPath[], platform: NodeJS.Platform): string[] => {
+  const paths = instructionPathsOf(platform);
   const candidates = new Set<string>();
   for (const touched of touchedPaths) {
-    const normalized = path.posix.normalize(touched.path);
-    const root = roots.find((entry) => normalized.startsWith(`${entry}/`));
+    const normalized = paths.resolve(touched.path);
+    const root = roots.find((entry) => containsByComponents({ existing: entry, tail: [] }, { existing: normalized, tail: [] }, false, paths));
     if (root === undefined) continue;
-    const segments = normalized.slice(root.length + 1).split('/').filter((segment) => segment !== '');
+    const segments = paths.relative(root, normalized).split(paths.sep).filter((segment) => segment !== '');
     const depth = touched.kind === 'file' ? segments.length - 1 : segments.length;
     for (let length = 1; length <= depth; length += 1) {
-      candidates.add(`${projectRoot}/${segments.slice(0, length).join('/')}/${FILE_NAME}`);
+      candidates.add(paths.join(projectRoot, ...segments.slice(0, length), FILE_NAME));
     }
   }
   return [...candidates];
@@ -80,12 +91,13 @@ export const nestedInstructionCandidates = (roots: readonly string[], projectRoo
 
 export const discoverInstructions = async (options: DiscoverOptions): Promise<DiscoveredInstructions> => {
   const { reader, home, trusted, touchedPaths } = options;
-  const projectRoot = path.posix.normalize(options.projectRoot).replace(/\/+$/, '');
+  const paths = instructionPathsOf(reader.platform);
+  const projectRoot = projectRootOf(reader.platform, options.projectRoot);
   const realRoot = await reader.realpath(projectRoot);
   if (realRoot === undefined) throw new Error(`project root ${projectRoot} does not exist`);
   const notices: ContextNotice[] = [];
 
-  const userPath = `${home}/.momonga/${FILE_NAME}`;
+  const userPath = paths.join(homeLayout(home, reader.platform).root, FILE_NAME);
   const userFile = await reader.read(userPath);
   const user =
     userFile === undefined ? undefined : loadedFile(userPath, userFile.realPath, 'user', 'all projects', userFile.text);
@@ -103,11 +115,11 @@ export const discoverInstructions = async (options: DiscoverOptions): Promise<Di
     return file;
   };
 
-  const rootPath = `${projectRoot}/${FILE_NAME}`;
+  const rootPath = paths.join(projectRoot, FILE_NAME);
   let root: LoadedInstructionFile | undefined;
   if (trusted) {
     const file = await readInProject(rootPath);
-    if (file !== undefined) root = loadedFile(rootPath, file.realPath, 'root', `${projectRoot}/**`, file.text);
+    if (file !== undefined) root = loadedFile(rootPath, file.realPath, 'root', scopeOf(paths, projectRoot), file.text);
   } else if (await reader.exists(rootPath)) {
     notices.push({
       code: 'root_instructions_untrusted',
@@ -116,7 +128,7 @@ export const discoverInstructions = async (options: DiscoverOptions): Promise<Di
   }
 
   const nested: LoadedInstructionFile[] = [];
-  const candidates = nestedInstructionCandidates([...new Set([projectRoot, realRoot])], projectRoot, touchedPaths);
+  const candidates = nestedInstructionCandidates([...new Set([projectRoot, realRoot])], projectRoot, touchedPaths, reader.platform);
   if (!trusted) {
     for (const candidate of candidates) {
       if (await reader.exists(candidate)) {
@@ -127,14 +139,13 @@ export const discoverInstructions = async (options: DiscoverOptions): Promise<Di
         break;
       }
     }
-    return { user, root, nested, notices };
+    return { user, root, nested, notices, pinnedPaths: [userPath, rootPath], platform: reader.platform };
   }
   for (const candidate of candidates) {
     const file = await readInProject(candidate);
     if (file === undefined) continue;
-    const dir = path.posix.dirname(candidate);
-    nested.push(loadedFile(candidate, file.realPath, 'nested', `${dir}/**`, file.text));
+    nested.push(loadedFile(candidate, file.realPath, 'nested', scopeOf(paths, paths.dirname(candidate)), file.text));
   }
 
-  return { user, root, nested, notices };
+  return { user, root, nested, notices, pinnedPaths: [userPath, rootPath], platform: reader.platform };
 };

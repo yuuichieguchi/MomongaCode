@@ -1,5 +1,5 @@
 import { computeBackoff } from '@momonga/foundation';
-import { TERMINAL_STATUSES } from '@momonga/protocol';
+import { TERMINAL_STATUSES, isOpaqueEvent } from '@momonga/protocol';
 import type { RunStatus } from '@momonga/protocol';
 import { RECONNECT_FIRST_RETRY_MS, RECONNECT_MAX_INTERVAL_MS } from '../constants.ts';
 import { DaemonMoved } from '../client/runtime-client.ts';
@@ -206,6 +206,7 @@ export const followRun = async (options: FollowOptions): Promise<RunView> => {
     }
     options.onEvent(frame);
     const event = frame.data;
+    if (isOpaqueEvent(event)) return;
     if (onChildEvent !== undefined && event.type === 'tool.waiting' && event.awaits.kind === 'run') followChild(event.awaits.runId, event.awaits.agent, onChildEvent);
   };
 

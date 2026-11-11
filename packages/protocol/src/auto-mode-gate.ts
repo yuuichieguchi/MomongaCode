@@ -37,9 +37,9 @@ const percent = (value: number): string => `${(value * 100).toFixed(1)}%`;
 
 const factsText = (facts: AutoClassifierFacts): string => `false allows ${facts.falseAllows}/${facts.total}, upper bound ${percent(facts.upperBound)}`;
 
-export const autoModeNotice = ({ view, surface }: { view: AutoClassifierView; surface: AutoModeSurface }): string => {
+export const autoModeNotice = ({ view, surface, shownModel }: { view: AutoClassifierView; surface: AutoModeSurface; shownModel: string }): string => {
   const command = AUTO_MODE_CHECK_COMMANDS[surface];
-  const { model } = view;
+  const model = shownModel;
   if (view.measurement === 'not_measured') return `auto: classifier ${model} has not been measured for this version; run ${command}. ${AUTO_MODE_CAVEAT}`;
   if (view.measurement === 'unreadable') return `auto: the measurement record of classifier ${model} cannot be used (${view.refusal.reason}); run ${command} to measure again. ${AUTO_MODE_CAVEAT}`;
   const { facts } = view;

@@ -7,7 +7,7 @@ import { LockWaitTimeoutError, momongaLayout } from '@momonga/foundation';
 import { DEFAULT_LOCK_TIMEOUT_MS } from '../../foundation/src/file-lock.ts';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, sleepDrivenTiming, startLockHolder, testPaths, testKernelLock } from '@momonga/testkit';
 import { settingsLockPath } from '../src/file-lock.ts';
-import { localSettingsPath, makeDir, makeTree, trusting, writeJson } from './helpers.ts';
+import { localSettingsPath, makeDir, makeTree, trusting, userSettingsPath, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -199,7 +199,7 @@ describe('the settings writers take the lock through the lock port they are give
     const file = path.join(tree.project, PROJECT_MANDATE_FILE);
     const counted = countingLock();
     let edits = 0;
-    const options = { trust: trusting(tree), mechanism: testKernelLock(), lock: counted.lock, random, signal: new AbortController().signal };
+    const options = { home: tree.home, trust: trusting(tree), mechanism: testKernelLock(), lock: counted.lock, random, signal: new AbortController().signal };
     await editProjectMandate(
       tree.project,
       (document) => {
@@ -209,7 +209,8 @@ describe('the settings writers take the lock through the lock port they are give
       },
       options,
     );
-    expect(counted.events).toEqual([`acquire ${file}`, `release ${file}`]);
+    const userFile = userSettingsPath(tree);
+    expect(counted.events).toEqual([`acquire ${file}`, `release ${file}`, `acquire ${userFile}`, `release ${userFile}`]);
     expect(edits).toBe(1);
     const refused = editProjectMandate(
       tree.project,
@@ -221,7 +222,7 @@ describe('the settings writers take the lock through the lock port they are give
       options,
     );
     await expect(refused).rejects.toThrow(`${file}: /steps must be >= 1`);
-    expect(counted.events).toEqual([`acquire ${file}`, `release ${file}`, `acquire ${file}`, `release ${file}`]);
+    expect(counted.events).toEqual([`acquire ${file}`, `release ${file}`, `acquire ${userFile}`, `release ${userFile}`, `acquire ${file}`, `release ${file}`]);
     expect(edits).toBe(2);
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ steps: 20 });
   });
@@ -229,7 +230,7 @@ describe('the settings writers take the lock through the lock port they are give
   it('a folder that is not trusted is refused before the lock is asked for', async () => {
     const tree = makeTree();
     const counted = countingLock();
-    await expect(editProjectMandate(tree.project, () => true, { mechanism: testKernelLock(), trust: { isTrusted: () => false }, lock: counted.lock, random, signal: new AbortController().signal })).rejects.toBeInstanceOf(ConfigError);
+    await expect(editProjectMandate(tree.project, () => true, { home: tree.home, mechanism: testKernelLock(), trust: { isTrusted: () => false }, lock: counted.lock, random, signal: new AbortController().signal })).rejects.toBeInstanceOf(ConfigError);
     expect(counted.events).toEqual([]);
   });
 });

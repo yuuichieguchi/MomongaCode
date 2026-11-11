@@ -165,6 +165,14 @@ describe('MCP tool definitions', () => {
     expect(tool?.prepare).toBeUndefined();
     expect(tool?.reconcile).toBeUndefined();
   });
+
+  it('shows the server, the tool and every argument in its approval', async () => {
+    const { set } = await modernSet();
+    const tool = set.get('mcp__modern__echo');
+    if (tool?.approval === undefined) throw new Error('mcp__modern__echo has no approval content');
+    const content = await tool.approval({ text: 'hello', times: 2 }, {} as Parameters<NonNullable<typeof tool.approval>>[1]);
+    expect(content.effect).toBe('modern echo {"text":"hello","times":2}');
+  });
 });
 
 describe('MCP result mapping', () => {
@@ -256,12 +264,12 @@ describe('MCP timeouts and cancellation', () => {
     expect(await waitForRecord(recordFile, (record) => record.type === 'cancelled')).toMatchObject({ type: 'cancelled', tool: 'slow' });
   });
 
-  it('ends a stdio call that sends no progress at mcp.toolIdleTimeoutMs with the idle text, and the server records the cancellation', async () => {
+  it('ends a stdio call that sends no progress at mcp.toolIdleTimeoutStdioMs with the idle text, and the server records the cancellation', async () => {
     const { set, recordFile } = await modernSet({ toolIdleTimeoutMs: 300 });
     const result = await makeExecutor().resultOf(set, 'mcp__modern__slow', {});
     expect(result).toEqual({
       status: 'failed',
-      output: 'MCP server "modern" sent no response or progress for 300 ms, so the call to slow was stopped. The server may have run it; check before repeating it. To wait longer, raise mcp.toolIdleTimeoutMs.',
+      output: 'MCP server "modern" sent no response or progress for 300 ms, so the call to slow was stopped. The server may have run it; check before repeating it. To wait longer, raise mcp.toolIdleTimeoutStdioMs.',
     });
     expect(await waitForRecord(recordFile, (record) => record.type === 'cancelled')).toMatchObject({ type: 'cancelled', tool: 'slow' });
   });

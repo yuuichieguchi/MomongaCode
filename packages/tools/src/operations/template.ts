@@ -41,6 +41,9 @@ export const renderTemplate = (template: string, scope: Scope): string =>
     return value;
   });
 
+export const renderShown = (template: string, scope: Scope): string =>
+  template.replace(REFERENCE, (match, reference: string) => lookup(scope, reference) ?? match);
+
 export const isTruthy = (scope: Scope, reference: string): boolean => {
   const value = lookup(scope, reference);
   return value === 'true';

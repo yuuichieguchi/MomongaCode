@@ -1,10 +1,15 @@
 import { isIP } from 'node:net';
-import { isLoopbackHost } from '@momonga/foundation';
+import { isLoopbackAddress, normalizedHost } from '@momonga/foundation';
 import type { FixedModelsOptions, GatewayLimits, GatewayOptions } from '../types.ts';
 
 const MIN_HMAC_KEY_BYTES = 32;
 
-export const isLoopbackAddress = (address: string): boolean => (isIP(address) === 4 && isLoopbackHost(address)) || address === '::1';
+export const debugListenAddress = (host: string): string => normalizedHost(host);
+
+const isLoopbackLiteral = (host: string): boolean => {
+  const address = debugListenAddress(host);
+  return isIP(address) !== 0 && isLoopbackAddress(address);
+};
 
 const requirePositiveInteger = (name: string, value: number): void => {
   if (!Number.isInteger(value) || value < 1) throw new RangeError(`createGateway: ${name} must be a positive integer, got ${value}`);
@@ -44,7 +49,7 @@ export const checkGatewayOptions = (options: GatewayOptions): void => {
     throw new Error(`createGateway: hmacKey must be at least ${MIN_HMAC_KEY_BYTES} bytes, got ${options.hmacKey.length}`);
   }
   if (debugTcp !== undefined) {
-    if (!isLoopbackAddress(debugTcp.host)) {
+    if (!isLoopbackLiteral(debugTcp.host)) {
       throw new Error(`createGateway: debugTcp host "${debugTcp.host}" is not a loopback address; use 127.0.0.1 or ::1`);
     }
     if (debugTcp.token === '') throw new Error('createGateway: debugTcp token must not be empty');

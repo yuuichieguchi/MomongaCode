@@ -76,6 +76,7 @@ export const createMemoryPort = ({ store, settings, evidenceRun, evidencePorts =
       save: async ({ scope, text, runId, step, callId, kind, paths, supersedes, signal: bound }) => {
         replaceable(supersedes ?? [], scope);
         const evidence = await bindMemoryEvidence({
+          platform: process.platform,
           scope,
           paths: paths ?? [],
           project: scope === 'project' ? session.cwd : null,

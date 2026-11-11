@@ -31,7 +31,7 @@ const withoutUndefined = (counts: { steps: number | undefined; jobs: number | un
 });
 
 export const readChildCounts: ChildCountsReader = async (role, socketPath) => {
-  const client = createUdsClient(fixedSocket(socketPath), { headersTimeoutMs: CONTROL_REQUEST_TIMEOUT_MS, bodyTimeoutMs: CONTROL_REQUEST_TIMEOUT_MS });
+  const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: CONTROL_REQUEST_TIMEOUT_MS, headersTimeoutMs: CONTROL_REQUEST_TIMEOUT_MS, bodyTimeoutMs: CONTROL_REQUEST_TIMEOUT_MS });
   try {
     const response = await client.request({ method: 'GET', path: HEALTH_PATHS[role] });
     const text = await readBounded(response.body, HEALTH_BODY_MAX_BYTES);

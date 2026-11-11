@@ -103,7 +103,7 @@ describe('readProjectServers non-Error failures', () => {
     const real = fs.promises.readFile;
     vi.spyOn(fs.promises, 'readFile').mockImplementation(((target: fs.PathLike, options?: unknown) =>
       String(target) === file ? Promise.reject('a thrown string') : real(target, options as never)) as typeof fs.promises.readFile);
-    const outcome = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { PATH: '/usr/bin:/bin' } }).then(
+    const outcome = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { PATH: '/usr/bin:/bin' }, referenceEnv: { PATH: '/usr/bin:/bin' } }).then(
       () => undefined,
       (error: unknown) => error,
     );

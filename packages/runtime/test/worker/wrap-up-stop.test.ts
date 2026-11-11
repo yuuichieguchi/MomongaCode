@@ -30,6 +30,12 @@ const PATHS: WrapUpPath[] = [
   },
 ];
 
+const stopEnv = async (): Promise<Env> => {
+  const env = await makeEnv();
+  env.settings.contextValue = { ...env.settings.contextValue, observedCapacity: false };
+  return env;
+};
+
 const noticesOf = (env: Env, runId: string): string[] => env.ofType(runId, 'notice').map((event) => event.message);
 
 const sameJson = (left: unknown, right: unknown): boolean => canonicalJson(left) === canonicalJson(right);
@@ -37,7 +43,7 @@ const sameJson = (left: unknown, right: unknown): boolean => canonicalJson(left)
 describe('wrap-up request of the max_steps and maxTotalTokens paths', () => {
   it.for(PATHS)('sends no tools and counts the trailing user instruction on the $label path', async ({ reason, prepare }) => {
     const { limits, first } = await prepare();
-    const env = await makeEnv();
+    const env = await stopEnv();
     env.gateway.script.push(first, textStep('Summary.'));
     const run = await env.enqueue('Work', { limits });
 
@@ -61,7 +67,7 @@ describe('wrap-up request of the max_steps and maxTotalTokens paths', () => {
 describe('a 4xx on the wrap-up call stops the run with the original stop reason', () => {
   it.for(PATHS)('ends STOPPED with the $label reason and the gateway code in a notice', async ({ reason, prepare }) => {
     const { limits, first } = await prepare();
-    const env = await makeEnv();
+    const env = await stopEnv();
     env.gateway.script.push(first, thrown(REJECTED), textStep('never sent'));
     const run = await env.enqueue('Work', { limits });
 
@@ -81,7 +87,7 @@ describe('a 4xx on the wrap-up call stops the run with the original stop reason'
     { status: 422, type: 'invalid_request', code: 'unprocessable', message: 'the body cannot be processed' },
     { status: 401, type: 'invalid_request', code: 'authentication_failed', message: 'the upstream key was rejected' },
   ] satisfies ErrorFields[])('treats a $status $code on the wrap-up call as a stop, never max_tokens', async (fields) => {
-    const env = await makeEnv();
+    const env = await stopEnv();
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Echo', args: { value: 'x' } }]), thrown(fields));
     const run = await env.enqueue('Work', { limits: { maxSteps: 1 } });
 
@@ -93,7 +99,7 @@ describe('a 4xx on the wrap-up call stops the run with the original stop reason'
 
   it('computes the reason as max_steps when the step limit is reached and the tokens left hold only the summary', async () => {
     const budget = await summaryOnlyBudget();
-    const env = await makeEnv();
+    const env = await stopEnv();
     env.gateway.script.push(callsStep([echoX('call_w_1')], budget.usageUpTo()), thrown(REJECTED));
     const run = await env.enqueue('Work', { limits: { maxSteps: 1, ...budget.limits } });
 
@@ -105,7 +111,7 @@ describe('a 4xx on the wrap-up call stops the run with the original stop reason'
   });
 
   it('stops with max_steps and sends no summary when the step limit is reached and the tokens left hold no request', async () => {
-    const env = await makeEnv();
+    const env = await stopEnv();
     env.gateway.script.push(callsStep([echoX('call_w_1')], usageOf(10, SUMMARY_ONLY_LIMIT - 10)), textStep('never sent'));
     const run = await env.enqueue('Work', { limits: { maxSteps: 1, maxTotalTokens: SUMMARY_ONLY_LIMIT } });
 
@@ -118,7 +124,7 @@ describe('a 4xx on the wrap-up call stops the run with the original stop reason'
 
   it('computes the reason as budget when the budget is reached before the step limit', async () => {
     const budget = await summaryOnlyBudget();
-    const env = await makeEnv();
+    const env = await stopEnv();
     env.gateway.script.push(
       callsStep([{ callId: 'call_w_1', name: 'Echo', args: { value: 'x' } }], usageOf(10, 5)),
       callsStep([{ callId: 'call_w_2', name: 'Echo', args: { value: 'y' } }], budget.usageUpTo(15)),
@@ -142,7 +148,7 @@ describe('wrap-up dispositions: one rule decides what is requeued', () => {
     { status: 409, type: 'invalid_request', code: 'idempotency_key_in_progress', message: 'the key is in flight' },
     DEFERRED_429,
   ] satisfies ErrorFields[])('requeues a $status $code on the wrap-up call', async (fields) => {
-    const env = await makeEnv();
+    const env = await stopEnv();
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Echo', args: { value: 'x' } }]), thrown(fields), textStep('Summary.'));
     const run = await env.enqueue('Work', { limits: { maxSteps: 1 } });
 
@@ -155,7 +161,7 @@ describe('wrap-up dispositions: one rule decides what is requeued', () => {
     { status: 429, type: 'too_many_requests', code: 'rate_limited', message: 'slow down' },
     { status: 500, type: 'server_error', code: 'internal_error', message: 'boom' },
   ] satisfies ErrorFields[])('fails the run on a $status $code on the wrap-up call that is not a deferral', async (fields) => {
-    const env = await makeEnv();
+    const env = await stopEnv();
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Echo', args: { value: 'x' } }]), thrown(fields), textStep('never sent'));
     const run = await env.enqueue('Work', { limits: { maxSteps: 1 } });
 
@@ -166,7 +172,7 @@ describe('wrap-up dispositions: one rule decides what is requeued', () => {
   });
 
   it('fails the run on a model_error response.failed before output on the wrap-up call', async () => {
-    const env = await makeEnv();
+    const env = await stopEnv();
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Echo', args: { value: 'x' } }]), failedStep('upstream_protocol_error', 'model_error'));
     const run = await env.enqueue('Work', { limits: { maxSteps: 1 } });
 
@@ -176,7 +182,7 @@ describe('wrap-up dispositions: one rule decides what is requeued', () => {
   });
 
   it('still fails the run on a 400 at a normal step', async () => {
-    const env = await makeEnv();
+    const env = await stopEnv();
     env.gateway.script.push(thrown(REJECTED), textStep('never sent'));
     const run = await env.enqueue('Work', { limits: { maxSteps: 1 } });
 
@@ -186,7 +192,7 @@ describe('wrap-up dispositions: one rule decides what is requeued', () => {
   });
 
   it('still fails the run on a 400 from count_tokens while the wrap-up request is being built', async () => {
-    const env = await makeEnv();
+    const env = await stopEnv();
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Echo', args: { value: 'x' } }]), textStep('never sent'));
     const run = await env.enqueue('Work', { limits: { maxSteps: 1 } });
     env.gateway.countHook = async () => {
@@ -225,7 +231,7 @@ describe('stop reason boundary of a rejected wrap-up call', () => {
     },
   ])('$label', async ({ prepare, reason, wrapUpStep }) => {
     const { limits, steps } = await prepare();
-    const env = await makeEnv();
+    const env = await stopEnv();
     env.gateway.script.push(...steps, thrown(REJECTED));
     const run = await env.enqueue('Work', { limits });
 
@@ -254,7 +260,7 @@ describe('a crash during the wrap-up call', () => {
     { label: 'a reply', reply: () => textStep('Summary after the crash.'), rejected: false },
     { label: 'a 400', reply: () => thrown(REJECTED), rejected: true },
   ])('resends the recorded wrap-up body unchanged and stops with max_steps when the resend gets $label', async ({ reply, rejected }) => {
-    const env = await makeEnv();
+    const env = await stopEnv();
     const run = await env.enqueue('Work', { limits: { maxSteps: 1 } });
     await env.seed(
       run.id,

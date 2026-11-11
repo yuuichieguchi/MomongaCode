@@ -4,7 +4,7 @@ import net from 'node:net';
 import type { AddressInfo, LookupFunction } from 'node:net';
 import type { Duplex } from 'node:stream';
 import { createOutboundDispatcher, findOutboundError, formatHostEntry, hostEntryCovers, isAcceptableAddress, normalizedHosts, openOutboundTunnel, parseHostEntry } from '@momonga/foundation';
-import type { HostEntry, OutboundNetwork } from '@momonga/foundation';
+import type { HostEntry, OutboundNetwork, Random } from '@momonga/foundation';
 
 export type EgressRefusal =
   | { readonly kind: 'not_granted'; readonly host: string; readonly port: number }
@@ -17,6 +17,8 @@ export type EgressPorts = {
 
 export type EgressProxy = {
   readonly port: number;
+  readonly url: string;
+  readonly authorization: string;
   readonly hosts: readonly string[];
   refusals(): readonly EgressRefusal[];
   close(): Promise<void>;
@@ -43,6 +45,17 @@ export const describeEgressRefusal = (refusal: EgressRefusal, hosts: readonly st
 const NOT_FORWARDED: ReadonlySet<string> = new Set(['connection', 'expect', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'proxy-connection', 'te', 'trailer', 'transfer-encoding', 'upgrade']);
 
 const UNTIL_THE_COMMAND_ENDS = 0;
+
+const CREDENTIAL_RANDOM_BYTES = 32;
+
+const CREDENTIAL_USER = 'momonga';
+
+const CREDENTIAL_REFUSAL = 'the sandbox proxy is reached only with the credential of the command it was started for';
+
+const authorizationOf = (password: string): string => `Basic ${Buffer.from(`${CREDENTIAL_USER}:${password}`).toString('base64')}`;
+
+const credentialResponse = (): string =>
+  `HTTP/1.1 407 ${statusText(407)}\r\nProxy-Authenticate: Basic realm="momonga sandbox"\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: ${Buffer.byteLength(`${CREDENTIAL_REFUSAL}\n`)}\r\nConnection: close\r\n\r\n${CREDENTIAL_REFUSAL}\n`;
 
 const answering = (address: string): LookupFunction => {
   const family = net.isIP(address);
@@ -80,7 +93,10 @@ const targetOfUrl = (text: string | undefined): (Target & { path: string; author
 
 type Upstream = ReturnType<typeof createOutboundDispatcher>;
 
-export const startEgressProxy = async (options: { hosts: readonly string[]; network: OutboundNetwork; ports?: EgressPorts }): Promise<EgressProxy> => {
+export const startEgressProxy = async (options: { hosts: readonly string[]; network: OutboundNetwork; random: Random; ports?: EgressPorts }): Promise<EgressProxy> => {
+  const password = options.random.hex(CREDENTIAL_RANDOM_BYTES);
+  const authorization = authorizationOf(password);
+  const presented = (request: http.IncomingMessage): boolean => request.headers['proxy-authorization'] === authorization;
   const ports = options.ports ?? nodeEgressPorts;
   const { network } = options;
   const ending = new AbortController();
@@ -154,6 +170,45 @@ export const startEgressProxy = async (options: { hosts: readonly string[]; netw
     client.pipe(upstream);
   };
 
+  const upgrade = async (target: Target & { path: string; authority: string }, request: http.IncomingMessage, client: Duplex, head: Buffer): Promise<void> => {
+    const admitted = await admit(target);
+    if (closed) return;
+    if ('kind' in admitted) {
+      client.end(rawResponse(statusOf(admitted), refuse(admitted)));
+      return;
+    }
+    let upstream: Duplex;
+    try {
+      upstream = await openOutboundTunnel(network, { host: target.host, address: admitted.address, port: target.port }, { connectReplyTimeoutMs: UNTIL_THE_COMMAND_ENDS, signal: ending.signal });
+    } catch (error) {
+      if (closed) return;
+      const failure = findOutboundError(error);
+      if (failure === undefined) throw error;
+      client.end(rawResponse(502, `the sandbox proxy could not connect to ${formatHostEntry(target)}: ${failure.message}`));
+      return;
+    }
+    upstream.on('error', () => client.destroy());
+    if (closed || client.destroyed) {
+      upstream.destroy();
+      return;
+    }
+    track(upstream);
+    client.on('error', () => upstream.destroy());
+    client.on('close', () => upstream.destroy());
+    upstream.on('close', () => client.destroy());
+    const lines = [`${request.method ?? 'GET'} ${target.path} HTTP/1.1`, `Host: ${target.authority}`];
+    for (let index = 0; index < request.rawHeaders.length; index += 2) {
+      const name = request.rawHeaders[index] as string;
+      const lower = name.toLowerCase();
+      if (lower === 'host' || lower === 'proxy-authorization' || lower === 'proxy-connection') continue;
+      lines.push(`${name}: ${request.rawHeaders[index + 1] as string}`);
+    }
+    upstream.write(`${lines.join('\r\n')}\r\n\r\n`);
+    if (head.length > 0) upstream.write(head);
+    upstream.pipe(client);
+    client.pipe(upstream);
+  };
+
   const released = async (upstream: Upstream): Promise<void> => {
     upstreams.delete(upstream);
     await upstream.destroy();
@@ -211,6 +266,10 @@ export const startEgressProxy = async (options: { hosts: readonly string[]; netw
   server.on('connection', (socket) => track(socket));
   server.on('connect', (request: http.IncomingMessage, client: Duplex, head: Buffer) => {
     client.on('error', () => undefined);
+    if (!presented(request)) {
+      client.end(credentialResponse());
+      return;
+    }
     const target = targetOfAuthority(request.url);
     if (target === undefined) {
       client.end(rawResponse(400, `the sandbox proxy needs a CONNECT target of the form host:port, got ${JSON.stringify(request.url)}`));
@@ -218,7 +277,24 @@ export const startEgressProxy = async (options: { hosts: readonly string[]; netw
     }
     guard(tunnel(target, client, head), client);
   });
+  server.on('upgrade', (request: http.IncomingMessage, client: Duplex, head: Buffer) => {
+    client.on('error', () => undefined);
+    if (!presented(request)) {
+      client.end(credentialResponse());
+      return;
+    }
+    const target = targetOfUrl(request.url);
+    if (target === undefined) {
+      client.end(rawResponse(400, 'the sandbox proxy carries an Upgrade request for an http: URL only'));
+      return;
+    }
+    guard(upgrade(target, request, client, head), client);
+  });
   server.on('request', (request, response) => {
+    if (!presented(request)) {
+      response.writeHead(407, { 'proxy-authenticate': 'Basic realm="momonga sandbox"', 'content-type': 'text/plain; charset=utf-8', connection: 'close' }).end(`${CREDENTIAL_REFUSAL}\n`);
+      return;
+    }
     const target = targetOfUrl(request.url);
     if (target === undefined) {
       response.writeHead(400, { 'content-type': 'text/plain; charset=utf-8', connection: 'close' }).end('the sandbox proxy forwards requests for http: URLs and CONNECT tunnels only\n');
@@ -250,5 +326,6 @@ export const startEgressProxy = async (options: { hosts: readonly string[]; netw
     return closing;
   };
 
-  return { port: (server.address() as AddressInfo).port, hosts, refusals: () => [...refused], close };
+  const port = (server.address() as AddressInfo).port;
+  return { port, url: `http://${CREDENTIAL_USER}:${password}@${EGRESS_PROXY_HOST}:${port}`, authorization, hosts, refusals: () => [...refused], close };
 };

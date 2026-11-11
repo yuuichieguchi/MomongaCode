@@ -4,6 +4,8 @@ import { MAX_COST_USD } from '@momonga/protocol';
 import { askerOf } from './asker.ts';
 import { ConfigError } from './config-error.ts';
 import { readJsonFile } from './json-file.ts';
+import { approvalDigestOf } from './approval-digest.ts';
+import type { ProjectApprovalsSettings } from './settings.ts';
 import { RuleParseError, checkRuleText } from './rule.ts';
 
 export const PROJECT_MANDATE_FILE = path.join('.momonga', 'mandate.json');
@@ -68,12 +70,18 @@ export const parseProjectMandate = (value: unknown, source: string): ProjectMand
   return verdict.value;
 };
 
-export type ProjectMandateInput = { projectDir: string; trusted: boolean; signal: AbortSignal };
+export type ProjectMandateInput = { projectDir: string; trusted: boolean; approvals: ProjectApprovalsSettings | undefined; signal: AbortSignal };
 
-export const loadProjectMandate = async ({ projectDir, trusted, signal }: ProjectMandateInput): Promise<ProjectMandate | undefined> => {
+export const loadProjectMandate = async ({ projectDir, trusted, approvals, signal }: ProjectMandateInput): Promise<ProjectMandate | undefined> => {
   if (!trusted) return undefined;
   const file = path.join(projectDir, PROJECT_MANDATE_FILE);
   const asker = askerOf(signal);
   const read = await readJsonFile(file, asker, { confine: { to: projectDir, paths: asker.paths } });
-  return read.found ? parseProjectMandate(read.value, file) : undefined;
+  if (!read.found) return undefined;
+  const mandate = parseProjectMandate(read.value, file);
+  const folder = await asker.paths.canonicalPath(projectDir);
+  if (approvals?.[folder]?.mandate !== approvalDigestOf(read.value)) {
+    throw new ConfigError(`${file}: the mandate file is not approved for this folder, or changed since it was approved; new runs are refused until it is approved`);
+  }
+  return mandate;
 };

@@ -10,9 +10,14 @@ export const LOCK_PROOF_ENV = 'MOMONGA_TEST_LOCK_PROOF';
 let resolved: LayoutLocks | undefined;
 let inspector: ProcessInspector | undefined;
 
-const proveInRunFolder = (): LayoutLocks => {
+export const lockProofFolder = (): string => {
   const runFolder = process.env[LOCK_PROOF_ENV];
   if (runFolder === undefined || runFolder === '') throw new Error(`${LOCK_PROOF_ENV} is not set; run through a vitest project with the lock-proof global setup`);
+  return runFolder;
+};
+
+const proveInRunFolder = (): LayoutLocks => {
+  const runFolder = lockProofFolder();
   const proofDir = path.join(runFolder, String(process.pid));
   fs.mkdirSync(proofDir, { recursive: true, mode: 0o700 });
   return resolveLayoutLocks({ callLocks: proofDir, lockProof: proofDir });

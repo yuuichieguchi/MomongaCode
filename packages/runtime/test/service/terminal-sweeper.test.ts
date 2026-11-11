@@ -29,6 +29,10 @@ const scriptedStore = () => {
       calls.push('deadLetterExhausted');
       return [];
     },
+    reaskUnshownApprovals: async (): Promise<string[]> => {
+      calls.push('reaskUnshownApprovals');
+      return [];
+    },
   };
   return { store, calls, finishes };
 };
@@ -49,10 +53,10 @@ describe('startTerminalSweeper (O15 ii): the one owner of the sweeper-owned canc
 
     finishes[0]?.resolve([]);
     await afterMicrotasks();
-    expect(calls).toEqual(['finishCancelled', 'deadLetterExhausted']);
+    expect(calls).toEqual(['finishCancelled', 'deadLetterExhausted', 'reaskUnshownApprovals']);
     timers.advance(1000);
     await afterMicrotasks();
-    expect(calls).toEqual(['finishCancelled', 'deadLetterExhausted', 'finishCancelled']);
+    expect(calls).toEqual(['finishCancelled', 'deadLetterExhausted', 'reaskUnshownApprovals', 'finishCancelled']);
     finishes[1]?.resolve([]);
     await sweeper.close();
   });
@@ -90,6 +94,7 @@ describe('startTerminalSweeper (O15 ii): the one owner of the sweeper-owned canc
         onError(failure, 'run-failed');
         return ['run-finished'];
       },
+      reaskUnshownApprovals: async (): Promise<string[]> => [],
       deadLetterExhausted: async (onError: SweepErrorSink): Promise<string[]> => {
         onError(failure, 'run-exhausted');
         return [];
@@ -115,6 +120,7 @@ describe('startTerminalSweeper (O15 ii): the one owner of the sweeper-owned canc
   it('sends the runs the dead-letter sweep ended through the same release as the cancel finish', async () => {
     const store = {
       finishCancelled: async (): Promise<string[]> => ['run_cancelled'],
+      reaskUnshownApprovals: async (): Promise<string[]> => [],
       deadLetterExhausted: async (): Promise<string[]> => ['run_x'],
     };
     const released: string[] = [];
@@ -145,6 +151,7 @@ describe('startTerminalSweeper (O15 ii): the one owner of the sweeper-owned canc
         if (sweeps === 1) throw failure;
         return [];
       },
+      reaskUnshownApprovals: async (): Promise<string[]> => [],
       deadLetterExhausted: async (): Promise<string[]> => [],
     };
     const clock = createFakeClock(START_MS);
@@ -170,6 +177,7 @@ describe('startTerminalSweeper: what close() waits for and what an error report 
     let cancelCalls = 0;
     const store = {
       finishCancelled: async (): Promise<string[]> => ['run-cancelled'],
+      reaskUnshownApprovals: async (): Promise<string[]> => [],
       deadLetterExhausted: async (): Promise<string[]> => [],
     };
     const sweeper = startTerminalSweeper({
@@ -212,6 +220,7 @@ describe('startTerminalSweeper: what close() waits for and what an error report 
         onError(failure, 'run-cancel-failed');
         return [];
       },
+      reaskUnshownApprovals: async (): Promise<string[]> => [],
       deadLetterExhausted: async (onError: SweepErrorSink): Promise<string[]> => {
         onError(failure, 'run-dead-letter-failed');
         return [];

@@ -533,7 +533,7 @@ export const httpOver = async (
   body?: string,
 ): Promise<SimpleResponse> => {
   const { createUdsClient } = await import('@momonga/foundation');
-  const client = createUdsClient(fixedSocket(socketPath), { headersTimeoutMs: 5000 });
+  const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0, headersTimeoutMs: 5000 });
   registerCleanup(context, () => client.destroy());
   const response = await client.request({ method, path: requestPath, ...(body === undefined ? {} : { body, headers: { 'content-type': 'application/json' } }) });
   const text = await response.text();

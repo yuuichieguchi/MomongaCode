@@ -52,6 +52,7 @@ const countingReader = () => {
   return {
     probed,
     reader: {
+      platform: process.platform,
       contains: async () => true,
       read: async () => undefined,
       exists: async (target: string) => {

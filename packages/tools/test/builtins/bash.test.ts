@@ -369,18 +369,19 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
 });
 
 describe('Bash admission and metadata', () => {
-  it('uses the description as the title', async () => {
+  it('titles the call with its command and labels the description as the claim of the model', async () => {
     const tools = await makeBuiltins();
     const outcome = approvalOf(await tools.run('Bash', { command: 'make build', description: 'Build it' }));
-    expect(outcome.title).toBe('Build it');
+    expect(outcome.title).toBe('make build');
+    expect(outcome.shown.claim).toBe('Build it');
     expect(outcome.toolKind).toBe('execute');
   });
 
-  it('cuts the command to 80 characters for the title', async () => {
+  it('titles the call with the whole command, however long', async () => {
     const tools = await makeBuiltins();
     const command = `make ${'x'.repeat(120)}`;
     const outcome = approvalOf(await tools.run('Bash', { command }));
-    expect(outcome.title).toBe(command.slice(0, 80));
+    expect(outcome.title).toBe(command);
   });
 
   it('suggests a rule for the command when asking under Seatbelt', async () => {

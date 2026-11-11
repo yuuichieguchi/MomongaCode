@@ -1,5 +1,6 @@
 import { MCP_CONNECT_TIMEOUT_LIMITS, SANDBOX_NETWORK_SETTINGS, SECRET_NAME_PATTERN, SHUTDOWN_SETTING_LIMITS } from '@momonga/foundation';
 import { MAX_COST_USD, QUIESCENT_BEHAVIOURS, MANAGED_DECLARABLE_FIELDS, ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, PLAN_LABEL_PATTERN, PROVIDER_NAME_PATTERN, REASONING_EFFORTS, REQUEST_TOOL_KINDS, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS, MANAGED_ENDPOINT_FORMS, IDEMPOTENCY_KEY_HEADER_PATTERN, MIN_REQUEST_OUTPUT_TOKENS } from '@momonga/protocol';
+import { APPROVAL_DIGEST_PATTERN } from './approval-digest.ts';
 import type { CallRole, ManagedDeclarableField } from '@momonga/protocol';
 
 export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const satisfies readonly CallRole[];
@@ -13,6 +14,8 @@ const STRING_ARRAY = { type: 'array', items: { type: 'string' } } as const;
 const NON_EMPTY_STRING_ARRAY = { type: 'array', items: { type: 'string', minLength: 1 } } as const;
 const STRING_MAP = { type: 'object', additionalProperties: { type: 'string' } } as const;
 
+export const ENV_NAME_PATTERN = '^[A-Za-z_][A-Za-z0-9_]*$';
+
 export const MCP_SERVER_SCHEMA = {
   oneOf: [
     {
@@ -22,6 +25,7 @@ export const MCP_SERVER_SCHEMA = {
         command: { type: 'string', minLength: 1 },
         args: STRING_ARRAY,
         env: STRING_MAP,
+        secretEnv: { type: 'object', propertyNames: { pattern: ENV_NAME_PATTERN }, additionalProperties: { type: 'string', pattern: SECRET_NAME_PATTERN } },
         cwd: { type: 'string' },
       },
       required: ['command'],
@@ -49,7 +53,6 @@ export const MCP_SERVER_SCHEMA = {
   ],
 } as const;
 
-export const ENV_NAME_PATTERN = '^[A-Za-z_][A-Za-z0-9_]*$';
 export const PROVIDER_NAME_PATTERN_SOURCE = PROVIDER_NAME_PATTERN.source;
 
 export const MIN_RETENTION_DAYS = 1;
@@ -432,14 +435,23 @@ export const SETTINGS_SCHEMA = {
       properties: { classifier: { type: 'string', minLength: 1 } },
       additionalProperties: false,
     },
-    enabledMcpjsonServers: STRING_ARRAY,
+    enabledMcpjsonServers: {
+      type: 'array',
+      items: {
+        oneOf: [
+          { type: 'string' },
+          { type: 'object', properties: { name: { type: 'string', minLength: 1 }, digest: { type: 'string', pattern: APPROVAL_DIGEST_PATTERN } }, required: ['name', 'digest'], additionalProperties: false },
+        ],
+      },
+    },
     disabledMcpjsonServers: STRING_ARRAY,
     enableAllProjectMcpServers: { type: 'boolean' },
     mcpServers: { type: 'object', additionalProperties: MCP_SERVER_SCHEMA },
     mcp: {
       type: 'object',
       properties: {
-        toolIdleTimeoutMs: NON_NEGATIVE_INTEGER,
+        toolIdleTimeoutNetworkMs: NON_NEGATIVE_INTEGER,
+        toolIdleTimeoutStdioMs: NON_NEGATIVE_INTEGER,
         toolTotalTimeoutMs: POSITIVE_INTEGER,
         closeGraceMs: { type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.max },
         connectTimeoutMs: { type: 'integer', minimum: MCP_CONNECT_TIMEOUT_LIMITS.min, maximum: MCP_CONNECT_TIMEOUT_LIMITS.max },
@@ -652,6 +664,17 @@ export const SETTINGS_SCHEMA = {
         captureMessageContent: { type: 'boolean' },
       },
       additionalProperties: false,
+    },
+    projectApprovals: {
+      type: 'object',
+      additionalProperties: {
+        type: 'object',
+        properties: {
+          hooks: { type: 'array', items: { type: 'string', pattern: APPROVAL_DIGEST_PATTERN } },
+          mandate: { type: 'string', pattern: APPROVAL_DIGEST_PATTERN },
+        },
+        additionalProperties: false,
+      },
     },
     projectChecks: {
       type: 'object',

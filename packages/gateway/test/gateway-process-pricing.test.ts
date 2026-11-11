@@ -32,7 +32,7 @@ const startPricedGateway = async (context: CleanupContext, pricing: unknown[] | 
   registerCleanup(context, async () => {
     await handle.close();
   });
-  const client = createUdsClient(fixedSocket(handle.socketPath));
+  const client = createUdsClient(fixedSocket(handle.socketPath), { connectTimeoutMs: 0 });
   registerCleanup(context, () => client.close());
   return client;
 };

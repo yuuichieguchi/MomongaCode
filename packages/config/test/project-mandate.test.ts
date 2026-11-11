@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ConfigError, PROJECT_MANDATE_FILE, loadProjectMandate, parseProjectMandate } from '@momonga/config';
+import { ConfigError, PROJECT_MANDATE_FILE, approvalDigestOf, loadProjectMandate, parseProjectMandate } from '@momonga/config';
 
 const roots: string[] = [];
 
@@ -23,22 +23,34 @@ const projectWith = (content: unknown): string => {
 describe('the project file .momonga/mandate.json', () => {
   it('is read in a trusted folder: ask and deny rules, completion conditions and budget dimensions', async () => {
     const declared = { ask: ['GitPush(origin:release/*)'], deny: ['Bash(curl:*)'], until: ['npm test'], require: ['the changelog is updated'], steps: 20, tokens: 100_000, costUsd: 1.5, timeMs: 600_000, retries: 2 };
-    expect(await loadProjectMandate({ signal: new AbortController().signal, projectDir: projectWith(declared), trusted: true })).toEqual(declared);
+    const projectDir = projectWith(declared);
+    expect(await loadProjectMandate({ signal: new AbortController().signal, projectDir, trusted: true, approvals: { [projectDir]: { mandate: approvalDigestOf(declared) } } })).toEqual(declared);
+  });
+
+  it('is refused in a trusted folder until the person approved this content, naming the file', async () => {
+    const declared = { deny: ['Bash(curl:*)'], until: ['npm test'] };
+    const projectDir = projectWith(declared);
+    const file = path.join(projectDir, PROJECT_MANDATE_FILE);
+    const message = `${file}: the mandate file is not approved for this folder, or changed since it was approved; new runs are refused until it is approved`;
+    await expect(loadProjectMandate({ signal: new AbortController().signal, projectDir, trusted: true, approvals: undefined })).rejects.toThrow(message);
+    const before = { ...declared, until: ['true'] };
+    await expect(loadProjectMandate({ signal: new AbortController().signal, projectDir, trusted: true, approvals: { [projectDir]: { mandate: approvalDigestOf(before) } } })).rejects.toThrow(ConfigError);
+    await expect(loadProjectMandate({ signal: new AbortController().signal, projectDir, trusted: true, approvals: { [projectDir]: { mandate: approvalDigestOf(before) } } })).rejects.toThrow(message);
   });
 
   it('is not read in a folder that is not trusted, whatever it holds', async () => {
-    expect(await loadProjectMandate({ signal: new AbortController().signal, projectDir: projectWith('{ not json'), trusted: false })).toBeUndefined();
-    expect(await loadProjectMandate({ signal: new AbortController().signal, projectDir: projectWith({ allow: ['Bash'] }), trusted: false })).toBeUndefined();
+    expect(await loadProjectMandate({ signal: new AbortController().signal, projectDir: projectWith('{ not json'), trusted: false, approvals: undefined })).toBeUndefined();
+    expect(await loadProjectMandate({ signal: new AbortController().signal, projectDir: projectWith({ allow: ['Bash'] }), trusted: false, approvals: undefined })).toBeUndefined();
   });
 
   it('is absent when the folder has no such file', async () => {
-    expect(await loadProjectMandate({ signal: new AbortController().signal, projectDir: projectWith(undefined), trusted: true })).toBeUndefined();
+    expect(await loadProjectMandate({ signal: new AbortController().signal, projectDir: projectWith(undefined), trusted: true, approvals: undefined })).toBeUndefined();
   });
 
   it.each(['allow', 'onQuiescent'])('refuses %s, which only the user settings may declare', async (key) => {
     const projectDir = projectWith({ [key]: key === 'allow' ? ['Bash(git:*)'] : 'wait' });
-    await expect(loadProjectMandate({ signal: new AbortController().signal, projectDir, trusted: true })).rejects.toThrow(ConfigError);
-    await expect(loadProjectMandate({ signal: new AbortController().signal, projectDir, trusted: true })).rejects.toThrow(`${key} can only be declared in the user settings`);
+    await expect(loadProjectMandate({ signal: new AbortController().signal, projectDir, trusted: true, approvals: undefined })).rejects.toThrow(ConfigError);
+    await expect(loadProjectMandate({ signal: new AbortController().signal, projectDir, trusted: true, approvals: undefined })).rejects.toThrow(`${key} can only be declared in the user settings`);
   });
 
   it('refuses a key it does not know, a rule that is not a permission rule and a budget out of range, naming the file', () => {

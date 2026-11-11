@@ -39,7 +39,7 @@ const factsStore = (runIds: readonly string[]) => {
         cursor: () => ({ definitionsVersion: 1, afterEventId }),
         nextBatch: (limit: number) => {
           const ids = runIds.slice(afterEventId, afterEventId + limit);
-          return { runIds: ids, throughEventId: afterEventId + ids.length };
+          return { runIds: ids, eventIds: ids.map((_, index) => afterEventId + index + 1), afterEventId, throughEventId: afterEventId + ids.length };
         },
         commit: (commit: Commit) => {
           commits.push(commit);

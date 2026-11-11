@@ -1,5 +1,6 @@
 import { createUdsClient, fixedSocket } from '@momonga/foundation';
 import type { SocketResolver } from '@momonga/foundation';
+import { isOpaqueEvent } from '@momonga/protocol';
 import type { AnsweredByView, PermissionMode, ReportPage, RunHealth, Mandate } from '@momonga/protocol';
 import { RunApiError, createRuntimeClient as createProductClient } from '../../packages/cli/src/client/runtime-client.ts';
 import type { RuntimeClient as ProductClient } from '../../packages/cli/src/client/runtime-client.ts';
@@ -56,7 +57,7 @@ type StreamOutcome = { kind: 'match'; frame: RunEventFrame } | { kind: 'ended' }
 
 export const createRuntimeClient = (home: E2eHome, resolveSocket: SocketResolver = fixedSocket(firstGeneration(home.paths).sockets.runtime)): RuntimeClient => {
   const product: ProductClient = createProductClient({ resolveSocket, clock: nodeClock });
-  const http = createUdsClient(resolveSocket);
+  const http = createUdsClient(resolveSocket, { connectTimeoutMs: 0 });
   const openStreams = new Set<{ abort(): Promise<void> }>();
 
   const createSession = async (options: CreateSessionOptions = {}): Promise<{ session: SessionView }> => {
@@ -79,7 +80,7 @@ export const createRuntimeClient = (home: E2eHome, resolveSocket: SocketResolver
 
     const read = async (): Promise<void> => {
       for await (const frame of product.streamEvents(id, { ...options, signal: controller.signal })) {
-        if (!('runId' in frame.data)) throw new Error(`run event frame without a runId: ${JSON.stringify(frame.data)}`);
+        if (isOpaqueEvent(frame.data) || !('runId' in frame.data)) throw new Error(`run event frame without a known run event: ${JSON.stringify(frame.data)}`);
         frames.push({ id: frame.id, event: frame.event, data: frame.data });
       }
     };

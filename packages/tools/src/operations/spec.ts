@@ -53,12 +53,15 @@ export type RefusedForm = { readonly argv: readonly string[]; readonly word: str
 
 export type PrePushHook = { readonly remote: string; readonly ref: string; readonly localSha: string; readonly remoteProbe: string; readonly delete: string };
 
+export type ConditionalTitle = { readonly when: string; readonly title: string };
+
 export type OperationSpec = {
   readonly name: string;
   readonly description: string;
   readonly kind: ToolKind;
   readonly sideEffect: 'read_only' | 'write' | 'exec';
   readonly title: string;
+  readonly titles?: readonly ConditionalTitle[];
   readonly subject: SubjectSpec;
   readonly approval: ApprovalClass;
   readonly input: Record<string, unknown>;
@@ -123,6 +126,10 @@ const SPEC_SCHEMA = {
     kind: { enum: ['read', 'edit', 'search', 'execute', 'fetch', 'other'] },
     sideEffect: { enum: ['read_only', 'write', 'exec'] },
     title: { type: 'string', minLength: 1 },
+    titles: {
+      type: 'array',
+      items: { type: 'object', properties: { when: { type: 'string', pattern: '^input(\\.[A-Za-z0-9_]+)+$' }, title: { type: 'string', minLength: 1 } }, required: ['when', 'title'], additionalProperties: false },
+    },
     subject: {
       oneOf: [
         { type: 'object', properties: { kind: { const: 'none' } }, required: ['kind'], additionalProperties: false },

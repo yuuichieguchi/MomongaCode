@@ -21,6 +21,14 @@ const TERMINAL_LIST = TERMINAL_STATUSES.map((status) => `'${status}'`).join(', '
 
 const STOP_REASON_LIST = STOP_REASONS.map((reason) => `'${reason}'`).join(', ');
 
+const KNOWN_TERMINAL = `r.status IN (${TERMINAL_LIST}) AND (r.stop_reason IS NULL OR r.stop_reason IN (${STOP_REASON_LIST}))`;
+
+export const settledEventIdOf = (batch: FactsBatch, processed: number): number => {
+  const pending = batch.eventIds[processed];
+  if (pending === undefined) return batch.throughEventId;
+  return batch.eventIds.slice(0, processed).reduce((settled, eventId) => (eventId < pending ? Math.max(settled, eventId) : settled), batch.afterEventId);
+};
+
 const optional = <K extends string, V>(key: K, value: V | null): { [P in K]?: V } => (value === null ? {} : ({ [key]: value } as { [P in K]: V }));
 
 const episodeOf = (row: Row, context: DecodeContext): RecoveryEpisodeView => {
@@ -110,9 +118,17 @@ export const createRunFactsStore = (db: DatabaseSync, context: DecodeContext): R
   const nextTerminal = db.prepare(
     `SELECT e.id AS event_id, e.run_id
      FROM events e JOIN runs r ON r.id = e.run_id
-     WHERE e.id > :cursor AND e.type = 'run.status' AND r.status IN (${TERMINAL_LIST}) AND (r.stop_reason IS NULL OR r.stop_reason IN (${STOP_REASON_LIST}))
+     WHERE e.id > :cursor AND e.type = 'run.status' AND ${KNOWN_TERMINAL}
        AND e.seq = (SELECT MAX(x.seq) FROM events x WHERE x.run_id = e.run_id AND x.type = 'run.status')
      ORDER BY e.id LIMIT :limit`,
+  );
+  const terminalRootOf = db.prepare(
+    `WITH RECURSIVE up (id, parent) AS (
+       SELECT id, parent_run_id FROM runs WHERE id = :runId
+       UNION ALL
+       SELECT p.id, p.parent_run_id FROM runs p JOIN up ON p.id = up.parent
+     )
+     SELECT r.id FROM up JOIN runs r ON r.id = up.id WHERE up.parent IS NULL AND up.id <> :runId AND ${KNOWN_TERMINAL}`,
   );
   const deleteRecoveries = db.prepare('DELETE FROM run_recoveries WHERE run_id = :runId');
   const insertRecovery = db.prepare(
@@ -229,12 +245,23 @@ export const createRunFactsStore = (db: DatabaseSync, context: DecodeContext): R
 
     nextBatch: (limit): FactsBatch => {
       const { afterEventId } = cursor();
-      const rows = nextTerminal.all({ cursor: afterEventId, limit });
-      const last = rows.at(-1);
-      return {
-        runIds: rows.map((row) => readerFor('events', String(row['event_id']), row).string('run_id')),
-        throughEventId: last === undefined ? afterEventId : readerFor('events', String(last['event_id']), last).number('event_id'),
+      const runIds: string[] = [];
+      const eventIds: number[] = [];
+      const list = (runId: string, eventId: number): void => {
+        if (runIds.includes(runId)) return;
+        runIds.push(runId);
+        eventIds.push(eventId);
       };
+      let throughEventId = afterEventId;
+      for (const row of nextTerminal.all({ cursor: afterEventId, limit })) {
+        const reader = readerFor('events', String(row['event_id']), row);
+        const runId = reader.string('run_id');
+        throughEventId = reader.number('event_id');
+        list(runId, throughEventId);
+        const root = terminalRootOf.get({ runId });
+        if (root !== undefined) list(readerFor('runs', runId, root).string('id'), throughEventId);
+      }
+      return { runIds, eventIds, afterEventId, throughEventId };
     },
 
     commit: (batch: FactsCommit): void => {

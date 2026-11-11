@@ -18,7 +18,7 @@ describe('lock adoption in the daemon entry', () => {
     const io = createFakeEntryIo({
       argv: [`--home=${home}`, '--log-target=file'],
       home,
-      env: { [LOCK_FD_ENV]: '5', [LOCK_NONCE_ENV]: 'abc' },
+      env: { [LOCK_FD_ENV]: String(claim.lock.descriptor), [LOCK_NONCE_ENV]: 'abc' },
       lockMechanism: kernel,
     });
     const handle: DaemonHandle = { close: async () => ({ clean: true }), abort: async () => ({ clean: true }), fatal: new Promise<Error>(() => undefined) };
@@ -40,7 +40,7 @@ describe('lock adoption in the daemon entry', () => {
 
     await runDaemonEntry(io, definition);
 
-    expect(kernel.adoptionsMade()).toEqual([{ lockPath, descriptor: 5 }]);
+    expect(kernel.adoptionsMade()).toEqual([{ lockPath, descriptor: claim.lock.descriptor }]);
     expect(kernel.claimsMade()).toEqual([lockPath]);
   });
 });

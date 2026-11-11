@@ -1,5 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { escapeTerminalLine } from '@momonga/protocol';
+import { approvalShownLines, escapeTerminalLine } from '@momonga/protocol';
 import type { PermissionOption } from '@momonga/protocol';
 import { ensureCurrentDaemon, ensureSessionDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
@@ -53,6 +53,7 @@ export const pendingLines = (approval: ApprovalView, agent?: string): string =>
   [
     `${approval.id}  ${escapeTerminalLine(approval.toolCall.title)}${agent === undefined ? '' : `  (subagent ${escapeTerminalLine(agent)})`}`,
     ...approval.reason.split('\n').map((line) => `  ${escapeTerminalLine(line)}`),
+    ...(approval.shown === undefined ? [] : approvalShownLines(approval.shown)).map((line) => `  ${escapeTerminalLine(line)}`),
     ...approval.options.map((option) => `    ${option.kind}${option.name === option.kind ? '' : `  (${escapeTerminalLine(option.name)})`}`),
   ].join('\n');
 

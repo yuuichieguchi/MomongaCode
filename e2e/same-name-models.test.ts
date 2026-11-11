@@ -43,7 +43,7 @@ describe('two servers that serve a model of the same name', () => {
         models: servers.map(({ provider, fake }) => ({ adapter: 'chat-completions', provider, id: SHARED_NAME, answers: 'script', socketPath: fake.socketPath, capabilities: CAPABILITIES })),
       }),
     });
-    const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.gateway));
+    const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.gateway), { connectTimeoutMs: 0 });
     try {
       const listed = await client.request({ method: 'GET', path: '/v1/momonga/models' });
       expect(listed.status).toBe(200);

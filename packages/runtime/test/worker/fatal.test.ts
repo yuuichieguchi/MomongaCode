@@ -142,6 +142,32 @@ describe('worker fatal store errors', () => {
     expect(fatals).toEqual([failure]);
   });
 
+  it('a notice of a failed run that the store cannot write reaches onFatal instead of being dropped', async () => {
+    const env = await makeEnv();
+    const fatals: Error[] = [];
+    const loadFailure = new Error('load exploded');
+    const writeFailure = new Error('the notice could not be written');
+    const run = await env.enqueue('Fails to load');
+    const store: RuntimeStore = {
+      ...env.store,
+      load: () => {
+        throw loadFailure;
+      },
+      append: (claim, payloads) => {
+        if (payloads.some((payload) => payload.type === 'notice')) throw writeFailure;
+        return env.store.append(claim, payloads);
+      },
+    };
+    const worker = env.worker('worker-1', { store, idlePollMs: 1, onFatal: (error) => fatals.push(error), onError: () => undefined });
+
+    worker.start();
+    await env.passTime(() => fatals.length > 0, 'onFatal');
+    await env.settled(worker.stop(), 'the worker to stop');
+
+    expect(fatals).toEqual([writeFailure]);
+    expect(env.ofType(run.id, 'notice')).toEqual([]);
+  });
+
   it('a non-fatal claim error keeps the loop alive', async () => {
     const env = await makeEnv();
     const fatals: Error[] = [];

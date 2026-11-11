@@ -19,6 +19,7 @@ import type {
   ModelResponse,
   PermissionMode,
   PermissionOption,
+  ApprovalShown,
   PrefixEvent,
   RunEvent,
   RunEventPayload,
@@ -234,6 +235,7 @@ describe('run event payloads', () => {
       subjectDigest: string;
       suggestedRule?: string;
       reason: string;
+      shown: ApprovalShown;
     }>();
     expectTypeOf<Payload<'tool.permission.resolved'>>().toEqualTypeOf<{
       type: 'tool.permission.resolved';

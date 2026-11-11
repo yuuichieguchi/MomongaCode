@@ -30,7 +30,7 @@ const tool = (trusted = true): AnyTool => {
   return found;
 };
 
-const digestOf = async (input: RuleProposalInput): Promise<string> => subjectDigestOf(tool().subject(input as never, CTX), '/work/a', canonicalise);
+const digestOf = async (input: RuleProposalInput): Promise<string> => subjectDigestOf(tool().subject(input as never, CTX), { shown: { title: 'RulePropose', input: {} } }, '/work/a', canonicalise);
 
 describe('RulePropose', () => {
   it('is offered in a trusted folder and not in an untrusted one', () => {

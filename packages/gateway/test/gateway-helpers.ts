@@ -213,7 +213,7 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
     ...(options.priceTable === undefined ? {} : { priceTable: options.priceTable }),
   });
   registerCleanup(() => gateway.close());
-  const client = createUdsClient(fixedSocket(socketPath));
+  const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0 });
   registerCleanup(() => client.close());
   return { gateway, client, clock, timers, dir, socketPath, dbPath, model };
 };

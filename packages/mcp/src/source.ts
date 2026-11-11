@@ -7,7 +7,8 @@ import { parseElicitationAnswer } from './input-requests.ts';
 import { authorizationRequiredFor, isTransientRemoteFailure } from './remote-errors.ts';
 import { mcpToolIdentity } from './tool-identity.ts';
 import { McpInputSuspension, parseCheckpoint } from './suspension.ts';
-import { MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TOTAL_TIMEOUT_MS, durationText } from './call-bounds.ts';
+import { MCP_IDLE_SETTING_KEYS, MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TOTAL_TIMEOUT_MS, durationText } from './call-bounds.ts';
+import type { McpTransportKind } from './call-bounds.ts';
 import { pollCeilingMs } from './tasks.ts';
 import type { McpResume } from './suspension.ts';
 import type { McpServerConnection } from './connection.ts';
@@ -39,13 +40,13 @@ const boundsOf = (options: McpToolSourceOptions): CallBounds => {
 
 const UNKNOWN_RUN = 'The server may have run it; check before repeating it.';
 
-const STOP_SENTENCES: Record<ToolStop['bound'], (server: string, tool: string, duration: string) => string> = {
-  idle: (server, tool, duration) => `MCP server "${server}" sent no response or progress for ${duration}, so the call to ${tool} was stopped. ${UNKNOWN_RUN} To wait longer, raise mcp.toolIdleTimeoutMs.`,
+const STOP_SENTENCES: Record<ToolStop['bound'], (server: string, tool: string, duration: string, transport: McpTransportKind) => string> = {
+  idle: (server, tool, duration, transport) => `MCP server "${server}" sent no response or progress for ${duration}, so the call to ${tool} was stopped. ${UNKNOWN_RUN} To wait longer, raise ${MCP_IDLE_SETTING_KEYS[transport]}.`,
   total: (server, tool, duration) => `The call to ${tool} on MCP server "${server}" reached the overall limit of ${duration} and was stopped. ${UNKNOWN_RUN}`,
   deadline: (server, tool, duration) => `The call to ${tool} on MCP server "${server}" reached the run deadline after ${duration} and was stopped. ${UNKNOWN_RUN}`,
 };
 
-const stopSentence = (server: string, tool: string, stop: ToolStop): string => STOP_SENTENCES[stop.bound](server, tool, durationText(stop.ms));
+const stopSentence = (server: string, tool: string, stop: ToolStop, transport: McpTransportKind): string => STOP_SENTENCES[stop.bound](server, tool, durationText(stop.ms), transport);
 
 const cancelSentence = (cancelled: boolean): string =>
   cancelled ? 'The task was cancelled on the server.' : 'The task could not be cancelled and may still be running on the server.';
@@ -139,13 +140,14 @@ const buildTool = (
     timeoutMs: bounds.totalMs,
     ...(bounds.idleMs === undefined ? {} : { idleTimeoutMs: bounds.idleMs }),
     stopText: async (stop) => {
-      const sentence = connection.redact(stopSentence(server, tool.name, stop));
+      const sentence = connection.redact(stopSentence(server, tool.name, stop, connection.transportKind));
       const taskId = taskIdOf(stop.checkpoint);
       const cancelled = taskId === undefined ? undefined : connection.cancelOutcome(taskId);
       return cancelled === undefined ? sentence : `${sentence} ${cancelSentence(await cancelled)}`;
     },
     title: () => `${sanitizeServerText(server)}: ${titleOf(tool)}`,
     subject: () => ({ kind: 'mcp', server, tool: toolPart }),
+    approval: async (input) => ({ effect: `${server} ${tool.name} ${canonicalJson(input)}` }),
     execute: async (input, ctx) => {
       const resume = resumeOf(ctx.resume);
       if (resume?.checkpoint.kind === 'mrtr' || resume?.checkpoint.kind === 'parked') ctx.checkpoint(undefined);

@@ -12,11 +12,11 @@ const bash = (rawInput: unknown): ToolEntry => ({ kind: 'tool', callId: 'c1', na
 describe('the approval panel of a command that requests the network', () => {
   it('shows the request for unrestricted network access under the command', () => {
     const approval: PendingApproval = { approvalId: 'a1', callId: 'c1', options: OPTIONS, reason: 'the command requests unrestricted network access' };
-    expect(approvalWording(approval, () => bash({ command: 'npm install', network: 'open' }), '/w')).toEqual({ title: 'npm install', lines: ['the command requests unrestricted network access'] });
+    expect(approvalWording(approval, () => bash({ command: 'npm install', network: 'open' }))).toEqual({ title: 'npm install', lines: ['the command requests unrestricted network access'] });
   });
 
   it('shows the hosts of a request for named hosts', () => {
     const approval: PendingApproval = { approvalId: 'a1', callId: 'c1', options: OPTIONS, reason: 'the command requests network access to registry.example.org only' };
-    expect(approvalWording(approval, () => bash({ command: 'npm install', network: { hosts: ['registry.example.org'] } }), '/w').lines).toEqual(['the command requests network access to registry.example.org only']);
+    expect(approvalWording(approval, () => bash({ command: 'npm install', network: { hosts: ['registry.example.org'] } })).lines).toEqual(['the command requests network access to registry.example.org only']);
   });
 });

@@ -69,7 +69,7 @@ const echoServer = (): http.Server =>
   );
 
 const client = (socketPath: string): ReturnType<typeof createUdsClient> => {
-  const created = createUdsClient(fixedSocket(socketPath));
+  const created = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0 });
   cleanups.push(() => created.close());
   return created;
 };
@@ -377,7 +377,7 @@ describe('createUdsClient close', () => {
       });
     });
     await listenUnix(server, socketPath, { mechanism: testKernelLock() }, realProcessTestSignal());
-    const created = createUdsClient(fixedSocket(socketPath));
+    const created = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0 });
     expect((await created.request({ method: 'GET', path: '/' })).status).toBe(200);
     expect(connections).toBe(1);
     await created.close();
@@ -387,13 +387,13 @@ describe('createUdsClient close', () => {
   it('rejects requests made after close', async () => {
     const socketPath = path.join(makeDir(), 'd.sock');
     await listenUnix(echoServer(), socketPath, { mechanism: testKernelLock() }, realProcessTestSignal());
-    const created = createUdsClient(fixedSocket(socketPath));
+    const created = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0 });
     await created.close();
     await expect(created.request({ method: 'GET', path: '/' })).rejects.toThrow();
   });
 
   it('allows close to be called twice', async () => {
-    const created = createUdsClient(fixedSocket(path.join(makeDir(), 'e.sock')));
+    const created = createUdsClient(fixedSocket(path.join(makeDir(), 'e.sock')), { connectTimeoutMs: 0 });
     await created.close();
     await created.close();
   });
@@ -414,14 +414,14 @@ describe('createUdsClient timeouts', () => {
 
   it('fails with a headers timeout when headersTimeoutMs is exceeded', async () => {
     const socketPath = await slowServer(3000);
-    const limited = createUdsClient(fixedSocket(socketPath), { headersTimeoutMs: 100 });
+    const limited = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0, headersTimeoutMs: 100 });
     cleanups.push(() => limited.close());
     await expect(limited.request({ method: 'GET', path: '/' })).rejects.toMatchObject({ code: 'UND_ERR_HEADERS_TIMEOUT' });
   });
 
   it('disables the headers timeout with headersTimeoutMs 0', async () => {
     const socketPath = await slowServer(100);
-    const unbounded = createUdsClient(fixedSocket(socketPath), { headersTimeoutMs: 0, bodyTimeoutMs: 0 });
+    const unbounded = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0, headersTimeoutMs: 0, bodyTimeoutMs: 0 });
     cleanups.push(() => unbounded.close());
     const response = await unbounded.request({ method: 'GET', path: '/' });
     expect(await response.text()).toBe('late');

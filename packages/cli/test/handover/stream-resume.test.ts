@@ -70,7 +70,7 @@ describe('the quiet point and the record of a stream client (16.5, 16.7, O4)', (
       [
         ...FRAMES.slice(0, 2),
         frame(3, { type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Bash', kind: 'execute', title: 'Bash ls', rawInput: {} }),
-        frame(4, { type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: 'commands require approval', options: [] }),
+        frame(4, { type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: 'commands require approval', options: [], shown: { title: 'approval', input: {} } }),
         frame(5, { type: 'tool.permission.resolved', approvalId: 'ap1', callId: 'c1', optionId: 'o1', decision: 'allow' }),
       ],
       gate.promise,

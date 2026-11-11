@@ -2,9 +2,10 @@ import path from 'node:path';
 import { foldedKey, wildcardMatches } from '@momonga/policy';
 import type { PermissionSubject } from '@momonga/policy';
 import { withCurrentNames } from '@momonga/protocol';
+import { canonicalJson } from '@momonga/foundation';
 import type { StoredRenames } from '@momonga/protocol';
 import { ToolExecutionError, defineTool } from '../types.ts';
-import type { AnyTool, GateCall, GateFacts, OperationEffect, ReconcileContext, ReconcileResult, SubjectContext, ToolContext, ToolDefinition, ToolResult } from '../types.ts';
+import type { AnyTool, ApprovalContent, GateCall, GateFacts, OperationEffect, PreconditionContext, ReconcileContext, ReconcileResult, SubjectContext, ToolContext, ToolDefinition, ToolResult } from '../types.ts';
 import type { ToolIdempotencyRecord } from '../ports.ts';
 import type { ForgeFields } from '../forge/http.ts';
 import type { ForgeAccess } from '../forge/instances.ts';
@@ -20,7 +21,7 @@ import type { GitOriginCredential } from './git-credential.ts';
 import { OPERATION_SPECS } from './catalogue.ts';
 import { FORGE_REMOTE_INPUT, asksForge, describeClause, evaluateClauses, failedClauses } from './spec.ts';
 import type { ArgvCall, ArgvItem, ForgeCall, Network, OperationSpec, PrePushHook, Probe } from './spec.ts';
-import { isTruthy, lookup, lookupList, referencesIn, renderTemplate } from './template.ts';
+import { isTruthy, lookup, lookupList, referencesIn, renderShown, renderTemplate } from './template.ts';
 import type { Scope } from './template.ts';
 
 export type OperationSettings = { readonly protectedRefs?: readonly string[]; readonly approval?: Readonly<Record<string, 'rule' | 'always'>> };
@@ -478,6 +479,38 @@ const approvedDestinations = async (runtime: Runtime, input: Record<string, unkn
   return approved;
 };
 
+const shownArgument = (argument: string): string => (argument === '' || /[\s"'\\]/.test(argument) ? JSON.stringify(argument) : argument);
+
+const shownArgv = (items: readonly ArgvItem[], scope: Scope): string[] =>
+  items.flatMap((item) => {
+    if (typeof item === 'string') return [renderShown(item, scope)];
+    if ('each' in item) return lookupList(scope, item.each) ?? [`{${item.each}}`];
+    const chosen = isTruthy(scope, item.if) ? item.then : (item.else ?? []);
+    return chosen.map((entry) => renderShown(entry, scope));
+  });
+
+const titleOf = (spec: OperationSpec, input: Record<string, unknown>): string => {
+  const scope: Scope = { input };
+  const chosen = (spec.titles ?? []).find((entry) => isTruthy(scope, entry.when));
+  return renderTemplate(chosen?.title ?? spec.title, scope);
+};
+
+const shownEffectOf = (spec: OperationSpec, input: Record<string, unknown>, gateFacts: Record<string, unknown> | undefined): string | undefined => {
+  const { effect } = spec;
+  if (effect === undefined) return undefined;
+  const scope: Scope = { input };
+  if ('argv' in effect) {
+    const command = shownArgv(effect.argv, scope).map(shownArgument).join(' ');
+    const destinations = effect.network === undefined || effect.network === 'none' ? [] : (stringList(gateFacts?.[DESTINATIONS]) ?? []);
+    return [command, ...destinations.map((destination) => `to ${destination}`)].join('\n');
+  }
+  const args = Object.fromEntries(Object.entries(effect.args).map(([key, template]) => [key, renderShown(template, scope)]));
+  const forgeRemote = gateFacts?.[FORGE_REMOTE];
+  const location = typeof forgeRemote === 'string' ? parseRemoteUrl(forgeRemote) : undefined;
+  const place = location === undefined ? '' : `\non ${location.host}/${location.repo}`;
+  return `${effect.forge} ${canonicalJson(args)}${place}`;
+};
+
 const subjectOf = (runtime: Runtime, input: Record<string, unknown>, gateFacts: Record<string, unknown> | undefined): PermissionSubject => {
   const { spec, deps } = runtime;
   const scope: Scope = { input };
@@ -531,7 +564,11 @@ const toolOf = (spec: OperationSpec, deps: OperationDeps): AnyTool => {
     tier: 'optional' as const,
     inputSchema: spec.input,
     timeoutMs: spec.timeoutMs,
-    title: (input: Record<string, unknown>): string => renderTemplate(spec.title, { input }),
+    title: (input: Record<string, unknown>): string => titleOf(spec, input),
+    approval: async (input: Record<string, unknown>, _ctx: PreconditionContext, gateFacts?: GateFacts): Promise<ApprovalContent> => {
+      const effect = shownEffectOf(spec, input, gateFacts);
+      return effect === undefined ? {} : { effect };
+    },
     gateFacts: (input: Record<string, unknown>, ctx: SubjectContext, call: GateCall): Promise<GateFacts> => gateFactsOf(runtime, input, ctx, call),
     subject: (input: Record<string, unknown>, _ctx: SubjectContext, gateFacts?: GateFacts): PermissionSubject => subjectOf(runtime, input, gateFacts),
     execute: (input: Record<string, unknown>, ctx: ToolContext, prepared: Record<string, unknown> | undefined): Promise<ToolResult> => executeOperation(runtime, input, ctx, prepared),

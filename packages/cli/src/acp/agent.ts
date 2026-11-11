@@ -1,6 +1,6 @@
 import { PROTOCOL_VERSION, RequestError, agent } from '@agentclientprotocol/sdk';
 import type { AgentApp, AgentConnection, RequestPermissionRequest, SessionConfigOption, SessionUpdate } from '@agentclientprotocol/sdk';
-import { messageOf, readMandate, readinessShownText } from '@momonga/protocol';
+import { isOpaqueEvent, messageOf, readMandate, readinessShownText } from '@momonga/protocol';
 import type { ElicitationAnswerRecord, Mandate, ModelViews, Readiness, SkillsResponse } from '@momonga/protocol';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import { RunApiError } from '../client/runtime-client.ts';
@@ -312,6 +312,12 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
 
   const handleFrame = (session: BridgeSession, frame: RunEventFrame, replayThrough: number, mutedThrough = 0): void => {
     const event = frame.data;
+    if (isOpaqueEvent(event)) {
+      if (!session.mapper.opaqueTypes.has(event.type)) deps.report(`session ${session.id}: events of type ${event.type} are not known to this client and are not shown`);
+      mapRunEvent(event, 'live', session.mapper, clientFeatures());
+      active();
+      return;
+    }
     const seq = 'seq' in event ? event.seq : undefined;
     if ('seq' in event) lastSeq.set(event.runId, Math.max(lastSeq.get(event.runId) ?? 0, event.seq));
     const phase: Phase = seq !== undefined && seq <= replayThrough ? 'history' : 'live';

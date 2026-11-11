@@ -18,13 +18,13 @@ describe('runtime.drainTimeoutMs and mcp.closeGraceMs are user settings read as 
     expect(Object.keys(runtime.properties)).toEqual(['drainTimeoutMs']);
     expect(runtime.additionalProperties).toBe(false);
     const mcp = SETTINGS_SCHEMA.properties['mcp'] as { properties: Record<string, unknown> };
-    expect(Object.keys(mcp.properties).sort()).toEqual(['closeGraceMs', 'connectTimeoutMs', 'toolIdleTimeoutMs', 'toolTotalTimeoutMs']);
+    expect(Object.keys(mcp.properties).sort()).toEqual(['closeGraceMs', 'connectTimeoutMs', 'toolIdleTimeoutNetworkMs', 'toolIdleTimeoutStdioMs', 'toolTotalTimeoutMs']);
   });
 
   it.each([
     [{ runtime: { drainTimeoutMs: 0 }, mcp: { closeGraceMs: 0 } }, 0, 0],
     [{ runtime: { drainTimeoutMs: 300_000 }, mcp: { closeGraceMs: 30_000 } }, 300_000, 30_000],
-    [{ runtime: { drainTimeoutMs: 1234 }, mcp: { closeGraceMs: 567, toolIdleTimeoutMs: 10 } }, 1234, 567],
+    [{ runtime: { drainTimeoutMs: 1234 }, mcp: { closeGraceMs: 567, toolIdleTimeoutStdioMs: 10 } }, 1234, 567],
   ])('accepts %o from user settings', async (settings, drain, grace) => {
     expect(await stopValuesOf(settings)).toEqual({ closeGraceMs: 10_000, managedServerStopGraceMs: 3000, drainTimeoutMs: drain, mcpCloseGraceMs: grace });
   });

@@ -86,7 +86,7 @@ describe('publishCurrentGeneration', () => {
       link: async (from, to) => void operations.push({ op: 'link', file: from, to }),
       rm: async (file) => void operations.push({ op: 'rm', file }),
     };
-    expect(await publishCurrentGeneration(paths, recordOf('/Users/alice', 1, '1.0.0'), { fs: files, lock: createFakeKernelLock({ inheritable: false }) })).toBe('published');
+    expect(await publishCurrentGeneration(paths, recordOf('/Users/alice', 1, '1.0.0'), { fs: files, lock: createFakeKernelLock({ inheritable: false, disk: 'in-memory' }) })).toBe('published');
     const writesToCurrent = operations.filter((operation) => operation.file === paths.current && operation.op.startsWith('open'));
     expect(writesToCurrent).toEqual([]);
     const renames = operations.filter((operation) => operation.op === 'rename');
@@ -140,7 +140,7 @@ describe('createUdsClient with a resolver', () => {
       const client = createUdsClient(async () => {
         resolved += 1;
         return socket;
-      });
+      }, { connectTimeoutMs: 0 });
       try {
         expect(await (await client.request({ method: 'GET', path: '/a' })).text()).toBe('ok');
         expect(await (await client.request({ method: 'GET', path: '/b' })).text()).toBe('ok');
@@ -155,7 +155,7 @@ describe('createUdsClient with a resolver', () => {
 
   it('fails a request with ENOENT when no generation is current', async () => {
     await withHome(async (_home, paths) => {
-      const client = createUdsClient(currentSocketResolver(paths, 'runtime'));
+      const client = createUdsClient(currentSocketResolver(paths, 'runtime'), { connectTimeoutMs: 0 });
       try {
         await expect(client.request({ method: 'GET', path: '/v1/health' })).rejects.toMatchObject({ code: 'ENOENT' });
       } finally {

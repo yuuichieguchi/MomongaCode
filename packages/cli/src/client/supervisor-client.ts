@@ -45,7 +45,7 @@ const isShutdownResponse = (value: unknown): value is SupervisorShutdownResponse
 
 export const createSupervisorClient = (options: SupervisorClientOptions): SupervisorClient => {
   const responseBoundMs = options.responseBoundMs ?? SUPERVISOR_RESPONSE_BOUND_MS;
-  const http = createUdsClient(options.resolveSocket, { headersTimeoutMs: responseBoundMs, bodyTimeoutMs: responseBoundMs });
+  const http = createUdsClient(options.resolveSocket, { connectTimeoutMs: responseBoundMs, headersTimeoutMs: responseBoundMs, bodyTimeoutMs: responseBoundMs });
 
   const health = async (): Promise<SupervisorHealth> => {
     const response = await http.request({ method: 'GET', path: '/v1/health' });

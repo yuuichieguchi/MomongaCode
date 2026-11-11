@@ -144,8 +144,9 @@ describe('Read with a relative path', () => {
     const relative = approvalOf(await tools.run('Read', { file_path: '../outside/o.txt' }));
     moveShellTo(tools, 'outside');
     const afterCd = approvalOf(await tools.run('Read', { file_path: '../outside/o.txt' }));
-    expect(relative.subjectDigest).toBe(absolute.subjectDigest);
-    expect(afterCd.subjectDigest).toBe(absolute.subjectDigest);
+    expect(relative.shown.input).toEqual({ file_path: '../outside/o.txt' });
+    expect(relative.subjectDigest).not.toBe(absolute.subjectDigest);
+    expect(afterCd.subjectDigest).toBe(relative.subjectDigest);
     expect(relative.decision).toEqual(absolute.decision);
     expect(relative.title).toBe(`Read ${outsideFile}`);
     expect(relative.locations).toEqual([{ path: outsideFile }]);
@@ -285,7 +286,7 @@ describe('Write with a relative path', () => {
     const relative = approvalOf(await tools.run('Write', { file_path: 'sub/n.txt', content: 'x' }));
     expect(relative.title).toBe('Write sub/n.txt');
     expect(relative.locations).toEqual([{ path: target }]);
-    expect(relative.subjectDigest).toBe(inside.subjectDigest);
+    expect(relative.subjectDigest).not.toBe(inside.subjectDigest);
     const outside = approvalOf(await tools.run('Write', { file_path: '../outside/n.txt', content: 'x' }));
     expect(outside.title).toBe(`Write ${path.join(tools.layout.outside, 'n.txt')}`);
     expect(outside.locations).toEqual([{ path: path.join(tools.layout.outside, 'n.txt') }]);
@@ -447,7 +448,7 @@ describe('Glob paths', () => {
     const tools = await tree();
     const absolute = approvalOf(await tools.run('Glob', { pattern: '*', path: tools.layout.outside }));
     const relative = approvalOf(await tools.run('Glob', { pattern: '*', path: '../outside' }));
-    expect(relative.subjectDigest).toBe(absolute.subjectDigest);
+    expect(relative.subjectDigest).not.toBe(absolute.subjectDigest);
     expect(relative.decision).toEqual(absolute.decision);
     expect(relative.locations).toEqual([{ path: tools.layout.outside }]);
   });
@@ -561,7 +562,7 @@ describe('Grep policy', () => {
     const tools = await makeBuiltins();
     const absolute = approvalOf(await tools.run('Grep', { pattern: 'a', path: tools.layout.outside }));
     const relative = approvalOf(await tools.run('Grep', { pattern: 'a', path: '../outside' }));
-    expect(relative.subjectDigest).toBe(absolute.subjectDigest);
+    expect(relative.subjectDigest).not.toBe(absolute.subjectDigest);
     expect(relative.decision).toEqual(absolute.decision);
     expect(relative.locations).toEqual([{ path: tools.layout.outside }]);
   });

@@ -279,7 +279,7 @@ const RUNTIME_HEALTH_PATH = '/v1/health';
 export const runtimeHealthOver =
   (socketPath: string): RuntimeHealthProbe =>
   async (signal) => {
-    const client = createUdsClient(fixedSocket(socketPath));
+    const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0 });
     try {
       const response = await client.request({ method: 'GET', path: RUNTIME_HEALTH_PATH, signal });
       const text = await response.text();
@@ -309,7 +309,7 @@ const credentialFromSupervisor =
   (socketPath: string, capability: string | undefined, redact: (value: string) => void): HandedCredential =>
   async (name, signal) => {
     if (capability === undefined || capability === '') return undefined;
-    const client = createUdsClient(fixedSocket(socketPath));
+    const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0 });
     try {
       const response = await client.request({ method: 'GET', path: `/v1/credentials/${encodeURIComponent(name)}`, headers: { [CREDENTIAL_CAPABILITY_HEADER]: capability }, signal });
       const text = await response.text();
@@ -1373,8 +1373,10 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       const outbound = previous !== undefined && previous.networkDigest === networkDigest ? previous.network : await outboundNetworkOf(current.network, keySignal);
       const shape = { userDialects: current.models.dialects, headersTimeoutMs: current.models.headersTimeoutMs, idleTimeoutMs: current.models.idleTimeoutMs };
       const outputPolicy: ProbeOutputPolicy = { unboundedOutputReserve: current.context.unboundedOutputReserve };
+      const priceTable = definePriceTable(current.pricing === undefined ? [] : current.pricing);
       const parts = new Map<string, TargetPart>();
       const built: Closable[] = [];
+      let epoch: ProcessEpoch;
       try {
         const displays = displayMapOf(current.models.views);
         for (const [name, target] of current.models.models) {
@@ -1409,35 +1411,34 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           built.push(...part.closables.filter((closable) => !holds.has(closable)));
           parts.set(name, part);
         }
+        const counters = Object.fromEntries([...parts].map(([name, part]) => [name, part.counter]));
+        const config = withCounters(gatewayConfigOf(current.models), counters);
+        const adapters: Record<string, ProviderAdapter> = {};
+        for (const [name, part] of parts) {
+          adapters[name] = part.adapter;
+        }
+        const router = createRouter({
+          config,
+          adapters,
+          clock,
+          timers,
+          redactor: shared.redactor,
+          reasoningOrigin: shared.reasoningOrigin,
+          ...(previous === undefined ? {} : { previous: previous.gateway.router }),
+          live: [...liveEpochs].map((epoch) => epoch.gateway.router),
+        });
+        for (const credential of credentialValuesOf(options.env, credentialEnvNames(current.models), new Map(), (message) => logger.warn(message), outbound.config)) shared.redactor.add(credential);
+        epoch = {
+          gateway: { router, priceTable, telemetry: undefined, planTargets: planTargetRefsOf(current) },
+          priceTable,
+          parts,
+          network: outbound,
+          networkDigest,
+        };
       } catch (error) {
         await Promise.all(built.map((closable) => closable.close(undefined)));
         throw error;
       }
-      const counters = Object.fromEntries([...parts].map(([name, part]) => [name, part.counter]));
-      const config = withCounters(gatewayConfigOf(current.models), counters);
-      const adapters: Record<string, ProviderAdapter> = {};
-      for (const [name, part] of parts) {
-        adapters[name] = part.adapter;
-      }
-      const router = createRouter({
-        config,
-        adapters,
-        clock,
-        timers,
-        redactor: shared.redactor,
-        reasoningOrigin: shared.reasoningOrigin,
-        ...(previous === undefined ? {} : { previous: previous.gateway.router }),
-        live: [...liveEpochs].map((epoch) => epoch.gateway.router),
-      });
-      for (const credential of credentialValuesOf(options.env, credentialEnvNames(current.models), new Map(), (message) => logger.warn(message), outbound.config)) shared.redactor.add(credential);
-      const priceTable = definePriceTable(current.pricing === undefined ? [] : current.pricing);
-      const epoch: ProcessEpoch = {
-        gateway: { router, priceTable, telemetry: undefined, planTargets: planTargetRefsOf(current) },
-        priceTable,
-        parts,
-        network: outbound,
-        networkDigest,
-      };
       for (const closable of closablesOf(epoch)) hold(closable);
       liveEpochs.add(epoch);
       return epoch;
