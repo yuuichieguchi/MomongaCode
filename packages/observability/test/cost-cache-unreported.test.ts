@@ -3,6 +3,7 @@ import { ROOT_CONTEXT, trace } from '@opentelemetry/api';
 import { buildCostBreakdown, definePriceTable, formatCostBreakdown, recordChatResponse, startAgentSpan, startChatSpan } from '@momonga/observability';
 import type { BilledCall, BreakdownCall } from '@momonga/observability';
 import { harness, billedCallsOfRun } from './helpers.ts';
+import type { BilledCallAtCallTime } from './helpers.ts';
 
 const AT = Date.parse('2026-06-01T00:00:00Z');
 
@@ -33,7 +34,7 @@ const recordMainCalls = async (cachedByCall: readonly (number | undefined)[], h:
   await h.telemetry.forceFlush();
 };
 
-const asBreakdownCall = (call: BilledCall): BreakdownCall => ({
+const asBreakdownCall = (call: BilledCallAtCallTime): BreakdownCall => ({
   runId: call.runId,
   ...(call.step === undefined ? {} : { step: call.step }),
   ...(call.target === undefined ? {} : { target: call.target }),

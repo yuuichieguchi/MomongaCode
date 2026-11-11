@@ -24,9 +24,7 @@ const markerPath = (harness: ManagerHarness): string => {
   return path.join(harness.paths.markers.daemons, names[0] as string);
 };
 
-const untilReapEnds = async (reapEnded: () => boolean): Promise<void> => {
-  while (!reapEnded()) await new Promise<void>((resolve) => setTimeout(resolve, 10));
-};
+const untilReapEnds = (reapEnded: () => boolean): Promise<void> => pollUntil(reapEnded, REAL_PROCESS_TEST_TIMEOUT_MS, 'the reap to end');
 
 const trackUnhandled = (context: Parameters<typeof registerCleanup>[0]): unknown[] => {
   const rejections: unknown[] = [];

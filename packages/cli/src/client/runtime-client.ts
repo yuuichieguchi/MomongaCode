@@ -158,6 +158,7 @@ export type RuntimeClient = {
   setMcpServers(sessionId: string, servers: Readonly<Record<string, McpServerConfig>>): Promise<SessionView>;
   setPermissionMode(sessionId: string, mode: PermissionMode): Promise<SessionView>;
   setModel(sessionId: string, model: string): Promise<SessionView>;
+  updateSession(sessionId: string, update: SessionUpdate): Promise<SessionView>;
   createRun(sessionId: string, input: string, options?: CreateRunOptions): Promise<{ run: RunView; location: string }>;
   compact(sessionId: string, instructions?: string): Promise<RunView>;
   getRun(id: string): Promise<RunView>;
@@ -181,6 +182,10 @@ export type RuntimeClient = {
   startMcpAuthorization(sessionId: string, server: string): Promise<McpAuthorizationView>;
   mcpAuthorization(sessionId: string, server: string): Promise<McpAuthorizationView>;
   cancelMcpAuthorization(sessionId: string, server: string): Promise<void>;
+  folderMcpServers(folder: McpFolder): Promise<McpServerView[]>;
+  startFolderMcpAuthorization(folder: McpFolder, server: string): Promise<McpAuthorizationView>;
+  folderMcpAuthorization(cwd: string, server: string): Promise<McpAuthorizationView>;
+  cancelFolderMcpAuthorization(cwd: string, server: string): Promise<void>;
   memories(filter?: MemoryFilter): Promise<MemoryView[]>;
   lastReflection(project: string): Promise<ReflectionJobView | null>;
   runReflection(runId: string): Promise<RunReflectionView>;
@@ -286,6 +291,10 @@ const frameOf = (event: { id?: string; event?: string; data: string }, descripti
   if (!Number.isInteger(id)) throw new ContractViolation(description, `an event with a non-integer id ${event.id}`);
   return { id, event: event.event, data: checkRunEvent(parsed(event.data, description), description) };
 };
+
+export type SessionUpdate = { permissionMode: PermissionMode; model?: string } | { permissionMode?: PermissionMode; model: string };
+
+export type McpFolder = { cwd: string; env: Readonly<Record<string, string>> };
 
 const NO_SEGMENT = new Set(['', '.', '..']);
 
@@ -418,17 +427,15 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     return sessions;
   };
 
-  const setPermissionMode = async (sessionId: string, mode: PermissionMode): Promise<SessionView> => {
+  const updateSession = async (sessionId: string, update: SessionUpdate): Promise<SessionView> => {
     const path = `/v1/sessions/${pathSegment(sessionId)}`;
-    const { body } = await send('PATCH', path, [200], { body: { permissionMode: mode } });
+    const { body } = await send('PATCH', path, [200], { body: update });
     return sessionOf(body, `PATCH ${path}`);
   };
 
-  const setModel = async (sessionId: string, model: string): Promise<SessionView> => {
-    const path = `/v1/sessions/${pathSegment(sessionId)}`;
-    const { body } = await send('PATCH', path, [200], { body: { model } });
-    return sessionOf(body, `PATCH ${path}`);
-  };
+  const setPermissionMode = (sessionId: string, mode: PermissionMode): Promise<SessionView> => updateSession(sessionId, { permissionMode: mode });
+
+  const setModel = (sessionId: string, model: string): Promise<SessionView> => updateSession(sessionId, { model });
 
   const createRun = async (sessionId: string, input: string, runOptions: CreateRunOptions = {}): Promise<{ run: RunView; location: string }> => {
     const path = `/v1/sessions/${pathSegment(sessionId)}/runs`;
@@ -548,6 +555,32 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
 
   const cancelMcpAuthorization = async (sessionId: string, server: string): Promise<void> => {
     await send('DELETE', authorizationPath(sessionId, server), [204]);
+  };
+
+  const folderAuthorizationPath = (server: string): string => `/v1/mcp/servers/${pathSegment(server)}/authorization`;
+
+  const folderQuery = (cwd: string): string => `?cwd=${encodeURIComponent(cwd)}`;
+
+  const folderMcpServers = async (folder: McpFolder): Promise<McpServerView[]> => {
+    const path = '/v1/mcp/servers';
+    const { body } = await send('POST', path, [200], { body: folder });
+    return checkMcpServers(body, `POST ${path}`).servers;
+  };
+
+  const startFolderMcpAuthorization = async (folder: McpFolder, server: string): Promise<McpAuthorizationView> => {
+    const path = folderAuthorizationPath(server);
+    const { body } = await send('POST', path, [202], { body: folder });
+    return checkMcpAuthorization(fieldOf(body, 'authorization', `POST ${path}`), `POST ${path}`);
+  };
+
+  const folderMcpAuthorization = async (cwd: string, server: string): Promise<McpAuthorizationView> => {
+    const path = folderAuthorizationPath(server);
+    const { body } = await send('GET', `${path}${folderQuery(cwd)}`, [200]);
+    return checkMcpAuthorization(fieldOf(body, 'authorization', `GET ${path}`), `GET ${path}`);
+  };
+
+  const cancelFolderMcpAuthorization = async (cwd: string, server: string): Promise<void> => {
+    await send('DELETE', `${folderAuthorizationPath(server)}${folderQuery(cwd)}`, [204]);
   };
 
   const memoriesQueryOf = (filter: MemoryFilter, after?: string): string => {
@@ -787,6 +820,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     childRuns,
     setMcpServers,
     setPermissionMode,
+    updateSession,
     setModel,
     createRun,
     compact,
@@ -827,6 +861,10 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     startMcpAuthorization,
     mcpAuthorization,
     cancelMcpAuthorization,
+    folderMcpServers,
+    startFolderMcpAuthorization,
+    folderMcpAuthorization,
+    cancelFolderMcpAuthorization,
     memories,
     lastReflection,
     runReflection,

@@ -1,3 +1,4 @@
+import type { FallbackCause } from './fallback-cause.ts';
 import type { CacheMissCause } from './prefix-events.ts';
 
 export const ANATOMY_FLAT_LAYERS = ['system', 'tools', 'instructions', 'skills', 'governing', 'memories', 'summary', 'workingState'] as const;
@@ -47,6 +48,10 @@ export const CACHE_READS_NOT_REPORTED = 'cache reads not reported';
 export const PRICE_NOT_RECORDED = 'price not recorded';
 
 export type PriceNotRecorded = { kind: 'not_recorded' };
+
+export type RecordedPrice = ModelPricing | PriceNotRecorded;
+
+export type RecordedCost = { runId: string; responseId?: string; step?: number; price: RecordedPrice };
 
 export const UNPRICED_CODE_TEXT: Readonly<Record<UnpricedCode, string>> = {
   plan: 'plan usage, no per-token price',
@@ -117,7 +122,7 @@ export type BilledCallView = {
   billing: 'metered' | 'local' | 'plan' | 'unknown';
   startMs: number;
   usage: { inputTokens: number; cachedInputTokens?: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
-  price: { kind: 'priced'; units: string; priceVersion: string } | { kind: 'unpriced'; code: UnpricedCode; reason: string } | PriceNotRecorded;
+  fallbackCauses?: FallbackCause[];
 };
 
 export type BilledCallsCursorView = { run: number; after: number };

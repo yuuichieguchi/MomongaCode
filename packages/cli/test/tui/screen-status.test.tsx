@@ -14,10 +14,6 @@ const CTRL_O = '\u000f';
 
 const keyX: TerminalEvent = { type: 'key', text: 'x', ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
 
-const settle = async (): Promise<void> => {
-  for (let count = 0; count < 10; count += 1) await new Promise<void>((resolve) => setImmediate(resolve));
-};
-
 const working = async (size = { columns: 70, rows: 14 }) => {
   const clock = manualClock(10_000);
   const started = await start({}, { now: clock.now, timers: clock.timers }, size);
@@ -79,8 +75,7 @@ describe('the measuring row ends with its cause (6.2)', () => {
     expect(measuring[9]).toBe('⠋ measuring this model (once per model and OS build) 0s');
     expect(measuring.join('\n')).not.toContain('target primary is being measured');
     clock.advance(5000);
-    await settle();
-    expect(app.lastFrame()).toContain('measuring this model (once per model and OS build) 5s');
+    await untilFrame(app, 'measuring this model (once per model and OS build) 5s');
     toolCalling[SESSION.model] = unavailable;
     clock.advance(5000);
     const ended = await untilFrame(app, 'measuring this model failed: no answer');

@@ -198,7 +198,9 @@ describe('response schemas', () => {
       createdAt: 1_800_000_000_000,
       envKeys: ['PATH'],
       activeRunId: null,
+      activeRunAt: null,
       latestRunId: 'run-1',
+      latestRunAt: 1_800_000_000_500,
       additionalDirectories: ['/work/shared'],
       lastEventId: 12,
     };
@@ -216,7 +218,9 @@ describe('response schemas', () => {
       createdAt: 1_800_000_000_000,
       envKeys: [],
       activeRunId: null,
+      activeRunAt: null,
       latestRunId: null,
+      latestRunAt: null,
       additionalDirectories: [],
     };
     expect(accepts('SessionView', view)).toBe(false);
@@ -235,7 +239,9 @@ describe('response schemas', () => {
       createdAt: 1_800_000_000_000,
       envKeys: ['PATH'],
       activeRunId: null,
+      activeRunAt: null,
       latestRunId: null,
+      latestRunAt: null,
       lastEventId: 0,
     };
     expect(accepts('SessionView', view)).toBe(false);

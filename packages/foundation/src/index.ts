@@ -1,7 +1,7 @@
 export { computeBackoff, parseRetryAfter } from './backoff.ts';
 export { TRANSIENT_REQUEST_STATUSES, isRetryableHttp, parseShouldRetry } from './http-retry.ts';
 export { canonicalJson, sha256Hex } from './canonical-json.ts';
-export { ruleFingerprint } from './rule-fingerprint.ts';
+export { ruleFingerprint, sessionRootsOf } from './rule-fingerprint.ts';
 export { capText, sanitizeServerText } from './untrusted-text.ts';
 export { CircuitBreaker } from './circuit-breaker.ts';
 export { codeDigestOf, codeDigestOfRunningProcess } from './code-digest.ts';

@@ -4,6 +4,7 @@ import { stopDaemon } from '../src/daemon/ensure-daemon.ts';
 import { PollTimeout } from '../src/poll.ts';
 import type { CliClock, CliPorts } from '../src/ports.ts';
 import { setupGenerations } from './generations-harness.ts';
+import { afterMicrotasks } from '@momonga/testkit';
 
 const STOPPING = 'Stopping the daemon. This interrupts 2 running steps and 1 background jobs. Interrupted runs resume when the daemon starts again.\n';
 
@@ -13,7 +14,7 @@ const oversleepingClock = (): CliClock => {
     now: () => now,
     sleep: async () => {
       now = Number.MAX_SAFE_INTEGER;
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      await afterMicrotasks();
     },
   };
 };

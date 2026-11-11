@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, createProcessInspector, hostInspectorPorts } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, createProcessInspector, hostInspectorPorts, POLL_INTERVAL_MS, systemWaitTiming, waitUntil as foundationWaitUntil } from '@momonga/foundation';
 import type { HookExecution, HooksSettings } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox } from '@momonga/sandbox';
@@ -36,13 +36,10 @@ const isAlive = (pid: number): boolean => {
   }
 };
 
-const waitUntil = async (condition: () => boolean, attempts = 2000): Promise<boolean> => {
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    if (condition()) return true;
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-  return condition();
-};
+const CONDITION_BOUND_MS = 10_000;
+
+const waitUntil = async (condition: () => boolean): Promise<boolean> =>
+  (await foundationWaitUntil(systemWaitTiming, async () => (condition() ? true : undefined), { intervalMs: POLL_INTERVAL_MS, deadline: systemWaitTiming.monotonicMs() + CONDITION_BOUND_MS })).kind === 'found';
 
 const markerCorruptingSandbox = (inner: Sandbox, corrupted: string[]): Sandbox => ({
   kind: inner.kind,

@@ -119,18 +119,18 @@ describe('T8: unknown and GatewayError failures cross the guard redacted', () =>
     expectRedacted(body, TEST_API_KEY);
   });
 
-  it('answers a redacted 500 and logs a redacted message and stack when the cost report throws', async () => {
+  it('answers a redacted 500 and logs a redacted message and stack when the listing of billed calls throws', async () => {
     const log = captureLog();
     const logger = createJsonLogger({ service: 'gateway', clock: createFakeClock(START_MS), stream: log });
     const { client } = await startGateway({
       adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) },
       credentials: [TEST_API_KEY],
       onError: (error) => logger.error('unhandled gateway error', { err: error instanceof Error ? error : new Error(String(error)) }),
-      costReport: async () => {
+      billedCalls: async () => {
         throw new Error(`boom ${TEST_API_KEY}`);
       },
     });
-    const response = await postJson(client, '/v1/momonga/cost', { runs: [], includeRunless: false });
+    const response = await postJson(client, '/v1/momonga/cost/calls', { runIds: [], cursor: { run: 0, after: 0 }, limit: 1, includeRunless: false });
     const body = await response.text();
     expect(response.status).toBe(500);
     expect(JSON.parse(body).error).toMatchObject({ code: 'internal_error', message: `boom ${REDACTED}` });

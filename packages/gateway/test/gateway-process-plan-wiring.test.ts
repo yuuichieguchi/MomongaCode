@@ -17,7 +17,7 @@ import {
 import { openPlanSessions } from '../src/plan/session.ts';
 import { outputText, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
-import { PROFILE_ID, profileFor, signInAtFake } from './plan-support.ts';
+import { PROFILE_ID, profileFor, realSleep, signInAtFake } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -83,7 +83,7 @@ describe('plan tokens are redacted in every generation (M6, I-C1)', () => {
         signal.throwIfAborted();
         return use((url, init) => fetch(url, init));
       },
-      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      sleep: realSleep,
       redact: () => undefined,
       warn: () => undefined,
     });

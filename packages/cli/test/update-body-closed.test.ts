@@ -6,6 +6,7 @@ import { assetNameFor } from '../src/update/source.ts';
 import { checksumListing } from './fake-release-server.ts';
 import { NEW_BINARY, setupUpdate } from './update-harness.ts';
 import type { UpdateHarness } from './update-harness.ts';
+import { waitFor } from '@momonga/testkit';
 
 type Opened = { url: string; body: Readable };
 
@@ -22,17 +23,13 @@ const trackBodies = (harness: UpdateHarness): Opened[] => {
   return opened;
 };
 
-const settle = async (): Promise<void> => {
-  for (let turn = 0; turn < 20; turn += 1) await new Promise<void>((resolve) => setImmediate(resolve));
-};
-
 const runAndCheckBodies = async (harness: UpdateHarness, opened: Opened[], checkOnly = false): Promise<void> => {
   await runUpdate(harness.wiring, { write: () => undefined }, { checkOnly, interrupt: new AbortController().signal }).then(
     () => undefined,
     () => undefined,
   );
-  await settle();
   expect(opened.length, 'the consumer opened at least one response').toBeGreaterThan(0);
+  await waitFor(() => opened.every(({ body }) => body.closed), { description: `the close of the bodies of ${opened.filter(({ body }) => !body.closed).map(({ url }) => url).join(', ')}` });
   for (const { url, body } of opened) expect(body.closed, `the body of ${url} is closed after the consumer returned`).toBe(true);
 };
 

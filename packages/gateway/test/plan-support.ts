@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { planProfileOf } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
-import { CredentialStoreError, createEncryptedCredentialStore, endedStoreCall, momongaLayout, nodeFileSystem } from '@momonga/foundation';
+import { CredentialStoreError, createEncryptedCredentialStore, endedStoreCall, momongaLayout, nodeFileSystem, sleep, systemTiming } from '@momonga/foundation';
 import type { CredentialEntry, FileSystem, KernelLockMechanism, LimitTiming, ListableCredentialStore, SecretBackend, SecretStore } from '@momonga/foundation';
 import { SIWC_RESOURCE, createFakeClock, siwcBrowse, startFakeSiwcAuth, testKernelLock } from '@momonga/testkit';
 import type { FakeClock, SiwcAuth } from '@momonga/testkit';
@@ -24,18 +24,9 @@ export const MARGIN_MS = 121 * SECOND;
 export const CONDITION_WAIT = { timeout: 30_000, interval: 5 } as const;
 export const PAUSE_CODE = 'plan_usage_limit';
 
-export const realSleep: PlanSleep = (ms, signal) =>
-  new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer);
-        reject(signal.reason);
-      },
-      { once: true },
-    );
-  });
+export const realSleep: PlanSleep = async (ms, signal) => {
+  if ((await sleep(systemTiming, ms, signal)) === 'aborted') throw signal?.reason;
+};
 
 export type RecordedPlanEvent = { name: string; data: Record<string, unknown> };
 

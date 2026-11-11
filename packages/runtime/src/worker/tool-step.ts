@@ -6,7 +6,6 @@ import type { BatchOutputFormatter, CallOutcome, DisplayContext, NeedsApprovalOu
 import { COVERED_PROGRAMS, OPERATION_SPECS, TOOL_VALIDATOR_FAILED_CODE, supersededForms, toolRefusalKey, validateToolInput } from '@momonga/tools';
 import type { RuntimeStore, Session } from '@momonga/store';
 import { createToolHooks } from '@momonga/tools';
-import { permissionRulesFor } from '../governance/rules.ts';
 import { createAutoClassifier } from './auto-classifier.ts';
 import { haltRun, hookRunContextFor } from './hook-step.ts';
 import type { TraceSpan } from '../ports.ts';
@@ -19,7 +18,7 @@ import { hasHeld, heldLinkOf, heldOutput, heldVerdictOf, quiesce } from './held-
 import { heldSessionOf } from './known.ts';
 import type { HeldSession } from './known.ts';
 import { holdSandbox } from './held-sandbox.ts';
-import { laterVerdictNotice, policyRefusal, ruleVerdictFor } from './rule-verdict.ts';
+import { laterVerdictNotice, policyRefusal, ruleVerdictFor, runRulesFor } from './rule-verdict.ts';
 import type { HeldSandbox } from './held-sandbox.ts';
 
 export const REJECTED_OUTPUT = 'The user rejected this tool call.';
@@ -289,7 +288,7 @@ export const settleHeld = async (ctx: ClaimContext): Promise<Flow | number> => {
 const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSession, calls: ToolCall[], step: number, lateBatch?: LateBatch): Promise<Flow> => {
   const { options, journal, run } = ctx;
   const late = lateBatch !== undefined;
-  const rules = [...(await permissionRulesFor(options, session)), ...(ctx.delegation?.rules ?? [])];
+  const rules = await runRulesFor(options, session, ctx.delegation);
   const policy = await options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories, ruleEnforcement: held.ruleEnforcement, signal: ctx.control.signal, discoverGitConfig: true });
   const verdict = await ruleVerdictFor(ctx, session, { rules, roots: policy.roots, enforcement: held.ruleEnforcement });
   const laterVerdict = laterVerdictNotice(journal.state, ctx.policyFingerprint, verdict);

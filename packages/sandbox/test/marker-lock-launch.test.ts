@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { createLockCapability, createMarker, createProcessInspector, hostInspectorPorts } from '@momonga/foundation';
+import { createLockCapability, createMarker, createProcessInspector, hostInspectorPorts, POLL_INTERVAL_MS, systemWaitTiming, waitUntil } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testLocks } from '@momonga/testkit';
 import { launch } from '../src/process.ts';
 import type { LaunchOptions } from '../src/process.ts';
@@ -41,12 +41,18 @@ const launchWith = (root: string, markerFd: number, script: string, extra: Parti
     ...extra,
   } as LaunchOptions);
 
+const STATE_POLL_MS = 50;
+
 const waitForState = async (read: () => Promise<string>, wanted: string, attempts: number): Promise<string> => {
   let last = await read();
-  for (let attempt = 0; attempt < attempts && last !== wanted; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    last = await read();
-  }
+  await waitUntil(
+    systemWaitTiming,
+    async () => {
+      last = await read();
+      return last === wanted ? last : undefined;
+    },
+    { intervalMs: POLL_INTERVAL_MS, deadline: systemWaitTiming.monotonicMs() + attempts * STATE_POLL_MS },
+  );
   return last;
 };
 

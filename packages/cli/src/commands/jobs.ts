@@ -1,10 +1,10 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { escapeTerminalLine } from '@momonga/protocol';
+import { WORDS, escapeTerminalLine } from '@momonga/protocol';
 import type { JobView } from '@momonga/protocol';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
-import { newestSessionIdOf } from './targets.ts';
+import { latestRunOf } from './targets.ts';
 
 const endOf = (job: JobView): string => {
   if (job.status === 'running') return '';
@@ -18,9 +18,10 @@ export const listJobs = async (ports: CliPorts, paths: MomongaPaths, sessionId: 
   await ensureCurrentDaemon(ports, paths);
   const client = connectRuntime(ports, paths);
   try {
-    const target = sessionId ?? (await newestSessionIdOf(client, ports.cwd));
-    const jobs = await client.jobs(target);
+    const target = sessionId ?? (await latestRunOf(client, ports.cwd))?.session.id;
+    const jobs = target === undefined ? [] : await client.jobs(target);
     if (json) ports.stdout.write(`${JSON.stringify(jobs)}\n`);
+    else if (target === undefined) ports.stdout.write(`${escapeTerminalLine(`no ${WORDS.session} of the ${WORDS.folder} ${ports.cwd} has a ${WORDS.run}, so there are no background jobs`)}\n`);
     else ports.stdout.write(jobs.length === 0 ? `session ${target} has no background jobs\n` : `${jobs.map(jobLine).join('\n')}\n`);
     return 0;
   } finally {

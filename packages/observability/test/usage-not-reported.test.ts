@@ -4,7 +4,6 @@ import { RUN_API_SCHEMAS, UNPRICED_CODES, UNPRICED_CODE_TEXT } from '@momonga/pr
 import type { UsageSource } from '@momonga/protocol';
 import {
   buildCostBreakdown,
-  buildCostReport,
   definePriceTable,
   priceCall,
   recordChatResponse,
@@ -12,7 +11,7 @@ import {
   startChatSpan,
 } from '@momonga/observability';
 import type { CallBilling, ChatBilling, CostUsage, PriceCallInput, PriceTable, PricedCall } from '@momonga/observability';
-import { harness, billedCallsOfRun, moneyLine } from './helpers.ts';
+import { harness, billedCallsOfRun, moneyLine, costReportOfSpans } from './helpers.ts';
 
 const SIX = ['plan', 'unknown_billing', 'usage_not_reported', 'cache_read_not_reported', 'no_price_entry', 'unpriceable_usage'];
 
@@ -128,7 +127,7 @@ describe('one rule for unpricedCalls on the report and the breakdown', () => {
     }
     agent.end(h.clock.now());
     await h.telemetry.forceFlush();
-    const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: FULL });
+    const report = costReportOfSpans(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: FULL });
     const calls = billedCallsOfRun(h.store, 'run-a', FULL).map((call) => ({
       runId: call.runId,
       provider: call.provider,

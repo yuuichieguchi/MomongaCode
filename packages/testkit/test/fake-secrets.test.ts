@@ -10,6 +10,7 @@ import {
   fakeReadinessAnswer,
 } from '../src/index.ts';
 import type { FakeControl, FakeReadiness } from '../src/index.ts';
+import { afterMicrotasks } from '../src/index.ts';
 
 const NEVER_ABORTED = new AbortController().signal;
 
@@ -33,7 +34,7 @@ const settlementOf = (attempt: Promise<unknown>): { current(): unknown } => {
   return { current: () => state };
 };
 
-const turn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+const turn = afterMicrotasks;
 
 describe('createFakeSecurityPort', () => {
   it('answers a find-generic-password invocation and records it', async () => {

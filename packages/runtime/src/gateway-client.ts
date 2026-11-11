@@ -127,7 +127,6 @@ export type GatewayModel = {
 export type GatewayClient = GatewayPort & {
   models(): Promise<ListedGatewayModel[]>;
   health(): Promise<GatewayHealth>;
-  cost(runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean): Promise<{ report: GatewayCostReportView; text: string }>;
   billedCalls(runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean, signal: AbortSignal): Promise<BilledCallsPageView>;
   destroy(): Promise<void>;
 };
@@ -636,12 +635,6 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
     },
 
     models: async () => (await listModels(noSignal)).models,
-    cost: async (runs, signal, includeRunless) => {
-      const parsed = await unary({ method: 'POST', path: '/v1/momonga/cost', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runs, includeRunless }) }, signal, unaryBound());
-      if (!isRecord(parsed) || !isRecord(parsed['report']) || typeof parsed['text'] !== 'string') throw invalidResponse('the cost answer has no report and text');
-      return { report: parsed['report'] as GatewayCostReportView, text: parsed['text'] };
-    },
-
     billedCalls: async (runIds, cursor, limit, includeRunless, signal) => {
       const parsed = await unary({ method: 'POST', path: '/v1/momonga/cost/calls', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runIds, cursor, limit, includeRunless }) }, signal, unaryBound());
       if (!isRecord(parsed) || !Array.isArray(parsed['calls'])) throw invalidResponse('the billed calls answer has no calls list');

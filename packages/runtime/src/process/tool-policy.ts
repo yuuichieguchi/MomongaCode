@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { ConfigError } from '@momonga/config';
-import { discoverGitConfigFiles, ensureSessionTmpDir as defaultEnsureSessionTmpDir, filterAsync, hostPaths, isTransientErrno, protectedSetFor } from '@momonga/foundation';
+import { discoverGitConfigFiles, ensureSessionTmpDir as defaultEnsureSessionTmpDir, filterAsync, hostPaths, isTransientErrno, protectedSetFor, sessionRootsOf } from '@momonga/foundation';
 import type { MomongaPaths, RuleEnforcement, SessionScratch, KernelLockMechanism } from '@momonga/foundation';
 import { askedBy, computeFileRules } from '@momonga/policy';
 import type { PolicyHostPorts } from '@momonga/policy';
@@ -30,12 +30,9 @@ const contextBuilder = ({ paths, home, sessionStates, lock, ensureSessionTmpDir 
     const resolver = hostPaths(signal);
     const wrap = wrapperFor(session.id);
     sessionStates.get(session);
-    const roots: string[] = [];
-    for (const root of [session.cwd, ...session.additionalDirectories]) {
-      const result = await resolver.canonicalDirectory(root);
-      if (!result.ok) throw wrap(new Error(`root ${root} ${result.reason}`));
-      roots.push(result.path);
-    }
+    const resolved = await sessionRootsOf(session.cwd, session.additionalDirectories, resolver);
+    if (!resolved.ok) throw wrap(new Error(`root ${resolved.root} ${resolved.reason}`));
+    const { roots } = resolved;
 
     let tmpDir: string;
     try {

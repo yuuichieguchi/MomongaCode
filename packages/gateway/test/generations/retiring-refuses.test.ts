@@ -95,26 +95,23 @@ describe('a retiring gateway refuses new calls and sends nothing upstream (desig
     expect(answered.body).toEqual({ cancelled: false });
   });
 
-  it('serves the reads: models, the momonga model list, usage and health with state retiring and no active request', async () => {
+  it('serves the reads: models, the momonga model list and health with state retiring and no active request', async () => {
     const { client } = await retiringGateway();
 
     expect((await getJson(client, '/v1/models')).status).toBe(200);
     expect((await getJson(client, '/v1/momonga/models')).status).toBe(200);
-    expect((await getJson(client, '/v1/momonga/usage?run_id=run_1')).status).toBe(200);
     const health = await getJson(client, '/v1/momonga/health');
     expect(health.status).toBe(200);
     expect(health.body.state).toBe('retiring');
     expect(health.body.activeRequests).toBe(0);
   });
 
-  it('answers the cost routes and an unknown route by their own rule, not with the refusal', async () => {
+  it('answers the billed calls route and an unknown route by their own rule, not with the refusal', async () => {
     const { client } = await retiringGateway();
 
-    const cost = await readJson(await postJson(client, '/v1/momonga/cost', { runs: [], includeRunless: false }));
     const calls = await readJson(await postJson(client, '/v1/momonga/cost/calls', { runIds: [], cursor: { run: 0, after: 0 }, limit: 1, includeRunless: false }));
     const unknown = await getJson(client, '/v1/momonga/no-such-route');
 
-    expect([cost.status, cost.body.error.code]).toEqual([404, 'cost_unavailable']);
     expect([calls.status, calls.body.error.code]).toEqual([404, 'cost_unavailable']);
     expect([unknown.status, unknown.body.error.code]).toEqual([404, 'route_not_found']);
   });

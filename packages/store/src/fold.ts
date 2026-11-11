@@ -226,12 +226,11 @@ const withReconciledFacts = (facts: WorkingFacts, event: Extract<RunEvent, { typ
 const reconcileCall = (state: RunState, event: Extract<RunEvent, { type: 'tool.reconciled' }>): RunState => {
   const call = requireCall(state, event.callId, event.type);
   const finished = finishCall(state, event, 'reconciled');
-  const asks = event.outcome === 'unknown' && event.interrupted === undefined;
   return {
     ...finished,
     workingFacts: withReconciledFacts(finished.workingFacts, event),
     lastMutationSeq: reconciliationMutates(mutationFactsOf(call), event.outcome) ? event.seq : finished.lastMutationSeq,
-    ...(asks ? { unknownEffects: { ...finished.unknownEffects, [event.callId]: { acknowledged: false } } } : {}),
+    ...(event.outcome === 'unknown' ? { unknownEffects: { ...finished.unknownEffects, [event.callId]: { acknowledged: false } } } : {}),
   };
 };
 

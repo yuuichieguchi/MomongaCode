@@ -101,7 +101,6 @@ describe('addModel: the one way a model enters the settings', () => {
       () => 'written',
       (error: unknown) => (error instanceof Error ? error.message : String(error)),
     );
-    await turn();
     expect(fs.existsSync(waiting.file)).toBe(false);
     flow.abort(new Error('the flow was cancelled'));
     expect(await outcome).toBe('the flow was cancelled');

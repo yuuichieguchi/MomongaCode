@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LEASE_MS, enqueue, harness, mustClaim, mustRun, newSession, rawDb } from './helpers.ts';
+import { afterMicrotasks } from '@momonga/testkit';
 
 type Touched = { runId?: string; sessionId: string }[];
 
@@ -8,7 +9,7 @@ const recorder = () => {
   return { calls, onCommit: (touched: Touched) => void calls.push(touched) };
 };
 
-const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+const settle = afterMicrotasks;
 
 describe('store onCommit', () => {
   it('fires once after the commit, asynchronously, with the run and session touched', async () => {

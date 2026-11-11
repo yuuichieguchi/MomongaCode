@@ -1,5 +1,5 @@
 import type { ContributionKind, SummaryFidelity, SummarySource } from './context-record.ts';
-import type { VerificationOutcome, VerificationState } from './completion.ts';
+import type { QuiescentBehaviour, VerificationOutcome, VerificationState } from './completion.ts';
 import type { ToolFile, WorkingFacts } from './working-facts.ts';
 import type { HookExecution, HookStart } from './hooks.ts';
 import type { PrefixEvent } from './prefix-events.ts';
@@ -56,7 +56,7 @@ export type ApprovalKind = (typeof APPROVAL_KINDS)[number];
 
 export const unknownEffectOptions = (): PermissionOption[] => [{ optionId: 'allow_once', name: 'Continue', kind: 'allow_once' }];
 
-export const UNKNOWN_EFFECT_REASON = 'Its effect is unknown because the runtime stopped while it ran.';
+export const UNKNOWN_EFFECT_REASON = 'Its effect is unknown because the call was stopped before it reported a result.';
 
 export const UNKNOWN_EFFECT_ADVICE = 'Inspect the current state, then continue. To stop instead, cancel the run.';
 
@@ -320,7 +320,7 @@ export type RunEventPayload =
   | ({ type: 'budget.exhausted' } & BudgetExhausted)
   | { type: 'tool.held'; callId: string; approvalId: string; reason: string; footprint: CallFootprint }
   | { type: 'tool.held.resolved'; callId: string; approvalId: string; outcome: HeldOutcome; status: 'completed' | 'failed'; output: string }
-  | { type: 'run.quiescent'; held: HeldCallView[] }
+  | { type: 'run.quiescent'; held: HeldCallView[]; onQuiescent?: QuiescentBehaviour }
   | {
       type: 'model.rejected';
       step: number;

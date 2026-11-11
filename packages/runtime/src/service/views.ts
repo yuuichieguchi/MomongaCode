@@ -57,7 +57,9 @@ export const toSessionView = (store: Pick<RuntimeStore, 'sessionMaxEventId'>, se
   envKeys: Object.keys(session.env),
   additionalDirectories: [...session.additionalDirectories],
   activeRunId: session.activeRunId,
+  activeRunAt: session.activeRunAt,
   latestRunId: session.latestRunId,
+  latestRunAt: session.latestRunAt,
   lastEventId: store.sessionMaxEventId(session.id),
 });
 

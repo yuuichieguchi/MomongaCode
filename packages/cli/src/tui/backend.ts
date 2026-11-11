@@ -25,7 +25,6 @@ import { newerListenerOf } from '../handover/stream.ts';
 import { sessionSocketResolver } from '../daemon/generations.ts';
 import type { CliPorts } from '../ports.ts';
 import { followRun } from '../run/follow.ts';
-import { continuedSession, resolveSession } from '../run/resolve-session.ts';
 import type { BusyInbox } from './busy-input.ts';
 import type { NoticeSource } from './notices.ts';
 import { createClipboardPrograms } from './screen/clipboard-host.ts';
@@ -33,8 +32,8 @@ import type { ClipboardPrograms } from './screen/clipboard-host.ts';
 import { copyThroughRoutes, readClipboardThroughRoutes } from './screen/clipboard.ts';
 import type { ClipboardContent, CopyOutcome } from './screen/clipboard.ts';
 import { readImageAttachment } from '../images.ts';
-import { autoModeConfigured, connectSessionRuntime, environmentSnapshot } from '../run/open-session.ts';
-import type { SessionOptions } from '../run/open-session.ts';
+import { autoModeConfigured, connectSessionRuntime, environmentSnapshot, reopenedAsTyped, runBoundsOf } from '../run/open-session.ts';
+import type { RunBounds, SessionOptions } from '../run/open-session.ts';
 
 export type FollowHandlers = {
   onEvent(frame: RunEventFrame): void;
@@ -116,7 +115,7 @@ export type TuiBackend = {
 export const createTuiBackend = (
   ports: CliPorts,
   paths: MomongaPaths,
-  options: SessionOptions,
+  options: SessionOptions & RunBounds,
   history: HistoryStore,
   noticeSources: readonly NoticeSource[],
   clipboard: ClipboardPrograms = createClipboardPrograms(),
@@ -216,8 +215,8 @@ export const createTuiBackend = (
       });
       return adopt(created.session);
     },
-    resumeSession: async (id) => adopt(await resolveSession(runtime(), ports.cwd, id)),
-    continueSession: async () => adopt(await continuedSession(runtime(), ports.cwd)),
+    resumeSession: async (id) => adopt(await reopenedAsTyped(runtime(), ports.cwd, { kind: 'id', id }, options)),
+    continueSession: async () => adopt(await reopenedAsTyped(runtime(), ports.cwd, { kind: 'newest' }, options)),
     sessions: () => listedSessions(runtime(), ports.cwd, session?.id, closing.signal),
     runs: () => conversationRuns(current().id),
     setMode: async (mode) => {
@@ -231,7 +230,7 @@ export const createTuiBackend = (
     },
     autoModeAvailable: () => autoModeConfigured(ports, closing.signal),
     startRun: async (text, history, runOptions = {}) =>
-      (await runtime().createRun(current().id, text, { history, ...runOptions })).run,
+      (await runtime().createRun(current().id, text, { history, ...runBoundsOf(options), ...runOptions })).run,
     compact: (instructions) => runtime().compact(current().id, instructions),
     follow: async (runId, handlers) =>
       followRun({

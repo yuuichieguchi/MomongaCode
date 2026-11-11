@@ -3,8 +3,8 @@ import path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import { EntryUsageError, isProcessAlive, watchLifeline } from '@momonga/foundation';
-import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
+import { EntryUsageError, isProcessAlive, systemTiming, watchLifeline } from '@momonga/foundation';
+import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, spawnTracked, withTempDir, pollUntil, afterMicrotasks } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { TrackedChild } from '@momonga/testkit';
 
@@ -25,13 +25,10 @@ const collect = (child: TrackedChild): Output => {
   return { text: () => stdout, stderr: () => stderr, lines: () => stdout.split('\n').filter((line) => line !== '') };
 };
 
-const until = async (predicate: () => boolean, deadlineMs: number, description: string, detail: () => string = () => ''): Promise<void> => {
-  const deadline = Date.now() + deadlineMs;
-  while (!predicate()) {
-    if (Date.now() > deadline) throw new Error(`timed out after ${deadlineMs} ms waiting for ${description}${detail() === '' ? '' : `: ${detail()}`}`);
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-};
+const until = (predicate: () => boolean, deadlineMs: number, description: string, detail: () => string = () => ''): Promise<void> =>
+  pollUntil(predicate, { description, boundMs: deadlineMs }).catch((error: unknown) => {
+    throw new Error(`${error instanceof Error ? error.message : String(error)}${detail() === '' ? '' : `: ${detail()}`}`);
+  });
 
 const exitOf = (child: TrackedChild, deadlineMs: number): Promise<number | null> =>
   new Promise((resolve, reject) => {
@@ -39,9 +36,9 @@ const exitOf = (child: TrackedChild, deadlineMs: number): Promise<number | null>
       resolve(child.exitCode);
       return;
     }
-    const timer = setTimeout(() => reject(new Error(`child ${child.pid} did not exit within ${deadlineMs} ms`)), deadlineMs);
+    const timer = systemTiming.setTimeout(() => reject(new Error(`child ${child.pid} did not exit within ${deadlineMs} ms`)), deadlineMs);
     child.once('exit', (code) => {
-      clearTimeout(timer);
+      systemTiming.clearTimeout(timer);
       resolve(code);
     });
   });
@@ -119,10 +116,10 @@ describe('watchLifeline with real processes', () => {
   });
 
   it('no EOF while the parent end stays open', async (context) => {
-    const { child, output } = startChild(context);
+    const { child, output, lifeline } = startChild(context);
     await watching(child, output);
-    const observedFrom = Date.now();
-    await until(() => Date.now() - observedFrom >= 500 || child.exitCode !== null, 2000, 'the observation window');
+    lifeline.write('still here\n');
+    await until(() => output.lines().includes('line still here') || child.exitCode !== null, 5000, 'the child to read a line from the open lifeline', () => output.stderr());
     expect(child.exitCode).toBeNull();
     expect(output.lines()).not.toContain('eof');
   });
@@ -175,7 +172,7 @@ describe('watchLifeline on an unusable fd', () => {
     const onEnd = vi.fn();
     expect(() => watchLifeline(fd, { onEnd, onLine: () => undefined, onOverlongLine: () => undefined })).toThrow(EntryUsageError);
     expect(() => watchLifeline(fd, { onEnd, onLine: () => undefined, onOverlongLine: () => undefined })).toThrow(String(fd));
-    await new Promise((resolve) => setImmediate(resolve));
+    await afterMicrotasks();
     expect(onEnd).not.toHaveBeenCalled();
   });
 });

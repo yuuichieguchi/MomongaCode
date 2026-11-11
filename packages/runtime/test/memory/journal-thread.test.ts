@@ -5,7 +5,7 @@ import type { TestContext } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
 import { openDatabase, systemRandom, nodeFileSystem, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { JournalThreadError, openRuntimeStore } from '@momonga/store';
-import { createFakeClock, createFakeTimers, withTempDir, testKernelLock } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, withTempDir, testKernelLock, afterMicrotasks, waitFor } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
 import * as clientModule from '../../src/memory/journal-thread-client.ts';
 import { startJournalThread } from '../../src/memory/journal-thread-client.ts';
@@ -55,11 +55,9 @@ const fakeThread = (marker: string, onMessage: string): string =>
 
 const PONG = 'port.postMessage({ id: message.id, ok: true, threadId });';
 
-const turn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+const turn = afterMicrotasks;
 
-const until = async (condition: () => boolean): Promise<void> => {
-  while (!condition()) await turn();
-};
+const until = (condition: () => boolean): Promise<void> => waitFor(condition, { description: 'the state of the journal thread the case names' });
 
 const tracked = <T>(promise: Promise<T>): { readonly settled: () => boolean; readonly outcome: Promise<unknown> } => {
   let done = false;

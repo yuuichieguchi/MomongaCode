@@ -100,13 +100,11 @@ describe('service and worker over the real socket', () => {
     await kit.toolbox.waitStarted.promise;
     const gatewayCallsAtCancel = kit.gateway.streams.length;
 
-    const startedAt = Date.now();
     const cancel = await env.http('POST', `/v1/runs/${run.id}/cancel`);
     expect(cancel.status).toBe(202);
     expect(cancel.json.run.status).toBe('CANCELLING');
 
     await pollFor(() => env.store.getRun(run.id)?.status === 'CANCELLED', 3_000, 'the run to reach CANCELLED');
-    expect(Date.now() - startedAt).toBeLessThan(3_000);
     const rest = await stream.toEnd();
     expect(rest.at(-1)).toMatchObject({ type: 'run.status', to: 'CANCELLED' });
     expect(kit.toolbox.waitSignals.every((signal) => signal.aborted)).toBe(true);

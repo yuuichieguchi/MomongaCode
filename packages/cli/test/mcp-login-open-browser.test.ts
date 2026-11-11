@@ -10,18 +10,21 @@ const completedView = { server: 'docs', status: 'completed', startedAt: 0, expir
 let release: (value: typeof completedView) => void = () => undefined;
 
 const runtimeClient = {
-  startMcpAuthorization: vi.fn(async () => ({ server: 'docs', status: 'awaiting_user', url: AUTHORIZE_URL, startedAt: 0, expiresAt: 600000 })),
-  mcpAuthorization: vi.fn(
+  startFolderMcpAuthorization: vi.fn(async () => ({ server: 'docs', status: 'awaiting_user', url: AUTHORIZE_URL, startedAt: 0, expiresAt: 600000 })),
+  folderMcpAuthorization: vi.fn(
     () =>
       new Promise<typeof completedView>((resolve) => {
         release = resolve;
       }),
   ),
-  cancelMcpAuthorization: vi.fn(async () => undefined),
+  cancelFolderMcpAuthorization: vi.fn(async () => undefined),
 };
 
+vi.mock('../src/daemon/ensure-daemon.ts', async (original) => ({ ...(await original<object>()), ensureCurrentDaemon: async () => undefined }));
+
 vi.mock('../src/run/open-session.ts', () => ({
-  openSession: async () => ({ created: { session: { id: 'session-1' } }, client: runtimeClient, close: async () => undefined }),
+  connectRuntime: () => ({ ...runtimeClient, close: async () => undefined }),
+  environmentSnapshot: async () => ({}),
 }));
 
 const { mcpLogin } = await import('../src/commands/mcp.ts');
@@ -48,7 +51,7 @@ describe('momonga mcp login starts the browser through the opener port (P-C7 row
       },
     } as unknown as CliPorts;
     const exit = mcpLogin(ports, momongaLayout('/home/u', process.platform, process.env), 'docs', { openBrowser: true, interrupt: new AbortController().signal });
-    await eventually(() => runtimeClient.mcpAuthorization.mock.calls.length === 1, 'the poll of the authorization');
+    await eventually(() => runtimeClient.folderMcpAuthorization.mock.calls.length === 1, 'the poll of the authorization');
     const onFailure = launches[0]?.onFailure;
     if (onFailure === undefined) throw new Error('no launch recorded with an onFailure callback');
     onFailure('no opener');

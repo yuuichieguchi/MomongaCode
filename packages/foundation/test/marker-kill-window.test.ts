@@ -1,4 +1,4 @@
-import { sleepDrivenTiming } from '@momonga/testkit';
+import { sleepDrivenTiming, afterMicrotasks } from '@momonga/testkit';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -35,7 +35,7 @@ const holderIgnoringTerm = (releaseAfterKillMs: number | undefined) => {
     now: () => current,
     sleep: async (ms: number) => {
       current += ms;
-      await new Promise((resolve) => setImmediate(resolve));
+      await afterMicrotasks();
     },
   });
   const inspector: ProcessInspector = {

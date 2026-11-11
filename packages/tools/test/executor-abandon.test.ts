@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ABANDON_KILL_GRACE_MS, KILL_CONFIRM_MS, POLL_INTERVAL_MS, createUninspectableRegistry, findHolders, groupAlive } from '@momonga/foundation';
 import type { ProcessInspector, Timing, SignalSender, UninspectableRegistry } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, sleepDrivenTiming, testProcessInspector } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, sleepDrivenTiming, testProcessInspector, pollUntil } from '@momonga/testkit';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness, HarnessOptions } from './harness.ts';
 import { deferred, keyFor } from './helpers.ts';
@@ -34,21 +34,11 @@ const pidAlive = (pid: number): boolean => {
 
 const groupExists = (pgid: number): Promise<boolean> => groupAlive(pgid);
 
-const eventually = async (condition: () => Promise<boolean> | boolean, description: string, attempts = 2000): Promise<void> => {
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    if (await condition()) return;
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-  throw new Error(`condition not reached: ${description}`);
-};
+const CONDITION_BOUND_MS = 10_000;
 
-const waitUntilGone = async (pgid: number): Promise<void> => {
-  const deadline = Date.now() + 5000;
-  while (await groupExists(pgid)) {
-    if (Date.now() > deadline) throw new Error(`process group ${pgid} is still alive`);
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-};
+const eventually = (condition: () => Promise<boolean> | boolean, description: string): Promise<void> => pollUntil(condition, { description, boundMs: CONDITION_BOUND_MS });
+
+const waitUntilGone = (pgid: number): Promise<void> => pollUntil(async () => !(await groupExists(pgid)), { description: `the end of the process group ${pgid}`, boundMs: CONDITION_BOUND_MS });
 
 const markerOf = (harness: Harness, key: string): string => path.join(harness.markerDir, key);
 
@@ -500,14 +490,14 @@ describe('executor reconcile of a PENDING call whose earlier attempt is still ru
     }) as unknown as ProcessInspector;
 
   const settlesAfterAbort = async (running: Promise<unknown>, seen: AbortSignal[], abort: () => void): Promise<void> => {
-    await eventually(() => seen.length > 0, 'the reap started its first probe', 200);
+    await eventually(() => seen.length > 0, 'the reap started its first probe');
     abort();
     let settled = false;
     void running.then(
       () => void (settled = true),
       () => void (settled = true),
     );
-    await eventually(() => settled, 'the reap ended with its operation', 200);
+    await eventually(() => settled, 'the reap ended with its operation');
     expect(seen.every((signal) => signal.aborted)).toBe(true);
   };
 

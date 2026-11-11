@@ -10,7 +10,7 @@ import type { ManagerHarness } from './support/p2-manager-harness.ts';
 const RUNTIME_SHUTDOWN_BUDGET_MS = runtimeStopBudgetMs(DEFAULT_STOP_VALUES);
 const RUNTIME_ABORT_BUDGET_MS = runtimeAbortStopBudgetMs(DEFAULT_STOP_VALUES);
 
-const stopLineWritten = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+const stopLineWritten = afterMicrotasks;
 
 const exitAndWait = async (harness: ManagerHarness, state: string, code: number | null, signal: NodeJS.Signals | null = null): Promise<void> => {
   harness.port.last().exit(code, signal);
@@ -625,7 +625,7 @@ describe('stop', () => {
     aborted.spawnInitial();
     void aborted.manager.stop('shutdown', 'int', DEFAULT_STOP_VALUES);
     expect(aborted.port.last().signals).toEqual([]);
-    await new Promise((resolve) => setImmediate(resolve));
+    await stopLineWritten();
     expect(aborted.port.last().signals).toEqual(['SIGINT']);
     aborted.timers.advance(gatewayAbortBudgetMs(DEFAULT_STOP_VALUES) - 1);
     expect(aborted.port.last().groupKills).toBe(0);

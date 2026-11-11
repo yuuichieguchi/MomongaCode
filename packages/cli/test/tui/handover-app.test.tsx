@@ -10,6 +10,7 @@ import { runView } from '../fake-backend.ts';
 import type { FakeBackendOptions, FakeConversation } from '../fake-backend.ts';
 import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
 import { frame, runStarted, start, type } from '../tui-harness.tsx';
+import { waitFor, afterMicrotasks } from '@momonga/testkit';
 
 const IDLE = /^(?![\s\S]*esc to cancel)(?![\s\S]*steer after)[\s\S]*mode: \w+ \(shift\+tab\)/;
 
@@ -163,7 +164,7 @@ describe('the quiet point of the TUI (16.5, red tests 12 and 28)', () => {
     const before = move.checks();
     work.resolve();
     await running;
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await waitFor(() => move.checks() > before, { description: 'the check made again when the task ended' });
     expect(move.surface().quiet()).toBe(true);
     expect(move.checks()).toBeGreaterThan(before);
     app.unmount();
@@ -338,7 +339,7 @@ describe('the fullscreen view across the move (16.6, red tests 21, 22 and 23)', 
     const written = old.app.frames.length;
     await old.move.surface().suspend();
     old.move.surface().say(restartingText('1.2.4'));
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await afterMicrotasks();
     expect(old.app.frames.length).toBe(written);
     old.move.surface().resume();
     old.terminal.emit({ type: 'key', name: 'end', ctrl: true, alt: false, shift: false, super: false, hyper: false, meta: false });

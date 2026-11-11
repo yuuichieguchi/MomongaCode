@@ -409,13 +409,21 @@ export const pollFor = (condition: () => boolean, boundMs: number, description: 
 
 export type McpAdminPort = Parameters<typeof runtime.createRunService>[0]['mcp'];
 
-const unusedMcpAdmin: McpAdminPort = {
+export const unusedMcpAdmin: McpAdminPort = {
   servers: () => Promise.reject(new Error('this test configured no MCP admin')),
   startAuthorization: () => Promise.reject(new Error('this test configured no MCP admin')),
   authorization: () => {
     throw new Error('this test configured no MCP admin');
   },
   cancelAuthorization: () => {
+    throw new Error('this test configured no MCP admin');
+  },
+  folderServers: () => Promise.reject(new Error('this test configured no MCP admin')),
+  startFolderAuthorization: () => Promise.reject(new Error('this test configured no MCP admin')),
+  folderAuthorization: () => {
+    throw new Error('this test configured no MCP admin');
+  },
+  cancelFolderAuthorization: () => {
     throw new Error('this test configured no MCP admin');
   },
 };

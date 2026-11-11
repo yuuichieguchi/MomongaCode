@@ -5,7 +5,7 @@ import { vi } from 'vitest';
 import { FIRST_GENERATION, SWEEP_INTERVAL_MS, createGivenSecretStore, createUdsClient, fixedSocket, generationLayout, momongaPaths, secretStoreEnvFor } from '@momonga/foundation';
 import type { SecretProcessPort, SecretStore, UdsClient, LayoutLocks } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { killPidsForCleanup, modelSettings, FAKE_KEYCHAIN_PATH, createFakeSecretFiles, createTempDir, prepareGenerationForTest, removeTempDir, registerOwned, testLocks } from '@momonga/testkit';
+import { killPidsForCleanup, modelSettings, FAKE_KEYCHAIN_PATH, createFakeSecretFiles, createTempDir, prepareGenerationForTest, removeTempDir, registerOwned, testLocks, pollUntil } from '@momonga/testkit';
 import type { ModelSettings, FakeSecurityPort, PendingTimer } from '@momonga/testkit';
 import { registerCleanup } from './gateway-helpers.ts';
 
@@ -138,13 +138,7 @@ export const spawnSleeper = (): number => {
 
 export const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-export const until = async (predicate: () => boolean | Promise<boolean>, description: string, timeoutMs = 20_000): Promise<void> => {
-  const deadline = Date.now() + timeoutMs;
-  while (!(await predicate())) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${description}`);
-    await pause(25);
-  }
-};
+export const until = (predicate: () => boolean | Promise<boolean>, description: string, timeoutMs = 20_000): Promise<void> => pollUntil(predicate, { description, boundMs: timeoutMs });
 
 export const isAlive = (pid: number): boolean => {
   try {

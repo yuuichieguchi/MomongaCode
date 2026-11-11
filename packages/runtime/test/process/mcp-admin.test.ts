@@ -106,7 +106,7 @@ const setup = async () => {
       return pool;
     },
   });
-  return { admin, session, pools, created, plan, timers, reporter, ended };
+  return { admin, session, store, project: temp.project, pools, created, plan, timers, reporter, ended };
 };
 
 const controllerSignal = (): AbortSignal => new AbortController().signal;
@@ -338,5 +338,48 @@ describe('createMcpAdmin counts the authorizations that wait for the person', ()
     expect(admin.cancelAuthorization(session.id, 'remote')).toBe(true);
     await vi.waitFor(() => expect(ended.count).toBe(2));
     expect(admin.pendingAuthorizations()).toBe(0);
+  });
+});
+
+describe('createMcpAdmin for a folder, with no session', () => {
+  const ENV = { PATH: '/usr/bin' };
+
+  it('lists the servers of the folder with their probed state, opens its pool in that folder, and stores nothing', async () => {
+    const { admin, store, project, created, plan } = await setup();
+    const before = store.listSessions({ limit: 10, cursor: null }).sessions.length;
+    plan.next = { state: 'required', detail: 'sign in' };
+
+    const views = await admin.folderServers({ cwd: project, env: ENV }, controllerSignal());
+
+    expect(views).toEqual([
+      { name: 'local', scope: 'user', transport: 'stdio', auth: 'required', detail: 'sign in' },
+      { name: 'remote', scope: 'user', transport: 'http', url: REMOTE_URL, auth: 'required', detail: 'sign in' },
+    ]);
+    expect(created.map((options) => options.projectDir)).toEqual([project]);
+    expect(store.listSessions({ limit: 10, cursor: null }).sessions).toHaveLength(before);
+  });
+
+  it('starts, reads and cancels an authorization by the folder, apart from the attempts of a session of the same folder', async () => {
+    const { admin, session, project } = await setup();
+    const folder = { cwd: project, env: ENV };
+    expect(admin.cancelFolderAuthorization(project, 'remote')).toBe(false);
+
+    const started = await admin.startFolderAuthorization(folder, 'remote', controllerSignal());
+
+    expect(started).toMatchObject({ server: 'remote', status: 'awaiting_user', url: AUTHORIZE_URL });
+    expect(admin.folderAuthorization(project, 'remote')).toMatchObject({ status: 'awaiting_user' });
+    expect(admin.authorization(session.id, 'remote')).toBeUndefined();
+    expect((await admin.folderServers(folder, controllerSignal())).find((view) => view.name === 'remote')?.authorization).toMatchObject({ status: 'awaiting_user' });
+    expect(admin.cancelFolderAuthorization(project, 'remote')).toBe(true);
+    await admin.close(CLOSE_GRACE_MS);
+    expect(admin.folderAuthorization(project, 'remote')).toMatchObject({ status: 'failed' });
+  });
+
+  it('refuses a stdio server and an unknown server of the folder', async () => {
+    const { admin, project } = await setup();
+    const folder = { cwd: project, env: ENV };
+
+    await expect(admin.startFolderAuthorization(folder, 'local', controllerSignal())).rejects.toMatchObject({ status: 400, param: 'name' });
+    await expect(admin.startFolderAuthorization(folder, 'nope', controllerSignal())).rejects.toMatchObject({ status: 404 });
   });
 });

@@ -215,7 +215,9 @@ export const SESSION_PAGE_ROWS = REPORT_PAGE_ROWS;
 
 const LISTED_SESSION_COLUMNS = `s.*,
        (SELECT r.id FROM runs r WHERE r.session_id = s.id AND r.ordinal = (SELECT MIN(a.ordinal) FROM runs a WHERE a.session_id = s.id AND a.status NOT IN (${TERMINAL_LIST}))) AS active_run_id,
-       (SELECT r.id FROM runs r WHERE r.session_id = s.id AND r.ordinal = (SELECT MAX(l.ordinal) FROM runs l WHERE l.session_id = s.id)) AS latest_run_id`;
+       (SELECT r.created_at FROM runs r WHERE r.session_id = s.id AND r.ordinal = (SELECT MIN(a.ordinal) FROM runs a WHERE a.session_id = s.id AND a.status NOT IN (${TERMINAL_LIST}))) AS active_run_at,
+       (SELECT r.id FROM runs r WHERE r.session_id = s.id AND r.ordinal = (SELECT MAX(l.ordinal) FROM runs l WHERE l.session_id = s.id)) AS latest_run_id,
+       (SELECT r.created_at FROM runs r WHERE r.session_id = s.id AND r.ordinal = (SELECT MAX(l.ordinal) FROM runs l WHERE l.session_id = s.id)) AS latest_run_at`;
 
 const sessionPageOf = (db: DatabaseSync, index: string, folder: string) =>
   db.prepare(
@@ -592,7 +594,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
   const listedSessionOf = (row: Row): ListedSession => {
     const reader = readerFor('sessions', String(row['id']), row);
-    return { ...decodeSession(row, decodeContext), activeRunId: reader.nullableString('active_run_id'), latestRunId: reader.nullableString('latest_run_id') };
+    return { ...decodeSession(row, decodeContext), activeRunId: reader.nullableString('active_run_id'), activeRunAt: reader.nullableNumber('active_run_at'), latestRunId: reader.nullableString('latest_run_id'), latestRunAt: reader.nullableNumber('latest_run_at') };
   };
 
   const requireRun = (runId: string): Run => {
