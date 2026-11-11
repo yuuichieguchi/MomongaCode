@@ -482,7 +482,7 @@ describe('orphan reap at supervisor start', () => {
     });
     await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, maxMs: 5000 });
     expect(h.log.withMsg('orphans.reaped')).toEqual([expect.objectContaining({ reaped: 0, kept: 1, level: 'warn' })]);
-    h.fake.latest('runtime').exit(75);
+    h.fake.latest('runtime').exit(77);
     await h.waitForState('runtime', 'waiting-lock', 5000);
     expect(holderPid).toBeGreaterThan(0);
   });

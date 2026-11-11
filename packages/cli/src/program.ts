@@ -1,5 +1,5 @@
 import { Command, CommanderError, InvalidArgumentError, Option } from 'commander';
-import { currentSocketResolver } from '@momonga/foundation';
+import { EXIT_FAILURE, EXIT_OK, EXIT_USAGE, currentSocketResolver } from '@momonga/foundation';
 import type { EntryIo } from '@momonga/foundation';
 import { PERMISSION_MODES } from '@momonga/protocol';
 import type { Mandate, PermissionMode } from '@momonga/protocol';
@@ -17,6 +17,7 @@ import { INTERNAL_COMMANDS } from './daemon/launcher.ts';
 import { createGatewayClient } from './client/gateway-client.ts';
 import { pathsOf } from './paths.ts';
 import { terminalPorts } from './terminal-writer.ts';
+import { UsageError } from './usage-error.ts';
 import type { ProgramDeps } from './program-deps.ts';
 import type { HeadlessReopen, Reopen } from './run/resolve-session.ts';
 import type { ShellPort } from './tui/slash.ts';
@@ -91,6 +92,17 @@ const moneyArgument = (text: string): number => {
   const value = Number(text);
   if (!Number.isFinite(value) || value < 0) throw new InvalidArgumentError('expected an amount of US dollars, zero or more');
   return value;
+};
+
+const returnInsteadOfExit = (command: Command): void => {
+  command.exitOverride();
+  for (const sub of command.commands) returnInsteadOfExit(sub);
+};
+
+export const exitOfFailure = (error: unknown, stderr: { write(text: string): unknown }): number => {
+  if (error instanceof CommanderError) return error.exitCode === EXIT_OK ? EXIT_OK : EXIT_USAGE;
+  stderr.write(`momonga: ${describeFailure(error)}\n`);
+  return error instanceof UsageError ? EXIT_USAGE : EXIT_FAILURE;
 };
 
 const outputFormatOption = (): Option => new Option('--output-format <format>', 'output format of --print and attach').choices(OUTPUT_FORMATS).default('text');
@@ -272,19 +284,19 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
   internal(INTERNAL_COMMANDS.gateway, deps.entries.gateway);
   internal(INTERNAL_COMMANDS.runtime, deps.entries.runtime);
 
+  returnInsteadOfExit(program);
   return program;
 };
 
 export const createShellPort = (given: ProgramDeps): ShellPort => ({
   run: async (argv, io) => {
-    let code = 0;
+    let code: number = EXIT_OK;
     const sink = { write: io.write };
     const program = buildProgram({ ...given, ports: { ...given.ports, stdout: sink, stderr: sink, terminal: undefined }, interrupt: io.signal, complete: (exitCode) => void (code = exitCode) }, { embedded: true });
-    program.exitOverride();
     try {
       await program.parseAsync([...argv], { from: 'user' });
     } catch (error) {
-      if (error instanceof CommanderError) return error.exitCode;
+      if (error instanceof CommanderError) return exitOfFailure(error, sink);
       throw error;
     }
     return code;

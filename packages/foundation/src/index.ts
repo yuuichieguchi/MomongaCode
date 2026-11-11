@@ -273,7 +273,14 @@ export type { InstallTrustOptions, OutboundFailure, OutboundFetch, OutboundHop, 
 export type { Destination, NetworkConfig, NetworkEnvName, NetworkSettingKey, NetworkSource, Route, SourcedValue, UnsupportedProxyReason } from './network-route.ts';
 export {
   EXIT_ALREADY_RUNNING,
+  EXIT_CODES,
+  EXIT_INTERRUPTED,
   EXIT_RETIRED,
+  EXIT_SIGNAL_BASE,
+  EXIT_USAGE,
+  EXIT_WAITING_FOR_APPROVAL,
+  SIGNATURE_REJECTED_EXIT_CODE,
+  WINDOWS_KEEPER_COMPILER_MISSING_EXIT,
   withLogData,
   GENERATION_POLL_INTERVAL_MS,
   SWEEP_INTERVAL_MS,
@@ -426,7 +433,6 @@ export {
   RELEASE_SIGNATURE_KNOWN_ANSWER,
   RELEASE_SIGNATURE_NAMESPACE,
   RELEASE_SIGNATURE_TOOL,
-  SIGNATURE_REJECTED_EXIT_CODE,
   verifyReleaseSignature,
 } from './release-signature.ts';
 export { RELEASE_ASSETS, releaseTargetOf } from './release-assets.ts';
@@ -453,7 +459,7 @@ export { SHORT_TEMP_BASE, shortTempBase } from './short-temp-base.ts';
 export { readStopRecord, writeStopRecord } from './stop-record.ts';
 export { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER } from './process-contract.ts';
 export { SETTINGS_APPLIED_ENV, SETTINGS_APPLIED_FILE } from './momonga-paths.ts';
-export { WINDOWS_KEEPER_BINARY_ASSET, WINDOWS_KEEPER_COMPILER_MISSING_EXIT, WINDOWS_KEEPER_MANIFEST_ASSET, WINDOWS_KEEPER_STAGED_INFIX, WINDOWS_KEEPER_STAGED_NAME_BYTES, WindowsKeeperDistributionError, checkedWindowsKeeper, ensureBundledWindowsKeeper, parseWindowsKeeperManifest } from './platform/windows-keeper-asset.ts';
+export { WINDOWS_KEEPER_BINARY_ASSET, WINDOWS_KEEPER_MANIFEST_ASSET, WINDOWS_KEEPER_STAGED_INFIX, WINDOWS_KEEPER_STAGED_NAME_BYTES, WindowsKeeperDistributionError, checkedWindowsKeeper, ensureBundledWindowsKeeper, parseWindowsKeeperManifest } from './platform/windows-keeper-asset.ts';
 export type { WindowsKeeperDistributionPorts, WindowsKeeperManifest } from './platform/windows-keeper-asset.ts';
 export { KEEPER_EXIT_CODES, KEEPER_JOB_PREFIX, KEEPER_NAME_BYTES, KEEPER_NAME_FORM, KEEPER_PIPE_PREFIX, keeperExitName } from './process-contract.ts';
 export type { KeeperExitName } from './process-contract.ts';

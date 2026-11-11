@@ -1,4 +1,5 @@
 import type { CommandRunner } from './platform/command-runner.ts';
+import { SIGNATURE_REJECTED_EXIT_CODE } from './process-contract.ts';
 
 export const RELEASE_SIGNATURE_NAMESPACE = 'momonga-release';
 export const RELEASE_CHECKSUMS_ASSET = 'SHA256SUMS';
@@ -10,8 +11,6 @@ export const RELEASE_PUBLIC_KEY_PATTERN =
 export type PlacedFile = { readonly path: string; remove(): Promise<void> };
 
 export type PlaceFile = (content: string) => Promise<PlacedFile>;
-
-export const SIGNATURE_REJECTED_EXIT_CODE = 255;
 
 export type ReleaseSignatureVerdict = { kind: 'valid' } | { kind: 'invalid'; detail: string } | { kind: 'tool_unusable'; detail: string };
 

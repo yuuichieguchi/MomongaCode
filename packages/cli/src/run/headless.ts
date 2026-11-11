@@ -1,6 +1,6 @@
-import { isRecord } from '@momonga/foundation';
+import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_WAITING_FOR_APPROVAL, isRecord } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { QUIESCENT_EXIT_CODE, TARGET_NOT_READY, agentReadiness, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
+import { TARGET_NOT_READY, agentReadiness, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
 import type { BudgetExhausted, Mandate, MomongaModelEntry, PermissionMode, PublicRunEvent, RunReport, UnknownEffectCall } from '@momonga/protocol';
 import { noTargetLines } from '../readiness.ts';
 import { RunApiError } from '../client/runtime-client.ts';
@@ -35,9 +35,6 @@ import type { OutputFormat } from './output-format.ts';
 
 export { OUTPUT_FORMATS };
 export type { OutputFormat };
-
-export const EXIT_RUN_FAILED = 1;
-export const EXIT_CANCELLED = 130;
 
 export type HeadlessOptions = {
   prompt: string;
@@ -161,8 +158,6 @@ const HELD_OUTCOME_WORDS = { executed: 'was approved and has run', rejected: 'wa
 const BUDGET_CAUSE_WORDS = { limit: 'the limit is reached', unpriced: 'a model call has no price', cap_too_small: 'what is left does not pay for another request' } as const;
 
 const budgetFigure = (dimension: string, value: number): string => (dimension === 'cost' ? `${usdOfNano(value)} USD` : `${value} ${dimension}`);
-
-export const EXIT_WAITING_FOR_APPROVAL = QUIESCENT_EXIT_CODE;
 
 export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, format: OutputFormat, verbose: boolean): FrameSink => {
   const items = new Map<string, string>();
@@ -404,9 +399,9 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
   } else {
     ports.stdout.write(`${JSON.stringify(resultOf(run, text))}\n`);
   }
-  if (run.status === 'COMPLETED') return 0;
+  if (run.status === 'COMPLETED') return EXIT_OK;
   ports.stderr.write(`${describeEnd(run)}\n`);
-  return run.status === 'CANCELLED' ? EXIT_CANCELLED : EXIT_RUN_FAILED;
+  return run.status === 'CANCELLED' ? EXIT_INTERRUPTED : EXIT_FAILURE;
 };
 
 const openInterruptibleSession = async (ports: CliPorts, paths: MomongaPaths, options: HeadlessOptions): Promise<CliSession | undefined> => {
@@ -452,7 +447,7 @@ const refuse = (ports: CliPorts, paths: MomongaPaths, format: OutputFormat, erro
     const refused: RefusedResult = { type: 'result', subtype: 'error', is_error: true, result: '', error: { code: TARGET_NOT_READY, message: error.reason } };
     ports.stdout.write(`${JSON.stringify(refused)}\n`);
   }
-  return EXIT_RUN_FAILED;
+  return EXIT_FAILURE;
 };
 
 const MODEL_PARAM = 'model';
@@ -472,11 +467,11 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
     if (error instanceof RunApiError && error.code === TARGET_NOT_READY) return refuse(ports, paths, options.format, error);
     if (error instanceof RunApiError && isModelRefusal(error)) {
       ports.stderr.write(`${escapedLines([`momonga: ${error.reason}`])}\n`);
-      return EXIT_RUN_FAILED;
+      return EXIT_FAILURE;
     }
     throw error;
   }
-  if (session === undefined) return EXIT_CANCELLED;
+  if (session === undefined) return EXIT_INTERRUPTED;
   try {
     const readiness = agentReadiness(await options.capabilitiesOf(session.created.session.model));
     if (readiness.state === 'probing') ports.stderr.write(`${escapedLines([`momonga: ${readiness.message}`])}\n`);
@@ -487,13 +482,13 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
         const refused: RefusedResult = { type: 'result', subtype: 'error', is_error: true, result: '', error: { code: TARGET_NOT_READY, message } };
         ports.stdout.write(`${JSON.stringify(refused)}\n`);
       }
-      return EXIT_RUN_FAILED;
+      return EXIT_FAILURE;
     }
     if (readiness.state === 'no_tools') ports.stderr.write(`${escapedLines(leadWith('momonga: warning: ', readinessShownText(readiness, 'shell').split('\n')))}\n`);
     const sessionId = session.created.session.id;
     const invocation = await resolveSkillInvocation(session.client, sessionId, options.prompt, options.skill);
     const images = await Promise.all((options.images ?? []).map((file) => readImageAttachment(ports.files, ports.cwd, file)));
-    if (options.interrupt.aborted) return EXIT_CANCELLED;
+    if (options.interrupt.aborted) return EXIT_INTERRUPTED;
     const { run: started } = await session.client.createRun(sessionId, invocation.input, {
       ...(invocation.skill === undefined ? {} : { skill: invocation.skill }),
       ...(images.length === 0 ? {} : { images }),

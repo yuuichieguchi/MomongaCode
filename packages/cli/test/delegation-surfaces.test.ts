@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PublicRunEvent } from '@momonga/protocol';
-import { EXIT_WAITING_FOR_APPROVAL, createFrameSink, resultOf } from '../src/run/headless.ts';
+import { EXIT_WAITING_FOR_APPROVAL } from '@momonga/foundation';
+import { createFrameSink, resultOf } from '../src/run/headless.ts';
 import type { RunEventFrame } from '../src/client/runtime-client.ts';
 import type { RunView } from '../src/client/views.ts';
 

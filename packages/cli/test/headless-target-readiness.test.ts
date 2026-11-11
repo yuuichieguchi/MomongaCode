@@ -5,7 +5,8 @@ import type { ChainCapabilities, NeedsProbe, ToolCallingState } from '@momonga/p
 import { describe, expect, it, vi } from 'vitest';
 import type { RuntimeClient } from '../src/client/runtime-client.ts';
 import type { CliPorts } from '../src/ports.ts';
-import { EXIT_RUN_FAILED, runHeadless } from '../src/run/headless.ts';
+import { EXIT_FAILURE } from '@momonga/foundation';
+import { runHeadless } from '../src/run/headless.ts';
 import type { HeadlessOptions } from '../src/run/headless.ts';
 import { frameOf } from './acp-harness.ts';
 import { SESSION, capabilitiesOf, runView } from './fake-backend.ts';
@@ -129,7 +130,7 @@ describe('headless refuses a model the gateway lists as unavailable before the r
     expect(log).not.toContain('createRun');
     expect(result.stderr).toBe(`momonga: target_not_ready: ${UNAVAILABLE_MESSAGE}\n${UNAVAILABLE_REMEDY}\n`);
     expect(result.stdout).toBe('');
-    expect(result.code).toBe(EXIT_RUN_FAILED);
+    expect(result.code).toBe(EXIT_FAILURE);
   });
 
   it('the refused JSON object is printed in json format', async (context) => {
@@ -139,6 +140,6 @@ describe('headless refuses a model the gateway lists as unavailable before the r
     expect(result.stdout).toBe(
       `${JSON.stringify({ type: 'result', subtype: 'error', is_error: true, result: '', error: { code: 'target_not_ready', message: `${UNAVAILABLE_MESSAGE}\n${UNAVAILABLE_REMEDY}` } })}\n`,
     );
-    expect(result.code).toBe(EXIT_RUN_FAILED);
+    expect(result.code).toBe(EXIT_FAILURE);
   });
 });

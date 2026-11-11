@@ -3,7 +3,8 @@ import { withTempDir } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import type { RuntimeClient } from '../src/client/runtime-client.ts';
 import type { CliPorts } from '../src/ports.ts';
-import { EXIT_CANCELLED, runHeadless, watchRun } from '../src/run/headless.ts';
+import { EXIT_INTERRUPTED } from '@momonga/foundation';
+import { runHeadless, watchRun } from '../src/run/headless.ts';
 import { recordingSpawn, virtualClock } from './fake-supervisor.ts';
 import { capabilitiesOf, runView } from './fake-backend.ts';
 
@@ -29,7 +30,7 @@ describe('an interrupt that arrives before the run is followed', () => {
 
     const code = await runHeadless(ports, paths, { prompt: 'hello', format: 'text', verbose: false, interrupt: interrupt.signal, capabilitiesOf: async () => capabilitiesOf() });
 
-    expect(code).toBe(EXIT_CANCELLED);
+    expect(code).toBe(EXIT_INTERRUPTED);
     expect(spawned).toEqual([]);
   });
 
@@ -52,6 +53,6 @@ describe('an interrupt that arrives before the run is followed', () => {
     const code = await watchRun(ports, paths, { client, runId: 'run-1', format: 'text', verbose: false, interrupt: interrupt.signal });
 
     expect(cancelled).toEqual(['run-1']);
-    expect(code).toBe(EXIT_CANCELLED);
+    expect(code).toBe(EXIT_INTERRUPTED);
   });
 });
