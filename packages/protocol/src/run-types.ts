@@ -483,6 +483,7 @@ export type RunState = {
   usage: RunUsage;
   heldCalls?: Record<string, HeldCall>;
   quiescent?: true;
+  rejectedCalls?: string[];
   history: { seq: number; item: InputItem; callId?: string; handle?: string; omittedTokens?: number }[];
   nextItemSeq: number;
   summary?: { item: CompactionInputItem | MessageInputItem; summary: string; replacedThroughSeq: number };

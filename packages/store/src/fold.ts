@@ -251,6 +251,14 @@ const completeCall = (state: RunState, event: Extract<RunEvent, { type: 'tool.co
   };
 };
 
+export const rejectionKeyOf = (name: string, args: unknown): string => sha256Hex(`${name}\n${canonicalJson(args)}`);
+
+const withRejectedCall = (state: RunState, kind: string, rejectionKey: string): RunState => {
+  if (kind !== 'reject_once' && kind !== 'reject_always') return state;
+  const known = state.rejectedCalls ?? [];
+  return known.includes(rejectionKey) ? state : { ...state, rejectedCalls: [...known, rejectionKey] };
+};
+
 const withoutHold = (state: RunState, event: RunEvent): RunState => {
   const ended = heldEndOf(event);
   if (ended === undefined) return state;
@@ -483,11 +491,13 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
         if (option === undefined || held.subjectDigest === undefined) {
           throw new Error(`run ${state.runId}: ${event.type} for the held approval ${event.approvalId} names unknown option ${event.optionId}`);
         }
-        return { ...state, heldCalls: { ...state.heldCalls, [callId]: { ...held, resolution: { optionId: option.optionId, kind: option.kind, subjectDigest: held.subjectDigest } } } };
+        return withRejectedCall({ ...state, heldCalls: { ...state.heldCalls, [callId]: { ...held, resolution: { optionId: option.optionId, kind: option.kind, subjectDigest: held.subjectDigest } } } }, option.kind, rejectionKeyOf(held.name, held.arguments));
       }
       const entry = Object.entries(state.pendingCalls).find(([, call]) => call.approvalId === event.approvalId);
       if (entry === undefined) throw new Error(`run ${state.runId}: ${event.type} refers to unknown approval ${event.approvalId}`);
-      return withCall(state, entry[0], event.type, (call) => {
+      const [, asked] = entry;
+      const chosen = asked.options?.find((candidate) => candidate.optionId === event.optionId);
+      const resolved = withCall(state, entry[0], event.type, (call) => {
         const option = call.options?.find((candidate) => candidate.optionId === event.optionId);
         if (option === undefined || call.subjectDigest === undefined) {
           throw new Error(`run ${state.runId}: ${event.type} for approval ${event.approvalId} names unknown option ${event.optionId}`);
@@ -504,6 +514,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
           },
         };
       });
+      return chosen === undefined ? resolved : withRejectedCall(resolved, chosen.kind, rejectionKeyOf(asked.name, asked.arguments));
     }
     case 'tool.permission.cancelled': {
       const heldEntry = heldByApproval(state, event.approvalId);
