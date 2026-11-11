@@ -122,6 +122,7 @@ export type CreateSessionInput = {
   bypassAllowed?: boolean;
   sandboxNetwork?: SandboxNetworkSetting;
   mcpServers?: Readonly<Record<string, McpServerConfig>>;
+  terminalUi?: boolean;
 };
 
 export type CreateRunOptions = {
@@ -143,7 +144,7 @@ export type CostFilter = { run: string } | { session: string } | { cwd: string }
 
 export type ResolvedElicitation = { elicitation: ElicitationView; run: RunView };
 
-export type CreatedSession = { session: SessionView; strippedEnvKeys: string[] };
+export type CreatedSession = { session: SessionView; strippedEnvKeys: string[]; trustNotice?: string };
 
 export type ResolvedApproval = { approval: ApprovalView; run: RunView };
 
@@ -367,11 +368,15 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
         ...(input.bypassAllowed === undefined ? {} : { bypassAllowed: input.bypassAllowed }),
         ...(input.sandboxNetwork === undefined ? {} : { sandboxNetwork: input.sandboxNetwork }),
         ...(input.mcpServers === undefined ? {} : { mcpServers: input.mcpServers }),
+        ...(input.terminalUi === undefined ? {} : { terminalUi: input.terminalUi }),
       },
     });
     const stripped = listOf(body, 'strippedEnvKeys', description);
     if (!stripped.every((key): key is string => typeof key === 'string')) throw new ContractViolation(description, 'strippedEnvKeys holds a non-string');
-    return { session: sessionOf(body, description), strippedEnvKeys: stripped };
+    if (!isRecord(body) || !('trustNotice' in body)) return { session: sessionOf(body, description), strippedEnvKeys: stripped };
+    const trustNotice = body['trustNotice'];
+    if (typeof trustNotice !== 'string') throw new ContractViolation(description, 'trustNotice is not a string');
+    return { session: sessionOf(body, description), strippedEnvKeys: stripped, trustNotice };
   };
 
   const getSession = async (id: string): Promise<SessionView> => {
