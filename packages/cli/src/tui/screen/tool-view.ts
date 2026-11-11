@@ -289,7 +289,7 @@ export const useToolView = (host: ToolViewHost): ToolView => {
     return false;
   });
 
-  useEffect(() => terminal.input.claim((event) => onEvent(event)), [terminal]);
+  useEffect(() => terminal.input.claim('tool-view', (event) => onEvent(event)), [terminal]);
 
   const shown = current();
   return {

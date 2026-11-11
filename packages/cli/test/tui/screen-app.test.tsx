@@ -348,16 +348,16 @@ describe('the two screen modes', () => {
 });
 
 describe('the event path of the screen', () => {
-  it('hands an event to the newest claim first and drops what nobody claims', () => {
+  it('hands an event to the claims in the order of their priority and drops what nobody claims', () => {
     const input = createScreenInput();
     const seen: string[] = [];
-    input.claim((event) => (seen.push('first'), event.type === 'mouse'));
-    const stop = input.claim((event) => (seen.push('second'), event.type === 'key' && 'name' in event && event.name === 'pageup'));
+    const stop = input.claim('transcript', (event) => (seen.push('transcript'), event.type === 'key' && 'name' in event && event.name === 'pageup'));
+    input.claim('typing', (event) => (seen.push('typing'), event.type === 'mouse'));
     input.push([named('pageup'), typed('a'), mouse('press', 1, 1), typed('b')]);
-    expect(seen).toEqual(['second', 'second', 'first', 'second', 'first', 'second', 'first']);
+    expect(seen).toEqual(['transcript', 'transcript', 'typing', 'transcript', 'typing', 'transcript', 'typing']);
     stop();
     input.push([named('pageup')]);
-    expect(seen.at(-1)).toBe('first');
+    expect(seen.at(-1)).toBe('typing');
     expect(seen).toHaveLength(8);
   });
 });

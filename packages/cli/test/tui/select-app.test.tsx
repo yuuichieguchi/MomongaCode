@@ -303,20 +303,6 @@ describe('the sandbox-off dialog is decided only by enter and starts on the safe
   });
 });
 
-describe('the invitation banner is the selection component', () => {
-  it('escape hides it this time and remembers nothing', async () => {
-    const { app, backend } = await startPlan({ accounts: [] });
-    const banner = await untilFrame(app, 'Not now');
-    expect(banner).toContain('› 1. Continue with ChatGPT');
-    expect(banner).toContain('1-9 or enter to choose · up/down to move · esc: go back');
-    app.stdin.write(KEYS.escape);
-    await untilFrame(app, (shown) => !shown.includes('Not now'));
-    await quiet();
-    expect(backend.dismissals).toEqual([]);
-    app.unmount();
-  });
-});
-
 describe('the slash menu is the same rows, inline above the input', () => {
   it('lists the matching commands with their descriptions, the highlighted one first', async () => {
     const { app } = await start();

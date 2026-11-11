@@ -2,8 +2,8 @@ import { useReducer, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import type { PlanProfileView } from '@momonga/protocol';
+import type { KeyTable } from '../keys/table.ts';
 import { ChoiceRow, MoreRow, spanAt, topFor } from '../select.tsx';
-import type { SelectSpec } from '../select.tsx';
 import { namesOf } from '../slash.ts';
 import type { SlashCommand } from '../slash.ts';
 import { menuRowsCap } from './layout.ts';
@@ -11,21 +11,20 @@ import { inertText } from './wrap.ts';
 
 export type Invitation = { profile: PlanProfileView };
 
-const INVITATION_TITLE = 'New';
-const NOT_NOW = 'Not now';
+export const NOT_NOW_LABEL = 'Not now';
 
-export const INVITATION_ACCEPT = 0;
+export const invitationKeyOf = (profile: string): string => `invite:${profile}`;
 
-export const invitationSpec = (invitation: Invitation): SelectSpec => ({
-  title: INVITATION_TITLE,
-  lines: [invitation.profile.messages.inviteTitle],
-  rows: [{ label: invitation.profile.loginLabel }, { label: NOT_NOW }],
-  initial: INVITATION_ACCEPT,
-  decideOn: 'immediate',
-  escape: 'back',
-  interrupt: 'back',
-  filter: false,
-});
+export const invitationLine = (invitation: Invitation, keys: KeyTable): string => {
+  const hide = keys.keyHint('run.stop');
+  return `${invitation.profile.messages.inviteTitle} /login connects it${hide === '' ? '' : ` · ${hide} hides this line`}`;
+};
+
+export function InvitationLine({ invitation, keys }: { invitation: Invitation; keys: KeyTable }) {
+  return <Text dimColor wrap="truncate">{inertText(invitationLine(invitation, keys))}</Text>;
+}
+
+export const INVITATION_ROWS = 1;
 
 const COMPLETABLE = /^\/[^\s/]*$/;
 const MENU_FLOOR_ROWS = 3;

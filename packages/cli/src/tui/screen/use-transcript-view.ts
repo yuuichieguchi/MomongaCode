@@ -189,7 +189,7 @@ export const useTranscriptView = (host: TranscriptViewHost): TranscriptViewState
     return event.type === 'key' ? onKey(event) : false;
   });
 
-  useEffect(() => terminal.input.claim((event) => onEvent(event)), [terminal]);
+  useEffect(() => terminal.input.claim('transcript', (event) => onEvent(event)), [terminal]);
 
   return { source, window, position, selection: held.selection, toast: held.toast, showToast: (text) => change({ toast: text }), act: (action) => host.fullscreen && (actOnSelection(action) || actOnViewport(action, true)), place: (next) => change({ position: next }) };
 };

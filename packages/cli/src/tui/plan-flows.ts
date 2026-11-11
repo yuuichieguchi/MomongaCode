@@ -19,6 +19,7 @@ import type { SignInShown } from '../plan/sign-in.ts';
 import { codeNotAcceptedLine, listProblemLine, planDisabledLines, resumeLine, signedInLine, signedOutLines, tryAgainLine } from '../plan/texts.ts';
 import type { TuiBackend } from './backend.ts';
 import type { OverlayPorts, PickRow } from './picker.tsx';
+import { NOT_NOW_LABEL, invitationKeyOf } from './screen/menu.tsx';
 
 export type PlanFlowPorts = OverlayPorts & {
   readonly backend: TuiBackend;
@@ -30,6 +31,7 @@ export type PlanFlowPorts = OverlayPorts & {
   readonly found: FoundServers;
   readonly model: () => string | undefined;
   wait<T>(phase: string, work: (signal: AbortSignal) => Promise<T>): Promise<T>;
+  invitationAnswered(): void;
 };
 
 export type PlanFlows = {
@@ -56,6 +58,7 @@ const API_KEY_HELP = [
 ].join('\n');
 
 const USE_API_KEY = 'Use an API key';
+const CONNECT_TITLE = 'Connect a model';
 
 const SANDBOX_OFF_ROWS = [{ label: 'Continue' }, { label: 'Cancel' }] as const;
 const SANDBOX_OFF_CONTINUE = 0;
@@ -295,17 +298,27 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     ]);
   };
 
+  const invitedProfiles = (listed: PlanAccountsResponse, dismissed: Readonly<Record<string, unknown>>): PlanProfileView[] =>
+    listed.profiles.filter((profile) => accountsOf(profile.id, listed.accounts).length === 0 && !Object.hasOwn(dismissed, invitationKeyOf(profile.id)));
+
+  const answerNotNow = async (invited: readonly PlanProfileView[]): Promise<void> => {
+    for (const profile of invited) await backend.dismissNotice(invitationKeyOf(profile.id));
+    ports.invitationAnswered();
+  };
+
   const login = async (args: string): Promise<void> => {
-    ports.loading('Connect a model');
-    const listed = await backend.plan.accounts();
     if (args !== '') {
-      await providerFlowOf(profileOf(listed.profiles, args), listed);
+      const read = await ports.loading(CONNECT_TITLE, () => backend.plan.accounts());
+      if (read.kind === 'read') await providerFlowOf(profileOf(read.value.profiles, args), read.value);
       return;
     }
-    const [entries, health] = await Promise.all([backend.models(), backend.health()]);
+    const read = await ports.loading(CONNECT_TITLE, () => Promise.all([backend.plan.accounts(), backend.models(), backend.health(), backend.dismissedNotices()]));
+    if (read.kind === 'cancelled') return;
+    const [listed, entries, health, dismissed] = read.value;
+    const invited = invitedProfiles(listed, dismissed);
     const displays = displayMapOf(listingViewsOf(entries));
     const local = entries.filter((entry) => entry.billing === 'local');
-    await chooseFrom({ title: 'Connect a model' }, [
+    await chooseFrom({ title: CONNECT_TITLE }, [
       ...listed.profiles.map((profile) => ({ row: { label: `${profile.messages.pickerLabel} [subscription] · ${profileStateText(profile, listed.accounts)}` }, act: () => providerFlowOf(profile, listed) })),
       { row: { label: 'Add an API key' }, act: apiKeyHelp },
       ...local.map((entry) => {
@@ -313,12 +326,14 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         return { row: { label: `${display} [local server] · ${healthText(health.models[entry.id])}` }, act: async () => ports.info(configuredSwitchText(display)) };
       }),
       { row: { label: 'Add a local server' }, act: addLocalServer },
+      ...(invited.length === 0 ? [] : [{ row: { label: NOT_NOW_LABEL }, act: () => answerNotNow(invited) }]),
     ]);
   };
 
   const logout = async (): Promise<void> => {
-    ports.loading('Sign out');
-    const listed = await backend.plan.accounts();
+    const read = await ports.loading('Sign out', () => backend.plan.accounts());
+    if (read.kind === 'cancelled') return;
+    const listed = read.value;
     if (listed.accounts.length === 0) {
       ports.info('no subscription account is saved');
       return;
@@ -356,13 +371,18 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   };
 
   const modelPicker = async (current: string | undefined): Promise<void> => {
-    ports.loading('Models');
     const context = flowContext();
-    const [listing, health, listed] = await Promise.all([backend.modelList(), backend.health(), backend.plan.accounts()]);
+    const read = await ports.loading('Models', async () => {
+      const [readListing, readHealth, readListed] = await Promise.all([backend.modelList(), backend.health(), backend.plan.accounts()]);
+      const signedIn = readListed.accounts.filter((account) => account.state === 'active');
+      const readCatalogs = await Promise.all(signedIn.map(async (account) => ({ account, profile: profileOf(readListed.profiles, account.profile), catalog: await backend.plan.accountModels(account.label, { profile: account.profile }) })));
+      const remembered = ports.found.servers();
+      return { listing: readListing, health: readHealth, listed: readListed, catalogs: readCatalogs, remembered, opened: remembered.length === 0 ? undefined : await openEdit(context) };
+    });
+    if (read.kind === 'cancelled') return;
+    const { listing, health, listed, catalogs, remembered, opened } = read.value;
     const entries = listing.data;
     const served = new Set(entries.flatMap((entry) => entry.chain.map((member) => member.upstream)));
-    const signedIn = listed.accounts.filter((account) => account.state === 'active');
-    const catalogs = await Promise.all(signedIn.map(async (account) => ({ account, profile: profileOf(listed.profiles, account.profile), catalog: await backend.plan.accountModels(account.label, { profile: account.profile }) })));
     const catalogChoices = catalogs.flatMap(({ account, profile, catalog }) =>
       catalog.models
         .filter((entry) => !served.has(entry.slug))
@@ -378,8 +398,6 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
             : { row: { label: `${entry.slug} · ${entry.reason} · ${profile.messages.pickerLabel}`, disabled: true }, act: async () => undefined },
         ),
     );
-    const remembered = ports.found.servers();
-    const opened = remembered.length === 0 ? undefined : await openEdit(context);
     const found = opened === undefined ? [] : foundNotConfigured(opened.edit, remembered);
     const { rows, listed: listedRows } = modelListRows({ listing, current, health, found });
     if (rows.length + catalogChoices.length === 0) {

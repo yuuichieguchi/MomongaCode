@@ -1,4 +1,5 @@
 import type { PublicRunEvent } from '@momonga/protocol';
+import { createClaimTable } from '../../src/tui/screen/input.ts';
 import type { ScreenTerminal } from '../../src/tui/screen/input.ts';
 import { createTranscriptStore } from '../../src/tui/screen/store.ts';
 import type { TranscriptState, TranscriptStore } from '../../src/tui/screen/store.ts';
@@ -76,7 +77,7 @@ export type FakeScreenTerminal = ScreenTerminal & {
 export const fakeScreenTerminal = (given: { screen?: ScreenMode; columns?: number; rows?: number } = {}): FakeScreenTerminal => {
   const listeners = new Set<() => void>();
   const screenListeners = new Set<(request: ScreenRequest) => void>();
-  const claims: ((event: TerminalEvent) => boolean)[] = [];
+  const claims = createClaimTable();
   const observers = new Set<(event: TerminalEvent) => void>();
   const screens: ScreenMode[] = [];
   const titles: string[] = [];
@@ -135,16 +136,11 @@ export const fakeScreenTerminal = (given: { screen?: ScreenMode; columns?: numbe
           observers.delete(observer);
         };
       },
-      claim: (handler) => {
-        claims.unshift(handler);
-        return () => {
-          claims.splice(claims.indexOf(handler), 1);
-        };
-      },
+      claim: claims.claim,
     },
     emit: (event) => {
       for (const observer of [...observers]) observer(event);
-      return claims.some((claim) => claim(event));
+      return claims.offer(event);
     },
     resize: (columns, rows) => publish({ ...state, size: { columns, rows } }),
     shrink: (tooSmall) => publish({ ...state, tooSmall }),
