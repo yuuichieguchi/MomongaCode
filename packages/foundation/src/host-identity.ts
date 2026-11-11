@@ -67,7 +67,7 @@ export const createBinaryHashCache = (): BinaryHashCache => {
       const forget = (): void => {
         if (cached.get(file)?.call === call) cached.delete(file);
       };
-      const call = startSharedCall(NO_LIFETIME_END, (shared) => streamedSha256(file, shared), forget);
+      const call = startSharedCall(NO_LIFETIME_END, (shared) => streamedSha256(file, shared));
       cached.set(file, { identity, call });
       call.work.catch(forget);
       return call.join(signal);
@@ -89,7 +89,7 @@ export const createHeldHostReadings = (): HeldHostReadings => {
       const forget = (): void => {
         if (readings.get(component) === call) readings.delete(component);
       };
-      const call = startSharedCall(NO_LIFETIME_END, read, forget);
+      const call = startSharedCall(NO_LIFETIME_END, read);
       readings.set(component, call);
       call.work.then((result) => {
         if (result.kind === 'unreadable') forget();
