@@ -4,12 +4,13 @@ import type { JsonSchema } from './schema-helpers.ts';
 import type { ApprovalBasis } from './permission-denial.ts';
 import type { PermissionMode, RunStatus, SideEffect, StopReason } from './run-types.ts';
 
-export const RELIABILITY_FORMAT = 'momonga-reliability/4';
+export const RELIABILITY_FORMAT = 'momonga-reliability/5';
 
 export const RETIRED_RELIABILITY_FORMATS: Readonly<Record<string, string>> = {
   'momonga-reliability/1': 'the tasks whose run facts hold a value the build does not know',
   'momonga-reliability/2': 'the model of each run (it was recorded as an alias name)',
   'momonga-reliability/3': 'the money limit in the budget overrun and the figures of mandate runs',
+  'momonga-reliability/4': 'the root runs a period or a grouping could not place',
 };
 export const MIN_RATE_POPULATION = 35;
 export const REVIEW_SAMPLE_SIZE = 73;

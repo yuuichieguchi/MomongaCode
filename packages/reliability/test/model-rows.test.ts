@@ -27,13 +27,13 @@ describe('the model of a reliability row', () => {
     expect(groups[SECOND]?.buckets.counted).toBe(1);
   });
 
-  it('is written as momonga-reliability/4, and a momonga-reliability/2 report is retired because its rows held an alias name', () => {
-    expect(RELIABILITY_FORMAT).toBe('momonga-reliability/4');
+  it('is written as momonga-reliability/5, and a momonga-reliability/2 report is retired because its rows held an alias name', () => {
+    expect(RELIABILITY_FORMAT).toBe('momonga-reliability/5');
     const current = JSON.parse(encodeReliabilityReport(buildReliabilityReport({ kind: 'real', aggregate: aggregate([], { groupBy: 'model' }) }))) as Record<string, unknown>;
-    expect(current['format']).toBe('momonga-reliability/4');
+    expect(current['format']).toBe('momonga-reliability/5');
     const old = JSON.stringify({ ...current, format: 'momonga-reliability/2' });
     expect(() => decodeReliabilityReport(old)).toThrow(
-      'momonga-reliability/2 reports do not record the model of each run (it was recorded as an alias name), so momonga-reliability/2 is retired; rebuild the report as momonga-reliability/4',
+      'momonga-reliability/2 reports do not record the model of each run (it was recorded as an alias name), so momonga-reliability/2 is retired; rebuild the report as momonga-reliability/5',
     );
   });
 });

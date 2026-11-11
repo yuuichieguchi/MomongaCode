@@ -103,7 +103,7 @@ describe('protocol/src/reliability.ts', () => {
     expect(REPORT_PAGE_ROWS).toBe(500);
     expect(FACTS_SWEEP_BATCH_RUNS).toBe(3);
     expect(INDICATOR_DEFINITIONS_VERSION).toBe(3);
-    expect(RELIABILITY_FORMAT).toBe('momonga-reliability/4');
+    expect(RELIABILITY_FORMAT).toBe('momonga-reliability/5');
   });
 
   it('names the two recovery causes and the four episode outcomes', () => {
