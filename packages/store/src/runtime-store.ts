@@ -16,6 +16,7 @@ import { JournalThreadError, StalePreparation } from './journal-port.ts';
 import { createJournalReader, payloadStep } from './journal-reader.ts';
 import { StoreIdentityError, isFatalStoreError } from './fatal.ts';
 import { createIdempotencyStore } from './idempotency.ts';
+import { createIssueWatchStore } from './issue-watch.ts';
 import { decodeJob, prepareJobStatements } from './jobs.ts';
 import { createGoverningFactStore } from './governing.ts';
 import { createGuidelineStore } from './guidelines.ts';
@@ -490,6 +491,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const contextCharges = createContextChargeStore(db, clock, decodeContext);
   const reflection = createReflectionStore(db, clock, { memories, contextCharges }, decodeContext);
   const governing = createGoverningFactStore(db, clock, decodeContext);
+  const issueWatch = createIssueWatchStore(db, clock);
   const runFacts = createRunFactsStore(db, decodeContext);
   const journalReader = createJournalReader(db, { lookups: { memories, governing }, ...(options.onDecode === undefined ? {} : { onDecode: options.onDecode }) });
   const trust = createTrustStore(db, clock, home, decodeContext, fileSystem);
@@ -1974,6 +1976,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     contextCharges,
     guidelines: createGuidelineStore(db, clock),
     governing,
+    issueWatch,
     search: createSearchStore(db, decodeContext, derivedReads),
     runFacts,
     permissionReviews: createPermissionReviewsStore(db, decodeContext, runFacts.calls),

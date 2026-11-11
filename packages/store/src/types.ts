@@ -725,11 +725,19 @@ export type RuntimeStore = {
   contextCharges: ContextChargeStore;
   guidelines: GuidelineStore;
   governing: GoverningFactStore;
+  issueWatch: IssueWatchStore;
   search: SearchStore;
   runFacts: RunFactsStore;
   permissionReviews: PermissionReviewsStore;
   readonly journalFacts: JournalFacts;
   close(): void;
+};
+
+export type IssueStart = { project: string; reference: string; startedRunId: string; createdAt: number };
+
+export type IssueWatchStore = {
+  recordIssueStart(project: string, reference: string, runId: string): boolean;
+  issueStartsOf(project: string): IssueStart[];
 };
 
 export type RuntimeStoreOptions = {
