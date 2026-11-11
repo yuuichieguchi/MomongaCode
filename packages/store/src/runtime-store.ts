@@ -357,6 +357,16 @@ const prepareStatements = (db: DatabaseSync) => ({
   ),
   listExhausted: db.prepare(`SELECT r.* FROM runs r WHERE ${CLAIMABLE} AND ${EXHAUSTED} ${CLAIM_ORDER}`),
   exhaustedById: db.prepare(`SELECT r.* FROM runs r WHERE r.id = :id AND ${CLAIMABLE} AND ${EXHAUSTED}`),
+  unshownPendingRuns: db.prepare(
+    `SELECT DISTINCT a.run_id AS run_id FROM approvals a JOIN events e ON e.run_id = a.run_id AND e.type = 'tool.permission.requested' AND e.approval_id = a.id
+     WHERE a.status = 'pending' AND a.kind = 'permission' AND json_extract(e.payload_json, '$.shown') IS NULL
+     ORDER BY a.run_id`,
+  ),
+  unshownPendingOfRun: db.prepare(
+    `SELECT a.id AS id FROM approvals a JOIN events e ON e.run_id = a.run_id AND e.type = 'tool.permission.requested' AND e.approval_id = a.id
+     WHERE a.run_id = :runId AND a.status = 'pending' AND a.kind = 'permission' AND json_extract(e.payload_json, '$.shown') IS NULL
+     ORDER BY e.seq`,
+  ),
   listSweeperOwned: db.prepare(
     `SELECT r.* FROM runs r
      WHERE ${KNOWN_RUN_VALUES} AND r.status = 'CANCELLING' AND r.cancel_origin IN ('QUEUED', 'WAITING_HUMAN') AND (r.lease_owner IS NULL OR r.lease_expires_at <= :now)
@@ -997,15 +1007,15 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     };
   };
 
-  const requestOf = (approval: Approval): { reason: string; suggestedRule?: string; shown: ApprovalShown } => {
+  const requestOf = (approval: Approval): { reason: string; suggestedRule?: string; shown?: ApprovalShown } => {
     const row = derivedView.permissionRequestOf(approval.runId, approval.id);
     if (row === undefined) throw corrupt('approvals', approval.id, `run ${approval.runId} has no tool.permission.requested event for approval ${approval.id}`);
     const payload = expectRecord('events', approval.id, 'payload_json', readerFor('events', approval.id, row).json('payload_json'));
     const { reason, suggestedRule, shown } = payload;
     if (typeof reason !== 'string') throw corrupt('events', approval.id, 'reason must be a string');
     if (suggestedRule !== undefined && typeof suggestedRule !== 'string') throw corrupt('events', approval.id, 'suggestedRule must be a string');
-    if (!isApprovalShown(shown)) throw corrupt('events', approval.id, 'shown must hold a string title and the input');
-    return { reason, ...(suggestedRule === undefined ? {} : { suggestedRule }), shown };
+    if (shown !== undefined && !isApprovalShown(shown)) throw corrupt('events', approval.id, 'shown must hold a string title and the input');
+    return { reason, ...(suggestedRule === undefined ? {} : { suggestedRule }), ...(shown === undefined ? {} : { shown }) };
   };
 
   const titleOf = (approval: Approval, callId: string): string => {
@@ -1860,6 +1870,33 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         }
       }
       return stopped;
+    },
+
+    reaskUnshownApprovals: async (onError) => {
+      const reasked: string[] = [];
+      for (const row of sql.unshownPendingRuns.all()) {
+        const runId = readerFor('approvals', 'unshown', row).string('run_id');
+        try {
+          const didReask = await derivedReads.write({ runTree: runId }, () => {
+            const ids = sql.unshownPendingOfRun.all({ runId }).map((entry) => readerFor('approvals', runId, entry).string('id'));
+            if (ids.length === 0) return false;
+            const events = ids.map((id) => {
+              const approval = approvalOps.store.get(id);
+              if (approval === undefined) throw new Error(`approval ${id} vanished while it was asked again`);
+              approvalOps.end(id, 'superseded');
+              return cancelledEvent(approval, 'superseded');
+            });
+            const run = requireRun(runId);
+            if (run.status === 'WAITING_HUMAN' && approvalOps.store.listPending(run.id).length === 0) changeStatus(run, 'QUEUED', { edges: SERVICE_TRANSITIONS, availableAt: clock.now() }, events);
+            else writeRun({ ...appendPayloads(run, events), version: run.version + 1 });
+            return true;
+          });
+          if (didReask) reasked.push(runId);
+        } catch (error) {
+          onError(error, runId);
+        }
+      }
+      return reasked;
     },
 
     finishCancelled: async (onError) => {

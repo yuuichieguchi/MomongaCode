@@ -694,6 +694,7 @@ export type RuntimeStore = {
   elicitationView(elicitationId: string): Promise<ElicitationView | undefined>;
   pendingElicitationViews(runId: string): Promise<ElicitationView[]>;
   expireApprovals(nowMs: number, onError: SweepErrorSink): Promise<string[]>;
+  reaskUnshownApprovals(onError: SweepErrorSink): Promise<string[]>;
   finishCancelled(onError: SweepErrorSink): Promise<string[]>;
   deadLetterExhausted(onError: SweepErrorSink): Promise<string[]>;
   terminalRunIdsWithCheckpoint(): string[];
