@@ -7,6 +7,8 @@ import path from 'node:path';
 import { Writable } from 'node:stream';
 import type { Readable } from 'node:stream';
 import { isSea } from 'node:sea';
+import { loadSettings } from '@momonga/config';
+import type { SandboxSetting } from '@momonga/config';
 import { createWorkspaceProbe, nodeEvalFiles, nodeWorkspaceFiles } from '@momonga/eval';
 import type { CommandSandbox, WorkspaceProbe } from '@momonga/eval';
 import {
@@ -33,7 +35,7 @@ import {
   hostProcessGroupPort,
   launchApart,
 } from '@momonga/foundation';
-import type { GuardedStandardStreams, HeldKernelLock, HelperHost, LaunchProgram, ProcessGroupPort, ProcessPort, KernelLockMechanism } from '@momonga/foundation';
+import type { GuardedStandardStreams, HeldKernelLock, HelperHost, LaunchProgram, ProcessGroupPort, SandboxNetworkSetting, ProcessPort, KernelLockMechanism } from '@momonga/foundation';
 import { sourceBuiltLinuxSocketGuard, sourceBuiltWindowsKeeper } from './keeper/source.ts';
 import type { SourceKeeperFiles } from './keeper/source.ts';
 import { createHandoverHost } from './handover/host.ts';
@@ -53,16 +55,29 @@ export const launchProgramThrough =
 
 export const launchProgram: LaunchProgram = launchProgramThrough(launchApart);
 
-export type WorkspaceSandboxInput = { home: string; platform: NodeJS.Platform; env: Readonly<Record<string, string | undefined>>; signal: AbortSignal };
+export type WorkspaceSandboxInput = {
+  home: string;
+  platform: NodeJS.Platform;
+  env: Readonly<Record<string, string | undefined>>;
+  signal: AbortSignal;
+  sandbox: SandboxSetting;
+  network: SandboxNetworkSetting;
+  warn(text: string): void;
+};
 
-export const nodeWorkspaceSandbox = (input: WorkspaceSandboxInput): CommandSandbox => {
+export const nodeWorkspaceSandbox = (input: WorkspaceSandboxInput | (() => Promise<WorkspaceSandboxInput>)): CommandSandbox => {
   let sandbox: Promise<CommandSandbox> | undefined;
   return {
-    commandOf: async (command, workspace) => {
-      sandbox ??= import('@momonga/runtime').then(({ workspaceCommandSandbox }) => workspaceCommandSandbox(input));
-      return (await sandbox).commandOf(command, workspace);
+    start: async (command, workspace, env, signal) => {
+      sandbox ??= Promise.all([import('@momonga/runtime'), typeof input === 'function' ? input() : input]).then(([{ workspaceCommandSandbox }, resolved]) => workspaceCommandSandbox(resolved));
+      return (await sandbox).start(command, workspace, env, signal);
     },
   };
+};
+
+const settingsWorkspaceSandbox = (home: string, cwd: string, signal: AbortSignal, warn: (text: string) => void) => async (): Promise<WorkspaceSandboxInput> => {
+  const { settings } = await loadSettings({ home, projectDir: cwd, cli: {}, trust: { isTrusted: () => false }, signal });
+  return { home, platform: process.platform, env: process.env, signal, sandbox: settings.sandbox, network: settings.sandboxNetwork, warn };
 };
 
 export const nodeWorkspaceProbeOf =
@@ -340,7 +355,7 @@ export const nodePorts = (version: string, interrupt: AbortSignal, streams: Guar
     terminal: process.stdin.isTTY && process.stdout.isTTY ? { stdin: process.stdin, stdout: process.stdout } : undefined,
     files: nodeFilesLockedBy(lock),
     exec: createHostExec(minimalChildEnv(process.env)),
-    probe: nodeWorkspaceProbeOf(nodeWorkspaceSandbox({ home, platform: process.platform, env: process.env, signal: interrupt }), hostProcessGroupPort()),
+    probe: nodeWorkspaceProbeOf(nodeWorkspaceSandbox(settingsWorkspaceSandbox(home, process.cwd(), interrupt, (text) => streams.stderr.write(`${text}\n`))), hostProcessGroupPort()),
     openUrl: createBrowserOpener({ env: process.env, launch: launchProgram, files: nodeFileSystem }),
     secretStore: () => createPlatformSecretStore(createExecWithStdin(undefined), process.env),
     acpStdio: () => ({ input: acpInputOf(process.stdin), output: Writable.toWeb(process.stdout) }),
