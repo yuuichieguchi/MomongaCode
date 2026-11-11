@@ -1,7 +1,7 @@
 export { EarlierAttemptNotStoppedError, sweepCallLocks } from './call-lock.ts';
 export type { CallLock } from './call-lock.ts';
 export { RetiringYield } from './ports.ts';
-export { createToolExecutor, heldCallWaitMs, subjectDigestOf } from './executor.ts';
+export { ReconcileUndecidedError, createToolExecutor, heldCallWaitMs, subjectDigestOf } from './executor.ts';
 export { callStopOf } from './call-stop.ts';
 export type { CallStop, CallStopTerms } from './call-stop.ts';
 export type {

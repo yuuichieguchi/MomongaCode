@@ -1,11 +1,11 @@
-import { createExecWithStdin, createGivenSecretStore, createOutboundDispatcher, findOutboundError, givenSecretStoreChildEnv, minimalChildEnv, outboundFetch, protectedSetFor } from '@momonga/foundation';
+import { createExecWithStdin, createGivenSecretStore, createOutboundDispatcher, findOutboundError, givenSecretStoreChildEnv, minimalChildEnv, outboundFetch } from '@momonga/foundation';
 import type { HelperSelf, MomongaPaths, ProcessInspector, SecretStore } from '@momonga/foundation';
-import { askedBy, computeFileRules } from '@momonga/policy';
 import type { PolicyHostPorts } from '@momonga/policy';
-import { buildSandboxPolicy, createForgeAccess, createOperationTools, createSandboxedArgvRunner, forgeCredentialOf, loadForgeDescriptors } from '@momonga/tools';
+import { createForgeAccess, createOperationTools, createSandboxedArgvRunner, forgeCredentialOf, loadForgeDescriptors } from '@momonga/tools';
 import type { AnyTool, ForgeCredentialReference, ForgeFetch, MarkerOwners, ProbeContext, ReconcileSandbox, ShellHost } from '@momonga/tools';
 import type { SandboxBindings } from '../ports.ts';
 import type { NetworkOf } from './network-derivation.ts';
+import { toolSandboxPolicyOf } from './tool-policy.ts';
 import type { UserSnapshot } from './settings-port.ts';
 
 export type OperationToolsOptions = {
@@ -38,6 +38,26 @@ export const outboundForgeFetch =
     }
   };
 
+export type ReconcileSandboxOptions = Pick<OperationToolsOptions, 'paths' | 'home' | 'sandboxes' | 'fs'>;
+
+export const createReconcileSandbox =
+  (options: ReconcileSandboxOptions) =>
+  async (context: ProbeContext): Promise<ReconcileSandbox> => {
+    const held = await options.sandboxes.acquire(context.signal);
+    try {
+      const sessionRoots = context.roots.filter((root) => root !== context.tmpDir);
+      const sandboxPolicy = await toolSandboxPolicyOf(
+        { paths: options.paths, home: options.home, fs: options.fs, ruleEnforcement: held.value.ruleEnforcement },
+        { roots: sessionRoots, tmpDir: context.tmpDir, rules: [], gitConfigFiles: [], readableDirectories: [] },
+        context.signal,
+      );
+      return { sandbox: held.value.sandbox, sandboxPolicy, release: held.release };
+    } catch (error) {
+      held.release();
+      throw error;
+    }
+  };
+
 export const forgeCredentialReader =
   (secretStore: () => SecretStore) =>
   async (reference: ForgeCredentialReference, signal: AbortSignal): Promise<string> => {
@@ -50,25 +70,7 @@ export const forgeCredentialReader =
 export const createOperationToolSource = (options: OperationToolsOptions): ((snapshot: UserSnapshot) => AnyTool[]) => {
   const secretStore = options.secretStore ?? (() => createGivenSecretStore(createExecWithStdin({ ...minimalChildEnv(process.env), ...givenSecretStoreChildEnv(process.env) }), process.env));
 
-  const reconcileSandbox = async (context: ProbeContext): Promise<ReconcileSandbox> => {
-    const held = await options.sandboxes.acquire(context.signal);
-    const roots = [...context.roots];
-    const ports = askedBy(options.fs, context.signal);
-    const sandboxPolicy = await buildSandboxPolicy(
-      {
-        roots,
-        layout: options.paths,
-        home: options.home,
-        ...(context.tmpDir === undefined ? {} : { tmpDir: context.tmpDir }),
-        sessionsTmpRoot: options.paths.tmp.sessions,
-        fileRules: await computeFileRules([], roots, context.tmpDir ?? null, held.value.ruleEnforcement, ports),
-        protectedSet: await protectedSetFor(roots, ports),
-        network: 'deny',
-      },
-      context.signal,
-    );
-    return { sandbox: held.value.sandbox, sandboxPolicy, release: held.release };
-  };
+  const reconcileSandbox = createReconcileSandbox(options);
 
   const readCredential = forgeCredentialReader(secretStore);
 
