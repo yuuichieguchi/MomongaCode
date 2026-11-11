@@ -26,7 +26,7 @@ const journal = (): RunEventPayload[] => [
 describe('a deterministic compaction states each fact once', () => {
   it('leaves one occurrence of a written path in the built input, in the working state', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
-    const run = env.enqueue('question one');
+    const run = await env.enqueue('question one');
     await env.seed(run.id, journal(), 'release');
     env.gateway.compactSummaries.push(FABRICATED);
     env.gateway.script.push(textStep('Done.'));

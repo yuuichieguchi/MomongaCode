@@ -69,7 +69,7 @@ export const createUserInputPort = ({ tools, policy, store, settings, clock, hom
   return {
     attach: async (session, text, { ceiling, imageInput, signal }) => {
       const facts = await factsFor(session, signal);
-      const trusted = settings.trusted(session);
+      const trusted = await settings.trusted(session);
       const host: AttachHost = {
         ceiling,
         imageInput,

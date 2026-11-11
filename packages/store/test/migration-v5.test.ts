@@ -94,11 +94,11 @@ describe('migration v5 on a populated v4 database', () => {
     expect(() => rawDb(dbPath).prepare("UPDATE runs SET history_mode = NULL WHERE id = 'run-1'").run()).toThrow(/NOT NULL/);
   });
 
-  it('writes the history of a new run explicitly after the migration', () => {
+  it('writes the history of a new run explicitly after the migration', async () => {
     const { dbPath, store } = migrated();
     const session = newSession(store);
-    const first = enqueue(store, session.id, 'first');
-    const second = enqueue(store, session.id, 'second');
+    const first = await enqueue(store, session.id, 'first');
+    const second = await enqueue(store, session.id, 'second');
     expect(historyModes(dbPath)[first.id]).toBe('inherit');
     expect(historyModes(dbPath)[second.id]).toBe('inherit');
     expect(mustRun(store, second.id)).toMatchObject({ previousRunId: first.id, history: 'inherit' });

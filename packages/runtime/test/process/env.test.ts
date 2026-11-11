@@ -65,7 +65,7 @@ describe('tool env at use time (system timers)', () => {
       const dump = path.join(temp.root, 'mcp-env.txt');
       writeUserSettings(temp.home, {});
       const session = createSession(f.store, temp.project, { env: { PATH: '/usr/bin:/bin', HOME: temp.home } });
-      const runId = createRun(f.store, session.id);
+      const runId = await createRun(f.store, session.id);
 
       await withSentinel(async () => {
         const { outcome } = await runBashThroughPort(f, session, runId, 'env');
@@ -91,7 +91,7 @@ describe('tool env at use time (system timers)', () => {
       const dump = path.join(temp.root, 'mcp-env.txt');
       writeUserSettings(temp.home, {});
       const session = createSession(f.store, temp.project, { env: { PATH: '/usr/bin:/bin', HOME: temp.home, [DECLARED_CREDENTIAL]: 'v' } });
-      const runId = createRun(f.store, session.id);
+      const runId = await createRun(f.store, session.id);
       const before = await runBashThroughPort(f, session, runId, `printf '%s' "\${${DECLARED_CREDENTIAL}:-absent}"`);
       const beforeOutput = before.outcome.kind === 'result' ? before.outcome.result.output : '';
       expect(beforeOutput).toContain('v');
@@ -120,7 +120,7 @@ describe('tool env at use time (system timers)', () => {
     });
     writeUserSettings(f.temp.home, { mcpServers: { fx: { command: '/bin/echo' } } });
     const session = createSession(f.store, f.temp.project, { env: { PATH: '/usr/bin:/bin', PLAIN: '1' } });
-    const runId = createRun(f.store, session.id);
+    const runId = await createRun(f.store, session.id);
 
     const env = f.toolRuntime.port.envFor(session);
     const policy = await f.toolRuntime.port.policyFor(session, { signal: NEVER_CANCELLED, env, rules: [], ruleEnforcement: 'exact-paths' });

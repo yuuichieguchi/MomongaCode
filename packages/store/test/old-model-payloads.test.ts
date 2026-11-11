@@ -14,10 +14,10 @@ const insertOldModelChange = (h: Harness, sessionId: string): void => {
     .run(sessionId, h.clock.now(), JSON.stringify({ type: 'model.changed', modelAlias: 'Big Model', previousModelAlias: 'local' }));
 };
 
-const withOldRun = () => {
+const withOldRun = async () => {
   const h = harness();
   const session = newSession(h.store);
-  const run = enqueue(h.store, session.id);
+  const run = await enqueue(h.store, session.id);
   const claim = mustClaim(h.store, 'w1');
   expect(h.store.append(claim, [{ type: 'run.started', attempt: claim.attempt, now: h.clock.now(), pins: { ...OLD_PINS }, mode: 'manual' }, oldClassified]).kind).toBe('ok');
   return { h, session, run, claim };
@@ -35,23 +35,23 @@ describe('events an earlier build wrote with the old model keys', () => {
     expect(h.store.readSessionEvents(session.id, 0, 10).filter((event) => event.type === 'model.changed')).toMatchObject([{ model: 'Big Model', previousModel: 'local' }]);
   });
 
-  it('reads a run.started event whose pins hold modelAlias, and the pin decodes to the old text', () => {
-    const { h, run } = withOldRun();
+  it('reads a run.started event whose pins hold modelAlias, and the pin decodes to the old text', async () => {
+    const { h, run } = await withOldRun();
     const [started] = h.store.readRunEventsOfTypes(run.id, ['run.started']);
     if (started?.type !== 'run.started') throw new Error('the run has no run.started event');
     expect(decodeStoredModel(started.pins, STORED_MODEL_KEYS.pin)).toBe('local');
     expect(started.pins['roles']).toEqual({ compaction: 'cheap' });
   });
 
-  it('reads a tool.permission.classified event that holds the key alias, and the model decodes to the old text', () => {
-    const { h, run } = withOldRun();
+  it('reads a tool.permission.classified event that holds the key alias, and the model decodes to the old text', async () => {
+    const { h, run } = await withOldRun();
     const [classified] = h.store.readRunEventsOfTypes(run.id, ['tool.permission.classified']);
     expect(classified).toBeDefined();
     expect(decodeStoredModel(classified as unknown as Record<string, unknown>, STORED_MODEL_KEYS.classified)).toBe('guard');
   });
 
   it('lists a terminal run that holds such events for a facts rebuild, and its events are read without an error', async () => {
-    const { h, run, claim } = withOldRun();
+    const { h, run, claim } = await withOldRun();
     insertOldModelChange(h, run.sessionId);
     expect((await h.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     expect(h.store.runFacts.cursor().afterEventId).toBe(0);
@@ -60,8 +60,8 @@ describe('events an earlier build wrote with the old model keys', () => {
     expect(() => h.store.readSessionEvents(run.sessionId, 0, 100)).not.toThrow();
   });
 
-  it('rewrites no row when the old events are read', () => {
-    const { h, run } = withOldRun();
+  it('rewrites no row when the old events are read', async () => {
+    const { h, run } = await withOldRun();
     insertOldModelChange(h, run.sessionId);
     const before = payloadsOf(h);
     h.store.readModelChanges(run.sessionId, 0);

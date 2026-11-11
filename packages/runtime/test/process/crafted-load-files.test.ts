@@ -61,13 +61,13 @@ const write = (file: string, text: string): void => {
 };
 
 const skillPortFor = (home: string) =>
-  createSkillsPort({ loader: createSkillLoader({ home, fileSystem: createNodeSkillFileSystem() }), settings: { trusted: () => true } });
+  createSkillsPort({ loader: createSkillLoader({ home, fileSystem: createNodeSkillFileSystem() }), settings: { trusted: async () => true } });
 
 const agentPortFor = (home: string) =>
   createAgentsPort({
     home,
     fileSystem: createNodeSkillFileSystem(),
-    settings: { trusted: () => true },
+    settings: { trusted: async () => true },
     runs: {
       spawn: () => Promise.reject(new Error('no child runs in this test')),
       outcomeOf: () => {

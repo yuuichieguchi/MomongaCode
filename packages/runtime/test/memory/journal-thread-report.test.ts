@@ -25,7 +25,7 @@ const work = (now: number): RunEventPayload[] => [
 describe('the report request of the journal thread', () => {
   it('answers with the report buildRunReport gives for every event of the run, and the lastSeq it read', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work', { history: 'fresh', limits: { maxSteps: 7, maxTotalTokens: 90_000, maxCostUsd: 9.1 } });
+    const run = await env.enqueue('Work', { history: 'fresh', limits: { maxSteps: 7, maxTotalTokens: 90_000, maxCostUsd: 9.1 } });
     await env.seed(run.id, work(env.clock.now()), 'hold');
     env.clock.advance(250);
     const stored = env.run(run.id);
@@ -62,7 +62,7 @@ describe('the report request of the journal thread', () => {
 
   it('is what the store answers through journalFacts.report', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work', { history: 'fresh' });
+    const run = await env.enqueue('Work', { history: 'fresh' });
     await env.seed(run.id, work(env.clock.now()), 'hold');
 
     const reply = await env.store.journalFacts.report({ runId: run.id });

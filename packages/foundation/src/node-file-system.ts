@@ -34,6 +34,7 @@ export interface FileSystem extends AtomicWriteFileSystem {
   readlink(file: string): Promise<string>;
   readlinkBytes(file: string): Promise<Uint8Array>;
   readStart(file: string, bytes: number): Promise<Uint8Array>;
+  readRange(file: string, position: number, length: number): Promise<Uint8Array>;
   realpath(file: string): Promise<string>;
   openDirectory(directory: string): Promise<DirectoryReader>;
   cp(from: string, to: string): Promise<void>;
@@ -154,6 +155,21 @@ export const nodeFileSystem: FileSystem = {
       const buffer = Buffer.alloc(bytes);
       const { bytesRead } = await handle.read(buffer, 0, bytes, 0);
       return buffer.subarray(0, bytesRead);
+    } finally {
+      await handle.close();
+    }
+  },
+  readRange: async (file, position, length) => {
+    const handle = await fs.promises.open(file, 'r');
+    try {
+      const buffer = Buffer.alloc(length);
+      let filled = 0;
+      while (filled < length) {
+        const { bytesRead } = await handle.read(buffer, filled, length - filled, position + filled);
+        if (bytesRead === 0) break;
+        filled += bytesRead;
+      }
+      return buffer.subarray(0, filled);
     } finally {
       await handle.close();
     }

@@ -40,10 +40,10 @@ const meter = (eventId: number, runId: string, sessionId: string): RecordedEvent
   } as RunEventPayload,
 });
 
-const recordsAfter = (order: readonly ((runs: readonly string[], sessionId: string) => RecordedEvent)[]): unknown => {
+const recordsAfter = async (order: readonly ((runs: readonly string[], sessionId: string) => RecordedEvent)[]): Promise<unknown> => {
   const { store, dbPath } = harness();
   const session = newSession(store);
-  const runs = [enqueue(store, session.id, 'a').id, enqueue(store, session.id, 'b').id];
+  const runs = [(await enqueue(store, session.id, 'a')).id, (await enqueue(store, session.id, 'b')).id];
   const db = rawDb(dbPath);
   const records = createAppendRecords(db);
   for (const event of order) {
@@ -61,30 +61,30 @@ const meteredA = (runs: readonly string[], sessionId: string) => meter(11, runs[
 const meteredB = (runs: readonly string[], sessionId: string) => meter(21, runs[1] ?? '', sessionId);
 
 describe('a session-scoped derivation is a function of the set of events it covers (H7, 11.5 correction rule 3)', () => {
-  it('session_touched keeps the least first_event_id whatever order the runs are repaired in', () => {
-    const forward = recordsAfter([touchedA, touchedB]);
-    const backward = recordsAfter([touchedB, touchedA]);
+  it('session_touched keeps the least first_event_id whatever order the runs are repaired in', async () => {
+    const forward = await recordsAfter([touchedA, touchedB]);
+    const backward = await recordsAfter([touchedB, touchedA]);
     expect(backward).toEqual(forward);
     expect((forward as { touched: unknown[] }).touched).toEqual([{ path: '/work/a/x.txt', first_event_id: 10 }]);
   });
 
-  it('meter_records keeps the record of the greatest event id whatever order the runs are repaired in', () => {
-    const forward = recordsAfter([meteredA, meteredB]);
-    const backward = recordsAfter([meteredB, meteredA]);
+  it('meter_records keeps the record of the greatest event id whatever order the runs are repaired in', async () => {
+    const forward = await recordsAfter([meteredA, meteredB]);
+    const backward = await recordsAfter([meteredB, meteredA]);
     expect(backward).toEqual(forward);
     expect((forward as { meters: { seq: number; first_run: number }[] }).meters).toMatchObject([{ seq: 21, first_run: 0 }]);
   });
 
-  it('applying the same events twice gives the records of applying them once', () => {
-    const once = recordsAfter([touchedA, meteredA, touchedB, meteredB]);
-    const twice = recordsAfter([touchedA, meteredA, touchedB, meteredB, touchedB, meteredB, touchedA, meteredA]);
+  it('applying the same events twice gives the records of applying them once', async () => {
+    const once = await recordsAfter([touchedA, meteredA, touchedB, meteredB]);
+    const twice = await recordsAfter([touchedA, meteredA, touchedB, meteredB, touchedB, meteredB, touchedA, meteredA]);
     expect(twice).toEqual(once);
   });
 
-  it('the window of misses holds the misses of the greatest event ids, at most the window size', () => {
+  it('the window of misses holds the misses of the greatest event ids, at most the window size', async () => {
     const many = Array.from({ length: ERROR_WINDOW + 5 }, (_unused, index) => (runs: readonly string[], sessionId: string) => meter(100 + ERROR_WINDOW + 5 - index, runs[0] ?? '', sessionId));
-    const forward = recordsAfter(many) as { meters: { misses_json: string }[] };
-    const backward = recordsAfter([...many].reverse()) as { meters: { misses_json: string }[] };
+    const forward = (await recordsAfter(many)) as { meters: { misses_json: string }[] };
+    const backward = (await recordsAfter([...many].reverse())) as { meters: { misses_json: string }[] };
     expect(backward).toEqual(forward);
     const misses: unknown = JSON.parse(forward.meters[0]?.misses_json ?? '[]');
     expect(misses).toHaveLength(ERROR_WINDOW);

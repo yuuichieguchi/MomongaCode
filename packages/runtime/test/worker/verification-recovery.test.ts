@@ -42,9 +42,9 @@ const verificationMarkerName = (key: { runId: string; round: number; conditionId
 
 const workerOf = (env: Env, id = 'worker-2') => env.worker(id, { tools: { sandboxes: fixedSandboxBindings(createUnsandboxed({ killGraceMs: 200 })) } });
 
-const enqueueWith = (env: Env, command: string, deadlineAt = DEADLINE_MS): Run =>
+const enqueueWith = async (env: Env, command: string, deadlineAt = DEADLINE_MS): Promise<Run> =>
   createdRun(
-    env.store.createRunAndEnqueue(env.session.id, {
+    await env.store.createRunAndEnqueue(env.session.id, {
       input: 'check it',
       timeoutMs: deadlineAt - env.clock.now(),
       limits: {},
@@ -94,7 +94,7 @@ describe('recovery during verification', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     const counter = path.join(env.root, 'check-runs.txt');
     const command = `echo run >> ${counter}`;
-    const run = enqueueWith(env, command);
+    const run = await enqueueWith(env, command);
     env.seed(run.id, [stoppedResponse, startedCheck(conditionIdOf(command))], 'crash');
 
     await env.runOnce(workerOf(env));
@@ -109,7 +109,7 @@ describe('recovery during verification', () => {
   it('reaps the process group the crashed owner left behind before it reruns the check', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     const command = 'true';
-    const run = enqueueWith(env, command);
+    const run = await enqueueWith(env, command);
     const conditionId = conditionIdOf(command);
     env.seed(run.id, [stoppedResponse, startedCheck(conditionId)], 'crash');
     const pid = holdMarker(env, verificationMarkerName({ runId: run.id, round: 1, conditionId }));
@@ -125,7 +125,7 @@ describe('recovery during verification', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     const counter = path.join(env.root, 'check-runs.txt');
     const command = `echo run >> ${counter}`;
-    const run = enqueueWith(env, command);
+    const run = await enqueueWith(env, command);
     const conditionId = conditionIdOf(command);
     env.seed(
       run.id,
@@ -149,7 +149,7 @@ describe('recovery during verification', () => {
     const started = path.join(env.root, 'check-started');
     const pidFile = path.join(env.root, 'check-pid');
     env.gateway.script.push(textStep('done'));
-    const run = enqueueWith(env, `echo $$ > ${pidFile}; touch ${started}; sleep 30`);
+    const run = await enqueueWith(env, `echo $$ > ${pidFile}; touch ${started}; sleep 30`);
 
     const running = env.runOnce(workerOf(env, 'worker-1'));
     await within(
@@ -172,7 +172,7 @@ describe('recovery during verification', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     const started = path.join(env.root, 'check-started');
     env.gateway.script.push(textStep('done'));
-    const run = enqueueWith(env, `touch ${started}; sleep 30`, env.clock.now() + 1500);
+    const run = await enqueueWith(env, `touch ${started}; sleep 30`, env.clock.now() + 1500);
 
     const running = env.runOnce(workerOf(env, 'worker-1'));
     await within(

@@ -69,8 +69,6 @@ const SYNCHRONOUS_USERS: Readonly<Record<string, string>> = {
   'packages/config/src/models.ts': 'the user settings are parsed under the synchronous user-settings cache, once per change of the file and once at the begin of a stop',
   'packages/config/src/user-settings.ts': 'the synchronous user-settings cache: one parse per change of the file and one at the begin of a stop',
   'packages/config/src/edit-settings.ts': 'the settings editor checks a document inside its synchronous edit under the settings lock',
-  'packages/store/src/trust.ts': 'the origin of a run is decided inside the transaction that creates it, and the trusted port of the settings answers synchronously',
-  'packages/store/src/runtime-store.ts': 'the store is opened synchronously, once at process start',
   'packages/cli/src/tui/diff.ts': 'the terminal view words an approval once, synchronously, in the process of one terminal',
 };
 

@@ -17,8 +17,8 @@ export type HistoryPortOptions = {
 };
 
 export const createHistoryPort = ({ store, settings, clock, home, redactor, enforcement }: HistoryPortOptions): HistoryPort => ({
-  load: (session) => {
-    const trusted = settings.trusted(session);
+  load: async (session) => {
+    const trusted = await settings.trusted(session);
     const visibility: HistoryVisibility = { trusted, project: session.cwd };
     const denialFor = async (project: string, signal: AbortSignal): Promise<ReadDenial> => {
       const own = project === session.cwd;

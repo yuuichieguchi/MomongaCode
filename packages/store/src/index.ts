@@ -21,7 +21,8 @@ export { CANCEL_ORIGINS, CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSI
 export { FIDELITY_PRUNE_BATCH_ROWS, migrateRuntimeDatabase, openRuntimeStore } from './runtime-store.ts';
 export { FactsRefusedError, JournalThreadError, StalePreparation } from './journal-port.ts';
 export { JOURNAL_SCAN_RANGE_ROWS, createJournalReader } from './journal-reader.ts';
-export { blobDirectoryOf, createBlobStore } from './blobs.ts';
+export { blobDirectoryOf, createBlobStore, prepareBlobDirectory } from './blobs.ts';
+export type { BlobFileSystem, BlobPorts } from './blobs.ts';
 export type { JournalReader, JournalReaderOptions } from './journal-reader.ts';
 export type { RecordVisit, WalkUnits } from './record-walk.ts';
 export type { RecordHopRef } from './inherit-reference.ts';

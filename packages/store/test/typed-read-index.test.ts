@@ -60,7 +60,7 @@ const typedReadsOfAStoreInUse = async () => {
   const dbPath = path.join(dir, 'runtime.db');
   const captured = capturePrepared();
   const store = openStoreAt(dbPath, createFakeClock(START_MS));
-  const run = enqueue(store, newSession(store).id);
+  const run = await enqueue(store, newSession(store).id);
   const claim = mustClaim(store, 'w1');
   expect(store.append(claim, [requested(1), ...Array.from({ length: NON_MATCHING }, (_unused, index) => delta(index)), responded(1), requested(2)]).kind).toBe('ok');
   const lastSeq = store.getRun(run.id)?.lastSeq ?? 0;
@@ -93,7 +93,7 @@ describe('migration 21 adds one general typed-read index on events (O4 option b)
     versionTwenty.close();
     fs.chmodSync(dbPath, 0o600);
     const seeded = openStoreAt(dbPath, createFakeClock(START_MS));
-    const run = enqueue(seeded, newSession(seeded).id);
+    const run = await enqueue(seeded, newSession(seeded).id);
     const claim = mustClaim(seeded, 'w1');
     expect(seeded.append(claim, [requested(1), delta(0), responded(1)]).kind).toBe('ok');
     seeded.close();

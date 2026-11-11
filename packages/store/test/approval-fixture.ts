@@ -31,7 +31,7 @@ const awaiting = async <Call extends { callId: string }>(
   ask: (claim: Claim, call: Call) => Promise<Approval>,
 ): Promise<Awaiting> => {
   const session = newSession(store);
-  const run = enqueue(store, session.id);
+  const run = await enqueue(store, session.id);
   const claim = mustClaim(store, 'worker-1');
   const appended = store.append(claim, calls.map((call) => callEvent(call.callId)));
   if (appended.kind !== 'ok') throw new Error('expected the tool calls to be appended');

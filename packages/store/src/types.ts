@@ -1,6 +1,6 @@
 import type { RuleVerdictStore } from './rule-verdicts.ts';
 import type { Stored, UNKNOWN_VALUE } from './rows.ts';
-import type { Clock, Redactor } from '@momonga/foundation';
+import type { Clock, FileSystem, Random, Redactor } from '@momonga/foundation';
 import type { CANCEL_ORIGINS } from './transitions.ts';
 import type { PermissionReviewsStore } from './permission-reviews.ts';
 import type { InheritPlanReply, InheritPlanRequest, InheritedWindowReply, InheritedWindowRequest } from './inherit-reference.ts';
@@ -173,7 +173,7 @@ export type InboxWithdrawResult = { kind: 'withdrawn' | 'already_delivered'; row
 export type InboxDeliverResult = { kind: 'ok'; delivered: InboxRow[] } | LeaseLost;
 
 export type InboxStore = {
-  add(sessionId: string, input: InboxAddInput): InboxAddResult;
+  add(sessionId: string, input: InboxAddInput): Promise<InboxAddResult>;
   withdraw(id: string): InboxWithdrawResult;
   list(sessionId: string): InboxRow[];
   deliverSteering(claim: Claim): InboxDeliverResult;
@@ -345,6 +345,7 @@ export type BlobSlice = { text: string; totalLines: number; totalBytes: number }
 export type BlobByteSlice = BlobSlice & { offset: number; length: number };
 
 export type BlobStore = {
+  prepare(): Promise<void>;
   handleFor(content: string): string;
   put(data: string | Uint8Array, options: { mediaType: string; runId?: string }): Promise<BlobRef>;
   read(handle: string, range: BlobLineRange, scope?: BlobScope): Promise<BlobSlice>;
@@ -360,12 +361,8 @@ export type StoredTrustDecision = Stored<TrustDecision>;
 export type TrustAnswer = { decision: StoredTrustDecision | null; inheritedFrom?: string };
 
 export type TrustStore = {
-  get(path: string): StoredTrustDecision | undefined;
-  decisionFor(path: string): TrustAnswer;
   decisionAsked(path: string, signal: AbortSignal): Promise<TrustAnswer>;
-  set(path: string, decision: TrustDecision): void;
   setAsked(path: string, decision: TrustDecision, signal: AbortSignal): Promise<void>;
-  clear(path: string): void;
   clearAsked(path: string, signal: AbortSignal): Promise<void>;
 };
 
@@ -624,10 +621,10 @@ export type RuntimeStore = {
   createSession(input: CreateSessionInput): Session;
   getSession(id: string): Session | undefined;
   listSessions(filter?: { cwd?: string }): Session[];
-  createRunAndEnqueue(sessionId: string, input: CreateRunInput): CreateRunResult;
+  createRunAndEnqueue(sessionId: string, input: CreateRunInput): Promise<CreateRunResult>;
   findRunByIdempotencyKey(sessionId: string, key: string): { run: Run; requestDigest: string | null } | undefined;
   sessionActivity(sessionId: string): { lastActivityAt: number; hasActiveRun: boolean } | undefined;
-  checkIdentity(): void;
+  checkIdentity(): Promise<void>;
   pruneFidelityVerdicts(bound: number): number;
   readonly maxTotalAttempts: number;
   getRun(id: string): Run | undefined;
@@ -698,7 +695,7 @@ export type RuntimeStore = {
   writeSnapshot(claim: Claim, seq: number, state: RunState): SnapshotResult;
   inheritContext(claim: Claim, options: { mode: PermissionMode; facts?: Pick<JournalFacts, 'inheritPlan'> }): Promise<InheritContextResult>;
   dataVersion(): number;
-  createChildRun(input: ChildRunInput): CreateChildRunResult;
+  createChildRun(input: ChildRunInput): Promise<CreateChildRunResult>;
   listChildRuns(runId: string): Run[];
   treeSpend(runId: string): TreeSpend & { runsRead: number };
   admitModelRequest(holder: LeaseFence | SettledRun, ask: AdmissionAsk): Admission | LeaseLost;
@@ -729,6 +726,8 @@ export type RuntimeStoreOptions = {
   path: string;
   home: string;
   clock: Clock;
+  fileSystem: FileSystem;
+  random: Random;
   leaseMs: number;
   maxAttempts: number;
   maxTotalAttempts: number;

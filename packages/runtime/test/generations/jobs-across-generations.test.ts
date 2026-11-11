@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { canonicalJson, createUninspectableRegistry, fixedRolePort, markerReapClockBoundMs, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, createUninspectableRegistry, fixedRolePort, markerReapClockBoundMs, sha256Hex, systemRandom, nodeFileSystem } from '@momonga/foundation';
 import type { GenerationRole } from '@momonga/foundation';
 import type { SandboxExit, SandboxedProcess } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
@@ -78,13 +78,13 @@ afterEach(() => {
 
 type World = { root: string; clock: FakeClock; reapTiming: PacedReapTiming; store: RuntimeStore; runId: string; sessionId: string; liveOwners: Set<number> };
 
-const world = (): World => {
+const world = async (): Promise<World> => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-jobs-gen-')));
   roots.push(root);
   const clock = createFakeClock(START_MS);
-  const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS, path: path.join(root, 'runtime.db'), home: root, clock, leaseMs: 1000, maxAttempts: 5, maxTotalAttempts: 50 });
+  const store = openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: path.join(root, 'runtime.db'), home: root, clock, leaseMs: 1000, maxAttempts: 5, maxTotalAttempts: 50 });
   const session = store.createSession({ cwd: root, env: {}, permissionMode: 'manual', model: 'fm' });
-  const created = store.createRunAndEnqueue(session.id, { input: 'go', timeoutMs: 3_600_000, limits: {}, pins: {} });
+  const created = await store.createRunAndEnqueue(session.id, { input: 'go', timeoutMs: 3_600_000, limits: {}, pins: {} });
   if (created.kind !== 'created') throw new Error('expected a run');
   return { root, clock, reapTiming: pacedReapTiming(clock), store, runId: created.run.id, sessionId: session.id, liveOwners: new Set() };
 };
@@ -157,7 +157,7 @@ const flushed = async (file: string, bytes: number): Promise<void> => {
 
 describe('the owner of a background job (17.3, 20.38)', () => {
   it('records the owner generation, the absolute output path and no kill request, and opens the output file with mode 0600 inside run/g<N>/jobs before the process runs', async () => {
-    const w = world();
+    const w = await world();
     const owner = generationOf(w, 2);
 
     const { jobId } = await owner.start('call-1');
@@ -175,7 +175,7 @@ describe('the owner of a background job (17.3, 20.38)', () => {
   });
 
   it('refuses a symbolic link at the output path: the link target is unchanged, no row is written and no process is spawned', async () => {
-    const w = world();
+    const w = await world();
     const owner = generationOf(w, 3);
     const victim = path.join(w.root, 'victim.txt');
     fs.writeFileSync(victim, 'untouched');
@@ -192,7 +192,7 @@ describe('the owner of a background job (17.3, 20.38)', () => {
   });
 
   it('a retiring runtime starts no job: the start raises RetiringYield before any row, file or process (20.50)', async () => {
-    const w = world();
+    const w = await world();
     const retiring = generationOf(w, 1, 'retiring');
 
     await expect(retiring.start('call-1')).rejects.toBeInstanceOf(RetiringYield);
@@ -203,7 +203,7 @@ describe('the owner of a background job (17.3, 20.38)', () => {
   });
 
   it('appends every byte of both streams to the file in order, puts the last window in the blob at finish and unlinks the file', async () => {
-    const w = world();
+    const w = await world();
     const owner = generationOf(w, 1);
     const { jobId } = await owner.start('call-1');
     const process = owner.spawned[0] as FakeProcess;
@@ -231,7 +231,7 @@ describe('the owner of a background job (17.3, 20.38)', () => {
 
 describe('BashOutput from another generation (17.3 "Read from any generation")', () => {
   it('returns the same text, omitted count and total as the owner for the same read offset', async () => {
-    const w = world();
+    const w = await world();
     const owner = generationOf(w, 1);
     const reader = generationOf(w, 2);
     w.liveOwners.add(1);
@@ -257,7 +257,7 @@ describe('BashOutput from another generation (17.3 "Read from any generation")',
   });
 
   it('reads the blob of a job whose owner finished between the row read and the file read, and the empty text when the file is gone and the job still runs', async () => {
-    const w = world();
+    const w = await world();
     const owner = generationOf(w, 1);
     const reader = generationOf(w, 2);
     w.liveOwners.add(1);
@@ -277,7 +277,7 @@ describe('BashOutput from another generation (17.3 "Read from any generation")',
 
 describe('KillBash from another generation (17.3 "Kill", 17.9, 20.39)', () => {
   it('sets the flag once; the owner stops the job at its wake, and the caller reads stopped', async () => {
-    const w = world();
+    const w = await world();
     const owner = generationOf(w, 1);
     const other = generationOf(w, 2);
     w.liveOwners.add(1);
@@ -303,7 +303,7 @@ describe('KillBash from another generation (17.3 "Kill", 17.9, 20.39)', () => {
   });
 
   it('returns requested with the stored running view when the owner has not stopped the job within the bound of 17.9', async () => {
-    const w = world();
+    const w = await world();
     const owner = generationOf(w, 1);
     const other = generationOf(w, 2);
     w.liveOwners.add(1);
@@ -323,7 +323,7 @@ describe('KillBash from another generation (17.3 "Kill", 17.9, 20.39)', () => {
   });
 
   it('on a job whose owner is not alive runs the owner-dead reconcile: status unknown, the bytes of the file in the blob, the marker of the owner generation reaped, the file unlinked', async () => {
-    const w = world();
+    const w = await world();
     generationOf(w, 1);
     const other = generationOf(w, 2);
     const jobId = 'bash_dead00000001';
@@ -352,7 +352,7 @@ describe('the owner-dead reconcile (17.3, 20.36, 20.40)', () => {
   };
 
   it('marks unknown a job of its own generation that is not live here and a job without an owner, leaves a job whose owner runtime lock is held, and takes it once that lock is free', async () => {
-    const w = world();
+    const w = await world();
     const reconciler = generationOf(w, 2);
     generationOf(w, 1);
     seed(w, 'bash_own', 2);
@@ -377,7 +377,7 @@ describe('the owner-dead reconcile (17.3, 20.36, 20.40)', () => {
   });
 
   it('examines at most the batch of running jobs per call and goes on from where it stopped', async () => {
-    const w = world();
+    const w = await world();
     const reconciler = generationOf(w, 2);
     for (let index = 0; index < 5; index += 1) seed(w, `bash_${index}`, undefined);
 
@@ -389,7 +389,7 @@ describe('the owner-dead reconcile (17.3, 20.36, 20.40)', () => {
   });
 
   it('the owner checks only its live jobs for a set flag: the flagged one stops as killed, the other runs on', async () => {
-    const w = world();
+    const w = await world();
     const owner = generationOf(w, 1);
     const flagged = await owner.start('call-1');
     const other = await owner.start('call-2');

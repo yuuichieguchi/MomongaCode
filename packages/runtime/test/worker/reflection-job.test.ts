@@ -6,7 +6,7 @@ describe('worker and the reflection job', () => {
   it('writes the job row in the terminal transition of a run that completes', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Done.'));
-    const run = env.enqueue('Say hello');
+    const run = await env.enqueue('Say hello');
     expect(env.store.reflection.get(run.id)).toBeUndefined();
 
     await env.runOnce(env.worker());
@@ -17,7 +17,7 @@ describe('worker and the reflection job', () => {
 
   it('writes no row for a run that was cancelled while queued', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Never started');
+    const run = await env.enqueue('Never started');
     expect((await env.cancelToEnd(run.id)).status).toBe('CANCELLED');
     expect(env.store.reflection.get(run.id)).toBeUndefined();
   });

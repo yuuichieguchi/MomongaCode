@@ -15,7 +15,7 @@ const sessionWithRuns = async (store: RuntimeStore, clock: FakeClock, specs: rea
   const runs: Run[] = [];
   for (const spec of specs) {
     clock.advance(1000);
-    const run = enqueue(store, session.id, spec.task);
+    const run = await enqueue(store, session.id, spec.task);
     const claim = store.claim(`worker-${run.id}`);
     if (claim?.runId !== run.id) throw new Error(`expected to claim ${run.id}`);
     const appended = store.append(claim, (spec.steps ?? []).flatMap((step, index) => stepEvents(index + 1, step)));

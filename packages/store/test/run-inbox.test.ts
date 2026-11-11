@@ -17,8 +17,8 @@ const inboxMigration = (): Migration => {
   return found[0];
 };
 
-const add = (store: RuntimeStore, sessionId: string, delivery: InboxDelivery, text: string): InboxRow => {
-  const result = store.inbox.add(sessionId, { delivery, text, run: TERMS });
+const add = async (store: RuntimeStore, sessionId: string, delivery: InboxDelivery, text: string): Promise<InboxRow> => {
+  const result = await store.inbox.add(sessionId, { delivery, text, run: TERMS });
   if (result.kind !== 'added') throw new Error(`expected the message to be added, got ${result.kind}`);
   return result.row;
 };
@@ -33,9 +33,9 @@ const userMessages = (store: RuntimeStore, runId: string) =>
 const inboxEvents = (store: RuntimeStore, sessionId: string): string[][] =>
   store.readSessionEvents(sessionId, 0, 1000).flatMap((event) => (event.type === 'inbox.changed' ? [texts(event.pending)] : []));
 
-const busySession = (store: RuntimeStore) => {
+const busySession = async (store: RuntimeStore) => {
   const session = newSession(store);
-  const run = enqueue(store, session.id, 'first');
+  const run = await enqueue(store, session.id, 'first');
   const claim = mustClaim(store, 'w1');
   return { session, run, claim };
 };
@@ -80,14 +80,14 @@ describe('the run inbox migration', () => {
 });
 
 describe('adding, listing and taking back (design 5.3)', () => {
-  it('stores a row with a per-session seq and lists the pending rows in seq order', () => {
+  it('stores a row with a per-session seq and lists the pending rows in seq order', async () => {
     const h = harness();
-    const { session } = busySession(h.store);
+    const { session } = await busySession(h.store);
     const other = newSession(h.store, '/work/b');
-    enqueue(h.store, other.id, 'other first');
-    const first = add(h.store, session.id, 'queue', 'one');
-    const second = add(h.store, session.id, 'steer', 'two');
-    const foreign = add(h.store, other.id, 'queue', 'elsewhere');
+    await enqueue(h.store, other.id, 'other first');
+    const first = await add(h.store, session.id, 'queue', 'one');
+    const second = await add(h.store, session.id, 'steer', 'two');
+    const foreign = await add(h.store, other.id, 'queue', 'elsewhere');
     expect(first).toEqual({ id: expect.any(String), sessionId: session.id, delivery: 'queue', text: 'one', seq: 1, state: 'pending', createdAt: h.clock.now(), settledAt: null });
     expect(second.seq).toBe(2);
     expect(foreign.seq).toBe(1);
@@ -96,36 +96,37 @@ describe('adding, listing and taking back (design 5.3)', () => {
     expect(inboxEvents(h.store, session.id)).toEqual([['queue:one'], ['queue:one', 'steer:two']]);
   });
 
-  it('keeps the images of a row in the shape of a prompt', () => {
+  it('keeps the images of a row in the shape of a prompt', async () => {
     const h = harness();
-    const { session } = busySession(h.store);
+    const { session } = await busySession(h.store);
     const images = [{ mediaType: 'image/png' as const, data: 'AAAA' }];
-    const result = h.store.inbox.add(session.id, { delivery: 'queue', text: 'look', images, run: TERMS });
+    const result = await h.store.inbox.add(session.id, { delivery: 'queue', text: 'look', images, run: TERMS });
     expect(result).toMatchObject({ kind: 'added', row: { images } });
     expect(h.store.inbox.list(session.id)[0]?.images).toEqual(images);
   });
 
-  it('answers not_found for an unknown session and for an unknown row', () => {
+  it('answers not_found for an unknown session and for an unknown row', async () => {
     const h = harness();
-    expect(h.store.inbox.add('nope', { delivery: 'queue', text: 'x', run: TERMS })).toEqual({ kind: 'not_found' });
+    expect(await h.store.inbox.add('nope', { delivery: 'queue', text: 'x', run: TERMS })).toEqual({ kind: 'not_found' });
     expect(h.store.inbox.withdraw('nope')).toEqual({ kind: 'not_found' });
   });
 
-  it(`refuses the message after ${INBOX_MAX_PENDING} pending ones, and takes one again after a withdrawal`, () => {
+  it(`refuses the message after ${INBOX_MAX_PENDING} pending ones, and takes one again after a withdrawal`, async () => {
     const h = harness();
-    const { session } = busySession(h.store);
-    const rows = Array.from({ length: INBOX_MAX_PENDING }, (_, index) => add(h.store, session.id, index % 2 === 0 ? 'queue' : 'steer', `m${index}`));
-    expect(h.store.inbox.add(session.id, { delivery: 'queue', text: 'too many', run: TERMS })).toEqual({ kind: 'full' });
+    const { session } = await busySession(h.store);
+    const rows: InboxRow[] = [];
+    for (let index = 0; index < INBOX_MAX_PENDING; index += 1) rows.push(await add(h.store, session.id, index % 2 === 0 ? 'queue' : 'steer', `m${index}`));
+    expect(await h.store.inbox.add(session.id, { delivery: 'queue', text: 'too many', run: TERMS })).toEqual({ kind: 'full' });
     expect(h.store.inbox.list(session.id)).toHaveLength(INBOX_MAX_PENDING);
     h.store.inbox.withdraw(rows[0]?.id ?? '');
-    expect(add(h.store, session.id, 'queue', 'fits').seq).toBe(INBOX_MAX_PENDING + 1);
+    expect((await add(h.store, session.id, 'queue', 'fits')).seq).toBe(INBOX_MAX_PENDING + 1);
   });
 
-  it('withdraws a pending row once, and answers already_delivered for a delivered one', () => {
+  it('withdraws a pending row once, and answers already_delivered for a delivered one', async () => {
     const h = harness();
-    const { session, claim } = busySession(h.store);
-    const queued = add(h.store, session.id, 'queue', 'one');
-    const steered = add(h.store, session.id, 'steer', 'two');
+    const { session, claim } = await busySession(h.store);
+    const queued = await add(h.store, session.id, 'queue', 'one');
+    const steered = await add(h.store, session.id, 'steer', 'two');
     h.clock.advance(5);
     const taken = h.store.inbox.withdraw(queued.id);
     expect(taken).toMatchObject({ kind: 'withdrawn', row: { id: queued.id, state: 'withdrawn', settledAt: h.clock.now() } });
@@ -138,12 +139,12 @@ describe('adding, listing and taking back (design 5.3)', () => {
 });
 
 describe('steering at the step boundary', () => {
-  it('delivers every pending steer row in seq order as user messages marked steer, in the run, and leaves the queued rows', () => {
+  it('delivers every pending steer row in seq order as user messages marked steer, in the run, and leaves the queued rows', async () => {
     const h = harness();
-    const { session, run, claim } = busySession(h.store);
-    add(h.store, session.id, 'steer', 'also the tests');
-    add(h.store, session.id, 'queue', 'later');
-    add(h.store, session.id, 'steer', 'and the docs');
+    const { session, run, claim } = await busySession(h.store);
+    await add(h.store, session.id, 'steer', 'also the tests');
+    await add(h.store, session.id, 'queue', 'later');
+    await add(h.store, session.id, 'steer', 'and the docs');
     h.clock.advance(7);
     const drained = h.store.inbox.deliverSteering(claim);
     expect(drained.kind === 'ok' ? texts(drained.delivered) : []).toEqual(['steer:also the tests', 'steer:and the docs']);
@@ -156,10 +157,10 @@ describe('steering at the step boundary', () => {
     expect(userMessages(h.store, run.id)).toHaveLength(3);
   });
 
-  it('delivers nothing under a lost lease and keeps the rows pending', () => {
+  it('delivers nothing under a lost lease and keeps the rows pending', async () => {
     const h = harness();
-    const { session, run, claim } = busySession(h.store);
-    add(h.store, session.id, 'steer', 'kept');
+    const { session, run, claim } = await busySession(h.store);
+    await add(h.store, session.id, 'steer', 'kept');
     expect(h.store.inbox.deliverSteering({ ...claim, leaseToken: claim.leaseToken + 1 })).toEqual({ kind: 'lease_lost' });
     expect(texts(h.store.inbox.list(session.id))).toEqual(['steer:kept']);
     expect(userMessages(h.store, run.id)).toEqual([{ text: 'first' }]);
@@ -173,9 +174,9 @@ describe('the end of a run with messages waiting', () => {
     ['STOPPED', { stopReason: 'max_steps' }],
   ] as const)('starts the queued message with the lowest seq as the next run when the run ends %s, in the same transaction', async (to, patch) => {
     const h = harness();
-    const { session, run, claim } = busySession(h.store);
-    add(h.store, session.id, 'queue', 'second');
-    add(h.store, session.id, 'queue', 'third');
+    const { session, run, claim } = await busySession(h.store);
+    await add(h.store, session.id, 'queue', 'second');
+    await add(h.store, session.id, 'queue', 'third');
     h.clock.advance(11);
     expect((await h.store.transition(claim, ['RUNNING'], to, patch)).kind).toBe('ok');
     const [, next, ...rest] = runsOf(h.store, session.id);
@@ -190,10 +191,10 @@ describe('the end of a run with messages waiting', () => {
 
   it('turns the steer rows still pending into queued ones with their seq, so a steered message is never later than a queued one', async () => {
     const h = harness();
-    const { session, claim } = busySession(h.store);
-    add(h.store, session.id, 'queue', 'queued first');
-    add(h.store, session.id, 'steer', 'steered second');
-    add(h.store, session.id, 'queue', 'queued third');
+    const { session, claim } = await busySession(h.store);
+    await add(h.store, session.id, 'queue', 'queued first');
+    await add(h.store, session.id, 'steer', 'steered second');
+    await add(h.store, session.id, 'queue', 'queued third');
     await h.store.transition(claim, ['RUNNING'], 'COMPLETED');
     expect(h.store.inbox.list(session.id).map((row) => [row.delivery, row.text, row.seq])).toEqual([['queue', 'steered second', 2], ['queue', 'queued third', 3]]);
     const order: string[] = [];
@@ -210,8 +211,8 @@ describe('the end of a run with messages waiting', () => {
   it('starts the first waiting message when the run is cancelled', async () => {
     const h = harness();
     const session = newSession(h.store);
-    const run = enqueue(h.store, session.id, 'first');
-    add(h.store, session.id, 'steer', 'instead');
+    const run = await enqueue(h.store, session.id, 'first');
+    await add(h.store, session.id, 'steer', 'instead');
     await cancelToEnd(h.store, run.id);
     expect(mustRun(h.store, run.id).status).toBe('CANCELLED');
     const next = h.store.inbox.successorOf(run.id);
@@ -222,9 +223,9 @@ describe('the end of a run with messages waiting', () => {
 
   it('starts nothing while another run of the session is still open, and nothing when no message waits', async () => {
     const h = harness();
-    const { session, claim } = busySession(h.store);
-    const second = enqueue(h.store, session.id, 'typed by another client');
-    add(h.store, session.id, 'queue', 'waits for both');
+    const { session, claim } = await busySession(h.store);
+    const second = await enqueue(h.store, session.id, 'typed by another client');
+    await add(h.store, session.id, 'queue', 'waits for both');
     await h.store.transition(claim, ['RUNNING'], 'COMPLETED');
     expect(runsOf(h.store, session.id)).toHaveLength(2);
     expect(texts(h.store.inbox.list(session.id))).toEqual(['queue:waits for both']);
@@ -237,10 +238,10 @@ describe('the end of a run with messages waiting', () => {
     expect(runsOf(h.store, session.id)).toHaveLength(3);
   });
 
-  it('starts a message at once when it is added while no run of the session is open', () => {
+  it('starts a message at once when it is added while no run of the session is open', async () => {
     const h = harness();
     const session = newSession(h.store);
-    const result = h.store.inbox.add(session.id, { delivery: 'steer', text: 'nobody runs', run: TERMS });
+    const result = await h.store.inbox.add(session.id, { delivery: 'steer', text: 'nobody runs', run: TERMS });
     expect(result).toMatchObject({ kind: 'added', row: { state: 'delivered', delivery: 'queue' }, pending: [] });
     const [run] = runsOf(h.store, session.id);
     expect(run).toMatchObject({ status: 'QUEUED', limits: TERMS.limits, deadlineAt: h.clock.now() + TIMEOUT_MS });
@@ -249,9 +250,9 @@ describe('the end of a run with messages waiting', () => {
 
   it('keeps the waiting rows across a restart of the store', async () => {
     const h = harness();
-    const { session, run } = busySession(h.store);
-    add(h.store, session.id, 'steer', 'steered');
-    add(h.store, session.id, 'queue', 'queued');
+    const { session, run } = await busySession(h.store);
+    await add(h.store, session.id, 'steer', 'steered');
+    await add(h.store, session.id, 'queue', 'queued');
     h.store.close();
     const reopened = openStoreAt(h.dbPath, h.clock);
     expect(texts(reopened.inbox.list(session.id))).toEqual(['steer:steered', 'queue:queued']);

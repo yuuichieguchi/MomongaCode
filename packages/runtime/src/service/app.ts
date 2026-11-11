@@ -477,7 +477,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     await refuseDeniedConditions(session, terms.mandate);
     const refusedDuringChecks = replayWhileRefusing();
     if (refusedDuringChecks !== undefined) return refusedDuringChecks;
-    const result = store.createRunAndEnqueue(session.id, {
+    const result = await store.createRunAndEnqueue(session.id, {
       input: body.input,
       ...idempotency,
       timeoutMs: terms.timeoutMs,
@@ -504,7 +504,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const body = validateBody<CompactSessionRequest>('CompactSessionRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
     refuseNewWork();
     if (store.userShell.runActive(session.id)) throw conflict(USER_SHELL_RUN_ACTIVE_CODE, 'a run of this session is working; the compaction starts when it has ended');
-    const result = store.createRunAndEnqueue(session.id, {
+    const result = await store.createRunAndEnqueue(session.id, {
       input: compactInputOf(body.instructions),
       timeoutMs: deps.defaults.runTimeoutMs,
       limits: { ...deps.defaults.limits },
@@ -523,7 +523,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const body = validateBody<AddInboxBody>('AddInboxRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
     await requireImageInput(session, body.images, context.req.raw.signal);
     if (deps.isDraining()) throw drainingError();
-    const result = store.inbox.add(session.id, {
+    const result = await store.inbox.add(session.id, {
       delivery: body.delivery,
       text: body.text,
       ...(body.images === undefined ? {} : { images: body.images }),

@@ -109,9 +109,9 @@ describe('an upgrade from version 13 over rows that already exist', () => {
 });
 
 describe('migration v14', () => {
-  it('records the pinned-layer digest of a request appended after the migration in the events column and leaves other events without one', () => {
+  it('records the pinned-layer digest of a request appended after the migration in the events column and leaves other events without one', async () => {
     const h = harness();
-    enqueue(h.store, newSession(h.store).id);
+    await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
     const digest = 'c'.repeat(64);
 

@@ -22,10 +22,10 @@ describe('claim selects only runs whose acted-on values this build knows (11.4)'
     ['sessions', 'permission_mode', 'supervised'],
     ['runs', 'history_mode', 'branch'],
     ['runs', 'origin', 'vouched'],
-  ] as const)('leaves a queued run alone while %s.%s holds an unknown value', (table, column, value) => {
+  ] as const)('leaves a queued run alone while %s.%s holds an unknown value', async (table, column, value) => {
     const { store, dbPath } = newerStore();
     const session = newSession(store);
-    const run = enqueue(store, session.id);
+    const run = await enqueue(store, session.id);
     writeUnknown(dbPath, table, column, value, table === 'sessions' ? session.id : run.id);
 
     expect(store.claim('w-old')).toBeNull();
@@ -36,7 +36,7 @@ describe('claim selects only runs whose acted-on values this build knows (11.4)'
   it('claims the same run once the value is one this build knows', async () => {
     const { store, dbPath } = newerStore();
     const session = newSession(store);
-    const run = enqueue(store, session.id);
+    const run = await enqueue(store, session.id);
     writeUnknown(dbPath, 'sessions', 'permission_mode', 'supervised', session.id);
     expect(store.claim('w-old')).toBeNull();
     writeUnknown(dbPath, 'sessions', 'permission_mode', 'manual', session.id);
@@ -47,7 +47,7 @@ describe('claim selects only runs whose acted-on values this build knows (11.4)'
 describe('a held run whose status becomes unknown is yielded untouched (11.4)', () => {
   it('releases the lease, keeps the unknown status and appends nothing', async () => {
     const { store, dbPath } = newerStore();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w-old');
     const before = mustRun(store, run.id).lastSeq;
     writeUnknown(dbPath, 'runs', 'status', 'PAUSED', run.id);

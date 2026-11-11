@@ -36,7 +36,7 @@ const escalating = (): GatewayRequestError => new GatewayRequestError({ status: 
 
 const deterministicAfter = async (cause: 'escalating' | 'rejected') => {
   const env: Env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
-  const run = env.enqueue('question one');
+  const run = await env.enqueue('question one');
   await env.seed(run.id, journal(), 'release');
   if (cause === 'escalating') {
     env.gateway.compactHook = async () => {

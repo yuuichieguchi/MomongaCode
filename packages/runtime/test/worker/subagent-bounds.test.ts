@@ -29,7 +29,7 @@ const agentsPortOf = (env: Env): AgentsPort =>
   createAgentsPort({
     home: env.home,
     fileSystem: createNodeSkillFileSystem(),
-    settings: { trusted: () => env.settings.trustedValue },
+    settings: { trusted: async () => env.settings.trustedValue },
     runs: createChildRuns({ store: env.store, modelViews: async () => fakeViewsOf(['fm']) }),
   });
 
@@ -81,7 +81,7 @@ describe('G3: the subagent wait is bounded by the bounds of the child steps (R-G
     const real = await startRealGateway({ clock: env.clock, idleTimeoutMs: MODEL_IDLE_MS, script: Array.from({ length: CHILD_IDLE_STOPS }, () => keepAliveOnly) });
     const parentWorker = env.worker('w1', { agents: agentsPortOf(env) });
     const childWorker = env.worker('w2', { agents: agentsPortOf(env), gateway: real.client });
-    const parent = env.enqueue('Delegate');
+    const parent = await env.enqueue('Delegate');
     env.gateway.script.push(delegate('call-a'), textStep('parent done'));
     await env.runOnce(parentWorker);
     expect(env.run(parent.id).status).toBe('WAITING_TOOL');
@@ -106,7 +106,7 @@ describe('G3: the subagent wait is bounded by the bounds of the child steps (R-G
     writeAgent(env);
     const mcpTool = await silentMcpTool();
     const worker = env.worker('w1', { agents: agentsPortOf(env), toolList: () => [mcpTool] });
-    const parent = env.enqueue('Delegate');
+    const parent = await env.enqueue('Delegate');
     env.gateway.script.push(delegate('call-a'), callsStep([{ callId: 'call-m', name: 'mcp__jobs__long_job', args: {} }]), textStep('the job did not answer'), textStep('parent done'));
     await env.runOnce(worker);
     const [child] = env.store.listChildRuns(parent.id);
@@ -122,7 +122,7 @@ describe('G3: the subagent wait is bounded by the bounds of the child steps (R-G
     const env = await makeEnv();
     writeAgent(env);
     const worker = env.worker('w1', { agents: agentsPortOf(env) });
-    const parent = env.enqueue('Delegate');
+    const parent = await env.enqueue('Delegate');
     env.gateway.script.push(delegate('call-a'), delegate('call-b'), textStep('child gave up'), textStep('parent done'));
     await env.runOnce(worker);
     const [child] = env.store.listChildRuns(parent.id);

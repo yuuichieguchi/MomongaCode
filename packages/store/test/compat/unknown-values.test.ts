@@ -20,7 +20,7 @@ const withUnknownValues = async (newer: boolean) => {
   const approval = approvals[0];
   if (approval === undefined) throw new Error('no approval');
   const memory = (await env.store.memories.save({ origin: 'trusted', scope: 'project', project: '/work/a', text: 'tests live in test/', runId, step: 1, callId: 'c1' })).memory;
-  const queued = enqueue(env.store, newSession(env.store).id, 'later');
+  const queued = await enqueue(env.store, newSession(env.store).id, 'later');
   const db = rawDb(env.dbPath);
   if (newer) recordNewerMigration(db);
   setColumn(env.dbPath, 'runs', 'status', 'PAUSED', runId);

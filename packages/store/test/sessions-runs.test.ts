@@ -25,11 +25,11 @@ describe('sessions', () => {
 });
 
 describe('createRunAndEnqueue', () => {
-  it('creates a QUEUED run with its user.message event in one go', () => {
+  it('creates a QUEUED run with its user.message event in one go', async () => {
     const { clock, store } = harness();
     const session = newSession(store);
     clock.advance(10);
-    const run = enqueue(store, session.id, 'fix the bug');
+    const run = await enqueue(store, session.id, 'fix the bug');
     expect(run).toMatchObject({
       sessionId: session.id,
       status: 'QUEUED',
@@ -64,50 +64,50 @@ describe('createRunAndEnqueue', () => {
     });
   });
 
-  it('numbers ordinals per session', () => {
+  it('numbers ordinals per session', async () => {
     const { store } = harness();
     const s1 = newSession(store, '/a');
     const s2 = newSession(store, '/b');
-    expect(enqueue(store, s1.id).ordinal).toBe(1);
-    expect(enqueue(store, s1.id).ordinal).toBe(2);
-    expect(enqueue(store, s2.id).ordinal).toBe(1);
-    expect(enqueue(store, s1.id).ordinal).toBe(3);
+    expect((await enqueue(store, s1.id)).ordinal).toBe(1);
+    expect((await enqueue(store, s1.id)).ordinal).toBe(2);
+    expect((await enqueue(store, s2.id)).ordinal).toBe(1);
+    expect((await enqueue(store, s1.id)).ordinal).toBe(3);
   });
 
-  it('returns the existing run for a repeated idempotency key in the same session', () => {
+  it('returns the existing run for a repeated idempotency key in the same session', async () => {
     const { dbPath, store } = harness();
     const session = newSession(store);
-    const first = enqueue(store, session.id, 'once', 'key-1');
-    const second = enqueue(store, session.id, 'once', 'key-1');
+    const first = await enqueue(store, session.id, 'once', 'key-1');
+    const second = await enqueue(store, session.id, 'once', 'key-1');
     expect(second.id).toBe(first.id);
     const db = rawDb(dbPath);
     expect(db.prepare('SELECT COUNT(*) AS n FROM runs').get()).toEqual({ n: 1 });
     expect(db.prepare('SELECT COUNT(*) AS n FROM events').get()).toEqual({ n: 1 });
   });
 
-  it('scopes idempotency keys to the session', () => {
+  it('scopes idempotency keys to the session', async () => {
     const { store } = harness();
-    const a = enqueue(store, newSession(store, '/a').id, 'x', 'key-1');
-    const b = enqueue(store, newSession(store, '/b').id, 'x', 'key-1');
+    const a = await enqueue(store, newSession(store, '/a').id, 'x', 'key-1');
+    const b = await enqueue(store, newSession(store, '/b').id, 'x', 'key-1');
     expect(a.id).not.toBe(b.id);
   });
 
-  it('leaves neither run nor event when the transaction fails midway', () => {
+  it('leaves neither run nor event when the transaction fails midway', async () => {
     const { dbPath, store } = harness();
     const session = newSession(store);
     const db = rawDb(dbPath);
     db.exec("CREATE TRIGGER fail_events BEFORE INSERT ON events BEGIN SELECT RAISE(ABORT, 'injected'); END");
-    expect(() => enqueue(store, session.id)).toThrow(/injected/);
+    await expect(enqueue(store, session.id)).rejects.toThrow(/injected/);
     expect(db.prepare('SELECT COUNT(*) AS n FROM runs').get()).toEqual({ n: 0 });
     expect(db.prepare('SELECT COUNT(*) AS n FROM events').get()).toEqual({ n: 0 });
     db.exec('DROP TRIGGER fail_events');
-    expect(enqueue(store, session.id).ordinal).toBe(1);
+    expect((await enqueue(store, session.id)).ordinal).toBe(1);
   });
 
-  it('rejects an unknown session', () => {
+  it('rejects an unknown session', async () => {
     const { store } = harness();
     expect(
-      store.createRunAndEnqueue('no-such-session', { input: 'x', timeoutMs: 1000, limits: {}, pins: {} }),
+      await store.createRunAndEnqueue('no-such-session', { input: 'x', timeoutMs: 1000, limits: {}, pins: {} }),
     ).toEqual({ kind: 'not_found' });
   });
 });
@@ -116,7 +116,7 @@ describe('event reads', () => {
   it('pages run events by seq without gaps', async () => {
     const { store } = harness();
     const session = newSession(store);
-    const run = enqueue(store, session.id);
+    const run = await enqueue(store, session.id);
     for (let index = 0; index < 6; index += 1) {
       const current = mustRun(store, run.id);
       const result = store.appendAsService(run.id, current.version, null, [{ type: 'notice', level: 'info', message: `n${index}` }]);
@@ -131,13 +131,13 @@ describe('event reads', () => {
     expect(store.readRunEvents(run.id, 7, 3)).toEqual([]);
   });
 
-  it('pages session events across runs by global id', () => {
+  it('pages session events across runs by global id', async () => {
     const { store } = harness();
     const session = newSession(store);
     const other = newSession(store, '/other');
-    const r1 = enqueue(store, session.id, 'one');
-    enqueue(store, other.id, 'elsewhere');
-    const r2 = enqueue(store, session.id, 'two');
+    const r1 = await enqueue(store, session.id, 'one');
+    await enqueue(store, other.id, 'elsewhere');
+    const r2 = await enqueue(store, session.id, 'two');
     const all = store.readSessionEvents(session.id, 0, 100);
     expect(all.map((event) => ('runId' in event ? [event.runId, event.seq] : []))).toEqual([
       [r1.id, 1],

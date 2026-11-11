@@ -159,7 +159,7 @@ describe('run facts this build does not know (11.4)', () => {
   ] as const)('%s.%s decodes as unknown on a newer database', async (table, column, where, read) => {
     const { store, dbPath } = harness();
     const session = newSession(store);
-    const run = enqueue(store, session.id);
+    const run = await enqueue(store, session.id);
     store.runFacts.commit({ rows: [factsRow(run.id, session.id)], calls: [], unavailable: [], throughEventId: 0 });
     markNewer(dbPath);
     writeUnknown(dbPath, table, column, where, run.id);

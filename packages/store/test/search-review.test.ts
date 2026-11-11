@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
 import { anchorsOf, harness } from './helpers.ts';
 import { FAKE_KEY, finishedRun, indexAll, openRun, projectDir, redactor } from './search-fixture.ts';
+import { NEVER_CANCELLED } from '@momonga/testkit';
 
 const OWN = { trusted: true, project: '/work/a' } as const;
 
@@ -9,8 +10,8 @@ describe('the denial callback of a search', () => {
   it('receives the project of the document it judges', async () => {
     const { store, dir } = harness();
     const [a, b] = [projectDir(dir, 'a'), projectDir(dir, 'b')];
-    store.trust.set(a, 'trusted');
-    store.trust.set(b, 'trusted');
+    await store.trust.setAsked(a, 'trusted', NEVER_CANCELLED);
+    await store.trust.setAsked(b, 'trusted', NEVER_CANCELLED);
     await finishedRun(store, a, 'task', [{ tool: { name: 'Read', path: '/p/a.txt', output: 'projectterm in a' } }]);
     await finishedRun(store, b, 'task', [{ tool: { name: 'Read', path: '/p/b.txt', output: 'projectterm in b' } }]);
     await indexAll(store);
@@ -23,8 +24,8 @@ describe('the denial callback of a search', () => {
   it('lists the projects a session can reach, so rules can be loaded for each', async () => {
     const { store, dir } = harness();
     const [a, b, c] = [projectDir(dir, 'a'), projectDir(dir, 'b'), projectDir(dir, 'c')];
-    store.trust.set(a, 'trusted');
-    store.trust.set(b, 'trusted');
+    await store.trust.setAsked(a, 'trusted', NEVER_CANCELLED);
+    await store.trust.setAsked(b, 'trusted', NEVER_CANCELLED);
     await finishedRun(store, a, 'one');
     await finishedRun(store, b, 'two');
     await finishedRun(store, c, 'three');
@@ -98,7 +99,7 @@ describe('reading a range', () => {
 
   it('redacts a field name together with its value, in nested input too', async () => {
     const { store } = harness();
-    const { run, claim, finish } = openRun(store, '/work/a', 'task');
+    const { run, claim, finish } = await openRun(store, '/work/a', 'task');
     store.append(claim, [credentialCall('c1')]);
     await finish();
     const page = await store.search.readRange(OWN, { runId: run.id, limit: 100, redactor });
@@ -110,7 +111,7 @@ describe('reading a range', () => {
   it('keys the call paths by the call id the page shows, even when redaction changed it', async () => {
     const { store } = harness();
     const callId = 'sk-12345678abcdefgh';
-    const { run, claim, finish } = openRun(store, '/work/a', 'task');
+    const { run, claim, finish } = await openRun(store, '/work/a', 'task');
     store.append(claim, [credentialCall(callId), { type: 'tool.completed', callId, status: 'completed', output: 'done' }]);
     await finish();
     const page = await store.search.readRange(OWN, { runId: run.id, limit: 100, redactor });

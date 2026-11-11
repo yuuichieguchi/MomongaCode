@@ -241,8 +241,8 @@ export const chainBuilder = (h: ReferenceHarness) => {
   const outputs = new Map<string, string>();
   const blobWrites: Promise<unknown>[] = [];
 
-  const createRun = (input: string, options: { history?: 'inherit' | 'fresh'; timeoutMs?: number } = {}): Run => {
-    const result = h.store.createRunAndEnqueue(h.sessionId, {
+  const createRun = async (input: string, options: { history?: 'inherit' | 'fresh'; timeoutMs?: number } = {}): Promise<Run> => {
+    const result = await h.store.createRunAndEnqueue(h.sessionId, {
       input,
       timeoutMs: options.timeoutMs ?? TIMEOUT_MS,
       limits: {},
@@ -367,7 +367,7 @@ export const chainBuilder = (h: ReferenceHarness) => {
 export type Ending = Parameters<ChainBuilder['end']>[1];
 
 export const answeredRun = async (h: ReferenceHarness, b: ChainBuilder, task: string, body: (claim: Claim) => void, options: { fresh?: boolean; oldShape?: boolean; mode?: PermissionMode; ending?: Ending } = {}): Promise<Run> => {
-  const run = b.createRun(task, options.fresh === true ? { history: 'fresh' } : {});
+  const run = await b.createRun(task, options.fresh === true ? { history: 'fresh' } : {});
   const claim = b.claimNext(run.id);
   const mode = options.mode ?? 'manual';
   if (options.fresh !== true && run.previousRunId !== null) {
@@ -386,7 +386,7 @@ export const generatedRun = async (h: ReferenceHarness, b: ChainBuilder, random:
     return options.recordTokens ?? drawn;
   };
   const mode: PermissionMode = random.chance(0.2) ? 'plan' : 'manual';
-  const run = b.createRun(`task ${index}`, options.fresh === true ? { history: 'fresh' } : {});
+  const run = await b.createRun(`task ${index}`, options.fresh === true ? { history: 'fresh' } : {});
   const claim = b.claimNext(run.id);
   if (options.fresh !== true && run.previousRunId !== null) {
     if (options.oldShape === true) b.inheritOldShape(claim, mode);

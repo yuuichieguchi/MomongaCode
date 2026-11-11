@@ -4,9 +4,9 @@ import { createFakeClock } from '@momonga/testkit';
 import type { MemoryRecord, RuntimeStore } from '@momonga/store';
 import { START_MS, callEvent, enqueue, harness, mustClaim, newSession, openStoreAt, rawDb, recalled } from './helpers.ts';
 
-const startRun = (store: RuntimeStore, callIds: readonly string[], cwd = '/work/a') => {
+const startRun = async (store: RuntimeStore, callIds: readonly string[], cwd = '/work/a') => {
   const session = newSession(store, cwd);
-  const run = enqueue(store, session.id);
+  const run = await enqueue(store, session.id);
   const claim = mustClaim(store, 'w1');
   expect(store.append(claim, callIds.map(callEvent)).kind).toBe('ok');
   return { session, run };
@@ -18,7 +18,7 @@ const save = async (store: RuntimeStore, runId: string, callId: string, text: st
 describe('memory store', () => {
   it('records the scope, the source run, step and tool.call event, the creation time, and starts keptAt at creation', async () => {
     const { store } = harness();
-    const { session, run } = startRun(store, ['c1']);
+    const { session, run } = await startRun(store, ['c1']);
     const { memory, created } = await store.memories.save({ origin: 'trusted', scope: 'project', project: '/work/a', text: 'tests live in test/', runId: run.id, step: 2, callId: 'c1' });
     const call = store.readRunEvents(run.id, 0, 10).find((event) => event.type === 'tool.call');
     expect(created).toBe(true);
@@ -46,7 +46,7 @@ describe('memory store', () => {
 
   it('saves a replayed call once and returns the existing memory', async () => {
     const { store } = harness();
-    const { run } = startRun(store, ['c1']);
+    const { run } = await startRun(store, ['c1']);
     const first = await store.memories.save({ origin: 'trusted', scope: 'user', project: null, text: 'prefers tabs', runId: run.id, step: 1, callId: 'c1' });
     const second = await store.memories.save({ origin: 'trusted', scope: 'user', project: null, text: 'prefers tabs', runId: run.id, step: 1, callId: 'c1' });
     expect(second).toEqual({ memory: first.memory, created: false });
@@ -55,20 +55,20 @@ describe('memory store', () => {
 
   it('refuses a memory whose tool.call event was never recorded', async () => {
     const { store } = harness();
-    const { run } = startRun(store, ['c1']);
+    const { run } = await startRun(store, ['c1']);
     await expect(store.memories.save({ origin: 'trusted', scope: 'user', project: null, text: 'x', runId: run.id, step: 1, callId: 'missing' })).rejects.toThrow(/no recorded tool.call event/);
   });
 
   it('requires a project exactly for project memories', async () => {
     const { store } = harness();
-    const { run } = startRun(store, ['c1', 'c2']);
+    const { run } = await startRun(store, ['c1', 'c2']);
     await expect(store.memories.save({ origin: 'trusted', scope: 'project', project: null, text: 'x', runId: run.id, step: 1, callId: 'c1' })).rejects.toThrow(RangeError);
     await expect(store.memories.save({ origin: 'trusted', scope: 'user', project: '/work/a', text: 'x', runId: run.id, step: 1, callId: 'c2' })).rejects.toThrow(RangeError);
   });
 
   it('recalls user memories everywhere and project memories only for their own project, most recently kept first', async () => {
     const { store, clock } = harness();
-    const { run } = startRun(store, ['c1', 'c2', 'c3', 'c4']);
+    const { run } = await startRun(store, ['c1', 'c2', 'c3', 'c4']);
     const older = await save(store, run.id, 'c1', 'older user memory');
     clock.advance(10);
     const mine = await save(store, run.id, 'c2', 'project a memory', 'project', '/work/a');
@@ -97,7 +97,7 @@ describe('memory store', () => {
 
   it('keeps a user memory saved in an untrusted folder out of trusted projects and shows it only where the folder is untrusted', async () => {
     const { store } = harness();
-    const { run } = startRun(store, ['c1', 'c2', 'c3']);
+    const { run } = await startRun(store, ['c1', 'c2', 'c3']);
     const trustedUser = await save(store, run.id, 'c1', 'trusted user note');
     const untrustedUser = await save(store, run.id, 'c2', 'injected user note', 'user', null, 'untrusted');
     const project = await save(store, run.id, 'c3', 'project note', 'project', '/work/a');
@@ -111,7 +111,7 @@ describe('memory store', () => {
 
   it('searches the visible memories for every term, ignoring case', async () => {
     const { store } = harness();
-    const { run } = startRun(store, ['c1', 'c2', 'c3']);
+    const { run } = await startRun(store, ['c1', 'c2', 'c3']);
     const both = await save(store, run.id, 'c1', 'Deploys run through Make and need VPN');
     await save(store, run.id, 'c2', 'deploys use a staging cluster');
     await save(store, run.id, 'c3', 'vpn only in project b', 'project', '/work/b');
@@ -122,7 +122,7 @@ describe('memory store', () => {
 
   it('lists by scope and by project', async () => {
     const { store } = harness();
-    const { run } = startRun(store, ['c1', 'c2', 'c3']);
+    const { run } = await startRun(store, ['c1', 'c2', 'c3']);
     const user = await save(store, run.id, 'c1', 'u');
     const a = await save(store, run.id, 'c2', 'a', 'project', '/work/a');
     const b = await save(store, run.id, 'c3', 'b', 'project', '/work/b');
@@ -133,7 +133,7 @@ describe('memory store', () => {
 
   it('retires a memory instead of deleting it, and a second retirement changes nothing', async () => {
     const { store } = harness();
-    const { run } = startRun(store, ['c1']);
+    const { run } = await startRun(store, ['c1']);
     const memory = await save(store, run.id, 'c1', 'forget me');
     expect(store.memories.retire(memory.id)?.retired).toBe(true);
     expect(store.memories.get(memory.id)?.text).toBe('forget me');
@@ -144,7 +144,7 @@ describe('memory store', () => {
 
   it('keeps memories across store reopenings', async () => {
     const { store, dbPath } = harness();
-    const { run } = startRun(store, ['c1']);
+    const { run } = await startRun(store, ['c1']);
     const memory = await save(store, run.id, 'c1', 'durable');
     store.close();
     const reopened = openStoreAt(path.join(path.dirname(dbPath), 'runtime.db'), createFakeClock(START_MS + 1));
@@ -192,22 +192,22 @@ describe('memories added by a person', () => {
 });
 
 describe('memory lifecycle in the store', () => {
-  const setup = () => {
+  const setup = async () => {
     const { store, dbPath } = harness();
-    const { session, run } = startRun(store, ['c1', 'c2', 'c3', 'c4', 'c5', 'c6']);
+    const { session, run } = await startRun(store, ['c1', 'c2', 'c3', 'c4', 'c5', 'c6']);
     const db = rawDb(dbPath);
     return { store, db, session, run };
   };
 
   it('decodes the lifecycle fields of a saved memory', async () => {
-    const { store, run } = setup();
+    const { store, run } = await setup();
     const memory = await save(store, run.id, 'c1', 'tests live in test/');
     expect(memory).toMatchObject({ kind: 'fact', state: 'active', duplicateOf: null, supersedes: [], retiredAt: null, contributedAt: null, evidence: [] });
     expect(memory.source.kind).toBe('tool');
   });
 
   it('decodes the evidence of a memory in order, of each kind', async () => {
-    const { store, db, run } = setup();
+    const { store, db, run } = await setup();
     const memory = await save(store, run.id, 'c1', 'tests live in test/');
     const add = db.prepare(
       'INSERT INTO memory_evidence (memory_id, ordinal, kind, project, path, sha256, sha, run_id, call_id, seq, command, exit_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -223,7 +223,7 @@ describe('memory lifecycle in the store', () => {
   });
 
   it('decodes a reflection memory with its ordinal and no tool call', async () => {
-    const { store, db, session, run } = setup();
+    const { store, db, session, run } = await setup();
     const memory = await save(store, run.id, 'c1', 'learned');
     db.prepare("UPDATE memories SET source_kind = 'reflection', source_call_id = 'reflection:2', state = 'candidate' WHERE id = ?").run(memory.id);
     expect(store.memories.get(memory.id)?.source).toEqual({ kind: 'reflection', sessionId: session.id, runId: run.id, ordinal: 2 });
@@ -231,7 +231,7 @@ describe('memory lifecycle in the store', () => {
   });
 
   it('decodes a retired, superseding and duplicate memory', async () => {
-    const { store, db, run } = setup();
+    const { store, db, run } = await setup();
     const old = await save(store, run.id, 'c1', 'old');
     const next = await save(store, run.id, 'c2', 'next');
     db.prepare("UPDATE memories SET supersedes_json = ?, contributed_at = 9 WHERE id = ?").run(JSON.stringify([old.id]), next.id);
@@ -242,7 +242,7 @@ describe('memory lifecycle in the store', () => {
   });
 
   it('recalls and searches only active, live, unsuperseded memories', async () => {
-    const { store, db, run } = setup();
+    const { store, db, run } = await setup();
     const kept = await save(store, run.id, 'c1', 'topic kept');
     const candidate = await save(store, run.id, 'c2', 'topic candidate');
     const archived = await save(store, run.id, 'c3', 'topic archived');
@@ -261,7 +261,7 @@ describe('memory lifecycle in the store', () => {
   });
 
   it('does not let a candidate supersede a live memory', async () => {
-    const { store, db, run } = setup();
+    const { store, db, run } = await setup();
     const live = await save(store, run.id, 'c1', 'live');
     const candidate = await save(store, run.id, 'c2', 'proposal');
     db.prepare("UPDATE memories SET state = 'candidate', supersedes_json = ? WHERE id = ?").run(JSON.stringify([live.id]), candidate.id);

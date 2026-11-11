@@ -20,7 +20,7 @@ const agentsPortOf = (env: Env): AgentsPort =>
   createAgentsPort({
     home: env.home,
     fileSystem: createNodeSkillFileSystem(),
-    settings: { trusted: () => env.settings.trustedValue },
+    settings: { trusted: async () => env.settings.trustedValue },
     runs: createChildRuns({ store: env.store, modelViews: async () => fakeViewsOf(['fm']) }),
   });
 
@@ -45,7 +45,7 @@ describe('verifiable completion of sub-agent runs', () => {
   it('ends a child with an unmet front matter condition STOPPED(conditions_unmet) and tells the parent which condition failed', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     writeAgent(env, 'fixer', 'conditions:\n  - echo still-broken; exit 3\n');
-    const parent = env.enqueue('Delegate the fix');
+    const parent = await env.enqueue('Delegate the fix');
     env.gateway.script.push(delegate('call-a', 'fixer'), textStep('child: fixed'), textStep('child: really fixed'), textStep('parent done'));
 
     await runToRest(env, 3);
@@ -63,7 +63,7 @@ describe('verifiable completion of sub-agent runs', () => {
   it('pins the front matter declaration of a child in its run.started.pins.mandate.completion', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     writeAgent(env, 'fixer', 'conditions:\n  - true\n');
-    const parent = env.enqueue('Delegate the fix');
+    const parent = await env.enqueue('Delegate the fix');
     env.gateway.script.push(delegate('call-a', 'fixer'), textStep('child: fixed'), textStep('parent done'));
 
     await runToRest(env, 3);
@@ -80,7 +80,7 @@ describe('verifiable completion of sub-agent runs', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     writeAgent(env, 'writer', '');
     env.settings.verificationValue = { ...env.settings.verificationValue, conditions: ['echo parent-check; exit 1'], required: false } as never;
-    const parent = env.enqueue('Delegate a write');
+    const parent = await env.enqueue('Delegate a write');
     env.gateway.script.push(
       delegate('call-a', 'writer'),
       callsStep([{ callId: 'call-w', name: 'Write', args: { file_path: path.join(env.project, 'child.txt'), content: 'x' } }]),

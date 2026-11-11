@@ -92,7 +92,7 @@ const finish = async (store: RuntimeStore, claim: NonNullable<ReturnType<Runtime
 };
 
 const generatedRun = async (store: RuntimeStore, random: Random, task: string): Promise<{ runId: string; outcome: Outcome }> => {
-  const run = enqueue(store, newSession(store).id, task);
+  const run = await enqueue(store, newSession(store).id, task);
   const claim = store.claim(`worker-${run.id}`);
   if (claim?.runId !== run.id) throw new Error(`expected to claim ${run.id}`);
   for (const chunk of chunksOf(random, journalOf(random))) expect(store.append(claim, chunk).kind).toBe('ok');
@@ -102,7 +102,7 @@ const generatedRun = async (store: RuntimeStore, random: Random, task: string): 
 };
 
 const longRun = async (store: RuntimeStore, steps: number, outputChars: number): Promise<string> => {
-  const run = enqueue(store, newSession(store).id, 'a long task');
+  const run = await enqueue(store, newSession(store).id, 'a long task');
   const claim = store.claim(`worker-${run.id}`);
   if (claim?.runId !== run.id) throw new Error(`expected to claim ${run.id}`);
   for (let step = 1; step <= steps; step += 1) {

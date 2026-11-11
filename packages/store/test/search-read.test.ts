@@ -3,7 +3,7 @@ import type { RunEventPayload } from '@momonga/protocol';
 import type { HistoryVisibility, RuntimeStore } from '@momonga/store';
 import { harness } from './helpers.ts';
 import { FAKE_KEY, finishedRun, indexAll, openRun, projectDir, redactor } from './search-fixture.ts';
-import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+import { PROPERTY_TIMEOUT_MS, NEVER_CANCELLED } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
@@ -54,7 +54,7 @@ describe('reading a recorded range', () => {
 
   it('redacts every recorded string, however deeply nested', async () => {
     const { store } = harness();
-    const { run, claim, finish } = openRun(store, '/work/a', `task ${FAKE_KEY}`);
+    const { run, claim, finish } = await openRun(store, '/work/a', `task ${FAKE_KEY}`);
     const events: RunEventPayload[] = [
       { type: 'tool.call', callId: 'c1', providerCallId: 'c1', name: 'Bash', kind: 'execute', title: `run ${FAKE_KEY}`, rawInput: { nested: { command: `curl -H ${FAKE_KEY}` } } },
       { type: 'tool.completed', callId: 'c1', status: 'completed', output: `out ${FAKE_KEY}` },
@@ -71,7 +71,7 @@ describe('reading a recorded range', () => {
   it('redacts a credential field inside JSON text held in a recorded string', async () => {
     const password = 'Hunter2Hunter2Hunter2';
     const { store } = harness();
-    const { run, claim, finish } = openRun(store, '/work/a', 'task');
+    const { run, claim, finish } = await openRun(store, '/work/a', 'task');
     const events: RunEventPayload[] = [
       { type: 'tool.call', callId: 'c1', providerCallId: 'c1', name: 'Bash', kind: 'execute', title: 'cat config', rawInput: { command: 'cat config' } },
       { type: 'tool.completed', callId: 'c1', status: 'completed', output: JSON.stringify({ password }) },
@@ -92,7 +92,7 @@ describe('reading a recorded range', () => {
 
   it("reads the current run's replaced range before the run has ended or been indexed", async () => {
     const { store } = harness();
-    const { run, claim } = openRun(store, '/work/a', 'task', TWO_STEPS);
+    const { run, claim } = await openRun(store, '/work/a', 'task', TWO_STEPS);
     const replaced = store.getRun(run.id)?.lastSeq ?? 0;
     store.append(claim, [{ type: 'context.compacted', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'summary' }] }, summary: 'summary', replacedThroughSeq: replaced } as unknown as RunEventPayload]);
     const page = okPage(await read(store, OWN, { runId: run.id, seqFrom: 1, seqTo: replaced }));
@@ -108,8 +108,8 @@ describe('visibility on runId', () => {
     const [a, b] = [projectDir(dir, 'a'), projectDir(dir, 'b')];
     const untrustedOrigin = await finishedRun(store, b, 'made before trust');
     await indexAll(store);
-    store.trust.set(a, 'trusted');
-    store.trust.set(b, 'trusted');
+    await store.trust.setAsked(a, 'trusted', NEVER_CANCELLED);
+    await store.trust.setAsked(b, 'trusted', NEVER_CANCELLED);
     const trustedB = await finishedRun(store, b, 'trusted run');
     await indexAll(store);
     return { ...context, own: { trusted: true, project: a } as HistoryVisibility, b, untrustedOrigin, trustedB };

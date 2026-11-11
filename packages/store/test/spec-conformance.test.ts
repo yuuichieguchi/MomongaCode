@@ -3,8 +3,8 @@ import { DEADLINE_MS, LEASE_MS, START_MS, callEvent, enqueue, harness, mustClaim
 
 const EXPIRES_AT = DEADLINE_MS;
 
-const takeOver = (h: ReturnType<typeof harness>) => {
-  const run = enqueue(h.store, newSession(h.store).id);
+const takeOver = async (h: ReturnType<typeof harness>) => {
+  const run = await enqueue(h.store, newSession(h.store).id);
   const stale = mustClaim(h.store, 'w1');
   h.clock.advance(LEASE_MS + 1);
   const fresh = mustClaim(h.store, 'w2');
@@ -14,7 +14,7 @@ const takeOver = (h: ReturnType<typeof harness>) => {
 describe('facts that specs/tla/RunRecovery.tla relies on', () => {
   it('a holder is stale by lease token: an expired holder that nobody reclaimed can still append', async () => {
     const h = harness();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
     h.clock.advance(LEASE_MS + 1);
     expect(h.store.append(claim, [{ type: 'notice', level: 'info', message: 'late' }])).toMatchObject({ kind: 'ok' });
@@ -23,7 +23,7 @@ describe('facts that specs/tla/RunRecovery.tla relies on', () => {
 
   it('a superseded holder can never append, transition or release', async () => {
     const h = harness();
-    const { run, stale, fresh } = takeOver(h);
+    const { run, stale, fresh } = await takeOver(h);
     expect(fresh.leaseToken).toBe(stale.leaseToken + 1);
     expect(h.store.append(stale, [{ type: 'notice', level: 'info', message: 'stale' }])).toEqual({ kind: 'lease_lost' });
     expect(await h.store.transition(stale, ['RUNNING'], 'COMPLETED')).toEqual({ kind: 'lease_lost' });
@@ -34,7 +34,7 @@ describe('facts that specs/tla/RunRecovery.tla relies on', () => {
 
   it('the idempotency ledger is fenced: a superseded holder can neither begin, authorise, attach, checkpoint nor complete', async () => {
     const h = harness();
-    const { stale, fresh } = takeOver(h);
+    const { stale, fresh } = await takeOver(h);
     const lost = { kind: 'lease_lost' };
     expect(h.store.idempotency.holding(stale).begin('late', { expiresAt: EXPIRES_AT, meta: {} })).toEqual({ s: 'LEASE_LOST' });
     expect(h.store.idempotency.get('late')).toBeUndefined();
@@ -52,7 +52,7 @@ describe('facts that specs/tla/RunRecovery.tla relies on', () => {
 
   it('a superseded holder gets lease_lost, not an exception, for a record that the holder has already completed', async () => {
     const h = harness();
-    const { stale, fresh } = takeOver(h);
+    const { stale, fresh } = await takeOver(h);
     const holder = h.store.idempotency.holding(fresh);
     holder.begin('call', { expiresAt: EXPIRES_AT, meta: {} });
     expect(holder.complete('call', { by: 'w2' })).toEqual({ kind: 'ok' });
@@ -63,7 +63,7 @@ describe('facts that specs/tla/RunRecovery.tla relies on', () => {
 
   it('a record carries the lease token of the holder that began it and of the holder that last authorised it', async () => {
     const h = harness();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const first = mustClaim(h.store, 'w1');
     h.store.idempotency.holding(first).begin('call', { expiresAt: EXPIRES_AT, meta: {} });
     expect(h.store.idempotency.get('call')).toMatchObject({ rec: { leaseToken: first.leaseToken } });
@@ -77,7 +77,7 @@ describe('facts that specs/tla/RunRecovery.tla relies on', () => {
 
   it('a holder that released the run is fenced out of the ledger', async () => {
     const h = harness();
-    enqueue(h.store, newSession(h.store).id);
+    await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
     expect(await h.store.release(claim, 'QUEUED')).toMatchObject({ kind: 'ok' });
     expect(h.store.idempotency.holding(claim).begin('call', { expiresAt: EXPIRES_AT, meta: {} })).toEqual({ s: 'LEASE_LOST' });
@@ -93,7 +93,7 @@ describe('facts that specs/tla/RunRecovery.tla relies on', () => {
 
   it('a terminal run refuses service writes', async () => {
     const h = harness();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
     await h.store.transition(claim, ['RUNNING'], 'COMPLETED');
     const done = mustRun(h.store, run.id);
@@ -106,10 +106,10 @@ describe('facts that specs/tla/RunRecovery.tla relies on', () => {
   it('a parent that yields to wait for a child that already finished is requeued, not parked', async () => {
     const h = harness();
     const session = newSession(h.store);
-    const parent = enqueue(h.store, session.id);
+    const parent = await enqueue(h.store, session.id);
     const parentClaim = mustClaim(h.store, 'w-parent');
     h.store.append(parentClaim, [callEvent('c1')]);
-    const created = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'c1', input: 'task', pins: {}, model: 'fm' });
+    const created = await h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'c1', input: 'task', pins: {}, model: 'fm' });
     if (created.kind !== 'created') throw new Error(`expected a child run, got ${created.kind}`);
     const childClaim = mustClaim(h.store, 'w-child');
     expect(childClaim.runId).toBe(created.run.id);
@@ -121,9 +121,9 @@ describe('facts that specs/tla/RunRecovery.tla relies on', () => {
   it('a child that finishes while the parent waits wakes the parent in the same transaction', async () => {
     const h = harness();
     const session = newSession(h.store);
-    const parent = enqueue(h.store, session.id);
+    const parent = await enqueue(h.store, session.id);
     const parentClaim = mustClaim(h.store, 'w-parent');
-    const created = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'c1', input: 'task', pins: {}, model: 'fm' });
+    const created = await h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'c1', input: 'task', pins: {}, model: 'fm' });
     if (created.kind !== 'created') throw new Error(`expected a child run, got ${created.kind}`);
     await h.store.release(parentClaim, 'WAITING_TOOL', DEADLINE_MS, { awaits: { runIds: [created.run.id], jobIds: [] } });
     expect(mustRun(h.store, parent.id).status).toBe('WAITING_TOOL');
@@ -134,7 +134,7 @@ describe('facts that specs/tla/RunRecovery.tla relies on', () => {
 
   it('a worker that yields while the run is CANCELLING ends up CANCELLED only through the cancel transition', async () => {
     const h = harness();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
     await h.store.requestCancel(run.id);
     expect(mustRun(h.store, run.id).status).toBe('CANCELLING');

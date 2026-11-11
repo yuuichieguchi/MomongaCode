@@ -116,7 +116,7 @@ export const createSettingsComposition = ({ home, platform, cache, store, signal
     tools: async (session) => (await loadSessionSettings(session.cwd, takeUserSnapshot())).settings.tools,
     autoModeClassifier: () => takeUserSnapshot().settings.autoMode?.classifier,
     appendRule: (session, { effect, rule }, signal) => appendPermissionRule({ ports: systemFileLockPorts, home, projectDir: session.cwd, rule, effect, signal }),
-    trusted: (session) => store.trust.decisionFor(session.cwd).decision === 'trusted',
+    trusted: async (session) => (await store.trust.decisionAsked(session.cwd, lifetime)).decision === 'trusted',
   };
 
   return { settings, sessionCreateSettings, sessionReadSettings, keptLayers, envFor, takeUserSnapshot, admitUserSnapshot, loadSessionSettings, trustOracle, admitted };

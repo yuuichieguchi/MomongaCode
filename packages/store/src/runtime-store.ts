@@ -1,13 +1,13 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, sha256Hex, uuidv7, syncPaths } from '@momonga/foundation';
+import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, openDatabaseWithIdentity, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
+import type { DatabaseFileIdentity } from '@momonga/foundation';
 import { FIDELITY_FOLD_VERSION, INBOX_MAX_PENDING, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, admitRequest, unknownEffectLines, unknownEffectOptions } from '@momonga/protocol';
-import type { Admission, CallTiming, ElicitationAnswerRecord, ElicitationRequestView, InboxDelivery, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, TreeSpend, RunStatus, SessionEventPayload, TerminalStatus, UserShellRecord } from '@momonga/protocol';
+import type { Admission, CallTiming, MemoryOrigin, ElicitationAnswerRecord, ElicitationRequestView, InboxDelivery, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, TreeSpend, RunStatus, SessionEventPayload, TerminalStatus, UserShellRecord } from '@momonga/protocol';
 import { createAppendRecords, columnsOf } from './append-records.ts';
 import { createVerdictWriter } from './fidelity-verdicts.ts';
 import { createApprovalStore } from './approvals.ts';
-import { blobDirectoryOf, createBlobStore, prepareBlobDirectory } from './blobs.ts';
+import { blobDirectoryOf, createBlobStore } from './blobs.ts';
 import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
 import { HISTORY_MODES, decodeContextOf, decodeKnownEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, decodeStoredEvent, encodeRunState, userShellRecordOf } from './codec.ts';
 import { createDerivedReads, createDerivedRepair } from './derived-repair.ts';
@@ -437,23 +437,19 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     );
   }
   if (typeof options.home !== 'string') throw new TypeError('openRuntimeStore: home is required');
-  const home = syncPaths.realPath(options.home);
-  const { clock, leaseMs, maxAttempts, maxTotalAttempts } = options;
-  const db = openDatabase(options.path);
+  const { clock, leaseMs, maxAttempts, maxTotalAttempts, home, fileSystem, random } = options;
+  const { db, identity } = openDatabaseWithIdentity(options.path);
   let statements: Statements;
-  let blobDirectory: string;
-  let identity: fs.Stats;
   try {
-    identity = fs.statSync(options.path);
     migrate(db, MIGRATIONS);
-    blobDirectory = blobDirectoryOf(options.path);
-    prepareBlobDirectory(blobDirectory);
     statements = prepareStatements(db);
   } catch (error) {
     db.close();
     throw error;
   }
   const sql = statements;
+  const lifetime = new AbortController();
+  const blobs = createBlobStore(db, clock, blobDirectoryOf(options.path), { fileSystem, random });
   const decodeContext = decodeContextOf(db);
   const approvalOps = createApprovalStore(db, clock, decodeContext);
   const memories = createMemoryStore(db, clock, decodeContext);
@@ -462,9 +458,9 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const governing = createGoverningFactStore(db, clock, decodeContext);
   const runFacts = createRunFactsStore(db, decodeContext);
   const journalReader = createJournalReader(db, { lookups: { memories, governing }, ...(options.onDecode === undefined ? {} : { onDecode: options.onDecode }) });
-  const trust = createTrustStore(db, clock, home, decodeContext);
+  const trust = createTrustStore(db, clock, home, decodeContext, fileSystem);
   const ruleVerdicts = createRuleVerdictStore(db, clock);
-  const originOf = (cwd: string): 'trusted' | 'untrusted' => (trust.decisionFor(cwd).decision === 'trusted' ? 'trusted' : 'untrusted');
+  const originOf = async (cwd: string): Promise<MemoryOrigin> => ((await trust.decisionAsked(cwd, lifetime.signal)).decision === 'trusted' ? 'trusted' : 'untrusted');
   const touched = new Map<string, { runId?: string; sessionId: string }>();
   const preparer = options.preparer;
   const { onDecode, onEncode } = options;
@@ -679,7 +675,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return userShellRecordOf(identity, expectRecord('events', identity, 'payload_json', readerFor('events', identity, row).json('payload_json')));
     });
 
-  const insertRootRun = (sessionRow: Row, input: CreateRunInput, source?: InboxDelivery): Run => {
+  const insertRootRun = (sessionRow: Row, input: CreateRunInput, origin: Stored<MemoryOrigin>, source?: InboxDelivery): Run => {
     const session = decodeSession(sessionRow, decodeContext);
     const sessionId = session.id;
     const ordinalRow = sql.nextOrdinal.get({ sessionId });
@@ -705,7 +701,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       usage: canonicalJson({ inputTokens: 0, outputTokens: 0, totalTokens: 0 }),
       pins: canonicalJson(input.mandate === undefined ? input.pins : { ...input.pins, mandate: input.mandate }),
       createdAt: now,
-      origin: originOf(session.cwd),
+      origin,
     });
     const inserted = appendPayloads(requireRun(id), [
       {
@@ -722,14 +718,14 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return requireRun(id);
   };
 
-  const startNextQueued = (sessionId: string, terms: QueuedRunTerms): void => {
+  const startNextQueued = (sessionId: string, terms: QueuedRunTerms, origin: Stored<MemoryOrigin>): void => {
     if (inboxTable.pendingCount(sessionId) === 0 || inboxTable.sessionHasOpenRun(sessionId)) return;
     const sessionRow = sql.selectSession.get({ id: sessionId });
     if (sessionRow === undefined) throw new Error(`session ${sessionId} of a waiting message does not exist`);
     inboxTable.queuePendingSteer(sessionId);
     const head = inboxTable.firstPending(sessionId);
     if (head === undefined || !inboxTable.settle(head.id, 'delivered')) throw new Error(`the first waiting message of session ${sessionId} could not be delivered`);
-    insertRootRun(sessionRow, { input: head.text, ...(head.images === undefined ? {} : { images: head.images }), timeoutMs: terms.timeoutMs, limits: terms.limits, pins: {}, history: 'inherit' }, 'queue');
+    insertRootRun(sessionRow, { input: head.text, ...(head.images === undefined ? {} : { images: head.images }), timeoutMs: terms.timeoutMs, limits: terms.limits, pins: {}, history: 'inherit' }, origin, 'queue');
     announceInbox(sessionId);
   };
 
@@ -774,7 +770,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     writeRun(next);
     if (isTerminal(to) || to === 'CANCELLING') cancelChildren(run.id);
     if (isTerminal(to)) wakeParent(run);
-    if (isTerminal(to) && run.parentRunId === null) startNextQueued(run.sessionId, { timeoutMs: run.deadlineAt - run.createdAt, limits: run.limits });
+    if (isTerminal(to) && run.parentRunId === null) startNextQueued(run.sessionId, { timeoutMs: run.deadlineAt - run.createdAt, limits: run.limits }, run.origin);
     return requireRun(run.id);
   };
 
@@ -1221,18 +1217,22 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   };
 
   const inbox: InboxStore = {
-    add: (sessionId, input) =>
-      transaction<InboxAddResult>(() => {
+    add: async (sessionId, input) => {
+      const asked = sql.selectSession.get({ id: sessionId });
+      if (asked === undefined) return { kind: 'not_found' };
+      const origin = await originOf(decodeSession(asked, decodeContext).cwd);
+      return transaction<InboxAddResult>(() => {
         if (sql.selectSession.get({ id: sessionId }) === undefined) return { kind: 'not_found' };
         if (inboxTable.pendingCount(sessionId) >= INBOX_MAX_PENDING) return { kind: 'full' };
         const added = inboxTable.insert({ id: uuidv7(clock), sessionId, delivery: input.delivery, text: input.text, images: input.images });
         const open = inboxTable.sessionHasOpenRun(sessionId);
         if (open) announceInbox(sessionId);
-        else startNextQueued(sessionId, input.run);
+        else startNextQueued(sessionId, input.run, origin);
         const row = inboxTable.get(added.id);
         if (row === undefined) throw new Error(`inbox row ${added.id} vanished after it was written`);
         return { kind: 'added', row, pending: inboxTable.pending(sessionId) };
-      }),
+      });
+    },
     withdraw: (id) =>
       transaction<InboxWithdrawResult>(() => {
         const found = inboxTable.get(id);
@@ -1338,8 +1338,11 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { kind: 'ok', session: { ...decodeSession(row, decodeContext), mcpServers: servers } };
       }),
 
-    createRunAndEnqueue: (sessionId, input) =>
-      transaction<CreateRunResult>(() => {
+    createRunAndEnqueue: async (sessionId, input) => {
+      const asked = sql.selectSession.get({ id: sessionId });
+      if (asked === undefined) return { kind: 'not_found' };
+      const origin = await originOf(decodeSession(asked, decodeContext).cwd);
+      return transaction<CreateRunResult>(() => {
         const sessionRow = sql.selectSession.get({ id: sessionId });
         if (sessionRow === undefined) return { kind: 'not_found' };
         if (input.idempotencyKey !== undefined) {
@@ -1348,11 +1351,15 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
             return sameRunRequest(existing, input.requestDigest) ? { kind: 'existing', run: existing.run } : { kind: 'key_reused' };
           }
         }
-        return { kind: 'created', run: insertRootRun(sessionRow, input) };
-      }),
+        return { kind: 'created', run: insertRootRun(sessionRow, input, origin) };
+      });
+    },
 
-    createChildRun: (input) =>
-      transaction<CreateChildRunResult>(() => {
+    createChildRun: async (input) => {
+      const askedParent = sql.selectRun.get({ id: input.parentRunId });
+      if (askedParent === undefined) return { kind: 'parent_not_active', status: 'missing' };
+      const origin = await originOf(requireSession(decodeRun(askedParent, decodeContext).sessionId).cwd);
+      return transaction<CreateChildRunResult>(() => {
         const existing = sql.childByCall.get({ parentRunId: input.parentRunId, parentCallId: input.parentCallId });
         if (existing !== undefined) {
           const run = decodeRun(existing, decodeContext);
@@ -1395,11 +1402,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           usage: canonicalJson({ inputTokens: 0, outputTokens: 0, totalTokens: 0 }),
           pins: canonicalJson(input.pins),
           createdAt: now,
-          origin: originOf(parentSession.cwd),
+          origin,
         });
         writeRun(appendPayloads(requireRun(runId), [{ type: 'user.message', text: input.input }]));
         return { kind: 'created', run: requireRun(runId), session: requireSession(sessionId) };
-      }),
+      });
+    },
 
     listChildRuns: (runId) => sql.childRuns.all({ runId }).map((row) => decodeRun(row, decodeContext)),
 
@@ -1446,10 +1454,10 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     pruneFidelityVerdicts: (bound) => Number(sql.pruneFidelityVerdicts.run({ bound, limit: FIDELITY_PRUNE_BATCH_ROWS }).changes),
 
-    checkIdentity: () => {
-      let current: fs.Stats;
+    checkIdentity: async () => {
+      let current: DatabaseFileIdentity;
       try {
-        current = fs.statSync(options.path);
+        current = await fileSystem.stat(options.path);
       } catch (error) {
         if (isTransientErrno(error)) throw error;
         throw new StoreIdentityError(`database ${options.path} is no longer present`, { cause: error });
@@ -1878,7 +1886,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     idempotency: createIdempotencyStore(db, clock, (fence) => fenced(fence) !== undefined, decodeContext),
     approvals: approvalOps.store,
-    blobs: createBlobStore(db, clock, blobDirectory),
+    blobs,
     trust,
     ruleVerdicts,
     inbox,
@@ -1913,6 +1921,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     },
 
     close: () => {
+      lifetime.abort(new Error('the store is closed'));
       if (db.isOpen) db.close();
     },
   };

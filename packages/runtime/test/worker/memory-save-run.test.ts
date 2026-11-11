@@ -9,10 +9,11 @@ import type { AnyTool } from '@momonga/tools';
 import { makeEnv, textOf } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
+import { NEVER_CANCELLED } from '@momonga/testkit';
 
 const trustedEnv = async (): Promise<Env> => {
   const env = await makeEnv({ mode: 'bypassPermissions' });
-  env.store.trust.set(env.session.cwd, 'trusted');
+  await env.store.trust.setAsked(env.session.cwd, 'trusted', NEVER_CANCELLED);
   return env;
 };
 
@@ -82,7 +83,7 @@ describe('MemorySave in a run', () => {
       savePaths([FILE]),
       textStep('Saved.'),
     );
-    const run = env.enqueue('Remember what a.ts does');
+    const run = await env.enqueue('Remember what a.ts does');
     await env.runOnce(workerFor(env, 'w-1', gitRun(commands)));
     expect(env.run(run.id).status).toBe('COMPLETED');
     const [memory] = env.store.memories.list();
@@ -98,7 +99,7 @@ describe('MemorySave in a run', () => {
     const signals: AbortSignal[] = [];
     const commands: EvidenceCommand[] = [];
     env.gateway.script.push(callsStep([{ callId: 'call_m_1', name: 'MemorySave', args: { text: 'the repo uses vitest', scope: 'project' } }]), textStep('Saved.'));
-    env.enqueue('Remember');
+    await env.enqueue('Remember');
     await env.runOnce(
       workerFor(env, 'w-1', async (command, signal) => {
         commands.push(command);
@@ -118,7 +119,7 @@ describe('MemorySave in a run', () => {
     const given: AbortSignal[] = [];
     const inner = createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: () => gitRun([]) });
     env.gateway.script.push(textStep('Fine.'));
-    env.enqueue('Hello');
+    await env.enqueue('Hello');
     await env.runOnce(
       env.worker('w-1', {
         memories: {
@@ -137,7 +138,7 @@ describe('MemorySave in a run', () => {
     const env = await trustedEnv();
     writeFile(env, 'abc');
     env.gateway.script.push(savePaths([FILE]), textStep('Refused.'));
-    const run = env.enqueue('Remember what a.ts does');
+    const run = await env.enqueue('Remember what a.ts does');
     await env.runOnce(workerFor(env, 'w-1', gitRun([])));
     const [completed] = env.ofType(run.id, 'tool.completed');
     expect(completed?.status).toBe('failed');
@@ -149,7 +150,7 @@ describe('MemorySave in a run', () => {
     const saveOnce = async (env: Env, id: string, args: Record<string, unknown>, trusted: boolean) => {
       env.settings.trustedValue = trusted;
       env.gateway.script.push(callsStep([{ callId: `call_${id}`, name: 'MemorySave', args }]), textStep('Done.'));
-      const run = env.enqueue(`Remember ${id}`, { history: 'fresh' });
+      const run = await env.enqueue(`Remember ${id}`, { history: 'fresh' });
       await env.runOnce(env.worker(`w-${id}`, { memories: createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: () => gitRun([]) }) }));
       return run;
     };
@@ -181,7 +182,7 @@ describe('MemorySave in a run', () => {
   it('fails the call when the note replaces a memory that is not saved', async () => {
     const env = await trustedEnv();
     env.gateway.script.push(savePaths([], { supersedes: ['absent'] }), textStep('Refused.'));
-    const run = env.enqueue('Remember');
+    const run = await env.enqueue('Remember');
     await env.runOnce(workerFor(env, 'w-1', gitRun([])));
     expect(env.ofType(run.id, 'tool.completed')[0]?.status).toBe('failed');
     expect(env.store.memories.list()).toEqual([]);
@@ -192,20 +193,20 @@ describe('MemorySave in a run', () => {
     const target = writeFile(env, 'abc');
     const run = gitRun([]);
     env.gateway.script.push(callsStep([{ callId: 'call_r_1', name: 'Read', args: { file_path: target } }]), savePaths([FILE]), textStep('Saved.'));
-    env.enqueue('Remember what a.ts does', { history: 'fresh' });
+    await env.enqueue('Remember what a.ts does', { history: 'fresh' });
     await env.runOnce(workerFor(env, 'w-1', async () => ({ exitCode: 128 })));
     const [memory] = env.store.memories.list();
     expect(memory?.evidence.map((entry) => entry.kind)).toEqual(['file']);
 
     env.gateway.script.push(textStep('Fine.'));
-    const verified = env.enqueue('Continue', { history: 'fresh' });
+    const verified = await env.enqueue('Continue', { history: 'fresh' });
     await env.runOnce(workerFor(env, 'w-2', run));
     expect(env.ofType(verified.id, 'context.memories_loaded').map((event) => event.memories)).toEqual([[{ id: memory?.id, status: 'verified' }]]);
     expect(inputText(env, env.gateway.streams.length - 1)).toMatch(/status="verified"/);
 
     fs.writeFileSync(target, 'changed');
     env.gateway.script.push(textStep('Fine.'));
-    const stale = env.enqueue('Continue again', { history: 'fresh' });
+    const stale = await env.enqueue('Continue again', { history: 'fresh' });
     await env.runOnce(workerFor(env, 'w-3', run));
     expect(env.ofType(stale.id, 'context.memories_loaded').map((event) => event.memories)).toEqual([[{ id: memory?.id, status: 'stale' }]]);
     expect(inputText(env, env.gateway.streams.length - 1)).toContain('Do not rely on a note with status="stale"');
@@ -218,21 +219,21 @@ describe('MemorySave in a run', () => {
       callsStep([{ callId: 'call_m_1', name: 'MemorySave', args: { text: 'old shared note', scope: 'project' } }]),
       textStep('Saved.'),
     );
-    env.enqueue('Remember', { history: 'fresh' });
+    await env.enqueue('Remember', { history: 'fresh' });
     await env.runOnce(env.worker('w-1', { memories: port }));
     const [older] = env.store.memories.list();
     env.gateway.script.push(
       callsStep([{ callId: 'call_m_2', name: 'MemorySave', args: { text: 'new shared note', scope: 'project', supersedes: [older?.id] } }]),
       textStep('Replaced.'),
     );
-    env.enqueue('Replace', { history: 'fresh' });
+    await env.enqueue('Replace', { history: 'fresh' });
     await env.runOnce(env.worker('w-2', { memories: port }));
     env.gateway.script.push(
       callsStep([{ callId: 'call_s_1', name: 'MemorySearch', args: { query: 'shared' } }]),
       callsStep([{ callId: 'call_s_2', name: 'MemorySearch', args: { query: 'shared', include: 'all' } }]),
       textStep('Searched.'),
     );
-    const search = env.enqueue('Search', { history: 'fresh' });
+    const search = await env.enqueue('Search', { history: 'fresh' });
     await env.runOnce(env.worker('w-3', { memories: port }));
     const [live, all] = env.ofType(search.id, 'tool.completed').map((event) => event.output);
     expect(live).toContain('new shared note');

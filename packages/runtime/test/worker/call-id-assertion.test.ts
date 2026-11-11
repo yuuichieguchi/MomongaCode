@@ -34,7 +34,7 @@ describe('call-id uniqueness assertion', () => {
     const env = await makeEnv();
     env.gateway.rewriteCallIds = false;
     env.gateway.script.push(textThenCallsStep('Running both.', [echo('call_1', 'a'), echo('call_1', 'b')]));
-    const run = env.enqueue('Echo twice');
+    const run = await env.enqueue('Echo twice');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -48,7 +48,7 @@ describe('call-id uniqueness assertion', () => {
     const env = await makeEnv();
     env.gateway.rewriteCallIds = false;
     env.gateway.script.push(callsStep([echo('call_1', 'first')]), textThenCallsStep('Again.', [echo('call_1', 'second')]), textStep('never sent'));
-    const run = env.enqueue('Echo twice');
+    const run = await env.enqueue('Echo twice');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -62,7 +62,7 @@ describe('call-id uniqueness assertion', () => {
   it('does not trip on ids the gateway issued fresh for a repeated script id', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([echo('call_m_1', 'first')]), callsStep([echo('call_m_1', 'second')]), textStep('Done.'));
-    const run = env.enqueue('Echo twice');
+    const run = await env.enqueue('Echo twice');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -98,7 +98,7 @@ describe('call-id uniqueness assertion', () => {
   it('fails the run when a response reuses an id that is only in pendingCalls', async () => {
     const env = await makeEnv();
     env.gateway.rewriteCallIds = false;
-    const run = env.enqueue('Echo');
+    const run = await env.enqueue('Echo');
     await env.seed(run.id, [toolCallPayload('call_p'), { type: 'tool.started', callId: 'call_p', idemKey: 'k-p' }, { type: 'tool.completed', callId: 'call_p', status: 'completed', output: 'seed' }], 'release');
     const state = env.fold(run.id);
     expect(state.history.some((entry) => entry.item.type === 'function_call')).toBe(false);
@@ -114,7 +114,7 @@ describe('call-id uniqueness assertion', () => {
   it('fails the run when a response reuses an evicted id (also pending in 1.10e-1)', async () => {
     const env = await makeEnv();
     env.gateway.rewriteCallIds = false;
-    const run = env.enqueue('Echo');
+    const run = await env.enqueue('Echo');
     await env.seed(run.id, [...completedCall('call_e', 1), { type: 'context.truncated', callId: 'call_e', handle: 'blob-e', kind: 'omitted' }], 'release');
     expect(env.fold(run.id).evicted).toEqual(['call_e']);
     expect(Object.keys(env.fold(run.id).pendingCalls)).toContain('call_e');
@@ -129,7 +129,7 @@ describe('call-id uniqueness assertion', () => {
   it('asserts on the resumed stream too, restarting once for the recovery and once for the rejection', async () => {
     const env = await makeEnv();
     env.gateway.rewriteCallIds = false;
-    const run = env.enqueue('Echo');
+    const run = await env.enqueue('Echo');
     const body = { model: 'fm', input: [{ type: 'message', role: 'user', content: 'Echo' }], store: false, stream: true };
     await env.seed(
       run.id,

@@ -30,7 +30,7 @@ const saveNote = async (store: RuntimeStore, runId: string, callId: string, text
 const versionThirtyEightWithMemories = async (): Promise<{ dbPath: string; first: MemoryRecord; successor: MemoryRecord }> => {
   const source = harness();
   const session = newSession(source.store, PROJECT);
-  const run = enqueue(source.store, session.id);
+  const run = await enqueue(source.store, session.id);
   const claim = mustClaim(source.store, 'w1');
   expect(source.store.append(claim, ['c1', 'c2'].map(callEvent)).kind).toBe('ok');
   const first = await saveNote(source.store, run.id, 'c1', 'tests live in test/');

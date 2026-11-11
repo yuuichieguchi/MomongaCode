@@ -38,9 +38,9 @@ describe('run_indexed_chars, the characters of the indexed events of a run, adde
     expect(versions.indexOf(INDEXED_CHARS_DERIVATION)).toBe(versions.indexOf(34) + 1);
   });
 
-  it('equals what the scan of the payloads of the indexed types gives, for ASCII, Japanese, astral characters and escapes, and counts no other event type', () => {
+  it('equals what the scan of the payloads of the indexed types gives, for ASCII, Japanese, astral characters and escapes, and counts no other event type', async () => {
     const { store, dbPath } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
 
     expect(store.append(claim, mixed.slice(0, 3)).kind).toBe('ok');

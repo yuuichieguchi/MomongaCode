@@ -28,7 +28,7 @@ describe('attempt.failed carries when the run is tried again, its attempt and th
   it.each(WAITS)('after %s, retryAt is the availableAt the store wrote, and limit is maxTotalAttempts', async (_label, failure, code) => {
     const env = await makeEnv({ maxAttempts: 3, maxTotalAttempts: ATTEMPT_LIMIT });
     env.gateway.script.push(failure(), textStep('Recovered.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -42,7 +42,7 @@ describe('attempt.failed carries when the run is tried again, its attempt and th
     const env = await makeEnv({ maxAttempts: 3, maxTotalAttempts: ATTEMPT_LIMIT });
     const failedAt = env.clock.now();
     env.gateway.script.push(throwing({ status: 429, type: 'too_many_requests', code: 'rate_limited', message: 'wait', retryAfterMs: 90_000, deferred: true }), textStep('Recovered.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await env.runOnce(env.worker());
 
@@ -54,7 +54,7 @@ describe('attempt.failed carries when the run is tried again, its attempt and th
     const env = await makeEnv({ maxAttempts: 3, maxTotalAttempts: ATTEMPT_LIMIT });
     const lost = (): ScriptStep => throwing({ status: 502, type: 'server_error', code: 'provider_unavailable', message: 'the chat-completions upstream is unreachable' });
     env.gateway.script.push(lost(), lost(), textStep('Recovered.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await env.runOnce(env.worker('worker-1'));
     const firstRetryAt = env.run(run.id).availableAt;

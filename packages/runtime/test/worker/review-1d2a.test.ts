@@ -41,7 +41,7 @@ describe('WW1: bounded per-run memory', () => {
   it('keeps an entry only while a requeued run has a streak', async () => {
     const env = await makeEnv();
     env.gateway.script.push(gatewayClosed(), textStep('Recovered.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const worker = env.worker('worker-1', { random: FIXED_RANDOM });
 
     await env.runOnce(worker);
@@ -57,7 +57,7 @@ describe('WW1: bounded per-run memory', () => {
   it('holds no entry after a run waits for a human', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: `${env.project}/out.txt`, content: 'x' } }]));
-    const run = env.enqueue('Write it');
+    const run = await env.enqueue('Write it');
     const worker = env.worker();
 
     await env.runOnce(worker);
@@ -69,7 +69,7 @@ describe('WW1: bounded per-run memory', () => {
   it('drops the entry of a requeued run cancelled through the service on an idle poll tick', async () => {
     const env = await makeEnv();
     env.gateway.script.push(gatewayClosed());
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const worker = env.worker('worker-1', { random: FIXED_RANDOM, idlePollMs: 10 });
     await env.runOnce(worker);
     expect(worker.memorySize()).toBe(1);
@@ -83,7 +83,7 @@ describe('WW1: bounded per-run memory', () => {
   it('drops the entry of a requeued run whose deadline passed on an idle poll tick', async () => {
     const env = await makeEnv();
     env.gateway.script.push(gatewayClosed());
-    const run = env.enqueue('Work', { deadlineAt: START_MS + 600_000 });
+    const run = await env.enqueue('Work', { deadlineAt: START_MS + 600_000 });
     const worker = env.worker('worker-1', { random: FIXED_RANDOM, idlePollMs: 10 });
     await env.runOnce(worker);
     expect(worker.memorySize()).toBe(1);
@@ -100,7 +100,7 @@ describe('WW1: bounded per-run memory', () => {
 describe('WW2: CANCELLING branch guard', () => {
   it('sends no upstream cancel when the shutdown lands between the claim and drive', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     await env.seed(run.id, [requested()], 'crash');
     expect((await env.cancel(run.id)).status).toBe('CANCELLING');
     const holder: { worker?: Worker; aborting?: Promise<void> | undefined } = {};
@@ -124,7 +124,7 @@ describe('WW2: CANCELLING branch guard', () => {
 describe('WW3: restart detection scans from requestedSeq', () => {
   it('reads no event before requestedSeq when resuming the in-flight request', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const padding: RunEventPayload[] = Array.from({ length: 30 }, (_unused, index) => ({ type: 'notice', level: 'info', message: `pad ${index}` }));
     await env.seed(run.id, [...padding, requested(), { type: 'agent.message.delta', step: 1, attempt: 1, itemId: 'msg_partial', text: 'partial ' }], 'crash');
     const requestedSeq = env.ofType(run.id, 'model.requested')[0]?.seq ?? 0;
@@ -152,12 +152,12 @@ describe('WW4: runOnce honours stop', () => {
     const env = await makeEnv();
     const blocked = gated(textStep('first'), 0);
     env.gateway.script.push(blocked, textStep('second'));
-    env.enqueue('First');
+    await env.enqueue('First');
     const worker = env.worker('worker-1', { idlePollMs: 10 });
     worker.start();
     await within(blocked.gate.reached.promise, 5_000, 'the first stream to start');
     const otherSession = env.store.createSession({ cwd: env.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, permissionMode: 'manual', model: 'fm' });
-    const second = createdRun(env.store.createRunAndEnqueue(otherSession.id, { input: 'Second', timeoutMs: 3_600_000, limits: {}, pins: {} }));
+    const second = await createdRun(await env.store.createRunAndEnqueue(otherSession.id, { input: 'Second', timeoutMs: 3_600_000, limits: {}, pins: {} }));
 
     const stopping = worker.stop();
     const result = await env.runOnce(worker);
@@ -175,7 +175,7 @@ describe('WS1: quiet detached cancel recovery', () => {
     ['ShutdownError', () => new ShutdownError()],
   ] as const)('does not report a %s from the detached recovery after shutdown', async (_label, makeError) => {
     const env = await makeEnv();
-    const run = env.enqueue('Mark it');
+    const run = await env.enqueue('Mark it');
     await startedMarkSeed(env, run.id);
     expect((await env.cancel(run.id)).status).toBe('CANCELLING');
     const reached = deferred<void>();
@@ -212,7 +212,7 @@ describe('WS1: quiet detached cancel recovery', () => {
 describe('WS2: error hook and abort during stop', () => {
   it('folds the hook failure into the run notice when onError throws', async () => {
     const env = await makeEnv();
-    const failing = env.enqueue('Fails to load');
+    const failing = await env.enqueue('Fails to load');
     env.gateway.script.push(textStep('Hello.'));
     let thrown = false;
     const store: RuntimeStore = {
@@ -247,7 +247,7 @@ describe('WS2: error hook and abort during stop', () => {
     const env = await makeEnv();
     const blocked = gated(textStep('never finished', { chunks: ['partial ', 'answer'] }), 4);
     env.gateway.script.push(blocked);
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const worker = env.worker('worker-1', { idlePollMs: 10 });
     worker.start();
     await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
@@ -268,7 +268,7 @@ describe('WS3: refundable classes count toward the streak', () => {
     const env = await makeEnv();
     const closed = (): ScriptStep => ({ events: [], error: new GatewayRequestError({ status: 503, type: 'server_error', code: 'gateway_closed', message: 'the gateway is shutting down' }) });
     env.gateway.script.push(closed(), closed(), closed());
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const worker = env.worker('worker-1', { random: FIXED_RANDOM });
     const delays: number[] = [];
 
@@ -290,21 +290,21 @@ describe('WW1: sweep after each claim', () => {
   it('drops the entry of a cancelled run after the next claim without an idle tick', async () => {
     const env = await makeEnv();
     env.gateway.script.push(gatewayClosed());
-    const failed = env.enqueue('Work');
+    const failed = await env.enqueue('Work');
     const worker = env.worker('worker-1', { random: FIXED_RANDOM, idlePollMs: 600_000 });
     await env.runOnce(worker);
     expect(env.run(failed.id).status).toBe('QUEUED');
     expect(worker.memorySize()).toBe(1);
     expect((await env.cancelToEnd(failed.id)).status).toBe('CANCELLED');
 
-    const enqueueElsewhere = (input: string) => {
+    const enqueueElsewhere = async (input: string) => {
       const session = env.store.createSession({ cwd: env.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, permissionMode: 'manual', model: 'fm' });
-      return createdRun(env.store.createRunAndEnqueue(session.id, { input, timeoutMs: 3_600_000, limits: {}, pins: {} }));
+      return createdRun(await env.store.createRunAndEnqueue(session.id, { input, timeoutMs: 3_600_000, limits: {}, pins: {} }));
     };
-    const busy = enqueueElsewhere('Busy');
+    const busy = await enqueueElsewhere('Busy');
     const following = gated(textStep('following'), 0);
     env.gateway.script.push(textStep('busy'), following);
-    enqueueElsewhere('Following');
+    await enqueueElsewhere('Following');
 
     worker.start();
     await within(following.gate.reached.promise, 5_000, 'the following claim to start right after the busy run');

@@ -47,7 +47,7 @@ const sessionWithRuns = async (runs: number, eventsPerRun: number) => {
   let index = 0;
   for (let at = 0; at < runs; at += 1) {
     env.clock.advance(1);
-    const run = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Past work', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
+    const run = await createdRun(await env.store.createRunAndEnqueue(env.session.id, { input: 'Past work', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
     const payloads: RunEventPayload[] = [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { model: 'fm' }, mode: 'manual' }];
     for (let inRun = 0; inRun < eventsPerRun; inRun += 1) {
       const capabilities = index % 3 === 0 ? LARGE : SMALL;
@@ -108,7 +108,7 @@ describe('the meter of a session is a record written when meter.observed is appe
     for (const runs of [2, 40]) {
       const { env, decoded } = await sessionWithRuns(runs, 3);
       env.gateway.script.push(textStep('Done.'));
-      env.enqueue('Next', { history: 'fresh' });
+      await env.enqueue('Next', { history: 'fresh' });
       decoded.rows = 0;
       decoded.bytes = 0;
       decoded.counting = true;

@@ -22,7 +22,7 @@ describe('auto mode classifier reply without usage', () => {
       withoutUsage(textStep(reply, { usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } } })),
       textStep('never sent'),
     );
-    const run = env.enqueue('Write out.txt');
+    const run = await env.enqueue('Write out.txt');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 

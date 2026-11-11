@@ -34,10 +34,10 @@ const responded: RunEventPayload = {
 } as RunEventPayload;
 const notice: RunEventPayload = { type: 'notice', level: 'info', message: 'old', code: 'old.code' };
 
-const terminalRunWrittenByOlderBuild = () => {
+const terminalRunWrittenByOlderBuild = async () => {
   const env = harness();
   const session = newSession(env.store);
-  const run = enqueue(env.store, session.id, 'task');
+  const run = await enqueue(env.store, session.id, 'task');
   mustClaim(env.store, 'w-old');
   const db = rawDb(env.dbPath);
   const seqs = [requested, call, started, meter, responded, notice].map((payload) => {
@@ -50,58 +50,58 @@ const terminalRunWrittenByOlderBuild = () => {
 
 describe('derived records of a run an older build finished, never claimed again (H7, 11.5 gap; the rule is being decided)', () => {
   it('run_records: finalTextOf (append-records.ts:257) returns the last answer text', async () => {
-    const { store, run } = terminalRunWrittenByOlderBuild();
+    const { store, run } = await terminalRunWrittenByOlderBuild();
     expect(await store.finalTextOf(run.id)).toBe('the old build answered');
   });
 
   it('started_calls: startedCallsOf (append-records.ts:264) lists the call started and not finished', async () => {
-    const { store, run } = terminalRunWrittenByOlderBuild();
+    const { store, run } = await terminalRunWrittenByOlderBuild();
     expect(await store.startedCallsOf(run.id)).toEqual([{ callId: 'c1', name: 'Write', idemKey: 'k1' }]);
   });
 
   it('events.call_id: toolCallSeq (append-records.ts:253) finds the call', async () => {
-    const { store, run, seqs } = terminalRunWrittenByOlderBuild();
+    const { store, run, seqs } = await terminalRunWrittenByOlderBuild();
     expect(await store.toolCallSeq(run.id, 'c1')).toBe(seqs[1]);
   });
 
   it('events.tool_name: toolCallNames (runtime-store.ts:1406, statement :271) names the tool', async () => {
-    const { store, run } = terminalRunWrittenByOlderBuild();
+    const { store, run } = await terminalRunWrittenByOlderBuild();
     expect(await store.toolCallNames(run.id)).toEqual(['Write']);
   });
 
   it('events.notice_code: hasNoticeCode (append-records.ts:269) sees the code', async () => {
-    const { store, run } = terminalRunWrittenByOlderBuild();
+    const { store, run } = await terminalRunWrittenByOlderBuild();
     expect(await store.hasNoticeCode(run.id, 'old.code')).toBe(true);
   });
 
   it('events.model_call_json: readModelCallEvents (runtime-store.ts:1386, statement :261) lists the request and the response', async () => {
-    const { store, run, seqs } = terminalRunWrittenByOlderBuild();
+    const { store, run, seqs } = await terminalRunWrittenByOlderBuild();
     expect((await store.readModelCallEvents(run.id)).map((record) => [record.kind, record.seq])).toEqual([['requested', seqs[0]], ['responded', seqs[4]]]);
   });
 
   it('meter_records: meterRecordOf (append-records.ts:274) holds the observation', async () => {
-    const { store, run, session, seqs } = terminalRunWrittenByOlderBuild();
+    const { store, run, session, seqs } = await terminalRunWrittenByOlderBuild();
     expect(await store.meterRecordOf(session.id, { counter: COUNTER, contextWindow: 8192, tokenCounting: 'estimated' })).toMatchObject({ runId: run.id, seq: seqs[3] });
   });
 
   it('run_answerers: answeringTargetsOf (append-records.ts:270) names the target', async () => {
-    const { store, run } = terminalRunWrittenByOlderBuild();
+    const { store, run } = await terminalRunWrittenByOlderBuild();
     expect(await store.answeringTargetsOf(run.id)).toEqual(['primary']);
   });
 
   it('session_touched: sessionTouched.after and newest (append-records.ts:271-273, runtime-store.ts:1620) list the path', async () => {
-    const { store, session } = terminalRunWrittenByOlderBuild();
+    const { store, session } = await terminalRunWrittenByOlderBuild();
     expect((await store.sessionTouched.after(session.id, 0, 100)).map((entry) => entry.path)).toEqual(['/work/a/old.txt']);
     expect((await store.sessionTouched.newest(session.id, 10)).map((entry) => entry.path)).toEqual(['/work/a/old.txt']);
   });
 
   it('events.call_id: memories.save (memories.ts:124) finds the tool call of the finished run', async () => {
-    const { store, run } = terminalRunWrittenByOlderBuild();
+    const { store, run } = await terminalRunWrittenByOlderBuild();
     expect((await store.memories.save({ origin: 'trusted', scope: 'project', project: '/work/a', text: 'from the old run', runId: run.id, step: 1, callId: 'c1' })).created).toBe(true);
   });
 
   it('events.pinned_digest: the pinned digest column (journal-reader.ts:79) holds the digest of the request', async () => {
-    const { store, dbPath, run, seqs } = terminalRunWrittenByOlderBuild();
+    const { store, dbPath, run, seqs } = await terminalRunWrittenByOlderBuild();
     await store.finalTextOf(run.id);
     const [requestedSeq] = seqs;
     if (requestedSeq === undefined) throw new Error('the model.requested event was not appended');

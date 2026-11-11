@@ -2,7 +2,7 @@ import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ensureMomongaDirs, groupAlive, momongaPaths, FIRST_GENERATION } from '@momonga/foundation';
+import { ensureMomongaDirs, groupAlive, momongaPaths, FIRST_GENERATION, systemRandom, nodeFileSystem } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, spawnTracked, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
@@ -59,11 +59,11 @@ const spawnHolder = (marker: string, content?: (pid: number) => string): number 
   return pid;
 };
 
-const seedStore = async (temp: RunHome, seed: (store: ReturnType<typeof openRuntimeStore>) => void): Promise<void> => {
+const seedStore = async (temp: RunHome, seed: (store: ReturnType<typeof openRuntimeStore>) => void | Promise<void>): Promise<void> => {
   await prepareGeneration(temp);
-  const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock: createFakeClock(SEED_MS), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
+  const store = openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock: createFakeClock(SEED_MS), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
   try {
-    seed(store);
+    await seed(store);
   } finally {
     store.close();
   }
@@ -125,10 +125,10 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
     const jobId = 'bash_dead00000000';
     const idemKey = keyOf('j');
     let pgid: number | undefined;
-    await seedStore(stack.temp, (store) => {
+    await seedStore(stack.temp, async (store) => {
       store.idempotency.begin(idemKey, { expiresAt: SEED_MS + 30 * 86_400_000, meta: { job: true } });
       const session = createSession(store, stack.temp.project);
-      store.jobs.start({ id: jobId, idemKey, sessionId: session.id, runId: createRun(store, session.id), callId: 'c', command: 'sleep 30' });
+      store.jobs.start({ id: jobId, idemKey, sessionId: session.id, runId: await createRun(store, session.id), callId: 'c', command: 'sleep 30' });
       pgid = spawnHolder(path.join(scopedPaths(stack.temp).markers.tools, idemKey));
       store.jobs.attachProcess(jobId, pgid);
     });
@@ -187,10 +187,10 @@ type Seeded = { runId: string; pgid: number; lastClaimAt: number };
 const seedTakenOverRun = async (context: CleanupContext, temp: RunHome, deadLetterInSeed: boolean): Promise<Seeded> => {
   await prepareGeneration(temp);
   const clock = createFakeClock(SEED_MS);
-  const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock, leaseMs: LEASE_MS, maxAttempts: MAX_ATTEMPTS, maxTotalAttempts: 20 });
+  const store = openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock, leaseMs: LEASE_MS, maxAttempts: MAX_ATTEMPTS, maxTotalAttempts: 20 });
   try {
     const session = createSession(store, temp.project);
-    const runId = createRun(store, session.id);
+    const runId = await createRun(store, session.id);
     for (let claim = 0; claim < MAX_ATTEMPTS; claim += 1) {
       if (claim > 0) clock.advance(LEASE_MS + 1);
       if (store.claim(`seed-worker-${claim}`)?.runId !== runId) throw new Error(`seed claim ${claim} did not take run ${runId}`);

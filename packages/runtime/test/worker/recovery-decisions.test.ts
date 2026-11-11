@@ -21,7 +21,7 @@ const echoCall = (callId: string) => functionCallItem({ callId, name: 'Echo', ar
 describe('worker recovery replays the post-response decision of a recorded step', () => {
   it('stops with loop and executes nothing when the recorded step repeats the previous one', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Loop', { limits: { loopThreshold: 2 } });
+    const run = await env.enqueue('Loop', { limits: { loopThreshold: 2 } });
     await env.seed(
       run.id,
       [
@@ -43,7 +43,7 @@ describe('worker recovery replays the post-response decision of a recorded step'
 
   it('stops with max_tokens without a model call when an incomplete response held only reasoning', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Think');
+    const run = await env.enqueue('Think');
     await env.seed(run.id, [responded(1, [{ type: 'reasoning', id: 'rs_1', summary: [] }], 'max_output_tokens')], 'crash');
 
     await env.runOnce(env.worker());
@@ -54,7 +54,7 @@ describe('worker recovery replays the post-response decision of a recorded step'
 
   it('stops with refusal and executes nothing when the recorded output refused and also called a tool', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Refuse');
+    const run = await env.enqueue('Refuse');
     await env.seed(
       run.id,
       [
@@ -76,7 +76,7 @@ describe('worker recovery replays the post-response decision of a recorded step'
 
   it('completes without a model call when the recorded output was empty', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Nothing');
+    const run = await env.enqueue('Nothing');
     await env.seed(run.id, [responded(1, [])], 'crash');
 
     await env.runOnce(env.worker());
@@ -87,7 +87,7 @@ describe('worker recovery replays the post-response decision of a recorded step'
 
   it('fails with incomplete_response when the recorded incomplete reason is unknown', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Mystery');
+    const run = await env.enqueue('Mystery');
     await env.seed(run.id, [responded(1, [assistantMessage('msg_m', 'partial')], 'mystery_reason')], 'crash');
 
     await env.runOnce(env.worker());
@@ -104,7 +104,7 @@ describe('worker live handling of an unknown incomplete reason', () => {
   it('fails with incomplete_response after one model call and does not requeue', async () => {
     const env = await makeEnv();
     env.gateway.script.push(incompleteStep([assistantMessage('msg_p', 'partial')], 'mystery_reason'), textStep('never sent'));
-    const run = env.enqueue('Mystery');
+    const run = await env.enqueue('Mystery');
 
     await env.runOnce(env.worker());
 
@@ -122,7 +122,7 @@ describe('worker live handling of an unknown incomplete reason', () => {
 describe('worker cancel recovery past the run deadline', () => {
   it('reconciles a started call even though the deadline has passed, then cancels', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Mark it', { deadlineAt: START_MS + 10 });
+    const run = await env.enqueue('Mark it', { deadlineAt: START_MS + 10 });
     const key = toolKey(run.id, 1, 'call_m_1');
     await env.seed(
       run.id,

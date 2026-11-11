@@ -23,7 +23,7 @@ type Fixture = { store: RuntimeStore; run: Run; claim?: Claim };
 
 const arrange = async (from: RunStatus): Promise<Fixture> => {
   const { store } = harness();
-  const created = enqueue(store, newSession(store).id);
+  const created = await enqueue(store, newSession(store).id);
   const claimIt = () => mustClaim(store, 'w1');
   switch (from) {
     case 'QUEUED':

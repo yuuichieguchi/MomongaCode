@@ -2,8 +2,10 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { START_MS, harness, makeStoreDir, openStoreAt } from './helpers.ts';
+import { nodeFileSystem } from '@momonga/foundation';
+import { START_MS, exactTrustOf, harness, makeStoreDir, openStoreAt } from './helpers.ts';
 import { OPTIONS, awaitingApproval, requestFor } from './approval-fixture.ts';
+import { NEVER_CANCELLED } from '@momonga/testkit';
 
 const fileMode = (file: string) => fs.statSync(file).mode & 0o777;
 const sha256 = (data: string) => createHash('sha256').update(data, 'utf8').digest('hex');
@@ -223,28 +225,29 @@ describe('blobs', () => {
 
   it('rejects content that is not valid UTF-8', async () => {
     const { dir, store } = harness();
+    await store.blobs.prepare();
     await expect(store.blobs.put(Buffer.from([0x61, 0xff, 0xfe]), { mediaType: 'application/octet-stream' })).rejects.toThrow(/UTF-8/);
     expect(fs.existsSync(path.join(dir, 'blobs'))).toBe(true);
     expect(fs.readdirSync(path.join(dir, 'blobs'))).toEqual([]);
   });
 
-  it('streams line ranges instead of loading the whole blob', async () => {
+  it('reads line ranges page by page instead of loading the whole blob', async () => {
     const { store } = harness();
     const line = 'x'.repeat(99) + '\n';
     const { handle, byteLength } = await store.blobs.put(line.repeat(200_000), { mediaType: 'text/plain' });
     expect(byteLength).toBe(20_000_000);
-    const readFileSync = vi.spyOn(fs, 'readFileSync');
-    const createReadStream = vi.spyOn(fs, 'createReadStream');
+    const readFile = vi.spyOn(nodeFileSystem, 'readFile');
+    const readRange = vi.spyOn(nodeFileSystem, 'readRange');
     try {
       const slice = await store.blobs.read(handle, { lineStart: 2, lineEnd: 3 });
       expect(slice.text).toBe(line.repeat(2));
-      expect(readFileSync).not.toHaveBeenCalled();
-      expect(createReadStream).toHaveBeenCalledTimes(1);
-      const stream = createReadStream.mock.results[0]!.value as fs.ReadStream;
-      expect(stream.bytesRead).toBeLessThan(2_000_000);
+      expect(readFile).not.toHaveBeenCalled();
+      expect(readRange).toHaveBeenCalled();
+      const bytesAsked = readRange.mock.calls.reduce((sum, [, , length]) => sum + length, 0);
+      expect(bytesAsked).toBeLessThan(2_000_000);
     } finally {
-      readFileSync.mockRestore();
-      createReadStream.mockRestore();
+      readFile.mockRestore();
+      readRange.mockRestore();
     }
   });
 
@@ -291,11 +294,11 @@ describe('trust', () => {
     const project = makeStoreDir();
     const link = path.join(makeStoreDir(), 'link');
     fs.symlinkSync(project, link);
-    expect(store.trust.get(project)).toBeUndefined();
-    store.trust.set(link, 'trusted');
-    expect(store.trust.get(fs.realpathSync(project))).toBe('trusted');
-    expect(store.trust.get(project)).toBe('trusted');
-    store.trust.set(project, 'untrusted');
-    expect(store.trust.get(link)).toBe('untrusted');
+    expect(await exactTrustOf(store, project)).toBeNull();
+    await store.trust.setAsked(link, 'trusted', NEVER_CANCELLED);
+    expect(await exactTrustOf(store, fs.realpathSync(project))).toBe('trusted');
+    expect(await exactTrustOf(store, project)).toBe('trusted');
+    await store.trust.setAsked(project, 'untrusted', NEVER_CANCELLED);
+    expect(await exactTrustOf(store, link)).toBe('untrusted');
   });
 });

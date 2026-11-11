@@ -6,6 +6,7 @@ import type { Claim, RuntimeStore } from '@momonga/store';
 import { createFakeClock } from '@momonga/testkit';
 import { decodeRunEvents } from '../src/codec.ts';
 import { LEASE_MS, START_MS, enqueue, makeStoreDir, mustClaim, newSession, rawDb, registerCleanup, UNASKED_COMMANDS } from './helpers.ts';
+import { nodeFileSystem, systemRandom } from '@momonga/foundation';
 
 const READERS_PER_STEP = 4;
 
@@ -30,11 +31,11 @@ const SECOND_TEXT = `second request ${'beta '.repeat(5_000)}`;
 
 type Decodes = { rows: number; counting: boolean };
 
-const countingStore = () => {
+const countingStore = async () => {
   const dbPath = path.join(makeStoreDir(), 'runtime.db');
   const clock = createFakeClock(START_MS);
   const decodes: Decodes = { rows: 0, counting: false };
-  const store: RuntimeStore = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
+  const store: RuntimeStore = openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home: path.dirname(dbPath),
     clock,
@@ -46,7 +47,7 @@ const countingStore = () => {
     },
   });
   registerCleanup(() => store.close());
-  const run = enqueue(store, newSession(store).id);
+  const run = await enqueue(store, newSession(store).id);
   const claim = mustClaim(store, 'w1');
   expect(store.append(claim, [requestedWith(1, FIRST_TEXT)]).kind).toBe('ok');
   const counted = <T>(read: () => T): { value: T; rows: number } => {
@@ -75,8 +76,8 @@ const textOf = (event: ReturnType<typeof latestRequest>): string => {
 };
 
 describe('the recorded request body is decoded once per step under a claim (row 9)', () => {
-  it('four readers of the latest request in one step decode the body once, and each gets what an uncached read returns', () => {
-    const { dbPath, store, run, counted, lastSeq } = countingStore();
+  it('four readers of the latest request in one step decode the body once, and each gets what an uncached read returns', async () => {
+    const { dbPath, store, run, counted, lastSeq } = await countingStore();
     const before = lastSeq() + 1;
 
     const { value: reads, rows } = counted(() => Array.from({ length: READERS_PER_STEP }, () => latestRequest(store, run.id, before)));
@@ -88,8 +89,8 @@ describe('the recorded request body is decoded once per step under a claim (row 
     expect(textOf(reads[0])).toBe(FIRST_TEXT);
   });
 
-  it('a read of another type is not answered from the cached request', () => {
-    const { store, claim, run, counted, lastSeq } = countingStore();
+  it('a read of another type is not answered from the cached request', async () => {
+    const { store, claim, run, counted, lastSeq } = await countingStore();
     expect(store.append(claim, [responded(1)]).kind).toBe('ok');
     const before = lastSeq() + 1;
     counted(() => latestRequest(store, run.id, before));
@@ -103,8 +104,8 @@ describe('the recorded request body is decoded once per step under a claim (row 
     expect(rows).toBe(0);
   });
 
-  it('a new model.requested makes the next read return the new body, decoded once, while a read before it still returns the old one', () => {
-    const { dbPath, store, claim, run, counted, lastSeq } = countingStore();
+  it('a new model.requested makes the next read return the new body, decoded once, while a read before it still returns the old one', async () => {
+    const { dbPath, store, claim, run, counted, lastSeq } = await countingStore();
     const firstBefore = lastSeq() + 1;
     counted(() => latestRequest(store, run.id, firstBefore));
     expect(store.append(claim, [responded(1), requestedWith(2, SECOND_TEXT)]).kind).toBe('ok');
@@ -120,8 +121,8 @@ describe('the recorded request body is decoded once per step under a claim (row 
     expect(textOf(old)).toBe(FIRST_TEXT);
   });
 
-  it('the cache does not outlive the claim: the next claim of the run decodes the body again', () => {
-    const { clock, store, run, counted, lastSeq } = countingStore();
+  it('the cache does not outlive the claim: the next claim of the run decodes the body again', async () => {
+    const { clock, store, run, counted, lastSeq } = await countingStore();
     const before = lastSeq() + 1;
     expect(counted(() => latestRequest(store, run.id, before)).rows).toBe(1);
     clock.advance(LEASE_MS + 1);

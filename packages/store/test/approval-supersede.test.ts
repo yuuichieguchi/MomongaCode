@@ -11,9 +11,9 @@ const WIDER: PermissionOption[] = [...OPTIONS, { optionId: 'allow_always', name:
 const FIRST = 'a'.repeat(64);
 const SECOND = 'b'.repeat(64);
 
-const setup = () => {
+const setup = async () => {
   const { clock, store } = harness();
-  const run = enqueue(store, newSession(store).id);
+  const run = await enqueue(store, newSession(store).id);
   const claim = mustClaim(store, 'worker-1');
   const appended = store.append(claim, [
     { type: 'tool.call', callId: 'call_1', providerCallId: 'call_1', name: 'Write', kind: 'edit', title: 'Write', rawInput: {} },
@@ -33,14 +33,14 @@ const requestedIds = (store: RuntimeStore, runId: string): string[] =>
 
 describe('approval subject digest and supersede', () => {
   it('stores the subject digest on the approval', async () => {
-    const { store, claim } = setup();
+    const { store, claim } = await setup();
     const approval = await request(store, claim, OPTIONS, FIRST);
     expect(approval.subjectDigest).toBe(FIRST);
     expect(store.approvals.get(approval.id)?.subjectDigest).toBe(FIRST);
   });
 
   it('reuses the pending approval for the same options and digest without a second event', async () => {
-    const { store, runId, claim } = setup();
+    const { store, runId, claim } = await setup();
     const first = await request(store, claim, OPTIONS, FIRST);
     const again = await request(store, claim, OPTIONS, FIRST);
     expect(again.id).toBe(first.id);
@@ -51,7 +51,7 @@ describe('approval subject digest and supersede', () => {
     ['a different digest', OPTIONS, SECOND],
     ['different options', WIDER, FIRST],
   ])('supersedes the pending approval for %s and requests a new one', async (_label, options, digest) => {
-    const { store, runId, claim } = setup();
+    const { store, runId, claim } = await setup();
     const first = await request(store, claim, OPTIONS, FIRST);
 
     const second = await request(store, claim, options, digest);
@@ -64,7 +64,7 @@ describe('approval subject digest and supersede', () => {
   });
 
   it('refuses to resolve a superseded approval', async () => {
-    const { store, claim } = setup();
+    const { store, claim } = await setup();
     const first = await request(store, claim, OPTIONS, FIRST);
     await request(store, claim, OPTIONS, SECOND);
     expect(await store.resolveApproval(first.id, 'allow_once')).toEqual({ kind: 'approval_not_pending', status: 'superseded' });
@@ -72,7 +72,7 @@ describe('approval subject digest and supersede', () => {
   });
 
   it('leaves superseded approvals superseded when the run ends at its deadline', async () => {
-    const { store, runId, claim } = setup();
+    const { store, runId, claim } = await setup();
     const first = await request(store, claim, OPTIONS, FIRST);
     const second = await request(store, claim, OPTIONS, SECOND);
     expect((await store.release(claim, 'WAITING_HUMAN')).kind).toBe('ok');

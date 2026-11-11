@@ -14,7 +14,7 @@ describe('worker tool-set notice', () => {
     const second = path.join(env.project, 'second.txt');
     const reduced = () => env.toolbox.tools().filter((tool) => tool.name !== 'Probe');
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: first, content: 'one' } }]));
-    const run = env.enqueue('Write two files');
+    const run = await env.enqueue('Write two files');
     await env.runOnce(env.worker('worker-1'));
     await env.resolveApproval(run.id, 'allow_once');
     env.gateway.script.push(callsStep([{ callId: 'call_w_2', name: 'Write', args: { file_path: second, content: 'two' } }]));
@@ -35,7 +35,7 @@ describe('worker tool-set notice', () => {
     const second = path.join(env.project, 'second.txt');
     const reduced = () => env.toolbox.tools().filter((tool) => tool.name !== 'Probe');
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: first, content: 'one' } }]));
-    const run = env.enqueue('Write two files');
+    const run = await env.enqueue('Write two files');
     await env.runOnce(env.worker('worker-1'));
     const appended = env.store.appendAsService(run.id, env.run(run.id).version, null, [
       { type: 'notice', level: 'warning', message: 'The tool set differs from the one this run started with.', code: 'tools_changed' },
@@ -68,7 +68,7 @@ describe('worker MCP authorization notice', () => {
       },
     };
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: first, content: 'one' } }]));
-    const run = env.enqueue('Write two files');
+    const run = await env.enqueue('Write two files');
     await env.runOnce(env.worker('worker-1', { tools }));
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
     await env.resolveApproval(run.id, 'allow_once');
@@ -89,7 +89,7 @@ describe('worker recovery of a started call with an existing record', () => {
   it('reconciles without asking again even though the mode became stricter', async () => {
     const env = await makeEnv({ mode: 'acceptEdits' });
     const target = path.join(env.project, 'out.txt');
-    const run = env.enqueue('Write the file');
+    const run = await env.enqueue('Write the file');
     const key = toolKey(run.id, 1, 'call_w_1');
     const payloads: RunEventPayload[] = [
       requestedOffering(1, ['Write']),
@@ -154,7 +154,7 @@ describe('worker offering of the job tools', () => {
     const env = await makeEnv();
     env.settings.extraRules.push({ effect: 'deny', rule: 'Bash' });
     env.gateway.script.push(textStep('done'));
-    env.enqueue('Work');
+    await env.enqueue('Work');
 
     await env.runOnce(env.worker('w1', { toolList: withJobTools(env) }));
 
@@ -167,7 +167,7 @@ describe('worker offering of the job tools', () => {
     env.settings.extraRules.push({ effect: 'deny', rule: 'Bash' });
     const first = path.join(env.project, 'first.txt');
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: first, content: 'one' } }]));
-    const run = env.enqueue('Write a file');
+    const run = await env.enqueue('Write a file');
     startJob(env, run.id);
     await env.runOnce(env.worker('w1', { toolList: withJobTools(env) }));
     await env.resolveApproval(run.id, 'allow_once');
@@ -186,12 +186,12 @@ describe('worker offering of the job tools', () => {
     const env = await makeEnv();
     env.settings.extraRules.push({ effect: 'deny', rule: 'Bash' });
     env.gateway.script.push(textStep('first done'));
-    const earlier = env.enqueue('Start the job');
+    const earlier = await env.enqueue('Start the job');
     startJob(env, earlier.id);
     await env.runOnce(env.worker('w1', { toolList: withJobTools(env) }));
     expect(env.run(earlier.id).status).toBe('COMPLETED');
     env.gateway.script.push(textStep('second done'));
-    const later = env.enqueue('Look at the job');
+    const later = await env.enqueue('Look at the job');
 
     await env.runOnce(env.worker('w2', { toolList: withJobTools(env) }));
 
@@ -205,7 +205,7 @@ describe('worker offering of the job tools', () => {
     env.settings.extraRules.push({ effect: 'deny', rule: 'Bash' });
     const first = path.join(env.project, 'first.txt');
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: first, content: 'one' } }]));
-    const run = env.enqueue('Write a file');
+    const run = await env.enqueue('Write a file');
     const jobId = startJob(env, run.id);
     await env.runOnce(env.worker('w1', { toolList: withJobTools(env) }));
     env.store.jobs.finish(jobId, { status: 'exited', exitCode: 0 });

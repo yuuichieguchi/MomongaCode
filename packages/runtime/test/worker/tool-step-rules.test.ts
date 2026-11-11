@@ -34,7 +34,7 @@ describe('tool step rules', () => {
         },
       },
     });
-    const run = env.enqueue('Echo');
+    const run = await env.enqueue('Echo');
 
     expect(await env.runOnce(worker)).toBe('yielded');
 

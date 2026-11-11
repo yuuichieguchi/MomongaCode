@@ -3,7 +3,7 @@ import { HISTORY_SNIPPET_MAX_CHARS } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import { anchorsOf, harness } from './helpers.ts';
 import { finishedRun, indexAll, projectDir } from './search-fixture.ts';
-import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+import { PROPERTY_TIMEOUT_MS, NEVER_CANCELLED } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
@@ -174,8 +174,8 @@ describe('search visibility', () => {
     const untrustedOriginInA = await finishedRun(store, a, 'needleterm a before trust');
     const untrustedC = await finishedRun(store, c, 'needleterm c');
     await indexAll(store);
-    store.trust.set(a, 'trusted');
-    store.trust.set(b, 'trusted');
+    await store.trust.setAsked(a, 'trusted', NEVER_CANCELLED);
+    await store.trust.setAsked(b, 'trusted', NEVER_CANCELLED);
     const trustedA = await finishedRun(store, a, 'needleterm a');
     const trustedB = await finishedRun(store, b, 'needleterm b');
     await indexAll(store);

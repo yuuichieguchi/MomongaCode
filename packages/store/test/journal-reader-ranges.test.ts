@@ -18,9 +18,9 @@ const delta = (index: number): RunEventPayload => ({ type: 'agent.message.delta'
 
 type Trace = { maxRowsBetweenUnits: number; rowsStepped: number; units: number };
 
-const measuredRun = (hook: TerminalContribution): Trace & { journalRows: number } => {
+const measuredRun = async (hook: TerminalContribution): Promise<Trace & { journalRows: number }> => {
   const h = harness();
-  const run = enqueue(h.store, newSession(h.store).id);
+  const run = await enqueue(h.store, newSession(h.store).id);
   const claim = mustClaim(h.store, 'w1');
   expect(h.store.append(claim, [responded(1), ...Array.from({ length: DELTAS }, (_unused, index) => delta(index)), responded(2)]).kind).toBe('ok');
   const journalRows = mustRun(h.store, run.id).lastSeq;
@@ -51,16 +51,16 @@ describe('the reader bounds the rows stepped between two unit() calls by a state
     expect(JOURNAL_SCAN_RANGE_ROWS).toBeLessThan(DELTAS);
   });
 
-  it('a type IN read for model.responded across thousands of non-matching delta rows calls unit() at least once per K rows stepped', () => {
-    const trace = measuredRun({ eventTypes: ['model.responded'], measure: () => undefined });
+  it('a type IN read for model.responded across thousands of non-matching delta rows calls unit() at least once per K rows stepped', async () => {
+    const trace = await measuredRun({ eventTypes: ['model.responded'], measure: () => undefined });
 
     expect(trace.rowsStepped).toBeGreaterThanOrEqual(DELTAS);
     expect(trace.maxRowsBetweenUnits).toBeLessThanOrEqual(JOURNAL_SCAN_RANGE_ROWS);
     expect(trace.units).toBeGreaterThanOrEqual(Math.floor(trace.rowsStepped / JOURNAL_SCAN_RANGE_ROWS));
   });
 
-  it('a type NOT IN read of the replay across thousands of excluded delta rows calls unit() at least once per K rows stepped', () => {
-    const trace = measuredRun({
+  it('a type NOT IN read of the replay across thousands of excluded delta rows calls unit() at least once per K rows stepped', async () => {
+    const trace = await measuredRun({
       eventTypes: ['user.message', 'agent.message.delta'],
       measure: ({ replay }) => {
         replay(() => undefined);
@@ -73,9 +73,9 @@ describe('the reader bounds the rows stepped between two unit() calls by a state
     expect(trace.units).toBeGreaterThanOrEqual(Math.floor(trace.rowsStepped / JOURNAL_SCAN_RANGE_ROWS));
   });
 
-  it('the range reads see every row of the run exactly as one statement over the whole run would', () => {
+  it('the range reads see every row of the run exactly as one statement over the whole run would', async () => {
     const seen: string[] = [];
-    measuredRun({
+    await measuredRun({
       eventTypes: ['model.responded'],
       measure: ({ events }) => {
         seen.push(...events.map((event) => `${event.type}:${event.seq}`));

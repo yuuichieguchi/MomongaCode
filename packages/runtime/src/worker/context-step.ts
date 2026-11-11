@@ -139,13 +139,13 @@ const recordedReferencesOf = (ctx: ClaimContext): ReadonlySet<string> =>
 
 type OfferedInput = { input: BuildContextInput; offered: string; governing: string; kinds: string; joined: string[] };
 
-const offeredInputOf = (
+const offeredInputOf = async (
   ctx: ClaimContext,
   wrapUp: WrapUpReason | undefined,
   level: number,
   scan: GoverningScan,
   trailing: readonly InputItem[],
-): OfferedInput => {
+): Promise<OfferedInput> => {
   const { options, journal } = ctx;
   const state = journal.state;
   const session = sessionOf(ctx);
@@ -204,7 +204,7 @@ const offeredInputOf = (
     recordedReferences: recordedReferencesOf(ctx),
     ...(ctx.memoryShare === undefined ? {} : { memoryShare: ctx.memoryShare }),
     touchedPaths: ctx.touched.probes.witnesses(),
-    trusted: options.settings.trusted(session),
+    trusted: await options.settings.trusted(session),
     projectRoot: session.cwd,
     home: options.home,
     level,
@@ -232,13 +232,13 @@ const offeredInputOf = (
   return { input, offered, governing: governingKey, kinds, joined: joined.map((tool) => tool.name) };
 };
 
-export const contextInputOf = (
+export const contextInputOf = async (
   ctx: ClaimContext,
   wrapUp: WrapUpReason | undefined,
   level: number,
   scan: GoverningScan = 'active',
   trailing: readonly InputItem[] = [],
-): BuildContextInput => offeredInputOf(ctx, wrapUp, level, scan, trailing).input;
+): Promise<BuildContextInput> => (await offeredInputOf(ctx, wrapUp, level, scan, trailing)).input;
 
 const portsOf = (ctx: ClaimContext): BuildContextPorts => ({
   meter: ctx.meter,
@@ -252,14 +252,14 @@ const portsOf = (ctx: ClaimContext): BuildContextPorts => ({
 
 export const measurePinnedFor = async (ctx: ClaimContext): Promise<PinnedMeasure> => {
   await advanceTouched(ctx);
-  return measurePinned(contextInputOf(ctx, undefined, 0), portsOf(ctx));
+  return measurePinned(await contextInputOf(ctx, undefined, 0), portsOf(ctx));
 };
 
 export type ToolsMeasure = { measure: PinnedMeasure; floorTokens: number; kept: readonly string[] };
 
 export const measureToolsWith = async (ctx: ClaimContext, tools: readonly FunctionTool[]): Promise<ToolsMeasure> => {
   await advanceTouched(ctx);
-  const input: BuildContextInput = { ...contextInputOf(ctx, undefined, 0) };
+  const input: BuildContextInput = { ...(await contextInputOf(ctx, undefined, 0)) };
   delete input.pinnedTokens;
   delete input.toolsFrozen;
   const counts: { tools: readonly FunctionTool[]; tokens: number }[] = [];
@@ -295,7 +295,7 @@ const withNewSkills = (arrivals: readonly ContextArrival[], activatedSkills: rea
 
 export const measureLayersWith = async (ctx: ClaimContext, activatedSkills: readonly ActivatedSkill[]): Promise<void> => {
   await advanceTouched(ctx);
-  const input = contextInputOf(ctx, undefined, 0);
+  const input = await contextInputOf(ctx, undefined, 0);
   delete input.pinnedTokens;
   await measureLayers(
     {
@@ -317,7 +317,7 @@ const rankedAmong = (ranked: readonly FunctionTool[], kept: readonly FunctionToo
 const buildOnce = async (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, level: number, trailing: readonly InputItem[]): Promise<BuiltContext> => {
   await advanceTouched(ctx);
   await prepareRecall(ctx);
-  const { input, offered, governing, kinds, joined } = offeredInputOf(ctx, wrapUp, level, 'active', trailing);
+  const { input, offered, governing, kinds, joined } = await offeredInputOf(ctx, wrapUp, level, 'active', trailing);
   const built = await buildContext(input, portsOf(ctx));
   if (wrapUp === undefined) {
     ctx.pinnedDigest.value ??= built.pinnedDigest;
@@ -622,7 +622,7 @@ export const pinnedFailureFor = (ctx: ClaimContext, error: PinnedOverflowError):
 export const governingFailureAtStart = async (ctx: ClaimContext): Promise<{ code: 'pinned_overflow'; message: string } | undefined> => {
   if (governingFor(ctx, sessionOf(ctx), 'live').active.length === 0) return undefined;
   try {
-    await measurePinned(contextInputOf(ctx, undefined, 0, 'live'), portsOf(ctx));
+    await measurePinned(await contextInputOf(ctx, undefined, 0, 'live'), portsOf(ctx));
     return undefined;
   } catch (error) {
     if (error instanceof PinnedOverflowError) return pinnedFailureFor(ctx, error);
@@ -772,7 +772,7 @@ export const compactOnly = async (ctx: ClaimContext, focus: string | undefined):
     try {
       await advanceTouched(ctx);
       await prepareRecall(ctx);
-      plan = (await buildContext({ ...contextInputOf(ctx, undefined, 0), compactNow: true }, portsOf(ctx))).compaction;
+      plan = (await buildContext({ ...(await contextInputOf(ctx, undefined, 0)), compactNow: true }, portsOf(ctx))).compaction;
     } catch (error) {
       if (error instanceof PinnedOverflowError) {
         await ctx.terminals.finish('FAILED', { error: pinnedFailureFor(ctx, error) });

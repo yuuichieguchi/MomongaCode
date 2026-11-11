@@ -35,7 +35,7 @@ const runTwoGreps = async (formatters: OutputFormatterName[]) => {
     callsStep([{ callId: 'call_g_3', name: 'Grep', args: { pattern: 'load' } }]),
     textStep('Done.'),
   );
-  const run = env.enqueue('Find the nulls');
+  const run = await env.enqueue('Find the nulls');
   expect(await env.runOnce(env.worker('worker-1', { toolList: () => [grepTool] }))).toBe('yielded');
   expect(env.run(run.id).status).toBe('COMPLETED');
   const requests = env.ofType(run.id, 'model.requested').map((request) => inputOf(request.body as { input?: unknown }));

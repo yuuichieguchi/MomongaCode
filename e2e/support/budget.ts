@@ -460,7 +460,7 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
       bypassAllowed: true,
       model: E2E_MODEL,
     });
-    const created = env.store.createRunAndEnqueue(session.id, { input: ACCEPTANCE_TASK, timeoutMs: RUNTIME_DEFAULTS.runTimeoutMs, limits: {}, pins: {} });
+    const created = await env.store.createRunAndEnqueue(session.id, { input: ACCEPTANCE_TASK, timeoutMs: RUNTIME_DEFAULTS.runTimeoutMs, limits: {}, pins: {} });
     if (created.kind !== 'created') throw new Error(`dry run: the run was not created (${created.kind})`);
     const runId = created.run.id;
     const worker = env.worker('planner', {

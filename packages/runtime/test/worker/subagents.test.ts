@@ -18,7 +18,7 @@ const agentsPortOf = (env: Env, models: readonly string[] = ['fm']): AgentsPort 
   createAgentsPort({
     home: env.home,
     fileSystem: createNodeSkillFileSystem(),
-    settings: { trusted: () => env.settings.trustedValue },
+    settings: { trusted: async () => env.settings.trustedValue },
     runs: createChildRuns({ store: env.store, modelViews: async () => fakeViewsOf(models) }),
   });
 
@@ -49,7 +49,7 @@ describe('worker subagents', () => {
     const env = await makeEnv();
     writeAgent(env, 'reviewer', 'tools: Echo\n', 'You review code. Be terse.');
     const worker = env.worker('w1', { agents: agentsPortOf(env) });
-    const parent = env.enqueue('Review my change');
+    const parent = await env.enqueue('Review my change');
     env.gateway.script.push(delegate('call-a'), textStep('child verdict: ship it'), textStep('parent done'));
 
     await env.runOnce(worker);
@@ -80,7 +80,7 @@ describe('worker subagents', () => {
   it('starts the child on the model the parent pinned when the session model is switched while the parent runs', async () => {
     const env = await makeEnv();
     writeAgent(env, 'reviewer');
-    const parent = env.enqueue('Write then review');
+    const parent = await env.enqueue('Write then review');
     env.gateway.script.push(
       callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: path.join(env.project, 'out.txt'), content: 'x' } }]),
       delegate('call-a'),
@@ -102,7 +102,7 @@ describe('worker subagents', () => {
     const env = await makeEnv({ mode: 'plan' });
     writeAgent(env, 'writer', 'tools: Write\n', 'You write files.');
     const worker = env.worker('w1', { agents: agentsPortOf(env) });
-    const parent = env.enqueue('Plan the change');
+    const parent = await env.enqueue('Plan the change');
     const target = path.join(env.project, 'planted.txt');
     env.gateway.script.push(
       delegate('call-a', 'writer', 'Create planted.txt'),
@@ -129,7 +129,7 @@ describe('worker subagents', () => {
     const env = await makeEnv();
     writeAgent(env, 'reviewer');
     const worker = env.worker('w1', { agents: agentsPortOf(env) });
-    const parent = env.enqueue('Review');
+    const parent = await env.enqueue('Review');
     env.gateway.script.push(delegate('call-a'));
     await env.runOnce(worker);
     const [child] = env.store.listChildRuns(parent.id);
@@ -149,7 +149,7 @@ describe('worker subagents', () => {
     writeAgent(env, 'reviewer');
     writeAgent(env, 'tester');
     const worker = env.worker('w1', { agents: agentsPortOf(env) });
-    const parent = env.enqueue('Do both');
+    const parent = await env.enqueue('Do both');
     env.gateway.script.push(
       callsStep([
         { callId: 'a', name: 'Agent', args: { description: 'r', prompt: 'review', subagent_type: 'reviewer' } },
@@ -173,7 +173,7 @@ describe('worker subagents', () => {
     const env = await makeEnv();
     writeAgent(env, 'reviewer');
     const worker = env.worker('w1', { agents: agentsPortOf(env) });
-    env.enqueue('Review');
+    await env.enqueue('Review');
     env.gateway.script.push(delegate('call-a'), textStep('fine'), textStep('done'));
     await env.runOnce(worker);
     await env.runOnce(worker);
@@ -186,7 +186,7 @@ describe('worker subagents', () => {
     const env = await makeEnv();
     writeAgent(env, 'reviewer', 'tools: Nonexistent\n');
     const worker = env.worker('w1', { agents: agentsPortOf(env) });
-    const parent = env.enqueue('Review');
+    const parent = await env.enqueue('Review');
     env.gateway.script.push(delegate('call-a'), textStep('sorry'));
     await env.runOnce(worker);
     await env.runOnce(worker);
@@ -200,7 +200,7 @@ describe('worker subagents', () => {
     const env = await makeEnv();
     writeAgent(env, 'reviewer', 'model: ghost\n');
     const worker = env.worker('w1', { agents: agentsPortOf(env, ['fm']) });
-    const parent = env.enqueue('Review');
+    const parent = await env.enqueue('Review');
     env.gateway.script.push(delegate('call-a'), textStep('ok'));
     await env.runOnce(worker);
     expect(env.store.listChildRuns(parent.id)).toEqual([]);
@@ -212,7 +212,7 @@ describe('worker subagents', () => {
     writeAgent(env, 'reviewer');
     const worker = env.worker('w1', { agents: agentsPortOf(env) });
     const limit = 200_000;
-    const parent = env.enqueue('Review', { limits: { maxTotalTokens: limit } });
+    const parent = await env.enqueue('Review', { limits: { maxTotalTokens: limit } });
     env.gateway.script.push(
       callsStep([{ callId: 'a', name: 'Agent', args: { description: 'r', prompt: 'review', subagent_type: 'reviewer' } }], usageOf(10, 5)),
       textStep('child spent a lot', { usage: usageOf(limit - 115, 100) }),
@@ -232,7 +232,7 @@ describe('worker subagents', () => {
     const env = await makeEnv();
     writeAgent(env, 'reviewer');
     const worker = env.worker('w1', { agents: agentsPortOf(env) });
-    const parent = env.enqueue('Review');
+    const parent = await env.enqueue('Review');
     env.gateway.script.push(delegate('call-a'));
     await env.runOnce(worker);
     const [child] = env.store.listChildRuns(parent.id);
@@ -254,7 +254,7 @@ describe('worker subagents', () => {
     const env = await makeEnv();
     writeAgent(env, 'reviewer');
     const worker = env.worker('w1', { agents: agentsPortOf(env) });
-    const parent = env.enqueue('Review');
+    const parent = await env.enqueue('Review');
     env.gateway.script.push(delegate('call-a'), textStep('child verdict: ship it'));
     await env.runOnce(worker);
     await env.runOnce(worker);
@@ -280,7 +280,7 @@ describe('worker subagents', () => {
     const hook = (event: string) => [{ hooks: [{ type: 'command' as const, command: `echo ${event} >> ${counter}` }] }];
     env.settings.hooksValue = { SessionStart: hook('SessionStart'), UserPromptSubmit: hook('UserPromptSubmit'), Stop: hook('Stop') };
     const worker = env.worker('w1', { agents: agentsPortOf(env), tools: { sandboxes: fixedSandboxBindings(createUnsandboxed({ killGraceMs: 200 })) } });
-    const parent = env.enqueue('Review');
+    const parent = await env.enqueue('Review');
     env.gateway.script.push(delegate('call-a'), textStep('child verdict'), textStep('parent done'));
 
     await env.runOnce(worker);
@@ -297,7 +297,7 @@ describe('worker subagents', () => {
     const env = await makeEnv();
     writeAgent(env, 'reviewer');
     const worker = env.worker('w1', { agents: agentsPortOf(env) });
-    const parent = env.enqueue('Review');
+    const parent = await env.enqueue('Review');
     env.gateway.script.push(delegate('call-a'));
     await env.runOnce(worker);
     const [child] = env.store.listChildRuns(parent.id);
@@ -313,7 +313,7 @@ describe('worker subagents', () => {
     const env = await makeEnv();
     writeAgent(env, 'reviewer');
     const crashing = env.worker('w1', { agents: agentsPortOf(env) });
-    const parent = env.enqueue('Review');
+    const parent = await env.enqueue('Review');
     env.gateway.script.push(delegate('call-a'), textStep('child text'), textStep('parent done'));
     await env.runOnce(crashing);
     const [child] = env.store.listChildRuns(parent.id);
@@ -336,7 +336,7 @@ describe('worker subagents', () => {
     env.settings.trustedValue = false;
     writeAgent(env, 'reviewer');
     const worker = env.worker('w1', { agents: agentsPortOf(env) });
-    const parent = env.enqueue('Review');
+    const parent = await env.enqueue('Review');
     env.gateway.script.push(textStep('ok'));
     await env.runOnce(worker);
     expect(toolNames(env, 0)).not.toContain('Agent');

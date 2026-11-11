@@ -37,7 +37,7 @@ describe('worker gateway cancel wiring', () => {
     const env = await makeEnv();
     const blocked = gated(textStep('never finished', { chunks: ['partial ', 'answer'] }), 4);
     env.gateway.script.push(blocked);
-    const run = env.enqueue('Long answer');
+    const run = await env.enqueue('Long answer');
     const statuses = recordStatusAtCancel(env, run.id);
     const running = env.runOnce(env.worker('worker-1', { cancelPollMs: 10 }));
     await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
@@ -53,7 +53,7 @@ describe('worker gateway cancel wiring', () => {
 
   it('cancels the live compaction key upstream when the cancel lands while compacting', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
-    const run = env.enqueue('Task one');
+    const run = await env.enqueue('Task one');
     await env.seed(
       run.id,
       [
@@ -88,7 +88,7 @@ describe('worker gateway cancel wiring', () => {
 
   it('cancels the folded in-flight model key on a CANCELLING claim', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     await seedInFlightRequest(env, run.id);
     expect((await env.cancel(run.id)).status).toBe('CANCELLING');
     const statuses = recordStatusAtCancel(env, run.id);
@@ -103,7 +103,7 @@ describe('worker gateway cancel wiring', () => {
 
   it('does not cancel upstream on a CANCELLING claim with no in-flight model request', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     await env.seed(run.id, [], 'crash');
     expect((await env.cancel(run.id)).status).toBe('CANCELLING');
 
@@ -115,7 +115,7 @@ describe('worker gateway cancel wiring', () => {
 
   it('reaches CANCELLED with a notice when the upstream cancel rejects', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     await seedInFlightRequest(env, run.id);
     await env.cancel(run.id);
     env.gateway.cancelHook = async () => {
@@ -133,7 +133,7 @@ describe('worker gateway cancel wiring', () => {
 
   it('leaves the bound of the upstream cancel to the gateway client and aborts it only with the claim', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     await seedInFlightRequest(env, run.id);
     await env.cancel(run.id);
     const abortedAtSettle: boolean[] = [];
@@ -152,7 +152,7 @@ describe('worker gateway cancel wiring', () => {
   it('does not cancel upstream after a fatal gateway failure', async () => {
     const env = await makeEnv();
     env.gateway.script.push({ events: [], error: new GatewayRequestError({ status: 401, type: 'invalid_request', code: 'authentication_failed', message: 'rejected' }) });
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await env.runOnce(env.worker());
 
@@ -164,7 +164,7 @@ describe('worker gateway cancel wiring', () => {
     const env = await makeEnv();
     const blocked = gated(textStep('late answer', { chunks: ['late ', 'answer'] }), 4);
     env.gateway.script.push(blocked);
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const running = env.runOnce(env.worker('worker-a', { heartbeatMs: 10, cancelPollMs: 10 }));
     await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
 

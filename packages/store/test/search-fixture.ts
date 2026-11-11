@@ -41,9 +41,9 @@ export const stepEvents = (step: number, spec: StepSpec): RunEventPayload[] => {
   ];
 };
 
-export const openRun = (store: RuntimeStore, cwd: string, task: string, steps: readonly StepSpec[] = []) => {
+export const openRun = async (store: RuntimeStore, cwd: string, task: string, steps: readonly StepSpec[] = []) => {
   const session = newSession(store, cwd);
-  const run = enqueue(store, session.id, task);
+  const run = await enqueue(store, session.id, task);
   const claim = store.claim(`worker-${run.id}`);
   if (claim?.runId !== run.id) throw new Error(`expected to claim ${run.id}`);
   const appended = store.append(claim, steps.flatMap((spec, index) => stepEvents(index + 1, spec)));
@@ -64,7 +64,7 @@ export const openRun = (store: RuntimeStore, cwd: string, task: string, steps: r
   return { session, run, claim, finish };
 };
 
-export const finishedRun = async (store: RuntimeStore, cwd: string, task: string, steps: readonly StepSpec[] = [], outcome: Outcome = 'COMPLETED'): Promise<Run> => openRun(store, cwd, task, steps).finish(outcome);
+export const finishedRun = async (store: RuntimeStore, cwd: string, task: string, steps: readonly StepSpec[] = [], outcome: Outcome = 'COMPLETED'): Promise<Run> => (await openRun(store, cwd, task, steps)).finish(outcome);
 
 export const indexAll = async (store: RuntimeStore): Promise<void> => {
   await store.search.indexBatch({ limit: 1000, redactor });

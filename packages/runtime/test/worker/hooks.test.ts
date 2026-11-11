@@ -21,7 +21,7 @@ describe('worker hooks', () => {
   it('fails the run with a typed code when a UserPromptSubmit hook blocks the prompt, without calling the model', async () => {
     const env = await makeEnv();
     env.settings.hooksValue = hooks('UserPromptSubmit', 'echo "no secrets in prompts" >&2; exit 2');
-    const run = env.enqueue('here is my password');
+    const run = await env.enqueue('here is my password');
     await env.runOnce(workerWithProcesses(env));
     expect(env.run(run.id)).toMatchObject({ status: 'FAILED', error: { code: 'user_prompt_blocked', message: 'no secrets in prompts' } });
     expect(env.gateway.streams).toHaveLength(0);
@@ -35,7 +35,7 @@ describe('worker hooks', () => {
       ...hooks('SessionStart', 'echo "session-context"', 'startup'),
     };
     env.gateway.script.push(textStep('Hi.'));
-    const run = env.enqueue('hello');
+    const run = await env.enqueue('hello');
     await env.runOnce(workerWithProcesses(env));
     expect(env.run(run.id).status).toBe('COMPLETED');
     const sent = JSON.stringify(env.gateway.streams[0]?.body.input);
@@ -48,7 +48,7 @@ describe('worker hooks', () => {
     const env = await makeEnv();
     env.settings.hooksValue = hooks('Stop', 'echo "keep going" >&2; exit 2');
     for (let attempt = 0; attempt < 9; attempt += 1) env.gateway.script.push(textStep(`answer ${attempt}`));
-    const run = env.enqueue('hello');
+    const run = await env.enqueue('hello');
     await env.runOnce(workerWithProcesses(env));
     expect(env.run(run.id).status).toBe('COMPLETED');
     const feedback = env.ofType(run.id, 'user.message').filter((event) => event.text.startsWith(STOP_HOOK_FEEDBACK_PREFIX));
@@ -61,7 +61,7 @@ describe('worker hooks', () => {
     const env = await makeEnv();
     env.settings.hooksValue = hooks('Stop', 'true');
     env.gateway.script.push(textStep('done'));
-    const run = env.enqueue('hello');
+    const run = await env.enqueue('hello');
     await env.runOnce(workerWithProcesses(env));
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.ofType(run.id, 'hook.completed')).toMatchObject([{ hookEvent: 'Stop', outcome: 'success' }]);
@@ -71,7 +71,7 @@ describe('worker hooks', () => {
     const env = await makeEnv();
     const counter = path.join(env.project, 'stop-runs.txt');
     env.settings.hooksValue = hooks('Stop', `echo run >> ${counter}`);
-    const run = env.enqueue('hello');
+    const run = await env.enqueue('hello');
     await env.seed(
       run.id,
       [
@@ -93,7 +93,7 @@ describe('worker hooks', () => {
     const target = path.join(env.project, 'out.txt');
     env.settings.hooksValue = hooks('PreToolUse', 'echo "writes are frozen" >&2; exit 2', 'Write');
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } }]), textStep('Blocked.'));
-    const run = env.enqueue('write it');
+    const run = await env.enqueue('write it');
     await env.runOnce(workerWithProcesses(env));
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(fs.existsSync(target)).toBe(false);
@@ -106,7 +106,7 @@ describe('worker hooks', () => {
     const target = path.join(env.project, 'out.txt');
     env.settings.hooksValue = { PreToolUse: [{ hooks: [{ type: 'command', command: 'sleep 30', timeout: 1 }] }] };
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } }]), textStep('Written.'));
-    const run = env.enqueue('write it');
+    const run = await env.enqueue('write it');
     await env.runOnce(workerWithProcesses(env));
     expect(env.ofType(run.id, 'hook.completed')).toMatchObject([{ outcome: 'timed_out' }]);
     expect(fs.existsSync(target)).toBe(false);
@@ -123,7 +123,7 @@ describe('worker hooks', () => {
     const target = path.join(env.project, 'out.txt');
     env.settings.hooksValue = hooks('PreToolUse', `echo '${haltJson}'`, 'Write');
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } }]));
-    const run = env.enqueue('write it');
+    const run = await env.enqueue('write it');
     await env.runOnce(workerWithProcesses(env));
     expect(env.run(run.id)).toMatchObject({ status: 'FAILED', error: { code: 'hook_stopped', message: 'maintenance window' } });
     expect(fs.existsSync(target)).toBe(false);
@@ -138,7 +138,7 @@ describe('worker hooks', () => {
     const json = JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', updatedInput: { file_path: rewritten, content: 'y' } } });
     env.settings.hooksValue = hooks('PreToolUse', `echo '${json}'`, 'Write');
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: original, content: 'x' } }]), textStep('done'));
-    const run = env.enqueue('write it');
+    const run = await env.enqueue('write it');
     await env.runOnce(workerWithProcesses(env));
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(fs.existsSync(original)).toBe(false);
@@ -148,7 +148,7 @@ describe('worker hooks', () => {
   it('fails the run with hook_stopped when a SessionStart hook says continue false, before any model call', async () => {
     const env = await makeEnv();
     env.settings.hooksValue = hooks('SessionStart', `echo '${haltJson}'`, 'startup');
-    const run = env.enqueue('hello');
+    const run = await env.enqueue('hello');
     await env.runOnce(workerWithProcesses(env));
     expect(env.run(run.id)).toMatchObject({ status: 'FAILED', error: { code: 'hook_stopped' } });
     expect(env.gateway.streams).toHaveLength(0);
@@ -158,7 +158,7 @@ describe('worker hooks', () => {
     const env = await makeEnv();
     env.settings.hooksValue = hooks('Stop', `echo '${haltJson}'`);
     env.gateway.script.push(textStep('done'));
-    const run = env.enqueue('hello');
+    const run = await env.enqueue('hello');
     await env.runOnce(workerWithProcesses(env));
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.ofType(run.id, 'notice').some((notice) => notice.message.includes('maintenance window'))).toBe(true);
@@ -170,7 +170,7 @@ describe('worker hooks', () => {
     const counter = path.join(env.project, 'hook-runs.txt');
     env.settings.hooksValue = hooks('PreToolUse', `echo run >> ${counter}`, 'Write');
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } }]), textStep('written'));
-    const run = env.enqueue('write it');
+    const run = await env.enqueue('write it');
     await env.runOnce(workerWithProcesses(env));
     await env.resolveApproval(run.id, 'allow_once');
     await env.runOnce(workerWithProcesses(env));

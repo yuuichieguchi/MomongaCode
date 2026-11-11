@@ -61,7 +61,7 @@ describe('startSearchSweeper', () => {
     const clock = createFakeClock(START_MS);
     const timers = createFakeTimers(clock);
     const done = [await finishedRun(store, '/work/a', 'alphaterm one'), await finishedRun(store, '/work/a', 'alphaterm two'), await finishedRun(store, '/work/a', 'alphaterm three')];
-    openRun(store, '/work/a2', 'alphaterm live');
+    await openRun(store, '/work/a2', 'alphaterm live');
     const sweeper = startSearchSweeper({ store, timers, intervalMs: 1000, batchSize: 1, redactor, onError: (error: unknown) => { throw error; } });
     const found = () => anchorsOf(store.search.query({ trusted: false, project: '/work/a' }, { query: 'alphaterm', scope: 'project' })).length;
     timers.advance(1000);

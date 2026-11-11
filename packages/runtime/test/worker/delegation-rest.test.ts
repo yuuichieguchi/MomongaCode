@@ -19,7 +19,7 @@ describe('a run under a mandate is quiescent when every call the model tries is 
   it('reports why it waits and waits for a person instead of asking the model again, then goes on when the held call is decided', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([write(env, 'call_w', 'out.txt', 'approved content')]), callsStep([shell('call_same', 'cat out.txt')]), textStep('All done.'));
-    const run = env.enqueue('Write then read', { mandate: mandateAsking(env, 'out.txt') });
+    const run = await env.enqueue('Write then read', { mandate: mandateAsking(env, 'out.txt') });
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -42,7 +42,7 @@ describe('a run under a mandate is quiescent when every call the model tries is 
   it('takes the next model step when one call of the response ran beside the blocked one', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([write(env, 'call_w', 'out.txt')]), callsStep([shell('call_same', 'cat out.txt'), echo('call_other', 'elsewhere')]), textStep('Waiting.'));
-    const run = env.enqueue('Write then read', { mandate: mandateAsking(env, 'out.txt') });
+    const run = await env.enqueue('Write then read', { mandate: mandateAsking(env, 'out.txt') });
 
     await env.runOnce(env.worker());
 
@@ -54,7 +54,7 @@ describe('a worker that stops right after the approval of a held call was record
   it('leaves a hold, not a blocking approval: the next worker takes the next model step with the placeholder and one approval is pending', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([write(env, 'call_w', 'out.txt'), echo('call_r', 'sibling')]), textStep('Waiting for the write.'));
-    const run = env.enqueue('Write and read', { mandate: mandateAsking(env, 'out.txt') });
+    const run = await env.enqueue('Write and read', { mandate: mandateAsking(env, 'out.txt') });
     const stopsAfterApproval = new Proxy(env.store, {
       get: (target, property, receiver) => {
         if (property !== 'requestApproval') return Reflect.get(target, property, receiver) as unknown;
@@ -93,7 +93,7 @@ describe('the model is told its mandate', () => {
   it('in a context item of every model request of the run, and in no request of a run without a mandate', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([echo('call_r', 'one')]), textStep('Done.'));
-    const run = env.enqueue('Echo', { mandate: mandateAsking(env, 'out.txt') });
+    const run = await env.enqueue('Echo', { mandate: mandateAsking(env, 'out.txt') });
     await env.runOnce(env.worker());
 
     const bodies = env.ofType(run.id, 'model.requested').map((event) => JSON.stringify(event.body));
@@ -108,7 +108,7 @@ describe('the model is told its mandate', () => {
 
     const plain = await makeEnv();
     plain.gateway.script.push(textStep('Done.'));
-    const without = plain.enqueue('Say done');
+    const without = await plain.enqueue('Say done');
     await plain.runOnce(plain.worker());
     expect(JSON.stringify(plain.ofType(without.id, 'model.requested')[0]?.body)).not.toContain('works under a mandate');
   });
@@ -164,7 +164,7 @@ describe('the observed effect of an operation is recorded with its result', () =
       execute: async () => ({ status: 'completed', output: 'pushed', effect }),
     });
     env.gateway.script.push(callsStep([{ callId: 'call_e', name: 'Effecting', args: {} }]), textStep('Done.'));
-    const run = env.enqueue('Push');
+    const run = await env.enqueue('Push');
 
     await env.runOnce(env.worker('worker-1', { toolList: () => [...env.toolbox.tools(), effecting] }));
 

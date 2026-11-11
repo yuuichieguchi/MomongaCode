@@ -152,16 +152,16 @@ describe('the facts a reader needs are kept in RunState when their events are ap
 
 const idsOf = (run: { id: string; sessionId: string }) => ({ runId: run.id, sessionId: run.sessionId });
 
-const storedRun = () => {
+const storedRun = async () => {
   const { dbPath, clock, store } = harness();
-  const run = enqueue(store, newSession(store).id, 'do the task');
+  const run = await enqueue(store, newSession(store).id, 'do the task');
   const claim = mustClaim(store, 'w1');
   return { dbPath, clock, store, run, claim };
 };
 
 describe('recovery: the records survive a snapshot and a crash, and agree with a fold of the journal', () => {
-  it('writes a snapshot state version above 13, since the state gained fields', () => {
-    const { dbPath, store, run, claim } = storedRun();
+  it('writes a snapshot state version above 13, since the state gained fields', async () => {
+    const { dbPath, store, run, claim } = await storedRun();
     expect(store.append(claim, JOURNAL.slice(1)).kind).toBe('ok');
     const events = store.readRunEvents(run.id, 0, 1000);
     expect(store.writeSnapshot(claim, events.at(-1)!.seq, foldAll(events, idsOf(run)))).toEqual({ kind: 'ok' });
@@ -169,8 +169,8 @@ describe('recovery: the records survive a snapshot and a crash, and agree with a
     expect((JSON.parse(stored.state_json) as { stateVersion: number }).stateVersion).toBeGreaterThan(13);
   });
 
-  it('treats a version 13 snapshot, written before the records, as absent so that the records are folded from the journal', () => {
-    const { dbPath, store, run, claim } = storedRun();
+  it('treats a version 13 snapshot, written before the records, as absent so that the records are folded from the journal', async () => {
+    const { dbPath, store, run, claim } = await storedRun();
     expect(store.append(claim, JOURNAL.slice(1)).kind).toBe('ok');
     const events = store.readRunEvents(run.id, 0, 1000);
     expect(store.writeSnapshot(claim, events.at(-1)!.seq, foldAll(events, idsOf(run)))).toEqual({ kind: 'ok' });
@@ -180,8 +180,8 @@ describe('recovery: the records survive a snapshot and a crash, and agree with a
     expect(recordsOf(loaded.tail.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId })))).toEqual(recordsOf(foldAll(events, idsOf(run))));
   });
 
-  it('after a crash between a snapshot and later appends, snapshot plus tail gives the same records as a fold of the whole journal', () => {
-    const { dbPath, clock, store, run, claim } = storedRun();
+  it('after a crash between a snapshot and later appends, snapshot plus tail gives the same records as a fold of the whole journal', async () => {
+    const { dbPath, clock, store, run, claim } = await storedRun();
     const split = 12;
     expect(store.append(claim, JOURNAL.slice(1, split)).kind).toBe('ok');
     const early = store.readRunEvents(run.id, 0, 1000);

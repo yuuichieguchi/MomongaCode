@@ -3,9 +3,10 @@ import { enqueue, harness, mustRun } from './helpers.ts';
 import { indexAll, projectDir } from './search-fixture.ts';
 import type { RuntimeStore } from '@momonga/store';
 import { newSession } from './helpers.ts';
+import { NEVER_CANCELLED } from '@momonga/testkit';
 
 const finishInSession = async (store: RuntimeStore, sessionId: string, task: string): Promise<string> => {
-  const run = enqueue(store, sessionId, task);
+  const run = await enqueue(store, sessionId, task);
   const claim = store.claim(`worker-${run.id}`);
   if (claim?.runId !== run.id) throw new Error(`expected to claim ${run.id}`);
   const finished = await store.transition(claim, ['RUNNING'], 'COMPLETED');
@@ -19,12 +20,12 @@ describe('the origin of a run in a grouped session', () => {
     const project = projectDir(dir, 'a');
     const session = newSession(store, project);
     const before = await finishInSession(store, session.id, 'quokka before trust');
-    store.trust.set(project, 'trusted');
+    await store.trust.setAsked(project, 'trusted', NEVER_CANCELLED);
     clock.advance(1000);
     const after = await finishInSession(store, session.id, 'quokka after trust');
     await indexAll(store);
-    store.trust.set(project, 'untrusted');
-    store.trust.set(project, 'trusted');
+    await store.trust.setAsked(project, 'untrusted', NEVER_CANCELLED);
+    await store.trust.setAsked(project, 'trusted', NEVER_CANCELLED);
     const result = store.search.query({ trusted: true, project }, { query: 'quokka', scope: 'project' });
     expect(result.sessions).toHaveLength(1);
     const [grouped] = result.sessions;

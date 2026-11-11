@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { HISTORY_READ_PAGE_EVENTS } from '@momonga/store';
 import { anchorsOf, harness } from './helpers.ts';
 import { finishedRun, indexAll, projectDir, redactor } from './search-fixture.ts';
+import { NEVER_CANCELLED } from '@momonga/testkit';
 
 const OWN = { trusted: true, project: '/work/a' } as const;
 
@@ -58,11 +59,11 @@ describe('the origin of a run', () => {
   it('is the trust decision at run creation, whatever the decision is when the run is indexed', async () => {
     const { store, dir } = harness();
     const [a, b] = [projectDir(dir, 'a'), projectDir(dir, 'b')];
-    store.trust.set(a, 'trusted');
+    await store.trust.setAsked(a, 'trusted', NEVER_CANCELLED);
     const trustedThen = await finishedRun(store, a, 'needleterm a');
     const untrustedThen = await finishedRun(store, b, 'needleterm b');
-    store.trust.set(a, 'untrusted');
-    store.trust.set(b, 'trusted');
+    await store.trust.setAsked(a, 'untrusted', NEVER_CANCELLED);
+    await store.trust.setAsked(b, 'trusted', NEVER_CANCELLED);
     await indexAll(store);
     const origins = (project: string) => Object.fromEntries(anchorsOf(store.search.query({ trusted: true, project }, { query: 'needleterm', scope: 'project' })).map((anchor) => [anchor.runId, anchor.origin]));
     expect(origins(a)).toEqual({ [trustedThen.id]: 'trusted' });
