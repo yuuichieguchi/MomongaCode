@@ -25,7 +25,7 @@ describe('the settings of a project are loaded under the signal of the asker', (
       },
     };
     await loadSettings({ signal, home: tree.home, projectDir: tree.project, cli: {}, trust });
-    await loadMcpServers({ signal, home: tree.home, projectDir: tree.project, trust, env: {} });
+    await loadMcpServers({ signal, home: tree.home, projectDir: tree.project, trust, env: {}, referenceEnv: {} });
     expect(asked).toEqual([signal, signal, signal]);
   });
 

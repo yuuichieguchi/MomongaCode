@@ -26,7 +26,7 @@ describe('a JSON file that begins with a byte order mark', () => {
     const tree = makeTree();
     writeText(userSettingsPath(tree), JSON.stringify({ enableAllProjectMcpServers: true }));
     writeText(mcpJsonPath(tree), marked({ mcpServers: { docs: { command: 'docs-server' } } }));
-    const result = await loadMcpServers({ signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
+    const result = await loadMcpServers({ signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, referenceEnv: {} });
     expect(result.failed).toEqual([]);
     expect(result.enabled.map((entry) => entry.name)).toEqual(['docs']);
   });

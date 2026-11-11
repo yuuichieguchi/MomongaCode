@@ -24,6 +24,7 @@ export type McpStdioServerConfig = {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+  secretEnv?: Record<string, string>;
   cwd?: string;
 };
 

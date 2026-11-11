@@ -64,7 +64,7 @@ type Attempt = {
 
 export const loadSessionMcpServers = (
   options: { home: string; settings: Pick<SettingsComposition, 'trustOracle' | 'keptLayers'> },
-  session: Pick<Session, 'cwd' | 'mcpServers'>,
+  session: Pick<Session, 'cwd' | 'mcpServers' | 'env'>,
   env: ToolEnv,
   user: UserLayer,
   use: SettingsUse,
@@ -75,6 +75,7 @@ export const loadSessionMcpServers = (
     projectDir: session.cwd,
     trust: options.settings.trustOracle,
     env,
+    referenceEnv: session.env,
     signal,
     user,
     kept: options.settings.keptLayers(use),

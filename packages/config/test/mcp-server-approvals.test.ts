@@ -7,7 +7,7 @@ const signal = new AbortController().signal;
 const DOCS = { command: 'npx', args: ['docs-server', '--port', '${DOCS_PORT:-4000}'], env: { MODE: 'read' } };
 
 const loadWith = async (tree: ReturnType<typeof makeTree>, env: Record<string, string> = {}) =>
-  loadMcpServers({ signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env });
+  loadMcpServers({ signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env, referenceEnv: env });
 
 const approve = (tree: ReturnType<typeof makeTree>, config: unknown): void => {
   writeJson(userSettingsPath(tree), { enabledMcpjsonServers: [{ name: 'docs', digest: approvalDigestOf(config) }] });

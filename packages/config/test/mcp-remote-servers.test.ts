@@ -9,7 +9,7 @@ describe('remote MCP servers in .mcp.json', () => {
     const tree = makeTree();
     writeJson(localSettingsPath(tree), { enableAllProjectMcpServers: true });
     writeJson(mcpJsonPath(tree), { mcpServers: { remote: REMOTE } });
-    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: distrusting(), env: {} });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: distrusting(), env: {}, referenceEnv: {} });
     expect(result.enabled).toEqual([]);
     expect(result.pendingApproval).toEqual([]);
     expect(result.warnings.join('\n')).toContain('was not read');
@@ -18,7 +18,7 @@ describe('remote MCP servers in .mcp.json', () => {
   it('waits for the same per-server approval as a stdio entry', async () => {
     const tree = makeTree();
     writeJson(mcpJsonPath(tree), { mcpServers: { remote: REMOTE, local: { command: 'srv' } } });
-    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, referenceEnv: {} });
     expect(result.enabled).toEqual([]);
     expect(result.pendingApproval.map((entry) => [entry.name, entry.scope])).toEqual([
       ['remote', 'project'],
@@ -31,7 +31,7 @@ describe('remote MCP servers in .mcp.json', () => {
     const remote = { ...REMOTE, oauth: { clientId: 'abc', scope: 'read', callbackPort: 33418 } };
     writeJson(localSettingsPath(tree), { enabledMcpjsonServers: [{ name: 'remote', digest: approvalDigestOf(remote) }] });
     writeJson(mcpJsonPath(tree), { mcpServers: { remote } });
-    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, referenceEnv: {} });
     expect(result.enabled).toEqual([{ name: 'remote', scope: 'project', config: { ...REMOTE, oauth: { clientId: 'abc', scope: 'read', callbackPort: 33418 } } }]);
   });
 
@@ -39,7 +39,7 @@ describe('remote MCP servers in .mcp.json', () => {
     const tree = makeTree();
     writeJson(localSettingsPath(tree), { enableAllProjectMcpServers: true });
     writeJson(mcpJsonPath(tree), { mcpServers: { remote: { ...REMOTE, headers: { Authorization: 'Bearer ${GITHUB_TOKEN}' } } } });
-    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { GITHUB_TOKEN: 'ghp_fake' } });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { GITHUB_TOKEN: 'ghp_fake' }, referenceEnv: { GITHUB_TOKEN: 'ghp_fake' } });
     expect(result.enabled).toEqual([]);
     expect(result.warnings.join('\n')).toContain('must not expand credential variable GITHUB_TOKEN');
   });
@@ -52,7 +52,7 @@ describe('remote MCP servers in .mcp.json', () => {
     const tree = makeTree();
     writeJson(localSettingsPath(tree), { enableAllProjectMcpServers: true });
     writeJson(mcpJsonPath(tree), { mcpServers: { bad: entry, good: REMOTE } });
-    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, referenceEnv: {} });
     expect(result.enabled.map((server) => server.name)).toEqual(['good']);
     expect(result.warnings.join('\n')).toContain('skipped MCP server "bad"');
   });
@@ -63,7 +63,7 @@ describe('the deprecated HTTP+SSE transport', () => {
     const tree = makeTree();
     writeJson(localSettingsPath(tree), { enableAllProjectMcpServers: true });
     writeJson(mcpJsonPath(tree), { mcpServers: { legacy: { type: 'sse', url: 'https://mcp.example.com/sse' }, good: REMOTE } });
-    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, referenceEnv: {} });
     expect(result.enabled.map((server) => server.name)).toEqual(['good']);
     expect(result.warnings.join('\n')).toContain('deprecated HTTP+SSE transport');
     expect(result.warnings.join('\n')).toContain('use type "http"');
@@ -72,6 +72,6 @@ describe('the deprecated HTTP+SSE transport', () => {
   it('is rejected in user settings with the same message', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { mcpServers: { legacy: { type: 'sse', url: 'https://mcp.example.com/sse' } } });
-    await expect(loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} })).rejects.toThrow(/deprecated HTTP\+SSE transport/);
+    await expect(loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, referenceEnv: {} })).rejects.toThrow(/deprecated HTTP\+SSE transport/);
   });
 });

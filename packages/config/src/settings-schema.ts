@@ -14,6 +14,8 @@ const STRING_ARRAY = { type: 'array', items: { type: 'string' } } as const;
 const NON_EMPTY_STRING_ARRAY = { type: 'array', items: { type: 'string', minLength: 1 } } as const;
 const STRING_MAP = { type: 'object', additionalProperties: { type: 'string' } } as const;
 
+export const ENV_NAME_PATTERN = '^[A-Za-z_][A-Za-z0-9_]*$';
+
 export const MCP_SERVER_SCHEMA = {
   oneOf: [
     {
@@ -23,6 +25,7 @@ export const MCP_SERVER_SCHEMA = {
         command: { type: 'string', minLength: 1 },
         args: STRING_ARRAY,
         env: STRING_MAP,
+        secretEnv: { type: 'object', propertyNames: { pattern: ENV_NAME_PATTERN }, additionalProperties: { type: 'string', pattern: SECRET_NAME_PATTERN } },
         cwd: { type: 'string' },
       },
       required: ['command'],
@@ -50,7 +53,6 @@ export const MCP_SERVER_SCHEMA = {
   ],
 } as const;
 
-export const ENV_NAME_PATTERN = '^[A-Za-z_][A-Za-z0-9_]*$';
 export const PROVIDER_NAME_PATTERN_SOURCE = PROVIDER_NAME_PATTERN.source;
 
 export const MIN_RETENTION_DAYS = 1;

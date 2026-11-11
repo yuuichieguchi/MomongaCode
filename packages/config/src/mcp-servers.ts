@@ -28,6 +28,7 @@ export type LoadMcpServersOptions = {
   projectDir: string;
   trust: TrustOracle;
   env: Readonly<Record<string, string | undefined>>;
+  referenceEnv: Readonly<Record<string, string | undefined>>;
   signal: AbortSignal;
   user?: UserLayer;
   kept?: KeptLayers;
@@ -56,7 +57,7 @@ class CredentialVariableError extends Error {
 }
 
 const USER_EXPANSION_NOTE =
-  'user-scope ${VAR} expansion sees only the environment it is given (in the runtime, the credential-stripped session environment); keep MCP credentials as literal values in user settings until the keychain store exists';
+  'an MCP credential is a reference: write ${NAME} in env or headers of a server in the user settings to pass that variable of your environment, or name an entry of the secret store (momonga secret set) in secretEnv';
 
 const assertServerName = (name: string, source: string): void => {
   const problem = mcpServerNameProblem(name);
@@ -146,6 +147,9 @@ const evaluateProjectServer = (
   try {
     assertServerName(name, mcpJson);
     const config = assertMcpServer(rawConfig, mcpJson, name);
+    if ('secretEnv' in config && config.secretEnv !== undefined) {
+      return { kind: 'skipped', warning: `${mcpJson}: skipped MCP server ${JSON.stringify(name)}: secretEnv names an entry of the person's secret store and is only honored in user settings` };
+    }
     const digest = approvalDigestOf(config);
     if (!isApproved(digest)) return { kind: 'ok', config, digest, approved: false };
     return { kind: 'ok', config: expandServer(config, env, name, mcpJson, refuse), digest, approved: true };
@@ -201,7 +205,7 @@ export const assertSessionMcpServers = (value: unknown): Record<string, McpServe
   );
 };
 
-export const loadMcpServers = async ({ home, projectDir, trust, env, signal, user, kept, sessionServers }: LoadMcpServersOptions): Promise<LoadMcpServersResult> => {
+export const loadMcpServers = async ({ home, projectDir, trust, env, referenceEnv, signal, user, kept, sessionServers }: LoadMcpServersOptions): Promise<LoadMcpServersResult> => {
   const asker = askerOf(signal);
   const loaded = await loadLayersForUser({ home, projectDir, trust, asker, ...(user === undefined ? {} : { user }), ...(kept === undefined ? {} : { kept }) });
   const warnings = [...loaded.warnings];
@@ -222,7 +226,7 @@ export const loadMcpServers = async ({ home, projectDir, trust, env, signal, use
     for (const [name, config] of Object.entries(userSettings.settings.mcpServers ?? {})) {
       try {
         seen.add(name);
-        const expanded = tryExpand(() => expandServer(config, env, name, userSettings.source, allowAnyVariable));
+        const expanded = tryExpand(() => expandServer(config, referenceEnv, name, userSettings.source, allowAnyVariable));
         if ('config' in expanded) {
           enabled.push({ name, scope: 'user', config: expanded.config });
         } else {

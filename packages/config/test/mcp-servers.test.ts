@@ -30,7 +30,7 @@ describe('loadMcpServers', () => {
     };
     writeJson(localSettingsPath(tree), { enabledMcpjsonServers: [{ name: 'tools', digest: approvalDigestOf(tools) }] });
     writeJson(mcpJsonPath(tree), { mcpServers: { tools } });
-    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV, referenceEnv: ENV });
     expect(result.enabled).toEqual([
       {
         name: 'remote',
@@ -52,7 +52,7 @@ describe('loadMcpServers', () => {
     writeJson(mcpJsonPath(tree), {
       mcpServers: { db: { command: 'db-mcp', args: ['${DB_HOST}'] }, ok: { command: 'ok-mcp', args: ['${PORT}'] } },
     });
-    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV, referenceEnv: ENV });
     expect(result.enabled).toEqual([{ name: 'ok', scope: 'project', config: { command: 'ok-mcp', args: ['9000'] } }]);
     expect(result.pendingApproval).toEqual([]);
     expect(result.failed).toHaveLength(1);
@@ -68,7 +68,7 @@ describe('loadMcpServers', () => {
         files: { command: '${HOME_BIN}/files' },
       },
     });
-    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV, referenceEnv: ENV });
     expect(result.enabled).toEqual([{ name: 'files', scope: 'user', config: { command: '/opt/bin/files' } }]);
     expect(result.failed).toHaveLength(1);
     expect(result.failed[0]?.name).toBe('gh');
@@ -78,14 +78,14 @@ describe('loadMcpServers', () => {
   it('reports no failures when every variable is set', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { mcpServers: { files: { command: '${HOME_BIN}/files' } } });
-    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV, referenceEnv: ENV });
     expect(result.failed).toEqual([]);
   });
 
   it('skips a project server with an invalid name and warns naming it', async () => {
     const tree = makeTree();
     writeJson(mcpJsonPath(tree), { mcpServers: { 'bad name!': { command: 'x' } } });
-    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV, referenceEnv: ENV });
     expect(result.enabled).toEqual([]);
     expect(result.pendingApproval).toEqual([]);
     expect(result.warnings.filter((w) => w.includes('bad name!'))).toHaveLength(1);
@@ -94,7 +94,7 @@ describe('loadMcpServers', () => {
   it('warns about malformed .mcp.json with file and line', async () => {
     const tree = makeTree();
     const file = writeText(mcpJsonPath(tree), '{\n  "mcpServers": {\n    "a": }\n}\n');
-    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV, referenceEnv: ENV });
     expect(result.enabled).toEqual([]);
     expect(result.pendingApproval).toEqual([]);
     expect(result.warnings.filter((w) => w.includes(file) && /line 3/.test(w))).toHaveLength(1);
@@ -109,7 +109,7 @@ describe('loadMcpServers', () => {
     writeJson(mcpJsonPath(tree), {
       mcpServers: { a: { command: 'a' }, b: { command: 'b' }, c: { command: 'c' }, d: { command: 'd' } },
     });
-    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV, referenceEnv: ENV });
     expect(result.enabled.map((s) => s.name)).toEqual(['c']);
     expect(result.pendingApproval.map((s) => s.name)).toEqual(['a', 'b', 'd']);
   });
@@ -118,7 +118,7 @@ describe('loadMcpServers', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { enableAllProjectMcpServers: true, disabledMcpjsonServers: ['x'] });
     writeJson(mcpJsonPath(tree), { mcpServers: { x: { command: 'x' }, y: { command: 'y' } } });
-    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV, referenceEnv: ENV });
     expect(result.enabled.map((s) => s.name)).toEqual(['y']);
     expect(result.pendingApproval.map((s) => s.name)).toEqual(['x']);
   });
@@ -130,7 +130,7 @@ describe('loadMcpServers', () => {
       mcpServers: { mine: { command: 'mine' } },
     });
     const file = writeJson(mcpJsonPath(tree), { mcpServers: { evil: { command: 'evil' } } });
-    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: distrusting(), env: ENV });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: distrusting(), env: ENV, referenceEnv: ENV });
     expect(result.enabled.map((s) => s.name)).toEqual(['mine']);
     expect(result.pendingApproval).toEqual([]);
     expect(result.warnings.some((w) => w.includes(file))).toBe(true);
