@@ -233,6 +233,24 @@ export const proxyPasswordsOf = (config: NetworkConfig): Array<{ readonly source
     return (proxyAuthorizationOf(new URL(proxy.value))?.redacted ?? []).map((password) => ({ source: proxy.source, password }));
   });
 
+const notLoopback = (host: string, address: string): OutboundConnectionError => new OutboundConnectionError({ kind: 'not-loopback', host, address });
+
+type LookupAnswer = string | ReadonlyArray<{ readonly address: string }>;
+
+export const loopbackCheckedLookup =
+  (lookup: LookupFunction): LookupFunction =>
+  (hostname, options, callback) =>
+    lookup(hostname, options, (error, answered, family) => {
+      if (error !== null || !isLoopbackName(hostname)) {
+        callback(error, answered, family);
+        return;
+      }
+      const addresses = typeof answered === 'string' ? [answered] : (answered as LookupAnswer as ReadonlyArray<{ readonly address: string }>).map((entry) => entry.address);
+      const refused = addresses.find((address) => !isLoopbackAddress(address));
+      if (refused === undefined) callback(null, answered, family);
+      else callback(notLoopback(hostname, refused), answered, family);
+    });
+
 export type OutboundOptions = {
   readonly connectReplyTimeoutMs: number;
   readonly headersTimeout?: number;
@@ -499,7 +517,7 @@ export const openOutboundTunnel = async (network: OutboundNetwork, target: Outbo
   assertConnectBound(options.connectReplyTimeoutMs);
   const destination = new URL(`https://${hostOfAddress(target.host)}:${target.port}`);
   const checked = checkedUrlOf(destination, target.address);
-  if (claimsLoopback(target.host) && !isLoopbackAddress(target.address)) throw new OutboundConnectionError({ kind: 'not-loopback', host: target.host, address: target.address });
+  if (claimsLoopback(target.host) && !isLoopbackAddress(target.address)) throw notLoopback(target.host, target.address);
   const plan = routePlan(destination, network, { forwardsPlainHttp: false, signal: options.signal });
   if (plan.kind === 'refuse') throw plan.error;
   const route = routeToChecked(plan.route, checked, network.config);
@@ -592,7 +610,7 @@ class OutboundDispatcher extends Dispatcher {
   async #checkedLoopback(destination: URL, signal: unknown): Promise<URL> {
     const checked = await this.#checkedBySite(this.#siteLookup ?? systemLookup, destination, signal);
     const address = unbracketed(checked.hostname);
-    if (!isLoopbackAddress(address)) throw new OutboundConnectionError({ kind: 'not-loopback', host: unbracketed(destination.hostname), address });
+    if (!isLoopbackAddress(address)) throw notLoopback(unbracketed(destination.hostname), address);
     return checked;
   }
 

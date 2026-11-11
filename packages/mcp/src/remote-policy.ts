@@ -5,7 +5,7 @@ import type { RequestInit as UndiciRequestInit } from 'undici';
 import type { FetchLike } from '@modelcontextprotocol/client';
 import { mcpServerUrlProblemOf } from '@momonga/config';
 import type { McpServerScope } from '@momonga/config';
-import { createOutboundDispatcher, findOutboundError, isAcceptableAddress, outboundFetch } from '@momonga/foundation';
+import { claimsLoopback, createOutboundDispatcher, findOutboundError, isAcceptableAddress, outboundFetch } from '@momonga/foundation';
 import type { OutboundNetwork } from '@momonga/foundation';
 import { McpRemotePolicyError } from './remote-errors.ts';
 
@@ -19,8 +19,6 @@ const PUBLIC_ONLY = { loopback: false } as const;
 
 const withoutBrackets = (hostname: string): string => (hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname);
 
-const LOOPBACK_NAME = /(^|\.)localhost$/;
-
 export const assertRemoteUrl = (text: string, scope: McpServerScope): URL => {
   const url = new URL(text);
   const problem = mcpServerUrlProblemOf(url, scope);
@@ -31,7 +29,7 @@ export const assertRemoteUrl = (text: string, scope: McpServerScope): URL => {
     if (isIP(literal) !== 0 && !isAcceptableAddress(literal, PUBLIC_ONLY)) {
       throw new McpRemotePolicyError('non_public_address_literal', `project-scope MCP server URL points at a non-public address (${host})`);
     }
-    if (LOOPBACK_NAME.test(host)) {
+    if (claimsLoopback(host)) {
       throw new McpRemotePolicyError('loopback_hostname', `project-scope MCP server URL points at a loopback host name (${host})`);
     }
   }

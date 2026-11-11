@@ -1,9 +1,10 @@
 import http from 'node:http';
 import https from 'node:https';
 import type net from 'node:net';
+import type { LookupFunction } from 'node:net';
 import type { Duplex } from 'node:stream';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import { outboundPlan, proxyHopError, proxyReplyError, systemTiming } from '@momonga/foundation';
+import { loopbackCheckedLookup, outboundPlan, proxyHopError, proxyReplyError, systemTiming } from '@momonga/foundation';
 import type { OutboundNetwork, OutboundPlan } from '@momonga/foundation';
 
 export type OtlpAgent = { readonly agent: http.Agent; readonly labelled: (error: Error) => Error };
@@ -79,11 +80,11 @@ const callbackAgent = (base: typeof http.Agent, connect: (options: http.ClientRe
     }
   })({ keepAlive: true });
 
-const directAgent = (base: typeof http.Agent, ready: 'connect' | 'secureConnect', plan: RoutedPlan, timeoutMs: number, labels: Labels): http.Agent =>
+const directAgent = (base: typeof http.Agent, ready: 'connect' | 'secureConnect', plan: RoutedPlan, timeoutMs: number, labels: Labels, lookup: LookupFunction): http.Agent =>
   callbackAgent(base, async (options, create) => {
     try {
       return await bounded(timeoutMs, async (signal) => {
-        const socket = create(options);
+        const socket = create({ ...options, lookup: loopbackCheckedLookup(lookup) });
         if (socket === null || socket === undefined) throw new TypeError('node:http created no socket for the OTLP collector');
         await readiness(socket, ready, signal, () => unfinishedConnection(timeoutMs));
         return socket;
@@ -143,7 +144,7 @@ class RoutedProxyAgent extends HttpsProxyAgent<string> {
   }
 }
 
-export const createOtlpAgent = (collector: URL, network: OutboundNetwork, timeoutMs: number): OtlpAgent => {
+export const createOtlpAgent = (collector: URL, network: OutboundNetwork, timeoutMs: number, lookup: LookupFunction): OtlpAgent => {
   const labels: Labels = new WeakMap();
   const labelled = (error: Error): Error => labels.get(error) ?? error;
   const plan = outboundPlan(collector, network, { forwardsPlainHttp: false, signal: undefined });
@@ -154,5 +155,5 @@ export const createOtlpAgent = (collector: URL, network: OutboundNetwork, timeou
     return { agent: callbackAgent(base, () => Promise.reject(error)), labelled };
   }
   if (plan.route.kind === 'proxy') return { agent: new RoutedProxyAgent(plan.route.url.href, plan, timeoutMs, labels), labelled };
-  return { agent: directAgent(base, secure ? 'secureConnect' : 'connect', plan, timeoutMs, labels), labelled };
+  return { agent: directAgent(base, secure ? 'secureConnect' : 'connect', plan, timeoutMs, labels, lookup), labelled };
 };
