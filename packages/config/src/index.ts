@@ -67,7 +67,7 @@ export type { ServerRegistry } from './server-registry.ts';
 export { ConfigError, createStopValuesReader, createUserSettingsCache, writeAppliedRecord, loadUserModels, loadUserSettings, readUserStopValues, readUserStopValuesOrDefault, stopValuesOfSettings, userSettingsChangeKey, userSettingsOfText } from './user-settings.ts';
 export type { AppliedRecordPorts, LoadUserSettingsOptions, LoadUserSettingsResult, StopValuesReader, StopValuesReaderOptions, UserModels, UserSettingsCache, UserSettingsCacheOptions, UserSettingsLoaded, UserSettingsSnapshot, UserStopValuesOptions } from './user-settings.ts';
 export type { GatewayStopValues, LoadSettingsOptions, LoadSettingsResult, PendingHookGroup, ResolvedPermissions, ResolvedSettings } from './load-settings.ts';
-export { assertSessionMcpServers, loadMcpServers, serverKeyOfLabel } from './mcp-servers.ts';
+export { assertSessionMcpServers, loadMcpServers, projectMcpServersFile, serverKeyOfLabel } from './mcp-servers.ts';
 export { mcpServerNameProblem, mcpServerUrlProblem, mcpServerUrlProblemOf } from './mcp-server-rules.ts';
 export type { McpServerUrlProblem } from './mcp-server-rules.ts';
 export type { LoadMcpServersOptions, LoadMcpServersResult, McpServerEntry, McpServerFailure, McpServerScope, PendingMcpServer, ServerKeyOfLabel } from './mcp-servers.ts';
