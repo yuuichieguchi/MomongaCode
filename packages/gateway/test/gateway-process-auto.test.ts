@@ -218,10 +218,10 @@ describe('chat-completions target with toolCalling auto', () => {
     const hidden = 300 - tokensForText(summary);
 
     expect((await readJson(await postJson(client, '/v1/responses/compact', compact))).status).toBe(200);
-    expect((await loadEndpointRecord(probeDir, { endpoint, model: 'system' }, CURRENT_DIALECTS))?.report.reasoning).toEqual({ control: 'none', headroomTokens: hidden });
+    expect((await loadEndpointRecord(probeDir, { endpoint, model: 'system' }, CURRENT_DIALECTS, 'the-model'))?.report.reasoning).toEqual({ control: 'none', headroomTokens: hidden });
 
     expect((await readJson(await postJson(client, '/v1/responses/compact', compact))).status).toBe(200);
-    expect((await loadEndpointRecord(probeDir, { endpoint, model: 'system' }, CURRENT_DIALECTS))?.report.reasoning).toEqual({ control: 'none', headroomTokens: hidden });
+    expect((await loadEndpointRecord(probeDir, { endpoint, model: 'system' }, CURRENT_DIALECTS, 'the-model'))?.report.reasoning).toEqual({ control: 'none', headroomTokens: hidden });
     expect(completions(fake)).toHaveLength(2);
   });
 

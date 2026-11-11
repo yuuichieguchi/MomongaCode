@@ -35,7 +35,7 @@ describe('the Ollama probe measures the prompt cache from a repeated /api/chat',
   it('records nothing when the answer carries no cached count, and saves a valid record', async () => {
     const { dir, result } = await probeWith('unreported');
     expect(result.report).not.toHaveProperty('promptCache');
-    expect((await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS))?.report).toEqual(result.report);
+    expect((await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS, 'the-model'))?.report).toEqual(result.report);
   });
 });
 
@@ -57,7 +57,7 @@ describe('the Ollama cache probe builds its chat body with the adapter body buil
 describe('the probed Ollama cache becomes the capability unless declared', () => {
   const targetFor = async (declared: Capabilities) => {
     const { dir, result } = await probeWith('automatic');
-    const record = await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS);
+    const record = await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS, 'the-model');
     return createProbedOllamaTarget({
       targetName: 'local',
       endpoint: result.key.endpoint,

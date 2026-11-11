@@ -7,7 +7,7 @@ import { FM_CONTEXT_OVERFLOW_ERROR, FM_UNSUPPORTED_GUIDE_ERROR, createFakeClock,
 import type { FakeUpstreamServer } from '@momonga/testkit';
 import { START_MS, makeDir, postJson, readSse, registerCleanup, startGateway } from './gateway-helpers.ts';
 import { CC_CAPABILITIES, collect, terminalOf, userText } from './cc-support.ts';
-import { FM_CURRENCY, fmRecordKey, fmTargetBase, primed, recordKeyOptions } from './fm-record-support.ts';
+import { FM_CURRENCY, fmRecordKey, fmModelBase, primed, recordKeyOptions } from './fm-record-support.ts';
 import { makeReport } from './report-fixture.ts';
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 import type { KnownProbeKey } from '@momonga/config';
@@ -51,7 +51,7 @@ const unprobedFmAdapter = async (upstream: FakeUpstreamServer) => {
   await saveProbeRecord(probeRecordDir, key, makeReport(1, 1), FM_CURRENCY, testKernelLock());
   const managed = await primed(
     createManagedTarget({
-      ...fmTargetBase(),
+      ...fmModelBase(),
       server: fmServe,
       binary: '/opt/fake/fm',
       exec: countTokens,

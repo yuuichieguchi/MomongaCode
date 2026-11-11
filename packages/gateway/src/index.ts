@@ -60,7 +60,7 @@ export type { UserDialects } from './dialect/choice.ts';
 export type { EnvelopeShape } from './probe/envelope.ts';
 export { PROBE_METHOD_VERSION } from './probe/run-probe.ts';
 export { IDENTITY_READ_TIMEOUT_MS } from './probe/endpoint-target.ts';
-export { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS, UPSTREAM_LIVENESS_DEFAULTS } from './defaults.ts';
+export { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS } from './defaults.ts';
 export { lazyRefreshMarginMs } from './plan/refresh.ts';
 export { GATEWAY_STATE_IN_MODEL, gatewayConfigOf, instanceSocketOf, runtimeHealthOver, startGatewayProcess } from './process.ts';
 export { systemProcessFiles } from './process-ports.ts';

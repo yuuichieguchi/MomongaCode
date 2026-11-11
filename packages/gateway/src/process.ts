@@ -576,7 +576,7 @@ const createAutoChatCompletionsAdapter = async (
   const key = endpointProbeKeyOf(target);
   const { endpoint } = key;
   const currency = dialectCurrencyOf(target.capabilities.schemaDialect, userDialects);
-  const readRecord = async () => chatRecordOf(await loadEndpointRecord(probeRecordDir, key, currency), key);
+  const readRecord = async () => chatRecordOf(await loadEndpointRecord(probeRecordDir, key, currency, display), key);
   const loaded = await readRecord();
   const adapterTarget: AdapterTarget = { name: target.canon, display, model: target.model };
   const apiKeyNow = (signal: AbortSignal) => readKey(adapterTarget, signal);
@@ -649,7 +649,7 @@ const createProbedOllamaAdapter = async (
   const key = endpointProbeKeyOf(target);
   const { endpoint } = key;
   const currency = dialectCurrencyOf(target.capabilities.schemaDialect, userDialects);
-  const readRecord = async () => ollamaRecordOf(await loadEndpointRecord(probeRecordDir, key, currency), key);
+  const readRecord = async () => ollamaRecordOf(await loadEndpointRecord(probeRecordDir, key, currency, display), key);
   const loaded = await readRecord();
   const subject = ollamaProbeSubject({
     target: endpointLockKeyOf(key).target,

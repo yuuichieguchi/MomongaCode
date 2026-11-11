@@ -28,7 +28,7 @@ describe('probeEndpointTarget', () => {
     expect(result.report.parallelToolCalls).toEqual({ accepted: true, multiCallRate: 1 });
     expect(result.report.reasoning).toEqual({ control: 'reasoning_effort', lowest: 'none' });
     expect(result.key).toEqual({ endpoint: `unix:${fake.socketPath}`, model: 'qwen-fake' });
-    const stored = await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS);
+    const stored = await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS, 'the-model');
     expect(stored?.report).toEqual(result.report);
     expect(stored?.identity).toBe(result.identity);
     expect(result.identity).not.toBe('');
@@ -42,7 +42,7 @@ describe('probeEndpointTarget', () => {
     const result = await probeEndpointTarget({ ports: hostProbePorts, lock: testKernelLock(), probeRecordDir: dir, upstream: { kind: 'unix', socketPath: fake.socketPath }, key: { endpoint: endpointKeyOf({ kind: 'unix', socketPath: fake.socketPath }), model: 'qwen-fake' }, model: 'qwen-fake', apiKey: undefined, samples: 1 });
 
     expect(result.identityFields).toEqual(['id', 'object', 'owned_by']);
-    expect((await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS))?.identityFields).toEqual(['id', 'object', 'owned_by']);
+    expect((await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS, 'the-model'))?.identityFields).toEqual(['id', 'object', 'owned_by']);
   });
 
   it('keeps in the identity every field that stays put, as Ollama does with created', async () => {
@@ -52,7 +52,7 @@ describe('probeEndpointTarget', () => {
     const result = await probeEndpointTarget({ ports: hostProbePorts, lock: testKernelLock(), probeRecordDir: dir, upstream: { kind: 'unix', socketPath: fake.socketPath }, key: { endpoint: endpointKeyOf({ kind: 'unix', socketPath: fake.socketPath }), model: 'qwen-fake' }, model: 'qwen-fake', apiKey: undefined, samples: 1 });
 
     expect(result.identityFields).toEqual(['created', 'id', 'object', 'owned_by']);
-    expect((await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS))?.identity).toBe(result.identity);
+    expect((await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS, 'the-model'))?.identity).toBe(result.identity);
   });
 
   it('reads the listing twice, the second time after the measurements', async () => {
@@ -83,7 +83,7 @@ describe('probeEndpointTarget', () => {
     await expect(
       probeEndpointTarget({ ports: hostProbePorts, lock: testKernelLock(), probeRecordDir: dir, upstream: { kind: 'unix', socketPath: fake.socketPath }, key, model: 'qwen-fake', apiKey: undefined, samples: 1 }),
     ).rejects.toThrow(/does not list/);
-    expect(await loadEndpointRecord(dir, key, CURRENT_DIALECTS)).toBeNull();
+    expect(await loadEndpointRecord(dir, key, CURRENT_DIALECTS, 'the-model')).toBeNull();
   });
 
   it('never asks a chat-completions target for /health, whatever the transport', async () => {

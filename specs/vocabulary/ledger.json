@@ -437,11 +437,7 @@
       },
       "packages/gateway/src/probe/endpoint-record.ts": {
         "endpoint": 1,
-        "gateway": 1,
-        "target": 5
-      },
-      "packages/gateway/src/probe/record.ts": {
-        "gateway": 1
+        "target": 4
       },
       "packages/gateway/src/probe/remedy.ts": {
         "gateway": 1

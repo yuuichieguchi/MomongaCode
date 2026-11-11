@@ -22,7 +22,7 @@ const probedTarget = async (showCapabilities: readonly string[], declared: Decla
   const fake = await startFakeOllama({ show: showWith(showCapabilities), cacheProbe });
   const dir = makeDir();
   const result = await probeOllamaTarget({ ports: hostProbePorts, lock: testKernelLock(), probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 12288 });
-  const record = await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS);
+  const record = await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS, 'the-model');
   return createProbedOllamaTarget({
     targetName: 'local',
     endpoint: result.key.endpoint,

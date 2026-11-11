@@ -1,7 +1,11 @@
+import { WORDS } from '@momonga/protocol';
 import type { DialectId, NeedsProbe, ProbeReportDialect } from '@momonga/protocol';
 import { PreconditionFailedError } from '../adapters/shared/failures.ts';
 
-export const remedyOf = (targetName: string): string => `run \`momonga gateway probe ${targetName}\``;
+export const remedyOf = (targetName: string): string => `run \`${WORDS.command} gateway probe ${targetName}\``;
+
+export const unusableRecordError = (file: string, targetName: string, problem: string, cause?: unknown): Error =>
+  new Error(`Probe record ${file} is unusable (${problem}). Delete it or ${remedyOf(targetName)}.`, cause === undefined ? undefined : { cause });
 
 export const needsProbeOf = (targetName: string, message: string, evidence: string): NeedsProbe => ({
   state: 'needs_probe',

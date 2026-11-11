@@ -121,7 +121,7 @@ describe('record invalidation of the endpoint record (rule 7)', () => {
   const saveEndpoint = (dir: string, report: ProbeReport, currency: Currency) =>
     saveEndpointRecord(dir, endpointKey, 'identity', ['id'], report, currency, testKernelLock());
   const loadEndpoint = (dir: string, currency: Currency) =>
-    loadEndpointRecord(dir, endpointKey, currency);
+    loadEndpointRecord(dir, endpointKey, currency, 'the-model');
   const fileOf = (dir: string) => path.join(dir, endpointRecordFileName(endpointKey));
 
   it('writes both fields and loads the record back', async () => {

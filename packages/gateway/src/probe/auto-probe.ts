@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { POLL_INTERVAL_MS, ProcessLockHeldError, acquireProcessLock, canonicalJson, cleanFailureMessage, sleep } from '@momonga/foundation';
+import { POLL_INTERVAL_MS, ProcessLockHeldError, acquireProcessLock, canonicalJson, cleanFailureMessage, settledOrAborted, sleep } from '@momonga/foundation';
 import type { GenerationRole, ProcessLock, KernelLockMechanism } from '@momonga/foundation';
 import { SERVICE_UNAVAILABLE_STATUS, TARGET_NOT_READY, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE, isTargetProbing } from '@momonga/protocol';
 import type { Probing } from '@momonga/protocol';
@@ -64,17 +64,6 @@ export type ProbeSubject<Key extends ProbeLockKey, Report> = {
 
 export type MeasureProbe<Key extends ProbeLockKey, Report> = ProbeSubject<Key, Report>['measure'];
 
-const untilAborted = <T>(work: Promise<T>, signal: AbortSignal): Promise<T> =>
-  new Promise<T>((resolve, reject) => {
-    const onAbort = (): void => reject(signal.reason);
-    if (signal.aborted) {
-      onAbort();
-      return;
-    }
-    signal.addEventListener('abort', onAbort, { once: true });
-    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
-  });
-
 const sameKey = (left: ProbeLockKey, right: ProbeLockKey): boolean => identityOf(left) === identityOf(right);
 
 const holdProbeLock = async (dir: string, key: ProbeLockKey, target: string, lock: KernelLockMechanism, timers: ProbeTimers, signal: AbortSignal): Promise<ProcessLock> => {
@@ -90,7 +79,7 @@ const holdProbeLock = async (dir: string, key: ProbeLockKey, target: string, loc
 };
 
 const measureAndRecord = async <Key extends ProbeLockKey, Report>(subject: ProbeSubject<Key, Report>, dir: string, kernelLock: KernelLockMechanism, timers: ProbeTimers, key: Key, signal: AbortSignal): Promise<Report> => {
-  const report = await untilAborted(subject.measure({ key, signal }), signal);
+  const report = await settledOrAborted(subject.measure({ key, signal }), signal);
   const lock = await holdProbeLock(dir, key, subject.target, kernelLock, timers, signal);
   try {
     const after = await subject.readKey();
@@ -174,7 +163,7 @@ export const createAutoProbe = (options: AutoProbeOptions): AutoProbe => {
     const bound = options.timers.timeoutSignal(precondition.boundMs);
     const signal = AbortSignal.any([bound, stop.signal]);
     try {
-      return await untilAborted(precondition.check(signal), signal);
+      return await settledOrAborted(precondition.check(signal), signal);
     } catch (error) {
       if (bound.aborted && !stop.signal.aborted) return BOUND_EXPIRED;
       throw error;

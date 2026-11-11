@@ -62,7 +62,7 @@ describe('endpoint probe records', () => {
     const report = makeReport(1, 1);
     await saveEndpointRecord(dir, KEY, 'identity-1', ['id', 'owned_by'], report, CURRENT_DIALECTS, testKernelLock());
 
-    expect(await loadEndpointRecord(dir, KEY, CURRENT_DIALECTS)).toEqual({ identity: 'identity-1', identityFields: ['id', 'owned_by'], report });
+    expect(await loadEndpointRecord(dir, KEY, CURRENT_DIALECTS, 'the-model')).toEqual({ identity: 'identity-1', identityFields: ['id', 'owned_by'], report });
   });
 
   it('keeps one record per endpoint and model', async () => {
@@ -71,9 +71,9 @@ describe('endpoint probe records', () => {
     await saveEndpointRecord(dir, { ...KEY, model: 'other' }, 'b', FIELDS, makeReport(0.5, 1), CURRENT_DIALECTS, testKernelLock());
     await saveEndpointRecord(dir, { ...KEY, endpoint: 'http://127.0.0.1:8080/v1' }, 'c', FIELDS, makeReport(0.2, 1), CURRENT_DIALECTS, testKernelLock());
 
-    expect((await loadEndpointRecord(dir, KEY, CURRENT_DIALECTS))?.identity).toBe('a');
-    expect((await loadEndpointRecord(dir, { ...KEY, model: 'other' }, CURRENT_DIALECTS))?.identity).toBe('b');
-    expect((await loadEndpointRecord(dir, { ...KEY, endpoint: 'http://127.0.0.1:8080/v1' }, CURRENT_DIALECTS))?.identity).toBe('c');
+    expect((await loadEndpointRecord(dir, KEY, CURRENT_DIALECTS, 'the-model'))?.identity).toBe('a');
+    expect((await loadEndpointRecord(dir, { ...KEY, model: 'other' }, CURRENT_DIALECTS, 'the-model'))?.identity).toBe('b');
+    expect((await loadEndpointRecord(dir, { ...KEY, endpoint: 'http://127.0.0.1:8080/v1' }, CURRENT_DIALECTS, 'the-model'))?.identity).toBe('c');
   });
 
   it('replaces the record of the same endpoint and model', async () => {
@@ -81,11 +81,11 @@ describe('endpoint probe records', () => {
     await saveEndpointRecord(dir, KEY, 'old', FIELDS, makeReport(1, 1), CURRENT_DIALECTS, testKernelLock());
     await saveEndpointRecord(dir, KEY, 'new', FIELDS, makeReport(1, 1), CURRENT_DIALECTS, testKernelLock());
 
-    expect((await loadEndpointRecord(dir, KEY, CURRENT_DIALECTS))?.identity).toBe('new');
+    expect((await loadEndpointRecord(dir, KEY, CURRENT_DIALECTS, 'the-model'))?.identity).toBe('new');
   });
 
   it('finds nothing when no record exists', async () => {
-    expect(await loadEndpointRecord(makeDir(), KEY, CURRENT_DIALECTS)).toBeNull();
+    expect(await loadEndpointRecord(makeDir(), KEY, CURRENT_DIALECTS, 'the-model')).toBeNull();
   });
 
   it('refuses a record that is not a valid probe report, naming the file', async () => {
@@ -95,7 +95,7 @@ describe('endpoint probe records', () => {
     const stored = JSON.parse(fs.readFileSync(path.join(dir, file as string), 'utf8'));
     fs.writeFileSync(path.join(dir, file as string), JSON.stringify({ ...stored, report: { nope: true, schemaDialect: stored.report.schemaDialect } }));
 
-    await expect(loadEndpointRecord(dir, KEY, CURRENT_DIALECTS)).rejects.toThrow(file as string);
+    await expect(loadEndpointRecord(dir, KEY, CURRENT_DIALECTS, 'the-model')).rejects.toThrow(file as string);
   });
 
   it('refuses a record whose identity fields are not a list of names, naming the file', async () => {
@@ -105,7 +105,7 @@ describe('endpoint probe records', () => {
     const { identityFields: _identityFields, ...stored } = JSON.parse(fs.readFileSync(path.join(dir, file as string), 'utf8'));
     fs.writeFileSync(path.join(dir, file as string), JSON.stringify(stored));
 
-    await expect(loadEndpointRecord(dir, KEY, CURRENT_DIALECTS)).rejects.toThrow(file as string);
+    await expect(loadEndpointRecord(dir, KEY, CURRENT_DIALECTS, 'the-model')).rejects.toThrow(file as string);
   });
 
   it('is never keyed by a binary hash', async () => {

@@ -21,7 +21,7 @@ describe('the Ollama probe', () => {
     expect(fake.requests.find((request) => request.path === '/api/show')?.body).toMatchObject({ model: OLLAMA_MODEL });
     expect(result.identity).toBe(DEVSTRAL_DIGEST);
     expect(result.key).toEqual({ endpoint: fake.origin, model: OLLAMA_MODEL });
-    const stored = await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS);
+    const stored = await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS, 'the-model');
     expect(stored?.identity).toBe(DEVSTRAL_DIGEST);
     expect(stored?.report).toEqual(result.report);
   });
@@ -59,7 +59,7 @@ describe('the Ollama probe', () => {
     const dir = makeDir();
 
     await expect(probe(fake.origin, dir, TRAINED_CONTEXT_LENGTH + 1)).rejects.toThrow(String(TRAINED_CONTEXT_LENGTH));
-    expect(await loadEndpointRecord(dir, { endpoint: fake.origin, model: OLLAMA_MODEL }, CURRENT_DIALECTS)).toBeNull();
+    expect(await loadEndpointRecord(dir, { endpoint: fake.origin, model: OLLAMA_MODEL }, CURRENT_DIALECTS, 'the-model')).toBeNull();
   });
 
   it('records a new identity after the model is pulled again under the same tag', async () => {
@@ -73,6 +73,6 @@ describe('the Ollama probe', () => {
 
     expect(first.identity).toBe(DEVSTRAL_DIGEST);
     expect(second.identity).toBe(QWEN_DIGEST);
-    expect((await loadEndpointRecord(dir, second.key, CURRENT_DIALECTS))?.identity).toBe(QWEN_DIGEST);
+    expect((await loadEndpointRecord(dir, second.key, CURRENT_DIALECTS, 'the-model'))?.identity).toBe(QWEN_DIGEST);
   });
 });
