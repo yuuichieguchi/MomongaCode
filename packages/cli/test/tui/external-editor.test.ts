@@ -42,6 +42,13 @@ describe('the external editor', () => {
     expect(steps).toEqual(['write /tmp/draft-1/draft.md', 'leave the screen', 'launch code -w /tmp/draft-1/draft.md', 'return to the screen', 'read /tmp/draft-1/draft.md', 'remove /tmp/draft-1']);
   });
 
+  it('reads the variable as a command line: a quoted program path with a space is one word', async () => {
+    const launched: (readonly string[])[] = [];
+    const { host } = hostOf({ VISUAL: '"/Applications/My Editor/bin/edit" --wait' });
+    await createExternalEditor({ ...host, launch: async (argv) => void launched.push(argv) }).edit('x', 'json');
+    expect(launched).toEqual([['/Applications/My Editor/bin/edit', '--wait', '/tmp/draft-1/value.json']]);
+  });
+
   it('uses $EDITOR when $VISUAL is not set', async () => {
     const { host, steps } = hostOf({ EDITOR: 'vi' });
     await createExternalEditor(host).edit('x', 'draft');

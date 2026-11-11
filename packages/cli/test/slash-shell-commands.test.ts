@@ -105,19 +105,19 @@ beforeEach(() => {
 type Case = { line: string; spy: keyof typeof spies; args: unknown[]; background: boolean; from?: number };
 
 const CASES: readonly Case[] = [
-  { line: '/cost --breakdown', spy: 'showCost', args: [expect.objectContaining({ breakdown: true, all: false })], background: false },
-  { line: '/status run-1 --json', spy: 'showStatus', args: ['run-1', true], background: false },
-  { line: '/jobs sess-1', spy: 'listJobs', args: ['sess-1', false], background: false },
-  { line: '/trace run-2', spy: 'showTrace', args: ['run-2', expect.objectContaining({ json: false, content: false })], background: false },
-  { line: '/mcp list --json', spy: 'mcpList', args: [true], background: false },
+  { line: '/cost --breakdown', spy: 'showCost', args: [expect.objectContaining({ breakdown: true, all: false })], background: true },
+  { line: '/status run-1 --json', spy: 'showStatus', args: ['run-1', true], background: true },
+  { line: '/jobs sess-1', spy: 'listJobs', args: ['sess-1', false], background: true },
+  { line: '/trace run-2', spy: 'showTrace', args: ['run-2', expect.objectContaining({ json: false, content: false })], background: true },
+  { line: '/mcp list --json', spy: 'mcpList', args: [true], background: true },
   { line: '/mcp login docs --no-browser', spy: 'mcpLogin', args: ['docs', expect.objectContaining({ openBrowser: false })], background: true },
-  { line: '/memory add use pnpm --user', spy: 'memoryAdd', args: ['use pnpm', expect.objectContaining({ user: true })], background: false },
-  { line: '/memory review', spy: 'memoryReview', args: [expect.objectContaining({ json: false })], background: false },
-  { line: '/rule add Bash no pushing --kind constraint --deny Bash(git:*)', spy: 'ruleAdd', args: ['Bash', 'no pushing', expect.objectContaining({ enforcement: { behavior: 'deny', rule: 'Bash(git:*)' } })], background: false },
+  { line: '/memory add use pnpm --user', spy: 'memoryAdd', args: ['use pnpm', expect.objectContaining({ user: true })], background: true },
+  { line: '/memory review', spy: 'memoryReview', args: [expect.objectContaining({ json: false })], background: true },
+  { line: '/rule add Bash no pushing --kind constraint --deny Bash(git:*)', spy: 'ruleAdd', args: ['Bash', 'no pushing', expect.objectContaining({ enforcement: { behavior: 'deny', rule: 'Bash(git:*)' } })], background: true },
   { line: '/context improve --dataset d.json --model a --token-cap 5 --outcome o.json', spy: 'contextImprove', args: [expect.objectContaining({ dataset: 'd.json', model: 'a', tokenCap: 5, outcome: 'o.json' })], background: true },
-  { line: '/context guideline list', spy: 'guidelineList', args: [], background: false },
+  { line: '/context guideline list', spy: 'guidelineList', args: [], background: true },
   { line: '/policy verify --json', spy: 'policyVerify', args: [expect.anything(), expect.objectContaining({ json: true })], background: true },
-  { line: '/models --json', spy: 'listModels', from: 1, args: [{ json: true }], background: false },
+  { line: '/models --json', spy: 'listModels', from: 1, args: [{ json: true }], background: true },
   { line: '/gateway probe fm --samples 2', spy: 'probeModel', args: ['fm', expect.objectContaining({ samples: 2 })], background: true },
 ];
 
@@ -134,7 +134,7 @@ describe('the shell commands that have a slash form', () => {
     for (const command of SHELL_SLASH_COMMANDS) expect(infos.join('\n')).toContain(`/${command.name}`);
   });
 
-  it.each(CASES)('$line calls the function the shell command calls', async ({ line, spy, args, background, from }) => {
+  it.each(CASES)('$line calls the function the shell command calls, with the waiting row', async ({ line, spy, args, background, from }) => {
     const { context, backgrounds } = slashContext();
     await run(line, context);
     await Promise.all(backgrounds.map((entry) => entry.done));
@@ -158,10 +158,64 @@ describe('the shell commands that have a slash form', () => {
     expect(spies.showCost).toHaveBeenCalledTimes(1);
   });
 
+  it('reads quotes in a typed line as the shell does: a quoted rule is one argument', async () => {
+    const { context, backgrounds } = slashContext();
+    await run('/rule add x text --deny "Bash(npm test:*)"', context);
+    await Promise.all(backgrounds.map((entry) => entry.done));
+    expect(spies.ruleAdd.mock.calls[0]?.slice(2)).toEqual(['x', 'text', expect.objectContaining({ enforcement: { behavior: 'deny', rule: 'Bash(npm test:*)' } })]);
+  });
+
+  it('keeps a quoted path with a space whole, and an escaped space too', async () => {
+    const seen: string[][] = [];
+    const { context, backgrounds } = slashContext();
+    const shell = { run: async (argv: readonly string[]) => (seen.push([...argv]), 0) };
+    await run('/policy verify --secret "/a b" --mandate it\\ s', { ...context, shell } as unknown as SlashContext);
+    await Promise.all(backgrounds.map((entry) => entry.done));
+    expect(seen).toEqual([['policy', 'verify', '--secret', '/a b', '--mandate', 'it s']]);
+  });
+
+  it('refuses a line with an unclosed quote and runs nothing', async () => {
+    const seen: string[][] = [];
+    const { context, infos } = slashContext();
+    const shell = { run: async (argv: readonly string[]) => (seen.push([...argv]), 0) };
+    await run('/policy verify --secret "/a b', { ...context, shell } as unknown as SlashContext);
+    expect(seen).toEqual([]);
+    expect(infos.join('\n')).toContain('unclosed');
+  });
+
+  it('runs /cost with the waiting row, and esc aborts the signal the command runs under', async () => {
+    const { context, backgrounds, controller } = slashContext();
+    let seen: AbortSignal | undefined;
+    const shell = {
+      run: (_argv: readonly string[], io: { signal: AbortSignal }) => {
+        seen = io.signal;
+        return new Promise<number>((resolve) => io.signal.addEventListener('abort', () => resolve(130), { once: true }));
+      },
+    };
+    await run('/cost', { ...context, shell } as unknown as SlashContext);
+    expect(backgrounds.map((entry) => entry.label)).toEqual(['/cost']);
+    expect(seen?.aborted).toBe(false);
+    controller.abort();
+    await Promise.all(backgrounds.map((entry) => entry.done));
+    expect(seen?.aborted).toBe(true);
+  });
+
+  it('refuses /auth login with the usage and the way to sign in, and runs nothing', async () => {
+    const seen: string[][] = [];
+    const { context, infos, backgrounds } = slashContext();
+    const shell = { run: async (argv: readonly string[]) => (seen.push([...argv]), 0) };
+    await run('/auth login', { ...context, shell } as unknown as SlashContext);
+    expect(seen).toEqual([]);
+    expect(backgrounds).toEqual([]);
+    expect(infos.join('\n')).toContain('usage: /auth status [--json] | logout <account>');
+    expect(infos.join('\n')).toContain('/login');
+  });
+
   it('reports a non-zero exit code', async () => {
     spies.listModels.mockResolvedValueOnce(2);
-    const { context, infos } = slashContext();
+    const { context, infos, backgrounds } = slashContext();
     await run('/models --json', context);
+    await Promise.all(backgrounds.map((entry) => entry.done));
     expect(infos.at(-1)).toBe('/models exited with code 2');
   });
 

@@ -12,7 +12,7 @@ export const reportCommand: SlashCommand = {
   run: async (args, context) => {
     const tokens = args.split(/\s+/).filter((part) => part !== '');
     if (tokens.some((token) => !token.startsWith('--'))) {
-      await runShellCommand('report', args, context, false);
+      await runShellCommand('report', args, context);
       return;
     }
     const latest = (await context.backend.runs()).at(-1);
@@ -20,6 +20,6 @@ export const reportCommand: SlashCommand = {
       context.info(NO_RUN_TO_REPORT);
       return;
     }
-    await runShellCommand('report', [latest.id, ...tokens].join(' '), context, false);
+    await runShellCommand('report', `${latest.id} ${args}`, context);
   },
 };

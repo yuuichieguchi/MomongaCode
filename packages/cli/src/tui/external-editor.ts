@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { commandWords } from './command-words.ts';
 import type { KeyTable } from './keys/table.ts';
 
 export const EDITOR_VARIABLES = ['VISUAL', 'EDITOR'] as const;
@@ -26,10 +27,13 @@ export type ExternalEditorHost = {
 
 const EDITED_FILES: Readonly<Record<EditedText, string>> = { draft: 'draft.md', json: 'value.json' };
 
-const commandOf = (env: ExternalEditorHost['env']): string[] | undefined => {
+const commandOf = (env: ExternalEditorHost['env']): readonly string[] | undefined => {
   for (const name of EDITOR_VARIABLES) {
-    const words = env[name]?.split(/\s+/).filter((word) => word !== '');
-    if (words !== undefined && words.length > 0) return words;
+    const value = env[name];
+    if (value === undefined) continue;
+    const parsed = commandWords(value);
+    if (parsed.kind === 'refused') throw new Error(`the variable ${name} cannot be read: ${parsed.reason}`);
+    if (parsed.words.length > 0) return parsed.words;
   }
   return undefined;
 };
