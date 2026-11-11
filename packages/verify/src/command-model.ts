@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { ASSIGNMENT, RESERVED_WORDS, commandPatternOf, commandSpecsFor, inertPrinterSet } from '@momonga/policy';
+import { ASSIGNMENT, RESERVED_WORDS, commandPatternOf, commandSpecsFor, comparesByAdjacency, inertPrinterSet } from '@momonga/policy';
 import type { CommandPattern, PermissionRule } from '@momonga/policy';
 import type { Bool, Re, Seq } from 'z3-solver';
 import { setContains, singleton } from './char-set.ts';
@@ -26,7 +26,7 @@ export type CommandModel = {
   position(command: Seq, rule: PermissionRule): Bool;
   incidental(command: Seq, rule: PermissionRule): Bool;
   strict(command: Seq, rule: PermissionRule): Bool;
-  broad(command: Seq, rule: PermissionRule): Bool;
+  optionGap(command: Seq, rule: PermissionRule): Bool;
   unmodelled(rule: PermissionRule): boolean;
   wrapperDeny(rule: PermissionRule): boolean;
   wordCount(rule: PermissionRule): number;
@@ -101,12 +101,20 @@ export const createCommandModel = (smt: Smt): CommandModel => {
 
   const gap = smt.star(smt.concat(spaces, hyphen, smt.star(plainWord), smt.optional(smt.concat(spaces, plainWord))));
 
-  const broadLanguage = (pattern: CommandPattern): Re | undefined => {
+  const gappedLanguage = (pattern: CommandPattern): Re => {
     const words = patternWords(pattern);
-    if (words.length < 2) return undefined;
     const tail = words.slice(1).map((expected) => smt.concat(gap, spaces, smt.text(expected)));
-    const body = smt.concat(lenient(words[0] as string), ...tail);
-    return smt.concat(body, rest);
+    const body = smt.concat(smt.star(smt.concat(plainWord, spaces)), lenient(words[0] as string), ...tail);
+    return pattern.kind === 'prefix' ? smt.concat(body, rest) : body;
+  };
+
+  const skipsOptions = (rule: PermissionRule): boolean =>
+    rule.specifier !== undefined && rule.effect !== 'allow' && wordsExpressible(rule) && patternWords(commandPatternOf(rule)).length > 1 && !comparesByAdjacency(rule);
+
+  const optionGap = (term: Seq, rule: PermissionRule): Bool => {
+    if (!skipsOptions(rule)) return never;
+    const pattern = commandPatternOf(rule);
+    return ctx.And(smt.member(term, gappedLanguage(pattern)), ctx.Not(smt.member(term, positionLanguage(pattern))), ctx.Not(smt.member(term, incidentalLanguage(pattern))));
   };
 
   const member = (term: Seq, language: Re | undefined): Bool => (language === undefined ? never : smt.member(term, language));
@@ -118,7 +126,7 @@ export const createCommandModel = (smt: Smt): CommandModel => {
     position: (term, rule) => (rule.specifier === undefined ? ctx.Bool.val(true) : modelled(rule) ? member(term, positionLanguage(commandPatternOf(rule))) : never),
     incidental: (term, rule) => (rule.specifier === undefined || !wordsExpressible(rule) ? never : member(term, incidentalLanguage(commandPatternOf(rule)))),
     strict: (term, rule) => (rule.specifier === undefined ? ctx.Bool.val(true) : modelled(rule) ? member(term, strictLanguage(commandPatternOf(rule))) : never),
-    broad: (term, rule) => (rule.specifier === undefined || !modelled(rule) ? never : member(term, broadLanguage(commandPatternOf(rule)))),
+    optionGap,
     unmodelled: (rule) => rule.specifier !== undefined && !modelled(rule),
     wrapperDeny: (rule) => rule.specifier !== undefined && rule.effect === 'deny' && wordsExpressible(rule) && !modelled(rule),
     wordCount: (rule) => patternWords(commandPatternOf(rule)).length,

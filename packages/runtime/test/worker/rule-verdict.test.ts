@@ -13,7 +13,21 @@ const proved: RuleVerdict = { verdict: 'proved', solver: SOLVER, refuted: [], un
 const refuted: RuleVerdict = {
   verdict: 'refuted',
   solver: SOLVER,
-  refuted: [{ property: 'deny-precedence', subject: 'Read', message: 'an allow rule lets a denied path through', counterexample: 'Read /work/.env' }],
+  refuted: [
+    { property: 'secret-reach', subject: 'Read', message: 'an allow rule opens a secret location', counterexample: 'Read /work/.env' },
+    { property: 'bash-admission', subject: 'Bash', message: 'an allow rule admits a denied subcommand' },
+  ],
+  unknown: [],
+  notProved: NOT_PROVED,
+};
+const refutedWithoutRefusal: RuleVerdict = {
+  verdict: 'refuted',
+  solver: SOLVER,
+  refuted: [
+    { property: 'rule-consistency', subject: 'Write', message: 'this rule can never take effect' },
+    { property: 'deny-precedence', subject: 'Read', message: 'an allow rule lets a denied path through' },
+    { property: 'bash-admission', subject: 'Bash', message: 'an allow rule admits a denied subcommand' },
+  ],
   unknown: [],
   notProved: NOT_PROVED,
 };
@@ -32,10 +46,34 @@ describe('the verdict of the permission rules before a run', () => {
 
     expect(env.run(run.id)).toMatchObject({ status: 'FAILED', error: { code: POLICY_REFUTED_CODE, message: policyRefutedMessage(refuted) } });
     expect(policyRefutedMessage(refuted)).toBe(
-      'The permission rules were refuted, so the run was refused: deny-precedence (Read): an allow rule lets a denied path through; counterexample: Read /work/.env. Change the rules; "momonga policy verify" prints the full report.',
+      'The permission rules were refuted, so the run was refused: secret-reach (Read): an allow rule opens a secret location; counterexample: Read /work/.env. Change the rules; "momonga policy verify" prints the full report.',
     );
     expect(env.ofType(run.id, 'model.requested')).toEqual([]);
     expect(env.gateway.script).toHaveLength(1);
+  });
+
+  it.each(['secret-reach', 'superseded-forms', 'mandate-holds'])('a refuted %s refuses the run', async (property) => {
+    const env = await makeEnv();
+    env.ruleVerifier.answer = () => ({ ...refuted, refuted: [{ property, subject: 'a rule', message: 'what the protection forbids' }] });
+    env.gateway.script.push(textStep('Hello.'));
+    const run = env.enqueue('Say hello');
+
+    await env.runOnce(env.worker());
+
+    expect(env.run(run.id)).toMatchObject({ status: 'FAILED', error: { code: POLICY_REFUTED_CODE } });
+    expect(env.ofType(run.id, 'model.requested')).toEqual([]);
+  });
+
+  it('a verdict whose findings are about rule consistency, deny precedence or Bash admission refuses nothing: the run reaches the model', async () => {
+    const env = await makeEnv();
+    env.ruleVerifier.answer = () => refutedWithoutRefusal;
+    env.gateway.script.push(textStep('Hello.'));
+    const run = env.enqueue('Say hello');
+
+    await env.runOnce(env.worker());
+
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(env.ofType(run.id, 'model.requested')).toHaveLength(1);
   });
 
   it('a proved rule set starts the run, and run.started pins the verdict with its fingerprint and what is not proved', async () => {
@@ -122,7 +160,7 @@ describe('the verdict of the permission rules before a run', () => {
     const started = env.ofType(run.id, 'run.started')[0]?.pins['policyVerdict'] as { fingerprint: string };
     const [notice] = verdictEvents(env, run.id);
     expect(notice?.level).toBe('error');
-    expect(notice?.message).toContain('deny-precedence');
+    expect(notice?.message).toContain('secret-reach');
     expect(notice?.message).not.toContain(started.fingerprint);
   });
 

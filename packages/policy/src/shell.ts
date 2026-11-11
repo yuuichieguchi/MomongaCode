@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { commandSpecsFor } from './platform-specs.ts';
 import type { CommandSpecs } from './command-specs.ts';
-import { DARWIN_SED, pathEffectsOf } from './path-effects.ts';
+import { DARWIN_SED, globDirectory, pathEffectsOf } from './path-effects.ts';
 import type { ProgramEffects } from './path-effects.ts';
 import { escapeForGlob } from './glob-pattern.ts';
 import { ASSIGNMENT } from './shell-lexemes.ts';
@@ -476,13 +476,35 @@ const collectPayloads = (segment: Segment, nested: Analysis[], depth: number, sp
 
 export const STRUCTURAL_SPECS: CommandSpecs = commandSpecsFor('darwin');
 
-export const analyzeCommand = (command: string, specs: CommandSpecs = STRUCTURAL_SPECS): Analysis | null => {
+type CommandReading = { analysis: Analysis } | { unsupported: string };
+
+const readCommand = (command: string, specs: CommandSpecs): CommandReading => {
   try {
-    return scan(command, 0, { effect: 'none', trail: [] }, specs);
+    return { analysis: scan(command, 0, { effect: 'none', trail: [] }, specs) };
   } catch (error) {
-    if (error instanceof UnsupportedConstruct) return null;
+    if (error instanceof UnsupportedConstruct) return { unsupported: error.message };
     throw error;
   }
+};
+
+export const analyzeCommand = (command: string, specs: CommandSpecs = STRUCTURAL_SPECS): Analysis | null => {
+  const reading = readCommand(command, specs);
+  return 'analysis' in reading ? reading.analysis : null;
+};
+
+const unanalysedSegmentOf = (analysis: Analysis): Segment | undefined => {
+  const own = analysis.segments.find((segment) => segment.unanalyzable);
+  if (own !== undefined) return own;
+  for (const inner of analysis.nested) {
+    const found = unanalysedSegmentOf(inner);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+};
+
+export const unanalysedPartOf = (command: string, specs: CommandSpecs = STRUCTURAL_SPECS): string | undefined => {
+  const reading = readCommand(command, specs);
+  return 'analysis' in reading ? unanalysedSegmentOf(reading.analysis)?.text : reading.unsupported;
 };
 
 const writesOf = (segment: Segment, resolveFor: ((segment: Segment) => string | undefined) | undefined): Target[] =>
@@ -569,16 +591,6 @@ export const allWriteTargets = (analysis: Analysis, resolveFor?: (segment: Segme
   executionSteps(analysis, resolveFor).flatMap((step) => step.writes);
 
 export const allReadTargets = (analysis: Analysis): Target[] => executionSteps(analysis).flatMap((step) => step.reads);
-
-const GLOB_METACHARACTER = /[*?[{]/;
-
-const globDirectory = (glob: string): string => {
-  const wildcard = glob.search(GLOB_METACHARACTER);
-  const literalPrefix = wildcard === -1 ? glob : glob.slice(0, wildcard);
-  const slash = literalPrefix.lastIndexOf('/');
-  if (slash === -1) return '.';
-  return slash === 0 ? '/' : literalPrefix.slice(0, slash);
-};
 
 export const readPathsOfCommand = (command: string, specs: CommandSpecs): string[] => {
   const analysis = analyzeCommand(command, specs);
