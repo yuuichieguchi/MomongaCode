@@ -85,8 +85,6 @@
   ],
   "signalTimeouts": {
     "packages/foundation/src/process-contract.ts": ["STARTUP_TIMEOUT_MS"],
-    "packages/gateway/src/managed/target.ts": ["options.requestLimitMs"],
-    "packages/gateway/src/probe/auto-probe.ts": ["precondition.boundMs"],
     "packages/runtime/src/memory/deadline-signal.ts": ["Math.min(Math.max(deadlineAt - now, 0), TIMER_CEILING_MS)"]
   },
   "burnDown": {

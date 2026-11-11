@@ -3,7 +3,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { PROBE_REPLY_MAX_BYTES, ProbeReplyTooLargeError, createProbeClient } from '../src/probe/client.ts';
+import { createFakeClock, createFakeTimers, hostTimers } from '@momonga/testkit';
+import { PROBE_REPLY_MAX_BYTES, ProbeReplyTooLargeError, ProbeTimeoutError, createProbeClient } from '../src/probe/client.ts';
 
 const closers: Array<() => Promise<void>> = [];
 
@@ -40,7 +41,7 @@ const endless = (response: http.ServerResponse): void => {
 describe('the probe client reads a reply only up to its one cap', { timeout: 30_000 }, () => {
   it('ends an endless reply at the cap with a typed error', async () => {
     const socketPath = await serverAnswering(endless);
-    const client = createProbeClient({ kind: 'unix', socketPath }, undefined, 20_000);
+    const client = createProbeClient({ kind: 'unix', socketPath }, undefined, 20_000, hostTimers);
     closers.push(() => client.close());
     const failure = await client.post('chat', {}).then(
       () => undefined,
@@ -56,10 +57,23 @@ describe('the probe client reads a reply only up to its one cap', { timeout: 30_
       response.writeHead(200, { 'content-type': 'application/json' });
       response.end(body);
     });
-    const client = createProbeClient({ kind: 'unix', socketPath }, undefined, 20_000);
+    const client = createProbeClient({ kind: 'unix', socketPath }, undefined, 20_000, hostTimers);
     closers.push(() => client.close());
     const result = await client.get('models');
     expect(result.status).toBe(200);
     expect(result.text).toBe(body);
+  });
+
+  it('bounds a step on the timer port it is given', async () => {
+    const socketPath = await serverAnswering(() => undefined);
+    const timers = createFakeTimers(createFakeClock(0));
+    const client = createProbeClient({ kind: 'unix', socketPath }, undefined, 600_000, timers);
+    closers.push(() => client.close());
+    const failure = client.get('models').then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    timers.advance(600_000);
+    expect(await failure).toBeInstanceOf(ProbeTimeoutError);
   });
 });

@@ -70,7 +70,7 @@ export type MeasureManagedServerOptions = {
   declaredDialect?: DialectId;
   servers?: Set<ManagedServer>;
   spawn?: SpawnFn;
-  timers?: ManagedServerTimers;
+  timers: ManagedServerTimers;
   readStopGraceMs: () => number;
   onWarning(message: string): void;
 };
@@ -94,7 +94,7 @@ export const measureManagedServer =
       readStopGraceMs: options.readStopGraceMs,
       onWarning: options.onWarning,
       ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
-      ...(options.timers === undefined ? {} : { timers: options.timers }),
+      timers: options.timers,
     });
     options.servers?.add(server);
     const { tokenCount } = description;
@@ -109,6 +109,7 @@ export const measureManagedServer =
         ...(options.model === undefined ? {} : { model: options.model }),
         ...(tokenCount === 'estimated' ? {} : { countTokens: async (text: string) => parseCount(options.target, await options.execWithStdin(options.binary, tokenCount.argv, text, signal)) }),
         ...(options.samples === undefined ? {} : { samples: options.samples }),
+        ports: { clock: options.timers, timers: options.timers },
         signal,
       });
     } finally {
@@ -172,6 +173,7 @@ export type ProbeManagedOptions = {
   hashes: BinaryHashCache;
   isUsableBinary: (binary: string) => Promise<boolean>;
   readStopGraceMs: () => number;
+  timers: ManagedServerTimers;
   onWarning(message: string): void;
 };
 
@@ -201,6 +203,7 @@ export const probeManagedFm = async (options: ProbeManagedOptions): Promise<Prob
       exec,
       execWithStdin: createExecWithStdin(childEnv),
       readStopGraceMs: options.readStopGraceMs,
+      timers: options.timers,
       onWarning: options.onWarning,
       ...(options.model === undefined ? {} : { model: options.model }),
       ...(options.samples === undefined ? {} : { samples: options.samples }),
@@ -209,6 +212,6 @@ export const probeManagedFm = async (options: ProbeManagedOptions): Promise<Prob
     }),
     currency: managedCurrencyOf(options.description, options),
   });
-  const { key, report } = await recordProbe(subject, options.paths.probe, options.lock, options.signal);
+  const { key, report } = await recordProbe(subject, options.paths.probe, options.lock, options.timers, options.signal);
   return { report, toolCalling: decideToolCalling(report).mode, recordFile: managedRecordPath(options.paths.probe, knownKeyOf(key)) };
 };

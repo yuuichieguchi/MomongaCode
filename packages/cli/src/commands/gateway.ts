@@ -42,6 +42,14 @@ export const probeSubjectOf = (models: ResolvedModels, text: string): ProbeSubje
   return { canon, display, model };
 };
 
+export const managedProbeTimersOf = (ports: CliPorts): { setTimeout: CliPorts['timers']['setTimeout']; clearTimeout: CliPorts['timers']['clearTimeout']; now(): number } => ({
+  setTimeout: (callback, ms) => ports.timers.setTimeout(callback, ms),
+  clearTimeout: (handle) => ports.timers.clearTimeout(handle),
+  now: () => ports.clock.now(),
+});
+
+const probePortsOf = (ports: CliPorts): { clock: CliPorts['clock']; timers: CliPorts['timers'] } => ({ clock: ports.clock, timers: ports.timers });
+
 export const cliProbeInstance = (paths: MomongaPaths, provider: string): ManagedInstancePaths => managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', provider });
 
 export const RESTART_STARTED_TEXT = (version: string): string => `started a new daemon (v${version}) so that the gateway reads the record; work in the old one keeps running.`;
@@ -145,6 +153,7 @@ const probeChatCompletions = async (
   const { probeEndpointTarget, reachableEndpoint } = await import('@momonga/gateway');
   const { report, toolCalling, key } = await probeEndpointTarget({
     probeRecordDir: paths.probe,
+    ports: probePortsOf(ports),
     lock: resolveLayoutLocks(paths).mechanism,
     upstream: reachableEndpoint(upstreamEndpointOf(target), network),
     key: endpointRecordKeyOf(subject, target),
@@ -172,6 +181,7 @@ const probeOllama = async (
   const { probeOllamaTarget, reachableEndpoint } = await import('@momonga/gateway');
   const { report, key } = await probeOllamaTarget({
     probeRecordDir: paths.probe,
+    ports: probePortsOf(ports),
     lock: resolveLayoutLocks(paths).mechanism,
     upstream: reachableEndpoint(upstreamEndpointOf(target), network),
     key: endpointRecordKeyOf(subject, target),
@@ -208,6 +218,7 @@ const probeManaged = async (ports: CliPorts, paths: MomongaPaths, subject: Probe
     hashes: createBinaryHashCache(),
     isUsableBinary: systemProcessFiles.isUsableBinary,
     readStopGraceMs: () => settings.gateway.managedServerStopGraceMs,
+    timers: managedProbeTimersOf(ports),
     model: configured.model,
     onWarning: (message) => ports.stderr.write(`${escapedLines([`momonga: ${message}`])}\n`),
     ...(options.samples === undefined ? {} : { samples: options.samples }),

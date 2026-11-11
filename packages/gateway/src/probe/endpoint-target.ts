@@ -9,6 +9,7 @@ import { FULL_KEYWORD_SUPPORT } from '../dialect/keyword-support.ts';
 import type { KeywordSupport } from '../dialect/keyword-support.ts';
 import { resolveDialectId } from '../dialect/resolve-id.ts';
 import { ProbeTimeoutError, createProbeClient } from './client.ts';
+import type { ProbePorts } from './client.ts';
 import type { ProbeEndpoint } from './client.ts';
 import { capabilitiesFromProbe, decideToolCalling, layerOf, mergeCapabilities, withImageDefault } from './decide.ts';
 import type { ProbeOutputPolicy } from './decide.ts';
@@ -31,10 +32,11 @@ export const probeEndpointOf = (upstream: UpstreamEndpoint, apiKey: string | und
 
 export const readModelsListing = async (
   endpoint: ProbeEndpoint,
+  ports: ProbePorts,
   signal: AbortSignal,
   timeoutMs: number = IDENTITY_READ_TIMEOUT_MS,
 ): Promise<unknown> => {
-  const client = createProbeClient(endpoint, signal, timeoutMs);
+  const client = createProbeClient(endpoint, signal, timeoutMs, ports.timers);
   try {
     const result = await client.get('models');
     if (result.status !== 200) throw new UpstreamHttpError(result.status, null, 'the model listing was refused', undefined, false);
@@ -53,9 +55,10 @@ export const readEndpointIdentity = async (
   endpoint: ProbeEndpoint,
   model: string,
   fields: readonly string[],
+  ports: ProbePorts,
   signal: AbortSignal,
   timeoutMs: number = IDENTITY_READ_TIMEOUT_MS,
-): Promise<string> => endpointIdentityOf(await readModelsListing(endpoint, signal, timeoutMs), model, fields);
+): Promise<string> => endpointIdentityOf(await readModelsListing(endpoint, ports, signal, timeoutMs), model, fields);
 
 const NEVER_ENDED = new AbortController().signal;
 

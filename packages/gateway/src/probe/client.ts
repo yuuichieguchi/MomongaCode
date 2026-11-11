@@ -1,7 +1,6 @@
-import { setTimeout as setTimeoutPromise } from 'node:timers/promises';
 import { request } from 'undici';
-import { Deadline, createOutboundDispatcher, createUdsClient, fixedSocket } from '@momonga/foundation';
-import type { OutboundNetwork, UdsClient, UdsResponse } from '@momonga/foundation';
+import { OperationLimitError, createOutboundDispatcher, createUdsClient, fixedSocket, operationLimit } from '@momonga/foundation';
+import type { Clock, LimitTiming, OutboundNetwork, UdsClient, UdsResponse } from '@momonga/foundation';
 import { readTextLimited } from '../adapters/shared/body-reading.ts';
 
 export interface HttpResult {
@@ -10,8 +9,9 @@ export interface HttpResult {
   headers: Record<string, string>;
 }
 
-export const systemSleep = (ms: number, signal: AbortSignal | undefined): Promise<void> =>
-  setTimeoutPromise(ms, undefined, signal === undefined ? {} : { signal });
+export type ProbeTimers = LimitTiming;
+
+export type ProbePorts = { readonly clock: Clock; readonly timers: ProbeTimers };
 
 export type ProbeEndpoint =
   | { kind: 'unix'; socketPath: string }
@@ -93,6 +93,7 @@ export const createProbeClient = (
   endpoint: ProbeEndpoint,
   signal: AbortSignal | undefined,
   stepTimeoutMs: number,
+  timers: ProbeTimers,
   managedRoutes?: ManagedProbeRoutes,
 ): ProbeClient => {
   const transport = transportOf(endpoint, stepTimeoutMs);
@@ -106,17 +107,16 @@ export const createProbeClient = (
     perform: (requestSignal: AbortSignal, timedOut: () => boolean, dispose: () => void) => Promise<T>,
     streaming = false,
   ): Promise<T> => {
-    const deadline = Deadline.after(stepTimeoutMs);
-    const requestSignal = signal === undefined ? deadline.signal : AbortSignal.any([signal, deadline.signal]);
-    const timedOut = (): boolean => deadline.expired && signal?.aborted !== true;
+    const limit = operationLimit(signal ?? new AbortController().signal, stepTimeoutMs, `the step bound of ${method} ${path}`, timers);
+    const timedOut = (): boolean => limit.signal.reason instanceof OperationLimitError;
     try {
-      return await perform(requestSignal, timedOut, () => deadline.dispose());
+      return await perform(limit.signal, timedOut, () => limit.dispose());
     } catch (error) {
-      deadline.dispose();
+      limit.dispose();
       if (timedOut()) throw new ProbeTimeoutError(method, path, stepTimeoutMs);
       throw error;
     } finally {
-      if (!streaming) deadline.dispose();
+      if (!streaming) limit.dispose();
     }
   };
 

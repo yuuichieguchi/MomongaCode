@@ -1,4 +1,4 @@
-import { decodeSse, defineProductSchema } from '@momonga/foundation';
+import { decodeSse, defineProductSchema, sleep } from '@momonga/foundation';
 import type { OutboundNetwork, ProductValidator } from '@momonga/foundation';
 import {
   ESTIMATED_ERROR_BOUND_RATIO,
@@ -26,7 +26,7 @@ import { cachedCountOf } from './cached-count.ts';
 import { maxOutputTokensFor } from './decide.ts';
 import { IMAGE_PROMPT, SEARCH_TOLERANCE, TINY_PNG, measureImageTokens } from './image-tokens.ts';
 import type { ImageCostProbe } from './image-tokens.ts';
-import { ProbeTimeoutError, createProbeClient, systemSleep, type HttpResult, type ManagedProbeRoutes, type ProbeClient, type ProbeEndpoint } from './client.ts';
+import { ProbeTimeoutError, createProbeClient, type HttpResult, type ProbePorts, type ManagedProbeRoutes, type ProbeClient, type ProbeEndpoint } from './client.ts';
 import type { ProbeTool } from './envelope.ts';
 import { NO_USER_DIALECTS, resolveDialect } from '../dialect/choice.ts';
 import type { UserDialects } from '../dialect/choice.ts';
@@ -55,10 +55,9 @@ export interface ProbeOptions {
   samples?: number;
   countTokens?: (text: string) => Promise<number>;
   guardrailPrompt?: string;
-  now?: () => Date;
+  ports: ProbePorts;
   signal?: AbortSignal;
   stepTimeoutMs?: number;
-  sleep?: (ms: number, signal: AbortSignal | undefined) => Promise<void>;
 }
 
 export const PROBE_METHOD_VERSION = 3;
@@ -137,7 +136,7 @@ const endpointOf = (options: ProbeOptions): ProbeEndpoint => {
 };
 
 export const runProbe = async (options: ProbeOptions): Promise<ProbeReport> => {
-  const client = createProbeClient(endpointOf(options), options.signal, options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS, options.managed);
+  const client = createProbeClient(endpointOf(options), options.signal, options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS, options.ports.timers, options.managed);
   try {
     return await probeWith(client, options);
   } finally {
@@ -147,7 +146,7 @@ export const runProbe = async (options: ProbeOptions): Promise<ProbeReport> => {
 
 const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<ProbeReport> => {
   const samples = options.samples ?? DEFAULT_SAMPLES;
-  const now = options.now ?? (() => new Date());
+  const now = (): Date => new Date(options.ports.clock.now());
 
   const healthResult: HttpResult = client.hasHealthRoute ? await client.get('health') : { status: 200, text: '', headers: {} };
   expectStatus(healthResult, [200], 'health');
@@ -167,7 +166,6 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
     return { ...result, reply, errorKind, outcome: outcomeOf(result.status, reply, errorKind) };
   };
   const stepTimeoutMs = options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS;
-  const sleep = options.sleep ?? systemSleep;
   const retryingRateLimits =
     (once: Chat): Chat =>
     async (body) => {
@@ -175,7 +173,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
       for (let retry = 0; result.status === 429 && retry < MAX_RATE_LIMIT_RETRIES; retry += 1) {
         const waitMs = retryAfterMs(result.headers['retry-after'], now());
         if (waitMs === undefined || waitMs > stepTimeoutMs) return result;
-        await sleep(waitMs, options.signal);
+        if ((await sleep(options.ports.timers, waitMs, options.signal)) === 'aborted') options.signal?.throwIfAborted();
         result = await once(body);
       }
       return result;

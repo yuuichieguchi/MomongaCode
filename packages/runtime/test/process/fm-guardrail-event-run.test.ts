@@ -9,6 +9,7 @@ import type { RunHome } from './run-helpers.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
 import { createBinaryHashCache, managedInstancePaths } from '@momonga/foundation';
 import { FM_SERVER } from '@momonga/protocol';
+import { systemTiming } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -38,6 +39,7 @@ const startFmGateway = async (temp: RunHome): Promise<void> => {
   onCleanup(() => killGroupsForCleanup(servePids(dumpFile)));
   writeUserSettings(temp.home, { sandbox: 'none', models: { connections: [{ adapter: 'managed', server: 'fm', provider: 'fm', binary: fm.binaryPath, models: [{ id: 'system', toolCalling: 'native' }] }] } });
   await probeManagedFm({
+    timers: systemTiming,
     inspector: testProcessInspector(),
     lock: testKernelLock(),
     platform: process.platform,

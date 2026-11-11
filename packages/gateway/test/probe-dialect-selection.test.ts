@@ -5,6 +5,7 @@ import { collectAllowedNames, generateInstance, startFakeChatCompletions } from 
 import type { FakeChatCompletionsOptions, FakeChatCompletionsServer, FakeRoute, FakeScriptedReply } from '@momonga/testkit';
 import { FM_SERVER } from '@momonga/protocol';
 import { FM_PROBE_ROUTES } from './fm-record-support.ts';
+import { probePortsAt } from './probe-ports-support.ts';
 
 const servers: FakeChatCompletionsServer[] = [];
 afterEach(async () => {
@@ -22,7 +23,7 @@ const isRecord = (value: unknown): value is Json => typeof value === 'object' &&
 const probe = async (options: FakeChatCompletionsOptions, extra: Json = {}): Promise<{ report: ProbeReport; fake: FakeChatCompletionsServer }> => {
   const fake = await startFakeChatCompletions(options);
   servers.push(fake);
-  const report = await runProbe({ socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, now: fixedNow, samples: 2, ...extra });
+  const report = await runProbe({ socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, ports: probePortsAt(fixedNow), samples: 2, ...extra });
   return { report, fake };
 };
 

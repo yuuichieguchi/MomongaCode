@@ -13,6 +13,7 @@ import { OLLAMA_MODEL, startFakeOllama } from './ollama-support.ts';
 import { REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
 import { NO_PROBE_START } from './fm-record-support.ts';
 import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
+import { hostProbePorts, probePortsAt } from './probe-ports-support.ts';
 
 type JsonMode = 'json_object' | 'none' | undefined;
 
@@ -35,6 +36,7 @@ describe('the Ollama probe measures the JSON-only mode through the same item', (
   const probeOllama = async (jsonModeProbe: 'accepts' | 'rejects' | 'ignores' | 'fails'): Promise<unknown> => {
     const fake = await startFakeOllama({ jsonModeProbe });
     const result = await probeOllamaTarget({
+      ports: hostProbePorts,
       lock: testKernelLock(),
       probeRecordDir: makeDir(),
       upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK },
@@ -60,7 +62,7 @@ describe('a probed endpoint target carries the measured JSON-only mode', () => {
   const plainReport = async (): Promise<ProbeReport> => {
     const fake = await startFakeChatCompletions({ scenario: 'tools-ok', streamUsage: true });
     registerCleanup(() => fake.close());
-    return runProbe({ socketPath: fake.socketPath, samples: 2, now: NOW });
+    return runProbe({ socketPath: fake.socketPath, samples: 2, ports: probePortsAt(NOW) });
   };
 
   const reportWith = async (state: 'accepted' | 'refused' | undefined): Promise<ProbeReport> => {

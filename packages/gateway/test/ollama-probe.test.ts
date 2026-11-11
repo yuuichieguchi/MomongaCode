@@ -4,9 +4,10 @@ import { makeDir } from './gateway-helpers.ts';
 import { DEVSTRAL_DIGEST, OLLAMA_MODEL, QWEN_DIGEST, QWEN_MODEL, TRAINED_CONTEXT_LENGTH, startFakeOllama, tagsWithDevstralDigest } from './ollama-support.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
 import { UNCONFIGURED_NETWORK, testKernelLock } from '@momonga/testkit';
+import { hostProbePorts } from './probe-ports-support.ts';
 
 const probe = (origin: string, dir: string, contextWindow: number, model = OLLAMA_MODEL) =>
-  probeOllamaTarget({ lock: testKernelLock(), probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: origin }), model }, model, contextWindow });
+  probeOllamaTarget({ ports: hostProbePorts, lock: testKernelLock(), probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: origin }), model }, model, contextWindow });
 
 describe('the Ollama probe', () => {
   it('reads /api/version, /api/show for the model and /api/tags, and records the digest as the upstream identity', async () => {

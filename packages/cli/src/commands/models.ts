@@ -32,7 +32,7 @@ import { withIdentityReadFetch } from '../network.ts';
 import { announcePlainHttp } from '../plain-http.ts';
 import type { CliFiles, CliPorts } from '../ports.ts';
 import { escapedLines } from '../terminal-writer.ts';
-import { cliProbeInstance } from './gateway.ts';
+import { cliProbeInstance, managedProbeTimersOf } from './gateway.ts';
 
 type Writer = { write(text: string): void };
 
@@ -848,6 +848,7 @@ export const programModelOf = async (ports: CliPorts, paths: MomongaPaths, progr
     hashes: createBinaryHashCache(),
     isUsableBinary: systemProcessFiles.isUsableBinary,
     readStopGraceMs: () => settings.gateway.managedServerStopGraceMs,
+    timers: managedProbeTimersOf(ports),
     onWarning,
   });
   return report.modelId;

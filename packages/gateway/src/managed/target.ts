@@ -62,6 +62,7 @@ export type ManagedTargetOptions = {
   probeRecordDir: string;
   serverName: string;
   requestLimitMs: number;
+  timeoutSignal(ms: number): AbortSignal;
   isUsableBinary: (binary: string) => Promise<boolean>;
   readKey: (signal: AbortSignal) => Promise<ProbeKey>;
   onInstanceEnd: () => void;
@@ -223,7 +224,7 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
     return { report, capabilities, isGuardrail: guardrailMatcherOf(report) };
   };
 
-  const requestSignal = (): AbortSignal => AbortSignal.timeout(options.requestLimitMs);
+  const requestSignal = (): AbortSignal => options.timeoutSignal(options.requestLimitMs);
 
   const checkBinary = async (): Promise<void> => {
     if (await options.isUsableBinary(options.binary)) return;

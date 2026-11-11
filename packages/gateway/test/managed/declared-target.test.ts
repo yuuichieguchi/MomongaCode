@@ -14,6 +14,8 @@ import { makeDir, registerCleanup } from '../gateway-helpers.ts';
 import { makeHome } from '../gateway-process-helpers.ts';
 import { makeReport } from '../report-fixture.ts';
 import { declaredForm, loadedDeclaration, writeExecutable } from './declared-support.ts';
+import { systemTiming } from '@momonga/foundation';
+import { hostTimers } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -112,6 +114,7 @@ describe('a running instance keeps the key it started with (19.11-a, 19.14 item 
       probeRecordDir: dir,
       serverName: 'workbench',
       requestLimitMs: 300_000,
+      timeoutSignal: hostTimers.timeoutSignal,
       isUsableBinary: async () => true,
       readKey: async () => readKey(),
       onInstanceEnd: () => undefined,
@@ -168,6 +171,7 @@ describe('a declared server follows the one generic declared-only rule (19.11-b,
       probeRecordDir: path.join(makeDir(), 'probe'),
       serverName: 'workbench',
       requestLimitMs: 300_000,
+      timeoutSignal: hostTimers.timeoutSignal,
       isUsableBinary: async () => true,
       readKey: async () => KEY_A,
       onInstanceEnd: () => undefined,
@@ -217,6 +221,7 @@ describe('a declared server follows the one generic declared-only rule (19.11-b,
     const instance = managedInstancePaths(momongaPaths(home, process.platform, {}), { owner: 'cli', purpose: 'probe', provider: 'workbench' });
     fs.mkdirSync(instance.markerDirectory, { recursive: true, mode: 0o700 });
     const report = await measureManagedServer({
+      timers: systemTiming,
       inspector: testProcessInspector(),
       lock: testKernelLock(),
       description,

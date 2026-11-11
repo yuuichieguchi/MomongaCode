@@ -1,10 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { KILL_CONFIRM_MS, ProcessLockHeldError, acquireProcessLock, createUdsClient, fixedSocket, isPipePath, isUnixSocketLive, socketBindRefusalOf, startSharedCall, systemClock } from '@momonga/foundation';
+import { KILL_CONFIRM_MS, ProcessLockHeldError, acquireProcessLock, createUdsClient, fixedSocket, isPipePath, isUnixSocketLive, socketBindRefusalOf, startSharedCall } from '@momonga/foundation';
 import type { GenerationRole, ProcessLock, SharedCall, UdsClient, ProcessInspector, KernelLockMechanism } from '@momonga/foundation';
 import { SOCKET_PLACEHOLDER, WORDS, messageOf } from '@momonga/protocol';
 import type { HealthResult, ManagedEndpointForm, ManagedServerDescription } from '@momonga/protocol';
-import { realTimers } from '../process-ports.ts';
 import { PreconditionFailedError, TargetNotReadyError } from '../adapters/shared/failures.ts';
 import { createExecFn, createGroupSpawn, reapStaleGroups } from './fm-processes.ts';
 import type { ChildEnv } from './fm-processes.ts';
@@ -41,7 +40,7 @@ export type ManagedServerOptions = {
   env?: ChildEnv;
   exec?: ExecFn;
   spawn?: SpawnFn;
-  timers?: ManagedServerTimers;
+  timers: ManagedServerTimers;
   readStopGraceMs: () => number;
   onWarning: (message: string) => void;
   onChildStart?: (signal: AbortSignal) => Promise<void>;
@@ -90,8 +89,6 @@ export const MANAGED_SERVER_BEHAVIOUR = {
 
 const LOCK_DIRECTORY_MODE = 0o700;
 
-const defaultTimers: ManagedServerTimers = { ...realTimers, now: () => systemClock.now() };
-
 const CONNECTION_FAILURE_CODES = new Set(['ECONNREFUSED', 'ENOENT', 'ECONNRESET', 'EPIPE']);
 
 const isConnectionFailure = (error: unknown): boolean => {
@@ -135,7 +132,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
           throw new Error(aboutModel(target, 'the server has no marker directory, so it cannot be launched'));
         }
       : createGroupSpawn({ env: options.env, markerDirectory: options.markerDirectory, onWarning: options.onWarning, inspector: options.inspector }));
-  const timers = options.timers ?? defaultTimers;
+  const timers = options.timers;
   const argv = argvOf(description, options.socketPath);
   const said = (text: string): string => aboutModel(target, text);
 

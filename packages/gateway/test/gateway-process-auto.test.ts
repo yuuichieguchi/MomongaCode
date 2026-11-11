@@ -10,6 +10,7 @@ import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome,
 import { makeReport } from './report-fixture.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
 import { TARGET_PROBING } from '@momonga/protocol';
+import { hostProbePorts } from './probe-ports-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -37,6 +38,7 @@ const probedSetup = async (models: () => Array<Record<string, unknown>>) => {
     models: modelsOf({ local: ccTarget(fake.socketPath, { toolCalling: 'auto', model: 'qwen-fake' }) }),
   });
   await probeEndpointTarget({
+    ports: hostProbePorts,
     lock: testKernelLock(),
     probeRecordDir: momongaPaths(home, process.platform, {}).probe,
     upstream: { kind: 'unix', socketPath: fake.socketPath }, key: { endpoint: endpointKeyOf({ kind: 'unix', socketPath: fake.socketPath }), model: 'qwen-fake' }, model: 'qwen-fake',
