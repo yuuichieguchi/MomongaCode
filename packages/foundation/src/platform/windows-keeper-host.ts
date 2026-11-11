@@ -98,8 +98,15 @@ export type NodeKeeperHostOptions = {
   env: KeeperSpawnEnv;
 };
 
+const commandInterpreterIn = (env: KeeperSpawnEnv): string => {
+  const systemRoot = env['SystemRoot'];
+  if (systemRoot === undefined || systemRoot === '') throw new Error('SystemRoot is not set in the environment, so the Windows command interpreter that runs command scripts cannot be found');
+  return `${systemRoot.replace(/\\+$/, '')}\\System32\\cmd.exe`;
+};
+
 export const createNodeKeeperHost = ({ executable, random, env }: NodeKeeperHostOptions): KeeperHost => ({
   executable,
+  commandInterpreter: () => commandInterpreterIn(env),
   listen: listenForKeeper,
   start: startDetachedKeeper(env),
   random,

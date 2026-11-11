@@ -2,7 +2,7 @@ import { KEEPER_JOB_PREFIX, KEEPER_NAME_FORM } from '../process-contract.ts';
 import type { GroupProbeOptions } from './group-port.ts';
 import { hostKeeperHost } from './windows-keeper-host.ts';
 import { KeeperLostError, attachKept, openKeptLaunch } from './windows-keeper.ts';
-import type { KeeperFailureReason, KeeperHost, KeeperRun, KeptCommand, KeptGroup } from './windows-keeper.ts';
+import type { KeeperFailureReason, KeeperHost, KeeperRun, KeeperStart, KeptCommand, KeptGroup } from './windows-keeper.ts';
 
 export type KeptProcess = KeeperRun & { readonly pid: number | undefined };
 
@@ -10,7 +10,7 @@ export type KeptOpenRequest<P extends KeptProcess> = {
   command: KeptCommand;
   marker: string | undefined;
   descriptors: readonly number[];
-  start(executable: string, args: readonly string[]): P;
+  start: KeeperStart<P>;
 };
 
 export type KeptExit = { kind: 'exit'; code: number } | { kind: 'lost' };

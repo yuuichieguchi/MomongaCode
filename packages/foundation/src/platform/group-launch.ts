@@ -56,8 +56,9 @@ const launchKept = (keeper: GroupKeeper, request: GroupLaunchRequest, spawnProce
     command: { file: request.file, args: request.args },
     marker: marker?.file,
     descriptors: descriptorsBeyondStandard(stdio),
-    start: (executable, args) => {
-      const child = spawnProcess(executable, [...args], { ...placeOf(request), detached: true, windowsHide: true, stdio });
+    start: (executable, args, verbatim) => {
+      const verbatimForm = verbatim === true ? { windowsVerbatimArguments: true, argv0: `"${executable}"` } : {};
+      const child = spawnProcess(executable, [...args], { ...placeOf(request), ...verbatimForm, detached: true, windowsHide: true, stdio });
       return { child, pid: child.pid, exited: exitCodeOf(child) };
     },
   });

@@ -510,6 +510,33 @@ static void put_descriptor(BYTE *block, DWORD count, DWORD descriptor, BYTE flag
   CopyMemory(slots + (SIZE_T)descriptor * sizeof handle, &handle, sizeof handle);
 }
 
+static BOOL is_absolute(const WCHAR *path) {
+  BOOL drive = ((path[0] >= L'A' && path[0] <= L'Z') || (path[0] >= L'a' && path[0] <= L'z')) && path[1] == L':' && path[2] == L'\\';
+  BOOL share = path[0] == L'\\' && path[1] == L'\\';
+  return drive || share;
+}
+
+static WCHAR *absolute_program(const WCHAR *command_line) {
+  const WCHAR *start = command_line;
+  const WCHAR *end;
+  WCHAR *program;
+  SIZE_T length;
+  if (*start == L'"') {
+    start += 1;
+    end = start;
+    while (*end != 0 && *end != L'"') end += 1;
+  } else {
+    end = start;
+    while (*end != 0 && *end != L' ' && *end != L'\t') end += 1;
+  }
+  length = (SIZE_T)(end - start);
+  program = allocate((length + 1) * sizeof(WCHAR));
+  CopyMemory(program, start, length * sizeof(WCHAR));
+  program[length] = 0;
+  if (!is_absolute(program)) fail("launch-failed", EXIT_LAUNCH_FAILED, ERROR_BAD_PATHNAME);
+  return program;
+}
+
 static HANDLE start_command(WCHAR *command_line, HANDLE marker, const DWORD *descriptors, DWORD descriptor_count, DWORD *pid) {
   STARTUPINFOEXW startup;
   PROCESS_INFORMATION started;
@@ -517,6 +544,7 @@ static HANDLE start_command(WCHAR *command_line, HANDLE marker, const DWORD *des
   HANDLE *handles = allocate((STANDARD_DESCRIPTORS + 1 + (SIZE_T)descriptor_count) * sizeof(HANDLE));
   HANDLE standard[STANDARD_DESCRIPTORS];
   BYTE *block = NULL;
+  WCHAR *program;
   DWORD block_size = 0;
   DWORD count = 0;
   DWORD index;
@@ -561,7 +589,9 @@ static HANDLE start_command(WCHAR *command_line, HANDLE marker, const DWORD *des
     if (!InitializeProcThreadAttributeList(startup.lpAttributeList, 1, 0, &size)) fail("launch-failed", EXIT_LAUNCH_FAILED, GetLastError());
     if (!UpdateProcThreadAttribute(startup.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, handles, count * sizeof(HANDLE), NULL, NULL)) fail("launch-failed", EXIT_LAUNCH_FAILED, GetLastError());
   }
-  if (!CreateProcessW(NULL, command_line, NULL, NULL, count > 0, EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW, NULL, NULL, &startup.StartupInfo, &started)) fail("launch-failed", EXIT_LAUNCH_FAILED, GetLastError());
+  program = absolute_program(command_line);
+  if (!CreateProcessW(program, command_line, NULL, NULL, count > 0, EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW, NULL, NULL, &startup.StartupInfo, &started)) fail("launch-failed", EXIT_LAUNCH_FAILED, GetLastError());
+  release(program);
   CloseHandle(started.hThread);
   for (index = 0; index < descriptor_count; index += 1) CloseHandle(descriptor_handle(&own, descriptors[index]));
   if (startup.lpAttributeList != NULL) {
