@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { canonicalJson, createUninspectableRegistry, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, createUninspectableRegistry, sha256Hex, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { SandboxExit, SandboxedProcess } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { Run, RuntimeStore } from '@momonga/store';
@@ -81,7 +81,7 @@ const setup = (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}
   fs.mkdirSync(markerDir);
   const clock = createFakeClock(START_MS);
   const timers = createFakeTimers(clock);
-  const store: RuntimeStore = openRuntimeStore({ lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS, path: path.join(root, 'runtime.db'), home: root, clock, leaseMs: 1000, maxAttempts: 5, maxTotalAttempts: 50 });
+  const store: RuntimeStore = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS, path: path.join(root, 'runtime.db'), home: root, clock, leaseMs: 1000, maxAttempts: 5, maxTotalAttempts: 50 });
   const session = store.createSession({ cwd: root, env: {}, permissionMode: 'manual', model: 'fm' });
   const created = store.createRunAndEnqueue(session.id, { input: 'go', timeoutMs: 3_600_000, limits: {}, pins: {} });
   if (created.kind !== 'created') throw new Error('expected a run');

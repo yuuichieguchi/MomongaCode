@@ -178,7 +178,7 @@
       {"name":"MAX_POINTER_FILE_BYTES","file":"packages/foundation/src/protected-set.ts","lacks":["row"]},
       {"name":"MAX_REDACTED_CHARS","file":"packages/foundation/src/redaction.ts","lacks":["row"]},
       {"name":"MIN_CREDENTIAL_CHARS","file":"packages/foundation/src/redaction.ts","lacks":["row"]},
-      {"name":"DEFAULT_BUSY_TIMEOUT_MS","file":"packages/foundation/src/sqlite.ts","lacks":["kind"]},
+      {"name":"BUSY_WAIT_LIMIT_MS","file":"packages/foundation/src/sqlite.ts","lacks":["kind"]},
       {"name":"SSE_RECONNECT_BASE_MS","file":"packages/foundation/src/sse.ts","lacks":["kind","row"]},
       {"name":"SSE_RECONNECT_MAX_MS","file":"packages/foundation/src/sse.ts","lacks":["kind","row"]},
       {"name":"MAX_MESSAGE_CHARS","file":"packages/foundation/src/untrusted-errors.ts","lacks":["row"]},

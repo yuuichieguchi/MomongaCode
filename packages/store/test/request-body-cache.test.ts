@@ -6,6 +6,7 @@ import type { Claim, RuntimeStore } from '@momonga/store';
 import { createFakeClock, testKernelLock } from '@momonga/testkit';
 import { decodeRunEvents } from '../src/codec.ts';
 import { LEASE_MS, START_MS, enqueue, makeStoreDir, mustClaim, newSession, rawDb, registerCleanup, UNASKED_COMMANDS } from './helpers.ts';
+import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
 const READERS_PER_STEP = 4;
 
@@ -34,7 +35,7 @@ const countingStore = () => {
   const dbPath = path.join(makeStoreDir(), 'runtime.db');
   const clock = createFakeClock(START_MS);
   const decodes: Decodes = { rows: 0, counting: false };
-  const store: RuntimeStore = openRuntimeStore({ lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS,
+  const store: RuntimeStore = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home: path.dirname(dbPath),
     clock,

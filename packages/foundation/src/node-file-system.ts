@@ -5,6 +5,7 @@ import { PRIVATE_MODE, assertPrivateRegularFile, noFollowFlag } from './platform
 export const OPEN_FLAGS = {
   readOnly: fs.constants.O_RDONLY,
   readWrite: fs.constants.O_RDWR,
+  writeOnly: fs.constants.O_WRONLY,
   create: fs.constants.O_CREAT,
   exclusive: fs.constants.O_EXCL,
   nonBlocking: fs.constants.O_NONBLOCK,

@@ -20,8 +20,8 @@ import { REFLECTION_INPUT_EVENT_TYPES, createReflectionInputFold } from './refle
 import type { KernelLockMechanism } from '@momonga/foundation';
 import { kernelLockNamed } from '@momonga/foundation';
 
-export const openJournalConnection = (databasePath: string): ReturnType<typeof openDatabase> => {
-  const db = openDatabase(databasePath);
+export const openJournalConnection = (databasePath: string, busyTimeoutMs: number): ReturnType<typeof openDatabase> => {
+  const db = openDatabase(databasePath, { busyTimeoutMs });
   try {
     db.exec('PRAGMA query_only = ON');
   } catch (error) {
@@ -78,7 +78,7 @@ export const serveJournalReader = (handlers: Readonly<Record<string, JournalHand
   });
 };
 
-type JournalThreadData = { readonly databasePath: string; readonly blobsDir: string; readonly lockName: KernelLockMechanism['name']; readonly port: MessagePort };
+type JournalThreadData = { readonly databasePath: string; readonly blobsDir: string; readonly lockName: KernelLockMechanism['name']; readonly busyTimeoutMs: number; readonly port: MessagePort };
 
 const LOCK_NAMES: readonly KernelLockMechanism['name'][] = ['file-lock', 'sqlite-lock'];
 
@@ -86,6 +86,7 @@ const isJournalThreadData = (value: unknown): value is JournalThreadData =>
   typeof value === 'object' && value !== null && typeof (value as { databasePath?: unknown }).databasePath === 'string' &&
   typeof (value as { blobsDir?: unknown }).blobsDir === 'string' &&
   LOCK_NAMES.includes((value as { lockName?: unknown }).lockName as KernelLockMechanism['name']) &&
+  typeof (value as { busyTimeoutMs?: unknown }).busyTimeoutMs === 'number' &&
   (value as { port?: unknown }).port instanceof MessagePort;
 
 const identityOf = (databasePath: string): { readonly dev: number; readonly ino: number } => {
@@ -502,7 +503,7 @@ const UNUSED_CLOCK = {
 const serve = (data: JournalThreadData): void => {
   if (parentPort === null) throw new Error('journal thread has no parent port');
   const before = identityOf(data.databasePath);
-  const db = openJournalConnection(data.databasePath);
+  const db = openJournalConnection(data.databasePath, data.busyTimeoutMs);
   const after = identityOf(data.databasePath);
   if (before.dev !== after.dev || before.ino !== after.ino) {
     db.close();

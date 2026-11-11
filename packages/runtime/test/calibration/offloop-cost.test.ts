@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { describe, expect, it } from 'vitest';
-import { createRedactor } from '@momonga/foundation';
+import { createRedactor, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { buildRunReport } from '@momonga/observability';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
 import { HISTORY_INDEX_BATCH_CHARS } from '@momonga/store';
@@ -70,7 +70,7 @@ const threadOf = (dbPath: () => string): { preparer: ContributionPreparer; clien
     started ??= (() => {
       const databasePath = dbPath();
       const { dev, ino } = fs.statSync(databasePath);
-      return startJournalThread({ lock: testKernelLock(), databasePath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+      return startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
     })();
     return started;
   };
@@ -127,7 +127,7 @@ const measureSize = async (steps: number): Promise<Measured> => {
     const lastSeq = env.run(run.id).lastSeq;
     const spawn = await timed(async () => {
       const { dev, ino } = fs.statSync(env.dbPath);
-      return startJournalThread({ lock: testKernelLock(), databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+      return startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
     });
     await spawn.value.close();
 

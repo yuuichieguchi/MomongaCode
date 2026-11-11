@@ -8,6 +8,7 @@ import type { JournalThreadClient } from '../../src/memory/journal-thread-client
 import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../../src/memory/journal-thread-limits.ts';
 import { journalReaderPreparer, makeEnv } from '../worker/harness.ts';
 import { testKernelLock } from '@momonga/testkit';
+import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -30,7 +31,7 @@ const throughTheThread = (dbPath: () => string): { preparer: ContributionPrepare
     started ??= (() => {
       const databasePath = dbPath();
       const { dev, ino } = fs.statSync(databasePath);
-      return startJournalThread({ lock: testKernelLock(), databasePath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+      return startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
     })();
     return started;
   };
@@ -80,7 +81,7 @@ describe('the contribution handler of the embedded journal thread', () => {
     const env = await makeEnv({ preparer: thread.preparer });
     dbPath = env.dbPath;
     const { dev, ino } = fs.statSync(dbPath);
-    const client = await startJournalThread({ lock: testKernelLock(), databasePath: dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+    const client = await startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath: dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
 
     await expect(client.request({ kind: 'contribution', leading: [] })).rejects.toBeInstanceOf(JournalThreadError);
     expect(await client.ping()).toMatchObject({ threadId: expect.any(Number) });

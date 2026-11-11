@@ -8,6 +8,7 @@ import { startJournalThread } from '../../src/memory/journal-thread-client.ts';
 import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../../src/memory/journal-thread-limits.ts';
 import { makeEnv } from '../worker/harness.ts';
 import { testKernelLock } from '@momonga/testkit';
+import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -40,7 +41,7 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
     );
     expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     const { dev, ino } = fs.statSync(env.dbPath);
-    const thread = await startJournalThread({ lock: testKernelLock(), databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+    const thread = await startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
     try {
       const record = await thread.runFacts(run.id);
       const stored = env.store.getRun(run.id);
@@ -75,7 +76,7 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
     const claim = await env.seed(run.id, [responded], 'hold');
     expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     const { dev, ino } = fs.statSync(env.dbPath);
-    const thread = await startJournalThread({ lock: testKernelLock(), databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+    const thread = await startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
     try {
       const refusal = await thread.runFacts(run.id).then(
         () => undefined,
@@ -95,7 +96,7 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
     const claim = await env.seed(run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { model: 'fm' }, mode: 'manual' }, responded], 'hold');
     expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     const { dev, ino } = fs.statSync(env.dbPath);
-    const thread = await startJournalThread({ lock: testKernelLock(), databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+    const thread = await startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
     await thread.close();
     const failure = await thread.runFacts(run.id).then(
       () => undefined,

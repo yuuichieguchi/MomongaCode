@@ -75,7 +75,7 @@ export type TraceStore = {
   close(): void;
 };
 
-export type OpenTraceStoreOptions = { path: string; clock: Clock };
+export type OpenTraceStoreOptions = { path: string; clock: Clock; busyTimeoutMs: number };
 
 const INITIAL_SCHEMA = `
 CREATE TABLE spans (
@@ -446,7 +446,7 @@ const createStore = (db: DatabaseSync, statements: Statements, clock: Clock): Tr
 };
 
 export const openTraceStore = (options: OpenTraceStoreOptions): TraceStore => {
-  const db = openDatabase(options.path);
+  const db = openDatabase(options.path, { busyTimeoutMs: options.busyTimeoutMs });
   try {
     migrate(db, TRACE_STORE_MIGRATIONS);
     db.exec('PRAGMA secure_delete = ON');

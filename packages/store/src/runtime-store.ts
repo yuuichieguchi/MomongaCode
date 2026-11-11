@@ -418,8 +418,8 @@ const assertPositiveInteger = (name: string, value: number): void => {
   if (!Number.isInteger(value) || value < 1) throw new RangeError(`openRuntimeStore: ${name} must be a positive integer, got ${value}`);
 };
 
-export const migrateRuntimeDatabase = (file: string): void => {
-  const db = openDatabase(file);
+export const migrateRuntimeDatabase = (file: string, busyTimeoutMs: number): void => {
+  const db = openDatabase(file, { busyTimeoutMs });
   try {
     migrate(db, MIGRATIONS);
   } finally {
@@ -439,7 +439,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   if (typeof options.home !== 'string') throw new TypeError('openRuntimeStore: home is required');
   const home = syncPaths.realPath(options.home);
   const { clock, leaseMs, maxAttempts, maxTotalAttempts } = options;
-  const db = openDatabase(options.path);
+  const db = openDatabase(options.path, { busyTimeoutMs: options.busyTimeoutMs });
   let statements: Statements;
   let blobDirectory: string;
   let identity: fs.Stats;

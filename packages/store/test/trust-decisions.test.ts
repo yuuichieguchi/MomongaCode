@@ -5,6 +5,7 @@ import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore, RuntimeStoreOptions } from '@momonga/store';
 import { createFakeClock, testKernelLock } from '@momonga/testkit';
 import { START_MS, makeStoreDir, openStoreAt, rawDb, UNASKED_COMMANDS } from './helpers.ts';
+import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
 type TrustTree = { root: string; home: string; dbPath: string; store: RuntimeStore };
 
@@ -34,6 +35,7 @@ const caseInsensitiveVolume = (): boolean => {
 const CASE_INSENSITIVE = caseInsensitiveVolume();
 
 const openOptions = (dir: string, home: string): RuntimeStoreOptions => ({
+  busyTimeoutMs: BUSY_WAIT_LIMIT_MS,
   lock: testKernelLock(),
   path: path.join(dir, 'runtime.db'),
   home,

@@ -10,6 +10,7 @@ import type { BilledCall, BodyRecord, CallPrice, PriceTable, Telemetry, TraceSto
 import { billedCallOf, isBilledChat } from '../src/billed-calls.ts';
 import { createFakeClock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
+import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
 export const START_MS = 1_800_000_000_000;
 export const RUN_ID = 'run-0001';
@@ -35,7 +36,7 @@ export const makeDir = (mode = 0o700): string => {
 
 export const openStore = (clock: FakeClock): { store: TraceStore; file: string } => {
   const file = path.join(makeDir(), 'traces.db');
-  const store = openTraceStore({ path: file, clock });
+  const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file, clock });
   registerCleanup(() => store.close());
   return { store, file };
 };

@@ -2,7 +2,7 @@ import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { canonicalJson, ensureMomongaDirs, groupAlive, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, ensureMomongaDirs, groupAlive, sha256Hex, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { McpPoolOptions } from '@momonga/mcp';
 import type { RunEventPayload } from '@momonga/protocol';
 import { openRuntimeStore } from '@momonga/store';
@@ -67,7 +67,7 @@ type SeedCall = { callId: string; name: string; args: Record<string, unknown>; k
 
 const openSeedStore = async (temp: RunHome) => {
   await prepareGeneration(temp);
-  return openRuntimeStore({ lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock: createFakeClock(SEED_MS), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
+  return openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock: createFakeClock(SEED_MS), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
 };
 
 const seedCancellingRun = async (temp: RunHome, call: SeedCall, holderScript?: string) => {

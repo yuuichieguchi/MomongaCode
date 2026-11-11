@@ -1,14 +1,24 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { sha256Hex } from './canonical-json.ts';
+import { OPEN_FLAGS, nodeDescriptorWriterSync, nodeFileSystemSync } from './node-file-system.ts';
+import type { FileSystemSync } from './node-file-system.ts';
 import { modeIsPrivate } from './platform/privacy.ts';
 
-export const DEFAULT_BUSY_TIMEOUT_MS = 5000;
+export const BUSY_WAIT_LIMIT_MS = 5000;
+
+export const busyTimeoutMs = (heartbeatMs: number): number => Math.min(BUSY_WAIT_LIMIT_MS, Math.floor(heartbeatMs));
+
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 
-export type OpenDatabaseOptions = { busyTimeoutMs?: number; createDirectory?: boolean };
+export type OpenDatabaseOptions = { busyTimeoutMs: number; createDirectory?: boolean };
+
+type DatabaseFiles = Pick<FileSystemSync, 'statSync' | 'openDescriptorSync' | 'closeSync' | 'mkdirSync'>;
+
+const files: DatabaseFiles = nodeFileSystemSync;
+
+const CREATE_NEW_FLAGS = OPEN_FLAGS.writeOnly | OPEN_FLAGS.create | OPEN_FLAGS.exclusive;
 
 export type Migration = { version: number; name: string; sql: string; rebuildsReferencedTable?: true };
 
@@ -17,9 +27,9 @@ export type MigrateResult = { applied: number[]; unknownApplied: number[] };
 const formatMode = (mode: number): string => (mode & 0o777).toString(8).padStart(4, '0');
 
 const assertPrivateDirectory = (dir: string): void => {
-  let stat: fs.Stats;
+  let stat: ReturnType<DatabaseFiles['statSync']>;
   try {
-    stat = fs.statSync(dir);
+    stat = files.statSync(dir);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       throw new Error(`database directory ${dir} does not exist; create it with: mkdir -m 700 ${dir}`, { cause: error });
@@ -35,31 +45,31 @@ const assertPrivateDirectory = (dir: string): void => {
 const ensurePrivateFile = (file: string): void => {
   let fd: number;
   try {
-    fd = fs.openSync(file, 'wx', PRIVATE_FILE_MODE);
+    fd = files.openDescriptorSync(file, CREATE_NEW_FLAGS, PRIVATE_FILE_MODE);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-    const stat = fs.statSync(file);
+    const stat = files.statSync(file);
     if (!modeIsPrivate(stat, 'file')) {
       throw new Error(`database file ${file} has mode ${formatMode(stat.mode)} but must be 0600; run: chmod 600 ${file}`, { cause: error });
     }
     return;
   }
   try {
-    fs.fchmodSync(fd, PRIVATE_FILE_MODE);
+    nodeDescriptorWriterSync.chmod(fd, PRIVATE_FILE_MODE);
   } finally {
-    fs.closeSync(fd);
+    files.closeSync(fd);
   }
 };
 
-export const openDatabase = (file: string, options: OpenDatabaseOptions = {}): DatabaseSync => {
-  const busyTimeoutMs = options.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS;
-  if (!Number.isInteger(busyTimeoutMs) || busyTimeoutMs < 0) {
-    throw new RangeError(`openDatabase: busyTimeoutMs must be a non-negative integer, got ${busyTimeoutMs}`);
+export const openDatabase = (file: string, options: OpenDatabaseOptions): DatabaseSync => {
+  const busyWaitMs = options.busyTimeoutMs;
+  if (!Number.isInteger(busyWaitMs) || busyWaitMs < 0) {
+    throw new RangeError(`openDatabase: busyTimeoutMs must be a non-negative integer, got ${busyWaitMs}`);
   }
-  if (options.createDirectory === true) fs.mkdirSync(path.dirname(file), { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
+  if (options.createDirectory === true) files.mkdirSync(path.dirname(file), PRIVATE_DIRECTORY_MODE);
   assertPrivateDirectory(path.dirname(file));
   ensurePrivateFile(file);
-  const db = new DatabaseSync(file, { timeout: busyTimeoutMs, enableForeignKeyConstraints: true });
+  const db = new DatabaseSync(file, { timeout: busyWaitMs, enableForeignKeyConstraints: true });
   try {
     const journal = db.prepare('PRAGMA journal_mode = WAL').get();
     if (journal?.['journal_mode'] !== 'wal') {

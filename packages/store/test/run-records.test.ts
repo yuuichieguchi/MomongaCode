@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { canonicalJson, migrate } from '@momonga/foundation';
+import { canonicalJson, migrate, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { assistantTextOf } from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
 import { foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
@@ -96,7 +96,7 @@ const recordedFacts = async (store: RuntimeStore, runId: string): Promise<Facts>
 });
 
 const countingStore = (dbPath: string, decoded: { rows: number }): RuntimeStore => {
-  const store = openRuntimeStore({ lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS,
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home: path.dirname(dbPath),
     clock: createFakeClock(START_MS),

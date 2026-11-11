@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
-import { canonicalJson, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, fixedRolePort, openDatabase, sha256Hex, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { canonicalJson, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, fixedRolePort, openDatabase, sha256Hex, EMPTY_PROTECTED_SET, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { InstructionReader } from '@momonga/context';
 import { computeFileRules } from '@momonga/policy';
@@ -153,7 +153,7 @@ export type Env = Awaited<ReturnType<typeof makeEnv>>;
 export type ContributionItems = Extract<RunEventPayload, { type: 'context.contribution' }>['items'];
 
 const inProcessFacts = (dbPath: string, handlerFor: (reader: ReturnType<typeof createJournalReader>) => JournalHandler) => async (request: object): Promise<never> => {
-  const db = openDatabase(dbPath);
+  const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
   try {
     return (await handlerFor(createJournalReader(db))(request as Record<string, unknown>, () => undefined)) as never;
   } finally {
@@ -162,7 +162,7 @@ const inProcessFacts = (dbPath: string, handlerFor: (reader: ReturnType<typeof c
 };
 
 const inProcessFidelity = (dbPath: string) => async (request: object): Promise<never> => {
-  const db = openDatabase(dbPath);
+  const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
   try {
     const handler = fidelityHandler({
       reader: createJournalReader(db),
@@ -184,7 +184,7 @@ export const journalReaderPreparer = (dbPath: string): ContributionPreparer => (
   reflectionInput: inProcessFacts(dbPath, reflectionInputHandler),
   fidelity: inProcessFidelity(dbPath),
   report: async (request) => {
-    const db = openDatabase(dbPath);
+    const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     try {
       return (await reportHandler(db, createJournalReader(db))(request, () => undefined)) as ReportReply;
     } finally {
@@ -192,7 +192,7 @@ export const journalReaderPreparer = (dbPath: string): ContributionPreparer => (
     }
   },
   measure: async (request) => {
-    const db = openDatabase(dbPath);
+    const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     try {
       return createJournalReader(db).measure(contributionAtTerminal, request);
     } finally {
@@ -219,7 +219,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const dbPath = path.join(stateDir, 'runtime.db');
   const clock: FakeClock = createFakeClock(START_MS);
   const scriptedContributions = new Map<string, ContributionItems>();
-  const store: RuntimeStore = openRuntimeStore({ lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS,
+  const store: RuntimeStore = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home,
     clock,

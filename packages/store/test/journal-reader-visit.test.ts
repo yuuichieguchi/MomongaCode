@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { openDatabase } from '@momonga/foundation';
+import { openDatabase, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
 import { JOURNAL_SCAN_RANGE_ROWS, JournalThreadError, createJournalReader, openRuntimeStore } from '@momonga/store';
 import type { Run, RuntimeStore } from '@momonga/store';
@@ -33,7 +33,7 @@ const seeded = () => {
   const run = enqueue(h.store, newSession(h.store).id);
   const claim = mustClaim(h.store, 'w1');
   expect(h.store.append(claim, [responded(1), ...Array.from({ length: DELTAS }, (_unused, index) => delta(index)), responded(2)]).kind).toBe('ok');
-  const db = openDatabase(h.dbPath);
+  const db = openDatabase(h.dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
   registerCleanup(() => db.close());
   return { h, run, db };
 };
@@ -110,7 +110,7 @@ describe('store.journalFacts: the main thread reaches the new kinds only through
     const calls: unknown[] = [];
     let decoded = 0;
     const answer = { lastSeq: 7, verified: true, facts: [] };
-    const store = openRuntimeStore({ lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS,
+    const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS,
       path: path.join(dir, 'runtime.db'),
       home: dir,
       clock: createFakeClock(START_MS),

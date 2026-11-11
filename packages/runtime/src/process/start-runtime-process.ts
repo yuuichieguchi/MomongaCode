@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ConfigError, loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, readUserStopValues, keptSettingsDirectory, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
 import type { ResolvedSettings } from '@momonga/config';
-import { installTrust, trustFailureText, layoutProcessInspector } from '@momonga/foundation';
+import { installTrust, trustFailureText, layoutProcessInspector, busyTimeoutMs } from '@momonga/foundation';
 import {
   acquireProcessLock,
   announceReady,
@@ -189,6 +189,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   const leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS;
   assertPositiveInteger('workerCount', workerCount);
   assertPositiveInteger('leaseMs', leaseMs);
+  const storeBusyWaitMs = busyTimeoutMs(heartbeatMsFor(leaseMs));
   const sandboxExecPath = options.sandboxExecPath;
   const shellHost = options.shellHost ?? nodeShellHost();
   const clock = options.clock ?? systemClock;
@@ -476,15 +477,16 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
 
     const { notifier, store, journalThread } = await step('store', async () => {
-      migrateRuntimeDatabase(paths.databases.runtime);
+      migrateRuntimeDatabase(paths.databases.runtime, storeBusyWaitMs);
       const { dev, ino } = fs.statSync(paths.databases.runtime);
-      const startedThread = await startJournalThread({ databasePath: paths.databases.runtime, lock: kernelLock, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+      const startedThread = await startJournalThread({ databasePath: paths.databases.runtime, lock: kernelLock, busyTimeoutMs: storeBusyWaitMs, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
       const createdNotifier = createRunNotifier();
       try {
         const opened = openRuntimeStore({
           path: paths.databases.runtime,
           home: canonicalHome,
           lock: kernelLock,
+          busyTimeoutMs: storeBusyWaitMs,
           clock,
           leaseMs,
           maxAttempts: STORE_MAX_ATTEMPTS,
@@ -516,7 +518,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       await sweepCallLocks({ dir: paths.callLocks, mechanism: kernelLock });
     });
 
-    const traceStore: TraceStore = await step('trace-store', () => openTraceStore({ path: paths.traces.runtime, clock }));
+    const traceStore: TraceStore = await step('trace-store', () => openTraceStore({ path: paths.traces.runtime, clock, busyTimeoutMs: storeBusyWaitMs }));
     cleanups.push({ name: 'trace-store', run: () => traceStore.close() });
 
     const contentRetentionMs = resolveTelemetrySettings(settings.telemetry).contentRetentionDays * DAY_MS;

@@ -7,6 +7,7 @@ import type { JournalThreadClient } from '../../src/memory/journal-thread-client
 import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../../src/memory/journal-thread-limits.ts';
 import { factsStore } from './run-facts-fixture.ts';
 import { testKernelLock } from '@momonga/testkit';
+import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
 export type Claim = 'executed' | 'any';
 
@@ -63,7 +64,7 @@ export const fidelityEnv = () => {
   const blobsDir = path.join(env.dir, 'blobs');
   const fidelity = async (runId: string, tokens: readonly { token: string; claim: Claim }[], throughEventSeq?: number): Promise<FidelityReply> => {
     const { dev, ino } = fs.statSync(env.dbPath);
-    const client = await startJournalThread({ lock: testKernelLock(), databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS, blobsDir } as Parameters<typeof startJournalThread>[0]);
+    const client = await startJournalThread({ lock: testKernelLock(), busyTimeoutMs: BUSY_WAIT_LIMIT_MS, databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS, blobsDir } as Parameters<typeof startJournalThread>[0]);
     clients.push(client);
     const through = throughEventSeq ?? env.store.getRun(runId)?.lastSeq ?? 0;
     return (await client.request({ kind: 'fidelity', runId, throughEventSeq: through, cwd: env.project, tokens: tokens.map((entry) => ({ ...entry })) })) as unknown as FidelityReply;

@@ -729,6 +729,7 @@ export type RuntimeStoreOptions = {
   path: string;
   home: string;
   lock: KernelLockMechanism;
+  busyTimeoutMs: number;
   clock: Clock;
   leaseMs: number;
   maxAttempts: number;

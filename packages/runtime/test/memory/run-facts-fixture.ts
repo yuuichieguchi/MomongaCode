@@ -11,6 +11,7 @@ import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../../src/memory/journal-thread
 import { START_MS, enqueue, makeStoreDir, newSession, registerCleanup } from '../../../store/test/helpers.ts';
 import { finishClaimed } from './reflection-fixture.ts';
 import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
+import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
 export const SHA = 'a'.repeat(64);
 
@@ -42,7 +43,7 @@ export const lazyThread = (dbPath: () => string, override: ThreadOverride = {}) 
     started ??= (() => {
       const databasePath = dbPath();
       const { dev, ino } = fs.statSync(databasePath);
-      return startJournalThread({ lock: testKernelLock(), databasePath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS }) as Promise<RunFactsClient>;
+      return startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS }) as Promise<RunFactsClient>;
     })();
     return started;
   };
@@ -71,7 +72,7 @@ export const factsStore = (override: ThreadOverride = {}) => {
   const clock = createFakeClock(START_MS);
   const decoded = { rows: 0, bytes: 0 };
   const thread = lazyThread(() => dbPath, override);
-  const store: RuntimeStore = openRuntimeStore({ lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS,
+  const store: RuntimeStore = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home: dir,
     clock,

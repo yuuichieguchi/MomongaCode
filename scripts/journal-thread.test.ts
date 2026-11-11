@@ -13,7 +13,8 @@ import { buildSea } from './sea.ts';
 import { RUNS_MACOS_ARM64_ARTIFACTS } from './support/host.ts';
 import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
-import { productTestEnv } from '@momonga/testkit';
+import { productTestEnv, testKernelLock } from '@momonga/testkit';
+import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
 const PING_FIXTURE = `${repoRoot}test/fixtures/sea/journal-thread-ping.ts`;
 const NO_NODE_ENV = (home: string): NodeJS.ProcessEnv => (productTestEnv({ PATH: '/usr/bin:/bin', HOME: home }));
@@ -24,7 +25,7 @@ const sourceModuleState = (): string | null => (fs.existsSync(journalThreadModul
 
 const freshDatabase = (root: string): { databasePath: string; dev: number; ino: number } => {
   const databasePath = path.join(root, 'runtime.db');
-  migrateRuntimeDatabase(databasePath);
+  migrateRuntimeDatabase(databasePath, BUSY_WAIT_LIMIT_MS);
   const stat = fs.statSync(databasePath);
   return { databasePath, dev: stat.dev, ino: stat.ino };
 };
@@ -77,7 +78,7 @@ describe('the journal thread build', () => {
       const code = await bundleJournalThread();
       const { databasePath, dev, ino } = freshDatabase(root);
       const { port1, port2 } = new MessageChannel();
-      const worker = new Worker(code, { eval: true, workerData: { databasePath, blobsDir: blobDirectoryOf(databasePath), port: port2 }, transferList: [port2] });
+      const worker = new Worker(code, { eval: true, workerData: { databasePath, blobsDir: blobDirectoryOf(databasePath), lockName: testKernelLock().name, busyTimeoutMs: BUSY_WAIT_LIMIT_MS, port: port2 }, transferList: [port2] });
       try {
         expect(await nextMessage(port1, worker)).toEqual({ ready: true, dev, ino });
         const reply = nextMessage(port1, worker);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { openDatabase } from '@momonga/foundation';
+import { openDatabase, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
 import { createJournalReader } from '@momonga/store';
 import type { TerminalContribution } from '@momonga/store';
@@ -28,7 +28,7 @@ describe('createJournalReader: the reads the journal thread runs over its own co
         return contributionOf('m7');
       },
     };
-    const db = openDatabase(h.dbPath);
+    const db = openDatabase(h.dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     registerCleanup(() => db.close());
 
     const measured = createJournalReader(db).measure(hook, { runId: run.id, leading: [finalResponse] });
@@ -45,7 +45,7 @@ describe('createJournalReader: the reads the journal thread runs over its own co
     const h = harness();
     const run = enqueue(h.store, newSession(h.store).id);
     const hook: TerminalContribution = { eventTypes: ['user.message'], measure: () => undefined };
-    const db = openDatabase(h.dbPath);
+    const db = openDatabase(h.dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     registerCleanup(() => db.close());
 
     const measured = createJournalReader(db).measure(hook, { runId: run.id, leading: [] });
