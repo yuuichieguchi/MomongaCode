@@ -406,12 +406,14 @@ describe('createManagedServer start', () => {
     expect(spawn).toHaveBeenCalledTimes(2);
   });
 
-  it('joins concurrent start calls onto a single spawn', async () => {
+  it('joins concurrent start calls onto a single spawn, each asker with its own answer', async () => {
     const { server, spawn, socketPath } = setup();
     const first = server.start();
     const second = server.start();
-    expect(second).toBe(first);
-    expect(await first).toEqual({ kind: 'unix', path: socketPath });
+    expect(await Promise.all([first, second])).toEqual([
+      { kind: 'unix', path: socketPath },
+      { kind: 'unix', path: socketPath },
+    ]);
     expect(spawn).toHaveBeenCalledTimes(1);
     await expect(server.start()).rejects.toThrow(/already started/);
   });
@@ -900,10 +902,7 @@ const hangingOn =
   };
 
 describe('createManagedServer bounds each precondition command by the asking operation (design 8.2, row healthTimeoutMs (a))', () => {
-  it.each([
-    ['license', 'license --status'],
-    ['available', 'available'],
-  ])('cancels a hanging %s command when the asker ends, with no clock of its own, naming the command', async (hungCommand, argvText) => {
+  it.each(['license', 'available'])('cancels a hanging %s command when its only asker ends, with no clock of its own, and the asker leaves with its own reason', async (hungCommand) => {
     const signals: AbortSignal[] = [];
     const { server, spawn, manual } = setup({ exec: hangingOn(hungCommand, signals) });
     const asker = new AbortController();
@@ -911,8 +910,9 @@ describe('createManagedServer bounds each precondition command by the asking ope
     await vi.waitFor(() => expect(signals).toHaveLength(1));
     expect(manual.delays()).toEqual([]);
     expect(signals[0]?.aborted).toBe(false);
-    asker.abort(new Error('the request ended'));
-    expect(await starting).toMatchObject({ message: `the precondition "${argvText}" was cancelled before it answered` });
+    const reason = new Error('the request ended');
+    asker.abort(reason);
+    expect(await starting).toBe(reason);
     expect(signals[0]?.aborted).toBe(true);
     expect(spawn).not.toHaveBeenCalled();
   });

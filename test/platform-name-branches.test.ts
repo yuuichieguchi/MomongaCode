@@ -15,7 +15,7 @@ const KEPT: readonly Kept[] = [
   { file: 'foundation/src/momonga-paths.ts', row: 'B15', reason: 'OS conventions for where files live and the kind of socket' },
   { file: 'config/src/layout.ts', row: 'B15', reason: 'passes the OS to the B15 layout conventions' },
   { file: 'gateway/src/entry.ts', row: 'B15', reason: 'passes the OS to the B15 layout conventions' },
-  { file: 'gateway/src/process.ts', row: 'B15', reason: 'passes the OS to the B15 layout conventions' },
+  { file: 'gateway/src/process-ports.ts', row: 'B15', reason: 'the port through which the gateway process takes the OS for the B15 layout conventions' },
   { file: 'runtime/src/process/entry.ts', row: 'B15', reason: 'passes the OS to the B15 layout conventions' },
   { file: 'supervisor/src/entry.ts', row: 'B15', reason: 'passes the OS to the B15 layout conventions' },
   { file: 'supervisor/src/start-supervisor.ts', row: 'B15', reason: 'passes the OS to the B15 layout conventions' },
@@ -36,6 +36,7 @@ const BURN_DOWN: readonly BurnDown[] = [
   { file: 'tools/src/policy-filesystem.ts', rows: 'B6', owner: 'HB10e' },
   { file: 'config/src/settings.ts', rows: 'B8', owner: 'HB10c' },
   { file: 'runtime/src/process/start-runtime-process.ts', rows: 'B9 B15', owner: 'HB10c' },
+  { file: 'foundation/src/socket-path.ts', rows: 'B15', owner: 'config: endpointFormsOfPlatform reads process.platform by default and config/src/models.ts:122 calls it with no platform from its ports' },
   { file: 'cli/src/node-ports.ts', rows: 'CliPorts.platform', owner: 'not classified by the HB10 table' },
 ];
 

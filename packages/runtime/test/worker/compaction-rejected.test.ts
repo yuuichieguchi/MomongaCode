@@ -272,7 +272,7 @@ describe('a compaction sent to a role model with a smaller window than the sessi
 
   const refusal = (code: string, message: string): GatewayRequestError => new GatewayRequestError({ status: 400, type: 'invalid_request', code, message });
 
-  const seeded = async () => {
+  const conversationOverTheRoleWindow = async () => {
     const env = await makeEnv({ capabilities: session });
     env.gateway.roles = { compaction: 'cheap' };
     env.gateway.capabilitiesByModel['cheap'] = role;
@@ -289,7 +289,7 @@ describe('a compaction sent to a role model with a smaller window than the sessi
   };
 
   it('plans the summary cap and the region for the role model, so the gateway refuses nothing and the model writes the summary', async () => {
-    const { env, run } = await seeded();
+    const { env, run } = await conversationOverTheRoleWindow();
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -302,7 +302,7 @@ describe('a compaction sent to a role model with a smaller window than the sessi
   });
 
   it('asks the gateway for the capabilities of the role model once in the claim', async () => {
-    const { env } = await seeded();
+    const { env } = await conversationOverTheRoleWindow();
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
