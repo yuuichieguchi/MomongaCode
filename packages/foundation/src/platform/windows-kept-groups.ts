@@ -15,7 +15,7 @@ export type KeptOpenRequest<P extends KeptProcess> = {
 
 export type KeptExit = { kind: 'exit'; code: number } | { kind: 'lost' };
 
-export type KeptOpening<P extends KeptProcess> = { process: P; commandExit: Promise<KeptExit> };
+export type KeptOpening<P extends KeptProcess> = { process: P; commandPid: Promise<number>; commandExit: Promise<KeptExit> };
 
 export class GroupContainmentError extends Error {
   readonly reason: KeeperFailureReason;
@@ -110,10 +110,11 @@ export const createKeptGroupControl = (host: KeeperHost): KeptGroupControl => {
       const lifetime = new AbortController();
       const opened = openKeptLaunch(host, { command, onOwnerLoss: 'terminate', marker, descriptors, start, signal: lifetime.signal });
       const entry: Entry = { job: opened.job, live: undefined, gone: false };
-      const started = opened.launched.then((launch) => {
+      const launchedCommand = opened.launched.then((launch) => {
         if (launch.kind === 'refused') throw new GroupContainmentError(launch.reason, launch.systemError);
-        return launch.group;
+        return launch;
       });
+      const started = launchedCommand.then((launch) => launch.group);
       const { pid } = opened.process;
       const endEntry = (): void => {
         if (pid === undefined) entry.gone = true;
@@ -135,8 +136,9 @@ export const createKeptGroupControl = (host: KeeperHost): KeptGroupControl => {
           () => undefined,
         );
       if (pid !== undefined) entries.set(pid, entry);
-      const commandExit = started.then((group) => group.commandExit(lifetime.signal)).then((answer): KeptExit => (answer.kind === 'exit' ? answer : { kind: 'lost' }));
-      return { process: opened.process, commandExit };
+      const commandPid = launchedCommand.then((launch) => launch.commandPid);
+      const commandExit = commandPid.then(() => started).then((group) => group.commandExit(lifetime.signal)).then((answer): KeptExit => (answer.kind === 'exit' ? answer : { kind: 'lost' }));
+      return { process: opened.process, commandPid, commandExit };
     },
     nameOf: (pgid) => entries.get(pgid)?.job.slice(KEEPER_JOB_PREFIX.length),
     recall: (pgid, name) => {

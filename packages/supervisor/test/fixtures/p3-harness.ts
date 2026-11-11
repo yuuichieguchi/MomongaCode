@@ -166,6 +166,7 @@ export const createFakeSpawn = (options: FakeSpawnOptions = {}): FakeSpawn => {
         lifeline: null,
         onSpawnError: (listener) => void errorListeners.push(listener),
         onExit: (listener) => void exitListeners.push(listener),
+        onCommandPid: () => undefined,
         kill: () => undefined,
         killGroup: async () => undefined,
       };
@@ -223,6 +224,7 @@ export const createFakeSpawn = (options: FakeSpawnOptions = {}): FakeSpawn => {
       lifeline,
       onSpawnError: (listener) => void errorListeners.push(listener),
       onExit: (listener) => void exitListeners.push(listener),
+      onCommandPid: (listener) => listener(pid),
       kill: (signal) => {
         child.signals.push(signal);
         events.push({ kind: 'kill', role, pid, at: now(), detail: signal });

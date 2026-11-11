@@ -28,6 +28,7 @@ export type GroupLaunch = {
   readonly child: ChildProcess;
   readonly pgid: number | undefined;
   onExit(exited: (exit: LeaderExit) => void, failed: (error: Error) => void): void;
+  onStart(started: (commandPid: number) => void): void;
 };
 
 type SpawnPlace = { cwd?: string; env?: Record<string, string> };
@@ -61,13 +62,23 @@ const launchKept = (keeper: GroupKeeper, request: GroupLaunchRequest, spawnProce
     },
   });
   const { child } = opening.process;
-  const ended = opening.commandExit.then(leaderExitOf);
+  let commandPid: number | undefined;
+  const startListeners: ((commandPid: number) => void)[] = [];
+  const started = opening.commandPid.then((pid) => {
+    commandPid = pid;
+    for (const listener of startListeners.splice(0)) listener(pid);
+  });
+  const ended = Promise.all([started, opening.commandExit]).then(([, exit]) => leaderExitOf(exit));
   ended.catch(() => undefined);
   return {
     child,
     pgid: child.pid,
     onExit: (exited, failed) => {
       ended.then(exited, (error: unknown) => failed(error instanceof Error ? error : new Error(String(error))));
+    },
+    onStart: (started) => {
+      if (commandPid === undefined) startListeners.push(started);
+      else started(commandPid);
     },
   };
 };
@@ -89,6 +100,9 @@ const launchDirect = (request: GroupLaunchRequest, spawnProcess: typeof spawn): 
     pgid: child.pid,
     onExit: (exited) => {
       child.once('exit', (code, signal) => exited({ code, signal }));
+    },
+    onStart: (started) => {
+      if (child.pid !== undefined) started(child.pid);
     },
   };
 };

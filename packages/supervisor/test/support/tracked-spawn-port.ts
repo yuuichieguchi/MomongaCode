@@ -15,7 +15,7 @@ const killGroupAndAssertDead = async (pgid: number): Promise<void> => {
 };
 
 export const trackedSpawnPort = (context: CleanupContext, platform?: NodeJS.Platform): TrackedSpawnPort => {
-  const realPort = createSpawnPort(platform);
+  const realPort = createSpawnPort(platform === undefined ? {} : { platform });
   const spawned: ChildHandle[] = [];
   const port: SpawnPort = (command, args, options) => {
     const handle = realPort(command, args, options);

@@ -115,6 +115,7 @@ export type ManagerHarnessOptions = {
   env?: Readonly<Record<string, string | undefined>>;
   random?: () => number;
   port?: SpawnPort;
+  keptCommandPidOffset?: number;
   overrides?: Partial<ChildManagerOptions>;
   realReap?: boolean;
 };
@@ -130,7 +131,7 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
   writeSettings(home, options.settings ?? {});
   const clock = createFakeClock(T0);
   const timers = createFakeTimers(clock);
-  const port = createFakeSpawnPort({ role });
+  const port = createFakeSpawnPort({ role, ...(options.keptCommandPidOffset === undefined ? {} : { keptCommandPidOffset: options.keptCommandPidOffset }) });
   const warnings: string[] = [];
   const settings = settingsDouble(home, (message) => warnings.push(message));
   const lines: string[] = [];

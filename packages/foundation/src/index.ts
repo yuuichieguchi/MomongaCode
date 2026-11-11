@@ -364,7 +364,7 @@ export { createProcessInspector, hostInspectorPorts, layoutProcessInspector } fr
 export { createJobGroupPort, createPosixGroupPort, createProcessGroupPort, groupPortOf, groupSignalsOf, hostProcessGroupPort } from './platform/group-port.ts';
 export { GroupContainmentError, createKeptGroupControl } from './platform/windows-kept-groups.ts';
 export { launchApart, launchGroupLeader } from './platform/group-launch.ts';
-export type { GroupLaunch, GroupLaunchMarker } from './platform/group-launch.ts';
+export type { GroupLaunch, GroupLaunchMarker, GroupLaunchRequest } from './platform/group-launch.ts';
 export { canStillRun } from './platform/run-state.ts';
 export type { ProcessGroupPort } from './platform/group-port.ts';
 export { operationSignal } from './platform/probe-timing.ts';
