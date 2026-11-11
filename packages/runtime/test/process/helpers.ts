@@ -15,6 +15,7 @@ import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, UNCONFIGURED_NETWORK, createFakeClock
 import { nodeShellHost } from '@momonga/tools';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { fixedSandboxBindings } from '@momonga/runtime';
+import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
 export const START_MS = 1_800_000_000_000;
 export const DECLARED_CREDENTIAL = 'FM_UPSTREAM_VALUE';
@@ -111,7 +112,7 @@ export type StoreFixture = { store: RuntimeStore; notifier: RunNotifier; clock: 
 
 export const openStore = (temp: TempHome, clock: FakeClock = createFakeClock(START_MS)): StoreFixture => {
   const notifier = runtime.createRunNotifier();
-  const store = openRuntimeStore({
+  const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
     path: temp.dbPath,
     home: temp.home,
     clock,

@@ -25,7 +25,7 @@ import { KEYS as PRESS, renderObservable, untilFrame, untilOutput } from '../ink
 import { frame } from '../tui-harness.tsx';
 import { fakeScreenTerminal } from './screen-fakes.ts';
 
-const plain = { ctrl: false, alt: false, shift: false };
+const plain = { ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
 const named = (name: KeyName, mods: Partial<typeof plain> = {}): KeyEvent => ({ type: 'key', name, ...plain, ...mods });
 const text = (value: string, mods: Partial<typeof plain> = {}): KeyEvent => ({ type: 'key', text: value, ...plain, ...mods });
 
@@ -247,7 +247,7 @@ describe('a rebound key on the screen', () => {
   });
 
   it('says at startup how many entries of the file were ignored', async () => {
-    const { app } = await withFile(file(['chat', { 'ctrl+c': 'editor.undo', 'hyper+x': 'editor.undo' }]));
+    const { app } = await withFile(file(['chat', { 'ctrl+c': 'editor.undo', 'fn+x': 'editor.undo' }]));
     await untilOutput(app, '2 key bindings in ~/.momonga/keybindings.json were ignored; /keybindings shows why');
     app.unmount();
   });

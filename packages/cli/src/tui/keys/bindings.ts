@@ -1,6 +1,6 @@
 import { JsonDepthError, isRecord, parseOutsideJson } from '@momonga/foundation';
 import { KEY_NAMES } from '../terminal/events.ts';
-import { chordOf, chordParts, isPlainKey, KEYS, KEY_CONTEXTS, RESERVED_KEYS } from './table.ts';
+import { chordOf, chordParts, isPlainKey, KEYS, KEY_CONTEXTS, MODIFIER_ORDER, RESERVED_KEYS } from './table.ts';
 import type { ActionId, ActionRow, KeyContext, KeySpec } from './table.ts';
 
 export const KEY_FILE_MAX_BYTES = 64 * 1024;
@@ -9,8 +9,7 @@ export const TEXT_CONTEXTS: readonly KeyContext[] = ['chat', 'menu', 'shell'];
 
 export const KEPT_WITH_A_KEY: readonly ActionId[] = ['select.decide', 'select.escape'];
 
-const MODIFIER_ALIASES: Readonly<Record<string, string>> = { ctrl: 'ctrl', control: 'ctrl', alt: 'alt', opt: 'alt', option: 'alt', meta: 'alt', shift: 'shift', cmd: 'cmd' };
-const MODIFIER_ORDER = ['cmd', 'ctrl', 'alt', 'shift'];
+const MODIFIER_ALIASES: Readonly<Record<string, string>> = { ctrl: 'ctrl', control: 'ctrl', alt: 'alt', opt: 'alt', option: 'alt', meta: 'alt', shift: 'shift', cmd: 'cmd', super: 'cmd', hyper: 'hyper' };
 const KEY_ALIASES: Readonly<Record<string, string>> = { esc: 'escape', return: 'enter' };
 const SPECIAL_KEYS: readonly string[] = [...KEY_NAMES, 'space'];
 const PLUS = '+';

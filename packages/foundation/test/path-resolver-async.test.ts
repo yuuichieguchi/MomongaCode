@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createPathResolver, hostPaths, nodeFileSystem, setCaseSensitivityProbe } from '../src/index.ts';
-import type { PathFileSystem } from '../src/index.ts';
+import type { PathFileSystem } from '../src/path-compare.ts';
 
 type FakeStats = { dev: number; ino: number; isDirectory: () => boolean; isSymbolicLink: () => boolean; isFile: () => boolean };
 

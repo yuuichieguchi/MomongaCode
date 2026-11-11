@@ -14,6 +14,7 @@ import {
   exitCodeForStartError,
   nodeEntryIo,
   runDaemonEntry,
+  hostPaths,
 } from '@momonga/foundation';
 import type { DaemonCloseResult, DaemonDefinition, DaemonHandle, DaemonStartContext, EntryIo, EntrySignal, RotatingLogFile } from '@momonga/foundation';
 import { createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
@@ -70,6 +71,7 @@ const fakeIo = (argv: readonly string[]) => {
     argv,
     env: { HOME },
     home: HOME,
+    paths: hostPaths,
     stdout: { write: (chunk) => (stdoutChunks.push(chunk), true) },
     stderr: { write: (chunk) => (stderrChunks.push(chunk), true) },
     clock,

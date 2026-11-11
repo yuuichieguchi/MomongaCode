@@ -1,4 +1,4 @@
-import { systemClock } from '@momonga/foundation';
+import { hostPaths, systemClock } from '@momonga/foundation';
 import type { Clock, EntryIo, KernelLockMechanism, EntrySignal, RotatingLogFile } from '@momonga/foundation';
 
 export type JsonLine = Record<string, unknown> & { msg?: string };
@@ -27,6 +27,7 @@ export type FakeEntryIoOptions = {
   timers?: EntryIo['timers'];
   logFile?: (path: string) => RotatingLogFile;
   lockMechanism?: KernelLockMechanism;
+  paths?: EntryIo['paths'];
 };
 
 const realTimers: EntryIo['timers'] = {
@@ -111,6 +112,7 @@ export const createFakeEntryIo = (options: FakeEntryIoOptions): FakeEntryIo => {
       return { dispose: () => void lifecycle.push('dispose:lifeline'), drain: async () => undefined };
     },
     logFile,
+    paths: options.paths ?? hostPaths,
     holdOpen: () => {
       lifecycle.push('hold');
       return () => void lifecycle.push('release');

@@ -9,6 +9,9 @@ import { JournalThreadError, createJournalReader, openRuntimeStore } from '@momo
 import type { Claim, ContributionPreparer, HistoryQueryResult, Run, RuntimeStore, RuntimeStoreOptions, TerminalContribution } from '@momonga/store';
 import { createFakeClock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
+import { UNASKED_COMMANDS } from './support/unasked.ts';
+
+export { UNASKED_COMMANDS };
 
 export const LEASE_MS = 1000;
 export const START_MS = 1_800_000_000_000;
@@ -40,6 +43,7 @@ export type StoreOptions = {
   inheritance?: boolean;
   home?: string;
   generation?: number;
+  unaskedCommands?: RuntimeStoreOptions['unaskedCommands'];
 };
 
 const unexercised = (): Promise<never> => Promise.reject(new JournalThreadError('this store test double answers no journal facts'));
@@ -93,6 +97,7 @@ export const hookPreparer = (hook: TerminalContribution, dbPath: string): Contri
 
 export const openStoreAt =(dbPath: string, clock: FakeClock, options: StoreOptions = {}): RuntimeStore => {
   const store = openRuntimeStore({
+    unaskedCommands: options.unaskedCommands ?? UNASKED_COMMANDS,
     path: dbPath,
     home: options.home ?? path.dirname(dbPath),
     clock,

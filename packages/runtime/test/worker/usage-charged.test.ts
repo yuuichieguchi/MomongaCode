@@ -43,7 +43,7 @@ describe('token spend outside the main model calls counts against the run', () =
     const expected = { inputTokens: 150 + 10 + 20, outputTokens: 15 + 5 + 2, totalTokens: 165 + 15 + 22 };
     expect(env.run(run.id).usage).toEqual(expected);
     expect(env.fold(run.id).usage).toEqual(expected);
-    expect(env.store.treeTokens(run.id)).toBe(expected.totalTokens);
+    expect(env.store.treeSpend(run.id).totalTokens).toBe(expected.totalTokens);
   });
 
   it('stops a run at its token budget when the classifier spend alone exhausts it', async () => {

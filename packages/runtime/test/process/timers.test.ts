@@ -21,6 +21,7 @@ import {
   startStack,
 } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
+import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -45,7 +46,7 @@ const advanceStepwise = async (timers: FakeTimers, totalMs: number, stepMs: numb
 const LATER_KEY = 'c'.repeat(64);
 
 const seedKey = async (temp: RunHome, key: string, expiresAt: number): Promise<void> => {
-  const store = openRuntimeStore({
+  const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
     path: temp.paths.databases.runtime,
     home: temp.home,
     clock: createFakeClock(START_MS - 8 * DAY_MS),
@@ -62,7 +63,7 @@ const seedKey = async (temp: RunHome, key: string, expiresAt: number): Promise<v
 
 const seedIdempotency = async (temp: RunHome): Promise<void> => {
   await ensureMomongaDirs(temp.paths);
-  const store = openRuntimeStore({
+  const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
     path: temp.paths.databases.runtime,
     home: temp.home,
     clock: createFakeClock(START_MS - 8 * DAY_MS),

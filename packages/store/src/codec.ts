@@ -72,7 +72,7 @@ const decodeRunError = (identity: string, value: unknown): RunError => {
   const error: RunError = { code: record['code'], message: record['message'] };
   if (!Object.hasOwn(record, 'plan')) return error;
   const plan = planAccountRefOf(record['plan']);
-  if (plan === undefined) throw corrupt('runs', identity, 'column error_json must hold a plan with string profile and account when it holds one');
+  if (plan === undefined) throw corrupt('runs', identity, 'column error_json must hold a plan whose profile and account, when it names one, are plan labels');
   return { ...error, plan };
 };
 

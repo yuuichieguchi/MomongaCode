@@ -1,6 +1,5 @@
-import { escapeTerminalBlock } from '@momonga/protocol';
 import type { Entry } from '../transcript.ts';
-import { withoutTabs, wrapText } from './wrap.ts';
+import { inertText, wrapText } from './wrap.ts';
 import type { Row } from './wrap.ts';
 
 export type ThoughtEntry = Extract<Entry, { kind: 'thought' }>;
@@ -13,7 +12,7 @@ export const foldedThoughtText = (startedAt: number, endedAt: number): string =>
 
 export const earlierLinesText = (count: number): string => `… ${count} earlier lines`;
 
-const textRows = (text: string, width: number): Row[] => wrapText(withoutTabs(escapeTerminalBlock(text.replaceAll('\r\n', '\n'))), width, { token: 'dim', links: false });
+const textRows = (text: string, width: number): Row[] => wrapText(inertText(text), width, { token: 'dim', links: false });
 
 const dimRow = (text: string, width: number): Row[] => wrapText(text, width, { token: 'dim', links: false });
 

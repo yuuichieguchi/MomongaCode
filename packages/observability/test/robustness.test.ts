@@ -18,7 +18,7 @@ import {
 } from '@momonga/observability';
 import type { BodyRecord, TraceStore } from '@momonga/observability';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
-import { CONTENT, QUIET_BATCH, RUN_ID, START_MS, dumpAllRows, harness, openStore, registerCleanup } from './helpers.ts';
+import { CONTENT, QUIET_BATCH, RUN_ID, START_MS, dumpAllRows, harness, openStore, registerCleanup, bodiesOfSpan } from './helpers.ts';
 
 const captureErrors = (): unknown[] => {
   const errors: unknown[] = [];
@@ -47,7 +47,7 @@ const endedChat = (tracer: Parameters<typeof startChatSpan>[0], clock: { now(): 
 };
 
 const bodyContents = (store: TraceStore, chat: { spanContext(): { spanId: string } }): string[] =>
-  store.bodiesForSpan(chat.spanContext().spanId).map((body) => body.content);
+  bodiesOfSpan(store, chat.spanContext().spanId).map((body) => body.content);
 
 const countRows = (file: string, table: string): number => {
   const db = new DatabaseSync(file, { readOnly: true });
@@ -150,7 +150,7 @@ describe('captured content is queued off the span path and never throws', () => 
     chat.end(h.clock.now());
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(h.store.spansForRun(RUN_ID)).toEqual([]);
-    expect(h.store.bodiesForSpan(chat.spanContext().spanId)).toEqual([]);
+    expect(bodiesOfSpan(h.store, chat.spanContext().spanId)).toEqual([]);
   });
 
   it('persists the bodies of spans that ended before shutdown even when no flush ran', async () => {
@@ -269,9 +269,9 @@ describe('body retention', () => {
     const chat = endedChat(h.telemetry.tracer, h.clock, { [INPUT]: 'x' });
     await h.telemetry.forceFlush();
     h.clock.advance(999);
-    expect(h.store.bodiesForSpan(chat.spanContext().spanId)).toHaveLength(1);
+    expect(bodiesOfSpan(h.store, chat.spanContext().spanId)).toHaveLength(1);
     h.clock.advance(1);
-    expect(h.store.bodiesForSpan(chat.spanContext().spanId)).toEqual([]);
+    expect(bodiesOfSpan(h.store, chat.spanContext().spanId)).toEqual([]);
   });
 
   it('an export never purges; the purge timer removes the expired bodies', async () => {
@@ -427,12 +427,13 @@ describe('standalone store exporter', () => {
   const limits = { maxEntries: 10, maxBytes: 1000 };
 
   it.each(['forceFlush', 'shutdown'] as const)('%s drains the remaining bodies', async (phase) => {
-    const { store } = openStore(createFakeClock(START_MS));
+    const { store, file } = openStore(createFakeClock(START_MS));
     const queue = createBodyQueue(limits);
     queue.push(record());
     const exporter = createTraceStoreExporter(store, { queue, retentionMs: 1000 });
+    expect(dumpAllRows(file)).not.toContain('last words');
     await expect(exporter[phase]?.()).resolves.toBeUndefined();
-    expect(store.bodiesForSpan('s'.repeat(16)).map((body) => body.content)).toEqual(['last words']);
+    expect(dumpAllRows(file)).toContain('last words');
   });
 
   it('reports bodies lost to a failed drain once and resolves', async () => {

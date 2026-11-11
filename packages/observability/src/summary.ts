@@ -10,6 +10,7 @@ export type ChatResult = { step: number; attempt: number; finishReasons: string[
 export type RunSummary = {
   steps: number;
   chatCalls: number;
+  sideCalls: number;
   toolCalls: number;
   inputTokens: number;
   outputTokens: number;
@@ -32,6 +33,8 @@ const requiredNumber = (span: SpanRecord, key: string): number => {
   if (typeof value !== 'number') throw new TypeError(`span ${span.spanId} attribute ${key} must be a number`);
   return value;
 };
+
+const writtenNumber = (span: SpanRecord, key: string): number | undefined => (span.attributes[key] === undefined ? undefined : requiredNumber(span, key));
 
 const finishReasonsOf = (span: SpanRecord): string[] => {
   const value = span.attributes[A.ATTR_GEN_AI_RESPONSE_FINISH_REASONS];
@@ -56,11 +59,16 @@ export const summarizeRun = (store: TraceStore, runId: string): RunSummary => {
   const billedUsages = chats.filter(isBilledChat).map(billedUsageOf);
   const reportedUsages = billedUsages.filter(isCacheReadReported);
   const cacheRead = { calls: billedUsages.length, notReported: billedUsages.length - reportedUsages.length };
+  const chatResults = chats.flatMap((span): ChatResult[] => {
+    const step = writtenNumber(span, MOMONGA_ATTRIBUTES.step);
+    return step === undefined ? [] : [{ step, attempt: requiredNumber(span, MOMONGA_ATTRIBUTES.attempt), finishReasons: finishReasonsOf(span) }];
+  });
   const first = spans.reduce((earliest, span) => Math.min(earliest, span.startMs), Number.POSITIVE_INFINITY);
   const last = spans.reduce((latest, span) => Math.max(latest, span.endMs), Number.NEGATIVE_INFINITY);
   return {
     steps: steps.size,
     chatCalls: chats.length,
+    sideCalls: chats.length - chatResults.length,
     toolCalls: tools.length,
     inputTokens: sum(A.ATTR_GEN_AI_USAGE_INPUT_TOKENS),
     outputTokens: sum(A.ATTR_GEN_AI_USAGE_OUTPUT_TOKENS),
@@ -68,10 +76,6 @@ export const summarizeRun = (store: TraceStore, runId: string): RunSummary => {
     cacheReadNotReportedCalls: cacheRead.notReported,
     errorCount: spans.filter((span) => span.status === 'ERROR').length,
     durationMs: spans.length === 0 ? 0 : last - first,
-    chatResults: chats.map((span) => ({
-      step: requiredNumber(span, MOMONGA_ATTRIBUTES.step),
-      attempt: requiredNumber(span, MOMONGA_ATTRIBUTES.attempt),
-      finishReasons: finishReasonsOf(span),
-    })),
+    chatResults,
   };
 };

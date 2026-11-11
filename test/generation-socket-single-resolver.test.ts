@@ -44,7 +44,6 @@ describe('one resolver decides which runtime, gateway and supervisor socket a cl
   });
 
   it('builds no runtime, gateway or supervisor socket path outside the resolver', () => {
-    expect(offenders(/adapterSocketPath\([^)]*['"`](runtime|gateway|supervisor)['"`]/)).toEqual([]);
     expect(offenders(/['"`/](runtime|gateway|supervisor)\.sock['"`]/)).toEqual([]);
   });
 

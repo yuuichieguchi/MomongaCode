@@ -1,7 +1,7 @@
 import type { DialectId } from './dialect.ts';
 import { ERROR_TYPES } from './open-responses.ts';
 import type { ErrorType } from './open-responses.ts';
-import { CAPABILITIES_UNKNOWN_CODE, SIGN_IN_REQUIRED_CODE } from './plan-api.ts';
+import { CAPABILITIES_UNKNOWN_CODE, PLAN_STORE_STATES, SIGN_IN_REQUIRED_CODE } from './plan-api.ts';
 
 export type ToolCallingMode = 'native' | 'constrained' | 'none';
 
@@ -244,7 +244,7 @@ export const MODEL_ID_CHANGED_CODE = 'model_id_changed';
 
 export const MODEL_NOT_LISTED_CODE = 'model_not_listed';
 
-export const TARGET_HEALTH_REASONS = ['not_running', 'unhealthy', PRECONDITION_FAILED_CODE, 'health_check_failed', SIGN_IN_REQUIRED_CODE, 'store_unreadable', 'store_unwritable', CAPABILITIES_UNKNOWN_CODE] as const;
+export const TARGET_HEALTH_REASONS = ['not_running', 'unhealthy', PRECONDITION_FAILED_CODE, 'health_check_failed', SIGN_IN_REQUIRED_CODE, ...PLAN_STORE_STATES, CAPABILITIES_UNKNOWN_CODE] as const;
 export type TargetHealthReason = (typeof TARGET_HEALTH_REASONS)[number];
 
 export type HealthResult = { ok: boolean; reason?: TargetHealthReason; detail?: string; remediation?: string };

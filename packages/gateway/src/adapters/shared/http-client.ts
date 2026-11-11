@@ -10,7 +10,7 @@ export type KeyedEndpoint = { kind: 'unix'; socketPath: string } | { kind: 'tcp'
 export const reachableEndpoint = (endpoint: KeyedEndpoint, network: OutboundNetwork): UpstreamEndpoint =>
   endpoint.kind === 'unix' ? endpoint : { kind: 'tcp', baseUrl: endpoint.baseUrl, network };
 
-export type UpstreamLiveness = { headersTimeoutMs: number; idleTimeoutMs: number; timers?: GatewayTimers };
+export type UpstreamLiveness = { headersTimeoutMs: number; idleTimeoutMs: number; timers: GatewayTimers };
 
 export type EndpointRoute = { label: string; unixPath: string; urlSuffix: string };
 

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createManagedConnection } from '@momonga/mcp';
 import { KILL_CONFIRM_MS, isProcessAlive } from '@momonga/foundation';
-import type { DeadlineTiming } from '@momonga/foundation';
+import type { Timing } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, killPidsForCleanup, waitFor } from '@momonga/testkit';
 
 const STUBBORN_SERVER = path.join(import.meta.dirname, 'fixtures', 'stubborn-stdio-server.ts');
@@ -47,8 +47,8 @@ describe('a connection closed during its handshake (R5, R6)', () => {
       setTimeout: ((callback: () => void, ms: number) => {
         delays.push(ms);
         return timers.setTimeout(callback, ms);
-      }) as DeadlineTiming['setTimeout'],
-      clearTimeout: ((handle: unknown) => timers.clearTimeout(handle)) as DeadlineTiming['clearTimeout'],
+      }) as Timing['setTimeout'],
+      clearTimeout: ((handle: unknown) => timers.clearTimeout(handle)) as Timing['clearTimeout'],
     };
     const connection = createManagedConnection({
       name: 'stubborn',

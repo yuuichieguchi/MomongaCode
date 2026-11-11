@@ -1,4 +1,6 @@
 import type { Stored } from './stored-value.ts';
+import { boolean, closedRequiringAll, nonEmptyString, nonNegativeInteger, nullable, string } from './schema-helpers.ts';
+import type { JsonSchema } from './schema-helpers.ts';
 import type { ApprovalBasis } from './permission-denial.ts';
 import type { PermissionMode, RunStatus, SideEffect, StopReason } from './run-types.ts';
 
@@ -13,7 +15,7 @@ export const MIN_RATE_POPULATION = 35;
 export const REVIEW_SAMPLE_SIZE = 73;
 export const REPORT_PAGE_ROWS = 500;
 export const FACTS_SWEEP_BATCH_RUNS = 3;
-export const INDICATOR_DEFINITIONS_VERSION = 2;
+export const INDICATOR_DEFINITIONS_VERSION = 3;
 
 export const MAIN_AGENT = 'main';
 
@@ -135,35 +137,30 @@ export type TraceContentView = { id: number; spanId: string; kind: string; conte
 
 export type TraceContentPage = { bodies: TraceContentView[]; next: number | null };
 
-const text = { type: 'string', minLength: 1 } as const;
-const count = { type: 'integer', minimum: 0 } as const;
-const nullable = (schema: Record<string, unknown>): Record<string, unknown> => ({ anyOf: [schema, { type: 'null' }] });
-const closed = (properties: Record<string, unknown>): Record<string, unknown> => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });
-
-const review = closed({ runId: text, callId: text, label: text, reviewedAt: count });
+const review = closedRequiringAll({ runId: nonEmptyString, callId: nonEmptyString, label: nonEmptyString, reviewedAt: nonNegativeInteger });
 
 export const REPORT_SCHEMAS = {
-  ReviewPage: closed({
-    calls: { type: 'array', items: closed({ runId: text, callId: text, basis: nullable(text), sideEffect: nullable(text), asked: { type: 'boolean' } }) },
+  ReviewPage: closedRequiringAll({
+    calls: { type: 'array', items: closedRequiringAll({ runId: nonEmptyString, callId: nonEmptyString, basis: nullable(nonEmptyString), sideEffect: nullable(nonEmptyString), asked: boolean }) },
     reviews: { type: 'array', items: review },
-    nextCursor: nullable(text),
+    nextCursor: nullable(nonEmptyString),
   }),
-  StoreReviewRequest: closed({ runId: text, callId: text, label: { enum: [...REVIEW_LABELS] } }),
-  StoreReviewResponse: closed({ review }),
-  ReportCostRequest: closed({ runIds: { type: 'array', maxItems: REPORT_PAGE_ROWS, uniqueItems: true, items: text } }),
-  ReportCostPage: closed({
+  StoreReviewRequest: closedRequiringAll({ runId: nonEmptyString, callId: nonEmptyString, label: { enum: [...REVIEW_LABELS] } }),
+  StoreReviewResponse: closedRequiringAll({ review }),
+  ReportCostRequest: closedRequiringAll({ runIds: { type: 'array', maxItems: REPORT_PAGE_ROWS, uniqueItems: true, items: nonEmptyString } }),
+  ReportCostPage: closedRequiringAll({
     costs: {
       type: 'array',
-      items: closed({
-        runId: text,
-        calls: count,
-        notPriced: count,
-        priced: { type: 'array', items: closed({ currency: { const: COST_CURRENCY }, priceVersion: text, units: { type: 'string', pattern: '^[0-9]+$' } }) },
+      items: closedRequiringAll({
+        runId: nonEmptyString,
+        calls: nonNegativeInteger,
+        notPriced: nonNegativeInteger,
+        priced: { type: 'array', items: closedRequiringAll({ currency: { const: COST_CURRENCY }, priceVersion: nonEmptyString, units: { type: 'string', pattern: '^[0-9]+$' } }) },
       }),
     },
   }),
-  TraceContentPage: closed({
-    bodies: { type: 'array', items: closed({ id: count, spanId: text, kind: text, content: { type: 'string' }, createdAtMs: count, expiresAtMs: count }) },
-    next: nullable(count),
+  TraceContentPage: closedRequiringAll({
+    bodies: { type: 'array', items: closedRequiringAll({ id: nonNegativeInteger, spanId: nonEmptyString, kind: nonEmptyString, content: string, createdAtMs: nonNegativeInteger, expiresAtMs: nonNegativeInteger }) },
+    next: nullable(nonNegativeInteger),
   }),
-} as const satisfies Record<string, Record<string, unknown>>;
+} as const satisfies Record<string, JsonSchema>;

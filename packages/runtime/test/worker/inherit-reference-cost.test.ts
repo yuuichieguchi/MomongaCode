@@ -16,6 +16,7 @@ import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 import { settle } from './inheritance-support.ts';
 import { builderOf, harnessOf, referenceFactsOf } from './inherit-reference-support.ts';
+import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
 vi.setConfig({ testTimeout: 600_000 });
 
@@ -85,7 +86,7 @@ describe('R6: what crosses the thread boundary is bounded by W and the item boun
         byLength.get(length)?.counts.add(reply.entries.length);
         byLength.get(length)?.sizes.push(serializedSize(reply));
       }
-      const plan = await client.inheritPlan({ runId: queued.id, mode: 'manual' });
+      const plan = await client.inheritPlan({ runId: queued.id, mode: 'manual', unasked: UNASKED_COMMANDS });
       expect(plan).toMatchObject({ kind: 'ready', payload: { form: 'reference' } });
       planSizes.push(serializedSize(plan));
     }
@@ -119,9 +120,9 @@ describe('R9: inherit_plan and inherited_window write nothing', () => {
     const { h, links, queued } = await sourceWithChain(15);
     const before = snapshotOfDb(h.dbPath);
     const client = await threadOn(h.dbPath);
-    await client.inheritPlan({ runId: queued.id, mode: 'manual' });
+    await client.inheritPlan({ runId: queued.id, mode: 'manual', unasked: UNASKED_COMMANDS });
     await client.inheritedWindow({ runId: links[9] as string, ...WINDOW });
-    await client.inheritPlan({ runId: queued.id, mode: 'plan' });
+    await client.inheritPlan({ runId: queued.id, mode: 'plan', unasked: UNASKED_COMMANDS });
     expect(snapshotOfDb(h.dbPath)).toEqual(before);
   });
 });

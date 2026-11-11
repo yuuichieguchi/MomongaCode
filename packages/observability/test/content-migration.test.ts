@@ -5,7 +5,7 @@ import { migrate, openDatabase } from '@momonga/foundation';
 import { BODY_KINDS, openTraceStore } from '@momonga/observability';
 import { createFakeClock } from '@momonga/testkit';
 import { TRACE_STORE_MIGRATIONS } from '../src/trace-store.ts';
-import { RUN_ID, SENTINEL, START_MS, makeDir, registerCleanup } from './helpers.ts';
+import { RUN_ID, SENTINEL, START_MS, makeDir, registerCleanup, bodiesOfSpan } from './helpers.ts';
 
 const LEGACY_VERSION = 4;
 
@@ -82,7 +82,7 @@ describe('trace store migration 5: content bodies', () => {
     const store = openTraceStore({ path: file, clock: createFakeClock(START_MS) });
     registerCleanup(() => store.close());
     expect(store.moveLegacyContent({ retentionMs: 5000 })).toBe(1);
-    expect(store.bodiesForSpan('s')).toEqual([{ traceId: 't', spanId: 's', kind: BODY_KINDS[1], content: SENTINEL, createdAtMs: endMs, expiresAtMs: endMs + 5000 }]);
+    expect(bodiesOfSpan(store, 's')).toEqual([{ traceId: 't', spanId: 's', kind: BODY_KINDS[1], content: SENTINEL, createdAtMs: endMs, expiresAtMs: endMs + 5000 }]);
     expect(JSON.stringify(store.spansForRun(RUN_ID))).not.toContain(SENTINEL);
     expect(store.moveLegacyContent({ retentionMs: 5000 })).toBe(0);
   });

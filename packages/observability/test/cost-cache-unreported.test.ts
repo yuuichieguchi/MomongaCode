@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { ROOT_CONTEXT, trace } from '@opentelemetry/api';
-import { billedCallsOfRun, buildCostBreakdown, definePriceTable, formatCostBreakdown, recordChatResponse, startAgentSpan, startChatSpan } from '@momonga/observability';
+import { buildCostBreakdown, definePriceTable, formatCostBreakdown, recordChatResponse, startAgentSpan, startChatSpan } from '@momonga/observability';
 import type { BilledCall, BreakdownCall } from '@momonga/observability';
-import { harness } from './helpers.ts';
+import { harness, billedCallsOfRun } from './helpers.ts';
 
 const AT = Date.parse('2026-06-01T00:00:00Z');
 

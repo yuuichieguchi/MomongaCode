@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createMcpPool, createStdioTransport } from '@momonga/mcp';
 import type { StdioTransport, StdioTransportOptions } from '@momonga/mcp';
 import { KILL_CONFIRM_MS, groupAlive, hostProcessGroupPort, terminateGroup } from '@momonga/foundation';
-import type { DeadlineTiming, ProcessGroupPort } from '@momonga/foundation';
+import type { ProcessGroupPort, Timing } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, killGroupsForCleanup, waitFor } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
 import { BASE_ENV, entry, makeRecordFile, modernConfig } from './mcp-harness.ts';
@@ -29,18 +29,19 @@ const projectDir = (): string => {
   return dir;
 };
 
-type RecordingTiming = DeadlineTiming & { delays: number[] };
+type RecordingTiming = Timing & { delays: number[] };
 
 const recordingTiming = (timers: Pick<FakeTimers, 'now' | 'setTimeout' | 'clearTimeout'>): RecordingTiming => {
   const delays: number[] = [];
   return {
     delays,
     now: () => timers.now(),
+    monotonicMs: () => timers.now(),
     setTimeout: ((callback: () => void, ms: number) => {
       delays.push(ms);
       return timers.setTimeout(callback, ms);
-    }) as DeadlineTiming['setTimeout'],
-    clearTimeout: ((handle: unknown) => timers.clearTimeout(handle)) as DeadlineTiming['clearTimeout'],
+    }) as Timing['setTimeout'],
+    clearTimeout: ((handle: unknown) => timers.clearTimeout(handle)) as Timing['clearTimeout'],
   };
 };
 

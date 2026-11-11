@@ -54,6 +54,12 @@ export const makeDir = (): string => {
 
 export const TEST_VERSION = '0.0.0-test';
 
+export const stateDbPath = (dir: string): string => {
+  const state = path.join(dir, 'state');
+  fs.mkdirSync(state, { recursive: true, mode: 0o700 });
+  return path.join(state, 'gateway.db');
+};
+
 export type SwitchableRole = RolePort & { become(role: GenerationRole): void };
 
 export const switchableRole = (initial: GenerationRole = 'serving'): SwitchableRole => {
@@ -173,6 +179,7 @@ export type HarnessOptions = {
   debugTcp?: GatewayOptions['debugTcp'];
   onError?: GatewayOptions['onError'];
   costReport?: GatewayOptions['costReport'];
+  billedCalls?: GatewayOptions['billedCalls'];
   credentials?: readonly string[];
   credentialFeed?: GatewayOptions['credentialFeed'];
   priceTable?: FixedModelsOptions['priceTable'];
@@ -186,7 +193,7 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
   const clock = options.clock ?? createFakeClock(START_MS);
   const timers = options.timers ?? createFakeTimers(clock);
   const socketPath = path.join(dir, 'gw.sock');
-  const dbPath = path.join(dir, 'state', 'gateway.db');
+  const dbPath = stateDbPath(dir);
   const config = buildConfig(options.config);
   const model = Object.keys(config.models.chains)[0] ?? NO_START_MODEL;
   const gateway = await createGateway({
@@ -202,9 +209,11 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
     dbPath,
     hmacKey: options.hmacKey ?? HMAC_KEY,
     socketPath,
+    pid: process.pid,
     version: TEST_VERSION,
     ...(options.onError === undefined ? {} : { onError: options.onError }),
     ...(options.costReport === undefined ? {} : { costReport: options.costReport }),
+    ...(options.billedCalls === undefined ? {} : { billedCalls: options.billedCalls }),
     ...(options.telemetry === undefined ? {} : { telemetry: options.telemetry }),
     ...(options.debugTcp === undefined ? {} : { debugTcp: options.debugTcp }),
     ...(options.priceTable === undefined ? {} : { priceTable: options.priceTable }),

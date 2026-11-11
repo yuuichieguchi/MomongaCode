@@ -37,7 +37,7 @@ const INK_NAMES: readonly (readonly [keyof Key, KeyName])[] = [
 ];
 
 export const keyEventOf = (input: string, key: Partial<Key>): KeyEvent => {
-  const modifiers = { ctrl: key.ctrl === true, alt: key.meta === true, shift: key.shift === true };
+  const modifiers = { ctrl: key.ctrl === true, alt: key.meta === true, shift: key.shift === true, super: false, hyper: false, meta: false };
   const named = INK_NAMES.find(([flag]) => key[flag] === true);
   return named === undefined ? { type: 'key', text: input, ...modifiers } : { type: 'key', name: named[1], ...modifiers };
 };

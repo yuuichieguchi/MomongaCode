@@ -1,6 +1,6 @@
+import { planAccountRefOf } from '@momonga/protocol';
 import type { AdapterTarget, ClassifiedError, ErrorBody, HealthResult, PlanAccountRef, ProviderAdapter, StreamEvent } from '@momonga/protocol';
 import { isRecord } from '@momonga/foundation';
-import { isPlanLabel } from '../plan/label.ts';
 import { ClientDisconnectedError, GatewayError } from './errors.ts';
 import { sealedEventOf } from './sealed-events.ts';
 import type { Redactor } from './redaction.ts';
@@ -28,11 +28,8 @@ const PARAM_SHAPE = /^[A-Za-z0-9_.[\]:-]{1,128}$/;
 type ShapedPlan = { plan?: PlanAccountRef };
 
 const shapedPlan = (plan: unknown): ShapedPlan => {
-  if (!isRecord(plan)) return {};
-  const { profile, account } = plan;
-  if (!isPlanLabel(profile)) return {};
-  if (account === undefined) return { plan: { profile } as PlanAccountRef };
-  return isPlanLabel(account) ? { plan: { profile, account } } : {};
+  const shaped = planAccountRefOf(plan);
+  return shaped === undefined ? {} : { plan: shaped };
 };
 
 const planUnchanged = (original: unknown, shaped: ShapedPlan): boolean =>
@@ -195,7 +192,7 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
     toolChoiceWire: (capabilities, target) => inner.toolChoiceWire(capabilities, target),
     ...(health === undefined ? {} : { health: guardedHealth(health) }),
     ...(roomFacts === undefined ? {} : { roomFacts: (target) => converting(() => roomFacts.call(inner, target)) }),
-    ...(servedAccount === undefined ? {} : { servedAccount: (target: AdapterTarget) => servedAccount.call(inner, target) }),
+    ...(servedAccount === undefined ? {} : { servedAccount: (target: AdapterTarget) => planAccountRefOf(servedAccount.call(inner, target)) }),
     ...(close === undefined ? {} : { close: (stop) => close.call(inner, stop) }),
     [guardBrand]: true,
   };

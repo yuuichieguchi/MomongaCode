@@ -1,7 +1,7 @@
 export { MEMORY_MATCH_LIMIT, MEMORY_SCAN_LIMIT } from './memory-constants.ts';
 export { foldRunState, initialRunState, itemCountOf } from './fold.ts';
 export { INHERITANCE_ERROR_CODES, InheritanceError, applyInheritance, applyReferenceInheritance, isReferenceInherited, projectInheritance, referenceDigest } from './inherit.ts';
-export type { InheritanceErrorCode, InheritanceKind, InheritanceOutcome, InheritedPayload, ReferencePayload } from './inherit.ts';
+export type { InheritanceErrorCode, InheritanceKind, InheritanceOutcome, InheritedPayload, ReferencePayload, UnaskedCommands } from './inherit.ts';
 export { lowerBoundTokens } from './inherit-reference.ts';
 export type {
   EvictedStub,

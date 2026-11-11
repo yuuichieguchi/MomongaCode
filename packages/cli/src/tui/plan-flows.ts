@@ -1,6 +1,5 @@
-import { SECRET_NAME_PATTERN } from '@momonga/foundation';
-import { NO_MODEL_CONNECTED_TEXT, SIGN_IN_REQUIRED_CODE } from '@momonga/protocol';
-import type { DetectedManagedServer, GatewayHealth, MomongaModelEntry, PlanAccountView, PlanAccountsResponse, PlanProfileView, TargetHealth } from '@momonga/protocol';
+import { NO_MODEL_CONNECTED_TEXT, PLAN_LABEL_REFUSAL, SIGN_IN_REQUIRED_CODE, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME } from '@momonga/protocol';
+import type { DetectedManagedServer, GatewayHealth, MomongaModelEntry, PlanAccountRef, PlanAccountView, PlanAccountsResponse, PlanProfileView, TargetHealth } from '@momonga/protocol';
 import { displayMapOf } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import { isLocalServer, offeredServers } from '../commands/models.ts';
@@ -40,13 +39,11 @@ export type PlanFlows = {
   catalogPicker(profile: PlanProfileView, account: string): Promise<void>;
   welcome(profiles: readonly PlanProfileView[]): Promise<void>;
   usageLimit(profile: PlanProfileView): Promise<void>;
-  planUseNotEnabled(profile: PlanProfileView, account: string): Promise<void>;
+  planUseNotEnabled(profile: PlanProfileView, account: string | undefined): Promise<void>;
   notEligible(profile: PlanProfileView): Promise<void>;
 };
 
 type Choice = { row: PickRow; act(): Promise<void> };
-
-const NAME_SHAPE = new RegExp(SECRET_NAME_PATTERN);
 
 const API_KEY_HELP = [
   'MomongaCode takes an API key in one of two ways:',
@@ -183,15 +180,15 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       ports.closeWaiting();
     }
     switch (answer.outcome) {
-      case 'retry':
+      case RETRY_OUTCOME:
         ports.info(codeNotAcceptedLine('tui', profile, account));
         await sentence(profile, account, reconsent);
         return;
-      case 'plan_disabled':
+      case PLAN_DISABLED_STATE:
         for (const line of planDisabledLines('tui', profile, account)) ports.info(line);
         await sentence(profile, account, true);
         return;
-      case 'signed_in':
+      case SIGNED_IN_OUTCOME:
         ports.info(signedInLine(answer.account));
         await afterSignIn(profile, answer.account, answer.firstSignIn);
         await ports.signedIn();
@@ -215,7 +212,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         await ports.refreshConnection();
         return;
       case 'sign-in':
-        await sentence(profile, account.label, account.state === 'plan_disabled');
+        await sentence(profile, account.label, account.state === PLAN_DISABLED_STATE);
         return;
       case 'none':
         ports.info(`${accountRowLabel(account)}${account.cause === undefined ? '' : `: ${account.cause}`}`);
@@ -230,7 +227,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       lines: ['The workspace is chosen in the browser; each account or workspace is saved under its own label.'],
       initial: nextAccountLabel(profile.id, listed.accounts),
       validate: (text) => {
-        if (!NAME_SHAPE.test(text)) return `a label must match ${SECRET_NAME_PATTERN}`;
+        if (!isPlanLabel(text)) return PLAN_LABEL_REFUSAL;
         if (taken.has(text)) return `${text} is already saved; choose another label`;
         return undefined;
       },
@@ -331,7 +328,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     for (const line of signedOutLines(profile, chosen.label, report)) ports.info(line);
   };
 
-  const targetSignIn = async (listed: PlanAccountsResponse, plan: { profile: string; account?: string }): Promise<void> => {
+  const targetSignIn = async (listed: PlanAccountsResponse, plan: PlanAccountRef): Promise<void> => {
     const profile = profileOf(listed.profiles, plan.profile);
     const records = accountsOf(profile.id, listed.accounts);
     const label = plan.account ?? records.find((record) => record.active)?.label;
@@ -415,9 +412,9 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     ]);
   };
 
-  const planUseNotEnabled = async (profile: PlanProfileView, account: string): Promise<void> => {
+  const planUseNotEnabled = async (profile: PlanProfileView, account: string | undefined): Promise<void> => {
     await chooseFrom({}, [
-      { row: { label: `Enable ${profile.messages.identityLabel} plan use` }, act: () => sentence(profile, account, true) },
+      { row: { label: `Enable ${profile.messages.identityLabel} plan use` }, act: () => (account === undefined ? providerFlow(profile) : sentence(profile, account, true)) },
       { row: { label: USE_API_KEY }, act: apiKeyHelp },
     ]);
   };
