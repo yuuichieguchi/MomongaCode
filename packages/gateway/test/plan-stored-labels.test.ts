@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { SECRET_NAME_PATTERN, createMemoryCredentialStore } from '@momonga/foundation';
 import type { ListableCredentialStore } from '@momonga/foundation';
 import { GatewayError } from '../src/core/errors.ts';
-import { gatewayErrorOfCredential } from '../src/plan/api.ts';
+import { planRouteError } from '../src/plan/api.ts';
 import { catalogKey, createPlanCatalog } from '../src/plan/catalog.ts';
 import { fakeAuth } from './plan-auth-support.ts';
 import { PROFILE_ID, editRecord, recordFileOf, recordKey, signedIn, startHarness } from './plan-support.ts';
@@ -89,7 +89,7 @@ const shownFor = async (h: Harness): Promise<Shown> => {
     () => undefined,
     (thrown: unknown) => thrown,
   );
-  const translated = gatewayErrorOfCredential(error);
+  const translated = planRouteError(error);
   return {
     status: source.status(),
     warnings: [...h.warnings],

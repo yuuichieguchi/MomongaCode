@@ -198,7 +198,9 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
   const resetHost = (): Promise<HostIdentity> =>
     hostGate.run(async () => {
       if (waiting()) throw invalidRequest(PLAN_SIGN_IN_PENDING_CODE, 'A sign-in is waiting for the browser. Finish or cancel it, then reset the host.', null, CONFLICT_STATUS);
-      return resetHostIdentity(options.fileSystem, options.hostFile);
+      return resetHostIdentity(options.fileSystem, options.hostFile).catch((error: unknown) => {
+        throw hostIdentityFailure(error);
+      });
     });
 
   const begin = async (request: PlanSignInBeginRequest, signal: AbortSignal): Promise<PlanSignInBeginResponse> => {

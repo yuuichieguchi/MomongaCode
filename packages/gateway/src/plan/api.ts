@@ -1,4 +1,4 @@
-import { editModelsSettings } from '@momonga/config';
+import { ModelsEditRefused, editModelsSettings } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
 import { isRecord } from '@momonga/foundation';
 import type { Clock, LimitTiming } from '@momonga/foundation';
@@ -23,7 +23,7 @@ import { PlanCredentialError, credentialErrorType, statusOf } from './auth-sourc
 import { PLAN_OPERATION_LIMIT, limitFailureOf, withinRequestLimit } from './request-limit.ts';
 import type { AccountView } from './auth-source.ts';
 import { NO_REPORTED_WINDOW } from './catalog.ts';
-import { CONFLICT_STATUS, RETRYABLE_STATUS } from './http-status.ts';
+import { CONFLICT_STATUS, INVALID_REQUEST_STATUS, RETRYABLE_STATUS } from './http-status.ts';
 import { planProfileNamed } from './profiles.ts';
 import type { PlanCatalog } from './catalog.ts';
 import { ownEntry } from './own-entry.ts';
@@ -82,8 +82,11 @@ const portOf = (body: unknown): number => {
   return value;
 };
 
-export const gatewayErrorOfCredential = (error: unknown): unknown => {
+const MODELS_EDIT_CONFLICTS: ReadonlySet<ModelsEditRefused['code']> = new Set<ModelsEditRefused['code']>(['name_taken', 'duplicate', 'would_not_load']);
+
+export const planRouteError = (error: unknown): unknown => {
   if (error instanceof PlanAccountNotSelectableError) return invalidRequest(PLAN_ACCOUNT_NOT_SELECTABLE_CODE, error.message, null, CONFLICT_STATUS);
+  if (error instanceof ModelsEditRefused) return invalidRequest(error.code, error.message, null, MODELS_EDIT_CONFLICTS.has(error.code) ? CONFLICT_STATUS : INVALID_REQUEST_STATUS);
   const failure = error instanceof PlanCredentialError ? error : limitFailureOf(error);
   if (failure === undefined) return error;
   const type = credentialErrorType(failure.code);
@@ -94,7 +97,7 @@ const translated = async <T>(work: () => Promise<T>): Promise<T> => {
   try {
     return await work();
   } catch (error) {
-    throw gatewayErrorOfCredential(error);
+    throw planRouteError(error);
   }
 };
 
@@ -233,9 +236,10 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
         await viewNamed(ref, targets, signal);
         return { resumed: await sessions.resume(ref, signal) };
       }),
-    resetHost: async () => {
-      const { hostId } = await options.signIn.resetHost();
-      return { hostId };
-    },
+    resetHost: () =>
+      translated(async () => {
+        const { hostId } = await options.signIn.resetHost();
+        return { hostId };
+      }),
   };
 };
