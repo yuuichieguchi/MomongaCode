@@ -185,15 +185,15 @@ describe('resolveNetworkSources', () => {
 
   it('names the setting when a setting overrides a variable', () => {
     expect(sourcesOf({ httpsProxy: 'http://proxy.corp:3129', noProxy: '.corp' }, { HTTPS_PROXY: 'http://other:1', NO_PROXY: '*' })).toMatchObject({
-      httpsProxy: { value: 'http://proxy.corp:3129/', source: 'network.httpsProxy' },
+      httpsProxy: { value: 'http://proxy.corp:3129', source: 'network.httpsProxy' },
       noProxy: { value: '.corp', source: 'network.noProxy' },
     });
   });
 
   it('names the variable when no setting is present', () => {
     expect(sourcesOf(undefined, { HTTP_PROXY: 'http://env.proxy:8080', SSL_CERT_FILE: '/etc/ssl/corp.pem' })).toEqual({
-      httpProxy: { value: 'http://env.proxy:8080/', source: 'HTTP_PROXY' },
-      httpsProxy: { value: 'http://env.proxy:8080/', source: 'HTTP_PROXY' },
+      httpProxy: { value: 'http://env.proxy:8080', source: 'HTTP_PROXY' },
+      httpsProxy: { value: 'http://env.proxy:8080', source: 'HTTP_PROXY' },
       noProxy: { source: 'none' },
       trust: [{ value: '/etc/ssl/corp.pem', source: 'SSL_CERT_FILE' }],
     });
@@ -208,7 +208,7 @@ describe('resolveNetworkSources', () => {
   it('shows a proxy URL with credentials without them', () => {
     const shown = JSON.stringify(sourcesOf(NETWORK, {}));
     expect(sourcesOf(NETWORK, {})).toMatchObject({
-      httpProxy: { value: 'http://proxy.corp:3128/', source: 'network.httpProxy' },
+      httpProxy: { value: 'http://proxy.corp:3128', source: 'network.httpProxy' },
       trust: [{ value: '/etc/corp/root.pem', source: 'network.extraCaFiles' }],
     });
     expect(shown).not.toContain('secret');
