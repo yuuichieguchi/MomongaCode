@@ -1,6 +1,6 @@
 import { sha256Hex } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
-import { assertReadAndUnchanged, assertSameLocation, newFileMode, regularFileProblem, updateLedgerAfterWrite, sha256OfFile, statIfExists, writeFileAtomically } from './files.ts';
+import { assertReadAndUnchanged, assertSameLocation, isUtf8File, newFileMode, readUtf8File, regularFileProblem, updateLedgerAfterWrite, sha256OfFile, statIfExists, writeFileAtomically } from './files.ts';
 import { diffOfContents } from './applied-diff.ts';
 import { pluralize, splitLines } from './format.ts';
 import { accessedPathOf, canonicalPathOf, resolvedPathOf, shownPath } from './paths.ts';
@@ -41,6 +41,9 @@ export const writeTool = defineTool<WriteInput>({
     if (stat?.isDirectory() === true) throw new ToolExecutionError(`${shown} is a directory, not a file`);
     const problem = stat === undefined ? undefined : regularFileProblem(stat, shown);
     if (problem !== undefined) throw new ToolExecutionError(problem);
+    if (stat !== undefined && !(await isUtf8File(ctx.files, target))) {
+      throw new ToolExecutionError(`${shown} is not UTF-8 text and is not replaced by Write; its encoding is not guessed`);
+    }
     const preHash = stat === undefined ? null : await assertReadAndUnchanged(ctx.files, ctx.session, target, shown);
     return { path: target, preHash, postHash: sha256Hex(input.content) };
   },
@@ -58,7 +61,7 @@ export const writeTool = defineTool<WriteInput>({
       if ((await sha256OfFile(ctx.files, plan.path)) !== plan.preHash) {
         throw new ToolExecutionError(`${shown} has changed since it was last read; Read it again before modifying it`);
       }
-      oldText = await ctx.files.readTextFile(plan.path);
+      oldText = await readUtf8File(ctx.files, plan.path);
     } else if (plan.preHash !== null) {
       throw new ToolExecutionError(`${shown} has changed since it was last read; Read it again before modifying it`);
     }

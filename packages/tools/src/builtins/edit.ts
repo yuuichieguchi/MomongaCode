@@ -1,6 +1,7 @@
 import { sha256Hex } from '@momonga/foundation';
+import type { FileSystem } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
-import { assertReadAndUnchanged, assertSameLocation, looksBinary, regularFileProblem, updateLedgerAfterWrite, sha256OfFile, statIfExists, writeFileAtomically } from './files.ts';
+import { NotUtf8Error, assertReadAndUnchanged, assertSameLocation, looksBinary, readUtf8File, regularFileProblem, updateLedgerAfterWrite, sha256OfFile, statIfExists, writeFileAtomically } from './files.ts';
 import { diffOfReplacements } from './applied-diff.ts';
 import type { TextReplacement } from './applied-diff.ts';
 import { numberedLines, splitLines } from './format.ts';
@@ -70,6 +71,12 @@ const snippetOf = (replacement: Replacement): string => {
   return numberedLines(lines.slice(from - 1, to), from);
 };
 
+const editableTextOf = (files: Pick<FileSystem, 'readFile'>, file: string, shown: string): Promise<string> =>
+  readUtf8File(files, file).catch((error: unknown) => {
+    if (error instanceof NotUtf8Error) throw new ToolExecutionError(`${shown} is not UTF-8 text and cannot be edited as text; its encoding is not guessed`);
+    throw error;
+  });
+
 export const editTool = defineTool<EditInput>({
   name: 'Edit',
   description:
@@ -111,8 +118,9 @@ export const editTool = defineTool<EditInput>({
     const problem = regularFileProblem(stat, shown);
     if (problem !== undefined) throw new ToolExecutionError(problem);
     if (await looksBinary(ctx.files, target)) throw new ToolExecutionError(`${shown} is a binary file and cannot be edited as text`);
+    const text = await editableTextOf(ctx.files, target, shown);
     const preHash = await assertReadAndUnchanged(ctx.files, ctx.session, target, shown);
-    const replacement = computeReplacement(await ctx.files.readTextFile(target), input, shown);
+    const replacement = computeReplacement(text, input, shown);
     return { path: target, preHash, postHash: sha256Hex(replacement.updated) };
   },
   execute: async (input, ctx, prepared) => {
@@ -126,7 +134,7 @@ export const editTool = defineTool<EditInput>({
     if (stat === undefined || (await sha256OfFile(ctx.files, plan.path)) !== plan.preHash) {
       throw new ToolExecutionError(`${shown} has changed since it was last read; Read it again before modifying it`);
     }
-    const original = await ctx.files.readTextFile(plan.path);
+    const original = await editableTextOf(ctx.files, plan.path, shown);
     const replacement = computeReplacement(original, input, shown);
     if (sha256Hex(replacement.updated) !== plan.postHash) throw new ToolExecutionError('Edit result does not match the prepared state');
     const warning = await writeFileAtomically({

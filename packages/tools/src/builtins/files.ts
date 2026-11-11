@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { StringDecoder } from 'node:string_decoder';
 import { OPEN_FLAGS, sha256Hex, writeFileAtomically as writeFileAtomicallyThroughLock } from '@momonga/foundation';
 import type { AtomicWriteFileSystem, FileSystem, Random } from '@momonga/foundation';
 import type { ToolSessionState } from '../types.ts';
@@ -38,6 +37,45 @@ async function* pagesOf(files: PagedFiles, file: string): AsyncGenerator<Buffer>
   }
 }
 
+export class NotUtf8Error extends Error {
+  constructor() {
+    super('the file is not UTF-8 text');
+    this.name = 'NotUtf8Error';
+  }
+}
+
+type Utf8Decoder = { write(bytes: Uint8Array): string; end(): string };
+
+const utf8Decoder = (): Utf8Decoder => {
+  const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+  const decode = (bytes: Uint8Array | undefined): string => {
+    try {
+      return bytes === undefined ? decoder.decode() : decoder.decode(bytes, { stream: true });
+    } catch (error) {
+      if (error instanceof TypeError) throw new NotUtf8Error();
+      throw error;
+    }
+  };
+  return { write: (bytes) => decode(bytes), end: () => decode(undefined) };
+};
+
+export const isUtf8File = async (files: PagedFiles, file: string): Promise<boolean> => {
+  const decoder = utf8Decoder();
+  try {
+    for await (const page of pagesOf(files, file)) decoder.write(page);
+    decoder.end();
+    return true;
+  } catch (error) {
+    if (error instanceof NotUtf8Error) return false;
+    throw error;
+  }
+};
+
+export const readUtf8File = async (files: Pick<FileSystem, 'readFile'>, file: string): Promise<string> => {
+  const decoder = utf8Decoder();
+  return decoder.write(await files.readFile(file)) + decoder.end();
+};
+
 export const sha256OfFile = async (files: PagedFiles, file: string): Promise<string> => {
   const hash = createHash('sha256');
   for await (const page of pagesOf(files, file)) hash.update(page);
@@ -53,7 +91,7 @@ export const scanLines = async (
   signal: AbortSignal,
 ): Promise<LineScan> => {
   const hash = createHash('sha256');
-  const decoder = new StringDecoder('utf8');
+  const decoder = utf8Decoder();
   let pending = '';
   let lineNumber = 0;
   const feed = (text: string): void => {
