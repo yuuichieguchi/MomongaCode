@@ -1,8 +1,9 @@
 import { providerNameOf } from '@momonga/config';
-import { AUTH_DOCUMENT_MAX_BYTES, findOutboundError, isLoopbackHost, isRecord, parseOutsideJson } from '@momonga/foundation';
+import { AUTH_DOCUMENT_MAX_BYTES, findOutboundError, isLoopbackHost, isRecord } from '@momonga/foundation';
 import { SERVER_KINDS } from '@momonga/protocol';
 import type { DetectedLocalServer, DetectedManagedServer, DetectedModel, JsonCheck, LocalServerDetection, LocalServerToolSupport, ManagedServerDescription, ServerKind, ServerKinds } from '@momonga/protocol';
 import { readTextLimited } from './adapters/shared/body-reading.ts';
+import { MalformedJsonError, parseExternalJson } from './adapters/shared/json.ts';
 import { runPreconditions } from './managed/preconditions.ts';
 import type { ExecFn } from './managed/preconditions.ts';
 import { reportedContextCeiling, reportedContextWindow } from './probe/run-probe.ts';
@@ -51,9 +52,9 @@ const answerOf = async (response: { ok: boolean; body: AsyncIterable<Uint8Array>
   const read = await readTextLimited(response.body, DETECTION_BODY_MAX_BYTES);
   if (!response.ok || read.truncated) return NO_ANSWER;
   try {
-    return parseOutsideJson(read.text) as unknown;
+    return parseExternalJson(read.text);
   } catch (error) {
-    if (error instanceof SyntaxError) return NO_ANSWER;
+    if (error instanceof MalformedJsonError) return NO_ANSWER;
     throw error;
   }
 };
