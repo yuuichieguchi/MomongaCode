@@ -1,11 +1,12 @@
-import fsSync from 'node:fs';
-import fs from 'node:fs/promises';
+import type { Stats } from 'node:fs';
 import path from 'node:path';
 import util from 'node:util';
 import { ensureWindowsPrivateTree, modeIsPrivate, noFollowFlag, directoryFlag, ownerProblem } from './platform/privacy.ts';
 import { nodeCommandRunner } from './platform/command-runner.ts';
 import type { CommandRunner } from './platform/command-runner.ts';
 import { isAtomicWriteTemporary } from './atomic-file.ts';
+import { OPEN_FLAGS, nodeFileSystem } from './node-file-system.ts';
+import type { FileSystem, HeldEntry } from './node-file-system.ts';
 import { handoverLeftovers } from './handover-leftovers.ts';
 import type { LeftoverDirectory } from './leftover-sweep.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
@@ -270,9 +271,12 @@ export class MomongaDirectoryError extends Error {
 const reasonOf = (error: NodeJS.ErrnoException): string =>
   error.errno === undefined || error.code === undefined ? error.message : `${util.getSystemErrorMessage(error.errno)} (${error.code})`;
 
+const files: Pick<FileSystem, 'mkdir' | 'mkdirOne' | 'chmod' | 'openEntry' | 'lstat' | 'stat' | 'realpath'> = nodeFileSystem;
+
 const createDirectory = async (directory: string, options: { mode: number } | { recursive: true }): Promise<void> => {
   try {
-    await fs.mkdir(directory, options);
+    if ('recursive' in options) await files.mkdir(directory);
+    else await files.mkdirOne(directory, options.mode);
   } catch (error) {
     const failure = error as NodeJS.ErrnoException;
     if (failure.code === 'EEXIST' && !('recursive' in options)) return;
@@ -284,7 +288,7 @@ const ensurePrivateDirectory = async (directory: string, platform: NodeJS.Platfo
   let stat = await lstatIfPresent(directory);
   if (stat === undefined) {
     await createDirectory(directory, { mode: 0o700 });
-    stat = await fs.lstat(directory);
+    stat = await files.lstat(directory);
   }
   if (stat.isSymbolicLink()) throw new Error(`${directory} is a symlink; refusing to use it`);
   if (!stat.isDirectory()) throw new Error(`${directory} exists and is not a directory`);
@@ -292,7 +296,7 @@ const ensurePrivateDirectory = async (directory: string, platform: NodeJS.Platfo
   if (owner !== undefined) {
     throw new Error(`${directory} is owned by uid ${owner.found}, but the current user is uid ${owner.expected}; the directory must be owned by the current user`);
   }
-  if (!modeIsPrivate(stat, 'directory', platform)) await fs.chmod(directory, 0o700);
+  if (!modeIsPrivate(stat, 'directory', platform)) await files.chmod(directory, 0o700);
 };
 
 export type RoleEndpoint = { socketPath: string; lockPath: string };
@@ -398,7 +402,7 @@ export const scopeToGeneration = (paths: MomongaPaths, generation: number): Momo
 export const createGenerationDirs = async (paths: MomongaPaths, generation: number, ports: PlatformDirectoryPorts = {}): Promise<void> => {
   const platform = ports.platform ?? process.platform;
   const scoped = scopeToGeneration(paths, generation);
-  await fs.mkdir(path.join(paths.run, generationDirectoryName(generation)), { mode: 0o700 });
+  await files.mkdirOne(path.join(paths.run, generationDirectoryName(generation)), 0o700);
   for (const directory of [paths.markers.root, scoped.markers.root, ...MARKER_KINDS.map((kind) => scoped.markers[kind])]) {
     await ensurePrivateDirectory(directory, platform);
   }
@@ -473,7 +477,7 @@ const assertSessionId = (sessionId: string): void => {
   }
 };
 
-const assertOwnedDirectory = (directory: string, stat: fsSync.Stats, uid: number): void => {
+const assertOwnedDirectory = (directory: string, stat: Stats, uid: number): void => {
   if (stat.isSymbolicLink()) throw new SessionTmpDirError(`${directory} is a symlink; refusing to use it`);
   if (!stat.isDirectory()) throw new SessionTmpDirError(`${directory} exists and is not a directory`);
   if (stat.uid !== uid) {
@@ -481,11 +485,11 @@ const assertOwnedDirectory = (directory: string, stat: fsSync.Stats, uid: number
   }
 };
 
-const sameInode = (left: fsSync.Stats, right: fsSync.Stats): boolean => left.dev === right.dev && left.ino === right.ino;
+const sameInode = (left: Stats, right: Stats): boolean => left.dev === right.dev && left.ino === right.ino;
 
-const openDirectoryNoFollow = async (target: string, flags: number): Promise<fs.FileHandle> => {
+const openDirectoryNoFollow = async (target: string, flags: number): Promise<HeldEntry> => {
   try {
-    return await fs.open(target, flags);
+    return await files.openEntry(target, flags);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === 'ELOOP' || code === 'ENOTDIR') {
@@ -502,16 +506,16 @@ const ensureSessionTmpDirWindows = async (paths: MomongaPaths, sessionId: string
     throw new SessionTmpDirError(`${paths.tmp.sessions} is missing, a link, or not a directory; refusing to use it`);
   }
   try {
-    await fs.mkdir(directory);
+    await files.mkdirOne(directory);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
   }
-  const child = await fs.lstat(directory);
+  const child = await files.lstat(directory);
   if (child.isSymbolicLink() || !child.isDirectory()) {
     throw new SessionTmpDirError(`${directory} is a link or not a directory; refusing to use it`);
   }
-  const canonicalRoot = await fs.realpath(paths.tmp.sessions);
-  const canonicalDirectory = await fs.realpath(directory);
+  const canonicalRoot = await files.realpath(paths.tmp.sessions);
+  const canonicalDirectory = await files.realpath(directory);
   if (path.dirname(canonicalDirectory).toLowerCase() !== canonicalRoot.toLowerCase()) {
     throw new SessionTmpDirError(`${directory} does not live directly in the sessions root ${paths.tmp.sessions}`);
   }
@@ -568,30 +572,30 @@ const ensureClaimedSessionTmpDir = async (paths: MomongaPaths, sessionId: string
   if (platform === 'win32') return ensureSessionTmpDirWindows(paths, sessionId);
   const uid = process.getuid?.();
   if (uid === undefined) throw new Error('process.getuid is required to verify directory ownership');
-  const openFlags = fsSync.constants.O_RDONLY | directoryFlag(platform) | noFollowFlag(platform);
+  const openFlags = OPEN_FLAGS.readOnly | directoryFlag(platform) | noFollowFlag(platform);
   const directory = path.join(paths.tmp.sessions, sessionId);
-  let rootHandle: fs.FileHandle | undefined;
-  let childHandle: fs.FileHandle | undefined;
+  let rootHandle: HeldEntry | undefined;
+  let childHandle: HeldEntry | undefined;
   try {
     rootHandle = await openDirectoryNoFollow(paths.tmp.sessions, openFlags);
     const rootStat = await rootHandle.stat();
     assertOwnedDirectory(paths.tmp.sessions, rootStat, uid);
     try {
-      await fs.mkdir(directory, { mode: 0o700 });
+      await files.mkdirOne(directory, 0o700);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     }
     childHandle = await openDirectoryNoFollow(directory, openFlags);
     const childStat = await childHandle.stat();
     assertOwnedDirectory(directory, childStat, uid);
-    if (!sameInode(await fs.lstat(paths.tmp.sessions), rootStat)) {
+    if (!sameInode(await files.lstat(paths.tmp.sessions), rootStat)) {
       throw new SessionTmpDirError(`${paths.tmp.sessions} was replaced while preparing ${directory}`);
     }
-    const canonicalDirectory = await fs.realpath(directory);
-    if (!sameInode(await fs.stat(canonicalDirectory), childStat)) {
+    const canonicalDirectory = await files.realpath(directory);
+    if (!sameInode(await files.stat(canonicalDirectory), childStat)) {
       throw new SessionTmpDirError(`${directory} was replaced while it was being prepared`);
     }
-    if (!sameInode(await fs.stat(path.dirname(canonicalDirectory)), rootStat)) {
+    if (!sameInode(await files.stat(path.dirname(canonicalDirectory)), rootStat)) {
       throw new SessionTmpDirError(`${directory} does not live directly in the sessions root ${paths.tmp.sessions}`);
     }
     if ((childStat.mode & 0o777) !== 0o700) await childHandle.chmod(0o700);
@@ -602,9 +606,9 @@ const ensureClaimedSessionTmpDir = async (paths: MomongaPaths, sessionId: string
   return directory;
 };
 
-const lstatIfPresent = async (target: string): Promise<fsSync.Stats | undefined> => {
+const lstatIfPresent = async (target: string): Promise<Stats | undefined> => {
   try {
-    return await fs.lstat(target);
+    return await files.lstat(target);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;

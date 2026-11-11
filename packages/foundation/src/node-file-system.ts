@@ -20,6 +20,8 @@ export type DirectoryReader = { read(): Promise<string | null>; close(): Promise
 
 export type RemoveOptions = { readonly recursive: boolean };
 
+export type HeldEntry = { stat(): Promise<fs.Stats>; chmod(mode: number): Promise<void>; close(): Promise<void> };
+
 export interface FileSystem extends AtomicWriteFileSystem {
   rm(file: string, options?: RemoveOptions): Promise<void>;
   stat(file: string): Promise<fs.Stats>;
@@ -29,7 +31,10 @@ export interface FileSystem extends AtomicWriteFileSystem {
   readFile(file: string): Promise<Uint8Array>;
   readTextFile(file: string): Promise<string>;
   mkdir(directory: string, mode?: number): Promise<void>;
+  mkdirOne(directory: string, mode?: number): Promise<void>;
   mkdirPrivate(directory: string): Promise<void>;
+  chmod(target: string, mode: number): Promise<void>;
+  openEntry(target: string, flags: number): Promise<HeldEntry>;
   readOwnerOnlyTextFile(file: string, description: string, maxBytes?: number): Promise<string | undefined>;
   writeFile(file: string, content: FileContent): Promise<void>;
   access(file: string, check?: AccessCheck): Promise<void>;
@@ -125,6 +130,12 @@ export const nodeFileSystem: FileSystem = {
   readFile: async (file) => new Uint8Array(await fs.promises.readFile(file)),
   readTextFile: (file) => fs.promises.readFile(file, 'utf8'),
   mkdir: async (directory, mode) => void (await fs.promises.mkdir(directory, { recursive: true, ...(mode === undefined ? {} : { mode }) })),
+  mkdirOne: (directory, mode) => fs.promises.mkdir(directory, mode === undefined ? {} : { mode }),
+  chmod: (target, mode) => fs.promises.chmod(target, mode),
+  openEntry: async (target, flags) => {
+    const handle = await fs.promises.open(target, flags);
+    return { stat: () => handle.stat(), chmod: (mode) => handle.chmod(mode), close: () => handle.close() };
+  },
   mkdirPrivate: async (directory) => {
     await fs.promises.mkdir(directory, { recursive: true, mode: PRIVATE_MODE.directory });
     await fs.promises.chmod(directory, PRIVATE_MODE.directory);

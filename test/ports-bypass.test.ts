@@ -50,7 +50,6 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/foundation/src/host-identity.ts': { 'node:child_process': 1, 'node:fs': 2 },
   'packages/foundation/src/leftover-sweep.ts': { 'node:fs': 2 },
   'packages/foundation/src/lifeline.ts': { 'node:fs': 1, 'node:net': 1, 'setImmediate': 1 },
-  'packages/foundation/src/momonga-paths.ts': { 'node:fs/promises': 15 },
   'packages/foundation/src/outbound.ts': { 'node:net': 1, 'node:worker_threads': 1 },
   'packages/foundation/src/owned-directory.ts': { 'node:fs': 4 },
   'packages/foundation/src/pattern-check.ts': { 'node:worker_threads': 1 },
