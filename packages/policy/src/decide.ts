@@ -7,6 +7,7 @@ import { commandApproval } from './approval.ts';
 import { commandCoveredByAllowRules } from './command-match.ts';
 import { createDecisionResolver } from './filesystem.ts';
 import type { PolicyFilesystem, WritableCheck } from './filesystem.ts';
+import { suggestAllowRule } from './suggest-allow-rule.ts';
 import { supersededVerdictOf } from './superseded.ts';
 import type { CoveredProgram, SupersededForm } from './superseded.ts';
 import { matchPathlessStrength, matchRule, matchStrength, ruleCoversSubject } from './match-rule.ts';
@@ -386,9 +387,11 @@ const withTarget = (input: DecideInput, decision: Decision): Decision => {
   return target === undefined ? decision : { ...decision, reason: `${decision.reason}; target: ${target}` };
 };
 
-const withinMandate = (input: DecideInput, decision: Decision): Decision => {
+const withinMandate = async (input: DecideInput, decision: Decision): Promise<Decision> => {
   if (input.mandate !== true || decision.kind !== 'ask' || decision.source !== 'mode' || decision.humanOnly === true) return decision;
-  return { kind: 'deny', denial: 'mandate', source: 'mode', reason: `Not run: outside the declared mandate (${decision.reason}). Continue with work inside it or report.` };
+  const rule = await suggestAllowRule(input.tool, input.subject, input.cwd, input.fs.canonicalise);
+  const wayForward = rule === undefined ? '' : ` To allow it in a run under this mandate, add the rule ${rule} to the allow list of the mandate.`;
+  return { kind: 'deny', denial: 'mandate', source: 'mode', reason: `Not run: outside the declared mandate (${decision.reason}).${wayForward} Continue with work inside it or report.` };
 };
 
 const onlyReads = async (input: DecideInput): Promise<boolean> => {
@@ -399,7 +402,7 @@ const onlyReads = async (input: DecideInput): Promise<boolean> => {
 export const decide = (given: DecideInput): Promise<Decision> => decideResolvingOnce(resolvingOnce(given));
 
 const decideResolvingOnce = async (input: DecideInput): Promise<Decision> => {
-  const ordinary = async (): Promise<Decision> => withTarget(input, withinMandate(input, withNetworkRequest(input, await decideWithoutNetwork(input))));
+  const ordinary = async (): Promise<Decision> => withTarget(input, await withinMandate(input, withNetworkRequest(input, await decideWithoutNetwork(input))));
   if (input.mandate !== true || input.subject.kind !== 'command' || input.supersededForms === undefined) return ordinary();
   const verdict = supersededVerdictOf(input.subject.command, input.supersededForms, commandSpecsFor(input.fs.platform), input.coveredPrograms);
   if (verdict === undefined) return ordinary();

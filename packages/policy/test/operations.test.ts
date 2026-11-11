@@ -338,12 +338,34 @@ describe('a decision the mode default would ask about, in a mandate run', () => 
     const layout = makeLayout();
     const inMandate = await decideWith(layout, BASH, bash('npm install left-pad'), 'manual', [], { mandate: true });
     expect(inMandate).toMatchObject({ kind: 'deny', source: 'mode', denial: 'mandate' });
-    expect((await inMandate).reason).toBe('Not run: outside the declared mandate (shell commands require approval). Continue with work inside it or report.');
+    expect(inMandate.reason).toBe(
+      'Not run: outside the declared mandate (shell commands require approval). To allow it in a run under this mandate, add the rule Bash(npm install left-pad) to the allow list of the mandate. Continue with work inside it or report.',
+    );
     expect(await decideWith(layout, BASH, bash('npm install left-pad'), 'manual', [])).toMatchObject({ kind: 'ask', source: 'mode' });
   });
 
   it('is denied for an operation no rule of the mandate names', async () => {
     expect(await decideWith(makeLayout(), CREATE_TOOL, CREATE, 'manual', [], { mandate: true })).toMatchObject({ kind: 'deny', denial: 'mandate' });
+  });
+
+  it('names the rule to add for a Git operation the mandate allows only as a shell command', async () => {
+    const layout = makeLayout();
+    const stage = { kind: 'repo', tool: 'GitStage', operation: 'GitStage', remote: null, refs: [], destinations: [], destinationsMatchFetch: true, approval: 'rule' } as unknown as PermissionSubject;
+    const tool: PolicyTool = { name: 'GitStage', kind: 'execute', sideEffect: 'exec', subjectKind: 'repo' };
+    const decision = await decideWith(layout, tool, stage, 'manual', [ruleIn(layout)('allow', 'Bash(git add:*)')], { mandate: true });
+    expect(decision).toMatchObject({ kind: 'deny', denial: 'mandate' });
+    expect(decision.reason).toBe(
+      'Not run: outside the declared mandate (GitStage requires approval). To allow it in a run under this mandate, add the rule GitStage to the allow list of the mandate. Continue with work inside it or report.',
+    );
+    expect(await decideWith(layout, tool, stage, 'manual', [ruleIn(layout)('allow', 'GitStage')], { mandate: true })).toMatchObject({ kind: 'allow' });
+  });
+
+  it('names no rule where no rule can allow the call', async () => {
+    const save = { kind: 'memory', tool: 'MemorySave', scope: 'user' } as unknown as PermissionSubject;
+    const tool: PolicyTool = { name: 'MemorySave', kind: 'other', sideEffect: 'write', subjectKind: 'memory' };
+    const decision = await decideWith(makeLayout(), tool, save, 'manual', [], { mandate: true });
+    expect(decision).toMatchObject({ kind: 'deny', denial: 'mandate' });
+    expect(decision.reason).not.toContain('add the rule');
   });
 
   it('runs what an allow rule covers and keeps a read-only command allowed', async () => {

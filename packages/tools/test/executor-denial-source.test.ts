@@ -74,7 +74,11 @@ describe('the source of a refusal is the cause the decision names', () => {
 
   it('names the mandate as the source of a call outside the mandate', async () => {
     const denial = await denialOf({ command: 'make build' }, { mandate: MANDATE });
-    expect(denial).toMatchObject({ source: 'mandate', reason: expect.stringContaining('outside the declared mandate') });
+    expect(denial).toEqual({
+      source: 'mandate',
+      reason:
+        'Not run: outside the declared mandate (shell commands require approval). To allow it in a run under this mandate, add the rule Bash(make build) to the allow list of the mandate. Continue with work inside it or report.',
+    });
   });
 
   it('names the rule as the source of a call a deny rule refuses', async () => {
