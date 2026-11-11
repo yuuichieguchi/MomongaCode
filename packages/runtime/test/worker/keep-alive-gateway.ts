@@ -32,6 +32,7 @@ export const BREAKER_STAYS_CLOSED_SO_EVERY_REQUEUED_ATTEMPT_REACHES_THE_ONE_TARG
 export const startRealGateway = async (options: { clock: FakeClock; idleTimeoutMs: number; script: FakeScriptedReply[] }): Promise<RealGateway> => {
   const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ka-'));
   fs.chmodSync(dir, 0o700);
+  fs.mkdirSync(path.join(dir, 'state'), { mode: 0o700 });
   const upstream = await startFakeChatCompletions({ scenario: 'tools-ok', script: options.script });
   const capabilities = capabilitiesFor(100_000);
   const adapter = createChatCompletionsAdapter({ authSource: unauthenticatedSource,

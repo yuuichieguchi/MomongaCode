@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import * as gatewayModule from '@momonga/gateway';
 import { createGateway } from '@momonga/gateway';
 import { createFakeClock, createFakeTimers, createScriptedAdapter } from '@momonga/testkit';
-import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, makeDir, registerCleanup } from './gateway-helpers.ts';
+import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, makeDir, registerCleanup, stateDbPath } from './gateway-helpers.ts';
 
 describe('watchServerErrors is module-internal (B3)', () => {
   it('is not exported from @momonga/gateway', () => {
@@ -31,7 +31,7 @@ describe('watchServerErrors is module-internal (B3)', () => {
       adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) },
       clock,
       timers: createFakeTimers(clock),
-      dbPath: path.join(dir, 'state', 'gateway.db'),
+      dbPath: stateDbPath(dir),
       hmacKey: HMAC_KEY,
       socketPath: path.join(dir, 'gw.sock'),
       pid: process.pid,

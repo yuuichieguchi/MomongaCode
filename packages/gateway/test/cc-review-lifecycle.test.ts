@@ -8,7 +8,7 @@ import { createChatCompletionsAdapter, createManagedServer, createGateway, creat
 import type { ExecResult, ManagedServer, ManagedServerTimers, ProviderAdapter } from '@momonga/gateway';
 import { createFakeClock, createFakeTimers, createScriptedAdapter, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
-import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, makeDir, registerCleanup, startGateway } from './gateway-helpers.ts';
+import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, makeDir, registerCleanup, startGateway, stateDbPath } from './gateway-helpers.ts';
 import { CC_CAPABILITIES, TARGET } from './cc-support.ts';
 import { saveProbeRecord } from '@momonga/gateway';
 import { makeReport } from './report-fixture.ts';
@@ -178,7 +178,7 @@ describe('adapter and gateway shutdown', () => {
       adapters: { 'scripted/m': failing, 'b/m': { ...createScriptedAdapter({ calls: [] }), close: healthy } },
       clock,
       timers: createFakeTimers(clock),
-      dbPath: path.join(dir, 'state', 'gateway.db'),
+      dbPath: stateDbPath(dir),
       hmacKey: HMAC_KEY,
       socketPath,
       pid: process.pid,

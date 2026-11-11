@@ -54,6 +54,12 @@ export const makeDir = (): string => {
 
 export const TEST_VERSION = '0.0.0-test';
 
+export const stateDbPath = (dir: string): string => {
+  const state = path.join(dir, 'state');
+  fs.mkdirSync(state, { recursive: true, mode: 0o700 });
+  return path.join(state, 'gateway.db');
+};
+
 export type SwitchableRole = RolePort & { become(role: GenerationRole): void };
 
 export const switchableRole = (initial: GenerationRole = 'serving'): SwitchableRole => {
@@ -187,7 +193,7 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
   const clock = options.clock ?? createFakeClock(START_MS);
   const timers = options.timers ?? createFakeTimers(clock);
   const socketPath = path.join(dir, 'gw.sock');
-  const dbPath = path.join(dir, 'state', 'gateway.db');
+  const dbPath = stateDbPath(dir);
   const config = buildConfig(options.config);
   const model = Object.keys(config.models.chains)[0] ?? NO_START_MODEL;
   const gateway = await createGateway({
