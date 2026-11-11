@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { KILL_CONFIRM_MS, ProcessLockHeldError, acquireProcessLock, createUdsClient, fixedSocket, isPipePath, isUnixSocketLive, socketBindRefusalOf, startSharedCall, systemClock } from '@momonga/foundation';
 import type { GenerationRole, ProcessLock, SharedCall, UdsClient } from '@momonga/foundation';
-import { SOCKET_PLACEHOLDER, messageOf } from '@momonga/protocol';
+import { SOCKET_PLACEHOLDER, WORDS, messageOf } from '@momonga/protocol';
 import type { HealthResult, ManagedEndpointForm, ManagedServerDescription } from '@momonga/protocol';
 import { realTimers } from '../process-ports.ts';
 import { PreconditionFailedError, TargetNotReadyError } from '../adapters/shared/failures.ts';
@@ -154,7 +154,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
 
   const createDeadline = (ms: number): Deadline => {
     const controller = new AbortController();
-    const handle = timers.setTimeout(() => controller.abort(new ManagedServerError('unhealthy', said('the server was not ready before the request ended'), undefined)), ms);
+    const handle = timers.setTimeout(() => controller.abort(new ManagedServerError('unhealthy', said(`the ${WORDS.server} was not ready within ${ms} ms of its start; readyTimeoutMs of the ${WORDS.model} in the settings sets this bound`), undefined)), ms);
     return {
       signal: controller.signal,
       get expired(): boolean {

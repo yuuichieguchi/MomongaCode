@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { MANAGED_READY_LIMIT_MS, MANAGED_RESTART_POLICY, MANAGED_SERVERS, SOCKET_PLACEHOLDER } from '@momonga/protocol';
+import type { EndpointHost } from '@momonga/foundation';
+import { MANAGED_READY_LIMIT_MS, MANAGED_RESTART_POLICY, MANAGED_SERVERS, SOCKET_PLACEHOLDER, messageOf } from '@momonga/protocol';
 import type { ManagedEndpointForm, ManagedServerDescription } from '@momonga/protocol';
 import { ConfigError } from './config-error.ts';
 import type { DeclaredServer } from './settings.ts';
@@ -8,17 +9,13 @@ export type ServerRegistry = Readonly<Record<string, ManagedServerDescription>>;
 
 const DEFAULT_DECLARED_ENDPOINT_FORMS: readonly ManagedEndpointForm[] = ['unix'];
 
-const bracketed = (forms: readonly string[]): string => `[${forms.join(', ')}]`;
-
 export const firstOfferedEndpointForm = (description: ManagedServerDescription, hostForms: readonly ManagedEndpointForm[]): ManagedEndpointForm | undefined =>
   description.endpoint.forms.find((form) => hostForms.includes(form));
 
-export const requireOfferedEndpointForm = (description: ManagedServerDescription, hostForms: readonly ManagedEndpointForm[], where: string): ManagedEndpointForm => {
-  const form = firstOfferedEndpointForm(description, hostForms);
+export const requireOfferedEndpointForm = (description: ManagedServerDescription, host: EndpointHost, where: string): ManagedEndpointForm => {
+  const form = firstOfferedEndpointForm(description, host.forms);
   if (form === undefined) {
-    throw new ConfigError(
-      `${where}: server ${JSON.stringify(description.id)} accepts only the endpoint forms ${bracketed(description.endpoint.forms)}, and this host offers ${bracketed(hostForms)}; the target cannot be used on this platform`,
-    );
+    throw new ConfigError(`${where}: ${messageOf('serverFormNotOffered', 'cli', { server: description.id, platform: host.platform, accepted: description.endpoint.forms, offered: host.forms })}`);
   }
   return form;
 };
