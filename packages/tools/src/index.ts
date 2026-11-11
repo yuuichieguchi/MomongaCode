@@ -83,7 +83,7 @@ export type { UserCommandHost, UserCommandOutcome } from './builtins/bash.ts';
 export type { PolicyFacts, UserPolicy, UserPolicyFacts, UserSubject } from './executor.ts';
 export { gitEnvironment, gitProxyEnvironment, readOnlyEnvironment, readOnlySandboxPolicy } from './read-only-call.ts';
 export type { GitEnvironmentRequest } from './read-only-call.ts';
-export { REPOSITORY_KEY_RULES, repositoryKeyRuleOf } from './git-config-table.ts';
+export { REPOSITORY_KEY_RULES, productSetEntriesOf, repositoryKeyRuleOf } from './git-config-table.ts';
 export type { RepositoryKeyRule } from './git-config-table.ts';
 export { directoryEntriesOn, fileCandidatesOn } from './file-listing.ts';
 export type { FileListingOptions, FileListingPorts } from './file-listing.ts';
