@@ -1480,7 +1480,8 @@ export function App(props: AppProps) {
   const allocation = allocate(rows, {
     waiting: waiting === undefined || a11y.screenReader ? 0 : 1,
     inputRows: inputRowsOf(shownEditor, columns),
-    menu: !menuShown ? 0 : invitationInMenu ? INVITATION_ROWS : atMenu.open ? atMenu.rows : slashMenu.rows,
+    invitation: invitationInMenu ? INVITATION_ROWS : 0,
+    menu: !menuShown || invitationInMenu ? 0 : atMenu.open ? atMenu.rows : slashMenu.rows,
     subagents: transcript.subagents.length,
     footerSecond: (!fullscreen || planRowFits(planRow, columns) ? (planRow === undefined ? 0 : 1) : 0) + (busyHintRow === undefined ? 0 : 1),
     lines: inputShown ? shownAttachments.length + waitingLines.length : 0,
@@ -1603,7 +1604,8 @@ export function App(props: AppProps) {
           tokens: sessionTokens(transcript),
           contextPercent: contextPercentOf(transcript.contextTokens, capabilities?.contextWindow),
           imageInput,
-          right: shownHint ?? newlineHintText(newlineKeyHint(keys, terminalState.negotiation)),
+          answer: shownHint,
+          newline: newlineHintText(newlineKeyHint(keys, terminalState.negotiation)),
         }
       : undefined;
 

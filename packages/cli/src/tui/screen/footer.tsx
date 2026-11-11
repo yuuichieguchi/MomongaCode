@@ -3,7 +3,7 @@ import { escapeTerminalLine } from '@momonga/protocol';
 import type { KeyTable } from '../keys/table.ts';
 import { displayWidth } from './wrap.ts';
 
-export type FooterFacts = { mode: string; tokens: number; contextPercent: number | undefined; imageInput: boolean; right: string | undefined };
+export type FooterFacts = { mode: string; tokens: number; contextPercent: number | undefined; imageInput: boolean; answer: string | undefined; newline: string | undefined };
 
 export const formatTokens = (count: number): string => (count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count));
 
@@ -15,18 +15,44 @@ const SEPARATOR = ' · ';
 
 const IMAGE_HINT = 'image input: paste a file path';
 
-export const footerRow = (facts: FooterFacts, width: number, keys: KeyTable): string => {
-  const cycle = keys.keyHint('mode.cycle');
-  const droppable = [`tokens: ${formatTokens(facts.tokens)}`, `context: ${facts.contextPercent === undefined ? 'unknown' : `${facts.contextPercent}%`}`, ...(facts.imageInput ? [IMAGE_HINT] : [])];
-  const leftOf = (kept: number): string => [`mode: ${facts.mode}${cycle === '' ? '' : ` (${cycle})`}`, ...droppable.slice(0, kept)].join(SEPARATOR);
-  const whole = leftOf(droppable.length);
-  if (facts.right !== undefined) {
-    const gap = width - displayWidth(whole) - displayWidth(facts.right);
-    if (gap >= 1) return `${whole}${' '.repeat(gap)}${facts.right}`;
-  }
-  for (let kept = droppable.length; kept > 0; kept -= 1) if (displayWidth(leftOf(kept)) <= width) return leftOf(kept);
-  return leftOf(0);
+export type RowSegment = { side: 'left' | 'right'; forms: readonly string[] };
+
+const drawnOf = (shown: readonly string[], sides: readonly RowSegment['side'][], width: number): string | undefined => {
+  const left = shown.filter((_, index) => sides[index] === 'left').join(SEPARATOR);
+  const right = shown.filter((_, index) => sides[index] === 'right').join(SEPARATOR);
+  if (left === '' || right === '') return displayWidth(left) + displayWidth(right) <= width ? `${left}${right}` : undefined;
+  const gap = width - displayWidth(left) - displayWidth(right);
+  return gap >= 1 ? `${left}${' '.repeat(gap)}${right}` : undefined;
 };
+
+export const fit = (segments: readonly RowSegment[], width: number): string => {
+  const [first, ...rest] = segments;
+  if (first === undefined) return '';
+  const kept = [first, ...rest];
+  const form = kept.map(() => 0);
+  for (;;) {
+    const drawn = drawnOf(kept.map((segment, index) => segment.forms[form[index] ?? 0] ?? ''), kept.map((segment) => segment.side), width);
+    if (drawn !== undefined) return drawn;
+    const last = kept.length - 1;
+    const shorter = (form[last] ?? 0) + 1;
+    if (shorter < (kept[last]?.forms.length ?? 0)) form[last] = shorter;
+    else if (last > 0) kept.pop();
+    else return first.forms.at(-1) ?? '';
+  }
+};
+
+const modeForms = (mode: string, cycle: string): string[] => [...(cycle === '' ? [] : [`mode: ${mode} (${cycle})`]), `mode: ${mode}`, mode];
+
+export const footerSegments = (facts: FooterFacts, keys: KeyTable): RowSegment[] => [
+  ...(facts.answer === undefined ? [] : [{ side: 'right' as const, forms: [facts.answer] }]),
+  { side: 'left', forms: modeForms(facts.mode, keys.keyHint('mode.cycle')) },
+  { side: 'left', forms: [`tokens: ${formatTokens(facts.tokens)}`] },
+  { side: 'left', forms: [`context: ${facts.contextPercent === undefined ? 'unknown' : `${facts.contextPercent}%`}`] },
+  ...(facts.imageInput ? [{ side: 'left' as const, forms: [IMAGE_HINT] }] : []),
+  ...(facts.answer !== undefined || facts.newline === undefined ? [] : [{ side: 'right' as const, forms: [facts.newline] }]),
+];
+
+export const footerRow = (facts: FooterFacts, width: number, keys: KeyTable): string => fit(footerSegments(facts, keys), width);
 
 export const UNCONNECTED_FOOTER = 'no model connected · /login';
 

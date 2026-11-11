@@ -1,6 +1,6 @@
 import { INPUT_BOX_FRAME_ROWS, SUBAGENT_ROWS_MAX } from './constants.ts';
 
-export type RowRequests = { waiting: number; inputRows: number; menu: number; subagents: number; footerSecond: number; lines: number; panel: number | undefined };
+export type RowRequests = { waiting: number; inputRows: number; invitation: number; menu: number; subagents: number; footerSecond: number; lines: number; panel: number | undefined };
 
 export type RowAllocation = { viewport: number; menu: number; waiting: number; lines: number; input: number; footer: number; subagents: number };
 
@@ -29,9 +29,10 @@ export const allocate = (height: number, requests: RowRequests): RowAllocation =
     left -= given;
     return given;
   };
+  const invitation = panel === undefined ? take(requests.invitation) : 0;
   const waiting = take(requests.waiting);
   const inputExtra = panel === undefined ? take(Math.min(requests.inputRows, inputRowsCap(height)) - 1) : 0;
-  const menu = panel === undefined ? take(Math.min(requests.menu, menuRowsCap(height))) : 0;
+  const menu = invitation + (panel === undefined ? take(Math.min(requests.menu, menuRowsCap(height))) : 0);
   const subagents = take(Math.min(requests.subagents, subagentRowsCap(height)));
   const footerSecond = take(requests.footerSecond);
   const lines = panel === undefined ? take(requests.lines) : 0;
