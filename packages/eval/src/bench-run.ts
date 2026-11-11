@@ -11,6 +11,7 @@ import { buildBenchmarkReport } from './bench-report.ts';
 import type { BenchmarkTrial } from './bench-report.ts';
 import { failedWithCleanup } from './context-live.ts';
 import { EvalError, driveRun } from './runner.ts';
+import { answeredByOfRuns, treeSpendOf } from './run-tree.ts';
 
 export type BenchRunView = {
   sessionId: string;
@@ -114,7 +115,8 @@ const runTrial = async (task: BenchTask, repository: string, workspace: string, 
   const children: RunFactsView[] = [];
   for (const child of driven.children) children.push(await factsOfRun(api, child.runId, run.id, child.events));
   const grade = await gradeTrial({ task, workspace, base: repository, probe: ports.probe, files: ports.files });
-  return { facts: { ...folded, met: grade.met }, children, answeredBy: await api.answeredBy(run.id) };
+  const answeredBy = await answeredByOfRuns((runId) => api.answeredBy(runId), [run.id, ...driven.children.map((child) => child.runId)]);
+  return { facts: { ...folded, ...treeSpendOf([folded, ...children]), met: grade.met }, children, answeredBy };
 };
 
 const inHome = async <T>(home: BenchTrialHome, work: () => Promise<T>): Promise<T> => {

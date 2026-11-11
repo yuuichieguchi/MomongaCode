@@ -1,9 +1,9 @@
-import { canonicalJson } from '@momonga/foundation';
 import type { ContextMemory, WorkspaceStep } from './context-dataset.ts';
 import { failedWithCleanup } from './context-live.ts';
 import { resolvePolicyOverlay } from './context-policy.ts';
 import type { PolicyOverlay } from './context-policy.ts';
 import { driveRun } from './runner.ts';
+import { answeredByOfRuns } from './run-tree.ts';
 import type { EvalRunApi } from './runner.ts';
 import type { Answerer, Transcript, TranscriptReflection } from './transcript.ts';
 import type { YieldDataset, YieldFamily, YieldLearn, YieldReuse } from './yield-dataset.ts';
@@ -71,14 +71,6 @@ const within = async <Host extends Closable, Result>(label: string, host: Host, 
   return outcome.result;
 };
 
-const answeredByOfRuns = async (api: EvalRunApi, runIds: readonly string[]): Promise<Answerer[]> => {
-  const unique = new Map<string, Answerer>();
-  for (const runId of runIds) {
-    for (const answerer of await api.answeredBy(runId)) unique.set(canonicalJson(answerer), answerer);
-  }
-  return [...unique.values()];
-};
-
 type Played = { transcript: Transcript; runId: string };
 
 const playSession = async (
@@ -93,7 +85,7 @@ const playSession = async (
   const driven = await driveRun(host.api, { id: caseId, onAsk: task.onAsk }, run.id);
   const info = await host.api.getRun(run.id);
   const reflection = await reflectionOf(run.id);
-  const answeredBy = await answeredByOfRuns(host.api, [run.id, ...driven.children.map((child) => child.runId)]);
+  const answeredBy = await answeredByOfRuns((runId) => host.api.answeredBy(runId), [run.id, ...driven.children.map((child) => child.runId)]);
   return {
     runId: run.id,
     transcript: {

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { canonicalJson, isRecord, lexicallyWithin } from '@momonga/foundation';
+import { isRecord, lexicallyWithin } from '@momonga/foundation';
 import type { AddRuleRequest } from '@momonga/protocol';
 import type { CompactionSetting, ContextDataset, ContextMemory, ContextRule, ExpandedCase, ExpandedContextDataset, WorkspaceStep } from './context-dataset.ts';
 import { resolvePolicyOverlay } from './context-policy.ts';
@@ -7,6 +7,7 @@ import type { PolicyOverlay } from './context-policy.ts';
 import { isInsideWorkspace } from './dataset.ts';
 import type { WorkspaceFiles } from './files.ts';
 import { EvalError, driveRun } from './runner.ts';
+import { answeredByOfRuns } from './run-tree.ts';
 import type { Driven, EvalRunApi } from './runner.ts';
 import type { Answerer, Transcript, TranscriptRun } from './transcript.ts';
 
@@ -161,14 +162,6 @@ const stoppedBeforeStart = (entry: ExpandedCase, runIndex: number, reason: strin
 
 type CaseState = { spent: number };
 
-const answeredByOfRuns = async (api: ContextCaseHost['api'], runIds: readonly string[]): Promise<Answerer[]> => {
-  const unique = new Map<string, Answerer>();
-  for (const runId of runIds) {
-    for (const answerer of await api.answeredBy(runId)) unique.set(canonicalJson(answerer), answerer);
-  }
-  return [...unique.values()];
-};
-
 const runCase = async (
   expanded: ExpandedContextDataset,
   entry: ExpandedCase,
@@ -237,7 +230,7 @@ const runCase = async (
     const reflection = await host.api.reflectionOf(run.id);
     state.spent += (reflection.charges ?? []).reduce((sum, charge) => sum + charge.totalTokens, 0);
     const noise = entry.noiseTurns.length === 0 ? {} : { noiseTokens, noiseReflectionsUnsettled };
-    const answeredBy = await answeredByOfRuns(host.api, [run.id, ...outcome.driven.children.map((child) => child.runId)]);
+    const answeredBy = await answeredByOfRuns((runId) => host.api.answeredBy(runId), [run.id, ...outcome.driven.children.map((child) => child.runId)]);
     if (!outcome.expired) return emit({ caseId: entry.id, runIndex, run: info, ...outcome.driven, answeredBy, reflection, ...tagged(), ...noise });
     stop = DEADLINE_REASON;
     const { stopReason: _cancelled, ...rest } = info;
