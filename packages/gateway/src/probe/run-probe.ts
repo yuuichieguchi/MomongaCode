@@ -44,7 +44,9 @@ import { JSON_MODE_PROBE_PROMPT, measureJsonMode } from './json-mode.ts';
 import { MeasurementBoundReachedError, isCount } from './consent.ts';
 import type { MeasurementBound, MeteredMeasurement } from './consent.ts';
 import type { JsonModeAnswer } from './json-mode.ts';
-import { field, firstOf, isRecord, listedEntryOf, parseJson, valueAtPath } from './json.ts';
+import { field, firstOf, isRecord, listedEntryOf, valueAtPath } from './reply.ts';
+import { parseExternalJson } from '../adapters/shared/json.ts';
+import { usableUpstreamJson } from '../adapters/shared/upstream-json.ts';
 
 export interface ProbeOptions {
   socketPath?: string;
@@ -125,7 +127,7 @@ const nativeCallOf = (body: unknown): NativeCall | undefined => {
 const nativeCallValid = (call: NativeCall | undefined, ledger: RenderLedger): boolean => {
   if (call === undefined || call.name !== PROBE_TOOL.name) return false;
   const record = ledger.wraps.get(call.name);
-  return toolArgumentsValid(parseJson(record === undefined ? call.arguments : invertReply(record, call.arguments)));
+  return toolArgumentsValid(usableUpstreamJson(record === undefined ? call.arguments : invertReply(record, call.arguments)));
 };
 
 const endpointOf = (options: ProbeOptions): ProbeEndpoint => {
@@ -202,7 +204,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
 
   const modelsResult = await client.get('models');
   expectStatus(modelsResult, [200], 'models');
-  const modelsBody = parseJson(modelsResult.text);
+  const modelsBody = parseExternalJson(modelsResult.text);
   const listedId = options.managed === undefined ? field(firstOf(field(modelsBody, 'data')), 'id') : valueAtPath(modelsBody, options.managed.idPath);
   const model = options.model ?? listedId;
   if (typeof model !== 'string') throw new Error(`Probe could not determine a model id from ${options.managed?.listPath ?? '/v1/models'}`);
@@ -404,7 +406,7 @@ const probeStreaming = async (client: ProbeClient, model: string, outputBound: o
       doneSentinel = true;
       continue;
     }
-    const usage = field(parseJson(event.data), 'usage');
+    const usage = field(parseExternalJson(event.data), 'usage');
     if (isRecord(usage)) usageInStream = true;
   }
   return { supported: events > 0, doneSentinel, usageInStream };
@@ -592,7 +594,7 @@ export const reportedContextWindow = (source: unknown): number | undefined => re
 export const reportedContextCeiling = (source: unknown): number | undefined => reportedCount(source, CONTEXT_CEILING_FIELDS);
 
 const reportedWindowOf = (modelsBody: unknown, model: string, healthText: string): ProbeReport['contextWindow'] | undefined => {
-  for (const source of [listedEntryOf(modelsBody, model), parseJson(healthText)]) {
+  for (const source of [listedEntryOf(modelsBody, model), usableUpstreamJson(healthText)]) {
     const value = reportedContextWindow(source);
     if (value !== undefined) return { value, method: 'reported' };
   }

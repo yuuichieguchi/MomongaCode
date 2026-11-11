@@ -7,7 +7,7 @@ import type { DialectCurrency } from '../dialect/candidates.ts';
 import { recordProbe } from './auto-probe.ts';
 import type { MeasureProbe, ProbePrecondition, ProbeSubject } from './auto-probe.ts';
 import { endpointIdentityOf, endpointKeyOfLock, endpointLockKeyOf, requireListedEntry, saveEndpointRecord, stableIdentityFieldsOf } from './endpoint-record.ts';
-import { listedEntryOf } from './json.ts';
+import { listedEntryOf } from './reply.ts';
 import type { EndpointKey, EndpointLockKey } from './endpoint-record.ts';
 import { IDENTITY_READ_TIMEOUT_MS, probeEndpointOf, readModelsListing } from './endpoint-target.ts';
 import { DEFAULT_SAMPLES, PROBE_METHOD_VERSION, runProbe } from './run-probe.ts';

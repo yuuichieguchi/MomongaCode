@@ -1,4 +1,5 @@
 import { isRecord } from '@momonga/foundation';
+import { field } from './reply.ts';
 import type { DialectId, OllamaProbeReport } from '@momonga/protocol';
 import { NO_USER_DIALECTS } from '../dialect/choice.ts';
 import type { UserDialects } from '../dialect/choice.ts';
@@ -19,7 +20,8 @@ import { messagesOf, selectDialect } from './select-dialect.ts';
 import type { SelectionTransport } from './select-dialect.ts';
 import { IMAGE_PROMPT, measureImageTokens } from './image-tokens.ts';
 import type { ImageCostProbe } from './image-tokens.ts';
-import { parseJson } from './json.ts';
+import { parseExternalJson } from '../adapters/shared/json.ts';
+import { usableUpstreamJson } from '../adapters/shared/upstream-json.ts';
 import { JSON_MODE_PROBE_REQUEST, measureJsonMode } from './json-mode.ts';
 import type { JsonModeAnswer } from './json-mode.ts';
 import { jsonReplyPlanOf } from '../adapters/shared/json-reply.ts';
@@ -77,7 +79,7 @@ const withClient = async <T>(
 const jsonOf = async (client: ProbeClient, method: 'GET' | 'POST', path: string, body?: unknown): Promise<unknown> => {
   const result = await client.request(method, path, body);
   if (result.status !== 200) throw new UpstreamHttpError(result.status, null, `${method} ${path} was refused: ${result.text}`, undefined, false);
-  return parseJson(result.text);
+  return parseExternalJson(result.text);
 };
 
 const versionOf = (body: unknown): string | undefined => {
@@ -88,7 +90,7 @@ const versionOf = (body: unknown): string | undefined => {
 export const answersAsOllama = (upstream: UpstreamEndpoint, ports: ProbePorts, signal: AbortSignal): Promise<boolean> =>
   withClient(upstream, ports, signal, async (client) => {
     const result = await client.request('GET', VERSION_PATH);
-    return result.status === 200 && versionOf(parseJson(result.text)) !== undefined;
+    return result.status === 200 && versionOf(usableUpstreamJson(result.text)) !== undefined;
   });
 
 const tagMatches = (listed: string, model: string): boolean => listed === model || (!model.includes(':') && listed === `${model}:latest`);
@@ -154,13 +156,13 @@ const imageCostProbeOf = (client: ProbeClient, model: string, contextWindow: num
     baseline: async () => {
       const result = await send(undefined);
       if (result.status !== 200) throw new UpstreamHttpError(result.status, null, `POST ${CHAT_PATH} was refused for the image token baseline: ${result.text}`, undefined, false);
-      return promptEvalCountOf(parseJson(result.text));
+      return promptEvalCountOf(parseExternalJson(result.text));
     },
     cost: async (imageUrl) => {
       const result = await send(imageUrl);
       if (result.status === 400) return { rejected: true };
       if (result.status !== 200) throw new UpstreamHttpError(result.status, null, `POST ${CHAT_PATH} was refused for an image token measurement: ${result.text}`, undefined, false);
-      return { rejected: false, promptTokens: promptEvalCountOf(parseJson(result.text)) };
+      return { rejected: false, promptTokens: promptEvalCountOf(parseExternalJson(result.text)) };
     },
   };
 };
@@ -185,7 +187,7 @@ const askJsonOnly = async (client: ProbeClient, model: string, contextWindow: nu
     jsonReply: jsonReplyPlanOf(request, { structuredOutput: 'none', jsonMode: 'json_object' }),
   });
   const result = await client.request('POST', CHAT_PATH, body);
-  const parsed = parseJson(result.text);
+  const parsed = usableUpstreamJson(result.text);
   if (result.status !== 200) return OLLAMA_VOCABULARY.kindOf(result.status, parsed) === 'unsupported' ? { kind: 'unsupported' } : { kind: 'failure' };
   if (!isRecord(parsed) || parsed['done_reason'] !== 'stop') return { kind: 'failure' };
   const message = parsed['message'];
@@ -210,7 +212,7 @@ const ollamaTransport = (client: ProbeClient, model: string, contextWindow: numb
     if (ABSENT_STATUSES.includes(result.status)) return { kind: 'absent' };
     if (result.status >= 400 && result.status < 500) return { kind: 'refused', detail: result.text.slice(0, 500) };
     if (result.status !== 200) throw new UpstreamHttpError(result.status, null, `POST ${CHAT_PATH} was refused for the dialect step: ${result.text}`, undefined, false);
-    const message = (parseJson(result.text) as { message?: unknown } | undefined)?.message;
+    const message = field(parseExternalJson(result.text), 'message');
     const content = isRecord(message) ? message['content'] : undefined;
     return { kind: 'ok', content: typeof content === 'string' ? content : undefined };
   },

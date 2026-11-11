@@ -21,7 +21,8 @@ import { managedRecordPath, saveProbeRecord } from './record.ts';
 import type { ManagedRecordCurrency } from './record.ts';
 import { DEFAULT_STEP_TIMEOUT_MS, PROBE_METHOD_VERSION, runProbe } from './run-probe.ts';
 import { createProbeClient } from './client.ts';
-import { parseJson, valueAtPath } from './json.ts';
+import { parseExternalJson } from '../adapters/shared/json.ts';
+import { valueAtPath } from './reply.ts';
 
 export const MANAGED_CHILD_ENV_NAMES: readonly string[] = [];
 
@@ -213,7 +214,7 @@ export const listManagedModel = async (options: ListManagedModelOptions): Promis
     try {
       const listing = await client.get('models');
       if (listing.status !== 200) throw new Error(`the ${WORDS.server} ${description.id} answered GET ${description.models.listPath} with HTTP ${listing.status}`);
-      const id = valueAtPath(parseJson(listing.text), description.models.idPath);
+      const id = valueAtPath(parseExternalJson(listing.text), description.models.idPath);
       if (typeof id !== 'string') throw new Error(`the ${WORDS.server} ${description.id} lists no ${WORDS.model} id at GET ${description.models.listPath}`);
       return id;
     } finally {

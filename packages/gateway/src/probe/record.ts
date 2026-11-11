@@ -5,7 +5,7 @@ import { canonicalJson, modeIsPrivate, nodeFileSystem, systemRandom, writeFileAt
 import { dialectsDigest } from '../dialect/candidates.ts';
 import type { DialectCurrency } from '../dialect/candidates.ts';
 import { decideToolCalling } from './decide.ts';
-import { isRecord } from './json.ts';
+import { isRecord } from './reply.ts';
 import { preconditionOf, unusableRecordError } from './remedy.ts';
 import { isProbeReport } from './report-schema.ts';
 import type { KernelLockMechanism } from '@momonga/foundation';

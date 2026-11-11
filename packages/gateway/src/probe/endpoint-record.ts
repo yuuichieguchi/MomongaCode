@@ -4,7 +4,7 @@ import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { EndpointProbeReport, OllamaProbeReport, ProbeReport } from '@momonga/protocol';
 import type { DialectCurrency } from '../dialect/candidates.ts';
 import { PreconditionFailedError } from '../adapters/shared/failures.ts';
-import { isRecord, listedEntryOf } from './json.ts';
+import { isRecord, listedEntryOf } from './reply.ts';
 import { currentStamp, isCurrentRecord, writePrivateRecord } from './record.ts';
 import { isEndpointProbeReport } from './report-schema.ts';
 import type { KernelLockMechanism } from '@momonga/foundation';

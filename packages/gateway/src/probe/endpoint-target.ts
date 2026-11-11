@@ -18,7 +18,7 @@ import { endpointIdentityOf } from './endpoint-record.ts';
 import { recordForIdentity } from './record.ts';
 import type { EndpointRecord } from './endpoint-record.ts';
 import type { EnvelopeShape } from './envelope.ts';
-import { parseJson } from './json.ts';
+import { parseExternalJson } from '../adapters/shared/json.ts';
 import { declaredDialectRefusal, needsProbeOf, preconditionOf } from './remedy.ts';
 
 export const IDENTITY_READ_TIMEOUT_MS = 10_000;
@@ -40,7 +40,7 @@ export const readModelsListing = async (
   try {
     const result = await client.get('models');
     if (result.status !== 200) throw new UpstreamHttpError(result.status, null, 'the model listing was refused', undefined, false);
-    return parseJson(result.text);
+    return parseExternalJson(result.text);
   } catch (error) {
     if (error instanceof ProbeTimeoutError) {
       throw new StreamFailure('provider_unavailable', 'server_error', `the model listing did not answer within ${error.timeoutMs} ms`);

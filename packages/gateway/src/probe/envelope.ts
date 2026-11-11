@@ -5,7 +5,7 @@ import type { RenderLedger } from '../dialect/ledger.ts';
 import type { KeywordSupport } from '../dialect/keyword-support.ts';
 import { renderSchema } from '../dialect/render.ts';
 import { renderToolParameters } from '../dialect/tool-render.ts';
-import type { JsonObject } from './json.ts';
+import type { JsonObject } from './reply.ts';
 
 export type EnvelopeShape = 'union' | 'flat';
 

@@ -37,7 +37,8 @@ import type { KeywordSupport } from '../dialect/keyword-support.ts';
 import { FULL_KEYWORD_SUPPORT } from '../dialect/keyword-support.ts';
 import { resolveDialectId } from '../dialect/resolve-id.ts';
 import type { EnvelopeShape } from '../probe/envelope.ts';
-import { valueAtPath, parseJson } from '../probe/json.ts';
+import { parseExternalJson } from '../adapters/shared/json.ts';
+import { valueAtPath } from '../probe/reply.ts';
 import { loadProbeRecord, recordOfServedModel, resolveToolCalling } from '../probe/record.ts';
 import type { ManagedRecordCurrency } from '../probe/record.ts';
 import { targetProbingError } from '../probe/auto-probe.ts';
@@ -281,7 +282,7 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
       const response = await client.request({ method: 'GET', path: description.models.listPath, signal });
       const text = await readProbeReply('GET', description.models.listPath, response);
       if (response.status !== 200) throw new Error(aboutModel(modelName(), `the server answered GET ${description.models.listPath} with HTTP ${response.status}: ${text.slice(0, 200)}`));
-      const id = valueAtPath(parseJson(text), description.models.idPath);
+      const id = valueAtPath(parseExternalJson(text), description.models.idPath);
       if (typeof id !== 'string') throw new Error(aboutModel(modelName(), `the server lists no model id at GET ${description.models.listPath}`));
       return id;
     } finally {
