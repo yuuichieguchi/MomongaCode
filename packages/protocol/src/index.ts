@@ -341,6 +341,7 @@ export { JSON_MODE_PROBE_STATES, PROBE_KEYWORDS } from './probe.ts';
 export type { EndpointProbeReport, JsonModeProbeState, OllamaProbeReport, ProbeDialectAttempt, ProbeDialectResult, ProbeKeyword, ProbeReport, ProbeReportDialect } from './probe.ts';
 export {
   DIALECT_DEFINITION_SCHEMA,
+  strictPerToolOf,
   DIALECT_ID_PATTERN,
   DIALECT_FILL_TYPES,
   DIALECT_KINDS,
@@ -353,6 +354,7 @@ export type {
   ConstructSupport,
   DialectClause,
   DialectDefinition,
+  BuiltinDialectDefinition,
   DialectDescent,
   DialectFillType,
   DialectId,
