@@ -739,22 +739,34 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
 
   const refreshOnce = (account: Account, trigger: RefreshTrigger): SharedCall<void> => {
     if (account.inflight !== undefined) return account.inflight;
-    const flight: { abandoned: boolean } = { abandoned: false };
+    const flight: { abandoned: boolean; waiting: number } = { abandoned: false, waiting: 0 };
     const finished = (): void => {
       if (account.inflight === running) account.inflight = undefined;
     };
-    const running: SharedCall<void> = startSharedCall(
+    const shared: SharedCall<void> = startSharedCall(
       closing.signal,
-      (shared) => refreshInScope(account, trigger, shared).finally(finished),
+      (signal) => refreshInScope(account, trigger, signal).finally(finished),
       () => {
         flight.abandoned = true;
         finished();
         account.forced.abandon(running);
       },
     );
+    const running: SharedCall<void> = {
+      work: shared.work,
+      join: (signal) => {
+        flight.waiting += 1;
+        const left = (): void => {
+          flight.waiting -= 1;
+        };
+        signal.addEventListener('abort', left, { once: true });
+        return shared.join(signal).finally(() => signal.removeEventListener('abort', left));
+      },
+    };
     account.inflight = running;
-    const tracked = running.work.catch((error: unknown) => {
-      if (!flight.abandoned) throw error;
+    const tracked = shared.work.catch((error: unknown) => {
+      const receivedByAWaiter = flight.waiting > 0;
+      if (!flight.abandoned && !receivedByAWaiter) throw error;
     });
     refreshes.add(tracked);
     const untrack = (): void => void refreshes.delete(tracked);
@@ -1166,8 +1178,9 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     close: async () => {
       closing.abort();
       await Promise.all([...background]);
-      await Promise.all([...refreshes]);
-      if (backgroundFailures.length > 0) throw new AggregateError(backgroundFailures, 'plan session background tasks failed');
+      const refreshEnds = await Promise.allSettled([...refreshes]);
+      const undelivered = [...backgroundFailures.splice(0), ...refreshEnds.flatMap((end): unknown[] => (end.status === 'rejected' ? [end.reason] : []))];
+      if (undelivered.length > 0) throw new AggregateError(undelivered, 'plan session background tasks failed');
     },
   };
 };

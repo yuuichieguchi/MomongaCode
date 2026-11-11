@@ -177,6 +177,7 @@ export type Harness = {
   holdNextRevoke(): Gate;
   holdNextBackoff(): ReachedGate;
   failNextOutbound(error: Error): void;
+  holdNextOutbound(): { reached: Promise<void>; fail(error: Error): void };
   pendingBounds(): number[];
   fireLatestBound(ms: number): void;
   timing: LimitTiming;
@@ -201,7 +202,7 @@ const isRefreshPost = (url: string, init: RequestInit, tokenUrl: string): boolea
   url === tokenUrl && typeof init.body !== 'undefined' && new URLSearchParams(String(init.body)).get('grant_type') === 'refresh_token';
 
 export const startHarness = async (
-  options: { profile?: (auth: SiwcAuth) => PlanProfile; wrapFileSystem?: (base: FileSystem) => FileSystem; pointerSerial?: Serial; secretStore?: SecretStore } = {},
+  options: { profile?: (auth: SiwcAuth) => PlanProfile; wrapFileSystem?: (base: FileSystem) => FileSystem; pointerSerial?: Serial; secretStore?: SecretStore; wrapSleep?: (inner: PlanSleep) => PlanSleep } = {},
 ): Promise<Harness> => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'momonga-plan-'));
   const layout = momongaLayout(home);
@@ -223,6 +224,7 @@ export const startHarness = async (
   const backoffGates: ReachedGate[] = [];
   const backoffArrivals: Array<() => void> = [];
   const outboundFailures: Error[] = [];
+  const outboundHolds: Array<{ arrive(): void; failed: Promise<never> }> = [];
   const warnings: string[] = [];
   const fetchUrls: string[] = [];
   const events: RecordedPlanEvent[] = [];
@@ -288,9 +290,14 @@ export const startHarness = async (
         const failure = outboundFailures.shift();
         if (failure !== undefined) return Promise.reject(failure);
         signal.throwIfAborted();
+        const hold = outboundHolds.shift();
+        if (hold !== undefined) {
+          hold.arrive();
+          return hold.failed;
+        }
         return use(fetchPort);
       },
-      sleep: (ms, signal) => {
+      sleep: (options.wrapSleep ?? ((inner: PlanSleep) => inner))((ms, signal) => {
         if (ms !== TOKEN_ATTEMPT_BOUND_MS && ms !== REVOCATION_ATTEMPT_BOUND_MS) {
           sleeps.push(ms);
           const backoff = backoffGates.shift();
@@ -313,7 +320,7 @@ export const startHarness = async (
             { once: true },
           );
         });
-      },
+      }),
       redact: (key, values) => {
         fed.set(key, [...values]);
         secrets.push(...values);
@@ -363,6 +370,18 @@ export const startHarness = async (
     },
     failNextOutbound: (error) => {
       outboundFailures.push(error);
+    },
+    holdNextOutbound: () => {
+      let arrive = (): void => undefined;
+      let fail = (_error: Error): void => undefined;
+      const reached = new Promise<void>((resolve) => {
+        arrive = resolve;
+      });
+      const failed = new Promise<never>((_resolve, reject) => {
+        fail = reject;
+      });
+      outboundHolds.push({ arrive, failed });
+      return { reached, fail };
     },
     pendingBounds: () => bounds.map((bound) => bound.ms),
     fireLatestBound: (ms) => {
