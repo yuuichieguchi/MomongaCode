@@ -604,6 +604,7 @@ export type {
   Mandate,
   MandateBudget,
   MandateHold,
+  QuiescentBehaviour,
   MandateScope,
   PinnedDelegation,
   MutationFacts,

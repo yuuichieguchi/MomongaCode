@@ -1,7 +1,7 @@
 import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_WAITING_FOR_APPROVAL, isRecord } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { TARGET_NOT_READY, WORDS, agentReadiness, attachRunCommand, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
-import type { BudgetExhausted, Mandate, MomongaModelEntry, PermissionMode, PlanAccountRef, PublicRunEvent, RunReport, Surface, UnknownEffectCall } from '@momonga/protocol';
+import type { BudgetExhausted, Mandate, MomongaModelEntry, PermissionMode, PlanAccountRef, PublicRunEvent, QuiescentBehaviour, RunReport, Surface, UnknownEffectCall } from '@momonga/protocol';
 import { noTargetLines } from '../readiness.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
@@ -150,7 +150,7 @@ export type FrameSink = {
   texts(): string;
   pending(): number;
   unanswerable(): PendingAsk[];
-  onQuiescent(listener: () => void): void;
+  onQuiescent(listener: (resolved: QuiescentBehaviour | undefined) => void): void;
   onUnanswerable(listener: () => void): void;
 };
 
@@ -174,7 +174,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
   const open = new Map<string, Ask>();
   const waitingForPerson = new Set<string>();
   const found = new Map<string, string>();
-  const quiescentListeners: Array<() => void> = [];
+  const quiescentListeners: Array<(resolved: QuiescentBehaviour | undefined) => void> = [];
   const unanswerableListeners: Array<() => void> = [];
 
   const unanswerable = (): PendingAsk[] => [...open].flatMap(([id, ask]) => (!ask.held && waitingForPerson.has(ask.runId) ? [{ id, answerWith: ask.answerWith }] : []));
@@ -250,7 +250,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
           `momonga: the run waits for you: ${event.held.length} call${event.held.length === 1 ? '' : 's'} held for approval, and nothing else can proceed`,
           ...event.held.flatMap((held) => [`  ${held.approvalId}  ${held.tool}: ${held.reason}`, `    momonga approve ${held.approvalId} allow_once`]),
         ]);
-        if (agent === undefined) for (const listener of quiescentListeners) listener();
+        if (agent === undefined) for (const listener of quiescentListeners) listener(event.onQuiescent);
         break;
       case 'tool.permission.requested':
         note([
@@ -442,7 +442,11 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
   const checkMove = (): void => {
     void move?.mover.check();
   };
-  if (options.leaveWhenQuiescent === true) sink.onQuiescent(() => leaveAs('quiescent'));
+  if (options.leaveWhenQuiescent === true) {
+    sink.onQuiescent((resolved) => {
+      if (resolved !== 'wait') leaveAs('quiescent');
+    });
+  }
   if (options.leaveWhenAsked === true) sink.onUnanswerable(() => leaveAs('asked'));
   let run: RunView;
   try {
@@ -542,7 +546,7 @@ export const resumeStream = async (ports: CliPorts, paths: MomongaPaths, adopted
     await client.getRun(record.runId);
     ports.handover?.removeRecord(file);
     const move = streamMoveOf(ports, paths, record.kind);
-    return await watchRun(ports, paths, { client, runId: record.runId, format: record.output, verbose: record.verbose, after: record.lastSeq[record.runId] ?? 0, interrupt, onInterrupt: record.kind === 'attach' ? 'detach' : 'cancel', leaveWhenAsked: record.kind === 'headless', ...(move === undefined ? {} : { move }) });
+    return await watchRun(ports, paths, { client, runId: record.runId, format: record.output, verbose: record.verbose, after: record.lastSeq[record.runId] ?? 0, interrupt, onInterrupt: record.kind === 'attach' ? 'detach' : 'cancel', leaveWhenQuiescent: record.kind === 'headless', leaveWhenAsked: record.kind === 'headless', ...(move === undefined ? {} : { move }) });
   } finally {
     await client.close();
   }
@@ -609,7 +613,7 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
         `${JSON.stringify({ type: 'system', subtype: 'init', session_id: sessionId, run_id: started.id, cwd: ports.cwd, permission_mode: session.created.session.permissionMode, stripped_env_keys: session.created.strippedEnvKeys })}\n`,
       );
     }
-    return await watchRun(ports, paths, { client: session.client, runId: started.id, format: options.format, verbose: options.verbose, leaveWhenQuiescent: options.mandate?.hold?.onQuiescent !== 'wait', leaveWhenAsked: true, interrupt: options.interrupt, onInterrupt: 'cancel', ...(move === undefined ? {} : { move }) });
+    return await watchRun(ports, paths, { client: session.client, runId: started.id, format: options.format, verbose: options.verbose, leaveWhenQuiescent: true, leaveWhenAsked: true, interrupt: options.interrupt, onInterrupt: 'cancel', ...(move === undefined ? {} : { move }) });
   } finally {
     await session.close();
   }

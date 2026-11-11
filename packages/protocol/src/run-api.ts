@@ -629,7 +629,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     properties: { callId: string, approvalId: string, outcome: enumOf(HELD_OUTCOMES), status: enumOf(['completed', 'failed']), output: string },
     required: ['callId', 'approvalId', 'outcome', 'status', 'output'],
   },
-  'run.quiescent': { properties: { held: { type: 'array', items: heldCallView } }, required: ['held'] },
+  'run.quiescent': { properties: { held: { type: 'array', items: heldCallView }, onQuiescent: enumOf(QUIESCENT_BEHAVIOURS) }, required: ['held'] },
   'model.rejected': {
     properties: { step: nonNegativeInteger, attempt: nonNegativeInteger, reason: enumOf(MODEL_REJECTION_REASONS), counter: string, meterCounter: string, target: string },
     required: ['step', 'attempt', 'reason'],

@@ -1,5 +1,5 @@
 import type { ContributionKind, SummaryFidelity, SummarySource } from './context-record.ts';
-import type { VerificationOutcome, VerificationState } from './completion.ts';
+import type { QuiescentBehaviour, VerificationOutcome, VerificationState } from './completion.ts';
 import type { ToolFile, WorkingFacts } from './working-facts.ts';
 import type { HookExecution, HookStart } from './hooks.ts';
 import type { PrefixEvent } from './prefix-events.ts';
@@ -308,7 +308,7 @@ export type RunEventPayload =
   | ({ type: 'budget.exhausted' } & BudgetExhausted)
   | { type: 'tool.held'; callId: string; approvalId: string; reason: string; footprint: CallFootprint }
   | { type: 'tool.held.resolved'; callId: string; approvalId: string; outcome: HeldOutcome; status: 'completed' | 'failed'; output: string }
-  | { type: 'run.quiescent'; held: HeldCallView[] }
+  | { type: 'run.quiescent'; held: HeldCallView[]; onQuiescent?: QuiescentBehaviour }
   | {
       type: 'model.rejected';
       step: number;
