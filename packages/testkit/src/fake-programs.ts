@@ -3,47 +3,61 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MINIMAL_CHILD_PATH, SECRET_STORE_SEARCHED_PROGRAMS } from '@momonga/foundation';
+import { MINIMAL_CHILD_PATH, SECRET_STORE_SEARCHED_PROGRAMS, URL_OPENER_PROGRAMS } from '@momonga/foundation';
 
 import { FAKE_CALL_MODES, FAKE_READINESS_VALUES, READY_CONTROL } from './fake-secrets.ts';
 import type { FakeControl } from './fake-secrets.ts';
+import { openerRecordIn } from './opener-record.ts';
 import { fakeSecretProgramsBin } from './secret-store-env-check.ts';
 
+export { TEST_OPENER_RECORD_ENV, readOpenerRecord } from './opener-record.ts';
+export type { OpenerCall } from './opener-record.ts';
 export { TEST_SECRET_PROGRAMS_ENV, fakeSecretProgramsBin } from './secret-store-env-check.ts';
 
-const FAKE_PROGRAM_MAIN = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fake-secret-program-main.ts');
+const SOURCE_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
+const FAKE_SECRET_PROGRAM_MAIN = path.join(SOURCE_DIRECTORY, 'fake-secret-program-main.ts');
+const FAKE_OPENER_MAIN = path.join(SOURCE_DIRECTORY, 'fake-opener-main.ts');
+const BROWSER_STAND_IN = 'browser';
+
+const STAND_INS: ReadonlyArray<{ program: string; main: string }> = [
+  ...SECRET_STORE_SEARCHED_PROGRAMS.map((program) => ({ program, main: FAKE_SECRET_PROGRAM_MAIN })),
+  ...[...URL_OPENER_PROGRAMS, BROWSER_STAND_IN].map((program) => ({ program, main: FAKE_OPENER_MAIN })),
+];
 
 export const shellQuoted = (text: string): string => `'${text.replaceAll("'", "'\\''")}'`;
 
-const launcherOf = (platform: NodeJS.Platform, items: string, program: string): { name: string; text: string } =>
-  platform === 'win32'
-    ? { name: `${program}.cmd`, text: `@"${process.execPath}" "${FAKE_PROGRAM_MAIN}" "${items}" ${program} %*\r\n` }
-    : { name: program, text: `#!/bin/sh\nexec ${shellQuoted(process.execPath)} ${shellQuoted(FAKE_PROGRAM_MAIN)} ${shellQuoted(items)} ${program} "$@"\n` };
+const launcherNameOf = (platform: NodeJS.Platform, program: string): string => (platform === 'win32' ? `${program}.cmd` : program);
 
-export const installFakeSecretPrograms = (root: string, platform: NodeJS.Platform = process.platform): string => {
+const launcherTextOf = (platform: NodeJS.Platform, main: string, items: string, program: string): string =>
+  platform === 'win32'
+    ? `@"${process.execPath}" "${main}" "${items}" ${program} %*\r\n`
+    : `#!/bin/sh\nexec ${shellQuoted(process.execPath)} ${shellQuoted(main)} ${shellQuoted(items)} ${program} "$@"\n`;
+
+export const installFakePrograms = (root: string, platform: NodeJS.Platform = process.platform): string => {
   const bin = path.join(root, 'bin');
   const items = path.join(root, 'items');
   fs.mkdirSync(bin, { recursive: true, mode: 0o700 });
   fs.mkdirSync(items, { recursive: true, mode: 0o700 });
-  for (const program of SECRET_STORE_SEARCHED_PROGRAMS) {
-    const launcher = launcherOf(platform, items, program);
-    fs.writeFileSync(path.join(bin, launcher.name), launcher.text, { mode: 0o755 });
+  for (const { program, main } of STAND_INS) {
+    fs.writeFileSync(path.join(bin, launcherNameOf(platform, program)), launcherTextOf(platform, main, items, program), { mode: 0o755 });
   }
   return bin;
 };
+
+export const fakeBrowserOf = (bin: string, platform: NodeJS.Platform = process.platform): string => path.join(bin, launcherNameOf(platform, BROWSER_STAND_IN));
 
 const ROOT_PREFIX = 'momonga-secret-programs-';
 const MARKER_FILE = '.momonga-fake-secret-programs';
 const ROOT_ENTRIES = [MARKER_FILE, 'bin', 'items'].sort();
 
-export type FakeSecretPrograms = { root: string; bin: string; token: string };
+export type FakePrograms = { root: string; bin: string; token: string };
 
 type Marker = { token: string; root: string };
 
-export const createFakeSecretPrograms = (): FakeSecretPrograms => {
+export const createFakePrograms = (): FakePrograms => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), ROOT_PREFIX)));
   fs.chmodSync(root, 0o700);
-  const bin = installFakeSecretPrograms(root);
+  const bin = installFakePrograms(root);
   const marker: Marker = { token: randomBytes(32).toString('hex'), root };
   fs.writeFileSync(path.join(root, MARKER_FILE), JSON.stringify(marker), { mode: 0o600, flag: 'wx' });
   return { root, bin, token: marker.token };
@@ -65,12 +79,12 @@ const isCreatedWith = (root: string, token: string): boolean => {
   return marker.root === real && typeof marker.token === 'string' && TOKEN_SHAPE.test(marker.token) && timingSafeEqual(Buffer.from(marker.token), Buffer.from(token));
 };
 
-export const removeFakeSecretPrograms = (root: string, token: string): void => {
-  if (!isCreatedWith(root, token)) throw new Error(`${root} is not a fake secret programs directory this token created`);
+export const removeFakePrograms = (root: string, token: string): void => {
+  if (!isCreatedWith(root, token)) throw new Error(`${root} is not a fake programs directory this token created`);
   fs.rmSync(fs.realpathSync(root), { recursive: true, force: true });
 };
 
-export const posixPathLine = (bin: string): string => `PATH=${shellQuoted(bin)}:"$PATH"`;
+export const posixEnvLine = (bin: string): string => `PATH=${shellQuoted(bin)}:"$PATH" BROWSER=${shellQuoted(fakeBrowserOf(bin))}; export PATH BROWSER`;
 
 export const testHostPath = (base: string = MINIMAL_CHILD_PATH): string => `${fakeSecretProgramsBin()}${path.delimiter}${base}`;
 
@@ -81,6 +95,8 @@ const LOGIN_KEYCHAIN_FILE = '.login.keychain-db';
 const MISSING_KEYCHAIN_FILE = '.missing.keychain-db';
 
 const itemsOf = (bin: string): string => path.join(path.dirname(bin), 'items');
+
+export const fakeOpenerRecordOf = (bin: string): string => openerRecordIn(itemsOf(bin));
 
 const textOrUndefined = (file: string): string | undefined => {
   try {

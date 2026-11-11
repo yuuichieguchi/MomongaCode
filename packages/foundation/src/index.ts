@@ -25,7 +25,7 @@ export { OUTPUT_READER_TOOL, TRUNCATION_MARKER_SOURCE, truncationMarker } from '
 export { highestAppliedMigration, immediateTx, joinedTx, migrate, openDatabase, readTx } from './sqlite.ts';
 export type { MigrateResult, Migration, OpenDatabaseOptions } from './sqlite.ts';
 export { SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, decodeSse, encodeSse } from './sse.ts';
-export { createBrowserOpener, openCommandFor } from './open-browser.ts';
+export { URL_OPENER_PROGRAMS, createBrowserOpener, openCommandFor, urlOpenerFileFor } from './open-browser.ts';
 export type { BrowserOpenerPorts, LaunchProgram, OpenCommand, OpenUrl, ProgramEnd } from './open-browser.ts';
 export { findProgramOnPath } from './program-search.ts';
 export { FILE_CANDIDATE_LIMIT, directoryEntriesOf } from './file-candidates.ts';

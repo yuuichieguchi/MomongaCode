@@ -4,13 +4,15 @@ import path from 'node:path';
 import { registerE2eCleanup } from './home.ts';
 import type { E2eHome } from './home.ts';
 import { CLI_BUNDLE, CLI_FAKES_BUNDLE } from './cli-bundles.ts';
-import { productTestEnv } from '@momonga/testkit';
+import { TEST_OPENER_RECORD_ENV, productTestEnv, readOpenerRecord } from '@momonga/testkit';
+import type { OpenerCall } from '@momonga/testkit';
 import { SESSION_PATH } from './runtime-client.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, withinBound } from './wait.ts';
 
 export { CLI_BUNDLE, CLI_FAKES_BUNDLE, CLI_FAKES_ENTRY } from './cli-bundles.ts';
 
 export const OPEN_LOG_FILE_NAME = 'opened-urls.log';
+export const OPENER_RECORD_FILE_NAME = 'opened-by-stand-in.log';
 export const SECRETS_FILE_NAME = 'fake-secrets.json';
 
 export type CliResult = { readonly code: number | null; readonly signal: NodeJS.Signals | null; readonly stdout: string; readonly stderr: string };
@@ -23,8 +25,11 @@ export const cliEnv = (home: E2eHome, extra: Readonly<Record<string, string>> = 
     HOME: home.home,
     TMPDIR: home.root,
     LANG: 'C',
+    [TEST_OPENER_RECORD_ENV]: path.join(home.root, OPENER_RECORD_FILE_NAME),
     ...extra,
   });
+
+export const openerCallsOf = (home: E2eHome): OpenerCall[] => readOpenerRecord(path.join(home.root, OPENER_RECORD_FILE_NAME));
 
 export type RunningCli = { readonly result: Promise<CliResult>; readonly pid: number; kill(signal: NodeJS.Signals): void; interrupt(): void; partialStdout(): string; partialStderr(): string };
 
@@ -94,3 +99,10 @@ export const startCliWithFakes = (home: E2eHome, args: readonly string[], option
   startCli(home, args, { ...options, bundle: CLI_FAKES_BUNDLE, env: { ...fakePortsEnv(home), ...options.env } });
 
 export const runCliWithFakes = (home: E2eHome, args: readonly string[], options: RunCliOptions = {}): Promise<CliResult> => startCliWithFakes(home, args, options).result;
+
+export const approveInBrowser = async (url: string): Promise<void> => {
+  const authorize = await fetch(url, { redirect: 'manual' });
+  const location = authorize.headers.get('location');
+  if (location === null) throw new Error(`the authorization endpoint did not redirect (${authorize.status})`);
+  await (await fetch(location)).arrayBuffer();
+};

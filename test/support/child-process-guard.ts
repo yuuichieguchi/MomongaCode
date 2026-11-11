@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import { findProgramOnPath } from '@momonga/foundation/program-search';
 import { SECRET_STORE_SEARCHED_PROGRAMS, credentialReadScript, credentialWriteScript } from '@momonga/foundation/secret-store';
 import { MOMONGA_LAUNCHES } from '../../packages/cli/src/daemon/launcher.ts';
+import { URL_OPENER_PROGRAMS, urlOpenerFileFor } from '../../packages/foundation/src/open-browser.ts';
 import { chosenSecretProgramOutsideFakes, givenSecretProgramOutsideFakes, isInsideFakeSecretPrograms, realFileOf } from '../../packages/testkit/src/secret-store-env-check.ts';
 
 const LAUNCHERS = ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork'] as const;
@@ -133,12 +134,37 @@ const realFileOfWord = (file: string): string | undefined => {
   }
 };
 
-const realSecretProgram = (command: string | undefined, env: ProcessEnv, cwd: unknown): string | undefined => {
+const realFileStartedBy = (command: string | undefined, env: ProcessEnv, cwd: unknown): string | undefined => {
   if (command === undefined || command === '') return undefined;
   const found = resolvedCommand(command, env, cwd);
-  const real = found === undefined ? undefined : realFileOfWord(found);
+  return found === undefined ? undefined : realFileOfWord(found);
+};
+
+const realSecretProgram = (command: string | undefined, env: ProcessEnv, cwd: unknown): string | undefined => {
+  const real = realFileStartedBy(command, env, cwd);
   if (real === undefined) return undefined;
   return hasSecretProgramName(path.basename(real)) && !isInsideFakeSecretPrograms(real) ? real : undefined;
+};
+
+const URL_OPENER_NAMES: ReadonlySet<string> = new Set(URL_OPENER_PROGRAMS);
+
+const hasUrlOpenerName = (fileName: string): boolean => URL_OPENER_NAMES.has(fileName) || URL_OPENER_NAMES.has(fileName.replace(/\.[^.]+$/, ''));
+
+const realUrlOpener = (command: string | undefined, env: ProcessEnv, cwd: unknown): string | undefined => {
+  const real = realFileStartedBy(command, env, cwd);
+  if (real === undefined) return undefined;
+  return hasUrlOpenerName(path.basename(real)) && !isInsideFakeSecretPrograms(real) ? real : undefined;
+};
+
+const browserOutsideFakes = (env: ProcessEnv, cwd: unknown): string | undefined => {
+  const browser = env['BROWSER'];
+  if (browser === undefined || browser === '') return undefined;
+  return isInsideFakeSecretPrograms(resolvedCommand(browser, env, cwd) ?? browser) ? undefined : browser;
+};
+
+const inheritedOpenerOutsideFakes = (): string | undefined => {
+  const opener = urlOpenerFileFor(process.env);
+  return opener === undefined || isInsideFakeSecretPrograms(opener) ? undefined : opener;
 };
 
 const realSecretProgramAmong = ({ command, later }: LaunchWords, env: ProcessEnv, cwd: unknown): string | undefined => {
@@ -169,11 +195,12 @@ const storeChoosingLaunch = (name: LauncherName, args: readonly unknown[]): stri
   return STORE_CHOOSING_LAUNCHES.find((launch) => startsWith(argv, launch) || startsWith(argv.slice(1), launch))?.join(' ');
 };
 
-export const secretStoreLaunchRefusal = (name: LauncherName, args: readonly unknown[]): string | undefined => {
+export const launchRefusal = (name: LauncherName, args: readonly unknown[]): string | undefined => {
   const options = optionsOf(args);
   const env = options.env ?? process.env;
   const command = String(args[0]);
-  const program = realSecretProgramAmong(launchWordsOf(name, args, options), env, options.cwd);
+  const words = launchWordsOf(name, args, options);
+  const program = realSecretProgramAmong(words, env, options.cwd);
   if (program !== undefined) return `refused to launch ${command}: (i) it is the real secret store program ${program}, outside the fake directory`;
   if (launchCarriesCredentialManagerScript(args)) return `refused to launch ${command}: (iv) it carries the Credential Manager script of the product, and no fake of the Credential Manager exists`;
   const given = givenSecretProgramOutsideFakes(env);
@@ -183,6 +210,12 @@ export const secretStoreLaunchRefusal = (name: LauncherName, args: readonly unkn
     const chosen = chosenSecretProgramOutsideFakes(env);
     if (chosen !== undefined) return `refused to launch ${command}: (iii) it is the product launch of a MomongaCode binary with ${selfLaunch}, which would choose the secret store ${chosen} from its PATH, outside the fake directory`;
   }
+  const opener = realUrlOpener(words.command, env, options.cwd);
+  if (opener !== undefined) return `refused to launch ${command}: (v) it is the real program that opens a URL ${opener}, outside the fake directory`;
+  const browser = browserOutsideFakes(env, options.cwd);
+  if (browser !== undefined) return `refused to launch ${command}: (vi) its environment gives BROWSER=${browser}, outside the fake directory`;
+  const inherited = options.env === undefined ? inheritedOpenerOutsideFakes() : undefined;
+  if (inherited !== undefined) return `refused to launch ${command}: (vii) it inherits the environment of the test process, in which the product would open a URL with ${inherited}, outside the fake directory`;
   return undefined;
 };
 
@@ -190,7 +223,7 @@ const childProcess = createRequire(import.meta.url)('node:child_process') as Rec
 
 const checked = (name: LauncherName, launch: Launch): Launch =>
   function checkedLaunch(this: unknown, ...args: unknown[]): unknown {
-    const refusal = secretStoreLaunchRefusal(name, args);
+    const refusal = launchRefusal(name, args);
     if (refusal !== undefined) throw new Error(refusal);
     return launch.apply(this, args);
   };

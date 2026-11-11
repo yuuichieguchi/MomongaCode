@@ -12,7 +12,7 @@ import { INTERNAL_COMMANDS, MOMONGA_LAUNCHES } from '../packages/cli/src/daemon/
 import type { MomongaLaunch } from '../packages/cli/src/daemon/launcher.ts';
 import { nodeSpawnDetached } from '../packages/cli/src/node-ports.ts';
 import { powershellArgs } from '../packages/foundation/src/platform/windows-scripts.ts';
-import { secretStoreLaunchRefusal } from './support/child-process-guard.ts';
+import { launchRefusal } from './support/child-process-guard.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const require = createRequire(import.meta.url);
@@ -73,14 +73,14 @@ describe('the worker guard refuses a launch of a real secret store program (i)',
   });
 
   it('decides that /usr/bin/security, by absolute path or by name through a leaking PATH or no PATH, is refused, without launching it', () => {
-    expect(secretStoreLaunchRefusal('execFileSync', ['/usr/bin/security', ['-h'], {}])).toMatch(REAL_PROGRAM);
-    expect(secretStoreLaunchRefusal('spawnSync', ['security', ['-h'], { env: { PATH: MINIMAL_CHILD_PATH } }])).toMatch(REAL_PROGRAM);
-    expect(secretStoreLaunchRefusal('spawn', ['security', ['-h'], { env: {} }])).toMatch(REAL_PROGRAM);
-    expect(secretStoreLaunchRefusal('execSync', ['/usr/bin/security -h', {}])).toMatch(REAL_PROGRAM);
+    expect(launchRefusal('execFileSync', ['/usr/bin/security', ['-h'], {}])).toMatch(REAL_PROGRAM);
+    expect(launchRefusal('spawnSync', ['security', ['-h'], { env: { PATH: MINIMAL_CHILD_PATH } }])).toMatch(REAL_PROGRAM);
+    expect(launchRefusal('spawn', ['security', ['-h'], { env: {} }])).toMatch(REAL_PROGRAM);
+    expect(launchRefusal('execSync', ['/usr/bin/security -h', {}])).toMatch(REAL_PROGRAM);
   });
 
   it.each(['/bin/sh', 'git', 'sw_vers', process.execPath])('lets the product start %s with MINIMAL_CHILD_PATH', (command) => {
-    expect(secretStoreLaunchRefusal('spawn', [command, [], { env: { PATH: MINIMAL_CHILD_PATH } }])).toBeUndefined();
+    expect(launchRefusal('spawn', [command, [], { env: { PATH: MINIMAL_CHILD_PATH } }])).toBeUndefined();
   });
 
   it('runs /bin/sh with MINIMAL_CHILD_PATH through the raw module', () => {
@@ -110,10 +110,10 @@ describe('the worker guard reads every word a shell or a command-running program
   });
 
   it('decides that /usr/bin/security behind sh -c, env, a semicolon and && is refused, without launching it', () => {
-    expect(secretStoreLaunchRefusal('spawn', ['sh', ['-c', 'x; /usr/bin/security'], {}])).toMatch(REAL_PROGRAM);
-    expect(secretStoreLaunchRefusal('spawn', ['env', ['security'], { env: { PATH: MINIMAL_CHILD_PATH } }])).toMatch(REAL_PROGRAM);
-    expect(secretStoreLaunchRefusal('execSync', ["sh -c 'x; /usr/bin/security'", {}])).toMatch(REAL_PROGRAM);
-    expect(secretStoreLaunchRefusal('exec', ['x && env /usr/bin/security -h', {}])).toMatch(REAL_PROGRAM);
+    expect(launchRefusal('spawn', ['sh', ['-c', 'x; /usr/bin/security'], {}])).toMatch(REAL_PROGRAM);
+    expect(launchRefusal('spawn', ['env', ['security'], { env: { PATH: MINIMAL_CHILD_PATH } }])).toMatch(REAL_PROGRAM);
+    expect(launchRefusal('execSync', ["sh -c 'x; /usr/bin/security'", {}])).toMatch(REAL_PROGRAM);
+    expect(launchRefusal('exec', ['x && env /usr/bin/security -h', {}])).toMatch(REAL_PROGRAM);
   });
 
   it.each([
@@ -122,7 +122,7 @@ describe('the worker guard reads every word a shell or a command-running program
     ['a word that only contains the name', ['echo security-model insecurity', { env: { PATH: MINIMAL_CHILD_PATH } }]],
     ['an argument too long to be a file name', ['/bin/echo', [`/${'x'.repeat(5000)}`, 'a\0b/c'], {}]],
   ] as const)('does not refuse %s', (_case, args) => {
-    expect(secretStoreLaunchRefusal(args.length === 2 ? 'execSync' : 'spawn', [...args])).toBeUndefined();
+    expect(launchRefusal(args.length === 2 ? 'execSync' : 'spawn', [...args])).toBeUndefined();
   });
 
   it('lets a shell string run the fake by name', () => {
@@ -140,8 +140,8 @@ describe('the worker guard refuses a launch that carries the Credential Manager 
     ['the write script as the product encodes it', powershellArgs(credentialWriteScript('momonga/anthropic', 'momonga'))],
     ['the read script as plain text', ['-Command', credentialReadScript('momonga/anthropic')]],
   ])('decides that powershell.exe with %s is refused', (_case, args) => {
-    expect(secretStoreLaunchRefusal('spawn', [POWERSHELL, args, {}])).toMatch(CREDENTIAL_SCRIPT);
-    expect(secretStoreLaunchRefusal('execFile', ['pwsh', args, { env: { PATH: MINIMAL_CHILD_PATH } }])).toMatch(CREDENTIAL_SCRIPT);
+    expect(launchRefusal('spawn', [POWERSHELL, args, {}])).toMatch(CREDENTIAL_SCRIPT);
+    expect(launchRefusal('execFile', ['pwsh', args, { env: { PATH: MINIMAL_CHILD_PATH } }])).toMatch(CREDENTIAL_SCRIPT);
   });
 
   it('refuses before exec a program started with the encoded script', async () => {
@@ -153,7 +153,7 @@ describe('the worker guard refuses a launch that carries the Credential Manager 
   });
 
   it('lets powershell.exe run another encoded script', () => {
-    expect(secretStoreLaunchRefusal('spawn', [POWERSHELL, powershellArgs("Write-Output 'CredReadW is only a word here'"), {}])).toBeUndefined();
+    expect(launchRefusal('spawn', [POWERSHELL, powershellArgs("Write-Output 'CredReadW is only a word here'"), {}])).toBeUndefined();
   });
 });
 
@@ -188,8 +188,8 @@ describe('the worker guard classifies the real file behind a symbolic link', () 
     try {
       const link = path.join(dir, 'security');
       fs.symlinkSync(path.join(fakeSecretProgramsBin(), 'security'), link);
-      expect(secretStoreLaunchRefusal('spawn', [link, ['find-generic-password'], {}])).toBeUndefined();
-      expect(secretStoreLaunchRefusal('spawn', [process.execPath, [], { env: { [SECRET_PROGRAM_ENV]: link } }])).toBeUndefined();
+      expect(launchRefusal('spawn', [link, ['find-generic-password'], {}])).toBeUndefined();
+      expect(launchRefusal('spawn', [process.execPath, [], { env: { [SECRET_PROGRAM_ENV]: link } }])).toBeUndefined();
       expect(nodeChildProcess.spawnSync(link, ['find-generic-password', '-s', 'momonga', '-a', 'absent-item', '-w']).status).toBe(44);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -201,8 +201,8 @@ describe('the worker guard classifies the real file behind a symbolic link', () 
     try {
       const link = path.join(dir, 'security');
       fs.symlinkSync(path.join(dir, 'gone'), link);
-      expect(secretStoreLaunchRefusal('spawn', [link, [], {}])).toBeUndefined();
-      expect(secretStoreLaunchRefusal('spawn', [process.execPath, [], { env: { [SECRET_PROGRAM_ENV]: link } }])).toMatch(/\(ii\)/);
+      expect(launchRefusal('spawn', [link, [], {}])).toBeUndefined();
+      expect(launchRefusal('spawn', [process.execPath, [], { env: { [SECRET_PROGRAM_ENV]: link } }])).toMatch(/\(ii\)/);
       expect((nodeChildProcess.spawnSync(link, []).error as NodeJS.ErrnoException).code).toBe('ENOENT');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -288,11 +288,11 @@ describe('the worker guard refuses a product launch of a MomongaCode binary that
   });
 
   it.each(GIVEN_OR_NO_STORE)('%s, which chooses no store from PATH, is not judged by its PATH', (_name, launch) => {
-    expect(secretStoreLaunchRefusal('spawn', [process.execPath, [...launch.args], { env: { PATH: MINIMAL_CHILD_PATH } }])).toBeUndefined();
+    expect(launchRefusal('spawn', [process.execPath, [...launch.args], { env: { PATH: MINIMAL_CHILD_PATH } }])).toBeUndefined();
   });
 
   it('a program whose arguments only mention the words later is not a MomongaCode launch', () => {
-    expect(secretStoreLaunchRefusal('spawn', ['/bin/echo', ['say', 'the', 'daemon', 'start'], { env: { PATH: MINIMAL_CHILD_PATH } }])).toBeUndefined();
+    expect(launchRefusal('spawn', ['/bin/echo', ['say', 'the', 'daemon', 'start'], { env: { PATH: MINIMAL_CHILD_PATH } }])).toBeUndefined();
   });
 });
 
@@ -368,6 +368,7 @@ describe('the modules every worker loads before its test file', () => {
       'packages/cli/src/daemon/launcher.ts',
       'packages/foundation/src/json-depth.ts',
       'packages/foundation/src/node-file-system.ts',
+      'packages/foundation/src/open-browser.ts',
       'packages/foundation/src/operation-limit.ts',
       'packages/foundation/src/platform/privacy.ts',
       'packages/foundation/src/platform/probe-timing.ts',
@@ -395,7 +396,7 @@ describe('the modules every worker loads before its test file', () => {
 });
 
 const IMPORT_OF_CHILD_PROCESS = /(?:from\s*|import\s*\(\s*|require\s*\(\s*)['"](?:node:)?child_process['"]|['"]node-pty['"]/;
-const ALLOWED_IMPORTERS: ReadonlySet<string> = new Set(['packages/testkit/src/child-process.ts', 'test/support/child-process-guard.ts', 'test/child-process-guard.test.ts']);
+const ALLOWED_IMPORTERS: ReadonlySet<string> = new Set(['packages/testkit/src/child-process.ts', 'test/support/child-process-guard.ts', 'test/child-process-guard.test.ts', 'test/fake-programs.test.ts']);
 
 const testSources = (): string[] => {
   const walk = (dir: string): string[] =>

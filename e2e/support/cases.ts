@@ -165,6 +165,7 @@ export const E2E_CASES = [
   { id: 'cli-image-print', file: 'product-cli.test.ts', title: 'cli: momonga -p --image sends the image to a model that declares image input and fails with image_input_unsupported for one that does not', needsBash: false },
   { id: 'cli-elicit-print', file: 'product-cli.test.ts', title: 'cli: a -p run waiting for MCP input prints the request and the momonga elicit command, and the answer given with it resumes the run', needsBash: false },
   { id: 'cli-mcp-login', file: 'product-cli.test.ts', title: 'cli: momonga mcp list shows an unauthorized server, mcp login opens the browser through the port and authorizes it, and --no-browser prints the URL only', needsBash: false },
+  { id: 'cli-mcp-login-opener', file: 'product-cli.test.ts', title: 'cli: momonga mcp login of the shipped bundle opens the authorization URL once with the program its environment names, which a test run makes the stand-in, and mcp list opens nothing', needsBash: false },
   { id: 'cli-mcp-notice', file: 'product-cli.test.ts', title: 'cli: a -p run that needs MCP authorization prints the momonga mcp login command', needsBash: false },
   { id: 'cli-secret', file: 'product-pty.test.ts', title: 'cli pty: momonga secret set reads the value hidden from the terminal twice and stores it through the secret store port', needsBash: false },
   { id: 'cli-skill-pty', file: 'product-pty.test.ts', title: 'cli pty: a /skill-name is completed with tab from the skills of the session and starts a run with the skill', needsBash: false },
