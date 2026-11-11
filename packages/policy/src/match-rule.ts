@@ -78,10 +78,14 @@ const repoAllowMatches = (specifier: string, subject: Extract<PermissionSubject,
   });
 };
 
-const repoRestrictMatches = (specifier: string, subject: Extract<PermissionSubject, { kind: 'repo' }>): boolean => {
+const restrictingMatch = (specifier: string, targets: readonly string[]): boolean => {
   const key = foldedKey(specifier);
+  return targets.some((target) => wildcardMatches(key, foldedKey(target)));
+};
+
+const repoRestrictMatches = (specifier: string, subject: Extract<PermissionSubject, { kind: 'repo' }>): boolean => {
   const places = [subject.remote ?? '', ...subject.destinations];
-  return repoRefs(subject).some((ref) => places.some((place) => wildcardMatches(key, foldedKey(`${place}:${ref}`))));
+  return restrictingMatch(specifier, repoRefs(subject).flatMap((ref) => places.map((place) => `${place}:${ref}`)));
 };
 
 type PathSubject = Extract<PermissionSubject, { kind: 'path' }>;
@@ -90,7 +94,7 @@ export const matchPathlessRule = (rule: PermissionRule, subject: Exclude<Permiss
   if (!ruleCoversSubject(rule, subject)) return false;
   if (rule.specifier === undefined) return true;
   if (subject.kind === 'repo') return rule.effect === 'allow' ? repoAllowMatches(rule.specifier, subject) : repoRestrictMatches(rule.specifier, subject);
-  if (subject.kind === 'forge') return wildcardMatches(rule.specifier, forgeTarget(subject));
+  if (subject.kind === 'forge') return rule.effect === 'allow' ? wildcardMatches(rule.specifier, forgeTarget(subject)) : restrictingMatch(rule.specifier, [forgeTarget(subject)]);
   if (subject.kind === 'command') return matchesCommand(rule, subject.command);
   return false;
 };
