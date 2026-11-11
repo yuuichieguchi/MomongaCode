@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { stripCredentialEnv } from '@momonga/config';
-import { MINIMAL_CHILD_PATH, NETWORK_ENV_NAMES, SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV, SECRET_REFUSAL_ENV, secretStoreEnvFor } from '@momonga/foundation';
+import { MINIMAL_CHILD_PATH, NETWORK_ENV_NAMES, momongaPaths, SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV, SECRET_REFUSAL_ENV, secretStoreEnvFor } from '@momonga/foundation';
 import { afterMicrotasks, waitFor } from '@momonga/testkit';
 import { COLLIDING_CREDENTIAL_DETAIL, definedEnv, gatewayEnv, runtimeEnv } from '../src/child-env.ts';
 import type { CredentialSettings } from '../src/child-env.ts';
@@ -349,4 +349,19 @@ describe('settings at the supervisor', () => {
     expect(harness.log.events('child.held')).toEqual([expect.objectContaining({ child: 'runtime', source: 'settings', heldReason: message })]);
     expect(harness.port.calls).toHaveLength(2);
   });
+});
+
+describe('the layout every process derives from its environment (C12)', () => {
+  for (const platform of ['linux', 'win32'] as const) {
+    it(`${platform}: the gateway's environment gives the same cache base, executables area and key store as the supervisor's`, () => {
+      const home = platform === 'win32' ? 'C:\\Users\\a' : '/home/a';
+      const supervisor = { PATH: '/usr/bin', HOME: home, XDG_CACHE_HOME: '/x/cache', XDG_DATA_HOME: '/x/data', LOCALAPPDATA: 'D:\\local', APPDATA: 'D:\\roaming', SystemRoot: 'C:\\Windows' };
+      const gateway = gatewayEnv(supervisor, declaring(), home, {});
+      const of = (env: Record<string, string>) => {
+        const paths = momongaPaths(home, platform, env);
+        return { cacheBase: paths.cacheBase, executables: paths.executables, keychains: paths.keychains, tmp: paths.tmp };
+      };
+      expect(of(gateway)).toEqual(of(supervisor));
+    });
+  }
 });

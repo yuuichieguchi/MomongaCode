@@ -93,7 +93,7 @@ describe('assertHomeSocketBudget', () => {
       (caught: unknown) => caught,
     );
     expect(error).toBeInstanceOf(Error);
-    expect(String((error as Error).cause)).toContain('could not be tested: EACCES');
+    expect(String((error as Error).cause)).toMatch(/could not be tested in .*: EACCES/);
   });
 });
 

@@ -57,6 +57,14 @@ describe('alwaysWriteDenied', () => {
     );
   });
 
+  it('denies the executables area of the cache base the product runs with, which XDG_CACHE_HOME moves on Linux', async (context) => {
+    const { home } = createLauncherFixture(withTempDir(context), 'plain');
+    const cache = path.join(home, 'elsewhere-cache');
+    const denied = await alwaysWriteDenied(momongaLayout(home, 'linux', { XDG_CACHE_HOME: cache }), NEVER_CANCELLED);
+    expect(denied.executables).toBe(path.join(cache, 'momonga', 'executables'));
+    expect(denied.subtrees).toContain(path.join(cache, 'momonga', 'executables'));
+  });
+
   it('never follows the final link to the versioned target', async (context) => {
     const { home, target } = createLauncherFixture(withTempDir(context), 'symlinked');
     const denied = await alwaysWriteDenied(momongaLayout(home, process.platform, process.env), NEVER_CANCELLED);

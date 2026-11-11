@@ -24,7 +24,10 @@ const hostOf = (env: ExternalEditorHost['env'], edit: (text: string) => string =
     },
     leaveScreen: () => {
       steps.push('leave the screen');
-      return () => void steps.push('return to the screen');
+      return async () => {
+        await Promise.resolve();
+        steps.push('return to the screen');
+      };
     },
     launch: async (argv) => {
       steps.push(`launch ${argv.join(' ')}`);
@@ -47,6 +50,12 @@ describe('the external editor', () => {
     const { host } = hostOf({ VISUAL: '"/Applications/My Editor/bin/edit" --wait' });
     await createExternalEditor({ ...host, launch: async (argv) => void launched.push(argv) }).edit('x', 'json');
     expect(launched).toEqual([['/Applications/My Editor/bin/edit', '--wait', '/tmp/draft-1/value.json']]);
+  });
+
+  it('opens a named file in place, between leaving and re-entering the screen', async () => {
+    const { host, steps } = hostOf({ EDITOR: 'vi' });
+    expect(await createExternalEditor(host).open('/h/.momonga/settings.json')).toEqual({ kind: 'opened' });
+    expect(steps).toEqual(['leave the screen', 'launch vi /h/.momonga/settings.json', 'return to the screen']);
   });
 
   it('uses $EDITOR when $VISUAL is not set', async () => {

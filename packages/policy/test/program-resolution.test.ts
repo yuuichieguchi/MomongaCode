@@ -15,9 +15,11 @@ const segmentOf = (command: string): Segment => {
   return segment;
 };
 
-const resolve = async (command: string, layout: FakeFsLayout = {}) => {
+const HOMEBREW_SEARCH_PATH = `/opt/homebrew/bin:${TEST_SEARCH_PATH}`;
+
+const resolve = async (command: string, layout: FakeFsLayout = {}, searchPath: string = TEST_SEARCH_PATH) => {
   const filesystem = fakePolicyFilesystem(layout);
-  const result = await resolveSegmentProgram(segmentOf(command), { fs: filesystem, cwd: CWD, searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([CWD]) });
+  const result = await resolveSegmentProgram(segmentOf(command), { fs: filesystem, cwd: CWD, searchPath, isWritable: isWritableFor([CWD]) });
   return { result, calls: filesystem.resolveCalls };
 };
 
@@ -55,7 +57,7 @@ describe('resolveSegmentProgram (3.13)', () => {
     const { result, calls } =await  await resolve('command -p sed -n p f', layout);
     expect(result).toEqual({ program: '/usr/bin/sed' });
     expect(calls.map((call) => call.searchPath)).toEqual([DEFAULT_COMMAND_PATH_VALUE]);
-    expect((await resolve('sed -n p f', layout)).result).toEqual({ program: '/opt/homebrew/bin/sed' });
+    expect((await resolve('sed -n p f', layout, HOMEBREW_SEARCH_PATH)).result).toEqual({ program: '/opt/homebrew/bin/sed' });
   });
 
   it('does not strip the query form command -pv sed', async () => {

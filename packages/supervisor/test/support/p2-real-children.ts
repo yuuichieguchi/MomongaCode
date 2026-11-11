@@ -20,7 +20,6 @@ export const readOnlyScratchFd = (context: CleanupContext): number => {
 export const portOptions = (markerFd: number): SpawnPortOptions => ({
   cwd: process.cwd(),
   env: { PATH: testHostPath('/usr/bin:/bin') },
-  detached: true,
   stdio: ['ignore', 'pipe', 'pipe', 'pipe', markerFd],
 });
 

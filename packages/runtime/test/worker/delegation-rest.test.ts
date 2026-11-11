@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { toPublicRunEvent } from '@momonga/protocol';
 import { defineTool } from '@momonga/tools';
 import type { ResultOutcome } from '@momonga/tools';
@@ -14,6 +15,8 @@ const echo = (callId: string, value: string) => ({ callId, name: 'Echo', args: {
 const shell = (callId: string, command: string) => ({ callId, name: 'Bash', args: { command } });
 
 const mandateAsking = (env: Env, file: string) => ({ scope: { allow: ['Bash(ls:*)', 'Bash(cat:*)'], ask: [`Write(/${path.join(env.project, file)})`], deny: ['Bash(rm:*)'] } });
+
+vi.setConfig({ testTimeout: SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS, hookTimeout: SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS });
 
 describe('a run under a mandate is quiescent when every call the model tries is blocked', () => {
   it('reports why it waits and waits for a person instead of asking the model again, then goes on when the held call is decided', async () => {

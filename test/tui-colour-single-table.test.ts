@@ -6,10 +6,7 @@ const TUI = path.resolve(import.meta.dirname, '..', 'packages', 'cli', 'src', 't
 
 const THE_TABLE = 'screen/theme.ts';
 
-const PENDING: Readonly<Record<string, string>> = {
-  'picker.tsx': 'S3, the selection component',
-  'screen/prompt-panel.tsx': 'S3, the prompt panel',
-};
+const PENDING: Readonly<Record<string, string>> = {};
 
 const COLOUR_NAMES = 'black|red|green|yellow|blue|magenta|cyan|white|gray|grey';
 
