@@ -408,8 +408,11 @@ export type {
   RunCallView,
   RunFactsBasis,
   RunFactsRecord,
+  RunFactsAnswers,
   RunFactsDelegation,
+  RunFactsDenials,
   RunFactsLimits,
+  RunFactsVerification,
   RunFactsView,
   UnavailableRunView,
 } from './reliability.ts';

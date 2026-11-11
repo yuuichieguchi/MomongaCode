@@ -421,7 +421,17 @@ const runFactsViewProperties: Record<string, JsonSchema> = {
   costNano: nonNegativeInteger,
   steps: nonNegativeInteger,
   limits: closed({ maxSteps: nonNegativeInteger, maxTotalTokens: nonNegativeInteger, maxCostNano: nonNegativeInteger }, []),
-  delegation: closed({ held: nonNegativeInteger, resolvedByPerson: nonNegativeInteger, denied: nonNegativeInteger, waited: boolean }, ['held', 'resolvedByPerson', 'denied', 'waited']),
+  delegation: closed(
+    {
+      held: nonNegativeInteger,
+      resolvedByPerson: nonNegativeInteger,
+      denied: nonNegativeInteger,
+      waited: boolean,
+      holdLatencyMs: nonNegativeInteger,
+      workDuringHolds: closed({ modelSteps: nonNegativeInteger, toolCalls: nonNegativeInteger }, ['modelSteps', 'toolCalls']),
+    },
+    ['held', 'resolvedByPerson', 'denied', 'waited', 'holdLatencyMs', 'workDuringHolds'],
+  ),
   deadlineAt: integer,
   asked: nonNegativeInteger,
   elicited: nonNegativeInteger,
@@ -432,8 +442,19 @@ const runFactsViewProperties: Record<string, JsonSchema> = {
   reconciledNotApplied: nonNegativeInteger,
   reconciledUnknown: nonNegativeInteger,
   basis: runFactsBasis,
+  answers: closed(
+    { allowOnce: nonNegativeInteger, allowAlways: nonNegativeInteger, rejectOnce: nonNegativeInteger, rejectAlways: nonNegativeInteger },
+    ['allowOnce', 'allowAlways', 'rejectOnce', 'rejectAlways'],
+  ),
+  denials: closed(Object.fromEntries(PERMISSION_DENIAL_SOURCES.map((source) => [source, nonNegativeInteger])), [...PERMISSION_DENIAL_SOURCES]),
   declared: boolean,
   met: boolean,
+  mutated: boolean,
+  owed: boolean,
+  verification: closed(
+    { rounds: nonNegativeInteger, firstRoundPassed: nullable(boolean), failedRounds: nonNegativeInteger, checkMs: nonNegativeInteger, fixRoundTokens: nonNegativeInteger },
+    ['rounds', 'firstRoundPassed', 'failedRounds', 'checkMs', 'fixRoundTokens'],
+  ),
   recoveries: { type: 'array', items: recoveryEpisodeView },
 };
 
