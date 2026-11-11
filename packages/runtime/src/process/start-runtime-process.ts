@@ -750,7 +750,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             const { limits, ceilings, mandates } = (await settingsComposition.userSnapshot(requestSignal)).settings;
             return { ...(limits === undefined ? {} : { limits }), ...(ceilings === undefined ? {} : { ceilings }), ...(mandates === undefined ? {} : { mandates }) };
           },
-          projectMandate: async (cwd, requestSignal) => loadProjectMandate({ projectDir: cwd, trusted: await settingsComposition.trustOracle.isTrusted(cwd, requestSignal), signal: requestSignal }),
+          projectMandate: async (cwd, requestSignal) =>
+            loadProjectMandate({ projectDir: cwd, trusted: await settingsComposition.trustOracle.isTrusted(cwd, requestSignal), approvals: (await settingsComposition.userSnapshot(requestSignal)).settings.projectApprovals, signal: requestSignal }),
           chainBilling: async (model, requestSignal) => {
             const { chain } = await gatewayClient.model(model, { signal: requestSignal });
             const quote = await gatewayClient.quote(model, { signal: requestSignal });

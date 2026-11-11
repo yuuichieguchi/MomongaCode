@@ -3,7 +3,7 @@ import { childResultOf } from '@momonga/agents';
 
 const MODEL_IDLE_TEXT = 'The model sent no output for 300 s (only keep-alive signals arrived), so the call was stopped. Raise models.idleTimeoutMs if this model needs longer.';
 const MCP_IDLE_TEXT =
-  'MCP server "jobs" sent no response or progress for 5 minutes, so the call to long_job was stopped. The server may have run it; check before repeating it. To wait longer, raise mcp.toolIdleTimeoutMs.';
+  'MCP server "jobs" sent no response or progress for 5 minutes, so the call to long_job was stopped. The server may have run it; check before repeating it. To wait longer, raise mcp.toolIdleTimeoutNetworkMs.';
 
 const finished = (status: 'FAILED' | 'COMPLETED', fields: { error?: { code: string; message: string }; text: string }) => ({
   state: 'finished' as const,

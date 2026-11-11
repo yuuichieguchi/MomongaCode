@@ -28,6 +28,7 @@ export type SettingsComposition = {
   sessionReadSettings(cwd: string, signal: AbortSignal): Promise<SessionCreateSettings>;
   keptLayers(use: SettingsUse): KeptLayers;
   envFor(session: Pick<Session, 'env' | 'cwd'>, signal: AbortSignal): Promise<ToolEnv>;
+  referenceEnvFor(session: Pick<Session, 'env' | 'cwd'>, snapshot: UserSnapshot, signal: AbortSignal): Promise<ToolEnv>;
   takeUserSnapshot(): UserSnapshot;
   userSnapshot(signal: AbortSignal): Promise<UserSnapshot>;
   admitUserSnapshot(signal: AbortSignal): Promise<UserSnapshot>;
@@ -108,11 +109,17 @@ export const createSettingsComposition = ({ home, platform, cache, store, lock }
     return sessionSettingsFrom(snapshot, await settingsFor(cwd, snapshot, 'read', signal), signal);
   };
 
+  const sessionEnvOf = async (session: Pick<Session, 'env' | 'cwd'>, snapshot: UserSnapshot, signal: AbortSignal): Promise<Record<string, string>> => {
+    const { settings: sessionSettings } = await loadSessionSettings(session.cwd, snapshot, signal);
+    return { ...session.env, ...sessionSettings.env };
+  };
+
+  const referenceEnvFor = async (session: Pick<Session, 'env' | 'cwd'>, snapshot: UserSnapshot, signal: AbortSignal): Promise<ToolEnv> => Object.freeze(await sessionEnvOf(session, snapshot, signal));
+
   const envFor = async (session: Pick<Session, 'env' | 'cwd'>, signal: AbortSignal): Promise<ToolEnv> => {
     const snapshot = await settledOrAborted(userSnapshot(signal), signal);
-    const { settings: sessionSettings } = await loadSessionSettings(session.cwd, snapshot, signal);
     const { settings: userSettings } = snapshot;
-    return Object.freeze(stripCredentialEnv({ ...session.env, ...sessionSettings.env }, credentialNamesOf(userSettings), userSettings.credentials).env);
+    return Object.freeze(stripCredentialEnv(await sessionEnvOf(session, snapshot, signal), credentialNamesOf(userSettings), userSettings.credentials).env);
   };
 
   const settings: SettingsPort = {
@@ -127,5 +134,5 @@ export const createSettingsComposition = ({ home, platform, cache, store, lock }
     trusted: async (session, signal) => (await settledOrAborted(store.trust.decisionAsked(session.cwd, signal), signal)).decision === 'trusted',
   };
 
-  return { settings, sessionCreateSettings, sessionReadSettings, keptLayers, envFor, takeUserSnapshot, userSnapshot, admitUserSnapshot, loadSessionSettings, trustOracle, admitted };
+  return { settings, sessionCreateSettings, sessionReadSettings, keptLayers, envFor, referenceEnvFor, takeUserSnapshot, userSnapshot, admitUserSnapshot, loadSessionSettings, trustOracle, admitted };
 };

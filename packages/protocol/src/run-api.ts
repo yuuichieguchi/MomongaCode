@@ -1238,6 +1238,7 @@ export type McpServerView = {
   auth: McpAuthState;
   detail?: string;
   authorization?: McpAuthorizationView;
+  approval?: { digest: string; changed: boolean };
 };
 
 export type JobView = {
@@ -1508,6 +1509,7 @@ export const RUN_API_SCHEMAS = {
               auth: enumOf(MCP_AUTH_STATES),
               detail: string,
               authorization: { type: 'object' },
+              approval: closed({ digest: string, changed: { type: 'boolean' } }, ['digest', 'changed']),
             },
             ['name', 'scope', 'transport', 'auth'],
           ),

@@ -24,6 +24,7 @@ export type McpStdioServerConfig = {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+  secretEnv?: Record<string, string>;
   cwd?: string;
 };
 
@@ -303,7 +304,7 @@ export type ModelsSettings = {
   idleTimeoutMs?: number;
 };
 
-export type McpCallSettings = { toolIdleTimeoutMs?: number; toolTotalTimeoutMs?: number };
+export type McpCallSettings = { toolIdleTimeoutNetworkMs?: number; toolIdleTimeoutStdioMs?: number; toolTotalTimeoutMs?: number };
 
 export type SandboxSetting = 'seatbelt' | 'bubblewrap' | 'none';
 
@@ -329,6 +330,10 @@ export type RetentionSettings = { days?: number };
 export type ProjectCheckAnswer = { commands: string[] } | { declined: true };
 
 export type ProjectChecksSettings = Record<string, ProjectCheckAnswer>;
+
+export type McpServerApproval = string | { name: string; digest: string };
+
+export type ProjectApprovalsSettings = Record<string, { hooks?: string[]; mandate?: string }>;
 
 export type ResolvedRetentionSettings = { days: number };
 
@@ -413,7 +418,7 @@ export type Settings = {
   credentials?: CredentialsSettings;
   hooks?: Record<string, HookGroups>;
   autoMode?: AutoModeSettings;
-  enabledMcpjsonServers?: string[];
+  enabledMcpjsonServers?: McpServerApproval[];
   disabledMcpjsonServers?: string[];
   enableAllProjectMcpServers?: boolean;
   mcpServers?: Record<string, McpServerConfig>;
@@ -429,6 +434,7 @@ export type Settings = {
   telemetry?: TelemetrySettings;
   retention?: RetentionSettings;
   projectChecks?: ProjectChecksSettings;
+  projectApprovals?: ProjectApprovalsSettings;
   network?: NetworkSettings;
   pricing?: PriceEntrySettings[];
   limits?: LimitsSettings;
@@ -484,6 +490,7 @@ const assertNotHttpSse = (server: unknown, source: string, name: string): void =
 const RETIRED_KEYS: ReadonlyArray<{ readonly path: readonly [string, string]; readonly sentence: string }> = [
   { path: ['models', 'targets'], sentence: 'models.targets is not a setting any more; declare each server under models.connections with its models (see README, Models).' },
   { path: ['models', 'aliases'], sentence: 'models.aliases is not a setting any more; list the models to try after the model in models.fallback and choose the first with models.start (see README, Models).' },
+  { path: ['mcp', 'toolIdleTimeoutMs'], sentence: 'mcp.toolIdleTimeoutMs is not a setting any more; set mcp.toolIdleTimeoutNetworkMs for the servers reached by URL and mcp.toolIdleTimeoutStdioMs for the servers started as a command.' },
   { path: ['telemetry', 'contentRetentionDays'], sentence: 'telemetry.contentRetentionDays is not a setting any more; set retention.days in the user settings, the one retention period of every store.' },
 ];
 

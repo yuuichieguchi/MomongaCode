@@ -69,11 +69,11 @@ export { firstOfferedEndpointForm, registeredIds, registeredServer, registeredSe
 export type { ServerRegistry } from './server-registry.ts';
 export { ConfigError, createStopValuesReader, createUserSettingsCache, writeAppliedRecord, loadUserModels, loadUserSettings, readUserStopValues, readUserStopValuesOrDefault, stopValuesOfSettings, userSettingsChangeKey, userSettingsOfText } from './user-settings.ts';
 export type { AppliedRecordPorts, LoadUserSettingsOptions, LoadUserSettingsResult, StopValuesReader, StopValuesReaderOptions, UserModels, UserSettingsCache, UserSettingsCacheOptions, UserSettingsLoaded, UserSettingsSnapshot, UserStopValuesOptions } from './user-settings.ts';
-export type { GatewayStopValues, LoadSettingsOptions, LoadSettingsResult, ResolvedPermissions, ResolvedSettings } from './load-settings.ts';
+export type { GatewayStopValues, LoadSettingsOptions, LoadSettingsResult, PendingHookGroup, ResolvedPermissions, ResolvedSettings } from './load-settings.ts';
 export { assertSessionMcpServers, loadMcpServers } from './mcp-servers.ts';
 export { mcpServerNameProblem, mcpServerUrlProblem, mcpServerUrlProblemOf } from './mcp-server-rules.ts';
 export type { McpServerUrlProblem } from './mcp-server-rules.ts';
-export type { LoadMcpServersOptions, LoadMcpServersResult, McpServerEntry, McpServerFailure, McpServerScope } from './mcp-servers.ts';
+export type { LoadMcpServersOptions, LoadMcpServersResult, McpServerEntry, McpServerFailure, McpServerScope, PendingMcpServer } from './mcp-servers.ts';
 export { COMMAND_PREFIX_SUFFIX, EDIT_TOOLS, NETWORK_RULE_NOT_ENFORCED, NETWORK_RULE_SUBJECT, OPERATION_RULE_TOOLS, checkRuleText, parseGovernanceRule, PATH_TOOLS, PATH_TOOL_RULES, hasBalancedParentheses, isPathTool, parseRule, RuleParseError } from './rule.ts';
 export type { GovernanceRuleEntry, ParseRuleOptions, PathToolName, PermissionRule, RuleEffect, RuleLayer, RuleOrigin } from './rule.ts';
 export { SETTINGS_SCHEMA } from './settings-schema.ts';
@@ -81,6 +81,7 @@ export { CORE_SETTING_KEYS, NON_CORE_SETTING_KEYS } from './core-settings.ts';
 export type { CoreSettingKey } from './core-settings.ts';
 export { DEFAULT_RETENTION_DAYS, defaultSandboxSetting, resolveRetentionSettings, resolveTelemetrySettings } from './settings.ts';
 export { MAX_RETENTION_DAYS, MIN_RETENTION_DAYS } from './settings-schema.ts';
+export { APPROVAL_DIGEST_PATTERN, approvalDigestOf, hookGroupApprovalDigestOf } from './approval-digest.ts';
 export { DECLARED_CHECK_SOURCES, acceptedCheckOf, declaredChecksOf } from './declared-checks.ts';
 export type { AcceptedCheck, DeclaredCheck, DeclaredCheckSource } from './declared-checks.ts';
 export { resolveNetwork, resolveNetworkSources } from './network.ts';
@@ -153,6 +154,8 @@ export type {
   OperationsSettings,
   ResolvedRetentionSettings,
   ResolvedTelemetrySettings,
+  McpServerApproval,
+  ProjectApprovalsSettings,
   ProjectCheckAnswer,
   ProjectChecksSettings,
   RetentionSettings,

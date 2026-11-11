@@ -68,7 +68,7 @@ describe('a task through the executor', () => {
     expect(result).toEqual({
       status: 'failed',
       output:
-        'MCP server "remote" sent no response or progress for 400 ms, so the call to long_task was stopped. The server may have run it; check before repeating it. To wait longer, raise mcp.toolIdleTimeoutMs. The task was cancelled on the server.',
+        'MCP server "remote" sent no response or progress for 400 ms, so the call to long_task was stopped. The server may have run it; check before repeating it. To wait longer, raise mcp.toolIdleTimeoutNetworkMs. The task was cancelled on the server.',
     });
     expect(fixture.notes.filter((note) => note.type === 'task_cancel')).toHaveLength(1);
   });

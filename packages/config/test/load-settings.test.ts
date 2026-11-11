@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { SETTINGS_SCHEMA, loadSettings } from '@momonga/config';
+import { SETTINGS_SCHEMA, hookGroupApprovalDigestOf, loadSettings } from '@momonga/config';
 import type { HookMatcherGroup } from '@momonga/protocol';
 import { canonsOf, connectionOf, distrusting, localSettingsPath, makeTree, modelOf, projectSettingsPath, trusting, userSettingsPath, writeJson, writeText } from './helpers.ts';
 
@@ -33,6 +33,7 @@ describe('SETTINGS_SCHEMA', () => {
         'operations',
         'permissions',
         'pricing',
+        'projectApprovals',
         'projectChecks',
         'retention',
         'runtime',
@@ -320,7 +321,10 @@ describe('loadSettings hooks', () => {
 
   it('concatenates hook groups user < project < local < cli', async () => {
     const tree = makeTree();
-    writeJson(userSettingsPath(tree), { hooks: { PreToolUse: [hookGroup('user', 'Bash')] } });
+    writeJson(userSettingsPath(tree), {
+      hooks: { PreToolUse: [hookGroup('user', 'Bash')] },
+      projectApprovals: { [tree.project]: { hooks: [hookGroupApprovalDigestOf('PreToolUse', hookGroup('project')), hookGroupApprovalDigestOf('Stop', hookGroup('stop'))] } },
+    });
     writeJson(projectSettingsPath(tree), { hooks: { PreToolUse: [hookGroup('project')], Stop: [hookGroup('stop')] } });
     writeJson(localSettingsPath(tree), { hooks: { PreToolUse: [hookGroup('local')] } });
     const result = await loadSettings({
