@@ -74,7 +74,7 @@ describe('partial assistant text on an interrupted stream', () => {
       throw new Error('The operation was aborted');
     });
 
-    await within(env.runOnce(env.worker('worker-1', { gateway, cancelPollMs: 5 })), 5_000, 'the cancelled claim to settle');
+    await env.settled(env.runOnce(env.worker('worker-1', { gateway, cancelPollMs: 5 })), 'the cancelled claim to settle');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(journaledText(env, run.id)).toBe('Partial answer');
@@ -104,7 +104,7 @@ describe('partial assistant text on an interrupted stream', () => {
 
     const running = env.runOnce(env.worker('worker-1', { gateway, heartbeatMs: 10, store }));
     const stolenAtSeq = await within(stolen.promise, 5_000, 'the lease to be stolen');
-    await expect(within(running, 5_000, 'the first worker to stop after losing its lease')).resolves.toBe('yielded');
+    await expect(env.settled(running, 'the first worker to stop after losing its lease')).resolves.toBe('yielded');
 
     expect(env.run(run.id)).toMatchObject({ status: 'RUNNING', leaseOwner: 'worker-thief', lastSeq: stolenAtSeq });
     expect(env.ofType(run.id, 'agent.message.delta')).toEqual([]);

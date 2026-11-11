@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
-import { deferred, waitUntil, within } from './deferred.ts';
+import { deferred, within } from './deferred.ts';
 import { capabilitiesFor, makeEnv } from './harness.ts';
 import { assistantMessage, callsStep, textStep } from './scripts.ts';
 
@@ -34,11 +34,11 @@ describe('worker cancel before the model request', () => {
       await env.store.requestCancel(run.id);
       const [first] = env.gateway.countCalls;
       expect(first?.signal).toBeInstanceOf(AbortSignal);
-      await waitUntil(() => first?.signal?.aborted === true, 3_000, 'the countTokens signal to abort');
+      await env.passTime(() => first?.signal?.aborted === true, 'the countTokens signal to abort');
     } finally {
       gate.resolve();
     }
-    await within(running, 5_000, 'the worker to finish after cancel');
+    await env.settled(running, 'the worker to finish after cancel');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(env.ofType(run.id, 'model.requested')).toEqual([]);
@@ -71,11 +71,11 @@ describe('worker cancel before the model request', () => {
     try {
       await within(reached.promise, 2_000, 'compaction to start');
       await env.store.requestCancel(run.id);
-      await waitUntil(() => env.gateway.compacts[0]?.signal.aborted === true, 2_000, 'the compaction signal to abort');
+      await env.passTime(() => env.gateway.compacts[0]?.signal.aborted === true, 'the compaction signal to abort');
     } finally {
       gate.resolve();
     }
-    await within(running, 5_000, 'the worker to finish after cancel');
+    await env.settled(running, 'the worker to finish after cancel');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(env.ofType(run.id, 'model.requested')).toEqual([]);
@@ -107,7 +107,7 @@ describe('worker cancel with a non-cancel error', () => {
     );
     await within(reached.promise, 5_000, 'the batch to start');
     await env.store.requestCancel(run.id);
-    await within(running, 5_000, 'the worker to finish after cancel');
+    await env.settled(running, 'the worker to finish after cancel');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     const notices = env.ofType(run.id, 'notice').filter((notice) => notice.level === 'error' && notice.message.includes('executor exploded'));

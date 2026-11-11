@@ -21,7 +21,7 @@ describe('worker lease loss during a long tool', () => {
     env.clock.advance(LEASE_MS + 1);
     expect(env.store.claim('worker-thief')?.runId).toBe(run.id);
     const stolenAtSeq = env.run(run.id).lastSeq;
-    await within(running, 5_000, 'the first worker to stop after losing its lease');
+    await env.settled(running, 'the first worker to stop after losing its lease');
 
     expect(env.toolbox.waitSignals.map((signal) => signal.aborted)).toEqual([true]);
     expect(env.store.idempotency.get(key)?.s).toBe('PENDING');
@@ -37,7 +37,7 @@ describe('worker lease loss during a long tool', () => {
     expect(env.store.claim('worker-thief')?.runId).toBe(run.id);
     env.store.idempotency.complete(key, successorOutcome);
     const stolenAtSeq = env.run(run.id).lastSeq;
-    await expect(within(running, 5_000, 'the first worker to stop after losing its lease')).resolves.toBe('yielded');
+    await expect(env.settled(running, 'the first worker to stop after losing its lease')).resolves.toBe('yielded');
 
     expect(env.store.idempotency.get(key)).toEqual({ s: 'COMPLETED', result: successorOutcome });
     expect(env.run(run.id).lastSeq).toBe(stolenAtSeq);
@@ -67,7 +67,7 @@ describe('worker lease fencing of approval writes', () => {
     expect(env.store.claim('worker-thief')?.runId).toBe(run.id);
     const stolenAtSeq = env.run(run.id).lastSeq;
     gate.resolve();
-    await within(running, 5_000, 'worker-2 to stop after losing its lease');
+    await env.settled(running, 'worker-2 to stop after losing its lease');
 
     expect(env.settings.appended).toEqual([]);
     expect(env.toolbox.executions).toEqual([]);
@@ -93,7 +93,7 @@ describe('worker lease fencing of approval writes', () => {
     expect(env.store.claim('worker-thief')?.runId).toBe(run.id);
     const stolenAtSeq = env.run(run.id).lastSeq;
     gate.resolve();
-    await within(running, 5_000, 'worker-1 to stop after losing its lease');
+    await env.settled(running, 'worker-1 to stop after losing its lease');
 
     expect(env.store.approvals.listPending(run.id)).toEqual([]);
     expect(env.ofType(run.id, 'tool.permission.requested')).toEqual([]);

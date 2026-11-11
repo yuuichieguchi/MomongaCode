@@ -38,7 +38,7 @@ const fakeTime = () => {
 
 const advanceStepwise = async (timers: FakeTimers, totalMs: number, stepMs: number): Promise<void> => {
   for (let elapsed = 0; elapsed < totalMs; elapsed += stepMs) {
-    timers.advance(Math.min(stepMs, totalMs - elapsed));
+    await timers.advanceAsync(Math.min(stepMs, totalMs - elapsed));
     await afterMicrotasks();
   }
 };
@@ -92,7 +92,7 @@ describe('runtime periodic timers (fake timers and fake clock, in-process gatewa
     await launchRuntime(stack.temp, { clock, fakeTimers: timers });
     expect(idempotencyKeys(stack.temp)).toEqual([LIVE_KEY]);
     await seedKey(stack.temp, LATER_KEY, START_MS - 1);
-    timers.advance(HOUR_MS - 1);
+    await timers.advanceAsync(HOUR_MS - 1);
     await afterMicrotasks();
     expect(idempotencyKeys(stack.temp)).toEqual([LIVE_KEY, LATER_KEY]);
     await passServingTime(timers, 1, () => idempotencyKeys(stack.temp).join(',') === LIVE_KEY, 'the purge at the first serving tick after an hour');
@@ -107,7 +107,7 @@ describe('runtime periodic timers (fake timers and fake clock, in-process gatewa
     const unknownDir = path.join(stack.temp.paths.tmp.sessions, 'unknown-session');
     makeAbandonedDirectory(knownDir);
     makeAbandonedDirectory(unknownDir);
-    timers.advance(HOUR_MS - 1);
+    await timers.advanceAsync(HOUR_MS - 1);
     await afterMicrotasks();
     expect(fs.existsSync(unknownDir)).toBe(true);
     const kept = [known.id, path.basename(sidecarOf(hostKernelLock(), knownDir))].sort().join(',');

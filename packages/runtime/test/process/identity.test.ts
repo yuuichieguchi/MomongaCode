@@ -29,7 +29,7 @@ const fakeTime = () => {
 };
 
 const tick = async (timers: ReturnType<typeof createFakeTimers>, ms: number): Promise<void> => {
-  timers.advance(ms);
+  await timers.advanceAsync(ms);
   await afterMicrotasks();
 };
 

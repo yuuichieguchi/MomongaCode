@@ -16,14 +16,13 @@ import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import { blobDirectoryOf, createBlobStore, createJournalReader, foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
 import type { Claim, ContributionPreparer, ReportReply, Run, RuntimeStore, Session } from '@momonga/store';
-import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, testProbes, testPaths } from '@momonga/testkit';
-import type { FakeClock } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, driveFakeTime, testProbes, testPaths } from '@momonga/testkit';
+import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
 import type { AbandonTarget, AnyTool, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
 import { evidenceHandler, fidelityHandler, inheritPlanHandler, inheritedWindowHandler, reflectionInputHandler, reportHandler, verdictHandler } from '../../src/memory/journal-thread.ts';
 import type { JournalHandler } from '../../src/memory/journal-thread.ts';
-import { systemTimers } from '../../src/service/timers.ts';
 import { within } from './deferred.ts';
 import { createFakeGateway } from './fake-gateway.ts';
 import type { FakeGateway } from './fake-gateway.ts';
@@ -42,6 +41,7 @@ import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 export const START_MS = 1_800_000_000_000;
 export const LEASE_MS = 30_000;
 export const DEADLINE_MS = START_MS + 3_600_000;
+export const PASS_TIME_HORIZON_MS = 2 * LEASE_MS;
 export const EXTRA_ROOT = '/opt/momonga-extra-root';
 export const TEST_PROMPT_PREFIX = 'You are the MomongaCode test agent working in';
 
@@ -218,6 +218,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   fs.mkdirSync(sessionTmpDir, { recursive: true, mode: 0o700 });
   const dbPath = path.join(stateDir, 'runtime.db');
   const clock: FakeClock = createFakeClock(START_MS);
+  const timers: FakeTimers = createFakeTimers(clock);
   const scriptedContributions = new Map<string, ContributionItems>();
   const store: RuntimeStore = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
@@ -363,7 +364,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       leaseMs: LEASE_MS,
       random: () => 0.5,
       platform: process.platform,
-      timers: systemTimers,
+      timers,
       systemPrompt: testSystemPrompt,
       home,
       blobs: store.blobs,
@@ -413,6 +414,19 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     if (failures.length > 0) throw failures[0];
     if (!finished.includes(runId)) throw new Error(`the sweep did not finish run ${runId}`);
     return run(runId);
+  };
+
+  const passTime = (done: () => boolean, description: string, horizonMs = PASS_TIME_HORIZON_MS): Promise<void> =>
+    driveFakeTime(timers, { done, horizonAt: timers.monotonicMs() + horizonMs, description });
+
+  const settled = async <T>(work: Promise<T>, description: string, horizonMs = PASS_TIME_HORIZON_MS): Promise<T> => {
+    let ended = false;
+    const tracked = work.finally(() => {
+      ended = true;
+    });
+    tracked.catch(() => undefined);
+    await passTime(() => ended, description, horizonMs);
+    return tracked;
   };
 
   const scriptContribution = (runId: string, items: ContributionItems): void => {
@@ -492,6 +506,9 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     callLocks,
     dbPath,
     clock,
+    timers,
+    passTime,
+    settled,
     store,
     gateway,
     settings,

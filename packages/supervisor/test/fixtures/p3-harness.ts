@@ -348,12 +348,8 @@ export const recordingMarkerPorts = (overrides: MarkerPorts = {}, record?: strin
   return { ports, calls };
 };
 
-const advanceToDue = (timers: FakeTimers, due: number): void => {
-  timers.advance(Math.max(0, due - timers.now()));
-};
-
 export const pump = async (timers: FakeTimers, realWork: RealWorkScope, ms: number): Promise<void> => {
-  const target = timers.now() + ms;
+  const target = timers.monotonicMs() + ms;
   await driveFakeTime(timers, {
     done: () => {
       const due = timers.nextDueAt();
@@ -364,7 +360,7 @@ export const pump = async (timers: FakeTimers, realWork: RealWorkScope, ms: numb
     settle: () => settleRealWork(realWork, () => false, 'fake time to pump'),
     detail: () => realWork.describe(),
   });
-  advanceToDue(timers, target);
+  await timers.advanceAsync(Math.max(0, target - timers.monotonicMs()));
   await settleRealWork(realWork, () => false, 'fake time pumped');
 };
 

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import type { RuntimeStore } from '@momonga/store';
-import { waitUntil, within } from './deferred.ts';
 import { DEADLINE_MS, makeEnv, createdRun } from './harness.ts';
 import { MODEL_ID, textStep } from './scripts.ts';
 
@@ -38,8 +37,8 @@ describe('worker poll loop', () => {
         },
       });
       worker.start();
-      await waitUntil(() => env.run(healthy.id).status === 'COMPLETED', 3_000, 'the healthy run to complete');
-      await within(worker.stop(), 1_000, 'the worker to stop');
+      await env.passTime(() => env.run(healthy.id).status === 'COMPLETED', 'the healthy run to complete');
+      await env.settled(worker.stop(), 'the worker to stop');
     } finally {
       process.off('unhandledRejection', onUnhandled);
     }

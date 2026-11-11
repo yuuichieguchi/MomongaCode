@@ -913,7 +913,7 @@ describe('awaitLeave', () => {
     harness.spawnInitial();
     void harness.manager.stop('shutdown', 'term');
     const leaving = harness.manager.awaitLeave('stopping', { timeoutMs: HOOK_TIMEOUT_MS * 10, signal: new AbortController().signal });
-    harness.timers.advance(RUNTIME_SHUTDOWN_BUDGET_MS + KILL_CONFIRM_MS);
+    await harness.timers.advanceAsync(RUNTIME_SHUTDOWN_BUDGET_MS + KILL_CONFIRM_MS);
     await expect(leaving).resolves.toBe('stopped');
     expect(harness.events('child.unkillable')).toHaveLength(1);
     expect(harness.timers.pending().filter((timer) => timer.delayMs === HOOK_TIMEOUT_MS * 10)).toEqual([]);

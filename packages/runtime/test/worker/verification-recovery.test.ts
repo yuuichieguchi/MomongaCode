@@ -161,7 +161,7 @@ describe('recovery during verification', () => {
     );
     const checkPid = Number(fs.readFileSync(pidFile, 'utf8').trim());
     env.store.requestCancel(run.id);
-    await within(running, 10_000, 'the worker to finish after cancel');
+    await env.settled(running, 'the worker to finish after cancel');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(completions(env, run.id).filter((event) => event.outcome === 'passed' || event.outcome === 'failed')).toEqual([]);
@@ -183,7 +183,7 @@ describe('recovery during verification', () => {
       'the check to start',
     );
     env.clock.advance(2000);
-    await within(running, 10_000, 'the worker to finish at the deadline');
+    await env.settled(running, 'the worker to finish at the deadline');
 
     expect(completions(env, run.id)).toMatchObject([{ outcome: 'timed_out' }]);
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'timeout' });

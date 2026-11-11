@@ -4,7 +4,7 @@ import type { RunEventPayload } from '@momonga/protocol';
 import type { GatewayPort } from '@momonga/runtime';
 import type { RuntimeStore } from '@momonga/store';
 import { createToolExecutor, defineTool } from '@momonga/tools';
-import { deferred, waitUntil, within } from './deferred.ts';
+import { deferred, within } from './deferred.ts';
 import { DEADLINE_MS, LEASE_MS, START_MS, makeEnv, toolKey, createdRun } from './harness.ts';
 import { pinnedStart } from './cancel-fixture.ts';
 import type { Env } from './harness.ts';
@@ -66,7 +66,7 @@ describe('worker cancel recovery with a hanging reconcile', () => {
       reconcileGraceMs: 20,
     });
 
-    await within(env.runOnce(env.worker('worker-1', { tools: { executor }, toolList: () => [...env.toolbox.tools(), stall] })), 3_000, 'the cancel recovery');
+    await env.settled(env.runOnce(env.worker('worker-1', { tools: { executor }, toolList: () => [...env.toolbox.tools(), stall] })), 'the cancel recovery');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(env.ofType(run.id, 'tool.reconciled')).toEqual([expect.objectContaining({ callId: 'call_s_1', outcome: 'unknown' })]);
@@ -100,8 +100,8 @@ describe('worker default error reporter', () => {
 
     const worker = env.worker('worker-1', { store, idlePollMs: 10 });
     worker.start();
-    await waitUntil(() => env.ofType(failing.id, 'notice').some((notice) => notice.message.includes('load exploded')), 2_000, 'the failure notice');
-    await within(worker.stop(), 1_000, 'the worker to stop');
+    await env.passTime(() => env.ofType(failing.id, 'notice').some((notice) => notice.message.includes('load exploded')), 'the failure notice');
+    await env.settled(worker.stop(), 'the worker to stop');
 
     expect(appends.filter((payloads) => payloads.some(isFailureNotice))).toHaveLength(1);
     const notice = env.ofType(failing.id, 'notice').find((event) => event.message.includes('load exploded'));
@@ -129,8 +129,8 @@ describe('worker default error reporter', () => {
 
     const worker = env.worker('worker-1', { store, idlePollMs: 10 });
     worker.start();
-    await waitUntil(() => env.run(healthy.id).status === 'COMPLETED', 2_000, 'the healthy run to complete');
-    await within(worker.stop(), 1_000, 'the worker to stop');
+    await env.passTime(() => env.run(healthy.id).status === 'COMPLETED', 'the healthy run to complete');
+    await env.settled(worker.stop(), 'the worker to stop');
 
     expect(stolenAtSeq).toBeDefined();
     expect(env.run(failing.id).lastSeq).toBe(stolenAtSeq);
@@ -165,8 +165,8 @@ describe('worker default error reporter', () => {
     try {
       const worker = env.worker('worker-1', { store, idlePollMs: 10 });
       worker.start();
-      await waitUntil(() => env.run(healthy.id).status === 'COMPLETED', 2_000, 'the healthy run to complete');
-      await within(worker.stop(), 1_000, 'the worker to stop');
+      await env.passTime(() => env.run(healthy.id).status === 'COMPLETED', 'the healthy run to complete');
+      await env.settled(worker.stop(), 'the worker to stop');
     } finally {
       process.off('unhandledRejection', onUnhandled);
     }
@@ -192,7 +192,7 @@ describe('worker classification of stream errors', () => {
     const running = env.runOnce(env.worker('worker-1', { gateway, cancelPollMs: 10 }));
     await within(reached.promise, 2_000, 'the stream to start');
     await env.store.requestCancel(run.id);
-    await within(running, 3_000, 'the worker to finish after cancel');
+    await env.settled(running, 'the worker to finish after cancel');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(env.ofType(run.id, 'notice').filter((notice) => notice.level === 'error')).toEqual([]);

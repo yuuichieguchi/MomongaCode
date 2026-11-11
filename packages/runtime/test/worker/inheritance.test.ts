@@ -229,7 +229,7 @@ describe('interrupted run 1 in the request of run 2', () => {
           throw new Error('The operation was aborted');
         })(),
     };
-    await within(env.runOnce(env.worker('worker-1', { gateway, cancelPollMs: 5 })), 5_000, 'the cancelled claim to settle');
+    await env.settled(env.runOnce(env.worker('worker-1', { gateway, cancelPollMs: 5 })), 'the cancelled claim to settle');
     expect(env.run(first.id).status).toBe('CANCELLED');
 
     const second = await nextRun(env, 'Go on');
@@ -251,7 +251,7 @@ describe('interrupted run 1 in the request of run 2', () => {
     const running = env.runOnce(env.worker('worker-1', { cancelPollMs: 5 }));
     await within(blocked.gate.reached.promise, 5_000, 'the first stream to start');
     await env.cancel(first.id);
-    await within(running, 5_000, 'the cancelled claim');
+    await env.settled(running, 'the cancelled claim');
     expect(env.run(first.id).status).toBe('CANCELLED');
 
     const second = await nextRun(env, 'Second request');

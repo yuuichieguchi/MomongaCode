@@ -252,7 +252,7 @@ export const waitForTimer = (timers: FakeTimers, delayMs: number, description: s
 
 export const fireTimer = async (timers: FakeTimers, delayMs: number, description: string, exclude: ReadonlySet<number> = new Set()): Promise<void> => {
   await waitForTimer(timers, delayMs, description, exclude);
-  timers.advance(delayMs);
+  await timers.advanceAsync(delayMs);
   await afterMicrotasks();
 };
 
@@ -261,7 +261,7 @@ export const SERVING_TICK_MS = 1000;
 export const SERVING_TICKS_DRIVEN = 10;
 
 export const passServingTime = async (timers: FakeTimers, ms: number, done: () => boolean, description: string): Promise<void> => {
-  timers.advance(ms);
+  await timers.advanceAsync(ms);
   await driveFakeTime(timers, { done, horizonAt: timers.now() + SERVING_TICKS_DRIVEN * SERVING_TICK_MS, description });
 };
 

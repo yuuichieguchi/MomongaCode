@@ -10,11 +10,15 @@ interface FakeClock {
 const fakeTiming = (clock: FakeClock): Timing =>
   createSteppingTiming({
     now: () => clock.ms,
+    monotonicMs: () => clock.ms,
     advance: (ms) => {
       clock.ms += ms;
     },
     set: (ms) => {
       clock.ms = ms;
+    },
+    stepWall: () => {
+      throw new Error('this clock has one value and cannot step its wall time alone');
     },
   });
 

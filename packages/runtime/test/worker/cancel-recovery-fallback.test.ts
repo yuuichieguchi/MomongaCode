@@ -44,7 +44,7 @@ describe('cancel recovery fallback', () => {
       },
     });
 
-    await within(env.runOnce(worker), 10_000, 'the cancel recovery');
+    await env.settled(env.runOnce(worker), 'the cancel recovery');
 
     expect(contexts).toHaveLength(1);
     expect(env.run(run.id).status).toBe('CANCELLED');
@@ -67,7 +67,7 @@ describe('cancel recovery fallback', () => {
       },
     });
 
-    await within(env.runOnce(worker), 10_000, 'the cancel recovery');
+    await env.settled(env.runOnce(worker), 'the cancel recovery');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(env.toolbox.reconciles).toEqual([keys[MARK.callId]]);
@@ -95,7 +95,7 @@ describe('cancel recovery fallback', () => {
       },
     });
 
-    await within(env.runOnce(worker), 20_000, 'the cancel recovery');
+    await env.settled(env.runOnce(worker), 'the cancel recovery');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(await Promise.all(aliveAtCancel)).toEqual([false]);
@@ -125,7 +125,7 @@ describe('cancel recovery fallback', () => {
       },
     });
 
-    await within(env.runOnce(worker), 20_000, 'the cancel recovery');
+    await env.settled(env.runOnce(worker), 'the cancel recovery');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(await Promise.all(aliveAtCancel)).toEqual([false]);
@@ -146,7 +146,7 @@ describe('cancel recovery fallback', () => {
       },
     });
 
-    await within(env.runOnce(worker), 10_000, 'the cancel recovery');
+    await env.settled(env.runOnce(worker), 'the cancel recovery');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(errors).toHaveLength(1);
@@ -167,7 +167,7 @@ describe('cancel recovery fallback', () => {
       },
     });
 
-    await within(env.runOnce(worker), 10_000, 'the cancel recovery');
+    await env.settled(env.runOnce(worker), 'the cancel recovery');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(errorNotices(env, run.id).map((notice) => notice.message)).toEqual([`${RECONCILE_FAILURE_PREFIX}the user settings are invalid`]);
@@ -181,7 +181,7 @@ describe('cancel recovery fallback', () => {
     const { run, keys } = await seedStartedCalls(env, [MARK, REMOTE]);
     const worker = env.worker('worker-1');
 
-    await within(env.runOnce(worker), 10_000, 'the cancel recovery');
+    await env.settled(env.runOnce(worker), 'the cancel recovery');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(env.batches.map((batch) => batch.calls.map((call) => call.callId))).toEqual([[MARK.callId]]);
@@ -213,7 +213,7 @@ describe('cancel recovery fallback', () => {
       },
     });
 
-    await within(env.runOnce(worker), 10_000, 'the cancel recovery');
+    await env.settled(env.runOnce(worker), 'the cancel recovery');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     const reconciled = env.ofType(run.id, 'tool.reconciled').map((event) => [event.callId, event.outcome]);
@@ -241,7 +241,7 @@ describe('cancel recovery fallback', () => {
       },
     });
 
-    await within(env.runOnce(worker), 10_000, 'the cancel recovery');
+    await env.settled(env.runOnce(worker), 'the cancel recovery');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(env.portCalls.abandon.map((call) => call.targets)).toEqual([
@@ -267,7 +267,7 @@ describe('cancel recovery fallback', () => {
     env.clock.advance(LEASE_MS + 1);
     await env.cancel(run.id);
 
-    await within(env.runOnce(env.worker('worker-1')), 10_000, 'the cancel recovery');
+    await env.settled(env.runOnce(env.worker('worker-1')), 'the cancel recovery');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(env.portCalls.abandon.flatMap((call) => call.targets)).toEqual([]);
@@ -288,7 +288,7 @@ describe('cancel recovery fallback', () => {
       },
     });
 
-    await within(env.runOnce(worker), 10_000, 'the cancel recovery');
+    await env.settled(env.runOnce(worker), 'the cancel recovery');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(env.settings.ruleReads).toBe(0);
@@ -315,7 +315,7 @@ describe('cancel recovery fallback', () => {
       },
     });
 
-    await within(env.runOnce(worker), 10_000, 'the worker to give up the run');
+    await env.settled(env.runOnce(worker), 'the worker to give up the run');
     await afterMicrotasks();
 
     expect(env.portCalls.abandon).toEqual([]);
@@ -340,7 +340,7 @@ describe('cancel recovery fallback', () => {
       },
     });
 
-    await within(env.runOnce(worker), 10_000, 'the worker to yield');
+    await env.settled(env.runOnce(worker), 'the worker to yield');
     await within(shutdown ?? Promise.resolve(), 10_000, 'the shutdown');
     await afterMicrotasks();
 
@@ -366,8 +366,8 @@ describe('cancel recovery fallback', () => {
     });
 
     worker.start();
-    await waitUntil(() => fatals.length > 0, 10_000, 'onFatal');
-    await within(worker.stop(), 10_000, 'the worker to stop');
+    await env.passTime(() => fatals.length > 0, 'onFatal');
+    await env.settled(worker.stop(), 'the worker to stop');
 
     expect(fatals).toEqual([fatal]);
     expect(errorNotices(env, run.id)).toEqual([]);
@@ -394,8 +394,8 @@ describe('cancel recovery fallback', () => {
     });
 
     worker.start();
-    await waitUntil(() => fatals.length > 0, 10_000, 'onFatal');
-    await within(worker.stop(), 10_000, 'the worker to stop');
+    await env.passTime(() => fatals.length > 0, 'onFatal');
+    await env.settled(worker.stop(), 'the worker to stop');
 
     expect(fatals).toEqual([fatal]);
     expect(errorNotices(env, run.id)).toEqual([]);
@@ -420,7 +420,7 @@ describe('cancel recovery fallback', () => {
       },
     });
 
-    await within(env.runOnce(worker), 10_000, 'the cancel recovery');
+    await env.settled(env.runOnce(worker), 'the cancel recovery');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(errors).toHaveLength(1);
@@ -442,7 +442,7 @@ describe('cancel recovery fallback', () => {
       },
     });
 
-    await within(env.runOnce(worker), 10_000, 'the cancel recovery');
+    await env.settled(env.runOnce(worker), 'the cancel recovery');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(errorNotices(env, run.id)).toHaveLength(1);
@@ -480,7 +480,7 @@ describe('cancel recovery fallback', () => {
       },
     });
 
-    await within(env.runOnce(worker), 10_000, 'the cancel recovery');
+    await env.settled(env.runOnce(worker), 'the cancel recovery');
     await Promise.all(cancels);
 
     expect(env.run(run.id).status).toBe('CANCELLED');

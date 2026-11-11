@@ -14,10 +14,10 @@ describe('worker cancel', () => {
     const running = env.runOnce(env.worker());
     await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
 
-    const requestedAt = Date.now();
+    const requestedAt = env.clock.now();
     await env.store.requestCancel(run.id);
-    await within(running, CANCEL_BUDGET_MS + 2_000, 'the worker to finish after cancel');
-    const elapsed = Date.now() - requestedAt;
+    await env.settled(running, 'the worker to finish after cancel');
+    const elapsed = env.clock.now() - requestedAt;
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(elapsed).toBeLessThan(CANCEL_BUDGET_MS);
@@ -36,10 +36,10 @@ describe('worker cancel', () => {
     const running = env.runOnce(env.worker());
     await within(env.toolbox.waitStarted.promise, 5_000, 'the long tool to start');
 
-    const requestedAt = Date.now();
+    const requestedAt = env.clock.now();
     await env.store.requestCancel(run.id);
-    await within(running, CANCEL_BUDGET_MS + 2_000, 'the worker to finish after cancel');
-    const elapsed = Date.now() - requestedAt;
+    await env.settled(running, 'the worker to finish after cancel');
+    const elapsed = env.clock.now() - requestedAt;
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(elapsed).toBeLessThan(CANCEL_BUDGET_MS);

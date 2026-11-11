@@ -36,7 +36,7 @@ describe('health (fake timers)', () => {
     const response = await unsandboxed.http('GET', '/v1/health');
     expect(response.json.sandbox).toBe('none');
     expectSchema('Health', response.json);
-    unsandboxed.timers?.advance(60 * 60_000);
+    await unsandboxed.timers?.advanceAsync(60 * 60_000);
     expect((await unsandboxed.http('GET', '/v1/health')).json.sandbox).toBe('none');
   });
 });

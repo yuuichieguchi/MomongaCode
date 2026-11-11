@@ -65,7 +65,7 @@ describe('service fatal routing (fake timers)', () => {
     const fatal = sqliteError(SQLITE_CORRUPT, 'database disk image is malformed');
     faults.set('expireApprovals', fatal);
 
-    env.timers?.advance(SWEEP_INTERVAL_MS);
+    await env.timers?.advanceAsync(SWEEP_INTERVAL_MS);
 
     expect(env.fatals).toEqual([fatal]);
     expect(env.errors).toEqual([]);
@@ -77,7 +77,7 @@ describe('service fatal routing (fake timers)', () => {
     const fatal = sqliteError(SQLITE_IOERR, 'disk I/O error');
     faults.set('dataVersion', fatal);
 
-    env.timers?.advance(POLL_INTERVAL_MS);
+    await env.timers?.advanceAsync(POLL_INTERVAL_MS);
 
     expect(env.fatals).toEqual([fatal]);
     expect(env.errors).toEqual([]);
@@ -97,7 +97,7 @@ describe('service fatal routing (fake timers)', () => {
     const run = await env.createRun(session.id);
 
     expect((await env.http('POST', `/v1/runs/${run.id}/cancel`)).status).toBe(202);
-    env.timers?.advance(1000);
+    await env.timers?.advanceAsync(1000);
 
     await waitUntil(() => env.fatals.length > 0 || env.errors.length > 0, 3000, 'the cancelUpstream failure to be reported');
     expect(env.fatals).toEqual([fatal]);
@@ -175,7 +175,7 @@ describe('service fatal routing (fake timers)', () => {
 
     const sweepFatal = sqliteError(SQLITE_CORRUPT, 'database disk image is malformed');
     faults.set('expireApprovals', sweepFatal);
-    env.timers?.advance(SWEEP_INTERVAL_MS);
+    await env.timers?.advanceAsync(SWEEP_INTERVAL_MS);
 
     expect(env.errors).toEqual([handlerFatal, sweepFatal]);
     expect(env.fatals).toEqual([]);

@@ -202,11 +202,15 @@ describe('SS3 single clock read for run timestamps', () => {
         now += 1;
         return now;
       },
+      monotonicMs: () => now,
       advance: (ms) => {
         now += ms;
       },
       set: (ms) => {
         now = ms;
+      },
+      stepWall: () => {
+        throw new Error('this clock has one value and cannot step its wall time alone');
       },
     };
     const env = await startService({ clock: ticking });

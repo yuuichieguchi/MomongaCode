@@ -19,7 +19,7 @@ describe('worker lease loss', () => {
     expect(thief?.runId).toBe(run.id);
     const stolenAtSeq = env.run(run.id).lastSeq;
     blocked.gate.release.resolve();
-    await within(running, 5_000, 'the first worker to stop after losing its lease');
+    await env.settled(running, 'the first worker to stop after losing its lease');
 
     const lateWrites = env.events(run.id).filter((event) => event.leaseToken === started.leaseToken && event.seq > stolenAtSeq);
     expect(lateWrites).toEqual([]);
@@ -39,7 +39,7 @@ describe('worker lease loss', () => {
     env.clock.advance(LEASE_MS + 1);
     expect(env.store.claim('worker-thief')?.runId).toBe(run.id);
     const stolenAtSeq = env.run(run.id).lastSeq;
-    await within(running, 3_000, 'the heartbeat to detect the lost lease');
+    await env.settled(running, 'the heartbeat to detect the lost lease');
 
     expect(env.gateway.streams[0]?.signal.aborted).toBe(true);
     expect(env.run(run.id)).toMatchObject({ status: 'RUNNING', leaseOwner: 'worker-thief', lastSeq: stolenAtSeq });

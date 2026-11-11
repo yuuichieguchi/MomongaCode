@@ -3,10 +3,7 @@ import type { FakeTimers } from './fake-timers.ts';
 
 export const fakeReapTiming = (clock: FakeClock, timers: FakeTimers): { now(): number; sleep(ms: number): Promise<void> } => ({
   now: () => clock.now(),
-  sleep: (ms) => {
-    timers.advance(ms);
-    return Promise.resolve();
-  },
+  sleep: (ms) => timers.advanceAsync(ms),
 });
 
 export const drivenReapTiming = (clock: FakeClock, timers: FakeTimers): { now(): number; sleep(ms: number): Promise<void> } => ({

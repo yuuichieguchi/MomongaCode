@@ -174,10 +174,10 @@ describe('run stream liveness', () => {
     await waitUntil(() => env.notifier.subscriberCount() === 1, 5000, 'the subscriber to register');
     await waitUntil(() => timers.pending().some((timer) => timer.delayMs === 15_000), 5000, 'the keep-alive timer');
 
-    timers.advance(15_000);
+    await timers.advanceAsync(15_000);
     expect(await stream.nextComment()).toBe('keep-alive');
     await waitUntil(() => timers.pending().some((timer) => timer.delayMs === 15_000), 5000, 'the next keep-alive timer');
-    timers.advance(15_000);
+    await timers.advanceAsync(15_000);
     expect(await stream.nextComment()).toBe('keep-alive');
     expect(stream.events).toEqual([]);
   });
