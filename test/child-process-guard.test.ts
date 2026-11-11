@@ -399,6 +399,7 @@ const IMPORT_OF_CHILD_PROCESS = /(?:from\s*|import\s*\(\s*|require\s*\(\s*)['"](
 const ALLOWED_IMPORTERS: ReadonlySet<string> = new Set([
   'packages/cli/test/port-scan.test.ts',
   'packages/testkit/src/child-process.ts',
+  'packages/tools/test/ports-scan.test.ts',
   'test/child-process-guard.test.ts',
   'test/fake-programs.test.ts',
   'test/ports-bypass.test.ts',

@@ -7,7 +7,13 @@ export const EVERY_LOCAL_PATH = 'local:*';
 
 const LOCAL_PREFIX = 'local:';
 
+export const EVERYTHING = '*';
+
 export const EMPTY_FOOTPRINT: Footprint = { reads: [], writes: [] };
+
+const UNNAMED_FOOTPRINT: Footprint = { reads: [EVERYTHING], writes: [EVERYTHING] };
+
+export const isUnnamed = (footprint: Footprint): boolean => footprint.writes.includes(EVERYTHING);
 
 const localOf = (cwd: string, target: string): string => `${LOCAL_PREFIX}${path.resolve(cwd, target)}`;
 
@@ -29,6 +35,7 @@ export const footprintOf = (subject: PermissionSubject, cwd: string): Footprint 
     case 'forge':
       return { reads: [], writes: [`pr:${subject.host}/${subject.repo}#${subject.pr === undefined ? 'new' : String(subject.pr)}`] };
     case 'mcp':
+      return UNNAMED_FOOTPRINT;
     case 'memory':
     case 'history':
     case 'governance':
@@ -42,7 +49,7 @@ const isLocal = (resource: string): boolean => resource.startsWith(LOCAL_PREFIX)
 const within = (outer: string, inner: string): boolean => inner === outer || inner.startsWith(`${outer}${path.sep}`);
 
 const touches = (left: string, right: string): boolean => {
-  if (left === right) return true;
+  if (left === right || left === EVERYTHING || right === EVERYTHING) return true;
   if (!isLocal(left) || !isLocal(right)) return false;
   if (left === EVERY_LOCAL_PATH || right === EVERY_LOCAL_PATH) return true;
   const first = left.slice(LOCAL_PREFIX.length);
@@ -59,5 +66,5 @@ export type HeldFootprint = { callId: string; footprint: Footprint };
 
 export const blockerOf = (footprint: Footprint, held: readonly HeldFootprint[]): HeldFootprint | undefined => held.find((entry) => footprintsConflict(footprint, entry.footprint));
 
-export const blockedByHeldText = (callId: string): string =>
-  `Not run: blocked by the held call ${callId} (same path or ref), which waits for a person to approve it. Do not repeat this call until that one has been decided; continue with work that does not depend on it.`;
+export const blockedByHeldText = (callId: string, footprint: Footprint): string =>
+  `Not run: blocked by the held call ${callId} (${isUnnamed(footprint) ? 'the effects of this call cannot be named, so it may touch what that call changes' : 'same path or ref'}), which waits for a person to approve it. Do not repeat this call until that one has been decided; continue with work that does not depend on it.`;

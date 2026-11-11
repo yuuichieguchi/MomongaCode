@@ -1,12 +1,11 @@
-import fs from 'node:fs';
 import path from 'node:path';
-import { ABORT_SETTLE_LIMIT_MS, NO_NETWORK, UNMEASURED_CAPABILITY, canonicalJson, comparableFromParts, containsByComponents, computeBackoff, createMarker, defaultProcessInspector, describeNetworkScope, displayToolPath, enforcedNetworkScope, fileRuleFingerprint, findAsync, hostKernelLock, hostPaths, systemWaitTiming, lexicallyWithin, mapAsync, momongaLayout, networkScopeOfRequest, nodeFileSystem, reapMarkedProcessesWithReport, recordMarkerGroup, settledOrAborted, sha256Hex, someAsync, writableAreaOf, writableCheckOf } from '@momonga/foundation';
+import { ABORT_SETTLE_LIMIT_MS, NO_NETWORK, UNMEASURED_CAPABILITY, canonicalJson, comparableFromParts, containsByComponents, computeBackoff, createMarker, defaultProcessInspector, describeNetworkScope, displayToolPath, enforcedNetworkScope, fileRuleFingerprint, findAsync, hostKernelLock, hostPaths, systemWaitTiming, lexicallyWithin, mapAsync, momongaLayout, networkScopeOfRequest, reapMarkedProcessesWithReport, recordMarkerGroup, settledOrAborted, sha256Hex, someAsync, writableAreaOf, writableCheckOf } from '@momonga/foundation';
 import { createMarkerGuard } from './marker-guard.ts';
 import { createMarkerOwners } from './marker-owners.ts';
 import type { MarkerOwners } from './marker-owners.ts';
 import { createMarkerSettle } from './marker-settle.ts';
 import type { MarkerSettle } from './marker-settle.ts';
-import type { Awaitable, Clock, FileRuleProvenance, KernelLockMechanism, MarkerHandle, NetworkScope, OutboundNetwork, PathProbes, PathResolver, ProcessGroupPort, ProcessInspector, ReapReport, Timing, SandboxNetworkSetting, SignalSender, UninspectableRegistry } from '@momonga/foundation';
+import type { Awaitable, Clock, FileRuleProvenance, FileSystem, KernelLockMechanism, MarkerHandle, NetworkScope, OutboundNetwork, PathProbes, PathResolver, ProcessGroupPort, ProcessInspector, Random, ReapReport, Timing, SandboxNetworkSetting, SignalSender, UninspectableRegistry } from '@momonga/foundation';
 import { absoluteFrom, askedBy, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem, PolicyTool, CoveredProgram, SupersededForm } from '@momonga/policy';
 import { permissionDeniedOutput } from '@momonga/protocol';
@@ -20,9 +19,10 @@ import { contextWithNetwork, readOnlyContextOf } from './read-only-call.ts';
 import { createReadAccessMatcher } from './read-access.ts';
 import type { ReadFamilyTool } from './read-access.ts';
 import type { ReadAccessMatcher } from './read-access.ts';
-import type { PreToolHookVerdict, ToolHooks } from './hooks/events.ts';
+import type { PostToolHookResult, PreToolHookVerdict, ToolHooks } from './hooks/events.ts';
 import { RetiringYield } from './ports.ts';
-import type { AutoClassifier, BackgroundJobs, BlobPort, IdempotencyPort, LeaseFence, LeasedIdempotencyPort, LeasedOutcome, ToolIdempotencyLookup, ToolIdempotencyRecord } from './ports.ts';
+import type { ShellHost } from './builtins/shell.ts';
+import type { AutoClassifier, BackgroundJobs, BlobPort, IdempotencyPort, ToolTimers, LeaseFence, LeasedIdempotencyPort, LeasedOutcome, ToolIdempotencyLookup, ToolIdempotencyRecord } from './ports.ts';
 import type { ToolSet } from './registry.ts';
 import { callStopOf } from './call-stop.ts';
 import type { CallStop } from './call-stop.ts';
@@ -32,8 +32,8 @@ import type { WorkTreeMark, WorkTreeObserver } from './work-tree-observer.ts';
 import { blockedByHeldText, blockerOf, footprintOf } from './footprint.ts';
 import type { Footprint, HeldFootprint } from './footprint.ts';
 import { startsProcesses, ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
-import type { AnyTool, CallOutputFit, DisplayContext, GateFacts, OutputFit, SpawnMarker, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
-import { cleanFailureMessage } from '@momonga/foundation';
+import type { AnyTool, CallOutputFit, DisplayContext, GateFacts, OutputFit, ProbeContext, SpawnMarker, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
+import { cleanFailureMessage, groupPortOf } from '@momonga/foundation';
 import { toolRefusalKey, unavailable, validateToolInput } from './validate.ts';
 import type { ValidationResult } from './validate.ts';
 
@@ -158,6 +158,9 @@ export type ToolExecutorOptions = {
   idempotency: IdempotencyPort;
   blobs: BlobPort;
   clock: Clock;
+  shellHost: ShellHost;
+  random: Random;
+  files: FileSystem;
   outboundNetwork: OutboundNetwork;
   idempotencyTtlMs?: number;
   readOnlyRetry?: { attempts: number; baseMs: number; maxMs: number };
@@ -308,12 +311,12 @@ const launcherGuardKeys = async (literals: readonly string[], paths: PathResolve
   return new Set(await mapAsync(forms.flatMap((literal) => [literal, ...lexicalAncestorsOf(literal)]), (literal) => parentCanonicalKey(literal, paths)));
 };
 
-const isEmptyRegularFile = async (target: string, signal: AbortSignal): Promise<boolean> => {
-  const stat = await settledOrAborted(nodeFileSystem.lstat(target), signal);
+const isEmptyRegularFile = async (files: Pick<FileSystem, 'lstat'>, target: string, signal: AbortSignal): Promise<boolean> => {
+  const stat = await settledOrAborted(files.lstat(target), signal);
   return stat.isFile() && stat.size === 0;
 };
 
-const requireResolvable = async (entry: string, paths: PathResolver, signal: AbortSignal): Promise<void> => {
+const requireResolvable = async (files: Pick<FileSystem, 'lstat'>, entry: string, paths: PathResolver, signal: AbortSignal): Promise<void> => {
   try {
     await paths.canonicalPath(entry);
     return;
@@ -327,7 +330,7 @@ const requireResolvable = async (entry: string, paths: PathResolver, signal: Abo
         if ((inner as NodeJS.ErrnoException).code !== 'ENOTDIR') throw inner;
         continue;
       }
-      if (await isEmptyRegularFile(real, signal)) return;
+      if (await isEmptyRegularFile(files, real, signal)) return;
       throw error;
     }
     throw error;
@@ -338,14 +341,14 @@ type AccessFacts = Pick<ExecutionBatchInput, 'sandboxPolicy' | 'home' | 'tmpDir'
 
 type WriteGuard = (subject: PermissionSubject, cwd: string) => Promise<string | undefined>;
 
-const createWriteGuard = async (batch: AccessFacts, paths: PathResolver): Promise<WriteGuard> => {
+const createWriteGuard = async (files: Pick<FileSystem, 'lstat'>, batch: AccessFacts, paths: PathResolver): Promise<WriteGuard> => {
   for (const root of batch.sandboxPolicy.writableRoots) await paths.canonicalPath(root);
   const layout = momongaLayout(batch.home);
   const homeGuards = new Set([layout.root, layout.keychains]);
   const approvalGated = new Set(batch.sandboxPolicy.protectedSet.paths);
   const entries = batch.sandboxPolicy.writeDenied.filter((entry) => homeGuards.has(entry) || !approvalGated.has(entry));
   const guards = await mapAsync(entries, async (entry) => {
-    await requireResolvable(entry, paths, batch.signal);
+    await requireResolvable(files, entry, paths, batch.signal);
     return (await paths.locateThroughFiles(entry)).parts;
   });
   const launcherKeys = await launcherGuardKeys(batch.sandboxPolicy.writeDeniedLiterals, paths);
@@ -375,11 +378,11 @@ type BatchAccess = ReadAccessMatcher & {
   isWritable: (absolute: string) => Promise<boolean>;
 };
 
-const accessOf = async (facts: AccessFacts): Promise<BatchAccess> => {
+const accessOf = async (files: Pick<FileSystem, 'lstat'>, facts: AccessFacts): Promise<BatchAccess> => {
   const paths = hostPaths(facts.signal);
   const { writableRoots } = facts.sandboxPolicy;
   const isWritable = writableCheckOf(writableAreaOf({ writableRoots, entries: facts.sandboxPolicy.fileRules.entries }), paths);
-  return { ...(await createReadAccessMatcher(facts.sandboxPolicy, paths)), writeDeniedPath: await createWriteGuard(facts, paths), isWritable };
+  return { ...(await createReadAccessMatcher(facts.sandboxPolicy, paths)), writeDeniedPath: await createWriteGuard(files, facts, paths), isWritable };
 };
 
 const unlessCancelled = async <T, C>(signal: AbortSignal, action: () => Promise<T>, cancelled: C): Promise<T | C> => {
@@ -410,10 +413,10 @@ const subjectContextOf = (batch: BatchCore, signal: AbortSignal = batch.signal):
 
 const displayContextOf = (batch: BatchCore): DisplayContext => ({ cwd: batch.session.cwd, workingDirectory: batch.session.workingDirectory, paths: hostPaths(batch.signal) });
 
-const subjectOfTool = async (tool: AnyTool, input: unknown, batch: BatchCore): Promise<{ subject: PermissionSubject; facts?: GateFacts }> => {
+const subjectOfTool = async (tool: AnyTool, input: unknown, batch: BatchCore, probe: () => ProbeContext): Promise<{ subject: PermissionSubject; facts?: GateFacts }> => {
   const context = subjectContextOf(batch);
   if (tool.gateFacts === undefined) return { subject: tool.subject(input, context) };
-  const facts = await tool.gateFacts(input, context, { signal: batch.signal, env: batch.env });
+  const facts = await tool.gateFacts(input, context, { signal: batch.signal, env: batch.env, context: probe() });
   return { subject: tool.subject(input, context, facts), facts };
 };
 
@@ -508,23 +511,23 @@ const createLimiter = (limit: number): { acquire(): Promise<() => void> } => {
   };
 };
 
-const pause = (ms: number, signal: AbortSignal): Promise<void> =>
+const pause = (timers: ToolTimers, ms: number, signal: AbortSignal): Promise<void> =>
   new Promise<void>((resolve) => {
     if (ms <= 0 || signal.aborted) {
       resolve();
       return;
     }
     const finish = (): void => {
-      clearTimeout(handle);
+      timers.clearTimeout(handle);
       signal.removeEventListener('abort', finish);
       resolve();
     };
-    const handle = setTimeout(finish, ms);
+    const handle = timers.setTimeout(finish, ms);
     signal.addEventListener('abort', finish, { once: true });
   });
 
-const settleWithin = async (pending: Promise<unknown>, ms: number): Promise<void> => {
-  const timer = cancellableTimer(ms);
+const settleWithin = async (timers: ToolTimers, pending: Promise<unknown>, ms: number): Promise<void> => {
+  const timer = cancellableTimer(timers, ms);
   try {
     await Promise.race([pending, timer.done]);
   } finally {
@@ -532,8 +535,13 @@ const settleWithin = async (pending: Promise<unknown>, ms: number): Promise<void
   }
 };
 
+type StoredGroup = Pick<ToolIdempotencyRecord, 'pgid' | 'groupName'>;
+
+const NO_SANDBOX_REASON = 'no sandbox is available: file deny rules are checked on the command text only, so command execution requires approval';
+
 export const createToolExecutor = (options: ToolExecutorOptions): InspectableToolExecutor => {
   const { idempotency, blobs, clock } = options;
+  const timers: ToolTimers = options.shellHost.child;
   const ttlMs = options.idempotencyTtlMs ?? DEFAULT_IDEMPOTENCY_TTL_MS;
   const retry = options.readOnlyRetry ?? DEFAULT_READ_ONLY_RETRY;
   const maxParallel = options.maxParallel ?? DEFAULT_MAX_PARALLEL;
@@ -554,6 +562,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     }
   };
   const activeKeys = new Map<string, number>();
+  const reapGroup = groupPortOf(options.reap?.groupPort, options.reap?.kill);
   const owners = options.owners ?? createMarkerOwners();
   const guard = createMarkerGuard({
     markerDir: options.processMarkerDir,
@@ -563,7 +572,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     killGraceMs: options.reap?.killGraceMs ?? ABANDON_KILL_GRACE_MS,
     timing: reapTiming,
     ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
-    ...(options.reap?.groupPort === undefined ? {} : { groupPort: options.reap.groupPort }),
+    groupPort: reapGroup,
     ...(options.reap?.inspector === undefined ? {} : { inspector: options.reap.inspector }),
     ...(options.reap?.uninspectable === undefined ? {} : { uninspectable: options.reap.uninspectable }),
   });
@@ -690,6 +699,19 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
 
   const globBudget = globBudgetMs({ leaseMs: options.leaseMs, heartbeatMs: options.heartbeatMs });
 
+  const probeContextOf = (batch: ExecutionBatchInput, key: string): ProbeContext => ({
+    idemKey: key,
+    clock,
+    deadlineAt: batch.deadlineAt,
+    signal: batch.signal,
+    roots: rootsOf(batch),
+    random: options.random,
+    files: options.files,
+    sandbox: batch.sandbox,
+    sandboxPolicy: batch.sandboxPolicy,
+    ...(batch.tmpDir === undefined ? {} : { tmpDir: batch.tmpDir }),
+  });
+
   const evaluatePolicy = async (
     call: Pick<ToolCall, 'callId'>,
     tool: PolicyTool,
@@ -739,10 +761,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...(batch.sandboxNetwork === undefined ? {} : { sandboxNetwork: batch.sandboxNetwork }),
       ...(batch.mandate === undefined ? {} : { mandate: true as const, supersededForms: batch.mandate.supersededForms, coveredPrograms: batch.mandate.coveredPrograms }),
     });
-    if (decision.kind === 'deny') {
-      const source = decision.network === true ? 'sandbox' : decision.outside === true ? 'mandate' : decision.source === 'mode' ? 'mode' : 'rule';
-      return { outcome: deniedOutcome(call.callId, { source, reason: decision.reason }) };
-    }
+    if (decision.kind === 'deny') return { outcome: deniedOutcome(call.callId, { source: decision.denial, reason: decision.reason }) };
     return { decision };
   };
 
@@ -778,7 +797,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         let subject: PermissionSubject;
         let facts: GateFacts | undefined;
         try {
-          ({ subject, facts } = await subjectOfTool(tool, validation.value, batch));
+          ({ subject, facts } = await subjectOfTool(tool, validation.value, batch, () => probeContextOf(batch, key)));
         } catch (error) {
           return failedOutcome(call.callId, describeThrown(tool.name, error));
         }
@@ -804,9 +823,15 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const { subject, input } = target;
     const unenforceable = unenforceableNetwork(subject, batch.sandbox);
     if (unenforceable !== undefined) return deniedOutcome(call.callId, { source: 'sandbox', reason: unenforceable });
-    const unsandboxedExec = decision.kind === 'allow' && tool.sideEffect === 'exec' && batch.sandbox.kind === 'none';
+    const unsandboxedExec = tool.sideEffect === 'exec' && batch.sandbox.kind === 'none';
+    if (unsandboxedExec) {
+      decision =
+        decision.kind === 'ask'
+          ? { ...decision, humanOnly: true, reason: `${decision.reason}; ${NO_SANDBOX_REASON}` }
+          : { kind: 'ask', source: 'mode', humanOnly: true, reason: NO_SANDBOX_REASON };
+    }
     const { approval } = call;
-    if ((decision.kind === 'ask' || unsandboxedExec)) {
+    if (decision.kind === 'ask') {
       let subjectDigest: string;
       try {
         const asked = askedBy(options.fs, batch.signal);
@@ -815,17 +840,21 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return failedOutcome(call.callId, `Permission check failed: ${error instanceof Error ? error.message : String(error)}`);
       }
       if (approval?.subjectDigest !== subjectDigest) {
-        const effective: Decision = unsandboxedExec
-          ? { kind: 'ask', source: 'mode', reason: 'no sandbox is available: file deny rules are checked on the command text only, so command execution requires approval' }
-          : decision;
-        if (batch.mode === 'auto' && effective.source === 'mode' && effective.humanOnly !== true) {
+        if (stage === 'enforce' && tool.precondition !== undefined) {
+          try {
+            await tool.precondition(input, { ...subjectContextOf(batch), files: options.files, session: batch.session, signal: batch.signal });
+          } catch (error) {
+            return failedOutcome(call.callId, describeThrown(tool.name, error));
+          }
+        }
+        if (batch.mode === 'auto' && decision.source === 'mode' && decision.humanOnly !== true) {
           if (batch.classifier === undefined) throw new Error('auto mode needs a classifier');
           const classified = await batch.classifier.classify({
             callId: call.callId,
             toolName: tool.name,
             title: await tool.title(input, displayContextOf(batch)),
             input,
-            reason: effective.reason,
+            reason: decision.reason,
             subjectDigest,
           });
           if (classified === 'allow') {
@@ -842,7 +871,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return {
           callId: call.callId,
           kind: 'needs_approval',
-          decision: effective,
+          decision,
           subjectDigest,
           ...(suggestedRule === undefined ? {} : { suggestedRule }),
           title: await tool.title(input, displayContextOf(batch)),
@@ -917,14 +946,15 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     let subject: PermissionSubject;
     let facts: GateFacts | undefined;
     try {
-      ({ subject, facts } = await subjectOfTool(tool, input, batch));
+      ({ subject, facts } = await subjectOfTool(tool, input, batch, () => probeContextOf(batch, key)));
     } catch (error) {
       return outcome(failedOutcome(call.callId, describeThrown(tool.name, error)));
     }
     const target: GateTarget = { input, subject, ...(facts === undefined ? {} : { facts }) };
-    const blocker = blockerOf(footprintOf(subject, cwd), held.filter((entry) => entry.callId !== call.callId));
+    const footprint = footprintOf(subject, cwd);
+    const blocker = blockerOf(footprint, held.filter((entry) => entry.callId !== call.callId));
     if (blocker !== undefined) {
-      const reason = blockedByHeldText(blocker.callId);
+      const reason = blockedByHeldText(blocker.callId, footprint);
       return outcome({ callId: call.callId, kind: 'result', result: { status: 'failed', output: reason, denial: { source: 'held', reason } } });
     }
 
@@ -990,8 +1020,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     let markerOwned = false;
     let processAttached = false;
     let noteAfterOutput: string | undefined;
-    let fixedTimer: NodeJS.Timeout | undefined;
-    let idleTimer: NodeJS.Timeout | undefined;
+    let fixedTimer: unknown;
+    let idleTimer: unknown;
     let bounds: { startedAt: number; totalMs: number; idleMs: number | undefined } | undefined;
     let fired: CallStop['bound'] = 'total';
     const expire = (bound: CallStop['bound']): void => {
@@ -1001,10 +1031,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     };
     const armIdle = (): void => {
       if (bounds === undefined || abortReason !== undefined) return;
-      clearTimeout(idleTimer);
+      timers.clearTimeout(idleTimer);
       const now = clock.now();
       const stop = callStopOf({ startedAt: bounds.startedAt, lastProgressAt: now, idleMs: bounds.idleMs, totalMs: bounds.totalMs, deadlineAt });
-      if (stop.bound === 'idle') idleTimer = setTimeout(() => expire('idle'), Math.max(0, stop.at - now));
+      if (stop.bound === 'idle') idleTimer = timers.setTimeout(() => expire('idle'), Math.max(0, stop.at - now));
     };
     let heldLock: CallLock | undefined;
     let effect: Promise<unknown> | undefined;
@@ -1031,7 +1061,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         onWarning: options.onWarning,
         ...(options.reap?.killGraceMs === undefined ? {} : { killGraceMs: options.reap.killGraceMs }),
         ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
-        ...(options.reap?.groupPort === undefined ? {} : { groupPort: options.reap.groupPort }),
+        groupPort: reapGroup,
         timing: reapTiming,
       });
       owners.remember(name, handle.mode);
@@ -1059,13 +1089,17 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       deadlineAt,
       blobs: scopedBlobs(batch.runId),
       clock,
+      shellHost: options.shellHost,
+      random: options.random,
+      files: options.files,
       ...(options.jobs === undefined ? {} : { jobs: options.jobs }),
       session: batch.session,
       attachProcess: (processInfo) => {
         processAttached = true;
-        if (!leaseLost() && !contextClosed) holding(ledger.attachProcess(key, processInfo));
+        const groupName = reapGroup.names?.nameOf(processInfo.pgid);
+        if (!leaseLost() && !contextClosed) holding(ledger.attachProcess(key, groupName === undefined ? processInfo : { ...processInfo, groupName }));
         if (callMarker === undefined) return Promise.resolve();
-        const recorded = recordMarkerGroup(attachingMarker, processInfo.pgid);
+        const recorded = recordMarkerGroup(attachingMarker, processInfo.pgid, { names: reapGroup.names });
         groupRecords.push(
           recorded.then(
             () => undefined,
@@ -1090,7 +1124,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         bounds = { startedAt: now, totalMs, idleMs };
         armIdle();
         const fixed = callStopOf({ startedAt: now, lastProgressAt: now, idleMs: undefined, totalMs, deadlineAt });
-        fixedTimer = setTimeout(() => expire(fixed.bound), Math.max(0, fixed.at - now));
+        fixedTimer = timers.setTimeout(() => expire(fixed.bound), Math.max(0, fixed.at - now));
       },
       stop: () => {
         const startedAt = bounds?.startedAt ?? clock.now();
@@ -1100,8 +1134,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       reportProgress: armIdle,
       disarmTimer: () => {
         bounds = undefined;
-        clearTimeout(idleTimer);
-        clearTimeout(fixedTimer);
+        timers.clearTimeout(idleTimer);
+        timers.clearTimeout(fixedTimer);
       },
       closeContext: () => {
         contextClosed = true;
@@ -1186,8 +1220,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return { callId, kind: 'waiting', awaits: pending.awaits, ...(pending.wakeAt === undefined ? {} : { wakeAt: pending.wakeAt }) };
       },
       release: () => {
-        clearTimeout(idleTimer);
-        clearTimeout(fixedTimer);
+        timers.clearTimeout(idleTimer);
+        timers.clearTimeout(fixedTimer);
         const lock = heldLock;
         heldLock = undefined;
         if (lock !== undefined) {
@@ -1205,17 +1239,19 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     };
   };
 
-  const reapEarlierMarker = async (marker: string, key: string, pgid: number | undefined, signal: AbortSignal): Promise<boolean> => {
+  const reapEarlierMarker = async (marker: string, key: string, stored: StoredGroup, signal: AbortSignal): Promise<boolean> => {
     let reaped: ReapReport;
     try {
+      if (stored.pgid !== undefined && stored.groupName !== undefined) reapGroup.names?.recall(stored.pgid, stored.groupName);
       reaped = await reapMarkedProcessesWithReport({
         marker,
-        pgid,
+        pgid: stored.pgid,
         killGraceMs: options.reap?.killGraceMs ?? ABANDON_KILL_GRACE_MS,
         label: 'tool',
         onWarning: options.onWarning,
         timing: reapTiming,
         signal,
+        groupPort: reapGroup,
         ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
         ...(options.reap?.inspector === undefined ? {} : { inspector: options.reap.inspector }),
         ...(options.reap?.uninspectable === undefined ? {} : { uninspectable: options.reap.uninspectable }),
@@ -1239,12 +1275,12 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     return reaped.stopped;
   };
 
-  const reapEarlierAttempt = async (key: string, pgid: number | undefined, signal: AbortSignal): Promise<NonNullable<ReconcileContext['earlierAttempt']>> => {
-    let stopped = await reapEarlierMarker(path.join(options.processMarkerDir, key), key, pgid, signal);
+  const reapEarlierAttempt = async (key: string, stored: StoredGroup, signal: AbortSignal): Promise<NonNullable<ReconcileContext['earlierAttempt']>> => {
+    let stopped = await reapEarlierMarker(path.join(options.processMarkerDir, key), key, stored, signal);
     if (options.earlierMarkerDirs !== undefined) {
       for (const directory of await options.earlierMarkerDirs()) {
         if (directory === options.processMarkerDir) continue;
-        stopped = (await reapEarlierMarker(path.join(directory, key), key, pgid, signal)) || stopped;
+        stopped = (await reapEarlierMarker(path.join(directory, key), key, stored, signal)) || stopped;
       }
     }
     return { stopped };
@@ -1255,7 +1291,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   const reconcileAsHolder = async (scope: CallScope, callId: string, tool: AnyTool, input: unknown, record: ToolIdempotencyRecord): Promise<Resumed> => {
     if ((await scope.holdCall()) === 'aborted') return { kind: 'outcome', outcome: failedOutcome(callId, `${tool.name} was cancelled`) };
     if (!scope.holding(scope.ledger.authorise(record.key, 'reconcile'))) return { kind: 'outcome', outcome: scope.deferred };
-    const earlierAttempt = await reapEarlierAttempt(record.key, record.pgid, scope.controller.signal);
+    const earlierAttempt = await reapEarlierAttempt(record.key, record, scope.controller.signal);
     try {
       const ctx: ReconcileContext = { ...scope.reconcileCtx, earlierAttempt };
       return { kind: 'reconciled', result: await reconcileWithin(tool, input, record, ctx, () => scope.abortWith('timeout'), scope.closeContext) };
@@ -1292,7 +1328,12 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
 
   const applyPostToolHooks = async (batch: ExecutionBatchInput, call: ToolCall, tool: AnyTool, input: unknown, result: ToolResult): Promise<ToolResult> => {
     if (batch.hooks === undefined || result.status !== 'completed') return result;
-    const hooked = await batch.hooks.postToolUse({ callId: call.callId, toolName: tool.name, input, output: result.output });
+    let hooked: PostToolHookResult | undefined;
+    try {
+      hooked = await batch.hooks.postToolUse({ callId: call.callId, toolName: tool.name, input, output: result.output });
+    } catch (error) {
+      hooked = { feedback: `the PostToolUse hooks failed (${error instanceof Error ? error.message : String(error)}), so what they check was not checked` };
+    }
     if (hooked === undefined) return result;
     if (hooked.halt !== undefined) haltBatch(batch, hooked.halt.reason, 'PostToolUse');
     return hooked.feedback === undefined ? result : { ...result, output: `${result.output}\n\n[PostToolUse hook]\n${hooked.feedback}` };
@@ -1325,7 +1366,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const sharedAtEnd = batch.windowShared?.() === true;
     if (closed === undefined) return {};
     state.closed = { mark: closed.mark, ran: state.ran };
-    return { files: await observedToolFiles(closed.files, batch.signal), ...(window.sharedAtStart || sharedAtEnd ? { windowShared: true as const } : {}) };
+    return { files: await observedToolFiles(options.files, closed.files, batch.signal), ...(window.sharedAtStart || sharedAtEnd ? { windowShared: true as const } : {}) };
   };
 
   const performExecution = async (batch: ExecutionBatchInput, plan: ExecutionPlan): Promise<CallOutcome> => {
@@ -1440,7 +1481,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
                 !scope.controller.signal.aborted &&
                 batch.deadlineAt - clock.now() > 0;
               if (!retryable) return { status: 'failed', output: describeThrown(tool.name, error) };
-              await pause(computeBackoff({ attempt, baseMs: retry.baseMs, maxMs: retry.maxMs, random: { float: () => Math.random() } }), scope.controller.signal);
+              await pause(timers, computeBackoff({ attempt, baseMs: retry.baseMs, maxMs: retry.maxMs, random: options.random }), scope.controller.signal);
               if (scope.controller.signal.aborted) return { status: 'failed', output: describeThrown(tool.name, error) };
             }
           }
@@ -1471,7 +1512,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           const { detached, ...reported } = hooked;
           return scope.complete(await finalizeResult({ ...reported, ...(detached === true ? {} : facts.command === undefined ? {} : { command: facts.command }), ...effects }, tool, fitOfCall(batch.outputFit, call), batch.runId, batch.formatOutput), reconciled);
         }
-        await settleWithin(running, ABORT_SETTLE_LIMIT_MS);
+        await settleWithin(timers, running, ABORT_SETTLE_LIMIT_MS);
         return settleInterrupted(scope, tool, target.input, key, scope.abortReason() === 'timeout' ? 'timeout' : 'cancelled', {
           fit: fitOfCall(batch.reconcileFit, call),
           runId: batch.runId,
@@ -1530,7 +1571,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   ): Promise<ReconcileResult> => {
     const running = reconcileInterrupted(tool, input, record, ctx);
     const finished = running.then((value) => ({ value }));
-    const cap = cancellableTimer(reconcileCapMs);
+    const cap = cancellableTimer(timers, reconcileCapMs);
     let first: { value: ReconcileResult } | void;
     try {
       first = await Promise.race([finished, cap.done]);
@@ -1539,7 +1580,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     }
     if (first !== undefined) return first.value;
     abortTool();
-    const grace = cancellableTimer(reconcileGraceMs);
+    const grace = cancellableTimer(timers, reconcileGraceMs);
     try {
       await Promise.race([finished, grace.done]);
     } finally {
@@ -1601,7 +1642,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     if (given.sandboxPolicy.fileRules.fingerprint !== expected) {
       throw new SandboxPolicyError('file_rules_stale', 'the sandbox policy was built from different permission rules, roots or session tmp dir than this batch');
     }
-    return { batch: given, access: await unlessCancelled(given.signal, () => accessOf(given), undefined) };
+    return { batch: given, access: await unlessCancelled(given.signal, () => accessOf(options.files, given), undefined) };
   };
 
   const userRefusal: UserPolicy['userRefusal'] = async (subject, facts) => {
@@ -1609,7 +1650,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       { callId: USER_CALL_ID },
       USER_TOOLS[subject.tool],
       subject.tool === 'Read' ? { kind: 'path', tool: subject.tool, paths: [subject.path], access: 'read' } : { kind: 'command', tool: subject.tool, command: subject.command },
-      await accessOf(facts),
+      await accessOf(options.files, facts),
       { ...facts, mode: USER_MODE },
     );
     if ('outcome' in verdict) return verdict.outcome.result.denial?.reason ?? verdict.outcome.result.output;
@@ -1749,11 +1790,11 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     });
   };
 
-  const stopEarlierAttempt = async (key: string, pgid: number | undefined, signal: AbortSignal): Promise<void> => {
+  const stopEarlierAttempt = async (key: string, stored: StoredGroup, signal: AbortSignal): Promise<void> => {
     const lock = await callLocks.acquire(key, signal);
     if (lock === 'aborted') throw signal.reason;
     try {
-      await reapEarlierAttempt(key, pgid, signal);
+      await reapEarlierAttempt(key, stored, signal);
     } finally {
       releaseCallLock(lock);
     }
@@ -1762,7 +1803,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   const abandonTarget = async (target: AbandonTarget, signal: AbortSignal): Promise<AbandonOutcome> => {
     const lookup = idempotency.get(target.idemKey);
     try {
-      if (lookup?.s === 'PENDING') await stopEarlierAttempt(target.idemKey, lookup.rec.pgid, signal);
+      if (lookup?.s === 'PENDING') await stopEarlierAttempt(target.idemKey, lookup.rec, signal);
     } finally {
       idempotency.markUnknownIfPending(target.idemKey);
     }

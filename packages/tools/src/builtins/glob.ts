@@ -1,7 +1,7 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import picomatch from 'picomatch';
 import { mapAsync } from '@momonga/foundation';
+import type { FileSystem } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import { statIfExists } from './files.ts';
 import { canonicalPathOf, resolvedPathOf, shownPath } from './paths.ts';
@@ -12,8 +12,8 @@ type GlobInput = { pattern: string; path?: string };
 export const MAX_GLOB_RESULTS = 100;
 const TRUNCATION_NOTICE = '(Results are truncated. Consider a more specific path or pattern.)';
 
-export const sortByMtimeThenPath = async (files: readonly string[]): Promise<string[]> => {
-  const stamped = await Promise.all(files.map(async (file) => ({ file, mtimeMs: (await fs.promises.stat(file)).mtimeMs })));
+export const sortByMtimeThenPath = async (host: Pick<FileSystem, 'stat'>, files: readonly string[]): Promise<string[]> => {
+  const stamped = await Promise.all(files.map(async (file) => ({ file, mtimeMs: (await host.stat(file)).mtimeMs })));
   return stamped.sort((left, right) => right.mtimeMs - left.mtimeMs || (left.file < right.file ? -1 : left.file > right.file ? 1 : 0)).map((entry) => entry.file);
 };
 
@@ -49,12 +49,13 @@ export const globTool = defineTool<GlobInput>({
   execute: async (input, ctx) => {
     const root = await canonicalPathOf(ctx, 'path', input.path ?? '.');
     const shown = await shownPath(ctx, resolvedPathOf(ctx, input.path ?? '.'));
-    const stat = await statIfExists(root);
+    const stat = await statIfExists(ctx.files, root);
     if (stat === undefined) throw new ToolExecutionError(`Directory does not exist: ${shown}`);
     if (!stat.isDirectory()) throw new ToolExecutionError(`${shown} is not a directory`);
     const isMatch = picomatch(input.pattern, { dot: true });
     const matches: string[] = [];
     for await (const entry of walkFiles({
+      files: ctx.files,
       root,
       readDenied: ctx.sandboxPolicy.readDenied,
       readAllowed: ctx.sandboxPolicy.readAllowed,
@@ -68,7 +69,7 @@ export const globTool = defineTool<GlobInput>({
       if (isMatch(entry.relative)) matches.push(path.join(root, entry.relative));
     }
     if (matches.length === 0) return { status: 'completed', output: 'No files found' };
-    const sorted = await sortByMtimeThenPath(matches);
+    const sorted = await sortByMtimeThenPath(ctx.files, matches);
     const listed = await mapAsync(sorted.slice(0, MAX_GLOB_RESULTS), (file) => shownPath(ctx, file));
     return { status: 'completed', output: [...listed, ...(sorted.length > MAX_GLOB_RESULTS ? [TRUNCATION_NOTICE] : [])].join('\n') };
   },

@@ -1,6 +1,6 @@
 import type fs from 'node:fs';
 import path from 'node:path';
-import { brotliCompressSync } from 'node:zlib';
+import { brotliCompressSync, brotliDecompressSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { sha256Hex } from '@momonga/foundation';
 import type { ClaimOutcome, KernelLockMechanism } from '@momonga/foundation';
@@ -130,6 +130,7 @@ const portsOf = (fixture: Fixture, overrides: Partial<RipgrepDistributionPorts> 
       if (bytes === undefined) throw new Error(`no embedded asset ${name}`);
       return bytes;
     },
+    decompress: async (compressed) => new Uint8Array(brotliDecompressSync(compressed)),
     executablesRoot: AREA,
     random: () => {
       counter += 1;

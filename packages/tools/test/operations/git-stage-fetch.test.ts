@@ -74,6 +74,21 @@ describe('GitStage', () => {
     expect(runner.calls.some((argv) => argv.includes('add'))).toBe(false);
   });
 
+  it.each([
+    ['a path that names nothing', 'absent.txt'],
+    ['a tracked file with no change', 'b.txt'],
+  ])('fails, and runs no git add, for %s', async (_case, target) => {
+    const world = baseWorld();
+    world.write('a.txt', 'two\n');
+    const runner = countingRunner();
+    const parts = partsOf(operationTool('GitStage', { runArgv: runner.run }), { paths: [target] }, contextFor(world.work, world.env));
+    const result = await parts.execute(await parts.prepare());
+    expect(result).toMatchObject({ status: 'failed', effect: { outcome: 'failed' } });
+    expect(result.output).toContain('the given paths matched no change to stage');
+    expect(runner.calls.some((argv) => argv.includes('add'))).toBe(false);
+    expect(staged(world)).toEqual([]);
+  });
+
   it('after a kill inside the effect finds the staging applied and does not stage again (crash c2)', async () => {
     const world = baseWorld();
     world.write('a.txt', 'two\n');
@@ -143,7 +158,7 @@ describe('GitFetch', () => {
     world.git(world.work, 'remote', 'set-url', '--push', 'origin', path.join(world.base, 'elsewhere.git'));
     const tool = operationTool('GitFetch', { runArgv: countingRunner().run });
     const ctx = contextFor(world.work, world.env);
-    const facts = await tool.gateFacts?.({ remote: 'origin', branch: 'main' }, ctx, { signal: ctx.signal, env: ctx.env });
+    const facts = await tool.gateFacts?.({ remote: 'origin', branch: 'main' }, ctx, { signal: ctx.signal, env: ctx.env, context: ctx });
     const subject = tool.subject({ remote: 'origin', branch: 'main' }, { paths: testPaths(), cwd: world.work, workingDirectory: world.work, home: world.home, roots: [world.work] }, facts);
     expect(subject).toMatchObject({ kind: 'repo', operation: 'GitFetch', remote: 'origin', refs: ['main'], destinations: [world.bare], destinationsMatchFetch: true });
   });

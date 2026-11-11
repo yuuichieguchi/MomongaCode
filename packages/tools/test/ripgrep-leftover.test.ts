@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { brotliCompressSync } from 'node:zlib';
+import { brotliCompressSync, brotliDecompressSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createKernelLockMechanism, hostKernelLock, nodeFileSystem, sha256Hex } from '@momonga/foundation';
 import type { HeldKernelLock, KernelLockMechanism } from '@momonga/foundation';
@@ -51,6 +51,7 @@ const portsOf = (root: string, lock: KernelLockMechanism = hostKernelLock()): Ri
       if (bytes === undefined) throw new Error(`no embedded asset ${name}`);
       return bytes;
     },
+    decompress: async (compressed) => new Uint8Array(brotliDecompressSync(compressed)),
     executablesRoot: root,
     random: () => {
       counter += 1;

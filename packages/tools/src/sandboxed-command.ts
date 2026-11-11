@@ -47,7 +47,7 @@ export const runSandboxedCommand = async (request: SandboxedCommandRequest): Pro
   const controller = new AbortController();
   const onCancel = (): void => controller.abort();
   signal.addEventListener('abort', onCancel, { once: true });
-  const timer = cancellableTimer(timeoutMs);
+  const timer = cancellableTimer(shellHost.child, timeoutMs);
   let timedOut = false;
   void timer.done.then(() => {
     timedOut = true;
@@ -67,7 +67,7 @@ export const runSandboxedCommand = async (request: SandboxedCommandRequest): Pro
     try {
       child = await sandbox.spawn(
         {
-          argv: 'argv' in request ? [...request.argv] : [resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env }), '-c', request.command],
+          argv: 'argv' in request ? [...request.argv] : [await resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env }), '-c', request.command],
           cwd,
           env: { ...env },
           ...(stdin === undefined ? {} : { stdin }),
@@ -83,7 +83,7 @@ export const runSandboxedCommand = async (request: SandboxedCommandRequest): Pro
     }
     spawned = true;
     const captures = [createCapture(), createCapture()] as const;
-    const pump = pumpOutput([child.stdout, child.stderr], (index, chunk) => captures[index === 0 ? 0 : 1].push(chunk));
+    const pump = pumpOutput([child.stdout, child.stderr], (index, chunk) => captures[index === 0 ? 0 : 1].push(chunk), shellHost.child);
     let exit: SandboxExit;
     let groupNotice: string | undefined;
     try {

@@ -67,6 +67,6 @@ describe('the wait for a held call lock', () => {
 
   it('receives the heartbeat of the configured lease in the runtime process', () => {
     expect(sourceOf('runtime/src/process/tool-runtime.ts')).toMatch(/createToolExecutor\(\{[^}]*heartbeatMs/s);
-    expect(sourceOf('runtime/src/process/start-runtime-process.ts')).toMatch(/createToolRuntime\(\{[^}]*heartbeatMs/s);
+    expect(sourceOf('runtime/src/process/start-runtime-process.ts')).toMatch(/createToolRuntime\(\{(?:(?!\n {6}\}\);).)*\n {8}heartbeatMs: heartbeatMsFor\(leaseMs\),/s);
   });
 });

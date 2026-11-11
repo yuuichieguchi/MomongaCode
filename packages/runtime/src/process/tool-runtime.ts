@@ -20,6 +20,7 @@ import {
   hostInspectorPorts,
   ruleEnforcementOf,
   sha256Hex,
+  systemRandom,
 } from '@momonga/foundation';
 import type { Clock, CredentialSecretStore, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, OutboundNetwork, ProcessInspector, Timing, RolePort, RuleEnforcement, SecretStore, SessionScratch } from '@momonga/foundation';
 import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/mcp';
@@ -146,6 +147,9 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     idempotency: store.idempotency,
     blobs: store.blobs,
     clock,
+    shellHost: options.shellHost,
+    random: systemRandom,
+    files: nodeFileSystem,
     processMarkerDir: paths.markers.tools,
     earlierMarkerDirs: async () =>
       (await nodeFileSystem.readdir(options.sharedPaths.markers.root))
@@ -250,7 +254,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
 
       const registry = createToolRegistry();
       for (const tool of createBuiltinTools()) registry.register(tool);
-      for (const tool of operationTools(snapshot)) registry.register(tool);
+      if (trust === 'trusted') for (const tool of operationTools(snapshot)) registry.register(tool);
       for (const tool of additionalTools ?? []) registry.register(tool);
       for (const source of sources) registry.addSource(source);
       const set = await registry.snapshot({ signal, ...(only === undefined ? {} : { only }) });

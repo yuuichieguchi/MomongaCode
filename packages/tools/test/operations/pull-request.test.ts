@@ -227,7 +227,8 @@ describe.each(['hub', 'lab'] as const)('pull request operations against the %s f
     it('reads the state and head of a pull request without changing anything', async () => {
       const { forge, world, tool } = await setup(shape);
       forge.pulls.push({ number: 1, head: 'feature/x', base: 'main', headSha: HEAD_SHA, title: 't', state: 'open', merged: false });
-      const read = await tool('PullRequestStatus').execute({ number: 1 }, contextFor(world.work, world.env), undefined);
+      const parts = partsOf(tool('PullRequestStatus'), { number: 1 }, contextFor(world.work, world.env));
+      const read = await parts.execute(await parts.prepare());
       expect(read).toMatchObject({ status: 'completed' });
       expect((read as { output: string }).output).toContain(HEAD_SHA);
       expect(forge.requests.every((request) => request.method === 'GET')).toBe(true);
