@@ -501,22 +501,29 @@ describe('the HTTP forms the listener carries', () => {
 });
 
 describe('a granted tunnel carries only the name it was granted for', () => {
-  type Recorder = { port: number; received: () => Buffer };
+  type Recorder = { port: number; received: () => Buffer; arrived: Promise<void> };
 
   const recorder = async (): Promise<Recorder> => {
     const chunks: Buffer[] = [];
     const sockets = new Set<net.Socket>();
+    let arrive = (): void => undefined;
+    const arrived = new Promise<void>((resolve) => {
+      arrive = resolve;
+    });
     const server = net.createServer((socket) => {
       sockets.add(socket);
       socket.on('error', () => undefined);
-      socket.on('data', (chunk: Buffer) => chunks.push(chunk));
+      socket.on('data', (chunk: Buffer) => {
+        chunks.push(chunk);
+        arrive();
+      });
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     closers.push(async () => {
       for (const socket of sockets) socket.destroy();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     });
-    return { port: (server.address() as net.AddressInfo).port, received: () => Buffer.concat(chunks) };
+    return { port: (server.address() as net.AddressInfo).port, received: () => Buffer.concat(chunks), arrived };
   };
 
   const closedAfter = (socket: net.Socket, bytes: string | Buffer): Promise<void> =>
@@ -534,11 +541,8 @@ describe('a granted tunnel carries only the name it was granted for', () => {
   };
 
   const firstBytes = async (fixture: Recorder): Promise<Buffer> => {
-    for (;;) {
-      const received = fixture.received();
-      if (received.length > 0) return received;
-      await new Promise((resolve) => setImmediate(resolve));
-    }
+    await fixture.arrived;
+    return fixture.received();
   };
 
   const named = (): Promise<EgressProxy> => proxyFor(['here.test', '127.0.0.1'], resolverOf({ 'here.test': ['127.0.0.1'] }));

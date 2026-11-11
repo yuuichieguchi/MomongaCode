@@ -351,7 +351,7 @@ export type { Expression, FileMatcher, FilePatternContext } from './file-pattern
 export { HOST_FLAVOUR, nativePathOf, patternPathOf, specifierOf } from './path-flavour.ts';
 export type { PathFlavour } from './path-flavour.ts';
 export { DEFAULT_SANDBOX_NETWORK, NETWORK_SCOPE_KINDS, NO_NETWORK, OPEN_NETWORK, SANDBOX_NETWORK_SETTINGS, describeNetworkScope, enforcedNetworkScope, formatHostEntry, hostEntryCovers, hostEntryProblem, HOST_SUFFIX_PREFIX, hostPatternCovers, parseHostPattern, meetNetworkScopes, networkScopeOfRequest, networkScopeWithin, normalizedHosts, parseHostEntry } from './network-scope.ts';
-export type { HostEntry, HostPattern, NetworkRequest, NetworkScope, NetworkScopeKind, SandboxNetworkSetting } from './network-scope.ts';
+export type { HostEntry, NetworkRequest, NetworkScope, NetworkScopeKind, SandboxNetworkSetting } from './network-scope.ts';
 export type { RuleEnforcement } from './file-rules.ts';
 export { EMPTY_FILE_RULES, FileRuleError, HOST_RULE_ENFORCEMENT, ruleEnforcementOf, compileFileRuleSet, inWritableArea, lexicallyWithin, writableAreaOf, writableCheckOf, fileRuleBlocks, fileRuleBlockingForm, fileRuleFingerprint } from './file-rules.ts';
 export type { FileRuleAccess, FileRuleEntry, FileRuleProvenance, FileRuleSet, FileRuleSpec, WritableArea } from './file-rules.ts';
