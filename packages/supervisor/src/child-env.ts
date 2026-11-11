@@ -1,8 +1,8 @@
-import { credentialEnvNames, stripCredentialEnv } from '@momonga/config';
-import type { CredentialRules } from '@momonga/config';
+import { credentialEnvNames, credentialNamesOf, forgeCredentialNamesOf, stripCredentialEnv } from '@momonga/config';
+import type { CredentialNaming, CredentialRules } from '@momonga/config';
 import { MINIMAL_CHILD_ENV_LC_PREFIX, MINIMAL_CHILD_ENV_NAMES, NETWORK_ENV_NAMES, minimalChildEnv, secretStoreEnvFor } from '@momonga/foundation';
 
-export type CredentialSettings = { models: Parameters<typeof credentialEnvNames>[0]; credentials?: CredentialRules };
+export type CredentialSettings = CredentialNaming & { credentials?: CredentialRules };
 
 export type SourceEnv = Readonly<Record<string, string | undefined>>;
 
@@ -42,6 +42,11 @@ export const gatewayEnv = (env: SourceEnv, settings: CredentialSettings, home: s
 
 export const runtimeEnv = (env: SourceEnv, settings: CredentialSettings): { env: Record<string, string>; removed: string[] } => {
   const source = definedEnv(env);
-  const stripped = stripCredentialEnv(source, credentialEnvNames(settings.models), settings.credentials);
-  return { env: { ...stripped.env, ...secretStoreEnvFor(source) }, removed: stripped.removed };
+  const stripped = stripCredentialEnv(source, credentialNamesOf(settings), settings.credentials);
+  const forgeCredentials: Record<string, string> = {};
+  for (const name of forgeCredentialNamesOf(settings)) {
+    const value = source[name];
+    if (value !== undefined && !collidesWithMinimalEnv(name)) forgeCredentials[name] = value;
+  }
+  return { env: { ...stripped.env, ...forgeCredentials, ...secretStoreEnvFor(source) }, removed: stripped.removed.filter((name) => !(name in forgeCredentials)) };
 };

@@ -18,7 +18,6 @@ export type OperationToolsOptions = {
   owners: MarkerOwners;
   inspector: ProcessInspector;
   secretStore?: () => SecretStore;
-  environment?: Readonly<Record<string, string | undefined>>;
   forgeFetch?: ForgeFetch;
   helperSelf?: HelperSelf;
 };
@@ -39,8 +38,16 @@ export const outboundForgeFetch =
     }
   };
 
+export const forgeCredentialReader =
+  (secretStore: () => SecretStore) =>
+  async (reference: ForgeCredentialReference, signal: AbortSignal): Promise<string> => {
+    if ('secret' in reference) return secretStore().read(reference.secret, signal);
+    const value = process.env[reference.env];
+    if (value === undefined || value === '') throw new Error(`the environment variable ${reference.env} named by a forge credential is not set in the runtime`);
+    return value;
+  };
+
 export const createOperationToolSource = (options: OperationToolsOptions): ((snapshot: UserSnapshot) => AnyTool[]) => {
-  const environment = options.environment ?? process.env;
   const secretStore = options.secretStore ?? (() => createGivenSecretStore(createExecWithStdin({ ...minimalChildEnv(process.env), ...givenSecretStoreChildEnv(process.env) }), process.env));
 
   const reconcileSandbox = async (context: ProbeContext): Promise<ReconcileSandbox> => {
@@ -63,12 +70,7 @@ export const createOperationToolSource = (options: OperationToolsOptions): ((sna
     return { sandbox: held.value.sandbox, sandboxPolicy, release: held.release };
   };
 
-  const readCredential = async (reference: ForgeCredentialReference, signal: AbortSignal): Promise<string> => {
-    if ('secret' in reference) return secretStore().read(reference.secret, signal);
-    const value = environment[reference.env];
-    if (value === undefined || value === '') throw new Error(`the environment variable ${reference.env} named by a forge credential is not set in the runtime`);
-    return value;
-  };
+  const readCredential = forgeCredentialReader(secretStore);
 
   const runArgv = createSandboxedArgvRunner({
     reconcileSandbox,

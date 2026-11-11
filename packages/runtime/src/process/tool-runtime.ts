@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
-import { credentialEnvNames, stopValuesOfSettings } from '@momonga/config';
+import { credentialNamesOf, stopValuesOfSettings } from '@momonga/config';
 import {
   canonicalJson,
   createEncryptedCredentialStore,
@@ -65,7 +65,6 @@ export type ToolRuntimeOptions = {
   report(error: unknown): void;
   sandboxes: SandboxBindings;
   forgeSecretStore?: () => SecretStore;
-  forgeEnvironment?: Readonly<Record<string, string | undefined>>;
   forgeFetch?: ForgeFetch;
   helperSelf?: HelperSelf;
   shellHost: ShellHost;
@@ -201,7 +200,6 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     owners,
     inspector,
     ...(options.forgeSecretStore === undefined ? {} : { secretStore: options.forgeSecretStore }),
-    ...(options.forgeEnvironment === undefined ? {} : { environment: options.forgeEnvironment }),
     ...(options.forgeFetch === undefined ? {} : { forgeFetch: options.forgeFetch }),
     ...(options.helperSelf === undefined ? {} : { helperSelf: options.helperSelf }),
   });
@@ -229,7 +227,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
           ...(connectTimeoutMs === undefined ? {} : { connectTimeoutMs }),
         };
         const { credentials } = loaded.settings;
-        const credentialNames = credentialEnvNames(loaded.settings.models);
+        const credentialNames = credentialNamesOf(loaded.settings);
         const key = sha256Hex(canonicalJson({ project: session.cwd, servers, trust: trust ?? 'unset', env: inheritedEnvOf(env), credentials, credentialNames, network: network.identity, ...(Object.keys(callBounds).length === 0 ? {} : { callBounds }) }));
         const acquired = mcpPools.acquire(runId, {
           key,
