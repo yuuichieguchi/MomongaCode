@@ -465,7 +465,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       const bound = timers.setTimeout(() => reapStop.abort(), markerReapClockBoundMs(MARKER_REAP_KILL_GRACE_MS));
       const reapSignal = signal === undefined ? reapStop.signal : AbortSignal.any([signal, reapStop.signal]);
       try {
-        await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: MARKER_REAP_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming, signal: reapSignal });
+        await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: MARKER_REAP_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming, signal: reapSignal, occasion: 'startup' });
       } finally {
         timers.clearTimeout(bound);
       }
