@@ -80,8 +80,9 @@ const LISTED = [{ slug: 'plan-model', display_name: 'Plan Model', visibility: 'l
 describe('O-R5-6 L10: the plan events, their fields and what they never carry', () => {
   it('plan.sign_in carries exactly the fields of a signed-in outcome', async () => {
     const observation = await observed();
-    const [event, ...rest] = named(observation.events, 'plan.sign_in');
+    const [unconfirmed, event, ...rest] = named(observation.events, 'plan.sign_in');
     expect(rest).toEqual([]);
+    expect(unconfirmed?.data).toMatchObject({ outcome: 'identity_unconfirmed', endStep: 9 });
     if (event === undefined) throw new Error('no plan.sign_in event was written');
     expect(presentKeys(event)).toEqual(['account', 'alg', 'audShape', 'claimNames', 'durationMs', 'earliestRefreshAt', 'endStep', 'kid', 'outcome', 'port', 'profile', 'scope']);
     const claims = idTokenClaims(observation.gateway);
