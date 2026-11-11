@@ -48,6 +48,7 @@ export type Entry =
     }
   | { kind: 'plan'; entries: readonly PlanEntry[] }
   | { kind: 'notice'; level: 'info' | 'warning' | 'error'; text: string }
+  | { kind: 'error'; text: string }
   | { kind: 'info'; text: string }
   | { kind: 'retired' };
 

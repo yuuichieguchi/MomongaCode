@@ -18,6 +18,7 @@ export type ViewSource = {
   at(index: number): StoreEntry;
   indexOfId(id: number): number | undefined;
   rowsOf(entry: StoreEntry): readonly Row[];
+  parsed(entry: StoreEntry): boolean;
 };
 
 export type ViewportMove = { kind: 'rows'; rows: number } | { kind: 'top' } | { kind: 'bottom' };
@@ -29,6 +30,7 @@ export const sourceOf = (store: Pick<TranscriptStore, 'count' | 'at' | 'indexOfI
   at: store.at,
   indexOfId: store.indexOfId,
   rowsOf: (entry) => cache.rowsOf(entry, width),
+  parsed: (entry) => cache.parsed(entry, width),
 });
 
 type Cursor = { index: number; row: number };

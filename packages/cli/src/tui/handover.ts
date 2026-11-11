@@ -19,17 +19,17 @@ export type TuiMovePort = { attach(surface: TuiSurface): () => void; check(): vo
 
 export type TuiAdoption = { record: TuiRecord; attached(): void };
 
-export type LocalNote = Extract<Entry, { kind: 'info' | 'notice' }>;
+export type LocalNote = Extract<Entry, { kind: 'info' | 'notice' | 'error' }>;
 
-export const isLocalNote = (entry: Entry): entry is LocalNote => entry.kind === 'info' || entry.kind === 'notice';
+export const isLocalNote = (entry: Entry): entry is LocalNote => entry.kind === 'info' || entry.kind === 'notice' || entry.kind === 'error';
 
 const BEFORE_EVENTS: EventKey = { runId: '', seq: 0 };
 
 const sameEvent = (left: EventKey | null, right: EventKey | null): boolean => (left === null || right === null ? left === right : left.runId === right.runId && left.seq === right.seq);
 
-const noteOf = (anchor: EventKey | null, entry: LocalNote): HandoverNote => ({ anchor, kind: entry.kind, level: entry.kind === 'notice' ? entry.level : 'info', text: entry.text });
+const noteOf = (anchor: EventKey | null, entry: LocalNote): HandoverNote => ({ anchor, kind: entry.kind, level: entry.kind === 'notice' ? entry.level : entry.kind === 'error' ? 'error' : 'info', text: entry.text });
 
-export const entryOfNote = (note: HandoverNote): LocalNote => (note.kind === 'notice' ? { kind: 'notice', level: note.level, text: note.text } : { kind: 'info', text: note.text });
+export const entryOfNote = (note: HandoverNote): LocalNote => (note.kind === 'notice' ? { kind: 'notice', level: note.level, text: note.text } : { kind: note.kind, text: note.text });
 
 export type Origins = {
   at(key: EventKey): void;
