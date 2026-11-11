@@ -148,7 +148,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
   const itemRows = db.prepare(
     `SELECT * FROM events INDEXED BY events_by_run_type WHERE run_id = :runId AND type IN (${WALKED_EVENT_TYPES.map((type) => `'${type}'`).join(', ')}) AND seq >= :from AND seq <= :to ORDER BY seq DESC`,
   );
-  const callName = db.prepare("SELECT tool_name FROM events INDEXED BY events_by_run_type WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId ORDER BY seq LIMIT 1");
+  const callName = db.prepare("SELECT tool_name FROM events INDEXED BY events_by_run_type WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId ORDER BY seq");
   const itemFactsOf = (runId: string): ItemFacts => ({
     providerCallIdOf: (callId) => callId,
     heldToolNameOf: (callId) => {

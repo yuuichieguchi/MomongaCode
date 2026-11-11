@@ -100,7 +100,7 @@ export const createSearchStore = (db: DatabaseSync, context: DecodeContext, read
   );
   const documentById = db.prepare('SELECT * FROM search_docs WHERE id = :id');
   const runDocument = db.prepare("SELECT * FROM search_docs WHERE run_id = :runId AND level = 'run'");
-  const anyDocument = db.prepare('SELECT 1 AS present FROM search_docs WHERE run_id = :runId LIMIT 1');
+  const anyDocument = db.prepare('SELECT 1 AS present FROM search_docs WHERE run_id = :runId');
   const runRow = db.prepare('SELECT r.id, r.origin, s.cwd AS project FROM runs r JOIN sessions s ON s.id = r.session_id WHERE r.id = :runId');
   const derived = createDerivedSnapshot(db, context);
   const rangeEvents = db.prepare(
@@ -306,7 +306,7 @@ export const createSearchStore = (db: DatabaseSync, context: DecodeContext, read
     const keyOf = (target: string, project: string): string => JSON.stringify([project, target]);
     const answered: Denied = (target, project) => {
       const verdict = verdicts.get(keyOf(target, project));
-      if (verdict === undefined) throw new Error(`no read verdict was asked for ${target} of project ${project}`);
+      if (verdict === undefined) throw new Error(`no read verdict was asked for ${target} in the folder ${project}`);
       return verdict;
     };
     const anchors: HistoryAnchor[] = [];

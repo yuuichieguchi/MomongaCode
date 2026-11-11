@@ -276,7 +276,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock, context: Decod
     }
     if (short.length > 0) {
       parts.push(
-        `SELECT id FROM (SELECT id, text FROM memories WHERE ${scope.sql} AND ${RECALLABLE} ORDER BY created_at DESC, id DESC LIMIT :scanLimit)
+        `SELECT id FROM (SELECT id, text FROM memories INDEXED BY memories_by_created WHERE ${scope.sql} AND ${RECALLABLE} ORDER BY created_at DESC, id DESC LIMIT :scanLimit)
          WHERE ${short.map((_term, index) => `instr(lower(text), :recallShort${index}) > 0`).join(' OR ')}`,
       );
       params['scanLimit'] = MEMORY_SCAN_LIMIT;
@@ -480,7 +480,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock, context: Decod
           indexed.length > 0
             ? `SELECT memories.* FROM memories_index JOIN memories ON memories.id = memories_index.memory_id
                WHERE memories_index MATCH :match AND ${scope.sql}${live} ORDER BY memories_index.rowid DESC LIMIT :matchLimit`
-            : `SELECT * FROM memories WHERE ${scope.sql}${live} ORDER BY created_at DESC, id DESC LIMIT :scanLimit`;
+            : `SELECT * FROM memories INDEXED BY memories_by_created WHERE ${scope.sql}${live} ORDER BY created_at DESC, id DESC LIMIT :scanLimit`;
         if (indexed.length > 0) {
           params['match'] = indexed.map(quoted).join(' ');
           params['matchLimit'] = MEMORY_MATCH_LIMIT;
