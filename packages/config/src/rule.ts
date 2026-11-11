@@ -66,6 +66,8 @@ export { OPERATION_RULE_TOOLS };
 
 export const NETWORK_RULE_SUBJECT = 'Network';
 
+export const NETWORK_RULE_NOT_ENFORCED = 'Network rules are read but not enforced yet; this rule changes nothing';
+
 const NETWORK_SUFFIX_PREFIX = '*.';
 
 const MCP_TOOL_PREFIX = 'mcp__';

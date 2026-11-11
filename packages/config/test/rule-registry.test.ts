@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ConfigError, checkRuleText, loadSettings } from '@momonga/config';
+import { ConfigError, NETWORK_RULE_NOT_ENFORCED, checkRuleText, loadSettings } from '@momonga/config';
 import { OPERATION_RULE_TOOLS, TOOL_NAMES } from '@momonga/protocol';
 import { makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
@@ -60,7 +60,18 @@ describe('rules at load', () => {
     writeJson(userSettingsPath(tree), { permissions: { allow: ['Network(*.example.org)'] } });
     const result = await load(tree);
     expect(result.rules).toMatchObject([{ tool: 'Network', specifier: '*.example.org', effect: 'allow', origin: 'user' }]);
-    expect(result.warnings).toEqual([]);
+  });
+
+  it('says of a Network rule it loads that the rule is not enforced yet, in one text', async () => {
+    const tree = makeTree();
+    const file = writeJson(userSettingsPath(tree), { permissions: { allow: ['Network(*.example.org)'], deny: ['Network(tracker.example.org)'] }, mandates: { tidy: { allow: ['Network(example.org)'] } } });
+    const result = await load(tree);
+    expect(NETWORK_RULE_NOT_ENFORCED).toBe('Network rules are read but not enforced yet; this rule changes nothing');
+    expect(result.warnings).toEqual([
+      `${file}: /permissions/allow/0: "Network(*.example.org)": ${NETWORK_RULE_NOT_ENFORCED}`,
+      `${file}: /permissions/deny/0: "Network(tracker.example.org)": ${NETWORK_RULE_NOT_ENFORCED}`,
+      `${file}: /mandates/tidy/allow/0: "Network(example.org)": ${NETWORK_RULE_NOT_ENFORCED}`,
+    ]);
   });
 
   it('discards a Network rule of the project layer with a warning that names the file and the key', async () => {
@@ -71,25 +82,36 @@ describe('rules at load', () => {
     expect(result.warnings).toEqual([`${file}: permissions.allow rule "Network(*.example.org)" is only honored in user settings; discarded`]);
   });
 
-  it('loads the other rules of a file that holds one unreadable rule, and warns once naming that rule', async () => {
+  it('ignores an allow rule that cannot be read, warns once naming it, and keeps the valid rules in force', async () => {
     const tree = makeTree();
-    const file = writeJson(userSettingsPath(tree), { permissions: { allow: ['Read(./src/**)'], deny: ['Bash(git push:*)', 'Frobnicate', 'Read(.env)'] } });
+    const file = writeJson(userSettingsPath(tree), { permissions: { allow: ['Read(./src/**)', 'Frobnicate', 'Bash(npm test)'], deny: ['Bash(git push:*)', 'Read(.env)'] } });
     const result = await load(tree);
-    expect(result.rules.map((rule) => rule.text)).toEqual(['Read(./src/**)', 'Bash(git push:*)', 'Read(.env)']);
-    expect(result.warnings).toEqual([`${file}: invalid settings at /permissions/deny/1: invalid permission rule "Frobnicate": unknown tool; the rule is ignored`]);
+    expect(result.rules.map((rule) => rule.text)).toEqual(['Read(./src/**)', 'Bash(npm test)', 'Bash(git push:*)', 'Read(.env)']);
+    expect(result.warnings).toEqual([`${file}: invalid settings at /permissions/allow/1: invalid permission rule "Frobnicate": unknown tool; the rule is ignored`]);
   });
 
-  it('does not load a mandate that holds an unreadable rule, and loads the others', async () => {
+  it.each(['deny', 'ask'] as const)('refuses the load for a %s rule that cannot be read, naming the file, the key, the rule and the reason', async (effect) => {
     const tree = makeTree();
-    const file = writeJson(userSettingsPath(tree), {
-      mandates: {
-        tidy: { allow: ['Edit(./src/**)'], deny: ['Frobnicate'] },
-        docs: { allow: ['Edit(./docs/**)'] },
-      },
-    });
+    const file = writeJson(userSettingsPath(tree), { permissions: { allow: ['Read(./src/**)'], [effect]: ['Bash(git push:*)', 'Frobnicate'] } });
+    const failure = load(tree);
+    await expect(failure).rejects.toBeInstanceOf(ConfigError);
+    await expect(failure).rejects.toThrow(`${file}: invalid settings at /permissions/${effect}/1: invalid permission rule "Frobnicate": unknown tool`);
+  });
+
+  it('loads a mandate without its allow rule that cannot be read, and warns naming the rule', async () => {
+    const tree = makeTree();
+    const file = writeJson(userSettingsPath(tree), { mandates: { tidy: { allow: ['Edit(./src/**)', 'Frobnicate'], deny: ['Bash(curl:*)'] } } });
     const result = await load(tree);
-    expect(Object.keys(result.settings.mandates ?? {})).toEqual(['docs']);
-    expect(result.warnings).toEqual([`${file}: invalid settings at /mandates/tidy/deny/0: invalid permission rule "Frobnicate": unknown tool; the mandate tidy is not loaded`]);
+    expect(result.settings.mandates).toEqual({ tidy: { allow: ['Edit(./src/**)'], deny: ['Bash(curl:*)'] } });
+    expect(result.warnings).toEqual([`${file}: invalid settings at /mandates/tidy/allow/1: invalid permission rule "Frobnicate": unknown tool; the rule is ignored`]);
+  });
+
+  it.each(['deny', 'ask'] as const)('refuses the load for a %s rule of a mandate that cannot be read', async (effect) => {
+    const tree = makeTree();
+    const file = writeJson(userSettingsPath(tree), { mandates: { tidy: { allow: ['Edit(./src/**)'], [effect]: ['Frobnicate'] } } });
+    const failure = load(tree);
+    await expect(failure).rejects.toBeInstanceOf(ConfigError);
+    await expect(failure).rejects.toThrow(`${file}: invalid settings at /mandates/tidy/${effect}/0: invalid permission rule "Frobnicate": unknown tool`);
   });
 
   it('refuses an operation name the catalogue does not have, naming the names it has', async () => {
