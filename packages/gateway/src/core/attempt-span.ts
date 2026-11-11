@@ -9,8 +9,8 @@ import {
   startChatSpan,
 } from '@momonga/observability';
 import type { ChatBilling, Telemetry } from '@momonga/observability';
-import { MOMONGA_EVENTS } from '@momonga/protocol';
-import type { AdapterInputItem, FallbackCause, FunctionTool, ItemField, Usage, UsageSource } from '@momonga/protocol';
+import { MOMONGA_ATTRIBUTES, MOMONGA_EVENTS } from '@momonga/protocol';
+import type { AdapterInputItem, UpstreamRoute, FallbackCause, FunctionTool, ItemField, Usage, UsageSource } from '@momonga/protocol';
 import { chatRequestContentOf, chatResponseMessagesOf } from './chat-content.ts';
 
 export type TraceParent = ReturnType<Telemetry['propagation']['extract']>;
@@ -46,6 +46,7 @@ const chatUsageOf = (billed: BilledUsage) => ({
 export type AttemptSpan = {
   readonly startedAtMs: number;
   note(name: string, message: string): void;
+  route(route: UpstreamRoute): void;
   committed(): void;
   succeed(info: {
     responseModel: string;
@@ -61,7 +62,7 @@ export type AttemptSpan = {
 };
 
 export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
-  if (input.telemetry === undefined) return { startedAtMs: input.startedAtMs, note: () => undefined, committed: () => undefined, succeed: () => undefined, fail: () => undefined };
+  if (input.telemetry === undefined) return { startedAtMs: input.startedAtMs, note: () => undefined, route: () => undefined, committed: () => undefined, succeed: () => undefined, fail: () => undefined };
   const span = startChatSpan(
     input.telemetry.tracer,
     {
@@ -94,6 +95,11 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
     startedAtMs: input.startedAtMs,
     note: (name, message) => {
       if (!ended) span.addEvent(name, { message });
+    },
+    route: (route) => {
+      if (ended) return;
+      span.setAttribute(MOMONGA_ATTRIBUTES.route, route.kind);
+      if (route.kind === 'proxy' || route.kind === 'unsupported') span.setAttribute(MOMONGA_ATTRIBUTES.routeProxy, route.proxy);
     },
     committed: () => {
       if (!ended) span.addEvent(MOMONGA_EVENTS.responseCommitted);

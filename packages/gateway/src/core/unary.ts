@@ -360,7 +360,7 @@ const compactOnce = async (
     }
     const span = startSpan(target, attemptNumber, cap, sent.retryOfSeq);
     try {
-      const result = await compact.call(target.adapter, compactRequestFor(target, cap), adapterContextOf(services, target, capabilities, guarded, attemptNumber, sent.callKey));
+      const result = await compact.call(target.adapter, compactRequestFor(target, cap), adapterContextOf(services, target, capabilities, guarded, attemptNumber, sent.callKey, span.route));
       spans.set(target, span);
       return result;
     } catch (error) {

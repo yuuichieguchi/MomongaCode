@@ -218,7 +218,7 @@ const openAttempt = async (
   }
   const span = startSpan(retryOfSeq);
   try {
-    const stream = target.adapter.create(adapterRequestFor(job, resolved, target, visibleBound), adapterContextOf(services, target, capabilities, signal, attemptNumber, callKey));
+    const stream = target.adapter.create(adapterRequestFor(job, resolved, target, visibleBound), adapterContextOf(services, target, capabilities, signal, attemptNumber, callKey, span.route));
     const iterator = stream[Symbol.asyncIterator]();
     const held: StreamEvent[] = [];
     for (;;) {
