@@ -204,6 +204,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
       `ripgrep-manifest ${work}/dist/release/momonga-linux-x64`,
       `ripgrep-manifest ${work}/dist/release/momonga-linux-arm64`,
       `ripgrep-manifest ${work}/dist/release/momonga-win-x64.exe`,
+      'npm run',
       'write_checksums',
       'rm -f',
       'ssh-keygen -Y',
@@ -237,6 +238,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
       'npm run',
       'npm run',
       'npm run',
+      'npm run',
       'ssh-keygen -Y',
       'ssh-keygen -Y',
       'gh release',
@@ -260,17 +262,17 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
         (target) => `npm run sea -- --unsigned --target ${target} --output ${out}/momonga-${target}${target === 'win-x64' ? '.exe' : ''} ${updateSourceFlags}`,
       ),
     );
-    expect(calls[14]).toBe(`ssh-keygen -Y sign -f ${signingKey} -n momonga-release ${out}/SHA256SUMS `);
-    expect(calls[15]).toMatch(/^ssh-keygen -Y verify -f \S+ -I momonga-release -n momonga-release -s \S+ $/);
-    expect(calls[16]).toContain(
+    expect(calls[14]).toBe(`npm run notices -- --output ${out}/THIRD-PARTY-NOTICES.md `);
+    expect(calls[15]).toBe(`ssh-keygen -Y sign -f ${signingKey} -n momonga-release ${out}/SHA256SUMS `);
+    expect(calls[16]).toMatch(/^ssh-keygen -Y verify -f \S+ -I momonga-release -n momonga-release -s \S+ $/);
+    expect(calls[17]).toContain(
       `gh release create v1.2.3 ${binary} ${out}/momonga-linux-x64 ${out}/momonga-linux-arm64 ${out}/momonga-win-x64.exe ${out}/THIRD-PARTY-NOTICES.md ${out}/SHA256SUMS ${out}/SHA256SUMS.sig --repo fake-owner/fake-repo --draft --target ${git(work, 'rev-parse', 'HEAD').trim()} --title v1.2.3 --notes - second change (`,
     );
-    expect(calls[17]).toBe('gh release edit v1.2.3 --repo fake-owner/fake-repo --draft=false ');
+    expect(calls[18]).toBe('gh release edit v1.2.3 --repo fake-owner/fake-repo --draft=false ');
     expect(originTags()).toBe('v1.2.3\n');
     expect(git(work, 'tag', '--list')).toBe('v1.2.3\n');
     const sums = fs.readFileSync(`${work}/dist/release/SHA256SUMS`, 'utf8').trimEnd().split('\n');
     expect(sums.map((line) => line.replace(/^[0-9a-f]{64} {2}/, ''))).toEqual(['momonga-darwin-arm64', 'momonga-linux-x64', 'momonga-linux-arm64', 'momonga-win-x64.exe', 'THIRD-PARTY-NOTICES.md']);
-    expect(fs.readFileSync(`${work}/dist/release/THIRD-PARTY-NOTICES.md`, 'utf8')).toBe(fs.readFileSync(`${work}/THIRD-PARTY-NOTICES.md`, 'utf8'));
   });
 
   it('refuses to build or publish when the installers pin no release key, and says what to do', () => {
@@ -404,7 +406,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     const binary = `${work}/dist/release/momonga-darwin-arm64`;
     expect(calls[4]).toBe(`npm run sea -- --unsigned --output ${binary} --repo fake-owner/fake-repo --team-id ${TEAM_ID} --release-public-key ${PINNED_KEY} `);
     expect(calls[5]).toContain(`codesign --sign ${SIGNING_IDENTITY} --force`);
-    expect(calls[14]).toBe(`ssh-keygen -Y sign -f ${signingKey} -n momonga-release ${work}/dist/release/SHA256SUMS `);
+    expect(calls[15]).toBe(`ssh-keygen -Y sign -f ${signingKey} -n momonga-release ${work}/dist/release/SHA256SUMS `);
     expect(calls.join('\n')).not.toContain('env-owner/env-repo');
     expect(calls.join('\n')).not.toContain('FAKE000000');
   });

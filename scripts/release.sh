@@ -99,7 +99,6 @@ delete_draft() {
 }
 
 write_checksums() {
-  cp "$ROOT/$NOTICES_NAME" "$NOTICES"
   (cd "$OUT_DIR" && shasum -a 256 "$ASSET_NAME" "${OTHER_ASSETS[@]}" "$NOTICES_NAME" > "$CHECKSUMS_NAME")
 }
 
@@ -188,6 +187,9 @@ assert_executable_format "$OUT_DIR/momonga-win-x64.exe" PE
 for index in "${!OTHER_TARGETS[@]}"; do
   assert_embedded_ripgrep "$OUT_DIR/${OTHER_ASSETS[$index]}" "${OTHER_TARGETS[$index]}"
 done
+
+step "third-party notices of the release"
+run npm run notices -- --output "$NOTICES"
 
 step "checksums and their signature"
 run write_checksums
