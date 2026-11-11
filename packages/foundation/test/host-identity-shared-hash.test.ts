@@ -74,32 +74,23 @@ describe('the shared hash of one binary belongs to no single asker', () => {
     expect(held.streams).toHaveLength(1);
   });
 
-  it('ends the read when its last asker leaves, and reads again for the next asker', async () => {
+  it('runs the read to completion after its only asker left, and gives the next asker that digest without a second read', async () => {
     const file = binaryFile();
     const held = holdTheReads();
     const cache = createBinaryHashCache();
-    const first = new AbortController();
-    const second = new AbortController();
-    const firstLeft = new Error('the first asker left');
-    const secondLeft = new Error('the second asker left');
+    const only = new AbortController();
+    const left = new Error('the only asker left');
 
-    const firstOutcome = outcomeOf(cache.sha256Of(file, first.signal));
-    const secondOutcome = outcomeOf(cache.sha256Of(file, second.signal));
-    await vi.waitFor(() => expect(held.statsSettled()).toBe(2));
+    const onlyOutcome = outcomeOf(cache.sha256Of(file, only.signal));
     await vi.waitFor(() => expect(held.streams).toHaveLength(1));
-    first.abort(firstLeft);
+    only.abort(left);
+
+    expect(await onlyOutcome).toEqual({ error: left });
     expect(held.streams[0]?.destroyed).toBe(false);
-    second.abort(secondLeft);
-
-    expect(await firstOutcome).toEqual({ error: firstLeft });
-    expect(await secondOutcome).toEqual({ error: secondLeft });
-    await vi.waitFor(() => expect(held.streams[0]?.destroyed).toBe(true));
-
-    const third = outcomeOf(cache.sha256Of(file, new AbortController().signal));
-    await vi.waitFor(() => expect(held.streams).toHaveLength(2));
-    held.streams[1]?.push(CONTENT);
-    held.streams[1]?.push(null);
-    expect(await third).toEqual({ value: DIGEST });
+    held.streams[0]?.push(CONTENT);
+    held.streams[0]?.push(null);
+    expect(await cache.sha256Of(file, new AbortController().signal)).toBe(DIGEST);
+    expect(held.streams).toHaveLength(1);
   });
 });
 
@@ -140,7 +131,7 @@ describe('the held OS build reading belongs to no single asker', () => {
     expect(await secondOutcome).toEqual({ value: { hostOsBuild: { kind: 'read', value: '25A1' } } });
   });
 
-  it('ends the exec when its last asker leaves, and runs it again for the next asker', async () => {
+  it('runs the exec to completion after its only asker left, and gives the next asker that reading without a second exec', async () => {
     const fake = heldExec();
     const host = createHeldHostReadings();
     const only = new AbortController();
@@ -150,10 +141,9 @@ describe('the held OS build reading belongs to no single asker', () => {
     only.abort(leftBecause);
 
     expect(await outcome).toEqual({ error: leftBecause });
-    expect(fake.calls[0]?.aborted).toBe(true);
-    const next = outcomeOf(readOsBuild(fake.exec, host, new AbortController().signal));
-    await vi.waitFor(() => expect(fake.calls).toHaveLength(2));
+    expect(fake.calls[0]?.aborted).toBe(false);
     fake.answer('25A1');
-    expect(await next).toEqual({ value: { hostOsBuild: { kind: 'read', value: '25A1' } } });
+    expect(await readOsBuild(fake.exec, host, new AbortController().signal)).toEqual({ hostOsBuild: { kind: 'read', value: '25A1' } });
+    expect(fake.calls).toHaveLength(1);
   });
 });

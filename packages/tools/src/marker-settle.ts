@@ -53,7 +53,7 @@ export const createMarkerSettle = ({ marker, mode, inspector, killGraceMs, kill,
       return { holders, refused };
     },
     groupAlive: async (pgid, signal) => {
-      await recallMarkerGroup(group, marker, pgid);
+      if ((await recallMarkerGroup(group, marker, pgid)) === 'unknown') return true;
       return groupAlive(pgid, group, signal);
     },
     reap: async (pgid, signal) => {

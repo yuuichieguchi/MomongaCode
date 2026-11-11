@@ -323,7 +323,7 @@
         "job": 1
       },
       "packages/foundation/src/platform/windows-kept-groups.ts": {
-        "job": 3
+        "job": 2
       },
       "packages/foundation/src/schema-reference-cycles.ts": {
         "target": 1

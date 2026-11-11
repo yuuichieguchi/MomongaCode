@@ -3,6 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { reconcileProcessGroup } from '../../src/process-markers.ts';
 import type { ProcessGroupPort } from '../../src/platform/group-port.ts';
 import type { CommandResult, CommandRunner } from '../../src/platform/command-runner.ts';
+import type { KeptMembers } from '../../src/platform/windows-kept-groups.ts';
+import { createKeptGroupControl } from '../../src/platform/windows-kept-groups.ts';
+import { createProcessGroupPort } from '../../src/platform/group-port.ts';
+import { recordMarkerGroup } from '../../src/platform/marker-record.ts';
+import { fakeKeeperHost } from '../support/fake-keeper.ts';
+import { makeTemporaryDirectory } from '../support/temporary-directory.ts';
+import fs from 'node:fs';
+import path from 'node:path';
 import { createAsyncSignalSender } from '../../src/platform/group-port.ts';
 import { createWindowsInspector } from '../../src/platform/windows-inspector.ts';
 import { parsePidList, parseStartTime } from '../../src/platform/windows-parsers.ts';
@@ -17,12 +25,15 @@ const decodeScript = (args: readonly string[]): string => Buffer.from(args[args.
 
 const NO_JOBS = {
   groups: {
-    members: async (pgid: number): Promise<number[]> => {
-      throw new Error(`no job is recorded for process group ${pgid}`);
+    members: async (pgid: number): Promise<KeptMembers> => {
+      throw new Error(`the keeper of process group ${pgid} closed its pipe before it listed the members`);
     },
+    leads: (): boolean => false,
   },
   alive: (): boolean => false,
 };
+
+const listing = (pids: number[]): KeptMembers => ({ kind: 'members', pids });
 
 describe('windows parsers (shape of ConvertTo-Json -Compress output)', () => {
   it('parses pid lists and creation times', () => {
@@ -50,8 +61,8 @@ describe('windows scripts', () => {
 });
 
 describe('windows inspector through an injected command runner', () => {
-  const calls: Array<{ file: string; args: readonly string[]; env: Readonly<Record<string, string>> }> = [];
-  const runnerReturning = (result: Partial<CommandResult>) => async (file: string, args: readonly string[], options: { env: Readonly<Record<string, string>> }): Promise<CommandResult> => {
+  const calls: Array<{ file: string; args: readonly string[]; env: Readonly<Record<string, string>> | undefined }> = [];
+  const runnerReturning = (result: Partial<CommandResult>) => async (file: string, args: readonly string[], options: { env: Readonly<Record<string, string>> | undefined }): Promise<CommandResult> => {
     calls.push({ file, args, env: options.env });
     return { exitCode: 0, stdout: '', stderr: '', ...result };
   };
@@ -116,8 +127,9 @@ describe('windows inspector through an injected command runner', () => {
       groups: {
         members: async (pgid) => {
           asked.push(pgid);
-          return pgid === 100 ? [200, 300] : [];
+          return listing(pgid === 100 ? [200, 300] : []);
         },
+        leads: (pgid) => pgid === 100,
       },
       alive: (pid) => pid === 100 || pid === 400,
     });
@@ -130,6 +142,16 @@ describe('windows inspector through an injected command runner', () => {
       ]),
     });
     expect(asked).toEqual([100]);
+  });
+
+  it('does not take a live pid equal to the candidate number as that group when this process does not hold the keeper of that job', async () => {
+    const inspector = createWindowsInspector({ run: runnerReturning({}), env: ENV, groups: { members: async () => listing([200]), leads: () => false }, alive: (pid) => pid === 100 || pid === 200 });
+    expect(await inspector.groupsOf([100, 200], [100], LIVE)).toEqual({ kind: 'value', value: new Map([[200, 100]]) });
+  });
+
+  it('gives no members for a candidate the keeper control does not know', async () => {
+    const inspector = createWindowsInspector({ run: runnerReturning({}), env: ENV, groups: { members: async () => ({ kind: 'unknown' }), leads: () => false }, alive: () => true });
+    expect(await inspector.groupsOf([300], [100], LIVE)).toEqual({ kind: 'value', value: new Map([[300, 300]]) });
   });
 
   it('reports a failed read, not a group, when the keeper cannot answer for a candidate', async () => {
@@ -179,7 +201,7 @@ describe('a Windows start time read that OpenProcess refuses (design 19.6 point 
       if (script.includes('rstrtmgr.dll')) return { exitCode: 0, stdout: '[4242]', stderr: '' };
       throw new Error(`no other script is run: ${script}`);
     };
-    const inspector = createWindowsInspector({ run: runner, env: ENV, groups: { members: async () => [] }, alive: () => true });
+    const inspector = createWindowsInspector({ run: runner, env: ENV, groups: { members: async () => listing([]), leads: () => false }, alive: () => true });
     const sent: Array<[number, NodeJS.Signals | 0]> = [];
     const groupPort: ProcessGroupPort = { signal: async (pgid, signal) => void sent.push([-pgid, signal]), alive: async () => false };
     let now = 0;
@@ -189,5 +211,28 @@ describe('a Windows start time read that OpenProcess refuses (design 19.6 point 
     );
     expect(sent.filter(([, signal]) => signal !== 0)).toEqual([]);
     expect(result.leftAlonePids).toEqual([4242]);
+  });
+});
+
+describe('a marker of a group this process did not launch, with no job name', () => {
+  it('gives the unknown group answer: the reaper keeps the group, reports it and signals nothing', async () => {
+    const marker = path.join(makeTemporaryDirectory(), 'marker');
+    fs.writeFileSync(marker, '');
+    await recordMarkerGroup(marker, 5000, { names: { nameOf: () => undefined, recall: () => undefined } });
+    const fake = fakeKeeperHost();
+    const kept = createKeptGroupControl(fake.host);
+    const groupPort = createProcessGroupPort('win32', { run: async () => ({ exitCode: 0, stdout: '[]', stderr: '' }), env: ENV, kept });
+    const runner: CommandRunner = async () => ({ exitCode: 0, stdout: '[]', stderr: '' });
+    const inspector = createWindowsInspector({ run: runner, env: ENV, groups: kept, alive: () => true });
+    const sent: Array<[number, NodeJS.Signals | 0]> = [];
+    let now = 0;
+    const result = await reconcileProcessGroup(
+      { pgid: 5000, marker },
+      { killGraceMs: 100, kill: (pid, signal) => void sent.push([pid, signal]), groupPort, timing: sleepDrivenTiming({ now: () => now, sleep: async (ms) => void (now += ms) }), inspector, signal: new AbortController().signal },
+    );
+    expect(result).toMatchObject({ outcome: 'unknown', stopped: false, leftAloneGroup: 5000 });
+    expect(result.output).toContain('records no name');
+    expect(sent.filter(([, signal]) => signal !== 0)).toEqual([]);
+    expect(fake.keepers).toHaveLength(0);
   });
 });
