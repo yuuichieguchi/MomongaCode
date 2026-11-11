@@ -362,8 +362,8 @@ const withNetworkRequest = (input: DecideInput, decision: Decision): Decision =>
   const setting = input.sandboxNetwork ?? DEFAULT_SANDBOX_NETWORK;
   if (setting === 'deny') return { kind: 'deny', source: 'mode', reason: `${requests}, and the setting sandboxNetwork is deny`, network: true };
   if (setting === 'allow' || input.mode === 'bypassPermissions') return decision.kind === 'ask' ? { ...decision, reason: `${decision.reason}; ${requests}` } : decision;
-  if (decision.kind === 'ask') return { ...decision, reason: `${decision.reason}; ${requests}`, humanOnly: true, network: true };
-  return { kind: 'ask', source: 'mode', reason: requests, humanOnly: true, network: true };
+  if (decision.kind === 'ask') return { ...decision, reason: `${decision.reason}; ${requests}`, network: true };
+  return { kind: 'ask', source: 'mode', reason: requests, network: true };
 };
 
 const programsOf = (forms: readonly SupersededForm[]): string => [...new Set(forms.map((form) => form.argv[0]))].join(', ');
