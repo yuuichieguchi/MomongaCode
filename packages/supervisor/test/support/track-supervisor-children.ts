@@ -27,7 +27,7 @@ const childPidsFromBody = (body: unknown): number[] => {
 };
 
 const fetchChildPids = async (socketPath: string, healthTimeoutMs: number): Promise<number[]> => {
-  const client = createUdsClient(fixedSocket(socketPath), { headersTimeoutMs: healthTimeoutMs, bodyTimeoutMs: healthTimeoutMs });
+  const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0, headersTimeoutMs: healthTimeoutMs, bodyTimeoutMs: healthTimeoutMs });
   try {
     const response = await client.request({ method: 'GET', path: '/v1/health' });
     if (response.status !== 200) throw new Error(`supervisor health answered ${response.status}`);

@@ -34,7 +34,7 @@ const launch = async (layout: Layout, attempt: Attempt = {}): Promise<RunService
 };
 
 const healthStatus = async (socketPath: string): Promise<number> => {
-  const client = createUdsClient(fixedSocket(socketPath));
+  const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0 });
   onCleanup(() => client.close());
   return (await sendJson(client, 'GET', '/v1/health')).status;
 };
@@ -120,7 +120,7 @@ describe('run service start (system timers)', () => {
 
     expect(error).toBe(failure);
     expect(fs.existsSync(layout.socketPath)).toBe(false);
-    const probe = createUdsClient(fixedSocket(layout.socketPath));
+    const probe = createUdsClient(fixedSocket(layout.socketPath), { connectTimeoutMs: 0 });
     onCleanup(() => probe.close());
     await expect(probe.request({ method: 'GET', path: '/v1/health' })).rejects.toThrow();
 

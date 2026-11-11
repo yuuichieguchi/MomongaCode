@@ -92,7 +92,7 @@ const startGateway = async (context: CleanupContext, settings: unknown, env: Rec
   registerCleanup(context, async () => {
     await handle.close();
   });
-  const client = createUdsClient(fixedSocket(handle.socketPath));
+  const client = createUdsClient(fixedSocket(handle.socketPath), { connectTimeoutMs: 0 });
   registerCleanup(context, () => client.close());
   return { handle, client, log };
 };

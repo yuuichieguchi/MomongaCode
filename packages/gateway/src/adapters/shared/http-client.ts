@@ -54,7 +54,7 @@ const lowercased = (headers: Record<string, string | string[] | undefined>): Rec
 };
 
 const unixClient = (socketPath: string, route: EndpointRoute, liveness: UpstreamLiveness): EndpointClient => {
-  const client = createUdsClient(fixedSocket(socketPath), { headersTimeoutMs: liveness.headersTimeoutMs, bodyTimeoutMs: liveness.idleTimeoutMs });
+  const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: liveness.headersTimeoutMs, headersTimeoutMs: liveness.headersTimeoutMs, bodyTimeoutMs: liveness.idleTimeoutMs });
   return {
     post: ({ subpath, streamed, onRoute, ...options }) => {
       onRoute?.({ kind: 'direct' });

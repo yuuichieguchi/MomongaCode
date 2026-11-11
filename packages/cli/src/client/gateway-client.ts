@@ -1,4 +1,4 @@
-import { GENERATION_RETIRED_CODE, JsonDepthError, createUdsClient, isRecord, parseOutsideJson } from '@momonga/foundation';
+import { GENERATION_RETIRED_CODE, HOST_READ_BOUND_MS, JsonDepthError, createUdsClient, isRecord, parseOutsideJson } from '@momonga/foundation';
 import type { SocketResolver, UdsClient } from '@momonga/foundation';
 import { checkTraceContent } from './contract.ts';
 import { JSON_MODES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_REVOCATIONS, PLAN_ROUTES, TARGET_ANSWERS, TARGET_BILLINGS, TARGET_HEALTH_REASONS, displayMapOf, isNotListedCapabilities, isToolCallingState, notListedMessage, planAccountRefOf, INVALID_GRANT_REASON, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
@@ -270,7 +270,7 @@ const MODELS_PATH = '/v1/momonga/models';
 const MODEL_LIST_KIND = 'a model list';
 
 export const createGatewayClient = (options: { resolveSocket: SocketResolver }): GatewayClient => {
-  const dial = (): UdsClient => createUdsClient(options.resolveSocket);
+  const dial = (): UdsClient => createUdsClient(options.resolveSocket, { connectTimeoutMs: HOST_READ_BOUND_MS });
 
   let http = dial();
 

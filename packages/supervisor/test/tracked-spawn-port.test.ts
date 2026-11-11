@@ -110,7 +110,7 @@ describe('trackSupervisorChildren', () => {
     supervisor.once('exit', () => {
       exited = true;
     });
-    const client = createUdsClient(fixedSocket(socketPath));
+    const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0 });
     registerCleanup(context, () => client.destroy());
     const health = async (): Promise<SupervisorHealth | undefined> => {
       try {

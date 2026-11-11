@@ -72,7 +72,7 @@ describe('runtime bin (real process, §5.3)', () => {
     const { home, paths, env } = await prepare(context);
     const daemon = startDaemonBin(context, BIN, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=file'], env);
     await daemon.waitForReady();
-    const client = createUdsClient(fixedSocket(firstGeneration(paths).sockets.runtime));
+    const client = createUdsClient(fixedSocket(firstGeneration(paths).sockets.runtime), { connectTimeoutMs: 0 });
     registerCleanup(context, () => client.close());
 
     const response = await client.request({ method: 'GET', path: '/v1/health' });

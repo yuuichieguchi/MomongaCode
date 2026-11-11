@@ -81,7 +81,7 @@ describe('the daemon.current frame at the exit of a retiring runtime (20.44, rul
 
     const socketPath = path.join(path.dirname(env.layout.socketPath), 'serving.sock');
     const serving = await launchService(serviceOptions({ store: env.store, clock: env.clock, home: env.layout.home, socketPath, ports: env.ports, notifier: env.notifier, errors: env.errors }));
-    const client = createUdsClient(fixedSocket(socketPath));
+    const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0 });
     try {
       const claim = env.store.claim('serving-worker');
       if (claim === null) {
