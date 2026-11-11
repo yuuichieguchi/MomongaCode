@@ -634,7 +634,7 @@ export const startService = async (overrides: ServiceOverrides & { fakeTimers?: 
     await service.close();
   };
   onCleanup(closeService);
-  const client = createUdsClient(fixedSocket(layout.socketPath));
+  const client = createUdsClient(fixedSocket(layout.socketPath), { connectTimeoutMs: 0 });
   onCleanup(() => client.close());
   let rawDb: DatabaseSync | undefined;
   onCleanup(() => rawDb?.close());
@@ -742,7 +742,7 @@ export const requestManualApproval = async (
   const result = await env.store.requestApproval(claim, {
     callId,
     options: OPTIONS,
-    event: { subjectDigest: SUBJECT_DIGEST, reason: 'edits require approval', ...extra },
+    event: { subjectDigest: SUBJECT_DIGEST, reason: 'edits require approval', ...extra, shown: { title: 'approval', input: {} } },
   });
   if (result.kind !== 'ok') throw new Error(`requestApproval failed: ${result.kind}`);
   return result.approval.id;

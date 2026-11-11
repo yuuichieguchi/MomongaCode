@@ -9,7 +9,7 @@ const AUTHORIZE = 'https://auth.example.com/authorize?state=s';
 const SIGNAL = new AbortController().signal;
 
 const build = (overrides: Partial<OAuthProviderOptions> = {}) => {
-  const store = createMemoryCredentialStore();
+  const store = overrides.store ?? createMemoryCredentialStore();
   const received: URL[] = [];
   const provider = createOAuthProvider({
     key: KEY,
@@ -64,7 +64,7 @@ describe('oauth provider with every hook at its default', () => {
 
   it('removes everything for scope all and only the tokens for scope tokens', async () => {
     const { provider, store } = build();
-    await provider.saveClientInformation?.({ client_id: 'c' }, { issuer: ISSUER });
+    await provider.saveClientInformation?.({ client_id: 'c', redirect_uris: ['http://127.0.0.1:1/callback'] }, { issuer: ISSUER });
     await provider.saveTokens(TOKENS, { issuer: ISSUER });
     await provider.invalidateCredentials?.('tokens');
     expect(await provider.tokens({ issuer: ISSUER })).toBeUndefined();
@@ -245,5 +245,40 @@ describe('oauth provider store calls under the signal of the operation', () => {
     void provider.invalidateCredentials?.('verifier');
     void provider.invalidateCredentials?.('discovery');
     expect(asked).toBe(0);
+  });
+});
+
+describe('C22: a stored client registration is reused only for the same redirect', () => {
+  const PORT_A = 'http://127.0.0.1:41001/callback';
+  const PORT_B = 'http://127.0.0.1:41002/callback';
+  const registeredFor = (redirect: string) => ({ client_id: `client-for-${redirect}`, redirect_uris: [redirect] });
+
+  it('asks for a new registration when the stored one was made for another redirect, and keeps the new one', async () => {
+    const first = build({ redirectUrl: PORT_A });
+    await first.provider.saveClientInformation?.(registeredFor(PORT_A), { issuer: ISSUER });
+    const second = build({ redirectUrl: PORT_B, store: first.store });
+    expect(await second.provider.clientInformation({ issuer: ISSUER })).toBeUndefined();
+    await second.provider.saveClientInformation?.(registeredFor(PORT_B), { issuer: ISSUER });
+    expect(await second.provider.clientInformation({ issuer: ISSUER })).toEqual(registeredFor(PORT_B));
+    expect(JSON.parse((await first.store.read(KEY, SIGNAL)) as string).issuers[ISSUER].clientInformation).toEqual(registeredFor(PORT_B));
+  });
+
+  it('reuses the stored registration when its redirect URIs hold the current redirect', async () => {
+    const { provider } = build({ redirectUrl: PORT_A });
+    await provider.saveClientInformation?.(registeredFor(PORT_A), { issuer: ISSUER });
+    expect(await provider.clientInformation({ issuer: ISSUER })).toEqual(registeredFor(PORT_A));
+  });
+
+  it('asks for a new registration when the stored one names no redirect URIs', async () => {
+    const { provider } = build({ redirectUrl: PORT_A });
+    await provider.saveClientInformation?.({ client_id: 'client-without-redirects' }, { issuer: ISSUER });
+    expect(await provider.clientInformation({ issuer: ISSUER })).toBeUndefined();
+  });
+
+  it('keeps using the stored registration where no sign-in can start, to refresh with it', async () => {
+    const first = build({ redirectUrl: PORT_A });
+    await first.provider.saveClientInformation?.(registeredFor(PORT_A), { issuer: ISSUER });
+    const passive = build({ redirectUrl: undefined, store: first.store });
+    expect(await passive.provider.clientInformation({ issuer: ISSUER })).toEqual(registeredFor(PORT_A));
   });
 });

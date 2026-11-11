@@ -31,6 +31,7 @@ export interface UdsClient {
 }
 
 export interface UdsClientOptions {
+  connectTimeoutMs: number;
   headersTimeoutMs?: number;
   bodyTimeoutMs?: number;
 }
@@ -43,16 +44,16 @@ export const fixedSocket =
     Promise.resolve(socketPath);
 
 const dialResolved =
-  (resolveSocket: SocketResolver): buildConnector.connector =>
+  (resolveSocket: SocketResolver, connectTimeoutMs: number): buildConnector.connector =>
   (connectOptions, callback) => {
     void resolveSocket()
-      .then((socketPath) => buildConnector({ socketPath })(connectOptions, callback))
+      .then((socketPath) => buildConnector({ socketPath, timeout: connectTimeoutMs })(connectOptions, callback))
       .catch((error: unknown) => callback(error instanceof Error ? error : new Error(String(error)), null));
   };
 
-export const createUdsClient = (resolveSocket: SocketResolver, options: UdsClientOptions = {}): UdsClient => {
+export const createUdsClient = (resolveSocket: SocketResolver, options: UdsClientOptions): UdsClient => {
   const agent = new Agent({
-    connect: dialResolved(resolveSocket),
+    connect: dialResolved(resolveSocket, options.connectTimeoutMs),
     ...(options.headersTimeoutMs === undefined ? {} : { headersTimeout: options.headersTimeoutMs }),
     ...(options.bodyTimeoutMs === undefined ? {} : { bodyTimeout: options.bodyTimeoutMs }),
   });

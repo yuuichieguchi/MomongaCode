@@ -96,6 +96,11 @@ export const createOAuthProvider = (options: OAuthProviderOptions): OAuthProvide
   const authorizationRequired = (): OAuthAuthorizationError =>
     new OAuthAuthorizationError('required', `${options.subject} requires authorization and has no valid credentials`);
 
+  const registeredFor = (information: StoredOAuthClientInformation, redirectUrl: string): boolean => {
+    const uris: unknown = (information as { redirect_uris?: unknown }).redirect_uris;
+    return Array.isArray(uris) && uris.includes(redirectUrl);
+  };
+
   const reveal = (...values: Array<string | undefined>): void => {
     for (const value of values) if (value !== undefined && value !== '') options.onSecret?.(value);
   };
@@ -127,7 +132,7 @@ export const createOAuthProvider = (options: OAuthProviderOptions): OAuthProvide
     },
     clientInformation: async (context) => {
       const stored = (await entryFor(context))?.clientInformation;
-      if (stored !== undefined) return stored;
+      if (stored !== undefined && (options.redirectUrl === undefined || registeredFor(stored, options.redirectUrl))) return stored;
       if (options.preregisteredClientId !== undefined) return { client_id: options.preregisteredClientId };
       if (options.redirectUrl === undefined) throw authorizationRequired();
       return undefined;

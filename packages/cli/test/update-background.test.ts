@@ -177,7 +177,22 @@ describe('startBackgroundCheck: what the user command does', () => {
     const harness = await setupUpdate(context);
     harness.state.value = { checkedAt: 'yesterday' };
 
-    await expect(startBackgroundCheck(harness.wiring)).rejects.toThrow('the update state file is not valid');
+    await expect(startBackgroundCheck(harness.wiring)).rejects.toThrow(
+      `the update state file ${harness.state.file} is not valid; remove it to reset the background update check`,
+    );
+    expect(harness.spawned).toHaveLength(0);
+  });
+
+  it('names the state file and its one remedy for a file that is not JSON, without the parser text', async (context) => {
+    const harness = await setupUpdate(context);
+    harness.state.value = '{ nope';
+
+    const failure = await startBackgroundCheck(harness.wiring).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toBe(`the update state file ${harness.state.file} is not valid; remove it to reset the background update check`);
     expect(harness.spawned).toHaveLength(0);
   });
 

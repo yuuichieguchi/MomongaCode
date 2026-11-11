@@ -20,6 +20,7 @@
     "typecheck": "node scripts/bundle.ts --threads && tsc -p tsconfig.json",
     "bundle": "node scripts/bundle.ts",
     "sea": "node scripts/sea.ts",
+    "notices": "node scripts/third-party-notices.ts",
     "test:sea": "vitest run --project packaging scripts/sea.test.ts",
     "test:install": "vitest run --project packaging scripts/install.test.ts",
     "test:release": "vitest run --project packaging scripts/release.test.ts"

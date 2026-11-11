@@ -142,6 +142,8 @@ export {
   homeLayout,
   momongaLayout,
   momongaPaths,
+  canonicalHomeOf,
+  protectedAreasOf,
   refuseUnfitGenerationSocketsBeforeCreation,
   requireGenerationDirs,
   roleEndpoint,
@@ -316,7 +318,7 @@ export { HELPER_COMMAND, helperCommandLine } from './executable-helper.ts';
 export type { ExecutableHelper, ExecutableHelpers, HelperHost, HelperSelf } from './executable-helper.ts';
 export { SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, endpointFormsOfSocket, endpointHostOf, isPipePath, setSocketBind, socketBindRefusalOf, pipePathFor } from './socket-path.ts';
 export { MAX_SYMLINK_HOPS, comparableFromParts, containsByComponents, createPathResolver, createSyncPathResolver, hostPaths, setCaseSensitivityProbe, walkPath } from './path-compare.ts';
-export { displayToolPathSync, syncPaths } from './sync-paths.ts';
+export { syncPaths } from './sync-paths.ts';
 export { answeredLater, answeredNow, askedPaths } from './path-asking.ts';
 export type { PathAsking } from './path-asking.ts';
 export type { EndpointForm, EndpointHost } from './socket-path.ts';
@@ -423,3 +425,5 @@ export type {
   KeptLaunch,
 } from './platform/windows-keeper.ts';
 export { createNodeKeeperHost, provideCheckedWindowsKeeper, provideWindowsKeeper } from './platform/windows-keeper-host.ts';
+export { CONTROL_PLANE_LAUNCH } from './child-protection.ts';
+export type { ChildProtection, LaunchProtection } from './child-protection.ts';

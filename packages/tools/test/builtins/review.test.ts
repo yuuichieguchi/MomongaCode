@@ -2,7 +2,7 @@ import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxedProcess } from '@momonga/sandbox';
 import { keyFor } from '../helpers.ts';
@@ -74,7 +74,7 @@ describe('review 1: ripgrep excludes readDenied entries inside the search target
   describe.runIf(HAS_RG).each(['content', 'files_with_matches', 'count'] as const)('%s mode', (outputMode) => {
     it('never shows readDenied content with an unsandboxed ripgrep', async () => {
       const { tools, visible, vault } = await makeVaultTree(false);
-      const unsandboxed: Sandbox = createUnsandboxed({ killGraceMs: 300 });
+      const unsandboxed: Sandbox = createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 300 });
       const result = resultOf(
         await tools.run('Grep', { pattern: 'alpha', output_mode: outputMode }, { sandbox: unsandboxed, sandboxPolicy: withReadDenied(tools, vault), env: { PATH: RG_PATH } }),
       );

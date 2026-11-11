@@ -55,7 +55,7 @@ export type UpdateHarness = {
   stdout: string[];
   spawned: SpawnedCheck[];
   released: { count: number };
-  state: { value: unknown; writes: unknown[] };
+  state: { value: unknown; writes: unknown[]; file: string };
   targetBytes(): Buffer;
   directoryEntries(): string[];
 };
@@ -100,7 +100,7 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
   const stdout: string[] = [];
   const spawned: SpawnedCheck[] = [];
   const released = { count: 0 };
-  const state: UpdateHarness['state'] = { value: undefined, writes: [] };
+  const state: UpdateHarness['state'] = { value: undefined, writes: [], file: path.join(root, '.momonga', 'state', 'update.json') };
   const self: SelfExecutable = options.scripted === true ? { kind: 'script', execPath: target, script: '/main.js' } : { kind: 'single-binary', execPath: target };
   const readText = (file: string): string | undefined => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined);
   const ports: UpdatePorts = {
@@ -140,7 +140,8 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
       },
     },
     state: {
-      read: async () => state.value,
+      file: state.file,
+      read: async () => (state.value === undefined ? undefined : typeof state.value === 'string' ? state.value : JSON.stringify(state.value)),
       write: async (value) => {
         state.value = value;
         state.writes.push(value);

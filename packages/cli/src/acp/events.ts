@@ -1,6 +1,6 @@
 import type { ContentBlock, PermissionOption, SessionUpdate, ToolCall, ToolCallContent, ToolCallStatus, ToolCallUpdate } from '@agentclientprotocol/sdk';
 import { isRecord } from '@momonga/foundation';
-import { heldEndOf, unknownEffectLines, unknownEffectTitle } from '@momonga/protocol';
+import { approvalShownLines, heldEndOf, unknownEffectLines, unknownEffectTitle } from '@momonga/protocol';
 import type { ElicitationRequestView, PublicRunEvent } from '@momonga/protocol';
 import { classificationLevel, describeClassification, describeDenial, describeHook, describeVerification, hookLevel, verificationLevel } from '../policy-messages.ts';
 import { describeRetryWait } from '../retry-wait.ts';
@@ -147,7 +147,9 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
       const toolCallId = toolCallIdOf(event.runId, event.callId);
       const toolCall = state.calls.get(toolCallId);
       if (toolCall === undefined) throw new Error(`approval ${event.approvalId} asks about call ${event.callId}, which no tool.call event announced`);
-      return [{ kind: 'permission', approvalId: event.approvalId, toolCall: { ...toolCall, status: 'pending' }, options: event.options }];
+      const lines = approvalShownLines(event.shown);
+      const shownCall = { ...toolCall, status: 'pending' as const, rawInput: event.shown.input, ...(lines.length === 0 ? {} : { content: outputContent(lines.join('\n')) }) };
+      return [{ kind: 'permission', approvalId: event.approvalId, toolCall: shownCall, options: event.options }];
     }
     case 'tool.unknown.requested': {
       const asked = event.callIds.map((callId) => {

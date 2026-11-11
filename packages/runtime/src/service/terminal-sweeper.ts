@@ -2,7 +2,7 @@ import type { RuntimeStore } from '@momonga/store';
 import type { ServiceTimers } from './timers.ts';
 
 export type TerminalSweeperOptions = {
-  store: Pick<RuntimeStore, 'finishCancelled' | 'deadLetterExhausted'>;
+  store: Pick<RuntimeStore, 'finishCancelled' | 'deadLetterExhausted' | 'reaskUnshownApprovals'>;
   timers: ServiceTimers;
   intervalMs: number;
   cancelUpstream?: (runId: string, signal: AbortSignal) => Promise<void>;
@@ -39,6 +39,7 @@ export const startTerminalSweeper = (options: TerminalSweeperOptions): TerminalS
     try {
       for (const runId of await store.finishCancelled(reportRun)) afterCommit(runId);
       for (const runId of await store.deadLetterExhausted(reportRun)) afterCommit(runId);
+      await store.reaskUnshownApprovals(reportRun);
     } catch (error) {
       onError(error);
     }

@@ -1,11 +1,13 @@
 import type { ToolIdempotencyRecord } from '../ports.ts';
-import type { ReconcileContext, ReconcileResult } from '../types.ts';
+import type { ApprovalContent, ReconcileContext, ReconcileResult } from '../types.ts';
 import { appliedDiffOf } from './applied-diff.ts';
 import type { AppliedDiff } from './applied-diff.ts';
 import { hashOfFileIfExists } from './files.ts';
 import { shownPath } from './paths.ts';
 
 export type PreparedWrite = { path: string; preHash: string | null; postHash: string; diff?: AppliedDiff };
+
+export const approvalOfPreparedWrite = ({ preHash, diff }: PreparedWrite): ApprovalContent => ({ state: preHash, ...(diff === undefined ? {} : { diff }) });
 
 export const parsePreparedWrite = (value: unknown): PreparedWrite => {
   if (typeof value !== 'object' || value === null) throw new TypeError('prepared state is missing');

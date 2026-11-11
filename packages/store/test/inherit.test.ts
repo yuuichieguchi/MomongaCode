@@ -63,6 +63,7 @@ const withdrawn = (reason: 'withdrawn' | 'expired'): RunEventPayload[] => [
     options: [{ optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' }],
     subjectDigest: 'a'.repeat(64),
     reason: 'edits require approval',
+    shown: { title: 'approval', input: {} },
   },
   { type: 'tool.permission.cancelled', approvalId: 'appr-1', reason },
 ];

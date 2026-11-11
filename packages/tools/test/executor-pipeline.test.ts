@@ -113,9 +113,10 @@ describe('executor pipeline early exits', () => {
         decision,
         suggestedRule: 'Bash(make build)',
         title: 'Run make',
+        shown: { title: 'Run make', input: { value: 'make' } },
         toolKind: 'execute',
         locations: [{ path: '/work/Makefile', line: 3 }],
-        subjectDigest: sha256Hex(canonicalJson({ subject, cwd: harness.layout.project })),
+        subjectDigest: sha256Hex(canonicalJson({ subject: { subject, cwd: harness.layout.project }, shown: { title: 'Run make', input: { value: 'make' } } })),
         footprint: { reads: ['local:*'], writes: ['local:*'] },
       },
     ]);

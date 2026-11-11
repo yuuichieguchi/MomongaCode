@@ -17,7 +17,7 @@ describe('tool.permission.cancelled on supersede', () => {
     expect(store.approvals.get(first.id)?.status).toBe('superseded');
     expect(tailPayloads(store.readRunEvents(runId, 0, 100), 2)).toEqual([
       { type: 'tool.permission.cancelled', approvalId: first.id, reason: 'superseded' },
-      expect.objectContaining({ type: 'tool.permission.requested', approvalId: second.id, subjectDigest: 'b'.repeat(64) }),
+      expect.objectContaining({ type: 'tool.permission.requested', approvalId: second.id, subjectDigest: 'b'.repeat(64), shown: { title: 'approval', input: {} } }),
     ]);
   });
 });

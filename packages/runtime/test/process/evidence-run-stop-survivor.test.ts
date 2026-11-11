@@ -7,7 +7,7 @@ import { ensureMomongaDirs, momongaPaths, ruleEnforcementOf } from '@momonga/fou
 import * as foundation from '@momonga/foundation';
 import type { MarkerState, ProcessGroupPort, ProcessInspector } from '@momonga/foundation';
 import type { Sandbox } from '@momonga/sandbox';
-import { fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
+import { fakePolicyFilesystem, withTempDir, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { launch } from '../../../sandbox/src/process.ts';
 import type { LaunchOptions } from '../../../sandbox/src/process.ts';
 import { virtualTiming, driveUntil } from '../../../foundation/test/support/probe-fakes.ts';
@@ -44,7 +44,7 @@ const scene = (survives: boolean) => {
       const stdout = new PassThrough();
       const stderr = new PassThrough();
       const child = Object.assign(new EventEmitter(), { pid: GROUP, stdout, stderr, stdin: null });
-      const launched = launch({
+      const launched = launch({ protection: TEST_CHILD_UNPROTECTED,
         file: 'git',
         args: [],
         cwd: '/',

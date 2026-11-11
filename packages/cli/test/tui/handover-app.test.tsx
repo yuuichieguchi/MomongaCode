@@ -132,7 +132,7 @@ describe('the quiet point of the TUI (16.5, red tests 12 and 28)', () => {
     await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'go');
     backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Bash', kind: 'execute', title: 'Bash ls', rawInput: {} }));
-    backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: 'commands require approval', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }] }));
+    backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: 'commands require approval', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], shown: { title: 'approval', input: {} } }));
     await untilFrame(app, 'Allow once');
     expect(move.surface().quiet()).toBe(false);
     const before = move.checks();

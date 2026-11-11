@@ -5,9 +5,9 @@ import { absoluteFrom } from '@momonga/policy';
 import { unconfiguredNetworkOf, FAKE_LEASE, createFakeKernelLock, driveFakeTime, fakePolicyFilesystem, hostFilesystemOf, testPaths, testProcessInspector } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
 import type { PermissionSubject } from '@momonga/policy';
-import { createHostRipgrepLocator, createToolExecutor, createToolRegistry, defineTool, nodeShellHost, schemaIdentity } from '@momonga/tools';
+import { approvalDescriptionOf, createHostRipgrepLocator, createToolExecutor, subjectDigestOf, createToolRegistry, defineTool, nodeShellHost, schemaIdentity } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../test/support/pinned-ripgrep.ts';
-import type { AnyTool, CallOutputFit, ExecutionBatchInput, OutputCall, OutputFit, ShellHost, SideEffectBinding, ToolBody, ToolCall, ToolContext, ToolDefinition, ToolExecutorOptions, ToolSet, WorkTreeObserver } from '@momonga/tools';
+import type { AnyTool, ToolSessionState, CallOutputFit, ExecutionBatchInput, OutputCall, OutputFit, ShellHost, SideEffectBinding, ToolBody, ToolCall, ToolContext, ToolDefinition, ToolExecutorOptions, ToolSet, WorkTreeObserver } from '@momonga/tools';
 import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode, SideEffect } from '@momonga/protocol';
 import { fakeSandbox, makeBlobs, makeClock, makeIdempotency, makeLayout, minimalPolicyFor } from './helpers.ts';
@@ -156,8 +156,10 @@ export const makeHarness = (options: HarnessOptions = {}) => {
     extra: Partial<Omit<ExecutionBatchInput, 'recoverOnly'>> & { recoverOnly?: true; mode?: PermissionMode; rules?: PermissionRule[] } = {},
   ): Promise<ExecutionBatchInput> => {
     const batch = {
-    calls: calls.map((entry) =>
-      bindApproval(entry, toolSet, { cwd: (extra.session ?? session).cwd, workingDirectory: (extra.session ?? session).workingDirectory, home: extra.home ?? layout.home, roots: extra.roots ?? [layout.project] }),
+    calls: await Promise.all(
+      calls.map((entry) =>
+        bindApproval(entry, toolSet, { cwd: (extra.session ?? session).cwd, workingDirectory: (extra.session ?? session).workingDirectory, home: extra.home ?? layout.home, roots: extra.roots ?? [layout.project], session: extra.session ?? session }),
+      ),
     ),
     toolSet,
     fence: { runId: 'run-1', workerId: 'w1', leaseToken: 1 },
@@ -200,43 +202,34 @@ export type HarnessCall = { callId: string; name: string; arguments: unknown; ap
 
 export const UNRESOLVED_SUBJECT_DIGEST = 'unresolved-subject';
 
-const subjectForDigest = (subject: PermissionSubject, cwd: string): unknown => {
-  if (subject.kind === 'path') {
-    return {
-      ...subject,
-      paths: subject.paths.map((target) => {
-        const absolute = absoluteFrom(target, cwd);
-        const resolution = syncPaths.resolveCanonicalPath(absolute);
-        return resolution.ok ? resolution.path : absolute;
-      }),
-    };
-  }
-  if (subject.kind === 'command') {
-    const resolution = syncPaths.resolveCanonicalPath(cwd);
-    return { subject, cwd: resolution.ok ? resolution.path : null };
-  }
-  return subject;
+type BindingContext = { cwd: string; workingDirectory: string; home: string; roots: readonly string[]; session: ToolSessionState };
+
+const digestForTool = async (tool: AnyTool, value: unknown, context: BindingContext): Promise<string> => {
+  const subjectContext = { cwd: context.cwd, workingDirectory: context.workingDirectory, home: context.home, roots: context.roots, paths: testPaths() };
+  const described = await approvalDescriptionOf(tool, value, subjectContext, { ...subjectContext, files: nodeFileSystem, session: context.session, signal: new AbortController().signal });
+  return subjectDigestOf(tool.subject(value, subjectContext), described, context.cwd, syncPaths.resolveCanonicalPath);
 };
 
-export const expectedSubjectDigest = (subject: PermissionSubject, cwd: string): string => sha256Hex(canonicalJson(subjectForDigest(subject, cwd)));
+export const expectedDigestOf = (tool: AnyTool, input: unknown, harness: { layout: Layout; session: ToolSessionState }): Promise<string> =>
+  digestForTool(tool, input, { cwd: harness.session.cwd, workingDirectory: harness.session.workingDirectory, home: harness.layout.home, roots: [harness.layout.project], session: harness.session });
 
-const digestForCall = (entry: HarnessCall, toolSet: ToolSet, context: { cwd: string; workingDirectory: string; home: string; roots: readonly string[] }): string => {
+const digestForCall = async (entry: HarnessCall, toolSet: ToolSet, context: BindingContext): Promise<string> => {
   const tool = toolSet.get(entry.name);
   if (tool === undefined) return UNRESOLVED_SUBJECT_DIGEST;
   const value: unknown = typeof entry.arguments === 'string' ? JSON.parse(entry.arguments) : entry.arguments;
   if (!validateUntrusted(schemaIdentity(tool), tool.inputSchema, value).valid) return UNRESOLVED_SUBJECT_DIGEST;
   try {
-    return expectedSubjectDigest(tool.subject(value, { ...context, paths: testPaths() }), context.cwd);
+    return await digestForTool(tool, value, context);
   } catch {
     return UNRESOLVED_SUBJECT_DIGEST;
   }
 };
 
-const bindApproval = (entry: HarnessCall, toolSet: ToolSet, context: { cwd: string; workingDirectory: string; home: string; roots: readonly string[] }): ToolCall => {
+const bindApproval = async (entry: HarnessCall, toolSet: ToolSet, context: BindingContext): Promise<ToolCall> => {
   const { approval, ...rest } = entry;
   if (approval === undefined) return rest;
   if (typeof approval !== 'string') return { ...rest, approval };
-  return { ...rest, approval: { kind: approval, subjectDigest: digestForCall(entry, toolSet, context) } };
+  return { ...rest, approval: { kind: approval, subjectDigest: await digestForCall(entry, toolSet, context) } };
 };
 
 export const call = (callId: string, name: string, args: unknown = {}, approval?: ApprovalSpec): HarnessCall =>

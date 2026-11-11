@@ -385,6 +385,14 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
   };
 }
 
+export const planProtection = (denied: readonly string[], scratch: readonly string[]): string[] => [
+  '--bind',
+  '/',
+  '/',
+  ...denied.flatMap((area) => ['--tmpfs', area]),
+  ...scratch.flatMap((folder) => ['--bind', folder, folder]),
+];
+
 export const bwrapProbeArguments = (shell: string): string[] => [
   '--unshare-pid',
   '--unshare-ipc',
@@ -589,6 +597,7 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
       return launch({
         file: wrapped.file,
         args: wrapped.args,
+        protection: { kind: 'sandboxed', backend: 'bubblewrap' },
         socketFilter: socketFilter(architecture, wrapped.socketFilter),
         cwd: command.cwd,
         ...(command.markerFile === undefined ? {} : { markerFile: command.markerFile }),

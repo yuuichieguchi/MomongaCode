@@ -310,7 +310,7 @@ export const pathSegment = (value: string): string => {
 export type RuntimeClientOptions = { resolveSocket: SocketResolver; clock: Pick<CliClock, 'now' | 'sleep'>; onMoved?: () => Promise<void> };
 
 export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClient => {
-  const http = createUdsClient(options.resolveSocket, { headersTimeoutMs: HOST_READ_BOUND_MS });
+  const http = createUdsClient(options.resolveSocket, { connectTimeoutMs: HOST_READ_BOUND_MS, headersTimeoutMs: HOST_READ_BOUND_MS });
 
   const send = async (
     method: string,

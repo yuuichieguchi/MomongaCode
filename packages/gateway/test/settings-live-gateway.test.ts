@@ -70,7 +70,7 @@ const startStack = async (context: CleanupContext, settings: unknown, env: Recor
   registerCleanup(context, async () => {
     await handle.close(NO_GRACE);
   });
-  const client = createUdsClient(fixedSocket(handle.socketPath));
+  const client = createUdsClient(fixedSocket(handle.socketPath), { connectTimeoutMs: 0 });
   registerCleanup(context, () => client.destroy());
   return { home, handle, client, logText: () => chunks.join('') };
 };
@@ -409,7 +409,7 @@ const startKeyedStack = async (context: CleanupContext, fake: FakeChatCompletion
   registerCleanup(context, async () => {
     await handle.close(NO_GRACE);
   });
-  const client = createUdsClient(fixedSocket(handle.socketPath));
+  const client = createUdsClient(fixedSocket(handle.socketPath), { connectTimeoutMs: 0 });
   registerCleanup(context, () => client.destroy());
   return client;
 };
@@ -486,7 +486,7 @@ describe('S8 gateway: every supervisor reply that is not a value is unset, and i
     registerCleanup(context, async () => {
       await handle.close(NO_GRACE);
     });
-    const client = createUdsClient(fixedSocket(handle.socketPath));
+    const client = createUdsClient(fixedSocket(handle.socketPath), { connectTimeoutMs: 0 });
     registerCleanup(context, () => client.destroy());
     const answered = await post(client, ask());
     expect(answered.text).toContain(UNSET_TEXT);

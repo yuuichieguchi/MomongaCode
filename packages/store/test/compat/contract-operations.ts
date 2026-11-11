@@ -53,7 +53,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
       const claim = claimOf(store, run.id, 'asking-worker');
       ok(store.append(claim, [call('ask-1'), call('ask-2')]), 'append calls');
       const expiresAt = clock.now() + 60_000;
-      const approval = ok(await store.requestApproval(claim, { callId: 'ask-1', options: OPTIONS, event: { subjectDigest: 'a'.repeat(64), reason: 'contract' } }), 'approval').approval;
+      const approval = ok(await store.requestApproval(claim, { callId: 'ask-1', options: OPTIONS, event: { subjectDigest: 'a'.repeat(64), reason: 'contract', shown: { title: 'approval', input: {} } } }), 'approval').approval;
       const elicitation = ok(await store.requestElicitation(claim, { callId: 'ask-2', expiresAt, server: 'remote', requests: REQUESTS }), 'elicitation').approval;
       ok(await store.release(claim, 'WAITING_HUMAN'), 'park');
       expect((await store.resolveApproval(approval.id, 'allow_once')).kind).toBe('ok');

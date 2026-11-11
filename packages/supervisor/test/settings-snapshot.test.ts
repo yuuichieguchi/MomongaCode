@@ -42,7 +42,7 @@ const askForCredential = (context: CleanupContext, h: Harness, name: string): Pr
   h.realWork.run(async () => {
     const capability = h.fake.latest('gateway').options.env[CREDENTIAL_CAPABILITY_ENV];
     if (capability === undefined) throw new Error('the gateway was spawned without a credential capability');
-    const client = createUdsClient(fixedSocket(firstGeneration(h.paths).sockets.supervisor), { headersTimeoutMs: 5000 });
+    const client = createUdsClient(fixedSocket(firstGeneration(h.paths).sockets.supervisor), { connectTimeoutMs: 0, headersTimeoutMs: 5000 });
     registerCleanup(context, () => client.destroy());
     const response = await client.request({ method: 'GET', path: `/v1/credentials/${name}`, headers: { [CREDENTIAL_CAPABILITY_HEADER]: capability } });
     const text = await response.text();

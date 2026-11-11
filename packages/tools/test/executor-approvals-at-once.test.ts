@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { PermissionSubject } from '@momonga/policy';
-import { call, expectedSubjectDigest, makeHarness, makeTool, toolSetOf } from './harness.ts';
+import { call, expectedDigestOf, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import { ruleFor } from './helpers.ts';
 
 const PATH_SCHEMA = { type: 'object', properties: { file_path: { type: 'string' } }, required: ['file_path'], additionalProperties: false } as const;
@@ -45,10 +45,10 @@ describe('executor asks for every call that needs approval in one batch', () => 
       ['cC', 'deferred'],
       ['cD', 'deferred'],
     ]);
-    const digestOf = (name: string) => expectedSubjectDigest(writeSubject({ file_path: target(name) }), harness.layout.project);
-    expect(outcomes[0]).toMatchObject({ subjectDigest: digestOf('a.txt') });
-    expect(outcomes[1]).toMatchObject({ subjectDigest: digestOf('b.txt') });
-    expect(digestOf('a.txt')).not.toBe(digestOf('b.txt'));
+    const digestOf = (name: string) => expectedDigestOf(write, { file_path: target(name) }, harness);
+    expect(outcomes[0]).toMatchObject({ subjectDigest: await digestOf('a.txt') });
+    expect(outcomes[1]).toMatchObject({ subjectDigest: await digestOf('b.txt') });
+    expect(await digestOf('a.txt')).not.toBe(await digestOf('b.txt'));
     expect(outcomes[2]).toEqual({ callId: 'cC', kind: 'deferred' });
     expect(outcomes[3]).toEqual({ callId: 'cD', kind: 'deferred' });
     expect(executed).toEqual([]);

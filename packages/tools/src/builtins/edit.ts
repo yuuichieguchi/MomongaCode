@@ -7,7 +7,7 @@ import { diffOfReplacements } from './applied-diff.ts';
 import type { TextReplacement } from './applied-diff.ts';
 import { numberedLines, splitLines } from './format.ts';
 import { accessedPathOf, canonicalPathOf, resolvedPathOf, shownPath } from './paths.ts';
-import { parsePreparedWrite, reconcileWrite } from './prepared.ts';
+import { approvalOfPreparedWrite, parsePreparedWrite, reconcileWrite } from './prepared.ts';
 import type { PreparedWrite } from './prepared.ts';
 
 type EditInput = { file_path: string; old_string: string; new_string: string; replace_all?: boolean };
@@ -133,7 +133,7 @@ export const editTool = defineTool<EditInput>({
   title: async (input, ctx) => `Edit ${await shownPath(ctx, await accessedPathOf(ctx, input.file_path))}`,
   locations: (input, ctx) => [{ path: resolvedPathOf(ctx, input.file_path) }],
   subject: (input, ctx) => ({ kind: 'path', tool: 'Edit', paths: [resolvedPathOf(ctx, input.file_path)], access: 'write' }),
-  precondition: async (input, ctx) => void (await planEdit(input, ctx)),
+  approval: async (input, ctx) => approvalOfPreparedWrite(await prepareEdit(input, ctx)),
   prepare: prepareEdit,
   execute: async (input, ctx, prepared) => {
     const plan = parsePreparedWrite(prepared);

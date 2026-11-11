@@ -94,7 +94,7 @@ describe('the transcript store', () => {
     const child = (event: Record<string, unknown>) => ({ ...eventOf(event), runId: 'child' });
     foldChild([child({ ...call, title: 'Read /b' }), child({ type: 'tool.started', callId: 'c1', idemKey: 'k' })], 'reviewer', store);
     expect(store.state().subagents).toEqual([{ runId: 'child', agent: 'reviewer', title: 'Read /b', startedAt: 1000, awaitingApproval: false }]);
-    foldChild([child({ type: 'tool.permission.requested', approvalId: 'ap', callId: 'c1', subjectDigest: 'd', options: [] })], 'reviewer', store);
+    foldChild([child({ type: 'tool.permission.requested', approvalId: 'ap', callId: 'c1', subjectDigest: 'd', options: [], shown: { title: 'approval', input: {} } })], 'reviewer', store);
     expect(store.state().subagents[0]?.awaitingApproval).toBe(true);
     foldChild([child({ type: 'tool.permission.resolved', approvalId: 'ap', optionId: 'o' })], 'reviewer', store);
     expect(store.state().subagents[0]?.awaitingApproval).toBe(false);

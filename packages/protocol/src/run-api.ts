@@ -35,6 +35,7 @@ const appliedDiffFields = {
   removed: integer,
   diffOmitted: string,
 } as const satisfies Record<string, JsonSchema>;
+const approvalShown: JsonSchema = closed({ title: string, input: anything, effect: string, claim: string, diff: closed(appliedDiffFields, []) }, ['title', 'input']);
 const toolFiles: JsonSchema = { type: 'array', items: closed({ path: string, sha256: string, access: enumOf(FILE_ACCESSES) }, ['path', 'access']) };
 
 const permissionMode = enumOf(PERMISSION_MODES);
@@ -522,8 +523,8 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     required: ['callId', 'providerCallId', 'name', 'kind', 'title', 'rawInput'],
   },
   'tool.permission.requested': {
-    properties: { approvalId: string, callId: string, options: { type: 'array', items: permissionOption }, subjectDigest: string, reason: string, suggestedRule: string },
-    required: ['approvalId', 'callId', 'options', 'subjectDigest', 'reason'],
+    properties: { approvalId: string, callId: string, options: { type: 'array', items: permissionOption }, subjectDigest: string, reason: string, suggestedRule: string, shown: approvalShown },
+    required: ['approvalId', 'callId', 'options', 'subjectDigest', 'reason', 'shown'],
   },
   'tool.permission.classified': {
     properties: {
@@ -1587,6 +1588,7 @@ export const RUN_API_SCHEMAS = {
         createdAt: integer,
         suggestedRule: string,
         reason: string,
+        shown: approvalShown,
         toolCall: closed(
           {
             callId: string,

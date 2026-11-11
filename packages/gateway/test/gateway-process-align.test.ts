@@ -121,7 +121,7 @@ const rejectionOf = async (started: Promise<GatewayProcess>): Promise<unknown> =
 const heldRequest = async (context: CleanupContext, fake: Awaited<ReturnType<typeof prepareHome>>['fake'], socketPath: string) => {
   const hold = fake.hold();
   registerCleanup(context, () => hold.release());
-  const client = createUdsClient(fixedSocket(socketPath));
+  const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0 });
   registerCleanup(context, () => client.close());
   const request = postJson(client, '/v1/responses', { model: 'primary/system', input: userInput('hold me') }, { 'idempotency-key': 'held-through-grace' }).then(
     async (response) => response.status,

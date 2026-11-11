@@ -42,7 +42,7 @@ const initRepository = (home: E2eHome, origin: string): string => {
 };
 
 const trustProject = async (home: E2eHome): Promise<void> => {
-  const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime));
+  const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime), { connectTimeoutMs: 0 });
   try {
     const response = await client.request({ method: 'PUT', path: '/v1/trust', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: home.project, decision: 'trusted' }) });
     expect(response.status).toBe(200);

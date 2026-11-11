@@ -7,7 +7,7 @@ import { createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import * as tools from '@momonga/tools';
 import { nodeShellHost } from '@momonga/tools';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -59,7 +59,7 @@ const recording = (inner: Sandbox): Sandbox => ({
 
 const request = (command: string, extra: Record<string, unknown> = {}) => ({
   command,
-  sandbox: recording(createUnsandboxed({ killGraceMs: 200 })),
+  sandbox: recording(createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 200 })),
   sandboxPolicy: policy(),
   env: { PATH: '/usr/bin:/bin' },
   shellHost: nodeShellHost(),
