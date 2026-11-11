@@ -40,9 +40,6 @@ const deferred = <T>(): Deferred<T> => {
   return { promise, resolve, reject };
 };
 
-const settle = async (): Promise<void> => {
-  for (let turn = 0; turn < 10; turn += 1) await new Promise((resolve) => setImmediate(resolve));
-};
 
 type LogLine = Record<string, unknown> & { msg: string };
 
@@ -192,20 +189,30 @@ const launch = async (argv: readonly string[] = ARGV_FILE, overrides: Partial<Da
     },
   );
   running.catch(() => undefined);
-  await settle();
+  await waitFor(() => daemon.contexts.length === 1 || entryError !== undefined || exitCode !== undefined, { description: 'the start of the daemon or the end of the entry' });
   return { ...fake, ...daemon, running, exitCode: () => exitCode, entryError: () => entryError };
 };
 
 const launchRunning = async (argv: readonly string[] = ARGV_FILE, overrides: Partial<DaemonDefinition<Flags>> = {}) => {
   const launched = await launch(argv, overrides);
-  await waitFor(() => launched.contexts.length === 1 || launched.entryError() !== undefined || launched.exitCode() !== undefined, { description: 'the start of the daemon or the end of the entry' });
   expect(launched.contexts, `start was not called: ${String(launched.entryError())}`).toHaveLength(1);
   launched.run();
-  await settle();
+  await launched.start.promise;
   return launched;
 };
 
 type Launched = Awaited<ReturnType<typeof launch>>;
+
+const closing = (launched: Launched): Promise<void> =>
+  waitFor(() => launched.close.mock.calls.length === 1 && launched.timers.pending().length > 0, { description: 'the close to begin with its deadline armed' });
+
+const aborting = (launched: Launched): Promise<void> => waitFor(() => launched.abort.mock.calls.length === 1, { description: 'the abort' });
+
+const deadlineArmed = (launched: Launched): Promise<void> => waitFor(() => launched.timers.pending().length > 0, { description: 'the deadline of the stop to be armed' });
+
+const shutdownSettled = async (launched: Launched): Promise<void> => {
+  await launched.result.promise.catch(() => undefined);
+};
 
 const expectFinalExit = (lines: readonly LogLine[], expected: { code: number; path: string; clean: boolean; trigger?: string }): void => {
   const last = lines.at(-1);
@@ -217,7 +224,6 @@ const expectFinalExit = (lines: readonly LogLine[], expected: { code: number; pa
 };
 
 const finish = async (launched: Launched, code: number): Promise<void> => {
-  await settle();
   expect(await launched.running).toBe(code);
   expect(launched.exits).toEqual([code]);
 };
@@ -230,7 +236,7 @@ describe('runDaemonEntry: running state', () => {
   it('SIGTERM closes', async () => {
     const launched = await launchRunning();
     launched.signal('SIGTERM');
-    await settle();
+    await closing(launched);
     expect(launched.close).toHaveBeenCalledTimes(1);
     launched.result.resolve({ clean: true });
     await finish(launched, 0);
@@ -241,9 +247,9 @@ describe('runDaemonEntry: running state', () => {
   it('second SIGTERM aborts', async () => {
     const launched = await launchRunning();
     launched.signal('SIGTERM');
-    await settle();
+    await closing(launched);
     launched.signal('SIGTERM');
-    await settle();
+    await aborting(launched);
     expect(launched.close).toHaveBeenCalledTimes(1);
     expect(launched.abort).toHaveBeenCalledTimes(1);
     launched.result.resolve({ clean: true });
@@ -254,20 +260,20 @@ describe('runDaemonEntry: running state', () => {
   it('SIGINT aborts directly', async () => {
     const launched = await launchRunning();
     launched.signal('SIGINT');
-    await settle();
+    await aborting(launched);
     expect(launched.abort).toHaveBeenCalledTimes(1);
-    expect(launched.close).not.toHaveBeenCalled();
     launched.result.resolve({ clean: true });
     await finish(launched, 0);
+    expect(launched.close).not.toHaveBeenCalled();
     expectFinalExit(launched.sinkLines(), { code: 0, path: 'abort', clean: true, trigger: 'sigint' });
   });
 
   it('SIGINT during closing aborts', async () => {
     const launched = await launchRunning();
     launched.signal('SIGTERM');
-    await settle();
+    await closing(launched);
     launched.signal('SIGINT');
-    await settle();
+    await aborting(launched);
     expect(launched.abort).toHaveBeenCalledTimes(1);
     launched.result.resolve({ clean: true });
     await finish(launched, 0);
@@ -276,26 +282,24 @@ describe('runDaemonEntry: running state', () => {
   it('signals during aborting are logged and ignored', async () => {
     const launched = await launchRunning();
     launched.signal('SIGINT');
-    await settle();
+    await aborting(launched);
     launched.signal('SIGTERM');
     launched.signal('SIGINT');
-    await settle();
-    expect(launched.abort).toHaveBeenCalledTimes(1);
-    expect(launched.close).not.toHaveBeenCalled();
     expect(launched.sinkLines().filter((line) => line.msg === 'entry.signal')).toHaveLength(3);
     launched.result.resolve({ clean: true });
     await finish(launched, 0);
+    expect(launched.abort).toHaveBeenCalledTimes(1);
+    expect(launched.close).not.toHaveBeenCalled();
   });
 
   it('lifeline EOF closes', async () => {
     const launched = await launchRunning(ARGV_LIFELINE);
     expect(launched.lifelines.map((lifeline) => lifeline.fd)).toEqual([3]);
     launched.eof();
-    await settle();
-    expect(launched.close).toHaveBeenCalledTimes(1);
+    await closing(launched);
     expect(launched.sinkLines().some((line) => line.msg === 'entry.lifeline_eof')).toBe(true);
     launched.signal('SIGTERM');
-    await settle();
+    await aborting(launched);
     expect(launched.abort).toHaveBeenCalledTimes(1);
     launched.result.resolve({ clean: true });
     await finish(launched, 0);
@@ -305,13 +309,12 @@ describe('runDaemonEntry: running state', () => {
   it('EOF during closing is ignored', async () => {
     const launched = await launchRunning(ARGV_LIFELINE);
     launched.signal('SIGTERM');
-    await settle();
+    await closing(launched);
     launched.eof();
-    await settle();
-    expect(launched.close).toHaveBeenCalledTimes(1);
-    expect(launched.abort).not.toHaveBeenCalled();
     launched.result.resolve({ clean: true });
     await finish(launched, 0);
+    expect(launched.close).toHaveBeenCalledTimes(1);
+    expect(launched.abort).not.toHaveBeenCalled();
     expectFinalExit(launched.sinkLines(), { code: 0, path: 'close', clean: true, trigger: 'sigterm' });
   });
 
@@ -334,21 +337,20 @@ describe('runDaemonEntry: running state', () => {
   it('fatal resolving aborts and exits 1', async () => {
     const launched = await launchRunning();
     launched.fatal.resolve(new Error('server error'));
-    await settle();
-    expect(launched.abort).toHaveBeenCalledTimes(1);
-    expect(launched.close).not.toHaveBeenCalled();
+    await aborting(launched);
     expect(launched.sinkLines().some((line) => line.msg === 'entry.fatal')).toBe(true);
     launched.result.resolve({ clean: true });
     await finish(launched, 1);
+    expect(launched.close).not.toHaveBeenCalled();
     expectFinalExit(launched.sinkLines(), { code: 1, path: 'abort', clean: false, trigger: 'fatal' });
   });
 
   it('fatal during closing aborts', async () => {
     const launched = await launchRunning();
     launched.signal('SIGTERM');
-    await settle();
+    await closing(launched);
     launched.fatal.resolve(new Error('server error'));
-    await settle();
+    await aborting(launched);
     expect(launched.abort).toHaveBeenCalledTimes(1);
     launched.result.resolve({ clean: true });
     await finish(launched, 1);
@@ -357,7 +359,7 @@ describe('runDaemonEntry: running state', () => {
   it('uncaught error aborts and exits 1', async () => {
     const launched = await launchRunning();
     launched.uncaught(new Error('boom'));
-    await settle();
+    await aborting(launched);
     expect(launched.abort).toHaveBeenCalledTimes(1);
     const uncaught = launched.sinkLines().find((line) => line.msg === 'entry.uncaught');
     expect(uncaught?.['err']).toMatchObject({ name: 'Error', message: 'boom' });
@@ -369,17 +371,15 @@ describe('runDaemonEntry: running state', () => {
   it('hard deadline', async () => {
     const launched = await launchRunning();
     launched.signal('SIGTERM');
-    await settle();
+    await closing(launched);
     launched.timers.advance(MAX_CLOSE_MS + ENTRY_HARD_EXIT_MARGIN_MS - 1);
-    await settle();
     expect(launched.exits).toEqual([]);
     launched.timers.advance(1);
-    await settle();
     expect(launched.exits).toEqual([1]);
     expectFinalExit(launched.sinkLines(), { code: 1, path: 'deadline', clean: false, trigger: 'sigterm' });
     launched.timers.advance(60_000);
     launched.result.resolve({ clean: true });
-    await settle();
+    await shutdownSettled(launched);
     expect(launched.exits).toEqual([1]);
   });
 });
@@ -388,7 +388,6 @@ describe('runDaemonEntry: starting state', () => {
   it('signal during starting cancels startup', async () => {
     const launched = await launch();
     launched.signal('SIGTERM');
-    await settle();
     const signal = launched.contexts[0]?.signal;
     expect(signal?.aborted).toBe(true);
     expect(signal?.reason).toBeInstanceOf(StartupCancelled);
@@ -402,7 +401,6 @@ describe('runDaemonEntry: starting state', () => {
     const launched = await launch(ARGV_LIFELINE, {});
     expect(launched.events.filter((event) => event !== 'hold' && event !== 'release')).toEqual(['watchLifeline']);
     launched.eof();
-    await settle();
     const signal = launched.contexts[0]?.signal;
     expect(signal?.aborted).toBe(true);
     expect(signal?.reason).toBeInstanceOf(StartupCancelled);
@@ -426,7 +424,7 @@ describe('runDaemonEntry: starting state', () => {
       },
     });
     void runDaemonEntry(fake.io, daemon.definition).catch(() => undefined);
-    await settle();
+    await waitFor(() => order.length === 2, { description: 'the call of start' });
     expect(order).toEqual(['watchLifeline', 'start']);
   });
 
@@ -437,9 +435,8 @@ describe('runDaemonEntry: starting state', () => {
     const launched = await launch(ARGV_LIFELINE);
     if (trigger === 'sigterm') launched.signal('SIGTERM');
     else launched.eof();
-    await settle();
     launched.run();
-    await settle();
+    await closing(launched);
     expect(launched.close).toHaveBeenCalledTimes(1);
     expect(launched.abort).not.toHaveBeenCalled();
     launched.result.resolve({ clean: true });
@@ -450,9 +447,8 @@ describe('runDaemonEntry: starting state', () => {
   it('lifeline EOF handler is not re-armed but the cancel latch is honoured', async () => {
     const launched = await launch(ARGV_LIFELINE);
     launched.eof();
-    await settle();
     launched.run();
-    await settle();
+    await closing(launched);
     expect(launched.events.filter((event) => event === 'watchLifeline')).toHaveLength(1);
     expect(launched.close).toHaveBeenCalledTimes(1);
     launched.result.resolve({ clean: true });
@@ -462,7 +458,6 @@ describe('runDaemonEntry: starting state', () => {
   it('uncaught during starting exits 1', async () => {
     const launched = await launch();
     launched.uncaught(new Error('early boom'));
-    await settle();
     expect(launched.sinkLines().some((line) => line.msg === 'entry.uncaught')).toBe(true);
     const signal = launched.contexts[0]?.signal;
     expect(signal?.aborted).toBe(true);
@@ -474,9 +469,8 @@ describe('runDaemonEntry: starting state', () => {
   it('uncaught during starting forces 1 even when start resolves and closes cleanly', async () => {
     const launched = await launch();
     launched.uncaught(new Error('early boom'));
-    await settle();
     launched.run();
-    await settle();
+    await waitFor(() => launched.close.mock.calls.length + launched.abort.mock.calls.length > 0, { description: 'the stop of the handle that started anyway' });
     expect(launched.close.mock.calls.length + launched.abort.mock.calls.length).toBe(1);
     launched.result.resolve({ clean: true });
     await finish(launched, 1);
@@ -486,12 +480,10 @@ describe('runDaemonEntry: starting state', () => {
     const launched = await launch();
     launched.timers.advance(10_000);
     launched.signal('SIGTERM');
-    await settle();
+    await deadlineArmed(launched);
     launched.timers.advance(MAX_CLOSE_MS + ENTRY_HARD_EXIT_MARGIN_MS - 1);
-    await settle();
     expect(launched.exits).toEqual([]);
     launched.timers.advance(1);
-    await settle();
     expect(launched.exits).toEqual([1]);
     expectFinalExit(launched.sinkLines(), { code: 1, path: 'deadline', clean: false, trigger: 'sigterm' });
   });
@@ -499,8 +491,8 @@ describe('runDaemonEntry: starting state', () => {
   it('no deadline runs while start is pending without a cancel', async () => {
     const launched = await launch();
     expect(launched.contexts, `start was not called: ${String(launched.entryError())}`).toHaveLength(1);
+    expect(launched.timers.pending()).toEqual([]);
     launched.timers.advance(10 * (MAX_CLOSE_MS + ENTRY_HARD_EXIT_MARGIN_MS));
-    await settle();
     expect(launched.exits).toEqual([]);
   });
 });
@@ -517,7 +509,7 @@ describe('runDaemonEntry: requestShutdown', () => {
   it("requestShutdown closes once and exits 0 with trigger 'request'", async () => {
     const launched = await launchRunning();
     requestShutdownOf(launched)();
-    await settle();
+    await closing(launched);
     expect(launched.close).toHaveBeenCalledTimes(1);
     expect(launched.abort).not.toHaveBeenCalled();
     expect(shutdownRequests(launched).map((line) => line['state'])).toEqual(['running']);
@@ -531,11 +523,8 @@ describe('runDaemonEntry: requestShutdown', () => {
     const launched = await launchRunning();
     const requestShutdown = requestShutdownOf(launched);
     requestShutdown();
-    await settle();
+    await closing(launched);
     requestShutdown();
-    await settle();
-    expect(launched.close).toHaveBeenCalledTimes(1);
-    expect(launched.abort).not.toHaveBeenCalled();
     expect(shutdownRequests(launched).map((line) => line['state'])).toEqual(['running', 'closing']);
     launched.result.resolve({ clean: true });
     await finish(launched, 0);
@@ -546,9 +535,9 @@ describe('runDaemonEntry: requestShutdown', () => {
   it('a SIGTERM after requestShutdown aborts', async () => {
     const launched = await launchRunning();
     requestShutdownOf(launched)();
-    await settle();
+    await closing(launched);
     launched.signal('SIGTERM');
-    await settle();
+    await aborting(launched);
     expect(launched.close).toHaveBeenCalledTimes(1);
     expect(launched.abort).toHaveBeenCalledTimes(1);
     launched.result.resolve({ clean: true });
@@ -560,18 +549,15 @@ describe('runDaemonEntry: requestShutdown', () => {
     const launched = await launchRunning();
     const requestShutdown = requestShutdownOf(launched);
     launched.signal('SIGINT');
-    await settle();
+    await aborting(launched);
     requestShutdown();
-    await settle();
-    expect(launched.close).not.toHaveBeenCalled();
-    expect(launched.abort).toHaveBeenCalledTimes(1);
     expect(shutdownRequests(launched).map((line) => line['state'])).toEqual(['aborting']);
     launched.result.resolve({ clean: true });
     await finish(launched, 0);
+    expect(launched.close).not.toHaveBeenCalled();
     expectFinalExit(launched.sinkLines(), { code: 0, path: 'abort', clean: true, trigger: 'sigint' });
     const linesAtExit = launched.sinkLines().length;
     expect(() => requestShutdown()).not.toThrow();
-    await settle();
     expect(launched.sinkLines()).toHaveLength(linesAtExit);
     expect(launched.close).not.toHaveBeenCalled();
     expect(launched.abort).toHaveBeenCalledTimes(1);
@@ -591,7 +577,7 @@ describe('runDaemonEntry: requestShutdown', () => {
       return started;
     };
     const running = runDaemonEntry(fake.io, daemon.definition);
-    await settle();
+    await waitFor(() => daemon.contexts.length === 1, { description: 'the start of the daemon' });
     const context = daemon.contexts[0];
     expect(context).toBeDefined();
     expect(context?.signal.aborted).toBe(true);
@@ -599,19 +585,17 @@ describe('runDaemonEntry: requestShutdown', () => {
     expect(fake.sinkLines().filter((line) => line.msg === 'entry.shutdown_requested').map((line) => line['state'])).toEqual(['starting']);
     if (outcome === 'reject') {
       daemon.start.reject(context?.signal.reason);
-      await settle();
       expect(await running).toBe(1);
       expect(fake.exits).toEqual([1]);
       expect(daemon.close).not.toHaveBeenCalled();
       expectFinalExit(fake.sinkLines(), { code: 1, path: 'startup-cancelled', clean: false, trigger: 'request' });
     } else {
       daemon.run();
-      await settle();
+      await waitFor(() => daemon.close.mock.calls.length === 1, { description: 'the close of the handle that started anyway' });
+      daemon.result.resolve({ clean: true });
+      expect(await running).toBe(0);
       expect(daemon.close).toHaveBeenCalledTimes(1);
       expect(daemon.abort).not.toHaveBeenCalled();
-      daemon.result.resolve({ clean: true });
-      await settle();
-      expect(await running).toBe(0);
       expect(fake.exits).toEqual([0]);
       expectFinalExit(fake.sinkLines(), { code: 0, path: 'close', clean: true, trigger: 'request' });
     }
@@ -621,7 +605,7 @@ describe('runDaemonEntry: requestShutdown', () => {
     const launched = await launchRunning();
     const requestShutdown = requestShutdownOf(launched);
     await Promise.resolve().then(() => requestShutdown());
-    await settle();
+    await closing(launched);
     expect(launched.close).toHaveBeenCalledTimes(1);
     expect(launched.abort).not.toHaveBeenCalled();
     launched.result.resolve({ clean: true });
@@ -634,14 +618,12 @@ describe('runDaemonEntry: requestShutdown', () => {
     const requestShutdown = requestShutdownOf(launched);
     launched.timers.setTimeout(() => requestShutdown(), 250);
     launched.timers.advance(249);
-    await settle();
-    expect(launched.close).not.toHaveBeenCalled();
+    expect(shutdownRequests(launched)).toEqual([]);
     launched.timers.advance(1);
-    await settle();
-    expect(launched.close).toHaveBeenCalledTimes(1);
-    expect(launched.abort).not.toHaveBeenCalled();
+    await closing(launched);
     launched.result.resolve({ clean: true });
     await finish(launched, 0);
+    expect(launched.abort).not.toHaveBeenCalled();
     expectFinalExit(launched.sinkLines(), { code: 0, path: 'close', clean: true, trigger: 'request' });
   });
 });
@@ -801,7 +783,7 @@ describe('log targets and stdout', () => {
     announceReady(fields, context.stdout);
     context.logger.info('daemon.started');
     launched.run();
-    await settle();
+    await launched.start.promise;
     await closeCleanly(launched);
     expect(launched.stdout()).toBe(`${JSON.stringify({ event: 'ready', ...fields })}\n`);
     expect(launched.sinkLines().length).toBeGreaterThan(0);
@@ -849,10 +831,9 @@ describe('log targets and stdout', () => {
     const daemon = scriptedDaemon();
     const running = runDaemonEntry(fake.io, daemon.definition);
     running.catch(() => undefined);
-    await settle();
-    expect(daemon.contexts).toHaveLength(1);
+    await waitFor(() => daemon.contexts.length === 1, { description: 'the start of the daemon' });
     daemon.run();
-    await settle();
+    await daemon.start.promise;
     fake.signal('SIGTERM');
     daemon.result.resolve({ clean: true });
     expect(await running).toBe(0);
@@ -868,12 +849,12 @@ const exitScenarios: Array<[string, (launched: Launched) => Promise<void>, { cod
   ['abort', async (launched) => (launched.signal('SIGINT'), launched.result.resolve({ clean: true })), { code: 0, path: 'abort' }],
   ['request', async (launched) => (requestShutdownOf(launched)(), launched.result.resolve({ clean: true })), { code: 0, path: 'close' }],
   ['unclean close', async (launched) => (launched.signal('SIGTERM'), launched.result.resolve({ clean: false })), { code: 1, path: 'close' }],
-  ['fatal', async (launched) => (launched.fatal.resolve(new Error('f')), await settle(), launched.result.resolve({ clean: true })), { code: 1, path: 'abort' }],
+  ['fatal', async (launched) => (launched.fatal.resolve(new Error('f')), await aborting(launched), launched.result.resolve({ clean: true })), { code: 1, path: 'abort' }],
   [
     'deadline',
     async (launched) => {
       launched.signal('SIGTERM');
-      await settle();
+      await closing(launched);
       launched.timers.advance(MAX_CLOSE_MS + ENTRY_HARD_EXIT_MARGIN_MS);
     },
     { code: 1, path: 'deadline' },
@@ -884,9 +865,8 @@ describe('every path', () => {
   it.each(exitScenarios)('entry.exit is the last line and exit is called once: %s', async (_name, drive, expected) => {
     const launched = await launchRunning();
     await drive(launched);
-    await settle();
+    await launched.running;
     launched.timers.advance(60_000);
-    await settle();
     expect(launched.exits).toEqual([expected.code]);
     const last = launched.sinkLines().at(-1);
     expect(last).toMatchObject({ msg: 'entry.exit', code: expected.code, path: expected.path, clean: expected.code === 0 });
@@ -910,6 +890,7 @@ const fakeStream = () => {
     hold: () => {
       holdCallbacks = true;
     },
+    held: () => pendingCallbacks.length,
     release: () => {
       for (const callback of pendingCallbacks.splice(0)) callback();
     },
@@ -985,20 +966,20 @@ describe('nodeEntryIo', () => {
     const io = nodeEntryIo(asProcess);
     io.exit(3);
     expect(host.exitCode).toBe(3);
-    await settle();
+    await waitFor(() => exit.mock.calls.length > 0, { description: 'the exit after the flush' });
     expect(exit).toHaveBeenCalledTimes(1);
     expect(exit).toHaveBeenCalledWith(3);
   });
 
   it('nodeEntryIo.exit flushes before exiting', async () => {
-    const { stderr, exit, asProcess } = fakeHost();
+    const { stdout, stderr, exit, asProcess } = fakeHost();
     stderr.hold();
     const io = nodeEntryIo(asProcess);
     io.exit(2);
-    await settle();
+    await waitFor(() => stderr.held() === 1 && stdout.written.length > 0, { description: 'the flush of both streams to be asked' });
     expect(exit).not.toHaveBeenCalled();
     stderr.release();
-    await settle();
+    await waitFor(() => exit.mock.calls.length > 0, { description: 'the exit after the flush' });
     expect(exit).toHaveBeenCalledTimes(1);
     expect(exit).toHaveBeenCalledWith(2);
   });
@@ -1009,12 +990,11 @@ describe('nodeEntryIo', () => {
     stderr.hold();
     const io = nodeEntryIo(asProcess);
     io.exit(2);
-    await settle();
+    await waitFor(() => stderr.held() === 1, { description: 'the flush of stderr to be asked' });
     vi.advanceTimersByTime(STDIO_EXIT_FLUSH_MS - 1);
-    await settle();
     expect(exit).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
-    await settle();
+    await waitFor(() => exit.mock.calls.length > 0, { description: 'the exit after the flush gave up' });
     expect(exit).toHaveBeenCalledTimes(1);
     expect(exit).toHaveBeenCalledWith(2);
   });
