@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { canStillRun } from '@momonga/foundation';
+import { tempDirPrefixFor, testRunToken } from '../../packages/testkit/src/test-support.ts';
 import type { TlcRun, TlcRunOptions } from './manifest.ts';
 
 export const TLC_WORKERS = Math.ceil(os.availableParallelism() / 2);
@@ -86,14 +87,8 @@ process.on('exit', () => {
   for (const pgid of liveGroups) killGroup(pgid);
 });
 
-const metadirPrefix = (): string => {
-  const token = process.env['MOMONGA_TEST_RUN'];
-  if (token === undefined) throw new Error('MOMONGA_TEST_RUN is not set; run through a vitest project with the leak-guard global setup');
-  return `mmt-${token}-tlc-`;
-};
-
 export const runTlc = async (options: TlcRunOptions): Promise<TlcRun> => {
-  const metadir = fs.mkdtempSync(path.join(os.tmpdir(), metadirPrefix()));
+  const metadir = fs.mkdtempSync(path.join(os.tmpdir(), `${tempDirPrefixFor(testRunToken())}tlc-`));
   try {
     const child = spawn(options.script, [options.config, ...options.args, '-workers', String(TLC_WORKERS)], {
       detached: true,

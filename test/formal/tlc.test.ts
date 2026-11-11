@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { TEST_SETUP_COMMAND, requireTlaJar } from '../../scripts/fetch-tla.ts';
+import { tempDirPrefixFor, testRunToken } from '../../packages/testkit/src/test-support.ts';
 import { createTempRoot, removeTempRoot } from '../../scripts/support/temp.ts';
 import { MANIFEST_FORMAT, TLC_WORKERS, discoveryProblems, readManifest, runTlc, verdictProblems } from './manifest.ts';
 import type { Manifest, ManifestEntry, TlcRun } from './manifest.ts';
@@ -320,7 +321,7 @@ describe('running tlc.sh under the harness', () => {
     const metadir = (run.stdout.split('\n').find((line) => line.startsWith('METADIR ')) ?? '').slice('METADIR '.length);
     expect(metadir).toBe(run.metadir);
     expect(path.dirname(run.metadir)).toBe(os.tmpdir());
-    expect(path.basename(run.metadir).startsWith(`mmt-${process.env['MOMONGA_TEST_RUN']}-tlc-`)).toBe(true);
+    expect(path.basename(run.metadir).startsWith(`${tempDirPrefixFor(testRunToken())}tlc-`)).toBe(true);
     expect(run.stdout).toContain('METADIR_EXISTS');
     expect(fs.existsSync(run.metadir)).toBe(false);
   });
