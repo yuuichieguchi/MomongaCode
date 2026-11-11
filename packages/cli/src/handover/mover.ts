@@ -1,4 +1,4 @@
-import { orderVersions } from '@momonga/foundation';
+import { isRecord, orderVersions } from '@momonga/foundation';
 import type { KeptWork, Surface } from '@momonga/protocol';
 import type { HandoverTerminal } from '../tui/terminal/layer.ts';
 import { encodeRecord } from './record.ts';
@@ -38,6 +38,11 @@ export type Mover = {
 
 const reasonOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
+const codeOf = (error: unknown): string => {
+  if (isRecord(error) && typeof error['code'] === 'string') return error['code'];
+  return error instanceof Error ? error.name : String(error);
+};
+
 export const createMover = (ports: MoverPorts): Mover => {
   let surface: MoveSurface | undefined;
   let wanted: string | undefined;
@@ -45,6 +50,7 @@ export const createMover = (ports: MoverPorts): Mover => {
   const tried = new Set<string>();
   const toldTooLarge = new Set<string>();
   const refusals = new Map<string, string>();
+  const toldWriteFailure = new Map<string, string>();
 
   const said = (on: MoveSurface, version: string, reason: string): void => {
     on.say(handoverFailedText(on.surface, { toVersion: version, fromVersion: ports.version, reason, kept: on.kept() }));
@@ -72,6 +78,9 @@ export const createMover = (ports: MoverPorts): Mover => {
       ports.write(file, encoded.text);
     } catch (error) {
       on.resume();
+      const code = codeOf(error);
+      if (toldWriteFailure.get(version) === code) return;
+      toldWriteFailure.set(version, code);
       said(on, version, reasonOf(error));
       return;
     }
