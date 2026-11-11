@@ -81,7 +81,7 @@ describe('on a port whose identity is a job the launch goes through the keeper',
     expect(file).toBe('C:\\cache\\momonga-keeper.exe');
     expect(args[0]).toBe('launch');
     expect(args[4]).toBe(Buffer.from('C:\\m\\marker', 'utf8').toString('hex'));
-    expect(args.slice(5)).toEqual(['--', 'C:\\Windows\\System32\\cmd.exe', '/c', 'echo a b']);
+    expect(args.slice(5)).toEqual(['-', '--', 'C:\\Windows\\System32\\cmd.exe', '/c', 'echo a b']);
     expect(options).toMatchObject({ cwd: 'C:\\work', env: { SystemRoot: 'C:\\Windows' }, detached: true, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     expect(world.port.names?.nameOf(KEEPER_PID)).toMatch(/^[0-9a-f]{32}$/);
   });
