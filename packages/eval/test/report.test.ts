@@ -45,7 +45,7 @@ describe('transcript codec', () => {
   });
 
   it('rejects a file without a transcript header, naming the design-core-on 3.2 transcript format', () => {
-    expect(() => decodeTranscript('{"type":"user.message"}\n', 'bad.jsonl')).toThrow(/first line must be a momonga-transcript\/9 header/);
+    expect(() => decodeTranscript('{"type":"user.message"}\n', 'bad.jsonl')).toThrow(/first line must be a momonga-transcript\/10 header/);
   });
 
   it('refuses a version 1 transcript, which cannot say whether subagent runs were observed', () => {
@@ -60,7 +60,7 @@ describe('transcript codec', () => {
 
   it('refuses a version 3 transcript, naming its format and the required one, because it records no policy and no code digest', () => {
     const header = { format: 'momonga-transcript/3', caseId: 'c1', runIndex: 0, run: finalAnswerTranscript('c1', 0).run, children: [] };
-    expect(() => decodeTranscript(`${JSON.stringify(header)}\n`, 'old.jsonl')).toThrow(/old\.jsonl:1: momonga-transcript\/3 .*momonga-transcript\/9/);
+    expect(() => decodeTranscript(`${JSON.stringify(header)}\n`, 'old.jsonl')).toThrow(/old\.jsonl:1: momonga-transcript\/3 .*momonga-transcript\/10/);
     expect(() => decodeTranscript(`${JSON.stringify(header)}\n`, 'old.jsonl')).toThrow(TranscriptError);
   });
 
