@@ -2,7 +2,7 @@ import { FIRST_GENERATION, fixedRolePort } from '@momonga/foundation';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { ConfigError, loadMcpServers } from '@momonga/config';
+import { ConfigError, approvalDigestOf, loadMcpServers } from '@momonga/config';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { createMcpPool, inheritedEnvOf } from '@momonga/mcp';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
@@ -154,10 +154,10 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
       const f = await makeRuntimeFixture();
       await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
       writeJson(path.join(f.temp.project, '.mcp.json'), { mcpServers: { a: fixtureServer, b: fixtureServer } });
-      writeUserSettings(f.temp.home, { enabledMcpjsonServers: ['a'] });
+      writeUserSettings(f.temp.home, { enabledMcpjsonServers: [{ name: 'a', digest: approvalDigestOf(fixtureServer) }] });
       await f.toolRuntime.port.toolSet(await newRun(f), { signal: signalNever(), env: toolEnv() });
 
-      writeUserSettings(f.temp.home, { enabledMcpjsonServers: ['a', 'b'] });
+      writeUserSettings(f.temp.home, { enabledMcpjsonServers: [{ name: 'a', digest: approvalDigestOf(fixtureServer) }, { name: 'b', digest: approvalDigestOf(fixtureServer) }] });
       await f.toolRuntime.port.toolSet(await newRun(f), { signal: signalNever(), env: toolEnv() });
 
       expect(f.pools.pools).toHaveLength(2);

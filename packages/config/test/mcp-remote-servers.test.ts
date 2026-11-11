@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadMcpServers } from '@momonga/config';
+import { approvalDigestOf, loadMcpServers } from '@momonga/config';
 import { distrusting, localSettingsPath, makeTree, mcpJsonPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
 const REMOTE = { type: 'http', url: 'https://mcp.example.com/mcp' } as const;
@@ -28,8 +28,9 @@ describe('remote MCP servers in .mcp.json', () => {
 
   it('enables an approved remote entry in project scope with its oauth settings', async () => {
     const tree = makeTree();
-    writeJson(localSettingsPath(tree), { enabledMcpjsonServers: ['remote'] });
-    writeJson(mcpJsonPath(tree), { mcpServers: { remote: { ...REMOTE, oauth: { clientId: 'abc', scope: 'read', callbackPort: 33418 } } } });
+    const remote = { ...REMOTE, oauth: { clientId: 'abc', scope: 'read', callbackPort: 33418 } };
+    writeJson(localSettingsPath(tree), { enabledMcpjsonServers: [{ name: 'remote', digest: approvalDigestOf(remote) }] });
+    writeJson(mcpJsonPath(tree), { mcpServers: { remote } });
     const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
     expect(result.enabled).toEqual([{ name: 'remote', scope: 'project', config: { ...REMOTE, oauth: { clientId: 'abc', scope: 'read', callbackPort: 33418 } } }]);
   });

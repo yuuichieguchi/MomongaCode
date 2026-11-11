@@ -3,6 +3,7 @@ import path from 'node:path';
 import { askerOf, rethrowIfUnread } from './asker.ts';
 import type { Asker } from './asker.ts';
 import { readJsonFile } from './json-file.ts';
+import { approvalDigestOf } from './approval-digest.ts';
 import { looksLikeCredentialName } from './credential-env.ts';
 import { exists, loadLayers } from './layers.ts';
 import { credentialEnvNames } from './models.ts';
@@ -20,6 +21,8 @@ export type McpServerEntry = { name: string; scope: McpServerScope; config: McpS
 
 export type McpServerFailure = { name: string; reason: string };
 
+export type PendingMcpServer = McpServerEntry & { digest: string; changed: boolean };
+
 export type LoadMcpServersOptions = {
   home: string;
   projectDir: string;
@@ -33,7 +36,7 @@ export type LoadMcpServersOptions = {
 
 export type LoadMcpServersResult = {
   enabled: McpServerEntry[];
-  pendingApproval: McpServerEntry[];
+  pendingApproval: PendingMcpServer[];
   failed: McpServerFailure[];
   warnings: string[];
 };
@@ -128,7 +131,7 @@ const loadLayersForUser = async (options: LayerOptions): Promise<LoadedLayers> =
 };
 
 type ProjectOutcome =
-  | { kind: 'ok'; config: McpServerConfig }
+  | { kind: 'ok'; config: McpServerConfig; digest: string; approved: boolean }
   | { kind: 'unset'; reason: string }
   | { kind: 'skipped'; warning: string };
 
@@ -136,15 +139,16 @@ const evaluateProjectServer = (
   name: string,
   rawConfig: unknown,
   mcpJson: string,
-  expandNow: boolean,
+  isApproved: (digest: string) => boolean,
   env: LoadMcpServersOptions['env'],
   refuse: VariableGuard,
 ): ProjectOutcome => {
   try {
     assertServerName(name, mcpJson);
     const config = assertMcpServer(rawConfig, mcpJson, name);
-    if (!expandNow) return { kind: 'ok', config };
-    return { kind: 'ok', config: expandServer(config, env, name, mcpJson, refuse) };
+    const digest = approvalDigestOf(config);
+    if (!isApproved(digest)) return { kind: 'ok', config, digest, approved: false };
+    return { kind: 'ok', config: expandServer(config, env, name, mcpJson, refuse), digest, approved: true };
   } catch (error) {
     if (error instanceof UnsetVariableError) return { kind: 'unset', reason: error.message };
     if (error instanceof CredentialVariableError) {
@@ -204,12 +208,13 @@ export const loadMcpServers = async ({ home, projectDir, trust, env, signal, use
   const userSettings = loaded.layers.find((layer) => layer.origin === 'user');
   const approvingSettings = loaded.layers.filter((layer) => layer.origin === 'user' || layer.origin === 'local').map((layer) => layer.settings);
 
-  const approved = new Set(approvingSettings.flatMap((settings) => settings.enabledMcpjsonServers ?? []));
+  const approvals = approvingSettings.flatMap((settings) => settings.enabledMcpjsonServers ?? []).map((approval) => (typeof approval === 'string' ? { name: approval, digest: undefined } : approval));
+  const approvedNames = new Set(approvals.map((approval) => approval.name));
   const disabled = new Set(approvingSettings.flatMap((settings) => settings.disabledMcpjsonServers ?? []));
   const approveAll = approvingSettings.some((settings) => settings.enableAllProjectMcpServers === true);
 
   const enabled: McpServerEntry[] = [];
-  const pendingApproval: McpServerEntry[] = [];
+  const pendingApproval: PendingMcpServer[] = [];
   const failed: McpServerFailure[] = [];
   const seen = new Set<string>();
 
@@ -258,12 +263,16 @@ export const loadMcpServers = async ({ home, projectDir, trust, env, signal, use
   const refuseCredentialVariable: VariableGuard = (variable) => looksLikeCredentialName(variable) || protectedNames.has(variable);
   const projectServers = await readProjectServers(mcpJson, projectDir, seen, warnings, asker);
   for (const [name, rawConfig] of Object.entries(projectServers ?? {})) {
-    const isEnabled = !disabled.has(name) && (approveAll || approved.has(name));
-    const outcome = evaluateProjectServer(name, rawConfig, mcpJson, isEnabled, env, refuseCredentialVariable);
+    const isApproved = (digest: string): boolean => !disabled.has(name) && (approveAll || approvals.some((approval) => approval.name === name && approval.digest === digest));
+    const outcome = evaluateProjectServer(name, rawConfig, mcpJson, isApproved, env, refuseCredentialVariable);
     if (outcome.kind === 'skipped') warnings.push(outcome.warning);
     else if (outcome.kind === 'unset') failed.push({ name, reason: outcome.reason });
-    else if (isEnabled) enabled.push({ name, scope: 'project', config: outcome.config });
-    else pendingApproval.push({ name, scope: 'project', config: outcome.config });
+    else if (outcome.approved) enabled.push({ name, scope: 'project', config: outcome.config });
+    else {
+      const changed = !disabled.has(name) && approvedNames.has(name);
+      if (changed) warnings.push(`${mcpJson}: MCP server ${JSON.stringify(name)} changed since it was approved; it is not started until it is approved again`);
+      pendingApproval.push({ name, scope: 'project', config: outcome.config, digest: outcome.digest, changed });
+    }
   }
   return { enabled, pendingApproval, failed, warnings };
 };

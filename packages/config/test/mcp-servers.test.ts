@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadMcpServers } from '@momonga/config';
+import { approvalDigestOf, loadMcpServers } from '@momonga/config';
 import {
   distrusting,
   localSettingsPath,
@@ -22,17 +22,14 @@ describe('loadMcpServers', () => {
         remote: { type: 'http', url: 'http://127.0.0.1:${PORT}/mcp', headers: { Authorization: 'Bearer ${TOKEN_VALUE}' } },
       },
     });
-    writeJson(localSettingsPath(tree), { enabledMcpjsonServers: ['tools'] });
-    writeJson(mcpJsonPath(tree), {
-      mcpServers: {
-        tools: {
-          command: '${HOME_BIN}/server',
-          args: ['--level', '${LEVEL:-info}', '--port=${PORT}'],
-          env: { KEY: '${PLAIN_VALUE}', MODE: '${MODE:-dev}' },
-          cwd: '${CWD:-.}',
-        },
-      },
-    });
+    const tools = {
+      command: '${HOME_BIN}/server',
+      args: ['--level', '${LEVEL:-info}', '--port=${PORT}'],
+      env: { KEY: '${PLAIN_VALUE}', MODE: '${MODE:-dev}' },
+      cwd: '${CWD:-.}',
+    };
+    writeJson(localSettingsPath(tree), { enabledMcpjsonServers: [{ name: 'tools', digest: approvalDigestOf(tools) }] });
+    writeJson(mcpJsonPath(tree), { mcpServers: { tools } });
     const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
     expect(result.enabled).toEqual([
       {
@@ -105,9 +102,10 @@ describe('loadMcpServers', () => {
 
   it('puts project servers in pendingApproval unless enabled by user or local settings', async () => {
     const tree = makeTree();
-    writeJson(userSettingsPath(tree), { enabledMcpjsonServers: ['a'] });
-    writeJson(projectSettingsPath(tree), { enabledMcpjsonServers: ['b'], enableAllProjectMcpServers: true });
-    writeJson(localSettingsPath(tree), { enabledMcpjsonServers: ['c'], disabledMcpjsonServers: ['a'] });
+    const approved = (name: string) => ({ name, digest: approvalDigestOf({ command: name }) });
+    writeJson(userSettingsPath(tree), { enabledMcpjsonServers: [approved('a')] });
+    writeJson(projectSettingsPath(tree), { enabledMcpjsonServers: [approved('b')], enableAllProjectMcpServers: true });
+    writeJson(localSettingsPath(tree), { enabledMcpjsonServers: [approved('c')], disabledMcpjsonServers: ['a'] });
     writeJson(mcpJsonPath(tree), {
       mcpServers: { a: { command: 'a' }, b: { command: 'b' }, c: { command: 'c' }, d: { command: 'd' } },
     });

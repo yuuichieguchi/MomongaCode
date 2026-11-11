@@ -330,6 +330,10 @@ export type ProjectCheckAnswer = { commands: string[] } | { declined: true };
 
 export type ProjectChecksSettings = Record<string, ProjectCheckAnswer>;
 
+export type McpServerApproval = string | { name: string; digest: string };
+
+export type ProjectApprovalsSettings = Record<string, { hooks?: string[]; mandate?: string }>;
+
 export type ResolvedRetentionSettings = { days: number };
 
 export const DEFAULT_RETENTION_DAYS = 30;
@@ -413,7 +417,7 @@ export type Settings = {
   credentials?: CredentialsSettings;
   hooks?: Record<string, HookGroups>;
   autoMode?: AutoModeSettings;
-  enabledMcpjsonServers?: string[];
+  enabledMcpjsonServers?: McpServerApproval[];
   disabledMcpjsonServers?: string[];
   enableAllProjectMcpServers?: boolean;
   mcpServers?: Record<string, McpServerConfig>;
@@ -429,6 +433,7 @@ export type Settings = {
   telemetry?: TelemetrySettings;
   retention?: RetentionSettings;
   projectChecks?: ProjectChecksSettings;
+  projectApprovals?: ProjectApprovalsSettings;
   network?: NetworkSettings;
   pricing?: PriceEntrySettings[];
   limits?: LimitsSettings;

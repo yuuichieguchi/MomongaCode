@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ConfigError, PROJECT_MANDATE_FILE, editProjectMandate, loadProjectMandate, settingsFileLock, systemFileLockPorts } from '@momonga/config';
+import { ConfigError, approvalDigestOf, PROJECT_MANDATE_FILE, editProjectMandate, loadProjectMandate, settingsFileLock, systemFileLockPorts } from '@momonga/config';
 import { distrusting, makeDir, makeTree, trusting, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 import { testKernelLock } from '@momonga/testkit';
@@ -30,7 +30,7 @@ describe('editProjectMandate: the one writer of .momonga/mandate.json', () => {
     await trustedEdit(tree, setting(DECLARED));
     expect(JSON.parse(fs.readFileSync(mandateFile(tree), 'utf8'))).toEqual(DECLARED);
     expect(fs.statSync(mandateFile(tree)).mode & 0o777).toBe(0o600);
-    expect(await loadProjectMandate({ projectDir: tree.project, trusted: true, signal })).toEqual(DECLARED);
+    expect(await loadProjectMandate({ projectDir: tree.project, trusted: true, approvals: { [tree.project]: { mandate: approvalDigestOf(DECLARED) } }, signal })).toEqual(DECLARED);
   });
 
   it('changes one key of the file that is there and keeps the others', async () => {
@@ -75,12 +75,12 @@ describe('editProjectMandate: the one writer of .momonga/mandate.json', () => {
   it('repairs a mandate file that does not load', async () => {
     const tree = makeTree();
     writeJson(mandateFile(tree), { ...DECLARED, allow: ['Bash(npm test)'] });
-    await expect(loadProjectMandate({ projectDir: tree.project, trusted: true, signal })).rejects.toBeInstanceOf(ConfigError);
+    await expect(loadProjectMandate({ projectDir: tree.project, trusted: true, approvals: undefined, signal })).rejects.toBeInstanceOf(ConfigError);
     await trustedEdit(tree, (document) => {
       delete document['allow'];
       return true;
     });
-    expect(await loadProjectMandate({ projectDir: tree.project, trusted: true, signal })).toEqual(DECLARED);
+    expect(await loadProjectMandate({ projectDir: tree.project, trusted: true, approvals: { [tree.project]: { mandate: approvalDigestOf(DECLARED) } }, signal })).toEqual(DECLARED);
   });
 
   it('leaves the bytes of the file when the edit changes nothing', async () => {

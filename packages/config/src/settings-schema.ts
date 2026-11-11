@@ -1,5 +1,6 @@
 import { MCP_CONNECT_TIMEOUT_LIMITS, SANDBOX_NETWORK_SETTINGS, SECRET_NAME_PATTERN, SHUTDOWN_SETTING_LIMITS } from '@momonga/foundation';
 import { MAX_COST_USD, QUIESCENT_BEHAVIOURS, MANAGED_DECLARABLE_FIELDS, ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, PLAN_LABEL_PATTERN, PROVIDER_NAME_PATTERN, REASONING_EFFORTS, REQUEST_TOOL_KINDS, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS, MANAGED_ENDPOINT_FORMS, IDEMPOTENCY_KEY_HEADER_PATTERN, MIN_REQUEST_OUTPUT_TOKENS } from '@momonga/protocol';
+import { APPROVAL_DIGEST_PATTERN } from './approval-digest.ts';
 import type { CallRole, ManagedDeclarableField } from '@momonga/protocol';
 
 export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const satisfies readonly CallRole[];
@@ -432,7 +433,15 @@ export const SETTINGS_SCHEMA = {
       properties: { classifier: { type: 'string', minLength: 1 } },
       additionalProperties: false,
     },
-    enabledMcpjsonServers: STRING_ARRAY,
+    enabledMcpjsonServers: {
+      type: 'array',
+      items: {
+        oneOf: [
+          { type: 'string' },
+          { type: 'object', properties: { name: { type: 'string', minLength: 1 }, digest: { type: 'string', pattern: APPROVAL_DIGEST_PATTERN } }, required: ['name', 'digest'], additionalProperties: false },
+        ],
+      },
+    },
     disabledMcpjsonServers: STRING_ARRAY,
     enableAllProjectMcpServers: { type: 'boolean' },
     mcpServers: { type: 'object', additionalProperties: MCP_SERVER_SCHEMA },
@@ -653,6 +662,17 @@ export const SETTINGS_SCHEMA = {
         captureMessageContent: { type: 'boolean' },
       },
       additionalProperties: false,
+    },
+    projectApprovals: {
+      type: 'object',
+      additionalProperties: {
+        type: 'object',
+        properties: {
+          hooks: { type: 'array', items: { type: 'string', pattern: APPROVAL_DIGEST_PATTERN } },
+          mandate: { type: 'string', pattern: APPROVAL_DIGEST_PATTERN },
+        },
+        additionalProperties: false,
+      },
     },
     projectChecks: {
       type: 'object',
