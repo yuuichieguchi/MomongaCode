@@ -17,6 +17,8 @@ import {
   loadDataset,
   loadTranscripts,
   parsePolicyOverlay,
+  refuseExistingOutput,
+  refuseRecordedTranscripts,
   replayDataset,
   runDataset,
   saveContextReport,
@@ -210,6 +212,9 @@ export const evaluateContext = async (
   if (replay !== undefined && options.settings !== undefined) {
     throw new EvaluateUsageError('--settings belongs to a live run; a replayed transcript was produced under a policy this command cannot know');
   }
+  const reportFile = options.report === undefined ? undefined : path.resolve(ports.cwd, options.report);
+  if (reportFile !== undefined) await refuseExistingOutput(ports.files, reportFile);
+  if (options.record !== undefined) await refuseRecordedTranscripts(ports.files, path.resolve(ports.cwd, options.record));
   const policy = options.settings === undefined ? {} : parsePolicyOverlay(await ports.files.readText(path.resolve(ports.cwd, options.settings)), options.settings);
   const mode = replay === undefined ? ({ kind: 'live', ...assertLiveOptions(options) } as const) : ({ kind: 'replay', directory: replay } as const);
   const dataset = await loadContextDataset(ports.files, path.resolve(ports.cwd, datasetFile));
@@ -234,8 +239,8 @@ export const evaluateContext = async (
     seed: CONTEXT_BOOTSTRAP_SEED,
     ...(datasetSeed === undefined ? {} : { datasetSeed }),
   });
-  if (options.report !== undefined) await saveContextReport(ports.files, path.resolve(ports.cwd, options.report), report);
   ports.stdout.write(`${formatContextReport(report)}\n`);
+  if (reportFile !== undefined) await saveContextReport(ports.files, reportFile, report);
   return report.passed ? 0 : 1;
 };
 
@@ -274,6 +279,7 @@ export const evaluate = async (
   hostEffects: (ports: CliPorts, lock: KernelLockMechanism) => ContextHostEffects = nodeContextEffects,
 ): Promise<number> => {
   if (options.record !== undefined && options.replay !== undefined) throw new EvaluateUsageError('--record and --replay cannot be combined');
+  if (options.record !== undefined) await refuseRecordedTranscripts(ports.files, path.resolve(ports.cwd, options.record));
   const dataset = await loadDataset(ports.files, path.resolve(ports.cwd, datasetFile));
   const report =
     options.replay === undefined

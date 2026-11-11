@@ -118,7 +118,7 @@ export type {
 export { ANSWER_KINDS, TRANSCRIPT_FORMAT, TranscriptError, decodeTranscript, encodeTranscript, parsePublicRunEvent } from './transcript.ts';
 export type { AnswerKind, Answerer, RecordedRun, Transcript, TranscriptChild, TranscriptReflection, TranscriptRun } from './transcript.ts';
 export { modelKindOf } from '@momonga/protocol';
-export { loadContextDataset, loadContextReport, loadDataset, loadTranscripts, loadYieldDataset, nodeEvalFiles, nodeWorkspaceFiles, saveContextReport, saveTranscript, saveYieldReport, transcriptFileName } from './files.ts';
+export { loadContextDataset, loadContextReport, loadDataset, loadTranscripts, loadYieldDataset, nodeEvalFiles, nodeWorkspaceFiles, OutputExistsError, refuseExistingOutput, refuseRecordedTranscripts, saveContextReport, saveTranscript, saveYieldReport, transcriptFileName } from './files.ts';
 export type { EvalFiles, WorkspaceFiles } from './files.ts';
 export { BENCH_DEFAULT_RUNS, BENCH_DIFFICULTIES, BENCH_FORMAT, BENCH_SCHEMA, BENCH_TASK_TYPES, EVIDENCE_KINDS, mandateOfTask, parseBenchmark, treeDigest } from './bench.ts';
 export { GATE_VERDICTS, completionAgreement, gateVerdictOf } from './oracle.ts';
@@ -137,7 +137,7 @@ export type { BuildInjectionReportInput, InjectionTrial } from './inject-report.
 export { compareReliability, formatReliabilityComparison } from './reliability-compare.ts';
 export type { ReliabilityComparison } from './reliability-compare.ts';
 export { runBenchmark } from './bench-run.ts';
-export type { BenchRunApi, BenchRunPorts, BenchRunResult, BenchRunView, BenchTrialHome, InvalidSetup } from './bench-run.ts';
+export type { BenchRunApi, BenchRunPorts, BenchRunResult, BenchRunView, BenchTrialHome } from './bench-run.ts';
 export { YIELD_DATASET_FORMAT, YIELD_DATASET_SCHEMA, parseYieldDataset, yieldDatasetDigestOf } from './yield-dataset.ts';
 export type { YieldDataset, YieldFamily, YieldLearn, YieldReuse } from './yield-dataset.ts';
 export { YIELD_ARMS, acceptedByAnchors, runYieldDataset, yieldCaseIdOf } from './yield-run.ts';

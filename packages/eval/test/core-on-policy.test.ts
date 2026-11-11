@@ -33,6 +33,8 @@ const CORE_OFF_FILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
 const RESOLVED_ON = RESOLVED_ON_POLICY;
 const RESOLVED_OFF = RESOLVED_OFF_POLICY;
 
+const CORE_OFF_RESOLVED = { ...RESOLVED_OFF, context: { ...RESOLVED_OFF.context, autoCompact: RESOLVED_ON.context.autoCompact } };
+
 const OVERLAY_KEYS = [
   'context.adaptiveBudget',
   'context.autoCompact',
@@ -92,13 +94,14 @@ describe('parsing and resolving a policy overlay (design core-on 3.2, test 7)', 
     expect(resolvePolicyOverlay(parsePolicyOverlay('{}', 'policy.json'))).toEqual(RESOLVED_ON);
   });
 
-  it('resolves the shipped core-off.json to every key off', () => {
+  it('resolves the shipped core-off.json to every key off but context.autoCompact, which each case sets', () => {
     const text = fs.readFileSync(CORE_OFF_FILE, 'utf8');
-    expect(resolvePolicyOverlay(parsePolicyOverlay(text, CORE_OFF_FILE))).toEqual(RESOLVED_OFF);
+    expect(resolvePolicyOverlay(parsePolicyOverlay(text, CORE_OFF_FILE))).toEqual(CORE_OFF_RESOLVED);
   });
 
   it('accepts an overlay that restates every default, which is the candidate of the gate', () => {
-    const restated = JSON.stringify({ ...RESOLVED_ON, context: { ...RESOLVED_ON.context, outputFormatters: ['log', 'json', 'grep', 'identicalOutput'] } });
+    const { autoCompact: _setByEachCase, ...context } = RESOLVED_ON.context;
+    const restated = JSON.stringify({ ...RESOLVED_ON, context: { ...context, outputFormatters: ['log', 'json', 'grep', 'identicalOutput'] } });
     expect(resolvePolicyOverlay(parsePolicyOverlay(restated, 'policy.json'))).toEqual(RESOLVED_ON);
   });
 
@@ -220,11 +223,11 @@ describe('a live run records the resolved policy and passes only the overlay to 
     expect(caseSettingsFor({ sandbox: 'none' }, { policy: {} })).toEqual({ sandbox: 'none' });
   });
 
-  it('records every key off under core-off.json, and the case settings carry exactly that overlay', async () => {
+  it('records every overlay key off under core-off.json, and the case settings carry exactly that overlay', async () => {
     const overlay = parsePolicyOverlay(fs.readFileSync(CORE_OFF_FILE, 'utf8'), CORE_OFF_FILE);
     const portsFor = liveHarness();
     const { transcripts } = await runContextDataset(expandContextDataset(dataset, 1), portsFor(overlay));
-    for (const transcript of transcripts) expect(transcript.policy).toEqual(RESOLVED_OFF);
+    for (const transcript of transcripts) expect(transcript.policy).toEqual(CORE_OFF_RESOLVED);
     expect(caseSettingsFor({ sandbox: 'none' }, { policy: overlay })).toEqual({ sandbox: 'none', ...overlay });
   });
 

@@ -1,7 +1,6 @@
 {
   "context": {
     "adaptiveBudget": false,
-    "autoCompact": false,
     "cachePrefix": false,
     "outputFormatters": [],
     "loopGuidance": false,
