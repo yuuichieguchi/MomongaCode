@@ -119,6 +119,11 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
     delete restricted.telemetry;
   }
 
+  if (settings.projectChecks !== undefined) {
+    warnings.push(`${source}: projectChecks is only honored in user settings; discarded`);
+    delete restricted.projectChecks;
+  }
+
   if (settings.retention !== undefined) {
     warnings.push(`${source}: retention is only honored in user settings; discarded`);
     delete restricted.retention;

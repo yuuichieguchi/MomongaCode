@@ -653,6 +653,15 @@ export const SETTINGS_SCHEMA = {
       },
       additionalProperties: false,
     },
+    projectChecks: {
+      type: 'object',
+      additionalProperties: {
+        oneOf: [
+          { type: 'object', properties: { commands: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } } }, required: ['commands'], additionalProperties: false },
+          { type: 'object', properties: { declined: { const: true } }, required: ['declined'], additionalProperties: false },
+        ],
+      },
+    },
     retention: {
       type: 'object',
       properties: { days: { type: 'integer', minimum: MIN_RETENTION_DAYS, maximum: MAX_RETENTION_DAYS } },

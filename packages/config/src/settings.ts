@@ -326,6 +326,10 @@ export const resolveTelemetrySettings = (settings: TelemetrySettings | undefined
 
 export type RetentionSettings = { days?: number };
 
+export type ProjectCheckAnswer = { commands: string[] } | { declined: true };
+
+export type ProjectChecksSettings = Record<string, ProjectCheckAnswer>;
+
 export type ResolvedRetentionSettings = { days: number };
 
 export const DEFAULT_RETENTION_DAYS = 30;
@@ -424,6 +428,7 @@ export type Settings = {
   sandboxUnixSockets?: SandboxUnixSocketsSettings;
   telemetry?: TelemetrySettings;
   retention?: RetentionSettings;
+  projectChecks?: ProjectChecksSettings;
   network?: NetworkSettings;
   pricing?: PriceEntrySettings[];
   limits?: LimitsSettings;
