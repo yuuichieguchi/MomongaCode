@@ -15,7 +15,7 @@ import type { MatchStrength } from './command-match.ts';
 import { absoluteFrom } from './path-match.ts';
 import { commandSpecsFor } from './platform-specs.ts';
 import { insideRoots } from './roots.ts';
-import { analyzeCommand, executionSteps, looseRedirectTargets } from './shell.ts';
+import { analyzeCommand, executionSteps, looseRedirectTargets, unanalysedPartOf } from './shell.ts';
 import type { Analysis } from './shell.ts';
 import { changedBefore, judgedAfter, locateTargets, locateWrites, resolveSedPrograms, sedResolution } from './step-plan.ts';
 import type { PathPlan } from './step-plan.ts';
@@ -100,7 +100,7 @@ type DenyInput = Pick<DecideInput, 'rules' | 'mode' | 'fileRules'> & { fs: { can
 const applicableRules = (input: Pick<DecideInput, 'rules'>, subject: PermissionSubject): Applicable =>
   input.rules.map((rule, ruleIndex) => ({ rule, ruleIndex })).filter(({ rule }) => ruleCoversSubject(rule, subject));
 
-type DenyScan = { denied: Decision | undefined; incidental: PermissionRule | undefined };
+type DenyScan = { denied: Decision | undefined; incidental: PermissionRule | undefined; unanalysed: boolean };
 
 type DenyHit = { rule: PermissionRule; strength: MatchStrength | null };
 
@@ -122,7 +122,7 @@ const strongestDeny = (hits: readonly DenyHit[], mode: PermissionMode): DenyScan
       : incidental !== undefined && mode === 'bypassPermissions'
         ? byRule('deny', incidental.rule, 'denied')
         : undefined;
-  return { denied, incidental: incidental?.rule };
+  return { denied, incidental: incidental?.rule, unanalysed: hits.some((hit) => hit.strength === 'unanalysable') };
 };
 
 export const denyingRuleFor = (rules: readonly PermissionRule[], mode: PermissionMode, subject: PathlessSubject): PermissionRule | undefined => {
@@ -130,6 +130,27 @@ export const denyingRuleFor = (rules: readonly PermissionRule[], mode: Permissio
     .filter(({ rule }) => rule.effect === 'deny')
     .map(({ rule }) => ({ rule, strength: matchPathlessStrength(rule, subject) }));
   return strongestDeny(hits, mode).denied?.rule;
+};
+
+type CommandSubject = Extract<PermissionSubject, { kind: 'command' }>;
+
+const unanalysedReason = (subject: CommandSubject, restriction: string): string => {
+  const part = unanalysedPartOf(subject.command);
+  if (part === undefined) throw new Error('a command was matched as not analysable, and the analysis names no such part');
+  return `a part of the command could not be analysed (${part}), and ${restriction} for ${subject.tool} exists, so no rule and no mode decides it`;
+};
+
+const unanalysedUnderDeny = (mode: PermissionMode, subject: CommandSubject): Decision => {
+  const reason = unanalysedReason(subject, 'a deny rule');
+  if (mode === 'bypassPermissions') return { kind: 'deny', source: 'mode', reason: `Not run: ${reason}, and bypassPermissions mode asks nobody` };
+  return { kind: 'ask', source: 'mode', humanOnly: true, reason: `${reason}; a person decides` };
+};
+
+const unanalysedUnderAsk = (mode: PermissionMode, subject: CommandSubject, applicable: Applicable): Decision | undefined => {
+  const unread = applicable.filter(({ rule }) => rule.effect === 'ask' && matchPathlessStrength(rule, subject) === 'unanalysable');
+  if (unread.some(({ rule }) => isGoverningRule(rule))) return { kind: 'ask', source: 'mode', humanOnly: true, reason: `${unanalysedReason(subject, 'a governing ask rule')}; a person decides` };
+  if (unread.length === 0 || mode === 'bypassPermissions') return undefined;
+  return { kind: 'ask', source: 'mode', reason: `${unanalysedReason(subject, 'an ask rule')}; approval required` };
 };
 
 const operationDecision = (subject: PermissionSubject): Decision | undefined =>
@@ -191,7 +212,7 @@ const decideSubject = async (input: DecideInput, tool: PolicyTool, subject: Perm
   const { mode, fileRules } = input;
   const { canonicalise } = input.fs;
   const applicable = applicableRules(input, subject);
-  const { denied, incidental } = await scanDeny(input, subject, applicable);
+  const { denied, incidental, unanalysed } = await scanDeny(input, subject, applicable);
   if (denied !== undefined) return denied;
 
   if (subject.kind === 'governance') return modeDefault(input, subject);
@@ -199,6 +220,8 @@ const decideSubject = async (input: DecideInput, tool: PolicyTool, subject: Perm
   if (!commandDerived && mode === 'plan' && planModeRefuses(tool)) {
     return byMode('deny', `plan mode only allows read-only tools; ${tool.name} has side effect ${tool.sideEffect}`);
   }
+
+  if (unanalysed && subject.kind === 'command') return unanalysedUnderDeny(mode, subject);
 
   const guarded = await protectedDecision(input, subject);
   if (guarded !== undefined) return guarded;
@@ -209,11 +232,14 @@ const decideSubject = async (input: DecideInput, tool: PolicyTool, subject: Perm
   const askRules = await filterAsync(applicable, async ({ rule, ruleIndex }) => rule.effect === 'ask' && (await matchRule(rule, subject, fileRules, ruleIndex, canonicalise)));
   const governingAsk = askRules.find(({ rule }) => isGoverningRule(rule));
   if (governingAsk !== undefined) return askByRule(governingAsk.rule, 'approval required');
+  const unread = subject.kind === 'command' ? unanalysedUnderAsk(mode, subject, applicable) : undefined;
+  if (unread?.humanOnly === true) return unread;
   const asked = askRules[0];
   if (asked !== undefined) {
     if (mode === 'bypassPermissions') return byMode('allow', `bypassPermissions mode overrides ask rule ${describeRule(asked.rule)}`);
     return byRule('ask', asked.rule, 'approval required');
   }
+  if (unread !== undefined) return unread;
   if (incidental !== undefined) return askByRule(incidental, 'approval required (the rule words appear as an argument)');
 
   const allowRules = applicable.filter(({ rule }) => rule.effect === 'allow');

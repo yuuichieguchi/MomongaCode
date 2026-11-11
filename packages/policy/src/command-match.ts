@@ -9,7 +9,7 @@ import type { Analysis, Segment, Word } from './shell.ts';
 const INERT_PRINTERS = inertPrinterSet(STRUCTURAL_SPECS);
 const WORD_PIECE_SEPARATOR = /[=!]/;
 
-export type MatchStrength = 'position' | 'incidental';
+export type MatchStrength = 'position' | 'unanalysable' | 'incidental';
 
 export type CommandPattern = { kind: 'exact'; text: string } | { kind: 'prefix'; words: string[] };
 
@@ -48,7 +48,6 @@ const expandWordPieces = (words: Word[]): Word[] =>
   });
 
 const conservativeSegmentStrength = (pattern: CommandPattern, segment: Segment): MatchStrength | null => {
-  if (segment.unanalyzable) return 'position';
   if (pattern.kind === 'exact' && segment.text === pattern.text) return 'position';
   const expected = patternWords(pattern);
   const coversWholeCommand = (offset: number, length: number): boolean => pattern.kind === 'prefix' || offset + expected.length === length;
@@ -56,6 +55,7 @@ const conservativeSegmentStrength = (pattern: CommandPattern, segment: Segment):
   if (positionOffsets.some((offset) => prefixMatchesAt(segment.words, expected, offset, true) && coversWholeCommand(offset, segment.words.length))) {
     return 'position';
   }
+  if (segment.unanalyzable) return 'unanalysable';
   const first = segment.words[0];
   const startsWithPrinter = first !== undefined && first.literal && INERT_PRINTERS.has(path.basename(first.value));
   if (startsWithPrinter) return null;
@@ -65,7 +65,7 @@ const conservativeSegmentStrength = (pattern: CommandPattern, segment: Segment):
 };
 
 const strongest = (strengths: Array<MatchStrength | null>): MatchStrength | null =>
-  strengths.includes('position') ? 'position' : strengths.includes('incidental') ? 'incidental' : null;
+  strengths.includes('position') ? 'position' : strengths.includes('unanalysable') ? 'unanalysable' : strengths.includes('incidental') ? 'incidental' : null;
 
 const conservativeAnalysisStrength = (pattern: CommandPattern, analysis: Analysis): MatchStrength | null =>
   strongest([
@@ -85,11 +85,14 @@ export const commandMatchStrength = (rule: PermissionRule, command: string): Mat
     const covered = analysis !== null && analysis.segments.length > 0 && analysis.segments.every((segment) => strictSegmentMatches(pattern, segment));
     return covered ? 'position' : null;
   }
-  if (analysis === null) return 'position';
+  if (analysis === null) return 'unanalysable';
   return conservativeAnalysisStrength(pattern, analysis);
 };
 
-export const matchesCommand = (rule: PermissionRule, command: string): boolean => commandMatchStrength(rule, command) !== null;
+export const matchesCommand = (rule: PermissionRule, command: string): boolean => {
+  const strength = commandMatchStrength(rule, command);
+  return strength === 'position' || strength === 'incidental';
+};
 
 export const commandCoveredByAllowRules = (rules: PermissionRule[], command: string): PermissionRule | undefined => {
   const whole = rules.find((rule) => matchesCommand(rule, command));
