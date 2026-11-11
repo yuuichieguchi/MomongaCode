@@ -116,7 +116,7 @@ describe('gateway client request headers', () => {
       {
         ...listedView(MAIN),
         capabilities: { contextWindow: 8192 },
-        chain: [{ model: MAIN, counter: 'c'.repeat(64), adapter: 'chat-completions', answers: 'model', upstream: MAIN, capabilities: { contextWindow: 8192 } }],
+        chain: [{ model: MAIN, counter: 'c'.repeat(64), adapter: 'chat-completions', answers: 'model', upstream: MAIN, capabilities: { contextWindow: 8192 }, billing: 'metered' }],
       },
     ]);
     expect(await client.health()).toMatchObject({ version: '1.0.0', state: 'running' });
@@ -170,8 +170,8 @@ describe('gateway client request headers', () => {
       id: SMALL,
       capabilities: { contextWindow: 2000 },
       chain: [
-        { model: SMALL, counter: '2'.repeat(64), capabilities: { contextWindow: 2000 } },
-        { model: MAIN, counter: '1'.repeat(64), capabilities: { contextWindow: 8192 } },
+        { model: SMALL, counter: '2'.repeat(64), capabilities: { contextWindow: 2000 }, billed: { billing: 'metered', upstream: SMALL } },
+        { model: MAIN, counter: '1'.repeat(64), capabilities: { contextWindow: 8192 }, billed: { billing: 'metered', upstream: MAIN } },
       ],
       targets: {
         [SMALL]: { adapter: 'chat-completions', model: SMALL, answers: 'model' },

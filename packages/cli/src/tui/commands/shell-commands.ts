@@ -25,7 +25,7 @@ export const SHELL_SLASH_COMMANDS: readonly ShellSlash[] = [
     description: 'improve how the context is compacted, and inspect, adopt and roll back the compaction guideline',
     longRunning: (tokens) => tokens[0] === 'improve',
   },
-  { name: 'policy', usage: 'verify [--json] [--mode <mode>] [--secret <path>]', description: 'check the permission rules of this folder', longRunning: always },
+  { name: 'policy', usage: 'verify [--json] [--mode <mode>] [--secret <path>] [--mandate <name>]', description: 'check the permission rules of this folder', longRunning: always },
   { name: 'models', usage: '[--json] | detect [url...] [--json]', description: 'list the configured models with the capabilities they declare, or find the local model servers that are running', longRunning: (tokens) => tokens[0] === 'detect' || tokens[0] === 'check' || tokens[0] === 'add' || tokens[0] === 'add-program' },
   { name: 'gateway', usage: 'probe <model> [--samples <count>]', description: 'measure a model and record the result for the gateway', longRunning: always },
 ];

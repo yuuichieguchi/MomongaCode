@@ -23,7 +23,7 @@ import type { KeptLayers, Layer, TrustOracle, UserLayer } from './layers.ts';
 import { EDIT_TOOLS, NEGATION_PREFIX, isPathTool, parseRule, RuleParseError } from './rule.ts';
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
 import { assertSettings, defaultSandboxSetting, defaultTuiSettings } from './settings.ts';
-import type { AutoModeSettings, CredentialsSettings, McpSettings, RuntimeSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, ResolvedSandboxUnixSockets, ResolvedTuiSettings, SandboxSetting, Settings, TelemetrySettings } from './settings.ts';
+import type { AutoModeSettings, CredentialsSettings, McpSettings, RuntimeSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, ResolvedSandboxUnixSockets, ResolvedTuiSettings, SandboxSetting, Settings, TelemetrySettings, CeilingsSettings, ForgeInstanceSettings, LimitsSettings, MandateProfileSettings, OperationsSettings } from './settings.ts';
 import type { ResolvedModels } from './models.ts';
 
 
@@ -58,6 +58,11 @@ export type ResolvedSettings = {
   telemetry?: TelemetrySettings;
   network?: NetworkSettings;
   pricing?: PriceEntrySettings[];
+  limits?: LimitsSettings;
+  ceilings?: CeilingsSettings;
+  mandates?: Record<string, MandateProfileSettings>;
+  forges?: ForgeInstanceSettings[];
+  operations?: OperationsSettings;
   memory: ResolvedMemorySettings;
   verification: ResolvedVerificationSettings;
   context: ResolvedContextSettings;
@@ -203,6 +208,11 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
       telemetry,
       network,
       pricing,
+      limits,
+      ceilings,
+      mandates,
+      forges,
+      operations,
       memory,
       verification,
       context,
@@ -251,6 +261,11 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     if (telemetry !== undefined) merged.telemetry = telemetry;
     if (network !== undefined) merged.network = network;
     if (pricing !== undefined) merged.pricing = pricing;
+    if (limits !== undefined) merged.limits = limits;
+    if (ceilings !== undefined) merged.ceilings = ceilings;
+    if (mandates !== undefined) merged.mandates = mandates;
+    if (forges !== undefined) merged.forges = forges;
+    if (operations !== undefined) merged.operations = operations;
   }
   if (unixSockets !== undefined) merged.sandboxUnixSockets = { allow: enforceableUnixSockets(unixSockets, merged.sandbox, home, warnings) };
   return merged;

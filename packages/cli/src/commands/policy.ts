@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { loadSettings, parseGovernanceRule } from '@momonga/config';
+import { loadSettings, parseGovernanceRule, parseRule } from '@momonga/config';
 import { canonicalDirectory, canonicalPath, protectedSetFor, ruleEnforcementOf, ruleFingerprint } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
@@ -15,7 +15,9 @@ export const policyWarningsText = (warnings: readonly string[]): string => `${es
 
 export const VERIFY_BUDGET_MS = RULE_VERIFY_BUDGET_MS;
 
-export type PolicyVerifyOptions = { json: boolean; mode?: PermissionMode; secrets: readonly string[] };
+export type PolicyVerifyOptions = { json: boolean; mode?: PermissionMode; secrets: readonly string[]; mandate?: string };
+
+const MANDATE_EFFECTS = ['deny', 'ask', 'allow'] as const;
 
 export class PolicyVerifyInputError extends Error {
   constructor(message: string) {
@@ -60,8 +62,20 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
     paths,
     options.secrets.map((text) => secretPathOf(home, text)),
   );
+  const mandate = options.mandate === undefined ? undefined : loaded.settings.mandates?.[options.mandate];
+  if (options.mandate !== undefined && mandate === undefined) {
+    throw new PolicyVerifyInputError(`no mandate named ${JSON.stringify(options.mandate)} is declared in the user settings`);
+  }
+  const mandateRules =
+    mandate === undefined
+      ? []
+      : MANDATE_EFFECTS.flatMap((effect) =>
+          (mandate[effect] ?? []).map((text) => parseRule(text, { effect, origin: 'cli', source: `the mandate ${options.mandate ?? ''}`, settingsRoot: ports.cwd, home: ports.home, cwd: ports.cwd })),
+        );
+  const catalogue = mandate === undefined ? undefined : await host.loadOperationCatalogue?.();
+  if (mandate !== undefined && catalogue === undefined) throw new PolicyVerifyInputError('this build cannot read the operation catalogue, so a mandate cannot be checked');
   const request = {
-    rules: [...loaded.rules, ...governanceRules],
+    rules: [...loaded.rules, ...governanceRules, ...mandateRules],
     roots,
     mode,
     home,
@@ -73,7 +87,13 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
   const engine = await host.openSolver(verifier);
   let report: Awaited<ReturnType<typeof verifier.verifyPermissions>>;
   try {
-    report = await verifier.verifyPermissions(engine.api, { ...request, fs, exemptDirectory: null, budgetMs: VERIFY_BUDGET_MS });
+    report = await verifier.verifyPermissions(engine.api, {
+      ...request,
+      fs,
+      exemptDirectory: null,
+      budgetMs: VERIFY_BUDGET_MS,
+      ...(catalogue === undefined ? {} : { supersededForms: catalogue.supersededForms, alwaysOperations: catalogue.alwaysOperations }),
+    });
   } finally {
     await engine.close();
   }
@@ -84,6 +104,7 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
       : `${verifier.formatReport(report)}\n${hasGovernance ? `${formatGovernanceVerification(governance, report.exitCode === 0)}\n` : ''}`,
   );
   if (loaded.warnings.length > 0) ports.stderr.write(policyWarningsText(loaded.warnings));
+  if (mandate !== undefined) return report.exitCode;
   const solverVersion = await host.solverVersion(verifier);
   const verdicts = connectRuntime(paths);
   try {

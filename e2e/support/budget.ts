@@ -429,6 +429,7 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
       capabilities: (model, options) => client.capabilities(model, options),
       model: (model, options) => client.model(model, options),
       listing: (options) => client.listing(options),
+      quote: (model, options) => client.quote(model, options),
       countTokens: async (request, options) => {
         const result = await client.countTokens(request, options);
         const perturbed = { ...result, input_tokens: Math.max(0, result.input_tokens + perturbation) };

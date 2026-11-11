@@ -37,6 +37,8 @@ type RootOptions = {
   image: string[];
   until: string[];
   require: string[];
+  mandate?: string;
+  maxCostUsd?: number;
   verbose?: true;
   resume?: string | true;
   continue?: true;
@@ -67,17 +69,29 @@ const integerArgument =
 
 const collectValues = (value: string, previous: string[]): string[] => [...previous, value];
 
-const mandateOf = (options: Pick<RootOptions, 'until' | 'require'>): { mandate?: Mandate } =>
-  options.until.length === 0 && options.require.length === 0
-    ? {}
-    : {
-        mandate: {
-          completion: {
-            ...(options.until.length === 0 ? {} : { conditions: options.until.map((command) => ({ command })) }),
-            ...(options.require.length === 0 ? {} : { requirements: options.require }),
-          },
-        },
-      };
+const mandateOf = (options: Pick<RootOptions, 'until' | 'require' | 'mandate'>): { mandate?: Mandate } => {
+  const completes = options.until.length > 0 || options.require.length > 0;
+  if (!completes && options.mandate === undefined) return {};
+  return {
+    mandate: {
+      ...(options.mandate === undefined ? {} : { profile: options.mandate }),
+      ...(completes
+        ? {
+            completion: {
+              ...(options.until.length === 0 ? {} : { conditions: options.until.map((command) => ({ command })) }),
+              ...(options.require.length === 0 ? {} : { requirements: options.require }),
+            },
+          }
+        : {}),
+    },
+  };
+};
+
+const moneyArgument = (text: string): number => {
+  const value = Number(text);
+  if (!Number.isFinite(value) || value < 0) throw new InvalidArgumentError('expected an amount of US dollars, zero or more');
+  return value;
+};
 
 const outputFormatOption = (): Option => new Option('--output-format <format>', 'output format of --print and attach').choices(OUTPUT_FORMATS).default('text');
 
@@ -113,6 +127,8 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
     .option('--image <path>', 'attach an image to the prompt; repeat for several (needs a model that declares image input)', collectValues, [])
     .option('--until <command>', 'with --print: a shell command that must exit 0 before the run counts as complete; repeat for several. The runtime runs it after the model stops, never the model, so it must only check and change nothing', collectValues, [])
     .option('--require <text>', 'with --print: a completion requirement that has no mechanical check; the report lists it as not run; repeat for several', collectValues, [])
+    .option('--mandate <name>', 'with --print: run under the mandate of this name from the user settings (mandates): only what it allows is run, what it asks for is held for your approval while other work goes on, and its budget bounds the run')
+    .option('--max-cost-usd <usd>', 'with --print: the money limit of the run in US dollars; the run stops before a model request that would pass it', moneyArgument)
     .option('--verbose', 'print tool activity to stderr')
     .addOption(new Option('--resume [session-id]', 'reopen a conversation of this folder by its id or a unique prefix of at least 8 characters; without an id, choose from a list').conflicts('continue'))
     .option('--continue', 'reopen the newest conversation of this folder')
@@ -136,7 +152,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
             await gateway.close();
           }
         };
-        deps.complete(await runHeadless(ports, paths, { capabilitiesOf, prompt: options.print, format: options.outputFormat, verbose: options.verbose === true, interrupt: deps.interrupt, ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...mandateOf(options), ...session, ...(resumed === undefined ? {} : { reopen: resumed }) }));
+        deps.complete(await runHeadless(ports, paths, { capabilitiesOf, prompt: options.print, format: options.outputFormat, verbose: options.verbose === true, interrupt: deps.interrupt, ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...mandateOf(options), ...(options.maxCostUsd === undefined ? {} : { limits: { maxCostUsd: options.maxCostUsd } }), ...session, ...(resumed === undefined ? {} : { reopen: resumed }) }));
         return;
       }
       if (ports.terminal === undefined) throw new Error('the interactive session needs a terminal; pass --print <prompt> to run without one');

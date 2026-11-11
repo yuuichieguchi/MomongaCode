@@ -653,12 +653,14 @@ const registerPolicy: CommandGroup = (program, deps) => {
     .option('--json', 'print the report as JSON')
     .addOption(new Option('--mode <mode>', 'the permission mode to check; the starting mode of the settings when omitted').choices(PERMISSION_MODES))
     .option('--secret <path>', 'a further secret location to keep out of reach; repeat for several', collect, [])
-    .action(async (options: { json?: true; mode?: PermissionMode; secret: string[] }) => {
+    .option('--mandate <name>', 'check the rules as a run under this mandate of the user settings would have them, and report an allow rule that admits a Bash form a dedicated operation replaces or names an operation that always needs a person')
+    .action(async (options: { json?: true; mode?: PermissionMode; secret: string[]; mandate?: string }) => {
       deps.complete(
         await policyVerify(deps.ports, await pathsOf(deps.ports), await deps.policyVerify(), {
           json: options.json === true,
           secrets: options.secret,
           ...(options.mode === undefined ? {} : { mode: options.mode }),
+          ...(options.mandate === undefined ? {} : { mandate: options.mandate }),
         }),
       );
     });

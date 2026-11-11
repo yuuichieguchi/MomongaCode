@@ -5,6 +5,7 @@ import type { MatchStrength } from './command-match.ts';
 import path from 'node:path';
 import { fileRuleBlocks, resolveCanonicalPath } from '@momonga/foundation';
 import type { FileRuleSet } from '@momonga/foundation';
+import { foldedKey } from './fold.ts';
 import { absoluteFrom } from './path-match.ts';
 import type { PermissionSubject } from './types.ts';
 
@@ -37,9 +38,55 @@ const pathMatchesRule = (rule: PermissionRule, target: string, fileRules: FileRu
   return fileRules.entries.some((entry) => entry.ruleIndex === ruleIndex && fileRuleBlocks(fileRules, entry, requested, resolved));
 };
 
+export const wildcardMatches = (pattern: string, text: string): boolean => {
+  let patternIndex = 0;
+  let textIndex = 0;
+  let starIndex = -1;
+  let resumeIndex = 0;
+  while (textIndex < text.length) {
+    if (pattern[patternIndex] === '*') {
+      starIndex = patternIndex;
+      resumeIndex = textIndex;
+      patternIndex += 1;
+    } else if (patternIndex < pattern.length && pattern[patternIndex] === text[textIndex]) {
+      patternIndex += 1;
+      textIndex += 1;
+    } else if (starIndex >= 0) {
+      resumeIndex += 1;
+      textIndex = resumeIndex;
+      patternIndex = starIndex + 1;
+    } else {
+      return false;
+    }
+  }
+  while (pattern[patternIndex] === '*') patternIndex += 1;
+  return patternIndex === pattern.length;
+};
+
+const forgeTarget = (subject: Extract<PermissionSubject, { kind: 'forge' }>): string => `${subject.host}:${subject.repo}`;
+
+const repoRefs = (subject: Extract<PermissionSubject, { kind: 'repo' }>): readonly string[] => (subject.refs.length === 0 ? [''] : subject.refs);
+
+const repoAllowMatches = (specifier: string, subject: Extract<PermissionSubject, { kind: 'repo' }>): boolean => {
+  const remote = subject.remote ?? '';
+  return repoRefs(subject).every((ref) => {
+    const byName = subject.destinationsMatchFetch && wildcardMatches(specifier, `${remote}:${ref}`);
+    const byDestination = subject.destinations.length > 0 && subject.destinations.every((destination) => wildcardMatches(specifier, `${destination}:${ref}`));
+    return byName || byDestination;
+  });
+};
+
+const repoRestrictMatches = (specifier: string, subject: Extract<PermissionSubject, { kind: 'repo' }>): boolean => {
+  const key = foldedKey(specifier);
+  const places = [subject.remote ?? '', ...subject.destinations];
+  return repoRefs(subject).some((ref) => places.some((place) => wildcardMatches(key, foldedKey(`${place}:${ref}`))));
+};
+
 export const matchRule = (rule: PermissionRule, subject: PermissionSubject, fileRules: FileRuleSet, ruleIndex: number): boolean => {
   if (!ruleCoversSubject(rule, subject)) return false;
   if (rule.specifier === undefined) return true;
+  if (subject.kind === 'repo') return rule.effect === 'allow' ? repoAllowMatches(rule.specifier, subject) : repoRestrictMatches(rule.specifier, subject);
+  if (subject.kind === 'forge') return wildcardMatches(rule.specifier, forgeTarget(subject));
   if (subject.kind === 'command') return matchesCommand(rule, subject.command);
   if (subject.kind !== 'path') return false;
   if (subject.paths.length === 0) return false;

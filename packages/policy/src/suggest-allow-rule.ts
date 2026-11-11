@@ -41,6 +41,9 @@ export const suggestAllowRule = (
     case 'history':
     case 'governance':
       return undefined;
+    case 'repo':
+    case 'forge':
+      return subject.approval === 'always' ? undefined : subject.tool;
     case 'none':
       return tool.name;
   }

@@ -34,6 +34,7 @@ const factsOf = (runId: string, overrides: Partial<RunFactsView> = {}): RunFacts
   elapsedMs: 1000,
   humanWaitMs: 0,
   tokensTotal: 10,
+  costNano: 0,
   steps: 1,
   limits: FIXTURE_LIMITS,
   deadlineAt: CREATED_AT + FIXTURE_TIMEOUT_MS,

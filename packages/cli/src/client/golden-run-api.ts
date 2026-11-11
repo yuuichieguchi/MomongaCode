@@ -67,6 +67,7 @@ export const goldenRunApi = (
       id: (
         await client.createRun(sessionId, input.input, {
           ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
+          ...(input.limits === undefined ? {} : { limits: input.limits }),
           ...(input.mandate === undefined ? {} : { mandate: input.mandate }),
         })
       ).run.id,

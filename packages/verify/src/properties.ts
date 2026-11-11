@@ -1,4 +1,5 @@
-import type { PermissionRule } from '@momonga/policy';
+import { matchRule, supersededFormOf } from '@momonga/policy';
+import type { PermissionRule, SupersededForm } from '@momonga/policy';
 import type { Bool } from 'z3-solver';
 import { SUBJECT_TOOLS, ruleEffectCases } from './decision-model.ts';
 import type { RuleTerms, SubjectModel, SubjectTool } from './decision-model.ts';
@@ -258,6 +259,66 @@ export const checkBashAdmission = async (context: QueryContext): Promise<Propert
       'commands that reach a denied program through a wrapper, a shell payload or a script',
       READ_ONLY_LIMITS.bashAdmission,
     ],
+    verdict: verdictOf(tally),
+  };
+};
+
+const COMMAND_PREFIX = ':*';
+
+const candidatesFor = (rule: PermissionRule, form: SupersededForm): string[] => {
+  const plain = form.argv.join(' ');
+  if (rule.specifier === undefined) return [plain];
+  const specifier = rule.specifier.endsWith(COMMAND_PREFIX) ? rule.specifier.slice(0, -COMMAND_PREFIX.length) : rule.specifier;
+  const words = specifier.trim().split(/\s+/);
+  const narrower = form.argv.every((word, index) => words[index] === word);
+  return narrower ? [plain, specifier.trim()] : [plain];
+};
+
+export const checkSupersededForms = (context: QueryContext, forms: readonly SupersededForm[]): PropertyResult => {
+  const tally = newTally();
+  const allows = context.models.rules.filter((rule) => rule.tool === 'Bash' && rule.effect === 'allow');
+  for (const rule of allows) {
+    for (const form of forms) {
+      const admitted = candidatesFor(rule, form).find((command) => {
+        if (supersededFormOf(command, [form]) === undefined) return false;
+        return matchRule(rule, { kind: 'command', tool: 'Bash', command }, context.env.fileRules, context.models.rules.indexOf(rule));
+      });
+      if (admitted === undefined) continue;
+      tally.findings.push({
+        subject: ruleLabel(rule),
+        message: `duplicate prevention not guaranteed: this allow rule admits \`${admitted}\`, which ${form.operation} replaces; a run that uses Bash for it is not reconciled against the real state`,
+      });
+    }
+  }
+  return {
+    id: 'superseded-forms',
+    title: 'no allow rule admits a Bash form that a dedicated operation replaces',
+    subject: `${allows.length} Bash allow rule(s) against ${forms.length} superseded form(s)`,
+    proves: 'for every Bash allow rule and every superseded form, the rule does not admit the bare form or the form completed with the words of the rule itself, judged by the same matcher the decision uses',
+    doesNotProve: [
+      'commands that reach the form through a wrapper, a shell payload or a script, or with arguments that differ from the rule words',
+      'that the dedicated operation is registered and visible to the model',
+      'the mode default of a command, because only rules are examined',
+    ],
+    verdict: verdictOf(tally),
+  };
+};
+
+export const checkMandateHolds = (context: QueryContext, alwaysOperations: readonly string[]): PropertyResult => {
+  const tally = newTally();
+  const allows = context.models.rules.filter((rule) => rule.effect === 'allow' && alwaysOperations.includes(rule.tool));
+  for (const rule of allows) {
+    tally.findings.push({
+      subject: ruleLabel(rule),
+      message: `this allow rule names ${rule.tool}, which always needs a person: the rule does not lower it, and the call is held until a person approves`,
+    });
+  }
+  return {
+    id: 'mandate-holds',
+    title: 'no allow rule names an operation that always needs a person',
+    subject: `${context.models.rules.filter((rule) => rule.effect === 'allow').length} allow rule(s) against ${alwaysOperations.length} operation(s) of the class always`,
+    proves: 'no allow rule is written for an operation whose approval class is always, so no rule reads as if it let such an operation run without a person',
+    doesNotProve: ['an approval class the user changed under operations.approval in the user settings', 'a push that becomes always by its arguments (force, delete) or by a protected ref'],
     verdict: verdictOf(tally),
   };
 };

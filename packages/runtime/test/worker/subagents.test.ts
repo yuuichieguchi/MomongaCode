@@ -211,17 +211,21 @@ describe('worker subagents', () => {
     const env = await makeEnv();
     writeAgent(env, 'reviewer');
     const worker = env.worker('w1', { agents: agentsPortOf(env) });
-    const parent = env.enqueue('Review', { limits: { maxTotalTokens: 500 } });
+    const limit = 200_000;
+    const parent = env.enqueue('Review', { limits: { maxTotalTokens: limit } });
     env.gateway.script.push(
       callsStep([{ callId: 'a', name: 'Agent', args: { description: 'r', prompt: 'review', subagent_type: 'reviewer' } }], usageOf(10, 5)),
-      textStep('child spent a lot', { usage: usageOf(400, 100) }),
-      textStep('wrap-up summary'),
+      textStep('child spent a lot', { usage: usageOf(limit - 115, 100) }),
+      textStep('never sent'),
     );
     await env.runOnce(worker);
     await env.runOnce(worker);
-    expect(env.store.treeTokens(parent.id)).toBe(515);
+    expect(env.store.treeSpend(parent.id).totalTokens).toBe(limit);
     await env.runOnce(worker);
     expect(env.run(parent.id)).toMatchObject({ status: 'STOPPED', stopReason: 'budget' });
+    expect(env.ofType(parent.id, 'budget.exhausted')).toEqual([expect.objectContaining({ dimension: 'tokens', cause: 'limit', spent: limit, limit })]);
+    expect(env.ofType(parent.id, 'model.requested')).toHaveLength(1);
+    expect(env.gateway.script).toHaveLength(1);
   });
 
   it('cancels the child when the parent is cancelled while it waits', async () => {

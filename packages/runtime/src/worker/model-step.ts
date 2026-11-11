@@ -1,11 +1,12 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import type { TokenMeter } from '@momonga/context';
-import { LOWEST_REASONING_EFFORT, describeFallbackCause, marginFloorFor, wireUsageOf } from '@momonga/protocol';
+import type { BuiltContext, TokenMeter } from '@momonga/context';
+import { BUDGET_EXCEEDED_CODE, LOWEST_REASONING_EFFORT, describeFallbackCause, marginFloorFor, wireUsageOf } from '@momonga/protocol';
 import { billedDetailOf, priceOutcomeOf } from './model-stream.ts';
-import type { Capabilities, CreateResponseBody, ModelRejectionReason, FunctionTool, InputItem, ModelResponse, MomongaResponseExtension, ResponseResource, RunEventPayload, RunState } from '@momonga/protocol';
+import type { BudgetExhausted, ModelQuote, Capabilities, CreateResponseBody, ModelRejectionReason, FunctionTool, InputItem, ModelResponse, MomongaResponseExtension, ResponseResource, RunEventPayload, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { modelKey } from '../model-key.ts';
 import { GatewayFailureError } from './errors.ts';
+import { GatewayRequestError } from '../gateway-client.ts';
 import { responseFailureDisposition, terminalOf } from './gateway-policy.ts';
 import { outputBoundOf } from './output-bound.ts';
 import { isRecord } from './json.ts';
@@ -16,8 +17,14 @@ import type { CallResult } from './loop-guidance.ts';
 import { streamModel } from './model-stream.ts';
 import type { StreamedModel } from './model-stream.ts';
 import { summaryStopReason } from './wrap-up.ts';
+import { requestBudgetOf, stepsExhausted } from './budget.ts';
+import { admissionFor, ceilingOf, overCeiling, quoteFor } from './admitted-request.ts';
+import type { AdmissionProof } from './admitted-request.ts';
+import { stopExhausted, stopReasonOf } from './budget-stop.ts';
+import type { StepAdmission } from './budget.ts';
 import { stopGate } from './verification-step.ts';
-import { recordCalls, settleCalls } from './tool-step.ts';
+import { recordCalls, settleCalls, settleHeld } from './tool-step.ts';
+import { hasHeld, quiesce } from './held-calls.ts';
 import { pinnedDigestOf } from './pinned-digest.ts';
 import { recordPrefix } from './prefix-record.ts';
 import { cacheControlsOf } from './cache-controls.ts';
@@ -27,16 +34,10 @@ import { offeredRecordFor } from './tool-offer.ts';
 const DEADLINE_CODE = 'deadline_exceeded';
 const REFUSAL_CODES = ['guardrail_violation', 'refusal', 'content_filter'];
 
-type LimitReason = 'max_steps' | 'budget';
-
 const isRequestBody = (value: unknown): value is CreateResponseBody => isRecord(value) && typeof value['model'] === 'string';
 
-const limitReached = (ctx: ClaimContext): LimitReason | undefined => {
-  const state = ctx.journal.state;
-  if (state.step >= ctx.limits.maxSteps) return 'max_steps';
-  if (ctx.options.store.treeTokens(ctx.run.id) >= ctx.limits.maxTotalTokens) return 'budget';
-  return undefined;
-};
+const admissionOf = (ctx: ClaimContext, built: BuiltContext, quote: ModelQuote | undefined): StepAdmission =>
+  admissionFor(ctx.budget, { inputTokens: built.inputTokens, marginTokens: built.budget.margin, maxOutputTokens: built.maxOutputTokens }, quote);
 
 const incompleteFailure = (reason: string | undefined, terminals: ClaimContext['terminals']): Promise<Flow> => {
   if (reason === 'max_output_tokens') return terminals.finish('STOPPED', { stopReason: 'max_tokens' });
@@ -66,6 +67,10 @@ export const decideAfterResponse = async (ctx: ClaimContext): Promise<Flow> => {
   if (response.refusal) return terminals.finish('STOPPED', { stopReason: 'refusal' });
   if (response.callIds.length === 0) {
     if (response.incomplete) return incompleteFailure(response.incompleteReason, terminals);
+    const settled = await settleHeld(ctx);
+    if (settled === 'done') return 'done';
+    if (settled !== 'continue' && settled > 0) return 'continue';
+    if (hasHeld(journal.state)) return quiesce(ctx);
     const gated = await stopGate(ctx);
     return gated === 'allow' ? terminals.finish('COMPLETED') : gated;
   }
@@ -153,6 +158,7 @@ const handleResult = async (
       return terminals.finish('STOPPED', { stopReason: 'refusal' });
     }
     if (result.code === DEADLINE_CODE) return terminals.finish('STOPPED', { stopReason: 'timeout' });
+    if (result.code === BUDGET_EXCEEDED_CODE) return stopExhausted(ctx, overCeiling(ctx.budget));
     if (result.retryable) throw new GatewayFailureError(`${result.code}: ${result.message}`);
     const terminal = terminalOf(responseFailureDisposition(result));
     return terminals.finish(terminal.to, terminal.patch);
@@ -303,13 +309,20 @@ const streamRecovering = async (
   ctx: ClaimContext,
   body: CreateResponseBody,
   position: { step: number; attempt: number },
+  proof: AdmissionProof,
 ): Promise<StreamOutcome> => {
   try {
-    return { kind: 'result', streamed: await streamModel(ctx, body, modelKey(ctx.run.id, position.step, position.attempt), position) };
+    return { kind: 'result', streamed: await streamModel(ctx, body, modelKey(ctx.run.id, position.step, position.attempt), position, proof) };
   } catch (error) {
+    if (error instanceof GatewayRequestError && error.code === BUDGET_EXCEEDED_CODE) {
+      delete ctx.control.inFlight.modelKey;
+      return { kind: 'flow', flow: await stopExhausted(ctx, overCeiling(ctx.budget)) };
+    }
     const recovery = await recoverRejectedCompaction(ctx, error, position);
     delete ctx.control.inFlight.modelKey;
     return { kind: 'flow', flow: recovery === 'done' ? 'done' : 'continue' };
+  } finally {
+    ctx.budget.release();
   }
 };
 
@@ -320,7 +333,7 @@ export const resumeInFlight = async (ctx: ClaimContext): Promise<Flow> => {
   const position = { step: inFlight.step, attempt: inFlight.attempt };
   if (ctx.control.yieldRequested()) return ctx.terminals.yieldLease();
   if (streamedBeforeRestart(ctx.journal.state, position)) ctx.journal.append([{ type: 'model.stream.restarted', step: position.step, attempt: position.attempt }]);
-  const outcome = await streamRecovering(ctx, inFlight.body, position);
+  const outcome = await streamRecovering(ctx, inFlight.body, position, 'recorded');
   return outcome.kind === 'flow' ? outcome.flow : handleResult(ctx, outcome.streamed, position, observationOf(inFlight.body));
 };
 
@@ -368,11 +381,22 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   const { journal, terminals, options } = ctx;
   if (options.clock.now() >= ctx.run.deadlineAt) return terminals.finish('STOPPED', { stopReason: 'timeout' });
   if (ctx.control.yieldRequested()) return terminals.yieldLease();
-  const limit = limitReached(ctx);
-  const outcome = await buildNext(ctx, { ...(limit === undefined ? {} : { wrapUp: limit }), trailing: loopGuidanceTrailing(ctx) });
+  const quote = await quoteFor(ctx.budget, ctx.model);
+  const trailing = loopGuidanceTrailing(ctx);
+  let exhausted = stepsExhausted(journal.state.step, ctx.limits.maxSteps);
+  let outcome = await buildNext(ctx, { ...(exhausted === undefined ? {} : { wrapUp: stopReasonOf(exhausted) }), trailing });
   if (outcome.kind === 'done') return 'done';
+  let admission = admissionOf(ctx, outcome.built, quote);
+  if (admission.kind === 'exhausted' && exhausted === undefined && outcome.wrapUp === undefined && admission.exhausted.cause !== 'unpriced') {
+    exhausted = admission.exhausted;
+    outcome = await buildNext(ctx, { wrapUp: stopReasonOf(exhausted), trailing });
+    if (outcome.kind === 'done') return 'done';
+    admission = admissionOf(ctx, outcome.built, quote);
+  }
+  if (admission.kind === 'lease_lost') return terminals.yieldLease();
+  if (admission.kind === 'exhausted') return stopExhausted(ctx, exhausted ?? admission.exhausted);
   const { built, wrapUp } = outcome;
-  const summarising = limit !== undefined || wrapUp !== undefined;
+  const summarising = exhausted !== undefined || wrapUp !== undefined;
   const step = journal.state.step + 1;
   const plainBody: CreateResponseBody = {
     model: ctx.model,
@@ -381,7 +405,7 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
     ...(summarising ? { tool_choice: 'none' as const } : ctx.toolLess ? {} : { tool_choice: 'auto' as const }),
     ...(ctx.capabilities.parallelToolCalls === undefined || ctx.toolLess ? {} : { parallel_tool_calls: ctx.capabilities.parallelToolCalls }),
     ...(summarising ? { reasoning: { effort: LOWEST_REASONING_EFFORT } } : {}),
-    ...outputBoundOf(ctx.capabilities, built.maxOutputTokens),
+    ...outputBoundOf(ctx.capabilities, admission.maxOutputTokens),
     store: false,
     stream: true,
     metadata: { run_id: ctx.run.id, step: String(step) },
@@ -390,12 +414,14 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   const position = { step, attempt: 1 };
   const prefixRecord = recordPrefix(ctx, built, summarising);
   const cacheControls = cacheControlsOf(ctx, built, prefixRecord?.prefix);
-  const body: CreateResponseBody = { ...plainBody, ...cacheControls, momonga: { ...cacheControls.momonga, ...EXACT_MODEL } };
+  const body: CreateResponseBody = { ...plainBody, ...cacheControls, momonga: { ...cacheControls.momonga, ...EXACT_MODEL, ...ceilingOf(admission) } };
+  const proof = requestBudgetOf(admission, quote);
   const requestOffered = offeredRecordFor(journal.state.offeredTools, built.tools.map((tool) => tool.name));
   journal.append([
     ...(requestOffered === undefined ? [] : [requestOffered]),
     ...(wrapUp === undefined ? [] : [{ type: 'notice' as const, level: 'error' as const, message: wrapUp.notice, code: 'context_wrap_up' }]),
     ...(prefixRecord === undefined ? [] : prefixRecord.notices),
+    ...(exhausted === undefined ? [] : [{ type: 'budget.exhausted' as const, ...exhausted }]),
     {
       type: 'model.requested',
       step: position.step,
@@ -405,9 +431,10 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
       body,
       anatomy: built.anatomy,
       ...(prefixRecord === undefined ? {} : { prefix: prefixRecord.prefix }),
+      budget: proof,
     },
   ]);
-  const streamed = await streamRecovering(ctx, body, position);
+  const streamed = await streamRecovering(ctx, body, position, proof);
   return streamed.kind === 'flow'
     ? streamed.flow
     : handleResult(ctx, streamed.streamed, position, observationOf(body));

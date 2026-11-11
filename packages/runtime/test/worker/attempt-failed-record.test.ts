@@ -144,6 +144,7 @@ describe('a crash between attempt.failed and the yield (RunRecord FailedBeforeYi
       limits: {},
       step: 1,
       tokensTotal: 0,
+      costNano: 0,
       model: 'fm',
       mode: 'manual',
       agent: 'build',

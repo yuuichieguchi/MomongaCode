@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DATASET_FORMAT, EvalError, runDataset } from '@momonga/eval';
 import type { EvalRunApi } from '@momonga/eval';
 import type { PublicRunEvent } from '@momonga/protocol';
-import { approvalTranscript, callsTranscript, finalAnswerTranscript, goldenCase } from './fixtures.ts';
+import { approvalTranscript, callsTranscript, finalAnswerTranscript, goldenCase, publicEventsOf } from './fixtures.ts';
 import type { RecordedRun, Transcript } from '@momonga/eval';
 
 type Scripted = { sessions: string[]; runs: string[]; resolved: { approvalId: string; optionId: string }[]; cancelled: string[]; api: EvalRunApi };
@@ -356,5 +356,72 @@ describe('runDataset', () => {
     await expect(
       runDataset({ format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'answer', graders: [{ kind: 'status', equals: 'COMPLETED' }] })] }, shared(scripted.api)),
     ).rejects.toThrow('no scripted run left');
+  });
+});
+
+describe('a mandate run that went quiescent, driven by a runner without a person', () => {
+  const HELD = { callId: 'c1', approvalId: 'held-1', tool: 'GitPush', reason: 'needs a person', sinceSeq: 3 };
+  const heldEvents = publicEventsOf([
+    { type: 'user.message', text: 'push it' },
+    { type: 'tool.held', callId: 'c1', approvalId: 'held-1', reason: 'needs a person', footprint: { reads: [], writes: [] } },
+    { type: 'run.quiescent', held: [HELD, { ...HELD, callId: 'c2', approvalId: 'held-2' }] },
+  ]);
+  const resumedEvents = publicEventsOf([{ type: 'tool.held.resolved', callId: 'c1', approvalId: 'held-1', outcome: 'rejected', status: 'failed', output: 'rejected' }]);
+
+  const heldApi = (): { resolved: { approvalId: string; optionId: string }[]; cancelled: string[]; api: EvalRunApi } => {
+    const answered = Promise.withResolvers<void>();
+    const record = { resolved: [] as { approvalId: string; optionId: string }[], cancelled: [] as string[], api: undefined as unknown as EvalRunApi };
+    record.api = {
+      createSession: async () => ({ id: 's1' }),
+      createRun: async () => ({ id: 'run-held' }),
+      events: async function* () {
+        for (const event of heldEvents) yield event;
+        await answered.promise;
+        for (const event of resumedEvents) yield event;
+      },
+      reflectionOf: async () => ({ state: 'none' }),
+      answeredBy: async () => [],
+      getRun: async (runId) => ({ id: runId, status: record.resolved.length === 2 ? 'COMPLETED' : 'WAITING_HUMAN', step: 1, usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } }),
+      resolveApproval: async (approvalId, optionId) => {
+        record.resolved.push({ approvalId, optionId });
+        if (record.resolved.length === 2) answered.resolve();
+      },
+      cancelRun: async (runId) => {
+        record.cancelled.push(runId);
+      },
+    };
+    return record;
+  };
+
+  it('resolves every held approval as its onAsk says, so the run goes on to its end', async () => {
+    const held = heldApi();
+    const stored: RecordedRun[] = [];
+
+    await runDataset(
+      { format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'held', onAsk: 'reject_once', mandate: { scope: { allow: ['Read'] }, hold: { onQuiescent: 'wait' } }, graders: [{ kind: 'mustNotRun', tool: 'GitPush' }] })] },
+      { ...shared(held.api), onTranscript: async (transcript) => void stored.push(transcript) },
+    );
+
+    expect(held.resolved).toEqual([
+      { approvalId: 'held-1', optionId: 'reject_once' },
+      { approvalId: 'held-2', optionId: 'reject_once' },
+    ]);
+    expect(stored[0]?.run.status).toBe('COMPLETED');
+    expect(stored[0]?.events.at(-1)?.type).toBe('tool.held.resolved');
+  });
+
+  it('ends the trial with the run still held when the case says a quiescent run reports and stops', async () => {
+    const held = heldApi();
+    const stored: RecordedRun[] = [];
+
+    await runDataset(
+      { format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'held', onAsk: 'reject_once', mandate: { scope: { allow: ['Read'] }, hold: { onQuiescent: 'report' } }, graders: [{ kind: 'mustNotRun', tool: 'GitPush' }] })] },
+      { ...shared(held.api), onTranscript: async (transcript) => void stored.push(transcript) },
+    );
+
+    expect(held.resolved).toEqual([]);
+    expect(held.cancelled).toEqual([]);
+    expect(stored[0]?.run.status).toBe('WAITING_HUMAN');
+    expect(stored[0]?.events.at(-1)?.type).toBe('run.quiescent');
   });
 });

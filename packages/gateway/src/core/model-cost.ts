@@ -31,7 +31,7 @@ export const modelCostOf = (input: ModelCostInput): ModelPricing => {
     table: input.table ?? [],
   });
   if (priced.kind === 'unpriced') return { kind: 'unpriced', code: priced.code, reason: priced.code === 'no_price_entry' && input.table === undefined ? NO_PRICE_TABLE_REASON : priced.reason };
-  return { kind: 'priced', cost: { amount: amountOfUnits(priced.units), currency: priced.currency, priceVersion: priced.priceVersion } };
+  return { kind: 'priced', cost: { amount: amountOfUnits(priced.units), units: priced.units.toString(), currency: priced.currency, priceVersion: priced.priceVersion } };
 };
 
 export const pricingFieldsOf = (pricing: ModelPricing): { cost: ModelCost } | { unpriced: UnpricedOutcome } =>

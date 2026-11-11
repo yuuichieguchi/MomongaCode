@@ -173,6 +173,7 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/tools/src/builtins/write.ts': { 'node:fs': 1 },
   'packages/tools/src/capture.ts': { 'setTimeout': 1 },
   'packages/tools/src/file-listing.ts': { 'node:fs': 1 },
+  'packages/tools/src/operations/git-credential.ts': { 'node:fs/promises': 1, 'randomBytes': 1 },
   'packages/tools/src/executor.ts': { 'setTimeout': 3, 'node:fs': 1 },
   'packages/tools/src/policy-filesystem.ts': { 'setTimeout': 1, 'node:fs': 1 },
   'packages/tools/src/timers.ts': { 'setTimeout': 1 },

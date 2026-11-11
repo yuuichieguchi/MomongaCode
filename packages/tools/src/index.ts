@@ -49,7 +49,7 @@ export type { GitWorkTreeObserverOptions, ObservedFile, ObservedWindow, WorkTree
 export { createToolRegistry, extendToolSet } from './registry.ts';
 export { pageToFit } from './paging.ts';
 export type { SnapshotOptions, ToolListOptions, ToolRegistry, ToolSet, ToolSource, ToolSourceListing } from './registry.ts';
-export { TOOL_TIERS, defineTool, harnessOutputToolsOf, outputOriginOf, ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
+export { OPERATION_RECONCILE_OUTCOMES, TOOL_TIERS, defineTool, harnessOutputToolsOf, outputOriginOf, ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
 export type {
   AnyTool,
   CallOutputFit,
@@ -137,3 +137,23 @@ export type { MarkerOwner, MarkerOwners } from './marker-owners.ts';
 export { removeMarkerFile } from './marker-settle.ts';
 export { createMarkerSettle, settleFinishedCommand, unnamedLivenessNotes } from './marker-settle.ts';
 export type { MarkerSettle, MarkerSettleOptions } from './marker-settle.ts';
+export { COVERED_PROGRAMS, OPERATION_SPECS, operationCatalogueFacts } from './operations/catalogue.ts';
+export type { OperationCatalogueFacts } from './operations/catalogue.ts';
+export { OPERATION_CRASH_POINTS, OPERATION_GUARDS, OperationSpecError, evaluateClauses, parseOperationSpec, supersededForms } from './operations/spec.ts';
+export type { Clause, ClauseItem, Guard, OperationSpec } from './operations/spec.ts';
+export type { GateCall, GateFacts, OperationEffect } from './types.ts';
+export { openGitCredentialChannel } from './operations/git-credential.ts';
+export type { GitCredentialChannel, GitHostCredential } from './operations/git-credential.ts';
+export { createOperationTools } from './operations/runner.ts';
+export type { OperationDeps, OperationSettings } from './operations/runner.ts';
+export { createSandboxedArgvRunner, networkScopeOfDestinations } from './operations/argv.ts';
+export type { ArgvOptions, ArgvResult, ArgvRunner, ReconcileSandbox, SandboxedRunnerPorts } from './operations/argv.ts';
+export { hostGitReader, resolveDestinations } from './operations/git-read.ts';
+export type { Destinations, GitRead, GitReadOptions, GitReader } from './operations/git-read.ts';
+export { ForgeDescriptorError, loadForgeDescriptors, parseForgeDescriptor } from './forge/descriptor.ts';
+export type { ForgeDescriptor, ForgeOperationDescriptor } from './forge/descriptor.ts';
+export { createForgeAccess, forgeCredentialOf } from './forge/instances.ts';
+export type { ForgeAccess, ForgeAccessOptions, ForgeCredentialReference, ForgeInstance, ForgeRequest } from './forge/instances.ts';
+export type { ForgeFetch } from './forge/http.ts';
+export { EMPTY_FOOTPRINT, blockedByHeldText, blockerOf, footprintOf, footprintsConflict } from './footprint.ts';
+export type { Footprint, HeldFootprint } from './footprint.ts';

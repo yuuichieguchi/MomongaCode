@@ -1,0 +1,40 @@
+{
+  "name": "GitPush",
+  "description": "Pushes a local branch to the same-named branch of a remote. A plain push fails when the remote branch moved. With force the push is leased on the remote value observed before it, so a branch that moved is not overwritten. With delete the remote branch is removed. A force push, a delete and a push to a protected branch always need a person to approve.",
+  "kind": "execute",
+  "sideEffect": "exec",
+  "title": "Push {input.branch} to {input.remote}",
+  "subject": { "kind": "repo", "remote": "{input.remote}", "refs": ["{input.branch}"], "alwaysWhen": ["force", "delete"] },
+  "approval": "rule",
+  "input": {
+    "type": "object",
+    "properties": {
+      "remote": { "type": "string", "pattern": "^[^-\\s][^\\s]*$", "description": "The remote name" },
+      "branch": { "type": "string", "refName": true, "description": "The branch name, local and remote" },
+      "force": { "type": "boolean", "description": "Overwrite the remote branch, leased on the value observed before the push" },
+      "delete": { "type": "boolean", "description": "Delete the remote branch" }
+    },
+    "required": ["remote", "branch"],
+    "additionalProperties": false
+  },
+  "timeoutMs": 120000,
+  "observe": [
+    { "id": "remoteRef", "via": { "argv": ["git", "ls-remote", "{call.destination}", "refs/heads/{input.branch}"], "network": "destination", "extract": "firstField", "each": "pushUrls" } },
+    { "id": "localSha", "via": { "argv": ["git", "rev-parse", "--verify", "-q", "refs/heads/{input.branch}"], "extract": "trim", "emptyOnFailure": true } }
+  ],
+  "effect": {
+    "network": "destinations",
+    "argv": [
+      "git",
+      "push",
+      { "if": "input.force", "then": ["--force-with-lease=refs/heads/{input.branch}:{before.remoteRef}"] },
+      "{input.remote}",
+      { "if": "input.delete", "then": [":refs/heads/{input.branch}"], "else": ["refs/heads/{input.branch}:refs/heads/{input.branch}"] }
+    ]
+  },
+  "applied": [{ "if": "input.delete", "then": [["after.remoteRef", { "literal": "" }]], "else": [["after.remoteRef", "before.localSha"]] }],
+  "unchanged": [["after.remoteRef", "before.remoteRef"]],
+  "guard": "compare_and_set",
+  "supersedes": [["git", "push"]],
+  "report": "The branch {input.branch} on {input.remote} is at {after.remoteRef}."
+}

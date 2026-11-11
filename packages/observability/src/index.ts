@@ -14,7 +14,8 @@ export type { BilledCall, BilledCallWire, BilledCallsCursor, BilledCallsPage } f
 export { UNPRICED_CODE_TEXT } from '@momonga/protocol';
 export { describeMoney, moneyAmountOf, moneyLine, moneyTallyOf, unpricedCallsOf } from './money-line.ts';
 export type { CallPrice, MoneyTally } from './money-line.ts';
-export { LOCAL_PRICE_VERSION, amountOfUnits, definePriceTable, findPriceEntry, priceCall, runCostsOf } from './cost.ts';
+export { LOCAL_PRICE_VERSION, amountOfUnits, definePriceTable, findPriceEntry, priceCall, quoteChain, runCostsOf } from './cost.ts';
+export type { QuotedMember } from './cost.ts';
 export type { RunCostCall } from './cost.ts';
 export { MAX_TRACE_CONTENT_PAGE, pageRunBodies } from './trace-content.ts';
 export type { CallBilling, CostInput, CostUsage, PriceCallInput, PriceEntry, PriceTable, PricedCall, UnpricedPrice } from './cost.ts';

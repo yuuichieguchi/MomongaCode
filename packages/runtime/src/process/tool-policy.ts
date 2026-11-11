@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { ConfigError } from '@momonga/config';
-import { canonicalDirectory, canonicalPath, comparableContains, ensureSessionTmpDir as defaultEnsureSessionTmpDir, isTransientErrno, protectedSetFor } from '@momonga/foundation';
+import { canonicalDirectory, canonicalPath, comparableContains, discoverGitConfigFiles, ensureSessionTmpDir as defaultEnsureSessionTmpDir, isTransientErrno, protectedSetFor } from '@momonga/foundation';
 import type { MomongaPaths, RuleEnforcement, SessionScratch } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import type { PolicyPorts } from '@momonga/policy';
@@ -52,11 +52,12 @@ export const createPolicyFor = (options: PolicyForOptions): EnforcedPolicyFor =>
   const { paths, home, fs, ruleEnforcement } = options;
   const contextFor = contextBuilder(options);
 
-  return async (session, { env, rules, readableDirectories, unixSocketAllow }) => {
+  return async (session, { env, rules, readableDirectories, unixSocketAllow, signal }) => {
     const { roots, tmpDir, wrap } = await contextFor(session);
     try {
       const fileRules = computeFileRules(rules, roots, tmpDir, ruleEnforcement);
-      const protectedSet = protectedSetFor(roots, fs);
+      const gitConfigFiles = signal === undefined ? [] : await discoverGitConfigFiles({ workingDirectory: session.cwd, env, signal });
+      const protectedSet = protectedSetFor(roots, fs, gitConfigFiles);
       const skillsRoot = canonicalPath(paths.skills);
       const readAllowed = (readableDirectories ?? []).filter((directory) => comparableContains(skillsRoot, directory));
       const sandboxPolicy = buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules, protectedSet, network: 'deny', readAllowed, ...(unixSocketAllow === undefined ? {} : { unixSocketAllow }) });

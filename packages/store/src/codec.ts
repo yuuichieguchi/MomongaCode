@@ -54,7 +54,11 @@ const decodeUsage = (identity: string, value: unknown): Run['usage'] => {
   if (typeof inputTokens !== 'number' || typeof outputTokens !== 'number' || typeof totalTokens !== 'number') {
     throw corrupt('runs', identity, 'column usage_json must hold numeric inputTokens, outputTokens and totalTokens');
   }
-  return { inputTokens, outputTokens, totalTokens };
+  const { costNano, unpricedCalls } = record;
+  if ((costNano !== undefined && typeof costNano !== 'number') || (unpricedCalls !== undefined && typeof unpricedCalls !== 'number')) {
+    throw corrupt('runs', identity, 'column usage_json must hold numeric costNano and unpricedCalls when it holds them');
+  }
+  return { inputTokens, outputTokens, totalTokens, ...(costNano === undefined ? {} : { costNano }), ...(unpricedCalls === undefined ? {} : { unpricedCalls }) };
 };
 
 const decodeCancelOrigin = (context: DecodeContext, identity: string, value: string | null): Run['cancelOrigin'] =>
@@ -160,6 +164,10 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'tool.loaded': true,
   'tool.offered': true,
   'loop.warned': true,
+  'budget.exhausted': true,
+  'tool.held': true,
+  'tool.held.resolved': true,
+  'run.quiescent': true,
   'meter.observed': true,
   'model.rejected': true,
   'approval.rule.persisted': true,

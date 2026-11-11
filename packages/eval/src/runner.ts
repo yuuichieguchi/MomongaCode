@@ -3,6 +3,8 @@ import { gradeChecks } from './oracle-grade.ts';
 import type { WorkspaceProbe } from './oracle-grade.ts';
 import { gateVerdictOf } from './oracle.ts';
 import type { GoldenCase, GoldenDataset } from './dataset.ts';
+import { runFiguresOf } from './budget-metrics.ts';
+import type { CaseLimits } from './dataset.ts';
 import { grade } from './graders.ts';
 import { buildReport } from './report.ts';
 import type { CaseResult, EvalReport } from './report.ts';
@@ -14,7 +16,7 @@ export type EvalSessionInput = { cwd: string; env?: Record<string, string>; perm
 
 export type EvalRunApi = {
   createSession(input: EvalSessionInput): Promise<{ id: string }>;
-  createRun(sessionId: string, input: { input: string; timeoutMs?: number; mandate?: Mandate }): Promise<{ id: string }>;
+  createRun(sessionId: string, input: { input: string; timeoutMs?: number; limits?: CaseLimits; mandate?: Mandate }): Promise<{ id: string }>;
   events(runId: string): AsyncIterable<PublicRunEvent>;
   getRun(runId: string): Promise<TranscriptRun>;
   answeredBy(runId: string): Promise<Answerer[]>;
@@ -48,14 +50,18 @@ const optionIdFor = (event: Extract<PublicRunEvent, { type: 'tool.permission.req
 
 export type Driven = { events: PublicRunEvent[]; children: TranscriptChild[] };
 
-export const driveRun = async (api: Pick<EvalRunApi, 'events' | 'resolveApproval' | 'cancelRun'>, golden: Pick<GoldenCase, 'id' | 'onAsk'>, rootRunId: string): Promise<Driven> => {
+export const driveRun = async (api: Pick<EvalRunApi, 'events' | 'resolveApproval' | 'cancelRun'>, golden: Pick<GoldenCase, 'id' | 'onAsk' | 'mandate'>, rootRunId: string): Promise<Driven> => {
   const events: PublicRunEvent[] = [];
   const children: TranscriptChild[] = [];
   const followed = new Set<string>([rootRunId]);
   const following: Promise<void>[] = [];
   const failures: unknown[] = [];
+  const staysHeld = golden.mandate?.hold?.onQuiescent === 'report';
+  const leftHeld = Promise.withResolvers<void>();
+  let ended = false;
 
   const abandon = async (error: unknown): Promise<void> => {
+    if (ended) return;
     failures.push(error);
     try {
       await api.cancelRun(rootRunId);
@@ -75,6 +81,13 @@ export const driveRun = async (api: Pick<EvalRunApi, 'events' | 'resolveApproval
       sink.push(event);
       if (event.type === 'tool.permission.requested') await api.resolveApproval(event.approvalId, optionIdFor(event, golden));
       if (event.type === 'tool.unknown.requested') await answerUnknownEffect(event);
+      if (event.type === 'run.quiescent') {
+        if (staysHeld) {
+          leftHeld.resolve();
+          return;
+        }
+        for (const held of event.held) await api.resolveApproval(held.approvalId, golden.onAsk);
+      }
       if (event.type === 'tool.waiting' && event.awaits.kind === 'run' && !followed.has(event.awaits.runId)) {
         followed.add(event.awaits.runId);
         const child: TranscriptChild = { runId: event.awaits.runId, agent: event.awaits.agent, events: [] };
@@ -84,8 +97,13 @@ export const driveRun = async (api: Pick<EvalRunApi, 'events' | 'resolveApproval
     }
   };
 
-  await follow(rootRunId, events).catch(abandon);
-  for (let index = 0; index < following.length; index += 1) await following[index];
+  const followedToTheEnd = async (): Promise<void> => {
+    await follow(rootRunId, events).catch(abandon);
+    for (let index = 0; index < following.length; index += 1) await following[index];
+  };
+  const everyRunEnded = followedToTheEnd();
+  await Promise.race([leftHeld.promise, everyRunEnded]);
+  ended = true;
   const [first, ...rest] = failures;
   if (rest.length > 0) {
     throw new EvalError(`case ${golden.id}: ${failures.length} failures: ${failures.map((failure) => (failure instanceof Error ? failure.message : String(failure))).join('; ')}`, {
@@ -108,7 +126,8 @@ const runOnce = async (ports: EvalPorts, golden: GoldenCase, runIndex: number): 
     const run = await scope.api.createRun(session.id, {
       input: golden.input,
       ...(golden.timeoutMs === undefined ? {} : { timeoutMs: golden.timeoutMs }),
-      ...(golden.completion === undefined ? {} : { mandate: { completion: golden.completion } }),
+      ...(golden.limits === undefined ? {} : { limits: golden.limits }),
+      ...(golden.completion === undefined && golden.mandate === undefined ? {} : { mandate: { ...golden.mandate, ...(golden.completion === undefined ? {} : { completion: golden.completion }) } }),
     });
     const { events, children } = await driveRun(scope.api, golden, run.id);
     const oracle =
@@ -137,6 +156,7 @@ const resultOf = (golden: GoldenCase, transcripts: readonly RecordedRun[]): Case
     runIndex: transcript.runIndex,
     runId: transcript.run.id,
     graded: grade(golden.graders, transcript),
+    figures: runFiguresOf(golden, transcript),
     ...(transcript.oracle === undefined ? {} : { completion: { gate: gateVerdictOf(transcript.run, transcript.events), oracle: transcript.oracle.met } }),
   })),
 });

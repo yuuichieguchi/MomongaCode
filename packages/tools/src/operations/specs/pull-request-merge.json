@@ -1,0 +1,30 @@
+{
+  "name": "PullRequestMerge",
+  "description": "Merges a pull request at the head commit that was approved. If the head moved since, nothing is sent and the call fails with the new head. Always needs a person to approve.",
+  "kind": "other",
+  "sideEffect": "write",
+  "title": "Merge pull request #{input.number}",
+  "subject": { "kind": "forge", "pr": "{input.number}", "headSha": "{input.headSha}" },
+  "approval": "always",
+  "input": {
+    "type": "object",
+    "properties": {
+      "number": { "type": "integer", "minimum": 1, "description": "The pull request number" },
+      "headSha": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The head commit that was reviewed" }
+    },
+    "required": ["number", "headSha"],
+    "additionalProperties": false
+  },
+  "timeoutMs": 60000,
+  "observe": [{ "id": "pr", "via": { "forge": "getPullRequest", "args": { "number": "{input.number}" }, "shape": "one" } }],
+  "require": [["before.pr.headSha", "input.headSha"]],
+  "effect": { "forge": "mergePullRequest", "args": { "number": "{input.number}", "headSha": "{input.headSha}" } },
+  "applied": [["after.pr.merged", { "literal": "true" }]],
+  "unchanged": [
+    ["after.pr.merged", { "literal": "false" }],
+    ["after.pr.headSha", "input.headSha"]
+  ],
+  "guard": "compare_and_set",
+  "supersedes": [["gh", "pr", "merge"]],
+  "report": "Pull request #{input.number} is merged."
+}

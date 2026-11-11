@@ -25,10 +25,18 @@ const work = (now: number): RunEventPayload[] => [
 describe('the report request of the journal thread', () => {
   it('answers with the report buildRunReport gives for every event of the run, and the lastSeq it read', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work', { history: 'fresh' });
+    const run = env.enqueue('Work', { history: 'fresh', limits: { maxSteps: 7, maxTotalTokens: 90_000, maxCostUsd: 9.1 } });
     await env.seed(run.id, work(env.clock.now()), 'hold');
     env.clock.advance(250);
-    const expected = buildRunReport(env.events(run.id));
+    const stored = env.run(run.id);
+    const expected = {
+      ...buildRunReport(env.events(run.id)),
+      budget: {
+        limits: { maxSteps: 7, maxTotalTokens: 90_000, maxCostNano: 9_100_000_000, deadlineAt: stored.deadlineAt },
+        spent: { steps: stored.step, totalTokens: 0, costNano: 0, unpricedCalls: 0 },
+        reserved: { tokens: 0, costNano: 0 },
+      },
+    };
     const { dev, ino } = fs.statSync(env.dbPath);
     const thread = await startJournalThread({ databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
 
@@ -59,6 +67,8 @@ describe('the report request of the journal thread', () => {
 
     const reply = await env.store.journalFacts.report({ runId: run.id });
 
-    expect(reply.report).toEqual(buildRunReport(env.events(run.id)));
+    const { budget, ...folded } = reply.report;
+    expect(folded).toEqual(buildRunReport(env.events(run.id)));
+    expect(budget?.limits.deadlineAt).toBe(env.run(run.id).deadlineAt);
   });
 });

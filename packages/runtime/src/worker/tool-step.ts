@@ -3,7 +3,7 @@ import { canonicalJson, parseBoundedJson, spanValueOfJsonText } from '@momonga/f
 import { termsOf } from '@momonga/protocol';
 import type { PermissionOption, RunEventPayload, RunState, ToolAwait } from '@momonga/protocol';
 import type { BatchOutputFormatter, CallOutcome, DisplayContext, NeedsApprovalOutcome, NeedsInputOutcome, ResultOutcome, ToolCall, WaitingOutcome } from '@momonga/tools';
-import { TOOL_VALIDATOR_FAILED_CODE, toolRefusalKey, validateToolInput } from '@momonga/tools';
+import { COVERED_PROGRAMS, OPERATION_SPECS, TOOL_VALIDATOR_FAILED_CODE, supersededForms, toolRefusalKey, validateToolInput } from '@momonga/tools';
 import type { RuntimeStore, Session } from '@momonga/store';
 import { createToolHooks } from '@momonga/tools';
 import { permissionRulesFor } from '../governance/rules.ts';
@@ -15,6 +15,7 @@ import { pinnedFailureFor, taskOf } from './context-step.ts';
 import { ownEntries } from './own-entries.ts';
 import { offeredInBody } from './tool-offer.ts';
 import type { OfferedInBody } from './tool-offer.ts';
+import { hasHeld, heldOutput, heldVerdictOf, quiesce } from './held-calls.ts';
 import { heldSessionOf } from './known.ts';
 import type { HeldSession } from './known.ts';
 import { holdSandbox } from './held-sandbox.ts';
@@ -83,6 +84,7 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
           ...(result.added === undefined ? {} : { added: result.added }),
           ...(result.removed === undefined ? {} : { removed: result.removed }),
           ...(result.diffOmitted === undefined ? {} : { diffOmitted: result.diffOmitted }),
+          ...(result.effect === undefined ? {} : { effect: result.effect }),
         }
       : {
           type: 'tool.reconciled',
@@ -92,6 +94,7 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
           ...(outcome.interrupted === undefined ? {} : { interrupted: outcome.interrupted }),
           ...(result.files === undefined ? {} : { files: result.files }),
           ...(result.command === undefined ? {} : { command: result.command }),
+          ...(result.effect === undefined ? {} : { effect: result.effect }),
         };
   return [
     settled,
@@ -103,6 +106,8 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
       : [{ type: 'mcp.authorization.required' as const, callId, server: result.authorizationRequired.server }]),
   ];
 };
+
+const SUPERSEDED_FORMS = supersededForms(OPERATION_SPECS);
 
 const batchFormatterOf = (ctx: ClaimContext): BatchOutputFormatter | undefined => {
   const enabled = ctx.token.outputFormatters;
@@ -134,19 +139,25 @@ const requireSuggestedRule = (callId: string, call: PendingCall): string => {
   return rule;
 };
 
-const requestApproval = async (ctx: ClaimContext, outcome: NeedsApprovalOutcome): Promise<void> => {
+const ONCE_OPTIONS: PermissionOption[] = approvalOptions(undefined);
+
+type HeldRequest = { options: PermissionOption[]; late: boolean };
+
+const requestApproval = async (ctx: ClaimContext, outcome: NeedsApprovalOutcome, held?: HeldRequest): Promise<string> => {
   const { options, journal } = ctx;
   const created = await options.store.requestApproval(ctx.claim, {
     callId: outcome.callId,
-    options: approvalOptions(outcome.suggestedRule),
+    options: held?.options ?? approvalOptions(outcome.suggestedRule),
     event: {
       subjectDigest: outcome.subjectDigest,
       reason: outcome.decision.reason,
       ...(outcome.suggestedRule === undefined ? {} : { suggestedRule: outcome.suggestedRule }),
     },
+    ...(held === undefined ? {} : { held: { footprint: { reads: [...outcome.footprint.reads], writes: [...outcome.footprint.writes] }, ...(held.late ? {} : { placeholder: heldOutput }) } }),
   });
-  if (created.kind === 'lease_lost') ctx.control.lost();
+  if (created.kind === 'lease_lost') return ctx.control.lost();
   journal.sync();
+  return created.approval.id;
 };
 
 const requestInput = async (ctx: ClaimContext, outcome: NeedsInputOutcome): Promise<void> => {
@@ -235,10 +246,50 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   }
 };
 
-const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSession, calls: ToolCall[], step: number): Promise<Flow> => {
+type LateBatch = { late: true };
+
+const blockersOf = (ctx: ClaimContext, calls: readonly ToolCall[]) =>
+  Object.entries(ctx.journal.state.heldCalls ?? {})
+    .filter(([callId]) => !calls.some((call) => call.callId === callId))
+    .map(([callId, heldCall]) => ({ callId, footprint: heldCall.footprint }));
+
+const holdCalls = async (ctx: ClaimContext, asking: readonly NeedsApprovalOutcome[], late: boolean): Promise<void> => {
+  for (const outcome of asking) await requestApproval(ctx, outcome, { options: ONCE_OPTIONS, late });
+};
+
+const blockedByHeld = (outcome: CallOutcome): boolean => outcome.kind === 'result' && outcome.result.denial?.source === 'held';
+
+export const settleHeld = async (ctx: ClaimContext): Promise<Flow | number> => {
+  const { journal, options, run } = ctx;
+  let settled = 0;
+  for (const [callId, heldCall] of Object.entries(journal.state.heldCalls ?? {})) {
+    const verdict = heldVerdictOf(heldCall);
+    if (verdict.kind === 'waiting') continue;
+    if (verdict.kind === 'closed') {
+      journal.append([{ type: 'tool.held.resolved', callId, approvalId: heldCall.approvalId, outcome: verdict.outcome, status: 'failed', output: verdict.output }]);
+      settled += 1;
+      continue;
+    }
+    if (ctx.control.yieldRequested()) return ctx.terminals.yieldLease();
+    const session = heldSessionOf(options.store, run.sessionId);
+    const sandbox = await holdSandbox(options.tools.sandboxes, ctx.control.signal);
+    let flow: Flow;
+    try {
+      flow = await runBatchOn(ctx, sandbox, session, [{ callId, name: heldCall.name, arguments: heldCall.arguments, approval: verdict.approval }], heldCall.step, { late: true });
+    } finally {
+      sandbox.done();
+    }
+    if (flow === 'done') return 'done';
+    if (journal.state.heldCalls?.[callId] === undefined) settled += 1;
+  }
+  return settled;
+};
+
+const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSession, calls: ToolCall[], step: number, lateBatch?: LateBatch): Promise<Flow> => {
   const { options, journal, run } = ctx;
-  const rules = await permissionRulesFor(options, session);
-  const policy = await options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories, ruleEnforcement: held.ruleEnforcement });
+  const late = lateBatch !== undefined;
+  const rules = [...(await permissionRulesFor(options, session)), ...(ctx.delegation?.rules ?? [])];
+  const policy = await options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories, ruleEnforcement: held.ruleEnforcement, signal: ctx.control.signal });
   const verdict = await ruleVerdictFor(ctx, session, { rules, roots: policy.roots, enforcement: held.ruleEnforcement });
   const laterVerdict = laterVerdictNotice(journal.state, ctx.policyFingerprint, verdict);
   if (laterVerdict.length > 0) journal.append(laterVerdict);
@@ -255,13 +306,14 @@ const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSes
   const spans = new Map<string, TraceSpan>();
   const halt: { reason?: string; hookEvent?: string } = {};
   const formatOutput = batchFormatterOf(ctx);
-  const offered = offeredOfRequest(options.store, run.id, journal.state.lastSeq);
+  const offered = late ? undefined : offeredOfRequest(options.store, run.id, journal.state.lastSeq);
   let outcomes: CallOutcome[];
   try {
     outcomes = await options.tools.executor.runBatch({
       calls,
       toolSet: ctx.toolSet,
-      offered,
+      ...(offered === undefined ? {} : { offered }),
+      ...(ctx.delegation === undefined ? {} : { mandate: { supersededForms: SUPERSEDED_FORMS, coveredPrograms: COVERED_PROGRAMS }, hold: { blockers: blockersOf(ctx, calls) } }),
       fence: ctx.claim,
       runId: run.id,
       step,
@@ -302,6 +354,12 @@ const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSes
         return { traceparent: span.traceparent };
       },
       onOutcome: (outcome) => {
+        if (late) {
+          const lateCall = journal.state.heldCalls?.[outcome.callId];
+          if (lateCall === undefined) throw new Error(`the held call ${outcome.callId} settled twice`);
+          journal.append([{ type: 'tool.held.resolved', callId: outcome.callId, approvalId: lateCall.approvalId, outcome: 'executed', status: outcome.result.status, output: outcome.result.output }]);
+          return;
+        }
         journal.append(outcomePayloads(outcome));
         if (outcome.result.toolsLoaded !== undefined) ctx.toolLoading?.rememberLoaded(outcome.result.toolsLoaded);
         recordToolContent(spans, calls, outcome);
@@ -309,8 +367,12 @@ const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSes
       },
       toolUnavailable: (toolKey) => toolRefusedInJournal(ctx, toolKey),
       onWarning: (message, toolKey) => journal.append([{ type: 'notice', level: 'warning', message, code: TOOL_VALIDATOR_FAILED_CODE, toolKey }]),
-      onStarted: (callId, idemKey, basis) => journal.append([{ type: 'tool.started', callId, idemKey, basis }]),
-      onUpdate: (callId, content) => journal.append([{ type: 'tool.updated', callId, content }]),
+      onStarted: (callId, idemKey, basis) => {
+        if (!late) journal.append([{ type: 'tool.started', callId, idemKey, basis }]);
+      },
+      onUpdate: (callId, content) => {
+        if (!late) journal.append([{ type: 'tool.updated', callId, content }]);
+      },
     });
   } catch (error) {
     for (const span of spans.values()) span.end(error);
@@ -328,6 +390,12 @@ const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSes
 
   const asking = outcomes.filter((outcome): outcome is NeedsApprovalOutcome => outcome.kind === 'needs_approval');
   const inputs = outcomes.filter((outcome): outcome is NeedsInputOutcome => outcome.kind === 'needs_input');
+  if (ctx.delegation !== undefined && asking.length > 0) {
+    await holdCalls(ctx, asking, late);
+    asking.length = 0;
+  } else if (!late && hasHeld(journal.state) && outcomes.length > 0 && outcomes.every(blockedByHeld)) {
+    return quiesce(ctx);
+  }
   if (asking.length > 0 || inputs.length > 0) {
     for (const outcome of asking) await requestApproval(ctx, outcome);
     for (const outcome of inputs) await requestInput(ctx, outcome);

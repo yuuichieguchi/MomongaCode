@@ -11,7 +11,7 @@ import type {
   HooksSettings,
   StreamEvent,
 } from '@momonga/protocol';
-import type { MemoryView, PermissionMode, RuleVerdict, TargetAnswers } from '@momonga/protocol';
+import type { MemoryView, ModelQuote, PermissionMode, RuleVerdict, TargetAnswers } from '@momonga/protocol';
 import type { GatewayListing, GatewayModel } from './gateway-client.ts';
 import type { AgentSet, ChildRuns } from '@momonga/agents';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
@@ -39,6 +39,7 @@ export type GatewayPort = {
   model(model: string, options: { signal: AbortSignal }): Promise<GatewayModel>;
   listing(options: { signal: AbortSignal }): Promise<GatewayListing>;
   cancel(idempotencyKey: string, options: { signal: AbortSignal }): Promise<boolean>;
+  quote(model: string, options: { signal: AbortSignal }): Promise<ModelQuote>;
 };
 
 export type AppendedRule = { effect: 'allow' | 'deny'; rule: string };
@@ -137,7 +138,7 @@ export type ToolRuntimePort = {
   envFor(session: Session): ToolEnv;
   toolSet(runId: string, options: { signal: AbortSignal; env: ToolEnv; additionalTools?: readonly AnyTool[]; only?: readonly string[] }): Promise<ToolSet>;
   recoveryToolSet(options: { signal: AbortSignal; additionalTools?: readonly AnyTool[] }): Promise<ToolSet>;
-  policyFor(session: Session, options: { env: ToolEnv; rules: readonly PermissionRule[]; readableDirectories?: readonly string[]; ruleEnforcement: RuleEnforcement }): Promise<ToolPolicy>;
+  policyFor(session: Session, options: { env: ToolEnv; rules: readonly PermissionRule[]; readableDirectories?: readonly string[]; ruleEnforcement: RuleEnforcement; signal?: AbortSignal }): Promise<ToolPolicy>;
   recoveryContextFor(session: Session, options: { env: ToolEnv }): Promise<RecoveryContext>;
   executor: ToolExecutor;
   sandboxes: SandboxBindings;

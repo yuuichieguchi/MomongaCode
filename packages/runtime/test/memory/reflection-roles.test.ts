@@ -64,7 +64,7 @@ const setup = () => {
     await finishClaimed(store, verified, 'COMPLETED', pinsWith(roles));
     return run;
   };
-  return { store, api: store as unknown as Api, gateway, settings, reflector, finishedRun, project };
+  return { store, api: store as unknown as Api, gateway, settings, reflector, finishedRun, project, session, verified };
 };
 
 describe('the reflection role', () => {
@@ -130,5 +130,23 @@ describe('the reflection role', () => {
     expect(env.gateway.streams.map((stream) => stream.body.model)).toEqual(['strict']);
     expect(env.api.reflection.get((await run).id)?.state).toBe('done');
     expect(env.api.contextCharges.list()).toMatchObject([{ purpose: 'reflection', model: 'strict', inputTokens: 100, outputTokens: 20 }]);
+  });
+});
+
+describe('the reflection call is admitted by the budget of its run', () => {
+  it('is not sent when the tokens left of the run do not pay for it, and the job ends done saying so', async () => {
+    const env = setup();
+    const created = env.store.createRunAndEnqueue(env.session.id, { input: 'fix the bug', timeoutMs: 600_000, limits: { maxSteps: 10, maxTotalTokens: 20 }, pins: { model: 'fm' } });
+    if (created.kind !== 'created') throw new Error(`expected a run, got ${created.kind}`);
+    await finishClaimed(env.store, env.verified, 'COMPLETED', pinsWith(undefined));
+    env.gateway.script.push(textStep(REPLY, { usage: usageOf(100, 20) }));
+
+    expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
+
+    expect(env.gateway.streams).toEqual([]);
+    expect(env.api.contextCharges.list()).toEqual([]);
+    const job = env.api.reflection.get(created.run.id);
+    expect(job?.state).toBe('done');
+    expect(job?.lastError).toContain('budget');
   });
 });

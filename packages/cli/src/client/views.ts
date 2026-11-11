@@ -15,7 +15,7 @@ export type SessionView = {
   readonly autoClassifier?: AutoClassifierView;
 };
 
-export type RunUsage = { readonly inputTokens: number; readonly outputTokens: number; readonly totalTokens: number };
+export type RunUsage = { readonly inputTokens: number; readonly outputTokens: number; readonly totalTokens: number; readonly costNano?: number; readonly unpricedCalls?: number };
 
 export type RunErrorView = { readonly code: string; readonly message: string; readonly plan?: PlanAccountRef };
 

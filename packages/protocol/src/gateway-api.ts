@@ -96,6 +96,7 @@ export type ChainMemberEntry = {
   model: string;
   counter: string;
   billing: TargetBilling;
+  provider?: string;
   adapter: string;
   answers: TargetAnswers;
   upstream: string;

@@ -21,7 +21,7 @@ export const ENTRY_ACTIONS = ['Edit', 'Remove'] as const;
 export const CONFIRM_ROWS = ['No', 'Yes'] as const;
 export const STRUCTURED_LINES = ['The value as JSON. Nothing is written until the settings loader accepts it.'] as const;
 
-export const SETTING_SECTIONS = ['Display', 'Permissions', 'Context', 'Tools', 'Memory', 'Verification', 'MCP', 'Hooks', 'Models', 'Environment variables', 'Credentials', 'Network', 'Sandbox', 'Telemetry', 'Pricing', 'Updates', 'Shutdown'] as const;
+export const SETTING_SECTIONS = ['Display', 'Permissions', 'Context', 'Tools', 'Memory', 'Verification', 'MCP', 'Hooks', 'Models', 'Environment variables', 'Credentials', 'Network', 'Sandbox', 'Telemetry', 'Pricing', 'Budget and delegation', 'Git and pull requests', 'Updates', 'Shutdown'] as const;
 
 export type SettingSection = (typeof SETTING_SECTIONS)[number];
 
@@ -31,6 +31,8 @@ export type SettingPresentation = {
   readonly appliesNow: boolean;
   readonly confirm?: { readonly value: unknown; readonly question: string };
   readonly form?: readonly FormField[];
+  readonly constants?: Readonly<Record<string, unknown>>;
+  readonly line?: (entry: Readonly<Record<string, unknown>>) => string;
 };
 
 export type FormField = { readonly name: string; readonly label: string; readonly kind: 'text' | 'number'; readonly required: boolean };
@@ -45,7 +47,21 @@ const PRICE_FORM: readonly FormField[] = [
   { name: 'cacheWritePerMTok', label: 'Cache write, USD per million tokens (empty: none)', kind: 'number', required: false },
 ];
 
+const FORGE_FORM: readonly FormField[] = [
+  { name: 'id', label: 'Name', kind: 'text', required: true },
+  { name: 'descriptor', label: 'Forge kind (a shipped descriptor, such as github)', kind: 'text', required: true },
+  { name: 'host', label: 'Host of the git remote', kind: 'text', required: true },
+  { name: 'apiBaseUrl', label: 'API base URL', kind: 'text', required: true },
+  { name: 'credentialEnv', label: 'Token: environment variable name (or the next field)', kind: 'text', required: false },
+  { name: 'credentialSecret', label: 'Token: name in the secret store', kind: 'text', required: false },
+];
+
 const PRICE_CONSTANTS = { currency: 'USD' } as const;
+
+const priceLine = (entry: Readonly<Record<string, unknown>>): string =>
+  `${String(entry['provider'])}/${String(entry['model'])}  from ${String(entry['effectiveFrom'])}  input ${String(entry['inputPerMTok'])}  output ${String(entry['outputPerMTok'])}`;
+
+const forgeLine = (entry: Readonly<Record<string, unknown>>): string => `${String(entry['id'])}  ${String(entry['descriptor'])}  ${String(entry['host'])}  ${String(entry['apiBaseUrl'])}`;
 
 export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'tui.screen': { label: 'Screen mode at start', section: 'Display', appliesNow: false },
@@ -95,7 +111,15 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'telemetry.otlp.headers': { label: 'OTLP headers', section: 'Telemetry', appliesNow: false },
   'telemetry.captureMessageContent': { label: 'Capture message content', section: 'Telemetry', appliesNow: false, confirm: { value: true, question: 'Capture message content in telemetry?' } },
   'telemetry.contentRetentionDays': { label: 'Content retention (days)', section: 'Telemetry', appliesNow: false },
-  pricing: { label: 'Prices', section: 'Pricing', appliesNow: false, form: PRICE_FORM },
+  pricing: { label: 'Prices', section: 'Pricing', appliesNow: false, form: PRICE_FORM, constants: PRICE_CONSTANTS, line: priceLine },
+  'limits.maxCostUsd': { label: 'Money limit of a run (USD)', section: 'Budget and delegation', appliesNow: false },
+  'ceilings.costUsd': { label: 'Ceiling on the money a mandate may declare (USD)', section: 'Budget and delegation', appliesNow: false },
+  'ceilings.tokens': { label: 'Ceiling on the tokens a mandate may declare', section: 'Budget and delegation', appliesNow: false },
+  'ceilings.timeMs': { label: 'Ceiling on the time a mandate may declare (ms)', section: 'Budget and delegation', appliesNow: false },
+  mandates: { label: 'Mandates by name', section: 'Budget and delegation', appliesNow: false },
+  forges: { label: 'Forges for pull request operations', section: 'Git and pull requests', appliesNow: false, form: FORGE_FORM, line: forgeLine },
+  'operations.protectedRefs': { label: 'Protected branches (a push always asks you)', section: 'Git and pull requests', appliesNow: false },
+  'operations.approval': { label: 'Approval class by operation (rule or always)', section: 'Git and pull requests', appliesNow: false },
   autoUpdates: { label: 'Automatic updates', section: 'Updates', appliesNow: false },
   'gateway.closeGraceMs': { label: 'Close grace (ms)', section: 'Shutdown', appliesNow: false },
   'gateway.managedServerStopGraceMs': { label: 'Managed server stop grace (ms)', section: 'Shutdown', appliesNow: false },
@@ -444,7 +468,7 @@ const formValues = async (context: SlashContext, title: string, form: readonly F
   return values;
 };
 
-const priceLine = (entry: unknown): string => (isRecord(entry) ? `${String(entry['provider'])}/${String(entry['model'])}  from ${String(entry['effectiveFrom'])}  input ${String(entry['inputPerMTok'])}  output ${String(entry['outputPerMTok'])}` : JSON.stringify(entry));
+const entryLine = (presentation: SettingPresentation, entry: unknown): string => (isRecord(entry) && presentation.line !== undefined ? presentation.line(entry) : JSON.stringify(entry));
 
 const formCollection = (leaf: SettingLeaf, presentation: SettingPresentation, form: readonly FormField[], layer: SettingsLayer): Collection => {
   const own = (snapshot: SettingsSnapshot): readonly unknown[] => {
@@ -454,20 +478,20 @@ const formCollection = (leaf: SettingLeaf, presentation: SettingPresentation, fo
   const store = (context: SlashContext, next: readonly unknown[] | undefined): Promise<Refusal | undefined> => writeSetting(context, layer, next === undefined ? { kind: 'unset', path: leaf.path } : { kind: 'set', path: leaf.path, value: next });
   return {
     title: `${presentation.label} (${layer})`,
-    entries: (snapshot) => own(snapshot).map(priceLine),
+    entries: (snapshot) => own(snapshot).map((entry) => entryLine(presentation, entry)),
     add: async (context, snapshot) => {
       const values = await formValues(context, presentation.label, form, {});
-      return values === undefined ? 'left' : store(context, [...own(snapshot), { ...values, ...PRICE_CONSTANTS }]);
+      return values === undefined ? 'left' : store(context, [...own(snapshot), { ...values, ...presentation.constants }]);
     },
     act: async (context, snapshot, index, remove) => {
       const items = own(snapshot);
       if (remove) return store(context, without(items, index));
-      const action = await context.overlays.choose({ title: priceLine(items[index]), rows: ENTRY_ACTIONS.map((label) => ({ label })), decideOn: 'enter', escape: 'back', filter: false });
+      const action = await context.overlays.choose({ title: entryLine(presentation, items[index]), rows: ENTRY_ACTIONS.map((label) => ({ label })), decideOn: 'enter', escape: 'back', filter: false });
       if (action === undefined) return 'left';
       if (ENTRY_ACTIONS[action.index] === 'Remove') return store(context, without(items, index));
       const before = items[index];
       const values = await formValues(context, presentation.label, form, isRecord(before) ? before : {});
-      return values === undefined ? 'left' : store(context, items.map((item, position) => (position === index ? { ...values, ...PRICE_CONSTANTS } : item)));
+      return values === undefined ? 'left' : store(context, items.map((item, position) => (position === index ? { ...values, ...presentation.constants } : item)));
     },
   };
 };

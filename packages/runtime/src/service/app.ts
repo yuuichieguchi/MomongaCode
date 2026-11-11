@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { MarkerOwners } from '@momonga/tools';
 import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, stripCredentialEnv } from '@momonga/config';
+import type { ProjectMandate } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, PermissionRule } from '@momonga/config';
 import { denyingRuleFor } from '@momonga/policy';
 import { shellCommandSubject } from '@momonga/tools';
@@ -61,6 +62,18 @@ import type { ReportRouteDeps } from './report-routes.ts';
 import { registerTrustRoutes } from './trust.ts';
 import type { ServiceTimers } from './timers.ts';
 import { answeredByOf } from './answered-by.ts';
+import { runTermsOf } from './delegation.ts';
+import type { DelegationPort } from './delegation.ts';
+
+const projectMandateOf = async (delegation: DelegationPort | undefined, cwd: string, signal: AbortSignal): Promise<ProjectMandate | undefined> => {
+  if (delegation === undefined) return undefined;
+  try {
+    return await delegation.projectMandate(cwd, signal);
+  } catch (error) {
+    if (error instanceof ConfigError) throw invalidRequest(error.message, 'mandate');
+    throw error;
+  }
+};
 import { readAutoClassifierView } from './auto-classifier-view.ts';
 import { isTerminalStatus, toJobView, toAgentView, toRunView, toSessionView, toSkillView } from './views.ts';
 
@@ -117,6 +130,7 @@ export type RunAppDeps = {
   markerOwners: MarkerOwners;
   ignorableMarkerDirectories: () => Promise<readonly string[]>;
   onError: (error: unknown) => void;
+  delegation?: DelegationPort;
 };
 
 export type Handler = (context: Context) => Response | Promise<Response>;
@@ -444,20 +458,31 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     await requireImageInput(session, body.images, context.req.raw.signal);
     const attached = await attachedTo(session, body, context.req.raw.signal);
     const images = [...(body.images ?? []), ...attached.images];
-    await refuseDeniedConditions(session, body.mandate);
+    const sessionModel = resolveStoredModelRef(storedModelRef(session.model), views);
+    const terms = await runTermsOf({
+      request: { ...(body.mandate === undefined ? {} : { mandate: body.mandate }), ...(body.limits === undefined ? {} : { limits: body.limits }), ...(body.timeoutMs === undefined ? {} : { timeoutMs: body.timeoutMs }) },
+      defaults: deps.defaults,
+      settings: deps.delegation?.settings() ?? {},
+      ...(deps.delegation === undefined ? {} : { project: () => projectMandateOf(deps.delegation, session.cwd, context.req.raw.signal) }),
+      billing: async () => {
+        if (deps.delegation === undefined || sessionModel === undefined) return { metered: false, priced: false };
+        return deps.delegation.chainBilling(sessionModel.canon, context.req.raw.signal);
+      },
+    });
+    await refuseDeniedConditions(session, terms.mandate);
     const refusedDuringChecks = replayWhileRefusing();
     if (refusedDuringChecks !== undefined) return refusedDuringChecks;
     const result = store.createRunAndEnqueue(session.id, {
       input: body.input,
       ...idempotency,
-      timeoutMs: body.timeoutMs ?? deps.defaults.runTimeoutMs,
-      limits: { ...deps.defaults.limits, ...body.limits },
+      timeoutMs: terms.timeoutMs,
+      limits: terms.limits,
       pins: {},
       history: body.history ?? 'inherit',
       ...(skill === undefined ? {} : { skill }),
       ...(images.length === 0 ? {} : { images }),
       ...(attached.attachments.length === 0 ? {} : { attachments: attached.attachments }),
-      ...(body.mandate === undefined ? {} : { mandate: body.mandate }),
+      ...(terms.mandate === undefined ? {} : { mandate: terms.mandate }),
     });
     if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
     if (result.kind === 'key_reused') throw idempotencyKeyReused();

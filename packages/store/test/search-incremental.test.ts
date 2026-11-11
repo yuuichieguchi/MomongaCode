@@ -114,9 +114,9 @@ const longRun = async (store: RuntimeStore, steps: number, outputChars: number):
 };
 
 describe('the search document of a run, kept at each append (row 12, O9 option c)', () => {
-  it('is its own derivation among the records filled at append, added by the last migration', () => {
+  it('is its own derivation among the records filled at append, numbered by the migration that adds it', () => {
     expect(DERIVATIONS).toContain(SEARCH_DRAFT_DERIVATION);
-    expect(Math.max(...MIGRATIONS.map((migration) => migration.version))).toBe(SEARCH_DRAFT_DERIVATION);
+    expect(MIGRATIONS.find((migration) => migration.version === SEARCH_DRAFT_DERIVATION)?.sql).toMatch(/search/i);
   });
 
   it.each([1, 2, 3, 4, 5, 6, 7, 8])('gives, for generated journals of seed %i appended in chunks, the documents a whole re-extraction of the run gives', async (seed) => {

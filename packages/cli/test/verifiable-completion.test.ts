@@ -67,6 +67,21 @@ describe('--until and --require on momonga -p', () => {
   });
 });
 
+describe('--mandate and --max-cost-usd on momonga -p', () => {
+  it('name the mandate of the user settings and the money limit of the run', async () => {
+    seen.headless.length = 0;
+    await run(harness().program, '-p', 'ship it', '--mandate', 'nightly', '--max-cost-usd', '2.5', '--until', 'npm test');
+    expect(seen.headless[0]).toMatchObject({ mandate: { profile: 'nightly', completion: { conditions: [{ command: 'npm test' }] } }, limits: { maxCostUsd: 2.5 } });
+    await run(harness().program, '-p', 'ship it', '--mandate', 'nightly');
+    expect(seen.headless[1]?.['mandate']).toEqual({ profile: 'nightly' });
+    expect(seen.headless[1]?.['limits']).toBeUndefined();
+  });
+
+  it('refuse an amount that is not a number of dollars', async () => {
+    await expect(run(harness().program, '-p', 'ship it', '--max-cost-usd', 'lots')).rejects.toThrow();
+  });
+});
+
 describe('momonga report', () => {
   it('is a command', () => {
     const { program } = harness();

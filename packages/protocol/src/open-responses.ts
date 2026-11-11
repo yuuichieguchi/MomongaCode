@@ -308,7 +308,7 @@ export type CreateResponseBody = {
   safety_identifier?: string | null;
   service_tier?: string | null;
   background?: boolean;
-  momonga?: { cache?: PromptCacheCounts; exact_model?: boolean };
+  momonga?: { cache?: PromptCacheCounts; exact_model?: boolean; max_cost_nano?: number; max_input_tokens?: number };
 };
 
 type ResponseEvent<T extends string> = { type: T; sequence_number: number; response: ResponseResource };
@@ -401,7 +401,7 @@ export const carriesOutput = (event: StreamEvent): boolean =>
   event.type === 'response.function_call_arguments.delta' ||
   (event.type === 'response.output_item.added' && event.item.type === 'function_call');
 
-export type CompactMomongaExtension = { max_summary_tokens?: number; retains_user_request?: boolean; guideline?: string; instructions?: string; exact_model?: boolean };
+export type CompactMomongaExtension = { max_summary_tokens?: number; retains_user_request?: boolean; guideline?: string; instructions?: string; exact_model?: boolean; max_cost_nano?: number; max_input_tokens?: number };
 
 export type CompactRequest = {
   model: string;

@@ -1,12 +1,13 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { MAX_TRACE_CONTENT_PAGE, ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
+import { MAX_TRACE_CONTENT_PAGE, QUOTE_ROUTE, ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
 import { MAX_BILLED_CALLS_PAGE } from '@momonga/observability';
 import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView, GatewayHealth, ModelList, MomongaModelList, TraceContentPage } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, gatewayClosedError, generationRetiredError, invalidRequest, notFound } from '../core/errors.ts';
 import type { ResponsesService, SubmitHeaders } from '../core/responses-service.ts';
 import type { PlanApi } from '../plan/api.ts';
 import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
+import { quoteOf } from '../core/quote.ts';
 import { roleOfHeader } from '../core/role.ts';
 import { withPinnedServices } from '../core/services.ts';
 import type { GatewayServices } from '../core/services.ts';
@@ -194,6 +195,13 @@ export const createApp = (dependencies: AppDependencies): Hono => {
       return context.json(report);
     }),
   );
+
+  app.post(QUOTE_ROUTE, async (context) => {
+    const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
+    const model = isRecord(raw) ? raw['model'] : undefined;
+    if (typeof model !== 'string' || model === '') throw invalidRequest('invalid_body', 'model is required and must be a non-empty string', 'model');
+    return withPinnedServices(services, requestSignalOf(context), async ({ router, priceTable }) => context.json(quoteOf(router, model, priceTable, services.clock.now())));
+  });
 
   app.post('/v1/momonga/responses/cancel', (context) =>
     context.json({

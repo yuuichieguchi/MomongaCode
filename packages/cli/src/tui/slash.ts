@@ -1,5 +1,5 @@
 import { ModelRefError, PERMISSION_MODES, displayMapOf, isNotListedCapabilities, notListedMessage } from '@momonga/protocol';
-import type { MomongaModelEntry, PermissionMode } from '@momonga/protocol';
+import type { Mandate, MomongaModelEntry, PermissionMode } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import { listedModelOf } from '../commands/models.ts';
 import { selectableModes } from '../modes.ts';
@@ -40,7 +40,7 @@ export type SlashContext = ModeAvailability & {
   readonly commands: readonly SlashCommand[];
   readonly backend: TuiBackend;
   info(text: string): void;
-  startRun(text: string, options?: { skill?: string }): Promise<void>;
+  startRun(text: string, options?: { skill?: string; mandate?: Mandate }): Promise<void>;
   compact(instructions: string | undefined): Promise<void>;
   exit(): void;
   setMode(mode: PermissionMode): Promise<void>;

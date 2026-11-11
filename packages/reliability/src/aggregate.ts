@@ -176,6 +176,9 @@ type Accumulator = {
   interventionK: number;
   overrunK: number;
   overrunN: number;
+  moneyOverK: number;
+  moneyOverN: number;
+  delegation: Indicators['delegation'];
   budgetStops: number;
   timeN: number;
   activeSum: number;
@@ -204,6 +207,9 @@ const emptyAccumulator = (): Accumulator => ({
   interventionK: 0,
   overrunK: 0,
   overrunN: 0,
+  moneyOverK: 0,
+  moneyOverN: 0,
+  delegation: { n: 0, intervened: 0, unattended: 0, waited: 0, held: 0, denied: 0 },
   budgetStops: 0,
   timeN: 0,
   activeSum: 0,
@@ -212,13 +218,15 @@ const emptyAccumulator = (): Accumulator => ({
 
 const SUMMARY_STEP = 1;
 
-const overrunOf = (root: RunFacts): { limited: boolean; over: boolean } => {
-  const { maxSteps, maxTotalTokens } = root.limits;
+const overrunOf = (root: RunFacts): { limited: boolean; over: boolean; money?: boolean } => {
+  const { maxSteps, maxTotalTokens, maxCostNano } = root.limits;
   const dimensions: boolean[] = [];
   if (maxTotalTokens !== undefined) dimensions.push(root.tokensTotal > maxTotalTokens);
+  const money = maxCostNano === undefined ? undefined : root.costNano > maxCostNano;
+  if (money !== undefined) dimensions.push(money);
   if (maxSteps !== undefined) dimensions.push(root.steps > maxSteps + SUMMARY_STEP);
   if (root.deadlineAt !== undefined) dimensions.push(root.endedAt > root.deadlineAt);
-  return { limited: dimensions.length > 0, over: dimensions.some(Boolean) };
+  return { limited: dimensions.length > 0, over: dimensions.some(Boolean), ...(money === undefined ? {} : { money }) };
 };
 
 export type Marks = Map<string, string[]>;
@@ -292,6 +300,19 @@ const accumulate = (accumulator: Accumulator, task: TaskPartial, marks?: Marks):
       markOf(marks, 'budget overrun', root.runId);
     }
   }
+  if (overrun.money !== undefined) {
+    accumulator.moneyOverN += 1;
+    if (overrun.money) accumulator.moneyOverK += 1;
+  }
+  if (root.delegation !== undefined) {
+    const { delegation } = accumulator;
+    delegation.n += 1;
+    delegation.held += root.delegation.held;
+    delegation.denied += root.delegation.denied;
+    if (root.delegation.resolvedByPerson > 0) delegation.intervened += 1;
+    if (root.delegation.waited) delegation.waited += 1;
+    if (root.status === 'COMPLETED' && root.delegation.held === 0) delegation.unattended += 1;
+  }
   if (root.status === 'STOPPED' && root.stopReason === 'budget') {
     accumulator.budgetStops += 1;
     markOf(marks, 'budget stop', root.runId);
@@ -331,7 +352,8 @@ const finish = (accumulator: Accumulator): Indicators => {
     },
     duplicates: { journal: { k: accumulator.duplicatesK, n: accumulator.duplicatesN }, prevented: accumulator.prevented, unknown: accumulator.unknown },
     intervention: { k: accumulator.interventionK, n: accumulator.counted },
-    overrun: { k: accumulator.overrunK, n: accumulator.overrunN, budgetStops: accumulator.budgetStops },
+    overrun: { k: accumulator.overrunK, n: accumulator.overrunN, budgetStops: accumulator.budgetStops, money: { k: accumulator.moneyOverK, n: accumulator.moneyOverN } },
+    delegation: { ...accumulator.delegation },
     time: {
       n: accumulator.timeN,
       meanActiveMs: accumulator.timeN === 0 ? null : accumulator.activeSum / accumulator.timeN,

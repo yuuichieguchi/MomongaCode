@@ -6,6 +6,8 @@ import type { ApprovalBasis, PermissionMode } from '@momonga/protocol';
 import { commandApproval } from './approval.ts';
 import { commandCoveredByAllowRules } from './command-match.ts';
 import type { PolicyFilesystem } from './filesystem.ts';
+import { supersededVerdictOf } from './superseded.ts';
+import type { CoveredProgram, SupersededForm } from './superseded.ts';
 import { matchRule, matchStrength, ruleCoversSubject } from './match-rule.ts';
 import { absoluteFrom } from './path-match.ts';
 import { commandSpecsFor } from './platform-specs.ts';
@@ -33,16 +35,20 @@ export type DecideInput = {
   searchPath: string | undefined;
   isWritable: (absolute: string) => boolean;
   sandboxNetwork?: SandboxNetworkSetting;
+  mandate?: true;
+  supersededForms?: readonly SupersededForm[];
+  coveredPrograms?: readonly CoveredProgram[];
 };
 
 export type Decision = {
   kind: DecisionKind;
-  source: 'rule' | 'mode' | 'protected' | 'hook';
+  source: 'rule' | 'mode' | 'protected' | 'hook' | 'operation';
   reason: string;
   rule?: PermissionRule;
   humanOnly?: true;
   basis?: ApprovalBasis;
   network?: true;
+  outside?: true;
 };
 
 const WRITE_TOOL: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' };
@@ -114,6 +120,11 @@ export const denyingRuleFor = (rules: readonly PermissionRule[], mode: Permissio
   return scanDeny(input, subject, applicableRules(input, subject)).denied?.rule;
 };
 
+const operationDecision = (subject: PermissionSubject): Decision | undefined =>
+  (subject.kind === 'repo' || subject.kind === 'forge') && subject.approval === 'always'
+    ? { kind: 'ask', source: 'operation', humanOnly: true, reason: `${subject.operation} always needs a person to approve it, in every mode` }
+    : undefined;
+
 const protectedDecision = (input: DecideInput, subject: PermissionSubject): Decision | undefined => {
   const reason = protectedWriteReason(input, subject);
   return reason === undefined ? undefined : { kind: 'ask', source: 'protected', reason, humanOnly: true };
@@ -137,6 +148,9 @@ const modeDefault = (input: DecideInput, subject: PermissionSubject): Decision =
       return byMode('ask', `saving a ${subject.scope} memory requires approval because it persists into later sessions`);
     case 'history':
       return byMode('ask', `reading the recorded history of ${subject.project === 'all' ? 'every project' : subject.project} requires approval because it reaches outside this project`);
+    case 'repo':
+    case 'forge':
+      return byMode('ask', `${subject.operation} requires approval`);
     case 'command':
       return commandDefault(input, subject.command);
     case 'path': {
@@ -175,6 +189,9 @@ const decideSubject = (input: DecideInput, tool: PolicyTool, subject: Permission
 
   const guarded = protectedDecision(input, subject);
   if (guarded !== undefined) return guarded;
+
+  const always = operationDecision(subject);
+  if (always !== undefined) return always;
 
   const askRules = applicable.filter(({ rule, ruleIndex }) => rule.effect === 'ask' && matchRule(rule, subject, fileRules, ruleIndex));
   const governingAsk = askRules.find(({ rule }) => isGoverningRule(rule));
@@ -306,4 +323,53 @@ const withNetworkRequest = (input: DecideInput, decision: Decision): Decision =>
   return { kind: 'ask', source: 'mode', reason: requests, humanOnly: true, network: true };
 };
 
-export const decide = (input: DecideInput): Decision => withNetworkRequest(input, decideWithoutNetwork(input));
+const programsOf = (forms: readonly SupersededForm[]): string => [...new Set(forms.map((form) => form.argv[0]))].join(', ');
+
+const targetOf = (subject: PermissionSubject): string | undefined => {
+  if (subject.kind === 'repo') {
+    if (subject.remote === null) return undefined;
+    const places = subject.destinations.length === 0 ? subject.remote : `${subject.remote} (${subject.destinations.join(', ')})`;
+    return `${subject.refs.join(', ')} at ${places}`;
+  }
+  if (subject.kind === 'forge') {
+    const pull = subject.pr === undefined ? '' : ` #${subject.pr}`;
+    const head = subject.headSha === undefined ? '' : ` at commit ${subject.headSha}`;
+    return `${subject.repo}${pull} on ${subject.host}${head}`;
+  }
+  return undefined;
+};
+
+const withTarget = (input: DecideInput, decision: Decision): Decision => {
+  const target = decision.kind === 'ask' ? targetOf(input.subject) : undefined;
+  return target === undefined ? decision : { ...decision, reason: `${decision.reason}; target: ${target}` };
+};
+
+const withinMandate = (input: DecideInput, decision: Decision): Decision => {
+  if (input.mandate !== true || decision.kind !== 'ask' || decision.source !== 'mode' || decision.humanOnly === true) return decision;
+  return { kind: 'deny', source: 'mode', outside: true, reason: `Not run: outside the declared mandate (${decision.reason}). Continue with work inside it or report.` };
+};
+
+const onlyReads = (input: DecideInput): boolean => {
+  const unruled = decideWithoutNetwork({ ...input, rules: [], fileRules: EMPTY_FILE_RULES });
+  return unruled.kind === 'allow' && unruled.basis === 'read_only';
+};
+
+export const decide = (input: DecideInput): Decision => {
+  const ordinary = (): Decision => withTarget(input, withinMandate(input, withNetworkRequest(input, decideWithoutNetwork(input))));
+  if (input.mandate !== true || input.subject.kind !== 'command' || input.supersededForms === undefined) return ordinary();
+  const verdict = supersededVerdictOf(input.subject.command, input.supersededForms, commandSpecsFor(input.fs.platform), input.coveredPrograms);
+  if (verdict === undefined) return ordinary();
+  if (verdict.kind === 'superseded') {
+    return byMode('deny', `Not run: this run has a mandate, and ${verdict.form.argv.join(' ')} is replaced by a dedicated operation; use ${verdict.form.operation}`);
+  }
+  const decided = withNetworkRequest(input, decideWithoutNetwork(input));
+  if (decided.kind === 'deny') return decided;
+  if (onlyReads(input)) return ordinary();
+  return {
+    kind: 'ask',
+    source: 'operation',
+    humanOnly: true,
+    reason: `this run has a mandate, and the command could be a form that a dedicated operation replaces (${programsOf(input.supersededForms)}): the whole command is not one that is known to only read, so a person decides`,
+    ...(decided.network === true ? { network: true as const } : {}),
+  };
+};

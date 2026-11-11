@@ -2,12 +2,15 @@ import { canonicalJson, parseBoundedJson, sha256Hex } from '@momonga/foundation'
 import {
   LOOP_GROUPS_KEPT,
   STOP_HOOK_FEEDBACK_PREFIX,
+  RECORDED_DATA_MARKER,
   STOP_REASONS,
   completionMutates,
   emptyWorkingFacts,
   findDanglingOutput,
   initialVerificationState,
+  nanoOfCost,
   reconciliationMutates,
+  recordedDataMessage,
   userMessageContent,
   withCommand,
   withItemEvents,
@@ -18,9 +21,20 @@ import {
   withVerificationStarted,
   withWritten,
 } from '@momonga/protocol';
-import type { InputItem, ReconciledOutcome, RunEvent, RunEventPayload, RunState, StopReason, ToolFile, WorkingFacts } from '@momonga/protocol';
+import type { HeldCall, HeldOutcome, InputItem, ReconciledOutcome, RunEvent, RunEventPayload, RunState, StopReason, ToolFile, WorkingFacts } from '@momonga/protocol';
 import { applyInheritance, applyReferenceInheritance, isReferenceInherited } from './inherit.ts';
 import { isRecord } from './rows.ts';
+
+export const LATE_RESULT_TAG = 'late_tool_result';
+
+const LATE_OUTCOME_TEXT: Record<HeldOutcome, string> = {
+  executed: 'a person approved it and it has now run',
+  rejected: 'a person rejected it, so it was not run',
+  withdrawn: 'the request for approval was withdrawn, so it was not run',
+};
+
+export const lateResultOrigin = (tool: string, callId: string, outcome: HeldOutcome): string =>
+  `${RECORDED_DATA_MARKER}: the result of the held call ${tool} (${callId}); ${LATE_OUTCOME_TEXT[outcome]}`;
 
 type PendingCall = RunState['pendingCalls'][string];
 type HistoryEntry = RunState['history'][number];
@@ -61,11 +75,18 @@ export const initialRunState = (ids: { runId: string; sessionId: string }): RunS
 export const spendOf = (event: RunEventPayload): RunState['usage'] | undefined => {
   if (event.type === 'model.responded') {
     const { input_tokens, output_tokens, total_tokens } = event.response.usage;
-    return { inputTokens: input_tokens, outputTokens: output_tokens, totalTokens: total_tokens };
+    return { inputTokens: input_tokens, outputTokens: output_tokens, totalTokens: total_tokens, ...moneyOf(event.response.momonga) };
   }
-  if (event.type === 'usage.charged') return { inputTokens: event.inputTokens, outputTokens: event.outputTokens, totalTokens: event.totalTokens };
+  if (event.type === 'usage.charged') return { inputTokens: event.inputTokens, outputTokens: event.outputTokens, totalTokens: event.totalTokens, ...moneyOf(event) };
   return undefined;
 };
+
+const moneyOf = (billed: { cost?: { amount: number; units?: string }; unpriced?: unknown } | undefined): { costNano?: number; unpricedCalls?: number } => {
+  if (billed?.cost !== undefined) return { costNano: nanoOfCost(billed.cost) };
+  return billed?.unpriced === undefined ? {} : { unpricedCalls: 1 };
+};
+
+const sumOf = (left: number | undefined, right: number | undefined): number | undefined => (left === undefined && right === undefined ? undefined : (left ?? 0) + (right ?? 0));
 
 const requiredSpend = (event: RunEventPayload): RunState['usage'] => {
   const spend = spendOf(event);
@@ -77,7 +98,14 @@ export const addUsage = (total: RunState['usage'], spend: RunState['usage']): Ru
   inputTokens: total.inputTokens + spend.inputTokens,
   outputTokens: total.outputTokens + spend.outputTokens,
   totalTokens: total.totalTokens + spend.totalTokens,
+  ...moneySum(total, spend),
 });
+
+const moneySum = (total: RunState['usage'], spend: RunState['usage']): { costNano?: number; unpricedCalls?: number } => {
+  const costNano = sumOf(total.costNano, spend.costNano);
+  const unpricedCalls = sumOf(total.unpricedCalls, spend.unpricedCalls);
+  return { ...(costNano === undefined ? {} : { costNano }), ...(unpricedCalls === undefined ? {} : { unpricedCalls }) };
+};
 
 const toStopReason = (reason: string, state: RunState): StopReason => {
   const match = STOP_REASONS.find((candidate) => candidate === reason);
@@ -86,6 +114,9 @@ const toStopReason = (reason: string, state: RunState): StopReason => {
   }
   return match;
 };
+
+const heldByApproval = (state: RunState, approvalId: string): [string, HeldCall] | undefined =>
+  Object.entries(state.heldCalls ?? {}).find(([, held]) => held.approvalId === approvalId);
 
 const requireCall = (state: RunState, callId: string, eventType: string): PendingCall => {
   const call = state.pendingCalls[callId];
@@ -139,6 +170,7 @@ export const itemCountOf = (event: RunEventPayload): number => {
     case 'user.message':
     case 'tool.completed':
     case 'tool.reconciled':
+    case 'tool.held.resolved':
       return 1;
     case 'model.responded':
       return responseItemsOf(event).length;
@@ -472,6 +504,15 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
     case 'tool.permission.requested':
       return withCall(state, event.callId, event.type, ({ resolution: _stale, ...call }) => ({ ...call, status: 'awaiting_approval', approvalId: event.approvalId, options: event.options, subjectDigest: event.subjectDigest, ...(event.suggestedRule === undefined ? {} : { suggestedRule: event.suggestedRule }) }));
     case 'tool.permission.resolved': {
+      const heldEntry = heldByApproval(state, event.approvalId);
+      if (heldEntry !== undefined) {
+        const [callId, held] = heldEntry;
+        const option = held.options?.find((candidate) => candidate.optionId === event.optionId);
+        if (option === undefined || held.subjectDigest === undefined) {
+          throw new Error(`run ${state.runId}: ${event.type} for the held approval ${event.approvalId} names unknown option ${event.optionId}`);
+        }
+        return { ...state, heldCalls: { ...state.heldCalls, [callId]: { ...held, resolution: { optionId: option.optionId, kind: option.kind, subjectDigest: held.subjectDigest } } } };
+      }
       const entry = Object.entries(state.pendingCalls).find(([, call]) => call.approvalId === event.approvalId);
       if (entry === undefined) throw new Error(`run ${state.runId}: ${event.type} refers to unknown approval ${event.approvalId}`);
       return withCall(state, entry[0], event.type, (call) => {
@@ -493,6 +534,8 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       });
     }
     case 'tool.permission.cancelled': {
+      const heldEntry = heldByApproval(state, event.approvalId);
+      if (heldEntry !== undefined) return { ...state, heldCalls: { ...state.heldCalls, [heldEntry[0]]: { ...heldEntry[1], cancelled: event.reason } } };
       const entry = Object.entries(state.pendingCalls).find(([, call]) => call.approvalId === event.approvalId);
       if (entry === undefined) throw new Error(`run ${state.runId}: ${event.type} refers to unknown approval ${event.approvalId}`);
       return withCall(state, entry[0], event.type, (call) => {
@@ -593,6 +636,36 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       return { ...state, offeredTools: [...event.names] };
     case 'loop.warned':
       return { ...state, loopWarned: { signature: event.signature } };
+    case 'budget.exhausted':
+      return state;
+    case 'run.quiescent':
+      return { ...state, quiescent: true };
+    case 'tool.held': {
+      const call = requireCall(state, event.callId, event.type);
+      const held: HeldCall = {
+        name: call.name,
+        providerCallId: call.providerCallId,
+        arguments: call.arguments,
+        step: state.step,
+        approvalId: event.approvalId,
+        reason: event.reason,
+        sinceSeq: event.seq,
+        footprint: event.footprint,
+        ...(call.subjectDigest === undefined ? {} : { subjectDigest: call.subjectDigest }),
+        ...(call.options === undefined ? {} : { options: call.options }),
+      };
+      const { approvalId: _approval, options: _options, subjectDigest: _digest, suggestedRule: _rule, ...settled } = call;
+      const again = state.heldCalls?.[event.callId] !== undefined;
+      return { ...state, pendingCalls: { ...state.pendingCalls, [event.callId]: again ? { ...settled, status: 'completed' } : settled }, heldCalls: { ...state.heldCalls, [event.callId]: held } };
+    }
+    case 'tool.held.resolved': {
+      const held = state.heldCalls?.[event.callId];
+      if (held === undefined) throw new Error(`run ${state.runId}: ${event.type} refers to a call that is not held (${event.callId})`);
+      const { [event.callId]: _settled, ...rest } = state.heldCalls ?? {};
+      const { lastResponse: _answered, quiescent: _waiting, ...moving } = state;
+      const item = recordedDataMessage({ tag: LATE_RESULT_TAG, origin: lateResultOrigin(held.name, event.callId, event.outcome), text: event.output });
+      return appendItems({ ...moving, heldCalls: rest }, [{ item }], event.seq);
+    }
     case 'approval.rule.persisted': {
       const entry = Object.entries(state.pendingCalls).find(([, call]) => call.approvalId === event.approvalId);
       if (entry === undefined) throw new Error(`run ${state.runId}: ${event.type} refers to unknown approval ${event.approvalId}`);

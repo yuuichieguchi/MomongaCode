@@ -9,8 +9,9 @@ import { createMarkerSettle, settleFinishedCommand } from './marker-settle.ts';
 import type { MarkerOwners } from './marker-owners.ts';
 import { cancellableTimer } from './timers.ts';
 
-export type SandboxedCommandRequest = {
-  command: string;
+export type SandboxedCommandLine = { command: string } | { argv: readonly string[] };
+
+export type SandboxedCommandRequest = SandboxedCommandLine & {
   sandbox: Sandbox;
   sandboxPolicy: SandboxPolicy;
   env: Readonly<Record<string, string>>;
@@ -66,7 +67,7 @@ export const runSandboxedCommand = async (request: SandboxedCommandRequest): Pro
     try {
       child = sandbox.spawn(
         {
-          argv: [resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env }), '-c', request.command],
+          argv: 'argv' in request ? [...request.argv] : [resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env }), '-c', request.command],
           cwd,
           env: { ...env },
           ...(stdin === undefined ? {} : { stdin }),

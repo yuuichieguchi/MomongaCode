@@ -16,6 +16,7 @@ import type { EvidenceRun } from '../memory/evidence.ts';
 import type { AgentCatalogPort, SkillsPort, UserInputPort } from '../ports.ts';
 import { createRunApp } from './app.ts';
 import type { ModelListing, RunLimitDefaults, SessionCreateSettings } from './app.ts';
+import type { DelegationPort } from './delegation.ts';
 import type { McpAdminPort } from './input-routes.ts';
 import type { RunNotifier } from './notifier.ts';
 import { startDataVersionPoll } from './data-version-poll.ts';
@@ -46,6 +47,7 @@ export type RunServiceOptions = {
   protectedRootAreas: readonly string[];
   notifier: RunNotifier;
   modelListing: (signal: AbortSignal) => Promise<ModelListing>;
+  delegation?: DelegationPort;
   modelCapabilities: (model: string, signal: AbortSignal) => Promise<Capabilities>;
   sessionCreateSettings: (cwd: string, signal: AbortSignal) => Promise<SessionCreateSettings>;
   sessionReadSettings: (cwd: string, signal: AbortSignal) => Promise<SessionCreateSettings>;
@@ -137,6 +139,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     home: options.home,
     version: options.version,
     modelListing: options.modelListing,
+    ...(options.delegation === undefined ? {} : { delegation: options.delegation }),
     modelCapabilities: options.modelCapabilities,
     sessionCreateSettings: options.sessionCreateSettings,
     sessionReadSettings: options.sessionReadSettings,

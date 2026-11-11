@@ -1,0 +1,38 @@
+{
+  "name": "GitCommit",
+  "description": "Commits the staged changes with the given message. The result is checked against the repository: the new head must have the previous head as its parent, the staged tree, and the message. A commit hook that changes the tree makes the call fail.",
+  "kind": "execute",
+  "sideEffect": "exec",
+  "title": "Commit: {input.message}",
+  "subject": { "kind": "repo" },
+  "approval": "rule",
+  "input": {
+    "type": "object",
+    "properties": {
+      "message": { "type": "string", "pattern": "^\\S(?:[\\s\\S]*\\S)?$", "description": "The commit message, without leading or trailing whitespace" }
+    },
+    "required": ["message"],
+    "additionalProperties": false
+  },
+  "timeoutMs": 120000,
+  "observe": [
+    { "id": "head", "via": { "argv": ["git", "rev-parse", "--verify", "-q", "HEAD"], "extract": "trim", "emptyOnFailure": true } },
+    { "id": "indexTree", "via": { "argv": ["git", "write-tree"], "extract": "trim" } },
+    { "id": "headParent", "via": { "argv": ["git", "rev-parse", "--verify", "-q", "HEAD^"], "extract": "trim", "emptyOnFailure": true } },
+    { "id": "headTree", "via": { "argv": ["git", "rev-parse", "--verify", "-q", "HEAD^{tree}"], "extract": "trim" } },
+    { "id": "headMessage", "via": { "argv": ["git", "log", "-1", "--format=%B"], "extract": "trim" } }
+  ],
+  "effect": { "argv": ["git", "commit", "-q", "--cleanup=verbatim", "-m", "{input.message}"] },
+  "applied": [
+    ["after.headParent", "before.head"],
+    ["after.headTree", "before.indexTree"],
+    ["after.headMessage", "input.message"]
+  ],
+  "unchanged": [
+    ["after.head", "before.head"],
+    ["after.indexTree", "before.indexTree"]
+  ],
+  "guard": "compare_and_set",
+  "supersedes": [["git", "commit"]],
+  "report": "Committed {after.head}: {after.headMessage}"
+}

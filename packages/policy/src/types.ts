@@ -6,6 +6,8 @@ export type PolicyTool = { name: string; kind: ToolKind } & (
   | { sideEffect: Exclude<SideEffect, 'read_only'>; subjectKind: PermissionSubject['kind'] }
 );
 
+export type OperationApproval = 'rule' | 'always';
+
 export type PermissionSubject =
   | { kind: 'path'; tool: string; paths: readonly string[]; access: 'read' | 'write' }
   | { kind: 'command'; tool: string; command: string; network?: NetworkRequest }
@@ -30,6 +32,8 @@ export type PermissionSubject =
       enforcement: GoverningEnforcement | null;
       supersedes: readonly string[];
     }
+  | { kind: 'repo'; tool: string; operation: string; remote: string | null; refs: readonly string[]; destinations: readonly string[]; destinationsMatchFetch: boolean; approval: OperationApproval }
+  | { kind: 'forge'; tool: string; operation: string; host: string; repo: string; pr?: number; headSha?: string; approval: OperationApproval }
   | { kind: 'none'; tool: string };
 
 export type DecisionKind = 'allow' | 'ask' | 'deny';

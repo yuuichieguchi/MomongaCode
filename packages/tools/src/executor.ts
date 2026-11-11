@@ -8,7 +8,7 @@ import { createMarkerSettle } from './marker-settle.ts';
 import type { MarkerSettle } from './marker-settle.ts';
 import type { Clock, FileRuleProvenance, KernelLockMechanism, MarkerHandle, NetworkScope, OutboundNetwork, PathResolution, ProcessGroupPort, ProcessInspector, ReapReport, ReapTiming, SandboxNetworkSetting, SignalSender, UninspectableRegistry } from '@momonga/foundation';
 import { absoluteFrom, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule } from '@momonga/policy';
-import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem, PolicyTool } from '@momonga/policy';
+import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem, PolicyTool, CoveredProgram, SupersededForm } from '@momonga/policy';
 import { permissionDeniedOutput } from '@momonga/protocol';
 import type { ApprovalBasis, ElicitationRequestView, PermissionDenial, PermissionMode, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
 import { SANDBOX_NETWORK_SCOPES, SANDBOX_STOP_BOUND_MS, SandboxPolicyError, canonicalParentForm } from '@momonga/sandbox';
@@ -29,8 +29,10 @@ import type { CallStop } from './call-stop.ts';
 import { cancellableTimer } from './timers.ts';
 import { observedToolFiles } from './work-tree-observer.ts';
 import type { WorkTreeMark, WorkTreeObserver } from './work-tree-observer.ts';
+import { blockedByHeldText, blockerOf, footprintOf } from './footprint.ts';
+import type { Footprint, HeldFootprint } from './footprint.ts';
 import { startsProcesses, ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
-import type { AnyTool, CallOutputFit, OutputFit, SpawnMarker, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
+import type { AnyTool, CallOutputFit, GateFacts, OutputFit, SpawnMarker, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
 import { cleanFailureMessage } from '@momonga/foundation';
 import { toolRefusalKey, unavailable, validateToolInput } from './validate.ts';
 import type { ValidationResult } from './validate.ts';
@@ -98,6 +100,8 @@ type BatchCore = BatchCallbacks & {
   workTreeObserver?: WorkTreeObserver;
   windowShared?(): boolean;
   offered?: { tools: readonly string[]; catalog: readonly string[] };
+  mandate?: { supersededForms: readonly SupersededForm[]; coveredPrograms: readonly CoveredProgram[] };
+  hold?: { blockers: readonly HeldFootprint[] };
 };
 
 export type ExecutionBatchInput = BatchCore & {
@@ -134,6 +138,7 @@ export type NeedsApprovalOutcome = {
   title: string;
   toolKind: ToolKind;
   locations?: { path: string; line?: number }[];
+  footprint: Footprint;
 };
 
 export type NeedsInputOutcome = {
@@ -178,7 +183,7 @@ export type AbandonOutcome = { idemKey: string; callId: string; outcome: 'unknow
 
 export type ReleaseTarget = { callId: string; name: string; idemKey: string };
 
-export type PolicyFacts = Pick<ExecutionBatchInput, 'mode' | 'home' | 'roots' | 'readRoots' | 'tmpDir' | 'env' | 'session' | 'signal' | 'rules' | 'sandboxPolicy' | 'sandboxNetwork'>;
+export type PolicyFacts = Pick<ExecutionBatchInput, 'mode' | 'home' | 'roots' | 'readRoots' | 'tmpDir' | 'env' | 'session' | 'signal' | 'rules' | 'sandboxPolicy' | 'sandboxNetwork' | 'mandate'>;
 
 export type UserSubject = { tool: 'Read'; path: string } | { tool: 'Bash'; command: string };
 
@@ -219,9 +224,9 @@ type RecoveryPlan = {
 
 type RunPlan = ExecutionPlan | RecoveryPlan;
 
-type Gate = { subject: PermissionSubject; access: BatchAccess };
+type Gate = { subject: PermissionSubject; access: BatchAccess; facts?: GateFacts };
 
-type GateTarget = { input: unknown; subject: PermissionSubject; hookInput?: unknown; basis?: ApprovalBasis };
+type GateTarget = { input: unknown; subject: PermissionSubject; facts?: GateFacts; hookInput?: unknown; basis?: ApprovalBasis };
 
 const allowBasisOf = (decision: Decision): ApprovalBasis => {
   if (decision.basis === undefined) throw new Error(`an allow decision from ${decision.source} carries no basis`);
@@ -390,6 +395,13 @@ const subjectContextOf = (batch: BatchCore): SubjectContext => ({
   home: batch.home,
   roots: rootsOf(batch),
 });
+
+const subjectOfTool = async (tool: AnyTool, input: unknown, batch: BatchCore): Promise<{ subject: PermissionSubject; facts?: GateFacts }> => {
+  const context = subjectContextOf(batch);
+  if (tool.gateFacts === undefined) return { subject: tool.subject(input, context) };
+  const facts = await tool.gateFacts(input, context, { signal: batch.signal, env: batch.env });
+  return { subject: tool.subject(input, context, facts), facts };
+};
 
 type SubjectFacts = { command?: string; files?: ToolFile[] };
 
@@ -635,6 +647,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...(result.added === undefined ? {} : { added: result.added }),
       ...(result.removed === undefined ? {} : { removed: result.removed }),
       ...(result.diffOmitted === undefined ? {} : { diffOmitted: result.diffOmitted }),
+      ...(result.effect === undefined ? {} : { effect: result.effect }),
       ...('truncated' in truncated ? { truncated: truncated.truncated, handle: truncated.handle } : {}),
       ...(formatted === undefined ? {} : { formatted: formatted.formatted }),
     };
@@ -709,9 +722,11 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       searchPath: batch.env['PATH'],
       isWritable: access.isWritable,
       ...(batch.sandboxNetwork === undefined ? {} : { sandboxNetwork: batch.sandboxNetwork }),
+      ...(batch.mandate === undefined ? {} : { mandate: true as const, supersededForms: batch.mandate.supersededForms, coveredPrograms: batch.mandate.coveredPrograms }),
     });
     if (decision.kind === 'deny') {
-      return { outcome: deniedOutcome(call.callId, { source: decision.network === true ? 'sandbox' : decision.source === 'mode' ? 'mode' : 'rule', reason: decision.reason }) };
+      const source = decision.network === true ? 'sandbox' : decision.outside === true ? 'mandate' : decision.source === 'mode' ? 'mode' : 'rule';
+      return { outcome: deniedOutcome(call.callId, { source, reason: decision.reason }) };
     }
     return { decision };
   };
@@ -746,8 +761,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         const validation = await validateFor(batch, tool, verdict.updatedInput);
         if (!validation.ok) return failedOutcome(call.callId, `A PreToolUse hook returned an input that ${tool.name} rejects: ${rejectionOf(batch, tool, validation)}`);
         let subject: PermissionSubject;
+        let facts: GateFacts | undefined;
         try {
-          subject = tool.subject(validation.value, subjectContextOf(batch));
+          ({ subject, facts } = await subjectOfTool(tool, validation.value, batch));
         } catch (error) {
           return failedOutcome(call.callId, describeThrown(tool.name, error));
         }
@@ -756,6 +772,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         decision = second.decision;
         target.input = validation.value;
         target.subject = subject;
+        if (facts === undefined) delete target.facts;
+        else target.facts = facts;
         target.hookInput = validation.value;
       }
       if (verdict?.decision === 'deny') {
@@ -814,6 +832,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           title: tool.title(input, batch.session),
           toolKind: tool.kind,
           ...(locations === undefined ? {} : { locations }),
+          footprint: footprintOf(subject, cwd),
         };
       }
       target.basis = 'person';
@@ -830,7 +849,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     return validation.ok ? { input: validation.value } : { failure: rejectionOf(batch, tool, validation) };
   };
 
-  const admit = async (call: ToolCall, batch: BatchInput, access: BatchAccess | undefined, stage: GateStage = 'enforce'): Promise<Admission> => {
+  const admit = async (call: ToolCall, batch: BatchInput, access: BatchAccess | undefined, stage: GateStage = 'enforce', held: readonly HeldFootprint[] = []): Promise<Admission> => {
     const outcome = (value: CallOutcome): Admission => ({ kind: 'outcome', outcome: value });
     if (batch.signal.aborted) return outcome(failedOutcome(call.callId, `${call.name} was cancelled`));
     if (haltedBatches.has(batch)) return outcome(failedOutcome(call.callId, `${call.name} was not run: a hook stopped the run`));
@@ -877,12 +896,18 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     if (hooked !== undefined) input = hooked.input;
 
     let subject: PermissionSubject;
+    let facts: GateFacts | undefined;
     try {
-      subject = tool.subject(input, subjectContextOf(batch));
+      ({ subject, facts } = await subjectOfTool(tool, input, batch));
     } catch (error) {
       return outcome(failedOutcome(call.callId, describeThrown(tool.name, error)));
     }
-    const target: GateTarget = { input, subject };
+    const target: GateTarget = { input, subject, ...(facts === undefined ? {} : { facts }) };
+    const blocker = blockerOf(footprintOf(subject, cwd), held.filter((entry) => entry.callId !== call.callId));
+    if (blocker !== undefined) {
+      const reason = blockedByHeldText(blocker.callId);
+      return outcome({ callId: call.callId, kind: 'result', result: { status: 'failed', output: reason, denial: { source: 'held', reason } } });
+    }
 
     if (recovered === undefined) {
       const gated = await permissionGate(call, tool, target, access, batch, stage);
@@ -895,7 +920,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         call,
         tool,
         input: target.input,
-        gate: { subject: target.subject, access },
+        gate: { subject: target.subject, access, ...(target.facts === undefined ? {} : { facts: target.facts }) },
         key,
         batch,
         gateRan: recovered === undefined,
@@ -1210,7 +1235,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
 
   const reconcileAsHolder = async (scope: CallScope, callId: string, tool: AnyTool, input: unknown, record: ToolIdempotencyRecord): Promise<Resumed> => {
     if ((await scope.holdCall()) === 'aborted') return { kind: 'outcome', outcome: failedOutcome(callId, `${tool.name} was cancelled`) };
-    if (!scope.holding(scope.ledger.authorise(record.key))) return { kind: 'outcome', outcome: scope.deferred };
+    if (!scope.holding(scope.ledger.authorise(record.key, 'reconcile'))) return { kind: 'outcome', outcome: scope.deferred };
     const earlierAttempt = await reapEarlierAttempt(record.key, record.pgid, scope.controller.signal);
     try {
       const ctx: ReconcileContext = { ...scope.reconcileCtx, earlierAttempt };
@@ -1240,7 +1265,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return scope.complete(await finalizeResult({ status: 'failed', output: cancelledOutput(tool) }, tool, fitOfCall(fit, call), batch.runId), 'not_applied');
       }
       const status = reconcileOutcome.outcome === 'already_applied' ? 'completed' : 'failed';
-      return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output }, tool, fitOfCall(fit, call), batch.runId), reconcileOutcome.outcome);
+      return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output, ...(reconcileOutcome.effect === undefined ? {} : { effect: reconcileOutcome.effect }) }, tool, fitOfCall(fit, call), batch.runId), reconcileOutcome.outcome);
     } finally {
       scope.release();
     }
@@ -1289,6 +1314,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const target: GateTarget = {
       input: plan.input,
       subject: gate.subject,
+      ...(gate.facts === undefined ? {} : { facts: gate.facts }),
       ...(plan.hookInput === undefined ? {} : { hookInput: plan.hookInput }),
       ...(plan.basis === undefined ? {} : { basis: plan.basis }),
     };
@@ -1329,7 +1355,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         await batch.outputFit.ready?.();
         if (tool.prepare !== undefined) {
           try {
-            prepared = await tool.prepare(target.input, contextForBasis());
+            prepared = await tool.prepare(target.input, contextForBasis(), target.facts);
           } catch (error) {
             return failedOutcome(callId, describeThrown(tool.name, error));
           }
@@ -1466,7 +1492,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return await execute('not_applied');
       }
       const status = reconcileOutcome.outcome === 'already_applied' ? 'completed' : 'failed';
-      return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output }, tool, fitOfCall(fit, call), batch.runId), reconcileOutcome.outcome);
+      return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output, ...(reconcileOutcome.effect === undefined ? {} : { effect: reconcileOutcome.effect }) }, tool, fitOfCall(fit, call), batch.runId), reconcileOutcome.outcome);
     } finally {
       scope.release();
     }
@@ -1592,6 +1618,11 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     };
 
     let approvalAsked = false;
+    const holding = batch.hold !== undefined;
+    const held: HeldFootprint[] = [...(batch.hold?.blockers ?? [])];
+    const noteHeld = (outcome: CallOutcome): void => {
+      if (outcome.kind === 'needs_approval') held.push({ callId: outcome.callId, footprint: outcome.footprint });
+    };
 
     const surfaceApprovalsFrom = async (start: number): Promise<void> => {
       for (let later = start; later < calls.length; later += 1) {
@@ -1616,7 +1647,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           release?.();
           return;
         }
-        if (approvalAsked) {
+        if (approvalAsked && !holding) {
           release?.();
           await surfaceApprovalsFrom(index);
           return;
@@ -1624,7 +1655,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
 
         let admission: Admission;
         try {
-          admission = await admit(call, batch, access);
+          admission = await admit(call, batch, access, 'enforce', held);
         } catch (error) {
           release?.();
           throw error;
@@ -1634,6 +1665,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           release?.();
           outcomes[index] = admission.outcome;
           announce(admission.outcome);
+          if (holding) {
+            noteHeld(admission.outcome);
+            continue;
+          }
           if (admission.outcome.kind === 'needs_approval') {
             await drain();
             await surfaceApprovalsFrom(index + 1);
@@ -1646,6 +1681,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           const performed = await perform(admission.plan);
           outcomes[index] = performed;
           announce(performed);
+          if (holding && performed.kind === 'needs_approval') {
+            noteHeld(performed);
+            continue;
+          }
           if (performed.kind === 'needs_approval' || performed.kind === 'needs_input') {
             await surfaceApprovalsFrom(index + 1);
             return;
@@ -1657,7 +1696,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           .then(
             (outcome) => {
               outcomes[index] = outcome;
-              if (outcome.kind === 'needs_approval' || outcome.kind === 'needs_input') approvalAsked = true;
+              if (holding && outcome.kind === 'needs_approval') noteHeld(outcome);
+              else if (outcome.kind === 'needs_approval' || outcome.kind === 'needs_input') approvalAsked = true;
               try {
                 announce(outcome);
               } catch (error) {

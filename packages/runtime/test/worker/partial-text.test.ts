@@ -170,7 +170,7 @@ describe('partial assistant text on an interrupted stream', () => {
       agentSpan: { traceparent: undefined },
     } as unknown as ClaimContext;
 
-    await expect(streamModel(ctx, { model: 'fm', input: [] }, 'key', { step: 1, attempt: 1 })).rejects.toBe(streamError);
+    await expect(streamModel(ctx, { model: 'fm', input: [] }, 'key', { step: 1, attempt: 1 }, 'recorded')).rejects.toBe(streamError);
     expect(failures).toEqual([flushError]);
   });
 

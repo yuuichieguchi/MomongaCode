@@ -1,7 +1,7 @@
 import { MODEL_ROLES } from '@momonga/config';
 import type { ModelRoles } from '@momonga/config';
-import { pinnedCompletionOf, verificationRequiredOf, OUTPUT_FORMATTERS, STORED_MODEL_KEYS, TARGET_ANSWERS, agentReadiness, decodeStoredModel, isPinnedRuleVerdict, isToolCallingState } from '@momonga/protocol';
-import type { Capabilities, OutputFormatterName, PinnedCompletion, PinnedRuleVerdict, TargetAnswers } from '@momonga/protocol';
+import { pinnedCompletionOf, pinnedDelegationOf, verificationRequiredOf, OUTPUT_FORMATTERS, STORED_MODEL_KEYS, TARGET_ANSWERS, agentReadiness, decodeStoredModel, isPinnedRuleVerdict, isToolCallingState } from '@momonga/protocol';
+import type { Capabilities, OutputFormatterName, PinnedCompletion, PinnedRuleVerdict, TargetAnswers, PinnedDelegation } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { isRecord } from './json.ts';
 
@@ -28,6 +28,7 @@ export type RunPins = {
   token?: TokenPin;
   policyVerdict?: PinnedRuleVerdict;
   mandate?: { completion: PinnedCompletion };
+  delegation?: PinnedDelegation;
   verificationRequired?: true;
 };
 
@@ -87,12 +88,13 @@ export const readTokenPin = (value: unknown): TokenPin => {
   };
 };
 
-export const parentPinsOf = (store: Pick<RuntimeStore, 'readRunEventsOfTypes'>, runId: string): { model: string; roles: ModelRoles } => {
+export const parentPinsOf = (store: Pick<RuntimeStore, 'readRunEventsOfTypes'>, runId: string): { model: string; roles: ModelRoles; delegation?: PinnedDelegation } => {
   const started = store.readRunEventsOfTypes(runId, ['run.started'])[0];
   if (started === undefined || started.type !== 'run.started') throw new Error(`run ${runId} has not recorded run.started, so it has pinned no model and no roles`);
   const model = decodeStoredModel(started.pins, STORED_MODEL_KEYS.pin);
   if (model === undefined) throw new Error(`run ${runId} recorded run.started without a model pin`);
-  return { model, roles: readRoles(started.pins['roles']) };
+  const delegation = pinnedDelegationOf(started.pins);
+  return { model, roles: readRoles(started.pins['roles']), ...(delegation === undefined ? {} : { delegation }) };
 };
 
 const isCapabilities = (value: unknown): value is Capabilities =>
@@ -108,6 +110,7 @@ export const readPins = (value: Record<string, unknown>): RunPins => {
   const { systemPromptDigest, toolSetDigest, capabilities, memoryShare, guidelineVersion, token, policyVerdict } = value;
   const model = decodeStoredModel(value, STORED_MODEL_KEYS.pin);
   const completion = pinnedCompletionOf(value);
+  const delegation = pinnedDelegationOf(value);
   if (
     model === undefined ||
     typeof systemPromptDigest !== 'string' ||
@@ -135,6 +138,7 @@ export const readPins = (value: Record<string, unknown>): RunPins => {
     ...(token === undefined ? {} : { token: readTokenPin(token) }),
     ...(policyVerdict === undefined ? {} : { policyVerdict }),
     ...(completion === undefined ? {} : { mandate: { completion } }),
+    ...(delegation === undefined ? {} : { delegation }),
     ...(verificationRequiredOf(value) ? { verificationRequired: true as const } : {}),
   };
 };

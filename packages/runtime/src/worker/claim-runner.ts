@@ -22,6 +22,7 @@ import { runStartHooks } from './hook-step.ts';
 import { openJournal } from './journal.ts';
 import type { Journal } from './journal.ts';
 import { readRunLimits } from './limits.ts';
+import { delegationOf } from './held-calls.ts';
 import { decideAfterResponse, responsePending, resumeInFlight, runModelStep } from './model-step.ts';
 import { guidelineOf, guidelineVersionFor } from './guideline-pin.ts';
 import { memoryShareFor } from './memory-share.ts';
@@ -37,12 +38,12 @@ import { completionPinFor } from './completion-pin.ts';
 import type { RunPins } from './pins.ts';
 import { createSkillAdmission } from './skill-admission.ts';
 import { createTerminals } from './terminals.ts';
-import { extendToolSet, harnessOutputToolsOf } from '@momonga/tools';
+import { extendToolSet, harnessOutputToolsOf, operationCatalogueFacts } from '@momonga/tools';
 import { createLoadToolsTool } from './load-tools-tool.ts';
 import { createToolLoading } from './tool-admission.ts';
 import { offerFor, offeredRecordFor } from './tool-offer.ts';
 import type { ToolOffer } from './tool-offer.ts';
-import { settleCalls } from './tool-step.ts';
+import { settleCalls, settleHeld } from './tool-step.ts';
 import { unknownGate } from './unknown-gate.ts';
 import { laterVerdictNotice, policyRefusal, ruleVerdictAtStart } from './rule-verdict.ts';
 import type { WorkerOptions } from './types.ts';
@@ -539,6 +540,15 @@ const drive = async (
     ...(pins.memoryShare === undefined ? {} : { memoryShare: pins.memoryShare }),
     ...(pinnedGuideline === undefined ? {} : { guideline: pinnedGuideline }),
     limits,
+    budget: {
+      limits: { maxTotalTokens: limits.maxTotalTokens, ...(limits.maxCostNano === undefined ? {} : { maxCostNano: limits.maxCostNano }) },
+      quote: (model) => control.recordingRaised(gateway.quote(model, { signal: control.signal })),
+      spend: () => options.store.treeSpend(run.id),
+      ledger: { admitModelRequest: (ask) => options.store.admitModelRequest(claim, ask) },
+      release: () => options.store.releaseBudget(run.id),
+      tail: Promise.resolve(),
+    },
+    ...delegationOf(pins as unknown as Record<string, unknown>, { home: options.home, cwd: session.cwd }, operationCatalogueFacts()),
     toolSet: offeredSet,
     ...(loading === undefined ? {} : { toolLoading: loading }),
     skills,
@@ -608,6 +618,7 @@ const drive = async (
       return;
     }
     if ((await unknownGate(ctx)) === 'done') return;
+    if ((await settleHeld(ctx)) === 'done') return;
     journal.deliverSteering();
     flow = await runModelStep(ctx);
   }

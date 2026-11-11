@@ -33,11 +33,12 @@ export type MapperState = {
   readonly calls: Map<string, ToolCall>;
   readonly found: Map<string, string>;
   readonly firstSeq: Map<string, number>;
+  readonly held: Map<string, { approvalId: string; reason: string }>;
   contextTokens: number | undefined;
   lastFailure: Extract<PublicRunEvent, { type: 'attempt.failed' }> | undefined;
 };
 
-export const createMapperState = (): MapperState => ({ calls: new Map(), found: new Map(), firstSeq: new Map(), contextTokens: undefined, lastFailure: undefined });
+export const createMapperState = (): MapperState => ({ calls: new Map(), found: new Map(), firstSeq: new Map(), held: new Map(), contextTokens: undefined, lastFailure: undefined });
 
 export class UnsupportedToolContent extends Error {
   constructor(detail: string) {
@@ -87,6 +88,13 @@ export const noticeUpdate = (features: ClientFeatures, messageId: string, level:
 const liveNotice = (features: ClientFeatures, runId: string, seq: number, level: 'info' | 'warning' | 'error', text: string): Effect[] => [
   { kind: 'update', update: noticeUpdate(features, `${runId}/notice/${seq}`, level, text) },
 ];
+
+const HELD_GOES_ON = 'The run goes on with other work.';
+const HELD_QUIESCENT = 'The run waits for a person: nothing else can proceed.';
+
+const heldText = (approvalId: string, reason: string, state: string): string => `Held for approval (${approvalId}): ${reason}. ${state}`;
+
+const heldUpdate = (toolCallId: string, held: { approvalId: string; reason: string }, state: string): Effect => toolUpdate(toolCallId, { status: 'pending', content: outputContent(heldText(held.approvalId, held.reason, state)) });
 
 const awaitedText = (awaits: Extract<PublicRunEvent, { type: 'tool.waiting' }>['awaits']): string =>
   awaits.kind === 'run' ? `waiting for subagent ${awaits.agent}` : `waiting for job ${awaits.jobId}`;
@@ -160,7 +168,22 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
       return [toolUpdate(toolCallIdOf(event.runId, event.callId), { status: 'in_progress' })];
     case 'tool.updated':
       return [toolUpdate(toolCallIdOf(event.runId, event.callId), { content: toolContentOf(event.content) })];
-    case 'tool.completed':
+    case 'tool.held': {
+      const toolCallId = toolCallIdOf(event.runId, event.callId);
+      const held = { approvalId: event.approvalId, reason: event.reason };
+      state.held.set(toolCallId, held);
+      return [heldUpdate(toolCallId, held, HELD_GOES_ON)];
+    }
+    case 'tool.held.resolved': {
+      const toolCallId = toolCallIdOf(event.runId, event.callId);
+      state.held.delete(toolCallId);
+      return [toolUpdate(toolCallId, { status: event.status, content: outputContent(event.output), rawOutput: event.output })];
+    }
+    case 'run.quiescent':
+      return event.held.map((entry) => heldUpdate(toolCallIdOf(event.runId, entry.callId), { approvalId: entry.approvalId, reason: entry.reason }, HELD_QUIESCENT));
+    case 'tool.completed': {
+      const waiting = event.denial?.source === 'held' ? state.held.get(toolCallIdOf(event.runId, event.callId)) : undefined;
+      if (waiting !== undefined) return [heldUpdate(toolCallIdOf(event.runId, event.callId), waiting, HELD_GOES_ON)];
       return [
         toolUpdate(toolCallIdOf(event.runId, event.callId), {
           status: event.status,
@@ -173,6 +196,7 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
           rawOutput: event.output,
         }),
       ];
+    }
     case 'tool.reconciled':
       state.found.set(toolCallIdOf(event.runId, event.callId), event.output);
       return [
@@ -240,6 +264,7 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
     case 'tool.loaded':
     case 'tool.offered':
     case 'loop.warned':
+    case 'budget.exhausted':
     case 'meter.observed':
     case 'model.rejected':
     case 'approval.rule.persisted':

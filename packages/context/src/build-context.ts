@@ -79,6 +79,7 @@ type Head = {
   task: InputItem;
   pinnedLayers: InputItem[];
   catalogMessages: MessageInputItem[];
+  mandateMessages: MessageInputItem[];
   governing: MessageInputItem[];
   pinnedDigest: string;
   pinnedTokens: number;
@@ -225,7 +226,8 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
   const catalogMessages: MessageInputItem[] =
     sources.skillCatalog === undefined ? [] : [{ type: 'message', role: 'developer', content: sources.skillCatalog }];
   const instructionMessages = [...catalogMessages, ...[discovered.user, discovered.root].flatMap((file) => (file === undefined ? [] : [file.message]))];
-  const pinnedLayers: InputItem[] = [systemMessage, ...instructionMessages];
+  const mandateMessages: MessageInputItem[] = sources.mandate === undefined ? [] : [{ type: 'message', role: 'developer', content: sources.mandate }];
+  const pinnedLayers: InputItem[] = [systemMessage, ...instructionMessages, ...mandateMessages];
   const pinned: InputItem[] = [...pinnedLayers, task];
   const pinnedDigest = chainTail(digestChain({ scope: 'pinned-items' }, pinned));
   if (input.expectedPinnedDigest !== undefined && input.expectedPinnedDigest !== pinnedDigest) {
@@ -434,6 +436,7 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
     task,
     pinnedLayers,
     catalogMessages,
+    mandateMessages,
     governing,
     pinnedDigest,
     pinnedTokens,
@@ -1093,6 +1096,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   const layerByItem = new Map<InputItem, TaggedItem['layer']>();
   layerByItem.set(task, 'history.user');
   for (const message of head.catalogMessages) layerByItem.set(message, 'skills');
+  for (const message of head.mandateMessages) layerByItem.set(message, 'instructions');
   for (const entry of head.arrivals) layerByItem.set(entry.message, entry.layer);
   for (const file of [discovered.user, discovered.root]) if (file !== undefined) layerByItem.set(file.message, 'instructions');
   for (const message of head.governing) layerByItem.set(message, 'governing');

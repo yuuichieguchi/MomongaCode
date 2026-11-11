@@ -80,6 +80,8 @@ describe('formatReliabilityReport', () => {
       'Duplicate Side Effect Rate',
       'Human Intervention Rate',
       'Budget Overrun Rate',
+      'over the money limit',
+      'Delegation (mandate runs)',
       'Mean Recovery Time',
       'Time per Successful Task',
     ]) {
@@ -119,14 +121,14 @@ describe('the Recovery Success Rate line (decisions 19 and 36)', () => {
     expect(line).toBe('Recovery Success Rate: 0/1; unknown_effect 1; failed 0; stopped 2');
   });
 
-  it('round-trips the stopped count through momonga-reliability/3', () => {
+  it('round-trips the stopped count through momonga-reliability/4', () => {
     const report = reportOf([stoppedEpisode('s1')]);
     expect(report.total.recovery).toEqual({ k: 0, n: 0, unknownEffect: 0, failed: 0, stopped: 1 });
     expect(decodeReliabilityReport(encodeReliabilityReport(report))).toEqual(report);
   });
 });
 
-describe('momonga-reliability/3', () => {
+describe('momonga-reliability/4', () => {
   it('round-trips a report through encode and decode', () => {
     const report = reportOf(tasks(12, 28, 5));
     expect(report.format).toBe(RELIABILITY_FORMAT);

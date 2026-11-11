@@ -69,6 +69,7 @@ describe('the injection report builder (design 4.4)', () => {
       elapsedMs: 1,
       humanWaitMs: 0,
       tokensTotal: 1,
+      costNano: 0,
       steps: 1,
       limits: {},
       asked: 0,

@@ -76,7 +76,7 @@ describe('executor pipeline early exits', () => {
     expect(harness.idempotency.records.size).toBe(0);
   });
 
-  it('returns needs_approval for ask with decision, suggested rule, title, kind and locations', async () => {
+  it('returns needs_approval for ask with decision, suggested rule, title, kind, locations and footprint', async () => {
     const harness = makeHarness();
     const probe = counting();
     const subject = { kind: 'command' as const, tool: 'Bash', command: 'make build' };
@@ -110,6 +110,7 @@ describe('executor pipeline early exits', () => {
         toolKind: 'execute',
         locations: [{ path: '/work/Makefile', line: 3 }],
         subjectDigest: sha256Hex(canonicalJson({ subject, cwd: harness.layout.project })),
+        footprint: { reads: ['local:*'], writes: ['local:*'] },
       },
     ]);
     expect(suggestAllowRule({ name: 'Bash', ...BASH }, subject, harness.layout.project, resolveCanonicalPath)).toBe('Bash(make build)');

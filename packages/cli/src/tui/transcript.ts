@@ -53,7 +53,7 @@ export type Entry =
 
 export type ToolEntry = Extract<Entry, { kind: 'tool' }>;
 
-export type PendingApproval = { approvalId: string; callId: string; options: readonly PermissionOption[]; reason: string; suggestedRule?: string; unknownCallIds?: readonly string[] };
+export type PendingApproval = { approvalId: string; callId: string; options: readonly PermissionOption[]; reason: string; suggestedRule?: string; held?: true; unknownCallIds?: readonly string[] };
 
 export type PendingElicitation = { inputId: string; callId: string; server: string; flow: ElicitationFlow; submitted: boolean };
 
@@ -300,7 +300,16 @@ const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
     case 'tool.updated':
       updateTool(store, event.callId, (tool) => withOutput(tool, reportedText(event.content), tool.shownAt));
       return;
+    case 'tool.held': {
+      const hold = (approval: PendingApproval): PendingApproval => (approval.approvalId === event.approvalId ? { ...approval, held: true } : approval);
+      store.update({ approval: state.approval === undefined ? undefined : hold(state.approval), queuedApprovals: state.queuedApprovals.map(hold) });
+      return;
+    }
+    case 'tool.held.resolved':
+      updateTool(store, event.callId, (tool) => ({ ...withOutput(tool, event.output, event.createdAt), status: event.status }));
+      return;
     case 'tool.completed':
+      if (event.denial?.source === 'held' && heldApprovalsOf(state).some((approval) => approval.callId === event.callId)) return;
       updateTool(store, event.callId, (tool) => {
         const ended: ToolEntry = { ...withOutput(tool, event.output, event.createdAt), status: event.status, ...(event.denial === undefined ? {} : { denial: event.denial }) };
         return event.status === 'completed' ? withDiff(ended, event) : ended;
@@ -422,6 +431,9 @@ const foldPhase = (store: TranscriptStore, event: PublicRunEvent): void => {
     case 'tool.waiting':
       begin('awaited', awaitedText(event.awaits));
       return;
+    case 'run.quiescent':
+      begin('awaited', QUIESCENT_PHASE_TEXT);
+      return;
     case 'tool.permission.classified':
     case 'hook.completed':
     case 'verification.completed':
@@ -488,7 +500,24 @@ export const runLeft = (store: TranscriptStore): void => {
   store.update({ phase: undefined, runningTools: [] });
 };
 
-export const shownRunPhase = (state: Pick<TranscriptState, 'phase' | 'approval' | 'elicitation'>): RunPhase | undefined => (state.approval !== undefined || state.elicitation !== undefined ? undefined : state.phase);
+export const HELD_PANEL_LINE = 'Held: the run goes on with other work while this call waits for you.';
+
+export const QUIESCENT_PHASE_TEXT = 'waiting for your approval, nothing else can proceed';
+
+type OpenPrompts = Pick<TranscriptState, 'approval' | 'queuedApprovals' | 'elicitation'>;
+
+const heldApprovalsOf = (state: Pick<TranscriptState, 'approval' | 'queuedApprovals'>): PendingApproval[] =>
+  [...(state.approval === undefined ? [] : [state.approval]), ...state.queuedApprovals].filter((approval) => approval.held === true);
+
+export const blockingPrompt = (state: OpenPrompts): boolean => state.elicitation !== undefined || (state.approval !== undefined && state.approval.held !== true);
+
+export const heldPhaseText = (count: number): string => `${count} call${count === 1 ? '' : 's'} held for your approval`;
+
+export const shownRunPhase = (state: OpenPrompts & Pick<TranscriptState, 'phase'>): RunPhase | undefined => {
+  if (blockingPrompt(state) || state.phase === undefined) return undefined;
+  const held = heldApprovalsOf(state).length;
+  return held === 0 ? state.phase : { ...state.phase, text: `${state.phase.text} · ${heldPhaseText(held)}` };
+};
 
 const withSubagent = (store: TranscriptStore, runId: string, change: (subagent: Subagent) => Subagent): void => {
   const { subagents } = store.state();

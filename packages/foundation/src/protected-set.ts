@@ -320,7 +320,7 @@ const patternSpecsOf = (specifiers: readonly string[], roots: readonly string[])
     provenance: PATTERN_PROVENANCE,
   }));
 
-export const protectedSetFor = (roots: readonly string[], ports: ProtectedSetPorts): ProtectedSet => {
+export const protectedSetFor = (roots: readonly string[], ports: ProtectedSetPorts, gitConfigFiles: readonly string[] = []): ProtectedSet => {
   const collected: Collected = {
     forms: new Map(),
     paths: new Set(),
@@ -332,6 +332,7 @@ export const protectedSetFor = (roots: readonly string[], ports: ProtectedSetPor
     issues: [],
   };
   for (const root of roots) collectRoot(roots, ports, collected, root);
+  for (const file of gitConfigFiles) collected.paths.add(file);
   for (const root of roots) {
     const rootPattern = escapeGlob(patternPathOf(flavourOf(ports.platform), root).slice(1));
     for (const name of PROTECTED_NAMES) for (const entry of GIT_DIRECTORY_ENTRIES) collected.patternSpecifiers.add(`//${rootPattern}/**/${escapeGlob(name)}/${entry}`);

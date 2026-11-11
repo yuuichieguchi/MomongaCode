@@ -1,0 +1,77 @@
+import { ToolExecutionError } from '../types.ts';
+import type { ForgeOperationName } from '../operations/spec.ts';
+import { callForge } from './http.ts';
+import type { ForgeAnswer, ForgeFetch, ForgeFields } from './http.ts';
+import type { ForgeDescriptor } from './descriptor.ts';
+import { parseRemoteUrl, splitRepository } from './remote.ts';
+
+export type ForgeCredentialReference = { readonly env: string } | { readonly secret: string };
+
+export const forgeCredentialOf = (instance: { credentialEnv?: string; credentialSecret?: string; id: string }): ForgeCredentialReference => {
+  if (instance.credentialEnv !== undefined) return { env: instance.credentialEnv };
+  if (instance.credentialSecret !== undefined) return { secret: instance.credentialSecret };
+  throw new ToolExecutionError(`the forge ${instance.id} names no credential`);
+};
+
+export type ForgeInstance = {
+  readonly id: string;
+  readonly descriptor: string;
+  readonly host: string;
+  readonly apiBaseUrl: string;
+  readonly credential: ForgeCredentialReference;
+};
+
+export type ForgeRequest = {
+  remoteUrl: string;
+  operation: ForgeOperationName;
+  args: Readonly<Record<string, string>>;
+  signal: AbortSignal;
+  boundMs: number;
+};
+
+export type ForgeGitCredential = { username: string; password: string };
+
+export type ForgeAccess = {
+  request(request: ForgeRequest): Promise<ForgeAnswer>;
+  gitCredential(remoteUrl: string, signal: AbortSignal): Promise<ForgeGitCredential | undefined>;
+};
+
+export type ForgeAccessOptions = {
+  descriptors: readonly ForgeDescriptor[];
+  instances: readonly ForgeInstance[];
+  readCredential(reference: ForgeCredentialReference, signal: AbortSignal): Promise<string>;
+  fetch: ForgeFetch;
+};
+
+export const createForgeAccess = (options: ForgeAccessOptions): ForgeAccess => {
+  const descriptorOf = (instance: ForgeInstance): ForgeDescriptor => {
+    const descriptor = options.descriptors.find((candidate) => candidate.id === instance.descriptor);
+    if (descriptor === undefined) throw new ToolExecutionError(`the forge ${instance.id} names the descriptor ${instance.descriptor}, which is not installed`);
+    return descriptor;
+  };
+  return {
+    gitCredential: async (remoteUrl, signal) => {
+      const { host } = parseRemoteUrl(remoteUrl);
+      const instance = options.instances.find((candidate) => candidate.host === host);
+      if (instance === undefined) return undefined;
+      const descriptor = descriptorOf(instance);
+      return { username: descriptor.auth.gitUsername, password: await options.readCredential(instance.credential, signal) };
+    },
+    request: async ({ remoteUrl, operation, args, signal, boundMs }) => {
+      const location = parseRemoteUrl(remoteUrl);
+      const instance = options.instances.find((candidate) => candidate.host === location.host);
+      if (instance === undefined) throw new ToolExecutionError(`no forge configured for host ${location.host}`);
+      const descriptor = descriptorOf(instance);
+      const credential = await options.readCredential(instance.credential, signal);
+      const { owner, name } = splitRepository(location.repo);
+      const redact = (text: string): string => text.split(credential).join('[redacted]');
+      try {
+        const answer = await callForge({ descriptor, apiBaseUrl: instance.apiBaseUrl, credential, variables: { owner, name, ...args }, operation, signal, boundMs, fetch: options.fetch });
+        const clean = (fields: ForgeFields): ForgeFields => Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, redact(value)]));
+        return { status: answer.status, items: answer.items.map(clean), fields: clean(answer.fields) };
+      } catch (error) {
+        throw new ToolExecutionError(redact(error instanceof Error ? error.message : String(error)));
+      }
+    },
+  };
+};

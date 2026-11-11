@@ -1,0 +1,12 @@
+[
+  {
+    "program": "git",
+    "flagOptions": ["--no-pager", "--paginate", "-p", "-P", "--bare", "--no-replace-objects", "--literal-pathspecs", "--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs", "--no-optional-locks", "--no-lazy-fetch", "--version", "--help", "-h"],
+    "valueOptions": ["-C", "-c", "--exec-path", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env", "--list-cmds", "--attr-source"]
+  },
+  {
+    "program": "gh",
+    "flagOptions": ["--help", "--version"],
+    "valueOptions": ["-R", "--repo", "--hostname"]
+  }
+]

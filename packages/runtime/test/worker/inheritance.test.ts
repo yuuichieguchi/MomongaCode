@@ -268,12 +268,12 @@ describe('run-local limits and loop detection', () => {
   it('gives run 2 its own maxSteps and maxTotalTokens and starts its usage at 0', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([echo('call_e_1', 'one')], usageOf(400, 10)), textStep('First done.', { usage: usageOf(400, 10) }));
-    const first = env.enqueue('Echo one', { limits: { maxSteps: 2, maxTotalTokens: 1000 } });
+    const first = env.enqueue('Echo one', { limits: { maxSteps: 2, maxTotalTokens: 100_000 } });
     expect((await settle(env, first.id)).status).toBe('COMPLETED');
     expect(env.run(first.id).usage.totalTokens).toBe(820);
 
     env.gateway.script.push(callsStep([echo('call_e_2', 'two')], usageOf(400, 10)), textStep('Second done.', { usage: usageOf(400, 10) }));
-    const second = env.enqueue('Echo two', { limits: { maxSteps: 2, maxTotalTokens: 1000 } });
+    const second = env.enqueue('Echo two', { limits: { maxSteps: 2, maxTotalTokens: 100_000 } });
     const finished = await settle(env, second.id);
 
     expect(finished.status).toBe('COMPLETED');

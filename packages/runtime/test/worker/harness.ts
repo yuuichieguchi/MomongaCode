@@ -8,7 +8,7 @@ import type { PermissionRule } from '@momonga/config';
 import type { InstructionReader } from '@momonga/context';
 import { computeFileRules } from '@momonga/policy';
 import { applyCapabilityOverride } from '@momonga/protocol';
-import type { Capabilities, CapabilityOverride, PermissionMode, RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
+import type { Capabilities, CapabilityOverride, Mandate, PermissionMode, RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { createAgentLoader } from '@momonga/agents';
 import { contributionAtTerminal, createSkillsPort, createWorker } from '@momonga/runtime';
 import type { AgentCatalogPort, EvidenceRun, GovernancePort, HistoryPort, MemoryPort, SkillsPort, ToolEnv, ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
@@ -383,7 +383,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
 
   const enqueue = (
     input = 'Say hello',
-    extra: { limits?: Record<string, unknown>; deadlineAt?: number; history?: 'inherit' | 'fresh'; skill?: { name: string; content: string } } = {},
+    extra: { limits?: Record<string, unknown>; deadlineAt?: number; history?: 'inherit' | 'fresh'; skill?: { name: string; content: string }; mandate?: Mandate } = {},
   ): Run =>
     createdRun(
       store.createRunAndEnqueue(session.id, {
@@ -393,6 +393,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
         pins: {},
         ...(extra.history === undefined ? {} : { history: extra.history }),
         ...(extra.skill === undefined ? {} : { skill: extra.skill }),
+        ...(extra.mandate === undefined ? {} : { mandate: extra.mandate }),
       }),
     );
 

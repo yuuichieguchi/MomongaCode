@@ -36,10 +36,19 @@ const keyedModels = (fakeSocketPath: string): Record<string, unknown> => {
 const journalOf = (temp: RunHome, runId: string): string =>
   JSON.stringify(readDb<{ type: string; payload_json: string }>(temp.paths.databases.runtime, 'SELECT type, payload_json FROM events WHERE run_id = ? ORDER BY seq', runId));
 
-const noticesOf = (temp: RunHome, runId: string): string[] =>
+const RETRY_NOTICE_CODE = 'attempt_retried';
+
+type JournalNotice = { message: string; code?: string };
+
+const noticesOf = (temp: RunHome, runId: string): JournalNotice[] =>
   readDb<{ payload_json: string }>(temp.paths.databases.runtime, "SELECT payload_json FROM events WHERE run_id = ? AND type = 'notice' ORDER BY seq", runId).map(
-    (row) => (JSON.parse(row.payload_json) as { message: string }).message,
+    (row) => JSON.parse(row.payload_json) as JournalNotice,
   );
+
+const retryNoticesOf = (temp: RunHome, runId: string): string[] =>
+  noticesOf(temp, runId)
+    .filter((notice) => notice.code === RETRY_NOTICE_CODE)
+    .map((notice) => notice.message);
 
 const startKeyedRun = async (reply: FakeScriptedReply) => {
   const stack = await prepareStack({ routes: [{ match: () => true, reply }] });
@@ -73,12 +82,12 @@ describe('T7: a credential echoed by the upstream stays out of the runtime journ
     const { stack, gatewayLog, runId } = await startKeyedRun(FINISH_REASON_ECHO);
     await waitForCondition(() => {
       const status = runStatus(stack.temp, runId);
-      return noticesOf(stack.temp, runId).length > 0 || (status !== undefined && TERMINAL.includes(status));
-    }, `a notice or a terminal state for run ${runId}`);
-    const notices = noticesOf(stack.temp, runId);
-    expect(notices.length).toBeGreaterThan(0);
-    expect(notices.some((notice) => notice.includes(REDACTED))).toBe(true);
-    for (const notice of notices) expectNoCredential(notice, TEST_API_KEY);
+      return retryNoticesOf(stack.temp, runId).length > 0 || (status !== undefined && TERMINAL.includes(status));
+    }, `the retry notice or a terminal state for run ${runId}`);
+    const retryNotices = retryNoticesOf(stack.temp, runId);
+    expect(retryNotices.length).toBeGreaterThan(0);
+    expect(retryNotices.every((notice) => notice.includes(REDACTED))).toBe(true);
+    for (const notice of noticesOf(stack.temp, runId)) expectNoCredential(notice.message, TEST_API_KEY);
     expectNoCredential(journalOf(stack.temp, runId), TEST_API_KEY);
     expectNoCredential(gatewayLog.chunks.join(''), TEST_API_KEY);
   });

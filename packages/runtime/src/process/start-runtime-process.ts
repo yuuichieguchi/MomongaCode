@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ConfigError, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, readUserStopValues, keptSettingsDirectory, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
+import { ConfigError, loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, readUserStopValues, keptSettingsDirectory, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
 import type { ResolvedSettings } from '@momonga/config';
 import { installTrust, trustFailureText } from '@momonga/foundation';
 import {
@@ -696,6 +696,18 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         protectedRootAreas: protectedRootAreasOf(paths, canonicalHome),
         notifier,
         modelListing: (requestSignal) => gatewayClient.listing({ signal: requestSignal }),
+        delegation: {
+          settings: () => {
+            const { limits, ceilings, mandates } = settingsComposition.takeUserSnapshot().settings;
+            return { ...(limits === undefined ? {} : { limits }), ...(ceilings === undefined ? {} : { ceilings }), ...(mandates === undefined ? {} : { mandates }) };
+          },
+          projectMandate: (cwd) => loadProjectMandate({ projectDir: cwd, trusted: settingsComposition.trustOracle.isTrusted(cwd) }),
+          chainBilling: async (model, requestSignal) => {
+            const { chain } = await gatewayClient.model(model, { signal: requestSignal });
+            const quote = await gatewayClient.quote(model, { signal: requestSignal });
+            return { metered: chain.some((member) => member.billed?.billing === 'metered'), priced: quote.priced };
+          },
+        },
         modelCapabilities: (model, requestSignal) => gatewayClient.capabilities(model, { signal: requestSignal }),
         sessionCreateSettings: async (cwd, requestSignal) => {
           const admittedSettings = await settingsComposition.sessionCreateSettings(cwd, requestSignal);
@@ -841,6 +853,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         attemptTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs,
         timers,
         random: Math.random,
+        defaults: RUNTIME_DEFAULTS.limits,
       });
       const upkeepSchedule = createMemoryUpkeepSchedule({
         store,

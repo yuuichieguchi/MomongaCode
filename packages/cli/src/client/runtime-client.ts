@@ -114,7 +114,7 @@ export type CreateRunOptions = {
   idempotencyKey?: string;
   skill?: string;
   timeoutMs?: number;
-  limits?: { maxSteps?: number; maxTotalTokens?: number };
+  limits?: { maxSteps?: number; maxTotalTokens?: number; maxCostUsd?: number };
   images?: readonly ImageAttachment[];
   attachMentions?: boolean;
   mandate?: Mandate;

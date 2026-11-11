@@ -1,0 +1,21 @@
+{
+  "name": "PullRequestStatus",
+  "description": "Reads the state of a pull request: whether it is open or merged, its head commit, and its URL.",
+  "kind": "fetch",
+  "sideEffect": "read_only",
+  "title": "Read pull request #{input.number}",
+  "subject": { "kind": "none" },
+  "approval": "rule",
+  "input": {
+    "type": "object",
+    "properties": { "number": { "type": "integer", "minimum": 1, "description": "The pull request number" } },
+    "required": ["number"],
+    "additionalProperties": false
+  },
+  "timeoutMs": 30000,
+  "observe": [{ "id": "pr", "via": { "forge": "getPullRequest", "args": { "number": "{input.number}" }, "shape": "one" } }],
+  "applied": [],
+  "unchanged": [],
+  "supersedes": [["gh", "pr", "view"], ["gh", "pr", "status"], ["gh", "pr", "checks"]],
+  "report": "Pull request #{input.number} is {after.pr.state}, merged {after.pr.merged}, head {after.pr.headSha}: {after.pr.url}"
+}

@@ -295,11 +295,29 @@ const requireExactModelFlag = (momonga: SchemaObject): void => {
   }
 };
 
+const isWholeCount = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
+const requireCostCeiling = (momonga: SchemaObject, maxOutputTokens: unknown, outputBoundName: string): void => {
+  const ceiling = momonga['max_cost_nano'];
+  const inputBound = momonga['max_input_tokens'];
+  if (ceiling === undefined && inputBound === undefined) return;
+  if (!isWholeCount(ceiling)) {
+    throw invalidRequest('invalid_max_cost_nano', `${MOMONGA_REQUEST_FIELDS.maxCostNano} must be a non-negative whole number of nano-USD and comes with ${MOMONGA_REQUEST_FIELDS.maxInputTokens}`, MOMONGA_REQUEST_FIELDS.maxCostNano);
+  }
+  if (!isWholeCount(inputBound)) {
+    throw invalidRequest('invalid_max_input_tokens', `${MOMONGA_REQUEST_FIELDS.maxInputTokens} must be a non-negative whole number of tokens and comes with ${MOMONGA_REQUEST_FIELDS.maxCostNano}`, MOMONGA_REQUEST_FIELDS.maxInputTokens);
+  }
+  if (!isWholeCount(maxOutputTokens)) {
+    throw invalidRequest('cost_ceiling_without_output_bound', `${MOMONGA_REQUEST_FIELDS.maxCostNano} needs ${outputBoundName}, since the cost of an unbounded answer cannot be bounded`, outputBoundName);
+  }
+};
+
 const validateCompactMomonga = (value: unknown): void => {
   const momonga = momongaRecord(value);
   if (momonga === undefined) return;
-  requireKnownKeys(momonga, ['max_summary_tokens', 'retains_user_request', 'guideline', 'instructions', 'exact_model'], ['momonga']);
+  requireKnownKeys(momonga, ['max_summary_tokens', 'retains_user_request', 'guideline', 'instructions', 'exact_model', 'max_cost_nano', 'max_input_tokens'], ['momonga']);
   requireExactModelFlag(momonga);
+  requireCostCeiling(momonga, momonga['max_summary_tokens'], MOMONGA_REQUEST_FIELDS.maxSummaryTokens);
   const cap = momonga['max_summary_tokens'];
   if (cap !== undefined && (!Number.isInteger(cap) || (cap as number) < MIN_SUMMARY_TOKENS)) {
     throwIssue({ segments: ['momonga', 'max_summary_tokens'], message: `must be an integer of at least ${MIN_SUMMARY_TOKENS}` });
@@ -344,11 +362,12 @@ const validateCountMomonga = (value: unknown): void => {
 
 const CACHE_MARK_NAMES = ['stable', 'fixed', 'previousHistory', 'history'] as const;
 
-const validateCreateMomonga = (value: unknown, inputLength: number): void => {
+const validateCreateMomonga = (value: unknown, inputLength: number, maxOutputTokens: unknown): void => {
   const momonga = momongaRecord(value);
   if (momonga === undefined) return;
-  requireKnownKeys(momonga, ['cache', 'exact_model'], ['momonga']);
+  requireKnownKeys(momonga, ['cache', 'exact_model', 'max_cost_nano', 'max_input_tokens'], ['momonga']);
   requireExactModelFlag(momonga);
+  requireCostCeiling(momonga, maxOutputTokens, 'max_output_tokens');
   const cache = momonga['cache'];
   if (cache === undefined) return;
   const at = ['momonga', 'cache'];
@@ -423,7 +442,7 @@ export const createRequestValidator = (): RequestValidator => {
       if (record['background'] === true) {
         throw invalidRequest('capability_unsupported', 'background responses are not supported', 'background');
       }
-      validateCreateMomonga(record['momonga'], inputLengthOf(record['input']));
+      validateCreateMomonga(record['momonga'], inputLengthOf(record['input']), record['max_output_tokens']);
       validateToolChoiceSatisfiable(record['tool_choice'], record['tools']);
       return assertValidated<CreateResponseBody>(body);
     },

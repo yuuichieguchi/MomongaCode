@@ -13,6 +13,7 @@ export type RunInfo = {
   deadlineAt?: number;
   step: number;
   tokensTotal: number;
+  costNano: number;
   model: string;
   mode: PermissionMode;
   agent: string;
@@ -32,7 +33,8 @@ export type Indicators = {
   recoveryTime: { n: number; meanMs: number | null; medianMs: number | null; clockSkew: number };
   duplicates: { journal: Rate; prevented: number; unknown: number };
   intervention: Rate;
-  overrun: { k: number; n: number; budgetStops: number };
+  overrun: { k: number; n: number; budgetStops: number; money: Rate };
+  delegation: { n: number; intervened: number; unattended: number; waited: number; held: number; denied: number };
   time: { n: number; meanActiveMs: number | null; meanElapsedMs: number | null };
 };
 

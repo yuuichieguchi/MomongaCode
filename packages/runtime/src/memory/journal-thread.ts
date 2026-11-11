@@ -5,9 +5,9 @@ import { openDatabase } from '@momonga/foundation/sqlite';
 import { REPOSITORY_FACTS_EVENT_TYPES, createRepositoryFactsFold } from '@momonga/memory';
 import { RUN_REPORT_EVENT_TYPES, createRunReportFold } from '@momonga/observability/run-report';
 import { FactsRefusedError, createBlobStore, createJournalReader, knownValue } from '@momonga/store';
-import { FIDELITY_CLAIMS, MAIN_AGENT, PERMISSION_MODES, STORED_MODEL_KEYS, decodeStoredModel } from '@momonga/protocol';
+import { FIDELITY_CLAIMS, MAIN_AGENT, PERMISSION_MODES, STORED_MODEL_KEYS, TERMINAL_STATUSES, decodeStoredModel, nanoOfAmount } from '@momonga/protocol';
 import { FACTS_EVENT_TYPES, createCallsFold, createFactsFold } from '@momonga/reliability';
-import type { Capabilities, ClaimedToken, PermissionMode, RunEvent, RunEventPayload, RunFactsLimits } from '@momonga/protocol';
+import type { Capabilities, ClaimedToken, PermissionMode, RunBudgetReport, RunEvent, RunEventPayload, RunFactsLimits } from '@momonga/protocol';
 import type { DatabaseSync } from 'node:sqlite';
 import type { BlobStore, JournalReader, WalkUnits } from '@momonga/store';
 import { contributionAtTerminal } from './contribution.ts';
@@ -167,15 +167,66 @@ const createdAtOf = (row: Record<string, unknown> | undefined, runId: string): n
   return createdAt;
 };
 
+const ROOT_RUN_ID = `WITH RECURSIVE up(id, parent) AS (
+  SELECT id, parent_run_id FROM runs WHERE id = :runId
+  UNION ALL
+  SELECT r.id, r.parent_run_id FROM runs r JOIN up ON r.id = up.parent
+) SELECT id FROM up WHERE parent IS NULL`;
+
+const TERMINAL_STATUS_LIST = TERMINAL_STATUSES.map((status) => `'${status}'`).join(', ');
+
+const TREE_SPEND = `WITH RECURSIVE tree(id) AS (SELECT :rootId UNION ALL SELECT r.id FROM runs r JOIN tree t ON r.parent_run_id = t.id)
+SELECT COALESCE(SUM(json_extract(r.usage_json, '$.totalTokens')), 0) AS total_tokens,
+       COALESCE(SUM(json_extract(r.usage_json, '$.costNano')), 0) AS cost_nano,
+       COALESCE(SUM(json_extract(r.usage_json, '$.unpricedCalls')), 0) AS unpriced_calls,
+       COALESCE(SUM(CASE WHEN r.status IN (${TERMINAL_STATUS_LIST}) THEN 0 ELSE r.reserved_tokens END), 0) AS reserved_tokens,
+       COALESCE(SUM(CASE WHEN r.status IN (${TERMINAL_STATUS_LIST}) THEN 0 ELSE r.reserved_nano END), 0) AS reserved_nano
+FROM runs r JOIN tree t ON r.id = t.id`;
+
+const declaredLimit = (limits: Record<string, unknown>, key: string, runId: string): number | undefined => {
+  const value = limits[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number') throw new TypeError(`run ${runId}: limit ${key} must be a number`);
+  return value;
+};
+
+const countOf = (row: Record<string, unknown>, column: string, runId: string): number => {
+  const value = row[column];
+  if (typeof value !== 'number') throw new TypeError(`run ${runId}: the spend of its tree has no numeric ${column}`);
+  return value;
+};
+
 export const reportHandler = (db: DatabaseSync, reader: VisitingReader): JournalHandler => {
   const firstEventAt = db.prepare(FIRST_EVENT_AT);
   const lastEventAt = db.prepare(LAST_EVENT_AT);
+  const rootOf = db.prepare(ROOT_RUN_ID);
+  const treeSpend = db.prepare(TREE_SPEND);
+  const budgetOf = (run: { id: string; limits: Record<string, unknown>; deadlineAt: number; step: number }): RunBudgetReport => {
+    const rootRow = rootOf.get({ runId: run.id });
+    if (rootRow === undefined) throw new Error(`run ${run.id}: its tree could not be read`);
+    const spend = treeSpend.get({ rootId: String(rootRow['id']) });
+    if (spend === undefined) throw new Error(`run ${run.id}: the spend of its tree could not be read`);
+    const maxSteps = declaredLimit(run.limits, 'maxSteps', run.id);
+    const maxTotalTokens = declaredLimit(run.limits, 'maxTotalTokens', run.id);
+    const maxCostUsd = declaredLimit(run.limits, 'maxCostUsd', run.id);
+    return {
+      limits: {
+        ...(maxSteps === undefined ? {} : { maxSteps }),
+        ...(maxTotalTokens === undefined ? {} : { maxTotalTokens }),
+        ...(maxCostUsd === undefined ? {} : { maxCostNano: nanoOfAmount(maxCostUsd) }),
+        deadlineAt: run.deadlineAt,
+      },
+      spent: { steps: run.step, totalTokens: countOf(spend, 'total_tokens', run.id), costNano: countOf(spend, 'cost_nano', run.id), unpricedCalls: countOf(spend, 'unpriced_calls', run.id) },
+      reserved: { tokens: countOf(spend, 'reserved_tokens', run.id), costNano: countOf(spend, 'reserved_nano', run.id) },
+    };
+  };
   return (request) => {
     const runId = textOf(request, 'runId', 'report');
     const fold = createRunReportFold();
     const run = reader.visitRun(runId, RUN_REPORT_EVENT_TYPES, fold.add);
     const report = fold.finish({
       runId,
+      budget: budgetOf(run),
       firstCreatedAt: createdAtOf(firstEventAt.get({ runId }), runId),
       lastCreatedAt: createdAtOf(lastEventAt.get({ runId, lastSeq: run.lastSeq }), runId),
     });
@@ -183,18 +234,12 @@ export const reportHandler = (db: DatabaseSync, reader: VisitingReader): Journal
   };
 };
 
-const ROOT_RUN_ID = `WITH RECURSIVE up(id, parent) AS (
-  SELECT id, parent_run_id FROM runs WHERE id = :runId
-  UNION ALL
-  SELECT r.id, r.parent_run_id FROM runs r JOIN up ON r.id = up.parent
-) SELECT id FROM up WHERE parent IS NULL`;
-
 const TREE_TOKENS = `WITH RECURSIVE tree(id) AS (SELECT :runId UNION ALL SELECT r.id FROM runs r JOIN tree t ON r.parent_run_id = t.id)
-SELECT COALESCE(SUM(json_extract(r.usage_json, '$.totalTokens')), 0) AS total FROM runs r JOIN tree t ON r.id = t.id`;
+SELECT COALESCE(SUM(json_extract(r.usage_json, '$.totalTokens')), 0) AS total, COALESCE(SUM(json_extract(r.usage_json, '$.costNano')), 0) AS cost_nano FROM runs r JOIN tree t ON r.id = t.id`;
 
 const isRecordValue = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const limitOf = (limits: Record<string, unknown>, key: keyof RunFactsLimits, runId: string): number | undefined => {
+const limitOf = (limits: Record<string, unknown>, key: 'maxSteps' | 'maxTotalTokens' | 'maxCostUsd', runId: string): number | undefined => {
   const value = limits[key];
   if (value === undefined) return undefined;
   if (typeof value !== 'number') throw new TypeError(`run ${runId}: limit ${key} must be a number`);
@@ -247,6 +292,7 @@ export const runFactsHandler = (db: DatabaseSync, reader: VisitingReader): Journ
     const facts = refusingFold(() => {
       const maxSteps = limitOf(run.limits, 'maxSteps', runId);
       const maxTotalTokens = limitOf(run.limits, 'maxTotalTokens', runId);
+      const maxCostUsd = limitOf(run.limits, 'maxCostUsd', runId);
       return fold.finish({
         runId,
         rootRunId: String(rootRow['id']),
@@ -254,10 +300,15 @@ export const runFactsHandler = (db: DatabaseSync, reader: VisitingReader): Journ
         status: knownValue(run.status, `the status of run ${runId}`),
         ...(run.stopReason === undefined ? {} : { stopReason: knownValue(run.stopReason, `the stop reason of run ${runId}`) }),
         createdAt: run.createdAt,
-        limits: { ...(maxSteps === undefined ? {} : { maxSteps }), ...(maxTotalTokens === undefined ? {} : { maxTotalTokens }) },
+        limits: {
+          ...(maxSteps === undefined ? {} : { maxSteps }),
+          ...(maxTotalTokens === undefined ? {} : { maxTotalTokens }),
+          ...(maxCostUsd === undefined ? {} : { maxCostNano: nanoOfAmount(maxCostUsd) }),
+        },
         deadlineAt: run.deadlineAt,
         step: run.step,
         tokensTotal: Number(tokensRow['total']),
+        costNano: Number(tokensRow['cost_nano']),
         model: begun.model,
         mode: begun.mode,
         agent: agentOf(run.pins, runId),

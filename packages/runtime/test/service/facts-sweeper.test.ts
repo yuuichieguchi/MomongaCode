@@ -67,6 +67,7 @@ const fullRow = (runId: string, sessionId: string): RunFactsView => ({
   elapsedMs: 0,
   humanWaitMs: 0,
   tokensTotal: 0,
+  costNano: 0,
   steps: 1,
   limits: {},
   asked: 0,

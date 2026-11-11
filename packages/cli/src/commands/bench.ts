@@ -88,9 +88,11 @@ export const benchRunApi = (client: BenchClient, env: Readonly<Record<string, st
         limits: {
           ...(run.limits.maxSteps === undefined ? {} : { maxSteps: run.limits.maxSteps }),
           ...(run.limits.maxTotalTokens === undefined ? {} : { maxTotalTokens: run.limits.maxTotalTokens }),
+          ...(run.report.budget?.limits.maxCostNano === undefined ? {} : { maxCostNano: run.report.budget.limits.maxCostNano }),
         },
         step: run.step,
         tokensTotal: run.usage.totalTokens,
+        costNano: run.usage.costNano ?? 0,
         origin: run.origin,
         agent: run.agent ?? MAIN_AGENT,
         mode: session.permissionMode,

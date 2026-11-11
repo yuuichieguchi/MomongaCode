@@ -25,6 +25,7 @@ export const finalTextOf = (events: readonly PublicRunEvent[]): string | undefin
 
 const decisionOf = (events: readonly PublicRunEvent[], callId: string): ObservedCall['decision'] => {
   if (eventsOfType(events, 'tool.permission.requested').some((event) => event.callId === callId)) return 'ask';
+  if (eventsOfType(events, 'tool.held').some((event) => event.callId === callId)) return 'ask';
   if (eventsOfType(events, 'tool.started').some((event) => event.callId === callId)) return 'allow';
   const completed = eventsOfType(events, 'tool.completed').find((event) => event.callId === callId);
   if (completed?.denial !== undefined) return 'deny';

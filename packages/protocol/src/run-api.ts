@@ -1,6 +1,6 @@
 import type { Stored } from './stored-value.ts';
 import { UNKNOWN_VALUE } from './stored-value.ts';
-import { CONDITION_SOURCES, CONDITION_STATES, CONDITION_WHENS, NOT_RUN_REASONS, RESIDUAL_RISK_CODES, VERIFICATION_OUTCOMES } from './completion.ts';
+import { CONDITION_SOURCES, CONDITION_STATES, CONDITION_WHENS, NOT_RUN_REASONS, QUIESCENT_BEHAVIOURS, RESIDUAL_RISK_CODES, VERIFICATION_OUTCOMES } from './completion.ts';
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
 import { RULE_VERDICTS } from './rule-verdict.ts';
 import { GUIDELINE_TEXT_PATTERN } from './guideline-text.ts';
@@ -15,9 +15,10 @@ import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STAT
 import type { ContextChargePurpose, SummaryFidelity, SummarySource } from './context-record.ts';
 import { AUTO_FIT_FAILED_BOUNDS, AUTO_FIT_MEASUREMENTS } from './auto-mode-gate.ts';
 import { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
+import { BUDGET_CAUSES, BUDGET_DIMENSIONS, HELD_OUTCOMES, MAX_COST_USD } from './budget.ts';
 import { RECOVERY_CAUSES, RECOVERY_OUTCOMES, REPORT_PAGE_ROWS } from './reliability.ts';
 import { FILE_ACCESSES } from './working-facts.ts';
-import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_MAX_PENDING, INBOX_STATES, JOB_STATUSES, isInheritedReference, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES, USER_SHELL_COMMAND_CHARS, PROMPT_TEXT_MAX_CHARS } from './run-types.ts';
+import { APPROVAL_STATUSES, OPERATION_EFFECT_OUTCOMES, IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_MAX_PENDING, INBOX_STATES, JOB_STATUSES, isInheritedReference, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES, USER_SHELL_COMMAND_CHARS, PROMPT_TEXT_MAX_CHARS } from './run-types.ts';
 import type { ImageMediaType, InboxDelivery, InboxRowView, MessageAttachment, UserShellRecord, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent, SessionEventPayload } from './run-types.ts';
 import type { ReflectionJobView } from './memory.ts';
 import { UNPRICED_CODES } from './token-anatomy.ts';
@@ -47,6 +48,7 @@ const anything: JsonSchema = {};
 const enumOf = (values: readonly string[]): JsonSchema => ({ type: 'string', enum: values });
 const storedEnumOf = (values: readonly string[]): JsonSchema => enumOf([...values, UNKNOWN_VALUE]);
 const constant = (value: string): JsonSchema => ({ type: 'string', const: value });
+const operationEffect: JsonSchema = closed({ operation: string, target: string, outcome: enumOf(OPERATION_EFFECT_OUTCOMES) }, ['operation', 'target', 'outcome']);
 const toolFiles: JsonSchema = { type: 'array', items: closed({ path: string, sha256: string, access: enumOf(FILE_ACCESSES) }, ['path', 'access']) };
 const boundedInteger = (minimum: number, maximum: number): JsonSchema => ({ type: 'integer', minimum, maximum });
 
@@ -141,7 +143,9 @@ const elicitationAnswer = {
   ],
 } as const satisfies JsonSchema;
 
-const usage = closed({ inputTokens: nonNegativeInteger, outputTokens: nonNegativeInteger, totalTokens: nonNegativeInteger }, [
+const heldCallView = closed({ callId: string, approvalId: string, tool: string, reason: string, sinceSeq: nonNegativeInteger }, ['callId', 'approvalId', 'tool', 'reason', 'sinceSeq']);
+
+const usage = closed({ inputTokens: nonNegativeInteger, outputTokens: nonNegativeInteger, totalTokens: nonNegativeInteger, costNano: nonNegativeInteger, unpricedCalls: nonNegativeInteger }, [
   'inputTokens',
   'outputTokens',
   'totalTokens',
@@ -166,7 +170,31 @@ export const COMPLETION_DECLARATION_SCHEMA: JsonSchema = closed(
   [],
 );
 
-const mandate = closed({ completion: COMPLETION_DECLARATION_SCHEMA }, []);
+const ruleTexts = { type: 'array', items: { type: 'string', minLength: 1 } } as const;
+
+export const MANDATE_SCOPE_SCHEMA: JsonSchema = closed({ allow: ruleTexts, ask: ruleTexts, deny: ruleTexts }, []);
+
+export const MANDATE_BUDGET_SCHEMA: JsonSchema = closed(
+  {
+    steps: boundedInteger(1, 1000),
+    tokens: boundedInteger(1, 100_000_000),
+    costUsd: { type: 'number', minimum: 0, maximum: MAX_COST_USD },
+    timeMs: boundedInteger(1000, 7 * DAY_MS),
+    retries: boundedInteger(1, 100),
+  },
+  [],
+);
+
+const mandate = closed(
+  {
+    completion: COMPLETION_DECLARATION_SCHEMA,
+    profile: { type: 'string', minLength: 1 },
+    scope: MANDATE_SCOPE_SCHEMA,
+    budget: MANDATE_BUDGET_SCHEMA,
+    hold: closed({ onQuiescent: enumOf(QUIESCENT_BEHAVIOURS) }, []),
+  },
+  [],
+);
 
 const pinnedCondition = closed(
   { id: string, command: string, when: enumOf(CONDITION_WHENS), source: enumOf(CONDITION_SOURCES), timeoutMs: nonNegativeInteger },
@@ -208,6 +236,33 @@ const runReport = closed(
     notRun: { type: 'array', items: closed({ what: string, reason: enumOf(NOT_RUN_REASONS) }, ['what', 'reason']) },
     residualRisk: { type: 'array', items: closed({ code: enumOf(RESIDUAL_RISK_CODES), count: nonNegativeInteger }, ['code', 'count']) },
     modelChecks: { type: 'array', items: closed({ command: string, exitCode: integer, seq: nonNegativeInteger }, ['command', 'exitCode', 'seq']) },
+    budget: closed(
+      {
+        limits: closed({ maxSteps: nonNegativeInteger, maxTotalTokens: nonNegativeInteger, maxCostNano: nonNegativeInteger, deadlineAt: nonNegativeInteger }, ['deadlineAt']),
+        spent: closed({ steps: nonNegativeInteger, totalTokens: nonNegativeInteger, costNano: nonNegativeInteger, unpricedCalls: nonNegativeInteger }, ['steps', 'totalTokens', 'costNano', 'unpricedCalls']),
+        reserved: closed({ tokens: nonNegativeInteger, costNano: nonNegativeInteger }, ['tokens', 'costNano']),
+      },
+      ['limits', 'spent', 'reserved'],
+    ),
+    stoppedBy: closed({ dimension: enumOf(BUDGET_DIMENSIONS), cause: enumOf(BUDGET_CAUSES), spent: nonNegativeInteger, limit: nonNegativeInteger }, ['dimension', 'cause', 'spent', 'limit']),
+    delegation: closed(
+      {
+        held: {
+          type: 'array',
+          items: closed(
+            { callId: string, tool: string, reason: string, heldSeq: nonNegativeInteger, outcome: enumOf(HELD_OUTCOMES), status: enumOf(['completed', 'failed']), resolvedSeq: nonNegativeInteger },
+            ['callId', 'tool', 'reason', 'heldSeq'],
+          ),
+        },
+        denied: { type: 'array', items: closed({ callId: string, tool: string, source: enumOf(['mandate', 'held']), reason: string }, ['callId', 'tool', 'source', 'reason']) },
+        quiescent: { type: 'boolean' },
+      },
+      ['held', 'denied', 'quiescent'],
+    ),
+    operations: {
+      type: 'array',
+      items: closed({ callId: string, operation: string, target: string, effect: enumOf(OPERATION_EFFECT_OUTCOMES) }, ['callId', 'operation', 'target', 'effect']),
+    },
   },
   ['runId', 'status', 'durationMs', 'declaration', 'changes', 'conditions', 'notRun', 'residualRisk', 'modelChecks'],
 );
@@ -218,6 +273,8 @@ const runLimits = closed(
     maxTotalTokens: boundedInteger(1, 100_000_000),
     approvalTtlMs: boundedInteger(1000, 7 * DAY_MS),
     loopThreshold: boundedInteger(2, 20),
+    maxCostUsd: { type: 'number', minimum: 0, maximum: MAX_COST_USD },
+    maxFailedAttempts: boundedInteger(1, 100),
   },
   [],
 );
@@ -298,7 +355,7 @@ const tokenAnatomy = closed(
   ['estimated', 'total', 'layers', 'tools'],
 );
 
-const modelCost = closed({ amount: { type: 'number', minimum: 0 }, currency: constant('USD'), priceVersion: string }, ['amount', 'currency', 'priceVersion']);
+const modelCost = closed({ amount: { type: 'number', minimum: 0 }, units: { type: 'string', pattern: '^[0-9]+$' }, currency: constant('USD'), priceVersion: string }, ['amount', 'currency', 'priceVersion']);
 
 const unpricedOutcome = closed({ code: enumOf(UNPRICED_CODES), reason: string }, ['code', 'reason']);
 
@@ -351,8 +408,10 @@ const runFactsViewProperties: Record<string, JsonSchema> = {
   elapsedMs: integer,
   humanWaitMs: nonNegativeInteger,
   tokensTotal: nonNegativeInteger,
+  costNano: nonNegativeInteger,
   steps: nonNegativeInteger,
-  limits: closed({ maxSteps: nonNegativeInteger, maxTotalTokens: nonNegativeInteger }, []),
+  limits: closed({ maxSteps: nonNegativeInteger, maxTotalTokens: nonNegativeInteger, maxCostNano: nonNegativeInteger }, []),
+  delegation: closed({ held: nonNegativeInteger, resolvedByPerson: nonNegativeInteger, denied: nonNegativeInteger, waited: boolean }, ['held', 'resolvedByPerson', 'denied', 'waited']),
   deadlineAt: integer,
   asked: nonNegativeInteger,
   elicited: nonNegativeInteger,
@@ -370,7 +429,7 @@ const runFactsViewProperties: Record<string, JsonSchema> = {
 
 const runFactsView = closed(
   runFactsViewProperties,
-  Object.keys(runFactsViewProperties).filter((key) => key !== 'stopReason' && key !== 'deadlineAt'),
+  Object.keys(runFactsViewProperties).filter((key) => key !== 'stopReason' && key !== 'deadlineAt' && key !== 'delegation'),
 );
 
 type PublicPayloadKeys<Type> = Extract<PublicPayload | SessionEventPayload, { type: Type }> extends infer Payload ? (Payload extends unknown ? Exclude<keyof Payload, 'type'> : never) : never;
@@ -553,6 +612,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       added: integer,
       removed: integer,
       diffOmitted: string,
+      effect: operationEffect,
     },
     required: ['callId', 'status', 'output'],
   },
@@ -578,6 +638,19 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
   'tool.loaded': { properties: { names: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } } }, required: ['names'] },
   'tool.offered': { properties: { names: { type: 'array', items: { type: 'string', minLength: 1 } } }, required: ['names'] },
   'loop.warned': { properties: { signature: string }, required: ['signature'] },
+  'budget.exhausted': {
+    properties: { dimension: enumOf(BUDGET_DIMENSIONS), cause: enumOf(BUDGET_CAUSES), spent: nonNegativeInteger, limit: nonNegativeInteger },
+    required: ['dimension', 'cause', 'spent', 'limit'],
+  },
+  'tool.held': {
+    properties: { callId: string, approvalId: string, reason: string, footprint: closed({ reads: { type: 'array', items: string }, writes: { type: 'array', items: string } }, ['reads', 'writes']) },
+    required: ['callId', 'approvalId', 'reason', 'footprint'],
+  },
+  'tool.held.resolved': {
+    properties: { callId: string, approvalId: string, outcome: enumOf(HELD_OUTCOMES), status: enumOf(['completed', 'failed']), output: string },
+    required: ['callId', 'approvalId', 'outcome', 'status', 'output'],
+  },
+  'run.quiescent': { properties: { held: { type: 'array', items: heldCallView } }, required: ['held'] },
   'model.rejected': {
     properties: { step: nonNegativeInteger, attempt: nonNegativeInteger, reason: enumOf(MODEL_REJECTION_REASONS), counter: string, meterCounter: string, target: string },
     required: ['step', 'attempt', 'reason'],
@@ -602,7 +675,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     required: ['target', 'counter', 'fallback', 'inputDigest', 'itemCount', 'counted', 'reported', 'kept', 'known', 'uncounted', 'miss', 'contextWindow', 'tokenCounting'],
   },
   'tool.reconciled': {
-    properties: { callId: string, outcome: enumOf(['already_applied', 'not_applied', 'unknown']), output: string, interrupted: enumOf(['timeout', 'cancelled']), files: toolFiles, command: string },
+    properties: { callId: string, outcome: enumOf(['already_applied', 'not_applied', 'unknown']), output: string, interrupted: enumOf(['timeout', 'cancelled']), files: toolFiles, command: string, effect: operationEffect },
     required: ['callId', 'outcome', 'output'],
   },
   'tool.waiting': {

@@ -2,6 +2,7 @@ import type { CallStop } from './call-stop.ts';
 import type { Clock, NetworkScope, OutboundNetwork } from '@momonga/foundation';
 import type { MarkerSettle } from './marker-settle.ts';
 import type { PermissionSubject } from '@momonga/policy';
+import { OPERATION_EFFECT_OUTCOMES } from '@momonga/protocol';
 import type { DiffHunk, ElicitationRequestView, ReferenceKind, SideEffect, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { RipgrepLocator } from './ripgrep-locator.ts';
@@ -29,6 +30,7 @@ export type ToolResult = {
   skill?: SkillActivation;
   toolsLoaded?: string[];
   authorizationRequired?: { server: string };
+  effect?: OperationEffect;
   files?: ToolFile[];
   mutated?: true;
   command?: string;
@@ -119,9 +121,20 @@ export type ReconcileContext = SubjectContext & {
   update(content: ToolContent[]): void;
 };
 
+export const OPERATION_RECONCILE_OUTCOMES = ['already_applied', 'not_applied', 'unknown'] as const;
+
+export type OperationEffectOutcome = (typeof OPERATION_EFFECT_OUTCOMES)[number];
+
+export type GateFacts = Record<string, unknown>;
+
+export type GateCall = { signal: AbortSignal; env: Readonly<Record<string, string>> };
+
+export type OperationEffect = { operation: string; target: string; outcome: OperationEffectOutcome };
+
 export type ReconcileResult = {
-  outcome: 'already_applied' | 'not_applied' | 'unknown';
+  outcome: (typeof OPERATION_RECONCILE_OUTCOMES)[number];
   output: string;
+  effect?: OperationEffect;
 };
 
 export const TOOL_TIERS = ['essential', 'common', 'optional'] as const;
@@ -131,10 +144,10 @@ export type ToolTier = (typeof TOOL_TIERS)[number];
 type SubjectKind = PermissionSubject['kind'];
 
 type DeclaredSubject<Input> = {
-  [Kind in SubjectKind]: { subjectKind: Kind; subject(input: Input, ctx: SubjectContext): Extract<PermissionSubject, { kind: Kind }> };
+  [Kind in SubjectKind]: { subjectKind: Kind; subject(input: Input, ctx: SubjectContext, gateFacts?: GateFacts): Extract<PermissionSubject, { kind: Kind }> };
 }[SubjectKind];
 
-type UndeclaredSubject<Input> = { subjectKind?: never; subject(input: Input, ctx: SubjectContext): PermissionSubject };
+type UndeclaredSubject<Input> = { subjectKind?: never; subject(input: Input, ctx: SubjectContext, gateFacts?: GateFacts): PermissionSubject };
 
 export type SideEffectBinding<Input> =
   | ({ sideEffect: 'read_only' } & (DeclaredSubject<Input> | UndeclaredSubject<Input>))
@@ -167,7 +180,8 @@ export type ToolBody<Input> = {
   stopText?(stop: ToolStop): Promise<string>;
   title(input: Input, ctx: DisplayContext): string;
   locations?(input: Input, ctx: DisplayContext): { path: string; line?: number }[];
-  prepare?(input: Input, ctx: ToolContext): Promise<Record<string, unknown>>;
+  gateFacts?(input: Input, ctx: SubjectContext, call: GateCall): Promise<GateFacts>;
+  prepare?(input: Input, ctx: ToolContext, gateFacts?: GateFacts): Promise<Record<string, unknown>>;
   execute(input: Input, ctx: ToolContext, prepared: Record<string, unknown> | undefined): Promise<ToolResult | ToolPending>;
   reconcile?(input: Input, record: ToolIdempotencyRecord, ctx: ReconcileContext): Promise<ReconcileResult>;
   releaseCheckpoint?(checkpoint: Record<string, unknown>, ctx: { signal: AbortSignal }): Promise<void>;

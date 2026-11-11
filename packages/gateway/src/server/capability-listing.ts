@@ -39,6 +39,7 @@ const memberEntryOf = (target: TargetRuntime, capabilities: ListedCapabilities<C
   model: target.name,
   counter: target.counter,
   billing: target.billing,
+  provider: target.provider,
   adapter: target.kind,
   answers: target.answers,
   upstream: target.model,

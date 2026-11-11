@@ -6,6 +6,7 @@ import { bodyDigest, finalSummaryInstruction, makeEnv, modelKey } from './harnes
 import type { Env } from './harness.ts';
 import { callsStep, failedStep, functionCallItem, textStep } from './scripts.ts';
 import type { ScriptStep } from './fake-gateway.ts';
+import { SUMMARY_ONLY_LIMIT, summaryOnlyBudget } from './token-budget.ts';
 
 type ErrorFields = ConstructorParameters<typeof GatewayRequestError>[0];
 
@@ -13,15 +14,19 @@ const thrown = (fields: ErrorFields): ScriptStep => ({ events: [], error: new Ga
 
 const REJECTED = { status: 400, type: 'invalid_request', code: 'context_window_exceeded', message: 'the prompt is longer than the model accepts' } satisfies ErrorFields;
 
-type WrapUpPath = { label: string; reason: 'max_steps' | 'budget'; limits: Record<string, number>; first: () => ScriptStep };
+type WrapUpPath = { label: string; reason: 'max_steps' | 'budget'; prepare: () => Promise<{ limits: Record<string, number>; first: ScriptStep }> };
+
+const echoX = (callId: string) => ({ callId, name: 'Echo', args: { value: 'x' } });
 
 const PATHS: WrapUpPath[] = [
-  { label: 'max_steps', reason: 'max_steps', limits: { maxSteps: 1 }, first: () => callsStep([{ callId: 'call_w_1', name: 'Echo', args: { value: 'x' } }]) },
+  { label: 'max_steps', reason: 'max_steps', prepare: async () => ({ limits: { maxSteps: 1 }, first: callsStep([echoX('call_w_1')]) }) },
   {
     label: 'maxTotalTokens',
     reason: 'budget',
-    limits: { maxTotalTokens: 100 },
-    first: () => callsStep([{ callId: 'call_w_1', name: 'Echo', args: { value: 'x' } }], usageOf(100, 10)),
+    prepare: async () => {
+      const budget = await summaryOnlyBudget();
+      return { limits: budget.limits, first: callsStep([echoX('call_w_1')], budget.usageUpTo()) };
+    },
   },
 ];
 
@@ -30,9 +35,10 @@ const noticesOf = (env: Env, runId: string): string[] => env.ofType(runId, 'noti
 const sameJson = (left: unknown, right: unknown): boolean => canonicalJson(left) === canonicalJson(right);
 
 describe('wrap-up request of the max_steps and maxTotalTokens paths', () => {
-  it.for(PATHS)('sends no tools and counts the trailing user instruction on the $label path', async ({ reason, limits, first }) => {
+  it.for(PATHS)('sends no tools and counts the trailing user instruction on the $label path', async ({ reason, prepare }) => {
+    const { limits, first } = await prepare();
     const env = await makeEnv();
-    env.gateway.script.push(first(), textStep('Summary.'));
+    env.gateway.script.push(first, textStep('Summary.'));
     const run = env.enqueue('Work', { limits });
 
     await env.runOnce(env.worker());
@@ -53,9 +59,10 @@ describe('wrap-up request of the max_steps and maxTotalTokens paths', () => {
 });
 
 describe('a 4xx on the wrap-up call stops the run with the original stop reason', () => {
-  it.for(PATHS)('ends STOPPED with the $label reason and the gateway code in a notice', async ({ reason, limits, first }) => {
+  it.for(PATHS)('ends STOPPED with the $label reason and the gateway code in a notice', async ({ reason, prepare }) => {
+    const { limits, first } = await prepare();
     const env = await makeEnv();
-    env.gateway.script.push(first(), thrown(REJECTED), textStep('never sent'));
+    env.gateway.script.push(first, thrown(REJECTED), textStep('never sent'));
     const run = env.enqueue('Work', { limits });
 
     await env.runOnce(env.worker());
@@ -84,28 +91,45 @@ describe('a 4xx on the wrap-up call stops the run with the original stop reason'
     expect(noticesOf(env, run.id).some((message) => message.includes(fields.code))).toBe(true);
   });
 
-  it('computes the reason as max_steps when the step limit and the token budget are both reached', async () => {
+  it('computes the reason as max_steps when the step limit is reached and the tokens left hold only the summary', async () => {
+    const budget = await summaryOnlyBudget();
     const env = await makeEnv();
-    env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Echo', args: { value: 'x' } }], usageOf(100, 10)), thrown(REJECTED));
-    const run = env.enqueue('Work', { limits: { maxSteps: 1, maxTotalTokens: 100 } });
+    env.gateway.script.push(callsStep([echoX('call_w_1')], budget.usageUpTo()), thrown(REJECTED));
+    const run = env.enqueue('Work', { limits: { maxSteps: 1, ...budget.limits } });
 
     await env.runOnce(env.worker());
 
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'max_steps' });
+    expect(env.ofType(run.id, 'budget.exhausted')).toEqual([expect.objectContaining({ dimension: 'steps', cause: 'limit', spent: 1, limit: 1 })]);
+    expect(env.gateway.streams).toHaveLength(2);
+  });
+
+  it('stops with max_steps and sends no summary when the step limit is reached and the tokens left hold no request', async () => {
+    const env = await makeEnv();
+    env.gateway.script.push(callsStep([echoX('call_w_1')], usageOf(10, SUMMARY_ONLY_LIMIT - 10)), textStep('never sent'));
+    const run = env.enqueue('Work', { limits: { maxSteps: 1, maxTotalTokens: SUMMARY_ONLY_LIMIT } });
+
+    await env.runOnce(env.worker());
+
+    expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'max_steps' });
+    expect(env.ofType(run.id, 'budget.exhausted')).toEqual([expect.objectContaining({ dimension: 'steps', cause: 'limit' })]);
+    expect(env.gateway.streams).toHaveLength(1);
   });
 
   it('computes the reason as budget when the budget is reached before the step limit', async () => {
+    const budget = await summaryOnlyBudget();
     const env = await makeEnv();
     env.gateway.script.push(
       callsStep([{ callId: 'call_w_1', name: 'Echo', args: { value: 'x' } }], usageOf(10, 5)),
-      callsStep([{ callId: 'call_w_2', name: 'Echo', args: { value: 'y' } }], usageOf(100, 10)),
+      callsStep([{ callId: 'call_w_2', name: 'Echo', args: { value: 'y' } }], budget.usageUpTo(15)),
       thrown(REJECTED),
     );
-    const run = env.enqueue('Work', { limits: { maxSteps: 5, maxTotalTokens: 100 } });
+    const run = env.enqueue('Work', { limits: { maxSteps: 5, ...budget.limits } });
 
     await env.runOnce(env.worker());
 
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'budget' });
+    expect(env.ofType(run.id, 'budget.exhausted')).toEqual([expect.objectContaining({ dimension: 'tokens', cause: 'cap_too_small', limit: budget.limits.maxTotalTokens })]);
     expect(env.gateway.streams).toHaveLength(3);
   });
 });
@@ -179,25 +203,30 @@ describe('wrap-up dispositions: one rule decides what is requeued', () => {
 describe('stop reason boundary of a rejected wrap-up call', () => {
   it.for([
     {
-      label: 'a wrap-up at step 2 with maxSteps 2 after the budget was reached at step 1 stops with budget',
-      limits: { maxSteps: 2, maxTotalTokens: 100 },
-      steps: () => [callsStep([{ callId: 'call_b_1', name: 'Echo', args: { value: 'x' } }], usageOf(100, 10))],
+      label: 'a wrap-up at step 2 with maxSteps 2 after the token limit left room for the summary only at step 1 stops with budget',
+      prepare: async () => {
+        const budget = await summaryOnlyBudget();
+        return { limits: { maxSteps: 2, ...budget.limits }, steps: [callsStep([{ callId: 'call_b_1', name: 'Echo', args: { value: 'x' } }], budget.usageUpTo())] };
+      },
       reason: 'budget',
       wrapUpStep: 2,
     },
     {
       label: 'a wrap-up at step 3 with maxSteps 2 stops with max_steps',
-      limits: { maxSteps: 2 },
-      steps: () => [
-        callsStep([{ callId: 'call_m_1', name: 'Echo', args: { value: 'x' } }], usageOf(10, 5)),
-        callsStep([{ callId: 'call_m_2', name: 'Echo', args: { value: 'y' } }], usageOf(10, 5)),
-      ],
+      prepare: async () => ({
+        limits: { maxSteps: 2 },
+        steps: [
+          callsStep([{ callId: 'call_m_1', name: 'Echo', args: { value: 'x' } }], usageOf(10, 5)),
+          callsStep([{ callId: 'call_m_2', name: 'Echo', args: { value: 'y' } }], usageOf(10, 5)),
+        ],
+      }),
       reason: 'max_steps',
       wrapUpStep: 3,
     },
-  ])('$label', async ({ limits, steps, reason, wrapUpStep }) => {
+  ])('$label', async ({ prepare, reason, wrapUpStep }) => {
+    const { limits, steps } = await prepare();
     const env = await makeEnv();
-    env.gateway.script.push(...steps(), thrown(REJECTED));
+    env.gateway.script.push(...steps, thrown(REJECTED));
     const run = env.enqueue('Work', { limits });
 
     await env.runOnce(env.worker());

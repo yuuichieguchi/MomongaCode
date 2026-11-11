@@ -20,6 +20,7 @@ import type {
   UsageSource,
 } from '@momonga/protocol';
 import { modelCostOf, pricingFieldsOf } from './model-cost.ts';
+import { requireWithinCostCeiling } from './quote.ts';
 import { MOMONGA_SPAN_NOTES, TERMINAL_STREAM_EVENT_TYPES, carriesOutput, isReasoningEffort, wireUsageOf } from '@momonga/protocol';
 import { startAttemptSpan } from './attempt-span.ts';
 import type { AttemptSpan, TraceParent } from './attempt-span.ts';
@@ -162,6 +163,12 @@ const openAttempt = async (
   signal: AbortSignal,
   call: CallIdentity,
 ): Promise<Opened> => {
+  requireWithinCostCeiling(
+    { ceilingNano: job.body.momonga?.max_cost_nano, inputBound: job.body.momonga?.max_input_tokens, outputBound: job.body.max_output_tokens },
+    target,
+    services.priceTable,
+    services.clock.now(),
+  );
   const release = await target.gate.acquire(signal);
   const startSpan = (retryOf?: number): AttemptSpan =>
     startAttemptSpan({

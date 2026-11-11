@@ -67,7 +67,7 @@ import { UNSTORED_TUI_SETTINGS, useAttention } from './screen/notify.ts';
 import type { NotifyMode, TuiSettingsPort } from './screen/notify.ts';
 import { UNREPORTED_COLOUR_HOST, appearanceOf, applyAppearance, applyTheme } from './screen/theme.ts';
 import type { ColourHost, ThemeId } from './screen/theme.ts';
-import { appendEntry, BANNER_KEY, foldChildEvent, foldLiveEvent, foldReplayedEvent, nextMode, runCreated, runLeft, sessionTokens, setThoughtWindow, shownRunPhase, subagentEnded, subagentStarted, thoughtWindowOf } from './transcript.ts';
+import { appendEntry, BANNER_KEY, foldChildEvent, foldLiveEvent, foldReplayedEvent, blockingPrompt, nextMode, runCreated, runLeft, sessionTokens, setThoughtWindow, shownRunPhase, subagentEnded, subagentStarted, thoughtWindowOf } from './transcript.ts';
 import type { Entry } from './transcript.ts';
 import { attachmentDigest } from '../handover/record.ts';
 import type { HandoverAttachment, HandoverInput, HandoverNote } from '../handover/record.ts';
@@ -1424,7 +1424,7 @@ export function App(props: AppProps) {
   const invitationInMenu = menuShown && phase.kind === 'ready' && invitationShown;
   const waiting = waitingOf({
     startingSince: phase.kind === 'starting' ? openedAt : undefined,
-    prompting: transcript.approval !== undefined || transcript.elicitation !== undefined,
+    prompting: blockingPrompt(transcript),
     reconnectingSince: phase.kind === 'ready' ? reconnectingSince : undefined,
     run: phase.kind === 'ready' ? shownRunPhase(transcript) : undefined,
     command: commands.at(-1),

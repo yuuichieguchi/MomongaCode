@@ -1,7 +1,7 @@
 import type { MomongaPaths } from '@momonga/foundation';
 import { findProgramOnPath, systemTiming } from '@momonga/foundation';
 import type { FileCandidates } from '@momonga/foundation';
-import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView } from '@momonga/protocol';
+import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView } from '@momonga/protocol';
 import { editSettings, readSettingsSnapshot } from '@momonga/config';
 import type { SettingsLayer, SettingsOperation, SettingsSnapshot } from '@momonga/config';
 import { programModelOf, serversDetector } from '../commands/models.ts';
@@ -44,7 +44,7 @@ export type FollowHandlers = {
 
 export type ListedSession = { id: string; createdAt: number; runs: number; firstPrompt: string };
 
-export type StartRunOptions = { skill?: string; images?: readonly ImageAttachment[]; attachMentions?: boolean };
+export type StartRunOptions = { skill?: string; images?: readonly ImageAttachment[]; attachMentions?: boolean; mandate?: Mandate };
 
 export type UserInputBackend = {
   fileCandidates(signal: AbortSignal): Promise<FileCandidates>;
