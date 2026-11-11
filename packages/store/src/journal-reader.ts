@@ -157,7 +157,7 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
     return run;
   };
 
-  const runEventsPage = db.prepare('SELECT * FROM events WHERE run_id = :runId AND seq > :after AND seq <= :through ORDER BY seq LIMIT :pageEvents');
+  const runEventsPage = db.prepare('SELECT * FROM events WHERE run_id = :runId AND seq > :after AND seq <= :through ORDER BY seq');
 
   const runState: JournalReader['runState'] = async (runId, { pageEvents, pause }) => {
     const run = readTx(db, () => {
@@ -167,7 +167,7 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
     });
     let state = initialRunState({ runId: run.id, sessionId: run.sessionId });
     while (state.lastSeq < run.lastSeq) {
-      const events = decodeEach(runEventsPage.iterate({ runId, after: state.lastSeq, through: run.lastSeq, pageEvents }));
+      const events = decodeEach(runEventsPage.iterate({ runId, after: state.lastSeq, through: Math.min(run.lastSeq, state.lastSeq + pageEvents) }));
       if (events.length === 0) throw new Error(`run ${runId} has no event after seq ${state.lastSeq}, below its last seq ${run.lastSeq}`);
       state = events.reduce(foldRunState, state);
       await pause();
