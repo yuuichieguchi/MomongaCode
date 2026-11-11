@@ -59,6 +59,7 @@ export type Telemetry = {
   captureMessageContent: boolean;
   propagation: TracePropagation;
   forceFlush(): Promise<void>;
+  flushLocal(): Promise<void>;
   shutdown(): Promise<void>;
 };
 
@@ -86,14 +87,15 @@ export const createTelemetry = (options: TelemetryOptions): Telemetry => {
   }
   const batch = options.batch ?? {};
   const storeExporter = store === undefined ? undefined : createTraceStoreExporter(store, bodyCapture);
-  const exporters = [...(options.exporters ?? []), ...(storeExporter === undefined ? [] : [storeExporter])];
+  const remoteProcessors = (options.exporters ?? []).map((exporter) => new BatchSpanProcessor(batchProcessorOptions(exporter, batch)));
+  const storeProcessor = storeExporter === undefined ? undefined : new BatchSpanProcessor(batchProcessorOptions(storeExporter, batch));
 
   const provider = new TracerProvider({
     resource: resourceFromAttributes({
       [ATTR_SERVICE_NAME]: options.serviceName,
       [ATTR_SERVICE_VERSION]: options.serviceVersion,
     }),
-    spanProcessors: exporters.map((exporter) => new BatchSpanProcessor(batchProcessorOptions(exporter, batch))),
+    spanProcessors: [...remoteProcessors, ...(storeProcessor === undefined ? [] : [storeProcessor])],
   });
   const tracer = createClockedTracer(
     provider.getTracer(INSTRUMENTATION_SCOPE_NAME, undefined, { schemaUrl: GENAI_SEMCONV.schemaUrl }),
@@ -118,6 +120,10 @@ export const createTelemetry = (options: TelemetryOptions): Telemetry => {
       } catch (error) {
         reportError(error);
       }
+      await storeExporter?.forceFlush?.();
+    },
+    flushLocal: async () => {
+      await storeProcessor?.forceFlush();
       await storeExporter?.forceFlush?.();
     },
     shutdown: () => {

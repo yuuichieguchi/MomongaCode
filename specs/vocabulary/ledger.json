@@ -10,9 +10,6 @@
       "packages/cli/src/commands/report.ts": {
         "limit": 2
       },
-      "packages/cli/src/models-texts.ts": {
-        "gateway": 1
-      },
       "packages/eval/src/context-improve.ts": {
         "benchmark": 5,
         "cap": 4
@@ -229,9 +226,8 @@
         "profile": 3
       },
       "packages/config/src/plan-profiles.ts": {
-        "limit": 2,
-        "profile": 5,
-        "target": 1
+        "limit": 1,
+        "profile": 5
       },
       "packages/config/src/project-mandate.ts": {
         "project": 2
@@ -505,7 +501,7 @@
         "target": 1
       },
       "packages/protocol/src/capabilities.ts": {
-        "target": 2
+        "target": 1
       },
       "packages/protocol/src/reliability.ts": {
         "limit": 2,

@@ -6,6 +6,7 @@ import { SNAPSHOT_STATE_VERSION, decodeEvent } from '../src/codec.ts';
 import { enqueue, harness, mustClaim, newSession, rawDb } from './helpers.ts';
 import { encodedRunState, foldedRunState } from './run-state-codec.ts';
 import { callItem, foldOf, requested, responded, task, toolCall, toolDone } from './inherit-fixtures.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const ENVELOPE = { id: 9, runId: 'r1', sessionId: 's1', seq: 5, step: 1, leaseToken: 1, createdAt: 10 };
 
@@ -41,7 +42,7 @@ describe('the token events in the journal', () => {
 
 describe('the token state of a run', () => {
   it('starts with no loaded tools and no loop warning', () => {
-    const state = initialRunState({ runId: 'r1', sessionId: 's1' });
+    const state = initialRunState({ runId: 'r1', sessionId: 's1', fence: TEST_FENCE });
     expect(state.loadedTools).toEqual([]);
     expect(state.loopWarned).toBeUndefined();
   });
@@ -115,7 +116,7 @@ const storedSnapshot = async () => {
   const claim = mustClaim(store, 'w1');
   expect(store.append(claim, JOURNAL).kind).toBe('ok');
   const events: RunEvent[] = store.readRunEvents(run.id, 0, 1000);
-  const state = events.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));
+  const state = events.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId, fence: store.getSession(run.sessionId)?.fenceNonce ?? '' }));
   const encoded = encodedRunState(state);
   return { store, run, state, events, mutate: encoded.mutate, storedJson: encoded.json, read: encoded.read };
 };

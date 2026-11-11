@@ -7,6 +7,7 @@ import type { ClaimContext } from '../../src/worker/claim-context.ts';
 import { buildNext } from '../../src/worker/context-step.ts';
 import { WRAPUP_INSTRUCTIONS_VERSION, wrapUpInstructionFor } from '../../src/worker/wrap-up.ts';
 import { capabilitiesFor } from './harness.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const SYSTEM_PROMPT = 'You are the wrap-up test agent.';
 const TASK_TEXT = 'Do the work.';
@@ -15,7 +16,7 @@ const ECHO_TOOL: FunctionTool = { type: 'function', name: 'Echo', description: '
 const tokensOf = (value: unknown): number => Math.ceil(canonicalJson(value).length / 4);
 
 const stateWithHistory = (): RunState => ({
-  ...initialRunState({ runId: 'run_wrap', sessionId: 'session_wrap' }),
+  ...initialRunState({ runId: 'run_wrap', sessionId: 'session_wrap', fence: TEST_FENCE }),
   step: 1,
   taskSeq: 1,
   history: [

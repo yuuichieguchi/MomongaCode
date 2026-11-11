@@ -3,7 +3,7 @@ import { defineTool } from '@momonga/tools';
 import type { CallOutputFit } from '@momonga/tools';
 import { itemCapFor } from '@momonga/context';
 import { canonicalJson } from '@momonga/foundation';
-import { envelopeOf, tokensForText } from '@momonga/protocol';
+import { TOOL_OUTPUT_TAG, fenceUntrusted, tokensForText } from '@momonga/protocol';
 import { inputTokensOf, tokensOfText } from './fake-gateway.ts';
 import { START_MS, capabilitiesFor, makeEnv, toolKey } from './harness.ts';
 import { callsStep, functionCallItem, requestedOffering, textStep } from './scripts.ts';
@@ -35,8 +35,8 @@ const dumpTool = defineTool<Record<string, unknown>>({
   },
 });
 
-const journaledTokens = (output: string, callId: string): number =>
-  tokensOfText(canonicalJson({ type: 'function_call_output', call_id: callId, output: envelopeOf({ content: output, callId, tool: 'Dump' }) }));
+const journaledTokens = (output: string, callId: string, fence: string): number =>
+  tokensOfText(canonicalJson({ type: 'function_call_output', call_id: callId, output: fenceUntrusted(TOOL_OUTPUT_TAG, { call: callId, tool: 'Dump' }, output, fence) }));
 
 const longestFitting = async (fits: (text: string) => Promise<boolean>, tokensOf: (text: string) => number, cap: number): Promise<string> => {
   let low = 1;
@@ -69,13 +69,16 @@ describe('output fit from the pinned floor', () => {
     const [completed] = env.ofType(run.id, 'tool.completed');
     expect(completed?.truncated).toBe(true);
     const callId = completed?.callId ?? '';
-    expect(journaledTokens(completed?.output ?? '', callId)).toBeLessThanOrEqual(itemCap);
-    expect(journaledTokens(completed?.output ?? '', callId)).toBeGreaterThan(itemCap / 2);
+    const session = env.store.getSession(run.sessionId);
+    expect(session).toBeDefined();
+    const fence = session?.fenceNonce ?? '';
+    expect(journaledTokens(completed?.output ?? '', callId, fence)).toBeLessThanOrEqual(itemCap);
+    expect(journaledTokens(completed?.output ?? '', callId, fence)).toBeGreaterThan(itemCap / 2);
     expect(completed?.output).toContain(completed?.handle);
     const [batch] = env.batches;
     expect(typeof batch?.outputFit.ready).toBe('function');
     expect(seenFits).toHaveLength(1);
-    await longestFitting((text) => (seenFits[0] as CallOutputFit).fits(text), (text) => journaledTokens(text, callId), itemCap);
+    await longestFitting((text) => (seenFits[0] as CallOutputFit).fits(text), (text) => journaledTokens(text, callId, fence), itemCap);
   });
 
   it('keeps an output that fits the item cap as it is, with no handle', async () => {

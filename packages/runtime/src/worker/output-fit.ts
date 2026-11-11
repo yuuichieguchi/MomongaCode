@@ -19,10 +19,10 @@ const outputFitOf = (input: { count: CallCount; itemCap: () => Promise<number> }
   };
 };
 
-export const meteredOutputFit = (input: { meter: TokenMeter; itemCap: () => Promise<number>; harnessTools: ReadonlySet<string> }): OutputFit =>
+export const meteredOutputFit = (input: { meter: TokenMeter; itemCap: () => Promise<number>; harnessTools: ReadonlySet<string>; fence: string }): OutputFit =>
   outputFitOf({
     count: (text, call) =>
-      input.meter.countItem(outputRenderOf({ type: 'function_call_output', call_id: call.callId, output: text }, call.tool, input.harnessTools, false).full, {
+      input.meter.countItem(outputRenderOf({ type: 'function_call_output', call_id: call.callId, output: text }, call.tool, input.harnessTools, false, input.fence).full, {
         callNames: { [call.callId]: call.tool },
         withTools: true,
       }),

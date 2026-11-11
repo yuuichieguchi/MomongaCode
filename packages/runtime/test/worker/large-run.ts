@@ -4,6 +4,7 @@ import { foldRunState, initialRunState } from '@momonga/store';
 import type { Claim, Run } from '@momonga/store';
 import type { Env } from './harness.ts';
 import { functionCallItem } from './scripts.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 export const OUTPUT_CHARS = 30_000;
 export const MEMORIES = 40;
@@ -109,7 +110,7 @@ export const seedLargeRun = async (env: Env, steps: number): Promise<LargeRun> =
 };
 
 export const foldedThrough = (env: Env, run: Run, throughSeq: number): RunState => {
-  let state = initialRunState({ runId: run.id, sessionId: run.sessionId });
+  let state = initialRunState({ runId: run.id, sessionId: run.sessionId, fence: TEST_FENCE });
   while (state.lastSeq < throughSeq) {
     const events = env.store.readRunEvents(run.id, state.lastSeq, Math.min(FOLD_CHUNK_EVENTS, throughSeq - state.lastSeq));
     if (events.length === 0) throw new Error(`run ${run.id} has no event after seq ${state.lastSeq}`);

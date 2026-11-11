@@ -97,7 +97,7 @@ describe('the adapter applies the profile errorRules and their credential effect
   it('a classification that pauses and carries no code is refused', async () => {
     const auth = fakeAuth({ renew: false });
     const clock = createFakeClock(START_MS);
-    await expect(applyCredentialEffect(auth, { credential: 'pause', error: { code: null } } as never, clock, new AbortController().signal)).rejects.toThrow('a classification that pauses the credential carries no code');
+    await expect(applyCredentialEffect(auth, { credential: 'pause', error: { code: null } } as never, clock, new AbortController().signal)).rejects.toThrow('a classification whose credential effect is pause carries no code');
     expect(auth.pauses).toEqual([]);
   });
 });

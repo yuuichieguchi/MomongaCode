@@ -5,6 +5,7 @@ import type { Claim, RuntimeStore } from '@momonga/store';
 import { START_MS, TIMEOUT_MS, harness, mustClaim, newSession } from './helpers.ts';
 import { foldedRunState, roundTripped } from './run-state-codec.ts';
 import { assistantItem } from './inherit-fixtures.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const IDS = { runId: 'run-1', sessionId: 'sess-1' };
 const USAGE = { input_tokens: 10, output_tokens: 2, total_tokens: 12 };
@@ -13,7 +14,7 @@ const foldAll = (payloads: readonly RunEventPayload[]): RunState =>
   payloads.reduce<RunState>(
     (state, payload, index) =>
       foldRunState(state, { ...payload, id: index + 1, ...IDS, seq: index + 1, step: 0, leaseToken: 1, createdAt: START_MS } as RunEvent),
-    initialRunState(IDS),
+    initialRunState({ ...IDS, fence: TEST_FENCE }),
   );
 
 const createRun = async (store: RuntimeStore, sessionId: string, skill?: { name: string; content: string }) => {
@@ -40,7 +41,7 @@ const finish = async (store: RuntimeStore, claim: Claim): Promise<void> => {
 
 describe('skill.activated in the fold', () => {
   it('starts without activated skills', () => {
-    expect(initialRunState(IDS).activatedSkills).toEqual([]);
+    expect(initialRunState({ ...IDS, fence: TEST_FENCE }).activatedSkills).toEqual([]);
   });
 
   it('records each skill once and keeps the first content', () => {
@@ -93,7 +94,7 @@ describe('skill inheritance across runs of a session', () => {
     const events = store.readRunEvents(second.id, 0, 100);
     const inherited = events.find((event) => event.type === 'context.inherited');
     expect(inherited).toMatchObject({ activatedSkills: [{ name: 'pdf', content: 'pdf body' }] });
-    const state = events.reduce(foldRunState, initialRunState({ runId: second.id, sessionId: second.sessionId }));
+    const state = events.reduce(foldRunState, initialRunState({ runId: second.id, sessionId: second.sessionId, fence: TEST_FENCE }));
     expect(state.activatedSkills).toEqual([
       { name: 'pdf', content: 'pdf body', seq: 3 },
       { name: 'review', content: 'review body', seq: 2 },
@@ -107,7 +108,7 @@ describe('skill inheritance across runs of a session', () => {
     await finish(store, mustClaim(store, 'w1'));
     const second = await createRun(store, session.id, { name: 'pdf', content: 'changed body' });
     await store.inheritContext(mustClaim(store, 'w1'), { mode: 'manual' });
-    const state = store.readRunEvents(second.id, 0, 100).reduce(foldRunState, initialRunState({ runId: second.id, sessionId: second.sessionId }));
+    const state = store.readRunEvents(second.id, 0, 100).reduce(foldRunState, initialRunState({ runId: second.id, sessionId: second.sessionId, fence: TEST_FENCE }));
     expect(state.activatedSkills).toEqual([{ name: 'pdf', content: 'pdf body', seq: 3 }]);
   });
 
@@ -129,7 +130,7 @@ describe('skill snapshots', () => {
     const { store } = harness();
     const run = await createRun(store, newSession(store).id, { name: 'pdf', content: 'pdf body' });
     const events = store.readRunEvents(run.id, 0, 100);
-    const state = events.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));
+    const state = events.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId, fence: TEST_FENCE }));
     expect(roundTripped(state)?.activatedSkills).toEqual([{ name: 'pdf', content: 'pdf body', seq: 2 }]);
   });
 });
