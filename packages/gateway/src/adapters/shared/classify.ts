@@ -66,6 +66,7 @@ const OUTBOUND_CODES: Readonly<Record<OutboundConnectionError['failure']['kind']
   'origin-certificate': 'certificate_untrusted',
   'ca-file': 'ca_file_unreadable',
   'origin-connection': 'adapter_error',
+  'not-loopback': 'adapter_error',
 };
 
 export const isConnectionFailure = (error: unknown): boolean => {

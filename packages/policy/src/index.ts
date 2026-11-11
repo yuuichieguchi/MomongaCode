@@ -21,7 +21,7 @@ export { computeFileRules, fileRuleSpecsOf } from './file-rules.ts';
 export type { DecisionKind, OperationApproval, PermissionSubject, PolicyTool } from './types.ts';
 export { modelVisibleTools } from './visible-tools.ts';
 export type { VisibleToolsOptions } from './visible-tools.ts';
-export { suggestAllowRule } from './suggest-allow-rule.ts';
+export { suggestAllowRule, suggestNetworkRule } from './suggest-allow-rule.ts';
 export { absoluteFrom } from './path-match.ts';
 export { MAX_APPROVABLE_COMMAND_CHARS, MAX_GLOB_MATCHES } from './approval.ts';
 export { commandSpecsFor, systemProgramDirectories, userlandOf } from './platform-specs.ts';

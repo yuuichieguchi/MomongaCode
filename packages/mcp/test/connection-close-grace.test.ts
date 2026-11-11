@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createManagedConnection } from '@momonga/mcp';
 import { KILL_CONFIRM_MS, isProcessAlive, nodeFileSystem } from '@momonga/foundation';
 import type { Timing } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, killPidsForCleanup, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, killPidsForCleanup, waitFor, TEST_STDIO_LAUNCH } from '@momonga/testkit';
 
 const STUBBORN_SERVER = path.join(import.meta.dirname, 'fixtures', 'stubborn-stdio-server.ts');
 const poolCloseBoundMs = (graceMs: number): number => 6 * graceMs + 3 * 25 + 2 * KILL_CONFIRM_MS;
@@ -50,7 +50,7 @@ describe('a connection closed during its handshake (R5, R6)', () => {
       }) as Timing['setTimeout'],
       clearTimeout: ((handle: unknown) => timers.clearTimeout(handle)) as Timing['clearTimeout'],
     };
-    const connection = createManagedConnection({ files: nodeFileSystem,
+    const connection = createManagedConnection({ launch: TEST_STDIO_LAUNCH, files: nodeFileSystem,
       clientVersion: '0.0.0-test',
       name: 'stubborn',
       config: { command: process.execPath, args: [STUBBORN_SERVER, 'ignore-stdin', `--pid-file=${pidFile}`] },

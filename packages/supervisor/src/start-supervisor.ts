@@ -1,3 +1,4 @@
+import { syncPaths } from '@momonga/foundation';
 import path from 'node:path';
 import type fs from 'node:fs';
 import { createStopValuesReader, createUserSettingsCache, noKeptRecords, stopValuesOfSettings, userSettingsChangeKey, writeAppliedRecord } from '@momonga/config';
@@ -23,6 +24,10 @@ import {
   systemClock,
   systemRandom,
   writeStopRecord,
+  SECRET_BACKEND_ENV,
+  SECRET_PROGRAM_ENV,
+  SECRET_REFUSAL_ENV,
+  secretStoreEnvFor,
 } from '@momonga/foundation';
 import type { AbandonReason, AtomicWriteFileSystem, Clock, GenerationRole, JsonLogger, KernelLockMechanism, ProcessLock, ReadyFields, StopValues, Timing, TextStream, ProcessInspector } from '@momonga/foundation';
 import type { SupervisorHealth, SupervisorPhase } from '@momonga/protocol';
@@ -56,6 +61,7 @@ import {
   supervisorBackgroundFailed,
   supervisorBackgroundTransient,
   writeEvent,
+  secretStoreChosen,
 } from './log-events.ts';
 import { omitUndefined } from './omit-undefined.ts';
 import type { MarkerPorts } from './orphans.ts';
@@ -170,12 +176,14 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
   const { startupTimeoutMs } = resolveStartTiming(options);
   const env = { ...(options.env ?? process.env) };
   const homePaths = momongaPaths(canonicalHome, process.platform, env);
+  const secretStoreEnv = secretStoreEnvFor(env, { platform: process.platform, uid: process.getuid?.(), realPathOf: (file) => syncPaths.canonicalPath(file) });
   const paths = scopeToGeneration(homePaths, options.generation);
   const { lockMechanism, inspector } = options;
   const lockOptions = { mechanism: lockMechanism };
   const processStartedAt = clock.now();
   const startedAt = new Date(processStartedAt).toISOString();
   const log = writeEvent.bind(undefined, logger);
+  log(secretStoreChosen({ backend: secretStoreEnv[SECRET_BACKEND_ENV] ?? null, program: secretStoreEnv[SECRET_PROGRAM_ENV] ?? null, refusal: secretStoreEnv[SECRET_REFUSAL_ENV] ?? null }));
   const sleep = (ms: number): Promise<void> => new Promise<void>((resolve) => timers.setTimeout(resolve, ms));
 
   const own = generationLayout(canonicalHome, options.generation);
@@ -329,6 +337,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         endpoint: roleEndpoint(own, childRole),
         launcher: options.launcher,
         env,
+        secretStoreEnv,
         spawn: options.spawn,
         settings,
         signal: lifetime.signal,

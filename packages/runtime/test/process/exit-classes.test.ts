@@ -2,7 +2,7 @@ import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/config';
-import { EXIT_ALREADY_RUNNING, EXIT_CONFIG, EXIT_FAILURE, FIRST_GENERATION, ProcessLockHeldError, ensureGenerationDirs, ensureMomongaDirs } from '@momonga/foundation';
+import { EXIT_ALREADY_RUNNING, EXIT_CONFIG, EXIT_FAILURE, FIRST_GENERATION, ProcessLockHeldError, ensureMomongaDirs } from '@momonga/foundation';
 import { trackGroup, writeInvalidUserSettings, writeUserSettings, onCleanup } from './helpers.ts';
 import { RUNTIME_VERSION, captureStream, failureOf, hookLogger, launchRuntime, makeRunHome, runtimeAlreadyRunningError, startRuntimeProcess, startStack } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
@@ -45,7 +45,7 @@ describe('exit classes of startRuntimeProcess errors (system timers)', () => {
     const temp = makeRunHome();
     writeUserSettings(temp.home, { sandbox: 'none' });
     await ensureMomongaDirs(temp.paths);
-    await ensureGenerationDirs(temp.paths, FIRST_GENERATION);
+    fs.mkdirSync(firstGeneration(temp.paths).dir, { mode: 0o700 });
     const holder = (await startLockHolder(context, `${firstGeneration(temp.paths).sockets.runtime}.lock`)).pid;
     const error = await startFailure(temp);
     expect(error).toBeInstanceOf(ProcessLockHeldError);
@@ -64,7 +64,7 @@ describe('exit classes of startRuntimeProcess errors (system timers)', () => {
     const occupied = makeRunHome();
     writeUserSettings(occupied.home, { sandbox: 'none' });
     await ensureMomongaDirs(occupied.paths);
-    await ensureGenerationDirs(occupied.paths, FIRST_GENERATION);
+    fs.mkdirSync(firstGeneration(occupied.paths).dir, { mode: 0o700 });
     fs.writeFileSync(firstGeneration(occupied.paths).sockets.runtime, 'not a socket');
     const other = await startFailure(occupied);
     expect(other).toBeInstanceOf(Error);

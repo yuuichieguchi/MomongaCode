@@ -7,7 +7,7 @@ const callIdsOf = (input: unknown[]): string[] =>
   (input as Array<{ type: string; call_id?: string }>).filter((item) => item.call_id !== undefined).map((item) => item.call_id as string);
 
 describe('function call ids', () => {
-  it('rewrites provider call ids per response and keeps chained history unambiguous', async () => {
+  it('rewrites provider call ids per response and keeps a resent history unambiguous', async () => {
     const primary = createScriptedAdapter({
       calls: [
         { events: functionCallEvents('call_0', 'read_file', '{"path":"a"}') },
@@ -16,7 +16,7 @@ describe('function call ids', () => {
       ],
     });
     const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
-    const first = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('q1'), store: true }));
+    const first = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('q1') }));
     const firstCall = first.body.output[0];
     expect(firstCall.call_id).toMatch(/^call_/);
     expect(firstCall.call_id).not.toBe('call_0');
@@ -24,9 +24,7 @@ describe('function call ids', () => {
     const second = await readJson(
       await postJson(client, '/v1/responses', {
         model: 'scripted/scripted-primary',
-        store: true,
-        previous_response_id: first.body.id,
-        input: [{ type: 'function_call_output', call_id: firstCall.call_id, output: 'A' }],
+        input: [...userInput('q1'), ...first.body.output, { type: 'function_call_output', call_id: firstCall.call_id, output: 'A' }],
       }),
     );
     const secondCall = second.body.output[0];
@@ -35,8 +33,13 @@ describe('function call ids', () => {
     await readJson(
       await postJson(client, '/v1/responses', {
         model: 'scripted/scripted-primary',
-        previous_response_id: second.body.id,
-        input: [{ type: 'function_call_output', call_id: secondCall.call_id, output: 'B' }],
+        input: [
+          ...userInput('q1'),
+          ...first.body.output,
+          { type: 'function_call_output', call_id: firstCall.call_id, output: 'A' },
+          ...second.body.output,
+          { type: 'function_call_output', call_id: secondCall.call_id, output: 'B' },
+        ],
       }),
     );
     const sent = primary.calls[2]?.request.input as unknown[];

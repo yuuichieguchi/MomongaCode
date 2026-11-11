@@ -665,7 +665,7 @@ const registerModels: CommandGroup = (program, deps) => {
   formOf(
     models
       .command('timeouts')
-      .description('how long a request waits for the first reply and without any data; 0 never cuts')
+      .description('how long a request waits for the first reply and without any data, in whole minutes, 1 or more')
       .option('--headers <minutes>', 'wait for the first reply')
       .option('--idle <minutes>', 'wait without any data')
       .option(YES_FLAG, YES_HELP),

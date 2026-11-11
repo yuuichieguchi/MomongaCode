@@ -83,6 +83,7 @@ describe('run event payloads', () => {
     expectTypeOf<RunEventPayload['type']>().toEqualTypeOf<
       | 'user.message'
       | 'context.compacting'
+      | 'context.inherited_compacted'
       | 'tool.permission.classifying'
       | 'hook.started'
       | 'run.started'
@@ -530,6 +531,7 @@ describe('RunState', () => {
         itemCount?: number;
       };
       ownCompactionEventSeq?: number;
+      inheritedCompactionRecorded?: true;
       inheritedSummaryItem?: MessageInputItem;
       inheritedTruncations?: { callId: string; handle: string; kind: 'omitted' | 'truncated' | 'reference' }[];
       lastSeq: number;

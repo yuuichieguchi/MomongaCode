@@ -56,6 +56,7 @@ describe('the frame around the screen', () => {
         requestListeners.add(listener);
         return () => requestListeners.delete(listener);
       },
+      attachInk: () => () => undefined,
     };
     return {
       layer,

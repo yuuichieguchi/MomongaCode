@@ -46,7 +46,7 @@ export const registerUserShellRoutes = (route: RouteRegistrar, deps: UserShellRo
           if (open) controller.enqueue(encoder.encode(encodeSse({ event: frame.type, data: JSON.stringify(frame) })));
         };
         const work = async (): Promise<void> => {
-          const outcome = await userInput.shell(session, body.command, { signal, onOutput: (text) => send({ type: 'output', text }) });
+          const outcome = await userInput.shell(session, body.command, { signal, onUnprotected: (reason) => send({ type: 'unprotected', reason }), onOutput: (text) => send({ type: 'output', text }) });
           if (outcome.kind === 'refused') {
             send({ type: 'refused', reason: outcome.reason });
             return;
@@ -86,5 +86,5 @@ export const registerUserShellRoutes = (route: RouteRegistrar, deps: UserShellRo
     return json({ pending: store.userShell.pending(session.id) });
   };
 
-  route('/v1/sessions/:id/user-shell', { GET: pending, POST: run, DELETE: stopRunning });
+  route('/v1/sessions/:id/user-shell', { GET: pending, POST: run, DELETE: stopRunning }, { person: ['POST', 'DELETE'] });
 };

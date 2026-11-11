@@ -1,5 +1,6 @@
+import fs from 'node:fs';
 import http from 'node:http';
-import { currentSocketResolver, ensureGenerationDirs, ensureMomongaDirs, generationLayout, momongaPaths, publishCurrentGeneration } from '@momonga/foundation';
+import { currentSocketResolver, ensureMomongaDirs, generationLayout, momongaPaths, publishCurrentGeneration } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { registerCleanup, withTempDir, testKernelLock } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
@@ -7,6 +8,8 @@ import { createGatewayClient } from '../src/client/gateway-client.ts';
 import { createRuntimeClient } from '../src/client/runtime-client.ts';
 import { nodeClock } from '../src/node-ports.ts';
 import { createSupervisorClient } from '../src/client/supervisor-client.ts';
+
+const FAKE_PERSON_CAPABILITY = 'f'.repeat(32);
 
 type Role = 'runtime' | 'gateway' | 'supervisor';
 
@@ -60,8 +63,8 @@ const twoGenerations = async (context: Parameters<typeof withTempDir>[0], role: 
   const home = withTempDir(context, { asHome: true });
   const paths = momongaPaths(home, process.platform, process.env);
   await ensureMomongaDirs(paths);
-  await ensureGenerationDirs(paths, 1);
-  await ensureGenerationDirs(paths, 2);
+  fs.mkdirSync(generationLayout(home, 1).dir, { mode: 0o700 });
+  fs.mkdirSync(generationLayout(home, 2).dir, { mode: 0o700 });
   const g1 = await retiringStyleServer(generationLayout(home, 1).sockets[role], role);
   registerCleanup(context, () => g1.close());
   const g2 = await retiringStyleServer(generationLayout(home, 2).sockets[role], role);
@@ -77,7 +80,7 @@ type Client = { call(): Promise<unknown>; close(): Promise<void> };
 
 const clients: Record<Role, (paths: MomongaPaths) => Client> = {
   runtime: (paths) => {
-    const client = createRuntimeClient({ resolveSocket: currentSocketResolver(paths, 'runtime'), clock: nodeClock });
+    const client = createRuntimeClient({ personCapability: async () => FAKE_PERSON_CAPABILITY, resolveSocket: currentSocketResolver(paths, 'runtime'), clock: nodeClock });
     return { call: () => client.health(), close: () => client.close() };
   },
   gateway: (paths) => {

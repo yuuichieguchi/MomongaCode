@@ -29,7 +29,8 @@ import {
 import type { ConstructName } from './dialect-probe-schema.ts';
 import { keywordProbeSchemas } from './envelope.ts';
 import type { EnvelopeShape } from './envelope.ts';
-import { field, isRecord, parseJson } from './json.ts';
+import { field, isRecord } from './reply.ts';
+import { usableUpstreamJson } from '../adapters/shared/upstream-json.ts';
 import { assistantMessage, failProbeStep, isAcceptedOrRejected, sampleRequest } from './probe-chat.ts';
 import type { Chat, ChatResult } from './probe-chat.ts';
 
@@ -126,14 +127,14 @@ const argumentsInverted = (call: unknown, ledger: RenderLedger): unknown => {
   const name = call['name'];
   const record = typeof name === 'string' ? ledger.wraps.get(name) : undefined;
   if (record === undefined) return call;
-  return { ...call, arguments: parseJson(invertReply(record, JSON.stringify(call['arguments']))) };
+  return { ...call, arguments: usableUpstreamJson(invertReply(record, JSON.stringify(call['arguments']))) };
 };
 
 const SELECTION_PLAN = { toolNames: new Set(SELECTION_TOOLS.map((tool) => tool.name)), requireToolCalls: false };
 
 const replyEnvelope = (reply: SelectionReply | undefined, ledger: RenderLedger): Record<string, unknown> | undefined => {
   if (reply?.kind !== 'ok' || reply.content === undefined || !isAcceptedEnvelope(reply.content, SELECTION_PLAN)) return undefined;
-  const envelope = parseJson(reply.content);
+  const envelope = usableUpstreamJson(reply.content);
   if (!isRecord(envelope)) return undefined;
   const calls = envelope['calls'];
   return Array.isArray(calls) ? { ...envelope, calls: calls.map((call) => argumentsInverted(call, ledger)) } : envelope;

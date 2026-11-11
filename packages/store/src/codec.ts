@@ -168,6 +168,7 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'usage.updated': true,
   'usage.charged': true,
   'context.compacted': true,
+  'context.inherited_compacted': true,
   'context.governing_loaded': true,
   'context.memories_loaded': true,
   'context.contribution': true,
@@ -562,7 +563,7 @@ const isWorkingFacts = (value: unknown): boolean =>
   isArrayOf(value['itemEvents'], (entry) => isRecord(entry) && Number.isInteger(entry['itemSeq']) && Number.isInteger(entry['eventSeq'])) &&
   (value['replacedThroughEventSeq'] === undefined || Number.isInteger(value['replacedThroughEventSeq']));
 
-export const SNAPSHOT_STATE_VERSION = 24;
+export const SNAPSHOT_STATE_VERSION = 25;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 
@@ -631,6 +632,7 @@ export const decodeRunState = (identity: string, value: unknown): RunState | und
     (state['loopOpen'] === undefined || isLoopOpen(state['loopOpen'])) &&
     (state['inherited'] === undefined || isInherited(state['inherited'])) &&
     (state['ownCompactionEventSeq'] === undefined || Number.isInteger(state['ownCompactionEventSeq'])) &&
+    (state['inheritedCompactionRecorded'] === undefined || state['inheritedCompactionRecorded'] === true) &&
     (state['inheritedSummaryItem'] === undefined || isSummaryItem(state['inheritedSummaryItem'])) &&
     (state['inheritedTruncations'] === undefined || isArrayOf(state['inheritedTruncations'], isInheritedTruncation));
   if (!valid) throw corrupt('snapshots', identity, 'column state_json does not hold a RunState');

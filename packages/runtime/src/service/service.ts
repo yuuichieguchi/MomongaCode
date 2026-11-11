@@ -1,7 +1,7 @@
 import http from 'node:http';
 import path from 'node:path';
 import { getRequestListener } from '@hono/node-server';
-import { SWEEP_INTERVAL_MS, encodeSse, hostPaths, listenUnix, startDeadlineSignal } from '@momonga/foundation';
+import { SWEEP_INTERVAL_MS, encodeSse, hostPaths, listenUnix, startDeadlineSignal, systemRandom, personCapabilityOf } from '@momonga/foundation';
 import { createMarkerOwners } from '@momonga/tools';
 import type { MarkerOwners } from '@momonga/tools';
 import type { Clock, FileSystem, Redactor, RolePort, KernelLockMechanism } from '@momonga/foundation';
@@ -139,10 +139,12 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
   let retireFrame: Uint8Array | undefined;
   let draining = false;
   const runTimeoutMs = options.defaults.runTimeoutMs ?? SIX_HOURS_MS;
+  const personCapability = await personCapabilityOf({ files: options.files, random: systemRandom, lock: options.lock }, options.home);
   const app = createRunApp({
     store: options.store,
     clock: options.clock,
     home: options.home,
+    personCapability,
     version: options.version,
     modelListing: options.modelListing,
     ...(options.delegation === undefined ? {} : { delegation: options.delegation }),

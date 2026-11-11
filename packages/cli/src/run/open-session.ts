@@ -68,12 +68,18 @@ export const autoModeConfigured = async (ports: Pick<CliPorts, 'home'>, signal: 
   return settings.autoMode?.classifier !== undefined;
 };
 
-export const connectRuntime = (ports: Pick<CliPorts, 'clock'>, paths: MomongaPaths): RuntimeClient => createRuntimeClient({ resolveSocket: currentSocketResolver(paths, 'runtime'), clock: ports.clock });
+export const connectRuntime = (ports: Pick<CliPorts, 'clock' | 'personCapability'>, paths: MomongaPaths): RuntimeClient =>
+  createRuntimeClient({ resolveSocket: currentSocketResolver(paths, 'runtime'), clock: ports.clock, personCapability: () => ports.personCapability() });
 
-export const connectSessionRuntime = (ports: Pick<DaemonPorts, 'version' | 'clock'>, paths: MomongaPaths, onNewer?: NewerListener): RuntimeClient =>
-  createRuntimeClient({ resolveSocket: sessionSocketResolver(paths, ports.version, 'runtime'), clock: ports.clock, onMoved: endSessionWhenMovedAway(paths, ports.version, onNewer) });
+export const connectSessionRuntime = (ports: Pick<DaemonPorts, 'version' | 'clock'> & Pick<CliPorts, 'personCapability'>, paths: MomongaPaths, onNewer?: NewerListener): RuntimeClient =>
+  createRuntimeClient({
+    resolveSocket: sessionSocketResolver(paths, ports.version, 'runtime'),
+    clock: ports.clock,
+    personCapability: () => ports.personCapability(),
+    onMoved: endSessionWhenMovedAway(paths, ports.version, onNewer),
+  });
 
-export const openSession = async (ports: DaemonPorts & Pick<CliPorts, 'cwd' | 'stderr' | 'interrupt'>, paths: MomongaPaths, options: OpenSessionOptions): Promise<CliSession> => {
+export const openSession = async (ports: DaemonPorts & Pick<CliPorts, 'cwd' | 'stderr' | 'interrupt' | 'personCapability'>, paths: MomongaPaths, options: OpenSessionOptions): Promise<CliSession> => {
   const { onNewer } = options;
   await ensureSessionDaemon(ports, paths, { ...(options.signal === undefined ? {} : { signal: options.signal }), ...(onNewer === undefined ? {} : { onNewer }) });
   const client = connectSessionRuntime(ports, paths, onNewer);

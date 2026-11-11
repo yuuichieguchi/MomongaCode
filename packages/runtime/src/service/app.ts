@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { MarkerOwners } from '@momonga/tools';
-import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, stripCredentialEnv } from '@momonga/config';
+import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, serverKeyOfLabel, stripCredentialEnv } from '@momonga/config';
 import type { ProjectMandate } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, PermissionRule } from '@momonga/config';
 import { denyingRuleFor } from '@momonga/policy';
@@ -61,6 +61,7 @@ import { canonicalProject } from './project-query.ts';
 import { registerReportRoutes } from './report-routes.ts';
 import type { ReportRouteDeps } from './report-routes.ts';
 import { registerTrustRoutes, undecidedFolderNotice } from './trust.ts';
+import { requirePersonCapability } from './person-capability.ts';
 import type { ServiceTimers } from './timers.ts';
 import { answeredByOf } from './answered-by.ts';
 import { runTermsOf } from './delegation.ts';
@@ -98,6 +99,7 @@ export type RunAppDeps = {
   store: RuntimeStore;
   clock: Clock;
   home: string;
+  personCapability: string;
   version: string;
   modelListing: (signal: AbortSignal) => Promise<ModelListing>;
   modelCapabilities: (model: string, signal: AbortSignal) => Promise<Capabilities>;
@@ -139,7 +141,9 @@ export type RunAppDeps = {
 
 export type Handler = (context: Context) => Response | Promise<Response>;
 
-export type RouteRegistrar = (routePath: string, handlers: Readonly<Record<string, Handler>>) => void;
+export type RouteAccess = { person: readonly string[] };
+
+export type RouteRegistrar = (routePath: string, handlers: Readonly<Record<string, Handler>>, access?: RouteAccess) => void;
 
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
@@ -190,7 +194,18 @@ const checkModeAllowed = (mode: PermissionMode, bypassAllowed: boolean, autoMode
   }
 };
 
-const checkedMcpServers = (servers: Record<string, Record<string, unknown>>): Record<string, Record<string, unknown>> => {
+const keyedMcpServers = (servers: Record<string, Record<string, unknown>>): Record<string, Record<string, unknown>> => {
+  const keyed = new Map<string, Record<string, unknown>>();
+  for (const [label, server] of Object.entries(servers)) {
+    const derived = serverKeyOfLabel(label, new Set(keyed.keys()));
+    if (derived.kind === 'refused') throw invalidRequest(derived.reason, 'mcpServers');
+    keyed.set(derived.key, server);
+  }
+  return Object.fromEntries(keyed);
+};
+
+const checkedMcpServers = (given: Record<string, Record<string, unknown>>): Record<string, Record<string, unknown>> => {
+  const servers = keyedMcpServers(given);
   try {
     assertSessionMcpServers(servers);
   } catch (error) {
@@ -225,11 +240,14 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return run;
   };
 
-  const route: RouteRegistrar = (routePath: string, handlers: Readonly<Record<string, Handler>>): void => {
+  const requirePerson = (context: Context): void => requirePersonCapability(context.req.raw, deps.personCapability);
+
+  const route: RouteRegistrar = (routePath, handlers, access) => {
     app.all(routePath, (context) => {
       const method = context.req.method;
       const handler = method === 'HEAD' ? handlers['GET'] : handlers[method];
       if (handler === undefined) throw methodNotAllowed(handlers['GET'] === undefined ? Object.keys(handlers) : [...Object.keys(handlers), 'HEAD']);
+      if (access?.person.includes(method) === true) requirePerson(context);
       return handler(context);
     });
   };
@@ -749,8 +767,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   };
 
   route('/v1/health', { GET: health });
-  route('/v1/sessions', { GET: listSessions, POST: createSession });
-  route('/v1/sessions/:id', { GET: getSession, PATCH: patchSession });
+  route('/v1/sessions', { GET: listSessions, POST: createSession }, { person: ['POST'] });
+  route('/v1/sessions/:id', { GET: getSession, PATCH: patchSession }, { person: ['PATCH'] });
   route('/v1/sessions/:id/runs', { GET: listRuns, POST: createRun });
   route('/v1/sessions/:id/compact', { POST: compactSession });
   route('/v1/sessions/:id/skills', { GET: listSkills });
@@ -768,7 +786,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   route('/v1/cost', { GET: cost });
   route('/v1/runs/:id/approvals', { GET: listRunApprovals });
   route('/v1/runs/:id/events', { GET: runEvents });
-  route('/v1/approvals/:id', { GET: getApproval, POST: resolveApproval });
+  route('/v1/approvals/:id', { GET: getApproval, POST: resolveApproval }, { person: ['POST'] });
   registerReportRoutes(route, { store, now: () => deps.clock.now(), maxBodyBytes: deps.maxBodyBytes, reportCost: deps.reportCost, runTraceContent: deps.runTraceContent, recomputeFacts: deps.recomputeFacts });
   registerTrustRoutes(route, { store, maxBodyBytes: deps.maxBodyBytes });
   registerMemoryRoutes(route, {

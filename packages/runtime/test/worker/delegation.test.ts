@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
@@ -12,6 +13,8 @@ const shell = (callId: string, command: string) => ({ callId, name: 'Bash', args
 const mandateAsking = (env: Env, file: string) => ({ scope: { allow: ['Bash(ls:*)'], ask: [`Write(/${path.join(env.project, file)})`] } });
 
 const textOf = (item: unknown): string => JSON.stringify(item);
+
+vi.setConfig({ testTimeout: SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS, hookTimeout: SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS });
 
 describe('a run under a mandate holds a call that needs approval and goes on', () => {
   it('runs the sibling call, gives the model a placeholder for the held one, and takes the next model step without waiting', async () => {
@@ -115,7 +118,7 @@ describe('a call outside the mandate is not run and not asked about', () => {
   it('denies it with the reason, and the same call without a mandate asks as today', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([write(env, 'call_w', 'other.txt')]), textStep('I could not write it.'));
-    const run = await env.enqueue('Write', { mandate: { scope: { allow: ['Read'] } } });
+    const run = await env.enqueue('Write', { mandate: { scope: { allow: ['Read(src/**)'] } } });
 
     await env.runOnce(env.worker());
 
@@ -137,11 +140,11 @@ describe('a call outside the mandate is not run and not asked about', () => {
   it('pins the scope and the hold of the mandate at the start of the run', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Hello.'));
-    const run = await env.enqueue('Say hello', { mandate: { scope: { allow: ['Read'], deny: ['Bash(rm:*)'] }, hold: { onQuiescent: 'wait' } } });
+    const run = await env.enqueue('Say hello', { mandate: { scope: { allow: ['Read(src/**)'], deny: ['Bash(rm:*)'] }, hold: { onQuiescent: 'wait' } } });
 
     await env.runOnce(env.worker());
 
-    expect(env.ofType(run.id, 'run.started')[0]?.pins['mandate']).toMatchObject({ scope: { allow: ['Read'], deny: ['Bash(rm:*)'] }, hold: { onQuiescent: 'wait' } });
+    expect(env.ofType(run.id, 'run.started')[0]?.pins['mandate']).toMatchObject({ scope: { allow: ['Read(src/**)'], deny: ['Bash(rm:*)'] }, hold: { onQuiescent: 'wait' } });
   });
 });
 

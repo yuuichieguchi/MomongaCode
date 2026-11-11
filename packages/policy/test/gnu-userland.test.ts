@@ -70,8 +70,9 @@ describe('decisions follow the platform of the filesystem port', () => {
   });
 
   it('allows the common GNU read-only forms on Linux', async () => {
+    const linuxWithGlob: Pick<Row, 'fs'> = { fs: () => ({ platform: 'linux', globs: { '--include=*.ts': { matches: [] } } }) };
     for (const command of ['ls -la --color=auto', 'cat -n f', 'head -n 5 f', 'tail -n 5 f', 'grep -rn --include=*.ts x .', 'wc -l f', 'stat -c %s f', 'du -sh .', 'find . -name x -type f', 'sort -u f', 'diff -u f m', 'ps aux', 'ps -ef']) {
-      expect(await kindIn(commandRow(command, { ...linux }), 'manual'), command).toBe('allow');
+      expect(await kindIn(commandRow(command, { ...linuxWithGlob }), 'manual'), command).toBe('allow');
     }
   });
 

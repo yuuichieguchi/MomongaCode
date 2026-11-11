@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CONTROL_PLANE_LAUNCH, hostProcessGroupPort, systemTiming } from '@momonga/foundation';
+import { CONTROL_PLANE_LAUNCH, hostProcessGroupPort, launchGroupLeader, systemTiming } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, pollUntil } from '@momonga/testkit';
 import { createWorkspaceProbe, nodeWorkspaceFiles } from '../src/index.ts';
 import type { CommandSandbox, WorkspaceProbe } from '../src/index.ts';
@@ -32,7 +32,13 @@ afterEach(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-const passThrough: CommandSandbox = { commandOf: async (command) => ({ file: '/bin/sh', args: ['-c', command], protection: CONTROL_PLANE_LAUNCH }) };
+const launched = (file: string, args: readonly string[], cwd: string, env: Readonly<Record<string, string>>) => {
+  const { pgid, onExit } = launchGroupLeader({ file, args, cwd, env, stdio: ['ignore', 'ignore', 'ignore'], protection: CONTROL_PLANE_LAUNCH });
+  if (pgid === undefined) throw new Error(`${file} started with no process group`);
+  return { pgid, exited: new Promise<{ code: number | null }>((resolve, reject) => onExit(({ code }) => resolve({ code }), reject)) };
+};
+
+const passThrough: CommandSandbox = { start: async (command, workspace, env) => launched('/bin/sh', ['-c', command], workspace, env) };
 
 const probe = (sandbox: CommandSandbox = passThrough): WorkspaceProbe =>
   createWorkspaceProbe({ env: { PATH: '/usr/bin:/bin' }, sandbox, files: nodeWorkspaceFiles, timing: systemTiming, groups: hostProcessGroupPort() });
@@ -50,7 +56,7 @@ const alive = (pid: number): boolean => {
 describe('the one workspace probe', () => {
   it('runs a command in the workspace through the command sandbox and reports its exit code', async () => {
     const asked: { command: string; workspace: string }[] = [];
-    const recording: CommandSandbox = { commandOf: async (command, workspace) => (asked.push({ command, workspace }), passThrough.commandOf(command, workspace)) };
+    const recording: CommandSandbox = { start: async (command, workspace, env, signal) => (asked.push({ command, workspace }), passThrough.start(command, workspace, env, signal)) };
     expect(await probe(recording).run('sh check.sh', 30_000, dir)).toEqual({ exitCode: 1, timedOut: false });
     fs.writeFileSync(path.join(dir, 'done.txt'), '');
     expect(await probe(recording).run('sh check.sh', 30_000, dir)).toEqual({ exitCode: 0, timedOut: false });

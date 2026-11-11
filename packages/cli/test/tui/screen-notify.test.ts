@@ -4,14 +4,20 @@ import { TITLE_STATES } from '../../src/tui/terminal/title.ts';
 
 describe('what is known of the focus', () => {
   it('is what the terminal last reported while focus reporting is on', () => {
-    expect(focusKnowledgeOf(true, 'in')).toBe('in');
-    expect(focusKnowledgeOf(true, 'out')).toBe('out');
+    expect(focusKnowledgeOf(true, 'in', false)).toBe('in');
+    expect(focusKnowledgeOf(true, 'out', false)).toBe('out');
   });
 
   it('is unreported while focus reporting is off or the terminal has reported nothing', () => {
-    expect(focusKnowledgeOf(false, undefined)).toBe('unreported');
-    expect(focusKnowledgeOf(false, 'in')).toBe('unreported');
-    expect(focusKnowledgeOf(true, undefined)).toBe('unreported');
+    expect(focusKnowledgeOf(false, undefined, false)).toBe('unreported');
+    expect(focusKnowledgeOf(false, 'in', false)).toBe('unreported');
+    expect(focusKnowledgeOf(true, undefined, true)).toBe('unreported');
+  });
+
+  it('is not known while reporting is on, nothing was reported and the wait for a report has not ended, and then the bell waits', () => {
+    expect(focusKnowledgeOf(true, undefined, false)).toBe('unknown');
+    expect(bellDue({ notify: 'bell', focus: 'unknown', state: 'done' })).toBe(false);
+    expect(bellDue({ notify: 'bell', focus: 'unreported', state: 'done' })).toBe(true);
   });
 });
 

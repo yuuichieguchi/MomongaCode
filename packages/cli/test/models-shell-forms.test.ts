@@ -73,7 +73,7 @@ const WRITING: readonly WritingCase[] = [
       expect(document.models.connections.map((connection) => connection['adapter'])).toEqual(['ollama']);
       expect(document.models).not.toHaveProperty('start');
     },
-    refused: { input: input(['nope']), sentence: 'The server "nope" is not configured.\n' },
+    refused: { input: input(['nope']), sentence: 'The server "nope" is not configured. Configured servers: ollama, lmstudio.\n' },
   },
   {
     form: 'start',
@@ -182,7 +182,7 @@ const WRITING: readonly WritingCase[] = [
     confirm: 'Set Concurrent requests of lmstudio to 2?',
     summaries: ['Set Concurrent requests of lmstudio to 2.'],
     written: (document) => expect(document.models.connections[1]?.['maxConcurrency']).toBe(2),
-    refused: { input: input(['nope', 'maxConcurrency', '2']), sentence: 'The server "nope" is not configured.\n' },
+    refused: { input: input(['nope', 'maxConcurrency', '2']), sentence: 'The server "nope" is not configured. Configured servers: ollama, lmstudio.\n' },
   },
   {
     form: 'unset-server',
@@ -192,7 +192,7 @@ const WRITING: readonly WritingCase[] = [
     confirm: 'Clear Concurrent requests of lmstudio?',
     summaries: ['Cleared Concurrent requests of lmstudio.'],
     written: (document) => expect(document.models.connections[1]).not.toHaveProperty('maxConcurrency'),
-    refused: { input: input(['nope', 'maxConcurrency']), sentence: 'The server "nope" is not configured.\n' },
+    refused: { input: input(['nope', 'maxConcurrency']), sentence: 'The server "nope" is not configured. Configured servers: ollama, lmstudio.\n' },
   },
   {
     form: 'name',
@@ -225,7 +225,7 @@ const WRITING: readonly WritingCase[] = [
     confirm: 'Set readyPath of llama-server?',
     summaries: ['Set readyPath of llama-server.'],
     written: (document) => expect(document.models['servers']).toEqual({ 'llama-server': { ...LLAMA_SERVER, readyPath: '/ready' } }),
-    refused: { input: input(['nope', 'readyPath', '/ready']), sentence: 'The server program "nope" is not declared.\n' },
+    refused: { input: input(['nope', 'readyPath', '/ready']), sentence: 'The server program "nope" is not declared. Declared server programs: llama-server.\n' },
   },
   {
     form: 'forget-program',
@@ -235,7 +235,7 @@ const WRITING: readonly WritingCase[] = [
     confirm: 'Forget llama-server? 0 servers use it.',
     summaries: ['Forgot the server program llama-server.'],
     written: (document) => expect(document.models).not.toHaveProperty('servers'),
-    refused: { input: input(['nope']), sentence: 'The server program "nope" is not declared.\n' },
+    refused: { input: input(['nope']), sentence: 'The server program "nope" is not declared. Declared server programs: llama-server.\n' },
   },
   {
     form: 'timeouts',

@@ -3,7 +3,7 @@ import { displayWidth, wrapLine } from './screen/wrap.ts';
 import type { Row, Span } from './screen/wrap.ts';
 import type { StyleToken } from './screen/tokens.ts';
 
-export type StartupConfig = { version: string; home: string; color: boolean };
+export type StartupConfig = { version: string; home: string };
 
 export type StartupBanner = { config: StartupConfig; model: string | undefined; cwd: string; notices: readonly string[] };
 
@@ -48,11 +48,11 @@ const padded = (cells: readonly Cell[], width: number): Cell[] => {
   return [...cells, { text: ' '.repeat(Math.max(0, width - used)) }];
 };
 
-const rowOf = (cells: readonly Cell[], color: boolean): Row => {
+const rowOf = (cells: readonly Cell[]): Row => {
   const spans: Span[] = [];
   let text = '';
   for (const cell of cells) {
-    if (cell.token !== undefined && cell.text !== '' && (color || cell.token === 'bold' || cell.token === 'dim')) spans.push([text.length, text.length + cell.text.length, cell.token]);
+    if (cell.token !== undefined && cell.text !== '') spans.push([text.length, text.length + cell.text.length, cell.token]);
     text += cell.text;
   }
   return { text, spans, wrapped: false, prefixCols: 0 };
@@ -72,8 +72,8 @@ export const bannerRows = (banner: StartupBanner, columns: number): Row[] => {
   const noticeRows: Cell[][] = notices.length === 0 ? [] : [[], ...notices.flatMap((notice) => wrapLine(`! ${notice}`, inner, { links: false }).map((row): Cell[] => [{ text: row.text, token: 'warning' }]))];
   const edge = (text: string): Cell => ({ text, token: 'banner.border' });
   return [
-    rowOf([edge(`╭${'─'.repeat(inner + 2)}╮`)], config.color),
-    ...[...body, ...noticeRows].map((cells) => rowOf([edge('│'), { text: ' ' }, ...padded(cells, inner), { text: ' ' }, edge('│')], config.color)),
-    rowOf([edge(`╰${'─'.repeat(inner + 2)}╯`)], config.color),
+    rowOf([edge(`╭${'─'.repeat(inner + 2)}╮`)]),
+    ...[...body, ...noticeRows].map((cells) => rowOf([edge('│'), { text: ' ' }, ...padded(cells, inner), { text: ' ' }, edge('│')])),
+    rowOf([edge(`╰${'─'.repeat(inner + 2)}╯`)]),
   ];
 };

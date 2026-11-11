@@ -27,7 +27,7 @@ export class NotAProbeableModel extends Error {
   }
 }
 
-export type ProbeOptions = { samples?: number; interrupt: AbortSignal };
+export type ProbeOptions = { samples?: number; stepTimeoutMs: number; consented: boolean; interrupt: AbortSignal };
 
 export type ProbeSubject = { canon: string; display: string; model: ProbeableModel };
 
@@ -41,6 +41,14 @@ export const probeSubjectOf = (models: ResolvedModels, text: string): ProbeSubje
   if (model === undefined || !isProbeable(model)) throw new NotAProbeableModel(display, models.views.map((view) => displays.get(view.canon) ?? view.canon));
   return { canon, display, model };
 };
+
+export const managedProbeTimersOf = (ports: CliPorts): { setTimeout: CliPorts['timers']['setTimeout']; clearTimeout: CliPorts['timers']['clearTimeout']; now(): number } => ({
+  setTimeout: (callback, ms) => ports.timers.setTimeout(callback, ms),
+  clearTimeout: (handle) => ports.timers.clearTimeout(handle),
+  now: () => ports.clock.now(),
+});
+
+const probePortsOf = (ports: CliPorts): { clock: CliPorts['clock']; timers: CliPorts['timers'] } => ({ clock: ports.clock, timers: ports.timers });
 
 export const cliProbeInstance = (paths: MomongaPaths, provider: string): ManagedInstancePaths => managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', provider });
 
@@ -95,11 +103,16 @@ export const probeEndpointText = (name: string, endpoint: string, recordPath: st
     `  structured output: ${report.constrained.accepted ? 'json_schema' : 'none'}, stop sequences: ${report.stopSequences}, usage reported: ${report.usageReported}, ${outputBoundText(report, declaredOutputBound)}`,
     `  parallel tool calls: ${parallel === undefined ? 'not measured' : `${parallel.accepted && parallel.multiCallRate >= 0.9} (${parallel.multiCallRate} of replies carried several calls)`}`,
     `  reasoning: ${reasoning === undefined ? 'not measured' : reasoning.control === 'reasoning_effort' ? `reasoning_effort, lowest ${reasoning.lowest}` : `cannot be controlled${reasoning.headroomTokens === undefined ? '' : `, leaves room for ${reasoning.headroomTokens} tokens`}`}`,
-    `  max concurrency: ${report.maxConcurrency}`,
+    `  max concurrency: ${concurrencyText(report.maxConcurrency)}`,
     `  schema dialect: ${dialectText(report.schemaDialect)}`,
     `  recorded in ${recordPath}`,
   ])}\n`;
 };
+
+const concurrencyText = (measured: EndpointProbe['report']['maxConcurrency']): string =>
+  measured === undefined
+    ? 'not measured (the server refused no request; maxConcurrency in the settings declares it, one request at a time otherwise)'
+    : `${measured.value} (the server refused more at once)`;
 
 type OllamaProbe = Awaited<ReturnType<typeof import('@momonga/gateway').probeOllamaTarget>>;
 
@@ -122,7 +135,7 @@ export const probeFmText = (target: string, recordPath: string, report: Endpoint
   `${escapedLines([
     `probed ${target}: model ${report.modelId}, context window ${report.contextWindow.value} (${report.contextWindow.method})`,
     `  tool calling: ${toolCalling} (native ${report.nativeTools.validRate}, constrained ${report.constrained.validRate})`,
-    `  stop sequences: ${report.stopSequences}, usage reported: ${report.usageReported}, ${outputBoundText(report, declaredOutputBound)}, max concurrency: ${report.maxConcurrency}`,
+    `  stop sequences: ${report.stopSequences}, usage reported: ${report.usageReported}, ${outputBoundText(report, declaredOutputBound)}, max concurrency: ${concurrencyText(report.maxConcurrency)}`,
     `  schema dialect: ${dialectText(report.schemaDialect)}`,
     `  recorded in ${recordPath}`,
   ])}\n`;
@@ -142,17 +155,25 @@ const probeChatCompletions = async (
   userDialects: Record<string, DialectDefinition>,
   network: OutboundNetwork,
 ): Promise<number> => {
-  const { probeEndpointTarget, reachableEndpoint } = await import('@momonga/gateway');
-  const { report, toolCalling, key } = await probeEndpointTarget({
+  const { DEFAULT_SAMPLES, isMeteredTarget, measurementBoundOf, probeEndpointTarget, reachableEndpoint, saveMeasurementConsent } = await import('@momonga/gateway');
+  const key = endpointRecordKeyOf(subject, target);
+  const metered = isMeteredTarget(target) ? { display: subject.display, declaredContextWindow: target.capabilities.contextWindow } : undefined;
+  if (metered !== undefined && options.consented) {
+    await saveMeasurementConsent(paths.probe, key, measurementBoundOf(metered.declaredContextWindow, options.samples ?? DEFAULT_SAMPLES), resolveLayoutLocks(paths).mechanism);
+  }
+  const { report, toolCalling } = await probeEndpointTarget({
     probeRecordDir: paths.probe,
+    ...(metered === undefined ? {} : { metered }),
+    ports: probePortsOf(ports),
     lock: resolveLayoutLocks(paths).mechanism,
     upstream: reachableEndpoint(upstreamEndpointOf(target), network),
-    key: endpointRecordKeyOf(subject, target),
+    key,
     model: target.model,
     ...(target.capabilities.schemaDialect === undefined ? {} : { declaredDialect: target.capabilities.schemaDialect }),
     userDialects,
     apiKey: await apiKeyOf(ports, target, options.interrupt),
     signal: options.interrupt,
+    stepTimeoutMs: options.stepTimeoutMs,
     ...(options.samples === undefined ? {} : { samples: options.samples }),
   });
   ports.stdout.write(probeEndpointText(subject.display, key.endpoint, paths.probe, report, toolCalling, target.capabilities.outputBoundField));
@@ -172,6 +193,7 @@ const probeOllama = async (
   const { probeOllamaTarget, reachableEndpoint } = await import('@momonga/gateway');
   const { report, key } = await probeOllamaTarget({
     probeRecordDir: paths.probe,
+    ports: probePortsOf(ports),
     lock: resolveLayoutLocks(paths).mechanism,
     upstream: reachableEndpoint(upstreamEndpointOf(target), network),
     key: endpointRecordKeyOf(subject, target),
@@ -180,6 +202,7 @@ const probeOllama = async (
     ...(target.capabilities.schemaDialect === undefined ? {} : { declaredDialect: target.capabilities.schemaDialect }),
     userDialects,
     signal: options.interrupt,
+    stepTimeoutMs: options.stepTimeoutMs,
     ...(options.samples === undefined ? {} : { samples: options.samples }),
   });
   ports.stdout.write(probeOllamaText(subject.display, key.endpoint, paths.probe, report, target.capabilities.contextWindow));
@@ -208,6 +231,8 @@ const probeManaged = async (ports: CliPorts, paths: MomongaPaths, subject: Probe
     hashes: createBinaryHashCache(),
     isUsableBinary: systemProcessFiles.isUsableBinary,
     readStopGraceMs: () => settings.gateway.managedServerStopGraceMs,
+    timers: managedProbeTimersOf(ports),
+    stepTimeoutMs: options.stepTimeoutMs,
     model: configured.model,
     onWarning: (message) => ports.stderr.write(`${escapedLines([`momonga: ${message}`])}\n`),
     ...(options.samples === undefined ? {} : { samples: options.samples }),

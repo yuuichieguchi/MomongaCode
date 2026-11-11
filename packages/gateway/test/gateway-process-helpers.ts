@@ -66,7 +66,8 @@ export type SecretHost = { env: Record<string, string>; programPath: string };
 export const fakeSecretHost = (bin: string, store: SecretHostProgram): SecretHost => {
   const programPath = path.join(bin, store.program);
   fs.writeFileSync(programPath, '#!/bin/sh\nexit 97\n', { mode: 0o755 });
-  return { env: secretStoreEnvFor({ PATH: bin, ...store.extraEnv }), programPath };
+  const platform: NodeJS.Platform = store.program === 'security' ? 'darwin' : 'linux';
+  return { env: secretStoreEnvFor({ PATH: bin, ...store.extraEnv }, { platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) }), programPath };
 };
 
 export type HostPort = SecretProcessPort & {
@@ -155,6 +156,7 @@ export const ccTarget = (socketPath: string, extra: Record<string, unknown> = {}
   adapter: 'chat-completions',
   model: CC_MODEL,
   socketPath,
+  billing: 'local',
   capabilities: { contextWindow: 4096, maxOutputTokens: 1024 },
   ...extra,
 });

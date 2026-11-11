@@ -1,5 +1,6 @@
 import { RequestError } from '@agentclientprotocol/sdk';
 import type { McpServer } from '@agentclientprotocol/sdk';
+import { serverKeyOfLabel } from '@momonga/config';
 import type { McpServerConfig } from '@momonga/config';
 
 const recordOf = (entries: readonly { readonly name: string; readonly value: string }[]): Record<string, string> =>
@@ -16,8 +17,9 @@ const configOf = (server: McpServer): McpServerConfig => {
 export const mcpServersOf = (servers: readonly McpServer[]): Record<string, McpServerConfig> => {
   const configs = new Map<string, McpServerConfig>();
   for (const server of servers) {
-    if (configs.has(server.name)) throw RequestError.invalidParams({ name: server.name }, `the MCP server name ${server.name} is given twice`);
-    configs.set(server.name, configOf(server));
+    const derived = serverKeyOfLabel(server.name, new Set(configs.keys()));
+    if (derived.kind === 'refused') throw RequestError.invalidParams({ name: server.name }, derived.reason);
+    configs.set(derived.key, configOf(server));
   }
   return Object.fromEntries(configs);
 };

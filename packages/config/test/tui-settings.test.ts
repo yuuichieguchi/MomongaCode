@@ -40,13 +40,13 @@ describe('tui.theme and tui.notify', () => {
   it.each(['solarized', '', 'Dark', 7, null])('refuses the theme %o with the list of the five ids', async (theme) => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { tui: { theme } });
-    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow(`${userSettingsPath(tree)}: tui.theme must be one of auto, dark, light, dark-colorblind, light-colorblind; got ${JSON.stringify(theme)}`);
+    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow(`${userSettingsPath(tree)}: invalid settings at /tui/theme: must be one of auto, dark, light, dark-colorblind, light-colorblind; got ${JSON.stringify(theme)}`);
   });
 
   it.each(['osc9', true])('refuses the notification value %o with the list of the two', async (notify) => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { tui: { notify } });
-    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow(`${userSettingsPath(tree)}: tui.notify must be one of off, bell; got ${JSON.stringify(notify)}`);
+    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow(`${userSettingsPath(tree)}: invalid settings at /tui/notify: must be one of off, bell; got ${JSON.stringify(notify)}`);
   });
 
   it('refuses a key the tui object does not have', async () => {

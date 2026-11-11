@@ -589,6 +589,8 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       return withoutHold(reconcileCall(state, event), event);
     case 'context.compacted':
       return { ...withCompactionRecorded(compact(state, event), event, true), ownCompactionEventSeq: event.seq };
+    case 'context.inherited_compacted':
+      return { ...state, inheritedCompactionRecorded: true };
     case 'context.compaction_rejected':
       return withCompactionRecorded(rejectCompaction(state, event), event, false);
     case 'context.inherited':

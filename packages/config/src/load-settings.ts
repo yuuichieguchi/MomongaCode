@@ -26,11 +26,11 @@ import type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSett
 import { keyStoreOf, layoutOf } from './layout.ts';
 import { loadLayers, normalizeHooks } from './layers.ts';
 import type { KeptLayers, Layer, TrustOracle, UserLayer } from './layers.ts';
-import { EDIT_TOOLS, NEGATION_PREFIX, NETWORK_RULE_NOT_ENFORCED, NETWORK_RULE_SUBJECT, checkRuleText, isPathTool, parseRule, RuleParseError } from './rule.ts';
+import { EDIT_TOOLS, NEGATION_PREFIX, NETWORK_RULE_SUBJECT, checkRuleText, isPathTool, parseRule, RuleParseError } from './rule.ts';
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
 import { escapePointerSegment } from './json-file.ts';
 import { assertSettings, defaultSandboxSetting, defaultTuiSettings } from './settings.ts';
-import type { HookGroups, McpServerApproval, ProjectApprovalsSettings, ProjectChecksSettings, RetentionSettings, AutoModeSettings, CredentialsSettings, McpSettings, RuntimeSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, ResolvedSandboxUnixSockets, ResolvedTuiSettings, SandboxSetting, Settings, TelemetrySettings, CeilingsSettings, ForgeInstanceSettings, LimitsSettings, MandateProfileSettings, OperationsSettings } from './settings.ts';
+import type { HookGroups, McpServerApproval, ProjectApprovalsSettings, ProjectChecksSettings, RetentionSettings, AutoModeSettings, CredentialsSettings, McpSettings, RuntimeSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, ResolvedSandboxUnixSockets, ResolvedTuiSettings, SandboxSetting, Settings, TelemetrySettings, CeilingsSettings, ForgeInstanceSettings, LimitsSettings, MandateProfileSettings, IssuesSettings, OperationsSettings } from './settings.ts';
 import type { ResolvedModels } from './models.ts';
 
 
@@ -72,6 +72,7 @@ export type ResolvedSettings = {
   limits?: LimitsSettings;
   ceilings?: CeilingsSettings;
   mandates?: Record<string, MandateProfileSettings>;
+  issues?: IssuesSettings;
   forges?: ForgeInstanceSettings[];
   operations?: OperationsSettings;
   memory: ResolvedMemorySettings;
@@ -120,7 +121,6 @@ const unreadableRule = (effect: RuleEffect, source: string, pointer: string, err
   warnings.push(`${problem}; ${RULE_IGNORED}`);
 };
 
-const networkRuleNotice = (source: string, pointer: string, text: string): string => `${source}: ${pointer}: ${JSON.stringify(text)}: ${NETWORK_RULE_NOT_ENFORCED}`;
 
 const attachNegations = (effect: RuleEffect, parsed: readonly ListedRule[], layer: Layer, warnings: string[]): PermissionRule[] => {
   const kept: PermissionRule[] = [];
@@ -162,7 +162,6 @@ export const parseLayerRules = (layer: Layer, home: string, projectDir: string, 
         warnings.push(`${layer.source}: permissions.${effect} rule ${JSON.stringify(text)} is only honored in user settings; discarded`);
         continue;
       }
-      if (rule.tool === NETWORK_RULE_SUBJECT) warnings.push(networkRuleNotice(layer.source, pointer, text));
       parsed.push({ rule, pointer });
     }
     return attachNegations(effect, parsed, layer, warnings);
@@ -171,7 +170,7 @@ export const parseLayerRules = (layer: Layer, home: string, projectDir: string, 
 const readableMandateRules = (texts: readonly string[], effect: RuleEffect, source: string, pointer: string, warnings: string[]): string[] =>
   texts.filter((text, index) => {
     try {
-      if (checkRuleText(text).tool === NETWORK_RULE_SUBJECT) warnings.push(networkRuleNotice(source, `${pointer}/${index}`, text));
+      checkRuleText(text);
       return true;
     } catch (error) {
       if (!(error instanceof RuleParseError)) throw error;
@@ -291,6 +290,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
       limits,
       ceilings,
       mandates,
+      issues,
       forges,
       operations,
       memory,
@@ -350,6 +350,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
     if (limits !== undefined) merged.limits = limits;
     if (ceilings !== undefined) merged.ceilings = ceilings;
     if (mandates !== undefined) merged.mandates = readableMandates(mandates, layer.source, warnings);
+    if (issues !== undefined) merged.issues = issues;
     if (forges !== undefined) merged.forges = forges;
     if (operations !== undefined) merged.operations = operations;
   }

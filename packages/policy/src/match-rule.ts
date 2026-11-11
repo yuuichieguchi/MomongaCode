@@ -1,11 +1,11 @@
-import { EDIT_TOOLS, PATH_TOOL_RULES, PATH_TOOLS } from '@momonga/config';
+import { EDIT_TOOLS, NETWORK_RULE_SUBJECT, PATH_TOOL_RULES, PATH_TOOLS } from '@momonga/config';
 import type { PathToolName, PermissionRule } from '@momonga/config';
 import { commandMatchStrength, matchesCommand } from './command-match.ts';
 import type { MatchStrength } from './command-match.ts';
 import { wildcardMatches } from './wildcard.ts';
 import path from 'node:path';
-import { everyAsync, fileRuleBlocks, someAsync } from '@momonga/foundation';
-import type { FileRuleSet, PathProbes } from '@momonga/foundation';
+import { everyAsync, fileRuleBlocks, hostPatternCovers, parseHostPattern, someAsync } from '@momonga/foundation';
+import type { FileRuleSet, HostEntry, PathProbes } from '@momonga/foundation';
 import { foldedKey } from './fold.ts';
 import { absoluteFrom } from './path-match.ts';
 import type { PermissionSubject } from './types.ts';
@@ -96,4 +96,13 @@ export const matchPathlessStrength = (rule: PermissionRule, subject: PathlessSub
 export const matchStrength = async (rule: PermissionRule, subject: PermissionSubject, fileRules: FileRuleSet, ruleIndex: number, canonicalise: RuleResolution): Promise<MatchStrength | null> => {
   if (subject.kind !== 'path') return matchPathlessStrength(rule, subject);
   return (await matchRule(rule, subject, fileRules, ruleIndex, canonicalise)) ? 'position' : null;
+};
+
+export const isNetworkRule = (rule: PermissionRule): boolean => rule.tool === NETWORK_RULE_SUBJECT;
+
+export const networkRuleCovers = (rule: PermissionRule, asked: HostEntry): boolean => {
+  if (!isNetworkRule(rule)) return false;
+  const pattern = rule.specifier === undefined ? undefined : parseHostPattern(rule.specifier);
+  if (pattern === undefined) throw new Error(`the Network rule ${rule.text} was loaded without a host pattern`);
+  return hostPatternCovers(pattern, asked);
 };

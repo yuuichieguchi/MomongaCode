@@ -179,11 +179,11 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
 
   route('/v1/reflection', { GET: latestReflection });
   route('/v1/runs/:id/reflection', { GET: reflectionOfRun, POST: requestReflection });
-  route('/v1/memories', { GET: listMemories, POST: addMemory });
-  route('/v1/memories/:id', { GET: getMemory, DELETE: deleteMemory });
+  route('/v1/memories', { GET: listMemories, POST: addMemory }, { person: ['POST'] });
+  route('/v1/memories/:id', { GET: getMemory, DELETE: deleteMemory }, { person: ['DELETE'] });
   route('/v1/memories/:id/history', { GET: memoryHistory });
-  route('/v1/memories/:id/accept', { POST: acceptMemory });
-  route('/v1/memories/:id/reject', { POST: rejectMemory });
-  route('/v1/memories/:id/restore', { POST: restoreMemory });
-  route('/v1/memories/:id/promote', { POST: promoteMemory });
+  route('/v1/memories/:id/accept', { POST: acceptMemory }, { person: ['POST'] });
+  route('/v1/memories/:id/reject', { POST: rejectMemory }, { person: ['POST'] });
+  route('/v1/memories/:id/restore', { POST: restoreMemory }, { person: ['POST'] });
+  route('/v1/memories/:id/promote', { POST: promoteMemory }, { person: ['POST'] });
 };

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CREDENTIAL_MANAGER_BACKEND, KEYCHAIN_BACKEND, SECRET_SERVICE_BACKEND } from '@momonga/foundation/secret-store';
 import {
   OperationLimitError,
+  SECRET_TOOL_BINARY,
   SECURITY_BINARY,
   StoreCallEndedError,
   createCredentialManagerStore,
@@ -188,7 +189,7 @@ describe('a secret-store call ended by the limit of the operation that asked', (
     const fake = perCommandPort({ call: hanging });
     const store =
       label === 'Secret Service'
-        ? createSecretServiceStore(fake.port)
+        ? createSecretServiceStore(fake.port, SECRET_TOOL_BINARY)
         : createCredentialManagerStore(fake.port, { file: 'powershell.exe', args: (script) => ['-EncodedCommand', script] });
     const attempt = store.read('k', signal);
     await until(() => fake.calls.length === 1, 'the store call started');

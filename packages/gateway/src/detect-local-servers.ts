@@ -1,5 +1,5 @@
 import { providerNameOf } from '@momonga/config';
-import { AUTH_DOCUMENT_MAX_BYTES, findOutboundError, isLoopbackHost, isRecord } from '@momonga/foundation';
+import { AUTH_DOCUMENT_MAX_BYTES, claimsLoopback, findOutboundError, isRecord } from '@momonga/foundation';
 import { SERVER_KINDS } from '@momonga/protocol';
 import type { DetectedLocalServer, DetectedManagedServer, DetectedModel, JsonCheck, LocalServerDetection, LocalServerToolSupport, ManagedServerDescription, ServerKind, ServerKinds } from '@momonga/protocol';
 import { readTextLimited } from './adapters/shared/body-reading.ts';
@@ -205,7 +205,7 @@ const detectManaged = async (description: ManagedServerDescription, options: Det
 
 export const detectLocalServers = async (options: DetectLocalServersOptions): Promise<LocalServerDetection[]> => {
   const kinds = options.kinds ?? SERVER_KINDS;
-  const loopback = options.candidates.filter((candidate) => isLoopbackHost(new URL(candidate).hostname));
+  const loopback = options.candidates.filter((candidate) => claimsLoopback(new URL(candidate).hostname));
   const addresses = [...new Set([...loopback, ...options.typed])];
   const answered = await Promise.all(addresses.map((address) => detectOne(address, options.fetch, options.signal, kinds)));
   const found = answered.flatMap((server) => (server === undefined || server.models.length === 0 ? [] : [server]));

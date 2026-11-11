@@ -1,6 +1,8 @@
 import { USER_SHELL_OUTPUT_BYTES } from '@momonga/protocol';
 import type { UserShellRecord } from '@momonga/protocol';
 import type { UserShellEnd } from '../client/runtime-client.ts';
+import { expandedText, insertText, placeText } from './editor.ts';
+import type { EditorState } from './editor.ts';
 import type { KeyTable } from './keys/table.ts';
 import type { TranscriptStore } from './screen/store.ts';
 import { userToolEnded, userToolOutput, userToolStarted } from './transcript.ts';
@@ -11,18 +13,25 @@ export const USER_SHELL_TOOL = 'UserShell';
 const MARKS = /^!+/;
 const HINT_SEPARATOR = ' · ';
 
-export const isShellDraft = (text: string): boolean => text.startsWith(SHELL_MARK);
+export const typedIntoDraft = (state: EditorState, typed: string): EditorState =>
+  !state.shell && state.text === '' && typed.startsWith(SHELL_MARK) ? insertText({ ...state, shell: true }, typed.slice(SHELL_MARK.length)) : insertText(state, typed);
 
-export const withoutShellMark = (text: string): string => text.replace(MARKS, '');
+export const leftShell = (state: EditorState): EditorState => {
+  const text = state.text.replace(MARKS, '');
+  return text === state.text ? { ...state, shell: false } : placeText(state, text);
+};
 
 export type ShellCommand = { command: string; include: boolean };
 
-export const shellCommandOf = (text: string): ShellCommand | undefined => {
-  if (!isShellDraft(text)) return undefined;
-  const include = !text.startsWith(`${SHELL_MARK}${SHELL_MARK}`);
-  const command = text.slice(include ? 1 : 2).trim();
+export const shellCommandOf = (state: EditorState): ShellCommand | undefined => {
+  if (!state.shell) return undefined;
+  const text = expandedText(state);
+  const include = !text.startsWith(SHELL_MARK);
+  const command = text.slice(include ? 0 : SHELL_MARK.length).trim();
   return command === '' ? undefined : { command, include };
 };
+
+export const shellHistoryText = ({ command, include }: ShellCommand): string => `${include ? SHELL_MARK : `${SHELL_MARK}${SHELL_MARK}`}${command}`;
 
 export const shellHint = (keys: KeyTable): string =>
   ['! shell: output goes to the model', '!! keeps it out', `${keys.keyHint('shell.run')} runs`, `${keys.keyHint('shell.leave')} leaves`].join(HINT_SEPARATOR);

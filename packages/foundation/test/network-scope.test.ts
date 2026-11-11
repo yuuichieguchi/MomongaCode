@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NETWORK_SCOPE_KINDS, NO_NETWORK, OPEN_NETWORK, describeNetworkScope, enforcedNetworkScope, meetNetworkScopes, networkScopeOfRequest, networkScopeWithin, normalizedHosts, parseHostEntry } from '@momonga/foundation';
+import { NETWORK_SCOPE_KINDS, NO_NETWORK, OPEN_NETWORK, describeNetworkScope, enforcedNetworkScope, meetNetworkScopes, networkScopeOfRequest, networkScopeWithin, normalizedHosts, parseHostEntry, hostPatternCovers, parseHostPattern } from '@momonga/foundation';
 import type { NetworkScope, NetworkScopeKind } from '@momonga/foundation';
 
 const hosts = (...names: string[]): NetworkScope => ({ kind: 'hosts', hosts: names });
@@ -70,5 +70,45 @@ describe('the network scope of a call', () => {
     expect(describeNetworkScope(NO_NETWORK)).toBe('no network access');
     expect(describeNetworkScope(OPEN_NETWORK)).toBe('unrestricted network access');
     expect(describeNetworkScope(hosts('a.test', 'b.test:443'))).toBe('network access to a.test, b.test:443 only');
+  });
+});
+
+describe('a host pattern of a Network rule', () => {
+  const covers = (pattern: string, host: string, port?: number): boolean => {
+    const parsed = parseHostPattern(pattern);
+    if (parsed === undefined) throw new Error(`${pattern} is not a host pattern`);
+    return hostPatternCovers(parsed, { host, port });
+  };
+
+  it('covers the names under a suffix, never the suffix itself', () => {
+    expect(covers('*.example.com', 'api.example.com')).toBe(true);
+    expect(covers('*.example.com', 'a.b.example.com')).toBe(true);
+    expect(covers('*.example.com', 'example.com')).toBe(false);
+    expect(covers('*.example.com', 'badexample.com')).toBe(false);
+    expect(covers('*.example.com', 'example.com.evil.test')).toBe(false);
+  });
+
+  it('folds case on both sides', () => {
+    expect(covers('*.Example.COM', 'API.example.com', 443)).toBe(true);
+    expect(covers('Registry.Test', 'registry.TEST')).toBe(true);
+  });
+
+  it('covers an exact name or address, and a pattern with a port only that port', () => {
+    expect(covers('registry.test', 'registry.test')).toBe(true);
+    expect(covers('registry.test', 'registry.test', 443)).toBe(true);
+    expect(covers('registry.test', 'other.test')).toBe(false);
+    expect(covers('registry.test:443', 'registry.test', 443)).toBe(true);
+    expect(covers('registry.test:443', 'registry.test', 80)).toBe(false);
+    expect(covers('registry.test:443', 'registry.test')).toBe(false);
+    expect(covers('10.0.0.5', '10.0.0.5', 22)).toBe(true);
+  });
+
+  it('never lets a suffix cover an address, and reads no pattern that is not a host form', () => {
+    expect(covers('*.0.0.5', '10.0.0.5')).toBe(false);
+    expect(parseHostPattern('*.example.com:443')).toBeUndefined();
+    expect(parseHostPattern('*.10.0.0.5')).toBeUndefined();
+    expect(parseHostPattern('*')).toBeUndefined();
+    expect(parseHostPattern('a.*.test')).toBeUndefined();
+    expect(parseHostPattern('*.Example.com')).toEqual({ host: 'example.com', port: undefined, suffix: true });
   });
 });

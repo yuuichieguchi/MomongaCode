@@ -60,5 +60,5 @@ export const registerTrustRoutes = (route: RouteRegistrar, deps: { store: Pick<R
     return new Response(null, { status: 204 });
   };
 
-  route('/v1/trust', { GET: getTrust, PUT: putTrust, DELETE: deleteTrust });
+  route('/v1/trust', { GET: getTrust, PUT: putTrust, DELETE: deleteTrust }, { person: ['PUT', 'DELETE'] });
 };

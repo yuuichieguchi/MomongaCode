@@ -17,14 +17,7 @@ export const jsonModeStateOf = (answer: JsonModeAnswer): JsonModeProbeState => {
   return 'value' in readJsonReply(null, { text: answer.text, path: 'enforced' }) ? 'accepted' : 'refused';
 };
 
-export const measureJsonMode = async (ask: () => Promise<JsonModeAnswer>, signal: AbortSignal | undefined): Promise<JsonModeProbeState> => {
-  try {
-    return jsonModeStateOf(await ask());
-  } catch {
-    signal?.throwIfAborted();
-    return 'unmeasured';
-  }
-};
+export const measureJsonMode = async (ask: () => Promise<JsonModeAnswer>): Promise<JsonModeProbeState> => jsonModeStateOf(await ask());
 
 export const jsonModeCapabilityOf = (state: JsonModeProbeState | undefined): { jsonMode?: JsonMode } => {
   if (state === 'accepted') return { jsonMode: 'json_object' };

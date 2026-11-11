@@ -6,9 +6,9 @@ import { deserializeMessage, serializeMessage, type JSONRPCMessage, type Transpo
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
 import { Deadline, SHUTDOWN_SETTING_LIMITS, claimRetry, groupTerminationBoundMs, launchGroupLeader, operationSignal, reapMarkedProcesses, recordMarkerGroup, systemTiming, terminateGroup, type GroupLaunch, type RetryKind, type TerminateOutcome, type Timing } from '@momonga/foundation';
-import type { FileSystem, LaunchProtection, ProcessInspector } from '@momonga/foundation';
+import type { ChildProtection, FileSystem, ProcessInspector } from '@momonga/foundation';
 
-const STDIO_SERVER_LAUNCH: LaunchProtection = { kind: 'unprotected', reason: 'a stdio MCP server is started without the protection of the home' };
+export type StdioLaunch = { protection: ChildProtection; commandOf(argv: readonly string[]): { file: string; args: string[] } };
 
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 const STDERR_TAIL_BYTES = 64 * 1024;
@@ -27,6 +27,7 @@ export interface StdioTransportOptions {
   projectDir: string;
   baseEnv: Record<string, string>;
   files: FileSystem;
+  launch: StdioLaunch;
   closeGraceMs?: CloseGrace;
   markers?: McpMarkerOptions;
   terminate?: (pgid: number, options: { graceMs: number; signal?: AbortSignal; timing?: Timing }) => Promise<TerminateOutcome>;
@@ -189,11 +190,12 @@ class StdioTransportImpl implements StdioTransport {
   }
 
   private async spawnServer(config: McpStdioServerConfig, cwd: string, env: Record<string, string>, markerPath: string | undefined): Promise<GroupLaunch> {
-    const file = await resolveCommand(this.options.files, config.command, cwd, env['PATH'] ?? '');
-    const args = config.args ?? [];
-    if (markerPath === undefined) return launchGroupLeader({ file, args, cwd, env, stdio: ['pipe', 'pipe', 'pipe'], protection: STDIO_SERVER_LAUNCH });
+    const resolved = await resolveCommand(this.options.files, config.command, cwd, env['PATH'] ?? '');
+    const { protection } = this.options.launch;
+    const { file, args } = this.options.launch.commandOf([resolved, ...(config.args ?? [])]);
+    if (markerPath === undefined) return launchGroupLeader({ file, args, cwd, env, stdio: ['pipe', 'pipe', 'pipe'], protection });
     await (await this.options.files.open(markerPath, 'wx', MARKER_FILE_MODE)).close();
-    return launchGroupLeader({ file, args, cwd, env, stdio: ['pipe', 'pipe', 'pipe'], protection: STDIO_SERVER_LAUNCH, marker: { slot: MARKER_SLOT, file: markerPath } });
+    return launchGroupLeader({ file, args, cwd, env, stdio: ['pipe', 'pipe', 'pipe'], protection, marker: { slot: MARKER_SLOT, file: markerPath } });
   }
 
   send(message: JSONRPCMessage): Promise<void> {

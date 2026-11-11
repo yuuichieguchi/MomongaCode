@@ -103,6 +103,20 @@ describe('a command the person typed (design 5.9)', () => {
     expect(started).toBe(0);
   });
 
+  it('tells, before the output, that the command runs without the protection of the home, with the sentence that names how to get it', async () => {
+    const reason = 'With sandbox none, commands can read and change the home, because bubblewrap is not installed: install bubblewrap (bwrap) to protect it.';
+    const shell: UserInputPort['shell'] = async (_session, command, io) => {
+      io.onUnprotected(reason);
+      io.onOutput(`ran ${command}\n`);
+      return { kind: 'ran', exitCode: 0, output: `ran ${command}` };
+    };
+    const env = await startService({ userInput: { attach: unusedAttach, shell } });
+    const session = await env.createSession();
+    const frames = framesOf(await shellOf(env, session.id, 'ls', true));
+    expect(frames.map((frame) => frame.type)).toEqual(['unprotected', 'output', 'exit']);
+    expect(frames[0]).toEqual({ type: 'unprotected', reason });
+  });
+
   it('tells a refused command with its reason and stores nothing', async () => {
     const env = await startService({ userInput: { attach: unusedAttach, shell: async () => ({ kind: 'refused', reason: 'denied by rule Bash(rm:*)' }) } });
     const session = await env.createSession();

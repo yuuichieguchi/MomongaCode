@@ -128,7 +128,6 @@ export {
   MARKER_KINDS,
   MomongaDirectoryError,
   SessionTmpDirError,
-  ensureGenerationDirs,
   ensureMomongaDirs,
   ensureSessionTmpDir,
   releaseSessionScratch,
@@ -139,6 +138,7 @@ export {
   generationSpawnScratch,
   leftoverDirectories,
   managedInstancePaths,
+  layoutEnvOf,
   homeLayout,
   momongaLayout,
   momongaPaths,
@@ -220,12 +220,12 @@ export {
 } from './secret-store.ts';
 export type { SecretBackend, SecretProcessPort, SecretProcessResult, SecretStore } from './secret-store.ts';
 export { isAcceptableAddress, isLoopbackAddress } from './global-address.ts';
-export { isLoopbackHost, normalizedHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
+export { claimsLoopback, normalizedHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
 export { matchesNoProxy, NETWORK_ENV_NAMES, routeOf } from './network-route.ts';
 export { HOST_READ_BOUND_MS } from './host-read-bound.ts';
 export { startSharedCall } from './shared-call.ts';
 export type { SharedCall } from './shared-call.ts';
-export { OutboundConnectionError, createOutboundDispatcher, findOutboundError, installTrust, openOutboundTunnel, outboundFetch, outboundPlan, proxyHopError, proxyPasswordsOf, proxyReplyError, trustFailureText } from './outbound.ts';
+export { OutboundConnectionError, createOutboundDispatcher, loopbackCheckedLookup, findOutboundError, installTrust, openOutboundTunnel, outboundFetch, outboundPlan, proxyHopError, proxyPasswordsOf, proxyReplyError, trustFailureText } from './outbound.ts';
 export type { OutboundFailure, OutboundFetch, OutboundNetwork, OutboundOptions, OutboundPlan, TrustReport } from './outbound.ts';
 export type { NetworkConfig, NetworkEnvName, NetworkSource, Route, SourcedValue } from './network-route.ts';
 export {
@@ -316,7 +316,7 @@ export type { SignalSender } from './process-alive.ts';
 export type { ProcessPort } from './process-port.ts';
 export { HELPER_COMMAND, helperCommandLine } from './executable-helper.ts';
 export type { ExecutableHelper, ExecutableHelpers, HelperHost, HelperSelf } from './executable-helper.ts';
-export { SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, endpointFormsOfSocket, endpointHostOf, isPipePath, setSocketBind, socketBindRefusalOf, pipePathFor } from './socket-path.ts';
+export { SocketPathUnmeasuredError, SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, endpointFormsOfSocket, endpointHostOf, isPipePath, setSocketBind, socketBindRefusalOf, pipePathFor } from './socket-path.ts';
 export { MAX_SYMLINK_HOPS, comparableFromParts, containsByComponents, createPathResolver, createSyncPathResolver, hostPaths, setCaseSensitivityProbe, walkPath } from './path-compare.ts';
 export { syncPaths } from './sync-paths.ts';
 export { answeredLater, answeredNow, askedPaths } from './path-asking.ts';
@@ -327,6 +327,7 @@ export type { CapabilityResult } from './capability-probe.ts';
 export type { LocatedParts, PathFileSystem, PathResolver, StepRead, SyncPathResolver, WalkEntry } from './path-compare.ts';
 export { isTransientErrno } from './transient-errno.ts';
 export { modeIsPrivate } from './platform/privacy.ts';
+export { personCapabilityOf } from './platform/person-capability.ts';
 export { BASE_ENTRY_FLAGS, CHILD_ENTRY_FLAGS, COMMON_ENTRY_FLAGS, EntryUsageError, parseFlags } from './entry-flags.ts';
 export type { FlagSpec } from './entry-flags.ts';
 export { watchLifeline } from './lifeline.ts';
@@ -338,6 +339,8 @@ export type { GuardedStandardStreams } from './standard-streams.ts';
 export type { DaemonCloseResult, DaemonDefinition, DaemonHandle, DaemonStartContext, EntryIo, EntrySignal } from './daemon-entry.ts';
 export { UNRESOLVABLE_ERRNO_CODES, resolveCanonicalPath, unresolvableReasonOf } from './path-resolution.ts';
 export { everyAsync, filterAsync, findAsync, mapAsync, someAsync } from './sequential.ts';
+export { SYSTEM_PROGRAM_DIRECTORIES, programOnSearchPath, systemProgramDirectories } from './program-search.ts';
+export type { ProgramResolution, WritableCheck } from './program-search.ts';
 export { displayToolPath, resolveToolPath } from './tool-path.ts';
 export type { Awaitable, PathProbes, PathResolution, UnresolvableErrno, UnresolvableReason, Unresolved } from './path-resolution.ts';
 export { gitlinksOfIndex } from './git-index.ts';
@@ -350,7 +353,7 @@ export { anchorFormOf, checkExceptionGrammar, checkFilePatternGrammar, fileMatch
 export type { Expression, FileMatcher, FilePatternContext } from './file-pattern.ts';
 export { HOST_FLAVOUR, nativePathOf, patternPathOf, specifierOf } from './path-flavour.ts';
 export type { PathFlavour } from './path-flavour.ts';
-export { DEFAULT_SANDBOX_NETWORK, NETWORK_SCOPE_KINDS, NO_NETWORK, OPEN_NETWORK, SANDBOX_NETWORK_SETTINGS, describeNetworkScope, enforcedNetworkScope, formatHostEntry, hostEntryCovers, hostEntryProblem, meetNetworkScopes, networkScopeOfRequest, networkScopeWithin, normalizedHosts, parseHostEntry } from './network-scope.ts';
+export { DEFAULT_SANDBOX_NETWORK, NETWORK_SCOPE_KINDS, NO_NETWORK, OPEN_NETWORK, SANDBOX_NETWORK_SETTINGS, describeNetworkScope, enforcedNetworkScope, formatHostEntry, hostEntryCovers, hostEntryProblem, HOST_SUFFIX_PREFIX, hostPatternCovers, parseHostPattern, meetNetworkScopes, networkScopeOfRequest, networkScopeWithin, normalizedHosts, parseHostEntry } from './network-scope.ts';
 export type { HostEntry, NetworkRequest, NetworkScope, NetworkScopeKind, SandboxNetworkSetting } from './network-scope.ts';
 export type { RuleEnforcement } from './file-rules.ts';
 export { EMPTY_FILE_RULES, FileRuleError, HOST_RULE_ENFORCEMENT, ruleEnforcementOf, compileFileRuleSet, inWritableArea, lexicallyWithin, writableAreaOf, writableCheckOf, fileRuleBlocks, fileRuleBlockingForm, fileRuleFingerprint } from './file-rules.ts';

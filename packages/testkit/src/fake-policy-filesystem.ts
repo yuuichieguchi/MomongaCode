@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { EMPTY_PROTECTED_SET, gitlinksOfIndex, hostPaths, programKeysOfConfig } from '@momonga/foundation';
+import { EMPTY_PROTECTED_SET, gitlinksOfIndex, hostPaths, programKeysOfConfig, programOnSearchPath } from '@momonga/foundation';
 import { TEST_HEARTBEAT_MS } from './test-support.ts';
 import type { ConfigPrograms, EntryRead, GitlinkRead, LocatedParts, PathProbes, PathResolution, PathResolver, ProtectedSet, StepRead, Unresolved, UnresolvableErrno } from '@momonga/foundation';
 
@@ -39,11 +39,19 @@ export type RecordingPolicyFilesystem = FakePolicyFilesystem & { resolveCalls: F
 export type FakePolicyFilesystemLayout = {
   platform?: NodeJS.Platform;
   programs?: Readonly<Record<string, string>>;
+  heldPrograms?: readonly string[];
   programsBySearchPath?: Readonly<Record<string, Readonly<Record<string, string>>>>;
   globs?: Readonly<Record<string, FakeGlobExpansion>>;
   entries?: Readonly<Record<string, EntryRead>>;
   overrides?: Partial<FakePolicyFilesystem>;
 };
+
+export class UndeclaredGlobError extends Error {
+  constructor(pattern: string, cwd: string) {
+    super(`the fake policy file system has no expansion declared for ${pattern} in ${cwd}; only bash on the disk expands a glob, so the test declares its expansion`);
+    this.name = 'UndeclaredGlobError';
+  }
+}
 
 export const APPLE_PROGRAMS: Readonly<Record<string, string>> = {
   mkdir: '/bin/mkdir',
@@ -168,20 +176,24 @@ export const fakePolicyFilesystem = (layout: FakePolicyFilesystemLayout = {}): R
   const globs = layout.globs ?? {};
   const entries = layout.entries ?? {};
   const resolveCalls: FakeResolveCall[] = [];
+  const platform = layout.platform ?? process.platform;
   return {
     resolveCalls,
-    platform: layout.platform ?? 'darwin',
+    platform,
     canonicalise: (absolute) => testPaths().resolveCanonicalPath(absolute),
     volumeProbe: (directory) => testPaths().volumeIsCaseInsensitive(directory),
     locate: (absolute) => testPaths().locate(absolute),
     resolveProgram: (name, cwd, searchPath, isWritable) => {
       resolveCalls.push({ name, cwd, searchPath, isWritable });
-      if (searchPath === undefined) return { none: true };
-      const found = (layout.programsBySearchPath?.[searchPath] ?? programs)[name];
-      if (found === undefined) return { none: true };
-      return { program: found };
+      const table = (searchPath === undefined ? undefined : layout.programsBySearchPath?.[searchPath]) ?? programs;
+      const held = new Set([...Object.values(table), ...(layout.heldPrograms ?? [])]);
+      return programOnSearchPath(platform, (directory, program) => held.has(path.join(directory, program)))(name, cwd, searchPath, isWritable);
     },
-    expandGlob: (pattern, cwd) => globs[path.resolve(cwd, pattern)] ?? globs[pattern] ?? { matches: [] },
+    expandGlob: (pattern, cwd) => {
+      const declared = globs[path.resolve(cwd, pattern)] ?? globs[pattern];
+      if (declared === undefined) throw new UndeclaredGlobError(pattern, cwd);
+      return declared;
+    },
     readEntry: (absolute) => entries[absolute] ?? readRealEntry(absolute),
     readNoFollow: (absolute) => {
       const entry = entries[absolute];
@@ -219,7 +231,7 @@ export const FAKE_LEASE = { leaseMs: LEASE_PER_HEARTBEAT * TEST_HEARTBEAT_MS, he
 
 export const protectedSetWith = (roots: readonly string[], paths: readonly string[]): ProtectedSet => ({ ...EMPTY_PROTECTED_SET, roots, paths });
 
-export const TEST_SEARCH_PATH = '/usr/bin:/bin';
+export const TEST_SEARCH_PATH = '/usr/bin:/bin:/opt/homebrew/bin';
 
 export const isWritableFor =
   (roots: readonly string[]) =>
