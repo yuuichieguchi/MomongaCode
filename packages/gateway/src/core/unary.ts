@@ -31,6 +31,7 @@ import { adapterTargetOf } from './router.ts';
 import type { Narrowed, TargetRuntime } from './router.ts';
 import { CandidateDropped, CandidateRefused, REFUSAL_STAGES, UnprobedTarget } from './candidate-refusal.ts';
 import type { Refusal } from './candidate-refusal.ts';
+import type { SharedWorkHold, WorkRegistry } from './run.ts';
 import { withPinnedServices } from './services.ts';
 import type { GatewayServices, Services } from './services.ts';
 import type { UnknownFields } from './unknown-fields.ts';
@@ -49,7 +50,6 @@ export type UnaryService = {
   ): Promise<CompactResource>;
   cancel(idempotencyKeyHeader: string | undefined): boolean;
   abortAll(reason: unknown): void;
-  settled(): Promise<void>;
   activeCount(): number;
 };
 
@@ -60,6 +60,7 @@ type InflightCompaction = {
   subscribers: number;
   detachTimer: unknown;
   settled: boolean;
+  work: SharedWorkHold;
 };
 
 const identifier = (services: Services, prefix: string): string => `${prefix}_${uuidv7(services.clock).replaceAll('-', '')}`;
@@ -384,7 +385,7 @@ const compactOnce = async (
   };
 };
 
-export const createUnaryService = (services: GatewayServices, validator: RequestValidator): UnaryService => {
+export const createUnaryService = (services: GatewayServices, validator: RequestValidator, inFlight: WorkRegistry): UnaryService => {
   const inflight = new Map<string, InflightCompaction>();
   const active = new Set<InflightCompaction>();
 
@@ -396,11 +397,13 @@ export const createUnaryService = (services: GatewayServices, validator: Request
 
   const attach = (entry: InflightCompaction): void => {
     entry.subscribers += 1;
+    entry.work.subscribers(entry.subscribers);
     clearDetachTimer(entry);
   };
 
   const detach = (entry: InflightCompaction): void => {
     entry.subscribers -= 1;
+    entry.work.subscribers(entry.subscribers);
     if (entry.subscribers > 0 || entry.settled || entry.controller.signal.aborted || entry.detachTimer !== undefined) return;
     entry.detachTimer = services.timers.setTimeout(() => {
       entry.detachTimer = undefined;
@@ -466,6 +469,7 @@ export const createUnaryService = (services: GatewayServices, validator: Request
       subscribers: 0,
       detachTimer: undefined,
       settled: false,
+      work: inFlight.beginWork(),
       promise: Promise.resolve().then(async () => {
         try {
           const resource = await withPinnedServices(services, controller.signal, (pinned) => compactOnce(pinned, request, unknownFields, controller.signal, deadlineAt, trace));
@@ -475,6 +479,7 @@ export const createUnaryService = (services: GatewayServices, validator: Request
           return resource;
         } finally {
           entry.settled = true;
+          entry.work.end();
           clearDetachTimer(entry);
           active.delete(entry);
           if (inflight.get(key) === entry) inflight.delete(key);
@@ -515,9 +520,6 @@ export const createUnaryService = (services: GatewayServices, validator: Request
     },
     abortAll: (reason) => {
       for (const entry of active) entry.controller.abort(reason);
-    },
-    settled: async () => {
-      await Promise.all([...active].map((entry) => entry.promise.then(() => undefined, () => undefined)));
     },
     activeCount: () => active.size,
   };

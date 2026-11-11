@@ -19,6 +19,7 @@ import { createErrorExit } from './error-exit.ts';
 import { createApp } from './app.ts';
 import { checkGatewayOptions, isLoopbackAddress, limitsOf } from './config-check.ts';
 import { createRequestTracker } from './tracker.ts';
+import type { RequestTracker } from './tracker.ts';
 import { createWebSocketTransport } from './websocket.ts';
 import type { WebSocketTransport } from './websocket.ts';
 
@@ -102,6 +103,12 @@ const fixedEpochs = (options: FixedModelsOptions & Pick<GatewayOptions, 'clock' 
 
 const derivedEpochs = (epochs: DerivedModelsOptions['epochs']): ClosableEpochs => ({ epochs, close: () => epochs.close() });
 
+const countRequests = (server: http.Server, tracker: RequestTracker): void => {
+  server.on('request', (_request, response) => {
+    response.once('close', tracker.begin());
+  });
+};
+
 const watchServerErrors = (server: http.Server, onFatal: (error: Error) => void): void => {
   server.on('error', (error: Error) => onFatal(error));
 };
@@ -138,18 +145,17 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       redactor,
     };
     const errors = createErrorExit(redactor, options.onError);
-    const responses = createResponsesService(services, validator);
-    const unary = createUnaryService(services, validator);
     const tracker = createRequestTracker();
+    const responses = createResponsesService(services, validator, tracker);
+    const unary = createUnaryService(services, validator, tracker);
     const startedAtMs = clock.now();
     const startedAt = new Date(startedAtMs).toISOString();
     const isRetiring = (): boolean => options.role.current() === 'retiring';
-    const activeRequests = (): number => Math.max(tracker.active(), responses.activeCount() + unary.activeCount()) + (options.probeFlights?.() ?? 0);
+    const activeRequests = (): number => tracker.active() + (options.probeFlights?.() ?? 0);
     const app = createApp({
       services,
       responses,
       unary,
-      tracker,
       isRetiring,
       activeRequests,
       startedAtSeconds: Math.floor(startedAtMs / 1000),
@@ -174,6 +180,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
     });
     transports.push(webSocket);
     const unixServer = http.createServer(getRequestListener(handler));
+    countRequests(unixServer, tracker);
     webSocket.attach(unixServer);
     servers.push(unixServer);
     await listenUnix(unixServer, options.socketPath, undefined, startDeadlineSignal(options.startSignal));
@@ -194,6 +201,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       });
       transports.push(tcpSockets);
       tcpServer = http.createServer(getRequestListener(requireToken(token, handler)));
+      countRequests(tcpServer, tracker);
       tcpSockets.attach(tcpServer);
       servers.push(tcpServer);
       tcpPort = await listenTcp(tcpServer, options.debugTcp.host, options.debugTcp.port);
@@ -223,7 +231,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
             : new Promise<'expired'>((resolve) => {
                 graceHandle = timers.setTimeout(() => resolve('expired'), graceMs);
               });
-        const drained = Promise.all([responses.settled(), unary.settled(), tracker.idle()]).then(() => 'drained' as const);
+        const drained = tracker.idle().then(() => 'drained' as const);
         const outcome = await Promise.race([drained, grace, abortRequested]);
         if (graceHandle !== undefined) timers.clearTimeout(graceHandle);
         if (outcome !== 'drained') {
