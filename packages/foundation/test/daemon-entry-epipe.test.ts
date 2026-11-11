@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
+import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, spawnTracked, withTempDir, pollUntil } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
@@ -15,9 +16,9 @@ const UNPROTECTED = path.join(FIXTURES, 'epipe-daemon-unprotected.ts');
 
 type LogLine = Record<string, unknown> & { msg: string };
 
-const prepareHome = (context: CleanupContext): string => {
+const prepareHome = async (context: CleanupContext): Promise<string> => {
   const home = withTempDir(context, { asHome: true });
-  fs.mkdirSync(path.join(home, '.momonga', 'logs'), { recursive: true, mode: 0o700 });
+  await ensureMomongaDirs(momongaPaths(fs.realpathSync(home), process.platform, process.env));
   return home;
 };
 
@@ -89,7 +90,7 @@ const expectGracefulLog = (home: string): void => {
 
 describe('daemon entry with a vanished supervisor', () => {
   it('supervisor death with the file target: graceful close', async (context) => {
-    const home = prepareHome(context);
+    const home = await prepareHome(context);
     const daemon = await startDaemon(context, PROTECTED, home, 'file');
     killSupervisorSide(daemon);
     expect(await exitOf(daemon.child)).toBe(0);
@@ -97,7 +98,7 @@ describe('daemon entry with a vanished supervisor', () => {
   });
 
   it('supervisor death with the both target', async (context) => {
-    const home = prepareHome(context);
+    const home = await prepareHome(context);
     const daemon = await startDaemon(context, PROTECTED, home, 'both');
     killSupervisorSide(daemon);
     expect(await exitOf(daemon.child)).toBe(0);
@@ -105,7 +106,7 @@ describe('daemon entry with a vanished supervisor', () => {
   });
 
   it('supervisor death with the stderr target still closes gracefully', async (context) => {
-    const home = prepareHome(context);
+    const home = await prepareHome(context);
     const daemon = await startDaemon(context, PROTECTED, home, 'stderr');
     killSupervisorSide(daemon);
     expect(await exitOf(daemon.child)).toBe(0);
@@ -113,14 +114,14 @@ describe('daemon entry with a vanished supervisor', () => {
   });
 
   it('negative control: the pre-fix nodeEntryIo', async (context) => {
-    const home = prepareHome(context);
+    const home = await prepareHome(context);
     const daemon = await startDaemon(context, UNPROTECTED, home, 'stderr');
     killSupervisorSide(daemon);
     expect(await exitOf(daemon.child)).toBe(1);
   });
 
   it('exit does not truncate backed-up stderr', async (context) => {
-    const home = prepareHome(context);
+    const home = await prepareHome(context);
     const child = spawnTracked(context, process.execPath, [PROTECTED, `--home=${home}`, '--log-target=stderr', '--bulk-bytes=300000'], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });

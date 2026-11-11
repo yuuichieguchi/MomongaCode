@@ -1,3 +1,4 @@
+import type { ReapMarkerDirectoryResult } from '@momonga/foundation';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -182,7 +183,7 @@ describe('supervisor-level settings evaluation', () => {
 
 describe('the first spawn and the settings read', () => {
   it('an edit made during the reap is picked up by the first spawn', async (context) => {
-    const reap = Promise.withResolvers<{ reaped: number; kept: number }>();
+    const reap = Promise.withResolvers<ReapMarkerDirectoryResult>();
     const h = await startHarness(context, {
       settings: validSettings({ sandbox: 'seatbelt' }),
       markerPorts: { reapMarkerDirectory: () => reap.promise },
@@ -194,7 +195,7 @@ describe('the first spawn and the settings read', () => {
     });
     await waitFor(() => h.markers.calls.reapMarkerDirectory.length > 0);
     writeSettings(h.home, validSettings({ sandbox: 'none', apiKeyEnv: 'UPSTREAM_SECRET_NAME' }));
-    reap.resolve({ reaped: 0, kept: 0 });
+    reap.resolve({ reaped: 0, kept: 0, unreaped: [] });
     await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, maxMs: 5000 });
     await pump(h.timers, h.realWork, 10_000);
     expect(h.fake.spawnCount()).toBe(2);

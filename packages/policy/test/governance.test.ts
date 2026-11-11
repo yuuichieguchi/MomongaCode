@@ -1,3 +1,4 @@
+import { testSecretLocations } from '@momonga/testkit';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
@@ -27,7 +28,7 @@ const governed = (layout: Layout, effect: 'deny' | 'ask', text: string): Permiss
 
 const decideWith = async (layout: Layout, tool: PolicyTool, subject: PermissionSubject, mode: PermissionMode, rules: PermissionRule[]) => {
   const roots = [layout.project];
-  return decide({
+  return decide({ secretLocations: testSecretLocations(layout.home),
     tool,
     subject,
     mode,

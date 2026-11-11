@@ -1,8 +1,8 @@
 import type { PermissionRule } from '@momonga/config';
-import { ruleFingerprint } from '@momonga/foundation';
+import { verdictKey } from '@momonga/foundation';
 import type { RuleEnforcement } from '@momonga/foundation';
-import { POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, policyRefutedMessage, policyVerdictNotice, refusingRefutations } from '@momonga/protocol';
-import type { PinnedRuleVerdict, RunEventPayload, RunState } from '@momonga/protocol';
+import { POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, isFinalRuleVerdict, policyRefutedMessage, policyVerdictNotice, refusingRefutations } from '@momonga/protocol';
+import type { PinnedRuleVerdict, RuleVerdict, RunEventPayload, RunState } from '@momonga/protocol';
 import type { RunError } from '@momonga/store';
 import { permissionRulesFor } from '../governance/rules.ts';
 import type { RuleVerifierPort, ToolEnv } from '../ports.ts';
@@ -12,7 +12,9 @@ import type { HeldSession } from './known.ts';
 import { holdSandbox } from './held-sandbox.ts';
 import type { WorkerOptions } from './types.ts';
 
-export { ruleFingerprint };
+export type RuleVerdictSources = { options: Pick<WorkerOptions, 'store' | 'home' | 'ruleVerifier'>; control: Pick<ClaimControl, 'signal' | 'recordingRaised' | 'fail'> };
+
+export type RuleSetFacts = { rules: readonly PermissionRule[]; roots: readonly string[]; exemptDirectory: string; enforcement: RuleEnforcement };
 
 export const runRulesFor = async (
   options: Parameters<typeof permissionRulesFor>[0],
@@ -21,19 +23,51 @@ export const runRulesFor = async (
   signal: AbortSignal,
 ): Promise<PermissionRule[]> => [...(await permissionRulesFor(options, session, signal)), ...(delegation?.rules ?? [])];
 
-export type RuleVerdictSources = { options: Pick<WorkerOptions, 'store' | 'home' | 'ruleVerifier'>; control: Pick<ClaimControl, 'signal' | 'recordingRaised'> };
+type Undecided = { verdict: RuleVerdict; retry: Promise<void> | undefined };
 
-export type RuleSetFacts = { rules: readonly PermissionRule[]; roots: readonly string[]; enforcement: RuleEnforcement };
+const undecidedByVerifier = new WeakMap<RuleVerifierPort, Map<string, Undecided>>();
+
+const undecidedOf = (verifier: RuleVerifierPort): Map<string, Undecided> => {
+  const known = undecidedByVerifier.get(verifier);
+  if (known !== undefined) return known;
+  const fresh = new Map<string, Undecided>();
+  undecidedByVerifier.set(verifier, fresh);
+  return fresh;
+};
+
+const NOT_NEEDED = { verdict: 'not-needed', refuted: [], unknown: [], notProved: [] } as const satisfies Omit<RuleVerdict, 'solver'>;
 
 export const ruleVerdictFor = async ({ options, control }: RuleVerdictSources, session: HeldSession, facts: RuleSetFacts): Promise<PinnedRuleVerdict> => {
   const verifier: RuleVerifierPort = options.ruleVerifier;
-  const input = await verifier.inputOf({ rules: facts.rules, roots: facts.roots, mode: session.permissionMode, home: options.home, cwd: session.cwd, enforcement: facts.enforcement }, control.signal);
-  const fingerprint = ruleFingerprint({ input, solverVersion: await verifier.solverVersion() });
+  const input = await verifier.inputOf(
+    { rules: facts.rules, roots: facts.roots, mode: session.permissionMode, home: options.home, cwd: session.cwd, exemptDirectory: facts.exemptDirectory, enforcement: facts.enforcement },
+    control.signal,
+  );
+  const solver = await verifier.solverVersion();
+  const fingerprint = verdictKey(input, solver);
+  if (!(await verifier.needsVerdict(input))) return { fingerprint, solver, ...NOT_NEEDED };
   const stored = options.store.ruleVerdicts.get(fingerprint);
   if (stored !== undefined) return { fingerprint, ...stored.verdict };
-  const verdict = await control.recordingRaised(verifier.verify(input, control.signal));
-  options.store.ruleVerdicts.put(fingerprint, verdict);
-  return { fingerprint, ...verdict };
+  const undecided = undecidedOf(verifier);
+  const settle = (verdict: RuleVerdict): void => {
+    if (isFinalRuleVerdict(verdict)) {
+      options.store.ruleVerdicts.put(fingerprint, verdict);
+      undecided.delete(fingerprint);
+    } else {
+      undecided.set(fingerprint, { verdict, retry: undefined });
+    }
+  };
+  const earlier = undecided.get(fingerprint);
+  if (earlier === undefined) {
+    const verdict = await control.recordingRaised(verifier.verify(input, control.signal));
+    settle(verdict);
+    return { fingerprint, ...verdict };
+  }
+  earlier.retry ??= verifier.verify(input, control.signal).then(settle, (error: unknown) => {
+    earlier.retry = undefined;
+    if (!control.signal.aborted) control.fail(error);
+  });
+  return { fingerprint, ...earlier.verdict };
 };
 
 export type StartVerdictSources = RuleVerdictSources & {
@@ -49,7 +83,7 @@ export const ruleVerdictAtStart = async (sources: StartVerdictSources, session: 
   try {
     const rules = await runRulesFor(options, session, sources.delegation, control.signal);
     const policy = await options.tools.policyFor(session, { env: sources.env, rules, readableDirectories: sources.readableDirectories, ruleEnforcement: held.ruleEnforcement, signal: control.signal, discoverGitConfig: true });
-    return await ruleVerdictFor(sources, session, { rules, roots: policy.roots, enforcement: held.ruleEnforcement });
+    return await ruleVerdictFor(sources, session, { rules, roots: policy.roots, exemptDirectory: policy.tmpDir, enforcement: held.ruleEnforcement });
   } finally {
     held.done();
   }
@@ -58,10 +92,15 @@ export const ruleVerdictAtStart = async (sources: StartVerdictSources, session: 
 export const policyRefusal = (verdict: PinnedRuleVerdict): RunError | undefined =>
   refusingRefutations(verdict).length > 0 ? { code: POLICY_REFUTED_CODE, message: policyRefutedMessage(verdict) } : undefined;
 
-const NOTICE_LEVELS = { proved: 'info', unknown: 'warning', refuted: 'error' } as const;
+const SETTLED_WITHOUT_FINDING: readonly RuleVerdict['verdict'][] = ['proved', 'not-needed'];
+
+const noticeLevelOf = (verdict: PinnedRuleVerdict): 'info' | 'warning' | 'error' => {
+  if (refusingRefutations(verdict).length > 0) return 'error';
+  return SETTLED_WITHOUT_FINDING.some((kind) => kind === verdict.verdict) && verdict.refuted.length === 0 ? 'info' : 'warning';
+};
 
 export const laterVerdictNotice = (state: Pick<RunState, 'notes'>, pinnedFingerprint: string | undefined, verdict: PinnedRuleVerdict): RunEventPayload[] => {
   if (verdict.fingerprint === pinnedFingerprint) return [];
   if (state.notes.some((note) => note.code === POLICY_VERDICT_NOTICE_CODE && note.message.includes(verdict.fingerprint))) return [];
-  return [{ type: 'notice', level: NOTICE_LEVELS[verdict.verdict], code: POLICY_VERDICT_NOTICE_CODE, message: policyVerdictNotice(verdict) }];
+  return [{ type: 'notice', level: noticeLevelOf(verdict), code: POLICY_VERDICT_NOTICE_CODE, message: policyVerdictNotice(verdict) }];
 };

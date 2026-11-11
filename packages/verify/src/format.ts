@@ -27,17 +27,17 @@ const describeResult = (result: PropertyResult): string[] => {
     }
   }
   if (verdict.status === 'unknown') lines.push(`  undecided: ${verdict.reason}`);
-  for (const finding of result.byModeDefault) {
-    lines.push(`  by the mode default, not by a rule: ${finding.subject}: ${finding.message}`);
-    if (finding.counterexample !== undefined) lines.push(...describeCounterexample(finding.counterexample));
-  }
   for (const note of verdict.notes) lines.push(`  note: ${note}`);
   lines.push(`  does not prove: ${result.doesNotProve.join('; ')}`);
   return lines;
 };
 
 export const formatReport = (report: VerificationReport): string => {
-  const lines = [`policy verification of ${report.ruleCount} rule(s) in ${report.mode} mode with ${report.solver}`, ''];
+  const lines = [
+    `policy verification of ${report.ruleCount} rule(s) in ${report.mode} mode with ${report.solver}`,
+    ...(report.timings.length === 0 ? [] : [`time per phase: ${report.timings.map((entry) => `${entry.phase} ${entry.ms} ms`).join(', ')}`]),
+    '',
+  ];
   for (const result of report.results) lines.push(...describeResult(result), '');
   if (report.mismatches.length > 0) {
     lines.push(`${report.mismatches.length} counterexample(s) disagree with the decision code, so the model does not match the implementation there:`);

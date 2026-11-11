@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { EMPTY_PROTECTED_SET, canonicalJson, sha256Hex, ruleEnforcementOf, syncPaths } from '@momonga/foundation';
-import { TEST_SEARCH_PATH, afterMicrotasks, fakePolicyFilesystem, isWritableFor, protectedSetWith, testProbes, waitFor } from '@momonga/testkit';
+import { TEST_SEARCH_PATH, afterMicrotasks, fakePolicyFilesystem, isWritableFor, protectedSetWith, testProbes, waitFor, testSecretLocations } from '@momonga/testkit';
 
 import { computeFileRules, decide, suggestAllowRule } from '@momonga/policy';
 
@@ -64,7 +64,7 @@ describe('executor pipeline early exits', () => {
     const tool = makeTool('Bash', { ...BASH, subject: () => subject, execute: probe.execute });
     const rules = [ruleFor(harness.layout)('deny', 'Bash')];
     const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Bash')], { rules }));
-    const expected = await decide({
+    const expected = await decide({ secretLocations: testSecretLocations(harness.layout.home),
       tool: { name: 'Bash', ...BASH },
       subject,
       mode: 'manual',
@@ -94,7 +94,7 @@ describe('executor pipeline early exits', () => {
       execute: probe.execute,
     });
     const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Bash', { value: 'make' })]));
-    const decision = await decide({
+    const decision = await decide({ secretLocations: testSecretLocations(harness.layout.home),
       tool: { name: 'Bash', ...BASH },
       subject,
       mode: 'manual',

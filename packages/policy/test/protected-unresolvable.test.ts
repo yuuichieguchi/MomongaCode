@@ -1,3 +1,4 @@
+import { testSecretLocations } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -15,7 +16,7 @@ const loopGuard = async () => {
   return { layout, loop, guard: path.join(loop, 'x') };
 };
 
-const writeInput = async (layout: ReturnType<typeof makeLayout>, target: string, guard: string): Promise<DecideInput> => ({
+const writeInput = async (layout: ReturnType<typeof makeLayout>, target: string, guard: string): Promise<DecideInput> => ({ secretLocations: testSecretLocations(layout.home),
   tool: WRITE,
   subject: { kind: 'path', tool: 'Write', paths: [target], access: 'write' } satisfies PermissionSubject,
   mode: 'acceptEdits',

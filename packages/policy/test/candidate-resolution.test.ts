@@ -1,3 +1,4 @@
+import { testSecretLocations } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -36,6 +37,7 @@ const inputFor = async (layout: Layout, tool: PolicyTool, subject: PermissionSub
   rules: [],
   roots: [layout.project],
   home: layout.home,
+  secretLocations: testSecretLocations(layout.home),
   cwd: layout.project,
   fileRules: await fileRulesFor([], [layout.project]),
   fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]),

@@ -1,3 +1,4 @@
+import { testSecretLocations } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import type { NetworkRequest } from '@momonga/foundation';
@@ -13,7 +14,7 @@ type Case = { command: string; network: NetworkRequest; mode: PermissionMode; ru
 const decideCall = async ({ command, network, mode, rules }: Case): Promise<Decision> => {
   const layout = makeLayout();
   const parsed = rules === undefined ? [] : rules(layout);
-  return decide({
+  return decide({ secretLocations: testSecretLocations(layout.home),
     tool: BASH,
     subject: { kind: 'command', tool: 'Bash', command, network },
     mode,

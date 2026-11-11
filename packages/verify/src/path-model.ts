@@ -16,6 +16,7 @@ export type PathModelContext = {
   fileRules: FileRuleSet;
   protectedSet: ProtectedSet;
   roots: readonly string[];
+  secretDirectories: readonly string[];
   probes: PathProbes;
 };
 
@@ -26,6 +27,7 @@ export type PathModel = {
   ruleMatches(variables: PathVariables, ruleIndex: number): Bool;
   protectedWrite(resolved: Seq): Bool;
   inside(resolved: Seq): Bool;
+  secret(resolved: Seq): Bool;
   under(resolved: Seq, directory: string): Promise<Bool>;
   canonicalDirectory(directory: string): Promise<PathResolution>;
   aliases: ReadonlyArray<{ lexical: string; canonical: string }>;
@@ -34,7 +36,7 @@ export type PathModel = {
 const dialectOf = (smt: Smt, ignoreCase: boolean): RegexDialect => ({ alphabet: smt.alphabet, ignoreCase });
 
 export const createPathModel = async (context: PathModelContext): Promise<PathModel> => {
-  const { smt, fileRules, protectedSet, roots, probes } = context;
+  const { smt, fileRules, protectedSet, roots, secretDirectories, probes } = context;
   const rest = smt.concat(smt.chars(singleton(SLASH)), smt.anyString);
   const slash = smt.chars(singleton(SLASH));
   const segmentChars = smt.chars(subtractSets(smt.alphabet, singleton(SLASH)));
@@ -115,16 +117,26 @@ export const createPathModel = async (context: PathModelContext): Promise<PathMo
 
   const folded = async (directory: string): Promise<Folded> => ({ directory, fold: await foldOf(directory) });
 
-  const canonicalRoots: Folded[] = [];
-  for (const root of roots) {
-    const resolution = await probes.canonicalise(root);
-    if (resolution.ok) canonicalRoots.push(await folded(resolution.path));
-  }
-
-  const inside = (resolved: Seq): Bool => {
-    const ctx = smt.ctx;
-    return canonicalRoots.length === 0 ? ctx.Bool.val(false) : ctx.Or(...canonicalRoots.map((root) => underFolded(resolved, root.directory, root.fold)));
+  const canonicalFolded = async (directories: readonly string[]): Promise<Folded[]> => {
+    const found: Folded[] = [];
+    for (const directory of directories) {
+      const resolution = await probes.canonicalise(directory);
+      if (resolution.ok) found.push(await folded(resolution.path));
+    }
+    return found;
   };
+
+  const underAny = (resolved: Seq, directories: readonly Folded[]): Bool => {
+    const ctx = smt.ctx;
+    return directories.length === 0 ? ctx.Bool.val(false) : ctx.Or(...directories.map((entry) => underFolded(resolved, entry.directory, entry.fold)));
+  };
+
+  const canonicalRoots = await canonicalFolded(roots);
+  const canonicalSecrets = await canonicalFolded(secretDirectories);
+
+  const inside = (resolved: Seq): Bool => underAny(resolved, canonicalRoots);
+
+  const secret = (resolved: Seq): Bool => underAny(resolved, canonicalSecrets);
 
   const isEmptyProtected =
     protectedSet.paths.length === 0 &&
@@ -180,5 +192,5 @@ export const createPathModel = async (context: PathModelContext): Promise<PathMo
     return clauses.length === 0 ? ctx.Bool.val(false) : ctx.Or(...clauses);
   };
 
-  return { variables, ruleMatches, protectedWrite, inside, under, canonicalDirectory: async (directory) => probes.canonicalise(directory), aliases };
+  return { variables, ruleMatches, protectedWrite, inside, secret, under, canonicalDirectory: async (directory) => probes.canonicalise(directory), aliases };
 };

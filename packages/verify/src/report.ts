@@ -1,5 +1,5 @@
 import type { DecisionKind } from '@momonga/policy';
-import type { PermissionMode, RuleNote } from '@momonga/protocol';
+import type { PermissionMode, RuleNote, RuleVerdictPhase } from '@momonga/protocol';
 import type { Witness } from './decision-model.ts';
 
 export const PROPERTY_IDS = ['deny-precedence', 'secret-reach', 'rule-consistency', 'bash-admission', 'superseded-forms', 'mandate-holds'] as const;
@@ -39,7 +39,6 @@ export type PropertyResult = {
   proves: string;
   doesNotProve: readonly string[];
   verdict: Verdict;
-  byModeDefault: readonly Finding[];
 };
 
 export type ModelMismatch = { property: PropertyId; subject: string; counterexample: Counterexample };
@@ -50,6 +49,7 @@ export type VerificationReport = {
   solver: string;
   results: readonly PropertyResult[];
   mismatches: readonly ModelMismatch[];
+  timings: readonly RuleVerdictPhase[];
   outsideProof: readonly string[];
   exitCode: 0 | 1;
 };

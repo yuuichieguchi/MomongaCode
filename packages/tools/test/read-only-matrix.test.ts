@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { protectedSetFor, ruleEnforcementOf, momongaLayout } from '@momonga/foundation';
 import { EMPTY_GLOB_TABLE, computeFileRules, createGlobDeadline, decide, prepareGlobs, settleGlobs, askedBy } from '@momonga/policy';
 import type { Sandbox } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED, testSecretLocations } from '@momonga/testkit';
 import { buildSandboxPolicy, createPolicyFilesystem } from '@momonga/tools';
 import { makeBuiltins, resultOf } from './builtins/fixtures.ts';
 import { collect } from './read-only-collect.ts';
@@ -43,7 +43,7 @@ describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same 
     const roots = [project];
     const subject = { kind: 'command', tool: 'Bash', command } as const;
     const globs = await prepareGlobs({ expand: filesystem.expandGlob, platform: filesystem.platform, subject, cwd: project, home, deadline: createGlobDeadline(GLOB_BUDGET_MS), signal: new AbortController().signal });
-    return decide({
+    return decide({ secretLocations: testSecretLocations(home),
       tool: { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' },
       subject,
       mode: 'manual',

@@ -1,7 +1,7 @@
 import { currentSocketResolver } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, anatomyLayerEntries, describeFallbackCause, isFallbackCauseList } from '@momonga/protocol';
-import type { FallbackCause, RunTraceCall, RunTraceEvent, RunTraceSpan, RunTraceView, TokenAnatomy, TraceContentPage } from '@momonga/protocol';
+import { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, anatomyLayerEntries, describeFallbackCause, isSpanFallbackCauseList } from '@momonga/protocol';
+import type { RunTraceCall, SpanFallbackCause, RunTraceEvent, RunTraceSpan, RunTraceView, TokenAnatomy, TraceContentPage } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
@@ -12,12 +12,12 @@ import { latestRunIdOf } from './targets.ts';
 const childrenOf = (spans: readonly RunTraceSpan[], parent: string | null): RunTraceSpan[] =>
   spans.filter((span) => span.parentSpanId === parent).sort((left, right) => left.startMs - right.startMs);
 
-const fallbackCausesOf = (span: RunTraceSpan): FallbackCause[] => {
+const fallbackCausesOf = (span: RunTraceSpan): SpanFallbackCause[] => {
   const value = span.attributes[MOMONGA_ATTRIBUTES.fallbackCauses];
   if (value === undefined) return [];
   if (typeof value !== 'string') throw new TypeError(`span ${span.spanId} attribute ${MOMONGA_ATTRIBUTES.fallbackCauses} must be a string`);
   const causes: unknown = JSON.parse(value);
-  if (!isFallbackCauseList(causes)) throw new TypeError(`span ${span.spanId} attribute ${MOMONGA_ATTRIBUTES.fallbackCauses} must hold a list of fallback causes`);
+  if (!isSpanFallbackCauseList(causes)) throw new TypeError(`span ${span.spanId} attribute ${MOMONGA_ATTRIBUTES.fallbackCauses} must hold a list of fallback causes`);
   return causes;
 };
 

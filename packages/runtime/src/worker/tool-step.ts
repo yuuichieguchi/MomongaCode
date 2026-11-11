@@ -293,7 +293,7 @@ const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSes
   const late = lateBatch !== undefined;
   const rules = await runRulesFor(options, session, ctx.delegation, ctx.control.signal);
   const policy = await options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories, ruleEnforcement: held.ruleEnforcement, signal: ctx.control.signal, discoverGitConfig: true });
-  const verdict = await ruleVerdictFor(ctx, session, { rules, roots: policy.roots, enforcement: held.ruleEnforcement });
+  const verdict = await ruleVerdictFor(ctx, session, { rules, roots: policy.roots, exemptDirectory: policy.tmpDir, enforcement: held.ruleEnforcement });
   const laterVerdict = laterVerdictNotice(journal.state, ctx.policyFingerprint, verdict);
   if (laterVerdict.length > 0) journal.append(laterVerdict);
   const refusal = policyRefusal(verdict);

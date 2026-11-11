@@ -1,3 +1,4 @@
+import { testSecretLocations } from '@momonga/testkit';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -13,7 +14,7 @@ describe.runIf(syncPaths.volumeIsCaseInsensitive(os.tmpdir()))('roots compare ca
     const layout = makeLayout();
     const root = path.join(layout.project, 'newdir');
     const target = path.join(layout.project, 'NEWDIR', 'f');
-    const decision = await decide({
+    const decision = await decide({ secretLocations: testSecretLocations(layout.home),
       tool: WRITE,
       subject: { kind: 'path', tool: 'Write', paths: [target], access: 'write' },
       mode: 'acceptEdits',
@@ -30,7 +31,7 @@ describe.runIf(syncPaths.volumeIsCaseInsensitive(os.tmpdir()))('roots compare ca
     const layout = makeLayout();
     const root = path.join(layout.project, 'newdir');
     const target = path.join(layout.project, 'OTHER', 'f');
-    const decision = await decide({
+    const decision = await decide({ secretLocations: testSecretLocations(layout.home),
       tool: WRITE,
       subject: { kind: 'path', tool: 'Write', paths: [target], access: 'write' },
       mode: 'acceptEdits',

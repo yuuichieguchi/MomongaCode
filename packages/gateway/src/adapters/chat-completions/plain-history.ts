@@ -1,7 +1,7 @@
 import { canonicalJson } from '@momonga/foundation';
 import { CHAT_REASONING_FIELDS, compactionSummaryMessage } from '@momonga/protocol';
 import type { AdapterInputItem, ChatReasoningField, ReasoningOrigin } from '@momonga/protocol';
-import { callArgumentsObject, callArgumentsText } from '../shared/call-arguments.ts';
+import { callArgumentsObject, readableHistoryOf } from '../shared/call-arguments.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { escapeAttribute, neutralizeMarkup, reasoningTextOf, textOfContent } from '../shared/input-text.ts';
 import type { ReasoningInput } from '../shared/input-text.ts';
@@ -88,7 +88,7 @@ export const plainHistoryOf = (input: readonly AdapterInputItem[], options: Plai
     list.push({ role: 'assistant', content: toolCallsText(pendingCalls) });
     pendingCalls = [];
   };
-  for (const item of input) {
+  for (const item of readableHistoryOf(input)) {
     if (item.type === 'reasoning') {
       flushCalls();
       list.hold(carrierOf(item, options.origin));
@@ -127,14 +127,14 @@ export const nativeHistoryOf = (input: readonly AdapterInputItem[], origin: Reas
     list.push({ role: 'assistant', content: null, tool_calls: pendingCalls });
     pendingCalls = [];
   };
-  for (const item of input) {
+  for (const item of readableHistoryOf(input)) {
     if (item.type === 'reasoning') {
       flushCalls();
       list.hold(carrierOf(item, origin));
       continue;
     }
     if (item.type === 'function_call') {
-      pendingCalls.push({ id: item.call_id, type: 'function', function: { name: item.name, arguments: callArgumentsText(item.arguments) } });
+      pendingCalls.push({ id: item.call_id, type: 'function', function: { name: item.name, arguments: item.arguments } });
       continue;
     }
     flushCalls();

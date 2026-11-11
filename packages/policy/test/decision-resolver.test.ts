@@ -1,3 +1,4 @@
+import { testSecretLocations } from '@momonga/testkit';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { askedBy, decide } from '@momonga/policy';
@@ -64,7 +65,7 @@ describe('P-R1: a decision resolves each distinct path once', () => {
       const rules = rulesNaming(layout, groups);
       const { fs, counts } = counting(fakeFs());
       const fileRules = await fileRulesFor(rules, [layout.project]);
-      const decision = await decide({
+      const decision = await decide({ secretLocations: testSecretLocations(layout.home),
         tool: c.tool,
         subject: c.subject(file),
         mode: 'manual',
@@ -117,7 +118,7 @@ describe('a file system that never answers', () => {
     const controller = new AbortController();
     const fileRules = await fileRulesFor([], [layout.project]);
     const settled: Array<{ decision: Decision } | { error: unknown }> = [];
-    const pending = decide({
+    const pending = decide({ secretLocations: testSecretLocations(layout.home),
       tool: c.tool,
       subject: c.subject(file),
       mode: 'manual',

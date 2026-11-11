@@ -29,7 +29,7 @@ describe('a cost report holding a billing change keeps the Run API contract', ()
         parent,
       );
       recordChatResponse(chat, { finishReasons: ['stop'], usageSource: 'reported', usage: { inputTokens: 10, outputTokens: 5 } });
-      if (fallback) recordFallbackCauses(chat, [ALLOWED_CAUSE]);
+      if (fallback) recordFallbackCauses(chat, [ALLOWED_CAUSE], true);
       chat.end(h.clock.now());
     }
     agent.end(h.clock.now());

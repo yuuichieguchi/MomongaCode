@@ -1,3 +1,4 @@
+import { testSecretLocations } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { decide, modelVisibleTools } from '@momonga/policy';
 import type { PolicyTool } from '@momonga/policy';
@@ -15,7 +16,7 @@ const kindsUnder = async (effect: 'deny' | 'ask' | 'allow', text: string, target
   const rules = [ruleIn(layout)(effect, text)];
   const kinds: string[] = [];
   for (const tool of TOOLS) {
-    const decision = await decide({
+    const decision = await decide({ secretLocations: testSecretLocations(layout.home),
       tool,
       subject: { kind: 'path', tool: tool.name, paths: [target(layout.project, layout.outside)], access: 'read' },
       mode: 'manual',

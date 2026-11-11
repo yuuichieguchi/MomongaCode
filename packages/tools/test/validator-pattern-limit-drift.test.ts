@@ -12,13 +12,15 @@ const sourceFilesUnder = (relative: string): string[] => {
   if (!fs.existsSync(root)) return [];
   return fs
     .readdirSync(root, { recursive: true, withFileTypes: true })
-    .filter((entry) => entry.isFile() && /\.(ts|js|mjs|cjs)$/.test(entry.name))
+    .filter((entry) => entry.isFile() && /\.(ts|js|mjs|cjs)$/.test(entry.name) && !entry.name.endsWith('.generated.ts'))
     .map((entry) => path.join(entry.parentPath, entry.name));
 };
 
 const allSources = SCANNED_ROOTS.flatMap(sourceFilesUnder).map((file) => ({ file, text: fs.readFileSync(file, 'utf8') }));
 
-const checkSources = allSources.filter(({ text }) => text.includes(LIMIT_NAME));
+const withoutReExports = (text: string): string => text.replace(/^export \{[^}]*\} from [^;]*;$/gm, '');
+
+const checkSources = allSources.filter(({ text }) => withoutReExports(text).includes(LIMIT_NAME));
 
 const definitions = allSources.filter(({ text }) => new RegExp(`\\b(const|let|var)\\s+${LIMIT_NAME}\\b`).test(text));
 

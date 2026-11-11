@@ -1,3 +1,4 @@
+import type { ReapMarkerDirectoryResult } from '@momonga/foundation';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -62,7 +63,7 @@ const recorded = (overrides: MarkerPorts = {}) => {
     },
     reapMarkerDirectory: async (options) => {
       calls.reap.push({ options, abortedAtCall: options.signal?.aborted ?? false });
-      return overrides.reapMarkerDirectory === undefined ? { reaped: 0, kept: 0 } : overrides.reapMarkerDirectory(options);
+      return overrides.reapMarkerDirectory === undefined ? { reaped: 0, kept: 0, unreaped: [] } : overrides.reapMarkerDirectory(options);
     },
   };
   return { calls, ports };
@@ -72,7 +73,7 @@ describe('reapOrphans', () => {
   it('with an occasion, hands it to the marker reap so that each marker spends that one chance (20.62)', async (context) => {
     const dir = markersDir(context);
     fs.writeFileSync(path.join(dir, 'runtime-05'), '', { mode: 0o600 });
-    const { calls, ports } = recorded({ reapMarkerDirectory: async () => ({ reaped: 1, kept: 0 }) });
+    const { calls, ports } = recorded({ reapMarkerDirectory: async () => ({ reaped: 1, kept: 0, unreaped: [] }) });
     const { options } = reapSetup(dir, { markerPorts: ports, occasion: 'sweep' });
     await expect(reapOrphans(options)).resolves.toEqual({ reaped: 1, kept: 0, aborted: false });
     expect(calls.reap.map((call) => call.options.occasion)).toEqual(['sweep']);
@@ -119,7 +120,7 @@ describe('reapOrphans', () => {
   it('markers without holders go straight to the reap', async (context) => {
     const dir = markersDir(context);
     fs.writeFileSync(path.join(dir, 'runtime-01'), '', { mode: 0o600 });
-    const { calls, ports } = recorded({ reapMarkerDirectory: async () => ({ reaped: 1, kept: 0 }) });
+    const { calls, ports } = recorded({ reapMarkerDirectory: async () => ({ reaped: 1, kept: 0, unreaped: [] }) });
     const { options, log } = reapSetup(dir, { markerPorts: ports });
     await expect(reapOrphans(options)).resolves.toEqual({ reaped: 1, kept: 0, aborted: false });
     expect(calls.findHolders).toBe(1);
@@ -136,7 +137,7 @@ describe('reapOrphans', () => {
         onUninspectable?.({ pid: 31_339, command: 'ssh-agent', startedAt: 616161n });
         return [];
       },
-      reapMarkerDirectory: async () => ({ reaped: 2, kept: 0 }),
+      reapMarkerDirectory: async () => ({ reaped: 2, kept: 0, unreaped: [] }),
     };
     const { options, log } = reapSetup(dir, { markerPorts: ports, uninspectable: createUninspectableRegistry({ isAlive: () => true }) });
     await reapOrphans(options);
@@ -150,7 +151,7 @@ describe('reapOrphans', () => {
     const dir = markersDir(context);
     fs.writeFileSync(path.join(dir, 'runtime-02'), '', { mode: 0o600 });
     const holder = liveHolder();
-    const { calls, ports } = recorded({ findHolders: holder.findHolders, reapMarkerDirectory: async () => ({ reaped: 1, kept: 0 }) });
+    const { calls, ports } = recorded({ findHolders: holder.findHolders, reapMarkerDirectory: async () => ({ reaped: 1, kept: 0, unreaped: [] }) });
     const { options, clock, reap, until } = reapSetup(dir, { markerPorts: ports });
     const result = reap();
     await until(() => clock.now() >= 3000, 3000);
@@ -173,7 +174,7 @@ describe('reapOrphans', () => {
       findHolders: holder.findHolders,
       reapMarkerDirectory: async () => {
         reapAt = setup?.clock.now();
-        return { reaped: 1, kept: 0 };
+        return { reaped: 1, kept: 0, unreaped: [] };
       },
     });
     setup = reapSetup(dir, { markerPorts: ports, orphanGraceMs: 1000 });
@@ -207,7 +208,7 @@ describe('reapOrphans', () => {
       findHolders: async () => [HOLDER_PID],
       reapMarkerDirectory: async (reapOptions) => {
         if (reapOptions.timing !== undefined) await sleep(reapOptions.timing, markerReapClockBoundMs(reapOptions.killGraceMs));
-        return { reaped: 0, kept: 1 };
+        return { reaped: 0, kept: 1, unreaped: [] };
       },
     });
     const { clock, options, reap, until } = reapSetup(dir, { markerPorts: ports, orphanGraceMs: 1000 });
@@ -295,7 +296,7 @@ describe('reapOrphans', () => {
         if (attempts <= 2) throw transientFailure();
         return [];
       },
-      reapMarkerDirectory: async () => ({ reaped: 1, kept: 0 }),
+      reapMarkerDirectory: async () => ({ reaped: 1, kept: 0, unreaped: [] }),
     });
     const { reap, until, log } = reapSetup(dir, { markerPorts: ports });
     const result = reap();
@@ -341,7 +342,7 @@ describe('reapOrphans', () => {
       },
       reapMarkerDirectory: async () => {
         reapAt = setup?.clock.now();
-        return { reaped: 1, kept: 0 };
+        return { reaped: 1, kept: 0, unreaped: [] };
       },
     });
     setup = reapSetup(dir, { markerPorts: ports, orphanGraceMs: 1000 });
@@ -364,7 +365,7 @@ describe('reapOrphans', () => {
     const { ports } = recorded({
       reapMarkerDirectory: async () => {
         reapingAtCall.push(log?.withMsg('orphans.reaping').map((line) => line['holders']) ?? []);
-        return { reaped: 1, kept: 0 };
+        return { reaped: 1, kept: 0, unreaped: [] };
       },
     });
     const setup = reapSetup(dir, { markerPorts: ports });
@@ -399,7 +400,7 @@ describe('reapOrphans', () => {
       reapMarkerDirectory: async (reapOptions) => {
         controller?.abort();
         expect(reapOptions.signal?.aborted).toBe(true);
-        return { reaped: 1, kept: 0 };
+        return { reaped: 1, kept: 0, unreaped: [] };
       },
     });
     const setup = reapSetup(dir, { markerPorts: ports, orphanGraceMs: 250 });
@@ -437,7 +438,7 @@ describe('orphan reap at supervisor start', () => {
     let socketPath = '';
     let lockPath = '';
     const seenAtReap: Array<{ lock: boolean; socket: boolean }> = [];
-    const reap = Promise.withResolvers<{ reaped: number; kept: number }>();
+    const reap = Promise.withResolvers<ReapMarkerDirectoryResult>();
     const h = await startHarness(context, {
       prepare: (_home, paths) => {
         socketPath = firstGeneration(paths).sockets.supervisor;
@@ -457,7 +458,7 @@ describe('orphan reap at supervisor start', () => {
     const response = await httpOver(context, socketPath, 'GET', '/v1/health');
     expect(JSON.parse(response.text)).toMatchObject({ phase: 'running', generation: 1, role: 'starting' });
     expect(h.fake.spawnCount()).toBe(0);
-    reap.resolve({ reaped: 0, kept: 0 });
+    reap.resolve({ reaped: 0, kept: 0, unreaped: [] });
     await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, maxMs: 5000 });
     expect(h.log.withMsg('phase.change')).toEqual([]);
   });
@@ -472,7 +473,7 @@ describe('orphan reap at supervisor start', () => {
         holderPid = holder.pid;
         lock.holdExternally(firstGeneration(paths).locks.runtime, holder.pid);
       },
-      markerPorts: { findHolders: async () => [999_999], reapMarkerDirectory: async () => ({ reaped: 0, kept: 1 }) },
+      markerPorts: { findHolders: async () => [999_999], reapMarkerDirectory: async () => ({ reaped: 0, kept: 1, unreaped: [] }) },
       overrides: { lockMechanism: lock, lockWaitMs: 3_600_000 },
     });
     await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, maxMs: 5000 });

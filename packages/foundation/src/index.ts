@@ -1,7 +1,10 @@
 export { computeBackoff, parseRetryAfter } from './backoff.ts';
 export { TRANSIENT_REQUEST_STATUSES, isRetryableHttp, parseShouldRetry } from './http-retry.ts';
 export { canonicalJson, sha256Hex } from './canonical-json.ts';
-export { ruleFingerprint, sessionRootsOf } from './rule-fingerprint.ts';
+export { sessionRootsOf, verdictKey, verdictSubjectOf } from './rule-fingerprint.ts';
+export type { VerdictSubject } from './rule-fingerprint.ts';
+export { CREDENTIAL_PATHS, standardSecretLocations } from './secret-locations.ts';
+export type { SecretLocation } from './secret-locations.ts';
 export { capText, sanitizeServerText } from './untrusted-text.ts';
 export { CircuitBreaker } from './circuit-breaker.ts';
 export { codeDigestOf, codeDigestOfRunningProcess } from './code-digest.ts';
@@ -299,7 +302,8 @@ export {
   supervisorMaxCloseMs,
 } from './process-contract.ts';
 export type { EventPayload, JsonLogger, LogFields, LogLevel, LogValue, ReadyFields, ReservedLogKey, StopValueName, StopValues, TextStream } from './process-contract.ts';
-export { MarkerReapError, findHolders, holderGroups, markerReapClockBoundMs, reapMarkedProcesses, reapMarkedProcessesWithReport, recallMarkerGroup, reapMarkerDirectory, outlivedNotes, reconcileProcessGroup, reportUninspectableOnce, stoppedCommandResult } from './process-markers.ts';
+export { findHolders, holderGroups, markerReapClockBoundMs, reapMarkedProcesses, reapMarkedProcessesWithReport, recallMarkerGroup, reapMarkerDirectory, outlivedNotes, reconcileProcessGroup, reportUninspectableOnce, stoppedCommandResult } from './process-markers.ts';
+export type { ReapMarkerDirectoryResult } from './process-markers.ts';
 export type { MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirectoryOptions, ReapReport } from './process-markers.ts';
 export { createLiveIdentities } from './platform/live-identities.ts';
 export { createUninspectableRegistry } from './uninspectable-registry.ts';
@@ -395,7 +399,18 @@ export { SHORT_TEMP_BASE, shortTempBase } from './short-temp-base.ts';
 export { readStopRecord, writeStopRecord } from './stop-record.ts';
 export { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER } from './process-contract.ts';
 export { SETTINGS_APPLIED_ENV, SETTINGS_APPLIED_FILE } from './momonga-paths.ts';
-export { WINDOWS_KEEPER_BINARY_ASSET, WINDOWS_KEEPER_MANIFEST_ASSET, WINDOWS_KEEPER_STAGED_INFIX, WINDOWS_KEEPER_STAGED_NAME_BYTES, WindowsKeeperDistributionError, checkedWindowsKeeper, ensureBundledWindowsKeeper, parseWindowsKeeperManifest } from './platform/windows-keeper-asset.ts';
+export { BUNDLED_EXECUTABLE_STAGED_INFIX, BUNDLED_EXECUTABLE_STAGED_NAME_BYTES } from './platform/bundled-executable.ts';
+export type { BundledExecutableManifest } from './platform/bundled-executable.ts';
+export {
+  LINUX_SOCKET_GUARD_BINARY_ASSET,
+  LINUX_SOCKET_GUARD_BINARY_NAME,
+  LINUX_SOCKET_GUARD_MANIFEST_ASSET,
+  LinuxSocketGuardDistributionError,
+  checkedLinuxSocketGuard,
+  ensureBundledLinuxSocketGuard,
+  parseLinuxSocketGuardManifest,
+} from './platform/linux-socket-guard-asset.ts';
+export { WINDOWS_KEEPER_BINARY_ASSET, WINDOWS_KEEPER_MANIFEST_ASSET, WindowsKeeperDistributionError, checkedWindowsKeeper, ensureBundledWindowsKeeper, parseWindowsKeeperManifest } from './platform/windows-keeper-asset.ts';
 export type { WindowsKeeperManifest } from './platform/windows-keeper-asset.ts';
 export { KEEPER_EXIT_CODES, KEEPER_JOB_PREFIX } from './process-contract.ts';
 export { KeeperProtocolError, attachKept, confirmByAttach, launchKept, stopKeptGroup } from './platform/windows-keeper.ts';

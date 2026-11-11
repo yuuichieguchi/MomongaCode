@@ -1,3 +1,4 @@
+import type { ReapMarkerDirectoryResult } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import { KILL_CONFIRM_MS, formatStopMessage, managedServerReapBoundMs } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
@@ -133,7 +134,7 @@ type ReapDirectoryCall = { dir: string; killGraceMs: number };
 const reapingHarness = (context: Parameters<typeof createManagerHarness>[0]) => {
   const calls: ReapDirectoryCall[] = [];
   const signals: AbortSignal[] = [];
-  const pending = Promise.withResolvers<{ reaped: number; kept: number }>();
+  const pending = Promise.withResolvers<ReapMarkerDirectoryResult>();
   const setup = gatewayHarness(context, {
     overrides: {
       markerPorts: {
@@ -146,7 +147,7 @@ const reapingHarness = (context: Parameters<typeof createManagerHarness>[0]) => 
       },
     },
   });
-  return { ...setup, calls, signals, finishReap: () => pending.resolve({ reaped: 1, kept: 0 }) };
+  return { ...setup, calls, signals, finishReap: () => pending.resolve({ reaped: 1, kept: 0, unreaped: [] }) };
 };
 
 const settledFlag = (promise: Promise<unknown>): { done: boolean } => {

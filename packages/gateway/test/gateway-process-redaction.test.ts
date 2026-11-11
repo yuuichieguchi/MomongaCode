@@ -46,7 +46,7 @@ const captureLog = (): TextStream & { text(): string } => {
   };
 };
 
-type ScanOptions = { markerInTraces?: boolean; forbidden?: readonly string[] };
+type ScanOptions = { upstreamTextOffTraces?: boolean; forbidden?: readonly string[] };
 
 type Stack = {
   home: string;
@@ -99,7 +99,7 @@ const startKeyedStack = async (
     expect(traces.length).toBeGreaterThan(0);
     expectFilesFreeOfCredential(files, TEST_API_KEY);
     const tracesBytes = traces.map((file) => fs.readFileSync(file).toString('latin1')).join('\n');
-    if (scan.markerInTraces === true) expect(tracesBytes).toContain(REDACTED);
+    if (scan.upstreamTextOffTraces === true) expect(tracesBytes).not.toContain(REDACTED);
     const everything = [log.text(), ...files.map((file) => fs.readFileSync(file).toString('latin1'))].join('\n');
     for (const forbidden of scan.forbidden ?? []) expect(everything).not.toContain(forbidden);
   };
@@ -138,7 +138,7 @@ describe('T1: a 401 echo of the configured key', () => {
     expect(error.code).toBe('authentication_failed');
     expect(error.message).toBe(REDACTED_401);
     expectRedacted(response.text, TEST_API_KEY);
-    await stack.closeAndScan({ markerInTraces: true });
+    await stack.closeAndScan({ upstreamTextOffTraces: true });
   });
 
   it.for([
@@ -153,7 +153,7 @@ describe('T1: a 401 echo of the configured key', () => {
     expect(response.text).not.toContain(`${SK}proj`);
     expect(response.text).not.toContain('***');
     expect(response.text).not.toContain(`${SK}...`);
-    await stack.closeAndScan({ markerInTraces: true, forbidden: ['5hQA', `${SK}proj`, `${SK}...`] });
+    await stack.closeAndScan({ upstreamTextOffTraces: true, forbidden: ['5hQA', `${SK}proj`, `${SK}...`] });
   });
 
   it('redacts the trimmed key when the env value has surrounding whitespace', async (context) => {
@@ -161,7 +161,7 @@ describe('T1: a 401 echo of the configured key', () => {
     const response = await post(stack.client, body);
     expect(response.status).toBe(401);
     expect(JSON.parse(response.text).error.message).toBe(REDACTED_401);
-    await stack.closeAndScan({ markerInTraces: true });
+    await stack.closeAndScan({ upstreamTextOffTraces: true });
   });
 });
 
