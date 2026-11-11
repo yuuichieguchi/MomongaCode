@@ -5,7 +5,7 @@ import { KEYS, untilFrame, untilOutput, withoutLinks } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
 import { frame, runStarted } from './tui-harness.tsx';
 import { authLogout } from '../src/commands/auth.ts';
-import { AUTHORIZATION_URL, LISTENER_PORT, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, fakePlanBackend, quiet, rowNumberOf, startPlan, submitLine, untilRow } from './fake-plan-gateway.tsx';
+import { account, AUTHORIZATION_URL, choose, eventually, fakePlanBackend, LISTENER_PORT, PLAN_TEST_TIMEOUT_MS, rowNumberOf, startPlan, submitLine, untilRow, untilTypedAfter } from './fake-plan-gateway.tsx';
 import type { FakePlanBackend } from './fake-plan-gateway.tsx';
 
 vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
@@ -76,7 +76,7 @@ describe('choosing a saved account in the picker', () => {
     await submitLine(app, '/login chatgpt');
     await choose(app, 'work · w@example.com');
     await eventually(() => routesOf(backend).includes('accounts/active'), 'the pointer move');
-    await quiet();
+    await untilTypedAfter(app);
     expect(bodyOf(backend, 'accounts/active')).toEqual({ profile: 'chatgpt', account: 'work' });
     expect(routesOf(backend).filter((route) => route !== 'accounts' && route !== 'accounts/active')).toEqual([]);
     expect(backend.listenerPaths).toEqual([]);
@@ -102,11 +102,11 @@ describe('choosing a saved account in the picker', () => {
     await choose(app, 'work · w@example.com');
     const shown = (await untilFrame(app, SENTENCE)).replace(/\s+/g, ' ');
     expect(shown).toContain('The saved record of work cannot be read (bad tag). Run /login to replace it with a new sign-in, or /logout to forget it on this computer; forgetting it does not revoke the session at the provider.');
-    await quiet();
-    expect(routesOf(backend).filter((route) => route !== 'accounts')).toEqual([]);
-    expect(backend.listenerPaths).toEqual([]);
     await choose(app, 'Continue with ChatGPT');
     await eventually(() => routesOf(backend).includes('sign-in/begin'), 'the sign-in start');
+    expect(routesOf(backend).filter((route) => route !== 'accounts')[0]).toBe('sign-in/begin');
+    expect(routesOf(backend).filter((route) => route === 'sign-in/begin')).toHaveLength(1);
+    expect(backend.listenerPaths).toHaveLength(1);
     expect(bodyOf(backend, 'sign-in/begin')).toMatchObject({ profile: 'chatgpt', account: 'work' });
     app.unmount();
   });
@@ -167,7 +167,7 @@ describe('the account picker and a new sign-in', () => {
     await submitLine(app, '/login chatgpt');
     await choose(app, 'Continue with ChatGPT');
     await eventually(() => routesOf(backend).includes('sign-in/complete'), 'the sign-in completion');
-    await quiet();
+    await untilTypedAfter(app);
     expect(app.frames.join('\n')).not.toContain("You're using your ChatGPT plan");
     app.unmount();
   });
@@ -190,7 +190,7 @@ describe('the account picker and a new sign-in', () => {
     await backend.called('openSession');
     expect(bodyOf(backend, 'accounts/chatgpt/targets')).toEqual({ profile: 'chatgpt', slug: 'gpt-5.1' });
     await eventually(() => backend.started.length > 0, 'the initial prompt');
-    await quiet();
+    await untilTypedAfter(app);
     expect(backend.started.map((run) => run.text)).toEqual(['start here']);
     app.unmount();
   });
@@ -204,7 +204,7 @@ describe('/logout', () => {
     const listed = await untilFrame(app, 'work · ada@example.com');
     expect(listed).toContain('home · ada@example.com');
     await choose(app, 'work · ada@example.com');
-    await quiet();
+    await untilFrame(app, 'again to sign out');
     expect(routesOf(backend)).not.toContain('sign-out');
     app.stdin.write(KEYS.enter);
     await eventually(() => routesOf(backend).includes('sign-out'), 'the sign-out');
@@ -230,7 +230,7 @@ describe('a command and the TUI print the same sign-out lines (P-C8)', () => {
     await ready(app);
     await submitLine(app, '/logout');
     await choose(app, 'work · ada@example.com');
-    await quiet();
+    await untilFrame(app, 'again to sign out');
     app.stdin.write(KEYS.enter);
     await eventually(() => routesOf(backend).includes('sign-out'), 'the sign-out');
     const output = withoutLinks(await untilOutput(app, (shown) => withoutLinks(shown).includes(lines[1])));
@@ -245,7 +245,7 @@ describe('/logout of an account with nothing to sign out', () => {
     await ready(app);
     await submitLine(app, '/logout');
     await choose(app, 'work · ada@example.com');
-    await quiet();
+    await untilFrame(app, 'again to sign out');
     app.stdin.write(KEYS.enter);
     await eventually(() => routesOf(backend).includes('sign-out'), 'the sign-out');
     const output = await untilOutput(app, 'work was already signed out.');
@@ -283,9 +283,7 @@ describe('Using ChatGPT plan in the footer', () => {
     await untilFrame(app, 'Using ChatGPT plan');
     backend.emit(frame({ type: 'model.responded', attempt: 0, target: 'metered-key', response: { status: 'completed', output: [], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } }));
     backend.emit(frame({ type: 'usage.updated', inputTokens: 2, outputTokens: 2, totalTokens: 4 }));
-    await untilFrame(app, 'tokens: 4');
-    await quiet();
-    expect(app.lastFrame()).not.toContain('Using ChatGPT plan');
+    expect(await untilFrame(app, 'tokens: 4')).not.toContain('Using ChatGPT plan');
     app.unmount();
   });
 });

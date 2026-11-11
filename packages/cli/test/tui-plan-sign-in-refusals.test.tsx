@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { GatewayAnswerError } from '../src/client/gateway-client.ts';
 import { untilFrame } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
-import { PLAN_TEST_TIMEOUT_MS, account, choose, eventually, quiet, startPlan, submitLine } from './fake-plan-gateway.tsx';
+import { PLAN_TEST_TIMEOUT_MS, account, choose, eventually, startPlan, submitLine, untilTypedAfter } from './fake-plan-gateway.tsx';
 import type { FakePlanBackend } from './fake-plan-gateway.tsx';
 
 vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
@@ -24,8 +24,7 @@ describe('/login: a refused sign-in is one notice with the message of the answer
     const { app } = await startPlan({ accounts: [], completeFails: new GatewayAnswerError(TRANSPORT_TEXT, 400, { code: 'access_denied', message: 'Sign-in was cancelled in the browser.' }) });
     await signInFromLogin(app);
     const shown = flat(await untilFrame(app, 'Sign-in was cancelled in the browser.'));
-    await quiet();
-    const settled = flat(app.lastFrame() ?? shown);
+    const settled = flat(await untilTypedAfter(app));
     expect(settled).toContain('Sign-in was cancelled in the browser. Run /login to try again.');
     expect(settled.split('Sign-in was cancelled in the browser.')).toHaveLength(2);
     expect(settled).not.toContain('POST');

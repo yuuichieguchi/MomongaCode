@@ -40,7 +40,6 @@ const BURN_DOWN: Readonly<Record<string, BurnDown>> = {
   'e2e/supervisor.test.ts': { kinds: { 'wall-clock reading': 1 }, owner: 'tests-W7: C-e2e-bodies (wall-clock asserts) and C-waits (the e2e bounds list)' },
   'e2e/support/stack.ts': { kinds: { 'wall-clock reading': 1 }, owner: 'tests-W7: C-e2e-bodies (wall-clock asserts) and C-waits (the e2e bounds list)' },
   'e2e/support/wait.ts': { kinds: { 'timer wait': 2, 'wall-clock reading': 1 }, owner: 'tests-W7: C-e2e-bodies (wall-clock asserts) and C-waits (the e2e bounds list)' },
-  'packages/cli/test/fake-plan-gateway.tsx': { kinds: { 'timer wait': 1 }, owner: 'tests-W4 remainder: quiet() of the sign-in screens (about 70 sites)' },
   'packages/cli/test/keychain-fixture.ts': { kinds: { 'timer wait': 1 }, owner: 'tests-W4: the fake keychain answers after a turn of the real setImmediate beside faked timeouts; it answers when the product asked' },
   'packages/config/test/append-rule.test.ts': { kinds: { 'timer wait': 1 }, owner: 'config: the second save waits in the in-process queue of the settings lock (packages/config/src/file-lock.ts:15,22, createKeyedSerializer), which has no port that shows a waiter, so the stop comes after fifty turns' },
   'packages/foundation/test/platform/linux-real-processes.test.ts': { kinds: { 'timer wait': 1, 'wall-clock reading': 1 }, owner: 'tests-W4 remainder, Linux container: the agent must be older than the marker by a clock tick, and the probe that succeeds at once is measured on the wall clock because the Linux inspector takes no timing' },

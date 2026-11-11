@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { KEYS, untilFrame, untilOutput } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
-import { AUTHORIZATION_URL, PLAN_TEST_TIMEOUT_MS, choose, eventually, quiet, startPlan, submitLine } from './fake-plan-gateway.tsx';
+import { AUTHORIZATION_URL, PLAN_TEST_TIMEOUT_MS, choose, eventually, startPlan, submitLine, untilTypedAfter } from './fake-plan-gateway.tsx';
 import type { FakePlanBackend } from './fake-plan-gateway.tsx';
 import { GatewayAnswerError } from '../src/client/gateway-client.ts';
 
@@ -29,14 +29,12 @@ const waitingScreen = async (options: { completeHeld?: Promise<void>; completeFa
   return started;
 };
 
-const paste = async (app: Instance, text: string): Promise<void> => {
+const paste = (app: Instance, text: string): void => {
   app.stdin.write(text);
-  await quiet();
   app.stdin.write(KEYS.enter);
 };
 
-const expectStillWaiting = async (app: Instance, backend: FakePlanBackend): Promise<void> => {
-  await quiet();
+const expectStillWaiting = (app: Instance, backend: FakePlanBackend): void => {
   expect(routesOf(backend)).not.toContain('sign-in/complete');
   expect(routesOf(backend)).not.toContain('sign-in/cancel');
   expect(app.lastFrame() ?? '').toContain(PASTE_LABEL);
@@ -54,30 +52,29 @@ describe('the paste box of the sign-in waiting screen (P6.6, D11, O-R5-4 S2)', (
 
   it('refuses text over 8 KiB of UTF-8 without sending anything or ending the wait', async () => {
     const { app, backend } = await waitingScreen();
-    await paste(app, `https://localhost:1/x?code=c&state=st-1&pad=${'a'.repeat(PASTED_CALLBACK_CAP_BYTES)}`);
+    paste(app, `https://localhost:1/x?code=c&state=st-1&pad=${'a'.repeat(PASTED_CALLBACK_CAP_BYTES)}`);
     await untilFrame(app, TOO_LONG);
-    await expectStillWaiting(app, backend);
+    expectStillWaiting(app, backend);
     app.unmount();
   });
 
   it('refuses text that is not a URL with a state and a code or error, without sending anything or ending the wait', async () => {
     const { app, backend } = await waitingScreen();
-    await paste(app, 'not a url');
+    paste(app, 'not a url');
     await untilFrame(app, NOT_REDIRECT);
-    await expectStillWaiting(app, backend);
+    expectStillWaiting(app, backend);
     app.unmount();
   });
 
   it('compares the state before anything is sent, keeps waiting, and completes with the next valid paste sent whole, whatever its host, port and path', async () => {
     const { app, backend } = await waitingScreen();
-    await paste(app, 'https://localhost:1/x?code=c&state=st-other');
+    paste(app, 'https://localhost:1/x?code=c&state=st-other');
     await untilFrame(app, OTHER_SIGN_IN);
-    await expectStillWaiting(app, backend);
+    expectStillWaiting(app, backend);
 
     const valid = 'https://localhost:1/anything?code=pasted-code&state=st-1';
-    await paste(app, valid);
-    await eventually(() => routesOf(backend).includes('sign-in/complete'), 'the sign-in completion');
-    await quiet();
+    paste(app, valid);
+    await untilFrame(app, 'Signed in as chatgpt');
     expect(bodiesOf(backend, 'sign-in/complete')).toEqual([{ attemptId: 'attempt-1', callbackUrl: valid }]);
     expect(routesOf(backend)).not.toContain('sign-in/cancel');
     app.unmount();
@@ -94,9 +91,9 @@ describe('the paste box of the sign-in waiting screen (P6.6, D11, O-R5-4 S2)', (
   it('does nothing on Enter with a blank input', async () => {
     const { app, backend } = await waitingScreen();
     app.stdin.write('   ');
-    await quiet();
     app.stdin.write(KEYS.enter);
-    await expectStillWaiting(app, backend);
+    await untilTypedAfter(app);
+    expectStillWaiting(app, backend);
     const frame = app.lastFrame() ?? '';
     for (const sentence of [TOO_LONG, NOT_REDIRECT, OTHER_SIGN_IN]) expect(frame).not.toContain(sentence);
     app.unmount();
@@ -104,7 +101,7 @@ describe('the paste box of the sign-in waiting screen (P6.6, D11, O-R5-4 S2)', (
 
   it('clears the input when a value is refused', async () => {
     const { app } = await waitingScreen();
-    await paste(app, 'refused-value');
+    paste(app, 'refused-value');
     const frame = await untilFrame(app, NOT_REDIRECT);
     expect(frame).not.toContain('refused-value');
     app.unmount();
@@ -112,12 +109,12 @@ describe('the paste box of the sign-in waiting screen (P6.6, D11, O-R5-4 S2)', (
 
   it('refuses a paste of 8193 bytes as too long and a paste of 8192 bytes as not a redirect URL', async () => {
     const { app, backend } = await waitingScreen();
-    await paste(app, 'a'.repeat(PASTED_CALLBACK_CAP_BYTES + 1));
+    paste(app, 'a'.repeat(PASTED_CALLBACK_CAP_BYTES + 1));
     await untilFrame(app, TOO_LONG);
-    await expectStillWaiting(app, backend);
-    await paste(app, 'a'.repeat(PASTED_CALLBACK_CAP_BYTES));
+    expectStillWaiting(app, backend);
+    paste(app, 'a'.repeat(PASTED_CALLBACK_CAP_BYTES));
     await untilFrame(app, NOT_REDIRECT);
-    await expectStillWaiting(app, backend);
+    expectStillWaiting(app, backend);
     app.unmount();
   });
 
@@ -130,7 +127,7 @@ describe('the paste box of the sign-in waiting screen (P6.6, D11, O-R5-4 S2)', (
     await untilFrame(app, '> half-typed');
     app.stdin.write(key);
     await untilOutput(app, 'sign-in cancelled');
-    await quiet();
+    await untilTypedAfter(app);
     expect(bodiesOf(backend, 'sign-in/cancel')).toEqual([{ attemptId: 'attempt-1' }]);
     expect(routesOf(backend)).not.toContain('sign-in/complete');
     app.unmount();
@@ -142,18 +139,15 @@ describe('the paste box of the sign-in waiting screen (P6.6, D11, O-R5-4 S2)', (
       release = resolve;
     });
     const { app, backend } = await waitingScreen({ completeHeld: held });
-    await paste(app, 'https://localhost:1/anything?code=pasted-code&state=st-1');
+    paste(app, 'https://localhost:1/anything?code=pasted-code&state=st-1');
     const frame = await untilFrame(app, 'Finishing the sign-in…');
     expect(frame).toContain('please wait');
     expect(frame).not.toContain(PASTE_LABEL);
     app.stdin.write(KEYS.escape);
-    await quiet();
     app.stdin.write(KEYS.ctrlC);
-    await quiet();
     expect(routesOf(backend)).not.toContain('sign-in/cancel');
     release();
-    await eventually(() => routesOf(backend).includes('sign-in/complete'), 'the sign-in completion');
-    await quiet();
+    await untilFrame(app, 'Signed in as chatgpt');
     expect(routesOf(backend)).not.toContain('sign-in/cancel');
     app.unmount();
   });
@@ -168,9 +162,7 @@ describe('the paste box of the sign-in waiting screen (P6.6, D11, O-R5-4 S2)', (
     const frame = await untilFrame(app, 'Finishing the sign-in…');
     expect(frame).not.toContain(PASTE_LABEL);
     app.stdin.write(KEYS.escape);
-    await quiet();
     app.stdin.write(KEYS.ctrlC);
-    await quiet();
     expect(routesOf(backend)).not.toContain('sign-in/cancel');
     expect(app.lastFrame() ?? '').toContain('Finishing the sign-in…');
     app.unmount();
@@ -188,14 +180,11 @@ describe('the paste box of the sign-in waiting screen (P6.6, D11, O-R5-4 S2)', (
     const held = new Promise<void>(() => undefined);
     const { app, backend } = await waitingScreen({ completeHeld: held });
     const valid = 'https://localhost:1/anything?code=pasted-code&state=st-1';
-    await paste(app, valid);
+    paste(app, valid);
     await untilFrame(app, 'Finishing the sign-in…');
     app.stdin.write(CTRL_Y);
-    await quiet();
     app.stdin.write(KEYS.enter);
-    await quiet();
-    await paste(app, 'https://localhost:1/anything?code=second-code&state=st-1');
-    await quiet();
+    paste(app, 'https://localhost:1/anything?code=second-code&state=st-1');
     expect(backend.clipboard).toEqual([]);
     expect(bodiesOf(backend, 'sign-in/complete')).toEqual([{ attemptId: 'attempt-1', callbackUrl: valid }]);
     expect(routesOf(backend)).not.toContain('sign-in/cancel');
@@ -217,7 +206,7 @@ describe('the paste box of the sign-in waiting screen (P6.6, D11, O-R5-4 S2)', (
     const refused = new GatewayAnswerError('POST /v1/momonga/plan/sign-in/complete answered 400', 400, { code: 'access_denied', message: 'Sign-in was cancelled in the browser.' });
     const { app, backend } = await waitingScreen({ completeFails: refused });
     const denied = 'https://localhost:1/anything?error=access_denied&state=st-1';
-    await paste(app, denied);
+    paste(app, denied);
     const shown = (await untilFrame(app, 'Sign-in was cancelled in the browser.')).replace(/\s+/g, ' ');
     expect(shown).toContain('Sign-in was cancelled in the browser. Run /login to try again.');
     expect(bodiesOf(backend, 'sign-in/complete')).toEqual([{ attemptId: 'attempt-1', callbackUrl: denied }]);
@@ -231,16 +220,14 @@ describe('the paste box of the sign-in waiting screen (P6.6, D11, O-R5-4 S2)', (
       await untilOutput(app, 'sign-in cancelled');
     }],
     ['a finished sign-in', async (app: Instance) => {
-      await paste(app, 'https://localhost:1/anything?code=pasted-code&state=st-1');
+      paste(app, 'https://localhost:1/anything?code=pasted-code&state=st-1');
       await untilFrame(app, 'Signed in as chatgpt');
     }],
   ] as const)('after %s the screen holds neither the sign-in URL nor the pasted redirect, and the input history does not bring them back (B)', async (_name, end) => {
     const { app } = await waitingScreen();
     await end(app);
-    await quiet();
     app.stdin.write(KEYS.up);
-    await quiet();
-    const frame = (app.lastFrame() ?? '').replace(/\s+/g, '');
+    const frame = (await untilFrame(app, '> /login chatgpt')).replace(/\s+/g, '');
     expect(frame).not.toContain('auth.openai.com/api/accounts/authorize');
     expect(frame).not.toContain('pasted-code');
     expect(frame).not.toContain('state=st-1');
