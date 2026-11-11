@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_STOP_VALUES, KILL_CONFIRM_MS, REAP_POLL_INTERVAL_MS, gatewayMaxCloseMs, adapterSocketPath, createJsonLogger, reapMarkedProcesses, FIRST_GENERATION } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, KILL_CONFIRM_MS, REAP_POLL_INTERVAL_MS, gatewayMaxCloseMs, createJsonLogger, reapMarkedProcesses, FIRST_GENERATION } from '@momonga/foundation';
 import type { ProcessInspector, StopValues } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
 import type { ManagedChild } from '@momonga/gateway';

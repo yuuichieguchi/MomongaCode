@@ -45,20 +45,24 @@ export const exportedNames = (file: string): string[] =>
 
 const namesAnyMemberOf = (nodes: readonly SourceNode[]): string[] =>
   nodes.flatMap((node) => {
-    if (node.type === 'MemberExpression' && node['computed'] !== true) return nameOf(childOf(node, 'property')) ?? [];
+    if (node.type === 'MemberExpression') return nameOf(childOf(node, 'property')) ?? [];
     if (node.type === 'Property' && node['computed'] !== true) return nameOf(childOf(node, 'key')) ?? [];
     if (node.type === 'TSQualifiedName') return nameOf(childOf(node, 'right')) ?? [];
     return [];
   });
 
-export const namesTakenFrom = (file: string, module: string): Set<string> => {
+export type ExportingModule = { readonly name: string; readonly index: string };
+
+export const namesTakenFrom = (file: string, module: ExportingModule): Set<string> => {
   const nodes = everyNode(parsed(file));
   const taken = new Set<string>();
+  const names = (specifier: unknown): boolean =>
+    typeof specifier === 'string' && (specifier === module.name || (specifier.startsWith('.') && path.resolve(path.dirname(file), specifier) === module.index));
   let whole = false;
   for (const node of nodes) {
-    if ((node.type === 'ImportExpression' || node.type === 'TSImportType' || node.type === 'ExportAllDeclaration') && sourceOf(node) === module) whole = true;
-    if (node.type === 'CallExpression' && childrenOf(node, 'arguments').some((argument) => literalValue(argument) === module)) whole = true;
-    if ((node.type !== 'ImportDeclaration' && node.type !== 'ExportNamedDeclaration') || sourceOf(node) !== module) continue;
+    if ((node.type === 'ImportExpression' || node.type === 'TSImportType' || node.type === 'ExportAllDeclaration') && names(sourceOf(node))) whole = true;
+    if (node.type === 'CallExpression' && childrenOf(node, 'arguments').some((argument) => names(literalValue(argument)))) whole = true;
+    if ((node.type !== 'ImportDeclaration' && node.type !== 'ExportNamedDeclaration') || !names(sourceOf(node))) continue;
     for (const specifier of childrenOf(node, 'specifiers')) {
       if (specifier.type === 'ImportNamespaceSpecifier') whole = true;
       else taken.add(nameOf(childOf(specifier, specifier.type === 'ExportSpecifier' ? 'local' : 'imported')) ?? 'default');
@@ -95,4 +99,4 @@ export const testFiles = (): string[] => [
   ...filesUnder(path.join(ROOT, 'scripts')).filter((file) => isTest(file) || file.includes(`${path.sep}support${path.sep}`)),
 ];
 
-export const namesTakenBy = (files: readonly string[], module: string): Set<string> => new Set(files.flatMap((file) => [...namesTakenFrom(file, module)]));
+export const namesTakenBy = (files: readonly string[], module: ExportingModule): Set<string> => new Set(files.flatMap((file) => [...namesTakenFrom(file, module)]));

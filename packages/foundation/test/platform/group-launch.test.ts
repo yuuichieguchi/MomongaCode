@@ -5,7 +5,8 @@ import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import { GroupContainmentError, createKeptGroupControl, createPosixGroupPort, createProcessGroupPort, launchApart, launchGroupLeader, nodeCommandRunner } from '../../src/index.ts';
-import type { GroupLaunchRequest, ProcessGroupPort } from '../../src/index.ts';
+import type { ProcessGroupPort } from '../../src/index.ts';
+import type { GroupLaunchRequest } from '../../src/platform/group-launch.ts';
 import { answeringMembers, fakeKeeperHost, settle } from '../support/fake-keeper.ts';
 
 const KEEPER_PID = 9_999_981;

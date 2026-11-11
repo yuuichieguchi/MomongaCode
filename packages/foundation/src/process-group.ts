@@ -17,16 +17,6 @@ export const realGroupTiming: Timing = {
 
 export type TerminateOutcome = 'terminated' | 'killed' | 'gone' | 'unconfirmed';
 
-export class GroupNotStoppedError extends Error {
-  readonly pgid: number;
-
-  constructor(pgid: number) {
-    super(`process group ${pgid} was not stopped: a member that can still run remained after SIGTERM and SIGKILL`);
-    this.name = 'GroupNotStoppedError';
-    this.pgid = pgid;
-  }
-}
-
 export interface TerminateGroupOptions {
   graceMs: number;
   termDeadline?: number;
