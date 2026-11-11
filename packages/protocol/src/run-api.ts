@@ -65,7 +65,11 @@ const permissionOption = closed(
   ['optionId', 'name', 'kind'],
 );
 
-const BASE64_PATTERN = '^[A-Za-z0-9+/]+={0,2}$';
+const BASE64_PATTERN = '^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{4})$';
+
+const BASE64_RULE = 'padded base64 (a length that is a multiple of 4)';
+
+export const PATTERN_RULES: ReadonlyMap<string, string> = new Map([[BASE64_PATTERN, BASE64_RULE]]);
 
 const imageAttachment = closed(
   { mediaType: enumOf(IMAGE_MEDIA_TYPES), data: { type: 'string', minLength: 1, pattern: BASE64_PATTERN } },
@@ -112,6 +116,7 @@ const inboxPending: JsonSchema = { type: 'array', items: inboxRowView, maxItems:
 const inboxChangeRow = closed({ id: string, delivery: storedEnumOf(INBOX_DELIVERIES), state: storedEnumOf(INBOX_STATES), seq: { type: 'integer', minimum: 1 } }, ['id', 'delivery', 'state', 'seq']);
 
 export const base64ByteLength = (data: string): number => {
+  if (data.length % 4 !== 0) throw new RangeError(`base64 data of ${data.length} characters is not ${BASE64_RULE}`);
   const padding = data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0;
   return (data.length / 4) * 3 - padding;
 };
