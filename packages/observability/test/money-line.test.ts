@@ -4,7 +4,6 @@ import { UNPRICED_CODES } from '@momonga/protocol';
 import {
   UNPRICED_CODE_TEXT,
   buildCostBreakdown,
-  buildCostReport,
   definePriceTable,
   formatCostBreakdown,
   formatCostReport,
@@ -14,7 +13,7 @@ import {
   startChatSpan,
 } from '@momonga/observability';
 import type { CallBilling, ChatBilling, PricedCall } from '@momonga/observability';
-import { harness, billedCallsOfRun, moneyLine } from './helpers.ts';
+import { harness, billedCallsOfRun, moneyLine, costReportOfSpans } from './helpers.ts';
 
 const AT = Date.parse('2026-07-10T00:00:00Z');
 const TABLE = definePriceTable([{ provider: 'acme', model: 'm1', effectiveFrom: '2026-01-01', inputPerMTok: 1, outputPerMTok: 4, currency: 'USD' }]);
@@ -124,7 +123,7 @@ describe('the report and the breakdown print the same money line for the same ca
     const calls = billedCallsOfRun(h.store, 'run-a', TABLE);
     const line = moneyLine(calls.map((call) => call.price));
 
-    const report = formatCostReport(buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE }));
+    const report = formatCostReport(costReportOfSpans(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE }));
     const breakdown = formatCostBreakdown(
       buildCostBreakdown(
         calls.map((call) => ({ runId: call.runId, provider: call.provider, model: call.model, billing: call.billing, at: new Date(call.startMs), price: call.price, usage: call.usage })),

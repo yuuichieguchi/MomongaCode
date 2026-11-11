@@ -2,7 +2,7 @@ import { computeBackoff, readJsonReply } from '@momonga/foundation';
 import type { Clock, RolePort } from '@momonga/foundation';
 import { normalizeMemoryText } from '@momonga/memory';
 import { LOWEST_REASONING_EFFORT, jsonReplyOf, jsonReplyPathFor, summaryTokenCapFor } from '@momonga/protocol';
-import type { BilledDetail, CallTiming, CreateResponseBody, MomongaResponseExtension, ReflectionDrop, TextFormat, Usage } from '@momonga/protocol';
+import type { NewBilledDetail, CallTiming, CreateResponseBody, MomongaResponseExtension, ReflectionDrop, TextFormat, Usage } from '@momonga/protocol';
 import { memoryTextProblem } from '@momonga/tools';
 import type { ContextChargeInput, RuntimeStore, SaveCandidateInput } from '@momonga/store';
 import type { GatewayPort, SettingsPort } from '../ports.ts';
@@ -61,7 +61,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     body: CreateResponseBody,
     signal: AbortSignal,
     proof: AdmissionProof,
-  ): Promise<{ terminal: ModelResult; usage: Usage | null; detail: BilledDetail }> => {
+  ): Promise<{ terminal: ModelResult; usage: Usage | null; detail: NewBilledDetail }> => {
     let terminal: ModelResult | undefined;
     let usage: Usage | null = null;
     let extension: MomongaResponseExtension | undefined;

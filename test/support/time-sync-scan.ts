@@ -15,7 +15,40 @@ const COMPARISONS = new Set(['-', '<', '>', '<=', '>=']);
 
 const FAKE_TIME = /\bcreateFake(?:Clock|Timers)\(/;
 
-const VITEST_FAKE_TIME = /\bvi\.useFakeTimers\(/;
+const VITEST_DEFAULT_FAKES = ['setTimeout', 'setImmediate', 'setInterval', 'Date', 'performance'] as const;
+
+const CASE_CALLS = new Set(['it', 'test', 'it.only', 'test.only', 'it.concurrent', 'test.concurrent']);
+
+const isCaseBody = (node: SourceNode, parent: SourceNode | undefined, key: string): boolean =>
+  (node.type === 'ArrowFunctionExpression' || node.type === 'FunctionExpression') && parent?.type === 'CallExpression' && key === 'arguments' && CASE_CALLS.has(memberChain(childOf(parent, 'callee')) ?? '');
+
+const fakesOfCall = (call: SourceNode): readonly string[] => {
+  if (memberChain(childOf(call, 'callee')) !== 'vi.useFakeTimers') return [];
+  const options = unwrapped(childrenOf(call, 'arguments')[0]);
+  if (options === undefined) return VITEST_DEFAULT_FAKES;
+  if (options.type !== 'ObjectExpression') return [];
+  const list = childrenOf(options, 'properties').find((property) => identifierName(childOf(property, 'key')) === 'toFake');
+  if (list === undefined) return VITEST_DEFAULT_FAKES;
+  const names = unwrapped(childOf(list, 'value'));
+  return names?.type === 'ArrayExpression' ? childrenOf(names, 'elements').flatMap((element) => { const name = literalValue(element); return typeof name === 'string' ? [name] : []; }) : [];
+};
+
+const fakedWithin = (root: SourceNode, crossCases: boolean): Set<string> => {
+  const faked = new Set<string>();
+  const visit = (node: SourceNode, parent: SourceNode | undefined, key: string): void => {
+    if (node !== root && !crossCases && isCaseBody(node, parent, key)) return;
+    if (node.type === 'CallExpression') for (const name of fakesOfCall(node)) faked.add(name);
+    for (const [childKey, value] of Object.entries(node)) {
+      if (Array.isArray(value)) {
+        for (const item of value) if (isNode(item)) visit(item, node, childKey);
+      } else if (isNode(value)) {
+        visit(value, node, childKey);
+      }
+    }
+  };
+  visit(root, undefined, 'root');
+  return faked;
+};
 
 const SELF_ENDING_HOLDER = /\bexec\s+(?:\/bin\/)?sleep\s+\d/;
 
@@ -35,21 +68,23 @@ const promiseTimerOf = (source: ParsedSource, call: SourceNode): boolean => {
   return binding !== undefined && hostModuleOf(binding.module) === 'node:timers/promises' && HOST_TIMERS.has(binding.imported);
 };
 
-const hostTimerOf = (source: ParsedSource, call: SourceNode): boolean => {
+const hostTimerOf = (source: ParsedSource, call: SourceNode, faked: ReadonlySet<string>): boolean => {
   const callee = unwrapped(childOf(call, 'callee'));
   const chain = memberChain(callee);
-  if (chain === undefined || !HOST_TIMERS.has(chain)) return false;
+  if (chain === undefined || !HOST_TIMERS.has(chain) || faked.has(chain)) return false;
   return callee?.type === 'MemberExpression' || isHostName(source, chain);
 };
 
 const isPromiseExecutor = (node: SourceNode, parent: SourceNode | undefined, key: string): boolean =>
   parent !== undefined && parent.type === 'NewExpression' && key === 'arguments' && identifierName(childOf(parent, 'callee')) === 'Promise' && childrenOf(parent, 'arguments')[0] === node;
 
-const isWallClockCall = (source: ParsedSource, node: SourceNode | undefined): boolean => {
+const isWallClockCall = (source: ParsedSource, node: SourceNode | undefined, faked: ReadonlySet<string>): boolean => {
   const plain = unwrapped(node);
   if (plain?.type !== 'CallExpression') return false;
   const chain = memberChain(childOf(plain, 'callee'));
-  return chain !== undefined && WALL_CLOCKS.has(chain) && isHostName(source, chain.slice(0, chain.indexOf('.')));
+  if (chain === undefined || !WALL_CLOCKS.has(chain)) return false;
+  const owner = chain.slice(0, chain.indexOf('.'));
+  return !faked.has(owner) && isHostName(source, owner);
 };
 
 const stringsOf = (node: SourceNode): string[] => {
@@ -64,21 +99,22 @@ const stringsOf = (node: SourceNode): string[] => {
 export const countTimeSync = (source: ParsedSource): Counts => {
   const counts: Counts = {};
   const fakeTime = FAKE_TIME.test(source.text);
-  const hostTimeIsFake = VITEST_FAKE_TIME.test(source.text);
-  const visit = (node: SourceNode, parent: SourceNode | undefined, key: string, insideExecutor: boolean): void => {
+  const fileFaked = fakedWithin(source.program, false);
+  const visit = (node: SourceNode, parent: SourceNode | undefined, key: string, insideExecutor: boolean, outerFaked: ReadonlySet<string>): void => {
     const executor = insideExecutor || isPromiseExecutor(node, parent, key);
-    if (!hostTimeIsFake && node.type === 'CallExpression' && (promiseTimerOf(source, node) || (executor && hostTimerOf(source, node)))) countInto(counts, 'timer wait');
-    if (!hostTimeIsFake && node.type === 'BinaryExpression' && COMPARISONS.has(String(node['operator'])) && (isWallClockCall(source, childOf(node, 'left')) || isWallClockCall(source, childOf(node, 'right')))) countInto(counts, 'wall-clock reading');
+    const faked = isCaseBody(node, parent, key) ? new Set([...outerFaked, ...fakedWithin(node, true)]) : outerFaked;
+    if (node.type === 'CallExpression' && (promiseTimerOf(source, node) || (executor && hostTimerOf(source, node, faked)))) countInto(counts, 'timer wait');
+    if (node.type === 'BinaryExpression' && COMPARISONS.has(String(node['operator'])) && (isWallClockCall(source, childOf(node, 'left'), faked) || isWallClockCall(source, childOf(node, 'right'), faked))) countInto(counts, 'wall-clock reading');
     if (fakeTime && stringsOf(node).some((text) => SELF_ENDING_HOLDER.test(text))) countInto(counts, 'holder that ends by itself');
     for (const [childKey, value] of Object.entries(node)) {
       if (Array.isArray(value)) {
-        for (const item of value) if (isNode(item)) visit(item, node, childKey, executor);
+        for (const item of value) if (isNode(item)) visit(item, node, childKey, executor, faked);
       } else if (isNode(value)) {
-        visit(value, node, childKey, executor);
+        visit(value, node, childKey, executor, faked);
       }
     }
   };
-  visit(source.program, undefined, 'program', false);
+  visit(source.program, undefined, 'program', false, fileFaked);
   return counts;
 };
 

@@ -1,4 +1,5 @@
 import { measureContribution } from '@momonga/memory';
+import { EXECUTED_TEXT_EVENT_TYPES } from '@momonga/protocol';
 import type { InjectedItem, RenderedWorkingState } from '@momonga/memory';
 import type { RunEvent, WorkingFacts } from '@momonga/protocol';
 import type { TerminalContribution } from '@momonga/store';
@@ -84,10 +85,9 @@ const injectedOf = (events: readonly RunEvent[], lookup: Lookup): WorkingStateTr
 
 export const contributionAtTerminal: TerminalContribution = {
   eventTypes: [
+    ...EXECUTED_TEXT_EVENT_TYPES,
     'user.message',
     'model.responded',
-    'tool.completed',
-    'tool.reconciled',
     'context.compacted',
     'context.inherited',
     'context.memories_loaded',

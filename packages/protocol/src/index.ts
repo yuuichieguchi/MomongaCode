@@ -458,9 +458,9 @@ export type {
 } from './run-api.ts';
 export { assistantTextOf, jsonReplyOf } from './assistant-text.ts';
 export { jsonReplyPathFor } from './json-reply-path.ts';
-export { BUDGET_CAUSES, BUDGET_DIMENSIONS, BUDGET_EXCEEDED_CODE, QUOTE_ROUTE, fitsCostCeiling, tokenPriceOfQuote, worstCaseUnits, HELD_OUTCOMES, MAX_COST_USD, NANO_PER_USD, PRICE_UNITS_PER_NANO, admitRequest, composeBudget, nanoOfAmount, nanoOfCost, nanoOfDecimal, nanoOfUnits, usdOfNano } from './budget.ts';
+export { BUDGET_CAUSES, BUDGET_DIMENSIONS, BUDGET_EXCEEDED_CODE, QUOTE_ROUTE, fitsCostCeiling, tokenPriceOfQuote, worstCaseUnits, HELD_OUTCOMES, MAX_COST_USD, NANO_PER_USD, PRICE_UNITS_PER_NANO, admitRequest, composeBudget, nanoOfAmount, nanoOfCost, isLegacyPrecisionCost, unitsOfCost, nanoOfDecimal, nanoOfUnits, usdOfNano } from './budget.ts';
 export type { Admission, AdmissionAsk, CallFootprint, BudgetCause, BudgetDimension, BudgetExhausted, ComposedBudget, HeldCallView, HeldOutcome, ModelQuote, RequestBudget, RunUsage, TokenPrice, TreeSpend } from './budget.ts';
-export { ANATOMY_FLAT_LAYERS, ANATOMY_HISTORY_LAYERS, CACHE_READS_NOT_REPORTED, PRICE_NOT_RECORDED, UNPRICED_CODES, UNPRICED_CODE_TEXT, anatomyLayerEntries } from './token-anatomy.ts';
+export { ANATOMY_FLAT_LAYERS, ANATOMY_HISTORY_LAYERS, CACHE_READS_NOT_REPORTED, LEGACY_PRECISION_TEXT, PRICE_NOT_RECORDED, UNPRICED_CODES, UNPRICED_CODE_TEXT, anatomyLayerEntries, recordedCostOf } from './token-anatomy.ts';
 export type {
   BilledDetail,
   BilledCallsCursorView,
@@ -472,7 +472,13 @@ export type {
   CostBreakdownView,
   ModelCost,
   ModelPricing,
+  NewBilledDetail,
+  RecordedModelCost,
+  RecordedPricing,
+  StoredModelCost,
   PriceNotRecorded,
+  RecordedCost,
+  RecordedPrice,
   RoleBreakdownView,
   TimingSummaryView,
   TokenAnatomy,
@@ -597,6 +603,8 @@ export {
   reconciliationMutates,
   verificationRequiredOf,
   withVerificationCompleted,
+  failureBeforeRound,
+  openRoundOf,
   withVerificationStarted,
 } from './completion.ts';
 export type {
@@ -629,6 +637,8 @@ export type {
 export { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES, permissionDeniedOutput } from './permission-denial.ts';
 export type { OperationEffectRecord } from './run-types.ts';
 export type { ApprovalBasis, PermissionDenial, PermissionDenialSource } from './permission-denial.ts';
+export { EXECUTED_TEXT_EVENT_TYPES, readExecutedText } from './executed-text.ts';
+export type { ExecutedTextEvent, ExecutedTextEventType, ExecutedTextHandlers } from './executed-text.ts';
 export { diffFieldsOf, heldEndOf, OPERATION_EFFECT_OUTCOMES, APPROVAL_KINDS, APPROVAL_STATUSES, UNKNOWN_EFFECT_ADVICE, UNKNOWN_EFFECT_REASON, unknownEffectLines, unknownEffectOptions, unknownEffectTitle, isInheritedReference, IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_FULL_CODE, INBOX_MAX_PENDING, INBOX_STATES, inboxFullMessage, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, USAGE_CHARGE_PURPOSES, USER_SHELL_COMMAND_CHARS, USER_SHELL_HEAD_BYTES, USER_SHELL_OUTPUT_BYTES, USER_SHELL_RUN_ACTIVE_CODE, USER_SHELL_TAIL_BYTES, NOTHING_TO_COMPACT_CODE, NOTHING_TO_COMPACT_MESSAGE, PROMPT_TEXT_MAX_CHARS } from './run-types.ts';
 export type {
   ActivatedSkillEntry,
@@ -749,11 +759,7 @@ export type {
   MomongaModelRoles,
   MomongaEventName,
   TargetHealth,
-  UsageReport,
-  UsageReportResponse,
-  UsageReportStep,
   UsageSource,
-  UsageTotals,
 } from './gateway-api.ts';
 export type { JsonReplyPath, MomongaResponseExtension, WireUsage } from './open-responses.ts';
 export type {

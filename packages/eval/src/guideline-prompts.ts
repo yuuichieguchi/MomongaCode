@@ -1,7 +1,7 @@
 import { defineProductSchema, jsonReplyInstructions, readJsonReply, sha256Hex } from '@momonga/foundation';
 import type { JsonReplyInput, ProductValidator } from '@momonga/foundation';
 import { GUIDELINE_TEXT_PATTERN, MIN_SUMMARY_TOKENS, escapeXmlAttribute, escapeXmlText } from '@momonga/protocol';
-import type { BilledDetail } from '@momonga/protocol';
+import type { NewBilledDetail } from '@momonga/protocol';
 import { recordOf } from './guideline-record.ts';
 import type { Transcript } from './transcript.ts';
 
@@ -104,7 +104,7 @@ export type GuidelineCompletionRequest = {
   seed?: number;
 };
 
-export type GuidelineCompletion = JsonReplyInput & { usage: { inputTokens: number; outputTokens: number; totalTokens: number }; detail?: BilledDetail };
+export type GuidelineCompletion = JsonReplyInput & { usage: { inputTokens: number; outputTokens: number; totalTokens: number }; detail?: NewBilledDetail };
 
 const formatFor = (name: string, schema: Record<string, unknown>): GuidelineCompletionRequest['format'] => ({ type: 'json_schema', name, strict: true, schema });
 

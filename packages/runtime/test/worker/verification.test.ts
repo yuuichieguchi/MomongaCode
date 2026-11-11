@@ -8,7 +8,10 @@ import { fixedSandboxBindings } from '@momonga/runtime';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { Run } from '@momonga/store';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { EarlierAttemptNotStoppedError, verificationMarkerName } from '@momonga/tools';
+import type { ToolExecutor } from '@momonga/tools';
 import { createRequestValidator } from '../../../gateway/src/core/validation.ts';
+import { deferred } from './deferred.ts';
 import { DEADLINE_MS, createdRun, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
@@ -444,5 +447,71 @@ describe('limits during the send-back loop', () => {
 
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'max_steps' });
     expect(completions(env, run.id).length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('a completion check holds the lock of its call', () => {
+  type HoldCall = ToolExecutor['holdCall'];
+
+  const lockingWorker = (env: Env, holdCall: HoldCall) =>
+    env.worker('worker-1', { tools: { sandboxes: fixedSandboxBindings(recordingSandbox()), executor: { ...env.executor, holdCall } } });
+
+  const failing = async (env: Env): Promise<Run> => {
+    env.gateway.script.push(textStep('All done.'), textStep('Really done.'));
+    return enqueueWith(env, 'make the tests pass', { conditions: [{ command: 'exit 1' }] });
+  };
+
+  it('takes the lock named after the run, the round and the condition before the check starts and holds it until the result is recorded', async () => {
+    const env = await makeEnv({ mode: 'bypassPermissions' });
+    const run = await failing(env);
+    const trace: string[] = [];
+    const holdCall: HoldCall = async (key) => {
+      trace.push(`hold ${key}: ${starts(env, run.id).length} started`);
+      return { release: () => trace.push(`release: ${completions(env, run.id).length} completed`) };
+    };
+
+    await env.runOnce(lockingWorker(env, holdCall));
+
+    const [condition] = pinnedConditions(env, run.id);
+    const name = verificationMarkerName({ runId: run.id, round: 1, conditionId: condition?.id ?? '' });
+    expect(trace).toEqual([`hold ${name}: 0 started`, 'release: 1 completed']);
+  });
+
+  it('does not start the check while another attempt holds the lock, and runs it once the lock is free', async () => {
+    const env = await makeEnv({ mode: 'bypassPermissions' });
+    const run = await failing(env);
+    const asked = deferred<void>();
+    const free = deferred<void>();
+    let holds = 0;
+    const holdCall: HoldCall = async () => {
+      holds += 1;
+      if (holds === 1) {
+        asked.resolve();
+        await free.promise;
+      }
+      return { release: () => undefined };
+    };
+
+    const running = env.runOnce(lockingWorker(env, holdCall));
+    await env.settled(asked.promise, 'the check to ask for its lock');
+    expect(starts(env, run.id)).toEqual([]);
+
+    free.resolve();
+    await env.settled(running, 'the worker to end its claim');
+    expect(completions(env, run.id)).toMatchObject([{ round: 1, outcome: 'failed' }]);
+  });
+
+  it('fails the run with earlier_attempt_not_stopped when the lock stays held past its bound, and records no verdict', async () => {
+    const env = await makeEnv({ mode: 'bypassPermissions' });
+    const run = await failing(env);
+    const holdCall: HoldCall = async (key) => {
+      throw new EarlierAttemptNotStoppedError(`the call ${key} is still held by another attempt`, 'lock_held');
+    };
+
+    await env.runOnce(lockingWorker(env, holdCall));
+
+    expect(env.run(run.id)).toMatchObject({ status: 'FAILED', error: { code: 'earlier_attempt_not_stopped' } });
+    expect(starts(env, run.id)).toEqual([]);
+    expect(completions(env, run.id)).toEqual([]);
   });
 });

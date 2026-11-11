@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { BilledCallsCursorView, BilledCallsPageView, BilledCallView, TokenAnatomy } from '@momonga/protocol';
+import type { BilledCallsCursorView, BilledCallsPageView, BilledCallView, RecordedCost, TokenAnatomy } from '@momonga/protocol';
 import type { ModelCallRecord } from '@momonga/store';
 import { costBreakdownOf } from '../../src/service/model-calls.ts';
+import type { CostBreakdownSources } from '../../src/service/model-calls.ts';
 import { expectSchema } from './helpers.ts';
 
 const ANATOMY: TokenAnatomy = {
@@ -33,7 +34,6 @@ const billed = (runId: string, step: number | undefined, input: number, extra: P
   billing: 'metered',
   startMs: 1,
   usage: { inputTokens: input, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 1, reasoningTokens: 0 },
-  price: { kind: 'priced', units: String(input * 1_000_000_000), priceVersion: '2026-01-01' },
   ...extra,
 });
 
@@ -63,12 +63,37 @@ const pagedOver = (calls: readonly BilledCallView[], runIds: readonly string[]) 
   return { fetchPage, pages };
 };
 
+const recordedAtCallTime = (call: BilledCallView): RecordedCost[] => {
+  if (call.responseId === undefined) return [];
+  const units = call.usage.inputTokens * 1_000_000_000;
+  return [
+    {
+      runId: call.runId,
+      responseId: call.responseId,
+      price: call.billing === 'plan' ? { kind: 'unpriced', code: 'plan', reason: 'plan' } : { kind: 'priced', cost: { amount: units / 1e15, units: String(units), currency: 'USD', priceVersion: '2026-01-01' } },
+    },
+  ];
+};
+
+const breakdownOf = (sources: Omit<CostBreakdownSources, 'recordedCosts'>): ReturnType<typeof costBreakdownOf> => {
+  const paged: BilledCallView[] = [];
+  return costBreakdownOf({
+    ...sources,
+    fetchPage: async (runIds, cursor, limit) => {
+      const page = await sources.fetchPage(runIds, cursor, limit);
+      paged.push(...page.calls);
+      return page;
+    },
+    recordedCosts: () => paged.flatMap(recordedAtCallTime),
+  });
+};
+
 describe('costBreakdownOf', () => {
   it('returns a breakdown of metered and plan calls that the CostBreakdown wire schema accepts', async () => {
-    const calls = [billed('r1', 1, 4), billed('r1', 2, 300, { billing: 'plan', price: { kind: 'unpriced', code: 'plan', reason: 'plan' } })];
+    const calls = [billed('r1', 1, 4), billed('r1', 2, 300, { billing: 'plan' })];
     const { fetchPage } = pagedOver(calls, ['r1']);
 
-    const { breakdown } = await costBreakdownOf({
+    const { breakdown } = await breakdownOf({
       runIds: ['r1'],
       recordsOf: async (runId) => [requested(1), responded(1, idOf(runId, 1)), requested(2), responded(2, idOf(runId, 2))],
       fetchPage,
@@ -82,7 +107,7 @@ describe('costBreakdownOf', () => {
     const calls = [billed('r1', 1, 1), billed('r2', 1, 2), billed('r3', 1, 3)];
     const { fetchPage, pages } = pagedOver(calls, ['r1', 'r2', 'r3']);
 
-    const { breakdown } = await costBreakdownOf({
+    const { breakdown } = await breakdownOf({
       runIds: ['r1', 'r2', 'r3'],
       recordsOf: async (runId) => [requested(1), responded(1, idOf(runId, 1))],
       fetchPage,
@@ -94,7 +119,7 @@ describe('costBreakdownOf', () => {
     expect(breakdown.layers.callsWithoutAnatomy).toBe(0);
     expect(breakdown.layers.tokens['system']).toBe(30);
     expect(breakdown.duration?.n).toBe(3);
-    expect(breakdown.cost).toEqual({ amount: 0.000006, currency: 'USD', unpricedCalls: 0, unpriced: {}, priceNotRecordedCalls: 0, priceVersions: ['2026-01-01'] });
+    expect(breakdown.cost).toEqual({ amount: 0.000006, currency: 'USD', unpricedCalls: 0, unpriced: {}, priceNotRecordedCalls: 0, legacyPrecisionCalls: 0, priceVersions: ['2026-01-01'] });
     expect(breakdown.unjoined).toEqual([]);
   });
 
@@ -103,7 +128,7 @@ describe('costBreakdownOf', () => {
     const second = billed('r1', 1, 2, { responseId: 'resp_second' });
     const { fetchPage } = pagedOver([first, second], ['r1']);
 
-    const { breakdown } = await costBreakdownOf({ runIds: ['r1'], recordsOf: async () => [requested(1), responded(1, 'resp_second')], fetchPage });
+    const { breakdown } = await breakdownOf({ runIds: ['r1'], recordsOf: async () => [requested(1), responded(1, 'resp_second')], fetchPage });
 
     expect(breakdown.calls).toBe(2);
     expect(breakdown.layers.callsWithoutAnatomy).toBe(1);
@@ -115,7 +140,7 @@ describe('costBreakdownOf', () => {
   it('bills a span with no response id with its layers not recorded and never pairs it by position', async () => {
     const { fetchPage } = pagedOver([unidentified(billed('r1', 1, 5))], ['r1']);
 
-    const { breakdown } = await costBreakdownOf({ runIds: ['r1'], recordsOf: async () => [requested(1), responded(1, idOf('r1', 1))], fetchPage });
+    const { breakdown } = await breakdownOf({ runIds: ['r1'], recordsOf: async () => [requested(1), responded(1, idOf('r1', 1))], fetchPage });
 
     expect(breakdown.calls).toBe(1);
     expect(breakdown.billed.inputTokens).toBe(5);
@@ -128,7 +153,7 @@ describe('costBreakdownOf', () => {
   it('gives a call that belongs to no run, such as the analysis of context improve, the timing of the guideline charge that carries its response id', async () => {
     const calls = [billed('', undefined, 8, { role: 'analysis', responseId: 'resp_analysis' }), billed('', undefined, 9, { role: 'analysis', responseId: 'resp_other' })];
 
-    const { breakdown } = await costBreakdownOf({
+    const { breakdown } = await breakdownOf({
       runIds: [],
       recordsOf: async () => [],
       runlessTimingsOf: () => [{ responseId: 'resp_analysis', timing: { firstEventMs: 2, durationMs: 45_000 } }],
@@ -147,7 +172,7 @@ describe('costBreakdownOf', () => {
       { kind: 'responded', seq: 22, step: 2, attempt: 1, timing: { durationMs: 9 } },
     ];
 
-    const { breakdown, text } = await costBreakdownOf({ runIds: ['r1'], recordsOf: async () => oldRecords, fetchPage: pagedOver(oldCalls, ['r1']).fetchPage });
+    const { breakdown, text } = await breakdownOf({ runIds: ['r1'], recordsOf: async () => oldRecords, fetchPage: pagedOver(oldCalls, ['r1']).fetchPage });
 
     expect(breakdown.calls).toBe(2);
     expect(breakdown.callsWithoutResponseId).toBe(2);
@@ -172,7 +197,7 @@ describe('costBreakdownOf', () => {
       { responseId: 'resp_reflect', timing: { durationMs: 5000 } },
     ];
 
-    const { breakdown } = await costBreakdownOf({
+    const { breakdown } = await breakdownOf({
       runIds: ['r1'],
       recordsOf: async () => [requested(1), responded(1, idOf('r1', 1))],
       sideTimingsOf: () => timings,
@@ -188,7 +213,7 @@ describe('costBreakdownOf', () => {
   });
 
   it('reports a recorded response that carries an id and has no billed call instead of failing', async () => {
-    const lonely = await costBreakdownOf({
+    const lonely = await breakdownOf({
       runIds: ['r1'],
       recordsOf: async () => [requested(1), responded(1, idOf('r1', 1)), requested(2), responded(2, 'resp_unbilled')],
       fetchPage: pagedOver([billed('r1', 1, 1)], ['r1']).fetchPage,
@@ -202,13 +227,13 @@ describe('costBreakdownOf', () => {
     const { fetchPage } = pagedOver([billed('r1', 1, 1)], ['r1']);
     const resumed = [requested(1, 1), requested(1, 2), responded(1, idOf('r1', 1), 2)];
 
-    const { breakdown } = await costBreakdownOf({ runIds: ['r1'], recordsOf: async () => resumed, fetchPage });
+    const { breakdown } = await breakdownOf({ runIds: ['r1'], recordsOf: async () => resumed, fetchPage });
 
     expect(breakdown.calls).toBe(1);
     expect(breakdown.layers.callsWithoutAnatomy).toBe(0);
     expect(breakdown.unjoined).toEqual([]);
 
-    const twice = await costBreakdownOf({ runIds: ['r1'], recordsOf: async () => [requested(1), responded(1, idOf('r1', 1)), requested(1, 2), responded(1, idOf('r1', 1), 2)], fetchPage });
+    const twice = await breakdownOf({ runIds: ['r1'], recordsOf: async () => [requested(1), responded(1, idOf('r1', 1)), requested(1, 2), responded(1, idOf('r1', 1), 2)], fetchPage });
     expect(twice.breakdown.calls).toBe(1);
     expect(twice.breakdown.unjoined).toEqual([]);
   });
@@ -217,7 +242,7 @@ describe('costBreakdownOf', () => {
     const calls = [billed('r1', 1, 1), billed('r1', 1, 2, { role: 'classifier', responseId: 'resp_side' }), billed('r1', 2, 3, { role: 'run' })];
     const { fetchPage } = pagedOver(calls, ['r1']);
 
-    const { breakdown } = await costBreakdownOf({
+    const { breakdown } = await breakdownOf({
       runIds: ['r1'],
       recordsOf: async () => [requested(1), responded(1, idOf('r1', 1)), requested(2), responded(2, idOf('r1', 2))],
       fetchPage,
@@ -230,25 +255,25 @@ describe('costBreakdownOf', () => {
 
   it('refuses a gateway that repeats the cursor, never advances it, or sends a cursor with an empty page', async () => {
     const repeating = async (): Promise<BilledCallsPageView> => ({ calls: [billed('r1', 1, 1)], next: { run: 0, after: 0 } });
-    await expect(costBreakdownOf({ runIds: ['r1'], recordsOf: async () => [], fetchPage: repeating })).rejects.toThrow(/cursor/);
+    await expect(breakdownOf({ runIds: ['r1'], recordsOf: async () => [], fetchPage: repeating })).rejects.toThrow(/cursor/);
 
     const backwards = async (_runIds: readonly string[], cursor: BilledCallsCursorView): Promise<BilledCallsPageView> => ({
       calls: [billed('r1', 1, 1)],
       next: cursor.after === 0 ? { run: 0, after: 5 } : { run: 0, after: 2 },
     });
-    await expect(costBreakdownOf({ runIds: ['r1'], recordsOf: async () => [], fetchPage: backwards })).rejects.toThrow(/cursor/);
+    await expect(breakdownOf({ runIds: ['r1'], recordsOf: async () => [], fetchPage: backwards })).rejects.toThrow(/cursor/);
 
     const empty = async (): Promise<BilledCallsPageView> => ({ calls: [], next: { run: 0, after: 1 } });
-    await expect(costBreakdownOf({ runIds: ['r1'], recordsOf: async () => [], fetchPage: empty })).rejects.toThrow(/empty page/);
+    await expect(breakdownOf({ runIds: ['r1'], recordsOf: async () => [], fetchPage: empty })).rejects.toThrow(/empty page/);
 
     const malformed = async (): Promise<BilledCallsPageView> => ({ calls: [billed('r1', 1, 1)], next: { run: -1, after: 1.5 } });
-    await expect(costBreakdownOf({ runIds: ['r1'], recordsOf: async () => [], fetchPage: malformed })).rejects.toThrow(/cursor/);
+    await expect(breakdownOf({ runIds: ['r1'], recordsOf: async () => [], fetchPage: malformed })).rejects.toThrow(/cursor/);
   });
 
   it('keeps a call from before the timing existed as billed, with its timing not recorded', async () => {
     const { fetchPage } = pagedOver([billed('r1', 1, 1)], ['r1']);
 
-    const { breakdown, text } = await costBreakdownOf({ runIds: ['r1'], recordsOf: async () => [{ kind: 'responded', seq: 1, step: 1, attempt: 1, responseId: idOf('r1', 1) }], fetchPage });
+    const { breakdown, text } = await breakdownOf({ runIds: ['r1'], recordsOf: async () => [{ kind: 'responded', seq: 1, step: 1, attempt: 1, responseId: idOf('r1', 1) }], fetchPage });
 
     expect(breakdown.calls).toBe(1);
     expect(breakdown.duration).toBeNull();

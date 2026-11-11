@@ -8,7 +8,7 @@ import { createGatewayClient } from '../src/client/gateway-client.ts';
 
 const RETIRED_MESSAGE = 'This gateway belongs to a replaced generation and takes no new requests. The request was not run; send it again.';
 
-const USAGE = { run_id: 'run_1', responses: [], steps: [], total: { input_tokens: 0, output_tokens: 0, total_tokens: 0 } };
+const MODEL_LIST = { data: [], start: null, roles: {} };
 
 type Answer = { status: number; body: unknown };
 
@@ -34,7 +34,7 @@ const gatewayAnswering = async (context: TestContext, name: string, answers: Ans
 describe('the CLI gateway client and a retired generation (design-update 18.9 O-I5-2, 20.3, 20.56)', () => {
   it('resolves the socket again and sends the same call once more when the gateway answers generation_retired', async (context) => {
     const retired = await gatewayAnswering(context, 'old.sock', [RETIRED]);
-    const serving = await gatewayAnswering(context, 'new.sock', [{ status: 200, body: USAGE }]);
+    const serving = await gatewayAnswering(context, 'new.sock', [{ status: 200, body: MODEL_LIST }]);
     const dialed: string[] = [];
     const sockets = [retired.socketPath, serving.socketPath];
     const client = createGatewayClient({
@@ -46,19 +46,19 @@ describe('the CLI gateway client and a retired generation (design-update 18.9 O-
     });
     registerCleanup(context, () => client.close());
 
-    expect(await client.usageOf('run_1')).toEqual(USAGE);
+    expect(await client.modelList()).toEqual(MODEL_LIST);
 
     expect(dialed).toEqual([retired.socketPath, serving.socketPath]);
-    expect(retired.requests).toEqual(['GET /v1/momonga/usage?run_id=run_1']);
-    expect(serving.requests).toEqual(['GET /v1/momonga/usage?run_id=run_1']);
+    expect(retired.requests).toEqual(['GET /v1/momonga/models']);
+    expect(serving.requests).toEqual(['GET /v1/momonga/models']);
   });
 
   it('shows the text of the refusal as the error when the call sent once more is refused again, and sends no third call', async (context) => {
-    const retired = await gatewayAnswering(context, 'old.sock', [RETIRED, RETIRED, { status: 200, body: USAGE }]);
+    const retired = await gatewayAnswering(context, 'old.sock', [RETIRED, RETIRED, { status: 200, body: MODEL_LIST }]);
     const client = createGatewayClient({ resolveSocket: async () => retired.socketPath });
     registerCleanup(context, () => client.close());
 
-    await expect(client.usageOf('run_1')).rejects.toThrow(RETIRED_MESSAGE);
+    await expect(client.modelList()).rejects.toThrow(RETIRED_MESSAGE);
 
     expect(retired.requests).toHaveLength(2);
   });

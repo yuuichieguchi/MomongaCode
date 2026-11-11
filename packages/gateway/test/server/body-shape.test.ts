@@ -5,7 +5,7 @@ import { PRIMARY, postJson, readJson, startGateway } from '../gateway-helpers.ts
 
 const NOT_AN_OBJECT = ['null', '[]', '"x"'] as const;
 
-const OBJECT_BODY_ROUTES = ['/v1/responses', '/v1/responses/compact', '/v1/momonga/count_tokens', QUOTE_ROUTE, '/v1/momonga/cost', '/v1/momonga/cost/calls'] as const;
+const OBJECT_BODY_ROUTES = ['/v1/responses', '/v1/responses/compact', '/v1/momonga/count_tokens', QUOTE_ROUTE, '/v1/momonga/cost/calls'] as const;
 
 const PLAN_BODY_ROUTES = [PLAN_ROUTES.accountsActive, PLAN_ROUTES.signInBegin, PLAN_ROUTES.signInComplete, PLAN_ROUTES.signInCancel, PLAN_ROUTES.signOut].map((route) => `${PLAN_API_PREFIX}${route}`);
 
@@ -14,9 +14,6 @@ const cases = (routes: readonly string[]): Array<[string, string]> => routes.fla
 const gateway = () =>
   startGateway({
     adapters: { [PRIMARY]: createScriptedAdapter({ calls: [] }) },
-    costReport: async () => {
-      throw new Error('the cost report must not be built for a body that is not an object');
-    },
     billedCalls: async () => {
       throw new Error('the billed calls must not be read for a body that is not an object');
     },

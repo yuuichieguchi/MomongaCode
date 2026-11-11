@@ -26,7 +26,7 @@ const modelCall = (): RunEventPayload =>
       status: 'completed',
       output: [],
       usage: { input_tokens: 1000, output_tokens: 50, total_tokens: 1050, input_tokens_details: { cached_tokens: 400 }, output_tokens_details: { reasoning_tokens: 0 } },
-      momonga: { cost: { amount: 0.002, currency: 'USD', priceVersion: '2026-01-01' } },
+      momonga: { cost: { amount: 0.002, units: '2000000000000', currency: 'USD', priceVersion: '2026-01-01' } },
       timing: { firstEventMs: 10, durationMs: 100 },
     },
   }) as unknown as RunEventPayload;
@@ -62,7 +62,7 @@ const reflectionCharge = {
   outputTokens: 40,
   totalTokens: 540,
   createdAt: 1,
-  detail: { cachedInputTokens: 100, cost: { amount: 0.003, currency: 'USD' as const, priceVersion: '2026-01-01' }, timing: { durationMs: 70 } },
+  detail: { cachedInputTokens: 100, cost: { amount: 0.003, units: '3000000000000', currency: 'USD' as const, priceVersion: '2026-01-01' }, timing: { durationMs: 70 } },
 };
 
 describe('the token metrics count every billed call of a run', () => {

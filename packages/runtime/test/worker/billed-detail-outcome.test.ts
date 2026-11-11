@@ -18,11 +18,11 @@ describe('billedDetailOf moves the price outcome from a response to a record', (
   });
 
   it('copies cost and writes no unpriced for a priced call', () => {
-    const extension = { cost: { amount: 0.5, currency: 'USD', priceVersion: '2026-01-01' } } as unknown as MomongaResponseExtension;
+    const extension = { cost: { amount: 0.5, units: '500000000000000', currency: 'USD', priceVersion: '2026-01-01' } } as unknown as MomongaResponseExtension;
 
     const detail = billedDetailOf(USAGE, extension, TIMING, 'resp_2');
 
-    expect(detail).toEqual({ responseId: 'resp_2', cachedInputTokens: 100, cost: { amount: 0.5, currency: 'USD', priceVersion: '2026-01-01' }, timing: TIMING });
+    expect(detail).toEqual({ responseId: 'resp_2', cachedInputTokens: 100, cost: { amount: 0.5, units: '500000000000000', currency: 'USD', priceVersion: '2026-01-01' }, timing: TIMING });
     expect(billedDetailOf(USAGE, { unpriced: { code: 'no_price_entry', reason: 'no price table' } } as unknown as MomongaResponseExtension, TIMING, 'r')).toHaveProperty('unpriced');
   });
 });

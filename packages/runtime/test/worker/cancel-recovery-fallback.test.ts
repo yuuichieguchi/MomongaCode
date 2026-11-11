@@ -202,6 +202,7 @@ describe('cancel recovery fallback', () => {
     const worker = env.worker('worker-1', {
       tools: {
         executor: {
+          holdCall: (key, signal) => env.executor.holdCall(key, signal),
           runBatch: async (input) => {
             const settled: ResultOutcome = { callId: MARK.callId, kind: 'result', reconciled: 'already_applied', idemKey: keys[MARK.callId] as string, result: { status: 'completed', output: 'already marked one' } };
             input.onOutcome?.(settled);
@@ -231,6 +232,7 @@ describe('cancel recovery fallback', () => {
     const worker = env.worker('worker-1', {
       tools: {
         executor: {
+          holdCall: (key, signal) => env.executor.holdCall(key, signal),
           runBatch: async (input) => {
             input.onOutcome?.({ callId: MARK.callId, kind: 'result', reconciled: 'already_applied', result: { status: 'completed', output: 'already marked one' } });
             throw new Error('the batch broke');
@@ -384,6 +386,7 @@ describe('cancel recovery fallback', () => {
       onFatal: (error) => fatals.push(error),
       tools: {
         executor: {
+          holdCall: (key, signal) => env.executor.holdCall(key, signal),
           runBatch: (input) => env.executor.runBatch(input),
           release: (targets, options) => env.executor.release(targets, options),
           abandon: async () => {
@@ -411,6 +414,7 @@ describe('cancel recovery fallback', () => {
       onError: (error) => errors.push(error),
       tools: {
         executor: {
+          holdCall: (key, signal) => env.executor.holdCall(key, signal),
           runBatch: (input) => env.executor.runBatch(input),
           release: (targets, options) => env.executor.release(targets, options),
           abandon: async () => {

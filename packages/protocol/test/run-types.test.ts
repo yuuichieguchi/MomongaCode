@@ -15,7 +15,7 @@ import type {
   InputItem,
   MemoryStatus,
   MessageInputItem,
-  ModelCost,
+  RecordedModelCost,
   ModelResponse,
   PermissionMode,
   PermissionOption,
@@ -172,7 +172,7 @@ describe('run event payloads', () => {
         input_tokens_details?: { cached_tokens: number };
         output_tokens_details?: { reasoning_tokens: number };
       };
-      momonga?: { cacheWriteInputTokens?: number; cacheReadNotReported?: true; cost?: ModelCost; unpriced?: UnpricedOutcome };
+      momonga?: { cacheWriteInputTokens?: number; cacheReadNotReported?: true; cost?: RecordedModelCost; unpriced?: UnpricedOutcome };
       timing?: CallTiming;
     }>();
     expectTypeOf<Payload<'model.requested'>>().toEqualTypeOf<{
@@ -426,7 +426,7 @@ describe('RunState', () => {
       stopReason?: StopReason;
       step: number;
       attempt: number;
-      usage: { inputTokens: number; outputTokens: number; totalTokens: number; costNano?: number; unpricedCalls?: number };
+      usage: { inputTokens: number; outputTokens: number; totalTokens: number; costNano?: number; unpricedCalls?: number; legacyPrecisionCalls?: number };
       heldCalls?: Record<
         string,
         {
@@ -494,9 +494,10 @@ describe('RunState', () => {
       lastMutationSeq: number;
       verification: {
         round: number;
-        results: Record<string, { seq: number; outcome: 'passed' | 'failed' | 'timed_out' | 'cancelled' | 'spawn_error'; mutationSeq: number }>;
+        results: Record<string, { seq: number; outcome: 'passed' | 'failed' | 'timed_out' | 'cancelled' | 'spawn_error'; mutationSeq: number; round?: number }>;
         pending?: Record<string, { round: number; attempt: number }>;
-        lastFailedRoundMutationSeq?: number;
+        lastFailure?: { round: number; mutationSeq: number };
+        failureBefore?: number;
       };
       formsSinceCompaction: Record<string, number>;
       governingLoaded?: { active: { id: string; textSha256: string }[]; conflicts: { target: string; ids: string[] }[] };

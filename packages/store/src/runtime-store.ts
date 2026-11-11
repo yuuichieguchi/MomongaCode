@@ -594,11 +594,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
   const listedSessionOf = (row: Row): ListedSession => {
     const reader = readerFor('sessions', String(row['id']), row);
-    return { ...decodeSession(row, decodeContext), activeRunId: reader.nullableString('active_run_id'),
-      activeRunAt: reader.nullableNumber('active_run_at'),
-      latestRunId: reader.nullableString('latest_run_id'),
-      latestRunAt: reader.nullableNumber('latest_run_at'),
-    };
+    return { ...decodeSession(row, decodeContext), activeRunId: reader.nullableString('active_run_id'), activeRunAt: reader.nullableNumber('active_run_at'), latestRunId: reader.nullableString('latest_run_id'), latestRunAt: reader.nullableNumber('latest_run_at') };
   };
 
   const requireRun = (runId: string): Run => {

@@ -1,12 +1,17 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { CONTEXT_CHARGE_PURPOSES } from '@momonga/protocol';
-import type { BilledDetail } from '@momonga/protocol';
+import { CONTEXT_CHARGE_PURPOSES, recordedCostOf } from '@momonga/protocol';
+import type { BilledDetail, StoredModelCost } from '@momonga/protocol';
 import { expectOneOf, expectRecord, readerFor, storedOneOf } from './rows.ts';
 import type { DecodeContext } from './decode-context.ts';
 import type { Row } from './rows.ts';
 import type { ContextCharge, ContextChargeInput, ContextChargeStore } from './types.ts';
+
+const recordedDetailOf = (stored: Record<string, unknown>): BilledDetail => {
+  const detail = stored as Omit<BilledDetail, 'cost'> & { cost?: StoredModelCost };
+  return detail.cost === undefined ? (detail as BilledDetail) : { ...detail, cost: recordedCostOf(detail.cost) };
+};
 
 const decodeCharge = (row: Row, context: DecodeContext): ContextCharge => {
   const identity = String(row['id']);
@@ -22,7 +27,7 @@ const decodeCharge = (row: Row, context: DecodeContext): ContextCharge => {
     outputTokens: reader.number('output_tokens'),
     totalTokens: reader.number('total_tokens'),
     createdAt: reader.number('created_at'),
-    ...(detail === null ? {} : { detail: expectRecord('context_charges', identity, 'detail_json', detail) as BilledDetail }),
+    ...(detail === null ? {} : { detail: recordedDetailOf(expectRecord('context_charges', identity, 'detail_json', detail)) }),
   };
 };
 

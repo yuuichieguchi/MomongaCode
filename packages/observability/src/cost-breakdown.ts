@@ -61,7 +61,7 @@ export type CostBreakdown = {
   timeToFirstToken: TimingSummary | null;
   duration: TimingSummary | null;
   roles: Record<string, RoleBreakdown>;
-  cost: { amount: number | null; currency: 'USD'; unpricedCalls: number; unpriced: Partial<Record<UnpricedCode, number>>; priceNotRecordedCalls: number; priceVersions: string[] };
+  cost: { amount: number | null; currency: 'USD'; unpricedCalls: number; unpriced: Partial<Record<UnpricedCode, number>>; priceNotRecordedCalls: number; legacyPrecisionCalls: number; priceVersions: string[] };
   plan: { calls: number; inputTokens: number; outputTokens: number };
   unpriced: UnpricedCall[];
   inconsistentUsage: InconsistentUsage[];
@@ -235,6 +235,7 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
       unpricedCalls: unpricedCallsOf(money.unpriced),
       unpriced: money.unpriced,
       priceNotRecordedCalls: money.priceNotRecorded,
+      legacyPrecisionCalls: money.legacyPrecisionCalls,
       priceVersions: [...money.meteredPriceVersions],
     },
     plan,
@@ -293,7 +294,7 @@ export const formatCostBreakdown = (breakdown: CostBreakdown): string => {
       : `layers (estimated): ${shares.map(([name, share]) => `${name} ${percent(share)}`).join(', ')}`;
   const withoutAnatomy =
     breakdown.layers.callsWithoutAnatomy === 0 ? '' : `, ${breakdown.layers.callsWithoutAnatomy} of ${breakdown.calls} call(s) have no recorded layers`;
-  const cost = `cost: ${describeMoney({ calls: breakdown.calls, unpriced: breakdown.cost.unpriced, priceNotRecorded: breakdown.cost.priceNotRecordedCalls, amount: breakdown.cost.amount, meteredPriceVersions: breakdown.cost.priceVersions })}`;
+  const cost = `cost: ${describeMoney({ calls: breakdown.calls, unpriced: breakdown.cost.unpriced, priceNotRecorded: breakdown.cost.priceNotRecordedCalls, amount: breakdown.cost.amount, meteredPriceVersions: breakdown.cost.priceVersions, legacyPrecisionCalls: breakdown.cost.legacyPrecisionCalls })}`;
   return [
     `calls: ${breakdown.calls}`,
     `${layerLine}${withoutAnatomy}`,

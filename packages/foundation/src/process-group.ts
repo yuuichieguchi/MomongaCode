@@ -101,7 +101,7 @@ export async function waitForGroupGone(
     await pushedEnd(pgid, deadline, port, port.ended, timing, stop);
     return (await probeGroup(pgid, port, stop)) === 'gone';
   }
-  const ended = await waitUntil(timing, () => endOfGroup(pgid, port, stop), { intervalMs: POLL_INTERVAL_MS, deadline, ...(stop === undefined ? {} : { signal: stop }) });
+  const ended = await waitUntil(timing, () => endOfGroup(pgid, port, stop), { intervalMs: POLL_INTERVAL_MS, deadline, signal: stop });
   return ended.kind === 'found' && ended.value === 'gone';
 }
 
@@ -120,7 +120,7 @@ export async function forceKillGroup(pgid: number, { deadline, port = hostProces
     if (ended === undefined) await signalGroup(pgid, last, port, signal);
     return ended;
   };
-  const ended = await waitUntil(timing, endedOrKilledAgain, { intervalMs: POLL_INTERVAL_MS, deadline, ...(signal === undefined ? {} : { signal }) });
+  const ended = await waitUntil(timing, endedOrKilledAgain, { intervalMs: POLL_INTERVAL_MS, deadline, signal });
   if (ended.kind === 'found') return ended.value === 'gone';
   return (await probeGroup(pgid, port, signal)) === 'gone';
 }
