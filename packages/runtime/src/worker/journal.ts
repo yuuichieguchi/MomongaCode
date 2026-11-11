@@ -1,8 +1,7 @@
 import type { RunEventPayload, RunState } from '@momonga/protocol';
-import { foldRunState, initialRunState } from '@momonga/store';
+import { foldRunState } from '@momonga/store';
 import type { Claim, InheritedWindowReply, RuntimeStore, WindowEntry } from '@momonga/store';
 
-const SNAPSHOT_INTERVAL_EVENTS = 200;
 const READ_CHUNK = 1000;
 
 type HistoryEntry = RunState['history'][number];
@@ -16,12 +15,12 @@ export type Journal = {
   deliverSteering(): void;
   sync(): void;
   verifyLease(): void;
-  snapshot(): void;
 };
 
 export type JournalOptions = {
   store: RuntimeStore;
   claim: Claim;
+  signal: AbortSignal;
   lost(): never;
 };
 
@@ -69,12 +68,8 @@ const unreadableState = (own: RunState): RunState => {
   }) as RunState;
 };
 
-export const openJournal = ({ store, claim, lost }: JournalOptions): Journal => {
-  const loaded = store.load(claim.runId);
-  const run = store.getRun(claim.runId);
-  if (run === undefined) throw new Error(`unknown run ${claim.runId}`);
-  let own = loaded.tail.reduce(foldRunState, loaded.snapshot?.state ?? initialRunState({ runId: run.id, sessionId: run.sessionId }));
-  let snapshotSeq = loaded.snapshot?.seq ?? 0;
+export const openJournal = async ({ store, claim, signal, lost }: JournalOptions): Promise<Journal> => {
+  let own = (await store.load(claim.runId, signal)).state;
   let window: InheritedWindowReply | undefined;
   let merged: { own: RunState; window: InheritedWindowReply; state: RunState } | undefined;
 
@@ -84,13 +79,6 @@ export const openJournal = ({ store, claim, lost }: JournalOptions): Journal => 
       own = events.reduce(foldRunState, own);
       if (events.length < READ_CHUNK) return;
     }
-  };
-
-  const snapshot = (): void => {
-    const result = store.writeSnapshot(claim, own.lastSeq, own);
-    if (result.kind === 'lease_lost') lost();
-    if (result.kind === 'conflict') throw new Error(`snapshot of run ${claim.runId} at seq ${own.lastSeq} was refused: ${result.reason ?? 'conflict'}`);
-    snapshotSeq = own.lastSeq;
   };
 
   return {
@@ -115,15 +103,12 @@ export const openJournal = ({ store, claim, lost }: JournalOptions): Journal => 
       const result = store.append(claim, payloads);
       if (result.kind === 'lease_lost') lost();
       sync();
-      if (own.lastSeq - snapshotSeq >= SNAPSHOT_INTERVAL_EVENTS) snapshot();
     },
     deliverSteering: () => {
       const result = store.inbox.deliverSteering(claim);
       if (result.kind === 'lease_lost') return lost();
       if (result.delivered.length === 0) return;
       sync();
-      if (own.lastSeq - snapshotSeq >= SNAPSHOT_INTERVAL_EVENTS) snapshot();
     },
-    snapshot,
   };
 };

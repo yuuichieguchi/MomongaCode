@@ -104,6 +104,15 @@ async function metadataAncestors(allowed: readonly string[], denied: readonly st
   return unique(found);
 }
 
+export const SYSTEM_RESOLVER_SOCKET = '/private/var/run/mDNSResponder';
+
+const GRANTED_NETWORK_RULES = [
+  '(allow network-outbound (remote ip))',
+  `(allow network-outbound (remote unix-socket (path-literal "${SYSTEM_RESOLVER_SOCKET}")))`,
+  '(allow network-bind (local ip))',
+  '(allow network-inbound (local ip))',
+];
+
 const DEVICE_NODE_RULES = [
   '(allow file-write-data (literal "/dev/null") (literal "/dev/dtracehelper"))',
   '(allow file-write-data file-ioctl (literal "/dev/tty"))',
@@ -263,7 +272,7 @@ export async function buildSeatbeltProfile(policy: SandboxPolicy, options: { tmp
     lines.push(...DEVICE_NODE_RULES);
   }
   const unixSocketAllow = unique(await mapAsync(policy.unixSocketAllow ?? [], paths.canonicalPath));
-  if (policy.network === 'allow') lines.push('(allow network*)');
+  if (policy.network === 'allow') lines.push(...GRANTED_NETWORK_RULES);
   if (typeof policy.network === 'object') {
     const { loopbackPort } = policy.network;
     if (!Number.isInteger(loopbackPort) || loopbackPort < 1 || loopbackPort > 65_535) {

@@ -12,7 +12,7 @@ import { ContextHostError, OWNER_FILE, ROOT_PREFIX, caseEnvironment, readCredent
 import { endpointRecordFileName } from '@momonga/gateway';
 import { copyEndpointProbeRecord, copyProbeRecord, listEvalRoots, nodeContextEffects, readEvalOwner } from '../src/eval/context-effects.ts';
 import type { CliPorts } from '../src/ports.ts';
-import { KEYCHAIN_UNANSWERED_ADVICE, afterPendingIo, keychainFixture, outcomeOf, useLimitTimers } from './keychain-fixture.ts';
+import { KEYCHAIN_UNANSWERED_ADVICE, keychainFixture, outcomeOf, useLimitTimers, stillPendingAfter, settledAfter } from './keychain-fixture.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -248,11 +248,9 @@ describe('the credentials a live run reads with the store of the person', () => 
       await vi.advanceTimersByTimeAsync(FIRST_ANSWERS_AFTER_MS);
       firstAnswer.resolve();
       await keychain.arrived('find-generic-password', 2);
-      await vi.advanceTimersByTimeAsync(COMMAND_LIMIT_MS - FIRST_ANSWERS_AFTER_MS - 1);
-      await afterPendingIo();
-      expect(attempt.state()).toBe('pending');
+      await stillPendingAfter(attempt, COMMAND_LIMIT_MS - FIRST_ANSWERS_AFTER_MS - 1);
       await vi.advanceTimersByTimeAsync(1);
-      await afterPendingIo();
+      await settledAfter(attempt);
 
       expect(attempt.state()).toBe('rejected');
       expect(attempt.error()).toBeInstanceOf(ContextHostError);

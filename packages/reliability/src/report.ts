@@ -44,7 +44,7 @@ type Measured = { aggregate: Aggregate };
 
 export type ReportInput =
   | (Measured & { kind: 'real'; harness?: null; period?: Period; cost?: CostGroups })
-  | (Measured & { kind: 'benchmark'; harness: Harness; tasks?: TaskRow[]; cost: CostGroups })
+  | (Measured & { kind: 'benchmark'; harness: Harness; tasks?: TaskRow[]; cost: CostGroups; notRun: NotRun[] })
   | (Measured & { kind: 'injection'; harness: Harness; scenarios?: ScenarioRow[]; witnessed?: Rate; notRun?: NotRun[] });
 
 export const buildReliabilityReport = (input: ReportInput): ReliabilityReport => {
@@ -54,7 +54,7 @@ export const buildReliabilityReport = (input: ReportInput): ReliabilityReport =>
     case 'real':
       return { ...base, kind: 'real', harness: null, ...(input.period === undefined ? {} : { period: input.period }), ...(input.cost === undefined ? {} : { cost: input.cost }) };
     case 'benchmark':
-      return { ...base, kind: 'benchmark', harness: input.harness, ...(input.tasks === undefined ? {} : { tasks: input.tasks }), cost: input.cost };
+      return { ...base, kind: 'benchmark', harness: input.harness, ...(input.tasks === undefined ? {} : { tasks: input.tasks }), cost: input.cost, population: { notRun: input.notRun } };
     case 'injection':
       return {
         ...base,

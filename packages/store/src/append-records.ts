@@ -26,6 +26,8 @@ export const columnsOf = (payload: RunEventPayload | SessionEventPayload): Event
       return { ...NO_COLUMNS, callId: payload.callId, approvalId: payload.approvalId };
     case 'tool.elicitation.requested':
       return { ...NO_COLUMNS, callId: payload.callId, approvalId: payload.inputId };
+    case 'tool.reconciled':
+      return { ...NO_COLUMNS, callId: payload.callId };
     case 'tool.unknown.requested':
       return { ...NO_COLUMNS, callId: payload.callIds[0] ?? null, approvalId: payload.approvalId };
     case 'notice':
@@ -140,7 +142,7 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
     permissionRequest: db.prepare("SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.permission.requested' AND approval_id = :approvalId LIMIT 1"),
     elicitationRequest: db.prepare("SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.elicitation.requested' AND approval_id = :approvalId LIMIT 1"),
     unknownRequest: db.prepare("SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.unknown.requested' AND approval_id = :approvalId LIMIT 1"),
-    reconciled: db.prepare("SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.reconciled' AND json_extract(payload_json, '$.callId') = :callId ORDER BY seq DESC LIMIT 1"),
+    reconciled: db.prepare("SELECT payload_json FROM events WHERE run_id = :runId AND call_id = :callId AND type = 'tool.reconciled' ORDER BY seq DESC LIMIT 1"),
     toolCallEvent: db.prepare("SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId LIMIT 1"),
     toolCallSeq: db.prepare("SELECT seq FROM events WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId LIMIT 1"),
     toolCallRow: db.prepare("SELECT seq, tool_name FROM events WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId LIMIT 1"),

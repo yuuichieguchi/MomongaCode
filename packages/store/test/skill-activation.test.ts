@@ -3,6 +3,7 @@ import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import type { Claim, RuntimeStore } from '@momonga/store';
 import { START_MS, TIMEOUT_MS, harness, mustClaim, newSession } from './helpers.ts';
+import { foldedRunState, roundTripped } from './run-state-codec.ts';
 import { assistantItem } from './inherit-fixtures.ts';
 
 const IDS = { runId: 'run-1', sessionId: 'sess-1' };
@@ -67,8 +68,7 @@ describe('explicit skill activation at run creation', () => {
     const session = newSession(store);
     const run = await createRun(store, session.id, { name: 'pdf', content: '<skill_content name="pdf">x</skill_content>' });
     expect(store.readRunEvents(run.id, 0, 10).map((event) => event.type)).toEqual(['user.message', 'skill.activated']);
-    const loaded = store.load(run.id);
-    const state = loaded.tail.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));
+    const state = await foldedRunState(store, run.id);
     expect(state.activatedSkills).toEqual([{ name: 'pdf', content: '<skill_content name="pdf">x</skill_content>', seq: 2 }]);
   });
 
@@ -128,10 +128,8 @@ describe('skill snapshots', () => {
   it('round-trips activated skills through a snapshot', async () => {
     const { store } = harness();
     const run = await createRun(store, newSession(store).id, { name: 'pdf', content: 'pdf body' });
-    const claim = mustClaim(store, 'w1');
     const events = store.readRunEvents(run.id, 0, 100);
     const state = events.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));
-    expect(store.writeSnapshot(claim, state.lastSeq, state)).toEqual({ kind: 'ok' });
-    expect(store.load(run.id).snapshot?.state.activatedSkills).toEqual([{ name: 'pdf', content: 'pdf body', seq: 2 }]);
+    expect(roundTripped(state)?.activatedSkills).toEqual([{ name: 'pdf', content: 'pdf body', seq: 2 }]);
   });
 });

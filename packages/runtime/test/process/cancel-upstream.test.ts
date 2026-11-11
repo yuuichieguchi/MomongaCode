@@ -3,10 +3,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { RunEvent, RunEventPayload, RunState, RunStatus } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
-import type { LoadedRun, Run } from '@momonga/store';
+import type { Run } from '@momonga/store';
 import { afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { createCancelUpstream } from '../../src/process/cancel-upstream.ts';
 import { START_MS } from './helpers.ts';
+
+type LoadedRun = { snapshot?: { seq: number; state: RunState }; tail: RunEvent[] };
 
 const RUN_ID = '01900000-0000-7000-8000-000000000001';
 const SESSION_ID = '01900000-0000-7000-8000-000000000002';

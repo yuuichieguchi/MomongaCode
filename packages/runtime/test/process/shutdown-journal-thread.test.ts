@@ -16,7 +16,7 @@ const control = vi.hoisted(() => ({
   writesAfterClose: [] as string[],
 }));
 
-const WRITES = new Set(['append', 'transition', 'release', 'releaseLease', 'appendAsService', 'requestCancel', 'writeSnapshot', 'finishCancelled', 'deadLetterExhausted', 'expireApprovals']);
+const WRITES = new Set(['append', 'transition', 'release', 'releaseLease', 'appendAsService', 'requestCancel', 'finishCancelled', 'deadLetterExhausted', 'expireApprovals']);
 
 vi.mock('../../src/memory/journal-thread-client.ts', async () => {
   const { JournalThreadError } = await import('@momonga/store');
@@ -31,6 +31,16 @@ vi.mock('../../src/memory/journal-thread-client.ts', async () => {
         inheritPlan: async () => ({ kind: 'none' }),
         inheritedWindow: async () => {
           throw new JournalThreadError('a first run of a fresh session has no inherited window');
+        },
+        runState: async (request: { runId: string }) => {
+          const { openDatabase, BUSY_WAIT_LIMIT_MS } = await import('@momonga/foundation');
+          const { createJournalReader } = await import('@momonga/store');
+          const db = openDatabase(options.databasePath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
+          try {
+            return await createJournalReader(db).runState(request.runId, { pageEvents: 200, pause: async () => undefined });
+          } finally {
+            db.close();
+          }
         },
         report: async (request: { runId: string }) => ({
           lastSeq: 0,

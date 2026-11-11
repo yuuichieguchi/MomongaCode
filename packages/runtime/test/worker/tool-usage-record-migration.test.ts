@@ -9,6 +9,9 @@ import { encodeRunState } from '../../../store/src/codec.ts';
 import { foldRunState, initialRunState } from '../../../store/src/fold.ts';
 import { MIGRATIONS } from '../../../store/src/schema.ts';
 import { START_MS, callEvent, makeStoreDir, openStoreAt, rawDb } from '../../../store/test/helpers.ts';
+import { journalReaderPreparer } from './harness.ts';
+
+const foldedRunStateAt = (dbPath: string, runId: string) => journalReaderPreparer(dbPath).runState({ runId });
 import { toolUsageWindowOf } from '../../src/worker/tool-usage-window.ts';
 import { bodyWatchedStore } from './body-watched-store.ts';
 
@@ -120,15 +123,13 @@ describe('the offered-names record of runs written before it existed (person ite
     expect(reads.bodyReads).toEqual([]);
   });
 
-  it('gives a run that was not finished at the upgrade its record at last_seq + 1, folded over its snapshot, and lets the next append land after it', async () => {
+  it('gives a run that was not finished at the upgrade its record at last_seq + 1, folded from its journal, and lets the next append land after it', async () => {
     const dbPath = storeWrittenBeforeTheRecord();
     const store = openStoreAt(dbPath, createFakeClock(START_MS + 100));
 
     expect(rawDb(dbPath).prepare("SELECT last_seq FROM runs WHERE id = 'r3'").get()).toEqual({ last_seq: 3 });
-    const loaded = store.load('r3');
-    expect(loaded.snapshot?.seq).toBe(2);
-    expect(loaded.tail.map((event) => [event.seq, event.type])).toEqual([[3, 'tool.offered']]);
-    const folded = loaded.tail.reduce(foldRunState, loaded.snapshot?.state ?? initialRunState({ runId: 'r3', sessionId: 's1' }));
+    expect(store.readRunEvents('r3', 2, 10).map((event) => [event.seq, event.type])).toEqual([[3, 'tool.offered']]);
+    const folded = (await foldedRunStateAt(dbPath, 'r3')).state;
     expect(folded.offeredTools).toEqual(['Echo', 'Write']);
 
     const claim = store.claim('worker');

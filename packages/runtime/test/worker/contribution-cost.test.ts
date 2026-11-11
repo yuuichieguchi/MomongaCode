@@ -54,8 +54,6 @@ const terminalCounts = async (steps: number, path: Path): Promise<Counts> => {
   boundStore = env.store;
   boundPath = env.dbPath;
   const { run, claim } = await seedLargeRun(env, steps);
-  const state = foldedThrough(env, run, env.run(run.id).lastSeq);
-  expect(env.store.writeSnapshot(claim, state.lastSeq, state).kind).toBe('ok');
 
   counting.on = true;
   const result = await env.store.transition(claim, ['RUNNING'], 'COMPLETED');

@@ -2,7 +2,7 @@ import { MessageChannel, Worker, receiveMessageOnPort } from 'node:worker_thread
 import type { MessagePort } from 'node:worker_threads';
 import { CONDITION_STATES, NOT_RUN_REASONS, RESIDUAL_RISK_CODES } from '@momonga/protocol';
 import type { RunCallView, RunFactsRecord, RunFactsView, RunReport } from '@momonga/protocol';
-import { FactsRefusedError, InheritanceError, JournalThreadError, blobDirectoryOf } from '@momonga/store';
+import { FactsRefusedError, InheritanceError, JournalThreadError, UnknownValueError, blobDirectoryOf, decodeRunState } from '@momonga/store';
 import type {
   ContributionMeasured,
   ContributionPreparer,
@@ -14,6 +14,7 @@ import type {
   RecordedHash,
   ReflectionInputReply,
   ReportReply,
+  RunStateReply,
   VerdictFact,
   VerdictReply,
 } from '@momonga/store';
@@ -40,9 +41,9 @@ export type JournalThreadReply = Readonly<Record<string, unknown>>;
 
 export type JournalThreadClient = ContributionPreparer & {
   readonly identity: { readonly dev: number; readonly ino: number };
-  request(request: { readonly kind: string } & Readonly<Record<string, unknown>>): Promise<JournalThreadReply>;
+  request(request: { readonly kind: string } & Readonly<Record<string, unknown>>, signal?: AbortSignal): Promise<JournalThreadReply>;
   ping(): Promise<{ readonly threadId: number }>;
-  runFacts(runId: string): Promise<RunFactsRecord>;
+  runFacts(runId: string, signal?: AbortSignal): Promise<RunFactsRecord>;
   close(): Promise<void>;
 };
 
@@ -52,6 +53,7 @@ type Live = {
   readonly worker: Worker;
   readonly port: MessagePort;
   readonly pending: Map<number, Pending>;
+  readonly abandoned: Set<number>;
   readonly ready: Promise<Live>;
   readonly settleReady: { resolve: (live: Live) => void; reject: (error: JournalThreadError) => void };
   handshaking: boolean;
@@ -212,6 +214,21 @@ const isReportOf = (report: unknown, runId: string): report is RunReport =>
   isListOf(report['residualRisk'], (risk) => typeof risk['count'] === 'number' && RESIDUAL_RISK_CODES.some((code) => code === risk['code'])) &&
   isListOf(report['modelChecks'], (check) => typeof check['command'] === 'string' && typeof check['exitCode'] === 'number' && typeof check['seq'] === 'number');
 
+const runStateOf = (reply: JournalThreadReply, runId: string): RunStateReply => {
+  const identity = `run_state reply for run ${runId}`;
+  let state: ReturnType<typeof decodeRunState>;
+  try {
+    state = decodeRunState(identity, reply['state']);
+  } catch (error) {
+    throw new JournalThreadError(`journal thread ${identity} carries a malformed run state`, { cause: error });
+  }
+  if (state === undefined) throw new JournalThreadError(`journal thread ${identity} carries a run state of another version`);
+  if (state.runId !== runId) throw new JournalThreadError(`journal thread ${identity} carries the state of run ${state.runId}`);
+  const lastSeq = lastSeqOf(reply, 'run_state');
+  if (state.lastSeq !== lastSeq) throw new JournalThreadError(`journal thread ${identity} folded through seq ${state.lastSeq}, not its lastSeq ${lastSeq}`);
+  return { lastSeq, state };
+};
+
 const reportOf = (reply: JournalThreadReply, runId: string): ReportReply => {
   const { report } = reply;
   if (!isReportOf(report, runId)) throw new JournalThreadError(`journal thread report reply carries a malformed report for run ${runId}`);
@@ -286,6 +303,11 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
       return;
     }
     const id = message['id'];
+    if (typeof id === 'number' && live.abandoned.has(id)) {
+      if (message['ok'] !== undefined) live.abandoned.delete(id);
+      arm(live);
+      return;
+    }
     const request = typeof id === 'number' ? live.pending.get(id) : undefined;
     if (request === undefined || typeof id !== 'number') {
       fail(live, new JournalThreadError(`journal thread sent a message that matches no request: ${JSON.stringify(message)}`));
@@ -309,8 +331,13 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
       request.reject(new FactsRefusedError(text, { cause: { name, message: text } }));
       return;
     }
+    if (isRecord(cause) && cause['unknownValue'] === true) {
+      request.reject(Object.assign(new UnknownValueError('a row the journal thread read'), { message: text, cause: { name, message: text } }));
+      return;
+    }
     const code = isRecord(cause) && typeof cause['code'] === 'string' ? cause['code'] : undefined;
-    request.reject(new JournalThreadError(`journal thread request failed: ${text}`, { cause: { name, message: text, ...(code === undefined ? {} : { code }) } }));
+    const failed = new JournalThreadError(`journal thread request failed: ${text}`, { cause: { name, message: text, ...(code === undefined ? {} : { code }) } });
+    request.reject(isRecord(cause) && typeof cause['errcode'] === 'number' ? Object.assign(failed, { errcode: cause['errcode'] }) : failed);
   };
 
   const drain = (live: Live): boolean => {
@@ -348,7 +375,7 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
       settleReady.resolve = resolve;
       settleReady.reject = reject;
     });
-    const live: Live = { worker, port: port1, pending: new Map(), ready, settleReady, handshaking: true, dead: false, timer: undefined, armed: false };
+    const live: Live = { worker, port: port1, pending: new Map(), abandoned: new Set(), ready, settleReady, handshaking: true, dead: false, timer: undefined, armed: false };
     current = live;
     port1.on('message', (message: unknown) => onMessage(live, message));
     worker.on('error', (error: Error) => {
@@ -368,18 +395,38 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
     return current.ready;
   };
 
-  const request: JournalThreadClient['request'] = async (body) => {
+  const request: JournalThreadClient['request'] = async (body, signal) => {
     if (closePromise !== null) throw new JournalThreadError('journal thread client is closed');
+    signal?.throwIfAborted();
     const live = await liveThread();
+    signal?.throwIfAborted();
     if (live.dead) throw new JournalThreadError('journal thread died before the request was sent');
     return new Promise<JournalThreadReply>((resolve, reject) => {
       const id = nextId++;
-      live.pending.set(id, { resolve, reject });
+      const abandon = (): void => {
+        if (signal === undefined || !live.pending.delete(id)) return;
+        live.abandoned.add(id);
+        arm(live);
+        reject(signal.reason);
+      };
+      const settled = (): void => signal?.removeEventListener('abort', abandon);
+      live.pending.set(id, {
+        resolve: (reply) => {
+          settled();
+          resolve(reply);
+        },
+        reject: (error) => {
+          settled();
+          reject(error);
+        },
+      });
+      signal?.addEventListener('abort', abandon, { once: true });
       arm(live);
       try {
         live.worker.postMessage({ ...body, id });
       } catch (error) {
         live.pending.delete(id);
+        settled();
         arm(live);
         reject(new JournalThreadError('journal thread request could not be sent', { cause: error }));
       }
@@ -393,41 +440,43 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
     return { threadId: reportedThreadId };
   };
 
-  const measure: JournalThreadClient['measure'] = async ({ runId, leading }) => {
-    const reply = await request({ kind: 'contribution', runId, leading });
+  const measure: JournalThreadClient['measure'] = async ({ runId, leading }, signal) => {
+    const reply = await request({ kind: 'contribution', runId, leading }, signal);
     return measuredOf(reply);
   };
 
-  const verdict: JournalThreadClient['verdict'] = async ({ runId, commands, manifests }) => verdictOf(await request({ kind: 'verdict', runId, commands, manifests }));
+  const verdict: JournalThreadClient['verdict'] = async ({ runId, commands, manifests }, signal) => verdictOf(await request({ kind: 'verdict', runId, commands, manifests }, signal));
 
-  const evidence: JournalThreadClient['evidence'] = async ({ runId, paths, onlyCommand }) =>
-    evidenceOf(await request({ kind: 'evidence', runId, paths, ...(onlyCommand === undefined ? {} : { onlyCommand }) }));
+  const evidence: JournalThreadClient['evidence'] = async ({ runId, paths, onlyCommand }, signal) =>
+    evidenceOf(await request({ kind: 'evidence', runId, paths, ...(onlyCommand === undefined ? {} : { onlyCommand }) }, signal));
 
-  const reflectionInput: JournalThreadClient['reflectionInput'] = async ({ runId, project, capabilities }) =>
-    reflectionInputOf(await request({ kind: 'reflection_input', runId, project, capabilities }));
+  const reflectionInput: JournalThreadClient['reflectionInput'] = async ({ runId, project, capabilities }, signal) =>
+    reflectionInputOf(await request({ kind: 'reflection_input', runId, project, capabilities }, signal));
 
-  const inheritPlan: JournalThreadClient['inheritPlan'] = async ({ runId, mode, unasked }) => {
+  const inheritPlan: JournalThreadClient['inheritPlan'] = async ({ runId, mode, unasked }, signal) => {
     try {
-      return inheritPlanOf(await request({ kind: 'inherit_plan', runId, mode, unasked }));
+      return inheritPlanOf(await request({ kind: 'inherit_plan', runId, mode, unasked }, signal));
     } catch (error) {
       throw asInheritanceError(error);
     }
   };
 
-  const inheritedWindow: JournalThreadClient['inheritedWindow'] = async ({ runId, windowTokens, floorTokens }) => {
+  const inheritedWindow: JournalThreadClient['inheritedWindow'] = async ({ runId, windowTokens, floorTokens }, signal) => {
     try {
-      return inheritedWindowOf(await request({ kind: 'inherited_window', runId, windowTokens, floorTokens }));
+      return inheritedWindowOf(await request({ kind: 'inherited_window', runId, windowTokens, floorTokens }, signal));
     } catch (error) {
       throw asInheritanceError(error);
     }
   };
 
-  const fidelity: JournalThreadClient['fidelity'] = async ({ runId, throughEventSeq, cwd, tokens }) =>
-    fidelityOf(await request({ kind: 'fidelity', runId, throughEventSeq, cwd, tokens }));
+  const fidelity: JournalThreadClient['fidelity'] = async ({ runId, throughEventSeq, cwd, tokens }, signal) =>
+    fidelityOf(await request({ kind: 'fidelity', runId, throughEventSeq, cwd, tokens }, signal));
 
-  const report: JournalThreadClient['report'] = async ({ runId }) => reportOf(await request({ kind: 'report', runId }), runId);
+  const report: JournalThreadClient['report'] = async ({ runId }, signal) => reportOf(await request({ kind: 'report', runId }, signal), runId);
 
-  const runFacts: JournalThreadClient['runFacts'] = async (runId) => runFactsOf(await request({ kind: 'runFacts', runId }), runId);
+  const runState: JournalThreadClient['runState'] = async ({ runId }, signal) => runStateOf(await request({ kind: 'run_state', runId }, signal), runId);
+
+  const runFacts: JournalThreadClient['runFacts'] = async (runId, signal) => runFactsOf(await request({ kind: 'runFacts', runId }, signal), runId);
 
   const close = (): Promise<void> => {
     closePromise ??= (async () => {
@@ -439,5 +488,5 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
   };
 
   await liveThread();
-  return { identity, request, ping, runFacts, measure, verdict, evidence, reflectionInput, fidelity, report, inheritPlan, inheritedWindow, close };
+  return { identity, request, ping, runFacts, measure, verdict, evidence, reflectionInput, fidelity, report, runState, inheritPlan, inheritedWindow, close };
 };

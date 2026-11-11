@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SandboxPolicyError, buildSeatbeltProfile, createSeatbeltSandbox } from '@momonga/sandbox';
+import { SYSTEM_RESOLVER_SOCKET, SandboxPolicyError, buildSeatbeltProfile, createSeatbeltSandbox } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, NEVER_CANCELLED, testPaths, testKernelLock } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
@@ -60,6 +60,19 @@ describe('the Unix socket allow list in the Seatbelt profile', () => {
       '(deny network-outbound (remote unix-socket (subpath (param "READ_DENIED_0"))))',
     ]);
     expect(params['READ_DENIED_0']).toBe(owned);
+  });
+
+  it('grants only IP outbound, IP listening, the listed sockets and the system resolver socket when network is allow', async () => {
+    const root = tempDir();
+    const listed = path.join(root, 'sockets');
+    const { profile } = await buildSeatbeltProfile(policyFor(root, { network: 'allow', unixSocketAllow: [listed] }), {}, testPaths());
+    expect(profile.split('\n').filter((line) => line.startsWith('(allow network'))).toEqual([
+      '(allow network-outbound (remote ip))',
+      `(allow network-outbound (remote unix-socket (path-literal "${SYSTEM_RESOLVER_SOCKET}")))`,
+      '(allow network-bind (local ip))',
+      '(allow network-inbound (local ip))',
+      '(allow network-outbound (remote unix-socket (subpath (param "UNIX_SOCKET_ALLOW_0"))))',
+    ]);
   });
 
   it('refuses a list entry that is not an absolute path', async () => {
@@ -158,6 +171,44 @@ describe.runIf(process.platform === 'darwin')('the Unix socket allow list under 
     const result = await run(await connect(socket, { readDenied: [owned], unixSocketAllow: [path.join(owned, 'run')] }));
     expect(result.code).not.toBe(0);
     expect(hits).toEqual([]);
+  });
+
+  it('cannot connect to an unlisted socket when the network is granted', async () => {
+    const socket = await serve('unlisted', path.join(outside, 'other', 'c.sock'));
+    const result = await run(await connect(socket, { network: 'allow', unixSocketAllow: [path.join(outside, 'agents')] }));
+    expect(result.code).not.toBe(0);
+    expect(hits).toEqual([]);
+  });
+
+  it('connects to a listed socket when the network is granted', async () => {
+    const socket = await serve('listed', path.join(outside, 'agents', 'd.sock'));
+    const result = await run(await connect(socket, { network: 'allow', unixSocketAllow: [path.join(outside, 'agents')] }));
+    expect(result.code).toBe(0);
+    expect(result.stdout).toBe('hi');
+    expect(hits).toEqual(['listed']);
+  });
+
+  const shell = async (script: string, overrides: Partial<SandboxPolicy>): Promise<{ code: number | null; stdout: string }> => {
+    const proc = await sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd: root, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' } }, policyFor(root, overrides), new AbortController().signal);
+    spawned.push(proc);
+    return run(proc);
+  };
+
+  it('connects to the system resolver socket when the network is granted', async () => {
+    expect((await shell(`/usr/bin/nc -U '${SYSTEM_RESOLVER_SOCKET}' </dev/null`, { network: 'allow' })).code).toBe(0);
+  });
+
+  it('cannot connect to the system resolver socket when the network is not granted', async () => {
+    expect((await shell(`/usr/bin/nc -U '${SYSTEM_RESOLVER_SOCKET}' </dev/null`, { network: 'deny' })).code).not.toBe(0);
+  });
+
+  it('binds and accepts on 127.0.0.1 when the network is granted', async () => {
+    const script = [
+      `/usr/bin/nc -l 127.0.0.1 0 >/dev/null 2>&1 & listener=$!`,
+      `port=""; for attempt in 1 2 3 4 5 6 7 8 9 10; do port=$(/usr/sbin/lsof -nP -a -p "$listener" -iTCP -sTCP:LISTEN -Fn 2>/dev/null | /usr/bin/sed -n 's/^n.*://p'); [ -n "$port" ] && break; /bin/sleep 0.2; done`,
+      `/usr/bin/nc -z -w 2 127.0.0.1 "$port"; code=$?; kill "$listener" 2>/dev/null; exit $code`,
+    ].join('\n');
+    expect((await shell(script, { network: 'allow' })).code).toBe(0);
   });
 
   it('cannot reach a TCP listener through the list', async () => {

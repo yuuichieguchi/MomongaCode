@@ -18,6 +18,7 @@ import {
   usageChargedRun,
 } from '@momonga/testkit';
 import { enqueue, harness, mustClaim, newSession, rawDb } from './helpers.ts';
+import { encodedRunState, foldedRunState } from './run-state-codec.ts';
 
 const start = () => initialRunState({ runId: FIXTURE_RUN_ID, sessionId: FIXTURE_SESSION_ID });
 const foldAll = (events: readonly RunEvent[], from: RunState = start()) => events.reduce(foldRunState, from);
@@ -699,75 +700,26 @@ describe('approval resolution', () => {
   });
 });
 
-describe('store snapshots', () => {
-  it('loads the latest snapshot and the tail after it', async () => {
+describe('the folded run state', () => {
+  it('is the fold of every event of the run, read in pages', async () => {
     const { store } = harness();
     const run = await enqueue(store, newSession(store).id, 'read a.txt');
     const claim = mustClaim(store, 'w1');
     const payloads = toolRoundTripRun.payloads.filter((payload) => payload.type !== 'user.message' && payload.type !== 'run.status');
     expect(store.append(claim, payloads).kind).toBe('ok');
     const all = store.readRunEvents(run.id, 0, 1000);
-    const fresh = initialRunState({ runId: run.id, sessionId: run.sessionId });
-    const full = foldAll(all, fresh);
-
-    expect(store.load(run.id)).toEqual({ tail: all });
-
-    expect(store.writeSnapshot(claim, 3, foldAll(all.slice(0, 3), fresh))).toEqual({ kind: 'ok' });
-    expect(store.writeSnapshot(claim, 6, foldAll(all.slice(0, 6), fresh))).toEqual({ kind: 'ok' });
-    const loaded = store.load(run.id);
-    expect(loaded.snapshot?.seq).toBe(6);
-    expect(loaded.tail.map((event) => event.seq)).toEqual(all.slice(6).map((event) => event.seq));
-    expect(foldAll(loaded.tail, loaded.snapshot!.state)).toEqual(full);
+    expect(await foldedRunState(store, run.id)).toEqual(foldAll(all, initialRunState({ runId: run.id, sessionId: run.sessionId })));
   });
 
-  it('treats a snapshot written by the previous fold as absent and refolds from all events', async () => {
-    const { dbPath, store } = harness();
-    const run = await enqueue(store, newSession(store).id, 'read a.txt');
-    const claim = mustClaim(store, 'w1');
-    const payloads = toolRoundTripRun.payloads.filter((payload) => payload.type !== 'user.message' && payload.type !== 'run.status');
-    expect(store.append(claim, payloads).kind).toBe('ok');
-    const all = store.readRunEvents(run.id, 0, 1000);
-    const previousFoldState = {
-      runId: run.id,
-      sessionId: run.sessionId,
-      status: 'RUNNING',
-      step: 1,
-      attempt: 1,
-      usage: { inputTokens: 20, outputTokens: 5, totalTokens: 25 },
-      items: [userItem('read a.txt'), callItem('c1', 'Read', { path: 'a.txt' })],
-      pendingCalls: { c1: { name: 'Read', providerCallId: 'c1', arguments: { path: 'a.txt' }, status: 'requested' } },
-      notes: [],
-      toolCallCounts: { [sha256('Read\n{"path":"a.txt"}')]: 1 },
-      lastSeq: 6,
-    };
-    rawDb(dbPath)
-      .prepare('INSERT INTO snapshots (run_id, seq, state_json, created_at) VALUES (?, 6, ?, 0)')
-      .run(run.id, JSON.stringify(previousFoldState));
-    const loaded = store.load(run.id);
-    expect(loaded).toEqual({ tail: all });
-    const fresh = initialRunState({ runId: run.id, sessionId: run.sessionId });
-    expect(foldAll(loaded.tail, fresh)).toEqual(foldAll(all, fresh));
-  });
-
-  it('reports a current-version snapshot whose history is malformed as corrupt', async () => {
-    const { dbPath, store } = harness();
+  it('reports an encoded state of the current version whose history is malformed as corrupt', async () => {
+    const { store } = harness();
     const run = await enqueue(store, newSession(store).id);
-    const claim = mustClaim(store, 'w1');
     const all = store.readRunEvents(run.id, 0, 1000);
     const state = foldAll(all, initialRunState({ runId: run.id, sessionId: run.sessionId }));
-    expect(store.writeSnapshot(claim, state.lastSeq, state)).toEqual({ kind: 'ok' });
-    expect(store.load(run.id).snapshot?.state).toEqual(state);
-    rawDb(dbPath).prepare("UPDATE snapshots SET state_json = json_set(state_json, '$.history', 'oops') WHERE run_id = ?").run(run.id);
-    expect(() => store.load(run.id)).toThrow(/corrupt/);
-  });
-
-  it('rejects a snapshot beyond the last event', async () => {
-    const { store } = harness();
-    const run = await enqueue(store, newSession(store).id);
-    const claim = mustClaim(store, 'w1');
-    const state = initialRunState({ runId: run.id, sessionId: run.sessionId });
-    expect(store.writeSnapshot(claim, 5, state).kind).toBe('conflict');
-    expect(store.load(run.id).snapshot).toBeUndefined();
+    const encoded = encodedRunState(state);
+    expect(encoded.read()).toEqual(state);
+    encoded.mutate("json_set(state_json, '$.history', 'oops')");
+    expect(() => encoded.read()).toThrow(/corrupt/);
   });
 });
 
@@ -806,26 +758,20 @@ describe('snapshot validation', () => {
   ];
 
   const storedRichSnapshot = async () => {
-    const { dbPath, store } = harness();
+    const { store } = harness();
     const run = await enqueue(store, newSession(store).id);
-    const claim = mustClaim(store, 'w1');
-    const events = store.readRunEvents(run.id, 0, 1000);
-    const lastEventSeq = events[events.length - 1]!.seq;
     const state = foldAll(materializeEvents(richPayloads(), { runId: run.id, sessionId: run.sessionId }), initialRunState({ runId: run.id, sessionId: run.sessionId }));
-    expect(store.writeSnapshot(claim, lastEventSeq, state)).toEqual({ kind: 'ok' });
-    const mutate = (expression: string): void => {
-      rawDb(dbPath).prepare(`UPDATE snapshots SET state_json = ${expression} WHERE run_id = ?`).run(run.id);
-    };
-    return { store, run, state, mutate };
+    const encoded = encodedRunState(state);
+    return { state, mutate: encoded.mutate, read: encoded.read };
   };
 
   it('loads the unmodified rich snapshot', async () => {
-    const { store, run, state } = await storedRichSnapshot();
+    const { state, read } = await storedRichSnapshot();
     expect(state.history.map((historyEntry) => historyEntry.seq)).toEqual([2, 3, 4, 5, 6]);
     expect(state.summary?.replacedThroughSeq).toBe(1);
     expect(state.pendingCalls['cB']?.options).toHaveLength(2);
     expect(state.pendingCalls['cC']?.resolution?.kind).toBe('allow_once');
-    expect(store.load(run.id).snapshot?.state).toEqual(state);
+    expect(read()).toEqual(state);
   });
 
   it.each([
@@ -844,21 +790,8 @@ describe('snapshot validation', () => {
     ['a permission option with an unknown kind', "json_set(state_json, '$.pendingCalls.cB.options[0].kind', 'maybe')"],
     ['a resolution with an unknown kind', "json_set(state_json, '$.pendingCalls.cC.resolution.kind', 'maybe')"],
   ])('reports a snapshot with %s as corrupt', async (_label, expression) => {
-    const { store, run, mutate } = await storedRichSnapshot();
+    const { mutate, read } = await storedRichSnapshot();
     mutate(expression);
-    expect(() => store.load(run.id)).toThrow(/corrupt/);
-  });
-});
-
-describe('load consistency', () => {
-  it('rolls back its read transaction when a snapshot row is corrupt', async () => {
-    const { dbPath, store } = harness();
-    const run = await enqueue(store, newSession(store).id);
-    const claim = mustClaim(store, 'w1');
-    rawDb(dbPath)
-      .prepare("INSERT INTO snapshots (run_id, seq, state_json, created_at) VALUES (?, 1, 'not json', 0)")
-      .run(run.id);
-    expect(() => store.load(run.id)).toThrow(/corrupt/);
-    expect(store.append(claim, [{ type: 'notice', level: 'info', message: 'still writable' }]).kind).toBe('ok');
+    expect(() => read()).toThrow(/corrupt/);
   });
 });

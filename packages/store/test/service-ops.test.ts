@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { ApprovalStore, ApprovalView, Run, RuntimeStore } from '@momonga/store';
 import { TIMEOUT_MS, START_MS, cancel, enqueue, harness, mustClaim, mustRun, newSession, rawDb } from './helpers.ts';
+import { foldedRunState } from './run-state-codec.ts';
 import { OPTIONS, awaitingApproval } from './approval-fixture.ts';
 
 const digestOf = (body: unknown): string => sha256Hex(canonicalJson(body));
@@ -145,7 +146,7 @@ describe('setPermissionMode', () => {
     const sessionEvents = store.readSessionEvents(session.id, 0, 100);
     expect(sessionEvents.at(-1)).toEqual({ id: expect.any(Number), sessionId: session.id, createdAt: START_MS + 3, type: 'mode.changed', mode: 'plan' });
     expect(store.readRunEvents(run.id, 0, 100).map((event) => event.type)).toEqual(['user.message']);
-    expect(store.load(run.id).tail.map((event) => event.type)).toEqual(['user.message']);
+    expect((await foldedRunState(store, run.id)).lastSeq).toBe(1);
   });
 
   it('returns ok without a change and appends nothing for the current mode', async () => {
