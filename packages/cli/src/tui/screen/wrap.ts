@@ -1,3 +1,4 @@
+import { escapeTerminalBlock } from '@momonga/protocol';
 import { TAB_COLUMNS } from './constants.ts';
 import type { StyleToken } from './tokens.ts';
 
@@ -26,6 +27,8 @@ export const displayWidth = (text: string): number => {
 };
 
 export const withoutTabs = (text: string): string => text.replaceAll('\t', ' '.repeat(TAB_COLUMNS));
+
+export const inertText = (text: string): string => withoutTabs(escapeTerminalBlock(text.replaceAll('\r\n', '\n')));
 
 const BARE_URL = /https?:\/\/[^\s<>"'`\\]+/g;
 const TRAILING_PUNCTUATION = /[.,;:!?)\]}]+$/;

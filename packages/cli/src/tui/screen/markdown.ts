@@ -1,6 +1,5 @@
-import { escapeTerminalBlock } from '@momonga/protocol';
 import type { StyleToken } from './tokens.ts';
-import { displayWidth, withoutTabs, wrapLine } from './wrap.ts';
+import { displayWidth, inertText, wrapLine } from './wrap.ts';
 import type { Link, Row, Span } from './wrap.ts';
 
 export const MARKDOWN_UNIT_BYTES = 16 * 1024;
@@ -26,8 +25,6 @@ const MARKDOWN_STYLE = {
 type Role = keyof typeof MARKDOWN_STYLE;
 
 type Inline = { text: string; spans: Span[]; links: Link[] };
-
-export const inertText = (text: string): string => withoutTabs(escapeTerminalBlock(text.replaceAll('\r\n', '\n')));
 
 const FENCE = /^\s*(?:```|~~~)/;
 const FENCE_MARKS = /^\s*(?:`+|~+)\s*/;

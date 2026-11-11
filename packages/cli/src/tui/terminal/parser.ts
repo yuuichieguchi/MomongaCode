@@ -79,11 +79,15 @@ const unitsOf = (codePoint: number): number => (codePoint > 0xffff ? 2 : 1);
 
 const isScalar = (codePoint: number): boolean => Number.isInteger(codePoint) && codePoint >= 0 && codePoint <= 0x10ffff && !(codePoint >= 0xd800 && codePoint <= 0xdfff);
 
+const isC1Control = (codePoint: number): boolean => codePoint >= 0x80 && codePoint <= 0x9f;
+
+const isControl = (codePoint: number): boolean => codePoint < 0x20 || codePoint === 0x7f || isC1Control(codePoint);
+
+const isPrintable = (codePoint: number): boolean => isScalar(codePoint) && !isControl(codePoint);
+
 const namedKey = (name: KeyName, modifiers: KeyModifiers): KeyEvent => ({ type: 'key', name, ...modifiers });
 
 const textKey = (text: string, modifiers: KeyModifiers): KeyEvent => ({ type: 'key', text, ...modifiers });
-
-const textKeys = (text: string): TerminalEvent[] => Array.from(text, (character) => textKey(character, NO_KEY_MODIFIERS));
 
 const MODIFIER_BITS = { shift: 1, alt: 2, ctrl: 4, super: 8, hyper: 16, meta: 32 } as const satisfies Record<keyof KeyModifiers, number>;
 
@@ -131,8 +135,8 @@ const codePointKey = (codePoint: number, shifted: number | undefined, modifiers:
   const name = CODE_POINT_KEYS[codePoint];
   if (name !== undefined) return [namedKey(name, modifiers)];
   if (codePoint >= PRIVATE_USE_FIRST && codePoint <= PRIVATE_USE_LAST) return [];
-  if (codePoint < 0x20 || !isScalar(codePoint)) return 'unknown';
-  const shown = modifiers.shift && shifted !== undefined && isScalar(shifted) ? shifted : codePoint;
+  if (!isPrintable(codePoint)) return 'unknown';
+  const shown = modifiers.shift && shifted !== undefined && isPrintable(shifted) ? shifted : codePoint;
   return [textKey(String.fromCodePoint(shown), modifiers)];
 };
 
@@ -145,7 +149,7 @@ const kittyKey = (parameters: string): Interpreted => {
   if (modified.released) return [];
   if (textField !== '') {
     const codePoints = numbersOf(textField, ':');
-    if (codePoints === undefined || !codePoints.every(isScalar)) return 'unknown';
+    if (codePoints === undefined || !codePoints.every(isPrintable)) return 'unknown';
     return [textKey(String.fromCodePoint(...codePoints), modified.modifiers)];
   }
   return codePointKey(code, shiftedText === undefined ? undefined : numberOf(shiftedText), modified.modifiers);
@@ -220,11 +224,11 @@ const interpretCsi = (parameters: string, intermediates: string, final: string):
 
 const parsed = (events: TerminalEvent[], next: number): Parsed => ({ events, next, pasteStarts: false });
 
-const abandoned = (buffer: string, start: number, next: number): Parsed => parsed(textKeys(buffer.slice(start, next)), next);
+const dropped = (next: number): Parsed => parsed([], next);
 
-const interpreted = (buffer: string, start: number, next: number, result: Interpreted): Parsed => {
+const interpreted = (next: number, result: Interpreted): Parsed => {
   if (result === 'paste-start') return { events: [], next, pasteStarts: true };
-  return result === 'unknown' ? abandoned(buffer, start, next) : parsed(result, next);
+  return result === 'unknown' ? dropped(next) : parsed(result, next);
 };
 
 const isParameter = (code: number): boolean => code >= 0x30 && code <= 0x3f;
@@ -238,11 +242,11 @@ const parseCsi = (buffer: string, start: number): Step => {
     const code = buffer.charCodeAt(index);
     if (isFinal(code)) {
       const split = parametersEnd ?? index;
-      return interpreted(buffer, start, index + 1, interpretCsi(buffer.slice(start + 2, split), buffer.slice(split, index), buffer.charAt(index)));
+      return interpreted(index + 1, interpretCsi(buffer.slice(start + 2, split), buffer.slice(split, index), buffer.charAt(index)));
     }
     if (isIntermediate(code)) parametersEnd ??= index;
-    else if (!isParameter(code) || parametersEnd !== undefined) return abandoned(buffer, start, index);
-    if (index - start + 1 >= MAX_SEQUENCE_BYTES) return abandoned(buffer, start, index + 1);
+    else if (!isParameter(code) || parametersEnd !== undefined) return dropped(index);
+    if (index - start + 1 >= MAX_SEQUENCE_BYTES) return dropped(index + 1);
   }
   return 'incomplete';
 };
@@ -250,9 +254,9 @@ const parseCsi = (buffer: string, start: number): Step => {
 const parseSs3 = (buffer: string, start: number): Step => {
   for (let index = start + 2; index < buffer.length; index += 1) {
     const code = buffer.charCodeAt(index);
-    if (isFinal(code)) return interpreted(buffer, start, index + 1, letterKey(buffer.slice(start + 2, index), buffer.charAt(index)));
-    if (code !== 0x3b && !(code >= 0x30 && code <= 0x39)) return abandoned(buffer, start, index);
-    if (index - start + 1 >= MAX_SEQUENCE_BYTES) return abandoned(buffer, start, index + 1);
+    if (isFinal(code)) return interpreted(index + 1, letterKey(buffer.slice(start + 2, index), buffer.charAt(index)));
+    if (code !== 0x3b && !(code >= 0x30 && code <= 0x39)) return dropped(index);
+    if (index - start + 1 >= MAX_SEQUENCE_BYTES) return dropped(index + 1);
   }
   return 'incomplete';
 };
@@ -266,17 +270,17 @@ const parseOsc = (buffer: string, start: number): Step => {
   let index = start + 2;
   while (index < buffer.length) {
     const character = buffer.charAt(index);
-    if (character === BEL) return interpreted(buffer, start, index + 1, interpretOsc(buffer.slice(start + 2, index)));
+    if (character === BEL) return interpreted(index + 1, interpretOsc(buffer.slice(start + 2, index)));
     if (character === ESC) {
       const after = buffer[index + 1];
       if (after === undefined) return 'incomplete';
-      if (after !== '\\') return abandoned(buffer, start, index);
-      return interpreted(buffer, start, index + 2, interpretOsc(buffer.slice(start + 2, index)));
+      if (after !== '\\') return dropped(index);
+      return interpreted(index + 2, interpretOsc(buffer.slice(start + 2, index)));
     }
     const codePoint = buffer.codePointAt(index) ?? 0;
     bytes += utf8Length(codePoint);
     index += unitsOf(codePoint);
-    if (bytes >= MAX_SEQUENCE_BYTES) return abandoned(buffer, start, index);
+    if (bytes >= MAX_SEQUENCE_BYTES) return dropped(index);
   }
   return 'incomplete';
 };
@@ -298,7 +302,7 @@ const parseEscape = (buffer: string, start: number, held: boolean): Step => {
     return step === 'incomplete' ? step : withAlt(step);
   }
   const codePoint = buffer.codePointAt(start + 1) ?? 0;
-  return parsed([plainKey(codePoint, true)], start + 1 + unitsOf(codePoint));
+  return parsed(isC1Control(codePoint) ? [] : [plainKey(codePoint, true)], start + 1 + unitsOf(codePoint));
 };
 
 const heldEndPrefix = (buffer: string, from: number): number => {
@@ -373,7 +377,7 @@ export const createInputParser = (): InputParser => {
       }
       const codePoint = buffer.codePointAt(at) ?? 0;
       if (codePoint !== 0x1b) {
-        events.push(plainKey(codePoint, false));
+        if (!isC1Control(codePoint)) events.push(plainKey(codePoint, false));
         at += unitsOf(codePoint);
         continue;
       }

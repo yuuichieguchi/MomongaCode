@@ -231,28 +231,61 @@ describe('a lone ESC byte', () => {
 });
 
 describe('sequences that are not recognised', () => {
-  it('turns an unknown complete sequence into text', () => {
-    expect(parseText(`${ESC}[5n`)).toEqual(textOf(`${ESC}[5n`));
+  it.each([
+    ['a device status report', `${ESC}[5n`],
+    ['F13', `${ESC}[25~`],
+    ['F16', `${ESC}[29~`],
+    ['the keypad 5', `${ESC}[E`],
+    ['the keypad 5 with ctrl', `${ESC}[1;5E`],
+    ['an SS3 key that is not known', `${ESC}OE`],
+    ['an OSC 52 clipboard write', `${ESC}]52;c;AA==\u0007`],
+    ['an OSC ended by ST', `${ESC}]0;title${ESC}\\`],
+    ['a kitty key of a control code point', `${ESC}[1;5u`],
+    ['a mouse report with a field missing', `${ESC}[<0;1M`],
+    ['a sequence with an intermediate byte', `${ESC}[1 q`],
+  ])('drops %s whole and types nothing', (_name, sequence) => {
+    expect(parseText(sequence)).toEqual([]);
+    expect(parseText(`a${sequence}b`)).toEqual(textOf('ab'));
+    expect(parse(...[...bytesOf(`a${sequence}b`)].map((byte) => Uint8Array.of(byte)))).toEqual(textOf('ab'));
   });
 
-  it('turns an unknown OSC into text', () => {
-    expect(parseText(`${ESC}]52;c;AA==\u0007`)).toEqual(textOf(`${ESC}]52;c;AA==\u0007`));
+  it('drops a C1 control character, alone or after an ESC, and a kitty key whose text holds a control character', () => {
+    expect(parseText('a\u009b1mb\u0085c')).toEqual(textOf('a1mbc'));
+    expect(parseText(`${ESC}\u009b`)).toEqual([]);
+    expect(parseText(`${ESC}[97;;7u`)).toEqual([]);
+    expect(parseText(`${ESC}[97;;97:155u`)).toEqual([]);
+    expect(parseText(`${ESC}[133u`)).toEqual([]);
+    expect(parseText(`${ESC}[97:133;2u`)).toEqual([text('a', { shift: true })]);
   });
 
-  it('abandons a sequence at a byte that cannot continue it and parses that byte on its own', () => {
-    expect(parseText(`${ESC}[1\r`)).toEqual([...textOf(`${ESC}[1`), named('enter')]);
+  it('drops a sequence at a byte that cannot continue it and parses that byte on its own', () => {
+    expect(parseText(`${ESC}[1\r`)).toEqual([named('enter')]);
+    expect(parseText(`${ESC}]0;x${ESC}[A`)).toEqual([named('up')]);
   });
 
-  it(`abandons a sequence that passes ${MAX_SEQUENCE_BYTES} bytes without a final byte`, () => {
-    const overlong = `${ESC}[${'1'.repeat(300)}`;
-    expect(parseText(overlong)).toEqual(textOf(overlong));
-    expect(parse(...[...bytesOf(overlong)].map((byte) => Uint8Array.of(byte)))).toEqual(textOf(overlong));
+  it(`drops a sequence that passes ${MAX_SEQUENCE_BYTES} bytes without a final byte`, () => {
+    const overlong = `${ESC}[${'1'.repeat(MAX_SEQUENCE_BYTES - 2)}`;
+    expect(parseText(overlong)).toEqual([]);
+    expect(parse(...[...bytesOf(overlong)].map((byte) => Uint8Array.of(byte)))).toEqual([]);
   });
 
-  it('emits the abandoned bytes as soon as the bound is reached', () => {
+  it('reads on as soon as the bound is reached', () => {
     const parser = createInputParser();
     expect(parser.push(bytesOf(`${ESC}[${'1'.repeat(MAX_SEQUENCE_BYTES - 3)}`))).toEqual([]);
-    expect(parser.push(bytesOf('1'))).toEqual(textOf(`${ESC}[${'1'.repeat(MAX_SEQUENCE_BYTES - 2)}`));
+    expect(parser.push(bytesOf('1'))).toEqual([]);
+    expect(parser.push(bytesOf(`${ESC}[A`))).toEqual([named('up')]);
+  });
+
+  it('never gives a key event that holds a control character', () => {
+    const alphabet = [0x1b, 0x1b, 0x5b, 0x4f, 0x5d, 0x3c, 0x3f, 0x3b, 0x31, 0x32, 0x39, 0x75, 0x7e, 0x4d, 0x41, 0x45, 0x6e, 0x07, 0x5c, 0x61, 0x20, 0x24, 0x37, 0x33, 0xc2, 0x9b, 0xc2, 0x85];
+    let state = 11;
+    for (let round = 0; round < 500; round += 1) {
+      const bytes = Uint8Array.from({ length: 1 + (round % 40) }, () => {
+        state = (state * 1103515245 + 12345) % 2147483648;
+        return alphabet[Math.floor(state / 65536) % alphabet.length] ?? 0;
+      });
+      for (const event of parse(bytes)) if (event.type === 'key' && 'text' in event) expect(event.text, `round ${round}`).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/u);
+    }
   });
 
   it('keeps a sequence of exactly the bound', () => {
