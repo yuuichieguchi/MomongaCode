@@ -44,6 +44,7 @@ describe('a callback carrying error= reaches the gateway whole, which judges it 
         plan: fake.plan,
         startListener: loopbackSignInListener(systemTiming, new AbortController().signal),
         authorize: async () => undefined,
+        confirmIdentity: async () => false,
         pasted: (_state, signal) => {
           callbackUrl = `http://127.0.0.1:${fake.ports[0]}/auth/callback?error=access_denied&state=st-1`;
           answered.push(fetch(callbackUrl));
@@ -73,6 +74,7 @@ describe('a callback carrying error= reaches the gateway whole, which judges it 
           close: async () => undefined,
         }),
         authorize: async () => undefined,
+        confirmIdentity: async () => false,
         pasted: async () => pastedUrl,
         signal: new AbortController().signal,
         timers: createFakeTimers(createFakeClock(START_MS)),

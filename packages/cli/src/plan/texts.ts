@@ -1,5 +1,5 @@
-import { PLAN_REVOCATION_CONFIRMED, PLAN_REVOCATION_NONE, PLAN_REVOCATION_UNCONFIRMED } from '@momonga/protocol';
-import type { PlanAccountRef, PlanSignOutResponse, Surface } from '@momonga/protocol';
+import { PLAN_REVOCATION_CONFIRMED, PLAN_REVOCATION_NONE, PLAN_REVOCATION_UNCONFIRMED, messageOf } from '@momonga/protocol';
+import type { PlanAccountRef, PlanSignInIdentity, PlanSignOutResponse, Surface } from '@momonga/protocol';
 import { reconsentCommand, signInCommandOf } from '../policy-messages.ts';
 
 export const SENSITIVE_URL_LINE = 'Open this URL (it is sensitive: do not share it):';
@@ -10,6 +10,24 @@ export const noBrowserHintLine = (providerId: string, accountLabel: string): str
   `If no browser window opens, press Ctrl-C and run ${signInCommandOf('cli', { profile: providerId, account: accountLabel })} --no-browser to get the sign-in URL.`;
 
 export const signedInLine = (account: { label: string; email?: string }): string => `Signed in as ${account.label}${account.email === undefined ? '' : ` (${account.email})`}`;
+
+const identityText = (identity: PlanSignInIdentity): string => identity.email ?? `the account id ${identity.subject}`;
+
+export const IDENTITY_CANCEL_LABEL = 'Cancel';
+
+export const IDENTITY_SAVE_LABEL = 'Save this account';
+
+export const IDENTITY_CHOICES = [IDENTITY_CANCEL_LABEL, IDENTITY_SAVE_LABEL] as const;
+
+export const IDENTITY_CANCEL = IDENTITY_CHOICES.indexOf(IDENTITY_CANCEL_LABEL);
+
+export const IDENTITY_SAVE = IDENTITY_CHOICES.indexOf(IDENTITY_SAVE_LABEL);
+
+export const identityQuestion = (surface: Surface, profile: { messages: { identityLabel: string } }, account: string, identity: PlanSignInIdentity): string =>
+  messageOf('signInIdentityQuestion', surface, { provider: profile.messages.identityLabel, identity: identityText(identity), account });
+
+export const identityNotConfirmedLine = (surface: Surface, plan: PlanAccountRef & { account: string }, identity: PlanSignInIdentity): string =>
+  messageOf('signInIdentityNotConfirmed', surface, { identity: identityText(identity), account: plan.account, command: signInCommandOf(surface, plan) });
 
 export const tryAgainLine = (surface: Surface, plan: PlanAccountRef): string => `Run ${signInCommandOf(surface, plan)} to try again.`;
 

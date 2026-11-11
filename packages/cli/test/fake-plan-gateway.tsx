@@ -8,6 +8,7 @@ import type {
   PlanModelsResponse,
   PlanProfileView,
   PlanSignInCompleteResponse,
+  PlanSignInIdentityUnconfirmed,
   TargetBilling,
   TargetHealth,
 } from '@momonga/protocol';
@@ -43,6 +44,13 @@ export const account = (overrides: Partial<PlanAccountView> = {}): PlanAccountVi
   ...overrides,
 });
 
+export const IDENTITY_UNCONFIRMED: PlanSignInIdentityUnconfirmed = {
+  outcome: 'identity_unconfirmed',
+  attemptId: 'attempt-1',
+  identity: { subject: 'sub-1', email: 'ada@example.com' },
+  expiresAt: '2026-11-10T00:10:00.000Z',
+};
+
 export type PlanCall = { route: string; body?: unknown };
 
 export type FakePlanOptions = FakeBackendOptions & {
@@ -50,6 +58,8 @@ export type FakePlanOptions = FakeBackendOptions & {
   profiles?: readonly PlanProfileView[];
   catalogs?: Readonly<Record<string, PlanModelsResponse>>;
   complete?: PlanSignInCompleteResponse;
+  confirmed?: PlanSignInCompleteResponse;
+  completeFails?: Error;
   health?: Readonly<Record<string, TargetHealth>>;
   billing?: Readonly<Record<string, TargetBilling>>;
   planTargets?: Readonly<Record<string, { profile: string; account?: string }>>;
@@ -105,7 +115,9 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
       called('sign-in/complete', request);
       await options.completeHeld;
       const begun = planCalls.find((call) => call.route === 'sign-in/begin')?.body as { account: string } | undefined;
-      const answer: PlanSignInCompleteResponse = options.complete ?? { outcome: 'signed_in', account: account({ label: begun?.account ?? 'chatgpt' }), firstSignIn: false };
+      if (options.completeFails !== undefined) throw options.completeFails;
+      const signedIn: PlanSignInCompleteResponse = { outcome: 'signed_in', account: account({ label: begun?.account ?? 'chatgpt' }), firstSignIn: false };
+      const answer: PlanSignInCompleteResponse = 'identityConfirmed' in request ? (options.confirmed ?? signedIn) : (options.complete ?? signedIn);
       if (answer.outcome !== 'retry' && answer.outcome !== 'identity_unconfirmed') accounts = [...accounts.filter((existing) => existing.label !== answer.account.label).map((existing) => ({ ...existing, active: false })), answer.account];
       return answer;
     },

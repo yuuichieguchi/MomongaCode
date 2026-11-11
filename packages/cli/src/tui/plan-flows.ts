@@ -1,5 +1,5 @@
-import { PLAN_LABEL_REFUSAL, messageOf, SIGN_IN_REQUIRED_CODE, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME } from '@momonga/protocol';
-import type { DetectedManagedServer, GatewayHealth, MomongaModelEntry, PlanAccountRef, PlanAccountView, PlanAccountsResponse, PlanProfileView, TargetHealth } from '@momonga/protocol';
+import { PLAN_LABEL_REFUSAL, messageOf, SIGN_IN_REQUIRED_CODE, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
+import type { DetectedManagedServer, GatewayHealth, MomongaModelEntry, PlanAccountRef, PlanAccountView, PlanAccountsResponse, PlanProfileView, PlanSignInCompleteResponse, PlanSignInIdentity, TargetHealth } from '@momonga/protocol';
 import { displayMapOf } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import { isLocalServer, offeredServers } from '../commands/models.ts';
@@ -15,7 +15,7 @@ import { couldNotOpenBrowser } from '../browser-text.ts';
 import { SANDBOX_OFF_NOTICE, accountRowLabel, accountsOf, nextAccountLabel, profileOf, profileStateText, savedAccountAction } from '../plan/accounts.ts';
 import { SignInAttemptNotFoundError, SignInExpiredError, SignInGatewayStoppedError, SignInListenerError, SignInListenerFailedError, signIn, waitForPaste } from '../plan/sign-in.ts';
 import type { SignInShown } from '../plan/sign-in.ts';
-import { codeNotAcceptedLine, listProblemLine, planDisabledLines, resumeLine, signedInLine, signedOutLines, tryAgainLine } from '../plan/texts.ts';
+import { IDENTITY_CANCEL, IDENTITY_CHOICES, IDENTITY_SAVE, codeNotAcceptedLine, identityNotConfirmedLine, identityQuestion, listProblemLine, planDisabledLines, resumeLine, signedInLine, signedOutLines, tryAgainLine } from '../plan/texts.ts';
 import type { TuiBackend } from './backend.ts';
 import type { OverlayPorts, PickRow } from './picker.tsx';
 import { NOT_NOW_LABEL, invitationKeyOf } from './screen/menu.tsx';
@@ -151,7 +151,19 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         ports.waiting({ title: profile.loginLabel, lines: [...lines, `${couldNotOpenBrowser(message)} Copy the URL and continue manually.`], url, state }, handlers);
       });
     };
-    let answer;
+    const confirmIdentity = async (identity: PlanSignInIdentity, waiting: AbortSignal): Promise<boolean> => {
+      const chosen = await ports.pick({
+        title: profile.loginLabel,
+        lines: [identityQuestion('tui', profile, account, identity)],
+        rows: IDENTITY_CHOICES.map((label) => ({ label })),
+        initial: IDENTITY_CANCEL,
+        decideOn: 'enter',
+        escape: IDENTITY_CANCEL,
+      });
+      waiting.throwIfAborted();
+      return chosen === IDENTITY_SAVE;
+    };
+    let answer: PlanSignInCompleteResponse;
     try {
       answer = await signIn(
         {
@@ -159,6 +171,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
           startListener: backend.startSignInListener,
           authorize,
           pasted: (_state, signal) => waitForPaste(deliveries, signal),
+          confirmIdentity,
           signal: cancel.signal,
           timers: backend.signInTimers,
           delivered: () => ports.delivered(),
@@ -186,6 +199,9 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       case RETRY_OUTCOME:
         ports.info(codeNotAcceptedLine('tui', profile, account));
         await sentence(profile, account, reconsent);
+        return;
+      case IDENTITY_UNCONFIRMED_OUTCOME:
+        ports.info(identityNotConfirmedLine('tui', { profile: profile.id, account }, answer.identity));
         return;
       case PLAN_DISABLED_STATE:
         for (const line of planDisabledLines('tui', profile, account)) ports.info(line);

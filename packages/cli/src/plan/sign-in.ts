@@ -1,9 +1,9 @@
-import { PLAN_SIGN_IN_FAILURE } from '@momonga/protocol';
+import { IDENTITY_UNCONFIRMED_OUTCOME, PLAN_SIGN_IN_FAILURE } from '@momonga/protocol';
 import { AUTHORIZATION_WAIT_MS, OAuthAuthorizationError, startLoopbackRedirect } from '@momonga/foundation';
 import type { LoopbackRedirectOptions } from '@momonga/foundation';
 import type { Timing } from '@momonga/foundation';
 import { planProfileOf } from '@momonga/config';
-import type { PlanSignInCompleteResponse } from '@momonga/protocol';
+import type { PlanSignInCompleteRequest, PlanSignInCompleteResponse, PlanSignInIdentity, PlanSignInIdentityUnconfirmed } from '@momonga/protocol';
 import { GatewayAnswerError } from '../client/gateway-client.ts';
 import type { PlanGatewayClient } from '../client/gateway-client.ts';
 
@@ -52,6 +52,7 @@ export type SignInPorts = {
   startListener: StartSignInListener;
   authorize(shown: SignInShown, waiting: AbortSignal): Promise<void>;
   pasted(state: string, signal: AbortSignal): Promise<string>;
+  confirmIdentity(identity: PlanSignInIdentity, waiting: AbortSignal): Promise<boolean>;
   signal: AbortSignal;
   timers: SignInWaitTimers;
   delivered?(): void;
@@ -112,14 +113,37 @@ const firstValue = async (sources: readonly ((signal: AbortSignal) => Promise<st
   }
 };
 
-const completed = async (plan: PlanGatewayClient, attemptId: string, callbackUrl: string): Promise<PlanSignInCompleteResponse> => {
+const completed = async (plan: PlanGatewayClient, request: PlanSignInCompleteRequest): Promise<PlanSignInCompleteResponse> => {
   try {
-    return await plan.signInComplete({ attemptId, callbackUrl });
+    return await plan.signInComplete(request);
   } catch (error) {
     if (!(error instanceof GatewayAnswerError)) throw new SignInGatewayStoppedError(error);
     if (error.answer?.code === ATTEMPT_NOT_FOUND) throw new SignInAttemptNotFoundError(error.answer.message);
     throw error;
   }
+};
+
+const abandoned = (plan: PlanGatewayClient, attemptId: string): Promise<void> => plan.signInCancel({ attemptId }).catch(() => undefined);
+
+const confirmed = async (ports: SignInPorts, unconfirmed: PlanSignInIdentityUnconfirmed): Promise<PlanSignInCompleteResponse> => {
+  const expiry = new AbortController();
+  const timer = ports.timers.setTimeout(() => expiry.abort(new SignInExpiredError()), AUTHORIZATION_WAIT_MS);
+  let accepted: boolean;
+  try {
+    const waiting = AbortSignal.any([ports.signal, expiry.signal]);
+    accepted = await ports.confirmIdentity(unconfirmed.identity, waiting);
+    waiting.throwIfAborted();
+  } catch (error) {
+    await abandoned(ports.plan, unconfirmed.attemptId);
+    throw error;
+  } finally {
+    ports.timers.clearTimeout(timer);
+  }
+  if (!accepted) {
+    await ports.plan.signInCancel({ attemptId: unconfirmed.attemptId });
+    return unconfirmed;
+  }
+  return completed(ports.plan, { attemptId: unconfirmed.attemptId, identityConfirmed: true });
 };
 
 export const signIn = async (ports: SignInPorts, request: SignInRequest): Promise<PlanSignInCompleteResponse> => {
@@ -142,13 +166,14 @@ export const signIn = async (ports: SignInPorts, request: SignInRequest): Promis
       value = await firstValue([async (signal) => (await listener.callback({ state: begun.state, signal })).href, (signal) => ports.pasted(begun.state, signal)], waiting);
       ports.delivered?.();
     } catch (error) {
-      await ports.plan.signInCancel({ attemptId: begun.attemptId }).catch(() => undefined);
+      await abandoned(ports.plan, begun.attemptId);
       throw error;
     } finally {
       ports.timers.clearTimeout(timer);
       ended.abort();
     }
-    return await completed(ports.plan, begun.attemptId, value);
+    const answer = await completed(ports.plan, { attemptId: begun.attemptId, callbackUrl: value });
+    return answer.outcome === IDENTITY_UNCONFIRMED_OUTCOME ? await confirmed(ports, answer) : answer;
   } finally {
     await listener.close();
   }

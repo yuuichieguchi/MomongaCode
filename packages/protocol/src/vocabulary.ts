@@ -257,6 +257,8 @@ export type MessageInputs = {
   modelNotReady: [given: { readonly model: string; readonly reason: string }];
   modelIdChanged: [given: { readonly server: string; readonly model: string; readonly listed: string; readonly entry: string }];
   serverSocketPathTooLong: [given: { readonly model: string; readonly byteLength: number; readonly directory: string; readonly code: string }];
+  signInIdentityQuestion: [given: { readonly provider: string; readonly identity: string; readonly account: string }];
+  signInIdentityNotConfirmed: [given: { readonly identity: string; readonly account: string; readonly command: string }];
 };
 
 export type MessageKey = keyof MessageInputs;
@@ -285,6 +287,16 @@ const MESSAGES: { readonly [Key in MessageKey]: (surface: Surface, ...given: Mes
       model: given.model,
       text: `its ${WORDS.server} socket path is ${given.byteLength} bytes, and the system refused to bind a socket path of that length in ${given.directory} (${given.code}); choose a shorter ${WORDS.server} name`,
     }),
+  signInIdentityQuestion: (_surface, given) => `The sign-in at ${given.provider} is for ${given.identity}. Save this account under the label ${given.account}?`,
+  signInIdentityNotConfirmed: (surface, given) =>
+    `The sign-in for ${given.identity} was not saved under the label ${given.account}, because the account was not confirmed. Run ${given.command} to sign in again${SIGN_IN_AGAIN_UNASKED[surface]}.`,
+};
+
+const SIGN_IN_AGAIN_UNASKED: Readonly<Record<Surface, string>> = {
+  cli: ', or add --yes to save the account without the question',
+  tui: '',
+  acp: '',
+  gateway: '',
 };
 
 export const MESSAGE_KEYS = Object.keys(MESSAGES) as readonly MessageKey[];

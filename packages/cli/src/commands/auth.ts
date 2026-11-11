@@ -1,5 +1,5 @@
 import { PLAN_LABEL_REFUSAL, displayMapOf, messageOf, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
-import type { MomongaModelList, PlanAccountView, PlanAccountsResponse, PlanProfileView, PlanSignInCompleteResponse, TargetBilling } from '@momonga/protocol';
+import type { MomongaModelList, PlanAccountView, PlanAccountsResponse, PlanProfileView, PlanSignInCompleteResponse, PlanSignInIdentity, TargetBilling } from '@momonga/protocol';
 import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE } from '@momonga/foundation';
 import type { OpenUrl } from '@momonga/foundation';
 import { couldNotOpenBrowser } from '../browser-text.ts';
@@ -19,7 +19,7 @@ import {
   signIn,
 } from '../plan/sign-in.ts';
 import type { SandboxKind, SignInWaitTimers, StartSignInListener } from '../plan/sign-in.ts';
-import { codeNotAcceptedLine, listProblemLine, noBrowserHintLine, planDisabledLines, resumeLine, sensitiveUrlLines, signedInLine, signedOutLines, tryAgainLine } from '../plan/texts.ts';
+import { IDENTITY_CHOICES, IDENTITY_SAVE, codeNotAcceptedLine, identityNotConfirmedLine, identityQuestion, listProblemLine, noBrowserHintLine, planDisabledLines, resumeLine, sensitiveUrlLines, signedInLine, signedOutLines, tryAgainLine } from '../plan/texts.ts';
 import { escapedLines } from '../terminal-writer.ts';
 import { UsageError } from '../usage-error.ts';
 
@@ -71,7 +71,7 @@ export const authStatus = async (ports: AuthStatusPorts, options: { json: boolea
   return 0;
 };
 
-type Choose = (question: string, choices: readonly string[]) => Promise<number | undefined>;
+type Choose = (question: string, choices: readonly string[], until?: AbortSignal) => Promise<number | undefined>;
 
 type TerminalPorts = { isTerminal: false } | { isTerminal: true; choose: Choose };
 
@@ -122,7 +122,7 @@ const pastedLine =
 const unfixableAccount = (listed: PlanAccountsResponse, profile: string, label: string): PlanAccountView | undefined =>
   accountsOf(profile, listed.accounts).find((account) => account.label === label && savedAccountAction(account) === 'none');
 
-export type AuthLoginOptions = { provider?: string; account?: string; reconsent?: boolean; browser?: boolean };
+export type AuthLoginOptions = { provider?: string; account?: string; reconsent?: boolean; browser?: boolean; yes?: boolean };
 
 const chosenProfile = async (ports: AuthLoginPorts, listed: PlanAccountsResponse, provider: string | undefined): Promise<PlanProfileView | undefined> => {
   if (provider !== undefined) return profileOf(listed.profiles, provider);
@@ -141,7 +141,7 @@ const outcomeLines = (profile: PlanProfileView, account: string, answer: PlanSig
     case RETRY_OUTCOME:
       return [codeNotAcceptedLine('cli', profile, account)];
     case IDENTITY_UNCONFIRMED_OUTCOME:
-      return [`${account}: the sign-in as ${answer.identity.email ?? answer.identity.subject} was not saved, because the account identity was not confirmed.`];
+      return [identityNotConfirmedLine('cli', { profile: profile.id, account }, answer.identity)];
     case PLAN_DISABLED_STATE:
       return planDisabledLines('cli', profile, answer.account.label);
     case SIGNED_IN_OUTCOME:
@@ -173,6 +173,11 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
           return pastedLine(ports.terminal, ports.stderr)(state, signal);
         }
       : (_state: string, signal: AbortSignal): Promise<string> => waitForAbort(signal);
+  const confirmIdentity = async (identity: PlanSignInIdentity, waiting: AbortSignal): Promise<boolean> => {
+    if (options.yes === true) return true;
+    if (!ports.isTerminal) return false;
+    return (await ports.choose(identityQuestion('cli', profile, account, identity), IDENTITY_CHOICES, waiting)) === IDENTITY_SAVE;
+  };
   let answer: PlanSignInCompleteResponse;
   try {
     answer = await signIn(
@@ -182,6 +187,7 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
         signal: ports.signal,
         timers: ports.timers,
         pasted,
+        confirmIdentity,
         authorize: async ({ url }, waiting) => {
           if (options.browser === false) {
             print(ports.stdout, sensitiveUrlLines(url));
@@ -211,8 +217,9 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
     }
     throw error;
   }
-  print(ports.stdout, outcomeLines(profile, account, answer));
-  return answer.outcome === SIGNED_IN_OUTCOME ? EXIT_OK : EXIT_FAILURE;
+  const signedIn = answer.outcome === SIGNED_IN_OUTCOME;
+  print(signedIn ? ports.stdout : ports.stderr, outcomeLines(profile, account, answer));
+  return signedIn ? EXIT_OK : EXIT_FAILURE;
 };
 
 export type AuthLogoutPorts = { stdout: Writer; stderr: Writer; plan: PlanGatewayClient } & TerminalPorts;

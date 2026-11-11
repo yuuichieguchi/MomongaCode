@@ -85,6 +85,8 @@ describe('messageOf: one builder per message, which names the command of the sur
       modelNotReady: (surface) => messageOf('modelNotReady', surface, { model: 'fm/system', reason: 'the executable is missing' }),
       modelIdChanged: (surface) => messageOf('modelIdChanged', surface, { server: 'fm', model: 'fm/system', listed: 'renamed', entry: 'system' }),
       serverSocketPathTooLong: (surface) => messageOf('serverSocketPathTooLong', surface, { model: 'fm/system', byteLength: 105, directory: '/run/g1', code: 'EINVAL' }),
+      signInIdentityQuestion: (surface) => messageOf('signInIdentityQuestion', surface, { provider: 'ChatGPT', identity: 'ada@example.com', account: 'work' }),
+      signInIdentityNotConfirmed: (surface) => messageOf('signInIdentityNotConfirmed', surface, { identity: 'ada@example.com', account: 'work', command: 'momonga auth login chatgpt --account work' }),
     };
     expect(MESSAGE_KEYS.flatMap((key) => SURFACES.flatMap((surface) => bannedVariantsIn(samples[key](surface)).map((use) => `${key} on ${surface}: ${use.variant}`)))).toEqual([]);
   });

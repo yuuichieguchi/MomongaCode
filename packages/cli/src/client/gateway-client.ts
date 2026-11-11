@@ -1,7 +1,7 @@
 import { GENERATION_RETIRED_CODE, JsonDepthError, createUdsClient, isRecord, parseOutsideJson } from '@momonga/foundation';
 import type { SocketResolver } from '@momonga/foundation';
 import { checkTraceContent } from './contract.ts';
-import { JSON_MODES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_REVOCATIONS, PLAN_ROUTES, TARGET_ANSWERS, TARGET_BILLINGS, TARGET_HEALTH_REASONS, displayMapOf, isNotListedCapabilities, isToolCallingState, notListedMessage, planAccountRefOf, INVALID_GRANT_REASON, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME } from '@momonga/protocol';
+import { JSON_MODES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_REVOCATIONS, PLAN_ROUTES, TARGET_ANSWERS, TARGET_BILLINGS, TARGET_HEALTH_REASONS, displayMapOf, isNotListedCapabilities, isToolCallingState, notListedMessage, planAccountRefOf, INVALID_GRANT_REASON, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
 import type {
   TraceContentPage,
   Capabilities,
@@ -223,9 +223,12 @@ const isAccountsResponse = (value: unknown): value is PlanAccountsResponse =>
 const isBeginResponse = (value: unknown): value is PlanSignInBeginResponse =>
   isRecord(value) && isString(value['attemptId']) && isString(value['authorizationUrl']) && isString(value['state']) && isString(value['expiresAt']);
 
+const isSignInIdentity = (value: unknown): boolean => isRecord(value) && isString(value['subject']) && isOptional(value['email'], isString);
+
 const isCompleteResponse = (value: unknown): value is PlanSignInCompleteResponse =>
   isRecord(value) &&
   ((value['outcome'] === RETRY_OUTCOME && value['reason'] === INVALID_GRANT_REASON) ||
+    (value['outcome'] === IDENTITY_UNCONFIRMED_OUTCOME && isString(value['attemptId']) && isSignInIdentity(value['identity']) && isString(value['expiresAt'])) ||
     (oneOf(value['outcome'], [SIGNED_IN_OUTCOME, PLAN_DISABLED_STATE]) && isAccountView(value['account']) && typeof value['firstSignIn'] === 'boolean'));
 
 const isSignOutResponse = (value: unknown): value is PlanSignOutResponse => isRecord(value) && oneOf(value['revocation'], PLAN_REVOCATIONS) && isString(value['usageUrl']);
