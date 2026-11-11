@@ -76,7 +76,7 @@ describe('the phase of a run comes from its events (6.1)', () => {
   });
 
   it('hides the phase while an approval or an MCP input is open, and a child run never changes it', () => {
-    const store = storeOf([requested, call('c1', 'Bash ls'), { type: 'tool.permission.requested', approvalId: 'ap', callId: 'c1', subjectDigest: 'd', options: [], reason: 'ask' }]);
+    const store = storeOf([requested, call('c1', 'Bash ls'), { type: 'tool.permission.requested', approvalId: 'ap', callId: 'c1', subjectDigest: 'd', options: [], reason: 'ask', shown: { title: 'approval', input: {} } }]);
     expect(shownRunPhase(store.state())).toBeUndefined();
     storeOf([{ type: 'tool.permission.resolved', approvalId: 'ap', optionId: 'o' }], store);
     expect(shownRunPhase(store.state())?.text).toBe('running Bash ls');

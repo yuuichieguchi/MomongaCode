@@ -34,7 +34,7 @@ describe('store.requestApproval for a held call', () => {
     const result = await store.requestApproval(claim, {
       callId: 'call_1',
       options: OPTIONS,
-      event: { subjectDigest: DIGEST, reason: REASON },
+      event: { subjectDigest: DIGEST, reason: REASON, shown: { title: 'approval', input: {} } },
       held: { footprint: FOOTPRINT, placeholder: (approvalId) => `waiting for ${approvalId}` },
     });
 
@@ -52,14 +52,14 @@ describe('store.requestApproval for a held call', () => {
   it('records the hold without a placeholder for a call whose result the model already has', async () => {
     const { store } = harness();
     const { runId, claim } = await claimWithCall(store);
-    await store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: DIGEST, reason: REASON }, held: { footprint: FOOTPRINT } });
+    await store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: DIGEST, reason: REASON, shown: { title: 'approval', input: {} } }, held: { footprint: FOOTPRINT } });
     expect(typesAfterCall(store, runId)).toEqual(['tool.permission.requested', 'tool.held']);
   });
 
   it('writes nothing a second time for the same request', async () => {
     const { store } = harness();
     const { runId, claim } = await claimWithCall(store);
-    const input = { callId: 'call_1', options: OPTIONS, event: { subjectDigest: DIGEST, reason: REASON }, held: { footprint: FOOTPRINT, placeholder: (approvalId: string) => `waiting for ${approvalId}` } };
+    const input = { callId: 'call_1', options: OPTIONS, event: { subjectDigest: DIGEST, reason: REASON, shown: { title: 'approval', input: {} } }, held: { footprint: FOOTPRINT, placeholder: (approvalId: string) => `waiting for ${approvalId}` } };
     await store.requestApproval(claim, input);
     await store.requestApproval(claim, input);
     expect(typesAfterCall(store, runId)).toEqual(['tool.permission.requested', 'tool.held', 'tool.completed']);
@@ -68,7 +68,7 @@ describe('store.requestApproval for a held call', () => {
   it('writes only the approval for a call that is not held, as before', async () => {
     const { store } = harness();
     const { runId, claim } = await claimWithCall(store);
-    await store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: DIGEST, reason: REASON } });
+    await store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: DIGEST, reason: REASON, shown: { title: 'approval', input: {} } } });
     expect(typesAfterCall(store, runId)).toEqual(['tool.permission.requested']);
   });
 });

@@ -4,6 +4,10 @@
   "kind": "execute",
   "sideEffect": "exec",
   "title": "Push {input.branch} to {input.remote}",
+  "titles": [
+    { "when": "input.delete", "title": "Delete the remote branch {input.branch} on {input.remote}" },
+    { "when": "input.force", "title": "Force push {input.branch} to {input.remote}" }
+  ],
   "subject": { "kind": "repo", "remote": "{input.remote}", "refs": ["{input.branch}"], "alwaysWhen": ["force", "delete"] },
   "approval": "rule",
   "input": {

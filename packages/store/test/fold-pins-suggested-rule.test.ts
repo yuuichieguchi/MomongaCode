@@ -37,6 +37,7 @@ const requested = (suggestedRule?: string): RunEventPayload[] => [
     subjectDigest: DIGEST,
     reason: 'edits require approval',
     ...(suggestedRule === undefined ? {} : { suggestedRule }),
+    shown: { title: 'approval', input: {} },
   },
 ];
 
@@ -115,6 +116,7 @@ describe('snapshot codec for pins and suggested rules', () => {
         subjectDigest: DIGEST,
         reason: 'edits require approval',
         suggestedRule: RULE,
+        shown: { title: 'approval', input: {} },
       },
       { type: 'tool.call', callId: 'c2', providerCallId: 'c2', name: 'Bash', kind: 'execute', title: 'b', rawInput: { command: 'b' } },
       {
@@ -125,6 +127,7 @@ describe('snapshot codec for pins and suggested rules', () => {
         subjectDigest: DIGEST,
         reason: 'edits require approval',
         suggestedRule: RULE,
+        shown: { title: 'approval', input: {} },
       },
       { type: 'tool.permission.resolved', approvalId: 'ap2', optionId: 'opt-aa' },
     ];

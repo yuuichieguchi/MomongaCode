@@ -23,7 +23,7 @@ const relative = (file: string): string => path.relative(ROOT, file).split(path.
 
 const SYNCHRONOUS_CALL = /\b\w+Sync\b|\bsyncPaths\b/;
 
-const SYNCHRONOUS_DRIVER = /\bsyncPaths\b|\bdisplayToolPathSync\b/;
+const SYNCHRONOUS_DRIVER = /\bsyncPaths\b/;
 
 const SYNCHRONOUS_HOST_CALL = /\b(realpathSync|readlinkSync)\b/;
 
@@ -72,7 +72,6 @@ const ASYNCHRONOUS_FILES: readonly string[] = [
 const SYNCHRONOUS_USERS: Readonly<Record<string, string>> = {
   'packages/foundation/src/sync-paths.ts': 'the synchronous driver of the one resolution algorithm',
   'packages/foundation/src/index.ts': 'exports the synchronous driver',
-  'packages/cli/src/tui/diff.ts': 'the terminal view words an approval once, synchronously, in the process of one terminal',
 };
 
 describe('path resolution is asynchronous and goes through the file-system port', () => {

@@ -241,6 +241,7 @@ describe('approval diff size', () => {
           { optionId: 'o1', name: 'Allow once', kind: 'allow_once' },
           { optionId: 'o3', name: 'Reject once', kind: 'reject_once' },
         ],
+        shown: { title: 'Write /work/a.txt', input: {}, diff: { hunks: [{ oldStart: 0, newStart: 1, lines: content.split('\n').map((line) => `+${line}`) }], added: 30, removed: 0 } },
       }),
     );
     const visible = maxDiffLines(panelRowsCap(20), 2);

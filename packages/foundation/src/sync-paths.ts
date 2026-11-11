@@ -12,8 +12,3 @@ export const syncPaths: SyncPathResolver = createSyncPathResolver({
   list: (target) => nodeFileSystemSync.accessSync(target, 'list'),
   names: (directory) => nodeFileSystemSync.readdirSync(directory),
 });
-
-export const displayToolPathSync = (workingDirectory: string, absolute: string): string => {
-  const bases = [workingDirectory, canonicalOrWritten(workingDirectory, syncPaths.resolveCanonicalPath(workingDirectory))];
-  return displayAmong(bases, [absolute, parentFormOf(absolute, syncPaths.resolveCanonicalPath(path.dirname(absolute)))], absolute);
-};

@@ -49,7 +49,7 @@ describe('the waiting row in the screen (6.1)', () => {
   it('is hidden while an approval is open and names the reconnect as a phase', async () => {
     const { app, backend, clock } = await working({ columns: 80, rows: 20 });
     backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Bash', kind: 'execute', title: 'Bash ls', rawInput: { command: 'ls' } }));
-    backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], reason: 'ask' }));
+    backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], reason: 'ask', shown: { title: 'approval', input: {} } }));
     const asked = await untilFrame(app, 'Permission requested: Bash ls');
     expect(asked).not.toMatch(/\ds · esc to cancel/);
     backend.emit(frame({ type: 'tool.permission.resolved', approvalId: 'ap1', optionId: 'o1' }));

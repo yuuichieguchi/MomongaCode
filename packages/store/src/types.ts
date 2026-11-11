@@ -6,6 +6,7 @@ import type { PermissionReviewsStore } from './permission-reviews.ts';
 import type { InheritPlanReply, InheritPlanRequest, InheritedWindowReply, InheritedWindowRequest } from './inherit-reference.ts';
 import type { UnaskedCommands } from './inherit.ts';
 import type {
+  ApprovalShown,
   CallFootprint,
   BilledDetail,
   Capabilities,
@@ -307,6 +308,7 @@ export type ApprovalView = {
   createdAt: number;
   suggestedRule?: string;
   reason: string;
+  shown?: ApprovalShown;
   toolCall: {
     callId: string;
     name: string;
@@ -678,7 +680,7 @@ export type RuntimeStore = {
     input: {
       callId: string;
       options: PermissionOption[];
-      event: { subjectDigest: string; reason: string; suggestedRule?: string };
+      event: { subjectDigest: string; reason: string; suggestedRule?: string; shown: ApprovalShown };
       held?: { footprint: CallFootprint; placeholder?(approvalId: string): string };
     },
   ): Promise<RequestApprovalResult>;
@@ -692,6 +694,7 @@ export type RuntimeStore = {
   elicitationView(elicitationId: string): Promise<ElicitationView | undefined>;
   pendingElicitationViews(runId: string): Promise<ElicitationView[]>;
   expireApprovals(nowMs: number, onError: SweepErrorSink): Promise<string[]>;
+  reaskUnshownApprovals(onError: SweepErrorSink): Promise<string[]>;
   finishCancelled(onError: SweepErrorSink): Promise<string[]>;
   deadLetterExhausted(onError: SweepErrorSink): Promise<string[]>;
   terminalRunIdsWithCheckpoint(): string[];

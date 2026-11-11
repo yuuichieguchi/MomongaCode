@@ -742,7 +742,7 @@ export const requestManualApproval = async (
   const result = await env.store.requestApproval(claim, {
     callId,
     options: OPTIONS,
-    event: { subjectDigest: SUBJECT_DIGEST, reason: 'edits require approval', ...extra },
+    event: { subjectDigest: SUBJECT_DIGEST, reason: 'edits require approval', ...extra, shown: { title: 'approval', input: {} } },
   });
   if (result.kind !== 'ok') throw new Error(`requestApproval failed: ${result.kind}`);
   return result.approval.id;

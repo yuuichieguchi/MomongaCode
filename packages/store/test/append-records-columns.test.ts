@@ -40,6 +40,7 @@ const permissionRequested = (approvalId: string, callId: string): RunEventPayloa
   options: [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }],
   subjectDigest: `subject-${callId}`,
   reason: 'needs approval',
+  shown: { title: 'approval', input: {} },
 });
 
 const elicitationRequested = (inputId: string, callId: string): RunEventPayload => ({ type: 'tool.elicitation.requested', inputId, callId, server: 'srv', requests: [] });

@@ -258,7 +258,7 @@ const assertConstrainedWire = (observed: Observed): void => {
 describe('a: within-turn truncation and compaction at W=4096', () => {
   it.for(PLANNED_CASES)('$title', { timeout: PLANNED_CASE_TIMEOUT_MS }, async ({ id, spec }) => {
     const home = await createE2eHome();
-    const haystack = writeHaystack(home.project);
+    const haystack = await writeHaystack(home.project);
     const summary = summaryTextOf(haystack.handle);
     const target = acceptanceTarget(spec.toolCalling);
 
@@ -281,7 +281,7 @@ describe('a: within-turn truncation and compaction at W=4096', () => {
 
   it(titleOf('a-constrained-tool-room'), { timeout: PLANNED_CASE_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
-    writeHaystack(home.project);
+    await writeHaystack(home.project);
     const target = acceptanceTarget('constrained');
     const stack = await startStack({ home, sandbox: 'none', target, script: upstreamRepliesOf([{ kind: 'final', text: 'Done.' }], 'constrained') });
     const capabilities = await createGatewayCountClient(firstGeneration(home.paths).sockets.gateway).capabilities();

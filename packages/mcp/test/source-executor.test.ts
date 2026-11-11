@@ -165,6 +165,14 @@ describe('MCP tool definitions', () => {
     expect(tool?.prepare).toBeUndefined();
     expect(tool?.reconcile).toBeUndefined();
   });
+
+  it('shows the server, the tool and every argument in its approval', async () => {
+    const { set } = await modernSet();
+    const tool = set.get('mcp__modern__echo');
+    if (tool?.approval === undefined) throw new Error('mcp__modern__echo has no approval content');
+    const content = await tool.approval({ text: 'hello', times: 2 }, {} as Parameters<NonNullable<typeof tool.approval>>[1]);
+    expect(content.effect).toBe('modern echo {"text":"hello","times":2}');
+  });
 });
 
 describe('MCP result mapping', () => {

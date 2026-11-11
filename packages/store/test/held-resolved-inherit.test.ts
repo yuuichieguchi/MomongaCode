@@ -34,7 +34,7 @@ const runWithResolvedHold = async () => {
   const asked = await h.store.requestApproval(claim, {
     callId,
     options: OPTIONS,
-    event: { subjectDigest: 'a'.repeat(64), reason: 'outside the mandate' },
+    event: { subjectDigest: 'a'.repeat(64), reason: 'outside the mandate', shown: { title: 'approval', input: {} } },
     held: { footprint: FOOTPRINT, placeholder: (approvalId) => `waiting for ${approvalId}` },
   });
   if (asked.kind !== 'ok') throw new Error(`the hold returned ${asked.kind}`);
@@ -69,7 +69,7 @@ describe('the items of the history of a run come from one table', () => {
   const CALL: RunEventPayload = { type: 'tool.call', callId: 'c1', providerCallId: 'provider-c1', name: 'Write', kind: 'edit', title: 'Write x.txt', rawInput: {} };
   const HELD: RunEventPayload[] = [
     CALL,
-    { type: 'tool.permission.requested', callId: 'c1', approvalId: 'ap-1', options: OPTIONS, subjectDigest: 'a'.repeat(64), reason: 'outside the mandate' } as RunEventPayload,
+    { type: 'tool.permission.requested', callId: 'c1', approvalId: 'ap-1', options: OPTIONS, subjectDigest: 'a'.repeat(64), reason: 'outside the mandate', shown: { title: 'approval', input: {} } } as RunEventPayload,
     { type: 'tool.held', callId: 'c1', approvalId: 'ap-1', reason: 'outside the mandate', footprint: FOOTPRINT },
     { type: 'tool.completed', callId: 'c1', status: 'failed', output: 'waiting for ap-1', denial: { source: 'held', reason: 'outside the mandate' } },
   ];

@@ -21,7 +21,6 @@ export const DEFAULT_TIMEOUT_MS = 120_000;
 export const MAX_TIMEOUT_MS = 600_000;
 export const DEFAULT_BACKGROUND_TIMEOUT_MS = 1_800_000;
 export const MAX_BACKGROUND_TIMEOUT_MS = 7_200_000;
-const TITLE_CHARS = 80;
 const CWD_NONCE_BYTES = 16;
 const trapScript = (nonce: string): string =>
   `trap 'status=$?; printf "\\n__MOMONGA_CWD_${nonce}__=%s\\n" "$(pwd -P)"; exit $status' EXIT`;
@@ -172,7 +171,8 @@ export const bashTool = defineTool<BashInput>({
     }
     return {};
   },
-  title: (input) => input.description ?? input.command.slice(0, TITLE_CHARS),
+  title: (input) => input.command,
+  approval: async (input) => ({ effect: input.command, ...(input.description === undefined ? {} : { claim: input.description }) }),
   subject: (input) => ({ ...shellCommandSubject(input.command), ...(input.network === undefined ? {} : { network: networkRequestOf(input.network) }) }),
   locations: (input, ctx) => readPathsOfCommand(input.command, commandSpecsFor(process.platform)).map((target) => ({ path: resolveToolPath(ctx.cwd, target) })),
   execute: async (input, ctx) => {

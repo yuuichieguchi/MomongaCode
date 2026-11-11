@@ -146,6 +146,7 @@ const buildTool = (
     },
     title: () => `${sanitizeServerText(server)}: ${titleOf(tool)}`,
     subject: () => ({ kind: 'mcp', server, tool: toolPart }),
+    approval: async (input) => ({ effect: `${server} ${tool.name} ${canonicalJson(input)}` }),
     execute: async (input, ctx) => {
       const resume = resumeOf(ctx.resume);
       if (resume?.checkpoint.kind === 'mrtr' || resume?.checkpoint.kind === 'parked') ctx.checkpoint(undefined);
