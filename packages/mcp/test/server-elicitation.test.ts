@@ -1,3 +1,4 @@
+import { nodeFileSystem } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import { McpInputSuspension, McpParkedInputLostError, connectMcpServer, createMcpToolSource } from '@momonga/mcp';
 import type { McpServerConnection } from '@momonga/mcp';
@@ -7,7 +8,7 @@ import type { AnyTool, ToolContext } from '@momonga/tools';
 import { BASE_ENV, NEVER_ABORTED, makeDir, onCleanup } from './mcp-harness.ts';
 
 const connect = async (): Promise<McpServerConnection> => {
-  const connection = await connectMcpServer({
+  const connection = await connectMcpServer({ files: nodeFileSystem,
     clientVersion: '0.0.0-test',
     name: 'legacy',
     config: { command: process.execPath, args: [MCP_LEGACY_SERVER_PATH], env: { [FIXTURE_EXTRA_TOOLS_ENV]: 'ask_name' } },
@@ -47,7 +48,7 @@ describe('the time budget of a call that waits for the person', () => {
         return fake.setTimeout(callback, ms);
       },
     };
-    const connection = await connectMcpServer({
+    const connection = await connectMcpServer({ files: nodeFileSystem,
       clientVersion: '0.0.0-test',
       name: 'legacy',
       config: { command: process.execPath, args: [MCP_LEGACY_SERVER_PATH], env: { [FIXTURE_EXTRA_TOOLS_ENV]: 'ask_name' } },

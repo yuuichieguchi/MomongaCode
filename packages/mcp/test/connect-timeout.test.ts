@@ -1,3 +1,4 @@
+import { nodeFileSystem } from '@momonga/foundation';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createManagedConnection } from '@momonga/mcp';
 import { createFakeClock } from '@momonga/testkit';
@@ -12,7 +13,7 @@ describe('mcp.connectTimeoutMs bounds the connect of a server that never answers
   });
 
   const silentServer = (connectTimeoutMs: number) => {
-    const connection = createManagedConnection({
+    const connection = createManagedConnection({ files: nodeFileSystem,
       clientVersion: '0.0.0-test',
       name: 's',
       config: NEVER_ANSWERS,

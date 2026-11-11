@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { OperationLimitError, SHUTDOWN_SETTING_LIMITS, StoreCallEndedError, createFileCredentialStore } from '@momonga/foundation';
+import { OperationLimitError, SHUTDOWN_SETTING_LIMITS, StoreCallEndedError, createFileCredentialStore, nodeFileSystem } from '@momonga/foundation';
 import { DEFAULT_LOCK_TIMEOUT_MS } from '../../foundation/src/file-lock.ts';
 import type { FileLockPorts } from '@momonga/foundation';
 import { McpInputSuspension, MIN_TASK_POLL_MS, createManagedConnection } from '@momonga/mcp';
@@ -257,7 +257,7 @@ describe('the store calls the MCP SDK makes for an operation of a connection', (
   });
 
   it('listTools has the request limit when the request hangs outside the store', async () => {
-    const connection = createManagedConnection({
+    const connection = createManagedConnection({ files: nodeFileSystem,
       clientVersion: '0.0.0-test',
       name: 's',
       config: { command: process.execPath, args: ['-e', SERVER_THAT_NEVER_ANSWERS_A_LISTING] },
