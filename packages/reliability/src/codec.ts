@@ -260,6 +260,7 @@ export const decodeReliabilityReport = (text: string): ReliabilityReport => {
   rowsOnlyFor('population', 'injection', 'benchmark');
   rowsOnlyFor('period', 'real');
   rowsOnlyFor('cost', 'real', 'benchmark');
+  rowsOnlyFor('gate', 'benchmark');
   return {
     format: RELIABILITY_FORMAT,
     kind,
@@ -274,5 +275,8 @@ export const decodeReliabilityReport = (text: string): ReliabilityReport => {
     ...(fields['population'] === undefined ? {} : { population: decodePopulation(fields['population']) }),
     ...(fields['period'] === undefined ? {} : { period: decodePeriod(fields['period']) }),
     ...(fields['cost'] === undefined ? {} : { cost: decodeCost(fields['cost']) }),
+    ...(fields['gate'] === undefined
+      ? {}
+      : { gate: countsAt(fields['gate'], 'report.gate', ['gatePassOraclePass', 'gatePassOracleFail', 'gateFailOraclePass', 'gateFailOracleFail', 'gateNotRun']) }),
   };
 };

@@ -24,6 +24,8 @@ export type ScenarioRow = { scenario: string; trials: number; episodes: number; 
 
 export type NotRun = { id: string; reason: string };
 
+export type GateAgreement = { gatePassOraclePass: number; gatePassOracleFail: number; gateFailOraclePass: number; gateFailOracleFail: number; gateNotRun: number };
+
 export type ReliabilityReport = {
   format: typeof RELIABILITY_FORMAT;
   kind: ReportKind;
@@ -38,13 +40,14 @@ export type ReliabilityReport = {
   population?: { notRun: NotRun[] };
   period?: Period;
   cost?: CostGroups;
+  gate?: GateAgreement;
 };
 
 type Measured = { aggregate: Aggregate };
 
 export type ReportInput =
   | (Measured & { kind: 'real'; harness?: null; period?: Period; cost?: CostGroups })
-  | (Measured & { kind: 'benchmark'; harness: Harness; tasks?: TaskRow[]; cost: CostGroups; notRun: NotRun[] })
+  | (Measured & { kind: 'benchmark'; harness: Harness; tasks?: TaskRow[]; cost: CostGroups; notRun: NotRun[]; gate: GateAgreement })
   | (Measured & { kind: 'injection'; harness: Harness; scenarios?: ScenarioRow[]; witnessed?: Rate; notRun?: NotRun[] });
 
 export const buildReliabilityReport = (input: ReportInput): ReliabilityReport => {
@@ -54,7 +57,7 @@ export const buildReliabilityReport = (input: ReportInput): ReliabilityReport =>
     case 'real':
       return { ...base, kind: 'real', harness: null, ...(input.period === undefined ? {} : { period: input.period }), ...(input.cost === undefined ? {} : { cost: input.cost }) };
     case 'benchmark':
-      return { ...base, kind: 'benchmark', harness: input.harness, ...(input.tasks === undefined ? {} : { tasks: input.tasks }), cost: input.cost, population: { notRun: input.notRun } };
+      return { ...base, kind: 'benchmark', harness: input.harness, ...(input.tasks === undefined ? {} : { tasks: input.tasks }), cost: input.cost, population: { notRun: input.notRun }, gate: input.gate };
     case 'injection':
       return {
         ...base,
@@ -133,6 +136,11 @@ const rowLines = (report: ReliabilityReport): string[] => [
   ...(report.tasks ?? []).map((row) => `Task ${escapeTerminalLine(row.task)} (${escapeTerminalLine(row.taskType)}, ${escapeTerminalLine(row.difficulty)}): met ${row.met}/${row.trials}`),
   ...(report.scenarios ?? []).map((row) => `Scenario ${escapeTerminalLine(row.scenario)}: recovered ${row.recovered}/${row.episodes} episodes in ${row.trials} trials`),
   ...(report.witnessed === undefined ? [] : [`Duplicate Side Effect Rate (witnessed): ${describeRate(report.witnessed)}`]),
+  ...(report.gate === undefined
+    ? []
+    : [
+        `Completion gate against the oracle: passed with the oracle met ${report.gate.gatePassOraclePass}, passed with the oracle unmet ${report.gate.gatePassOracleFail} (false pass), failed with the oracle met ${report.gate.gateFailOraclePass}, failed with the oracle unmet ${report.gate.gateFailOracleFail}, no gate verdict ${report.gate.gateNotRun}`,
+      ]),
 ];
 
 export const formatReliabilityReport = (report: ReliabilityReport): string => {

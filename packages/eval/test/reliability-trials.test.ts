@@ -11,6 +11,7 @@ const benchmark = (codeDigest: string, trialsOfFirst: number): ReliabilityReport
     tasks: Array.from({ length: 12 }, (_, index) => ({ task: `task-${index}`, trials: index === 0 ? trialsOfFirst : 3, met: 1, difficulty: 'easy', taskType: 'bug_fix' })),
     cost: { total: { successful: { tasks: 0, fullyPriced: 0, noData: 0, calls: 0, notPriced: 0, tokens: 0, priced: [] }, unsuccessful: { tasks: 0, fullyPriced: 0, noData: 0, calls: 0, notPriced: 0, tokens: 0, priced: [] } }, groups: {} },
     notRun: [],
+    gate: { gatePassOraclePass: 0, gatePassOracleFail: 0, gateFailOraclePass: 0, gateFailOracleFail: 0, gateNotRun: 0 },
   });
 
 describe('a paired comparison compares units of equal size', () => {
