@@ -527,7 +527,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       previous !== undefined && previous.replacedBy === 'lazy' && previous.access !== undefined && previous.accessExpiresAt !== undefined
         ? [{ value: previous.access, expiresAt: previous.accessExpiresAt }]
         : [];
-    const kept = [...older, ...leaving].filter((entry) => nowMs < entry.expiresAt);
+    const kept = [...older, ...leaving].filter((entry) => nowMs < entry.expiresAt).slice(-defaults.replacedAccessTokensKept);
     account.fed = {
       current: { tokens, access: record.access_token, accessExpiresAt: record.expiresAt },
       previous: current === undefined ? undefined : { ...current, replacedBy },

@@ -33,6 +33,7 @@ export const PLAN_SESSION_DEFAULTS = {
   marginMs: PLAN_SKEW_MS + PLAN_REFRESH_BUDGET_MS,
   revocationBudgetMs: planRetry.maxAttempts * PLAN_REVOCATION_TIMEOUT_MS + planRetry.baseMs + 2 * planRetry.baseMs,
   persistRetryMs: GATEWAY_CONFIG_DEFAULTS.breaker.openMs,
+  replacedAccessTokensKept: 3,
 } as const;
 
 const KIB = 1024;
