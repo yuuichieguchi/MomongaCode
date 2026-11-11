@@ -20,6 +20,7 @@ import {
   serverCountText,
   typedModelText,
   withDefaultTag,
+  messageOf,
 } from '@momonga/protocol';
 import type { DetectedLocalServer, DetectedManagedServer, DetectedModel, LocalServerDetection, ModelView, ModelViews, MomongaModelEntry, MomongaModelList, MomongaModelRoles, PlanAccountView, PlanCatalogEntry, Readiness, ServerKind, ServerKindAdapter, TargetBilling } from '@momonga/protocol';
 import { createGatewayClient, listingViewsOf } from '../client/gateway-client.ts';
@@ -27,7 +28,7 @@ import type { PlanGatewayClient } from '../client/gateway-client.ts';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import { formatTokens } from '../format-tokens.ts';
 import { localManagedPorts } from '../local-managed-ports.ts';
-import { NOT_LISTED_BY_SERVER_MARK, NO_SERVER_ANSWERED_TEXT, RUN_AGAIN_WITH_YES_TEXT, noModelsText, noServerAnsweredAtText, notListedByServerText } from '../models-texts.ts';
+import { NOT_LISTED_BY_SERVER_MARK, NO_SERVER_ANSWERED_TEXT, RUN_AGAIN_WITH_YES_TEXT, noServerAnsweredAtText, notListedByServerText } from '../models-texts.ts';
 import { withIdentityReadFetch } from '../network.ts';
 import { announcePlainHttp } from '../plain-http.ts';
 import type { CliFiles, CliPorts } from '../ports.ts';
@@ -129,7 +130,7 @@ export const modelRowOf = (model: ListedModel, start: string | null): string =>
   `${ROW_INDENT}${[model.name, ...windowPartsOf(model), ...(model.model === start ? [START_MARK] : []), ...(model.code === MODEL_NOT_LISTED_CODE ? [NOT_LISTED_BY_SERVER_MARK] : [])].join(SEPARATOR)}`;
 
 const modelLinesOf = (document: ModelsDocument): string[] => {
-  if (document.models.length === 0) return [noModelsText()];
+  if (document.models.length === 0) return [messageOf('noModelConnected', 'cli')];
   const providers = [...new Set(document.models.map((model) => model.provider))];
   return providers.flatMap((provider) => {
     const served = document.models.filter((model) => model.provider === provider);

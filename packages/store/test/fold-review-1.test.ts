@@ -4,6 +4,7 @@ import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { START_MS, enqueue, harness, mustClaim, newSession } from './helpers.ts';
 import { roundTripped } from './run-state-codec.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const IDS = { runId: 'run-1', sessionId: 'sess-1' };
 
@@ -12,7 +13,7 @@ const foldAll = (payloads: readonly unknown[]): RunState =>
     const step = typeof (payload as { step?: unknown }).step === 'number' ? (payload as { step: number }).step : 0;
     const event = { ...(payload as RunEventPayload), id: index + 1, ...IDS, seq: index + 1, step, leaseToken: 1, createdAt: START_MS } as RunEvent;
     return foldRunState(state, event);
-  }, initialRunState(IDS));
+  }, initialRunState({ ...IDS, fence: TEST_FENCE }));
 
 const requested = (step: number, toolChoice: string): RunEventPayload => ({
   type: 'model.requested',
@@ -24,7 +25,7 @@ const requested = (step: number, toolChoice: string): RunEventPayload => ({
 
 describe('fold: per-step request facts', () => {
   it('starts with no steps and no loaded instructions', () => {
-    const state = initialRunState(IDS);
+    const state = initialRunState({ ...IDS, fence: TEST_FENCE });
     expect(state.steps).toEqual({});
     expect(state.loadedInstructions).toEqual([]);
   });
@@ -84,7 +85,7 @@ describe('snapshot codec: steps and loadedInstructions', () => {
     const run = await enqueue(store, newSession(store).id);
     const appended = store.append(mustClaim(store, 'worker-1'), [requested(1, 'auto'), { type: 'instructions.loaded', path: '/proj/AGENTS.md', content: 'v1' }]);
     if (appended.kind !== 'ok') throw new Error('expected the append to succeed');
-    const state = store.readRunEvents(run.id, 0, 100).reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));
+    const state = store.readRunEvents(run.id, 0, 100).reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId, fence: TEST_FENCE }));
     return { read: () => roundTripped({ ...state, ...patch } as RunState), state };
   };
 

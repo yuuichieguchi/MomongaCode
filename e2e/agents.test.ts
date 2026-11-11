@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createUdsClient, fixedSocket } from '@momonga/foundation';
-import { envelopeOf } from '@momonga/protocol';
+import { TOOL_OUTPUT_TAG, fenceUntrusted } from '@momonga/protocol';
 import { skipCase, titleOf } from './support/cases.ts';
 import { runCli, startCli } from './support/cli.ts';
 import { prepareProduct } from './support/product.ts';
@@ -29,6 +29,7 @@ import {
 } from './support/wait.ts';
 import type { FakeRoute, FakeScriptedReply } from '@momonga/testkit';
 import { firstGeneration } from '@momonga/testkit';
+import { fenceBoundaryIn } from '@momonga/testkit';
 
 type Json = Record<string, any>;
 
@@ -86,7 +87,7 @@ const toolTexts = (request: Parameters<typeof messagesOf>[0]): string[] =>
 const agentEnvelopes = (request: Parameters<typeof messagesOf>[0], content: string): string[] =>
   messagesOf(request)
     .filter((message) => message.role === 'tool')
-    .map((message) => envelopeOf({ content, callId: String(message.tool_call_id), tool: 'Agent' }));
+    .map((message) => fenceUntrusted(TOOL_OUTPUT_TAG, { call: String(message.tool_call_id), tool: 'Agent' }, content, fenceBoundaryIn(String(message.content))));
 
 describe('agents: subagents', () => {
   it(titleOf('agent-run'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {

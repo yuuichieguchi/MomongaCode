@@ -27,6 +27,7 @@ import { SUPERVISOR_APP_VERSION } from './stack.ts';
 import { E2E_MARGIN_MS } from './wait.ts';
 import { envelopeFinalReply, envelopeToolCallsReply, textReply, toolCallReply, wireTokensOfRequest } from './upstream.ts';
 import { fixedSandboxBindings } from '@momonga/runtime';
+import { TEST_FENCE } from '@momonga/testkit';
 
 export { budgetFor, errorBoundFor, wireOf, wireTokensOf };
 
@@ -170,7 +171,7 @@ export const sizingFor = (capabilities: Capabilities, pinned: number): Sizing =>
 };
 
 export const seenOutputTokens = async (count: GatewayCountClient, call: { callId: string; tool: string }, output: string): Promise<number> => {
-  const render = outputRenderOf({ type: 'function_call_output', call_id: call.callId, output }, call.tool, new Set(harnessOutputToolsOf(createBuiltinTools())), false);
+  const render = outputRenderOf({ type: 'function_call_output', call_id: call.callId, output }, call.tool, new Set(harnessOutputToolsOf(createBuiltinTools())), false, TEST_FENCE);
   const counted = await count.gateway.countTokens(
     { model: E2E_MODEL, input: [render.full], momonga: { lenient_items: { call_names: { [call.callId]: call.tool }, with_tools: true } } },
     { signal: AbortSignal.timeout(E2E_MARGIN_MS) },

@@ -4,8 +4,9 @@ import { foldRunState, initialRunState } from '@momonga/store';
 import { FIXTURE_RUN_ID, FIXTURE_SESSION_ID, fixtureSubjectDigest, materializeEvents } from '@momonga/testkit';
 import { enqueue, harness, mustClaim, newSession, rawDb } from './helpers.ts';
 import { encodedRunState } from './run-state-codec.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
-const start = () => initialRunState({ runId: FIXTURE_RUN_ID, sessionId: FIXTURE_SESSION_ID });
+const start = () => initialRunState({ runId: FIXTURE_RUN_ID, sessionId: FIXTURE_SESSION_ID, fence: TEST_FENCE });
 const foldAll = (events: readonly RunEvent[], from: RunState = start()) => events.reduce(foldRunState, from);
 
 const FIRST_PINS = {
@@ -133,7 +134,7 @@ describe('snapshot codec for pins and suggested rules', () => {
     ];
     expect(store.append(claim, payloads).kind).toBe('ok');
     const events = store.readRunEvents(run.id, 0, 1000);
-    const state = foldAll(events, initialRunState({ runId: run.id, sessionId: run.sessionId }));
+    const state = foldAll(events, initialRunState({ runId: run.id, sessionId: run.sessionId, fence: TEST_FENCE }));
     const encoded = encodedRunState(state);
     return { store, run, state, mutate: encoded.mutate, read: encoded.read };
   };

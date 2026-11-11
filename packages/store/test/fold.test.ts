@@ -19,8 +19,9 @@ import {
 } from '@momonga/testkit';
 import { enqueue, harness, mustClaim, newSession, rawDb } from './helpers.ts';
 import { encodedRunState, foldedRunState } from './run-state-codec.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
-const start = () => initialRunState({ runId: FIXTURE_RUN_ID, sessionId: FIXTURE_SESSION_ID });
+const start = () => initialRunState({ runId: FIXTURE_RUN_ID, sessionId: FIXTURE_SESSION_ID, fence: TEST_FENCE });
 const foldAll = (events: readonly RunEvent[], from: RunState = start()) => events.reduce(foldRunState, from);
 const sha256 = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
 
@@ -59,6 +60,7 @@ describe('initialRunState', () => {
     expect(start()).toEqual({
       runId: FIXTURE_RUN_ID,
       sessionId: FIXTURE_SESSION_ID,
+      fence: TEST_FENCE,
       status: 'QUEUED',
       step: 0,
       attempt: 0,
@@ -710,14 +712,14 @@ describe('the folded run state', () => {
     const payloads = toolRoundTripRun.payloads.filter((payload) => payload.type !== 'user.message' && payload.type !== 'run.status');
     expect(store.append(claim, payloads).kind).toBe('ok');
     const all = store.readRunEvents(run.id, 0, 1000);
-    expect(await foldedRunState(store, run.id)).toEqual(foldAll(all, initialRunState({ runId: run.id, sessionId: run.sessionId })));
+    expect(await foldedRunState(store, run.id)).toEqual(foldAll(all, initialRunState({ runId: run.id, sessionId: run.sessionId, fence: store.getSession(run.sessionId)?.fenceNonce ?? '' })));
   });
 
   it('reports an encoded state of the current version whose history is malformed as corrupt', async () => {
     const { store } = harness();
     const run = await enqueue(store, newSession(store).id);
     const all = store.readRunEvents(run.id, 0, 1000);
-    const state = foldAll(all, initialRunState({ runId: run.id, sessionId: run.sessionId }));
+    const state = foldAll(all, initialRunState({ runId: run.id, sessionId: run.sessionId, fence: store.getSession(run.sessionId)?.fenceNonce ?? '' }));
     const encoded = encodedRunState(state);
     expect(encoded.read()).toEqual(state);
     encoded.mutate("json_set(state_json, '$.history', 'oops')");
@@ -764,7 +766,7 @@ describe('snapshot validation', () => {
   const storedRichSnapshot = async () => {
     const { store } = harness();
     const run = await enqueue(store, newSession(store).id);
-    const state = foldAll(materializeEvents(richPayloads(), { runId: run.id, sessionId: run.sessionId }), initialRunState({ runId: run.id, sessionId: run.sessionId }));
+    const state = foldAll(materializeEvents(richPayloads(), { runId: run.id, sessionId: run.sessionId }), initialRunState({ runId: run.id, sessionId: run.sessionId, fence: store.getSession(run.sessionId)?.fenceNonce ?? '' }));
     const encoded = encodedRunState(state);
     return { state, mutate: encoded.mutate, read: encoded.read };
   };

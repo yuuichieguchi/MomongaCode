@@ -6,6 +6,7 @@ import { fixtureCompactionItem } from '@momonga/testkit';
 import { enqueue, harness, mustClaim, newSession } from './helpers.ts';
 import { encodedRunState, foldedRunState } from './run-state-codec.ts';
 import { assistantItem, inheritedEvent, taskItem } from './inherit-fixtures.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const USAGE = { input_tokens: 10, output_tokens: 2, total_tokens: 12 };
 const PLAIN = { type: 'message', role: 'user', content: '<conversation_summary>\nfirst part\n</conversation_summary>' } as const;
@@ -43,7 +44,7 @@ const storedSnapshot = async (leading: readonly RunEventPayload[] = []) => {
   const claim = mustClaim(store, 'w1');
   expect(store.append(claim, [...leading, ...journal]).kind).toBe('ok');
   const events: RunEvent[] = store.readRunEvents(run.id, 0, 1000);
-  const state = events.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));
+  const state = events.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId, fence: store.getSession(run.sessionId)?.fenceNonce ?? '' }));
   const encoded = encodedRunState(state);
   return { store, run, state, events, mutate: encoded.mutate, storedJson: encoded.json, read: encoded.read };
 };

@@ -52,6 +52,7 @@ export type AuthSource = {
   read(signal: AbortSignal): Promise<PlanRead>;
   rejected(generation: number, signal: AbortSignal): Promise<'renewed' | 'unchanged'>;
   pause(pause: { untilMs?: number; code: string }, signal: AbortSignal): Promise<void>;
+  expire(code: string, signal: AbortSignal): Promise<void>;
   resume(signal: AbortSignal): Promise<void>;
   status(): PlanStatus;
   health(): PlanHealth;
