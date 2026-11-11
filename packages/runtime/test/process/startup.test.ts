@@ -6,8 +6,8 @@ import { ConfigError } from '@momonga/config';
 import { FIRST_GENERATION, ProcessLockHeldError, ensureGenerationDirs, ensureMomongaDirs, generationLayout, momongaPaths } from '@momonga/foundation';
 import type { Worker, WorkerOptions } from '@momonga/runtime';
 import { createPlaceholderJournal, identityOf } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, startLockHolder, firstGeneration } from '@momonga/testkit';
-import { START_MS, errnoError, trackGroup, writeInvalidUserSettings, writeUserSettings } from './helpers.ts';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, startLockHolder, firstGeneration, registerOwned } from '@momonga/testkit';
+import { START_MS, errnoError, trackGroup, writeInvalidUserSettings, writeUserSettings, onCleanup } from './helpers.ts';
 import {
   RUNTIME_VERSION,
   STARTUP_STEPS,
@@ -128,7 +128,7 @@ const spawnDetachedSleeper = (): number => {
 const startBare = (temp: RunHome, extra: Record<string, unknown> = {}) => {
   const logger = hookLogger(() => undefined);
   const stdout = captureStream();
-  return { logger, stdout, started: startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger, stdout, ...extra }) };
+  return { logger, stdout, started: registerOwned(onCleanup, () => startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger, stdout, ...extra })) };
 };
 
 const sandboxNoneHome = (): RunHome => {
@@ -454,24 +454,17 @@ describe('startRuntimeProcess startup (system timers)', () => {
     const stack = await prepareStack();
     const link = path.join(stack.temp.root, 'link');
     fs.symlinkSync(stack.temp.home, link);
-    const viaLink = await startRuntimeProcess({ generation: FIRST_GENERATION, home: link, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream() });
-    try {
-      expect(viaLink.ready.socketPath).toBe(firstGeneration(stack.temp.paths).sockets.runtime);
-      expect(fs.existsSync(stack.temp.paths.databases.runtime)).toBe(true);
-      expect(fs.existsSync(firstGeneration(stack.temp.paths).locks.runtime)).toBe(true);
-      expect(fs.existsSync(path.join(link, '.momonga'))).toBe(true);
-      expect(fs.lstatSync(path.join(stack.temp.home, '.momonga')).isDirectory()).toBe(true);
-    } finally {
-      await viaLink.close();
-    }
+    const viaLink = await registerOwned(onCleanup, () => startRuntimeProcess({ generation: FIRST_GENERATION, home: link, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream() }));
+    expect(viaLink.ready.socketPath).toBe(firstGeneration(stack.temp.paths).sockets.runtime);
+    expect(fs.existsSync(stack.temp.paths.databases.runtime)).toBe(true);
+    expect(fs.existsSync(firstGeneration(stack.temp.paths).locks.runtime)).toBe(true);
+    expect(fs.existsSync(path.join(link, '.momonga'))).toBe(true);
+    expect(fs.lstatSync(path.join(stack.temp.home, '.momonga')).isDirectory()).toBe(true);
+    await viaLink.close();
     const upper = path.join(path.dirname(stack.temp.home), path.basename(stack.temp.home).toUpperCase());
     if (fs.existsSync(upper)) {
-      const viaCase = await startRuntimeProcess({ generation: FIRST_GENERATION, home: upper, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream() });
-      try {
-        expect(viaCase.ready.socketPath).toBe(generationLayout(stack.temp.home, FIRST_GENERATION).sockets.runtime);
-      } finally {
-        await viaCase.close();
-      }
+      const viaCase = await registerOwned(onCleanup, () => startRuntimeProcess({ generation: FIRST_GENERATION, home: upper, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream() }));
+      expect(viaCase.ready.socketPath).toBe(generationLayout(stack.temp.home, FIRST_GENERATION).sockets.runtime);
     }
   });
 });
@@ -506,7 +499,7 @@ describe('startup cancellation through signal (system timers)', () => {
         if (msg === 'startup.step' && logged === step) controller.abort(reason);
       });
       const stdout = captureStream();
-      const error = await failureOf(startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger, stdout, signal: controller.signal }));
+      const error = await failureOf(registerOwned(onCleanup, () => startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger, stdout, signal: controller.signal })));
       expect(error).toBe(reason);
       expect(stepsLogged(logger).at(-1)).toBe(step);
       expect(stepsLogged(logger, 'teardown.step')).toEqual([...teardown]);
@@ -523,7 +516,7 @@ describe('startup cancellation through signal (system timers)', () => {
       if (msg === 'startup.step' && logged === 'ready') controller.abort(reason);
     });
     const stdout = captureStream();
-    const error = await failureOf(startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger, stdout, signal: controller.signal }));
+    const error = await failureOf(registerOwned(onCleanup, () => startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger, stdout, signal: controller.signal })));
     expect(error).toBe(reason);
     expect(stepsLogged(logger)).toEqual([...STARTUP_STEPS]);
     expect(stepsLogged(logger, 'teardown.step')).toEqual(['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock']);
@@ -561,7 +554,7 @@ describe('startup cancellation through signal (system timers)', () => {
     const logger = hookLogger((logged, msg) => {
       if (msg === 'startup.step' && logged === 'settings') controller.abort(reason);
     });
-    const second = await failureOf(startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger, stdout: captureStream(), signal: controller.signal }));
+    const second = await failureOf(registerOwned(onCleanup, () => startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger, stdout: captureStream(), signal: controller.signal })));
     expect(second).toBe(reason);
     expect(second).not.toBeInstanceOf(ConfigError);
     expect(second).not.toBeInstanceOf(ProcessLockHeldError);

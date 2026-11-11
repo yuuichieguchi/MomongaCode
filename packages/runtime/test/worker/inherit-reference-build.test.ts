@@ -60,7 +60,7 @@ const runCase = async ({ seed, window, autoCompact, heavyRuns }: Case, shape: Sh
     b.started(claim, 'manual');
     for (let step = 0; step < 6; step += 1) {
       b.text(claim, 6_000);
-      b.tool(claim, { outputChars: 1_500, evict: step % 3 === 0, withTokens: false });
+      await b.tool(claim, { outputChars: 1_500, evict: step % 3 === 0, withTokens: false });
     }
     await b.end(claim, { to: 'COMPLETED' });
   }
@@ -165,7 +165,7 @@ describe('known differences of 13.7, pinned as stated', () => {
     const first = b.createRun('Corrupt early', { history: 'fresh' });
     const claim = b.claimNext(first.id);
     b.started(claim, 'manual');
-    const callId = b.tool(claim);
+    const callId = await b.tool(claim);
     for (let step = 0; step < 30; step += 1) b.text(claim, 2_000);
     await b.end(claim, { to: 'COMPLETED' });
     const db = env.raw();
@@ -189,7 +189,7 @@ describe('known differences of 13.7, pinned as stated', () => {
       const first = b.createRun('Write it', { history: 'fresh' });
       const claim = b.claimNext(first.id);
       b.started(claim, 'manual');
-      const callId = b.tool(claim, { evict: true, withTokens: false });
+      const callId = await b.tool(claim, { evict: true, withTokens: false });
       b.text(claim);
       b.compact(claim, 3);
       b.text(claim);

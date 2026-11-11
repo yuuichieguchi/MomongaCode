@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, firstGeneration, registerOwned } from '@momonga/testkit';
 import { FIRST_GENERATION, ensureGenerationDirs, ensureMomongaDirs } from '@momonga/foundation';
 import type { RunServiceOptions } from '@momonga/runtime';
-import { writeUserSettings } from './helpers.ts';
+import { writeUserSettings, onCleanup } from './helpers.ts';
 import {
   RUNTIME_VERSION,
   captureStream,
@@ -159,7 +159,7 @@ describe('shutdown and logging errors (system timers, in-process gateway)', () =
     const flushError = new Error('flush failed during unwind');
     control.flushError = flushError;
     const logger = hookLogger(() => undefined);
-    const error = await failureOf(startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger, stdout: captureStream() }));
+    const error = await failureOf(registerOwned(onCleanup, () => startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger, stdout: captureStream() })));
     expect((error as Error).message).toBe(`${firstGeneration(temp.paths).sockets.runtime} exists and is not a socket`);
     expect(entriesNamed(logger, 'startup.cleanup_failed').map((entry) => entry.fields?.err)).toEqual([flushError]);
     expect(control.shutdowns).toBe(1);

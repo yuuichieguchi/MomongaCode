@@ -101,8 +101,8 @@ describe('R6: what crosses the thread boundary is bounded by W and the item boun
     const h = referenceHarness();
     const b = chainBuilder(h);
     let callId = '';
-    await answeredRun(h, b, 'one', (claim) => {
-      callId = b.tool(claim, { outputChars: 30_000, evict: true });
+    await answeredRun(h, b, 'one', async (claim) => {
+      callId = await b.tool(claim, { outputChars: 30_000, evict: true });
       b.text(claim);
     }, { fresh: true });
     const child = b.createRun('child');

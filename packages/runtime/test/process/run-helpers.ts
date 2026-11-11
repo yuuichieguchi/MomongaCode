@@ -10,11 +10,11 @@ import { startGatewayProcess } from '@momonga/gateway';
 import * as runtime from '@momonga/runtime';
 import type { ServiceTimers } from '@momonga/runtime';
 import type { ShellHost } from '@momonga/tools';
-import { afterMicrotasks, driveFakeTime, fakeUsageOfRequest, modelSettings as settingsOfModels, startFakeChatCompletions, firstGeneration, createTempDir, prepareGenerationForTest, removeTempDir } from '@momonga/testkit';
+import { afterMicrotasks, driveFakeTime, fakeUsageOfRequest, modelSettings as settingsOfModels, startFakeChatCompletions, firstGeneration, createTempDir, prepareGenerationForTest, registerOwned, removeTempDir } from '@momonga/testkit';
 import type { ModelSpec } from '@momonga/testkit';
 
 import type { FakeChatCompletionsOptions, FakeChatCompletionsServer, FakeFixedUsage, FakeResponseHold, FakeTimers, FakeUsageOfRequest } from '@momonga/testkit';
-import { closedAtCleanup, makeLogger, onCleanup, writeUserSettings } from './helpers.ts';
+import { makeLogger, onCleanup, writeUserSettings } from './helpers.ts';
 import type { LogEntry, RecordingLogger } from './helpers.ts';
 import { openEventStream, sendJson } from '../service/helpers.ts';
 import type { EventStream, JsonResponse, RequestInit } from '../service/helpers.ts';
@@ -172,16 +172,13 @@ export const startGateway = async (temp: RunHome, options: StartGatewayOptions =
   await prepareGeneration(temp);
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
   try {
-    const gateway = await closedAtCleanup(startGatewayProcess({
+    await registerOwned(onCleanup, () => startGatewayProcess({
       generation: FIRST_GENERATION,
       home: temp.home,
       env: { ...sessionEnvFor(temp.home), ...options.env },
       version: GATEWAY_VERSION,
       ...(options.logger === undefined ? {} : { logger: options.logger }),
     }));
-    onCleanup(async () => {
-      await gateway.close();
-    });
   } finally {
     stdout.mockRestore();
   }
@@ -277,22 +274,26 @@ export const launchRuntime = async (temp: RunHome, options: LaunchOptions = {}):
   const logger = givenLogger ?? makeLogger();
   const stdout = givenStdout ?? captureStream();
   const values = stopValuesOf(drainTimeoutMs, mcpCloseGraceMs);
-  const started = await startRuntimeProcess({
-    home: temp.home,
-    generation,
-    version: RUNTIME_VERSION,
-    logger,
-    stdout,
-    ...(fakeTimers === undefined ? {} : { timers: fakeTimers }),
-    ...rest,
-  });
-  const handle: RuntimeProcess = { ...started, close: (given = values) => started.close(given), abort: (given = values) => started.abort(given) };
-  onCleanup(async () => {
-    const closing = handle.abort();
-    const clock = rest.clock;
-    if (fakeTimers === undefined || clock === undefined) await closing;
+  const abortAtCleanup = async (process: RuntimeProcess): Promise<void> => {
+    const closing = process.abort(values);
+    if (fakeTimers === undefined || rest.clock === undefined) await closing;
     else await driveUntilSettled(closing, fakeTimers, abortHorizonMs(values), 'the runtime abort at cleanup');
-  });
+  };
+  const started = await registerOwned(
+    onCleanup,
+    () =>
+      startRuntimeProcess({
+        home: temp.home,
+        generation,
+        version: RUNTIME_VERSION,
+        logger,
+        stdout,
+        ...(fakeTimers === undefined ? {} : { timers: fakeTimers }),
+        ...rest,
+      }),
+    abortAtCleanup,
+  );
+  const handle: RuntimeProcess = { ...started, close: (given = values) => started.close(given), abort: (given = values) => started.abort(given) };
   return { handle, logger, stdout, ...clientOf(temp, generation) };
 };
 

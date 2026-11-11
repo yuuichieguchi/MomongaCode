@@ -11,7 +11,7 @@ import type { RunNotifier, SettingsComposition, ToolRuntime } from '@momonga/run
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
-import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, UNCONFIGURED_NETWORK, createFakeClock, closeOnceStarted, createFakeTimers, createTempDir, driveFakeTime, fakeReapTiming, killGroupsForCleanup, modelSettings, removeTempDir, NEVER_CANCELLED } from '@momonga/testkit';
+import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, UNCONFIGURED_NETWORK, createFakeClock, createFakeTimers, createTempDir, driveFakeTime, fakeReapTiming, killGroupsForCleanup, modelSettings, removeTempDir, NEVER_CANCELLED } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { fixedSandboxBindings } from '@momonga/runtime';
@@ -41,11 +41,6 @@ afterEach(async () => {
 });
 
 export const onCleanup = (cleanup: Cleanup): void => void cleanups.push(cleanup);
-
-export const closedAtCleanup = <Handle extends { close: () => Promise<unknown> }>(started: Promise<Handle>): Promise<Handle> => {
-  onCleanup(closeOnceStarted(started));
-  return started;
-};
 
 export type TempHome = { root: string; home: string; paths: MomongaPaths; project: string; dbPath: string };
 

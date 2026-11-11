@@ -632,10 +632,13 @@ describe('candidates of a reflection', () => {
     };
 
     const turn = env.reflector(() => true, env.store, { evidenceRun: () => hangs, attemptTimeoutMs: 40_000, timers }).runOne(SIGNAL);
-    const failure = expect(turn).rejects.toThrow();
-    await started;
-    timers.advance(40_000);
-    await failure;
+    await Promise.all([
+      expect(turn).rejects.toThrow(),
+      (async () => {
+        await started;
+        timers.advance(40_000);
+      })(),
+    ]);
 
     expect(env.api.memories.candidates()).toEqual([]);
     expect(env.api.reflection.get((await run).id)?.state).not.toBe('done');

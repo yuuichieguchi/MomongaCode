@@ -170,8 +170,7 @@ describe('shutdown order and bounds', () => {
   });
 
   it('a startup-timeout stop followed by close() sends one SIGTERM', async (context) => {
-    const h = await startHarness(context, { overrides: { startupTimeoutMs: 1000 } });
-    h.fake.setBehaviour('runtime', { autoReady: false, onTerm: 'ignore' });
+    const h = await startHarness(context, { overrides: { startupTimeoutMs: 1000 }, behaviours: { runtime: { autoReady: false, onTerm: 'ignore' } } });
     await h.waitForState('gateway', 'ready', 10_000);
     await pumpUntil(h.timers, () => h.fake.of('runtime').some((child) => child.signals.length > 0), { realWork: h.realWork, maxMs: 5000 });
     const closing = h.supervisor.close();

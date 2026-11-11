@@ -344,11 +344,14 @@ describe('createManagedServer start', () => {
     const { server, spawn, manual } = setup({
       child: (index) => (index === 0 ? { healthy: false } : {}),
     });
-    const rejected = expect(server.start()).rejects.toMatchObject({ reason: 'unhealthy' });
-    await vi.waitFor(() => expect(children[0]).toBeDefined());
-    await vi.waitFor(() => expect(manual.delays()).toContain(HEALTH_MS));
-    manual.fire(HEALTH_MS);
-    await rejected;
+    await Promise.all([
+      expect(server.start()).rejects.toMatchObject({ reason: 'unhealthy' }),
+      (async () => {
+        await vi.waitFor(() => expect(children[0]).toBeDefined());
+        await vi.waitFor(() => expect(manual.delays()).toContain(HEALTH_MS));
+        manual.fire(HEALTH_MS);
+      })(),
+    ]);
     expect(children[0]?.signals).toEqual(['SIGTERM']);
     expect(children[0]?.alive).toBe(false);
     expect(await server.health(asking())).toMatchObject({ ok: false, reason: 'unhealthy' });
@@ -362,13 +365,16 @@ describe('createManagedServer start', () => {
     const { server, spawn, manual } = setup({
       child: (index) => (index === 0 ? { healthy: false, ignoreSigterm: true } : {}),
     });
-    const rejected = expect(server.start()).rejects.toMatchObject({ reason: 'unhealthy' });
-    await vi.waitFor(() => expect(children[0]).toBeDefined());
-    await vi.waitFor(() => expect(manual.delays()).toContain(HEALTH_MS));
-    manual.fire(HEALTH_MS);
-    await vi.waitFor(() => expect(manual.delays()).toContain(GRACE_MS));
-    manual.fire(GRACE_MS);
-    await rejected;
+    await Promise.all([
+      expect(server.start()).rejects.toMatchObject({ reason: 'unhealthy' }),
+      (async () => {
+        await vi.waitFor(() => expect(children[0]).toBeDefined());
+        await vi.waitFor(() => expect(manual.delays()).toContain(HEALTH_MS));
+        manual.fire(HEALTH_MS);
+        await vi.waitFor(() => expect(manual.delays()).toContain(GRACE_MS));
+        manual.fire(GRACE_MS);
+      })(),
+    ]);
     expect(children[0]?.signals).toEqual(['SIGTERM', 'SIGKILL']);
     await server.start();
     expect(spawn).toHaveBeenCalledTimes(2);
@@ -376,11 +382,14 @@ describe('createManagedServer start', () => {
 
   it('rejects with unhealthy and terminates the child when it never opens the socket', async () => {
     const { server, manual } = setup({ child: { serve: false } });
-    const rejected = expect(server.start()).rejects.toMatchObject({ reason: 'unhealthy' });
-    await vi.waitFor(() => expect(children[0]).toBeDefined());
-    await vi.waitFor(() => expect(manual.delays()).toContain(HEALTH_MS));
-    manual.fire(HEALTH_MS);
-    await rejected;
+    await Promise.all([
+      expect(server.start()).rejects.toMatchObject({ reason: 'unhealthy' }),
+      (async () => {
+        await vi.waitFor(() => expect(children[0]).toBeDefined());
+        await vi.waitFor(() => expect(manual.delays()).toContain(HEALTH_MS));
+        manual.fire(HEALTH_MS);
+      })(),
+    ]);
     expect(children[0]?.signals).toEqual(['SIGTERM']);
   });
 
@@ -410,10 +419,13 @@ describe('createManagedServer start', () => {
   it('terminates the child and rejects start when stop is called while the child is still becoming healthy', async () => {
     const { server, spawn } = setup({ child: { manualServe: true } });
     const starting = server.start();
-    const rejected = expect(starting).rejects.toMatchObject({ reason: 'not_running' });
-    await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
-    await server.stop();
-    await rejected;
+    await Promise.all([
+      expect(starting).rejects.toMatchObject({ reason: 'not_running' }),
+      (async () => {
+        await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
+        await server.stop();
+      })(),
+    ]);
     expect(children[0]?.signals).toEqual(['SIGTERM']);
     expect(await server.health(asking())).toMatchObject({ ok: false, reason: 'not_running' });
     expect(spawn).toHaveBeenCalledTimes(1);
@@ -431,24 +443,29 @@ describe('createManagedServer start', () => {
       },
     });
     const starting = server.start();
-    const rejected = expect(starting).rejects.toMatchObject({ reason: 'not_running' });
-    const stopping = server.stop();
-    release();
-    await stopping;
-    await rejected;
+    await Promise.all([
+      expect(starting).rejects.toMatchObject({ reason: 'not_running' }),
+      (async () => {
+        const stopping = server.stop();
+        release();
+        await stopping;
+      })(),
+    ]);
     expect(spawn).not.toHaveBeenCalled();
   });
 
   it('keeps a start issued while a stop is still settling usable', async () => {
     const { server, spawn } = setup({ child: (index) => (index === 0 ? { manualServe: true } : {}) });
-    const first = server.start();
-    const firstRejected = expect(first).rejects.toMatchObject({ reason: 'not_running' });
-    await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
-    const stopping = server.stop();
-    const second = server.start();
-    await stopping;
-    await firstRejected;
-    await second;
+    await Promise.all([
+      expect(server.start()).rejects.toMatchObject({ reason: 'not_running' }),
+      (async () => {
+        await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
+        const stopping = server.stop();
+        const second = server.start();
+        await stopping;
+        await second;
+      })(),
+    ]);
     expect(spawn).toHaveBeenCalledTimes(2);
     expect(await server.health(asking())).toEqual({ ok: true });
   });
@@ -981,15 +998,18 @@ describe('createManagedServer stops begun outside a close read the stop grace at
         return FILE_GRACE_MS;
       },
     });
-    const rejected = expect(server.start()).rejects.toMatchObject({ reason: 'unhealthy' });
-    await vi.waitFor(() => expect(children[0]).toBeDefined());
-    await vi.waitFor(() => expect(manual.delays()).toContain(HEALTH_MS));
-    manual.fire(HEALTH_MS);
-    await vi.waitFor(() => expect(manual.delays()).toContain(FILE_GRACE_MS));
-    expect(manual.delays()).not.toContain(GRACE_MS);
-    expect(reads).toBe(1);
-    manual.fire(FILE_GRACE_MS);
-    await rejected;
+    await Promise.all([
+      expect(server.start()).rejects.toMatchObject({ reason: 'unhealthy' }),
+      (async () => {
+        await vi.waitFor(() => expect(children[0]).toBeDefined());
+        await vi.waitFor(() => expect(manual.delays()).toContain(HEALTH_MS));
+        manual.fire(HEALTH_MS);
+        await vi.waitFor(() => expect(manual.delays()).toContain(FILE_GRACE_MS));
+        expect(manual.delays()).not.toContain(GRACE_MS);
+        expect(reads).toBe(1);
+        manual.fire(FILE_GRACE_MS);
+      })(),
+    ]);
     expect(children[0]?.signals).toEqual(['SIGTERM', 'SIGKILL']);
   });
 

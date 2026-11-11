@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { StoreIdentityError } from '@momonga/store';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, firstGeneration } from '@momonga/testkit';
-import { START_MS, errnoError } from './helpers.ts';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, firstGeneration, registerOwned } from '@momonga/testkit';
+import { START_MS, errnoError, onCleanup } from './helpers.ts';
 import {
   RUNTIME_VERSION,
   STORE_IDENTITY_CHECK_MS,
@@ -102,7 +102,7 @@ describe('database identity check (fake timers and fake clock, in-process gatewa
       if (msg === 'startup.step' && step === 'timers') replaceFile(stack.temp.paths.databases.runtime);
     });
     const stdout = captureStream();
-    const error = await failureOf(startRuntimeProcess({ generation: FIRST_GENERATION, home: stack.temp.home, version: RUNTIME_VERSION, clock, timers, logger, stdout }));
+    const error = await failureOf(registerOwned(onCleanup, () => startRuntimeProcess({ generation: FIRST_GENERATION, home: stack.temp.home, version: RUNTIME_VERSION, clock, timers, logger, stdout })));
     expect(error).toBeInstanceOf(StoreIdentityError);
     expect(stepsLogged(logger).at(-1)).toBe('ready');
     expect(stepsLogged(logger, 'teardown.step')).toEqual(['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock']);
@@ -156,7 +156,7 @@ describe('database identity check (fake timers and fake clock, in-process gatewa
       if (msg === 'startup.step' && step === 'ready') spy = injectStatFailure(stack.temp.paths.databases.runtime, injected);
     });
     try {
-      const error = await failureOf(startRuntimeProcess({ generation: FIRST_GENERATION, home: stack.temp.home, version: RUNTIME_VERSION, clock, timers, logger, stdout: captureStream() }));
+      const error = await failureOf(registerOwned(onCleanup, () => startRuntimeProcess({ generation: FIRST_GENERATION, home: stack.temp.home, version: RUNTIME_VERSION, clock, timers, logger, stdout: captureStream() })));
       expect(error).toBe(injected);
       expect(error).not.toBeInstanceOf(StoreIdentityError);
     } finally {

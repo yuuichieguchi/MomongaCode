@@ -8,7 +8,7 @@ import type { RunEventPayload } from '@momonga/protocol';
 import { JournalThreadError, createJournalReader, openRuntimeStore } from '@momonga/store';
 import type { Claim, ContributionPreparer, HistoryQueryResult, Run, RuntimeStore, RuntimeStoreOptions, TerminalContribution } from '@momonga/store';
 import { createFakeClock } from '@momonga/testkit';
-import type { FakeClock } from '@momonga/testkit';
+import type { FakeClock, SettledBeforeCleanup } from '@momonga/testkit';
 import { UNASKED_COMMANDS } from './support/unasked.ts';
 
 export { UNASKED_COMMANDS };
@@ -50,7 +50,7 @@ const unexercised = (): Promise<never> => Promise.reject(new JournalThreadError(
 
 export const noJournalFacts = { inheritPlan: unexercised, inheritedWindow: unexercised, verdict: unexercised, evidence: unexercised, reflectionInput: unexercised, fidelity: unexercised, report: unexercised };
 
-const readerReply = <T,>(dbPath: string, read: (reader: ReturnType<typeof createJournalReader>) => T): T => {
+const readerReply = <T,>(dbPath: string, read: (reader: ReturnType<typeof createJournalReader>) => SettledBeforeCleanup<T>): T => {
   const db = openDatabase(dbPath);
   try {
     return read(createJournalReader(db));

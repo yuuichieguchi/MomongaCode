@@ -9,7 +9,7 @@ import { DEFAULT_STOP_VALUES, FIRST_GENERATION, createFileCredentialStore, creat
 import type { UdsClient } from '@momonga/foundation';
 import { saveEndpointRecord, startGatewayProcess } from '@momonga/gateway';
 import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretStore, openResponsesTextReply, registerCleanup, startFakeSiwcAuth, waitFor, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretStore, openResponsesTextReply, registerCleanup, startFakeSiwcAuth, waitFor, withTempDir, registerOwned } from '@momonga/testkit';
 import type { CleanupContext, SiwcAuth } from '@momonga/testkit';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
 import { getJson, userInput, listedEntryOf, listedMembersOf, listedCountersOf } from './gateway-helpers.ts';
@@ -150,7 +150,7 @@ const startRemoteStack = async (
   for (const record of options.records?.(hostId) ?? []) await store.write(`plan/${PROFILE_ID}/${String(record['account'])}`, JSON.stringify(record), new AbortController().signal);
   const settingsWith = (network: Record<string, unknown>) => ({ credentials: { plaintextTokenFiles: true }, models: pinnedTargets(options.accounts), network });
   replaceSettings(home, settingsWith(options.network));
-  const handle = await startGatewayProcess({
+  const handle = await registerOwned(context, () => startGatewayProcess({
     generation: FIRST_GENERATION,
     home,
     env: baseEnv(home),
@@ -158,10 +158,7 @@ const startRemoteStack = async (
     stdout: { write: () => true },
     secretStore: createFakeSecretStore({}),
     planProfiles: { [PROFILE_ID]: options.profile },
-  });
-  registerCleanup(context, async () => {
-    await handle.close(NO_GRACE);
-  });
+  }), (started) => started.close(NO_GRACE));
   const client = createUdsClient(fixedSocket(handle.socketPath));
   registerCleanup(context, () => client.destroy());
   return { home, client, settingsWith };
