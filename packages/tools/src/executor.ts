@@ -182,7 +182,7 @@ export type ToolExecutorOptions = {
 
 export type AbandonTarget = { callId: string; idemKey: string };
 
-export type AbandonOutcome = { idemKey: string; callId: string; outcome: 'unknown' };
+export type AbandonOutcome = { idemKey: string; callId: string; outcome: 'unknown'; command?: string; files?: ToolFile[] };
 
 export type ReleaseTarget = { callId: string; name: string; idemKey: string };
 
@@ -1825,7 +1825,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     } finally {
       idempotency.markUnknownIfPending(target.idemKey);
     }
-    return { idemKey: target.idemKey, callId: target.callId, outcome: 'unknown' };
+    return { idemKey: target.idemKey, callId: target.callId, outcome: 'unknown', ...(lookup === undefined || lookup.s === 'COMPLETED' ? {} : recordedFactsOf(lookup.rec)) };
   };
 
   const abandon = async (targets: readonly AbandonTarget[], { signal }: { signal: AbortSignal }): Promise<AbandonOutcome[]> => {
