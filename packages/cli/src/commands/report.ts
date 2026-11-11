@@ -41,7 +41,7 @@ const CAUSE_TEXT: Record<BudgetExhausted['cause'], string> = {
 
 const figureOf = (dimension: BudgetExhausted['dimension'], value: number): string => (dimension === 'cost' ? usd(value) : dimension === 'time' ? `${value} ms` : String(value));
 
-const stoppedByLine = (stopped: BudgetExhausted): string =>
+export const stoppedByLine = (stopped: BudgetExhausted): string =>
   `stopped by the ${LIMIT_WORDS[stopped.dimension]} limit: ${CAUSE_TEXT[stopped.cause]} (${figureOf(stopped.dimension, stopped.spent)} of ${figureOf(stopped.dimension, stopped.limit)} used or reserved)`;
 
 const HELD_OUTCOME_TEXT = { executed: 'approved and run', rejected: 'rejected', withdrawn: 'withdrawn' } as const;
