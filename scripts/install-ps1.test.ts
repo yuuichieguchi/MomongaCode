@@ -65,6 +65,23 @@ describe('install.ps1', () => {
     expect(source).toContain('(127\\.0\\.0\\.1|localhost|\\[::1\\])(:\\d+)?(/|$)');
   });
 
+  it('reads SHA256SUMS by the rule of install.sh: one leading * marks binary mode and is removed from the name', () => {
+    const source = fs.readFileSync(SCRIPT, 'utf8');
+    expect(source).toContain("($fields[1] -replace '^\\*', '') -eq $assetName");
+    expect(source).not.toContain("TrimStart('*')");
+    expect(fs.readFileSync(`${repoRoot}scripts/install.sh`, 'utf8')).toContain('sub(/^\\*/, "", name)');
+  });
+
+  it('runs the candidate with --version before it is moved into place, and refuses another version than the one asked for', () => {
+    const source = fs.readFileSync(SCRIPT, 'utf8');
+    const check = source.indexOf('$reported = & $candidate --version');
+    const move = source.indexOf('Move-Item -Force -LiteralPath $candidate');
+    expect(check).toBeGreaterThan(0);
+    expect(move).toBeGreaterThan(check);
+    expect(source).toContain('version $($env:MOMONGA_VERSION) was asked for, but the downloaded executable reports version $reported; nothing was installed');
+    expect(source).toContain('the downloaded executable exited with code $LASTEXITCODE for --version; nothing was installed');
+  });
+
   it.runIf(pwshAvailable)('parses without errors under PowerShell', () => {
     const parse = spawnSync(
       'pwsh',
@@ -134,6 +151,7 @@ describe.runIf(pwshAvailable)('install.ps1 under iex in a caller session', () =>
 });
 
 const READ_USER_PATH = "function Read-UserPath { [Environment]::GetEnvironmentVariable('Path', 'User') }";
+const CANDIDATE_CHECK = '$reported = & $candidate --version';
 const WRITE_USER_PATH = "function Write-UserPath([string]$value) { [Environment]::SetEnvironmentVariable('Path', $value, 'User') }";
 
 describe('install.ps1 PATH contract', () => {
@@ -199,13 +217,15 @@ describe.runIf(pwshAvailable)('install.ps1 PATH behaviour under PowerShell', () 
     const text = fs.readFileSync(SCRIPT, 'utf8');
     expect(text).toContain(READ_USER_PATH);
     expect(text).toContain(WRITE_USER_PATH);
+    expect(text).toContain(CANDIDATE_CHECK);
     const directory = fs.mkdtempSync(path.join(root, 'stubbed-'));
     const script = path.join(directory, 'install.ps1');
     fs.writeFileSync(
       script,
       text
         .replace(READ_USER_PATH, `function Read-UserPath { Get-Content -Raw -LiteralPath '${userPathFile}' }`)
-        .replace(WRITE_USER_PATH, `function Write-UserPath([string]$value) { Set-Content -NoNewline -LiteralPath '${userPathFile}' -Value $value }`),
+        .replace(WRITE_USER_PATH, `function Write-UserPath([string]$value) { Set-Content -NoNewline -LiteralPath '${userPathFile}' -Value $value }`)
+        .replace(CANDIDATE_CHECK, "$reported = '1.0.0'; $global:LASTEXITCODE = 0"),
     );
     return script;
   };

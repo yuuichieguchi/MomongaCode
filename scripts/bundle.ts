@@ -65,7 +65,7 @@ const bundlePlugins: Plugin[] = [
   },
 ];
 
-const bundleThread = async (name: string, entry: string): Promise<string> => {
+export const bundleThreadOf = async (name: string, entry: string): Promise<string> => {
   const result = await build({
     entryPoints: [entry],
     absWorkingDir: repoRoot,
@@ -75,7 +75,7 @@ const bundleThread = async (name: string, entry: string): Promise<string> => {
     format: 'cjs',
     target: 'node24',
     bundle: true,
-    legalComments: 'none',
+    legalComments: 'eof',
     plugins: bundlePlugins,
     logLevel: 'error',
   });
@@ -95,13 +95,13 @@ const writeThreadModule = (modulePath: string, constant: string, code: string): 
   }
 };
 
-export const bundleJournalThread = (): Promise<string> => bundleThread('journal-thread', journalThreadEntry);
+export const bundleJournalThread = (): Promise<string> => bundleThreadOf('journal-thread', journalThreadEntry);
 
 export const writeJournalThreadModule = async (modulePath: string = journalThreadModule): Promise<void> => {
   writeThreadModule(modulePath, 'JOURNAL_THREAD_CODE', await bundleJournalThread());
 };
 
-export const bundleRuleVerifierThread = (): Promise<string> => bundleThread('rule-verifier-thread', ruleVerifierThreadEntry);
+export const bundleRuleVerifierThread = (): Promise<string> => bundleThreadOf('rule-verifier-thread', ruleVerifierThreadEntry);
 
 export const writeRuleVerifierThreadModule = async (modulePath: string = ruleVerifierThreadModule): Promise<void> => {
   writeThreadModule(modulePath, 'RULE_VERIFIER_THREAD_CODE', await bundleRuleVerifierThread());
