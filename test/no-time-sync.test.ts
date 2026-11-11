@@ -28,6 +28,7 @@ const KEPT: Readonly<Record<string, Kept>> = {
   'packages/store/test/search-incremental.test.ts': { kinds: { 'timer wait': 1 }, reason: 'the case proves the indexing does not block the event loop: a turn that runs while the work is pending is the event' },
   'packages/supervisor/test/entry-slow-fs.test.ts': { kinds: { 'timer wait': 1 }, reason: 'the latency of the slow file system is real time by design: the case shows the pump of the harness waits for real I/O' },
   'packages/supervisor/test/p3-harness-pump.test.ts': { kinds: { 'timer wait': 2 }, reason: 'the subject is the pump of the harness against real timers and real I/O' },
+  'test/no-time-sync.test.ts': { kinds: { 'holder that ends by itself': 2 }, reason: 'the two holder fixtures are the texts the scan itself is tested with' },
   'packages/testkit/test/drive-fake-time.test.ts': { kinds: { 'wall-clock reading': 3 }, reason: 'the subject is the fake-time driver; its real-time deadline is the property under test' },
 };
 
@@ -37,8 +38,12 @@ const BURN_DOWN: Readonly<Record<string, BurnDown>> = {
   'e2e/support/stack.ts': { kinds: { 'wall-clock reading': 1 }, owner: 'tests-W7: C-e2e-bodies (wall-clock asserts) and C-waits (the e2e bounds list)' },
   'e2e/support/wait.ts': { kinds: { 'timer wait': 2, 'wall-clock reading': 1 }, owner: 'tests-W7: C-e2e-bodies (wall-clock asserts) and C-waits (the e2e bounds list)' },
   'packages/cli/test/fake-plan-gateway.tsx': { kinds: { 'timer wait': 1 }, owner: 'tests-W4 remainder: quiet() of the sign-in screens (about 70 sites)' },
+  'packages/cli/test/keychain-fixture.ts': { kinds: { 'timer wait': 1 }, owner: 'tests-W4: the fake keychain answers after a turn of the real setImmediate beside faked timeouts; it answers when the product asked' },
+  'packages/cli/test/network-trust-bound.test.ts': { kinds: { 'timer wait': 3 }, owner: 'tests-W4: real turns beside faked timeouts; the case waits for the read it names' },
   'packages/config/test/append-rule.test.ts': { kinds: { 'timer wait': 1 }, owner: 'tests-W4 remainder: the second save must be seen waiting behind the first before the stop; the in-process queue of the settings save shows no event (owner of the event: config)' },
   'packages/config/test/edit-models-settings.test.ts': { kinds: { 'timer wait': 1 }, owner: 'tests-W4 remainder: the edit must be seen waiting at the held lock before the file is changed by hand; the lock wait shows no event (owner of the event: config)' },
+  'packages/foundation/test/daemon-entry-stage-d.test.ts': { kinds: { 'timer wait': 1 }, owner: 'tests-W4: settle() of ten real turns; each waits for the named state of the entry' },
+  'packages/foundation/test/daemon-entry.test.ts': { kinds: { 'timer wait': 1 }, owner: 'tests-W4: settle() of ten real turns; each waits for the named state of the entry' },
   'packages/foundation/test/platform/linux-real-processes.test.ts': { kinds: { 'timer wait': 1, 'wall-clock reading': 1 }, owner: 'tests-W4 remainder, Linux container: the agent must be older than the marker by a clock tick, and the probe that succeeds at once is measured on the wall clock because the Linux inspector takes no timing' },
   'packages/foundation/test/support/probe-fakes.ts': { kinds: { 'timer wait': 1 }, owner: 'tests-W4 remainder: the virtual timing of the probe fakes is restated on FakeTimers.advanceAsync' },
   'packages/foundation/test/support/secret-store-fakes.ts': { kinds: { 'timer wait': 1 }, owner: 'tests-W4 remainder: the turn of the secret store fakes is used by 56 sites of the secret store tests; each waits for the call it names' },
@@ -46,6 +51,8 @@ const BURN_DOWN: Readonly<Record<string, BurnDown>> = {
   'packages/gateway/test/gateway-process-helpers.ts': { kinds: { 'timer wait': 1 }, owner: 'gateway-accounts: the negatives of fm-groups (a survivor still alive, a marker still there) and of auto-probe-endpoints (the probe waits at the record lock) pause; the reap and the lock wait show no event' },
   'packages/gateway/test/managed/managed-server.test.ts': { kinds: { 'timer wait': 1 }, owner: 'gateway-accounts: the second start that waits at the lock of the first shows no event' },
   'packages/gateway/test/settings-live-gateway.test.ts': { kinds: { 'timer wait': 2 }, owner: 'gateway: a request waiting at the carried gate shows no event; the gate has no count of waiters a test can read' },
+  'packages/mcp/test/call-bounds.test.ts': { kinds: { 'timer wait': 1 }, owner: 'tests-W4: a real sleep outside the one case that fakes the timers' },
+  'packages/mcp/test/credential-store-fakes.ts': { kinds: { 'timer wait': 1 }, owner: 'tests-W4: the fake store answers after a turn of the real setImmediate beside faked timeouts; it answers when the product asked' },
   'packages/mcp/test/stdio-transport.test.ts': { kinds: { 'timer wait': 1 }, owner: 'mcp: the quiet window after the close, in which an escaped grandchild writes to pipes nobody reads, has no event on the side of the transport' },
   'packages/runtime/test/process/cancel-recovery.test.ts': { kinds: { 'holder that ends by itself': 2 }, owner: 'tests-W4: the holders run through the product sandbox, which ends them' },
   'packages/testkit/test/fake-chat-completions-hold.test.ts': { kinds: { 'timer wait': 1 }, owner: 'tests-W7 (fake-chat-completions): a held request is shown pending by twenty turns' },
@@ -57,7 +64,6 @@ const BURN_DOWN: Readonly<Record<string, BurnDown>> = {
   'packages/tools/test/executor-review-2c.test.ts': { kinds: { 'timer wait': 1 }, owner: 'tools: the concurrent read is held by a real sleep so the Write is deferred behind it; the order has no event of the executor' },
   'test/formal/runner.ts': { kinds: { 'timer wait': 1 }, owner: 'tests-W11 (formal tier): the CPU budget poll of the TLC runner' },
   'test/formal/tlc.test.ts': { kinds: { 'wall-clock reading': 2, 'timer wait': 2 }, owner: 'tests-W11 (formal tier): the CPU budget against wall seconds is the subject' },
-  'test/no-time-sync.test.ts': { kinds: { 'holder that ends by itself': 2 }, owner: 'tests-W4: the two holder fixtures are the texts the scan is tested with' },
 };
 
 const FOUND = timeSyncOfTests();
@@ -78,6 +84,10 @@ describe('no test synchronises on time: it waits on the event, the journal entry
     ['a wall-clock difference', 'const t0 = Date.now();\nawait work;\nexpect(Date.now() - t0).toBeLessThan(100);', 'wall-clock reading'],
     ['a wall-clock deadline', 'while (!done() && Date.now() < deadline) await step();', 'wall-clock reading'],
     ['a monotonic difference', 'expect(performance.now() - started).toBeLessThan(10);', 'wall-clock reading'],
+    ['a host timer vitest leaves real beside its faked timeouts', "vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });\nawait new Promise((resolve) => setImmediate(resolve));", 'timer wait'],
+    ['the promise timers of node beside the faked host timers', "import { setImmediate as nextTurn } from 'node:timers/promises';\nvi.useFakeTimers();\nawait nextTurn();", 'timer wait'],
+    ['a wall-clock comparison vitest leaves real beside its faked timeouts', "vi.useFakeTimers({ toFake: ['setTimeout'] });\nexpect(Date.now() - t0).toBeLessThan(100);", 'wall-clock reading'],
+    ['a host timer of a helper beside timers faked in one case only', "const sleep = () => new Promise((resolve) => setTimeout(resolve, 40));\nit('fakes', () => { vi.useFakeTimers(); });", 'timer wait'],
     ['a holder that ends by itself beside a fake clock', "const clock = createFakeClock(0);\nspawn('/bin/sh', ['-c', 'exec /bin/sleep 30']);", 'holder that ends by itself'],
   ])('refuses %s', (_form, text, kind) => {
     expect(counted(text)).toEqual({ [kind]: 1 });
@@ -91,6 +101,9 @@ describe('no test synchronises on time: it waits on the event, the journal entry
     ['a holder that waits for its signal', "spawn('/bin/sh', ['-c', 'exec /usr/bin/tail -f /dev/null']);"],
     ['a sleep in a script beside no fake clock', "spawn('/bin/sh', ['-c', 'exec /bin/sleep 30']);"],
     ['a timer of the faked host timers of vitest', 'vi.useFakeTimers();\nawait new Promise((resolve) => setTimeout(resolve, 5));'],
+    ['a timer vitest fakes by name', "vi.useFakeTimers({ toFake: ['setImmediate'] });\nawait new Promise((resolve) => setImmediate(resolve));"],
+    ['a timer inside the case that fakes it', "it('waits', async () => { vi.useFakeTimers(); await new Promise((resolve) => setTimeout(resolve, 5)); });"],
+    ['a timer of a helper beside timers faked for every case', "beforeEach(() => { vi.useFakeTimers(); });\nconst sleep = () => new Promise((resolve) => setTimeout(resolve, 40));"],
     ['the forbidden forms in a string', "const fixture = 'await new Promise((resolve) => setTimeout(resolve, 5)); Date.now() - t0';"],
   ])('accepts %s', (_form, text) => {
     expect(counted(text)).toEqual({});
