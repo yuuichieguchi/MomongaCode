@@ -3,7 +3,7 @@ import type { McpServerEntry, SettingsUse, UserLayer } from '@momonga/config';
 import { AUTHORIZATION_WAIT_MS, CredentialStoreError, canonicalJson, nodeFileSystem, sha256Hex } from '@momonga/foundation';
 import type { Clock, JsonLogger } from '@momonga/foundation';
 import { McpAuthorizationError } from '@momonga/mcp';
-import type { McpAuthorizingPool, McpMarkerOptions, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
+import type { McpAuthorizingPool, McpMarkerOptions, McpPoolOptions, McpRemotePorts, StdioLaunch } from '@momonga/mcp';
 import type { McpAuthorizationView, McpServerView } from '@momonga/protocol';
 import type { RuntimeStore, Session } from '@momonga/store';
 import type { ToolEnv } from '../ports.ts';
@@ -50,6 +50,7 @@ export type McpAdminOptions = {
   readCloseGraceMs(): number;
   readConnectTimeoutMs(): number | undefined;
   markers?: McpMarkerOptions;
+  launch: StdioLaunch;
   onAuthorizationEnded?: () => void;
 };
 
@@ -115,6 +116,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
       projectDir: session.cwd,
       baseEnv: { ...env },
       files: nodeFileSystem,
+      launch: options.launch,
       clock,
       clientVersion: options.clientVersion,
       timers: options.timers,

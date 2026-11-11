@@ -5,7 +5,7 @@ import { McpAuthorizationError } from '@momonga/mcp';
 import type { McpAuthProbe, McpAuthorizingPool, McpPoolOptions } from '@momonga/mcp';
 import { createMcpAdmin } from '@momonga/runtime';
 import type { McpAdmin } from '@momonga/runtime';
-import { createFakeClock, createFakeTimers, unconfiguredDerivedNetworkOf } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, unconfiguredDerivedNetworkOf, TEST_STDIO_LAUNCH } from '@momonga/testkit';
 import { POOL_IDLE_CLOSE_MS, START_MS, createSession, makeCache, makeLogger, makeReporter, makeTempHome, openStore, writeUserSettings } from './helpers.ts';
 
 const REMOTE_URL = 'https://mcp.example.test/mcp';
@@ -74,7 +74,7 @@ const setup = async () => {
   const created: McpPoolOptions[] = [];
   const plan: ProbePlan = { next: { state: 'required' } };
   const ended = { count: 0 };
-  const admin: McpAdmin = createMcpAdmin({
+  const admin: McpAdmin = createMcpAdmin({ launch: TEST_STDIO_LAUNCH,
     onAuthorizationEnded: () => {
       ended.count += 1;
     },

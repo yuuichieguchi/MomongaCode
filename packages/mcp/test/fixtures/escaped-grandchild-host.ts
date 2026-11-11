@@ -1,10 +1,11 @@
+import { TEST_STDIO_LAUNCH } from '@momonga/testkit';
 import { nodeFileSystem } from '@momonga/foundation';
 import { createStdioTransport } from '../../src/index.ts';
 
 const [fixturePath, readyFile, projectDir] = process.argv.slice(2);
 if (fixturePath === undefined || readyFile === undefined || projectDir === undefined) throw new Error('usage: host <fixture> <readyFile> <projectDir>');
 
-const transport = createStdioTransport({ files: nodeFileSystem,
+const transport = createStdioTransport({ launch: TEST_STDIO_LAUNCH, files: nodeFileSystem,
   name: 'escaped',
   config: { command: process.execPath, args: [fixturePath] },
   projectDir,
