@@ -121,6 +121,7 @@ export type ReconcileContext = SubjectContext & {
   random: Random;
   files: FileSystem;
   jobs?: BackgroundJobs;
+  patternCheckLimitMs?: number;
   session: ToolSessionState;
   attachProcess(process: { pgid: number; startedAt: number }): Promise<void>;
   update(content: ToolContent[]): void;
