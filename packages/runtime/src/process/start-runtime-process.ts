@@ -608,7 +608,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     cleanups.push({ name: 'gateway-client', run: () => gatewayClient.destroy() });
 
     const ports = await step('ports', async () => {
-      const composition = createSettingsComposition({ home: canonicalHome, platform, cache, store, lock: kernelLock, signal: lifetime.signal });
+      const composition = createSettingsComposition({ home: canonicalHome, platform, cache, store, lock: kernelLock });
       const runtime: ToolRuntime = createToolRuntime({
         version,
         owners: markerOwners,
@@ -750,7 +750,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         sessionReadSettings: settingsComposition.sessionReadSettings,
         skills: skillsPort,
         agents: agentsPort,
-        permissionRules: (session, requestSignal) => settledOrAborted(permissionRulesFor({ store, settings: settingsComposition.settings, clock, home: canonicalHome }, session), requestSignal),
+        permissionRules: (session, requestSignal) => permissionRulesFor({ store, settings: settingsComposition.settings, clock, home: canonicalHome }, session, requestSignal),
         userInput: createUserInputPort({
           tools: toolRuntime.port,
           policy: toolRuntime.userPolicy,
@@ -906,7 +906,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         pageRows: MEMORY_PAGE_ROWS,
         passIntervalMs: DAY_MS,
         forgetAfterDays: async (project) =>
-          (project === null ? settingsComposition.takeUserSnapshot().settings.memory : await settingsComposition.settings.memory({ cwd: project })).forgetAfterDays,
+          (project === null ? settingsComposition.takeUserSnapshot().settings.memory : await settingsComposition.settings.memory({ cwd: project }, lifetime.signal)).forgetAfterDays,
         onSkipped: (project) => logger.warn(`memory upkeep skipped the project ${project}: the folder no longer exists`),
       });
       const sweepStop = new AbortController();

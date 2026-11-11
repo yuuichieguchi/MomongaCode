@@ -47,15 +47,15 @@ export type AppendedRule = { effect: 'allow' | 'deny'; rule: string };
 export type TargetFacts = { adapter: string; model: string; answers?: TargetAnswers };
 
 export type SettingsPort = {
-  rules(session: Session): Promise<PermissionRule[]>;
-  hooks(session: Session): Promise<HooksSettings>;
-  verification(session: Session): Promise<ResolvedVerificationSettings>;
-  memory(target: Pick<Session, 'cwd'>): Promise<ResolvedMemorySettings>;
-  context(session: Session): Promise<ResolvedContextSettings>;
-  tools(session: Session): Promise<ResolvedToolsSettings>;
+  rules(session: Session, signal: AbortSignal): Promise<PermissionRule[]>;
+  hooks(session: Session, signal: AbortSignal): Promise<HooksSettings>;
+  verification(session: Session, signal: AbortSignal): Promise<ResolvedVerificationSettings>;
+  memory(target: Pick<Session, 'cwd'>, signal: AbortSignal): Promise<ResolvedMemorySettings>;
+  context(session: Session, signal: AbortSignal): Promise<ResolvedContextSettings>;
+  tools(session: Session, signal: AbortSignal): Promise<ResolvedToolsSettings>;
   autoModeClassifier(): string | undefined;
   appendRule(session: Session, entry: AppendedRule, signal: AbortSignal): Promise<void>;
-  trusted(session: Session): Promise<boolean>;
+  trusted(session: Session, signal: AbortSignal): Promise<boolean>;
 };
 
 export type AttachTerms = { ceiling: number; imageInput: boolean; signal: AbortSignal };
@@ -90,13 +90,13 @@ export type MemoryPort = {
 export type GovernanceSet = { tools: readonly AnyTool[] };
 
 export type GovernancePort = {
-  load(session: Session): Promise<GovernanceSet>;
+  load(session: Session, signal: AbortSignal): Promise<GovernanceSet>;
 };
 
 export type HistorySet = { tools: readonly AnyTool[] };
 
 export type HistoryPort = {
-  load(session: Session): Promise<HistorySet>;
+  load(session: Session, signal: AbortSignal): Promise<HistorySet>;
 };
 
 export type AgentCatalogPort = { load(session: Session, signal: AbortSignal): Promise<AgentSet> };

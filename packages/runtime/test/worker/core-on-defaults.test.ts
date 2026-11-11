@@ -22,7 +22,7 @@ const defaultsEnv = async (): Promise<Env> => {
 describe('the token pin under the shipped defaults (design core-on 1, test 4)', () => {
   it('pins every on key for a new root run, and a run recorded without a token pin still recovers with every key off', async () => {
     const settings = { context: async () => defaultContextSettings(), tools: async () => defaultToolsSettings() };
-    const pin = await tokenPinFor({ store: { readRunEventsOfTypes: () => [] }, settings, session: SESSION, run: ROOT_RUN });
+    const pin = await tokenPinFor({ signal: new AbortController().signal, store: { readRunEventsOfTypes: () => [] }, settings, session: SESSION, run: ROOT_RUN });
 
     expect(pin).toEqual({ cachePrefix: true, conciseDescriptions: true, outputFormatters: EVERY_FORMATTER, loopGuidance: true, observedCapacity: true });
     expect(tokenPolicyOf(undefined)).toEqual({ cachePrefix: false, conciseDescriptions: false, loopGuidance: false, observedCapacity: false, outputFormatters: [], deferred: undefined });

@@ -18,7 +18,8 @@ export const runRulesFor = async (
   options: Parameters<typeof permissionRulesFor>[0],
   session: HeldSession,
   delegation: Pick<Delegation, 'rules'> | undefined,
-): Promise<PermissionRule[]> => [...(await permissionRulesFor(options, session)), ...(delegation?.rules ?? [])];
+  signal: AbortSignal,
+): Promise<PermissionRule[]> => [...(await permissionRulesFor(options, session, signal)), ...(delegation?.rules ?? [])];
 
 export type RuleVerdictSources = { options: Pick<WorkerOptions, 'store' | 'home' | 'ruleVerifier'>; control: Pick<ClaimControl, 'signal' | 'recordingRaised'> };
 
@@ -46,7 +47,7 @@ export const ruleVerdictAtStart = async (sources: StartVerdictSources, session: 
   const { options, control } = sources;
   const held = await holdSandbox(options.tools.sandboxes, control.signal);
   try {
-    const rules = await runRulesFor(options, session, sources.delegation);
+    const rules = await runRulesFor(options, session, sources.delegation, control.signal);
     const policy = await options.tools.policyFor(session, { env: sources.env, rules, readableDirectories: sources.readableDirectories, ruleEnforcement: held.ruleEnforcement, signal: control.signal, discoverGitConfig: true });
     return await ruleVerdictFor(sources, session, { rules, roots: policy.roots, enforcement: held.ruleEnforcement });
   } finally {

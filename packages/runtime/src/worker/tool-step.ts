@@ -291,14 +291,14 @@ export const settleHeld = async (ctx: ClaimContext): Promise<Flow | number> => {
 const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSession, calls: ToolCall[], step: number, lateBatch?: LateBatch): Promise<Flow> => {
   const { options, journal, run } = ctx;
   const late = lateBatch !== undefined;
-  const rules = await runRulesFor(options, session, ctx.delegation);
+  const rules = await runRulesFor(options, session, ctx.delegation, ctx.control.signal);
   const policy = await options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories, ruleEnforcement: held.ruleEnforcement, signal: ctx.control.signal, discoverGitConfig: true });
   const verdict = await ruleVerdictFor(ctx, session, { rules, roots: policy.roots, enforcement: held.ruleEnforcement });
   const laterVerdict = laterVerdictNotice(journal.state, ctx.policyFingerprint, verdict);
   if (laterVerdict.length > 0) journal.append(laterVerdict);
   const refusal = policyRefusal(verdict);
   if (refusal !== undefined) return ctx.terminals.finish('FAILED', { error: refusal });
-  const hookSettings = await options.settings.hooks(session);
+  const hookSettings = await options.settings.hooks(session, ctx.control.signal);
   const hasToolHooks = hookSettings.PreToolUse !== undefined || hookSettings.PostToolUse !== undefined;
   const toolHooks = hasToolHooks
     ? createToolHooks(
@@ -332,7 +332,7 @@ const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSes
       sandboxPolicy: policy.sandboxPolicy,
       ...(policy.sandboxNetwork === undefined ? {} : { sandboxNetwork: policy.sandboxNetwork }),
       ripgrep: options.tools.ripgrepLocator(policy.env),
-      workTreeObserver: options.tools.workTreeObserver(session, await options.settings.trusted(session)),
+      workTreeObserver: options.tools.workTreeObserver(session, await options.settings.trusted(session, ctx.control.signal)),
       windowShared: ctx.windowShared,
       deadlineAt: run.deadlineAt,
       signal: ctx.control.signal,

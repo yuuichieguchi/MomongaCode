@@ -204,7 +204,7 @@ const offeredInputOf = async (
     recordedReferences: recordedReferencesOf(ctx),
     ...(ctx.memoryShare === undefined ? {} : { memoryShare: ctx.memoryShare }),
     touchedPaths: ctx.touched.probes.witnesses(),
-    trusted: await options.settings.trusted(session),
+    trusted: await options.settings.trusted(session, ctx.control.signal),
     projectRoot: session.cwd,
     home: options.home,
     level,

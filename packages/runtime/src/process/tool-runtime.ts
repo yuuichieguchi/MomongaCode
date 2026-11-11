@@ -218,7 +218,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
 
     let acquiredHere = false;
     try {
-      const loaded = await settings.loadSessionSettings(session.cwd, snapshot);
+      const loaded = await settings.loadSessionSettings(session.cwd, snapshot, signal);
       const mcp = await loadSessionMcpServers({ home, settings }, session, env, snapshot.user, 'read', signal);
       const sources: McpPool['sources'] = [];
       if (mcp.enabled.length > 0) {

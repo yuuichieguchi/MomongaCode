@@ -38,9 +38,9 @@ const shareFromWindow = async (store: RuntimeStore, project: string): Promise<nu
   return nextMemoryShare({ previous, runs: recent.filter((entry) => entry.share === previous).map((entry) => entry.window) });
 };
 
-export const memoryShareFor = async (input: { store: RuntimeStore; settings: Pick<SettingsPort, 'context'>; session: Session; run: Run }): Promise<number | undefined> => {
-  const { store, settings, session, run } = input;
+export const memoryShareFor = async (input: { store: RuntimeStore; settings: Pick<SettingsPort, 'context'>; session: Session; run: Run; signal: AbortSignal }): Promise<number | undefined> => {
+  const { store, settings, session, run, signal } = input;
   if (run.parentRunId !== null) return shareOfParent(store, run.parentRunId);
-  if (!(await settings.context(session)).adaptiveBudget) return undefined;
+  if (!(await settings.context(session, signal)).adaptiveBudget) return undefined;
   return shareFromWindow(store, session.cwd);
 };

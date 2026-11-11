@@ -18,7 +18,7 @@ const toolsFor = async (store: RuntimeStore, session: Session, rules: RulesOf = 
     trusted: async (candidate: Session) => (await store.trust.decisionAsked(candidate.cwd, NEVER_CANCELLED)).decision === 'trusted',
     rules: async (candidate: Session) => (typeof rules === 'function' ? rules(candidate.cwd) : rules),
   };
-  return (await createHistoryPort({ store, settings, clock, home: '/home/user', redactor, enforcement: () => ruleEnforcementOf('none') }).load(session)).tools as AnyTool[];
+  return (await createHistoryPort({ store, settings, clock, home: '/home/user', redactor, enforcement: () => ruleEnforcementOf('none') }).load(session, new AbortController().signal)).tools as AnyTool[];
 };
 
 const execute = async (tools: AnyTool[], name: string, input: unknown, runId = 'current'): Promise<ToolResult> => {

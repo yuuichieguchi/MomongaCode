@@ -28,7 +28,7 @@ const compositionWithAManagedClassifier = async (): Promise<{ composition: runti
   const binary = path.join(makeDir(f.temp.home, 'bin'), 'fm');
   fs.writeFileSync(binary, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   writeUserSettings(f.temp.home, { autoMode: { classifier: 'system' }, models: { connections: [{ adapter: 'managed', server: 'fm', binary, models: [{ id: 'system', toolCalling: 'native' }] }] } });
-  const composition = runtime.createSettingsComposition({ lock: testKernelLock(), signal: new AbortController().signal, home: f.temp.home, platform: 'darwin', cache: makeCache(f.temp.home), store: f.store });
+  const composition = runtime.createSettingsComposition({ lock: testKernelLock(), home: f.temp.home, platform: 'darwin', cache: makeCache(f.temp.home), store: f.store });
   return { composition, project: f.temp.project };
 };
 

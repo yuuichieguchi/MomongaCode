@@ -67,7 +67,7 @@ export const createUserInputPort = ({ tools, policy, store, settings, clock, hom
     const held = await holdSandbox(tools.sandboxes, signal);
     try {
       const env = await tools.envFor(session, signal);
-      const rules = await permissionRulesFor({ store, settings, clock, home }, session);
+      const rules = await permissionRulesFor({ store, settings, clock, home }, session, signal);
       const policy = await tools.policyFor(session, { env, rules, ruleEnforcement: held.ruleEnforcement, signal });
       return { home, roots: policy.roots, tmpDir: policy.tmpDir, env, session: tools.sessionState(session), signal, rules, sandboxPolicy: policy.sandboxPolicy };
     } finally {
@@ -78,7 +78,7 @@ export const createUserInputPort = ({ tools, policy, store, settings, clock, hom
   return {
     attach: async (session, text, { ceiling, imageInput, signal }) => {
       const facts = await factsFor(session, signal);
-      const trusted = await settings.trusted(session);
+      const trusted = await settings.trusted(session, signal);
       const host: AttachHost = {
         ceiling,
         imageInput,
