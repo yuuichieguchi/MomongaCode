@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { OperationLimitError, StoreCallEndedError } from '@momonga/foundation';
 import { KEYCHAIN_BACKEND } from '@momonga/foundation/secret-store';
 import { McpAuthorizationError } from '@momonga/mcp';
@@ -71,7 +71,11 @@ const setup = async () => {
   const reporter = makeReporter();
   const pools: FakeAuthPool[] = [];
   const plan: ProbePlan = { next: { state: 'required' } };
+  const ended = { count: 0 };
   const admin: McpAdmin = createMcpAdmin({
+    onAuthorizationEnded: () => {
+      ended.count += 1;
+    },
     home: temp.home,
     store,
     clock,
@@ -97,7 +101,7 @@ const setup = async () => {
       return pool;
     },
   });
-  return { admin, session, pools, plan, timers, reporter };
+  return { admin, session, pools, plan, timers, reporter, ended };
 };
 
 const controllerSignal = (): AbortSignal => new AbortController().signal;
@@ -290,5 +294,35 @@ describe('createMcpAdmin authorization', () => {
     await admin.close(CLOSE_GRACE_MS);
 
     expect(admin.authorization(session.id, 'remote')).toMatchObject({ status: 'failed', failure: { message: 'the authorization of MCP server "remote" failed: the runtime is shutting down' } });
+  });
+});
+
+describe('createMcpAdmin counts the authorizations that wait for the person', () => {
+  it('counts an attempt from its start until the person answers, and tells its owner when it ends', async () => {
+    const { admin, session, pools, ended } = await setup();
+    expect(admin.pendingAuthorizations()).toBe(0);
+
+    await admin.startAuthorization(session.id, 'remote', controllerSignal());
+
+    expect(admin.pendingAuthorizations()).toBe(1);
+    expect(ended.count).toBe(0);
+    pools.at(-1)?.finishAuthorization();
+    await vi.waitFor(() => expect(admin.authorization(session.id, 'remote')?.status).toBe('completed'));
+    expect(admin.pendingAuthorizations()).toBe(0);
+    await vi.waitFor(() => expect(ended.count).toBe(1));
+  });
+
+  it('an attempt that fails or is cancelled no longer counts', async () => {
+    const { admin, session, pools, ended } = await setup();
+    await admin.startAuthorization(session.id, 'remote', controllerSignal());
+    pools.at(-1)?.failAuthorization(new McpAuthorizationError('denied', 'the person refused'));
+    await vi.waitFor(() => expect(ended.count).toBe(1));
+    expect(admin.pendingAuthorizations()).toBe(0);
+
+    await admin.startAuthorization(session.id, 'remote', controllerSignal());
+    expect(admin.pendingAuthorizations()).toBe(1);
+    expect(admin.cancelAuthorization(session.id, 'remote')).toBe(true);
+    await vi.waitFor(() => expect(ended.count).toBe(2));
+    expect(admin.pendingAuthorizations()).toBe(0);
   });
 });

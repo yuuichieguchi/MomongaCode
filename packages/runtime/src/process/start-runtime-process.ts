@@ -122,7 +122,7 @@ import type { TeardownStep } from './teardown.ts';
 import { sweepSessionTmp, sweepSpawnTmp } from './tmp-sweep.ts';
 import { reapToolMarkers } from './tool-markers.ts';
 import { createToolRuntime } from './tool-runtime.ts';
-import type { ToolRuntime } from './tool-runtime.ts';
+import type { ToolRuntime, ToolRuntimeOptions } from './tool-runtime.ts';
 
 export type StartRuntimeProcessOptions = {
   home: string;
@@ -144,6 +144,7 @@ export type StartRuntimeProcessOptions = {
   ruleSolver?: RuleSolverSource;
   role?: RolePort;
   requestShutdown?: () => void;
+  createAdminPool?: ToolRuntimeOptions['createAdminPool'];
 };
 
 export type BundledRipgrepSource = (paths: Pick<MomongaPaths, 'executables'>) => BundledRipgrepResolver;
@@ -591,6 +592,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         generation: options.generation,
         role: rolePort,
         onJobSettled: () => onWorkEnded(),
+        onAuthorizationEnded: () => onWorkEnded(),
+        ...(options.createAdminPool === undefined ? {} : { createAdminPool: options.createAdminPool }),
         home: canonicalHome,
         store,
         notifier,
@@ -988,7 +991,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       let announcedRetiring = false;
       const checkRetireExit = (): void => {
         if (phase !== 'running' || lifecycle !== undefined || rolePort.current() !== 'retiring') return;
-        if (stepsInFlight() > 0 || toolRuntime.jobs.liveCount() > 0 || requireService().openRequests() > 0) return;
+        if (stepsInFlight() > 0 || toolRuntime.jobs.liveCount() > 0 || toolRuntime.mcpAdmin.pendingAuthorizations() > 0 || requireService().openRequests() > 0) return;
         requireService().stopListening();
         logger.info('generation.retired', { data: { generation: options.generation } });
         lifecycle = retire(sharedPaths);

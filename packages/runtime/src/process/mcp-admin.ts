@@ -18,6 +18,7 @@ export type McpAdmin = {
   startAuthorization(sessionId: string, name: string, signal: AbortSignal): Promise<McpAuthorizationView>;
   authorization(sessionId: string, name: string): McpAuthorizationView | undefined;
   cancelAuthorization(sessionId: string, name: string): boolean;
+  pendingAuthorizations(): number;
   close(graceMs: number): Promise<void>;
 };
 
@@ -34,6 +35,7 @@ export type McpAdminOptions = {
   readCloseGraceMs(): number;
   readConnectTimeoutMs(): number | undefined;
   markers?: McpMarkerOptions;
+  onAuthorizationEnded?: () => void;
 };
 
 type ProbePool = { pool: McpAuthorizingPool; users: number; idle?: unknown };
@@ -193,7 +195,11 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
         view.failure = failureOf(name, error);
       } finally {
         surface();
-        await pool.close();
+        try {
+          await pool.close();
+        } finally {
+          options.onAuthorizationEnded?.();
+        }
       }
     })();
     settled.catch(report);
@@ -217,6 +223,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
       attempt.controller.abort(new Error('authorization was cancelled by the client'));
       return true;
     },
+    pendingAuthorizations: () => [...attempts.values()].filter((attempt) => attempt.view.status === 'awaiting_user').length,
     close: async (graceMs) => {
       for (const attempt of attempts.values()) attempt.controller.abort(new Error('the runtime is shutting down'));
       for (const [key, entry] of [...probePools]) {

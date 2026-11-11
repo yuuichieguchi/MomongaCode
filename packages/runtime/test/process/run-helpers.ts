@@ -9,6 +9,7 @@ import type { Clock, GenerationRole, JsonLogger, MomongaPaths, ReadyFields, Role
 import { startGatewayProcess } from '@momonga/gateway';
 import * as runtime from '@momonga/runtime';
 import type { ServiceTimers } from '@momonga/runtime';
+import type { McpAuthorizingPool, McpPoolOptions } from '@momonga/mcp';
 import type { ShellHost } from '@momonga/tools';
 import { afterMicrotasks, driveFakeTime, fakeUsageOfRequest, modelSettings as settingsOfModels, startFakeChatCompletions, firstGeneration, createTempDir, prepareGenerationForTest, removeTempDir } from '@momonga/testkit';
 import type { ModelSpec } from '@momonga/testkit';
@@ -82,6 +83,7 @@ export type StartRuntimeProcessOptions = {
   signal?: AbortSignal;
   role?: RolePort;
   requestShutdown?: () => void;
+  createAdminPool?: (options: McpPoolOptions) => McpAuthorizingPool;
 };
 
 const exported = <T>(name: string): T => {
