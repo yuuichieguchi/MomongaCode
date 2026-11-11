@@ -57,10 +57,20 @@ const FORGE_FORM: readonly FormField[] = [
   { name: 'credentialSecret', label: 'Token: name in the secret store', kind: 'text', required: false, at: ['credential', 'secret'] },
 ];
 
+const ISSUE_WATCH_FORM: readonly FormField[] = [
+  { name: 'repository', label: 'Repository (owner/name)', kind: 'text', required: true },
+  { name: 'labels', label: 'Labels an issue must carry, separated by commas', kind: 'list', required: false },
+  { name: 'authorAssociation', label: 'Authors it takes (OWNER, MEMBER, COLLABORATOR), separated by commas', kind: 'list', required: false },
+  { name: 'mandate', label: 'Mandate of the run it starts', kind: 'text', required: true },
+];
+
 const PRICE_CONSTANTS = { currency: 'USD' } as const;
 
 const priceLine = (entry: Readonly<Record<string, unknown>>): string =>
   `${String(entry['provider'])}/${String(entry['model'])}  from ${String(entry['effectiveFrom'])}  input ${String(entry['inputPerMTok'])}  output ${String(entry['outputPerMTok'])}`;
+
+const issueWatchLine = (entry: Readonly<Record<string, unknown>>): string =>
+  `${String(entry['repository'])}  under ${String(entry['mandate'])}${Array.isArray(entry['labels']) ? `  labels ${entry['labels'].map(String).join(', ')}` : ''}${Array.isArray(entry['authorAssociation']) ? `  authors ${entry['authorAssociation'].map(String).join(', ')}` : ''}`;
 
 const forgeLine = (entry: Readonly<Record<string, unknown>>): string =>
   `${String(entry['id'])}  ${String(entry['descriptor'])}  ${Array.isArray(entry['hosts']) ? entry['hosts'].map(String).join(', ') : ''}  ${String(entry['apiBaseUrl'])}`;
@@ -121,6 +131,7 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'ceilings.timeMs': { label: 'Ceiling on the time a mandate may declare (ms)', section: 'Budget and delegation', appliesNow: false },
   mandates: { label: 'Mandates by name', section: 'Budget and delegation', appliesNow: false },
   forges: { label: 'Forges for pull request operations', section: 'Git and pull requests', appliesNow: false, form: FORGE_FORM, line: forgeLine },
+  'issues.watch': { label: 'Issues the watch takes', section: 'Git and pull requests', appliesNow: false, form: ISSUE_WATCH_FORM, line: issueWatchLine },
   'operations.protectedRefs': { label: 'Protected branches (a push always asks you)', section: 'Git and pull requests', appliesNow: false },
   'operations.approval': { label: 'Approval class by operation (rule or always)', section: 'Git and pull requests', appliesNow: false },
   autoUpdates: { label: 'Automatic updates', section: 'Updates', appliesNow: false },

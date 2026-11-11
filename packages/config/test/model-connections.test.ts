@@ -1,7 +1,7 @@
 import dns from 'node:dns';
 import net from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { credentialEnvNames, planAccountNames, secretNames } from '@momonga/config';
+import { credentialEnvNames } from '@momonga/config';
 import { CAPABILITIES, S1, S2, S2H, S3, S3_PLAN, S4, chatConnection, ollamaConnection } from './model-fixtures.ts';
 import { loadFile, loadModelsSection, loadWithProject, refusalOf, sentenceOf } from './load-models.ts';
 import type { LoadedModels } from './load-models.ts';
@@ -16,10 +16,7 @@ const modelAt = (models: LoadedModels, canon: string): Record<string, unknown> =
   return model;
 };
 
-const names = (resolved: unknown): { env: string[]; secrets: string[]; accounts: unknown[] } => {
-  const reader = <T>(read: unknown): T => (read as (models: unknown) => T)(resolved);
-  return { env: reader<string[]>(credentialEnvNames), secrets: reader<string[]>(secretNames), accounts: reader<unknown[]>(planAccountNames) };
-};
+const names = (resolved: unknown): { env: string[] } => ({ env: (credentialEnvNames as (models: unknown) => string[])(resolved) });
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -167,7 +164,7 @@ describe('what a connection may leave out, and what each default is', () => {
     expect(warnings).toContain(`${projectFile}: models.start is only honored in user settings; discarded`);
   });
 
-  it('the credential names and the plan accounts are read over the connections, sorted and once each; a key server without a written name gets its address name', async () => {
+  it('the credential variable names are read over the connections, sorted and once each; a key server without a written name gets its address name', async () => {
     const keyed = (host: string, key: Record<string, string>, ids: readonly string[]) => chatConnection(`https://${host}/v1`, ids, key);
     const { models } = await loadModelsSection({
       connections: [
@@ -182,14 +179,7 @@ describe('what a connection may leave out, and what each default is', () => {
         chatConnection('https://api.openai.com/v1', ['gpt-5.5']),
       ],
     });
-    expect(names(models)).toEqual({
-      env: ['ALPHA_KEY', 'ZED_KEY'],
-      secrets: ['alpha-secret', 'work-secret'],
-      accounts: [
-        { profile: 'chatgpt', account: 'chatgpt-1' },
-        { profile: 'chatgpt', account: 'chatgpt-2' },
-      ],
-    });
+    expect(names(models)).toEqual({ env: ['ALPHA_KEY', 'ZED_KEY'] });
     expect(keysOf(models)).toContain('srv-api.openai.com-443/gpt-5.5');
     expect(modelAt(models, 'srv-api.openai.com-443/gpt-5.5')).toMatchObject({ provider: 'srv-api.openai.com-443', billing: 'metered' });
     expect(keysOf(models).filter((canon) => canon.startsWith('chatgpt'))).toEqual(['chatgpt-2/gpt-5.5', 'chatgpt-2/gpt-5.5-mini', 'chatgpt-1/gpt-5.5', 'chatgpt/gpt-5.5']);

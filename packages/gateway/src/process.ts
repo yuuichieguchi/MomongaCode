@@ -19,6 +19,7 @@ import {
   resolveTelemetrySettings,
   settingsInputsDigest,
   stopValuesOfSettings,
+  telemetryWithReferences,
   upstreamEndpointOf,
 } from '@momonga/config';
 import type { ResolvedModel, ResolvedModels, ResolvedSettings } from '@momonga/config';
@@ -1016,7 +1017,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         serviceVersion: options.version,
         clock,
         store: traceStore,
-        exporters: exportersFor(current.telemetry, outbound),
+        exporters: exportersFor(telemetryWithReferences(current.telemetry, options.env), outbound),
         captureMessageContent: resolved.captureMessageContent,
         contentRetentionMs: resolveRetentionSettings(current.retention).days * DAY_MS,
       });

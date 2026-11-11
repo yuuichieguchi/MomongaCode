@@ -4,7 +4,7 @@ export type { EditProjectMandateOptions, ProjectMandateEdit } from './edit-proje
 export type { EditUserSettingsOptions, SettingsEdit } from './edit-user-settings.ts';
 export { settingsFileLock, settingsWriterPorts } from './file-lock.ts';
 export type { SettingsFileLockOptions, SettingsLockPort, SettingsWriterOptions, SettingsWriterPorts } from './file-lock.ts';
-export { MODELS_SETTING_WRITERS, ModelsEditRefused, durationText, editModelsSettings, fieldLabel, fieldValueText, planModelsEdit, serverNameFromCommand, settableFieldPath } from './models-writers.ts';
+export { ModelsEditRefused, durationText, editModelsSettings, fieldLabel, fieldValueText, planModelsEdit, serverNameFromCommand, settableFieldPath } from './models-writers.ts';
 export type {
   ModelsEditPlan,
   ModelsEditPorts,
@@ -14,7 +14,6 @@ export type {
   ModelsOperation,
   ModelsOperations,
   ModelsReference,
-  ModelsSettingWriter,
 } from './models-writers.ts';
 export { chainRoomVerdict, roomVerdictText } from './chain-room.ts';
 export type { ChainMember, RoomRefusal, RoomVerdict } from './chain-room.ts';
@@ -30,7 +29,6 @@ export {
   AUTO_GATE_BOUNDS,
   autoFitDirectoryOf,
   autoFitKeyOf,
-  autoFitViewOf,
   autoGatePasses,
   autoModeDatasetDigest,
   autoModeDatasetDigestOf,
@@ -39,7 +37,6 @@ export {
   classifierIdentityOf,
   failedBoundOf,
   measurement,
-  readAutoFitRecord,
   readAutoFitView,
   readClassifierProbeKeys,
   writeAutoFitRecord,
@@ -59,7 +56,7 @@ export type { AdapterKind, AdapterTable, AdapterTraits, MeasuredBy, ProbeKind, P
 export { PROBE_KEY_DIGEST_CHARS, knownKeyOf, managedServerDigest, probeKeyOf } from './probe-key.ts';
 export type { EndpointProbeKeyInput, KnownProbeKey, ManagedProbeKeyInput, ProbeKey, ProbeKeyInput, UnknownProbeKey } from './probe-key.ts';
 export type { EndpointProbeKey, ProbeRecordKey, UpstreamEndpointKeyed } from './probe-record-key.ts';
-export { FIVE_MINUTES_MS, chainOf, credentialEnvNames, outputBoundFieldOf, planAccountNames, plainHttpWarningText, resolveModels, secretNames } from './models.ts';
+export { FIVE_MINUTES_MS, chainOf, credentialEnvNames, outputBoundFieldOf, plainHttpWarningText, resolveModels } from './models.ts';
 export { PROJECT_MANDATE_FILE, PROJECT_MANDATE_USER_ONLY_KEYS, loadProjectMandate, parseProjectMandate } from './project-mandate.ts';
 export type { ProjectMandate, ProjectMandateInput } from './project-mandate.ts';
 export { PLAN_PROFILES, assertPlanProfile, planProfileOf } from './plan-profiles.ts';
@@ -77,7 +74,8 @@ export type { LoadMcpServersOptions, LoadMcpServersResult, McpServerEntry, McpSe
 export { COMMAND_PREFIX_SUFFIX, EDIT_TOOLS, NETWORK_RULE_SUBJECT, OPERATION_RULE_TOOLS, checkRuleText, parseGovernanceRule, PATH_TOOLS, PATH_TOOL_RULES, hasBalancedParentheses, isPathTool, parseRule, RuleParseError } from './rule.ts';
 export type { GovernanceRuleEntry, ParseRuleOptions, PathToolName, PermissionRule, RuleEffect, RuleLayer, RuleOrigin } from './rule.ts';
 export { SETTINGS_SCHEMA } from './settings-schema.ts';
-export { CORE_SETTING_KEYS, NON_CORE_SETTING_KEYS } from './core-settings.ts';
+export { CORE_SETTING_KEYS } from './core-settings.ts';
+export { telemetryWithReferences } from './expansion.ts';
 export type { CoreSettingKey } from './core-settings.ts';
 export { DEFAULT_RETENTION_DAYS, defaultSandboxSetting, resolveRetentionSettings, resolveTelemetrySettings } from './settings.ts';
 export { MAX_RETENTION_DAYS, MIN_RETENTION_DAYS } from './settings-schema.ts';
@@ -150,6 +148,8 @@ export type {
   ForgeInstanceSettings,
   LimitsSettings,
   MandateProfileSettings,
+  IssueWatchEntry,
+  IssuesSettings,
   OperationApprovalClass,
   OperationsSettings,
   ResolvedRetentionSettings,

@@ -236,9 +236,6 @@
       "packages/config/src/project-mandate.ts": {
         "project": 2
       },
-      "packages/config/src/settings.ts": {
-        "target": 1
-      },
       "packages/context/src/budget.ts": {
         "target": 1
       },

@@ -12,7 +12,8 @@ import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.t
 import type { TrustOracle, UserLayer } from './layers.ts';
 import { assertMcpServer, assertMcpServersFile } from './settings.ts';
 import type { McpServerConfig, McpServersFile, Settings } from './settings.ts';
-import { MCP_EXPANSION_PATTERN, mcpServerNameProblem } from './mcp-server-rules.ts';
+import { mcpServerNameProblem } from './mcp-server-rules.ts';
+import { environmentValueOf, expandVariables } from './expansion.ts';
 import type { McpServerScope } from './mcp-server-rules.ts';
 
 export type { McpServerScope };
@@ -42,9 +43,6 @@ export type LoadMcpServersResult = {
   warnings: string[];
 };
 
-const EXPANSION = new RegExp(MCP_EXPANSION_PATTERN, 'g');
-const EXPANSION_BODY = /^([A-Za-z_][A-Za-z0-9_]*)(?::-([\s\S]*))?$/;
-
 class UnsetVariableError extends Error {}
 
 class CredentialVariableError extends Error {
@@ -67,21 +65,19 @@ const assertServerName = (name: string, source: string): void => {
 type VariableGuard = (variable: string) => boolean;
 
 const expandText = (value: string, env: LoadMcpServersOptions['env'], serverName: string, source: string, refuse: VariableGuard): string =>
-  value.replace(EXPANSION, (_match, body: string) => {
-    const parsed = EXPANSION_BODY.exec(body);
-    if (parsed === null) throw new Error(`${source}: MCP server ${JSON.stringify(serverName)} has an invalid expansion \${${body}}`);
-    const variable = parsed[1] as string;
-    if (refuse(variable)) {
-      throw new CredentialVariableError(
-        `${source}: MCP server ${JSON.stringify(serverName)} must not expand credential variable ${variable}`,
-        variable,
-      );
-    }
-    const fallback = parsed[2];
-    const current = env[variable];
-    if (current !== undefined && (current !== '' || fallback === undefined)) return current;
-    if (fallback !== undefined) return fallback;
-    throw new UnsetVariableError(`${source}: MCP server ${JSON.stringify(serverName)} needs environment variable ${variable}, which is not set`);
+  expandVariables(value, {
+    invalid: (body) => {
+      throw new Error(`${source}: MCP server ${JSON.stringify(serverName)} has an invalid expansion \${${body}}`);
+    },
+    resolve: (expansion) => {
+      const { variable } = expansion;
+      if (refuse(variable)) {
+        throw new CredentialVariableError(`${source}: MCP server ${JSON.stringify(serverName)} must not expand credential variable ${variable}`, variable);
+      }
+      const value = environmentValueOf(env, expansion);
+      if (value !== undefined) return value;
+      throw new UnsetVariableError(`${source}: MCP server ${JSON.stringify(serverName)} needs environment variable ${variable}, which is not set`);
+    },
   });
 
 const expandMap = (map: Record<string, string>, expand: (value: string) => string): Record<string, string> =>
