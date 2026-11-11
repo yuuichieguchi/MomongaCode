@@ -889,14 +889,14 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   await requireGenerationDirs(paths, options.generation);
   signal?.throwIfAborted();
   const lock = await (options.acquireLock ?? acquireProcessLock)(own.locks.gateway);
-  const cleanups: Array<() => void | Promise<void>> = [() => lock.release()];
+  const cleanups: Array<(values: StopValues | undefined) => void | Promise<void>> = [() => lock.release()];
   const lifetime = new AbortController();
-  const unwind = async (): Promise<Error[]> => {
+  const unwind = async (values: StopValues | undefined): Promise<Error[]> => {
     lifetime.abort(new Error('the gateway is closing'));
     const failures: Error[] = [];
     for (const cleanup of cleanups.splice(0).reverse()) {
       try {
-        await cleanup();
+        await cleanup(values);
       } catch (error) {
         failures.push(...failuresOf(error));
       }
@@ -910,18 +910,18 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   const fatal = new Promise<Error>((resolve) => {
     resolveFatal = resolve;
   });
-  let requestGatewayAbort: () => void = () => undefined;
+  let requestGatewayAbort: (values: StopValues) => void = () => undefined;
   let gatewayAbandonedRuns: () => number = () => 0;
   let abortRequested = false;
-  let lifecycle: Promise<GatewayCloseResult> | undefined;
-  let closeValues: StopValues | undefined;
+  type Shutdown = { readonly values: StopValues; result(): Promise<GatewayCloseResult> };
+  let closing: Shutdown | undefined;
+  const closingValues = (): StopValues | undefined => closing?.values;
   let retired = false;
   const stopValues = options.stopValues ?? createStopValuesReader({ load: () => readUserStopValues(options.home), onNotice: (message) => logger.warn(message) });
 
   const shutdown = async (values: StopValues): Promise<GatewayCloseResult> => {
     phase = 'closing';
-    closeValues = values;
-    const failures = await unwind();
+    const failures = await unwind(values);
     phase = 'closed';
     const abandonedRuns = gatewayAbandonedRuns();
     if (abandonedRuns > 0) logger.warn('close.abandoned_runs', { count: abandonedRuns });
@@ -935,16 +935,21 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     };
   };
 
+  const shutdownWith = (values: StopValues): Shutdown => {
+    let result: Promise<GatewayCloseResult> | undefined;
+    return { values, result: () => (result ??= shutdown(values)) };
+  };
+
   const close = (values?: StopValues): Promise<GatewayCloseResult> => {
-    lifecycle ??= shutdown(values ?? stopValues.read());
-    return lifecycle;
+    closing ??= shutdownWith(values ?? stopValues.read());
+    return closing.result();
   };
 
   const abort = (values?: StopValues): Promise<GatewayCloseResult> => {
     abortRequested = true;
-    if (lifecycle === undefined) lifecycle = shutdown(values ?? stopValues.read());
-    else requestGatewayAbort();
-    return lifecycle;
+    if (closing === undefined) return close(values);
+    requestGatewayAbort(closing.values);
+    return closing.result();
   };
 
   const latchFatal = (error: Error): void => {
@@ -1033,8 +1038,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       },
     });
     const probeServers = new Set<ManagedServer>();
-    const closeProbes = async (): Promise<void> => {
-      await Promise.all([autoProbe.close(), ...[...probeServers].map((server) => server.stop(closeValues === undefined ? undefined : { stopGraceMs: closeValues.managedServerStopGraceMs }))]);
+    const closeProbes = async (values: StopValues | undefined): Promise<void> => {
+      await Promise.all([autoProbe.close(), ...[...probeServers].map((server) => server.stop(values === undefined ? undefined : { stopGraceMs: values.managedServerStopGraceMs }))]);
     };
     cleanups.push(closeProbes);
     const probePorts: Omit<ProbeWiring, 'outputPolicy'> = {
@@ -1204,7 +1209,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         return;
       }
       holds.delete(closable);
-      await closable.close(closeValues);
+      await closable.close(closingValues());
     };
     const closablesOf = (epoch: ProcessEpoch): Closable[] => [...epoch.parts.values()].flatMap((part) => part.closables);
     const liveEpochs = new Set<ProcessEpoch>();
@@ -1503,8 +1508,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     if (gateway.tcpPort !== undefined) logger.info('gateway.debug_listener', { data: { host: DEBUG_TCP_HOST, port: gateway.tcpPort } });
     cleanups.splice(cleanups.indexOf(closeProbes), 1);
     cleanups.splice(cleanups.indexOf(retireEpochsAtFailedStart), 1);
-    cleanups.push(() => closeTogether([abortRequested ? gateway.abort(closeValues) : gateway.close(closeValues), closeProbes()]));
-    requestGatewayAbort = () => void gateway.abort(closeValues);
+    cleanups.push((values) => closeTogether([abortRequested ? gateway.abort(values) : gateway.close(values), closeProbes(values)]));
+    requestGatewayAbort = (values) => void gateway.abort(values);
     gatewayAbandonedRuns = () => gateway.abandonedRuns;
     signal?.throwIfAborted();
     const ready: ReadyFields = { service: 'gateway', pid, version: options.version, socketPath: gateway.socketPath, startedAt: gateway.startedAt };
@@ -1554,7 +1559,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     return { ready, socketPath: gateway.socketPath, close, abort, role: () => role.current(), fatal };
   } catch (error) {
     phase = 'closing';
-    for (const cleanupFailure of await unwind()) logger.error('startup.cleanup_failed', { err: cleanupFailure });
+    for (const cleanupFailure of await unwind(undefined)) logger.error('startup.cleanup_failed', { err: cleanupFailure });
     phase = 'closed';
     throw error;
   }
