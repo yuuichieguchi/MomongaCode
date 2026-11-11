@@ -437,10 +437,10 @@ describe('scheduling and restart', () => {
     const env = setup();
     const run = await queued(env);
     const stopping = new AbortController();
-    env.gateway.script.push({ events: [], error: new DOMException('aborted', 'AbortError') });
     stopping.abort();
-    await expect(env.reflector().runOne(stopping.signal)).rejects.toThrow();
+    await expect(env.reflector().runOne(stopping.signal)).rejects.toBe(stopping.signal.reason);
     expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'running', attempts: 0 });
+    expect(env.gateway.streams).toEqual([]);
     env.gateway.script.push(textStep(CANDIDATE_REPLY([])));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', attempts: 1 });
@@ -451,9 +451,8 @@ describe('scheduling and restart', () => {
     const run = await queued(env);
     for (let stop = 0; stop < MAX_ATTEMPTS + 2; stop += 1) {
       const stopping = new AbortController();
-      env.gateway.script.push({ events: [], error: new DOMException('aborted', 'AbortError') });
       stopping.abort();
-      await expect(env.reflector().runOne(stopping.signal)).rejects.toThrow();
+      await expect(env.reflector().runOne(stopping.signal)).rejects.toBe(stopping.signal.reason);
     }
     expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'running', attempts: 0 });
     const failure = new Error('connection lost');
