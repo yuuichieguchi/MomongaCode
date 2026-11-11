@@ -155,11 +155,16 @@ export const browse = async (authorizationUrl: string): Promise<URL> => {
   return new URL(location);
 };
 
+export const completeConfirmed = async (gateway: PlanGateway, attemptId: string, callbackUrl: string) => {
+  const exchanged = await gateway.post(PLAN_ROUTES.signInComplete, { attemptId, callbackUrl });
+  return exchanged.body?.outcome === 'identity_unconfirmed' ? gateway.post(PLAN_ROUTES.signInComplete, { attemptId, identityConfirmed: true }) : exchanged;
+};
+
 export const signIn = async (gateway: PlanGateway) => {
   const begun = await begin(gateway);
   if (begun.status !== 200) throw new Error(`begin answered ${begun.status}: ${JSON.stringify(begun.body)}`);
   const callback = await browse(begun.body.authorizationUrl);
-  const completed = await gateway.post(PLAN_ROUTES.signInComplete, { attemptId: begun.body.attemptId, callbackUrl: callback.toString() });
+  const completed = await completeConfirmed(gateway, begun.body.attemptId, callback.toString());
   return { begun, callback, completed };
 };
 

@@ -75,7 +75,8 @@ const completeSignIn = async (signIn: ReturnType<typeof signInOver>) => {
   const { attemptId, authorizationUrl } = await signIn.begin({ profile: PROFILE_ID, account: 'work', port: PORT }, new AbortController().signal);
   const browsed = await siwcBrowse(authorizationUrl);
   if (browsed.redirect === undefined) throw new Error(`the fake refused the authorization: ${JSON.stringify(browsed.body)}`);
-  return signIn.complete(attemptId, browsed.redirect.href, signal());
+  const exchanged = await signIn.complete(attemptId, browsed.redirect.href, signal());
+  return exchanged.outcome === 'identity_unconfirmed' ? signIn.confirm(attemptId, signal()) : exchanged;
 };
 
 describe('every started plan operation writes its event at every end (P-G6)', () => {
@@ -94,7 +95,10 @@ describe('every started plan operation writes its event at every end (P-G6)', ()
     await pointer.reached;
     pointer.fail(new Error('EACCES: simulated'));
     await completed;
-    expect(named(h, 'plan.sign_in')).toEqual([expect.objectContaining({ outcome: 'failed', failure: 'plan_store_unwritable', endStep: 10 })]);
+    expect(named(h, 'plan.sign_in')).toEqual([
+      expect.objectContaining({ outcome: 'identity_unconfirmed', endStep: 9 }),
+      expect.objectContaining({ outcome: 'failed', failure: 'plan_store_unwritable', endStep: 10 }),
+    ]);
   });
 
   it.each([
@@ -123,7 +127,10 @@ describe('every started plan operation writes its event at every end (P-G6)', ()
       },
     };
     await completeSignIn(signInOver(h, sessions)).catch(() => undefined);
-    expect(named(h, 'plan.sign_in')).toEqual([expect.objectContaining({ outcome: 'failed', failure: 'internal', endStep: 10 })]);
+    expect(named(h, 'plan.sign_in')).toEqual([
+      expect.objectContaining({ outcome: 'identity_unconfirmed', endStep: 9 }),
+      expect.objectContaining({ outcome: 'failed', failure: 'internal', endStep: 10 }),
+    ]);
   });
 
   it('host identity unavailable at begin writes no sign_in event', async () => {

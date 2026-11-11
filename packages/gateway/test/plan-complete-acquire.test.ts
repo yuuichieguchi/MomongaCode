@@ -41,7 +41,8 @@ describe('O-R5-6 (M) 2.4: the acquire comes before the first irreversible step o
     expect(h.auth.calls.tokenAuthorizationCode).toBe(0);
     expect(signIn.waiting()).toBe(true);
 
-    await expect(signIn.complete(attemptId, callback.href, new AbortController().signal)).resolves.toMatchObject({
+    await expect(signIn.complete(attemptId, callback.href, new AbortController().signal)).resolves.toMatchObject({ outcome: 'identity_unconfirmed', attemptId });
+    await expect(signIn.confirm(attemptId, new AbortController().signal)).resolves.toMatchObject({
       outcome: 'signed_in',
       ref: { profile: PROFILE_ID, account: 'work' },
       firstSignIn: true,

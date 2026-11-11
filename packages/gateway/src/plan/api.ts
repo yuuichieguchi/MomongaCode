@@ -2,7 +2,7 @@ import { ModelsEditRefused, editModelsSettings } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
 import { isRecord } from '@momonga/foundation';
 import type { Clock, LimitTiming } from '@momonga/foundation';
-import { PLAN_ACCOUNT_NOT_FOUND_CODE, PLAN_ACCOUNT_NOT_SELECTABLE_CODE, PLAN_LABEL_REFUSAL, isPlanLabel, RETRY_OUTCOME } from '@momonga/protocol';
+import { PLAN_ACCOUNT_NOT_FOUND_CODE, PLAN_ACCOUNT_NOT_SELECTABLE_CODE, PLAN_LABEL_REFUSAL, isPlanLabel, RETRY_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
 import type {
   NamedPlanAccountRef,
   PlanAccountRef,
@@ -224,8 +224,9 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
       }),
     complete: (body, targets, signal) =>
       translated(async () => {
-        const end = await options.signIn.complete(stringField(body, 'attemptId'), stringField(body, 'callbackUrl'), signal);
-        if (end.outcome === RETRY_OUTCOME) return end;
+        const attemptId = stringField(body, 'attemptId');
+        const end = optionalBoolean(body, 'identityConfirmed') === true ? await options.signIn.confirm(attemptId, signal) : await options.signIn.complete(attemptId, stringField(body, 'callbackUrl'), signal);
+        if (end.outcome === RETRY_OUTCOME || end.outcome === IDENTITY_UNCONFIRMED_OUTCOME) return end;
         return { outcome: end.outcome, account: await viewNamed(end.ref, targets, signal), firstSignIn: end.firstSignIn };
       }),
     cancel: (body) => ({ cancelled: options.signIn.cancel(stringField(body, 'attemptId')) }),

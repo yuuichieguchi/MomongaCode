@@ -17,7 +17,7 @@ import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, homePaths, launchGateway
 import { startFake } from './cc-support.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
 import { makeReport } from './report-fixture.ts';
-import { ACCOUNT, CALLBACK_PORT, accountRoute, begin, browse, sessionsDirectory, startPlanGateway } from './plan-signin-support.ts';
+import { ACCOUNT, CALLBACK_PORT, accountRoute, begin, browse, completeConfirmed, sessionsDirectory, startPlanGateway } from './plan-signin-support.ts';
 import type { PlanGateway } from './plan-signin-support.ts';
 import { CONDITION_WAIT, PROFILE_ID } from './plan-support.ts';
 
@@ -274,7 +274,7 @@ const signInAs = async (gateway: PlanGateway, account: string): Promise<void> =>
   const begun = await begin(gateway, { account });
   expect(begun.status).toBe(200);
   const callback = await browse(begun.body.authorizationUrl);
-  const completed = await gateway.post(PLAN_ROUTES.signInComplete, { attemptId: begun.body.attemptId, callbackUrl: callback.toString() });
+  const completed = await completeConfirmed(gateway, begun.body.attemptId, callback.toString());
   expect(completed.body).toMatchObject({ outcome: 'signed_in', account: { label: account } });
 };
 

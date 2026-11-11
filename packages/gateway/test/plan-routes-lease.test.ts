@@ -34,7 +34,9 @@ const completeFor = async (gateway: PlanGateway, account: string) => {
   const begun = await begin(gateway, { account });
   expect(begun.status).toBe(200);
   const callback = await browse(begun.body.authorizationUrl);
-  return gateway.post(PLAN_ROUTES.signInComplete, { attemptId: begun.body.attemptId, callbackUrl: callback.toString() });
+  const exchanged = await gateway.post(PLAN_ROUTES.signInComplete, { attemptId: begun.body.attemptId, callbackUrl: callback.toString() });
+  expect(exchanged.body).toMatchObject({ outcome: 'identity_unconfirmed' });
+  return gateway.post(PLAN_ROUTES.signInComplete, { attemptId: begun.body.attemptId, identityConfirmed: true });
 };
 
 describe('O-R5-6 L6: the routes that read plan targets take the D1 lease and read them from the leased epoch', () => {

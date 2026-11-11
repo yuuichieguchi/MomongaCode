@@ -160,7 +160,8 @@ describe('one serializer for pointer writes, each built from the file as it is t
     expect(h.auth.calls.tokenAuthorizationCode).toBe(0);
     expect(signIn.waiting()).toBe(true);
     fs.writeFileSync(h.paths.active, '{}');
-    await expect(signIn.complete(attemptId, browsed.redirect.href, new AbortController().signal)).resolves.toMatchObject({ outcome: 'signed_in' });
+    await expect(signIn.complete(attemptId, browsed.redirect.href, new AbortController().signal)).resolves.toMatchObject({ outcome: 'identity_unconfirmed' });
+    await expect(signIn.confirm(attemptId, new AbortController().signal)).resolves.toMatchObject({ outcome: 'signed_in' });
   });
 
   it('a pointer write that fails after install rejects PLAN_STORE_UNWRITABLE_CODE naming the file, the record stays active, and selectActive then succeeds', async () => {
