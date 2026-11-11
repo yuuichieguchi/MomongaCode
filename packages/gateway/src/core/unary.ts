@@ -67,6 +67,8 @@ type InflightCompaction = {
   work: SharedWorkHold;
 };
 
+const SHARED_WORK_HAS_NO_CALLER_DEADLINE = undefined;
+
 const identifier = (services: Services, prefix: string): string => `${prefix}_${uuidv7(services.clock).replaceAll('-', '')}`;
 
 type Sent = { callKey: string; retryOfSeq: number | undefined };
@@ -500,7 +502,7 @@ export const createUnaryService = (services: GatewayServices, validator: Request
       work: inFlight.beginWork(),
       promise: Promise.resolve().then(async () => {
         try {
-          const resource = await withPinnedServices(services, controller.signal, (pinned) => compactOnce(pinned, request, unknownFields, controller.signal, deadlineAt, trace, { kind: 'keyed', key, digest }));
+          const resource = await withPinnedServices(services, controller.signal, (pinned) => compactOnce(pinned, request, unknownFields, controller.signal, SHARED_WORK_HAS_NO_CALLER_DEADLINE, trace, { kind: 'keyed', key, digest }));
           if (isRunCancelled(controller.signal.reason)) throw controller.signal.reason;
           const now = services.clock.now();
           services.store.commitCompaction({ key, digest, resource, createdAtMs: now, expiresAtMs: now + services.config.idempotency.ttlMs });
