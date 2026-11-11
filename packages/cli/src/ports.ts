@@ -1,5 +1,5 @@
-import type { WorkspaceProbe } from '@momonga/eval';
-import type { FileSystem, HostExec, OpenUrl, SecretStore } from '@momonga/foundation';
+import type { WorkspaceFiles, WorkspaceProbe } from '@momonga/eval';
+import type { FileSystem, HostExec, OpenUrl, ProcessPort, SecretStore, Timing } from '@momonga/foundation';
 import type { HandoverHost } from './handover/host.ts';
 
 export type CliClock = {
@@ -31,7 +31,12 @@ export type AcpStdio = { input: ReadableStream<Uint8Array>; output: WritableStre
 
 export type Terminal = { stdin: NodeJS.ReadStream; stdout: NodeJS.WriteStream };
 
-export type CliFiles = Pick<FileSystem, 'readFile' | 'readTextFile' | 'stat' | 'mkdir' | 'mkdirPrivate' | 'mkdtemp' | 'rm' | 'rename'> & {
+export type CliTimers = Pick<Timing, 'setTimeout' | 'clearTimeout'>;
+
+export type StandardInput = { isTerminal: boolean; bytes(): AsyncIterable<Uint8Array> };
+
+export type CliFiles = Pick<FileSystem, 'readFile' | 'readTextFile' | 'stat' | 'mkdir' | 'mkdirPrivate' | 'mkdtemp' | 'rm' | 'rename'> & WorkspaceFiles & {
+  copyTreeVerbatim(from: string, to: string): Promise<void>;
   readText(file: string): Promise<string>;
   writeText(file: string, text: string): Promise<void>;
   listFiles(directory: string): Promise<string[]>;
@@ -50,8 +55,13 @@ export type CliPorts = {
   interrupt: AbortSignal;
   stdout: Sink;
   stderr: Sink;
+  stdin: StandardInput;
   clock: CliClock;
+  timers: CliTimers;
   random: () => number;
+  uuid: () => string;
+  process: ProcessPort;
+  tmpdir: string;
   self: SelfExecutable;
   spawnDetached: SpawnDetached;
   terminal: Terminal | undefined;

@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { ModelRoles } from '@momonga/config';
 import {
@@ -83,7 +82,7 @@ const completerFor = async (ports: CliPorts, paths: MomongaPaths, model: string,
       metadata: { purpose: 'guideline', ...(request.seed === undefined ? {} : { seed: String(request.seed) }) },
     };
     const startedAt = ports.clock.now();
-    const call = { idempotencyKey: randomUUID(), deadlineAt: startedAt + RUNTIME_DEFAULTS.runTimeoutMs, signal, role: 'analysis' } as const;
+    const call = { idempotencyKey: ports.uuid(), deadlineAt: startedAt + RUNTIME_DEFAULTS.runTimeoutMs, signal, role: 'analysis' } as const;
     let firstEventMs: number | undefined;
     const collect = async (): Promise<StreamEvent[]> => {
       const collected: StreamEvent[] = [];
@@ -144,7 +143,7 @@ export const contextImprove = async (
 ): Promise<number> => {
   const dataset = await loadContextDataset(ports.files, path.resolve(ports.cwd, options.dataset));
   await ensureCurrentDaemon(ports, paths);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   const gatewayInfo = createCliGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
   try {
     const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS, RUNTIME_DEFAULTS } = await import('@momonga/runtime');
@@ -217,7 +216,7 @@ export const formatGuidelines = ({ current, guidelines }: GuidelinesResponse): s
 
 export const guidelineList = async (ports: CliPorts, paths: MomongaPaths): Promise<number> => {
   await ensureCurrentDaemon(ports, paths);
-  const client: RuntimeClient = connectRuntime(paths);
+  const client: RuntimeClient = connectRuntime(ports, paths);
   try {
     ports.stdout.write(`${formatGuidelines(await client.guidelines())}\n`);
     return 0;
@@ -247,7 +246,7 @@ export const adoptOutcome = async (stdout: Sink, client: Pick<RuntimeClient, 'gu
 export const guidelineAdopt = async (ports: CliPorts, paths: MomongaPaths, outcomeFile: string): Promise<number> => {
   const outcomeText = await ports.files.readText(path.resolve(ports.cwd, outcomeFile));
   await ensureCurrentDaemon(ports, paths);
-  const client: RuntimeClient = connectRuntime(paths);
+  const client: RuntimeClient = connectRuntime(ports, paths);
   try {
     return await adoptOutcome(ports.stdout, client, outcomeText);
   } finally {
@@ -257,7 +256,7 @@ export const guidelineAdopt = async (ports: CliPorts, paths: MomongaPaths, outco
 
 export const guidelineRollback = async (ports: CliPorts, paths: MomongaPaths, version: number): Promise<number> => {
   await ensureCurrentDaemon(ports, paths);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   try {
     const row = await client.rollbackGuideline(version);
     ports.stdout.write(`rolled back to the text of version ${version} as version ${row.version}\n`);

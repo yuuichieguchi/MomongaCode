@@ -1,11 +1,12 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
-import { defineProductSchema, nodeFileSystem } from '@momonga/foundation';
+import { defineProductSchema } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
 import { CONDITION_WHENS, PERMISSION_MODES } from '@momonga/protocol';
 import type { ConditionWhen, Mandate, PermissionMode } from '@momonga/protocol';
 import { ASK_RESPONSES, DatasetError, describeFirstError, isInsideWorkspace, jsonOf } from './dataset.ts';
 import type { AskResponse } from './dataset.ts';
+import type { WorkspaceFiles } from './files.ts';
 import { EVIDENCE_KINDS, ORACLE_CHECKS_SCHEMA } from './oracle-check.ts';
 import type { OracleCheck } from './oracle-check.ts';
 
@@ -159,22 +160,24 @@ export const parseBenchmark = (fileText: string, source: string): Benchmark => {
   return verdict.value;
 };
 
-const filesUnder = async (root: string, relative = ''): Promise<string[]> => {
-  const entries = await nodeFileSystem.readdirEntries(path.join(root, relative));
+type TreeFiles = Pick<WorkspaceFiles, 'readdirEntries' | 'readFile'>;
+
+const filesUnder = async (files: TreeFiles, root: string, relative = ''): Promise<string[]> => {
+  const entries = await files.readdirEntries(path.join(root, relative));
   const nested = await Promise.all(
     entries.map(async (entry) => {
       const child = relative === '' ? entry.name : `${relative}/${entry.name}`;
-      return entry.isDirectory() ? filesUnder(root, child) : [child];
+      return entry.isDirectory() ? filesUnder(files, root, child) : [child];
     }),
   );
   return nested.flat();
 };
 
-export const treeDigest = async (directory: string): Promise<string> => {
+export const treeDigest = async (files: TreeFiles, directory: string): Promise<string> => {
   const hash = crypto.createHash('sha256');
-  const files = (await filesUnder(directory)).sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
-  for (const relative of files) {
-    const content = crypto.createHash('sha256').update(await nodeFileSystem.readFile(path.join(directory, relative))).digest('hex');
+  const names = (await filesUnder(files, directory)).sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+  for (const relative of names) {
+    const content = crypto.createHash('sha256').update(await files.readFile(path.join(directory, relative))).digest('hex');
     hash.update(`${relative}\0${content}\0`);
   }
   return `sha256:${hash.digest('hex')}`;

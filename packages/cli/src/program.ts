@@ -1,5 +1,5 @@
 import { Command, CommanderError, InvalidArgumentError, Option } from 'commander';
-import { EXIT_FAILURE, EXIT_OK, EXIT_USAGE, currentSocketResolver } from '@momonga/foundation';
+import { EXIT_FAILURE, EXIT_OK, EXIT_USAGE, HELPER_COMMAND, currentSocketResolver } from '@momonga/foundation';
 import type { EntryIo } from '@momonga/foundation';
 import { PERMISSION_MODES, TRACE_CONTENT_PAGE_OPTION } from '@momonga/protocol';
 import type { Mandate, PermissionMode } from '@momonga/protocol';
@@ -17,6 +17,7 @@ import { INTERNAL_COMMANDS } from './daemon/launcher.ts';
 import { createGatewayClient } from './client/gateway-client.ts';
 import { pathsOf } from './paths.ts';
 import { terminalPorts } from './terminal-writer.ts';
+import { runHelper } from './helper-mode.ts';
 import { UsageError } from './usage-error.ts';
 import type { ProgramDeps } from './program-deps.ts';
 import type { HeadlessReopen, Reopen } from './run/resolve-session.ts';
@@ -294,6 +295,15 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
     .helpOption(false)
     .action(async () => {
       deps.complete(await runBackgroundCheck(await deps.update(), deps.interrupt));
+    });
+  program
+    .command(HELPER_COMMAND, { hidden: true })
+    .helpOption(false)
+    .allowUnknownOption()
+    .allowExcessArguments()
+    .argument('[args...]')
+    .action(async () => {
+      deps.complete(await runHelper(deps.helper));
     });
   internal(INTERNAL_COMMANDS.supervise, deps.entries.supervise);
   internal(INTERNAL_COMMANDS.gateway, deps.entries.gateway);

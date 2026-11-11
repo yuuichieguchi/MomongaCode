@@ -15,6 +15,7 @@ import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
 import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 import { freshHome } from './fresh-home.ts';
 import { userModelsOf } from './user-models.ts';
+import { NO_HELPER } from './no-helper.ts';
 
 vi.mock('@momonga/runtime', () => {
   throw new Error('the yield host loaded the runtime; the command supplies what the host needs from it');
@@ -275,6 +276,7 @@ const program = () => {
     entries: {} as DaemonEntries,
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt: new AbortController().signal,
+    helper: NO_HELPER,
     entryIo: (args) => ({ argv: [...args] }) as unknown as EntryIo,
     complete: (code) => completed.push(code),
   });

@@ -28,11 +28,6 @@ const SYNCHRONOUS_ADAPTERS: Readonly<Record<string, string>> = {
 };
 
 const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
-  'packages/cli/src/client/runtime-client.ts': { 'setTimeout': 1 },
-  'packages/cli/src/commands/bench.ts': { 'node:os': 1 },
-  'packages/cli/src/commands/context.ts': { 'randomUUID': 1 },
-  'packages/cli/src/commands/evaluate.ts': { 'node:os': 2 },
-  'packages/cli/src/eval/context-effects.ts': { 'node:fs/promises': 6, 'process.kill': 1, 'setTimeout': 1 },
   'packages/cli/src/eval/workspace-probe.ts': { 'node:fs/promises': 3, 'setTimeout': 1 },
   'packages/cli/src/handover/replace-process.ts': { 'node:child_process': 1 },
   'packages/cli/src/ripgrep/host.ts': { 'randomBytes': 1 },
@@ -47,9 +42,7 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/config/src/local-settings.ts': { 'node:fs': 2 },
   'packages/config/src/user-settings.ts': { 'node:fs': 1 },
   'packages/context/src/fs-instruction-reader.ts': { 'node:fs/promises': 3 },
-  'packages/eval/src/bench-grade.ts': { 'node:os': 1 },
-  'packages/eval/src/context-live.ts': { 'node:fs/promises': 8 },
-  'packages/eval/src/files.ts': { 'node:fs/promises': 3 },
+  'packages/eval/src/files.ts': { 'node:fs/promises': 4 },
   'packages/foundation/src/clock.ts': { 'Date.now': 1 },
   'packages/foundation/src/code-digest.ts': { 'node:fs/promises': 7 },
   'packages/foundation/src/exec-with-stdin.ts': { 'node:child_process': 1 },

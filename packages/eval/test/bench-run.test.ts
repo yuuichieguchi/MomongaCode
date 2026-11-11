@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { nodeWorkspaceFiles } from '@momonga/eval';
+import type { WorkspaceFiles } from '@momonga/eval';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { ADD_FIXED, CHEATING_TEST, benchmarkDir, exported, nodeProbe } from './bench-fixtures.ts';
 import type { WorkspaceProbe } from './bench-fixtures.ts';
@@ -37,7 +39,7 @@ type Result = {
   report: { kind: string; total: { completion: { k: number; n: number; undeclared: number }; intervention: { k: number; n: number } }; harness: { suite: { name: string }; codeDigest: string; answeredBy: unknown[]; unrecordedAnswers: number }; tasks?: { task: string; trials: number; met: number }[] };
   invalidSetup: { taskId: string; trial: number }[];
 };
-type RunBenchmark = (file: string, ports: { api: Api; probe: WorkspaceProbe; model: string; codeDigest: string; groupBy: 'model'; scratch: string }) => Promise<Result>;
+type RunBenchmark = (file: string, ports: { api: Api; probe: WorkspaceProbe; files: WorkspaceFiles; model: string; codeDigest: string; groupBy: 'model'; scratch: string }) => Promise<Result>;
 
 const scratches: string[] = [];
 afterEach(() => {
@@ -163,7 +165,7 @@ const fakeApi = (behaviour: Behaviour = {}) => {
 };
 
 const runBenchmark = (dir: string, api: Api, at: string): Promise<Result> =>
-  exported<RunBenchmark>('runBenchmark')(path.join(dir, 'benchmark.json'), { api, probe: nodeProbe, model: 'fake/system', codeDigest: 'sha256:build', groupBy: 'model', scratch: at });
+  exported<RunBenchmark>('runBenchmark')(path.join(dir, 'benchmark.json'), { api, probe: nodeProbe, files: nodeWorkspaceFiles, model: 'fake/system', codeDigest: 'sha256:build', groupBy: 'model', scratch: at });
 
 const fixTheBug = (cwd: string): void => fs.writeFileSync(path.join(cwd, 'src/add.js'), ADD_FIXED);
 
