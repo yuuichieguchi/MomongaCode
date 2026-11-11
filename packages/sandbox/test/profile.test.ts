@@ -111,6 +111,8 @@ describe('buildSeatbeltProfile', () => {
     const { profile } = await buildSeatbeltProfile(policyFor(tempDir(), { network: 'allow' }), {}, testPaths());
     expect(profile).toContain('(allow network-outbound (remote ip))');
     expect(profile).toContain(`(allow network-outbound (remote unix-socket (path-literal "${SYSTEM_RESOLVER_SOCKET}")))`);
+    expect(profile).toContain('(allow network-bind (local ip))');
+    expect(profile).toContain('(allow network-inbound (local ip))');
     expect(profile).not.toContain('(allow network*)');
   });
 

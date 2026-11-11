@@ -25,8 +25,8 @@ describe('what each network value of a policy lets the kernel allow (I4.5)', () 
     expect(SANDBOX_NETWORK_SCOPES).toEqual({ seatbelt: ['none', 'hosts', 'open'], bubblewrap: ['none', 'open'], none: ['open'] });
   });
 
-  it('writes IP outbound and the system resolver socket into the Seatbelt profile for open only', async () => {
-    expect(await networkRules('allow')).toEqual(['(allow network-outbound (remote ip))', `(allow network-outbound (remote unix-socket (path-literal "${SYSTEM_RESOLVER_SOCKET}")))`]);
+  it('writes IP outbound, IP listening and the system resolver socket into the Seatbelt profile for open only', async () => {
+    expect(await networkRules('allow')).toEqual(['(allow network-outbound (remote ip))', `(allow network-outbound (remote unix-socket (path-literal "${SYSTEM_RESOLVER_SOCKET}")))`, '(allow network-bind (local ip))', '(allow network-inbound (local ip))']);
     expect(await networkRules('deny')).toEqual([]);
     expect(await networkRules({ loopbackPort: 41234 })).toEqual(['(allow network-outbound (remote ip "localhost:41234"))']);
   });
