@@ -124,7 +124,7 @@ export const makePool = (
     ...(options.timers === undefined ? {} : { timers: options.timers }),
     ...(options.connectTimeoutMs === undefined ? {} : { connectTimeoutMs: options.connectTimeoutMs }),
     ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }),
-    ...(options.toolIdleTimeoutMs === undefined ? {} : { toolIdleTimeoutMs: options.toolIdleTimeoutMs }),
+    ...(options.toolIdleTimeoutMs === undefined ? {} : { toolIdleTimeoutNetworkMs: options.toolIdleTimeoutMs, toolIdleTimeoutStdioMs: options.toolIdleTimeoutMs }),
     ...(options.resetAfterMs === undefined ? {} : { resetAfterMs: options.resetAfterMs }),
     ...(options.credentialNames === undefined ? {} : { credentialNames: options.credentialNames }),
   });

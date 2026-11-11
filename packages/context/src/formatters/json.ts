@@ -1,5 +1,7 @@
-import { parseOutsideJson } from '@momonga/foundation';
+import { JsonDepthError, parseOutsideJson } from '@momonga/foundation';
 import { asciiLower, partitionTerms } from '@momonga/protocol';
+
+export const isUnreadableJson = (error: unknown): boolean => error instanceof SyntaxError || error instanceof JsonDepthError;
 
 const INDENT = 2;
 const LOSSY_NUMBER = /\d{16,}/;
@@ -46,8 +48,9 @@ export const formatJson = (raw: string, terms: readonly string[]): string | unde
   let parsed: unknown;
   try {
     parsed = parseOutsideJson(raw);
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (isUnreadableJson(error)) return undefined;
+    throw error;
   }
   const matchTerms = partitionTerms(terms.map(asciiLower)).indexed;
   return JSON.stringify(transformed(parsed, matchTerms), null, raw.includes('\n') ? INDENT : undefined);

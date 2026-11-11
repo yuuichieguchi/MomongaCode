@@ -192,7 +192,7 @@ describe('loaders taking a user layer', () => {
     writeAt(file, { mcpServers: { snap: { command: 'snap-server' } } }, T0);
     const user = await snapshotUser(tree);
     fs.rmSync(file);
-    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, user });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, referenceEnv: {}, user });
     expect(result.enabled.map((entry) => [entry.name, entry.scope, entry.config])).toEqual([['snap', 'user', { command: 'snap-server' }]]);
   });
 });

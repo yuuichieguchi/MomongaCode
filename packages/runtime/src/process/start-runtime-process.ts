@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { ConfigError, loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, stopValuesOfSettings, resolveRetentionSettings, resolveTelemetrySettings } from '@momonga/config';
 import type { ResolvedSettings, StopValuesReader } from '@momonga/config';
-import { canonicalHomeOf, installTrust, settledOrAborted, layoutProcessInspector, busyTimeoutMs } from '@momonga/foundation';
+import { canonicalHomeOf, helperCommandLine, installTrust, settledOrAborted, layoutProcessInspector, busyTimeoutMs } from '@momonga/foundation';
 import {
   acquireProcessLock,
   announceReady,
@@ -35,13 +35,13 @@ import {
 import type { Clock, GenerationRole, HelperSelf, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, StopValues, TextStream, LayoutLocks } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore, pageRunBodies, startBodyPurge } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
-import { DEFAULT_BWRAP_PATH, bubblewrapPresent, childProtectionFor, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
+import { DEFAULT_BWRAP_PATH, NETWORK_RELAY_HELPER, bubblewrapPresent, childProtectionFor, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
 import { unaskedCommandsFor } from '@momonga/policy';
 import { DERIVED_CATCH_UP_PAGES, FIDELITY_PRUNE_BATCH_ROWS, isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { createRuleVerifier, installedRuleSolver } from './rule-verifier.ts';
+import { productRuleVerifier } from './rule-verifier.ts';
 import type { RuleSolverSource } from './rule-verifier.ts';
 import { RetiringYield, ShellNotFoundError, createMarkerOwners, createPolicyFilesystem, nodeShellHost, resolveBashPath, sweepCallLocks } from '@momonga/tools';
 import type { BundledRipgrepResolver, ShellHost } from '@momonga/tools';
@@ -422,6 +422,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
 
     const journalDirectory = path.join(paths.state, PLACEHOLDER_JOURNAL_DIRECTORY);
+    const { helperSelf } = options;
     const bubblewrap = platform === 'linux' && (await bubblewrapPresent(DEFAULT_BWRAP_PATH, (file) => nodeFileSystem.access(file, 'execute')));
     const noneProtection = childProtectionFor({ sandbox: 'none', home: canonicalHome, platform, env: process.env, bubblewrap });
     const sandboxOf = async (kind: SandboxKind, deriveSignal: AbortSignal): Promise<Sandbox> => {
@@ -467,6 +468,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           journal: createPlaceholderJournal(journalDirectory),
           holders: () => heldMountPoints(),
           ...(options.socketGuard === undefined ? {} : { socketGuard: options.socketGuard(paths) }),
+          ...(helperSelf === undefined ? {} : { relay: () => helperCommandLine(helperSelf, NETWORK_RELAY_HELPER, []) }),
         });
       }
       return createSeatbeltSandbox({ sandboxExecPath: launcherPath, tmpRoot: paths.tmp.spawn, lock: kernelLock, killGraceMs: SANDBOX_KILL_GRACE_MS });
@@ -748,7 +750,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             const { limits, ceilings, mandates } = (await settingsComposition.userSnapshot(requestSignal)).settings;
             return { ...(limits === undefined ? {} : { limits }), ...(ceilings === undefined ? {} : { ceilings }), ...(mandates === undefined ? {} : { mandates }) };
           },
-          projectMandate: async (cwd, requestSignal) => loadProjectMandate({ projectDir: cwd, trusted: await settingsComposition.trustOracle.isTrusted(cwd, requestSignal), signal: requestSignal }),
+          projectMandate: async (cwd, requestSignal) =>
+            loadProjectMandate({ projectDir: cwd, trusted: await settingsComposition.trustOracle.isTrusted(cwd, requestSignal), approvals: (await settingsComposition.userSnapshot(requestSignal)).settings.projectApprovals, signal: requestSignal }),
           chainBilling: async (model, requestSignal) => {
             const { chain } = await gatewayClient.model(model, { signal: requestSignal });
             const quote = await gatewayClient.quote(model, { signal: requestSignal });
@@ -823,14 +826,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     service = runService;
     cleanups.push({ name: 'service', run: () => (retireFrame === undefined ? runService.close() : runService.retire(retireFrame.current)) });
 
-    const ruleVerifier = createRuleVerifier({
-      host: options.ruleSolver === undefined ? installedRuleSolver(import.meta.url) : options.ruleSolver(paths),
-      fs: createPolicyFilesystem(),
-      paths,
-      timers,
-      bashPath: () => resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env: process.env }),
-      clock,
-    });
+    const ruleVerifier = productRuleVerifier({ solver: options.ruleSolver, paths, timers, shellHost, env: process.env, clock });
     await step('workers', () => {
       for (let index = 0; index < workerCount; index += 1) {
         const id = `runtime-${process.pid}-${startedAtMs}-${index}`;

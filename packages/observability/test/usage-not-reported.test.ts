@@ -140,10 +140,10 @@ describe('one rule for unpricedCalls on the report and the breakdown', () => {
     return { report, breakdown: buildCostBreakdown(calls, {}) };
   };
 
-  it('gives one plan call and one priced metered call the same unpricedCalls, 0, on /v1/cost and the breakdown', async () => {
+  it('gives one plan call and one priced metered call the same unpricedCalls, 1, on /v1/cost and the breakdown', async () => {
     const { report, breakdown } = await record(['plan', 'metered']);
 
-    expect(report.total.unpricedCalls).toBe(0);
+    expect(report.total.unpricedCalls).toBe(1);
     expect(breakdown.cost.unpricedCalls).toBe(report.total.unpricedCalls);
   });
 

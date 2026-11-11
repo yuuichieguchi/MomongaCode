@@ -21,6 +21,7 @@ const echoCall = (callId: string) => functionCallItem({ callId, name: 'Echo', ar
 describe('worker recovery replays the post-response decision of a recorded step', () => {
   it('stops with loop and executes nothing when the recorded step repeats the previous one', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...env.settings.contextValue, loopGuidance: false };
     const run = await env.enqueue('Loop', { limits: { loopThreshold: 2 } });
     await env.seed(
       run.id,

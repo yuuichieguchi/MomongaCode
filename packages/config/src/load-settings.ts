@@ -5,6 +5,7 @@ import { DEFAULT_SANDBOX_NETWORK, DEFAULT_STOP_VALUES, answeredLater, askedPaths
 import type { FileSystem, PathAsking } from '@momonga/foundation';
 import { askerOf } from './asker.ts';
 import { acceptedCheckOf } from './declared-checks.ts';
+import { hookGroupApprovalDigestOf } from './approval-digest.ts';
 import type { Asker } from './asker.ts';
 import type { SandboxNetworkSetting, StopValues } from '@momonga/foundation';
 
@@ -29,7 +30,7 @@ import { EDIT_TOOLS, NEGATION_PREFIX, NETWORK_RULE_NOT_ENFORCED, NETWORK_RULE_SU
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
 import { escapePointerSegment } from './json-file.ts';
 import { assertSettings, defaultSandboxSetting, defaultTuiSettings } from './settings.ts';
-import type { ProjectChecksSettings, RetentionSettings, AutoModeSettings, CredentialsSettings, McpSettings, RuntimeSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, ResolvedSandboxUnixSockets, ResolvedTuiSettings, SandboxSetting, Settings, TelemetrySettings, CeilingsSettings, ForgeInstanceSettings, LimitsSettings, MandateProfileSettings, OperationsSettings } from './settings.ts';
+import type { HookGroups, McpServerApproval, ProjectApprovalsSettings, ProjectChecksSettings, RetentionSettings, AutoModeSettings, CredentialsSettings, McpSettings, RuntimeSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, ResolvedSandboxUnixSockets, ResolvedTuiSettings, SandboxSetting, Settings, TelemetrySettings, CeilingsSettings, ForgeInstanceSettings, LimitsSettings, MandateProfileSettings, OperationsSettings } from './settings.ts';
 import type { ResolvedModels } from './models.ts';
 
 
@@ -47,8 +48,9 @@ export type ResolvedSettings = {
   env: Record<string, string>;
   credentials: Required<CredentialsSettings>;
   hooks: HooksSettings;
+  pendingHooks: PendingHookGroup[];
   autoMode?: AutoModeSettings;
-  enabledMcpjsonServers: string[];
+  enabledMcpjsonServers: McpServerApproval[];
   disabledMcpjsonServers: string[];
   enableAllProjectMcpServers?: boolean;
   mcpServers: Record<string, McpServerConfig>;
@@ -64,6 +66,7 @@ export type ResolvedSettings = {
   telemetry?: TelemetrySettings;
   retention?: RetentionSettings;
   projectChecks?: ProjectChecksSettings;
+  projectApprovals?: ProjectApprovalsSettings;
   network?: NetworkSettings;
   pricing?: PriceEntrySettings[];
   limits?: LimitsSettings;
@@ -76,6 +79,8 @@ export type ResolvedSettings = {
   context: ResolvedContextSettings;
   tools: ResolvedToolsSettings;
 };
+
+export type PendingHookGroup = { event: keyof HooksSettings; group: HookGroups[number]; digest: string; source: string };
 
 export type LoadSettingsOptions = {
   home: string;
@@ -230,6 +235,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
     env: {},
     credentials: { env: [], keep: [], valuePatterns: [], plaintextTokenFiles: false },
     hooks: {},
+    pendingHooks: [],
     enabledMcpjsonServers: [],
     disabledMcpjsonServers: [],
     mcpServers: {},
@@ -249,6 +255,14 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
   };
   let unixSockets: { source: string; allow: string[] } | undefined;
   let declaredCommands: string[] | undefined;
+  const approvedHooks = new Set(layers.find((layer) => layer.origin === 'user')?.settings.projectApprovals?.[projectReal]?.hooks ?? []);
+  const isApprovedHookGroup = (event: keyof HooksSettings, group: HookGroups[number], source: string): boolean => {
+    const digest = hookGroupApprovalDigestOf(event, group);
+    if (approvedHooks.has(digest)) return true;
+    merged.pendingHooks.push({ event, group, digest, source });
+    warnings.push(`${source}: a ${event} hook group is not approved for this folder, or changed since it was approved; it does not run until it is approved`);
+    return false;
+  };
   for (const layer of layers) {
     const {
       permissions,
@@ -271,6 +285,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
       telemetry,
       retention,
       projectChecks,
+      projectApprovals,
       network,
       pricing,
       limits,
@@ -310,7 +325,8 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
     if (credentials?.plaintextTokenFiles !== undefined) merged.credentials.plaintextTokenFiles = credentials.plaintextTokenFiles;
     for (const [event, groups] of Object.entries(hooks ?? {})) {
       const key = event as keyof HooksSettings;
-      merged.hooks[key] = [...(merged.hooks[key] ?? []), ...groups];
+      const admitted = layer.origin === 'project' ? groups.filter((group) => isApprovedHookGroup(key, group, layer.source)) : groups;
+      if (admitted.length > 0) merged.hooks[key] = [...(merged.hooks[key] ?? []), ...admitted];
     }
     if (autoMode !== undefined) merged.autoMode = autoMode;
     merged.enabledMcpjsonServers.push(...(enabledMcpjsonServers ?? []));
@@ -328,6 +344,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
     if (telemetry !== undefined) merged.telemetry = telemetry;
     if (retention !== undefined) merged.retention = retention;
     if (projectChecks !== undefined) merged.projectChecks = projectChecks;
+    if (projectApprovals !== undefined) merged.projectApprovals = projectApprovals;
     if (network !== undefined) merged.network = network;
     if (pricing !== undefined) merged.pricing = pricing;
     if (limits !== undefined) merged.limits = limits;

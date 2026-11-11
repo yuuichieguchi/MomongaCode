@@ -143,6 +143,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       }
       try {
         const evidence = await bindMemoryEvidence({
+          platform: process.platform,
           scope: 'project',
           paths,
           project,

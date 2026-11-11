@@ -172,7 +172,6 @@ const NAMED_ONLY_BY_TESTS: readonly string[] = [
   'handoverRecordOwner',
   'holderGroups',
   'hostInspectorPorts',
-  'isLoopbackAddress',
   'judgeProcessIdentity',
   'killedChildSettleMs',
   'launchKept',

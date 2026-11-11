@@ -529,7 +529,7 @@
       },
       "packages/reliability/src/report.ts": {
         "limit": 1,
-        "task": 7
+        "task": 6
       },
       "packages/runtime/src/gateway-client.ts": {
         "compact": 4,
@@ -641,9 +641,6 @@
       },
       "packages/runtime/src/worker/wrap-up.ts": {
         "conversation": 1,
-        "limit": 1
-      },
-      "packages/sandbox/src/bubblewrap.ts": {
         "limit": 1
       },
       "packages/sandbox/src/egress-proxy.ts": {

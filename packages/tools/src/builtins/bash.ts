@@ -1,7 +1,8 @@
 import { StringDecoder } from 'node:string_decoder';
 import { commandSpecsFor, readPathsOfCommand } from '@momonga/policy';
 import { groupRecordOutcome, hostEntryProblem, normalizedHosts, reconcileProcessGroup, resolveToolPath, stoppedCommandResult } from '@momonga/foundation';
-import type { NetworkRequest } from '@momonga/foundation';
+import type { NetworkRequest, NetworkScopeKind } from '@momonga/foundation';
+import { SANDBOX_NETWORK_SCOPES } from '@momonga/sandbox';
 import { defineTool, ToolExecutionError, ToolInputError } from '../types.ts';
 import { USER_SHELL_HEAD_BYTES, USER_SHELL_TAIL_BYTES } from '@momonga/protocol';
 import type { SandboxCommand, SandboxExit, SandboxedProcess } from '@momonga/sandbox';
@@ -127,10 +128,26 @@ const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<T
 
 export const shellCommandSubject = (command: string): { kind: 'command'; tool: string; command: string } => ({ kind: 'command', tool: 'Bash', command });
 
+const PLATFORM_SANDBOX_SCOPES: readonly NetworkScopeKind[] = [...new Set([...SANDBOX_NETWORK_SCOPES.seatbelt, ...SANDBOX_NETWORK_SCOPES.bubblewrap])];
+
+const BASH_DESCRIPTION_HEAD = `Runs a shell command with /bin/bash inside a sandbox, in the current working directory. Output combines stdout and stderr. A cd that stays inside the workspace persists to later calls. timeout is in milliseconds (default ${DEFAULT_TIMEOUT_MS}, maximum ${MAX_TIMEOUT_MS}). No process started by the command outlives it. With run_in_background the command starts as a background job and the call returns its job id at once; read its output with BashOutput and stop it with KillBash. For a background job timeout is the time the job may run (default ${DEFAULT_BACKGROUND_TIMEOUT_MS}, maximum ${MAX_BACKGROUND_TIMEOUT_MS}); a job ends with its command, with KillBash, at its time limit, or when MomongaCode stops.`;
+
+const BASH_CONCISE_HEAD = `Runs a bash command in a sandbox in the working directory; output is stdout and stderr. timeout is in milliseconds (default ${DEFAULT_TIMEOUT_MS}, maximum ${MAX_TIMEOUT_MS}). With run_in_background it returns a job id; use BashOutput and KillBash. A background job's timeout defaults to ${DEFAULT_BACKGROUND_TIMEOUT_MS}, maximum ${MAX_BACKGROUND_TIMEOUT_MS}.`;
+
+export const bashDescriptionOf = (scopes: readonly NetworkScopeKind[]): { description: string; conciseDescription: string } =>
+  scopes.includes('hosts')
+    ? {
+        description: `${BASH_DESCRIPTION_HEAD} The sandbox has no network: a command that needs it sets network to {"hosts": ["name", ...]} to reach only those hosts through a filtering proxy (HTTP and HTTPS; a program that ignores the proxy variables stays without network), or to "open" for unrestricted access. Either asks the person before the command runs, so name the fewest hosts that do the work.`,
+        conciseDescription: `${BASH_CONCISE_HEAD} The sandbox has no network; set network to {"hosts": ["name", ...]} (those hosts only, through a proxy for HTTP and HTTPS) or "open" when the command needs it; either asks the person.`,
+      }
+    : {
+        description: `${BASH_DESCRIPTION_HEAD} The sandbox has no network: a command that needs it sets network to "open" for unrestricted access. This asks the person before the command runs.`,
+        conciseDescription: `${BASH_CONCISE_HEAD} The sandbox has no network; set network to "open" when the command needs it; this asks the person.`,
+      };
+
 export const bashTool = defineTool<BashInput>({
   name: 'Bash',
-  description: `Runs a shell command with /bin/bash inside a sandbox, in the current working directory. Output combines stdout and stderr. A cd that stays inside the workspace persists to later calls. timeout is in milliseconds (default ${DEFAULT_TIMEOUT_MS}, maximum ${MAX_TIMEOUT_MS}). No process started by the command outlives it. With run_in_background the command starts as a background job and the call returns its job id at once; read its output with BashOutput and stop it with KillBash. For a background job timeout is the time the job may run (default ${DEFAULT_BACKGROUND_TIMEOUT_MS}, maximum ${MAX_BACKGROUND_TIMEOUT_MS}); a job ends with its command, with KillBash, at its time limit, or when MomongaCode stops. The sandbox has no network: a command that needs it sets network to {"hosts": ["name", ...]} to reach only those hosts through a filtering proxy (HTTP and HTTPS; a program that ignores the proxy variables stays without network), or to "open" for unrestricted access. Either asks the person before the command runs, so name the fewest hosts that do the work.`,
-  conciseDescription: `Runs a bash command in a sandbox in the working directory; output is stdout and stderr. timeout is in milliseconds (default ${DEFAULT_TIMEOUT_MS}, maximum ${MAX_TIMEOUT_MS}). With run_in_background it returns a job id; use BashOutput and KillBash. A background job's timeout defaults to ${DEFAULT_BACKGROUND_TIMEOUT_MS}, maximum ${MAX_BACKGROUND_TIMEOUT_MS}. The sandbox has no network; set network to {"hosts": ["name", ...]} (those hosts only, through a proxy for HTTP and HTTPS) or "open" when the command needs it; either asks the person.`,
+  ...bashDescriptionOf(PLATFORM_SANDBOX_SCOPES),
   conciseParameterDescriptions: {
     command: 'Command to run',
     timeout: 'Timeout in milliseconds',

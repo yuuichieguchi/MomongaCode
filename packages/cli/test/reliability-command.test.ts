@@ -87,7 +87,7 @@ describe('momonga reliability', () => {
     const { reliabilityText } = await reliabilityCommand();
     const text = await reliabilityText(pagedClient(ROWS, 2).client, { groupBy: 'model', explain: false, days: 30 }, NOW);
     const lines = text.split('\n');
-    expect(lines).toContain('Population: 3 terminal root tasks; counted 2; cancelled 1 (excluded); pending facts 0 (excluded); facts unavailable 0 (excluded); unknown values 0 (excluded); facts coverage 3/3');
+    expect(lines).toContain('Population: 3 terminal root runs; counted 2; cancelled 1 (excluded); pending facts 0 (excluded); facts unavailable 0 (excluded); unknown values 0 (excluded); facts coverage 3/3; not placed 0 (no facts row of the root run, so no period or group was tested; outside every count above)');
     expect(lines).toContain('Task Completion Rate: 1/2 (0 tasks without a declared condition are not in the denominator)');
     expect(lines).toContain('Recovery Success Rate: 1/1; unknown_effect 0; failed 0; stopped 0');
     expect(lines).toContain('Mean Recovery Time: n=1, mean 3000 ms, median 3000 ms; clock_skew 0');
@@ -113,8 +113,8 @@ describe('momonga reliability --days (2.2, gap B)', () => {
     const month = await reliabilityText(client, { groupBy: 'model', explain: false, days: 30 }, NOW);
     expect(requests).toHaveLength(3);
     expect(month.split('\n')[1]).toBe(`Period: tasks whose root run ended in the last 30 days (${new Date(NOW - 30 * DAY).toISOString()} to ${new Date(NOW).toISOString()})`);
-    expect(month).toContain('Population: 2 terminal root tasks; counted 2;');
-    expect(await reliabilityText(client, { groupBy: 'model', explain: false, days: 7 }, NOW)).toContain('Population: 1 terminal root tasks; counted 1;');
+    expect(month).toContain('Population: 2 terminal root runs; counted 2;');
+    expect(await reliabilityText(client, { groupBy: 'model', explain: false, days: 7 }, NOW)).toContain('Population: 1 terminal root runs; counted 1;');
     expect(await reliabilityText(client, { groupBy: 'model', explain: true, days: 7 }, NOW)).not.toContain('run-old');
   });
 });
@@ -152,7 +152,7 @@ describe('momonga reliability: the cost lines (X6)', () => {
 });
 
 describe('decision 55: unavailable runs in the text', () => {
-  it('merges the unavailable roots of every page into the fourth bucket and counts them as resolved in the coverage', async () => {
+  it('merges the unavailable runs of every page: one under a root row is the fourth bucket, a root with no row is not placed', async () => {
     const { reliabilityText } = await reliabilityCommand();
     const pages: ReportPage[] = [
       { rows: [row('run-a')], unavailable: [{ runId: 'poison-1', rootRunId: 'poison-1' }], nextCursor: '1' },
@@ -160,7 +160,7 @@ describe('decision 55: unavailable runs in the text', () => {
     ];
     const client: FactsClient = { reportCost: noCost, reportFacts: async (request) => pages[request.cursor === null ? 0 : 1] as ReportPage };
     const text = await reliabilityText(client, { groupBy: 'model', explain: false, days: 30 }, NOW);
-    expect(text).toContain('Population: 3 terminal root tasks; counted 1; cancelled 0 (excluded); pending facts 0 (excluded); facts unavailable 2 (excluded); unknown values 0 (excluded); facts coverage 3/3');
+    expect(text).toContain('Population: 2 terminal root runs; counted 1; cancelled 0 (excluded); pending facts 0 (excluded); facts unavailable 1 (excluded); unknown values 0 (excluded); facts coverage 2/2; not placed 1');
   });
 });
 

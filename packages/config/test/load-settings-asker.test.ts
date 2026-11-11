@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { loadMcpServers, loadProjectMandate, loadSettings } from '@momonga/config';
+import { approvalDigestOf, loadMcpServers, loadProjectMandate, loadSettings } from '@momonga/config';
 import { makeTree, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
 describe('the settings of a project are loaded under the signal of the asker', () => {
@@ -25,7 +25,7 @@ describe('the settings of a project are loaded under the signal of the asker', (
       },
     };
     await loadSettings({ signal, home: tree.home, projectDir: tree.project, cli: {}, trust });
-    await loadMcpServers({ signal, home: tree.home, projectDir: tree.project, trust, env: {} });
+    await loadMcpServers({ signal, home: tree.home, projectDir: tree.project, trust, env: {}, referenceEnv: {} });
     expect(asked).toEqual([signal, signal, signal]);
   });
 
@@ -38,7 +38,7 @@ describe('the settings of a project are loaded under the signal of the asker', (
     writeJson(path.join(tree.project, 'real-mandate.json'), {});
     fs.symlinkSync(path.join(tree.project, 'real-mandate.json'), path.join(directory, 'mandate.json'));
     const reason = new Error('the request ended');
-    await expect(loadProjectMandate({ projectDir: tree.project, trusted: true, signal: AbortSignal.abort(reason) })).rejects.toBe(reason);
-    await expect(loadProjectMandate({ projectDir: tree.project, trusted: true, signal: new AbortController().signal })).resolves.toEqual({});
+    await expect(loadProjectMandate({ projectDir: tree.project, trusted: true, approvals: undefined, signal: AbortSignal.abort(reason) })).rejects.toBe(reason);
+    await expect(loadProjectMandate({ projectDir: tree.project, trusted: true, approvals: { [tree.project]: { mandate: approvalDigestOf({}) } }, signal: new AbortController().signal })).resolves.toEqual({});
   });
 });

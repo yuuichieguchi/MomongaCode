@@ -533,7 +533,7 @@ export type HistoryReadResult =
 
 export type FactsCursor = { definitionsVersion: number; afterEventId: number };
 
-export type FactsBatch = { runIds: string[]; throughEventId: number };
+export type FactsBatch = { runIds: string[]; eventIds: number[]; afterEventId: number; throughEventId: number };
 
 export type FactsCommit = { rows: readonly RunFactsView[]; calls: readonly RunCallView[]; unavailable: readonly string[]; throughEventId: number };
 

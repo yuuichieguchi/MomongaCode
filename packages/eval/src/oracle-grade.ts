@@ -28,7 +28,7 @@ const within = (changed: string, allowed: string): boolean => {
 };
 
 export const filesUnder = async (files: WorkspaceFiles, root: string, relative: string): Promise<string[]> => {
-  const stat = await files.stat(path.join(root, relative)).then(
+  const stat = await files.lstat(path.join(root, relative)).then(
     (found) => found,
     (error: NodeJS.ErrnoException) => {
       if (error.code === 'ENOENT') return undefined;
@@ -37,7 +37,7 @@ export const filesUnder = async (files: WorkspaceFiles, root: string, relative: 
   );
   if (stat === undefined || !stat.isDirectory()) return stat === undefined ? [] : [relative];
   const children = await files.readdir(path.join(root, relative));
-  const nested = await Promise.all(children.map((child) => filesUnder(files, root, path.posix.join(relative, child))));
+  const nested = await Promise.all(children.sort().map((child) => filesUnder(files, root, relative === '' ? child : path.posix.join(relative, child))));
   return nested.flat();
 };
 

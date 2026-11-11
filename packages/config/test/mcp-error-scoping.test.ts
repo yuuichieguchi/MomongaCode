@@ -5,7 +5,7 @@ import { ConfigError, loadMcpServers } from '@momonga/config';
 import { makeDir, makeTree, mcpJsonPath, trusting, userSettingsPath, writeJson, writeText } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 
-const load = (tree: Tree) => loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
+const load = (tree: Tree) => loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, referenceEnv: {} });
 
 const approveAll = (tree: Tree, servers: Record<string, unknown> = {}): void => {
   writeJson(userSettingsPath(tree), { enableAllProjectMcpServers: true, mcpServers: servers });

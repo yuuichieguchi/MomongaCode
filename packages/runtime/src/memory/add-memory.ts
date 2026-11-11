@@ -64,6 +64,7 @@ export const prepareCommandMemory = async (request: AddMemoryRequest, context: M
   let evidence: MemoryEvidence[];
   try {
     evidence = await bindMemoryEvidence({
+      platform: process.platform,
       scope: request.scope,
       paths,
       project,

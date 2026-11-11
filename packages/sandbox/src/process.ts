@@ -1,11 +1,12 @@
 import type { spawn } from 'node:child_process';
 import { Deadline, SANDBOX_KILL_GRACE_MS, closeMarkerDescriptor, groupSignalsOf, groupTerminationBoundMs, hostProcessGroupPort, launchGroupLeader, signalGroup, sleep, systemTiming, systemWaitTiming, terminateGroup } from '@momonga/foundation';
-import type { GroupLaunch, GroupLaunchMarker, LaunchProtection, ProcessGroupPort, TerminateOutcome, Timing } from '@momonga/foundation';
+import type { GroupLaunch, GroupLaunchMarker, LaunchProtection, LaunchSlot, ProcessGroupPort, TerminateOutcome, Timing } from '@momonga/foundation';
+import type { Duplex } from 'node:stream';
 import type { SandboxExit, SandboxedProcess } from './types.ts';
 
 export { SANDBOX_KILL_GRACE_MS };
 
-const MARKER_SLOT = 3;
+export const MARKER_SLOT = 3;
 
 export const SOCKET_FILTER_SLOT = 4;
 
@@ -28,11 +29,20 @@ export interface LaunchOptions {
   markerFd?: number;
   stdin?: string;
   socketFilter?: Uint8Array;
+  channel?: { slot: number; serve: (stream: Duplex) => void };
   spawnProcess?: typeof spawn;
   signalTerm?: (pgid: number, stop: AbortSignal) => Promise<void> | void;
   groupPort?: ProcessGroupPort;
   timing?: Timing;
 }
+
+const stdioOf = (stdinMode: 'ignore' | 'pipe', options: LaunchOptions): LaunchSlot[] => {
+  const slots: LaunchSlot[] = [stdinMode, 'pipe', 'pipe', ...(options.socketFilter === undefined ? [] : STDIO_THROUGH_SOCKET_FILTER)];
+  if (options.channel === undefined) return slots;
+  while (slots.length < options.channel.slot) slots.push('ignore');
+  slots[options.channel.slot] = 'pipe';
+  return slots;
+};
 
 export function launch(options: LaunchOptions): SandboxedProcess {
   const stdinMode = options.stdin === undefined ? 'ignore' : 'pipe';
@@ -56,7 +66,7 @@ export function launch(options: LaunchOptions): SandboxedProcess {
       protection: options.protection,
       cwd: options.cwd,
       env: options.env,
-      stdio: [stdinMode, 'pipe', 'pipe', ...(options.socketFilter === undefined ? [] : STDIO_THROUGH_SOCKET_FILTER)],
+      stdio: stdioOf(stdinMode, options),
       ...(marker === undefined ? {} : { marker }),
       port: groupPort,
       ...(options.spawnProcess === undefined ? {} : { spawnProcess: options.spawnProcess }),
@@ -100,6 +110,17 @@ export function launch(options: LaunchOptions): SandboxedProcess {
       if (!ENDED_BEFORE_READING.has(error.code ?? '')) stdinFailure ??= error;
     });
     feed.end(options.socketFilter);
+  }
+  if (options.channel !== undefined) {
+    const stream = child.stdio[options.channel.slot];
+    if (stream === null || stream === undefined || !('end' in stream) || !('read' in stream)) {
+      child.once('error', () => undefined);
+      signalGroup(pid, lastSignal ?? firstSignal, groupPort, signal).catch((failure: unknown) => {
+        process.emitWarning(new Error(`the process group ${pid} could not be killed after its network relay channel failed to open`, { cause: failure }));
+      });
+      throw new Error(`failed to open the network relay channel for ${options.file}`);
+    }
+    options.channel.serve(stream as Duplex);
   }
   let killedBy: SandboxExit['killedBy'];
   let leaderExited = false;

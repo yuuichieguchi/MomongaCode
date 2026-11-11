@@ -119,15 +119,13 @@ export type Period = { days: number; fromMs: number; toMs: number };
 
 export const withinPeriod = (aggregated: Aggregate, period: Period): Aggregate => {
   const outside = new Set<string>();
-  const rootless: string[] = [];
   for (const [rootRunId, { root }] of aggregated.tasks) {
-    if (root === undefined) rootless.push(rootRunId);
-    else if (root.endedAt < period.fromMs || root.endedAt > period.toMs) outside.add(rootRunId);
+    if (root !== undefined && (root.endedAt < period.fromMs || root.endedAt > period.toMs)) outside.add(rootRunId);
   }
   return {
     groupBy: aggregated.groupBy,
     tasks: new Map([...aggregated.tasks].filter(([rootRunId]) => !outside.has(rootRunId))),
-    unavailableRoots: new Set([...aggregated.unavailableRoots, ...rootless].filter((rootRunId) => !outside.has(rootRunId))),
+    unavailableRoots: new Set([...aggregated.unavailableRoots].filter((rootRunId) => !outside.has(rootRunId))),
     labels: aggregated.labels,
   };
 };
@@ -168,6 +166,7 @@ const groupOf = (row: RunFacts, groupBy: GroupKey, labels: ReadonlyMap<string, T
 
 type Accumulator = {
   counted: number;
+  notPlaced: number;
   cancelled: number;
   pendingFacts: number;
   factsUnavailable: number;
@@ -199,6 +198,7 @@ type Accumulator = {
 
 const emptyAccumulator = (): Accumulator => ({
   counted: 0,
+  notPlaced: 0,
   cancelled: 0,
   pendingFacts: 0,
   factsUnavailable: 0,
@@ -254,20 +254,17 @@ type Excluded = 'pendingFacts' | 'unknownValues' | 'cancelled';
 
 const EXCLUDED_LABELS: Record<Excluded, string> = { pendingFacts: 'pending facts', unknownValues: 'unknown values', cancelled: 'cancelled' };
 
-const exclusionOf = (task: TaskPartial): Excluded | undefined => {
-  if (task.root === undefined || task.stale) return 'pendingFacts';
+const exclusionOf = (root: RunFacts, task: TaskPartial): Excluded | undefined => {
+  if (task.stale) return 'pendingFacts';
   if (task.unknownValues) return 'unknownValues';
-  return task.root.status === 'CANCELLED' ? 'cancelled' : undefined;
+  return root.status === 'CANCELLED' ? 'cancelled' : undefined;
 };
 
-const accumulate = (accumulator: Accumulator, task: TaskPartial, marks?: Marks): void => {
-  const { root } = task;
-  const excluded = exclusionOf(task);
-  if (root === undefined || excluded !== undefined) {
-    if (excluded !== undefined) {
-      accumulator[excluded] += 1;
-      markOf(marks, EXCLUDED_LABELS[excluded], (root ?? task.earliest).rootRunId);
-    }
+const accumulate = (accumulator: Accumulator, root: RunFacts, task: TaskPartial, marks?: Marks): void => {
+  const excluded = exclusionOf(root, task);
+  if (excluded !== undefined) {
+    accumulator[excluded] += 1;
+    markOf(marks, EXCLUDED_LABELS[excluded], root.rootRunId);
     return;
   }
   accumulator.counted += 1;
@@ -347,7 +344,14 @@ const finish = (accumulator: Accumulator): Indicators => {
   const durationSum = sorted.reduce((sum, value) => sum + value, 0);
   const episodes = accumulator.recovered + accumulator.unknownEffect + accumulator.failedEpisodes;
   return {
-    buckets: { counted: accumulator.counted, cancelled: accumulator.cancelled, pendingFacts: accumulator.pendingFacts, factsUnavailable: accumulator.factsUnavailable, unknownValues: accumulator.unknownValues },
+    buckets: {
+      counted: accumulator.counted,
+      cancelled: accumulator.cancelled,
+      pendingFacts: accumulator.pendingFacts,
+      factsUnavailable: accumulator.factsUnavailable,
+      unknownValues: accumulator.unknownValues,
+      notPlaced: accumulator.notPlaced,
+    },
     completion: { k: accumulator.completionK, n: accumulator.completionN, undeclared: accumulator.undeclared },
     recovery: {
       k: accumulator.recovered,
@@ -374,30 +378,44 @@ const finish = (accumulator: Accumulator): Indicators => {
   };
 };
 
-const place = (accumulator: Accumulator, rootRunId: string, task: TaskPartial, unavailable: boolean, marks?: Marks): void => {
+const NOT_PLACED = 'not placed';
+
+const notPlaced = (accumulator: Accumulator, rootRunId: string, marks?: Marks): void => {
+  accumulator.notPlaced += 1;
+  markOf(marks, NOT_PLACED, rootRunId);
+};
+
+const place = (accumulator: Accumulator, root: RunFacts, task: TaskPartial, unavailable: boolean, marks?: Marks): void => {
   if (!unavailable) {
-    accumulate(accumulator, task, marks);
+    accumulate(accumulator, root, task, marks);
     return;
   }
   accumulator.factsUnavailable += 1;
-  markOf(marks, 'facts unavailable', rootRunId);
+  markOf(marks, 'facts unavailable', root.rootRunId);
 };
+
+const unplacedRootsOf = (aggregated: Aggregate): string[] => [
+  ...[...aggregated.tasks].filter(([, task]) => task.root === undefined).map(([rootRunId]) => rootRunId),
+  ...[...aggregated.unavailableRoots].filter((rootRunId) => !aggregated.tasks.has(rootRunId)),
+];
 
 export const indicatorsOf = (aggregated: Aggregate): IndicatorGroups => {
   const total = emptyAccumulator();
   const groups = new Map<string, Accumulator>();
   for (const [rootRunId, task] of aggregated.tasks) {
+    const { root } = task;
+    if (root === undefined) continue;
     const unavailable = aggregated.unavailableRoots.has(rootRunId);
-    place(total, rootRunId, task, unavailable);
-    const key = groupOf(task.root ?? task.earliest, aggregated.groupBy, aggregated.labels);
+    place(total, root, task, unavailable);
+    const key = groupOf(root, aggregated.groupBy, aggregated.labels);
     let group = groups.get(key);
     if (group === undefined) {
       group = emptyAccumulator();
       groups.set(key, group);
     }
-    place(group, rootRunId, task, unavailable);
+    place(group, root, task, unavailable);
   }
-  for (const rootRunId of aggregated.unavailableRoots) if (!aggregated.tasks.has(rootRunId)) total.factsUnavailable += 1;
+  for (const rootRunId of unplacedRootsOf(aggregated)) notPlaced(total, rootRunId);
   return {
     total: finish(total),
     groups: Object.fromEntries([...groups.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)).map(([key, group]) => [key, finish(group)])),
@@ -407,8 +425,8 @@ export const indicatorsOf = (aggregated: Aggregate): IndicatorGroups => {
 export const explainOf = (aggregated: Aggregate): Marks => {
   const marks: Marks = new Map();
   const scratch = emptyAccumulator();
-  for (const [rootRunId, task] of aggregated.tasks) place(scratch, rootRunId, task, aggregated.unavailableRoots.has(rootRunId), marks);
-  for (const rootRunId of aggregated.unavailableRoots) if (!aggregated.tasks.has(rootRunId)) markOf(marks, 'facts unavailable', rootRunId);
+  for (const [rootRunId, task] of aggregated.tasks) if (task.root !== undefined) place(scratch, task.root, task, aggregated.unavailableRoots.has(rootRunId), marks);
+  for (const rootRunId of unplacedRootsOf(aggregated)) notPlaced(scratch, rootRunId, marks);
   for (const ids of marks.values()) ids.sort();
   return new Map([...marks.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)));
 };
@@ -419,7 +437,7 @@ export const countedTasksOf = (aggregated: Aggregate): CountedTask[] => {
   const counted: CountedTask[] = [];
   for (const [rootRunId, task] of aggregated.tasks) {
     const { root } = task;
-    if (root === undefined || aggregated.unavailableRoots.has(rootRunId) || exclusionOf(task) !== undefined) continue;
+    if (root === undefined || aggregated.unavailableRoots.has(rootRunId) || exclusionOf(root, task) !== undefined) continue;
     counted.push({ rootRunId, group: groupOf(root, aggregated.groupBy, aggregated.labels), met: root.met, tokens: root.tokensTotal, runIds: [...task.runIds].sort() });
   }
   return counted.sort((left, right) => (left.rootRunId < right.rootRunId ? -1 : 1));

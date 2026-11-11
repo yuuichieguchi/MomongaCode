@@ -220,7 +220,7 @@ export {
 } from './secret-store.ts';
 export type { SecretBackend, SecretProcessPort, SecretProcessResult, SecretStore } from './secret-store.ts';
 export { isAcceptableAddress, isLoopbackAddress } from './global-address.ts';
-export { isLoopbackHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
+export { isLoopbackHost, normalizedHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
 export { matchesNoProxy, NETWORK_ENV_NAMES, routeOf } from './network-route.ts';
 export { HOST_READ_BOUND_MS } from './host-read-bound.ts';
 export { startSharedCall } from './shared-call.ts';
@@ -364,7 +364,7 @@ export { createProcessInspector, hostInspectorPorts, layoutProcessInspector } fr
 export { createJobGroupPort, createPosixGroupPort, createProcessGroupPort, groupPortOf, groupSignalsOf, hostProcessGroupPort } from './platform/group-port.ts';
 export { GroupContainmentError, createKeptGroupControl } from './platform/windows-kept-groups.ts';
 export { launchApart, launchGroupLeader } from './platform/group-launch.ts';
-export type { GroupLaunch, GroupLaunchMarker } from './platform/group-launch.ts';
+export type { GroupLaunch, GroupLaunchMarker, LaunchSlot } from './platform/group-launch.ts';
 export { canStillRun } from './platform/run-state.ts';
 export type { ProcessGroupPort } from './platform/group-port.ts';
 export { operationSignal } from './platform/probe-timing.ts';

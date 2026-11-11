@@ -39,11 +39,7 @@ export const createWorker = (options: WorkerOptions): Worker => {
   };
 
   const noticeOnClaim = (message: string, claim: Claim): void => {
-    try {
-      options.store.append(claim, [{ type: 'notice', level: 'error', message }]);
-    } catch {
-      return;
-    }
+    options.store.append(claim, [{ type: 'notice', level: 'error', message }]);
   };
 
   const report = (error: unknown, context: WorkerErrorContext, claim: Claim | null): void => {

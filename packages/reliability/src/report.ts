@@ -96,7 +96,7 @@ const indicatorLines = (indicators: Indicators, cost?: CostIndicators): string[]
 
 const populationLine = ({ buckets }: Indicators): string => {
   const roots = buckets.counted + buckets.cancelled + buckets.pendingFacts + buckets.factsUnavailable + buckets.unknownValues;
-  return `Population: ${roots} terminal root tasks; counted ${buckets.counted}; cancelled ${buckets.cancelled} (excluded); pending facts ${buckets.pendingFacts} (excluded); facts unavailable ${buckets.factsUnavailable} (excluded); unknown values ${buckets.unknownValues} (excluded); facts coverage ${buckets.counted + buckets.cancelled + buckets.factsUnavailable + buckets.unknownValues}/${roots}`;
+  return `Population: ${roots} terminal root runs; counted ${buckets.counted}; cancelled ${buckets.cancelled} (excluded); pending facts ${buckets.pendingFacts} (excluded); facts unavailable ${buckets.factsUnavailable} (excluded); unknown values ${buckets.unknownValues} (excluded); facts coverage ${buckets.counted + buckets.cancelled + buckets.factsUnavailable + buckets.unknownValues}/${roots}; not placed ${buckets.notPlaced} (no facts row of the root run, so no period or group was tested; outside every count above)`;
 };
 
 const periodLines = (period: Period | undefined): string[] =>

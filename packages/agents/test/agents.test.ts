@@ -37,6 +37,14 @@ describe('agent definitions', () => {
     expect(set.agents[1]?.model).toBeUndefined();
   });
 
+  it.each([["an empty string", 'tools: ""\n'], ['a blank list', 'tools: " , "\n'], ['an empty list', 'tools: []\n']])('reads %s of tools as no tools line: the agent inherits the tools', async (_label, line) => {
+    const absent = await load({ [`${HOME}/.momonga/agents/r.md`]: agentFile('r', 'd') });
+    const empty = await load({ [`${HOME}/.momonga/agents/r.md`]: agentFile('r', 'd', line) });
+    expect(empty.warnings).toEqual([]);
+    expect(empty.agents).toEqual(absent.agents);
+    expect(empty.agents[0]?.tools).toBeUndefined();
+  });
+
   it('skips project agents of an untrusted folder and says so', async () => {
     const set = await load({ [`${PROJECT}/.momonga/agents/a.md`]: agentFile('a', 'A'), [`${HOME}/.momonga/agents/b.md`]: agentFile('b', 'B') }, false);
     expect(set.agents.map((agent) => agent.name)).toEqual(['b']);

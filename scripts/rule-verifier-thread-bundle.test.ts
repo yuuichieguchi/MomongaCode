@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { BuildOptions, Metafile } from 'esbuild';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { parseRule } from '@momonga/config';
-import { systemClock } from '@momonga/foundation';
+import { momongaLayout, systemClock } from '@momonga/foundation';
 import { createPolicyFilesystem } from '@momonga/tools';
 import { NEVER_CANCELLED } from '@momonga/testkit';
 import { Z3_MANIFEST_ASSET, parseZ3Manifest } from '@momonga/verify';
@@ -75,7 +75,7 @@ describe('the bundle of the verification thread', () => {
         recipe: async () => ({ kind: 'bundled', executablesRoot: executables, assets }),
         threadCode: code,
       };
-      const verifier = createRuleVerifier({ host, fs: createPolicyFilesystem(), paths: { root: path.join(home, '.momonga'), keychains: path.join(home, 'keys') } as never, timers: systemTimers, bashPath: () => '/bin/bash', clock: systemClock });
+      const verifier = createRuleVerifier({ host, fs: createPolicyFilesystem(), paths: momongaLayout(home, process.platform, {}), timers: systemTimers, bashPath: () => '/bin/bash', clock: systemClock });
       const rule = (text: string, effect: 'allow' | 'deny') => parseRule(text, { effect, origin: 'user', source: path.join(home, '.momonga', 'settings.json'), settingsRoot: home, home, cwd: work });
 
       const input = await verifier.inputOf(
