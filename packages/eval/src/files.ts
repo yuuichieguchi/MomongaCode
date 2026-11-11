@@ -19,6 +19,7 @@ export type EvalFiles = {
   readText(file: string): Promise<string>;
   writeText(file: string, text: string): Promise<void>;
   listFiles(directory: string): Promise<string[]>;
+  exists(file: string): Promise<boolean>;
 };
 
 export type WorkspaceFiles = Pick<FileSystem, 'stat' | 'lstat' | 'readdir' | 'readdirEntries' | 'readFile' | 'readTextFile' | 'mkdir' | 'writeFile' | 'access' | 'realpath' | 'cp'> & {
@@ -47,6 +48,32 @@ export const nodeEvalFiles: EvalFiles = {
   readText: (file) => fs.readFile(file, 'utf8'),
   writeText: (file, text) => fs.writeFile(file, text, { mode: TRANSCRIPT_FILE_MODE, flag: 'wx' }),
   listFiles: async (directory) => (await fs.readdir(directory)).sort().map((name) => path.join(directory, name)),
+  exists: async (file) => {
+    try {
+      await fs.lstat(file);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+      throw error;
+    }
+  },
+};
+
+export class OutputExistsError extends Error {
+  constructor(file: string) {
+    super(`${file} already exists, and a result is never written over another: name a file that does not exist`);
+    this.name = 'OutputExistsError';
+  }
+}
+
+export const refuseExistingOutput = async (files: Pick<EvalFiles, 'exists'>, file: string): Promise<void> => {
+  if (await files.exists(file)) throw new OutputExistsError(file);
+};
+
+export const refuseRecordedTranscripts = async (files: Pick<EvalFiles, 'exists' | 'listFiles'>, directory: string): Promise<void> => {
+  if (!(await files.exists(directory))) return;
+  const recorded = (await files.listFiles(directory)).find((file) => file.endsWith(TRANSCRIPT_FILE_SUFFIX));
+  if (recorded !== undefined) throw new OutputExistsError(recorded);
 };
 
 export const loadDataset = async (files: EvalFiles, file: string): Promise<GoldenDataset> => parseDataset(await files.readText(file), file);

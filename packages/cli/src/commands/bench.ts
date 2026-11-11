@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { UserModels } from '@momonga/config';
-import { caseSettingsFor, failedWithCleanup, runBenchmark, validateBenchmark } from '@momonga/eval';
+import { caseSettingsFor, failedWithCleanup, refuseExistingOutput, runBenchmark, validateBenchmark } from '@momonga/eval';
 import type { BenchProblem, BenchRunApi, BenchRunResult, TaskValidation, WorkspaceFiles, WorkspaceProbe } from '@momonga/eval';
 import { EXIT_FAILURE, EXIT_OK, codeDigestOfRunningProcess, currentSocketResolver, resolveLayoutLocks } from '@momonga/foundation';
 import type { KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
@@ -176,6 +176,8 @@ const run = async (
   options: { model: string; report?: string; groupBy: GroupKey; interrupt: AbortSignal },
   hostEffects: (ports: CliPorts, lock: KernelLockMechanism) => BenchHostEffects,
 ): Promise<number> => {
+  const reportFile = options.report === undefined ? undefined : path.resolve(ports.cwd, options.report);
+  if (reportFile !== undefined) await refuseExistingOutput(ports.files, reportFile);
   const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } = await import('@momonga/runtime');
   const models = await shellModelsOf(ports, options.interrupt);
   const { report, trialsRun } = await runBenchLive(hostEffects(ports, resolveLayoutLocks(paths).mechanism), {
@@ -192,8 +194,8 @@ const run = async (
     onUnownedHomes: (roots) => ports.stderr.write(unownedHomesNotice(roots)),
     interrupt: options.interrupt,
   });
-  if (options.report !== undefined) await ports.files.writeText(path.resolve(ports.cwd, options.report), encodeReliabilityReport(report));
   ports.stdout.write(formatReliabilityReport(report));
+  if (reportFile !== undefined) await ports.files.writeText(reportFile, encodeReliabilityReport(report));
   if (trialsRun > 0) return EXIT_OK;
   ports.stderr.write('no trial ran, so the report measures nothing\n');
   return EXIT_FAILURE;

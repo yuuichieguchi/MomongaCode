@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { buildYieldReport, formatYieldReport, judgeYield, loadYieldDataset, saveYieldReport } from '@momonga/eval';
+import { buildYieldReport, formatYieldReport, judgeYield, loadYieldDataset, refuseExistingOutput, saveYieldReport } from '@momonga/eval';
 import { codeDigestOfRunningProcess, currentSocketResolver, momongaPaths, resolveLayoutLocks } from '@momonga/foundation';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
 import { nodeYieldEffects } from '../eval/context-effects.ts';
@@ -19,6 +19,8 @@ export const evaluateYield = async (
   options: EvaluateYieldOptions,
   hostEffects: (ports: CliPorts, lock: KernelLockMechanism) => YieldHostEffects = nodeYieldEffects,
 ): Promise<number> => {
+  const reportFile = path.resolve(ports.cwd, options.report);
+  await refuseExistingOutput(ports.files, reportFile);
   const dataset = await loadYieldDataset(ports.files, path.resolve(ports.cwd, datasetFile));
   const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } = await import('@momonga/runtime');
   const models = await shellModelsOf(ports, options.interrupt);
@@ -35,7 +37,7 @@ export const evaluateYield = async (
   });
   const report = buildYieldReport({ dataset, runs, seed: CONTEXT_BOOTSTRAP_SEED });
   const gate = judgeYield(report, { seed: CONTEXT_BOOTSTRAP_SEED });
-  await saveYieldReport(ports.files, path.resolve(ports.cwd, options.report), report);
   ports.stdout.write(`${formatYieldReport(report, gate)}\n`);
+  await saveYieldReport(ports.files, reportFile, report);
   return gate.passed ? 0 : 1;
 };

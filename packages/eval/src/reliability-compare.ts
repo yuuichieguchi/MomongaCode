@@ -16,6 +16,7 @@ type Term = (pairing: Pairing) => GateCheck;
 
 type KindRow = {
   unit: string;
+  size: string;
   requireModel: boolean;
   unitsOf(report: ReliabilityReport): readonly Unit[];
   terms: readonly Term[];
@@ -72,8 +73,8 @@ const scenarioUnits: KindRow['unitsOf'] = (report) =>
   unitsOrRefuse(report.scenarios, 'per-scenario rows', 'injection').map((row) => ({ id: row.scenario, numerator: row.recovered, denominator: row.episodes }));
 
 const KIND_ROWS: Record<Exclude<ReportKind, 'real'>, KindRow> = {
-  benchmark: { unit: 'task', requireModel: true, unitsOf: taskUnits, terms: [rateTerm('completionRate', 'task', taskUnits)] },
-  injection: { unit: 'scenario', requireModel: false, unitsOf: scenarioUnits, terms: [rateTerm('recoveryRate', 'scenario', scenarioUnits), witnessedTerm] },
+  benchmark: { unit: 'task', size: 'trials', requireModel: true, unitsOf: taskUnits, terms: [rateTerm('completionRate', 'task', taskUnits)] },
+  injection: { unit: 'scenario', size: 'episodes', requireModel: false, unitsOf: scenarioUnits, terms: [rateTerm('recoveryRate', 'scenario', scenarioUnits), witnessedTerm] },
 };
 
 export type ReliabilityComparison = {
@@ -105,6 +106,12 @@ const assertPaired = (row: KindRow, baseline: ReliabilityReport, candidate: Reli
     ...[...after].filter((id) => !before.has(id)).map((id) => `${row.unit} ${id} is missing from the baseline report`),
   ];
   if (missing.length > 0) throw new EvalError(`${missing.join('; ')}, so the reports cannot be paired`);
+  const sizes = new Map(row.unitsOf(baseline).map((unit) => [unit.id, unit.denominator]));
+  const unequal = row.unitsOf(candidate).flatMap((unit) => {
+    const size = sizes.get(unit.id);
+    return size === undefined || size === unit.denominator ? [] : [`${row.unit} ${unit.id} has ${size} ${row.size} in the baseline report and ${unit.denominator} in the candidate report`];
+  });
+  if (unequal.length > 0) throw new EvalError(`${unequal.join('; ')}, so the paired rates are not of equal size and the reports cannot be compared`);
 };
 
 export const compareReliability = (baseline: ReliabilityReport, candidate: ReliabilityReport, options: { seed: number }): ReliabilityComparison => {
