@@ -407,6 +407,7 @@ const NO_FORGE: ForgeAccess = {
     throw new Error('a dry run configures no forge');
   },
   gitCredential: async () => undefined,
+  gitDestination: () => undefined,
 };
 
 export type DryRunRecord = DryRun & { readonly journal: readonly JournalEvent[]; readonly bodies: readonly unknown[]; readonly counts: readonly CountTokensResult[]; readonly observedCounts: readonly number[] };
