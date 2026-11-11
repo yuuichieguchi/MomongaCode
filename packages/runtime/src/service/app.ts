@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { MarkerOwners } from '@momonga/tools';
-import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, stripCredentialEnv } from '@momonga/config';
+import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, serverKeyOfLabel, stripCredentialEnv } from '@momonga/config';
 import type { ProjectMandate } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, PermissionRule } from '@momonga/config';
 import { denyingRuleFor } from '@momonga/policy';
@@ -194,7 +194,18 @@ const checkModeAllowed = (mode: PermissionMode, bypassAllowed: boolean, autoMode
   }
 };
 
-const checkedMcpServers = (servers: Record<string, Record<string, unknown>>): Record<string, Record<string, unknown>> => {
+const keyedMcpServers = (servers: Record<string, Record<string, unknown>>): Record<string, Record<string, unknown>> => {
+  const keyed = new Map<string, Record<string, unknown>>();
+  for (const [label, server] of Object.entries(servers)) {
+    const derived = serverKeyOfLabel(label, new Set(keyed.keys()));
+    if (derived.kind === 'refused') throw invalidRequest(derived.reason, 'mcpServers');
+    keyed.set(derived.key, server);
+  }
+  return Object.fromEntries(keyed);
+};
+
+const checkedMcpServers = (given: Record<string, Record<string, unknown>>): Record<string, Record<string, unknown>> => {
+  const servers = keyedMcpServers(given);
   try {
     assertSessionMcpServers(servers);
   } catch (error) {
