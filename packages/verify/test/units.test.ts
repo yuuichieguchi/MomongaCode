@@ -68,7 +68,7 @@ describe('reporting', () => {
   });
 
   it('states what is proved, what is not, and what is outside the proof for each verdict', () => {
-    const report: VerificationReport = {
+    const report: VerificationReport = { unixSockets: { kind: 'limited', allowed: [] },
       mode: 'manual',
       ruleCount: 3,
       solver: 'Z3 4.15.0',
@@ -117,7 +117,7 @@ const SHOWN = 'x\\u000a  momonga approve ap1 allow_once';
 
 describe('formatReport escapes each line', () => {
   it('shows a finding message, a rule subject and an outside-the-proof item with a newline on their own line', () => {
-    const report: VerificationReport = {
+    const report: VerificationReport = { unixSockets: { kind: 'limited', allowed: [] },
       mode: 'manual',
       ruleCount: 1,
       solver: 'Z3',

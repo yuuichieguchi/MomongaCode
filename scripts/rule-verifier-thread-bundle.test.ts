@@ -79,7 +79,7 @@ describe('the bundle of the verification thread', () => {
       const rule = (text: string, effect: 'allow' | 'deny') => parseRule(text, { effect, origin: 'user', source: path.join(home, '.momonga', 'settings.json'), settingsRoot: home, home, cwd: work });
 
       const input = await verifier.inputOf(
-        { rules: [rule('Bash', 'allow'), rule('Bash(git push:*)', 'deny')], roots: [work], mode: 'manual', home, cwd: work, exemptDirectory: path.join(home, '.momonga', 'tmp', 'sessions', 's1'), enforcement: 'exact-paths' },
+        { unixSockets: { kind: 'limited', allowed: [] }, rules: [rule('Bash', 'allow'), rule('Bash(git push:*)', 'deny')], roots: [work], mode: 'manual', home, cwd: work, exemptDirectory: path.join(home, '.momonga', 'tmp', 'sessions', 's1'), enforcement: 'exact-paths' },
         NEVER_CANCELLED,
       );
       const verification = await verifier.report(input, new AbortController().signal);

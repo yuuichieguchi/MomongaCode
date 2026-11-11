@@ -428,3 +428,5 @@ export type {
 export { createNodeKeeperHost, provideCheckedWindowsKeeper, provideWindowsKeeper } from './platform/windows-keeper-host.ts';
 export { CONTROL_PLANE_LAUNCH } from './child-protection.ts';
 export type { ChildProtection, LaunchProtection } from './child-protection.ts';
+export { unixSocketPolicyOf } from './unix-socket-policy.ts';
+export type { UnixSocketPolicy } from './unix-socket-policy.ts';

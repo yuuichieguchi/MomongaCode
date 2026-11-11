@@ -1,6 +1,6 @@
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { systemClock, systemRandom } from '@momonga/foundation';
-import type { Clock } from '@momonga/foundation';
+import type { Clock, UnixSocketPolicy } from '@momonga/foundation';
 import type { RuleVerdict, RuleVerdictPhase } from '@momonga/protocol';
 import { ShellNotFoundError, createHostFilesystem, nodeGlobPorts } from '@momonga/policy';
 
@@ -14,6 +14,7 @@ export type RuleSolverRecipe =
 
 export type RuleVerifyJob = {
   readonly input: RuleVerifyInput;
+  readonly unixSockets: UnixSocketPolicy;
   readonly solver: RuleSolverRecipe;
   readonly solverVersion: string;
   readonly budgetMs: number;
@@ -71,6 +72,7 @@ export const runRuleVerifyJob = async (job: RuleVerifyJob, { signal, clock }: { 
       signal,
       clock,
       hostPhases,
+      unixSockets: job.unixSockets,
     });
     return { verdict: verifier.verdictOfReport(report, job.solverVersion), report: verifier.formatReport(report) };
   } finally {
