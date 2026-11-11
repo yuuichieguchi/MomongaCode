@@ -21,10 +21,10 @@ vi.mock('@momonga/sandbox', async (importOriginal) => {
       const sandbox = original.createBubblewrapSandbox(options);
       return {
         ...sandbox,
-        sweep: () => {
+        sweep: async () => {
           sandboxSweeps.calls += 1;
           if (sandboxSweeps.failure !== undefined) throw sandboxSweeps.failure;
-          sandbox.sweep?.();
+          await sandbox.sweep?.();
         },
       };
     },

@@ -44,7 +44,7 @@ export interface SandboxedProcess {
 
 export interface Sandbox {
   kind: 'seatbelt' | 'bubblewrap' | 'none';
-  sweep?(): void;
+  sweep?(): Promise<void>;
   spawn(command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal, descriptors?: SandboxDescriptors): SandboxedProcess | Promise<SandboxedProcess>;
 }
 

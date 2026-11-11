@@ -22,7 +22,7 @@ export interface LaunchOptions {
   env: Readonly<Record<string, string>>;
   signal: AbortSignal;
   killGraceMs: number;
-  afterExit: () => void;
+  afterExit: () => void | Promise<void>;
   markerFile?: string;
   markerFd?: number;
   stdin?: string;
@@ -146,10 +146,10 @@ export function launch(options: LaunchOptions): SandboxedProcess {
   };
 
   let afterExitRan = false;
-  const afterExitOnce = (): void => {
+  const afterExitOnce = async (): Promise<void> => {
     if (afterExitRan) return;
     afterExitRan = true;
-    options.afterExit();
+    await options.afterExit();
   };
 
   const reapAndClean = async (): Promise<TerminateOutcome | undefined> => {
@@ -161,7 +161,7 @@ export function launch(options: LaunchOptions): SandboxedProcess {
       failures.push(error);
     }
     try {
-      afterExitOnce();
+      await afterExitOnce();
     } catch (error) {
       failures.push(error);
     }

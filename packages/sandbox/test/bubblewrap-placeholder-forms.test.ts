@@ -98,21 +98,21 @@ describe('planBubblewrap mounts each placeholder on its own path, in its form', 
 });
 
 describe('the host creates a placeholder in its form', () => {
-  it('creates a directory form with mkdir, empty, and returns its identity', () => {
+  it('creates a directory form with mkdir, empty, and returns its identity', async () => {
     const target = path.join(work, '.git');
-    const identity = nodeFilesystemPort(testKernelLock()).createPlaceholder(target, DIRECTORY_FORM);
+    const identity = await nodeFilesystemPort(testKernelLock()).createPlaceholder(target, DIRECTORY_FORM);
     expect(fs.lstatSync(target).isDirectory()).toBe(true);
     expect(fs.readdirSync(target)).toEqual([]);
-    expect(identity).toEqual(identityOf(target));
+    expect(identity).toEqual(await identityOf(target));
   });
 
-  it('creates a file form with exactly its bytes', () => {
+  it('creates a file form with exactly its bytes', async () => {
     fs.mkdirSync(path.join(work, '.git'));
     const target = path.join(work, '.git', 'commondir');
-    const identity = nodeFilesystemPort(testKernelLock()).createPlaceholder(target, COMMONDIR_FORM);
+    const identity = await nodeFilesystemPort(testKernelLock()).createPlaceholder(target, COMMONDIR_FORM);
     expect(fs.lstatSync(target).isFile()).toBe(true);
     expect(fs.readFileSync(target, 'latin1')).toBe('.\n');
-    expect(identity).toEqual(identityOf(target));
+    expect(identity).toEqual(await identityOf(target));
   });
 
   it('never takes a file of a person: an existing file stays as it was and creation fails', async () => {
@@ -154,7 +154,7 @@ describe('a command holds placeholders in their form and release removes them (s
     expect(result.stdout.trim()).toBe('forms-ok');
     expect(fs.existsSync(path.join(work, '.git'))).toBe(false);
     expect(fs.existsSync(path.join(work, '.mcp.json'))).toBe(false);
-    expect(journal.records()).toEqual([]);
+    expect(await journal.records()).toEqual([]);
   });
 
   it('shows the command a commondir holding a dot and a newline, and removes it after release', async () => {
@@ -180,6 +180,6 @@ describe('a command holds placeholders in their form and release removes them (s
     fs.mkdirSync(path.join(work, '.git'));
     await run(await start('printf ../main > .git/commondir'));
     expect(fs.readFileSync(path.join(work, '.git', 'commondir'), 'utf8')).toBe('../main');
-    expect(journal.records()).toEqual([]);
+    expect(await journal.records()).toEqual([]);
   });
 });

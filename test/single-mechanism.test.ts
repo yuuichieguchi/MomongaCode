@@ -32,7 +32,7 @@ const PRESENT_RENAMES: Readonly<Record<string, Counts>> = {
   'packages/cli/src/node-ports.ts': { 'renameSync': 1 },
   'packages/cli/src/update/node-ports.ts': { 'rename': 4 },
   'packages/foundation/src/platform/bundled-executable.ts': { 'rename': 1 },
-  'packages/sandbox/src/placeholder-journal.ts': { 'renameSync': 1 },
+  'packages/sandbox/src/placeholder-journal.ts': { 'rename': 1 },
   'packages/tools/src/ripgrep-distribution.ts': { 'rename': 2 },
   'packages/verify/src/z3-distribution.ts': { 'rename': 1 },
 };
