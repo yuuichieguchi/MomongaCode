@@ -199,6 +199,46 @@ describe('the list in the rows it is given', () => {
   });
 });
 
+describe('the rows a list panel draws are the rows it was given (cli-tui-23)', () => {
+  const drawnRows = (of: SelectSpec, frame: { width: number; rows: number; border: boolean }): string[] => {
+    const state = selectStart(of);
+    const app = renderObservable(<SelectView spec={of} layout={selectLayout(of, state, selectText(of, frame), frame, 0)} state={state} border={frame.border} keys={DEFAULT_KEY_TABLE} sending={false} settling={false} />);
+    const shown = (app.lastFrame() ?? '').split('\n');
+    app.unmount();
+    return shown;
+  };
+
+  const SMALLEST_BORDERED_ROWS = 6;
+
+  it('never draws more rows than its frame holds, whatever the text and the list', () => {
+    for (const rows of [SMALLEST_BORDERED_ROWS, 7, 10]) {
+      for (const lines of [0, 4]) {
+        for (const choices of [2, 5]) {
+          const of = spec({ title: 'Permission requested: Bash ls', lines: Array.from({ length: lines }, (_, index) => `line ${index}`), rows: labels(choices) });
+          const shown = drawnRows(of, { width: 60, rows, border: true });
+          expect(shown.length, `${rows} rows, ${lines} lines, ${choices} choices:\n${shown.join('\n')}`).toBeLessThanOrEqual(rows);
+          expect(shown.at(-1)).toMatch(/^╰/);
+        }
+      }
+    }
+  });
+
+  it('counts the row that says text was cut, and where the text has no row of its own the last row says it', () => {
+    const of = spec({ title: 'Permission requested: Bash ls', lines: ['the reason'], rows: labels(4) });
+    const long = spec({ ...of, lines: ['a', 'b', 'c'] });
+    const wider = { width: 60, rows: 8, border: true };
+    const roomy = selectLayout(long, selectStart(long), selectText(long, wider), wider, 0);
+    expect([roomy.text.length, roomy.more, roomy.moreRow, roomy.listTop]).toEqual([1, 3, true, 3]);
+    const tight = { width: 60, rows: SMALLEST_BORDERED_ROWS, border: true };
+    const layout = selectLayout(of, selectStart(of), selectText(of, tight), tight, 0);
+    expect([layout.text.length, layout.more, layout.moreRow, layout.listTop]).toEqual([0, 2, false, 1]);
+    const shown = drawnRows(of, tight);
+    expect(shown).toHaveLength(SMALLEST_BORDERED_ROWS);
+    expect(shown[1]).toContain('› 1. row 1');
+    expect(shown[4]).toContain('… 2 more lines (ctrl+o shows all)');
+  });
+});
+
 describe('a row that opens a browser or starts a sign-in', () => {
   const of = spec({ rows: [{ label: 'a' }, { label: 'Continue in the browser', opensBrowser: true }, { label: 'c' }] });
 

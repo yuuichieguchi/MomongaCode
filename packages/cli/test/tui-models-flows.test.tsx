@@ -226,7 +226,8 @@ describe('the /models flows, one per row of 4.9.1', () => {
     const { billingChanges: _allowed, fallback: _fallback, ...rest } = S3.models;
     const asked = flowOf(context, { models: rest }, [{ pick: 'Add a model' }, { pick: 'openai/gpt-5.5' }, YES, { pick: 'Only for openai/gpt-5.5' }, YES]);
     await runFallbackFlow(asked.context);
-    expect(asked.picks()[2]?.title).toBe('Requests that fall from plan to metered would be charged by openai. Allow this change? [y/N]');
+    expect(asked.picks()[2]).toMatchObject({ title: 'Requests that fall from plan to metered would be charged by openai. Allow this change?', rows: ['No', 'Yes'] });
+    for (const pick of asked.picks().filter((shown) => shown.rows.join() === 'No,Yes')) expect(pick.title).toMatch(/\?$/);
     expect(asked.picks()[3]).toMatchObject({ title: 'Allow it for every model, or only for openai/gpt-5.5?', rows: ['For every model', 'Only for openai/gpt-5.5'] });
     expect(asked.picks()[4]?.title).toBe('Add openai/gpt-5.5 as fallback 1?');
     expect(writtenOf(asked).models).toMatchObject({ fallback: ['openai/gpt-5.5'], billingChanges: [{ from: 'plan', to: 'metered', model: 'openai/gpt-5.5' }] });
@@ -364,7 +365,7 @@ describe('the /models flows, one per row of 4.9.1', () => {
 
     const plan = flowOf(context, S3, [], { health: { 'chatgpt/gpt-5.5': { ok: false, breaker: 'closed', reason: 'sign_in_required' } } });
     await runModelsHub(plan.context);
-    expect(plan.picks()[0]?.rows.slice(0, 4)).toEqual(['chatgpt', '  chatgpt/gpt-5.5  ·  plan  ·  starts new sessions  ·  sign in required', 'openai  ·  https://api.openai.com/v1', '  openai/gpt-5.5  ·  400.0k tokens  ·  metered']);
+    expect(plan.picks()[0]?.rows.slice(0, 4)).toEqual(['chatgpt', '  chatgpt/gpt-5.5  ·  plan  ·  starts new sessions  ·  sign in required', 'openai  ·  https://api.openai.com/v1', '  openai/gpt-5.5  ·  400k tokens  ·  metered']);
 
     const plain = flowOf(context, { models: { connections: [{ adapter: 'chat-completions', provider: 'gpu-box', baseUrl: 'http://192.168.1.20:8080/v1', models: [{ id: 'm', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }] }] } }, []);
     await runModelsHub(plain.context);
