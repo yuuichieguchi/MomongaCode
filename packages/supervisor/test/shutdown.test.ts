@@ -55,7 +55,7 @@ describe('childCloseBudgetMs', () => {
     expect(childCloseBudgetMs('runtime', 'term', DEFAULT_STOP_VALUES)).toBe(RUNTIME_TERM_BOUND);
     expect(childCloseBudgetMs('gateway', 'term', DEFAULT_STOP_VALUES)).toBe(GATEWAY_TERM_BOUND);
     expect(childCloseBudgetMs('runtime', 'int', DEFAULT_STOP_VALUES)).toBe(RUNTIME_INT_BOUND);
-    expect(childCloseBudgetMs('runtime', 'int', DEFAULT_STOP_VALUES)).toBe(39_125);
+    expect(childCloseBudgetMs('runtime', 'int', DEFAULT_STOP_VALUES)).toBe(39_175);
     expect(childCloseBudgetMs('gateway', 'int', DEFAULT_STOP_VALUES)).toBe(27_075);
   });
 });

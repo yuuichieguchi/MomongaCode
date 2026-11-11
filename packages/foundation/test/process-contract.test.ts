@@ -255,10 +255,10 @@ describe('close budgets', () => {
     expect(RUNTIME_ABORT_BUDGET_MS).toBe(ABORT_SETTLE_LIMIT_MS + SANDBOX_KILL_GRACE_MS + KILL_CONFIRM_MS + 2 * POLL_INTERVAL_MS);
   });
 
-  it('runtimeMaxCloseMs equals drain + 8050 + 10000 + 6 x MCP grace + 75 + 2K', () => {
-    expect(runtimeMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 0, mcpCloseGraceMs: 0 })).toBe(28_125);
-    expect(runtimeMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(64_125);
-    expect(runtimeMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 1, mcpCloseGraceMs: 0 })).toBe(28_126);
+  it('runtimeMaxCloseMs equals drain + 8050 + 10000 + 6 x MCP grace + 125 + 2K', () => {
+    expect(runtimeMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 0, mcpCloseGraceMs: 0 })).toBe(28_175);
+    expect(runtimeMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(64_175);
+    expect(runtimeMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 1, mcpCloseGraceMs: 0 })).toBe(28_176);
   });
 
   it('pins the gateway close at the default stop values, the margins and the stdio flushes', () => {
@@ -288,8 +288,8 @@ describe('close budgets', () => {
   });
 
   it('supervisorMaxCloseMs counts every wait of the orderly shutdown once', () => {
-    expect(supervisorMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(143_275);
-    expect(supervisorMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 0, mcpCloseGraceMs: 0 })).toBe(107_275);
+    expect(supervisorMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(143_325);
+    expect(supervisorMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 0, mcpCloseGraceMs: 0 })).toBe(107_325);
     for (const drain of [1, 1000, 12_345]) {
       const values = { ...DEFAULT_STOP_VALUES, drainTimeoutMs: drain };
       const steps = [
