@@ -643,9 +643,6 @@
         "conversation": 1,
         "limit": 1
       },
-      "packages/sandbox/src/bubblewrap.ts": {
-        "limit": 1
-      },
       "packages/sandbox/src/egress-proxy.ts": {
         "target": 1
       },

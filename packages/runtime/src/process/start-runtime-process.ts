@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { ConfigError, loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, stopValuesOfSettings, resolveRetentionSettings, resolveTelemetrySettings } from '@momonga/config';
 import type { ResolvedSettings, StopValuesReader } from '@momonga/config';
-import { canonicalHomeOf, installTrust, settledOrAborted, layoutProcessInspector, busyTimeoutMs } from '@momonga/foundation';
+import { canonicalHomeOf, helperCommandLine, installTrust, settledOrAborted, layoutProcessInspector, busyTimeoutMs } from '@momonga/foundation';
 import {
   acquireProcessLock,
   announceReady,
@@ -35,7 +35,7 @@ import {
 import type { Clock, GenerationRole, HelperSelf, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, StopValues, TextStream, LayoutLocks } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore, pageRunBodies, startBodyPurge } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
-import { DEFAULT_BWRAP_PATH, bubblewrapPresent, childProtectionFor, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
+import { DEFAULT_BWRAP_PATH, NETWORK_RELAY_HELPER, bubblewrapPresent, childProtectionFor, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
 import { unaskedCommandsFor } from '@momonga/policy';
@@ -422,6 +422,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
 
     const journalDirectory = path.join(paths.state, PLACEHOLDER_JOURNAL_DIRECTORY);
+    const { helperSelf } = options;
     const bubblewrap = platform === 'linux' && (await bubblewrapPresent(DEFAULT_BWRAP_PATH, (file) => nodeFileSystem.access(file, 'execute')));
     const noneProtection = childProtectionFor({ sandbox: 'none', home: canonicalHome, platform, env: process.env, bubblewrap });
     const sandboxOf = async (kind: SandboxKind, deriveSignal: AbortSignal): Promise<Sandbox> => {
@@ -467,6 +468,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           journal: createPlaceholderJournal(journalDirectory),
           holders: () => heldMountPoints(),
           ...(options.socketGuard === undefined ? {} : { socketGuard: options.socketGuard(paths) }),
+          ...(helperSelf === undefined ? {} : { relay: () => helperCommandLine(helperSelf, NETWORK_RELAY_HELPER, []) }),
         });
       }
       return createSeatbeltSandbox({ sandboxExecPath: launcherPath, tmpRoot: paths.tmp.spawn, lock: kernelLock, killGraceMs: SANDBOX_KILL_GRACE_MS });

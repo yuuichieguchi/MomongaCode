@@ -23,3 +23,4 @@ export { EGRESS_PROXY_HOST, describeEgressRefusal, nodeEgressPorts, startEgressP
 export type { EgressPorts, EgressProxy, EgressRefusal } from './egress-proxy.ts';
 export { socketFilter, socketFilterArchitectureOf } from './seccomp.ts';
 export type { SocketFilterArchitecture, SocketFilterKind } from './seccomp.ts';
+export { NETWORK_RELAY_HELPER, RELAY_CHANNEL_SLOT, relayCommandOf, relayInside, runNetworkRelay, serveRelayChannel } from './relay.ts';
