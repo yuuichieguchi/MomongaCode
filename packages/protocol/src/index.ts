@@ -593,8 +593,8 @@ export {
   hookTimeoutMs,
 } from './hooks.ts';
 export type { HookCommand, HookEvent, HookExecution, HookStart, HookMatcherGroup, HookOutcome, HookPreToolDecision, HooksSettings } from './hooks.ts';
-export { FINAL_RULE_VERDICTS, POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, REFUSING_PROPERTIES, RULE_FINGERPRINT_PATTERN, RULE_NOTE_KINDS, RULE_VERDICTS, RULE_VERIFY_BUDGET_MS, isFinalRuleVerdict, isPinnedRuleVerdict, isRuleVerdict, policyRefutedMessage, policyVerdictNotice, refusingRefutations } from './rule-verdict.ts';
-export type { PinnedRuleVerdict, PutRuleVerdictRequest, RuleNote, RuleNoteKind, RuleNoteRule, RuleRefutation, RuleVerdict, RuleVerdictKind, RuleVerdictPhase } from './rule-verdict.ts';
+export { FINAL_RULE_VERDICTS, POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, REFUSING_PROPERTIES, RULE_NOTE_KINDS, RULE_VERDICTS, RULE_VERIFY_BUDGET_MS, isFinalRuleVerdict, isPinnedRuleVerdict, isRuleVerdict, policyRefutedMessage, policyVerdictNotice, refusingRefutations } from './rule-verdict.ts';
+export type { PinnedRuleVerdict, PolicyVerifyRequest, PolicyVerifyResponse, RuleNote, RuleNoteKind, RuleNoteRule, RuleRefutation, RuleVerdict, RuleVerdictKind, RuleVerdictPhase } from './rule-verdict.ts';
 export {
   CONDITION_SOURCES,
   CONDITION_STATES,
@@ -761,7 +761,7 @@ export type {
   ResponseToolChoice,
   Usage,
 } from './open-responses.ts';
-export { MOMONGA_EVENT_PREFIX, SERVICE_UNAVAILABLE_STATUS, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE, isTargetProbing } from './gateway-api.ts';
+export { MOMONGA_EVENT_PREFIX, SERVICE_UNAVAILABLE_STATUS, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE, isTargetProbeFailed, isTargetProbing } from './gateway-api.ts';
 export type {
   CountTokensMethod,
   CountTokensMomongaExtension,

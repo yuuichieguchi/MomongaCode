@@ -12,12 +12,20 @@ export const provedVerifier = {
 
 export const PROVED_THREAD_CODE = `
 const { parentPort, workerData } = require('node:worker_threads');
-parentPort.postMessage({ ok: true, verdict: { verdict: 'proved', solver: workerData.solverVersion, refuted: [], unknown: [], notProved: [] }, report: '' });
+parentPort.postMessage({ entered: true });
+parentPort.postMessage({ ok: true, verdict: { verdict: 'proved', solver: workerData.solverVersion, refuted: [], unknown: [], notProved: [] }, report: '', findings: { exitCode: 0 } });
 `;
 
 export const REPORTING_THREAD_CODE = `
 const { parentPort, workerData } = require('node:worker_threads');
-parentPort.postMessage({ ok: true, verdict: { verdict: 'proved', solver: workerData.solverVersion, refuted: [], unknown: [], notProved: [] }, report: 'policy verification of ' + workerData.input.rules.length + ' rule(s)' });
+parentPort.postMessage({ entered: true });
+parentPort.postMessage({ ok: true, verdict: { verdict: 'proved', solver: workerData.solverVersion, refuted: [], unknown: [], notProved: [] }, report: 'policy verification of ' + workerData.input.rules.length + ' rule(s)', findings: { exitCode: 0 } });
+`;
+
+export const BUDGET_THREAD_CODE = `
+const { parentPort, workerData } = require('node:worker_threads');
+parentPort.postMessage({ entered: true });
+parentPort.postMessage({ ok: true, verdict: { verdict: 'proved', solver: workerData.solverVersion, refuted: [], unknown: [], notProved: [] }, report: 'budget ' + workerData.budgetMs, findings: { exitCode: 0 } });
 `;
 
 export const provedRuleSolver: RuleSolverSource = () => ({

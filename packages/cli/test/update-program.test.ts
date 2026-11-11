@@ -6,7 +6,6 @@ import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
 import { UPDATE_CHECK_COMMAND } from '../src/update/background.ts';
 import { assetNameFor } from '../src/update/source.ts';
-import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 import { NEW_BINARY, setupUpdate } from './update-harness.ts';
 import type { HarnessOptions } from './update-harness.ts';
 import { NO_HELPER } from './no-helper.ts';
@@ -32,7 +31,6 @@ const programFor = async (context: TestContext, options: HarnessOptions = {}) =>
   } as unknown as CliPorts;
   const program = buildProgram({
     ports: cli,
-    policyVerify: () => nodePolicyVerifyHost(cli, { executables: `${harness.ports.home}/cache/executables` }),
     entries,
     update: () => harness.wiring,
     interrupt: new AbortController().signal,

@@ -1,18 +1,21 @@
+import path from 'node:path';
 import type { Context } from 'hono';
 import type { Clock } from '@momonga/foundation';
 import { checkGoverningFact, normalizeTarget, overlappingEnforced, resolveGoverning, ruleSizeReport } from '@momonga/memory';
-import { RULE_FINGERPRINT_PATTERN, displayOf, enforcedBehaviorOf, isFinalRuleVerdict, tokensForText } from '@momonga/protocol';
-import type { AddRuleRequest, Capabilities, GoverningFactView, ModelView, ModelViews, PolicyGovernanceResponse, PutRuleVerdictRequest, RuleAddResponse } from '@momonga/protocol';
+import { displayOf, enforcedBehaviorOf, tokensForText } from '@momonga/protocol';
+import type { AddRuleRequest, Capabilities, GoverningFactView, ModelView, ModelViews, PolicyGovernanceResponse, PolicyVerifyRequest, RuleAddResponse } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { GatewayRequestError, ModelUnlistedError } from '../gateway-client.ts';
 import { ruleParses } from '../governance/rules.ts';
+import type { PolicyVerification } from '../process/folder-verification.ts';
 import { invalidRequest, notFound } from './errors.ts';
 import type { Handler, ModelListing, RouteRegistrar } from './app.ts';
 import { canonicalProject } from './project-query.ts';
 import { JSON_MEDIA_TYPES, readJson, validateBody } from './request.ts';
 
 export type RuleRoutesDeps = {
-  store: Pick<RuntimeStore, 'governing' | 'ruleVerdicts'>;
+  store: Pick<RuntimeStore, 'governing'>;
+  policyVerification: PolicyVerification;
   clock: Clock;
   modelListing: (signal: AbortSignal) => Promise<ModelListing>;
   modelCapabilities: (model: string, signal: AbortSignal) => Promise<Capabilities>;
@@ -125,14 +128,18 @@ export const registerRuleRoutes = (route: RouteRegistrar, deps: RuleRoutesDeps):
   route('/v1/rules', { GET: listRules, POST: addRule }, { person: ['POST'] });
   route('/v1/rules/:id/retire', { POST: retireRule }, { person: ['POST'] });
   route('/v1/rules/:id/history', { GET: ruleHistory });
-  const putRuleVerdict: Handler = async (context) => {
-    const fingerprint = context.req.param('fingerprint') ?? '';
-    if (!RULE_FINGERPRINT_PATTERN.test(fingerprint)) throw invalidRequest('the fingerprint must be a sha256 in lower-case hexadecimal', 'fingerprint');
-    const body = validateBody<PutRuleVerdictRequest>('PutRuleVerdictRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
-    if (isFinalRuleVerdict(body.verdict)) deps.store.ruleVerdicts.put(fingerprint, body.verdict);
-    return new Response(null, { status: 204 });
+  const verifyPolicy: Handler = async (context) => {
+    const body = validateBody<PolicyVerifyRequest>('PolicyVerifyRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
+    const relative = body.secrets.find((secret) => !path.isAbsolute(secret));
+    if (relative !== undefined) throw invalidRequest(`the secret location ${JSON.stringify(relative)} must be an absolute path`, 'secrets');
+    const cwd = await canonicalProject(body.project, 'project', context.req.raw.signal);
+    const answer = await deps.policyVerification(
+      { cwd, secrets: body.secrets, ...(body.mode === undefined ? {} : { mode: body.mode }), ...(body.mandate === undefined ? {} : { mandate: body.mandate }) },
+      context.req.raw.signal,
+    );
+    return json(answer, 200);
   };
 
   route('/v1/policy/governance', { GET: policyGovernance });
-  route('/v1/policy/verdicts/:fingerprint', { PUT: putRuleVerdict }, { person: ['PUT'] });
+  route('/v1/policy/verify', { POST: verifyPolicy }, { person: ['POST'] });
 };

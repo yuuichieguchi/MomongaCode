@@ -22,7 +22,7 @@ export type RuleVerifyJob = {
   readonly bashPath: string | undefined;
 };
 
-export type RuleVerification = { readonly verdict: RuleVerdict; readonly report: string };
+export type RuleVerification = { readonly verdict: RuleVerdict; readonly report: string; readonly findings: Record<string, unknown> };
 
 export type RuleVerifyReply = ({ readonly ok: true } & RuleVerification) | { readonly ok: false; readonly reason: string };
 
@@ -55,7 +55,7 @@ export const hostPhasesOf = ({ askedAtMs, enteredAtMs, loadedAtMs, instantiatedA
   { phase: 'instantiate', ms: instantiatedAtMs - loadedAtMs },
 ];
 
-export const runRuleVerifyJob = async (job: RuleVerifyJob, { signal, clock }: { signal: AbortSignal; clock: Clock }): Promise<RuleVerification> => {
+export const runRuleVerifyJob = async (job: RuleVerifyJob, { signal, clock, onEntered }: { signal: AbortSignal; clock: Clock; onEntered: () => void }): Promise<RuleVerification> => {
   const enteredAtMs = clock.now();
   signal.throwIfAborted();
   const verifier = await import('@momonga/verify');
@@ -64,6 +64,7 @@ export const runRuleVerifyJob = async (job: RuleVerifyJob, { signal, clock }: { 
   const engine = await verifier.openZ3(source);
   const hostPhases = hostPhasesOf({ askedAtMs: job.askedAtMs, enteredAtMs, loadedAtMs, instantiatedAtMs: clock.now() });
   try {
+    onEntered();
     const report = await verifier.verifyPermissions(engine.api, {
       ...job.input,
       fs: createHostFilesystem(job.platform, () => bashPathOf(job), process.env, nodeGlobPorts()),
@@ -72,7 +73,7 @@ export const runRuleVerifyJob = async (job: RuleVerifyJob, { signal, clock }: { 
       clock,
       hostPhases,
     });
-    return { verdict: verifier.verdictOfReport(report, job.solverVersion), report: verifier.formatReport(report) };
+    return { verdict: verifier.verdictOfReport(report, job.solverVersion), report: verifier.formatReport(report), findings: report };
   } finally {
     await engine.close();
   }
@@ -90,7 +91,7 @@ if (!isMainThread && parentPort !== null && isRuleVerifyJob(workerData)) {
     if (isRuleVerifyAbort(message)) asker.abort(new Error(message.abort));
   });
   const post = (reply: RuleVerifyReply): void => port.postMessage(reply);
-  void runRuleVerifyJob(workerData, { signal: asker.signal, clock: systemClock }).then(
+  void runRuleVerifyJob(workerData, { signal: asker.signal, clock: systemClock, onEntered: () => port.postMessage({ entered: true }) }).then(
     (verification) => post({ ok: true, ...verification }),
     (error: unknown) => post({ ok: false, reason: error instanceof Error ? error.message : String(error) }),
   );

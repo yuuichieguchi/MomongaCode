@@ -12,7 +12,6 @@ import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
-import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 import { freshHome } from './fresh-home.ts';
 import { userModelsOf } from './user-models.ts';
 import { NO_HELPER } from './no-helper.ts';
@@ -273,7 +272,6 @@ const program = () => {
   } as unknown as CliPorts;
   const built = buildProgram({
     ports,
-    policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/w/cache/executables' }),
     entries: {} as DaemonEntries,
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt: new AbortController().signal,

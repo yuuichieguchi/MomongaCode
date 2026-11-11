@@ -2,7 +2,7 @@ import type { McpServerConfig } from '@momonga/config';
 import { GENERATION_STARTING_CODE, HOST_READ_BOUND_MS, MOVED_CODE, createUdsClient, decodeSse, isRecord, parseRetryAfter } from '@momonga/foundation';
 import type { SandboxNetworkSetting, SocketResolver, UdsResponse } from '@momonga/foundation';
 import { DAEMON_CURRENT_EVENT, PERSON_CAPABILITY_HEADER, STREAM_FAILED_EVENT, WORDS, messageOf } from '@momonga/protocol';
-import type { AddMemoryRequest, AddRuleRequest, PutRuleVerdictRequest, RuleVerdict, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, PublicStreamEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, ReportRecomputePage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, Mandate } from '@momonga/protocol';
+import type { AddMemoryRequest, AddRuleRequest, PolicyVerifyRequest, PolicyVerifyResponse, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, PublicStreamEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, ReportRecomputePage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, Mandate } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
@@ -27,6 +27,7 @@ import {
   checkMemories,
   checkMemory,
   checkPolicyGovernance,
+  checkPolicyVerify,
   checkPromoted,
   checkReflection,
   checkReportCost,
@@ -209,7 +210,7 @@ export type RuntimeClient = {
   ruleHistory(id: string): Promise<GoverningFactView[]>;
   ignoreMarker(name: string): Promise<void>;
   policyGovernance(project: string): Promise<PolicyGovernanceResponse>;
-  putRuleVerdict(fingerprint: string, verdict: RuleVerdict): Promise<void>;
+  policyVerify(request: PolicyVerifyRequest): Promise<PolicyVerifyResponse>;
   guidelines(): Promise<GuidelinesResponse>;
   adoptGuideline(request: AdoptGuidelineRequest): Promise<GuidelineView>;
   rollbackGuideline(version: number): Promise<GuidelineView>;
@@ -703,8 +704,9 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     return checkPolicyGovernance(body, `GET ${path}`);
   };
 
-  const putRuleVerdict = async (fingerprint: string, verdict: RuleVerdict): Promise<void> => {
-    await send('PUT', `/v1/policy/verdicts/${pathSegment(fingerprint)}`, [204], { body: { verdict } satisfies PutRuleVerdictRequest });
+  const policyVerify = async (request: PolicyVerifyRequest): Promise<PolicyVerifyResponse> => {
+    const { body } = await send('POST', '/v1/policy/verify', [200], { body: request });
+    return checkPolicyVerify(body, 'POST /v1/policy/verify');
   };
 
   const costPath = (filter: CostFilter, format: 'json' | 'text'): string => `/v1/cost?${new URLSearchParams({ ...filter, format }).toString()}`;
@@ -902,7 +904,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     ruleHistory,
     ignoreMarker,
     policyGovernance,
-    putRuleVerdict,
+    policyVerify,
     guidelines,
     adoptGuideline,
     rollbackGuideline,

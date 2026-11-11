@@ -50,7 +50,7 @@ type RequestSchemaName =
   | 'PutTrustRequest'
   | 'McpFolderRequest'
   | 'AddRuleRequest'
-  | 'PutRuleVerdictRequest'
+  | 'PolicyVerifyRequest'
   | 'PromoteMemoryRequest'
   | 'AddMemoryRequest'
   | 'AdoptGuidelineRequest'
@@ -70,7 +70,7 @@ const validators: Record<RequestSchemaName, ProductValidator<unknown>> = {
   PutTrustRequest: requestValidator(RUN_API_SCHEMAS.PutTrustRequest),
   McpFolderRequest: requestValidator(RUN_API_SCHEMAS.McpFolderRequest),
   AddRuleRequest: requestValidator(RUN_API_SCHEMAS.AddRuleRequest),
-  PutRuleVerdictRequest: requestValidator(RUN_API_SCHEMAS.PutRuleVerdictRequest),
+  PolicyVerifyRequest: requestValidator(RUN_API_SCHEMAS.PolicyVerifyRequest),
   PromoteMemoryRequest: requestValidator(RUN_API_SCHEMAS.PromoteMemoryRequest),
   AddMemoryRequest: requestValidator(RUN_API_SCHEMAS.AddMemoryRequest),
   AdoptGuidelineRequest: requestValidator(RUN_API_SCHEMAS.AdoptGuidelineRequest),

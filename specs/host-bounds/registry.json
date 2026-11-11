@@ -95,7 +95,6 @@
     "constants": [
       {"name":"SPAWN_TOOL_TIMEOUT_MS","file":"packages/agents/src/constants.ts","lacks":["kind"]},
       {"name":"MINUTE_MS","file":"packages/cli/src/commands/models.ts","lacks":["kind","row"]},
-      {"name":"VERIFY_BUDGET_MS","file":"packages/cli/src/commands/policy.ts","lacks":["kind"]},
       {"name":"DAY_MS","file":"packages/cli/src/commands/reliability.ts","lacks":["kind"]},
       {"name":"RECONNECT_FIRST_RETRY_MS","file":"packages/cli/src/constants.ts","lacks":["kind"]},
       {"name":"KILL_WAIT_MS","file":"packages/cli/src/daemon/generations.ts","lacks":["kind"]},

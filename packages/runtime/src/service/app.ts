@@ -8,7 +8,7 @@ import { denyingRuleFor } from '@momonga/policy';
 import { shellCommandSubject } from '@momonga/tools';
 import { canonicalJson, hostPaths, sha256Hex } from '@momonga/foundation';
 import type { Clock, FileSystem, GenerationRole, PathResolver } from '@momonga/foundation';
-import { AUTO_MODE_UNAVAILABLE, RUN_STATUSES, messageOf, TARGET_PROBING_MESSAGE, agentReadiness, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, USER_SHELL_RUN_ACTIVE_CODE, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
+import { AUTO_MODE_UNAVAILABLE, RUN_STATUSES, messageOf, TARGET_PROBING_MESSAGE, agentReadiness, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, USER_SHELL_RUN_ACTIVE_CODE, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
 import type { Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
 import { mentionsOf } from '@momonga/context';
 import type { AttachedMentions } from '@momonga/context';
@@ -40,6 +40,7 @@ import {
   skillUnavailable,
   starting,
   targetNotReady,
+  targetProbeFailed,
   unknownSkill,
 } from './errors.ts';
 import { STREAM_HEADERS, eventStreamResponse } from './event-stream.ts';
@@ -55,6 +56,8 @@ import { registerGuidelineRoutes } from './guidelines.ts';
 import { registerMemoryRoutes } from './memories.ts';
 import { registerMarkerRoutes } from './markers.ts';
 import { registerRuleRoutes } from './rules.ts';
+import type { PolicyVerification } from '../process/folder-verification.ts';
+import type { GatewayStanding } from '../process/supervised-gateway.ts';
 import { registerInputRoutes } from './input-routes.ts';
 import type { McpAdminPort } from './input-routes.ts';
 import { canonicalProject } from './project-query.ts';
@@ -108,6 +111,8 @@ export type RunAppDeps = {
   skills: SkillsPort;
   agents: AgentCatalogPort;
   permissionRules: (session: Session, signal: AbortSignal) => Promise<readonly PermissionRule[]>;
+  policyVerification: PolicyVerification;
+  gatewayStanding: (signal: AbortSignal) => Promise<GatewayStanding>;
   userInput: UserInputPort;
   evidenceRun: (project: string) => EvidenceRun;
   platform: NodeJS.Platform;
@@ -159,15 +164,34 @@ const CLIENT_CLOSED_REQUEST_STATUS = 499;
 
 const isAbortOf = (error: unknown, signal: AbortSignal): boolean => signal.aborted && (error === signal.reason || (error instanceof Error && error.cause === signal.reason));
 
+const isMeasuringAnswer = (error: unknown): boolean => error instanceof GatewayRequestError && (isTargetProbing(error) || isTargetProbeFailed(error));
+
 const isGatewayUnavailable = (error: unknown): boolean =>
-  error instanceof GatewayRequestError && (error.type === 'transport' || error.status >= 500);
+  error instanceof GatewayRequestError && !isMeasuringAnswer(error) && (error.type === 'transport' || error.status >= 500);
 
 const isClientErrorStatus = (status: number): boolean => status >= 400 && status < 500;
 
-const capabilitiesReadFailure = (error: unknown): unknown => {
+const gatewayGivenUp = (state: string): ApiError =>
+  new ApiError({
+    status: 503,
+    type: 'server_error',
+    code: 'gateway_unavailable',
+    message: `The model gateway has stopped and the daemon will not start it again (${state}). Run momonga daemon stop; the next momonga command starts the daemon again.`,
+  });
+
+const pricesWhileRestarting = (): ApiError =>
+  serviceUnavailable('gateway_unavailable', 'The models cannot be reached while the daemon starts them again, and a run with a money budget or a mandate needs their prices. The request was not run; send it again.');
+
+const listingReadFailure = (error: unknown): unknown => {
   if (error instanceof GatewayRequestError && isTargetProbing(error)) return targetNotReady(TARGET_PROBING_MESSAGE);
-  if (error instanceof ModelUnlistedError) return targetNotReady(readinessText(agentReadiness({ unavailable: error.message })));
+  if (error instanceof GatewayRequestError && isTargetProbeFailed(error)) return targetProbeFailed(error.message, error.retryAfterMs);
   if (isGatewayUnavailable(error)) return serviceUnavailable('gateway_unavailable', 'the model gateway is unavailable');
+  return error;
+};
+
+const gatewayReadFailure = (error: unknown): unknown => {
+  if (!isMeasuringAnswer(error) && error instanceof ModelUnlistedError) return targetNotReady(readinessText(agentReadiness({ unavailable: error.message })));
+  if (isMeasuringAnswer(error) || isGatewayUnavailable(error)) return listingReadFailure(error);
   if (error instanceof GatewayRequestError && isClientErrorStatus(error.status)) {
     return gatewayAnswer({ status: error.status, type: error.type, code: error.code, message: error.message });
   }
@@ -286,8 +310,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     try {
       return await deps.modelListing(signal);
     } catch (error) {
-      if (isGatewayUnavailable(error)) throw serviceUnavailable('gateway_unavailable', 'the model gateway is unavailable');
-      throw error;
+      throw listingReadFailure(error);
     }
   };
 
@@ -447,7 +470,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     try {
       return await deps.modelCapabilities(session.model, signal);
     } catch (error) {
-      throw capabilitiesReadFailure(error);
+      throw gatewayReadFailure(error);
     }
   };
 
@@ -474,18 +497,42 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     }
   };
 
+  const standingOfGateway = async (signal: AbortSignal): Promise<GatewayStanding> => {
+    try {
+      return await deps.gatewayStanding(signal);
+    } catch (error) {
+      signal.throwIfAborted();
+      throw serviceUnavailable('gateway_unavailable', `The models cannot be reached, and the supervisor of the daemon could not be asked why: ${error instanceof Error ? error.message : String(error)}. The request was not run; send it again.`);
+    }
+  };
+
+  const listingUnlessRestarting = async (signal: AbortSignal): Promise<ModelListing | undefined> => {
+    try {
+      return await deps.modelListing(signal);
+    } catch (error) {
+      if (!isGatewayUnavailable(error)) throw listingReadFailure(error);
+      const standing = await standingOfGateway(signal);
+      if (standing.kind === 'given-up') throw gatewayGivenUp(standing.state);
+      return undefined;
+    }
+  };
+
   const admittedTermsOf = async (session: Session, request: RunTermsRequest, signal: AbortSignal): Promise<RunTerms> => {
     await sessionSettingsOf(session.cwd, signal);
-    const { views } = await gatewayListing(signal);
-    const sessionModel = resolveStoredModelRef(storedModelRef(session.model), views);
-    if (sessionModel === undefined) throw modelNotConfigured(sessionModelNotConfiguredText(session.model));
+    const listing = await listingUnlessRestarting(signal);
+    const sessionModel = listing === undefined ? undefined : resolveStoredModelRef(storedModelRef(session.model), listing.views);
+    if (listing !== undefined && sessionModel === undefined) throw modelNotConfigured(sessionModelNotConfiguredText(session.model));
     const { delegation } = deps;
     const terms = await runTermsOf({
       request,
       defaults: deps.defaults,
       settings: delegation === undefined ? {} : await settingsThrough(() => delegation.settings(signal)),
       ...(delegation === undefined ? {} : { project: () => projectMandateOf(delegation, session.cwd, signal) }),
-      billing: async () => (delegation === undefined ? { metered: false, priced: false } : delegation.chainBilling(sessionModel.canon, signal)),
+      billing: async () => {
+        if (sessionModel === undefined) throw pricesWhileRestarting();
+        if (delegation === undefined) return { metered: false, priced: false };
+        return delegation.chainBilling(sessionModel.canon, signal);
+      },
     });
     await refuseDeniedConditions(session, terms.mandate, signal);
     return terms;
@@ -807,6 +854,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     modelCapabilities: deps.modelCapabilities,
     maxBodyBytes: deps.maxBodyBytes,
     refuseWhileRetiring,
+    policyVerification: deps.policyVerification,
   });
   registerMarkerRoutes(route, { markerDirectories: deps.ignorableMarkerDirectories, owners: deps.markerOwners, files: deps.files });
   registerUserShellRoutes(route, { store, userInput: deps.userInput, maxBodyBytes: deps.maxBodyBytes, closeSignal: deps.closeSignal });

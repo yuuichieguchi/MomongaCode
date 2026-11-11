@@ -9,7 +9,6 @@ import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
-import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 import { testHostPath } from '@momonga/testkit';
 import { NO_HELPER } from './no-helper.ts';
 
@@ -39,7 +38,6 @@ describe('interactive session on a HOME that has never run momonga', () => {
     const entries: DaemonEntries = { supervise: entry, gateway: entry, runtime: entry };
     const program = buildProgram({
       ports,
-      policyVerify: () => nodePolicyVerifyHost(ports, { executables: path.join(home, 'cache', 'executables') }),
       entries,
       update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
       interrupt: new AbortController().signal,

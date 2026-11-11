@@ -6,6 +6,7 @@ import { makeEnv as makeBareEnv } from './harness.ts';
 import type { Env, EnvOptions } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 import { createFakeRuleVerifier } from './fake-rule-verifier.ts';
+import { RuleVerificationFailure } from '../../src/process/rule-verifier-thread-client.ts';
 import type { FakeRuleVerifier } from './fake-rule-verifier.ts';
 
 const SOLVER = 'fake-solver 1';
@@ -244,6 +245,59 @@ describe('the verdict of the permission rules before a run, with a fake verifier
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.ofType(run.id, 'run.started')[0]?.pins['policyVerdict']).toMatchObject({ verdict: 'failed', unknown: [{ property: 'secret-reach' }] });
     expect(storedVerdicts(env, run.id)).toBeUndefined();
+  });
+
+  it('a verification thread that fails gives no verdict and refuses nothing: the run starts with unknown naming the failure, nothing is stored, and the next start tries again', async () => {
+    const env = await makeEnv();
+    const answers: Array<() => RuleVerdict> = [
+      () => {
+        throw new RuleVerificationFailure('the verification thread did not start within 10000 ms');
+      },
+      () => proved,
+    ];
+    env.ruleVerifier.answer = () => (answers.shift() ?? (() => proved))();
+    env.gateway.script.push(textStep('One.'), textStep('Two.'));
+    const first = await env.enqueue('Say one');
+    await env.runOnce(env.worker('worker-1'));
+
+    expect(env.run(first.id).status).toBe('COMPLETED');
+    expect(env.ofType(first.id, 'run.started')[0]?.pins['policyVerdict']).toMatchObject({
+      verdict: 'unknown',
+      solver: SOLVER,
+      unknown: [{ property: 'verification', reason: 'the verification thread did not start within 10000 ms' }],
+    });
+    expect(storedVerdicts(env, first.id)).toBeUndefined();
+
+    const second = await env.enqueue('Say two');
+    await env.runOnce(env.worker('worker-2'));
+    await env.ruleVerifier.settled();
+    expect(env.ruleVerifier.verified).toHaveLength(2);
+    await vi.waitFor(() => expect(storedVerdicts(env, second.id)?.verdict).toEqual(proved));
+  });
+
+  it('a retry behind a run whose thread fails leaves the run as it is and is tried again by the next start', async () => {
+    const env = await makeEnv();
+    const answers: Array<() => RuleVerdict> = [
+      () => unknown,
+      () => {
+        throw new RuleVerificationFailure('the verification thread exited with code 3 before it gave a verdict');
+      },
+      () => proved,
+    ];
+    env.ruleVerifier.answer = () => (answers.shift() ?? (() => proved))();
+    env.gateway.script.push(textStep('One.'), textStep('Two.'), textStep('Three.'));
+    await env.enqueue('Say one');
+    await env.runOnce(env.worker('worker-1'));
+    const second = await env.enqueue('Say two');
+    await env.runOnce(env.worker('worker-2'));
+    await env.ruleVerifier.settled();
+
+    expect(env.run(second.id).status).toBe('COMPLETED');
+    const third = await env.enqueue('Say three');
+    await env.runOnce(env.worker('worker-3'));
+    await env.ruleVerifier.settled();
+    expect(env.ruleVerifier.verified).toHaveLength(3);
+    await vi.waitFor(() => expect(storedVerdicts(env, third.id)?.verdict).toEqual(proved));
   });
 
   it('a worker that stops during the verification loses nothing: the next claim verifies once and starts', async () => {
