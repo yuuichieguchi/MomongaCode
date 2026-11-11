@@ -1,6 +1,7 @@
-import { randomFillSync } from 'node:crypto';
-import { systemClock } from './clock.ts';
 import type { Clock } from './clock.ts';
+import type { Random } from './random.ts';
+import { systemRandom } from './system-random.ts';
+import { systemClock } from './system-timing.ts';
 
 type GeneratorState = { ms: bigint; sequence: bigint };
 
@@ -13,17 +14,15 @@ const MAX_TIMESTAMP_MS = (1n << 48n) - 1n;
 
 const statesByClock = new WeakMap<Clock, GeneratorState>();
 
-const defaultRandom = (length: number): Uint8Array => randomFillSync(new Uint8Array(length));
-
-const seedSequence = (random: (length: number) => Uint8Array): bigint => {
-  const bytes = random(10);
+const seedSequence = (random: Random): bigint => {
+  const bytes = random.bytes(10);
   if (bytes.length < 10) throw new RangeError(`uuidv7: random source returned ${bytes.length} bytes, expected 10`);
   let seed = 0n;
   for (let index = 0; index < 10; index += 1) seed = (seed << 8n) | BigInt(bytes[index] as number);
   return seed & SEQUENCE_SEED_MASK;
 };
 
-const nextState = (previous: GeneratorState | undefined, nowMs: bigint, random: (length: number) => Uint8Array): GeneratorState => {
+const nextState = (previous: GeneratorState | undefined, nowMs: bigint, random: Random): GeneratorState => {
   if (previous === undefined || nowMs > previous.ms) return { ms: nowMs, sequence: seedSequence(random) };
   const sequence = previous.sequence + 1n;
   if (sequence >= SEQUENCE_LIMIT) return { ms: previous.ms + 1n, sequence: 0n };
@@ -32,7 +31,7 @@ const nextState = (previous: GeneratorState | undefined, nowMs: bigint, random: 
 
 const toHex = (value: bigint, digits: number): string => value.toString(16).padStart(digits, '0');
 
-export const uuidv7 = (clock: Clock = systemClock, random: (length: number) => Uint8Array = defaultRandom): string => {
+export const uuidv7 = (clock: Clock = systemClock, random: Random = systemRandom): string => {
   const nowMs = BigInt(Math.trunc(clock.now()));
   if (nowMs < 0n || nowMs > MAX_TIMESTAMP_MS) throw new RangeError(`uuidv7: clock value ${nowMs} does not fit in 48 bits`);
   const state = nextState(statesByClock.get(clock), nowMs, random);

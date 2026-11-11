@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { appendPermissionRule, systemFileLockPorts } from '@momonga/config';
 import type { FileLockPorts } from '@momonga/foundation';
 import { settingsLockPath } from '../src/file-lock.ts';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, testPaths } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, testPaths, sleepDrivenTiming } from '@momonga/testkit';
 import { localSettingsDir, localSettingsPath, makeDir, makeTree, registerCleanup, writeText } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 
@@ -135,19 +135,24 @@ for (let i = 0; i < 15; i += 1) await appendPermissionRule({ ports: systemFileLo
     const firstIsInsideItsSave = Promise.withResolvers<void>();
     const lockIsFree = Promise.withResolvers<void>();
     const heldAtTheLock: FileLockPorts = {
-      clock: { now: () => 1_000_000 },
-      sleep: () => {
-        firstIsInsideItsSave.resolve();
-        return lockIsFree.promise;
-      },
-      randomHex: systemFileLockPorts.randomHex,
+      timing: sleepDrivenTiming({
+        now: () => 1_000_000,
+        sleep: () => {
+          firstIsInsideItsSave.resolve();
+          return lockIsFree.promise;
+        },
+      }),
+      random: systemFileLockPorts.random,
     };
     let secondAskedForTheLock = false;
     const neverAtTheLock: FileLockPorts = {
       ...systemFileLockPorts,
-      sleep: (ms) => {
-        secondAskedForTheLock = true;
-        return systemFileLockPorts.sleep(ms);
+      timing: {
+        ...systemFileLockPorts.timing,
+        setTimeout: (callback, ms) => {
+          secondAskedForTheLock = true;
+          return systemFileLockPorts.timing.setTimeout(callback, ms);
+        },
       },
     };
     const stop = new AbortController();

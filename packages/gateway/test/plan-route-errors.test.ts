@@ -39,12 +39,12 @@ describe('every plan route error passes one mapping (P-162, N-G5-1, G5-4)', () =
     await signIn(gateway);
     const listed = await gateway.get(`${accountRoute(PLAN_ROUTES.accountModels)}?profile=${PROFILE_ID}&refresh=1`);
     expect(listed.status).toBe(200);
-    writeSettings(gateway.home, { models: { connections: 'not a list' } });
+    writeSettings(gateway.home, { models: { fallback: 'not a list' } });
     const answer = await gateway.post(accountRoute(PLAN_ROUTES.accountTargets), { profile: PROFILE_ID, slug: 'plan-extra' });
     expect(answer.body.error.code).not.toBe('internal_error');
     expect(answer.status).toBe(400);
     expect(answer.body.error).toMatchObject({ type: 'invalid_request', code: 'invalid_value' });
-    expect(answer.body.error.message).toBe('invalid settings at /models/connections: must be array');
+    expect(answer.body.error.message).toBe('invalid settings at /models/fallback: must be array');
   });
 
   it('host/reset whose identity file cannot be written answers 500 plan_host_identity_unavailable, as begin does', async () => {

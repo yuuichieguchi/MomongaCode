@@ -3,9 +3,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { HOLD_UNTIL_SIGNALLED, HOLD_UNTIL_SIGNALLED_ARGV, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
-import { REAP_POLL_INTERVAL_MS, findHolders, holderGroups, markerReapClockBoundMs, reapMarkedProcesses, reconcileProcessGroup } from '@momonga/foundation';
-import type { ProbeResult, ProcessInspector, ReapTiming } from '@momonga/foundation';
+import { HOLD_UNTIL_SIGNALLED, HOLD_UNTIL_SIGNALLED_ARGV, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, sleepDrivenTiming } from '@momonga/testkit';
+import { POLL_INTERVAL_MS, findHolders, holderGroups, markerReapClockBoundMs, reapMarkedProcesses, reconcileProcessGroup } from '@momonga/foundation';
+import type { ProbeResult, ProcessInspector, Timing } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -414,14 +414,14 @@ describe('reconcileProcessGroup timing injection', () => {
     const group = await startGroup(dir, IGNORING_GROUP_SCRIPT, { fd3: marker });
     let current = 0;
     const sleeps: number[] = [];
-    const timing: ReapTiming = {
+    const timing: Timing = sleepDrivenTiming({
       now: () => current,
       sleep: async (ms: number) => {
         sleeps.push(ms);
         current += ms;
         await new Promise((resolve) => setImmediate(resolve));
       },
-    };
+    });
     const signals: Array<{ pid: number; signal: NodeJS.Signals | number; at: number }> = [];
     const kill = (pid: number, signal: NodeJS.Signals | number): void => {
       if (signal !== 0) signals.push({ pid, signal, at: current });
@@ -457,20 +457,20 @@ describe('markerReapClockBoundMs', () => {
   const OWN_GROUP = 424_241;
   const HOLDER = 424_243;
   const HOLDER_STARTED_AT = 1_700_000_000n;
-  const FAILURES_PER_WINDOW = KILL_GRACE_MS / REAP_POLL_INTERVAL_MS - 1;
+  const FAILURES_PER_WINDOW = KILL_GRACE_MS / POLL_INTERVAL_MS - 1;
   const SLOW_PROBE: ProbeResult<number[]> = { kind: 'failed', cause: 'transient', evidence: { kind: 'timeout', detail: 'the probe was slow' } };
 
   it('bounds the clock a marker reap spends when every probe window retries to its end and the holder never lets go', async () => {
     const marker = path.join(makeDir(), 'marker');
     fs.writeFileSync(marker, `${RECORDED_GROUP}\n`, { mode: 0o600 });
     let current = 0;
-    const timing: ReapTiming = {
+    const timing: Timing = sleepDrivenTiming({
       now: () => current,
       sleep: async (ms: number) => {
         current += ms;
         await new Promise((resolve) => setImmediate(resolve));
       },
-    };
+    });
     const scriptedHolders: ProbeResult<number[]>[] = [
       ...Array.from({ length: FAILURES_PER_WINDOW }, () => SLOW_PROBE),
       { kind: 'value', value: [HOLDER] },

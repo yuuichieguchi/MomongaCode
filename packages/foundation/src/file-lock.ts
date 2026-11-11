@@ -1,24 +1,17 @@
-import { randomBytes } from 'node:crypto';
-import { systemClock } from './clock.ts';
-import type { Clock } from './clock.ts';
 import { settledOrAborted } from './operation-limit.ts';
-import { CLAIM_POLL_MS, claimWithin } from './platform/claim-within.ts';
+import { claimWithin } from './platform/claim-within.ts';
 import { hostKernelLock } from './platform/host-kernel-lock.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
+import type { Random } from './random.ts';
+import { systemRandom } from './system-random.ts';
+import { systemWaitTiming } from './system-timing.ts';
+import type { Timing } from './timing.ts';
 
 export const DEFAULT_LOCK_TIMEOUT_MS = 10000;
 
-export type FileLockPorts = {
-  clock: Clock;
-  sleep(ms: number): Promise<void>;
-  randomHex(bytes: number): string;
-};
+export type FileLockPorts = { timing: Timing; random: Random };
 
-export const systemFileLockPorts: FileLockPorts = {
-  clock: systemClock,
-  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-  randomHex: (bytes) => randomBytes(bytes).toString('hex'),
-};
+export const systemFileLockPorts: FileLockPorts = { timing: systemWaitTiming, random: systemRandom };
 
 export type FileLockOptions = { ports: FileLockPorts; mechanism?: KernelLockMechanism; signal?: AbortSignal; timeoutMs?: number };
 
@@ -50,8 +43,7 @@ const acquireWithinTimeout = async (lockPath: string, options: FileLockOptions):
     mechanism: options.mechanism ?? hostKernelLock(),
     lockPath,
     holder: String(process.pid),
-    timing: { now: () => options.ports.clock.now(), sleep: (ms) => options.ports.sleep(ms) },
-    pollMs: CLAIM_POLL_MS,
+    timing: options.ports.timing,
     waitMs: timeoutMs,
     signal,
   });

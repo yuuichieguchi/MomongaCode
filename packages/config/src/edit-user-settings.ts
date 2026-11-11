@@ -1,21 +1,20 @@
 import path from 'node:path';
-import { createKeyedSerializer, hostPaths, isRecord, nodeFileSystem, systemFileLockPorts, systemRandom, withFileLock, writeFileAtomically } from '@momonga/foundation';
-import type { FileLockPorts, PathResolver } from '@momonga/foundation';
-import { settingsLockPath } from './file-lock.ts';
+import { hostPaths, isRecord, nodeFileSystem, writeFileAtomically } from '@momonga/foundation';
+import type { PathResolver } from '@momonga/foundation';
+import { ConfigError } from './config-error.ts';
+import type { SettingsWriterPorts } from './file-lock.ts';
 import { isAbsentPathError, readJsonFile } from './json-file.ts';
-import { layoutOf } from './layout.ts';
+import type { Confinement } from './json-file.ts';
 
 const SETTINGS_FILE_MODE = 0o600;
 const PRIVATE_DIRECTORY_MODE = 0o700;
 
-const serializeInProcess = createKeyedSerializer();
+export type EditUserSettingsOptions = SettingsWriterPorts & { confine?: Confinement };
 
-export type EditUserSettingsOptions = { ports?: FileLockPorts; lockTimeoutMs?: number; signal: AbortSignal };
-
-const documentOf = async (settingsFile: string): Promise<Record<string, unknown>> => {
-  const read = await readJsonFile(settingsFile);
+const documentOf = async (settingsFile: string, confine: Confinement | undefined): Promise<Record<string, unknown>> => {
+  const read = await readJsonFile(settingsFile, confine === undefined ? {} : { confine });
   if (!read.found) return {};
-  if (!isRecord(read.value)) throw new Error(`${settingsFile}: settings must be a JSON object`);
+  if (!isRecord(read.value)) throw new ConfigError(`${settingsFile}: settings must be a JSON object`);
   return read.value;
 };
 
@@ -31,35 +30,17 @@ export const settingsWriteTarget = async (file: string, paths: Pick<PathResolver
   try {
     return await paths.realPath(file);
   } catch (error) {
-    if (isAbsentPathError(error)) throw new Error(`${file}: dangling symlink`, { cause: error });
+    if (isAbsentPathError(error)) throw new ConfigError(`${file}: dangling symlink`, { cause: error });
     throw error;
   }
 };
 
-export const editUserSettings = async (
-  home: string,
-  settingsFile: string,
-  edit: (document: Record<string, unknown>) => boolean,
-  options: EditUserSettingsOptions,
-): Promise<void> => {
-  const ports = options.ports ?? systemFileLockPorts;
-  const paths = hostPaths(options.signal);
-  const target = await settingsWriteTarget(settingsFile, paths);
+export const editUserSettings = async (settingsFile: string, edit: (document: Record<string, unknown>) => boolean, { lock, random, signal, confine }: EditUserSettingsOptions): Promise<void> => {
+  const target = await settingsWriteTarget(settingsFile, hostPaths(signal));
   await nodeFileSystem.mkdir(path.dirname(target), PRIVATE_DIRECTORY_MODE);
-  await nodeFileSystem.mkdir(layoutOf(home).run, PRIVATE_DIRECTORY_MODE);
-  const lockPath = await settingsLockPath(home, target, paths);
-  await serializeInProcess(
-    await paths.comparablePath(target),
-    () =>
-      withFileLock(
-        lockPath,
-        async () => {
-          const document = await documentOf(settingsFile);
-          if (!edit(document)) return;
-          await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: ports.randomHex }, target, `${JSON.stringify(document, null, 2)}\n`, { mode: SETTINGS_FILE_MODE });
-        },
-        { ports, signal: options.signal, ...(options.lockTimeoutMs === undefined ? {} : { timeoutMs: options.lockTimeoutMs }) },
-      ),
-    options.signal,
-  );
+  await lock.locked(target, signal, async () => {
+    const document = await documentOf(settingsFile, confine);
+    if (!edit(document)) return;
+    await writeFileAtomically(nodeFileSystem, random, target, `${JSON.stringify(document, null, 2)}\n`, { mode: SETTINGS_FILE_MODE });
+  });
 };

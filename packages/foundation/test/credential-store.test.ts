@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createFileCredentialStore, createMemoryCredentialStore } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, sleepDrivenTiming, createFakeRandom } from '@momonga/testkit';
 import { deferred, settlementOf, turn } from './support/secret-store-fakes.ts';
 import { makeTemporaryDirectory as makeDir } from './support/temporary-directory.ts';
 
@@ -90,11 +90,13 @@ describe('file credential store while another process holds the key lock', () =>
   const steppedPorts = (): FileLockPorts => {
     let now = 1_000_000;
     return {
-      clock: { now: () => now },
-      sleep: async (ms) => {
-        now += ms;
-      },
-      randomHex: () => 'cafe0001',
+      timing: sleepDrivenTiming({
+        now: () => now,
+        sleep: async (ms) => {
+          now += ms;
+        },
+      }),
+      random: { ...createFakeRandom(1), hex: () => 'cafe0001' },
     };
   };
 

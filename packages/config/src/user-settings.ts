@@ -1,9 +1,8 @@
-import fs from 'node:fs';
-import { DEFAULT_STOP_VALUES, answeredNow, canonicalJson, isTransientErrno, nodeFileSystemSync, syncPaths, systemRandom, writeFileAtomicallySync } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, answeredNow, canonicalJson, isTransientErrno, nodeFileSystemSync, sha256Hex, syncPaths, systemRandom, writeFileAtomicallySync } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
-import { readJsonFileSync } from './json-file.ts';
-import type { JsonFile } from './json-file.ts';
+import { isAbsentPathError, isMissingFileError, parsedJsonOf, readJsonTextSync } from './json-file.ts';
+import type { JsonFile, JsonText } from './json-file.ts';
 import { createKeptSettings } from './kept-settings.ts';
 import type { KeptRecords, KeptSettings } from './kept-settings.ts';
 import { keptOrThrow } from './last-good.ts';
@@ -65,8 +64,14 @@ export type AppliedRecordWrite = { kind: 'written'; seq: number } | { kind: 'unc
 
 type AppliedRecord = { seq: number; settings: unknown };
 
-const appliedRecordOf = (file: string): AppliedRecord | undefined => {
-  const read = readJsonFileSync(file);
+const MISSING_KEY = 'missing';
+
+const contentKeyOf = (read: JsonText): string => (read.found ? sha256Hex(read.text) : MISSING_KEY);
+
+const changeKeyOf = (file: string): string => contentKeyOf(readJsonTextSync(file, isMissingFileError));
+
+const appliedRecordOf = (file: string, text: JsonText): AppliedRecord | undefined => {
+  const read = parsedJsonOf(text, file);
   if (!read.found) return undefined;
   const { value } = read;
   if (typeof value !== 'object' || value === null) throw new ConfigError(`the applied settings record ${file} is not an object`);
@@ -75,15 +80,20 @@ const appliedRecordOf = (file: string): AppliedRecord | undefined => {
   return { seq, settings };
 };
 
-type AppliedRecordRead = { kind: 'absent' } | { kind: 'readable'; record: AppliedRecord } | { kind: 'unreadable'; reason: string };
+const UNREAD_IDENTITY = 'unread';
+
+type AppliedRecordRead = { kind: 'absent' } | { kind: 'readable'; record: AppliedRecord } | { kind: 'unreadable'; reason: string; identity: string };
 
 const readAppliedRecord = (file: string): AppliedRecordRead => {
+  let identity = UNREAD_IDENTITY;
   try {
-    const record = appliedRecordOf(file);
+    const text = readJsonTextSync(file, isAbsentPathError);
+    identity = contentKeyOf(text);
+    const record = appliedRecordOf(file, text);
     return record === undefined ? { kind: 'absent' } : { kind: 'readable', record };
   } catch (error) {
     rethrowIfTransient(error);
-    return { kind: 'unreadable', reason: error instanceof Error ? error.message : String(error) };
+    return { kind: 'unreadable', reason: error instanceof Error ? error.message : String(error), identity };
   }
 };
 
@@ -123,16 +133,6 @@ export type UserSettingsCache = {
   kept: KeptSettings;
 };
 
-const changeKeyOf = (file: string): string => {
-  try {
-    const stat = fs.statSync(file, { bigint: true });
-    return `${stat.mtimeNs}:${stat.size}:${stat.ino}`;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'missing';
-    throw error;
-  }
-};
-
 export const userSettingsChangeKey = (home: string): string => changeKeyOf(layoutOf(home).settingsFile);
 
 export const createUserSettingsCache = ({ home, onWarning, keptRecords, appliedRecord, planProfiles }: UserSettingsCacheOptions): UserSettingsCache => {
@@ -148,10 +148,9 @@ export const createUserSettingsCache = ({ home, onWarning, keptRecords, appliedR
 
   const readableRecord = (): AppliedRecord | undefined => {
     if (appliedRecord === undefined) return undefined;
-    const identity = changeKeyOf(appliedRecord);
     const recorded = readAppliedRecord(appliedRecord);
     if (recorded.kind === 'readable') return recorded.record;
-    if (recorded.kind === 'unreadable') reportUnreadable(appliedRecord, identity, recorded.reason);
+    if (recorded.kind === 'unreadable') reportUnreadable(appliedRecord, recorded.identity, recorded.reason);
     return undefined;
   };
 
@@ -176,7 +175,7 @@ export const createUserSettingsCache = ({ home, onWarning, keptRecords, appliedR
       rebuilt = userSettingsFrom(home, { found: true, value: recorded.settings }, planProfiles);
     } catch (error) {
       if (!(error instanceof ConfigError)) throw error;
-      reportUnreadable(appliedRecord, changeKeyOf(appliedRecord), error.message);
+      reportUnreadable(appliedRecord, sha256Hex(canonicalJson(recorded.settings)), error.message);
       return undefined;
     }
     notedSeq = recorded.seq;
@@ -202,19 +201,20 @@ export const createUserSettingsCache = ({ home, onWarning, keptRecords, appliedR
   };
 
   const refresh = (): UserSettingsSnapshot => {
-    let key: string;
+    let text: JsonText;
     try {
-      key = userSettingsChangeKey(home);
+      text = readJsonTextSync(file, isMissingFileError);
     } catch (error) {
       seenKey = undefined;
       rethrowIfTransient(error);
       failWith(toConfigError(error), undefined);
       return latest as UserSettingsSnapshot;
     }
-    if (latest !== undefined && !('error' in latest) && key === seenKey) return latest;
+    const key = contentKeyOf(text);
+    if (latest !== undefined && key === seenKey) return latest;
     seenKey = key;
     try {
-      const read = readUserJsonFile(home);
+      const read = parsedJsonOf(text, file);
       const loaded = userSettingsFrom(home, read, planProfiles);
       for (const warning of loaded.warnings) onWarning(warning);
       kept.remember(file, read);

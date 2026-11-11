@@ -2,9 +2,9 @@ import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { KILL_CONFIRM_MS, REAP_POLL_INTERVAL_MS, createUninspectableRegistry, defaultProcessInspector, findHolders, groupAlive } from '@momonga/foundation';
-import type { ProcessInspector, ReapTiming, SignalSender, UninspectableRegistry } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
+import { KILL_CONFIRM_MS, POLL_INTERVAL_MS, createUninspectableRegistry, defaultProcessInspector, findHolders, groupAlive } from '@momonga/foundation';
+import type { ProcessInspector, Timing, SignalSender, UninspectableRegistry } from '@momonga/foundation';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, sleepDrivenTiming } from '@momonga/testkit';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness, HarnessOptions } from './harness.ts';
 import { deferred, keyFor } from './helpers.ts';
@@ -73,24 +73,25 @@ const seedPending = (harness: Harness, key: string, pgid?: number): void => {
 
 const noSignal = (): AbortSignal => new AbortController().signal;
 
-const fakeTiming = (overlapTarget = 1): ReapTiming & { active: number; maxActive: number; sleeps: number } => {
+const fakeTiming = (overlapTarget = 1): Timing & { active: number; maxActive: number; sleeps: number } => {
   let now = 0;
   const overlapped = deferred<void>();
-  const timing = {
-    active: 0,
-    maxActive: 0,
-    sleeps: 0,
-    now: () => now,
-    sleep: async (ms: number) => {
-      timing.sleeps += 1;
-      timing.active += 1;
-      timing.maxActive = Math.max(timing.maxActive, timing.active);
-      if (timing.maxActive >= overlapTarget) overlapped.resolve();
-      await overlapped.promise;
-      timing.active -= 1;
-      now += ms;
-    },
-  };
+  const counts = { active: 0, maxActive: 0, sleeps: 0 };
+  const timing = Object.assign(
+    counts,
+    sleepDrivenTiming({
+      now: () => now,
+      sleep: async (ms: number) => {
+        counts.sleeps += 1;
+        counts.active += 1;
+        counts.maxActive = Math.max(counts.maxActive, counts.active);
+        if (counts.maxActive >= overlapTarget) overlapped.resolve();
+        await overlapped.promise;
+        counts.active -= 1;
+        now += ms;
+      },
+    }),
+  );
   return timing;
 };
 
@@ -105,7 +106,7 @@ const firstListingKept = (): ProcessInspector => {
   };
 };
 
-const harnessWith = (reap: { kill?: SignalSender; timing?: ReapTiming; killGraceMs?: number; inspector?: ProcessInspector; uninspectable?: UninspectableRegistry }): Harness =>
+const harnessWith = (reap: { kill?: SignalSender; timing?: Timing; killGraceMs?: number; inspector?: ProcessInspector; uninspectable?: UninspectableRegistry }): Harness =>
   makeHarness({ executor: { reap } } as HarnessOptions);
 
 describe('executor abandon', () => {
@@ -325,7 +326,7 @@ describe('executor abandon', () => {
       expect.arrayContaining([`tool marker ${marker} kept: process ${stubborn} still hold it after cleanup; the next start will retry`]),
     );
     expect(harness.idempotency.stateOf(KEY_A)).toBe('UNKNOWN');
-    expect(timing.sleeps).toBe((STUBBORN_GRACE_MS + KILL_CONFIRM_MS) / REAP_POLL_INTERVAL_MS);
+    expect(timing.sleeps).toBe(1 + KILL_CONFIRM_MS / POLL_INTERVAL_MS);
   });
 
   it('a target whose marker cannot be removed is a typed failure while the others are still reaped and every target is CAS-ed', async () => {
@@ -355,12 +356,12 @@ describe('executor abandon', () => {
 
   it('a call lock that stays held is a typed failure, the earlier attempt is not touched and the record is still marked UNKNOWN', async () => {
     let now = 0;
-    const timing: ReapTiming = {
+    const timing: Timing = sleepDrivenTiming({
       now: () => now,
       sleep: async (ms) => {
         now += ms;
       },
-    };
+    });
     const harness = makeHarness({ executor: { reap: { timing }, reconcileCapMs: 100 } });
     seedPending(harness, KEY_A);
     harness.kernelLock.holdExternally(path.join(harness.callLockDir, `${KEY_A}.lock`), 4242);

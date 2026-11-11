@@ -1,14 +1,14 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { claimWithin, withFileLock } from '@momonga/foundation';
-import type { FileLockPorts, KernelLockMechanism, ReapTiming } from '@momonga/foundation';
-import { createFakeKernelLock, withTempDir } from '@momonga/testkit';
+import { POLL_INTERVAL_MS, claimWithin, withFileLock } from '@momonga/foundation';
+import type { FileLockPorts, KernelLockMechanism, Timing } from '@momonga/foundation';
+import { createFakeKernelLock, createFakeRandom, withTempDir } from '@momonga/testkit';
 
 const HOLDER_PID = 4242;
-const POLL_MS = 7;
-const WAIT_MS = 21;
+const POLL_MS = POLL_INTERVAL_MS;
+const WAIT_MS = 3 * POLL_INTERVAL_MS;
 
-type RecordingTiming = ReapTiming & { sleeps: number[] };
+type RecordingTiming = Timing & { sleeps: number[] };
 
 const recordingTiming = (onSleep: (sleeps: number) => void = () => undefined): RecordingTiming => {
   let current = 0;
@@ -16,26 +16,27 @@ const recordingTiming = (onSleep: (sleeps: number) => void = () => undefined): R
   return {
     sleeps,
     now: () => current,
-    sleep: async (ms) => {
-      current += ms;
-      sleeps.push(ms);
-      onSleep(sleeps.length);
+    monotonicMs: () => current,
+    setTimeout: (wake, ms) => {
+      queueMicrotask(() => {
+        current += ms;
+        sleeps.push(ms);
+        onSleep(sleeps.length);
+        wake();
+      });
+      return undefined;
     },
+    clearTimeout: () => undefined,
   };
 };
 
-const fileLockPorts = (timing: ReapTiming): FileLockPorts => ({
-  clock: { now: () => timing.now() },
-  sleep: (ms) => timing.sleep(ms),
-  randomHex: () => 'deadbeef',
-});
+const fileLockPorts = (timing: Timing): FileLockPorts => ({ timing, random: createFakeRandom(1) });
 
-const request = (mechanism: KernelLockMechanism, lockPath: string, timing: ReapTiming, signal: AbortSignal = new AbortController().signal) => ({
+const request = (mechanism: KernelLockMechanism, lockPath: string, timing: Timing, signal: AbortSignal = new AbortController().signal) => ({
   mechanism,
   lockPath,
   holder: '77',
   timing,
-  pollMs: POLL_MS,
   waitMs: WAIT_MS,
   signal,
 });
@@ -54,7 +55,7 @@ describe('claimWithin', () => {
     expect(fake.isHeldBy(lockPath)).toBe('claim');
   });
 
-  it('polls at the given interval and claims once the holder lets go', async (context) => {
+  it('polls at the one poll interval and claims once the holder lets go', async (context) => {
     const lockPath = path.join(withTempDir(context), 'a.lock');
     const fake = createFakeKernelLock({ inheritable: false });
     fake.holdExternally(lockPath, HOLDER_PID);

@@ -184,7 +184,7 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
 
   const addedModelOf = async (profile: string, slug: string, signal: AbortSignal): Promise<string> => {
     const connection = { adapter: 'open-responses' as const, plan: { profile } };
-    const { model } = await editModelsSettings(options.home, options.settingsFile, [{ kind: 'addModel', choice: { connection, model: { id: slug } } }], { signal });
+    const { model } = await editModelsSettings(options.home, options.settingsFile, [{ kind: 'addModel', choice: { connection, model: { id: slug } } }], { signal, planProfiles: options.profiles });
     if (model === undefined) throw new TypeError(`the settings writer added the plan model ${slug} without naming it`);
     return model;
   };

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { JsonDepthError, MAX_JSON_DEPTH, parseOutsideJson } from '@momonga/foundation';
 import type { PathResolver } from '@momonga/foundation';
+import { ConfigError } from './config-error.ts';
 
 export type JsonFile = { found: false } | { found: true; value: unknown };
 
@@ -150,7 +151,7 @@ const rejectForbiddenKeys = (value: unknown, pointer: string, source: string): v
   if (typeof value !== 'object' || value === null) return;
   for (const [key, child] of Object.entries(value)) {
     const childPointer = `${pointer}/${escapePointerSegment(key)}`;
-    if (FORBIDDEN_KEYS.has(key)) throw new Error(`${source}: forbidden key at ${childPointer}`);
+    if (FORBIDDEN_KEYS.has(key)) throw new ConfigError(`${source}: forbidden key at ${childPointer}`);
     rejectForbiddenKeys(child, childPointer, source);
   }
 };
@@ -163,17 +164,17 @@ export const parseJsonText = (written: string, source: string): unknown => {
   try {
     value = parseOutsideJson(text);
   } catch (error) {
-    if (error instanceof JsonDepthError) throw new Error(`${source}: ${error.message}`, { cause: error });
+    if (error instanceof JsonDepthError) throw new ConfigError(`${source}: ${error.message}`, { cause: error });
     let offset: number | undefined;
     try {
       offset = new JsonSyntaxScanner(text).firstErrorOffset();
     } catch (scanFailure) {
-      if (scanFailure instanceof JsonDepthError) throw new Error(`${source}: ${scanFailure.message}`, { cause: scanFailure });
+      if (scanFailure instanceof JsonDepthError) throw new ConfigError(`${source}: ${scanFailure.message}`, { cause: scanFailure });
       throw scanFailure;
     }
-    if (offset === undefined) throw error;
+    if (offset === undefined) throw new ConfigError(`${source}: invalid JSON: ${(error as Error).message}`, { cause: error });
     const { line, column } = lineAndColumn(text, offset);
-    throw new Error(`${source}: invalid JSON at line ${line} column ${column}: ${(error as Error).message}`, { cause: error });
+    throw new ConfigError(`${source}: invalid JSON at line ${line} column ${column}: ${(error as Error).message}`, { cause: error });
   }
   rejectForbiddenKeys(value, '', source);
   return value;
@@ -200,18 +201,18 @@ const assertReadable = async (file: string, confine: Confinement | undefined): P
     try {
       target = await fs.promises.stat(file);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`${file}: dangling symlink`, { cause: error });
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new ConfigError(`${file}: dangling symlink`, { cause: error });
       throw error;
     }
-    if (!target.isFile()) throw new Error(`${file}: not a regular file`);
+    if (!target.isFile()) throw new ConfigError(`${file}: not a regular file`);
     if (confine !== undefined) {
       const real = await confine.paths.canonicalPath(file);
       const root = await confine.paths.canonicalPath(confine.to);
-      if (!(await confine.paths.comparableContains(root, real))) throw new Error(`${file}: symlink target ${real} is outside the project ${root}`);
+      if (!(await confine.paths.comparableContains(root, real))) throw new ConfigError(`${file}: symlink target ${real} is outside the project ${root}`);
     }
     return true;
   }
-  if (!link.isFile()) throw new Error(`${file}: not a regular file`);
+  if (!link.isFile()) throw new ConfigError(`${file}: not a regular file`);
   return true;
 };
 
@@ -227,12 +228,16 @@ export const readJsonFile = async (file: string, options: ReadJsonFileOptions = 
   return { found: true, value: parseJsonText(text, file) };
 };
 
-export const readJsonFileSync = (file: string): JsonFile => {
+export type JsonText = { found: false } | { found: true; text: string };
+
+export const isMissingFileError = (error: unknown): boolean => (error as NodeJS.ErrnoException).code === 'ENOENT';
+
+export const readJsonTextSync = (file: string, isAbsent: (error: unknown) => boolean): JsonText => {
   let link: fs.Stats;
   try {
     link = fs.lstatSync(file);
   } catch (error) {
-    if (isAbsentPathError(error)) return { found: false };
+    if (isAbsent(error)) return { found: false };
     throw error;
   }
   if (link.isSymbolicLink()) {
@@ -240,12 +245,16 @@ export const readJsonFileSync = (file: string): JsonFile => {
     try {
       target = fs.statSync(file);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`${file}: dangling symlink`, { cause: error });
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new ConfigError(`${file}: dangling symlink`, { cause: error });
       throw error;
     }
-    if (!target.isFile()) throw new Error(`${file}: not a regular file`);
+    if (!target.isFile()) throw new ConfigError(`${file}: not a regular file`);
   } else if (!link.isFile()) {
-    throw new Error(`${file}: not a regular file`);
+    throw new ConfigError(`${file}: not a regular file`);
   }
-  return { found: true, value: parseJsonText(fs.readFileSync(file, 'utf8'), file) };
+  return { found: true, text: fs.readFileSync(file, 'utf8') };
 };
+
+export const parsedJsonOf = (read: JsonText, source: string): JsonFile => (read.found ? { found: true, value: parseJsonText(read.text, source) } : read);
+
+export const readJsonFileSync = (file: string): JsonFile => parsedJsonOf(readJsonTextSync(file, isAbsentPathError), file);

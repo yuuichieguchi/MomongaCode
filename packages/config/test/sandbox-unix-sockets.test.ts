@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SETTINGS_SCHEMA, loadSettings, loadUserSettings } from '@momonga/config';
@@ -50,6 +51,30 @@ describe('sandboxUnixSockets setting', () => {
     const result = await loadUserSettings({ home: tree.home });
     expect(result.settings.sandboxUnixSockets).toEqual({ allow: ['/var/run/agent'] });
     expect(result.warnings).toEqual([`${file}: sandboxUnixSockets.allow entry ${JSON.stringify(owned)} is inside a directory momonga owns; its sockets are always denied; discarded`]);
+  });
+
+  it('drops an entry that reaches a directory momonga owns through a link to the home', async () => {
+    const tree = makeTree();
+    const linkedHome = path.join(path.dirname(tree.home), 'home-link');
+    fs.symlinkSync(tree.home, linkedHome, 'dir');
+    fs.mkdirSync(path.join(tree.home, '.momonga', 'run'), { recursive: true, mode: 0o700 });
+    const throughLink = path.join(linkedHome, '.momonga', 'run', 'agent.sock');
+    const file = writeJson(userSettingsPath(tree), { sandbox: 'seatbelt', sandboxUnixSockets: { allow: [throughLink, '/var/run/agent'] } });
+    const result = await loadUserSettings({ home: tree.home });
+    expect(result.settings.sandboxUnixSockets).toEqual({ allow: ['/var/run/agent'] });
+    expect(result.warnings).toEqual([`${file}: sandboxUnixSockets.allow entry ${JSON.stringify(throughLink)} is inside a directory momonga owns; its sockets are always denied; discarded`]);
+  });
+
+  it('drops an entry inside a directory momonga owns when the home itself is given through a link', async () => {
+    const tree = makeTree();
+    const linkedHome = path.join(path.dirname(tree.home), 'home-link');
+    fs.symlinkSync(tree.home, linkedHome, 'dir');
+    const real = path.join(tree.home, '.momonga', 'run', 'agent.sock');
+    const file = writeJson(userSettingsPath(tree), { sandbox: 'seatbelt', sandboxUnixSockets: { allow: [real] } });
+    const result = await loadUserSettings({ home: linkedHome });
+    expect(result.settings.sandboxUnixSockets).toEqual({ allow: [] });
+    expect(result.warnings).toEqual([`${path.join(linkedHome, '.momonga', 'settings.json')}: sandboxUnixSockets.allow entry ${JSON.stringify(real)} is inside a directory momonga owns; its sockets are always denied; discarded`]);
+    expect(fs.existsSync(file)).toBe(true);
   });
 
   it('applies no entry under the bubblewrap sandbox and says so', async () => {

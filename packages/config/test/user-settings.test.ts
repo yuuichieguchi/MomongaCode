@@ -87,14 +87,14 @@ describe('createUserSettingsCache', () => {
     expect(cache.get().env).toEqual({ MODE: 'two' });
   });
 
-  it('keeps the cached value while the mtime is unchanged', () => {
+  it('sees a rewrite of the same size with the same mtime', () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeAt(file, { env: { MODE: 'one' } }, T0);
     const { cache } = cacheFor(tree);
     expect(cache.get().env).toEqual({ MODE: 'one' });
     writeAt(file, { env: { MODE: 'two' } }, T0);
-    expect(cache.get().env).toEqual({ MODE: 'one' });
+    expect(cache.get().env).toEqual({ MODE: 'two' });
   });
 
   it('detects a same-mtime rewrite of a different size', () => {

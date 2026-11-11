@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { claimRetry, operationSignal, readMarkerGroup, reapMarkedProcesses, unreadableMarkerNotice } from '@momonga/foundation';
-import type { MarkerMode, MarkerState, ProcessInspector, ReapTiming, RetryKind, UninspectableRegistry } from '@momonga/foundation';
+import type { MarkerMode, MarkerState, ProcessInspector, Timing, RetryKind, UninspectableRegistry } from '@momonga/foundation';
 import { TERMINAL_STATUSES } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { createMarkerSettle, unownedOf } from '@momonga/tools';
@@ -21,7 +21,7 @@ export type ReapToolMarkersOptions = {
   signal?: AbortSignal | undefined;
   killGraceMs: number;
   onWarning(message: string): void;
-  timing?: ReapTiming;
+  timing?: Timing;
   reap?: typeof reapMarkedProcesses;
   files?: RuntimeFiles;
   inspector?: ProcessInspector;

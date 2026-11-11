@@ -21,7 +21,7 @@ import {
   ruleEnforcementOf,
   sha256Hex,
 } from '@momonga/foundation';
-import type { Clock, CredentialSecretStore, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, OutboundNetwork, ProcessInspector, ReapTiming, RolePort, RuleEnforcement, SecretStore, SessionScratch } from '@momonga/foundation';
+import type { Clock, CredentialSecretStore, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, OutboundNetwork, ProcessInspector, Timing, RolePort, RuleEnforcement, SecretStore, SessionScratch } from '@momonga/foundation';
 import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/mcp';
 import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { SandboxBindings } from '../ports.ts';
@@ -70,7 +70,7 @@ export type ToolRuntimeOptions = {
   forgeFetch?: ForgeFetch;
   shellHost: ShellHost;
   settings: Pick<SettingsComposition, 'envFor' | 'takeUserSnapshot' | 'admitUserSnapshot' | 'keptLayers' | 'loadSessionSettings' | 'trustOracle'>;
-  reapTiming: ReapTiming;
+  reapTiming: Timing;
   leaseMs: number;
   heartbeatMs: number;
   createPool?: (options: McpPoolOptions) => McpPool;

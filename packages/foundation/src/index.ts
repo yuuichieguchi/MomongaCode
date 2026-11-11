@@ -5,7 +5,6 @@ export { ruleFingerprint } from './rule-fingerprint.ts';
 export { capText, sanitizeServerText } from './untrusted-text.ts';
 export { CircuitBreaker } from './circuit-breaker.ts';
 export { codeDigestOf, codeDigestOfRunningProcess } from './code-digest.ts';
-export { systemClock } from './clock.ts';
 export type { Clock } from './clock.ts';
 export { Deadline } from './deadline.ts';
 export { TOO_DEEP_PLACEHOLDER, isRecord, parseBoundedJson, spanValueOfJsonText } from './json.ts';
@@ -29,7 +28,7 @@ export type { SseEvent } from './sse.ts';
 export { createUdsClient, fixedSocket, isUnixSocketLive, listenUnix } from './uds.ts';
 export type { SocketResolver, UdsClient, UdsResponse } from './uds.ts';
 export { uuidv7 } from './uuidv7.ts';
-export { newCallId } from './call-id.ts';
+export { CALL_ID_PREFIX, newCallId } from './call-id.ts';
 export { LockWaitTimeoutError, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
 export type { FileLockPorts } from './file-lock.ts';
 export { AUTH_DOCUMENT_MAX_BYTES, createFileCredentialStore, createMemoryCredentialStore, credentialFileFor } from './credential-store.ts';
@@ -66,11 +65,11 @@ export { sleep } from './timing.ts';
 export type { Timing } from './timing.ts';
 export { POLL_INTERVAL_MS, waitUntil } from './wait-until.ts';
 export type { Random } from './random.ts';
-export { systemTiming } from './system-timing.ts';
+export { systemClock, systemTiming, systemWaitTiming } from './system-timing.ts';
 export { systemRandom } from './system-random.ts';
 export { nodeDescriptorWriter, nodeFileSystem, nodeFileSystemSync } from './node-file-system.ts';
 export type { FileSystem, FileSystemSync } from './node-file-system.ts';
-export { forceKillGroup, groupAlive, groupTerminationBoundMs, realGroupTiming, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from './process-group.ts';
+export { forceKillGroup, groupAlive, groupTerminationBoundMs, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from './process-group.ts';
 export type { TerminateOutcome } from './process-group.ts';
 export { procGroupMembers } from './platform/group-members.ts';
 export type { GroupMembersReader } from './platform/group-members.ts';
@@ -117,7 +116,7 @@ export { LOCK_DATABASE_SUFFIX, createSqliteFileLock, nodeSqliteLockOps, probeRem
 export type { SqliteLockOps, UnlinkOpenProbePorts } from './platform/sqlite-lock.ts';
 export { removeFilesThenRelease } from './platform/holder-file.ts';
 export type { LockFileIdentity } from './platform/file-identity.ts';
-export { CLAIM_POLL_MS, claimWithin } from './platform/claim-within.ts';
+export { claimWithin } from './platform/claim-within.ts';
 export type { ClaimOutcome, FileLockOps, HeldKernelLock, InheritedLockRequest, KernelLockMechanism } from './platform/kernel-lock.ts';
 export { judgeProcessIdentity } from './process-identity.ts';
 export {
@@ -246,7 +245,6 @@ export {
   MAXIMUM_STOP_VALUES,
   ABORT_SETTLE_LIMIT_MS,
   SANDBOX_KILL_GRACE_MS,
-  GROUP_POLL_INTERVAL_MS,
   mcpPoolCloseBoundMs,
   runtimeTeardownBudgetMs,
   runtimeAbortStopBudgetMs,
@@ -300,8 +298,8 @@ export {
   supervisorMaxCloseMs,
 } from './process-contract.ts';
 export type { EventPayload, JsonLogger, LogFields, LogLevel, LogValue, ReadyFields, ReservedLogKey, StopValueName, StopValues, TextStream } from './process-contract.ts';
-export { MarkerReapError, REAP_POLL_INTERVAL_MS, findHolders, holderGroups, hostReapTiming, markerReapClockBoundMs, reapMarkedProcesses, reapMarkedProcessesWithReport, recallMarkerGroup, reapMarkerDirectory, outlivedNotes, reconcileProcessGroup, reportUninspectableOnce, stoppedCommandResult } from './process-markers.ts';
-export type { MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirectoryOptions, ReapReport, ReapTiming } from './process-markers.ts';
+export { MarkerReapError, findHolders, holderGroups, markerReapClockBoundMs, reapMarkedProcesses, reapMarkedProcessesWithReport, recallMarkerGroup, reapMarkerDirectory, outlivedNotes, reconcileProcessGroup, reportUninspectableOnce, stoppedCommandResult } from './process-markers.ts';
+export type { MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirectoryOptions, ReapReport } from './process-markers.ts';
 export { createLiveIdentities } from './platform/live-identities.ts';
 export { createUninspectableRegistry } from './uninspectable-registry.ts';
 export type { UninspectableRegistry } from './uninspectable-registry.ts';
@@ -359,8 +357,7 @@ export { launchApart, launchGroupLeader } from './platform/group-launch.ts';
 export type { GroupLaunch, GroupLaunchMarker } from './platform/group-launch.ts';
 export { canStillRun } from './platform/run-state.ts';
 export type { ProcessGroupPort } from './platform/group-port.ts';
-export { deadlineSignal, hostProbeTiming, operationSignal } from './platform/probe-timing.ts';
-export type { ProbeTiming } from './platform/probe-timing.ts';
+export { operationSignal } from './platform/probe-timing.ts';
 export type { FileIdentity, ProcFs } from './platform/procfs.ts';
 export { parseChecksumListing } from './checksum-listing.ts';
 export {
