@@ -56,7 +56,7 @@ export type ApprovalKind = (typeof APPROVAL_KINDS)[number];
 
 export const unknownEffectOptions = (): PermissionOption[] => [{ optionId: 'allow_once', name: 'Continue', kind: 'allow_once' }];
 
-export const UNKNOWN_EFFECT_REASON = 'Its effect is unknown because the runtime stopped while it ran.';
+export const UNKNOWN_EFFECT_REASON = 'Its effect is unknown because the call was stopped before it reported a result.';
 
 export const UNKNOWN_EFFECT_ADVICE = 'Inspect the current state, then continue. To stop instead, cancel the run.';
 
