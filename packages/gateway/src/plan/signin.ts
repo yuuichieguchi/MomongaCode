@@ -158,9 +158,17 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     return attempt;
   };
 
+  const removeExpired = (): void => {
+    const now = options.clock.now();
+    for (const attempt of [...attempts.values()]) if (now >= attempt.expiresAt) consume(attempt.id);
+  };
+
   let completing = 0;
 
-  const waiting = (): boolean => completing > 0 || [...attempts.values()].some((attempt) => options.clock.now() < attempt.expiresAt);
+  const waiting = (): boolean => {
+    removeExpired();
+    return completing > 0 || attempts.size > 0;
+  };
 
   const beginAttempt = async (profile: PlanProfile, request: PlanSignInBeginRequest, signal: AbortSignal): Promise<Attempt> => {
     await options.sessions.pointerReady();
@@ -170,6 +178,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     const { hostId } = await ensureHostIdentity(options.fileSystem, options.hostFile, { accountsExist }).catch((error: unknown) => {
       throw hostIdentityFailure(error);
     });
+    removeExpired();
     const key = attemptKey(profile.id, request.account);
     const replaced = pendingByAccount.get(key);
     if (replaced !== undefined) attempts.delete(replaced);
@@ -286,6 +295,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
 
   const completeAttempt = async (fetch: PlanFetch, attemptId: string, callbackUrl: string, signal: AbortSignal): Promise<SignInEnd> => {
     const attempt = consume(attemptId);
+    removeExpired();
     if (attempt === undefined) throw signInFailure(PLAN_SIGN_IN_FAILURE.attemptNotFound, undefined);
     const progress: Progress = { endStep: STEP_ATTEMPT, facts: {} };
     try {
