@@ -4,6 +4,7 @@ import { createTerminalLayer } from '../../src/tui/terminal/layer.ts';
 import type { ProcessEvent } from '../../src/tui/terminal/layer.ts';
 import { BACKGROUND_QUERY, QUERY_BATCH, TERMINAL_MODES } from '../../src/tui/terminal/modes.ts';
 import { TITLE_MAX_CHARACTERS, TITLE_STATES, titleOf, titleSequence, titleStateOf } from '../../src/tui/terminal/title.ts';
+import { manualClock } from './screen-clock.ts';
 
 const ESC = '\u001b';
 const PUSH_TITLE = `${ESC}[22;2t`;
@@ -38,6 +39,7 @@ const fakes = () => {
       },
       kill: () => undefined,
     },
+    timers: manualClock().timers,
     screen: 'scrollback',
     screenSetByUser: false,
     mouse: false,

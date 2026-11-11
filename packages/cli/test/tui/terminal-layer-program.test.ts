@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { TerminalEvent } from '../../src/tui/terminal/events.ts';
 import { createTerminalLayer } from '../../src/tui/terminal/layer.ts';
 import type { ScreenRequest } from '../../src/tui/terminal/layer.ts';
+import { manualClock } from './screen-clock.ts';
 
 const ESC = '\u001b';
 
@@ -22,6 +23,7 @@ const startLayer = () => {
     },
     output: { writeSync: (text) => written.push(text), size: () => ({ columns: 100, rows: 30 }), onResize: () => () => undefined },
     process: { on: () => undefined, off: () => undefined, kill: () => undefined },
+    timers: manualClock().timers,
     screen: 'fullscreen',
     screenSetByUser: true,
     mouse: false,
@@ -54,7 +56,7 @@ describe('leaving the screen for a program that takes the terminal', () => {
     expect(flow.at(-1)).toBe('resume');
     expect(requests).toEqual([{ type: 'redraw' }]);
     feed('a');
-    expect(events).toEqual([{ type: 'key', text: 'a', ctrl: false, alt: false, shift: false }]);
+    expect(events).toEqual([{ type: 'key', text: 'a', ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false }]);
     layer.close();
   });
 

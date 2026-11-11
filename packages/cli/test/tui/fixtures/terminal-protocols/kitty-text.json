@@ -8,7 +8,10 @@
       "text": "a",
       "ctrl": false,
       "alt": false,
-      "shift": false
+      "shift": false,
+      "super": false,
+      "hyper": false,
+      "meta": false
     }
   ]
 }

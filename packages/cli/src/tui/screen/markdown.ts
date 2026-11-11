@@ -1,6 +1,5 @@
-import { escapeTerminalBlock } from '@momonga/protocol';
 import type { StyleToken } from './tokens.ts';
-import { displayWidth, withoutTabs, wrapLine } from './wrap.ts';
+import { displayWidth, inertText, parseWebUrl, wrapLine } from './wrap.ts';
 import type { Link, Row, Span } from './wrap.ts';
 
 export const MARKDOWN_UNIT_BYTES = 16 * 1024;
@@ -27,8 +26,6 @@ type Role = keyof typeof MARKDOWN_STYLE;
 
 type Inline = { text: string; spans: Span[]; links: Link[] };
 
-export const inertText = (text: string): string => withoutTabs(escapeTerminalBlock(text.replaceAll('\r\n', '\n')));
-
 const FENCE = /^\s*(?:```|~~~)/;
 const FENCE_MARKS = /^\s*(?:`+|~+)\s*/;
 const QUOTE = /^ {0,3}> ?(.*)$/;
@@ -44,7 +41,6 @@ const MARKDOWN_LINK = /\[((?:\\.|[^[\]\\])*)\]\(\s*<?([^\s()<>]+)>?(?:\s+"[^"]*"
 const AUTOLINK = /<(https?:\/\/[^\s<>]+)>/y;
 const BARE_URL = /https?:\/\/[^\s<>"'`\\]+/y;
 const URL_TRAILING = /[.,;:!?)\]}*_~]+$/;
-const OPENABLE = /^https?:\/\//i;
 const WORD_CHARACTER = /[\p{L}\p{N}]/u;
 const SPACE = /\s/;
 
@@ -59,7 +55,7 @@ const styled = (out: Inline, role: Role, write: () => void): void => {
 const linked = (out: Inline, url: string, write: () => void): void => {
   const start = out.text.length;
   write();
-  if (OPENABLE.test(url) && out.text.length > start) out.links.push([start, out.text.length, url]);
+  if (parseWebUrl(url) !== undefined && out.text.length > start) out.links.push([start, out.text.length, url]);
 };
 
 const runLength = (source: string, position: number): number => {

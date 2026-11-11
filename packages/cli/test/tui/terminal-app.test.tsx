@@ -40,6 +40,7 @@ const startOnLayer = () => {
     input: { setRawMode: () => undefined, resume: () => undefined, pause: () => undefined, on: (event, listener) => terminalInput.on(event, listener), off: (event, listener) => terminalInput.off(event, listener) },
     output: { writeSync: (text) => control.push(text), size: () => ({ columns: stdout.columns, rows: stdout.rows }), onResize: () => () => undefined },
     process: { on: () => undefined, off: () => undefined, kill: () => undefined },
+    timers: systemTiming,
     screen: 'scrollback',
     screenSetByUser: true,
     mouse: true,
