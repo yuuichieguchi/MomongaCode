@@ -2,7 +2,7 @@ import type { Stored } from './stored-value.ts';
 import { anything, boolean, boundedInteger, closed, constant, enumOf, integer, nonNegativeInteger, nullable, root, storedEnumOf, string } from './schema-helpers.ts';
 import type { JsonSchema } from './schema-helpers.ts';
 import { UNKNOWN_VALUE } from './stored-value.ts';
-import { CONDITION_SOURCES, CONDITION_STATES, CONDITION_WHENS, NOT_RUN_REASONS, QUIESCENT_BEHAVIOURS, RESIDUAL_RISK_CODES, VERIFICATION_OUTCOMES } from './completion.ts';
+import { CONDITION_SOURCES, CONDITION_STATES, CONDITION_WHENS, NOT_RUN_REASONS, QUIESCENT_BEHAVIOURS, REPORT_ANOMALY_CAUSES, RESIDUAL_RISK_CODES, VERIFICATION_OUTCOMES } from './completion.ts';
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
 import { RULE_NOTE_KINDS, RULE_VERDICTS } from './rule-verdict.ts';
 import { GUIDELINE_TEXT_PATTERN } from './guideline-text.ts';
@@ -252,6 +252,11 @@ const runReport = closed(
     operations: {
       type: 'array',
       items: closed({ callId: string, operation: string, target: string, effect: enumOf(OPERATION_EFFECT_OUTCOMES) }, ['callId', 'operation', 'target', 'effect']),
+    },
+    failedCalls: { type: 'array', items: closed({ callId: string, tool: string, seq: nonNegativeInteger }, ['callId', 'tool', 'seq']) },
+    anomalies: {
+      type: 'array',
+      items: closed({ seq: nonNegativeInteger, type: string, callId: string, cause: enumOf(REPORT_ANOMALY_CAUSES) }, ['seq', 'type', 'callId', 'cause']),
     },
   },
   ['runId', 'status', 'durationMs', 'declaration', 'changes', 'conditions', 'notRun', 'residualRisk', 'modelChecks'],

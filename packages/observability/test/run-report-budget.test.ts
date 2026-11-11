@@ -100,8 +100,9 @@ describe('the run report lists the calls a mandate run held and denied', () => {
     expect(report.residualRisk).toContainEqual({ code: 'permission_denials', count: 3 });
   });
 
-  it('refuses a resolution of a call that was never held', () => {
-    expect(() => buildRunReport(journalOf([call('m1', 'Bash'), { type: 'tool.held.resolved', callId: 'm1', approvalId: 'ap', outcome: 'rejected', status: 'failed', output: '' }]))).toThrow(/was not held/);
+  it('shows a resolution of a call that was never held as an anomaly of the report', () => {
+    const report = buildRunReport(journalOf([call('m1', 'Bash'), { type: 'tool.held.resolved', callId: 'm1', approvalId: 'ap', outcome: 'rejected', status: 'failed', output: '' }]));
+    expect(report.anomalies?.map((anomaly) => [anomaly.type, anomaly.callId, anomaly.cause])).toEqual([['tool.held.resolved', 'm1', 'not_held']]);
   });
 });
 
