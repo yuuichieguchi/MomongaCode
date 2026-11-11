@@ -45,6 +45,7 @@ describe('an interrupt during a run of a dataset', () => {
     const started: string[] = [];
     let closed = 0;
     const api: EvalRunApi = {
+      costs: async () => [],
       createSession: async () => ({ id: 'session-1' }),
       createRun: async () => {
         started.push(`run-${started.length + 1}`);
@@ -102,6 +103,7 @@ describe('an interrupt during a trial of the bench', () => {
     const started: string[] = [];
     const probed: string[] = [];
     const api: BenchRunApi = {
+      costs: async (runIds) => runIds.map((runId) => ({ runId, calls: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
       createSession: async () => ({ id: 'session-1' }),
       createRun: async () => {
         started.push(`run-${started.length + 1}`);

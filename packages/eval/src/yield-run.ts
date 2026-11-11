@@ -85,7 +85,9 @@ const playSession = async (
   const driven = await driveRun(host.api, { id: caseId, onAsk: task.onAsk }, run.id);
   const info = await host.api.getRun(run.id);
   const reflection = await reflectionOf(run.id);
-  const answeredBy = await answeredByOfRuns((runId) => host.api.answeredBy(runId), [run.id, ...driven.children.map((child) => child.runId)]);
+  const treeRunIds = [run.id, ...driven.children.map((child) => child.runId)];
+  const answeredBy = await answeredByOfRuns((runId) => host.api.answeredBy(runId), treeRunIds);
+  const costs = await host.api.costs(treeRunIds);
   return {
     runId: run.id,
     transcript: {
@@ -93,6 +95,7 @@ const playSession = async (
       runIndex: 0,
       run: info,
       ...driven,
+      costs,
       answeredBy,
       ...(reflection === undefined ? {} : { reflection }),
       policy: resolvePolicyOverlay(ports.policy),

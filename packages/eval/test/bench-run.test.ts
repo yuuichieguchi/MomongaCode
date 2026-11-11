@@ -32,6 +32,7 @@ type Api = {
   events(runId: string): AsyncIterable<PublicRunEvent>;
   runOf(runId: string): Promise<RunView>;
   answeredBy(runId: string): Promise<{ target: string; answers: 'model' | 'script' | 'unknown' }[]>;
+  costs(runIds: readonly string[]): Promise<{ runId: string; calls: number; notPriced: number; legacyPrecisionCalls: number; priced: [] }[]>;
   resolveApproval(approvalId: string, optionId: string): Promise<void>;
   cancelRun(runId: string): Promise<void>;
 };
@@ -155,6 +156,7 @@ const fakeApi = (behaviour: Behaviour = {}) => {
       };
     },
     answeredBy: async () => [{ target: 'fake/system', answers: 'script' }],
+    costs: async (runIds) => runIds.map((runId) => ({ runId, calls: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
     resolveApproval: async (approvalId, optionId) => {
       resolved.push({ approvalId, optionId });
     },

@@ -16,7 +16,7 @@ const FIXTURE_TIMEOUT_MS = 60000;
 const MODEL: AnsweredByView = { target: 'fm', adapter: 'fm', upstreamModel: 'fm-1', answers: 'model' };
 const SCRIPT: AnsweredByView = { target: 'script', adapter: 'script', upstreamModel: 'script', answers: 'script' };
 
-type Trial = { taskId: string; trial: number; facts: RunFactsView; children: RunFactsView[] };
+type Trial = { taskId: string; trial: number; facts: RunFactsView; children: RunFactsView[]; costs: { runId: string; calls: number; notPriced: number; legacyPrecisionCalls: number; priced: never[] }[] };
 type BenchmarkInput = { benchmark: unknown; trials: readonly Trial[]; answeredBy: readonly AnsweredByView[]; unrecordedAnswers: number; codeDigest: string; groupBy: 'model' };
 
 const factsOf = (runId: string, overrides: Partial<RunFactsView> = {}): RunFactsView => ({
@@ -62,10 +62,12 @@ const fixture = async (): Promise<{ text: string; benchmark: unknown }> => {
 
 const buildBenchmarkReport = (input: BenchmarkInput): ReliabilityReport => exported<(input: BenchmarkInput) => ReliabilityReport>('buildBenchmarkReport')(input);
 
+const unpricedRecord = (runId: string) => ({ runId, calls: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] });
+
 const trialsWith = (third: Partial<RunFactsView>): Trial[] => [
-  { taskId: 'fix-add', trial: 1, facts: factsOf('t1'), children: [] },
-  { taskId: 'fix-add', trial: 2, facts: factsOf('t2'), children: [] },
-  { taskId: 'fix-add', trial: 3, facts: factsOf('t3', third), children: [] },
+  { taskId: 'fix-add', trial: 1, facts: factsOf('t1'), children: [], costs: [unpricedRecord('t1')] },
+  { taskId: 'fix-add', trial: 2, facts: factsOf('t2'), children: [], costs: [unpricedRecord('t2')] },
+  { taskId: 'fix-add', trial: 3, facts: factsOf('t3', third), children: [], costs: [unpricedRecord('t3')] },
 ];
 
 const inputOf = (benchmark: unknown, trials: readonly Trial[]): BenchmarkInput => ({

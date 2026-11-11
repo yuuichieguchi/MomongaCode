@@ -8,6 +8,7 @@ import { MAIN_AGENT } from '@momonga/protocol';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { encodeReliabilityReport, formatReliabilityReport } from '@momonga/reliability';
 import type { GroupKey } from '@momonga/reliability';
+import { recordedCostsOf } from '../client/recorded-costs.ts';
 import { DaemonMoved } from '../client/runtime-client.ts';
 import type { RuntimeClient } from '../client/runtime-client.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
@@ -52,7 +53,7 @@ const validate = async (ports: Pick<CliPorts, 'stdout' | 'probe' | 'files' | 'tm
   return 1;
 };
 
-type BenchClient = Pick<RuntimeClient, 'createSession' | 'createRun' | 'streamEvents' | 'getRun' | 'getSession' | 'runAnsweredBy' | 'resolveApproval' | 'cancel'>;
+type BenchClient = Pick<RuntimeClient, 'createSession' | 'createRun' | 'streamEvents' | 'getRun' | 'getSession' | 'runAnsweredBy' | 'reportCost' | 'resolveApproval' | 'cancel'>;
 
 export const benchRunApi = (client: BenchClient, env: Readonly<Record<string, string>>): BenchRunApi => {
   async function* events(runId: string): AsyncGenerator<PublicRunEvent> {
@@ -92,7 +93,6 @@ export const benchRunApi = (client: BenchClient, env: Readonly<Record<string, st
         },
         step: run.step,
         tokensTotal: run.usage.totalTokens,
-        costNano: run.usage.costNano ?? 0,
         origin: run.origin,
         agent: run.agent ?? MAIN_AGENT,
         mode: session.permissionMode,
@@ -101,6 +101,7 @@ export const benchRunApi = (client: BenchClient, env: Readonly<Record<string, st
       };
     },
     answeredBy: async (runId) => (await client.runAnsweredBy(runId)).answeredBy,
+    costs: (runIds) => recordedCostsOf(client, runIds),
     resolveApproval: async (approvalId, optionId) => void (await client.resolveApproval(approvalId, optionId)),
     cancelRun: async (runId) => void (await client.cancel(runId)),
   };

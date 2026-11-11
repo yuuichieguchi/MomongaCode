@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { DATASET_FORMAT, formatReport, grade, parseDataset, replayDataset, runDataset } from '@momonga/eval';
 import type { EvalRunApi, GoldenCase, GoldenDataset, Transcript } from '@momonga/eval';
-import type { RunEventPayload } from '@momonga/protocol';
+import type { PublicRunEvent, RunCostView, RunEventPayload } from '@momonga/protocol';
 import { RECORDED_IDENTITY, goldenCase, publicEventsOf } from './fixtures.ts';
 
 const DATASETS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'datasets');
@@ -29,7 +29,20 @@ const responded = (step: number, tokens: number, cost: { units: string } | 'unpr
 
 type Ending = { status: Transcript['run']['status']; stopReason?: NonNullable<Transcript['run']['stopReason']> };
 
+const recordOf = (runId: string, events: readonly PublicRunEvent[]): RunCostView => {
+  const responses = events.flatMap((event) => (event.type === 'model.responded' ? [event.response.momonga] : []));
+  const priced = responses.flatMap((billed) => (billed?.cost === undefined ? [] : [billed.cost.units ?? '0']));
+  return {
+    runId,
+    calls: responses.length,
+    notPriced: responses.filter((billed) => billed?.cost === undefined).length,
+    legacyPrecisionCalls: 0,
+    priced: priced.length === 0 ? [] : [{ currency: 'USD', priceVersion: '2026-01-01', units: priced.reduce((sum, units) => sum + BigInt(units), 0n).toString() }],
+  };
+};
+
 const transcriptOf = (caseId: string, runIndex: number, payloads: readonly RunEventPayload[], ending: Ending = { status: 'COMPLETED' }, children: Transcript['children'] = []): Transcript => ({
+  costs: [recordOf(`run-${caseId}-${runIndex}`, publicEventsOf(payloads)), ...children.map((child) => recordOf(child.runId, child.events))],
   caseId,
   runIndex,
   run: { id: `run-${caseId}-${runIndex}`, ...ending, step: 1, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } },
@@ -185,6 +198,7 @@ describe('a golden case carries the limits and the mandate of its run', () => {
     const golden = goldenCase({ id: 'limited', graders: STATUS, limits: { maxCostUsd: 0.5, maxTotalTokens: 2000, maxSteps: 4 }, mandate: { scope: { allow: ['Bash(npm test)'] }, budget: { costUsd: 0.25 } }, completion: { conditions: [{ command: 'true' }] } });
     const transcript = transcriptOf('limited', 0, []);
     const api: EvalRunApi = {
+      costs: async () => [],
       createSession: async () => ({ id: 's1' }),
       createRun: async (_sessionId, input) => {
         created.push(input);

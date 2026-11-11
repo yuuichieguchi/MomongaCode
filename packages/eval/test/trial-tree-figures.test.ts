@@ -41,7 +41,6 @@ const delegatingApi = (): BenchRunApi => {
       limits: child ? {} : root.limits,
       step: 1,
       tokensTotal: child ? CHILD_TOKENS : ROOT_TOKENS,
-      costNano: 0,
       origin: 'trusted',
       agent: child ? 'explore' : 'main',
       mode: 'acceptEdits',
@@ -69,6 +68,7 @@ const delegatingApi = (): BenchRunApi => {
       yield { ...envelope(runId, 'session-1', 4), type: 'run.status', from: 'RUNNING', to: 'COMPLETED' } as PublicRunEvent;
     },
     runOf: async (runId) => view(runId),
+    costs: async (runIds) => runIds.map((runId) => ({ runId, calls: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
     answeredBy: async (runId) => (runId.startsWith('child-') ? [{ target: 'child/model', answers: 'model' }] : [{ target: 'root/model', answers: 'model' }]),
     resolveApproval: async () => undefined,
     cancelRun: async () => undefined,

@@ -16,6 +16,7 @@ const harness = (candidatesFor: (familyId: string) => YieldCandidate[]) => {
   let homes = 0;
   let runs = 0;
   const apiFor = (cwd: string): EvalRunApi => ({
+    costs: async () => [],
     createSession: async (input) => {
       sessions.push({ cwd: input.cwd, permissionMode: input.permissionMode, ...(input.model === undefined ? {} : { model: input.model }) });
       return { id: `s-${cwd}` };

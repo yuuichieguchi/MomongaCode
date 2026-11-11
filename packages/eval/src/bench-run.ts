@@ -1,5 +1,5 @@
 import path from 'node:path';
-import type { AnsweredByView, Mandate, PermissionMode, PublicRunEvent, RunFactsView, RunStatus, StopReason } from '@momonga/protocol';
+import type { AnsweredByView, Mandate, PermissionMode, PublicRunEvent, RunCostView, RunFactsView, RunStatus, StopReason } from '@momonga/protocol';
 import { FACTS_EVENT_TYPES, foldFacts } from '@momonga/reliability';
 import type { FactsEvent, GroupKey, ReliabilityReport } from '@momonga/reliability';
 import { BENCH_DEFAULT_RUNS, mandateOfTask, parseBenchmark, treeDigest } from './bench.ts';
@@ -11,7 +11,7 @@ import { buildBenchmarkReport } from './bench-report.ts';
 import type { BenchmarkTrial } from './bench-report.ts';
 import { failedWithCleanup } from './context-live.ts';
 import { EvalError, driveRun } from './runner.ts';
-import { answeredByOfRuns, treeSpendOf } from './run-tree.ts';
+import { answeredByOfRuns, nanoOfCostViews, treeSpendOf } from './run-tree.ts';
 
 export type BenchRunView = {
   sessionId: string;
@@ -22,7 +22,6 @@ export type BenchRunView = {
   limits: { maxSteps?: number; maxTotalTokens?: number; maxCostNano?: number };
   step: number;
   tokensTotal: number;
-  costNano: number;
   origin: string;
   agent: string;
   mode: PermissionMode;
@@ -36,6 +35,7 @@ export type BenchRunApi = {
   events(runId: string): AsyncIterable<PublicRunEvent>;
   runOf(runId: string): Promise<BenchRunView>;
   answeredBy(runId: string): Promise<AnsweredByView[]>;
+  costs(runIds: readonly string[]): Promise<RunCostView[]>;
   resolveApproval(approvalId: string, optionId: string): Promise<void>;
   cancelRun(runId: string): Promise<void>;
 };
@@ -76,9 +76,11 @@ const setUp = async (task: BenchTask, workspace: string, probe: WorkspaceProbe, 
   return true;
 };
 
-type Trial = { facts: RunFactsView; children: RunFactsView[]; answeredBy: AnsweredByView[] };
+type Trial = { facts: RunFactsView; children: RunFactsView[]; answeredBy: AnsweredByView[]; costs: RunCostView[] };
 
-const factsOfRun = async (api: BenchRunApi, runId: string, rootRunId: string, events: readonly PublicRunEvent[]): Promise<RunFactsView> => {
+const factsOfRun = async (api: BenchRunApi, runId: string, rootRunId: string, events: readonly PublicRunEvent[], costs: ReadonlyMap<string, RunCostView>): Promise<RunFactsView> => {
+  const cost = costs.get(runId);
+  if (cost === undefined) throw new EvalError(`the cost record holds no entry for run ${runId}`);
   const view = await api.runOf(runId);
   const folded = foldFacts(factsEventsOf(events), {
     runId,
@@ -91,7 +93,7 @@ const factsOfRun = async (api: BenchRunApi, runId: string, rootRunId: string, ev
     deadlineAt: view.deadlineAt,
     step: view.step,
     tokensTotal: view.tokensTotal,
-    costNano: view.costNano,
+    costNano: nanoOfCostViews([cost]),
     model: view.model,
     mode: view.mode,
     agent: view.agent,
@@ -111,12 +113,15 @@ const runTrial = async (task: BenchTask, repository: string, workspace: string, 
   });
   const driven = await driveRun(api, task, run.id, ports.signal);
   ports.signal?.throwIfAborted();
-  const folded = await factsOfRun(api, run.id, run.id, driven.events);
+  const treeRunIds = [run.id, ...driven.children.map((child) => child.runId)];
+  const costs = await api.costs(treeRunIds);
+  const costOfRun = new Map(costs.map((cost) => [cost.runId, cost]));
+  const folded = await factsOfRun(api, run.id, run.id, driven.events, costOfRun);
   const children: RunFactsView[] = [];
-  for (const child of driven.children) children.push(await factsOfRun(api, child.runId, run.id, child.events));
+  for (const child of driven.children) children.push(await factsOfRun(api, child.runId, run.id, child.events, costOfRun));
   const grade = await gradeTrial({ task, workspace, base: repository, probe: ports.probe, files: ports.files });
-  const answeredBy = await answeredByOfRuns((runId) => api.answeredBy(runId), [run.id, ...driven.children.map((child) => child.runId)]);
-  return { facts: { ...folded, ...treeSpendOf([folded, ...children]), met: grade.met }, children, answeredBy };
+  const answeredBy = await answeredByOfRuns((runId) => api.answeredBy(runId), treeRunIds);
+  return { facts: { ...folded, ...treeSpendOf([folded, ...children]), met: grade.met }, children, answeredBy, costs };
 };
 
 const inHome = async <T>(home: BenchTrialHome, work: () => Promise<T>): Promise<T> => {
@@ -175,7 +180,7 @@ export const runBenchmark = async (benchmarkFile: string, ports: BenchRunPorts):
         ports.onTrial?.({ taskId: task.id, trial, met: 'invalid_setup' });
         continue;
       }
-      trials.push({ taskId: task.id, trial, facts: outcome.facts, children: outcome.children });
+      trials.push({ taskId: task.id, trial, facts: outcome.facts, children: outcome.children, costs: outcome.costs });
       answeredBy.push(...outcome.answeredBy);
       if (outcome.answeredBy.length === 0) unrecordedAnswers += 1;
       ports.onTrial?.({ taskId: task.id, trial, met: outcome.facts.met });

@@ -1,12 +1,12 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import type { AnsweredByView, RunFactsView } from '@momonga/protocol';
-import { aggregate, buildReliabilityReport } from '@momonga/reliability';
+import type { AnsweredByView, RunCostView, RunFactsView } from '@momonga/protocol';
+import { aggregate, buildReliabilityReport, costOf } from '@momonga/reliability';
 import type { GroupKey, ReliabilityReport, TaskLabels, TaskRow } from '@momonga/reliability';
 import type { Benchmark, BenchTask } from './bench.ts';
 import { uniqueAnswerers } from './context-report.ts';
 import { EvalError } from './runner.ts';
 
-export type BenchmarkTrial = { taskId: string; trial: number; facts: RunFactsView; children: readonly RunFactsView[] };
+export type BenchmarkTrial = { taskId: string; trial: number; facts: RunFactsView; children: readonly RunFactsView[]; costs: readonly RunCostView[] };
 
 export type BuildBenchmarkReportInput = {
   benchmark: Benchmark;
@@ -56,12 +56,14 @@ export const buildBenchmarkReport = (input: BuildBenchmarkReportInput): Reliabil
     const trials = trialsByTask.get(task.id);
     return trials === undefined ? [] : [rowOf(task, trials)];
   });
+  const aggregated = aggregate(
+    input.trials.flatMap((trial) => [trial.facts, ...trial.children]),
+    { groupBy: input.groupBy, labels },
+  );
   return buildReliabilityReport({
     kind: 'benchmark',
-    aggregate: aggregate(
-      input.trials.flatMap((trial) => [trial.facts, ...trial.children]),
-      { groupBy: input.groupBy, labels },
-    ),
+    aggregate: aggregated,
+    cost: costOf(aggregated, input.trials.flatMap((trial) => trial.costs)),
     harness: {
       suite: { name: benchmark.name, digest: suiteDigestOf(benchmark) },
       answeredBy: uniqueAnswerers(input.answeredBy),

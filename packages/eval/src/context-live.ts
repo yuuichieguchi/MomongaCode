@@ -155,6 +155,7 @@ const stoppedBeforeStart = (entry: ExpandedCase, runIndex: number, reason: strin
   run: { id: `stopped-${entry.id}-${runIndex}`, status: 'FAILED', step: 0, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, model },
   events: [],
   children: [],
+  costs: [],
   answeredBy: [],
   stopped: reason,
   ...details,
@@ -230,11 +231,13 @@ const runCase = async (
     const reflection = await host.api.reflectionOf(run.id);
     state.spent += (reflection.charges ?? []).reduce((sum, charge) => sum + charge.totalTokens, 0);
     const noise = entry.noiseTurns.length === 0 ? {} : { noiseTokens, noiseReflectionsUnsettled };
-    const answeredBy = await answeredByOfRuns((runId) => host.api.answeredBy(runId), [run.id, ...outcome.driven.children.map((child) => child.runId)]);
-    if (!outcome.expired) return emit({ caseId: entry.id, runIndex, run: info, ...outcome.driven, answeredBy, reflection, ...tagged(), ...noise });
+    const treeRunIds = [run.id, ...outcome.driven.children.map((child) => child.runId)];
+    const answeredBy = await answeredByOfRuns((runId) => host.api.answeredBy(runId), treeRunIds);
+    const costs = await host.api.costs(treeRunIds);
+    if (!outcome.expired) return emit({ caseId: entry.id, runIndex, run: info, ...outcome.driven, costs, answeredBy, reflection, ...tagged(), ...noise });
     stop = DEADLINE_REASON;
     const { stopReason: _cancelled, ...rest } = info;
-    return emit({ caseId: entry.id, runIndex, run: { ...rest, status: 'FAILED' }, ...outcome.driven, answeredBy, reflection, stopped: stop, ...tagged(), ...noise });
+    return emit({ caseId: entry.id, runIndex, run: { ...rest, status: 'FAILED' }, ...outcome.driven, costs, answeredBy, reflection, stopped: stop, ...tagged(), ...noise });
   };
 
   try {

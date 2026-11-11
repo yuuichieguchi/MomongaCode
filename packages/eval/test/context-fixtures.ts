@@ -107,6 +107,7 @@ export const recorded = (
   return {
     caseId,
     runIndex,
+    costs: [],
     run: { id: `run-${caseId}-${runIndex}`, status: options.status ?? 'COMPLETED', step: 1, usage: { inputTokens: totalTokens - 1, outputTokens: 1, totalTokens }, ...(options.model === undefined ? {} : { model: options.model }) },
     events: publicEventsOf(payloads),
     children: options.children ?? [],
