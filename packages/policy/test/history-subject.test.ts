@@ -1,3 +1,4 @@
+import { testSecretLocations } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { decide, suggestAllowRule } from '@momonga/policy';
 import type { PermissionRule, PermissionSubject, PolicyTool } from '@momonga/policy';
@@ -11,7 +12,7 @@ const SUBJECT = { kind: 'history', tool: 'HistorySearch', project: '/work/other'
 
 const decideHistory = async (mode: PermissionMode, rules: PermissionRule[] = [], subject: PermissionSubject = SUBJECT) => {
   const layout = makeLayout();
-  return decide({
+  return decide({ secretLocations: testSecretLocations(layout.home),
     tool: HISTORY_SEARCH,
     subject,
     mode,

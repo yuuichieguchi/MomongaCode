@@ -143,6 +143,7 @@ export {
   REMEDY_SURFACES,
   TARGET_HEALTH_REASONS,
   NO_MODEL_TARGET,
+  startModelOf,
   TARGET_NOT_READY,
   JSON_MODES,
   agentReadiness,
@@ -194,6 +195,9 @@ export {
   bannedVariantsIn,
   messageOf,
   reopenSessionCommand,
+  shellQuote,
+  BYPASS_OPT_IN_OPTION,
+  PERMISSION_MODE_OPTION,
   serverCountText,
   signOutCommand,
 } from './vocabulary.ts';
@@ -387,6 +391,8 @@ export type {
   PermissionReviewView,
   ReportCostPage,
   ReportCostRequest,
+  ReportRecomputePage,
+  ReportRecomputeRequest,
   ReviewLabel,
   ReviewPage,
   RunCostView,
@@ -409,7 +415,7 @@ export type {
 export { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, MOMONGA_EVENTS, MOMONGA_REQUEST_FIELDS, MOMONGA_SPAN_NOTES, SPAN_ATTRIBUTE_RENAMES } from './trace-attributes.ts';
 export { EVENT_PAYLOAD_RENAMES, withCurrentNames } from './stored-names.ts';
 export type { StoredRenames } from './stored-names.ts';
-export { COMPLETION_DECLARATION_SCHEMA, MANDATE_BUDGET_SCHEMA, MANDATE_SCOPE_SCHEMA, DAEMON_CURRENT_EVENT, STREAM_FAILED_EVENT, EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, runApiSchemaName, toPublicRunEvent } from './run-api.ts';
+export { COMPLETION_DECLARATION_SCHEMA, MANDATE_BUDGET_SCHEMA, MANDATE_SCOPE_SCHEMA, DAEMON_CURRENT_EVENT, STREAM_FAILED_EVENT, EVENT_TYPES, RUN_API_SCHEMAS, SESSION_SANDBOX_NETWORKS, base64ByteLength, runApiSchemaName, toPublicRunEvent } from './run-api.ts';
 export type { DaemonCurrentFrame, StreamFailedFrame } from './run-api.ts';
 export { INBOX_WITHDRAW_OUTCOMES, MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES, MODEL_KINDS, attachmentSummaryOf, modelKindOf } from './run-api.ts';
 export type { AttachmentSummary, InboxAddResponse, InboxResponse, InboxWithdrawOutcome, InboxWithdrawResponse, ModelKind, UserShellFrame, UserShellPendingResponse, UserShellRequest, CompactSessionRequest } from './run-api.ts';
@@ -454,9 +460,9 @@ export type {
 } from './run-api.ts';
 export { assistantTextOf, jsonReplyOf } from './assistant-text.ts';
 export { jsonReplyPathFor } from './json-reply-path.ts';
-export { BUDGET_CAUSES, BUDGET_DIMENSIONS, BUDGET_EXCEEDED_CODE, QUOTE_ROUTE, fitsCostCeiling, tokenPriceOfQuote, worstCaseUnits, HELD_OUTCOMES, MAX_COST_USD, NANO_PER_USD, PRICE_UNITS_PER_NANO, admitRequest, composeBudget, nanoOfAmount, nanoOfCost, nanoOfDecimal, nanoOfUnits, usdOfNano } from './budget.ts';
+export { BUDGET_CAUSES, BUDGET_DIMENSIONS, BUDGET_EXCEEDED_CODE, QUOTE_ROUTE, fitsCostCeiling, tokenPriceOfQuote, worstCaseUnits, HELD_OUTCOMES, MAX_COST_USD, NANO_PER_USD, PRICE_UNITS_PER_NANO, admitRequest, composeBudget, nanoOfAmount, nanoOfCost, isLegacyPrecisionCost, unitsOfCost, nanoOfDecimal, nanoOfUnits, usdOfNano } from './budget.ts';
 export type { Admission, AdmissionAsk, CallFootprint, BudgetCause, BudgetDimension, BudgetExhausted, ComposedBudget, HeldCallView, HeldOutcome, ModelQuote, RequestBudget, RunUsage, TokenPrice, TreeSpend } from './budget.ts';
-export { ANATOMY_FLAT_LAYERS, ANATOMY_HISTORY_LAYERS, CACHE_READS_NOT_REPORTED, PRICE_NOT_RECORDED, UNPRICED_CODES, UNPRICED_CODE_TEXT, anatomyLayerEntries } from './token-anatomy.ts';
+export { ANATOMY_FLAT_LAYERS, ANATOMY_HISTORY_LAYERS, CACHE_READS_NOT_REPORTED, LEGACY_PRECISION_TEXT, PRICE_NOT_RECORDED, UNPRICED_CODES, UNPRICED_CODE_TEXT, anatomyLayerEntries, recordedCostOf } from './token-anatomy.ts';
 export type {
   BilledDetail,
   BilledCallsCursorView,
@@ -468,7 +474,13 @@ export type {
   CostBreakdownView,
   ModelCost,
   ModelPricing,
+  NewBilledDetail,
+  RecordedModelCost,
+  RecordedPricing,
+  StoredModelCost,
   PriceNotRecorded,
+  RecordedCost,
+  RecordedPrice,
   RoleBreakdownView,
   TimingSummaryView,
   TokenAnatomy,
@@ -571,8 +583,8 @@ export {
   hookTimeoutMs,
 } from './hooks.ts';
 export type { HookCommand, HookEvent, HookExecution, HookStart, HookMatcherGroup, HookOutcome, HookPreToolDecision, HooksSettings } from './hooks.ts';
-export { POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, REFUSING_PROPERTIES, RULE_FINGERPRINT_PATTERN, RULE_NOTE_KINDS, RULE_VERDICTS, RULE_VERIFY_BUDGET_MS, isPinnedRuleVerdict, isRuleVerdict, policyRefutedMessage, policyVerdictNotice, refusingRefutations } from './rule-verdict.ts';
-export type { PinnedRuleVerdict, PutRuleVerdictRequest, RuleNote, RuleNoteKind, RuleNoteRule, RuleRefutation, RuleVerdict, RuleVerdictKind } from './rule-verdict.ts';
+export { FINAL_RULE_VERDICTS, POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, REFUSING_PROPERTIES, RULE_FINGERPRINT_PATTERN, RULE_NOTE_KINDS, RULE_VERDICTS, RULE_VERIFY_BUDGET_MS, isFinalRuleVerdict, isPinnedRuleVerdict, isRuleVerdict, policyRefutedMessage, policyVerdictNotice, refusingRefutations } from './rule-verdict.ts';
+export type { PinnedRuleVerdict, PutRuleVerdictRequest, RuleNote, RuleNoteKind, RuleNoteRule, RuleRefutation, RuleVerdict, RuleVerdictKind, RuleVerdictPhase } from './rule-verdict.ts';
 export {
   CONDITION_SOURCES,
   CONDITION_STATES,
@@ -593,6 +605,8 @@ export {
   reconciliationMutates,
   verificationRequiredOf,
   withVerificationCompleted,
+  failureBeforeRound,
+  openRoundOf,
   withVerificationStarted,
 } from './completion.ts';
 export type {
@@ -605,6 +619,7 @@ export type {
   Mandate,
   MandateBudget,
   MandateHold,
+  QuiescentBehaviour,
   MandateScope,
   PinnedDelegation,
   MutationFacts,
@@ -624,6 +639,8 @@ export type {
 export { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES, permissionDeniedOutput } from './permission-denial.ts';
 export type { OperationEffectRecord } from './run-types.ts';
 export type { ApprovalBasis, PermissionDenial, PermissionDenialSource } from './permission-denial.ts';
+export { EXECUTED_TEXT_EVENT_TYPES, readExecutedText } from './executed-text.ts';
+export type { ExecutedTextEvent, ExecutedTextEventType, ExecutedTextHandlers } from './executed-text.ts';
 export { diffFieldsOf, heldEndOf, OPERATION_EFFECT_OUTCOMES, APPROVAL_KINDS, APPROVAL_STATUSES, UNKNOWN_EFFECT_ADVICE, UNKNOWN_EFFECT_REASON, unknownEffectLines, unknownEffectOptions, unknownEffectTitle, isInheritedReference, IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_FULL_CODE, INBOX_MAX_PENDING, INBOX_STATES, inboxFullMessage, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, USAGE_CHARGE_PURPOSES, USER_SHELL_COMMAND_CHARS, USER_SHELL_HEAD_BYTES, USER_SHELL_OUTPUT_BYTES, USER_SHELL_RUN_ACTIVE_CODE, USER_SHELL_TAIL_BYTES, NOTHING_TO_COMPACT_CODE, NOTHING_TO_COMPACT_MESSAGE, PROMPT_TEXT_MAX_CHARS } from './run-types.ts';
 export type {
   ActivatedSkillEntry,
@@ -744,11 +761,7 @@ export type {
   MomongaModelRoles,
   MomongaEventName,
   TargetHealth,
-  UsageReport,
-  UsageReportResponse,
-  UsageReportStep,
   UsageSource,
-  UsageTotals,
 } from './gateway-api.ts';
 export type { JsonReplyPath, MomongaResponseExtension, WireUsage } from './open-responses.ts';
 export type {

@@ -3,6 +3,7 @@ import { ROOT_CONTEXT, trace } from '@opentelemetry/api';
 import { buildCostBreakdown, definePriceTable, formatCostBreakdown, recordChatResponse, startAgentSpan, startChatSpan } from '@momonga/observability';
 import type { BilledCall, BreakdownCall } from '@momonga/observability';
 import { harness, billedCallsOfRun } from './helpers.ts';
+import type { BilledCallAtCallTime } from './helpers.ts';
 
 const AT = Date.parse('2026-06-01T00:00:00Z');
 
@@ -33,7 +34,7 @@ const recordMainCalls = async (cachedByCall: readonly (number | undefined)[], h:
   await h.telemetry.forceFlush();
 };
 
-const asBreakdownCall = (call: BilledCall): BreakdownCall => ({
+const asBreakdownCall = (call: BilledCallAtCallTime): BreakdownCall => ({
   runId: call.runId,
   ...(call.step === undefined ? {} : { step: call.step }),
   ...(call.target === undefined ? {} : { target: call.target }),
@@ -92,7 +93,7 @@ describe('cache-miss causes for a target that never reports cached tokens', () =
 
     const breakdown = breakdownOf(h);
 
-    expect(breakdown.cost).toEqual({ amount: 0.000141, currency: 'USD', unpricedCalls: 0, unpriced: { cache_read_not_reported: 1 }, priceNotRecordedCalls: 0, priceVersions: ['2026-01-01'] });
+    expect(breakdown.cost).toEqual({ amount: 0.000141, currency: 'USD', unpricedCalls: 0, unpriced: { cache_read_not_reported: 1 }, priceNotRecordedCalls: 0, legacyPrecisionCalls: 0, priceVersions: ['2026-01-01'] });
     expect(breakdown.unpriced).toEqual([{ runId: 'run-a', provider: 'acme', model: 'm1', step: 2, code: 'cache_read_not_reported', reason: 'the upstream did not report the cache reads of the call' }]);
   });
 

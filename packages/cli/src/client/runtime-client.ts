@@ -1,8 +1,8 @@
 import type { McpServerConfig } from '@momonga/config';
 import { GENERATION_STARTING_CODE, HOST_READ_BOUND_MS, MOVED_CODE, createUdsClient, decodeSse, isRecord, parseRetryAfter } from '@momonga/foundation';
-import type { SocketResolver, UdsResponse } from '@momonga/foundation';
+import type { SandboxNetworkSetting, SocketResolver, UdsResponse } from '@momonga/foundation';
 import { DAEMON_CURRENT_EVENT, STREAM_FAILED_EVENT, WORDS, messageOf } from '@momonga/protocol';
-import type { AddMemoryRequest, AddRuleRequest, PutRuleVerdictRequest, RuleVerdict, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, Mandate } from '@momonga/protocol';
+import type { AddMemoryRequest, AddRuleRequest, PutRuleVerdictRequest, RuleVerdict, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, ReportRecomputePage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, Mandate } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
@@ -31,6 +31,7 @@ import {
   checkReflection,
   checkReportCost,
   checkReportPage,
+  checkReportRecompute,
   checkReviewPage,
   checkStoreReview,
   checkTraceContent,
@@ -119,6 +120,7 @@ export type CreateSessionInput = {
   permissionMode?: PermissionMode;
   model?: string;
   bypassAllowed?: boolean;
+  sandboxNetwork?: SandboxNetworkSetting;
   mcpServers?: Readonly<Record<string, McpServerConfig>>;
 };
 
@@ -158,6 +160,7 @@ export type RuntimeClient = {
   setMcpServers(sessionId: string, servers: Readonly<Record<string, McpServerConfig>>): Promise<SessionView>;
   setPermissionMode(sessionId: string, mode: PermissionMode): Promise<SessionView>;
   setModel(sessionId: string, model: string): Promise<SessionView>;
+  updateSession(sessionId: string, update: SessionUpdate): Promise<SessionView>;
   createRun(sessionId: string, input: string, options?: CreateRunOptions): Promise<{ run: RunView; location: string }>;
   compact(sessionId: string, instructions?: string): Promise<RunView>;
   getRun(id: string): Promise<RunView>;
@@ -181,6 +184,10 @@ export type RuntimeClient = {
   startMcpAuthorization(sessionId: string, server: string): Promise<McpAuthorizationView>;
   mcpAuthorization(sessionId: string, server: string): Promise<McpAuthorizationView>;
   cancelMcpAuthorization(sessionId: string, server: string): Promise<void>;
+  folderMcpServers(folder: McpFolder): Promise<McpServerView[]>;
+  startFolderMcpAuthorization(folder: McpFolder, server: string): Promise<McpAuthorizationView>;
+  folderMcpAuthorization(cwd: string, server: string): Promise<McpAuthorizationView>;
+  cancelFolderMcpAuthorization(cwd: string, server: string): Promise<void>;
   memories(filter?: MemoryFilter): Promise<MemoryView[]>;
   lastReflection(project: string): Promise<ReflectionJobView | null>;
   runReflection(runId: string): Promise<RunReflectionView>;
@@ -208,6 +215,7 @@ export type RuntimeClient = {
   reportReviews(request: { cursor: string | null; limit: number }): Promise<ReviewPage>;
   storeReview(request: StoreReviewRequest): Promise<PermissionReviewView>;
   reportCost(runIds: readonly string[]): Promise<RunCostView[]>;
+  reportRecompute(runIds: readonly string[]): Promise<ReportRecomputePage>;
   traceContent(runId: string, request: { after: number; limit: number }): Promise<TraceContentPage>;
   cost(filter?: CostFilter): Promise<CostReportView>;
   costText(filter?: CostFilter): Promise<string>;
@@ -287,6 +295,10 @@ const frameOf = (event: { id?: string; event?: string; data: string }, descripti
   return { id, event: event.event, data: checkRunEvent(parsed(event.data, description), description) };
 };
 
+export type SessionUpdate = { permissionMode: PermissionMode; model?: string } | { permissionMode?: PermissionMode; model: string };
+
+export type McpFolder = { cwd: string; env: Readonly<Record<string, string>> };
+
 const NO_SEGMENT = new Set(['', '.', '..']);
 
 export const pathSegment = (value: string): string => {
@@ -353,6 +365,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
         ...(input.permissionMode === undefined ? {} : { permissionMode: input.permissionMode }),
         ...(input.model === undefined ? {} : { model: input.model }),
         ...(input.bypassAllowed === undefined ? {} : { bypassAllowed: input.bypassAllowed }),
+        ...(input.sandboxNetwork === undefined ? {} : { sandboxNetwork: input.sandboxNetwork }),
         ...(input.mcpServers === undefined ? {} : { mcpServers: input.mcpServers }),
       },
     });
@@ -418,17 +431,15 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     return sessions;
   };
 
-  const setPermissionMode = async (sessionId: string, mode: PermissionMode): Promise<SessionView> => {
+  const updateSession = async (sessionId: string, update: SessionUpdate): Promise<SessionView> => {
     const path = `/v1/sessions/${pathSegment(sessionId)}`;
-    const { body } = await send('PATCH', path, [200], { body: { permissionMode: mode } });
+    const { body } = await send('PATCH', path, [200], { body: update });
     return sessionOf(body, `PATCH ${path}`);
   };
 
-  const setModel = async (sessionId: string, model: string): Promise<SessionView> => {
-    const path = `/v1/sessions/${pathSegment(sessionId)}`;
-    const { body } = await send('PATCH', path, [200], { body: { model } });
-    return sessionOf(body, `PATCH ${path}`);
-  };
+  const setPermissionMode = (sessionId: string, mode: PermissionMode): Promise<SessionView> => updateSession(sessionId, { permissionMode: mode });
+
+  const setModel = (sessionId: string, model: string): Promise<SessionView> => updateSession(sessionId, { model });
 
   const createRun = async (sessionId: string, input: string, runOptions: CreateRunOptions = {}): Promise<{ run: RunView; location: string }> => {
     const path = `/v1/sessions/${pathSegment(sessionId)}/runs`;
@@ -548,6 +559,32 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
 
   const cancelMcpAuthorization = async (sessionId: string, server: string): Promise<void> => {
     await send('DELETE', authorizationPath(sessionId, server), [204]);
+  };
+
+  const folderAuthorizationPath = (server: string): string => `/v1/mcp/servers/${pathSegment(server)}/authorization`;
+
+  const folderQuery = (cwd: string): string => `?cwd=${encodeURIComponent(cwd)}`;
+
+  const folderMcpServers = async (folder: McpFolder): Promise<McpServerView[]> => {
+    const path = '/v1/mcp/servers';
+    const { body } = await send('POST', path, [200], { body: folder });
+    return checkMcpServers(body, `POST ${path}`).servers;
+  };
+
+  const startFolderMcpAuthorization = async (folder: McpFolder, server: string): Promise<McpAuthorizationView> => {
+    const path = folderAuthorizationPath(server);
+    const { body } = await send('POST', path, [202], { body: folder });
+    return checkMcpAuthorization(fieldOf(body, 'authorization', `POST ${path}`), `POST ${path}`);
+  };
+
+  const folderMcpAuthorization = async (cwd: string, server: string): Promise<McpAuthorizationView> => {
+    const path = folderAuthorizationPath(server);
+    const { body } = await send('GET', `${path}${folderQuery(cwd)}`, [200]);
+    return checkMcpAuthorization(fieldOf(body, 'authorization', `GET ${path}`), `GET ${path}`);
+  };
+
+  const cancelFolderMcpAuthorization = async (cwd: string, server: string): Promise<void> => {
+    await send('DELETE', `${folderAuthorizationPath(server)}${folderQuery(cwd)}`, [204]);
   };
 
   const memoriesQueryOf = (filter: MemoryFilter, after?: string): string => {
@@ -708,6 +745,11 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     return checkReportCost(body, 'POST /v1/report/cost').costs;
   };
 
+  const reportRecompute = async (runIds: readonly string[]): Promise<ReportRecomputePage> => {
+    const { body } = await send('POST', '/v1/report/recompute', [200], { body: { runIds } });
+    return checkReportRecompute(body, 'POST /v1/report/recompute');
+  };
+
   const traceContent = async (runId: string, request: { after: number; limit: number }): Promise<TraceContentPage> => {
     const path = `/v1/runs/${pathSegment(runId)}/trace/content?${new URLSearchParams({ after: String(request.after), limit: String(request.limit) }).toString()}`;
     const { body } = await send('GET', path, [200]);
@@ -787,6 +829,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     childRuns,
     setMcpServers,
     setPermissionMode,
+    updateSession,
     setModel,
     createRun,
     compact,
@@ -827,6 +870,10 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     startMcpAuthorization,
     mcpAuthorization,
     cancelMcpAuthorization,
+    folderMcpServers,
+    startFolderMcpAuthorization,
+    folderMcpAuthorization,
+    cancelFolderMcpAuthorization,
     memories,
     lastReflection,
     runReflection,
@@ -854,6 +901,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     reportReviews,
     storeReview,
     reportCost,
+    reportRecompute,
     traceContent,
     cost,
     costText,

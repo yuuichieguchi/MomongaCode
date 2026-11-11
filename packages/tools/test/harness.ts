@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalJson, nodeFileSystem, resolveCanonicalPath, sha256Hex, systemRandom, truncationMarker, validateUntrusted, momongaLayout } from '@momonga/foundation';
 import { absoluteFrom } from '@momonga/policy';
-import { UNCONFIGURED_NETWORK, FAKE_LEASE, createFakeKernelLock, driveFakeTime, fakePolicyFilesystem, hostFilesystemOf, testPaths, testProcessInspector } from '@momonga/testkit';
+import { unconfiguredNetworkOf, FAKE_LEASE, createFakeKernelLock, driveFakeTime, fakePolicyFilesystem, hostFilesystemOf, testPaths, testProcessInspector } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
 import type { PermissionSubject } from '@momonga/policy';
 import { createHostRipgrepLocator, createToolExecutor, createToolRegistry, defineTool, nodeShellHost, schemaIdentity } from '@momonga/tools';
@@ -129,7 +129,7 @@ export const makeHarness = (options: HarnessOptions = {}) => {
     shellHost: nodeShellHost(),
     random: systemRandom,
     files: nodeFileSystem,
-    outboundNetwork: UNCONFIGURED_NETWORK,
+    outboundNetwork: unconfiguredNetworkOf,
     idempotency: idempotency.port,
     blobs: blobs.port,
     clock,

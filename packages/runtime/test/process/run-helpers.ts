@@ -237,7 +237,7 @@ export const stopValuesOf = (drainTimeoutMs = DEFAULT_DRAIN_TIMEOUT_MS, mcpClose
   mcpCloseGraceMs,
 });
 
-const abortHorizonMs = (values: StopValues): number => ABORT_BUDGET_MS + TEARDOWN_BUDGET_MS + 6 * values.mcpCloseGraceMs + 10_075;
+const abortHorizonMs = (values: StopValues): number => ABORT_BUDGET_MS + TEARDOWN_BUDGET_MS + 6 * values.mcpCloseGraceMs + 10_125;
 
 export const driveUntilSettled = async <T>(promise: Promise<T>, timers: FakeTimers, horizonMs: number, description: string): Promise<T> => {
   let settled = false;

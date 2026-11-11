@@ -396,7 +396,9 @@ const drive = async (
     await terminals.finish('FAILED', { error: { code: MODEL_NOT_FOUND_CODE, message: roleModelNotConfiguredText(lostRole, newRoles[lostRole] ?? '') } });
     return;
   }
-  const startVerdict = await ruleVerdictAtStart({ options, control, env, readableDirectories: skills.readDirectories }, session);
+  const completionPin = pinned === undefined ? await completionPinFor({ run, session, settings: options.settings }) : undefined;
+  const { delegation } = delegationOf((pinned ?? completionPin ?? {}) as unknown as Record<string, unknown>, { home: options.home, cwd: session.cwd }, operationCatalogueFacts());
+  const startVerdict = await ruleVerdictAtStart({ options, control, env, readableDirectories: skills.readDirectories, delegation }, session);
   const startRefusal = policyRefusal(startVerdict);
   if (startRefusal !== undefined) {
     await terminals.finish('FAILED', { error: startRefusal });
@@ -420,7 +422,7 @@ const drive = async (
             ...(await tokenPinFor({ store: options.store, settings: options.settings, session, run })),
             ...(await deferredPinFor({ store: options.store, settings: options.settings, session, run })),
           },
-          ...(await completionPinFor({ run, session, settings: options.settings })),
+          ...completionPin,
         }
       : pinned;
   const startOffered = offeredRecordFor(journal.state.offeredTools, pins.token?.deferred ?? []);
@@ -548,7 +550,7 @@ const drive = async (
       release: () => options.store.releaseBudget(run.id),
       tail: Promise.resolve(),
     },
-    ...delegationOf(pins as unknown as Record<string, unknown>, { home: options.home, cwd: session.cwd }, operationCatalogueFacts()),
+    ...(delegation === undefined ? {} : { delegation }),
     toolSet: offeredSet,
     ...(loading === undefined ? {} : { toolLoading: loading }),
     skills,

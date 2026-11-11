@@ -12,7 +12,7 @@ export type FileListingOptions = {
   limit?: number;
 };
 
-export type FileListingPorts = { child: Pick<ChildPorts, 'spawn'>; files: Pick<FileSystem, 'readdirEntries'> };
+export type FileListingPorts = { child: Pick<ChildPorts, 'spawn'>; files: Pick<FileSystem, 'readdirEntries' | 'stat' | 'access'> };
 
 const GIT_LISTING = ['ls-files', '--cached', '--others', '--exclude-standard', '-z'];
 const NUL = '\0';
@@ -20,7 +20,7 @@ const NUL = '\0';
 const definedOf = (env: Readonly<Record<string, string | undefined>>): Record<string, string> =>
   Object.fromEntries(Object.entries(env).flatMap(([name, value]) => (value === undefined ? [] : [[name, value] as const])));
 
-const gitFor = (options: FileListingOptions): string | undefined => (options.trusted ? findProgramOnPath('git', options.env) : undefined);
+const gitFor = async (ports: FileListingPorts, options: FileListingOptions): Promise<string | undefined> => (options.trusted ? findProgramOnPath('git', options.env, ports.files) : undefined);
 
 const tracked = (ports: FileListingPorts, git: string, { root, env, signal, limit = FILE_CANDIDATE_LIMIT }: FileListingOptions): Promise<FileCandidates | undefined> =>
   new Promise((resolve, reject) => {
@@ -75,12 +75,12 @@ const walked = async (ports: FileListingPorts, { root, signal, limit = FILE_CAND
 };
 
 export const fileCandidatesOn = async (ports: FileListingPorts, options: FileListingOptions): Promise<FileCandidates> => {
-  const git = gitFor(options);
+  const git = await gitFor(ports, options);
   return (git === undefined ? undefined : await tracked(ports, git, options)) ?? walked(ports, options);
 };
 
 export const directoryEntriesOn = async (ports: FileListingPorts, options: FileListingOptions): Promise<string[]> => {
-  const git = gitFor(options);
+  const git = await gitFor(ports, options);
   const listed = git === undefined ? undefined : await tracked(ports, git, options);
   if (listed !== undefined) return directoryEntriesOf(listed.entries);
   const entries = await ports.files.readdirEntries(options.root);

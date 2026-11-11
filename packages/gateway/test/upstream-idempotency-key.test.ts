@@ -5,7 +5,7 @@ import { createTelemetry } from '@momonga/observability';
 import type { Telemetry } from '@momonga/observability';
 import { anthropicMessageEnd, anthropicMessageStart, anthropicStream, anthropicTextBlock, anthropicTextReply, createFakeClock, openResponsesTextReply } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeClock, FakeScriptedReply } from '@momonga/testkit';
-import { START_MS, getJson, postJson, readJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
+import { START_MS, postJson, readJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 import type { Harness } from './gateway-helpers.ts';
 import { makeAdapter, startFake } from './cc-support.ts';
 import { chunkLine, doneLine, makeOllamaAdapter, startFakeOllama } from './ollama-support.ts';
@@ -179,44 +179,55 @@ describe('a second send of one model request is recorded as retry_of (Q20 B3, K4
     }
   };
 
-  it('usage: the answer of a second send names the first send, and a first send names none', async () => {
-    const started = await startDeclared([REFUSED, OK, OK], HEADER, { maxAttempts: 1 });
+  const traced = (): { clock: FakeClock; telemetry: Telemetry; retryOfEachChat: () => Promise<unknown[]> } => {
+    const clock = createFakeClock(START_MS);
+    const memory = new InMemorySpanExporter();
+    const telemetry = createTelemetry({ serviceName: 'momonga-gateway-test', serviceVersion: '0.0.0', clock, exporters: [memory], batch: { maxQueueSize: 2048, scheduledDelayMs: 60_000, maxExportBatchSize: 512 } });
+    registerCleanup(() => telemetry.shutdown());
+    const retryOfEachChat = async (): Promise<unknown[]> => {
+      await telemetry.forceFlush();
+      return memory
+        .getFinishedSpans()
+        .filter((finished) => finished.attributes['gen_ai.operation.name'] === 'chat')
+        .map((finished) => finished.attributes['momonga.retry_of']);
+    };
+    return { clock, telemetry, retryOfEachChat };
+  };
+
+  it('sends: the second send of a call is recorded under the key of the first, its span names the first send, and a first send names none', async () => {
+    const { clock, telemetry, retryOfEachChat } = traced();
+    const started = await startDeclared([REFUSED, OK, OK], HEADER, { maxAttempts: 1, clock, telemetry });
     expect((await readJson(await call(started, 'key-1'))).status).not.toBe(200);
-    const second = await readJson(await call(started, 'key-1'));
-    const other = await readJson(await call(started, 'key-2', 'another', { run_id: 'run-1', step: '2' }));
+    expect((await readJson(await call(started, 'key-1'))).status).toBe(200);
+    expect((await readJson(await call(started, 'key-2', 'another', { run_id: 'run-1', step: '2' }))).status).toBe(200);
     const sends = sendsOf(started.dbPath);
     expect(sends.map((send) => [send.target, send.run_id, send.step])).toEqual([[FIRST, 'run-1', 1], [FIRST, 'run-1', 1], [FIRST, 'run-1', 2]]);
     expect(sends[1]?.call_key).toBe(sends[0]?.call_key);
     expect(sends[2]?.call_key).not.toBe(sends[0]?.call_key);
     expect(sends[0]?.call_key).toBe(sentKeys(started.fake)[0]);
-    const report = await getJson(started.client, '/v1/momonga/usage?run_id=run-1');
-    expect(report.body.responses).toEqual([
-      expect.objectContaining({ response_id: second.body.id, step: 1, retry_of_seq: sends[0]?.seq }),
-      expect.objectContaining({ response_id: other.body.id, step: 2 }),
-    ]);
-    expect(report.body.responses[1]).not.toHaveProperty('retry_of_seq');
+    expect(await retryOfEachChat()).toEqual([undefined, sends[0]?.seq, undefined]);
   });
 
-  it('usage: a second send is recorded for a connection that declares no header too', async () => {
-    const started = await startDeclared([REFUSED, OK], null, { maxAttempts: 1 });
+  it('sends: a second send is recorded for a connection that declares no header too', async () => {
+    const { clock, telemetry, retryOfEachChat } = traced();
+    const started = await startDeclared([REFUSED, OK], null, { maxAttempts: 1, clock, telemetry });
     await readJson(await call(started, 'key-1'));
-    const second = await readJson(await call(started, 'key-1'));
+    await readJson(await call(started, 'key-1'));
     const sends = sendsOf(started.dbPath);
     expect(sends).toHaveLength(2);
-    const report = await getJson(started.client, '/v1/momonga/usage?run_id=run-1');
-    expect(report.body.responses).toEqual([expect.objectContaining({ response_id: second.body.id, retry_of_seq: sends[0]?.seq })]);
+    expect(await retryOfEachChat()).toEqual([undefined, sends[0]?.seq]);
   });
 
-  it('usage: the first send is known after the gateway restarts on the same database', async () => {
-    const before = await startDeclared([REFUSED], HEADER, { maxAttempts: 1 });
+  it('sends: the first send is known after the gateway restarts on the same database', async () => {
+    const { clock, telemetry, retryOfEachChat } = traced();
+    const before = await startDeclared([REFUSED], HEADER, { maxAttempts: 1, clock, telemetry });
     await readJson(await call(before, 'key-1'));
     await before.gateway.close();
-    const after = await startDeclared([OK], HEADER, { maxAttempts: 1, dir: before.dir });
+    const after = await startDeclared([OK], HEADER, { maxAttempts: 1, dir: before.dir, clock, telemetry });
     const second = await readJson(await call(after, 'key-1'));
     expect(second.status).toBe(200);
     expect(sentKeys(after.fake)[0]).toBe(sentKeys(before.fake)[0]);
-    const report = await getJson(after.client, '/v1/momonga/usage?run_id=run-1');
-    expect(report.body.responses).toEqual([expect.objectContaining({ response_id: second.body.id, retry_of_seq: sendsOf(after.dbPath)[0]?.seq })]);
+    expect(await retryOfEachChat()).toEqual([undefined, sendsOf(after.dbPath)[0]?.seq]);
   });
 
   it('trace: the span of a second send carries momonga.retry_of, the span of a first send does not', async () => {

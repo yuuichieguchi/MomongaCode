@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { appendPermissionRule, autoFitKeyOf, readClassifierProbeKeys, ConfigError, systemFileLockPorts, credentialEnvNames, loadSettings, stripCredentialEnv } from '@momonga/config';
+import { appendPermissionRule, autoFitKeyOf, readClassifierProbeKeys, ConfigError, systemFileLockPorts, credentialNamesOf, loadSettings, stripCredentialEnv } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, KeptLayers, LoadSettingsResult, ResolvedSettings, SettingsUse, TrustOracle, UserLayer, UserSettingsCache } from '@momonga/config';
 import { createBinaryHashCache, createHeldHostReadings, createHostExec } from '@momonga/foundation';
 import type { RuntimeStore, Session } from '@momonga/store';
@@ -28,7 +28,7 @@ export type SettingsComposition = {
   sessionCreateSettings(cwd: string, signal: AbortSignal): Promise<SessionCreateSettings>;
   sessionReadSettings(cwd: string, signal: AbortSignal): Promise<SessionCreateSettings>;
   keptLayers(use: SettingsUse): KeptLayers;
-  envFor(session: Session, signal: AbortSignal): Promise<ToolEnv>;
+  envFor(session: Pick<Session, 'env'>, signal: AbortSignal): Promise<ToolEnv>;
   takeUserSnapshot(): UserSnapshot;
   userSnapshot(signal: AbortSignal): Promise<UserSnapshot>;
   admitUserSnapshot(signal: AbortSignal): Promise<UserSnapshot>;
@@ -92,7 +92,7 @@ export const createSettingsComposition = ({ home, platform, cache, store, lock, 
       ...(permissions.defaultMode === undefined ? {} : { defaultMode: permissions.defaultMode }),
       ...(origin === undefined || origin === 'cli' ? {} : { defaultModeOrigin: origin }),
       additionalDirectories: permissions.additionalDirectories,
-      credentialEnvNames: credentialEnvNames(snapshot.settings.models),
+      credentialEnvNames: credentialNamesOf(snapshot.settings),
       ...(hasCredentialRules(credentialRulesOf(snapshot.settings.credentials)) ? { credentials: credentialRulesOf(snapshot.settings.credentials) } : {}),
       ...(classifier === undefined ? {} : { autoModeClassifier: classifier }),
       ...(autoModeKey === undefined ? {} : { autoModeKey }),
@@ -109,9 +109,9 @@ export const createSettingsComposition = ({ home, platform, cache, store, lock, 
     return sessionSettingsFrom(snapshot, await settingsFor(cwd, snapshot, 'read', signal), signal);
   };
 
-  const envFor = async (session: Session, signal: AbortSignal): Promise<ToolEnv> => {
+  const envFor = async (session: Pick<Session, 'env'>, signal: AbortSignal): Promise<ToolEnv> => {
     const { settings: userSettings } = await userSnapshot(signal);
-    return Object.freeze(stripCredentialEnv(session.env, credentialEnvNames(userSettings.models), userSettings.credentials).env);
+    return Object.freeze(stripCredentialEnv(session.env, credentialNamesOf(userSettings), userSettings.credentials).env);
   };
 
   const settings: SettingsPort = {

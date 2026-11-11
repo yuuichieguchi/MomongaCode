@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_STOP_VALUES, KILL_CONFIRM_MS, POLL_INTERVAL_MS, managedServerStopBoundMs, gatewayMaxCloseMs, managedServerReapBoundMs, markerReapClockBoundMs, supervisorMaxCloseMs } from '@momonga/foundation';
-import { proofArith } from '../../src/proofs/arith.ts';
-import type { ProofArith, ProofInt } from '../../src/proofs/arith.ts';
-import { prove } from '../../src/proofs/prove.ts';
+import { proofArith } from '../support/proofs/arith.ts';
+import type { ProofArith, ProofInt } from '../support/proofs/arith.ts';
+import { prove } from '../support/proofs/prove.ts';
 import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, useZ3 } from '../harness.ts';
 
 const MANAGED_STOP_WINDOWS = 4;
@@ -10,12 +10,12 @@ const MANAGED_REAP_WINDOWS = 3;
 const MANAGED_STOP_FIXED_MS = MANAGED_REAP_WINDOWS * 25 + 2 * 5000;
 const MANAGED_REAP_FIXED_MS = MANAGED_REAP_WINDOWS * 25 + 5000;
 const STARTUP_UNWIND_STOPS = 2;
-const SUPERVISOR_FIXED_TERMS_MS = 76_275;
+const SUPERVISOR_FIXED_TERMS_MS = 76_325;
 const MCP_GRACE_WINDOWS = 6;
 const DEFAULT_CLOSE_GRACE_MS = 10_000;
 const DEFAULT_STOP_GRACE_MS = 3_000;
 const GATEWAY_CLOSE_AT_DEFAULTS_MS = 32_075;
-const SUPERVISOR_CLOSE_AT_ZERO_DRAIN_MS = 107_275;
+const SUPERVISOR_CLOSE_AT_ZERO_DRAIN_MS = 107_325;
 const SAMPLED_GRACES_MS = [0, 1, 567, 3_000, 60_000] as const;
 const SAMPLED_DRAINS_MS = [0, 7, 30_000] as const;
 const SAMPLED_MCP_GRACES_MS = [0, 40, 1_000, 30_000] as const;
@@ -135,7 +135,7 @@ describe('managed server bounds (design-managed-servers-2026-11-09.md, section 1
     expect(await prove(arith, arith.ctx.And(unwind.ge(perPhase), unwind.eq(perPhase.add(perPhase))))).toEqual({ status: 'proved' });
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
-  it('RM7 checks the close-grace pins at the defaults: 32 075 for the gateway close and 107 245 for the supervisor at a zero drain and a zero MCP grace (revision 8, section 2.5)', async () => {
+  it('RM7 checks the close-grace pins at the defaults: 32 075 for the gateway close and 107 325 for the supervisor at a zero drain and a zero MCP grace (revision 8, section 2.5)', async () => {
     const arith = proofArith(z3.engine().api, 'RM7');
     const closeGrace = constant(arith, DEFAULT_CLOSE_GRACE_MS);
     const stop = constant(arith, DEFAULT_STOP_GRACE_MS);

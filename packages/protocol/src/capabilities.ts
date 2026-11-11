@@ -274,6 +274,8 @@ export const TARGET_NOT_READY = 'target_not_ready';
 
 export const NO_MODEL_TARGET = 'no model target is set up';
 
+export const startModelOf = (listed: { count: number; start: string | null }): string | undefined => (listed.count === 0 || listed.start === null ? undefined : listed.start);
+
 export type Readiness =
   | { state: 'ready' }
   | { state: 'no_tools'; message: string }

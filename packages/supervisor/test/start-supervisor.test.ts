@@ -1,3 +1,4 @@
+import type { ReapMarkerDirectoryResult } from '@momonga/foundation';
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import path from 'node:path';
@@ -74,13 +75,13 @@ describe('startSupervisor', () => {
   });
 
   it('startSupervisor resolves before the reap of its own markers ends, and no child spawns before it finished', async (context) => {
-    const reap = deferred<{ reaped: number; kept: number }>();
+    const reap = deferred<ReapMarkerDirectoryResult>();
     const h = await startHarness(context, { markerPorts: { reapMarkerDirectory: () => reap.promise } });
     await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, maxMs: 5000 });
     await pumpUntil(h.timers, () => true, { realWork: h.realWork, maxMs: 0 });
     expect(h.health().phase).toBe('running');
     expect(h.fake.spawnCount()).toBe(0);
-    reap.resolve({ reaped: 1, kept: 0 });
+    reap.resolve({ reaped: 1, kept: 0, unreaped: [] });
     await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, maxMs: 5000 });
     expect(h.health().phase).toBe('running');
   });
@@ -161,12 +162,12 @@ describe('startSupervisor', () => {
   });
 
   it('a started supervisor with invalid settings still announces ready and reports both children held-config', async (context) => {
-    const reap = deferred<{ reaped: number; kept: number }>();
+    const reap = deferred<ReapMarkerDirectoryResult>();
     const h = await startHarness(context, { settingsText: INVALID_SETTINGS_TEXT, markerPorts: { reapMarkerDirectory: () => reap.promise } });
     expect(h.stdout.lines()).toHaveLength(1);
     await waitFor(() => h.markers.calls.reapMarkerDirectory.length > 0);
     expect(h.health().children.map((child) => child.state)).toEqual(['pending', 'pending']);
-    reap.resolve({ reaped: 0, kept: 0 });
+    reap.resolve({ reaped: 0, kept: 0, unreaped: [] });
     await pumpUntil(h.timers, () => h.health().children.every((child) => child.state === 'held-config'), { realWork: h.realWork, maxMs: 5000 });
     expect(h.health().children.map((child) => child.state)).toEqual(['held-config', 'held-config']);
     for (const child of h.health().children) {

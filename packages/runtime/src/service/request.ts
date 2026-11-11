@@ -1,5 +1,5 @@
 import { JsonDepthError, defineProductSchema, parseOutsideJson, productErrorsText } from '@momonga/foundation';
-import type { ProductValidator } from '@momonga/foundation';
+import type { ProductValidator, SandboxNetworkSetting } from '@momonga/foundation';
 import { RUN_API_SCHEMAS, runApiSchemaName } from '@momonga/protocol';
 import type { ImageAttachment, InboxDelivery, JsonSchema, PermissionMode, Mandate } from '@momonga/protocol';
 import { bodyTooLarge, invalidRequest, unsupportedMediaType } from './errors.ts';
@@ -10,6 +10,7 @@ export type CreateSessionBody = {
   permissionMode?: PermissionMode;
   model?: string;
   bypassAllowed?: boolean;
+  sandboxNetwork?: SandboxNetworkSetting;
   mcpServers?: Record<string, Record<string, unknown>>;
 };
 
@@ -34,6 +35,8 @@ export type ResolveElicitationBody = { responses: Record<string, unknown> };
 
 export type PutTrustBody = { path: string; decision: 'trusted' | 'untrusted' };
 
+export type McpFolderBody = { cwd: string; env: Record<string, string> };
+
 type RequestSchemaName =
   | 'CreateSessionRequest'
   | 'PatchSessionRequest'
@@ -44,6 +47,7 @@ type RequestSchemaName =
   | 'CompactSessionRequest'
   | 'ResolveElicitationRequest'
   | 'PutTrustRequest'
+  | 'McpFolderRequest'
   | 'AddRuleRequest'
   | 'PutRuleVerdictRequest'
   | 'PromoteMemoryRequest'
@@ -63,6 +67,7 @@ const validators: Record<RequestSchemaName, ProductValidator<unknown>> = {
   CompactSessionRequest: requestValidator(RUN_API_SCHEMAS.CompactSessionRequest),
   ResolveElicitationRequest: requestValidator(RUN_API_SCHEMAS.ResolveElicitationRequest),
   PutTrustRequest: requestValidator(RUN_API_SCHEMAS.PutTrustRequest),
+  McpFolderRequest: requestValidator(RUN_API_SCHEMAS.McpFolderRequest),
   AddRuleRequest: requestValidator(RUN_API_SCHEMAS.AddRuleRequest),
   PutRuleVerdictRequest: requestValidator(RUN_API_SCHEMAS.PutRuleVerdictRequest),
   PromoteMemoryRequest: requestValidator(RUN_API_SCHEMAS.PromoteMemoryRequest),

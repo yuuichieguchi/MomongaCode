@@ -18,6 +18,7 @@ import {
   createExecWithStdin,
   createHostExec,
   createPlatformSecretStore,
+  ensureBundledLinuxSocketGuard,
   guardStandardStreams,
   momongaLayout,
   resolveLayoutLocks,
@@ -32,7 +33,7 @@ import {
   launchApart,
 } from '@momonga/foundation';
 import type { GuardedStandardStreams, HeldKernelLock, HelperHost, LaunchProgram, ProcessPort, KernelLockMechanism } from '@momonga/foundation';
-import { sourceBuiltWindowsKeeper } from './keeper/source.ts';
+import { sourceBuiltLinuxSocketGuard, sourceBuiltWindowsKeeper } from './keeper/source.ts';
 import type { SourceKeeperFiles } from './keeper/source.ts';
 import { createHandoverHost } from './handover/host.ts';
 import type { RecordFiles } from './handover/host.ts';
@@ -103,13 +104,17 @@ export const createWorkspaceProbe = (env: Readonly<Record<string, string>>): Wor
   },
 });
 
-export const launchProgram: LaunchProgram = (file, args) =>
-  new Promise((resolve, reject) => {
-    const child = launchApart(file, args, { stdio: 'ignore', windowsHide: true });
-    child.once('error', reject);
-    child.once('exit', (exitCode, signal) => resolve({ exitCode, signal }));
-    child.unref();
-  });
+export const launchProgramThrough =
+  (start: typeof launchApart): LaunchProgram =>
+  (file, args) =>
+    new Promise((resolve, reject) => {
+      const child = start(file, args, { stdio: 'ignore', windowsHide: true });
+      child.once('error', reject);
+      child.once('exit', (exitCode, signal) => resolve({ exitCode, signal }));
+      child.unref();
+    });
+
+export const launchProgram: LaunchProgram = launchProgramThrough(launchApart);
 
 const LONGEST_HOST_TIMER_MS = 2_147_483_647;
 
@@ -210,6 +215,20 @@ export const runKeeperBuild = (script: string, workDir: string): number | null =
 
 export const hostSourceBuiltWindowsKeeper = (executablesRoot: string): (() => string) =>
   sourceBuiltWindowsKeeper({ script: WINDOWS_KEEPER_BUILD_SCRIPT, executablesRoot, build: runKeeperBuild, files: nodeSourceKeeperFiles, random: systemRandom });
+
+export const LINUX_SOCKET_GUARD_BUILD_SCRIPT = path.resolve(import.meta.dirname, '..', '..', '..', 'scripts', 'linux-socket-guard.ts');
+
+export const runSocketGuardBuild = (script: string, workDir: string): number | null => {
+  const run = spawnSync(process.execPath, [script, '--work-dir', workDir, '--compiler', 'host'], { stdio: ['ignore', 'ignore', 'inherit'] });
+  if (run.error !== undefined) throw run.error;
+  return run.status;
+};
+
+export const hostExtractedLinuxSocketGuard = (asset: (name: string) => Uint8Array, executablesRoot: string): Promise<string> =>
+  ensureBundledLinuxSocketGuard({ asset, executablesRoot, random: systemRandom, files: nodeFileSystem });
+
+export const hostSourceBuiltLinuxSocketGuard = (executablesRoot: string): (() => string) =>
+  sourceBuiltLinuxSocketGuard({ script: LINUX_SOCKET_GUARD_BUILD_SCRIPT, executablesRoot, build: runSocketGuardBuild, files: nodeSourceKeeperFiles, random: systemRandom });
 
 export const nodeSpawnDetached: SpawnDetached = (spec) => {
   const child = launchApart(spec.command, spec.args, {
@@ -357,7 +376,7 @@ export const nodePorts = (version: string, interrupt: AbortSignal, streams: Guar
     files: nodeFilesLockedBy(lock),
     exec: createHostExec(minimalChildEnv(process.env)),
     probe: createWorkspaceProbe(minimalChildEnv(process.env)),
-    openUrl: createBrowserOpener({ env: process.env, launch: launchProgram }),
+    openUrl: createBrowserOpener({ env: process.env, launch: launchProgram, files: nodeFileSystem }),
     secretStore: () => createPlatformSecretStore(createExecWithStdin(undefined), process.env),
     acpStdio: () => ({ input: acpInputOf(process.stdin), output: Writable.toWeb(process.stdout) }),
   };

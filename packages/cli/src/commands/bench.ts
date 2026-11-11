@@ -6,6 +6,7 @@ import type { MomongaPaths } from '@momonga/foundation';
 import { MAIN_AGENT } from '@momonga/protocol';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { encodeReliabilityReport, formatReliabilityReport } from '@momonga/reliability';
+import type { GroupKey } from '@momonga/reliability';
 import { DaemonMoved } from '../client/runtime-client.ts';
 import type { RuntimeClient } from '../client/runtime-client.ts';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
@@ -15,7 +16,7 @@ import type { CliPorts } from '../ports.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import { EvaluateUsageError } from './evaluate.ts';
 
-export type EvaluateBenchOptions = { validate: boolean; model?: string; report?: string; interrupt: AbortSignal };
+export type EvaluateBenchOptions = { validate: boolean; model?: string; report?: string; groupBy: GroupKey; interrupt: AbortSignal };
 
 export const BENCHMARK_FILE = 'benchmark.json';
 
@@ -105,7 +106,7 @@ export const benchRunApi = (client: BenchClient, env: Readonly<Record<string, st
   };
 };
 
-const run = async (ports: CliPorts, paths: MomongaPaths, benchmarkFile: string, options: { model: string; report?: string; interrupt: AbortSignal }): Promise<number> => {
+const run = async (ports: CliPorts, paths: MomongaPaths, benchmarkFile: string, options: { model: string; report?: string; groupBy: GroupKey; interrupt: AbortSignal }): Promise<number> => {
   const model = pinnedModelOf(await shellModelsOf(ports, options.interrupt), options.model);
   await ensureCurrentDaemon(ports, paths);
   const env = await environmentSnapshot(ports, options.interrupt);
@@ -118,7 +119,7 @@ const run = async (ports: CliPorts, paths: MomongaPaths, benchmarkFile: string, 
       files: ports.files,
       model,
       codeDigest: await codeDigestOfRunningProcess(),
-      groupBy: 'model',
+      groupBy: options.groupBy,
       scratch: scratch.path,
       signal: options.interrupt,
     });
@@ -139,5 +140,5 @@ export const evaluateBench = async (ports: CliPorts, paths: MomongaPaths, direct
     return validate(ports, paths, benchmarkFile);
   }
   if (options.model === undefined) throw new EvaluateUsageError('--model <model> is required for a run of the benchmark: it names the model every task runs on');
-  return run(ports, paths, benchmarkFile, { model: options.model, interrupt: options.interrupt, ...(options.report === undefined ? {} : { report: options.report }) });
+  return run(ports, paths, benchmarkFile, { model: options.model, groupBy: options.groupBy, interrupt: options.interrupt, ...(options.report === undefined ? {} : { report: options.report }) });
 };

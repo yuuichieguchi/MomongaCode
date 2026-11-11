@@ -4,9 +4,9 @@ import { diffFieldsOf, termsOf } from '@momonga/protocol';
 import type { HeldLink, PermissionOption, RunEventPayload, RunState, ToolAwait } from '@momonga/protocol';
 import type { BatchOutputFormatter, CallOutcome, DisplayContext, NeedsApprovalOutcome, NeedsInputOutcome, ResultOutcome, ToolCall, WaitingOutcome } from '@momonga/tools';
 import { COVERED_PROGRAMS, OPERATION_SPECS, TOOL_VALIDATOR_FAILED_CODE, supersededForms, toolRefusalKey, validateToolInput } from '@momonga/tools';
+import { rejectionKeyOf } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
 import { createToolHooks } from '@momonga/tools';
-import { permissionRulesFor } from '../governance/rules.ts';
 import { createAutoClassifier } from './auto-classifier.ts';
 import { haltRun, hookRunContextFor } from './hook-step.ts';
 import type { TraceSpan } from '../ports.ts';
@@ -19,10 +19,12 @@ import { hasHeld, heldLinkOf, heldOutput, heldVerdictOf, quiesce } from './held-
 import { heldSessionOf } from './known.ts';
 import type { HeldSession } from './known.ts';
 import { holdSandbox } from './held-sandbox.ts';
-import { laterVerdictNotice, policyRefusal, ruleVerdictFor } from './rule-verdict.ts';
+import { laterVerdictNotice, policyRefusal, ruleVerdictFor, runRulesFor } from './rule-verdict.ts';
 import type { HeldSandbox } from './held-sandbox.ts';
 
 export const REJECTED_OUTPUT = 'The user rejected this tool call.';
+
+export const REJECTED_AGAIN_OUTPUT = 'A person rejected this same call earlier in this run, so it was not run and not asked about again. Do not repeat it unchanged.';
 
 type PendingCall = RunState['pendingCalls'][string];
 
@@ -289,9 +291,9 @@ export const settleHeld = async (ctx: ClaimContext): Promise<Flow | number> => {
 const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSession, calls: ToolCall[], step: number, lateBatch?: LateBatch): Promise<Flow> => {
   const { options, journal, run } = ctx;
   const late = lateBatch !== undefined;
-  const rules = [...(await permissionRulesFor(options, session)), ...(ctx.delegation?.rules ?? [])];
+  const rules = await runRulesFor(options, session, ctx.delegation);
   const policy = await options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories, ruleEnforcement: held.ruleEnforcement, signal: ctx.control.signal, discoverGitConfig: true });
-  const verdict = await ruleVerdictFor(ctx, session, { rules, roots: policy.roots, enforcement: held.ruleEnforcement });
+  const verdict = await ruleVerdictFor(ctx, session, { rules, roots: policy.roots, exemptDirectory: policy.tmpDir, enforcement: held.ruleEnforcement });
   const laterVerdict = laterVerdictNotice(journal.state, ctx.policyFingerprint, verdict);
   if (laterVerdict.length > 0) journal.append(laterVerdict);
   const refusal = policyRefusal(verdict);
@@ -383,7 +385,14 @@ const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSes
 
   if (halt.hookEvent !== undefined) return haltRun(ctx, halt.hookEvent, halt.reason);
 
-  const asking = outcomes.filter((outcome): outcome is NeedsApprovalOutcome => outcome.kind === 'needs_approval');
+  const rejectedBefore = journal.state.rejectedCalls ?? [];
+  const rejectedEarlier = (outcome: NeedsApprovalOutcome): boolean => {
+    const call = calls.find((candidate) => candidate.callId === outcome.callId);
+    return call !== undefined && rejectedBefore.includes(rejectionKeyOf(call.name, call.arguments));
+  };
+  const repeated = outcomes.filter((outcome): outcome is NeedsApprovalOutcome => outcome.kind === 'needs_approval' && rejectedEarlier(outcome));
+  if (repeated.length > 0) journal.append(repeated.map((outcome): RunEventPayload => ({ type: 'tool.completed', callId: outcome.callId, status: 'failed', output: REJECTED_AGAIN_OUTPUT })));
+  const asking = outcomes.filter((outcome): outcome is NeedsApprovalOutcome => outcome.kind === 'needs_approval' && !rejectedEarlier(outcome));
   const inputs = outcomes.filter((outcome): outcome is NeedsInputOutcome => outcome.kind === 'needs_input');
   if (ctx.delegation !== undefined && asking.length > 0) {
     await holdCalls(ctx, asking, late);

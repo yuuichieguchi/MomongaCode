@@ -1,10 +1,11 @@
 import path from 'node:path';
 import { ConfigError } from '@momonga/config';
-import { discoverGitConfigFiles, ensureSessionTmpDir as defaultEnsureSessionTmpDir, filterAsync, hostPaths, isTransientErrno, protectedSetFor } from '@momonga/foundation';
+import { createGitConfigDiscovery, ensureSessionTmpDir as defaultEnsureSessionTmpDir, filterAsync, hostPaths, isTransientErrno, protectedSetFor, sessionRootsOf } from '@momonga/foundation';
 import type { MomongaPaths, RuleEnforcement, SessionScratch, KernelLockMechanism } from '@momonga/foundation';
 import { askedBy, computeFileRules } from '@momonga/policy';
 import type { PolicyHostPorts } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
+import type { SandboxPolicy } from '@momonga/sandbox';
 import type { ToolRuntimePort } from '../ports.ts';
 import type { SessionStates } from './session-states.ts';
 
@@ -30,12 +31,9 @@ const contextBuilder = ({ paths, home, sessionStates, lock, ensureSessionTmpDir 
     const resolver = hostPaths(signal);
     const wrap = wrapperFor(session.id);
     sessionStates.get(session);
-    const roots: string[] = [];
-    for (const root of [session.cwd, ...session.additionalDirectories]) {
-      const result = await resolver.canonicalDirectory(root);
-      if (!result.ok) throw wrap(new Error(`root ${root} ${result.reason}`));
-      roots.push(result.path);
-    }
+    const resolved = await sessionRootsOf(session.cwd, session.additionalDirectories, resolver);
+    if (!resolved.ok) throw wrap(new Error(`root ${resolved.root} ${resolved.reason}`));
+    const { roots } = resolved;
 
     let tmpDir: string;
     try {
@@ -51,21 +49,52 @@ const contextBuilder = ({ paths, home, sessionStates, lock, ensureSessionTmpDir 
 
 export type EnforcedPolicyFor = (session: Parameters<ToolRuntimePort['policyFor']>[0], options: Omit<Parameters<ToolRuntimePort['policyFor']>[1], 'ruleEnforcement'> & { unixSocketAllow?: readonly string[] }) => ReturnType<ToolRuntimePort['policyFor']>;
 
+export type ToolSandboxPolicyHost = { paths: MomongaPaths; home: string; fs: PolicyHostPorts; ruleEnforcement: RuleEnforcement };
+
+export type ToolSandboxPolicyInput = {
+  roots: readonly string[];
+  tmpDir: string | undefined;
+  rules: Parameters<typeof computeFileRules>[0];
+  gitConfigFiles: readonly string[];
+  readableDirectories: readonly string[];
+  unixSocketAllow?: readonly string[];
+};
+
+export const toolSandboxPolicyOf = async ({ paths, home, fs, ruleEnforcement }: ToolSandboxPolicyHost, input: ToolSandboxPolicyInput, signal: AbortSignal): Promise<SandboxPolicy> => {
+  const roots = [...input.roots];
+  const resolver = hostPaths(signal);
+  const ports = askedBy(fs, signal);
+  const fileRules = await computeFileRules(input.rules, roots, input.tmpDir ?? null, ruleEnforcement, ports);
+  const protectedSet = await protectedSetFor(roots, ports, [...input.gitConfigFiles]);
+  const skillsRoot = await resolver.canonicalPath(paths.skills);
+  const readAllowed = await filterAsync([...input.readableDirectories], (directory) => resolver.comparableContains(skillsRoot, directory));
+  return buildSandboxPolicy(
+    {
+      roots,
+      home,
+      layout: paths,
+      ...(input.tmpDir === undefined ? {} : { tmpDir: input.tmpDir }),
+      sessionsTmpRoot: paths.tmp.sessions,
+      fileRules,
+      protectedSet,
+      network: 'deny',
+      readAllowed,
+      ...(input.unixSocketAllow === undefined ? {} : { unixSocketAllow: input.unixSocketAllow }),
+    },
+    signal,
+  );
+};
+
 export const createPolicyFor = (options: PolicyForOptions): EnforcedPolicyFor => {
   const { paths, home, fs, ruleEnforcement } = options;
   const contextFor = contextBuilder(options);
+  const gitConfig = createGitConfigDiscovery();
 
   return async (session, { env, rules, readableDirectories, unixSocketAllow, signal, discoverGitConfig }) => {
     const { roots, tmpDir, wrap } = await contextFor(session, signal);
     try {
-      const resolver = hostPaths(signal);
-      const ports = askedBy(fs, signal);
-      const fileRules = await computeFileRules(rules, roots, tmpDir, ruleEnforcement, ports);
-      const gitConfigFiles = discoverGitConfig === true ? await discoverGitConfigFiles({ workingDirectory: session.cwd, env, signal }) : [];
-      const protectedSet = await protectedSetFor(roots, ports, gitConfigFiles);
-      const skillsRoot = await resolver.canonicalPath(paths.skills);
-      const readAllowed = await filterAsync(readableDirectories ?? [], (directory) => resolver.comparableContains(skillsRoot, directory));
-      const sandboxPolicy = await buildSandboxPolicy({ roots, home, layout: paths, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules, protectedSet, network: 'deny', readAllowed, ...(unixSocketAllow === undefined ? {} : { unixSocketAllow }) }, signal);
+      const gitConfigFiles = discoverGitConfig === true ? await gitConfig.discover({ workingDirectory: session.cwd, env, signal }) : [];
+      const sandboxPolicy = await toolSandboxPolicyOf({ paths, home, fs, ruleEnforcement }, { roots, tmpDir, rules, gitConfigFiles, readableDirectories: readableDirectories ?? [], ...(unixSocketAllow === undefined ? {} : { unixSocketAllow }) }, signal);
       return { roots, sandboxPolicy, tmpDir, env };
     } catch (error) {
       signal.throwIfAborted();

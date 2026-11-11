@@ -18,7 +18,7 @@ import type { SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import { journalReaderPreparer } from '../worker/harness.ts';
 import type { Claim, ContributionPreparer, RuntimeStore, Session } from '@momonga/store';
-import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, createTempDir, pollUntil, removeTempDir, testProbes, testProcessInspector, testKernelLock } from '@momonga/testkit';
+import { unconfiguredNetworkOf, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, createTempDir, pollUntil, removeTempDir, testProbes, testProcessInspector, testKernelLock } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
@@ -409,13 +409,21 @@ export const pollFor = (condition: () => boolean, boundMs: number, description: 
 
 export type McpAdminPort = Parameters<typeof runtime.createRunService>[0]['mcp'];
 
-const unusedMcpAdmin: McpAdminPort = {
+export const unusedMcpAdmin: McpAdminPort = {
   servers: () => Promise.reject(new Error('this test configured no MCP admin')),
   startAuthorization: () => Promise.reject(new Error('this test configured no MCP admin')),
   authorization: () => {
     throw new Error('this test configured no MCP admin');
   },
   cancelAuthorization: () => {
+    throw new Error('this test configured no MCP admin');
+  },
+  folderServers: () => Promise.reject(new Error('this test configured no MCP admin')),
+  startFolderAuthorization: () => Promise.reject(new Error('this test configured no MCP admin')),
+  folderAuthorization: () => {
+    throw new Error('this test configured no MCP admin');
+  },
+  cancelFolderAuthorization: () => {
     throw new Error('this test configured no MCP admin');
   },
 };
@@ -449,6 +457,7 @@ export type ServiceOverrides = {
   capabilitiesOf?: (model: string) => Promise<unknown>;
   runCost?: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<unknown>;
   reportCost?: (runIds: readonly string[], signal: AbortSignal) => Promise<unknown>;
+  recomputeFacts?: (runIds: readonly string[], signal: AbortSignal) => Promise<unknown>;
   runTraceContent?: (runId: string, after: number, limit: number) => Promise<unknown>;
   onFatal?: boolean;
   sandboxKind?: 'seatbelt' | 'none';
@@ -561,6 +570,7 @@ export const serviceOptions = (
   releaseStopped: overrides.releaseStopped ?? (async () => undefined),
   runTrace: overrides.runTrace ?? (async () => undefined),
   reportCost: overrides.reportCost ?? (async () => []),
+  recomputeFacts: overrides.recomputeFacts ?? (async () => ({ rows: [], refused: [] })),
   runTraceContent: overrides.runTraceContent ?? (async () => ({ bodies: [], next: null })),
   runCost:
     overrides.runCost ??
@@ -761,7 +771,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
     reap: { inspector: testProcessInspector() },
     shellHost: nodeShellHost(),
     random: systemRandom,
-    files: nodeFileSystem, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE, idempotency: env.store.idempotency, blobs: env.store.blobs, clock: env.clock, processMarkerDir: markers, callLockDir: callLocks, kernelLock: createFakeKernelLock({ inheritable: false }), onWarning: () => undefined });
+    files: nodeFileSystem, outboundNetwork: unconfiguredNetworkOf, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE, idempotency: env.store.idempotency, blobs: env.store.blobs, clock: env.clock, processMarkerDir: markers, callLockDir: callLocks, kernelLock: createFakeKernelLock({ inheritable: false }), onWarning: () => undefined });
   const sessionsTmpRoot = path.join(env.layout.root, 'sessions');
   const sessionTmpDir = path.join(sessionsTmpRoot, 'session-tmp');
   fs.mkdirSync(sessionTmpDir, { recursive: true, mode: 0o700 });

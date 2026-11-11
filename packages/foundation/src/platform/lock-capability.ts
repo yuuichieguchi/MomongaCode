@@ -120,8 +120,8 @@ const removeFreeLeftovers = (ops: FileLockOps, proofDir: string, own: string): v
     if (file === own) continue;
     try {
       if (!sharedOpenIsRefused(ops, file)) nodeFileSystemSync.rmSync(file);
-    } catch {
-      continue;
+    } catch (error) {
+      if (codeOf(error) !== 'ENOENT') throw error;
     }
   }
 };

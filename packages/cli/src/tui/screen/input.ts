@@ -53,3 +53,13 @@ export const createScreenInput = (): ScreenInput => {
     claim: claims.claim,
   };
 };
+
+export const untilNextKey = (input: Pick<ScreenInput, 'observe'>): AbortSignal => {
+  const watch = new AbortController();
+  const stop = input.observe((event) => {
+    if (event.type !== 'key') return;
+    stop();
+    watch.abort();
+  });
+  return watch.signal;
+};

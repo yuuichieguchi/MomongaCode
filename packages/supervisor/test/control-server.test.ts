@@ -1,3 +1,4 @@
+import type { ReapMarkerDirectoryResult } from '@momonga/foundation';
 import { spawnSync } from '@momonga/testkit/child-process';
 import type { ChildProcess } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
@@ -351,7 +352,7 @@ describe('control API through the supervisor', () => {
   });
 
   it('health during the reap of its own markers', async (context) => {
-    const reap = Promise.withResolvers<{ reaped: number; kept: number }>();
+    const reap = Promise.withResolvers<ReapMarkerDirectoryResult>();
     const h = await startHarness(context, { markerPorts: { reapMarkerDirectory: () => reap.promise } });
     await waitFor(() => h.markers.calls.reapMarkerDirectory.length > 0, { description: 'the reap of its own markers' });
     const response = await httpOver(context, firstGeneration(h.paths).sockets.supervisor, 'GET', '/v1/health');
@@ -364,7 +365,7 @@ describe('control API through the supervisor', () => {
       { role: 'runtime', state: 'pending', restarts: 0, consecutiveFailures: 0 },
     ]);
     expect(h.fake.spawnCount()).toBe(0);
-    reap.resolve({ reaped: 0, kept: 0 });
+    reap.resolve({ reaped: 0, kept: 0, unreaped: [] });
   });
 
   it('phase transitions are one way', async (context) => {
@@ -384,7 +385,7 @@ describe('control API through the supervisor', () => {
   it('a shutdown begun before the first spawn goes to draining and spawns nothing', async (context) => {
     const h = await startHarness(context, {
       markerPorts: {
-        reapMarkerDirectory: (options) => new Promise((resolve) => options.signal?.addEventListener('abort', () => resolve({ reaped: 0, kept: 0 }), { once: true })),
+        reapMarkerDirectory: (options) => new Promise((resolve) => options.signal?.addEventListener('abort', () => resolve({ reaped: 0, kept: 0, unreaped: [] }), { once: true })),
       },
     });
     await waitFor(() => h.markers.calls.reapMarkerDirectory.length > 0);

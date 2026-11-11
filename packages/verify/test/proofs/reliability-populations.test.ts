@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { MIN_RATE_POPULATION } from '@momonga/protocol';
 import { wilsonInterval } from '@momonga/reliability';
-import { proofArith } from '../../src/proofs/arith.ts';
-import type { ProofArith } from '../../src/proofs/arith.ts';
-import { expectRefuted, prove } from '../../src/proofs/prove.ts';
+import { proofArith } from '../support/proofs/arith.ts';
+import type { ProofArith } from '../support/proofs/arith.ts';
+import { expectRefuted, prove } from '../support/proofs/prove.ts';
 import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, useZ3 } from '../harness.ts';
 
 const Z_95 = '1.959963984540054';

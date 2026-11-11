@@ -67,7 +67,6 @@ type Opened = {
   release: Release;
   span: AttemptSpan;
   capabilities: Capabilities;
-  retryOfSeq: number | undefined;
 };
 
 type Pulled = { kind: 'event'; event: StreamEvent } | { kind: 'failed'; error: unknown };
@@ -215,7 +214,7 @@ const openAttempt = async (
       if (carriesOutput(step.value) || TERMINAL_TYPES.has(step.value.type)) break;
     }
     span.committed();
-    return { iterator, held, release, span, capabilities, retryOfSeq };
+    return { iterator, held, release, span, capabilities };
   } catch (error) {
     release();
     const failure = failureFrom(target.adapter, error, signal);
@@ -553,23 +552,9 @@ async function* relaySteps(
     ...(job.idempotency === undefined || priorFrames === undefined
       ? {}
       : { idempotency: { key: job.idempotency.key, digest: job.idempotency.digest, frames: [...priorFrames, terminal] } }),
-    ...(job.runId === undefined
-      ? {}
-      : {
-          usage: {
-            responseId,
-            runId: job.runId,
-            step: job.step ?? null,
-            target: target.name,
-            inputTokens: usage.input_tokens,
-            outputTokens: usage.output_tokens,
-            usageSource,
-            retryOfSeq: opened.retryOfSeq ?? null,
-          },
-        }),
   };
   let commitFailure: unknown;
-  if (commit.response !== undefined || commit.idempotency !== undefined || commit.usage !== undefined) {
+  if (commit.response !== undefined || commit.idempotency !== undefined) {
     try {
       services.store.commit(commit);
     } catch (error) {

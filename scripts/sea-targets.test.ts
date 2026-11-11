@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { WINDOWS_KEEPER_BINARY_ASSET } from '@momonga/foundation';
+import { LINUX_SOCKET_GUARD_BINARY_ASSET, WINDOWS_KEEPER_BINARY_ASSET } from '@momonga/foundation';
 import { SEA_NODE_VERSION, SEA_TARGETS, extractCommand, isSeaTargetName } from './node-runtime.ts';
 import { buildSea, hostSeaTarget } from './sea.ts';
 import { repoRoot } from './bundle.ts';
@@ -57,9 +57,9 @@ describe.runIf(process.platform === 'darwin' && process.arch === 'arm64')('cross
   });
 
   it.each([
-    ['linux-x64', Buffer.from([0x7f, 0x45, 0x4c, 0x46]), 0],
-    ['win-x64', Buffer.from('MZ'), 1],
-  ] as const)('%s produces an executable with the right container format and the keeper manifest only where the target runs Windows', async (target, magic, keeperManifests) => {
+    ['linux-x64', Buffer.from([0x7f, 0x45, 0x4c, 0x46]), 0, 1],
+    ['win-x64', Buffer.from('MZ'), 1, 0],
+  ] as const)('%s produces an executable with the right container format, the keeper manifest only where the target runs Windows and the socket guard manifest only where it runs Linux', async (target, magic, keeperManifests, socketGuardManifests) => {
     const output = path.join(root, `momonga-${target}`);
     await buildSea({ entry: `${repoRoot}test/fixtures/sea/entry.ts`, output, workDir: path.join(root, `work-${target}`), target });
     const head = Buffer.alloc(magic.length);
@@ -70,6 +70,8 @@ describe.runIf(process.platform === 'darwin' && process.arch === 'arm64')('cross
       fs.closeSync(fd);
     }
     expect(head).toEqual(magic);
-    expect(fs.readFileSync(output).toString('latin1').split(`"binary":{"asset":"${WINDOWS_KEEPER_BINARY_ASSET}"`).length - 1).toBe(keeperManifests);
+    const bytes = fs.readFileSync(output).toString('latin1');
+    expect(bytes.split(`"binary":{"asset":"${WINDOWS_KEEPER_BINARY_ASSET}"`).length - 1).toBe(keeperManifests);
+    expect(bytes.split(`"binary":{"asset":"${LINUX_SOCKET_GUARD_BINARY_ASSET}"`).length - 1).toBe(socketGuardManifests);
   }, UNBOUNDED_BUILD_WAIT_MS);
 });

@@ -1,12 +1,12 @@
 import { parseRule } from '@momonga/config';
 import type { PermissionRule } from '@momonga/config';
 import { pinnedDelegationOf } from '@momonga/protocol';
-import type { HeldCall, HeldCallView, HeldLink, HeldOutcome, PinnedDelegation, RunState } from '@momonga/protocol';
+import type { HeldCall, HeldCallView, HeldLink, HeldOutcome, PinnedDelegation, QuiescentBehaviour, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
 
 const MANDATE_SOURCE = 'the mandate of this run';
 
-export type Delegation = { rules: readonly PermissionRule[]; notice: string; onQuiescent?: 'report' | 'wait' };
+export type Delegation = { rules: readonly PermissionRule[]; notice: string; onQuiescent?: QuiescentBehaviour };
 
 export type MandateCatalogue = { alwaysOperations: readonly string[]; supersededForms: ReadonlyArray<{ operation: string; argv: readonly string[] }> };
 
@@ -79,8 +79,9 @@ export const quiesce = (ctx: ClaimContext): Promise<Flow> => {
   const { journal } = ctx;
   if (journal.state.quiescent !== true) {
     const held = heldViewsOf(journal.state);
+    const onQuiescent = ctx.delegation?.onQuiescent;
     journal.append([
-      { type: 'run.quiescent', held },
+      { type: 'run.quiescent', held, ...(onQuiescent === undefined ? {} : { onQuiescent }) },
       { type: 'notice', level: 'warning', message: quiescentText(held), code: 'run_quiescent' },
     ]);
   }

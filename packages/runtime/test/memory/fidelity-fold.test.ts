@@ -47,6 +47,38 @@ describe('the fidelity fold decides sources by event type', () => {
     expect((await env.fidelity(run.id, [{ token: TOKEN, claim: 'executed' }])).attested).toEqual([TOKEN]);
   });
 
+  const checkOf = (command: string, output: string): RunEventPayload[] =>
+    [
+      { type: 'verification.started', round: 1, conditionId: 'c1', command, mutationSeq: 0, attempt: 1 },
+      { type: 'verification.completed', round: 1, conditionId: 'c1', command, outcome: 'failed', exitCode: 1, durationMs: 3, output, mutationSeq: 0 },
+    ] as RunEventPayload[];
+
+  it('attests the command of a check the runtime ran, as executed text', async () => {
+    expect(await attested(checkOf(TOKEN, '2 tests failed'), 'executed')).toEqual([TOKEN]);
+  });
+
+  it('attests a token found only in the output of a check the runtime ran', async () => {
+    expect(await attested(checkOf('npm test', `error: ${TOKEN} is missing`), 'executed')).toEqual([TOKEN]);
+  });
+
+  it('attests a token in a handled blob of a check output', async () => {
+    const env = await fidelityEnv();
+    const { handle } = await env.store.blobs.put(`head\nthe check says ${TOKEN}\ntail`, { mediaType: 'text/plain' } as never);
+    const [started, completed] = checkOf('npm test', 'omitted');
+    const run = await env.finished([started, { ...completed, truncated: true, handle }] as RunEventPayload[]);
+    expect((await env.fidelity(run.id, [{ token: TOKEN, claim: 'executed' }])).attested).toEqual([TOKEN]);
+  });
+
+  it('attests a token found only in the recorded result of a held call', async () => {
+    const held = [
+      { type: 'tool.call', callId: 'h1', providerCallId: 'h1', name: 'Sh', kind: 'other', title: 'h1', rawInput: { command: 'deploy' } },
+      { type: 'tool.held', callId: 'h1', approvalId: 'a1', reason: 'needs a person', footprint: { reads: [], writes: [] } },
+      { type: 'tool.completed', callId: 'h1', status: 'failed', output: 'Not run yet', denial: { source: 'held', reason: 'needs a person' } },
+      { type: 'tool.held.resolved', callId: 'h1', approvalId: 'a1', outcome: 'executed', status: 'completed', output: `ran ${TOKEN}` },
+    ] as RunEventPayload[];
+    expect(await attested(held, 'executed')).toEqual([TOKEN]);
+  });
+
   it('does not attest a token found only in a previous context.compacted summary', async () => {
     const summary = `DONE:\nran \`${TOKEN}\``;
     const compacted = { type: 'context.compacted', item: { type: 'message', role: 'user', content: summary }, summary, replacedThroughSeq: 1, source: 'model' } as RunEventPayload;

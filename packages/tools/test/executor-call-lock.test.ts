@@ -332,3 +332,53 @@ describe('the per-call lock of the executor', () => {
     expect(outcome).toMatchObject({ kind: 'result', reconciled: 'already_applied' });
   });
 });
+
+describe('the call lock the executor lends to a caller that runs a process of its own', () => {
+  const OTHER = 'verify-0001';
+  const otherPath = (harness: Harness): string => path.join(harness.callLockDir, `${OTHER}.lock`);
+
+  it('claims the lock under the name it is given and removes it on release', async () => {
+    const harness = makeHarness();
+
+    const held = await harness.executor.holdCall(OTHER, new AbortController().signal);
+
+    if (held === 'aborted') throw new Error('the lock was not claimed');
+    expect(harness.kernelLock.isHeldBy(otherPath(harness))).toBeDefined();
+    held.release();
+    expect(harness.kernelLock.isHeldBy(otherPath(harness))).toBeUndefined();
+  });
+
+  it('waits while another attempt holds the lock and claims it once it is released', async () => {
+    const waiting = gatedFirstPoll();
+    const harness = makeHarness({ executor: { reap: { inspector: testProcessInspector(), timing: waiting.timing } } });
+    harness.kernelLock.holdExternally(otherPath(harness), HOLDER_PID);
+    let claimed = false;
+
+    const holding = harness.executor.holdCall(OTHER, new AbortController().signal).then((held) => {
+      claimed = true;
+      return held;
+    });
+    await waiting.polled;
+    expect(claimed).toBe(false);
+
+    harness.kernelLock.releaseExternally(otherPath(harness));
+    waiting.resume();
+    expect(await holding).not.toBe('aborted');
+  });
+
+  it('fails with the typed error of a call when the lock stays held for the wait derived from the heartbeat', async () => {
+    const harness = makeHarness({ executor: { reap: { inspector: testProcessInspector(), timing: advancingTiming() }, heartbeatMs: HEARTBEAT_MS } });
+    harness.kernelLock.holdExternally(otherPath(harness), HOLDER_PID);
+
+    await expect(harness.executor.holdCall(OTHER, new AbortController().signal)).rejects.toMatchObject({
+      code: 'earlier_attempt_not_stopped',
+      reason: 'lock_held',
+      message: expect.stringContaining(`after ${heldCallWaitMs(HEARTBEAT_MS)} ms`),
+    });
+  });
+
+  it('answers aborted when the signal of the caller is already aborted', async () => {
+    const harness = makeHarness();
+    expect(await harness.executor.holdCall(OTHER, AbortSignal.abort())).toBe('aborted');
+  });
+});

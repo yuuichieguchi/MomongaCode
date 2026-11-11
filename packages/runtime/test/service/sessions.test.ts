@@ -45,7 +45,9 @@ describe('session creation, listing and reading', () => {
       createdAt: START_MS,
       envKeys: expect.any(Array),
       activeRunId: null,
+      activeRunAt: null,
       latestRunId: null,
+      latestRunAt: null,
       additionalDirectories: [],
       lastEventId: 0,
     });
@@ -217,6 +219,14 @@ describe('session permission mode rules', () => {
     const patched = await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { permissionMode: 'bypassPermissions' } });
     expect(patched.status).toBe(200);
     expect(patched.json.session.permissionMode).toBe('bypassPermissions');
+  });
+
+  it('keeps the network of a sandboxed command the command line gave, and refuses a value the setting does not take', async () => {
+    const env = await startService();
+    const session = await env.createSession({ sandboxNetwork: 'deny' });
+    expect(env.store.getSession(session.id)?.sandboxNetwork).toBe('deny');
+    const refused = await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: {}, sandboxNetwork: 'open' } });
+    expect(refused.status).toBe(400);
   });
 
   it('rejects an explicit bypass without bypassAllowed with 403', async () => {
@@ -439,7 +449,7 @@ describe('session run pointers and run listing', () => {
     const second = await env.createRun(session.id, { input: 'two' });
 
     const read = await env.http('GET', `/v1/sessions/${session.id}`);
-    expect(read.json.session).toMatchObject({ activeRunId: first.id, latestRunId: second.id });
+    expect(read.json.session).toMatchObject({ activeRunId: first.id, activeRunAt: first.createdAt, latestRunId: second.id, latestRunAt: second.createdAt });
 
     expect((await env.http('POST', `/v1/runs/${first.id}/cancel`)).status).toBe(202);
     expect(await env.store.finishCancelled(() => undefined)).toEqual([first.id]);

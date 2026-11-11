@@ -1,14 +1,13 @@
 import { systemClock } from '@momonga/foundation';
-import type { Clock, ProtectedSet, RuleEnforcement } from '@momonga/foundation';
+import type { Clock, ProtectedSet, RuleEnforcement, SecretLocation } from '@momonga/foundation';
 import { askedBy, computeFileRules } from '@momonga/policy';
 import type { PermissionRule, PolicyHostFilesystem, SupersededForm } from '@momonga/policy';
-import type { PermissionMode } from '@momonga/protocol';
+import type { PermissionMode, RuleVerdictPhase } from '@momonga/protocol';
 import { startBudget } from './budget.ts';
 import { alphabetFor } from './char-set.ts';
 import { createCommandModel } from './command-model.ts';
 import { createPathModel } from './path-model.ts';
 import { checkBashAdmission, checkDenyPrecedence, checkRuleConsistency, checkMandateHolds, checkSecretReach, checkSupersededForms } from './properties.ts';
-import type { SecretLocation } from './properties.ts';
 import { buildSubjects } from './queries.ts';
 import type { QueryContext } from './queries.ts';
 import { exitCodeOf } from './report.ts';
@@ -25,11 +24,13 @@ export type VerifyRequest = {
   protectedSet: ProtectedSet;
   fs: PolicyHostFilesystem;
   secretLocations: readonly SecretLocation[];
+  deniedLocations: readonly SecretLocation[];
   exemptDirectory: string | null;
   enforcement: RuleEnforcement;
   budgetMs: number;
   signal: AbortSignal;
   clock?: Clock;
+  hostPhases?: readonly RuleVerdictPhase[];
   supersededForms?: readonly SupersededForm[];
   alwaysOperations?: readonly string[];
 };
@@ -40,7 +41,7 @@ const STATIC_OUTSIDE_PROOF: readonly string[] = [
   'Commands with quoting, expansion, redirects, pipes, && or ;, wrapper programs (env, sudo, timeout, xargs and the like), shell payloads (bash -c) and script interpreters, and the file paths the product derives from the arguments of a command.',
   'Path normalisation: the model takes absolute, normalised paths whose symlinks are those the rules were compiled against. Relative paths, .. segments, other symlinks and non-NFC names are normalised by product code that is not proved.',
   'Path characters: printable ASCII plus the non-ASCII characters that occur in the rules, the home folder and the roots. Case folding covers upper and lower case pairs only.',
-  'Hooks, the auto-mode classifier (auto mode is checked as manual mode), the sandbox profile, approvals granted while a run is in progress, the scratch folder that each session exempts from file rules, and agent skill directories that are readable by default.',
+  'Hooks, the auto-mode classifier (auto mode is checked as manual mode), the sandbox profile, approvals granted while a run is in progress, and agent skill directories that are readable by default.',
   'MCP server names that contain a double underscore, and whether an MCP tool is read-only, which the model leaves open.',
   'The solver and the encoding. The encoding is replayed against the real decision code for every counterexample and compared on generated inputs by the test suite; a proved result is not replayed.',
 ];
@@ -60,13 +61,18 @@ const unmodelledNotes = (context: QueryContext, rules: readonly PermissionRule[]
   return notes;
 };
 
+export const needsVerdict = ({ rules, supersededForms, alwaysOperations }: Pick<VerifyRequest, 'rules' | 'supersededForms' | 'alwaysOperations'>): boolean =>
+  supersededForms !== undefined || alwaysOperations !== undefined || rules.some((rule) => rule.effect === 'allow');
+
 export const buildQueryContext = async (api: Z3Api, request: VerifyRequest): Promise<QueryContext> => {
   const { rules, roots, mode, home, cwd, protectedSet, fs, secretLocations, exemptDirectory, enforcement, budgetMs, signal } = request;
   const budget = startBudget(request.clock ?? systemClock, budgetMs);
   const probes = askedBy(fs, signal);
   const fileRules = await computeFileRules(rules, roots, exemptDirectory, enforcement, probes);
   const locationTexts: string[] = [];
-  for (const location of secretLocations) {
+  const { deniedLocations } = request;
+  const deniedDirectories = deniedLocations.map((location) => location.directory);
+  for (const location of [...secretLocations, ...deniedLocations]) {
     const canonical = await probes.canonicalise(location.directory);
     locationTexts.push(location.directory, ...(canonical.ok ? [canonical.path] : []));
   }
@@ -83,12 +89,12 @@ export const buildQueryContext = async (api: Z3Api, request: VerifyRequest): Pro
     ...fileRules.entries.flatMap((entry) => [entry.anchorDirectory, entry.lexicalDirectory]),
   ]);
   const smt = createSmt(api, alphabet);
-  const paths = await createPathModel({ smt, fileRules, protectedSet, roots, probes });
+  const paths = await createPathModel({ smt, fileRules, protectedSet, roots, secretDirectories: deniedDirectories, probes });
   const commands = createCommandModel(smt);
   const models = { smt, paths, commands, rules, mode };
   return {
     models,
-    env: { rules, roots, mode, home, cwd, fileRules, protectedSet, fs, globBudgetMs: budgetMs, signal },
+    env: { rules, roots, mode, home, cwd, fileRules, protectedSet, secretLocations: deniedLocations, fs, globBudgetMs: budgetMs, signal },
     budget,
     subjects: buildSubjects(models),
     mismatches: [],
@@ -105,9 +111,14 @@ export const verifyPermissions = async (api: Z3Api, request: VerifyRequest): Pro
     (scoped: QueryContext) => checkRuleConsistency(scoped),
     (scoped: QueryContext) => checkBashAdmission(scoped),
   ];
+  const clock = request.clock ?? systemClock;
   const results: PropertyResult[] = [];
+  const timings: RuleVerdictPhase[] = [...(request.hostPhases ?? [])];
   for (const [index, check] of checks.entries()) {
-    results.push(await check({ ...context, budget: context.budget.share(checks.length - index) }));
+    const startedAt = clock.now();
+    const result = await check({ ...context, budget: context.budget.share(checks.length - index) });
+    results.push(result);
+    timings.push({ phase: result.id, ms: clock.now() - startedAt });
   }
   if (request.supersededForms !== undefined) results.push(checkSupersededForms(context, request.supersededForms));
   if (request.alwaysOperations !== undefined) results.push(checkMandateHolds(context, request.alwaysOperations));
@@ -117,6 +128,7 @@ export const verifyPermissions = async (api: Z3Api, request: VerifyRequest): Pro
     solver: `Z3 ${api.getVersionString()}`,
     results,
     mismatches,
+    timings,
     outsideProof: [...STATIC_OUTSIDE_PROOF, ...unmodelledNotes(context, rules)],
     exitCode: exitCodeOf(results, mismatches),
   };

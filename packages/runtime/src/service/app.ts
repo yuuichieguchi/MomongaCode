@@ -8,7 +8,7 @@ import { denyingRuleFor } from '@momonga/policy';
 import { shellCommandSubject } from '@momonga/tools';
 import { canonicalJson, hostPaths, sha256Hex } from '@momonga/foundation';
 import type { Clock, GenerationRole, PathResolver } from '@momonga/foundation';
-import { AUTO_MODE_UNAVAILABLE, NO_MODEL_TARGET, RUN_STATUSES, TARGET_PROBING_MESSAGE, agentReadiness, displayMapOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, USER_SHELL_RUN_ACTIVE_CODE, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
+import { AUTO_MODE_UNAVAILABLE, NO_MODEL_TARGET, RUN_STATUSES, TARGET_PROBING_MESSAGE, agentReadiness, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, USER_SHELL_RUN_ACTIVE_CODE, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
 import type { Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
 import { mentionsOf } from '@momonga/context';
 import type { AttachedMentions } from '@momonga/context';
@@ -127,6 +127,7 @@ export type RunAppDeps = {
   runCostBreakdown: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ breakdown: CostBreakdownView; text: string }>;
   reportCost: ReportRouteDeps['reportCost'];
   runTraceContent: ReportRouteDeps['runTraceContent'];
+  recomputeFacts: ReportRouteDeps['recomputeFacts'];
   mcp: McpAdminPort;
   markerOwners: MarkerOwners;
   ignorableMarkerDirectories: () => Promise<readonly string[]>;
@@ -308,8 +309,9 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const cwdArea = await protectedAreaOf(deps.protectedRootAreas, cwd, paths);
     if (cwdArea !== undefined) throw invalidRequest(`cwd ${body.cwd} is inside ${cwdArea} and cannot be a session root`, 'cwd');
     const { views, start } = await gatewayListing(context.req.raw.signal);
-    if (views.length === 0 || start === null) throw targetNotReady(agentReadiness({ unavailable: NO_MODEL_TARGET }).message);
-    const model = body.model === undefined ? start : requestedModelOf(body.model, views);
+    const startModel = startModelOf({ count: views.length, start });
+    if (startModel === undefined) throw targetNotReady(agentReadiness({ unavailable: NO_MODEL_TARGET }).message);
+    const model = body.model === undefined ? startModel : requestedModelOf(body.model, views);
     const settings = await sessionSettingsOf(cwd, context.req.raw.signal);
     const additionalDirectories: string[] = [];
     const seen = new Set<string>([await paths.comparablePath(cwd)]);
@@ -330,7 +332,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const stripped = stripCredentialEnv(body.env, settings.credentialEnvNames, settings.credentials);
     const mcpServers = checkedMcpServers(body.mcpServers ?? {});
     refuseNewWork();
-    const session = store.createSession({ cwd, env: stripped.env, permissionMode, model, bypassAllowed, additionalDirectories, mcpServers });
+    const session = store.createSession({ cwd, env: stripped.env, permissionMode, model, bypassAllowed, ...(body.sandboxNetwork === undefined ? {} : { sandboxNetwork: body.sandboxNetwork }), additionalDirectories, mcpServers });
     return json({ session: await sessionViewOf(session, context.req.raw.signal, settings), strippedEnvKeys: stripped.removed }, 201, { location: `/v1/sessions/${session.id}` });
   };
 
@@ -764,7 +766,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   route('/v1/runs/:id/approvals', { GET: listRunApprovals });
   route('/v1/runs/:id/events', { GET: runEvents });
   route('/v1/approvals/:id', { GET: getApproval, POST: resolveApproval });
-  registerReportRoutes(route, { store, now: () => deps.clock.now(), maxBodyBytes: deps.maxBodyBytes, reportCost: deps.reportCost, runTraceContent: deps.runTraceContent });
+  registerReportRoutes(route, { store, now: () => deps.clock.now(), maxBodyBytes: deps.maxBodyBytes, reportCost: deps.reportCost, runTraceContent: deps.runTraceContent, recomputeFacts: deps.recomputeFacts });
   registerTrustRoutes(route, { store, maxBodyBytes: deps.maxBodyBytes });
   registerMemoryRoutes(route, {
     store,

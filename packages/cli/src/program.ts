@@ -1,7 +1,7 @@
 import { Command, CommanderError, InvalidArgumentError, Option } from 'commander';
-import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE, HELPER_COMMAND } from '@momonga/foundation';
-import type { EntryIo } from '@momonga/foundation';
-import { PERMISSION_MODES, TRACE_CONTENT_PAGE_OPTION } from '@momonga/protocol';
+import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE, HELPER_COMMAND, SANDBOX_NETWORK_SETTINGS } from '@momonga/foundation';
+import type { EntryIo, SandboxNetworkSetting } from '@momonga/foundation';
+import { PERMISSION_MODES, TRACE_CONTENT_PAGE_OPTION, messageOf } from '@momonga/protocol';
 import type { Mandate, PermissionMode } from '@momonga/protocol';
 import { serveAcp } from './acp/serve.ts';
 import { daemonStart, daemonStatus, daemonStop } from './commands/daemon.ts';
@@ -16,6 +16,7 @@ import { showReport } from './commands/report.ts';
 import { sessionSocketResolver } from './daemon/generations.ts';
 import { INTERNAL_COMMANDS } from './daemon/launcher.ts';
 import { createGatewayClient } from './client/gateway-client.ts';
+import type { GatewayClient } from './client/gateway-client.ts';
 import { pathsOf } from './paths.ts';
 import { terminalPorts } from './terminal-writer.ts';
 import { runHelper } from './helper-mode.ts';
@@ -36,6 +37,7 @@ type RootOptions = {
   permissionMode?: PermissionMode;
   model?: string;
   dangerouslySkipPermissions?: true;
+  sandboxNetwork?: SandboxNetworkSetting;
   skill?: string;
   image: string[];
   until: string[];
@@ -55,7 +57,7 @@ export const reopenOf = (options: Pick<RootOptions, 'resume' | 'continue'>): Reo
 };
 
 const headlessReopenOf = (reopen: Reopen | undefined): HeadlessReopen | undefined => {
-  if (reopen?.kind === 'pick') throw new Error('--resume needs a session id when --print is used');
+  if (reopen?.kind === 'pick') throw new UsageError(messageOf('resumeNeedsIdToPrint', 'cli'));
   return reopen;
 };
 
@@ -97,6 +99,15 @@ const mandateOf = (options: Pick<RootOptions, 'until' | 'require' | 'mandate'>):
     },
   };
 };
+
+type ModeOption = { readonly name: keyof RootOptions; readonly flag: string };
+
+const PRINT_ONLY_OPTIONS: readonly ModeOption[] = [
+  { name: 'outputFormat', flag: '--output-format' },
+  { name: 'verbose', flag: '--verbose' },
+];
+
+const INTERACTIVE_ONLY_OPTIONS: readonly ModeOption[] = [{ name: 'screenReader', flag: '--screen-reader' }];
 
 const moneyArgument = (text: string): number => {
   const value = Number(text);
@@ -154,36 +165,46 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
     .addOption(new Option('--permission-mode <mode>', 'permission mode of the session').choices(PERMISSION_MODES))
     .option('--model <model>', 'the model of the session, for example devstral-small-2 (momonga models lists them; /model switches it in an interactive session)')
     .option('--dangerously-skip-permissions', 'run in bypassPermissions mode')
+    .addOption(new Option('--sandbox-network <setting>', 'the network of a sandboxed command in this session: deny, ask or allow; wins over the setting sandboxNetwork').choices(SANDBOX_NETWORK_SETTINGS))
     .option('--skill <name>', 'run the prompt with this skill activated')
     .option('--image <path>', 'attach an image to the prompt; repeat for several (needs a model that declares image input)', collectValues, [])
-    .option('--until <command>', 'with --print: a shell command that must exit 0 before the run counts as complete; repeat for several. The runtime runs it after the model stops, never the model, so it must only check and change nothing', collectValues, [])
-    .option('--require <text>', 'with --print: a completion requirement that has no mechanical check; the report lists it as not run; repeat for several', collectValues, [])
-    .option('--mandate <name>', 'with --print: run under the mandate of this name from the user settings (mandates): only what it allows is run, what it asks for is held for your approval while other work goes on, and its budget bounds the run')
-    .option('--max-cost-usd <usd>', 'with --print: the money limit of the run in US dollars; the run stops before a model request that would pass it', moneyArgument)
+    .option('--until <command>', 'a shell command that must exit 0 before the run counts as complete; repeat for several. The runtime runs it after the model stops, never the model, so it must only check and change nothing', collectValues, [])
+    .option('--require <text>', 'a completion requirement that has no mechanical check; the report lists it as not run; repeat for several', collectValues, [])
+    .option('--mandate <name>', 'run under the mandate of this name from the user settings (mandates): only what it allows is run, what it asks for is held for your approval while other work goes on, and its budget bounds the run')
+    .option('--max-cost-usd <usd>', 'the money limit of the run in US dollars; the run stops before a model request that would pass it', moneyArgument)
     .option('--verbose', 'print tool activity to stderr')
     .addOption(new Option('--resume [session-id]', 'reopen a conversation of this folder by its id or a unique prefix of at least 8 characters; without an id, choose from a list').conflicts('continue'))
     .option('--continue', 'reopen the newest conversation of this folder')
     .option('--screen-reader', 'draw the interactive session as plain appended lines for a screen reader')
-    .action(async (prompt: string | undefined, options: RootOptions) => {
+    .action(async (prompt: string | undefined, options: RootOptions, command: Command) => {
+      const printing = options.print !== undefined;
+      const typed = (name: keyof RootOptions): boolean => command.getOptionValueSource(name) === 'cli';
+      const unapplied = (printing ? INTERACTIVE_ONLY_OPTIONS : PRINT_ONLY_OPTIONS).find((option) => typed(option.name));
+      if (unapplied !== undefined) throw new UsageError(messageOf(printing ? 'optionNeedsInteractive' : 'optionNeedsPrint', 'cli', { option: unapplied.flag }));
+      if (printing && prompt !== undefined) throw new UsageError(messageOf('promptGivenTwice', 'cli', { prompt }));
       const reopen = reopenOf(options);
       const permissionMode = options.dangerouslySkipPermissions === true ? 'bypassPermissions' : options.permissionMode;
       const session = {
         ...(permissionMode === undefined ? {} : { permissionMode }),
         ...(options.model === undefined ? {} : { model: options.model }),
         ...(options.dangerouslySkipPermissions === true ? { bypassAllowed: true } : {}),
+        ...(options.sandboxNetwork === undefined ? {} : { sandboxNetwork: options.sandboxNetwork }),
       };
+      const bounds = { ...mandateOf(options), ...(options.maxCostUsd === undefined ? {} : { limits: { maxCostUsd: options.maxCostUsd } }) };
       if (options.print !== undefined) {
         const resumed = headlessReopenOf(reopen);
         const paths = await pathsOf(ports);
-        const capabilitiesOf = async (model: string) => {
+        const asked = async <T>(ask: (gateway: GatewayClient) => Promise<T>): Promise<T> => {
           const gateway = createGatewayClient({ resolveSocket: sessionSocketResolver(paths, ports.version, 'gateway') });
           try {
-            return await gateway.capabilitiesOf(model);
+            return await ask(gateway);
           } finally {
             await gateway.close();
           }
         };
-        deps.complete(await runHeadless(ports, paths, { capabilitiesOf, prompt: options.print, format: options.outputFormat, verbose: options.verbose === true, interrupt: deps.interrupt, ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...mandateOf(options), ...(options.maxCostUsd === undefined ? {} : { limits: { maxCostUsd: options.maxCostUsd } }), ...session, ...(resumed === undefined ? {} : { reopen: resumed }) }));
+        const capabilitiesOf = (model: string) => asked((gateway) => gateway.capabilitiesOf(model));
+        const modelList = () => asked((gateway) => gateway.modelList(deps.interrupt));
+        deps.complete(await runHeadless(ports, paths, { capabilitiesOf, modelList, prompt: options.print, format: options.outputFormat, verbose: options.verbose === true, interrupt: deps.interrupt, ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...bounds, ...session, ...(resumed === undefined ? {} : { reopen: resumed }) }));
         return;
       }
       if (ports.terminal === undefined) {
@@ -191,7 +212,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
         throw new Error(`the interactive session needs a terminal;${read} pass --print <prompt> to run without one`);
       }
       const { runInteractive } = await import('./tui/run-interactive.tsx');
-      deps.complete(await runInteractive(ports, await pathsOf(ports), ports.terminal, { ...(prompt === undefined ? {} : { prompt }), ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...session, ...(reopen === undefined ? {} : { reopen }), screenReader: options.screenReader === true }, await deps.update(), createShellPort(given)));
+      deps.complete(await runInteractive(ports, await pathsOf(ports), ports.terminal, { ...(prompt === undefined ? {} : { prompt }), ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...bounds, ...session, ...(reopen === undefined ? {} : { reopen }), screenReader: options.screenReader === true }, await deps.update(), createShellPort(given)));
     });
 
   program
@@ -334,8 +355,7 @@ export const createShellPort = (given: ProgramDeps): ShellPort => ({
     try {
       await program.parseAsync([...argv], { from: 'user' });
     } catch (error) {
-      if (error instanceof CommanderError) return exitOfFailure(error, sink);
-      throw error;
+      return exitOfFailure(error, sink, io.signal);
     }
     return code;
   },

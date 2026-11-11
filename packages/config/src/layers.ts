@@ -67,6 +67,8 @@ const assertRipgrepSetting = (value: unknown, file: string): void => {
   throw new ConfigError(`${file}: tools.ripgrep must be "bundled", "system" or an absolute path; got ${JSON.stringify(ripgrep)}`);
 };
 
+const USER_ONLY_MODES = ['bypassPermissions', 'auto'] as const;
+
 const USER_ONLY_TUI_KEYS = ['screen', 'mouse', 'copyOnSelect'] as const;
 
 const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: string[]): Settings => {
@@ -164,15 +166,10 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
     restricted.tools = remaining;
   }
 
-  if (settings.permissions?.defaultMode === 'bypassPermissions') {
-    warnings.push(`${source}: bypassPermissions is only honored in user settings and on the command line; ignored`);
-    const { defaultMode: _ignored, ...remaining } = settings.permissions;
-    restricted.permissions = remaining;
-  }
-
-  if (restricted.permissions?.defaultMode === 'auto') {
-    warnings.push(`${source}: auto mode is only honored in user settings and on the command line; ignored`);
-    const { defaultMode: _ignored, ...remaining } = restricted.permissions;
+  const mode = settings.permissions?.defaultMode;
+  if (settings.permissions !== undefined && mode !== undefined && (USER_ONLY_MODES as readonly string[]).includes(mode)) {
+    warnings.push(`${source}: permissions.defaultMode ${mode} is only honored in user settings and on the command line; discarded`);
+    const { defaultMode: _discarded, ...remaining } = settings.permissions;
     restricted.permissions = remaining;
   }
 

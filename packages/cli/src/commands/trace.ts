@@ -1,7 +1,7 @@
 import { currentSocketResolver } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, anatomyLayerEntries, describeFallbackCause, isFallbackCauseList } from '@momonga/protocol';
-import type { FallbackCause, RunTraceCall, RunTraceEvent, RunTraceSpan, RunTraceView, TokenAnatomy, TraceContentPage, UsageReport } from '@momonga/protocol';
+import type { FallbackCause, RunTraceCall, RunTraceEvent, RunTraceSpan, RunTraceView, TokenAnatomy, TraceContentPage } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
@@ -61,13 +61,13 @@ const callLine = (call: RunTraceCall): string => {
 const eventLine = (event: RunTraceEvent): string =>
   event.type === 'tool.loaded' ? `step ${event.step}: loaded tools: ${event.names.join(', ')}` : `step ${event.step}: loop warned: ${event.signature}`;
 
-export const renderTrace = (trace: RunTraceView, usage: UsageReport): string => {
+export const renderTrace = (trace: RunTraceView): string => {
   const known = new Set(trace.spans.map((span) => span.spanId));
   const roots = trace.spans.filter((span) => span.parentSpanId === null || !known.has(span.parentSpanId));
   const { summary } = trace;
   return escapedLines([
-    `run ${trace.runId}: ${summary.steps} steps, ${usage.responses.length} model calls, ${summary.toolCalls} tool calls, ${summary.errorCount} errors, ${summary.durationMs} ms`,
-    `tokens: ${usage.total.input_tokens} in, ${usage.total.output_tokens} out`,
+    `run ${trace.runId}: ${summary.steps} steps, ${summary.chatCalls} model calls, ${summary.toolCalls} tool calls, ${summary.errorCount} errors, ${summary.durationMs} ms`,
+    `tokens: ${summary.inputTokens} in, ${summary.outputTokens} out`,
     ...(trace.calls ?? []).map(callLine),
     ...(trace.events ?? []).map(eventLine),
     ...roots
@@ -122,8 +122,7 @@ export const showTrace = async (ports: CliPorts, paths: MomongaPaths, runId: str
         return 0;
       }
       const trace = await client.trace(runId ?? (await latestRunIdOf(client, ports.cwd)));
-      const usage = await gateway.usageOf(trace.runId);
-      ports.stdout.write(`${options.json ? JSON.stringify({ ...trace, usage }) : renderTrace(trace, usage)}\n`);
+      ports.stdout.write(`${options.json ? JSON.stringify(trace) : renderTrace(trace)}\n`);
     } finally {
       await gateway.close();
     }

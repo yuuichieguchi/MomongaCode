@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ConfigError, loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, stopValuesOfSettings, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
+import { ConfigError, loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, stopValuesOfSettings, resolveTelemetrySettings } from '@momonga/config';
 import type { ResolvedSettings, StopValuesReader } from '@momonga/config';
-import { installTrust, settledOrAborted, trustFailureText, layoutProcessInspector, busyTimeoutMs } from '@momonga/foundation';
+import { installTrust, settledOrAborted, layoutProcessInspector, busyTimeoutMs } from '@momonga/foundation';
 import {
   acquireProcessLock,
   announceReady,
@@ -56,14 +56,14 @@ import { createRunNotifier } from '../service/notifier.ts';
 import type { RunNotifier } from '../service/notifier.ts';
 import { FACTS_SWEEP_BATCH_RUNS, FIDELITY_FOLD_VERSION } from '@momonga/protocol';
 import type { DaemonCurrentFrame } from '@momonga/protocol';
-import { startFactsSweeper } from '../service/facts-sweeper.ts';
+import { recomputeFactsOf, startFactsSweeper } from '../service/facts-sweeper.ts';
 import { startMemorySweeper } from '../service/memory-sweeper.ts';
 import { createRunService } from '../service/service.ts';
 import { createReflector } from '../memory/reflection.ts';
 import { createMemoryUpkeepSchedule } from '../memory/upkeep-schedule.ts';
 import { DAY_MS } from '@momonga/memory';
 import { createRecordViews } from '../memory/views.ts';
-import { TRACE_EVENT_TYPES, costBreakdownOf, reportCostOf, runlessTimingsOf, sideTimingsOfRun, traceCallsOf, traceEventsOf } from '../service/model-calls.ts';
+import { TRACE_EVENT_TYPES, costBreakdownOf, costReportOf, readRecordedCosts, reportCostOf, runlessTimingsOf, sideTimingsOfRun, traceCallsOf, traceEventsOf } from '../service/model-calls.ts';
 import { runTraceOf } from '../service/trace-view.ts';
 import type { RunService } from '../service/service.ts';
 import { systemTimers } from '../service/timers.ts';
@@ -119,6 +119,7 @@ import { runTeardown } from './teardown.ts';
 import type { TeardownStep } from './teardown.ts';
 import { sweepSessionTmp, sweepSpawnTmp } from './tmp-sweep.ts';
 import { reapToolMarkers } from './tool-markers.ts';
+import { createNetworkDerivation } from './network-derivation.ts';
 import { createToolRuntime } from './tool-runtime.ts';
 import type { ToolRuntime, ToolRuntimeOptions } from './tool-runtime.ts';
 
@@ -143,12 +144,15 @@ export type StartRuntimeProcessOptions = {
   bundledRipgrep?: BundledRipgrepSource;
   helperSelf?: HelperSelf;
   ruleSolver?: RuleSolverSource;
+  socketGuard?: SocketGuardSource;
   role?: RolePort;
   requestShutdown?: () => void;
   createAdminPool?: ToolRuntimeOptions['createAdminPool'];
 };
 
 export type BundledRipgrepSource = (paths: Pick<MomongaPaths, 'executables'>, locks: LayoutLocks) => BundledRipgrepResolver;
+
+export type SocketGuardSource = (paths: Pick<MomongaPaths, 'executables'>) => () => Promise<string>;
 
 export type RuntimeCloseResult = {
   clean: boolean;
@@ -403,12 +407,6 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
     cleanups.push({ name: 'lock', run: () => lock.release() });
 
-    const outboundNetworkOf = async (section: ResolvedSettings['network'], installSignal: AbortSignal): Promise<OutboundNetwork> => {
-      const networkConfig = resolveNetwork(section, process.env);
-      const trust = await installTrust(networkConfig, nodeFileSystem, { signal: installSignal });
-      for (const failure of trust.failures) logger.warn(trustFailureText(failure));
-      return { config: networkConfig, trust };
-    };
     const { cache, settings } = await step('settings', async () => {
       const appliedRecord = process.env[SETTINGS_APPLIED_ENV];
       const created = createUserSettingsCache({
@@ -458,7 +456,15 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             `bwrap at ${launcherPath} cannot create a sandbox on this host: ${probe.stderr}; set "sandbox": "none" in ${paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
           );
         }
-        return createBubblewrapSandbox({ bwrapPath: launcherPath, tmpRoot: paths.tmp.spawn, lock: kernelLock, killGraceMs: SANDBOX_KILL_GRACE_MS, journal: createPlaceholderJournal(journalDirectory), holders: () => heldMountPoints() });
+        return createBubblewrapSandbox({
+          bwrapPath: launcherPath,
+          tmpRoot: paths.tmp.spawn,
+          lock: kernelLock,
+          killGraceMs: SANDBOX_KILL_GRACE_MS,
+          journal: createPlaceholderJournal(journalDirectory),
+          holders: () => heldMountPoints(),
+          ...(options.socketGuard === undefined ? {} : { socketGuard: options.socketGuard(paths) }),
+        });
       }
       return createSeatbeltSandbox({ sandboxExecPath: launcherPath, tmpRoot: paths.tmp.spawn, lock: kernelLock, killGraceMs: SANDBOX_KILL_GRACE_MS });
     };
@@ -554,6 +560,14 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     };
     cleanups.push({ name: 'body-purge', run: () => bodyPurge?.stop() });
 
+    const networks = createNetworkDerivation({
+      cache,
+      signal: lifetime.signal,
+      env: process.env,
+      install: (config, installSignal) => installTrust(config, nodeFileSystem, { signal: installSignal }),
+      onWarning: (message) => logger.warn(message),
+    });
+
     type TracedTelemetry = { telemetry: Telemetry; tracer: TracerPort };
     const telemetries = createPinnedDerivation<TracedTelemetry>({
       cache,
@@ -561,7 +575,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       inputsOf: derivedInputsOf('D2'),
       derive: async (current, _previous, deriveSignal) => {
         const resolved = resolveTelemetrySettings(current.telemetry);
-        const outbound = await outboundNetworkOf(current.network, deriveSignal);
+        const { outbound } = await networks.networkOf(deriveSignal);
         const telemetry = createTelemetry({
           serviceName: 'momonga-runtime',
           serviceVersion: version,
@@ -606,14 +620,13 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
     const ports = await step('ports', async () => {
       const composition = createSettingsComposition({ home: canonicalHome, platform, cache, store, lock: kernelLock, signal: lifetime.signal });
-      const mcpNetwork = await outboundNetworkOf(settings.network, startDeadlineSignal(undefined));
       const runtime: ToolRuntime = createToolRuntime({
         version,
         owners: markerOwners,
         lockCapability,
         kernelLock,
         paths,
-        network: mcpNetwork,
+        network: networks.networkOf,
         sharedPaths,
         generation: options.generation,
         role: rolePort,
@@ -770,16 +783,24 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             ? undefined
             : { ...trace, calls: traceCallsOf(await store.readModelCallEvents(runId)), events: traceEventsOf(store.readRunEventsOfTypes(runId, [...TRACE_EVENT_TYPES])) };
         },
-        runCost: (runs, signal, includeRunless) => gatewayClient.cost(runs, signal, includeRunless),
+        runCost: (runs, signal, includeRunless) =>
+          costReportOf({
+            runs,
+            includeRunless,
+            recordedCosts: () => readRecordedCosts(store, runs.map((run) => run.runId), includeRunless),
+            fetchPage: (runIds, cursor, limit) => gatewayClient.billedCalls(runIds, cursor, limit, includeRunless, signal),
+          }),
         runCostBreakdown: (runs, signal, includeRunless) =>
           costBreakdownOf({
             runIds: runs.map((run) => run.runId),
             recordsOf: (runId) => store.readModelCallEvents(runId),
+            recordedCosts: () => readRecordedCosts(store, runs.map((run) => run.runId), includeRunless),
             sideTimingsOf: (runId) => sideTimingsOfRun(store, runId),
             runlessTimingsOf: () => runlessTimingsOf(store),
             fetchPage: (runIds, cursor, limit) => gatewayClient.billedCalls(runIds, cursor, limit, includeRunless, signal),
           }),
-        reportCost: (runIds, signal) => reportCostOf({ runIds, fetchPage: (ids, cursor, limit) => gatewayClient.billedCalls(ids, cursor, limit, false, signal) }),
+        recomputeFacts: (runIds, signal) => recomputeFactsOf(journalThread, runIds, signal),
+        reportCost: async (runIds) => reportCostOf(store, runIds),
         runTraceContent: async (runId, after, limit, requestSignal) => {
           await settledOrAborted(telemetries.current().telemetry.forceFlush(), requestSignal);
           return pageRunBodies(traceStore, runId, after, limit);
@@ -802,6 +823,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       fs: createPolicyFilesystem(),
       paths,
       timers,
+      bashPath: () => resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env: process.env }),
+      clock,
     });
     await step('workers', () => {
       for (let index = 0; index < workerCount; index += 1) {

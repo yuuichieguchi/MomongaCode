@@ -1,5 +1,5 @@
 import { nodeFileSystem, systemRandom } from '@momonga/foundation';
-import { UNCONFIGURED_NETWORK, FAKE_LEASE, createFakeClock, createFakeTimers, fakePolicyFilesystem, hostFilesystemOf, testProcessInspector } from '@momonga/testkit';
+import { unconfiguredNetworkOf, FAKE_LEASE, createFakeClock, createFakeTimers, fakePolicyFilesystem, hostFilesystemOf, testProcessInspector } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -21,7 +21,7 @@ const boundedExecutor = (harness: Harness, timers?: FakeTimers) =>
     reap: { inspector: testProcessInspector() },
     shellHost: timers === undefined ? nodeShellHost() : fakeTimedShellHost(timers),
     random: systemRandom,
-    files: nodeFileSystem, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
+    files: nodeFileSystem, outboundNetwork: unconfiguredNetworkOf, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
     idempotency: harness.idempotency.port,
     blobs: harness.blobs.port,
     clock: harness.clock,

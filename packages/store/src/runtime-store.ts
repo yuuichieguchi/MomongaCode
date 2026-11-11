@@ -215,7 +215,9 @@ export const SESSION_PAGE_ROWS = REPORT_PAGE_ROWS;
 
 const LISTED_SESSION_COLUMNS = `s.*,
        (SELECT r.id FROM runs r WHERE r.session_id = s.id AND r.ordinal = (SELECT MIN(a.ordinal) FROM runs a WHERE a.session_id = s.id AND a.status NOT IN (${TERMINAL_LIST}))) AS active_run_id,
-       (SELECT r.id FROM runs r WHERE r.session_id = s.id AND r.ordinal = (SELECT MAX(l.ordinal) FROM runs l WHERE l.session_id = s.id)) AS latest_run_id`;
+       (SELECT r.created_at FROM runs r WHERE r.session_id = s.id AND r.ordinal = (SELECT MIN(a.ordinal) FROM runs a WHERE a.session_id = s.id AND a.status NOT IN (${TERMINAL_LIST}))) AS active_run_at,
+       (SELECT r.id FROM runs r WHERE r.session_id = s.id AND r.ordinal = (SELECT MAX(l.ordinal) FROM runs l WHERE l.session_id = s.id)) AS latest_run_id,
+       (SELECT r.created_at FROM runs r WHERE r.session_id = s.id AND r.ordinal = (SELECT MAX(l.ordinal) FROM runs l WHERE l.session_id = s.id)) AS latest_run_at`;
 
 const sessionPageOf = (db: DatabaseSync, index: string, folder: string) =>
   db.prepare(
@@ -238,8 +240,8 @@ const afterCursor = (cursor: string | null): { afterCreatedAt: number; afterId: 
 
 const prepareStatements = (db: DatabaseSync) => ({
   insertSession: db.prepare(
-    `INSERT INTO sessions (id, cwd, env_json, permission_mode, model, bypass_allowed, additional_directories_json, mcp_servers_json, created_at)
-     VALUES (:id, :cwd, :env, :permissionMode, :model, :bypassAllowed, :additionalDirectories, :mcpServers, :createdAt)`,
+    `INSERT INTO sessions (id, cwd, env_json, permission_mode, model, bypass_allowed, sandbox_network, additional_directories_json, mcp_servers_json, created_at)
+     VALUES (:id, :cwd, :env, :permissionMode, :model, :bypassAllowed, :sandboxNetwork, :additionalDirectories, :mcpServers, :createdAt)`,
   ),
   updateSessionMcpServers: db.prepare('UPDATE sessions SET mcp_servers_json = :mcpServers WHERE id = :id'),
   updateSessionMode: db.prepare('UPDATE sessions SET permission_mode = :permissionMode WHERE id = :id'),
@@ -592,7 +594,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
   const listedSessionOf = (row: Row): ListedSession => {
     const reader = readerFor('sessions', String(row['id']), row);
-    return { ...decodeSession(row, decodeContext), activeRunId: reader.nullableString('active_run_id'), latestRunId: reader.nullableString('latest_run_id') };
+    return { ...decodeSession(row, decodeContext), activeRunId: reader.nullableString('active_run_id'), activeRunAt: reader.nullableNumber('active_run_at'), latestRunId: reader.nullableString('latest_run_id'), latestRunAt: reader.nullableNumber('latest_run_at') };
   };
 
   const requireRun = (runId: string): Run => {
@@ -1331,6 +1333,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           permissionMode: input.permissionMode,
           model: input.model,
           bypassAllowed: input.bypassAllowed === true ? 1 : 0,
+          sandboxNetwork: input.sandboxNetwork ?? null,
           additionalDirectories: canonicalJson(input.additionalDirectories ?? []),
           mcpServers: canonicalJson(input.mcpServers ?? {}),
           createdAt: clock.now(),
@@ -1440,6 +1443,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           permissionMode: parentSession.permissionMode,
           model: input.model,
           bypassAllowed: parentSession.bypassAllowed ? 1 : 0,
+          sandboxNetwork: parentSession.sandboxNetwork,
           additionalDirectories: canonicalJson(parentSession.additionalDirectories),
           mcpServers: canonicalJson(parentSession.mcpServers),
           createdAt: now,

@@ -30,7 +30,7 @@ export type {
   RecordedRequest,
 } from './fake-chat-completions.ts';
 export { inlinedSubsetRefusalOf, strictClosedRefusalOf } from './dialect-checkers.ts';
-export { UNCONFIGURED_NETWORK, UNDICI_DEFAULT_LIVENESS, hostTimers } from './outbound-network.ts';
+export { UNCONFIGURED_NETWORK, UNDICI_DEFAULT_LIVENESS, hostTimers, unconfiguredDerivedNetworkOf, unconfiguredNetworkOf } from './outbound-network.ts';
 export { generateInstance, collectAllowedNames, findUsedKeywords } from './schema-instance.ts';
 export type { JsonSchema, InstancePreferences } from './schema-instance.ts';
 export { CLAIM_HOLDER_MAIN, LOCK_HOLDER_MAIN, startClaimHolder, startLockHolder } from './lock-holder.ts';
@@ -146,6 +146,7 @@ export {
   realProcessTestSignal,
 } from './test-support.ts';
 export type { CleanupContext, CleanupOwner, CleanupRegistrar, SettledBeforeCleanup, TempDirOptions, TrackedChild } from './test-support.ts';
+export { hostBuiltSocketGuard } from './linux-socket-guard.ts';
 export { createFakeEntryIo, parseJsonLines } from './fake-entry-io.ts';
 export type { FakeEntryIo, FakeEntryIoOptions, JsonLine } from './fake-entry-io.ts';
 export { DAEMON_BIN_EXIT_DEADLINE_MS, DAEMON_BIN_READY_DEADLINE_MS, readJsonLinesFile, startDaemonBin } from './daemon-bin.ts';
@@ -288,3 +289,4 @@ export { assertFakeSecretStoreEnv } from './secret-store-env-check.ts';
 export { productTestEnv } from './product-spawn.ts';
 export { SCRIPTED_MODEL, SCRIPTED_MODEL_ID, SCRIPTED_PROVIDER, modelSettings } from './model-settings.ts';
 export type { ModelSettings, ModelSettingsConnection, ModelSettingsSpec, ModelSpec } from './model-settings.ts';
+export { testSecretLocations } from './secret-locations.ts';

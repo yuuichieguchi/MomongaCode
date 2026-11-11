@@ -1,5 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { findProgramOnPath, resolveLayoutLocks } from '@momonga/foundation';
+import { findProgramOnPathSync, nodeFileSystemSync, resolveLayoutLocks } from '@momonga/foundation';
 import type { FileCandidates } from '@momonga/foundation';
 import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView } from '@momonga/protocol';
 import { editSettings, readSettingsSnapshot } from '@momonga/config';
@@ -25,7 +25,6 @@ import { newerListenerOf } from '../handover/stream.ts';
 import { sessionSocketResolver } from '../daemon/generations.ts';
 import type { CliPorts } from '../ports.ts';
 import { followRun } from '../run/follow.ts';
-import { continuedSession, resolveSession } from '../run/resolve-session.ts';
 import type { BusyInbox } from './busy-input.ts';
 import type { NoticeSource } from './notices.ts';
 import { createClipboardPrograms } from './screen/clipboard-host.ts';
@@ -33,8 +32,8 @@ import type { ClipboardPrograms } from './screen/clipboard-host.ts';
 import { copyThroughRoutes, readClipboardThroughRoutes } from './screen/clipboard.ts';
 import type { ClipboardContent, CopyOutcome } from './screen/clipboard.ts';
 import { readImageAttachment } from '../images.ts';
-import { autoModeConfigured, connectSessionRuntime, environmentSnapshot } from '../run/open-session.ts';
-import type { SessionOptions } from '../run/open-session.ts';
+import { autoModeConfigured, connectSessionRuntime, environmentSnapshot, reopenedAsTyped, runBoundsOf } from '../run/open-session.ts';
+import type { RunBounds, SessionOptions } from '../run/open-session.ts';
 
 export type FollowHandlers = {
   onEvent(frame: RunEventFrame): void;
@@ -79,7 +78,7 @@ export type TuiBackend = {
   readonly userInput: UserInputBackend;
   resolveApproval(approvalId: string, optionId: string): Promise<void>;
   resolveElicitation(inputId: string, responses: Readonly<Record<string, ElicitationAnswerRecord>>): Promise<void>;
-  openUrl(url: URL, watch: AbortSignal | undefined, onFailure: (message: string) => void): void;
+  openUrl(url: URL, watch: AbortSignal, onFailure: (message: string) => void): void;
   copyToClipboard(text: string): Promise<CopyOutcome>;
   skills(): Promise<SkillsResponse>;
   memories(filter?: MemoryFilter): Promise<MemoryView[]>;
@@ -116,7 +115,7 @@ export type TuiBackend = {
 export const createTuiBackend = (
   ports: CliPorts,
   paths: MomongaPaths,
-  options: SessionOptions,
+  options: SessionOptions & RunBounds,
   history: HistoryStore,
   noticeSources: readonly NoticeSource[],
   clipboard: ClipboardPrograms = createClipboardPrograms(),
@@ -212,12 +211,13 @@ export const createTuiBackend = (
         env: await environmentSnapshot(ports, closing.signal),
         ...(chosenMode === undefined ? {} : { permissionMode: chosenMode }),
         ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
+        ...(options.sandboxNetwork === undefined ? {} : { sandboxNetwork: options.sandboxNetwork }),
         ...(chosen === undefined ? {} : { model: chosen }),
       });
       return adopt(created.session);
     },
-    resumeSession: async (id) => adopt(await resolveSession(runtime(), ports.cwd, id)),
-    continueSession: async () => adopt(await continuedSession(runtime(), ports.cwd)),
+    resumeSession: async (id) => adopt(await reopenedAsTyped(runtime(), ports.cwd, { kind: 'id', id }, options)),
+    continueSession: async () => adopt(await reopenedAsTyped(runtime(), ports.cwd, { kind: 'newest' }, options)),
     sessions: () => listedSessions(runtime(), ports.cwd, session?.id, closing.signal),
     runs: () => conversationRuns(current().id),
     setMode: async (mode) => {
@@ -231,7 +231,7 @@ export const createTuiBackend = (
     },
     autoModeAvailable: () => autoModeConfigured(ports, closing.signal),
     startRun: async (text, history, runOptions = {}) =>
-      (await runtime().createRun(current().id, text, { history, ...runOptions })).run,
+      (await runtime().createRun(current().id, text, { history, ...runBoundsOf(options), ...runOptions })).run,
     compact: (instructions) => runtime().compact(current().id, instructions),
     follow: async (runId, handlers) =>
       followRun({
@@ -265,7 +265,7 @@ export const createTuiBackend = (
       shell: (command, include, onOutput) => runtime().userShell(current().id, command, include, onOutput),
       stopShell: () => runtime().stopUserShell(current().id),
       pendingShell: () => runtime().pendingUserShell(current().id),
-      readClipboard: (signal) => readClipboardThroughRoutes({ env: ports.env, findProgram: (name) => findProgramOnPath(name, ports.env), capture: clipboard.capture }, signal),
+      readClipboard: (signal) => readClipboardThroughRoutes({ env: ports.env, findProgram: (name) => findProgramOnPathSync(name, ports.env, nodeFileSystemSync), capture: clipboard.capture }, signal),
     },
     resolveApproval: async (approvalId, optionId) => {
       await runtime().resolveApproval(approvalId, optionId);
@@ -273,11 +273,11 @@ export const createTuiBackend = (
     resolveElicitation: async (inputId, responses) => {
       await runtime().resolveElicitation(inputId, responses);
     },
-    openUrl: (url, watch, onFailure) => ports.openUrl(url, watch === undefined ? closing.signal : AbortSignal.any([closing.signal, watch]), onFailure),
+    openUrl: (url, watch, onFailure) => ports.openUrl(url, AbortSignal.any([closing.signal, watch]), onFailure),
     copyToClipboard: async (text) => {
       const terminal = ports.terminal;
       if (terminal === undefined) throw new Error('the clipboard request needs a terminal');
-      return copyThroughRoutes({ env: ports.env, findProgram: (name) => findProgramOnPath(name, ports.env), pipe: clipboard.pipe, writeTerminal: (sequence) => void terminal.stdout.write(sequence) }, text);
+      return copyThroughRoutes({ env: ports.env, findProgram: (name) => findProgramOnPathSync(name, ports.env, nodeFileSystemSync), pipe: clipboard.pipe, writeTerminal: (sequence) => void terminal.stdout.write(sequence) }, text);
     },
     skills: () => runtime().skills(current().id),
     memories: (filter) => runtime().memories(filter),

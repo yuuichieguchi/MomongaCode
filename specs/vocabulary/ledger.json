@@ -4,6 +4,9 @@
   "burnDown": "A use nobody has read against the table yet: it is either in the other meaning or it is to be replaced by the word of the table, by the package of the area that owns the file. A count only shrinks.",
   "uses": {
     "otherMeaning": {
+      "packages/cli/src/commands/jobs.ts": {
+        "job": 1
+      },
       "packages/cli/src/commands/report.ts": {
         "limit": 2
       },
@@ -325,6 +328,9 @@
       "packages/foundation/src/schema-reference-cycles.ts": {
         "target": 1
       },
+      "packages/foundation/src/secret-locations.ts": {
+        "gateway": 1
+      },
       "packages/foundation/src/secret-store.ts": {
         "gateway": 1,
         "target": 4
@@ -383,8 +389,8 @@
         "gateway": 1
       },
       "packages/gateway/src/core/store.ts": {
-        "gateway": 4,
-        "target": 5
+        "gateway": 3,
+        "target": 3
       },
       "packages/gateway/src/core/tool-choice.ts": {
         "target": 5
@@ -447,7 +453,7 @@
         "profile": 1
       },
       "packages/gateway/src/server/app.ts": {
-        "gateway": 4,
+        "gateway": 3,
         "limit": 2
       },
       "packages/gateway/src/server/body.ts": {
@@ -787,17 +793,8 @@
         "conversation": 1,
         "project": 3
       },
-      "packages/verify/src/dialect-model/primitives.ts": {
-        "target": 2
-      },
-      "packages/verify/src/dialect-model/seeds.ts": {
-        "target": 2
-      },
       "packages/verify/src/properties.ts": {
         "directory": 1
-      },
-      "packages/verify/src/secret-locations.ts": {
-        "gateway": 1
       },
       "packages/verify/src/verify.ts": {
         "directory": 1,

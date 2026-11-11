@@ -6,6 +6,7 @@ import type { Claim, Run, StatusPatch, WaitTargets } from '@momonga/store';
 import type { OutputFit, ToolSet } from '@momonga/tools';
 import type { MemorySet, ToolEnv, TracerPort, TraceSpan } from '../ports.ts';
 import type { ClaimControl } from './claim-control.ts';
+import type { Delegation } from './held-calls.ts';
 import type { Journal } from './journal.ts';
 import type { BudgetAccount } from './admitted-request.ts';
 import type { PermissionRule } from '@momonga/config';
@@ -38,7 +39,7 @@ export type ClaimContext = {
   guideline?: { version: number; text: string };
   limits: RunLimits;
   budget: BudgetAccount;
-  delegation?: { rules: readonly PermissionRule[]; notice: string; onQuiescent?: 'report' | 'wait' };
+  delegation?: Delegation;
   toolSet: ToolSet;
   skills: SkillSet;
   recalled: MemorySet;

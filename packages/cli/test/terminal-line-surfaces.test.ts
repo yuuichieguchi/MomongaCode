@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Capabilities, McpServerView, MomongaModelEntry, RunTraceSpan, RunTraceView, SupervisorHealth, UsageReport } from '@momonga/protocol';
+import type { Capabilities, McpServerView, MomongaModelEntry, RunTraceSpan, RunTraceView, SupervisorHealth } from '@momonga/protocol';
 import { waitFor } from '@momonga/testkit';
 import { describeFailure } from '../src/failure.ts';
 import { formatMcpServers, mcpAuthorizationInvitation } from '../src/commands/mcp.ts';
@@ -85,8 +85,7 @@ describe('a value a person did not write stays on its own line in command output
       summary: { steps: 1, chatCalls: 1, sideCalls: 0, toolCalls: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, errorCount: 0, durationMs: 1, chatResults: [] },
       spans: [span({ name: `root ${FORGED}` }), span({ spanId: 'c', parentSpanId: 's', name: 'chat', attributes: { 'momonga.target': 't', 'momonga.failure_message': FORGED } })],
     };
-    const usage = { total: { input_tokens: 1, output_tokens: 1 }, responses: [] } as unknown as UsageReport;
-    const lines = renderTrace(view, usage).split('\n');
+    const lines = renderTrace(view).split('\n');
     expect(lines[2]).toBe(`root ${SHOWN}  1 ms  OK`);
     expect(lines[3]).toBe(`  chat  1 ms  OK  target t: ${SHOWN}`);
     expect(lines).toHaveLength(4);
