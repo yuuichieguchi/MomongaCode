@@ -5,7 +5,7 @@ import path from 'node:path';
 import { planProfileOf } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
 import { CredentialStoreError, createEncryptedCredentialStore, endedStoreCall, momongaLayout, nodeFileSystem } from '@momonga/foundation';
-import type { CredentialEntry, FileSystem, KernelLockMechanism, LimitTiming, ListableCredentialStore, SecretStore } from '@momonga/foundation';
+import type { CredentialEntry, FileSystem, KernelLockMechanism, LimitTiming, ListableCredentialStore, SecretBackend, SecretStore } from '@momonga/foundation';
 import { SIWC_RESOURCE, createFakeClock, siwcBrowse, startFakeSiwcAuth } from '@momonga/testkit';
 import type { FakeClock, SiwcAuth } from '@momonga/testkit';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
@@ -202,7 +202,7 @@ const isRefreshPost = (url: string, init: RequestInit, tokenUrl: string): boolea
   url === tokenUrl && typeof init.body !== 'undefined' && new URLSearchParams(String(init.body)).get('grant_type') === 'refresh_token';
 
 export const startHarness = async (
-  options: { profile?: (auth: SiwcAuth) => PlanProfile; wrapFileSystem?: (base: FileSystem) => FileSystem; pointerSerial?: Serial; secretStore?: SecretStore; wrapSleep?: (inner: PlanSleep) => PlanSleep } = {},
+  options: { profile?: (auth: SiwcAuth) => PlanProfile; wrapFileSystem?: (base: FileSystem) => FileSystem; pointerSerial?: Serial; secretStore?: SecretStore; wrapSleep?: (inner: PlanSleep) => PlanSleep; storeBackend?: SecretBackend } = {},
 ): Promise<Harness> => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'momonga-plan-'));
   const layout = momongaLayout(home);
@@ -278,6 +278,7 @@ export const startHarness = async (
     openPlanSessions({
       ...(lock === undefined ? {} : { lock }),
       ...(options.pointerSerial === undefined ? {} : { pointerSerial: options.pointerSerial }),
+      ...(options.storeBackend === undefined ? {} : { storeBackend: options.storeBackend }),
       profiles: { [PROFILE_ID]: profile },
       paths,
       signal: NEVER_ENDED,

@@ -1,7 +1,7 @@
 import { editModelsSettings } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
 import { isRecord } from '@momonga/foundation';
-import type { Clock } from '@momonga/foundation';
+import type { Clock, LimitTiming } from '@momonga/foundation';
 import { PLAN_ACCOUNT_NOT_FOUND_CODE, PLAN_ACCOUNT_NOT_SELECTABLE_CODE, PLAN_LABEL_REFUSAL, isPlanLabel, RETRY_OUTCOME } from '@momonga/protocol';
 import type {
   NamedPlanAccountRef,
@@ -20,7 +20,7 @@ import type {
 } from '@momonga/protocol';
 import { GatewayError, invalidRequest, notFound, statusFor } from '../core/errors.ts';
 import { PlanCredentialError, credentialErrorType, statusOf } from './auth-source.ts';
-import { limitFailureOf } from './request-limit.ts';
+import { PLAN_OPERATION_LIMIT, limitFailureOf, withinRequestLimit } from './request-limit.ts';
 import type { AccountView } from './auth-source.ts';
 import { NO_REPORTED_WINDOW } from './catalog.ts';
 import { CONFLICT_STATUS, RETRYABLE_STATUS } from './http-status.ts';
@@ -97,6 +97,9 @@ const translated = async <T>(work: () => Promise<T>): Promise<T> => {
     throw gatewayErrorOfCredential(error);
   }
 };
+
+export const withinPlanOperation = <T>(timing: LimitTiming, signal: AbortSignal, step: (signal: AbortSignal) => Promise<T>): Promise<T> =>
+  translated(() => withinRequestLimit(PLAN_OPERATION_LIMIT, timing, signal, step));
 
 export const accountViewOf = (ref: NamedPlanAccountRef, view: AccountView, active: boolean, pinnedBy: readonly string[], nowMs: number): PlanAccountView | undefined => {
   const status = statusOf(view, nowMs);

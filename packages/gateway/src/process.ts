@@ -1103,6 +1103,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       profiles: planProfiles,
       paths: { sessions: paths.planSessions, host: paths.planHost, active: paths.planActive },
       store: options.planStore === undefined ? planRecordStore : options.planStore(planRecordStore),
+      ...(secretStore.backend === undefined ? {} : { storeBackend: secretStore.backend }),
       fileSystem: nodeFileSystem,
       accounts: [],
       clock,

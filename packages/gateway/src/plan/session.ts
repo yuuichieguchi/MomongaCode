@@ -1,7 +1,7 @@
 import path from 'node:path';
 import type { PlanProfile } from '@momonga/config';
-import { HOST_READ_BOUND_MS, hostKernelLock, isAtomicWriteTemporary, isRecord, operationLimit, sweepLeftovers, systemRandom } from '@momonga/foundation';
-import type { Clock, CredentialEntry, FileSystem, KernelLockMechanism, LimitTiming, ListableCredentialStore } from '@momonga/foundation';
+import { HOST_READ_BOUND_MS, endedStoreCall, hostKernelLock, isAtomicWriteTemporary, isRecord, operationLimit, sweepLeftovers, systemRandom } from '@momonga/foundation';
+import type { Clock, CredentialEntry, FileSystem, KernelLockMechanism, LimitTiming, ListableCredentialStore, SecretBackend } from '@momonga/foundation';
 import { PLAN_ACCOUNT_STATES, PLAN_DISABLED_STATE, PLAN_LABEL_PATTERN, PLAN_REVOCATION_CONFIRMED, PLAN_REVOCATION_NONE, PLAN_REVOCATION_UNCONFIRMED, PLAN_SIGN_IN_FAILURE, PLAN_STORE_STATES, SIGNED_IN_OUTCOME, isPlanLabel } from '@momonga/protocol';
 import type { NamedPlanAccountRef, PlanAccountRef, PlanAccountState, PlanListProblem, PlanRevocation, PlanRevocationAnswer, PlanStoreState } from '@momonga/protocol';
 import { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS, PLAN_SIGN_IN_DEFAULTS } from '../defaults.ts';
@@ -96,6 +96,7 @@ export type OpenPlanSessionsOptions = {
   random?: () => number;
   events?: PlanEvents;
   pointerSerial?: Serial;
+  storeBackend?: SecretBackend;
 };
 
 export type RegisterInput = { profile: string; account: string; clientId: string; hostId: string };
@@ -493,6 +494,9 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     }
   };
 
+  const leftLoadOf = (error: unknown, signal: AbortSignal): unknown =>
+    options.storeBackend !== undefined && signal.aborted && error === signal.reason ? endedStoreCall({ action: 'read', name: undefined, backend: options.storeBackend }, error) : error;
+
   const load = (account: Account, signal: AbortSignal): Promise<void> => {
     if (account.loaded !== undefined) return Promise.resolve();
     if (account.loading === undefined) {
@@ -519,7 +523,9 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       loads.add(ended);
       void ended.then(() => loads.delete(ended));
     }
-    return account.loading.join(signal);
+    return account.loading.join(signal).catch((error: unknown) => {
+      throw leftLoadOf(error, signal);
+    });
   };
 
   const recordOf = (account: Account): PlanRecord | undefined => (account.loaded?.kind === 'record' ? account.loaded.record : undefined);
