@@ -86,7 +86,7 @@ describe('editSettings', () => {
   it.each([
     [['sandbox'], 'none', 'sandbox is only honored in user settings; discarded'],
     [['tui', 'mouse'], false, 'tui.mouse is only honored in user settings; discarded'],
-    [['permissions', 'defaultMode'], 'bypassPermissions', 'bypassPermissions is only honored in user settings and on the command line; ignored'],
+    [['permissions', 'defaultMode'], 'bypassPermissions', 'permissions.defaultMode bypassPermissions is only honored in user settings and on the command line; discarded'],
   ] as const)('refuses %j in the project file with the sentence the loader would warn with', async (path, value, sentence) => {
     const tree = makeTree();
     const file = projectSettingsPath(tree);

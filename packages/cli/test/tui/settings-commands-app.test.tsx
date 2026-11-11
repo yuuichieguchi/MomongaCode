@@ -82,7 +82,7 @@ describe('/permissions', () => {
     await press(started, '5', '› 5. bypassPermissions');
     await press(started, KEYS.enter, SAVE_TO_TITLE);
     await press(started, '2', '› 2. project');
-    await press(started, KEYS.enter, 'bypassPermissions is only honored in user settings and on the command line; ignored');
+    await press(started, KEYS.enter, 'permissions.defaultMode bypassPermissions is only honored in user settings and on the command line; discarded');
     expect(fs.existsSync(place.projectFile)).toBe(false);
     started.app.unmount();
   });
