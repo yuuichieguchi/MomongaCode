@@ -105,6 +105,7 @@ export const USER_SHELL_TAIL_BYTES = USER_SHELL_OUTPUT_BYTES - USER_SHELL_HEAD_B
 export const USER_SHELL_COMMAND_CHARS = 100_000;
 export const USER_SHELL_RUN_ACTIVE_CODE = 'run_active';
 export const PROMPT_TEXT_MAX_CHARS = 1_000_000;
+export const COMPACT_PIN_KEY = 'compact';
 export const NOTHING_TO_COMPACT_CODE = 'nothing_to_compact';
 export const NOTHING_TO_COMPACT_MESSAGE = 'Nothing to compact.';
 

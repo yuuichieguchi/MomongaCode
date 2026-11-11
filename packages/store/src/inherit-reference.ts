@@ -8,7 +8,7 @@ import { isFatalStoreError } from './fatal.ts';
 import { foldRunState, initialRunState } from './fold.ts';
 import { ITEM_EVENT_TYPES, itemsOfEvent } from './history-items.ts';
 import type { ItemFacts } from './history-items.ts';
-import { InheritanceError, isReferenceInherited, projectReference, rebaseOntoReference, referenceDigest, retractsTask, signReference } from './inherit.ts';
+import { InheritanceError, compactCommandOf, isReferenceInherited, projectReference, rebaseOntoReference, referenceDigest, retractsTask, signReference } from './inherit.ts';
 import type { InheritanceOutcome, UnaskedCommands } from './inherit.ts';
 import { createRecordWalker } from './record-walk.ts';
 import type { RecordVisit, WalkUnits } from './record-walk.ts';
@@ -538,6 +538,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
     status: run.status,
     ...(run.stopReason === undefined ? {} : { stopReason: knownValue(run.stopReason, `the stop reason of run ${run.id}`) }),
     ...(run.error === undefined ? {} : { errorCode: run.error.code }),
+    ...compactCommandOf(run.pins),
   });
 
   const predecessorOf = (child: Run): Run => {

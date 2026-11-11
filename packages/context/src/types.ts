@@ -269,6 +269,8 @@ export type BuiltContext = {
   inputDigest: string;
   evictions: ContextEviction[];
   compaction?: CompactionPlan;
+  compactionBlockedBy?: CompactionBlock;
+  lastLevel: boolean;
   notices: ContextNotice[];
   loadedInstructions: LoadedInstruction[];
   loadedMemoryIds: string[];

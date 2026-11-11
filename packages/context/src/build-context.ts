@@ -1128,6 +1128,8 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     inputDigest: total.inputDigest,
     evictions: reported(),
     ...(hint !== undefined && 'plan' in hint ? { compaction: hint.plan } : {}),
+    ...(hint !== undefined && 'blocked' in hint ? { compactionBlockedBy: hint.blocked } : {}),
+    lastLevel,
     notices,
     loadedInstructions: [discovered.user, discovered.root, ...head.instructionFiles]
       .filter((file) => file !== undefined)

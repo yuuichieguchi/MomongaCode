@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { NOTHING_TO_COMPACT_CODE } from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
 import { compactInputOf, compactPinOf } from '../../src/worker/compact-pin.ts';
+import { COMPACTION_WAY_FORWARD } from '../../src/worker/context-step.ts';
 import { capabilitiesFor, createdRun, makeEnv } from './harness.ts';
 import { assistantMessage, textStep } from './scripts.ts';
 
@@ -106,5 +107,74 @@ describe('a run whose only work is to compact the context now', () => {
     const sent = JSON.stringify(env.gateway.streams.at(-1)?.body.input);
     expect(sent).toContain('question six');
     expect(sent).not.toContain('answer one');
+    expect(sent).not.toContain('/compact');
+  });
+
+  it('does not give the next run the command when the compaction carried a focus', async () => {
+    const env = await conversed();
+    const compact = await enqueueCompact(env, 'keep the parser decisions');
+    await env.runOnce(env.worker());
+    expect(env.run(compact.id).status).toBe('COMPLETED');
+    const next = await env.enqueue('question six');
+    env.gateway.script.push(textStep('Done again.'));
+
+    await env.runOnce(env.worker());
+
+    expect(env.run(next.id).status).toBe('COMPLETED');
+    const sent = JSON.stringify(env.gateway.streams.at(-1)?.body.input);
+    expect(sent).not.toContain('/compact');
+    expect(sent).not.toContain('keep the parser decisions');
+  });
+});
+
+const seededWith = async (turns: readonly RunEventPayload[]): Promise<Env> => {
+  const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
+  const first = await env.enqueue('question one');
+  await env.seed(first.id, turns, 'release');
+  env.gateway.script.push(textStep('Done.'));
+  await env.runOnce(env.worker());
+  expect(env.run(first.id).status).toBe('COMPLETED');
+  return env;
+};
+
+describe('a compact command over a short session', () => {
+  it('compacts a session of one large turn', async () => {
+    const env = await seededWith([responded(1, [assistantMessage('m1', `answer one ${'x'.repeat(40_000)}`)])]);
+    const run = await enqueueCompact(env);
+
+    await env.runOnce(env.worker());
+
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(env.gateway.compacts).toHaveLength(1);
+    expect(env.ofType(run.id, 'context.compacted')).toHaveLength(1);
+    expect(env.ofType(run.id, 'notice').filter((event) => event.code === NOTHING_TO_COMPACT_CODE)).toEqual([]);
+  });
+
+  it('compacts a session of two large turns', async () => {
+    const env = await seededWith([
+      responded(1, [assistantMessage('m1', `answer one ${'x'.repeat(40_000)}`)]),
+      { type: 'user.message', text: 'question two' },
+      responded(2, [assistantMessage('m2', `answer two ${'y'.repeat(40_000)}`)]),
+    ]);
+    const run = await enqueueCompact(env);
+
+    await env.runOnce(env.worker());
+
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(env.gateway.compacts).toHaveLength(1);
+    expect(env.ofType(run.id, 'context.compacted')).toHaveLength(1);
+  });
+
+  it('ends with the reason and what to do when a summary would free nothing', async () => {
+    const env = await seededWith([responded(1, [assistantMessage('m1', 'ok')])]);
+    const run = await enqueueCompact(env);
+
+    await env.runOnce(env.worker());
+
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(env.gateway.compacts).toEqual([]);
+    const [notice] = env.ofType(run.id, 'notice').filter((event) => event.code === NOTHING_TO_COMPACT_CODE);
+    expect(notice?.message).toMatch(/^No compaction: the latest compactable region of \d+ tokens would free -?\d+ after a summary of \d+, but 1 are needed\. /);
+    expect(notice?.message).toContain(COMPACTION_WAY_FORWARD.deficit_not_closed);
   });
 });
