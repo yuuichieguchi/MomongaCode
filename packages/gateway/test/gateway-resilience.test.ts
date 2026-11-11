@@ -66,7 +66,7 @@ describe('retry', () => {
     expect(timers.pending()).toEqual([]);
   });
 
-  it('retries a 5xx on the only target past retry.maxAttempts with equal-jitter waits until the next wait would pass retry.totalWaitMs', async () => {
+  it('retries a 5xx on the only target with equal-jitter waits until it was sent retry.maxAttempts times', async () => {
     const primary = createScriptedAdapter({
       calls: [
         { failure: { status: 500, message: 'e1' } },
@@ -84,11 +84,11 @@ describe('retry', () => {
     const pending = postJson(client, '/v1/responses', request);
     const waits = await driveTimers(harness, [pending]);
     const response = await readJson(await pending);
-    expect(waits).toEqual([75, 150, 300]);
+    expect(waits).toEqual([75, 150]);
     expect(response.status).toBe(502);
     expectErrorBody(response.body, { type: 'server_error', code: 'upstream_error' });
-    expect(response.body.error.message).toContain('e4');
-    expect(primary.calls.map((call: { attempt: number }) => call.attempt)).toEqual([1, 2, 3, 4]);
+    expect(response.body.error.message).toContain('e3');
+    expect(primary.calls.map((call: { attempt: number }) => call.attempt)).toEqual([1, 2, 3]);
     expect(timers.pending()).toEqual([]);
   });
 

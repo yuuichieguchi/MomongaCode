@@ -309,7 +309,7 @@ describe('anthropic adapter through the gateway: failures', () => {
   it('surfaces the final 429 with its Retry-After and no deferral when the next 7 s wait does not fit the remaining budget', async () => {
     const gateway = await startAnthropicGateway({
       script: [anthropicErrorReply(429, 'rate_limit_error', 'slow down', { 'retry-after': '7' }), anthropicErrorReply(429, 'rate_limit_error', 'slow down', { 'retry-after': '7' })],
-      config: { retry: { maxAttempts: 1, totalWaitMs: 10_000, baseMs: 100, maxMs: 10_000 } },
+      config: { retry: { maxAttempts: 2, totalWaitMs: 10_000, baseMs: 100, maxMs: 10_000 } },
     });
     const pending = postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hi') });
     let settled = false;
