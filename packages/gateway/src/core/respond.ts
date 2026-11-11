@@ -37,7 +37,7 @@ import { baseResource } from './resource.ts';
 import { UpstreamFailure, emptyStreamFailure, failureFrom, runWithRetry } from './retry.ts';
 import type { RetryOutcome } from './retry.ts';
 import type { Release } from './admission.ts';
-import { adapterContextOf } from './adapter-context.ts';
+import { adapterContextOf, originOf } from './adapter-context.ts';
 import type { Narrowed, TargetRuntime } from './router.ts';
 import { CandidateDropped, CandidateRefused, UnprobedTarget } from './candidate-refusal.ts';
 import type { RunControl } from './run.ts';
@@ -621,6 +621,7 @@ export async function* executeResponse(services: Services, job: ResponseJob, con
     outputBound: job.body.max_output_tokens !== undefined && job.body.max_output_tokens !== null,
     toolChoice: { tools: job.body.tools, tool_choice: job.body.tool_choice },
     unknownFields: { keys: Object.keys(job.unknownFields), operation: 'create' },
+    carry: { requestFor: (target) => adapterRequestFor(job, resolved, target, undefined), originFor: (target) => originOf(services, target) },
   });
   const disarm = armDeadline(services, job.deadlineAt, control.abort);
   const call: CallIdentity = job.idempotency === undefined ? { kind: 'unkeyed', nonce: uuidv7(services.clock) } : { kind: 'keyed', ...job.idempotency };

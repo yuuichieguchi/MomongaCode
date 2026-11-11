@@ -779,6 +779,7 @@ export type {
   AdapterStop,
   ChainRoomFacts,
   ProviderAdapter,
+  CarryRefusal,
   ClientOperation,
   ReasoningOrigin,
   RenderWireOptions,
