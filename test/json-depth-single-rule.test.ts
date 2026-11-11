@@ -58,7 +58,7 @@ const INTERNAL_PARSES: Readonly<Record<string, InternalParse>> = {
   'packages/cli/src/client/runtime-client.ts': { calls: 2, reason: 'responses of the product\'s own run service, which bounds its inputs at entry' },
   'packages/cli/src/client/supervisor-client.ts': { calls: 2, reason: 'responses of the product\'s own supervisor' },
   'packages/observability/src/trace-store.ts': { calls: 1, reason: 'spans the product wrote to its own trace store' },
-  'packages/observability/src/cost-report.ts': { calls: 1, reason: 'a span attribute the product encoded' },
+  'packages/observability/src/billed-calls.ts': { calls: 1, reason: 'a span attribute the product encoded' },
   'packages/sandbox/src/placeholder-journal.ts': { calls: 1, reason: 'the placeholder journal the sandbox writes' },
   'packages/foundation/src/process-contract.ts': { calls: 1, reason: 'the ready line of a child process the product started' },
   'packages/supervisor/src/lock-watch.ts': { calls: 1, reason: 'health answers of the product\'s own child services' },

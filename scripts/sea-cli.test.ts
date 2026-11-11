@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { momongaLayout } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { startFakeChatCompletions, productTestEnv } from '@momonga/testkit';
+import { modelSettings, startFakeChatCompletions, productTestEnv } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import cliPackage from '../packages/cli/package.json' with { type: 'json' };
 import { chatCompletions, textReply, toolCallReply } from '../e2e/support/upstream.ts';
@@ -17,7 +17,6 @@ import { RUNS_MACOS_ARM64_ARTIFACTS } from './support/host.ts';
 const ORIGINAL = 'greeting = "hello"\n';
 const EDITED = 'greeting = "hello, momonga"\n';
 const FINAL_TEXT = 'Updated the greeting in config.toml.';
-const UPSTREAM_TARGET = 'primary';
 
 type Invocation = { status: number | null; stdout: string; stderr: string };
 
@@ -79,18 +78,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('single executable built from the r
     fs.writeFileSync(
       paths.settingsFile,
       JSON.stringify({
-        models: {
-          aliases: { default: [UPSTREAM_TARGET] },
-          targets: {
-            [UPSTREAM_TARGET]: {
-              adapter: 'chat-completions',
-              provider: 'fake',
-              model: 'system',
-              socketPath: path.join(root, 'u.sock'),
-              capabilities: { contextWindow: 8192, maxOutputTokens: 1024 },
-            },
-          },
-        },
+        ...modelSettings({ start: 'fake/system', models: [{ provider: 'fake', id: 'system', socketPath: path.join(root, 'u.sock'), capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }] }),
         sandbox: 'none',
       }),
     );

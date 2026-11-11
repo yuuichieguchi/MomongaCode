@@ -380,14 +380,17 @@ export type MandateProfileSettings = {
   onQuiescent?: 'report' | 'wait';
 };
 
+const isAbsoluteHttpUrl = (value: string): boolean => URL.canParse(value) && ['http:', 'https:'].includes(new URL(value).protocol);
+
 export type ForgeInstanceSettings = {
   id: string;
   descriptor: string;
-  host: string;
+  hosts: string[];
   apiBaseUrl: string;
-  credentialEnv?: string;
-  credentialSecret?: string;
+  credential: ForgeCredentialSettings;
 };
+
+export type ForgeCredentialSettings = { env: string } | { secret: string };
 
 export type OperationApprovalClass = 'rule' | 'always';
 
@@ -555,8 +558,7 @@ export const assertSettings = (value: unknown, source: string): Settings => {
     if (!path.isAbsolute(entry)) throw new ConfigError(`${source}: invalid settings at /sandboxUnixSockets/allow/${index}: not an absolute path`);
   });
   (settings.forges ?? []).forEach((forge, index) => {
-    const references = [forge.credentialEnv, forge.credentialSecret].filter((reference) => reference !== undefined).length;
-    if (references !== 1) throw new ConfigError(`${source}: invalid settings at /forges/${index}: exactly one of credentialEnv and credentialSecret must name the token`);
+    if (!isAbsoluteHttpUrl(forge.apiBaseUrl)) throw new ConfigError(`${source}: invalid settings at /forges/${index}/apiBaseUrl: not an absolute http or https URL`);
   });
   for (const [name, server] of Object.entries(settings.mcpServers ?? {})) {
     const pointer = `/mcpServers/${escapePointerSegment(name)}`;

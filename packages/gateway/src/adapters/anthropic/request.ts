@@ -5,7 +5,7 @@ import type { DialectChoice } from '../../dialect/choice.ts';
 import type { RenderLedger } from '../../dialect/ledger.ts';
 import type { ResolvedDialect } from '../../dialect/render.ts';
 import { renderToolParameters } from '../../dialect/tool-render.ts';
-import { callArgumentsObject } from '../shared/call-arguments.ts';
+import { callArgumentsObject, readableHistoryItemOf } from '../shared/call-arguments.ts';
 import { isJsonOnlyEnforced, jsonReplyFormatOf } from '../shared/json-reply.ts';
 import type { JsonReplyPlan } from '../shared/json-reply.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
@@ -142,8 +142,10 @@ const convertMessages = (input: readonly AdapterInputItem[], origin: ReasoningOr
   const grouped: PlacedMessage[] = [];
   const prefixLength = stablePrefixLength(input);
   let stablePrefixEnd: AnthropicBlock | undefined;
+  const readable = readableHistoryItemOf(input);
   for (const [index, item] of input.entries()) {
-    const converted = blocksOf(item, origin);
+    const kept = readable(item);
+    const converted = kept === undefined ? undefined : blocksOf(kept, origin);
     if (converted === undefined || converted.blocks.length === 0) continue;
     if (index < prefixLength) stablePrefixEnd = converted.blocks.at(-1);
     const placed = converted.blocks.map((block): Placed => ({ block, origin: index }));

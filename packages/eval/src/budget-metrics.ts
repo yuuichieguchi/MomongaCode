@@ -1,5 +1,6 @@
-import { TERMINAL_STATUSES, heldEndOf, nanoOfAmount, nanoOfCost } from '@momonga/protocol';
-import type { BudgetCause, BudgetDimension, PublicRunEvent, RecordedModelCost } from '@momonga/protocol';
+import { TERMINAL_STATUSES, heldEndOf, nanoOfAmount } from '@momonga/protocol';
+import type { BudgetCause, BudgetDimension, PublicRunEvent } from '@momonga/protocol';
+import { nanoOfCostViews } from './run-tree.ts';
 import type { GoldenCase } from './dataset.ts';
 import { gateVerdictOf } from './oracle.ts';
 import { proportionOf } from './stats.ts';
@@ -38,31 +39,20 @@ const limitsOf = (golden: Pick<GoldenCase, 'limits' | 'mandate'>): RunBudgetFact
   return { ...(tokens === undefined ? {} : { tokens }), ...(costUsd === undefined ? {} : { costNano: nanoOfAmount(costUsd) }) };
 };
 
-type Billed = { cost?: RecordedModelCost; unpriced?: unknown };
-
-const spendOfEvents = (events: readonly PublicRunEvent[]): RunBudgetFacts['spent'] => {
-  const spent = { tokens: 0, costNano: 0, unpricedCalls: 0 };
-  const bill = (tokens: number, billed: Billed | undefined): void => {
-    spent.tokens += tokens;
-    if (billed?.cost !== undefined) spent.costNano += nanoOfCost(billed.cost);
-    else if (billed?.unpriced !== undefined) spent.unpricedCalls += 1;
-  };
+const tokensOfEvents = (events: readonly PublicRunEvent[]): number => {
+  let tokens = 0;
   for (const event of events) {
-    if (event.type === 'model.responded') bill(event.response.usage.total_tokens, event.response.momonga);
-    if (event.type === 'usage.charged') bill(event.totalTokens, event);
+    if (event.type === 'model.responded') tokens += event.response.usage.total_tokens;
+    if (event.type === 'usage.charged') tokens += event.totalTokens;
   }
-  return spent;
+  return tokens;
 };
 
 const budgetFactsOf = (golden: Pick<GoldenCase, 'limits' | 'mandate'>, transcript: RecordedRun): RunBudgetFacts => {
-  const spends = [transcript.events, ...transcript.children.map((child) => child.events)].map(spendOfEvents);
+  const tokens = [transcript.events, ...transcript.children.map((child) => child.events)].reduce((sum, events) => sum + tokensOfEvents(events), 0);
   return {
     limits: limitsOf(golden),
-    spent: {
-      tokens: spends.reduce((sum, spend) => sum + spend.tokens, 0),
-      costNano: spends.reduce((sum, spend) => sum + spend.costNano, 0),
-      unpricedCalls: spends.reduce((sum, spend) => sum + spend.unpricedCalls, 0),
-    },
+    spent: { tokens, costNano: nanoOfCostViews(transcript.costs), unpricedCalls: transcript.costs.reduce((sum, cost) => sum + cost.notPriced, 0) },
     gatePassed: gateVerdictOf(transcript.run, transcript.events) === 'passed',
     stops: transcript.events.flatMap((event) => (event.type === 'budget.exhausted' ? [{ dimension: event.dimension, cause: event.cause, spent: event.spent, limit: event.limit }] : [])),
   };

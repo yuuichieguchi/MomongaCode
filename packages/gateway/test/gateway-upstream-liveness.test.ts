@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createOpenResponsesAdapter, unauthenticatedSource } from '@momonga/gateway';
 import type { UpstreamLiveness } from '@momonga/gateway';
-import { createFakeClock, openingEvents, openResponsesStream, startFakeOpenResponses } from '@momonga/testkit';
+import { createFakeClock, hostTimers, openingEvents, openResponsesStream, startFakeOpenResponses } from '@momonga/testkit';
 import type { FakeUpstreamReply } from '@momonga/testkit';
 import { START_MS, postJson, readJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 import { REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
 
-const SETTINGS_LIVENESS = { headersTimeoutMs: 50, idleTimeoutMs: 50 };
+const SETTINGS_LIVENESS: UpstreamLiveness = { headersTimeoutMs: 50, idleTimeoutMs: 50, timers: hostTimers };
 
 const openingThenSilence = (): FakeUpstreamReply => {
   const opening = openResponsesStream(openingEvents(), { done: false });
@@ -21,7 +21,7 @@ const startSilentUpstream = async (script: FakeUpstreamReply[]) => {
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     capabilities: async () => REMOTE_CAPABILITIES,
     clock: createFakeClock(START_MS),
-    liveness: SETTINGS_LIVENESS as unknown as UpstreamLiveness,
+    liveness: SETTINGS_LIVENESS,
   });
   registerCleanup(() => adapter.close());
   return startGateway({

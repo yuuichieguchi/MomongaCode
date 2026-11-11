@@ -16,12 +16,12 @@ const unreportedCall: RunEventPayload = {
 } as unknown as RunEventPayload;
 
 describe('the transcript format records whether each call reported its cache reads', () => {
-  it('is /8 and keeps a call that did not report its cache reads through a round trip', () => {
+  it('is /9 and keeps a call that did not report its cache reads through a round trip', () => {
     const transcript = recorded('a-on', 0, [unreportedCall]);
     const text = encodeTranscript(transcript);
 
-    expect(TRANSCRIPT_FORMAT).toBe('momonga-transcript/8');
-    expect(JSON.parse(text.split('\n')[0] ?? '{}')).toMatchObject({ format: 'momonga-transcript/8' });
+    expect(TRANSCRIPT_FORMAT).toBe('momonga-transcript/9');
+    expect(JSON.parse(text.split('\n')[0] ?? '{}')).toMatchObject({ format: 'momonga-transcript/9' });
     expect(decodeTranscript(text, 'a.jsonl')).toEqual(transcript);
   });
 
@@ -31,7 +31,7 @@ describe('the transcript format records whether each call reported its cache rea
 
     expect(() => decodeTranscript(text, 'old.jsonl')).toThrow(TranscriptError);
     expect(() => decodeTranscript(text, 'old.jsonl')).toThrow(
-      'old.jsonl:1: momonga-transcript/6 transcripts do not record whether the upstream reported the cache reads of each call, so they cannot be graded as momonga-transcript/8; record the case again',
+      'old.jsonl:1: momonga-transcript/6 transcripts do not record whether the upstream reported the cache reads of each call, so they cannot be graded as momonga-transcript/9; record the case again',
     );
   });
 });

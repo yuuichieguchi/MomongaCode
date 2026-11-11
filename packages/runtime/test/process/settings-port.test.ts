@@ -49,9 +49,9 @@ describe('settings composition hooks and auto mode', () => {
     writeProjectSettings(f.temp.project, { hooks: stopHook('project-stop'), autoMode: { classifier: 'attacker' } });
     const session = createSession(f.store, f.temp.project);
 
-    expect((await f.composition.settings.hooks(session)).Stop?.map((group) => group.hooks[0]?.command)).toEqual(['user-stop']);
+    expect((await f.composition.settings.hooks(session, new AbortController().signal)).Stop?.map((group) => group.hooks[0]?.command)).toEqual(['user-stop']);
     await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
-    expect((await f.composition.settings.hooks(session)).Stop?.map((group) => group.hooks[0]?.command)).toEqual(['user-stop', 'project-stop']);
+    expect((await f.composition.settings.hooks(session, new AbortController().signal)).Stop?.map((group) => group.hooks[0]?.command)).toEqual(['user-stop', 'project-stop']);
     expect(f.composition.settings.autoModeClassifier()).toBe('x');
     expect((await f.composition.sessionCreateSettings(f.temp.project, signalNever())).autoModeClassifier).toBe('fake/x');
   });
@@ -60,10 +60,10 @@ describe('settings composition hooks and auto mode', () => {
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, {});
     const session = createSession(f.store, f.temp.project);
-    expect((await f.composition.settings.verification(session)).commands).toEqual([...DEFAULT_VERIFICATION_COMMANDS]);
+    expect((await f.composition.settings.verification(session, new AbortController().signal)).commands).toEqual([...DEFAULT_VERIFICATION_COMMANDS]);
 
     writeUserSettings(f.temp.home, { verification: { commands: ['make check'] } });
-    expect(await f.composition.settings.verification(session)).toEqual({
+    expect(await f.composition.settings.verification(session, new AbortController().signal)).toEqual({
       commands: ['make check'],
       manifests: [...DEFAULT_VERIFICATION_MANIFESTS],
       conditions: ['make check'],
@@ -76,7 +76,7 @@ describe('settings composition hooks and auto mode', () => {
     const binary = path.join(makeDir(f.temp.home, 'bin'), 'fm');
     fs.writeFileSync(binary, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
     writeUserSettings(f.temp.home, { autoMode: { classifier: 'system' }, models: { connections: [{ adapter: 'managed', server: 'fm', binary, models: [{ id: 'system', toolCalling: 'native' }] }] } });
-    const composition = runtime.createSettingsComposition({ lock: testKernelLock(), signal: new AbortController().signal, home: f.temp.home, platform: 'aix', cache: makeCache(f.temp.home), store: f.store });
+    const composition = runtime.createSettingsComposition({ lock: testKernelLock(), home: f.temp.home, platform: 'aix', cache: makeCache(f.temp.home), store: f.store });
     const created = await composition.sessionCreateSettings(f.temp.project, signalNever());
     expect(created.autoModeClassifier).toBe('apple/system');
     expect(created.autoModeKey).toBeUndefined();
@@ -159,7 +159,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     const runId = await createRun(f.store, session.id);
 
     expect(await rejectionOf(f.composition.sessionCreateSettings(f.temp.project, signalNever()))).toBeInstanceOf(ConfigError);
-    expect(await rejectionOf(f.composition.settings.rules(session))).toBeInstanceOf(ConfigError);
+    expect(await rejectionOf(f.composition.settings.rules(session, new AbortController().signal))).toBeInstanceOf(ConfigError);
     expect(await rejectionOf((async () => f.composition.envFor(session, signalNever()))())).toBeInstanceOf(ConfigError);
     expect(await rejectionOf((async () => f.toolRuntime.port.envFor(session, signalNever()))())).toBeInstanceOf(ConfigError);
     expect(await rejectionOf(f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: Object.freeze({ PLAIN: '1' }) }))).toBeInstanceOf(ConfigError);
@@ -192,7 +192,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
       additionalDirectories: [],
       credentialEnvNames: [],
     });
-    expect((await f.composition.settings.rules(session)).map((rule) => rule.text)).toEqual(['Bash(ls)']);
+    expect((await f.composition.settings.rules(session, new AbortController().signal)).map((rule) => rule.text)).toEqual(['Bash(ls)']);
     expect(await f.composition.envFor(session, signalNever())).toEqual({ PLAIN: '1' });
   });
 
@@ -208,7 +208,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     };
 
     expect(await delta(() => f.composition.sessionCreateSettings(f.temp.project, signalNever()))).toBe(1);
-    expect(await delta(() => f.composition.settings.rules(session))).toBe(1);
+    expect(await delta(() => f.composition.settings.rules(session, new AbortController().signal))).toBe(1);
     expect(await delta(() => f.composition.envFor(session, signalNever()))).toBe(1);
     expect(await delta(() => f.toolRuntime.port.envFor(session, signalNever()))).toBe(1);
     expect(await delta(() => f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: Object.freeze({ PLAIN: '1' }) }))).toBe(1);
@@ -220,7 +220,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     writeUserSettings(f.temp.home, {});
     const missing = path.join(f.temp.root, 'missing-project');
 
-    const error = await rejectionOf(f.composition.loadSessionSettings(missing, await f.composition.userSnapshot(signalNever())));
+    const error = await rejectionOf(f.composition.loadSessionSettings(missing, await f.composition.userSnapshot(signalNever()), new AbortController().signal));
 
     expect(error).toBeInstanceOf(ConfigError);
     expect((error as Error).cause).toBeInstanceOf(Error);
@@ -233,7 +233,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     const snapshot = await f.composition.userSnapshot(signalNever());
     writeUserSettings(f.temp.home, { permissions: { allow: ['Bash(pwd)', 'Bash(cat)'] } });
 
-    const loaded = await f.composition.loadSessionSettings(f.temp.project, snapshot);
+    const loaded = await f.composition.loadSessionSettings(f.temp.project, snapshot, new AbortController().signal);
 
     expect(loaded.rules.map((rule) => rule.text)).toEqual(['Bash(ls)']);
   });
@@ -242,11 +242,11 @@ describe('settings composition (fake timers, not used by the code under test)', 
     const f = await makeRuntimeFixture();
     const session = createSession(f.store, f.temp.project);
 
-    expect(await f.composition.settings.trusted(session)).toBe(false);
+    expect(await f.composition.settings.trusted(session, new AbortController().signal)).toBe(false);
     await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
-    expect(await f.composition.settings.trusted(session)).toBe(true);
+    expect(await f.composition.settings.trusted(session, new AbortController().signal)).toBe(true);
     await f.store.trust.setAsked(f.temp.project, 'untrusted', NEVER_CANCELLED);
-    expect(await f.composition.settings.trusted(session)).toBe(false);
+    expect(await f.composition.settings.trusted(session, new AbortController().signal)).toBe(false);
     expect(await f.composition.trustOracle.isTrusted(f.temp.project, new AbortController().signal)).toBe(false);
   });
 
@@ -256,13 +256,13 @@ describe('settings composition (fake timers, not used by the code under test)', 
     const sub = makeDir(f.temp.project, 'pkg');
     writeProjectSettings(sub, { permissions: { allow: ['Bash(make)'] } });
     const session = createSession(f.store, sub);
-    expect(await f.composition.settings.rules(session)).toEqual([]);
+    expect(await f.composition.settings.rules(session, new AbortController().signal)).toEqual([]);
 
     await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
 
-    const rules = await f.composition.settings.rules(session);
+    const rules = await f.composition.settings.rules(session, new AbortController().signal);
     expect(rules.map((rule) => [rule.text, rule.origin])).toEqual([['Bash(make)', 'project']]);
-    expect(await f.composition.settings.trusted(session)).toBe(true);
+    expect(await f.composition.settings.trusted(session, new AbortController().signal)).toBe(true);
     expect(await f.composition.trustOracle.isTrusted(sub, new AbortController().signal)).toBe(true);
   });
 
@@ -275,8 +275,8 @@ describe('settings composition (fake timers, not used by the code under test)', 
     const session = createSession(f.store, inside);
 
     expect(await f.composition.trustOracle.isTrusted(inside, new AbortController().signal)).toBe(false);
-    expect(await f.composition.settings.trusted(session)).toBe(false);
-    expect(await f.composition.settings.rules(session)).toEqual([]);
+    expect(await f.composition.settings.trusted(session, new AbortController().signal)).toBe(false);
+    expect(await f.composition.settings.rules(session, new AbortController().signal)).toEqual([]);
   });
 
   it("appendRule writes to the project's local settings", async () => {
@@ -288,7 +288,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
 
     const file = path.join(f.temp.home, '.momonga', 'projects', sha256Hex(fs.realpathSync.native(f.temp.project)), 'settings.local.json');
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ permissions: { allow: ['Bash(npm test)'] } });
-    const rules = await f.composition.settings.rules(session);
+    const rules = await f.composition.settings.rules(session, new AbortController().signal);
     expect(rules.map((rule) => [rule.text, rule.origin, rule.effect])).toEqual([['Bash(npm test)', 'local', 'allow']]);
   });
 
@@ -326,7 +326,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     const temp = await makeTempHome();
     const { store } = openStore(temp);
 
-    const error = await thrownBy(() => runtime.createSettingsComposition({ lock: testKernelLock(), signal: new AbortController().signal, home: 'relative/home', platform: process.platform, cache: makeCache(temp.home), store }));
+    const error = await thrownBy(() => runtime.createSettingsComposition({ lock: testKernelLock(), home: 'relative/home', platform: process.platform, cache: makeCache(temp.home), store }));
 
     expect(error).toBeInstanceOf(TypeError);
     expect((error as Error).message).toContain('relative/home');

@@ -12,7 +12,7 @@ import { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES,
 import { CACHE_MISS_CAUSES, PREFIX_EVENTS } from './prefix-events.ts';
 import type { PrefixEvent } from './prefix-events.ts';
 import { BILLING_CHANGE_REASONS } from './fallback-cause.ts';
-import type { FallbackCause } from './fallback-cause.ts';
+import type { FallbackCause, SpanFallbackCause } from './fallback-cause.ts';
 import { TARGET_BILLINGS } from './capabilities.ts';
 import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES, REFLECTION_DROP_CAUSES, REFLECTION_JOB_STATES, VALIDITY_CLOSERS } from './memory.ts';
 import type { ContextChargePurpose, SummaryFidelity, SummarySource } from './context-record.ts';
@@ -732,6 +732,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       guidelineVersion: nonNegativeInteger,
       tokensBefore: nonNegativeInteger,
       tokensAfter: nonNegativeInteger,
+      tokensAfterEstimated: { type: 'boolean', const: true },
     },
     required: ['summary', 'replacedThroughSeq'],
   },
@@ -790,6 +791,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       message: string,
       code: string,
       toolKey: string,
+      key: string,
       reduction: closed({ turn: nonNegativeInteger, from: nonNegativeInteger, to: nonNegativeInteger }, ['turn', 'from', 'to']),
     },
     required: ['level', 'message'],
@@ -1249,7 +1251,7 @@ export type JobView = {
 };
 
 export type JobsResponse = { jobs: JobView[] };
-export type CostFallbackView = { answeredBy: string; calls: number; failed: FallbackCause[] };
+export type CostFallbackView = { answeredBy: string; calls: number; failed: SpanFallbackCause[] };
 
 export type RoleCostView = {
   fallbackCalls?: number;
@@ -1809,7 +1811,7 @@ type PublicPayload =
   | { type: 'user.message'; text: string; images?: { mediaType: ImageMediaType; byteLength: number }[]; source?: InboxDelivery; attachments?: AttachmentSummary[]; shell?: UserShellRecord[] }
   | { type: 'model.requested'; step: number; attempt: number; digest: string; anatomy?: TokenAnatomy; prefix?: Extract<RunEventPayload, { type: 'model.requested' }>['prefix'] }
   | { type: 'run.started'; attempt: number }
-  | { type: 'context.compacted'; summary: string; replacedThroughSeq: number; source?: SummarySource; fidelity?: SummaryFidelity; guidelineVersion?: number; tokensBefore?: number; tokensAfter?: number }
+  | { type: 'context.compacted'; summary: string; replacedThroughSeq: number; source?: SummarySource; fidelity?: SummaryFidelity; guidelineVersion?: number; tokensBefore?: number; tokensAfter?: number; tokensAfterEstimated?: true }
   | { type: 'context.compaction_rejected'; step?: number; attempt?: number }
   | {
       type: 'context.inherited';
@@ -1913,6 +1915,7 @@ const toPublicKnownEvent = (event: RunEvent | SessionEvent): PublicRunEvent => {
         ...(event.guidelineVersion === undefined ? {} : { guidelineVersion: event.guidelineVersion }),
         ...(event.tokensBefore === undefined ? {} : { tokensBefore: event.tokensBefore }),
         ...(event.tokensAfter === undefined ? {} : { tokensAfter: event.tokensAfter }),
+        ...(event.tokensAfterEstimated === undefined ? {} : { tokensAfterEstimated: event.tokensAfterEstimated }),
       };
     case 'context.compaction_rejected':
       return { ...envelope, type: event.type, ...(event.attempt === undefined ? {} : { attempt: event.attempt }) };

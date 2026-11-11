@@ -32,7 +32,7 @@ const shareWindowWith = async (noticesPerRun: number) => {
   }
   const next = await env.enqueue('Next', { history: 'fresh' });
   decoded.counting = true;
-  const share = await memoryShareFor({ store: env.store, settings: env.settings, session: env.session, run: env.run(next.id) });
+  const share = await memoryShareFor({ signal: new AbortController().signal, store: env.store, settings: env.settings, session: env.session, run: env.run(next.id) });
   decoded.counting = false;
   return { share, decoded: { rows: decoded.rows, bytes: decoded.bytes } };
 };

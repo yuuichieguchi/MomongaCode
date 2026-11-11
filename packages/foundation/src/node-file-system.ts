@@ -20,7 +20,7 @@ export type DirectoryReader = { read(): Promise<string | null>; close(): Promise
 
 export type RemoveOptions = { readonly recursive: boolean };
 
-export type ReadHandle = { stat(): Promise<fs.Stats>; chmod(mode: number): Promise<void>; read(page: Uint8Array): Promise<number>; close(): Promise<void> };
+export type ReadHandle = { stat(): Promise<fs.Stats>; chmod(mode: number): Promise<void>; read(page: Uint8Array): Promise<number>; readAt(page: Uint8Array, position: number): Promise<number>; close(): Promise<void> };
 
 export interface FileSystem extends AtomicWriteFileSystem {
   rm(file: string, options?: RemoveOptions): Promise<void>;
@@ -189,6 +189,7 @@ export const nodeFileSystem: FileSystem = {
       stat: () => handle.stat(),
       chmod: (mode) => handle.chmod(mode),
       read: async (page) => (await handle.read(page, 0, page.length, null)).bytesRead,
+      readAt: async (page, position) => (await handle.read(page, 0, page.length, position)).bytesRead,
       close: () => handle.close(),
     };
   },

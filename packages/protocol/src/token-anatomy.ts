@@ -1,4 +1,4 @@
-import type { FallbackCause } from './fallback-cause.ts';
+import type { SpanFallbackCause } from './fallback-cause.ts';
 import type { CacheMissCause } from './prefix-events.ts';
 
 export const ANATOMY_FLAT_LAYERS = ['system', 'tools', 'instructions', 'skills', 'governing', 'memories', 'summary', 'workingState'] as const;
@@ -134,7 +134,7 @@ export type BilledCallView = {
   billing: 'metered' | 'local' | 'plan' | 'unknown';
   startMs: number;
   usage: { inputTokens: number; cachedInputTokens?: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
-  fallbackCauses?: FallbackCause[];
+  fallbackCauses?: SpanFallbackCause[];
 };
 
 export type BilledCallsCursorView = { run: number; after: number };

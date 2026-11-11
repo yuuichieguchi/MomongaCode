@@ -137,7 +137,7 @@ export type { BuildInjectionReportInput, InjectionTrial } from './inject-report.
 export { compareReliability, formatReliabilityComparison } from './reliability-compare.ts';
 export type { ReliabilityComparison } from './reliability-compare.ts';
 export { runBenchmark } from './bench-run.ts';
-export type { BenchRunApi, BenchRunPorts, BenchRunResult, BenchRunView, InvalidSetup } from './bench-run.ts';
+export type { BenchRunApi, BenchRunPorts, BenchRunResult, BenchRunView, BenchTrialHome, InvalidSetup } from './bench-run.ts';
 export { YIELD_DATASET_FORMAT, YIELD_DATASET_SCHEMA, parseYieldDataset, yieldDatasetDigestOf } from './yield-dataset.ts';
 export type { YieldDataset, YieldFamily, YieldLearn, YieldReuse } from './yield-dataset.ts';
 export { YIELD_ARMS, acceptedByAnchors, runYieldDataset, yieldCaseIdOf } from './yield-run.ts';

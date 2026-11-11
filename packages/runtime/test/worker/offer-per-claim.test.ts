@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AddGoverningFactInput } from '@momonga/store';
+import { TOKEN_SETTINGS_OFF } from './fake-settings.ts';
 import { makeEnv, textOf } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
@@ -24,7 +25,7 @@ const inputOf = (body: unknown): unknown[] => (body as { input: unknown[] }).inp
 
 const runWithMidClaimFact = async (cachePrefix: boolean, overrides: Partial<AddGoverningFactInput>) => {
   const env = await makeEnv();
-  env.settings.contextValue = { ...env.settings.contextValue, cachePrefix };
+  env.settings.contextValue = { ...TOKEN_SETTINGS_OFF, cachePrefix };
   env.toolbox.hooks.Echo = async () => {
     added(env, overrides);
   };

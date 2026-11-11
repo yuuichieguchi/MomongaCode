@@ -641,7 +641,7 @@ export type { OperationEffectRecord } from './run-types.ts';
 export type { ApprovalBasis, PermissionDenial, PermissionDenialSource } from './permission-denial.ts';
 export { EXECUTED_TEXT_EVENT_TYPES, readExecutedText } from './executed-text.ts';
 export type { ExecutedTextEvent, ExecutedTextEventType, ExecutedTextHandlers } from './executed-text.ts';
-export { diffFieldsOf, heldEndOf, OPERATION_EFFECT_OUTCOMES, APPROVAL_KINDS, APPROVAL_STATUSES, UNKNOWN_EFFECT_ADVICE, UNKNOWN_EFFECT_REASON, unknownEffectLines, unknownEffectOptions, unknownEffectTitle, isInheritedReference, IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_FULL_CODE, INBOX_MAX_PENDING, INBOX_STATES, inboxFullMessage, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, USAGE_CHARGE_PURPOSES, USER_SHELL_COMMAND_CHARS, USER_SHELL_HEAD_BYTES, USER_SHELL_OUTPUT_BYTES, USER_SHELL_RUN_ACTIVE_CODE, USER_SHELL_TAIL_BYTES, NOTHING_TO_COMPACT_CODE, NOTHING_TO_COMPACT_MESSAGE, PROMPT_TEXT_MAX_CHARS } from './run-types.ts';
+export { diffFieldsOf, heldEndOf, OPERATION_EFFECT_OUTCOMES, APPROVAL_KINDS, APPROVAL_STATUSES, UNKNOWN_EFFECT_ADVICE, UNKNOWN_EFFECT_REASON, unknownEffectLines, unknownEffectOptions, unknownEffectTitle, isInheritedReference, IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_FULL_CODE, INBOX_MAX_PENDING, INBOX_STATES, inboxFullMessage, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, USAGE_CHARGE_PURPOSES, USER_SHELL_COMMAND_CHARS, USER_SHELL_HEAD_BYTES, USER_SHELL_OUTPUT_BYTES, USER_SHELL_RUN_ACTIVE_CODE, USER_SHELL_TAIL_BYTES, COMPACT_PIN_KEY, NOTHING_TO_COMPACT_CODE, NOTHING_TO_COMPACT_MESSAGE, PROMPT_TEXT_MAX_CHARS } from './run-types.ts';
 export type {
   ActivatedSkillEntry,
   ActivatedSkillRecord,
@@ -768,6 +768,7 @@ export type {
   AdapterCompactRequest,
   AdapterCompactResult,
   AdapterContext,
+  UpstreamRoute,
   AdapterCountTokensResult,
   AdapterInputItem,
   AdapterRequest,
@@ -798,8 +799,8 @@ export type {
   SupervisorPhase,
   SupervisorShutdownResponse,
 } from './supervisor-api.ts';
-export { BILLING_CHANGE_ALLOWED, BILLING_CHANGE_REASONS, BILLING_CHANGE_REFUSED, describeFallbackCause, fallbackCauseName, isFallbackCause, isFallbackCauseList } from './fallback-cause.ts';
-export type { BillingChangeReason, BillingChangeRecord, FallbackCause } from './fallback-cause.ts';
+export { BILLING_CHANGE_ALLOWED, BILLING_CHANGE_REASONS, BILLING_CHANGE_REFUSED, describeFallbackCause, fallbackCauseName, isFallbackCause, isFallbackCauseList, isSpanFallbackCause, isSpanFallbackCauseList, spanFallbackCauseOf } from './fallback-cause.ts';
+export type { BillingChangeReason, BillingChangeRecord, FallbackCause, SpanFallbackCause } from './fallback-cause.ts';
 export { PLAN_LABEL_PATTERN, PLAN_LABEL_REFUSAL, isPlanLabel, planAccountRefOf } from './plan-account.ts';
 export type { NamedPlanAccountRef } from './plan-account.ts';
 export type { JsonSchema } from './schema-helpers.ts';

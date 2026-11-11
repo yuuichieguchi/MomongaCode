@@ -91,7 +91,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
       const state = bridge.snapshot();
       return { kind: 'sessions', sessionIds: state === undefined ? [] : state.sessions };
     },
-    recordFile: () => (bridge.snapshot() === undefined ? undefined : recordFileOf(paths, recordName())),
+    recordFile: () => (bridge.snapshot() === undefined ? undefined : recordFileOf(paths, 'acp', recordName())),
     quiet: () => bridge.quiet() && carried.idle(),
     snapshot: (toVersion) => {
       const state = bridge.snapshot();

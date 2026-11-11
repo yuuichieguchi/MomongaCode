@@ -58,6 +58,7 @@ const runJob = async (survives: boolean) => {
     markerDir,
     ...jobGenerationOptions(root),
     markerFiles: createNodeJobMarkerFiles(),
+    files: nodeFileSystem,
     killGraceMs: 10,
     reapTiming: sleepDrivenTiming({ now: () => clock.now(), sleep: async () => undefined }),
     onWarning: (message: string) => void warnings.push(message),

@@ -12,7 +12,7 @@ export type GovernancePortOptions = {
 };
 
 export const createGovernancePort = ({ store, settings }: GovernancePortOptions): GovernancePort => ({
-  load: async (session) => {
+  load: async (session, signal) => {
     const find = (runId: string, callId: string): { factId: string } | undefined => {
       const recorded = store.governing.list().find((fact) => fact.source.kind === 'proposal' && fact.source.runId === runId && fact.source.callId === callId);
       return recorded === undefined ? undefined : { factId: recorded.id };
@@ -50,6 +50,6 @@ export const createGovernancePort = ({ store, settings }: GovernancePortOptions)
         return { factId: added.fact.id, created: added.created };
       },
     };
-    return { tools: createGovernanceTools({ port: toolPort, trusted: await settings.trusted(session) }) };
+    return { tools: createGovernanceTools({ port: toolPort, trusted: await settings.trusted(session, signal) }) };
   },
 });

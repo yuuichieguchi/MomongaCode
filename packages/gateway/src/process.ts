@@ -7,6 +7,7 @@ import {
   credentialEnvNames,
   derivedInputsOf,
   diskKeptRecords,
+  isMeasuredBy,
   keptSettingsDirectory,
   probeRecordKeyOf,
   providerNameOf,
@@ -1310,13 +1311,13 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           closables: [adapterClosable(adapter), core.closable],
         };
       }
-      if (target.adapter === 'ollama') {
+      if (isMeasuredBy(target, 'ollama-wire')) {
         const probed = await createProbedOllamaAdapter(display, target, paths.probe, clock, userDialects, liveness, outbound, probes);
         return unmanagedPart(keys.part, probed.adapter, targetCounterOf({ target, codeDigest, outputPolicy, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) }));
       }
       const readKey = apiKeyReader(options.env, secretResolverOfPart(), target, handedCredential, keyReadLimitOf(current.models.headersTimeoutMs), timers);
       const identify = identificationOf(display, target, outbound);
-      if (target.adapter === 'chat-completions' && target.toolCalling === 'auto') {
+      if (isMeasuredBy(target, 'chat-completions-wire')) {
         const probed = await createAutoChatCompletionsAdapter(display, target, readKey, paths.probe, clock, identify, userDialects, liveness, outbound, probes);
         return unmanagedPart(keys.part, probed.adapter, targetCounterOf({ target, codeDigest, outputPolicy, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) }));
       }

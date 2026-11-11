@@ -7,7 +7,7 @@ import type { ResolvedDialect } from '../../dialect/render.ts';
 import { renderToolParameters } from '../../dialect/tool-render.ts';
 import { isJsonOnlyEnforced, jsonReplyFormatOf } from '../shared/json-reply.ts';
 import type { JsonReplyPlan } from '../shared/json-reply.ts';
-import { callArgumentsText } from '../shared/call-arguments.ts';
+import { readableHistoryOf } from '../shared/call-arguments.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { imageUrlOf, isImagePart } from '../shared/image-part.ts';
 import { ownReasoning } from '../shared/reasoning-origin.ts';
@@ -71,7 +71,7 @@ const itemOf = (item: AdapterInputItem, origin: ReasoningOrigin, systemRole: Sys
     case 'message':
       return { type: 'message', role: item.role === 'system' ? systemRole : item.role, content: relayable(item.content, item.role === 'user' ? USER_PART_TYPES : TEXT_PART_TYPES) };
     case 'function_call':
-      return { type: 'function_call', call_id: item.call_id, name: item.name, arguments: callArgumentsText(item.arguments) };
+      return { type: 'function_call', call_id: item.call_id, name: item.name, arguments: item.arguments };
     case 'function_call_output':
       return { type: 'function_call_output', call_id: item.call_id, output: relayable(item.output, USER_PART_TYPES) };
   }
@@ -128,7 +128,7 @@ export const buildResponsesBody = (request: AdapterRequest, origin: ReasoningOri
     return schema === undefined ? rest : { ...rest, parameters: schema as NonNullable<FunctionTool['parameters']> };
   });
   const systemRole = rendering.systemRole ?? DEFAULT_SYSTEM_ROLE;
-  const input = request.input.flatMap((item) => itemOf(item, origin, systemRole) ?? []);
+  const input = readableHistoryOf(request.input).flatMap((item) => itemOf(item, origin, systemRole) ?? []);
   const additional = tools.length > 0 && (rendering.toolPlacement ?? DEFAULT_TOOL_PLACEMENT) === 'additional_tools';
   return {
     ...request.unknownFields,

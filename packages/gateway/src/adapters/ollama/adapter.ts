@@ -6,7 +6,7 @@ import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { StreamFailure, UpstreamProtocolError } from '../shared/failures.ts';
 import { gatewayOutputCeilingOf, watchContent, watchedPostOf } from '../shared/content-idle.ts';
 import type { ContentWatch } from '../shared/content-idle.ts';
-import { createEndpointPool } from '../shared/http-client.ts';
+import { createEndpointPool, routeReportOf } from '../shared/http-client.ts';
 import { jsonReplyPathOf, jsonReplyPlanOf } from '../shared/json-reply.ts';
 import { retryAfterHint, httpErrorOf } from '../shared/http-error.ts';
 import type { ErrorDetailReader } from '../shared/http-error.ts';
@@ -47,7 +47,7 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
     let watch: ContentWatch | undefined;
     try {
       const endpoint = await options.resolveEndpoint(ctx.target, signal);
-      const response = await pool.clientFor(endpoint).post({
+      const response = await pool.clientFor(endpoint).post({ ...routeReportOf(ctx),
         headers: { ...idempotencyHeaderOf(ctx), 'content-type': 'application/json', accept: 'application/x-ndjson' },
         body: JSON.stringify(body),
         signal,

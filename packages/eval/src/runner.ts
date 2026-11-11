@@ -1,4 +1,4 @@
-import type { Mandate, PublicRunEvent } from '@momonga/protocol';
+import type { Mandate, PublicRunEvent, RunCostView } from '@momonga/protocol';
 import { gradeChecks } from './oracle-grade.ts';
 import type { WorkspaceFiles } from './files.ts';
 import type { WorkspaceProbe } from './oracle-grade.ts';
@@ -21,6 +21,7 @@ export type EvalRunApi = {
   events(runId: string): AsyncIterable<PublicRunEvent>;
   getRun(runId: string): Promise<TranscriptRun>;
   answeredBy(runId: string): Promise<Answerer[]>;
+  costs(runIds: readonly string[]): Promise<RunCostView[]>;
   reflectionOf(runId: string): Promise<TranscriptReflection>;
   resolveApproval(approvalId: string, optionId: string): Promise<void>;
   cancelRun(runId: string): Promise<void>;
@@ -164,6 +165,7 @@ const runOnce = async (ports: EvalPorts, golden: GoldenCase, runIndex: number): 
       run: await scope.api.getRun(run.id),
       events,
       children,
+      costs: await scope.api.costs([run.id, ...children.map((child) => child.runId)]),
       reflection: await scope.api.reflectionOf(run.id),
       ...(oracle === undefined ? {} : { oracle }),
     };

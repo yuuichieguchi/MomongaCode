@@ -62,7 +62,7 @@ describe('isRunVerified reads the verdict from the journal thread (inventory row
     const env = await factsStore();
     const run = await env.finished(checkedRun(env.project, steps));
 
-    const { value, rows } = await env.decodedDuring(() => isRunVerified({ store: env.store, settings: { verification: async () => VERIFICATION } } as never, run.id));
+    const { value, rows } = await env.decodedDuring(() => isRunVerified({ store: env.store, settings: { verification: async () => VERIFICATION } } as never, run.id, new AbortController().signal));
 
     expect(value).toBe(true);
     expect(rows).toBe(0);
@@ -72,7 +72,7 @@ describe('isRunVerified reads the verdict from the journal thread (inventory row
     const env = await factsStore({ verdict: threadFailure });
     const run = await env.finished(checkedRun(env.project, 1));
 
-    await expect(isRunVerified({ store: env.store, settings: { verification: async () => VERIFICATION } } as never, run.id)).rejects.toBeInstanceOf(JournalThreadError);
+    await expect(isRunVerified({ store: env.store, settings: { verification: async () => VERIFICATION } } as never, run.id, new AbortController().signal)).rejects.toBeInstanceOf(JournalThreadError);
   });
 });
 

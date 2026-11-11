@@ -69,7 +69,7 @@ export const read = (callId: string, path: string, output: string): RunEventPayl
 
 export const bash = (callId: string, command: string, status: 'completed' | 'failed'): RunEventPayload[] => [
   call(callId, 'Bash', { command }),
-  { type: 'tool.completed', callId, status, output: '' },
+  { type: 'tool.completed', callId, status, output: '', command },
 ];
 
 const started = (callId: string): RunEventPayload => ({ type: 'tool.started', callId, idemKey: `key-${callId}` });
@@ -107,6 +107,7 @@ export const recorded = (
   return {
     caseId,
     runIndex,
+    costs: [],
     run: { id: `run-${caseId}-${runIndex}`, status: options.status ?? 'COMPLETED', step: 1, usage: { inputTokens: totalTokens - 1, outputTokens: 1, totalTokens }, ...(options.model === undefined ? {} : { model: options.model }) },
     events: publicEventsOf(payloads),
     children: options.children ?? [],
