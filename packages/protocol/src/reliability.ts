@@ -104,6 +104,10 @@ export type ReportCostRequest = { runIds: string[] };
 
 export type ReportCostPage = { costs: RunCostView[] };
 
+export type ReportRecomputeRequest = { runIds: string[] };
+
+export type ReportRecomputePage = { rows: RunFactsView[]; refused: string[] };
+
 export const MAX_TRACE_CONTENT_PAGE = 50;
 
 export const TRACE_CONTENT_PAGE_OPTION = { flag: '--page-size', minimum: 1, maximum: MAX_TRACE_CONTENT_PAGE, default: MAX_TRACE_CONTENT_PAGE } as const;
@@ -148,6 +152,7 @@ export const REPORT_SCHEMAS = {
   StoreReviewRequest: closedRequiringAll({ runId: nonEmptyString, callId: nonEmptyString, label: { enum: [...REVIEW_LABELS] } }),
   StoreReviewResponse: closedRequiringAll({ review }),
   ReportCostRequest: closedRequiringAll({ runIds: { type: 'array', maxItems: REPORT_PAGE_ROWS, uniqueItems: true, items: nonEmptyString } }),
+  ReportRecomputeRequest: closedRequiringAll({ runIds: { type: 'array', maxItems: REPORT_PAGE_ROWS, uniqueItems: true, items: nonEmptyString } }),
   ReportCostPage: closedRequiringAll({
     costs: {
       type: 'array',

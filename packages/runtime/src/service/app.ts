@@ -127,6 +127,7 @@ export type RunAppDeps = {
   runCostBreakdown: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ breakdown: CostBreakdownView; text: string }>;
   reportCost: ReportRouteDeps['reportCost'];
   runTraceContent: ReportRouteDeps['runTraceContent'];
+  recomputeFacts: ReportRouteDeps['recomputeFacts'];
   mcp: McpAdminPort;
   markerOwners: MarkerOwners;
   ignorableMarkerDirectories: () => Promise<readonly string[]>;
@@ -765,7 +766,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   route('/v1/runs/:id/approvals', { GET: listRunApprovals });
   route('/v1/runs/:id/events', { GET: runEvents });
   route('/v1/approvals/:id', { GET: getApproval, POST: resolveApproval });
-  registerReportRoutes(route, { store, now: () => deps.clock.now(), maxBodyBytes: deps.maxBodyBytes, reportCost: deps.reportCost, runTraceContent: deps.runTraceContent });
+  registerReportRoutes(route, { store, now: () => deps.clock.now(), maxBodyBytes: deps.maxBodyBytes, reportCost: deps.reportCost, runTraceContent: deps.runTraceContent, recomputeFacts: deps.recomputeFacts });
   registerTrustRoutes(route, { store, maxBodyBytes: deps.maxBodyBytes });
   registerMemoryRoutes(route, {
     store,

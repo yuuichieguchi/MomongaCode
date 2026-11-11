@@ -20,9 +20,19 @@ export type RunInfo = {
   origin: string;
 };
 
-export const GROUP_KEYS = ['model', 'mode', 'agent', 'origin', 'period'] as const;
+export const RUN_GROUP_KEYS = ['model', 'mode', 'agent', 'origin', 'period'] as const;
+
+export const TASK_LABEL_KEYS = ['taskType', 'difficulty'] as const;
+
+export const GROUP_KEYS = [...RUN_GROUP_KEYS, ...TASK_LABEL_KEYS] as const;
 
 export type GroupKey = (typeof GROUP_KEYS)[number];
+
+export type RunGroupKey = (typeof RUN_GROUP_KEYS)[number];
+
+export type TaskLabelKey = (typeof TASK_LABEL_KEYS)[number];
+
+export type TaskLabels = Record<TaskLabelKey, string>;
 
 export type Rate = { k: number; n: number };
 

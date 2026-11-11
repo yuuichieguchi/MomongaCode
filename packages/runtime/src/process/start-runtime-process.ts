@@ -56,7 +56,7 @@ import { createRunNotifier } from '../service/notifier.ts';
 import type { RunNotifier } from '../service/notifier.ts';
 import { FACTS_SWEEP_BATCH_RUNS, FIDELITY_FOLD_VERSION } from '@momonga/protocol';
 import type { DaemonCurrentFrame } from '@momonga/protocol';
-import { startFactsSweeper } from '../service/facts-sweeper.ts';
+import { recomputeFactsOf, startFactsSweeper } from '../service/facts-sweeper.ts';
 import { startMemorySweeper } from '../service/memory-sweeper.ts';
 import { createRunService } from '../service/service.ts';
 import { createReflector } from '../memory/reflection.ts';
@@ -779,6 +779,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             runlessTimingsOf: () => runlessTimingsOf(store),
             fetchPage: (runIds, cursor, limit) => gatewayClient.billedCalls(runIds, cursor, limit, includeRunless, signal),
           }),
+        recomputeFacts: (runIds, signal) => recomputeFactsOf(journalThread, runIds, signal),
         reportCost: (runIds, signal) => reportCostOf({ runIds, fetchPage: (ids, cursor, limit) => gatewayClient.billedCalls(ids, cursor, limit, false, signal) }),
         runTraceContent: async (runId, after, limit, requestSignal) => {
           await settledOrAborted(telemetries.current().telemetry.forceFlush(), requestSignal);
