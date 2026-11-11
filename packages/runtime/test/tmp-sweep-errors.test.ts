@@ -41,16 +41,10 @@ const failingFiles = (directory: string, present: Set<string>): RuntimeFiles => 
     if (name === NOT_EMPTY) throw errno('ENOTEMPTY');
     present.delete(name);
   };
-  const stat = { isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false } as unknown as fs.Stats;
   return {
     readdir: async (dir: string) => (dir === directory ? [...present] : []),
     rm: async (entry: string) => fail(entry),
-    lstat: async () => stat,
-    unlink: async (entry: string) => fail(entry),
-    lstatSync: () => stat,
-    unlinkSync: (entry: string) => fail(entry),
-    renameSync: () => undefined,
-  } as RuntimeFiles;
+  };
 };
 
 const expectedWarnings = (directory: string): string[] => [

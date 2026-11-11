@@ -1053,7 +1053,6 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       announceReady(fields, stdout);
       logger.info('runtime ready');
       phase = 'running';
-      if (fatalError !== undefined) void abort();
       return fields;
     });
 

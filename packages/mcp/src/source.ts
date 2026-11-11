@@ -11,7 +11,7 @@ import { MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TOTAL_TIMEOUT_MS, durationText } fro
 import { pollCeilingMs } from './tasks.ts';
 import type { McpResume } from './suspension.ts';
 import type { McpServerConnection } from './connection.ts';
-import { sanitizeSchema } from './schema-sanitizer.ts';
+import { boundedSchemaCopy } from './schema-copy.ts';
 import { capText, sanitizeServerText } from './text.ts';
 
 const MAX_TOOL_NAME_CHARS = 64;
@@ -133,7 +133,7 @@ const buildTool = (
     sideEffect: 'write',
     subjectKind: 'mcp',
     inputSchema,
-    ...(tool.outputSchema === undefined ? {} : { outputSchema: sanitizeSchema(tool.outputSchema) }),
+    ...(tool.outputSchema === undefined ? {} : { outputSchema: boundedSchemaCopy(tool.outputSchema) }),
     server,
     validatorIdentity: mcpToolIdentity(server, tool.name),
     timeoutMs: bounds.totalMs,
@@ -203,7 +203,7 @@ export const createMcpToolSource = (options: McpToolSourceOptions): ToolSource =
       try {
         const toolPart = normalizeToolPart(server, tool.name);
         displayName = `mcp__${server}__${toolPart}`;
-        tools.push(buildTool(options, tool, toolPart, sanitizeSchema(tool.inputSchema)));
+        tools.push(buildTool(options, tool, toolPart, boundedSchemaCopy(tool.inputSchema)));
       } catch (error) {
         notices.push(`skipped ${JSON.stringify(displayName)}: ${error instanceof Error ? error.message : String(error)}`);
       }
