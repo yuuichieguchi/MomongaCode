@@ -5,6 +5,10 @@ export type ForgeShape = 'hub' | 'lab';
 
 export type FakePullRequest = { number: number; head: string; base: string; headSha: string; title: string; state: 'open' | 'closed'; merged: boolean };
 
+export type FakeCheck = { name: string; status: string; conclusion?: string };
+
+export type FakeReviewComment = { path: string; line?: number; body: string };
+
 export type Fault = 'apply_then_drop' | 'drop_before_apply' | 'apply_then_hold' | 'hold_before_apply' | 'echo_authorization_500';
 
 export type FakeForgeRequest = { method: string; path: string; query: Record<string, string>; body: unknown; headers: http.IncomingHttpHeaders };
@@ -16,6 +20,8 @@ export type FakeForge = {
   requests: FakeForgeRequest[];
   pulls: FakePullRequest[];
   comments: Map<number, string[]>;
+  reviewComments: Map<number, FakeReviewComment[]>;
+  checks: Map<string, FakeCheck[]>;
   branchSha: Map<string, string>;
   faultNext(kind: 'create' | 'merge' | 'comment' | 'any', fault: Fault): void;
   creates(): number;
@@ -31,7 +37,7 @@ const NAME = 'widgets';
 
 export const REPOSITORY_PATH = `${OWNER}/${NAME}`;
 
-type Route = { kind: 'list' | 'get' | 'create' | 'merge' | 'comments' | 'comment' | 'checks' | 'branch'; number?: number; branch?: string };
+type Route = { kind: 'list' | 'get' | 'create' | 'merge' | 'comments' | 'comment' | 'reviewComments' | 'checks' | 'branch'; number?: number; branch?: string; sha?: string };
 
 const routeOf = (shape: ForgeShape, method: string, pathname: string): Route | undefined => {
   const parts = pathname.split('/').filter((part) => part !== '').map(decodeURIComponent);
@@ -41,8 +47,9 @@ const routeOf = (shape: ForgeShape, method: string, pathname: string): Route | u
     if (rest[0] === 'pulls' && rest.length === 1) return method === 'GET' ? { kind: 'list' } : method === 'POST' ? { kind: 'create' } : undefined;
     if (rest[0] === 'pulls' && rest.length === 2 && method === 'GET') return { kind: 'get', number: Number(rest[1]) };
     if (rest[0] === 'pulls' && rest[2] === 'merge' && method === 'PUT') return { kind: 'merge', number: Number(rest[1]) };
+    if (rest[0] === 'pulls' && rest[2] === 'comments' && method === 'GET') return { kind: 'reviewComments', number: Number(rest[1]) };
     if (rest[0] === 'issues' && rest[2] === 'comments') return { kind: method === 'GET' ? 'comments' : 'comment', number: Number(rest[1]) };
-    if (rest[0] === 'commits' && rest[2] === 'check-runs') return { kind: 'checks' };
+    if (rest[0] === 'commits' && rest[2] === 'check-runs') return { kind: 'checks', sha: rest[1] as string };
     if (rest[0] === 'branches' && rest.length === 2 && method === 'GET') return { kind: 'branch', branch: rest[1] as string };
     return undefined;
   }
@@ -51,8 +58,9 @@ const routeOf = (shape: ForgeShape, method: string, pathname: string): Route | u
   if (rest[0] === 'merge_requests' && rest.length === 1) return method === 'GET' ? { kind: 'list' } : method === 'POST' ? { kind: 'create' } : undefined;
   if (rest[0] === 'merge_requests' && rest.length === 2 && method === 'GET') return { kind: 'get', number: Number(rest[1]) };
   if (rest[0] === 'merge_requests' && rest[2] === 'merge' && method === 'PUT') return { kind: 'merge', number: Number(rest[1]) };
+  if (rest[0] === 'merge_requests' && rest[2] === 'review_notes' && method === 'GET') return { kind: 'reviewComments', number: Number(rest[1]) };
   if (rest[0] === 'merge_requests' && rest[2] === 'notes') return { kind: method === 'GET' ? 'comments' : 'comment', number: Number(rest[1]) };
-  if (rest[0] === 'repository' && rest[1] === 'commits' && rest[3] === 'statuses') return { kind: 'checks' };
+  if (rest[0] === 'repository' && rest[1] === 'commits' && rest[3] === 'statuses') return { kind: 'checks', sha: rest[2] as string };
   if (rest[0] === 'repository' && rest[1] === 'branches' && rest.length === 3 && method === 'GET') return { kind: 'branch', branch: rest[2] as string };
   return undefined;
 };
@@ -63,6 +71,8 @@ export const startFakeForge = async (shape: ForgeShape, credential: string): Pro
   const requests: FakeForgeRequest[] = [];
   const pulls: FakePullRequest[] = [];
   const comments = new Map<number, string[]>();
+  const reviewComments = new Map<number, FakeReviewComment[]>();
+  const checks = new Map<string, FakeCheck[]>();
   const branchSha = new Map<string, string>();
   const faults: Array<{ kind: 'create' | 'merge' | 'comment' | 'any'; fault: Fault }> = [];
   let origin = '';
@@ -156,8 +166,24 @@ export const startFakeForge = async (shape: ForgeShape, credential: string): Pro
         comments.set(route.number ?? 0, list);
         return reply(shape === 'hub' ? 201 : 200, { id: list.length, body: fields['body'] });
       }
-      case 'checks':
-        return sendJson(res, 200, shape === 'hub' ? { total_count: 0, check_runs: [] } : []);
+      case 'reviewComments':
+        return sendJson(
+          res,
+          200,
+          (reviewComments.get(route.number ?? 0) ?? []).map((entry, index) =>
+            shape === 'hub' ? { id: index + 1, path: entry.path, line: entry.line ?? null, body: entry.body } : { id: index + 1, file: entry.path, new_line: entry.line ?? null, note: entry.body },
+          ),
+        );
+      case 'checks': {
+        const found = checks.get(route.sha ?? '') ?? [];
+        return sendJson(
+          res,
+          200,
+          shape === 'hub'
+            ? { total_count: found.length, check_runs: found.map((check) => ({ name: check.name, status: check.status, conclusion: check.conclusion ?? null })) }
+            : found.map((check) => ({ name: check.name, status: check.conclusion ?? check.status })),
+        );
+      }
     }
   });
   origin = server.origin;
@@ -169,6 +195,8 @@ export const startFakeForge = async (shape: ForgeShape, credential: string): Pro
     requests,
     pulls,
     comments,
+    reviewComments,
+    checks,
     branchSha,
     faultNext: (kind, fault) => {
       faults.push({ kind, fault });
@@ -234,7 +262,14 @@ export const LAB_DESCRIPTOR = {
       path: '/api/v4/projects/{owner}/{name}/merge_requests/{number}/notes',
       success: [200],
       items: '',
-      result: { body: 'body' },
+      result: { id: 'id', body: 'body' },
+    },
+    listReviewComments: {
+      method: 'GET',
+      path: '/api/v4/projects/{owner}/{name}/merge_requests/{number}/review_notes',
+      success: [200],
+      items: '',
+      result: { id: 'id', path: 'file', line: 'new_line', body: 'note' },
     },
     createComment: {
       method: 'POST',

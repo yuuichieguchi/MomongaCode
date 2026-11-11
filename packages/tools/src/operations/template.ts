@@ -7,7 +7,9 @@ export class TemplateError extends Error {
   }
 }
 
-const REFERENCE = /\{((?:input|before|after|call)(?:\.[A-Za-z0-9_]+)+)\}/g;
+const REFERENCE = /\{((?:input|before|after|call|seen|item)(?:\.[A-Za-z0-9_]+)+)\}/g;
+
+export const referencesIn = (template: string): string[] => [...template.matchAll(REFERENCE)].map((match) => match[1] as string);
 
 export const lookup = (scope: Scope, reference: string): string | undefined => {
   let current: unknown = scope;

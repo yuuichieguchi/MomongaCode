@@ -1,7 +1,7 @@
 import { defineProductSchema } from '@momonga/foundation';
 import type { ToolKind } from '@momonga/protocol';
 import { withRefNameRule } from './ref-name.ts';
-import { REFERENCE_PATTERN, isTruthy, lookup, renderTemplate } from './template.ts';
+import { REFERENCE_PATTERN, isTruthy, lookup, referencesIn, renderTemplate } from './template.ts';
 import type { Scope } from './template.ts';
 
 export class OperationSpecError extends Error {
@@ -18,7 +18,7 @@ export const OPERATION_CRASH_POINTS = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5'] as co
 export const APPROVAL_CLASSES = ['rule', 'always'] as const;
 export type ApprovalClass = (typeof APPROVAL_CLASSES)[number];
 
-export const FORGE_VOCABULARY = ['listPullRequests', 'getPullRequest', 'createPullRequest', 'mergePullRequest', 'getBranch', 'listChecks', 'listComments', 'createComment'] as const;
+export const FORGE_VOCABULARY = ['listPullRequests', 'getPullRequest', 'createPullRequest', 'mergePullRequest', 'getBranch', 'listChecks', 'listComments', 'listReviewComments', 'createComment'] as const;
 export type ForgeOperationName = (typeof FORGE_VOCABULARY)[number];
 
 export type Operand = string | { readonly literal: string };
@@ -40,7 +40,7 @@ export type ForgeCall = { readonly forge: ForgeOperationName; readonly args: Rea
 
 export type ProbeSource =
   | (ArgvCall & { readonly extract?: 'trim' | 'firstField'; readonly emptyOnFailure?: true; readonly each?: 'destinations' })
-  | (ForgeCall & { readonly shape: 'one' | 'list' | 'count'; readonly contains?: { readonly field: string; readonly value: string } });
+  | (ForgeCall & ({ readonly shape: 'one' | 'list' | 'count'; readonly contains?: { readonly field: string; readonly value: string } } | { readonly shape: 'lines'; readonly lines: readonly string[] }));
 
 export type Probe = { readonly id: string; readonly via: ProbeSource };
 
@@ -154,7 +154,8 @@ const SPEC_SCHEMA = {
                 properties: {
                   forge: FORGE_NAME,
                   args: STRING_MAP,
-                  shape: { enum: ['one', 'list', 'count'] },
+                  shape: { enum: ['one', 'list', 'count', 'lines'] },
+                  lines: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 },
                   contains: { type: 'object', properties: { field: { type: 'string' }, value: { type: 'string' } }, required: ['field', 'value'], additionalProperties: false },
                 },
                 required: ['forge', 'args', 'shape'],
@@ -223,6 +224,22 @@ const takesOptionalForgeRemote = (input: Record<string, unknown>): boolean => {
   return isString && !(Array.isArray(required) && required.includes(FORGE_REMOTE_INPUT));
 };
 
+const SEEN = 'seen';
+
+const checkForgeProbe = (name: string, probe: Probe, earlier: readonly Probe[]): void => {
+  const via = probe.via;
+  if (!('forge' in via)) return;
+  const givesLines = 'lines' in via;
+  if (via.shape === 'lines' && !givesLines) throw new OperationSpecError(`${name}: the probe ${probe.id} lists every item and must give the forms of a line in lines`);
+  if (via.shape !== 'lines' && givesLines) throw new OperationSpecError(`${name}: the probe ${probe.id} gives the forms of a line but does not list every item (shape lines)`);
+  for (const reference of Object.values(via.args).flatMap(referencesIn)) {
+    const [root, source] = reference.split('.');
+    if (root === SEEN && !earlier.some((candidate) => candidate.id === source)) {
+      throw new OperationSpecError(`${name}: the probe ${probe.id} reads ${reference}, but no probe named ${source} comes before it`);
+    }
+  }
+};
+
 export const parseOperationSpec = (value: unknown): OperationSpec => {
   const verdict = validateSpec(value);
   if (!verdict.valid) {
@@ -252,6 +269,7 @@ export const parseOperationSpec = (value: unknown): OperationSpec => {
     }
   }
   if (asksForge(spec) && !takesOptionalForgeRemote(spec.input)) throw new OperationSpecError(`${spec.name} asks a forge and must take the optional string input ${FORGE_REMOTE_INPUT}, which names the remote whose forge is asked`);
+  spec.observe.forEach((probe, index) => checkForgeProbe(spec.name, probe, spec.observe.slice(0, index)));
   const ids = spec.observe.map((probe) => probe.id);
   if (new Set(ids).size !== ids.length) throw new OperationSpecError(`${spec.name} declares a probe id twice`);
   return { ...spec, input: withRefNameRule(spec.input), require: spec.require ?? [] };

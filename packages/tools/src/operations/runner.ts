@@ -6,6 +6,7 @@ import type { StoredRenames } from '@momonga/protocol';
 import { ToolExecutionError, defineTool } from '../types.ts';
 import type { AnyTool, GateCall, GateFacts, OperationEffect, ReconcileContext, ReconcileResult, SubjectContext, ToolContext, ToolDefinition, ToolResult } from '../types.ts';
 import type { ToolIdempotencyRecord } from '../ports.ts';
+import type { ForgeFields } from '../forge/http.ts';
 import type { ForgeAccess } from '../forge/instances.ts';
 import { parseRemoteUrl } from '../forge/remote.ts';
 import { gitEnvironment, isHttpDestination } from '../read-only-call.ts';
@@ -17,7 +18,7 @@ import type { GitOriginCredential } from './git-credential.ts';
 import { OPERATION_SPECS } from './catalogue.ts';
 import { FORGE_REMOTE_INPUT, asksForge, describeClause, evaluateClauses, failedClauses } from './spec.ts';
 import type { ArgvCall, ArgvItem, ForgeCall, Network, OperationSpec, PrePushHook, Probe } from './spec.ts';
-import { isTruthy, lookup, lookupList, renderTemplate } from './template.ts';
+import { isTruthy, lookup, lookupList, referencesIn, renderTemplate } from './template.ts';
 import type { Scope } from './template.ts';
 
 export type OperationSettings = { readonly protectedRefs?: readonly string[]; readonly approval?: Readonly<Record<string, 'rule' | 'always'>> };
@@ -183,6 +184,14 @@ const observeEach = async (runtime: Runtime, via: Extract<Probe['via'], { argv: 
   return new Set(values).size === 1 ? (values[0] as string) : AGREEMENT_LOST;
 };
 
+const lineOf = (runtime: Runtime, probe: string, forms: readonly string[], item: ForgeFields): string => {
+  const form = forms.find((candidate) => referencesIn(candidate).every((reference) => lookup({ item }, reference) !== undefined));
+  if (form === undefined) {
+    throw new ToolExecutionError(`${runtime.spec.name} could not show an entry of ${probe}: the forge gave only ${Object.keys(item).join(', ') || 'no field'}, which fits none of the forms ${forms.join(' | ')}`);
+  }
+  return renderTemplate(form, { item });
+};
+
 const observeProbe = async (runtime: Runtime, probe: Probe, ctx: ReconcileContext, scope: Scope, repoRoot: string): Promise<unknown> => {
   const via = probe.via;
   if ('argv' in via) return via.each === undefined ? observeArgv(runtime, via, ctx, scope, repoRoot) : observeEach(runtime, via, ctx, scope, repoRoot);
@@ -195,6 +204,7 @@ const observeProbe = async (runtime: Runtime, probe: Probe, ctx: ReconcileContex
   });
   if (via.shape === 'one') return { ...answer.fields };
   if (via.shape === 'list') return { count: String(answer.items.length), ...(answer.items[0] ?? {}) };
+  if (via.shape === 'lines') return { count: String(answer.items.length), text: answer.items.map((item) => lineOf(runtime, probe.id, via.lines, item)).join('\n') };
   const contains = via.contains;
   if (contains === undefined) throw new ToolExecutionError(`${runtime.spec.name} counts without a contains filter`);
   const needle = renderTemplate(contains.value, scope);
@@ -245,6 +255,7 @@ const observe = async (runtime: Runtime, ctx: ReconcileContext, input: Record<st
     const scope: Scope = {
       input,
       call: callOf(ctx.idemKey),
+      seen: observed,
       ...(before === undefined ? {} : { before }),
       ...(destinations === undefined ? {} : { [DESTINATIONS]: destinations }),
       ...(recorded.forgeRemote === undefined ? {} : { [FORGE_REMOTE]: recorded.forgeRemote }),

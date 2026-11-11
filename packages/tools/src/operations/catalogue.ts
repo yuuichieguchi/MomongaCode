@@ -5,6 +5,7 @@ import gitPush from './specs/git-push.json' with { type: 'json' };
 import gitStage from './specs/git-stage.json' with { type: 'json' };
 import gitUpdate from './specs/git-update.json' with { type: 'json' };
 import pullRequestComment from './specs/pull-request-comment.json' with { type: 'json' };
+import pullRequestComments from './specs/pull-request-comments.json' with { type: 'json' };
 import pullRequestCreate from './specs/pull-request-create.json' with { type: 'json' };
 import pullRequestMerge from './specs/pull-request-merge.json' with { type: 'json' };
 import pullRequestStatus from './specs/pull-request-status.json' with { type: 'json' };
@@ -15,7 +16,7 @@ import { OperationSpecError, parseOperationSpec, supersededForms } from './spec.
 import type { SupersededForm } from './spec.ts';
 import type { OperationSpec } from './spec.ts';
 
-const SPEC_DATA: readonly unknown[] = [gitBranch, gitStage, gitCommit, gitFetch, gitUpdate, gitPush, pullRequestComment, pullRequestCreate, pullRequestMerge, pullRequestStatus];
+const SPEC_DATA: readonly unknown[] = [gitBranch, gitStage, gitCommit, gitFetch, gitUpdate, gitPush, pullRequestComment, pullRequestCreate, pullRequestMerge, pullRequestStatus, pullRequestComments];
 
 const PROGRAM_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
