@@ -73,6 +73,7 @@ export type ClassifiedError = {
   fallback?: ErrorFallback;
   credential?: CredentialEffect;
   upstream?: UpstreamFailureFacts;
+  cause?: string;
 };
 
 export type AdapterCountTokensResult = CountTokensResult;

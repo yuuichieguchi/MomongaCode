@@ -10,6 +10,7 @@ import type { RuntimeStore } from '@momonga/store';
 import { fixtureCompactionItem, materializeEvents, createFakeClock, testKernelLock } from '@momonga/testkit';
 import { MIGRATIONS } from '../src/schema.ts';
 import { LEASE_MS, START_MS, enqueue, harness, makeStoreDir, mustClaim, newSession, openStoreAt, registerCleanup, UNASKED_COMMANDS } from './helpers.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const USAGE = { input_tokens: 10, output_tokens: 2, total_tokens: 12 };
 
@@ -78,7 +79,7 @@ const USER_MESSAGE: RunEventPayload = { type: 'user.message', text: 'do the task
 
 const todaysFacts = (payloads: readonly RunEventPayload[]): Facts => {
   const events = materializeEvents([USER_MESSAGE, ...payloads], { runId: 'run-fixture', sessionId: 'session-fixture' });
-  const state = events.reduce(foldRunState, initialRunState({ runId: 'run-fixture', sessionId: 'session-fixture' }));
+  const state = events.reduce(foldRunState, initialRunState({ runId: 'run-fixture', sessionId: 'session-fixture', fence: TEST_FENCE }));
   const finalText = [...state.history].reverse().map((entry) => assistantTextOf([entry.item])).find((text) => text !== '') ?? '';
   return {
     finalText,

@@ -15,6 +15,7 @@ import type { E2eHome } from './home.ts';
 import { chatCompletions, textReply, toolCallReply } from './upstream.ts';
 import { E2E_MARGIN_MS } from './wait.ts';
 import { firstGeneration } from '@momonga/testkit';
+import { TEST_FENCE } from '@momonga/testkit';
 
 export const PREFIX_PROBE_TASK = 'Report the size of the prefix.';
 
@@ -52,7 +53,7 @@ export type MeasuredWindow = { capabilities: Capabilities; person: Sizing; bench
 
 const widestFactlessWorkingStateText = (capabilities: Capabilities): string => {
   const state: RunState = {
-    ...initialRunState({ runId: 'r', sessionId: 's' }),
+    ...initialRunState({ runId: 'r', sessionId: 's', fence: TEST_FENCE }),
     summary: { item: { type: 'message', role: 'user', content: '' }, summary: '', replacedThroughSeq: 1 },
     evicted: ['call'],
     workingFacts: { ...emptyWorkingFacts(), replacedThroughEventSeq: Number('9'.repeat(MAX_JOURNAL_SEQ_DIGITS)) },

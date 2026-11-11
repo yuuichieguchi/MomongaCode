@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { sha256Hex } from '@momonga/foundation';
 import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const STORE_SRC = fileURLToPath(new URL('../src/', import.meta.url));
 const TOOL_NAME_LITERAL = /'(?:Bash|Write|Edit|Read|Glob|Grep)'/;
@@ -15,7 +16,7 @@ const USAGE = { input_tokens: 1, output_tokens: 1, total_tokens: 2 };
 const fold = (payloads: readonly RunEventPayload[]): RunState =>
   payloads
     .map((payload, index) => ({ ...payload, id: index + 1, ...IDS, seq: index + 1, step: 1, leaseToken: 1, createdAt: 1 }) as RunEvent)
-    .reduce(foldRunState, initialRunState(IDS));
+    .reduce(foldRunState, initialRunState({ ...IDS, fence: TEST_FENCE }));
 
 const called = (callId: string, name: string, rawInput: unknown): RunEventPayload[] => [
   {

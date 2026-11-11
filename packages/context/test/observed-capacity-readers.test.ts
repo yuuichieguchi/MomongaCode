@@ -16,6 +16,7 @@ import type { Capabilities, FunctionTool, MessageInputItem } from '@momonga/prot
 import { HOME, MODEL, PROJECT, SYSTEM_PROMPT, capabilitiesFor, fakeBlobs, fakeReader, sourcesWith, user } from './helpers.ts';
 import { weightMeter, weightOf } from './weight-meter.ts';
 import type { UnderRule } from './weight-meter.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const WINDOW = 8192;
 const OUTPUT = 1024;
@@ -45,6 +46,7 @@ type Setup = { task?: MessageInputItem; tools?: readonly FunctionTool[]; skills?
 const inputWith = (capabilities: Capabilities, { task, tools, skills, observed }: Setup): BuildContextInput => {
   const input: BuildContextInput & { observedCapacity?: true } = {
     capabilities,
+    fence: TEST_FENCE,
     model: MODEL,
     sources: sourcesWith({
       history: [user(1, 'question')],

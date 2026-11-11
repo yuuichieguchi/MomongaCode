@@ -6,9 +6,9 @@ export const HOOK_COMMAND_TYPE = 'command' as const;
 
 export const HOOK_BLOCKING_EXIT_CODE = 2;
 
-export const HOOK_DEFAULT_TIMEOUT_SECONDS = 600;
+export const HOOK_DEFAULT_TIMEOUT_SECONDS: { readonly default: number } & Readonly<Partial<Record<HookEvent, number>>> = { default: 600, UserPromptSubmit: 30 };
 
-export const USER_PROMPT_HOOK_DEFAULT_TIMEOUT_SECONDS = 30;
+export const hookTimeoutSecondsOf = (event: HookEvent, value?: number): number => value ?? HOOK_DEFAULT_TIMEOUT_SECONDS[event] ?? HOOK_DEFAULT_TIMEOUT_SECONDS.default;
 
 export const STOP_HOOK_MAX_CONTINUATIONS = 8;
 
@@ -46,7 +46,7 @@ export type HookExecution = {
 };
 
 export const hookTimeoutMs = (event: HookEvent, command: { timeout?: number }): number =>
-  (command.timeout ?? (event === 'UserPromptSubmit' ? USER_PROMPT_HOOK_DEFAULT_TIMEOUT_SECONDS : HOOK_DEFAULT_TIMEOUT_SECONDS)) * 1000;
+  hookTimeoutSecondsOf(event, command.timeout) * 1000;
 
 const LITERAL_MATCHER = /^[A-Za-z0-9_|]+$/;
 

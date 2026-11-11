@@ -6,6 +6,7 @@ import { ContextOverflowError, buildContext, capacityFor, createTokenMeter, meas
 import type { BuildContextInput, BuildContextPorts, BuiltContext, ContextArrival, HistoryItem, MeterCount, TokenMeter } from '@momonga/context';
 import { HOME, MODEL, PROJECT, assistant, call, capabilitiesFor, fakeBlobs, fakeReader, output, seeded, shapeCounter, sourcesWith, touchedFile, user } from './helpers.ts';
 import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+import { TEST_FENCE } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
@@ -95,6 +96,7 @@ const caseOf = (random: Random): Case => {
 
 const inputOf = (scenario: Case, history: HistoryItem[], memories: MemoryView[], extra: Partial<BuildContextInput> = {}): BuildContextInput => ({
   capabilities: capabilitiesFor(scenario.window, { tokenCounting: 'estimated', maxOutputTokens: 1024 }),
+  fence: TEST_FENCE,
   model: MODEL,
   sources: sourcesWith({ history, memories }),
   evicted: new Set<string>(),
