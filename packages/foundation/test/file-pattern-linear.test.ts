@@ -1,3 +1,4 @@
+import { Worker } from 'node:worker_threads';
 import { describe, expect, it } from 'vitest';
 import { fileMatcherOf, parseFilePattern, testFileMatcher } from '@momonga/foundation';
 import type { FilePatternContext } from '@momonga/foundation';
@@ -12,19 +13,51 @@ const accepts = (specifier: string, candidate: string, form: MatcherForm = 'exac
     return verdict.own || verdict.below;
   });
 
-describe('file rules are matched over path segments without a backtracking regular expression', () => {
-  it('answers a rule of thirty stars against a twenty thousand character segment that does not match', () => {
-    const rule = `//w/${'*a'.repeat(30)}b`;
-    const candidate = `/w/${'a'.repeat(20_000)}`;
-    for (const form of ['exact', 'deny', 'subset'] as const) expect(accepts(rule, candidate, form)).toBe(false);
-    expect(accepts(rule, `${candidate}b`)).toBe(true);
+const WORKER_BOUND_MS = 10_000;
+
+const WORKER_SOURCE = `
+const { parentPort, workerData } = require('node:worker_threads');
+import(workerData.module).then(({ fileMatcherOf, parseFilePattern, testFileMatcher }) => {
+  const context = { roots: ['/w'], home: '/h', settingsRoot: '/s', effect: 'deny' };
+  const blocks = parseFilePattern(workerData.rule, context).some((pattern) =>
+    ['exact', 'deny', 'subset'].some((form) => {
+      const verdict = testFileMatcher(fileMatcherOf(pattern, pattern.directory, form), workerData.candidate, false);
+      return verdict.own || verdict.below;
+    }),
+  );
+  parentPort.postMessage(blocks);
+});
+`;
+
+type BoundedAnswer = { kind: 'answered'; blocks: boolean } | { kind: 'ended at the bound' };
+
+const boundedAnswer = (rule: string, candidate: string): Promise<BoundedAnswer> =>
+  new Promise((resolve, reject) => {
+    const module = new URL('../src/file-pattern.ts', import.meta.url).href;
+    const worker = new Worker(WORKER_SOURCE, { eval: true, workerData: { module, rule, candidate } });
+    const bound = setTimeout(() => {
+      void worker.terminate();
+      resolve({ kind: 'ended at the bound' });
+    }, WORKER_BOUND_MS);
+    worker.once('message', (blocks: boolean) => {
+      clearTimeout(bound);
+      void worker.terminate();
+      resolve({ kind: 'answered', blocks });
+    });
+    worker.once('error', (error) => {
+      clearTimeout(bound);
+      reject(error);
+    });
   });
 
-  it('answers a rule of many globstars against a deep path that does not match', () => {
-    const rule = `//w/${'**/a/'.repeat(12)}b`;
-    const candidate = `/w/${'a/'.repeat(400)}c`;
-    expect(accepts(rule, candidate)).toBe(false);
-    expect(accepts(rule, `/w/${'a/'.repeat(400)}b`)).toBe(true);
+describe('file rules are matched over path segments without a backtracking regular expression', () => {
+  it.each([
+    [`//w/${'*a'.repeat(30)}b`, `/w/${'a'.repeat(20_000)}`],
+    [`//w/${'**/a/'.repeat(12)}b`, `/w/${'a/'.repeat(400)}c`],
+  ])('answers the pathological rule %# in a worker that is ended when it passes its bound', async (rule, candidate) => {
+    const answer = await boundedAnswer(rule, candidate);
+    expect(answer).toEqual({ kind: 'answered', blocks: false });
+    expect(accepts(rule, `${candidate.slice(0, -1)}b`)).toBe(true);
   });
 
   it('never lets a star cross a slash', () => {
