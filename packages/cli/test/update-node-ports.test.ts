@@ -2,9 +2,10 @@ import fs from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
-import { STARTUP_TIMEOUT_MS, ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
+import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import { registerCleanup, withTempDir } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
+import { daemonReadyBoundMs } from '../src/daemon/ensure-daemon.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { MAX_REDIRECTS, STAGING_PREFIX, nodeDaemonProbe, nodeUpdateFs, nodeUpdateLock, nodeUpdatePorts, nodeUpdateState, undiciUpdateHttp } from '../src/update/node-ports.ts';
 import { readyChildren, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
@@ -166,10 +167,9 @@ describe('daemon probe', () => {
     expect(await nodeDaemonProbe(paths, virtualClock()).retiring()).toEqual({ steps: 2, jobs: 1, versions: ['0.9.0', '1.0.0'] });
   });
 
-  it('bounds the start after an install by the ready bound alone (20.72)', async (context) => {
+  it('gives the ready bound of the daemon as the wait of the start after an install (20.72)', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    expect(await nodeDaemonProbe(momongaPaths(home), virtualClock()).restartBoundMs()).toBe(STARTUP_TIMEOUT_MS);
-    expect(STARTUP_TIMEOUT_MS).toBe(60_000);
+    expect(await nodeDaemonProbe(momongaPaths(home), virtualClock()).readyBoundMs()).toBe(await daemonReadyBoundMs());
   });
 });
 

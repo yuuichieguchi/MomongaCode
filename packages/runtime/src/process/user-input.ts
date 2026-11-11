@@ -14,7 +14,7 @@ import type { SettingsPort, ToolRuntimePort, UserInputPort } from '../ports.ts';
 import { holdSandbox } from '../worker/held-sandbox.ts';
 
 export type UserInputOptions = {
-  tools: Pick<ToolRuntimePort, 'envFor' | 'policyFor' | 'sandboxes' | 'sessionState'>;
+  tools: Pick<ToolRuntimePort, 'envFor' | 'policyFor' | 'sandboxes' | 'sessionState' | 'shellHost'>;
   policy: UserPolicy;
   store: Pick<RuntimeStore, 'governing'>;
   settings: Pick<SettingsPort, 'rules' | 'trusted'>;
@@ -88,6 +88,7 @@ export const createUserInputPort = ({ tools, policy, store, settings, clock, hom
         command,
         cwd: facts.session.cwd,
         env: facts.env,
+        shellHost: tools.shellHost,
         signal: io.signal,
         refusal: (asked) => policy.userRefusal({ tool: 'Bash', command: asked }, facts),
         spawn: (spawned, signal) => unsandboxed.spawn(spawned, facts.sandboxPolicy, signal),

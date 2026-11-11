@@ -81,7 +81,7 @@ describe('a command that cannot be analysed while a Bash deny rule exists', () =
     const decision = await bash('cat <<EOF\nx\nEOF', { deny: DENY, mandate: true });
 
     expect(decision).toMatchObject({ kind: 'ask', humanOnly: true });
-    expect(decision.outside).toBeUndefined();
+    expect(decision).not.toHaveProperty('denial');
   });
 
   it('is still denied by the rule whose words stand in command position', async () => {

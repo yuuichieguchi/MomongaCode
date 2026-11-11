@@ -20,7 +20,7 @@ import {
   upstreamEndpointOf,
 } from '@momonga/config';
 import type { ResolvedModel, ResolvedModels, ResolvedSettings } from '@momonga/config';
-import { CAPABILITIES_UNKNOWN_CODE, PLAN_USE_NOT_ENABLED_CODE, SERVER_KINDS, SIGN_IN_REQUIRED_CODE, USAGE_PAUSED_CODE, displayMapOf, planAccountRefOf, PLAN_STORE_UNREADABLE_STATE, PLAN_STORE_UNWRITABLE_STATE } from '@momonga/protocol';
+import { CAPABILITIES_UNKNOWN_CODE, PLAN_USE_NOT_ENABLED_CODE, SERVER_KINDS, SIGN_IN_REQUIRED_CODE, USAGE_PAUSED_CODE, WORDS, displayMapOf, planAccountRefOf, PLAN_STORE_UNREADABLE_STATE, PLAN_STORE_UNWRITABLE_STATE } from '@momonga/protocol';
 import type { ManagedServerDescription, PlanAccountRef, PlanHealthReason, TargetHealthReason, GatewayHealth } from '@momonga/protocol';
 import {
   acquireProcessLock,
@@ -155,6 +155,7 @@ import type { OllamaMeasurement } from './probe/ollama.ts';
 import { endpointKeyOfLock, endpointLockKeyOf } from './probe/endpoint-record.ts';
 import type { EndpointKey, EndpointLockKey } from './probe/endpoint-record.ts';
 import { createManagedTarget } from './managed/target.ts';
+import { aboutModel, managedConnectionPlace, managedModelName } from './managed/name.ts';
 import type { ExecWithStdinFn, ManagedTarget } from './managed/target.ts';
 import { createGateway } from './server/gateway.ts';
 import { createRouter } from './core/router.ts';
@@ -405,7 +406,7 @@ const requiredServer = (servers: ServerRegistry | undefined, id: string): Manage
 };
 
 type ManagedAdapterWiring = {
-  display: string;
+  connectionPlace: string;
   target: Extract<ResolvedTarget, { adapter: 'managed' }>;
   description: ManagedServerDescription;
   paths: MomongaPaths;
@@ -440,9 +441,10 @@ export const instanceSocketOf = (form: EndpointForm, unixSocketPath: string, hom
 type ManagedCore = { managed: ManagedTarget; probeKey: string | undefined };
 
 const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedCore> => {
-  const { display, target, description, paths } = wiring;
+  const { target, description, paths } = wiring;
   const { provider } = target;
-  const form = requireOfferedEndpointForm(description, wiring.hostForms, `the server ${provider}`);
+  const name = managedModelName(provider, { declared: target.model });
+  const form = requireOfferedEndpointForm(description, wiring.hostForms, wiring.connectionPlace);
   const inForm = (instance: ManagedInstancePaths): ManagedInstancePaths => ({ ...instance, socketPath: instanceSocketOf(form, instance.socketPath, wiring.home, wiring.generation) });
   const serving = inForm(managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'serve', provider, incarnation: wiring.incarnation }));
   const probing = inForm(managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'probe', provider }));
@@ -454,7 +456,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
   let managed: ManagedTarget | undefined;
   const server = createManagedServer({
     description,
-    target: display,
+    target: name,
     binary: target.binary,
     socketPath: serving.socketPath,
     lockPath: serving.lockPath,
@@ -466,7 +468,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     readStopGraceMs: wiring.readStopGraceMs,
     onWarning: wiring.onWarning,
     onChildStart: async (signal) => {
-      if (managed === undefined) throw new Error(`the server of the model ${display} started a child before the model was wired`);
+      if (managed === undefined) throw new Error(aboutModel(name, `the ${WORDS.server} ${provider} started a child before the ${WORDS.model} was wired`));
       await managed.childStarting(signal);
     },
     onChildExit: () => managed?.childExited(),
@@ -475,7 +477,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
   });
   const measure = measureManagedServer({
     description,
-    target: display,
+    target: name,
     binary: target.binary,
     instance: probing,
     readyTimeoutMs: target.readyTimeoutMs,
@@ -491,8 +493,8 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     ...spawnPort,
   });
   const subject = managedProbeSubject({
-    target: display,
-    precondition: managedPrecondition(description, display, target.binary, wiring.exec, wiring.files.isUsableBinary, wiring.requestLimitMs),
+    target: name,
+    precondition: managedPrecondition(description, name, target.binary, wiring.exec, wiring.files.isUsableBinary, wiring.requestLimitMs),
     probeRecordDir: paths.probe,
     readKey: freshKey,
     keySignal: () => wiring.timeoutSignal(wiring.requestLimitMs),
@@ -505,7 +507,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     binary: target.binary,
     exec: wiring.execWithStdin,
     probeRecordDir: paths.probe,
-    target: display,
+    serverName: provider,
     requestLimitMs: wiring.requestLimitMs,
     isUsableBinary: wiring.files.isUsableBinary,
     readKey,
@@ -513,14 +515,14 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     startProbe: (key) => wiring.autoProbe.ensure(subject, lockKeyOf(key)),
     instanceProbe: (unknown) =>
       createInstanceProbe({
-        target: display,
+        target: name,
         unknown,
         dir: paths.probe,
         measure: (signal) => measure({ key: {}, signal }),
         retryAfterMs: PROBE_RETRY_AFTER_MS,
         clock: wiring.timers,
         onNotice: wiring.onWarning,
-        onFailure: (error) => wiring.onWarning(`the measurement of the model ${display} failed: ${error instanceof Error ? error.message : String(error)}`),
+        onFailure: (error) => wiring.onWarning(aboutModel(name, `the measurement failed: ${error instanceof Error ? error.message : String(error)}`)),
       }),
     currency,
     ...(target.capabilities === undefined ? {} : { declaredCapabilities: target.capabilities }),
@@ -1101,6 +1103,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       profiles: planProfiles,
       paths: { sessions: paths.planSessions, host: paths.planHost, active: paths.planActive },
       store: options.planStore === undefined ? planRecordStore : options.planStore(planRecordStore),
+      ...(secretStore.backend === undefined ? {} : { storeBackend: secretStore.backend }),
       fileSystem: nodeFileSystem,
       accounts: [],
       clock,
@@ -1240,7 +1243,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           carried ??
           (await (async (): Promise<ManagedPart> => {
             const built = await createManagedCore({
-              display,
+              connectionPlace: managedConnectionPlace(paths.settingsFile, current.models.connections, target.provider),
               target,
               description: server,
               paths,

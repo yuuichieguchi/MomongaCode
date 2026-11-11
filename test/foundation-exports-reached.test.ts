@@ -21,7 +21,6 @@ const NAMED_ONLY_BY_TESTS: readonly string[] = [
   'CapabilityResult',
   'ClaimOutcome',
   'CommandOptions',
-  'CommandResult',
   'DaemonCloseResult',
   'DaemonDefinition',
   'DaemonHandle',

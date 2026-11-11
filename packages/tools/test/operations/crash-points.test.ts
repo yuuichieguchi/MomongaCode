@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import { createOperationTools, hostGitReader } from '@momonga/tools';
+import { createOperationTools } from '@momonga/tools';
 import type { ArgvRunner, CallOutcome, ResultOutcome } from '@momonga/tools';
 import { call, makeHarness, toolSetOf } from '../harness.ts';
 import { keyFor, makeLayout, ruleFor } from '../helpers.ts';
@@ -25,7 +25,7 @@ const setup = async () => {
     const run = (): ReturnType<ArgvRunner> => counting.run(argv, options);
     return injection.current === undefined ? run() : injection.current(argv, run);
   };
-  const toolSet = await toolSetOf(...createOperationTools({ runArgv, readGit: hostGitReader, forge: NO_FORGE, settings: {} }));
+  const toolSet = await toolSetOf(...createOperationTools({ runArgv, forge: NO_FORGE, settings: {} }));
   const layout: Layout = { ...makeLayout(), root: world.base, home: world.home, project: world.work, outside: path.join(world.base, 'outside') };
   const rules = [ruleFor(layout)('allow', 'GitCommit')];
   const reconciled: Array<ResultOutcome['reconciled']> = [];
@@ -80,7 +80,7 @@ describe('a worker that stops at each step of GitCommit, and the worker that tak
     expectOneCommit(context);
   });
 
-  it('c1, after begin and before authorise: the record holds the observation and no authorisation, reconcile answers not applied without a probe, and the commit runs once', async () => {
+  it('c1, after begin and before authorise: the record holds the observation and no authorisation, reconcile answers not applied without a probe (only the repository is resolved for the permission), and the commit runs once', async () => {
     const context = await setup();
     const { port } = context.harness.idempotency;
     const begin = port.begin.bind(port);
@@ -97,13 +97,13 @@ describe('a worker that stops at each step of GitCommit, and the worker that tak
 
     port.begin = begin;
     context.takeOver();
-    let probesBeforeCommit = 0;
+    let ranBeforeCommit: string[] | undefined;
     context.injection.current = (argv, run) => {
-      if (argv.includes('commit')) probesBeforeCommit = context.counting.calls.length;
+      if (argv.includes('commit')) ranBeforeCommit = context.counting.calls.map((earlier) => earlier.join(' '));
       return run();
     };
     expect(await context.attempt()).toMatchObject({ kind: 'result', result: { status: 'completed' } });
-    expect(probesBeforeCommit).toBe(0);
+    expect(ranBeforeCommit).toEqual(['git rev-parse --show-toplevel']);
     expect(context.commitsRun()).toBe(1);
     expectOneCommit(context);
   });

@@ -1,4 +1,4 @@
-import { DEFAULT_LOCK_TIMEOUT_MS, createKeyedSerializer, hostPaths, nodeFileSystem, sha256Hex, systemFileLockPorts, withFileLock } from '@momonga/foundation';
+import { createKeyedSerializer, hostPaths, nodeFileSystem, sha256Hex, systemFileLockPorts, withFileLock } from '@momonga/foundation';
 import type { FileLockPorts, PathResolver, Random } from '@momonga/foundation';
 import { layoutOf } from './layout.ts';
 
@@ -14,12 +14,12 @@ export type SettingsFileLockOptions = { ports?: FileLockPorts; lockTimeoutMs?: n
 
 const serializeInProcess = createKeyedSerializer();
 
-export const settingsFileLock = (home: string, { ports = systemFileLockPorts, lockTimeoutMs = DEFAULT_LOCK_TIMEOUT_MS }: SettingsFileLockOptions = {}): SettingsLockPort => ({
+export const settingsFileLock = (home: string, { ports = systemFileLockPorts, lockTimeoutMs }: SettingsFileLockOptions = {}): SettingsLockPort => ({
   locked: async (file, signal, work) => {
     const paths = hostPaths(signal);
     await nodeFileSystem.mkdir(layoutOf(home).run, PRIVATE_DIRECTORY_MODE);
     const lockPath = await settingsLockPath(home, file, paths);
-    return serializeInProcess(await paths.comparablePath(file), () => withFileLock(lockPath, work, { ports, signal, timeoutMs: lockTimeoutMs }), signal);
+    return serializeInProcess(await paths.comparablePath(file), () => withFileLock(lockPath, work, { ports, signal, ...(lockTimeoutMs === undefined ? {} : { timeoutMs: lockTimeoutMs }) }), signal);
   },
 });
 

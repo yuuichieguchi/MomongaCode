@@ -99,11 +99,11 @@ describe.runIf(process.platform === 'darwin')('the network scope of a Bash call'
     expect(hits()).toBe(1);
   });
 
-  it('refuses the call when the setting is deny, as a denial of the sandbox', async () => {
+  it('refuses the call when the setting is deny, as a denial of the setting', async () => {
     const tools = await stage();
     const result = resultOf(await tools.run('Bash', { command: 'npm install', network: 'open' }, { mode: 'bypassPermissions', sandboxNetwork: 'deny' }));
     expect(result.status).toBe('failed');
-    expect(result.denial).toEqual({ source: 'sandbox', reason: 'the command requests unrestricted network access, and the setting sandboxNetwork is deny' });
+    expect(result.denial).toEqual({ source: 'setting', reason: 'the command requests unrestricted network access, and the setting sandboxNetwork is deny' });
     expect(tools.spawns).toEqual([]);
   });
 

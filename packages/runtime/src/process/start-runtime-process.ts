@@ -439,7 +439,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       if (kind === 'bubblewrap') {
         let shell: string;
         try {
-          shell = resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env: process.env });
+          shell = await resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env: process.env });
         } catch (error) {
           if (!(error instanceof ShellNotFoundError)) throw error;
           throw new ConfigError(error.message, { cause: error });

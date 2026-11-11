@@ -3,6 +3,7 @@ import type { Clock, ParsedJwt } from '@momonga/foundation';
 import type { IdTokenCheck } from '@momonga/protocol';
 import { PLAN_SESSION_DEFAULTS, PLAN_SIGN_IN_DEFAULTS } from '../defaults.ts';
 import type { PlanOutbound } from './outbound.ts';
+import { SUCCESS_STATUS } from './http-status.ts';
 import { boundedSend } from './refresh.ts';
 import type { PlanFetch, PlanSleep } from './refresh.ts';
 
@@ -84,7 +85,7 @@ export const createIdTokenVerifier = (options: IdTokenVerifierOptions): IdTokenV
       PLAN_SIGN_IN_DEFAULTS.keysTimeoutMs,
       PLAN_SIGN_IN_DEFAULTS.keysBodyBytes,
     );
-    if (outcome.kind === 'unanswered' || outcome.status !== 200 || outcome.truncated) throw new KeysUnavailable('the key set could not be fetched');
+    if (outcome.kind === 'unanswered' || outcome.status !== SUCCESS_STATUS || outcome.truncated) throw new KeysUnavailable('the key set could not be fetched');
     return { keys: keysOf(outcome.body), fetchedAt: options.clock.now() };
   };
 

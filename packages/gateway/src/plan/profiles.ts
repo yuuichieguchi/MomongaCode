@@ -1,0 +1,10 @@
+import type { PlanProfile } from '@momonga/config';
+import { PLAN_PROFILE_UNKNOWN_CODE } from '@momonga/protocol';
+import { invalidRequest } from '../core/errors.ts';
+import { ownEntry } from './own-entry.ts';
+
+export const planProfileNamed = (profiles: Readonly<Record<string, PlanProfile>>, id: string): PlanProfile => {
+  const profile = ownEntry(profiles, id);
+  if (profile === undefined) throw invalidRequest(PLAN_PROFILE_UNKNOWN_CODE, `no plan profile is named ${JSON.stringify(id)}`, 'profile');
+  return profile;
+};

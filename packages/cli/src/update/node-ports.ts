@@ -10,7 +10,7 @@ import {
   hostKernelLock,
   inspectProcessLock,
   listGenerations,
-  nodeCommandRunner,
+  nodeBoundedCommandRunner,
   nodeDescriptorWriter,
   nodeFileSystem,
   sweepLeftovers,
@@ -189,7 +189,7 @@ export const nodeUpdateState = (paths: MomongaPaths): UpdateStateStore => {
 export const nodeDaemonProbe = (paths: MomongaPaths, clock: CliClock): DaemonProbe => ({
   running: async () => (await listGenerations(paths, { lock: hostKernelLock() })).some((listed) => listed.live),
   retiring: async () => retiringWorkOf(await listLiveGenerations({ clock }, paths)),
-  restartBoundMs: () => daemonReadyBoundMs(),
+  readyBoundMs: () => daemonReadyBoundMs(),
 });
 
 const definedEnv = (env: Readonly<Record<string, string | undefined>>): Record<string, string> =>
@@ -205,7 +205,7 @@ export const nodeUpdatePorts = (ports: CliPorts, paths: MomongaPaths): UpdatePor
   clock: ports.clock,
   http: leasedUpdateHttp(ports),
   fs: nodeUpdateFs(),
-  run: nodeCommandRunner,
+  run: nodeBoundedCommandRunner,
   lock: nodeUpdateLock(paths),
   state: nodeUpdateState(paths),
   daemon: nodeDaemonProbe(paths, ports.clock),

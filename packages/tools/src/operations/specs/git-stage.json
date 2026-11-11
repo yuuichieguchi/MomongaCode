@@ -1,6 +1,6 @@
 {
   "name": "GitStage",
-  "description": "Stages the given files for the next commit as they are in the working tree: a changed or new file is added, a deleted file is staged as deleted. Each path is read literally, relative to the working directory. The result is checked against the repository: nothing under the given paths may be left unstaged.",
+  "description": "Stages the given files for the next commit as they are in the working tree: a changed or new file is added, a deleted file is staged as deleted. Each path is read literally, relative to the working directory. The result is checked against the repository: nothing under the given paths may be left unstaged. A call whose paths match no change, staged or not, fails and stages nothing.",
   "kind": "execute",
   "sideEffect": "exec",
   "title": "Stage {input.paths}",
@@ -17,8 +17,10 @@
   "timeoutMs": 60000,
   "observe": [
     { "id": "indexTree", "via": { "argv": ["git", "write-tree"], "extract": "trim" } },
+    { "id": "changes", "via": { "argv": ["git", "--no-optional-locks", "--literal-pathspecs", "status", "--porcelain", "--untracked-files=all", "--", { "each": "input.paths" }], "extract": "trim" } },
     { "id": "unstaged", "via": { "argv": ["git", "--literal-pathspecs", "ls-files", "--modified", "--deleted", "--others", "--exclude-standard", "--", { "each": "input.paths" }], "extract": "trim" } }
   ],
+  "require": [{ "observed": "before.changes", "otherwise": "the given paths matched no change to stage" }],
   "effect": { "argv": ["git", "--literal-pathspecs", "add", "--", { "each": "input.paths" }] },
   "applied": [["after.unstaged", { "literal": "" }]],
   "unchanged": [["after.indexTree", "before.indexTree"]],

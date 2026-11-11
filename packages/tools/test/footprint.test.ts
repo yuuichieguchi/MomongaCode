@@ -14,6 +14,7 @@ const bash = of({ kind: 'command', tool: 'Bash', command: 'npm test' });
 const commit = of({ kind: 'repo', tool: 'GitCommit', operation: 'GitCommit', remote: null, refs: [], destinations: [], destinationsMatchFetch: true, approval: 'rule' });
 const push = (ref: string, destinations: string[] = ['https://forge.example/acme/widgets.git']): Footprint =>
   of({ kind: 'repo', tool: 'GitPush', operation: 'GitPush', remote: 'origin', refs: [ref], destinations, destinationsMatchFetch: true, approval: 'rule' });
+const mcp = of({ kind: 'mcp', server: 'tracker', tool: 'close_issue' });
 const merge = (pr: number): Footprint => of({ kind: 'forge', tool: 'PullRequestMerge', operation: 'PullRequestMerge', host: 'forge.example', repo: 'acme/widgets', pr, approval: 'always' });
 
 describe('the footprint of a call, from its permission subject', () => {
@@ -35,9 +36,13 @@ describe('the footprint of a call, from its permission subject', () => {
     expect(merge(7)).toEqual({ reads: [], writes: ['pr:forge.example/acme/widgets#7'] });
   });
 
-  it('is empty for a call with no path, ref or pull request', () => {
+  it('is empty for a call the design gives no path, ref or pull request', () => {
     expect(of({ kind: 'none', tool: 'UpdatePlan' })).toBe(EMPTY_FOOTPRINT);
-    expect(of({ kind: 'mcp', server: 's', tool: 't' })).toBe(EMPTY_FOOTPRINT);
+    expect(of({ kind: 'memory', tool: 'MemorySave', scope: 'project' } as PermissionSubject)).toBe(EMPTY_FOOTPRINT);
+  });
+
+  it('is everything for an MCP call, whose effects the product cannot name', () => {
+    expect(mcp).toEqual({ reads: ['*'], writes: ['*'] });
   });
 });
 
@@ -60,6 +65,13 @@ describe('two calls conflict when one writes what the other reads or writes', ()
     ['merges of two pull requests', merge(7), merge(8), false],
     ['two merges of one pull request', merge(7), merge(7), true],
     ['a call with no footprint and anything', EMPTY_FOOTPRINT, bash, false],
+    ['an MCP call and a write of a local file', mcp, write('a.txt'), true],
+    ['an MCP call and a read of a local file', mcp, read('a.txt'), true],
+    ['an MCP call and a merge of a pull request', mcp, merge(7), true],
+    ['an MCP call and a push', mcp, push('main'), true],
+    ['an MCP call and a shell command', mcp, bash, true],
+    ['two MCP calls', mcp, mcp, true],
+    ['an MCP call and a call with no footprint', mcp, EMPTY_FOOTPRINT, false],
   ];
 
   it.each(cases)('%s', (_label, left, right, expected) => {
@@ -72,5 +84,7 @@ describe('two calls conflict when one writes what the other reads or writes', ()
     expect(blockerOf(bash, held)?.callId).toBe('call_write');
     expect(blockerOf(read('b.txt'), held)).toBeUndefined();
     expect(blockerOf(merge(7), held)?.callId).toBe('call_merge');
+    expect(blockerOf(mcp, held)?.callId).toBe('call_merge');
+    expect(blockerOf(mcp, [])).toBeUndefined();
   });
 });

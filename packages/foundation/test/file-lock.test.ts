@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ProcessLockHeldError, acquireProcessLock, createKeyedSerializer, inspectProcessLock, withFileLock } from '@momonga/foundation';
+import { LockWaitTimeoutError, ProcessLockHeldError, acquireProcessLock, createKeyedSerializer, inspectProcessLock, withFileLock } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
 import { registerCleanup, withTempDir, sleepDrivenTiming, createFakeRandom } from '@momonga/testkit';
 
@@ -57,6 +57,39 @@ describe('withFileLock', () => {
     await expect(failure).rejects.toThrow(lockPath);
     await expect(failure).rejects.toThrow(String(process.pid));
     expect(runs).toBe(0);
+  });
+
+  it('the timeout rejects with LockWaitTimeoutError, which carries the lock, the bound and the holder (A5)', async (context) => {
+    const lockPath = path.join(withTempDir(context), 'task.lock');
+    const held = await acquireProcessLock(lockPath);
+    registerCleanup(context, () => held.release());
+    const failure = await withFileLock(lockPath, async () => undefined, { ports: steppedPorts(), timeoutMs: 50, signal: NEVER_ABORTED }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(LockWaitTimeoutError);
+    expect(failure).toMatchObject({ name: 'LockWaitTimeoutError', lockPath, timeoutMs: 50, holder: String(process.pid) });
+    expect((failure as Error).message).toBe(`timed out after 50ms waiting for lock ${lockPath} held by process ${process.pid}`);
+  });
+
+  it('a wait ended by the asker\'s signal rejects with that signal\'s reason, not with the timeout class', async (context) => {
+    const lockPath = path.join(withTempDir(context), 'task.lock');
+    const held = await acquireProcessLock(lockPath);
+    registerCleanup(context, () => held.release());
+    const asker = new AbortController();
+    const reason = new Error('the operation ended');
+    let now = 1_000_000;
+    const failure = withFileLock(lockPath, async () => undefined, {
+      ports: {
+        ...steppedPorts(),
+        timing: sleepDrivenTiming({
+          now: () => now,
+          sleep: async (ms) => {
+            now += ms;
+            asker.abort(reason);
+          },
+        }),
+      },
+      signal: asker.signal,
+    });
+    await expect(failure).rejects.toBe(reason);
   });
 });
 

@@ -1,5 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { getAssetKeys, getRawAsset, isSea } from 'node:sea';
+import { promisify } from 'node:util';
+import { brotliDecompress } from 'node:zlib';
 import { ProbeFailedError, defaultProcessInspector, nodeFileSystem } from '@momonga/foundation';
 import type { ProbeOptions, ProcessInspector, StartTime } from '@momonga/foundation';
 
@@ -22,6 +24,8 @@ export const ownOwnerIdWith = (inspector: ProcessInspector, pid: number): ((opti
   };
 };
 
+const decompressOffTheEventLoop = promisify(brotliDecompress);
+
 const randomFraction = (): number => randomBytes(4).readUInt32BE(0) / 0x1_0000_0000;
 
 export const embeddedRipgrepSource = ({ RIPGREP_MANIFEST_ASSET, ensureBundledRipgrep }: Pick<RuntimeEntry, 'RIPGREP_MANIFEST_ASSET' | 'ensureBundledRipgrep'>): BundledRipgrepSource | undefined => {
@@ -31,6 +35,7 @@ export const embeddedRipgrepSource = ({ RIPGREP_MANIFEST_ASSET, ensureBundledRip
   return (paths) => async (signal) =>
     ensureBundledRipgrep({
       asset: (name) => new Uint8Array(getRawAsset(name)),
+      decompress: async (compressed) => new Uint8Array(await decompressOffTheEventLoop(compressed)),
       executablesRoot: paths.executables,
       random: randomFraction,
       ownerId: await ownerId({ signal }),

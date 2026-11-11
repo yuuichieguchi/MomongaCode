@@ -235,4 +235,49 @@ describe('a background job that was granted named hosts', () => {
     await (await child).exited;
     expect(await refusesConnections(network.loopbackPort)).toBe(true);
   });
+  it('writes the hosts the proxy refused into the output of the job when the job ends, even while a stream of the job stays open', async () => {
+    const started: BackgroundJobStart[] = [];
+    const jobs = { start: async (request: BackgroundJobStart) => (started.push(request), { jobId: 'bash_aaaaaaaaaaaa' }) } as unknown as BackgroundJobs;
+    const spawns: RecordedSpawn[] = [];
+    let end: () => void = () => undefined;
+    let closeStream: () => void = () => undefined;
+    const streamHeld = new Promise<void>((resolve) => (closeStream = resolve));
+    const sandbox: Sandbox = {
+      kind: 'seatbelt',
+      spawn: (command, policy) => {
+        spawns.push({ command, policy });
+        return {
+          pid: 1,
+          pgid: 1,
+          stdout: (async function* () {})(),
+          stderr: (async function* () {
+            yield Buffer.from('from the job\n');
+            await streamHeld;
+          })(),
+          exited: new Promise((resolve) => (end = () => resolve({ code: 0, signal: null }))),
+        };
+      },
+    };
+    const tools = await makeBuiltins({ jobs, sandbox });
+    await tools.run('Bash', { command: 'npm install', run_in_background: true, network: { hosts: ['registry.example.org'] } }, { mode: 'manual' }, 'allow_once');
+    const child = await (started[0] as BackgroundJobStart).spawn('/marker', new AbortController().signal, undefined);
+    const network = spawns[0]?.policy.network as { loopbackPort: number };
+    await new Promise<void>((resolve, reject) => {
+      const request = http.request({ host: '127.0.0.1', port: network.loopbackPort, method: 'GET', path: 'http://evil.example.net/' }, (response) => {
+        response.resume();
+        response.once('end', resolve);
+      });
+      request.once('error', reject);
+      request.end();
+    });
+    const errors = child.stderr[Symbol.asyncIterator]();
+    expect(Buffer.from((await errors.next()).value as Uint8Array).toString()).toBe('from the job\n');
+    end();
+    expect(await child.exited).toEqual({ code: 0, signal: null });
+    expect(Buffer.from((await errors.next()).value as Uint8Array).toString()).toBe(
+      '[network] the sandbox proxy refused evil.example.net:80: it is not among the hosts this command was granted (registry.example.org)\n',
+    );
+    closeStream();
+    expect((await errors.next()).done).toBe(true);
+  });
 });

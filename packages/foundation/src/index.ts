@@ -29,7 +29,7 @@ export { createUdsClient, fixedSocket, isUnixSocketLive, listenUnix } from './ud
 export type { SocketResolver, UdsClient, UdsResponse } from './uds.ts';
 export { uuidv7 } from './uuidv7.ts';
 export { CALL_ID_PREFIX, newCallId } from './call-id.ts';
-export { DEFAULT_LOCK_TIMEOUT_MS, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
+export { LockWaitTimeoutError, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
 export type { FileLockPorts } from './file-lock.ts';
 export { AUTH_DOCUMENT_MAX_BYTES, createFileCredentialStore, createMemoryCredentialStore, credentialFileFor } from './credential-store.ts';
 export type { CredentialEntry, CredentialStore, ListableCredentialStore } from './credential-store.ts';
@@ -67,8 +67,8 @@ export { POLL_INTERVAL_MS, waitUntil } from './wait-until.ts';
 export type { Random } from './random.ts';
 export { systemClock, systemTiming, systemWaitTiming } from './system-timing.ts';
 export { systemRandom } from './system-random.ts';
-export { nodeDescriptorWriter, nodeFileSystem, nodeFileSystemSync } from './node-file-system.ts';
-export type { FileSystem } from './node-file-system.ts';
+export { OPEN_FLAGS, nodeDescriptorWriter, nodeFileSystem, nodeFileSystemSync } from './node-file-system.ts';
+export type { FileSystem, FileSystemSync, ReadHandle } from './node-file-system.ts';
 export { forceKillGroup, groupAlive, groupTerminationBoundMs, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from './process-group.ts';
 export type { TerminateOutcome } from './process-group.ts';
 export { procGroupMembers } from './platform/group-members.ts';
@@ -150,7 +150,6 @@ export type { GenerationRole, RolePort } from './generation-role.ts';
 export { GENERATION_RETIRED_CODE, GENERATION_RETIRED_STATUS, MOVED_CODE } from './generation-codes.ts';
 export { formatStartRecord, generationIsLive, listGenerationNumbers, listGenerations, lockReadsHeld, probeGenerationLocks, readStartRecord } from './generation-registry.ts';
 export {
-  ABANDON_REASON_TEXTS,
   CurrentGenerationUnreadableError,
   GenerationCounterError,
   GenerationPrepareError,
@@ -162,6 +161,7 @@ export {
 } from './generation-start.ts';
 export type {
   AbandonReason,
+  StartFailureReason,
   GenerationRef,
   GenerationStartFiles,
   HeldStart,
@@ -345,9 +345,9 @@ export type { HostEntry, NetworkRequest, NetworkScope, NetworkScopeKind, Sandbox
 export type { RuleEnforcement } from './file-rules.ts';
 export { EMPTY_FILE_RULES, FileRuleError, HOST_RULE_ENFORCEMENT, ruleEnforcementOf, compileFileRuleSet, inWritableArea, lexicallyWithin, writableAreaOf, writableCheckOf, fileRuleBlocks, fileRuleBlockingForm, fileRuleFingerprint } from './file-rules.ts';
 export type { FileRuleAccess, FileRuleEntry, FileRuleProvenance, FileRuleSet, FileRuleSpec, WritableArea } from './file-rules.ts';
-export { nodeCommandRunner } from './platform/command-runner.ts';
+export { nodeBoundedCommandRunner, nodeCommandRunner } from './platform/command-runner.ts';
 export { discoverGitConfigFiles } from './git-config-files.ts';
-export type { CommandOptions, CommandResult, CommandRunner } from './platform/command-runner.ts';
+export type { BoundedCommandRunner, CommandOptions, CommandResult, CommandRunner, CommandTimedOut } from './platform/command-runner.ts';
 export { ProbeFailedError, classifyProbeCause, failureOfError, isTransientFailure, probeFailed, valueOrThrow } from './platform/inspector-types.ts';
 export type { ProbeOptions, ProbeResult, ProcessInspector, StartTime, UninspectableProcess } from './platform/inspector-types.ts';
 export { createProcessInspector, defaultProcessInspector, hostInspectorPorts, hostProcessInspector } from './platform/process-inspector.ts';

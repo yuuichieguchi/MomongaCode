@@ -6,6 +6,7 @@ import { createFakeClock, createFakeSecretStore, startFakePlanResponses, startFa
 import type { FakeClock, FakePlanResponses, FakeSecretStore, PlanResponsesOptions, SiwcAccessTokenForm, SiwcAuth } from '@momonga/testkit';
 import { getJson, postJson, readJson, registerCleanup } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
+import type { GatewayTimers } from '../src/types.ts';
 import { PROFILE_ID, profileFor } from './plan-support.ts';
 
 export const CALLBACK_PORT = 49152;
@@ -65,6 +66,7 @@ export type PlanGatewayOptions = {
   catalogReply?: PlanResponsesOptions['catalogReply'];
   planStore?: (store: ListableCredentialStore) => ListableCredentialStore;
   pinned?: boolean;
+  timers?: GatewayTimers;
 };
 
 export const holdNextExchange = (gateway: PlanGateway): { reached: Promise<void>; release(): void } => {
@@ -111,7 +113,7 @@ export const startPlanGateway = async (options: PlanGatewayOptions = {}): Promis
         },
       }),
   });
-  const launchOnly = () => launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, secretStore, planProfiles: { [PROFILE_ID]: profile }, ...(options.clock === undefined ? {} : { clock: options.clock }), ...(options.logger === undefined ? {} : { logger: options.logger }), ...(options.planStore === undefined ? {} : { planStore: options.planStore }) });
+  const launchOnly = () => launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, secretStore, planProfiles: { [PROFILE_ID]: profile }, ...(options.clock === undefined ? {} : { clock: options.clock }), ...(options.logger === undefined ? {} : { logger: options.logger }), ...(options.planStore === undefined ? {} : { planStore: options.planStore }), ...(options.timers === undefined ? {} : { timers: options.timers }) });
   const launch = async () => {
     const launched = await launchOnly();
     await publishCurrentGeneration(momongaPaths(home, process.platform, {}), {
@@ -153,11 +155,16 @@ export const browse = async (authorizationUrl: string): Promise<URL> => {
   return new URL(location);
 };
 
+export const completeConfirmed = async (gateway: PlanGateway, attemptId: string, callbackUrl: string) => {
+  const exchanged = await gateway.post(PLAN_ROUTES.signInComplete, { attemptId, callbackUrl });
+  return exchanged.body?.outcome === 'identity_unconfirmed' ? gateway.post(PLAN_ROUTES.signInComplete, { attemptId, identityConfirmed: true }) : exchanged;
+};
+
 export const signIn = async (gateway: PlanGateway) => {
   const begun = await begin(gateway);
   if (begun.status !== 200) throw new Error(`begin answered ${begun.status}: ${JSON.stringify(begun.body)}`);
   const callback = await browse(begun.body.authorizationUrl);
-  const completed = await gateway.post(PLAN_ROUTES.signInComplete, { attemptId: begun.body.attemptId, callbackUrl: callback.toString() });
+  const completed = await completeConfirmed(gateway, begun.body.attemptId, callback.toString());
   return { begun, callback, completed };
 };
 

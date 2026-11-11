@@ -23,6 +23,11 @@ export const selfInvocation = (self: SelfExecutable, subcommand: string, flags: 
     ? { command: self.execPath, args: [subcommand, ...flags] }
     : { command: self.execPath, args: [self.script, subcommand, ...flags] };
 
+export const reportVersionInvocation = (self: SelfExecutable): SelfInvocation => ({
+  command: self.execPath,
+  args: self.kind === 'single-binary' ? MOMONGA_LAUNCHES.reportVersion.args : [self.script, ...MOMONGA_LAUNCHES.reportVersion.args],
+});
+
 export const selfLauncher =
   (self: SelfExecutable) =>
   (role: ChildRole): SelfInvocation =>
