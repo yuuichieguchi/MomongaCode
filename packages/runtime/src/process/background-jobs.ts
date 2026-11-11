@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { CLAIM_POLL_MS, canonicalJson, claimRetry, commandMayStillRun, defaultProcessInspector, findHolders, groupAlive, groupPortOf, groupRecordOutcome, markerReapClockBoundMs, outlivedNotes, reapMarkedProcesses, recordMarkerGroup, reconcileProcessGroup, reportUninspectableOnce, sha256Hex } from '@momonga/foundation';
-import type { Clock, MarkerMode, MarkerState, ProcessGroupPort, ReapTiming, RolePort, UninspectableProcess, UninspectableRegistry } from '@momonga/foundation';
+import { POLL_INTERVAL_MS, sleep, canonicalJson, claimRetry, commandMayStillRun, defaultProcessInspector, findHolders, groupAlive, groupPortOf, groupRecordOutcome, markerReapClockBoundMs, outlivedNotes, reapMarkedProcesses, recordMarkerGroup, reconcileProcessGroup, reportUninspectableOnce, sha256Hex } from '@momonga/foundation';
+import type { Clock, MarkerMode, MarkerState, ProcessGroupPort, Timing, RolePort, UninspectableProcess, UninspectableRegistry } from '@momonga/foundation';
 import type { SandboxedProcess } from '@momonga/sandbox';
 import type { Job, JobResult, RuntimeStore } from '@momonga/store';
 import { RetiringYield, ToolExecutionError, createMarkerOwners, unnamedLivenessNotes } from '@momonga/tools';
@@ -29,7 +29,7 @@ export type BackgroundJobsOptions = {
   markerFiles: JobMarkerFiles;
   owners?: MarkerOwners;
   killGraceMs: number;
-  reapTiming: ReapTiming;
+  reapTiming: Timing;
   onWarning(message: string): void;
   report(error: unknown): void;
   probes?: Partial<ProcessProbes>;
@@ -255,7 +255,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       const current = store.jobs.get(jobId);
       if (current === undefined) throw new Error(`job ${jobId} vanished`);
       if (current.status !== 'running' || reapTiming.now() >= deadline || lifecycle.aborted) return current;
-      await reapTiming.sleep(Math.min(CLAIM_POLL_MS, deadline - reapTiming.now()));
+      await sleep(reapTiming, Math.min(POLL_INTERVAL_MS, deadline - reapTiming.now()));
     }
   };
 

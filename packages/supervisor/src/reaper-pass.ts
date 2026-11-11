@@ -1,7 +1,7 @@
 import path from 'node:path';
 import type { StopValuesReader } from '@momonga/config';
 import { GENERATION_MARKER_LABELS, GENERATION_REAPER_OCCASION, generationLayout, hostKernelLock, momongaPaths, readStopRecord, reapDeadGenerations, reapMarkerDirectory } from '@momonga/foundation';
-import type { Clock, GenerationMarkerReap, JsonLogger, KernelLockMechanism, MarkerKind, MomongaPaths, ReapTiming } from '@momonga/foundation';
+import type { Clock, GenerationMarkerReap, JsonLogger, KernelLockMechanism, MarkerKind, MomongaPaths, Timing } from '@momonga/foundation';
 import { DAEMON_MARKER_KILL_GRACE_MS } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
 import { orphansWarning, writeEvent } from './log-events.ts';
@@ -20,7 +20,7 @@ export type ReaperPassOptions = {
   lock: KernelLockMechanism;
   logger: JsonLogger;
   timers: SupervisorTimers;
-  reapTiming: ReapTiming;
+  reapTiming: Timing;
   orphanGraceMs: number;
   orphanReapGraceMs: number;
   orphanPollMs: number;
@@ -102,7 +102,7 @@ export const entryReaperPass = (deps: EntryReaperDeps, values: EntryReaperValues
     lock: deps.lockMechanism ?? hostKernelLock(),
     logger: values.logger,
     timers: values.timers,
-    reapTiming: deps.reapTiming ?? { now: () => values.clock.now(), sleep: (ms) => new Promise<void>((resolve) => values.timers.setTimeout(resolve, ms)) },
+    reapTiming: deps.reapTiming ?? { now: () => values.clock.now(), monotonicMs: () => values.clock.now(), setTimeout: (callback, ms) => values.timers.setTimeout(callback, ms), clearTimeout: (handle) => values.timers.clearTimeout(handle) },
     orphanGraceMs: timing.orphanGraceMs,
     orphanReapGraceMs: DAEMON_MARKER_KILL_GRACE_MS,
     orphanPollMs: timing.orphanPollMs,

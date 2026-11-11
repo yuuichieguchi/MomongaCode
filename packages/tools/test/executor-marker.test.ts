@@ -1,3 +1,4 @@
+import { sleepDrivenTiming } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -76,7 +77,7 @@ describe('process marker', () => {
   });
 
   it('passes the marker to reconcile and removes it after the reconciled record completes', async () => {
-    const harness = makeHarness({ executor: { reap: { inspector: holderlessInspector, timing: { now: () => 0, sleep: async () => undefined }, killGraceMs: 100 } } });
+    const harness = makeHarness({ executor: { reap: { inspector: holderlessInspector, timing: sleepDrivenTiming({ now: () => 0, sleep: async () => undefined }), killGraceMs: 100 } } });
     const marker = path.join(harness.markerDir, KEY);
     fs.writeFileSync(marker, '', { mode: 0o600 });
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Bash' });

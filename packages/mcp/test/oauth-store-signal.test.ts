@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_LOCK_TIMEOUT_MS, OperationLimitError, StoreCallEndedError, createFileCredentialStore } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
 import { McpInputSuspension, MIN_TASK_POLL_MS, createManagedConnection } from '@momonga/mcp';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, startLockHolder } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, startLockHolder, sleepDrivenTiming, createFakeRandom } from '@momonga/testkit';
 import type { McpOAuthProvider } from '../src/mcp-oauth.ts';
 import { createMcpOAuthProvider, credentialKey } from '../src/mcp-oauth.ts';
 import type * as RemoteTransportModule from '../src/remote-transport.ts';
@@ -36,12 +36,14 @@ const steppedPorts = (): FileLockPorts & { waitedMs(): number } => {
   const start = 1_000_000;
   let now = start;
   return {
-    clock: { now: () => now },
-    sleep: (ms) => {
-      now += ms;
-      return new Promise((resolve) => setImmediate(resolve));
-    },
-    randomHex: () => 'cafe0001',
+    timing: sleepDrivenTiming({
+      now: () => now,
+      sleep: (ms) => {
+        now += ms;
+        return new Promise((resolve) => setImmediate(resolve));
+      },
+    }),
+    random: { ...createFakeRandom(1), hex: () => 'cafe0001' },
     waitedMs: () => now - start,
   };
 };

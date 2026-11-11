@@ -1,3 +1,4 @@
+import { sleepDrivenTiming } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,10 +29,12 @@ const errno = (code: string): NodeJS.ErrnoException => Object.assign(new Error(c
 const countingTiming = () => {
   let elapsed = 0;
   return {
-    now: () => elapsed,
-    sleep: async (ms: number): Promise<void> => {
-      elapsed += ms;
-    },
+    ...sleepDrivenTiming({
+      now: () => elapsed,
+      sleep: async (ms: number): Promise<void> => {
+        elapsed += ms;
+      },
+    }),
     elapsed: () => elapsed,
   };
 };

@@ -736,7 +736,7 @@ class ManagedConnection implements McpServerConnection {
         attempt: this.consecutiveFailures - 1,
         baseMs: BACKOFF_BASE_MS,
         maxMs: BACKOFF_MAX_MS,
-        random: this.random,
+        random: { float: this.random },
       });
       if (delay > 0) await pause(this.timers, delay, this.lifetime.signal);
     }

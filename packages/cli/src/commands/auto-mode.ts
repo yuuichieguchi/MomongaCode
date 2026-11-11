@@ -157,7 +157,7 @@ export const autoModeCheckPortsOf = async (ports: CliPorts, write: (text: string
     home: ports.home,
     version: ports.version,
     now: () => ports.clock.now(),
-    randomHex: systemFileLockPorts.randomHex,
+    randomHex: (bytes) => systemFileLockPorts.random.hex(bytes),
     reflection: { pendingBoundMs: REFLECTION_PICKUP_BOUND_MS, attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS, pollMs: REFLECTION_POLL_MS },
     write,
   };

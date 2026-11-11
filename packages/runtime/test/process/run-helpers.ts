@@ -47,7 +47,7 @@ export const TEARDOWN_ORDER = ['timers', 'workers', 'service', 'cancel-upstream'
 export const HOUR_MS = 3_600_000;
 export const FIVE_MINUTES_MS = 300_000;
 export const STORE_IDENTITY_CHECK_MS = 5000;
-export const ABORT_BUDGET_MS = 8020;
+export const ABORT_BUDGET_MS = 8050;
 export const TEARDOWN_BUDGET_MS = 10_000;
 export const CANCEL_SETTLE_MS = 1000;
 

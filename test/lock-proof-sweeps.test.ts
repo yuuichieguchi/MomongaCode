@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createJsonLogger, ensureMomongaDirs, hostKernelLock, momongaLayout, reapDeadGenerations, reapMarkerDirectory } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { withTempDir } from '@momonga/testkit';
+import { withTempDir, sleepDrivenTiming } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { reapOrphans } from '@momonga/supervisor';
 import { createMarkerOwners } from '@momonga/tools';
@@ -77,7 +77,7 @@ const sweepEverything = async (paths: MomongaPaths, kill: (target: number, signa
     timers: timers as never,
     signal: new AbortController().signal,
     logger: createJsonLogger({ service: 'supervisor', clock: { now: () => Date.now() }, stream: { write: () => true } as never } as never),
-    reapTiming: { now: () => Date.now(), sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)) },
+    reapTiming: sleepDrivenTiming({ now: () => Date.now(), sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }),
   });
   await reapDeadGenerations({ paths, lock: hostKernelLock(), signal: new AbortController().signal, warn: onWarning, reapMarkers: async () => undefined });
   return warnings;
