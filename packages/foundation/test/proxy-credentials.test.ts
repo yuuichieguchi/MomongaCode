@@ -2,7 +2,7 @@ import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { request } from 'undici';
-import { createOutboundDispatcher, proxyPasswordsOf, routeOf } from '@momonga/foundation';
+import { createOutboundDispatcher, proxyPasswordsOf, redactedUrl, routeOf } from '@momonga/foundation';
 import { proxyCredentialsOf } from '../src/network-route.ts';
 import type { NetworkConfig } from '@momonga/foundation';
 
@@ -67,5 +67,23 @@ describe('proxy URL user info is decoded once, tolerantly', { timeout: TEST_TIME
     );
 
     expect(proxy.received().toLowerCase()).toContain(`\r\nproxy-authorization: ${basic('user:100%').toLowerCase()}`);
+  });
+
+  it('lists for redaction exactly the token it sends for a user name without a password, and no error text carries it', async () => {
+    const proxy = await startRefusingProxy();
+    const config = configWith(`http://user@127.0.0.1:${proxy.port}`);
+    const token = Buffer.from('user:').toString('base64');
+    const dispatcher = createOutboundDispatcher({ config, trust: { sources: [], failures: [] } }, { connectReplyTimeoutMs: CONNECT_BOUND_MS });
+    closers.push(() => dispatcher.destroy());
+
+    const error = await request('https://model.example.test/', { dispatcher }).then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+
+    expect(proxy.received().toLowerCase()).toContain(`\r\nproxy-authorization: basic ${token.toLowerCase()}`);
+    expect(proxyPasswordsOf(config).map(({ password }) => password)).toContain(token);
+    expect(String((error as Error).message)).not.toContain(token);
+    expect(redactedUrl(config.httpsProxy?.value ?? '')).not.toContain('user');
   });
 });

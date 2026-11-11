@@ -213,23 +213,24 @@ export const trustFailureText = (failure: TrustFailure): string =>
 
 const caSourceNames = (trust: TrustReport): string[] => trust.sources.map((entry) => ('file' in entry ? `${entry.source} ${entry.file}` : entry.source));
 
-const basicTokenOf = (proxy: URL): string | undefined => {
+type ProxyAuthorization = { readonly token: string; readonly redacted: readonly string[] };
+
+const proxyAuthorizationOf = (proxy: URL): ProxyAuthorization | undefined => {
   const { username, password } = proxyCredentialsOf(proxy);
-  return username === '' ? undefined : Buffer.from(`${username}:${password}`, 'utf8').toString('base64');
+  if (username === '' && password === '') return undefined;
+  const token = Buffer.from(`${username}:${password}`, 'utf8').toString('base64');
+  return { token, redacted: [token, ...[username, password].filter((part) => part !== '')] };
 };
 
 const proxyAuthorization = (proxy: URL): Record<string, string> => {
-  const token = basicTokenOf(proxy);
-  return token === undefined ? {} : { 'proxy-authorization': `Basic ${token}` };
+  const authorization = proxyAuthorizationOf(proxy);
+  return authorization === undefined ? {} : { 'proxy-authorization': `Basic ${authorization.token}` };
 };
 
 export const proxyPasswordsOf = (config: NetworkConfig): Array<{ readonly source: NetworkSource; readonly password: string }> =>
   [config.httpProxy, config.httpsProxy].flatMap((proxy) => {
     if (proxy === undefined || !URL.canParse(proxy.value)) return [];
-    const url = new URL(proxy.value);
-    const { password } = proxyCredentialsOf(url);
-    const token = basicTokenOf(url);
-    return [...(password === '' ? [] : [password]), ...(token === undefined || password === '' ? [] : [token])].map((value) => ({ source: proxy.source, password: value }));
+    return (proxyAuthorizationOf(new URL(proxy.value))?.redacted ?? []).map((password) => ({ source: proxy.source, password }));
   });
 
 export type OutboundOptions = {
@@ -631,10 +632,10 @@ class OutboundDispatcher extends Dispatcher {
     const { connectReplyTimeoutMs } = this.#options;
     const timeouts = siteTimeouts(this.#options);
     const proxyOrigin = route.url.origin;
-    const token = basicTokenOf(route.url);
+    const authorization = proxyAuthorizationOf(route.url);
     const agent = new ProxyAgent({
       uri: route.url.origin,
-      ...(token === undefined ? {} : { token: `Basic ${token}` }),
+      ...(authorization === undefined ? {} : { token: `Basic ${authorization.token}` }),
       ...timeouts,
       clientFactory: (origin, clientOptions) => tunnelClient(origin, clientOptions, connectReplyTimeoutMs),
       factory: (origin, poolOptions) => {
