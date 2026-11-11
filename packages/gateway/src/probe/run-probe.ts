@@ -1,4 +1,4 @@
-import { decodeSse, defineProductSchema } from '@momonga/foundation';
+import { SSE_EVENT_MAX_BYTES, decodeSse, defineProductSchema } from '@momonga/foundation';
 import type { OutboundNetwork, ProductValidator } from '@momonga/foundation';
 import {
   ESTIMATED_ERROR_BOUND_RATIO,
@@ -348,7 +348,7 @@ const probeStreaming = async (client: ProbeClient, model: string, outputBound: o
   let events = 0;
   let doneSentinel = false;
   let usageInStream = false;
-  for await (const event of decodeSse(chunks)) {
+  for await (const event of decodeSse(chunks, { maxEventBytes: SSE_EVENT_MAX_BYTES })) {
     events += 1;
     if (event.data === '[DONE]') {
       doneSentinel = true;

@@ -1,31 +1,13 @@
+import { SSE_EVENT_MAX_BYTES, SseEventTooLargeError, decodeSse } from '@momonga/foundation';
+import type { SseEvent } from '@momonga/foundation';
 import { UpstreamProtocolError } from './failures.ts';
 
-const LINE_FEED = 10;
-const CARRIAGE_RETURN = 13;
-
-export async function* boundedSseBytes(source: AsyncIterable<Uint8Array>, maxEventBytes: number): AsyncGenerator<Uint8Array> {
-  let eventBytes = 0;
-  let lineEmpty = true;
-  let previousWasCarriageReturn = false;
-  for await (const chunk of source) {
-    for (const byte of chunk) {
-      const lineBreak = byte === CARRIAGE_RETURN || (byte === LINE_FEED && !previousWasCarriageReturn);
-      previousWasCarriageReturn = byte === CARRIAGE_RETURN;
-      if (byte === LINE_FEED && !lineBreak) continue;
-      if (!lineBreak) {
-        lineEmpty = false;
-        eventBytes += 1;
-      } else if (lineEmpty) {
-        eventBytes = 0;
-      } else {
-        lineEmpty = true;
-        eventBytes += 1;
-      }
-      if (eventBytes > maxEventBytes) {
-        throw new UpstreamProtocolError(`an upstream server-sent event exceeds ${maxEventBytes} bytes`);
-      }
-    }
-    yield chunk;
+export async function* upstreamSseEvents(source: AsyncIterable<Uint8Array>): AsyncGenerator<SseEvent> {
+  try {
+    yield* decodeSse(source, { maxEventBytes: SSE_EVENT_MAX_BYTES });
+  } catch (error) {
+    if (error instanceof SseEventTooLargeError) throw new UpstreamProtocolError(`an upstream server-sent event exceeds ${error.maxEventBytes} bytes`);
+    throw error;
   }
 }
 

@@ -1,5 +1,4 @@
 import { sendAuthorized } from '../shared/auth.ts';
-import { decodeSse } from '@momonga/foundation';
 import { agentReadiness, readinessText, summaryTokenCapFor } from '@momonga/protocol';
 import type { AdapterCompactRequest, AllowedToolsForm, Capabilities, ToolCallingMode, ToolChoiceWire, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, LenientItems, ReasoningOrigin, RenderWireOptions, StreamEvent } from '@momonga/protocol';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
@@ -7,7 +6,7 @@ import { NO_TOOL_CHOICE_WIRE, resolveToolChoice } from '../../core/tool-choice.t
 import { hiddenReasoningTokens } from '../../core/hidden-reasoning.ts';
 import { classifyChatCompletionsError, matchesGuardrailCode } from './classify.ts';
 import { CHAT_COMPLETIONS_VOCABULARY, withGuardrailMatcher } from './vocabulary.ts';
-import { boundedSseBytes } from '../shared/body-reading.ts';
+import { upstreamSseEvents } from '../shared/body-reading.ts';
 import { buildConstrainedBody } from './constrained-request.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { createConstrainedSink } from './constrained-sink.ts';
@@ -20,7 +19,6 @@ import type { ContentWatch } from '../shared/content-idle.ts';
 import { createEndpointPool, routeReportOf } from '../shared/http-client.ts';
 import { isJsonOnlyEnforced, jsonReplyFormatOf, jsonReplyPathOf, jsonReplyPlanOf } from '../shared/json-reply.ts';
 import { retryAfterHint, httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
-import { MAX_SSE_EVENT_BYTES } from '../shared/limits.ts';
 import { CHAT_COMPLETIONS_PATH, CHAT_COMPLETIONS_SUFFIX } from './limits.ts';
 import { buildNativeBody } from './native-request.ts';
 import type { ChatRequestBody } from './native-request.ts';
@@ -173,7 +171,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
 
       let opening: StreamEvent[] | undefined = driver.start();
       try {
-        for await (const message of decodeSse(boundedSseBytes(watch.source(response.body), MAX_SSE_EVENT_BYTES))) {
+        for await (const message of upstreamSseEvents(watch.source(response.body))) {
           ctx.signal.throwIfAborted();
           const errorEvent = upstreamErrorEventBody(message);
           if (errorEvent !== undefined) throw upstreamErrorFailure(vocabulary, response.status, errorEvent.body);

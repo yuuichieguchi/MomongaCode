@@ -21,13 +21,13 @@ export { HISTORY_OUTPUT_HEAD_CHARS, HISTORY_OUTPUT_TAIL_CHARS, cutToChars, keepi
 export { OUTPUT_READER_TOOL, TRUNCATION_MARKER_SOURCE, truncationMarker } from './output-marker.ts';
 export { BUSY_WAIT_LIMIT_MS, busyTimeoutMs, highestAppliedMigration, immediateTx, joinedTx, migrate, openDatabase, openDatabaseWithIdentity, readTx } from './sqlite.ts';
 export type { DatabaseFileIdentity, Migration } from './sqlite.ts';
-export { SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, decodeSse, encodeSse } from './sse.ts';
+export { SSE_EVENT_MAX_BYTES, SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, SseEventTooLargeError, decodeSse, encodeSse } from './sse.ts';
 export { URL_OPENER_PROGRAMS, createBrowserOpener, openCommandFor, urlOpenerFileFor } from './open-browser.ts';
 export type { LaunchProgram, OpenUrl, ProgramEnd } from './open-browser.ts';
 export { findProgramOnPath, findProgramOnPathSync } from './program-search.ts';
 export { FILE_CANDIDATE_LIMIT, directoryEntriesOf } from './file-candidates.ts';
 export type { FileCandidates } from './file-candidates.ts';
-export type { SseEvent } from './sse.ts';
+export type { DecodeSseOptions, SseEvent } from './sse.ts';
 export { createUdsClient, fixedSocket, isUnixSocketLive, listenUnix } from './uds.ts';
 export type { SocketResolver, UdsClient, UdsResponse } from './uds.ts';
 export { uuidv7 } from './uuidv7.ts';
