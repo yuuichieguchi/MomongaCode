@@ -1,13 +1,14 @@
 import { Duplex, Readable } from 'node:stream';
-import { CONTROL_PLANE_LAUNCH, DAEMON_MARKER_FD, LIFELINE_FD, launchGroupLeader, signalGroup } from '@momonga/foundation';
+import { CONTROL_PLANE_LAUNCH, DAEMON_MARKER_FD, LIFELINE_FD, hostProcessGroupPort, launchGroupLeader, signalGroup } from '@momonga/foundation';
 import type { GroupLaunchMarker, GroupLaunchRequest, ProcessGroupPort } from '@momonga/foundation';
 import type { ChildExit, ChildHandle, SpawnPort } from './child-manager.ts';
 
 const endedReadable = (): Readable => Readable.from([]);
 
-export type SpawnPortHost = { platform?: NodeJS.Platform; port?: ProcessGroupPort; spawnProcess?: GroupLaunchRequest['spawnProcess'] };
+export type SpawnPortHost = { port?: ProcessGroupPort; spawnProcess?: GroupLaunchRequest['spawnProcess'] };
 
-export const createSpawnPort = ({ platform = process.platform, port, spawnProcess }: SpawnPortHost = {}): SpawnPort => (command, args, options) => {
+export const createSpawnPort = ({ port: given, spawnProcess }: SpawnPortHost = {}): SpawnPort => (command, args, options) => {
+  const port = given ?? hostProcessGroupPort();
   const descriptor = options.stdio[DAEMON_MARKER_FD];
   const marker: GroupLaunchMarker = options.markerFile === undefined ? { slot: DAEMON_MARKER_FD, descriptor } : { slot: DAEMON_MARKER_FD, file: options.markerFile, descriptor };
   const launched = launchGroupLeader({
@@ -18,7 +19,7 @@ export const createSpawnPort = ({ platform = process.platform, port, spawnProces
     stdio: options.stdio,
     marker,
     protection: CONTROL_PLANE_LAUNCH,
-    ...(port === undefined ? {} : { port }),
+    port,
     ...(spawnProcess === undefined ? {} : { spawnProcess }),
   });
   const { child, pgid } = launched;
@@ -53,16 +54,21 @@ export const createSpawnPort = ({ platform = process.platform, port, spawnProces
       launched.onStart(listener);
     },
     kill: (signal) => {
-      if (platform === 'win32') {
-        if (lifeline === null) throw new Error(`cannot stop ${command}: it has no lifeline and signals terminate a Windows process without a graceful close`);
+      if (port.identity !== 'job') {
+        child.kill(signal);
+        return;
+      }
+      if (signal === 'SIGTERM') {
+        if (lifeline === null) throw new Error(`cannot stop ${command}: it has no lifeline, and a Windows process is only terminated without a graceful close`);
         lifeline.destroy();
         return;
       }
-      child.kill(signal);
+      if (pgid === undefined) throw new Error(`cannot terminate ${command}: the process was never spawned`);
+      port.signal(pgid, signal, { signal: undefined }).catch((error: unknown) => deliverError(error instanceof Error ? error : new Error(String(error))));
     },
     killGroup: async (stop) => {
       if (pgid === undefined) throw new Error(`cannot signal the group of ${command}: the process was never spawned`);
-      await signalGroup(pgid, 'SIGKILL', undefined, stop);
+      await signalGroup(pgid, 'SIGKILL', port, stop);
     },
   };
   return handle;

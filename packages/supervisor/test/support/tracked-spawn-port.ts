@@ -14,8 +14,8 @@ const killGroupAndAssertDead = async (pgid: number): Promise<void> => {
   if (await groupAlive(pgid)) throw new Error(`tracked process ${pgid} is still alive after its group was killed`);
 };
 
-export const trackedSpawnPort = (context: CleanupContext, platform?: NodeJS.Platform): TrackedSpawnPort => {
-  const realPort = createSpawnPort(platform === undefined ? {} : { platform });
+export const trackedSpawnPort = (context: CleanupContext): TrackedSpawnPort => {
+  const realPort = createSpawnPort();
   const spawned: ChildHandle[] = [];
   const port: SpawnPort = (command, args, options) => {
     const handle = realPort(command, args, options);
