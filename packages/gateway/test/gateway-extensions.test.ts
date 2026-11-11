@@ -131,7 +131,7 @@ describe('models and health', () => {
   const config = {
     chains: { 'scripted/model-a': ['scripted/model-a'], 'scripted/model-b': ['scripted/model-b', 'scripted/model-a'] },
     targets: {
-      'scripted/model-a': { capabilities: { contextWindow: 4096, toolCalling: 'constrained' as const } },
+      'scripted/model-a': {},
       'scripted/model-b': {},
     },
   };
@@ -147,8 +147,8 @@ describe('models and health', () => {
     for (const model of response.body.data) expect(model).toMatchObject({ object: 'model', owned_by: 'scripted' });
   });
 
-  it('returns per-model capabilities with config overrides merged over the adapter declaration', async () => {
-    const a = createScriptedAdapter({ calls: [], capabilities: { maxOutputTokens: 2048 } });
+  it('returns per-model capabilities as the adapter declares them', async () => {
+    const a = createScriptedAdapter({ calls: [], capabilities: { maxOutputTokens: 2048, contextWindow: 4096, toolCalling: 'constrained' } });
     const b = createScriptedAdapter({ calls: [] });
     const { client } = await startGateway({ adapters: { 'scripted/model-a': a, 'scripted/model-b': b }, config });
     const response = await getJson(client, '/v1/momonga/models');
@@ -160,7 +160,6 @@ describe('models and health', () => {
       maxOutputTokens: 2048,
       contextWindow: 4096,
       toolCalling: 'constrained',
-      source: 'config',
     });
     const deep = response.body.data.find((entry: { id: string }) => entry.id === 'scripted/model-b');
     expect(deep.chain.map((member: { model: string }) => member.model)).toEqual(['scripted/model-b', 'scripted/model-a']);

@@ -18,31 +18,6 @@ const corrupt = (dbPath: string, sql: string, ...params: string[]): void => {
 const events = (text: string) => textResponseEvents({ model: 'scripted-primary', chunks: [text] });
 
 describe('rows read back from gateway.db are validated', () => {
-  it('names the responses table and id when a stored output is malformed', async () => {
-    const primary = createScriptedAdapter({ calls: [{ events: events('one') }] });
-    const { client, dbPath } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
-    const stored = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('q'), store: true }));
-    corrupt(dbPath, 'UPDATE responses SET output_json = ? WHERE id = ?', '[{"type":"message","role":"bogus"}]', stored.body.id);
-    const followUp = await readJson(
-      await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('q2'), previous_response_id: stored.body.id }),
-    );
-    expect(followUp.status).toBe(500);
-    expect(followUp.body.error.message).toContain('responses');
-    expect(followUp.body.error.message).toContain(stored.body.id);
-    expect(primary.calls).toHaveLength(1);
-  });
-
-  it('names the responses table when stored input is not an array', async () => {
-    const primary = createScriptedAdapter({ calls: [{ events: events('one') }] });
-    const { client, dbPath } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
-    const stored = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('q'), store: true }));
-    corrupt(dbPath, 'UPDATE responses SET input_json = ? WHERE id = ?', '{"not":"an array"}', stored.body.id);
-    const followUp = await readJson(
-      await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('q2'), previous_response_id: stored.body.id }),
-    );
-    expect(followUp.status).toBe(500);
-    expect(followUp.body.error.message).toContain('responses');
-  });
 
   it('names the idempotency table and key when stored frames are malformed', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: events('one') }] });

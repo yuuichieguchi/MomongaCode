@@ -209,7 +209,6 @@
       {"name":"PLAN_REVOCATION_TIMEOUT_MS","file":"packages/gateway/src/defaults.ts","lacks":["kind","row"]},
       {"name":"PLAN_SKEW_MS","file":"packages/gateway/src/defaults.ts","lacks":["kind","row"]},
       {"name":"SEVEN_DAYS_MS","file":"packages/gateway/src/defaults.ts","lacks":["kind","row"]},
-      {"name":"SIXTY_MINUTES_MS","file":"packages/gateway/src/defaults.ts","lacks":["kind","row"]},
       {"name":"THIRTY_MINUTES_MS","file":"packages/gateway/src/defaults.ts","lacks":["kind","row"]},
       {"name":"DETECTION_BODY_MAX_BYTES","file":"packages/gateway/src/detect-local-servers.ts","lacks":["row"]},
       {"name":"HEALTH_POLL_INTERVAL_MS","file":"packages/gateway/src/managed/server.ts","lacks":["row"]},

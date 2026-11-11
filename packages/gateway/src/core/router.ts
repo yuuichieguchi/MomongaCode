@@ -6,7 +6,6 @@ import {
   MOMONGA_REQUEST_FIELDS,
   PRECONDITION_FAILED_CODE,
   agentReadiness,
-  applyCapabilityOverride,
   displayMapOf,
   imageCapability,
   largestSummaryCapFor,
@@ -22,7 +21,6 @@ import type {
   AdapterRequest,
   AdapterTarget,
   Capabilities,
-  CapabilityOverride,
   ChainCapabilities,
   ClientOperation,
   FunctionTool,
@@ -78,7 +76,6 @@ export type TargetRuntime = {
   adapter: GuardedAdapter;
   breaker: TargetBreaker;
   gate: AdmissionGate;
-  capabilityOverride: CapabilityOverride | undefined;
   idempotencyKeyHeader: string | undefined;
   plan: PlanAccountRef | undefined;
   keyGroup: string | undefined;
@@ -275,7 +272,6 @@ export const createRouter = (options: RouterOptions): Router => {
           admissionTimeoutMs: target.admissionTimeoutMs,
           timers,
         }),
-      capabilityOverride: target.capabilities,
       idempotencyKeyHeader: target.idempotencyKeyHeader,
       plan: target.plan,
       keyGroup: target.keyGroup,
@@ -297,8 +293,7 @@ export const createRouter = (options: RouterOptions): Router => {
   const capabilitiesOf = async (target: TargetRuntime): Promise<Capabilities> => {
     const reported = await target.adapter.capabilities(adapterTargetOf(target));
     const declared: Capabilities = target.idempotencyKeyHeader === undefined ? reported : { ...reported, idempotencyKey: { header: target.idempotencyKeyHeader } };
-    if (target.capabilityOverride === undefined) return declared;
-    return { ...applyCapabilityOverride(declared, target.capabilityOverride), source: 'config' };
+    return declared;
   };
 
   const readRoomMember = async (target: TargetRuntime): Promise<ChainMember> => {

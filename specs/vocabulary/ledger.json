@@ -459,9 +459,6 @@
       "packages/gateway/src/server/body.ts": {
         "limit": 1
       },
-      "packages/gateway/src/server/websocket.ts": {
-        "limit": 1
-      },
       "packages/mcp/src/common-passwords.data.ts": {
         "compact": 1,
         "gateway": 1,
