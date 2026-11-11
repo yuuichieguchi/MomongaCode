@@ -138,6 +138,8 @@ export type CreateRunOptions = {
 
 export type UserShellEnd = { kind: 'refused'; reason: string } | { kind: 'exit'; record: UserShellRecord };
 
+export type UserShellIo = { onUnprotected(reason: string): void; onOutput(text: string): void };
+
 export type MemoryFilter = { scope?: MemoryScope; state?: MemoryState; project?: string };
 
 export type CostFilter = { run: string } | { session: string } | { cwd: string } | Record<string, never>;
@@ -169,7 +171,7 @@ export type RuntimeClient = {
   inboxWithdraw(id: string): Promise<InboxWithdrawResponse>;
   inboxList(sessionId: string): Promise<InboxRowView[]>;
   runSuccessor(runId: string): Promise<RunView | undefined>;
-  userShell(sessionId: string, command: string, include: boolean, onOutput: (text: string) => void): Promise<UserShellEnd>;
+  userShell(sessionId: string, command: string, include: boolean, io: UserShellIo): Promise<UserShellEnd>;
   stopUserShell(sessionId: string): Promise<void>;
   pendingUserShell(sessionId: string): Promise<UserShellRecord[]>;
   cancel(id: string): Promise<{ status: 200 | 202; run: RunView }>;
@@ -841,14 +843,15 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     inboxAdd,
     inboxWithdraw,
     inboxList,
-    userShell: async (sessionId, command, include, onOutput) => {
+    userShell: async (sessionId, command, include, io) => {
       const path = `/v1/sessions/${pathSegment(sessionId)}/user-shell`;
       const description = `POST ${path}`;
       const response = await http.request({ method: 'POST', path, headers: JSON_HEADERS, body: JSON.stringify({ command, include }) });
       if (response.status !== 200) throw new RunApiError(description, response.status, await response.text());
       for await (const event of decodeSse(response.body)) {
         const frame = checkUserShellFrame(parsed(event.data, description), description);
-        if (frame.type === 'output') onOutput(frame.text);
+        if (frame.type === 'output') io.onOutput(frame.text);
+        else if (frame.type === 'unprotected') io.onUnprotected(frame.reason);
         else return frame.type === 'refused' ? { kind: 'refused', reason: frame.reason } : { kind: 'exit', record: frame.record };
       }
       throw new ContractViolation(description, 'the stream ended without an exit');

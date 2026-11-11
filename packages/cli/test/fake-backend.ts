@@ -381,10 +381,10 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     succeed: (runId, next) => void successors.set(runId, next),
     userInput: {
       fileCandidates: async () => ({ entries: [...(options.files ?? [])], truncated: false }),
-      shell: async (command, include, onOutput) => {
+      shell: async (command, include, io) => {
         record(`shell:${include ? '!' : '!!'}:${command}`);
-        if (options.shell !== undefined) return options.shell(command, include, onOutput);
-        onOutput(`out of ${command}\n`);
+        if (options.shell !== undefined) return options.shell(command, include, io);
+        io.onOutput(`out of ${command}\n`);
         return { kind: 'exit', record: { command, exitCode: 0, output: `out of ${command}`, include } };
       },
       stopShell: async () => {

@@ -2,27 +2,39 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_KEY_TABLE } from '../../src/tui/keys/table.ts';
 import { createTranscriptStore } from '../../src/tui/screen/store.ts';
 import { foldReplayedEvent } from '../../src/tui/transcript.ts';
-import { isShellDraft, shellCommandOf, shellEnded, shellHint, shellOutput, shellStarted, showShellRecord, withoutShellMark } from '../../src/tui/user-shell.ts';
+import { emptyEditor, insertPaste, placeText } from '../../src/tui/editor.ts';
+import type { EditorState } from '../../src/tui/editor.ts';
+import { leftShell, shellCommandOf, shellEnded, shellHint, shellHistoryText, shellOutput, shellStarted, showShellRecord, typedIntoDraft } from '../../src/tui/user-shell.ts';
 import { eventOf, plainOf } from './screen-fakes.ts';
 
-describe('a draft that starts with ! (design 5.9)', () => {
-  it('is a shell draft, for the model with one mark and kept out with two', () => {
-    expect(isShellDraft('!ls')).toBe(true);
-    expect(isShellDraft('ls !')).toBe(false);
-    expect(shellCommandOf('!ls -la')).toEqual({ command: 'ls -la', include: true });
-    expect(shellCommandOf('!!cat notes.txt')).toEqual({ command: 'cat notes.txt', include: false });
-    expect(shellCommandOf('! git status ')).toEqual({ command: 'git status', include: true });
+const typedInto = (text: string, state: EditorState = emptyEditor()): EditorState => typedIntoDraft(state, text);
+
+describe('the shell mode of a draft (design 5.9)', () => {
+  it('is entered only by a ! typed into an empty draft, and is a flag of the draft, not its text', () => {
+    const shell = typedInto('!');
+    expect(shell).toMatchObject({ shell: true, text: '' });
+    expect(typedInto('ls', shell).text).toBe('ls');
+    expect(typedInto('!', typedInto('ls')).shell).toBe(false);
+    expect(insertPaste(emptyEditor(), '!important')).toMatchObject({ shell: false, text: '!important' });
+    expect(placeText(shell, '!ls').shell).toBe(false);
   });
 
-  it('names no command when only the marks are typed', () => {
-    expect(shellCommandOf('!')).toBeUndefined();
-    expect(shellCommandOf('!!  ')).toBeUndefined();
-    expect(shellCommandOf('ls')).toBeUndefined();
+  it('names the command for the model with one mark and kept out with two', () => {
+    expect(shellCommandOf(typedInto('!ls -la'))).toEqual({ command: 'ls -la', include: true });
+    expect(shellCommandOf(typedInto('!!cat notes.txt'))).toEqual({ command: 'cat notes.txt', include: false });
+    expect(shellCommandOf(typedInto('! git status '))).toEqual({ command: 'git status', include: true });
+    expect(shellHistoryText({ command: 'cat notes.txt', include: false })).toBe('!!cat notes.txt');
+  });
+
+  it('names no command when only the marks are typed, and none for a draft that is not in the mode', () => {
+    expect(shellCommandOf(typedInto('!'))).toBeUndefined();
+    expect(shellCommandOf(typedInto('!!  '))).toBeUndefined();
+    expect(shellCommandOf(insertPaste(emptyEditor(), '!ls'))).toBeUndefined();
   });
 
   it('becomes a chat draft again without its marks', () => {
-    expect(withoutShellMark('!!ls')).toBe('ls');
-    expect(withoutShellMark('!')).toBe('');
+    expect(leftShell(typedInto('!!ls'))).toMatchObject({ shell: false, text: 'ls' });
+    expect(leftShell(typedInto('!'))).toMatchObject({ shell: false, text: '' });
   });
 
   it('has the hint row of the design, with the keys of the table', () => {

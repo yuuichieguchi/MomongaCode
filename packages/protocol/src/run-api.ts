@@ -1423,7 +1423,7 @@ export type CompactSessionRequest = { instructions?: string };
 
 export type UserShellPendingResponse = { pending: UserShellRecord[] };
 
-export type UserShellFrame = { type: 'output'; text: string } | { type: 'refused'; reason: string } | { type: 'exit'; record: UserShellRecord };
+export type UserShellFrame = { type: 'unprotected'; reason: string } | { type: 'output'; text: string } | { type: 'refused'; reason: string } | { type: 'exit'; record: UserShellRecord };
 
 export type InboxAddResponse = { row: InboxRowView; pending: InboxRowView[] };
 
@@ -1468,6 +1468,7 @@ export const RUN_API_SCHEMAS = {
   UserShellPendingResponse: root(closed({ pending: { type: 'array', items: userShellRecord } }, ['pending'])),
   UserShellFrame: root({
     anyOf: [
+      closed({ type: constant('unprotected'), reason: string }, ['type', 'reason']),
       closed({ type: constant('output'), text: string }, ['type', 'text']),
       closed({ type: constant('refused'), reason: string }, ['type', 'reason']),
       closed({ type: constant('exit'), record: userShellRecord }, ['type', 'record']),

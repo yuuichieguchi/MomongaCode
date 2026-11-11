@@ -15,6 +15,7 @@ export type EditorState = {
   killed: string | undefined;
   pastes: readonly PastedSpan[];
   pasteCount: number;
+  shell: boolean;
   undo: readonly Snapshot[];
   typing: boolean;
 };
@@ -49,7 +50,7 @@ export const UNDO_STEPS_MAX = 100;
 export const PASTE_COLLAPSE_LINES = 3;
 export const PASTE_COLLAPSE_CHARACTERS = 800;
 
-export const emptyEditor = (history: readonly string[] = []): EditorState => ({ text: '', cursor: 0, history, historyIndex: undefined, draft: '', draftPastes: [], killed: undefined, pastes: [], pasteCount: 0, undo: [], typing: false });
+export const emptyEditor = (history: readonly string[] = []): EditorState => ({ text: '', cursor: 0, history, historyIndex: undefined, draft: '', draftPastes: [], killed: undefined, pastes: [], pasteCount: 0, shell: false, undo: [], typing: false });
 
 const LINE_CONTINUATION = '\\';
 
@@ -164,6 +165,7 @@ const recalled = (state: EditorState, shown: Kept, historyIndex: number | undefi
   historyIndex,
   draft: draft.text,
   draftPastes: draft.pastes,
+  shell: false,
   typing: false,
 });
 
@@ -219,7 +221,7 @@ export const expandedText = (state: EditorState): string => {
   return text + state.text.slice(at);
 };
 
-export const placeText = (state: EditorState, text: string): EditorState => ({ ...spliced(state, 0, state.text.length, text), pastes: [] });
+export const placeText = (state: EditorState, text: string): EditorState => ({ ...spliced(state, 0, state.text.length, text), pastes: [], shell: false });
 
 export const placeCaret = (state: EditorState, cursor: number): EditorState => movedTo(state, Math.max(0, Math.min(cursor, state.text.length)));
 

@@ -45,7 +45,7 @@ const ID_ROUTES: Readonly<Record<string, Call>> = {
   traceContent: (client, id) => client.traceContent(id, { after: 0, limit: 1 }),
   streamEvents: (client, id) => client.streamEvents(id).next(),
   streamSessionEvents: (client, id) => client.streamSessionEvents(id).next(),
-  userShell: (client, id) => client.userShell(id, 'true', false, () => undefined),
+  userShell: (client, id) => client.userShell(id, 'true', false, { onUnprotected: () => undefined, onOutput: () => undefined }),
   stopUserShell: (client, id) => client.stopUserShell(id),
   pendingUserShell: (client, id) => client.pendingUserShell(id),
   runAnsweredBy: (client, id) => client.runAnsweredBy(id),
