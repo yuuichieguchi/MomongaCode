@@ -145,6 +145,7 @@ export {
   realProcessTestSignal,
 } from './test-support.ts';
 export type { CleanupContext, TempDirOptions, TrackedChild } from './test-support.ts';
+export { hostBuiltSocketGuard } from './linux-socket-guard.ts';
 export { createFakeEntryIo, parseJsonLines } from './fake-entry-io.ts';
 export type { FakeEntryIo, FakeEntryIoOptions, JsonLine } from './fake-entry-io.ts';
 export { DAEMON_BIN_EXIT_DEADLINE_MS, DAEMON_BIN_READY_DEADLINE_MS, readJsonLinesFile, startDaemonBin } from './daemon-bin.ts';

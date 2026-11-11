@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
 import { EMPTY_PROTECTED_SET, canonicalJson, protectedSetFor, sha256Hex, ruleEnforcementOf } from '@momonga/foundation';
-import { fakePolicyFilesystem, testProbes, NEVER_CANCELLED, testPaths } from '@momonga/testkit';
+import { fakePolicyFilesystem, hostBuiltSocketGuard, testProbes, NEVER_CANCELLED, testPaths } from '@momonga/testkit';
 import { computeFileRules, parseRule } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
 import type { LeaseFence, LeasedIdempotencyPort } from '@momonga/tools';
@@ -18,8 +18,12 @@ export const HAS_REAL_SANDBOX = (process.platform === 'darwin' && fs.existsSync(
 
 export const HOST_SANDBOX_KIND = process.platform === 'darwin' ? ('seatbelt' as const) : ('bubblewrap' as const);
 
+const hostSocketGuard = hostBuiltSocketGuard();
+
 export const createHostSandbox = (options: { tmpRoot: string; killGraceMs: number }): Sandbox =>
-  process.platform === 'darwin' ? createSeatbeltSandbox(options) : createBubblewrapSandbox({ ...options, journal: createPlaceholderJournal(`${options.tmpRoot}-journal`), holders: () => heldMountPoints() });
+  process.platform === 'darwin'
+    ? createSeatbeltSandbox(options)
+    : createBubblewrapSandbox({ ...options, journal: createPlaceholderJournal(`${options.tmpRoot}-journal`), holders: () => heldMountPoints(), socketGuard: hostSocketGuard });
 
 const cleanups: Array<() => void> = [];
 

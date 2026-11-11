@@ -6,7 +6,7 @@ export const EXIT_CODES = {
   ok: { code: 0, meaning: 'success' },
   failure: { code: 1, meaning: 'general failure, refused, not restored' },
   usage: { code: 2, meaning: 'usage error' },
-  keeperCompilerMissing: { code: 3, meaning: 'the Windows keeper build found no compiler' },
+  keeperCompilerMissing: { code: 3, meaning: 'the build of a native helper (the Windows keeper, the Linux socket guard) found no compiler' },
   waitingForApproval: { code: 75, meaning: 'headless run waiting for approval' },
   versionMismatchReserved: { code: 76, meaning: 'reserved: version mismatch' },
   alreadyRunning: { code: 77, meaning: 'daemon already running (lock held)' },

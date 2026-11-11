@@ -7,6 +7,10 @@ export { SANDBOX_KILL_GRACE_MS };
 
 const MARKER_SLOT = 3;
 
+export const SOCKET_FILTER_SLOT = 4;
+
+const STDIO_THROUGH_SOCKET_FILTER = ['ignore', 'pipe'] as const;
+
 export const SANDBOX_STOP_BOUND_MS = groupTerminationBoundMs(SANDBOX_KILL_GRACE_MS);
 
 export interface LaunchOptions {
@@ -20,6 +24,7 @@ export interface LaunchOptions {
   markerFile?: string;
   markerFd?: number;
   stdin?: string;
+  socketFilter?: Uint8Array;
   spawnProcess?: typeof spawn;
   signalTerm?: (pgid: number, stop: AbortSignal) => Promise<void> | void;
   groupPort?: ProcessGroupPort;
@@ -47,7 +52,7 @@ export function launch(options: LaunchOptions): SandboxedProcess {
       args: options.args,
       cwd: options.cwd,
       env: options.env,
-      stdio: [stdinMode, 'pipe', 'pipe'],
+      stdio: [stdinMode, 'pipe', 'pipe', ...(options.socketFilter === undefined ? [] : STDIO_THROUGH_SOCKET_FILTER)],
       ...(marker === undefined ? {} : { marker }),
       port: groupPort,
       ...(options.spawnProcess === undefined ? {} : { spawnProcess: options.spawnProcess }),
@@ -71,11 +76,24 @@ export function launch(options: LaunchOptions): SandboxedProcess {
   }
   const signalTerm = options.signalTerm ?? ((pgid: number, stop: AbortSignal) => signalGroup(pgid, firstSignal, groupPort, stop));
   let stdinFailure: Error | undefined;
+  const fed = (error: NodeJS.ErrnoException): void => {
+    if (error.code !== 'EPIPE') stdinFailure ??= error;
+  };
   if (options.stdin !== undefined && stdin !== null) {
-    stdin.on('error', (error: NodeJS.ErrnoException) => {
-      if (error.code !== 'EPIPE') stdinFailure ??= error;
-    });
+    stdin.on('error', fed);
     stdin.end(options.stdin);
+  }
+  if (options.socketFilter !== undefined) {
+    const feed = child.stdio[SOCKET_FILTER_SLOT];
+    if (feed === null || feed === undefined || !('end' in feed)) {
+      child.once('error', () => undefined);
+      signalGroup(pid, lastSignal ?? firstSignal, groupPort, signal).catch((failure: unknown) => {
+        process.emitWarning(new Error(`the process group ${pid} could not be killed after the pipe of its socket filter failed`, { cause: failure }));
+      });
+      throw new Error(`failed to open the pipe of the socket filter for ${options.file}`);
+    }
+    feed.on('error', fed);
+    feed.end(options.socketFilter);
   }
   let killedBy: SandboxExit['killedBy'];
   let leaderExited = false;
