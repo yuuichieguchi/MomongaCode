@@ -2,9 +2,11 @@ import { escapeTerminalLine } from '@momonga/protocol';
 import { describeDenial } from '../../policy-messages.ts';
 import { bannerRows, textLines } from '../startup.tsx';
 import type { Entry, ToolEntry } from '../transcript.ts';
-import { markdownRowsWith } from './markdown.ts';
+import { markdownRowsWith, parseMarkdown } from './markdown.ts';
+import type { Parsed, ParsePoint, TableDrawing } from './markdown.ts';
 import type { StyleToken } from './tokens.ts';
-import { thoughtRows } from './thought.ts';
+import { openThoughtRows, thoughtRows } from './thought.ts';
+import type { ThoughtEntry, ThoughtWrap } from './thought.ts';
 import { runningToolText, toolBlockRows } from './tool-view.ts';
 import type { RowFacts } from './tool-view.ts';
 import { inertText, withoutTabs, wrapText } from './wrap.ts';
@@ -42,7 +44,19 @@ const toolRows = (entry: ToolEntry, width: number, { keys, a11y }: RowFacts): Ro
   ];
 };
 
-export const assistantTextRows = (text: string, width: number, { a11y }: RowFacts): Row[] => markdownRowsWith(text, width, { tables: a11y.screenReader ? 'records' : 'grid' });
+const tablesOf = ({ a11y }: RowFacts): TableDrawing => (a11y.screenReader ? 'records' : 'grid');
+
+export const assistantTextRows = (text: string, width: number, facts: RowFacts): Row[] => markdownRowsWith(text, width, { tables: tablesOf(facts) });
+
+export type AnswerReading = { settled: boolean; unit: boolean };
+
+export const answerRowsFrom = (text: string, from: ParsePoint, width: number, reading: AnswerReading, facts: RowFacts): Parsed => parseMarkdown(text, from, width, { ...reading, tables: tablesOf(facts) });
+
+export const plainTextRows = (text: string, width: number): Row[] => wrapText(shown(text), width, { links: false });
+
+const UNSPOKEN_THOUGHT: ThoughtWrap = { width: 0, window: 0, characters: 0, wrapped: 0, kept: [], rows: [] };
+
+export const openThoughtRowsFrom = (entry: ThoughtEntry, width: number, before: ThoughtWrap | undefined, { a11y }: RowFacts): ThoughtWrap => (a11y.screenReader ? UNSPOKEN_THOUGHT : openThoughtRows(entry, width, before));
 
 const plainBannerRows = (banner: Extract<Entry, { kind: 'banner' }>['banner'], width: number): Row[] =>
   [...textLines(banner.config, banner.model, banner.cwd), ...banner.notices.map((notice) => `! ${notice}`)].flatMap((line) => wrapText(shown(line), width));

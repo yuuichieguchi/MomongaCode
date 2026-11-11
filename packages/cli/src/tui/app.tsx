@@ -1505,6 +1505,7 @@ export function App(props: AppProps) {
     keyFacts: () => ({ panelOpen: panel !== undefined || toolView.shown, menuOpen: completionOpen, inputEmpty: editorRef.current.text === '' }),
     keys,
     a11y,
+    timers,
   });
   const toolView = useToolView({
     store,

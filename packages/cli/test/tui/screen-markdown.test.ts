@@ -9,13 +9,13 @@ import { createTranscriptStore } from '../../src/tui/screen/store.ts';
 import { displayWidth, logicalText } from '../../src/tui/screen/wrap.ts';
 import type { Row } from '../../src/tui/screen/wrap.ts';
 import { foldEvent } from '../../src/tui/transcript.ts';
-import { eventOf, seeded, storeOf, ROW_FACTS, ROW_RENDERERS } from './screen-fakes.ts';
+import { eventOf, seeded, storeOf, ROW_FACTS, ROW_RENDERERS, ROW_SCHEDULE } from './screen-fakes.ts';
 
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const rowsOfEntry = (entry: Parameters<typeof rowsOfEntryWith>[0], width: number) => rowsOfEntryWith(entry, width, ROW_FACTS);
 const assistantTextRows = (text: string, width: number) => assistantTextRowsWith(text, width, ROW_FACTS);
-const createRowCache = (renderers: Parameters<typeof createRowCacheWith>[0] = ROW_RENDERERS) => createRowCacheWith(renderers);
+const createRowCache = (renderers: Parameters<typeof createRowCacheWith>[0] = ROW_RENDERERS) => createRowCacheWith(renderers, ROW_SCHEDULE);
 
 const texts = (rows: readonly Row[]): string[] => rows.map((row) => row.text);
 const spans = (rows: readonly Row[]): unknown[] => rows.map((row) => row.spans);
@@ -225,10 +225,10 @@ describe('streamed markdown', () => {
     const store = storeOf([delta('a', '# One\n\n```\ncode\n\nmore\n```\n\ntail ')]);
     const calls: number[] = [];
     const cache = createRowCache({
-      entryRows: rowsOfEntry,
-      assistantRows: (text, width) => {
-        calls.push(text.length);
-        return assistantTextRows(text, width);
+      ...ROW_RENDERERS,
+      answerRows: (text, from, width, reading) => {
+        calls.push(text.length - from.characters);
+        return ROW_RENDERERS.answerRows(text, from, width, reading);
       },
     });
     cache.rowsOf(store.at(0), 20);

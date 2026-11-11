@@ -7,6 +7,7 @@ export const MARKDOWN_UNIT_BYTES = 16 * 1024;
 const INLINE_NESTING_MAX = 8;
 const WIDEST_GRAPHEME_COLUMNS = 2;
 const CODE_INDENT = '  ';
+const CODE_BLOCK_INDENT = 4;
 const QUOTE_GUTTER = '│ ';
 const BULLET = '•';
 
@@ -26,10 +27,10 @@ type Role = keyof typeof MARKDOWN_STYLE;
 
 type Inline = { text: string; spans: Span[]; links: Link[] };
 
-const FENCE = /^\s*(?:```|~~~)/;
-const FENCE_MARKS = /^\s*(?:`+|~+)\s*/;
+const FENCE = /^(\s*)(`{3,}|~{3,})(.*)$/;
 const QUOTE = /^ {0,3}> ?(.*)$/;
 const HEADING = /^ {0,3}#{1,6} +/;
+const UNDERLINE = /^ {0,3}(?:=+|-+) *$/;
 const RULE = /^ {0,3}([-*_])(?: *\1){2,} *$/;
 const LIST_ITEM = /^( *)([-*+]|\d{1,9}[.)]) +(.*)$/;
 const TABLE_DELIMITER = /^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$/;
@@ -72,8 +73,33 @@ const closerOf = (source: string, mark: string, from: number, accepts: (index: n
   return undefined;
 };
 
+type CodeMarks = (length: number, from: number) => number | undefined;
+
+const codeMarksOf = (source: string): CodeMarks => {
+  let runs: Map<number, { starts: number[]; next: number }> | undefined;
+  const read = (): Map<number, { starts: number[]; next: number }> => {
+    const found = new Map<number, { starts: number[]; next: number }>();
+    for (let index = source.indexOf('`'); index >= 0; ) {
+      const length = runLength(source, index);
+      const held = found.get(length);
+      if (held === undefined) found.set(length, { starts: [index], next: 0 });
+      else held.starts.push(index);
+      index = source.indexOf('`', index + length);
+    }
+    return found;
+  };
+  return (length, from) => {
+    runs ??= read();
+    const held = runs.get(length);
+    if (held === undefined) return undefined;
+    while ((held.starts[held.next] ?? from) < from) held.next += 1;
+    return held.starts[held.next];
+  };
+};
+
 const inlineInto = (out: Inline, source: string, depth: number): void => {
   const unclosed = new Set<string>();
+  const codeMark = codeMarksOf(source);
   const sticky = (pattern: RegExp, position: number): RegExpExecArray | null => {
     pattern.lastIndex = position;
     return pattern.exec(source);
@@ -94,7 +120,7 @@ const inlineInto = (out: Inline, source: string, depth: number): void => {
 
   const codeAt = (position: number): number | undefined => {
     const length = runLength(source, position);
-    const end = closer('`'.repeat(length), position + length, () => true);
+    const end = codeMark(length, position + length);
     if (end === undefined) {
       out.text += source.slice(position, position + length);
       return position + length;
@@ -245,7 +271,24 @@ const wrapInline = (inline: Inline, width: number, prefix: Prefix = NO_PREFIX): 
   });
 };
 
-const overUnit = (line: string): boolean => Buffer.byteLength(line) > MARKDOWN_UNIT_BYTES;
+const LONGEST_LINE_END = '\r\n';
+
+const sourceBytes = (line: string): number => Buffer.byteLength(line) + LONGEST_LINE_END.length;
+
+const overUnit = (line: string): boolean => sourceBytes(line) > MARKDOWN_UNIT_BYTES;
+
+type Fence = { readonly mark: string; readonly length: number };
+
+const fenceOf = (line: string): (Fence & { info: string }) | undefined => {
+  const match = FENCE.exec(line);
+  const run = match?.[2];
+  const info = match?.[3];
+  const mark = run?.[0];
+  if (run === undefined || info === undefined || mark === undefined) return undefined;
+  return mark === '`' && info.includes('`') ? undefined : { mark, length: run.length, info: info.trim() };
+};
+
+const closes = (line: Fence & { info: string }, open: Fence): boolean => line.mark === open.mark && line.length >= open.length && line.info === '';
 
 const withoutClosingMarks = (heading: string): string => {
   const trimmed = heading.trimEnd();
@@ -255,7 +298,6 @@ const withoutClosingMarks = (heading: string): string => {
 };
 
 const lineRows = (line: string, width: number): Row[] => {
-  if (overUnit(line)) return wrapLine(line, width, { links: false });
   let gutter = '';
   let content = line;
   for (let quote = QUOTE.exec(content); quote !== null && fits(gutter + QUOTE_GUTTER, width); quote = QUOTE.exec(content)) {
@@ -279,6 +321,11 @@ const codeRows = (line: string, width: number, role: Role): Row[] => {
   return wrapLine(line, width, { ...prefix, links: false }).map((row) => (row.text.length === prefix.first.length ? row : { ...row, spans: [[prefix.first.length, row.text.length, MARKDOWN_STYLE[role]]] }));
 };
 
+const languageRows = (info: string, width: number): Row[] => {
+  const [language = ''] = info.split(SPACE);
+  return language === '' ? [] : codeRows(language, width, 'language').map((row): Row => ({ ...row, kind: 'label' }));
+};
+
 const cellsOf = (line: string): string[] => {
   const trimmed = line.trim();
   const inner = trimmed.slice(trimmed.startsWith('|') ? 1 : 0, trimmed.endsWith('|') && !trimmed.endsWith('\\|') && trimmed.length > 1 ? -1 : undefined);
@@ -286,9 +333,14 @@ const cellsOf = (line: string): string[] => {
 };
 
 const isTableStart = (header: string, delimiter: string | undefined): delimiter is string =>
-  delimiter !== undefined && header.includes('|') && delimiter.includes('-') && !overUnit(header) && !overUnit(delimiter) && TABLE_DELIMITER.test(delimiter) && cellsOf(header).length === cellsOf(delimiter).length;
+  delimiter !== undefined &&
+  header.includes('|') &&
+  delimiter.includes('-') &&
+  sourceBytes(header) + sourceBytes(delimiter) <= MARKDOWN_UNIT_BYTES &&
+  TABLE_DELIMITER.test(delimiter) &&
+  cellsOf(header).length === cellsOf(delimiter).length;
 
-const isTableRow = (line: string | undefined): line is string => line !== undefined && line.includes('|') && line.trim() !== '' && !FENCE.test(line) && !overUnit(line);
+const isTableRow = (line: string | undefined): line is string => line !== undefined && line.includes('|') && line.trim() !== '' && fenceOf(line) === undefined && !overUnit(line);
 
 const columnWidths = (headers: readonly Inline[], natural: readonly number[], available: number): number[] | undefined => {
   const least = headers.map((header, column) => Math.max(displayWidth(header.text), Math.min(natural[column] ?? 0, WIDEST_GRAPHEME_COLUMNS)));
@@ -350,26 +402,161 @@ const tableRows = (lines: readonly string[], width: number, drawing: TableDrawin
   return [borderRow(widths, '┌', '┬', '┐'), ...gridRows(headers, widths), borderRow(widths, '├', '┼', '┤'), ...body.flatMap((cells) => gridRows(cells, widths)), borderRow(widths, '└', '┴', '┘')];
 };
 
-export const markdownRowsWith = (text: string, width: number, { tables }: { tables: TableDrawing }): Row[] => {
-  const lines = inertText(text).split('\n');
-  const rows: Row[] = [];
-  let fenced = false;
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? '';
-    if (FENCE.test(line)) {
-      const language = fenced ? '' : line.replace(FENCE_MARKS, '').trim();
-      if (language !== '') rows.push(...codeRows(language, width, 'language'));
-      fenced = !fenced;
-    } else if (fenced) rows.push(...codeRows(line, width, 'code'));
-    else if (line.trim() === '') rows.push(EMPTY_ROW);
-    else if (isTableStart(line, lines[index + 1])) {
-      let end = index + 2;
-      while (isTableRow(lines[end])) end += 1;
-      rows.push(...tableRows(lines.slice(index, end), width, tables));
-      index = end - 1;
-    } else rows.push(...lineRows(line, width));
-  }
-  return rows;
+export type BlockState = {
+  readonly fence: Fence | undefined;
+  readonly list: number | undefined;
+  readonly paragraph: 'none' | 'top' | 'item';
+  readonly records: readonly string[] | undefined;
 };
+
+const OUTSIDE: BlockState = { fence: undefined, list: undefined, paragraph: 'none', records: undefined };
+
+export type ParsePoint = { readonly characters: number; readonly state: BlockState };
+
+export const START_OF_TEXT: ParsePoint = { characters: 0, state: OUTSIDE };
+
+type Look = (index: number) => string | undefined;
+
+type Block = { rows: Row[]; next: number; state: BlockState };
+
+const indentOf = (line: string): number => {
+  let columns = 0;
+  while (line[columns] === ' ') columns += 1;
+  return columns;
+};
+
+const startsTable = (look: Look, index: number): boolean => {
+  const line = look(index);
+  return line !== undefined && line.includes('|') && isTableStart(line, look(index + 1));
+};
+
+const tableAt = (look: Look, index: number, width: number, drawing: TableDrawing): Block => {
+  const lines = [look(index) ?? '', look(index + 1) ?? ''];
+  let bytes = lines.reduce((sum, line) => sum + sourceBytes(line), 0);
+  let end = index + 2;
+  for (let row = look(end); isTableRow(row); row = look(end)) {
+    if (bytes + sourceBytes(row) > MARKDOWN_UNIT_BYTES) return { rows: tableRows(lines, width, 'records'), next: end, state: { ...OUTSIDE, records: cellsOf(lines[0] ?? '') } };
+    lines.push(row);
+    bytes += sourceBytes(row);
+    end += 1;
+  }
+  return { rows: tableRows(lines, width, drawing), next: end, state: OUTSIDE };
+};
+
+const recordAt = (line: string, headers: readonly string[], width: number): Row[] => [
+  EMPTY_ROW,
+  ...recordRows(
+    headers.map((cell) => inlineOf(cell, 'tableHeader')),
+    [cellsOf(line).map((cell) => inlineOf(cell))],
+    width,
+  ),
+];
+
+const continuesParagraph = (look: Look, index: number): boolean => {
+  const line = look(index);
+  if (line === undefined || line.trim() === '' || overUnit(line) || fenceOf(line) !== undefined) return false;
+  if (HEADING.test(line) || QUOTE.test(line) || RULE.test(line) || UNDERLINE.test(line) || LIST_ITEM.test(line)) return false;
+  return !startsTable(look, index);
+};
+
+const paragraphAt = (look: Look, index: number, state: BlockState, list: number | undefined, width: number): Block => {
+  const lines = [look(index) ?? ''];
+  let bytes = sourceBytes(lines[0] ?? '');
+  let end = index + 1;
+  for (; continuesParagraph(look, end); end += 1) {
+    const line = look(end) ?? '';
+    if (bytes + sourceBytes(line) > MARKDOWN_UNIT_BYTES) break;
+    lines.push(line);
+    bytes += sourceBytes(line);
+  }
+  const under = look(end);
+  if (list === undefined && under !== undefined && UNDERLINE.test(under) && bytes + sourceBytes(under) <= MARKDOWN_UNIT_BYTES)
+    return { rows: lines.flatMap((line) => wrapInline(inlineOf(line.trim(), 'heading'), width)), next: end + 1, state: OUTSIDE };
+  return { rows: lines.flatMap((line) => lineRows(line, width)), next: end, state: { ...OUTSIDE, list, paragraph: list === undefined ? 'top' : 'item' } };
+};
+
+const blockAt = (look: Look, index: number, state: BlockState, width: number, drawing: TableDrawing): Block => {
+  const line = look(index) ?? '';
+  const one = (rows: Row[], next: BlockState): Block => ({ rows, next: index + 1, state: next });
+  const fence = fenceOf(line);
+  if (state.fence !== undefined) return fence !== undefined && closes(fence, state.fence) ? one([], { ...state, fence: undefined }) : one(codeRows(line, width, 'code'), state);
+  if (state.records !== undefined) return isTableRow(line) ? one(recordAt(line, state.records, width), state) : blockAt(look, index, { ...state, records: undefined }, width, drawing);
+  if (line.trim() === '') return one([EMPTY_ROW], { ...state, paragraph: 'none' });
+  if (overUnit(line)) return one(wrapLine(line, width, { links: false }), OUTSIDE);
+  const indent = indentOf(line);
+  const inside = state.list !== undefined && indent >= state.list;
+  const list = inside ? state.list : undefined;
+  if (fence !== undefined) return one(languageRows(fence.info, width), { ...OUTSIDE, list, fence });
+  const item = LIST_ITEM.exec(line);
+  const codeFrom = (list ?? 0) + CODE_BLOCK_INDENT;
+  if (indent >= codeFrom && state.paragraph === 'none' && (item === null || state.list === undefined)) return one(codeRows(line.slice(codeFrom), width, 'code'), { ...OUTSIDE, list });
+  if (startsTable(look, index)) return tableAt(look, index, width, drawing);
+  if (HEADING.test(line) || QUOTE.test(line) || RULE.test(line)) return one(lineRows(line, width), { ...OUTSIDE, list });
+  if (item !== null) return one(lineRows(line, width), { ...OUTSIDE, paragraph: 'item', list: (item[1] ?? '').length + (item[2] ?? '').length + 1 });
+  return paragraphAt(look, index, state, state.paragraph === 'item' ? state.list : list, width);
+};
+
+type Lines = { at(index: number): string | undefined; complete(index: number): boolean; startOf(index: number): number };
+
+const linesOf = (text: string, from: number): Lines => {
+  const shown: string[] = [];
+  const ends: number[] = [];
+  let ended = false;
+  const read = (index: number): boolean => {
+    while (ends.length <= index && !ended) {
+      const start = ends.at(-1) ?? from;
+      const found = text.indexOf('\n', start);
+      ended = found === -1;
+      const raw = text.slice(start, ended ? text.length : found);
+      shown.push(inertText(!ended && raw.endsWith('\r') ? raw.slice(0, -1) : raw));
+      ends.push(ended ? text.length : found + 1);
+    }
+    return index < ends.length;
+  };
+  return {
+    at: (index) => (read(index) ? shown[index] : undefined),
+    complete: (index) => read(index) && !(ended && index === ends.length - 1),
+    startOf: (index) => (index === 0 ? from : read(index - 1) ? (ends[index - 1] ?? text.length) : text.length),
+  };
+};
+
+export type Reading = { tables: TableDrawing; settled: boolean; unit: boolean };
+
+export type Parsed = { rows: Row[]; point: ParsePoint; tail: Row[] | undefined };
+
+export const parseMarkdown = (text: string, from: ParsePoint, width: number, reading: Reading): Parsed => {
+  const lines = linesOf(text, from.characters);
+  let examined = 0;
+  const look: Look = (index) => {
+    examined = Math.max(examined, index + 1);
+    return lines.at(index);
+  };
+  const rows: Row[] = [];
+  let index = 0;
+  let { state } = from;
+  let taken = 0;
+  while (lines.at(index) !== undefined) {
+    examined = 0;
+    const block = blockAt(look, index, state, width, reading.tables);
+    if (!reading.settled && !lines.complete(examined - 1)) break;
+    const bytes = Buffer.byteLength(text.slice(lines.startOf(index), lines.startOf(block.next)));
+    if (reading.unit && taken > 0 && taken + bytes > MARKDOWN_UNIT_BYTES) return { rows, point: { characters: lines.startOf(index), state }, tail: undefined };
+    for (const row of block.rows) rows.push(row);
+    index = block.next;
+    state = block.state;
+    taken += bytes;
+  }
+  const point: ParsePoint = { characters: lines.startOf(index), state };
+  const tail: Row[] = [];
+  while (lines.at(index) !== undefined) {
+    const block = blockAt(look, index, state, width, reading.tables);
+    for (const row of block.rows) tail.push(row);
+    index = block.next;
+    state = block.state;
+  }
+  return { rows, point, tail };
+};
+
+export const markdownRowsWith = (text: string, width: number, { tables }: { tables: TableDrawing }): Row[] => parseMarkdown(text, START_OF_TEXT, width, { tables, settled: true, unit: false }).rows;
 
 export const markdownRows = (text: string, width: number): Row[] => markdownRowsWith(text, width, { tables: 'grid' });
