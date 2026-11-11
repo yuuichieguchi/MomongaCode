@@ -7,7 +7,7 @@ import type { GatewayEpoch } from '../src/core/services.ts';
 import { createReasoningOriginCodec } from '../src/core/reasoning-origin.ts';
 import { createRedactor } from '../src/core/redaction.ts';
 import { remedyOf } from '../src/probe/remedy.ts';
-import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, counterForTest, getJson, makeDir, postJson, readJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
+import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, counterForTest, getJson, makeDir, postJson, readJson, registerCleanup, startGateway, userInput, stateDbPath } from './gateway-helpers.ts';
 import type { ConfigOverrides } from './gateway-helpers.ts';
 import path from 'node:path';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
@@ -248,9 +248,10 @@ describe('the model of a request is typed text, resolved once by the leased rout
       clock,
       timers,
       random: () => 0.5,
-      dbPath: path.join(dir, 'state', 'gateway.db'),
+      dbPath: stateDbPath(dir),
       hmacKey: HMAC_KEY,
       socketPath,
+      pid: process.pid,
       version: TEST_VERSION,
       role: fixedRolePort('serving'),
     });

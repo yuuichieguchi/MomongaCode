@@ -1,4 +1,3 @@
-import os from 'node:os';
 import path from 'node:path';
 import {
   DEFAULT_DATASET_SEED,
@@ -35,8 +34,9 @@ import type { ContextHostEffects } from '../eval/context-host.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import { shellModelsOf } from '../plain-http.ts';
+import { UsageError } from '../usage-error.ts';
 
-export class EvaluateUsageError extends Error {
+export class EvaluateUsageError extends UsageError {
   constructor(message: string) {
     super(message);
     this.name = 'EvaluateUsageError';
@@ -59,7 +59,7 @@ const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenData
   await ensureCurrentDaemon(ports, paths);
   const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } = await import('@momonga/runtime');
   const env = await environmentSnapshot(ports);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   const api = goldenRunApi(client, undefined, {
     pendingBoundMs: REFLECTION_PICKUP_BOUND_MS,
     attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS,
@@ -73,15 +73,15 @@ const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenData
   try {
     return await runDataset(dataset, {
       open: async (golden) => {
-        const workspace = await createOwnedDirectory({ parent: os.tmpdir(), prefix: WORKSPACE_PREFIX });
+        const workspace = await createOwnedDirectory({ parent: ports.tmpdir, prefix: WORKSPACE_PREFIX });
         workspaces.push(workspace);
         const cwd = workspace.path;
         await populate(ports, cwd, golden);
         if (golden.oracle === undefined) return { api, workspace: { cwd, env }, close: async () => undefined };
-        const base = await createOwnedDirectory({ parent: os.tmpdir(), prefix: WORKSPACE_PREFIX });
+        const base = await createOwnedDirectory({ parent: ports.tmpdir, prefix: WORKSPACE_PREFIX });
         workspaces.push(base);
         await populate(ports, base.path, golden);
-        return { api, workspace: { cwd, env }, oracle: { base: base.path, probe: nodeWorkspaceProbe(env) }, close: async () => undefined };
+        return { api, workspace: { cwd, env }, oracle: { base: base.path, probe: nodeWorkspaceProbe(env), files: ports.files }, close: async () => undefined };
       },
       ...(record === undefined ? {} : { onTranscript: async (run: RecordedRun) => void (await saveTranscript(ports.files, record, { ...run, policy: null, codeDigest: null })) }),
     });

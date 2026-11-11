@@ -29,6 +29,7 @@ const refutationOf = (property: string, finding: Finding): RuleRefutation => ({
 
 export const verdictOfReport = (report: VerificationReport, solver: string): RuleVerdict => {
   const refuted = report.results.flatMap((result) => (result.verdict.status === 'refuted' ? result.verdict.findings.map((finding) => refutationOf(result.id, finding)) : []));
+  const notes = report.results.flatMap((result) => (result.verdict.status === 'noted' ? result.verdict.ruleNotes : []));
   const byModeDefault = report.results.flatMap((result) => result.byModeDefault.map((finding) => refutationOf(result.id, finding)));
   const unknown = [
     ...report.results.flatMap((result) => (result.verdict.status === 'unknown' ? [{ property: result.id, reason: result.verdict.reason }] : [])),
@@ -41,6 +42,7 @@ export const verdictOfReport = (report: VerificationReport, solver: string): Rul
     verdict: refuted.length > 0 ? 'refuted' : unknown.length > 0 ? 'unknown' : 'proved',
     solver,
     refuted,
+    ...(notes.length === 0 ? {} : { notes }),
     ...(byModeDefault.length === 0 ? {} : { byModeDefault }),
     unknown,
     notProved: [...report.outsideProof],

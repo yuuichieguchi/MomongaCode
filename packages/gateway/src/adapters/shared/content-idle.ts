@@ -1,6 +1,5 @@
 import type { Capabilities } from '@momonga/protocol';
 import { UpstreamStall } from './failures.ts';
-import { realTimers } from '../../process-ports.ts';
 import type { UpstreamLiveness } from './http-client.ts';
 
 export const UPSTREAM_IDLE_CODE = 'stream_interrupted';
@@ -24,8 +23,7 @@ const unwatched: ContentWatch = {
 
 export const watchContent = (liveness: UpstreamLiveness | undefined): ContentWatch => {
   if (liveness === undefined || liveness.idleTimeoutMs === 0) return unwatched;
-  const { idleTimeoutMs } = liveness;
-  const timers = liveness.timers ?? realTimers;
+  const { idleTimeoutMs, timers } = liveness;
   let timer: unknown;
   let expired: UpstreamStall | undefined;
   let wake: ((failure: UpstreamStall) => void) | undefined;

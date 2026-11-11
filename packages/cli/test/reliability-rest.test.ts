@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Command } from 'commander';
-import { GATE_NAMES, treeDigest } from '@momonga/eval';
+import { GATE_NAMES, nodeWorkspaceFiles, treeDigest } from '@momonga/eval';
 import { REPORT_PAGE_ROWS, REVIEW_SAMPLE_SIZE } from '@momonga/protocol';
 import type { RunCallView } from '@momonga/protocol';
 
@@ -19,7 +19,7 @@ type ReviewCommand = {
 };
 type Body = { id: number; spanId: string; kind: string; content: string; createdAtMs: number; expiresAtMs: number };
 type ContentSource = { name: string; page(runId: string, after: number, limit: number): Promise<{ bodies: Body[]; next: number | null }> };
-type TraceCommand = { writeTraceContent(sources: readonly ContentSource[], runId: string, json: boolean, write: (text: string) => void): Promise<void> };
+type TraceCommand = { writeTraceContent(sources: readonly ContentSource[], runId: string, options: { json: boolean; pageSize: number }, write: (text: string) => void): Promise<void> };
 type Probe = {
   run(command: string, timeoutMs: number, cwd: string): Promise<{ exitCode: number | null; timedOut: boolean }>;
   digest(cwd: string, paths: readonly string[]): Promise<string>;
@@ -131,16 +131,18 @@ describe('momonga trace --content', () => {
   const body = (id: number, content: string): Body => ({ id, spanId: `span-${id}`, kind: 'gen_ai.input.messages', content, createdAtMs: 0, expiresAtMs: Date.UTC(2026, 11, 1) });
   const source = (name: string, bodies: readonly Body[]) => {
     const asked: number[] = [];
+    const limits: number[] = [];
     const content: ContentSource = {
       name,
       page: async (_runId, after, limit) => {
         asked.push(after);
+        limits.push(limit);
         const rest = bodies.filter((entry) => entry.id > after);
         const shown = rest.slice(0, Math.min(limit, 2));
         return { bodies: shown, next: rest.length > shown.length ? (shown.at(-1) as Body).id : null };
       },
     };
-    return { content, asked };
+    return { content, asked, limits };
   };
 
   it('follows the cursor of every store to the end and prints each body under a line that names its store, span, kind and expiry', async () => {
@@ -148,7 +150,7 @@ describe('momonga trace --content', () => {
     const runtime = source('runtime', [body(1, 'tool arguments'), body(2, 'tool result'), body(3, 'more')]);
     const gateway = source('gateway', [body(7, 'the messages')]);
     const out: string[] = [];
-    await writeTraceContent([runtime.content, gateway.content], 'run-1', false, (text) => out.push(text));
+    await writeTraceContent([runtime.content, gateway.content], 'run-1', { json: false, pageSize: 50 }, (text) => out.push(text));
     const text = out.join('');
     expect(runtime.asked).toEqual([0, 2]);
     expect(gateway.asked).toEqual([0]);
@@ -157,13 +159,23 @@ describe('momonga trace --content', () => {
     expect(text.indexOf('more')).toBeLessThan(text.indexOf('the messages'));
   });
 
+  it('asks every store for pages of the size it is given', async () => {
+    const { writeTraceContent } = await load<TraceCommand>('commands/trace.ts');
+    const runtime = source('runtime', [body(1, 'first'), body(2, 'second'), body(3, 'third')]);
+    const gateway = source('gateway', [body(7, 'the messages')]);
+    await writeTraceContent([runtime.content, gateway.content], 'run-1', { json: false, pageSize: 1 }, () => undefined);
+    expect(runtime.limits).toEqual([1, 1, 1]);
+    expect(runtime.asked).toEqual([0, 1, 2]);
+    expect(gateway.limits).toEqual([1]);
+  });
+
   it('says so when no body of the run is stored, and prints one JSON object per body with --json', async () => {
     const { writeTraceContent } = await load<TraceCommand>('commands/trace.ts');
     const out: string[] = [];
-    await writeTraceContent([source('runtime', []).content], 'run-1', false, (text) => out.push(text));
+    await writeTraceContent([source('runtime', []).content], 'run-1', { json: false, pageSize: 50 }, (text) => out.push(text));
     expect(out.join('')).toBe('No stored content for run run-1: message content is stored only while telemetry.captureMessageContent is on, and each body is removed when it expires.\n');
     const json: string[] = [];
-    await writeTraceContent([source('gateway', [body(7, 'the messages')]).content], 'run-1', true, (text) => json.push(text));
+    await writeTraceContent([source('gateway', [body(7, 'the messages')]).content], 'run-1', { json: true, pageSize: 50 }, (text) => json.push(text));
     expect(json.join('').trim().split('\n').map((line) => JSON.parse(line))).toEqual([{ store: 'gateway', ...body(7, 'the messages') }]);
   });
 });
@@ -187,7 +199,7 @@ describe('momonga eval bench --validate', () => {
       JSON.stringify({
         format: 'momonga-bench/1',
         name: 'fixture',
-        repositories: { fix: { directory: 'repos/fix', digest: await treeDigest(path.join(dir, 'repos/fix')) } },
+        repositories: { fix: { directory: 'repos/fix', digest: await treeDigest(nodeWorkspaceFiles, path.join(dir, 'repos/fix')) } },
         tasks: [
           {
             id: 'fix',
@@ -219,7 +231,7 @@ describe('momonga eval bench --validate', () => {
     const { createWorkspaceProbe } = await load<{ createWorkspaceProbe(env: Readonly<Record<string, string>>): Probe }>('node-ports.ts');
     const out: string[] = [];
     const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-    return { ports: { cwd, stdout: { write: (text: string) => out.push(text) }, probe: createWorkspaceProbe(env) }, out };
+    return { ports: { cwd, stdout: { write: (text: string) => out.push(text) }, probe: createWorkspaceProbe(env), files: nodeWorkspaceFiles, tmpdir: os.tmpdir() }, out };
   };
 
   it('exits 0 and names every task as valid when each fails first and passes with its reference, without a model or a daemon', async () => {

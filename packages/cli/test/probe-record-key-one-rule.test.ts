@@ -19,6 +19,7 @@ import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
 import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 import { OLLAMA_MODEL, startFakeOllama } from '../../gateway/test/ollama-support.ts';
 import { testHostPath } from '@momonga/testkit';
+import { NO_HELPER } from './no-helper.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -66,6 +67,7 @@ const runCli = async (home: string, args: readonly string[]): Promise<{ codes: n
     entries,
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt: new AbortController().signal,
+    helper: NO_HELPER,
     entryIo: (entryArgs) => ({ argv: [...entryArgs] }) as unknown as EntryIo,
     complete: (code) => void codes.push(code),
   });

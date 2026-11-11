@@ -3,10 +3,11 @@ import type { CostFilter } from '../client/runtime-client.ts';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
+import { UsageError } from '../usage-error.ts';
 
 export type CostOptions = { runId?: string; session?: string; all: boolean; json: boolean; breakdown?: boolean };
 
-export class CostUsageError extends Error {
+export class CostUsageError extends UsageError {
   constructor(message: string) {
     super(message);
     this.name = 'CostUsageError';
@@ -24,7 +25,7 @@ const filterOf = (ports: Pick<CliPorts, 'cwd'>, options: CostOptions): CostFilte
 export const showCost = async (ports: CliPorts, paths: MomongaPaths, options: CostOptions): Promise<number> => {
   const filter = filterOf(ports, options);
   await ensureCurrentDaemon(ports, paths);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   try {
     if (options.breakdown === true) {
       ports.stdout.write(options.json ? `${JSON.stringify(await client.costBreakdown(filter))}\n` : await client.costBreakdownText(filter));

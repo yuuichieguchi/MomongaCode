@@ -1,7 +1,7 @@
 import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { GroupTiming, ProcessGroupPort } from '@momonga/foundation';
+import type { ProcessGroupPort, Timing } from '@momonga/foundation';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTempRoot, removeTempRoot } from '../../scripts/support/temp.ts';
 import { checkEntry, createTierReport } from './check-entry.ts';
@@ -19,6 +19,20 @@ const JAVA: JavaIdentity = { runtime: '22.0.1+8-16', vm: 'OpenJDK 64-Bit Server 
 const NESTED_RUN_TIMEOUT_MS = 180000;
 
 const limitOf = (entry: ManifestEntry): number => entry.budgetCpuSeconds * TLC_WORKERS * 1000;
+
+const timingThatPassesOnEveryRead = (onRead: (read: number) => void): Timing => {
+  let clock = 0;
+  return {
+    now: () => clock,
+    monotonicMs: () => {
+      clock += 100;
+      onRead(clock);
+      return clock;
+    },
+    setTimeout: (wake) => void queueMicrotask(wake),
+    clearTimeout: () => undefined,
+  };
+};
 
 const executable = (file: string, lines: readonly string[]): string => {
   writeFile(file, ['#!/bin/sh', ...lines, ''].join('\n'));
@@ -170,9 +184,7 @@ describe('checking one configuration', () => {
       'a run whose process group stays alive',
       () => {
         const port: ProcessGroupPort = { signal: async () => undefined, alive: async () => true };
-        let clock = Date.now();
-        const timing: GroupTiming = { now: () => (clock += 100), sleep: async () => undefined };
-        return { groupPort: port, timing };
+        return { groupPort: port, timing: timingThatPassesOnEveryRead(() => undefined) };
       },
     ],
     ['a holding entry whose run violates Small with exit 12', () => (answer(fake, 12, invariantViolationOutput('Small')), {})],
@@ -307,15 +319,7 @@ describe('checking one configuration', () => {
       },
     };
     const seen: number[] = [];
-    let clock = Date.now();
-    const timing: GroupTiming = {
-      now: () => {
-        clock += 100;
-        seen.push(clock);
-        return clock;
-      },
-      sleep: async () => undefined,
-    };
+    const timing = timingThatPassesOnEveryRead((read) => void seen.push(read));
     const limitMs = 1000;
     const outcome = await checkEntry(request({ groupPort: port, timing, limitMs }));
     const pid = Number(fs.readFileSync(fake.pidFile, 'utf8').trim());

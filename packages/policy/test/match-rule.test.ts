@@ -25,12 +25,13 @@ describe('matchRule paths', () => {
     expect(await matchRule(make('Read(*.secret)'), read(path.join(cwd, 'a', 'k.txt')), await fileRulesFor([make('Read(*.secret)')], [make('Read(*.secret)').cwd]), 0, testProbes().canonicalise)).toBe(false);
   });
 
-  it('a tool-only rule matches any subject of that tool and no other tool', async () => {
+  it('a tool-only rule matches any subject of the family of that tool and no other tool', async () => {
     const layout = makeLayout();
     const rule = ruleIn(layout)('allow', 'Read');
     const file = touch(path.join(layout.outside, 'z'));
     expect(await matchRule(rule, { kind: 'path', tool: 'Read', paths: [file], access: 'read' }, await fileRulesFor([rule], [rule.cwd]), 0, testProbes().canonicalise)).toBe(true);
-    expect(await matchRule(rule, { kind: 'path', tool: 'Grep', paths: [file], access: 'read' }, await fileRulesFor([rule], [rule.cwd]), 0, testProbes().canonicalise)).toBe(false);
+    expect(await matchRule(rule, { kind: 'path', tool: 'Grep', paths: [file], access: 'read' }, await fileRulesFor([rule], [rule.cwd]), 0, testProbes().canonicalise)).toBe(true);
+    expect(await matchRule(rule, { kind: 'path', tool: 'Write', paths: [file], access: 'write' }, await fileRulesFor([rule], [rule.cwd]), 0, testProbes().canonicalise)).toBe(false);
   });
 
   it('does not let a symlink inside the project escape to an outside target', async () => {

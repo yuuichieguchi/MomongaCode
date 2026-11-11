@@ -71,7 +71,7 @@ const FILE_MODE = 0o600;
 
 export const credentialFileFor = (directory: string, key: string): string => path.join(directory, `${createHash('sha256').update(key).digest('hex')}.json`);
 
-const readOwnerOnly = (file: string): Promise<string | undefined> => nodeFileSystem.readOwnerOnlyTextFile(file, `credential file ${file}`);
+const readOwnerOnly = (file: string): Promise<string | undefined> => nodeFileSystem.readOwnerOnlyTextFile(file, `credential file ${file}`, AUTH_DOCUMENT_MAX_BYTES);
 
 export type FileCredentialStoreOptions = { ports?: FileLockPorts; lockTimeoutMs?: number };
 

@@ -1,28 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { Deadline, KILL_CONFIRM_MS, forceKillGroup, terminateGroup, waitForGroupGone } from '@momonga/foundation';
-import type { DeadlineTiming, GroupTiming, ProcessGroupPort } from '@momonga/foundation';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import type { ProcessGroupPort, Timing } from '@momonga/foundation';
+import { createFakeClock, createFakeTimers, createSteppingTiming } from '@momonga/testkit';
 
-const fakeDeadlineTiming = (): { timing: DeadlineTiming; advance(ms: number): void } => {
+const fakeDeadlineTiming = (): { timing: Timing; advance(ms: number): void } => {
   const clock = createFakeClock(1_000_000);
   const timers = createFakeTimers(clock);
-  return { timing: { now: () => clock.now(), setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout }, advance: timers.advance };
+  return { timing: timers, advance: timers.advance };
 };
 
-const fakeGroupTiming = (): { timing: GroupTiming; sleeps: number[]; now(): number } => {
+const fakeGroupTiming = (): { timing: Timing; sleeps: number[]; now(): number } => {
   const clock = createFakeClock(0);
-  const sleeps: number[] = [];
-  return {
-    sleeps,
-    now: () => clock.now(),
-    timing: {
-      now: () => clock.now(),
-      sleep: async (ms) => {
-        sleeps.push(ms);
-        clock.advance(ms);
-      },
-    },
-  };
+  const timing = createSteppingTiming(clock);
+  return { sleeps: timing.sleeps, now: () => clock.now(), timing };
 };
 
 const groupPort = (aliveUntil: () => boolean): { port: ProcessGroupPort; signals: string[] } => {

@@ -10,10 +10,11 @@ import type { ElicitationView } from '../client/views.ts';
 import { couldNotOpenBrowser } from '../browser-text.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
+import { UsageError } from '../usage-error.ts';
 import { activeRunIdOf, runTreeOf } from './targets.ts';
 import type { RuntimeClient } from '../client/runtime-client.ts';
 
-export class ElicitationUsageError extends Error {
+export class ElicitationUsageError extends UsageError {
   constructor(message: string) {
     super(message);
     this.name = 'ElicitationUsageError';
@@ -115,7 +116,7 @@ export const elicit = async (ports: CliPorts, paths: MomongaPaths, inputId: stri
   if (actions.length > 1) throw new ElicitationUsageError(`choose one of --accept, --decline, --cancel and --responses, not ${actions.join(' and ')}`);
   if (inputId === undefined && (actions.length > 0 || options.set.length > 0)) throw new ElicitationUsageError('name the elicitation to answer: momonga elicit <id> ...');
   await ensureCurrentDaemon(ports, paths);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   try {
     if (inputId === undefined) {
       const runId = await activeRunIdOf(client, ports.cwd);

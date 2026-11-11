@@ -14,6 +14,7 @@ import {
   exitCodeForStartError,
   nodeEntryIo,
   runDaemonEntry,
+  hostPaths,
 } from '@momonga/foundation';
 import type { DaemonCloseResult, DaemonDefinition, DaemonHandle, DaemonStartContext, EntryIo, EntrySignal, RotatingLogFile } from '@momonga/foundation';
 import { createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
@@ -70,6 +71,7 @@ const fakeIo = (argv: readonly string[]) => {
     argv,
     env: { HOME },
     home: HOME,
+    paths: hostPaths,
     stdout: { write: (chunk) => (stdoutChunks.push(chunk), true) },
     stderr: { write: (chunk) => (stderrChunks.push(chunk), true) },
     clock,
@@ -654,8 +656,8 @@ class RuntimeAlreadyRunningLike extends ProcessLockHeldError {}
 const startErrors: Array<[string, number, () => unknown]> = [
   ['a config error', 78, () => new ConfigError('bad settings')],
   ['an EntryUsageError', 78, () => new EntryUsageError('bad flag')],
-  ['the own lock held', 75, () => new ProcessLockHeldError('held', OWN_LOCK, 4242)],
-  ['a subclass of the own lock error', 75, () => new RuntimeAlreadyRunningLike('runtime already running', OWN_LOCK, 4242)],
+  ['the own lock held', 77, () => new ProcessLockHeldError('held', OWN_LOCK, 4242)],
+  ['a subclass of the own lock error', 77, () => new RuntimeAlreadyRunningLike('runtime already running', OWN_LOCK, 4242)],
   ['another lock held', 1, () => new ProcessLockHeldError('socket held', `${HOME}/.momonga/run/runtime.sock.lock`, 4242)],
   ['a plain Error', 1, () => new Error('boom')],
   ['a non-Error', 1, () => 'string failure'],

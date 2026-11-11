@@ -13,7 +13,7 @@ import { fakeScreenTerminal } from './screen-fakes.ts';
 const HOSTILE_FOLDER = '/work/pro\u001b]0;pwn\u0007ject\u009b2J\n';
 const TITLE = (state: string): string => `momonga · pro]0;pwnject2J · ${state}`;
 
-const keyX: TerminalEvent = { type: 'key', text: 'x', ctrl: false, alt: false, shift: false };
+const keyX: TerminalEvent = { type: 'key', text: 'x', ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
 const focus = (direction: 'in' | 'out'): TerminalEvent => ({ type: 'focus', direction });
 
 const until = async (met: () => boolean, what: string): Promise<void> => {

@@ -559,9 +559,9 @@ describe('supervisor cases', () => {
       expect(ofChild(externalRecords, 'child.spawn', 'runtime')).toEqual([]);
       expect(ofChild(externalRecords, 'child.exit', 'runtime')).toEqual([]);
     } else {
-      expect(external.lastExit).toMatchObject({ code: 75, reason: 'lock-held' });
+      expect(external.lastExit).toMatchObject({ code: 77, reason: 'lock-held' });
       expect(ofChild(externalRecords, 'child.spawn', 'runtime')).toHaveLength(1);
-      expect(ofChild(externalRecords, 'child.exit', 'runtime')).toEqual([expect.objectContaining({ code: 75, reason: 'lock-held' })]);
+      expect(ofChild(externalRecords, 'child.exit', 'runtime')).toEqual([expect.objectContaining({ code: 77, reason: 'lock-held' })]);
     }
     expect(isAlive(holderPid)).toBe(true);
 

@@ -52,3 +52,12 @@ export const applyCredentialEffect = async (auth: AuthSource, classified: Classi
   if (code === null) throw new Error('a classification that pauses the credential carries no code');
   await auth.pause({ code, ...(classified.retryAfterMs === undefined ? {} : { untilMs: clock.now() + classified.retryAfterMs }) }, signal);
 };
+
+export const afterCredentialEffect = async <Failure extends Error>(failure: Failure, auth: AuthSource, classified: ClassifiedError, clock: Clock, signal: AbortSignal): Promise<Failure> => {
+  try {
+    await applyCredentialEffect(auth, classified, clock, signal);
+  } catch (effectFailure) {
+    failure.cause = effectFailure;
+  }
+  return failure;
+};

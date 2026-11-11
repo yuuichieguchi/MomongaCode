@@ -3,7 +3,7 @@ import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { POLL_INTERVAL_MS, ProcessLockHeldError, acquireProcessLock, canonicalJson, cleanFailureMessage } from '@momonga/foundation';
 import type { GenerationRole, ProcessLock } from '@momonga/foundation';
-import { TARGET_NOT_READY, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE } from '@momonga/protocol';
+import { SERVICE_UNAVAILABLE_STATUS, TARGET_NOT_READY, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE, isTargetProbing } from '@momonga/protocol';
 import type { Probing } from '@momonga/protocol';
 import { GatewayError } from '../core/errors.ts';
 import { ensurePrivateProbeDirectory } from './record.ts';
@@ -109,7 +109,7 @@ export const recordProbe = async <Key extends ProbeLockKey, Report>(subject: Pro
 
 export const targetProbingError = (probing: Probing): GatewayError =>
   new GatewayError({
-    status: 503,
+    status: SERVICE_UNAVAILABLE_STATUS,
     type: 'server_error',
     code: TARGET_PROBING,
     message: probing.message,
@@ -122,14 +122,14 @@ export const probeBackoffOf = (error: unknown, until: number): ProbeBackoff => (
 
 export const targetProbeFailedError = (backoff: ProbeBackoff, remainingMs: number): GatewayError =>
   new GatewayError({
-    status: 503,
+    status: SERVICE_UNAVAILABLE_STATUS,
     type: 'server_error',
     code: TARGET_PROBE_FAILED,
     message: `measuring this model failed: ${backoff.cause}`,
     headers: { 'retry-after': String(Math.ceil(remainingMs / MS_PER_SECOND)) },
   });
 
-export const isTargetProbing = (error: unknown): error is GatewayError => error instanceof GatewayError && error.body.code === TARGET_PROBING;
+export const isTargetProbingError = (error: unknown): error is GatewayError => error instanceof GatewayError && isTargetProbing({ status: error.status, code: error.body.code });
 
 export const probingOf = (error: GatewayError): Probing => ({ state: 'probing', message: error.body.message, retryAfterSeconds: Number(error.headers['retry-after']) });
 

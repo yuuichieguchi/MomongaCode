@@ -50,7 +50,7 @@ export const reliabilityText = async (client: ReportClient, options: Reliability
 
 export const showReliability = async (ports: CliPorts, paths: MomongaPaths, options: ReliabilityOptions): Promise<number> => {
   await ensureCurrentDaemon(ports, paths);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   try {
     ports.stdout.write(await reliabilityText(client, options, ports.clock.now()));
     return 0;

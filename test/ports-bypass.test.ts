@@ -1,75 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { countCliUses, countHostUses, countSynchronousFileCalls } from './support/host-uses.ts';
+import { ROOT, packageSources, parseSource, perFile, productSources, relativeOf } from './support/source-scan.ts';
+import type { Counts, ParsedSource } from './support/source-scan.ts';
 
-const ROOT = path.resolve(import.meta.dirname, '..');
-
-type Token =
-  | 'setTimeout'
-  | 'setInterval'
-  | 'Date.now'
-  | 'performance.now'
-  | 'Math.random'
-  | 'randomUUID'
-  | 'randomBytes'
-  | 'node:fs'
-  | 'node:fs/promises'
-  | 'execFileSync';
-
-type CliToken = 'createHostExec' | 'nodeFileSystem' | 'process.env';
-
-type Counts = Partial<Record<Token | CliToken, number>>;
-
-const TOKENS: Readonly<Record<Token, RegExp>> = {
-  setTimeout: /(?<![\w.$])setTimeout\(/g,
-  setInterval: /(?<![\w.$])setInterval\(/g,
-  'Date.now': /\bDate\.now\(/g,
-  'performance.now': /\bperformance\.now\(/g,
-  'Math.random': /\bMath\.random\(/g,
-  randomUUID: /(?<![\w.$])randomUUID\(/g,
-  randomBytes: /(?<![\w.$])randomBytes\(/g,
-  'node:fs': /from\s+['"]node:fs['"]/g,
-  'node:fs/promises': /from\s+['"]node:fs\/promises['"]/g,
-  execFileSync: /(?<![\w.$])execFileSync\(/g,
-};
-
-const CLI_TOKENS: Readonly<Record<CliToken, RegExp>> = {
-  createHostExec: /(?<![\w.$])createHostExec\(/g,
-  nodeFileSystem: /(?<![\w.$])nodeFileSystem\b/g,
-  'process.env': /(?<![\w.$])process\.env\b/g,
-};
-
-const IMPORT_STATEMENT = /^\s*import\b[\s\S]*?\bfrom\s+['"][^'"]+['"];?/gm;
-
-const METHOD_SIGNATURE = /^\s*[\w$]+\(.*\)\s*:\s*[^=]+;\s*$/;
-
-const countBypasses = (source: string, tokens: Readonly<Partial<Record<Token | CliToken, RegExp>>> = TOKENS): Counts => {
-  const body = (tokens === TOKENS ? source : source.replace(IMPORT_STATEMENT, ''))
-    .split('\n')
-    .filter((line) => !METHOD_SIGNATURE.test(line))
-    .join('\n');
-  const counts: Counts = {};
-  for (const [token, pattern] of Object.entries(tokens) as Array<[Token | CliToken, RegExp]>) {
-    const found = [...body.matchAll(pattern)].length;
-    if (found > 0) counts[token] = found;
-  }
-  return counts;
-};
-
-const sourceFiles = (dir: string, extension: RegExp = /\.ts$/): string[] =>
-  fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) return sourceFiles(full, extension);
-    return extension.test(entry.name) && !entry.name.endsWith('.generated.ts') ? [full] : [];
-  });
-
-const productSources = (): string[] =>
-  fs
-    .readdirSync(path.join(ROOT, 'packages'))
-    .filter((name) => name !== 'testkit')
-    .map((name) => path.join(ROOT, 'packages', name, 'src'))
-    .filter((dir) => fs.existsSync(dir))
-    .flatMap((dir) => sourceFiles(dir));
+const counted = (text: string, count: (source: ParsedSource) => Counts = countHostUses): Counts => count(parseSource('sample.ts', text));
 
 const ADAPTERS: Readonly<Record<string, string>> = {
   'packages/foundation/src/system-timing.ts': 'the one production Timing adapter over the host timers and clocks',
@@ -85,127 +21,216 @@ const ADAPTERS: Readonly<Record<string, string>> = {
   'packages/runtime/src/process/start-runtime-process.ts': 'the composition root of the runtime process',
 };
 
-const PRESENT_BYPASSES_REASON = 'a present bypass of the Timing, Random or FileSystem port; the increment that adopts the port there removes the entry';
+const DAEMON_PACKAGES: readonly string[] = ['foundation', 'gateway', 'mcp', 'runtime', 'sandbox', 'store', 'supervisor'];
+
+const SYNCHRONOUS_ADAPTERS: Readonly<Record<string, string>> = {
+  'packages/foundation/src/node-file-system.ts': 'the one production FileSystem adapter over node:fs',
+  'packages/foundation/src/sync-paths.ts': 'the synchronous driver of the one path resolution algorithm',
+};
 
 const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
-  'packages/cli/src/commands/context.ts': { 'randomUUID': 1 },
-  'packages/cli/src/eval/context-effects.ts': { 'setTimeout': 1, 'node:fs/promises': 1 },
-  'packages/cli/src/eval/workspace-probe.ts': { 'setTimeout': 1, 'node:fs/promises': 1 },
+  'packages/cli/src/eval/workspace-probe.ts': { 'node:fs/promises': 3, 'setTimeout': 1 },
+  'packages/cli/src/handover/replace-process.ts': { 'node:child_process': 1 },
   'packages/cli/src/ripgrep/host.ts': { 'randomBytes': 1 },
+  'packages/cli/src/tui/run-interactive.tsx': { 'node:child_process': 1, 'node:os': 1 },
+  'packages/cli/src/tui/screen/clipboard-host.ts': { 'node:child_process': 2 },
+  'packages/cli/src/tui/screen/history-view.tsx': { 'setImmediate': 1 },
   'packages/config/src/append-rule.ts': { 'node:fs': 1 },
-  'packages/config/src/auto-fit.ts': { 'node:fs': 1 },
+  'packages/config/src/auto-fit.ts': { 'node:fs': 2 },
   'packages/config/src/auto-mode-dataset.ts': { 'node:fs': 1 },
-  'packages/config/src/json-file.ts': { 'node:fs': 1 },
-  'packages/config/src/layers.ts': { 'node:fs': 1 },
-  'packages/config/src/load-settings.ts': { 'node:fs': 1 },
-  'packages/config/src/local-settings.ts': { 'node:fs': 1 },
-  'packages/config/src/mcp-servers.ts': { 'node:fs': 1 },
+  'packages/config/src/json-file.ts': { 'node:fs': 6 },
+  'packages/config/src/layers.ts': { 'node:fs': 2 },
+  'packages/config/src/local-settings.ts': { 'node:fs': 2 },
   'packages/config/src/user-settings.ts': { 'node:fs': 1 },
-  'packages/context/src/fs-instruction-reader.ts': { 'node:fs': 1, 'node:fs/promises': 1 },
-  'packages/eval/src/context-live.ts': { 'node:fs/promises': 1 },
-  'packages/eval/src/files.ts': { 'node:fs/promises': 1 },
+  'packages/context/src/fs-instruction-reader.ts': { 'node:fs/promises': 3 },
+  'packages/eval/src/files.ts': { 'node:fs/promises': 4 },
   'packages/foundation/src/clock.ts': { 'Date.now': 1 },
-  'packages/foundation/src/code-digest.ts': { 'node:fs/promises': 1 },
-  'packages/foundation/src/file-lock.ts': { 'setTimeout': 1, 'randomBytes': 1 },
-  'packages/foundation/src/generation-reaper.ts': { 'node:fs': 1 },
-  'packages/foundation/src/handover-leftovers.ts': { 'node:fs': 1 },
-  'packages/foundation/src/host-identity.ts': { 'node:fs': 1 },
-  'packages/foundation/src/leftover-sweep.ts': { 'node:fs': 1 },
-  'packages/foundation/src/lifeline.ts': { 'node:fs': 1 },
-  'packages/foundation/src/momonga-paths.ts': { 'node:fs': 1, 'node:fs/promises': 1 },
-  'packages/foundation/src/owned-directory.ts': { 'node:fs': 1 },
-  'packages/foundation/src/platform/file-identity.ts': { 'node:fs': 1 },
-  'packages/foundation/src/platform/group-members.ts': { 'node:fs': 1 },
-  'packages/foundation/src/platform/holder-file.ts': { 'node:fs': 1 },
-  'packages/foundation/src/platform/kernel-lock.ts': { 'node:fs': 1 },
-  'packages/foundation/src/platform/privacy.ts': { 'node:fs': 1 },
-  'packages/foundation/src/platform/probe-timing.ts': { 'setTimeout': 1, 'Date.now': 1 },
-  'packages/foundation/src/platform/procfs.ts': { 'node:fs': 1 },
-  'packages/foundation/src/platform/sqlite-lock.ts': { 'node:fs': 1 },
-  'packages/foundation/src/process-group.ts': { 'setTimeout': 1, 'Date.now': 1 },
+  'packages/foundation/src/code-digest.ts': { 'node:fs/promises': 7 },
+  'packages/foundation/src/exec-with-stdin.ts': { 'node:child_process': 1 },
+  'packages/foundation/src/file-lock.ts': { 'randomBytes': 1, 'setTimeout': 1 },
+  'packages/foundation/src/generation-reaper.ts': { 'node:fs': 6, 'setImmediate': 1 },
+  'packages/foundation/src/handover-leftovers.ts': { 'node:fs': 4 },
+  'packages/foundation/src/host-identity.ts': { 'node:child_process': 1, 'node:fs': 2 },
+  'packages/foundation/src/leftover-sweep.ts': { 'node:fs': 2 },
+  'packages/foundation/src/lifeline.ts': { 'node:fs': 1, 'node:net': 1, 'setImmediate': 1 },
+  'packages/foundation/src/momonga-paths.ts': { 'node:fs/promises': 15 },
+  'packages/foundation/src/outbound.ts': { 'node:net': 1, 'node:worker_threads': 1 },
+  'packages/foundation/src/owned-directory.ts': { 'node:fs': 4 },
+  'packages/foundation/src/pattern-check.ts': { 'node:worker_threads': 1 },
+  'packages/foundation/src/platform/file-identity.ts': { 'node:fs': 2 },
+  'packages/foundation/src/platform/group-launch.ts': { 'node:child_process': 2 },
+  'packages/foundation/src/platform/group-members.ts': { 'node:fs': 2 },
+  'packages/foundation/src/platform/group-port.ts': { 'process.kill': 3 },
+  'packages/foundation/src/platform/holder-file.ts': { 'node:fs': 11 },
+  'packages/foundation/src/platform/kernel-lock.ts': { 'node:fs': 4 },
+  'packages/foundation/src/platform/linux-inspector.ts': { 'node:os': 1 },
+  'packages/foundation/src/platform/lock-capability.ts': { 'node:os': 1 },
+  'packages/foundation/src/platform/probe-timing.ts': { 'Date.now': 1, 'setTimeout': 1 },
+  'packages/foundation/src/platform/procfs.ts': { 'node:fs': 5 },
+  'packages/foundation/src/platform/sqlite-lock.ts': { 'node:fs': 6, 'node:os': 1 },
+  'packages/foundation/src/platform/windows-keeper-host.ts': { 'node:child_process': 1, 'node:net': 1 },
+  'packages/foundation/src/process-group.ts': { 'process.kill': 1, 'setTimeout': 1 },
   'packages/foundation/src/process-lock.ts': { 'randomBytes': 1 },
-  'packages/foundation/src/process-markers.ts': { 'node:fs': 1 },
-  'packages/foundation/src/rotating-log.ts': { 'node:fs': 1 },
-  'packages/foundation/src/sqlite.ts': { 'node:fs': 1 },
-  'packages/foundation/src/stop-record.ts': { 'node:fs': 1 },
-  'packages/foundation/src/uds.ts': { 'node:fs': 1 },
-  'packages/gateway/src/adapters/replay-adapter.ts': { 'node:fs': 1 },
-  'packages/gateway/src/managed/fm-processes.ts': { 'randomUUID': 1, 'node:fs': 1 },
-  'packages/gateway/src/managed/server.ts': { 'node:fs': 1 },
+  'packages/foundation/src/process-markers.ts': { 'node:fs': 5 },
+  'packages/foundation/src/rotating-log.ts': { 'node:fs': 8 },
+  'packages/foundation/src/short-temp-base.ts': { 'node:os': 1 },
+  'packages/foundation/src/socket-path.ts': { 'node:net': 1 },
+  'packages/foundation/src/sqlite.ts': { 'node:fs': 6 },
+  'packages/foundation/src/stop-record.ts': { 'node:fs': 2 },
+  'packages/foundation/src/uds.ts': { 'node:fs': 4, 'node:net': 1 },
+  'packages/foundation/src/uuidv7.ts': { 'randomFillSync': 1 },
+  'packages/gateway/src/adapters/replay-adapter.ts': { 'node:fs': 10 },
+  'packages/gateway/src/managed/fm-processes.ts': { 'node:fs': 4, 'randomUUID': 1 },
+  'packages/gateway/src/managed/server.ts': { 'node:fs': 5 },
+  'packages/gateway/src/probe/auto-probe.ts': { 'setTimeout': 1 },
+  'packages/gateway/src/probe/client.ts': { 'setTimeout': 1 },
   'packages/gateway/src/probe/endpoint-record.ts': { 'node:fs': 1 },
-  'packages/gateway/src/probe/record.ts': { 'node:fs': 1 },
-  'packages/gateway/src/probe/run-probe.ts': { 'performance.now': 4 },
-  'packages/mcp/src/stdio-transport.ts': { 'randomUUID': 1, 'node:fs': 1 },
+  'packages/gateway/src/probe/ollama.ts': { 'new Date()': 1 },
+  'packages/gateway/src/probe/record.ts': { 'node:fs': 4 },
+  'packages/gateway/src/probe/run-probe.ts': { 'new Date()': 1, 'performance.now': 4 },
+  'packages/mcp/src/connection.ts': { 'Math.random': 1 },
+  'packages/mcp/src/stdio-transport.ts': { 'node:fs': 7, 'randomUUID': 1 },
   'packages/mcp/src/timers.ts': { 'setTimeout': 1 },
   'packages/policy/src/glob-expansion.ts': { 'performance.now': 1 },
-  'packages/runtime/src/memory/evidence.ts': { 'node:fs': 1 },
-  'packages/runtime/src/memory/journal-thread-client.ts': { 'setTimeout': 1 },
-  'packages/runtime/src/memory/journal-thread.ts': { 'performance.now': 2, 'node:fs': 1 },
-  'packages/runtime/src/memory/skill-promotion.ts': { 'node:fs': 1 },
+  'packages/runtime/src/memory/evidence.ts': { 'node:fs': 3 },
+  'packages/runtime/src/memory/journal-thread-client.ts': { 'node:worker_threads': 4, 'setTimeout': 1 },
+  'packages/runtime/src/memory/journal-thread.ts': { 'node:fs': 1, 'node:worker_threads': 8, 'performance.now': 2, 'setImmediate': 1 },
+  'packages/runtime/src/memory/skill-promotion.ts': { 'node:fs': 4 },
   'packages/runtime/src/memory/upkeep.ts': { 'node:fs': 1 },
-  'packages/runtime/src/process/job-output-file.ts': { 'node:fs': 1 },
-  'packages/runtime/src/process/runtime-files.ts': { 'node:fs': 1 },
+  'packages/runtime/src/process/job-output-file.ts': { 'node:fs': 4 },
+  'packages/runtime/src/process/operation-tools.ts': { 'node:os': 1 },
+  'packages/runtime/src/process/rule-verifier-thread-client.ts': { 'node:worker_threads': 1 },
+  'packages/runtime/src/process/rule-verifier-thread.ts': { 'node:worker_threads': 5 },
+  'packages/runtime/src/process/runtime-files.ts': { 'node:fs': 5 },
   'packages/runtime/src/process/tool-runtime.ts': { 'randomBytes': 1 },
-  'packages/runtime/src/process/user-input.ts': { 'node:fs': 1 },
+  'packages/runtime/src/process/user-input.ts': { 'node:fs': 3 },
   'packages/runtime/src/service/markers.ts': { 'node:fs': 1 },
   'packages/runtime/src/service/timers.ts': { 'setTimeout': 1 },
   'packages/runtime/src/worker/model-stream.ts': { 'setTimeout': 1 },
-  'packages/sandbox/src/bubblewrap.ts': { 'Date.now': 1, 'node:fs': 1 },
-  'packages/sandbox/src/placeholder-journal.ts': { 'node:fs': 1 },
+  'packages/runtime/src/worker/touched-paths.ts': { 'setImmediate': 1 },
+  'packages/sandbox/src/bubblewrap.ts': { 'Date.now': 1, 'node:child_process': 1, 'node:fs': 9 },
+  'packages/sandbox/src/placeholder-journal.ts': { 'node:fs': 23 },
   'packages/sandbox/src/scratch.ts': { 'node:fs': 1 },
   'packages/sandbox/src/seatbelt.ts': { 'node:fs': 1 },
-  'packages/skills/src/file-system.ts': { 'node:fs/promises': 1 },
-  'packages/store/src/blobs.ts': { 'node:fs': 1 },
-  'packages/store/src/runtime-store.ts': { 'node:fs': 1 },
+  'packages/skills/src/file-system.ts': { 'node:fs/promises': 4 },
+  'packages/store/src/blobs.ts': { 'node:fs': 6 },
+  'packages/store/src/derived-repair.ts': { 'setImmediate': 1 },
+  'packages/store/src/runtime-store.ts': { 'node:fs': 2 },
+  'packages/store/src/search.ts': { 'setImmediate': 1 },
   'packages/store/src/trust.ts': { 'node:fs': 1 },
   'packages/supervisor/src/child-manager.ts': { 'randomBytes': 1 },
-  'packages/supervisor/src/orphans.ts': { 'node:fs': 1 },
+  'packages/supervisor/src/orphans.ts': { 'node:fs': 5 },
   'packages/supervisor/src/settings-watch.ts': { 'node:fs': 1 },
-  'packages/supervisor/src/start-supervisor.ts': { 'setTimeout': 1, 'node:fs': 1 },
-  'packages/verify/src/distribution-files.ts': { 'node:fs/promises': 1 },
+  'packages/supervisor/src/start-supervisor.ts': { 'Math.random': 1, 'setTimeout': 1 },
+  'packages/tools/src/operations/git-credential.ts': { 'node:net': 1 },
   'packages/verify/src/dialect-model/gate.ts': { 'Date.now': 4 },
   'packages/verify/src/dialect-model/harness.ts': { 'Date.now': 3 },
+  'packages/verify/src/distribution-files.ts': { 'node:fs/promises': 2 },
 };
 
 const CLI_PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
-  'packages/cli/src/commands/auto-mode.ts': { createHostExec: 1 },
-  'packages/cli/src/daemon/ensure-daemon.ts': { nodeFileSystem: 1 },
-  'packages/cli/src/eval/context-effects.ts': { createHostExec: 1 },
-  'packages/cli/src/keeper/host.ts': { nodeFileSystem: 1 },
-  'packages/cli/src/ripgrep/host.ts': { nodeFileSystem: 1 },
+  'packages/cli/src/commands/auto-mode.ts': { 'createHostExec': 1 },
+  'packages/cli/src/daemon/ensure-daemon.ts': { 'nodeFileSystem': 1 },
+  'packages/cli/src/eval/context-effects.ts': { 'createHostExec': 1 },
+  'packages/cli/src/keeper/host.ts': { 'nodeFileSystem': 1 },
+  'packages/cli/src/ripgrep/host.ts': { 'nodeFileSystem': 1 },
 };
 
-const actualCliBypasses = (): Record<string, Counts> =>
-  Object.fromEntries(
-    sourceFiles(path.join(ROOT, 'packages', 'cli', 'src'), /\.tsx?$/)
-      .map((file) => [path.relative(ROOT, file).split(path.sep).join('/'), countBypasses(fs.readFileSync(file, 'utf8'), CLI_TOKENS)] as const)
-      .filter(([relative, counts]) => !(relative in ADAPTERS) && Object.keys(counts).length > 0),
-  );
+const SYNCHRONOUS_FILE_CALLS: Readonly<Record<string, Counts>> = {
+  'packages/foundation/src/handover-leftovers.ts': { 'closeSync': 1, 'fstatSync': 1, 'openSync': 1, 'readFileSync': 1 },
+  'packages/foundation/src/lifeline.ts': { 'fstatSync': 1 },
+  'packages/foundation/src/owned-directory.ts': { 'mkdirSync': 1, 'rmSync': 1 },
+  'packages/foundation/src/platform/file-identity.ts': { 'fstatSync': 1, 'lstatSync': 1 },
+  'packages/foundation/src/platform/group-members.ts': { 'readFileSync': 1, 'readdirSync': 1 },
+  'packages/foundation/src/platform/holder-file.ts': { 'closeSync': 2, 'ftruncateSync': 1, 'openSync': 2, 'readSync': 2, 'rmSync': 1, 'writeSync': 2 },
+  'packages/foundation/src/platform/kernel-lock.ts': { 'closeSync': 1, 'fstatSync': 1, 'openSync': 1, 'statSync': 1 },
+  'packages/foundation/src/platform/sqlite-lock.ts': { 'closeSync': 2, 'openSync': 2, 'rmSync': 1, 'unlinkSync': 1 },
+  'packages/foundation/src/rotating-log.ts': { 'closeSync': 1, 'fstatSync': 1, 'mkdirSync': 1, 'openSync': 1, 'renameSync': 2, 'statSync': 1, 'writeSync': 1 },
+  'packages/foundation/src/sqlite.ts': { 'closeSync': 1, 'fchmodSync': 1, 'mkdirSync': 1, 'openSync': 1, 'statSync': 2 },
+  'packages/gateway/src/adapters/replay-adapter.ts': { 'chmodSync': 1, 'closeSync': 1, 'existsSync': 3, 'mkdirSync': 1, 'openSync': 1, 'readFileSync': 1, 'statSync': 1, 'writeSync': 1 },
+  'packages/gateway/src/managed/fm-processes.ts': { 'closeSync': 1, 'openSync': 1, 'rmSync': 2 },
+  'packages/gateway/src/process-ports.ts': { 'existsSync': 1, 'readFileSync': 1, 'statSync': 1 },
+  'packages/mcp/src/stdio-transport.ts': { 'accessSync': 1, 'closeSync': 1, 'openSync': 1, 'rmSync': 2, 'statSync': 1, 'writeFileSync': 1 },
+  'packages/runtime/src/memory/journal-thread.ts': { 'statSync': 1 },
+  'packages/runtime/src/memory/upkeep.ts': { 'statSync': 1 },
+  'packages/runtime/src/process/runtime-files.ts': { 'lstatSync': 1, 'renameSync': 1, 'unlinkSync': 1 },
+  'packages/runtime/src/process/start-runtime-process.ts': { 'statSync': 1 },
+  'packages/sandbox/src/bubblewrap.ts': { 'accessSync': 1, 'closeSync': 1, 'lstatSync': 1, 'mkdirSync': 1, 'openSync': 1, 'readdirSync': 1, 'statSync': 1, 'writeFileSync': 1 },
+  'packages/sandbox/src/placeholder-journal.ts': { 'closeSync': 2, 'existsSync': 1, 'fsyncSync': 2, 'lstatSync': 3, 'mkdirSync': 1, 'openSync': 2, 'readFileSync': 4, 'readdirSync': 3, 'renameSync': 1, 'rmSync': 1, 'rmdirSync': 1, 'unlinkSync': 1, 'writeFileSync': 1 },
+  'packages/sandbox/src/scratch.ts': { 'statSync': 1 },
+  'packages/sandbox/src/seatbelt.ts': { 'accessSync': 1 },
+  'packages/store/src/blobs.ts': { 'closeSync': 1, 'mkdirSync': 1, 'openSync': 1, 'readSync': 1, 'statSync': 1 },
+  'packages/store/src/runtime-store.ts': { 'statSync': 2 },
+  'packages/store/src/trust.ts': { 'existsSync': 1 },
+  'packages/supervisor/src/orphans.ts': { 'closeSync': 1, 'openSync': 2, 'rmSync': 1 },
+};
 
-const actualBypasses = (): Record<string, Counts> =>
-  Object.fromEntries(
-    productSources()
-      .map((file) => [path.relative(ROOT, file), countBypasses(fs.readFileSync(file, 'utf8'))] as const)
-      .filter(([relative, counts]) => !(relative in ADAPTERS) && Object.keys(counts).length > 0),
-  );
+const outside = (table: Readonly<Record<string, string>>, files: readonly string[]): string[] => files.filter((file) => !(relativeOf(file) in table));
+
+const actualBypasses = (): Record<string, Counts> => perFile(outside(ADAPTERS, productSources()), countHostUses);
+
+const actualCliBypasses = (): Record<string, Counts> => perFile(outside(ADAPTERS, packageSources('cli')), countCliUses);
+
+const actualSynchronousFileCalls = (): Record<string, Counts> => perFile(outside(SYNCHRONOUS_ADAPTERS, DAEMON_PACKAGES.flatMap(packageSources)), countSynchronousFileCalls);
 
 describe('ports bypass scan', () => {
   it('counts a direct host call and ignores a port call and a port method signature', () => {
-    expect(countBypasses('const timer = setTimeout(done, 5);')).toEqual({ setTimeout: 1 });
-    expect(countBypasses('const timer = timing.setTimeout(done, 5);')).toEqual({});
-    expect(countBypasses('  setTimeout(callback: () => void, ms: number): unknown;')).toEqual({});
-    expect(countBypasses("import fs from 'node:fs';\nimport { readFile } from \"node:fs/promises\";")).toEqual({ 'node:fs': 1, 'node:fs/promises': 1 });
-    expect(countBypasses('const id = Date.now() + Math.random() + performance.now();')).toEqual({ 'Date.now': 1, 'Math.random': 1, 'performance.now': 1 });
+    expect(counted('const timer = setTimeout(done, 5);')).toEqual({ setTimeout: 1 });
+    expect(counted('const timer = timing.setTimeout(done, 5);')).toEqual({});
+    expect(counted('interface Timing {\n  setTimeout(callback: () => void, ms: number): unknown;\n}')).toEqual({});
+    expect(counted('const id = Date.now() + Math.random() + performance.now();')).toEqual({ 'Date.now': 1, 'Math.random': 1, 'performance.now': 1 });
   });
 
-  it('every production adapter named in the table exists', () => {
-    const missing = Object.keys(ADAPTERS).filter((file) => !fs.existsSync(path.join(ROOT, file)));
+  it('counts every call site of a host module, not the import of it', () => {
+    expect(counted("import fs from 'node:fs';\nimport { readFile } from \"node:fs/promises\";")).toEqual({});
+    expect(counted("import fs from 'node:fs';\nfs.statSync(a);\nfs.readFileSync(b);")).toEqual({ 'node:fs': 2 });
+    expect(counted("import { readFile as read } from 'fs/promises';\nawait read(a);")).toEqual({ 'node:fs/promises': 1 });
+    expect(counted("import type { Stats } from 'node:fs';\nimport fs from 'node:fs';\nlet stats: fs.Stats | Stats;")).toEqual({});
+    expect(counted("import fs from 'node:fs';\nimport net from 'node:net';\nconst flags = fs.constants.O_RDONLY;\nconst family = net.isIP(host);")).toEqual({});
+  });
+
+  it('counts a host capability under any name it is imported by', () => {
+    expect(counted("import { setTimeout as delay } from 'node:timers/promises';\nawait delay(5);")).toEqual({ setTimeout: 1 });
+    expect(counted("import * as timers from 'node:timers';\ntimers.setInterval(tick, 5);")).toEqual({ setInterval: 1 });
+    expect(counted("import { randomUUID as id } from 'node:crypto';\nconst a = id();")).toEqual({ randomUUID: 1 });
+    expect(counted("import crypto from 'node:crypto';\nconst a = crypto.randomBytes(8);\nconst b = crypto.createHash('sha256');")).toEqual({ randomBytes: 1 });
+    expect(counted('const a = crypto.randomUUID();\nconst b = globalThis.crypto.getRandomValues(c);')).toEqual({ 'crypto.randomUUID': 1, 'crypto.getRandomValues': 1 });
+    expect(counted("const fs = await import('node:fs');\nconst os = require('os');\nconst net = process.getBuiltinModule('node:net');")).toEqual({ 'node:fs': 1, 'node:os': 1, 'node:net': 1 });
+    expect(counted("export { readFile } from 'node:fs/promises';")).toEqual({ 'node:fs/promises': 1 });
+  });
+
+  it('counts the host capabilities that have no port call of the same name', () => {
+    expect(counted('setImmediate(done);\nglobalThis.setTimeout(done, 1);')).toEqual({ setImmediate: 1, setTimeout: 1 });
+    expect(counted('const stamp = new Date();\nconst shown = new Date(stamp.getTime());')).toEqual({ 'new Date()': 1 });
+    expect(counted('process.kill(pid, 0);\nconst t = process.hrtime.bigint();')).toEqual({ 'process.kill': 1, 'process.hrtime': 1 });
+    expect(counted("import { spawn } from 'node:child_process';\nimport os from 'node:os';\nimport net from 'node:net';\nimport { Worker } from 'node:worker_threads';\nspawn(a);\nos.homedir();\nnet.connect(b);\nnew Worker(c);")).toEqual({
+      'node:child_process': 1,
+      'node:os': 1,
+      'node:net': 1,
+      'node:worker_threads': 1,
+    });
+  });
+
+  it('does not count a name the file binds itself', () => {
+    expect(counted('const run = (setTimeout: (done: () => void, ms: number) => void): void => setTimeout(done, 5);')).toEqual({});
+    expect(counted("import { process } from './fake.ts';\nprocess.kill(1);")).toEqual({});
+  });
+
+  it('counts every synchronous file call by its name', () => {
+    expect(counted("import fs, { existsSync as there } from 'node:fs';\nfs.statSync(a);\nfs.readdirSync(b);\nthere(c);\nawait fs.promises.stat(a);", countSynchronousFileCalls)).toEqual({
+      statSync: 1,
+      readdirSync: 1,
+      existsSync: 1,
+    });
+  });
+
+  it('every production adapter named in the tables exists', () => {
+    const missing = [...Object.keys(ADAPTERS), ...Object.keys(SYNCHRONOUS_ADAPTERS)].filter((file) => !fs.existsSync(path.join(ROOT, file)));
     expect(missing).toEqual([]);
   });
 
-  it('every adapter and every present bypass carries a reason', () => {
-    expect(Object.entries(ADAPTERS).filter(([, reason]) => reason.trim() === '')).toEqual([]);
-    expect(PRESENT_BYPASSES_REASON.trim()).not.toBe('');
+  it('every adapter carries a reason', () => {
+    expect([...Object.entries(ADAPTERS), ...Object.entries(SYNCHRONOUS_ADAPTERS)].filter(([, reason]) => reason.trim() === '')).toEqual([]);
   });
 
   it('no file is both an adapter and a present bypass', () => {
@@ -216,11 +241,15 @@ describe('ports bypass scan', () => {
     expect(actualBypasses()).toEqual(PRESENT_BYPASSES);
   });
 
-  it('the new tokens are counted', () => {
-    expect(countBypasses('const exec = createHostExec(minimalChildEnv(env));', CLI_TOKENS)).toEqual({ createHostExec: 1 });
-    expect(countBypasses('await nodeFileSystem.stat(file);', CLI_TOKENS)).toEqual({ nodeFileSystem: 1 });
-    expect(countBypasses("const home = process.env['HOME'];", CLI_TOKENS)).toEqual({ 'process.env': 1 });
-    expect(countBypasses("import {\n  nodeFileSystem,\n  createHostExec,\n} from '@momonga/foundation';", CLI_TOKENS)).toEqual({});
+  it('the synchronous file calls on the daemon paths are exactly the listed ones', () => {
+    expect(actualSynchronousFileCalls()).toEqual(SYNCHRONOUS_FILE_CALLS);
+  });
+
+  it('the names the CLI reaches the host by are counted', () => {
+    expect(counted('const exec = createHostExec(minimalChildEnv(env));', countCliUses)).toEqual({ createHostExec: 1 });
+    expect(counted('await nodeFileSystem.stat(file);', countCliUses)).toEqual({ nodeFileSystem: 1 });
+    expect(counted("const home = process.env['HOME'];", countCliUses)).toEqual({ 'process.env': 1 });
+    expect(counted("import {\n  nodeFileSystem,\n  createHostExec,\n} from '@momonga/foundation';", countCliUses)).toEqual({});
   });
 
   it("the CLI's direct createHostExec, nodeFileSystem and process.env uses outside the adapters are exactly the listed present bypasses", () => {

@@ -1,6 +1,6 @@
 import { cachedDetailOf } from '@momonga/protocol';
 import type { ErrorType, StreamEvent, Usage } from '@momonga/protocol';
-import { CONTEXT_WINDOW_EXCEEDED, UpstreamProtocolError } from '../shared/failures.ts';
+import { CONTEXT_WINDOW_EXCEEDED, MalformedOutputError, UpstreamProtocolError } from '../shared/failures.ts';
 import { MAX_TOOL_CALLS } from '../shared/limits.ts';
 import type { ResponseEmitter } from '../shared/response-emitter.ts';
 import { AssistantRecorder } from './assistant-recorder.ts';
@@ -49,6 +49,7 @@ export class AnthropicStreamDriver {
   private stopReason: string | undefined;
   private segmentStarted = false;
   private pausedTurn = false;
+  private pausedBlocks: Record<string, unknown>[] = [];
 
   constructor(emitter: ResponseEmitter, continuation?: Continuation) {
     this.emitter = emitter;
@@ -74,7 +75,7 @@ export class AnthropicStreamDriver {
   }
 
   pausedContent(): Record<string, unknown>[] {
-    return this.recorder.content();
+    return this.pausedBlocks;
   }
 
   accumulatedUsage(): AnthropicUsageFields {
@@ -86,7 +87,7 @@ export class AnthropicStreamDriver {
     try {
       this.apply(event);
     } catch (error) {
-      if (!this.hasStarted || !(error instanceof UpstreamProtocolError)) throw error;
+      if (!this.hasStarted || !(error instanceof UpstreamProtocolError || error instanceof MalformedOutputError)) throw error;
       this.emitter.fail(error.code, error.errorType, error.message);
     }
     return this.emitter.take();
@@ -210,6 +211,7 @@ export class AnthropicStreamDriver {
         return;
       case 'pause_turn':
         if (this.recorder.unfinished > 0) throw new UpstreamProtocolError('the upstream paused the turn with a content block still open');
+        this.pausedBlocks = this.recorder.continuationContent();
         this.pausedTurn = true;
         return;
       case 'max_tokens':

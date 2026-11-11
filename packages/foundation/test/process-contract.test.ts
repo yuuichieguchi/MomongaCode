@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   EXIT_ALREADY_RUNNING,
+  EXIT_CODES,
+  EXIT_INTERRUPTED,
+  EXIT_SIGNAL_BASE,
+  EXIT_USAGE,
+  KEEPER_EXIT_CODES,
+  SIGNATURE_REJECTED_EXIT_CODE,
+  WINDOWS_KEEPER_COMPILER_MISSING_EXIT,
   EXIT_CONFIG,
   EXIT_FAILURE,
   EXIT_OK,
@@ -59,8 +66,19 @@ describe('exit codes', () => {
     expect([EXIT_OK, EXIT_FAILURE, EXIT_CONFIG]).toEqual([0, 1, 78]);
   });
 
-  it('EXIT_ALREADY_RUNNING is 75', () => {
-    expect(EXIT_ALREADY_RUNNING).toBe(75);
+  it('EXIT_ALREADY_RUNNING is 77: 75 is the headless run waiting for approval and 76 is reserved for a version mismatch', () => {
+    expect(EXIT_ALREADY_RUNNING).toBe(77);
+    expect([EXIT_CODES.waitingForApproval.code, EXIT_CODES.versionMismatchReserved.code]).toEqual([75, 76]);
+  });
+
+  it('gives every meaning of the table its own code, apart from the Windows keeper failure names', () => {
+    const codes = Object.values(EXIT_CODES).map((entry) => entry.code);
+    expect(new Set(codes).size).toBe(codes.length);
+    expect(codes.filter((code) => (Object.values(KEEPER_EXIT_CODES) as number[]).includes(code))).toEqual([]);
+  });
+
+  it('names the usage error 2, the interrupt 130 as the signal base plus SIGINT, the keeper compiler 3 and the rejected signature 255', () => {
+    expect([EXIT_USAGE, EXIT_INTERRUPTED, EXIT_SIGNAL_BASE + 2, WINDOWS_KEEPER_COMPILER_MISSING_EXIT, SIGNATURE_REJECTED_EXIT_CODE]).toEqual([2, 130, 130, 3, 255]);
   });
 });
 

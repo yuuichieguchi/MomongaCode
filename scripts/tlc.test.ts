@@ -155,8 +155,8 @@ describe.skipIf(!HAS_POSIX_SHELL)('tlc.sh takes the heavy run lock for more than
 
   const baseEnv = (): Record<string, string> => {
     const env: Record<string, string> = {};
-    for (const [key, value] of Object.entries(process.env)) if (value !== undefined && key !== 'MOMONGA_RUN_LOCK' && key !== 'MOMONGA_RUN_LOCK_WAIT_SECONDS') env[key] = value;
-    return { ...env, MOMONGA_DEV_STATE_DIR: state, PATH: `${bin}${path.delimiter}${nodeDir}${path.delimiter}/usr/bin${path.delimiter}/bin` };
+    for (const [key, value] of Object.entries(process.env)) if (value !== undefined && key !== 'MOMONGA_RUN_LOCK') env[key] = value;
+    return { ...env, MOMONGA_RUN_LOCK_WAIT_SECONDS: '0', MOMONGA_DEV_STATE_DIR: state, PATH: `${bin}${path.delimiter}${nodeDir}${path.delimiter}/usr/bin${path.delimiter}/bin` };
   };
 
   const tlc = (args: string[], extra: Record<string, string> = {}): SpawnSyncReturns<string> =>

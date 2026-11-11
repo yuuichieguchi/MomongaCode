@@ -6,6 +6,7 @@ export type PendingTimer = { id: number; delayMs: number; dueAt: number };
 export type FakeTimers = {
   setTimeout(callback: () => void, ms: number): unknown;
   clearTimeout(handle: unknown): void;
+  timeoutSignal(ms: number): AbortSignal;
   advance(ms: number): void;
   pending(): PendingTimer[];
   now(): number;
@@ -34,12 +35,18 @@ export const createFakeTimers = (clock: FakeClock): FakeTimers => {
     }
     return best;
   };
+  const start = (callback: () => void, ms: number): number => {
+    const delayMs = nodeTimerDelay(ms);
+    const id = nextId++;
+    entries.set(id, { id, delayMs, dueAt: clock.now() + delayMs, callback: AsyncResource.bind(callback) });
+    return id;
+  };
   return {
-    setTimeout: (callback, ms) => {
-      const delayMs = nodeTimerDelay(ms);
-      const id = nextId++;
-      entries.set(id, { id, delayMs, dueAt: clock.now() + delayMs, callback: AsyncResource.bind(callback) });
-      return id;
+    setTimeout: start,
+    timeoutSignal: (ms) => {
+      const controller = new AbortController();
+      start(() => controller.abort(new DOMException('The operation was aborted due to timeout', 'TimeoutError')), ms);
+      return controller.signal;
     },
     clearTimeout: (handle) => {
       if (typeof handle === 'number') entries.delete(handle);

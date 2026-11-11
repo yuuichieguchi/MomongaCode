@@ -6,6 +6,7 @@ import type { GoldenCase } from '@momonga/eval';
 import type { FakeScriptedReply } from '@momonga/testkit';
 import { goldenRunApi } from '../packages/cli/src/client/golden-run-api.ts';
 import { createRuntimeClient as createCliRuntimeClient } from '../packages/cli/src/client/runtime-client.ts';
+import { nodeClock } from '../packages/cli/src/node-ports.ts';
 import { skipCase, titleOf } from './support/cases.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
@@ -178,7 +179,7 @@ describe('hooks and auto mode against real processes', () => {
       Array.from({ length: golden.runs }, (_unused, runIndex) => [callFor(golden, runIndex), ...classifierFor(golden), textReply('finished')]).flat(),
     );
     const stack = await startStack({ home, settings: autoSettings(home), script });
-    const client = createCliRuntimeClient({ resolveSocket: fixedSocket(firstGeneration(home.paths).sockets.runtime) });
+    const client = createCliRuntimeClient({ resolveSocket: fixedSocket(firstGeneration(home.paths).sockets.runtime), clock: nodeClock });
     try {
       const api = goldenRunApi(client, undefined, {
         pendingBoundMs: REFLECTION_PICKUP_BOUND_MS,

@@ -1,4 +1,6 @@
-import { AUTHORIZATION_WAIT_MS, OAuthAuthorizationError, startLoopbackRedirect, systemTiming } from '@momonga/foundation';
+import { PLAN_SIGN_IN_FAILURE } from '@momonga/protocol';
+import { AUTHORIZATION_WAIT_MS, OAuthAuthorizationError, startLoopbackRedirect } from '@momonga/foundation';
+import type { LoopbackRedirectOptions } from '@momonga/foundation';
 import type { Timing } from '@momonga/foundation';
 import { planProfileOf } from '@momonga/config';
 import type { PlanSignInCompleteResponse } from '@momonga/protocol';
@@ -17,9 +19,9 @@ export type StartSignInListener = (path: string) => Promise<SignInListener>;
 export type SandboxKind = 'seatbelt' | 'bubblewrap' | 'none';
 
 export const loopbackSignInListener =
-  (signal: AbortSignal): StartSignInListener =>
+  (timers: LoopbackRedirectOptions['timers'], signal: AbortSignal): StartSignInListener =>
   async (path) => {
-    const redirect = await startLoopbackRedirect({ port: 0, path, timers: systemTiming });
+    const redirect = await startLoopbackRedirect({ port: 0, path, timers });
     return {
       port: Number(new URL(redirect.redirectUrl).port),
       redirectUrl: redirect.redirectUrl,
@@ -94,7 +96,7 @@ export class SignInAttemptNotFoundError extends Error {
   }
 }
 
-const ATTEMPT_NOT_FOUND = 'attempt_not_found';
+const ATTEMPT_NOT_FOUND = PLAN_SIGN_IN_FAILURE.attemptNotFound;
 
 export const callbackPathOf = (profile: string): string => planProfileOf(profile).oauth.callbackPath;
 

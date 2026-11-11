@@ -192,7 +192,7 @@ const prepare = (db: DatabaseSync): Statements => ({
 });
 
 export const openGatewayStore = (dbPath: string, checks: StoredDataChecks): GatewayStore => {
-  const db = openDatabase(dbPath, { createDirectory: true });
+  const db = openDatabase(dbPath);
   try {
     migrate(db, MIGRATIONS);
     const statements = prepare(db);

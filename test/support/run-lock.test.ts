@@ -5,6 +5,7 @@ import { spawn } from '@momonga/testkit/child-process';
 import type { ChildProcess } from '@momonga/testkit/child-process';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { RUN_LOCK_DEFAULT_WAIT_SECONDS } from '../../scripts/support/run-lock.ts';
 import config from '../../vitest.config.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -71,14 +72,17 @@ afterEach(async () => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-const baseEnv = (extra: Record<string, string> = {}): Record<string, string> => {
+type ChildEnv = Record<string, string | undefined>;
+
+const NO_WAIT_NAMED: ChildEnv = { MOMONGA_RUN_LOCK_WAIT_SECONDS: undefined };
+
+const baseEnv = (extra: ChildEnv = {}): ChildEnv => {
   const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(process.env))
-    if (value !== undefined && !key.startsWith('VITEST') && key !== 'MOMONGA_RUN_LOCK' && key !== 'MOMONGA_RUN_LOCK_WAIT_SECONDS') env[key] = value;
-  return { ...env, MOMONGA_DEV_STATE_DIR: state, FIXTURE_OUT: out, ...extra };
+  for (const [key, value] of Object.entries(process.env)) if (value !== undefined && !key.startsWith('VITEST') && key !== 'MOMONGA_RUN_LOCK') env[key] = value;
+  return { ...env, MOMONGA_RUN_LOCK_WAIT_SECONDS: '0', MOMONGA_DEV_STATE_DIR: state, FIXTURE_OUT: out, ...extra };
 };
 
-const startProcess = (command: string, args: string[], cwd: string, env: Record<string, string>): Started => {
+const startProcess = (command: string, args: string[], cwd: string, env: ChildEnv): Started => {
   const child = spawn(command, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '';
   const collect = (chunk: Buffer): void => {
@@ -92,7 +96,7 @@ const startProcess = (command: string, args: string[], cwd: string, env: Record<
   return run;
 };
 
-const fixtureRun = (args: string[], extra: Record<string, string> = {}): Started =>
+const fixtureRun = (args: string[], extra: ChildEnv = {}): Started =>
   startProcess(process.execPath, [VITEST, 'run', '--config', 'vitest.config.mjs', ...args], fixture, baseEnv(extra));
 
 const until = async (condition: () => boolean, run: Started): Promise<void> => {
@@ -159,6 +163,17 @@ describe('the run lock global setup classifies a vitest run and holds its lock',
     expect(await run.exit).toBe(0);
     expect(run.output()).toContain('run-lock: heavy run starts after waiting ');
     expect(tokenFiles().length).toBeGreaterThan(0);
+  });
+
+  it('waits up to the default limit when no wait variable is set: a light run beside a heavy holder is not refused at once', async () => {
+    const holder = await hold('heavy');
+    const run = fixtureRun(['a/x.test.ts'], NO_WAIT_NAMED);
+    await until(() => run.output().includes(`run-lock: light run waits up to ${RUN_LOCK_DEFAULT_WAIT_SECONDS} s for heavy pid ${holder.run.child.pid} `), run);
+    expect(tokenFiles()).toEqual([]);
+    fs.writeFileSync(holder.release, '');
+
+    expect(await run.exit).toBe(0);
+    expect(fs.readFileSync(path.join(out, 'x.test.ts.token'), 'utf8')).toMatch(/^light\.[0-9a-f]{16}$/);
   });
 
   it('TB40 runs under a live heavy token without a new lock file', async () => {

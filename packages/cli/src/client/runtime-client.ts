@@ -1,6 +1,5 @@
 import type { McpServerConfig } from '@momonga/config';
-import { setTimeout as sleepFor } from 'node:timers/promises';
-import { HOST_READ_BOUND_MS, MOVED_CODE, createUdsClient, decodeSse, isRecord, parseRetryAfter, systemClock } from '@momonga/foundation';
+import { HOST_READ_BOUND_MS, MOVED_CODE, createUdsClient, decodeSse, isRecord, parseRetryAfter } from '@momonga/foundation';
 import type { SocketResolver, UdsResponse } from '@momonga/foundation';
 import { DAEMON_CURRENT_EVENT } from '@momonga/protocol';
 import type { AddMemoryRequest, AddRuleRequest, PutRuleVerdictRequest, RuleVerdict, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, Mandate } from '@momonga/protocol';
@@ -47,6 +46,7 @@ import {
   checkTrace,
   checkTrust,
 } from './contract.ts';
+import type { CliClock } from '../ports.ts';
 import type { ApprovalView, ElicitationView, RunView, SessionView, TrustView } from './views.ts';
 
 export class RunApiError extends Error {
@@ -267,11 +267,10 @@ const frameOf = (event: { id?: string; event?: string; data: string }, descripti
   return { id, event: event.event, data: checkRunEvent(parsed(event.data, description), description) };
 };
 
-export type RuntimeClientOptions = { resolveSocket: SocketResolver; sleep?: (ms: number) => Promise<void>; onMoved?: () => Promise<void> };
+export type RuntimeClientOptions = { resolveSocket: SocketResolver; clock: Pick<CliClock, 'now' | 'sleep'>; onMoved?: () => Promise<void> };
 
 export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClient => {
   const http = createUdsClient(options.resolveSocket, { headersTimeoutMs: HOST_READ_BOUND_MS });
-  const sleep = options.sleep ?? ((ms: number): Promise<void> => sleepFor(ms).then(() => undefined));
 
   const send = async (
     method: string,
@@ -301,11 +300,11 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
       if (expected.includes(response.status)) return { response, body: response.status === 204 ? undefined : init.raw === true ? text : parsed(text, description) };
       const failure = new RunApiError(description, response.status, text);
       if (response.status !== 503 || failure.code !== MOVED_CODE || movedResends >= MOVED_RESENDS) throw failure;
-      const retryAfterMs = parseRetryAfter(response.headers['retry-after'], systemClock.now());
+      const retryAfterMs = parseRetryAfter(response.headers['retry-after'], options.clock.now());
       if (retryAfterMs === undefined) throw failure;
       await options.onMoved?.();
       movedResends += 1;
-      await sleep(retryAfterMs);
+      await options.clock.sleep(retryAfterMs);
     }
   };
 

@@ -20,7 +20,7 @@ import type { Telemetry, TraceStore } from '@momonga/observability';
 import { MOMONGA_ATTRIBUTES } from '@momonga/protocol';
 import { createFakeClock, createFakeTimers, PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
-import { QUIET_BATCH, RUN_ID, SENTINEL, START_MS, dumpAllRows, openStore, registerCleanup } from './helpers.ts';
+import { QUIET_BATCH, RUN_ID, SENTINEL, START_MS, dumpAllRows, openStore, registerCleanup, bodiesOfSpan } from './helpers.ts';
 
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
@@ -113,7 +113,7 @@ describe('the trace store keeps message content only in bodies (D-8)', () => {
     for (const key of CONTENT_KEYS) expect(Object.keys(span?.attributes ?? {})).not.toContain(key);
     for (const json of attributesJsonRows(file)) expect(json).not.toContain(SENTINEL);
 
-    const bodies = store.bodiesForSpan(spanId);
+    const bodies = bodiesOfSpan(store, spanId);
     expect(bodies.map((body) => body.kind).sort()).toEqual([...CONTENT_KEYS].sort());
     for (const body of bodies) {
       expect(body.content).toBe(contentValue(body.kind, 'one'));
@@ -138,7 +138,7 @@ describe('the trace store keeps message content only in bodies (D-8)', () => {
     await telemetry.forceFlush();
     const [exported] = otlp.getFinishedSpans();
     for (const key of CONTENT_KEYS) expect(exported?.attributes[key]).toBe(contentValue(key, 'otlp'));
-    expect(store.bodiesForSpan(spanId)).toHaveLength(CONTENT_KEYS.length);
+    expect(bodiesOfSpan(store, spanId)).toHaveLength(CONTENT_KEYS.length);
   });
 
   it('the store exporter does not mutate the span it is given, so a later exporter sees the content', async () => {
@@ -164,7 +164,7 @@ describe('the trace store keeps message content only in bodies (D-8)', () => {
     const result = await new Promise<ExportResult>((resolve) => exporter.export([span], resolve));
     expect(result.code).toBe(ExportResultCode.SUCCESS);
     for (const key of CONTENT_KEYS) expect(span.attributes[key]).toBe(contentValue(key, 'direct'));
-    expect(store.bodiesForSpan('b'.repeat(16)).map((body) => body.kind).sort()).toEqual([...CONTENT_KEYS].sort());
+    expect(bodiesOfSpan(store, 'b'.repeat(16)).map((body) => body.kind).sort()).toEqual([...CONTENT_KEYS].sort());
     const [stored] = store.spansForRun(RUN_ID);
     for (const key of CONTENT_KEYS) expect(Object.keys(stored?.attributes ?? {})).not.toContain(key);
   });

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { createGateway } from '@momonga/gateway';
 import { createFakeClock, createFakeTimers, createScriptedAdapter } from '@momonga/testkit';
 import { isLoopbackAddress } from '../src/server/config-check.ts';
-import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, makeDir, registerCleanup, startGateway } from './gateway-helpers.ts';
+import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, makeDir, registerCleanup, startGateway, stateDbPath } from './gateway-helpers.ts';
 
 const construct = (overrides: { hmacKey?: Uint8Array; debugTcp?: { host: string; port: number; token: string } }) => {
   const dir = makeDir();
@@ -18,9 +18,10 @@ const construct = (overrides: { hmacKey?: Uint8Array; debugTcp?: { host: string;
     adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) },
     clock,
     timers: createFakeTimers(clock),
-    dbPath: path.join(dir, 'state', 'gateway.db'),
+    dbPath: stateDbPath(dir),
     hmacKey: overrides.hmacKey ?? HMAC_KEY,
     socketPath: path.join(dir, 'gw.sock'),
+    pid: process.pid,
     version: TEST_VERSION,
     ...(overrides.debugTcp === undefined ? {} : { debugTcp: overrides.debugTcp }),
   });
@@ -85,9 +86,10 @@ describe('readerStallMs', () => {
         adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) },
         clock,
         timers: createFakeTimers(clock),
-        dbPath: path.join(dir, 'state', 'gateway.db'),
+        dbPath: stateDbPath(dir),
         hmacKey: HMAC_KEY,
         socketPath: path.join(dir, 'gw.sock'),
+        pid: process.pid,
         version: TEST_VERSION,
       }),
     ).rejects.toThrow(/readerStallMs/);

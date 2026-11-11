@@ -5,6 +5,8 @@ import type { Timing } from '../timing.ts';
 
 export const KEEPER_LINE_LIMIT = 1_048_576;
 export const KEEPER_NO_MARKER = '-';
+export const KEEPER_NO_DESCRIPTORS = '-';
+export const KEEPER_DESCRIPTOR_SEPARATOR = ',';
 export const KEEPER_COMMAND_SEPARATOR = '--';
 
 export const KEEPER_FAILURE_REASONS = ['name-taken', 'containment-unavailable', 'marker-unavailable', 'launch-failed', 'job-absent'] as const satisfies readonly KeeperExitName[];
@@ -16,7 +18,7 @@ export const KEEPER_OWNER_LOSS = ['terminate', 'persist'] as const;
 export type KeeperOwnerLoss = (typeof KEEPER_OWNER_LOSS)[number];
 
 export type KeeperMessage =
-  | { kind: 'started'; pid: number }
+  | { kind: 'started'; pid: number; descriptors: number[] }
   | { kind: 'attached' }
   | { kind: 'failed'; reason: KeeperFailureReason; systemError: number }
   | { kind: 'exit'; code: number }
@@ -57,8 +59,7 @@ export const parseKeeperLine = (line: string): KeeperMessage => {
   const words = line.split(' ');
   switch (words[0]) {
     case 'started':
-      wordCount(words, 2, line);
-      return { kind: 'started', pid: numberOf(words[1], line) };
+      return { kind: 'started', pid: numberOf(words[1], line), descriptors: words.slice(2).map((word) => numberOf(word, line)) };
     case 'attached':
       wordCount(words, 1, line);
       return { kind: 'attached' };
@@ -103,14 +104,15 @@ export const keeperPipeName = (random: NameSource): string => `${KEEPER_PIPE_PRE
 
 export type KeptCommand = { readonly file: string; readonly args: readonly string[] };
 
-export type KeeperLaunchWords = { pipe: string; job: string; onOwnerLoss: KeeperOwnerLoss; marker: string | undefined; command: KeptCommand };
+export type KeeperLaunchWords = { pipe: string; job: string; onOwnerLoss: KeeperOwnerLoss; marker: string | undefined; descriptors: readonly number[]; command: KeptCommand };
 
-export const keeperLaunchArguments = ({ pipe, job, onOwnerLoss, marker, command }: KeeperLaunchWords): string[] => [
+export const keeperLaunchArguments = ({ pipe, job, onOwnerLoss, marker, descriptors, command }: KeeperLaunchWords): string[] => [
   'launch',
   pipe,
   job,
   onOwnerLoss,
   marker === undefined ? KEEPER_NO_MARKER : Buffer.from(marker, 'utf8').toString('hex'),
+  descriptors.length === 0 ? KEEPER_NO_DESCRIPTORS : descriptors.join(KEEPER_DESCRIPTOR_SEPARATOR),
   KEEPER_COMMAND_SEPARATOR,
   command.file,
   ...command.args,
@@ -323,6 +325,7 @@ export type KeptLaunchRequest<P extends KeeperRun> = {
   command: KeptCommand;
   onOwnerLoss: KeeperOwnerLoss;
   marker: string | undefined;
+  descriptors: readonly number[];
   start(executable: string, args: readonly string[]): P;
   signal: AbortSignal;
 };
@@ -337,12 +340,17 @@ export const openKeptLaunch = <P extends KeeperRun>(host: KeeperHost, request: K
   const job = keeperJobName(host.random);
   const { process, connected } = connectKeeper(
     host,
-    (pipe) => keeperLaunchArguments({ pipe, job, onOwnerLoss: request.onOwnerLoss, marker: request.marker, command: request.command }),
+    (pipe) => keeperLaunchArguments({ pipe, job, onOwnerLoss: request.onOwnerLoss, marker: request.marker, descriptors: request.descriptors, command: request.command }),
     request.start,
     request.signal,
   );
   const launched = connected.then(({ session, first }): KeptLaunch<P> => {
-    if (first.kind === 'started') return { kind: 'started', group: session.group(job), commandPid: first.pid, process };
+    if (first.kind === 'started') {
+      const dropped = request.descriptors.filter((descriptor) => !first.descriptors.includes(descriptor));
+      if (dropped.length === 0) return { kind: 'started', group: session.group(job), commandPid: first.pid, process };
+      session.close();
+      throw new KeeperProtocolError(`the keeper started command ${first.pid} without descriptor ${dropped.join(', ')}, which the launch named`);
+    }
     session.close();
     if (first.kind === 'failed' && first.reason !== 'job-absent') return { kind: 'refused', reason: first.reason, systemError: first.systemError, process };
     throw new KeeperProtocolError(`a launching keeper answered ${first.kind === 'failed' ? first.reason : first.kind}`);

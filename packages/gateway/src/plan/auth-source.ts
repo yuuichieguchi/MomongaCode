@@ -1,5 +1,8 @@
 import type { PlanProfile } from '@momonga/config';
 import {
+  PLAN_DISABLED_STATE,
+  PLAN_STORE_UNREADABLE_STATE,
+  PLAN_STORE_UNWRITABLE_STATE,
   PLAN_CREDENTIAL_UNAVAILABLE_CODE,
   PLAN_HOST_IDENTITY_UNAVAILABLE_CODE,
   PLAN_STORE_UNREADABLE_CODE,
@@ -74,11 +77,11 @@ export const activePause = (record: PlanRecord, nowMs: number): PlanPause | unde
 };
 
 export const blockingCondition = (profile: PlanProfile, view: AccountView, nowMs: number): Condition | undefined => {
-  if (view.kind === 'unreadable') return { reason: 'store_unreadable', code: PLAN_STORE_UNREADABLE_CODE, detail: view.cause };
+  if (view.kind === 'unreadable') return { reason: PLAN_STORE_UNREADABLE_STATE, code: PLAN_STORE_UNREADABLE_CODE, detail: view.cause };
   if (view.kind === 'absent' || SIGN_IN_STATES.has(view.record.state)) {
     return { reason: SIGN_IN_REQUIRED_CODE, code: SIGN_IN_REQUIRED_CODE, detail: signInRequiredMessage(profile, view.kind === 'absent' ? undefined : view.record) };
   }
-  if (view.record.state === 'plan_disabled') return { reason: PLAN_USE_NOT_ENABLED_CODE, code: PLAN_USE_NOT_ENABLED_CODE, detail: profile.messages.planNotEnabledMessage };
+  if (view.record.state === PLAN_DISABLED_STATE) return { reason: PLAN_USE_NOT_ENABLED_CODE, code: PLAN_USE_NOT_ENABLED_CODE, detail: profile.messages.planNotEnabledMessage };
   const pause = activePause(view.record, nowMs);
   if (pause !== undefined) {
     return { reason: USAGE_PAUSED_CODE, code: USAGE_PAUSED_CODE, detail: profile.messages.usageLimitMessage, ...(pause.until === undefined ? {} : { retryAfterMs: pause.until - nowMs }) };
@@ -115,8 +118,8 @@ const remediationOf = (reason: PlanHealthReason, profile: PlanProfile, label: st
       return `sign in with consent: /login in the app, or run \`${login} --reconsent\``;
     case USAGE_PAUSED_CODE:
       return `resume plan use in the account picker, or run \`momonga auth resume ${label}\``;
-    case 'store_unreadable':
-    case 'store_unwritable':
+    case PLAN_STORE_UNREADABLE_STATE:
+    case PLAN_STORE_UNWRITABLE_STATE:
       return `repair the plan session store for this account, then sign in again with /login in the app, or run \`${login}\``;
   }
 };
@@ -124,18 +127,18 @@ const remediationOf = (reason: PlanHealthReason, profile: PlanProfile, label: st
 export const healthOf = (profile: PlanProfile, label: string | undefined, view: AccountView, nowMs: number): PlanHealth => {
   const condition =
     blockingCondition(profile, view, nowMs) ??
-    (view.kind === 'record' && view.unwritable !== undefined ? { reason: 'store_unwritable' as const, code: PLAN_STORE_UNWRITABLE_CODE, detail: view.unwritable } : undefined);
+    (view.kind === 'record' && view.unwritable !== undefined ? { reason: PLAN_STORE_UNWRITABLE_STATE, code: PLAN_STORE_UNWRITABLE_CODE, detail: view.unwritable } : undefined);
   if (condition === undefined) return { ok: true };
   return { ok: false, reason: condition.reason, detail: condition.detail, remediation: remediationOf(condition.reason, profile, label ?? '<label>') };
 };
 
 export const statusOf = (view: AccountView, nowMs: number): PlanStatus => {
   if (view.kind === 'absent') return { state: 'absent' };
-  if (view.kind === 'unreadable') return { state: 'store_unreadable', cause: view.cause };
+  if (view.kind === 'unreadable') return { state: PLAN_STORE_UNREADABLE_STATE, cause: view.cause };
   const paused = activePause(view.record, nowMs);
   const cause = view.unwritable ?? view.record.cause;
   return {
-    state: view.unwritable === undefined ? view.record.state : 'store_unwritable',
+    state: view.unwritable === undefined ? view.record.state : PLAN_STORE_UNWRITABLE_STATE,
     ...(cause === undefined ? {} : { cause }),
     ...(paused === undefined ? {} : { paused }),
   };

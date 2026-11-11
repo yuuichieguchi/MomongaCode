@@ -11,8 +11,10 @@ import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.t
 import type { TrustOracle, UserLayer } from './layers.ts';
 import { assertMcpServer, assertMcpServersFile } from './settings.ts';
 import type { McpServerConfig, McpServersFile, Settings } from './settings.ts';
+import { MCP_EXPANSION_PATTERN, mcpServerNameProblem } from './mcp-server-rules.ts';
+import type { McpServerScope } from './mcp-server-rules.ts';
 
-export type McpServerScope = 'user' | 'project' | 'session';
+export type { McpServerScope };
 
 export type McpServerEntry = { name: string; scope: McpServerScope; config: McpServerConfig };
 
@@ -36,8 +38,7 @@ export type LoadMcpServersResult = {
   warnings: string[];
 };
 
-const SERVER_NAME = /^[A-Za-z0-9_-]+$/;
-const EXPANSION = /\$\{([^}]*)\}/g;
+const EXPANSION = new RegExp(MCP_EXPANSION_PATTERN, 'g');
 const EXPANSION_BODY = /^([A-Za-z_][A-Za-z0-9_]*)(?::-([\s\S]*))?$/;
 
 class UnsetVariableError extends Error {}
@@ -53,9 +54,6 @@ class CredentialVariableError extends Error {
 
 const USER_EXPANSION_NOTE =
   'user-scope ${VAR} expansion sees only the environment it is given (in the runtime, the credential-stripped session environment); keep MCP credentials as literal values in user settings until the keychain store exists';
-
-export const mcpServerNameProblem = (name: string): string | undefined =>
-  !SERVER_NAME.test(name) || name.includes('__') || name.startsWith('_') || name.endsWith('_') ? `invalid MCP server name ${JSON.stringify(name)}; use letters, digits, "-" and single "_" only` : undefined;
 
 const assertServerName = (name: string, source: string): void => {
   const problem = mcpServerNameProblem(name);
@@ -219,7 +217,6 @@ export const loadMcpServers = async ({ home, projectDir, trust, env, signal, use
   if (userSettings !== undefined) {
     for (const [name, config] of Object.entries(userSettings.settings.mcpServers ?? {})) {
       try {
-        assertServerName(name, userSettings.source);
         seen.add(name);
         const expanded = tryExpand(() => expandServer(config, env, name, userSettings.source, allowAnyVariable));
         if ('config' in expanded) {

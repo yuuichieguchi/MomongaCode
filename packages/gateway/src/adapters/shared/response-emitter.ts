@@ -20,9 +20,9 @@ import type {
 import { echoedFields } from '../../core/resource.ts';
 import { echoedToolChoice } from '../../core/tool-choice.ts';
 import { invertReply } from '../../dialect/unwrap.ts';
-import { TokenTally } from '@momonga/protocol';
+import { TOOL_NAME_PATTERN, TokenTally, isToolName } from '@momonga/protocol';
 import { MAX_CALL_ARGUMENT_CHARS, MAX_RESPONSE_TEXT_CHARS } from './limits.ts';
-import { UpstreamProtocolError } from './failures.ts';
+import { MalformedOutputError, UpstreamProtocolError } from './failures.ts';
 
 type Unsequenced<Event> = Event extends unknown ? Omit<Event, 'sequence_number'> : never;
 
@@ -195,6 +195,7 @@ export class ResponseEmitter {
   }
 
   beginCall(key: number, callId: string, name: string): void {
+    if (!isToolName(name)) throw new MalformedOutputError(`the model called a tool by the name ${JSON.stringify(name)}, and a tool name must match ${TOOL_NAME_PATTERN.source}`);
     this.endImplicitReasoning();
     const call: OpenCall = { kind: 'call', id: newId('fc', this.options.clock), outputIndex: this.allocate(), callId, name, args: '' };
     this.observe(name);

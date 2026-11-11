@@ -1,5 +1,5 @@
 import { MCP_CONNECT_TIMEOUT_LIMITS, SANDBOX_NETWORK_SETTINGS, SECRET_NAME_PATTERN, SHUTDOWN_SETTING_LIMITS } from '@momonga/foundation';
-import { MAX_COST_USD, QUIESCENT_BEHAVIOURS, MANAGED_DECLARABLE_FIELDS, ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, PROVIDER_NAME_PATTERN, REASONING_EFFORTS, REQUEST_TOOL_KINDS, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS, MANAGED_ENDPOINT_FORMS, IDEMPOTENCY_KEY_HEADER_PATTERN } from '@momonga/protocol';
+import { MAX_COST_USD, QUIESCENT_BEHAVIOURS, MANAGED_DECLARABLE_FIELDS, ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, PLAN_LABEL_PATTERN, PROVIDER_NAME_PATTERN, REASONING_EFFORTS, REQUEST_TOOL_KINDS, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS, MANAGED_ENDPOINT_FORMS, IDEMPOTENCY_KEY_HEADER_PATTERN, MIN_REQUEST_OUTPUT_TOKENS } from '@momonga/protocol';
 import type { CallRole, ManagedDeclarableField } from '@momonga/protocol';
 
 export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const satisfies readonly CallRole[];
@@ -53,6 +53,7 @@ export const ENV_NAME_PATTERN = '^[A-Za-z_][A-Za-z0-9_]*$';
 export const PROVIDER_NAME_PATTERN_SOURCE = PROVIDER_NAME_PATTERN.source;
 
 const POSITIVE_INTEGER = { type: 'integer', minimum: 1 } as const;
+const OUTPUT_TOKEN_BOUND = { type: 'integer', minimum: MIN_REQUEST_OUTPUT_TOKENS } as const;
 const NON_NEGATIVE_INTEGER = { type: 'integer', minimum: 0 } as const;
 
 const OUTPUT_BOUND_FIELD_SCHEMA = { enum: [...OUTPUT_BOUND_FIELDS] } as const;
@@ -80,7 +81,7 @@ export const READY_TIMEOUT_LIMITS = { min: 1, max: 300_000 } as const;
 
 const MANAGED_DECLARABLE_SCHEMAS: Record<ManagedDeclarableField, object> = {
   contextWindow: { type: 'integer', minimum: 1, maximum: MAX_BUDGET_COUNT },
-  maxOutputTokens: POSITIVE_INTEGER,
+  maxOutputTokens: OUTPUT_TOKEN_BOUND,
 };
 
 const MODEL_ID_SCHEMA = { type: 'string', minLength: 1 } as const;
@@ -222,7 +223,7 @@ const targetCapabilitiesSchema = (promptCache: object, extraProperties: object =
   properties: {
     ...extraProperties,
     contextWindow: { type: 'integer', minimum: 1, maximum: MAX_BUDGET_COUNT },
-    maxOutputTokens: POSITIVE_INTEGER,
+    maxOutputTokens: OUTPUT_TOKEN_BOUND,
     structuredOutput: { enum: ['json_schema', 'none'] },
     jsonMode: { enum: [...JSON_MODES] },
     streaming: { type: 'boolean' },
@@ -325,7 +326,7 @@ const PLAN_REFERENCE_SCHEMA = {
   type: 'object',
   properties: {
     profile: { type: 'string', minLength: 1 },
-    account: { type: 'string', pattern: SECRET_NAME_PATTERN },
+    account: { type: 'string', pattern: PLAN_LABEL_PATTERN },
   },
   required: ['profile'],
   additionalProperties: false,
@@ -481,7 +482,7 @@ export const SETTINGS_SCHEMA = {
       properties: {
         reflection: {
           type: 'object',
-          properties: { enabled: { type: 'boolean' }, maxTokens: POSITIVE_INTEGER },
+          properties: { enabled: { type: 'boolean' }, maxTokens: OUTPUT_TOKEN_BOUND },
           additionalProperties: false,
         },
         forgetAfterDays: POSITIVE_INTEGER,

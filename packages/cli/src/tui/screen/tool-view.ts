@@ -1,6 +1,5 @@
 import { createElement, useEffect, useEffectEvent, useReducer, useRef } from 'react';
 import type { ReactNode } from 'react';
-import { escapeTerminalBlock } from '@momonga/protocol';
 import { DetailView, detailCapacity } from '../select.tsx';
 import type { SelectFrame, TextRow } from '../select.tsx';
 import type { KeyContext, KeyTable } from '../keys/table.ts';
@@ -24,7 +23,7 @@ import type { ScreenTimers } from './timers.ts';
 import { styleOf } from './tokens.ts';
 import type { ViewWindow } from './viewport.ts';
 import { SPINNER_FRAMES } from './waiting-row.tsx';
-import { displayWidth, segmentsOf, withoutTabs, wrapLine } from './wrap.ts';
+import { displayWidth, inertText, segmentsOf, wrapLine } from './wrap.ts';
 import type { Row } from './wrap.ts';
 
 export const VIEWER_UNIT_BYTES = MARKDOWN_UNIT_BYTES;
@@ -40,7 +39,7 @@ export const expandRowText = (hidden: number, keys: KeyTable): string => {
   return `${ELLIPSIS} +${hidden} lines${key === '' ? '' : ` (${key} to expand)`}`;
 };
 
-const inertLine = (line: string): string => withoutTabs(escapeTerminalBlock(line.endsWith('\r') ? line.slice(0, -1) : line));
+const inertLine = (line: string): string => inertText(line.endsWith('\r') ? line.slice(0, -1) : line);
 
 const cutToWidth = (text: string, width: number): string => {
   if (displayWidth(text) <= width) return text;

@@ -1,21 +1,19 @@
 import { systemTiming } from './system-timing.ts';
 import type { Timing } from './timing.ts';
 
-export type DeadlineTiming = Pick<Timing, 'now' | 'setTimeout' | 'clearTimeout'>;
-
 export class Deadline {
   readonly signal: AbortSignal;
   private readonly expiresAt: number;
   private readonly parent: AbortSignal | undefined;
-  private readonly timing: DeadlineTiming;
+  private readonly timing: Timing;
   private timer: unknown;
   private readonly onParentAbort: () => void;
 
-  private constructor(ms: number, parent: AbortSignal | undefined, timing: DeadlineTiming) {
+  private constructor(ms: number, parent: AbortSignal | undefined, timing: Timing) {
     const controller = new AbortController();
     this.signal = controller.signal;
     this.timing = timing;
-    this.expiresAt = timing.now() + ms;
+    this.expiresAt = timing.monotonicMs() + ms;
     this.parent = parent;
     this.onParentAbort = (): void => {
       this.dispose();
@@ -25,6 +23,10 @@ export class Deadline {
       controller.abort(parent.reason);
       return;
     }
+    if (ms <= 0) {
+      controller.abort();
+      return;
+    }
     this.timer = timing.setTimeout(() => {
       parent?.removeEventListener('abort', this.onParentAbort);
       controller.abort();
@@ -32,8 +34,12 @@ export class Deadline {
     parent?.addEventListener('abort', this.onParentAbort, { once: true });
   }
 
-  static after(ms: number, timing: DeadlineTiming = systemTiming): Deadline {
+  static after(ms: number, timing: Timing = systemTiming): Deadline {
     return new Deadline(ms, undefined, timing);
+  }
+
+  static fromWall(wallMs: number, timing: Timing = systemTiming): Deadline {
+    return new Deadline(wallMs - timing.now(), undefined, timing);
   }
 
   get expired(): boolean {
@@ -41,7 +47,7 @@ export class Deadline {
   }
 
   remainingMs(): number {
-    return Math.max(0, this.expiresAt - this.timing.now());
+    return Math.max(0, this.expiresAt - this.timing.monotonicMs());
   }
 
   child(ms: number): Deadline {

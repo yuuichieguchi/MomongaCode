@@ -5,6 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
 import * as evaluation from '@momonga/eval';
+import { nodeWorkspaceFiles } from '@momonga/eval';
+import type { WorkspaceFiles } from '@momonga/eval';
 
 const cleanups: string[] = [];
 
@@ -71,12 +73,12 @@ export type FixtureTask = {
 export const benchmarkDir = async (tasks: readonly FixtureTask[]): Promise<string> => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-bench-'));
   cleanups.push(dir);
-  const treeDigest = exported<(directory: string) => Promise<string>>('treeDigest');
+  const treeDigest = exported<(files: WorkspaceFiles, directory: string) => Promise<string>>('treeDigest');
   const repositories: Record<string, { directory: string; digest: string }> = {};
   for (const task of tasks) {
     write(path.join(dir, 'repos', task.id), task.repository ?? { 'src/add.js': ADD_BUGGY, 'test/add.test.js': ADD_TEST });
     write(path.join(dir, 'solutions', task.id), task.reference);
-    repositories[task.id] = { directory: `repos/${task.id}`, digest: task.digest ?? (await treeDigest(path.join(dir, 'repos', task.id))) };
+    repositories[task.id] = { directory: `repos/${task.id}`, digest: task.digest ?? (await treeDigest(nodeWorkspaceFiles, path.join(dir, 'repos', task.id))) };
   }
   const benchmark = {
     format: 'momonga-bench/1',

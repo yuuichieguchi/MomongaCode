@@ -1,6 +1,6 @@
 import { ModelsEditRefused, PLAN_PROFILES, durationText, editModelsSettings, fieldLabel, fieldValueText, loadUserModels, loadUserSettings, planModelsEdit, providerNameOf, registeredServer, serverKindOf, serverNameFromCommand, serverRegistryOf } from '@momonga/config';
 import type { ConnectionDraft, ModelEntry, ModelsEditPlan, ModelsEditPorts, ModelsOperation, ModelsOperations, ModelsReference, ProviderNameInput, ResolvedModels } from '@momonga/config';
-import { createBinaryHashCache, currentSocketResolver, isRecord, parseOutsideJson } from '@momonga/foundation';
+import { EXIT_FAILURE, EXIT_USAGE, createBinaryHashCache, currentSocketResolver, isRecord, parseOutsideJson } from '@momonga/foundation';
 import type { MomongaPaths, OutboundFetch } from '@momonga/foundation';
 import {
   GENERIC_SERVER_KIND,
@@ -60,8 +60,6 @@ export type ModelsShell = {
 
 export type ModelsHost = Omit<ModelsShell, 'stdout' | 'stderr'>;
 
-const EXIT_USAGE = 2;
-const EXIT_REFUSED = 1;
 export const SEPARATOR = '  ·  ';
 const ROW_INDENT = '  ';
 export const START_MARK = 'starts new sessions';
@@ -819,7 +817,7 @@ export const runModelsForm = async (shell: ModelsShell, form: ModelsForm, input:
     }
     if (isModelsRefusal(error)) {
       print(shell.stderr, [error.message]);
-      return EXIT_REFUSED;
+      return EXIT_FAILURE;
     }
     throw error;
   }

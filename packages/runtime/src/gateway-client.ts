@@ -9,6 +9,7 @@ import {
   RUN_ID_HEADER,
   STREAM_IDLE_HEADER,
   TARGET_ANSWERS,
+  SERVICE_UNAVAILABLE_STATUS,
   TARGET_PROBING,
   isProbingCapabilities,
   isToolCallingState,
@@ -87,9 +88,6 @@ export class ModelUnlistedError extends GatewayRequestError {
   }
 }
 
-const SERVICE_UNAVAILABLE_STATUS = 503;
-
-export const isTargetProbing = (error: GatewayRequestError): boolean => error.status === SERVICE_UNAVAILABLE_STATUS && error.code === TARGET_PROBING;
 export const GATEWAY_UNAVAILABLE_CODE = 'gateway_unavailable';
 
 export const isGenerationRetiredRefusal = (error: unknown): error is GatewayRequestError => error instanceof GatewayRequestError && error.code === GENERATION_RETIRED_CODE;
@@ -327,7 +325,7 @@ const unlistedErrorOf = (capabilities: Record<string, unknown>): ModelUnlistedEr
   const listed = { toolCalling };
   if (isProbingCapabilities(listed)) {
     return new ModelUnlistedError({
-      status: 503,
+      status: SERVICE_UNAVAILABLE_STATUS,
       type: 'server_error',
       code: TARGET_PROBING,
       message: listed.toolCalling.message,

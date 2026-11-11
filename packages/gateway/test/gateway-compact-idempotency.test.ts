@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
+import { definePriceTable } from '@momonga/observability';
 import type { AdapterCompactRequest, AdapterCompactResult, AdapterContext, ProviderAdapter } from '@momonga/gateway';
 import { createScriptedAdapter, usageOf, waitFor } from '@momonga/testkit';
 import { expectErrorBody, postJson, readJson, registerCleanup, startGateway, userInput, validator } from './gateway-helpers.ts';
@@ -131,6 +132,27 @@ describe('POST /v1/responses/compact with Idempotency-Key', () => {
     expect(reused.status).toBe(422);
     expectErrorBody(reused.body, { type: 'invalid_request', code: 'idempotency_key_reused', param: null });
     expect(primary.compactSignals).toHaveLength(1);
+  });
+
+  it('returns the stored resource for the same key when only the cost ceiling of the retry differs', async () => {
+    const primary = createGatedCompactAdapter(['first', 'unexpected'], false);
+    const priceTable = definePriceTable([{ provider: 'scripted', model: 'scripted-primary', effectiveFrom: '2020-01-01', inputPerMTok: 2, cacheWritePerMTok: 2.5, cachedInputPerMTok: 0.5, outputPerMTok: 8, currency: 'USD' }]);
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, priceTable });
+    const first = await compact(client, 'cp-ceiling', { ...compactBody, momonga: { max_summary_tokens: 64, max_cost_nano: 9_000_000_000, max_input_tokens: 4000 } });
+    const retried = await compact(client, 'cp-ceiling', { ...compactBody, momonga: { max_summary_tokens: 64, max_cost_nano: 8_000_000_000, max_input_tokens: 3000 } });
+    expect(first.status).toBe(200);
+    expect(retried.status).toBe(200);
+    expect(retried.body).toEqual(first.body);
+    expect(primary.compactSignals).toHaveLength(1);
+  });
+
+  it('still rejects the same key when the summary cap differs', async () => {
+    const primary = createGatedCompactAdapter(['first', 'unexpected'], false);
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
+    expect((await compact(client, 'cp-cap', { ...compactBody, momonga: { max_summary_tokens: 64 } })).status).toBe(200);
+    const reused = await compact(client, 'cp-cap', { ...compactBody, momonga: { max_summary_tokens: 65 } });
+    expect(reused.status).toBe(422);
+    expectErrorBody(reused.body, { type: 'invalid_request', code: 'idempotency_key_reused', param: null });
   });
 
   it('does not store a failed result, so a retry with the key calls upstream again', async () => {
