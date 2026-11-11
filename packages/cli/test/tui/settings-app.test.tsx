@@ -135,7 +135,10 @@ describe('/config, the settings screen', () => {
     await press(started, KEYS.enter, '1. npm run typecheck');
     expect(stored(place.userFile)).toEqual({ verification: { commands: ['npm run typecheck', 'npm run lint'] } });
     await press(started, '1', '› 1. npm run typecheck');
-    await press(started, KEYS.tab, '1. npm run lint');
+    await press(started, KEYS.delete, 'Remove npm run typecheck?');
+    expect(stored(place.userFile)).toEqual({ verification: { commands: ['npm run typecheck', 'npm run lint'] } });
+    await press(started, '2', '› 2. Yes');
+    await press(started, KEYS.enter, '1. npm run lint');
     expect(stored(place.userFile)).toEqual({ verification: { commands: ['npm run lint'] } });
     await press(started, KEYS.escape, `Verification commands  npm run lint  user  ${APPLIES_NEXT_SESSION}`);
     started.app.unmount();

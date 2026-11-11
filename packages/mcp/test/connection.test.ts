@@ -31,6 +31,7 @@ import {
 
 const connect = async (name: string, config: McpServerConfig, requestTimeoutMs?: number): Promise<McpServerConnection> => {
   const connection = await connectMcpServer({
+    clientVersion: '0.0.0-test',
     name,
     config,
     scope: 'user',
@@ -96,6 +97,7 @@ describe('connectMcpServer remote configs', () => {
     const { port } = server.address() as net.AddressInfo;
     await expect(
       connectMcpServer({
+        clientVersion: '0.0.0-test',
         name: 'remote',
         config: { type: 'http', url: `http://127.0.0.1:${port}/mcp` },
         scope: 'user',
@@ -238,6 +240,7 @@ describe('the connect of a server against the limit of the connect', () => {
 
   it('a connect that hangs outside the store has the limit text', LIMIT_TEST, async () => {
     const connection = createManagedConnection({
+      clientVersion: '0.0.0-test',
       name: 's',
       config: { command: process.execPath, args: ['-e', 'setInterval(() => {}, 1000)'] },
       scope: 'user',

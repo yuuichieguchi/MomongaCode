@@ -98,7 +98,7 @@ describe('the layout of the full screen', () => {
     await runStarted(backend, app, 'go');
     backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Bash', kind: 'execute', title: 'Bash ls', rawInput: { command: 'ls' } }));
     backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: 'asks', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }] }));
-    const lines = linesOf(await untilFrame(app, 'Permission requested: Bash ls'));
+    const lines = linesOf(await untilFrame(app, (now) => now.includes('Permission requested: Bash ls') && now.includes('to choose')));
     expect(lines).toHaveLength(16);
     expect(lines.filter((line) => line.includes('│ >'))).toEqual([]);
     expect(lines.slice(9, 15).map((line) => line.replace(/^│ /, '').replace(/ *│$/, ''))).toEqual([expect.stringMatching(/^╭─+╮$/), 'Permission requested: Bash ls', 'asks', '› 1. Allow once', '1-9 or enter to choose · up/down to move · ctrl+c: cancel the run', expect.stringMatching(/^╰─+╯$/)]);
@@ -348,16 +348,16 @@ describe('the two screen modes', () => {
 });
 
 describe('the event path of the screen', () => {
-  it('hands an event to the newest claim first and drops what nobody claims', () => {
+  it('hands an event to the claims in the order of their priority and drops what nobody claims', () => {
     const input = createScreenInput();
     const seen: string[] = [];
-    input.claim((event) => (seen.push('first'), event.type === 'mouse'));
-    const stop = input.claim((event) => (seen.push('second'), event.type === 'key' && 'name' in event && event.name === 'pageup'));
+    const stop = input.claim('transcript', (event) => (seen.push('transcript'), event.type === 'key' && 'name' in event && event.name === 'pageup'));
+    input.claim('typing', (event) => (seen.push('typing'), event.type === 'mouse'));
     input.push([named('pageup'), typed('a'), mouse('press', 1, 1), typed('b')]);
-    expect(seen).toEqual(['second', 'second', 'first', 'second', 'first', 'second', 'first']);
+    expect(seen).toEqual(['transcript', 'transcript', 'typing', 'transcript', 'typing', 'transcript', 'typing']);
     stop();
     input.push([named('pageup')]);
-    expect(seen.at(-1)).toBe('first');
+    expect(seen.at(-1)).toBe('typing');
     expect(seen).toHaveLength(8);
   });
 });

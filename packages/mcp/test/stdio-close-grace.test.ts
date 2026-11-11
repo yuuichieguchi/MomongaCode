@@ -152,6 +152,7 @@ describe('the grace of a close is an argument of that close', () => {
     const real = { now: () => timers.now(), setTimeout: (callback: () => void, ms: number) => setTimeout(callback, ms), clearTimeout: (handle: unknown) => clearTimeout(handle as NodeJS.Timeout) };
     const timing = recordingTiming(real);
     const pool = createMcpPool({
+      clientVersion: '0.0.0-test',
       servers: [entry('modern', modernConfig(makeRecordFile()))],
       projectDir: projectDir(),
       baseEnv: BASE_ENV,

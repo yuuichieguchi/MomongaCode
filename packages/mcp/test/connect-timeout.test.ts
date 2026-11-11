@@ -13,6 +13,7 @@ describe('mcp.connectTimeoutMs bounds the connect of a server that never answers
 
   const silentServer = (connectTimeoutMs: number) => {
     const connection = createManagedConnection({
+      clientVersion: '0.0.0-test',
       name: 's',
       config: NEVER_ANSWERS,
       scope: 'user',

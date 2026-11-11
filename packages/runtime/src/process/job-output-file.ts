@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { nodeFileSystem } from '@momonga/foundation';
 
 const CONTINUATION_MASK = 0b1100_0000;
 const CONTINUATION_BITS = 0b1000_0000;
@@ -33,6 +34,17 @@ export const ensureJobOutputDirectory = async (jobsDirectory: string): Promise<v
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
   }
+};
+
+export const removeLeftoverJobOutputFile = async (filePath: string): Promise<void> => {
+  let entry: fs.Stats;
+  try {
+    entry = await nodeFileSystem.lstat(filePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw error;
+  }
+  if (entry.isFile()) await nodeFileSystem.rm(filePath);
 };
 
 export const openJobOutputFile = async ({ path: filePath, maxBytes, onFailure }: JobOutputFileOptions): Promise<JobOutputFile> => {

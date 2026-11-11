@@ -1,5 +1,5 @@
 import { UNNAMED_REASON, commandMayStillRun, refusedReason, defaultProcessInspector, groupAlive, groupPortOf, nodeFileSystem, findHolders, outlivedNotes, recallMarkerGroup, reconcileProcessGroup } from '@momonga/foundation';
-import type { CommandLiveness, HolderListing, MarkerMode, MarkerReconcileResult, MarkerState, ProcessGroupPort, ProcessInspector, ReapTiming, SignalSender, UninspectableProcess } from '@momonga/foundation';
+import type { CommandLiveness, HolderListing, MarkerMode, MarkerReconcileResult, MarkerState, ProcessGroupPort, ProcessInspector, Timing, SignalSender, UninspectableProcess } from '@momonga/foundation';
 
 import { ToolExecutionError } from './types.ts';
 import type { SpawnMarker, ToolContext } from './types.ts';
@@ -24,7 +24,7 @@ export type MarkerSettleOptions = {
   killGraceMs?: number;
   kill?: SignalSender;
   groupPort?: ProcessGroupPort;
-  timing?: ReapTiming;
+  timing?: Timing;
   onWarning(message: string): void;
 };
 

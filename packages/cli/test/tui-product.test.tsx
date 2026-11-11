@@ -3,6 +3,7 @@ import type { ElicitationRequestView, ImageAttachment, SkillView } from '@momong
 import { maxDiffLines } from '../src/tui/diff.ts';
 import { panelRowsCap } from '../src/tui/screen/layout.ts';
 import { FRAME_BOUND_MS, KEYS, untilFrame, untilOutput, withoutLinks } from './ink-helpers.ts';
+import { quiet } from './fake-plan-gateway.tsx';
 import { frame, runStarted, start, type } from './tui-harness.tsx';
 
 const FORM: ElicitationRequestView = {
@@ -88,6 +89,9 @@ describe('elicitation in the TUI', () => {
     expect(prompt).toContain(`URL: ${URL_REQUEST.mode === 'url' ? URL_REQUEST.url : ''}`);
     expect(backend.openedUrls).toEqual([]);
     app.stdin.write('1');
+    await quiet();
+    expect(backend.openedUrls).toEqual([]);
+    app.stdin.write(KEYS.enter);
     await backend.called('elicit:in2');
     expect(backend.openedUrls).toEqual([URL_REQUEST.mode === 'url' ? URL_REQUEST.url : '']);
     expect(backend.elicitationAnswers[0]?.responses).toEqual({ consent: { action: 'accept' } });
@@ -102,6 +106,9 @@ describe('elicitation in the TUI', () => {
     backend.emit(requestInput('in2', 'c1', [URL_REQUEST]));
     await untilFrame(app, 'Sign in to continue');
     app.stdin.write('1');
+    await quiet();
+    expect(backend.openedUrls).toEqual([]);
+    app.stdin.write(KEYS.enter);
     const url = URL_REQUEST.mode === 'url' ? URL_REQUEST.url : '';
     const notice = `MCP server calc: Could not open the browser (no browser). Open this URL to continue: ${url}`;
     const shown = withoutLinks(await untilOutput(app, (output) => wrappedAtWordGaps(notice).test(withoutLinks(output))));

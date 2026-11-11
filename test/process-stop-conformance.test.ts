@@ -1,9 +1,10 @@
+import { sleepDrivenTiming } from '@momonga/testkit';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createPosixGroupPort, reapMarkedProcesses, reconcileProcessGroup } from '@momonga/foundation';
-import type { ProcessGroupPort, ProcessInspector, ReapTiming } from '@momonga/foundation';
+import type { ProcessGroupPort, ProcessInspector, Timing } from '@momonga/foundation';
 import { readManifest } from './formal/manifest.ts';
 import { canStillRun } from '../packages/foundation/src/platform/run-state.ts';
 
@@ -60,14 +61,14 @@ const world = (initial: Record<number, Entry>, reuseAtGroupRead: Record<number, 
   return { signals, kill, inspector, groupPort };
 };
 
-const instantTiming = (): ReapTiming => {
+const instantTiming = (): Timing => {
   let now = 0;
-  return {
+  return sleepDrivenTiming({
     now: () => now,
     sleep: async (ms: number) => {
       now += ms;
     },
-  } as ReapTiming;
+  }) as Timing;
 };
 
 const dirs: string[] = [];

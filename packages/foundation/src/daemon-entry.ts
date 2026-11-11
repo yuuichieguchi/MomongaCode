@@ -1,5 +1,5 @@
 import os from 'node:os';
-import { systemClock } from './clock.ts';
+import { systemClock } from './system-timing.ts';
 import type { Clock } from './clock.ts';
 import { EntryUsageError, parseFlags } from './entry-flags.ts';
 import type { FlagSpec, ParsedFlags } from './entry-flags.ts';

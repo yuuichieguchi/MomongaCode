@@ -1,9 +1,10 @@
+import { sleepDrivenTiming } from '@momonga/testkit';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { KILL_CONFIRM_MS, REAP_POLL_INTERVAL_MS, markerReapClockBoundMs, reapMarkedProcesses } from '@momonga/foundation';
-import type { ProcessInspector, ReapTiming } from '@momonga/foundation';
+import { KILL_CONFIRM_MS, POLL_INTERVAL_MS, markerReapClockBoundMs, reapMarkedProcesses } from '@momonga/foundation';
+import type { ProcessInspector, Timing } from '@momonga/foundation';
 
 const RECORDED_GROUP = 525_252;
 const OWN_GROUP = 525_251;
@@ -30,13 +31,13 @@ const holderIgnoringTerm = (releaseAfterKillMs: number | undefined) => {
   let current = 0;
   let killedAt: number | undefined;
   const released = (): boolean => killedAt !== undefined && releaseAfterKillMs !== undefined && current >= killedAt + releaseAfterKillMs;
-  const timing: ReapTiming = {
+  const timing: Timing = sleepDrivenTiming({
     now: () => current,
     sleep: async (ms: number) => {
       current += ms;
       await new Promise((resolve) => setImmediate(resolve));
     },
-  };
+  });
   const inspector: ProcessInspector = {
     startTimeOf: async () => (released() ? { kind: 'gone' } : { kind: 'value', value: HOLDER_STARTED_AT }),
     holdersOf: async () => ({ kind: 'value', value: released() ? [] : [HOLDER] }),
@@ -83,11 +84,11 @@ describe('a marker reap confirms its SIGKILL in its own window K = KILL_CONFIRM_
     expect(warnings[0]).toContain(marker);
     const afterKill = host.now() - (host.killedAt() ?? Number.NaN);
     expect(afterKill).toBeGreaterThanOrEqual(KILL_CONFIRM_MS);
-    expect(afterKill).toBeLessThanOrEqual(KILL_CONFIRM_MS + REAP_POLL_INTERVAL_MS);
+    expect(afterKill).toBeLessThanOrEqual(KILL_CONFIRM_MS + POLL_INTERVAL_MS);
     expect(host.now()).toBeLessThanOrEqual(markerReapClockBoundMs(killGraceMs));
   });
 
   it.each(GRACES)('grace %i: markerReapClockBoundMs is three windows of the grace and one K', (killGraceMs) => {
-    expect(markerReapClockBoundMs(killGraceMs)).toBe(3 * (killGraceMs + REAP_POLL_INTERVAL_MS) + KILL_CONFIRM_MS);
+    expect(markerReapClockBoundMs(killGraceMs)).toBe(3 * (killGraceMs + POLL_INTERVAL_MS) + KILL_CONFIRM_MS);
   });
 });

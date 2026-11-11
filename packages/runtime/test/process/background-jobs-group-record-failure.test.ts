@@ -8,7 +8,7 @@ import { createUninspectableRegistry } from '@momonga/foundation';
 import type { MarkerState, ProcessGroupPort } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, sleepDrivenTiming } from '@momonga/testkit';
 import { createBackgroundJobs, createNodeJobMarkerFiles } from '@momonga/runtime';
 import { launch } from '../../../sandbox/src/process.ts';
 import type { LaunchOptions } from '../../../sandbox/src/process.ts';
@@ -58,7 +58,7 @@ const runJob = async (survives: boolean) => {
     ...jobGenerationOptions(root),
     markerFiles: createNodeJobMarkerFiles(),
     killGraceMs: 10,
-    reapTiming: { now: () => clock.now(), sleep: async () => undefined },
+    reapTiming: sleepDrivenTiming({ now: () => clock.now(), sleep: async () => undefined }),
     onWarning: (message: string) => void warnings.push(message),
     report: () => undefined,
     uninspectable: createUninspectableRegistry({ isAlive: () => true }),

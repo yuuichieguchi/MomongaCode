@@ -7,26 +7,21 @@ import { createTransport, eventually, makeDir, onCleanup, pidAlive, rawConfig, t
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const control = vi.hoisted(() => ({
-  failPidWriteUnder: undefined as string | undefined,
+  failGroupRecordUnder: undefined as string | undefined,
   reapFailure: undefined as Error | undefined,
   reapCalls: 0,
 }));
-
-vi.mock('node:fs', async (importOriginal) => {
-  const original = await importOriginal<typeof import('node:fs')>();
-  const writeFileSync = ((file: fs.PathOrFileDescriptor, data: unknown, options?: fs.WriteFileOptions) => {
-    if (control.failPidWriteUnder !== undefined && typeof file === 'string' && file.startsWith(control.failPidWriteUnder) && /^\d+\n$/.test(String(data))) {
-      throw Object.assign(new Error('ENOSPC: no space left on device, write'), { code: 'ENOSPC' });
-    }
-    return original.writeFileSync(file, data as string, options);
-  }) as typeof original.writeFileSync;
-  return { ...original, writeFileSync, default: { ...original, writeFileSync } };
-});
 
 vi.mock('@momonga/foundation', async (importOriginal) => {
   const original = await importOriginal<typeof import('@momonga/foundation')>();
   return {
     ...original,
+    recordMarkerGroup: async (...args: Parameters<typeof original.recordMarkerGroup>) => {
+      if (control.failGroupRecordUnder !== undefined && args[0].startsWith(control.failGroupRecordUnder)) {
+        throw Object.assign(new Error('ENOSPC: no space left on device, write'), { code: 'ENOSPC' });
+      }
+      return original.recordMarkerGroup(...args);
+    },
     reapMarkedProcesses: async (...args: Parameters<typeof original.reapMarkedProcesses>) => {
       control.reapCalls += 1;
       if (control.reapFailure !== undefined) throw control.reapFailure;
@@ -42,7 +37,7 @@ const markerSetup = () => {
 };
 
 describe('MCP marker failure handling', () => {
-  it('keeps the marker when the pid write fails after spawn, and close still sweeps a setsid grandchild', async () => {
+  it('keeps the marker when the group record cannot be written after spawn, and close still sweeps a setsid grandchild', async () => {
     const { dir, markers } = markerSetup();
     const readyFile = path.join(makeDir(), 'setsid.pid');
     onCleanup(() => {
@@ -50,7 +45,7 @@ describe('MCP marker failure handling', () => {
       const pid = Number(fs.readFileSync(readyFile, 'utf8'));
       if (pid > 1 && pidAlive(pid)) killPidsForCleanup([pid]);
     });
-    control.failPidWriteUnder = dir;
+    control.failGroupRecordUnder = dir;
     control.reapFailure = undefined;
     const transport = createTransport({
       config: { command: process.execPath, args: [MCP_MODERN_SERVER_PATH], env: { [MODERN_FIXTURE_SETSID_GRANDCHILD_ENV]: readyFile } },
@@ -61,7 +56,7 @@ describe('MCP marker failure handling', () => {
     try {
       await expect(transport.start()).rejects.toThrow(/ENOSPC/);
     } finally {
-      control.failPidWriteUnder = undefined;
+      control.failGroupRecordUnder = undefined;
     }
 
     expect(fs.readdirSync(dir)).toHaveLength(1);

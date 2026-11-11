@@ -13,10 +13,10 @@ import type { SupervisorHarness } from './support/p2-supervisor-harness.ts';
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const FIRST: StopValues = { closeGraceMs: 1000, managedServerStopGraceMs: 200, drainTimeoutMs: 7000, mcpCloseGraceMs: 40 };
-const FIRST_DAEMON_STOP_BOUND_MS = 7000 + 1000 + 7 * 200 + 6 * 40 + 79_245;
+const FIRST_DAEMON_STOP_BOUND_MS = 7000 + 1000 + 7 * 200 + 6 * 40 + 79_275;
 const LATER: StopValues = { closeGraceMs: 250_000, managedServerStopGraceMs: 50_000, drainTimeoutMs: 250_000, mcpCloseGraceMs: 25_000 };
 const POSTED: StopValues = { closeGraceMs: 0, managedServerStopGraceMs: 10, drainTimeoutMs: 20, mcpCloseGraceMs: 30 };
-const POSTED_DAEMON_STOP_BOUND_MS = 20 + 0 + 7 * 10 + 6 * 30 + 79_245;
+const POSTED_DAEMON_STOP_BOUND_MS = 20 + 0 + 7 * 10 + 6 * 30 + 79_275;
 
 const settingsOf = (values: StopValues): Record<string, unknown> => ({
   gateway: { closeGraceMs: values.closeGraceMs, managedServerStopGraceMs: values.managedServerStopGraceMs },

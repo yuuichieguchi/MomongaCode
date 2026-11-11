@@ -13,7 +13,7 @@ export const waitUntil = async <T>(timing: Timing, probe: () => Promise<T | unde
     const value = await probe();
     if (value !== undefined) return { kind: 'found', value };
     if (signal?.aborted === true) return { kind: 'aborted' };
-    const remaining = deadline - timing.now();
+    const remaining = deadline - timing.monotonicMs();
     if (remaining <= 0) return { kind: 'timed_out' };
     if ((await sleep(timing, Math.min(intervalMs, remaining), signal)) === 'aborted') return { kind: 'aborted' };
   }

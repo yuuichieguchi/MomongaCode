@@ -50,6 +50,8 @@ describe('16.8: the record names its owner and is held by its writer', () => {
       replace: () => Promise.reject(new Error('execve EACCES')),
     });
     mover.attach({
+      surface: 'cli',
+      kept: () => ({ kind: 'run', runId: RECORD.runId }),
       recordFile: () => '/home/u/.momonga/run/handover/session-1.json',
       quiet: () => true,
       snapshot: () => RECORD,

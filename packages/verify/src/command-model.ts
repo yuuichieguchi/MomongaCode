@@ -96,6 +96,7 @@ export const createCommandModel = (smt: Smt): CommandModel => {
 
   const strictLanguage = (pattern: CommandPattern): Re | undefined => {
     if (pattern.kind === 'exact') return [...pattern.text].every((character) => character === ' ' || expressible(character)) ? smt.text(pattern.text) : undefined;
+    if (pattern.kind === 'glob') return undefined;
     return smt.concat(sequence(pattern.words, (expected) => smt.text(expected)), rest);
   };
 

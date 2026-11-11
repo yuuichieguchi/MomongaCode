@@ -375,7 +375,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect(error).not.toBeInstanceOf(AggregateError);
     expect((error as Error).message).toBe(`${firstGeneration(temp.paths).sockets.runtime} exists and is not a socket`);
     expect(stepsLogged(logger).at(-1)).toBe('service');
-    expect(stepsLogged(logger, 'teardown.step')).toEqual(['cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock']);
+    expect(stepsLogged(logger, 'teardown.step')).toEqual(['cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'sandbox', 'lock']);
     expect(control.events).toEqual(['trace-store.close', 'store.close']);
     expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
     expect(stdout.chunks).toEqual([]);
@@ -388,7 +388,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     const { started, stdout, logger } = startBare(temp);
     expect(await failureOf(started)).toBe(injected);
     expect(stepsLogged(logger).at(-1)).toBe('telemetry');
-    expect(stepsLogged(logger, 'teardown.step')).toEqual(['body-purge', 'trace-store', 'store', 'lock']);
+    expect(stepsLogged(logger, 'teardown.step')).toEqual(['body-purge', 'trace-store', 'store', 'sandbox', 'lock']);
     expect(control.events).toEqual(['trace-store.close', 'store.close']);
     expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
     expect(stdout.chunks).toEqual([]);
@@ -414,7 +414,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect(await failureOf(started)).toBe(fatal);
     expect(logger.entries).toContainEqual(expect.objectContaining({ level: 'error', msg: 'runtime.fatal', fields: expect.objectContaining({ err: fatal }) }));
     expect(stepsLogged(logger)).toEqual([...STARTUP_STEPS]);
-    expect(stepsLogged(logger, 'teardown.step')).toEqual(['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock']);
+    expect(stepsLogged(logger, 'teardown.step')).toEqual(['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'sandbox', 'lock']);
     expect(control.events.at(-1)).toBe('store.close');
     expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
     expect(stdout.chunks).toEqual([]);
@@ -493,9 +493,9 @@ describe('startup cancellation through signal (system timers)', () => {
 
   it.each([
     ['lock', ['lock']],
-    ['store', ['store', 'lock']],
-    ['telemetry', ['telemetry', 'body-purge', 'trace-store', 'store', 'lock']],
-    ['workers', ['workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock']],
+    ['store', ['store', 'sandbox', 'lock']],
+    ['telemetry', ['telemetry', 'body-purge', 'trace-store', 'store', 'sandbox', 'lock']],
+    ['workers', ['workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'sandbox', 'lock']],
   ] as const)(
     'a signal aborted by the logger hook during step %s unwinds the registered cleanups and throws the reason unchanged, with no ready line and the lock free',
     async (step, teardown) => {
@@ -526,7 +526,7 @@ describe('startup cancellation through signal (system timers)', () => {
     const error = await failureOf(startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger, stdout, signal: controller.signal }));
     expect(error).toBe(reason);
     expect(stepsLogged(logger)).toEqual([...STARTUP_STEPS]);
-    expect(stepsLogged(logger, 'teardown.step')).toEqual(['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock']);
+    expect(stepsLogged(logger, 'teardown.step')).toEqual(['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'sandbox', 'lock']);
     expect(stdout.chunks).toEqual([]);
     expect(entriesNamed(logger, 'runtime ready')).toEqual([]);
     expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);

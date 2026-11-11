@@ -1,10 +1,9 @@
-import type { Clock, ReapTiming } from '@momonga/foundation';
+import type { Clock, Timing } from '@momonga/foundation';
 import type { ServiceTimers } from '../service/timers.ts';
 
-export const reapTimingOf = (clock: Clock, timers: ServiceTimers): ReapTiming => ({
+export const reapTimingOf = (clock: Clock, timers: ServiceTimers): Timing => ({
   now: () => clock.now(),
-  sleep: (ms) =>
-    new Promise<void>((resolve) => {
-      timers.setTimeout(resolve, ms);
-    }),
+  monotonicMs: () => clock.now(),
+  setTimeout: (callback, ms) => timers.setTimeout(callback, ms),
+  clearTimeout: (handle) => timers.clearTimeout(handle),
 });

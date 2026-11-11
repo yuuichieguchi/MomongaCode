@@ -3,8 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ProbeFailedError, reapMarkedProcesses, reapMarkedProcessesWithReport, reconcileProcessGroup } from '@momonga/foundation';
-import type { MarkerReconcileResult, ProbeResult, ProcessGroupPort, ProcessInspector, ReapTiming } from '@momonga/foundation';
-import { createFakeClock } from '@momonga/testkit';
+import type { MarkerReconcileResult, ProbeResult, ProcessGroupPort, ProcessInspector, Timing } from '@momonga/foundation';
+import { createFakeClock, sleepDrivenTiming } from '@momonga/testkit';
 import { reapHolders } from '../src/process-markers.ts';
 
 const markerDirs: string[] = [];
@@ -76,7 +76,7 @@ const worldOf = (initial: Record<number, Proc>, hooks: Hooks = {}) => {
     alive: async (pgid) => [...procs.values()].some((proc) => proc.group === pgid),
   };
   const clock = createFakeClock(0);
-  const timing: ReapTiming = {
+  const timing: Timing = sleepDrivenTiming({
     now: () => clock.now(),
     sleep: async (ms) => {
       if (!slept) {
@@ -85,7 +85,7 @@ const worldOf = (initial: Record<number, Proc>, hooks: Hooks = {}) => {
       }
       clock.advance(ms);
     },
-  };
+  });
   return { procs, sent, inspector, kill, groupPort, timing };
 };
 
@@ -264,10 +264,10 @@ const recorded = (world: World): Event[] => {
     events.push(`start ${pid}`);
     return startTimeOf.call(world.inspector, pid, options);
   };
-  const sleep = world.timing.sleep;
-  world.timing.sleep = async (ms) => {
+  const startTimer = world.timing.setTimeout;
+  world.timing.setTimeout = (callback, ms) => {
     events.push('sleep');
-    return sleep(ms);
+    return startTimer(callback, ms);
   };
   const kill = world.kill;
   const recordingKill = (target: number, signal: NodeJS.Signals | 0): void => {

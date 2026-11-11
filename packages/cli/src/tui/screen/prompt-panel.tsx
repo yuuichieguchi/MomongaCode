@@ -96,7 +96,7 @@ export const elicitationSpec = (elicitation: PendingElicitation, title: string, 
   return {
     title: elicitationTitle(elicitation, title, waiting),
     lines: [request.message, ...(request.mode === 'url' ? [`URL: ${request.url}`] : []), ...(flow.error === undefined ? [] : [{ text: flow.error, color: 'red' }])],
-    rows: choices.map((choice) => ({ label: choice.label })),
+    rows: choices.map((choice) => ({ label: choice.label, ...(choice.decision === 'accept' && request.mode === 'url' ? { opensBrowser: true } : {}) })),
     initial: 0,
     decideOn: 'immediate',
     escape: choices.findIndex((choice) => choice.decision === 'decline'),
@@ -111,7 +111,7 @@ export const fieldHint = (keys: KeyTable): string => {
   return joinHint([...(confirm === '' ? [] : [`${confirm} to confirm the value`]), ...(leave === '' ? [] : [`${leave}: decline or cancel instead`])]);
 };
 
-export function ElicitationFields({ elicitation, title, editor, waiting, keys }: { elicitation: PendingElicitation; title: string; editor: EditorState; waiting: number; keys: KeyTable }) {
+export function ElicitationFields({ elicitation, title, editor, waiting, settling, keys }: { elicitation: PendingElicitation; title: string; editor: EditorState; waiting: number; settling: boolean; keys: KeyTable }) {
   const { flow } = elicitation;
   const request = currentRequest(flow);
   const field = currentField(flow);
@@ -131,7 +131,7 @@ export function ElicitationFields({ elicitation, title, editor, waiting, keys }:
           </Box>
         )}
         {flow.error === undefined ? null : <Text color="red">{inertText(flow.error)}</Text>}
-        <Text dimColor>{fieldHint(keys)}</Text>
+        <Text dimColor>{settling ? ' ' : fieldHint(keys)}</Text>
       </Box>
       <PanelInputBox editor={editor} />
     </Box>

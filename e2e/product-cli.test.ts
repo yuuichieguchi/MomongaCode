@@ -5,7 +5,7 @@ import { CACHE_READ_TEXT } from '@momonga/observability';
 import { CACHE_READS_NOT_REPORTED } from '@momonga/protocol';
 import { startMcpHttpFixture, startMcpOauthFixture } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
-import { OPEN_LOG_FILE_NAME, runCli, runCliWithFakes, startCli, startCliWithFakes } from './support/cli.ts';
+import { OPEN_LOG_FILE_NAME, approveInBrowser, openerCallsOf, runCli, runCliWithFakes, startCli, startCliWithFakes } from './support/cli.ts';
 import type { CliResult } from './support/cli.ts';
 import type { E2eHome } from './support/home.ts';
 import { PNG_BYTES, WINDOW_WITH_ROOM_FOR_ALL_TOOLS_AND_AN_IMAGE, prepareProduct, requestText, writePng, writeUserSkill } from './support/product.ts';
@@ -22,13 +22,6 @@ const jsonOf = (text: string): unknown => JSON.parse(text);
 const openedUrls = (home: E2eHome): string[] => {
   const file = path.join(home.root, OPEN_LOG_FILE_NAME);
   return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter((line) => line !== '') : [];
-};
-
-const approveAsUser = async (url: string): Promise<void> => {
-  const authorize = await fetch(url, { redirect: 'manual' });
-  const location = authorize.headers.get('location');
-  if (location === null) throw new Error(`the authorization endpoint did not redirect (${authorize.status})`);
-  await (await fetch(location)).arrayBuffer();
 };
 
 describe('momonga models, cost and memory', () => {
@@ -279,6 +272,42 @@ describe('momonga with MCP servers', () => {
     }
   });
 
+  it(titleOf('cli-mcp-login-opener'), { timeout: 3 * E2E_TEST_TIMEOUT_MS }, async () => {
+    const oauth = await startMcpOauthFixture();
+    const fixture = await startMcpHttpFixture({ era: 'modern', oauth });
+    try {
+      const { home } = await prepareProduct({ settings: { mcpServers: { remote: { type: 'http', url: fixture.url } } } });
+
+      const before = await runCli(home, ['mcp', 'list']);
+      expect(before.code).toBe(0);
+      expect(openerCallsOf(home)).toEqual([]);
+
+      const login = startCli(home, ['mcp', 'login', 'remote']);
+      const [call] = await until(
+        () => {
+          const calls = openerCallsOf(home);
+          return calls.length > 0 ? calls : undefined;
+        },
+        { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the stand-in for the program that opens a URL to be run with the authorization URL' },
+      );
+      const url = call?.args[0];
+      if (call === undefined || url === undefined) throw new Error('the stand-in was run without a URL');
+      expect(call).toEqual({ program: 'browser', args: [url] });
+      await approveInBrowser(url);
+      const finished = await login.result;
+      expect(finished.stderr).toBe('');
+      expect(finished.code).toBe(0);
+      expect(finished.stdout).toBe(`Authorize MCP server remote in your browser:\n${url}\nMCP server remote is authorized\n`);
+
+      const after = await runCli(home, ['mcp', 'list']);
+      expect(after.stdout).toMatch(/^remote\s+user\s+http\s+authorized\s/m);
+      expect(openerCallsOf(home)).toEqual([{ program: 'browser', args: [url] }]);
+    } finally {
+      await fixture.close();
+      await oauth.close();
+    }
+  });
+
   it(titleOf('cli-mcp-login'), { timeout: 3 * E2E_TEST_TIMEOUT_MS }, async () => {
     const oauth = await startMcpOauthFixture();
     const fixture = await startMcpHttpFixture({ era: 'modern', oauth });
@@ -299,7 +328,7 @@ describe('momonga with MCP servers', () => {
         { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the browser port to be asked to open the authorization URL' },
       );
       if (url === undefined) throw new Error('no URL was opened');
-      await approveAsUser(url);
+      await approveInBrowser(url);
       const finished = await login.result;
       expect(finished.stderr).toBe('');
       expect(finished.code).toBe(0);
@@ -346,7 +375,7 @@ describe('momonga with MCP servers', () => {
         },
         { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the authorization URL to be printed' },
       );
-      await approveAsUser(url);
+      await approveInBrowser(url);
       const finished = await login.result;
       expect(finished.code).toBe(0);
       expect(finished.stdout).toContain('MCP server remote is authorized');

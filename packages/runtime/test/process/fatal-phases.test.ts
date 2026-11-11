@@ -49,7 +49,7 @@ vi.mock('../../src/worker/worker.ts', async (importOriginal) => {
 });
 
 const DRAIN_MS = 60_000;
-const ALL_STEPS = ['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock'];
+const ALL_STEPS = ['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'sandbox', 'lock'];
 
 beforeEach(() => {
   control.onFatal = [];

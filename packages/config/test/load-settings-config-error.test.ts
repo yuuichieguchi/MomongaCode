@@ -15,12 +15,12 @@ const failureOf = async (tree: Tree): Promise<Error> => {
 };
 
 describe('loadSettings raises ConfigError for project settings content', () => {
-  it('a missing project additionalDirectories entry', async () => {
+  it('a missing project additionalDirectories entry is no failure: it is skipped with a warning naming the file', async () => {
     const tree = makeTree();
     const file = writeJson(projectSettingsPath(tree), { permissions: { additionalDirectories: ['./missing'] } });
-    const error = await failureOf(tree);
-    expect(error).toBeInstanceOf(ConfigError);
-    expect(error.message).toContain(file);
+    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    expect(result.settings.permissions.additionalDirectories).toEqual([]);
+    expect(result.warnings).toEqual([`${file}: additionalDirectories entry "./missing" does not exist; skipped`]);
   });
 
   it('a project additionalDirectories entry that is a file', async () => {

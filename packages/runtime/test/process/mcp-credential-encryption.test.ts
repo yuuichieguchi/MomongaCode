@@ -46,6 +46,7 @@ const authorizingThroughStore = async (secretStore: { kind: 'available'; store: 
       close: async () => undefined,
     }) as unknown as McpAuthorizingPool;
   const toolRuntime = runtime.createToolRuntime({
+    version: '0.0.0-test',
     network: UNCONFIGURED_NETWORK,
     paths: f.temp.paths,
     sharedPaths: f.temp.paths,

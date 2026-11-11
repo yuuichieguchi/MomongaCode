@@ -404,14 +404,14 @@ describe('describeRunError for plan_use_not_enabled and plan_not_eligible in a h
   const plan = { profile: 'chatgpt', account: 'work' };
 
   it('plan_use_not_enabled names the reconsent command, then the cause', () => {
-    expect(describeRunError({ code: 'plan_use_not_enabled', message: 'Plan use is not enabled.', plan }, 'headless')).toEqual([
+    expect(describeRunError({ code: 'plan_use_not_enabled', message: 'Plan use is not enabled.', plan }, 'cli')).toEqual([
       'Plan use is not enabled. · Run momonga auth login chatgpt --account work --reconsent to enable it',
       'cause: plan_use_not_enabled',
     ]);
   });
 
   it('plan_not_eligible prints the message, the cause, then the way to another account or an API key', () => {
-    const lines = describeRunError({ code: 'plan_not_eligible', message: 'Not eligible.', plan }, 'headless');
+    const lines = describeRunError({ code: 'plan_not_eligible', message: 'Not eligible.', plan }, 'cli');
     expect(lines).toHaveLength(3);
     expect(lines.slice(0, 2)).toEqual(['Not eligible.', 'cause: plan_not_eligible']);
     expect(lines[2]?.startsWith('Run momonga auth login chatgpt --account ')).toBe(true);
@@ -419,11 +419,11 @@ describe('describeRunError for plan_use_not_enabled and plan_not_eligible in a h
   });
 
   it.each(['plan_use_not_enabled', 'plan_not_eligible'])('%s keeps the default line when the error carries no plan', (code) => {
-    expect(describeRunError({ code, message: 'text' }, 'headless')).toEqual([`${code}: text`]);
+    expect(describeRunError({ code, message: 'text' }, 'cli')).toEqual([`${code}: text`]);
   });
 
   it('the usage codes keep the default line', () => {
-    expect(describeRunError({ code: 'plan_usage_limit', message: 'Manage usage', plan }, 'headless')).toEqual(['plan_usage_limit: Manage usage']);
+    expect(describeRunError({ code: 'plan_usage_limit', message: 'Manage usage', plan }, 'cli')).toEqual(['plan_usage_limit: Manage usage']);
   });
 });
 

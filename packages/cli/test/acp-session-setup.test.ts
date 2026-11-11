@@ -109,11 +109,11 @@ describe('the ACP mode ids are the mode names (design 8.2 row 15)', () => {
     const state = modeStateOf({ permissionMode: 'manual', bypassAllowed: true, autoAvailable: true });
     expect(state.currentModeId).toBe('manual');
     expect(state.availableModes).toEqual([
-      { id: 'manual', name: 'Manual', description: 'asks before every file change and command' },
-      { id: 'acceptEdits', name: 'Accept edits', description: 'accepts file edits inside the workspace, asks before commands' },
-      { id: 'plan', name: 'Plan', description: 'read-only tools, the agent proposes a plan' },
-      { id: 'auto', name: 'Auto', description: 'an automatic classifier decides which calls are allowed' },
-      { id: 'bypassPermissions', name: 'Bypass permissions', description: 'runs every tool without asking' },
+      { id: 'manual', name: 'manual', description: 'asks before every file change and command' },
+      { id: 'acceptEdits', name: 'acceptEdits', description: 'accepts file edits inside the workspace, asks before commands' },
+      { id: 'plan', name: 'plan', description: 'read-only tools, the agent proposes a plan' },
+      { id: 'auto', name: 'auto', description: 'an automatic classifier decides which calls are allowed' },
+      { id: 'bypassPermissions', name: 'bypassPermissions', description: 'runs every tool without asking' },
     ]);
   });
 

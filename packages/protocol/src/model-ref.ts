@@ -1,3 +1,6 @@
+import { messageOf } from './vocabulary.ts';
+import type { Surface } from './vocabulary.ts';
+
 export const PROVIDER_NAME_PATTERN = /^[a-z][a-z0-9._-]*$/;
 
 export type ModelView = { canon: string; provider: string; ownName: string; defaultTag?: string };
@@ -107,21 +110,14 @@ export class ModelRefError extends Error {
   }
 }
 
-const COUNT_WORDS: Readonly<Record<number, string>> = { 2: 'two', 3: 'three' };
-
-export const serverCountText = (count: number): string => COUNT_WORDS[count] ?? String(count);
-
-export const NO_MODEL_CONNECTED_TEXT = 'No model is connected. Use /login to connect one.';
-
-export const modelRefErrorOf = (text: string, resolution: Exclude<TypedResolution, { kind: 'found' }>, views: ModelViews): ModelRefError => {
+export const modelRefErrorOf = (text: string, resolution: Exclude<TypedResolution, { kind: 'found' }>, views: ModelViews, surface: Surface): ModelRefError => {
   const index = indexOf(views);
   if (resolution.kind === 'ambiguous') {
     const choices = resolution.choices.map((choice) => displayIn(index, choice));
-    return new ModelRefError('ambiguous_model', text, choices, `The model "${text}" is served by ${serverCountText(choices.length)} servers: ${choices.join(', ')}. Write one of them.`);
+    return new ModelRefError('ambiguous_model', text, choices, messageOf('modelAmbiguous', surface, { text, choices }));
   }
   const choices = views.map((view) => displayIn(index, view));
-  const rest = choices.length === 0 ? NO_MODEL_CONNECTED_TEXT : `Configured models: ${choices.join(', ')}.`;
-  return new ModelRefError('model_not_found', text, choices, `The model "${text}" is not configured. ${rest}`);
+  return new ModelRefError('model_not_found', text, choices, messageOf('modelNotConfigured', surface, { text, choices }));
 };
 
 export const STORED_MODEL_KEYS = {

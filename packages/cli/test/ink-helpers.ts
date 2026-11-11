@@ -40,6 +40,30 @@ export const renderObservable = (element: ReactElement): Instance => {
   return instance;
 };
 
+type TestTimers = { setTimeout(run: () => void, ms: number): unknown; clearTimeout(handle: unknown): void };
+
+type AtOnce = { cancelled: boolean };
+
+const isAtOnce = (handle: unknown): handle is AtOnce => typeof handle === 'object' && handle !== null && 'cancelled' in handle;
+
+export const TEST_KEY_SETTLE_MS = 0.5;
+
+export const settleAtOnce = <T extends TestTimers>(timers: T): T => ({
+  ...timers,
+  setTimeout: (run: () => void, ms: number): unknown => {
+    if (ms !== TEST_KEY_SETTLE_MS) return timers.setTimeout(run, ms);
+    const handle: AtOnce = { cancelled: false };
+    queueMicrotask(() => {
+      if (!handle.cancelled) run();
+    });
+    return handle;
+  },
+  clearTimeout: (handle: unknown): void => {
+    if (isAtOnce(handle)) handle.cancelled = true;
+    else timers.clearTimeout(handle);
+  },
+});
+
 export const FRAME_BOUND_MS = 10_000;
 
 type Source = (instance: Instance) => string | undefined;

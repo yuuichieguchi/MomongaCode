@@ -90,7 +90,7 @@ describe('reopening a session from the shell (9.1, 9.2)', () => {
   it('refuses an id no session has and leaves with that reason', async () => {
     const { app, exited } = await start({ conversations }, { reopen: { kind: 'id', id: 'ffffffff' }, now: () => NOW });
 
-    expect((await exited).error?.message).toBe('No conversation has the id ffffffff.');
+    expect((await exited).error?.message).toBe('No session has the id ffffffff.');
     app.unmount();
   });
 
@@ -139,7 +139,7 @@ describe('/resume (9.1, 4.3)', () => {
     const { app } = await start({ conversations }, { now: () => NOW });
     await untilFrame(app, 'mode: manual');
     await enter(app, '/resume ffffffff');
-    await untilFrame(app, 'No conversation has the id ffffffff.');
+    await untilFrame(app, 'No session has the id ffffffff.');
     await enter(app, '/resume aaaaaaaa');
     await untilFrame(app, 'It is fixed.');
     app.unmount();

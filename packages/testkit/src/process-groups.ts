@@ -1,4 +1,4 @@
-import { forceKillGroup, generationLayout, inspectProcessLock, isProcessAlive, listGenerationNumbers, momongaPaths, realGroupTiming } from '@momonga/foundation';
+import { forceKillGroup, generationLayout, inspectProcessLock, isProcessAlive, listGenerationNumbers, momongaPaths, systemWaitTiming } from '@momonga/foundation';
 
 export const CLEANUP_KILL_DEADLINE_MS = 5000;
 const HOLDER_EXIT_POLL_MS = 20;
@@ -18,7 +18,7 @@ const stopHolderOf = async (lockPath: string): Promise<number | undefined> => {
   } catch (error) {
     if (!isMissingProcess(error)) throw error;
   }
-  const deadline = realGroupTiming.monotonicMs() + CLEANUP_KILL_DEADLINE_MS;
+  const deadline = systemWaitTiming.monotonicMs() + CLEANUP_KILL_DEADLINE_MS;
   while (isProcessAlive(pid) || (await inspectProcessLock(lockPath)).state !== 'free') {
     if (Date.now() >= deadline) throw new Error(`the supervisor ${pid} holding ${lockPath} did not exit within ${CLEANUP_KILL_DEADLINE_MS} ms of SIGKILL`);
     await new Promise<void>((resolve) => setTimeout(resolve, HOLDER_EXIT_POLL_MS));
@@ -36,7 +36,7 @@ export const stopSupervisorHolders = async (home: string): Promise<number[]> => 
 };
 
 export const killGroupsForCleanup = async (pgids: readonly number[]): Promise<void> => {
-  const deadline = realGroupTiming.monotonicMs() + CLEANUP_KILL_DEADLINE_MS;
+  const deadline = systemWaitTiming.monotonicMs() + CLEANUP_KILL_DEADLINE_MS;
   const gone = await Promise.all(pgids.map((pgid) => forceKillGroup(pgid, { deadline })));
   const survivors = pgids.filter((_, index) => !gone[index]);
   if (survivors.length > 0) throw new Error(`cleanup could not kill process groups ${survivors.join(', ')}`);

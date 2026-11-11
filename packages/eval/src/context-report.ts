@@ -1,6 +1,6 @@
 import { canonicalJson, defineProductSchema, isRecord, sha256Hex } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
-import { CACHE_READS_NOT_REPORTED, MODEL_KINDS, PRICE_NOT_RECORDED, UNPRICED_CODES, UNPRICED_CODE_TEXT, escapeTerminalLine, modelKindOf } from '@momonga/protocol';
+import { CACHE_READS_NOT_REPORTED, MODEL_KINDS, PRICE_NOT_RECORDED, UNPRICED_CODES, UNPRICED_CODE_TEXT, WORDS, escapeTerminalLine, modelKindOf } from '@momonga/protocol';
 import type { ModelKind } from '@momonga/protocol';
 import { clusterBootstrap } from './bootstrap.ts';
 import type { Cluster } from './bootstrap.ts';
@@ -25,8 +25,8 @@ import type { Answerer, Transcript } from './transcript.ts';
 export const CONTEXT_REPORT_FORMAT = 'momonga-eval-context-report/7';
 const RETIRED_CONTEXT_REPORT_FORMATS: Readonly<Record<string, string>> = {
   'momonga-eval-context-report/1': 'the policy and the code digest of the runs',
-  'momonga-eval-context-report/2': 'the targets that answered the runs and whether each is a model or a script',
-  'momonga-eval-context-report/3': 'an answerer whose adapter and model are unknown (a paid answer that recorded no answering target)',
+  'momonga-eval-context-report/2': 'what answered the runs and whether each is a model or a script',
+  'momonga-eval-context-report/3': 'an answerer whose adapter and model are unknown (a paid answer that recorded no answering model)',
   'momonga-eval-context-report/4': 'which calls the upstream reported cache reads for (an unreported cache read was recorded as 0)',
   'momonga-eval-context-report/5': 'the price outcome of the calls (why a cost is unmeasured)',
   'momonga-eval-context-report/6': 'the models the runs used (they were recorded as alias names)',
@@ -467,9 +467,9 @@ const tokenLines = (metrics: ContextMetrics, cases: readonly ContextCaseReport[]
 };
 
 const answeredLine = (report: Pick<ContextReport, 'answeredBy' | 'unrecordedAnswers'>): string => {
-  const targets = report.answeredBy.map((answerer) => `${answerer.target} (${answerer.answers})`);
-  const unrecorded = report.unrecordedAnswers === 0 ? [] : [`${report.unrecordedAnswers} transcript(s) record no answering target`];
-  return [...targets, ...unrecorded].join(', ') || 'no target recorded';
+  const answerers = report.answeredBy.map((answerer) => `${answerer.target} (${answerer.answers})`);
+  const unrecorded = report.unrecordedAnswers === 0 ? [] : [`${report.unrecordedAnswers} transcript(s) record no answering ${WORDS.model}`];
+  return [...answerers, ...unrecorded].join(', ') || `no ${WORDS.model} recorded`;
 };
 
 export const formatContextReport = (report: ContextReport): string => {
@@ -514,7 +514,7 @@ export const formatContextReport = (report: ContextReport): string => {
   lines.push(`unclassifiedCompactions ${report.unclassifiedCompactions}`);
   lines.push(`governanceRunsWithoutEvent ${report.governanceRunsWithoutEvent} (runs of cases with rules that loaded no governing set; each counts as an empty set)`);
   lines.push(`datasetSeed ${report.datasetSeed}`);
-  lines.push(`noiseTokens ${report.noiseTokens} (spent by the noise turns and their reflections before each task; counted against the dataset cap and not in tokensPerSuccess)`);
+  lines.push(`noiseTokens ${report.noiseTokens} (spent by the noise turns and their reflections before each case; counted against the dataset cap and not in tokensPerSuccess)`);
   lines.push(`noise reflections unsettled ${report.unsettledNoiseReflections} (a reflection of a noise run still pending or running past its bound; the charges recorded so far are in noiseTokens, and the cases stay measured)`);
   for (const stop of report.stopped) lines.push(`stopped ${stop.caseId} run ${stop.runIndex}: ${stop.reason} (counted as a failed run)`);
   return lines.map(escapeTerminalLine).join('\n');

@@ -3,7 +3,8 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { isRecord, isTransientErrno } from '@momonga/foundation';
 import type { Asker } from './asker.ts';
-import { HOOK_EVENTS, HOOK_MATCHER_EVENTS, hookMatcherError } from '@momonga/protocol';
+import { HOOK_EVENTS, HOOK_MATCHER_EVENTS, SERVER_KINDS, hookMatcherError } from '@momonga/protocol';
+import type { ServerKinds } from '@momonga/protocol';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import { looksLikeCredentialName } from './credential-env.ts';
 import { isAbsentPathError, readJsonFile, readJsonFileSync } from './json-file.ts';
@@ -261,13 +262,19 @@ export const readUserJsonFile = (home: string): JsonFile => {
 
 export const readUserLayer = (home: string): UserLayer => userLayerFrom(home, readUserJsonFile(home));
 
-export const userLayerFrom = (home: string, read: JsonFile, planProfiles: PlanProfiles = PLAN_PROFILES): UserLayer => {
+export type UserModelsSource = { source: string; home: string | undefined; warnings: string[]; planProfiles?: PlanProfiles; kinds?: ServerKinds };
+
+export const userModelsOf = (settings: Pick<Settings, 'models' | 'autoMode'> | undefined, { source, home, warnings, planProfiles = PLAN_PROFILES, kinds = SERVER_KINDS }: UserModelsSource): ResolvedModels => {
+  const declared = settings?.models;
+  return resolveModels(declared, { source, home, warnings, servers: serverRegistryOf(declared?.servers, source), planProfiles, classifier: settings?.autoMode?.classifier, kinds });
+};
+
+export const userLayerFrom = (home: string, read: JsonFile, planProfiles?: PlanProfiles): UserLayer => {
   try {
     const warnings: string[] = [];
     const file = userSettingsFile(home);
     const layer = buildLayer(read, file, 'user', home, path.dirname(file), false, warnings);
-    const declared = layer?.settings.models;
-    const models = resolveModels(declared, { source: file, home, warnings, servers: serverRegistryOf(declared?.servers, file), planProfiles, classifier: layer?.settings.autoMode?.classifier });
+    const models = userModelsOf(layer?.settings, { source: file, home, warnings, ...(planProfiles === undefined ? {} : { planProfiles }) });
     return { layer, models, warnings };
   } catch (error) {
     rethrowIfTransient(error);

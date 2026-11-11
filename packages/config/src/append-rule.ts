@@ -3,6 +3,7 @@ import path from 'node:path';
 import { isRecord } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
 import { editUserSettings } from './edit-user-settings.ts';
+import { settingsWriterPorts } from './file-lock.ts';
 import { localSettingsDirectory, reRootedRule, worktreeRootOf } from './local-settings.ts';
 import { parseRule } from './rule.ts';
 import type { RuleEffect } from './rule.ts';
@@ -36,5 +37,5 @@ export const appendPermissionRule = async ({ home, projectDir, rule, effect, por
   const stored = reRootedRule(rule, await fs.promises.realpath(projectDir), root);
   parseRule(stored, { effect, origin: 'local', source: file, settingsRoot: root, home, cwd: projectDir });
 
-  await editUserSettings(home, file, (document) => addRule(document, file, stored, effect), { ports, signal, ...(lockTimeoutMs === undefined ? {} : { lockTimeoutMs }) });
+  await editUserSettings(file, (document) => addRule(document, file, stored, effect), settingsWriterPorts(home, { ports, signal, ...(lockTimeoutMs === undefined ? {} : { lockTimeoutMs }) }));
 };

@@ -1,5 +1,5 @@
 import { plainHttpWarningText } from '@momonga/config';
-import { NO_MODEL_CONNECTED_TEXT, PROVIDER_NAME_PATTERN, SIGN_IN_REQUIRED_CODE } from '@momonga/protocol';
+import { PROVIDER_NAME_PATTERN, SIGN_IN_REQUIRED_CODE, messageOf } from '@momonga/protocol';
 import type { GatewayHealth } from '@momonga/protocol';
 import { SEPARATOR, addressesOf, modelRowOf, modelsDocumentOf, notListedOf } from '../../commands/models.ts';
 import type { ListedModel, ModelsDocument, ModelsEdit } from '../../commands/models.ts';
@@ -170,7 +170,7 @@ export const runModelsHub = async (context: ModelsFlowContext): Promise<void> =>
     const rows = hubRows({ document, plainHttp: opened.edit.resolved.plainHttp, signInRequired: signInRequiredOf(document, health) });
     const index = await chosenOf(context, {
       title: MODELS_TITLE,
-      lines: document.models.length === 0 ? [NO_MODEL_CONNECTED_TEXT] : [],
+      lines: document.models.length === 0 ? [messageOf('noModelConnected', 'tui')] : [],
       rows: rows.map((row) => ({ label: row.label, ...(row.kind === 'warning' ? { disabled: true } : {}), ...(row.kind === 'heading' ? { separator: true } : {}) })),
       initial: Math.min(at, rows.length - 1),
       filter: false,

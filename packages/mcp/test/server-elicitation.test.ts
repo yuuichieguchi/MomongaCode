@@ -8,6 +8,7 @@ import { BASE_ENV, NEVER_ABORTED, makeDir, onCleanup } from './mcp-harness.ts';
 
 const connect = async (): Promise<McpServerConnection> => {
   const connection = await connectMcpServer({
+    clientVersion: '0.0.0-test',
     name: 'legacy',
     config: { command: process.execPath, args: [MCP_LEGACY_SERVER_PATH], env: { [FIXTURE_EXTRA_TOOLS_ENV]: 'ask_name' } },
     scope: 'user',
@@ -47,6 +48,7 @@ describe('the time budget of a call that waits for the person', () => {
       },
     };
     const connection = await connectMcpServer({
+      clientVersion: '0.0.0-test',
       name: 'legacy',
       config: { command: process.execPath, args: [MCP_LEGACY_SERVER_PATH], env: { [FIXTURE_EXTRA_TOOLS_ENV]: 'ask_name' } },
       scope: 'user',
