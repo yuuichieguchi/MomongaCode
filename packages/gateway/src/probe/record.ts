@@ -54,7 +54,10 @@ export const saveProbeRecord = async (dir: string, key: ManagedRecordKey, report
 const corruptRecord = (file: string, target: string, problem: string, cause: unknown): Error =>
   new Error(`Probe record ${file} is unusable (${problem}). Delete it or run "/gateway probe ${target}" in MomongaCode.`, { cause });
 
-export const loadProbeRecord = async (dir: string, key: ManagedRecordKey, currency: ManagedRecordCurrency, target: string): Promise<ProbeReport | null> => {
+export const recordOfServedModel = <Report extends Pick<ProbeReport, 'modelId'>>(report: Report, servedModel: string | undefined): Report | null =>
+  servedModel === undefined ? report : recordForIdentity(report, { modelId: report.modelId }, { modelId: servedModel });
+
+export const loadProbeRecord = async (dir: string, key: ManagedRecordKey, currency: ManagedRecordCurrency, target: string, servedModel?: string): Promise<ProbeReport | null> => {
   const file = managedRecordPath(dir, key);
   const raw = await fs.promises.readFile(file, 'utf8').catch((error: NodeJS.ErrnoException) => {
     if (error.code === 'ENOENT') return undefined;
@@ -74,7 +77,7 @@ export const loadProbeRecord = async (dir: string, key: ManagedRecordKey, curren
   if (matching === null || matching['descriptionDigest'] !== currency.descriptionDigest || !isCurrentRecord(matching, currency)) return null;
   const report = parsed['report'];
   if (!isProbeReport(report)) throw corruptRecord(file, target, 'invalid report', new TypeError('report does not match the probe report schema'));
-  return report;
+  return recordOfServedModel(report, servedModel);
 };
 
 export interface ResolvedToolCalling {

@@ -1,7 +1,8 @@
 import path from 'node:path';
+import { fileIdentityComponentOf } from '@momonga/foundation';
 import type { EndpointHost } from '@momonga/foundation';
 import { MANAGED_READY_LIMIT_MS, MANAGED_RESTART_POLICY, MANAGED_SERVERS, SOCKET_PLACEHOLDER, messageOf } from '@momonga/protocol';
-import type { ManagedEndpointForm, ManagedServerDescription } from '@momonga/protocol';
+import type { ManagedEndpointForm, ManagedServerDescription, ProbeKeyComponent } from '@momonga/protocol';
 import { ConfigError } from './config-error.ts';
 import type { DeclaredServer } from './settings.ts';
 
@@ -20,6 +21,18 @@ export const requireOfferedEndpointForm = (description: ManagedServerDescription
   return form;
 };
 
+const OPTION_VALUE = /^-[^=]*=(.*)$/s;
+
+const pathOfArgument = (argument: string): string | undefined => {
+  if (argument === SOCKET_PLACEHOLDER) return undefined;
+  const value = OPTION_VALUE.exec(argument)?.[1] ?? argument;
+  return path.isAbsolute(value) ? value : undefined;
+};
+
+const pathArgumentsOf = (args: readonly string[]): string[] => [...new Set(args.flatMap((argument) => pathOfArgument(argument) ?? []))];
+
+const declaredIdentityOf = (declared: DeclaredServer): readonly ProbeKeyComponent[] => ['binarySha256', 'hostOsBuild', ...pathArgumentsOf(declared.args).map(fileIdentityComponentOf)];
+
 const declaredDescriptionOf = (id: string, declared: DeclaredServer): ManagedServerDescription => ({
   id,
   provider: id,
@@ -29,7 +42,7 @@ const declaredDescriptionOf = (id: string, declared: DeclaredServer): ManagedSer
   endpoint: { forms: declared.endpoint?.forms ?? DEFAULT_DECLARED_ENDPOINT_FORMS },
   ready: { method: 'GET', path: declared.readyPath, status: 200, limitMs: MANAGED_READY_LIMIT_MS },
   preconditions: [],
-  identity: ['binarySha256', 'hostOsBuild'],
+  identity: declaredIdentityOf(declared),
   restart: MANAGED_RESTART_POLICY,
   models: { listPath: '/v1/models', idPath: ['data', '0', 'id'] },
   toolForms: ['native', 'envelope'],
