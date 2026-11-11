@@ -26,7 +26,7 @@ describe('the origin of a run in a grouped session', () => {
     await indexAll(store);
     await store.trust.setAsked(project, 'untrusted', NEVER_CANCELLED);
     await store.trust.setAsked(project, 'trusted', NEVER_CANCELLED);
-    const result = store.search.query({ trusted: true, project }, { query: 'quokka', scope: 'project' });
+    const result = await store.search.query({ trusted: true, project }, { query: 'quokka', scope: 'project' });
     expect(result.sessions).toHaveLength(1);
     const [grouped] = result.sessions;
     expect(Object.keys(grouped ?? {}).sort()).toEqual(['project', 'runs', 'sessionId', 'span']);

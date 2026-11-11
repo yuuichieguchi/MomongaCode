@@ -16,7 +16,7 @@ describe('the denial callback of a search', () => {
     await finishedRun(store, b, 'task', [{ tool: { name: 'Read', path: '/p/b.txt', output: 'projectterm in b' } }]);
     await indexAll(store);
     const seen: Array<[string, string]> = [];
-    store.search.query({ trusted: true, project: a }, { query: 'projectterm', scope: 'all', readDenied: (target, project) => (seen.push([target, project]), false) });
+    await store.search.query({ trusted: true, project: a }, { query: 'projectterm', scope: 'all', readDenied: (target, project) => (seen.push([target, project]), false) });
     const judged = [...new Set(seen.map(([target, project]) => `${target} ${project}`))].sort();
     expect(judged).toEqual([`/p/a.txt ${a}`, `/p/b.txt ${b}`]);
   });
@@ -44,9 +44,9 @@ describe('a denied path in the touched paths of a run document', () => {
     await finishedRun(store, '/work/a', 'task', [{ tool: { name: 'Read', path: secret, output: 'unrelated output' } }]);
     await indexAll(store);
     const denied = (target: string) => target.startsWith('/work/a/secret/');
-    const plain = store.search.query(OWN, { query: 'key.txt', scope: 'project' });
+    const plain = await store.search.query(OWN, { query: 'key.txt', scope: 'project' });
     expect(anchorsOf(plain)).toHaveLength(1);
-    const result = store.search.query(OWN, { query: 'key.txt', scope: 'project', readDenied: denied });
+    const result = await store.search.query(OWN, { query: 'key.txt', scope: 'project', readDenied: denied });
     expect(anchorsOf(result)).toEqual([]);
     expect(result.withheld).toBe(2);
   });
@@ -55,7 +55,7 @@ describe('a denied path in the touched paths of a run document', () => {
     const { store } = harness();
     await finishedRun(store, '/work/a', 'rename the widgetterm parser', [{ tool: { name: 'Read', path: secret, output: 'unrelated output' } }]);
     await indexAll(store);
-    const result = store.search.query(OWN, { query: 'widgetterm', scope: 'project', readDenied: (target) => target.startsWith('/work/a/secret/') });
+    const result = await store.search.query(OWN, { query: 'widgetterm', scope: 'project', readDenied: (target) => target.startsWith('/work/a/secret/') });
     expect(JSON.stringify(result)).not.toContain('key.txt');
     expect(anchorsOf(result)).toHaveLength(1);
   });
@@ -70,10 +70,10 @@ describe('the candidate bound of an indexed query', () => {
     clock.advance(1000);
     const newest = await finishedRun(store, '/work/a', 'candidateterm newest');
     await indexAll(store);
-    const bounded = store.search.query(OWN, { query: 'candidateterm', scope: 'project', candidateLimit: 2 });
+    const bounded = await store.search.query(OWN, { query: 'candidateterm', scope: 'project', candidateLimit: 2 });
     expect(anchorsOf(bounded).map((anchor) => anchor.runId).sort()).toEqual([middle.id, newest.id].sort());
     expect(bounded.searched).toBe(2);
-    const open = store.search.query(OWN, { query: 'candidateterm', scope: 'project', candidateLimit: 3 });
+    const open = await store.search.query(OWN, { query: 'candidateterm', scope: 'project', candidateLimit: 3 });
     expect(anchorsOf(open).map((anchor) => anchor.runId)).toContain(old.id);
     expect(open.searched).toBeUndefined();
   });

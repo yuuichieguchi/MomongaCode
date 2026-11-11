@@ -505,7 +505,7 @@ export type HistoryQueryRequest = {
   scope: HistoryScope;
   scanLimit?: number;
   candidateLimit?: number;
-  readDenied?: (path: string, project: string) => boolean;
+  readDenied?: (path: string, project: string) => boolean | Promise<boolean>;
 };
 
 export type HistorySession = { sessionId: string; project: string; span: { from: number; to: number }; runs: HistoryAnchor[] };
@@ -545,7 +545,7 @@ export type RunFactsStore = {
 export type SearchStore = {
   indexBatch(options: { limit: number; redactor: Redactor; maxChars?: number }): Promise<{ runs: number }>;
   visibleProjects(visibility: HistoryVisibility, scope: HistoryScope): string[];
-  query(visibility: HistoryVisibility, request: HistoryQueryRequest): HistoryQueryResult;
+  query(visibility: HistoryVisibility, request: HistoryQueryRequest): Promise<HistoryQueryResult>;
   readRange(visibility: HistoryVisibility, request: HistoryReadRequest): Promise<HistoryReadResult>;
   projectOf(visibility: HistoryVisibility, runId: string): string | undefined;
 };

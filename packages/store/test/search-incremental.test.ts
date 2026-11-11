@@ -157,7 +157,7 @@ describe('the search document of a run, kept at each append (row 12, O9 option c
     expect(held()).toBe(steps + 1);
     expect([...seen].filter((count) => count > 0 && count < steps + 1).length).toBeGreaterThan(1);
     expect(indexedDocuments(dbPath, runId)).toEqual(wholeExtraction(db, runId, 'COMPLETED', redactor));
-    expect(store.search.query({ project: '/work/a', trusted: false }, { query: 'widget', scope: 'project' }).sessions).toHaveLength(1);
+    expect((await store.search.query({ project: '/work/a', trusted: false }, { query: 'widget', scope: 'project' })).sessions).toHaveLength(1);
   });
 
   it('continues a run whose indexing failed between two pages, and writes each of its documents once', async () => {

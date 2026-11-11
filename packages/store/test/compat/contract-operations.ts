@@ -78,7 +78,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
       ok(store.append(claim, [call('mem-1')]), 'append');
       await store.memories.save({ origin: 'trusted', scope: 'project', project: '/work/contract', text: 'contract memory', runId: run.id, step: 1, callId: 'mem-1' });
       expect(store.memories.list().length).toBeGreaterThan(0);
-      store.search.query({ trusted: true, project: '/work/contract' }, { query: 'contractneedle', scope: 'project' });
+      await store.search.query({ trusted: true, project: '/work/contract' }, { query: 'contractneedle', scope: 'project' });
       store.recordFidelityVerdicts(run.id, '/work/contract', { checkedThrough: 1, verdicts: [{ token: 'make', inh: 'none', inhDeps: [], taskStated: false, statedAt: null, executedAt: null, ownDeps: [] }] });
     },
   },

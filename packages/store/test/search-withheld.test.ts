@@ -20,7 +20,7 @@ describe('search hits whose path a read deny rule now covers', () => {
     const { store } = harness();
     const run = await finishedRun(store, '/work/a', 'task', stepsOf);
     await indexAll(store);
-    const result = store.search.query(OWN, { query: 'withheldterm', scope: 'project', readDenied: denySecret });
+    const result = await store.search.query(OWN, { query: 'withheldterm', scope: 'project', readDenied: denySecret });
     expect(anchorsOf(result).map((anchor) => anchor.steps.map((step) => step.step))).toEqual([[2]]);
     expect(anchorsOf(result)[0]?.runId).toBe(run.id);
     expect(JSON.stringify(result)).not.toContain('inside the secret file');
@@ -31,7 +31,7 @@ describe('search hits whose path a read deny rule now covers', () => {
     const { store } = harness();
     await finishedRun(store, '/work/a', 'task', stepsOf);
     await indexAll(store);
-    const result = store.search.query(OWN, { query: 'withheldterm', scope: 'project' });
+    const result = await store.search.query(OWN, { query: 'withheldterm', scope: 'project' });
     expect(anchorsOf(result)[0]?.steps.map((step) => step.step).sort()).toEqual([1, 2]);
     expect(result.withheld).toBeUndefined();
   });
@@ -40,7 +40,7 @@ describe('search hits whose path a read deny rule now covers', () => {
     const { store } = harness();
     await finishedRun(store, '/work/a', 'task', [stepsOf[0] as (typeof stepsOf)[number]]);
     await indexAll(store);
-    const result = store.search.query(OWN, { query: 'withheldterm', scope: 'project', readDenied: denySecret });
+    const result = await store.search.query(OWN, { query: 'withheldterm', scope: 'project', readDenied: denySecret });
     expect(anchorsOf(result)).toEqual([]);
     expect(result.withheld).toBe(1);
   });
@@ -49,7 +49,7 @@ describe('search hits whose path a read deny rule now covers', () => {
     const { store } = harness();
     await finishedRun(store, '/work/a', 'task', [{ tool: { name: 'Read', path: SECRET, output: '設計 inside the secret file' } }]);
     await indexAll(store);
-    const result = store.search.query(OWN, { query: '設計', scope: 'project', readDenied: denySecret });
+    const result = await store.search.query(OWN, { query: '設計', scope: 'project', readDenied: denySecret });
     expect(anchorsOf(result)).toEqual([]);
     expect(result.withheld).toBe(1);
   });
@@ -65,9 +65,9 @@ describe('the origin of a run', () => {
     await store.trust.setAsked(a, 'untrusted', NEVER_CANCELLED);
     await store.trust.setAsked(b, 'trusted', NEVER_CANCELLED);
     await indexAll(store);
-    const origins = (project: string) => Object.fromEntries(anchorsOf(store.search.query({ trusted: true, project }, { query: 'needleterm', scope: 'project' })).map((anchor) => [anchor.runId, anchor.origin]));
-    expect(origins(a)).toEqual({ [trustedThen.id]: 'trusted' });
-    expect(origins(b)).toEqual({ [untrustedThen.id]: 'untrusted' });
+    const origins = async (project: string) => Object.fromEntries(anchorsOf(await store.search.query({ trusted: true, project }, { query: 'needleterm', scope: 'project' })).map((anchor) => [anchor.runId, anchor.origin]));
+    expect(await origins(a)).toEqual({ [trustedThen.id]: 'trusted' });
+    expect(await origins(b)).toEqual({ [untrustedThen.id]: 'untrusted' });
   });
 });
 

@@ -96,7 +96,7 @@ describe('search documents', () => {
     expect(bodies.join('\n')).not.toContain(FAKE_KEY);
     expect(indexMatches(dbPath, 'abcdefghij')).toBe(0);
     expect(indexMatches(dbPath, 'xyz012345')).toBe(0);
-    expect(anchorsOf(store.search.query({ trusted: true, project: '/work/a' }, { query: 'abcdefghij', scope: 'project' }))).toEqual([]);
+    expect(anchorsOf(await store.search.query({ trusted: true, project: '/work/a' }, { query: 'abcdefghij', scope: 'project' }))).toEqual([]);
   });
 
   it('never cuts a secret before redacting it, wherever the head and tail end', async () => {
