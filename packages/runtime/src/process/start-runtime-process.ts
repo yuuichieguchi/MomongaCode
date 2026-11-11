@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { ConfigError, loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, stopValuesOfSettings, resolveTelemetrySettings } from '@momonga/config';
+import { ConfigError, loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, stopValuesOfSettings, resolveRetentionSettings, resolveTelemetrySettings } from '@momonga/config';
 import type { ResolvedSettings, StopValuesReader } from '@momonga/config';
 import { installTrust, settledOrAborted, layoutProcessInspector, busyTimeoutMs } from '@momonga/foundation';
 import {
@@ -548,7 +548,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     const traceStore: TraceStore = await step('trace-store', () => openTraceStore({ path: paths.traces.runtime, clock, busyTimeoutMs: storeBusyWaitMs }));
     cleanups.push({ name: 'trace-store', run: () => traceStore.close() });
 
-    const contentRetentionMs = resolveTelemetrySettings(settings.telemetry).contentRetentionDays * DAY_MS;
+    const contentRetentionMs = resolveRetentionSettings(settings.retention).days * DAY_MS;
     let bodyPurge: { stop(): void } | undefined;
     const applyBodyPurge = (role: GenerationRole): void => {
       if (role === 'serving') {
@@ -583,7 +583,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           store: traceStore,
           exporters: exportersFor(current.telemetry, outbound),
           captureMessageContent: resolved.captureMessageContent,
-          contentRetentionMs: resolved.contentRetentionDays * DAY_MS,
+          contentRetentionMs: resolveRetentionSettings(current.retention).days * DAY_MS,
         });
         return { telemetry, tracer: createTracerPort(telemetry) };
       },

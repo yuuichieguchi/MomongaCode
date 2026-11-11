@@ -15,6 +15,7 @@ import {
   registeredServer,
   requireOfferedEndpointForm,
   resolveNetwork,
+  resolveRetentionSettings,
   resolveTelemetrySettings,
   settingsInputsDigest,
   stopValuesOfSettings,
@@ -1014,7 +1015,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         store: traceStore,
         exporters: exportersFor(current.telemetry, outbound),
         captureMessageContent: resolved.captureMessageContent,
-        contentRetentionMs: resolved.contentRetentionDays * DAY_MS,
+        contentRetentionMs: resolveRetentionSettings(current.retention).days * DAY_MS,
       });
     };
     const telemetries = createPinnedDerivation<Telemetry>({
@@ -1030,7 +1031,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     });
     cleanups.push(() => telemetries.retireAll());
     (await telemetries.admit(startSignal)).release();
-    const contentRetentionMs = resolveTelemetrySettings(settings.telemetry).contentRetentionDays * DAY_MS;
+    const contentRetentionMs = resolveRetentionSettings(settings.retention).days * DAY_MS;
     const bodyPurge = startBodyPurge({
       store: traceStore,
       timers,

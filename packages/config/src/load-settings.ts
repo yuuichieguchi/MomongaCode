@@ -4,6 +4,7 @@ import type { HooksSettings, PermissionMode } from '@momonga/protocol';
 import { DEFAULT_SANDBOX_NETWORK, DEFAULT_STOP_VALUES, answeredLater, askedPaths } from '@momonga/foundation';
 import type { FileSystem, PathAsking } from '@momonga/foundation';
 import { askerOf } from './asker.ts';
+import { acceptedCheckOf } from './declared-checks.ts';
 import type { Asker } from './asker.ts';
 import type { SandboxNetworkSetting, StopValues } from '@momonga/foundation';
 
@@ -18,6 +19,7 @@ import {
   mergeMemorySettings,
   mergeToolsSettings,
   mergeVerificationSettings,
+  withCompletionConditions,
 } from './context-settings.ts';
 import type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from './context-settings.ts';
 import { keyStoreOf, layoutOf } from './layout.ts';
@@ -27,7 +29,7 @@ import { EDIT_TOOLS, NEGATION_PREFIX, NETWORK_RULE_NOT_ENFORCED, NETWORK_RULE_SU
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
 import { escapePointerSegment } from './json-file.ts';
 import { assertSettings, defaultSandboxSetting, defaultTuiSettings } from './settings.ts';
-import type { AutoModeSettings, CredentialsSettings, McpSettings, RuntimeSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, ResolvedSandboxUnixSockets, ResolvedTuiSettings, SandboxSetting, Settings, TelemetrySettings, CeilingsSettings, ForgeInstanceSettings, LimitsSettings, MandateProfileSettings, OperationsSettings } from './settings.ts';
+import type { ProjectChecksSettings, RetentionSettings, AutoModeSettings, CredentialsSettings, McpSettings, RuntimeSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, ResolvedSandboxUnixSockets, ResolvedTuiSettings, SandboxSetting, Settings, TelemetrySettings, CeilingsSettings, ForgeInstanceSettings, LimitsSettings, MandateProfileSettings, OperationsSettings } from './settings.ts';
 import type { ResolvedModels } from './models.ts';
 
 
@@ -60,6 +62,8 @@ export type ResolvedSettings = {
   sandboxNetwork: SandboxNetworkSetting;
   sandboxUnixSockets: ResolvedSandboxUnixSockets;
   telemetry?: TelemetrySettings;
+  retention?: RetentionSettings;
+  projectChecks?: ProjectChecksSettings;
   network?: NetworkSettings;
   pricing?: PriceEntrySettings[];
   limits?: LimitsSettings;
@@ -244,6 +248,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
     tools: defaultToolsSettings(),
   };
   let unixSockets: { source: string; allow: string[] } | undefined;
+  let declaredCommands: string[] | undefined;
   for (const layer of layers) {
     const {
       permissions,
@@ -264,6 +269,8 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
       sandboxNetwork,
       sandboxUnixSockets,
       telemetry,
+      retention,
+      projectChecks,
       network,
       pricing,
       limits,
@@ -278,6 +285,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
     } = layer.settings;
     merged.memory = mergeMemorySettings(merged.memory, memory);
     merged.verification = mergeVerificationSettings(merged.verification, verification);
+    declaredCommands = verification?.commands ?? declaredCommands;
     merged.context = mergeContextSettings(merged.context, context);
     merged.tools = mergeToolsSettings(merged.tools, tools);
     if (permissions?.defaultMode !== undefined) {
@@ -318,6 +326,8 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
     if (sandboxNetwork !== undefined) merged.sandboxNetwork = sandboxNetwork;
     if (sandboxUnixSockets !== undefined) unixSockets = { source: layer.source, allow: sandboxUnixSockets.allow ?? [] };
     if (telemetry !== undefined) merged.telemetry = telemetry;
+    if (retention !== undefined) merged.retention = retention;
+    if (projectChecks !== undefined) merged.projectChecks = projectChecks;
     if (network !== undefined) merged.network = network;
     if (pricing !== undefined) merged.pricing = pricing;
     if (limits !== undefined) merged.limits = limits;
@@ -327,6 +337,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
     if (operations !== undefined) merged.operations = operations;
   }
   if (unixSockets !== undefined) merged.sandboxUnixSockets = { allow: yield* enforceableUnixSockets(unixSockets, home, warnings) };
+  merged.verification = withCompletionConditions(merged.verification, declaredCommands, acceptedCheckOf(merged, projectReal));
   return merged;
 }
 
