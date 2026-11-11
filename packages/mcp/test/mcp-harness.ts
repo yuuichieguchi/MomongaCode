@@ -17,7 +17,7 @@ import { createToolExecutor, createToolRegistry } from '@momonga/tools';
 
 
 import type { BlobPort, ExecutionBatchInput, IdempotencyPort, LeasedBegin, ToolCall, ToolIdempotencyRecord, ToolSet } from '@momonga/tools';
-import { UNCONFIGURED_NETWORK, MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, createFakeClock, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, killPidsForCleanup, UNBOUNDED_OUTPUT_FIT, type FakeClock, type ModernFixtureRecord } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, createFakeClock, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, killPidsForCleanup, UNBOUNDED_OUTPUT_FIT, type FakeClock, type ModernFixtureRecord, pollUntil } from '@momonga/testkit';
 
 
 
@@ -75,13 +75,7 @@ export const makeRecordFile = (): string => {
   return file;
 };
 
-export const waitUntil = async (condition: () => boolean, description: string, limitMs = 10_000): Promise<void> => {
-  const startedAt = Date.now();
-  while (!condition()) {
-    if (Date.now() - startedAt > limitMs) throw new Error(`condition not reached: ${description}`);
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-};
+export const waitUntil = (condition: () => boolean, description: string, limitMs = 10_000): Promise<void> => pollUntil(condition, { description, boundMs: limitMs });
 
 export const waitForRecord = async (file: string, predicate: (entry: ModernFixtureRecord) => boolean): Promise<ModernFixtureRecord> => {
   await waitUntil(() => readRecords(file).some(predicate), `record in ${file}`);

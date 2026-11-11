@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
 import { GatewayRequestError } from '@momonga/runtime';
-import { deferred, within } from './deferred.ts';
+import { deferred } from './deferred.ts';
 import { LEASE_MS, bodyDigest, capabilitiesFor, compactKey, makeEnv, modelKey } from './harness.ts';
 import type { Env } from './harness.ts';
 import { assistantMessage, gated, textStep } from './scripts.ts';
@@ -40,7 +40,7 @@ describe('worker gateway cancel wiring', () => {
     const run = env.enqueue('Long answer');
     const statuses = recordStatusAtCancel(env, run.id);
     const running = env.runOnce(env.worker('worker-1', { cancelPollMs: 10 }));
-    await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the stream to start');
 
     await env.store.requestCancel(run.id);
     await env.settled(running, 'the worker to finish after cancel');
@@ -75,7 +75,7 @@ describe('worker gateway cancel wiring', () => {
     };
     const statuses = recordStatusAtCancel(env, run.id);
     const running = env.runOnce(env.worker('worker-1', { cancelPollMs: 10 }));
-    await within(compacting.promise, 5_000, 'the compaction to start');
+    await env.settled(compacting.promise, 'the compaction to start');
 
     await env.store.requestCancel(run.id);
     await env.settled(running, 'the worker to finish after cancel');
@@ -166,7 +166,7 @@ describe('worker gateway cancel wiring', () => {
     env.gateway.script.push(blocked);
     const run = env.enqueue('Work');
     const running = env.runOnce(env.worker('worker-a', { heartbeatMs: 10, cancelPollMs: 10 }));
-    await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the stream to start');
 
     env.clock.advance(LEASE_MS + 1);
     expect(env.store.claim('worker-thief')?.runId).toBe(run.id);

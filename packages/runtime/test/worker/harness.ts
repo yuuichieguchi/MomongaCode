@@ -23,7 +23,6 @@ import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
 import type { AbandonTarget, AnyTool, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
 import { evidenceHandler, fidelityHandler, inheritPlanHandler, inheritedWindowHandler, reflectionInputHandler, reportHandler, verdictHandler } from '../../src/memory/journal-thread.ts';
 import type { JournalHandler } from '../../src/memory/journal-thread.ts';
-import { within } from './deferred.ts';
 import { createFakeGateway } from './fake-gateway.ts';
 import type { FakeGateway } from './fake-gateway.ts';
 import { createFakeSettings } from './fake-settings.ts';
@@ -287,8 +286,8 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   cleanups.push(() => rawDb?.close());
   cleanups.push(async () => {
     gateway.releaseAll();
-    await within(Promise.allSettled(pendingRuns), 10_000, 'abandoned worker runs to settle');
-    await within(Promise.allSettled(workers.map((worker) => worker.stop())), 10_000, 'workers to stop');
+    await settled(Promise.allSettled(pendingRuns), 'abandoned worker runs to settle');
+    await settled(Promise.allSettled(workers.map((worker) => worker.stop())), 'workers to stop');
   });
 
   const session: Session = store.createSession({

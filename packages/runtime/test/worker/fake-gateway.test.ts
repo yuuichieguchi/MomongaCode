@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { StreamEvent } from '@momonga/protocol';
-import { within } from './deferred.ts';
+import { waitFor } from '@momonga/testkit';
 import { createFakeGateway } from './fake-gateway.ts';
 import { capabilitiesFor } from './harness.ts';
 import { callsStep, failedStep, gated, incompleteStep, functionCallItem, textStep, thrownStep } from './scripts.ts';
@@ -54,7 +54,7 @@ describe('fake gateway', () => {
     const step = gated(textStep('slow'), 2);
     gateway.script.push(step);
     const leader = drain(gateway.stream(BODY, options('k1')));
-    await within(step.gate.reached.promise, 1000, 'the gate');
+    await waitFor(() => step.gate.reached.settled(), { description: 'the gate' });
     const follower = drain(gateway.stream(BODY, options('k1')));
     step.gate.release.resolve();
     const [led, followed] = await Promise.all([leader, follower]);
@@ -77,7 +77,7 @@ describe('fake gateway', () => {
     gateway.script.push(step);
     const controller = new AbortController();
     const pending = drain(gateway.stream(BODY, options('k1', controller.signal)));
-    await within(step.gate.reached.promise, 1000, 'the gate');
+    await waitFor(() => step.gate.reached.settled(), { description: 'the gate' });
     controller.abort();
     await expect(pending).rejects.toThrow(/abort/i);
   });

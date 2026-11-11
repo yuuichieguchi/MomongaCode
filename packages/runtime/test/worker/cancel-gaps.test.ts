@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
-import { deferred, within } from './deferred.ts';
+import { deferred } from './deferred.ts';
 import { capabilitiesFor, makeEnv } from './harness.ts';
 import { assistantMessage, callsStep, textStep } from './scripts.ts';
 
@@ -30,7 +30,7 @@ describe('worker cancel before the model request', () => {
     const run = env.enqueue('Count first');
     const running = env.runOnce(env.worker('worker-1', { cancelPollMs: 10 }));
     try {
-      await within(reached.promise, 5_000, 'countTokens to be called');
+      await env.settled(reached.promise, 'countTokens to be called');
       await env.store.requestCancel(run.id);
       const [first] = env.gateway.countCalls;
       expect(first?.signal).toBeInstanceOf(AbortSignal);
@@ -69,7 +69,7 @@ describe('worker cancel before the model request', () => {
     };
     const running = env.runOnce(env.worker('worker-1', { cancelPollMs: 10 }));
     try {
-      await within(reached.promise, 2_000, 'compaction to start');
+      await env.settled(reached.promise, 'compaction to start');
       await env.store.requestCancel(run.id);
       await env.passTime(() => env.gateway.compacts[0]?.signal.aborted === true, 'the compaction signal to abort');
     } finally {
@@ -105,7 +105,7 @@ describe('worker cancel with a non-cancel error', () => {
         },
       }),
     );
-    await within(reached.promise, 5_000, 'the batch to start');
+    await env.settled(reached.promise, 'the batch to start');
     await env.store.requestCancel(run.id);
     await env.settled(running, 'the worker to finish after cancel');
 

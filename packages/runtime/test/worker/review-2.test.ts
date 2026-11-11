@@ -4,7 +4,7 @@ import type { RunEventPayload } from '@momonga/protocol';
 import type { GatewayPort } from '@momonga/runtime';
 import type { RuntimeStore } from '@momonga/store';
 import { createToolExecutor, defineTool } from '@momonga/tools';
-import { deferred, within } from './deferred.ts';
+import { deferred } from './deferred.ts';
 import { DEADLINE_MS, LEASE_MS, START_MS, makeEnv, toolKey, createdRun } from './harness.ts';
 import { pinnedStart } from './cancel-fixture.ts';
 import type { Env } from './harness.ts';
@@ -190,7 +190,7 @@ describe('worker classification of stream errors', () => {
     };
     const run = env.enqueue('Talk');
     const running = env.runOnce(env.worker('worker-1', { gateway, cancelPollMs: 10 }));
-    await within(reached.promise, 2_000, 'the stream to start');
+    await env.settled(reached.promise, 'the stream to start');
     await env.store.requestCancel(run.id);
     await env.settled(running, 'the worker to finish after cancel');
 

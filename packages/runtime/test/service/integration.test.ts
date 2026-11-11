@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Worker } from '@momonga/runtime';
 import { callsStep, textStep } from '../worker/scripts.ts';
-import { attachWorkerKit, startService, waitUntil } from './helpers.ts';
+import { attachWorkerKit, startService, pollFor } from './helpers.ts';
 import type { ServiceEnv, WorkerKit } from './helpers.ts';
 
 const REJECTED = 'The user rejected this tool call.';
@@ -30,7 +30,7 @@ describe('service and worker over the real socket', () => {
     const run = await env.createRun(session.id, { input: 'Say hello' });
 
     const stream = await env.stream(`/v1/runs/${run.id}/events`);
-    const frames = await stream.toEnd(10_000);
+    const frames = await stream.toEnd();
 
     expect(frames.at(-1)).toMatchObject({ type: 'run.status', to: 'COMPLETED' });
     expect(frames.filter((event) => event.type === 'agent.message.delta').map((event) => event.text).join('')).toBe('Hello from the fake model.');
@@ -48,16 +48,16 @@ describe('service and worker over the real socket', () => {
     const run = await env.createRun(session.id, { input: 'Write the file' });
     const stream = await env.stream(`/v1/runs/${run.id}/events`);
 
-    const untilRequest = await stream.until((event) => event.type === 'tool.permission.requested', 10_000);
+    const untilRequest = await stream.until((event) => event.type === 'tool.permission.requested');
     const requested = untilRequest.at(-1);
-    await waitUntil(() => env.store.getRun(run.id)?.status === 'WAITING_HUMAN', 10_000, 'the run to wait for a human');
+    await pollFor(() => env.store.getRun(run.id)?.status === 'WAITING_HUMAN', 10_000, 'the run to wait for a human');
     const [approval] = (await env.http('GET', `/v1/runs/${run.id}/approvals`)).json.approvals;
     expect(approval.id).toBe(requested?.approvalId);
 
     const resolved = await env.http('POST', `/v1/approvals/${approval.id}`, { body: { optionId: optionOf(approval, 'reject_once') } });
     expect(resolved.status).toBe(200);
 
-    const rest = await stream.toEnd(10_000);
+    const rest = await stream.toEnd();
     expect(rest.at(-1)).toMatchObject({ type: 'run.status', to: 'COMPLETED' });
     expect(rest.find((event) => event.type === 'tool.completed')).toMatchObject({ callId: kit.gateway.callId('call_w_1'), status: 'failed', output: REJECTED });
     expect(fs.existsSync(target)).toBe(false);
@@ -73,17 +73,17 @@ describe('service and worker over the real socket', () => {
     const session = await env.createSession();
     const first = await env.createRun(session.id, { input: 'Write the file' });
     const firstStream = await env.stream(`/v1/runs/${first.id}/events`);
-    await firstStream.until((event) => event.type === 'tool.permission.requested', 10_000);
-    await waitUntil(() => env.store.getRun(first.id)?.status === 'WAITING_HUMAN', 10_000, 'the first run to wait for a human');
+    await firstStream.until((event) => event.type === 'tool.permission.requested');
+    await pollFor(() => env.store.getRun(first.id)?.status === 'WAITING_HUMAN', 10_000, 'the first run to wait for a human');
     const [approval] = (await env.http('GET', `/v1/runs/${first.id}/approvals`)).json.approvals;
     expect((await env.http('POST', `/v1/approvals/${approval.id}`, { body: { optionId: optionOf(approval, 'allow_always') } })).status).toBe(200);
-    expect((await firstStream.toEnd(10_000)).at(-1)).toMatchObject({ type: 'run.status', to: 'COMPLETED' });
+    expect((await firstStream.toEnd()).at(-1)).toMatchObject({ type: 'run.status', to: 'COMPLETED' });
     expect(kit.settings.appended).toEqual([{ sessionId: session.id, effect: 'allow', rule: `Write(/${target})` }]);
     expect(fs.readFileSync(target, 'utf8')).toBe('first');
 
     kit.gateway.script.push(callsStep([{ callId: 'call_w_2', name: 'Write', args: { file_path: target, content: 'second' } }]), textStep('Written again.'));
     const second = await env.createRun(session.id, { input: 'Write it again' });
-    const secondFrames = await (await env.stream(`/v1/runs/${second.id}/events`)).toEnd(10_000);
+    const secondFrames = await (await env.stream(`/v1/runs/${second.id}/events`)).toEnd();
 
     expect(secondFrames.at(-1)).toMatchObject({ type: 'run.status', to: 'COMPLETED' });
     expect(secondFrames.map((event) => event.type)).not.toContain('tool.permission.requested');
@@ -105,9 +105,9 @@ describe('service and worker over the real socket', () => {
     expect(cancel.status).toBe(202);
     expect(cancel.json.run.status).toBe('CANCELLING');
 
-    await waitUntil(() => env.store.getRun(run.id)?.status === 'CANCELLED', 3_000, 'the run to reach CANCELLED');
+    await pollFor(() => env.store.getRun(run.id)?.status === 'CANCELLED', 3_000, 'the run to reach CANCELLED');
     expect(Date.now() - startedAt).toBeLessThan(3_000);
-    const rest = await stream.toEnd(3_000);
+    const rest = await stream.toEnd();
     expect(rest.at(-1)).toMatchObject({ type: 'run.status', to: 'CANCELLED' });
     expect(kit.toolbox.waitSignals.every((signal) => signal.aborted)).toBe(true);
     await kit.live.stop();

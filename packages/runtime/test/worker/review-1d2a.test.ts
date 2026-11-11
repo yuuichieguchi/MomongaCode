@@ -3,7 +3,7 @@ import type { RunEventPayload } from '@momonga/protocol';
 import { GatewayRequestError, LeaseLostError, ShutdownError } from '@momonga/runtime';
 import type { Worker } from '@momonga/runtime';
 import type { RuntimeStore } from '@momonga/store';
-import { deferred, waitUntil, within } from './deferred.ts';
+import { deferred } from './deferred.ts';
 import { START_MS, bodyDigest, createdRun, makeEnv, toolKey } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, functionCallItem, gated, textStep } from './scripts.ts';
@@ -76,8 +76,8 @@ describe('WW1: bounded per-run memory', () => {
 
     expect((await env.cancelToEnd(run.id)).status).toBe('CANCELLED');
     worker.start();
-    await waitUntil(() => worker.memorySize() === 0, 3_000, 'the cancelled run to be forgotten');
-    await within(worker.stop(), 3_000, 'the worker to stop');
+    await env.passTime(() => worker.memorySize() === 0, 'the cancelled run to be forgotten');
+    await env.settled(worker.stop(), 'the worker to stop');
   });
 
   it('drops the entry of a requeued run whose deadline passed on an idle poll tick', async () => {
@@ -92,8 +92,8 @@ describe('WW1: bounded per-run memory', () => {
     const blocker = env.store.claim('worker-holder');
     expect(blocker?.runId).toBe(run.id);
     worker.start();
-    await waitUntil(() => worker.memorySize() === 0, 3_000, 'the expired run to be forgotten');
-    await within(worker.stop(), 3_000, 'the worker to stop');
+    await env.passTime(() => worker.memorySize() === 0, 'the expired run to be forgotten');
+    await env.settled(worker.stop(), 'the worker to stop');
   });
 });
 
@@ -113,8 +113,8 @@ describe('WW2: CANCELLING branch guard', () => {
     };
     holder.worker = env.worker('worker-1', { store });
 
-    await within(env.runOnce(holder.worker), 5_000, 'the claim to settle');
-    await within(holder.aborting ?? Promise.resolve(), 5_000, 'the abort to resolve');
+    await env.settled(env.runOnce(holder.worker), 'the claim to settle');
+    await env.settled(holder.aborting ?? Promise.resolve(), 'the abort to resolve');
 
     expect(env.gateway.cancels).toEqual([]);
     expect(env.run(run.id)).toMatchObject({ status: 'CANCELLING', leaseOwner: null });
@@ -155,14 +155,14 @@ describe('WW4: runOnce honours stop', () => {
     env.enqueue('First');
     const worker = env.worker('worker-1', { idlePollMs: 10 });
     worker.start();
-    await within(blocked.gate.reached.promise, 5_000, 'the first stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the first stream to start');
     const otherSession = env.store.createSession({ cwd: env.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, permissionMode: 'manual', model: 'fm' });
     const second = createdRun(env.store.createRunAndEnqueue(otherSession.id, { input: 'Second', timeoutMs: 3_600_000, limits: {}, pins: {} }));
 
     const stopping = worker.stop();
     const result = await env.runOnce(worker);
     blocked.gate.release.resolve();
-    await within(stopping, 5_000, 'the worker to stop');
+    await env.settled(stopping, 'the worker to stop');
 
     expect(result).toBe('idle');
     expect(env.run(second.id).status).toBe('QUEUED');
@@ -197,9 +197,9 @@ describe('WS1: quiet detached cancel recovery', () => {
     const claimEnded = running.then(() => {
       throw new Error('the claim settled before cancel recovery built its tool set');
     });
-    await within(Promise.race([reached.promise, claimEnded]), 5_000, 'cancel recovery to build its tool set');
+    await env.settled(Promise.race([reached.promise, claimEnded]), 'cancel recovery to build its tool set');
 
-    await within(worker.abort('shutdown'), 5_000, 'the shutdown abort to resolve');
+    await env.settled(worker.abort('shutdown'), 'the shutdown abort to resolve');
     gate.resolve();
     await thrown.promise;
     await afterMicrotasks();
@@ -235,8 +235,8 @@ describe('WS2: error hook and abort during stop', () => {
       },
     });
     worker.start();
-    await waitUntil(() => hookCalls === 1, 3_000, 'the hook to be called');
-    await within(worker.stop(), 3_000, 'the worker to stop');
+    await env.passTime(() => hookCalls === 1, 'the hook to be called');
+    await env.settled(worker.stop(), 'the worker to stop');
 
     expect(env.ofType(failing.id, 'notice').map((event) => event.message)).toEqual([
       'The worker failed on this run: load exploded (the error hook also failed: hook broke)',
@@ -250,11 +250,11 @@ describe('WS2: error hook and abort during stop', () => {
     const run = env.enqueue('Work');
     const worker = env.worker('worker-1', { idlePollMs: 10 });
     worker.start();
-    await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the stream to start');
 
     const stopping = worker.stop();
     const aborting = worker.abort('shutdown');
-    await within(Promise.all([stopping, aborting]), 5_000, 'stop and abort to resolve');
+    await env.settled(Promise.all([stopping, aborting]), 'stop and abort to resolve');
 
     expect(env.gateway.streams[0]?.signal.reason).toBe('shutdown');
     expect(env.ofType(run.id, 'model.responded')).toEqual([]);
@@ -307,7 +307,7 @@ describe('WW1: sweep after each claim', () => {
     enqueueElsewhere('Following');
 
     worker.start();
-    await within(following.gate.reached.promise, 5_000, 'the following claim to start right after the busy run');
+    await env.settled(following.gate.reached.promise, 'the following claim to start right after the busy run');
 
     expect(env.run(busy.id).status).toBe('COMPLETED');
     expect(worker.memorySize()).toBeLessThanOrEqual(1);

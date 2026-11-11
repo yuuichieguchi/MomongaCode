@@ -4,7 +4,7 @@ import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { claimRetry, ensureMomongaDirs, groupAlive, momongaPaths, readAttemptRecord, recordMarkerGroup, FIRST_GENERATION } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, spawnTracked, withTempDir, firstGeneration, registerOwned } from '@momonga/testkit';
+import { HOLD_UNTIL_SIGNALLED, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, spawnTracked, withTempDir, firstGeneration, registerOwned } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { START_MS, createRun, createSession, trackGroup, writeUserSettings, onCleanup } from './helpers.ts';
 import { RUNTIME_VERSION, captureStream, failureOf, hookLogger, isLockFree, launchRuntime, modelSettings, prepareStack, readDb, startRuntimeProcess, stepsLogged, prepareGeneration, scopedPaths } from './run-helpers.ts';
@@ -49,7 +49,7 @@ const spawnHolder = (marker: string, content?: (pid: number) => string): number 
   const fd = fs.openSync(marker, 'w', 0o600);
   let pid: number | undefined;
   try {
-    pid = spawn('/bin/sh', ['-c', 'exec sleep 30'], { detached: true, stdio: ['ignore', 'ignore', 'ignore', fd] }).pid;
+    pid = spawn('/bin/sh', ['-c', `exec ${HOLD_UNTIL_SIGNALLED}`], { detached: true, stdio: ['ignore', 'ignore', 'ignore', fd] }).pid;
     if (pid !== undefined && content !== undefined) fs.writeSync(fd, content(pid));
   } finally {
     fs.closeSync(fd);
@@ -189,7 +189,7 @@ const trackedRunHome = (context: CleanupContext): RunHome => {
 const trackedHolder = (context: CleanupContext, marker: string): number => {
   const fd = fs.openSync(marker, 'w', 0o600);
   try {
-    return spawnTracked(context, '/bin/sh', ['-c', 'exec sleep 30'], { stdio: ['ignore', 'ignore', 'ignore', fd] }).pid;
+    return spawnTracked(context, '/bin/sh', ['-c', `exec ${HOLD_UNTIL_SIGNALLED}`], { stdio: ['ignore', 'ignore', 'ignore', fd] }).pid;
   } finally {
     fs.closeSync(fd);
   }

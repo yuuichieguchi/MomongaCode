@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { within } from './deferred.ts';
+
 import { makeEnv } from './harness.ts';
 import { callsStep, gated, textStep } from './scripts.ts';
 
@@ -12,7 +12,7 @@ describe('worker cancel', () => {
     env.gateway.script.push(blocked, textStep('never sent'));
     const run = env.enqueue('Long answer');
     const running = env.runOnce(env.worker());
-    await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the stream to start');
 
     const requestedAt = env.clock.now();
     await env.store.requestCancel(run.id);
@@ -34,7 +34,7 @@ describe('worker cancel', () => {
     env.gateway.script.push(callsStep([{ callId: 'call_wait_1', name: 'Wait', args: { value: 'forever' } }]), textStep('never sent'));
     const run = env.enqueue('Wait for a long time');
     const running = env.runOnce(env.worker());
-    await within(env.toolbox.waitStarted.promise, 5_000, 'the long tool to start');
+    await env.settled(env.toolbox.waitStarted.promise, 'the long tool to start');
 
     const requestedAt = env.clock.now();
     await env.store.requestCancel(run.id);

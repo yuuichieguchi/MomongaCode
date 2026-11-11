@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { findHolders, recordMarkerGroup } from '@momonga/foundation';
 import type { ReapMarkedProcessesOptions } from '@momonga/foundation';
 import type { IdempotencyLookup, IdempotencyRecord, Run } from '@momonga/store';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, fakeReapTiming, killGroupsForCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
+import { HOLD_UNTIL_SIGNALLED, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, fakeReapTiming, killGroupsForCleanup, pollUntil, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { createMarkerOwners } from '@momonga/tools';
 import { reapToolMarkers } from '../../src/process/tool-markers.ts';
@@ -56,7 +56,7 @@ const holdMarker = async (marker: string): Promise<number> => {
   const fd = fs.openSync(marker, 'r');
   let pid: number | undefined;
   try {
-    const child = spawn('/bin/sh', ['-c', 'exec /bin/sleep 30'], { detached: true, stdio: ['ignore', 'ignore', 'ignore', fd], env: { PATH: '/usr/bin:/bin' } });
+    const child = spawn('/bin/sh', ['-c', `exec ${HOLD_UNTIL_SIGNALLED}`], { detached: true, stdio: ['ignore', 'ignore', 'ignore', fd], env: { PATH: '/usr/bin:/bin' } });
     child.unref();
     pid = child.pid;
     if (pid === undefined) throw new Error('the holder did not start');
@@ -317,15 +317,11 @@ const trackedHolder = async (context: CleanupContext, marker: string): Promise<n
   const fd = fs.openSync(marker, 'r');
   let pid: number;
   try {
-    pid = spawnTracked(context, '/bin/sh', ['-c', 'exec /bin/sleep 30'], { stdio: ['ignore', 'ignore', 'ignore', fd], env: { PATH: '/usr/bin:/bin' } }).pid;
+    pid = spawnTracked(context, '/bin/sh', ['-c', `exec ${HOLD_UNTIL_SIGNALLED}`], { stdio: ['ignore', 'ignore', 'ignore', fd], env: { PATH: '/usr/bin:/bin' } }).pid;
   } finally {
     fs.closeSync(fd);
   }
-  const deadline = Date.now() + 10_000;
-  while (!(await findHolders(marker, { signal: new AbortController().signal })).includes(pid)) {
-    if (Date.now() > deadline) throw new Error(`process ${pid} never showed up as a holder of ${marker}`);
-    await new Promise<void>((resolve) => setTimeout(resolve, 10));
-  }
+  await pollUntil(async () => (await findHolders(marker, { signal: new AbortController().signal })).includes(pid), { description: `process ${pid} to show up as a holder of ${marker}`, boundMs: REAL_PROCESS_TEST_TIMEOUT_MS / 2 });
   return pid;
 };
 

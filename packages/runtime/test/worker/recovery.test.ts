@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { usageOf } from '@momonga/testkit';
-import { within } from './deferred.ts';
+
 import { LEASE_MS, START_MS, makeEnv, modelKey, toolKey } from './harness.ts';
 import { assistantMessage, functionCallItem, gated, requestedOffering, textStep } from './scripts.ts';
 
@@ -18,16 +18,16 @@ describe('worker recovery (b1): crash after model.requested', () => {
     env.gateway.script.push(blocked);
     const run = env.enqueue('Work');
     const abandoned = env.runOnce(env.worker('worker-a'));
-    await within(blocked.gate.reached.promise, 5_000, 'the first stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the first stream to start');
     const [firstRequest] = env.ofType(run.id, 'model.requested');
     if (firstRequest === undefined) throw new Error('expected model.requested');
 
     env.clock.advance(LEASE_MS + 1);
     const recovering = env.runOnce(env.worker('worker-b'));
-    await within(env.gateway.nthStream(1), 5_000, 'the recovery re-send');
+    await env.settled(env.gateway.nthStream(1), 'the recovery re-send');
     blocked.gate.release.resolve();
-    await within(recovering, 5_000, 'the recovering worker');
-    await within(abandoned, 5_000, 'the abandoned worker to stop');
+    await env.settled(recovering, 'the recovering worker');
+    await env.settled(abandoned, 'the abandoned worker to stop');
 
     expect(env.run(run.id).status).toBe('COMPLETED');
     const [first, second] = env.gateway.streams;

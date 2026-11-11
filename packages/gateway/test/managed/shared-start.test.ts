@@ -92,7 +92,7 @@ describe.each(SERVER_KINDS)('a start of $label shared by several askers runs und
 });
 
 describe('the model listing of a managed target shared by several askers runs under its own signal', () => {
-  it('the first asker leaves while the listing is read: the second gets the listed id from the one read', { timeout: 20_000 }, async () => {
+  it('the first asker leaves while the listing is read: the second gets the listed id from the one read', async () => {
     const socketPath = path.join(makeShortDir(dirs), 'listing.sock');
     let listings = 0;
     let answer = (): void => undefined;

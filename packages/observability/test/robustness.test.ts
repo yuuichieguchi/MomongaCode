@@ -17,7 +17,7 @@ import {
   startChatSpan,
 } from '@momonga/observability';
 import type { BodyRecord, TraceStore } from '@momonga/observability';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
 import { CONTENT, QUIET_BATCH, RUN_ID, START_MS, dumpAllRows, harness, openStore, registerCleanup, bodiesOfSpan } from './helpers.ts';
 
 const captureErrors = (): unknown[] => {
@@ -136,7 +136,7 @@ describe('captured content is queued off the span path and never throws', () => 
     const queue = createBodyQueue({ maxEntries: 10, maxBytes: 1000 });
     queue.close('telemetry is shut down');
     for (const index of [1, 2, 3]) queue.push({ traceId: 't'.repeat(32), spanId: 's'.repeat(16), kind: INPUT, content: String(index), createdAtMs: START_MS, expiresAtMs: START_MS + 1 });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitFor(() => errors.length > 0, { description: 'the aggregated error of the closed queue' });
     expect(errors).toHaveLength(1);
     expect(String(errors[0])).toContain('telemetry is shut down; dropped 3 bodies');
     expect(queue.drain()).toEqual([]);

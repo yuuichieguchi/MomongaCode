@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { within } from './deferred.ts';
+
 import { LEASE_MS, makeEnv } from './harness.ts';
 import { gated, textStep } from './scripts.ts';
 
@@ -10,7 +10,7 @@ describe('worker lease loss', () => {
     env.gateway.script.push(blocked);
     const run = env.enqueue('Work');
     const running = env.runOnce(env.worker('worker-a'));
-    await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the stream to start');
     const [started] = env.ofType(run.id, 'run.started');
     if (started === undefined) throw new Error('expected run.started');
 
@@ -34,7 +34,7 @@ describe('worker lease loss', () => {
     env.gateway.script.push(blocked);
     const run = env.enqueue('Work');
     const running = env.runOnce(env.worker('worker-a', { heartbeatMs: 10 }));
-    await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the stream to start');
 
     env.clock.advance(LEASE_MS + 1);
     expect(env.store.claim('worker-thief')?.runId).toBe(run.id);

@@ -3,7 +3,7 @@ import type { Readable, Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { STOP_MESSAGE_MAX_BYTES, formatStopMessage } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, spawnTracked } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, spawnTracked, pollUntil } from '@momonga/testkit';
 import type { CleanupContext, TrackedChild } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -14,11 +14,9 @@ const REPORT_DEADLINE_MS = 10_000;
 type Report = { seenAtSignal: number; lines: string[]; overlong: number };
 
 const until = async (predicate: () => boolean, description: string, detail: () => string): Promise<void> => {
-  const deadline = Date.now() + REPORT_DEADLINE_MS;
-  while (!predicate()) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${description}: ${detail()}`);
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
+  await pollUntil(predicate, { description, boundMs: REPORT_DEADLINE_MS }).catch((error: unknown) => {
+    throw new Error(`${String(error)}: ${detail()}`, { cause: error });
+  });
 };
 
 const start = async (context: CleanupContext) => {

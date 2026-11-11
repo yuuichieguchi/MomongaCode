@@ -9,6 +9,7 @@ import type { FakeBackendOptions } from '../fake-backend.ts';
 import { KEYS, renderObservable, untilFrame, untilOutput, TEST_KEY_SETTLE_MS, settleAtOnce } from '../ink-helpers.ts';
 import { frame } from '../tui-harness.tsx';
 import { fakeScreenTerminal } from './screen-fakes.ts';
+import { pollUntil } from '@momonga/testkit';
 
 const HOSTILE_FOLDER = '/work/pro\u001b]0;pwn\u0007ject\u009b2J\n';
 const TITLE = (state: string): string => `momonga · pro]0;pwnject2J · ${state}`;
@@ -16,13 +17,9 @@ const TITLE = (state: string): string => `momonga · pro]0;pwnject2J · ${state}
 const keyX: TerminalEvent = { type: 'key', text: 'x', ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
 const focus = (direction: 'in' | 'out'): TerminalEvent => ({ type: 'focus', direction });
 
-const until = async (met: () => boolean, what: string): Promise<void> => {
-  const deadline = Date.now() + 3000;
-  while (!met()) {
-    if (Date.now() > deadline) throw new Error(`not reached within 3 s: ${what}`);
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-};
+const until = (met: () => boolean, what: string): Promise<void> => pollUntil(met, { description: what, boundMs: SCREEN_REACHED_BOUND_MS });
+
+const SCREEN_REACHED_BOUND_MS = 3000;
 
 const storedSettings = (initial: Partial<ResolvedTuiSettings> = {}) => {
   const saved: { name: string; value: string | boolean; aborted: boolean }[] = [];

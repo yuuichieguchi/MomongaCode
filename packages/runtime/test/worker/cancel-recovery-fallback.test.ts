@@ -3,7 +3,7 @@ import { ConfigError } from '@momonga/runtime';
 import type { ToolEnv } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
 import type { ResultOutcome } from '@momonga/tools';
-import { waitUntil, within } from './deferred.ts';
+
 import { LEASE_MS, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import {
@@ -309,7 +309,7 @@ describe('cancel recovery fallback', () => {
         recoveryToolSet: async ({ signal }: { signal: AbortSignal }) => {
           env.clock.advance(LEASE_MS + 1);
           if (env.store.claim('thief') === null) throw new Error('the thief could not take the run');
-          await waitUntil(() => signal.aborted, 5_000, 'the recovery signal to abort on lease loss');
+          await env.passTime(() => signal.aborted, 'the recovery signal to abort on lease loss');
           return toolsWithout(env)();
         },
       },
@@ -341,7 +341,7 @@ describe('cancel recovery fallback', () => {
     });
 
     await env.settled(env.runOnce(worker), 'the worker to yield');
-    await within(shutdown ?? Promise.resolve(), 10_000, 'the shutdown');
+    await env.settled(shutdown ?? Promise.resolve(), 'the shutdown');
     await afterMicrotasks();
 
     expect(env.portCalls.abandon).toEqual([]);
@@ -474,7 +474,7 @@ describe('cancel recovery fallback', () => {
         recoveryToolSet: async ({ signal }: { signal: AbortSignal }) => {
           recoverySignal = signal;
           const seen = cancelPolls;
-          await waitUntil(() => cancelPolls >= seen + 3, 5_000, 'the cancel poll to abort the claim signal');
+          await env.passTime(() => cancelPolls >= seen + 3, 'the cancel poll to abort the claim signal');
           return env.snapshotTools(env.toolbox.tools());
         },
       },

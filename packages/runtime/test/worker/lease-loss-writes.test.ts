@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { deferred, within } from './deferred.ts';
+import { deferred } from './deferred.ts';
 import { LEASE_MS, makeEnv, toolKey } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep } from './scripts.ts';
@@ -9,7 +9,7 @@ const startWait = async (env: Env) => {
   env.gateway.script.push(callsStep([{ callId: 'call_wait_1', name: 'Wait', args: { value: 'forever' } }]));
   const run = env.enqueue('Wait for a long time');
   const running = env.runOnce(env.worker('worker-a', { heartbeatMs: 10 }));
-  await within(env.toolbox.waitStarted.promise, 5_000, 'the long tool to start');
+  await env.settled(env.toolbox.waitStarted.promise, 'the long tool to start');
   return { run, running, key: toolKey(run.id, 1, env.gateway.callId('call_wait_1')) };
 };
 
@@ -62,7 +62,7 @@ describe('worker lease fencing of approval writes', () => {
     };
 
     const running = env.runOnce(env.worker('worker-2'));
-    await within(reached.promise, 5_000, 'worker-2 to read the rules');
+    await env.settled(reached.promise, 'worker-2 to read the rules');
     env.clock.advance(LEASE_MS + 1);
     expect(env.store.claim('worker-thief')?.runId).toBe(run.id);
     const stolenAtSeq = env.run(run.id).lastSeq;
@@ -88,7 +88,7 @@ describe('worker lease fencing of approval writes', () => {
     const run = env.enqueue('Write the file');
 
     const running = env.runOnce(env.worker('worker-1'));
-    await within(reached.promise, 5_000, 'the batch to read the rules');
+    await env.settled(reached.promise, 'the batch to read the rules');
     env.clock.advance(LEASE_MS + 1);
     expect(env.store.claim('worker-thief')?.runId).toBe(run.id);
     const stolenAtSeq = env.run(run.id).lastSeq;

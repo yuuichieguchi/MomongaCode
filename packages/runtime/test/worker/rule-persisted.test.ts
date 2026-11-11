@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { deferred, within } from './deferred.ts';
+import { deferred } from './deferred.ts';
 import { LEASE_MS, makeEnv } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 
@@ -26,12 +26,12 @@ describe('worker allow_always rule persistence across a crash', () => {
     };
 
     const crashed = env.runOnce(env.worker('worker-2'));
-    await within(reached.promise, 5_000, 'worker-2 to read the rules after persisting the rule');
+    await env.settled(reached.promise, 'worker-2 to read the rules after persisting the rule');
     env.clock.advance(LEASE_MS + 1);
     env.gateway.script.push(textStep('Written.'));
     await env.runOnce(env.worker('worker-3'));
     gate.resolve();
-    await within(crashed, 5_000, 'worker-2 to stop after losing its lease');
+    await env.settled(crashed, 'worker-2 to stop after losing its lease');
 
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(fs.readFileSync(target, 'utf8')).toBe('approved');
