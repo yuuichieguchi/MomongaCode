@@ -7,7 +7,7 @@ import { OperationLimitError, SHUTDOWN_SETTING_LIMITS, StoreCallEndedError, crea
 import { DEFAULT_LOCK_TIMEOUT_MS } from '../../foundation/src/file-lock.ts';
 import type { FileLockPorts } from '@momonga/foundation';
 import { McpInputSuspension, MIN_TASK_POLL_MS, createManagedConnection } from '@momonga/mcp';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, startLockHolder, sleepDrivenTiming, createFakeRandom, testKernelLock, afterMicrotasks, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, startLockHolder, sleepDrivenTiming, createFakeRandom, testKernelLock, afterMicrotasks, waitFor, TEST_STDIO_LAUNCH } from '@momonga/testkit';
 import type { McpOAuthProvider } from '../src/mcp-oauth.ts';
 import { createMcpOAuthProvider, credentialKey } from '../src/mcp-oauth.ts';
 import type * as RemoteTransportModule from '../src/remote-transport.ts';
@@ -257,7 +257,7 @@ describe('the store calls the MCP SDK makes for an operation of a connection', (
   });
 
   it('listTools has the request limit when the request hangs outside the store', async () => {
-    const connection = createManagedConnection({ files: nodeFileSystem,
+    const connection = createManagedConnection({ launch: TEST_STDIO_LAUNCH, files: nodeFileSystem,
       clientVersion: '0.0.0-test',
       name: 's',
       config: { command: process.execPath, args: ['-e', SERVER_THAT_NEVER_ANSWERS_A_LISTING] },

@@ -232,7 +232,7 @@ const countTokens = async (
     throw invalidRequest('invalid_target', `model "${router.displayOf(named)}" is not "${router.displayOf(model)}" or one of its fallback models`, MOMONGA_REQUEST_FIELDS.target);
   }
   const candidates = found === undefined ? chain : [found];
-  const resolved = resolveInput(services.store, services.codec, undefined, normalizeInput(request.input));
+  const resolved = resolveInput(services.codec, normalizeInput(request.input));
   const narrowed = await router.narrow(model, candidates, {
     images: inputHasImages(resolved.forAdapter),
     toolChoice: { tools: request.tools, tool_choice: request.tool_choice },
@@ -266,7 +266,7 @@ const compactOnce = async (
   const sizingCall = unkeyedCallOf(services);
   const model = router.resolveRequestModel(request.model, request.momonga?.exact_model === true);
   const targets = router.chainOf(model);
-  const resolved = resolveInput(services.store, services.codec, request.previous_response_id, normalizeInput(request.input));
+  const resolved = resolveInput(services.codec, normalizeInput(request.input));
   const narrowed = await router.narrow(model, targets, {
     images: inputHasImages(resolved.forAdapter),
     ...(request.momonga?.max_summary_tokens === undefined ? {} : { summaryCap: request.momonga.max_summary_tokens }),

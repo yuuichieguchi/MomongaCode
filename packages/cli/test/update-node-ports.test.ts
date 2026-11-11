@@ -47,6 +47,7 @@ const cliPortsFor = (home: string): CliPorts =>
     exec: unusedPort('exec'),
     probe: unusedPort('probe'),
     secretStore: unusedPort('secretStore'),
+    personCapability: unusedPort('personCapability'),
   }) satisfies CliPorts;
 
 describe('autoUpdates', () => {

@@ -1,12 +1,14 @@
 import type { AdapterInputItem, ContentPart, FunctionTool, InputContentKind, InputItem, RequestToolKind } from '@momonga/protocol';
 import type { CompactionCodec } from './compaction.ts';
-import { invalidRequest, notFound } from './errors.ts';
-import type { GatewayStore, StoredResponse } from './store.ts';
+import { invalidRequest } from './errors.ts';
 
-export type ConnectionResponses = {
-  lookup(id: string): StoredResponse | undefined;
-  remember(id: string, response: StoredResponse): void;
-  evict(id: string): void;
+export const refuseStoredResponses = (body: Readonly<Record<string, unknown>>): void => {
+  if (body['store'] === true) {
+    throw invalidRequest('stored_responses_unsupported', 'no response is kept for a later call; send store: false and the whole input', 'store');
+  }
+  if (body['previous_response_id'] !== undefined && body['previous_response_id'] !== null) {
+    throw invalidRequest('stored_responses_unsupported', 'no response is kept for a later call to continue; send the whole input instead of previous_response_id', 'previous_response_id');
+  }
 };
 
 export const normalizeInput = (input: string | InputItem[] | null | undefined): InputItem[] => {
@@ -20,30 +22,16 @@ export type ResolvedInput = {
   forAdapter: AdapterInputItem[];
 };
 
-export const resolveInput = (
-  store: GatewayStore,
-  codec: CompactionCodec,
-  previousResponseId: string | null | undefined,
-  clientInput: InputItem[],
-  connection?: ConnectionResponses,
-): ResolvedInput => {
-  const prior =
-    previousResponseId === undefined || previousResponseId === null ? undefined : (connection?.lookup(previousResponseId) ?? store.getResponse(previousResponseId));
-  if (previousResponseId !== undefined && previousResponseId !== null && prior === undefined) {
-    throw notFound('previous_response_not_found', `previous response "${previousResponseId}" was not found or was not stored`, 'previous_response_id');
-  }
-  const priorItems: InputItem[] = prior === undefined ? [] : [...prior.input, ...prior.output];
-  const stored = [...priorItems, ...clientInput];
-  const forAdapter = stored.map((item, index): AdapterInputItem => {
+export const resolveInput = (codec: CompactionCodec, clientInput: InputItem[]): ResolvedInput => {
+  const forAdapter = clientInput.map((item, index): AdapterInputItem => {
     if (item.type !== 'compaction') return item;
     const summary = codec.decode(item.encrypted_content);
     if (summary === undefined) {
-      const param = index < priorItems.length ? 'previous_response_id' : `input[${index - priorItems.length}].encrypted_content`;
-      throw invalidRequest('invalid_compaction', 'compaction item failed verification and was not produced by this gateway', param);
+      throw invalidRequest('invalid_compaction', 'compaction item failed verification and was not produced by this gateway', `input[${index}].encrypted_content`);
     }
     return { type: 'compaction_summary', summary };
   });
-  return { stored, forAdapter };
+  return { stored: clientInput, forAdapter };
 };
 
 const partsHaveImage = (content: string | readonly ContentPart[]): boolean =>

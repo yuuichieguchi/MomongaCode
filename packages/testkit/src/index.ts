@@ -292,4 +292,4 @@ export { productTestEnv } from './product-spawn.ts';
 export { SCRIPTED_MODEL, SCRIPTED_MODEL_ID, SCRIPTED_PROVIDER, modelSettings } from './model-settings.ts';
 export type { ModelSettings, ModelSettingsConnection, ModelSettingsSpec, ModelSpec } from './model-settings.ts';
 export { testSecretLocations } from './secret-locations.ts';
-export { TEST_CHILD_UNPROTECTED } from './child-protection.ts';
+export { TEST_CHILD_UNPROTECTED, TEST_STDIO_LAUNCH } from './child-protection.ts';

@@ -2,14 +2,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { hostProcessGroupPort, momongaLayout, protectedAreasOf, systemTiming } from '@momonga/foundation';
+import { ensureMomongaDirs, hostProcessGroupPort, momongaPaths, systemTiming } from '@momonga/foundation';
 import { createWorkspaceProbe, nodeWorkspaceFiles } from '@momonga/eval';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { nodeWorkspaceSandbox } from '../src/node-ports.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const PLATFORM_WITH_A_SANDBOX = process.platform === 'darwin' || (process.platform === 'linux' && fs.existsSync('/usr/bin/bwrap'));
+const PLATFORM_SANDBOX = process.platform === 'darwin' ? 'seatbelt' : process.platform === 'linux' && fs.existsSync('/usr/bin/bwrap') ? 'bubblewrap' : undefined;
 
 let root = '';
 let home = '';
@@ -21,31 +21,53 @@ beforeEach(() => {
   workspace = path.join(root, 'work');
   fs.mkdirSync(home);
   fs.mkdirSync(workspace);
+  fs.mkdirSync(path.join(root, 'outside'));
 });
 
 afterEach(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-describe('the real sandbox port of the oracle commands (darwin, and linux with bubblewrap; the linux leg runs in the container)', () => {
-  it.skipIf(!PLATFORM_WITH_A_SANDBOX)("an oracle command that writes into the product's home never reaches it (refused on darwin, an empty tmpfs on linux), and one that writes into its workspace does", async () => {
+describe('the real sandbox port of the oracle commands is the sandbox of a tool command (darwin, and linux with bubblewrap; the linux leg runs in the container)', () => {
+  it.skipIf(PLATFORM_SANDBOX === undefined)('an oracle command that writes outside its workspace and its scratch is denied; one that writes into its workspace or its own scratch (TMPDIR, removed when it ends) is not', async () => {
     const env = { PATH: '/usr/bin:/bin', HOME: home };
-    const [denied] = protectedAreasOf(momongaLayout(home, process.platform, env));
-    if (denied === undefined) throw new Error('the layout of the home names no protected area');
-    fs.mkdirSync(denied, { recursive: true });
+    const paths = momongaPaths(home, process.platform, env);
+    await ensureMomongaDirs(paths);
+    const warnings: string[] = [];
     const probe = createWorkspaceProbe({
       env,
-      sandbox: nodeWorkspaceSandbox({ home, platform: process.platform, env, signal: new AbortController().signal }),
+      sandbox: nodeWorkspaceSandbox({ home, platform: process.platform, env, signal: new AbortController().signal, sandbox: PLATFORM_SANDBOX ?? 'none', network: 'deny', warn: (text) => warnings.push(text) }),
       files: nodeWorkspaceFiles,
       timing: systemTiming,
       groups: hostProcessGroupPort(),
     });
-    const leak = path.join(denied, 'leak.txt');
+    const leak = path.join(root, 'outside', 'leak.txt');
     const outcome = await probe.run(`echo x > ${leak}`, 30_000, workspace);
     expect(outcome.timedOut).toBe(false);
-    if (process.platform === 'darwin') expect(outcome.exitCode).not.toBe(0);
+    expect(outcome.exitCode).not.toBe(0);
     expect(fs.existsSync(leak)).toBe(false);
     expect(await probe.run('echo x > made.txt', 30_000, workspace)).toEqual({ exitCode: 0, timedOut: false });
     expect(fs.readFileSync(path.join(workspace, 'made.txt'), 'utf8')).toBe('x\n');
+    expect(await probe.run('test -n "$TMPDIR" && echo x > "$TMPDIR/scratch.txt" && test -f "$TMPDIR/scratch.txt"', 30_000, workspace)).toEqual({ exitCode: 0, timedOut: false });
+    expect(await probe.run(`echo "$TMPDIR" > ${path.join(workspace, 'scratch-path.txt')}`, 30_000, workspace)).toEqual({ exitCode: 0, timedOut: false });
+    const scratch = fs.readFileSync(path.join(workspace, 'scratch-path.txt'), 'utf8').trim();
+    expect(scratch.startsWith(fs.realpathSync(paths.tmp.sessions))).toBe(true);
+    expect(fs.existsSync(scratch)).toBe(false);
+    expect(warnings).toEqual([]);
+  });
+
+  it.skipIf(process.platform === 'win32')('under sandbox none an oracle command runs as a tool command does, with the same sentence', async () => {
+    const env = { PATH: '/usr/bin:/bin', HOME: home };
+    await ensureMomongaDirs(momongaPaths(home, process.platform, env));
+    const warnings: string[] = [];
+    const probe = createWorkspaceProbe({
+      env,
+      sandbox: nodeWorkspaceSandbox({ home, platform: process.platform, env, signal: new AbortController().signal, sandbox: 'none', network: 'deny', warn: (text) => warnings.push(text) }),
+      files: nodeWorkspaceFiles,
+      timing: systemTiming,
+      groups: hostProcessGroupPort(),
+    });
+    expect(await probe.run('echo x > made.txt', 30_000, workspace)).toEqual({ exitCode: 0, timedOut: false });
+    expect(warnings[0]).toBe('sandbox is none: Bash asks before every command');
   });
 });

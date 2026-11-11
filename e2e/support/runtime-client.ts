@@ -1,3 +1,5 @@
+import { PERSON_CAPABILITY_HEADER } from '@momonga/protocol';
+import { nodeFileSystem, personCapabilityOf, systemRandom } from '@momonga/foundation';
 import { createUdsClient, fixedSocket } from '@momonga/foundation';
 import type { SocketResolver } from '@momonga/foundation';
 import { isOpaqueEvent } from '@momonga/protocol';
@@ -8,11 +10,13 @@ import { nodeClock } from '../../packages/cli/src/node-ports.ts';
 import type { ApprovalView, RunView, SessionView } from '../../packages/cli/src/client/views.ts';
 import type { E2eHome } from './home.ts';
 import { until } from './wait.ts';
-import { firstGeneration } from '@momonga/testkit';
+import { firstGeneration, testKernelLock } from '@momonga/testkit';
 
 export type { ApprovalView, RunView, SessionView };
 
 const JSON_HEADERS = { 'content-type': 'application/json' };
+
+export const personCapabilityOfHome = (home: Pick<E2eHome, 'home'>): Promise<string> => personCapabilityOf({ files: nodeFileSystem, random: systemRandom, lock: testKernelLock() }, home.home);
 
 export const SESSION_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 
@@ -56,7 +60,7 @@ export const framesOfType = (frames: readonly RunEventFrame[], type: string): Ru
 type StreamOutcome = { kind: 'match'; frame: RunEventFrame } | { kind: 'ended' } | { kind: 'failed'; error: unknown };
 
 export const createRuntimeClient = (home: E2eHome, resolveSocket: SocketResolver = fixedSocket(firstGeneration(home.paths).sockets.runtime)): RuntimeClient => {
-  const product: ProductClient = createProductClient({ resolveSocket, clock: nodeClock });
+  const product: ProductClient = createProductClient({ resolveSocket, clock: nodeClock, personCapability: () => personCapabilityOfHome(home) });
   const http = createUdsClient(resolveSocket, { connectTimeoutMs: 0 });
   const openStreams = new Set<{ abort(): Promise<void> }>();
 
@@ -176,7 +180,8 @@ export const createRuntimeClient = (home: E2eHome, resolveSocket: SocketResolver
     const response = await http.request({
       method,
       path,
-      ...(body === undefined ? {} : { headers: JSON_HEADERS, body: JSON.stringify(body) }),
+      headers: { [PERSON_CAPABILITY_HEADER]: await personCapabilityOfHome(home), ...(body === undefined ? {} : JSON_HEADERS) },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     const text = await response.text();
     return { status: response.status, body: text === '' ? undefined : JSON.parse(text) };

@@ -4,7 +4,7 @@ import { indicatorsOf } from './aggregate.ts';
 import type { Aggregate, Period } from './aggregate.ts';
 import { costLines } from './cost.ts';
 import type { CostGroups, CostIndicators } from './cost.ts';
-import type { GroupKey, Indicators, Rate } from './types.ts';
+import type { GroupKey, Indicators, PermissionFigures, Rate } from './types.ts';
 import { wilsonInterval } from './wilson.ts';
 
 export const REPORT_KINDS = ['real', 'benchmark', 'injection'] as const;
@@ -24,6 +24,8 @@ export type ScenarioRow = { scenario: string; trials: number; episodes: number; 
 
 export type NotRun = { id: string; reason: string };
 
+export type GateAgreement = { gatePassOraclePass: number; gatePassOracleFail: number; gateFailOraclePass: number; gateFailOracleFail: number; gateNotRun: number };
+
 export type ReliabilityReport = {
   format: typeof RELIABILITY_FORMAT;
   kind: ReportKind;
@@ -38,13 +40,14 @@ export type ReliabilityReport = {
   population?: { notRun: NotRun[] };
   period?: Period;
   cost?: CostGroups;
+  gate?: GateAgreement;
 };
 
 type Measured = { aggregate: Aggregate };
 
 export type ReportInput =
   | (Measured & { kind: 'real'; harness?: null; period?: Period; cost?: CostGroups })
-  | (Measured & { kind: 'benchmark'; harness: Harness; tasks?: TaskRow[]; cost: CostGroups; notRun: NotRun[] })
+  | (Measured & { kind: 'benchmark'; harness: Harness; tasks?: TaskRow[]; cost: CostGroups; notRun: NotRun[]; gate: GateAgreement })
   | (Measured & { kind: 'injection'; harness: Harness; scenarios?: ScenarioRow[]; witnessed?: Rate; notRun?: NotRun[] });
 
 export const buildReliabilityReport = (input: ReportInput): ReliabilityReport => {
@@ -54,7 +57,7 @@ export const buildReliabilityReport = (input: ReportInput): ReliabilityReport =>
     case 'real':
       return { ...base, kind: 'real', harness: null, ...(input.period === undefined ? {} : { period: input.period }), ...(input.cost === undefined ? {} : { cost: input.cost }) };
     case 'benchmark':
-      return { ...base, kind: 'benchmark', harness: input.harness, ...(input.tasks === undefined ? {} : { tasks: input.tasks }), cost: input.cost, population: { notRun: input.notRun } };
+      return { ...base, kind: 'benchmark', harness: input.harness, ...(input.tasks === undefined ? {} : { tasks: input.tasks }), cost: input.cost, population: { notRun: input.notRun }, gate: input.gate };
     case 'injection':
       return {
         ...base,
@@ -77,8 +80,20 @@ export const describeRate = ({ k, n }: Rate): string => {
 
 const milliseconds = (value: number | null): string => (value === null ? 'n/a' : `${value} ms`);
 
+const plural = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;
+
+const permissionLine = (mode: string, { basis, asks, answers, denials }: PermissionFigures): string => {
+  const answered = answers.allowOnce + answers.allowAlways + answers.rejectOnce + answers.rejectAlways;
+  return [
+    `Permission decisions (mode ${escapeTerminalLine(mode)}): by basis read_only ${basis.readOnly}, rule ${basis.rule}, mode ${basis.mode}, hook ${basis.hook}, classifier ${basis.classifier}, person ${basis.person}`,
+    `asks ${asks}`,
+    `answers allow_once ${answers.allowOnce}, allow_always ${answers.allowAlways}, reject_once ${answers.rejectOnce}, reject_always ${answers.rejectAlways}, unanswered ${asks - answered}`,
+    `denials ${Object.entries(denials).map(([source, count]) => `${source} ${count}`).join(', ')}`,
+  ].join('; ');
+};
+
 const indicatorLines = (indicators: Indicators, cost?: CostIndicators): string[] => {
-  const { completion, recovery, recoveryTime, duplicates, intervention, overrun, delegation, time } = indicators;
+  const { completion, recovery, recoveryTime, duplicates, intervention, overrun, delegation, time, verification, permissions } = indicators;
   return [
     completion.n === 0
       ? `Task Completion Rate: not measurable: no task declared a completion condition (${completion.undeclared} tasks without one)`
@@ -89,7 +104,13 @@ const indicatorLines = (indicators: Indicators, cost?: CostIndicators): string[]
     `Human Intervention Rate: ${describeRate(intervention)}`,
     `Budget Overrun Rate: ${describeRate(overrun)}; over the money limit ${describeRate(overrun.money)}; budget stops ${overrun.budgetStops}`,
     `Delegation (mandate runs): n=${delegation.n}; a person resolved a held call in ${describeRate({ k: delegation.intervened, n: delegation.n })}; completed with no held call ${describeRate({ k: delegation.unattended, n: delegation.n })}; waited for a person at least once ${delegation.waited}; held calls ${delegation.held}; denied outside the mandate ${delegation.denied}`,
+    `Holds (mandate runs): work done while a call was held ${plural(delegation.workDuringHolds.modelSteps, 'model step', 'model steps')}, ${plural(delegation.workDuringHolds.toolCalls, 'tool call', 'tool calls')}; hold latency ${delegation.resolvedHolds === 0 ? 'n/a (no hold was resolved by a person)' : `mean ${Math.round(delegation.holdLatencyMs / delegation.resolvedHolds)} ms over ${plural(delegation.resolvedHolds, 'hold', 'holds')} resolved by a person`}`,
+    ...Object.entries(permissions).map(([mode, figures]) => permissionLine(mode, figures)),
     `Time per Successful Task: n=${time.n}, active mean ${milliseconds(time.meanActiveMs)}, elapsed mean ${milliseconds(time.meanElapsedMs)}`,
+    `Verification Success Rate (first round passed): ${describeRate(verification.firstRoundPassed)}`,
+    `Averted False Completion (runs with a failed round): ${describeRate(verification.failedRound)}`,
+    `Gate Coverage (runs with a mutation that owed a condition): ${describeRate(verification.coverage)}`,
+    `Verification Effort: checks took ${verification.checkMs} ms of ${verification.elapsedMs} ms elapsed in the runs with a round (${verification.elapsedMs === 0 ? 'n/a' : percent(verification.checkMs / verification.elapsedMs)}); tokens of fix rounds ${verification.fixRoundTokens}`,
     ...(cost === undefined ? [] : costLines(cost)),
   ];
 };
@@ -115,6 +136,11 @@ const rowLines = (report: ReliabilityReport): string[] => [
   ...(report.tasks ?? []).map((row) => `Task ${escapeTerminalLine(row.task)} (${escapeTerminalLine(row.taskType)}, ${escapeTerminalLine(row.difficulty)}): met ${row.met}/${row.trials}`),
   ...(report.scenarios ?? []).map((row) => `Scenario ${escapeTerminalLine(row.scenario)}: recovered ${row.recovered}/${row.episodes} episodes in ${row.trials} trials`),
   ...(report.witnessed === undefined ? [] : [`Duplicate Side Effect Rate (witnessed): ${describeRate(report.witnessed)}`]),
+  ...(report.gate === undefined
+    ? []
+    : [
+        `Completion gate against the oracle: passed with the oracle met ${report.gate.gatePassOraclePass}, passed with the oracle unmet ${report.gate.gatePassOracleFail} (false pass), failed with the oracle met ${report.gate.gateFailOraclePass}, failed with the oracle unmet ${report.gate.gateFailOracleFail}, no gate verdict ${report.gate.gateNotRun}`,
+      ]),
 ];
 
 export const formatReliabilityReport = (report: ReliabilityReport): string => {

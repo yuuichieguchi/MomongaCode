@@ -10,7 +10,7 @@ import { nodeClock } from '../packages/cli/src/node-ports.ts';
 import { skipCase, titleOf } from './support/cases.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
-import { SESSION_PATH, createRuntimeClient, framesOfType } from './support/runtime-client.ts';
+import { SESSION_PATH, createRuntimeClient, framesOfType, personCapabilityOfHome } from './support/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from './support/runtime-client.ts';
 import { baseSettings, startStack, upstreamModelRef, withClassifierModel } from './support/stack.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
@@ -179,7 +179,7 @@ describe('hooks and auto mode against real processes', () => {
       Array.from({ length: golden.runs }, (_unused, runIndex) => [callFor(golden, runIndex), ...classifierFor(golden), textReply('finished')]).flat(),
     );
     const stack = await startStack({ home, settings: autoSettings(home), script });
-    const client = createCliRuntimeClient({ resolveSocket: fixedSocket(firstGeneration(home.paths).sockets.runtime), clock: nodeClock });
+    const client = createCliRuntimeClient({ resolveSocket: fixedSocket(firstGeneration(home.paths).sockets.runtime), clock: nodeClock, personCapability: () => personCapabilityOfHome(home) });
     try {
       const api = goldenRunApi(client, undefined, {
         pendingBoundMs: REFLECTION_PICKUP_BOUND_MS,

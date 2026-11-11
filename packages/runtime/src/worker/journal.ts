@@ -56,6 +56,26 @@ const mergedState = (own: RunState, window: InheritedWindowReply): RunState => {
   };
 };
 
+const compactionOfInheritance = (store: RuntimeStore, own: RunState): { fromRunId: string; tokens: Pick<Extract<RunEventPayload, { type: 'context.compacted' }>, 'tokensBefore' | 'tokensAfter' | 'tokensAfterEstimated'> } => {
+  const inherited = own.inherited;
+  if (inherited === undefined) throw new Error(`run ${own.runId} records an inherited compaction without an inheritance`);
+  if (inherited.compaction === undefined) return { fromRunId: inherited.fromRunId, tokens: {} };
+  const { runId, eventSeq } = inherited.compaction;
+  const [event] = store.readRunEvents(runId, eventSeq - 1, 1);
+  if (event?.type !== 'context.compacted' || event.seq !== eventSeq) throw new Error(`run ${own.runId} inherits the compaction ${runId}@${eventSeq}, which is not a context.compacted event`);
+  const { tokensBefore, tokensAfter, tokensAfterEstimated } = event;
+  return {
+    fromRunId: runId,
+    tokens: { ...(tokensBefore === undefined ? {} : { tokensBefore }), ...(tokensAfter === undefined ? {} : { tokensAfter }), ...(tokensAfterEstimated === undefined ? {} : { tokensAfterEstimated }) },
+  };
+};
+
+const inheritedCompactionEvent = (store: RuntimeStore, own: RunState, state: RunState): RunEventPayload | undefined => {
+  if (own.inherited === undefined || own.inheritedCompactionRecorded === true || own.ownCompactionEventSeq !== undefined || state.summary === undefined) return undefined;
+  const { fromRunId, tokens } = compactionOfInheritance(store, own);
+  return { type: 'context.inherited_compacted', fromRunId, item: state.summary.item, summary: state.summary.summary, replacedThroughSeq: state.summary.replacedThroughSeq, ...tokens };
+};
+
 const unreadableState = (own: RunState): RunState => {
   const { history: _history, summary: _summary, evicted: _evicted, ...rest } = own;
   const refuse = (): never => {
@@ -81,7 +101,7 @@ export const openJournal = async ({ store, claim, signal, lost }: JournalOptions
     }
   };
 
-  return {
+  const journal: Journal = {
     get state() {
       if (!awaitsWindow(own)) return own;
       if (window === undefined) return unreadableState(own);
@@ -100,7 +120,8 @@ export const openJournal = async ({ store, claim, signal, lost }: JournalOptions
       if (store.append(claim, []).kind === 'lease_lost') lost();
     },
     append: (payloads) => {
-      const result = store.append(claim, payloads);
+      const inheritedCompaction = payloads.some((payload) => payload.type === 'model.requested') ? inheritedCompactionEvent(store, own, journal.state) : undefined;
+      const result = store.append(claim, inheritedCompaction === undefined ? payloads : [inheritedCompaction, ...payloads]);
       if (result.kind === 'lease_lost') lost();
       sync();
     },
@@ -111,4 +132,5 @@ export const openJournal = async ({ store, claim, signal, lost }: JournalOptions
       sync();
     },
   };
+  return journal;
 };

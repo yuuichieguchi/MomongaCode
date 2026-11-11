@@ -114,7 +114,7 @@ export { fixedSandboxBindings } from './process/sandbox-bindings.ts';
 export { createNetworkDerivation } from './process/network-derivation.ts';
 export type { DerivedNetwork, NetworkDerivation, NetworkDerivationOptions, NetworkOf } from './process/network-derivation.ts';
 export { workspaceCommandSandbox } from './process/workspace-command-sandbox.ts';
-export type { WorkspaceCommand, WorkspaceCommandSandbox, WorkspaceCommandSandboxInput } from './process/workspace-command-sandbox.ts';
+export type { WorkspaceCommandRun, WorkspaceCommandSandbox, WorkspaceCommandSandboxInput } from './process/workspace-command-sandbox.ts';
 export { createReconcileSandbox, forgeCredentialReader, outboundForgeFetch } from './process/operation-tools.ts';
 export { createToolRuntime } from './process/tool-runtime.ts';
 export type { ToolRuntime, ToolRuntimeOptions } from './process/tool-runtime.ts';

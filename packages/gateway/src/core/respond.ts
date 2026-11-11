@@ -32,7 +32,7 @@ import { ClientDisconnectedError, GatewayError, isGatewayClosed, isRunCancelled 
 import { estimateInputTokens, estimateOutputTokens, estimatedUsage, tokensForText } from './estimate.ts';
 import { inputHasImages, inputKindsOf, resolveInput } from './input.ts';
 import { StreamFailure } from './stream-failure.ts';
-import type { ConnectionResponses, ResolvedInput } from './input.ts';
+import type { ResolvedInput } from './input.ts';
 import { baseResource } from './resource.ts';
 import { UpstreamFailure, emptyStreamFailure, failureFrom, runWithRetry } from './retry.ts';
 import type { RetryOutcome } from './retry.ts';
@@ -58,7 +58,6 @@ export type ResponseJob = {
   runId: string | undefined;
   step: number | undefined;
   role: string;
-  connection?: ConnectionResponses;
 };
 
 const closeOnError = async (iterator: AsyncIterator<StreamEvent>, span: Opened['span']): Promise<void> => {
@@ -573,7 +572,6 @@ async function* relaySteps(
   const commit: CommitRequest = {
     recordedAtMs: clock.now(),
     idempotencyExpiredBeforeMs: clock.now() - services.config.idempotency.ttlMs,
-    ...(job.body.store === true ? { response: { id: responseId, input: resolved.stored, output: resource.output } } : {}),
     ...(job.idempotency === undefined || priorFrames === undefined
       ? {}
       : { idempotency: { key: job.idempotency.key, digest: job.idempotency.digest, frames: [...priorFrames, terminal] } }),
@@ -594,7 +592,6 @@ async function* relaySteps(
     yield failedTerminal({ code: 'internal_error', message, type: 'server_error' }, resource.output, false, billed);
     return;
   }
-  job.connection?.remember(responseId, { input: resolved.stored, output: resource.output });
   outcome.settle('success');
   opened.span.succeed({
     responseModel: target.model,
@@ -612,7 +609,7 @@ async function* relaySteps(
 
 export async function* executeResponse(services: Services, job: ResponseJob, control: RunControl): AsyncGenerator<StreamEvent> {
   const { signal } = control;
-  const resolved = resolveInput(services.store, services.codec, job.body.previous_response_id, job.clientInput, job.connection);
+  const resolved = resolveInput(services.codec, job.clientInput);
   const narrowed = await services.router.candidates(job.model, {
     tools: (job.body.tools?.length ?? 0) > 0,
     images: inputHasImages(resolved.forAdapter),

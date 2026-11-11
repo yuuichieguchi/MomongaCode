@@ -1,6 +1,6 @@
 import { credentialEnvNames, credentialNamesOf, forgeCredentialNamesOf, stripCredentialEnv } from '@momonga/config';
 import type { CredentialNaming, CredentialRules } from '@momonga/config';
-import { MINIMAL_CHILD_ENV_LC_PREFIX, MINIMAL_CHILD_ENV_NAMES, NETWORK_ENV_NAMES, layoutEnvOf, minimalChildEnv, secretStoreEnvFor } from '@momonga/foundation';
+import { MINIMAL_CHILD_ENV_LC_PREFIX, MINIMAL_CHILD_ENV_NAMES, NETWORK_ENV_NAMES, layoutEnvOf, minimalChildEnv } from '@momonga/foundation';
 
 export type CredentialSettings = CredentialNaming & { credentials?: CredentialRules };
 
@@ -19,7 +19,9 @@ export const definedEnv = (env: SourceEnv): Record<string, string> =>
 
 export const handedCredentialNames = (settings: CredentialSettings): readonly string[] => credentialEnvNames(settings.models).filter((name) => !collidesWithMinimalEnv(name));
 
-export const gatewayEnv = (env: SourceEnv, settings: CredentialSettings, home: string, onSkipped: (name: string) => void = () => undefined): Record<string, string> => {
+export type SecretStoreEnv = Readonly<Record<string, string>>;
+
+export const gatewayEnv = (env: SourceEnv, settings: CredentialSettings, home: string, secretStore: SecretStoreEnv, onSkipped: (name: string) => void = () => undefined): Record<string, string> => {
   const source = definedEnv(env);
   const result: Record<string, string> = {};
   for (const name of credentialEnvNames(settings.models)) {
@@ -31,7 +33,7 @@ export const gatewayEnv = (env: SourceEnv, settings: CredentialSettings, home: s
     if (value !== undefined) result[name] = value;
   }
   Object.assign(result, minimalChildEnv(source));
-  Object.assign(result, secretStoreEnvFor(source));
+  Object.assign(result, secretStore);
   Object.assign(result, layoutEnvOf(source));
   if (source['HOME'] === undefined) result['HOME'] = home;
   for (const name of NETWORK_ENV_NAMES) {
@@ -41,7 +43,7 @@ export const gatewayEnv = (env: SourceEnv, settings: CredentialSettings, home: s
   return result;
 };
 
-export const runtimeEnv = (env: SourceEnv, settings: CredentialSettings): { env: Record<string, string>; removed: string[] } => {
+export const runtimeEnv = (env: SourceEnv, settings: CredentialSettings, secretStore: SecretStoreEnv): { env: Record<string, string>; removed: string[] } => {
   const source = definedEnv(env);
   const stripped = stripCredentialEnv(source, credentialNamesOf(settings), settings.credentials);
   const forgeCredentials: Record<string, string> = {};
@@ -49,5 +51,5 @@ export const runtimeEnv = (env: SourceEnv, settings: CredentialSettings): { env:
     const value = source[name];
     if (value !== undefined && !collidesWithMinimalEnv(name)) forgeCredentials[name] = value;
   }
-  return { env: { ...stripped.env, ...forgeCredentials, ...secretStoreEnvFor(source) }, removed: stripped.removed.filter((name) => !(name in forgeCredentials)) };
+  return { env: { ...stripped.env, ...forgeCredentials, ...secretStore }, removed: stripped.removed.filter((name) => !(name in forgeCredentials)) };
 };

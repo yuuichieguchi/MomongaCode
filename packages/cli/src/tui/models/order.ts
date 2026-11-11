@@ -161,7 +161,7 @@ export const runClassifierFlow = async (context: ModelsFlowContext): Promise<voi
   await chooseRoleModel(context, await openEdit(context), row.job, row.label);
 };
 
-const WHOLE_MINUTES = /^\d+$/;
+const WHOLE_MINUTES = /^[1-9]\d*$/;
 
 export const runTimeoutsFlow = async (context: ModelsFlowContext): Promise<void> => {
   for (;;) {

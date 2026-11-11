@@ -2,7 +2,7 @@ import type { ErrorVocabulary, UpstreamErrorKind } from '../adapters/shared/voca
 import type { UpstreamReply } from '../adapters/chat-completions/upstream-reply.ts';
 import { ProbeTimeoutError } from './client.ts';
 import type { HttpResult } from './client.ts';
-import { field, firstOf } from './json.ts';
+import { field, firstOf } from './reply.ts';
 
 export type ProbeOutcome = 'accepted' | 'unsupported' | 'overflow' | 'too_large' | 'failure';
 

@@ -40,7 +40,7 @@ describe('a managed probe record of an earlier shape is no record (design-model-
     const { dir, file } = await savedRecord();
     fs.writeFileSync(file, '{ not json');
     await expect(loadProbeRecord(dir, KEY, FM_CURRENCY, 'system')).rejects.toThrow(
-      `Probe record ${file} is unusable (not valid JSON). Delete it or run "/gateway probe system" in MomongaCode.`,
+      `Probe record ${file} is unusable (not valid JSON). Delete it or run \`momonga gateway probe system\`.`,
     );
   });
 });

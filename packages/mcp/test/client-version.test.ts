@@ -1,7 +1,7 @@
 import { nodeFileSystem } from '@momonga/foundation';
 import { describe, expect, it, vi } from 'vitest';
 import { createManagedConnection } from '@momonga/mcp';
-import { LEGACY_FIXTURE_PROTOCOL_VERSION, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
+import { LEGACY_FIXTURE_PROTOCOL_VERSION, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, TEST_STDIO_LAUNCH } from '@momonga/testkit';
 import { BASE_ENV, makeDir, onCleanup } from './mcp-harness.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -28,7 +28,7 @@ lines.on('close', () => process.exit(0));
 
 describe('the MCP client reports the version it was given', () => {
   it('the clientInfo of the initialize message carries the product name and the clientVersion of the connection', async () => {
-    const connection = createManagedConnection({ files: nodeFileSystem,
+    const connection = createManagedConnection({ launch: TEST_STDIO_LAUNCH, files: nodeFileSystem,
       name: 'recorder',
       config: { command: process.execPath, args: ['-e', RECORDING_SERVER] },
       scope: 'user',

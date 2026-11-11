@@ -5,6 +5,8 @@ import type { GroupKey, NotRun, ReliabilityReport, TaskLabels, TaskRow } from '@
 import type { Benchmark, BenchTask } from './bench.ts';
 import { uniqueAnswerers } from './context-report.ts';
 import { EvalError } from './runner.ts';
+import { completionAgreement } from './oracle.ts';
+import type { GateVerdict } from './oracle.ts';
 
 export type BenchmarkTrial = { taskId: string; trial: number; facts: RunFactsView; children: readonly RunFactsView[]; costs: readonly RunCostView[] };
 
@@ -31,6 +33,11 @@ const assertRecordedAsDeclared = ({ taskId, trial, facts }: BenchmarkTrial, task
   const timeoutMs = facts.deadlineAt === undefined ? undefined : facts.deadlineAt - facts.createdAt;
   if (timeoutMs !== task.budget.timeoutMs) differences.push(`it ran with timeoutMs ${timeoutMs} and the task declares ${task.budget.timeoutMs}`);
   if (differences.length > 0) throw new EvalError(`${where}: ${differences.join('; ')}, so the harness did not run the task as declared and no report can be built`);
+};
+
+const gateVerdictOfFacts = (facts: RunFactsView): GateVerdict => {
+  if (facts.status === 'STOPPED' && facts.stopReason === 'conditions_unmet') return 'failed';
+  return facts.status === 'COMPLETED' && facts.verification.rounds > 0 ? 'passed' : 'not_run';
 };
 
 const rowOf = (task: BenchTask, trials: readonly BenchmarkTrial[]): TaskRow => ({
@@ -73,5 +80,6 @@ export const buildBenchmarkReport = (input: BuildBenchmarkReportInput): Reliabil
       codeDigest: input.codeDigest,
     },
     tasks,
+    gate: completionAgreement(input.trials.map((trial) => ({ gate: gateVerdictOfFacts(trial.facts), oracle: trial.facts.met }))),
   });
 };

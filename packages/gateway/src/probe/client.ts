@@ -1,7 +1,7 @@
-import { setTimeout as setTimeoutPromise } from 'node:timers/promises';
 import { request } from 'undici';
-import { Deadline, createOutboundDispatcher, createUdsClient, fixedSocket } from '@momonga/foundation';
-import type { OutboundNetwork, UdsClient } from '@momonga/foundation';
+import { OperationLimitError, createOutboundDispatcher, createUdsClient, fixedSocket, operationLimit } from '@momonga/foundation';
+import type { Clock, LimitTiming, OutboundNetwork, UdsClient, UdsResponse } from '@momonga/foundation';
+import { readTextLimited } from '../adapters/shared/body-reading.ts';
 
 export interface HttpResult {
   status: number;
@@ -9,8 +9,9 @@ export interface HttpResult {
   headers: Record<string, string>;
 }
 
-export const systemSleep = (ms: number, signal: AbortSignal | undefined): Promise<void> =>
-  setTimeoutPromise(ms, undefined, signal === undefined ? {} : { signal });
+export type ProbeTimers = LimitTiming;
+
+export type ProbePorts = { readonly clock: Clock; readonly timers: ProbeTimers };
 
 export type ProbeEndpoint =
   | { kind: 'unix'; socketPath: string }
@@ -73,10 +74,26 @@ export class ProbeTimeoutError extends Error {
   }
 }
 
+export const PROBE_REPLY_MAX_BYTES = 8 * 1024 * 1024;
+
+export class ProbeReplyTooLargeError extends Error {
+  constructor(method: string, path: string) {
+    super(`the reply to ${method} ${path} exceeds ${PROBE_REPLY_MAX_BYTES} bytes`);
+    this.name = 'ProbeReplyTooLargeError';
+  }
+}
+
+export const readProbeReply = async (method: string, path: string, response: UdsResponse): Promise<string> => {
+  const read = await readTextLimited(response.body, PROBE_REPLY_MAX_BYTES);
+  if (read.truncated) throw new ProbeReplyTooLargeError(method, path);
+  return read.text;
+};
+
 export const createProbeClient = (
   endpoint: ProbeEndpoint,
   signal: AbortSignal | undefined,
   stepTimeoutMs: number,
+  timers: ProbeTimers,
   managedRoutes?: ManagedProbeRoutes,
 ): ProbeClient => {
   const transport = transportOf(endpoint, stepTimeoutMs);
@@ -90,17 +107,16 @@ export const createProbeClient = (
     perform: (requestSignal: AbortSignal, timedOut: () => boolean, dispose: () => void) => Promise<T>,
     streaming = false,
   ): Promise<T> => {
-    const deadline = Deadline.after(stepTimeoutMs);
-    const requestSignal = signal === undefined ? deadline.signal : AbortSignal.any([signal, deadline.signal]);
-    const timedOut = (): boolean => deadline.expired && signal?.aborted !== true;
+    const limit = operationLimit(signal ?? new AbortController().signal, stepTimeoutMs, `the step bound of ${method} ${path}`, timers);
+    const timedOut = (): boolean => limit.signal.reason instanceof OperationLimitError;
     try {
-      return await perform(requestSignal, timedOut, () => deadline.dispose());
+      return await perform(limit.signal, timedOut, () => limit.dispose());
     } catch (error) {
-      deadline.dispose();
+      limit.dispose();
       if (timedOut()) throw new ProbeTimeoutError(method, path, stepTimeoutMs);
       throw error;
     } finally {
-      if (!streaming) deadline.dispose();
+      if (!streaming) limit.dispose();
     }
   };
 
@@ -118,12 +134,12 @@ export const createProbeClient = (
     get: (route) =>
       withTimeout('GET', paths[route], async (requestSignal) => {
         const response = await uds.request({ method: 'GET', path: paths[route], headers: authHeaders, signal: requestSignal });
-        return { status: response.status, text: await response.text(), headers: response.headers };
+        return { status: response.status, text: await readProbeReply('GET', paths[route], response), headers: response.headers };
       }),
     post: (route, body) =>
       withTimeout('POST', paths[route], async (requestSignal) => {
         const response = await jsonPost(paths[route], body, requestSignal);
-        return { status: response.status, text: await response.text(), headers: response.headers };
+        return { status: response.status, text: await readProbeReply('POST', paths[route], response), headers: response.headers };
       }),
     request: (method, path, body) =>
       withTimeout(method, path, async (requestSignal) => {
@@ -131,7 +147,7 @@ export const createProbeClient = (
           method === 'GET'
             ? await uds.request({ method, path, headers: authHeaders, signal: requestSignal })
             : await jsonPost(path, body, requestSignal);
-        return { status: response.status, text: await response.text(), headers: response.headers };
+        return { status: response.status, text: await readProbeReply(method, path, response), headers: response.headers };
       }),
     stream: (route, body) => {
       const path = paths[route];

@@ -34,7 +34,7 @@ export const givenSecretProgramOutsideFakes = (env: ProcessEnv): string | undefi
 };
 
 export const chosenSecretProgramOutsideFakes = (env: ProcessEnv): string | undefined => {
-  const chosen = secretStoreEnvFor(env)[SECRET_PROGRAM_ENV];
+  const chosen = secretStoreEnvFor(env, { platform: process.platform, uid: process.getuid?.(), realPathOf: (file) => fs.realpathSync(file) })[SECRET_PROGRAM_ENV];
   return chosen !== undefined && !isInsideFakeSecretPrograms(chosen) ? chosen : undefined;
 };
 

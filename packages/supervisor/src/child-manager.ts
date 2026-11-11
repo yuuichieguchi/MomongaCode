@@ -95,6 +95,7 @@ export type ChildManagerOptions = {
   endpoint: RoleEndpoint;
   launcher: Launcher;
   env: Readonly<Record<string, string | undefined>>;
+  secretStoreEnv: Readonly<Record<string, string>>;
   runtime?: RuntimeTuning;
   gateway?: GatewayTuning;
   spawn: SpawnPort;
@@ -399,8 +400,8 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       baseEnv: definedEnv(options.env),
       separateEnv: (merged) =>
         role === 'gateway'
-          ? gatewayEnv(merged, snapshot.settings, options.home, (name) => skippedNames.push(name))
-          : runtimeEnv(merged, snapshot.settings).env,
+          ? gatewayEnv(merged, snapshot.settings, options.home, options.secretStoreEnv, (name) => skippedNames.push(name))
+          : runtimeEnv(merged, snapshot.settings, options.secretStoreEnv).env,
     });
     if (role === 'gateway') reportSkippedNames(skippedNames);
     const spawnCapability = role === 'gateway' ? randomBytes(CAPABILITY_BYTES).toString('hex') : undefined;

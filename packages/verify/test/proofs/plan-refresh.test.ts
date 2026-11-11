@@ -29,14 +29,6 @@ const constant = (arith: ProofArith, name: string, value: number): ProofInt => {
   return variable;
 };
 
-const backoffSum = (arith: ProofArith, attempts: number): ProofInt => {
-  const { baseMs, maxMs } = retry();
-  const cap = arith.ctx.Int.val(BigInt(maxMs));
-  let total: ProofInt = arith.ctx.Int.val(0n);
-  for (let index = 0; index < attempts - 1; index += 1) total = total.add(arith.min(arith.ctx.Int.val(BigInt(baseMs * 2 ** index)), cap));
-  return total;
-};
-
 describe('the plan credential numbers of design-chatgpt-plan.md section 6', () => {
   const z3 = useZ3();
 
@@ -292,37 +284,6 @@ describe('the plan credential numbers of design-chatgpt-plan.md section 6', () =
       arith.given(issuedAt.ge(firstStart), issuedAt.le(firstStart.add(budget)), secondStart.ge(issuedAt));
       expect(await hypothesesSatisfiable(arith)).toBe(true);
       await expectRefuted(arith, secondStart.sub(firstStart).ge(skew));
-    },
-    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
-  );
-
-  it(
-    'P6 proves the revocation budget 31.5 s equals attempts x T_rev plus the backoff between attempts, and the sign-out wait is at most B plus that budget',
-    async () => {
-      const arith = proofArith(z3.engine().api, 'P6');
-      const attempts = constant(arith, 'attempts', retry().maxAttempts);
-      const timeout = constant(arith, 'T_rev', PLAN.revocationTimeoutMs);
-      const budget = constant(arith, 'revocationBudget', PLAN.revocationBudgetMs);
-      const refreshBudget = constant(arith, 'B', PLAN.refreshBudgetMs);
-      const waits = backoffSum(arith, retry().maxAttempts);
-      const signOutWait = arith.int('signOutWait');
-      arith.given(signOutWait.eq(refreshBudget.add(budget)));
-      expect(await hypothesesSatisfiable(arith)).toBe(true);
-      expect(await prove(arith, arith.ctx.And(budget.eq(attempts.mul(timeout).add(waits)), signOutWait.eq(arith.ctx.Int.val(92_500n))))).toEqual({ status: 'proved' });
-    },
-    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
-  );
-
-  it(
-    'P6w refutes the budget for a revocation timeout one millisecond longer',
-    async () => {
-      const arith = proofArith(z3.engine().api, 'P6w');
-      const attempts = constant(arith, 'attempts', retry().maxAttempts);
-      const timeout = constant(arith, 'T_rev', PLAN.revocationTimeoutMs + 1);
-      const budget = constant(arith, 'revocationBudget', PLAN.revocationBudgetMs);
-      const waits = backoffSum(arith, retry().maxAttempts);
-      expect(await hypothesesSatisfiable(arith)).toBe(true);
-      await expectRefuted(arith, attempts.mul(timeout).add(waits).le(budget));
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );

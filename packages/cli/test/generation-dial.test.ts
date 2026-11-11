@@ -9,6 +9,8 @@ import { createRuntimeClient } from '../src/client/runtime-client.ts';
 import { nodeClock } from '../src/node-ports.ts';
 import { createSupervisorClient } from '../src/client/supervisor-client.ts';
 
+const FAKE_PERSON_CAPABILITY = 'f'.repeat(32);
+
 type Role = 'runtime' | 'gateway' | 'supervisor';
 
 const BODIES: Record<Role, { path: string; body: unknown }> = {
@@ -78,7 +80,7 @@ type Client = { call(): Promise<unknown>; close(): Promise<void> };
 
 const clients: Record<Role, (paths: MomongaPaths) => Client> = {
   runtime: (paths) => {
-    const client = createRuntimeClient({ resolveSocket: currentSocketResolver(paths, 'runtime'), clock: nodeClock });
+    const client = createRuntimeClient({ personCapability: async () => FAKE_PERSON_CAPABILITY, resolveSocket: currentSocketResolver(paths, 'runtime'), clock: nodeClock });
     return { call: () => client.health(), close: () => client.close() };
   },
   gateway: (paths) => {

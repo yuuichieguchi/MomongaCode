@@ -122,8 +122,8 @@ export const registerRuleRoutes = (route: RouteRegistrar, deps: RuleRoutesDeps):
     return json(response, 200);
   };
 
-  route('/v1/rules', { GET: listRules, POST: addRule });
-  route('/v1/rules/:id/retire', { POST: retireRule });
+  route('/v1/rules', { GET: listRules, POST: addRule }, { person: ['POST'] });
+  route('/v1/rules/:id/retire', { POST: retireRule }, { person: ['POST'] });
   route('/v1/rules/:id/history', { GET: ruleHistory });
   const putRuleVerdict: Handler = async (context) => {
     const fingerprint = context.req.param('fingerprint') ?? '';
@@ -134,5 +134,5 @@ export const registerRuleRoutes = (route: RouteRegistrar, deps: RuleRoutesDeps):
   };
 
   route('/v1/policy/governance', { GET: policyGovernance });
-  route('/v1/policy/verdicts/:fingerprint', { PUT: putRuleVerdict });
+  route('/v1/policy/verdicts/:fingerprint', { PUT: putRuleVerdict }, { person: ['PUT'] });
 };

@@ -9,11 +9,13 @@ import { createManagedTarget, decideToolCalling, loadProbeRecord, managedCurrenc
 import type { ManagedServer } from '@momonga/gateway';
 import { FM_SERVER, TARGET_PROBING } from '@momonga/protocol';
 import type { ManagedServerDescription, ProbeReport } from '@momonga/protocol';
-import { FAKE_OS_BUILD, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeManagedServer, fakeExec, killGroupsForCleanup, testKernelLock, testProcessInspector } from '@momonga/testkit';
+import { FAKE_OS_BUILD, FAKE_SERVER_MODEL, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeManagedServer, fakeExec, killGroupsForCleanup, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import { makeDir, registerCleanup } from '../gateway-helpers.ts';
 import { makeHome } from '../gateway-process-helpers.ts';
 import { makeReport } from '../report-fixture.ts';
 import { declaredForm, loadedDeclaration, writeExecutable } from './declared-support.ts';
+import { systemTiming } from '@momonga/foundation';
+import { hostTimers } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -112,6 +114,7 @@ describe('a running instance keeps the key it started with (19.11-a, 19.14 item 
       probeRecordDir: dir,
       serverName: 'workbench',
       requestLimitMs: 300_000,
+      timeoutSignal: hostTimers.timeoutSignal,
       isUsableBinary: async () => true,
       readKey: async () => readKey(),
       onInstanceEnd: () => undefined,
@@ -168,6 +171,7 @@ describe('a declared server follows the one generic declared-only rule (19.11-b,
       probeRecordDir: path.join(makeDir(), 'probe'),
       serverName: 'workbench',
       requestLimitMs: 300_000,
+      timeoutSignal: hostTimers.timeoutSignal,
       isUsableBinary: async () => true,
       readKey: async () => KEY_A,
       onInstanceEnd: () => undefined,
@@ -217,6 +221,7 @@ describe('a declared server follows the one generic declared-only rule (19.11-b,
     const instance = managedInstancePaths(momongaPaths(home, process.platform, {}), { owner: 'cli', purpose: 'probe', provider: 'workbench' });
     fs.mkdirSync(instance.markerDirectory, { recursive: true, mode: 0o700 });
     const report = await measureManagedServer({
+      timers: systemTiming,
       inspector: testProcessInspector(),
       lock: testKernelLock(),
       description,
@@ -227,6 +232,7 @@ describe('a declared server follows the one generic declared-only rule (19.11-b,
       env: {},
       exec: fakeExec,
       execWithStdin: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
+      model: FAKE_SERVER_MODEL,
       samples: 2,
       readStopGraceMs: () => 1_000,
       onWarning: () => undefined,

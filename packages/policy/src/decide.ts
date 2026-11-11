@@ -1,16 +1,16 @@
 import path from 'node:path';
-import { DEFAULT_SANDBOX_NETWORK, EMPTY_FILE_RULES, describeNetworkScope, filterAsync, findAsync, isProtectedWrite, lexicallyWithin, networkScopeOfRequest, someAsync } from '@momonga/foundation';
-import type { FileRuleSet, ProtectedSet, SandboxNetworkSetting, SecretLocation, UnresolvableReason } from '@momonga/foundation';
+import { DEFAULT_SANDBOX_NETWORK, EMPTY_FILE_RULES, describeNetworkScope, filterAsync, findAsync, isProtectedWrite, lexicallyWithin, networkScopeOfRequest, parseHostEntry, someAsync } from '@momonga/foundation';
+import type { FileRuleSet, HostEntry, NetworkScope, ProtectedSet, SandboxNetworkSetting, SecretLocation, UnresolvableReason } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { ApprovalBasis, PermissionDenialSource, PermissionMode } from '@momonga/protocol';
 import { commandApproval } from './approval.ts';
 import { commandCoveredByAllowRules } from './command-match.ts';
 import { createDecisionResolver } from './filesystem.ts';
 import type { PolicyFilesystem, WritableCheck } from './filesystem.ts';
-import { suggestAllowRule } from './suggest-allow-rule.ts';
+import { suggestAllowRule, suggestNetworkRule } from './suggest-allow-rule.ts';
 import { supersededVerdictOf } from './superseded.ts';
 import type { CoveredProgram, SupersededForm } from './superseded.ts';
-import { matchPathlessStrength, matchRule, matchStrength, ruleCoversSubject } from './match-rule.ts';
+import { isNetworkRule, matchPathlessStrength, matchRule, matchStrength, networkRuleCovers, ruleCoversSubject } from './match-rule.ts';
 import type { PathlessSubject, RuleResolution } from './match-rule.ts';
 import type { MatchStrength } from './command-match.ts';
 import { absoluteFrom } from './path-match.ts';
@@ -386,13 +386,47 @@ const withWriteBasis = (primary: Decision, writes: PathPlan, writeDecisions: rea
 
 const PROXY_NOTE = 'through the sandbox proxy, which carries HTTP and HTTPS; a program that does not use the proxy variables stays without network';
 
+const requestedEntries = (scope: Extract<NetworkScope, { kind: 'hosts' }>): HostEntry[] =>
+  scope.hosts.map((text) => {
+    const entry = parseHostEntry(text);
+    if (entry === undefined) throw new Error(`the requested host ${text} was normalized without a host form`);
+    return entry;
+  });
+
+const networkRulesOf = (input: DecideInput, effect: PermissionRule['effect']): PermissionRule[] => input.rules.filter((rule) => rule.effect === effect && isNetworkRule(rule));
+
+const restrictingNetworkRule = (input: DecideInput, scope: NetworkScope, effect: 'deny' | 'ask'): PermissionRule | undefined => {
+  const rules = networkRulesOf(input, effect);
+  if (scope.kind === 'none') return undefined;
+  if (scope.kind === 'open') return rules[0];
+  const entries = requestedEntries(scope);
+  return rules.find((rule) => entries.some((entry) => networkRuleCovers(rule, entry)));
+};
+
+const allowedByNetworkRules = (input: DecideInput, scope: NetworkScope): boolean => {
+  const rules = networkRulesOf(input, 'allow');
+  if (scope.kind === 'none') return true;
+  if (scope.kind === 'open') return false;
+  return requestedEntries(scope).every((entry) => rules.some((rule) => networkRuleCovers(rule, entry)));
+};
+
 const withNetworkRequest = (input: DecideInput, decision: Decision): Decision => {
   if (input.subject.kind !== 'command' || input.subject.network === undefined || decision.kind === 'deny') return decision;
   const scope = networkScopeOfRequest(input.subject.network);
   const requests = `the command requests ${describeNetworkScope(scope)}${scope.kind === 'hosts' ? ` (${PROXY_NOTE})` : ''}`;
+  const denying = restrictingNetworkRule(input, scope, 'deny');
+  if (denying !== undefined) {
+    const denied = byRule('deny', denying, 'denied');
+    return { ...denied, reason: `${requests}; ${denied.reason}`, network: true };
+  }
   const setting = input.sandboxNetwork ?? DEFAULT_SANDBOX_NETWORK;
   if (setting === 'deny') return { kind: 'deny', denial: 'setting', source: 'mode', reason: `${requests}, and the setting sandboxNetwork is deny`, network: true };
-  if (setting === 'allow' || input.mode === 'bypassPermissions') return decision.kind === 'ask' ? { ...decision, reason: `${decision.reason}; ${requests}` } : decision;
+  const asking = input.mode === 'bypassPermissions' ? undefined : restrictingNetworkRule(input, scope, 'ask');
+  if (asking !== undefined) {
+    const asked = askByRule(asking, 'approval required');
+    return decision.kind === 'ask' ? { ...decision, reason: `${decision.reason}; ${requests}; ${asked.reason}`, network: true } : { ...asked, reason: `${requests}; ${asked.reason}`, network: true };
+  }
+  if (setting === 'allow' || input.mode === 'bypassPermissions' || allowedByNetworkRules(input, scope)) return decision.kind === 'ask' ? { ...decision, reason: `${decision.reason}; ${requests}` } : decision;
   if (decision.kind === 'ask') return { ...decision, reason: `${decision.reason}; ${requests}`, network: true };
   return { kind: 'ask', source: 'mode', reason: requests, network: true };
 };
@@ -420,7 +454,7 @@ const withTarget = (input: DecideInput, decision: Decision): Decision => {
 
 const withinMandate = async (input: DecideInput, decision: Decision): Promise<Decision> => {
   if (input.mandate !== true || decision.kind !== 'ask' || decision.source !== 'mode' || decision.humanOnly === true) return decision;
-  const rule = await suggestAllowRule(input.tool, input.subject, input.cwd, input.fs.canonicalise);
+  const rule = decision.network === true ? suggestNetworkRule(input.subject) : await suggestAllowRule(input.tool, input.subject, input.cwd, input.fs.canonicalise);
   const wayForward = rule === undefined ? '' : ` To allow it in a run under this mandate, add the rule ${rule} to the allow list of the mandate.`;
   return { kind: 'deny', denial: 'mandate', source: 'mode', reason: `Not run: outside the declared mandate (${decision.reason}).${wayForward} Continue with work inside it or report.` };
 };

@@ -12,6 +12,7 @@ import { OLLAMA_MODEL, startFakeOllama } from '../../../gateway/test/ollama-supp
 import { CLIENT_VERSION, fakeClock } from './fixtures.ts';
 import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
 import { prepareGatewayHome } from './prepared-home.ts';
+import { hostProbePorts } from '../../../gateway/test/probe-ports-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -71,6 +72,7 @@ const ollamaClient = async () => {
   const home = makeHome();
   writeModel(home, { adapter: 'ollama', provider: OLLAMA_PROVIDER, id: OLLAMA_MODEL, baseUrl: fake.origin, capabilities: { contextWindow: CONTEXT_WINDOW, maxOutputTokens: 1024 } });
   await probeOllamaTarget({
+    ports: hostProbePorts,
     lock: testKernelLock(),
     key: { endpoint: fake.origin, model: OLLAMA_OWN_NAME },
     probeRecordDir: momongaPaths(home, process.platform, {}).probe,

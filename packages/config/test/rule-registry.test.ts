@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ConfigError, NETWORK_RULE_NOT_ENFORCED, checkRuleText, loadSettings } from '@momonga/config';
+import { ConfigError, checkRuleText, loadSettings } from '@momonga/config';
 import { OPERATION_RULE_TOOLS, TOOL_NAMES } from '@momonga/protocol';
 import { makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
@@ -62,16 +62,12 @@ describe('rules at load', () => {
     expect(result.rules).toMatchObject([{ tool: 'Network', specifier: '*.example.org', effect: 'allow', origin: 'user' }]);
   });
 
-  it('says of a Network rule it loads that the rule is not enforced yet, in one text', async () => {
+  it('loads a Network rule of the user layer and of a mandate without a warning: the rule is enforced', async () => {
     const tree = makeTree();
-    const file = writeJson(userSettingsPath(tree), { permissions: { allow: ['Network(*.example.org)'], deny: ['Network(tracker.example.org)'] }, mandates: { tidy: { allow: ['Network(example.org)'] } } });
+    writeJson(userSettingsPath(tree), { permissions: { allow: ['Network(*.example.org)'], deny: ['Network(tracker.example.org)'] }, mandates: { tidy: { allow: ['Network(example.org)'] } } });
     const result = await load(tree);
-    expect(NETWORK_RULE_NOT_ENFORCED).toBe('Network rules are read but not enforced yet; this rule changes nothing');
-    expect(result.warnings).toEqual([
-      `${file}: /permissions/allow/0: "Network(*.example.org)": ${NETWORK_RULE_NOT_ENFORCED}`,
-      `${file}: /permissions/deny/0: "Network(tracker.example.org)": ${NETWORK_RULE_NOT_ENFORCED}`,
-      `${file}: /mandates/tidy/allow/0: "Network(example.org)": ${NETWORK_RULE_NOT_ENFORCED}`,
-    ]);
+    expect(result.warnings).toEqual([]);
+    expect(result.rules.map((rule) => rule.text).sort()).toEqual(['Network(*.example.org)', 'Network(tracker.example.org)']);
   });
 
   it('discards a Network rule of the project layer with a warning that names the file and the key', async () => {

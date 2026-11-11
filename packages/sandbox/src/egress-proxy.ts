@@ -3,13 +3,16 @@ import http from 'node:http';
 import net from 'node:net';
 import type { AddressInfo, LookupFunction } from 'node:net';
 import type { Duplex } from 'node:stream';
+import { tunnelOpeningAdmits, tunnelOpeningOf } from './tunnel-opening.ts';
+import type { TunnelOpening } from './tunnel-opening.ts';
 import { createOutboundDispatcher, findOutboundError, formatHostEntry, hostEntryCovers, isAcceptableAddress, normalizedHosts, openOutboundTunnel, parseHostEntry } from '@momonga/foundation';
 import type { HostEntry, OutboundNetwork, Random } from '@momonga/foundation';
 
 export type EgressRefusal =
   | { readonly kind: 'not_granted'; readonly host: string; readonly port: number }
   | { readonly kind: 'guarded_address'; readonly host: string; readonly port: number; readonly address: string }
-  | { readonly kind: 'unresolvable'; readonly host: string; readonly port: number; readonly cause: string };
+  | { readonly kind: 'unresolvable'; readonly host: string; readonly port: number; readonly cause: string }
+  | { readonly kind: 'other_name'; readonly host: string; readonly port: number; readonly presented: string | undefined };
 
 export type EgressPorts = {
   resolve(host: string): Promise<readonly string[]>;
@@ -39,6 +42,8 @@ export const describeEgressRefusal = (refusal: EgressRefusal, hosts: readonly st
       return `the sandbox proxy refused ${target}: the name resolves to ${refusal.address}, which is not a public address; a command reaches such an address only when the address itself is granted`;
     case 'unresolvable':
       return `the sandbox proxy could not reach ${target}: the name could not be resolved (${refusal.cause})`;
+    case 'other_name':
+      return `the sandbox proxy closed the tunnel to ${target}: it was granted for ${refusal.host}, and the connection ${refusal.presented === undefined ? 'did not open with a TLS server name or an HTTP Host equal to it' : `named ${refusal.presented}`}`;
   }
 };
 
@@ -47,6 +52,8 @@ const NOT_FORWARDED: ReadonlySet<string> = new Set(['connection', 'expect', 'kee
 const UNTIL_THE_COMMAND_ENDS = 0;
 
 const CREDENTIAL_RANDOM_BYTES = 32;
+
+export const TUNNEL_OPENING_MAX_BYTES = 65_536;
 
 const CREDENTIAL_USER = 'momonga';
 
@@ -90,6 +97,42 @@ const targetOfUrl = (text: string | undefined): (Target & { path: string; author
   if (entry === undefined) return undefined;
   return { host: entry.host, port: entry.port ?? 80, path: `${url.pathname}${url.search}`, authority: url.host };
 };
+
+const presentedNameOf = (opening: TunnelOpening): string | undefined => {
+  if (opening.kind === 'tls') return opening.name;
+  if (opening.kind !== 'http' || opening.host === undefined) return undefined;
+  return parseHostEntry(opening.host)?.host ?? opening.host;
+};
+
+type Opened = { readonly opening: TunnelOpening; readonly bytes: Buffer };
+
+const openingOf = (client: Duplex, head: Buffer): Promise<Opened | undefined> =>
+  new Promise((resolve) => {
+    let bytes = head;
+    const settle = (opened: Opened | undefined): void => {
+      client.off('data', received);
+      client.off('end', ended);
+      client.off('close', ended);
+      client.pause();
+      resolve(opened);
+    };
+    const judged = (): boolean => {
+      const opening = tunnelOpeningOf(bytes);
+      if (opening.kind !== 'incomplete') settle({ opening, bytes });
+      else if (bytes.length > TUNNEL_OPENING_MAX_BYTES) settle({ opening: { kind: 'other' }, bytes });
+      else return false;
+      return true;
+    };
+    const received = (chunk: Buffer): void => {
+      bytes = Buffer.concat([bytes, chunk]);
+      judged();
+    };
+    const ended = (): void => settle(undefined);
+    if (judged()) return;
+    client.on('data', received);
+    client.once('end', ended);
+    client.once('close', ended);
+  });
 
 type Upstream = ReturnType<typeof createOutboundDispatcher>;
 
@@ -165,7 +208,18 @@ export const startEgressProxy = async (options: { hosts: readonly string[]; netw
     client.on('close', () => upstream.destroy());
     upstream.on('close', () => client.destroy());
     client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-    if (head.length > 0) upstream.write(head);
+    const opened = await openingOf(client, head);
+    if (opened === undefined || closed) {
+      upstream.destroy();
+      return;
+    }
+    if (!tunnelOpeningAdmits(target.host, opened.opening)) {
+      refused.push({ kind: 'other_name', host: target.host, port: target.port, presented: presentedNameOf(opened.opening) });
+      client.destroy();
+      upstream.destroy();
+      return;
+    }
+    upstream.write(opened.bytes);
     upstream.pipe(client);
     client.pipe(upstream);
   };

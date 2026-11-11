@@ -8,6 +8,7 @@ import { mergeCapabilities } from '../src/probe/decide.ts';
 import { isProbeReport } from '../src/probe/report-schema.ts';
 import { makeDir } from './gateway-helpers.ts';
 import { CC_CAPABILITIES } from './cc-support.ts';
+import { probePortsAt } from './probe-ports-support.ts';
 
 type JsonModeBehaviour = 'accepts' | 'rejects' | 'fails' | 'ignores';
 
@@ -82,7 +83,7 @@ const startJsonModeTarget = async (behaviour: JsonModeBehaviour): Promise<{ sock
 
 const probeAgainst = async (behaviour: JsonModeBehaviour): Promise<{ report: ProbeReport; jsonObjectRequests: number }> => {
   const target = await startJsonModeTarget(behaviour);
-  const report = await runProbe({ socketPath: target.socketPath, samples: 2, now: NOW });
+  const report = await runProbe({ socketPath: target.socketPath, samples: 2, ports: probePortsAt(NOW) });
   return { report, jsonObjectRequests: target.jsonObjectRequests() };
 };
 

@@ -1,6 +1,6 @@
 import { ModelsEditRefused, durationText, editModelsSettings, fieldLabel, fieldValueText, loadUserModels, loadUserSettings, planModelsEdit, providerNameOf, registeredServer, serverKindOf, serverNameFromCommand, serverRegistryOf, settableFieldPath } from '@momonga/config';
 import type { ConnectionDraft, ModelEntry, ModelsEditPlan, ModelsEditPorts, ModelsOperation, ModelsOperations, ModelsReference, ProviderNameInput, ResolvedModels } from '@momonga/config';
-import { EXIT_FAILURE, EXIT_USAGE, createBinaryHashCache, currentSocketResolver, isRecord, parseOutsideJson, resolveLayoutLocks, layoutProcessInspector } from '@momonga/foundation';
+import { EXIT_FAILURE, EXIT_USAGE, currentSocketResolver, isRecord, parseOutsideJson, resolveLayoutLocks, layoutProcessInspector } from '@momonga/foundation';
 import type { MomongaPaths, OutboundFetch, KernelLockMechanism } from '@momonga/foundation';
 import {
   GENERIC_SERVER_KIND,
@@ -32,7 +32,7 @@ import { withIdentityReadFetch } from '../network.ts';
 import { announcePlainHttp } from '../plain-http.ts';
 import type { CliFiles, CliPorts } from '../ports.ts';
 import { escapedLines } from '../terminal-writer.ts';
-import { cliProbeInstance } from './gateway.ts';
+import { cliProbeInstance, managedProbeTimersOf } from './gateway.ts';
 
 type Writer = { write(text: string): void };
 
@@ -826,31 +826,28 @@ export const runModelsForm = async (shell: ModelsShell, form: ModelsForm, input:
 };
 
 export const programModelOf = async (ports: CliPorts, paths: MomongaPaths, program: ServerProgram, signal: AbortSignal, onWarning: (message: string) => void): Promise<string> => {
-  const { probeManagedFm, systemProcessFiles } = await import('@momonga/gateway');
+  const { listManagedModel, systemProcessFiles } = await import('@momonga/gateway');
   const { settings } = await loadUserSettings({ home: ports.home, signal });
   const declared = 'builtIn' in program ? undefined : { [program.id]: { command: program.command, args: [...program.args], readyPath: program.readyPath } };
   const description = registeredServer(serverRegistryOf(declared, paths.settingsFile), program.id);
   if (description === undefined) throw new TypeError(`the server program ${program.id} is not in the registry of server programs`);
   const locks = resolveLayoutLocks(paths);
-  const { report } = await probeManagedFm({
+  return listManagedModel({
     paths,
     lock: locks.mechanism,
     inspector: layoutProcessInspector(locks.capability),
-    platform: ports.platform,
     instance: cliProbeInstance(paths, program.id),
     description,
     target: program.id,
     binary: 'builtIn' in program ? description.binary.defaultPath : program.command,
     readyTimeoutMs: description.ready.limitMs,
     env: ports.env,
-    userDialects: settings.models.dialects,
     signal,
-    hashes: createBinaryHashCache(),
     isUsableBinary: systemProcessFiles.isUsableBinary,
     readStopGraceMs: () => settings.gateway.managedServerStopGraceMs,
+    timers: managedProbeTimersOf(ports),
     onWarning,
   });
-  return report.modelId;
 };
 
 export const serversDetector =

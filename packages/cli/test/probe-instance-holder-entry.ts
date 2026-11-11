@@ -1,5 +1,5 @@
 import { createManagedServer } from '@momonga/gateway';
-import { kernelLockNamed, momongaLayout } from '@momonga/foundation';
+import { kernelLockNamed, momongaLayout, systemTiming } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
 import { FM_SERVER } from '@momonga/protocol';
 import { fakeExec, testProcessInspector } from '@momonga/testkit';
@@ -20,6 +20,7 @@ const server = createManagedServer({
   binary,
   env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home },
   exec: fakeExec,
+  timers: systemTiming,
   onWarning: (message) => process.stderr.write(`${message}\n`),
 });
 await server.start();

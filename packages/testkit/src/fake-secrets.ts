@@ -1,5 +1,5 @@
 import * as foundation from '@momonga/foundation';
-import { KEYCHAIN_SERVICE, SECRET_TOOL_BINARY, SECURITY_BINARY, SecretUnavailableError } from '@momonga/foundation';
+import { KEYCHAIN_SERVICE, SECRET_TOOL_BINARY, SECURITY_BINARY } from '@momonga/foundation';
 import type { SecretProcessPort, SecretProcessResult, SecretStore } from '@momonga/foundation';
 import type { SecretStoreFiles } from '@momonga/foundation/secret-store';
 

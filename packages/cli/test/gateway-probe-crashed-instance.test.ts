@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import { createManagedServer } from '@momonga/gateway';
-import { ensureMomongaDirs, momongaLayout } from '@momonga/foundation';
+import { ensureMomongaDirs, momongaLayout, systemTiming } from '@momonga/foundation';
 import { FM_SERVER } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup, registerCleanup, spawnTracked, testKernelLock, testProcessInspector, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
@@ -71,6 +71,7 @@ const nextProbe = (context: CleanupContext, at: Awaited<ReturnType<typeof prepar
     binary: at.binary,
     env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: at.home, TMPDIR: at.home },
     exec: fakeExec,
+    timers: systemTiming,
     onWarning: (message) => warnings.push(message),
   });
   registerCleanup(context, () => server.stop());

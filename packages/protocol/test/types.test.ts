@@ -93,7 +93,7 @@ describe('protocol capability types', () => {
       probedAt: string;
       health: HealthResult;
       modelId: string;
-      contextWindow: { value: number; method: 'reported' | 'searched'; overflowErrorShape?: unknown };
+      contextWindow: { value: number; method: 'reported' | 'searched' | 'declared'; overflowErrorShape?: unknown };
       streaming: { supported: boolean; doneSentinel: boolean; usageInStream: boolean };
       usageReported: boolean;
       nativeTools: { accepted: boolean; validRate: number; roundTripOk: boolean };
@@ -105,7 +105,7 @@ describe('protocol capability types', () => {
       outputBoundField?: 'max_completion_tokens' | 'max_tokens' | 'none';
       parallelToolCalls?: { accepted: boolean; multiCallRate: number };
       reasoning?: { control: 'none'; headroomTokens?: number } | { control: 'reasoning_effort'; lowest: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' };
-      maxConcurrency: number;
+      maxConcurrency?: { value: number; evidence: 'refused' };
       imageInputAccepted: boolean;
       imageTokens?: { pixelsPerToken: number; maxTokens: number; minTokens: number };
       guardrail: { errorShape?: unknown };

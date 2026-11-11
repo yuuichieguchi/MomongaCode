@@ -119,3 +119,22 @@ export const describeNetworkScope = (scope: NetworkScope): string => {
       return `network access to ${scope.hosts.join(', ')} only`;
   }
 };
+
+export type HostPattern = { readonly host: string; readonly port: number | undefined; readonly suffix: boolean };
+
+export const HOST_SUFFIX_PREFIX = '*.';
+
+export const parseHostPattern = (text: string): HostPattern | undefined => {
+  const suffix = text.startsWith(HOST_SUFFIX_PREFIX);
+  const entry = parseHostEntry(suffix ? text.slice(HOST_SUFFIX_PREFIX.length) : text);
+  if (entry === undefined) return undefined;
+  if (suffix && (net.isIP(entry.host) !== 0 || entry.port !== undefined)) return undefined;
+  return { host: entry.host, port: entry.port, suffix };
+};
+
+export const hostPatternCovers = (pattern: HostPattern, asked: { readonly host: string; readonly port: number | undefined }): boolean => {
+  const host = asked.host.toLowerCase();
+  if (pattern.port !== undefined && pattern.port !== asked.port) return false;
+  if (!pattern.suffix) return host === pattern.host;
+  return net.isIP(host) === 0 && host.endsWith(`.${pattern.host}`);
+};

@@ -26,7 +26,7 @@ describe('mcp.connectTimeoutMs is one global user setting for the connect of eve
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { mcp: { connectTimeoutMs: value } });
     await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow(
-      `${userSettingsPath(tree)}: mcp.connectTimeoutMs must be an integer from 1 to 3600000 milliseconds; got ${JSON.stringify(value)}`,
+      `${userSettingsPath(tree)}: invalid settings at /mcp/connectTimeoutMs: must be an integer from 1 to 3600000 milliseconds; got ${JSON.stringify(value)}`,
     );
   });
 

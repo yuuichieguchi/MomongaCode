@@ -33,6 +33,11 @@ const row = (runId: string, overrides: Partial<RunFactsView> = {}): RunFactsView
   reconciledAlreadyApplied: 0,
   reconciledNotApplied: 0,
   reconciledUnknown: 0,
+  mutated: false,
+  owed: false,
+  verification: { rounds: 0, firstRoundPassed: null, failedRounds: 0, checkMs: 0, fixRoundTokens: 0 },
+  answers: { allowOnce: 0, allowAlways: 0, rejectOnce: 0, rejectAlways: 0 },
+  denials: { sandbox: 0, rule: 0, mode: 0, setting: 0, hook: 0, mandate: 0, superseded: 0, held: 0 },
   basis: { readOnly: 0, rule: 0, mode: 0, hook: 0, classifier: 0, person: 0 },
   declared: true,
   met: true,
@@ -76,6 +81,6 @@ describe('store-protocol-C16: a period or a grouping applies to every bucket pri
     expect(population).toContain('not placed 1');
     expect(decodeReliabilityReport(encodeReliabilityReport(report))).toEqual(report);
     expect(Object.hasOwn(RETIRED_RELIABILITY_FORMATS, 'momonga-reliability/4')).toBe(true);
-    expect(RELIABILITY_FORMAT).toBe('momonga-reliability/5');
+    expect(RELIABILITY_FORMAT).toBe('momonga-reliability/6');
   });
 });

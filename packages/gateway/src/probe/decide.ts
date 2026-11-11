@@ -16,13 +16,17 @@ export interface ToolCallingDecision {
 
 export const DEFAULT_MIN_VALID_RATE = 0.9;
 
+export const DEFAULT_NATIVE_MARGIN = 0.05;
+
+export const UNMEASURED_MAX_CONCURRENCY = 1;
+
 const EPSILON = 1e-9;
 
 export const atLeast = (value: number, threshold: number): boolean => value >= threshold - EPSILON;
 
 export const decideToolCalling = (report: ProbeReport, thresholds: DecideThresholds = {}): ToolCallingDecision => {
   const minValidRate = thresholds.minValidRate ?? DEFAULT_MIN_VALID_RATE;
-  const nativeMargin = thresholds.nativeMargin ?? 0.05;
+  const nativeMargin = thresholds.nativeMargin ?? DEFAULT_NATIVE_MARGIN;
   const native = report.nativeTools;
   const constrained = report.constrained;
   const constrainedRate = constrained.accepted ? constrained.validRate : 0;
@@ -86,7 +90,7 @@ export const capabilitiesFromProbe = (
     tokenCounting: report.tokenCalibration === undefined ? 'estimated' : 'calibrated',
     ...(report.tokenCalibration === undefined ? {} : { tokenErrorRatio: report.tokenCalibration.errorBound }),
     usageReported: report.usageReported,
-    maxConcurrency: report.maxConcurrency,
+    maxConcurrency: report.maxConcurrency?.value ?? UNMEASURED_MAX_CONCURRENCY,
     source: 'probed',
     probedAt: report.probedAt,
   };

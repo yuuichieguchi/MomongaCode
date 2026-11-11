@@ -20,6 +20,8 @@ export type AdapterTraits = {
   readonly wire: WireFacts;
 };
 
+const ANTHROPIC_WIRE_CACHE_BREAKPOINTS = 4;
+
 export const ADAPTERS = {
   managed: {
     credentials: 'none',
@@ -63,7 +65,7 @@ export const ADAPTERS = {
     probeRecord: 'none',
     probe: 'none',
     measured: 'never',
-    wire: { stopSequences: false, parallelToolCalls: true, tokenCounting: 'exact', promptCache: { kind: 'breakpoints', maxBreakpoints: 4 } },
+    wire: { stopSequences: false, parallelToolCalls: true, tokenCounting: 'exact', promptCache: { kind: 'breakpoints', maxBreakpoints: ANTHROPIC_WIRE_CACHE_BREAKPOINTS } },
   },
   ollama: {
     credentials: 'none',

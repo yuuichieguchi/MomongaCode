@@ -226,7 +226,7 @@ const resolveRemote = (
     billing: target.billing ?? serving.billing,
     capabilities,
     maxConcurrency,
-    admissionTimeoutMs: target.admissionTimeoutMs ?? 30000,
+    admissionTimeoutMs: target.admissionTimeoutMs ?? DEFAULT_ADMISSION_TIMEOUT_MS,
   };
 };
 
@@ -284,7 +284,7 @@ const resolvePlan = (target: PlanOpenResponsesTarget, provider: string, { connec
       ...declaredImageCapability(imageInput, imageTokens, entry),
     },
     maxConcurrency,
-    admissionTimeoutMs: target.admissionTimeoutMs ?? 30000,
+    admissionTimeoutMs: target.admissionTimeoutMs ?? DEFAULT_ADMISSION_TIMEOUT_MS,
   };
 };
 
@@ -594,13 +594,3 @@ const sortedNames = (names: Iterable<string | undefined>): string[] => [...new S
 
 export const credentialEnvNames = (resolved: Pick<ResolvedModels, 'connections'>): string[] => sortedNames(resolved.connections.map((connection) => connection.apiKeyEnv));
 
-export const secretNames = (resolved: Pick<ResolvedModels, 'connections'>): string[] => sortedNames(resolved.connections.map((connection) => connection.apiKeySecret));
-
-export const planAccountNames = (resolved: Pick<ResolvedModels, 'connections'>): PlanReference[] => {
-  const seen = new Map<string, PlanReference>();
-  for (const { plan } of resolved.connections) {
-    if (plan?.account === undefined) continue;
-    seen.set(JSON.stringify([plan.profile, plan.account]), plan);
-  }
-  return [...seen.values()].sort((a, b) => a.profile.localeCompare(b.profile) || (a.account as string).localeCompare(b.account as string));
-};

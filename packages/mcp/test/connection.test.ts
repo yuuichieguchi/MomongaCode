@@ -13,6 +13,7 @@ import {
   MODERN_FIXTURE_PROTOCOL_VERSION,
   MODERN_FIXTURE_TOOL_NAMES,
   createFakeClock,
+  TEST_STDIO_LAUNCH,
 } from '@momonga/testkit';
 import {
   BASE_ENV,
@@ -30,7 +31,7 @@ import {
 } from './mcp-harness.ts';
 
 const connect = async (name: string, config: McpServerConfig, requestTimeoutMs?: number): Promise<McpServerConnection> => {
-  const connection = await connectMcpServer({ files: nodeFileSystem,
+  const connection = await connectMcpServer({ launch: TEST_STDIO_LAUNCH, files: nodeFileSystem,
     clientVersion: '0.0.0-test',
     name,
     config,
@@ -96,7 +97,7 @@ describe('connectMcpServer remote configs', () => {
     onCleanup(() => new Promise<void>((resolve) => server.close(() => resolve())));
     const { port } = server.address() as net.AddressInfo;
     await expect(
-      connectMcpServer({ files: nodeFileSystem,
+      connectMcpServer({ launch: TEST_STDIO_LAUNCH, files: nodeFileSystem,
         clientVersion: '0.0.0-test',
         name: 'remote',
         config: { type: 'http', url: `http://127.0.0.1:${port}/mcp` },
@@ -239,7 +240,7 @@ describe('the connect of a server against the limit of the connect', () => {
   });
 
   it('a connect that hangs outside the store has the limit text', LIMIT_TEST, async () => {
-    const connection = createManagedConnection({ files: nodeFileSystem,
+    const connection = createManagedConnection({ launch: TEST_STDIO_LAUNCH, files: nodeFileSystem,
       clientVersion: '0.0.0-test',
       name: 's',
       config: { command: process.execPath, args: ['-e', 'setInterval(() => {}, 1000)'] },
