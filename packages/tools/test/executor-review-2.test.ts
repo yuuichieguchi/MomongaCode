@@ -5,7 +5,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createToolExecutor, nodeShellHost } from '@momonga/tools';
 import type { CallOutcome } from '@momonga/tools';
-import { call, expectedSubjectDigest, makeHarness, makeTool, toolSetOf } from './harness.ts';
+import { call, expectedDigestOf, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
 import { keyFor, ruleFor } from './helpers.ts';
 import { momongaLayout } from '@momonga/foundation';
@@ -85,10 +85,6 @@ describe('executor admission of a call with an existing record', () => {
     fs.mkdirSync(other);
     const target = path.join(dir, 'file.txt');
     const subject = { kind: 'path' as const, tool: 'Edit', paths: [target], access: 'write' as const };
-    const approvedDigest = expectedSubjectDigest(subject, harness.layout.project);
-    harness.idempotency.seed(KEY, 'PENDING', { tool: 'Edit' });
-    fs.rmSync(dir, { recursive: true });
-    fs.symlinkSync(other, dir, 'dir');
     let executed = 0;
     const tool = makeTool('Edit', {
       kind: 'edit',
@@ -100,9 +96,13 @@ describe('executor admission of a call with an existing record', () => {
         return { status: 'completed', output: 'edited' };
       },
     });
+    const approvedDigest = await expectedDigestOf(tool, {}, harness);
+    harness.idempotency.seed(KEY, 'PENDING', { tool: 'Edit' });
+    fs.rmSync(dir, { recursive: true });
+    fs.symlinkSync(other, dir, 'dir');
 
     const [outcome] = await harness.executor.runBatch(
-      await harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, { kind: 'allow_once', subjectDigest: await approvedDigest })], { mode: 'manual' }),
+      await harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, { kind: 'allow_once', subjectDigest: approvedDigest })], { mode: 'manual' }),
     );
 
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'needs_approval' });

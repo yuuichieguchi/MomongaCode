@@ -97,7 +97,7 @@ describe('the layout of the full screen', () => {
     await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'go');
     backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Bash', kind: 'execute', title: 'Bash ls', rawInput: { command: 'ls' } }));
-    backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: 'asks', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }] }));
+    backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: 'asks', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], shown: { title: 'approval', input: {} } }));
     const lines = linesOf(await untilFrame(app, (now) => now.includes('Permission requested: Bash ls') && now.includes('to choose')));
     expect(lines).toHaveLength(16);
     expect(lines.filter((line) => line.includes('│ >'))).toEqual([]);

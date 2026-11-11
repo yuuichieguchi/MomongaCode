@@ -118,6 +118,7 @@ describe('App run rendering', () => {
           { optionId: 'o3', name: 'Reject once', kind: 'reject_once' },
           { optionId: 'o4', name: 'Always reject', kind: 'reject_always' },
         ],
+        shown: { title: 'Edit /work/project/a.toml', input: {}, diff: { hunks: [{ oldStart: 1, newStart: 1, lines: ['-name = "old"', '+name = "new"'] }], added: 1, removed: 1 } },
       }),
     );
     const prompt = await untilFrame(app, 'Permission requested: Edit /work/project/a.toml');
@@ -145,47 +146,11 @@ describe('App run rendering', () => {
           { optionId: 'o1', name: 'Allow once', kind: 'allow_once' },
           { optionId: 'o3', name: 'Reject once', kind: 'reject_once' },
         ],
+        shown: { title: 'approval', input: {} },
       }),
     );
     const prompt = await untilFrame(app, 'Permission requested: Write /elsewhere/out.txt');
     expect(prompt).toContain('edit outside the workspace requires approval');
-    app.unmount();
-  });
-
-  it.each([
-    ['an absolute path inside the working directory', '/work/project/src/a.toml', 'src/a.toml'],
-    ['a relative path', 'src/a.toml', 'src/a.toml'],
-    ['a path outside the working directory', '/elsewhere/a.toml', '/elsewhere/a.toml'],
-    ['a relative path that leaves the working directory', '../elsewhere/a.toml', '/work/elsewhere/a.toml'],
-  ])('heads the approval diff for %s with its display form', async (_label, filePath, header) => {
-    const { backend, app } = await start();
-    await untilFrame(app, 'mode: manual');
-    await runStarted(backend, app, 'edit it');
-    backend.emit(
-      frame({
-        type: 'tool.call',
-        callId: 'c1',
-        providerCallId: 'p1',
-        name: 'Edit',
-        kind: 'edit',
-        title: 'Edit target',
-        rawInput: { file_path: filePath, old_string: 'name = "old"', new_string: 'name = "new"' },
-      }),
-    );
-    backend.emit(
-      frame({
-        type: 'tool.permission.requested',
-        approvalId: 'ap1',
-        callId: 'c1',
-        subjectDigest: 'd',
-        reason: 'edits require approval',
-        options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }],
-      }),
-    );
-    const prompt = await untilFrame(app, '+ name = "new"');
-    const lines = prompt.split('\n').map((line) => line.replace(/^[│|]\s?/, '').replace(/\s*[│|]$/, '').trim());
-    const headerIndex = lines.findIndex((line) => line.endsWith('- name = "old"')) - 1;
-    expect(lines[headerIndex]).toBe(header);
     app.unmount();
   });
 
@@ -205,6 +170,7 @@ describe('App run rendering', () => {
           { optionId: 'o1', name: 'Allow once', kind: 'allow_once' },
           { optionId: 'o3', name: 'Reject once', kind: 'reject_once' },
         ],
+        shown: { title: 'approval', input: {} },
       }),
     );
     await untilFrame(app, 'Permission requested: Bash ls');
@@ -224,7 +190,7 @@ describe('App run rendering', () => {
     ];
     for (const [callId, approvalId] of [['c1', 'ap1'], ['c2', 'ap2']] as const) {
       backend.emit(frame({ type: 'tool.call', callId, providerCallId: callId, name: 'Bash', kind: 'execute', title: `Bash ${callId}`, rawInput: { command: 'ls' } }));
-      backend.emit(frame({ type: 'tool.permission.requested', approvalId, callId, subjectDigest: 'd', reason: 'edits require approval', options }));
+      backend.emit(frame({ type: 'tool.permission.requested', approvalId, callId, subjectDigest: 'd', reason: 'edits require approval', options, shown: { title: 'approval', input: {} } }));
     }
     await untilFrame(app, 'Permission requested: Bash c1');
     app.stdin.write(KEYS.down);

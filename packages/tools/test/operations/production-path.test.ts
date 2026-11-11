@@ -7,7 +7,7 @@ import { createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxCommand, SandboxPolicy } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, unconfiguredNetworkOf, testProcessInspector } from '@momonga/testkit';
 import { createOperationTools, createSandboxedArgvRunner, networkScopeOfDestinations, nodeShellHost } from '@momonga/tools';
-import type { CallOutcome, ResultOutcome } from '@momonga/tools';
+import type { CallOutcome, NeedsApprovalOutcome, ResultOutcome } from '@momonga/tools';
 import { call, makeHarness, toolSetOf } from '../harness.ts';
 import { HAS_REAL_SANDBOX, createHostSandbox, makeLayout, policyFor, ruleFor, sessionTmpDirOf } from '../helpers.ts';
 import type { Layout } from '../helpers.ts';
@@ -250,6 +250,26 @@ describe('operations through the executor and the policy, which spawn only the r
     const outcome = await run('GitPush', { remote: 'origin', branch: 'main' });
     expect(outcome?.kind).toBe('needs_approval');
     expect(onlyGateReads(spawns)).toBe(true);
+  });
+
+  it('gives a force push and a delete their own titles and digests, and shows the rendered command with its destination', async () => {
+    const { run } = await setup({ realSandbox: false });
+    const asked = async (input: Record<string, unknown>): Promise<NeedsApprovalOutcome> => {
+      const outcome = await run('GitPush', input);
+      if (outcome?.kind !== 'needs_approval') throw new Error(`GitPush did not ask: ${JSON.stringify(outcome)}`);
+      return outcome;
+    };
+    const plain = await asked({ remote: 'origin', branch: 'main' });
+    const forced = await asked({ remote: 'origin', branch: 'main', force: true });
+    const deleted = await asked({ remote: 'origin', branch: 'main', delete: true });
+    expect(plain.title).toBe('Push main to origin');
+    expect(forced.title).toBe('Force push main to origin');
+    expect(deleted.title).toBe('Delete the remote branch main on origin');
+    expect(new Set([plain.subjectDigest, forced.subjectDigest, deleted.subjectDigest]).size).toBe(3);
+    expect(plain.shown.effect).toContain('git push origin refs/heads/main:refs/heads/main');
+    expect(forced.shown.effect).toContain('--force-with-lease=refs/heads/main:');
+    expect(deleted.shown.effect).toContain('git push origin :refs/heads/main');
+    expect(plain.shown.effect).toMatch(/\nto \S+/);
   });
 
   it('asks a person for a push to a protected ref even under an allow rule and bypassPermissions', async () => {

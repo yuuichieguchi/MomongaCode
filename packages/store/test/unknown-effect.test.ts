@@ -134,7 +134,7 @@ describe('the answer to an unknown effect', () => {
     await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'worker-1');
     store.append(claim, [callEvent('call_1')]);
-    const result = await store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: 'a'.repeat(64), reason: 'edits require approval' } });
+    const result = await store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: 'a'.repeat(64), reason: 'edits require approval', shown: { title: 'approval', input: {} } } });
     if (result.kind !== 'ok') throw new Error('expected an approval');
     expect(await store.approvalView(result.approval.id)).toMatchObject({ kind: 'permission' });
   });

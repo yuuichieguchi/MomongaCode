@@ -381,6 +381,7 @@ describe('tool.permission.requested reason', () => {
     options: OPTIONS,
     subjectDigest: 'd'.repeat(64),
     reason: 'edit outside the workspace requires approval',
+    shown: { title: 'approval', input: {} },
   };
 
   it('accepts a public request that carries the reason the policy asked', () => {

@@ -25,7 +25,7 @@ const REJECT = { optionId: 'o3', name: 'Reject once', kind: 'reject_once' };
 
 const askFor = (backend: FakeBackend, callId: string, approvalId: string, options: readonly unknown[], reason = 'asks'): void => {
   backend.emit(frame({ type: 'tool.call', callId, providerCallId: callId, name: 'Bash', kind: 'execute', title: `Bash ${callId}`, rawInput: { command: 'ls' } }));
-  backend.emit(frame({ type: 'tool.permission.requested', approvalId, callId, subjectDigest: 'd', reason, options }));
+  backend.emit(frame({ type: 'tool.permission.requested', approvalId, callId, subjectDigest: 'd', reason, options, shown: { title: 'approval', input: {} } }));
 };
 
 const approving = async (options: readonly unknown[], size: { columns?: number; rows?: number } = {}, reason = 'asks') => {

@@ -45,6 +45,7 @@ const rejected = (id: string, input: unknown): RunEventPayload[] => [
     ],
     subjectDigest: 'digest',
     reason: 'edits require approval',
+    shown: { title: 'approval', input: {} },
   },
   { type: 'tool.permission.resolved', approvalId: `approval-${id}`, optionId: 'reject_once' },
   done(id, 'The user rejected this tool call.', 'failed'),

@@ -30,7 +30,7 @@ describe('foldEvent', () => {
   });
 
   it('holds a pending approval until it is resolved or cancelled', () => {
-    const requested = { type: 'tool.permission.requested', approvalId: 'ap', callId: 'c1', subjectDigest: 'd', options: [{ optionId: 'o', name: 'Allow', kind: 'allow_once' }] };
+    const requested = { type: 'tool.permission.requested', approvalId: 'ap', callId: 'c1', subjectDigest: 'd', options: [{ optionId: 'o', name: 'Allow', kind: 'allow_once' }], shown: { title: 'approval', input: {} } };
     const pending = apply([call, requested]);
     expect(pending.approval).toMatchObject({ approvalId: 'ap', callId: 'c1' });
     expect(pending.entries[0]).toMatchObject({ status: 'awaiting_approval' });
@@ -43,7 +43,7 @@ describe('foldEvent', () => {
     const option = [{ optionId: 'o', name: 'Allow', kind: 'allow_once' }];
     const childEvent = (runId: string, event: Record<string, unknown>): PublicRunEvent => ({ ...envelope, runId, ...event }) as PublicRunEvent;
     const toolCall = (runId: string): PublicRunEvent => childEvent(runId, { ...call, callId: 'c1' });
-    const request = (runId: string, approvalId: string): PublicRunEvent => childEvent(runId, { type: 'tool.permission.requested', approvalId, callId: 'c1', subjectDigest: 'd', options: option });
+    const request = (runId: string, approvalId: string): PublicRunEvent => childEvent(runId, { type: 'tool.permission.requested', approvalId, callId: 'c1', subjectDigest: 'd', options: option, shown: { title: 'approval', input: {} } });
     const settle = (runId: string, approvalId: string): PublicRunEvent => childEvent(runId, { type: 'tool.permission.resolved', approvalId, optionId: 'o' });
     const raised = [toolCall('a'), request('a', 'ap-a'), toolCall('b'), request('b', 'ap-b')];
     const both = plainOf(foldChild(raised, 'reviewer'));
@@ -80,13 +80,14 @@ describe('foldEvent', () => {
       subjectDigest: 'd',
       reason: 'edit outside the workspace requires approval',
       options: [{ optionId: 'o', name: 'Allow', kind: 'allow_once' }],
+      shown: { title: 'approval', input: {} },
     };
 
     expect(apply([call, requested]).approval?.reason).toBe('edit outside the workspace requires approval');
   });
 
   it('does not queue an approval it already holds', () => {
-    const requested = { type: 'tool.permission.requested', approvalId: 'ap', callId: 'c1', subjectDigest: 'd', options: [] };
+    const requested = { type: 'tool.permission.requested', approvalId: 'ap', callId: 'c1', subjectDigest: 'd', options: [], shown: { title: 'approval', input: {} } };
 
     expect(apply([call, requested, requested]).queuedApprovals).toEqual([]);
   });
@@ -214,7 +215,7 @@ describe('waiting and subagent runs', () => {
       foldChild(
         ([
       { ...envelope, runId: 'child', type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Edit', kind: 'edit', title: 'Edit /a', rawInput: {} },
-      { ...envelope, runId: 'child', type: 'tool.permission.requested', approvalId: 'ap-1', callId: 'c1', subjectDigest: 'd', options: [], expiresAt: 10 },
+      { ...envelope, runId: 'child', type: 'tool.permission.requested', approvalId: 'ap-1', callId: 'c1', subjectDigest: 'd', options: [], expiresAt: 10, shown: { title: 'approval', input: {} } },
       { ...envelope, runId: 'child', type: 'agent.message.delta', attempt: 0, itemId: 'm', text: 'child text' },
       { ...envelope, runId: 'child', type: 'run.status', from: 'RUNNING', to: 'COMPLETED' },
     ] as unknown[]) as PublicRunEvent[],

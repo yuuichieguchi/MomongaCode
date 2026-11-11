@@ -62,6 +62,7 @@ describe('fold: approval.rule.persisted', () => {
         options: [{ optionId: 'aa', name: 'Always allow', kind: 'allow_always' }],
         subjectDigest: 'd'.repeat(64),
         suggestedRule: 'Write(/x)',
+        shown: { title: 'approval', input: {} },
       },
       { type: 'tool.permission.resolved', approvalId: 'appr-1', optionId: 'aa' },
       { type: 'approval.rule.persisted', approvalId: 'appr-1', effect: 'allow', rule: 'Write(/x)' },

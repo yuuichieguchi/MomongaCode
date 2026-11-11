@@ -92,6 +92,7 @@ const fakeApi = (behaviour: Behaviour = {}) => {
           ],
           subjectDigest: 'digest',
           reason: 'ask',
+          shown: { title: 'approval', input: {} },
         } as PublicRunEvent;
         yield { ...base, id: 3, seq: 3, createdAt: T0 + 3, type: 'run.status', from: 'RUNNING', to: 'COMPLETED' } as PublicRunEvent;
         return;
@@ -113,6 +114,7 @@ const fakeApi = (behaviour: Behaviour = {}) => {
           ],
           subjectDigest: 'digest',
           reason: 'ask',
+          shown: { title: 'approval', input: {} },
         } as PublicRunEvent;
       }
       if (behaviour.unknownEffect === true) {

@@ -3,7 +3,7 @@ import { unconfiguredNetworkOf, FAKE_LEASE, fakePolicyFilesystem, hostFilesystem
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createToolExecutor, nodeShellHost } from '@momonga/tools';
-import { call, expectedSubjectDigest, makeHarness, makeTool, toolSetOf } from './harness.ts';
+import { call, expectedDigestOf, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
 import { keyFor, ruleFor } from './helpers.ts';
 import { momongaLayout } from '@momonga/foundation';
@@ -80,11 +80,11 @@ describe('executor gates a call whose recovered record vanished before begin', (
   });
 
   it('returns needs_approval with the subject digest and never executes when the policy asks', async () => {
-    const { harness, tool, subject, executor, executions } = setup();
+    const { harness, tool, executor, executions } = setup();
 
     const [outcome] = await executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Write')], { mode: 'manual' }));
 
-    expect(outcome).toMatchObject({ callId: 'c1', kind: 'needs_approval', subjectDigest: expectedSubjectDigest(subject, harness.layout.project) });
+    expect(outcome).toMatchObject({ callId: 'c1', kind: 'needs_approval', subjectDigest: await expectedDigestOf(tool, {}, harness) });
     expect(executions()).toBe(0);
     expect(harness.started).toEqual([]);
     expect(harness.idempotency.stateOf(KEY)).toBeUndefined();

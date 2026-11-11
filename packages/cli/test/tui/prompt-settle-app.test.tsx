@@ -17,7 +17,7 @@ const NO_TRUST = 'No, continue without its project settings';
 
 const ask = (backend: FakeBackend, callId = 'c1', approvalId = 'ap1'): void => {
   backend.emit(frame({ type: 'tool.call', callId, providerCallId: callId, name: 'Bash', kind: 'execute', title: `Bash ${callId}`, rawInput: { command: 'ls' } }));
-  backend.emit(frame({ type: 'tool.permission.requested', approvalId, callId, subjectDigest: 'd', reason: 'asks', options: [ALLOW, REJECT] }));
+  backend.emit(frame({ type: 'tool.permission.requested', approvalId, callId, subjectDigest: 'd', reason: 'asks', options: [ALLOW, REJECT], shown: { title: 'approval', input: {} } }));
 };
 
 const approvals = (backend: FakeBackend): string[] => backend.calls.filter((call) => call.startsWith('approve:'));

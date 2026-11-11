@@ -117,6 +117,7 @@ describe('entries', () => {
         options: [{ optionId: 'reject_once', name: 'Reject', kind: 'reject_once' }],
         subjectDigest: 'digest',
         reason: 'shell commands require approval',
+        shown: { title: 'approval', input: {} },
       },
       { type: 'tool.permission.resolved', approvalId: 'approval-r', optionId: 'reject_once' },
       { type: 'tool.completed', callId: 'r', status: 'failed', output: 'The user rejected this tool call.', command: 'make deploy', files: [] },

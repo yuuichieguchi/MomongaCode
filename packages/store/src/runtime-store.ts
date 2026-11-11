@@ -2,8 +2,8 @@ import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, openDatabaseWithIdentity, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
 import type { DatabaseFileIdentity } from '@momonga/foundation';
-import { FIDELITY_FOLD_VERSION, INBOX_MAX_PENDING, REPORT_PAGE_ROWS, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, admitRequest, unknownEffectLines, unknownEffectOptions } from '@momonga/protocol';
-import type { Admission, CallTiming, MemoryOrigin, ElicitationAnswerRecord, ElicitationRequestView, InboxDelivery, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, TreeSpend, RunStatus, SessionEventPayload, TerminalStatus, UserShellRecord } from '@momonga/protocol';
+import { FIDELITY_FOLD_VERSION, INBOX_MAX_PENDING, REPORT_PAGE_ROWS, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, admitRequest, isApprovalShown, unknownEffectLines, unknownEffectOptions } from '@momonga/protocol';
+import type { Admission, ApprovalShown, CallTiming, MemoryOrigin, ElicitationAnswerRecord, ElicitationRequestView, InboxDelivery, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, TreeSpend, RunStatus, SessionEventPayload, TerminalStatus, UserShellRecord } from '@momonga/protocol';
 import { createAppendRecords, columnsOf } from './append-records.ts';
 import { createVerdictWriter } from './fidelity-verdicts.ts';
 import { createApprovalStore } from './approvals.ts';
@@ -1004,14 +1004,15 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     };
   };
 
-  const requestOf = (approval: Approval): { reason: string; suggestedRule?: string } => {
+  const requestOf = (approval: Approval): { reason: string; suggestedRule?: string; shown: ApprovalShown } => {
     const row = derivedView.permissionRequestOf(approval.runId, approval.id);
     if (row === undefined) throw corrupt('approvals', approval.id, `run ${approval.runId} has no tool.permission.requested event for approval ${approval.id}`);
     const payload = expectRecord('events', approval.id, 'payload_json', readerFor('events', approval.id, row).json('payload_json'));
-    const { reason, suggestedRule } = payload;
+    const { reason, suggestedRule, shown } = payload;
     if (typeof reason !== 'string') throw corrupt('events', approval.id, 'reason must be a string');
     if (suggestedRule !== undefined && typeof suggestedRule !== 'string') throw corrupt('events', approval.id, 'suggestedRule must be a string');
-    return { reason, ...(suggestedRule === undefined ? {} : { suggestedRule }) };
+    if (!isApprovalShown(shown)) throw corrupt('events', approval.id, 'shown must hold a string title and the input');
+    return { reason, ...(suggestedRule === undefined ? {} : { suggestedRule }), shown };
   };
 
   const titleOf = (approval: Approval, callId: string): string => {
@@ -1040,7 +1041,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
   const viewOf = (approval: Approval): ApprovalView => {
     if (approval.kind !== 'permission' && approval.kind !== 'unknown_effect') throw corrupt('approvals', approval.id, `an approval of kind ${approval.kind} has no approval view`);
-    const { reason, suggestedRule } = approval.kind === 'unknown_effect' ? { reason: unknownReasonOf(approval), suggestedRule: undefined } : requestOf(approval);
+    const { reason, suggestedRule, shown } = approval.kind === 'unknown_effect' ? { reason: unknownReasonOf(approval), suggestedRule: undefined, shown: undefined } : requestOf(approval);
     return {
       id: approval.id,
       kind: approval.kind,
@@ -1051,6 +1052,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       createdAt: approval.createdAt,
       ...(suggestedRule === undefined ? {} : { suggestedRule }),
       reason,
+      ...(shown === undefined ? {} : { shown }),
       toolCall: toolCallOf(approval),
     };
   };
@@ -1766,6 +1768,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
             subjectDigest: input.event.subjectDigest,
             reason: input.event.reason,
             ...(input.event.suggestedRule === undefined ? {} : { suggestedRule: input.event.suggestedRule }),
+            shown: input.event.shown,
           });
           if (input.held !== undefined) {
             const { footprint, placeholder } = input.held;

@@ -324,7 +324,6 @@
       {"name":"DEFAULT_TIMEOUT_MS","file":"packages/tools/src/builtins/bash.ts","lacks":["kind","row"]},
       {"name":"MAX_BACKGROUND_TIMEOUT_MS","file":"packages/tools/src/builtins/bash.ts","lacks":["kind","row"]},
       {"name":"MAX_TIMEOUT_MS","file":"packages/tools/src/builtins/bash.ts","lacks":["kind","row"]},
-      {"name":"TITLE_CHARS","file":"packages/tools/src/builtins/bash.ts","lacks":["row"]},
       {"name":"BINARY_SNIFF_BYTES","file":"packages/tools/src/builtins/files.ts","lacks":["row"]},
       {"name":"FILE_READ_PAGE_BYTES","file":"packages/tools/src/builtins/files.ts","lacks":["row"]},
       {"name":"MAX_LINE_CHARS","file":"packages/tools/src/builtins/format.ts","lacks":["row"]},

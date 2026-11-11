@@ -370,7 +370,7 @@ describe('permission requests', () => {
   const requestedScript = (harness: Harness, afterRequested: () => Promise<void>) => {
     harness.scripts.set('run-1', async ({ onEvent }) => {
       onEvent(frameOf('run-1', 1, toolCall()));
-      onEvent(frameOf('run-1', 2, { type: 'tool.permission.requested', approvalId: 'approval-1', callId: 'call-1', options: OPTIONS, subjectDigest: 'd', reason: 'edits require approval' }));
+      onEvent(frameOf('run-1', 2, { type: 'tool.permission.requested', approvalId: 'approval-1', callId: 'call-1', options: OPTIONS, subjectDigest: 'd', reason: 'edits require approval', shown: { title: 'approval', input: {} } }));
       await afterRequested();
       return finishedRun();
     });
@@ -424,7 +424,7 @@ describe('permission requests', () => {
     });
     harness.scripts.set('run-1', async ({ onEvent }) => {
       onEvent(frameOf('run-1', 1, toolCall()));
-      onEvent(frameOf('run-1', 2, { type: 'tool.permission.requested', approvalId: 'approval-1', callId: 'call-1', options: OPTIONS, subjectDigest: 'd', reason: 'edits require approval' }));
+      onEvent(frameOf('run-1', 2, { type: 'tool.permission.requested', approvalId: 'approval-1', callId: 'call-1', options: OPTIONS, subjectDigest: 'd', reason: 'edits require approval', shown: { title: 'approval', input: {} } }));
       await harness.runtime.called('cancel');
       return finishedRun('CANCELLED');
     });
@@ -448,7 +448,7 @@ describe('permission requests', () => {
     });
     harness.scripts.set('run-1', async ({ onEvent }) => {
       onEvent(frameOf('run-1', 1, toolCall()));
-      onEvent(frameOf('run-1', 2, { type: 'tool.permission.requested', approvalId: 'approval-1', callId: 'call-1', options: OPTIONS, subjectDigest: 'd', reason: 'edits require approval' }));
+      onEvent(frameOf('run-1', 2, { type: 'tool.permission.requested', approvalId: 'approval-1', callId: 'call-1', options: OPTIONS, subjectDigest: 'd', reason: 'edits require approval', shown: { title: 'approval', input: {} } }));
       await harness.peer.untilReceived((message) => 'method' in message && message.method === 'session/request_permission');
       onEvent(frameOf('run-1', 3, { type: 'tool.permission.cancelled', approvalId: 'approval-1', reason: 'withdrawn' }));
       return finishedRun('CANCELLED');
@@ -477,7 +477,7 @@ describe('permission requests', () => {
     });
     harness.scripts.set('run-1', async ({ onEvent }) => {
       onEvent(frameOf('run-1', 1, toolCall()));
-      onEvent(frameOf('run-1', 2, { type: 'tool.permission.requested', approvalId: 'approval-1', callId: 'call-1', options: OPTIONS, subjectDigest: 'd', reason: 'edits require approval' }));
+      onEvent(frameOf('run-1', 2, { type: 'tool.permission.requested', approvalId: 'approval-1', callId: 'call-1', options: OPTIONS, subjectDigest: 'd', reason: 'edits require approval', shown: { title: 'approval', input: {} } }));
       await reading.promise;
       onEvent(frameOf('run-1', 3, { type: 'tool.permission.cancelled', approvalId: 'approval-1', reason: 'withdrawn' }));
       read.resolve();
@@ -538,7 +538,7 @@ describe('permission requests', () => {
     harness.peer.answerRequests(() => ({ outcome: { outcome: 'selected', optionId: 'nope' } }));
     harness.scripts.set('run-1', async ({ onEvent, signal }) => {
       onEvent(frameOf('run-1', 1, toolCall()));
-      onEvent(frameOf('run-1', 2, { type: 'tool.permission.requested', approvalId: 'approval-1', callId: 'call-1', options: OPTIONS, subjectDigest: 'd', reason: 'edits require approval' }));
+      onEvent(frameOf('run-1', 2, { type: 'tool.permission.requested', approvalId: 'approval-1', callId: 'call-1', options: OPTIONS, subjectDigest: 'd', reason: 'edits require approval', shown: { title: 'approval', input: {} } }));
       await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }));
       throw signal.reason;
     });

@@ -1,8 +1,8 @@
 import { Box, Text } from 'ink';
-import { unknownEffectLines, unknownEffectTitle } from '@momonga/protocol';
+import { CHANGE_NOT_SHOWN_LEAD, MODEL_CLAIM_LEAD, hunkHeaderOf, unknownEffectLines, unknownEffectTitle } from '@momonga/protocol';
+import type { ApprovalShown, DiffHunk } from '@momonga/protocol';
 import { currentField, currentRequest } from '../../elicit/flow.ts';
 import type { ElicitationDecision, ElicitationFlow } from '../../elicit/flow.ts';
-import { diffOfToolInput } from '../diff.ts';
 import type { DiffLine } from '../diff.ts';
 import type { EditorState } from '../editor.ts';
 import type { KeyTable } from '../keys/table.ts';
@@ -41,15 +41,30 @@ const DIFF_STYLE = {
   context: { first: '  ' },
 } as const satisfies Record<DiffLine['kind'], { color?: string; first: string }>;
 
-export const approvalLines = (approval: PendingApproval, tool: ToolEntry | undefined, workingDirectory: string): SelectLine[] => {
-  const diff = tool === undefined ? undefined : diffOfToolInput(tool.name, tool.rawInput, workingDirectory);
-  return [approval.reason, ...(approval.held === true ? [HELD_PANEL_LINE] : []), ...(diff ?? []).map((line): SelectLine => ({ text: line.text, ...DIFF_STYLE[line.kind] }))];
-};
+const HUNK_LINE_KINDS: Readonly<Record<string, DiffLine['kind']>> = { '-': 'removed', '+': 'added', ' ': 'context' };
 
-export const approvalWording = (approval: PendingApproval, toolOf: (callId: string) => ToolEntry | undefined, workingDirectory: string): { title: string; lines: SelectLine[] } => {
+const hunkLines = (hunk: DiffHunk): DiffLine[] => [
+  { kind: 'header', text: hunkHeaderOf(hunk) },
+  ...hunk.lines.map((line): DiffLine => ({ kind: HUNK_LINE_KINDS[line.charAt(0)] ?? 'context', text: line.slice(1) })),
+];
+
+const shownLines = (shown: ApprovalShown): SelectLine[] => [
+  ...(shown.effect === undefined ? [] : [shown.effect]),
+  ...(shown.claim === undefined ? [] : [`${MODEL_CLAIM_LEAD}${shown.claim}`]),
+  ...(shown.diff?.diffOmitted === undefined ? [] : [`${CHANGE_NOT_SHOWN_LEAD}${shown.diff.diffOmitted}`]),
+  ...(shown.diff?.hunks ?? []).flatMap(hunkLines).map((line): SelectLine => ({ text: line.text, ...DIFF_STYLE[line.kind] })),
+];
+
+export const approvalLines = (approval: PendingApproval): SelectLine[] => [
+  approval.reason,
+  ...(approval.held === true ? [HELD_PANEL_LINE] : []),
+  ...(approval.shown === undefined ? [] : shownLines(approval.shown)),
+];
+
+export const approvalWording = (approval: PendingApproval, toolOf: (callId: string) => ToolEntry | undefined): { title: string; lines: SelectLine[] } => {
   if (approval.unknownCallIds === undefined) {
     const tool = toolOf(approval.callId);
-    return { title: tool?.title ?? approval.callId, lines: approvalLines(approval, tool, workingDirectory) };
+    return { title: tool?.title ?? approval.callId, lines: approvalLines(approval) };
   }
   const calls = approval.unknownCallIds.map((callId) => {
     const tool = toolOf(callId);
