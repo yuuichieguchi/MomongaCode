@@ -293,19 +293,48 @@ describe('bracketed paste', () => {
     expect(parser.push(bytesOf(`${END}a`))).toEqual([{ type: 'paste', text: '', overflow: true }, text('a')]);
   });
 
-  it('ends an unterminated paste after 8 MiB and parses normally again', () => {
+  const OVERFLOWED: TerminalEvent = { type: 'paste', text: '', overflow: true };
+
+  it('reports a paste once when 8 MiB arrived with no end marker, and turns nothing of what follows into a key', () => {
+    const parser = createInputParser();
+    const chunk = bytesOf(`${'x'.repeat(64 * 1024 - 1)}\r`);
+    const events: TerminalEvent[] = [...parser.push(bytesOf(START))];
+    for (let sent = 0; sent < PASTE_ABANDON_BYTES; sent += chunk.length) events.push(...parser.push(chunk));
+    expect(events).toEqual([OVERFLOWED]);
+    expect(parser.push(bytesOf(`\rrm -rf x\r${ESC}[A\u0003`))).toEqual([]);
+    expect(parser.push(chunk)).toEqual([]);
+    expect(parser.holdsLoneEscape()).toBe(false);
+  });
+
+  it('reads keys again after the end marker of an abandoned paste, and reports that paste only once', () => {
     const parser = createInputParser();
     const chunk = bytesOf('x'.repeat(64 * 1024));
     const events: TerminalEvent[] = [...parser.push(bytesOf(START))];
-    for (let sent = 0; sent < PASTE_ABANDON_BYTES; sent += chunk.length) events.push(...parser.push(chunk));
-    expect(events).toEqual([{ type: 'paste', text: '', overflow: true }]);
-    expect(parser.push(bytesOf(`\r${ESC}[A`))).toEqual([named('enter'), named('up')]);
+    for (let sent = 0; sent < PASTE_ABANDON_BYTES + chunk.length; sent += chunk.length) events.push(...parser.push(chunk));
+    events.push(...parser.push(bytesOf(`left over\r${END}\r${ESC}[A`)));
+    expect(events).toEqual([OVERFLOWED, named('enter'), named('up')]);
   });
 
-  it('ends an unterminated paste at the same byte whatever the chunking', () => {
-    const tail = 'abc';
-    const whole = bytesOf(`${START}${'x'.repeat(PASTE_ABANDON_BYTES)}${tail}`);
-    expect(parse(whole)).toEqual([{ type: 'paste', text: '', overflow: true }, ...textOf(tail)]);
+  it('finds the end marker of an abandoned paste split across reads', () => {
+    const parser = createInputParser();
+    parser.push(bytesOf(`${START}${'x'.repeat(PASTE_ABANDON_BYTES)}`));
+    expect(parser.push(bytesOf(`tail\r${ESC}[20`))).toEqual([]);
+    expect(parser.push(bytesOf('1'))).toEqual([]);
+    expect(parser.push(bytesOf('~a'))).toEqual([text('a')]);
+  });
+
+  it('gives the same events for a paste over 8 MiB whatever the chunking', () => {
+    const whole = bytesOf(`${START}${'x'.repeat(PASTE_ABANDON_BYTES)}abc\r${END}z`);
+    const expected = [OVERFLOWED, text('z')];
+    expect(parse(whole)).toEqual(expected);
+    const cut = START.length + PASTE_ABANDON_BYTES;
+    for (const position of [cut - 1, cut, cut + 1, cut + 4, whole.length - 3]) expect(parse(whole.subarray(0, position), whole.subarray(position)), `split at ${position}`).toEqual(expected);
+  });
+
+  it('keeps nothing of a paste it abandoned', () => {
+    const parser = createInputParser();
+    parser.push(bytesOf(`${START}${'x'.repeat(PASTE_ABANDON_BYTES)}`));
+    expect(parser.push(bytesOf(`${END}${START}small${END}`))).toEqual([{ type: 'paste', text: 'small', overflow: false }]);
   });
 });
 

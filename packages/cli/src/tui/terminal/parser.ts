@@ -12,7 +12,7 @@ type Parsed = { events: TerminalEvent[]; next: number; pasteStarts: boolean };
 type Step = Parsed | 'incomplete';
 type Interpreted = TerminalEvent[] | 'paste-start' | 'unknown';
 
-type OpenPaste = { pieces: string[]; seen: number; overflow: boolean };
+type OpenPaste = { pieces: string[]; seen: number; overflow: boolean; abandoned: boolean };
 
 const LETTER_KEYS: Readonly<Record<string, KeyName>> = { A: 'up', B: 'down', C: 'right', D: 'left', H: 'home', F: 'end', P: 'f1', Q: 'f2', R: 'f3', S: 'f4' };
 
@@ -308,18 +308,6 @@ const heldEndPrefix = (buffer: string, from: number): number => {
   return 0;
 };
 
-const unitsWithin = (text: string, byteBudget: number): number => {
-  let bytes = 0;
-  let index = 0;
-  while (index < text.length) {
-    const codePoint = text.codePointAt(index) ?? 0;
-    if (bytes + utf8Length(codePoint) > byteBudget) return index;
-    bytes += utf8Length(codePoint);
-    index += unitsOf(codePoint);
-  }
-  return index;
-};
-
 const OVERFLOWED_PASTE: TerminalEvent = { type: 'paste', text: '', overflow: true };
 
 export const createInputParser = (): InputParser => {
@@ -344,19 +332,20 @@ export const createInputParser = (): InputParser => {
   const pasteStep = (open: OpenPaste, buffer: string, at: number, events: TerminalEvent[]): number | undefined => {
     const end = buffer.indexOf(PASTE_END, at);
     const stop = end === -1 ? buffer.length - heldEndPrefix(buffer, at) : end;
-    const piece = buffer.slice(at, stop);
-    if (open.seen + Buffer.byteLength(piece, 'utf8') >= PASTE_ABANDON_BYTES) {
-      paste = undefined;
-      events.push(OVERFLOWED_PASTE);
-      return at + unitsWithin(piece, PASTE_ABANDON_BYTES - open.seen);
+    if (!open.abandoned) {
+      const piece = buffer.slice(at, stop);
+      if (open.seen + Buffer.byteLength(piece, 'utf8') >= PASTE_ABANDON_BYTES) {
+        open.abandoned = true;
+        open.pieces = [];
+        events.push(OVERFLOWED_PASTE);
+      } else collect(open, piece);
     }
-    collect(open, piece);
     if (end === -1) {
       pending = buffer.slice(stop);
       return undefined;
     }
     paste = undefined;
-    events.push(closed(open));
+    if (!open.abandoned) events.push(closed(open));
     return end + PASTE_END.length;
   };
 
@@ -394,7 +383,7 @@ export const createInputParser = (): InputParser => {
         break;
       }
       for (const event of step.events) events.push(event);
-      if (step.pasteStarts) paste = { pieces: [], seen: 0, overflow: false };
+      if (step.pasteStarts) paste = { pieces: [], seen: 0, overflow: false, abandoned: false };
       at = step.next;
     }
     if (bytes.length > 0) readEndedWithEscape = bytes[bytes.length - 1] === 0x1b;
