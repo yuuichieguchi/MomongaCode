@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { momongaLayout } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { startFakeChatCompletions, productTestEnv } from '@momonga/testkit';
+import { modelSettings, startFakeChatCompletions, productTestEnv } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { chatCompletions, textReply, toolCallReply } from '../e2e/support/upstream.ts';
 import { defaultEntry } from './bundle.ts';
@@ -14,7 +14,6 @@ import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { RUNS_MACOS_ARM64_ARTIFACTS } from './support/host.ts';
 
-const UPSTREAM_TARGET = 'primary';
 const NEEDLE = 'needle-token-7f3a';
 const DONE = 'Searched.';
 const RUNS = 4;
@@ -69,18 +68,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('the built executable runs its embe
     fs.writeFileSync(
       paths.settingsFile,
       JSON.stringify({
-        models: {
-          aliases: { default: [UPSTREAM_TARGET] },
-          targets: {
-            [UPSTREAM_TARGET]: {
-              adapter: 'chat-completions',
-              provider: 'fake',
-              model: 'system',
-              socketPath: path.join(root, 'u.sock'),
-              capabilities: { contextWindow: 8192, maxOutputTokens: 1024 },
-            },
-          },
-        },
+        ...modelSettings({ start: 'fake/system', models: [{ provider: 'fake', id: 'system', socketPath: path.join(root, 'u.sock'), capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }] }),
         sandbox: 'none',
       }),
     );
