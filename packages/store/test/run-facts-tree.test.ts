@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { INDICATOR_DEFINITIONS_VERSION } from '@momonga/protocol';
 import { settledEventIdOf } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { enqueue, harness, mustClaim, mustRun, newSession } from './helpers.ts';
+import { enqueue, harness, mustClaim, mustRun, newSession, rawDb } from './helpers.ts';
 
 const startTree = async (store: RuntimeStore): Promise<{ rootId: string; childId: string; childClaim: ReturnType<typeof mustClaim> }> => {
   const root = await enqueue(store, newSession(store).id);
@@ -47,6 +48,22 @@ describe('store-protocol-C09: the facts row of a root is recomputed when a membe
     const { rootId, childId, childClaim } = await startTree(store);
     expect((await store.transition(childClaim, ['CANCELLING'], 'CANCELLED')).kind).toBe('ok');
 
+    expect(store.runFacts.nextBatch(10).runIds).toEqual([rootId, childId]);
+  });
+});
+
+describe('store-protocol-C09: root rows folded under the rule before C09 are folded again', () => {
+  const RULE_BEFORE_C09 = 3;
+
+  it('moves the definitions version past the rule before C09, so a cursor of that rule hands the ended root out again', async () => {
+    const { dbPath, store } = harness();
+    const { rootId, childId, childClaim } = await startTree(store);
+    expect((await store.transition(childClaim, ['CANCELLING'], 'CANCELLED')).kind).toBe('ok');
+    const batch = store.runFacts.nextBatch(10);
+    store.runFacts.commit({ rows: [], calls: [], unavailable: [rootId, childId], throughEventId: batch.throughEventId });
+    rawDb(dbPath).prepare('UPDATE facts_cursor SET definitions_version = ?').run(RULE_BEFORE_C09);
+
+    expect(INDICATOR_DEFINITIONS_VERSION).toBeGreaterThan(RULE_BEFORE_C09);
     expect(store.runFacts.nextBatch(10).runIds).toEqual([rootId, childId]);
   });
 });

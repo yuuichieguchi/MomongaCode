@@ -106,3 +106,24 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
     expect(failure).not.toBeInstanceOf(FactsRefused);
   });
 });
+
+describe('store-protocol-C09: the folded root row holds the spend of a child that ended after the root', () => {
+  it('sums the tokens the child charged while CANCELLING into the root row', async () => {
+    const env = await makeEnv();
+    const root = await env.enqueue('Work', { history: 'fresh' });
+    const rootClaim = await env.seed(root.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { model: 'fm' }, mode: 'manual' }, responded], 'hold');
+    const created = await env.store.createChildRun({ parentRunId: root.id, parentCallId: 'call_child', input: 'Child', pins: { model: 'fm' }, model: 'fm' });
+    if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
+    const childClaim = await env.seed(created.run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { model: 'fm' }, mode: 'manual' }], 'hold');
+    expect((await env.store.transition(rootClaim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
+    expect(env.store.append(childClaim, [responded]).kind).toBe('ok');
+    expect((await env.store.transition(childClaim, ['CANCELLING'], 'CANCELLED')).kind).toBe('ok');
+    const { dev, ino } = fs.statSync(env.dbPath);
+    const thread = await startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+    try {
+      expect((await thread.runFacts(root.id)).facts.tokensTotal).toBe(4);
+    } finally {
+      await thread.close();
+    }
+  });
+});
