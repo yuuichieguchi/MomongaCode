@@ -194,6 +194,8 @@ export const runSocketGuardBuild = (script: string, workDir: string): number | n
   return run.status;
 };
 
+export const hostPlatform = (): NodeJS.Platform => process.platform;
+
 export const hostExtractedLinuxSocketGuard = (asset: (name: string) => Uint8Array, executablesRoot: string): Promise<string> =>
   ensureBundledLinuxSocketGuard({ asset, executablesRoot, random: systemRandom, files: nodeFileSystem });
 
