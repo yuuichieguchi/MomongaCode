@@ -9,13 +9,13 @@ import {
   applyCapabilityOverride,
   displayMapOf,
   imageCapability,
+  largestSummaryCapFor,
   isUnavailableCapabilities,
   modelRefErrorOf,
   resolveStoredModelRef,
   resolveTypedModelRef,
   sizingRatioFor,
   storedModelRef,
-  summaryTokenCapFor,
   typedModelText,
 } from '@momonga/protocol';
 import type {
@@ -403,7 +403,7 @@ export const createRouter = (options: RouterOptions): Router => {
         }
       }
       const { summaryCap } = requirements;
-      if (summaryCap !== undefined && Math.min(summaryTokenCapFor(capabilities), capabilities.maxOutputTokens) < summaryCap) {
+      if (summaryCap !== undefined && largestSummaryCapFor(capabilities) < summaryCap) {
         return {
           stage: REFUSAL_STAGES.summaryCap,
           error: invalidRequest(
