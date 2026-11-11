@@ -1,3 +1,4 @@
+import { DEFAULT_ANTHROPIC_BASE_URL } from '@momonga/protocol';
 import { ConfigError } from './config-error.ts';
 import type { ResolvedModelTarget } from './settings.ts';
 
@@ -43,8 +44,15 @@ export const addressProblem = (address: WrittenAddress): string | undefined => {
   return reading.kind === 'problem' ? reading.reason : undefined;
 };
 
+const DEFAULT_ADDRESS_OF_ADAPTER: Readonly<Record<string, WrittenAddress>> = { anthropic: { baseUrl: DEFAULT_ANTHROPIC_BASE_URL } };
+
+export const withDefaultAddress = <T extends WrittenAddress & { adapter: string }>(connection: T): T => {
+  if (connection.baseUrl !== undefined || connection.socketPath !== undefined || !Object.hasOwn(DEFAULT_ADDRESS_OF_ADAPTER, connection.adapter)) return connection;
+  return { ...connection, ...DEFAULT_ADDRESS_OF_ADAPTER[connection.adapter] };
+};
+
 export const connectionAddressProblem = (connection: WrittenAddress & { adapter: string; plan?: unknown }): string | undefined =>
-  connection.adapter === 'managed' || connection.plan !== undefined ? undefined : addressProblem(connection);
+  connection.adapter === 'managed' || connection.plan !== undefined ? undefined : addressProblem(withDefaultAddress(connection));
 
 export const upstreamEndpointOf = (target: Exclude<ResolvedModelTarget, { adapter: 'managed' }>): UpstreamEndpointKeyed => {
   const reading = addressOf(target);

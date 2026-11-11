@@ -107,6 +107,7 @@ export type { ErrorShape } from './budget-constants.ts';
 export {
   ANTHROPIC_API_VERSIONS,
   DEFAULT_ANTHROPIC_API_VERSION,
+  DEFAULT_ANTHROPIC_BASE_URL,
   SAMPLING_FIELDS,
   anthropicVersionSamplingBound,
   DEFAULT_OUTPUT_BOUND_FIELD,
