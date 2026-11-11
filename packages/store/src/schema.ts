@@ -1180,6 +1180,44 @@ INSERT INTO derived_through (run_id, derivation, through_seq)
 SELECT r.id, 36, r.last_seq FROM runs r WHERE EXISTS (SELECT 1 FROM search_docs d WHERE d.run_id = r.id AND d.level = 'run');
 `;
 
+const CHECK_EVIDENCE_CONDITION = `
+CREATE TABLE memory_evidence_with_condition (
+  memory_id TEXT NOT NULL REFERENCES memories (id),
+  ordinal INTEGER NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('file', 'commit', 'check')),
+  project TEXT,
+  path TEXT,
+  sha256 TEXT,
+  sha TEXT,
+  run_id TEXT,
+  call_id TEXT,
+  condition_id TEXT,
+  seq INTEGER,
+  command TEXT,
+  exit_code INTEGER,
+  PRIMARY KEY (memory_id, ordinal),
+  CHECK (
+    kind <> 'file'
+    OR (project IS NOT NULL AND path IS NOT NULL AND sha256 IS NOT NULL
+      AND sha IS NULL AND run_id IS NULL AND call_id IS NULL AND condition_id IS NULL AND seq IS NULL AND command IS NULL AND exit_code IS NULL)
+  ),
+  CHECK (
+    kind <> 'commit'
+    OR (sha IS NOT NULL
+      AND project IS NULL AND path IS NULL AND sha256 IS NULL AND run_id IS NULL AND call_id IS NULL AND condition_id IS NULL AND seq IS NULL AND command IS NULL AND exit_code IS NULL)
+  ),
+  CHECK (
+    kind <> 'check'
+    OR (run_id IS NOT NULL AND seq IS NOT NULL AND command IS NOT NULL AND exit_code IS NOT NULL AND (call_id IS NULL) <> (condition_id IS NULL)
+      AND project IS NULL AND path IS NULL AND sha256 IS NULL AND sha IS NULL)
+  )
+);
+INSERT INTO memory_evidence_with_condition (memory_id, ordinal, kind, project, path, sha256, sha, run_id, call_id, seq, command, exit_code)
+  SELECT memory_id, ordinal, kind, project, path, sha256, sha, run_id, call_id, seq, command, exit_code FROM memory_evidence;
+DROP TABLE memory_evidence;
+ALTER TABLE memory_evidence_with_condition RENAME TO memory_evidence;
+`;
+
 const STORED_SETS_RECORDED = `
 SELECT 'event type: user_shell; inbox delivery: steer, queue; inbox state: pending, delivered, withdrawn';
 `;
@@ -1376,5 +1414,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 40,
     name: 'record that this build writes the session event type user_shell and the deliveries and states of the inbox, so that a build without this migration reads them with tolerance: no table changes',
     sql: STORED_SETS_RECORDED,
+  },
+  {
+    version: 41,
+    name: 'record the condition of a check in the evidence of a memory in condition_id, by rebuilding memory_evidence with every row kept: a row written before keeps the model call it named in call_id, and a check row holds exactly one of the two',
+    sql: CHECK_EVIDENCE_CONDITION,
   },
 ];

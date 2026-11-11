@@ -206,7 +206,7 @@ describe('memory lifecycle in the store', () => {
     expect(memory.source.kind).toBe('tool');
   });
 
-  it('decodes the evidence of a memory in order, of each kind', async () => {
+  it('decodes the evidence of a memory in order, of each kind, a check written before condition_id naming a model call', async () => {
     const { store, db, run } = await setup();
     const memory = await save(store, run.id, 'c1', 'tests live in test/');
     const add = db.prepare(
@@ -218,7 +218,7 @@ describe('memory lifecycle in the store', () => {
     expect(store.memories.get(memory.id)?.evidence).toEqual([
       { kind: 'file', project: '/work/a', path: 'src/a.ts', sha256: 'abc' },
       { kind: 'commit', sha: 'd818eb5' },
-      { kind: 'check', runId: 'r1', conditionId: 'c1', seq: 3, command: 'npm test', exitCode: 0 },
+      { kind: 'check', runId: 'r1', modelCallId: 'c1', seq: 3, command: 'npm test', exitCode: 0 },
     ]);
   });
 

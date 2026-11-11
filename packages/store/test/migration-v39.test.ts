@@ -96,7 +96,7 @@ describe('migration 39: no trigger and no cascade for the delete of a memory, wh
     expect(deleteRulesOf(after, 'memory_replacements')).toEqual(['NO ACTION']);
     expect(deleteRulesOf(after, 'memory_evidence')).toEqual(['NO ACTION']);
     expect(rowsOf(after, 'memory_replacements', 'replaced_id, successor_id')).toEqual(replacements);
-    expect(rowsOf(after, 'memory_evidence', 'memory_id, ordinal')).toEqual(evidence);
+    expect(rowsOf(after, 'memory_evidence', 'memory_id, ordinal')).toEqual(evidence.map((row) => ({ ...(row as object), condition_id: null })));
     expect(
       after
         .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'memory_replacements_by_successor'")

@@ -491,6 +491,7 @@ export type {
   MemoriesResponse,
   MemoryEvidence,
   StoredMemoryEvidence,
+  ModelCallCheckEvidence,
   StoredMemorySource,
   MemoryEvidenceKind,
   MemoryKind,

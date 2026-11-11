@@ -1009,6 +1009,17 @@ const memoryEvidence: JsonSchema = {
       },
       ['kind', 'runId', 'conditionId', 'seq', 'command', 'exitCode'],
     ),
+    closed(
+      {
+        kind: constant('check'),
+        runId: string,
+        modelCallId: string,
+        seq: nonNegativeInteger,
+        command: string,
+        exitCode: integer,
+      },
+      ['kind', 'runId', 'modelCallId', 'seq', 'command', 'exitCode'],
+    ),
     unknownKind,
   ],
 };
