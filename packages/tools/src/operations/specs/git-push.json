@@ -1,6 +1,6 @@
 {
   "name": "GitPush",
-  "description": "Pushes a local branch to the same-named branch of a remote. A plain push fails when the remote branch moved. With force the push is leased on the remote value observed before it, so a branch that moved is not overwritten. With delete the remote branch is removed. A force push, a delete and a push to a protected branch always need a person to approve.",
+  "description": "Pushes a local branch to the same-named branch of a remote. A branch that does not exist locally is not pushed. A plain push fails when the remote branch moved. With force the push is leased on the remote value observed before it, so a branch that moved is not overwritten. With delete the remote branch is removed. A force push, a delete and a push to a protected branch always need a person to approve. A pre-push hook of the repository runs first, on its own, without the network and without the credential; when it fails nothing is sent and its output is the result.",
   "kind": "execute",
   "sideEffect": "exec",
   "title": "Push {input.branch} to {input.remote}",
@@ -20,8 +20,9 @@
   "timeoutMs": 120000,
   "observe": [
     { "id": "remoteRef", "via": { "argv": ["git", "ls-remote", "{call.destination}", "refs/heads/{input.branch}"], "network": "destination", "extract": "firstField", "each": "pushUrls" } },
-    { "id": "localSha", "via": { "argv": ["git", "rev-parse", "--verify", "-q", "refs/heads/{input.branch}"], "extract": "trim", "emptyOnFailure": true } }
+    { "id": "localSha", "via": { "argv": ["git", "rev-parse", "--verify", "-q", "refs/heads/{input.branch}"], "extract": "trim" } }
   ],
+  "require": [{ "if": "input.delete", "then": [], "else": [{ "observed": "before.localSha", "otherwise": "the local branch {input.branch} does not exist" }] }],
   "effect": {
     "network": "destinations",
     "argv": [
@@ -32,8 +33,9 @@
       { "if": "input.delete", "then": [":refs/heads/{input.branch}"], "else": ["refs/heads/{input.branch}:refs/heads/{input.branch}"] }
     ]
   },
+  "prePush": { "remote": "{input.remote}", "ref": "refs/heads/{input.branch}", "localSha": "before.localSha", "remoteProbe": "remoteRef", "delete": "input.delete" },
   "applied": [{ "if": "input.delete", "then": [["after.remoteRef", { "literal": "" }]], "else": [["after.remoteRef", "before.localSha"]] }],
-  "unchanged": [["after.remoteRef", "before.remoteRef"]],
+  "unchanged": [{ "ifObserved": "before.remoteRef", "then": [["after.remoteRef", "before.remoteRef"]], "else": [["after.remoteRef", { "literal": "" }]] }],
   "guard": "compare_and_set",
   "supersedes": [["git", "push"]],
   "report": "The branch {input.branch} on {input.remote} is at {after.remoteRef}."

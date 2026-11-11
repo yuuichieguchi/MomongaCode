@@ -93,7 +93,7 @@ const KINDS: Kind[] = [
 
 const descriptionIn = async (home: string, id: string): Promise<ManagedServerDescription> => {
   if (id === FM_SERVER.id) return FM_SERVER;
-  const { settings } = await loadUserSettings({ home });
+  const { settings } = await loadUserSettings({ home, signal: new AbortController().signal });
   const found = registryOf(settings.models).find((server) => server.id === id);
   if (found === undefined) throw new Error(`the loaded registry has no server ${JSON.stringify(id)}`);
   return found;
@@ -147,8 +147,8 @@ describe.each(KINDS)('one mechanism serves $label with the five assertions of se
     const answered = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', ask(kind.target)));
     expect(answered.status).toBe(412);
     const text = JSON.stringify(answered.body);
-    expect(text).toContain(`the model \\"${kind.model}\\" is not ready: the executable is missing`);
-    expect(text).toContain(`the model \\"${kind.model}\\": the executable was not found at ${binary}`);
+    expect(text).toContain(`the model \\"${kind.target}\\" is not ready: the executable is missing`);
+    expect(text).toContain(`the model \\"${kind.target}\\": the executable was not found at ${binary}`);
     expect(serves(dumpFile, kind.serveCommand)).toEqual([]);
   });
 
@@ -207,7 +207,7 @@ describe('a declared server whose command is missing answers the row-0 text, not
     const handle = await launch(home);
     const answered = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', ask()));
     expect(answered.status).toBe(412);
-    expect(JSON.stringify(answered.body)).toContain(`the model \\"fake-1\\": the executable was not found at ${missing}`);
+    expect(JSON.stringify(answered.body)).toContain(`the model \\"workbench/fake-1\\": the executable was not found at ${missing}`);
   });
 });
 
@@ -228,7 +228,7 @@ describe.skipIf(process.platform === 'win32')('a declared server socket path too
     const handle = await launch(home);
     const answered = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', ask(`${name}/fake-1`)));
     expect(answered.status).toBe(412);
-    expect(answered.body.error.message).toContain(`the model "fake-1": its server socket path is ${refused} bytes, and the system refused to bind a socket path of that length in ${path.dirname(socket)} (`);
+    expect(answered.body.error.message).toContain(`the model "${name}/fake-1": its server socket path is ${refused} bytes, and the system refused to bind a socket path of that length in ${path.dirname(socket)} (`);
     expect(answered.body.error.message).toMatch(/\((ENAMETOOLONG|EINVAL)\); choose a shorter server name/);
     expect(fs.existsSync(targetMarkers(home, `${name}-1`))).toBe(false);
     expect(fs.existsSync(socket)).toBe(false);

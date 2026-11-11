@@ -148,9 +148,9 @@ export const autoModeStatus = async (ports: AutoModeStatusPorts, options: AutoMo
   return { measurement: view.measurement };
 };
 
-export const autoModeCheckPortsOf = async (ports: CliPorts, write: (text: string) => void): Promise<AutoModeCheckPorts> => {
+export const autoModeCheckPortsOf = async (ports: CliPorts, write: (text: string) => void, signal: AbortSignal): Promise<AutoModeCheckPorts> => {
   const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } = await import('@momonga/runtime');
-  const models = shellModelsOf(ports);
+  const models = await shellModelsOf(ports, signal);
   return {
     effects: nodeContextEffects(ports),
     models,
@@ -158,13 +158,13 @@ export const autoModeCheckPortsOf = async (ports: CliPorts, write: (text: string
     home: ports.home,
     version: ports.version,
     now: () => ports.clock.now(),
-    randomHex: systemFileLockPorts.randomHex,
+    randomHex: (bytes) => systemFileLockPorts.random.hex(bytes),
     reflection: { pendingBoundMs: REFLECTION_PICKUP_BOUND_MS, attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS, pollMs: REFLECTION_POLL_MS },
     write,
   };
 };
 
-export const autoModeStatusPortsOf = (ports: CliPorts, write: (text: string) => void): AutoModeStatusPorts => {
-  const models = shellModelsOf(ports);
+export const autoModeStatusPortsOf = async (ports: CliPorts, write: (text: string) => void, signal: AbortSignal): Promise<AutoModeStatusPorts> => {
+  const models = await shellModelsOf(ports, signal);
   return { models, configuredClassifier: models.autoModeClassifier, home: ports.home, platform: ports.platform, write };
 };

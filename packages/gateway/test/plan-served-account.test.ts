@@ -10,7 +10,7 @@ import { clientFor } from './gateway-process-helpers.ts';
 import { contextOf } from './own-reasoning.ts';
 import { PLAN_CAPABILITIES, RESOLVED_ACCOUNT, fakeAuth } from './plan-auth-support.ts';
 import type { FakeAuth } from './plan-auth-support.ts';
-import { ACCOUNT, begin, browse, signIn, startPlanGateway } from './plan-signin-support.ts';
+import { ACCOUNT, begin, browse, completeConfirmed, signIn, startPlanGateway } from './plan-signin-support.ts';
 import type { PlanGateway } from './plan-signin-support.ts';
 import { ACCESS_LIFETIME_MS, MARGIN_MS, PROFILE_ID } from './plan-support.ts';
 
@@ -47,7 +47,7 @@ const signInAs = async (gateway: PlanGateway, account: string): Promise<void> =>
   const begun = await begin(gateway, { account });
   expect(begun.status).toBe(200);
   const callback = await browse(begun.body.authorizationUrl);
-  const completed = await gateway.post(PLAN_ROUTES.signInComplete, { attemptId: begun.body.attemptId, callbackUrl: callback.toString() });
+  const completed = await completeConfirmed(gateway, begun.body.attemptId, callback.toString());
   expect(completed.body).toMatchObject({ outcome: 'signed_in', account: { label: account } });
 };
 

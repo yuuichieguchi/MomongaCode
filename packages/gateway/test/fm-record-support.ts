@@ -49,9 +49,9 @@ export const idleServer: ManagedServer = {
   health: async () => ({ ok: true }),
 };
 
-export const fmTargetBase = (target = 'fm'): Omit<ManagedTargetOptions, 'server' | 'exec' | 'binary' | 'probeRecordDir' | 'readKey' | 'startProbe' | 'toolCallingSetting'> => ({
+export const fmTargetBase = (serverName = 'fm'): Omit<ManagedTargetOptions, 'server' | 'exec' | 'binary' | 'probeRecordDir' | 'readKey' | 'startProbe' | 'toolCallingSetting'> => ({
   description: FM_SERVER,
-  target,
+  serverName,
   requestLimitMs: 300_000,
   isUsableBinary: async () => true,
   onInstanceEnd: () => undefined,

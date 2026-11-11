@@ -6,12 +6,12 @@ import { canonicalJson, createUninspectableRegistry, sha256Hex } from '@momonga/
 import type { SandboxExit, SandboxedProcess } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { Run, RuntimeStore } from '@momonga/store';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, sleepDrivenTiming } from '@momonga/testkit';
 import { createBackgroundJobs, createNodeJobMarkerFiles } from '@momonga/runtime';
 import type { BackgroundJobRegistry } from '@momonga/runtime';
 import { JOB_END_PROBE_MS } from '../../src/process/constants.ts';
 import { createJobOutput } from '../../src/process/job-output.ts';
-import { createMarkerOwners, unsettledKeys } from '@momonga/tools';
+import { createLineFilter, createMarkerOwners, unsettledKeys } from '@momonga/tools';
 import { jobGenerationOptions } from './job-fixture.ts';
 import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
@@ -99,7 +99,7 @@ const setup = (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}
     ...jobGenerationOptions(root),
     markerFiles: createNodeJobMarkerFiles(),
     killGraceMs: 10,
-    reapTiming: { now: () => clock.now(), sleep: async () => undefined },
+    reapTiming: sleepDrivenTiming({ now: () => clock.now(), sleep: async () => undefined }),
     onWarning: (message) => warnings.push(message),
     report: (error) => reports.push(error),
     uninspectable: createUninspectableRegistry({ isAlive: () => true }),
@@ -220,8 +220,22 @@ describe('background jobs', () => {
     const { jobId } = await t.start('call-1');
     const process = t.spawned[0] as FakeProcess;
     await process.stdoutStream.write('ok 1\nERROR a\nok 2\nERROR b\n');
-    expect((await t.jobs.read(t.run.id, jobId, { call: 'read-5', filter: /ERROR/ })).output).toBe('ERROR a\nERROR b');
+    expect((await t.jobs.read(t.run.id, jobId, { call: 'read-5', keep: createLineFilter('ERROR', {}) })).output).toBe('ERROR a\nERROR b');
     expect((await t.jobs.read(t.run.id, jobId, { call: 'read-6' })).output).toBe('');
+    process.exit({ code: 0, signal: null });
+    await t.settled(jobId);
+  });
+
+  it('leaves the new output unread when the line filter refuses it', async () => {
+    const t = setup();
+    const { jobId } = await t.start('call-1');
+    const process = t.spawned[0] as FakeProcess;
+    await process.stdoutStream.write('ok 1\nERROR a\n');
+    const refusing = async (): Promise<readonly string[]> => {
+      throw new Error('the pattern is too costly to match');
+    };
+    await expect(t.jobs.read(t.run.id, jobId, { call: 'read-5', keep: refusing })).rejects.toThrow('the pattern is too costly to match');
+    expect((await t.jobs.read(t.run.id, jobId, { call: 'read-6' })).output).toBe('ok 1\nERROR a');
     process.exit({ code: 0, signal: null });
     await t.settled(jobId);
   });

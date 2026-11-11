@@ -1,6 +1,7 @@
 import path from 'node:path';
 import type { MarkerState, ProcessGroupPort, ProcessInspector, SignalSender, UninspectableProcess } from '@momonga/foundation';
 import type { AnyTool, CallOutcome, ResultOutcome, ToolExecutorOptions } from '@momonga/tools';
+import { sleepDrivenTiming } from '@momonga/testkit';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { HarnessOptions } from './harness.ts';
 import { keyFor } from './helpers.ts';
@@ -38,7 +39,7 @@ export const world = (initial: MarkerState = 'held', extra: Partial<ToolExecutor
   };
   let now = 0;
   const completes: Array<{ key: string; meta: unknown }> = [];
-  const harness = makeHarness({ executor: { reap: { inspector, kill, groupPort, timing: { now: () => now, sleep: async (ms: number) => void (now += ms) }, killGraceMs: 100 }, ...extra } } as HarnessOptions);
+  const harness = makeHarness({ executor: { reap: { inspector, kill, groupPort, timing: sleepDrivenTiming({ now: () => now, sleep: async (ms: number) => void (now += ms) }), killGraceMs: 100 }, ...extra } } as HarnessOptions);
   const port = harness.idempotency.port;
   const holding = port.holding.bind(port);
   port.holding = (fence) => {

@@ -9,7 +9,7 @@ import { STOP_WAIT_WHEN_UNKNOWN_MS, ensureDaemon, stopDaemon, stopWaitBoundMs } 
 import type { DaemonPorts } from '../src/daemon/ensure-daemon.ts';
 import { PollTimeout } from '../src/poll.ts';
 import type { CliClock, SelfExecutable } from '../src/ports.ts';
-import { recordingSpawn, startFakeSupervisor } from './fake-supervisor.ts';
+import { installedProgram, recordingSpawn, startFakeSupervisor } from './fake-supervisor.ts';
 
 const VERSION = '1.2.3';
 const SELF: SelfExecutable = { kind: 'script', execPath: '/opt/node', script: '/opt/momonga/main.js' };
@@ -45,7 +45,7 @@ const setup = async (context: TestContext) => {
     }
     return supervisor;
   };
-  const ports: DaemonPorts = { version: VERSION, env: { PATH: '/usr/bin' }, home, clock: oversleepingClock(), self: SELF, spawnDetached: recordingSpawn(() => undefined).spawn };
+  const ports: DaemonPorts = { version: VERSION, env: { PATH: '/usr/bin' }, home, clock: oversleepingClock(), self: SELF, spawnDetached: recordingSpawn(() => undefined).spawn, ...installedProgram(VERSION).ports };
   return { paths, ports, start, writeUserSettings };
 };
 
@@ -71,7 +71,7 @@ describe('daemon stop carries the values it read', () => {
     const timeout = await timeoutOf(stopping);
     await edited;
     expect(supervisor.shutdownBodies.map((body) => JSON.parse(body) as unknown)).toEqual([{ closeGraceMs: 2000, managedServerStopGraceMs: 500, drainTimeoutMs: 7000, mcpCloseGraceMs: 40 }]);
-    expect(timeout.boundMs).toBe(7000 + 2000 + 7 * 500 + 6 * 40 + 79_245);
+    expect(timeout.boundMs).toBe(7000 + 2000 + 7 * 500 + 6 * 40 + 79_275);
   });
 
   it('posts the defaults when the user settings set nothing', async (context) => {
@@ -79,7 +79,7 @@ describe('daemon stop carries the values it read', () => {
     const supervisor = await start({ version: VERSION, keepsLock: true });
     const timeout = await timeoutOf(stopDaemon(ports, paths));
     expect(supervisor.shutdownBodies.map((body) => JSON.parse(body) as unknown)).toEqual([{ closeGraceMs: 10_000, managedServerStopGraceMs: 3000, drainTimeoutMs: 30_000, mcpCloseGraceMs: 1000 }]);
-    expect(timeout.boundMs).toBe(146_245);
+    expect(timeout.boundMs).toBe(146_275);
   });
 
   it('waits on a stop it did not begin for the bound the draining supervisor reports', async (context) => {
@@ -101,8 +101,8 @@ describe('daemon stop carries the values it read', () => {
     const { paths, ports, start } = await setup(context);
     await start({ version: VERSION, phase: 'draining' });
     const timeout = await timeoutOf(stopDaemon(ports, paths));
-    expect(STOP_WAIT_WHEN_UNKNOWN_MS).toBe(1_279_245);
-    expect(timeout.boundMs).toBe(1_279_245);
+    expect(STOP_WAIT_WHEN_UNKNOWN_MS).toBe(1_279_275);
+    expect(timeout.boundMs).toBe(1_279_275);
   });
 });
 
@@ -125,6 +125,6 @@ describe('the wait over several generations', () => {
   });
 
   it('counts a generation that reports no bound at the allowed maxima', () => {
-    expect(stopWaitBoundMs([healthReporting(90_000), healthReporting(undefined)])).toBe(1_279_245);
+    expect(stopWaitBoundMs([healthReporting(90_000), healthReporting(undefined)])).toBe(1_279_275);
   });
 });

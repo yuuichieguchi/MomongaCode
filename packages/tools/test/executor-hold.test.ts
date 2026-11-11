@@ -51,7 +51,14 @@ const setup = async () => {
     execute: ran,
   });
   const echo = makeTool('Echo', { execute: ran });
-  const toolSet = await toolSetOf(write, read, bash, merge, echo);
+  const remote = makeTool('mcp__tracker__close_issue', {
+    kind: 'other',
+    sideEffect: 'write',
+    subjectKind: 'mcp',
+    subject: (): Extract<PermissionSubject, { kind: 'mcp' }> => ({ kind: 'mcp', server: 'tracker', tool: 'close_issue' }),
+    execute: ran,
+  });
+  const toolSet = await toolSetOf(write, read, bash, merge, echo, remote);
   const rule = ruleFor(harness.layout);
   const inside = (name: string): string => path.join(harness.layout.project, name);
   const rules = [rule('ask', `Write(/${inside('held.txt')})`), rule('allow', 'Write'), rule('allow', 'Read'), rule('allow', 'Bash(cat:*)')];
@@ -114,6 +121,21 @@ describe('a batch in hold mode', () => {
     expect(resultOf(outcomes[0]).output).toContain('blocked by the held call cEarlier');
     expect(resultOf(outcomes[1]).status).toBe('completed');
     expect(executed).toEqual(['cOther']);
+  });
+
+  it.each([
+    ['a write of a file', call('cHeld', 'Write', { file_path: 'held.txt' })],
+    ['a merge of a pull request', call('cHeld', 'PullRequestMerge', { number: 7 })],
+  ])('blocks an MCP call while %s is held, because the effects of the MCP call cannot be named', async (_label, heldCall) => {
+    const { executed, run } = await setup();
+    const outcomes = await run([heldCall, call('cRemote', 'mcp__tracker__close_issue', {})]);
+    expect(outcomes[0]?.kind).toBe('needs_approval');
+    const result = resultOf(outcomes[1]);
+    expect(result).toMatchObject({ status: 'failed', denial: { source: 'held' } });
+    expect(result.output).toBe(
+      'Not run: blocked by the held call cHeld (the effects of this call cannot be named, so it may touch what that call changes), which waits for a person to approve it. Do not repeat this call until that one has been decided; continue with work that does not depend on it.',
+    );
+    expect(executed).toEqual([]);
   });
 
   it('does not block a shell command by a held pull request merge, whose footprint is the pull request and no local path', async () => {

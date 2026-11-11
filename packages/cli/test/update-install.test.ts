@@ -3,9 +3,10 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runUpdate } from '../src/commands/update.ts';
 import { UpdateError } from '../src/update/errors.ts';
+import { CANDIDATE_CHECK_TIMEOUT_MS } from '../src/update/install.ts';
 import { assetNameFor } from '../src/update/source.ts';
 import { DEFAULT_SIGNATURE, checksumListing } from './fake-release-server.ts';
-import { DAEMON_RESTART_BOUND_MS, NEW_BINARY, OLD_BINARY, PUBLIC_KEY, TEAM_ID, setupUpdate } from './update-harness.ts';
+import { DAEMON_READY_BOUND_MS, NEW_BINARY, OLD_BINARY, PUBLIC_KEY, TEAM_ID, setupUpdate, timedOutAt } from './update-harness.ts';
 import type { HarnessOptions, UpdateHarness } from './update-harness.ts';
 
 const interrupt = (): AbortSignal => new AbortController().signal;
@@ -431,11 +432,11 @@ describe('momonga update: the daemon after the update', () => {
     await update(harness);
 
     expect(harness.stdout.join('')).toBe(
-      `updated momonga 1.0.0 -> 2.0.0 (${harness.target})\nUpdated to v2.0.0. The daemon is running the new version now. 2 running steps and 1 background jobs of v0.9.0, 1.0.0 finish in the background; nothing is interrupted.\n`,
+      `updated momonga 1.0.0 -> 2.0.0 (${harness.target})\nUpdated to v2.0.0. The daemon is running the new version now. 2 running steps and 1 background jobs of v0.9.0, v1.0.0 finish in the background; nothing is interrupted.\n`,
     );
   });
 
-  it('lets the interrupt stop the signature check, the candidate check and the restart, and bounds the restart', async (context) => {
+  it('lets the interrupt stop the signature check, the candidate check and the restart, and bounds the restart by the start of the executable plus its wait for the daemon', async (context) => {
     const harness = await setupUpdate(context, darwin);
     harness.control.daemonRunning = true;
     publish(harness);
@@ -444,7 +445,7 @@ describe('momonga update: the daemon after the update', () => {
     await runUpdate(harness.wiring, { write: () => undefined }, { checkOnly: false, interrupt: controller.signal });
 
     expect(harness.runs.map((call) => call.options.signal)).toEqual([controller.signal, controller.signal, controller.signal]);
-    expect(harness.runs.at(-1)?.options.timeoutMs).toBe(DAEMON_RESTART_BOUND_MS);
+    expect(harness.runs.at(-1)?.options.timeoutMs).toBe(CANDIDATE_CHECK_TIMEOUT_MS + DAEMON_READY_BOUND_MS);
   });
 
   it('does not start a daemon that was not running', async (context) => {
@@ -469,6 +470,53 @@ describe('momonga update: the daemon after the update', () => {
     expect(error.detail).toBe('supervisor exited');
     expect(error.remediation).toBe('run `momonga daemon start`');
     expect(harness.targetBytes().equals(NEW_BINARY)).toBe(true);
+  });
+
+  it('reports a new daemon that never becomes ready in the words of the update, not as a failed command', async (context) => {
+    const harness = await setupUpdate(context);
+    harness.control.daemonRunning = true;
+    harness.control.daemonStart = timedOutAt(CANDIDATE_CHECK_TIMEOUT_MS + DAEMON_READY_BOUND_MS, 'still waiting');
+    publish(harness);
+
+    const error = await expectRejected(harness, 'daemon_restart_failed');
+
+    expect(error.message).toBe('The new daemon (v2.0.0) did not start (did not become ready within 60 s); v1.0.0 keeps running.');
+    expect(error.detail).toBe('still waiting');
+    expect(error.remediation).toBe('run `momonga daemon start`');
+    expect(harness.targetBytes().equals(NEW_BINARY)).toBe(true);
+  });
+
+  it('refuses a downloaded executable that does not answer --version within its bound, and installs nothing', async (context) => {
+    const harness = await setupUpdate(context);
+    harness.control.candidateTimedOut = true;
+    publish(harness);
+
+    const error = await expectRejected(harness, 'candidate_unusable');
+
+    expect(error.message).toBe('the downloaded executable did not answer --version within 30 s');
+    expectUnchanged(harness);
+  });
+
+  it('refuses a downloaded executable whose code signature check does not finish within its bound', async (context) => {
+    const harness = await setupUpdate(context, darwin);
+    harness.control.codesign = timedOutAt(CANDIDATE_CHECK_TIMEOUT_MS);
+    publish(harness);
+
+    const error = await expectRejected(harness, 'candidate_unusable');
+
+    expect(error.message).toBe('the code signature check of the downloaded executable did not finish within 30 s');
+    expectUnchanged(harness);
+  });
+
+  it('reports a signature tool that does not finish within its bound as unusable', async (context) => {
+    const harness = await setupUpdate(context);
+    harness.control.signature = timedOutAt(CANDIDATE_CHECK_TIMEOUT_MS);
+    publish(harness);
+
+    const error = await expectRejected(harness, 'signature_tool_unusable');
+
+    expect(error.message).toBe('ssh-keygen did not finish verifying the release signature within 30 s');
+    expectUnchanged(harness);
   });
 
   it('does not restart the daemon when the update itself failed', async (context) => {

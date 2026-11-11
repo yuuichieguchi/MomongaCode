@@ -34,9 +34,28 @@ describe('providerNameOf: the server name of a connection', () => {
   it('an Ollama server is ollama at its own address, and ollama with the address in the name anywhere else', () => {
     expect(providerNameOf(ollama('http://127.0.0.1:11434'))).toBe('ollama');
     expect(providerNameOf(ollama('http://192.168.1.20:11434'))).toBe('ollama-192.168.1.20-11434');
-    expect(providerNameOf(ollama('http://localhost:11434'))).toBe('ollama-localhost-11434');
-    expect(providerNameOf(ollama('http://[::1]:11434'))).toBe('ollama6---1-11434');
+    expect(providerNameOf(ollama('http://localhost:11435'))).toBe('ollama-localhost-11435');
+    expect(providerNameOf(ollama('http://[fe80::1]:11434'))).toBe('ollama6-fe80--1-11434');
     expect(providerNameOf({ adapter: 'ollama', socketPath: '/run/llm/x.sock' })).toBe('ollama-sock-0a00a44b-x.sock');
+  });
+
+  it('the loopback names 127.0.0.1, localhost and ::1 are one address: an Ollama server at any of them is ollama', () => {
+    expect(providerNameOf(ollama('http://localhost:11434'))).toBe('ollama');
+    expect(providerNameOf(ollama('http://LOCALHOST:11434/'))).toBe('ollama');
+    expect(providerNameOf(ollama('http://[::1]:11434'))).toBe('ollama');
+  });
+
+  it('the key of an address is the same for the three loopback names and is the written address for any other host', () => {
+    const keyOf = (baseUrl: string): string => config.endpointKeyOf({ kind: 'tcp', baseUrl });
+    expect(keyOf('http://127.0.0.1:11434')).toBe('http://127.0.0.1:11434');
+    expect(keyOf('http://127.0.0.1:11434/')).toBe('http://127.0.0.1:11434');
+    expect(keyOf('http://localhost:11434')).toBe('http://127.0.0.1:11434');
+    expect(keyOf('http://[::1]:11434/')).toBe('http://127.0.0.1:11434');
+    expect(keyOf('http://localhost:1234/v1/')).toBe('http://127.0.0.1:1234/v1');
+    expect(keyOf('http://192.168.1.20:11434/')).toBe('http://192.168.1.20:11434');
+    expect(keyOf('https://api.example.com/v1')).toBe('https://api.example.com/v1');
+    expect(keyOf('http://127.0.0.2:11434')).toBe('http://127.0.0.2:11434');
+    expect(config.endpointKeyOf({ kind: 'unix', socketPath: '/run/llm/x.sock' })).toBe('unix:/run/llm/x.sock');
   });
 
   it('a server of no known kind is named from its host and port', () => {
@@ -103,8 +122,19 @@ describe('server names in a settings file', () => {
     expect(await sentenceOf({ models: { connections: [fm({ binary: '/opt/fm/a' }), fm({ binary: '/opt/fm/b' })] } })).toBe(duplicateSentence('apple'));
   });
 
-  it('two Ollama connections at 127.0.0.1 and at localhost are two servers with two names', async () => {
-    const { models } = await loadModelsSection({ connections: [ollamaConnection('http://127.0.0.1:11434'), ollamaConnection('http://localhost:11434')] });
-    expect([...models.models.keys()]).toEqual(['ollama/m:latest', 'ollama-localhost-11434/m:latest']);
+  it('two Ollama connections at 127.0.0.1 and at localhost are one address and are refused as one name', async () => {
+    expect(await sentenceOf({ models: { connections: [ollamaConnection('http://127.0.0.1:11434'), ollamaConnection('http://localhost:11434')] } })).toBe(duplicateSentence('ollama'));
+  });
+
+  it('a name derived from a pinned account label follows the name rule: the refusal names the connection and the field to write', async () => {
+    const plan = (account: string, extra: Record<string, unknown> = {}) => ({ adapter: 'open-responses', plan: { profile: 'chatgpt', account }, ...extra, models: [{ id: 'gpt-5.5' }] });
+    expect(await sentenceOf({ models: { connections: [plan('Work')] } })).toBe(
+      'models.connections[0]: the server name "Work" made from plan.account must start with a lower-case letter and use only lower-case letters, digits, . _ -; write "provider" on this connection',
+    );
+    expect(await sentenceOf({ models: { connections: [plan('9lives')] } })).toContain('the server name "9lives" made from plan.account');
+    const named = await loadModelsSection({ connections: [plan('Work', { provider: 'work' })] });
+    expect([...named.models.models.keys()]).toEqual(['work/gpt-5.5']);
+    const lower = await loadModelsSection({ connections: [plan('work-2')] });
+    expect([...lower.models.models.keys()]).toEqual(['work-2/gpt-5.5']);
   });
 });

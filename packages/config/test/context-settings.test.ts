@@ -10,7 +10,7 @@ const TOKEN_ON = { cachePrefix: true, outputFormatters: ['log', 'json', 'grep', 
 const resolvedWith = async (settings: Record<string, unknown>) => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), settings);
-  return (await loadUserSettings({ home: tree.home })).settings;
+  return (await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings;
 };
 
 describe('context settings defaults', () => {
@@ -110,7 +110,7 @@ describe('context settings rejection', () => {
   ])('rejects %j at its pointer', async (settings, pointer) => {
     const tree = makeTree();
     const file = writeJson(userSettingsPath(tree), settings);
-    const failure = loadUserSettings({ home: tree.home });
+    const failure = loadUserSettings({ home: tree.home, signal: new AbortController().signal });
     await expect(failure).rejects.toThrow(file);
     await expect(failure).rejects.toThrow(`invalid settings at ${pointer}:`);
   });

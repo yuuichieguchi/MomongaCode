@@ -1,5 +1,6 @@
 import type { CallStop } from './call-stop.ts';
-import type { Awaitable, Clock, NetworkScope, OutboundNetwork, PathResolver } from '@momonga/foundation';
+import type { Awaitable, Clock, FileSystem, NetworkScope, OutboundNetwork, PathResolver, Random } from '@momonga/foundation';
+import type { ShellHost } from './builtins/shell.ts';
 import type { MarkerSettle } from './marker-settle.ts';
 import type { PermissionSubject } from '@momonga/policy';
 import { OPERATION_EFFECT_OUTCOMES } from '@momonga/protocol';
@@ -64,6 +65,8 @@ export type SubjectContext = {
 
 export type DisplayContext = Pick<SubjectContext, 'cwd' | 'workingDirectory' | 'paths'>;
 
+export type PreconditionContext = SubjectContext & { files: FileSystem; session: ToolSessionState; signal: AbortSignal };
+
 export type ToolResume = {
   checkpoint: Record<string, unknown> | undefined;
   inputResponses: Record<string, unknown> | undefined;
@@ -116,7 +119,11 @@ export type ReconcileContext = SubjectContext & {
   deadlineAt: number;
   blobs: BlobPort;
   clock: Clock;
+  shellHost: ShellHost;
+  random: Random;
+  files: FileSystem;
   jobs?: BackgroundJobs;
+  patternCheckLimitMs?: number;
   session: ToolSessionState;
   attachProcess(process: { pgid: number; startedAt: number }): Promise<void>;
   update(content: ToolContent[]): void;
@@ -128,7 +135,9 @@ export type OperationEffectOutcome = (typeof OPERATION_EFFECT_OUTCOMES)[number];
 
 export type GateFacts = Record<string, unknown>;
 
-export type GateCall = { signal: AbortSignal; env: Readonly<Record<string, string>> };
+export type ProbeContext = Pick<ReconcileContext, 'idemKey' | 'clock' | 'deadlineAt' | 'tmpDir' | 'signal' | 'roots' | 'random' | 'files'> & Partial<Pick<ToolContext, 'sandbox' | 'sandboxPolicy'>>;
+
+export type GateCall = { signal: AbortSignal; env: Readonly<Record<string, string>>; context: ProbeContext };
 
 export type OperationEffect = { operation: string; target: string; outcome: OperationEffectOutcome };
 
@@ -182,6 +191,7 @@ export type ToolBody<Input> = {
   title(input: Input, ctx: DisplayContext): Awaitable<string>;
   locations?(input: Input, ctx: DisplayContext): { path: string; line?: number }[];
   gateFacts?(input: Input, ctx: SubjectContext, call: GateCall): Promise<GateFacts>;
+  precondition?(input: Input, ctx: PreconditionContext): Promise<void>;
   prepare?(input: Input, ctx: ToolContext, gateFacts?: GateFacts): Promise<Record<string, unknown>>;
   execute(input: Input, ctx: ToolContext, prepared: Record<string, unknown> | undefined): Promise<ToolResult | ToolPending>;
   reconcile?(input: Input, record: ToolIdempotencyRecord, ctx: ReconcileContext): Promise<ReconcileResult>;

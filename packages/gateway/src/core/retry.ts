@@ -71,7 +71,7 @@ export type WaitDecision = { kind: 'wait'; ms: number } | { kind: 'leave' };
 export type WaitQuestion = { attempt: number; retryAfterMs?: number; elapsedMs: number; policy: WaitPolicy; lastCandidate?: boolean };
 
 export const nextWait = ({ attempt, retryAfterMs, elapsedMs, policy, lastCandidate = false }: WaitQuestion): WaitDecision => {
-  const backoffMs = computeBackoff({ attempt, baseMs: policy.baseMs, maxMs: policy.maxMs, random: policy.random, jitter: 'equal' });
+  const backoffMs = computeBackoff({ attempt, baseMs: policy.baseMs, maxMs: policy.maxMs, random: { float: policy.random }, jitter: 'equal' });
   const ms = Math.max(backoffMs, retryAfterMs ?? 0);
   if ((!lastCandidate && ms > policy.maxMs) || elapsedMs + ms > policy.totalWaitMs) return { kind: 'leave' };
   return { kind: 'wait', ms };
@@ -90,7 +90,7 @@ const sleep = (timers: GatewayTimers, ms: number, signal: AbortSignal): Promise<
     signal.addEventListener('abort', onAbort, { once: true });
   });
 
-const retryAfterSeconds = (retryAfterMs: number): string => String(Math.max(1, Math.ceil(retryAfterMs / 1000)));
+export const retryAfterSeconds = (retryAfterMs: number): string => String(Math.max(1, Math.ceil(retryAfterMs / 1000)));
 
 const finalError = (classified: ClassifiedError, totalWaitMs: number): GatewayError => {
   const { retryAfterMs } = classified;

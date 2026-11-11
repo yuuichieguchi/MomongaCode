@@ -175,7 +175,7 @@ export const createEncryptedCredentialStore = (options: EncryptedCredentialStore
       },
       write_marker: async () => {
         const { name } = creation.created as CreatedKey;
-        await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: ports.randomHex }, markerFile, `${JSON.stringify({ name })}\n`, { mode: FILE_MODE });
+        await writeFileAtomically(nodeFileSystem, ports.random, markerFile, `${JSON.stringify({ name })}\n`, { mode: FILE_MODE });
       },
     };
     for (const step of CREDENTIAL_KEY_CREATION_STEPS) {

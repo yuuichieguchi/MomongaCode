@@ -298,9 +298,6 @@
       "packages/foundation/src/file-rules.ts": {
         "directory": 2
       },
-      "packages/foundation/src/generation-start.ts": {
-        "directory": 1
-      },
       "packages/foundation/src/json-depth.ts": {
         "limit": 1
       },
@@ -420,15 +417,18 @@
         "profile": 1
       },
       "packages/gateway/src/plan/api.ts": {
-        "profile": 2
+        "profile": 1
+      },
+      "packages/gateway/src/plan/profiles.ts": {
+        "profile": 1
+      },
+      "packages/gateway/src/plan/request-limit.ts": {
+        "limit": 1
       },
       "packages/gateway/src/plan/session.ts": {
         "limit": 2,
-        "profile": 4,
+        "profile": 3,
         "task": 2
-      },
-      "packages/gateway/src/plan/signin.ts": {
-        "profile": 1
       },
       "packages/gateway/src/probe/endpoint-record.ts": {
         "endpoint": 1,
@@ -472,7 +472,7 @@
       "packages/mcp/src/remote-policy.ts": {
         "project": 2
       },
-      "packages/mcp/src/schema-sanitizer.ts": {
+      "packages/mcp/src/schema-copy.ts": {
         "limit": 1
       },
       "packages/mcp/src/source.ts": {
@@ -550,7 +550,7 @@
         "project": 2
       },
       "packages/runtime/src/process/background-jobs.ts": {
-        "job": 8
+        "job": 10
       },
       "packages/runtime/src/process/history-port.ts": {
         "project": 1
@@ -563,9 +563,6 @@
       },
       "packages/runtime/src/prompts/init.ts": {
         "project": 1
-      },
-      "packages/runtime/src/service/answered-by.ts": {
-        "target": 2
       },
       "packages/runtime/src/service/app.ts": {
         "gateway": 3

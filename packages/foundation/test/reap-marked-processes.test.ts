@@ -4,10 +4,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { HOLD_UNTIL_SIGNALLED, HOLD_UNTIL_SIGNALLED_ARGV, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
+import { HOLD_UNTIL_SIGNALLED, HOLD_UNTIL_SIGNALLED_ARGV, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, spawnTracked, waitFor, withTempDir, sleepDrivenTiming } from '@momonga/testkit';
 import type { CleanupContext, TrackedChild } from '@momonga/testkit';
-import { MarkerReapError, createProcessInspector, hostInspectorPorts, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reconcileProcessGroup } from '@momonga/foundation';
-import type { CommandRunner, ProcessInspector, ReapTiming } from '@momonga/foundation';
+import { MarkerReapError, createProcessInspector, hostInspectorPorts, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reconcileProcessGroup, sleep } from '@momonga/foundation';
+import type { CommandRunner, ProcessInspector, Timing } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: 4 * REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -67,7 +67,7 @@ const makeMarker = (dir: string, name = 'marker', content = ''): string => {
   return marker;
 };
 
-type FakeTiming = { timing: ReapTiming; sleeps: number[]; now(): number };
+type FakeTiming = { timing: Timing; sleeps: number[]; now(): number };
 
 const fakeTiming = (): FakeTiming => {
   let current = 0;
@@ -75,14 +75,14 @@ const fakeTiming = (): FakeTiming => {
   return {
     sleeps,
     now: () => current,
-    timing: {
+    timing: sleepDrivenTiming({
       now: () => current,
       sleep: async (ms: number) => {
         sleeps.push(ms);
         current += ms;
         await new Promise((resolve) => setImmediate(resolve));
       },
-    },
+    }),
   };
 };
 
@@ -473,7 +473,7 @@ describe('reapMarkerDirectory', () => {
     let current = 0;
     let pendingFirst: Array<() => void> = [];
     let released = false;
-    const timing: ReapTiming = {
+    const timing: Timing = sleepDrivenTiming({
       now: () => current,
       sleep: async (ms: number) => {
         events.push(`sleep:${ms}`);
@@ -491,7 +491,7 @@ describe('reapMarkerDirectory', () => {
           }
         });
       },
-    };
+    });
     const kill = (pid: number, signal: NodeJS.Signals | 0): void => {
       if (signal !== 0) events.push(`kill:${pid}:${signal}`);
       process.kill(pid, signal);
@@ -572,7 +572,7 @@ const SLICE_MS = 25;
 const REMOVED_PS_PROBE_TIMEOUT_MS = 2000;
 const SLOW_LISTING_MS = 5 * REMOVED_PS_PROBE_TIMEOUT_MS;
 
-type AbortableTiming = { timing: ReapTiming; sleeps: number[]; now(): number };
+type AbortableTiming = { timing: Timing; sleeps: number[]; now(): number };
 
 const abortableTiming = (trigger: { controller: AbortController; at: number } | undefined, onSleep: () => void = () => undefined): AbortableTiming => {
   let current = 0;
@@ -580,16 +580,18 @@ const abortableTiming = (trigger: { controller: AbortController; at: number } | 
   return {
     sleeps,
     now: () => current,
-    timing: {
+    timing: sleepDrivenTiming({
       now: () => current,
       sleep: async (ms: number) => {
         onSleep();
-        sleeps.push(ms);
-        current += ms;
-        if (trigger !== undefined && current >= trigger.at && !trigger.controller.signal.aborted) trigger.controller.abort();
+        const endedByTrigger = trigger !== undefined && !trigger.controller.signal.aborted && current + ms >= trigger.at;
+        const slept = endedByTrigger ? Math.max(0, trigger.at - current) : ms;
+        sleeps.push(slept);
+        current += slept;
+        if (endedByTrigger) trigger.controller.abort();
         await new Promise((resolve) => setImmediate(resolve));
       },
-    },
+    }),
   };
 };
 
@@ -853,7 +855,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
     const requests: Array<{ file: string; timeoutMs: number | undefined; signalAborted: boolean | undefined }> = [];
     const slowListing: CommandRunner = async (file, _args, options) => {
       requests.push({ file, timeoutMs: options.timeoutMs, signalAborted: options.signal?.aborted });
-      await fake.timing.sleep(SLOW_LISTING_MS);
+      await sleep(fake.timing, SLOW_LISTING_MS);
       if (options.timeoutMs !== undefined && options.timeoutMs < SLOW_LISTING_MS) throw Object.assign(new Error(`${file} killed after ${options.timeoutMs} ms`), { killed: true, signal: 'SIGKILL' });
       if (options.signal?.aborted === true) throw Object.assign(new Error('aborted'), { name: 'AbortError', code: 'ABORT_ERR' });
       return { exitCode: 1, stdout: '', stderr: '' };

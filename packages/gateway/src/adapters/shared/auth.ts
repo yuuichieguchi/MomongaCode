@@ -4,6 +4,7 @@ import type { AuthSource } from '../../plan/auth-source.ts';
 import { readTextLimited } from './body-reading.ts';
 import type { CompletionResponse } from './http-client.ts';
 import { MAX_ERROR_BODY_BYTES } from './limits.ts';
+import { pauseEndOf } from '../../plan/pause-end.ts';
 
 export type AdapterAuth = (target: AdapterTarget) => AuthSource;
 
@@ -50,7 +51,8 @@ export const applyCredentialEffect = async (auth: AuthSource, classified: Classi
   if (classified.credential !== 'pause') return;
   const { code } = classified.error;
   if (code === null) throw new Error('a classification that pauses the credential carries no code');
-  await auth.pause({ code, ...(classified.retryAfterMs === undefined ? {} : { untilMs: clock.now() + classified.retryAfterMs }) }, signal);
+  const untilMs = pauseEndOf(clock.now(), classified.retryAfterMs);
+  await auth.pause({ code, ...(untilMs === undefined ? {} : { untilMs }) }, signal);
 };
 
 export const afterCredentialEffect = async <Failure extends Error>(failure: Failure, auth: AuthSource, classified: ClassifiedError, clock: Clock, signal: AbortSignal): Promise<Failure> => {

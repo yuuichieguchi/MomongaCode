@@ -13,19 +13,19 @@ describe('mcp.connectTimeoutMs is one global user setting for the connect of eve
   it.each([1, 30_000, 3_600_000])('accepts %d from user settings', async (value) => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { mcp: { connectTimeoutMs: value } });
-    expect((await loadUserSettings({ home: tree.home })).settings.mcp.connectTimeoutMs).toBe(value);
+    expect((await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings.mcp.connectTimeoutMs).toBe(value);
   });
 
   it('is absent when the user sets nothing, so the connect uses its default', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), {});
-    expect((await loadUserSettings({ home: tree.home })).settings.mcp.connectTimeoutMs).toBeUndefined();
+    expect((await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings.mcp.connectTimeoutMs).toBeUndefined();
   });
 
   it.each([0, -1, 3_600_001, 1.5, '30000', null, true])('refuses %o with the English message', async (value) => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { mcp: { connectTimeoutMs: value } });
-    await expect(loadUserSettings({ home: tree.home })).rejects.toThrow(
+    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow(
       `${userSettingsPath(tree)}: mcp.connectTimeoutMs must be an integer from 1 to 3600000 milliseconds; got ${JSON.stringify(value)}`,
     );
   });

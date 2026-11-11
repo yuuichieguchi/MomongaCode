@@ -1,3 +1,4 @@
+import { sleepDrivenTiming } from '@momonga/testkit';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -42,7 +43,7 @@ const settleFor = (scene: ReturnType<typeof sceneOf>) => {
   const marker = path.join(dir, 'marker');
   fs.writeFileSync(marker, '', { mode: 0o600 });
   let now = 0;
-  const timing = { now: () => now, sleep: async (ms: number) => void (now += ms) };
+  const timing = sleepDrivenTiming({ now: () => now, sleep: async (ms: number) => void (now += ms) });
   return createMarkerSettle({ marker, mode: 'listed', inspector: scene.inspector, kill: scene.kill, timing, killGraceMs: 100, onWarning: () => undefined });
 };
 

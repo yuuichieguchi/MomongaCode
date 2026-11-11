@@ -1,3 +1,6 @@
+import { cancellableTimer } from './timers.ts';
+import type { ToolTimers } from './ports.ts';
+
 const HEAD_BYTES = 4 * 1024 * 1024;
 const TAIL_BYTES = 4 * 1024 * 1024;
 const CONTINUATION_BYTE = 0b1100_0000;
@@ -60,6 +63,7 @@ const STREAM_DRAIN_MS = 1000;
 export const pumpOutput = (
   streams: readonly AsyncIterable<Uint8Array>[],
   onChunk: (streamIndex: number, chunk: Buffer) => void,
+  timers: ToolTimers,
 ): { settle(): Promise<void>; close(): Promise<void>; failure(): { error: unknown } | undefined } => {
   const iterators = streams.map((stream) => stream[Symbol.asyncIterator]());
   let streamFailure: { error: unknown } | undefined;
@@ -77,14 +81,11 @@ export const pumpOutput = (
   );
   return {
     settle: async () => {
-      let timer: NodeJS.Timeout | undefined;
-      const expired = new Promise<void>((resolve) => {
-        timer = setTimeout(resolve, STREAM_DRAIN_MS);
-      });
+      const drain = cancellableTimer(timers, STREAM_DRAIN_MS);
       try {
-        await Promise.race([Promise.all(pumps).then(() => undefined), expired]);
+        await Promise.race([Promise.all(pumps).then(() => undefined), drain.done]);
       } finally {
-        clearTimeout(timer);
+        drain.cancel();
       }
     },
     close,

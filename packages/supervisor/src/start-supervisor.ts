@@ -25,9 +25,10 @@ import {
   scopeToGeneration,
   startDeadlineSignal,
   systemClock,
+  systemRandom,
   writeStopRecord,
 } from '@momonga/foundation';
-import type { AbandonReason, AtomicWriteFileSystem, Clock, GenerationRole, JsonLogger, KernelLockMechanism, ProcessLock, ReadyFields, ReapTiming, StopValues, TextStream } from '@momonga/foundation';
+import type { AbandonReason, AtomicWriteFileSystem, Clock, GenerationRole, JsonLogger, KernelLockMechanism, ProcessLock, ReadyFields, StopValues, Timing, TextStream } from '@momonga/foundation';
 import type { SupervisorHealth, SupervisorPhase } from '@momonga/protocol';
 import { FIDELITY_FOLD_VERSION, SUPERVISOR_API_VERSION } from '@momonga/protocol';
 import { readChildCounts } from './child-counts.ts';
@@ -95,7 +96,7 @@ export type SupervisorOptions = {
   random?: () => number;
   logger?: JsonLogger;
   droppedLogLines?: () => number;
-  reapTiming?: ReapTiming;
+  reapTiming?: Timing;
   lockMechanism?: KernelLockMechanism;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
   markerPorts?: MarkerPorts;
@@ -276,22 +277,21 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       log(phaseChange({ from, to: next }));
     };
 
-    const reapTiming: ReapTiming = options.reapTiming ?? {
+    const reapTiming: Timing = options.reapTiming ?? {
       now: () => clock.now(),
-      sleep,
+      monotonicMs: () => clock.now(),
+      setTimeout: (callback, ms) => timers.setTimeout(callback, ms),
+      clearTimeout: (handle) => timers.clearTimeout(handle),
     };
 
-    const settings = createUserSettingsCache({ home: canonicalHome, onWarning: (detail) => log(settingsWarning({ detail })), keptRecords: noKeptRecords });
-    const stopValues =
-      options.stopValues ??
-      createStopValuesReader({
-        load: () => {
-          const snapshot = settings.snapshot();
-          if ('error' in snapshot) throw snapshot.error;
-          return stopValuesOfSettings(snapshot.settings);
-        },
-        onNotice: (detail) => log(settingsWarning({ detail })),
-      });
+    const stopValues = options.stopValues ?? createStopValuesReader({ onNotice: (detail) => log(settingsWarning({ detail })) });
+    const settings = createUserSettingsCache({
+      home: canonicalHome,
+      onWarning: (detail) => log(settingsWarning({ detail })),
+      keptRecords: noKeptRecords,
+      onLoaded: (loaded) => stopValues.remember(stopValuesOfSettings(loaded.settings)),
+    });
+    const changeKey = (): Promise<string> => userSettingsChangeKey(canonicalHome, lifetime.signal);
 
     const endByItself = (): void => {
       if (ended || draining) return;
@@ -490,12 +490,12 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
 
     let recordFailedKey: string | undefined;
     let lastWrittenSeq: number | undefined;
-    const recordApplied = (key: string | undefined): void => {
+    const recordApplied = async (key: string | undefined): Promise<void> => {
       try {
-        const written = writeAppliedRecord(canonicalHome, own.settingsApplied, lastWrittenSeq);
+        const written = await writeAppliedRecord(canonicalHome, own.settingsApplied, lastWrittenSeq, { signal: lifetime.signal, random: systemRandom });
         if (written.kind !== 'invalid') lastWrittenSeq = written.seq;
       } catch (error) {
-        if (key === recordFailedKey) return;
+        if (lifetime.signal.aborted || key === recordFailedKey) return;
         recordFailedKey = key;
         log(settingsRecordFailed({ detail: failureOf(error).message }));
       }
@@ -508,31 +508,31 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       log(settingsReadFailed({ detail: failure.message }, failure));
     };
 
-    const evaluateOnce = (): void => {
-      const key = safeChangeKey(() => userSettingsChangeKey(canonicalHome));
+    const evaluateOnce = async (): Promise<void> => {
+      const key = await safeChangeKey(changeKey);
       if (key === lastEvaluatedKey) return;
-      for (const manager of managers) manager.retryHeld();
       let snapshot: ReturnType<typeof settings.snapshot>;
       try {
-        snapshot = settings.snapshot();
+        snapshot = await settings.load(lifetime.signal);
       } catch (error) {
-        reportReadFailure(error);
+        if (!lifetime.signal.aborted) reportReadFailure(error);
         return;
       }
+      for (const manager of managers) manager.retryHeld();
       lastEvaluatedKey = key;
       lastReadFailure = undefined;
       if ('error' in snapshot) {
         log(settingsInvalid({ detail: snapshot.error.message, action: 'keep-running-children-hold-spawns' }));
         return;
       }
-      recordApplied(key);
+      await recordApplied(key);
       log(settingsChanged({}));
     };
 
-    const evaluate = (): void => {
+    const evaluate = async (): Promise<void> => {
       if (draining || role === 'retiring') return;
       try {
-        evaluateOnce();
+        await evaluateOnce();
       } catch (error) {
         reportReadFailure(error);
       }
@@ -546,7 +546,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         file: path.basename(homePaths.settingsFile),
         debounceMs: intervals.settingsDebounceMs,
         pollMs: intervals.settingsPollMs,
-        changeKey: () => userSettingsChangeKey(canonicalHome),
+        changeKey,
         initialKey,
         onChange: evaluate,
         onWarning: (error) => log(settingsWarning({ detail: error.message })),
@@ -625,7 +625,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       ...lockOptions,
     });
 
-    recordApplied(userSettingsChangeKey(canonicalHome));
+    await recordApplied(await changeKey());
     const ready: ReadyFields = { service: SUPERVISOR_SERVICE, pid: process.pid, version: options.version, socketPath: own.sockets.supervisor, startedAt };
     announceReady(ready, options.stdout);
 
@@ -652,7 +652,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       logger,
       reapOwnMarkers,
       settings,
-      changeKey: () => userSettingsChangeKey(canonicalHome),
+      changeKey,
       gateway,
       runtime,
       startWatch,

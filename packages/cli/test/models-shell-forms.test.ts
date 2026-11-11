@@ -319,6 +319,38 @@ describe.each(WRITING)('momonga models $form', (entry) => {
   });
 });
 
+describe('momonga models set and set-server take only the fields of the writer', () => {
+  it('refuses a field that is not in the table with the fields of the table, exits 1 and writes nothing', async (context) => {
+    const at = homeWith(context, threeModels());
+    const before = bytesOf(at.settingsFile);
+    for (const [form, args, subject] of [
+      ['set', ['qwen3.8:27b', 'nope', '1'], 'model'],
+      ['unset', ['qwen3.8:27b', '__proto__.polluted'], 'model'],
+      ['set-server', ['lmstudio', 'provider', 'studio'], 'server'],
+      ['unset-server', ['lmstudio', '__proto__'], 'server'],
+    ] as const) {
+      const harness = shellOf(at);
+      const code = await runModelsForm(harness.shell, form, input(args, { yes: true }));
+      expect(harness.err()).toContain(`"${args[1]}" is not a field of a ${subject} that can be set. The fields are: `);
+      expect(code).toBe(1);
+      expect(bytesOf(at.settingsFile)).toBe(before);
+    }
+  });
+
+  it('set <model> id <new> renames the model and rewrites the references to it', async (context) => {
+    const at = homeWith(context, threeModels({ start: 'ollama/qwen3.8:27b', fallback: ['ollama/qwen3.8:27b'] }));
+    const harness = shellOf(at);
+    const code = await runModelsForm(harness.shell, 'set', input(['qwen3.8:27b', 'id', 'qwen3.9:27b'], { yes: true }));
+    expect(harness.err()).toBe('');
+    expect(code).toBe(0);
+    expect(harness.out().split('\n')).toEqual(['Rename qwen3.8:27b to qwen3.9:27b?', 'Renamed qwen3.8:27b to qwen3.9:27b.', '']);
+    const document = documentOf(at.settingsFile) as Written;
+    expect(document.models.connections[0]?.models[1]?.['id']).toBe('qwen3.9:27b');
+    expect(document.models['start']).toBe('ollama/qwen3.9:27b');
+    expect(document.models['fallback']).toEqual(['ollama/qwen3.9:27b']);
+  });
+});
+
 const CATALOG: readonly PlanCatalogEntry[] = [
   { slug: 'gpt-5.5', displayName: 'GPT-5.5', usable: true, contextWindow: 400000, maxOutputTokens: 128000 },
   { slug: 'gpt-old', displayName: 'GPT Old', usable: false, reason: 'the list reports no context window' },

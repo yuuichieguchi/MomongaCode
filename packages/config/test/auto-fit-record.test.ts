@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import * as config from '@momonga/config';
-import { readAutoFitRecord, writeAutoFitRecord } from '@momonga/config';
+import { ConfigError, readAutoFitRecord, writeAutoFitRecord } from '@momonga/config';
 import type { AutoFitKey, AutoFitRecord } from '@momonga/config';
 import { makeDir } from './helpers.ts';
 import { loadModelsSection } from './load-models.ts';
@@ -60,6 +60,54 @@ describe('the stored measurement of an auto-mode classifier names the model that
     const file = await write(directory, { ...RECORD, agentModel: 'ollama/devstral-small-2:latest' });
     fs.writeFileSync(file, `${JSON.stringify({ ...RECORD, agentAlias: 'fm' }, null, 2)}\n`, { mode: 0o600 });
     await expect(readAutoFitRecord(directory, KEY)).resolves.toBeUndefined();
+  });
+
+  it.each([
+    ['text that is no JSON', 'not json at all'],
+    ['an empty file', ''],
+    ['a record cut off while it was written', '{"key": {"classifier": "x"'],
+    ['a value nested deeper than the product reads', `${'['.repeat(5000)}${']'.repeat(5000)}`],
+    ['control bytes', '\u0000\u0001\u0002'],
+  ])('a record that is not JSON (%s) is refused with the typed error that names the file', async (_name, text) => {
+    const directory = makeDir();
+    const file = await write(directory, { ...RECORD, agentModel: 'ollama/devstral-small-2:latest' });
+    fs.writeFileSync(file, text, { mode: 0o600 });
+    const error = await readAutoFitRecord(directory, KEY).then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(ConfigError);
+    expect((error as Error).message.startsWith(`${file}: `)).toBe(true);
+  });
+
+  it.each([
+    ['without its runs', (({ runs: _runs, ...rest }) => rest)({ ...RECORD, agentModel: 'm' })],
+    ['without its key', (({ key: _key, ...rest }) => rest)({ ...RECORD, agentModel: 'm' })],
+    ['that is a list', []],
+    ['that is null', null],
+  ])('a record %s is refused with the same typed error that names the file', async (_name, value) => {
+    const directory = makeDir();
+    const file = await write(directory, { ...RECORD, agentModel: 'ollama/devstral-small-2:latest' });
+    fs.writeFileSync(file, JSON.stringify(value), { mode: 0o600 });
+    const error = await readAutoFitRecord(directory, KEY).then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(ConfigError);
+    expect((error as Error).message).toBe(`${file}: not an auto mode measurement record`);
+  });
+
+  it('a record that is a directory is refused with the typed error that names the file', async () => {
+    const directory = makeDir();
+    const file = await write(directory, { ...RECORD, agentModel: 'ollama/devstral-small-2:latest' });
+    fs.rmSync(file);
+    fs.mkdirSync(file);
+    const error = await readAutoFitRecord(directory, KEY).then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(ConfigError);
+    expect((error as Error).message.startsWith(`${file}: `)).toBe(true);
   });
 
   it('the key names the identities of the models that can answer a classification, in chain order, so a change of models.fallback changes it', async () => {

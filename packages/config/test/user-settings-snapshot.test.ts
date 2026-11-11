@@ -6,6 +6,8 @@ import type { UserLayer, UserSettingsSnapshot } from '@momonga/config';
 import { canonsOf, makeTree, trusting, userSettingsPath, writeJson, writeText } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 
+const NOT_ABORTED = new AbortController().signal;
+
 const T0 = new Date('2026-01-01T00:00:00Z');
 const T1 = new Date('2026-01-01T00:00:10Z');
 const T2 = new Date('2026-01-01T00:00:20Z');
@@ -36,13 +38,13 @@ const errorOf = (snapshot: UserSettingsSnapshot): ConfigError => {
   return snapshot.error;
 };
 
-describe('UserSettingsCache.snapshot', () => {
-  it('snapshot returns settings and the user layer after a good load', () => {
+describe('UserSettingsCache.load', () => {
+  it('load returns settings and the user layer after a good load', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeAt(file, { env: { TZ: 'user' }, autoUpdates: false }, T0);
     const { cache } = cacheFor(tree);
-    const snapshot = settingsOf(cache.snapshot());
+    const snapshot = settingsOf(await cache.load(NOT_ABORTED));
     expect(snapshot.settings.env).toEqual({ TZ: 'user' });
     expect(snapshot.settings.autoUpdates).toBe(false);
     expect(snapshot.user.layer?.source).toBe(file);
@@ -52,112 +54,114 @@ describe('UserSettingsCache.snapshot', () => {
     expect(snapshot.user.warnings).toEqual([]);
   });
 
-  it('a failed reload makes snapshot return { error: ConfigError } while get() keeps the last good settings', () => {
+  it('a failed reload makes load return { error: ConfigError } while loadOrKeep keeps the last good settings', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeAt(file, { env: { TZ: 'good' } }, T0);
     const { cache, warnings } = cacheFor(tree);
-    expect(settingsOf(cache.snapshot()).settings.env).toEqual({ TZ: 'good' });
+    expect(settingsOf(await cache.load(NOT_ABORTED)).settings.env).toEqual({ TZ: 'good' });
     writeTextAt(file, '{ broken', T1);
-    const error = errorOf(cache.snapshot());
+    const error = errorOf(await cache.load(NOT_ABORTED));
     expect(error).toBeInstanceOf(ConfigError);
     expect(error.message).toContain(file);
-    expect(cache.get().env).toEqual({ TZ: 'good' });
+    expect((await cache.loadOrKeep(NOT_ABORTED)).settings.env).toEqual({ TZ: 'good' });
     expect(warnings.some((message) => message.startsWith('settings file is invalid: ') && message.includes(file))).toBe(true);
     expect(warnings.some((message) => message.includes('keeping') || message.includes('last good'))).toBe(false);
   });
 
-  it('a later good load replaces the error', () => {
+  it('a later good load replaces the error', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeAt(file, { env: { TZ: 'good' } }, T0);
     const { cache } = cacheFor(tree);
-    cache.snapshot();
+    await cache.load(NOT_ABORTED);
     writeTextAt(file, '{ broken', T1);
-    expect(errorOf(cache.snapshot())).toBeInstanceOf(ConfigError);
+    expect(errorOf(await cache.load(NOT_ABORTED))).toBeInstanceOf(ConfigError);
     writeAt(file, { env: { TZ: 'fixed' } }, T2);
-    expect(settingsOf(cache.snapshot()).settings.env).toEqual({ TZ: 'fixed' });
-    expect(cache.get().env).toEqual({ TZ: 'fixed' });
+    expect(settingsOf(await cache.load(NOT_ABORTED)).settings.env).toEqual({ TZ: 'fixed' });
+    expect((await cache.loadOrKeep(NOT_ABORTED)).settings.env).toEqual({ TZ: 'fixed' });
   });
 
-  it('a failed load is never cached, so fixing the cause restores service without touching the file', () => {
+  it('a failed load is cached under the content of the file, and a changed content loads', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
-    const extra = path.join(tree.home, 'extra');
-    writeAt(file, { permissions: { additionalDirectories: [extra] } }, T0);
+    writeAt(file, { tui: { theme: 'bogus' } }, T0);
     const { cache } = cacheFor(tree);
-    expect(errorOf(cache.snapshot())).toBeInstanceOf(ConfigError);
-    fs.mkdirSync(extra);
-    expect(settingsOf(cache.snapshot()).settings.permissions.additionalDirectories).toEqual([extra]);
+    const failed = await cache.load(NOT_ABORTED);
+    expect(errorOf(failed)).toBeInstanceOf(ConfigError);
+    writeAt(file, { tui: { theme: 'bogus' } }, T1);
+    expect(await cache.load(NOT_ABORTED)).toBe(failed);
+    writeAt(file, { autoUpdates: false }, T1);
+    expect(settingsOf(await cache.load(NOT_ABORTED)).settings.autoUpdates).toBe(false);
   });
 
-  it('a non-ConfigError failure is wrapped as ConfigError with cause', () => {
+  it('a non-ConfigError failure is wrapped as ConfigError with cause', async () => {
     const tree = makeTree();
     writeText(path.join(tree.home, '.momonga'), 'not a directory');
     const { cache } = cacheFor(tree);
-    const error = errorOf(cache.snapshot());
+    const error = errorOf(await cache.load(NOT_ABORTED));
     expect(error).toBeInstanceOf(ConfigError);
     expect((error.cause as NodeJS.ErrnoException | undefined)?.code).toBe('ENOTDIR');
   });
 
-  it('get() throws ConfigError when there are no last-good settings', () => {
+  it('loadOrKeep throws ConfigError when there are no last-good settings', async () => {
     const tree = makeTree();
     writeText(path.join(tree.home, '.momonga'), 'not a directory');
     const { cache } = cacheFor(tree);
-    expect(errorOf(cache.snapshot())).toBeInstanceOf(ConfigError);
-    expect(() => cache.get()).toThrow(ConfigError);
+    expect(errorOf(await cache.load(NOT_ABORTED))).toBeInstanceOf(ConfigError);
+    await expect(cache.loadOrKeep(NOT_ABORTED)).rejects.toThrow(ConfigError);
   });
 
-  it('get() throws ConfigError after an initial parse failure seen through snapshot', () => {
+  it('loadOrKeep throws ConfigError after an initial parse failure seen through snapshot', async () => {
     const tree = makeTree();
     writeTextAt(userSettingsPath(tree), '{ broken', T0);
     const { cache } = cacheFor(tree);
-    expect(errorOf(cache.snapshot())).toBeInstanceOf(ConfigError);
-    expect(() => cache.get()).toThrow(ConfigError);
+    expect(errorOf(await cache.load(NOT_ABORTED))).toBeInstanceOf(ConfigError);
+    await expect(cache.loadOrKeep(NOT_ABORTED)).rejects.toThrow(ConfigError);
   });
 
-  it('get() and snapshot() reload once per file change', () => {
+  it('loadOrKeep and load reload once per file change', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeAt(file, { unknownSettingForCount: 1 }, T0);
     const { cache, warnings } = cacheFor(tree);
     const reloads = (): number => warnings.filter((message) => message.includes('unknownSettingForCount')).length;
-    cache.get();
-    cache.snapshot();
-    cache.get();
-    cache.snapshot();
+    await cache.loadOrKeep(NOT_ABORTED);
+    await cache.load(NOT_ABORTED);
+    await cache.loadOrKeep(NOT_ABORTED);
+    await cache.load(NOT_ABORTED);
     expect(reloads()).toBe(1);
     writeAt(file, { unknownSettingForCount: 2 }, T1);
-    cache.snapshot();
-    cache.get();
-    cache.snapshot();
+    await cache.load(NOT_ABORTED);
+    await cache.loadOrKeep(NOT_ABORTED);
+    await cache.load(NOT_ABORTED);
     expect(reloads()).toBe(2);
   });
 
-  it('snapshot never throws', () => {
+  it('load never rejects for an invalid file', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeTextAt(file, '{ broken', T0);
     const { cache } = cacheFor(tree);
-    expect(() => cache.snapshot()).not.toThrow();
+    await expect(cache.load(NOT_ABORTED)).resolves.toBeDefined();
     fs.rmSync(path.join(tree.home, '.momonga'), { recursive: true, force: true });
     writeText(path.join(tree.home, '.momonga'), 'not a directory');
-    expect(() => cache.snapshot()).not.toThrow();
-    expect(errorOf(cache.snapshot())).toBeInstanceOf(ConfigError);
+    await expect(cache.load(NOT_ABORTED)).resolves.toBeDefined();
+    expect(errorOf(await cache.load(NOT_ABORTED))).toBeInstanceOf(ConfigError);
   });
 });
 
 describe('loaders taking a user layer', () => {
-  const snapshotUser = (tree: Tree): UserLayer => {
+  const snapshotUser = async (tree: Tree): Promise<UserLayer> => {
     const { cache } = cacheFor(tree);
-    return settingsOf(cache.snapshot()).user;
+    return settingsOf(await cache.load(NOT_ABORTED)).user;
   };
 
   it('loadSettings with a user layer does not read the user settings file', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeAt(file, { env: { TZ: 'snapshot' }, autoUpdates: false }, T0);
-    const user = snapshotUser(tree);
+    const user = await snapshotUser(tree);
     fs.rmSync(file);
     const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree), user });
     expect(result.settings.env).toEqual({ TZ: 'snapshot' });
@@ -169,7 +173,7 @@ describe('loaders taking a user layer', () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeAt(file, { env: { TZ: 'snapshot' } }, T0);
-    const user = snapshotUser(tree);
+    const user = await snapshotUser(tree);
     writeAt(file, { env: { TZ: 'rewritten' } }, T1);
     const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree), user });
     expect(result.settings.env).toEqual({ TZ: 'snapshot' });
@@ -186,7 +190,7 @@ describe('loaders taking a user layer', () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeAt(file, { mcpServers: { snap: { command: 'snap-server' } } }, T0);
-    const user = snapshotUser(tree);
+    const user = await snapshotUser(tree);
     fs.rmSync(file);
     const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, user });
     expect(result.enabled.map((entry) => [entry.name, entry.scope, entry.config])).toEqual([['snap', 'user', { command: 'snap-server' }]]);
@@ -196,64 +200,64 @@ describe('loaders taking a user layer', () => {
 describe('warnings for a broken user settings file', () => {
   const invalidFileWarnings = (warnings: readonly string[]): string[] => warnings.filter((message) => message.startsWith('settings file is invalid: '));
 
-  it('warns once per failure while the file stays broken', () => {
+  it('warns once per failure while the file stays broken', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeAt(file, { env: { TZ: 'good' } }, T0);
     const { cache, warnings } = cacheFor(tree);
-    cache.get();
+    await cache.loadOrKeep(NOT_ABORTED);
     writeTextAt(file, '{ broken', T1);
-    cache.get();
-    cache.snapshot();
-    cache.get();
-    cache.snapshot();
-    cache.get();
+    await cache.loadOrKeep(NOT_ABORTED);
+    await cache.load(NOT_ABORTED);
+    await cache.loadOrKeep(NOT_ABORTED);
+    await cache.load(NOT_ABORTED);
+    await cache.loadOrKeep(NOT_ABORTED);
     expect(invalidFileWarnings(warnings)).toHaveLength(1);
     expect(invalidFileWarnings(warnings)[0]).toContain(file);
   });
 
-  it('warns again when the error message changes', () => {
+  it('warns again when the error message changes', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeAt(file, { env: { TZ: 'good' } }, T0);
     const { cache, warnings } = cacheFor(tree);
-    cache.get();
+    await cache.loadOrKeep(NOT_ABORTED);
     writeTextAt(file, '{ broken', T1);
-    cache.get();
-    cache.snapshot();
+    await cache.loadOrKeep(NOT_ABORTED);
+    await cache.load(NOT_ABORTED);
     writeAt(file, { permissions: { allow: 'Bash(ls)' } }, T2);
-    cache.get();
-    cache.snapshot();
-    cache.get();
+    await cache.loadOrKeep(NOT_ABORTED);
+    await cache.load(NOT_ABORTED);
+    await cache.loadOrKeep(NOT_ABORTED);
     expect(invalidFileWarnings(warnings)).toHaveLength(2);
   });
 
-  it('warns again when the file identity changes with the same error', () => {
+  it('warns once when the same content is written again with the same error', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeAt(file, { env: { TZ: 'good' } }, T0);
     const { cache, warnings } = cacheFor(tree);
-    cache.get();
+    await cache.loadOrKeep(NOT_ABORTED);
     writeTextAt(file, '{ broken', T1);
-    cache.get();
-    cache.snapshot();
+    await cache.loadOrKeep(NOT_ABORTED);
+    await cache.load(NOT_ABORTED);
     writeTextAt(file, '{ broken', T2);
-    cache.snapshot();
-    cache.get();
-    expect(invalidFileWarnings(warnings)).toHaveLength(2);
+    await cache.load(NOT_ABORTED);
+    await cache.loadOrKeep(NOT_ABORTED);
+    expect(invalidFileWarnings(warnings)).toHaveLength(1);
   });
 
-  it('the warning states the problem and no policy', () => {
+  it('the warning states the problem and no policy', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeAt(file, { env: { TZ: 'good' } }, T0);
     const getConsumer = cacheFor(tree);
     const snapshotConsumer = cacheFor(tree);
-    getConsumer.cache.get();
-    snapshotConsumer.cache.snapshot();
+    await getConsumer.cache.loadOrKeep(NOT_ABORTED);
+    await snapshotConsumer.cache.load(NOT_ABORTED);
     writeTextAt(file, '{ broken', T1);
-    getConsumer.cache.get();
-    const error = errorOf(snapshotConsumer.cache.snapshot());
+    await getConsumer.cache.loadOrKeep(NOT_ABORTED);
+    const error = errorOf(await snapshotConsumer.cache.load(NOT_ABORTED));
     expect(getConsumer.warnings).toEqual([`settings file is invalid: ${error.message}`]);
     expect(snapshotConsumer.warnings).toEqual(getConsumer.warnings);
     expect(getConsumer.warnings[0]).toContain(file);

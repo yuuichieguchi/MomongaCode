@@ -503,6 +503,16 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
   return run.status === 'CANCELLED' ? EXIT_INTERRUPTED : EXIT_FAILURE;
 };
 
+const modelsAnnounced = async (ports: CliPorts, interrupt: AbortSignal): Promise<boolean> => {
+  try {
+    await shellModelsOf(ports, interrupt);
+    return true;
+  } catch (error) {
+    if (interrupt.aborted && error === interrupt.reason) return false;
+    throw error;
+  }
+};
+
 const openInterruptibleSession = async (ports: CliPorts, paths: MomongaPaths, options: HeadlessOptions): Promise<CliSession | undefined> => {
   try {
     return await openSession(ports, paths, {
@@ -558,7 +568,7 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
   if (adoption.kind === 'refused') return refuseStart({ stderr: ports.stderr }, adoption);
   if (adoption.kind === 'record') return resumeStream(ports, paths, adoption, options.interrupt);
   const move = streamMoveOf(ports, paths, 'headless');
-  shellModelsOf(ports);
+  if (!(await modelsAnnounced(ports, options.interrupt))) return EXIT_INTERRUPTED;
   let session: CliSession | undefined;
   try {
     session = await openInterruptibleSession(ports, paths, options);

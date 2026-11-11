@@ -163,11 +163,12 @@ const readProjectServers = async (
   projectDir: string,
   userNames: ReadonlySet<string>,
   warnings: string[],
-  { signal, paths }: Asker,
+  asker: Asker,
 ): Promise<McpServersFile['mcpServers']> => {
+  const { signal, paths } = asker;
   let file: McpServersFile;
   try {
-    const read = await readJsonFile(mcpJson, { confine: { to: projectDir, paths } });
+    const read = await readJsonFile(mcpJson, asker, { confine: { to: projectDir, paths } });
     if (!read.found) return undefined;
     file = assertMcpServersFile(read.value, mcpJson);
   } catch (error) {
@@ -249,7 +250,7 @@ export const loadMcpServers = async ({ home, projectDir, trust, env, signal, use
 
   const mcpJson = path.join(projectDir, '.mcp.json');
   if (!(await trust.isTrusted(projectDir, signal))) {
-    if (await exists(mcpJson)) warnings.push(`project ${projectDir} is not trusted; ${mcpJson} was not read`);
+    if (await exists(mcpJson, asker)) warnings.push(`project ${projectDir} is not trusted; ${mcpJson} was not read`);
     return { enabled, pendingApproval, failed, warnings };
   }
 

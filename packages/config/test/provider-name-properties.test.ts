@@ -135,7 +135,7 @@ describe('the server name derived from a connection (I-N11)', () => {
           );
           if (accepted) added += 1;
           else expect(textOf(home), `seed ${seed}`).toBe(before);
-          const views = ((await loadUserSettings({ home: home.tree.home })).settings.models as unknown as { views: readonly { provider: string; canon: string }[] }).views;
+          const views = ((await loadUserSettings({ home: home.tree.home, signal: new AbortController().signal })).settings.models as unknown as { views: readonly { provider: string; canon: string }[] }).views;
           expect(new Set(views.map((view) => view.canon)).size, `seed ${seed}`).toBe(views.length);
         }
       }

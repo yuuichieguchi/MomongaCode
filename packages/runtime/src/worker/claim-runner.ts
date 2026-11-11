@@ -272,7 +272,7 @@ const requeueOrStop = async (
     return;
   }
   const now = options.clock.now();
-  const backoff = computeBackoff({ attempt: memory.streak, baseMs: REQUEUE_BASE_MS, maxMs: REQUEUE_MAX_MS, random: options.random });
+  const backoff = computeBackoff({ attempt: memory.streak, baseMs: REQUEUE_BASE_MS, maxMs: REQUEUE_MAX_MS, random: { float: options.random } });
   const availableAt = now + (disposition.kind === 'defer' ? disposition.retryAfterMs : Math.max(backoff, disposition.retryAfterMs));
   const deadlineAt = options.store.getRun(claim.runId)?.deadlineAt;
   if (deadlineAt !== undefined && availableAt >= deadlineAt) {
@@ -364,7 +364,7 @@ const drive = async (
   const basePrompt = (options.systemPrompt ?? buildSystemPrompt)({ cwd: session.cwd, platform: options.platform, ...(toolLess ? { tools: 'none' as const } : {}) });
   const systemPrompt = agentPin === undefined ? basePrompt : agentSystemPrompt(basePrompt, agentPin);
   const systemPromptDigest = sha256Hex(systemPrompt);
-  const env = tools.envFor(session);
+  const env = await tools.envFor(session, control.signal);
   const skills = await options.skills.load(session);
   const admit = createSkillAdmission(() => ctx);
   const activationTool = skills.activationTool({ isActive: (name) => journal.state.activatedSkills.some((skill) => skill.name === name), admit });

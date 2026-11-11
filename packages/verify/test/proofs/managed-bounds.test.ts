@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_STOP_VALUES, KILL_CONFIRM_MS, REAP_POLL_INTERVAL_MS, managedServerStopBoundMs, gatewayMaxCloseMs, managedServerReapBoundMs, markerReapClockBoundMs, supervisorMaxCloseMs } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, KILL_CONFIRM_MS, POLL_INTERVAL_MS, managedServerStopBoundMs, gatewayMaxCloseMs, managedServerReapBoundMs, markerReapClockBoundMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import { proofArith } from '../../src/proofs/arith.ts';
 import type { ProofArith, ProofInt } from '../../src/proofs/arith.ts';
 import { prove } from '../../src/proofs/prove.ts';
@@ -10,12 +10,12 @@ const MANAGED_REAP_WINDOWS = 3;
 const MANAGED_STOP_FIXED_MS = MANAGED_REAP_WINDOWS * 25 + 2 * 5000;
 const MANAGED_REAP_FIXED_MS = MANAGED_REAP_WINDOWS * 25 + 5000;
 const STARTUP_UNWIND_STOPS = 2;
-const SUPERVISOR_FIXED_TERMS_MS = 76_245;
+const SUPERVISOR_FIXED_TERMS_MS = 76_275;
 const MCP_GRACE_WINDOWS = 6;
 const DEFAULT_CLOSE_GRACE_MS = 10_000;
 const DEFAULT_STOP_GRACE_MS = 3_000;
 const GATEWAY_CLOSE_AT_DEFAULTS_MS = 32_075;
-const SUPERVISOR_CLOSE_AT_ZERO_DRAIN_MS = 107_245;
+const SUPERVISOR_CLOSE_AT_ZERO_DRAIN_MS = 107_275;
 const SAMPLED_GRACES_MS = [0, 1, 567, 3_000, 60_000] as const;
 const SAMPLED_DRAINS_MS = [0, 7, 30_000] as const;
 const SAMPLED_MCP_GRACES_MS = [0, 40, 1_000, 30_000] as const;
@@ -26,7 +26,7 @@ const gatewayMaxCloseOf = (arith: ProofArith, closeGrace: ProofInt, stop: ProofI
 
 const managedServerStopBoundOf = (arith: ProofArith, stop: ProofInt): ProofInt => stop.mul(MANAGED_STOP_WINDOWS).add(constant(arith, MANAGED_STOP_FIXED_MS));
 
-const managedServerReapBoundOf = (arith: ProofArith, stop: ProofInt): ProofInt => stop.add(constant(arith, REAP_POLL_INTERVAL_MS)).mul(MANAGED_REAP_WINDOWS).add(constant(arith, KILL_CONFIRM_MS));
+const managedServerReapBoundOf = (arith: ProofArith, stop: ProofInt): ProofInt => stop.add(constant(arith, POLL_INTERVAL_MS)).mul(MANAGED_REAP_WINDOWS).add(constant(arith, KILL_CONFIRM_MS));
 
 const supervisorMaxCloseOf = (drain: ProofInt, closeGrace: ProofInt, stop: ProofInt, mcpGrace: ProofInt, arith: ProofArith): ProofInt =>
   drain
@@ -41,7 +41,7 @@ describe('managed server bounds (design-managed-servers-2026-11-09.md, section 1
   const z3 = useZ3();
 
   it('reads the closed forms of the code at sampled values, so the proofs below describe the code and not themselves', () => {
-    expect(REAP_POLL_INTERVAL_MS).toBe(25);
+    expect(POLL_INTERVAL_MS).toBe(25);
     expect(KILL_CONFIRM_MS).toBe(5000);
     for (const grace of SAMPLED_GRACES_MS) {
       const values = { ...DEFAULT_STOP_VALUES, closeGraceMs: DEFAULT_CLOSE_GRACE_MS, managedServerStopGraceMs: grace };

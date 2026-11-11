@@ -10,8 +10,8 @@ type Hooks = {
   derive(): void;
 };
 
-const cache: Pick<UserSettingsCache, 'read'> = {
-  read: (): UserSettingsLoaded => ({ settings: {} as ResolvedSettings, user: { warnings: [] } as unknown as UserSettingsLoaded['user'] }),
+const cache: Pick<UserSettingsCache, 'loadOrKeep'> = {
+  loadOrKeep: async (): Promise<UserSettingsLoaded> => ({ settings: {} as ResolvedSettings, user: { warnings: [] } as unknown as UserSettingsLoaded['user'] }),
 };
 
 const derivationWith = (hooks: Hooks) => {

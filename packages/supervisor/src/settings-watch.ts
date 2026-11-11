@@ -8,9 +8,9 @@ export type WatchSettingsOptions = {
   file: string;
   debounceMs: number;
   pollMs: number;
-  changeKey: () => string;
+  changeKey: () => Promise<string>;
   initialKey: string;
-  onChange: () => void;
+  onChange: () => void | Promise<void>;
   onWarning: (error: Error) => void;
   onError: (error: Error) => void;
   timers: SupervisorTimers;
@@ -24,9 +24,9 @@ const errorTag = (error: unknown): string => {
   return error instanceof Error ? error.name : 'unknown';
 };
 
-export const safeChangeKey = (changeKey: () => string): string => {
+export const safeChangeKey = async (changeKey: () => Promise<string>): Promise<string> => {
   try {
-    return changeKey();
+    return await changeKey();
   } catch (error) {
     return `${ERROR_KEY_PREFIX}${errorTag(error)}`;
   }
@@ -58,12 +58,14 @@ export const watchSettings = (options: WatchSettingsOptions): SettingsWatch => {
     watcher.close();
   };
 
-  const fire = (): void => {
+  const fire = async (): Promise<void> => {
     debounceTimer = undefined;
     if (stopped) return;
-    lastKey = safeChangeKey(options.changeKey);
+    const key = await safeChangeKey(options.changeKey);
+    if (stopped) return;
+    lastKey = key;
     try {
-      options.onChange();
+      await options.onChange();
     } catch (error) {
       options.onError(asError(error));
     }
@@ -72,21 +74,24 @@ export const watchSettings = (options: WatchSettingsOptions): SettingsWatch => {
   const scheduleEvaluation = (): void => {
     if (stopped) return;
     if (debounceTimer !== undefined) timers.clearTimeout(debounceTimer);
-    debounceTimer = timers.setTimeout(fire, options.debounceMs);
+    debounceTimer = timers.setTimeout(() => void fire(), options.debounceMs);
   };
 
-  const armPoll = (): void => {
-    pollTimer = timers.setTimeout(() => {
-      pollTimer = undefined;
-      if (stopped) return;
-      const key = safeChangeKey(options.changeKey);
-      if (key !== lastKey) {
-        lastKey = key;
-        scheduleEvaluation();
-      }
-      armPoll();
-    }, options.pollMs);
+  const poll = async (): Promise<void> => {
+    pollTimer = undefined;
+    if (stopped) return;
+    const key = await safeChangeKey(options.changeKey);
+    if (stopped) return;
+    if (key !== lastKey) {
+      lastKey = key;
+      scheduleEvaluation();
+    }
+    armPoll();
   };
+
+  function armPoll(): void {
+    pollTimer = timers.setTimeout(() => void poll(), options.pollMs);
+  }
 
   try {
     watcher = watch(options.directory, { persistent: false }, (_eventType, filename) => {

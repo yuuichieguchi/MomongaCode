@@ -1,10 +1,10 @@
 import path from 'node:path';
-import { CLAIM_POLL_MS, canonicalJson, claimRetry, commandMayStillRun, defaultProcessInspector, findHolders, groupAlive, groupPortOf, groupRecordOutcome, markerReapClockBoundMs, outlivedNotes, reapMarkedProcesses, recordMarkerGroup, reconcileProcessGroup, reportUninspectableOnce, sha256Hex } from '@momonga/foundation';
-import type { Clock, MarkerMode, MarkerState, ProcessGroupPort, ReapTiming, RolePort, UninspectableProcess, UninspectableRegistry } from '@momonga/foundation';
+import { POLL_INTERVAL_MS, sleep, canonicalJson, claimRetry, commandMayStillRun, defaultProcessInspector, findHolders, groupAlive, groupPortOf, groupRecordOutcome, markerReapClockBoundMs, outlivedNotes, reapMarkedProcesses, recordMarkerGroup, reconcileProcessGroup, reportUninspectableOnce, sha256Hex } from '@momonga/foundation';
+import type { Clock, MarkerMode, MarkerState, ProcessGroupPort, Timing, RolePort, UninspectableProcess, UninspectableRegistry } from '@momonga/foundation';
 import type { SandboxedProcess } from '@momonga/sandbox';
 import type { Job, JobResult, RuntimeStore } from '@momonga/store';
 import { RetiringYield, ToolExecutionError, createMarkerOwners, unnamedLivenessNotes } from '@momonga/tools';
-import type { BackgroundJobs, MarkerOwners } from '@momonga/tools';
+import type { BackgroundJobs, LineFilter, MarkerOwners } from '@momonga/tools';
 import { toJobView as viewOf } from '../service/views.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { asError } from './as-error.ts';
@@ -29,7 +29,7 @@ export type BackgroundJobsOptions = {
   markerFiles: JobMarkerFiles;
   owners?: MarkerOwners;
   killGraceMs: number;
-  reapTiming: ReapTiming;
+  reapTiming: Timing;
   onWarning(message: string): void;
   report(error: unknown): void;
   probes?: Partial<ProcessProbes>;
@@ -75,11 +75,7 @@ type LiveJob = {
 
 const jobKeyOf = (callKey: string): string => sha256Hex(canonicalJson([callKey, 'background']));
 
-const matching = (text: string, filter: RegExp): string =>
-  text
-    .split('\n')
-    .filter((line) => filter.test(line))
-    .join('\n');
+const matching = async (text: string, keep: LineFilter): Promise<string> => (await keep(text.split('\n'))).join('\n');
 
 export const createBackgroundJobs = (options: BackgroundJobsOptions): BackgroundJobRegistry => {
   const { store, clock, timers, markerDir, markerFiles, killGraceMs, reapTiming, onWarning, report } = options;
@@ -283,7 +279,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       const current = store.jobs.get(jobId);
       if (current === undefined) throw new Error(`job ${jobId} vanished`);
       if (current.status !== 'running' || reapTiming.now() >= deadline || lifecycle.aborted) return current;
-      await reapTiming.sleep(Math.min(CLAIM_POLL_MS, deadline - reapTiming.now()));
+      await sleep(reapTiming, Math.min(POLL_INTERVAL_MS, deadline - reapTiming.now()));
     }
   };
 
@@ -400,11 +396,11 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       return job === undefined ? undefined : viewOf(job);
     },
     status: (runId, jobId) => viewOf(authorize(runId, jobId)),
-    read: async (runId, jobId, { filter, call }) => {
+    read: async (runId, jobId, { keep, call }) => {
       const job = authorize(runId, jobId);
       const { text, omitted, total } = await readWindow(job, call);
+      const kept = keep === undefined ? text : await matching(text, keep);
       store.jobs.advanceRead(job.id, total, call);
-      const kept = filter === undefined ? text : matching(text, filter);
       const note = omitted > 0 ? `[… ${omitted} bytes omitted …]\n` : '';
       const current = store.jobs.get(job.id) ?? job;
       const shown = kept === '' ? note.trimEnd() : `${note}${kept}`.replace(/\n+$/, '');

@@ -1,7 +1,8 @@
-import fs from 'node:fs';
 import { sha256Hex } from '@momonga/foundation';
+import type { FileSystem } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
-import { assertReadAndUnchanged, assertSameLocation, looksBinary, regularFileProblem, updateLedgerAfterWrite, sha256OfFile, statIfExists, writeFileAtomically } from './files.ts';
+import type { PreconditionContext } from '../types.ts';
+import { NotUtf8Error, assertReadAndUnchanged, assertSameLocation, looksBinary, readUtf8File, regularFileProblem, updateLedgerAfterWrite, sha256OfFile, statIfExists, writeFileAtomically } from './files.ts';
 import { diffOfReplacements } from './applied-diff.ts';
 import type { TextReplacement } from './applied-diff.ts';
 import { numberedLines, splitLines } from './format.ts';
@@ -71,6 +72,29 @@ const snippetOf = (replacement: Replacement): string => {
   return numberedLines(lines.slice(from - 1, to), from);
 };
 
+const editableTextOf = (files: Pick<FileSystem, 'readFile'>, file: string, shown: string): Promise<string> =>
+  readUtf8File(files, file).catch((error: unknown) => {
+    if (error instanceof NotUtf8Error) throw new ToolExecutionError(`${shown} is not UTF-8 text and cannot be edited as text; its encoding is not guessed`);
+    throw error;
+  });
+
+const planEdit = async (input: EditInput, ctx: PreconditionContext): Promise<{ path: string; preHash: string; postHash: string }> => {
+  if (input.old_string === '') throw new ToolExecutionError('old_string must not be empty; use Write to create or replace a file');
+  if (input.old_string === input.new_string) throw new ToolExecutionError('old_string and new_string are identical; nothing to change');
+  const target = await canonicalPathOf(ctx, 'file_path', input.file_path);
+  const shown = await shownPath(ctx, resolvedPathOf(ctx, input.file_path));
+  const stat = await statIfExists(ctx.files, target);
+  if (stat === undefined) throw new ToolExecutionError(`File does not exist: ${shown}`);
+  if (stat.isDirectory()) throw new ToolExecutionError(`${shown} is a directory, not a file`);
+  const problem = regularFileProblem(stat, shown);
+  if (problem !== undefined) throw new ToolExecutionError(problem);
+  if (await looksBinary(ctx.files, target)) throw new ToolExecutionError(`${shown} is a binary file and cannot be edited as text`);
+  const text = await editableTextOf(ctx.files, target, shown);
+  const preHash = await assertReadAndUnchanged(ctx.files, ctx.session, target, shown);
+  const replacement = computeReplacement(text, input, shown);
+  return { path: target, preHash, postHash: sha256Hex(replacement.updated) };
+};
+
 export const editTool = defineTool<EditInput>({
   name: 'Edit',
   description:
@@ -101,42 +125,31 @@ export const editTool = defineTool<EditInput>({
   title: async (input, ctx) => `Edit ${await shownPath(ctx, await accessedPathOf(ctx, input.file_path))}`,
   locations: (input, ctx) => [{ path: resolvedPathOf(ctx, input.file_path) }],
   subject: (input, ctx) => ({ kind: 'path', tool: 'Edit', paths: [resolvedPathOf(ctx, input.file_path)], access: 'write' }),
-  prepare: async (input, ctx) => {
-    if (input.old_string === '') throw new ToolExecutionError('old_string must not be empty; use Write to create or replace a file');
-    if (input.old_string === input.new_string) throw new ToolExecutionError('old_string and new_string are identical; nothing to change');
-    const target = await canonicalPathOf(ctx, 'file_path', input.file_path);
-    const shown = await shownPath(ctx, resolvedPathOf(ctx, input.file_path));
-    const stat = await statIfExists(target);
-    if (stat === undefined) throw new ToolExecutionError(`File does not exist: ${shown}`);
-    if (stat.isDirectory()) throw new ToolExecutionError(`${shown} is a directory, not a file`);
-    const problem = regularFileProblem(stat, shown);
-    if (problem !== undefined) throw new ToolExecutionError(problem);
-    if (await looksBinary(target)) throw new ToolExecutionError(`${shown} is a binary file and cannot be edited as text`);
-    const preHash = await assertReadAndUnchanged(ctx.session, target, shown);
-    const replacement = computeReplacement(await fs.promises.readFile(target, 'utf8'), input, shown);
-    return { path: target, preHash, postHash: sha256Hex(replacement.updated) };
-  },
+  precondition: async (input, ctx) => void (await planEdit(input, ctx)),
+  prepare: planEdit,
   execute: async (input, ctx, prepared) => {
     const plan = parsePreparedWrite(prepared);
     const requested = resolvedPathOf(ctx, input.file_path);
     const shown = await shownPath(ctx, requested);
     await assertSameLocation(ctx, requested, plan.path, await canonicalPathOf(ctx, 'file_path', input.file_path));
-    const stat = await statIfExists(plan.path);
+    const stat = await statIfExists(ctx.files, plan.path);
     const problem = stat === undefined ? undefined : regularFileProblem(stat, shown);
     if (problem !== undefined) throw new ToolExecutionError(problem);
-    if (stat === undefined || (await sha256OfFile(plan.path)) !== plan.preHash) {
+    if (stat === undefined || (await sha256OfFile(ctx.files, plan.path)) !== plan.preHash) {
       throw new ToolExecutionError(`${shown} has changed since it was last read; Read it again before modifying it`);
     }
-    const original = await fs.promises.readFile(plan.path, 'utf8');
+    const original = await editableTextOf(ctx.files, plan.path, shown);
     const replacement = computeReplacement(original, input, shown);
     if (sha256Hex(replacement.updated) !== plan.postHash) throw new ToolExecutionError('Edit result does not match the prepared state');
     const warning = await writeFileAtomically({
+      files: ctx.files,
+      random: ctx.random,
       scope: ctx,
       target: plan.path,
       requestedPath: requested,
       content: replacement.updated,
       mode: stat.mode & 0o777,
-      onRenamed: () => updateLedgerAfterWrite(ctx.session, plan.path, plan.postHash),
+      onRenamed: () => updateLedgerAfterWrite(ctx.files, ctx.session, plan.path, plan.postHash),
     });
     return {
       status: 'completed',

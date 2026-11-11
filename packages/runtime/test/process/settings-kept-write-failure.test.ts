@@ -6,8 +6,8 @@ import * as runtime from '@momonga/runtime';
 import { createSession, makeRuntimeFixture, writeProjectSettings, writeUserSettings } from './helpers.ts';
 
 const failingRecords = (): KeptRecords => ({
-  load: () => undefined,
-  save: () => {
+  load: async () => undefined,
+  save: async () => {
     throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
   },
 });
@@ -19,8 +19,9 @@ describe('a failed write of the kept copy never fails the read that triggered it
     const warnings: string[] = [];
     const cache = createUserSettingsCache({ home: f.temp.home, onWarning: (warning) => warnings.push(warning), keptRecords: failingRecords() });
 
-    const snapshot = cache.snapshot();
+    const snapshot = await cache.load(new AbortController().signal);
     expect('error' in snapshot ? snapshot.error.message : snapshot.settings.permissions.defaultMode).toBe('plan');
+    expect((await cache.loadOrKeep(new AbortController().signal)).settings.permissions.defaultMode).toBe('plan');
     expect(cache.read().settings.permissions.defaultMode).toBe('plan');
 
     const userFile = path.join(f.temp.home, '.momonga', 'settings.json');

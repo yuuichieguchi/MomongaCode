@@ -1,6 +1,7 @@
 import path from 'node:path';
-import { defineProductSchema, hostPaths, isRecord } from '@momonga/foundation';
+import { defineProductSchema, isRecord } from '@momonga/foundation';
 import { MAX_COST_USD } from '@momonga/protocol';
+import { askerOf } from './asker.ts';
 import { ConfigError } from './config-error.ts';
 import { readJsonFile } from './json-file.ts';
 import { RuleParseError, checkRuleText } from './rule.ts';
@@ -72,6 +73,7 @@ export type ProjectMandateInput = { projectDir: string; trusted: boolean; signal
 export const loadProjectMandate = async ({ projectDir, trusted, signal }: ProjectMandateInput): Promise<ProjectMandate | undefined> => {
   if (!trusted) return undefined;
   const file = path.join(projectDir, PROJECT_MANDATE_FILE);
-  const read = await readJsonFile(file, { confine: { to: projectDir, paths: hostPaths(signal) } });
+  const asker = askerOf(signal);
+  const read = await readJsonFile(file, asker, { confine: { to: projectDir, paths: asker.paths } });
   return read.found ? parseProjectMandate(read.value, file) : undefined;
 };

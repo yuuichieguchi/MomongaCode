@@ -6,7 +6,7 @@ import type { Readable, Stream, Writable } from 'node:stream';
 import { deserializeMessage, serializeMessage, type JSONRPCMessage, type Transport } from '@modelcontextprotocol/client';
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
-import { Deadline, SHUTDOWN_SETTING_LIMITS, claimRetry, groupTerminationBoundMs, launchGroupLeader, operationSignal, reapMarkedProcesses, recordMarkerGroup, systemTiming, terminateGroup, type GroupLaunch, type ReapTiming, type RetryKind, type TerminateOutcome, type Timing } from '@momonga/foundation';
+import { Deadline, SHUTDOWN_SETTING_LIMITS, claimRetry, groupTerminationBoundMs, launchGroupLeader, operationSignal, reapMarkedProcesses, recordMarkerGroup, systemTiming, terminateGroup, type GroupLaunch, type RetryKind, type TerminateOutcome, type Timing } from '@momonga/foundation';
 
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 const STDERR_TAIL_BYTES = 64 * 1024;
@@ -107,19 +107,11 @@ class StdioTransportImpl implements StdioTransport {
 
   private readonly options: StdioTransportOptions;
   private readonly timing: Timing;
-  private readonly sleepTiming: ReapTiming;
 
   constructor(options: StdioTransportOptions) {
     this.options = options;
     const timing = options.timing ?? systemTiming;
     this.timing = timing;
-    this.sleepTiming = {
-      now: () => timing.now(),
-      sleep: (ms) =>
-        new Promise((resolve) => {
-          timing.setTimeout(resolve, ms);
-        }),
-    };
   }
 
   get pgid(): number | undefined {
@@ -262,7 +254,7 @@ class StdioTransportImpl implements StdioTransport {
                 killGraceMs: graceMs,
                 label: 'mcp',
                 onWarning: this.options.markers.onWarning,
-                timing: this.sleepTiming,
+                timing: this.timing,
                 signal: sweep.signal,
               });
             }

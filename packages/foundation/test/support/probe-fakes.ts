@@ -8,7 +8,6 @@ import type { Timing } from '../../src/timing.ts';
 export const LOCK_FLAG_BITS = 0x10 | 0x20;
 
 export type VirtualTiming = Timing & {
-  sleep(ms: number): Promise<void>;
   advanceTo(time: number): Promise<void>;
 };
 
@@ -32,10 +31,6 @@ export const virtualTiming = (): VirtualTiming => {
       const index = waiters.findIndex((waiter) => waiter === handle);
       if (index >= 0) waiters.splice(index, 1);
     },
-    sleep: (ms) =>
-      new Promise<void>((resolve) => {
-        wakeAfter(ms, resolve);
-      }),
     advanceTo: async (time) => {
       for (;;) {
         await flushAsync();

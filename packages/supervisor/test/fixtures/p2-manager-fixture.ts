@@ -19,6 +19,8 @@ if (home === undefined || child === undefined) throw new Error('p2-manager-fixtu
 const paths = momongaPaths(home, process.platform, {});
 const layout = prepareGenerationForTest(home, FIRST_GENERATION, '0.0.0-fixture');
 const logger = createJsonLogger({ service: 'supervisor', clock: systemClock, stream: process.stderr });
+const settings = createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: noKeptRecords });
+await settings.load(new AbortController().signal);
 const manager = createChildManager({
   role: 'runtime',
   version: '0.0.0-fixture',
@@ -35,7 +37,7 @@ const manager = createChildManager({
   launcher: () => ({ command: process.execPath, args: [child, ...flag('child-arg')] }),
   env: { PATH: process.env['PATH'] ?? '/usr/bin:/bin', HOME: home },
   spawn: createSpawnPort(),
-  settings: createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: noKeptRecords }),
+  settings,
   logger,
   clock: systemClock,
   timers: { setTimeout: (callback, ms) => setTimeout(callback, ms), clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout) },

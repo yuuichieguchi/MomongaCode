@@ -20,8 +20,9 @@ import {
   hostInspectorPorts,
   ruleEnforcementOf,
   sha256Hex,
+  systemRandom,
 } from '@momonga/foundation';
-import type { Clock, CredentialSecretStore, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, OutboundNetwork, ProcessInspector, ReapTiming, RolePort, RuleEnforcement, SecretStore, SessionScratch } from '@momonga/foundation';
+import type { Clock, CredentialSecretStore, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, OutboundNetwork, ProcessInspector, Timing, RolePort, RuleEnforcement, SecretStore, SessionScratch } from '@momonga/foundation';
 import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/mcp';
 import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { SandboxBindings } from '../ports.ts';
@@ -69,8 +70,8 @@ export type ToolRuntimeOptions = {
   forgeEnvironment?: Readonly<Record<string, string | undefined>>;
   forgeFetch?: ForgeFetch;
   shellHost: ShellHost;
-  settings: Pick<SettingsComposition, 'envFor' | 'takeUserSnapshot' | 'admitUserSnapshot' | 'keptLayers' | 'loadSessionSettings' | 'trustOracle'>;
-  reapTiming: ReapTiming;
+  settings: Pick<SettingsComposition, 'envFor' | 'takeUserSnapshot' | 'userSnapshot' | 'admitUserSnapshot' | 'keptLayers' | 'loadSessionSettings' | 'trustOracle'>;
+  reapTiming: Timing;
   leaseMs: number;
   heartbeatMs: number;
   createPool?: (options: McpPoolOptions) => McpPool;
@@ -146,6 +147,9 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     idempotency: store.idempotency,
     blobs: store.blobs,
     clock,
+    shellHost: options.shellHost,
+    random: systemRandom,
+    files: nodeFileSystem,
     processMarkerDir: paths.markers.tools,
     earlierMarkerDirs: async () =>
       (await nodeFileSystem.readdir(options.sharedPaths.markers.root))
@@ -205,7 +209,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     if (run === undefined) throw new Error(`run ${runId} does not exist`);
     const session = store.getSession(run.sessionId);
     if (session === undefined) throw new Error(`session ${run.sessionId} does not exist`);
-    const snapshot = settings.takeUserSnapshot();
+    const snapshot = await settings.userSnapshot(signal);
     const trust = (await store.trust.decisionAsked(session.cwd, signal)).decision;
 
     let acquiredHere = false;
@@ -250,7 +254,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
 
       const registry = createToolRegistry();
       for (const tool of createBuiltinTools()) registry.register(tool);
-      for (const tool of operationTools(snapshot)) registry.register(tool);
+      if (trust === 'trusted') for (const tool of operationTools(snapshot)) registry.register(tool);
       for (const tool of additionalTools ?? []) registry.register(tool);
       for (const source of sources) registry.addSource(source);
       const set = await registry.snapshot({ signal, ...(only === undefined ? {} : { only }) });

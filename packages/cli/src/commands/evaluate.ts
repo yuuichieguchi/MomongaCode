@@ -58,7 +58,7 @@ const populate = async (ports: CliPorts, directory: string, golden: GoldenCase):
 const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenDataset, record: string | undefined, interrupt: AbortSignal | undefined): Promise<EvalReport> => {
   await ensureCurrentDaemon(ports, paths);
   const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } = await import('@momonga/runtime');
-  const env = await environmentSnapshot(ports);
+  const env = await environmentSnapshot(ports, ports.interrupt);
   const client = connectRuntime(ports, paths);
   const api = goldenRunApi(client, undefined, {
     pendingBoundMs: REFLECTION_PICKUP_BOUND_MS,
@@ -122,7 +122,7 @@ const runContextLiveCommand = async (
   const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS, RUNTIME_DEFAULTS } = await import('@momonga/runtime');
   if (options.record !== undefined) await ports.files.mkdir(options.record);
   const { record } = options;
-  const models = shellModelsOf(ports);
+  const models = await shellModelsOf(ports, options.interrupt);
   return runContextLive(hostEffects(ports), {
     dataset,
     seed: options.seed,

@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalJson, resolveCanonicalPath, sha256Hex, truncationMarker, validateUntrusted } from '@momonga/foundation';
+import { canonicalJson, nodeFileSystem, resolveCanonicalPath, sha256Hex, systemRandom, truncationMarker, validateUntrusted } from '@momonga/foundation';
 import { absoluteFrom } from '@momonga/policy';
 import { UNCONFIGURED_NETWORK, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, testPaths } from '@momonga/testkit';
 import type { PermissionSubject } from '@momonga/policy';
-import { createHostRipgrepLocator, createToolExecutor, createToolRegistry, defineTool, schemaIdentity } from '@momonga/tools';
+import { createHostRipgrepLocator, createToolExecutor, createToolRegistry, defineTool, nodeShellHost, schemaIdentity } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../test/support/pinned-ripgrep.ts';
 import type { AnyTool, CallOutputFit, ExecutionBatchInput, OutputCall, OutputFit, SideEffectBinding, ToolBody, ToolCall, ToolContext, ToolDefinition, ToolExecutorOptions, ToolSet, WorkTreeObserver } from '@momonga/tools';
 import type { PermissionRule } from '@momonga/policy';
@@ -103,6 +103,9 @@ export const makeHarness = (options: HarnessOptions = {}) => {
   const kernelLock = createFakeKernelLock({ inheritable: false });
   const warnings: string[] = [];
   const executor = createToolExecutor({
+    shellHost: nodeShellHost(),
+    random: systemRandom,
+    files: nodeFileSystem,
     outboundNetwork: UNCONFIGURED_NETWORK,
     idempotency: idempotency.port,
     blobs: blobs.port,

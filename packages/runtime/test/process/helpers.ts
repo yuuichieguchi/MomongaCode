@@ -3,8 +3,8 @@ import path from 'node:path';
 import { afterEach } from 'vitest';
 import { createUserSettingsCache, diskKeptRecords, keptSettingsDirectory } from '@momonga/config';
 import type { UserSettingsCache } from '@momonga/config';
-import { DEFAULT_STOP_VALUES, FIRST_GENERATION, mcpPoolCloseBoundMs, claimPathOf, ensureMomongaDirs, fixedRolePort, hostKernelLock, momongaPaths, nodeFileSystemSync } from '@momonga/foundation';
-import type { JsonLogger, LogFields, MomongaPaths, ReapTiming, RolePort, SessionScratch } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, FIRST_GENERATION, mcpPoolCloseBoundMs, claimPathOf, ensureMomongaDirs, fixedRolePort, hostKernelLock, momongaPaths, nodeFileSystem, systemRandom } from '@momonga/foundation';
+import type { JsonLogger, LogFields, MomongaPaths, Timing, RolePort, SessionScratch } from '@momonga/foundation';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
 import type { RunNotifier, SettingsComposition, ToolRuntime } from '@momonga/runtime';
@@ -91,18 +91,20 @@ export const chatTargetSettings = (apiKeyEnv: string): Record<string, unknown> =
 export type CountingCache = UserSettingsCache & { snapshots: number };
 
 export const makeCache = (home: string): CountingCache => {
-  const inner = createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(home)) });
+  const inner = createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: diskKeptRecords(nodeFileSystem, systemRandom, keptSettingsDirectory(home)) });
   const cache: CountingCache = {
     snapshots: 0,
     get: () => inner.get(),
     kept: inner.kept,
-    read: () => {
+    read: () => inner.read(),
+    snapshot: () => inner.snapshot(),
+    load: (signal) => {
       cache.snapshots += 1;
-      return inner.read();
+      return inner.load(signal);
     },
-    snapshot: () => {
+    loadOrKeep: (signal) => {
       cache.snapshots += 1;
-      return inner.snapshot();
+      return inner.loadOrKeep(signal);
     },
   };
   return cache;
@@ -210,15 +212,15 @@ export const makeFakePoolFactory = (): FakePoolFactory => {
   };
 };
 
-export const recordingReapTiming = (clock: FakeClock, timers: FakeTimers): ReapTiming & { sleeps: number[] } => {
+export const recordingReapTiming = (clock: FakeClock, timers: FakeTimers): Timing & { sleeps: number[] } => {
   const timing = fakeReapTiming(clock, timers);
   const sleeps: number[] = [];
   return {
+    ...timing,
     sleeps,
-    now: () => timing.now(),
-    sleep: (ms) => {
+    setTimeout: (callback, ms) => {
       sleeps.push(ms);
-      return timing.sleep(ms);
+      return timing.setTimeout(callback, ms);
     },
   };
 };
@@ -252,7 +254,7 @@ export type RuntimeFixtureOptions = {
   sandbox?: Sandbox;
   createPool?: (options: McpPoolOptions) => McpPool;
   ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<SessionScratch>;
-  reapTiming?: ReapTiming;
+  reapTiming?: Timing;
   role?: RolePort;
   generation?: number;
 };
@@ -263,6 +265,8 @@ export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): P
   const temp = options.temp ?? (await makeTempHome());
   const fixture = openStore(temp);
   const cache = makeCache(temp.home);
+  await cache.load(new AbortController().signal);
+  cache.snapshots = 0;
   const logger = makeLogger();
   const reporter = makeReporter();
   const pools = makeFakePoolFactory();
@@ -345,7 +349,7 @@ export const runBashThroughPort = async (
 ) => {
   const port = f.toolRuntime.port;
   const signal = signalNever();
-  const env = port.envFor(session);
+  const env = await port.envFor(session, signalNever());
   const binding = (await port.sandboxes.acquire(signal)).value;
   const policy = await port.policyFor(session, { signal: NEVER_CANCELLED, env, rules: [], ruleEnforcement: binding.ruleEnforcement });
   const toolSet = await port.toolSet(runId, { signal, env });

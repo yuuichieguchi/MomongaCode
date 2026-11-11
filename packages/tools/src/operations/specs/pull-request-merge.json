@@ -10,7 +10,8 @@
     "type": "object",
     "properties": {
       "number": { "type": "integer", "minimum": 1, "description": "The pull request number" },
-      "headSha": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The head commit that was reviewed" }
+      "headSha": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The head commit that was reviewed" },
+      "remote": { "type": "string", "pattern": "^[^-\\s][^\\s]*$", "description": "The remote whose forge is asked; origin when left out" }
     },
     "required": ["number", "headSha"],
     "additionalProperties": false

@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { hostKernelLock } from '@momonga/foundation';
-import type { ReapTiming } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, withTempDir } from '@momonga/testkit';
+import type { Timing } from '@momonga/foundation';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, withTempDir, sleepDrivenTiming } from '@momonga/testkit';
 import { heldCallWaitMs, sweepCallLocks } from '@momonga/tools';
 import { createCallLocks } from '../src/call-lock.ts';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
@@ -23,7 +23,7 @@ const gatedFirstPoll = () => {
   let first = true;
   const polled = deferred<void>();
   const resumed = deferred<void>();
-  const timing: ReapTiming = {
+  const timing: Timing = sleepDrivenTiming({
     now: () => current,
     sleep: async (ms) => {
       current += ms;
@@ -33,30 +33,30 @@ const gatedFirstPoll = () => {
         await resumed.promise;
       }
     },
-  };
+  });
   return { timing, polled: polled.promise, resume: (): void => resumed.resolve() };
 };
 
-const advancingTiming = (): ReapTiming => {
+const advancingTiming = (): Timing => {
   let current = 0;
-  return {
+  return sleepDrivenTiming({
     now: () => current,
     sleep: async (ms) => {
       current += ms;
     },
-  };
+  });
 };
 
 const hostPollingTiming = () => {
   const polled = deferred<void>();
-  const timing: ReapTiming = {
+  const timing: Timing = sleepDrivenTiming({
     now: () => Date.now(),
     sleep: (ms) =>
       new Promise<void>((resolve) => {
         polled.resolve();
         setTimeout(resolve, ms);
       }),
-  };
+  });
   return { timing, polled: polled.promise };
 };
 

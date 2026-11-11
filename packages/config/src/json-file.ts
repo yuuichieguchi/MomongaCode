@@ -1,6 +1,8 @@
-import fs from 'node:fs';
 import { JsonDepthError, MAX_JSON_DEPTH, parseOutsideJson } from '@momonga/foundation';
 import type { PathResolver } from '@momonga/foundation';
+import { asked } from './asker.ts';
+import type { Asker } from './asker.ts';
+import { ConfigError } from './config-error.ts';
 
 export type JsonFile = { found: false } | { found: true; value: unknown };
 
@@ -150,7 +152,7 @@ const rejectForbiddenKeys = (value: unknown, pointer: string, source: string): v
   if (typeof value !== 'object' || value === null) return;
   for (const [key, child] of Object.entries(value)) {
     const childPointer = `${pointer}/${escapePointerSegment(key)}`;
-    if (FORBIDDEN_KEYS.has(key)) throw new Error(`${source}: forbidden key at ${childPointer}`);
+    if (FORBIDDEN_KEYS.has(key)) throw new ConfigError(`${source}: forbidden key at ${childPointer}`);
     rejectForbiddenKeys(child, childPointer, source);
   }
 };
@@ -163,17 +165,17 @@ export const parseJsonText = (written: string, source: string): unknown => {
   try {
     value = parseOutsideJson(text);
   } catch (error) {
-    if (error instanceof JsonDepthError) throw new Error(`${source}: ${error.message}`, { cause: error });
+    if (error instanceof JsonDepthError) throw new ConfigError(`${source}: ${error.message}`, { cause: error });
     let offset: number | undefined;
     try {
       offset = new JsonSyntaxScanner(text).firstErrorOffset();
     } catch (scanFailure) {
-      if (scanFailure instanceof JsonDepthError) throw new Error(`${source}: ${scanFailure.message}`, { cause: scanFailure });
+      if (scanFailure instanceof JsonDepthError) throw new ConfigError(`${source}: ${scanFailure.message}`, { cause: scanFailure });
       throw scanFailure;
     }
-    if (offset === undefined) throw error;
+    if (offset === undefined) throw new ConfigError(`${source}: invalid JSON: ${(error as Error).message}`, { cause: error });
     const { line, column } = lineAndColumn(text, offset);
-    throw new Error(`${source}: invalid JSON at line ${line} column ${column}: ${(error as Error).message}`, { cause: error });
+    throw new ConfigError(`${source}: invalid JSON at line ${line} column ${column}: ${(error as Error).message}`, { cause: error });
   }
   rejectForbiddenKeys(value, '', source);
   return value;
@@ -187,65 +189,51 @@ const ABSENT_CODES: ReadonlySet<string | undefined> = new Set(['ENOENT', 'ENOTDI
 
 export const isAbsentPathError = (error: unknown): boolean => ABSENT_CODES.has((error as NodeJS.ErrnoException).code);
 
-const assertReadable = async (file: string, confine: Confinement | undefined): Promise<boolean> => {
-  let link: fs.Stats;
+export const isMissingFileError = (error: unknown): boolean => (error as NodeJS.ErrnoException).code === 'ENOENT';
+
+type AbsenceRule = (error: unknown) => boolean;
+
+const assertLinkedFile = async (file: string, asker: Asker, confine: Confinement | undefined): Promise<void> => {
+  let isFile: boolean;
   try {
-    link = await fs.promises.lstat(file);
+    isFile = (await asked(asker, asker.files.stat(file))).isFile();
   } catch (error) {
-    if (isAbsentPathError(error)) return false;
+    if (isMissingFileError(error)) throw new ConfigError(`${file}: dangling symlink`, { cause: error });
     throw error;
   }
-  if (link.isSymbolicLink()) {
-    let target: fs.Stats;
-    try {
-      target = await fs.promises.stat(file);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`${file}: dangling symlink`, { cause: error });
-      throw error;
-    }
-    if (!target.isFile()) throw new Error(`${file}: not a regular file`);
-    if (confine !== undefined) {
-      const real = await confine.paths.canonicalPath(file);
-      const root = await confine.paths.canonicalPath(confine.to);
-      if (!(await confine.paths.comparableContains(root, real))) throw new Error(`${file}: symlink target ${real} is outside the project ${root}`);
-    }
-    return true;
+  if (!isFile) throw new ConfigError(`${file}: not a regular file`);
+  if (confine === undefined) return;
+  const real = await confine.paths.canonicalPath(file);
+  const root = await confine.paths.canonicalPath(confine.to);
+  if (!(await confine.paths.comparableContains(root, real))) throw new ConfigError(`${file}: symlink target ${real} is outside the project ${root}`);
+};
+
+const isReadable = async (file: string, isAbsent: AbsenceRule, asker: Asker, confine: Confinement | undefined): Promise<boolean> => {
+  let link: { isSymbolicLink(): boolean; isFile(): boolean };
+  try {
+    link = await asked(asker, asker.files.lstat(file));
+  } catch (error) {
+    if (isAbsent(error)) return false;
+    throw error;
   }
-  if (!link.isFile()) throw new Error(`${file}: not a regular file`);
+  if (link.isSymbolicLink()) await assertLinkedFile(file, asker, confine);
+  else if (!link.isFile()) throw new ConfigError(`${file}: not a regular file`);
   return true;
 };
 
-export const readJsonFile = async (file: string, options: ReadJsonFileOptions = {}): Promise<JsonFile> => {
-  if (!(await assertReadable(file, options.confine))) return { found: false };
-  let text: string;
+export type JsonText = { found: false } | { found: true; text: string };
+
+export const readJsonText = async (file: string, isAbsent: AbsenceRule, asker: Asker, options: ReadJsonFileOptions = {}): Promise<JsonText> => {
+  asker.signal.throwIfAborted();
+  if (!(await isReadable(file, isAbsent, asker, options.confine))) return { found: false };
   try {
-    text = await fs.promises.readFile(file, 'utf8');
+    return { found: true, text: await asked(asker, asker.files.readTextFile(file)) };
   } catch (error) {
-    if (isAbsentPathError(error)) return { found: false };
+    if (isAbsent(error)) return { found: false };
     throw error;
   }
-  return { found: true, value: parseJsonText(text, file) };
 };
 
-export const readJsonFileSync = (file: string): JsonFile => {
-  let link: fs.Stats;
-  try {
-    link = fs.lstatSync(file);
-  } catch (error) {
-    if (isAbsentPathError(error)) return { found: false };
-    throw error;
-  }
-  if (link.isSymbolicLink()) {
-    let target: fs.Stats;
-    try {
-      target = fs.statSync(file);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`${file}: dangling symlink`, { cause: error });
-      throw error;
-    }
-    if (!target.isFile()) throw new Error(`${file}: not a regular file`);
-  } else if (!link.isFile()) {
-    throw new Error(`${file}: not a regular file`);
-  }
-  return { found: true, value: parseJsonText(fs.readFileSync(file, 'utf8'), file) };
-};
+export const parsedJsonOf = (read: JsonText, source: string): JsonFile => (read.found ? { found: true, value: parseJsonText(read.text, source) } : read);
+
+export const readJsonFile = async (file: string, asker: Asker, options: ReadJsonFileOptions = {}): Promise<JsonFile> => parsedJsonOf(await readJsonText(file, isAbsentPathError, asker, options), file);

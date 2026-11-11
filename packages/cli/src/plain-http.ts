@@ -15,8 +15,8 @@ export const announcePlainHttp = (ports: Announcer, servers: readonly string[]):
   }
 };
 
-export const shellModelsOf = (ports: Announcer): UserModels => {
-  const models = loadUserModels({ home: ports.home });
+export const shellModelsOf = async (ports: Announcer, signal: AbortSignal): Promise<UserModels> => {
+  const models = await loadUserModels({ home: ports.home, signal });
   announcePlainHttp(ports, models.resolved.plainHttp);
   return models;
 };

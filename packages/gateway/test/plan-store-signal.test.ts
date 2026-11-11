@@ -94,7 +94,6 @@ describe('every plan store call takes the signal of the operation that asked (de
     await signedIn(h, 'work');
     const source = h.sessions.authSource(WORK);
     await h.sessions.load(WORK, NEVER_ENDED);
-    await h.sessions.serve([WORK], NEVER_ENDED);
     await h.sessions.registration(WORK, NEVER_ENDED);
     await h.sessions.known(NEVER_ENDED);
     await h.sessions.selectActive(WORK, NEVER_ENDED);
@@ -317,7 +316,7 @@ describe('an abort or a limit is a failed write attempt, never store_unwritable 
     expect(h.pendingLimits()).toEqual([]);
     expect(source.status()).toMatchObject({ state: 'active' });
     expect((await readRecord(h, 'work'))?.['generation']).toBe(generation);
-    expect(h.sleeps.filter((ms) => ms === PERSIST_RETRY_MS)).toHaveLength(2);
+    expect(h.sleeps.filter((ms) => ms === PERSIST_RETRY_MS || ms === 2 * PERSIST_RETRY_MS)).toEqual([PERSIST_RETRY_MS, 2 * PERSIST_RETRY_MS]);
 
     watched.hang.write = () => false;
     secondWait.release();
@@ -341,7 +340,7 @@ describe('an abort or a limit is a failed write attempt, never store_unwritable 
     expect(lockReason).toBeInstanceOf(OperationLimitError);
     expect((lockReason as OperationLimitError).message).toBe('the persist limit of 300000 ms passed');
     expect(source.status()).toMatchObject({ state: 'active' });
-    expect(h.sleeps.filter((ms) => ms === PERSIST_RETRY_MS)).toHaveLength(2);
+    expect(h.sleeps.filter((ms) => ms === PERSIST_RETRY_MS || ms === 2 * PERSIST_RETRY_MS)).toEqual([PERSIST_RETRY_MS, 2 * PERSIST_RETRY_MS]);
     expect(h.warnings).toEqual([]);
     await expect(h.sessions.close()).resolves.toBeUndefined();
   });

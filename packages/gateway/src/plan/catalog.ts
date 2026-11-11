@@ -14,18 +14,19 @@ import { gatewayErrorFromBody } from '../core/errors.ts';
 import { PLAN_SESSION_DEFAULTS, PLAN_SIGN_IN_DEFAULTS } from '../defaults.ts';
 import { reportedContextWindow } from '../probe/run-probe.ts';
 import type { AuthSource } from './auth-source.ts';
-import { PLAN_EVENT_INTERNAL, noPlanEvents } from './events.ts';
+import { PLAN_EVENT_INTERNAL, eventScalar, noPlanEvents } from './events.ts';
 import type { PlanEvents } from './events.ts';
 import type { PlanOutbound } from './outbound.ts';
+import { SUCCESS_STATUS } from './http-status.ts';
 import { ownEntry } from './own-entry.ts';
 import { parsePlanJson } from './plan-json.ts';
-import { recordAccess } from './record-io.ts';
+import { endedByOperation, recordAccess } from './record-io.ts';
+import { responseBytes } from './refresh.ts';
 import type { PlanFetch, PlanSleep } from './refresh.ts';
 
 export const NO_REPORTED_WINDOW = 'the server reports no context window for this model';
 
 const CATALOG_LABEL = 'plan catalog';
-const SUCCESS_STATUS = 200;
 
 type RecordEntry = { contextWindow: number; maxOutputTokens: number; source: 'reported' } | { unreported: true };
 
@@ -45,8 +46,6 @@ export type PlanCatalogOptions = { store: CredentialStore; clock: Clock; outboun
 async function* bytesOf(text: string): AsyncGenerator<Uint8Array> {
   yield new TextEncoder().encode(text);
 }
-
-async function* noBytes(): AsyncGenerator<Uint8Array> {}
 
 type ListAnswer = CompletionResponse & { text: string; truncated: boolean };
 
@@ -147,7 +146,7 @@ export const createPlanCatalog = (options: PlanCatalogOptions): PlanCatalog => {
     try {
       return await sendAuthorized(request.auth, signal, async (bearer) => {
         const response = await fetch(url, { method: 'GET', redirect: 'manual', signal, headers: { accept: 'application/json', ...(bearer === undefined ? {} : { authorization: `Bearer ${bearer}` }) } });
-        const read = await readTextLimited((response.body as AsyncIterable<Uint8Array> | null) ?? noBytes(), PLAN_SIGN_IN_DEFAULTS.authBodyBytes);
+        const read = await readTextLimited(responseBytes(response), PLAN_SIGN_IN_DEFAULTS.authBodyBytes);
         return { status: response.status, headers: Object.fromEntries(response.headers), body: bytesOf(read.text), text: read.text, truncated: read.truncated };
       });
     } finally {
@@ -168,15 +167,15 @@ export const createPlanCatalog = (options: PlanCatalogOptions): PlanCatalog => {
       response = await fetchList(fetch, request);
     } catch (error) {
       const body = classify(error).error;
-      end({ outcome: body.code ?? UNCLASSIFIED });
+      end({ outcome: eventScalar(body.code ?? UNCLASSIFIED) });
       throw gatewayErrorFromBody(body);
     }
-    const requestIdHeaders = requestIdHeaderNames(response.headers);
+    const requestIdHeaders = requestIdHeaderNames(response.headers).map(eventScalar);
     try {
       if (response.status !== SUCCESS_STATUS) {
         const classified = classify(listErrorOf(response, options.clock));
         const failure = await afterCredentialEffect(gatewayErrorFromBody(classified.error), request.auth, classified, options.clock, request.signal);
-        end({ outcome: classified.error.code ?? UNCLASSIFIED, requestIdHeaders });
+        end({ outcome: eventScalar(classified.error.code ?? UNCLASSIFIED), requestIdHeaders });
         throw failure;
       }
       if (response.truncated) {
@@ -188,7 +187,7 @@ export const createPlanCatalog = (options: PlanCatalogOptions): PlanCatalog => {
         end({ outcome: 'list_invalid', requestIdHeaders });
         throw new Error(`the ${request.profile.messages.identityLabel} model list has no ${request.profile.catalog.listKey} array`);
       }
-      end({ outcome: 'ok', listed: listed.models.length, usable: listed.models.filter((entry) => entry.usable).length, entryKeys: listed.entryKeys, requestIdHeaders });
+      end({ outcome: 'ok', listed: listed.models.length, usable: listed.models.filter((entry) => entry.usable).length, entryKeys: listed.entryKeys.map(eventScalar), requestIdHeaders });
       return { readAt: new Date(options.clock.now()).toISOString(), models: listed.models };
     } catch (error) {
       if (!ended) end({ outcome: PLAN_EVENT_INTERNAL, requestIdHeaders });
@@ -196,11 +195,22 @@ export const createPlanCatalog = (options: PlanCatalogOptions): PlanCatalog => {
     }
   };
 
+  const readableRecord = async (request: CatalogRead): Promise<CatalogRecord | undefined> => {
+    try {
+      return await record(request.profile.id, request.account, request.signal);
+    } catch (error) {
+      if (endedByOperation(error, request.signal)) throw error;
+      return undefined;
+    }
+  };
+
   const read = async (request: CatalogRead): Promise<PlanModelsResponse> => {
     const key = catalogKey(request.profile.id, request.account);
-    const saved = await record(request.profile.id, request.account, request.signal);
-    const answered = answers.get(key);
-    if (!request.refresh && saved !== undefined && answered !== undefined && answered.readAt === saved.readAt && isFresh(saved, options.clock.now())) return answered;
+    const answered = request.refresh ? undefined : answers.get(key);
+    if (answered !== undefined) {
+      const saved = await readableRecord(request);
+      if (saved !== undefined && answered.readAt === saved.readAt && isFresh(saved, options.clock.now())) return answered;
+    }
     const response = await options.outbound(request.signal, (fetch) => readUpstream(fetch, request));
     const fresh = recordOf(response);
     await recordAccess('write', listOf(request.profile.id, request.account), () => options.store.write(key, JSON.stringify(fresh), request.signal), request.signal);

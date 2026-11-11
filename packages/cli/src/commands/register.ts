@@ -440,7 +440,7 @@ const registerAutoMode: CommandGroup = (program, deps) => {
     .description('run the auto-mode dataset against a classifier model in temporary homes and store the measurement; auto mode stays selectable whatever it shows')
     .option('--agent <model>', 'the model that drives the runs and proposes the calls the classifier judges')
     .action(async (model: string | undefined, options: { agent?: string }) => {
-      const outcome = await autoModeCheck(await autoModeCheckPortsOf(deps.ports, (text) => deps.ports.stdout.write(text)), {
+      const outcome = await autoModeCheck(await autoModeCheckPortsOf(deps.ports, (text) => deps.ports.stdout.write(text), deps.interrupt), {
         signal: deps.interrupt,
         ...(options.agent === undefined ? {} : { agent: options.agent }),
         ...(model === undefined ? {} : { classifier: model }),
@@ -451,7 +451,7 @@ const registerAutoMode: CommandGroup = (program, deps) => {
     .command('status [model]')
     .description('show the stored measurement of a classifier model for this version')
     .action(async (model: string | undefined) => {
-      await autoModeStatus(autoModeStatusPortsOf(deps.ports, (text) => deps.ports.stdout.write(text)), { surface: 'cli', signal: deps.interrupt, ...(model === undefined ? {} : { classifier: model }) });
+      await autoModeStatus(await autoModeStatusPortsOf(deps.ports, (text) => deps.ports.stdout.write(text), deps.interrupt), { surface: 'cli', signal: deps.interrupt, ...(model === undefined ? {} : { classifier: model }) });
       deps.complete(0);
     });
 };

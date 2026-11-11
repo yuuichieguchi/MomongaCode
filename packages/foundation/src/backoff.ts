@@ -1,8 +1,10 @@
+import type { Random } from './random.ts';
+
 export type BackoffOptions = {
   attempt: number;
   baseMs: number;
   maxMs: number;
-  random: () => number;
+  random: Pick<Random, 'float'>;
   jitter?: 'full' | 'equal';
 };
 
@@ -12,9 +14,9 @@ export const computeBackoff = ({ attempt, baseMs, maxMs, random, jitter = 'full'
   if (!Number.isFinite(maxMs) || maxMs < 0) throw new RangeError(`computeBackoff: maxMs must be a non-negative finite number, got ${maxMs}`);
   const exponential = baseMs * 2 ** Math.min(attempt, 1023);
   const cap = Math.min(maxMs, exponential);
-  if (jitter === 'full') return Math.floor(random() * cap);
+  if (jitter === 'full') return Math.floor(random.float() * cap);
   const floor = Math.ceil(cap / 2);
-  return floor + Math.floor(random() * (cap - floor));
+  return floor + Math.floor(random.float() * (cap - floor));
 };
 
 const HTTP_DATE = /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/;

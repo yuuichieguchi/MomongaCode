@@ -1,7 +1,11 @@
 import fs from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConfigError, createUserSettingsCache, loadMcpServers, noKeptRecords } from '@momonga/config';
+import { nodeFileSystem } from '@momonga/foundation';
+import type { FileSystem } from '@momonga/foundation';
 import { makeTree, mcpJsonPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
+
+const NOT_ABORTED = new AbortController().signal;
 
 const T0 = new Date('2026-01-01T00:00:00Z');
 const T1 = new Date('2026-01-01T00:00:10Z');
@@ -13,82 +17,81 @@ const writeAt = (file: string, value: unknown, at: Date): void => {
   fs.utimesSync(file, at, at);
 };
 
-const thrownBy = (action: () => unknown): unknown => {
-  try {
-    action();
-  } catch (error) {
-    return error;
-  }
-  return undefined;
-};
+const rejectionOf = (pending: Promise<unknown>): Promise<unknown> =>
+  pending.then(
+    () => undefined,
+    (error: unknown) => error,
+  );
 
 type Fault = { error?: Error };
 
-const faultStat = (target: string, fault: Fault): void => {
-  const real = fs.statSync;
-  vi.spyOn(fs, 'statSync').mockImplementation(((file: fs.PathLike, options?: unknown) => {
-    if (String(file) === target && fault.error !== undefined) throw fault.error;
-    return real(file, options as never);
-  }) as typeof fs.statSync);
+type FaultSite = 'lstat' | 'read';
+
+const faultyFiles = (target: string, site: FaultSite, fault: Fault): FileSystem => {
+  const failing = (at: FaultSite, file: string): void => {
+    if (at === site && file === target && fault.error !== undefined) throw fault.error;
+  };
+  return {
+    ...nodeFileSystem,
+    lstat: async (file) => {
+      failing('lstat', file);
+      return nodeFileSystem.lstat(file);
+    },
+    readTextFile: async (file) => {
+      failing('read', file);
+      return nodeFileSystem.readTextFile(file);
+    },
+  };
 };
 
-const faultRead = (target: string, fault: Fault): void => {
-  const real = fs.readFileSync;
-  vi.spyOn(fs, 'readFileSync').mockImplementation(((file: fs.PathOrFileDescriptor, options?: unknown) => {
-    if (String(file) === target && fault.error !== undefined) throw fault.error;
-    return real(file, options as never);
-  }) as typeof fs.readFileSync);
-};
+const cacheWith = (home: string, files: FileSystem) => createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: noKeptRecords, files });
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
 describe('UserSettingsCache with a transient errno after a good load', () => {
-  for (const site of ['stat', 'read'] as const) {
-    it(`get() keeps the last good settings and snapshot() throws the same EMFILE when the ${site} fails`, () => {
+  for (const site of ['lstat', 'read'] as const) {
+    it(`loadOrKeep keeps the last good settings and load rejects with the same EMFILE when the ${site} fails`, async () => {
       const tree = makeTree();
       const file = userSettingsPath(tree);
       writeAt(file, { env: { TZ: 'good' } }, T0);
-      const cache = createUserSettingsCache({ home: tree.home, onWarning: () => undefined, keptRecords: noKeptRecords });
-      expect(cache.get().env).toEqual({ TZ: 'good' });
+      const fault: Fault = {};
+      const cache = cacheWith(tree.home, faultyFiles(file, site, fault));
+      expect((await cache.loadOrKeep(NOT_ABORTED)).settings.env).toEqual({ TZ: 'good' });
 
       writeAt(file, { env: { TZ: 'newer' } }, T1);
-      const fault: Fault = { error: errnoError('EMFILE') };
-      if (site === 'stat') faultStat(file, fault);
-      else faultRead(file, fault);
+      fault.error = errnoError('EMFILE');
 
-      expect(thrownBy(() => cache.get())).toBeUndefined();
-      expect(cache.get().env).toEqual({ TZ: 'good' });
-      expect(thrownBy(() => cache.snapshot())).toBe(fault.error);
-      expect(thrownBy(() => cache.snapshot())).toBe(fault.error);
+      expect(await rejectionOf(cache.loadOrKeep(NOT_ABORTED))).toBeUndefined();
+      expect((await cache.loadOrKeep(NOT_ABORTED)).settings.env).toEqual({ TZ: 'good' });
+      expect(await rejectionOf(cache.load(NOT_ABORTED))).toBe(fault.error);
+      expect(await rejectionOf(cache.load(NOT_ABORTED))).toBe(fault.error);
 
       delete fault.error;
-      const snapshot = cache.snapshot();
+      const snapshot = await cache.load(NOT_ABORTED);
       expect('error' in snapshot).toBe(false);
-      expect(cache.get().env).toEqual({ TZ: 'newer' });
+      expect((await cache.loadOrKeep(NOT_ABORTED)).settings.env).toEqual({ TZ: 'newer' });
     });
   }
 
-  it('get() throws the transient error when there was no prior good load', () => {
+  it('loadOrKeep rejects with the transient error when there was no prior good load', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeAt(file, { env: { TZ: 'good' } }, T0);
     const fault: Fault = { error: errnoError('EMFILE') };
-    faultRead(file, fault);
-    const cache = createUserSettingsCache({ home: tree.home, onWarning: () => undefined, keptRecords: noKeptRecords });
-    expect(thrownBy(() => cache.get())).toBe(fault.error);
+    const cache = cacheWith(tree.home, faultyFiles(file, 'read', fault));
+    expect(await rejectionOf(cache.loadOrKeep(NOT_ABORTED))).toBe(fault.error);
     delete fault.error;
-    expect(cache.get().env).toEqual({ TZ: 'good' });
+    expect((await cache.loadOrKeep(NOT_ABORTED)).settings.env).toEqual({ TZ: 'good' });
   });
 
-  it('a non-transient errno (EACCES) still becomes a ConfigError snapshot', () => {
+  it('a non-transient errno (EACCES) still becomes a ConfigError snapshot', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeAt(file, {}, T0);
-    faultRead(file, { error: errnoError('EACCES') });
-    const cache = createUserSettingsCache({ home: tree.home, onWarning: () => undefined, keptRecords: noKeptRecords });
-    const snapshot = cache.snapshot();
+    const cache = cacheWith(tree.home, faultyFiles(file, 'read', { error: errnoError('EACCES') }));
+    const snapshot = await cache.load(NOT_ABORTED);
     expect('error' in snapshot && snapshot.error).toBeInstanceOf(ConfigError);
   });
 });
