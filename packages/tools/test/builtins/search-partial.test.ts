@@ -1,12 +1,16 @@
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { nodeFileSystem } from '@momonga/foundation';
 import type { FileSystem } from '@momonga/foundation';
-import { waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, pollUntil } from '@momonga/testkit';
 import type { Sandbox, SandboxExit } from '@momonga/sandbox';
 import type { RipgrepLocator, ToolLimits } from '@momonga/tools';
 import type { ChildPorts } from '../../src/ports.ts';
 import { makeBuiltins, resultOf } from './fixtures.ts';
+
+const WAIT_BOUND_MS = REAL_PROCESS_TEST_TIMEOUT_MS / 2;
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 type Armed = { callback: () => void; ms: number };
 
@@ -107,8 +111,8 @@ describe('a search that reaches tools.search.timeoutMs keeps the matches so far'
     const second = tools.write('src/second.ts', 'needle\n');
     const live = slowSearch(`${first}\0${second}\0`);
     const running = tools.run('Grep', { pattern: 'needle' }, { limits: LIMITS, sandbox: live.sandbox, ripgrep: fakeRipgrep });
-    await waitFor(live.searching, { description: 'the search started' });
-    await waitFor(() => [...timers.armed.values()].some((timer) => timer.ms === SEARCH_MS), { description: 'the search limit is armed' });
+    await pollUntil(live.searching, { description: 'the search started', boundMs: WAIT_BOUND_MS });
+    await pollUntil(() => [...timers.armed.values()].some((timer) => timer.ms === SEARCH_MS), { description: 'the search limit is armed', boundMs: WAIT_BOUND_MS });
     timers.fire(SEARCH_MS);
     const result = resultOf(await running);
     expect(result.status).toBe('completed');
@@ -132,7 +136,7 @@ describe('a search that reaches tools.search.timeoutMs keeps the matches so far'
     tools.write('a/found.ts', 'x\n');
     tools.write('stalled/hidden.ts', 'x\n');
     const running = tools.run('Glob', { pattern: '**/*.ts' }, { limits: LIMITS });
-    await waitFor(() => stalled, { description: 'the walk reached the stalled directory' });
+    await pollUntil(() => stalled, { description: 'the walk reached the stalled directory', boundMs: WAIT_BOUND_MS });
     timers.fire(SEARCH_MS);
     const result = resultOf(await running);
     expect(result.status).toBe('completed');

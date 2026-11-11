@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, pollUntil, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, pollUntil } from '@momonga/testkit';
 import type { Sandbox, SandboxExit, SandboxedProcess } from '@momonga/sandbox';
 import { ToolExecutionError } from '@momonga/tools';
 import type { BackgroundJobAdopt, BackgroundJobs, ToolLimits } from '@momonga/tools';
@@ -8,6 +8,8 @@ import { HAS_REAL_SANDBOX } from './helpers.ts';
 import { isAlive, makeBuiltins, resultOf, trackGroup } from './builtins/fixtures.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
+const WAIT_BOUND_MS = REAL_PROCESS_TEST_TIMEOUT_MS / 2;
 
 type Armed = { callback: () => void; ms: number };
 
@@ -170,7 +172,7 @@ const startBash = async (options: { limits?: ToolLimits; jobs?: BackgroundJobs; 
   const tools = await makeBuiltins({ sandbox: command.sandbox, ...(options.jobs === undefined ? {} : { jobs: options.jobs }), executor: timedHost(timers.port) });
   const extra = { limits: options.limits ?? LIMITS, ...(options.deadlineMs === undefined ? {} : { deadlineAt: tools.clock.now() + options.deadlineMs }) };
   const running = tools.run('Bash', { command: 'long-command', ...options.input }, extra, 'allow_once');
-  await waitFor(command.spawned, { description: 'the command was spawned' });
+  await pollUntil(command.spawned, { description: 'the command was spawned', boundMs: WAIT_BOUND_MS });
   return { timers, command, tools, running };
 };
 
@@ -181,7 +183,7 @@ describe('a foreground Bash command that reaches its timeout', () => {
     const jobs = adoptingJobs();
     const { timers, command, running } = await startBash({ jobs: jobs.port });
     command.write('first\n');
-    await waitFor(() => armedMs(timers).includes(LIMITS.bash.defaultTimeoutMs), { description: 'the call timer is armed at the default' });
+    await pollUntil(() => armedMs(timers).includes(LIMITS.bash.defaultTimeoutMs), { description: 'the call timer is armed at the default', boundMs: WAIT_BOUND_MS });
     timers.fire(LIMITS.bash.defaultTimeoutMs);
     const result = resultOf(await running);
     expect(result.status).toBe('completed');
@@ -194,7 +196,7 @@ describe('a foreground Bash command that reaches its timeout', () => {
     expect(command.rebound).toHaveLength(1);
     expect(command.finished()).toBeUndefined();
     command.write('second\n');
-    await waitFor(() => adopted.followed.join('').includes('second'), { description: 'the job reads the output written after the promotion' });
+    await pollUntil(() => adopted.followed.join('').includes('second'), { description: 'the job reads the output written after the promotion', boundMs: WAIT_BOUND_MS });
     adopted.stop.abort();
     expect(command.finished()).toMatchObject({ signal: 'SIGTERM' });
     await adopted.followDone;
@@ -203,7 +205,7 @@ describe('a foreground Bash command that reaches its timeout', () => {
   it('is killed when tools.bash.onTimeout is kill', async () => {
     const jobs = adoptingJobs();
     const { timers, command, running } = await startBash({ jobs: jobs.port, limits: { ...LIMITS, bash: { ...LIMITS.bash, onTimeout: 'kill' } } });
-    await waitFor(() => armedMs(timers).includes(LIMITS.bash.defaultTimeoutMs), { description: 'the call timer is armed' });
+    await pollUntil(() => armedMs(timers).includes(LIMITS.bash.defaultTimeoutMs), { description: 'the call timer is armed', boundMs: WAIT_BOUND_MS });
     timers.fire(LIMITS.bash.defaultTimeoutMs);
     const result = resultOf(await running);
     expect(result.status).toBe('failed');
@@ -215,7 +217,7 @@ describe('a foreground Bash command that reaches its timeout', () => {
   it('is killed, never promoted, when the run deadline comes first', async () => {
     const jobs = adoptingJobs();
     const { timers, command, running } = await startBash({ jobs: jobs.port, deadlineMs: 3_000 });
-    await waitFor(() => armedMs(timers).includes(3_000), { description: 'the timer is armed at the run deadline' });
+    await pollUntil(() => armedMs(timers).includes(3_000), { description: 'the timer is armed at the run deadline', boundMs: WAIT_BOUND_MS });
     timers.fire(3_000);
     const result = resultOf(await running);
     expect(result.status).toBe('failed');
@@ -226,7 +228,7 @@ describe('a foreground Bash command that reaches its timeout', () => {
   it('is killed with the reason when the job cannot be adopted', async () => {
     const jobs = adoptingJobs('This session already has 8 running background jobs; stop one with KillBash before starting another');
     const { timers, command, running } = await startBash({ jobs: jobs.port });
-    await waitFor(() => armedMs(timers).includes(LIMITS.bash.defaultTimeoutMs), { description: 'the call timer is armed' });
+    await pollUntil(() => armedMs(timers).includes(LIMITS.bash.defaultTimeoutMs), { description: 'the call timer is armed', boundMs: WAIT_BOUND_MS });
     timers.fire(LIMITS.bash.defaultTimeoutMs);
     const result = resultOf(await running);
     expect(result.status).toBe('failed');
@@ -239,7 +241,7 @@ describe('a foreground Bash command that reaches its timeout', () => {
 describe('the Bash timeout comes from the settings', () => {
   it('a timeout above the maximum is reduced to the maximum and the result says so', async () => {
     const { timers, command, running } = await startBash({ input: { timeout: 20_000 } });
-    await waitFor(() => armedMs(timers).includes(LIMITS.bash.maxTimeoutMs), { description: 'the call timer is armed at the maximum' });
+    await pollUntil(() => armedMs(timers).includes(LIMITS.bash.maxTimeoutMs), { description: 'the call timer is armed at the maximum', boundMs: WAIT_BOUND_MS });
     expect(armedMs(timers)).not.toContain(20_000);
     command.write('done\n');
     command.finish({ code: 0, signal: null });
@@ -276,7 +278,7 @@ describe.runIf(HAS_REAL_SANDBOX)('a promoted command in the real sandbox', () =>
     await pollUntil(() => groups().length > 0, { description: 'the command group is attached', boundMs: REAL_PROCESS_TEST_TIMEOUT_MS / 2 });
     const [group] = groups() as [number];
     trackGroup(group);
-    await waitFor(() => armedMs(timers).includes(LIMITS.bash.defaultTimeoutMs), { description: 'the call timer is armed' });
+    await pollUntil(() => armedMs(timers).includes(LIMITS.bash.defaultTimeoutMs), { description: 'the call timer is armed', boundMs: WAIT_BOUND_MS });
     timers.fire(LIMITS.bash.defaultTimeoutMs);
     const result = resultOf(await running);
     expect(result.status).toBe('completed');
