@@ -105,7 +105,7 @@ describe('protocol capability types', () => {
       outputBoundField?: 'max_completion_tokens' | 'max_tokens' | 'none';
       parallelToolCalls?: { accepted: boolean; multiCallRate: number };
       reasoning?: { control: 'none'; headroomTokens?: number } | { control: 'reasoning_effort'; lowest: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' };
-      maxConcurrency: number;
+      maxConcurrency?: { value: number; evidence: 'refused' };
       imageInputAccepted: boolean;
       imageTokens?: { pixelsPerToken: number; maxTokens: number; minTokens: number };
       guardrail: { errorShape?: unknown };

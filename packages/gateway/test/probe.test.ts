@@ -369,20 +369,12 @@ describe('runProbe server features', () => {
     expect(report.imageTokens).toBeUndefined();
   });
 
-  it('measures max concurrency 1', async () => {
+  it('records the largest count accepted before a refusal "too many" as the measured max concurrency', async () => {
     const { report } = await probe(
-      { scenario: 'tools-ok', latencyMs: SLOW_MS, maxConcurrency: 1, contextSizeExposure: 'models' },
+      { scenario: 'tools-ok', latencyMs: SLOW_MS, maxConcurrency: 3, contextSizeExposure: 'models' },
       { samples: 1 },
     );
-    expect(report.maxConcurrency).toBe(1);
-  });
-
-  it('measures max concurrency 2', async () => {
-    const { report } = await probe(
-      { scenario: 'tools-ok', latencyMs: SLOW_MS, maxConcurrency: 2, contextSizeExposure: 'models' },
-      { samples: 1 },
-    );
-    expect(report.maxConcurrency).toBe(2);
+    expect(report.maxConcurrency).toEqual({ value: 3, evidence: 'refused' });
   });
 
   it('builds the keyword support table from rejected keywords', async () => {
@@ -567,12 +559,12 @@ describe('runProbe context window calibration', () => {
 });
 
 describe('runProbe concurrency measurement', () => {
-  it('reports 1 for a server that queues requests instead of rejecting them', async () => {
+  it('records no max concurrency for a server that refuses no request, whatever its timing', async () => {
     const { report } = await probe(
       { scenario: 'tools-ok', latencyMs: SLOW_MS, maxConcurrency: 1, overflow: 'queue', contextSizeExposure: 'models' },
       { samples: 1 },
     );
-    expect(report.maxConcurrency).toBe(1);
+    expect(report.maxConcurrency).toBeUndefined();
   }, 20000);
 });
 

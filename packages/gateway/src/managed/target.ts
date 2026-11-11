@@ -178,7 +178,9 @@ const guardrailMatcherOf = (report: ProbeReport): ((body: unknown) => boolean) =
 
 const probedOf = (report: ProbeReport, refusal: NeedsProbe | undefined, modeOf: () => ToolCallingMode, policy: ProbeOutputPolicy | undefined): { measured: Capabilities; layer: CapabilityLayer } => {
   const measured = capabilitiesFromProbe(report, { mode: refusal === undefined ? modeOf() : 'none' }, {}, policy);
-  const { layer } = layerOf(measured);
+  const { layer: everyMeasured } = layerOf(measured);
+  const { maxConcurrency: _unmeasuredConcurrency, ...withoutConcurrency } = everyMeasured;
+  const layer = report.maxConcurrency === undefined ? withoutConcurrency : everyMeasured;
   return { measured, layer: refusal === undefined ? layer : { ...layer, toolCalling: refusal } };
 };
 

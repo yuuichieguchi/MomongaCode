@@ -67,7 +67,6 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/gateway/src/managed/server.ts': { 'node:fs': 5 },
   'packages/gateway/src/probe/endpoint-record.ts': { 'node:fs': 1 },
   'packages/gateway/src/probe/record.ts': { 'node:fs': 4 },
-  'packages/gateway/src/probe/run-probe.ts': { 'performance.now': 4 },
   'packages/mcp/src/connection.ts': { 'Math.random': 1 },
   'packages/mcp/src/stdio-transport.ts': { 'randomUUID': 1 },
   'packages/mcp/src/timers.ts': { 'setTimeout': 1 },

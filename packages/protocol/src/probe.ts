@@ -39,7 +39,7 @@ export type ProbeReport = {
   outputBoundField?: OutputBoundField | 'none';
   parallelToolCalls?: { accepted: boolean; multiCallRate: number };
   reasoning?: Exclude<ReasoningCapability, { control: 'thinking' }>;
-  maxConcurrency: number;
+  maxConcurrency?: { value: number; evidence: 'refused' };
   imageInputAccepted: boolean;
   imageTokens?: ImageTokenModel;
   guardrail: { errorShape?: unknown };

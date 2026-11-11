@@ -60,7 +60,7 @@ export interface ProbeOptions {
   stepTimeoutMs?: number;
 }
 
-export const PROBE_METHOD_VERSION = 3;
+export const PROBE_METHOD_VERSION = 4;
 
 const MAX_RATE_LIMIT_RETRIES = 3;
 export const DEFAULT_SAMPLES = 10;
@@ -249,7 +249,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
     outputBoundField,
     parallelToolCalls,
     reasoning,
-    maxConcurrency,
+    ...(maxConcurrency === undefined ? {} : { maxConcurrency }),
     imageInputAccepted,
     ...(imageTokens === undefined ? {} : { imageTokens }),
     guardrail,
@@ -595,17 +595,12 @@ const searchContextWindow = async (chat: Chat, countTokens: ProbeOptions['countT
   };
 };
 
-const measureConcurrency = async (chat: Chat): Promise<number> => {
+const measureConcurrency = async (chat: Chat): Promise<ProbeReport['maxConcurrency']> => {
   const request = (): Promise<ChatResult> => chat({ messages: [{ role: 'user', content: PLAIN_PROMPT }] });
-  expectStatus(await request(), [200], 'concurrency warm-up');
-  const singleStartedAt = performance.now();
-  expectStatus(await request(), [200], 'concurrency baseline');
-  const singleMs = performance.now() - singleStartedAt;
-  const parallelStartedAt = performance.now();
   const results = await Promise.all(Array.from({ length: CONCURRENCY_ATTEMPTS }, request));
-  const parallelMs = performance.now() - parallelStartedAt;
   for (const result of results) expectStatus(result, [200, 429], 'concurrency');
-  const successCount = results.filter((result) => result.status === 200).length;
-  const overlap = Math.floor((CONCURRENCY_ATTEMPTS * singleMs) / parallelMs);
-  return Math.max(1, Math.min(overlap, successCount));
+  const accepted = results.filter((result) => result.status === 200).length;
+  if (accepted === results.length) return undefined;
+  if (accepted === 0) throw new Error(`the server refused every one of ${CONCURRENCY_ATTEMPTS} requests sent at once as too many`);
+  return { value: accepted, evidence: 'refused' };
 };

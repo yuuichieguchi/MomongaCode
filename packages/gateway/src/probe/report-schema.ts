@@ -47,7 +47,6 @@ const reportSchema = {
     'constrained',
     'schemaDialect',
     'stopSequences',
-    'maxConcurrency',
     'imageInputAccepted',
     'guardrail',
   ],
@@ -117,7 +116,12 @@ const reportSchema = {
       properties: { accepted: bool, multiCallRate: rate },
     },
     reasoning: anyJson,
-    maxConcurrency: { type: 'integer', minimum: 1 },
+    maxConcurrency: {
+      type: 'object',
+      required: ['value', 'evidence'],
+      additionalProperties: false,
+      properties: { value: { type: 'integer', minimum: 1 }, evidence: { type: 'string', enum: ['refused'] } },
+    },
     imageInputAccepted: bool,
     imageTokens: {
       type: ['object', 'null'],
