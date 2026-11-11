@@ -171,6 +171,7 @@ const decodeCostSide = (value: unknown, path: string): CostSide => {
     calls: countAt(fields, 'calls', path),
     notPriced: countAt(fields, 'notPriced', path),
     tokens: countAt(fields, 'tokens', path),
+    ...(fields['legacyPrecisionCalls'] === undefined ? {} : { legacyPrecisionCalls: countAt(fields, 'legacyPrecisionCalls', path) }),
     priced: listAt(fields['priced'], `${path}.priced`).map((entry, index) => {
       const at = `${path}.priced[${index}]`;
       const amount = fieldsAt(entry, at);

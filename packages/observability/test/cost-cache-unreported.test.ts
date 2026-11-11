@@ -93,7 +93,7 @@ describe('cache-miss causes for a target that never reports cached tokens', () =
 
     const breakdown = breakdownOf(h);
 
-    expect(breakdown.cost).toEqual({ amount: 0.000141, currency: 'USD', unpricedCalls: 0, unpriced: { cache_read_not_reported: 1 }, priceNotRecordedCalls: 0, priceVersions: ['2026-01-01'] });
+    expect(breakdown.cost).toEqual({ amount: 0.000141, currency: 'USD', unpricedCalls: 0, unpriced: { cache_read_not_reported: 1 }, priceNotRecordedCalls: 0, legacyPrecisionCalls: 0, priceVersions: ['2026-01-01'] });
     expect(breakdown.unpriced).toEqual([{ runId: 'run-a', provider: 'acme', model: 'm1', step: 2, code: 'cache_read_not_reported', reason: 'the upstream did not report the cache reads of the call' }]);
   });
 

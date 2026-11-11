@@ -1,12 +1,12 @@
 import { MAX_BILLED_CALLS_PAGE, RUNLESS, buildCostBreakdown, buildCostReport, callPriceOf, formatCostBreakdown, formatCostReport, runCostsOf } from '@momonga/observability';
 import type { BreakdownCall, BreakdownPrefix, CallPrice, CostBreakdown, CostReport, CostedRun, RunCostCall, UnjoinedRecord } from '@momonga/observability';
-import { RUN_ROLE, unitsOfCost } from '@momonga/protocol';
+import { RUN_ROLE, isLegacyPrecisionCost, unitsOfCost } from '@momonga/protocol';
 import type {
   BilledCallsCursorView,
   BilledCallsPageView,
   BilledCallView,
   CallTiming,
-  ModelCost,
+  RecordedModelCost,
   RecordedCost,
   RecordedPrice,
   RunCostView,
@@ -72,7 +72,7 @@ const responsesOf = (records: readonly ModelCallRecord[]): Response[] => {
   return responses;
 };
 
-const recordedPriceOf = (billed: { cost?: ModelCost; unpriced?: UnpricedOutcome } | undefined): RecordedPrice => {
+const recordedPriceOf = (billed: { cost?: RecordedModelCost; unpriced?: UnpricedOutcome } | undefined): RecordedPrice => {
   if (billed?.cost !== undefined) return { kind: 'priced', cost: billed.cost };
   if (billed?.unpriced !== undefined) return { kind: 'unpriced', ...billed.unpriced };
   return { kind: 'not_recorded' };
@@ -105,7 +105,7 @@ export const readRecordedCosts = (store: CostRecordStore, runIds: readonly strin
 
 const runCostCallOf = (recorded: RecordedCost): RunCostCall => ({
   runId: recorded.runId,
-  price: recorded.price.kind === 'priced' ? { kind: 'priced', units: unitsOfCost(recorded.price.cost).toString(), priceVersion: recorded.price.cost.priceVersion } : { kind: recorded.price.kind },
+  price: recorded.price.kind === 'priced' ? { kind: 'priced', units: unitsOfCost(recorded.price.cost).toString(), priceVersion: recorded.price.cost.priceVersion, legacyPrecision: isLegacyPrecisionCost(recorded.price.cost) } : { kind: recorded.price.kind },
 });
 
 export const reportCostOf = (store: CostRecordStore, runIds: readonly string[]): RunCostView[] => runCostsOf(runIds, readRecordedCosts(store, runIds, false).map(runCostCallOf));

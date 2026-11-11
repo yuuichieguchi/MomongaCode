@@ -1,5 +1,5 @@
 import { USAGE_CHARGE_PURPOSES, anatomyLayerEntries, reportedCachedTokensOf } from '@momonga/protocol';
-import type { ModelCost, PublicRunEvent, UnpricedCode, UnpricedOutcome, UsageChargePurpose } from '@momonga/protocol';
+import type { RecordedModelCost, PublicRunEvent, UnpricedCode, UnpricedOutcome, UsageChargePurpose } from '@momonga/protocol';
 import { ratioBootstrap } from './bootstrap.ts';
 import type { Cluster } from './bootstrap.ts';
 import { eventsOfType } from './observe.ts';
@@ -18,7 +18,7 @@ export type CallFacts = {
   durationMs: number | undefined;
 };
 
-const priceFactsOf = (record: { cost?: ModelCost; unpriced?: UnpricedOutcome } | undefined): Pick<CallFacts, 'cost' | 'unpriced'> => ({
+const priceFactsOf = (record: { cost?: RecordedModelCost; unpriced?: UnpricedOutcome } | undefined): Pick<CallFacts, 'cost' | 'unpriced'> => ({
   cost: record?.cost?.amount,
   unpriced: record?.unpriced?.code,
 });

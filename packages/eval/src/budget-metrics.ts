@@ -1,5 +1,5 @@
 import { TERMINAL_STATUSES, heldEndOf, nanoOfAmount, nanoOfCost } from '@momonga/protocol';
-import type { BudgetCause, BudgetDimension, PublicRunEvent } from '@momonga/protocol';
+import type { BudgetCause, BudgetDimension, PublicRunEvent, RecordedModelCost } from '@momonga/protocol';
 import type { GoldenCase } from './dataset.ts';
 import { gateVerdictOf } from './oracle.ts';
 import { proportionOf } from './stats.ts';
@@ -38,7 +38,7 @@ const limitsOf = (golden: Pick<GoldenCase, 'limits' | 'mandate'>): RunBudgetFact
   return { ...(tokens === undefined ? {} : { tokens }), ...(costUsd === undefined ? {} : { costNano: nanoOfAmount(costUsd) }) };
 };
 
-type Billed = { cost?: { amount: number; units?: string }; unpriced?: unknown };
+type Billed = { cost?: RecordedModelCost; unpriced?: unknown };
 
 const spendOfEvents = (events: readonly PublicRunEvent[]): RunBudgetFacts['spent'] => {
   const spent = { tokens: 0, costNano: 0, unpricedCalls: 0 };
