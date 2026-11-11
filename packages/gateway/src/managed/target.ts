@@ -37,13 +37,15 @@ import type { KeywordSupport } from '../dialect/keyword-support.ts';
 import { FULL_KEYWORD_SUPPORT } from '../dialect/keyword-support.ts';
 import { resolveDialectId } from '../dialect/resolve-id.ts';
 import type { EnvelopeShape } from '../probe/envelope.ts';
-import { valueAtPath, parseJson } from '../probe/json.ts';
+import { parseExternalJson } from '../adapters/shared/json.ts';
+import { valueAtPath } from '../probe/reply.ts';
 import { loadProbeRecord, recordOfServedModel, resolveToolCalling } from '../probe/record.ts';
 import type { ManagedRecordCurrency } from '../probe/record.ts';
 import { targetProbingError } from '../probe/auto-probe.ts';
 import { modelIdChangedError } from '../probe/model-id-changed.ts';
 import type { InstanceProbe } from '../probe/instance-probe.ts';
 import { declaredDialectRefusal, needsProbeOf } from '../probe/remedy.ts';
+import { readProbeReply } from '../probe/client.ts';
 import { aboutModel, managedModelName } from './name.ts';
 import { missingExecutableVerdict, notReadyText } from './preconditions.ts';
 import type { ExecResult } from './preconditions.ts';
@@ -61,6 +63,7 @@ export type ManagedTargetOptions = {
   probeRecordDir: string;
   serverName: string;
   requestLimitMs: number;
+  timeoutSignal(ms: number): AbortSignal;
   isUsableBinary: (binary: string) => Promise<boolean>;
   readKey: (signal: AbortSignal) => Promise<ProbeKey>;
   onInstanceEnd: () => void;
@@ -176,7 +179,9 @@ const guardrailMatcherOf = (report: ProbeReport): ((body: unknown) => boolean) =
 
 const probedOf = (report: ProbeReport, refusal: NeedsProbe | undefined, modeOf: () => ToolCallingMode, policy: ProbeOutputPolicy | undefined): { measured: Capabilities; layer: CapabilityLayer } => {
   const measured = capabilitiesFromProbe(report, { mode: refusal === undefined ? modeOf() : 'none' }, {}, policy);
-  const { layer } = layerOf(measured);
+  const { layer: everyMeasured } = layerOf(measured);
+  const { maxConcurrency: _unmeasuredConcurrency, ...withoutConcurrency } = everyMeasured;
+  const layer = report.maxConcurrency === undefined ? withoutConcurrency : everyMeasured;
   return { measured, layer: refusal === undefined ? layer : { ...layer, toolCalling: refusal } };
 };
 
@@ -222,7 +227,7 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
     return { report, capabilities, isGuardrail: guardrailMatcherOf(report) };
   };
 
-  const requestSignal = (): AbortSignal => AbortSignal.timeout(options.requestLimitMs);
+  const requestSignal = (): AbortSignal => options.timeoutSignal(options.requestLimitMs);
 
   const checkBinary = async (): Promise<void> => {
     if (await options.isUsableBinary(options.binary)) return;
@@ -275,9 +280,9 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
     const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0 });
     try {
       const response = await client.request({ method: 'GET', path: description.models.listPath, signal });
-      const text = await response.text();
+      const text = await readProbeReply('GET', description.models.listPath, response);
       if (response.status !== 200) throw new Error(aboutModel(modelName(), `the server answered GET ${description.models.listPath} with HTTP ${response.status}: ${text.slice(0, 200)}`));
-      const id = valueAtPath(parseJson(text), description.models.idPath);
+      const id = valueAtPath(parseExternalJson(text), description.models.idPath);
       if (typeof id !== 'string') throw new Error(aboutModel(modelName(), `the server lists no model id at GET ${description.models.listPath}`));
       return id;
     } finally {

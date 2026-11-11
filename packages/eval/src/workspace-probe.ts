@@ -1,13 +1,13 @@
 import path from 'node:path';
-import { groupSignalsOf, launchGroupLeader, sha256Hex } from '@momonga/foundation';
-import type { LaunchProtection, ProcessGroupPort, Timing } from '@momonga/foundation';
+import { groupSignalsOf, sha256Hex } from '@momonga/foundation';
+import type { ProcessGroupPort, Timing } from '@momonga/foundation';
 import type { WorkspaceFiles } from './files.ts';
 import { filesUnder } from './oracle-grade.ts';
 import type { WorkspaceProbe } from './oracle-grade.ts';
 
-export type SandboxedProbeCommand = { file: string; args: readonly string[]; protection: LaunchProtection };
+export type SandboxedProbeRun = { pgid: number; exited: Promise<{ code: number | null }> };
 
-export type CommandSandbox = { commandOf(command: string, workspace: string): Promise<SandboxedProbeCommand> };
+export type CommandSandbox = { start(command: string, workspace: string, env: Readonly<Record<string, string>>, signal: AbortSignal): Promise<SandboxedProbeRun> };
 
 export type WorkspaceProbePorts = {
   env: Readonly<Record<string, string>>;
@@ -44,24 +44,22 @@ const strongestSignal = (groups: ProcessGroupPort): NodeJS.Signals => {
 };
 
 const runInGroup = async (ports: WorkspaceProbePorts, command: string, timeoutMs: number, cwd: string): Promise<ProbeOutcome> => {
-  const sandboxed = await ports.sandbox.commandOf(command, cwd);
-  return new Promise((resolve, reject) => {
-    const launched = launchGroupLeader({ file: sandboxed.file, args: sandboxed.args, cwd, env: ports.env, stdio: ['ignore', 'ignore', 'ignore'], port: ports.groups, protection: sandboxed.protection });
-    let timedOut = false;
-    const timer = ports.timing.setTimeout(() => {
-      timedOut = true;
-      if (launched.pgid !== undefined) ports.groups.signal(launched.pgid, strongestSignal(ports.groups), { signal: undefined }).catch(reject);
-    }, timeoutMs);
-    const failed = (error: Error): void => {
-      ports.timing.clearTimeout(timer);
-      reject(error);
-    };
-    launched.child.once('error', failed);
-    launched.onExit(({ code }) => {
-      ports.timing.clearTimeout(timer);
-      resolve({ exitCode: timedOut ? null : code, timedOut });
-    }, failed);
-  });
+  const stop = new AbortController();
+  const started = await ports.sandbox.start(command, cwd, ports.env, stop.signal);
+  let timedOut = false;
+  let signalled: Promise<void> = Promise.resolve();
+  const timer = ports.timing.setTimeout(() => {
+    timedOut = true;
+    signalled = ports.groups.signal(started.pgid, strongestSignal(ports.groups), { signal: undefined });
+    stop.abort();
+  }, timeoutMs);
+  try {
+    const { code } = await started.exited;
+    await signalled;
+    return { exitCode: timedOut ? null : code, timedOut };
+  } finally {
+    ports.timing.clearTimeout(timer);
+  }
 };
 
 export const createWorkspaceProbe = (ports: WorkspaceProbePorts): WorkspaceProbe => ({

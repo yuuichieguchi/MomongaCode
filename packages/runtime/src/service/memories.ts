@@ -54,6 +54,7 @@ export type MemoryRoutesDeps = {
   store: Pick<RuntimeStore, 'memories' | 'reflection' | 'trust' | 'contextCharges' | 'getRun'>;
   views: RecordViews;
   evidenceRun: (project: string) => EvidenceRun;
+  platform: NodeJS.Platform;
   maxBodyBytes: number;
   closeSignal: AbortSignal;
   home: string;
@@ -121,6 +122,7 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
       const prepared = await prepareCommandMemory(request, {
         trusted: async (project) => (await trust.decisionAsked(project, context.req.raw.signal)).decision === 'trusted',
         evidenceRun: deps.evidenceRun,
+        platform: deps.platform,
         signal: boundOf(context),
       });
       return json({ memory: await views.viewOf(memories.addByCommand(prepared), boundOf(context)) }, 201);
@@ -177,11 +179,11 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
 
   route('/v1/reflection', { GET: latestReflection });
   route('/v1/runs/:id/reflection', { GET: reflectionOfRun, POST: requestReflection });
-  route('/v1/memories', { GET: listMemories, POST: addMemory });
-  route('/v1/memories/:id', { GET: getMemory, DELETE: deleteMemory });
+  route('/v1/memories', { GET: listMemories, POST: addMemory }, { person: ['POST'] });
+  route('/v1/memories/:id', { GET: getMemory, DELETE: deleteMemory }, { person: ['DELETE'] });
   route('/v1/memories/:id/history', { GET: memoryHistory });
-  route('/v1/memories/:id/accept', { POST: acceptMemory });
-  route('/v1/memories/:id/reject', { POST: rejectMemory });
-  route('/v1/memories/:id/restore', { POST: restoreMemory });
-  route('/v1/memories/:id/promote', { POST: promoteMemory });
+  route('/v1/memories/:id/accept', { POST: acceptMemory }, { person: ['POST'] });
+  route('/v1/memories/:id/reject', { POST: rejectMemory }, { person: ['POST'] });
+  route('/v1/memories/:id/restore', { POST: restoreMemory }, { person: ['POST'] });
+  route('/v1/memories/:id/promote', { POST: promoteMemory }, { person: ['POST'] });
 };

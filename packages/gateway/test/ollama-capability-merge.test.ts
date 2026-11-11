@@ -12,6 +12,7 @@ import { OLLAMA_CAPABILITIES, OLLAMA_MODEL, fixtureJson, startFakeOllama } from 
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
 import { NO_PROBE_START } from './fm-record-support.ts';
 import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
+import { hostProbePorts, probePortsAt } from './probe-ports-support.ts';
 
 const RECORDED_SHOW = fixtureJson('api-show.json');
 
@@ -20,8 +21,8 @@ const showWith = (capabilities: readonly string[]) => ({ ...RECORDED_SHOW, capab
 const probedTarget = async (showCapabilities: readonly string[], declared: DeclaredCapabilities, cacheProbe: 'automatic' | 'none' = 'none') => {
   const fake = await startFakeOllama({ show: showWith(showCapabilities), cacheProbe });
   const dir = makeDir();
-  const result = await probeOllamaTarget({ lock: testKernelLock(), probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 12288 });
-  const record = await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS);
+  const result = await probeOllamaTarget({ ports: hostProbePorts, lock: testKernelLock(), probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 12288 });
+  const record = await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS, 'the-model');
   return createProbedOllamaTarget({
     targetName: 'local',
     endpoint: result.key.endpoint,
@@ -96,7 +97,7 @@ describe('one merge decides a declared against a probed prompt cache for every p
   const endpointTargetWith = async (declared: Capabilities) => {
     const fake = await startFakeChatCompletions({ scenario: 'tools-ok', streamUsage: true });
     try {
-      const report = { ...(await runProbe({ socketPath: fake.socketPath, samples: 2, now: () => new Date('2026-11-05T12:00:00.000Z') })), promptCache: { kind: 'automatic' as const } };
+      const report = { ...(await runProbe({ socketPath: fake.socketPath, samples: 2, ports: probePortsAt(() => new Date('2026-11-05T12:00:00.000Z')) })), promptCache: { kind: 'automatic' as const } };
       return createProbedEndpointTarget({
         targetName: 'remote',
         endpoint: 'unix:/nowhere',

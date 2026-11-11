@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { ReconcileUndecidedError } from '../src/index.ts';
 import { DIFF_FILE_TOO_LARGE, DIFF_HUNK_TEXT_MAX_BYTES, DIFF_TOO_LARGE } from '../src/builtins/applied-diff.ts';
 import { keyFor } from './helpers.ts';
 import { makeBuiltins, resultOf, sha256 } from './builtins/fixtures.ts';
@@ -131,14 +132,14 @@ describe('the change of an interrupted edit or write', () => {
     expect(resultOf(outcome).hunks).toBeUndefined();
   });
 
-  it('refuses a prepared state whose diff is not a diff', async () => {
+  it('refuses a prepared state whose diff is not a diff: the reconcile cannot decide, so the run cannot go on and the record is kept for the next attempt', async () => {
     const tools = await makeBuiltins();
     const file = tools.write('r.txt', 'new');
-    tools.idempotency.seed(keyFor('run-1', 1, 'call-bad'), 'PENDING', { tool: 'Write', prepared: { path: file, preHash: sha256('old'), postHash: sha256('new'), diff: { hunks: 'everything' } } });
-    const outcome = await tools.run('Write', { file_path: file, content: 'new' }, ACCEPT, undefined, 'call-bad');
-    const result = resultOf(outcome);
-    expect(result.status).toBe('failed');
-    expect(result.output).toContain('prepared state is malformed');
-    expect(result.hunks).toBeUndefined();
+    const key = keyFor('run-1', 1, 'call-bad');
+    tools.idempotency.seed(key, 'PENDING', { tool: 'Write', prepared: { path: file, preHash: sha256('old'), postHash: sha256('new'), diff: { hunks: 'everything' } } });
+    const outcome = tools.run('Write', { file_path: file, content: 'new' }, ACCEPT, undefined, 'call-bad');
+    await expect(outcome).rejects.toBeInstanceOf(ReconcileUndecidedError);
+    await expect(outcome).rejects.toThrow('prepared state is malformed: its diff is not a diff');
+    expect(tools.idempotency.stateOf(key)).toBe('PENDING');
   });
 });

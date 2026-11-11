@@ -48,7 +48,7 @@ describe('runtime.drainTimeoutMs and mcp.closeGraceMs are user settings read as 
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { [object]: { [key]: value } });
     await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow(
-      `${userSettingsPath(tree)}: ${object}.${key} must be an integer from 0 to ${max} milliseconds; got ${JSON.stringify(value)}`,
+      `${userSettingsPath(tree)}: invalid settings at /${object}/${key}: must be an integer from 0 to ${max} milliseconds; got ${JSON.stringify(value)}`,
     );
   });
 

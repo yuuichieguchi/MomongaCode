@@ -3,6 +3,7 @@ import type { ProductValidator, UntrustedError } from '@momonga/foundation';
 import { MIN_SUMMARY_TOKENS, MOMONGA_REQUEST_FIELDS, OPEN_RESPONSES_COMPONENT_NAMES, OPEN_RESPONSES_OPENAPI, OPEN_RESPONSES_REMOTE_DOCUMENTS, openResponsesComponentSchema, tokensForText, PROMPT_TEXT_MAX_CHARS } from '@momonga/protocol';
 import type { CompactRequest, CountTokensRequest, CreateResponseBody } from '@momonga/protocol';
 import { invalidRequest } from './errors.ts';
+import { refuseStoredResponses } from './input.ts';
 import type { UnknownFields } from './unknown-fields.ts';
 
 const REF_PREFIX = '#/components/schemas/';
@@ -436,6 +437,7 @@ export const createRequestValidator = (): RequestValidator => {
       if (typeof record['model'] !== 'string' || record['model'] === '') {
         throwIssue({ segments: ['model'], message: 'is required and must be a non-empty string' });
       }
+      refuseStoredResponses(record);
       if (record['background'] === true) {
         throw invalidRequest('capability_unsupported', 'background responses are not supported', 'background');
       }
@@ -445,7 +447,9 @@ export const createRequestValidator = (): RequestValidator => {
     },
     parseCompact: (body) => {
       validateWithItems(compactSchema, body);
-      validateCompactMomonga(requireRecord(body, 'body')['momonga']);
+      const record = requireRecord(body, 'body');
+      refuseStoredResponses(record);
+      validateCompactMomonga(record['momonga']);
       return assertValidated<CompactRequest>(body);
     },
     parseCountTokens: (body) => {

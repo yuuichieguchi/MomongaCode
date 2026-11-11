@@ -421,7 +421,17 @@ const runFactsViewProperties: Record<string, JsonSchema> = {
   costNano: nonNegativeInteger,
   steps: nonNegativeInteger,
   limits: closed({ maxSteps: nonNegativeInteger, maxTotalTokens: nonNegativeInteger, maxCostNano: nonNegativeInteger }, []),
-  delegation: closed({ held: nonNegativeInteger, resolvedByPerson: nonNegativeInteger, denied: nonNegativeInteger, waited: boolean }, ['held', 'resolvedByPerson', 'denied', 'waited']),
+  delegation: closed(
+    {
+      held: nonNegativeInteger,
+      resolvedByPerson: nonNegativeInteger,
+      denied: nonNegativeInteger,
+      waited: boolean,
+      holdLatencyMs: nonNegativeInteger,
+      workDuringHolds: closed({ modelSteps: nonNegativeInteger, toolCalls: nonNegativeInteger }, ['modelSteps', 'toolCalls']),
+    },
+    ['held', 'resolvedByPerson', 'denied', 'waited', 'holdLatencyMs', 'workDuringHolds'],
+  ),
   deadlineAt: integer,
   asked: nonNegativeInteger,
   elicited: nonNegativeInteger,
@@ -432,8 +442,19 @@ const runFactsViewProperties: Record<string, JsonSchema> = {
   reconciledNotApplied: nonNegativeInteger,
   reconciledUnknown: nonNegativeInteger,
   basis: runFactsBasis,
+  answers: closed(
+    { allowOnce: nonNegativeInteger, allowAlways: nonNegativeInteger, rejectOnce: nonNegativeInteger, rejectAlways: nonNegativeInteger },
+    ['allowOnce', 'allowAlways', 'rejectOnce', 'rejectAlways'],
+  ),
+  denials: closed(Object.fromEntries(PERMISSION_DENIAL_SOURCES.map((source) => [source, nonNegativeInteger])), [...PERMISSION_DENIAL_SOURCES]),
   declared: boolean,
   met: boolean,
+  mutated: boolean,
+  owed: boolean,
+  verification: closed(
+    { rounds: nonNegativeInteger, firstRoundPassed: nullable(boolean), failedRounds: nonNegativeInteger, checkMs: nonNegativeInteger, fixRoundTokens: nonNegativeInteger },
+    ['rounds', 'firstRoundPassed', 'failedRounds', 'checkMs', 'fixRoundTokens'],
+  ),
   recoveries: { type: 'array', items: recoveryEpisodeView },
 };
 
@@ -747,6 +768,17 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       tokensAfterEstimated: { type: 'boolean', const: true },
     },
     required: ['summary', 'replacedThroughSeq'],
+  },
+  'context.inherited_compacted': {
+    properties: {
+      fromRunId: string,
+      summary: string,
+      replacedThroughSeq: nonNegativeInteger,
+      tokensBefore: nonNegativeInteger,
+      tokensAfter: nonNegativeInteger,
+      tokensAfterEstimated: { type: 'boolean', const: true },
+    },
+    required: ['fromRunId', 'summary', 'replacedThroughSeq'],
   },
   'context.governing_loaded': {
     properties: {
@@ -1434,7 +1466,7 @@ export type CompactSessionRequest = { instructions?: string };
 
 export type UserShellPendingResponse = { pending: UserShellRecord[] };
 
-export type UserShellFrame = { type: 'output'; text: string } | { type: 'refused'; reason: string } | { type: 'exit'; record: UserShellRecord };
+export type UserShellFrame = { type: 'unprotected'; reason: string } | { type: 'output'; text: string } | { type: 'refused'; reason: string } | { type: 'exit'; record: UserShellRecord };
 
 export type InboxAddResponse = { row: InboxRowView; pending: InboxRowView[] };
 
@@ -1479,6 +1511,7 @@ export const RUN_API_SCHEMAS = {
   UserShellPendingResponse: root(closed({ pending: { type: 'array', items: userShellRecord } }, ['pending'])),
   UserShellFrame: root({
     anyOf: [
+      closed({ type: constant('unprotected'), reason: string }, ['type', 'reason']),
       closed({ type: constant('output'), text: string }, ['type', 'text']),
       closed({ type: constant('refused'), reason: string }, ['type', 'reason']),
       closed({ type: constant('exit'), record: userShellRecord }, ['type', 'record']),
@@ -1818,6 +1851,7 @@ type ReducedEventType =
   | 'run.started'
   | 'context.compacted'
   | 'context.compaction_rejected'
+  | 'context.inherited_compacted'
   | 'context.inherited'
   | 'instructions.loaded'
   | 'skill.activated';
@@ -1829,6 +1863,7 @@ type PublicPayload =
   | { type: 'run.started'; attempt: number }
   | { type: 'context.compacted'; summary: string; replacedThroughSeq: number; source?: SummarySource; fidelity?: SummaryFidelity; guidelineVersion?: number; tokensBefore?: number; tokensAfter?: number; tokensAfterEstimated?: true }
   | { type: 'context.compaction_rejected'; step?: number; attempt?: number }
+  | { type: 'context.inherited_compacted'; fromRunId: string; summary: string; replacedThroughSeq: number; tokensBefore?: number; tokensAfter?: number; tokensAfterEstimated?: true }
   | {
       type: 'context.inherited';
       fromRunId: string;
@@ -1939,6 +1974,17 @@ const toPublicKnownEvent = (event: RunEvent | SessionEvent): PublicRunEvent => {
       };
     case 'context.compaction_rejected':
       return { ...envelope, type: event.type, ...(event.attempt === undefined ? {} : { attempt: event.attempt }) };
+    case 'context.inherited_compacted':
+      return {
+        ...envelope,
+        type: event.type,
+        fromRunId: event.fromRunId,
+        summary: event.summary,
+        replacedThroughSeq: event.replacedThroughSeq,
+        ...(event.tokensBefore === undefined ? {} : { tokensBefore: event.tokensBefore }),
+        ...(event.tokensAfter === undefined ? {} : { tokensAfter: event.tokensAfter }),
+        ...(event.tokensAfterEstimated === undefined ? {} : { tokensAfterEstimated: event.tokensAfterEstimated }),
+      };
     case 'context.inherited':
       return {
         ...envelope,
@@ -1968,3 +2014,5 @@ export const runApiSchemaName = (schema: JsonSchema): string => {
   if (entry === undefined) throw new Error('the schema is not one of RUN_API_SCHEMAS');
   return entry[0];
 };
+
+export const PERSON_CAPABILITY_HEADER = 'momonga-person-capability';

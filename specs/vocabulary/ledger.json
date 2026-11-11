@@ -236,9 +236,6 @@
       "packages/config/src/project-mandate.ts": {
         "project": 2
       },
-      "packages/config/src/settings.ts": {
-        "target": 1
-      },
       "packages/context/src/budget.ts": {
         "target": 1
       },
@@ -323,7 +320,7 @@
         "job": 1
       },
       "packages/foundation/src/platform/windows-kept-groups.ts": {
-        "job": 2
+        "job": 1
       },
       "packages/foundation/src/schema-reference-cycles.ts": {
         "target": 1
@@ -437,11 +434,7 @@
       },
       "packages/gateway/src/probe/endpoint-record.ts": {
         "endpoint": 1,
-        "gateway": 1,
-        "target": 5
-      },
-      "packages/gateway/src/probe/record.ts": {
-        "gateway": 1
+        "target": 4
       },
       "packages/gateway/src/probe/remedy.ts": {
         "gateway": 1
@@ -457,9 +450,6 @@
         "limit": 2
       },
       "packages/gateway/src/server/body.ts": {
-        "limit": 1
-      },
-      "packages/gateway/src/server/websocket.ts": {
         "limit": 1
       },
       "packages/mcp/src/common-passwords.data.ts": {

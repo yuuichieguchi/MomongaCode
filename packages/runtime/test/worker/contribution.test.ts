@@ -6,7 +6,7 @@ import { LEASE_MS, makeEnv, textOf, unavailableEvidenceRun } from './harness.ts'
 import type { Env } from './harness.ts';
 import { assistantMessage, callsStep, gated, incompleteStep, refusalStep, textStep, textThenCallsStep } from './scripts.ts';
 
-const memoryWorker = (env: Env, id: string): Worker => env.worker(id, { memories: createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }) });
+const memoryWorker = (env: Env, id: string): Worker => env.worker(id, { memories: createMemoryPort({ platform: process.platform, store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }) });
 
 const saveNote = async (env: Env, text: string, callId = 'call_m_1'): Promise<string> => {
   env.gateway.script.push(callsStep([{ callId, name: 'MemorySave', args: { text, scope: 'user' } }]), textStep('Remembered.'));

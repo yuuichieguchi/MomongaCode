@@ -49,6 +49,7 @@ export const childStderr = defineEvent<RawRecord>('child.stderr', 'warn');
 export const childStdout = defineEvent<RawRecord>('child.stdout', 'info');
 export const supervisorBackgroundFailed = defineEvent<{ source: string }>('supervisor.background_failed', 'error');
 export const supervisorBackgroundTransient = defineEvent<{ source: string }>('supervisor.background_transient', 'warn');
+export const secretStoreChosen = defineEvent<{ backend: string | null; program: string | null; refusal: string | null }>('secret_store.chosen', 'info');
 export const settingsChanged = defineEvent<Record<string, never>>('settings.changed', 'info');
 export const settingsInvalid = defineEvent<{ detail: string; action: 'keep-running-children-hold-spawns' }>('settings.invalid', 'warn');
 export const settingsReadFailed = defineEvent<{ detail: string }>('settings.read_failed', 'warn');

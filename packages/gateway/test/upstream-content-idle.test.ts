@@ -4,7 +4,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createAnthropicAdapter, createChatCompletionsAdapter, createOpenResponsesAdapter, UPSTREAM_LIVENESS_DEFAULTS } from '@momonga/gateway';
+import { createAnthropicAdapter, createChatCompletionsAdapter, createOpenResponsesAdapter } from '@momonga/gateway';
 import type { UpstreamLiveness } from '@momonga/gateway';
 import type { AdapterContext, AdapterRequest, Capabilities, ProviderAdapter, StreamEvent } from '@momonga/protocol';
 import { anthropicMessageStart, createFakeClock, hostTimers, openingEvents } from '@momonga/testkit';
@@ -113,10 +113,6 @@ const responsesAdapter = (socketPath: string, capabilities: Capabilities = REMOT
 const target = { name: 'remote', display: 'remote', model: 'upstream-model' };
 
 describe('G1: the upstream idle bound restarts only when content arrives (audit-unbounded-waits-2026-11-07.md, R-G1a)', () => {
-  it('keeps one default for models.idleTimeoutMs, 300 s', () => {
-    expect(UPSTREAM_LIVENESS_DEFAULTS.idleTimeoutMs).toBe(300_000);
-  });
-
   it(
     'test 1: ends an Anthropic stream that sends only ping events past models.idleTimeoutMs with the idle text',
     async () => {

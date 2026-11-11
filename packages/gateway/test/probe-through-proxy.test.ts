@@ -38,7 +38,7 @@ const throughProxy = (port: number): OutboundNetwork => ({
 describe('a probe of a TCP endpoint behind a proxy that never answers CONNECT', { timeout: 30_000 }, () => {
   it('ends at the probe step bound', async () => {
     const proxy = await silentProxy();
-    const client = createProbeClient({ kind: 'tcp', baseUrl: 'https://model.example.test/v1', network: throughProxy(proxy.port) }, undefined, 300);
+    const client = createProbeClient({ kind: 'tcp', baseUrl: 'https://model.example.test/v1', network: throughProxy(proxy.port) }, undefined, 300, hostTimers);
     closers.push(() => client.close());
 
     await expect(client.get('models')).rejects.toThrow(/300 ms/);

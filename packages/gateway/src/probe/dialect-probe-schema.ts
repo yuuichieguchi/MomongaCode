@@ -7,7 +7,7 @@ import type { ResolvedDialect } from '../dialect/render.ts';
 import { renderToolParameters } from '../dialect/tool-render.ts';
 import { buildToolsEnvelope } from './envelope.ts';
 import type { EnvelopeShape, ProbeTool } from './envelope.ts';
-import type { JsonObject } from './json.ts';
+import type { JsonObject } from './reply.ts';
 
 export const FORECAST_TOOL: ProbeTool = {
   name: 'probe_forecast',

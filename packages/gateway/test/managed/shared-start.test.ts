@@ -7,7 +7,7 @@ import type { ManagedServer } from '@momonga/gateway';
 import type { KnownProbeKey } from '@momonga/config';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { memoizedVerification } from '../../src/probe/endpoint-target.ts';
-import { NO_AUTO_PROBE, fmRecordKey, fmTargetBase, primed, recordKeyOptions } from '../fm-record-support.ts';
+import { NO_AUTO_PROBE, fmRecordKey, fmModelBase, primed, recordKeyOptions } from '../fm-record-support.ts';
 import { makeDir } from '../gateway-helpers.ts';
 import { FakeChild, SERVER_KINDS, createManagedServer, createManualTimers, makeShortDir } from './managed-support.ts';
 import type { ManagedServerHandle } from './managed-support.ts';
@@ -119,7 +119,7 @@ describe('the model listing of a managed target shared by several askers runs un
     const probeRecordDir = makeDir();
     const target = await primed(
       createManagedTarget({
-        ...fmTargetBase(),
+        ...fmModelBase(),
         server: fmServe,
         binary: '/usr/bin/fm',
         exec: async () => ({ exitCode: 0, stdout: '', stderr: '' }),

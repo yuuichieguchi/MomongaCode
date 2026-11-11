@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CONTROL_PLANE_LAUNCH, hostProcessGroupPort } from '@momonga/foundation';
+import { CONTROL_PLANE_LAUNCH, hostProcessGroupPort, launchGroupLeader } from '@momonga/foundation';
 import type { ProcessGroupPort } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { nodeWorkspaceProbeOf } from '../src/node-ports.ts';
@@ -31,7 +31,16 @@ describe('the work process the CLI starts for an oracle command is a group leade
       },
     };
     const pidFile = path.join(workspace, 'leader.pid');
-    const probe = nodeWorkspaceProbeOf({ commandOf: async (command) => ({ file: '/bin/sh', args: ['-c', command], protection: CONTROL_PLANE_LAUNCH }) }, recording)({ PATH: '/usr/bin:/bin' });
+    const probe = nodeWorkspaceProbeOf(
+      {
+        start: async (command, cwd, env) => {
+          const { pgid, onExit } = launchGroupLeader({ file: '/bin/sh', args: ['-c', command], cwd, env, stdio: ['ignore', 'ignore', 'ignore'], protection: CONTROL_PLANE_LAUNCH });
+          if (pgid === undefined) throw new Error('the command started with no process group');
+          return { pgid, exited: new Promise((resolve, reject) => onExit(({ code }) => resolve({ code }), reject)) };
+        },
+      },
+      recording,
+    )({ PATH: '/usr/bin:/bin' });
     expect(await probe.run(`echo $$ > ${pidFile}; sleep 30`, 500, workspace)).toEqual({ exitCode: null, timedOut: true });
     const leader = Number(fs.readFileSync(pidFile, 'utf8').trim());
     expect(signalled).toEqual([{ pgid: leader, signal: 'SIGKILL' }]);

@@ -44,7 +44,7 @@ describe('gateway.closeGraceMs and gateway.managedServerStopGraceMs', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { gateway: { [key]: value } });
     await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow(
-      `${userSettingsPath(tree)}: gateway.${key} must be an integer from 0 to ${max} milliseconds; got ${JSON.stringify(value)}`,
+      `${userSettingsPath(tree)}: invalid settings at /gateway/${key}: must be an integer from 0 to ${max} milliseconds; got ${JSON.stringify(value)}`,
     );
   });
 

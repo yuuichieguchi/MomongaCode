@@ -4,6 +4,7 @@ import { FM_CONTEXT_OVERFLOW_ERROR, countFakeRequestTokens, startFakeChatComplet
 import { TARGET, collect, lastCompletionBody, makeAdapter, startFake, userText } from './cc-support.ts';
 import { FM_SERVER } from '@momonga/protocol';
 import { FM_PROBE_ROUTES } from './fm-record-support.ts';
+import { hostProbePorts } from './probe-ports-support.ts';
 
 const FM_WINDOW = 4096;
 
@@ -39,7 +40,7 @@ describe('the fm probe bounds what the model generates by the window it measures
   it('finishes when an unbounded constrained sample would generate until fm reports the transcript over its context size', async () => {
     const fake = await startFakeFm();
 
-    const report = await runProbe({ socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, samples: 2, vocabulary: vocabularyOf(FM_SERVER) });
+    const report = await runProbe({ ports: hostProbePorts, socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, samples: 2, vocabulary: vocabularyOf(FM_SERVER) });
 
     expect(report.constrained.accepted).toBe(true);
     expect(fake.routeHits).toEqual([0]);
@@ -48,7 +49,7 @@ describe('the fm probe bounds what the model generates by the window it measures
   it('sends every request whose prompt fits the window with an output bound fm honours, and prompt plus bound within the window it reports', async () => {
     const fake = await startFakeFm();
 
-    const report = await runProbe({ socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, samples: 2, vocabulary: vocabularyOf(FM_SERVER) }).catch(() => undefined);
+    const report = await runProbe({ ports: hostProbePorts, socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, samples: 2, vocabulary: vocabularyOf(FM_SERVER) }).catch(() => undefined);
 
     const window = report?.contextWindow.value ?? FM_WINDOW;
     const fitting = fake.requests

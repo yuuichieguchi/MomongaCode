@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { nodeFileSystem } from '@momonga/foundation';
 import { createManagedConnection, createMcpPool, createMcpToolSource } from '@momonga/mcp';
 import type { McpConnectionOptions, McpPoolOptions, McpServerConnection } from '@momonga/mcp';
-import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_TOOL_NAMES, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, testProcessInspector } from '@momonga/testkit';
+import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_TOOL_NAMES, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, testProcessInspector, TEST_STDIO_LAUNCH } from '@momonga/testkit';
 import { BASE_ENV, groupExists, makeDir, onCleanup } from './raw-transport.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -25,7 +25,7 @@ vi.mock('../src/stdio-transport.ts', async (importOriginal) => {
 const modernServer = { command: process.execPath, args: [MCP_MODERN_SERVER_PATH] };
 
 const connectionFor = (extra: Partial<McpConnectionOptions> = {}): McpServerConnection => {
-  const connection = createManagedConnection({
+  const connection = createManagedConnection({ launch: TEST_STDIO_LAUNCH,
     files: nodeFileSystem,
     clientVersion: '0.0.0-test',
     name: 'modern',
@@ -91,7 +91,7 @@ describe('MCP listTools signal', () => {
     fs.mkdirSync(markerDir, { mode: 0o700 });
     const onWarning = (): void => undefined;
     transportCalls.length = 0;
-    const pool = createMcpPool({
+    const pool = createMcpPool({ launch: TEST_STDIO_LAUNCH,
       files: nodeFileSystem,
       clientVersion: '0.0.0-test',
       servers: [{ name: 'modern', scope: 'user', config: modernServer }],

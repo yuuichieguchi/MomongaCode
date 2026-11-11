@@ -78,7 +78,7 @@ export const createSocketPathProbe = (bind: SocketBind): ((socketPath: string) =
           evidence: `the kernel refused to bind a Unix socket path of ${byteLength} bytes in ${directory} (${refusal.code}); the path must be shorter than ${byteLength} bytes. Use a shorter path.`,
         };
       }
-      return { kind: 'unmeasured', evidence: `a Unix socket path of ${byteLength} bytes in ${directory} could not be tested: ${refusal.reason}` };
+      return { kind: 'unmeasured', evidence: `a socket path of ${byteLength} bytes could not be tested in ${directory}: ${refusal.reason}` };
     },
   );
 
@@ -108,17 +108,11 @@ export const socketBindRefusalOf = (socketPath: string): Promise<SocketBindRefus
 
 export class SocketPathUnsupportedError extends Error {}
 
-const measureUnixSocketPath = async (socketPath: string): Promise<CapabilityResult<number>> => {
-  const result = await socketPathProbe(socketPath);
-  if (result.kind === 'unsupported') throw new SocketPathUnsupportedError(`Unix socket path ${socketPath}: ${result.evidence}`);
-  return result;
-};
-
-export const refuseUnbindableUnixSocketPath = async (socketPath: string): Promise<void> => {
-  await measureUnixSocketPath(socketPath);
-};
+export class SocketPathUnmeasuredError extends Error {}
 
 export const assertUnixSocketPathFits = async (socketPath: string): Promise<void> => {
-  const result = await measureUnixSocketPath(socketPath);
-  if (result.kind === 'unmeasured') throw new Error(`Unix socket path ${socketPath}: ${result.evidence}`);
+  const result = await socketPathProbe(socketPath);
+  if (result.kind === 'supported') return;
+  const message = `Unix socket path ${socketPath}: ${result.evidence}`;
+  throw result.kind === 'unsupported' ? new SocketPathUnsupportedError(message) : new SocketPathUnmeasuredError(message);
 };

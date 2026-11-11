@@ -14,11 +14,17 @@ describe('session MCP servers', () => {
     expect(session).not.toHaveProperty('mcpServers');
   });
 
+  it('keys each server label by the one server key rule', async () => {
+    const env = await startService();
+    const session = await env.createSession({ mcpServers: { 'Sequential Thinking': STDIO, docs: HTTP } });
+    expect(env.store.getSession(session.id)?.mcpServers).toEqual({ 'sequential-thinking': STDIO, docs: HTTP });
+  });
+
   it('rejects servers that do not validate with 400 and creates no session', async () => {
     const env = await startService();
 
     expectError(await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: {}, mcpServers: { editor: { nonsense: true } } } }), 400, 'invalid_request');
-    expectError(await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: {}, mcpServers: { 'bad__name': STDIO } } }), 400, 'invalid_request');
+    expectError(await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: {}, mcpServers: { '@/.': STDIO } } }), 400, 'invalid_request');
     expectError(await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: {}, mcpServers: { editor: { type: 'sse', url: 'https://example.com/sse' } } } }), 400, 'invalid_request');
     expect(env.store.listSessions({ limit: 100, cursor: null }).sessions).toEqual([]);
   });

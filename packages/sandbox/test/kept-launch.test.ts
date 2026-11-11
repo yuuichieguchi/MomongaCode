@@ -140,7 +140,7 @@ describe('T-JO-7 at the product level on a fake keeper', () => {
       (error: unknown) => error,
     );
     expect(failure).toBeInstanceOf(GroupContainmentError);
-    expect((failure as Error).message).toContain('containment-unavailable');
+    expect(failure).toMatchObject({ reason: 'containment-unavailable' });
     expect(world.afterExit).toBe(1);
     expect(world.fake.keepers).toHaveLength(1);
   });

@@ -1,3 +1,4 @@
+import { lookup as systemLookup } from 'node:dns';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import type { SpanExporter } from '@opentelemetry/sdk-trace';
 import { RUNTIME_TEARDOWN_BUDGET_MS, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
@@ -24,7 +25,7 @@ export const otlpTracesUrl = (endpoint: string): string => {
 
 export const createOtlpTraceExporter = (settings: OtlpExporterSettings, options: OtlpExporterOptions): SpanExporter => {
   const url = otlpTracesUrl(settings.endpoint);
-  const { agent, labelled } = createOtlpAgent(new URL(url), options.network, options.timeoutMs);
+  const { agent, labelled } = createOtlpAgent(new URL(url), options.network, options.timeoutMs, systemLookup);
   const exporter = new OTLPTraceExporter({
     url,
     timeoutMillis: options.timeoutMs,

@@ -1,7 +1,8 @@
 import { settledOrAborted } from '@momonga/foundation';
 import type { Awaitable, ConfigPrograms, EntryRead, GitlinkRead, LocatedParts, PathResolution, StepRead, Unresolved } from '@momonga/foundation';
 
-export type ProgramResolution = { program: string } | { none: true };
+export type { ProgramResolution } from '@momonga/foundation';
+import type { ProgramResolution, WritableCheck } from '@momonga/foundation';
 
 export type GlobExpansion = { matches: string[] } | { overflow: true } | Unresolved;
 
@@ -11,7 +12,7 @@ export type GlobDeadline = { remainingMs: () => number };
 
 export type GlobExpander = (pattern: string, cwd: string, limit: number, deadline: GlobDeadline, signal: AbortSignal) => Promise<GlobExpansion>;
 
-export type WritableCheck = (absolute: string) => Awaitable<boolean>;
+export type { WritableCheck } from '@momonga/foundation';
 
 type Ports<Asker extends unknown[]> = {
   platform: NodeJS.Platform;

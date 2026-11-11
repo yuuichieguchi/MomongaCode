@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { McpAuthorizingPool, McpPool, McpPoolOptions } from '@momonga/mcp';
 import type { Run } from '@momonga/store';
 import { createMcpAdmin, createMcpPoolCache } from '@momonga/runtime';
-import { createFakeClock, createFakeTimers, unconfiguredDerivedNetworkOf } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, unconfiguredDerivedNetworkOf, TEST_STDIO_LAUNCH } from '@momonga/testkit';
 import { POOL_IDLE_CLOSE_MS, START_MS, createSession, flushMicrotasks, makeCache, makeLogger, makeReporter, makeTempHome, openStore, writeUserSettings } from './helpers.ts';
 
 type GracePool = McpAuthorizingPool & { closeGraces: Array<number | undefined> };
@@ -85,7 +85,7 @@ const adminSetup = async () => {
   const pools: GracePool[] = [];
   const created: McpPoolOptions[] = [];
   const reader = { graceMs: 900, reads: 0 };
-  const admin = createMcpAdmin({
+  const admin = createMcpAdmin({ launch: TEST_STDIO_LAUNCH,
     clientVersion: '0.0.0-test',
     home: temp.home,
     readConnectTimeoutMs: () => undefined,

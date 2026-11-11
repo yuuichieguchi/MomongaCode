@@ -1,7 +1,6 @@
 import { Box, Text, useCursor } from 'ink';
 import { characterEndAfter } from '../editor.ts';
 import type { EditorState } from '../editor.ts';
-import { currentA11y } from './a11y.ts';
 import { INPUT_BOX_FRAME_ROWS } from './constants.ts';
 import { borderOf } from './theme.ts';
 import { displayWidth, inertText, segmentsOf } from './wrap.ts';
@@ -80,32 +79,35 @@ export const inputOffsetAt = (editor: EditorState, columns: number, visible: num
   return row.end;
 };
 
-type PanelLine = { line: string; start: number };
+const HIDDEN_MARK = '•';
 
-const panelLinesOf = (text: string): PanelLine[] => {
-  let offset = 0;
-  return text.split('\n').map((line) => {
-    const start = offset;
-    offset += line.length + 1;
-    return { line, start };
-  });
+const caretPlace = (text: string, cursor: number, hidden: boolean): { text: string; cursor: number } => {
+  if (!hidden) return { text, cursor };
+  const marks = (part: string): string => HIDDEN_MARK.repeat(segmentsOf(part).length);
+  return { text: marks(text), cursor: marks(text.slice(0, cursor)).length };
 };
 
-export function PanelInputBox({ editor }: { editor: EditorState }) {
-  const atCaret = editor.text.slice(editor.cursor, characterEndAfter(editor.text, editor.cursor));
-  const blank = atCaret === '' || atCaret === '\n';
+export type EditorViewProps = { editor: EditorState; columns: number; rows: number | undefined; hidden: boolean; framed: boolean };
+
+export function EditorView({ editor, columns, rows, hidden, framed }: EditorViewProps) {
+  const shown = caretPlace(editor.text, editor.cursor, hidden);
+  const layout = layoutInput(shown.text, shown.cursor, columns);
+  const visible = rows ?? layout.rows.length;
+  const first = windowTopOf(layout, visible);
   return (
-    <Box flexDirection="column" {...(currentA11y().screenReader ? {} : { borderStyle: 'round' as const, ...borderOf('border'), paddingX: 1 })}>
-      {panelLinesOf(editor.text).map(({ line, start }, index) => {
+    <Box flexDirection="column" {...(framed ? { borderStyle: 'round' as const, ...borderOf('border'), paddingX: 1 } : {})}>
+      {layout.rows.slice(first, first + visible).map((row, offset) => {
+        const index = first + offset;
         const prefix = index === 0 ? FIRST_PREFIX : REST_PREFIX;
-        const caret = editor.cursor - start;
-        if (caret < 0 || caret > line.length) return <Text key={index}>{`${prefix}${inertText(line)}`}</Text>;
+        if (index !== layout.caretRow) return <Text key={index}>{`${prefix}${row.drawn}`}</Text>;
+        const caret = shown.cursor - row.start;
+        const atCaret = row.text.slice(caret, characterEndAfter(row.text, caret));
         return (
           <Text key={index}>
             {prefix}
-            {inertText(line.slice(0, caret))}
-            <Text inverse>{blank ? ' ' : inertText(atCaret)}</Text>
-            {inertText(line.slice(caret + (blank ? 0 : atCaret.length)))}
+            {inertText(row.text.slice(0, caret))}
+            <Text inverse>{atCaret === '' ? ' ' : inertText(atCaret)}</Text>
+            {inertText(row.text.slice(caret + atCaret.length))}
           </Text>
         );
       })}

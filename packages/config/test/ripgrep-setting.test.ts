@@ -36,7 +36,7 @@ describe('tools.ripgrep', () => {
   });
 
   it.each([['a relative path', 'bin/rg'], ['an empty string', ''], ['a number', 7], ['a boolean', true]])('rejects %s', async (_label, value) => {
-    await userRejected({ tools: { ripgrep: value } }, /tools\.ripgrep/);
+    await userRejected({ tools: { ripgrep: value } }, /invalid settings at \/tools\/ripgrep: must be/);
   });
 
   it.each([

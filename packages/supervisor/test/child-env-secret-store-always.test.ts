@@ -1,3 +1,4 @@
+import { secretStoreEnvFor } from '@momonga/foundation';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -5,6 +6,8 @@ import { SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV } from '@momonga/foundation';
 import { withTempDir } from '@momonga/testkit';
 import { gatewayEnv } from '../src/child-env.ts';
 import type { CredentialSettings } from '../src/child-env.ts';
+
+const HOST = { platform: process.platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) };
 
 const binWith = (dir: string, program: string): string => {
   const real = fs.realpathSync.native(dir);
@@ -24,7 +27,7 @@ describe('the gateway spawn environment does not depend on the settings: the sec
   for (const { label, settings } of SETTINGS_WITHOUT_SECRETS) {
     it(`hands the secret-store location when the settings declare no apiKeySecret (${label})`, (context) => {
       const bin = binWith(withTempDir(context), 'security');
-      const env = gatewayEnv({ PATH: bin, HOME: '/home/u' }, settings, '/home/u');
+      const env = gatewayEnv({ PATH: bin, HOME: '/home/u' }, settings, '/home/u', secretStoreEnvFor({ PATH: bin, HOME: '/home/u' }, HOST));
       expect(env[SECRET_BACKEND_ENV]).toBe('keychain');
       expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, 'security'));
     });

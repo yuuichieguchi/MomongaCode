@@ -18,6 +18,7 @@
     {"name":"DAEMON_POLL_INTERVAL_MS","file":"packages/cli/src/constants.ts","kind":"C","owner":"cli","row":"cli.md"},
     {"name":"RECONNECT_MAX_INTERVAL_MS","file":"packages/cli/src/constants.ts","kind":"C","owner":"cli","row":"cli.md"},
     {"name":"HIGHLIGHT_MAX_BYTES","file":"packages/cli/src/tui/screen/markdown.ts","kind":"stated","owner":"cli","row":"cli.md"},
+    {"name":"FOCUS_REPORT_WAIT_MS","file":"packages/cli/src/tui/screen/notify.ts","kind":"P","owner":"cli","row":"cli.md"},
     {"name":"BACKGROUND_CHECK_INTERVAL_MS","file":"packages/cli/src/update/state.ts","kind":"C","owner":"cli","row":"cli.md"},
     {"name":"DEFAULT_BASH_BACKGROUND_TIMEOUT_MS","file":"packages/config/src/context-settings.ts","kind":"P","owner":"tools","row":"recovery.md"},
     {"name":"DEFAULT_BASH_MAX_BACKGROUND_TIMEOUT_MS","file":"packages/config/src/context-settings.ts","kind":"P","owner":"tools","row":"recovery.md"},
@@ -46,6 +47,7 @@
     {"name":"MAX_SSE_EVENT_BYTES","file":"packages/gateway/src/adapters/shared/limits.ts","kind":"stated","owner":"gateway","row":"gateway-config.md"},
     {"name":"MAX_UNARY_BODY_BYTES","file":"packages/gateway/src/adapters/shared/limits.ts","kind":"stated","owner":"gateway","row":"gateway-config.md"},
     {"name":"HEADER_BYTES","file":"packages/gateway/src/core/image-size.ts","kind":"stated","owner":"gateway","row":"gateway-config.md"},
+    {"name":"PROBE_REPLY_MAX_BYTES","file":"packages/gateway/src/probe/client.ts","kind":"stated","owner":"gateway","row":"gateway-config.md"},
     {"name":"FILE_NAME_HASH_CHARS","file":"packages/gateway/src/probe/endpoint-record.ts","kind":"stated","owner":"gateway","row":"gateway-config.md"},
     {"name":"MAX_ERROR_CHARS","file":"packages/mcp/src/authorize.ts","kind":"stated","owner":"mcp","row":"mcp-skills-agents-eval.md"},
     {"name":"BACKOFF_BASE_MS","file":"packages/mcp/src/connection.ts","kind":"C","owner":"mcp","row":"mcp-skills-agents-eval.md"},
@@ -62,6 +64,7 @@
     {"name":"MAX_COMPACTION_GUIDELINE_CHARS","file":"packages/protocol/src/budget-constants.ts","kind":"stated","owner":"protocol","row":"context.md"},
     {"name":"RUN_ID_CHARS","file":"packages/protocol/src/budget-constants.ts","kind":"stated","owner":"protocol","row":"context.md"},
     {"name":"WORKING_FACT_TEXT_CHARS","file":"packages/protocol/src/budget-constants.ts","kind":"stated","owner":"protocol","row":"context.md"},
+    {"name":"DEFAULT_PROBE_STEP_SECONDS","file":"packages/protocol/src/probe.ts","kind":"P","owner":"gateway","row":"gateway-config.md"},
     {"name":"MAX_TOOL_NAME_CHARS","file":"packages/protocol/src/reference-kinds.ts","kind":"stated","owner":"protocol","row":"context.md"},
     {"name":"MIN_NON_ASCII_TERM_CHARS","file":"packages/protocol/src/search-terms.ts","kind":"stated","owner":"protocol","row":"context.md"},
     {"name":"FIDELITY_SCAN_PAGE_BYTES","file":"packages/runtime/src/memory/journal-thread-limits.ts","kind":"stated","owner":"runtime","row":"context.md"},
@@ -73,6 +76,7 @@
     {"name":"RULE_VERIFY_LOAD_ALLOWANCE_MS","file":"packages/runtime/src/process/rule-verifier.ts","kind":"P","owner":"policy-verify-sandbox","row":"verify.md"},
     {"name":"DEFAULT_IDLE_POLL_MS","file":"packages/runtime/src/worker/worker.ts","kind":"C","owner":"runtime","row":"runtime-store.md"},
     {"name":"CREDENTIAL_RANDOM_BYTES","file":"packages/sandbox/src/egress-proxy.ts","kind":"stated","owner":"policy-verify-sandbox","row":"verify.md"},
+    {"name":"TUNNEL_OPENING_MAX_BYTES","file":"packages/sandbox/src/egress-proxy.ts","kind":"stated","owner":"policy-verify-sandbox","row":"verify.md"},
     {"name":"READ_PAGE_BYTES","file":"packages/store/src/blobs.ts","kind":"stated","owner":"store","row":"runtime-store.md"},
     {"name":"HISTORY_INDEX_BATCH_CHARS","file":"packages/store/src/search-constants.ts","kind":"stated","owner":"store","row":"context.md"},
     {"name":"HISTORY_READ_PAGE_CHARS","file":"packages/store/src/search-constants.ts","kind":"stated","owner":"store","row":"context.md"},
@@ -92,8 +96,6 @@
   ],
   "signalTimeouts": {
     "packages/foundation/src/process-contract.ts": ["STARTUP_TIMEOUT_MS"],
-    "packages/gateway/src/managed/target.ts": ["options.requestLimitMs"],
-    "packages/gateway/src/probe/auto-probe.ts": ["precondition.boundMs"],
     "packages/runtime/src/memory/deadline-signal.ts": ["Math.min(Math.max(deadlineAt - now, 0), TIMER_CEILING_MS)"]
   },
   "burnDown": {
@@ -132,6 +134,7 @@
       {"name":"PASTE_ABANDON_BYTES","file":"packages/cli/src/tui/terminal/constants.ts","lacks":["row"]},
       {"name":"PASTE_MAX_BYTES","file":"packages/cli/src/tui/terminal/constants.ts","lacks":["row"]},
       {"name":"CANDIDATE_CHECK_TIMEOUT_MS","file":"packages/cli/src/update/install.ts","lacks":["kind"]},
+      {"name":"STAGED_NAME_BYTES","file":"packages/cli/src/update/node-ports.ts","lacks":["row"]},
       {"name":"KEY_HEX_CHARS","file":"packages/config/src/file-lock.ts","lacks":["row"]},
       {"name":"MINUTE_MS","file":"packages/config/src/models-writers.ts","lacks":["kind","row"]},
       {"name":"SECOND_MS","file":"packages/config/src/models-writers.ts","lacks":["kind","row"]},
@@ -215,7 +218,6 @@
       {"name":"PLAN_REVOCATION_TIMEOUT_MS","file":"packages/gateway/src/defaults.ts","lacks":["kind","row"]},
       {"name":"PLAN_SKEW_MS","file":"packages/gateway/src/defaults.ts","lacks":["kind","row"]},
       {"name":"SEVEN_DAYS_MS","file":"packages/gateway/src/defaults.ts","lacks":["kind","row"]},
-      {"name":"SIXTY_MINUTES_MS","file":"packages/gateway/src/defaults.ts","lacks":["kind","row"]},
       {"name":"THIRTY_MINUTES_MS","file":"packages/gateway/src/defaults.ts","lacks":["kind","row"]},
       {"name":"DETECTION_BODY_MAX_BYTES","file":"packages/gateway/src/detect-local-servers.ts","lacks":["row"]},
       {"name":"HEALTH_POLL_INTERVAL_MS","file":"packages/gateway/src/managed/server.ts","lacks":["row"]},
@@ -228,7 +230,6 @@
       {"name":"PROBE_RETRY_AFTER_MS","file":"packages/gateway/src/probe/auto-probe.ts","lacks":["kind","row"]},
       {"name":"PROBE_RETRY_AFTER_SECONDS","file":"packages/gateway/src/probe/auto-probe.ts","lacks":["kind","row"]},
       {"name":"IDENTITY_READ_TIMEOUT_MS","file":"packages/gateway/src/probe/endpoint-target.ts","lacks":["kind"]},
-      {"name":"CACHE_PROBE_TIMEOUT_MS","file":"packages/gateway/src/probe/ollama.ts","lacks":["kind","row"]},
       {"name":"DEFAULT_STEP_TIMEOUT_MS","file":"packages/gateway/src/probe/run-probe.ts","lacks":["kind"]},
       {"name":"HOST_TIMER_LIMIT_MS","file":"packages/gateway/src/process-ports.ts","lacks":["kind","row"]},
       {"name":"DAY_MS","file":"packages/gateway/src/process.ts","lacks":["kind"]},
@@ -352,7 +353,7 @@
       {"name":"FIRST_BUDGET_CHARS","file":"packages/tools/src/paging.ts","lacks":["row"]}
     ],
     "literalBounds": {
-      "packages/gateway/src/defaults.ts": 9,
+      "packages/gateway/src/defaults.ts": 7,
       "packages/protocol/src/managed-servers.ts": 2,
       "packages/runtime/src/process/defaults.ts": 2,
       "packages/tools/src/builtins/edit.ts": 1,

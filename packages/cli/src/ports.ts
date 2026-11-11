@@ -31,7 +31,7 @@ export type AcpInput = { take(): Uint8Array | undefined; arrival(): Promise<'byt
 
 export type AcpStdio = { input: AcpInput; output: WritableStream<Uint8Array> };
 
-export type Terminal = { stdin: NodeJS.ReadStream; stdout: NodeJS.WriteStream };
+export type Terminal = { stdin: NodeJS.ReadStream; stdout: NodeJS.WriteStream; colourOff(): void };
 
 export type CliTimers = Pick<Timing, 'setTimeout' | 'clearTimeout'>;
 
@@ -72,6 +72,7 @@ export type CliPorts = {
   probe(env: Readonly<Record<string, string>>): WorkspaceProbe;
   openUrl: OpenUrl;
   secretStore(): SecretStore;
+  personCapability(): Promise<string>;
   acpStdio?: () => AcpStdio;
   handover?: HandoverHost;
 };

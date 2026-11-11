@@ -73,7 +73,7 @@ describe('loadMcpServers with session servers', () => {
 
     await expect(
       loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, referenceEnv: {}, sessionServers: { editor: { nonsense: true } } }),
-    ).rejects.toThrow(/invalid MCP server "editor"/);
+    ).rejects.toThrow('invalid settings at /mcpServers/editor');
   });
 });
 

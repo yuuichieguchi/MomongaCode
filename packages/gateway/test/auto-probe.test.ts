@@ -14,6 +14,7 @@ import { START_MS, getJson, makeDir, postJson, readJson, registerCleanup, userIn
 import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, until, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import { readFileTool } from './cc-support.ts';
 import { fmRecordKey } from './fm-record-support.ts';
+import { systemTiming } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -199,6 +200,7 @@ describe('the automatic probe of an fm target with no probe record', () => {
       const instance = managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', provider: 'fm' });
 
       const outcome = await probeManagedFm({
+        timers: systemTiming,
         inspector: testProcessInspector(),
         lock: testKernelLock(),
         platform: process.platform,

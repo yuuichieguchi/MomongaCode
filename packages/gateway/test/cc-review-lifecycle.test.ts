@@ -12,7 +12,7 @@ import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, makeDir, registerCleanup
 import { CC_CAPABILITIES, TARGET } from './cc-support.ts';
 import { saveProbeRecord } from '@momonga/gateway';
 import { makeReport } from './report-fixture.ts';
-import { FM_CURRENCY, fmRecordKey, fmTargetBase, recordKeyOptions } from './fm-record-support.ts';
+import { FM_CURRENCY, fmRecordKey, fmModelBase, recordKeyOptions } from './fm-record-support.ts';
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 import type { KnownProbeKey } from '@momonga/config';
 import { FM_SERVER } from '@momonga/protocol';
@@ -94,7 +94,7 @@ const managedFm = async () => {
     for (const child of children) await child.exit();
   });
   const managed = await createManagedTarget({
-    ...fmTargetBase(),
+    ...fmModelBase(),
     server: fmServe,
     binary: '/usr/bin/fm',
     exec: async () => ({ exitCode: 0, stdout: '5\n', stderr: '' }),
@@ -112,7 +112,7 @@ describe('managed endpoint', () => {
     const ensureRunning = vi.fn(async () => ({ kind: 'unix' as const, path: '/s.sock' }));
     const fmServe: ManagedServer = { restarts: 0, start: ensureRunning, ensureRunning, stop: async () => undefined, health: async () => ({ ok: true }) };
     const managed = await createManagedTarget({
-      ...fmTargetBase(),
+      ...fmModelBase(),
       server: fmServe,
       binary: '/usr/bin/fm',
       exec: okExec,
@@ -201,7 +201,7 @@ describe('count-tokens', () => {
     const dir = makeDir();
     await saveProbeRecord(dir, KEY, { ...makeReport(1, 1), tokenCalibration: { ratio, errorBound: 0.1 } }, FM_CURRENCY, testKernelLock());
     return createManagedTarget({
-      ...fmTargetBase(),
+      ...fmModelBase(),
       server: { restarts: 0, start: async () => ({ kind: 'unix', path: '/s' }), ensureRunning: async () => ({ kind: 'unix', path: '/s' }), stop: async () => undefined, health: async () => ({ ok: true }) },
       binary: '/usr/bin/fm',
       exec: async (_file: string, _args: readonly string[], _stdin: string, signal: AbortSignal) => {

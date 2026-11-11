@@ -23,6 +23,7 @@ import type { ConnectionTransport } from './remote-transport.ts';
 import { mcpToolIdentity } from './tool-identity.ts';
 import { createSafeSchemaValidator } from './schema-validator.ts';
 import { createStdioTransport } from './stdio-transport.ts';
+import type { StdioLaunch } from './stdio-transport.ts';
 import { createStoreScope, runInStoreScope, storeCallSignal, storeCallsSettled, storeUnderCallSignals } from './store-scope.ts';
 import type { StoreScope } from './store-scope.ts';
 import { closeGraceOf } from './stdio-transport.ts';
@@ -111,6 +112,7 @@ export type McpConnectionOptions = {
   projectDir: string;
   baseEnv: Record<string, string>;
   files: FileSystem;
+  launch: StdioLaunch;
   clock: Clock;
   clientVersion: string;
   timers?: McpTimers;
@@ -743,6 +745,7 @@ class ManagedConnection implements McpServerConnection {
         projectDir,
         baseEnv,
         files: this.options.files,
+        launch: this.options.launch,
         ...(markers === undefined ? {} : { markers }),
         ...(closeGraceMs === undefined ? {} : { closeGraceMs }),
         timing: { now: () => this.options.clock.now(), monotonicMs: () => this.options.clock.now(), setTimeout: (callback, ms) => this.timers.setTimeout(callback, ms), clearTimeout: (handle) => this.timers.clearTimeout(handle) },

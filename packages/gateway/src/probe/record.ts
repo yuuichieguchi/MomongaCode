@@ -5,8 +5,8 @@ import { canonicalJson, modeIsPrivate, nodeFileSystem, systemRandom, writeFileAt
 import { dialectsDigest } from '../dialect/candidates.ts';
 import type { DialectCurrency } from '../dialect/candidates.ts';
 import { decideToolCalling } from './decide.ts';
-import { isRecord } from './json.ts';
-import { preconditionOf } from './remedy.ts';
+import { isRecord } from './reply.ts';
+import { preconditionOf, unusableRecordError } from './remedy.ts';
 import { isProbeReport } from './report-schema.ts';
 import type { KernelLockMechanism } from '@momonga/foundation';
 
@@ -52,9 +52,6 @@ export const saveProbeRecord = async (dir: string, key: ManagedRecordKey, report
   await writePrivateRecord(dir, managedRecordPath(dir, key), JSON.stringify({ key: key.canonical, descriptionDigest: currency.descriptionDigest, ...currentStamp(report, currency), report }), lock);
 };
 
-const corruptRecord = (file: string, target: string, problem: string, cause: unknown): Error =>
-  new Error(`Probe record ${file} is unusable (${problem}). Delete it or run "/gateway probe ${target}" in MomongaCode.`, { cause });
-
 export const recordOfServedModel = <Report extends Pick<ProbeReport, 'modelId'>>(report: Report, servedModel: string | undefined): Report | null =>
   servedModel === undefined ? report : recordForIdentity(report, { modelId: report.modelId }, { modelId: servedModel });
 
@@ -69,15 +66,15 @@ export const loadProbeRecord = async (dir: string, key: ManagedRecordKey, curren
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
-    throw corruptRecord(file, target, 'not valid JSON', error);
+    throw unusableRecordError(file, target, 'not valid JSON', error);
   }
-  if (!isRecord(parsed)) throw corruptRecord(file, target, 'not an object', new TypeError('record is not an object'));
-  if (typeof parsed['key'] !== 'string') throw corruptRecord(file, target, 'missing key fields', new TypeError('key is missing'));
+  if (!isRecord(parsed)) throw unusableRecordError(file, target, 'not an object', new TypeError('record is not an object'));
+  if (typeof parsed['key'] !== 'string') throw unusableRecordError(file, target, 'missing key fields', new TypeError('key is missing'));
   if (typeof parsed['descriptionDigest'] !== 'string') return null;
   const matching = recordForIdentity(parsed, { key: parsed['key'] }, { key: key.canonical });
   if (matching === null || matching['descriptionDigest'] !== currency.descriptionDigest || !isCurrentRecord(matching, currency)) return null;
   const report = parsed['report'];
-  if (!isProbeReport(report)) throw corruptRecord(file, target, 'invalid report', new TypeError('report does not match the probe report schema'));
+  if (!isProbeReport(report)) throw unusableRecordError(file, target, 'invalid report', new TypeError('report does not match the probe report schema'));
   return recordOfServedModel(report, servedModel);
 };
 

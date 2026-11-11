@@ -56,7 +56,6 @@ export type ChildExit = { code: number | null; signal: NodeJS.Signals | null };
 export type SpawnPortOptions = {
   cwd: string;
   env: Readonly<Record<string, string>>;
-  detached: true;
   markerFile?: string;
   stdio: readonly ['ignore', 'pipe', 'pipe', 'pipe', number] | readonly ['ignore', 'pipe', 'pipe', 'pipe', number, number];
 };
@@ -68,6 +67,7 @@ export type ChildHandle = {
   readonly lifeline: Duplex | null;
   onSpawnError(listener: (error: NodeJS.ErrnoException) => void): void;
   onExit(listener: (exit: ChildExit) => void): void;
+  onCommandPid(listener: (pid: number) => void): void;
   kill(signal: NodeJS.Signals): void;
   killGroup(stop?: AbortSignal): Promise<void>;
 };
@@ -95,6 +95,7 @@ export type ChildManagerOptions = {
   endpoint: RoleEndpoint;
   launcher: Launcher;
   env: Readonly<Record<string, string | undefined>>;
+  secretStoreEnv: Readonly<Record<string, string>>;
   runtime?: RuntimeTuning;
   gateway?: GatewayTuning;
   spawn: SpawnPort;
@@ -151,7 +152,8 @@ type LifeTimerName = 'startup' | 'stable' | 'budget' | 'confirm';
 
 type Life = {
   readonly handle: ChildHandle;
-  readonly pid: number | undefined;
+  readonly processPid: number | undefined;
+  commandPid: number | undefined;
   readonly marker: DaemonMarker;
   readonly startedAt: number;
   captures: Promise<void>[];
@@ -398,8 +400,8 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       baseEnv: definedEnv(options.env),
       separateEnv: (merged) =>
         role === 'gateway'
-          ? gatewayEnv(merged, snapshot.settings, options.home, (name) => skippedNames.push(name))
-          : runtimeEnv(merged, snapshot.settings).env,
+          ? gatewayEnv(merged, snapshot.settings, options.home, options.secretStoreEnv, (name) => skippedNames.push(name))
+          : runtimeEnv(merged, snapshot.settings, options.secretStoreEnv).env,
     });
     if (role === 'gateway') reportSkippedNames(skippedNames);
     const spawnCapability = role === 'gateway' ? randomBytes(CAPABILITY_BYTES).toString('hex') : undefined;
@@ -408,7 +410,6 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       const handle = options.spawn(resolved.command, resolved.args, {
         cwd: options.home,
         env: { ...resolved.env, [SETTINGS_APPLIED_ENV]: generationLayout(options.home, options.generation).settingsApplied, ...(handoff === undefined ? {} : handoff.env), ...(spawnCapability === undefined ? {} : { [CREDENTIAL_CAPABILITY_ENV]: spawnCapability }) },
-        detached: true,
         markerFile: marker.path,
         stdio: childStdio(marker.fd, handoff?.descriptor),
       });
@@ -438,15 +439,15 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     if (current !== life) return false;
     if (state === 'stopping') {
       if (parseReadyLine(line) === undefined) return false;
-      log(childReadyIgnored({ child: role, childPid: life.pid ?? null }));
+      log(childReadyIgnored({ child: role, childPid: life.commandPid ?? null }));
       return true;
     }
     if (state !== 'starting') return false;
     const fields = parseReadyLine(line);
     if (fields === undefined) return false;
-    if (fields.service === role && fields.pid === life.pid) {
+    if (fields.service === role && fields.pid === life.commandPid) {
       if (fields.version !== options.version) {
-        log(childVersionMismatch({ child: role, childPid: life.pid ?? null, childVersion: fields.version, supervisorVersion: options.version }));
+        log(childVersionMismatch({ child: role, childPid: life.commandPid ?? null, childVersion: fields.version, supervisorVersion: options.version }));
         heldForVersion = true;
         void stop('ready-mismatch', 'term');
         options.onVersionMismatch({ role, childVersion: fields.version });
@@ -455,7 +456,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       becomeReady(life, fields);
       return true;
     }
-    log(childReadyMismatch({ child: role, childPid: life.pid ?? null, readyService: fields.service, readyPid: fields.pid }));
+    log(childReadyMismatch({ child: role, childPid: life.commandPid ?? null, readyService: fields.service, readyPid: fields.pid }));
     void stop('ready-mismatch', 'term');
     return true;
   };
@@ -498,11 +499,11 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   };
 
   const onHandleError = (life: Life, error: NodeJS.ErrnoException): void => {
-    if (life.pid === undefined && !life.exited && !life.failed && current === life) {
+    if (life.processPid === undefined && !life.exited && !life.failed && current === life) {
       failLifeWithoutProcess(life, error);
       return;
     }
-    log(childError({ child: role, childPid: life.pid ?? null }, error));
+    log(childError({ child: role, childPid: life.commandPid ?? null }, error));
   };
 
   const flushStdio = async (life: Life): Promise<void> => {
@@ -581,7 +582,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     log(
       childExit({
         child: role,
-        childPid: life.pid ?? null,
+        childPid: life.commandPid ?? null,
         code: exit.code,
         signal: exit.signal,
         reason: classification.reason,
@@ -646,7 +647,8 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     marker.closeFd();
     const life: Life = {
       handle,
-      pid: handle.pid,
+      processPid: handle.pid,
+      commandPid: undefined,
       marker,
       startedAt: clock.now(),
       captures: [],
@@ -671,12 +673,15 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     setState('starting');
     handle.onSpawnError((error) => onHandleError(life, error));
     handle.onExit((exit) => onHandleExit(life, exit));
-    if (handle.pid !== undefined) startCaptures(life, handle.pid);
+    handle.onCommandPid((pid) => {
+      life.commandPid = pid;
+      startCaptures(life, pid);
+    });
     life.timers.startup = schedule('startup-timer', options.startupTimeoutMs, () => {
       life.timers.startup = undefined;
       if (current === life && state === 'starting') void stop('startup-timeout', 'term');
     });
-    log(childSpawn({ child: role, childPid: handle.pid ?? null, restarts: Math.max(0, launches - 1), reason }));
+    log(childSpawn({ child: role, childPid: life.commandPid ?? null, restarts: Math.max(0, launches - 1), reason }));
   };
 
   function spawnFresh(reason: SpawnReason): void {
@@ -708,7 +713,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     leaked = true;
     setState('stopped');
     unreaped.add(life.marker.path);
-    log(childUnkillable({ child: role, childPid: life.pid ?? null }));
+    log(childUnkillable({ child: role, childPid: life.commandPid ?? null }));
     settleStop(life, { killed: true, leaked: true });
   };
 
@@ -772,9 +777,9 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       const recorded = life.stopReason;
       if (stopReasonRank(reason) > stopReasonRank(recorded)) {
         life.stopReason = reason;
-        log(childStop({ child: role, childPid: life.pid ?? null, stop: reason, mode, superseded: recorded }));
+        log(childStop({ child: role, childPid: life.commandPid ?? null, stop: reason, mode, superseded: recorded }));
       }
-      if (mode === 'int' && life.stopMode === 'term' && life.pid !== undefined) {
+      if (mode === 'int' && life.stopMode === 'term' && life.processPid !== undefined) {
         life.stopMode = 'int';
         if (life.signalled) life.handle.kill('SIGINT');
         if (!life.groupKilled && life.budgetEndsAt !== undefined && life.stopValues !== undefined) {
@@ -791,9 +796,9 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     clearLifeTimer(life, 'startup');
     clearLifeTimer(life, 'stable');
     setState('stopping');
-    log(childStop({ child: role, childPid: life.pid ?? null, stop: reason, mode }));
+    log(childStop({ child: role, childPid: life.commandPid ?? null, stop: reason, mode }));
     generation += 1;
-    if (life.pid !== undefined) {
+    if (life.processPid !== undefined) {
       const stopValues = values ?? stopValuesReader.read();
       life.stopValues = stopValues;
       armBudget(life, budgetFor(reason, mode, stopValues));
@@ -840,7 +845,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     restarts: Math.max(0, launches - 1),
     consecutiveFailures,
     ...omitUndefined({
-      pid: current?.pid,
+      pid: current?.commandPid,
       startedAt: current === undefined ? undefined : isoOf(current.startedAt),
       readyAt: readyAt === undefined ? undefined : isoOf(readyAt),
       nextAttemptAt: nextAttemptAt === undefined ? undefined : isoOf(nextAttemptAt),

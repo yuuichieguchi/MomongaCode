@@ -70,7 +70,6 @@ const RANGES = {
   nonGlobalIpv6: NON_GLOBAL_IPV6.map(rangeOf),
   globalUnicastIpv6: rangeOf(GLOBAL_UNICAST_IPV6),
   loopback: [rangeOf(LOOPBACK_IPV4), rangeOf(LOOPBACK_IPV6)],
-  mapped: rangeOf(MAPPED_IPV4),
   ipv4InLast32Bits: IPV4_IN_LAST_32_BITS.map(rangeOf),
   ipv4AfterFirst16Bits: IPV4_AFTER_FIRST_16_BITS.map(rangeOf),
 } as const;
@@ -85,7 +84,7 @@ const embeddedIpv4 = (bits: Bits): Bits | undefined => {
   return undefined;
 };
 
-const isLoopbackBits = (bits: Bits): boolean => withinAny(within(bits, RANGES.mapped) ? lowIpv4(bits) : bits, RANGES.loopback);
+const isLoopbackBits = (bits: Bits): boolean => withinAny(bits, RANGES.loopback) || withinAny(embeddedIpv4(bits) ?? bits, RANGES.loopback);
 
 const isGlobalUnicastBits = (bits: Bits): boolean => {
   if (bits.width === 32) return !withinAny(bits, RANGES.nonGlobalIpv4);
@@ -98,6 +97,8 @@ const isGlobalUnicastBits = (bits: Bits): boolean => {
 export type AddressAllowance = { readonly loopback: boolean };
 
 export const isLoopbackAddress = (address: string): boolean => isLoopbackBits(bitsOf(address));
+
+export const isAddressInRange = (address: string, cidr: string): boolean => within(bitsOf(address), rangeOf(cidr));
 
 export const isAcceptableAddress = (address: string, allow: AddressAllowance): boolean => {
   const bits = bitsOf(address);

@@ -6,7 +6,7 @@ import type { MarkerOwners } from './marker-owners.ts';
 import { createMarkerSettle } from './marker-settle.ts';
 import type { MarkerSettle } from './marker-settle.ts';
 import type { Awaitable, Clock, FileRuleProvenance, FileSystem, KernelLockMechanism, MarkerHandle, NetworkScope, OutboundNetwork, PathProbes, PathResolver, ProcessGroupPort, ProcessInspector, Random, ReapReport, Timing, SandboxNetworkSetting, SignalSender, UninspectableRegistry, MomongaPaths } from '@momonga/foundation';
-import { absoluteFrom, askedBy, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule } from '@momonga/policy';
+import { absoluteFrom, askedBy, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule, suggestNetworkRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem, PolicyTool, CoveredProgram, SupersededForm } from '@momonga/policy';
 import { diffFieldsOf, permissionDeniedOutput } from '@momonga/protocol';
 import type { ApprovalBasis, ApprovalShown, ElicitationRequestView, PermissionDenial, PermissionMode, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
@@ -898,7 +898,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         const suggestedRule =
           unsandboxedExec || decision.source === 'protected' || decision.source === 'hook' || decision.rule?.layer === 'governance'
             ? undefined
-            : await suggestAllowRule(policyTool, subject, cwd, askedBy(options.fs, batch.signal).canonicalise);
+            : decision.network === true
+              ? suggestNetworkRule(subject)
+              : await suggestAllowRule(policyTool, subject, cwd, askedBy(options.fs, batch.signal).canonicalise);
         const locations = tool.locations?.(input, displayContextOf(batch));
         return {
           callId: call.callId,

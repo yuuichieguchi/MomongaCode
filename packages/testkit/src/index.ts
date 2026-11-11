@@ -128,6 +128,9 @@ export { FAKE_SERVER, FAKE_SERVER_ID, FAKE_SERVER_KEY_MISSING_EXIT, FAKE_SERVER_
 export type { FakeManagedServer, FakeManagedServerConfig } from './fake-managed-server.ts';
 export {
   REAL_PROCESS_TEST_TIMEOUT_MS,
+  SOLVER_ENCODING_SWEEP_TEST_TIMEOUT_MS,
+  SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS,
+  SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   TEMP_DIR_PREFIX,
   TEST_HEARTBEAT_MS,
   TEST_RUN_ENV,
@@ -151,7 +154,7 @@ export { createFakeEntryIo, parseJsonLines } from './fake-entry-io.ts';
 export type { FakeEntryIo, FakeEntryIoOptions, JsonLine } from './fake-entry-io.ts';
 export { DAEMON_BIN_EXIT_DEADLINE_MS, DAEMON_BIN_READY_DEADLINE_MS, readJsonLinesFile, startDaemonBin } from './daemon-bin.ts';
 export type { DaemonBin } from './daemon-bin.ts';
-export { APPLE_PROGRAMS, FAKE_LEASE, NEVER_CANCELLED, TEST_SEARCH_PATH, fakePolicyFilesystem, hostFilesystemOf, isWritableFor, protectedSetWith, testPaths, testProbes } from './fake-policy-filesystem.ts';
+export { APPLE_PROGRAMS, FAKE_LEASE, NEVER_CANCELLED, TEST_SEARCH_PATH, UndeclaredGlobError, fakePolicyFilesystem, hostFilesystemOf, isWritableFor, protectedSetWith, testPaths, testProbes } from './fake-policy-filesystem.ts';
 export { canonicalPathSync } from './canonical-path-sync.ts';
 export { UNBOUNDED_OUTPUT_FIT } from './fake-output-fit.ts';
 export type { FakeGlobDeadline, FakeGlobExpansion, FakePolicyFilesystem, FakePolicyFilesystemLayout, FakeProgramResolution, FakeResolveCall, HostOf, RecordingPolicyFilesystem } from './fake-policy-filesystem.ts';
@@ -292,5 +295,5 @@ export { productTestEnv } from './product-spawn.ts';
 export { SCRIPTED_MODEL, SCRIPTED_MODEL_ID, SCRIPTED_PROVIDER, modelSettings } from './model-settings.ts';
 export type { ModelSettings, ModelSettingsConnection, ModelSettingsSpec, ModelSpec } from './model-settings.ts';
 export { testSecretLocations } from './secret-locations.ts';
-export { TEST_CHILD_UNPROTECTED } from './child-protection.ts';
+export { TEST_CHILD_UNPROTECTED, TEST_STDIO_LAUNCH } from './child-protection.ts';
 export { TEST_TOOL_LIMITS } from './tool-limits.ts';

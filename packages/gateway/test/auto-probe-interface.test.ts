@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { TARGET_NOT_READY, TARGET_PROBING_MESSAGE } from '@momonga/protocol';
 import { ProbeInProgressError, acquireProbeLock, createAutoProbe } from '@momonga/gateway';
 import type { PreconditionVerdict, ProbeSubject } from '@momonga/gateway';
-import { createFakeClock, testKernelLock } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, hostTimers, testKernelLock } from '@momonga/testkit';
 import { START_MS, makeDir } from './gateway-helpers.ts';
 import { until } from './gateway-process-helpers.ts';
 
@@ -48,10 +48,11 @@ const lantern = (dir: string) => {
 const setup = () => {
   const dir = makeDir();
   const clock = createFakeClock(START_MS);
+  const timers = createFakeTimers(clock);
   const events: Array<{ kind: string; target: string }> = [];
-  const autoProbe = createAutoProbe({ lock: testKernelLock(), dir, clock, retryAfterMs: 120_000, onEvent: (event) => events.push({ kind: event.kind, target: event.target }) });
+  const autoProbe = createAutoProbe({ lock: testKernelLock(), dir, clock, timers, retryAfterMs: 120_000, onEvent: (event) => events.push({ kind: event.kind, target: event.target }) });
   const { state, subject } = lantern(dir);
-  return { dir, clock, events, autoProbe, state, subject };
+  return { dir, clock, timers, events, autoProbe, state, subject };
 };
 
 describe('the automatic probe through its one interface, with an adapter no other test uses', () => {
@@ -71,10 +72,13 @@ describe('the automatic probe through its one interface, with an adapter no othe
   });
 
   it('treats a precondition check that outlives its declared bound as no refusal, and probes', async () => {
-    const { autoProbe, state, subject } = setup();
+    const { autoProbe, state, subject, timers } = setup();
     state.verdict = 'never';
 
-    expect(await autoProbe.ensure(subject, KEY)).toMatchObject({ state: 'probing' });
+    const ensured = autoProbe.ensure(subject, KEY);
+    await until(() => timers.pending().some((timer) => timer.delayMs === 50), 'the bound of the precondition is armed on the timer port');
+    timers.advance(50);
+    expect(await ensured).toMatchObject({ state: 'probing' });
     expect(state.measures).toBe(1);
   });
 
@@ -110,13 +114,15 @@ describe('the automatic probe through its one interface, with an adapter no othe
   });
 
   it('counts its open flights: a key that is starting or in progress counts once, and none is left after close (design-update 18.1.4)', async () => {
-    const { autoProbe, state, subject } = setup();
+    const { autoProbe, state, subject, timers } = setup();
     const other = { ...subject, readKey: async () => OTHER_KEY };
     expect(autoProbe.openFlights()).toBe(0);
 
     state.verdict = 'never';
     const starting = autoProbe.ensure(subject, KEY);
     expect(autoProbe.openFlights()).toBe(0);
+    await until(() => timers.pending().some((timer) => timer.delayMs === 50), 'the bound of the precondition is armed on the timer port');
+    timers.advance(50);
     await starting;
     expect(autoProbe.openFlights()).toBe(1);
 
@@ -133,7 +139,7 @@ describe('the automatic probe through its one interface, with an adapter no othe
   it('starts no flight while its gateway is retiring', async () => {
     const dir = makeDir();
     const { state, subject } = lantern(dir);
-    const autoProbe = createAutoProbe({ lock: testKernelLock(), dir, clock: createFakeClock(START_MS), retryAfterMs: 120_000, onEvent: () => undefined, role: { current: () => 'retiring' } });
+    const autoProbe = createAutoProbe({ lock: testKernelLock(), dir, clock: createFakeClock(START_MS), timers: hostTimers, retryAfterMs: 120_000, onEvent: () => undefined, role: { current: () => 'retiring' } });
 
     expect(await autoProbe.ensure(subject, KEY)).toEqual({ state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 });
 
@@ -145,7 +151,7 @@ describe('the automatic probe through its one interface, with an adapter no othe
     const dir = makeDir();
     const first = lantern(dir);
     const second = lantern(dir);
-    const probes = [first, second].map(() => createAutoProbe({ lock: testKernelLock(), dir, clock: createFakeClock(START_MS), retryAfterMs: 120_000, onEvent: () => undefined }));
+    const probes = [first, second].map(() => createAutoProbe({ lock: testKernelLock(), dir, clock: createFakeClock(START_MS), timers: hostTimers, retryAfterMs: 120_000, onEvent: () => undefined }));
 
     await probes[0]?.ensure(first.subject, KEY);
     await probes[1]?.ensure(second.subject, KEY);

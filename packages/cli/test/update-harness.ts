@@ -7,7 +7,7 @@ import type { TestContext } from 'vitest';
 import type { DetachedSpawn, SelfExecutable } from '../src/ports.ts';
 import type { UpdateWiring } from '../src/update/background.ts';
 import { DEFAULT_UPDATE_STALL_TIMEOUT_MS } from '@momonga/config';
-import { nodeUpdateFs, transferOptionsOf, undiciUpdateHttp } from '../src/update/node-ports.ts';
+import { leasedUpdateHttp, nodeUpdateFs, transferOptionsOf } from '../src/update/node-ports.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { startFakeReleaseServer } from './fake-release-server.ts';
 import type { FakeReleaseServer } from './fake-release-server.ts';
@@ -112,7 +112,9 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
     self,
     env: { PATH: '/usr/bin' },
     clock: virtualClock(),
-    http: undiciUpdateHttp(Promise.resolve({ config: { caFiles: [] }, trust: { sources: [], failures: [] } }), transferOptionsOf(DEFAULT_UPDATE_STALL_TIMEOUT_MS)),
+    http: leasedUpdateHttp((_signal, use) => use({ config: { caFiles: [] }, trust: { sources: [], failures: [] } }), transferOptionsOf(DEFAULT_UPDATE_STALL_TIMEOUT_MS), (error) => {
+      throw error;
+    }),
     fs: nodeUpdateFs(testKernelLock()),
     run: async (file, args, options) => {
       if (file === RELEASE_SIGNATURE_TOOL) {

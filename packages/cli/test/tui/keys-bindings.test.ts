@@ -301,7 +301,7 @@ describe('a table built from a file', () => {
     expect(table.chordStep(contexts, 'ctrl+x', named('enter'))).toEqual({ kind: 'action', id: 'prompt.submit' });
     expect(table.chordStep(contexts, 'ctrl+x', text('s', { ctrl: true }))).toEqual({ kind: 'action', id: 'history.search' });
     expect(table.chordStep(contexts, 'ctrl+x', text('q'))).toEqual({ kind: 'dropped' });
-    expect(table.chordStep(['select'], undefined, text('x', { ctrl: true }))).toEqual({ kind: 'none' });
+    expect(table.chordStep(['viewer'], undefined, text('x', { ctrl: true }))).toEqual({ kind: 'none' });
     const pressed = chordPressOf(table, 'prompt.submit');
     expect(pressed.actionOf(['chat'], named('enter'))).toBe('prompt.submit');
     expect(pressed.actionOf(['select'], named('enter'))).toBeUndefined();

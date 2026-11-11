@@ -121,6 +121,10 @@ export const runFactsOf = (runId: string, reply: EvidenceReply): BoundFacts => (
   check: reply.check === null ? null : { kind: 'check', runId, ...reply.check },
 });
 
+export const memoryPathsOf = (platform: NodeJS.Platform): path.PlatformPath => (platform === 'win32' ? path.win32 : path.posix);
+
+export const withinProject = (paths: path.PlatformPath, project: string, resolved: string): boolean => containsByComponents({ existing: project, tail: [] }, { existing: resolved, tail: [] }, false, paths);
+
 export const memoryPathOf = (paths: path.PlatformPath, project: string, resolved: string): string => paths.relative(project, resolved).split(paths.sep).join('/');
 
 export type BindMemoryEvidenceInput = {
@@ -140,7 +144,7 @@ export const bindMemoryEvidence = async (input: BindMemoryEvidenceInput): Promis
   }
   const { project } = input;
   if (project === null) throw new Error('a project memory is bound to a project');
-  const paths = input.platform === 'win32' ? path.win32 : path.posix;
+  const paths = memoryPathsOf(input.platform);
   const resolvedPaths = input.paths.map((given) => paths.resolve(project, given));
   const facts = await input.facts(resolvedPaths);
   const bound = new Map<string, MemoryEvidence>();
@@ -148,7 +152,7 @@ export const bindMemoryEvidence = async (input: BindMemoryEvidenceInput): Promis
     const resolved = resolvedPaths[index];
     const recorded = facts.recorded[index];
     if (resolved === undefined || recorded === undefined) throw new Error(`the journal thread answered ${facts.recorded.length} recorded hashes for ${input.paths.length} paths`);
-    if (!containsByComponents({ existing: project, tail: [] }, { existing: resolved, tail: [] }, false, paths)) throw new MemoryEvidenceError(`${given} is outside the project, so a note cannot be bound to it`);
+    if (!withinProject(paths, project, resolved)) throw new MemoryEvidenceError(`${given} is outside the project, so a note cannot be bound to it`);
     if (recorded === null) throw new MemoryEvidenceError(`${given} was not read or written in this run, so a note cannot be bound to it. Read the file first.`);
     bound.set(resolved, { kind: 'file', project, path: memoryPathOf(paths, project, resolved), sha256: recorded.sha256 });
   }

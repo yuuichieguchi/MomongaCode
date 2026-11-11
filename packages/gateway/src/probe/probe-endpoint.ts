@@ -7,13 +7,19 @@ import type { DialectCurrency } from '../dialect/candidates.ts';
 import { recordProbe } from './auto-probe.ts';
 import type { MeasureProbe, ProbePrecondition, ProbeSubject } from './auto-probe.ts';
 import { endpointIdentityOf, endpointKeyOfLock, endpointLockKeyOf, requireListedEntry, saveEndpointRecord, stableIdentityFieldsOf } from './endpoint-record.ts';
-import { listedEntryOf } from './json.ts';
+import { listedEntryOf } from './reply.ts';
 import type { EndpointKey, EndpointLockKey } from './endpoint-record.ts';
 import { IDENTITY_READ_TIMEOUT_MS, probeEndpointOf, readModelsListing } from './endpoint-target.ts';
-import { PROBE_METHOD_VERSION, runProbe } from './run-probe.ts';
+import { DEFAULT_SAMPLES, PROBE_METHOD_VERSION, runProbe } from './run-probe.ts';
+import type { ProbePorts } from './client.ts';
+import { requireMeasurementConsent } from './consent.ts';
+import type { MeasurementBound, MeteredMeasurement } from './consent.ts';
 import type { KernelLockMechanism } from '@momonga/foundation';
 
 export type ProbeEndpointTargetOptions = {
+  ports: ProbePorts;
+  metered?: MeteredMeasurement;
+  stepTimeoutMs?: number;
   probeRecordDir: string;
   lock: KernelLockMechanism;
   upstream: UpstreamEndpoint;
@@ -36,31 +42,42 @@ export type ProbeEndpointTargetResult = {
 
 export type EndpointMeasurement = { report: ProbeReport; identity: string; identityFields: string[] };
 
-export type MeasureEndpointOptions = Omit<ProbeEndpointTargetOptions, 'probeRecordDir' | 'lock' | 'key' | 'signal'>;
+export type MeasureEndpointOptions = Omit<ProbeEndpointTargetOptions, 'probeRecordDir' | 'lock' | 'key' | 'signal' | 'metered'> & {
+  metered?: { measurement: MeteredMeasurement; consented: () => Promise<MeasurementBound> };
+};
 
 export const measureEndpoint =
   (options: MeasureEndpointOptions): MeasureProbe<EndpointLockKey, EndpointMeasurement> =>
   async ({ signal }) => {
+    const metered = options.metered === undefined ? undefined : { measurement: options.metered.measurement, bound: await options.metered.consented() };
     const endpoint = probeEndpointOf(options.upstream, options.apiKey);
-    const firstListing = await readModelsListing(endpoint, signal);
+    const firstListing = await readModelsListing(endpoint, options.ports, signal);
     requireListedEntry(firstListing, options.model);
     const report = await runProbe({
       ...(endpoint.kind === 'unix' ? { socketPath: endpoint.socketPath } : { baseUrl: endpoint.baseUrl, network: endpoint.network, ...(endpoint.headers === undefined ? {} : { headers: endpoint.headers }) }),
       model: options.model,
       ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }),
       ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
+      ports: options.ports,
+      ...(metered === undefined ? {} : { metered }),
+      ...(options.stepTimeoutMs === undefined ? {} : { stepTimeoutMs: options.stepTimeoutMs }),
       signal,
       ...(options.samples === undefined ? {} : { samples: options.samples }),
     });
-    const secondListing = await readModelsListing(endpoint, signal);
+    const secondListing = await readModelsListing(endpoint, options.ports, signal);
     const identityFields = stableIdentityFieldsOf(firstListing, secondListing, options.model);
     return { report, identity: endpointIdentityOf(firstListing, options.model, identityFields), identityFields };
   };
 
-export const endpointPrecondition = (target: string, upstream: UpstreamEndpoint, model: string, apiKey: (signal: AbortSignal) => Promise<string | undefined>): ProbePrecondition => ({
+export const meteredGateOf = (probeRecordDir: string, key: EndpointKey, measurement: MeteredMeasurement, samples: number): NonNullable<MeasureEndpointOptions['metered']> => ({
+  measurement,
+  consented: () => requireMeasurementConsent(probeRecordDir, key, measurement, samples),
+});
+
+export const endpointPrecondition = (target: string, upstream: UpstreamEndpoint, ports: ProbePorts, model: string, apiKey: (signal: AbortSignal) => Promise<string | undefined>): ProbePrecondition => ({
   boundMs: IDENTITY_READ_TIMEOUT_MS,
   check: async (signal) => {
-    const listing = await readModelsListing(probeEndpointOf(upstream, await apiKey(signal)), signal);
+    const listing = await readModelsListing(probeEndpointOf(upstream, await apiKey(signal)), ports, signal);
     if (listedEntryOf(listing, model) !== undefined) return { kind: 'met' };
     return {
       kind: 'refused',
@@ -89,20 +106,25 @@ export const endpointProbeSubject = (options: EndpointProbeSubjectOptions): Prob
   save: (key, measured) => saveEndpointRecord(options.probeRecordDir, endpointKeyOfLock(key), measured.identity, measured.identityFields, measured.report, options.currency, options.lock),
 });
 
+const measureOptionsOf = ({ metered, probeRecordDir, lock: _lock, key, signal: _signal, ...rest }: ProbeEndpointTargetOptions): MeasureEndpointOptions => ({
+  ...rest,
+  ...(metered === undefined ? {} : { metered: meteredGateOf(probeRecordDir, key, metered, rest.samples ?? DEFAULT_SAMPLES) }),
+});
+
 export const probeEndpointTarget = async (options: ProbeEndpointTargetOptions): Promise<ProbeEndpointTargetResult> => {
   const subject = endpointProbeSubject({
     target: endpointLockKeyOf(options.key).target,
     key: options.key,
     probeRecordDir: options.probeRecordDir,
     lock: options.lock,
-    precondition: endpointPrecondition(endpointLockKeyOf(options.key).target, options.upstream, options.model, async () => options.apiKey),
-    measure: measureEndpoint(options),
+    precondition: endpointPrecondition(endpointLockKeyOf(options.key).target, options.upstream, options.ports, options.model, async () => options.apiKey),
+    measure: measureEndpoint(measureOptionsOf(options)),
     currency: {
       userDialects: options.userDialects ?? NO_USER_DIALECTS,
       probeMethod: PROBE_METHOD_VERSION,
       ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
     },
   });
-  const { report: measured } = await recordProbe(subject, options.probeRecordDir, options.lock, options.signal ?? new AbortController().signal);
+  const { report: measured } = await recordProbe(subject, options.probeRecordDir, options.lock, options.ports.timers, options.signal ?? new AbortController().signal);
   return { report: measured.report, toolCalling: decideToolCalling(measured.report).mode, key: options.key, identity: measured.identity, identityFields: measured.identityFields };
 };

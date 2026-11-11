@@ -1,10 +1,10 @@
-import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { loadUserSettings } from '@momonga/config';
 import {
   ProcessLockHeldError,
   acquireProcessLock,
+  claimNewEntry,
   createLockedEntry,
   createOutboundDispatcher,
   resolveLayoutLocks,
@@ -17,9 +17,8 @@ import {
   systemRandom,
   writeFileAtomically,
 } from '@momonga/foundation';
-import type { KernelLockMechanism, LockedEntry, LockedEntryFiles, MomongaPaths, OutboundNetwork, OutboundOptions } from '@momonga/foundation';
+import type { HeldKernelLock, KernelLockMechanism, LockedEntry, LockedEntryFiles, MomongaPaths, OutboundNetwork, OutboundOptions } from '@momonga/foundation';
 import { interceptors, request } from 'undici';
-import type { Dispatcher } from 'undici';
 import { withOutboundNetwork } from '../network.ts';
 import { daemonReadyBoundMs } from '../daemon/ensure-daemon.ts';
 import { listLiveGenerations, retiringWorkOf } from '../daemon/generations.ts';
@@ -34,30 +33,14 @@ const UPDATE_STATE_MODE = 0o600;
 
 export const transferOptionsOf = (stallTimeoutMs: number): OutboundOptions => ({ connectReplyTimeoutMs: stallTimeoutMs, headersTimeout: stallTimeoutMs, bodyTimeout: stallTimeoutMs });
 
-const redirectingDispatcher = (network: OutboundNetwork, options: OutboundOptions): Dispatcher =>
-  createOutboundDispatcher(network, options).compose(interceptors.redirect({ maxRedirections: MAX_REDIRECTS, throwOnMaxRedirect: true }));
+export type NetworkLease = <T>(signal: AbortSignal, use: (network: OutboundNetwork) => Promise<T>) => Promise<T>;
 
-export const undiciUpdateHttp = (network: Promise<OutboundNetwork>, options: OutboundOptions): UpdateHttp => {
-  let dispatcher: Promise<Dispatcher> | undefined;
-  const dispatcherOnce = (): Promise<Dispatcher> => {
-    dispatcher ??= network.then((resolved) => redirectingDispatcher(resolved, options));
-    return dispatcher;
-  };
-  return {
-    get: async (url, { headers, signal }) => {
-      const response = await request(url, { method: 'GET', headers: { ...headers }, signal, dispatcher: await dispatcherOnce() });
-      return { status: response.statusCode, body: response.body };
-    },
-  };
-};
-
-const leasedUpdateHttp = (ports: CliPorts): UpdateHttp => ({
+export const leasedUpdateHttp = (lease: NetworkLease, options: OutboundOptions, onCloseFailure: (error: unknown) => void): UpdateHttp => ({
   get: (url, { headers, signal }) =>
     new Promise((resolve, reject) => {
       let answered = false;
-      withOutboundNetwork(ports, signal, async (network) => {
-        const { stallTimeoutMs } = (await loadUserSettings({ home: ports.home, signal })).settings.update;
-        const dispatcher = createOutboundDispatcher(network, transferOptionsOf(stallTimeoutMs));
+      lease(signal, async (network) => {
+        const dispatcher = createOutboundDispatcher(network, options);
         try {
           const response = await request(url, { method: 'GET', headers: { ...headers }, signal, dispatcher: dispatcher.compose(interceptors.redirect({ maxRedirections: MAX_REDIRECTS, throwOnMaxRedirect: true })) });
           const bodyClosed = new Promise<void>((closed) => response.body.once('close', () => closed()));
@@ -69,9 +52,18 @@ const leasedUpdateHttp = (ports: CliPorts): UpdateHttp => ({
         }
       }).then(undefined, (error: unknown) => {
         if (!answered) reject(error);
-        else ports.stderr.write(`momonga: the update connection could not be closed: ${error instanceof Error ? error.message : String(error)}\n`);
+        else onCloseFailure(error);
       });
     }),
+});
+
+const cliUpdateHttp = (ports: CliPorts): UpdateHttp => ({
+  get: async (url, options) => {
+    const { stallTimeoutMs } = (await loadUserSettings({ home: ports.home, signal: options.signal })).settings.update;
+    return leasedUpdateHttp((signal, use) => withOutboundNetwork(ports, signal, use), transferOptionsOf(stallTimeoutMs), (error) => {
+      ports.stderr.write(`momonga: the update connection could not be closed: ${error instanceof Error ? error.message : String(error)}\n`);
+    }).get(url, options);
+  },
 });
 
 const REPLACE_REFUSED_CODES: ReadonlySet<string> = new Set(['EPERM', 'EACCES', 'EBUSY']);
@@ -83,20 +75,31 @@ const errorCodeOf = (error: unknown): string | undefined => {
 
 type Rename = (from: string, to: string) => Promise<void>;
 
-const publishReplacing = async (rename: Rename, staged: string, target: string): Promise<void> => {
+const STAGED_NAME_BYTES = 6;
+
+const publishReplacing = async (rename: Rename, lock: KernelLockMechanism, staged: string, target: string): Promise<HeldKernelLock | undefined> => {
   try {
     await rename(staged, target);
+    return undefined;
   } catch (error) {
     const code = errorCodeOf(error);
     if (code === undefined || !REPLACE_REFUSED_CODES.has(code)) throw error;
-    const aside = path.join(path.dirname(target), `${STAGING_PREFIX}${randomBytes(6).toString('hex')}`);
-    await rename(target, aside);
+    const aside = path.join(path.dirname(target), `${STAGING_PREFIX}${systemRandom.hex(STAGED_NAME_BYTES)}`);
+    const held = await claimNewEntry(lock, aside, 'sidecar');
+    try {
+      await rename(target, aside);
+    } catch (refused) {
+      held.dispose();
+      throw refused;
+    }
     try {
       await rename(staged, target);
     } catch (second) {
       await rename(aside, target);
+      held.dispose();
       throw second;
     }
+    return held;
   }
 };
 
@@ -114,11 +117,12 @@ const stagingFiles: LockedEntryFiles = {
 
 export const nodeUpdateFs = (lock: KernelLockMechanism, rename: Rename = fs.rename): UpdateFs => {
   const staging = new Map<string, LockedEntry>();
+  const asidesHeldWhileThisProcessRuns: HeldKernelLock[] = [];
   return {
     realpath: (file) => fs.realpath(file),
     modeOf: async (file) => (await fs.stat(file)).mode & 0o777,
     stage: async (directory, mode): Promise<StagedFile> => {
-      const file = path.join(directory, `${STAGING_PREFIX}${randomBytes(6).toString('hex')}`);
+      const file = path.join(directory, `${STAGING_PREFIX}${systemRandom.hex(STAGED_NAME_BYTES)}`);
       const entry = await createLockedEntry(stagingFiles, lock, file, mode);
       staging.set(file, entry);
       let closed = false;
@@ -134,7 +138,8 @@ export const nodeUpdateFs = (lock: KernelLockMechanism, rename: Rename = fs.rena
     },
     publish: async (staged, target) => {
       staging.get(staged)?.assertStillNamed();
-      await publishReplacing(rename, staged, target);
+      const aside = await publishReplacing(rename, lock, staged, target);
+      if (aside !== undefined) asidesHeldWhileThisProcessRuns.push(aside);
       staging.get(staged)?.finish();
       staging.delete(staged);
     },
@@ -201,7 +206,7 @@ export const nodeUpdatePorts = (ports: CliPorts, paths: MomongaPaths, lock: Kern
   self: ports.self,
   env: definedEnv(ports.env),
   clock: ports.clock,
-  http: leasedUpdateHttp(ports),
+  http: cliUpdateHttp(ports),
   fs: nodeUpdateFs(lock),
   run: nodeBoundedCommandRunner,
   lock: nodeUpdateLock(paths, lock),
