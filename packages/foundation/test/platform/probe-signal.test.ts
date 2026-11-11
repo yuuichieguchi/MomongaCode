@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { createDarwinInspector } from '../../src/platform/darwin-inspector.ts';
 import { Deadline } from '../../src/deadline.ts';
 import { createProcessInspector, hostInspectorPorts } from '../../src/platform/process-inspector.ts';
-import { fixedCapability, pendingOrSettled, silentRunner, slowRunner, virtualTiming } from '../support/probe-fakes.ts';
+import { fixedCapability, silentRunner, slowRunner, virtualTiming, settlementOf } from '../support/probe-fakes.ts';
 import type { RecordedCommand } from '../support/probe-fakes.ts';
 import { testLocks } from '@momonga/testkit';
 
@@ -38,13 +38,13 @@ describe('T4 no private probe bound; every probe ends with the signal of its cal
     const inspector = darwinWith(silentRunner(calls));
     const { signal } = Deadline.after(5000, timing);
     const listing = inspector.holdersOf('/m/marker', { signal });
-    await timing.advanceTo(4999);
-    expect((await pendingOrSettled(listing)).state).toBe('pending');
+    const listed = settlementOf(listing);
+    await timing.advanceAsync(4999);
+    expect(listed.current().state).toBe('pending');
     expect(calls).toHaveLength(1);
     expect(calls[0]?.options.signal).toBeInstanceOf(AbortSignal);
-    await timing.advanceTo(5000);
-    const settled = await pendingOrSettled(listing);
-    expect(settled).toMatchObject({ state: 'resolved', value: { kind: 'failed' } });
+    await timing.advanceAsync(1);
+    expect(await listing).toMatchObject({ kind: 'failed' });
     expect(calls[0]?.killed).toBe(true);
   });
 
@@ -55,8 +55,8 @@ describe('T4 no private probe bound; every probe ends with the signal of its cal
     const start = inspector.startTimeOf(42, { signal: controller.signal });
     const groups = inspector.groupsOf([42], [], { signal: controller.signal });
     controller.abort();
-    expect(await pendingOrSettled(start)).toMatchObject({ state: 'resolved', value: { kind: 'failed' } });
-    expect(await pendingOrSettled(groups)).toMatchObject({ state: 'resolved', value: { kind: 'failed' } });
+    expect(await start).toMatchObject({ kind: 'failed' });
+    expect(await groups).toMatchObject({ kind: 'failed' });
     expect(calls.map((call) => [call.options.signal?.aborted, call.killed])).toEqual([
       [true, true],
       [true, true],

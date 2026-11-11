@@ -12,7 +12,7 @@ import { createFakeClock, createFakeTimers, sleepDrivenTiming, testKernelLock, t
 import { createBackgroundJobs, createNodeJobMarkerFiles } from '@momonga/runtime';
 import { launch } from '../../../sandbox/src/process.ts';
 import type { LaunchOptions } from '../../../sandbox/src/process.ts';
-import { virtualTiming } from '../../../foundation/test/support/probe-fakes.ts';
+import { virtualTiming, driveUntil } from '../../../foundation/test/support/probe-fakes.ts';
 import { jobGenerationOptions } from './job-fixture.ts';
 import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
@@ -107,7 +107,7 @@ const runJob = async (survives: boolean) => {
     () => (done = true),
     () => (done = true),
   );
-  for (let step = 1; !done && step <= 1000; step += 1) await timing.advanceTo(step * KILL_GRACE_MS);
+  await driveUntil(timing, () => done, 1000 * KILL_GRACE_MS, 'the stop to end');
   await finalized.catch(() => undefined);
   const read = await jobs.read(created.run.id, jobId, { call: 'read-1' });
   const idemKey = store.jobs.get(jobId)?.idemKey ?? '';
