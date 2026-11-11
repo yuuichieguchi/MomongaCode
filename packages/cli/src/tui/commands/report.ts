@@ -1,6 +1,17 @@
 import type { SlashCommand } from '../slash.ts';
 import { runShellCommand } from './shell-commands.ts';
 
+const answeredUnless = <T>(signal: AbortSignal, answer: Promise<T>): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const stop = (): void => reject(signal.reason);
+    if (signal.aborted) {
+      stop();
+      return;
+    }
+    signal.addEventListener('abort', stop, { once: true });
+    answer.then(resolve, reject).finally(() => signal.removeEventListener('abort', stop));
+  });
+
 export const NO_RUN_TO_REPORT = 'This session has no run yet, so there is no report to show.';
 
 export const reportCommand: SlashCommand = {
@@ -15,7 +26,7 @@ export const reportCommand: SlashCommand = {
       await runShellCommand('report', args, context);
       return;
     }
-    const latest = (await context.backend.runs()).at(-1);
+    const latest = (await context.background('/report', (signal) => answeredUnless(signal, context.backend.runs()))).at(-1);
     if (latest === undefined) {
       context.info(NO_RUN_TO_REPORT);
       return;
