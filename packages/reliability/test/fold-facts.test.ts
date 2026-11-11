@@ -415,7 +415,54 @@ describe('X5 Budget Overrun Rate', () => {
       ended('deadline-met', T0 + 5000, { deadlineAt: T0 + 5000 }),
       ended('no-limit', T0 + 1000, { tokensTotal: 10_000_000, step: 500 }),
     ];
-    expect(totalOf(rows).overrun).toEqual({ k: 3, n: 6, budgetStops: 2 });
+    expect(totalOf(rows).overrun).toEqual({ k: 3, n: 6, budgetStops: 2, money: { k: 0, n: 0 } });
+  });
+
+  it('counts money spent over the money limit as an overrun, and reports the runs with a money limit on their own', () => {
+    const rows = [
+      ended('money-at-limit', T0 + 1000, { limits: { maxCostNano: 5000 }, costNano: 5000, status: 'STOPPED', stopReason: 'budget' }),
+      ended('money-over', T0 + 1000, { limits: { maxCostNano: 5000 }, costNano: 5001 }),
+      ended('money-under-tokens-over', T0 + 1000, { limits: { maxCostNano: 5000, maxTotalTokens: 10 }, costNano: 1, tokensTotal: 11 }),
+      ended('no-money-limit', T0 + 1000, { costNano: 9_000_000_000 }),
+    ];
+    expect(rows[1]).toMatchObject({ costNano: 5001, limits: { maxCostNano: 5000 } });
+    expect(totalOf(rows).overrun).toEqual({ k: 2, n: 3, budgetStops: 1, money: { k: 1, n: 3 } });
+  });
+});
+
+describe('the figures of mandate runs', () => {
+  const MANDATE = { scope: { allow: ['Read'], ask: ['GitPush'], deny: [] } };
+  const mandated = (attempt: number): Timed[1] => ({ type: 'run.started', attempt, now: T0, pins: { model: 'fm', mandate: MANDATE } }) as Timed[1];
+  const held = (callId: string): Timed[1] => ({ type: 'tool.held', callId, approvalId: `a-${callId}`, reason: 'ask', footprint: { reads: [], writes: [] } }) as Timed[1];
+  const resolved = (callId: string, outcome: 'executed' | 'rejected' | 'withdrawn'): Timed[1] =>
+    ({ type: 'tool.held.resolved', callId, approvalId: `a-${callId}`, outcome, status: outcome === 'executed' ? 'completed' : 'failed', output: outcome }) as Timed[1];
+  const deniedByMandate = (callId: string): Timed[1] =>
+    ({ type: 'tool.completed', callId, status: 'failed', output: 'Not run: outside the declared mandate', denial: { source: 'mandate', reason: 'outside the mandate' } }) as Timed[1];
+  const quiescent: Timed[1] = { type: 'run.quiescent', held: [] } as Timed[1];
+
+  it('records per run whether it had a mandate, its held calls, the holds a person resolved, its denials and whether it waited', () => {
+    const facts = fold('m1', [
+      [T0, mandated(1)],
+      [T0 + 10, held('c1')],
+      [T0 + 11, held('c2')],
+      [T0 + 12, deniedByMandate('c3')],
+      [T0 + 20, quiescent],
+      [T0 + 30, resolved('c1', 'executed')],
+      [T0 + 31, resolved('c2', 'withdrawn')],
+      [T0 + 40, terminal('COMPLETED')],
+    ]);
+    expect(facts.delegation).toEqual({ held: 2, resolvedByPerson: 1, denied: 1, waited: true });
+    expect(fold('plain', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]]).delegation).toBeUndefined();
+  });
+
+  it('reports mandate runs: those a person resolved a hold of, those that completed with no hold, those that waited', () => {
+    const rows = [
+      fold('unattended', [[T0, mandated(1)], [T0 + 5, deniedByMandate('c1')], [T0 + 9, terminal('COMPLETED')]]),
+      fold('intervened', [[T0, mandated(1)], [T0 + 1, held('c1')], [T0 + 2, quiescent], [T0 + 3, resolved('c1', 'rejected')], [T0 + 9, terminal('COMPLETED')]]),
+      fold('stopped', [[T0, mandated(1)], [T0 + 1, held('c1')], [T0 + 9, terminal('STOPPED')]], { status: 'STOPPED', stopReason: 'timeout' }),
+      fold('plain', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]]),
+    ];
+    expect(totalOf(rows).delegation).toEqual({ n: 3, intervened: 1, unattended: 1, waited: 1, held: 2, denied: 1 });
   });
 });
 

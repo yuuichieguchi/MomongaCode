@@ -3,6 +3,8 @@ import type { BilledDetail, CallTiming, CreateResponseBody, ModelCost, PlanAccou
 import type { RunEventPayload } from '@momonga/protocol';
 import { carriesOutput, planAccountRefOf, reportedCachedTokensOf } from '@momonga/protocol';
 import type { ClaimContext } from './claim-context.ts';
+import { streamAdmitted } from './admitted-request.ts';
+import type { AdmissionProof } from './admitted-request.ts';
 import { GatewayRequestError } from '../gateway-client.ts';
 
 export { carriesOutput };
@@ -126,6 +128,7 @@ export const streamModel = async (
   body: CreateResponseBody,
   idempotencyKey: string,
   position: { step: number; attempt: number },
+  proof: AdmissionProof,
 ): Promise<StreamedModel> => {
   const buffer = createDeltaBuffer((payloads) => ctx.journal.append(payloads), position, (error) => ctx.control.fail(error));
   let terminal: ModelResult | undefined;
@@ -137,7 +140,7 @@ export const streamModel = async (
   try {
     await ctx.control.recordingRaised(
       (async (): Promise<void> => {
-        const events = ctx.options.gateway.stream(body, {
+        const events = streamAdmitted(ctx.options.gateway, proof, body, {
           idempotencyKey,
           deadlineAt: ctx.run.deadlineAt,
           signal: ctx.control.signal,

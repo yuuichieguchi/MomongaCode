@@ -55,6 +55,8 @@ const setup = () => {
   const replays: string[] = [];
   const gateway = {
     capabilities: upstream.capabilities,
+    countTokens: upstream.countTokens,
+    quote: upstream.quote,
     stream: (body: CreateResponseBody, options: GatewayCallOptions) =>
       (async function* () {
         const key = options.idempotencyKey;

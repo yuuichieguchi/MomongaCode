@@ -19,10 +19,15 @@ import { REFLECTION_INSTRUCTIONS } from './reflection-input.ts';
 import { REFLECTION_REPLY_SCHEMA, validateReflectionReply } from './reflection-reply.ts';
 import { EXACT_MODEL } from '../worker/exact-model.ts';
 import { outputBoundOf } from '../worker/output-bound.ts';
+import { ceilingOf, streamAdmitted, unpaidMessage, withAdmission } from '../worker/admitted-request.ts';
+import type { AdmissionProof, BudgetAccount } from '../worker/admitted-request.ts';
+import { readRunLimits } from '../worker/limits.ts';
+import type { WorkerDefaults } from '../worker/types.ts';
 
 export type ReflectorOptions = {
-  store: Pick<RuntimeStore, 'reflection' | 'memories' | 'contextCharges' | 'getRun' | 'getSession' | 'readRunEventsOfTypes' | 'journalFacts'>;
-  gateway: Pick<GatewayPort, 'stream' | 'capabilities'>;
+  store: Pick<RuntimeStore, 'reflection' | 'memories' | 'contextCharges' | 'getRun' | 'getSession' | 'readRunEventsOfTypes' | 'journalFacts' | 'treeSpend' | 'admitModelRequest'>;
+  gateway: Pick<GatewayPort, 'stream' | 'capabilities' | 'countTokens' | 'quote'>;
+  defaults?: WorkerDefaults;
   settings: Pick<SettingsPort, 'trusted' | 'verification' | 'memory'>;
   clock: Clock;
   role: Pick<RolePort, 'refresh'>;
@@ -55,6 +60,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     runId: string,
     body: CreateResponseBody,
     signal: AbortSignal,
+    proof: AdmissionProof,
   ): Promise<{ terminal: ModelResult; usage: Usage | null; detail: BilledDetail }> => {
     let terminal: ModelResult | undefined;
     let usage: Usage | null = null;
@@ -62,7 +68,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     let responseId: string | undefined;
     let firstEventMs: number | undefined;
     const startedAt = clock.now();
-    const events = gateway.stream(body, {
+    const events = streamAdmitted(gateway, proof, body, {
       idempotencyKey: requestKey(runId, 'reflect', body),
       deadlineAt: clock.now() + options.attemptTimeoutMs,
       signal,
@@ -185,20 +191,44 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       return;
     }
     const { input: recordedRun } = await store.journalFacts.reflectionInput({ runId, project, capabilities }, signal);
-    const body: CreateResponseBody = {
-      model,
-      instructions: REFLECTION_INSTRUCTIONS,
-      input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: recordedRun }] }],
-      text: { format },
-      tool_choice: 'none',
-      reasoning: { effort: LOWEST_REASONING_EFFORT },
-      ...outputBoundOf(capabilities, Math.min(memorySettings.reflection.maxTokens ?? Number.POSITIVE_INFINITY, summaryTokenCapFor(capabilities))),
-      store: false,
-      stream: true,
-      metadata: { run_id: runId, purpose: 'reflection' },
-      momonga: { ...EXACT_MODEL },
+    const input: CreateResponseBody['input'] = [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: recordedRun }] }];
+    const counted = await gateway.countTokens({ model, input, instructions: REFLECTION_INSTRUCTIONS, momonga: { ...EXACT_MODEL } }, { signal });
+    const limits = readRunLimits(run.limits, options.defaults);
+    const account: BudgetAccount = {
+      limits: { maxTotalTokens: limits.maxTotalTokens, ...(limits.maxCostNano === undefined ? {} : { maxCostNano: limits.maxCostNano }) },
+      quote: (quoted) => gateway.quote(quoted, { signal }),
+      spend: () => store.treeSpend(runId),
+      ledger: { admitModelRequest: (ask) => store.admitModelRequest({ runId, settled: true }, ask) },
+      release: () => undefined,
+      tail: Promise.resolve(),
     };
-    const { terminal, usage, detail } = await complete(runId, body, signal);
+    const outputWanted = Math.min(memorySettings.reflection.maxTokens ?? Number.POSITIVE_INFINITY, summaryTokenCapFor(capabilities));
+    const sent = await withAdmission(
+      account,
+      { model, size: { inputTokens: counted.input_tokens, marginTokens: counted.error_bound, maxOutputTokens: outputWanted } },
+      ({ admitted, proof }) => {
+        const body: CreateResponseBody = {
+          model,
+          instructions: REFLECTION_INSTRUCTIONS,
+          input,
+          text: { format },
+          tool_choice: 'none',
+          reasoning: { effort: LOWEST_REASONING_EFFORT },
+          ...outputBoundOf(capabilities, admitted.maxOutputTokens),
+          store: false,
+          stream: true,
+          metadata: { run_id: runId, purpose: 'reflection' },
+          momonga: { ...EXACT_MODEL, ...ceilingOf(admitted) },
+        };
+        return complete(runId, body, signal, proof);
+      },
+    );
+    if (sent.kind === 'lease_lost') throw new Error(`the store asked for a lease to admit the reflection call of the ended run ${runId}`);
+    if (sent.kind === 'exhausted') {
+      store.reflection.complete({ runId, charge: null, candidates: keptFacts, dropped, reason: unpaidMessage('reflection', sent.exhausted) });
+      return;
+    }
+    const { terminal, usage, detail } = sent.value;
     if (usage !== null) {
       ledger.unrecorded = {
         detail,

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { BudgetExhausted, HeldOutcome } from './budget.ts';
 import type { ApprovalBasis } from './permission-denial.ts';
-import type { SideEffect } from './run-types.ts';
+import type { OperationEffectRecord, SideEffect } from './run-types.ts';
 
 export const VERIFICATION_OUTCOMES = ['passed', 'failed', 'timed_out', 'cancelled', 'spawn_error'] as const;
 
@@ -167,6 +167,8 @@ export type RunHeldCallReport = { callId: string; tool: string; reason: string; 
 
 export type RunDeniedCallReport = { callId: string; tool: string; source: 'mandate' | 'held'; reason: string };
 
+export type RunOperationReport = { callId: string; operation: string; target: string; effect: OperationEffectRecord['outcome'] };
+
 export type RunDelegationReport = { held: RunHeldCallReport[]; denied: RunDeniedCallReport[]; quiescent: boolean };
 
 export type RunReport = {
@@ -189,6 +191,7 @@ export type RunReport = {
   budget?: RunBudgetReport;
   stoppedBy?: BudgetExhausted;
   delegation?: RunDelegationReport;
+  operations?: RunOperationReport[];
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);

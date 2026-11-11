@@ -103,3 +103,27 @@ describe('the report text lists the held and denied calls of a mandate run', () 
     expect(text).not.toContain('denied');
   });
 });
+
+describe('the report text lists the Git and Pull Request operations of the run', () => {
+  it('prints each operation with its observed effect and its destination', () => {
+    const text = renderReport({
+      ...BASE,
+      operations: [
+        { callId: 'c1', operation: 'GitPush', target: 'origin refs/heads/feature', effect: 'applied' },
+        { callId: 'c2', operation: 'PullRequestCreate', target: 'acme/app#7', effect: 'already_applied' },
+        { callId: 'c3', operation: 'GitFetch', target: 'origin', effect: 'unknown' },
+      ],
+    });
+
+    expect(text.split('\n').slice(-4)).toEqual([
+      'Git and Pull Request operations (observed effect, destination):',
+      '  GitPush  applied  origin refs/heads/feature',
+      '  PullRequestCreate  already applied  acme/app#7',
+      '  GitFetch  unknown  origin',
+    ]);
+  });
+
+  it('prints no operations section for a run without one', () => {
+    expect(renderReport(BASE)).not.toContain('operations');
+  });
+});

@@ -37,6 +37,7 @@ const factsRow = (runId: string, recoveries: RunFactsView['recoveries'] = []): R
   elapsedMs: 10,
   humanWaitMs: 0,
   tokensTotal: 0,
+  costNano: 0,
   steps: 1,
   limits: {},
   asked: 0,
@@ -150,5 +151,21 @@ describe('decision 55: a page carries the unavailable runs with their roots', ()
     expect(page.rows.map((row) => row.runId)).toEqual([ids[0], ids[2]]);
     expect(page.unavailable).toEqual([{ runId: ids[1], rootRunId: ids[1] }]);
     expect(page.nextCursor).toBeNull();
+  });
+});
+
+describe('migration 38: the money and the mandate figures of a run', () => {
+  it('keeps the money spent, the money limit and the delegation figures of a run, and leaves a run without a mandate without them', async () => {
+    const { store } = harness();
+    const session = newSession(store);
+    const mandated = await completeRun(store, session.id);
+    const plain = await completeRun(store, session.id);
+    const batch = factsOf(store).nextBatch(10);
+    const withMandate: RunFactsView = { ...factsRow(mandated), costNano: 4200, limits: { maxCostNano: 5000 }, delegation: { held: 2, resolvedByPerson: 1, denied: 3, waited: true } };
+
+    factsOf(store).commit({ calls: [], rows: [withMandate, factsRow(plain)], unavailable: [], throughEventId: batch.throughEventId });
+
+    expect(factsOf(store).get(mandated)).toEqual({ kind: 'facts', facts: withMandate });
+    expect(factsOf(store).get(plain)).toEqual({ kind: 'facts', facts: factsRow(plain) });
   });
 });

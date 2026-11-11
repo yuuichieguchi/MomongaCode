@@ -235,11 +235,11 @@ export const reportHandler = (db: DatabaseSync, reader: VisitingReader): Journal
 };
 
 const TREE_TOKENS = `WITH RECURSIVE tree(id) AS (SELECT :runId UNION ALL SELECT r.id FROM runs r JOIN tree t ON r.parent_run_id = t.id)
-SELECT COALESCE(SUM(json_extract(r.usage_json, '$.totalTokens')), 0) AS total FROM runs r JOIN tree t ON r.id = t.id`;
+SELECT COALESCE(SUM(json_extract(r.usage_json, '$.totalTokens')), 0) AS total, COALESCE(SUM(json_extract(r.usage_json, '$.costNano')), 0) AS cost_nano FROM runs r JOIN tree t ON r.id = t.id`;
 
 const isRecordValue = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const limitOf = (limits: Record<string, unknown>, key: keyof RunFactsLimits, runId: string): number | undefined => {
+const limitOf = (limits: Record<string, unknown>, key: 'maxSteps' | 'maxTotalTokens' | 'maxCostUsd', runId: string): number | undefined => {
   const value = limits[key];
   if (value === undefined) return undefined;
   if (typeof value !== 'number') throw new TypeError(`run ${runId}: limit ${key} must be a number`);
@@ -292,6 +292,7 @@ export const runFactsHandler = (db: DatabaseSync, reader: VisitingReader): Journ
     const facts = refusingFold(() => {
       const maxSteps = limitOf(run.limits, 'maxSteps', runId);
       const maxTotalTokens = limitOf(run.limits, 'maxTotalTokens', runId);
+      const maxCostUsd = limitOf(run.limits, 'maxCostUsd', runId);
       return fold.finish({
         runId,
         rootRunId: String(rootRow['id']),
@@ -299,10 +300,15 @@ export const runFactsHandler = (db: DatabaseSync, reader: VisitingReader): Journ
         status: knownValue(run.status, `the status of run ${runId}`),
         ...(run.stopReason === undefined ? {} : { stopReason: knownValue(run.stopReason, `the stop reason of run ${runId}`) }),
         createdAt: run.createdAt,
-        limits: { ...(maxSteps === undefined ? {} : { maxSteps }), ...(maxTotalTokens === undefined ? {} : { maxTotalTokens }) },
+        limits: {
+          ...(maxSteps === undefined ? {} : { maxSteps }),
+          ...(maxTotalTokens === undefined ? {} : { maxTotalTokens }),
+          ...(maxCostUsd === undefined ? {} : { maxCostNano: nanoOfAmount(maxCostUsd) }),
+        },
         deadlineAt: run.deadlineAt,
         step: run.step,
         tokensTotal: Number(tokensRow['total']),
+        costNano: Number(tokensRow['cost_nano']),
         model: begun.model,
         mode: begun.mode,
         agent: agentOf(run.pins, runId),

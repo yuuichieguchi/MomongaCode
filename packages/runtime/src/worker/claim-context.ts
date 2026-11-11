@@ -7,7 +7,7 @@ import type { OutputFit, ToolSet } from '@momonga/tools';
 import type { MemorySet, ToolEnv, TracerPort, TraceSpan } from '../ports.ts';
 import type { ClaimControl } from './claim-control.ts';
 import type { Journal } from './journal.ts';
-import type { ModelQuote } from '@momonga/protocol';
+import type { BudgetAccount } from './admitted-request.ts';
 import type { PermissionRule } from '@momonga/config';
 import type { RunLimits } from './limits.ts';
 import type { ToolOffer } from './tool-offer.ts';
@@ -37,7 +37,7 @@ export type ClaimContext = {
   memoryShare?: number;
   guideline?: { version: number; text: string };
   limits: RunLimits;
-  quote(): Promise<ModelQuote>;
+  budget: BudgetAccount;
   delegation?: { rules: readonly PermissionRule[]; notice: string; onQuiescent?: 'report' | 'wait' };
   toolSet: ToolSet;
   skills: SkillSet;

@@ -23,11 +23,13 @@ import { TRANSIENT_REQUEST_STATUSES, canonicalJson, sha256Hex } from '@momonga/f
 import { resolveGoverning } from '@momonga/memory';
 import type { Session } from '@momonga/store';
 import { harnessOutputToolsOf } from '@momonga/tools';
-import { DETERMINISTIC_SUMMARY_TEXT, NOTHING_TO_COMPACT_CODE, NOTHING_TO_COMPACT_MESSAGE, compactionSummaryMessage, decodeCompactionSummary, tokensForText, userMessageContent } from '@momonga/protocol';
+import { BUDGET_EXCEEDED_CODE, DETERMINISTIC_SUMMARY_TEXT, LOWEST_REASONING_EFFORT, SUMMARY_PROMPT_TOKENS, marginFloorFor, outputTokensFor, NOTHING_TO_COMPACT_CODE, NOTHING_TO_COMPACT_MESSAGE, compactionSummaryMessage, decodeCompactionSummary, tokensForText, userMessageContent } from '@momonga/protocol';
 import { billedDetailOf } from './model-stream.ts';
 import type { CompactRequest, CompactResource, CompactionInputItem, ContentPart, FunctionTool, InputItem, MessageInputItem, NoticeReduction, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
 import { foldRunState } from '@momonga/store';
 import { GatewayRequestError } from '../gateway-client.ts';
+import { AdmissionRefusedError, ceilingOf, compactAdmitted, overCeiling, withAdmission } from './admitted-request.ts';
+import { stopIfRefused } from './budget-stop.ts';
 import { recallQueryOf } from '../memory/recall-query.ts';
 import { MEMORY_QUERY_MAX_CHARS } from '@momonga/tools';
 import { arrivalsOf } from './context-arrivals.ts';
@@ -390,35 +392,52 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource, 
     },
   };
   const guidelineVersion = ctx.guideline?.version ?? NO_ADOPTED_GUIDELINE;
-  const idempotencyKey = requestKey(ctx.run.id, 'compact', request);
-  journal.append([{ type: 'context.compacting', step: journal.state.step, attempt: FIRST_REQUEST_ATTEMPT }]);
-  ctx.control.inFlight.compactionKey = idempotencyKey;
-  let resource: CompactResource;
-  const startedAt = options.clock.now();
-  try {
-    resource = await ctx.control.recordingRaised(
-      options.gateway.compact(request, {
-        idempotencyKey,
-        deadlineAt: ctx.run.deadlineAt,
-        signal: ctx.control.signal,
-        traceparent: ctx.agentSpan.traceparent,
-        runId: ctx.run.id,
-      }),
-    );
-  } catch (error) {
-    if (!escalates(error)) throw error;
-    delete ctx.control.inFlight.compactionKey;
-    const fallback = await deterministicCompaction(ctx, plan, NO_ADOPTED_GUIDELINE);
-    journal.append([
-      noticeOf(
-        'compaction_failed',
-        `Compaction summary failed (${error.code}): ${error.message}${roleModel === undefined ? '' : ` [models.roles.compaction names the model ${ctx.display(roleModel)}]`}; the deterministic summary was used`,
-      ),
-      fallback,
-      ...unrecordedNoticePayloads(ctx, plan.notices),
-    ]);
-    return;
-  }
+  const model = roleModel ?? ctx.model;
+  const capabilities = roleModel === undefined ? ctx.capabilities : await ctx.control.recordingRaised(options.gateway.capabilities(roleModel, { signal: ctx.control.signal }));
+  const summaryOutput = outputTokensFor(capabilities, LOWEST_REASONING_EFFORT, plan.summaryTokenCap);
+  let startedAt = options.clock.now();
+  const sent = await withAdmission(
+    ctx.budget,
+    { model, size: { inputTokens: plan.tokens.input + SUMMARY_PROMPT_TOKENS, marginTokens: marginFloorFor(capabilities.contextWindow), maxOutputTokens: summaryOutput, outputFloor: summaryOutput } },
+    async ({ admitted, proof }): Promise<CompactResource | 'summarised_by_code'> => {
+      const admittedRequest: CompactRequest = { ...request, momonga: { ...request.momonga, ...ceilingOf(admitted) } };
+      const idempotencyKey = requestKey(ctx.run.id, 'compact', admittedRequest);
+      journal.append([{ type: 'context.compacting', step: journal.state.step, attempt: FIRST_REQUEST_ATTEMPT }]);
+      ctx.control.inFlight.compactionKey = idempotencyKey;
+      startedAt = options.clock.now();
+      try {
+        return await ctx.control.recordingRaised(
+          compactAdmitted(options.gateway, proof, admittedRequest, {
+            idempotencyKey,
+            deadlineAt: ctx.run.deadlineAt,
+            signal: ctx.control.signal,
+            traceparent: ctx.agentSpan.traceparent,
+            runId: ctx.run.id,
+          }),
+        );
+      } catch (error) {
+        if (error instanceof GatewayRequestError && error.code === BUDGET_EXCEEDED_CODE) {
+          delete ctx.control.inFlight.compactionKey;
+          throw new AdmissionRefusedError({ kind: 'exhausted', exhausted: overCeiling(ctx.budget) });
+        }
+        if (!escalates(error)) throw error;
+        delete ctx.control.inFlight.compactionKey;
+        const fallback = await deterministicCompaction(ctx, plan, NO_ADOPTED_GUIDELINE);
+        journal.append([
+          noticeOf(
+            'compaction_failed',
+            `Compaction summary failed (${error.code}): ${error.message}${roleModel === undefined ? '' : ` [models.roles.compaction names the model ${ctx.display(roleModel)}]`}; the deterministic summary was used`,
+          ),
+          fallback,
+          ...unrecordedNoticePayloads(ctx, plan.notices),
+        ]);
+        return 'summarised_by_code';
+      }
+    },
+  );
+  if (sent.kind !== 'sent') throw new AdmissionRefusedError(sent);
+  if (sent.value === 'summarised_by_code') return;
+  const resource = sent.value;
   delete ctx.control.inFlight.compactionKey;
   const compaction = resource.output.find((item) => item.type === 'compaction');
   if (compaction === undefined) throw new Error(`the compaction response for run ${ctx.run.id} holds no compaction item`);
@@ -673,7 +692,7 @@ const buildNextUnguarded = async (ctx: ClaimContext, options: { wrapUp?: WrapUpR
         attempt.attempts -= 1;
         return (await recoverRejectedCompaction(ctx, error)) === 'done' ? 'done' : 'retry';
       }
-      throw error;
+      return stopIfRefused(ctx, error);
     }
   };
 
@@ -775,7 +794,10 @@ export const compactOnly = async (ctx: ClaimContext, focus: string | undefined):
     try {
       await compactThrough(ctx, plan, focus);
     } catch (error) {
-      if (!(error instanceof GatewayRequestError)) throw error;
+      if (!(error instanceof GatewayRequestError)) {
+        await stopIfRefused(ctx, error);
+        return;
+      }
       delete ctx.control.inFlight.compactionKey;
       if (error.code !== 'invalid_compaction') throw error;
       if ((await recoverRejectedCompaction(ctx, error)) === 'done') return;

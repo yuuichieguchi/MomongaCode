@@ -54,6 +54,7 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
         deadlineAt: stored.deadlineAt,
         step: stored.step,
         tokensTotal: stored.usage.totalTokens,
+        costNano: 0,
         model: 'fm',
         mode: 'manual',
         agent: MAIN_AGENT,

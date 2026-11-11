@@ -853,6 +853,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         attemptTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs,
         timers,
         random: Math.random,
+        defaults: RUNTIME_DEFAULTS.limits,
       });
       const upkeepSchedule = createMemoryUpkeepSchedule({
         store,

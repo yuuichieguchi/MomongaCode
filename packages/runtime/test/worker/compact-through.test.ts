@@ -7,6 +7,7 @@ import type { ClaimContext } from '../../src/worker/claim-context.ts';
 import { GatewayRequestError } from '../../src/gateway-client.ts';
 import { compactThrough } from '../../src/worker/context-step.ts';
 import { capabilitiesFor } from './harness.ts';
+import { unlimitedBudget } from './unlimited-budget.ts';
 
 const TASK: InputItem = { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Do the work.' }] };
 
@@ -96,6 +97,7 @@ const contextFor = (options: ContextOptions = {}) => {
       },
     },
     run: { id: 'run_compact', sessionId: 'session_compact', deadlineAt: 2_000_000_000_000 },
+    budget: unlimitedBudget(),
     model: 'fm',
     meter: { countItem: async () => SUMMARY_ITEM_TOKENS },
     roles: {},

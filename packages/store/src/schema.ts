@@ -1186,6 +1186,16 @@ const MODEL_BY_ITS_OWN_NAME_MIGRATION: Migration = {
   sql: MODEL_BY_ITS_OWN_NAME,
 };
 
+const RUN_FACTS_MONEY_AND_MANDATE = `
+ALTER TABLE run_facts ADD COLUMN cost_nano INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE run_facts ADD COLUMN max_cost_nano INTEGER;
+ALTER TABLE run_facts ADD COLUMN mandate INTEGER NOT NULL DEFAULT 0 CHECK (mandate IN (0, 1));
+ALTER TABLE run_facts ADD COLUMN held INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE run_facts ADD COLUMN held_resolved INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE run_facts ADD COLUMN mandate_denied INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE run_facts ADD COLUMN quiescent INTEGER NOT NULL DEFAULT 0 CHECK (quiescent IN (0, 1));
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -1289,5 +1299,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 37,
     name: 'record when an idempotency record was authorised, so a recovery can tell an effect that never started from one that may have, and hold what an admitted model request of a run reserves of the budget of its run tree, in tokens and in nano-USD',
     sql: AUTHORISED_MARK_AND_BUDGET_RESERVATIONS,
+  },
+  {
+    version: 38,
+    name: 'record in the facts of a run the money its tree spent, its money limit, and for a run under a mandate its held calls, the holds a person resolved, its denials outside the mandate and whether it waited for a person',
+    sql: RUN_FACTS_MONEY_AND_MANDATE,
   },
 ];

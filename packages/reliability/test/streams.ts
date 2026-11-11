@@ -107,6 +107,7 @@ export const runInfo = (
   limits: {},
   step: 1,
   tokensTotal: 100,
+  costNano: 0,
   model: 'fm',
   mode: 'manual',
   agent: 'build',

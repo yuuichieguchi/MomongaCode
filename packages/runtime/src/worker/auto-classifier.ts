@@ -1,13 +1,14 @@
 import { budgetFor } from '@momonga/context';
 import { canonicalJson, defineProductSchema, jsonReplyInstructions, readJsonReply, sha256Hex } from '@momonga/foundation';
 import { AUTO_MODE_UNAVAILABLE, CLASSIFIER_VERDICT_SCHEMA, classifierAllows, displayOf, escapeXmlText, jsonReplyOf, outputReserveFor, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
-import type { ClassifierVerdict, CreateResponseBody, ModelView, ModelViews, RunEventPayload } from '@momonga/protocol';
+import type { CallTiming, ClassifierVerdict, CreateResponseBody, ModelView, ModelViews, RunEventPayload } from '@momonga/protocol';
 import type { AutoClassifier, AutoClassifierRequest } from '@momonga/tools';
 import { GatewayRequestError } from '../gateway-client.ts';
 import { GatewayFailureError } from './errors.ts';
 import { EXACT_MODEL } from './exact-model.ts';
 import { retireDecisionOf } from './gateway-policy.ts';
 import type { ClaimContext } from './claim-context.ts';
+import { ceilingOf, streamAdmitted, unpaidMessage, withAdmission } from './admitted-request.ts';
 import { billedDetailOf, carriesOutput, terminalResultOf } from './model-stream.ts';
 import type { ModelResult } from './model-stream.ts';
 import { outputBoundOf } from './output-bound.ts';
@@ -40,6 +41,7 @@ type Outcome = {
   outcome: 'allow' | 'ask';
   event: Omit<Extract<RunEventPayload, { type: 'tool.permission.classified' }>, 'type' | 'callId' | 'subjectDigest' | 'outcome'>;
   spend?: Extract<RunEventPayload, { type: 'usage.charged' }>;
+  notice?: Extract<RunEventPayload, { type: 'notice' }>;
 };
 
 const asked = (event: Outcome['event']): Outcome => ({ outcome: 'ask', event });
@@ -55,35 +57,47 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
     if (counted.input_tokens > budgetFor(capabilities, counted.error_bound).I) {
       return asked({ model: classifier, failure: `the tool call does not fit the context window of ${displayOf(view, views)}` });
     }
-    const body: CreateResponseBody = {
-      model: classifier,
-      instructions: CLASSIFIER_INSTRUCTIONS,
-      input,
-      text: { format: { type: 'json_schema', name: 'permission_verdict', schema: { ...CLASSIFIER_VERDICT_SCHEMA }, strict: true } },
-      tool_choice: 'none',
-      ...outputBoundOf(capabilities, outputReserveFor(capabilities)),
-      store: false,
-      stream: true,
-      metadata: { run_id: ctx.run.id, step: String(step), purpose: 'permission_classifier' },
-      momonga: { ...EXACT_MODEL },
-    };
-    ctx.journal.append([{ type: 'tool.permission.classifying', callId: request.callId, subjectDigest: request.subjectDigest }]);
-    let terminal: ModelResult | undefined;
-    let firstEventMs: number | undefined;
+    const size = { inputTokens: counted.input_tokens, marginTokens: counted.error_bound, maxOutputTokens: outputReserveFor(capabilities) };
     const { clock } = ctx.options;
-    const startedAt = clock.now();
-    const events = gateway.stream(body, {
-      idempotencyKey: sha256Hex(canonicalJson(['permission_classifier', ctx.run.id, step, request.callId, request.subjectDigest, classifier])),
-      deadlineAt: ctx.run.deadlineAt,
-      signal: ctx.control.signal,
-      traceparent: ctx.agentSpan.traceparent,
-      role: 'classifier',
+    const sent = await withAdmission(ctx.budget, { model: classifier, size }, async ({ admitted, proof }): Promise<{ terminal: ModelResult | undefined; timing: CallTiming }> => {
+      const body: CreateResponseBody = {
+        model: classifier,
+        instructions: CLASSIFIER_INSTRUCTIONS,
+        input,
+        text: { format: { type: 'json_schema', name: 'permission_verdict', schema: { ...CLASSIFIER_VERDICT_SCHEMA }, strict: true } },
+        tool_choice: 'none',
+        ...outputBoundOf(capabilities, admitted.maxOutputTokens),
+        store: false,
+        stream: true,
+        metadata: { run_id: ctx.run.id, step: String(step), purpose: 'permission_classifier' },
+        momonga: { ...EXACT_MODEL, ...ceilingOf(admitted) },
+      };
+      ctx.journal.append([{ type: 'tool.permission.classifying', callId: request.callId, subjectDigest: request.subjectDigest }]);
+      let terminal: ModelResult | undefined;
+      let firstEventMs: number | undefined;
+      const startedAt = clock.now();
+      const events = streamAdmitted(gateway, proof, body, {
+        idempotencyKey: sha256Hex(canonicalJson(['permission_classifier', ctx.run.id, step, request.callId, request.subjectDigest, classifier])),
+        deadlineAt: ctx.run.deadlineAt,
+        signal: ctx.control.signal,
+        traceparent: ctx.agentSpan.traceparent,
+        role: 'classifier',
+      });
+      for await (const event of events) {
+        if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = clock.now() - startedAt;
+        terminal = terminalResultOf(event) ?? terminal;
+      }
+      return { terminal, timing: { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: clock.now() - startedAt } };
     });
-    for await (const event of events) {
-      if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = clock.now() - startedAt;
-      terminal = terminalResultOf(event) ?? terminal;
+    if (sent.kind === 'lease_lost') {
+      ctx.journal.verifyLease();
+      throw new Error(`the store refused the classifier request of run ${ctx.run.id} for a lost lease that the journal still holds`);
     }
-    const timing = { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: clock.now() - startedAt };
+    if (sent.kind === 'exhausted') {
+      const failure = unpaidMessage('classifier', sent.exhausted);
+      return { ...asked({ model: classifier, failure }), notice: { type: 'notice', level: 'warning', message: `The permission classifier was not asked, so a person decides: ${failure}`, code: 'budget_auxiliary_skipped' } };
+    }
+    const { terminal, timing } = sent.value;
     if (terminal === undefined) return asked({ model: classifier, failure: 'the classifier stream ended without a terminal event' });
     if (terminal.kind === 'failed') return asked({ model: classifier, failure: `${terminal.code}: ${terminal.message}` });
     const { usage } = terminal.response;
@@ -128,6 +142,7 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
       }
       ctx.journal.append([
         ...(result.spend === undefined ? [] : [result.spend]),
+        ...(result.notice === undefined ? [] : [result.notice]),
         { type: 'tool.permission.classified', callId: request.callId, subjectDigest: request.subjectDigest, outcome: result.outcome, ...result.event },
       ]);
       return result.outcome;

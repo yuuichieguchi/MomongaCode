@@ -41,6 +41,7 @@ const decodeIndicators = (value: unknown, path: string): Indicators => {
   const duplicates = fieldsAt(fields['duplicates'], `${path}.duplicates`);
   const overrun = fieldsAt(fields['overrun'], `${path}.overrun`);
   const time = fieldsAt(fields['time'], `${path}.time`);
+  const delegation = fieldsAt(fields['delegation'], `${path}.delegation`);
   return {
     buckets: {
       counted: countAt(buckets, 'counted', `${path}.buckets`),
@@ -77,6 +78,15 @@ const decodeIndicators = (value: unknown, path: string): Indicators => {
       k: countAt(overrun, 'k', `${path}.overrun`),
       n: countAt(overrun, 'n', `${path}.overrun`),
       budgetStops: countAt(overrun, 'budgetStops', `${path}.overrun`),
+      money: rateAt(overrun['money'], `${path}.overrun.money`),
+    },
+    delegation: {
+      n: countAt(delegation, 'n', `${path}.delegation`),
+      intervened: countAt(delegation, 'intervened', `${path}.delegation`),
+      unattended: countAt(delegation, 'unattended', `${path}.delegation`),
+      waited: countAt(delegation, 'waited', `${path}.delegation`),
+      held: countAt(delegation, 'held', `${path}.delegation`),
+      denied: countAt(delegation, 'denied', `${path}.delegation`),
     },
     time: {
       n: countAt(time, 'n', `${path}.time`),

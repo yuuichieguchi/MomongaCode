@@ -1,6 +1,6 @@
 import type { MomongaPaths } from '@momonga/foundation';
 import { usdOfNano } from '@momonga/protocol';
-import type { BudgetExhausted, RunBudgetReport, RunDelegationReport, RunReport } from '@momonga/protocol';
+import type { BudgetExhausted, RunBudgetReport, RunDelegationReport, RunOperationReport, RunReport } from '@momonga/protocol';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
@@ -58,6 +58,13 @@ const delegationLines = (delegation: RunDelegationReport): string[] => [
   ...(delegation.quiescent ? ['the run finished its other work and waited for a person with calls held'] : []),
 ];
 
+const EFFECT_TEXT: Record<RunOperationReport['effect'], string> = { applied: 'applied', already_applied: 'already applied', failed: 'failed', unknown: 'unknown' };
+
+const operationLines = (operations: readonly RunOperationReport[]): string[] => [
+  'Git and Pull Request operations (observed effect, destination):',
+  ...operations.map((entry) => `  ${entry.operation}  ${EFFECT_TEXT[entry.effect]}  ${entry.target}`),
+];
+
 export const renderReport = (report: RunReport): string => {
   const outcome = report.stopReason === undefined ? report.status : `${report.status} (${report.stopReason})`;
   return escapedLines([
@@ -72,6 +79,7 @@ export const renderReport = (report: RunReport): string => {
     ...(report.budget === undefined ? [] : budgetLines(report.budget)),
     ...(report.stoppedBy === undefined ? [] : [stoppedByLine(report.stoppedBy)]),
     ...(report.delegation === undefined ? [] : delegationLines(report.delegation)),
+    ...(report.operations === undefined ? [] : operationLines(report.operations)),
   ]);
 };
 

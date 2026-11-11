@@ -26,6 +26,7 @@ import { errorTypeOf, messageOf } from './respond.ts';
 import { failureFrom, runWithRetry } from './retry.ts';
 import type { RetryOutcome } from './retry.ts';
 import { adapterContextOf, originOf } from './adapter-context.ts';
+import { requireWithinCostCeiling } from './quote.ts';
 import { adapterTargetOf } from './router.ts';
 import type { Narrowed, TargetRuntime } from './router.ts';
 import { CandidateDropped, CandidateRefused, REFUSAL_STAGES, UnprobedTarget } from './candidate-refusal.ts';
@@ -224,6 +225,12 @@ const countTokens = async (
   return settleCounted(outcome);
 };
 
+const withoutCeiling = (momonga: CompactRequest['momonga']): CompactRequest['momonga'] => {
+  if (momonga === undefined) return undefined;
+  const { max_cost_nano: _ceiling, max_input_tokens: _inputBound, ...rest } = momonga;
+  return rest;
+};
+
 export type CompactTrace = { runId: string | undefined; traceparent: string | undefined; tracestate: string | undefined };
 
 const compactOnce = async (
@@ -251,7 +258,7 @@ const compactOnce = async (
     model: target.model,
     input: resolved.forAdapter,
     ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
-    momonga: { ...request.momonga, max_summary_tokens: cap },
+    momonga: { ...withoutCeiling(request.momonga), max_summary_tokens: cap },
   });
   const sizeRefusal: Refusal = {
     stage: REFUSAL_STAGES.inputSize,
@@ -305,6 +312,12 @@ const compactOnce = async (
     try {
       capabilities = await narrowed.capabilitiesOf(target);
       cap = capFor(capabilities);
+      requireWithinCostCeiling(
+        { ceilingNano: request.momonga?.max_cost_nano, inputBound: request.momonga?.max_input_tokens, outputBound: outputTokensFor(capabilities, LOWEST_REASONING_EFFORT, cap) },
+        target,
+        services.priceTable,
+        services.clock.now(),
+      );
       const wire = wireFor(target, capabilities, cap);
       if (wire !== undefined && !fitsWindow(capabilities, cap, (await countWireOnce(services, target, capabilities, wire, guarded, attemptNumber)).result)) {
         throw new CandidateRefused(sizeRefusal);

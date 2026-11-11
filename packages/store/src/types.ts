@@ -245,6 +245,8 @@ export type IdempotencyLookup = Exclude<IdempotencyBegin, { s: 'NEW' }>;
 
 export type LeaseFence = Pick<Claim, 'runId' | 'workerId' | 'leaseToken'>;
 
+export type SettledRun = { runId: string; settled: true };
+
 export type LeasedBegin = IdempotencyBegin | { s: 'LEASE_LOST' };
 
 export type LeasedOutcome = { kind: 'ok' } | LeaseLost;
@@ -694,7 +696,7 @@ export type RuntimeStore = {
   listChildRuns(runId: string): Run[];
   treeTokens(runId: string): number;
   treeSpend(runId: string): TreeSpend & { runsRead: number };
-  admitModelRequest(claim: LeaseFence, ask: AdmissionAsk): Admission | LeaseLost;
+  admitModelRequest(holder: LeaseFence | SettledRun, ask: AdmissionAsk): Admission | LeaseLost;
   releaseBudget(runId: string): void;
   rootSessionId(sessionId: string): string;
   jobs: JobStore;

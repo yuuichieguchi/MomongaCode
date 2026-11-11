@@ -2,17 +2,18 @@ import type { Stored } from './stored-value.ts';
 import type { ApprovalBasis } from './permission-denial.ts';
 import type { PermissionMode, RunStatus, SideEffect, StopReason } from './run-types.ts';
 
-export const RELIABILITY_FORMAT = 'momonga-reliability/3';
+export const RELIABILITY_FORMAT = 'momonga-reliability/4';
 
 export const RETIRED_RELIABILITY_FORMATS: Readonly<Record<string, string>> = {
   'momonga-reliability/1': 'the tasks whose run facts hold a value the build does not know',
   'momonga-reliability/2': 'the model of each run (it was recorded as an alias name)',
+  'momonga-reliability/3': 'the money limit in the budget overrun and the figures of mandate runs',
 };
 export const MIN_RATE_POPULATION = 35;
 export const REVIEW_SAMPLE_SIZE = 73;
 export const REPORT_PAGE_ROWS = 500;
 export const FACTS_SWEEP_BATCH_RUNS = 3;
-export const INDICATOR_DEFINITIONS_VERSION = 1;
+export const INDICATOR_DEFINITIONS_VERSION = 2;
 
 export const MAIN_AGENT = 'main';
 
@@ -32,7 +33,9 @@ export type RecoveryEpisodeView = {
   progressSeq: number | null;
 };
 
-export type RunFactsLimits = { maxSteps?: number; maxTotalTokens?: number };
+export type RunFactsLimits = { maxSteps?: number; maxTotalTokens?: number; maxCostNano?: number };
+
+export type RunFactsDelegation = { held: number; resolvedByPerson: number; denied: number; waited: boolean };
 
 export type RunFactsBasis = { readOnly: number; rule: number; mode: number; hook: number; classifier: number; person: number };
 
@@ -52,8 +55,10 @@ export type RunFactsView = {
   elapsedMs: number;
   humanWaitMs: number;
   tokensTotal: number;
+  costNano: number;
   steps: number;
   limits: RunFactsLimits;
+  delegation?: RunFactsDelegation;
   deadlineAt?: number;
   asked: number;
   elicited: number;

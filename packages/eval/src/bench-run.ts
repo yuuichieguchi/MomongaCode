@@ -17,9 +17,10 @@ export type BenchRunView = {
   stopReason?: StopReason;
   createdAt: number;
   deadlineAt: number;
-  limits: { maxSteps?: number; maxTotalTokens?: number };
+  limits: { maxSteps?: number; maxTotalTokens?: number; maxCostNano?: number };
   step: number;
   tokensTotal: number;
+  costNano: number;
   origin: string;
   agent: string;
   mode: PermissionMode;
@@ -84,6 +85,7 @@ const factsOfRun = async (api: BenchRunApi, runId: string, rootRunId: string, ev
     deadlineAt: view.deadlineAt,
     step: view.step,
     tokensTotal: view.tokensTotal,
+    costNano: view.costNano,
     model: view.model,
     mode: view.mode,
     agent: view.agent,

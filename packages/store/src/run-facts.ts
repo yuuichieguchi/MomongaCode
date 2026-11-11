@@ -57,6 +57,7 @@ const factsOf = (row: Row, recoveries: RecoveryEpisodeView[], context: DecodeCon
   const stopReason = reader.nullableString('stop_reason');
   const maxSteps = reader.nullableNumber('max_steps');
   const maxTotalTokens = reader.nullableNumber('max_total_tokens');
+  const maxCostNano = reader.nullableNumber('max_cost_nano');
   const deadlineAt = reader.nullableNumber('deadline_at');
   return {
     runId: identity,
@@ -74,8 +75,12 @@ const factsOf = (row: Row, recoveries: RecoveryEpisodeView[], context: DecodeCon
     elapsedMs: reader.number('elapsed_ms'),
     humanWaitMs: reader.number('human_wait_ms'),
     tokensTotal: reader.number('tokens_total'),
+    costNano: reader.number('cost_nano'),
     steps: reader.number('steps'),
-    limits: { ...optional('maxSteps', maxSteps), ...optional('maxTotalTokens', maxTotalTokens) },
+    limits: { ...optional('maxSteps', maxSteps), ...optional('maxTotalTokens', maxTotalTokens), ...optional('maxCostNano', maxCostNano) },
+    ...(reader.flag('mandate')
+      ? { delegation: { held: reader.number('held'), resolvedByPerson: reader.number('held_resolved'), denied: reader.number('mandate_denied'), waited: reader.flag('quiescent') } }
+      : {}),
     ...optional('deadlineAt', deadlineAt),
     asked: reader.number('asked'),
     elicited: reader.number('elicited'),
@@ -120,13 +125,15 @@ export const createRunFactsStore = (db: DatabaseSync, context: DecodeContext): R
        created_at, ended_at, elapsed_ms, human_wait_ms, tokens_total, steps, max_steps, max_total_tokens, deadline_at,
        asked, elicited, authorization_required, side_effecting_calls, repeated_starts,
        reconciled_already_applied, reconciled_not_applied, reconciled_unknown,
-       basis_read_only, basis_rule, basis_mode, basis_hook, basis_classifier, basis_person, declared, met
+       basis_read_only, basis_rule, basis_mode, basis_hook, basis_classifier, basis_person, declared, met,
+       cost_nano, max_cost_nano, mandate, held, held_resolved, mandate_denied, quiescent
      ) VALUES (
        :runId, 0, :definitionsVersion, :rootRunId, :sessionId, :model, :mode, :agent, :origin, :status, :stopReason,
        :createdAt, :endedAt, :elapsedMs, :humanWaitMs, :tokensTotal, :steps, :maxSteps, :maxTotalTokens, :deadlineAt,
        :asked, :elicited, :authorizationRequired, :sideEffectingCalls, :repeatedStarts,
        :reconciledAlreadyApplied, :reconciledNotApplied, :reconciledUnknown,
-       :basisReadOnly, :basisRule, :basisMode, :basisHook, :basisClassifier, :basisPerson, :declared, :met
+       :basisReadOnly, :basisRule, :basisMode, :basisHook, :basisClassifier, :basisPerson, :declared, :met,
+       :costNano, :maxCostNano, :mandate, :held, :heldResolved, :mandateDenied, :quiescent
      )`,
   );
   const upsertUnavailable = db.prepare(
@@ -195,6 +202,13 @@ export const createRunFactsStore = (db: DatabaseSync, context: DecodeContext): R
       basisPerson: facts.basis.person,
       declared: facts.declared ? 1 : 0,
       met: facts.met ? 1 : 0,
+      costNano: facts.costNano,
+      maxCostNano: facts.limits.maxCostNano ?? null,
+      mandate: facts.delegation === undefined ? 0 : 1,
+      held: facts.delegation?.held ?? 0,
+      heldResolved: facts.delegation?.resolvedByPerson ?? 0,
+      mandateDenied: facts.delegation?.denied ?? 0,
+      quiescent: facts.delegation?.waited === true ? 1 : 0,
     });
     for (const episode of facts.recoveries) {
       insertRecovery.run({

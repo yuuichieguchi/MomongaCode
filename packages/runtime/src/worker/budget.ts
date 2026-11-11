@@ -3,7 +3,7 @@ import type { Admission, BudgetExhausted, ModelQuote, RequestBudget, TokenPrice 
 
 export const OUTPUT_FLOOR_TOKENS = 256;
 
-export type StepSize = { inputTokens: number; marginTokens: number; maxOutputTokens: number };
+export type StepSize = { inputTokens: number; marginTokens: number; maxOutputTokens: number; outputFloor?: number };
 
 export type BudgetLimits = { maxTotalTokens: number; maxCostNano?: number };
 
@@ -26,7 +26,7 @@ export const admitStep = ({ size, limits, price, unpricedCalls, spentNano, ledge
   const verdict = ledger.admitModelRequest({
     inputUpper,
     outputWanted: size.maxOutputTokens,
-    outputFloor: OUTPUT_FLOOR_TOKENS,
+    outputFloor: size.outputFloor ?? OUTPUT_FLOOR_TOKENS,
     ...(price === undefined ? {} : { price }),
     limits: { tokens: limits.maxTotalTokens, ...(limits.maxCostNano === undefined ? {} : { costNano: limits.maxCostNano }) },
   });
@@ -53,4 +53,10 @@ export const exhaustedText = (exhausted: BudgetExhausted, format: (dimension: Bu
   if (exhausted.cause === 'unpriced') return `The run stopped at its ${what} limit: a model call has no price, so its cost cannot be counted (${figures}).`;
   if (exhausted.cause === 'cap_too_small') return `The run stopped at its ${what} limit: what is left does not pay for another model request (${figures}).`;
   return `The run stopped at its ${what} limit (${figures}).`;
+};
+
+export const unpaidText = (exhausted: BudgetExhausted, format: (dimension: BudgetExhausted['dimension'], value: number) => string): string => {
+  const what = DIMENSION_WORDS[exhausted.dimension];
+  if (exhausted.cause === 'unpriced') return `its model has no price, so its cost cannot be counted under the ${what} limit of the run`;
+  return `${format(exhausted.dimension, exhausted.spent)} of ${format(exhausted.dimension, exhausted.limit)} of the ${what} limit of the run are used or reserved`;
 };

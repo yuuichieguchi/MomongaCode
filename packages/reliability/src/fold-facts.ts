@@ -1,4 +1,4 @@
-import { INDICATOR_DEFINITIONS_VERSION, TERMINAL_STATUSES, pinnedCompletionOf } from '@momonga/protocol';
+import { INDICATOR_DEFINITIONS_VERSION, TERMINAL_STATUSES, pinnedCompletionOf, pinnedDelegationOf } from '@momonga/protocol';
 import type { RecoveryCause, RecoveryEpisodeView, RecoveryOutcome, RunEvent, RunFactsView } from '@momonga/protocol';
 import type { RunInfo } from './types.ts';
 
@@ -29,6 +29,9 @@ export const FACTS_EVENT_TYPES = [
   'tool.started',
   'tool.completed',
   'tool.reconciled',
+  'tool.held',
+  'tool.held.resolved',
+  'run.quiescent',
   'tool.permission.requested',
   'tool.unknown.requested',
   'tool.elicitation.requested',
@@ -50,6 +53,11 @@ export const createFactsFold = (): FactsFold => {
   let pending: Episode | undefined;
   let ordinal = 0;
   let declared: boolean | undefined;
+  let mandated: boolean | undefined;
+  let held = 0;
+  let resolvedByPerson = 0;
+  let denied = 0;
+  let waited = false;
   let asked = 0;
   let elicited = 0;
   let authorizationRequired = 0;
@@ -103,6 +111,7 @@ export const createFactsFold = (): FactsFold => {
     switch (event.type) {
       case 'run.started': {
         declared ??= declaredCompletion(event);
+        mandated ??= pinnedDelegationOf(event.pins) !== undefined;
         break;
       }
       case 'attempt.failed':
@@ -140,7 +149,17 @@ export const createFactsFold = (): FactsFold => {
         openCalls.add(event.callId);
         break;
       }
+      case 'tool.held':
+        held += 1;
+        break;
+      case 'tool.held.resolved':
+        if (event.outcome !== 'withdrawn') resolvedByPerson += 1;
+        break;
+      case 'run.quiescent':
+        waited = true;
+        break;
       case 'tool.completed':
+        if (event.denial?.source === 'mandate') denied += 1;
         settle(event.callId);
         progress(event);
         break;
@@ -192,8 +211,10 @@ export const createFactsFold = (): FactsFold => {
       elapsedMs: endedAt - info.createdAt,
       humanWaitMs,
       tokensTotal: info.tokensTotal,
+      costNano: info.costNano,
       steps: info.step,
       limits: info.limits,
+      ...(mandated === true ? { delegation: { held, resolvedByPerson, denied, waited } } : {}),
       ...(info.deadlineAt === undefined ? {} : { deadlineAt: info.deadlineAt }),
       asked,
       elicited,

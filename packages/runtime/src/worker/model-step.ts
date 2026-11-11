@@ -1,6 +1,6 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { BuiltContext, TokenMeter } from '@momonga/context';
-import { BUDGET_EXCEEDED_CODE, LOWEST_REASONING_EFFORT, describeFallbackCause, marginFloorFor, tokenPriceOfQuote, usdOfNano, wireUsageOf } from '@momonga/protocol';
+import { BUDGET_EXCEEDED_CODE, LOWEST_REASONING_EFFORT, describeFallbackCause, marginFloorFor, wireUsageOf } from '@momonga/protocol';
 import { billedDetailOf, priceOutcomeOf } from './model-stream.ts';
 import type { BudgetExhausted, ModelQuote, Capabilities, CreateResponseBody, ModelRejectionReason, FunctionTool, InputItem, ModelResponse, MomongaResponseExtension, ResponseResource, RunEventPayload, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
@@ -17,11 +17,14 @@ import type { CallResult } from './loop-guidance.ts';
 import { streamModel } from './model-stream.ts';
 import type { StreamedModel } from './model-stream.ts';
 import { summaryStopReason } from './wrap-up.ts';
-import { admitStep, exhaustedText, requestBudgetOf, stepsExhausted } from './budget.ts';
+import { requestBudgetOf, stepsExhausted } from './budget.ts';
+import { admissionFor, ceilingOf, overCeiling, quoteFor } from './admitted-request.ts';
+import type { AdmissionProof } from './admitted-request.ts';
+import { stopExhausted, stopReasonOf } from './budget-stop.ts';
 import type { StepAdmission } from './budget.ts';
 import { stopGate } from './verification-step.ts';
 import { recordCalls, settleCalls, settleHeld } from './tool-step.ts';
-import { hasHeld, heldViewsOf, quiescentText } from './held-calls.ts';
+import { hasHeld, quiesce } from './held-calls.ts';
 import { pinnedDigestOf } from './pinned-digest.ts';
 import { recordPrefix } from './prefix-record.ts';
 import { cacheControlsOf } from './cache-controls.ts';
@@ -33,48 +36,8 @@ const REFUSAL_CODES = ['guardrail_violation', 'refusal', 'content_filter'];
 
 const isRequestBody = (value: unknown): value is CreateResponseBody => isRecord(value) && typeof value['model'] === 'string';
 
-const admissionFor = (ctx: ClaimContext, built: BuiltContext, quote: ModelQuote | undefined): StepAdmission => {
-  const spend = ctx.options.store.treeSpend(ctx.run.id);
-  return admitStep({
-    size: { inputTokens: built.inputTokens, marginTokens: built.budget.margin, maxOutputTokens: built.maxOutputTokens },
-    limits: { maxTotalTokens: ctx.limits.maxTotalTokens, ...(ctx.limits.maxCostNano === undefined ? {} : { maxCostNano: ctx.limits.maxCostNano }) },
-    price: quote === undefined ? undefined : tokenPriceOfQuote(quote),
-    unpricedCalls: spend.unpricedCalls,
-    spentNano: spend.costNano,
-    ledger: { admitModelRequest: (ask) => ctx.options.store.admitModelRequest(ctx.claim, ask) },
-  });
-};
-
-const budgetFigure = (dimension: BudgetExhausted['dimension'], value: number): string => (dimension === 'cost' ? `${usdOfNano(value)} USD` : dimension === 'time' ? `${value} ms` : `${value} ${dimension}`);
-
-const stopReasonOf = (exhausted: BudgetExhausted): 'max_steps' | 'budget' => (exhausted.dimension === 'steps' ? 'max_steps' : 'budget');
-
-const stopExhausted = (ctx: ClaimContext, exhausted: BudgetExhausted): Promise<Flow> => {
-  ctx.journal.append([
-    { type: 'budget.exhausted', ...exhausted },
-    { type: 'notice', level: 'error', message: exhaustedText(exhausted, budgetFigure), code: 'budget_exhausted' },
-  ]);
-  return ctx.terminals.finish('STOPPED', { stopReason: stopReasonOf(exhausted) });
-};
-
-const stopOverCeiling = (ctx: ClaimContext): Promise<Flow> => {
-  const limit = ctx.limits.maxCostNano;
-  if (limit === undefined) throw new Error(`the gateway refused a model request of run ${ctx.run.id} over a cost ceiling the run does not have`);
-  const spend = ctx.options.store.treeSpend(ctx.run.id);
-  return stopExhausted(ctx, { dimension: 'cost', cause: 'cap_too_small', spent: spend.costNano + spend.reservedNano, limit });
-};
-
-const quiesce = (ctx: ClaimContext): Promise<Flow> => {
-  const { journal } = ctx;
-  if (journal.state.quiescent !== true) {
-    const held = heldViewsOf(journal.state);
-    journal.append([
-      { type: 'run.quiescent', held },
-      { type: 'notice', level: 'warning', message: quiescentText(held), code: 'run_quiescent' },
-    ]);
-  }
-  return ctx.terminals.yieldTo('WAITING_HUMAN');
-};
+const admissionOf = (ctx: ClaimContext, built: BuiltContext, quote: ModelQuote | undefined): StepAdmission =>
+  admissionFor(ctx.budget, { inputTokens: built.inputTokens, marginTokens: built.budget.margin, maxOutputTokens: built.maxOutputTokens }, quote);
 
 const incompleteFailure = (reason: string | undefined, terminals: ClaimContext['terminals']): Promise<Flow> => {
   if (reason === 'max_output_tokens') return terminals.finish('STOPPED', { stopReason: 'max_tokens' });
@@ -195,7 +158,7 @@ const handleResult = async (
       return terminals.finish('STOPPED', { stopReason: 'refusal' });
     }
     if (result.code === DEADLINE_CODE) return terminals.finish('STOPPED', { stopReason: 'timeout' });
-    if (result.code === BUDGET_EXCEEDED_CODE) return stopOverCeiling(ctx);
+    if (result.code === BUDGET_EXCEEDED_CODE) return stopExhausted(ctx, overCeiling(ctx.budget));
     if (result.retryable) throw new GatewayFailureError(`${result.code}: ${result.message}`);
     const terminal = terminalOf(responseFailureDisposition(result));
     return terminals.finish(terminal.to, terminal.patch);
@@ -346,19 +309,20 @@ const streamRecovering = async (
   ctx: ClaimContext,
   body: CreateResponseBody,
   position: { step: number; attempt: number },
+  proof: AdmissionProof,
 ): Promise<StreamOutcome> => {
   try {
-    return { kind: 'result', streamed: await streamModel(ctx, body, modelKey(ctx.run.id, position.step, position.attempt), position) };
+    return { kind: 'result', streamed: await streamModel(ctx, body, modelKey(ctx.run.id, position.step, position.attempt), position, proof) };
   } catch (error) {
     if (error instanceof GatewayRequestError && error.code === BUDGET_EXCEEDED_CODE) {
       delete ctx.control.inFlight.modelKey;
-      return { kind: 'flow', flow: await stopOverCeiling(ctx) };
+      return { kind: 'flow', flow: await stopExhausted(ctx, overCeiling(ctx.budget)) };
     }
     const recovery = await recoverRejectedCompaction(ctx, error, position);
     delete ctx.control.inFlight.modelKey;
     return { kind: 'flow', flow: recovery === 'done' ? 'done' : 'continue' };
   } finally {
-    ctx.options.store.releaseBudget(ctx.run.id);
+    ctx.budget.release();
   }
 };
 
@@ -369,7 +333,7 @@ export const resumeInFlight = async (ctx: ClaimContext): Promise<Flow> => {
   const position = { step: inFlight.step, attempt: inFlight.attempt };
   if (ctx.control.yieldRequested()) return ctx.terminals.yieldLease();
   if (streamedBeforeRestart(ctx.journal.state, position)) ctx.journal.append([{ type: 'model.stream.restarted', step: position.step, attempt: position.attempt }]);
-  const outcome = await streamRecovering(ctx, inFlight.body, position);
+  const outcome = await streamRecovering(ctx, inFlight.body, position, 'recorded');
   return outcome.kind === 'flow' ? outcome.flow : handleResult(ctx, outcome.streamed, position, observationOf(inFlight.body));
 };
 
@@ -417,17 +381,17 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   const { journal, terminals, options } = ctx;
   if (options.clock.now() >= ctx.run.deadlineAt) return terminals.finish('STOPPED', { stopReason: 'timeout' });
   if (ctx.control.yieldRequested()) return terminals.yieldLease();
-  const quote = ctx.limits.maxCostNano === undefined ? undefined : await ctx.quote();
+  const quote = await quoteFor(ctx.budget, ctx.model);
   const trailing = loopGuidanceTrailing(ctx);
   let exhausted = stepsExhausted(journal.state.step, ctx.limits.maxSteps);
   let outcome = await buildNext(ctx, { ...(exhausted === undefined ? {} : { wrapUp: stopReasonOf(exhausted) }), trailing });
   if (outcome.kind === 'done') return 'done';
-  let admission = admissionFor(ctx, outcome.built, quote);
+  let admission = admissionOf(ctx, outcome.built, quote);
   if (admission.kind === 'exhausted' && exhausted === undefined && outcome.wrapUp === undefined && admission.exhausted.cause !== 'unpriced') {
     exhausted = admission.exhausted;
     outcome = await buildNext(ctx, { wrapUp: stopReasonOf(exhausted), trailing });
     if (outcome.kind === 'done') return 'done';
-    admission = admissionFor(ctx, outcome.built, quote);
+    admission = admissionOf(ctx, outcome.built, quote);
   }
   if (admission.kind === 'lease_lost') return terminals.yieldLease();
   if (admission.kind === 'exhausted') return stopExhausted(ctx, exhausted ?? admission.exhausted);
@@ -450,8 +414,8 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   const position = { step, attempt: 1 };
   const prefixRecord = recordPrefix(ctx, built, summarising);
   const cacheControls = cacheControlsOf(ctx, built, prefixRecord?.prefix);
-  const costCeiling = admission.costLimited ? { max_cost_nano: admission.reservedNano, max_input_tokens: admission.inputUpper } : {};
-  const body: CreateResponseBody = { ...plainBody, ...cacheControls, momonga: { ...cacheControls.momonga, ...EXACT_MODEL, ...costCeiling } };
+  const body: CreateResponseBody = { ...plainBody, ...cacheControls, momonga: { ...cacheControls.momonga, ...EXACT_MODEL, ...ceilingOf(admission) } };
+  const proof = requestBudgetOf(admission, quote);
   const requestOffered = offeredRecordFor(journal.state.offeredTools, built.tools.map((tool) => tool.name));
   journal.append([
     ...(requestOffered === undefined ? [] : [requestOffered]),
@@ -467,10 +431,10 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
       body,
       anatomy: built.anatomy,
       ...(prefixRecord === undefined ? {} : { prefix: prefixRecord.prefix }),
-      budget: requestBudgetOf(admission, quote),
+      budget: proof,
     },
   ]);
-  const streamed = await streamRecovering(ctx, body, position);
+  const streamed = await streamRecovering(ctx, body, position, proof);
   return streamed.kind === 'flow'
     ? streamed.flow
     : handleResult(ctx, streamed.streamed, position, observationOf(body));

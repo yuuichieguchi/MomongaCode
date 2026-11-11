@@ -50,14 +50,18 @@ const optionIdFor = (event: Extract<PublicRunEvent, { type: 'tool.permission.req
 
 export type Driven = { events: PublicRunEvent[]; children: TranscriptChild[] };
 
-export const driveRun = async (api: Pick<EvalRunApi, 'events' | 'resolveApproval' | 'cancelRun'>, golden: Pick<GoldenCase, 'id' | 'onAsk'>, rootRunId: string): Promise<Driven> => {
+export const driveRun = async (api: Pick<EvalRunApi, 'events' | 'resolveApproval' | 'cancelRun'>, golden: Pick<GoldenCase, 'id' | 'onAsk' | 'mandate'>, rootRunId: string): Promise<Driven> => {
   const events: PublicRunEvent[] = [];
   const children: TranscriptChild[] = [];
   const followed = new Set<string>([rootRunId]);
   const following: Promise<void>[] = [];
   const failures: unknown[] = [];
+  const staysHeld = golden.mandate?.hold?.onQuiescent === 'report';
+  const leftHeld = Promise.withResolvers<void>();
+  let ended = false;
 
   const abandon = async (error: unknown): Promise<void> => {
+    if (ended) return;
     failures.push(error);
     try {
       await api.cancelRun(rootRunId);
@@ -77,6 +81,13 @@ export const driveRun = async (api: Pick<EvalRunApi, 'events' | 'resolveApproval
       sink.push(event);
       if (event.type === 'tool.permission.requested') await api.resolveApproval(event.approvalId, optionIdFor(event, golden));
       if (event.type === 'tool.unknown.requested') await answerUnknownEffect(event);
+      if (event.type === 'run.quiescent') {
+        if (staysHeld) {
+          leftHeld.resolve();
+          return;
+        }
+        for (const held of event.held) await api.resolveApproval(held.approvalId, golden.onAsk);
+      }
       if (event.type === 'tool.waiting' && event.awaits.kind === 'run' && !followed.has(event.awaits.runId)) {
         followed.add(event.awaits.runId);
         const child: TranscriptChild = { runId: event.awaits.runId, agent: event.awaits.agent, events: [] };
@@ -86,8 +97,13 @@ export const driveRun = async (api: Pick<EvalRunApi, 'events' | 'resolveApproval
     }
   };
 
-  await follow(rootRunId, events).catch(abandon);
-  for (let index = 0; index < following.length; index += 1) await following[index];
+  const followedToTheEnd = async (): Promise<void> => {
+    await follow(rootRunId, events).catch(abandon);
+    for (let index = 0; index < following.length; index += 1) await following[index];
+  };
+  const everyRunEnded = followedToTheEnd();
+  await Promise.race([leftHeld.promise, everyRunEnded]);
+  ended = true;
   const [first, ...rest] = failures;
   if (rest.length > 0) {
     throw new EvalError(`case ${golden.id}: ${failures.length} failures: ${failures.map((failure) => (failure instanceof Error ? failure.message : String(failure))).join('; ')}`, {

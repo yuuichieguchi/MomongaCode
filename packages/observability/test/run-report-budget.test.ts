@@ -103,3 +103,31 @@ describe('the run report lists the calls a mandate run held and denied', () => {
     expect(() => buildRunReport(journalOf([call('m1', 'Bash'), { type: 'tool.held.resolved', callId: 'm1', approvalId: 'ap', outcome: 'rejected', status: 'failed', output: '' }]))).toThrow(/was not held/);
   });
 });
+
+describe('the run report lists the Git and Pull Request operations of the run with their observed effect', () => {
+  it('reports each operation with its destination and effect, the reconciled effect of a call replacing nothing but its own', () => {
+    const report = buildRunReport(
+      journalOf([
+        call('c1', 'GitPush'),
+        asPayload({ type: 'tool.completed', callId: 'c1', status: 'completed', output: 'pushed', effect: { operation: 'GitPush', target: 'origin refs/heads/feature', outcome: 'applied' } }),
+        call('c2', 'PullRequestCreate'),
+        asPayload({ type: 'tool.reconciled', callId: 'c2', outcome: 'already_applied', output: 'exists', effect: { operation: 'PullRequestCreate', target: 'acme/app#7', outcome: 'already_applied' } }),
+        call('c3', 'GitFetch'),
+        asPayload({ type: 'tool.completed', callId: 'c3', status: 'failed', output: 'no route', effect: { operation: 'GitFetch', target: 'origin', outcome: 'failed' } }),
+        call('c4', 'Bash'),
+        asPayload({ type: 'tool.completed', callId: 'c4', status: 'completed', output: 'ok' }),
+        { type: 'run.status', from: 'RUNNING', to: 'COMPLETED' },
+      ]),
+    );
+
+    expect(report.operations).toEqual([
+      { callId: 'c1', operation: 'GitPush', target: 'origin refs/heads/feature', effect: 'applied' },
+      { callId: 'c2', operation: 'PullRequestCreate', target: 'acme/app#7', effect: 'already_applied' },
+      { callId: 'c3', operation: 'GitFetch', target: 'origin', effect: 'failed' },
+    ]);
+  });
+
+  it('has no operations section for a run without an operation', () => {
+    expect('operations' in buildRunReport(journalOf([{ type: 'run.status', from: 'RUNNING', to: 'COMPLETED' }]))).toBe(false);
+  });
+});

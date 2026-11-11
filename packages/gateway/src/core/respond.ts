@@ -163,7 +163,12 @@ const openAttempt = async (
   signal: AbortSignal,
   call: CallIdentity,
 ): Promise<Opened> => {
-  requireWithinCostCeiling(job.body, target, services.priceTable, services.clock.now());
+  requireWithinCostCeiling(
+    { ceilingNano: job.body.momonga?.max_cost_nano, inputBound: job.body.momonga?.max_input_tokens, outputBound: job.body.max_output_tokens },
+    target,
+    services.priceTable,
+    services.clock.now(),
+  );
   const release = await target.gate.acquire(signal);
   const startSpan = (retryOf?: number): AttemptSpan =>
     startAttemptSpan({

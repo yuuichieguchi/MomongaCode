@@ -259,6 +259,10 @@ const runReport = closed(
       },
       ['held', 'denied', 'quiescent'],
     ),
+    operations: {
+      type: 'array',
+      items: closed({ callId: string, operation: string, target: string, effect: enumOf(OPERATION_EFFECT_OUTCOMES) }, ['callId', 'operation', 'target', 'effect']),
+    },
   },
   ['runId', 'status', 'durationMs', 'declaration', 'changes', 'conditions', 'notRun', 'residualRisk', 'modelChecks'],
 );
@@ -404,8 +408,10 @@ const runFactsViewProperties: Record<string, JsonSchema> = {
   elapsedMs: integer,
   humanWaitMs: nonNegativeInteger,
   tokensTotal: nonNegativeInteger,
+  costNano: nonNegativeInteger,
   steps: nonNegativeInteger,
-  limits: closed({ maxSteps: nonNegativeInteger, maxTotalTokens: nonNegativeInteger }, []),
+  limits: closed({ maxSteps: nonNegativeInteger, maxTotalTokens: nonNegativeInteger, maxCostNano: nonNegativeInteger }, []),
+  delegation: closed({ held: nonNegativeInteger, resolvedByPerson: nonNegativeInteger, denied: nonNegativeInteger, waited: boolean }, ['held', 'resolvedByPerson', 'denied', 'waited']),
   deadlineAt: integer,
   asked: nonNegativeInteger,
   elicited: nonNegativeInteger,
@@ -423,7 +429,7 @@ const runFactsViewProperties: Record<string, JsonSchema> = {
 
 const runFactsView = closed(
   runFactsViewProperties,
-  Object.keys(runFactsViewProperties).filter((key) => key !== 'stopReason' && key !== 'deadlineAt'),
+  Object.keys(runFactsViewProperties).filter((key) => key !== 'stopReason' && key !== 'deadlineAt' && key !== 'delegation'),
 );
 
 type PublicPayloadKeys<Type> = Extract<PublicPayload | SessionEventPayload, { type: Type }> extends infer Payload ? (Payload extends unknown ? Exclude<keyof Payload, 'type'> : never) : never;

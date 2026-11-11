@@ -37,6 +37,7 @@ const row = (runId: string, overrides: Partial<RunFactsView> = {}): RunFactsView
   elapsedMs: 10,
   humanWaitMs: 0,
   tokensTotal: 0,
+  costNano: 0,
   steps: 1,
   limits: {},
   asked: 0,

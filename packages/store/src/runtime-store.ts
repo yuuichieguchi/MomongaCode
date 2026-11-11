@@ -1409,8 +1409,14 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     treeSpend: (runId) => treeSpendOf(runId, null),
 
-    admitModelRequest: (claim, ask) =>
+    admitModelRequest: (holder, ask) =>
       transaction<Admission | LeaseLost>(() => {
+        if ('settled' in holder) {
+          const settled = requireRun(holder.runId);
+          if (!isTerminal(settled.status)) throw new Error(`run ${holder.runId} is ${settled.status}: only its worker admits a model request while it is not ended`);
+          return admitRequest(ask, treeSpendOf(holder.runId, null));
+        }
+        const claim = holder;
         if (fenced(claim) === undefined) return leaseLost;
         const verdict = admitRequest(ask, treeSpendOf(claim.runId, claim.runId));
         if (verdict.kind === 'admitted') sql.reserveBudget.run({ id: claim.runId, tokens: verdict.reservedTokens, nano: verdict.reservedNano });

@@ -1,5 +1,5 @@
 import { NOT_RUN_REASONS, RESIDUAL_RISK_CODES, completionMutates, conditionOwed, pinnedCompletionOf, reconciliationMutates } from '@momonga/protocol';
-import type { BudgetExhausted, ConditionResult, ConditionState, MutationFacts, NotRunReason, PinnedCompletion, ResidualRiskCode, RunBudgetReport, RunDeniedCallReport, RunEvent, RunEventPayload, RunHeldCallReport, RunReport } from '@momonga/protocol';
+import type { BudgetExhausted, ConditionResult, ConditionState, MutationFacts, NotRunReason, PinnedCompletion, ResidualRiskCode, OperationEffectRecord, RunBudgetReport, RunDeniedCallReport, RunOperationReport, RunEvent, RunEventPayload, RunHeldCallReport, RunReport } from '@momonga/protocol';
 
 type CallRecord = MutationFacts & { name: string; command: string | undefined; waitsOnRun: boolean; completedStatus: 'completed' | 'failed' | undefined };
 
@@ -65,6 +65,11 @@ export const createRunReportFold = (): RunReportFold => {
   const denied: RunDeniedCallReport[] = [];
   let stoppedBy: BudgetExhausted | undefined;
   let quiescent = false;
+  const operations = new Map<string, RunOperationReport>();
+
+  const recordEffect = (callId: string, effect: OperationEffectRecord | undefined): void => {
+    if (effect !== undefined) operations.set(callId, { callId, operation: effect.operation, target: effect.target, effect: effect.outcome });
+  };
 
   const recordMutation = (hasKnownPaths: boolean, seq: number): void => {
     lastMutationSeq = seq;
@@ -118,6 +123,7 @@ export const createRunReportFold = (): RunReportFold => {
         if (event.denial !== undefined) denials += 1;
         if (event.denial?.source === 'mandate' || event.denial?.source === 'held') denied.push({ callId: event.callId, tool: call.name, source: event.denial.source, reason: event.denial.reason });
         if (event.truncated === true) truncatedOutputs += 1;
+        recordEffect(event.callId, event.effect);
         if (completionMutates(call, event)) {
           const changed = event.files?.filter((file) => file.access !== 'read') ?? [];
           recordMutation(changed.length > 0, event.seq);
@@ -130,6 +136,7 @@ export const createRunReportFold = (): RunReportFold => {
       }
       case 'tool.reconciled': {
         const call = requireCall(event.callId, event.type);
+        recordEffect(event.callId, event.effect);
         if (event.outcome === 'unknown') unknownEffectCalls += 1;
         if (reconciliationMutates(call, event.outcome)) recordMutation(false, event.seq);
         break;
@@ -221,6 +228,7 @@ export const createRunReportFold = (): RunReportFold => {
       ...(span.budget === undefined ? {} : { budget: span.budget }),
       ...(stoppedBy === undefined ? {} : { stoppedBy }),
       ...(held.size === 0 && denied.length === 0 && !quiescent ? {} : { delegation: { held: [...held.values()], denied, quiescent } }),
+      ...(operations.size === 0 ? {} : { operations: [...operations.values()] }),
     };
   };
 
