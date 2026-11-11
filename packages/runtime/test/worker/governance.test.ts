@@ -292,7 +292,7 @@ describe('memory recall in a run', () => {
     env.setMode('bypassPermissions');
     env.gateway.script.push(callsStep([{ callId: 'call_m_1', name: 'MemorySave', args: { text, scope: 'project' } }]), textStep('Saved.'));
     await env.enqueue('Remember', { history: 'fresh' });
-    await env.runOnce(env.worker('w-seed', { memories: createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }) }));
+    await env.runOnce(env.worker('w-seed', { memories: createMemoryPort({ platform: process.platform, store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }) }));
     return env.store.memories.list()[0];
   };
 
@@ -301,7 +301,7 @@ describe('memory recall in a run', () => {
     const memory = await seedMemory(env, 'tests live in test/');
     env.gateway.script.push(textStep('Done.'));
     const run = await env.enqueue('Hello', { history: 'fresh' });
-    await env.runOnce(env.worker('w-2', { memories: createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }) }));
+    await env.runOnce(env.worker('w-2', { memories: createMemoryPort({ platform: process.platform, store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }) }));
     expect(env.ofType(run.id, 'context.memories_loaded').map((event) => event.memories)).toEqual([[{ id: memory?.id, status: 'unbound' }]]);
   });
 
@@ -310,7 +310,7 @@ describe('memory recall in a run', () => {
     await seedMemory(env, 'first note about alpha');
     env.gateway.script.push(callsStep([{ callId: 'call_m_2', name: 'MemorySave', args: { text: 'second note about sweeper', scope: 'project' } }]), textStep('Saved.'));
     await env.enqueue('Remember', { history: 'fresh' });
-    const memories = createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun });
+    const memories = createMemoryPort({ platform: process.platform, store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun });
     await env.runOnce(env.worker('w-2', { memories }));
     const streams = env.gateway.streams.length;
     env.gateway.script.push(textStep('Done.'));

@@ -25,6 +25,7 @@ import { readRunLimits } from '../worker/limits.ts';
 import type { WorkerDefaults } from '../worker/types.ts';
 
 export type ReflectorOptions = {
+  platform: NodeJS.Platform;
   store: Pick<RuntimeStore, 'reflection' | 'memories' | 'contextCharges' | 'getRun' | 'getSession' | 'readRunEventsOfTypes' | 'journalFacts' | 'treeSpend' | 'admitModelRequest'>;
   gateway: Pick<GatewayPort, 'stream' | 'capabilities' | 'countTokens' | 'quote'>;
   defaults?: WorkerDefaults;
@@ -143,7 +144,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       }
       try {
         const evidence = await bindMemoryEvidence({
-          platform: process.platform,
+          platform: options.platform,
           scope: 'project',
           paths,
           project,

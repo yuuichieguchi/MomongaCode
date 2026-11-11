@@ -28,6 +28,7 @@ type Env = Awaited<ReturnType<typeof factsStore>>;
 
 const memoryTools = async (env: Env) => {
   const port = createMemoryPort({
+    platform: process.platform,
     store: env.store,
     settings: { trusted: () => true, verification: async () => VERIFICATION },
     evidenceRun: () => async () => ({ exitCode: 0, stdout: `${HEAD}\n` }),
@@ -41,6 +42,7 @@ const memoryTools = async (env: Env) => {
 
 const reflectorFor = async (env: Env, gateway: ReturnType<typeof createFakeGateway>) =>
   createReflector({
+    platform: process.platform,
     store: env.store,
     gateway,
     settings: {

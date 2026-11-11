@@ -669,7 +669,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         owners: runtime.owners,
         onWarning,
       });
-      const memories = createMemoryPort({ store, settings: composition.settings, evidenceRun: evidenceRunFor });
+      const memories = createMemoryPort({ platform, store, settings: composition.settings, evidenceRun: evidenceRunFor });
       const history = createHistoryPort({ store, settings: composition.settings, clock, home: canonicalHome, redactor, enforcement: () => sandboxes.current().ruleEnforcement });
       const governance = createGovernancePort({ store, settings: composition.settings });
       const agents = createAgentsPort({
@@ -779,6 +779,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           files: nodeFileSystem,
         }),
         evidenceRun: evidenceRunFor,
+        platform,
         defaults: RUNTIME_DEFAULTS,
         timers,
         cancelUpstream: tracker.cancel,
@@ -853,7 +854,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           defaults: RUNTIME_DEFAULTS.limits,
           home: canonicalHome,
           blobs: store.blobs,
-          instructionReaderFor: createFsInstructionReader,
+          instructionReaderFor: (signal) => createFsInstructionReader(signal, platform),
           wake: notifier,
           onError: (error, context) =>
             logger.error('worker error', {
@@ -904,6 +905,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         role: rolePort,
         isIdle: () => phase === 'running' && rolePort.current() === 'serving' && !store.hasActiveRun(),
         evidenceRun: evidenceRunFor,
+        platform,
         maxAttempts: STORE_MAX_ATTEMPTS,
         attemptTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs,
         timers,

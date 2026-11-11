@@ -23,6 +23,12 @@ describe('an instruction read ends with the operation that asked for it', () => 
     const asker = new AbortController();
     const ended = new Error('the claim ended');
     asker.abort(ended);
-    await expect(createFsInstructionReader(asker.signal)[method](fileIn())).rejects.toBe(ended);
+    await expect(createFsInstructionReader(asker.signal, process.platform)[method](fileIn())).rejects.toBe(ended);
+  });
+});
+
+describe('the instruction reader takes its platform from the start', () => {
+  it('names the platform it was given, not the host it runs on', () => {
+    expect(createFsInstructionReader(new AbortController().signal, 'win32').platform).toBe('win32');
   });
 });

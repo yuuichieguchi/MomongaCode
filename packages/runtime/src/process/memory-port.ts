@@ -16,6 +16,7 @@ import type { MemoryPort, RecallCapacity, SettingsPort } from '../ports.ts';
 import { MEMORY_PAGE_ROWS } from './constants.ts';
 
 export type MemoryPortOptions = {
+  platform: NodeJS.Platform;
   store: Pick<RuntimeStore, 'memories' | 'journalFacts' | 'trust'>;
   settings: Pick<SettingsPort, 'trusted'>;
   evidenceRun: (project: string) => EvidenceRun;
@@ -30,7 +31,7 @@ export const recallPrefixTokensOf = (text: string, capacity: RecallCapacity): nu
 const visibleTo = (memory: MemoryRecord, visibility: MemoryVisibility): boolean =>
   visibility.trusted ? (memory.scope === 'user' && memory.origin === 'trusted') || (memory.scope === 'project' && memory.project === visibility.project) : memory.scope === 'user';
 
-export const createMemoryPort = ({ store, settings, evidenceRun, evidencePorts = createEvidencePorts }: MemoryPortOptions): MemoryPort => ({
+export const createMemoryPort = ({ platform, store, settings, evidenceRun, evidencePorts = createEvidencePorts }: MemoryPortOptions): MemoryPort => ({
   load: async (session, signal) => {
     const trusted = await settings.trusted(session, signal);
     const visibility: MemoryVisibility = trusted ? { trusted: true, project: session.cwd } : { trusted: false };
@@ -76,7 +77,7 @@ export const createMemoryPort = ({ store, settings, evidenceRun, evidencePorts =
       save: async ({ scope, text, runId, step, callId, kind, paths, supersedes, signal: bound }) => {
         replaceable(supersedes ?? [], scope);
         const evidence = await bindMemoryEvidence({
-          platform: process.platform,
+          platform,
           scope,
           paths: paths ?? [],
           project: scope === 'project' ? session.cwd : null,

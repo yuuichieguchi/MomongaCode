@@ -8,7 +8,7 @@ import { DEADLINE_MS, LEASE_MS, capabilitiesFor, createdRun, makeEnv, textOf, un
 import type { Env } from './harness.ts';
 import { callsStep, gated, textStep } from './scripts.ts';
 
-const memoryWorker = (env: Env, id: string): Worker => env.worker(id, { memories: createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }) });
+const memoryWorker = (env: Env, id: string): Worker => env.worker(id, { memories: createMemoryPort({ platform: process.platform, store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }) });
 
 type Past = { injected: number; used: number; dropped?: boolean; share?: number };
 

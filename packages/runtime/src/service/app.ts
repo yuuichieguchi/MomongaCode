@@ -108,6 +108,7 @@ export type RunAppDeps = {
   permissionRules: (session: Session, signal: AbortSignal) => Promise<readonly PermissionRule[]>;
   userInput: UserInputPort;
   evidenceRun: (project: string) => EvidenceRun;
+  platform: NodeJS.Platform;
   isDraining(): boolean;
   beginDraining(): void;
   role(): GenerationRole;
@@ -774,6 +775,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     store,
     views: createRecordViews({ store, evidenceRun: deps.evidenceRun }),
     evidenceRun: deps.evidenceRun,
+    platform: deps.platform,
     maxBodyBytes: deps.maxBodyBytes,
     closeSignal: deps.closeSignal,
     home: deps.home,
