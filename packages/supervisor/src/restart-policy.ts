@@ -10,7 +10,7 @@ export type RestartPolicy = {
   startupKillGraceMs: number;
 };
 
-export type StopReason = 'shutdown' | 'startup-timeout' | 'ready-mismatch';
+export type StopReason = 'shutdown' | 'superseded' | 'unpromoted' | 'startup-timeout' | 'ready-mismatch';
 
 export type StopMode = 'term' | 'int';
 
@@ -36,15 +36,29 @@ export const resolveRestartPolicy = (overrides: Partial<RestartPolicy> = {}): Re
 
 const STOP_REASON_RANKS = {
   shutdown: 2,
+  superseded: 2,
+  unpromoted: 2,
   'startup-timeout': 1,
   'ready-mismatch': 1,
 } as const satisfies Record<StopReason, number>;
 
 export const stopReasonRank = (reason: StopReason): number => STOP_REASON_RANKS[reason];
 
+const STOPS_OF_A_START = {
+  shutdown: false,
+  superseded: true,
+  unpromoted: true,
+  'startup-timeout': true,
+  'ready-mismatch': true,
+} as const satisfies Record<StopReason, boolean>;
+
+export const stopsAStart = (reason: StopReason): boolean => STOPS_OF_A_START[reason];
+
 const classifyStopReason = (stop: StopReason): ExitClassification => {
   switch (stop) {
     case 'shutdown':
+    case 'superseded':
+    case 'unpromoted':
       return { class: 'requested', reason: 'requested' };
     case 'startup-timeout':
       return { class: 'failure', reason: 'startup-timeout' };

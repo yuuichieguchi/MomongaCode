@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { KILL_CONFIRM_MS, formatStopMessage, managedServerStopBoundMs } from '@momonga/foundation';
+import { KILL_CONFIRM_MS, formatStopMessage, managedServerReapBoundMs } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
 import { afterMicrotasks } from '@momonga/testkit';
 import type { FakeChild } from './support/p2-fake-spawn-port.ts';
@@ -186,8 +186,8 @@ describe('a gone gateway child has its managed servers reaped before it counts a
   });
 });
 
-describe('the reap of the managed servers of a gone gateway child is bounded by the managed server stop', () => {
-  it('passes a signal that aborts when the managed server stop bound has passed', async (testContext) => {
+describe('the reap of the managed servers of a gone gateway child is bounded by the term the stop formula reserves for it', () => {
+  it('passes a signal that aborts when the managed server reap bound has passed', async (testContext) => {
     const { harness, child, write, signals, finishReap } = reapingHarness(testContext);
     const stopped = harness.manager.stop('shutdown', 'term', VALUES);
     await afterMicrotasks();
@@ -198,7 +198,7 @@ describe('the reap of the managed servers of a gone gateway child is bounded by 
     expect(signals).toHaveLength(1);
     const [signal] = signals;
     expect(signal?.aborted).toBe(false);
-    harness.timers.advance(managedServerStopBoundMs(VALUES.managedServerStopGraceMs) - 1);
+    harness.timers.advance(managedServerReapBoundMs(VALUES) - 1);
     expect(signal?.aborted).toBe(false);
     harness.timers.advance(1);
     expect(signal?.aborted).toBe(true);

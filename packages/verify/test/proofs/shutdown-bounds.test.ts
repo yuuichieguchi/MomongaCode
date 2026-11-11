@@ -29,7 +29,7 @@ import {
   supervisorMaxCloseMs,
 } from '@momonga/foundation';
 import type { StopValues as ProductStopValues } from '@momonga/foundation';
-import { resolveStartTiming, supervisorStartBoundMs } from '@momonga/supervisor';
+import { resolveStartTiming, shutdownStepBoundsMs, supervisorStartBoundMs } from '@momonga/supervisor';
 import { proofArith } from '../../src/proofs/arith.ts';
 import type { ProofArith, ProofInt } from '../../src/proofs/arith.ts';
 import { expectRefuted, prove } from '../../src/proofs/prove.ts';
@@ -136,6 +136,7 @@ describe('shutdown and start-up bounds (design-probe-timeout Z3 item 3; the clos
       expect(gatewayAbortBudgetMs(values)).toBe(MANAGED_STOP_GRACE_WINDOWS * m + MANAGED_STOP_FIXED_MS + SHUTDOWN_MARGIN_MS);
       expect(supervisorMaxCloseMs(values)).toBe(d + c + (MANAGED_STOP_GRACE_WINDOWS + MANAGED_REAP_GRACE_WINDOWS) * m + MCP_CLOSE_GRACE_WINDOWS * g + SUPERVISOR_FIXED_CLOSE_MS);
       expect(daemonStopBoundMs(values)).toBe(supervisorMaxCloseMs(values) + ENTRY_HARD_EXIT_MARGIN_MS);
+      expect(shutdownStepBoundsMs(values).reduce((total, bound) => total + bound, 0)).toBe(supervisorMaxCloseMs(values));
     }
     expect(daemonStopBoundMs(MAXIMUM_STOP_VALUES)).toBe(1_279_275);
     expect(SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.max).toBe(STARTUP_TIMEOUT_MS);

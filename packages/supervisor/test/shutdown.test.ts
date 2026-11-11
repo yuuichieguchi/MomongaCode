@@ -37,6 +37,7 @@ const running = async (context: CleanupContext, options: HarnessOptions = {}): P
   const h = await startHarness(context, options);
   await h.waitForState('gateway', 'ready', 10_000);
   await h.waitForState('runtime', 'ready', 10_000);
+  await pumpUntil(h.timers, () => h.supervisor.role() === 'serving', { realWork: h.realWork, maxMs: 5000, description: 'the generation to serve' });
   return h;
 };
 

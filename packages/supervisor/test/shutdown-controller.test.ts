@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createFakeClock, createFakeTimers, driveFakeTime, waitFor } from '@momonga/testkit';
 import type { ChildManager } from '../src/child-manager.ts';
-import { DEFAULT_STOP_VALUES, SHUTDOWN_DRAIN_BOUND_MS, killedChildSettleMs, managedServerReapBoundMs, supervisorMaxCloseMs } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, MAXIMUM_STOP_VALUES, SHUTDOWN_DRAIN_BOUND_MS, killedChildSettleMs, managedServerReapBoundMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import { stopBudgetMs } from '../src/child-manager.ts';
 import { SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS } from '../src/constants.ts';
 import type { ChildRole } from '../src/launcher.ts';
-import { createShutdownController } from '../src/shutdown.ts';
+import { createShutdownController, shutdownStepBoundsMs } from '../src/shutdown.ts';
 import type { ShutdownControllerOptions } from '../src/shutdown.ts';
 import type { SupervisorCloseResult } from '../src/start-supervisor.ts';
 import { createLogBuffer } from './support/p2-log-buffer.ts';
@@ -50,6 +50,7 @@ const setup = (options: {
   closeControl?: () => Promise<void>;
   reap?: (marker: string) => Reap;
   awaitBackground?: () => Promise<void>;
+  recordStop?: () => Promise<void>;
 }) => {
   const clock = createFakeClock(0);
   const timers = createFakeTimers(clock);
@@ -59,7 +60,7 @@ const setup = (options: {
   const controllerOptions: ShutdownControllerOptions = {
     runtime: options.runtime,
     gateway: options.gateway,
-    recordStop: async () => undefined,
+    recordStop: options.recordStop ?? (async () => undefined),
     timers,
     logger: log.logger,
     markerPorts: {
@@ -68,6 +69,7 @@ const setup = (options: {
         return options.reap === undefined ? { removed: true } : options.reap(reapOptions.marker);
       },
     },
+    stopReason: () => 'shutdown',
     beginDraining: () => undefined,
     awaitBackground: options.awaitBackground ?? (async () => undefined),
     closeControl: options.closeControl ?? (async () => undefined),
@@ -137,6 +139,86 @@ describe('shutdown step 1 bound and the sum of every wait', () => {
     expect(h.log.events('shutdown.step').filter((line) => line['detail'] === 'step 1 bound reached')).toHaveLength(1);
   });
 
+  it('a stop record write that never settles is given up at the step 1 bound, said once, and the stop goes on', async () => {
+    const stops: string[] = [];
+    const stopping = (role: ChildRole): ChildManager => ({
+      ...fakeManager(role, [], new Map()),
+      stop: async (_reason, mode) => {
+        stops.push(`${role}:${mode}`);
+        return { killed: false, leaked: false };
+      },
+    });
+    const h = setup({ runtime: stopping('runtime'), gateway: stopping('gateway'), recordStop: () => new Promise(() => undefined) });
+    const result = settledResult(h.controller.close(DEFAULT_STOP_VALUES));
+    h.timers.advance(SHUTDOWN_DRAIN_BOUND_MS - 1);
+    await Promise.resolve();
+    expect(stops).toEqual([]);
+    expect(result()).toBeUndefined();
+    h.timers.advance(1);
+    await waitFor(() => result() !== undefined, { description: 'close settles after the step 1 bound' });
+    expect(h.clock.now()).toBe(SHUTDOWN_DRAIN_BOUND_MS);
+    expect(stops).toEqual(['runtime:term', 'gateway:term']);
+    expect(h.log.events('shutdown.record_failed')).toMatchObject([{ detail: `the stop record was not written within ${SHUTDOWN_DRAIN_BOUND_MS} ms` }]);
+  });
+
+  it('an abort during a stop record write that never settles interrupts the children once the step 1 bound has passed', async () => {
+    const stops: string[] = [];
+    const held = deferred<{ killed: boolean; leaked: boolean }>();
+    const stopping = (role: ChildRole): ChildManager => ({
+      ...fakeManager(role, [], new Map()),
+      stop: (_reason, mode) => {
+        stops.push(`${role}:${mode}`);
+        if (mode === 'int') held.resolve({ killed: false, leaked: false });
+        return held.promise;
+      },
+    });
+    const h = setup({ runtime: stopping('runtime'), gateway: stopping('gateway'), recordStop: () => new Promise(() => undefined) });
+    const result = settledResult(h.controller.close(DEFAULT_STOP_VALUES));
+    void h.controller.abort(DEFAULT_STOP_VALUES);
+    h.timers.advance(SHUTDOWN_DRAIN_BOUND_MS);
+    await waitFor(() => result() !== undefined, { description: 'the aborted close settles' });
+    expect(stops).toContain('runtime:int');
+    expect(stops).toContain('gateway:int');
+  });
+
+  it('the record write and the background work share the one step 1 bound: with every wait at its worst and a record write that never settles, close settles exactly at supervisorMaxCloseMs', async () => {
+    const clock = createFakeClock(0);
+    const timers = createFakeTimers(clock);
+    const log = createLogBuffer(clock);
+    const slowManager = (role: ChildRole): ChildManager => ({
+      ...fakeManager(role, [`/markers/${role}-x`], new Map([[`/markers/${role}-x`, new Promise(() => undefined)]])),
+      stop: () =>
+        new Promise((resolve) => {
+          timers.setTimeout(() => resolve({ killed: true, leaked: false }), stopBudgetMs(role, 'term', DEFAULT_STOP_VALUES) + killedChildSettleMs() + (role === 'gateway' ? managedServerReapBoundMs(DEFAULT_STOP_VALUES) : 0));
+        }),
+    });
+    const controller = createShutdownController({
+      runtime: slowManager('runtime'),
+      gateway: slowManager('gateway'),
+      recordStop: () => new Promise(() => undefined),
+      timers,
+      logger: log.logger,
+      markerPorts: { reapMarkedProcesses: () => new Promise(() => undefined) },
+      stopReason: () => 'shutdown',
+      beginDraining: () => undefined,
+      awaitBackground: () => new Promise(() => undefined),
+      closeControl: () => new Promise(() => undefined),
+      releaseLock: () => undefined,
+      onFatal: () => undefined,
+    });
+    const result = settledResult(controller.close(DEFAULT_STOP_VALUES));
+    const limit = supervisorMaxCloseMs(DEFAULT_STOP_VALUES);
+    await driveFakeTime(timers, { done: () => result() !== undefined, horizonAt: limit, description: 'close to settle' });
+    expect(result()).toBeDefined();
+    expect(clock.now()).toBe(limit);
+  });
+
+  it('the step timers of a stop add up to supervisorMaxCloseMs', () => {
+    for (const values of [DEFAULT_STOP_VALUES, MAXIMUM_STOP_VALUES, { closeGraceMs: 0, managedServerStopGraceMs: 0, drainTimeoutMs: 0, mcpCloseGraceMs: 0 }]) {
+      expect(shutdownStepBoundsMs(values).reduce((total, bound) => total + bound, 0)).toBe(supervisorMaxCloseMs(values));
+    }
+  });
+
   it('with every wait at its worst, close settles exactly at supervisorMaxCloseMs', async () => {
     const clock = createFakeClock(0);
     const timers = createFakeTimers(clock);
@@ -155,6 +237,7 @@ describe('shutdown step 1 bound and the sum of every wait', () => {
       timers,
       logger: log.logger,
       markerPorts: { reapMarkedProcesses: () => new Promise(() => undefined) },
+      stopReason: () => 'shutdown',
       beginDraining: () => undefined,
       awaitBackground: () => new Promise(() => undefined),
       closeControl: () => new Promise(() => undefined),

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_STOP_VALUES, EXIT_RETIRED, gatewayAbortBudgetMs, gatewayStopBudgetMs, runtimeAbortStopBudgetMs, runtimeStopBudgetMs } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, EXIT_RETIRED, MAXIMUM_STOP_VALUES, gatewayAbortBudgetMs, gatewayStopBudgetMs, runtimeAbortStopBudgetMs, runtimeStopBudgetMs } from '@momonga/foundation';
 import { afterMicrotasks, createFakeKernelLock, waitFor, firstGeneration } from '@momonga/testkit';
 import { DEFAULT_INTERVALS, HELD_RETRY_MS, KILL_CONFIRM_MS, STABLE_AFTER_MS, STARTUP_KILL_GRACE_MS, STARTUP_TIMEOUT_MS, STDIO_FLUSH_MS } from '../src/constants.ts';
 import { errnoError } from './support/p2-fake-spawn-port.ts';
@@ -214,6 +214,22 @@ describe('exit classification in the manager', () => {
     await exitAndWait(harness, 'stopped', 1);
     await expect(stopped).resolves.toEqual({ killed: false, leaked: false });
     expect(harness.timers.pending()).toEqual([]);
+    expect(harness.manager.health().lastExit?.reason).toBe('requested');
+  });
+
+  it.for(['superseded', 'unpromoted'] as const)('the stop of a %s start gives the child the startup kill grace, and its exit is a requested one', async (reason, context) => {
+    const harness = createManagerHarness(context);
+    harness.spawnInitial();
+    harness.port.last().ready();
+    await waitFor(() => harness.manager.state() === 'ready');
+    void harness.manager.stop(reason, 'term', MAXIMUM_STOP_VALUES);
+    await stopLineWritten();
+    expect(harness.port.last().signals).toEqual(['SIGTERM']);
+    harness.timers.advance(STARTUP_KILL_GRACE_MS - 1);
+    expect(harness.port.last().groupKills).toBe(0);
+    harness.timers.advance(1);
+    expect(harness.port.last().groupKills).toBe(1);
+    await exitAndWait(harness, 'stopped', null, 'SIGKILL');
     expect(harness.manager.health().lastExit?.reason).toBe('requested');
   });
 

@@ -230,6 +230,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     let ended = false;
     let promoting = false;
     let draining = false;
+    let superseded = false;
     let lastEvaluatedKey: string | undefined;
     let lastReadFailure: string | undefined;
     let launchPromise: Promise<void> = Promise.resolve();
@@ -389,6 +390,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       );
       if (outcome === 'busy' || draining || ended) return;
       if (outcome === 'superseded') {
+        superseded = true;
         log(startSuperseded({ generation: own.generation, current: (await readCurrentGeneration(homePaths))?.generation ?? own.generation }));
         endByItself();
         return;
@@ -442,6 +444,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       if (draining || ended) return;
       if (role === 'starting') {
         if (current !== undefined && current > own.generation) {
+          superseded = true;
           log(startSuperseded({ generation: own.generation, current }));
           endByItself();
           return;
@@ -564,6 +567,10 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       logger,
       recordStop: (values) => writeStopRecord(own.stopRecord, own.generation, values),
       ...omitUndefined({ markerPorts: options.markerPorts }),
+      stopReason: () => {
+        if (role !== 'starting') return 'shutdown';
+        return superseded ? 'superseded' : 'unpromoted';
+      },
       beginDraining: () => {
         if (role === 'starting' && !ended) log(startUnpromoted({ generation: own.generation, reason: 'stopped' }));
         draining = true;

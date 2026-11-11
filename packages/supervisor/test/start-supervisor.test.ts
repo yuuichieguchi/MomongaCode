@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { ProcessLockHeldError, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, parseReadyLine, inspectProcessLock, runtimeMaxCloseMs } from '@momonga/foundation';
+import { generationLayout, parseReadyLine, inspectProcessLock, syncPaths } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, driveFakeTime, prepareGenerationForTest, spawnTracked, waitFor, firstGeneration } from '@momonga/testkit';
-import { ORPHAN_POLL_MS, STARTUP_TIMEOUT_MS } from '../src/constants.ts';
+import { ORPHAN_POLL_MS, STARTUP_KILL_GRACE_MS, STARTUP_TIMEOUT_MS } from '../src/constants.ts';
 import { resolveStartTiming, startSupervisor, supervisorStartBoundMs } from '../src/start-supervisor.ts';
 import {
   HARNESS_GENERATION,
@@ -251,6 +251,29 @@ describe('startSupervisor', () => {
     expect(unhandled).toEqual([]);
     const sources = h.log.withMsg('supervisor.background_failed').map((line) => String(line['source']));
     expect(new Set(sources).size).toBe(sources.length);
+  });
+});
+
+describe('the stop of a start that was never promoted (design 20.14)', () => {
+  it('a superseded start sends SIGTERM to its children and gives each the startup kill grace before the group kill', async (context) => {
+    const h = await startHarness(context, {
+      generation: 2,
+      behaviours: { runtime: { autoReady: false, onTerm: 'ignore' }, gateway: { autoReady: false, onTerm: 'ignore' } },
+      prepare: (home, paths) => {
+        prepareGenerationForTest(home, 3, TEST_VERSION);
+        fs.writeFileSync(paths.current, `${JSON.stringify({ generation: 3, version: TEST_VERSION, sockets: generationLayout(syncPaths.canonicalPath(home), 3).sockets })}\n`, { mode: 0o600 });
+      },
+    });
+    const closed = settledFlag(h.supervisor.closed);
+    await pumpUntil(h.timers, () => closed.settled(), { realWork: h.realWork, maxMs: STARTUP_TIMEOUT_MS, description: 'the superseded start to end' });
+    expect(h.log.withMsg('start.superseded')).toHaveLength(1);
+    for (const role of ['runtime', 'gateway'] as const) {
+      const signalled = h.fake.events.find((event) => event.role === role && event.kind === 'kill' && event.detail === 'SIGTERM');
+      const killed = h.fake.events.find((event) => event.role === role && event.kind === 'killGroup');
+      expect(signalled).toBeDefined();
+      expect((killed?.at ?? Number.NaN) - (signalled?.at ?? Number.NaN)).toBe(STARTUP_KILL_GRACE_MS);
+    }
+    expect(h.log.withMsg('child.stop').map((line) => line['stop'])).toEqual(['superseded', 'superseded']);
   });
 });
 

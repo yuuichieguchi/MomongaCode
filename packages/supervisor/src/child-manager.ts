@@ -7,7 +7,7 @@ import {
   formatStopMessage,
   gatewayAbortBudgetMs,
   gatewayStopBudgetMs,
-  managedServerStopBoundMs,
+  managedServerReapBoundMs,
   parseReadyLine,
   reapMarkerDirectory,
   runtimeAbortStopBudgetMs,
@@ -47,7 +47,7 @@ import { openDaemonMarker, reapDaemonMarker } from './orphans.ts';
 import type { DaemonMarker, MarkerPorts } from './orphans.ts';
 import { watchLock } from './lock-watch.ts';
 import type { ExternalProbe, LockWatch } from './lock-watch.ts';
-import { classifyExit, decideAfterExit, failureWithoutProcess, stopReasonRank } from './restart-policy.ts';
+import { classifyExit, decideAfterExit, failureWithoutProcess, stopReasonRank, stopsAStart } from './restart-policy.ts';
 import type { ExitClassification, ExitDecision, RestartPolicy, StopMode, StopReason } from './restart-policy.ts';
 
 export type ChildExit = { code: number | null; signal: NodeJS.Signals | null };
@@ -172,8 +172,6 @@ type Life = {
 type LastExit = { code: number | null; signal: string | null; at: string; reason: SupervisorExitReason };
 
 type External = { pid?: number; probe: ExternalProbe };
-
-const isStartupReason = (reason: StopReason): boolean => stopReasonRank(reason) === 1;
 
 export const createChildManager = (options: ChildManagerOptions): ChildManager => {
   const { role, timers, clock, logger } = options;
@@ -531,7 +529,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     if (!runsManagedServers(role)) return;
     const values = life.stopValues ?? stopValuesReader.read();
     const reapStop = new AbortController();
-    const bound = options.timers.setTimeout(() => reapStop.abort(), managedServerStopBoundMs(values.managedServerStopGraceMs));
+    const bound = options.timers.setTimeout(() => reapStop.abort(), managedServerReapBoundMs(values));
     try {
       await (options.markerPorts?.reapMarkerDirectory ?? reapMarkerDirectory)({
         dir: options.paths.markers.targets,
@@ -719,7 +717,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   };
 
   const budgetFor = (reason: StopReason, mode: StopMode, values: StopValues): number =>
-    isStartupReason(reason) && mode === 'term' ? options.restart.startupKillGraceMs : stopBudgetMs(role, mode, values);
+    stopsAStart(reason) && mode === 'term' ? options.restart.startupKillGraceMs : stopBudgetMs(role, mode, values);
 
   const signalOf = (mode: StopMode): NodeJS.Signals => (mode === 'int' ? 'SIGINT' : 'SIGTERM');
 
