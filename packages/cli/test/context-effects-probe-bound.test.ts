@@ -7,6 +7,7 @@ import { nodeContextEffects } from '../src/eval/context-effects.ts';
 import { nodeFiles, nodeProcess } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { LIMIT_TIMERS, MANAGED_CLASSIFIER, homeWithAManagedModel, isSettled, outcomeOf, untilTheExecIsAsked } from './unanswered-host-exec.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const unanswered = vi.hoisted(() => ({ calls: [] as string[] }));
 
@@ -30,7 +31,7 @@ afterEach(() => {
 const copyUnder = (signal: AbortSignal): Promise<void> => {
   const { home, binary } = homeWithAManagedModel();
   homes.push(home);
-  const effects = nodeContextEffects({ platform: 'darwin', env: {}, home, files: nodeFiles, process: nodeProcess, interrupt: new AbortController().signal } as unknown as CliPorts);
+  const effects = nodeContextEffects({ platform: 'darwin', env: {}, home, files: nodeFiles, process: nodeProcess, interrupt: new AbortController().signal } as unknown as CliPorts, testKernelLock());
   const caseHome = path.join(home, 'case');
   fs.mkdirSync(caseHome);
   return effects.copyProbeRecord({ model: MANAGED_CLASSIFIER, server: 'fm', binary, upstream: 'system' }, momongaPaths(caseHome, 'darwin', {}), signal);

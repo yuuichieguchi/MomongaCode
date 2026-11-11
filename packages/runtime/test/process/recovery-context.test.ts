@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import * as runtime from '@momonga/runtime';
-import { fakePolicyFilesystem, NEVER_CANCELLED } from '@momonga/testkit';
+import { fakePolicyFilesystem, NEVER_CANCELLED, testKernelLock } from '@momonga/testkit';
 import { createSession, makeDir, makeLogger, makeTempHome, openStore } from './helpers.ts';
 
 const failingFilesystem = () => {
@@ -32,7 +32,7 @@ describe('recoveryContextFor needs no protected set (3.15 (a) Recovery)', () => 
     const extra = makeDir(temp.root, 'extra');
     const session = createSession(store, temp.project, { additionalDirectories: [extra] });
     const { filesystem, touched } = failingFilesystem();
-    const recoveryContextFor = runtime.createRecoveryContextFor({ paths: temp.paths, home: temp.home, sessionStates, fs: filesystem });
+    const recoveryContextFor = runtime.createRecoveryContextFor({ lock: testKernelLock(), paths: temp.paths, home: temp.home, sessionStates, fs: filesystem });
     const env = Object.freeze({ PLAIN: '1' });
 
     const context = await recoveryContextFor(session, { signal: NEVER_CANCELLED, env });

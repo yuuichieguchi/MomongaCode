@@ -5,7 +5,7 @@ import { ConfigError, PROJECT_MANDATE_FILE, appendPermissionRule, editProjectMan
 import type { SettingsLockPort } from '@momonga/config';
 import { LockWaitTimeoutError, momongaLayout } from '@momonga/foundation';
 import { DEFAULT_LOCK_TIMEOUT_MS } from '../../foundation/src/file-lock.ts';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, sleepDrivenTiming, startLockHolder, testPaths } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, sleepDrivenTiming, startLockHolder, testPaths, testKernelLock } from '@momonga/testkit';
 import { settingsLockPath } from '../src/file-lock.ts';
 import { localSettingsPath, makeDir, makeTree, trusting, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
@@ -15,15 +15,15 @@ vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 const APPEND_RULE_SOURCE = path.resolve(import.meta.dirname, '../src/append-rule.ts');
 const ORIGINAL = { models: { connections: [] } };
 
-const userSettingsOf = (tree: Tree): string => writeJson(momongaLayout(tree.home).settingsFile, ORIGINAL);
+const userSettingsOf = (tree: Tree): string => writeJson(momongaLayout(tree.home, process.platform, process.env).settingsFile, ORIGINAL);
 
 const lockRunDirectoryOf = (tree: Tree): void => {
-  fs.mkdirSync(momongaLayout(tree.home).run, { recursive: true, mode: 0o700 });
+  fs.mkdirSync(momongaLayout(tree.home, process.platform, process.env).run, { recursive: true, mode: 0o700 });
 };
 
 const { random } = systemFileLockPorts;
 
-const heldOut = (tree: Tree) => ({ lock: settingsFileLock(tree.home, { lockTimeoutMs: 50 }), random, signal: new AbortController().signal });
+const heldOut = (tree: Tree) => ({ mechanism: testKernelLock(), lock: settingsFileLock(tree.home, { lock: testKernelLock(), lockTimeoutMs: 50 }), random, signal: new AbortController().signal });
 
 const countingLock = () => {
   const events: string[] = [];
@@ -97,7 +97,7 @@ describe('editUserSettings is the one writer of a settings file and takes the se
       }),
     };
     const recorded = recordingEdit();
-    await expect(editUserSettings(file, recorded.edit, { lock: settingsFileLock(tree.home, { ports }), random, signal: operation.signal })).rejects.toBe(reason);
+    await expect(editUserSettings(file, recorded.edit, { mechanism: testKernelLock(), lock: settingsFileLock(tree.home, { lock: testKernelLock(), ports }), random, signal: operation.signal })).rejects.toBe(reason);
     expect(now - started).toBeGreaterThan(3 * DEFAULT_LOCK_TIMEOUT_MS);
     expect(recorded.calls).toEqual([]);
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual(ORIGINAL);
@@ -119,16 +119,16 @@ describe('editUserSettings is the one writer of a settings file and takes the se
   it('creates no lock file beside the settings file', async () => {
     const tree = makeTree();
     const file = userSettingsOf(tree);
-    await editUserSettings(file, recordingEdit().edit, { lock: settingsFileLock(tree.home), random, signal: new AbortController().signal });
+    await editUserSettings(file, recordingEdit().edit, { mechanism: testKernelLock(), lock: settingsFileLock(tree.home, { lock: testKernelLock() }), random, signal: new AbortController().signal });
     expect(fs.readdirSync(path.dirname(file)).filter((name) => name.endsWith('.lock'))).toEqual([]);
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ ...ORIGINAL, network: { httpsProxy: 'http://proxy.corp:3128' } });
   });
 
   it('appendPermissionRule and editUserSettings take the same lock for one local settings file', async (context) => {
     const tree = makeTree();
-    await appendPermissionRule({ signal: new AbortController().signal, ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(a)', effect: 'allow' });
+    await appendPermissionRule({ lock: testKernelLock(), signal: new AbortController().signal, ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(a)', effect: 'allow' });
     const holder = await startLockHolder(context, await settingsLockPath(tree.home, localSettingsPath(tree), testPaths()));
-    await expect(appendPermissionRule({ signal: new AbortController().signal, ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(b)', effect: 'allow', lockTimeoutMs: 50 })).rejects.toThrow(
+    await expect(appendPermissionRule({ lock: testKernelLock(), signal: new AbortController().signal, ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(b)', effect: 'allow', lockTimeoutMs: 50 })).rejects.toThrow(
       `held by process ${holder.pid}`,
     );
     const recorded = recordingEdit();
@@ -157,13 +157,13 @@ describe('the settings writers take the lock through the lock port they are give
         document['autoUpdates'] = false;
         return true;
       },
-      { lock: counted.lock, random, signal: asker.signal },
+      { mechanism: testKernelLock(), lock: counted.lock, random, signal: asker.signal },
     );
     expect(counted.events).toEqual([`acquire ${file}`, 'edit', `release ${file}`]);
     expect(counted.signals).toEqual([asker.signal]);
     expect(edits).toBe(1);
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ ...ORIGINAL, autoUpdates: false });
-    expect(fs.existsSync(momongaLayout(tree.home).run)).toBe(false);
+    expect(fs.existsSync(momongaLayout(tree.home, process.platform, process.env).run)).toBe(false);
   });
 
   it('releases the lock when the edit refuses, and writes nothing', async () => {
@@ -177,7 +177,7 @@ describe('the settings writers take the lock through the lock port they are give
         () => {
           throw refusal;
         },
-        { lock: counted.lock, random, signal: new AbortController().signal },
+        { mechanism: testKernelLock(), lock: counted.lock, random, signal: new AbortController().signal },
       ),
     ).rejects.toBe(refusal);
     expect(counted.events).toEqual([`acquire ${file}`, `release ${file}`]);
@@ -190,7 +190,7 @@ describe('the settings writers take the lock through the lock port they are give
     const link = path.join(makeDir(), 'settings.json');
     fs.symlinkSync(target, link);
     const counted = countingLock();
-    await editUserSettings(link, recordingEdit().edit, { lock: counted.lock, random, signal: new AbortController().signal });
+    await editUserSettings(link, recordingEdit().edit, { mechanism: testKernelLock(), lock: counted.lock, random, signal: new AbortController().signal });
     expect(counted.events).toEqual([`acquire ${target}`, `release ${target}`]);
   });
 
@@ -199,7 +199,7 @@ describe('the settings writers take the lock through the lock port they are give
     const file = path.join(tree.project, PROJECT_MANDATE_FILE);
     const counted = countingLock();
     let edits = 0;
-    const options = { trust: trusting(tree), lock: counted.lock, random, signal: new AbortController().signal };
+    const options = { trust: trusting(tree), mechanism: testKernelLock(), lock: counted.lock, random, signal: new AbortController().signal };
     await editProjectMandate(
       tree.project,
       (document) => {
@@ -229,7 +229,7 @@ describe('the settings writers take the lock through the lock port they are give
   it('a folder that is not trusted is refused before the lock is asked for', async () => {
     const tree = makeTree();
     const counted = countingLock();
-    await expect(editProjectMandate(tree.project, () => true, { trust: { isTrusted: () => false }, lock: counted.lock, random, signal: new AbortController().signal })).rejects.toBeInstanceOf(ConfigError);
+    await expect(editProjectMandate(tree.project, () => true, { mechanism: testKernelLock(), trust: { isTrusted: () => false }, lock: counted.lock, random, signal: new AbortController().signal })).rejects.toBeInstanceOf(ConfigError);
     expect(counted.events).toEqual([]);
   });
 });

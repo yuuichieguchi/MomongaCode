@@ -8,8 +8,10 @@ import {
   momongaPaths,
   runDaemonEntry,
   supervisorMaxCloseMs,
+  layoutProcessInspector,
+  homeLayout,
 } from '@momonga/foundation';
-import type { EntryIo, JsonLogger } from '@momonga/foundation';
+import type { EntryIo, JsonLogger, HomePaths } from '@momonga/foundation';
 import { SUPERVISOR_SERVICE } from './constants.ts';
 import { entryReaperPass } from './reaper-pass.ts';
 import { startSupervisor } from './start-supervisor.ts';
@@ -17,7 +19,7 @@ import type { SupervisorOptions } from './start-supervisor.ts';
 
 export type SupervisorEntryDeps = Omit<
   SupervisorOptions,
-  'home' | 'env' | 'logger' | 'droppedLogLines' | 'stdout' | 'signal' | 'onShutdownRequested' | 'stopValues' | 'generation'
+  'home' | 'env' | 'logger' | 'droppedLogLines' | 'stdout' | 'signal' | 'onShutdownRequested' | 'stopValues' | 'generation' | 'lockMechanism' | 'inspector'
 >;
 
 export const SUPERVISE_ENTRY_FLAGS = { ...COMMON_ENTRY_FLAGS, generation: { kind: 'string' } } as const;
@@ -32,7 +34,7 @@ export const generationOfFlag = (value: string | undefined): number => {
   return generation;
 };
 
-const pathsOf = (home: string): ReturnType<typeof momongaPaths> => momongaPaths(home, process.platform, {});
+const pathsOf = (home: string): HomePaths => homeLayout(home, process.platform);
 
 export const runSupervisorEntry = (io: EntryIo, deps: SupervisorEntryDeps): Promise<number> => {
   let stopValues: StopValuesReader | undefined;
@@ -53,11 +55,13 @@ export const runSupervisorEntry = (io: EntryIo, deps: SupervisorEntryDeps): Prom
       const clock = deps.clock ?? io.clock;
       const timers = deps.timers ?? io.timers;
       const logger = withLogData(context.logger, { generation: generationOfFlag(context.flags.generation) });
+      const lockMechanism = context.locks.mechanism;
+      const inspector = layoutProcessInspector(context.locks.capability);
       const stopValuesAtStart = stopValuesOf(context.logger);
       stopValuesAtStart.remember(await readUserStopValuesOrDefault({ home: context.home, signal: context.signal, onNotice: (message) => context.logger.warn(message) }));
       const supervisor = await startSupervisor({
         ...deps,
-        reaperPass: deps.reaperPass ?? entryReaperPass(deps, { home: context.home, clock, timers, logger, stopValues: stopValuesAtStart }),
+        reaperPass: deps.reaperPass ?? entryReaperPass({ ...deps, lockMechanism, inspector }, { home: context.home, env: context.env, clock, timers, logger, stopValues: stopValuesAtStart }),
         clock,
         timers,
         home: context.home,
@@ -70,6 +74,8 @@ export const runSupervisorEntry = (io: EntryIo, deps: SupervisorEntryDeps): Prom
         signal: context.signal,
         onShutdownRequested: context.requestShutdown,
         stopValues: stopValuesAtStart,
+        lockMechanism,
+        inspector,
         acquireLock: context.acquireLock,
       });
       return { close: supervisor.close, abort: supervisor.abort, fatal: supervisor.fatal };

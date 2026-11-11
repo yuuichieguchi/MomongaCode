@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
 import { openRuntimeStore } from '@momonga/store';
 import type { Claim, RuntimeStore } from '@momonga/store';
-import { createFakeClock } from '@momonga/testkit';
+import { createFakeClock, testKernelLock } from '@momonga/testkit';
 import { decodeRunEvents } from '../src/codec.ts';
 import { LEASE_MS, START_MS, enqueue, makeStoreDir, mustClaim, newSession, rawDb, registerCleanup, UNASKED_COMMANDS } from './helpers.ts';
-import { nodeFileSystem, systemRandom } from '@momonga/foundation';
+import { nodeFileSystem, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
 const READERS_PER_STEP = 4;
 
@@ -35,7 +35,7 @@ const countingStore = async () => {
   const dbPath = path.join(makeStoreDir(), 'runtime.db');
   const clock = createFakeClock(START_MS);
   const decodes: Decodes = { rows: 0, counting: false };
-  const store: RuntimeStore = openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
+  const store: RuntimeStore = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home: path.dirname(dbPath),
     clock,

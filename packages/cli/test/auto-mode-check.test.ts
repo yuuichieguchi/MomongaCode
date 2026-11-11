@@ -348,9 +348,9 @@ describe('the signal of a command that reads credentials', () => {
 const withPlanAgent = (): UserModels => userModelsOf({ connections: [LOCAL_CONNECTION, PRODUCT_WRITTEN_PLAN_CONNECTION] });
 
 const publishGateGateway = async (home: string, gatewaySocket: string): Promise<void> => {
-  fs.mkdirSync(path.dirname(momongaPaths(home).current), { recursive: true, mode: 0o700 });
+  fs.mkdirSync(path.dirname(momongaPaths(home, process.platform, process.env).current), { recursive: true, mode: 0o700 });
   await publishCurrentGeneration(
-    momongaPaths(home),
+    momongaPaths(home, process.platform, process.env),
     { generation: 2, version: '0.0.0-test', sockets: { gateway: gatewaySocket, runtime: '/tmp/gate-home-sockets/runtime-2.sock', supervisor: '/tmp/gate-home-sockets/supervisor-2.sock' } },
     { fs: nodeFileSystem, lock: createFakeKernelLock({ inheritable: false }) },
   );

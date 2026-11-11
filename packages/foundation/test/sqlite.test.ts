@@ -4,7 +4,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
-import { immediateTx, migrate, openDatabase, readTx } from '@momonga/foundation';
+import { immediateTx, migrate, openDatabase, readTx, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { withTempDir } from '@momonga/testkit';
 
 const cleanups: Array<() => void> = [];
@@ -20,7 +20,7 @@ const makeDir = (mode = 0o700): string => {
   return dir;
 };
 
-const open = (file: string, options?: { busyTimeoutMs?: number }): DatabaseSync => {
+const open = (file: string, options: { busyTimeoutMs: number } = { busyTimeoutMs: BUSY_WAIT_LIMIT_MS }): DatabaseSync => {
   const db = openDatabase(file, options);
   cleanups.push(() => {
     if (db.isOpen) db.close();
@@ -72,8 +72,8 @@ describe('openDatabase', () => {
   it.each([0o755, 0o750, 0o701])('rejects a parent directory with mode %o, naming the directory and the fix', (mode) => {
     const dir = makeDir(mode);
     const file = path.join(dir, 'x.db');
-    expect(() => openDatabase(file)).toThrow(dir);
-    expect(() => openDatabase(file)).toThrow(/chmod 700/);
+    expect(() => openDatabase(file, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS })).toThrow(dir);
+    expect(() => openDatabase(file, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS })).toThrow(/chmod 700/);
     expect(fs.existsSync(file)).toBe(false);
   });
 
@@ -81,8 +81,8 @@ describe('openDatabase', () => {
     const file = path.join(makeDir(), 'x.db');
     open(file).close();
     fs.chmodSync(file, 0o644);
-    expect(() => openDatabase(file)).toThrow(file);
-    expect(() => openDatabase(file)).toThrow(/chmod 600/);
+    expect(() => openDatabase(file, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS })).toThrow(file);
+    expect(() => openDatabase(file, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS })).toThrow(/chmod 600/);
   });
 
   it('reopens an existing private database', () => {

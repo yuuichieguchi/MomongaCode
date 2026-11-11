@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { ProcessLockHeldError, listenUnix, momongaPaths, parseReadyLine, inspectProcessLock } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, registerCleanup, spawnTracked, waitFor, withTempDir, firstGeneration, realProcessTestSignal } from '@momonga/testkit';
+import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, registerCleanup, spawnTracked, waitFor, withTempDir, firstGeneration, realProcessTestSignal, testKernelLock } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { createControlRequestHandler, respondShutdown, startControlServer } from '../src/control-server.ts';
 import type { ControlServer } from '../src/control-server.ts';
@@ -89,6 +89,7 @@ const startServer = async (
   let shutdowns = 0;
   const errors: Error[] = [];
   const server: ControlServer = await realWork.run(() => startControlServer({
+    mechanism: testKernelLock(),
     socketPath,
     timers,
     health,
@@ -194,6 +195,7 @@ describe('startControlServer', () => {
     const { socketPath } = await startServer(context);
     const clock = createFakeClock(0);
     const second = startControlServer({
+      mechanism: testKernelLock(),
       socketPath,
       timers: createFakeTimers(clock),
       health: () => SAMPLE_HEALTH,
@@ -211,11 +213,11 @@ describe('startControlServer', () => {
 
   it('close removes the socket and releases its lock', async (context) => {
     const { socketPath, server, timers, realWork } = await startServer(context);
-    expect(await inspectProcessLock(`${socketPath}.lock`)).toEqual({ state: 'held', pid: process.pid });
+    expect(await inspectProcessLock(`${socketPath}.lock`, { mechanism: testKernelLock() })).toEqual({ state: 'held', pid: process.pid });
     const closing = settledFlag(server.close());
     await pumpUntil(timers, () => closing.settled(), { realWork, maxMs: 5000 });
     expect(fs.existsSync(socketPath)).toBe(false);
-    expect(await inspectProcessLock(`${socketPath}.lock`)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(`${socketPath}.lock`, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
   });
 
   it('step 5 with a half-sent request completes within the bound', async (context) => {
@@ -230,14 +232,14 @@ describe('startControlServer', () => {
     await quiesce(realWork);
     await pumpUntil(timers, () => closing.settled(), { realWork, maxMs: 1000 });
     expect(fs.existsSync(socketPath)).toBe(false);
-    expect(await inspectProcessLock(`${socketPath}.lock`)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(`${socketPath}.lock`, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
     expect(shutdowns()).toBe(0);
   });
 
   it('negative control: server.close alone is held by a half-sent request', async (context) => {
     const socketPath = path.join(runDir(context), 'control.sock');
     const server = http.createServer(() => undefined);
-    await listenUnix(server, socketPath, undefined, realProcessTestSignal());
+    await listenUnix(server, socketPath, { mechanism: testKernelLock() }, realProcessTestSignal());
     const raw = net.connect(socketPath);
     raw.on('error', () => undefined);
     await new Promise<void>((resolve) => raw.once('connect', () => resolve()));
@@ -257,7 +259,7 @@ describe('startControlServer', () => {
     server.closeAllConnections();
     await waitFor(() => closed, { description: 'close after closeAllConnections' });
     raw.destroy();
-    expect(await inspectProcessLock(`${socketPath}.lock`)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(`${socketPath}.lock`, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
   });
 });
 

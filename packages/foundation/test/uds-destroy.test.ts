@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createUdsClient, listenUnix, fixedSocket } from '@momonga/foundation';
-import { waitFor, realProcessTestSignal } from '@momonga/testkit';
+import { waitFor, realProcessTestSignal, testKernelLock } from '@momonga/testkit';
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -35,7 +35,7 @@ const startHangingServer = async (mode: 'no-headers' | 'partial-body'): Promise<
       response.write('first');
     }
   });
-  await listenUnix(server, socketPath, undefined, realProcessTestSignal());
+  await listenUnix(server, socketPath, { mechanism: testKernelLock() }, realProcessTestSignal());
   cleanups.push(
     () =>
       new Promise<void>((resolve) => {

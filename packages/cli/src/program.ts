@@ -1,5 +1,5 @@
 import { Command, CommanderError, InvalidArgumentError, Option } from 'commander';
-import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE, HELPER_COMMAND, currentSocketResolver } from '@momonga/foundation';
+import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE, HELPER_COMMAND } from '@momonga/foundation';
 import type { EntryIo } from '@momonga/foundation';
 import { PERMISSION_MODES, TRACE_CONTENT_PAGE_OPTION } from '@momonga/protocol';
 import type { Mandate, PermissionMode } from '@momonga/protocol';
@@ -13,6 +13,7 @@ import { probeModel } from './commands/gateway.ts';
 import { approve, attachRun, cancelRun } from './commands/runs.ts';
 import { showTrace } from './commands/trace.ts';
 import { showReport } from './commands/report.ts';
+import { sessionSocketResolver } from './daemon/generations.ts';
 import { INTERNAL_COMMANDS } from './daemon/launcher.ts';
 import { createGatewayClient } from './client/gateway-client.ts';
 import { pathsOf } from './paths.ts';
@@ -175,7 +176,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
         const resumed = headlessReopenOf(reopen);
         const paths = await pathsOf(ports);
         const capabilitiesOf = async (model: string) => {
-          const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
+          const gateway = createGatewayClient({ resolveSocket: sessionSocketResolver(paths, ports.version, 'gateway') });
           try {
             return await gateway.capabilitiesOf(model);
           } finally {

@@ -12,7 +12,7 @@ const directories = () => {
   const root = makeTemporaryDirectory();
   const proofDir = path.join(root, 'run', 'lock-proof');
   const markerDir = path.join(root, 'run', 'markers', 'tools');
-  fs.mkdirSync(proofDir, { recursive: true });
+  fs.mkdirSync(proofDir, { recursive: true, mode: 0o700 });
   fs.mkdirSync(markerDir, { recursive: true });
   return { proofDir, markerDir };
 };

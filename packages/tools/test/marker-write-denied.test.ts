@@ -27,7 +27,7 @@ const capabilities: Array<[string, (proofDir: string) => LockCapabilityProbe]> =
 describe.runIf(HAS_REAL_SANDBOX).each(capabilities)(`a spawn's marker file under the ${HOST_SANDBOX_KIND} sandbox of this host (%s marker)`, (_mode, capabilityFor) => {
   const setup = async () => {
     const layout = makeLayout();
-    const paths = momongaLayout(layout.home);
+    const paths = momongaLayout(layout.home, process.platform, process.env);
     fs.mkdirSync(paths.markers.tools, { recursive: true });
     const proofDir = path.join(layout.root, 'proof');
     fs.mkdirSync(proofDir, { mode: 0o700 });
@@ -38,7 +38,7 @@ describe.runIf(HAS_REAL_SANDBOX).each(capabilities)(`a spawn's marker file under
     fs.mkdirSync(sandboxTmpRoot);
     const tmpDir = path.join(paths.tmp.sessions, 'own-session');
     fs.mkdirSync(tmpDir, { recursive: true, mode: 0o700 });
-    const policy = await buildSandboxPolicy({ roots: [layout.home], home: layout.home, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules: EMPTY_FILE_RULES, protectedSet: EMPTY_PROTECTED_SET, network: 'deny' }, NEVER_CANCELLED);
+    const policy = await buildSandboxPolicy({ layout: momongaLayout(layout.home, process.platform, process.env), roots: [layout.home], home: layout.home, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules: EMPTY_FILE_RULES, protectedSet: EMPTY_PROTECTED_SET, network: 'deny' }, NEVER_CANCELLED);
     const sandbox = createHostSandbox({ tmpRoot: sandboxTmpRoot, killGraceMs: 300 });
     const runChild = async (script: string) => {
       const proc = await sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd: layout.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, tmpDir, markerFile: marker }, policy, new AbortController().signal, { markerFd: handle.fd });

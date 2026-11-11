@@ -373,7 +373,7 @@ describe('the clipboard of the TUI backend', () => {
       const piped: { file: string; args: readonly string[]; payload: string }[] = [];
       const capture = { write: (chunk: string | Uint8Array) => (written.push(String(chunk)), true) };
       const ports = { version: '1', env: { PATH: directory }, home: '/home/alice', cwd: '/home/alice', clock: { now: () => 0, sleep: async () => undefined }, stdout: capture, stderr: capture, terminal: { stdin: process.stdin, stdout: capture } } as unknown as CliPorts;
-      const backend = createTuiBackend(ports, momongaPaths('/home/alice'), {}, { load: async () => [], append: async () => undefined }, [], {
+      const backend = createTuiBackend(ports, momongaPaths('/home/alice', process.platform, process.env), {}, { load: async () => [], append: async () => undefined }, [], {
         pipe: async (file, args, payload) => void piped.push({ file, args, payload }),
         capture: async () => undefined,
         stop: () => undefined,

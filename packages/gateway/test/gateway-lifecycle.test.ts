@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createScriptedAdapter, textResponseEvents, waitFor } from '@momonga/testkit';
+import { createScriptedAdapter, textResponseEvents, waitFor, testKernelLock } from '@momonga/testkit';
 import { makeDir, outputText, postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
 import { openGatewayStore } from '../src/core/store.ts';
 import { createStoredDataChecks } from '../src/core/validation.ts';
@@ -39,7 +39,7 @@ describe('gateway persistence and lifecycle', () => {
     const settled = await inFlight;
     if ('status' in settled) expect(settled.status).not.toBe(200);
     expect(fs.existsSync(socketPath)).toBe(false);
-    expect((await inspectProcessLock(`${socketPath}.lock`)).state).toBe('free');
+    expect((await inspectProcessLock(`${socketPath}.lock`, { mechanism: testKernelLock() })).state).toBe('free');
     expect(timers.pending()).toEqual([]);
   });
 

@@ -7,7 +7,7 @@ import type { SandboxPolicy } from '@momonga/sandbox';
 import { withTempDir, NEVER_CANCELLED, testPaths } from '@momonga/testkit';
 import { createLauncherFixture, launcherLinksFile, recordLauncherLinks } from './launcher-fixture.ts';
 
-const keychainsOf = (home: string): string => momongaLayout(home).keychains;
+const keychainsOf = (home: string): string => momongaLayout(home, process.platform, process.env).keychains;
 
 const ancestorsWithinHome = (home: string, subtree: string): string[] => {
   const found: string[] = [];
@@ -16,7 +16,7 @@ const ancestorsWithinHome = (home: string, subtree: string): string[] => {
   return [...found, canonicalHome];
 };
 
-const deniedSubtreeAncestors = (home: string): string[] => [...ancestorsWithinHome(home, keychainsOf(home)), ...ancestorsWithinHome(home, momongaLayout(home).executables)];
+const deniedSubtreeAncestors = (home: string): string[] => [...ancestorsWithinHome(home, keychainsOf(home)), ...ancestorsWithinHome(home, momongaLayout(home, process.platform, process.env).executables)];
 
 const sortedUnique = (values: readonly string[]): string[] => [...new Set(values)].sort();
 
@@ -26,7 +26,7 @@ const paramsOfRule = (profile: string, params: Record<string, string>, rule: str
 };
 
 const policyFor = async (home: string): Promise<SandboxPolicy> => {
-  const denied = await alwaysWriteDenied(home, NEVER_CANCELLED);
+  const denied = await alwaysWriteDenied(momongaLayout(home, process.platform, process.env), NEVER_CANCELLED);
   return {
     writableRoots: [home],
     writeDenied: [...denied.subtrees],
@@ -39,19 +39,19 @@ const policyFor = async (home: string): Promise<SandboxPolicy> => {
 describe('alwaysWriteDenied', () => {
   it('returns the momonga root and the keychains as subtrees and the launcher as a literal for a plain ~/.local', async (context) => {
     const { home } = createLauncherFixture(withTempDir(context), 'plain');
-    const denied = await alwaysWriteDenied(home, NEVER_CANCELLED);
+    const denied = await alwaysWriteDenied(momongaLayout(home, process.platform, process.env), NEVER_CANCELLED);
     expect(denied.root).toBe(path.join(home, '.momonga'));
     expect(denied.keychains).toBe(keychainsOf(home));
-    expect([...denied.subtrees].sort()).toEqual([denied.root, denied.keychains, path.join(momongaLayout(home).cacheBase, 'executables')].sort());
+    expect([...denied.subtrees].sort()).toEqual([denied.root, denied.keychains, path.join(momongaLayout(home, process.platform, process.env).cacheBase, 'executables')].sort());
     expect(sortedUnique(denied.literals)).toEqual([path.join(home, '.local', 'bin', 'momonga')]);
   });
 
   it('returns both the lexical link and its canonical-parent form when ~/.local is a symlink', async (context) => {
     const { home } = createLauncherFixture(withTempDir(context), 'symlinked');
-    const denied = await alwaysWriteDenied(home, NEVER_CANCELLED);
+    const denied = await alwaysWriteDenied(momongaLayout(home, process.platform, process.env), NEVER_CANCELLED);
     expect(denied.root).toBe(path.join(home, '.momonga'));
     expect(denied.keychains).toBe(keychainsOf(home));
-    expect([...denied.subtrees].sort()).toEqual([denied.root, denied.keychains, path.join(momongaLayout(home).cacheBase, 'executables')].sort());
+    expect([...denied.subtrees].sort()).toEqual([denied.root, denied.keychains, path.join(momongaLayout(home, process.platform, process.env).cacheBase, 'executables')].sort());
     expect(sortedUnique(denied.literals)).toEqual(
       sortedUnique([path.join(home, '.local', 'bin', 'momonga'), path.join(home, 'dotfiles', 'local', 'bin', 'momonga')]),
     );
@@ -59,7 +59,7 @@ describe('alwaysWriteDenied', () => {
 
   it('never follows the final link to the versioned target', async (context) => {
     const { home, target } = createLauncherFixture(withTempDir(context), 'symlinked');
-    const denied = await alwaysWriteDenied(home, NEVER_CANCELLED);
+    const denied = await alwaysWriteDenied(momongaLayout(home, process.platform, process.env), NEVER_CANCELLED);
     expect(denied.literals).not.toContain(target);
   });
 });
@@ -117,7 +117,7 @@ describe('alwaysWriteDenied reads the installer launcher-links record', () => {
 
   it('adds a recorded custom link next to the default link', async (context) => {
     const { home, launcher } = createLauncherFixture(withTempDir(context), 'custom');
-    expect(sortedUnique((await alwaysWriteDenied(home, NEVER_CANCELLED)).literals)).toEqual(sortedUnique([defaultLink(home), launcher]));
+    expect(sortedUnique((await alwaysWriteDenied(momongaLayout(home, process.platform, process.env), NEVER_CANCELLED)).literals)).toEqual(sortedUnique([defaultLink(home), launcher]));
   });
 
   it('adds the canonical-parent form of a recorded link whose directory is reached through a symlink', async (context) => {
@@ -127,7 +127,7 @@ describe('alwaysWriteDenied reads the installer launcher-links record', () => {
     const recorded = path.join(home, 'alias', 'bin', 'momonga');
     fs.symlinkSync(path.join(home, 'nowhere'), recorded);
     recordLauncherLinks(home, `${recorded}\n`);
-    expect(sortedUnique((await alwaysWriteDenied(home, NEVER_CANCELLED)).literals)).toEqual(
+    expect(sortedUnique((await alwaysWriteDenied(momongaLayout(home, process.platform, process.env), NEVER_CANCELLED)).literals)).toEqual(
       sortedUnique([defaultLink(home), recorded, path.join(home, 'real', 'bin', 'momonga')]),
     );
   });
@@ -135,15 +135,15 @@ describe('alwaysWriteDenied reads the installer launcher-links record', () => {
   it('returns only the default link without error when the record is absent', async (context) => {
     const home = withTempDir(context);
     expect(fs.existsSync(launcherLinksFile(home))).toBe(false);
-    expect(sortedUnique((await alwaysWriteDenied(home, NEVER_CANCELLED)).literals)).toEqual([defaultLink(home)]);
-    expect((await alwaysWriteDenied(home, NEVER_CANCELLED)).launcherLinks).toEqual({ status: 'absent' });
+    expect(sortedUnique((await alwaysWriteDenied(momongaLayout(home, process.platform, process.env), NEVER_CANCELLED)).literals)).toEqual([defaultLink(home)]);
+    expect((await alwaysWriteDenied(momongaLayout(home, process.platform, process.env), NEVER_CANCELLED)).launcherLinks).toEqual({ status: 'absent' });
   });
 
   it('ignores a relative line and keeps the absolute ones', async (context) => {
     const home = withTempDir(context);
     const recorded = path.join(home, 'opt', 'momonga');
     recordLauncherLinks(home, `relative/bin/momonga\n${recorded}\n`);
-    expect(sortedUnique((await alwaysWriteDenied(home, NEVER_CANCELLED)).literals)).toEqual(sortedUnique([defaultLink(home), recorded]));
+    expect(sortedUnique((await alwaysWriteDenied(momongaLayout(home, process.platform, process.env), NEVER_CANCELLED)).literals)).toEqual(sortedUnique([defaultLink(home), recorded]));
   });
 
   it('emits literal and ancestor denies for a recorded link', async (context) => {
@@ -164,7 +164,7 @@ describe('alwaysWriteDenied reads the installer launcher-links record', () => {
 
 describe('alwaysWriteDenied launcher-links decisions', () => {
   const defaultLink = (home: string): string => path.join(home, '.local', 'bin', 'momonga');
-  const literalsOf = async (home: string): Promise<string[]> => sortedUnique((await alwaysWriteDenied(home, NEVER_CANCELLED)).literals);
+  const literalsOf = async (home: string): Promise<string[]> => sortedUnique((await alwaysWriteDenied(momongaLayout(home, process.platform, process.env), NEVER_CANCELLED)).literals);
 
   it('ignores a launcher-links that is a symlink and keeps only the default launcher', async (context) => {
     const home = withTempDir(context);
@@ -173,14 +173,14 @@ describe('alwaysWriteDenied launcher-links decisions', () => {
     fs.mkdirSync(path.dirname(launcherLinksFile(home)), { recursive: true });
     fs.symlinkSync(elsewhere, launcherLinksFile(home));
     expect(await literalsOf(home)).toEqual([defaultLink(home)]);
-    expect((await alwaysWriteDenied(home, NEVER_CANCELLED)).launcherLinks).toEqual({ status: 'ignored', reason: 'symlink' });
+    expect((await alwaysWriteDenied(momongaLayout(home, process.platform, process.env), NEVER_CANCELLED)).launcherLinks).toEqual({ status: 'ignored', reason: 'symlink' });
   });
 
   it('ignores a launcher-links that is a directory', async (context) => {
     const home = withTempDir(context);
     fs.mkdirSync(launcherLinksFile(home), { recursive: true });
     expect(await literalsOf(home)).toEqual([defaultLink(home)]);
-    expect((await alwaysWriteDenied(home, NEVER_CANCELLED)).launcherLinks).toEqual({ status: 'ignored', reason: 'not_regular' });
+    expect((await alwaysWriteDenied(momongaLayout(home, process.platform, process.env), NEVER_CANCELLED)).launcherLinks).toEqual({ status: 'ignored', reason: 'not_regular' });
   });
 
   it('ignores a launcher-links larger than 64 KiB', async (context) => {
@@ -190,7 +190,7 @@ describe('alwaysWriteDenied launcher-links decisions', () => {
     recordLauncherLinks(home, line.repeat(Math.ceil((64 * 1024 + 1) / line.length)));
     expect(fs.statSync(launcherLinksFile(home)).size).toBeGreaterThan(64 * 1024);
     expect(await literalsOf(home)).toEqual([defaultLink(home)]);
-    expect((await alwaysWriteDenied(home, NEVER_CANCELLED)).launcherLinks).toEqual({ status: 'ignored', reason: 'too_large' });
+    expect((await alwaysWriteDenied(momongaLayout(home, process.platform, process.env), NEVER_CANCELLED)).launcherLinks).toEqual({ status: 'ignored', reason: 'too_large' });
   });
 
   it('reads a launcher-links of exactly 64 KiB', async (context) => {
@@ -200,7 +200,7 @@ describe('alwaysWriteDenied launcher-links decisions', () => {
     recordLauncherLinks(home, head + '\n'.repeat(64 * 1024 - Buffer.byteLength(head)));
     expect(fs.statSync(launcherLinksFile(home)).size).toBe(64 * 1024);
     expect(await literalsOf(home)).toEqual(sortedUnique([defaultLink(home), recorded]));
-    expect((await alwaysWriteDenied(home, NEVER_CANCELLED)).launcherLinks).toEqual({ status: 'read' });
+    expect((await alwaysWriteDenied(momongaLayout(home, process.platform, process.env), NEVER_CANCELLED)).launcherLinks).toEqual({ status: 'read' });
   });
 
   it('skips blank lines, relative paths and lines with a NUL and keeps the absolute lines', async (context) => {
@@ -209,7 +209,7 @@ describe('alwaysWriteDenied launcher-links decisions', () => {
     const second = path.join(home, 'b', 'momonga');
     recordLauncherLinks(home, `\n   \n${first}\nrelative/momonga\n${path.join(home, 'c')}\u0000x\n\n${second}\n`);
     expect(await literalsOf(home)).toEqual(sortedUnique([defaultLink(home), first, second]));
-    expect((await alwaysWriteDenied(home, NEVER_CANCELLED)).launcherLinks).toEqual({ status: 'read' });
+    expect((await alwaysWriteDenied(momongaLayout(home, process.platform, process.env), NEVER_CANCELLED)).launcherLinks).toEqual({ status: 'read' });
   });
 
   it('skips a line that is not valid UTF-8 and keeps the others', async (context) => {
@@ -222,7 +222,7 @@ describe('alwaysWriteDenied launcher-links decisions', () => {
       { mode: 0o600 },
     );
     expect(await literalsOf(home)).toEqual(sortedUnique([defaultLink(home), valid]));
-    expect((await alwaysWriteDenied(home, NEVER_CANCELLED)).launcherLinks).toEqual({ status: 'read' });
+    expect((await alwaysWriteDenied(momongaLayout(home, process.platform, process.env), NEVER_CANCELLED)).launcherLinks).toEqual({ status: 'read' });
   });
 
   it('protects a recorded path that does not exist yet', async (context) => {

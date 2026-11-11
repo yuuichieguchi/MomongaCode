@@ -3,9 +3,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Readable } from 'node:stream';
-import { createKernelLockMechanism, hostKernelLock, momongaPaths } from '@momonga/foundation';
+import { momongaPaths } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, spawnTracked, startClaimHolder } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, spawnTracked, startClaimHolder, testKernelLock, expectedKernelLockOn } from '@momonga/testkit';
 import type { CleanupContext, TrackedChild } from '@momonga/testkit';
 import type { HeldKernelLock } from '@momonga/foundation';
 import { sweepSessionTmp, sweepSpawnTmp } from '../src/process/tmp-sweep.ts';
@@ -30,7 +30,7 @@ const temporaryDirectory = (): string => {
 };
 
 const holdEntry = async (entry: string): Promise<void> => {
-  const outcome = await hostKernelLock().claim(entry);
+  const outcome = await testKernelLock().claim(entry);
   if (outcome.kind !== 'claimed') throw new Error(`${entry} could not be claimed by the test`);
   held.push(outcome.lock);
   if (!fs.existsSync(entry)) fs.writeFileSync(entry, 'in flight', { mode: 0o600 });
@@ -56,13 +56,13 @@ describe('tmp-sweep.ts:28-44: the spawn scratch sweep never removes an entry who
     const dir = temporaryDirectory();
     const inUse = path.join(dir, 'spawn-0a1b2c');
     await holdEntry(inUse);
-    await sweepSpawnTmp({ dir, onWarning: noWarning });
+    await sweepSpawnTmp({ lock: testKernelLock(), dir, onWarning: noWarning });
     expect(fs.existsSync(inUse)).toBe(true);
   });
 
   for (const platform of MECHANISMS) {
     it(`${platform} mechanism: removes a spawn entry whose lock no one holds, with its sidecar`, async () => {
-      const lock = createKernelLockMechanism(platform);
+      const lock = expectedKernelLockOn(platform);
       const dir = temporaryDirectory();
       await makeLeftover(lock, path.join(dir, 'spawn-0a1b2c'), 'left by a crash');
       expect(fs.readdirSync(dir).sort()).toEqual(sidecarNamesOf(lock, 'spawn-0a1b2c'));
@@ -79,14 +79,14 @@ describe('tmp-sweep.ts:47-: age is retention only (R4); a session entry whose ow
     const inUse = path.join(root, sessionId);
     await holdEntry(inUse);
     const store = { sessionActivity: () => ({ hasActiveRun: false, lastActivityAt: NOW - SEVEN_DAYS_MS - 1 }) };
-    const result = await sweepSessionTmp({ root, store, now: NOW, onWarning: noWarning });
+    const result = await sweepSessionTmp({ lock: testKernelLock(), root, store, now: NOW, onWarning: noWarning });
     expect(fs.existsSync(inUse)).toBe(true);
     expect(result.removed).toBe(0);
   });
 
   for (const platform of MECHANISMS) {
   it(`${platform} mechanism: keeps an unheld session entry younger than the retention, and removes one older than it`, async () => {
-    const lock = createKernelLockMechanism(platform);
+    const lock = expectedKernelLockOn(platform);
     const root = temporaryDirectory();
     await makeLeftover(lock, path.join(root, 'young'), 'kept by retention');
     await makeLeftover(lock, path.join(root, 'old'), 'past retention');
@@ -101,7 +101,7 @@ describe('tmp-sweep.ts:47-: age is retention only (R4); a session entry whose ow
   }
 });
 
-const directoryClaimPath = (directory: string): string => (hostKernelLock().name === 'file-lock' ? `${directory}.lock` : directory);
+const directoryClaimPath = (directory: string): string => (testKernelLock().name === 'file-lock' ? `${directory}.lock` : directory);
 
 const killed = (child: TrackedChild): Promise<void> =>
   new Promise((resolve) => {
@@ -122,10 +122,10 @@ describe('S2: spawn and session scratch are directories with a sidecar, on real 
       const owner = await startClaimHolder(context, directoryClaimPath(scratch));
       fs.mkdirSync(scratch);
       fs.writeFileSync(path.join(scratch, 'out.txt'), 'in use');
-      await sweepSpawnTmp({ dir, onWarning: noWarning });
+      await sweepSpawnTmp({ lock: testKernelLock(), dir, onWarning: noWarning });
       expect(fs.existsSync(path.join(scratch, 'out.txt'))).toBe(true);
       await killed(owner);
-      await sweepSpawnTmp({ dir, onWarning: noWarning });
+      await sweepSpawnTmp({ lock: testKernelLock(), dir, onWarning: noWarning });
       expect(fs.readdirSync(dir)).toEqual([]);
     },
   );
@@ -139,10 +139,10 @@ describe('S2: spawn and session scratch are directories with a sidecar, on real 
       const owner = await startClaimHolder(context, directoryClaimPath(scratch));
       fs.mkdirSync(scratch);
       const store = { sessionActivity: () => ({ hasActiveRun: false, lastActivityAt: NOW - SEVEN_DAYS_MS - 1 }) };
-      await sweepSessionTmp({ root, store, now: NOW, onWarning: noWarning });
+      await sweepSessionTmp({ lock: testKernelLock(), root, store, now: NOW, onWarning: noWarning });
       expect(fs.statSync(scratch).isDirectory()).toBe(true);
       await killed(owner);
-      await sweepSessionTmp({ root, store, now: NOW, onWarning: noWarning });
+      await sweepSessionTmp({ lock: testKernelLock(), root, store, now: NOW, onWarning: noWarning });
       expect(fs.readdirSync(root)).toEqual([]);
     },
   );
@@ -168,9 +168,9 @@ describe('S9: session scratch made by ensureSessionTmpDir is kept while its owne
     it(
       `${platform} mechanism: kept while held past the retention; after SIGKILL kept within the retention and removed past it`,
       async (context) => {
-        const lock = createKernelLockMechanism(platform);
+        const lock = expectedKernelLockOn(platform);
         const home = temporaryDirectory();
-        const paths = momongaPaths(home);
+        const paths = momongaPaths(home, process.platform, process.env);
         fs.mkdirSync(paths.tmp.sessions, { recursive: true, mode: 0o700 });
         const sessionId = 'session-owned';
         const scratch = path.join(paths.tmp.sessions, sessionId);

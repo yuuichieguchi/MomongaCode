@@ -1,6 +1,5 @@
-import os from 'node:os';
 import { createExecWithStdin, createGivenSecretStore, createOutboundDispatcher, findOutboundError, givenSecretStoreChildEnv, minimalChildEnv, outboundFetch, protectedSetFor } from '@momonga/foundation';
-import type { MomongaPaths, OutboundNetwork, ProcessInspector, SecretStore } from '@momonga/foundation';
+import type { HelperSelf, MomongaPaths, OutboundNetwork, ProcessInspector, SecretStore } from '@momonga/foundation';
 import { askedBy, computeFileRules } from '@momonga/policy';
 import type { PolicyHostPorts } from '@momonga/policy';
 import { buildSandboxPolicy, createForgeAccess, createOperationTools, createSandboxedArgvRunner, forgeCredentialOf, loadForgeDescriptors } from '@momonga/tools';
@@ -20,6 +19,7 @@ export type OperationToolsOptions = {
   secretStore?: () => SecretStore;
   environment?: Readonly<Record<string, string | undefined>>;
   forgeFetch?: ForgeFetch;
+  helperSelf?: HelperSelf;
 };
 
 const outboundForgeFetch =
@@ -48,6 +48,7 @@ export const createOperationToolSource = (options: OperationToolsOptions): ((sna
     const sandboxPolicy = await buildSandboxPolicy(
       {
         roots,
+        layout: options.paths,
         home: options.home,
         ...(context.tmpDir === undefined ? {} : { tmpDir: context.tmpDir }),
         sessionsTmpRoot: options.paths.tmp.sessions,
@@ -67,7 +68,16 @@ export const createOperationToolSource = (options: OperationToolsOptions): ((sna
     return value;
   };
 
-  const runArgv = createSandboxedArgvRunner({ reconcileSandbox, shellHost: options.shellHost, outboundNetwork: options.network, markerDir: options.paths.markers.tools, credentialRoot: os.tmpdir(), owners: options.owners, inspector: options.inspector });
+  const runArgv = createSandboxedArgvRunner({
+    reconcileSandbox,
+    shellHost: options.shellHost,
+    outboundNetwork: options.network,
+    markerDir: options.paths.markers.tools,
+    credentialRoot: options.paths.tmp.spawn,
+    ...(options.helperSelf === undefined ? {} : { credentialHelper: options.helperSelf }),
+    owners: options.owners,
+    inspector: options.inspector,
+  });
   const fetch = options.forgeFetch ?? outboundForgeFetch(options.network);
   const descriptors = loadForgeDescriptors();
 

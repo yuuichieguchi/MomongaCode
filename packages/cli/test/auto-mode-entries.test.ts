@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createTempDir, removeTempDir } from '@momonga/testkit';
 import { nodeProcess } from '../src/node-ports.ts';
 import type { EntryIo } from '@momonga/foundation';
 import type { CliPorts } from '../src/ports.ts';
@@ -23,8 +24,20 @@ vi.mock('../src/commands/auto-mode.ts', async (importOriginal) => {
   return { ...original, autoModeCheck: spies.check, autoModeStatus: spies.status };
 });
 
+const homes: string[] = [];
+
+const freshHome = (): string => {
+  const home = createTempDir({ asHome: true });
+  homes.push(home);
+  return home;
+};
+
+afterEach(async () => {
+  for (const home of homes.splice(0)) await removeTempDir(home);
+});
+
 const programWith = (interrupt: AbortSignal) => {
-  const ports = { version: '9.9.9', home: '/h', cwd: '/c', terminal: undefined, env: {}, process: nodeProcess, stdout: { write: () => undefined }, stderr: { write: () => undefined } } as unknown as CliPorts;
+  const ports = { version: '9.9.9', home: freshHome(), platform: process.platform, interrupt, cwd: '/c', terminal: undefined, env: {}, process: nodeProcess, stdout: { write: () => undefined }, stderr: { write: () => undefined } } as unknown as CliPorts;
   const entry = async (): Promise<number> => 0;
   const program = buildProgram({
     ports,

@@ -10,6 +10,7 @@ import { createFakeClock } from '@momonga/testkit';
 import { GatewayRequestError } from '../../src/gateway-client.ts';
 import { createTracerPort } from '../../src/tracer.ts';
 import { LeaseLostError, ShutdownError } from '../../src/worker/errors.ts';
+import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
 const START_MS = 1_800_000_000_000;
 const QUIET_BATCH = { maxQueueSize: 2048, scheduledDelayMs: 60_000, maxExportBatchSize: 512 };
@@ -27,7 +28,7 @@ const setup = (captureMessageContent?: boolean) => {
   const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'tr-'));
   fs.chmodSync(dir, 0o700);
   cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const store = openTraceStore({ path: path.join(dir, 'traces.db'), clock });
+  const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: path.join(dir, 'traces.db'), clock });
   cleanups.push(() => store.close());
   const memory = new InMemorySpanExporter();
   const telemetry = createTelemetry({ serviceName: 'momonga-test', serviceVersion: '9.9.9', clock, store, exporters: [memory], batch: QUIET_BATCH, ...(captureMessageContent === undefined ? {} : { captureMessageContent, contentRetentionMs: 60_000 }) });

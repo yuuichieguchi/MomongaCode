@@ -51,7 +51,7 @@ export const PRODUCT_WRITTEN_PLAN_CONNECTION = { adapter: 'open-responses', plan
 
 export const productWrittenPlanModels = (context: TestContext): UserModels => {
   const home = withTempDir(context, { asHome: true });
-  const file = momongaLayout(home).settingsFile;
+  const file = momongaLayout(home, process.platform, process.env).settingsFile;
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   fs.writeFileSync(file, JSON.stringify({ models: { connections: [PRODUCT_WRITTEN_PLAN_CONNECTION] } }), { mode: 0o600 });
   return userModelsAt(home);

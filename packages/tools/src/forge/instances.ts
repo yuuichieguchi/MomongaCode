@@ -1,3 +1,4 @@
+import { createRedactor } from '@momonga/foundation';
 import { ToolExecutionError } from '../types.ts';
 import type { ForgeOperationName } from '../operations/spec.ts';
 import { callForge } from './http.ts';
@@ -29,7 +30,17 @@ export type ForgeRequest = {
   boundMs: number;
 };
 
-export type ForgeGitCredential = { username: string; password: string };
+export type ForgeGitCredential = { origin: string; username: string; password: string };
+
+const GIT_TRANSPORT_SCHEME = 'https';
+const URL_FORM = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+export const gitOriginOf = (instance: Pick<ForgeInstance, 'host'>): string => new URL(`${GIT_TRANSPORT_SCHEME}://${instance.host}`).origin;
+
+const originOfRemote = (remoteUrl: string): string | undefined => {
+  const trimmed = remoteUrl.trim();
+  return URL_FORM.test(trimmed) && URL.canParse(trimmed) ? new URL(trimmed).origin : undefined;
+};
 
 export type ForgeAccess = {
   request(request: ForgeRequest): Promise<ForgeAnswer>;
@@ -51,11 +62,11 @@ export const createForgeAccess = (options: ForgeAccessOptions): ForgeAccess => {
   };
   return {
     gitCredential: async (remoteUrl, signal) => {
-      const { host } = parseRemoteUrl(remoteUrl);
-      const instance = options.instances.find((candidate) => candidate.host === host);
-      if (instance === undefined) return undefined;
+      const origin = originOfRemote(remoteUrl);
+      const instance = origin === undefined ? undefined : options.instances.find((candidate) => gitOriginOf(candidate) === origin);
+      if (origin === undefined || instance === undefined) return undefined;
       const descriptor = descriptorOf(instance);
-      return { username: descriptor.auth.gitUsername, password: await options.readCredential(instance.credential, signal) };
+      return { origin, username: descriptor.auth.gitUsername, password: await options.readCredential(instance.credential, signal) };
     },
     request: async ({ remoteUrl, operation, args, signal, boundMs }) => {
       const location = parseRemoteUrl(remoteUrl);
@@ -64,7 +75,7 @@ export const createForgeAccess = (options: ForgeAccessOptions): ForgeAccess => {
       const descriptor = descriptorOf(instance);
       const credential = await options.readCredential(instance.credential, signal);
       const { owner, name } = splitRepository(location.repo);
-      const redact = (text: string): string => text.split(credential).join('[redacted]');
+      const redact = createRedactor({ credentials: [credential] }).whole;
       try {
         const answer = await callForge({ descriptor, apiBaseUrl: instance.apiBaseUrl, credential, variables: { owner, name, ...args }, operation, signal, boundMs, fetch: options.fetch });
         const clean = (fields: ForgeFields): ForgeFields => Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, redact(value)]));

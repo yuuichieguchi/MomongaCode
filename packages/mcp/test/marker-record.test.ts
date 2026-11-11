@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { hostProcessGroupPort, readAttemptRecord, readMarkerGroup, reapMarkerDirectory, type AttemptRecord } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testProcessInspector } from '@momonga/testkit';
 import { eventually, groupExists, makeDir, rawConfig, startRaw } from './raw-transport.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -63,7 +63,7 @@ describe('the marker of an MCP stdio server is a group record written by the one
     await killGroupsForCleanup([pid]);
     await eventually(async () => !(await groupExists(pid)), 'the server group to end');
 
-    const outcome = await reapMarkerDirectory({ dir: deadGeneration, killGraceMs: 200, label: 'mcp', onWarning: () => undefined, signal: new AbortController().signal, occasion: 'sweep' });
+    const outcome = await reapMarkerDirectory({ inspector: testProcessInspector(), dir: deadGeneration, killGraceMs: 200, label: 'mcp', onWarning: () => undefined, signal: new AbortController().signal, occasion: 'sweep' });
 
     expect(outcome).toEqual({ reaped: 1, kept: 0 });
     expect(fs.readdirSync(deadGeneration)).toEqual([]);

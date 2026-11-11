@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { STARTUP_TIMEOUT_MS, ensureMomongaDirs, generationLayout, hostKernelLock, momongaPaths, publishCurrentGeneration } from '@momonga/foundation';
+import { STARTUP_TIMEOUT_MS, ensureMomongaDirs, generationLayout, momongaPaths, publishCurrentGeneration } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
 import { FIDELITY_FOLD_VERSION } from '@momonga/protocol';
-import { registerCleanup, withTempDir, pollUntil } from '@momonga/testkit';
+import { registerCleanup, withTempDir, testKernelLock, pollUntil } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { describe, expect, it } from 'vitest';
 import { DaemonStartError, ensureDaemon, stopDaemon } from '../src/daemon/ensure-daemon.ts';
@@ -21,7 +21,7 @@ const SELF: SelfExecutable = { kind: 'script', execPath: '/opt/node', script: '/
 
 const setup = async (context: TestContext) => {
   const home = withTempDir(context, { asHome: true });
-  const paths = momongaPaths(home);
+  const paths = momongaPaths(home, process.platform, process.env);
   await ensureMomongaDirs(paths);
   const work = createFakeWork();
   const running: FakeSupervisor[] = [];
@@ -48,7 +48,7 @@ const startsAllocated = (start: (options: { version: string; generation: number 
 };
 
 const holdLock = async (context: TestContext, lockPath: string): Promise<{ release(): void }> => {
-  const outcome = await hostKernelLock().claim(lockPath);
+  const outcome = await testKernelLock().claim(lockPath);
   if (outcome.kind !== 'claimed') throw new Error(`${lockPath} is held`);
   registerCleanup(context, () => outcome.lock.release());
   return { release: () => outcome.lock.release() };
@@ -77,7 +77,7 @@ const afterMorePolls = async (counted: { sleeps(): number }): Promise<void> => {
 
 const startRecordOf = (home: string, generation: number): unknown => JSON.parse(fs.readFileSync(generationLayout(home, generation).startRecord, 'utf8'));
 
-const startingLockHeld = (home: string, generation: number): Promise<boolean> => hostKernelLock().isHeld(generationLayout(home, generation).startingLock);
+const startingLockHeld = (home: string, generation: number): Promise<boolean> => testKernelLock().isHeld(generationLayout(home, generation).startingLock);
 
 describe('ensureDaemon starts a numbered generation (15.1, 15.3 S1, 15.9)', () => {
   it('allocates generation 1 on a fresh home, passes it to the supervisor, and records the counter and start.json', async (context) => {
@@ -154,7 +154,7 @@ describe('ensureDaemon starts a numbered generation (15.1, 15.3 S1, 15.9)', () =
   it('refuses a client below the floor of run/current when no generation serves, with the settled text, and starts nothing (15.4 rule 3, 20.30)', async (context) => {
     const { home, paths, portsWith, counter } = await setup(context);
     fs.writeFileSync(counter, '1');
-    await publishCurrentGeneration(paths, { generation: 1, version: '2.0.0', sockets: generationLayout(home, 1).sockets });
+    await publishCurrentGeneration(paths, { generation: 1, version: '2.0.0', sockets: generationLayout(home, 1).sockets }, { lock: testKernelLock() });
     const { spawn, spawned } = recordingSpawn(() => undefined);
 
     const failure = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS }).catch((error: unknown) => error);
@@ -346,7 +346,7 @@ describe('the user stop is the only forced stop, and it reaches every live gener
     const serving = await start({ version: '0.0.1', generation: 1 });
     const starting = await start({ version: VERSION, generation: 2, publishes: false });
     const { spawn } = recordingSpawn(() => undefined);
-    const host = hostKernelLock();
+    const host = testKernelLock();
     let afterSnapshot: Promise<FakeSupervisor> | undefined;
     const lock: KernelLockMechanism = {
       ...host,

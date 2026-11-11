@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { closeMarkerDescriptor, ensureMomongaDirs, momongaPaths, ruleEnforcementOf } from '@momonga/foundation';
 import { SandboxPolicyError, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxCommand, SandboxPolicy } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, pollUntil, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, pollUntil, withTempDir, testProcessInspector } from '@momonga/testkit';
 import { createEvidenceRunner } from '../../src/process/evidence-run.ts';
 import { fixedSandboxBindings } from '@momonga/runtime';
 
@@ -29,11 +29,11 @@ const sandboxAnswering = (stdout: string, code: number | null) => {
 describe('the evidence runner', () => {
   it('runs the command in the sandbox with the project as the only writable root and no network, and returns the exit code and the output', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const project = fs.realpathSync(withTempDir(context));
     const { sandbox, spawned } = sandboxAnswering('abc\n', 0);
-    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: { PATH: '/usr/bin' } })(project);
+    const run = createEvidenceRunner({ reap: { inspector: testProcessInspector() }, paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: { PATH: '/usr/bin' } })(project);
 
     const caller = new AbortController();
     const result = await run({ argv: ['git', 'rev-parse', 'HEAD'], cwd: project, env: { GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0' }, network: 'deny' }, caller.signal);
@@ -62,11 +62,11 @@ describe('the evidence runner', () => {
 
   it('clears the git variables that name a program or a repository, whatever the daemon environment holds', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const project = fs.realpathSync(withTempDir(context));
     const { sandbox, spawned } = sandboxAnswering('', 0);
-    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: { GIT_SSH_COMMAND: '/planted', GIT_DIR: '/elsewhere', GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.pager', GIT_CONFIG_VALUE_0: '/planted' } })(project);
+    const run = createEvidenceRunner({ reap: { inspector: testProcessInspector() }, paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: { GIT_SSH_COMMAND: '/planted', GIT_DIR: '/elsewhere', GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.pager', GIT_CONFIG_VALUE_0: '/planted' } })(project);
     await run({ argv: ['git', 'status'], cwd: project, env: {}, network: 'deny' }, new AbortController().signal);
     const env = spawned[0]?.command.env ?? {};
     expect(env['GIT_SSH_COMMAND']).toBeUndefined();
@@ -76,17 +76,17 @@ describe('the evidence runner', () => {
 
   it('passes an exit code of null through, because a signal is not an answer', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const project = fs.realpathSync(withTempDir(context));
     const { sandbox } = sandboxAnswering('', null);
-    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} })(project);
+    const run = createEvidenceRunner({ reap: { inspector: testProcessInspector() }, paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} })(project);
     await expect(run({ argv: ['git', 'status'], cwd: project, env: {}, network: 'deny' }, new AbortController().signal)).resolves.toEqual({ exitCode: null, stdout: '' });
   });
 
   it('kills a child that hangs when the caller aborts, and answers with no exit code', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const project = fs.realpathSync(withTempDir(context));
     const real = createUnsandboxed({ killGraceMs: 200 });
@@ -99,7 +99,7 @@ describe('the evidence runner', () => {
         return child;
       },
     };
-    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} })(project);
+    const run = createEvidenceRunner({ reap: { inspector: testProcessInspector() }, paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} })(project);
     const caller = new AbortController();
     const answer = run({ argv: ['/bin/sleep', '60'], cwd: project, env: {}, network: 'deny' }, caller.signal);
     await pollUntil(() => pids.length === 1, { description: 'the evidence command to be spawned', boundMs: REAL_PROCESS_TEST_TIMEOUT_MS / 2 });
@@ -120,10 +120,10 @@ describe('the evidence runner', () => {
 
   it('starts nothing for a project that is not a folder', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const { sandbox, spawned } = sandboxAnswering('', 0);
-    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} })('/no/such/project');
+    const run = createEvidenceRunner({ reap: { inspector: testProcessInspector() }, paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} })('/no/such/project');
     await run({ argv: ['git', 'status'], cwd: '/no/such/project', env: {}, network: 'deny' }, new AbortController().signal);
     expect(spawned).toEqual([]);
   });
@@ -142,7 +142,7 @@ describe('the evidence runner', () => {
     for (const [label, make] of failures) {
       it(`is answered as a command that cannot be checked at the boundary of the runner, for ${label}`, async (context) => {
         const home = withTempDir(context, { asHome: true });
-        const paths = momongaPaths(home);
+        const paths = momongaPaths(home, process.platform, process.env);
         await ensureMomongaDirs(paths);
         const project = fs.realpathSync(withTempDir(context));
         const failure = make();
@@ -152,17 +152,17 @@ describe('the evidence runner', () => {
             throw failure;
           },
         };
-        const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} })(project);
+        const run = createEvidenceRunner({ reap: { inspector: testProcessInspector() }, paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} })(project);
         await expect(run({ argv: ['git', 'status'], cwd: project, env: {}, network: 'deny' }, new AbortController().signal)).resolves.toEqual({ exitCode: null, notStarted: failure.message });
       });
     }
 
     it('answers a project that is not a folder the same way', async (context) => {
       const home = withTempDir(context, { asHome: true });
-      const paths = momongaPaths(home);
+      const paths = momongaPaths(home, process.platform, process.env);
       await ensureMomongaDirs(paths);
       const { sandbox } = sandboxAnswering('', 0);
-      const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} })('/no/such/project');
+      const run = createEvidenceRunner({ reap: { inspector: testProcessInspector() }, paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} })('/no/such/project');
       const result = await run({ argv: ['git', 'status'], cwd: '/no/such/project', env: {}, network: 'deny' }, new AbortController().signal);
       expect(result).toEqual({ exitCode: null, notStarted: expect.stringContaining('/no/such/project') });
     });
@@ -170,7 +170,7 @@ describe('the evidence runner', () => {
 
   it('lets an error of our own after the process ran stay an error', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const project = fs.realpathSync(withTempDir(context));
     const sandbox: Sandbox = {
@@ -186,13 +186,13 @@ describe('the evidence runner', () => {
         exited: Promise.resolve({ code: 0, signal: null }),
       }),
     };
-    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} })(project);
+    const run = createEvidenceRunner({ reap: { inspector: testProcessInspector() }, paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} })(project);
     await expect(run({ argv: ['git', 'status'], cwd: project, env: {}, network: 'deny' }, new AbortController().signal)).rejects.toThrow('reading the output failed');
   });
 
   it('reads the output of the command through the bounded window: ten megabytes come back as the last bytes the window holds, with the count of the bytes left out', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const project = fs.realpathSync(withTempDir(context));
     const windowBytes = 1024;
@@ -209,7 +209,7 @@ describe('the evidence runner', () => {
         return { pid: 999_988, pgid: 999_988, stdout: flood('a'), stderr: flood('e'), exited: Promise.resolve({ code: 0, signal: null }) };
       },
     };
-    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {}, outputWindowBytes: windowBytes })(project);
+    const run = createEvidenceRunner({ reap: { inspector: testProcessInspector() }, paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {}, outputWindowBytes: windowBytes })(project);
 
     const result = await run({ argv: ['git', 'log'], cwd: project, env: {}, network: 'deny' }, new AbortController().signal);
 

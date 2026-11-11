@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import type { SecretStore } from '@momonga/foundation';
 import type { McpAuthorizingPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
-import { FAKE_LEASE, UNCONFIGURED_NETWORK, waitFor } from '@momonga/testkit';
+import { FAKE_LEASE, UNCONFIGURED_NETWORK, testLocks, testKernelLock, waitFor } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import { createSession, inertSandbox, makeRuntimeFixture, writeUserSettings } from './helpers.ts';
 
@@ -46,6 +46,8 @@ const authorizingThroughStore = async (secretStore: { kind: 'available'; store: 
       close: async () => undefined,
     }) as unknown as McpAuthorizingPool;
   const toolRuntime = runtime.createToolRuntime({
+    kernelLock: testKernelLock(),
+    lockCapability: testLocks().capability,
     version: '0.0.0-test',
     network: UNCONFIGURED_NETWORK,
     paths: f.temp.paths,

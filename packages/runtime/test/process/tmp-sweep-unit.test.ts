@@ -1,11 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { claimPathOf, createKernelLockMechanism, hostKernelLock } from '@momonga/foundation';
+import { claimPathOf } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
 import { sweepSessionTmp, sweepSpawnTmp } from '../../src/process/tmp-sweep.ts';
 import { makeDir, makeTempHome, START_MS } from './helpers.ts';
 import type { TempHome } from './helpers.ts';
+import { testKernelLock, expectedKernelLockOn } from '@momonga/testkit';
 
 const DAY_MS = 86_400_000;
 const NOW = START_MS + 30 * DAY_MS;
@@ -39,7 +40,7 @@ const warnings = () => {
 
 const abandonedDirectory = (parent: string, name: string): string => {
   const directory = path.join(parent, name);
-  const lock = hostKernelLock();
+  const lock = testKernelLock();
   const claimed = lock.claimSync?.(claimPathOf(lock, directory, 'sidecar'));
   if (claimed?.kind !== 'claimed') throw new Error(`the sidecar of ${directory} could not be claimed by the test`);
   fs.mkdirSync(directory);
@@ -62,13 +63,13 @@ const exists = (target: string): boolean => {
   }
 };
 
-const sweep = (temp: TempHome, store: { sessionActivity(id: string): Activity | undefined }, lock: KernelLockMechanism = hostKernelLock()) => {
+const sweep = (temp: TempHome, store: { sessionActivity(id: string): Activity | undefined }, lock: KernelLockMechanism = testKernelLock()) => {
   const warned = warnings();
   return { warned, result: sweepSessionTmp({ root: temp.paths.tmp.sessions, store, now: NOW, onWarning: warned.onWarning, lock }) };
 };
 
 const holdScratchClaim = (entry: string): (() => void) => {
-  const lock = hostKernelLock();
+  const lock = testKernelLock();
   const claimed = lock.claimSync?.(claimPathOf(lock, entry, 'sidecar'));
   if (claimed?.kind !== 'claimed') throw new Error(`the sidecar of ${entry} could not be claimed by the test`);
   return () => claimed.lock.dispose();
@@ -83,7 +84,7 @@ describe('sweepSpawnTmp (fake clock, fake timers, none armed)', () => {
     fs.writeFileSync(path.join(spawnRoot, 'stray-file'), 'x');
     const warned = warnings();
 
-    await sweepSpawnTmp({ dir: spawnRoot, onWarning: warned.onWarning });
+    await sweepSpawnTmp({ lock: testKernelLock(), dir: spawnRoot, onWarning: warned.onWarning });
 
     expect(fs.readdirSync(spawnRoot)).toEqual([]);
     expect(warned.messages).toEqual([]);
@@ -95,7 +96,7 @@ describe('sweepSpawnTmp (fake clock, fake timers, none armed)', () => {
     fs.writeFileSync(path.join(outside, 'keep.txt'), 'kept');
     fs.symlinkSync(outside, path.join(temp.paths.tmp.spawn, 'link'));
 
-    await sweepSpawnTmp({ dir: temp.paths.tmp.spawn, onWarning: warnings().onWarning });
+    await sweepSpawnTmp({ lock: testKernelLock(), dir: temp.paths.tmp.spawn, onWarning: warnings().onWarning });
 
     expect(fs.readdirSync(temp.paths.tmp.spawn)).toEqual(['link']);
     expect(fs.readFileSync(path.join(outside, 'keep.txt'), 'utf8')).toBe('kept');
@@ -172,7 +173,7 @@ describe('sweepSessionTmp (fake clock, fake timers, none armed)', () => {
 
   for (const platform of ['darwin', 'linux'] as const) {
     it(`${platform} mechanism: unlinks file entries of removable names, made in the form the product writes them`, async () => {
-      const lock = createKernelLockMechanism(platform);
+      const lock = expectedKernelLockOn(platform);
       const temp = await makeTempHome();
       const file = path.join(temp.paths.tmp.sessions, sessionId(1));
       const claimed = await lock.claim(file);
@@ -287,7 +288,7 @@ describe('sweepSessionTmp (fake clock, fake timers, none armed)', () => {
     await expect(result).rejects.toBe(failure);
     expect(warned.messages).toEqual([]);
     expect(exists(dir)).toBe(true);
-    expect(await hostKernelLock().isHeld(claimPathOf(hostKernelLock(), dir, 'sidecar'))).toBe(false);
+    expect(await testKernelLock().isHeld(claimPathOf(testKernelLock(), dir, 'sidecar'))).toBe(false);
   });
 
   it('retention is decided once, under the claim: the store is asked once per entry', async () => {

@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { hostKernelLock, inspectProcessLock } from '@momonga/foundation';
+import { inspectProcessLock } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
-import { createFakeClock, createFakeEntryIo, createFakeTimers, fakeReapTiming, parseJsonLines, prepareGenerationForTest, registerCleanup, firstGeneration } from '@momonga/testkit';
+import { createFakeClock, createFakeEntryIo, createFakeTimers, fakeReapTiming, parseJsonLines, prepareGenerationForTest, registerCleanup, firstGeneration, testKernelLock } from '@momonga/testkit';
 import type { CleanupContext, FakeEntryIo, JsonLine } from '@momonga/testkit';
 import { runSupervisorEntry } from '../src/entry.ts';
 import type { SupervisorEntryDeps } from '../src/entry.ts';
@@ -76,7 +76,6 @@ const startEntry = (context: CleanupContext, prepared: { home: string; paths: Mo
       random: () => 0.5,
       watchSettings: false,
       reapTiming: fakeReapTiming(clock, timers),
-      lockMechanism,
       ...deps,
     }),
   );
@@ -108,7 +107,7 @@ const exitOf = async (run: SlowRun, maxMs: number): Promise<number> => {
 };
 
 const cancelOnClaim = (target: string, cancel: () => void): KernelLockMechanism => {
-  const host = hostKernelLock();
+  const host = testKernelLock();
   return {
     ...host,
     claim: async (lockPath) => {
@@ -152,7 +151,7 @@ describe('supervisor entry under slow filesystem I/O', () => {
       code: 1,
     });
     expect(slow.run.io.stdoutLines()).toEqual([]);
-    expect(await inspectProcessLock(firstGeneration(slow.run.paths).locks.supervisor)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(firstGeneration(slow.run.paths).locks.supervisor, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
   });
 
   it('a cancel during listenUnix closes gracefully and removes the socket and both locks even when every fs operation is slow', async (context) => {
@@ -169,7 +168,7 @@ describe('supervisor entry under slow filesystem I/O', () => {
       code: 0,
     });
     expect(fs.existsSync(firstGeneration(slow.run.paths).sockets.supervisor)).toBe(false);
-    expect(await inspectProcessLock(`${firstGeneration(slow.run.paths).sockets.supervisor}.lock`)).toEqual({ state: 'free' });
-    expect(await inspectProcessLock(firstGeneration(slow.run.paths).locks.supervisor)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(`${firstGeneration(slow.run.paths).sockets.supervisor}.lock`, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(firstGeneration(slow.run.paths).locks.supervisor, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
   });
 });

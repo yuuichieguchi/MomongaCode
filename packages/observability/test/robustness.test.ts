@@ -19,6 +19,7 @@ import {
 import type { BodyRecord, TraceStore } from '@momonga/observability';
 import { createFakeClock, createFakeTimers, waitFor, afterMicrotasks } from '@momonga/testkit';
 import { CONTENT, QUIET_BATCH, RUN_ID, START_MS, dumpAllRows, harness, openStore, registerCleanup, bodiesOfSpan } from './helpers.ts';
+import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
 const captureErrors = (): unknown[] => {
   const errors: unknown[] = [];
@@ -299,7 +300,7 @@ describe('body retention', () => {
     h.store.close();
     expect(countRows(h.file, 'bodies')).toBe(1);
     h.clock.advance(2000);
-    openTraceStore({ path: h.file, clock: h.clock }).close();
+    openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: h.file, clock: h.clock }).close();
     expect(countRows(h.file, 'bodies')).toBe(0);
   });
 

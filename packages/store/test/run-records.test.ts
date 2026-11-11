@@ -2,12 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { canonicalJson, migrate, systemRandom, nodeFileSystem } from '@momonga/foundation';
+import { canonicalJson, migrate, systemRandom, nodeFileSystem, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { assistantTextOf } from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
 import { foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { fixtureCompactionItem, materializeEvents, createFakeClock } from '@momonga/testkit';
+import { fixtureCompactionItem, materializeEvents, createFakeClock, testKernelLock } from '@momonga/testkit';
 import { MIGRATIONS } from '../src/schema.ts';
 import { LEASE_MS, START_MS, enqueue, harness, makeStoreDir, mustClaim, newSession, openStoreAt, registerCleanup, UNASKED_COMMANDS } from './helpers.ts';
 
@@ -96,7 +96,7 @@ const recordedFacts = async (store: RuntimeStore, runId: string): Promise<Facts>
 });
 
 const countingStore = (dbPath: string, decoded: { rows: number }): RuntimeStore => {
-  const store = openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home: path.dirname(dbPath),
     clock: createFakeClock(START_MS),

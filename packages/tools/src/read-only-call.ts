@@ -2,37 +2,14 @@ import { GIT_APPROVED_SUBCOMMANDS } from '@momonga/policy';
 import type { NetworkScope } from '@momonga/foundation';
 import type { SandboxNetwork, SandboxPolicy } from '@momonga/sandbox';
 import type { ToolContext } from './types.ts';
+import { DESTINATION_PLACE, GIT_PROTOCOLS, overrideOf, overridesOf } from './git-config-table.ts';
+import type { ConfigEntry } from './git-config-table.ts';
 
-type ConfigEntry = readonly [key: string, value: string];
-
-const NO_PROGRAM = '/dev/null';
-const NO_EDITOR = ':';
-const ALTERNATE_REFS_DEFAULT = "f() { git --git-dir=\"$1\" for-each-ref --format='%(objectname)'; }; f";
-const PROTOCOLS: readonly string[] = ['ext', 'file', 'ftp', 'ftps', 'git', 'http', 'https', 'ssh'];
-
-const PROGRAM_KEYS: readonly ConfigEntry[] = [
-  ['core.fsmonitor', 'false'],
-  ['core.hooksPath', NO_PROGRAM],
-  ['core.pager', 'cat'],
-  ['core.editor', NO_EDITOR],
-  ['core.sshCommand', NO_PROGRAM],
-  ['core.askPass', NO_PROGRAM],
-  ['core.gitProxy', NO_PROGRAM],
-  ['core.alternateRefsCommand', ALTERNATE_REFS_DEFAULT],
-  ['gpg.program', NO_PROGRAM],
-  ['gpg.ssh.program', NO_PROGRAM],
-  ['gpg.x509.program', NO_PROGRAM],
-  ['gpg.ssh.defaultKeyCommand', NO_PROGRAM],
-  ['credential.helper', ''],
-  ['sequence.editor', NO_EDITOR],
-  ['interactive.diffFilter', NO_PROGRAM],
-  ['uploadpack.packObjectsHook', NO_PROGRAM],
-  ['protocol.allow', 'never'],
-];
+const PROGRAM_KEYS: readonly ConfigEntry[] = overridesOf(['program']);
 
 const READ_ONLY_GIT_CONFIG: readonly ConfigEntry[] = [
   ...PROGRAM_KEYS,
-  ...PROTOCOLS.map((name): ConfigEntry => [`protocol.${name}.allow`, 'never']),
+  ...overridesOf(['protocol']),
   ...GIT_APPROVED_SUBCOMMANDS.map((subcommand): ConfigEntry => [`pager.${subcommand}`, 'false']),
 ];
 
@@ -66,28 +43,28 @@ const HTTP_PROTOCOLS: readonly string[] = ['http', 'https'];
 
 const protocolOf = (destination: string): string | undefined => (LOCAL_DESTINATION.test(destination) ? 'file' : URL_SCHEME.exec(destination)?.[1]?.toLowerCase());
 
-const TRANSPORT_KEYS: readonly ConfigEntry[] = [
-  ['sslVerify', 'true'],
-  ['extraHeader', ''],
-  ['curloptResolve', ''],
-  ['followRedirects', 'initial'],
-  ['cookieFile', ''],
-  ['saveCookies', 'false'],
-];
-
 export const isHttpDestination = (destination: string): boolean => HTTP_PROTOCOLS.includes(protocolOf(destination) ?? '');
 
 const httpDestinationsOf = (destinations: readonly string[]): string[] => destinations.filter(isHttpDestination);
 
-const transportEntries = (keys: readonly ConfigEntry[], destinations: readonly string[]): ConfigEntry[] => [
-  ...keys.map(([key, value]): ConfigEntry => [`http.${key}`, value]),
-  ...httpDestinationsOf(destinations).flatMap((destination) => keys.map(([key, value]): ConfigEntry => [`http.${destination}.${key}`, value])),
-];
+const forEachDestination = (entries: readonly ConfigEntry[], destinations: readonly string[]): ConfigEntry[] =>
+  entries.flatMap(([key, value]): ConfigEntry[] => (key.includes(DESTINATION_PLACE) ? httpDestinationsOf(destinations).map((destination): ConfigEntry => [key.replace(DESTINATION_PLACE, destination), value]) : [[key, value]]));
 
-const networkConfig = (destinations: readonly string[]): ConfigEntry[] => {
+const ALLOWED = 'always';
+
+const protocolEntries = (destinations: readonly string[]): ConfigEntry[] => {
   const needed = new Set(destinations.map(protocolOf));
-  return [...PROGRAM_KEYS, ...PROTOCOLS.map((name): ConfigEntry => [`protocol.${name}.allow`, needed.has(name) ? 'always' : 'never']), ...transportEntries(TRANSPORT_KEYS, destinations)];
+  return GIT_PROTOCOLS.map((name): ConfigEntry => {
+    const [key, value] = overrideOf(`protocol.${name}.allow`);
+    return [key, needed.has(name) ? ALLOWED : value];
+  });
 };
+
+const networkConfig = (destinations: readonly string[]): ConfigEntry[] => [
+  ...PROGRAM_KEYS,
+  ...protocolEntries(destinations),
+  ...forEachDestination(overridesOf(['transport', 'recursion', 'credential']), destinations),
+];
 
 export type GitEnvironmentRequest = { readonly mode: 'read' } | { readonly mode: 'local' } | { readonly mode: 'network'; readonly destinations: readonly string[] };
 
@@ -120,7 +97,7 @@ export const gitEnvironment = (env: Readonly<Record<string, string>>, request: G
   );
 
 export const gitProxyEnvironment = (env: Readonly<Record<string, string>>, proxy: string, destinations: readonly string[]): Record<string, string> =>
-  appendGitConfig(env, transportEntries([['proxy', proxy]], destinations));
+  appendGitConfig(env, [['http.proxy', proxy], ...httpDestinationsOf(destinations).map((destination): ConfigEntry => [`http.${destination}.proxy`, proxy])]);
 
 export const readOnlyEnvironment = (env: Readonly<Record<string, string>>): Record<string, string> => gitEnvironment(env, { mode: 'read' });
 

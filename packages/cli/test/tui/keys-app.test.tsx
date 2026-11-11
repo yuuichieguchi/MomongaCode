@@ -105,7 +105,7 @@ const REBOUND: Blocks = [
 describe('every hint is generated from the keys in force (P11)', () => {
   const rebound = tableOf(...REBOUND);
   const spec: SelectSpec = { rows: [{ label: 'Yes' }, { label: 'No' }], initial: 0, decideOn: 'immediate', escape: 1, interrupt: 'cancel-run', filter: false, alt: { label: 'also later' } };
-  const footerFacts = { mode: 'manual', tokens: 0, contextPercent: 0, imageInput: false, right: undefined };
+  const footerFacts = { mode: 'manual', tokens: 0, contextPercent: 0, imageInput: false, answer: undefined, newline: undefined };
   const waiting = { phase: { text: 'thinking', startedAt: 0 }, cancelKey: 'run.stop' as const };
   const attachment = { file: '/a.png', image: { mediaType: 'image/png' as const, data: '' } };
 

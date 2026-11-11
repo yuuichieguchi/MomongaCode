@@ -22,6 +22,11 @@ export const daemonEntries = (self: SelfExecutable, version: string, spawnDetach
     const { runRuntimeEntry } = entry;
     const bundledRipgrep = embeddedRipgrepSource(entry);
     const ruleSolver = embeddedRuleSolver();
-    return runRuntimeEntry(io, { version, ...(bundledRipgrep === undefined ? {} : { bundledRipgrep }), ...(ruleSolver === undefined ? {} : { ruleSolver }) });
+    return runRuntimeEntry(io, {
+      version,
+      helperSelf: self.kind === 'single-binary' ? { execPath: self.execPath } : { execPath: self.execPath, script: self.script },
+      ...(bundledRipgrep === undefined ? {} : { bundledRipgrep }),
+      ...(ruleSolver === undefined ? {} : { ruleSolver }),
+    });
   },
 });

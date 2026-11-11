@@ -1,12 +1,12 @@
 import fs from 'node:fs';
-import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, momongaLayout } from '@momonga/foundation';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { TestContext } from 'vitest';
 import { alwaysWriteDenied, createSeatbeltSandbox } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, registerCleanup, withTempDir, NEVER_CANCELLED } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, registerCleanup, withTempDir, NEVER_CANCELLED, testKernelLock } from '@momonga/testkit';
 import { run } from './helpers.ts';
 import { createLauncherFixture, recordLauncherLinks } from './launcher-fixture.ts';
 import type { LauncherFixture, LauncherLayout } from './launcher-fixture.ts';
@@ -18,7 +18,7 @@ const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 type Scenario = { fixture: LauncherFixture; sh: (script: string) => Promise<{ code: number | null; stdout: string; stderr: string }> };
 
 const policyFor = async (fixture: LauncherFixture): Promise<SandboxPolicy> => {
-  const denied = await alwaysWriteDenied(fixture.home, NEVER_CANCELLED);
+  const denied = await alwaysWriteDenied(momongaLayout(fixture.home, process.platform, process.env), NEVER_CANCELLED);
   return {
     writableRoots: [fixture.home],
     writeDenied: [...denied.subtrees],
@@ -34,7 +34,7 @@ const scenario = (context: TestContext, layout: LauncherLayout): Scenario => {
   const fixture = createLauncherFixture(home, layout);
   expect(fixture.launcher.startsWith(path.join(fs.realpathSync(os.homedir()), '.local'))).toBe(false);
   fs.writeFileSync(path.join(home, 'other'), 'other');
-  const sandbox = createSeatbeltSandbox({ tmpRoot: withTempDir(context), killGraceMs: 300 });
+  const sandbox = createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot: withTempDir(context), killGraceMs: 300 });
   const sh = async (script: string) => {
     const proc = await sandbox.spawn(
       { argv: ['/bin/sh', '-c', script], cwd: home, env: { PATH: BASE_PATH, HOME: home } },
@@ -170,7 +170,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt protects the launcher li
       const home = withTempDir(context, { asHome: true });
       expect(home).not.toBe(fs.realpathSync(os.homedir()));
       fs.writeFileSync(path.join(home, 'other'), 'other');
-      const sandbox = createSeatbeltSandbox({ tmpRoot: withTempDir(context), killGraceMs: 300 });
+      const sandbox = createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot: withTempDir(context), killGraceMs: 300 });
       const fixture: LauncherFixture = { home, launcher: path.join(home, '.local', 'bin', 'momonga'), target: '/bin/ls', targetContent: '' };
       const sh = async (script: string) => {
         const proc = await sandbox.spawn(

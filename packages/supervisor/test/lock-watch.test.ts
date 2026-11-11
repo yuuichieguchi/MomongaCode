@@ -3,8 +3,8 @@ import http from 'node:http';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { InspectProcessLockOptions, ProcessLockInspection } from '@momonga/foundation';
-import { ProbeFailedError, createKernelLockMechanism, probeFailed } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeKernelLock, createFakeTimers, registerCleanup, startLockHolder, waitFor, withTempDir, firstGeneration } from '@momonga/testkit';
+import { ProbeFailedError, probeFailed } from '@momonga/foundation';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeKernelLock, createFakeTimers, registerCleanup, startLockHolder, waitFor, withTempDir, firstGeneration, testKernelLock } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { PROBE_HEADERS_TIMEOUT_MS, createExternalHealthProbe, holderPidOf, labelHealthResponse, probeExternalHealth, watchLock } from '../src/lock-watch.ts';
 import type { ExternalProbe, LockWatchOptions, ProbeOutcome } from '../src/lock-watch.ts';
@@ -116,6 +116,7 @@ const watchHarness = (overrides: Partial<LockWatchOptions> = {}) => {
   const transients: Array<{ error: unknown; source: string }> = [];
   let probeResult: ProbeOutcome = 'unreachable';
   const options: LockWatchOptions = {
+    mechanism: testKernelLock(),
     role: 'runtime',
     lockPath: '/fake/run/runtime.lock',
     socketPath: '/fake/run/runtime.sock',
@@ -225,7 +226,7 @@ describe('watchLock', () => {
   });
 
   it('forwards the lock mechanism to every inspection', async () => {
-    const mechanism = createKernelLockMechanism(process.platform);
+    const mechanism = testKernelLock();
     const h = watchHarness({ lockWaitMs: 3_600_000, mechanism });
     await pump(h.timers, h.realWork, 10_000);
     expect(h.scripted.inspections.length).toBeGreaterThanOrEqual(19);
@@ -355,6 +356,7 @@ const realWatch = (lockPath: string) => {
   const timers = createFakeTimers(clock);
   const events: string[] = [];
   const watch = watchLock({
+    mechanism: testKernelLock(),
     role: 'runtime' as ChildRole,
     lockPath,
     socketPath: path.join(path.dirname(lockPath), 'runtime.sock'),

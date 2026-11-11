@@ -47,7 +47,7 @@ describe('momonga mcp login starts the browser through the opener port (P-C7 row
         return Promise.resolve();
       },
     } as unknown as CliPorts;
-    const exit = mcpLogin(ports, momongaLayout('/home/u'), 'docs', { openBrowser: true, interrupt: new AbortController().signal });
+    const exit = mcpLogin(ports, momongaLayout('/home/u', process.platform, process.env), 'docs', { openBrowser: true, interrupt: new AbortController().signal });
     await eventually(() => runtimeClient.mcpAuthorization.mock.calls.length === 1, 'the poll of the authorization');
     const onFailure = launches[0]?.onFailure;
     if (onFailure === undefined) throw new Error('no launch recorded with an onFailure callback');
