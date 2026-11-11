@@ -132,7 +132,7 @@ describe('O-R5-6 L10: scripts/plan-real-check.ts against the fakes only', () => 
     expect(readReport(report).steps.find((entry) => entry.step === 'R7')).toEqual({
       step: 'R7',
       verdict: 'failed',
-      facts: { revocation: 'none', end: 'interrupted', reason: 'the sign-out ended without a revocation outcome' },
+      facts: { revocation: 'none', end: 'interrupted', reason: 'the sign-out was interrupted before a revocation outcome' },
     });
   });
 
@@ -142,7 +142,73 @@ describe('O-R5-6 L10: scripts/plan-real-check.ts against the fakes only', () => 
     const report = path.join(withTempDir(context), 'report.json');
     const run = await runScript(['collect', '--home', home, '--report', report]);
     expect(run.code).toBe(1);
-    expect(readReport(report).steps.find((entry) => entry.step === 'R7')).toEqual({ step: 'R7', verdict: 'recorded', facts: { revocation: 'confirmed', end: 'cleared' } });
+    expect(readReport(report).steps.find((entry) => entry.step === 'R7')).toEqual({
+      step: 'R7',
+      verdict: 'recorded',
+      facts: { revocation: 'confirmed', end: 'cleared', reason: 'signed out; the refresh token was revoked' },
+    });
+  });
+
+  it.for([
+    ['cleared', 'confirmed', undefined, 'recorded', 'signed out; the refresh token was revoked'],
+    ['cleared', 'unconfirmed', undefined, 'failed', 'signed out; the revocation was not confirmed'],
+    ['interrupted', 'none', undefined, 'failed', 'the sign-out was interrupted before a revocation outcome'],
+    ['failed', 'confirmed', 'plan_store_unwritable', 'failed', 'the refresh token was revoked, but the record could not be cleared (plan_store_unwritable)'],
+    ['failed', 'unconfirmed', 'plan_store_unwritable', 'failed', 'the revocation was not confirmed and the record could not be cleared (plan_store_unwritable)'],
+    ['failed', 'none', 'plan_store_unwritable', 'failed', 'the sign-out failed before a revocation was sent (plan_store_unwritable)'],
+  ] as const)('R7 for a sign-out that ended %s with the revocation %s gives its own reason (settlement N-I2)', async ([end, revocation, code, verdict, reason], context) => {
+    const home = withTempDir(context, { asHome: true });
+    fileLogger(home, createFakeClock(Date.now())).info('plan.sign_out', { data: { profile: PROFILE_ID, account: 'work', revocation, end, resumed: false, ...(code === undefined ? {} : { code }) } });
+    const report = path.join(withTempDir(context), 'report.json');
+    await runScript(['collect', '--home', home, '--report', report]);
+    expect(readReport(report).steps.find((entry) => entry.step === 'R7')).toEqual({
+      step: 'R7',
+      verdict,
+      facts: { revocation, end, reason, ...(code === undefined ? {} : { code }) },
+    });
+  });
+
+  it('R7 reads the last plan.sign_out event of the log (settlement N-I2, I-06)', async (context) => {
+    const failedLast = withTempDir(context, { asHome: true });
+    const failedLogger = fileLogger(failedLast, createFakeClock(Date.now()));
+    failedLogger.info('plan.sign_out', { data: { profile: PROFILE_ID, account: 'work', revocation: 'confirmed', end: 'cleared', resumed: false } });
+    failedLogger.info('plan.sign_out', { data: { profile: PROFILE_ID, account: 'work', revocation: 'none', end: 'interrupted', resumed: true } });
+    const clearedLast = withTempDir(context, { asHome: true });
+    const clearedLogger = fileLogger(clearedLast, createFakeClock(Date.now()));
+    clearedLogger.info('plan.sign_out', { data: { profile: PROFILE_ID, account: 'work', revocation: 'none', end: 'interrupted', resumed: false } });
+    clearedLogger.info('plan.sign_out', { data: { profile: PROFILE_ID, account: 'work', revocation: 'confirmed', end: 'cleared', resumed: true } });
+    const reports = withTempDir(context);
+    await runScript(['collect', '--home', failedLast, '--report', path.join(reports, 'failed.json')]);
+    await runScript(['collect', '--home', clearedLast, '--report', path.join(reports, 'cleared.json')]);
+    expect(verdictOf(readReport(path.join(reports, 'failed.json')), 'R7')).toBe('failed');
+    expect(verdictOf(readReport(path.join(reports, 'cleared.json')), 'R7')).toBe('recorded');
+  });
+
+  it('a --home directory and a --report directory that do not exist are each refused with one sentence that names the directory: exit 2 (settlement N-I1)', async (context) => {
+    const home = withTempDir(context, { asHome: true });
+    const reports = withTempDir(context);
+    const missingHome = path.join(reports, 'no-home');
+    const noHome = await runScript(['collect', '--home', missingHome, '--report', path.join(reports, 'report.json')]);
+    expect(noHome.code).toBe(2);
+    expect(noHome.stderr.trim()).toBe(`plan-real-check: the home directory ${missingHome} does not exist`);
+    const missingReports = path.join(reports, 'no-reports');
+    const noReports = await runScript(['collect', '--home', home, '--report', path.join(missingReports, 'report.json')]);
+    expect(noReports.code).toBe(2);
+    expect(noReports.stderr.trim()).toBe(`plan-real-check: the report directory ${missingReports} does not exist`);
+    expect(fs.existsSync(path.join(reports, 'report.json'))).toBe(false);
+  });
+
+  it('a gateway log that cannot be read is one line on stderr and exit 2 (settlement N-I4)', async (context) => {
+    const home = withTempDir(context, { asHome: true });
+    const log = momongaLayout(home).logFiles.gateway;
+    fs.mkdirSync(log, { recursive: true, mode: 0o700 });
+    const report = path.join(withTempDir(context), 'report.json');
+    const run = await runScript(['collect', '--home', home, '--report', report]);
+    expect(run.code).toBe(2);
+    expect(run.stderr.trim().split('\n')).toHaveLength(1);
+    expect(run.stderr).toContain(`plan-real-check: the gateway log ${log} cannot be read: `);
+    expect(run.stderr).toContain('EISDIR');
+    expect(fs.existsSync(report)).toBe(false);
   });
 
   it('a home directory that does not exist does not crash the own-home check', async (context) => {
@@ -272,7 +338,7 @@ const planEntryOf = (settingsText: string): Record<string, unknown> => {
   return document.models.connections[0]?.models[0] as Record<string, unknown>;
 };
 
-const startStubGateway = async (options: { dropRequest?: number } = {}): Promise<StubGateway> => {
+const startStubGateway = async (options: { dropRequest?: number; onRequest?: (request: number) => void } = {}): Promise<StubGateway> => {
   const home = makeHome();
   writeSettings(home, { models: modelsOf({ gpt: { adapter: 'open-responses', model: 'plan-model', capabilities: DECLARED, plan: { profile: PROFILE_ID, account: ACCOUNT } } }) });
   const settingsFile = momongaLayout(home).settingsFile;
@@ -284,6 +350,7 @@ const startStubGateway = async (options: { dropRequest?: number } = {}): Promise
       const settingsText = fs.readFileSync(settingsFile, 'utf8');
       const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { model: unknown };
       seen.push({ model: body.model, capabilities: planEntryOf(settingsText)['capabilities'], settingsText });
+      options.onRequest?.(seen.length);
       if (seen.length === options.dropRequest) {
         request.socket.destroy();
         return;
@@ -394,5 +461,38 @@ describe('design-model-names 5.3: scripts/plan-real-check.ts runs its variants o
     const notRun = (step: string) => ({ step, verdict: 'not_run', facts: { reason: 'gpt/other is not one plan model of this home' } });
     expect(readReport(unknown).steps).toEqual([notRun('R2'), notRun('R4')]);
     expect(stub.seen.length).toBe(5);
+  });
+
+  it('a settings file that is not JSON is one line on stderr and exit 2, and nothing is sent (settlement N-I4)', async (context) => {
+    const stub = await startStubGateway();
+    fs.writeFileSync(stub.settingsFile, '{ not json');
+    const report = path.join(withTempDir(context), 'report.json');
+    const run = await runScript(['carriage', '--home', stub.home, '--model', PLAN_MODEL, '--report', report]);
+    expect(run.code).toBe(2);
+    expect(run.stderr.trim()).toBe(`plan-real-check: the settings file ${stub.settingsFile} is not valid JSON`);
+    expect(stub.seen).toEqual([]);
+    expect(fs.existsSync(report)).toBe(false);
+  });
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('a settings edit that fails is one line on stderr and exit 2 (settlement N-I4; needs a folder mode the owner cannot write through)', async (context) => {
+    const locked: string[] = [];
+    const stub = await startStubGateway({
+      onRequest: (request) => {
+        if (request !== 1) return;
+        const folder = path.dirname(stub.settingsFile);
+        fs.chmodSync(folder, 0o500);
+        locked.push(folder);
+      },
+    });
+    const report = path.join(withTempDir(context), 'report.json');
+    const run = await runScript(['carriage', '--home', stub.home, '--model', PLAN_MODEL, '--report', report]).finally(() => {
+      for (const folder of locked) fs.chmodSync(folder, 0o700);
+    });
+    expect(locked).toHaveLength(1);
+    expect(run.code).toBe(2);
+    expect(run.stderr.trim().split('\n')).toHaveLength(1);
+    expect(run.stderr).toContain(`plan-real-check: the settings file ${stub.settingsFile} could not be changed: `);
+    expect(stub.seen).toHaveLength(1);
+    expect(fs.existsSync(report)).toBe(false);
   });
 });

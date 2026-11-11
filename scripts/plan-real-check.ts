@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { editModelsSettings, loadUserModels } from '@momonga/config';
-import type { ModelsOperation } from '@momonga/config';
+import type { ModelsOperation, ModelsOperations } from '@momonga/config';
 import { CONTEXT_REPORT_FORMAT } from '@momonga/eval';
 import { NoCurrentGenerationError, createUdsClient, currentSocketResolver, fixedSocket, isRecord, momongaLayout } from '@momonga/foundation';
 import type { MomongaPaths, UdsClient } from '@momonga/foundation';
@@ -51,6 +51,10 @@ type Arguments = {
 
 class UsageError extends Error {}
 
+class Refusal extends Error {}
+
+const causeText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
 const VALUE_FLAGS: Readonly<Record<Command, readonly string[]>> = {
   collect: ['--home', '--report', '--status-file', '--eval-reports', '--allow-long'],
   carriage: ['--home', '--model', '--report', '--allow-long'],
@@ -93,7 +97,9 @@ const parseArguments = (argv: readonly string[]): Arguments => {
   if (!REQUIRED_FLAGS[command].every((flag) => values.has(flag))) throw new UsageError();
   const home = values.get('--home') ?? '';
   const report = values.get('--report') ?? '';
-  if (!isDirectory(home) || !isDirectory(path.dirname(path.resolve(report)))) throw new UsageError();
+  if (!isDirectory(home)) throw new Refusal(`the home directory ${home} does not exist`);
+  const reportDirectory = path.dirname(path.resolve(report));
+  if (!isDirectory(reportDirectory)) throw new Refusal(`the report directory ${reportDirectory} does not exist`);
   const listed = values.get('--eval-reports')?.split(',');
   if (listed !== undefined && (listed.length !== 2 || listed.includes(''))) throw new UsageError();
   const [first, second] = listed ?? [];
@@ -158,7 +164,13 @@ const eventOfLine = (line: string): Event[] => {
 const readEvents = (paths: MomongaPaths): Event[] => {
   const file = paths.logFiles.gateway;
   if (!fs.existsSync(file)) return [];
-  return fs.readFileSync(file, 'utf8').split('\n').flatMap(eventOfLine);
+  let log: string;
+  try {
+    log = fs.readFileSync(file, 'utf8');
+  } catch (error) {
+    throw new Refusal(`the gateway log ${file} cannot be read: ${causeText(error)}`);
+  }
+  return log.split('\n').flatMap(eventOfLine);
 };
 
 const named = (events: readonly Event[], name: string): Event[] => events.filter((event) => event['msg'] === name);
@@ -212,14 +224,35 @@ const stepR5 = (events: readonly Event[]): Step => {
 
 const SIGN_OUT_CLEARED = 'cleared';
 
+const SIGN_OUT_REASONS: Readonly<Record<string, Readonly<Record<string, (code: string | null) => string>>>> = {
+  cleared: {
+    confirmed: () => 'signed out; the refresh token was revoked',
+    unconfirmed: () => 'signed out; the revocation was not confirmed',
+  },
+  interrupted: {
+    none: () => 'the sign-out was interrupted before a revocation outcome',
+  },
+  failed: {
+    confirmed: (code) => `the refresh token was revoked, but the record could not be cleared (${code})`,
+    unconfirmed: (code) => `the revocation was not confirmed and the record could not be cleared (${code})`,
+    none: (code) => `the sign-out failed before a revocation was sent (${code})`,
+  },
+};
+
+const signOutReason = (end: string, revocation: string | null, code: string | null): string => {
+  const cells = Object.hasOwn(SIGN_OUT_REASONS, end) ? SIGN_OUT_REASONS[end] : undefined;
+  const reason = cells !== undefined && revocation !== null && Object.hasOwn(cells, revocation) ? cells[revocation] : undefined;
+  return reason === undefined ? `the gateway log gives a sign-out end (${end}) and a revocation (${revocation}) that this script does not know` : reason(code);
+};
+
 const stepR7 = (events: readonly Event[]): Step => {
-  const [signOut] = named(events, 'plan.sign_out');
+  const signOut = named(events, 'plan.sign_out').at(-1);
   if (signOut === undefined) return notRun('R7', 'no plan.sign_out event in the gateway log');
   const revocation = text(signOut, 'revocation');
   const end = text(signOut, 'end') ?? SIGN_OUT_CLEARED;
-  if (end === SIGN_OUT_CLEARED && revocation === 'confirmed') return { step: 'R7', verdict: 'recorded', facts: { revocation, end } };
-  const reason = revocation === 'unconfirmed' ? 'the revocation was not confirmed' : 'the sign-out ended without a revocation outcome';
-  return { step: 'R7', verdict: 'failed', facts: { revocation, end, reason } };
+  const code = text(signOut, 'code');
+  const facts = { revocation, end, reason: signOutReason(end, revocation, code), ...(code === null ? {} : { code }) };
+  return { step: 'R7', verdict: end === SIGN_OUT_CLEARED && revocation === 'confirmed' ? 'recorded' : 'failed', facts };
 };
 
 type Rejection = { rejected: Event; terminal: Event };
@@ -386,7 +419,13 @@ type PlanModel = { canon: string; declared: DeclaredCapabilities };
 
 const readSettings = (paths: MomongaPaths): Record<string, unknown> => {
   if (!fs.existsSync(paths.settingsFile)) return {};
-  const parsed: unknown = JSON.parse(fs.readFileSync(paths.settingsFile, 'utf8'));
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(paths.settingsFile, 'utf8'));
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new Refusal(`the settings file ${paths.settingsFile} is not valid JSON`);
+    throw error;
+  }
   if (!isRecord(parsed)) throw new Error(`${paths.settingsFile}: settings must be a JSON object`);
   return parsed;
 };
@@ -422,13 +461,19 @@ const capabilityOf = (model: PlanModel, field: 'promptCache' | 'reasoning', valu
   value: value ?? model.declared?.[field],
 });
 
-const declareVariant = async (paths: MomongaPaths, model: PlanModel, variant: Variant, signal: AbortSignal): Promise<void> => {
-  await editModelsSettings(paths.home, paths.settingsFile, [capabilityOf(model, 'promptCache', variant.promptCache), capabilityOf(model, 'reasoning', variant.reasoning)], { signal });
+const changeSettings = async (paths: MomongaPaths, operations: ModelsOperations, signal: AbortSignal): Promise<void> => {
+  try {
+    await editModelsSettings(paths.home, paths.settingsFile, operations, { signal });
+  } catch (error) {
+    throw new Refusal(`the settings file ${paths.settingsFile} could not be changed: ${causeText(error)}`);
+  }
 };
 
-const restoreDeclared = async (paths: MomongaPaths, model: PlanModel, signal: AbortSignal): Promise<void> => {
-  await editModelsSettings(paths.home, paths.settingsFile, [{ kind: 'setModelField', model: model.canon, path: ['capabilities'], value: model.declared }], { signal });
-};
+const declareVariant = (paths: MomongaPaths, model: PlanModel, variant: Variant, signal: AbortSignal): Promise<void> =>
+  changeSettings(paths, [capabilityOf(model, 'promptCache', variant.promptCache), capabilityOf(model, 'reasoning', variant.reasoning)], signal);
+
+const restoreDeclared = (paths: MomongaPaths, model: PlanModel, signal: AbortSignal): Promise<void> =>
+  changeSettings(paths, [{ kind: 'setModelField', model: model.canon, path: ['capabilities'], value: model.declared }], signal);
 
 const variantRequests = async (client: UdsClient, paths: MomongaPaths, model: PlanModel, signal: AbortSignal): Promise<Step> => {
   const requests: Facts[] = [];
@@ -475,6 +520,7 @@ const gatewaySocket = async (paths: MomongaPaths): Promise<string | undefined> =
 
 const throughGateway = async (command: Exclude<Command, 'collect'>, paths: MomongaPaths, typed: string): Promise<Step[]> => {
   const steps = STEPS_OF[command];
+  readSettings(paths);
   const socketPath = await gatewaySocket(paths);
   if (socketPath === undefined) return steps.map((step) => notRun(step, 'no running gateway for this home'));
   const interrupt = new AbortController();
@@ -539,6 +585,16 @@ const textOf = (report: Report): string =>
   ].join('\n');
 
 const run = async (argv: readonly string[]): Promise<number> => {
+  try {
+    return await checked(argv);
+  } catch (error) {
+    if (!(error instanceof Refusal)) throw error;
+    process.stderr.write(`plan-real-check: ${error.message}\n`);
+    return EXIT_USAGE;
+  }
+};
+
+const checked = async (argv: readonly string[]): Promise<number> => {
   let args: Arguments;
   try {
     args = parseArguments(argv);
