@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { appendPermissionRule, loadSettings, systemFileLockPorts } from '@momonga/config';
 import type { PermissionRule } from '@momonga/config';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testKernelLock } from '@momonga/testkit';
 import { makeDir, makeTree } from './helpers.ts';
 
 const NEVER_ABORTED = new AbortController().signal;
@@ -26,7 +26,7 @@ const repository = (root: string): string => {
 };
 
 const persist = (home: string, projectDir: string, rule: string): Promise<void> =>
-  appendPermissionRule({ ports: systemFileLockPorts, home, projectDir, rule, effect: 'allow', signal: NEVER_ABORTED });
+  appendPermissionRule({ lock: testKernelLock(), ports: systemFileLockPorts, home, projectDir, rule, effect: 'allow', signal: NEVER_ABORTED });
 
 const localRules = async (home: string, projectDir: string): Promise<PermissionRule[]> => {
   const trust = { isTrusted: (): boolean => true };

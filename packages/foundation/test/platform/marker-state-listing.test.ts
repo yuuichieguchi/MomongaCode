@@ -3,6 +3,7 @@ import { auxvLayoutOf } from '../../src/platform/linux-parsers.ts';
 import { createProcessInspector, hostInspectorPorts } from '../../src/platform/process-inspector.ts';
 import type { FileIdentity, ProcFs } from '../../src/platform/procfs.ts';
 import { fixedCapability } from '../support/probe-fakes.ts';
+import { testLocks } from '@momonga/testkit';
 
 const live = () => ({ signal: new AbortController().signal });
 
@@ -56,7 +57,7 @@ const BASE: Record<string, FakeEntry> = {
 const ownStatus: FakeEntry = { text: `Name:\tsleep\nUid:\t${UID}\t${UID}\t${UID}\t${UID}\n` };
 
 const listingInspector = (entries: Record<string, FakeEntry>) =>
-  createProcessInspector('linux', { ...hostInspectorPorts(), procfs: fakeProcfs({ ...BASE, ...entries }), uid: () => UID, capability: fixedCapability('unenforced') });
+  createProcessInspector('linux', { ...hostInspectorPorts(testLocks().capability), procfs: fakeProcfs({ ...BASE, ...entries }), uid: () => UID, capability: fixedCapability('unenforced') });
 
 describe('T2 listing path: one rule decides the marker state (R1)', () => {
   it('is free only when the listing succeeded, named nobody and reported nothing uninspectable', async () => {

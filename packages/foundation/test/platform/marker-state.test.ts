@@ -9,6 +9,7 @@ import { createMarker } from '../../src/platform/marker-file.ts';
 import { createProcessInspector, hostInspectorPorts } from '../../src/platform/process-inspector.ts';
 import { makeTemporaryDirectory } from '../support/temporary-directory.ts';
 import { exclusiveProbeIsRefused, fixedCapability, sharedProbeIsRefused, throwingRunner } from '../support/probe-fakes.ts';
+import { testLocks } from '@momonga/testkit';
 
 const live = () => ({ signal: new AbortController().signal });
 
@@ -16,12 +17,12 @@ const markerDirectory = () => {
   const root = makeTemporaryDirectory();
   const proofDir = path.join(root, 'run', 'lock-proof');
   const markerDir = path.join(root, 'run', 'markers', 'tools');
-  fs.mkdirSync(proofDir, { recursive: true });
+  fs.mkdirSync(proofDir, { recursive: true, mode: 0o700 });
   fs.mkdirSync(markerDir, { recursive: true });
   return { proofDir, markerDir };
 };
 
-const lockedInspector = (capability: LockCapabilityProbe) => createProcessInspector(process.platform, { ...hostInspectorPorts(), run: throwingRunner(), capability });
+const lockedInspector = (capability: LockCapabilityProbe) => createProcessInspector(process.platform, { ...hostInspectorPorts(testLocks().capability), run: throwingRunner(), capability });
 
 const PROBER = `
 const fs = require('node:fs');

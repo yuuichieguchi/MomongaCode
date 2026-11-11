@@ -1,11 +1,11 @@
 import fs from 'node:fs';
-import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, momongaLayout } from '@momonga/foundation';
 import http from 'node:http';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, NEVER_CANCELLED } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, NEVER_CANCELLED, testKernelLock } from '@momonga/testkit';
 import { buildSandboxPolicy } from '@momonga/tools';
 import { START_MS, onCleanup, requestManualApproval, startService, toolCallPayload } from './helpers.ts';
 
@@ -51,8 +51,8 @@ describe.skipIf(!fs.existsSync(SANDBOX_EXEC))('run API boundary under real Seatb
       const sandboxTmp = path.join(env.layout.root, 'st');
       fs.mkdirSync(tmpDir, { recursive: true, mode: 0o700 });
       fs.mkdirSync(sandboxTmp);
-      const sandbox = createSeatbeltSandbox({ tmpRoot: sandboxTmp, killGraceMs: 300 });
-      const policy = await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [env.layout.projectReal], home: env.layout.home, tmpDir, sessionsTmpRoot, network }, NEVER_CANCELLED);
+      const sandbox = createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot: sandboxTmp, killGraceMs: 300 });
+      const policy = await buildSandboxPolicy({ layout: momongaLayout(env.layout.home, process.platform, process.env), protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [env.layout.projectReal], home: env.layout.home, tmpDir, sessionsTmpRoot, network }, NEVER_CANCELLED);
       const marker = path.join(env.layout.projectReal, 'ran.txt');
       const runSocket = env.layout.socketPath;
       const script = [

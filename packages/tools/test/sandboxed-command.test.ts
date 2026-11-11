@@ -7,7 +7,7 @@ import { createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import * as tools from '@momonga/tools';
 import { nodeShellHost } from '@momonga/tools';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -68,6 +68,7 @@ const request = (command: string, extra: Record<string, unknown> = {}) => ({
   clock: { now: () => Date.now() },
   signal: new AbortController().signal,
   timeoutMs: 30_000,
+  inspector: testProcessInspector(),
   ...extra,
 });
 
@@ -110,7 +111,7 @@ describe('runSandboxedCommand', () => {
     const running = runSandboxedCommand(given);
     setTimeout(() => controller.abort(), 300);
     expect((await running).kind).toBe('cancelled');
-    expect(fs.existsSync(given.markerFile) ? await findHolders(given.markerFile, { signal: new AbortController().signal }) : []).toEqual([]);
+    expect(fs.existsSync(given.markerFile) ? await findHolders(given.markerFile, { inspector: testProcessInspector(), signal: new AbortController().signal }) : []).toEqual([]);
   });
 
   it('removes the marker file after a normal exit', async () => {

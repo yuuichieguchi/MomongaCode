@@ -7,7 +7,7 @@ import type { GroupMembersReader } from '@momonga/foundation';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, groupTerminationBoundMs } from '@momonga/foundation';
 import { SandboxPolicyError, createBubblewrapSandbox, createPlaceholderJournal } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, waitFor, testKernelLock } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -50,7 +50,7 @@ const policy = (writeDenied: string[]): SandboxPolicy => ({
 
 const journal = () => createPlaceholderJournal(path.join(base, 'journal'));
 
-const sandbox = () => createBubblewrapSandbox({ bwrapPath: bwrap, tmpRoot: path.join(base, 'tmp'), killGraceMs: 300, journal: journal(), holders: () => new Set() });
+const sandbox = () => createBubblewrapSandbox({ lock: testKernelLock(), bwrapPath: bwrap, tmpRoot: path.join(base, 'tmp'), killGraceMs: 300, journal: journal(), holders: () => new Set() });
 
 describe('bubblewrap launch (a stand-in bwrap that creates the /dev/null mount points; the real bwrap is exercised in bubblewrap-real.test.ts)', () => {
   it('refuses to start a command in a workspace whose protected .git is a symlink loop, with a typed error that names it', async () => {
@@ -91,6 +91,7 @@ describe('bubblewrap launch (a stand-in bwrap that creates the /dev/null mount p
     const hooks = path.join(work, '.git', 'hooks');
     const failure = new Error('child could not be signalled');
     const failing = createBubblewrapSandbox({
+      lock: testKernelLock(),
       bwrapPath: bwrap,
       tmpRoot: path.join(base, 'tmp'),
       killGraceMs: 300,
@@ -190,6 +191,7 @@ describe('bubblewrap cancel (a stand-in bwrap that, like bwrap --die-with-parent
     const monitoring = path.join(base, 'monitoring-bwrap');
     fs.writeFileSync(monitoring, MONITORING_BWRAP, { mode: 0o755 });
     const monitored = createBubblewrapSandbox({
+      lock: testKernelLock(),
       bwrapPath: monitoring,
       tmpRoot: path.join(base, 'tmp'),
       killGraceMs: GRACE_MS,
@@ -220,6 +222,7 @@ describe('bubblewrap cancel (a stand-in bwrap that, like bwrap --die-with-parent
     const gate = path.join(base, 'setup-gate');
     execFileSync('/usr/bin/mkfifo', [gate]);
     const monitored = createBubblewrapSandbox({
+      lock: testKernelLock(),
       bwrapPath: monitoring,
       tmpRoot: path.join(base, 'tmp'),
       killGraceMs: GRACE_MS,

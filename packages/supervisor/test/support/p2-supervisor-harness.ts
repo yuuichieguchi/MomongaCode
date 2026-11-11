@@ -1,6 +1,6 @@
 import { FIRST_GENERATION, momongaPaths, systemClock } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { prepareGenerationForTest, registerOwned, withTempDir } from '@momonga/testkit';
+import { prepareGenerationForTest, registerOwned, withTempDir, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { startSupervisor } from '../../src/start-supervisor.ts';
 import type { SupervisorOptions, SupervisorProcess } from '../../src/start-supervisor.ts';
@@ -43,6 +43,8 @@ export const startSupervisorHarness = async (
     await process.abort();
   };
   const supervisor = await registerOwned(context, () => startSupervisor({
+    lockMechanism: testKernelLock(),
+    inspector: testProcessInspector(),
     home,
     version: '1.2.3',
     generation: FIRST_GENERATION,

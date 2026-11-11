@@ -3,11 +3,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
-import { canonicalJson, openDatabase, sha256Hex, systemRandom, nodeFileSystem } from '@momonga/foundation';
+import { canonicalJson, openDatabase, sha256Hex, systemRandom, nodeFileSystem, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { RunEventPayload } from '@momonga/protocol';
 import { JournalThreadError, createJournalReader, openRuntimeStore } from '@momonga/store';
 import type { Claim, ContributionPreparer, HistoryQueryResult, Run, RuntimeStore, RuntimeStoreOptions, TerminalContribution } from '@momonga/store';
-import { NEVER_CANCELLED, createFakeClock } from '@momonga/testkit';
+import { NEVER_CANCELLED, createFakeClock, testKernelLock } from '@momonga/testkit';
 import type { FakeClock, SettledBeforeCleanup } from '@momonga/testkit';
 import { UNASKED_COMMANDS } from './support/unasked.ts';
 
@@ -52,7 +52,7 @@ const unexercised = (): Promise<never> => Promise.reject(new JournalThreadError(
 export const noJournalFacts = { inheritPlan: unexercised, inheritedWindow: unexercised, verdict: unexercised, evidence: unexercised, reflectionInput: unexercised, fidelity: unexercised, report: unexercised };
 
 const readerReply = <T,>(dbPath: string, read: (reader: ReturnType<typeof createJournalReader>) => SettledBeforeCleanup<T>): T => {
-  const db = openDatabase(dbPath);
+  const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
   try {
     return read(createJournalReader(db));
   } finally {
@@ -65,7 +65,7 @@ export const inheritancePreparer = (dbPath: string): ContributionPreparer => ({
   inheritPlan: async (request) => readerReply(dbPath, (reader) => reader.planInheritance(request)),
   inheritedWindow: async (request) => readerReply(dbPath, (reader) => reader.readInheritedWindow(request)),
   measure: async ({ runId }) => {
-    const db = openDatabase(dbPath);
+    const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     try {
       const row = db.prepare('SELECT last_seq FROM runs WHERE id = ?').get(runId) as { last_seq: number } | undefined;
       if (row === undefined) throw new JournalThreadError(`unknown run ${runId}`);
@@ -87,7 +87,7 @@ export const dbPathOf = (store: RuntimeStore): string => {
 export const hookPreparer = (hook: TerminalContribution, dbPath: string): ContributionPreparer => ({
   ...noJournalFacts,
   measure: async (request) => {
-    const db = openDatabase(dbPath);
+    const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     try {
       return createJournalReader(db).measure(hook, request);
     } finally {
@@ -97,7 +97,7 @@ export const hookPreparer = (hook: TerminalContribution, dbPath: string): Contri
 });
 
 export const openStoreAt =(dbPath: string, clock: FakeClock, options: StoreOptions = {}): RuntimeStore => {
-  const store = openRuntimeStore({ fileSystem: options.fileSystem ?? nodeFileSystem, random: systemRandom,
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: options.fileSystem ?? nodeFileSystem, random: systemRandom,
     unaskedCommands: options.unaskedCommands ?? UNASKED_COMMANDS,
     path: dbPath,
     home: options.home ?? path.dirname(dbPath),

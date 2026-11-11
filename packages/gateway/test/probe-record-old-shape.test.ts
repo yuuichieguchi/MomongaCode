@@ -6,12 +6,13 @@ import { managedRecordPath } from '../src/probe/record.ts';
 import { FM_CURRENCY, fmRecordKey } from './fm-record-support.ts';
 import { makeDir } from './gateway-helpers.ts';
 import { makeReport } from './report-fixture.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const KEY = fmRecordKey('ef'.repeat(32), '25A100');
 
 const savedRecord = async (): Promise<{ dir: string; file: string; stored: Record<string, unknown> }> => {
   const dir = path.join(makeDir(), 'probe');
-  await saveProbeRecord(dir, KEY, makeReport(1, 1), FM_CURRENCY);
+  await saveProbeRecord(dir, KEY, makeReport(1, 1), FM_CURRENCY, testKernelLock());
   const file = managedRecordPath(dir, KEY);
   return { dir, file, stored: JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown> };
 };

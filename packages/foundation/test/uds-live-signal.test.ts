@@ -5,10 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { isUnixSocketLive, listenUnix } from '@momonga/foundation';
+import { testKernelLock } from '@momonga/testkit';
+import type { KernelLockMechanism } from '@momonga/foundation';
 
 type LiveCheck = (socketPath: string, signal: AbortSignal) => Promise<boolean>;
 
-type Listen = (server: net.Server, socketPath: string, lockOptions?: undefined, signal?: AbortSignal) => Promise<void>;
+type Listen = (server: net.Server, socketPath: string, lockOptions?: { mechanism: KernelLockMechanism }, signal?: AbortSignal) => Promise<void>;
 
 const listenAt = listenUnix as unknown as Listen;
 
@@ -71,11 +73,11 @@ describe.skipIf(process.platform === 'win32')('the socket liveness check takes t
     const reason = new Error('the start deadline passed');
     deadline.abort(reason);
     const claimant = net.createServer();
-    await expect(listenAt(claimant, socketPath, undefined, deadline.signal)).rejects.toBe(reason);
+    await expect(listenAt(claimant, socketPath, { mechanism: testKernelLock() }, deadline.signal)).rejects.toBe(reason);
     await closeServer(owner);
     const later = net.createServer();
     cleanups.unshift(() => closeServer(later));
-    await listenAt(later, socketPath, undefined, new AbortController().signal);
+    await listenAt(later, socketPath, { mechanism: testKernelLock() }, new AbortController().signal);
     expect(later.listening).toBe(true);
   });
 

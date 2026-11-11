@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { vocabularyOf, createChatCompletionsAdapter, createManagedTarget, saveProbeRecord, unauthenticatedSource } from '@momonga/gateway';
 import type { ChatCompletionsAdapter, ExecResult, ManagedServer } from '@momonga/gateway';
 import type { HealthResult, ProbeReport } from '@momonga/protocol';
-import { FM_CONTEXT_OVERFLOW_ERROR, FM_GUARDRAIL_ERROR, createFakeClock, startFakeChatCompletions } from '@momonga/testkit';
+import { FM_CONTEXT_OVERFLOW_ERROR, FM_GUARDRAIL_ERROR, createFakeClock, startFakeChatCompletions, testKernelLock } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeScriptedReply } from '@momonga/testkit';
 import { START_MS, makeDir, postJson, readJson, readSse, registerCleanup, startGateway } from './gateway-helpers.ts';
 import { collect, makeAdapter, userText } from './cc-support.ts';
@@ -31,7 +31,7 @@ const fmAdapter = async (fake: FakeChatCompletionsServer, report?: ProbeReport) 
     health: async (): Promise<HealthResult> => ({ ok: true }),
   };
   const probeRecordDir = path.join(makeDir(), 'probe');
-  await saveProbeRecord(probeRecordDir, RECORD_KEY, report ?? makeReport(1, 1), FM_CURRENCY);
+  await saveProbeRecord(probeRecordDir, RECORD_KEY, report ?? makeReport(1, 1), FM_CURRENCY, testKernelLock());
   const managed = await primed(createManagedTarget({
     ...fmTargetBase(),
     server: fmServe,

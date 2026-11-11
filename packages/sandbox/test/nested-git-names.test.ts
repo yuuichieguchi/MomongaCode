@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, protectedSetFor } from '@momonga/foundation';
-import { createSeatbeltSandbox, planBubblewrap } from '@momonga/sandbox';
+import { createSeatbeltSandbox, planBubblewrap, nodeFilesystemPort } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, killGroupsForCleanup, NEVER_CANCELLED, testPaths } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, killGroupsForCleanup, NEVER_CANCELLED, testPaths, testKernelLock } from '@momonga/testkit';
 import { buildSeatbeltProfile } from '../src/profile.ts';
 import { makeTempDir, run } from './helpers.ts';
 
@@ -59,14 +59,14 @@ describe('the .git name rule of the protected set reaches the sandbox', () => {
   });
 
   it('mounts read-only in the bubblewrap plan the control entries of every existing nested .git', async () => {
-    const { args } = await planBubblewrap(await policy(), { cwd: work }, NEVER_CANCELLED);
+    const { args } = await planBubblewrap(await policy(), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     const readOnly = args.flatMap((value, index) => (value === '--ro-bind' && args[index + 1] === args[index + 2] ? [args[index + 1]] : []));
     expect(readOnly).toContain(path.join(work, 'vendor', 'lib', '.git', 'hooks'));
     expect(readOnly).not.toContain(path.join(work, 'vendor', 'lib', '.git', 'objects'));
   });
 
   it.runIf(process.platform === 'darwin')('refuses a real sandboxed write to a nested .git hook and config, even in a .git that does not exist yet', async () => {
-    const sandbox = createSeatbeltSandbox({ tmpRoot: base, killGraceMs: 300 });
+    const sandbox = createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot: base, killGraceMs: 300 });
     const sh = async (script: string) => {
       const proc = await sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd: work, env: { PATH: BASE_PATH, HOME: work } }, await policy(), new AbortController().signal);
       try {

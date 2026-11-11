@@ -8,6 +8,7 @@ import { momongaLayout, systemTiming } from '@momonga/foundation';
 import { nodeFiles } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { nodeUpdatePorts } from '../src/update/node-ports.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const RELEASE_HOST = 'release.example.test';
 const TEST_TIMEOUT_MS = 10_000;
@@ -38,7 +39,7 @@ describe('the update ports of the CLI', { timeout: TEST_TIMEOUT_MS }, () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-update-wiring-'));
     cleanups.push(() => fs.rmSync(home, { recursive: true, force: true }));
     const proxy = await startForwardingProxy();
-    const paths = momongaLayout(home);
+    const paths = momongaLayout(home, process.platform, process.env);
     fs.mkdirSync(path.dirname(paths.settingsFile), { recursive: true });
     fs.writeFileSync(paths.settingsFile, JSON.stringify({ network: { httpProxy: `http://127.0.0.1:${proxy.port}` } }));
     const written: string[] = [];
@@ -54,7 +55,7 @@ describe('the update ports of the CLI', { timeout: TEST_TIMEOUT_MS }, () => {
     } as unknown as CliPorts;
     const url = `http://${RELEASE_HOST}/repos/acme/momonga/releases/latest`;
 
-    const response = await nodeUpdatePorts(ports, paths).http.get(url, { headers: {}, signal: new AbortController().signal });
+    const response = await nodeUpdatePorts(ports, paths, testKernelLock()).http.get(url, { headers: {}, signal: new AbortController().signal });
     let body = '';
     for await (const chunk of response.body) body += Buffer.from(chunk).toString('utf8');
 

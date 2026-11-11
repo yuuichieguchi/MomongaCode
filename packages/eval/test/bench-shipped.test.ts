@@ -6,6 +6,8 @@ import { nodeWorkspaceFiles } from '@momonga/eval';
 import type { WorkspaceFiles } from '@momonga/eval';
 import { exported, nodeProbe } from './bench-fixtures.ts';
 import type { WorkspaceProbe } from './bench-fixtures.ts';
+import { testKernelLock } from '@momonga/testkit';
+import type { KernelLockMechanism } from '@momonga/foundation';
 
 const BENCH_DIR = path.resolve(import.meta.dirname, '..', 'datasets', 'bench');
 const BENCH_FILE = path.join(BENCH_DIR, 'benchmark.json');
@@ -43,8 +45,8 @@ describe('the shipped benchmark (3.6, decision 20)', () => {
   });
 
   it('P12: every shipped task fails on its initial repository and passes with its reference', async () => {
-    const validate = exported<(benchmarkFile: string, ports: { probe: WorkspaceProbe; files: WorkspaceFiles; tmpdir: string }) => Promise<{ tasks: { id: string; problems: string[] }[] }>>('validateBenchmark');
-    const result = await validate(BENCH_FILE, { probe: nodeProbe, files: nodeWorkspaceFiles, tmpdir: os.tmpdir() });
+    const validate = exported<(benchmarkFile: string, ports: { probe: WorkspaceProbe; files: WorkspaceFiles; tmpdir: string; lock: KernelLockMechanism }) => Promise<{ tasks: { id: string; problems: string[] }[] }>>('validateBenchmark');
+    const result = await validate(BENCH_FILE, { probe: nodeProbe, files: nodeWorkspaceFiles, tmpdir: os.tmpdir(), lock: testKernelLock() });
     expect(result.tasks.map((task) => task.id).sort()).toEqual(shipped().tasks.map((task) => task.id).sort());
     expect(result.tasks.filter((task) => task.problems.length > 0)).toEqual([]);
   }, 600_000);

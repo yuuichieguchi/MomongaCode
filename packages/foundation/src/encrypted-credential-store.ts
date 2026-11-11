@@ -6,6 +6,7 @@ import type { CredentialEntry, CredentialKeyListing, ListableCredentialStore } f
 import { systemFileLockPorts, withFileLock } from './file-lock.ts';
 import { parseOutsideJson } from './json-depth.ts';
 import type { FileLockPorts } from './file-lock.ts';
+import type { KernelLockMechanism } from './platform/kernel-lock.ts';
 import { nodeFileSystem } from './node-file-system.ts';
 import type { Random } from './random.ts';
 import { SecretStoreAbsentError, StoreCallEndedError, limitEndOf } from './secret-store-failures.ts';
@@ -42,6 +43,7 @@ export type EncryptedCredentialStoreOptions = {
   secretStore: CredentialSecretStore;
   plaintextTokenFiles: () => boolean;
   keyOfPlaintext?: (text: string) => string;
+  lock: KernelLockMechanism;
   ports?: FileLockPorts;
   random?: Random;
 };
@@ -147,7 +149,7 @@ const keyNameOfMarker = (text: string, markerFile: string): string => {
 export const createEncryptedCredentialStore = (options: EncryptedCredentialStoreOptions): ListableCredentialStore => {
   const ports = options.ports ?? systemFileLockPorts;
   const random = options.random ?? systemRandom;
-  const records = createFileCredentialStore(options.directory, { ports });
+  const records = createFileCredentialStore(options.directory, { lock: options.lock, ports });
   const markerFile = path.join(options.stateDirectory, CREDENTIAL_KEY_MARKER_FILE);
   const lockFile = path.join(options.stateDirectory, CREDENTIAL_KEY_LOCK_NAME);
 
@@ -175,7 +177,7 @@ export const createEncryptedCredentialStore = (options: EncryptedCredentialStore
       },
       write_marker: async () => {
         const { name } = creation.created as CreatedKey;
-        await writeFileAtomically(nodeFileSystem, ports.random, markerFile, `${JSON.stringify({ name })}\n`, { mode: FILE_MODE });
+        await writeFileAtomically(nodeFileSystem, ports.random, markerFile, `${JSON.stringify({ name })}\n`, { mode: FILE_MODE, lock: options.lock });
       },
     };
     for (const step of CREDENTIAL_KEY_CREATION_STEPS) {
@@ -189,7 +191,7 @@ export const createEncryptedCredentialStore = (options: EncryptedCredentialStore
     const named = await readNamedKey(store, signal);
     if (named !== undefined) return named;
     await nodeFileSystem.mkdirPrivate(options.stateDirectory);
-    return withFileLock(lockFile, () => createKey(store, signal), { ports, signal });
+    return withFileLock(lockFile, () => createKey(store, signal), { ports, mechanism: options.lock, signal });
   };
 
   const keyForReading = async (signal: AbortSignal, file: string): Promise<string> => {

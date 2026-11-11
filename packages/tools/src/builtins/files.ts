@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { OPEN_FLAGS, sha256Hex, writeFileAtomically as writeFileAtomicallyThroughLock } from '@momonga/foundation';
-import type { AtomicWriteFileSystem, FileSystem, Random } from '@momonga/foundation';
+import type { AtomicWriteFileSystem, FileSystem, KernelLockMechanism, Random } from '@momonga/foundation';
 import type { ToolSessionState } from '../types.ts';
 import { ToolExecutionError } from '../types.ts';
 import { shownPath } from './paths.ts';
@@ -126,6 +126,7 @@ export type AtomicWrite = {
   requestedPath: string;
   content: string;
   mode: number;
+  lock: KernelLockMechanism;
   onRenamed(): Promise<string | undefined>;
 };
 
@@ -198,6 +199,7 @@ export const writeFileAtomically = async (write: AtomicWrite): Promise<string | 
   let ledgerWarning: string | undefined;
   await writeFileAtomicallyThroughLock(recordingDirectorySync(files, directory, directorySyncFailures), write.random, target, content, {
     mode,
+    lock: write.lock,
     beforePublish: () => assertResolvesTo(files, write.scope, write.requestedPath, directory),
     afterPublish: async () => {
       ledgerWarning = await write.onRenamed();

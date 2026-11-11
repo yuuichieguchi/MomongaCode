@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { ensureMomongaDirs, hostKernelLock, sidecarOf, systemRandom, nodeFileSystem } from '@momonga/foundation';
+import { ensureMomongaDirs, sidecarOf, systemRandom, nodeFileSystem, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, testKernelLock } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
 import { START_MS, makeAbandonedDirectory } from './helpers.ts';
 import {
@@ -46,7 +46,7 @@ const advanceStepwise = async (timers: FakeTimers, totalMs: number, stepMs: numb
 const LATER_KEY = 'c'.repeat(64);
 
 const seedKey = async (temp: RunHome, key: string, expiresAt: number): Promise<void> => {
-  const store = openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: temp.paths.databases.runtime,
     home: temp.home,
     clock: createFakeClock(START_MS - 8 * DAY_MS),
@@ -63,7 +63,7 @@ const seedKey = async (temp: RunHome, key: string, expiresAt: number): Promise<v
 
 const seedIdempotency = async (temp: RunHome): Promise<void> => {
   await ensureMomongaDirs(temp.paths);
-  const store = openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: temp.paths.databases.runtime,
     home: temp.home,
     clock: createFakeClock(START_MS - 8 * DAY_MS),
@@ -110,7 +110,7 @@ describe('runtime periodic timers (fake timers and fake clock, in-process gatewa
     await timers.advanceAsync(HOUR_MS - 1);
     await afterMicrotasks();
     expect(fs.existsSync(unknownDir)).toBe(true);
-    const kept = [known.id, path.basename(sidecarOf(hostKernelLock(), knownDir))].sort().join(',');
+    const kept = [known.id, path.basename(sidecarOf(testKernelLock(), knownDir))].sort().join(',');
     await passServingTime(
       timers,
       1,

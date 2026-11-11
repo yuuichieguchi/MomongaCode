@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DEFAULT_STOP_VALUES, POLL_INTERVAL_MS, SHUTDOWN_DRAIN_BOUND_MS } from '@momonga/foundation';
 import type { ReapMarkedProcessesOptions } from '@momonga/foundation';
-import { createFakeClock, createFakeTimers, waitFor, sleepDrivenTiming } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, waitFor, sleepDrivenTiming, testProcessInspector } from '@momonga/testkit';
 import type { ChildManager } from '../src/child-manager.ts';
 import { SHUTDOWN_REAP_BOUND_MS } from '../src/constants.ts';
 import type { ChildRole } from '../src/launcher.ts';
@@ -85,9 +85,10 @@ describe('T6 shutdown aborts the probes it waits for', () => {
     const launchController = new AbortController();
     const seen: Array<AbortSignal | undefined> = [];
     const markerPorts: MarkerPorts = { findHolders: probeAnsweringOnlyItsSignal(seen) as never };
-    const background = reapOrphans({ markersDir: dir, orphanGraceMs: 60_000, orphanReapGraceMs: 1000, orphanPollMs: 250, timers, signal: launchController.signal, logger: log.logger, reapTiming, markerPorts });
+    const background = reapOrphans({ inspector: testProcessInspector(), markersDir: dir, orphanGraceMs: 60_000, orphanReapGraceMs: 1000, orphanPollMs: 250, timers, signal: launchController.signal, logger: log.logger, reapTiming, markerPorts });
     await waitFor(() => seen.length > 0, { description: 'the start-up probe started' });
     const controller = createShutdownController({
+      inspector: testProcessInspector(),
       runtime: fakeManager('runtime', []),
       gateway: fakeManager('gateway', []),
       recordStop: async () => undefined,
@@ -115,6 +116,7 @@ describe('T6 shutdown aborts the probes it waits for', () => {
     const { timers, log } = world();
     const signals: Array<AbortSignal | undefined> = [];
     const controller = createShutdownController({
+      inspector: testProcessInspector(),
       runtime: fakeManager('runtime', ['/markers/runtime-a']),
       gateway: fakeManager('gateway', []),
       recordStop: async () => undefined,
@@ -149,7 +151,7 @@ describe('T4 (d) start-up recovery with a probe that never answers', () => {
     const { dir, marker } = markersWithOne();
     const seen: Array<AbortSignal | undefined> = [];
     const recovery = settled(
-      reapOrphans({ markersDir: dir, orphanGraceMs: 1000, orphanReapGraceMs: 1000, orphanPollMs: 250, timers, signal: new AbortController().signal, logger: log.logger, reapTiming, markerPorts: { findHolders: probeAnsweringOnlyItsSignal(seen) as never } }),
+      reapOrphans({ inspector: testProcessInspector(), markersDir: dir, orphanGraceMs: 1000, orphanReapGraceMs: 1000, orphanPollMs: 250, timers, signal: new AbortController().signal, logger: log.logger, reapTiming, markerPorts: { findHolders: probeAnsweringOnlyItsSignal(seen) as never } }),
     );
     await waitFor(() => seen.length > 0, { description: 'the start-up probe started' });
     expect(seen[0]).toBeInstanceOf(AbortSignal);

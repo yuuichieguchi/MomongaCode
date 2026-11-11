@@ -5,7 +5,7 @@ import { EMPTY_PROTECTED_SET, syncPaths } from '@momonga/foundation';
 import type { FileRuleSet, FileRuleSpec } from '@momonga/foundation';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testKernelLock } from '@momonga/testkit';
 import { fileRulesOf, fileSpec } from './file-rule-specs.ts';
 import type { FileSpecOptions } from './file-rule-specs.ts';
 import { makeTempDir, run } from './helpers.ts';
@@ -81,7 +81,7 @@ describe.runIf(process.platform === 'darwin')('user file rules under real Seatbe
       network: 'deny',
       fileRules,
     } as SandboxPolicy;
-    const sandbox = createSeatbeltSandbox({ tmpRoot: options.tmpRoot ?? fx.tmpRoot, killGraceMs: KILL_GRACE_MS });
+    const sandbox = createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot: options.tmpRoot ?? fx.tmpRoot, killGraceMs: KILL_GRACE_MS });
     const proc = await sandbox.spawn(
       {
         argv: ['/bin/sh', '-c', script, 'sh', ...(options.args ?? [])],

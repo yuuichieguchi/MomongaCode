@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { EXIT_CONFIG, EXIT_OK, hostKernelLock, inspectProcessLock, parseReadyLine } from '@momonga/foundation';
+import { EXIT_CONFIG, EXIT_OK, inspectProcessLock, parseReadyLine } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeEntryIo, createFakeTimers, fakeReapTiming, parseJsonLines, prepareGenerationForTest, registerCleanup, startLockHolder, waitFor, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeEntryIo, createFakeTimers, fakeReapTiming, parseJsonLines, prepareGenerationForTest, registerCleanup, startLockHolder, waitFor, firstGeneration, testKernelLock } from '@momonga/testkit';
 import type { CleanupContext, FakeEntryIo, JsonLine } from '@momonga/testkit';
 import type { MomongaPaths } from '@momonga/foundation';
 import { runSupervisorEntry } from '../src/entry.ts';
@@ -54,7 +54,7 @@ type EntryOptions = {
 };
 
 const cancelOnClaim = (target: string, cancel: () => void): KernelLockMechanism => {
-  const host = hostKernelLock();
+  const host = testKernelLock();
   return {
     ...host,
     claim: async (lockPath) => {
@@ -258,7 +258,7 @@ describe('runSupervisorEntry', () => {
     expect(await exitOf(run, 5000)).toBe(1);
     expect(lastLine(run)).toMatchObject({ msg: 'entry.exit', path: 'startup-cancelled', trigger: 'sigterm', code: 1 });
     expect(run.io.stdoutLines()).toEqual([]);
-    expect(await inspectProcessLock(firstGeneration(prepared.paths).locks.supervisor)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(firstGeneration(prepared.paths).locks.supervisor, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
   });
 
   it('a cancel during listenUnix still announces ready and closes gracefully', async (context) => {
@@ -271,8 +271,8 @@ describe('runSupervisorEntry', () => {
     expect(lastLine(run)).toMatchObject({ msg: 'entry.exit', path: 'close', trigger: 'sigterm', code: 0 });
     expect(run.fake.spawnCount()).toBe(0);
     expect(fs.existsSync(firstGeneration(run.paths).sockets.supervisor)).toBe(false);
-    expect(await inspectProcessLock(`${firstGeneration(run.paths).sockets.supervisor}.lock`)).toEqual({ state: 'free' });
-    expect(await inspectProcessLock(firstGeneration(run.paths).locks.supervisor)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(`${firstGeneration(run.paths).sockets.supervisor}.lock`, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(firstGeneration(run.paths).locks.supervisor, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
   });
 
   it('fatal after ready: the engine aborts and the children are stopped', async (context) => {

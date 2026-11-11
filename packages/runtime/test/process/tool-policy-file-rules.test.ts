@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { fakePolicyFilesystem, testProbes, NEVER_CANCELLED } from '@momonga/testkit';
+import { fakePolicyFilesystem, testProbes, NEVER_CANCELLED, testKernelLock } from '@momonga/testkit';
 import { ConfigError, loadSettings, parseRule } from '@momonga/config';
 import type { PermissionRule } from '@momonga/config';
 import { FileRuleError } from '@momonga/foundation';
@@ -15,7 +15,7 @@ const setup = async () => {
   const temp = await makeTempHome();
   const { store, clock } = openStore(temp);
   const states = runtime.createSessionStates({ clock, store, logger: makeLogger(), releaseScratch: () => undefined });
-  const policyFor = runtime.createPolicyFor({ paths: temp.paths, home: temp.home, sessionStates: states, fs: fakePolicyFilesystem(), ruleEnforcement: 'exact-paths' });
+  const policyFor = runtime.createPolicyFor({ lock: testKernelLock(), paths: temp.paths, home: temp.home, sessionStates: states, fs: fakePolicyFilesystem(), ruleEnforcement: 'exact-paths' });
   return { temp, store, policyFor };
 };
 

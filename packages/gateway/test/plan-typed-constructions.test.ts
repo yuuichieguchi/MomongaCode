@@ -3,6 +3,7 @@ import { nodeFileSystem } from '@momonga/foundation';
 import type { FileSystem } from '@momonga/foundation';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
 import { tokenResponseOf } from '../src/plan/refresh.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const HOST_FILE = '/nowhere/state/plan-host.json';
 
@@ -13,11 +14,11 @@ const throwingRead = (thrown: unknown): FileSystem => ({
 
 describe('a host identity file that cannot be read names what was thrown, whatever its type (GR-cast CA-2)', () => {
   it('an Error gives its message', async () => {
-    await expect(ensureHostIdentity(throwingRead(new Error('permission denied')), HOST_FILE, { accountsExist: true })).rejects.toThrow('cannot be read (permission denied)');
+    await expect(ensureHostIdentity(throwingRead(new Error('permission denied')), HOST_FILE, { lock: testKernelLock(), accountsExist: true })).rejects.toThrow('cannot be read (permission denied)');
   });
 
   it('a value that is not an Error gives its text, never "undefined"', async () => {
-    await expect(ensureHostIdentity(throwingRead('the disk went away'), HOST_FILE, { accountsExist: true })).rejects.toThrow('cannot be read (the disk went away)');
+    await expect(ensureHostIdentity(throwingRead('the disk went away'), HOST_FILE, { lock: testKernelLock(), accountsExist: true })).rejects.toThrow('cannot be read (the disk went away)');
   });
 });
 

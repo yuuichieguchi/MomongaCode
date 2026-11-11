@@ -1,5 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { findProgramOnPath } from '@momonga/foundation';
+import { findProgramOnPath, resolveLayoutLocks } from '@momonga/foundation';
 import type { FileCandidates } from '@momonga/foundation';
 import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView } from '@momonga/protocol';
 import { editSettings, readSettingsSnapshot } from '@momonga/config';
@@ -180,6 +180,7 @@ export const createTuiBackend = (
       return {
         home: paths.home,
         settingsFile: paths.settingsFile,
+        lock: () => resolveLayoutLocks(paths).mechanism,
         platform: ports.platform,
         interrupt,
         files: ports.files,
@@ -192,7 +193,7 @@ export const createTuiBackend = (
     dismissedNotices: () => readDismissedNotices(ports.files, paths.state, onNotice),
     dismissNotice: (key) => dismissNotice(ports.files, paths.state, key, new Date(ports.clock.now()), closing.signal, onNotice),
     settings: async () => readSettingsSnapshot({ home: paths.home, projectDir: ports.cwd, trusted: (await runtime().trust(ports.cwd)).decision === 'trusted', signal: closing.signal }),
-    editSettings: (layer, operation, signal) => editSettings({ home: paths.home, projectDir: ports.cwd }, layer, operation, { signal }),
+    editSettings: (layer, operation, signal) => editSettings({ home: paths.home, projectDir: ports.cwd }, layer, operation, { lock: resolveLayoutLocks(paths).mechanism, signal }),
     mcpServers: () => runtime().mcpServers(current().id),
     initInstruction: async () => (await import('@momonga/runtime')).INIT_INSTRUCTION,
     boot: async () => {

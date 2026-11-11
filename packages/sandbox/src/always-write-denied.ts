@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { hostPaths, isTransientErrno, momongaLayout, nodeFileSystem, settledOrAborted } from '@momonga/foundation';
-import type { PathResolver } from '@momonga/foundation';
+import { hostPaths, isTransientErrno, nodeFileSystem, settledOrAborted } from '@momonga/foundation';
+import type { PathResolver, MomongaPaths } from '@momonga/foundation';
 
 const LAUNCHER_LINKS_MAX_BYTES = 64 * 1024;
 
@@ -67,8 +67,9 @@ async function readLauncherLinks(file: string, signal: AbortSignal): Promise<{ l
   return { links: recordedLinks(Buffer.from(await settledOrAborted(nodeFileSystem.readFile(file), signal))), launcherLinks: { status: 'read' } };
 }
 
-export async function alwaysWriteDenied(home: string, signal: AbortSignal): Promise<AlwaysWriteDenied> {
-  const paths = momongaLayout(home);
+export type OwnedLayout = Pick<MomongaPaths, 'root' | 'launcher' | 'keychains' | 'executables'>;
+
+export async function alwaysWriteDenied(paths: OwnedLayout, signal: AbortSignal): Promise<AlwaysWriteDenied> {
   const resolver = hostPaths(signal);
   const { links, launcherLinks } = await readLauncherLinks(path.join(paths.root, 'bin', 'launcher-links'), signal);
   const lexical = [paths.launcher, ...links];

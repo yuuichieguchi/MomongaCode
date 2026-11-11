@@ -1,5 +1,5 @@
 import { declaredChildEnv, minimalChildEnv, probeKeyComponentLabel, readProbeKeyComponents } from '@momonga/foundation';
-import type { BinaryHashCache, HeldHostReadings, ManagedInstancePaths, MomongaPaths } from '@momonga/foundation';
+import type { BinaryHashCache, HeldHostReadings, ManagedInstancePaths, MomongaPaths, KernelLockMechanism, ProcessInspector } from '@momonga/foundation';
 import { knownKeyOf, managedServerDigest, probeKeyOf } from '@momonga/config';
 import type { ProbeKey } from '@momonga/config';
 import type { DialectId, ManagedServerDescription, ProbeReport, ToolCallingMode } from '@momonga/protocol';
@@ -58,6 +58,8 @@ export type MeasureManagedServerOptions = {
   target: string;
   binary: string;
   instance: ManagedInstancePaths;
+  lock: KernelLockMechanism;
+  inspector: ProcessInspector;
   readyTimeoutMs: number;
   env: Readonly<Record<string, string>>;
   exec: ExecFn;
@@ -83,6 +85,8 @@ export const measureManagedServer =
       binary: options.binary,
       socketPath: options.instance.socketPath,
       lockPath: options.instance.lockPath,
+      lock: options.lock,
+      inspector: options.inspector,
       markerDirectory: options.instance.markerDirectory,
       readyTimeoutMs: options.readyTimeoutMs,
       env: options.env,
@@ -122,6 +126,7 @@ export type ManagedProbeSubjectOptions = {
   target: string;
   precondition: ProbePrecondition;
   probeRecordDir: string;
+  lock: KernelLockMechanism;
   readKey: (signal: AbortSignal) => Promise<ProbeKey>;
   keySignal: () => AbortSignal;
   measure: MeasureProbe<ProbeLockKey, ProbeReport>;
@@ -144,11 +149,13 @@ export const managedProbeSubject = (options: ManagedProbeSubjectOptions): ProbeS
   },
   precondition: options.precondition,
   measure: options.measure,
-  save: (key, report) => saveProbeRecord(options.probeRecordDir, knownKeyOf(key), report, options.currency),
+  save: (key, report) => saveProbeRecord(options.probeRecordDir, knownKeyOf(key), report, options.currency, options.lock),
 });
 
 export type ProbeManagedOptions = {
   paths: MomongaPaths;
+  lock: KernelLockMechanism;
+  inspector: ProcessInspector;
   platform: NodeJS.Platform;
   instance: ManagedInstancePaths;
   description: ManagedServerDescription;
@@ -179,6 +186,7 @@ export const probeManagedFm = async (options: ProbeManagedOptions): Promise<Prob
     target: options.target,
     precondition: managedPrecondition(options.description, options.target, options.binary, exec, options.isUsableBinary, DEFAULT_STEP_TIMEOUT_MS),
     probeRecordDir: options.paths.probe,
+    lock: options.lock,
     readKey,
     keySignal: () => options.signal,
     measure: measureManagedServer({
@@ -186,6 +194,8 @@ export const probeManagedFm = async (options: ProbeManagedOptions): Promise<Prob
       target: options.target,
       binary: options.binary,
       instance: options.instance,
+      lock: options.lock,
+      inspector: options.inspector,
       readyTimeoutMs: options.readyTimeoutMs,
       env: childEnv,
       exec,
@@ -199,6 +209,6 @@ export const probeManagedFm = async (options: ProbeManagedOptions): Promise<Prob
     }),
     currency: managedCurrencyOf(options.description, options),
   });
-  const { key, report } = await recordProbe(subject, options.paths.probe, options.signal);
+  const { key, report } = await recordProbe(subject, options.paths.probe, options.lock, options.signal);
   return { report, toolCalling: decideToolCalling(report).mode, recordFile: managedRecordPath(options.paths.probe, knownKeyOf(key)) };
 };

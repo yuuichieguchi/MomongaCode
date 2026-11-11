@@ -19,7 +19,7 @@ export const sink = (): Sink => {
 
 export const setupGenerations = async (context: TestContext, version: string, installedVersion: string | (() => string) = version) => {
   const home = withTempDir(context, { asHome: true });
-  const paths = momongaPaths(home);
+  const paths = momongaPaths(home, process.platform, process.env);
   await ensureMomongaDirs(paths);
   const work = createFakeWork();
   const running: FakeSupervisor[] = [];

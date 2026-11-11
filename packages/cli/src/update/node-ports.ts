@@ -7,7 +7,7 @@ import {
   acquireProcessLock,
   createLockedEntry,
   createOutboundDispatcher,
-  hostKernelLock,
+  resolveLayoutLocks,
   inspectProcessLock,
   listGenerations,
   nodeBoundedCommandRunner,
@@ -112,7 +112,7 @@ const stagingFiles: LockedEntryFiles = {
   descriptors: nodeDescriptorWriter,
 };
 
-export const nodeUpdateFs = (rename: Rename = fs.rename, lock: KernelLockMechanism = hostKernelLock()): UpdateFs => {
+export const nodeUpdateFs = (lock: KernelLockMechanism, rename: Rename = fs.rename): UpdateFs => {
   const staging = new Map<string, LockedEntry>();
   return {
     realpath: (file) => fs.realpath(file),
@@ -150,23 +150,23 @@ export const nodeUpdateFs = (rename: Rename = fs.rename, lock: KernelLockMechani
   };
 };
 
-export const nodeUpdateLock = (paths: MomongaPaths): UpdateLock => {
+export const nodeUpdateLock = (paths: MomongaPaths, mechanism: KernelLockMechanism): UpdateLock => {
   const lockPath = path.join(paths.run, UPDATE_LOCK_FILE);
   return {
     acquire: async () => {
       try {
-        const lock = await acquireProcessLock(lockPath);
+        const lock = await acquireProcessLock(lockPath, undefined, { mechanism });
         return { release: () => lock.release() };
       } catch (error) {
         if (error instanceof ProcessLockHeldError) return undefined;
         throw error;
       }
     },
-    isHeld: async () => (await inspectProcessLock(lockPath)).state !== 'free',
+    isHeld: async () => (await inspectProcessLock(lockPath, { mechanism })).state !== 'free',
   };
 };
 
-export const nodeUpdateState = (paths: MomongaPaths): UpdateStateStore => {
+export const nodeUpdateState = (paths: MomongaPaths, lock: KernelLockMechanism): UpdateStateStore => {
   const file = path.join(paths.state, UPDATE_STATE_FILE);
   return {
     read: async () => {
@@ -181,21 +181,21 @@ export const nodeUpdateState = (paths: MomongaPaths): UpdateStateStore => {
       return parsed;
     },
     write: async (state) => {
-      await writeFileAtomically(nodeFileSystem, systemRandom, file, JSON.stringify(state), { mode: UPDATE_STATE_MODE });
+      await writeFileAtomically(nodeFileSystem, systemRandom, file, JSON.stringify(state), { mode: UPDATE_STATE_MODE, lock });
     },
   };
 };
 
-export const nodeDaemonProbe = (paths: MomongaPaths, clock: CliClock): DaemonProbe => ({
-  running: async () => (await listGenerations(paths, { lock: hostKernelLock() })).some((listed) => listed.live),
-  retiring: async () => retiringWorkOf(await listLiveGenerations({ clock }, paths)),
+export const nodeDaemonProbe = (paths: MomongaPaths, clock: CliClock, lock: KernelLockMechanism): DaemonProbe => ({
+  running: async () => (await listGenerations(paths, { lock })).some((listed) => listed.live),
+  retiring: async () => retiringWorkOf(await listLiveGenerations({ clock }, paths, { lock })),
   readyBoundMs: () => daemonReadyBoundMs(),
 });
 
 const definedEnv = (env: Readonly<Record<string, string | undefined>>): Record<string, string> =>
   Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined));
 
-export const nodeUpdatePorts = (ports: CliPorts, paths: MomongaPaths): UpdatePorts => ({
+export const nodeUpdatePorts = (ports: CliPorts, paths: MomongaPaths, lock: KernelLockMechanism = resolveLayoutLocks(paths).mechanism): UpdatePorts => ({
   version: ports.version,
   platform: ports.platform,
   arch: process.arch,
@@ -204,11 +204,11 @@ export const nodeUpdatePorts = (ports: CliPorts, paths: MomongaPaths): UpdatePor
   env: definedEnv(ports.env),
   clock: ports.clock,
   http: leasedUpdateHttp(ports),
-  fs: nodeUpdateFs(),
+  fs: nodeUpdateFs(lock),
   run: nodeBoundedCommandRunner,
-  lock: nodeUpdateLock(paths),
-  state: nodeUpdateState(paths),
-  daemon: nodeDaemonProbe(paths, ports.clock),
+  lock: nodeUpdateLock(paths, lock),
+  state: nodeUpdateState(paths, lock),
+  daemon: nodeDaemonProbe(paths, ports.clock, lock),
   autoUpdates: async () => (await loadUserSettings({ home: ports.home, signal: ports.interrupt })).settings.autoUpdates,
   spawnDetached: ports.spawnDetached,
   stderr: ports.stderr,

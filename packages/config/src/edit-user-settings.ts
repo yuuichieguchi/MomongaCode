@@ -38,7 +38,7 @@ export const settingsWriteTarget = async (file: string, asker: Asker): Promise<s
   }
 };
 
-export const editUserSettings = async (settingsFile: string, edit: SettingsEdit, { lock, random, signal, confine }: EditUserSettingsOptions): Promise<void> => {
+export const editUserSettings = async (settingsFile: string, edit: SettingsEdit, { lock, mechanism, random, signal, confine }: EditUserSettingsOptions): Promise<void> => {
   const asker = askerOf(signal);
   signal.throwIfAborted();
   const target = await settingsWriteTarget(settingsFile, asker);
@@ -47,6 +47,6 @@ export const editUserSettings = async (settingsFile: string, edit: SettingsEdit,
     const document = await documentOf(settingsFile, asker, confine);
     if (!(await edit(document))) return;
     signal.throwIfAborted();
-    await writeFileAtomically(asker.files, random, target, `${JSON.stringify(document, null, 2)}\n`, { mode: SETTINGS_FILE_MODE });
+    await writeFileAtomically(asker.files, random, target, `${JSON.stringify(document, null, 2)}\n`, { mode: SETTINGS_FILE_MODE, lock: mechanism });
   });
 };

@@ -4,6 +4,7 @@ import { nodeFileSystem, systemRandom } from '@momonga/foundation';
 import type { FileSystem, Random } from '@momonga/foundation';
 import { blobDirectoryOf, createBlobStore, prepareBlobDirectory } from '@momonga/store';
 import { harness, makeStoreDir, rawDb } from './helpers.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 type Recorded = { calls: string[]; fileSystem: FileSystem };
 
@@ -62,7 +63,7 @@ describe('the blob store reaches files and random values only through the ports 
     const dir = blobDirectoryOf(dbPath);
     const { calls, fileSystem } = recording();
     const { random, draws } = countingRandom();
-    const blobs = createBlobStore(rawDb(dbPath), clock, dir, { fileSystem, random });
+    const blobs = createBlobStore(rawDb(dbPath), clock, dir, { lock: testKernelLock(), fileSystem, random });
 
     const ref = await blobs.put(TEXT, { mediaType: 'text/plain' });
 
@@ -81,7 +82,7 @@ describe('the blob store reaches files and random values only through the ports 
     store.close();
     const held = Buffer.from('port\nheld\n', 'utf8');
     const { fileSystem } = recording({ readRange: async (_file, position, length) => held.subarray(position, position + length) });
-    const blobs = createBlobStore(rawDb(dbPath), clock, blobDirectoryOf(dbPath), { fileSystem, random: systemRandom });
+    const blobs = createBlobStore(rawDb(dbPath), clock, blobDirectoryOf(dbPath), { lock: testKernelLock(), fileSystem, random: systemRandom });
     const ref = await blobs.put('host\nfile\n', { mediaType: 'text/plain' });
 
     expect((await blobs.read(ref.handle, { lineStart: 1, lineEnd: 2 })).text).toBe('port\nheld\n');
@@ -103,7 +104,7 @@ describe('the blob store reaches files and random values only through the ports 
     const { dbPath, store, clock } = harness();
     store.close();
     const { fileSystem } = recording({ readRange: async () => new Uint8Array(0) });
-    const blobs = createBlobStore(rawDb(dbPath), clock, blobDirectoryOf(dbPath), { fileSystem, random: systemRandom });
+    const blobs = createBlobStore(rawDb(dbPath), clock, blobDirectoryOf(dbPath), { lock: testKernelLock(), fileSystem, random: systemRandom });
     const ref = await blobs.put('content', { mediaType: 'text/plain' });
 
     await expect(blobs.read(ref.handle, { offset: 0, length: 4 })).rejects.toThrow(/shorter than its recorded length/);

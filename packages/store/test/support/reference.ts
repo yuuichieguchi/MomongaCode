@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { openDatabase } from '@momonga/foundation';
+import { openDatabase, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { findDanglingOutput } from '@momonga/protocol';
 import type { InputItem, PermissionMode, RunEvent, RunEventPayload, RunState, StopReason } from '@momonga/protocol';
 import { JournalThreadError, applyInheritance, createJournalReader, foldRunState, initialRunState, knownValue, projectInheritance } from '@momonga/store';
@@ -75,7 +75,7 @@ export const referenceReader = (db: DatabaseSync, options: ReferenceReaderOption
   referenceReaderOf(createJournalReader(db, options as JournalReaderOptions));
 
 export const withReader = <T,>(dbPath: string, read: (reader: ReferenceReader) => SettledBeforeCleanup<T>, options: ReferenceReaderOptions = {}): T => {
-  const db = openDatabase(dbPath);
+  const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
   try {
     return read(referenceReader(db, options));
   } finally {
@@ -89,7 +89,7 @@ export type ReferenceFacts = {
 };
 
 const measuredNothing = (dbPath: string) => async (request: { runId: string }) => {
-  const db = openDatabase(dbPath);
+  const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
   try {
     const row = db.prepare('SELECT last_seq FROM runs WHERE id = ?').get(request.runId) as { last_seq: number } | undefined;
     if (row === undefined) throw new JournalThreadError(`unknown run ${request.runId}`);

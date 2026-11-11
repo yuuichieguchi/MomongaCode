@@ -11,7 +11,9 @@ import { guardStandardStreams } from './standard-streams.ts';
 import type { GuardedStandardStreams, StandardStream } from './standard-streams.ts';
 import { ProcessLockHeldError, UnadoptedEnv, acquireProcessLock } from './process-lock.ts';
 import type { DescribeHolder, ProcessLock } from './process-lock.ts';
-import type { KernelLockMechanism } from './platform/kernel-lock.ts';
+import { resolveLayoutLocks } from './platform/lock-capability.ts';
+import type { LayoutLocks } from './platform/lock-capability.ts';
+import { momongaLayout } from './momonga-paths.ts';
 import { LOG_KEEP, LOG_MAX_BYTES, createRotatingLogFile } from './rotating-log.ts';
 import type { RotatingLogFile } from './rotating-log.ts';
 import { answeredLater, askedPaths } from './path-asking.ts';
@@ -37,7 +39,7 @@ export type EntryIo = {
   paths(signal: AbortSignal): PathResolver;
   logFile(path: string): RotatingLogFile;
   holdOpen(): () => void;
-  lockMechanism?: KernelLockMechanism;
+  locks(home: string): LayoutLocks;
   exit(code: number): void;
 };
 
@@ -59,6 +61,7 @@ export type DaemonStartContext<F extends FlagSpec> = {
   stdout: TextStream;
   droppedLogLines(): number;
   requestShutdown(values?: StopValues): void;
+  locks: LayoutLocks;
   acquireLock(lockPath: string, describeHolder?: DescribeHolder): Promise<ProcessLock>;
 };
 
@@ -432,7 +435,8 @@ export const runDaemonEntry = async <F extends FlagSpec>(io: EntryIo, definition
   let started: DaemonHandle;
   try {
     const unadopted = new UnadoptedEnv(io.env);
-    const lockOptions = io.lockMechanism === undefined ? {} : { mechanism: io.lockMechanism };
+    const locks = io.locks(home);
+    const lockOptions = { mechanism: locks.mechanism };
     const acquireLock = async (lockPath: string, describeHolder?: DescribeHolder): Promise<ProcessLock> =>
       unadopted.handedOff ? unadopted.adopt(lockPath, lockOptions) : acquireProcessLock(lockPath, describeHolder, lockOptions);
     started = await definition.start({
@@ -445,6 +449,7 @@ export const runDaemonEntry = async <F extends FlagSpec>(io: EntryIo, definition
       stdout: io.stdout,
       droppedLogLines: sink.droppedLogLines,
       requestShutdown,
+      locks,
       acquireLock,
     });
   } catch (error) {
@@ -531,6 +536,7 @@ export const nodeEntryIo = (host: NodeJS.Process = process, streams: GuardedStan
     },
     watchLifeline,
     paths: hostPaths,
+    locks: (home) => resolveLayoutLocks(momongaLayout(home, host.platform, host.env)),
     holdOpen: () => {
       const hold = setInterval(noop, HOLD_OPEN_INTERVAL_MS);
       return () => clearInterval(hold);

@@ -5,13 +5,15 @@ import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testKernelLock } from '@momonga/testkit';
+import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { Claim } from '@momonga/store';
 import { LEASE_MS, START_MS, enqueue, harness, makeStoreDir, mustClaim, newSession, registerCleanup } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const STORE_ENTRY = pathToFileURL(path.resolve(import.meta.dirname, '../src/index.ts')).href;
+const FOUNDATION_ENTRY = pathToFileURL(path.resolve(import.meta.dirname, '../../foundation/src/index.ts')).href;
 
 const CHILD_SCRIPT = `
 import { dirname } from 'node:path';
@@ -19,7 +21,8 @@ import fs from 'node:fs';
 import { createInterface } from 'node:readline';
 const { openRuntimeStore } = await import(process.argv[2]);
 let now = Number(process.argv[4]);
-const store = openRuntimeStore({ unaskedCommands: { readOnly: [], edit: [] }, path: process.argv[3], home: dirname(process.argv[3]), clock: { now: () => now }, leaseMs: ${LEASE_MS}, maxAttempts: 5, maxTotalAttempts: 1000 });
+const { kernelLockNamed } = await import(${JSON.stringify(FOUNDATION_ENTRY)});
+const store = openRuntimeStore({ lock: kernelLockNamed(${JSON.stringify(testKernelLock().name)}), busyTimeoutMs: ${BUSY_WAIT_LIMIT_MS}, unaskedCommands: { readOnly: [], edit: [] }, path: process.argv[3], home: dirname(process.argv[3]), clock: { now: () => now }, leaseMs: ${LEASE_MS}, maxAttempts: 5, maxTotalAttempts: 1000 });
 const lines = createInterface({ input: process.stdin });
 process.stdout.write('ready\\n');
 for await (const line of lines) {

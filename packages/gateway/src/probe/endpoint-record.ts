@@ -7,6 +7,7 @@ import { PreconditionFailedError } from '../adapters/shared/failures.ts';
 import { isRecord, listedEntryOf } from './json.ts';
 import { currentStamp, isCurrentRecord, writePrivateRecord } from './record.ts';
 import { isEndpointProbeReport } from './report-schema.ts';
+import type { KernelLockMechanism } from '@momonga/foundation';
 
 export type EndpointKey = { endpoint: string; model: string };
 
@@ -68,11 +69,13 @@ export const saveEndpointRecord = async (
   identityFields: readonly string[],
   report: EndpointProbeReport,
   currency: DialectCurrency,
+  lock: KernelLockMechanism,
 ): Promise<void> => {
   await writePrivateRecord(
     dir,
     fileOf(dir, key),
     JSON.stringify({ endpoint: key.endpoint, model: key.model, identity, identityFields, ...currentStamp(report, currency), report }),
+    lock,
   );
 };
 

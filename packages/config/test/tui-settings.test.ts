@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { SETTINGS_SCHEMA, TUI_NOTIFY_MODES, TUI_THEMES, loadSettings, loadUserSettings, writeTuiSetting } from '@momonga/config';
 import { makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
-const UNABORTED = { signal: new AbortController().signal };
+import { testKernelLock } from '@momonga/testkit';
+const UNABORTED = { lock: testKernelLock(), signal: new AbortController().signal };
 
 
 const userTui = async (tui: Record<string, unknown> | undefined) => {
@@ -92,7 +93,7 @@ describe('writeTuiSetting', () => {
     const tree = makeTree();
     const stopped = new AbortController();
     stopped.abort(new Error('the command was cancelled'));
-    await expect(writeTuiSetting(tree.home, userSettingsPath(tree), 'theme', 'dark', { signal: stopped.signal })).rejects.toThrow('the command was cancelled');
+    await expect(writeTuiSetting(tree.home, userSettingsPath(tree), 'theme', 'dark', { lock: testKernelLock(), signal: stopped.signal })).rejects.toThrow('the command was cancelled');
     expect(fs.existsSync(userSettingsPath(tree))).toBe(false);
   });
 });

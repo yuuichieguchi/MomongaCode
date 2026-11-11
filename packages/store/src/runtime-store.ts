@@ -442,8 +442,8 @@ const assertPositiveInteger = (name: string, value: number): void => {
   if (!Number.isInteger(value) || value < 1) throw new RangeError(`openRuntimeStore: ${name} must be a positive integer, got ${value}`);
 };
 
-export const migrateRuntimeDatabase = (file: string): void => {
-  const db = openDatabase(file);
+export const migrateRuntimeDatabase = (file: string, busyTimeoutMs: number): void => {
+  const db = openDatabase(file, { busyTimeoutMs });
   try {
     migrate(db, MIGRATIONS);
   } finally {
@@ -462,7 +462,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   }
   if (typeof options.home !== 'string') throw new TypeError('openRuntimeStore: home is required');
   const { clock, leaseMs, maxAttempts, maxTotalAttempts, home, fileSystem, random } = options;
-  const { db, identity } = openDatabaseWithIdentity(options.path);
+  const { db, identity } = openDatabaseWithIdentity(options.path, { busyTimeoutMs: options.busyTimeoutMs });
   let statements: Statements;
   try {
     migrate(db, MIGRATIONS);
@@ -473,7 +473,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   }
   const sql = statements;
   const lifetime = new AbortController();
-  const blobs = createBlobStore(db, clock, blobDirectoryOf(options.path), { fileSystem, random });
+  const blobs = createBlobStore(db, clock, blobDirectoryOf(options.path), { fileSystem, random, lock: options.lock });
   const decodeContext = decodeContextOf(db);
   const approvalOps = createApprovalStore(db, clock, decodeContext);
   const memories = createMemoryStore(db, clock, decodeContext);

@@ -27,6 +27,7 @@ import { serverRegistryOf } from './server-registry.ts';
 import { MODEL_ROLES } from './settings-schema.ts';
 import { assertSettings } from './settings.ts';
 import type { ConnectionDraft, ModelEntry, ModelRole } from './settings.ts';
+import type { KernelLockMechanism } from '@momonga/foundation';
 
 export type ModelsOperation =
   | { kind: 'addModel'; choice: { connection: ConnectionDraft; model: ModelEntry } }
@@ -795,7 +796,7 @@ export const planModelsEdit = (document: unknown, operations: ModelsOperations, 
   }
 };
 
-export type EditModelsSettingsOptions = { signal: AbortSignal; planProfiles?: PlanProfiles };
+export type EditModelsSettingsOptions = { lock: KernelLockMechanism; signal: AbortSignal; planProfiles?: PlanProfiles };
 
 const refuseOwnSockets = async (document: Json, home: string, { paths, signal }: Asker): Promise<void> => {
   const connections = writtenConnections(document).map((connection) => ({ socketPath: isRecord(connection) ? writtenText(connection['socketPath']) : undefined }));
@@ -823,7 +824,7 @@ export const editModelsSettings = async (home: string, settingsFile: string, ope
       Object.assign(document, plan.document);
       return true;
     },
-    settingsWriterPorts(home, { signal: options.signal }),
+    settingsWriterPorts(home, { lock: options.lock, signal: options.signal }),
   );
   if (result === undefined) throw new TypeError(`${settingsFile}: the settings writer ended without a result`);
   return result;

@@ -4,6 +4,7 @@ import { writeFileAtomically } from './atomic-file.ts';
 import { nodeFileSystem } from './node-file-system.ts';
 import { createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
 import type { FileLockPorts } from './file-lock.ts';
+import type { KernelLockMechanism } from './platform/kernel-lock.ts';
 
 export interface CredentialEntry {
   read(): Promise<string | undefined>;
@@ -72,15 +73,15 @@ export const credentialFileFor = (directory: string, key: string): string => pat
 
 const readOwnerOnly = (file: string): Promise<string | undefined> => nodeFileSystem.readOwnerOnlyTextFile(file, `credential file ${file}`, AUTH_DOCUMENT_MAX_BYTES);
 
-export type FileCredentialStoreOptions = { ports?: FileLockPorts; lockTimeoutMs?: number };
+export type FileCredentialStoreOptions = { lock: KernelLockMechanism; ports?: FileLockPorts; lockTimeoutMs?: number };
 
-export const createFileCredentialStore = (directory: string, options: FileCredentialStoreOptions = {}): CredentialStore => {
+export const createFileCredentialStore = (directory: string, options: FileCredentialStoreOptions): CredentialStore => {
   const ports = options.ports ?? systemFileLockPorts;
   const serialized = createKeyedSerializer();
 
   const writeAtomically = async (key: string, value: string): Promise<void> => {
     await nodeFileSystem.mkdirPrivate(directory);
-    await writeFileAtomically(nodeFileSystem, ports.random, credentialFileFor(directory, key), value, { mode: FILE_MODE });
+    await writeFileAtomically(nodeFileSystem, ports.random, credentialFileFor(directory, key), value, { mode: FILE_MODE, lock: options.lock });
   };
 
   const locked = <T>(key: string, action: () => Promise<T>, signal: AbortSignal): Promise<T> =>
@@ -90,7 +91,7 @@ export const createFileCredentialStore = (directory: string, options: FileCreden
         const lockDirectory = `${directory}.locks`;
         await nodeFileSystem.mkdirPrivate(lockDirectory);
         const lockPath = path.join(lockDirectory, `${path.basename(credentialFileFor(directory, key))}.lock`);
-        return withFileLock(lockPath, action, { ports, signal, ...(options.lockTimeoutMs === undefined ? {} : { timeoutMs: options.lockTimeoutMs }) });
+        return withFileLock(lockPath, action, { ports, mechanism: options.lock, signal, ...(options.lockTimeoutMs === undefined ? {} : { timeoutMs: options.lockTimeoutMs }) });
       },
       signal,
     );

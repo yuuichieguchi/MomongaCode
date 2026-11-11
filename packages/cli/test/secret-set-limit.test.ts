@@ -25,7 +25,7 @@ describe('momonga secret set against a secret store that does not answer', () =>
     const keychain = keychainFixture({ control: { calls: 'hang' } });
     const { ports, stdout } = secretSetPorts(keychain.store, 'v\rv\r');
 
-    const attempt = outcomeOf(secretSet(ports, momongaLayout('/home/u'), 'k', interruptOf().signal));
+    const attempt = outcomeOf(secretSet(ports, momongaLayout('/home/u', process.platform, process.env), 'k', interruptOf().signal));
     await keychain.arrived('add-generic-password');
     await vi.advanceTimersByTimeAsync(COMMAND_LIMIT_MS - 1);
     await afterPendingIo();
@@ -54,7 +54,7 @@ describe('momonga secret set against a secret store that does not answer', () =>
     });
     const { ports, stdout } = secretSetPorts(keychain.store, 'v\rv\r');
 
-    const attempt = outcomeOf(secretSet(ports, momongaLayout('/home/u'), 'k', interruptOf().signal));
+    const attempt = outcomeOf(secretSet(ports, momongaLayout('/home/u', process.platform, process.env), 'k', interruptOf().signal));
     await keychain.arrived('add-generic-password');
     await vi.advanceTimersByTimeAsync(WRITE_ANSWERS_AFTER_MS);
     await keychain.arrived('find-generic-password');
@@ -81,7 +81,7 @@ describe('momonga secret set against a secret store that does not answer', () =>
     const interrupt = interruptOf();
     const reason = new Error('the person pressed Ctrl-C');
 
-    const attempt = secretSet(ports, momongaLayout('/home/u'), 'k', interrupt.signal);
+    const attempt = secretSet(ports, momongaLayout('/home/u', process.platform, process.env), 'k', interrupt.signal);
     await keychain.arrived('add-generic-password');
     interrupt.abort(reason);
 

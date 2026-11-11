@@ -5,7 +5,7 @@ import { Agent, request } from 'undici';
 import { describe, expect, it } from 'vitest';
 import { createGateway } from '@momonga/gateway';
 import type { GatewayOptions } from '@momonga/gateway';
-import { createFakeClock, createFakeTimers, createScriptedAdapter } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createScriptedAdapter, testKernelLock } from '@momonga/testkit';
 import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, expectErrorBody, getJson, makeDir, registerCleanup, startGateway, stateDbPath } from './gateway-helpers.ts';
 
 const DEBUG_TOKEN = 'momonga-debug-test-token';
@@ -22,6 +22,7 @@ const constructWith = (debugTcp: { host: string; port: number; token: string }) 
     dir,
     attempt: (async () =>
       createGateway({
+      lock: testKernelLock(),
       role: fixedRolePort('serving'),
       random: () => 0.5,
       credentials: [],

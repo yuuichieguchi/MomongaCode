@@ -7,6 +7,7 @@ import { createPlanSignIn } from '../src/plan/signin.ts';
 import { browse } from './plan-signin-support.ts';
 import { NEVER_ENDED, PROFILE_ID, START_MS, realSleep, signedIn, startHarness, toRefreshWindow } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const harnesses: Harness[] = [];
 
@@ -71,6 +72,7 @@ describe('the event rows of the ends nobody tested (G6)', () => {
     harnesses.push(h);
     const signIn = createPlanSignIn({
       profiles: { [PROFILE_ID]: h.profile },
+      lock: testKernelLock(),
       sessions: { ...h.sessions, register: () => Promise.reject(new PlanCredentialError(code, 'the record store did not answer', false)) },
       clock: h.clock,
       outbound: (signal, use) => {
