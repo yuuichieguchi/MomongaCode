@@ -147,7 +147,7 @@ export {
 export type { GenerationLayout, GenerationProcessRole, ManagedInstance, ManagedInstancePaths, MarkerKind, RoleEndpoint } from './momonga-paths.ts';
 export { GENERATION_ROLE_UNREADABLE_EVENT, createRolePort, fixedRolePort, readGenerationRole, roleOfGeneration } from './generation-role.ts';
 export type { GenerationRole, RolePort } from './generation-role.ts';
-export { GENERATION_RETIRED_CODE, GENERATION_RETIRED_STATUS, MOVED_CODE } from './generation-codes.ts';
+export { GENERATION_RETIRED_CODE, GENERATION_RETIRED_STATUS, GENERATION_STARTING_CODE, MOVED_CODE } from './generation-codes.ts';
 export { formatStartRecord, generationIsLive, listGenerationNumbers, listGenerations, lockReadsHeld, probeGenerationLocks, readStartRecord } from './generation-registry.ts';
 export {
   CurrentGenerationUnreadableError,

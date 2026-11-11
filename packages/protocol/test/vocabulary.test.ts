@@ -91,6 +91,7 @@ describe('messageOf: one builder per message, which names the command of the sur
       accountWithoutModel: (surface) => messageOf('accountWithoutModel', surface, { provider: 'chatgpt', account: 'work' }),
       planRecordUnreadable: (surface) => messageOf('planRecordUnreadable', surface, { account: 'work', cause: 'bad tag', signInCommand: 'momonga auth login chatgpt --account work' }),
       serverFormNotOffered: (surface) => messageOf('serverFormNotOffered', surface, { server: 'loom', platform: 'win32', accepted: ['unix'], offered: ['pipe'] }),
+      daemonStarting: (surface) => messageOf('daemonStarting', surface),
     };
     expect(MESSAGE_KEYS.flatMap((key) => SURFACES.flatMap((surface) => bannedVariantsIn(samples[key](surface)).map((use) => `${key} on ${surface}: ${use.variant}`)))).toEqual([]);
   });

@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { parseOutsideJson } from '@momonga/foundation';
-import { MEMORY_SCOPES, MEMORY_STATES } from '@momonga/protocol';
+import { MEMORY_SCOPES, MEMORY_STATES, USER_SHELL_RUN_ACTIVE_CODE, WORDS } from '@momonga/protocol';
 import type { AddMemoryRequest, MemoryScope, MemoryState, PromoteMemoryRequest, ReflectionResponse, RunReflectionView } from '@momonga/protocol';
 import { isValidSkillName } from '@momonga/skills';
 import type { MemoryChange, MemoryListCursor, RuntimeStore } from '@momonga/store';
@@ -14,6 +14,7 @@ import { conflict, invalidRequest, notFound } from './errors.ts';
 import type { Handler, RouteRegistrar } from './app.ts';
 import { canonicalProject } from './project-query.ts';
 import { JSON_MEDIA_TYPES, readJson, validateBody } from './request.ts';
+import { isTerminalStatus } from './views.ts';
 
 const json = (body: unknown, status: number): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -50,12 +51,13 @@ const decodeCursor = (raw: string | undefined): MemoryListCursor | null => {
 const projectOf = async (raw: string | undefined, signal: AbortSignal): Promise<string | undefined> => (raw === undefined ? undefined : canonicalProject(raw, 'project', signal));
 
 export type MemoryRoutesDeps = {
-  store: Pick<RuntimeStore, 'memories' | 'reflection' | 'trust' | 'contextCharges'>;
+  store: Pick<RuntimeStore, 'memories' | 'reflection' | 'trust' | 'contextCharges' | 'getRun'>;
   views: RecordViews;
   evidenceRun: (project: string) => EvidenceRun;
   maxBodyBytes: number;
   closeSignal: AbortSignal;
   home: string;
+  refuseWhileRetiring(): void;
 };
 
 export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDeps): void => {
@@ -152,19 +154,29 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
     return json(view, 200);
   };
 
-  const reflectionOfRun: Handler = (context) => {
-    const runId = context.req.param('id') ?? '';
+  const runReflectionView = (runId: string): RunReflectionView => {
     const job = reflection.get(runId);
-    const view: RunReflectionView = {
+    return {
       job: job === undefined ? null : { runId: job.runId, state: job.state, attempts: job.attempts, reason: job.lastError, dropped: job.dropped, updatedAt: job.updatedAt },
       charges: deps.store.contextCharges.list({ runIds: [runId] }).filter((entry) => entry.purpose === 'reflection'),
       queuedAhead: job === undefined ? 0 : reflection.aheadOf(runId),
     };
-    return json(view, 200);
+  };
+
+  const reflectionOfRun: Handler = (context) => json(runReflectionView(context.req.param('id') ?? ''), 200);
+
+  const requestReflection: Handler = (context) => {
+    const runId = context.req.param('id') ?? '';
+    const run = deps.store.getRun(runId);
+    if (run === undefined) throw notFound(`${WORDS.run} ${runId} does not exist`);
+    if (!isTerminalStatus(run.status)) throw conflict(USER_SHELL_RUN_ACTIVE_CODE, `${WORDS.run} ${runId} has not ended; its reflection can be asked for when it has`);
+    deps.refuseWhileRetiring();
+    reflection.enqueue(runId);
+    return json(runReflectionView(runId), 202);
   };
 
   route('/v1/reflection', { GET: latestReflection });
-  route('/v1/runs/:id/reflection', { GET: reflectionOfRun });
+  route('/v1/runs/:id/reflection', { GET: reflectionOfRun, POST: requestReflection });
   route('/v1/memories', { GET: listMemories, POST: addMemory });
   route('/v1/memories/:id', { GET: getMemory, DELETE: deleteMemory });
   route('/v1/memories/:id/history', { GET: memoryHistory });

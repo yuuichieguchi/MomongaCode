@@ -48,6 +48,7 @@ const autoClassifierView = closed(
       { recordedAt: string, falseAllows: nonNegativeInteger, total: nonNegativeInteger, upperBound: { type: 'number', minimum: 0, maximum: 1 }, failedBound: enumOf(AUTO_FIT_FAILED_BOUNDS) },
       ['recordedAt', 'falseAllows', 'total', 'upperBound'],
     ),
+    refusal: closed({ file: string, reason: string }, ['file', 'reason']),
   },
   ['model', 'key', 'measurement'],
 );

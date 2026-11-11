@@ -54,7 +54,7 @@ export type RunServiceOptions = {
   sessionReadSettings: (cwd: string, signal: AbortSignal) => Promise<SessionCreateSettings>;
   skills: SkillsPort;
   agents: AgentCatalogPort;
-  permissionRules: (session: Session) => Promise<readonly PermissionRule[]>;
+  permissionRules: (session: Session, signal: AbortSignal) => Promise<readonly PermissionRule[]>;
   userInput: UserInputPort;
   evidenceRun: (project: string) => EvidenceRun;
   defaults: { runTimeoutMs?: number; limits: RunLimitDefaults };
@@ -65,7 +65,7 @@ export type RunServiceOptions = {
   maxBodyBytes?: number;
   cancelUpstream?: (runId: string, signal: AbortSignal) => Promise<void>;
   releaseStopped(runId: string, signal: AbortSignal): Promise<void>;
-  runTrace: (runId: string) => Promise<RunTraceView | undefined>;
+  runTrace: (runId: string, signal: AbortSignal) => Promise<RunTraceView | undefined>;
   runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>;
   runCostBreakdown: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ breakdown: CostBreakdownView; text: string }>;
   reportCost: ReportRouteDeps['reportCost'];

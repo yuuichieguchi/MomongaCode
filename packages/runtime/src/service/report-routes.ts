@@ -4,7 +4,7 @@ import { MAX_TRACE_CONTENT_PAGE, REPORT_PAGE_ROWS, REPORT_SCHEMAS } from '@momon
 import type { ReportCostPage, ReportCostRequest, RunCostView, StoreReviewRequest, StoreReviewResponse, TraceContentPage } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { invalidRequest, notFound } from './errors.ts';
-import { JSON_MEDIA_TYPES, readJson } from './request.ts';
+import { JSON_MEDIA_TYPES, integerQueryOf, pageLimitOf, readJson } from './request.ts';
 import type { Handler, RouteRegistrar } from './app.ts';
 
 export type ReportRouteDeps = {
@@ -12,17 +12,10 @@ export type ReportRouteDeps = {
   now: () => number;
   maxBodyBytes: number;
   reportCost: (runIds: readonly string[], signal: AbortSignal) => Promise<RunCostView[]>;
-  runTraceContent: (runId: string, after: number, limit: number) => Promise<TraceContentPage>;
+  runTraceContent: (runId: string, after: number, limit: number, signal: AbortSignal) => Promise<TraceContentPage>;
 };
 
-const countOf = (raw: string | undefined, name: string, bounds: { from: number; to: number }): number | undefined => {
-  if (raw === undefined) return undefined;
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value < bounds.from || value > bounds.to) throw invalidRequest(`${name} must be an integer from ${bounds.from} to ${bounds.to}`, name);
-  return value;
-};
-
-const limitOf = (raw: string | undefined): number => countOf(raw, 'limit', { from: 1, to: REPORT_PAGE_ROWS }) ?? REPORT_PAGE_ROWS;
+const limitOf = (raw: string | undefined): number => pageLimitOf(raw, REPORT_PAGE_ROWS);
 
 const bodyOf = <T>(validate: ProductValidator<T>, value: unknown): T => {
   const verdict = validate(value);
@@ -68,9 +61,9 @@ export const registerReportRoutes = (route: RouteRegistrar, deps: ReportRouteDep
   const traceContent: Handler = async (context) => {
     const id = context.req.param('id') ?? '';
     if (deps.store.getRun(id) === undefined) throw notFound(`run ${id} does not exist`);
-    const after = countOf(context.req.query('after'), 'after', { from: 0, to: Number.MAX_SAFE_INTEGER }) ?? 0;
-    const limit = countOf(context.req.query('limit'), 'limit', { from: 1, to: MAX_TRACE_CONTENT_PAGE }) ?? MAX_TRACE_CONTENT_PAGE;
-    return json(await deps.runTraceContent(id, after, limit));
+    const after = integerQueryOf(context.req.query('after'), 'after', { from: 0, to: Number.MAX_SAFE_INTEGER }) ?? 0;
+    const limit = pageLimitOf(context.req.query('limit'), MAX_TRACE_CONTENT_PAGE);
+    return json(await deps.runTraceContent(id, after, limit, context.req.raw.signal));
   };
 
   route('/v1/report/facts', { GET: facts });

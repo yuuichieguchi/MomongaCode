@@ -267,6 +267,7 @@ export type MessageInputs = {
   planRecordUnreadable: [given: { readonly account: string; readonly cause: string | undefined; readonly signInCommand: string }];
   accountWithoutModel: [given: { readonly provider: string; readonly account: string }];
   serverFormNotOffered: [given: { readonly server: string; readonly platform: string; readonly accepted: readonly string[]; readonly offered: readonly string[] }];
+  daemonStarting: [];
 };
 
 export type MessageKey = keyof MessageInputs;
@@ -304,6 +305,7 @@ const MESSAGES: { readonly [Key in MessageKey]: (surface: Surface, ...given: Mes
   accountWithoutModel: (surface, given) => `No ${WORDS.model} uses this account yet. ${ACCOUNT_MODEL_STEP[surface](given)}`,
   serverFormNotOffered: (_surface, given) =>
     `the ${WORDS.server} ${JSON.stringify(given.server)} cannot be used on ${given.platform}: it accepts only the socket forms [${given.accepted.join(', ')}], and ${given.platform} offers [${given.offered.join(', ')}]`,
+  daemonStarting: () => `The ${WORDS.daemon} is still starting and accepts no new work yet. The request was not run; send it again.`,
 };
 
 const ACCOUNT_MODEL_STEP: Readonly<Record<Surface, (given: { readonly provider: string; readonly account: string }) => string>> = {
