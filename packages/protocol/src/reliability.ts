@@ -100,6 +100,12 @@ export type RunCallView = { runId: string; callId: string; basis: Stored<Approva
 
 export type RunFactsRecord = { facts: RunFactsView; calls: RunCallView[] };
 
+export const FACTS_SKIPPED_CANCELLED_BEFORE_START = 'cancelled_before_start';
+
+export type RunFactsSkipped = { skipped: typeof FACTS_SKIPPED_CANCELLED_BEFORE_START };
+
+export type RunFactsAnswer = RunFactsRecord | RunFactsSkipped;
+
 export type UnavailableRunView = { runId: string; rootRunId: string };
 
 export type ReportPage = { rows: RunFactsView[]; unavailable: UnavailableRunView[]; nextCursor: string | null };

@@ -389,11 +389,14 @@ export {
   TRACE_CONTENT_PAGE_OPTION,
   REVIEW_LABELS,
   unreportedOutsideRuns,
+  FACTS_SKIPPED_CANCELLED_BEFORE_START,
 } from './reliability.ts';
 export type {
   PermissionReviewView,
   ReportCostPage,
   PageCostAnswer,
+  RunFactsSkipped,
+  RunFactsAnswer,
   CostTotals,
   ReportCostRequest,
   ReportRecomputePage,

@@ -1,11 +1,11 @@
-import type { ReportRecomputePage, RunCallView, RunFactsRecord, RunFactsView } from '@momonga/protocol';
+import type { ReportRecomputePage, RunCallView, RunFactsAnswer, RunFactsView } from '@momonga/protocol';
 import { FactsRefusedError, settledEventIdOf } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import type { ServiceTimers } from './timers.ts';
 
 export type FactsSweeperOptions = {
   store: { runFacts: Pick<RuntimeStore['runFacts'], 'nextBatch' | 'commit'> };
-  thread: { runFacts(runId: string): Promise<RunFactsRecord> };
+  thread: { runFacts(runId: string): Promise<RunFactsAnswer> };
   timers: ServiceTimers;
   intervalMs: number;
   batchSize: number;
@@ -17,7 +17,8 @@ export const recomputeFactsOf = async (thread: FactsSweeperOptions['thread'], ru
   for (const runId of runIds) {
     signal.throwIfAborted();
     try {
-      page.rows.push((await thread.runFacts(runId)).facts);
+      const answer = await thread.runFacts(runId);
+      if ('facts' in answer) page.rows.push(answer.facts);
     } catch (error) {
       if (!(error instanceof FactsRefusedError)) throw error;
       page.refused.push(runId);
@@ -44,9 +45,10 @@ export const startFactsSweeper = (options: FactsSweeperOptions): { close(): Prom
     const unavailable: string[] = [];
     for (const [index, runId] of runIds.entries()) {
       try {
-        const record = await thread.runFacts(runId);
-        rows.push(record.facts);
-        calls.push(...record.calls);
+        const answer = await thread.runFacts(runId);
+        if ('skipped' in answer) continue;
+        rows.push(answer.facts);
+        calls.push(...answer.calls);
       } catch (error) {
         onError(error);
         if (!(error instanceof FactsRefusedError)) return { rows, calls, unavailable, processed: index };
