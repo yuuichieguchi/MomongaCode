@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 import { footerRow as footerRowWith } from '../../src/tui/screen/footer.tsx';
-import { allocate, regionAt } from '../../src/tui/screen/layout.ts';
+import { allocate, inputTopOf, naturalRows, regionAt } from '../../src/tui/screen/layout.ts';
 import type { RowRequests } from '../../src/tui/screen/layout.ts';
 import { displayWidth } from '../../src/tui/screen/wrap.ts';
 import { MIN_ROWS } from '../../src/tui/terminal/constants.ts';
@@ -79,6 +79,14 @@ describe('row allocation', () => {
     expect(allocate(MIN_ROWS, crowded)).toEqual({ viewport: 1, menu: 1, waiting: 0, lines: 0, input: 3, footer: 1, subagents: 0 });
     expect(allocate(MIN_ROWS, { ...crowded, menu: 9 }).menu).toBe(1);
     expect(allocate(24, { ...crowded, panel: 5 }).menu).toBe(0);
+  });
+
+  it('gives the top row of the input from the rows above it, in the fullscreen allocation and in the natural rows of scrollback', () => {
+    const rows = allocate(24, { ...none, waiting: 1, menu: 2, lines: 1 });
+    expect(inputTopOf(rows)).toBe(rows.viewport + 4);
+    expect(regionAt(rows, inputTopOf(rows) + 1)).toEqual({ region: 'input', row: 0 });
+    expect(inputTopOf(naturalRows(7, { waiting: 1, invitation: 1, menu: 0, lines: 2 }))).toBe(11);
+    expect(inputTopOf(naturalRows(0, { waiting: 0, invitation: 0, menu: 30, lines: 0 }))).toBe(30);
   });
 
   it('names the region of a screen row from the allocation, top to bottom', () => {

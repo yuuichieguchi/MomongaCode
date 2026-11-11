@@ -9,7 +9,7 @@ export const REGIONS = ['viewport', 'menu', 'waiting', 'lines', 'input', 'footer
 export type Region = (typeof REGIONS)[number];
 
 const FOOTER_ROWS = 1;
-const VIEWPORT_ROWS = 1;
+export const VIEWPORT_ROWS = 1;
 const PANEL_KEEPS_ROWS = 4;
 
 export const inputRowsCap = (height: number): number => Math.max(1, Math.floor(height / 3));
@@ -38,6 +38,14 @@ export const allocate = (height: number, requests: RowRequests): RowAllocation =
   const lines = panel === undefined ? take(requests.lines) : 0;
   return { viewport: VIEWPORT_ROWS + left, menu, waiting, lines, input: reservedInput + inputExtra, footer: FOOTER_ROWS + footerSecond, subagents };
 };
+
+export const drawnTranscriptRows = (viewport: number, held: number): number => Math.max(VIEWPORT_ROWS, Math.min(viewport, held));
+
+export type RowsAboveInput = Pick<RowAllocation, 'viewport' | 'menu' | 'waiting' | 'lines'>;
+
+export const naturalRows = (transcript: number, requests: Pick<RowRequests, 'waiting' | 'invitation' | 'menu' | 'lines'>): RowsAboveInput => ({ viewport: transcript, menu: requests.invitation + requests.menu, waiting: requests.waiting, lines: requests.lines });
+
+export const inputTopOf = (rows: RowsAboveInput): number => rows.viewport + rows.menu + rows.waiting + rows.lines;
 
 export const regionAt = (rows: RowAllocation, screenRow: number): { region: Region; row: number } | undefined => {
   let top = 1;

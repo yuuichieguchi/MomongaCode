@@ -6,12 +6,19 @@ export type HistoryFeed = {
   pending(settled: number): boolean;
   next(source: ViewSource, settled: number): Row[];
   handed(): number;
-  cursor(): { entryIndex: number; rowOffset: number };
+  live(source: ViewSource, settled: number): Row[];
+};
+
+const rowsFrom = (source: ViewSource, entryIndex: number, rowOffset: number): Row[] => {
+  const rows: Row[] = [];
+  for (let index = entryIndex; index < source.count(); index += 1) rows.push(...(index === entryIndex ? source.rowsOf(source.at(index)).slice(rowOffset) : source.rowsOf(source.at(index))));
+  return rows;
 };
 
 export const createHistoryFeed = (printed = 0): HistoryFeed => {
   let entryIndex = printed;
   let rowOffset = 0;
+  let caughtUp = false;
   return {
     pending: (settled) => entryIndex < settled,
     next: (source, settled) => {
@@ -28,6 +35,9 @@ export const createHistoryFeed = (printed = 0): HistoryFeed => {
       return chunk;
     },
     handed: () => entryIndex,
-    cursor: () => ({ entryIndex, rowOffset }),
+    live: (source, settled) => {
+      caughtUp ||= entryIndex >= settled;
+      return caughtUp ? rowsFrom(source, entryIndex, rowOffset) : rowsFrom(source, settled, 0);
+    },
   };
 };
