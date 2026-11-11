@@ -287,7 +287,7 @@ describe('KillBash from another generation (17.3 "Kill", 17.9, 20.39)', () => {
     w.store.jobs.requestKill = (id) => {
       const set = originalRequest(id);
       owner.jobs.stopKillRequested();
-      void w.reapTiming.pairedWith(owner.jobs.finalized(id));
+      void w.reapTiming.pairedWith(() => owner.jobs.finalized(id));
       return set;
     };
 

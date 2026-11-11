@@ -1,4 +1,6 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { FakeClock } from './fake-clock.ts';
+import { createFakeTimers } from './fake-timers.ts';
 import type { FakeTimers } from './fake-timers.ts';
 
 export const fakeReapTiming = (clock: FakeClock, timers: FakeTimers): { now(): number; sleep(ms: number): Promise<void> } => ({
@@ -14,13 +16,19 @@ export const drivenReapTiming = (clock: FakeClock, timers: FakeTimers): { now():
     }),
 });
 
-export type PacedReapTiming = { now(): number; sleep(ms: number): Promise<void>; pairedWith<T>(realOperation: Promise<T>): Promise<T> };
+export type PacedReapTiming = { now(): number; sleep(ms: number): Promise<void>; readonly sleeps: number[]; pairedWith<T>(startRealOperation: () => Promise<T>): Promise<T> };
 
-export const pacedReapTiming = (clock: FakeClock): PacedReapTiming => {
+const eventLoopTurn = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
+
+export const pacedReapTiming = (clock: FakeClock, timers: FakeTimers = createFakeTimers(clock)): PacedReapTiming => {
   const inFlight = new Set<Promise<void>>();
+  const sleeps: number[] = [];
+  const insidePairedOperation = new AsyncLocalStorage<true>();
   return {
     now: () => clock.now(),
-    pairedWith: (realOperation) => {
+    sleeps,
+    pairedWith: (startRealOperation) => {
+      const realOperation = insidePairedOperation.run(true, async () => startRealOperation());
       const settled: Promise<void> = realOperation.then(
         () => undefined,
         () => undefined,
@@ -30,8 +38,12 @@ export const pacedReapTiming = (clock: FakeClock): PacedReapTiming => {
       return realOperation;
     },
     sleep: async (ms) => {
-      clock.advance(ms);
-      if (inFlight.size === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+      if (insidePairedOperation.getStore() === true) {
+        throw new Error('pacedReapTiming: an operation paired with this timing slept on it; the sleep waits for the operation and the operation for the sleep, so neither could end');
+      }
+      sleeps.push(ms);
+      await timers.advanceAsync(ms);
+      if (inFlight.size === 0) await eventLoopTurn();
       else await Promise.all([...inFlight]);
     },
   };
