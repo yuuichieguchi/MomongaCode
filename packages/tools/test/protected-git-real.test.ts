@@ -111,7 +111,7 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
 
   it.each(['worktree', 'submodule'] as const)('reads the %s pointer as git does', async (which) => {
     const repositoryRoot = which === 'worktree' ? worktree : submodule;
-    const entry = policyFilesystem().readEntry(path.join(repositoryRoot, '.git'), NEVER_CANCELLED);
+    const entry = await policyFilesystem().readEntry(path.join(repositoryRoot, '.git'), NEVER_CANCELLED);
     if (!('kind' in entry) || entry.kind !== 'file') throw new Error('expected a file entry');
     const text = entry.text.replace(/\r?\n$/, '');
     expect(text.startsWith('gitdir: ')).toBe(true);

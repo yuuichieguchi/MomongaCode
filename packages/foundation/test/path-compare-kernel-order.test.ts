@@ -152,12 +152,12 @@ describe('canonicalPath honours a trailing slash like the kernel', () => {
     const d = makeDir();
     fs.writeFileSync(path.join(d, 'f'), 'x');
     await expect((async () => fs.openSync(`${d}/f/`, 'r'))()).rejects.toThrow(expect.objectContaining({ code: 'ENOTDIR' }));
-    expectKernelRefuses(`${d}/f/`);
+    await expectKernelRefuses(`${d}/f/`);
   });
 
-  it('throws for a missing entry followed by a slash', () => {
+  it('throws for a missing entry followed by a slash', async () => {
     const d = makeDir();
-    expectKernelRefuses(`${d}/missing/`);
+    await expectKernelRefuses(`${d}/missing/`);
     expect(fs.existsSync(path.join(d, 'missing'))).toBe(false);
   });
 
@@ -177,15 +177,15 @@ describe('canonicalPath honours a trailing slash like the kernel', () => {
 });
 
 describe.runIf(EMPTY_SYMLINK_SUPPORTED)('canonicalPath with an empty symlink target', () => {
-  it('throws for the link itself', () => {
+  it('throws for the link itself', async () => {
     const d = makeDir();
     fs.symlinkSync('', path.join(d, 'e'));
-    expectKernelRefuses(path.join(d, 'e'));
+    await expectKernelRefuses(path.join(d, 'e'));
   });
 
-  it('throws for a path below the link', () => {
+  it('throws for a path below the link', async () => {
     const d = makeDir();
     fs.symlinkSync('', path.join(d, 'e'));
-    expectKernelRefuses(path.join(d, 'e', 'z'));
+    await expectKernelRefuses(path.join(d, 'e', 'z'));
   });
 });

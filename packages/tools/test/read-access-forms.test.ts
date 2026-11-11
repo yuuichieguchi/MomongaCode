@@ -51,30 +51,30 @@ describe('read access candidate forms and an unresolvable path', () => {
   it('blockedBy checks the requested form of an ELOOP path as a deny', async () => {
     const cwd = loopProject();
     const matcher = await matcherFor(cwd, ['Read(loop/**)']);
-    expect((await (await matcher).blockedBy('loop/x', cwd))?.ruleText).toBe('Read(loop/**)');
-    expect((await (await matcher).blockedBy(path.join(cwd, 'loop', 'x'), cwd))?.ruleText).toBe('Read(loop/**)');
+    expect((await matcher.blockedBy('loop/x', cwd))?.ruleText).toBe('Read(loop/**)');
+    expect((await matcher.blockedBy(path.join(cwd, 'loop', 'x'), cwd))?.ruleText).toBe('Read(loop/**)');
   });
 
   it('blockedBy does not block an ELOOP path whose requested form no deny covers', async () => {
     const cwd = loopProject();
-    expect((await matcherFor(cwd, ['Read(other/**)'])).blockedBy('loop/x', cwd)).toBeUndefined();
+    expect(await (await matcherFor(cwd, ['Read(other/**)'])).blockedBy('loop/x', cwd)).toBeUndefined();
   });
 
   it('writeBlockedBy checks the requested form of an ELOOP path as a deny', async () => {
     const cwd = loopProject();
     const matcher = await matcherFor(cwd, ['Edit(loop/**)', 'Edit(other/**)']);
-    expect((await (await matcher).writeBlockedBy('loop/x', cwd))?.ruleText).toBe('Edit(loop/**)');
-    expect((await matcherFor(cwd, ['Edit(other/**)'])).writeBlockedBy('loop/x', cwd)).toBeUndefined();
+    expect((await matcher.writeBlockedBy('loop/x', cwd))?.ruleText).toBe('Edit(loop/**)');
+    expect(await (await matcherFor(cwd, ['Edit(other/**)'])).writeBlockedBy('loop/x', cwd)).toBeUndefined();
   });
 });
 
 describe('read access candidate forms and a canonicaliser error outside the unresolvable set', () => {
   const injectAt = (target: string, error: NodeJS.ErrnoException): void => {
-    const realLstat = fs.lstatSync;
-    vi.spyOn(fs, 'lstatSync').mockImplementation(((candidate: fs.PathLike, options?: unknown) => {
+    const realLstat = fs.promises.lstat;
+    vi.spyOn(fs.promises, 'lstat').mockImplementation((async (candidate: fs.PathLike, options?: unknown) => {
       if (String(candidate) === target) throw error;
       return realLstat(candidate, options as never);
-    }) as typeof fs.lstatSync);
+    }) as typeof fs.promises.lstat);
   };
 
   it.each(['EMFILE', 'EIO'])('blockedBy rethrows an injected %s unchanged', async (code) => {
@@ -84,7 +84,7 @@ describe('read access candidate forms and a canonicaliser error outside the unre
     fs.writeFileSync(target, 'x');
     const injected = errnoError(code);
     injectAt(target, injected);
-    expect(await thrownBy(async () => (await matcher).blockedBy('plain', cwd))).toBe(injected);
+    expect(await thrownBy(async () => matcher.blockedBy('plain', cwd))).toBe(injected);
   });
 
   it.each(['EMFILE', 'EIO'])('writeBlockedBy rethrows an injected %s unchanged', async (code) => {
@@ -94,6 +94,6 @@ describe('read access candidate forms and a canonicaliser error outside the unre
     fs.writeFileSync(target, 'x');
     const injected = errnoError(code);
     injectAt(target, injected);
-    expect(await thrownBy(async () => (await matcher).writeBlockedBy('plain', cwd))).toBe(injected);
+    expect(await thrownBy(async () => matcher.writeBlockedBy('plain', cwd))).toBe(injected);
   });
 });

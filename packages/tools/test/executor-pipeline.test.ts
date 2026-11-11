@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { EMPTY_PROTECTED_SET, canonicalJson, sha256Hex, ruleEnforcementOf, syncPaths } from '@momonga/foundation';
-import { TEST_SEARCH_PATH, afterMicrotasks, fakePolicyFilesystem, isWritableFor, protectedSetWith, testProbes } from '@momonga/testkit';
+import { TEST_SEARCH_PATH, afterMicrotasks, fakePolicyFilesystem, isWritableFor, protectedSetWith, testProbes, waitFor } from '@momonga/testkit';
 
 import { computeFileRules, decide, suggestAllowRule } from '@momonga/policy';
 
@@ -428,6 +428,7 @@ describe('executor execution', () => {
         },
       }),
     );
+    await waitFor(() => order.length > 0, { description: 'onStarted or execute ran' });
     await afterMicrotasks();
     expect(order).toEqual([`started:c1:${keyFor('run-1', 1, 'c1')}`]);
     release();

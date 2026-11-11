@@ -210,7 +210,7 @@ describe('executor write guard and the protected set (V15)', () => {
     fs.mkdirSync(keychains, { recursive: true });
     const target = path.join(keychains, 'x');
     const runs: string[] = [];
-    const policy = { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [keychains], protectedSet: protectedSetWith([harness.layout.project], [keychains]) };
+    const policy = { ...(await minimalPolicyFor({ layout: harness.layout })), writeDenied: [keychains], protectedSet: protectedSetWith([harness.layout.project], [keychains]) };
     const [outcome] = await harness.executor.runBatch(
       await harness.input(await toolSetOf(pathTool('write', target, runs)), [call('c1', 'PathTool', {}, 'allow_once')], { mode: 'bypassPermissions', sandboxPolicy: await policy }),
     );
@@ -224,7 +224,7 @@ describe('executor write guard and the protected set (V15)', () => {
     fs.symlinkSync(loop, loop);
     const entry = path.join(loop, 'x');
     const runs: string[] = [];
-    const policy = { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [entry], protectedSet: protectedSetWith([harness.layout.project], [entry]) };
+    const policy = { ...(await minimalPolicyFor({ layout: harness.layout })), writeDenied: [entry], protectedSet: protectedSetWith([harness.layout.project], [entry]) };
     const [outcome] = await harness.executor.runBatch(
       await harness.input(await toolSetOf(pathTool('write', path.join(harness.layout.project, 'a.txt'), runs)), [call('c1', 'PathTool', {}, 'allow_once')], { mode: 'acceptEdits', sandboxPolicy: await policy }),
     );

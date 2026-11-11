@@ -82,11 +82,11 @@ describe('transient errno and abort rules of the runtime composition (system tim
   it('a transient errno in the policyFor root check propagates as the same error', async () => {
     const { f, session } = await trustedProject();
     const failure = errnoError('EMFILE');
-    const original = fs.statSync;
-    vi.spyOn(fs, 'statSync').mockImplementation(((target: fs.PathLike, ...rest: unknown[]) => {
+    const original = fs.promises.stat;
+    vi.spyOn(fs.promises, 'stat').mockImplementation((async (target: fs.PathLike, ...rest: unknown[]) => {
       if (typeof target === 'string' && target === f.temp.project) throw failure;
       return (original as (...args: unknown[]) => unknown)(target, ...rest);
-    }) as typeof fs.statSync);
+    }) as typeof fs.promises.stat);
 
     const error = await rejectionOf(f.toolRuntime.port.policyFor(session, { signal: NEVER_CANCELLED, env: Object.freeze({ PATH: '/usr/bin:/bin' }), rules: [], ruleEnforcement: 'exact-paths' }));
 

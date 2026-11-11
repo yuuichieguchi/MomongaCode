@@ -40,17 +40,17 @@ const executable = (file: string): string => {
   return file;
 };
 
-const PATH_METHODS = ['statSync', 'lstatSync', 'openSync', 'readFileSync', 'readdirSync', 'opendirSync', 'readlinkSync', 'accessSync', 'existsSync'] as const;
+const PATH_METHODS = ['stat', 'lstat', 'open', 'readFile', 'readdir', 'opendir', 'readlink', 'access'] as const;
 
 const injectErrno = (code: string, under: string): void => {
   for (const method of PATH_METHODS) {
-    const original = fs[method] as (...args: unknown[]) => unknown;
-    vi.spyOn(fs, method).mockImplementation(((...args: unknown[]) => {
+    const original = fs.promises[method] as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(fs.promises, method).mockImplementation((async (...args: unknown[]) => {
       const target = args[0];
       if (typeof target === 'string' && (target === under || target.startsWith(`${under}/`))) {
         throw Object.assign(new Error(`${code}: injected, ${method} '${target}'`), { code, syscall: method, path: target });
       }
-      return original.apply(fs, args);
+      return original.apply(fs.promises, args);
     }) as never);
   }
 };
@@ -70,94 +70,94 @@ describe('resolveProgram walks the search path of the Bash spawn', () => {
   const resolveProgram = (name: string, cwd: string, searchPath: string | undefined, isWritable: (absolute: string) => boolean = never) =>
     createPolicyFilesystem().resolveProgram(name, cwd, searchPath, isWritable, NEVER_CANCELLED);
 
-  it('returns the system path of the first directory that holds the program for /usr/bin:/bin', () => {
+  it('returns the system path of the first directory that holds the program for /usr/bin:/bin', async () => {
     for (const name of ['ls', 'sed']) {
       const holder = ['/usr/bin', '/bin'].find((directory) => fs.existsSync(path.join(directory, name))) as string;
-      expect(resolveProgram(name, makeDir(), '/usr/bin:/bin')).toEqual({ program: path.join(holder, name) });
+      expect(await resolveProgram(name, makeDir(), '/usr/bin:/bin')).toEqual({ program: path.join(holder, name) });
     }
   });
 
-  it('returns none when the search path is undefined', () => {
-    expect(resolveProgram('ls', makeDir(), undefined)).toEqual({ none: true });
+  it('returns none when the search path is undefined', async () => {
+    expect(await resolveProgram('ls', makeDir(), undefined)).toEqual({ none: true });
   });
 
-  it('returns none for an empty entry before /usr/bin when the cwd holds the program', () => {
+  it('returns none for an empty entry before /usr/bin when the cwd holds the program', async () => {
     const cwd = makeDir();
     executable(path.join(cwd, 'ls'));
-    expect(resolveProgram('ls', cwd, ':/usr/bin:/bin')).toEqual({ none: true });
+    expect(await resolveProgram('ls', cwd, ':/usr/bin:/bin')).toEqual({ none: true });
   });
 
-  it('returns none for a relative entry before /bin', () => {
+  it('returns none for a relative entry before /bin', async () => {
     const cwd = makeDir();
     executable(path.join(cwd, 'bin', 'ls'));
-    expect(resolveProgram('ls', cwd, './bin:/bin')).toEqual({ none: true });
+    expect(await resolveProgram('ls', cwd, './bin:/bin')).toEqual({ none: true });
   });
 
   it.each([
     ['<root>/bin', (root: string) => path.join(root, 'bin')],
     ['an absolute <root>/node_modules/.bin', (root: string) => path.join(root, 'node_modules', '.bin')],
     ['the session tmp dir', (root: string) => path.join(root, 'sessions', 'one')],
-  ])('returns none for a writable entry %s before /usr/bin even when it holds no sed yet', (_label, entryOf) => {
+  ])('returns none for a writable entry %s before /usr/bin even when it holds no sed yet', async (_label, entryOf) => {
     const root = makeDir();
     const entry = entryOf(root);
     fs.mkdirSync(entry, { recursive: true });
     const isWritable = (absolute: string): boolean => absolute === root || absolute.startsWith(`${root}/`);
-    expect(resolveProgram('sed', root, `${entry}:/usr/bin`, isWritable)).toEqual({ none: true });
+    expect(await resolveProgram('sed', root, `${entry}:/usr/bin`, isWritable)).toEqual({ none: true });
   });
 
-  it('admits an entry outside the writable area that holds no sed, such as /opt/homebrew/bin', () => {
+  it('admits an entry outside the writable area that holds no sed, such as /opt/homebrew/bin', async () => {
     const outside = makeDir();
-    expect(resolveProgram('sed', makeDir(), `${outside}:/usr/bin`, never)).toEqual({ program: '/usr/bin/sed' });
+    expect(await resolveProgram('sed', makeDir(), `${outside}:/usr/bin`, never)).toEqual({ program: '/usr/bin/sed' });
   });
 
-  it('returns a non-Apple path for an admissible entry that holds the program', () => {
+  it('returns a non-Apple path for an admissible entry that holds the program', async () => {
     const opt = makeDir();
     const found = executable(path.join(opt, 'bin', 'git'));
-    expect(resolveProgram('git', makeDir(), `${path.join(opt, 'bin')}:/usr/bin`, never)).toEqual({ program: found });
+    expect(await resolveProgram('git', makeDir(), `${path.join(opt, 'bin')}:/usr/bin`, never)).toEqual({ program: found });
   });
 
-  it('resolves a relative entry against the cwd parameter', () => {
+  it('resolves a relative entry against the cwd parameter', async () => {
     const cwd = makeDir();
     const found = executable(path.join(cwd, 'tools', 'mytool'));
-    expect(resolveProgram('mytool', cwd, 'tools:/usr/bin')).toEqual({ program: found });
-    expect(resolveProgram('mytool', makeDir(), 'tools:/usr/bin')).toEqual({ none: true });
+    expect(await resolveProgram('mytool', cwd, 'tools:/usr/bin')).toEqual({ program: found });
+    expect(await resolveProgram('mytool', makeDir(), 'tools:/usr/bin')).toEqual({ none: true });
   });
 
-  it('skips an entry that gives ENOTDIR', () => {
+  it('skips an entry that gives ENOTDIR', async () => {
     const dir = makeDir();
     const file = path.join(dir, 'file');
     fs.writeFileSync(file, '');
-    expect(resolveProgram('ls', dir, `${file}:/bin`)).toEqual({ program: '/bin/ls' });
+    expect(await resolveProgram('ls', dir, `${file}:/bin`)).toEqual({ program: '/bin/ls' });
   });
 
   it('skips an EACCES entry before the holder and rethrows EIO', async () => {
     const dir = makeDir();
     injectErrno('EACCES', path.join(dir, 'denied'));
-    expect(resolveProgram('ls', dir, `${path.join(dir, 'denied')}:/bin`)).toEqual({ program: '/bin/ls' });
+    expect(await resolveProgram('ls', dir, `${path.join(dir, 'denied')}:/bin`)).toEqual({ program: '/bin/ls' });
     vi.restoreAllMocks();
     injectErrno('EIO', path.join(dir, 'broken'));
     const error = await thrownBy(() => resolveProgram('ls', dir, `${path.join(dir, 'broken')}:/bin`)) as NodeJS.ErrnoException;
     expect(error?.code).toBe('EIO');
   });
 
-  it('stops at the holder: an EACCES entry after it changes nothing', () => {
+  it('stops at the holder: an EACCES entry after it changes nothing', async () => {
     const dir = makeDir();
     injectErrno('EACCES', path.join(dir, 'denied'));
-    expect(resolveProgram('ls', dir, `/bin:${path.join(dir, 'denied')}`)).toEqual({ program: '/bin/ls' });
+    expect(await resolveProgram('ls', dir, `/bin:${path.join(dir, 'denied')}`)).toEqual({ program: '/bin/ls' });
   });
 
-  it('skips a non-executable file in an admissible entry and finds the Apple one', () => {
+  it('skips a non-executable file in an admissible entry and finds the Apple one', async () => {
     const outside = makeDir();
     fs.writeFileSync(path.join(outside, 'sed'), 'x', { mode: 0o644 });
-    expect(resolveProgram('sed', makeDir(), `${outside}:/usr/bin`)).toEqual({ program: '/usr/bin/sed' });
+    expect(await resolveProgram('sed', makeDir(), `${outside}:/usr/bin`)).toEqual({ program: '/usr/bin/sed' });
   });
 
-  it('keeps the Apple directories exact: /usr/sbin after a writable entry is not Apple', () => {
+  it('keeps the Apple directories exact: /usr/sbin after a writable entry is not Apple', async () => {
     const root = makeDir();
     fs.mkdirSync(path.join(root, 'bin'));
     const isWritable = (absolute: string): boolean => absolute.startsWith(root);
     const sbinProgram = fs.readdirSync('/usr/sbin').find((name) => fs.statSync(path.join('/usr/sbin', name), { throwIfNoEntry: false })?.isFile() === true) as string;
-    expect(resolveProgram(sbinProgram, root, `${path.join(root, 'bin')}:/usr/sbin`, isWritable)).toEqual({ program: path.join('/usr/sbin', sbinProgram) });
+    expect(await resolveProgram(sbinProgram, root, `${path.join(root, 'bin')}:/usr/sbin`, isWritable)).toEqual({ program: path.join('/usr/sbin', sbinProgram) });
   });
 
   it.each([
@@ -167,11 +167,11 @@ describe('resolveProgram walks the search path of the Bash spawn', () => {
     ['. with cwd /usr/bin', 'sed', () => '.', () => '/usr/bin'],
     ['empty with cwd /usr/bin', 'sed', () => '', () => '/usr/bin'],
     ['control <root>/bin:/usr/bin', 'sed', (root: string) => `${root}/bin:/usr/bin`, (root: string) => root],
-  ])('gives none for %s', (_label, name, searchPathOf, cwdOf) => {
+  ])('gives none for %s', async (_label, name, searchPathOf, cwdOf) => {
     const root = makeDir();
     fs.mkdirSync(path.join(root, 'bin'));
     const isWritable = (absolute: string): boolean => absolute.startsWith(root);
-    expect(resolveProgram(name, cwdOf(root), searchPathOf(root), isWritable)).toEqual({ none: true });
+    expect(await resolveProgram(name, cwdOf(root), searchPathOf(root), isWritable)).toEqual({ none: true });
   });
 });
 
@@ -190,11 +190,11 @@ describe('unreadable entries are typed (V13)', () => {
     const dir = makeDir();
     const link = path.join(dir, 'l');
     fs.symlinkSync('x', link);
-    const original = fs.readlinkSync;
-    vi.spyOn(fs, 'readlinkSync').mockImplementation(((target: fs.PathLike, ...rest: unknown[]) => {
+    const original = fs.promises.readlink;
+    vi.spyOn(fs.promises, 'readlink').mockImplementation((async (target: fs.PathLike, ...rest: unknown[]) => {
       if (target === link) throw Object.assign(new Error('EACCES: injected'), { code: 'EACCES' });
       return (original as (...args: unknown[]) => unknown)(target, ...rest);
-    }) as typeof fs.readlinkSync);
+    }) as typeof fs.promises.readlink);
     expect(await createPolicyFilesystem().readNoFollow(link, NEVER_CANCELLED)).toEqual({ unresolvable: { kind: 'errno', code: 'EACCES' } });
   });
 });
@@ -448,8 +448,8 @@ describe('pointer files and link targets keep the bytes (review item 10)', () =>
     const dir = makeDir();
     const link = path.join(dir, 'link');
     fs.symlinkSync('plain', link);
-    const original = fs.readlinkSync as (...args: unknown[]) => unknown;
-    vi.spyOn(fs, 'readlinkSync').mockImplementation(((target: unknown, options: unknown) =>
+    const original = fs.promises.readlink as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(fs.promises, 'readlink').mockImplementation((async (target: unknown, options: unknown) =>
       target === link && options === 'buffer' ? Buffer.from([0x6c, 0xff]) : original(target, options)) as never);
     expect(await createPolicyFilesystem().readNoFollow(link, NEVER_CANCELLED)).toEqual({ unresolvable: { kind: 'dynamic' } });
   });

@@ -212,9 +212,9 @@ describe('Read with a relative path', () => {
     const read = toolNamed(tools, 'Read');
     const shell = moveShellTo(tools, 'sub');
     const ctx = contextAfterCd(tools, shell);
-    expect(read.title({ file_path: path.join(project(tools), 'sub', 'a.txt') }, ctx)).toBe('Read sub/a.txt');
-    expect(read.title({ file_path: 'sub/a.txt' }, ctx)).toBe('Read sub/a.txt');
-    expect(read.title({ file_path: '../outside/o.txt' }, ctx)).toBe(`Read ${path.join(tools.layout.outside, 'o.txt')}`);
+    expect(await read.title({ file_path: path.join(project(tools), 'sub', 'a.txt') }, ctx)).toBe('Read sub/a.txt');
+    expect(await read.title({ file_path: 'sub/a.txt' }, ctx)).toBe('Read sub/a.txt');
+    expect(await read.title({ file_path: '../outside/o.txt' }, ctx)).toBe(`Read ${path.join(tools.layout.outside, 'o.txt')}`);
     expect(read.locations?.({ file_path: 'sub/a.txt' }, ctx)).toEqual([{ path: path.join(project(tools), 'sub', 'a.txt') }]);
   });
 

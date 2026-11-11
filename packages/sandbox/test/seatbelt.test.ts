@@ -180,33 +180,33 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox (real sandbox-ex
   it('kills the whole process group on abort', async () => {
     const controller = new AbortController();
     const proc = await sh(`sleep 30 & printf '%s\\n' "$!"; sleep 30`, {}, { signal: controller.signal });
-    expect((await proc).pgid).toBe((await proc).pid);
-    const iterator = (await proc).stdout[Symbol.asyncIterator]();
+    expect(proc.pgid).toBe(proc.pid);
+    const iterator = proc.stdout[Symbol.asyncIterator]();
     const first = await iterator.next();
     const grandchild = Number(Buffer.from(first.value ?? new Uint8Array()).toString('utf8').trim());
     expect(Number.isInteger(grandchild) && grandchild > 0).toBe(true);
     expect(isAlive(grandchild)).toBe(true);
 
     controller.abort();
-    const exit = (await proc).exited;
-    expect((await exit).killedBy).toBe('abort');
-    expect(await waitUntilDead([(await proc).pid, grandchild], KILL_GRACE_MS + 1000)).toBe(true);
+    const exit = await proc.exited;
+    expect(exit.killedBy).toBe('abort');
+    expect(await waitUntilDead([proc.pid, grandchild], KILL_GRACE_MS + 1000)).toBe(true);
   });
 
   it('SIGKILLs a group that ignores SIGTERM after killGraceMs', async () => {
     const controller = new AbortController();
     const proc = await sh(`trap '' TERM; printf 'ready\\n'; sleep 30`, {}, { signal: controller.signal });
-    const iterator = (await proc).stdout[Symbol.asyncIterator]();
+    const iterator = proc.stdout[Symbol.asyncIterator]();
     await iterator.next();
     const started = Date.now();
     controller.abort();
-    const exit = (await proc).exited;
+    const exit = await proc.exited;
     const elapsed = Date.now() - started;
-    expect((await exit).killedBy).toBe('grace-kill');
-    expect((await exit).signal).toBe('SIGKILL');
+    expect(exit.killedBy).toBe('grace-kill');
+    expect(exit.signal).toBe('SIGKILL');
     expect(elapsed).toBeGreaterThanOrEqual(KILL_GRACE_MS - 20);
     expect(elapsed).toBeLessThan(KILL_GRACE_MS + 2000);
-    expect(await waitUntilDead([(await proc).pid], 1000)).toBe(true);
+    expect(await waitUntilDead([proc.pid], 1000)).toBe(true);
   });
 
   it('streams stdout and stderr including more than 1 MiB without deadlock', async () => {
@@ -287,11 +287,11 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox (real sandbox-ex
   it('streams stdout before the process exits', async () => {
     const controller = new AbortController();
     const proc = await sh(`printf early; sleep 30`, {}, { signal: controller.signal });
-    const iterator = (await proc).stdout[Symbol.asyncIterator]();
+    const iterator = proc.stdout[Symbol.asyncIterator]();
     const first = await iterator.next();
     expect(Buffer.from(first.value ?? new Uint8Array()).toString('utf8')).toBe('early');
     controller.abort();
-    (await proc).exited;
+    await proc.exited;
     await collect({ [Symbol.asyncIterator]: () => iterator });
   });
 });

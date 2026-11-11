@@ -87,26 +87,24 @@ describe('buildSandboxPolicy session tmp invariants', () => {
 });
 
 describe('buildSandboxPolicy readAllowed validation', () => {
-  it('throws for an entry outside every readDenied entry', () => {
+  it('throws for an entry outside every readDenied entry', async () => {
     const { layout, sessions, tmpDir } = fixture();
-    expect(async () =>
-      await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [layout.outside] }, NEVER_CANCELLED),
-    ).toThrow();
+    await expect((async () =>
+      await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [layout.outside] }, NEVER_CANCELLED))()).rejects.toThrow();
   });
 
-  it('throws for an entry equal to a readDenied entry', () => {
+  it('throws for an entry equal to a readDenied entry', async () => {
     const { layout, sessions, tmpDir } = fixture();
-    expect(async () =>
-      await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [sessions] }, NEVER_CANCELLED),
-    ).toThrow();
+    await expect((async () =>
+      await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [sessions] }, NEVER_CANCELLED))()).rejects.toThrow();
   });
 
-  it('throws for an entry that is an ancestor of a readDenied entry', () => {
+  it('throws for an entry that is an ancestor of a readDenied entry', async () => {
     const { layout, sessions, tmpDir } = fixture();
     const vault = path.join(layout.outside, 'vault');
     const inner = path.join(vault, 'a', 'b');
     fs.mkdirSync(inner, { recursive: true });
-    expect(async () =>
+    await expect((async () =>
       await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES,
         roots: [layout.project],
         home: layout.home,
@@ -114,46 +112,42 @@ describe('buildSandboxPolicy readAllowed validation', () => {
         sessionsTmpRoot: sessions,
         extraReadDenied: [vault, inner],
         readAllowed: [path.join(vault, 'a')],
-      }, NEVER_CANCELLED),
-    ).toThrow();
+      }, NEVER_CANCELLED))()).rejects.toThrow();
   });
 
-  it('throws for an entry inside home/.momonga', () => {
+  it('throws for an entry inside home/.momonga', async () => {
     const { layout, sessions, tmpDir } = fixture();
     const inside = path.join(layout.home, '.momonga', 'projects');
     fs.mkdirSync(inside, { recursive: true });
-    expect(async () =>
-      await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [inside] }, NEVER_CANCELLED),
-    ).toThrow();
+    await expect((async () =>
+      await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [inside] }, NEVER_CANCELLED))()).rejects.toThrow();
   });
 
-  it('throws for an entry inside the platform keychains', () => {
+  it('throws for an entry inside the platform keychains', async () => {
     const { layout, sessions, tmpDir } = fixture();
     const inside = path.join(momongaLayout(layout.home).keychains, 'sub');
     fs.mkdirSync(inside, { recursive: true });
-    expect(async () =>
-      await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [inside] }, NEVER_CANCELLED),
-    ).toThrow();
+    await expect((async () =>
+      await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [inside] }, NEVER_CANCELLED))()).rejects.toThrow();
   });
 
-  it('throws for an entry that reaches home/.momonga through a symlink inside a readDenied entry', () => {
+  it('throws for an entry that reaches home/.momonga through a symlink inside a readDenied entry', async () => {
     const { layout, sessions, tmpDir } = fixture();
     const momonga = path.join(layout.home, '.momonga');
     fs.mkdirSync(momonga, { recursive: true });
     const link = path.join(tmpDir, 'link');
     fs.symlinkSync(momonga, link);
-    expect(async () =>
-      await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [link] }, NEVER_CANCELLED),
-    ).toThrow();
+    await expect((async () =>
+      await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [link] }, NEVER_CANCELLED))()).rejects.toThrow();
   });
 });
 
 describe.runIf(syncPaths.volumeIsCaseInsensitive(os.tmpdir()))('buildSandboxPolicy readAllowed validation on a case-insensitive volume', () => {
-  it('throws for an entry inside Keychains spelled in another case', () => {
+  it('throws for an entry inside Keychains spelled in another case', async () => {
     const { layout, sessions, tmpDir } = fixture();
     const library = path.join(layout.home, 'Library');
     fs.mkdirSync(path.join(library, 'Keychains'), { recursive: true });
-    expect(async () =>
+    await expect((async () =>
       await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES,
         roots: [layout.project],
         home: layout.home,
@@ -161,14 +155,13 @@ describe.runIf(syncPaths.volumeIsCaseInsensitive(os.tmpdir()))('buildSandboxPoli
         sessionsTmpRoot: sessions,
         extraReadDenied: [library],
         readAllowed: [path.join(library, 'KEYCHAINS')],
-      }, NEVER_CANCELLED),
-    ).toThrow();
+      }, NEVER_CANCELLED))()).rejects.toThrow();
   });
 
-  it('throws for an entry equal to home/.momonga in another case', () => {
+  it('throws for an entry equal to home/.momonga in another case', async () => {
     const { layout, sessions, tmpDir } = fixture();
     fs.mkdirSync(path.join(layout.home, '.momonga'), { recursive: true });
-    expect(async () =>
+    await expect((async () =>
       await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES,
         roots: [layout.project],
         home: layout.home,
@@ -176,13 +169,12 @@ describe.runIf(syncPaths.volumeIsCaseInsensitive(os.tmpdir()))('buildSandboxPoli
         sessionsTmpRoot: sessions,
         extraReadDenied: [layout.home],
         readAllowed: [path.join(layout.home, '.MOMONGA')],
-      }, NEVER_CANCELLED),
-    ).toThrow();
+      }, NEVER_CANCELLED))()).rejects.toThrow();
   });
 
-  it('throws for an entry equal to the sessions root in another case', () => {
+  it('throws for an entry equal to the sessions root in another case', async () => {
     const { layout, sessions, tmpDir } = fixture();
-    expect(async () =>
+    await expect((async () =>
       await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES,
         roots: [layout.project],
         home: layout.home,
@@ -190,7 +182,6 @@ describe.runIf(syncPaths.volumeIsCaseInsensitive(os.tmpdir()))('buildSandboxPoli
         sessionsTmpRoot: sessions,
         extraReadDenied: [path.dirname(sessions)],
         readAllowed: [path.join(path.dirname(sessions), path.basename(sessions).toUpperCase())],
-      }, NEVER_CANCELLED),
-    ).toThrow();
+      }, NEVER_CANCELLED))()).rejects.toThrow();
   });
 });

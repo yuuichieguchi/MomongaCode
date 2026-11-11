@@ -53,13 +53,13 @@ const journal = () => createPlaceholderJournal(path.join(base, 'journal'));
 const sandbox = () => createBubblewrapSandbox({ bwrapPath: bwrap, tmpRoot: path.join(base, 'tmp'), killGraceMs: 300, journal: journal(), holders: () => new Set() });
 
 describe('bubblewrap launch (a stand-in bwrap that creates the /dev/null mount points; the real bwrap is exercised in bubblewrap-real.test.ts)', () => {
-  it('refuses to start a command in a workspace whose protected .git is a symlink loop, with a typed error that names it', () => {
+  it('refuses to start a command in a workspace whose protected .git is a symlink loop, with a typed error that names it', async () => {
     const git = path.join(work, '.git');
     fs.symlinkSync('.git', git);
     const looped = { ...policy([]), writeDeniedLiterals: [git] };
     let thrown: unknown;
     try {
-      sandbox().spawn({ argv: ['/bin/sh', '-c', 'echo started'], cwd: work, env: { PATH: '/usr/bin:/bin' } }, looped, new AbortController().signal);
+      await sandbox().spawn({ argv: ['/bin/sh', '-c', 'echo started'], cwd: work, env: { PATH: '/usr/bin:/bin' } }, looped, new AbortController().signal);
     } catch (error) {
       thrown = error;
     }

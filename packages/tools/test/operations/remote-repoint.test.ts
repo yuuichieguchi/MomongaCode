@@ -124,13 +124,13 @@ describe.skipIf(!HAS_REAL_SANDBOX)('repointing the remote when the workspace roo
 
   it('a Write of ~/.gitconfig is held for a person as a protected path', async () => {
     const { home, write } = await setup();
-    expect(write(path.join(home, '.gitconfig'))).toMatchObject({ kind: 'ask', source: 'protected', humanOnly: true });
+    expect(await write(path.join(home, '.gitconfig'))).toMatchObject({ kind: 'ask', source: 'protected', humanOnly: true });
   });
 
   it('the XDG git config is protected the same way', async () => {
     const { home, write, inSandbox } = await setup();
     const file = path.join(home, '.config', 'git', 'config');
-    expect(write(file)).toMatchObject({ kind: 'ask', source: 'protected' });
+    expect(await write(file)).toMatchObject({ kind: 'ask', source: 'protected' });
     await inSandbox(`mkdir -p ${path.dirname(file)} && printf '[user]\\n' > ${file}`);
     expect(fs.existsSync(file)).toBe(false);
   });
@@ -138,7 +138,7 @@ describe.skipIf(!HAS_REAL_SANDBOX)('repointing the remote when the workspace roo
   it('a file named by include.path is protected: a Write is held and the sandbox leaves it unchanged', async () => {
     const { included, write, inSandbox, workspace } = await setup();
     const before = fs.readFileSync(included, 'utf8');
-    expect(write(included)).toMatchObject({ kind: 'ask', source: 'protected', humanOnly: true });
+    expect(await write(included)).toMatchObject({ kind: 'ask', source: 'protected', humanOnly: true });
     await inSandbox(`printf '[url "file:///elsewhere/other.git"]\\n\\tinsteadOf = file://${workspace.base}/origin.git\\n' >> ${included}`);
     expect(fs.readFileSync(included, 'utf8')).toBe(before);
   });

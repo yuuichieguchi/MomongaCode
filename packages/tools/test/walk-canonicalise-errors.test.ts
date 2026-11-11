@@ -16,11 +16,11 @@ describe('walker canonicalisation of a symlinked file (OP-8 debt: node:fs spy un
     const link = path.join(layout.project, 'link.txt');
     fs.symlinkSync(path.join(layout.project, 'target.txt'), link);
     const emfile = Object.assign(new Error('EMFILE: injected'), { code: 'EMFILE' });
-    const original = fs.lstatSync;
-    vi.spyOn(fs, 'lstatSync').mockImplementation(((target: fs.PathLike, ...rest: unknown[]) => {
+    const original = fs.promises.lstat;
+    vi.spyOn(fs.promises, 'lstat').mockImplementation((async (target: fs.PathLike, ...rest: unknown[]) => {
       if (target === link) throw emfile;
       return (original as (...args: unknown[]) => unknown)(target, ...rest);
-    }) as typeof fs.lstatSync);
+    }) as typeof fs.promises.lstat);
     const walk = async (): Promise<void> => {
       for await (const _entry of walkFiles({
         root: layout.project,

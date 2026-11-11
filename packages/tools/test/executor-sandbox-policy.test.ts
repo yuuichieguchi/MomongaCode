@@ -33,7 +33,7 @@ const execTool = (runs: string[], sideEffect: SideEffect = 'exec') =>
     },
   });
 
-const deniedPolicy = (harness: Harness, ...readDenied: string[]) => ({ ...minimalPolicyFor({ layout: harness.layout }), readDenied });
+const deniedPolicy = async (harness: Harness, ...readDenied: string[]) => ({ ...(await minimalPolicyFor({ layout: harness.layout })), readDenied });
 
 describe('executor: readDenied path subjects', () => {
   for (const mode of MODES) {

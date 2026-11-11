@@ -104,9 +104,9 @@ describe('the life of a placeholder (stand-in bwrap)', () => {
       expect(real().records()).toEqual([]);
     });
 
-    it('fails to clean up as well: every cleanup is tried, every failure is reported with the original one', () => {
+    it('fails to clean up as well: every cleanup is tried, every failure is reported with the original one', async () => {
       try {
-        start(failingJournal(real(), { method: 'complete', nth: 2, persistent: true }), 'true');
+        await start(failingJournal(real(), { method: 'complete', nth: 2, persistent: true }), 'true');
         expect.unreachable('the spawn should have failed');
       } catch (error) {
         expect(error).toBeInstanceOf(AggregateError);

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { UNMEASURED_CAPABILITY, createMarker, createProcessInspector, hostInspectorPorts, recordMarkerGroup } from '@momonga/foundation';
 import { createUnsandboxed } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testPaths } from '@momonga/testkit';
 import { createMarkerSettle } from '@momonga/tools';
 import type { ToolContext } from '@momonga/tools';
 import { bashTool } from '../../src/builtins/bash.ts';
@@ -52,6 +52,7 @@ describe.runIf(process.platform === 'darwin' || process.platform === 'linux')('B
       deadlineAt: Number.MAX_SAFE_INTEGER,
       clock: makeClock(),
       session: { cwd: layout.project },
+      paths: testPaths(),
       sandbox: createUnsandboxed({ killGraceMs: 300 }),
       sandboxPolicy: {},
       processMarker: marker,

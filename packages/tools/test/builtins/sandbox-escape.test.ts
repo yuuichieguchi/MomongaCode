@@ -98,7 +98,7 @@ describe('always-denied writes for the builtin Write', () => {
   it('cwd / cannot Write home/.momonga/x', async () => {
     const fx = await escapeFixture(false);
     const target = path.join(fx.momonga, 'x');
-    const result = resultOf(await fx.tools.run('Write', { file_path: target, content: 'x' }, { ...fx.extraFor(['/'], '/'), mode: 'bypassPermissions' }, 'allow_once'));
+    const result = resultOf(await fx.tools.run('Write', { file_path: target, content: 'x' }, { ...(await fx.extraFor(['/'], '/')), mode: 'bypassPermissions' }, 'allow_once'));
     expect(result.status).toBe('failed');
     expect(result.output).toMatch(/^Permission denied: /);
     expect(fs.existsSync(target)).toBe(false);
@@ -107,7 +107,7 @@ describe('always-denied writes for the builtin Write', () => {
   it('cwd home cannot Write home/Library/Keychains/x', async () => {
     const fx = await escapeFixture(false);
     const target = path.join(fx.keychains, 'x');
-    const result = resultOf(await fx.tools.run('Write', { file_path: target, content: 'x' }, { ...fx.extraFor([fx.home], fx.home), mode: 'bypassPermissions' }, 'allow_once'));
+    const result = resultOf(await fx.tools.run('Write', { file_path: target, content: 'x' }, { ...(await fx.extraFor([fx.home], fx.home)), mode: 'bypassPermissions' }, 'allow_once'));
     expect(result.status).toBe('failed');
     expect(result.output).toMatch(/^Permission denied: /);
     expect(fs.existsSync(target)).toBe(false);
@@ -116,7 +116,7 @@ describe('always-denied writes for the builtin Write', () => {
   it("cwd home cannot Write another session's tmp dir", async () => {
     const fx = await escapeFixture(false);
     const target = path.join(fx.other, 'x');
-    const result = resultOf(await fx.tools.run('Write', { file_path: target, content: 'x' }, { ...fx.extraFor([fx.home], fx.home), ...ACCEPT }, 'allow_once'));
+    const result = resultOf(await fx.tools.run('Write', { file_path: target, content: 'x' }, { ...(await fx.extraFor([fx.home], fx.home)), ...ACCEPT }, 'allow_once'));
     expect(result.status).toBe('failed');
     expect(result.output).toMatch(/^Permission denied: /);
     expect(fs.existsSync(target)).toBe(false);
@@ -126,7 +126,7 @@ describe('always-denied writes for the builtin Write', () => {
     const fx = await escapeFixture(false);
     const project = fx.tools.layout.project;
     const target = path.join(project, 'new.txt');
-    const result = resultOf(await fx.tools.run('Write', { file_path: target, content: 'hello' }, { ...fx.extraFor([project], project), ...ACCEPT }));
+    const result = resultOf(await fx.tools.run('Write', { file_path: target, content: 'hello' }, { ...(await fx.extraFor([project], project)), ...ACCEPT }));
     expect(result.status).toBe('completed');
     expect(fs.readFileSync(target, 'utf8')).toBe('hello');
   });

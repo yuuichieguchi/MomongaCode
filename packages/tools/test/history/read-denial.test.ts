@@ -31,21 +31,21 @@ describe('read denial follows the enforcement of the sandbox that runs the sessi
 describe('read denial of a recorded path', () => {
   it('denies the file a rule names and what lies below a denied directory', async () => {
     const { project, denied } = await setup('./secrets/**');
-    expect(denied(path.join(project, 'secrets', 'key.txt'))).toBe(true);
-    expect(denied(path.join(project, 'open', 'a.txt'))).toBe(false);
+    expect(await denied(path.join(project, 'secrets', 'key.txt'))).toBe(true);
+    expect(await denied(path.join(project, 'open', 'a.txt'))).toBe(false);
   });
 
   it('denies a recorded directory that contains a denied target, as a search of that directory read it', async () => {
     const { project, denied } = await setup('./secrets/key.txt');
-    expect(denied(path.join(project, 'secrets'))).toBe(true);
-    expect(denied(project)).toBe(true);
-    expect(denied(path.join(project, 'open'))).toBe(false);
+    expect(await denied(path.join(project, 'secrets'))).toBe(true);
+    expect(await denied(project)).toBe(true);
+    expect(await denied(path.join(project, 'open'))).toBe(false);
   });
 
   it('resolves a relative recorded path against the project it was recorded in', async () => {
     const { denied } = await setup('./secrets/key.txt');
-    expect(denied('secrets/key.txt')).toBe(true);
-    expect(denied('.')).toBe(true);
-    expect(denied('open/a.txt')).toBe(false);
+    expect(await denied('secrets/key.txt')).toBe(true);
+    expect(await denied('.')).toBe(true);
+    expect(await denied('open/a.txt')).toBe(false);
   });
 });

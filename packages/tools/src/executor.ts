@@ -382,6 +382,15 @@ const accessOf = async (facts: AccessFacts): Promise<BatchAccess> => {
   return { ...(await createReadAccessMatcher(facts.sandboxPolicy, paths)), writeDeniedPath: await createWriteGuard(facts, paths), isWritable };
 };
 
+const unlessCancelled = async <T, C>(signal: AbortSignal, action: () => Promise<T>, cancelled: C): Promise<T | C> => {
+  try {
+    return await action();
+  } catch (error) {
+    if (signal.aborted && error === signal.reason) return cancelled;
+    throw error;
+  }
+};
+
 const USER_CALL_ID = 'user';
 const USER_MODE: PermissionMode = 'bypassPermissions';
 const USER_TOOLS: Readonly<Record<UserSubject['tool'], PolicyTool>> = {
@@ -856,7 +865,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     return validation.ok ? { input: validation.value } : { failure: rejectionOf(batch, tool, validation) };
   };
 
-  const admit = async (call: ToolCall, batch: BatchInput, access: BatchAccess | undefined, stage: GateStage = 'enforce', held: readonly HeldFootprint[] = []): Promise<Admission> => {
+  const admit = (call: ToolCall, batch: BatchInput, access: BatchAccess | undefined, stage: GateStage = 'enforce', held: readonly HeldFootprint[] = []): Promise<Admission> =>
+    unlessCancelled(batch.signal, () => admitCall(call, batch, access, stage, held), { kind: 'outcome', outcome: failedOutcome(call.callId, `${call.name} was cancelled`) });
+
+  const admitCall = async (call: ToolCall, batch: BatchInput, access: BatchAccess | undefined, stage: GateStage, held: readonly HeldFootprint[]): Promise<Admission> => {
     const outcome = (value: CallOutcome): Admission => ({ kind: 'outcome', outcome: value });
     if (batch.signal.aborted) return outcome(failedOutcome(call.callId, `${call.name} was cancelled`));
     if (haltedBatches.has(batch)) return outcome(failedOutcome(call.callId, `${call.name} was not run: a hook stopped the run`));
@@ -1589,7 +1601,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     if (given.sandboxPolicy.fileRules.fingerprint !== expected) {
       throw new SandboxPolicyError('file_rules_stale', 'the sandbox policy was built from different permission rules, roots or session tmp dir than this batch');
     }
-    return { batch: given, access: await accessOf(given) };
+    return { batch: given, access: await unlessCancelled(given.signal, () => accessOf(given), undefined) };
   };
 
   const userRefusal: UserPolicy['userRefusal'] = async (subject, facts) => {
