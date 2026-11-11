@@ -1,12 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { REJECTED_AGAIN_OUTPUT } from '../../src/worker/tool-step.ts';
 import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 
 const writeOf = (env: Env, callId: string, content: string) => callsStep([{ callId, name: 'Write', args: { file_path: path.join(env.project, 'out.txt'), content } }]);
+
+vi.setConfig({ testTimeout: SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS, hookTimeout: SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS });
 
 describe('a call a person rejected is not asked again unchanged in the same run', () => {
   it('settles an identical repeat as rejected, without a second request for approval, and the run goes on', async () => {
