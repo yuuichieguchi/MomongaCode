@@ -4589,6 +4589,18 @@
       "budgetCpuSeconds": 11
     },
     {
+      "config": "LeftoverCleanup.twoStarters",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 2064736,
+      "measuredSeconds": 2077.87,
+      "measuredCpuSeconds": 1939.18,
+      "budgetCpuSeconds": 3882,
+      "measuredNote": "measured on a loaded machine (1-minute load 20 to 43 during the run); to be re-measured on a quiet machine (1-minute load below 15)"
+    },
+    {
       "config": "SettingsSwap",
       "role": "check",
       "expect": "holds",
