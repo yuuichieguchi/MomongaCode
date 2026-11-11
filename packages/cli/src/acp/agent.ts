@@ -312,7 +312,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
     const event = frame.data;
     if (isOpaqueEvent(event)) {
       if (!session.mapper.opaqueTypes.has(event.type)) deps.report(`session ${session.id}: events of type ${event.type} are not known to this client and are not shown`);
-      mapRunEvent(event, 'live', session.mapper, clientFeatures());
+      for (const effect of mapRunEvent(event, 'live', session.mapper, clientFeatures())) dispatch(session, effect);
       active();
       return;
     }
