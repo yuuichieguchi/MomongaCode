@@ -91,11 +91,11 @@ describe('trust.decisionAsked', () => {
     expect(await store.trust.decisionAsked(project, NEVER_CANCELLED)).toEqual({ decision: null });
   });
 
-  it('returns null for a missing path even under a trusted ancestor', async () => {
+  it('gives a missing path the decision of its nearest existing ancestor', async () => {
     const { root, store } = makeTrustTree();
     const project = mkdir(path.join(root, 'work', 'project'));
     await store.trust.setAsked(project, 'trusted', NEVER_CANCELLED);
-    expect(await store.trust.decisionAsked(path.join(project, 'missing'), NEVER_CANCELLED)).toEqual({ decision: null });
+    expect(await store.trust.decisionAsked(path.join(project, 'missing'), NEVER_CANCELLED)).toEqual({ decision: 'trusted', inheritedFrom: project });
   });
 
   it('applies a decision on home only to home itself', async () => {

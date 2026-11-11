@@ -44,6 +44,7 @@ export type StoreOptions = {
   home?: string;
   generation?: number;
   unaskedCommands?: RuntimeStoreOptions['unaskedCommands'];
+  fileSystem?: RuntimeStoreOptions['fileSystem'];
 };
 
 const unexercised = (): Promise<never> => Promise.reject(new JournalThreadError('this store test double answers no journal facts'));
@@ -96,7 +97,7 @@ export const hookPreparer = (hook: TerminalContribution, dbPath: string): Contri
 });
 
 export const openStoreAt =(dbPath: string, clock: FakeClock, options: StoreOptions = {}): RuntimeStore => {
-  const store = openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom,
+  const store = openRuntimeStore({ fileSystem: options.fileSystem ?? nodeFileSystem, random: systemRandom,
     unaskedCommands: options.unaskedCommands ?? UNASKED_COMMANDS,
     path: dbPath,
     home: options.home ?? path.dirname(dbPath),

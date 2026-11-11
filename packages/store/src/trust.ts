@@ -8,6 +8,8 @@ import type { StoredTrustDecision, TrustAnswer, TrustDecision, TrustStore } from
 
 const DECISIONS = ['trusted', 'untrusted'] as const;
 
+const isNotFound = (error: unknown): boolean => typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
+
 export const createTrustStore = (db: DatabaseSync, clock: Clock, home: string, context: DecodeContext, fileSystem: PathFileSystem): TrustStore => {
   const select = db.prepare('SELECT * FROM trust WHERE path = :path');
   const upsert = db.prepare(
@@ -20,13 +22,19 @@ export const createTrustStore = (db: DatabaseSync, clock: Clock, home: string, c
     if (row === undefined) return undefined;
     return storedOneOf(context, 'trust', real, 'decision', DECISIONS, readerFor('trust', real, row).string('decision'));
   };
-  function* deciding(target: string): PathAsking<TrustAnswer> {
-    let start: string;
-    try {
-      start = yield* askedPaths.realPath(target);
-    } catch {
-      return { decision: null };
+  function* resolvedThroughExistingPart(target: string): PathAsking<string> {
+    const missing: string[] = [];
+    for (let current = path.resolve(target); ; current = path.dirname(current)) {
+      try {
+        return path.join(yield* askedPaths.realPath(current), ...missing);
+      } catch (error) {
+        if (!isNotFound(error) || path.dirname(current) === current) throw error;
+        missing.unshift(path.basename(current));
+      }
     }
+  }
+  function* deciding(target: string): PathAsking<TrustAnswer> {
+    const start = yield* resolvedThroughExistingPart(target);
     for (let current = start; ; current = path.dirname(current)) {
       const decision = decisionAt(current);
       const exactOnly = yield* askedPaths.comparableContains(current, home);
@@ -50,7 +58,10 @@ export const createTrustStore = (db: DatabaseSync, clock: Clock, home: string, c
       const present = await settledOrAborted(
         fileSystem.access(target, 'exists').then(
           () => true,
-          () => false,
+          (error: unknown) => {
+            if (isNotFound(error)) return false;
+            throw error;
+          },
         ),
         signal,
       );
