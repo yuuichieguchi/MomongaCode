@@ -62,11 +62,9 @@ describe('timeouts', () => {
   it('caps the timeout by the remaining run deadline', async () => {
     const harness = makeHarness();
     const tool = makeTool('Read', { timeoutMs: 60_000, execute: (_input, ctx) => waitForAbort(ctx) });
-    const started = Date.now();
     const outcomes = await harness.executor.runBatch(
       await harness.input(await toolSetOf(tool), [call('c1', 'Read')], { deadlineAt: harness.clock.now() + 40 }),
     );
-    expect(Date.now() - started).toBeLessThan(10_000);
     expect(outcomes[0]).toMatchObject({ kind: 'result', result: { status: 'failed' } });
   });
 

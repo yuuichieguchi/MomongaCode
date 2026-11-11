@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import { MAX_GLOB_MATCHES, computeFileRules, createGlobDeadline, decide, prepareGlobs, settleGlobs, askedBy } from '@momonga/policy';
 import type { DecideInput, GlobDeadline } from '@momonga/policy';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED, afterMicrotasks } from '@momonga/testkit';
 import { createPolicyFilesystem } from '@momonga/tools';
 import type { ChildPorts, ChildSpawnOptions, PortChild } from '@momonga/tools';
 import { makeRealWorkspace } from './real-workspace.ts';
@@ -317,7 +317,7 @@ describe('descriptor exhaustion and oversized words never become an uncaught exc
       await budget.asked;
       process.nextTick(() => child.emit('error', failure));
       await expect(pending).rejects.toBe(failure);
-      await new Promise((resolve) => setImmediate(resolve));
+      await afterMicrotasks();
       expect(uncaught).toEqual([]);
       expect(timers[0]?.cleared).toBe(true);
       expect(child.signals).toEqual(['SIGKILL']);

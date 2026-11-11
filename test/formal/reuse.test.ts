@@ -9,6 +9,7 @@ import { cfgFor, holdsEntry, tinySpec, writeFile } from './fixtures.ts';
 import type { ManifestEntry } from './manifest.ts';
 import { canonicalJson, closureOf, createJavaIdentityReader, createResultStore, keyOf, keyPartsOf, refusalOf, reuseModeOf, sha256Hex } from './reuse.ts';
 import type { JavaIdentity, KeyParts, ResultRecord, StoreOps } from './reuse.ts';
+import { pollUntil } from '@momonga/testkit';
 
 const HARNESS_FILES = ['scripts/tlc.sh', 'test/formal/runner.ts', 'test/formal/verdict.ts', 'test/formal/manifest-reader.ts', 'test/formal/reuse.ts', 'test/formal/check-entry.ts', 'test/formal/tier.ts'] as const;
 
@@ -66,9 +67,7 @@ const FOUR_PROPERTIES: readonly (readonly [string, string])[] = [
 
 const READER_LIMIT_MS = 30000;
 
-const waitForFile = async (file: string): Promise<void> => {
-  while (!fs.existsSync(file)) await new Promise((resolve) => setTimeout(resolve, 20));
-};
+const waitForFile = (file: string): Promise<void> => pollUntil(() => fs.existsSync(file), { description: `the file ${file}`, boundMs: READER_LIMIT_MS });
 
 const linesOf = (file: string): string[] => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter((line) => line.length > 0) : []);
 
@@ -420,7 +419,7 @@ describe('the Java identity reader', () => {
     (armed[0] as { fire: () => void }).fire();
     expect(await first).toBeUndefined();
     const pgid = Number(fs.readFileSync(pidFile, 'utf8').trim());
-    while (await groupAlive(pgid)) await new Promise((resolve) => setTimeout(resolve, 20));
+    await pollUntil(async () => !(await groupAlive(pgid)), { description: `the end of the process group ${pgid}`, boundMs: READER_LIMIT_MS });
     expect(await read(300)).toBeUndefined();
     expect(linesOf(counter)).toEqual(['start']);
   });

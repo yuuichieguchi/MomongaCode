@@ -3,7 +3,7 @@ import path from 'node:path';
 import { spawn } from '@momonga/testkit/child-process';
 import type { ChildProcess } from '@momonga/testkit/child-process';
 import { isProcessAlive } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, pollUntil } from '@momonga/testkit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { repoRoot } from './bundle.ts';
 import { HAS_POSIX_SHELL } from './support/host.ts';
@@ -81,12 +81,15 @@ const lockEntries = (): string[] => (fs.existsSync(lockDir()) ? fs.readdirSync(l
 
 const eventLines = (): string[] => fs.readFileSync(events, 'utf8').split('\n').filter((line) => line !== '');
 
-const until = async (condition: () => boolean, run?: Started): Promise<void> => {
-  while (!condition()) {
-    if (run !== undefined && (run.child.exitCode !== null || run.child.signalCode !== null)) throw new Error(`the wrapper ended before the condition: ${run.stderr()}`);
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-};
+const until = (condition: () => boolean, run?: Started): Promise<void> =>
+  pollUntil(
+    () => {
+      if (condition()) return true;
+      if (run !== undefined && (run.child.exitCode !== null || run.child.signalCode !== null)) throw new Error(`the wrapper ended before the condition: ${run.stderr()}`);
+      return false;
+    },
+    { description: 'the condition of the run lock case', boundMs: REAL_PROCESS_TEST_TIMEOUT_MS },
+  );
 
 const holdHeavy = async (name = 'H1'): Promise<{ run: Started; release: string }> => {
   const release = releaseFileOf(name);

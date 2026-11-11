@@ -14,7 +14,7 @@ import { RUNS_MACOS_ARM64_ARTIFACTS } from './support/host.ts';
 import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { productTestEnv, testKernelLock } from '@momonga/testkit';
-import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
+import { BUSY_WAIT_LIMIT_MS, systemTiming } from '@momonga/foundation';
 
 const PING_FIXTURE = `${repoRoot}test/fixtures/sea/journal-thread-ping.ts`;
 const NO_NODE_ENV = (home: string): NodeJS.ProcessEnv => (productTestEnv({ PATH: '/usr/bin:/bin', HOME: home }));
@@ -32,12 +32,12 @@ const freshDatabase = (root: string): { databasePath: string; dev: number; ino: 
 
 const nextMessage = (port: MessagePort, worker: Worker): Promise<Record<string, unknown>> =>
   new Promise((resolve, reject) => {
-    const silence = setTimeout(() => {
+    const silence = systemTiming.setTimeout(() => {
       stopListening();
       reject(new Error(`the journal thread posted nothing within its silence limit of ${JOURNAL_THREAD_SILENCE_LIMIT_MS} ms`));
     }, JOURNAL_THREAD_SILENCE_LIMIT_MS);
     const stopListening = (): void => {
-      clearTimeout(silence);
+      systemTiming.clearTimeout(silence);
       port.off('message', onMessage);
       worker.off('error', onError);
       worker.off('exit', onExit);
