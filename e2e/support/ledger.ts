@@ -1,7 +1,7 @@
 import { execFile } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ProbeFailedError, defaultProcessInspector, findHolders, generationLayout, isProcessAlive, judgeProcessIdentity, listGenerationNumbers, rotatedLogPath, valueOrThrow } from '@momonga/foundation';
+import { ProbeFailedError, defaultProcessInspector, findHolders, generationLayout, generationOfDirectoryName, isProcessAlive, judgeProcessIdentity, listGenerationNumbers, rotatedLogPath, scopeToGeneration, valueOrThrow } from '@momonga/foundation';
 import type { MomongaPaths, ProbeResult, StartTime } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { killGroupsForCleanup } from '@momonga/testkit';
@@ -47,7 +47,6 @@ export type CreateProcessLedgerOptions = { pidsFile: string; ports?: Partial<Led
 
 const LEDGER_SOURCES: ReadonlySet<string> = new Set<LedgerSource>(['supervisor', 'health', 'supervisor-log', 'db', 'mcp-record', 'fixture', 'marker-holder']);
 const SPAWN_LOG_MESSAGES: ReadonlySet<string> = new Set(['child.spawn', 'child.ready']);
-const markerDirectoriesOf = (paths: MomongaPaths): string[] => [paths.markers.tools, paths.markers.mcp, paths.markers.daemons, path.join(paths.markers.targets, 'fm')];
 const RECORD_TYPES_WITH_PID: ReadonlySet<string> = new Set(['ready', 'grandchild']);
 const PS_PATH = '/bin/ps';
 const PIDS_FIELD_SEPARATOR = '\t';
@@ -74,6 +73,14 @@ const listIfPresent = (directory: string): string[] => {
     throw error;
   }
 };
+
+const markerDirectoriesOf = (paths: MomongaPaths): string[] =>
+  listIfPresent(paths.markers.root).flatMap((name) => {
+    const generation = generationOfDirectoryName(name);
+    if (generation === undefined) return [];
+    const { markers } = scopeToGeneration(paths, generation);
+    return [markers.tools, markers.mcp, markers.daemons, path.join(markers.targets, 'fm')];
+  });
 
 export const processGroupOf = (pid: number): Promise<number | undefined> =>
   new Promise((resolve, reject) => {

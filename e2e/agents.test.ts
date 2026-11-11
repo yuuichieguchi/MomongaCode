@@ -7,7 +7,7 @@ import { skipCase, titleOf } from './support/cases.ts';
 import { runCli, startCli } from './support/cli.ts';
 import { prepareProduct } from './support/product.ts';
 import { readDb } from './support/db.ts';
-import { createE2eHome } from './support/home.ts';
+import { createE2eHome, markersOf } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { TOOL_GROUPS_SQL } from './support/ledger.ts';
 import { groupAlive } from './support/process.ts';
@@ -301,7 +301,7 @@ describe('agents: background bash', () => {
       expect(outputs[1]).toContain('ready');
       expect(jobRow(home, jobId)).toMatchObject({ status: 'exited', exit_code: 0 });
       expect(groupAlive(pgid as number)).toBe(false);
-      expect(fs.readdirSync(home.paths.markers.tools)).toEqual([]);
+      expect(fs.readdirSync(markersOf(home).tools)).toEqual([]);
 
       const listed = (await rawGet(home, `/v1/sessions/${session.id}/jobs`)).json['jobs'] as Json[];
       expect(listed).toMatchObject([{ id: jobId, status: 'exited', exitCode: 0, command: 'echo started; sleep 2; echo ready' }]);
@@ -339,7 +339,7 @@ describe('agents: background bash', () => {
       const stopped = death.signal === null ? 'it was stopped' : `it was stopped (${death.signal})`;
       expect(framesOfType(frames, 'tool.completed').map((frame) => String(frame.data['output'])).at(-1)).toBe(`Job ${jobId}: ${stopped}.`);
       expect(readDb(home.paths.databases.runtime, TOOL_GROUPS_SQL).length).toBeGreaterThan(0);
-      expect(fs.readdirSync(home.paths.markers.tools)).toEqual([]);
+      expect(fs.readdirSync(markersOf(home).tools)).toEqual([]);
       await shutdownBarrier(stack);
     } finally {
       await runtime.close();
@@ -382,7 +382,7 @@ describe('agents: background bash', () => {
       const outputs = framesOfType(frames, 'tool.completed').map((frame) => String(frame.data['output']));
       expect(outputs.at(-1)).toContain(`Job ${jobId}: the runtime stopped while it ran, so its result is unknown.`);
       expect(chatCompletions(stack.fake)).toHaveLength(3);
-      expect(fs.readdirSync(home.paths.markers.tools)).toEqual([]);
+      expect(fs.readdirSync(markersOf(home).tools)).toEqual([]);
       const listed = (await rawGet(home, `/v1/sessions/${session.id}/jobs`)).json['jobs'] as Json[];
       expect(listed).toMatchObject([{ id: jobId, status: 'unknown' }]);
       expect(childOf(await stack.client.health(), 'runtime').restarts).toBe(1);

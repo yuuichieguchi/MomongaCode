@@ -303,7 +303,7 @@ describe('cli: momonga -p', () => {
 
   it(titleOf('cli-older-daemon-active-run'), { timeout: NEWER_CLIENT_RUN_BOUND_MS + E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
-    const stack = await startStack({ home, script: [textReply('held run'), textReply('another run')], version: '1.0.0' });
+    const stack = await startStack({ home, script: [textReply('another run'), textReply('held run')], version: '1.0.0' });
     const hold = stack.fake.hold();
     const runtime = createRuntimeClient(home);
     const session = await runtime.createSession();
@@ -386,7 +386,15 @@ describe('cli: momonga -p', () => {
     expect(version.code).toBe(0);
     expect(version.stdout).toBe(`${cliPackage.version}\n`);
 
-    const status = await runCli(home, ['daemon', 'status'], { env: { HOME: longHome } });
+    const uncreatable = await runCli(home, ['daemon', 'status'], { env: { HOME: longHome } });
+    expect(uncreatable.code).toBe(1);
+    expect(uncreatable.stdout).toBe('');
+    expect(uncreatable.stderr).toMatch(new RegExp(`^momonga: The directory ${longHome}\\S* could not be created: `));
+    expect(uncreatable.stderr).not.toContain('    at ');
+
+    const creatableLongHome = path.join(home.root, 'h'.repeat(200));
+    fs.mkdirSync(creatableLongHome, { mode: 0o700 });
+    const status = await runCli(home, ['daemon', 'status'], { env: { HOME: creatableLongHome } });
     expect(status.code).toBe(1);
     expect(status.stdout).toBe('');
     expect(status.stderr).toMatch(/^momonga: Unix socket path .* must be shorter than/);

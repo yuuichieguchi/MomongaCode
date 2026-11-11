@@ -3,7 +3,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { groupAlive, momongaPaths } from '@momonga/foundation';
+import { FIRST_GENERATION, groupAlive, momongaPaths, scopeToGeneration } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { killGroupsForCleanup, registerCleanup, spawnTracked, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
@@ -225,8 +225,8 @@ describe('process ledger: sources', () => {
     fs.writeFileSync(readyFile, '803');
     fs.mkdirSync(firstGeneration(paths).dir, { recursive: true, mode: 0o700 });
     fs.writeFileSync(firstGeneration(paths).locks.supervisor, '301');
-    fs.mkdirSync(paths.markers.tools, { recursive: true, mode: 0o700 });
-    const marker = path.join(paths.markers.tools, 'tool-marker');
+    fs.mkdirSync(toolMarkersOf(paths), { recursive: true, mode: 0o700 });
+    const marker = path.join(toolMarkersOf(paths), 'tool-marker');
     fs.writeFileSync(marker, '');
     const world = fakeWorld({ 301: 1n, 401: 1n, 601: 1n, 602: 1n, 701: 1n, 801: 1n, 802: 1n, 803: 1n, 901: 1n, 990: 1n });
     const ports: LedgerPorts = {
@@ -259,6 +259,8 @@ describe('process ledger: sources', () => {
   });
 });
 
+const toolMarkersOf = (paths: ReturnType<typeof momongaPaths>): string => scopeToGeneration(paths, FIRST_GENERATION).markers.tools;
+
 const persistedIn = (pidsFile: string) => (fs.existsSync(pidsFile) ? parsePidsFile(fs.readFileSync(pidsFile, 'utf8')) : []);
 
 type SourceFixture = { paths: ReturnType<typeof momongaPaths>; recordFile: string; marker: string };
@@ -267,8 +269,8 @@ const sourceFixture = (context: CleanupContext): SourceFixture => {
   const home = withTempDir(context, { asHome: true });
   const paths = momongaPaths(home);
   fs.mkdirSync(path.dirname(paths.logFiles.supervisor), { recursive: true, mode: 0o700 });
-  fs.mkdirSync(paths.markers.tools, { recursive: true, mode: 0o700 });
-  const marker = path.join(paths.markers.tools, 'tool-marker');
+  fs.mkdirSync(toolMarkersOf(paths), { recursive: true, mode: 0o700 });
+  const marker = path.join(toolMarkersOf(paths), 'tool-marker');
   fs.writeFileSync(marker, '');
   return { paths, recordFile: path.join(home, 'mcp.rec'), marker };
 };

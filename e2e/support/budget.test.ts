@@ -218,13 +218,13 @@ describe('acceptance (a) support', () => {
     { label: 'native, full tools', spec: { name: 'fidelity-native', toolCalling: 'native', deny: [], grid: [], probeFillers: 0 }, shape: { tool: 'Read', lineChars: 90 }, fillers: 6 },
     {
       label: 'native, Read, Grep and ReadOutput',
-      spec: { name: 'fidelity-lean', toolCalling: 'native', deny: ['Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob', 'HistorySearch', 'HistoryRead'], grid: [], probeFillers: 0 },
+      spec: { name: 'fidelity-lean', toolCalling: 'native', deny: ['Edit', 'Bash', 'UpdatePlan', 'Glob', 'HistorySearch', 'HistoryRead'], grid: [], probeFillers: 0 },
       shape: { tool: 'Read', lineChars: 90 },
       fillers: 12,
     },
     {
       label: 'constrained, Grep and ReadOutput',
-      spec: { name: 'fidelity-constrained', toolCalling: 'constrained', deny: ['Read', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob'], grid: [], probeFillers: 0 },
+      spec: { name: 'fidelity-constrained', toolCalling: 'constrained', deny: ['Read', 'Edit', 'Bash', 'UpdatePlan', 'Glob'], grid: [], probeFillers: 0 },
       shape: { tool: 'ReadOutput', limit: 1 },
       fillers: 10,
     },
@@ -276,7 +276,7 @@ describe('acceptance (a) support', () => {
     const modelPosts = chatCompletions(stack.fake).filter((post) => !isCompactionRequest(post.body));
 
     expect(predicted.claims).toBe(1);
-    expect(readDb<{ attempts: number }>(home.paths.databases.runtime, 'SELECT attempts FROM runs WHERE id = ?', runId)[0]?.attempts).toBe(1);
+    expect(readDb<{ attempts: number; error_json: string | null }>(home.paths.databases.runtime, 'SELECT attempts, error_json FROM runs WHERE id = ?', runId)).toEqual([{ attempts: 1, error_json: null }]);
     expect(comparable(predicted.journal)).toEqual(comparable(journal));
     expect(predicted.wireCounts).toEqual(modelPosts.map((post) => wireTokensOfBody(post.body)));
     expect(predicted.pinned).toBe(wireTokensOfBody(modelPosts[0]?.body));

@@ -305,7 +305,7 @@ describe('momonga context improve', () => {
     expect(removedFlag.stderr).toContain("unknown option '--adopt'");
 
     const stoppedAfterBaseline = await cli(improveArgs(1, baselineOutcome));
-    expect(stoppedAfterBaseline.code).not.toBe(0);
+    expect(stoppedAfterBaseline.code, `${stoppedAfterBaseline.stdout}\n${stoppedAfterBaseline.stderr}`).not.toBe(0);
     expect(stoppedAfterBaseline.stdout).toContain('model: fake');
     expect(stoppedAfterBaseline.stdout).toContain(GUIDELINE_CAP_REASON);
     expect(stoppedAfterBaseline.stdout).toMatch(/nothing was adopted/i);

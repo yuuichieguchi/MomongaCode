@@ -9,7 +9,7 @@ import { OPEN_LOG_FILE_NAME, runCli, runCliWithFakes, startCli, startCliWithFake
 import type { CliResult } from './support/cli.ts';
 import type { E2eHome } from './support/home.ts';
 import { PNG_BYTES, WINDOW_WITH_ROOM_FOR_ALL_TOOLS_AND_AN_IMAGE, prepareProduct, requestText, writePng, writeUserSkill } from './support/product.ts';
-import { UPSTREAM_MODEL, UPSTREAM_MODEL_REF, UPSTREAM_PROVIDER } from './support/stack.ts';
+import { UPSTREAM_CONTEXT_WINDOW, UPSTREAM_MODEL, UPSTREAM_MODEL_REF, UPSTREAM_PROVIDER } from './support/stack.ts';
 import { chatCompletions, reportedTokensOfRequest, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, policyVerifyBoundMs, until } from './support/wait.ts';
 
@@ -44,7 +44,7 @@ describe('momonga models, cost and memory', () => {
     const json = jsonOf((await runCli(home, ['models', '--json'])).stdout);
     expect(json).toMatchObject({
       start: UPSTREAM_MODEL_REF,
-      models: [{ model: UPSTREAM_MODEL_REF, name: UPSTREAM_MODEL, provider: UPSTREAM_PROVIDER, address: null, contextWindow: 8192, fallback: [] }],
+      models: [{ model: UPSTREAM_MODEL_REF, name: UPSTREAM_MODEL, provider: UPSTREAM_PROVIDER, address: null, contextWindow: UPSTREAM_CONTEXT_WINDOW, fallback: [] }],
     });
   });
 

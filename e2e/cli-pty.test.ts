@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { titleOf } from './support/cases.ts';
 import { readDb } from './support/db.ts';
 import { createE2eHome } from './support/home.ts';
-import { KEYS, spawnPty, untilRunEnds } from './support/pty.ts';
+import { answerTrust, KEYS, spawnPty, untilRunEnds } from './support/pty.ts';
 import { baseSettings, sandboxChoiceOf, startUpstream, writeSettingsFile } from './support/stack.ts';
 import { chatCompletions, hangReply, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
@@ -26,8 +26,7 @@ describe('cli: interactive TUI through a pty', () => {
     writeSettingsFile(home, baseSettings(home, sandboxChoiceOf({ home }).kind));
 
     const pty = await spawnPty(home, []);
-    await pty.waitFor('Do you trust the files in');
-    pty.write('1');
+    await answerTrust(pty, 'trust');
     await pty.waitFor('mode: manual');
 
     pty.write(KEYS.shiftTab);
@@ -73,8 +72,7 @@ describe('cli: interactive TUI through a pty', () => {
     fs.writeFileSync(path.join(home.paths.agents, 'editor.md'), '---\nname: editor\ndescription: edits files\ntools: Read, Edit\n---\nYou edit files.\n');
 
     const pty = await spawnPty(home, []);
-    await pty.waitFor('Do you trust the files in');
-    pty.write('1');
+    await answerTrust(pty, 'trust');
     await pty.waitFor('mode: manual');
     pty.write('change the greeting');
     await pty.waitFor('> change the greeting');
@@ -99,8 +97,7 @@ describe('cli: interactive TUI through a pty', () => {
     writeSettingsFile(home, baseSettings(home, sandboxChoiceOf({ home }).kind));
 
     const pty = await spawnPty(home, []);
-    await pty.waitFor('Do you trust the files in');
-    pty.write('2');
+    await answerTrust(pty, 'decline');
     await pty.waitFor('mode: manual');
 
     pty.write('/help');
@@ -148,8 +145,7 @@ describe('cli: interactive TUI through a pty', () => {
     writeSettingsFile(home, baseSettings(home, sandboxChoiceOf({ home }).kind));
 
     const pty = await spawnPty(home, []);
-    await pty.waitFor('Do you trust the files in');
-    pty.write('1');
+    await answerTrust(pty, 'trust');
     await pty.waitFor('mode: manual');
     pty.write('a long task');
     await pty.waitFor('> a long task');

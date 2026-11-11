@@ -31,7 +31,7 @@ export const SUPERVISOR_ENV_PATH = MINIMAL_CHILD_PATH;
 export const STDERR_TAIL_BYTES = 64 * 1024;
 export const UPSTREAM_MODEL = 'system';
 export const UPSTREAM_PROVIDER = 'fake';
-export const UPSTREAM_CONTEXT_WINDOW = 8192;
+export const UPSTREAM_CONTEXT_WINDOW = 16_384;
 
 export const DEFAULT_E2E_DEPS: E2eDeps = {
   runtime: { leaseMs: E2E_LEASE_MS, workerCount: 1 },

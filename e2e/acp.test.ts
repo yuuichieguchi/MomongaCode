@@ -12,7 +12,7 @@ import { runCli } from './support/cli.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
-import { baseSettings, sandboxChoiceOf, startStack, startUpstream, writeSettingsFile } from './support/stack.ts';
+import { UPSTREAM_CONTEXT_WINDOW, baseSettings, sandboxChoiceOf, startStack, startUpstream, writeSettingsFile } from './support/stack.ts';
 import { chatCompletions, hangReply, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
 
@@ -21,7 +21,6 @@ const EDITED = 'greeting = "hello, momonga"\n';
 const FINAL_TEXT = 'Updated the greeting in config.toml.';
 const REJECTED_OUTPUT = 'The user rejected this tool call.';
 const SKILL_BODY_MARKER = 'PDF-SKILL-BODY-MARKER-4f7a';
-const CONTEXT_WINDOW = 8192;
 
 type Prepared = { home: E2eHome; project: string; target: string; fake: Awaited<ReturnType<typeof startUpstream>> };
 
@@ -107,7 +106,7 @@ describe('acp: momonga acp', () => {
     expect(messageTexts(acp.updates, 'agent_message_chunk').join('')).toBe(FINAL_TEXT);
     const usage = updatesOf(acp.updates, 'usage_update');
     expect(usage.length).toBeGreaterThan(0);
-    expect(usage.at(-1)).toMatchObject({ size: CONTEXT_WINDOW });
+    expect(usage.at(-1)).toMatchObject({ size: UPSTREAM_CONTEXT_WINDOW });
     expect(chatCompletions(fake)).toHaveLength(4);
     await acp.untilUpdate((notification) => notification.update.sessionUpdate === 'available_commands_update', 'the available commands update');
 
