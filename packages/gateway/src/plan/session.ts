@@ -370,6 +370,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   const accounts = new Map<string, Account>();
   const background = new Set<Promise<void>>();
   const refreshes = new Set<Promise<void>>();
+  const loads = new Set<Promise<void>>();
   const backgroundFailures: unknown[] = [];
   const closing = new AbortController();
   let hostKnown = false;
@@ -511,6 +512,12 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
         forget,
       );
       account.loading = flight;
+      const ended = flight.work.then(
+        () => undefined,
+        () => undefined,
+      );
+      loads.add(ended);
+      void ended.then(() => loads.delete(ended));
     }
     return account.loading.join(signal);
   };
@@ -1181,7 +1188,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     lifetime: closing.signal,
     close: async () => {
       closing.abort();
-      await Promise.all([...background]);
+      await Promise.all([...background, ...loads]);
       const refreshEnds = await Promise.allSettled([...refreshes]);
       const undelivered = [...backgroundFailures.splice(0), ...refreshEnds.flatMap((end): unknown[] => (end.status === 'rejected' ? [end.reason] : []))];
       if (undelivered.length > 0) throw new AggregateError(undelivered, 'plan session background tasks failed');
