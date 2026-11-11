@@ -217,7 +217,7 @@ describe('a foreground Bash command that reaches its timeout', () => {
     command.write('last line\n__MOMONGA_CW');
     command.write(`D_${NONCE}__=/somewhere\n`);
     await pollUntil(() => adopted.followed.join('').includes('last line'), { description: 'the job reads the last line', boundMs: WAIT_BOUND_MS });
-    command.finish({ code: 0, signal: null });
+    command.finish({ code: 0, signal: null, stop: 'confirmed' });
     await adopted.followDone;
     expect(adopted.followed.join('')).toBe('last line\n');
   });
