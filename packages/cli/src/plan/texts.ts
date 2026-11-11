@@ -1,4 +1,4 @@
-import { PLAN_REVOCATION_CONFIRMED, PLAN_REVOCATION_NONE, PLAN_REVOCATION_UNCONFIRMED, messageOf } from '@momonga/protocol';
+import { PLAN_REVOCATION_CONFIRMED, PLAN_REVOCATION_NONE, PLAN_REVOCATION_UNCONFIRMED, WORDS, messageOf, signOutCommand } from '@momonga/protocol';
 import type { PlanAccountRef, PlanSignInIdentity, PlanSignOutResponse, Surface } from '@momonga/protocol';
 import { couldNotOpenBrowser } from '../browser-text.ts';
 import { reconsentCommand, signInCommandOf } from '../policy-messages.ts';
@@ -60,6 +60,19 @@ export const signedOutLines = (profile: { messages: { identityLabel: string } },
     case PLAN_REVOCATION_UNCONFIRMED:
       return [`Signed out ${label}`, `Remote revocation was not confirmed; disconnect the app in ${profile.messages.identityLabel} Settings: ${report.usageUrl}`];
   }
+};
+
+export const NO_ACCOUNT_SAVED_TEXT = 'no subscription account is saved';
+
+export const NO_PROVIDER_TEXT = 'no subscription provider is available';
+
+export const SIGN_OUT_LABEL_NEEDED_LINE = `Name the account to sign out: ${signOutCommand('<account>')}. ${WORDS.command} auth status lists the saved accounts.`;
+
+const PROVIDER_LIST = new Intl.ListFormat('en', { type: 'conjunction' });
+
+export const resetHostWarning = (profiles: readonly { messages: { identityLabel: string } }[]): string => {
+  const providers = PROVIDER_LIST.format(profiles.map((profile) => profile.messages.identityLabel));
+  return `This computer will be registered as a new host with ${providers}. Saved accounts keep their records; whether ${providers} ${profiles.length === 1 ? 'accepts' : 'accept'} them under the new host is not documented, so sign in again if one stops working.`;
 };
 
 export const listProblemLine = (problem: { file: string; cause: string }): string => `could not list ${problem.file}: ${problem.cause}`;

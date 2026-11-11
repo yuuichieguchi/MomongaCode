@@ -16,7 +16,7 @@ import {
   signIn,
 } from '../plan/sign-in.ts';
 import type { SandboxKind, SignInWaitTimers, StartSignInListener } from '../plan/sign-in.ts';
-import { IDENTITY_CHOICES, IDENTITY_SAVE, SIGN_IN_WORD, browserNotOpenedLine, cancelledLine, codeNotAcceptedLine, identityNotConfirmedLine, identityQuestion, listProblemLine, noBrowserHintLine, planDisabledLines, recordUnreadableLine, resumeLine, sensitiveUrlLines, signInFailureLine, signedInLine, signedOutLines } from '../plan/texts.ts';
+import { IDENTITY_CHOICES, IDENTITY_SAVE, SIGN_IN_WORD, browserNotOpenedLine, cancelledLine, codeNotAcceptedLine, identityNotConfirmedLine, identityQuestion, NO_ACCOUNT_SAVED_TEXT, NO_PROVIDER_TEXT, SIGN_OUT_LABEL_NEEDED_LINE, listProblemLine, noBrowserHintLine, planDisabledLines, recordUnreadableLine, resumeLine, sensitiveUrlLines, resetHostWarning, signInFailureLine, signedInLine, signedOutLines } from '../plan/texts.ts';
 import { escapedLines } from '../terminal-writer.ts';
 import { UsageError } from '../usage-error.ts';
 
@@ -50,7 +50,7 @@ export const authStatus = async (ports: AuthStatusPorts, options: { json: boolea
   const model = modelLineOf(await ports.listing(), options.model);
   if (options.json) {
     ports.stdout.write(`${JSON.stringify({ ...listed, model })}\n`);
-    return 0;
+    return EXIT_OK;
   }
   const lines = listed.profiles.flatMap((profile) => {
     const accounts = [...accountsOf(profile.id, listed.accounts)].sort((left, right) => left.label.localeCompare(right.label));
@@ -61,11 +61,11 @@ export const authStatus = async (ports: AuthStatusPorts, options: { json: boolea
     ];
   });
   print(ports.stdout, [
-    ...(lines.length === 0 ? ['no subscription provider is available'] : lines),
+    ...(lines.length === 0 ? [NO_PROVIDER_TEXT] : lines),
     ...(listed.listProblems ?? []).map((problem) => `  ${listProblemLine(problem)}`),
     modelLineText(model),
   ]);
-  return 0;
+  return EXIT_OK;
 };
 
 type Choose = (question: string, choices: readonly string[], until?: AbortSignal) => Promise<number | undefined>;
@@ -124,7 +124,7 @@ const chosenProfile = async (ports: AuthLoginPorts, listed: PlanAccountsResponse
   if (provider !== undefined) return profileOf(listed.profiles, provider);
   const [only, ...others] = listed.profiles;
   if (only !== undefined && others.length === 0) return only;
-  if (!ports.isTerminal || only === undefined) {
+  if (!ports.isTerminal) {
     print(ports.stderr, [`name the provider to sign in to: momonga auth login <provider>; the providers are ${listed.profiles.map((profile) => profile.id).join(', ')}`]);
     return undefined;
   }
@@ -151,6 +151,10 @@ const outcomeLines = (profile: PlanProfileView, account: string, answer: PlanSig
 export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions): Promise<number> => {
   if (options.account !== undefined && !isPlanLabel(options.account)) throw new UsageError(PLAN_LABEL_REFUSAL);
   const listed = await ports.plan.accounts();
+  if (listed.profiles.length === 0) {
+    print(ports.stderr, [NO_PROVIDER_TEXT]);
+    return EXIT_FAILURE;
+  }
   const profile = await chosenProfile(ports, listed, options.provider);
   if (profile === undefined) return EXIT_USAGE;
   const account = options.account ?? nextAccountLabel(profile.id, listed.accounts);
@@ -234,8 +238,11 @@ export const authLogout = async (ports: AuthLogoutPorts, options: { account?: st
   let chosen: PlanAccountView;
   if (options.account !== undefined) chosen = accountNamed(listed.accounts, options.account);
   else if (!ports.isTerminal) {
-    print(ports.stderr, ['momonga auth logout needs the account label when it does not run in a terminal: momonga auth logout <account>']);
+    print(ports.stderr, [SIGN_OUT_LABEL_NEEDED_LINE]);
     return EXIT_USAGE;
+  } else if (listed.accounts.length === 0) {
+    print(ports.stderr, [NO_ACCOUNT_SAVED_TEXT]);
+    return EXIT_FAILURE;
   } else {
     const index = await ports.choose('Sign out which account?', listed.accounts.map((account) => `${account.label} · ${account.email ?? ''} · ${accountStateWord(account)}`));
     const picked = index === undefined ? undefined : listed.accounts[index];
@@ -245,25 +252,18 @@ export const authLogout = async (ports: AuthLogoutPorts, options: { account?: st
   const report = await ports.plan.signOut({ profile: chosen.profile, account: chosen.label });
   const profile = profileOf(listed.profiles, chosen.profile);
   print(ports.stdout, signedOutLines(profile, chosen.label, report));
-  return 0;
+  return EXIT_OK;
 };
 
 export type AuthResumePorts = { stdout: Writer; stderr: Writer; plan: PlanGatewayClient };
 
 export const authResume = async (ports: AuthResumePorts, options: { account: string }): Promise<number> => {
   const listed = await ports.plan.accounts();
-  if (!listed.accounts.some((account) => account.label === options.account)) {
-    print(ports.stderr, [`no saved account is labelled ${JSON.stringify(options.account)}; momonga auth status lists them`]);
-    return EXIT_FAILURE;
-  }
   const chosen = accountNamed(listed.accounts, options.account);
   const answer = await ports.plan.resume(chosen.label, { profile: chosen.profile });
   print(ports.stdout, [resumeLine(chosen.label, answer.resumed)]);
-  return 0;
+  return EXIT_OK;
 };
-
-export const RESET_HOST_WARNING =
-  'This computer will be registered as a new host with ChatGPT. Saved accounts keep their records; whether ChatGPT accepts them under the new host is not documented, so sign in again if one stops working.';
 
 const RESET_HOST_CONFIRM = 'Register this computer as a new host';
 
@@ -276,12 +276,17 @@ export const authResetHost = async (ports: AuthResetHostPorts, options: { yes: b
     print(ports.stderr, ['momonga auth reset-host needs --yes when it does not run in a terminal']);
     return EXIT_USAGE;
   }
-  print(ports.stdout, [RESET_HOST_WARNING]);
+  const { profiles } = await ports.plan.accounts();
+  if (profiles.length === 0) {
+    print(ports.stderr, [NO_PROVIDER_TEXT]);
+    return EXIT_FAILURE;
+  }
+  print(ports.stdout, [resetHostWarning(profiles)]);
   if (!options.yes && ports.isTerminal) {
     const chosen = await ports.choose('Reset the host identity?', RESET_HOST_CHOICES);
     if (chosen === undefined || RESET_HOST_CHOICES[chosen] !== RESET_HOST_CONFIRM) return EXIT_USAGE;
   }
   const reset = await ports.plan.resetHost();
   print(ports.stdout, [`This computer is now the host ${reset.hostId}`]);
-  return 0;
+  return EXIT_OK;
 };

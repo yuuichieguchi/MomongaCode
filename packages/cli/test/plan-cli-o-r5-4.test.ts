@@ -73,11 +73,10 @@ describe('momonga auth resume (O-R5-4 S3)', () => {
     expect(stdout.text()).toBe('work is not paused\n');
   });
 
-  it('exits 1 for an unknown label', async () => {
-    const { plan } = fakePlan();
-    const stderr = writer();
-    expect(await commands['authResume']?.({ stdout: writer(), stderr, plan }, { account: 'nobody' })).toBe(1);
-    expect(stderr.text()).toContain('nobody');
+  it('fails for an unknown label with the sentence auth logout gives, and resumes nothing', async () => {
+    const { plan, calls } = fakePlan();
+    await expect(commands['authResume']?.({ stdout: writer(), stderr: writer(), plan }, { account: 'nobody' })).rejects.toThrow('no saved account is labelled "nobody"; momonga auth status lists them');
+    expect(calls.filter((call) => call.route === 'resume')).toEqual([]);
   });
 });
 
