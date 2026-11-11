@@ -99,6 +99,7 @@ const harness = (failingOn: number = 0, answers: Answers = 'script') => {
       writeText: async (file: string, text: string) => void stored.set(file, text),
       listFiles: async (directory: string) => [...stored.keys()].filter((file) => file.startsWith(`${directory}/`)).sort(),
     },
+    interrupt: new AbortController().signal,
   } as unknown as CliPorts;
   const entries = {} as DaemonEntries;
   const program = buildProgram({

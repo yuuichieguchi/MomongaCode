@@ -29,7 +29,7 @@ const harness = () => {
   const out: string[] = [];
   const entry = async (): Promise<number> => 0;
   const entries: DaemonEntries = { supervise: entry, gateway: entry, runtime: entry };
-  const ports = { version: '9.9.9', home: freshHome(), cwd: '/c', terminal: {} } as unknown as CliPorts;
+  const ports = { version: '9.9.9', interrupt: new AbortController().signal, home: freshHome(), cwd: '/c', terminal: {} } as unknown as CliPorts;
   const program = buildProgram({
     ports,
     policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/c/cache/executables' }),

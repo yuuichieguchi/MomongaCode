@@ -27,6 +27,7 @@ const programFor = async (context: TestContext, options: HarnessOptions = {}) =>
     self: harness.ports.self,
     spawnDetached: harness.ports.spawnDetached,
     terminal: undefined,
+    interrupt: new AbortController().signal,
   } as unknown as CliPorts;
   const program = buildProgram({
     ports: cli,

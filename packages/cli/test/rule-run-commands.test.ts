@@ -94,6 +94,7 @@ const setup = async (context: TestContext, answer: (seen: Seen) => Answer) => {
     },
     stdout: { write: (text: string) => void out.push(text) },
     stderr: { write: (text: string) => void err.push(text) },
+    interrupt: new AbortController().signal,
   } as unknown as CliPorts;
   return { paths, ports: terminalPorts(ports), project, seen, out, err };
 };

@@ -19,7 +19,7 @@ const harness = () => {
     return 7;
   };
   const entries: DaemonEntries = { supervise: entryFor('supervise'), gateway: entryFor('gateway'), runtime: entryFor('runtime') };
-  const ports = { version: '9.9.9', home: freshHome(), cwd: '/c', terminal: undefined } as unknown as CliPorts;
+  const ports = { version: '9.9.9', interrupt: new AbortController().signal, home: freshHome(), cwd: '/c', terminal: undefined } as unknown as CliPorts;
   const program = buildProgram({
     ports,
     policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/c/cache/executables' }),
