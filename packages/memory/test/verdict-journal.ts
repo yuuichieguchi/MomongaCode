@@ -52,12 +52,14 @@ export const read = (file: string, sha256 = 'bb'): Step => ({
 
 export type BashOptions = { basis?: ApprovalBasis | 'unrecorded'; exitCode?: number; status?: 'completed' | 'failed'; rejected?: boolean; denied?: boolean };
 
-export const bash = (command: string, options: BashOptions = {}): Step => {
+export const bash = (command: string, options: BashOptions = {}): Step => commandThrough('Bash', command, options);
+
+export const commandThrough = (name: string, command: string, options: BashOptions = {}): Step => {
   const basis = options.basis ?? 'read_only';
   const started = options.denied !== true && options.rejected !== true;
   return {
     step: 'call',
-    name: 'Bash',
+    name,
     kind: 'execute',
     sideEffect: 'exec',
     basis,
@@ -67,6 +69,7 @@ export const bash = (command: string, options: BashOptions = {}): Step => {
       status: options.status ?? 'completed',
       output: '',
       ...(options.denied === true ? { denial: { source: 'rule', message: 'no' } } : { exitCode: options.exitCode ?? 0 }),
+      ...(started ? { command } : {}),
     },
     started,
     ...(options.rejected === true ? { rejected: true } : {}),
@@ -76,7 +79,8 @@ export const bash = (command: string, options: BashOptions = {}): Step => {
 
 export const reconciled = (step: Step, outcome: 'already_applied' | 'not_applied' | 'unknown'): Step => {
   if (step.step !== 'call') throw new Error('only a call is reconciled');
-  return { ...step, end: { type: 'tool.reconciled', outcome, output: 'interrupted' }, mutates: step.mutates && outcome !== 'not_applied' };
+  const command = outcome === 'not_applied' ? undefined : step.end['command'];
+  return { ...step, end: { type: 'tool.reconciled', outcome, output: 'interrupted', ...(command === undefined ? {} : { command }) }, mutates: step.mutates && outcome !== 'not_applied' };
 };
 
 export const check = (command: string, outcome = 'passed', mutationSeq?: number): Step => ({

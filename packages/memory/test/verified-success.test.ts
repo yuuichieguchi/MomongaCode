@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isVerifiedSuccess } from '@momonga/memory';
-import { bash, check, journal, read, reconciled, standing, write } from './verdict-journal.ts';
+import { bash, check, commandThrough, journal, read, reconciled, standing, write } from './verdict-journal.ts';
 import type { Step } from './verdict-journal.ts';
 
 const COMMANDS = ['npm test', 'pytest'];
@@ -116,6 +116,25 @@ describe('isVerifiedSuccess', () => {
       expect(verdict([reconciled(edit('rm -rf build'), 'already_applied'), ...pass()])).toBe(false);
       expect(verdict([write('src/a.ts'), ...pass(), reconciled(edit('rm -rf build'), 'not_applied')])).toBe(true);
     });
+  });
+
+  describe('a command run through a tool that is not named Bash', () => {
+    const SHELL = 'mcp__remote__shell';
+
+    it('counts as a write of unknown paths, like the same command through Bash', () => {
+      expect(verdict([commandThrough(SHELL, "sed -i 's/a/b/' package.json", { basis: 'person' }), ...pass()])).toBe(false);
+      expect(verdict([reconciled(commandThrough(SHELL, 'rm -rf build', { basis: 'person' }), 'unknown'), ...pass()])).toBe(false);
+    });
+
+    it('is no write of a manifest when it is exactly a verification command', () => {
+      expect(verdict([write('src/a.ts'), commandThrough(SHELL, 'npm test', { basis: 'person' }), ...pass()])).toBe(true);
+    });
+  });
+
+  it('reads the command from the completion the boundary recorded, never from the arguments of the call', () => {
+    const ran = bash('rm -rf build', { basis: 'person' });
+    const disguised: Step = ran.step === 'call' ? { ...ran, rawInput: { command: 'npm test' } } : ran;
+    expect(verdict([disguised, ...pass()])).toBe(false);
   });
 
   it('verifies nothing with no declared condition', () => {
