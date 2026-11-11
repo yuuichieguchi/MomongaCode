@@ -43,11 +43,11 @@ describe('events an earlier build wrote with the old model keys', () => {
     expect(started.pins['roles']).toEqual({ compaction: 'cheap' });
   });
 
-  it('reads a tool.permission.classified event that holds the key alias, and the model decodes to the old text', async () => {
+  it('reads a tool.permission.classified event that holds the key alias with the old text as its model', async () => {
     const { h, run } = await withOldRun();
     const [classified] = h.store.readRunEventsOfTypes(run.id, ['tool.permission.classified']);
-    expect(classified).toBeDefined();
-    expect(decodeStoredModel(classified as unknown as Record<string, unknown>, STORED_MODEL_KEYS.classified)).toBe('guard');
+    expect(classified).toMatchObject({ type: 'tool.permission.classified', model: 'guard' });
+    expect(classified).not.toHaveProperty('alias');
   });
 
   it('lists a terminal run that holds such events for a facts rebuild, and its events are read without an error', async () => {

@@ -63,15 +63,11 @@ describe('decodeStoredModel reads a stored model field of this build and of an e
     },
   );
 
-  it('the classifier event reads the key of an earlier build through STORED_MODEL_KEYS.classified', () => {
+  it('holds the keys of the model fields a reader decodes, each with the key of an earlier build', () => {
     expect(STORED_MODEL_KEYS).toEqual({
       modelChanged: { current: 'model', legacy: 'modelAlias' },
       previousModel: { current: 'previousModel', legacy: 'previousModelAlias' },
       pin: { current: 'model', legacy: 'modelAlias' },
-      classified: { current: 'model', legacy: 'alias' },
     });
-    expect(decodeStoredModel({ alias: 'local' }, STORED_MODEL_KEYS.classified)).toBe('local');
-    expect(decodeStoredModel({ model: 'ollama/x:latest', alias: 'local' }, STORED_MODEL_KEYS.classified)).toBe('ollama/x:latest');
-    expect(decodeStoredModel({}, STORED_MODEL_KEYS.classified)).toBeUndefined();
   });
 });

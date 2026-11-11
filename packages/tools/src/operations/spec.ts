@@ -37,7 +37,7 @@ export type ArgvCall = { readonly argv: readonly ArgvItem[]; readonly network?: 
 export type ForgeCall = { readonly forge: ForgeOperationName; readonly args: Readonly<Record<string, string>> };
 
 export type ProbeSource =
-  | (ArgvCall & { readonly extract?: 'trim' | 'firstField'; readonly emptyOnFailure?: true; readonly each?: 'pushUrls' })
+  | (ArgvCall & { readonly extract?: 'trim' | 'firstField'; readonly emptyOnFailure?: true; readonly each?: 'destinations' })
   | (ForgeCall & { readonly shape: 'one' | 'list' | 'count'; readonly contains?: { readonly field: string; readonly value: string } });
 
 export type Probe = { readonly id: string; readonly via: ProbeSource };
@@ -133,7 +133,7 @@ const SPEC_SCHEMA = {
             oneOf: [
               {
                 type: 'object',
-                properties: { argv: ARGV, network: NETWORK, extract: { enum: ['trim', 'firstField'] }, emptyOnFailure: { const: true }, each: { const: 'pushUrls' } },
+                properties: { argv: ARGV, network: NETWORK, extract: { enum: ['trim', 'firstField'] }, emptyOnFailure: { const: true }, each: { const: 'destinations' } },
                 required: ['argv'],
                 additionalProperties: false,
               },

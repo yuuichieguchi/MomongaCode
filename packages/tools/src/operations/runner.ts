@@ -1,5 +1,7 @@
 import { foldedKey, wildcardMatches } from '@momonga/policy';
 import type { PermissionSubject } from '@momonga/policy';
+import { withCurrentNames } from '@momonga/protocol';
+import type { StoredRenames } from '@momonga/protocol';
 import { ToolExecutionError, defineTool } from '../types.ts';
 import type { AnyTool, GateCall, GateFacts, OperationEffect, ReconcileContext, ReconcileResult, SubjectContext, ToolContext, ToolDefinition, ToolResult } from '../types.ts';
 import type { ToolIdempotencyRecord } from '../ports.ts';
@@ -27,7 +29,12 @@ const STDERR_LIMIT = 2000;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const PUSH_URLS = 'pushUrls';
+const DESTINATIONS = 'destinations';
+
+const OBSERVATION_RENAMES: StoredRenames = { pushUrls: DESTINATIONS };
+
+const recordedBeforeOf = (prepared: unknown): Observation | undefined =>
+  isRecord(prepared) && isRecord(prepared['before']) ? withCurrentNames(prepared['before'], OBSERVATION_RENAMES) : undefined;
 
 const callOf = (idemKey: string, destination?: string): Record<string, string> => ({ key: idemKey, ...(destination === undefined ? {} : { destination }) });
 
@@ -47,15 +54,15 @@ const renderArgv = (items: readonly ArgvItem[], scope: Scope): string[] =>
     return chosen.map((entry) => renderTemplate(entry, scope));
   });
 
-const recordedPushUrls = (scope: Scope): string[] => {
+const recordedDestinations = (scope: Scope): string[] => {
   const before = scope['before'];
-  const urls = isRecord(before) ? before[PUSH_URLS] : scope[PUSH_URLS];
+  const urls = isRecord(before) ? before[DESTINATIONS] : scope[DESTINATIONS];
   return stringList(urls) ?? [];
 };
 
 const renderNetwork = (network: Network | undefined, scope: Scope): RenderedNetwork => {
   if (network === undefined || network === 'none') return 'none';
-  if (network === 'destinations') return { destinations: recordedPushUrls(scope) };
+  if (network === 'destinations') return { destinations: recordedDestinations(scope) };
   const destination = lookup(scope, 'call.destination');
   return { destinations: destination === undefined ? [] : [destination] };
 };
@@ -136,7 +143,7 @@ const observeArgv = async (runtime: Runtime, via: Extract<Probe['via'], { argv: 
 const AGREEMENT_LOST = 'mixed';
 
 const observeEach = async (runtime: Runtime, via: Extract<Probe['via'], { argv: unknown }>, ctx: ReconcileContext, scope: Scope): Promise<string | undefined> => {
-  const urls = recordedPushUrls(scope);
+  const urls = recordedDestinations(scope);
   if (urls.length === 0) throw new ToolExecutionError(`${runtime.spec.name} observes each push destination but none is recorded`);
   const values: Array<string | undefined> = [];
   for (const url of urls) {
@@ -181,7 +188,6 @@ const destinationsOf = async (runtime: Runtime, input: Record<string, unknown>, 
   return remote === undefined ? undefined : reachedOf(runtime, await resolveDestinations(runtime.deps.readGit, remote, { cwd: ctx.workingDirectory, env: call.env, signal: call.signal }));
 };
 
-const GATE_PUSH = 'pushUrls';
 const GATE_FETCH = 'fetchUrls';
 
 const gateFactsOf = async (runtime: Runtime, input: Record<string, unknown>, ctx: SubjectContext, call: GateCall): Promise<GateFacts> => {
@@ -189,20 +195,20 @@ const gateFactsOf = async (runtime: Runtime, input: Record<string, unknown>, ctx
   const remote = remoteNameOf(runtime, input);
   if (remote === undefined) return forge;
   const destinations = await resolveDestinations(runtime.deps.readGit, remote, { cwd: ctx.workingDirectory, env: call.env, signal: call.signal });
-  return { ...forge, [GATE_PUSH]: reachedOf(runtime, destinations), [GATE_FETCH]: destinations.fetch };
+  return { ...forge, [DESTINATIONS]: reachedOf(runtime, destinations), [GATE_FETCH]: destinations.fetch };
 };
 
 type Recorded = { forgeRemote?: string | undefined };
 
 const observe = async (runtime: Runtime, ctx: ReconcileContext, input: Record<string, unknown>, before: Observation | undefined, recorded: Recorded, destinations?: string[]): Promise<Observation> => {
   const observed: Observation = {};
-  if (destinations !== undefined) observed[PUSH_URLS] = destinations;
+  if (destinations !== undefined) observed[DESTINATIONS] = destinations;
   for (const probe of runtime.spec.observe) {
     const scope: Scope = {
       input,
       call: callOf(ctx.idemKey),
       ...(before === undefined ? {} : { before }),
-      ...(destinations === undefined ? {} : { [PUSH_URLS]: destinations }),
+      ...(destinations === undefined ? {} : { [DESTINATIONS]: destinations }),
       ...(recorded.forgeRemote === undefined ? {} : { [FORGE_REMOTE]: recorded.forgeRemote }),
     };
     const value = await observeProbe(runtime, probe, ctx, scope);
@@ -232,8 +238,9 @@ const recordedOf = (prepared: Record<string, unknown>): Recorded => (typeof prep
 
 const readPrepared = (record: ToolIdempotencyRecord): { before: Observation; recorded: Recorded } => {
   const prepared: unknown = record.meta['prepared'];
-  if (!isRecord(prepared) || !isRecord(prepared['before'])) throw new ToolExecutionError('the interrupted call has no recorded observation to compare with');
-  return { before: prepared['before'], recorded: recordedOf(prepared) };
+  const before = recordedBeforeOf(prepared);
+  if (!isRecord(prepared) || before === undefined) throw new ToolExecutionError('the interrupted call has no recorded observation to compare with');
+  return { before, recorded: recordedOf(prepared) };
 };
 
 const settledResult = (runtime: Runtime, scope: Scope, outcome: 'applied' | 'already_applied'): ToolResult => ({
@@ -280,11 +287,11 @@ const executeOperation = async (runtime: Runtime, input: Record<string, unknown>
     const after = await observe(runtime, ctx, input, undefined, located);
     return { status: 'completed', output: reportOf(runtime, scopeOf(ctx, input, undefined, after)) };
   }
-  if (prepared === undefined || !isRecord(prepared['before'])) throw new ToolExecutionError(`${spec.name} was started without a recorded observation`);
-  const before = prepared['before'];
+  const before = recordedBeforeOf(prepared);
+  if (prepared === undefined || before === undefined) throw new ToolExecutionError(`${spec.name} was started without a recorded observation`);
   const recorded = recordedOf(prepared);
   const beforeScope = scopeOf(ctx, input, before, before, recorded);
-  const approved = before[PUSH_URLS];
+  const approved = before[DESTINATIONS];
   if (Array.isArray(approved)) {
     const current = (await destinationsOf(runtime, input, ctx, call)) ?? [];
     if (!sameList(approved, current)) return failedResult(runtime, beforeScope, `the ${placesOf(runtime)} changed after the approval, so nothing was sent: approved ${JSON.stringify(approved)}, now ${JSON.stringify(current)}`, undefined);
@@ -329,7 +336,7 @@ const reconcileOperation = async (runtime: Runtime, input: Record<string, unknow
 const approvedDestinations = async (runtime: Runtime, input: Record<string, unknown>, ctx: ToolContext, gateFacts: Record<string, unknown> | undefined): Promise<string[] | undefined> => {
   const current = await destinationsOf(runtime, input, ctx, { signal: ctx.signal, env: ctx.env });
   if (current === undefined) return undefined;
-  const approved = stringList(gateFacts?.[GATE_PUSH]);
+  const approved = stringList(gateFacts?.[DESTINATIONS]);
   if (approved === undefined) throw new ToolExecutionError(`${runtime.spec.name} was started without the ${placesOf(runtime)} its permission was decided on`);
   if (!sameList(approved, current)) throw new ToolExecutionError(`the ${placesOf(runtime)} changed between the permission decision and the start, so nothing was sent: approved ${JSON.stringify(approved)}, now ${JSON.stringify(current)}`);
   return approved;
@@ -347,10 +354,10 @@ const subjectOf = (runtime: Runtime, input: Record<string, unknown>, gateFacts: 
     const flagged = (subject.alwaysWhen ?? []).some((flag) => isTruthy(scope, `input.${flag}`));
     const protectedHit = refs.some((ref) => protectedRefsOf(deps.settings).some((pattern) => wildcardMatches(foldedKey(pattern), foldedKey(ref))));
     const remote = subject.remote === undefined ? null : renderTemplate(subject.remote, scope);
-    const pushUrls = stringList(gateFacts?.[GATE_PUSH]);
+    const reached = stringList(gateFacts?.[DESTINATIONS]);
     const fetchUrls = stringList(gateFacts?.[GATE_FETCH]);
-    if (remote !== null && (pushUrls === undefined || fetchUrls === undefined)) throw new ToolExecutionError(`${spec.name} needs the ${placesOf(runtime)} of ${remote} resolved before its permission is decided`);
-    const destinations = pushUrls === undefined || fetchUrls === undefined ? undefined : { push: pushUrls, fetch: fetchUrls };
+    if (remote !== null && (reached === undefined || fetchUrls === undefined)) throw new ToolExecutionError(`${spec.name} needs the ${placesOf(runtime)} of ${remote} resolved before its permission is decided`);
+    const destinations = reached === undefined || fetchUrls === undefined ? undefined : { push: reached, fetch: fetchUrls };
     return {
       kind: 'repo',
       tool: spec.name,
