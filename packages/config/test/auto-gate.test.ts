@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import * as config from '@momonga/config';
+import * as autoFit from '../src/auto-fit.ts';
 import * as protocol from '@momonga/protocol';
 import { testKernelLock } from '@momonga/testkit';
 import type { KernelLockMechanism } from '@momonga/foundation';
@@ -52,7 +53,7 @@ const exportsOf = <T>(module: unknown, names: readonly string[], from: string): 
 
 const gate = (): GateApi => exportsOf<GateApi>(config, ['AUTO_GATE_BOUNDS', 'autoGatePasses', 'classifierIdentityOf', 'classifierCodeDigestOf'], '@momonga/config');
 
-const fit = (): FitApi => exportsOf<FitApi>(config, ['measurement', 'autoFitDirectoryOf', 'readAutoFitRecord', 'writeAutoFitRecord'], '@momonga/config');
+const fit = (): FitApi => exportsOf<FitApi>({ ...config, readAutoFitRecord: autoFit.readAutoFitRecord }, ['measurement', 'autoFitDirectoryOf', 'readAutoFitRecord', 'writeAutoFitRecord'], '@momonga/config');
 
 const notice = (): NoticeApi => exportsOf<NoticeApi>(protocol, ['autoModeNotice'], '@momonga/protocol');
 

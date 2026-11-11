@@ -1,12 +1,14 @@
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { approvalDigestOf } from '@momonga/config';
 import { OperationLimitError, StoreCallEndedError } from '@momonga/foundation';
 import { KEYCHAIN_BACKEND } from '@momonga/foundation/secret-store';
 import { McpAuthorizationError } from '@momonga/mcp';
 import type { McpAuthProbe, McpAuthorizingPool, McpPoolOptions } from '@momonga/mcp';
 import { createMcpAdmin } from '@momonga/runtime';
 import type { McpAdmin } from '@momonga/runtime';
-import { createFakeClock, createFakeTimers, unconfiguredDerivedNetworkOf } from '@momonga/testkit';
-import { POOL_IDLE_CLOSE_MS, START_MS, createSession, makeCache, makeLogger, makeReporter, makeTempHome, openStore, writeUserSettings } from './helpers.ts';
+import { createFakeClock, createFakeTimers, unconfiguredDerivedNetworkOf, TEST_STDIO_LAUNCH } from '@momonga/testkit';
+import { POOL_IDLE_CLOSE_MS, START_MS, createSession, makeCache, makeLogger, makeReporter, makeTempHome, openStore, writeJson, writeUserSettings } from './helpers.ts';
 
 const REMOTE_URL = 'https://mcp.example.test/mcp';
 const AUTHORIZE_URL = 'https://auth.example.test/authorize?state=1';
@@ -74,7 +76,7 @@ const setup = async () => {
   const created: McpPoolOptions[] = [];
   const plan: ProbePlan = { next: { state: 'required' } };
   const ended = { count: 0 };
-  const admin: McpAdmin = createMcpAdmin({
+  const admin: McpAdmin = createMcpAdmin({ launch: TEST_STDIO_LAUNCH,
     onAuthorizationEnded: () => {
       ended.count += 1;
     },
@@ -88,6 +90,7 @@ const setup = async () => {
     readConnectTimeoutMs: () => CONNECT_TIMEOUT_MS,
     settings: {
       envFor: async () => ({}),
+      referenceEnvFor: async () => ({}),
       admitUserSnapshot: async (signal) => {
         const snapshot = await cache.load(signal);
         if ('error' in snapshot) throw snapshot.error;
@@ -143,6 +146,25 @@ describe('createMcpAdmin servers', () => {
       { name: 'local', scope: 'user', transport: 'stdio', auth: 'required', detail: 'sign in' },
       { name: 'remote', scope: 'user', transport: 'http', url: REMOTE_URL, auth: 'required', detail: 'sign in' },
     ]);
+  });
+
+  it('lists a project server that waits for approval, unprobed, with the digest to approve and whether it changed', async () => {
+    const { admin, session, project, pools } = await setup();
+    const tracker = { type: 'http', url: 'https://tracker.example/mcp' };
+    writeJson(path.join(project, '.mcp.json'), { mcpServers: { tracker } });
+
+    const views = await admin.servers(session.id, controllerSignal());
+
+    expect(views.find((view) => view.name === 'tracker')).toEqual({
+      name: 'tracker',
+      scope: 'project',
+      transport: 'http',
+      url: 'https://tracker.example/mcp',
+      auth: 'not_applicable',
+      detail: 'not approved',
+      approval: { digest: approvalDigestOf(tracker), changed: false },
+    });
+    expect(pools.flatMap((pool) => pool.probes)).toEqual(['local', 'remote']);
   });
 
   it('answers an unknown session with not found', async () => {

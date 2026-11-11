@@ -144,7 +144,7 @@ describe('every terminal operation measures one run, outside the write transacti
     const approval = await h.store.requestApproval(childClaim, {
       callId: 'call_w',
       options: [{ optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' }],
-      event: { subjectDigest: 'a'.repeat(64), reason: 'edits require approval' },
+      event: { subjectDigest: 'a'.repeat(64), reason: 'edits require approval', shown: { title: 'approval', input: {} } },
     });
     expect(approval.kind).toBe('ok');
     expect((await h.store.release(childClaim, 'WAITING_HUMAN')).kind).toBe('ok');

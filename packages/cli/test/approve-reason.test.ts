@@ -34,4 +34,16 @@ describe('momonga approve shows why the policy asked', () => {
       ].join('\n'),
     );
   });
+
+  it('prints what will run in full, the claim of the model labelled, and the change to the current file', () => {
+    const command = `rm -rf build ${'x'.repeat(300)}`;
+    const view: ApprovalView = { ...outside, shown: { title: command, input: { command }, effect: command, claim: 'Clean the build' } };
+    expect(pendingLines(view)).toBe(
+      ['ap1  Write /elsewhere/out.txt', '  edit outside the workspace requires approval', `  ${command}`, '  The model describes it as: Clean the build', '    allow_once  (Allow once)', '    reject_once'].join('\n'),
+    );
+    const edit: ApprovalView = { ...outside, shown: { title: 'Write out.txt', input: {}, diff: { hunks: [{ oldStart: 2, newStart: 2, lines: ['-old', '+new'] }] } } };
+    expect(pendingLines(edit)).toBe(
+      ['ap1  Write /elsewhere/out.txt', '  edit outside the workspace requires approval', '  @@ -2 +2 @@', '  -old', '  +new', '    allow_once  (Allow once)', '    reject_once'].join('\n'),
+    );
+  });
 });

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { HANDOVER_DIRECTORY, HANDOVER_RECORD_MAX_BYTES, HANDOVER_RECORD_OWNER_FIELD, HANDOVER_RECORD_SUFFIX, handoverDirectoryOf, isRecord, parseOutsideJson } from '@momonga/foundation';
-import type { MomongaPaths } from '@momonga/foundation';
+import { HANDOVER_DIRECTORY, HANDOVER_RECORD_MAX_BYTES, HANDOVER_RECORD_SUFFIX, handoverDirectoryOf, handoverRecordFields, isRecord, parseOutsideJson } from '@momonga/foundation';
+import type { HandoverRecordParties, MomongaPaths } from '@momonga/foundation';
 import type { ImageAttachment } from '@momonga/protocol';
 import { OUTPUT_FORMATS } from '../run/output-format.ts';
 import type { OutputFormat } from '../run/output-format.ts';
@@ -29,9 +29,9 @@ export type HandoverView = { key: EntryKey | null; rowOffset: number; following:
 
 export type HandoverToggles = { thoughts: Record<string, boolean> };
 
-export type HandoverPaste = { label: string; text: string };
+export type HandoverPaste = { start: number; label: string; text: string };
 
-export type HandoverInput = { text: string; cursor: number; historyIndex: number | null; draft?: string; pastes?: HandoverPaste[]; pasteCount?: number };
+export type HandoverInput = { text: string; cursor: number; historyIndex: number | null; draft?: string; draftPastes?: HandoverPaste[]; pastes?: HandoverPaste[]; pasteCount?: number; shell?: boolean; draftShell?: boolean };
 
 export type HandoverAttachment = { file: string; sha256: string };
 
@@ -60,8 +60,8 @@ export type EncodedRecord = { kind: 'fits'; text: string } | { kind: 'too-large'
 
 export type ParsedRecord = { kind: 'record'; record: HandoverRecord } | { kind: 'refused'; reason: string };
 
-export const encodeRecord = (record: HandoverRecord, writerPid: number): EncodedRecord => {
-  const text = JSON.stringify({ ...record, [HANDOVER_RECORD_OWNER_FIELD]: writerPid });
+export const encodeRecord = (record: HandoverRecord, parties: HandoverRecordParties): EncodedRecord => {
+  const text = JSON.stringify({ ...record, ...handoverRecordFields(parties) });
   const bytes = Buffer.byteLength(text, 'utf8');
   return bytes > HANDOVER_RECORD_MAX_BYTES ? { kind: 'too-large', bytes } : { kind: 'fits', text };
 };
@@ -157,13 +157,18 @@ const togglesOf = (fields: Fields): HandoverToggles => {
   return { thoughts: Object.fromEntries(Object.keys(thoughts).map((itemId) => [itemId, flagOf(thoughts, itemId)])) };
 };
 
+const pasteOf = (paste: Fields): HandoverPaste => ({ start: countOf(paste, 'start'), label: textOf(paste, 'label'), text: textOf(paste, 'text') });
+
 const inputOf = (fields: Fields): HandoverInput => ({
   text: textOf(fields, 'text'),
   cursor: countOf(fields, 'cursor'),
   historyIndex: fields['historyIndex'] === null ? null : countOf(fields, 'historyIndex'),
   ...(fields['draft'] === undefined ? {} : { draft: textOf(fields, 'draft') }),
-  ...(fields['pastes'] === undefined ? {} : { pastes: listOf(fields, 'pastes', (paste) => ({ label: textOf(paste, 'label'), text: textOf(paste, 'text') })) }),
+  ...(fields['draftPastes'] === undefined ? {} : { draftPastes: listOf(fields, 'draftPastes', pasteOf) }),
+  ...(fields['pastes'] === undefined ? {} : { pastes: listOf(fields, 'pastes', pasteOf) }),
   ...(fields['pasteCount'] === undefined ? {} : { pasteCount: countOf(fields, 'pasteCount') }),
+  ...(fields['shell'] === undefined ? {} : { shell: flagOf(fields, 'shell') }),
+  ...(fields['draftShell'] === undefined ? {} : { draftShell: flagOf(fields, 'draftShell') }),
 });
 
 const tuiOf = (fields: Fields): TuiRecord => {

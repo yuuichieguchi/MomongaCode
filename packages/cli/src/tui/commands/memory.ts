@@ -14,7 +14,7 @@ export const memoryCommand: SlashCommand = {
   run: async (args, context) => {
     const first = args.split(/\s+/)[0] ?? '';
     if (SHARED_WITH_SHELL.has(first)) {
-      await runShellCommand('memory', args, context, false);
+      await runShellCommand('memory', args, context);
       return;
     }
     const [action = 'list', id, ...rest] = args.split(/\s+/).filter((part) => part !== '');

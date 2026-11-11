@@ -16,7 +16,7 @@ import { createRecordWalker } from './record-walk.ts';
 import type { RecordVisit, WalkUnits } from './record-walk.ts';
 import { readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
-import type { ContributionMeasured, ContributionRequest, GoverningFactStore, MemoryStore, Run, TerminalContribution } from './types.ts';
+import type { ContributionMeasured, ContributionRequest, GoverningFactStore, MemoryStore, Run, RunStateReply, TerminalContribution } from './types.ts';
 
 export const payloadStep = (payload: RunEventPayload): number => ('step' in payload ? payload.step : 0);
 
@@ -53,9 +53,13 @@ export type JournalReaderOptions = {
   lookups?: { memories: Pick<MemoryStore, 'get'>; governing: Pick<GoverningFactStore, 'get'> };
 };
 
+export type RunStatePaging = { pageEvents: number; pause: () => Promise<void> };
+
 export type JournalReader = {
+  runState(runId: string, paging: RunStatePaging): Promise<RunStateReply>;
   measure(hook: TerminalContribution, request: ContributionRequest): ContributionMeasured;
   eventsOfTypes(runId: string, types: readonly RunEventPayload['type'][], afterSeq?: number): RunEvent[];
+  latestSessionNotice(sessionId: string, code: string, key: string): RunEvent | undefined;
   visitRun(runId: string, types: readonly RunEventPayload['type'][], visit: (event: RunEvent) => void, throughSeq?: number): Run;
   walkRun(runId: string, types: readonly RunEventPayload['type'][], visit: RecordVisit, units: WalkUnits, range?: { throughSeq?: number; from?: number }): Promise<Run>;
   visitRecord: ReferenceReader['visitRecord'];
@@ -154,6 +158,24 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
     return run;
   };
 
+  const runEventsPage = db.prepare('SELECT * FROM events WHERE run_id = :runId AND seq > :after AND seq <= :through ORDER BY seq');
+
+  const runState: JournalReader['runState'] = async (runId, { pageEvents, pause }) => {
+    const run = readTx(db, () => {
+      const row = selectRun.get({ id: runId });
+      if (row === undefined) throw new Error(`unknown run ${runId}`);
+      return decodeRun(row, decodeContext);
+    });
+    let state = initialRunState({ runId: run.id, sessionId: run.sessionId });
+    while (state.lastSeq < run.lastSeq) {
+      const events = decodeEach(runEventsPage.iterate({ runId, after: state.lastSeq, through: Math.min(run.lastSeq, state.lastSeq + pageEvents) }));
+      if (events.length === 0) throw new Error(`run ${runId} has no event after seq ${state.lastSeq}, below its last seq ${run.lastSeq}`);
+      state = events.reduce(foldRunState, state);
+      await pause();
+    }
+    return { lastSeq: run.lastSeq, state };
+  };
+
   const hookEventsOfTypes = (runId: string, types: readonly RunEventPayload['type'][]): RunEvent[] => {
     const plain = types.filter((type) => type !== 'model.requested');
     const events = eventsOfTypes(runId, plain);
@@ -223,5 +245,16 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
       return contribution === undefined ? { lastSeq: run.lastSeq } : { lastSeq: run.lastSeq, contribution };
     });
 
-  return { measure, eventsOfTypes, visitRun, walkRun, visitRecord: reference.visitRecord, verdictRows: createVerdictReader(db).rowsOf, boundOf, planInheritance: reference.planInheritance, readInheritedWindow: reference.readInheritedWindow };
+  const latestNotice = db.prepare(
+    `SELECT * FROM events WHERE type = 'notice' AND run_id IN (SELECT id FROM runs WHERE session_id = :sessionId)
+       AND json_extract(payload_json, '$.code') = :code AND json_extract(payload_json, '$.key') = :key
+     ORDER BY id DESC`,
+  );
+
+  const latestSessionNotice = (sessionId: string, code: string, key: string): RunEvent | undefined => {
+    const row = latestNotice.get({ sessionId, code, key });
+    return row === undefined ? undefined : decodeEach([row])[0];
+  };
+
+  return { runState, measure, eventsOfTypes, latestSessionNotice, visitRun, walkRun, visitRecord: reference.visitRecord, verdictRows: createVerdictReader(db).rowsOf, boundOf, planInheritance: reference.planInheritance, readInheritedWindow: reference.readInheritedWindow };
 };

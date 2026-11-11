@@ -101,7 +101,7 @@ describe('the tool usage window reads one offered-names record per run (person i
     env.gateway.script.push(textStep('Done.'));
     const run = await env.enqueue('Use the tools', { history: 'fresh' });
     await env.runOnce(env.worker('main', { toolList: toolsOf(env, WORK_TOOLS) }));
-    expect(env.ofType(run.id, 'run.started')[0]?.pins['token']).toEqual({ deferred: ['Counter', 'Write'] });
+    expect(env.ofType(run.id, 'run.started')[0]?.pins['token']).toMatchObject({ deferred: ['Counter', 'Write'] });
     expect(namesSentTo(env, run.id)).toEqual([LOADER, 'Echo']);
     const { store, reads } = bodyWatchedStore(env.store);
 

@@ -1,4 +1,4 @@
-import { sleepDrivenTiming } from '@momonga/testkit';
+import { sleepDrivenTiming, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -57,7 +57,7 @@ const scene = (survivor: Survivor) => {
       const stdout = new PassThrough();
       const stderr = new PassThrough();
       const child = Object.assign(new EventEmitter(), { pid: version ? VERSION_GROUP : SEARCH_GROUP, stdout, stderr, stdin: null });
-      const launched = launch({
+      const launched = launch({ protection: TEST_CHILD_UNPROTECTED,
         file: '/fake/rg',
         args: [],
         cwd: '/',

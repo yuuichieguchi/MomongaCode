@@ -4,6 +4,7 @@ import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { SNAPSHOT_STATE_VERSION, decodeEvent } from '../src/codec.ts';
 import { enqueue, harness, mustClaim, newSession, rawDb } from './helpers.ts';
+import { encodedRunState, foldedRunState } from './run-state-codec.ts';
 import { callItem, foldOf, requested, responded, task, toolCall, toolDone } from './inherit-fixtures.ts';
 
 const ENVELOPE = { id: 9, runId: 'r1', sessionId: 's1', seq: 5, step: 1, leaseToken: 1, createdAt: 10 };
@@ -115,14 +116,8 @@ const storedSnapshot = async () => {
   expect(store.append(claim, JOURNAL).kind).toBe('ok');
   const events: RunEvent[] = store.readRunEvents(run.id, 0, 1000);
   const state = events.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));
-  expect(store.writeSnapshot(claim, events[events.length - 1]!.seq, state)).toEqual({ kind: 'ok' });
-  const db = rawDb(dbPath);
-  const mutate = (expression: string): void => {
-    db.prepare(`UPDATE snapshots SET state_json = ${expression} WHERE run_id = ?`).run(run.id);
-  };
-  const storedJson = (): Record<string, unknown> =>
-    JSON.parse((db.prepare('SELECT state_json FROM snapshots WHERE run_id = ?').get(run.id) as { state_json: string }).state_json) as Record<string, unknown>;
-  return { store, run, state, events, mutate, storedJson };
+  const encoded = encodedRunState(state);
+  return { store, run, state, events, mutate: encoded.mutate, storedJson: encoded.json, read: encoded.read };
 };
 
 describe('snapshot state version', () => {
@@ -132,19 +127,17 @@ describe('snapshot state version', () => {
   });
 
   it('round-trips the loaded tools, the loop warning and the arrival seqs', async () => {
-    const { store, run, state } = await storedSnapshot();
+    const { state, read } = await storedSnapshot();
     expect(state.loadedTools).toEqual(['Grep']);
     expect(state.loopWarned).toEqual({ signature: 'sig-1' });
-    expect(store.load(run.id).snapshot?.state).toEqual(state);
+    expect(read()).toEqual(state);
   });
 
   it('treats a version 12 snapshot as absent and rebuilds the state from the journal', async () => {
-    const { store, run, state, events, mutate } = await storedSnapshot();
+    const { store, run, state, mutate, read } = await storedSnapshot();
     mutate("json_set(state_json, '$.stateVersion', 12)");
-    const loaded = store.load(run.id);
-    expect(loaded.snapshot).toBeUndefined();
-    expect(loaded.tail).toEqual(events);
-    expect(loaded.tail.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }) as RunState)).toEqual(state);
+    expect(read()).toBeUndefined();
+    expect(await foldedRunState(store, run.id)).toEqual(state);
   });
 
   it.each([
@@ -154,8 +147,8 @@ describe('snapshot state version', () => {
     ['a loaded instruction without a seq', "json_remove(state_json, '$.loadedInstructions[0].seq')"],
     ['an activated skill without a seq', "json_remove(state_json, '$.activatedSkills[0].seq')"],
   ])('reports a snapshot with %s as corrupt', async (_label, expression) => {
-    const { store, run, mutate } = await storedSnapshot();
+    const { mutate, read } = await storedSnapshot();
     mutate(expression);
-    expect(() => store.load(run.id)).toThrow(/corrupt/);
+    expect(() => read()).toThrow(/corrupt/);
   });
 });

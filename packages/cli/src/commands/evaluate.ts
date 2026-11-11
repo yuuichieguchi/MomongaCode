@@ -31,7 +31,6 @@ import { codeDigestOfRunningProcess, createOwnedDirectory, currentSocketResolver
 import type { MomongaPaths, KernelLockMechanism } from '@momonga/foundation';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
-import { nodeWorkspaceProbe } from '../eval/workspace-probe.ts';
 import { createHomes, liveSettingsFor, needsPlanRelay, pinnedModelOf, readCredentials, readPlanRelay, runContextLive, sweepStaleHomes, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects, ContextRuntime, HomeEffects, ReflectionBounds } from '../eval/context-host.ts';
 import type { CliPorts } from '../ports.ts';
@@ -141,7 +140,7 @@ const runLive = async (
     oracleOf: async (golden, env) => {
       const base = await createOwnedDirectory({ parent: ports.tmpdir, prefix: ORACLE_BASE_PREFIX, lock });
       await populate(ports, base.path, golden);
-      return { oracle: { base: base.path, probe: nodeWorkspaceProbe(env), files: ports.files }, dispose: () => base.dispose() };
+      return { oracle: { base: base.path, probe: ports.probe(env), files: ports.files }, dispose: () => base.dispose() };
     },
     ...(record === undefined ? {} : { onTranscript: async (run: RecordedRun) => void (await saveTranscript(ports.files, record, { ...run, policy: null, codeDigest: null })) }),
     planRelaySocket: currentSocketResolver(paths, 'gateway'),

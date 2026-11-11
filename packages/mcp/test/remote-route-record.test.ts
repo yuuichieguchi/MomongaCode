@@ -3,7 +3,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import net from 'node:net';
 import { describe, expect, it } from 'vitest';
-import { UNCONFIGURED_NETWORK, createFakeClock } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, createFakeClock, TEST_STDIO_LAUNCH } from '@momonga/testkit';
 import type { NetworkConfig, OutboundNetwork } from '@momonga/foundation';
 import { createManagedConnection } from '@momonga/mcp';
 import { BASE_ENV, makeDir, onCleanup } from './mcp-harness.ts';
@@ -99,7 +99,7 @@ describe('the route an MCP connection took is on its connection record', { timeo
   });
 
   it('records no route for a stdio server', () => {
-    const connection = createManagedConnection({ files: nodeFileSystem,
+    const connection = createManagedConnection({ launch: TEST_STDIO_LAUNCH, files: nodeFileSystem,
       clientVersion: '0.0.0-test',
       name: 'local',
       config: { command: process.execPath, args: ['-e', ''] },

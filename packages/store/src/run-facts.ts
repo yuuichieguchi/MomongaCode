@@ -21,6 +21,14 @@ const TERMINAL_LIST = TERMINAL_STATUSES.map((status) => `'${status}'`).join(', '
 
 const STOP_REASON_LIST = STOP_REASONS.map((reason) => `'${reason}'`).join(', ');
 
+const KNOWN_TERMINAL = `r.status IN (${TERMINAL_LIST}) AND (r.stop_reason IS NULL OR r.stop_reason IN (${STOP_REASON_LIST}))`;
+
+export const settledEventIdOf = (batch: FactsBatch, processed: number): number => {
+  const pending = batch.eventIds[processed];
+  if (pending === undefined) return batch.throughEventId;
+  return batch.eventIds.slice(0, processed).reduce((settled, eventId) => (eventId < pending ? Math.max(settled, eventId) : settled), batch.afterEventId);
+};
+
 const optional = <K extends string, V>(key: K, value: V | null): { [P in K]?: V } => (value === null ? {} : ({ [key]: value } as { [P in K]: V }));
 
 const episodeOf = (row: Row, context: DecodeContext): RecoveryEpisodeView => {
@@ -59,6 +67,7 @@ const factsOf = (row: Row, recoveries: RecoveryEpisodeView[], context: DecodeCon
   const maxTotalTokens = reader.nullableNumber('max_total_tokens');
   const maxCostNano = reader.nullableNumber('max_cost_nano');
   const deadlineAt = reader.nullableNumber('deadline_at');
+  const firstRoundPassed = reader.nullableNumber('first_round_passed');
   return {
     runId: identity,
     rootRunId: reader.string('root_run_id'),
@@ -79,7 +88,16 @@ const factsOf = (row: Row, recoveries: RecoveryEpisodeView[], context: DecodeCon
     steps: reader.number('steps'),
     limits: { ...optional('maxSteps', maxSteps), ...optional('maxTotalTokens', maxTotalTokens), ...optional('maxCostNano', maxCostNano) },
     ...(reader.flag('mandate')
-      ? { delegation: { held: reader.number('held'), resolvedByPerson: reader.number('held_resolved'), denied: reader.number('mandate_denied'), waited: reader.flag('quiescent') } }
+      ? {
+          delegation: {
+            held: reader.number('held'),
+            resolvedByPerson: reader.number('held_resolved'),
+            denied: reader.number('mandate_denied'),
+            waited: reader.flag('quiescent'),
+            holdLatencyMs: reader.number('hold_latency_ms'),
+            workDuringHolds: { modelSteps: reader.number('hold_model_steps'), toolCalls: reader.number('hold_tool_calls') },
+          },
+        }
       : {}),
     ...optional('deadlineAt', deadlineAt),
     asked: reader.number('asked'),
@@ -98,8 +116,33 @@ const factsOf = (row: Row, recoveries: RecoveryEpisodeView[], context: DecodeCon
       classifier: reader.number('basis_classifier'),
       person: reader.number('basis_person'),
     },
+    answers: {
+      allowOnce: reader.number('answers_allow_once'),
+      allowAlways: reader.number('answers_allow_always'),
+      rejectOnce: reader.number('answers_reject_once'),
+      rejectAlways: reader.number('answers_reject_always'),
+    },
+    denials: {
+      sandbox: reader.number('denials_sandbox'),
+      rule: reader.number('denials_rule'),
+      mode: reader.number('denials_mode'),
+      setting: reader.number('denials_setting'),
+      hook: reader.number('denials_hook'),
+      mandate: reader.number('denials_mandate'),
+      superseded: reader.number('denials_superseded'),
+      held: reader.number('denials_held'),
+    },
     declared: reader.flag('declared'),
     met: reader.flag('met'),
+    mutated: reader.flag('mutated'),
+    owed: reader.flag('owed'),
+    verification: {
+      rounds: reader.number('verification_rounds'),
+      firstRoundPassed: firstRoundPassed === null ? null : firstRoundPassed === 1,
+      failedRounds: reader.number('failed_rounds'),
+      checkMs: reader.number('check_ms'),
+      fixRoundTokens: reader.number('fix_round_tokens'),
+    },
     recoveries,
   };
 };
@@ -110,9 +153,17 @@ export const createRunFactsStore = (db: DatabaseSync, context: DecodeContext): R
   const nextTerminal = db.prepare(
     `SELECT e.id AS event_id, e.run_id
      FROM events e JOIN runs r ON r.id = e.run_id
-     WHERE e.id > :cursor AND e.type = 'run.status' AND r.status IN (${TERMINAL_LIST}) AND (r.stop_reason IS NULL OR r.stop_reason IN (${STOP_REASON_LIST}))
+     WHERE e.id > :cursor AND e.type = 'run.status' AND ${KNOWN_TERMINAL}
        AND e.seq = (SELECT MAX(x.seq) FROM events x WHERE x.run_id = e.run_id AND x.type = 'run.status')
      ORDER BY e.id LIMIT :limit`,
+  );
+  const terminalRootOf = db.prepare(
+    `WITH RECURSIVE up (id, parent) AS (
+       SELECT id, parent_run_id FROM runs WHERE id = :runId
+       UNION ALL
+       SELECT p.id, p.parent_run_id FROM runs p JOIN up ON p.id = up.parent
+     )
+     SELECT r.id FROM up JOIN runs r ON r.id = up.id WHERE up.parent IS NULL AND up.id <> :runId AND ${KNOWN_TERMINAL}`,
   );
   const deleteRecoveries = db.prepare('DELETE FROM run_recoveries WHERE run_id = :runId');
   const insertRecovery = db.prepare(
@@ -126,14 +177,22 @@ export const createRunFactsStore = (db: DatabaseSync, context: DecodeContext): R
        asked, elicited, authorization_required, side_effecting_calls, repeated_starts,
        reconciled_already_applied, reconciled_not_applied, reconciled_unknown,
        basis_read_only, basis_rule, basis_mode, basis_hook, basis_classifier, basis_person, declared, met,
-       cost_nano, max_cost_nano, mandate, held, held_resolved, mandate_denied, quiescent
+       cost_nano, max_cost_nano, mandate, held, held_resolved, mandate_denied, quiescent,
+       mutated, owed, verification_rounds, first_round_passed, failed_rounds, check_ms, fix_round_tokens,
+       answers_allow_once, answers_allow_always, answers_reject_once, answers_reject_always,
+       denials_sandbox, denials_rule, denials_mode, denials_setting, denials_hook, denials_mandate, denials_superseded, denials_held,
+       hold_latency_ms, hold_model_steps, hold_tool_calls
      ) VALUES (
        :runId, 0, :definitionsVersion, :rootRunId, :sessionId, :model, :mode, :agent, :origin, :status, :stopReason,
        :createdAt, :endedAt, :elapsedMs, :humanWaitMs, :tokensTotal, :steps, :maxSteps, :maxTotalTokens, :deadlineAt,
        :asked, :elicited, :authorizationRequired, :sideEffectingCalls, :repeatedStarts,
        :reconciledAlreadyApplied, :reconciledNotApplied, :reconciledUnknown,
        :basisReadOnly, :basisRule, :basisMode, :basisHook, :basisClassifier, :basisPerson, :declared, :met,
-       :costNano, :maxCostNano, :mandate, :held, :heldResolved, :mandateDenied, :quiescent
+       :costNano, :maxCostNano, :mandate, :held, :heldResolved, :mandateDenied, :quiescent,
+       :mutated, :owed, :verificationRounds, :firstRoundPassed, :failedRounds, :checkMs, :fixRoundTokens,
+       :answersAllowOnce, :answersAllowAlways, :answersRejectOnce, :answersRejectAlways,
+       :denialsSandbox, :denialsRule, :denialsMode, :denialsSetting, :denialsHook, :denialsMandate, :denialsSuperseded, :denialsHeld,
+       :holdLatencyMs, :holdModelSteps, :holdToolCalls
      )`,
   );
   const upsertUnavailable = db.prepare(
@@ -202,6 +261,28 @@ export const createRunFactsStore = (db: DatabaseSync, context: DecodeContext): R
       basisPerson: facts.basis.person,
       declared: facts.declared ? 1 : 0,
       met: facts.met ? 1 : 0,
+      answersAllowOnce: facts.answers.allowOnce,
+      answersAllowAlways: facts.answers.allowAlways,
+      answersRejectOnce: facts.answers.rejectOnce,
+      answersRejectAlways: facts.answers.rejectAlways,
+      denialsSandbox: facts.denials.sandbox,
+      denialsRule: facts.denials.rule,
+      denialsMode: facts.denials.mode,
+      denialsSetting: facts.denials.setting,
+      denialsHook: facts.denials.hook,
+      denialsMandate: facts.denials.mandate,
+      denialsSuperseded: facts.denials.superseded,
+      denialsHeld: facts.denials.held,
+      holdLatencyMs: facts.delegation?.holdLatencyMs ?? 0,
+      holdModelSteps: facts.delegation?.workDuringHolds.modelSteps ?? 0,
+      holdToolCalls: facts.delegation?.workDuringHolds.toolCalls ?? 0,
+      mutated: facts.mutated ? 1 : 0,
+      owed: facts.owed ? 1 : 0,
+      verificationRounds: facts.verification.rounds,
+      firstRoundPassed: facts.verification.firstRoundPassed === null ? null : facts.verification.firstRoundPassed ? 1 : 0,
+      failedRounds: facts.verification.failedRounds,
+      checkMs: facts.verification.checkMs,
+      fixRoundTokens: facts.verification.fixRoundTokens,
       costNano: facts.costNano,
       maxCostNano: facts.limits.maxCostNano ?? null,
       mandate: facts.delegation === undefined ? 0 : 1,
@@ -229,12 +310,23 @@ export const createRunFactsStore = (db: DatabaseSync, context: DecodeContext): R
 
     nextBatch: (limit): FactsBatch => {
       const { afterEventId } = cursor();
-      const rows = nextTerminal.all({ cursor: afterEventId, limit });
-      const last = rows.at(-1);
-      return {
-        runIds: rows.map((row) => readerFor('events', String(row['event_id']), row).string('run_id')),
-        throughEventId: last === undefined ? afterEventId : readerFor('events', String(last['event_id']), last).number('event_id'),
+      const runIds: string[] = [];
+      const eventIds: number[] = [];
+      const list = (runId: string, eventId: number): void => {
+        if (runIds.includes(runId)) return;
+        runIds.push(runId);
+        eventIds.push(eventId);
       };
+      let throughEventId = afterEventId;
+      for (const row of nextTerminal.all({ cursor: afterEventId, limit })) {
+        const reader = readerFor('events', String(row['event_id']), row);
+        const runId = reader.string('run_id');
+        throughEventId = reader.number('event_id');
+        list(runId, throughEventId);
+        const root = terminalRootOf.get({ runId });
+        if (root !== undefined) list(readerFor('runs', runId, root).string('id'), throughEventId);
+      }
+      return { runIds, eventIds, afterEventId, throughEventId };
     },
 
     commit: (batch: FactsCommit): void => {

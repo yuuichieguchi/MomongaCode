@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CONTENT_RETENTION_DAYS } from '@momonga/config';
+import { DEFAULT_RETENTION_DAYS } from '@momonga/config';
 import { proofArith } from '../support/proofs/arith.ts';
 import type { ProofArith, ProofInt } from '../support/proofs/arith.ts';
 import { expectRefuted, prove } from '../support/proofs/prove.ts';
@@ -43,9 +43,9 @@ describe('Q16: the day arithmetic of the retention period', () => {
     expect(MIN_RETENTION_DAYS).toBe(1n);
     expect(MAX_RETENTION_DAYS).toBe(36_500n);
     expect(MAX_TIMESTAMP_MS).toBeLessThan(MAX_SAFE);
-    expect(DEFAULT_CONTENT_RETENTION_DAYS).toBe(30);
-    expect(BigInt(DEFAULT_CONTENT_RETENTION_DAYS)).toBeGreaterThanOrEqual(MIN_RETENTION_DAYS);
-    expect(BigInt(DEFAULT_CONTENT_RETENTION_DAYS)).toBeLessThanOrEqual(MAX_RETENTION_DAYS);
+    expect(DEFAULT_RETENTION_DAYS).toBe(30);
+    expect(BigInt(DEFAULT_RETENTION_DAYS)).toBeGreaterThanOrEqual(MIN_RETENTION_DAYS);
+    expect(BigInt(DEFAULT_RETENTION_DAYS)).toBeLessThanOrEqual(MAX_RETENTION_DAYS);
   });
 
   it(

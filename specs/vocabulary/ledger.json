@@ -236,9 +236,6 @@
       "packages/config/src/project-mandate.ts": {
         "project": 2
       },
-      "packages/config/src/settings.ts": {
-        "target": 1
-      },
       "packages/context/src/budget.ts": {
         "target": 1
       },
@@ -323,7 +320,7 @@
         "job": 1
       },
       "packages/foundation/src/platform/windows-kept-groups.ts": {
-        "job": 2
+        "job": 1
       },
       "packages/foundation/src/schema-reference-cycles.ts": {
         "target": 1
@@ -455,9 +452,6 @@
       "packages/gateway/src/server/body.ts": {
         "limit": 1
       },
-      "packages/gateway/src/server/websocket.ts": {
-        "limit": 1
-      },
       "packages/mcp/src/common-passwords.data.ts": {
         "compact": 1,
         "gateway": 1,
@@ -525,7 +519,7 @@
       },
       "packages/reliability/src/report.ts": {
         "limit": 1,
-        "task": 7
+        "task": 6
       },
       "packages/runtime/src/gateway-client.ts": {
         "compact": 4,
@@ -639,9 +633,6 @@
         "conversation": 1,
         "limit": 1
       },
-      "packages/sandbox/src/bubblewrap.ts": {
-        "limit": 1
-      },
       "packages/sandbox/src/egress-proxy.ts": {
         "target": 1
       },
@@ -721,7 +712,7 @@
       },
       "packages/store/src/runtime-store.ts": {
         "job": 2,
-        "limit": 14,
+        "limit": 13,
         "project": 1
       },
       "packages/store/src/schema.ts": {
@@ -733,7 +724,7 @@
         "task": 2
       },
       "packages/store/src/search.ts": {
-        "limit": 5,
+        "limit": 4,
         "project": 5
       },
       "packages/supervisor/src/shutdown.ts": {

@@ -2,8 +2,9 @@ import type { CredentialRules, McpServerEntry } from '@momonga/config';
 import type { Clock, FileSystem } from '@momonga/foundation';
 import type { ToolSource } from '@momonga/tools';
 import type { McpRemotePorts } from './remote-ports.ts';
-import type { CloseGrace, McpMarkerOptions } from './stdio-transport.ts';
+import type { CloseGrace, McpMarkerOptions, StdioLaunch } from './stdio-transport.ts';
 import type { McpTimers } from './timers.ts';
+import type { McpTransportKind } from './call-bounds.ts';
 import { createManagedConnection } from './connection.ts';
 import type { McpAuthProbe, McpServerDiagnostics } from './connection.ts';
 import { createMcpToolSource } from './source.ts';
@@ -21,12 +22,14 @@ export type McpPoolOptions = {
   remote?: McpRemotePorts;
   random?: () => number;
   requestTimeoutMs?: number;
-  toolIdleTimeoutMs?: number;
+  toolIdleTimeoutNetworkMs?: number;
+  toolIdleTimeoutStdioMs?: number;
   toolTotalTimeoutMs?: number;
   connectTimeoutMs?: number;
   resetAfterMs?: number;
   markers?: McpMarkerOptions;
   closeGraceMs?: CloseGrace;
+  launch: StdioLaunch;
 };
 
 export type McpPool = {
@@ -52,6 +55,7 @@ export const createMcpPool = (options: McpPoolOptions): McpAuthorizingPool => {
       projectDir,
       baseEnv,
       files: options.files,
+      launch: options.launch,
       clock,
       clientVersion,
       ...(options.credentials === undefined ? {} : { credentials: options.credentials }),
@@ -70,13 +74,17 @@ export const createMcpPool = (options: McpPoolOptions): McpAuthorizingPool => {
     const connection = connections.find((candidate) => candidate.name === server);
     return connection === undefined ? Promise.reject(new Error(`no MCP server named "${server}" in this pool`)) : Promise.resolve(connection);
   };
+  const idleTimeoutOf = (transport: McpTransportKind): { toolIdleTimeoutMs?: number } => {
+    const idle = transport === 'network' ? options.toolIdleTimeoutNetworkMs : options.toolIdleTimeoutStdioMs;
+    return idle === undefined ? {} : { toolIdleTimeoutMs: idle };
+  };
   return {
     sources: connections.map((connection) =>
       createMcpToolSource({
         server: connection.name,
         connection,
         takeNotices: () => noticesOf.get(connection.name)?.splice(0) ?? [],
-        ...(options.toolIdleTimeoutMs === undefined ? {} : { toolIdleTimeoutMs: options.toolIdleTimeoutMs }),
+        ...idleTimeoutOf(connection.transportKind),
         ...(options.toolTotalTimeoutMs === undefined ? {} : { toolTotalTimeoutMs: options.toolTotalTimeoutMs }),
       }),
     ),

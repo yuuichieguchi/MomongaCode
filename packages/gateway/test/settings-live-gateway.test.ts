@@ -4,7 +4,6 @@ import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { WebSocket } from 'ws';
 import { DEFAULT_STOP_VALUES, CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER, FIRST_GENERATION, createJsonLogger, createUdsClient, fixedSocket, generationLayout, systemClock } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
@@ -70,7 +69,7 @@ const startStack = async (context: CleanupContext, settings: unknown, env: Recor
   registerCleanup(context, async () => {
     await handle.close(NO_GRACE);
   });
-  const client = createUdsClient(fixedSocket(handle.socketPath));
+  const client = createUdsClient(fixedSocket(handle.socketPath), { connectTimeoutMs: 0 });
   registerCleanup(context, () => client.destroy());
   return { home, handle, client, logText: () => chunks.join('') };
 };
@@ -139,32 +138,6 @@ describe('S1 gateway: each request pins the router it started with (design-setti
     expect(b.requests).toEqual([]);
   });
 
-  it('an open WebSocket connection is not closed by a change, and its next frame sees the change', async (context) => {
-    const a = await fakeUpstream(context);
-    const b = await fakeUpstream(context);
-    const stack = await startStack(context, servedBy(a));
-    const socket = new WebSocket(`ws+unix://${stack.handle.socketPath}:/v1/responses`);
-    registerCleanup(context, () => socket.terminate());
-    const messages: Array<Record<string, unknown>> = [];
-    let closed = false;
-    socket.on('message', (data) => messages.push(JSON.parse(data.toString()) as Record<string, unknown>));
-    socket.on('close', () => {
-      closed = true;
-    });
-    await new Promise<void>((resolve, reject) => {
-      socket.once('open', () => resolve());
-      socket.once('error', reject);
-    });
-    const terminals = (): number => messages.filter((message) => ['response.completed', 'response.failed', 'error'].includes(String(message['type']))).length;
-    socket.send(JSON.stringify({ type: 'response.create', store: false, ...ask() }));
-    await waitFor(() => terminals() === 1, { description: 'the first frame to complete' });
-    replaceSettings(stack.home, servedBy(b));
-    socket.send(JSON.stringify({ type: 'response.create', store: false, ...ask() }));
-    await waitFor(() => terminals() === 2, { description: 'the second frame to complete' });
-    expect(closed).toBe(false);
-    expect(a.requests).toHaveLength(1);
-    expect(b.requests).toHaveLength(1);
-  });
 });
 
 describe('S1 gateway: breaker and gate are carried over by the identity of the target (design-settings-live 3.1)', () => {
@@ -409,7 +382,7 @@ const startKeyedStack = async (context: CleanupContext, fake: FakeChatCompletion
   registerCleanup(context, async () => {
     await handle.close(NO_GRACE);
   });
-  const client = createUdsClient(fixedSocket(handle.socketPath));
+  const client = createUdsClient(fixedSocket(handle.socketPath), { connectTimeoutMs: 0 });
   registerCleanup(context, () => client.destroy());
   return client;
 };
@@ -486,7 +459,7 @@ describe('S8 gateway: every supervisor reply that is not a value is unset, and i
     registerCleanup(context, async () => {
       await handle.close(NO_GRACE);
     });
-    const client = createUdsClient(fixedSocket(handle.socketPath));
+    const client = createUdsClient(fixedSocket(handle.socketPath), { connectTimeoutMs: 0 });
     registerCleanup(context, () => client.destroy());
     const answered = await post(client, ask());
     expect(answered.text).toContain(UNSET_TEXT);

@@ -2,14 +2,14 @@ import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, openDatabaseWithIdentity, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
 import type { DatabaseFileIdentity } from '@momonga/foundation';
-import { FIDELITY_FOLD_VERSION, INBOX_MAX_PENDING, REPORT_PAGE_ROWS, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, admitRequest, unknownEffectLines, unknownEffectOptions } from '@momonga/protocol';
-import type { Admission, CallTiming, MemoryOrigin, ElicitationAnswerRecord, ElicitationRequestView, InboxDelivery, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, TreeSpend, RunStatus, SessionEventPayload, TerminalStatus, UserShellRecord } from '@momonga/protocol';
+import { FIDELITY_FOLD_VERSION, INBOX_MAX_PENDING, REPORT_PAGE_ROWS, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, admitRequest, isApprovalShown, unknownEffectLines, unknownEffectOptions } from '@momonga/protocol';
+import type { Admission, ApprovalShown, CallTiming, MemoryOrigin, ElicitationAnswerRecord, ElicitationRequestView, InboxDelivery, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, TreeSpend, RunStatus, SessionEventPayload, TerminalStatus, UserShellRecord } from '@momonga/protocol';
 import { createAppendRecords, columnsOf } from './append-records.ts';
 import { createVerdictWriter } from './fidelity-verdicts.ts';
 import { createApprovalStore } from './approvals.ts';
 import { blobDirectoryOf, createBlobStore } from './blobs.ts';
 import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
-import { HISTORY_MODES, decodeContextOf, decodeKnownEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, decodeStoredEvent, encodeRunState, userShellRecordOf } from './codec.ts';
+import { HISTORY_MODES, decodeContextOf, decodeKnownEvent, decodeRun, decodeRunEvents, decodeSession, decodeStoredEvent, userShellRecordOf } from './codec.ts';
 import { createDerivedReads, createDerivedRepair } from './derived-repair.ts';
 import type { DerivedScope } from './derived-repair.ts';
 import { JournalThreadError, StalePreparation } from './journal-port.ts';
@@ -63,7 +63,6 @@ import type {
   JobStore,
   LeaseFence,
   LeaseLost,
-  LoadedRun,
   Run,
   RequestApprovalResult,
   RequestCancelResult,
@@ -358,6 +357,16 @@ const prepareStatements = (db: DatabaseSync) => ({
   ),
   listExhausted: db.prepare(`SELECT r.* FROM runs r WHERE ${CLAIMABLE} AND ${EXHAUSTED} ${CLAIM_ORDER}`),
   exhaustedById: db.prepare(`SELECT r.* FROM runs r WHERE r.id = :id AND ${CLAIMABLE} AND ${EXHAUSTED}`),
+  unshownPendingRuns: db.prepare(
+    `SELECT DISTINCT a.run_id AS run_id FROM approvals a JOIN events e ON e.run_id = a.run_id AND e.type = 'tool.permission.requested' AND e.approval_id = a.id
+     WHERE a.status = 'pending' AND a.kind = 'permission' AND json_extract(e.payload_json, '$.shown') IS NULL
+     ORDER BY a.run_id`,
+  ),
+  unshownPendingOfRun: db.prepare(
+    `SELECT a.id AS id FROM approvals a JOIN events e ON e.run_id = a.run_id AND e.type = 'tool.permission.requested' AND e.approval_id = a.id
+     WHERE a.run_id = :runId AND a.status = 'pending' AND a.kind = 'permission' AND json_extract(e.payload_json, '$.shown') IS NULL
+     ORDER BY e.seq`,
+  ),
   listSweeperOwned: db.prepare(
     `SELECT r.* FROM runs r
      WHERE ${KNOWN_RUN_VALUES} AND r.status = 'CANCELLING' AND r.cancel_origin IN ('QUEUED', 'WAITING_HUMAN') AND (r.lease_owner IS NULL OR r.lease_expires_at <= :now)
@@ -403,12 +412,6 @@ const prepareStatements = (db: DatabaseSync) => ({
      WHERE id = :runId AND lease_token = :leaseToken AND lease_owner = :workerId`,
   ),
   inheritedEvent: db.prepare("SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'context.inherited' LIMIT 1"),
-  latestSnapshot: db.prepare('SELECT * FROM snapshots WHERE run_id = :runId ORDER BY seq DESC LIMIT 1'),
-  upsertSnapshot: db.prepare(
-    `INSERT INTO snapshots (run_id, seq, state_json, created_at) VALUES (:runId, :seq, :state, :createdAt)
-     ON CONFLICT (run_id, seq) DO UPDATE SET state_json = excluded.state_json, created_at = excluded.created_at`,
-  ),
-  pruneSnapshots: db.prepare('DELETE FROM snapshots WHERE run_id = :runId AND seq < :seq'),
 });
 
 type Statements = ReturnType<typeof prepareStatements>;
@@ -1004,14 +1007,15 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     };
   };
 
-  const requestOf = (approval: Approval): { reason: string; suggestedRule?: string } => {
+  const requestOf = (approval: Approval): { reason: string; suggestedRule?: string; shown?: ApprovalShown } => {
     const row = derivedView.permissionRequestOf(approval.runId, approval.id);
     if (row === undefined) throw corrupt('approvals', approval.id, `run ${approval.runId} has no tool.permission.requested event for approval ${approval.id}`);
     const payload = expectRecord('events', approval.id, 'payload_json', readerFor('events', approval.id, row).json('payload_json'));
-    const { reason, suggestedRule } = payload;
+    const { reason, suggestedRule, shown } = payload;
     if (typeof reason !== 'string') throw corrupt('events', approval.id, 'reason must be a string');
     if (suggestedRule !== undefined && typeof suggestedRule !== 'string') throw corrupt('events', approval.id, 'suggestedRule must be a string');
-    return { reason, ...(suggestedRule === undefined ? {} : { suggestedRule }) };
+    if (shown !== undefined && !isApprovalShown(shown)) throw corrupt('events', approval.id, 'shown must hold a string title and the input');
+    return { reason, ...(suggestedRule === undefined ? {} : { suggestedRule }), ...(shown === undefined ? {} : { shown }) };
   };
 
   const titleOf = (approval: Approval, callId: string): string => {
@@ -1040,7 +1044,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
   const viewOf = (approval: Approval): ApprovalView => {
     if (approval.kind !== 'permission' && approval.kind !== 'unknown_effect') throw corrupt('approvals', approval.id, `an approval of kind ${approval.kind} has no approval view`);
-    const { reason, suggestedRule } = approval.kind === 'unknown_effect' ? { reason: unknownReasonOf(approval), suggestedRule: undefined } : requestOf(approval);
+    const { reason, suggestedRule, shown } = approval.kind === 'unknown_effect' ? { reason: unknownReasonOf(approval), suggestedRule: undefined, shown: undefined } : requestOf(approval);
     return {
       id: approval.id,
       kind: approval.kind,
@@ -1051,6 +1055,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       createdAt: approval.createdAt,
       ...(suggestedRule === undefined ? {} : { suggestedRule }),
       reason,
+      ...(shown === undefined ? {} : { shown }),
       toolCall: toolCallOf(approval),
     };
   };
@@ -1104,19 +1109,6 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   };
 
   const hasInheritedEvent = (runId: string): boolean => sql.inheritedEvent.get({ runId }) !== undefined;
-
-  const loadInReadTx = (runId: string): LoadedRun => {
-    requireRun(runId);
-    const row: Row | undefined = sql.latestSnapshot.get({ runId });
-    if (row === undefined) return { tail: decodeEvents(sql.runEvents.all({ runId, after: 0, limit: -1 })) };
-    const identity = `${runId}@${String(row['seq'])}`;
-    const reader = readerFor('snapshots', identity, row);
-    const seq = reader.number('seq');
-    const state = decodeRunState(identity, reader.json('state_json'));
-    if (state === undefined) return { tail: decodeEvents(sql.runEvents.all({ runId, after: 0, limit: -1 })) };
-    if (state.runId !== runId) throw corrupt('snapshots', identity, `state belongs to run ${state.runId}`);
-    return { snapshot: { seq, state }, tail: decodeEvents(sql.runEvents.all({ runId, after: seq, limit: -1 })) };
-  };
 
   const writeInheritance = (claim: Claim, plan: Extract<InheritPlanReply, { kind: 'ready' }>): InheritContextResult =>
     transaction<InheritContextResult>(() => {
@@ -1677,6 +1669,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       fillPage(afterSeq, limit, (after, wanted) => sql.runEvents.all({ runId, after, limit: wanted }), (row) => readerFor('events', runId, row).number('seq'), decodeEvents),
 
     readRunEventsOfTypes: (runId, types, afterSeq) => journalReader.eventsOfTypes(runId, types, afterSeq),
+    latestSessionNotice: (sessionId, code, key) => journalReader.latestSessionNotice(sessionId, code, key),
 
     readLatestRunEventBefore: <T extends RunEventPayload['type']>(runId: string, type: T, beforeSeq: number) => {
       if (type === 'model.requested') return readLatestRequest(runId, beforeSeq) as Extract<RunEvent, { type: T }> | undefined;
@@ -1734,7 +1727,11 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return readerFor('events', sessionId, row).number('max_id');
     },
 
-    load: (runId) => readTx(db, () => loadInReadTx(runId)),
+    load: async (runId, signal) => {
+      signal.throwIfAborted();
+      requireRun(runId);
+      return journalPreparer(preparer, 'run state').runState({ runId }, signal);
+    },
 
     inheritContext: async (claim, { mode, facts = store.journalFacts }) => {
       const run = requireRun(claim.runId);
@@ -1766,6 +1763,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
             subjectDigest: input.event.subjectDigest,
             reason: input.event.reason,
             ...(input.event.suggestedRule === undefined ? {} : { suggestedRule: input.event.suggestedRule }),
+            shown: input.event.shown,
           });
           if (input.held !== undefined) {
             const { footprint, placeholder } = input.held;
@@ -1847,6 +1845,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     pendingElicitationViews: (runId) => derivedReads.read({ runId }, () => approvalOps.store.listPending(runId).filter((approval) => approval.kind === 'elicitation').map(elicitationViewOf)),
 
+    catchUpDerived: (pages) => derivedReads.catchUp(pages),
     hasActiveRun: () => {
       const row = sql.anyActiveRunExists.get({});
       if (row === undefined) throw new Error('could not compute whether any run is active');
@@ -1871,6 +1870,33 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         }
       }
       return stopped;
+    },
+
+    reaskUnshownApprovals: async (onError) => {
+      const reasked: string[] = [];
+      for (const row of sql.unshownPendingRuns.all()) {
+        const runId = readerFor('approvals', 'unshown', row).string('run_id');
+        try {
+          const didReask = await derivedReads.write({ runTree: runId }, () => {
+            const ids = sql.unshownPendingOfRun.all({ runId }).map((entry) => readerFor('approvals', runId, entry).string('id'));
+            if (ids.length === 0) return false;
+            const events = ids.map((id) => {
+              const approval = approvalOps.store.get(id);
+              if (approval === undefined) throw new Error(`approval ${id} vanished while it was asked again`);
+              approvalOps.end(id, 'superseded');
+              return cancelledEvent(approval, 'superseded');
+            });
+            const run = requireRun(runId);
+            if (run.status === 'WAITING_HUMAN' && approvalOps.store.listPending(run.id).length === 0) changeStatus(run, 'QUEUED', { edges: SERVICE_TRANSITIONS, availableAt: clock.now() }, events);
+            else writeRun({ ...appendPayloads(run, events), version: run.version + 1 });
+            return true;
+          });
+          if (didReask) reasked.push(runId);
+        } catch (error) {
+          onError(error, runId);
+        }
+      }
+      return reasked;
     },
 
     finishCancelled: async (onError) => {
@@ -1929,24 +1955,6 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     pendingApprovalViews: (runId) => derivedReads.read({ runId }, () => approvalOps.store.listPending(runId).filter((approval) => approval.kind === 'permission' || approval.kind === 'unknown_effect').map(viewOf)),
 
-    writeSnapshot: (claim, seq, state) =>
-      transaction(() => {
-        const run = fenced(claim);
-        if (run === undefined) return leaseLost;
-        if (state.runId !== run.id) throw new Error(`snapshot state belongs to run ${state.runId}, not ${run.id}`);
-        if (!Number.isInteger(seq) || seq < 0) throw new RangeError(`snapshot seq must be a non-negative integer, got ${seq}`);
-        if (seq > run.lastSeq) return conflict(`snapshot seq ${seq} is beyond run ${run.id} last seq ${run.lastSeq}`);
-        const latest = sql.latestSnapshot.get({ runId: run.id });
-        if (latest !== undefined && readerFor('snapshots', run.id, latest).number('seq') > seq) {
-          return conflict(`run ${run.id} already has a newer snapshot than seq ${seq}`);
-        }
-        const encoded = canonicalJson(encodeRunState(state));
-        onEncode?.('snapshot', Buffer.byteLength(encoded));
-        sql.upsertSnapshot.run({ runId: run.id, seq, state: encoded, createdAt: clock.now() });
-        sql.pruneSnapshots.run({ runId: run.id, seq });
-        return { kind: 'ok' } as const;
-      }),
-
     idempotency: createIdempotencyStore(db, clock, (fence) => fenced(fence) !== undefined, decodeContext),
     approvals: approvalOps.store,
     blobs,
@@ -1975,6 +1983,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       reflectionInput: async (request, signal) => journalPreparer(preparer, 'reflection input').reflectionInput(request, signal),
       fidelity: async (request, signal) => journalPreparer(preparer, 'fidelity check').fidelity(request, signal),
       report: async (request, signal) => journalPreparer(preparer, 'report').report(request, signal),
+      runState: async (request, signal) => journalPreparer(preparer, 'run state').runState(request, signal),
     },
 
     dataVersion: () => {

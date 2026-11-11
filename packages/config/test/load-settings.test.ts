@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { SETTINGS_SCHEMA, loadSettings } from '@momonga/config';
+import { SETTINGS_SCHEMA, hookGroupApprovalDigestOf, loadSettings } from '@momonga/config';
 import type { HookMatcherGroup } from '@momonga/protocol';
 import { canonsOf, connectionOf, distrusting, localSettingsPath, makeTree, modelOf, projectSettingsPath, trusting, userSettingsPath, writeJson, writeText } from './helpers.ts';
 
@@ -23,6 +23,7 @@ describe('SETTINGS_SCHEMA', () => {
         'forges',
         'gateway',
         'hooks',
+        'issues',
         'limits',
         'mandates',
         'mcp',
@@ -33,6 +34,9 @@ describe('SETTINGS_SCHEMA', () => {
         'operations',
         'permissions',
         'pricing',
+        'projectApprovals',
+        'projectChecks',
+        'retention',
         'runtime',
         'sandbox',
         'sandboxNetwork',
@@ -150,7 +154,7 @@ describe('loadSettings security restrictions', () => {
     });
 
     it('refuses cleartext to a remote host', async () => {
-      await expect(load('http://collector.example')).rejects.toThrow(/telemetry\.otlp\.endpoint .*must use https/);
+      await expect(load('http://collector.example')).rejects.toThrow(/invalid settings at \/telemetry\/otlp\/endpoint: the address .*must use https/);
     });
 
     it('refuses userinfo without printing the password', async () => {
@@ -318,7 +322,10 @@ describe('loadSettings hooks', () => {
 
   it('concatenates hook groups user < project < local < cli', async () => {
     const tree = makeTree();
-    writeJson(userSettingsPath(tree), { hooks: { PreToolUse: [hookGroup('user', 'Bash')] } });
+    writeJson(userSettingsPath(tree), {
+      hooks: { PreToolUse: [hookGroup('user', 'Bash')] },
+      projectApprovals: { [tree.project]: { hooks: [hookGroupApprovalDigestOf('PreToolUse', hookGroup('project')), hookGroupApprovalDigestOf('Stop', hookGroup('stop'))] } },
+    });
     writeJson(projectSettingsPath(tree), { hooks: { PreToolUse: [hookGroup('project')], Stop: [hookGroup('stop')] } });
     writeJson(localSettingsPath(tree), { hooks: { PreToolUse: [hookGroup('local')] } });
     const result = await loadSettings({

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { createStdioTransport } from '@momonga/mcp';
 import { nodeFileSystem } from '@momonga/foundation';
 import type { FileSystem } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector, TEST_STDIO_LAUNCH } from '@momonga/testkit';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -42,7 +42,7 @@ describe('the command of a stdio MCP server is found on PATH through the file-sy
     const markers = makeDir();
     fs.symlinkSync(process.execPath, path.join(bin, 'mm-port-node'));
     const calls: Call[] = [];
-    const transport = createStdioTransport({
+    const transport = createStdioTransport({ launch: TEST_STDIO_LAUNCH,
       name: 'port',
       config: { command: 'mm-port-node', args: ['-e', 'setTimeout(() => undefined, 60000)'] },
       projectDir: makeDir(),
@@ -62,7 +62,7 @@ describe('the command of a stdio MCP server is found on PATH through the file-sy
   });
 
   it('names the command it did not find', async () => {
-    const transport = createStdioTransport({ name: 'missing', config: { command: 'mm-port-missing' }, projectDir: makeDir(), baseEnv: { PATH: makeDir() }, files: nodeFileSystem });
+    const transport = createStdioTransport({ launch: TEST_STDIO_LAUNCH, name: 'missing', config: { command: 'mm-port-missing' }, projectDir: makeDir(), baseEnv: { PATH: makeDir() }, files: nodeFileSystem });
     await expect(transport.start()).rejects.toThrow(/mm-port-missing/);
   });
 });

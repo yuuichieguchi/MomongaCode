@@ -27,7 +27,7 @@ export type SelfExecutable =
 
 export type Sink = { write(text: string): void };
 
-export type AcpInput = { take(): Uint8Array | undefined; arrival(): Promise<'bytes' | 'end'> };
+export type AcpInput = { take(): Uint8Array | undefined; arrival(): Promise<'bytes' | 'end'>; pause(): void; resume(): void };
 
 export type AcpStdio = { input: AcpInput; output: WritableStream<Uint8Array> };
 
@@ -69,9 +69,10 @@ export type CliPorts = {
   terminal: Terminal | undefined;
   files: CliFiles;
   exec: HostExec;
-  probe: WorkspaceProbe;
+  probe(env: Readonly<Record<string, string>>): WorkspaceProbe;
   openUrl: OpenUrl;
   secretStore(): SecretStore;
+  personCapability(): Promise<string>;
   acpStdio?: () => AcpStdio;
   handover?: HandoverHost;
 };

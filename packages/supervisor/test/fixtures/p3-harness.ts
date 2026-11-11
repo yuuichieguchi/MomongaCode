@@ -166,6 +166,7 @@ export const createFakeSpawn = (options: FakeSpawnOptions = {}): FakeSpawn => {
         lifeline: null,
         onSpawnError: (listener) => void errorListeners.push(listener),
         onExit: (listener) => void exitListeners.push(listener),
+        onCommandPid: () => undefined,
         kill: () => undefined,
         killGroup: async () => undefined,
       };
@@ -223,6 +224,7 @@ export const createFakeSpawn = (options: FakeSpawnOptions = {}): FakeSpawn => {
       lifeline,
       onSpawnError: (listener) => void errorListeners.push(listener),
       onExit: (listener) => void exitListeners.push(listener),
+      onCommandPid: (listener) => listener(pid),
       kill: (signal) => {
         child.signals.push(signal);
         events.push({ kind: 'kill', role, pid, at: now(), detail: signal });
@@ -531,7 +533,7 @@ export const httpOver = async (
   body?: string,
 ): Promise<SimpleResponse> => {
   const { createUdsClient } = await import('@momonga/foundation');
-  const client = createUdsClient(fixedSocket(socketPath), { headersTimeoutMs: 5000 });
+  const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0, headersTimeoutMs: 5000 });
   registerCleanup(context, () => client.destroy());
   const response = await client.request({ method, path: requestPath, ...(body === undefined ? {} : { body, headers: { 'content-type': 'application/json' } }) });
   const text = await response.text();

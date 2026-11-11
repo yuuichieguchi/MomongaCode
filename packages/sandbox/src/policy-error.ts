@@ -14,7 +14,7 @@ export type SandboxPolicyErrorCode =
   | 'protected_link_not_pinnable'
   | 'protected_path_unreadable'
   | 'network_port_invalid'
-  | 'network_scope_unsupported'
+  | 'network_relay_missing'
   | 'socket_filter_unsupported'
   | 'socket_guard_missing';
 

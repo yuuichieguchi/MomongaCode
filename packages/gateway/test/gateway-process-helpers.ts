@@ -123,7 +123,7 @@ export const launchGateway = async (options: GatewayProcessOptions): Promise<Gat
 };
 
 export const clientFor = (socketPath: string): UdsClient => {
-  const client = createUdsClient(fixedSocket(socketPath));
+  const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0 });
   registerCleanup(() => client.close());
   return client;
 };

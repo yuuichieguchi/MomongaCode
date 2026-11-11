@@ -5,7 +5,7 @@ import { nodeFileSystem, systemRandom } from '@momonga/foundation';
 import { openDatabase } from '@momonga/foundation/sqlite';
 import { REPOSITORY_FACTS_EVENT_TYPES, createRepositoryFactsFold } from '@momonga/memory';
 import { RUN_REPORT_EVENT_TYPES, createRunReportFold } from '@momonga/observability/run-report';
-import { FactsRefusedError, createBlobStore, createJournalReader, knownValue } from '@momonga/store';
+import { FactsRefusedError, UnknownValueError, createBlobStore, createJournalReader, encodeRunState, knownValue } from '@momonga/store';
 import { FIDELITY_CLAIMS, MAIN_AGENT, PERMISSION_MODES, STORED_MODEL_KEYS, TERMINAL_STATUSES, decodeStoredModel, nanoOfAmount } from '@momonga/protocol';
 import { FACTS_EVENT_TYPES, createCallsFold, createFactsFold } from '@momonga/reliability';
 import type { Capabilities, ClaimedToken, PermissionMode, RunBudgetReport, RunEvent, RunEventPayload, RunFactsLimits } from '@momonga/protocol';
@@ -15,7 +15,7 @@ import { contributionAtTerminal } from './contribution.ts';
 import { EVIDENCE_EVENT_TYPES, createEvidenceFold } from './evidence-fold.ts';
 import { FIDELITY_EVENT_TYPES, createFidelityFold } from './fidelity-fold.ts';
 import type { FidelityFold } from './fidelity-fold.ts';
-import { FIDELITY_SCAN_PAGE_BYTES, JOURNAL_PROGRESS_INTERVAL_MS } from './journal-thread-limits.ts';
+import { FIDELITY_SCAN_PAGE_BYTES, JOURNAL_PROGRESS_INTERVAL_MS, RUN_STATE_PAGE_EVENTS } from './journal-thread-limits.ts';
 import { createProgressGate } from './progress-gate.ts';
 import { REFLECTION_INPUT_EVENT_TYPES, createReflectionInputFold } from './reflection-input.ts';
 import type { KernelLockMechanism } from '@momonga/foundation';
@@ -49,11 +49,13 @@ const requestOf = (message: unknown): { readonly id: number; readonly kind: stri
 
 const codeOf = (error: Error & { code?: unknown }): string | undefined => (typeof error.code === 'string' ? error.code : undefined);
 
-const errorOf = (error: unknown): { name: string; message: string; code?: string; refusal?: true } => {
+const errorOf = (error: unknown): { name: string; message: string; code?: string; errcode?: number; refusal?: true; unknownValue?: true } => {
   if (error instanceof FactsRefusedError) return { name: error.name, message: error.message, refusal: true };
+  if (error instanceof UnknownValueError) return { name: error.name, message: error.message, unknownValue: true };
   if (!(error instanceof Error)) return { name: 'Error', message: String(error) };
   const code = codeOf(error);
-  return { name: error.name, message: error.message, ...(code === undefined ? {} : { code }) };
+  const { errcode } = error as { errcode?: unknown };
+  return { name: error.name, message: error.message, ...(code === undefined ? {} : { code }), ...(typeof errcode === 'number' ? { errcode } : {}) };
 };
 
 export const serveJournalReader = (handlers: Readonly<Record<string, JournalHandler>>, { incoming, outgoing }: JournalChannel): void => {
@@ -411,6 +413,23 @@ const scanBlob = async (blobs: BlobPages, handle: string, fold: FidelityFold, un
 
 const yieldToThread = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
+export const runStateHandler = (reader: Pick<JournalReader, 'runState'>, current: { progress: (() => void) | undefined }): JournalHandler => async (request, progress) => {
+  const runId = textOf(request, 'runId', 'run_state');
+  current.progress = progress;
+  try {
+    const { lastSeq, state } = await reader.runState(runId, {
+      pageEvents: RUN_STATE_PAGE_EVENTS,
+      pause: async () => {
+        await yieldToThread();
+        current.progress = progress;
+      },
+    });
+    return { lastSeq, state: encodeRunState(state) };
+  } finally {
+    current.progress = undefined;
+  }
+};
+
 export const fidelityHandler = ({ reader, blobs, current, gateFor }: FidelityPorts): JournalHandler => async (request, progress) => {
   const runId = textOf(request, 'runId', 'fidelity');
   const cwd = textOf(request, 'cwd', 'fidelity');
@@ -523,6 +542,7 @@ const serve = (data: JournalThreadData): void => {
       reflection_input: withProgress(current, reflectionInputHandler(reader)),
       runFacts: withProgress(current, runFactsHandler(db, reader)),
       report: withProgress(current, reportHandler(db, reader)),
+      run_state: runStateHandler(reader, current),
       fidelity: fidelityHandler({ reader, blobs, current, gateFor: (post) => createProgressGate({ now: () => performance.now(), intervalMs: JOURNAL_PROGRESS_INTERVAL_MS, post }) }),
       inherit_plan: withProgress(current, inheritPlanHandler(reader)),
       inherited_window: withProgress(current, inheritedWindowHandler(reader)),

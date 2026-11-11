@@ -1,3 +1,4 @@
+import { TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -22,7 +23,7 @@ describe('a group member that survives the stop after the leader exits is report
       alive: async () => true,
     };
     const child = Object.assign(new EventEmitter(), { pid: FAKE_PID, stdout: new PassThrough(), stderr: new PassThrough(), stdin: null });
-    const launched = launch({
+    const launched = launch({ protection: TEST_CHILD_UNPROTECTED,
       file: '/bin/sh',
       args: [],
       cwd: '/',
@@ -52,7 +53,7 @@ describe('a group member that survives the stop after the leader exits is report
       alive: async () => alive,
     };
     const child = Object.assign(new EventEmitter(), { pid: FAKE_PID, stdout: new PassThrough(), stderr: new PassThrough(), stdin: null });
-    const launched = launch({
+    const launched = launch({ protection: TEST_CHILD_UNPROTECTED,
       file: '/bin/sh',
       args: [],
       cwd: '/',
@@ -103,7 +104,7 @@ describe('a group member that survives the stop after the leader exits is report
     fs.writeFileSync(markerFile, `${FAKE_PID}\n`, { mode: 0o600 });
     try {
       const child = Object.assign(new EventEmitter(), { pid: FAKE_PID, stdout: new PassThrough(), stderr: new PassThrough(), stdin: null });
-      const launched = launch({
+      const launched = launch({ protection: TEST_CHILD_UNPROTECTED,
         file: '/bin/sh',
         args: [],
         cwd: '/',

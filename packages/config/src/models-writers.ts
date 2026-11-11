@@ -50,7 +50,7 @@ export type ModelsOperation =
 
 export type ModelsOperations = readonly [ModelsOperation, ...ModelsOperation[]];
 
-export type ModelsEditRefusalCode = 'would_not_load' | 'unresolved' | 'name_taken' | 'reserved_name' | 'duplicate' | 'invalid_value';
+export type ModelsEditRefusalCode = 'would_not_load' | 'unresolved' | 'name_taken' | 'reserved_name' | 'duplicate' | 'in_use' | 'invalid_value';
 
 export type ModelsEditRefusal = { code: ModelsEditRefusalCode; message: string };
 
@@ -204,9 +204,11 @@ const requireConfigured = (state: State, canon: string): string => {
   return canon;
 };
 
+const namesOrNone = (names: readonly string[]): string => (names.length === 0 ? 'none' : names.join(', '));
+
 const connectionIndexOf = (state: State, provider: string): number => {
   const index = state.providers.indexOf(provider);
-  return index >= 0 ? index : refuse('unresolved', `The server "${provider}" is not configured.`);
+  return index >= 0 ? index : refuse('unresolved', `The server "${provider}" is not configured. Configured servers: ${namesOrNone(state.providers.flatMap((name) => name ?? []))}.`);
 };
 
 const canonOfText = (state: State, text: unknown): string | undefined => {
@@ -387,21 +389,24 @@ const allowBillingChange = (document: Json, state: State, operation: Extract<Mod
   if (model !== undefined) requireConfigured(state, model);
   const scope = model === undefined ? '' : ` for ${displayIn(state, model)}`;
   const changes = billingChangesIn(document);
-  if (changes.some(sameBillingChange(state, operation))) refuse('duplicate', `Requests may already fall from ${from} to ${to}${scope}.`);
+  if (changes.some(sameBillingChange(state, operation))) refuse('duplicate', `Requests may already fall from ${from} to ${to}${scope}; nothing changed.`);
   changes.push(model === undefined ? { from, to } : { from, to, model });
   return { summary: () => `Requests may now fall from ${from} to ${to}${scope}.` };
 };
 
 const forbidBillingChange = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'forbidBillingChange' }>): Applied => {
-  if (operation.model !== undefined) requireConfigured(state, operation.model);
+  const { from, to, model } = operation;
+  if (model !== undefined) requireConfigured(state, model);
+  const scope = model === undefined ? '' : ` for ${displayIn(state, model)}`;
   const models = document['models'];
   const same = sameBillingChange(state, operation);
   const written = isRecord(models) ? models['billingChanges'] : undefined;
-  if (isRecord(models) && Array.isArray(written) && (written as Json[]).some(same)) {
-    models['billingChanges'] = (written as Json[]).filter((change) => !same(change));
-    dropIfEmpty(models, 'billingChanges');
+  if (!isRecord(models) || !Array.isArray(written) || !(written as Json[]).some(same)) {
+    return { summary: () => `Requests were not allowed to fall from ${from} to ${to}${scope}; nothing changed.` };
   }
-  return { summary: () => `Requests may no longer fall from ${operation.from} to ${operation.to}.` };
+  models['billingChanges'] = (written as Json[]).filter((change) => !same(change));
+  dropIfEmpty(models, 'billingChanges');
+  return { summary: () => `Requests may no longer fall from ${from} to ${to}${scope}.` };
 };
 
 const JOB_LABELS: Readonly<Record<ModelRole, string>> = { compaction: 'Summaries', reflection: 'Reflection', analysis: 'Analysis' };
@@ -684,7 +689,7 @@ const declaredServersIn = (document: Json): Json => recordAt(modelsIn(document),
 const declaredServerOf = (document: Json, id: string): Json => {
   const servers = modelsIn(document)['servers'];
   if (isRecord(servers) && Object.hasOwn(servers, id) && isRecord(servers[id])) return servers[id];
-  return refuse('unresolved', `The server program "${id}" is not declared.`);
+  return refuse('unresolved', `The server program "${id}" is not declared. Declared server programs: ${namesOrNone(Object.keys(isRecord(servers) ? servers : {}))}.`);
 };
 
 const declareServer = (document: Json, operation: Extract<ModelsOperation, { kind: 'declareServer' }>): Applied => {
@@ -708,7 +713,7 @@ const forgetServer = (document: Json, state: State, operation: Extract<ModelsOpe
   const { id } = operation;
   declaredServerOf(document, id);
   const user = writtenConnections(document).findIndex((connection) => isRecord(connection) && connection['server'] === id);
-  if (user >= 0) refuse('duplicate', `${id} is used by ${state.providers[user] ?? `models.connections[${user}]`}; remove that server first.`);
+  if (user >= 0) refuse('in_use', `${id} is used by ${state.providers[user] ?? `models.connections[${user}]`}; remove that server first.`);
   const models = modelsIn(document);
   delete declaredServersIn(document)[id];
   dropIfEmpty(models, 'servers');
@@ -840,30 +845,3 @@ export const serverNameFromCommand = (command: string, taken: ReadonlySet<string
   while (taken.has(`${name}-${suffix}`)) suffix += 1;
   return `${name}-${suffix}`;
 };
-
-export type ModelsSettingWriter = { path: string; operations: readonly ModelsOperation['kind'][]; inSession: readonly string[]; shell: readonly string[] };
-
-const CONNECTION_PATH = 'models.connections[]';
-const ENTRY_PATH = `${CONNECTION_PATH}.models[]`;
-
-const REMOVAL_WRITER = { operations: ['removeConnection', 'removeModel'], inSession: ['/models'], shell: ['momonga models remove-server', 'momonga models remove'] } as const;
-
-export const MODELS_SETTING_WRITERS: readonly ModelsSettingWriter[] = [
-  ...CONNECTION_FIELD_KEYS.map((key) => ({ path: `${CONNECTION_PATH}.${key}`, operations: ['setConnectionField', 'addModel'] as const, inSession: ['/models'], shell: ['momonga models set-server', 'momonga models add'] })),
-  { path: `${CONNECTION_PATH}.plan.profile`, operations: ['addModel'], inSession: ['/login'], shell: ['momonga auth login'] },
-  { path: CONNECTION_PATH, operations: ['removeConnection'], inSession: ['/models'], shell: ['momonga models remove-server'] },
-  { path: 'models.servers.*', operations: ['removeConnection', 'declareServer', 'setServerField', 'forgetServer'], inSession: ['/models'], shell: ['momonga models remove-server --forget-program', 'momonga models add-program', 'momonga models set-program', 'momonga models forget-program'] },
-  { path: `${CONNECTION_PATH}.provider`, operations: ['setProvider'], inSession: ['/models'], shell: ['momonga models name'] },
-  { path: `${ENTRY_PATH}.${ENTRY_ID_FIELD}`, operations: ['addModel', 'removeModel', 'setModelField'], inSession: ['/models'], shell: ['momonga models add', 'momonga models remove', 'momonga models set'] },
-  ...ENTRY_FIELD_KEYS.map((key) => ({ path: `${ENTRY_PATH}.${key}`, operations: ['setModelField'] as const, inSession: ['/models'], shell: ['momonga models set'] })),
-  { path: 'models.start', operations: ['setStart', ...REMOVAL_WRITER.operations], inSession: ['/models start', '/model --start', ...REMOVAL_WRITER.inSession], shell: ['momonga models start', ...REMOVAL_WRITER.shell] },
-  { path: 'models.fallback[]', operations: ['setFallback', ...REMOVAL_WRITER.operations], inSession: ['/models fallback', ...REMOVAL_WRITER.inSession], shell: ['momonga models fallback', ...REMOVAL_WRITER.shell] },
-  { path: 'models.roles.*', operations: ['setRole', ...REMOVAL_WRITER.operations], inSession: ['/models role', ...REMOVAL_WRITER.inSession], shell: ['momonga models role', ...REMOVAL_WRITER.shell] },
-  { path: 'autoMode.classifier', operations: ['setClassifier', ...REMOVAL_WRITER.operations], inSession: ['/models role', '/auto-mode', ...REMOVAL_WRITER.inSession], shell: ['momonga models role set classifier', ...REMOVAL_WRITER.shell] },
-  { path: 'models.billingChanges[].from', operations: ['allowBillingChange', 'forbidBillingChange'], inSession: ['/models billing', '/models fallback'], shell: ['momonga models billing'] },
-  { path: 'models.billingChanges[].to', operations: ['allowBillingChange', 'forbidBillingChange'], inSession: ['/models billing', '/models fallback'], shell: ['momonga models billing'] },
-  { path: 'models.billingChanges[].model', operations: ['allowBillingChange', 'forbidBillingChange', ...REMOVAL_WRITER.operations], inSession: ['/models billing', '/models fallback', ...REMOVAL_WRITER.inSession], shell: ['momonga models billing', ...REMOVAL_WRITER.shell] },
-  { path: 'models.dialects.*', operations: ['setDialects'], inSession: ['/config'], shell: ['momonga models dialects set'] },
-  { path: 'models.headersTimeoutMs', operations: ['setTimeouts'], inSession: ['/models timeouts'], shell: ['momonga models timeouts'] },
-  { path: 'models.idleTimeoutMs', operations: ['setTimeouts'], inSession: ['/models timeouts'], shell: ['momonga models timeouts'] },
-];

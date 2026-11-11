@@ -3,13 +3,13 @@ import { describe, expect, it } from 'vitest';
 
 import { subjectDigestOf } from '@momonga/tools';
 
-import type { NeedsApprovalOutcome } from '@momonga/tools';
 import { approvalOf, makeBuiltins } from './builtins/fixtures.ts';
 
-import { expectedSubjectDigest } from './harness.ts';
+import { expectedDigestOf } from './harness.ts';
 import { syncPaths } from '@momonga/foundation';
 import { testPaths } from '@momonga/testkit';
 
+const SHOWN = { shown: { title: 'shown', input: {} } };
 
 const subjectContext = (tools: Awaited<ReturnType<typeof makeBuiltins>>) => ({
   cwd: tools.session.cwd,
@@ -19,33 +19,40 @@ const subjectContext = (tools: Awaited<ReturnType<typeof makeBuiltins>>) => ({
   roots: [tools.layout.project],
 });
 
-const subjectOf = (tools: Awaited<ReturnType<typeof makeBuiltins>>, name: string, args: unknown) => {
+const toolOf = (tools: Awaited<ReturnType<typeof makeBuiltins>>, name: string) => {
   const tool = tools.toolSet.get(name);
   if (tool === undefined) throw new Error(`missing tool ${name}`);
-  return tool.subject(args, subjectContext(tools));
+  return tool;
 };
+
+const subjectOf = (tools: Awaited<ReturnType<typeof makeBuiltins>>, name: string, args: unknown) => toolOf(tools, name).subject(args, subjectContext(tools));
 
 describe('subjectDigestOf', () => {
   it('equals the digest of a needs_approval outcome for a path subject', async () => {
     const tools = await makeBuiltins();
     const args = { file_path: path.join(tools.layout.project, 'new.txt'), content: 'x' };
-    const asked: NeedsApprovalOutcome = approvalOf(await tools.run('Write', args));
-    expect(await subjectDigestOf(subjectOf(tools, 'Write', args), tools.session.cwd, syncPaths.resolveCanonicalPath)).toBe(asked.subjectDigest);
+    const asked = approvalOf(await tools.run('Write', args));
+    expect(await expectedDigestOf(toolOf(tools, 'Write'), args, tools)).toBe(asked.subjectDigest);
   });
 
   it('equals the digest of a needs_approval outcome for a command subject', async () => {
     const tools = await makeBuiltins();
     const args = { command: 'rm -r build' };
     const asked = approvalOf(await tools.run('Bash', args));
-    const digest = await subjectDigestOf(subjectOf(tools, 'Bash', args), tools.session.cwd, syncPaths.resolveCanonicalPath);
-    expect(digest).toBe(asked.subjectDigest);
-    expect(digest).toBe(expectedSubjectDigest(subjectOf(tools, 'Bash', args), tools.session.cwd));
+    expect(await expectedDigestOf(toolOf(tools, 'Bash'), args, tools)).toBe(asked.subjectDigest);
   });
 
   it('differs for the same command run from a different cwd', async () => {
     const tools = await makeBuiltins();
     const subject = subjectOf(tools, 'Bash', { command: 'rm -r build' });
-    expect(await subjectDigestOf(subject, tools.layout.project, syncPaths.resolveCanonicalPath)).not.toBe(await subjectDigestOf(subject, tools.layout.outside, syncPaths.resolveCanonicalPath));
+    expect(await subjectDigestOf(subject, SHOWN, tools.layout.project, syncPaths.resolveCanonicalPath)).not.toBe(await subjectDigestOf(subject, SHOWN, tools.layout.outside, syncPaths.resolveCanonicalPath));
+  });
+
+  it('differs when only what is shown differs', async () => {
+    const tools = await makeBuiltins();
+    const subject = subjectOf(tools, 'Bash', { command: 'rm -r build' });
+    const other = { shown: { title: 'shown', input: {}, claim: 'Clean the build' } };
+    expect(await subjectDigestOf(subject, SHOWN, tools.layout.project, syncPaths.resolveCanonicalPath)).not.toBe(await subjectDigestOf(subject, other, tools.layout.project, syncPaths.resolveCanonicalPath));
   });
 
   it('rethrows EMFILE from the canonicalise it is given', async () => {
@@ -54,7 +61,7 @@ describe('subjectDigestOf', () => {
     const subject = subjectOf(tools, 'Write', { file_path: path.join(tools.layout.project, 'new.txt'), content: 'x' });
     let caught: unknown;
     try {
-      await subjectDigestOf(subject, tools.session.cwd, () => {
+      await subjectDigestOf(subject, SHOWN, tools.session.cwd, () => {
         throw emfile;
       });
     } catch (error) {

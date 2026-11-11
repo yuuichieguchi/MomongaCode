@@ -198,7 +198,7 @@ describe('withFileLock as an adapter of claimWithin', () => {
     );
 
     await expect(failure).rejects.toMatchObject({ code: 'ENOENT' });
-    expect(fake.claimsMade()).toEqual([lockPath]);
+    expect(fake.claimsMade()).toEqual([]);
     expect(fake.isHeldBy(lockPath)).toBeUndefined();
     expect(runs).toBe(0);
   });

@@ -76,7 +76,7 @@ describe('the quiet point of the ACP bridge (16.5, red test 12)', () => {
     harness.runtime.runs = [runView({ id: 'run-1', status: 'WAITING_HUMAN', lastSeq: 0 })];
     harness.scripts.set('run-1', async (request) => {
       request.onEvent(frameOf('run-1', 1, toolCall));
-      request.onEvent(frameOf('run-1', 2, { type: 'tool.permission.requested', approvalId: 'approval-1', callId: 'call-1', subjectDigest: 'd', reason: 'edits require approval', options: OPTIONS }));
+      request.onEvent(frameOf('run-1', 2, { type: 'tool.permission.requested', approvalId: 'approval-1', callId: 'call-1', subjectDigest: 'd', reason: 'edits require approval', options: OPTIONS, shown: { title: 'approval', input: {} } }));
       return new Promise(() => undefined);
     });
     void prompt(harness, sessionId, 'hello');

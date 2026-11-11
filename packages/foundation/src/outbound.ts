@@ -511,12 +511,20 @@ export const proxyReplyError = (status: number): Error => {
   return error;
 };
 
+const refusedController = (error: Error): Dispatcher.DispatchController => ({
+  aborted: true,
+  paused: false,
+  reason: error,
+  abort: () => undefined,
+  pause: () => undefined,
+  resume: () => undefined,
+});
+
 class OutboundDispatcher extends Dispatcher {
   readonly #network: OutboundNetwork;
   readonly #options: OutboundOptions;
   readonly #direct: Agent;
   readonly #proxies = new Map<string, ProxyAgent>();
-  readonly #refusals = new Map<string, Agent>();
   readonly #siteRefusals = new WeakSet<object>();
   readonly #siteLookup: LookupFunction | undefined;
 
@@ -525,7 +533,7 @@ class OutboundDispatcher extends Dispatcher {
     this.#network = network;
     this.#options = options;
     this.#siteLookup = options.lookup === undefined ? undefined : this.#recordingRefusals(options.lookup);
-    this.#direct = new Agent({ ...siteTimeouts(options), ...(this.#siteLookup === undefined ? {} : { connect: { lookup: this.#siteLookup } }) });
+    this.#direct = new Agent({ ...siteTimeouts(options), connect: { timeout: options.connectReplyTimeoutMs, ...(this.#siteLookup === undefined ? {} : { lookup: this.#siteLookup }) } });
   }
 
   #recordingRefusals(lookup: LookupFunction): LookupFunction {
@@ -540,10 +548,18 @@ class OutboundDispatcher extends Dispatcher {
     return causeChain(error).some((entry) => typeof entry === 'object' && entry !== null && this.#siteRefusals.has(entry));
   }
 
-  #checkedBySite(lookup: LookupFunction, destination: URL): Promise<URL> {
+  #checkedBySite(lookup: LookupFunction, destination: URL, signal: unknown): Promise<URL> {
     const hostname = unbracketed(destination.hostname);
+    const asker = signal instanceof AbortSignal ? signal : undefined;
     return new Promise((resolve, reject) => {
+      if (asker?.aborted === true) {
+        reject(asker.reason);
+        return;
+      }
+      const onAbort = (): void => reject(asker?.reason);
+      asker?.addEventListener('abort', onAbort, { once: true });
       lookup(hostname, { all: true }, (error, answered) => {
+        asker?.removeEventListener('abort', onAbort);
         if (error !== null) {
           reject(error);
           return;
@@ -561,28 +577,24 @@ class OutboundDispatcher extends Dispatcher {
     const destination = new URL(String(options.origin));
     const signal: unknown = 'signal' in options ? options.signal : undefined;
     const plan = outboundPlan(destination, this.#network, { forwardsPlainHttp: true, signal });
-    if (plan.kind === 'refuse') return this.#refuse(plan.error, options, handler);
+    if (plan.kind === 'refuse') return this.#refuse(plan.error, handler);
     const labelled = labelledHandler(handler, (error) => (this.#refusedBySite(error) ? error : plan.label(error)));
     if (plan.route.kind !== 'proxy') return this.#direct.dispatch(options, labelled);
     const named = plan.route;
     if (this.#siteLookup === undefined || isIP(unbracketed(destination.hostname)) !== 0) return this.#proxyFor(named).dispatch(options, labelled);
-    void this.#checkedBySite(this.#siteLookup, destination)
+    void this.#checkedBySite(this.#siteLookup, destination, signal)
       .then((checked) => {
         const route = routeToChecked(named, checked, this.#network.config);
         const bound = dispatchToChecked(options, destination, checked);
         return route.kind === 'proxy' ? this.#proxyFor(route).dispatch(bound, labelled) : this.#direct.dispatch(bound, labelled);
       })
-      .catch((error: unknown) => this.#refuse(errorOf(error), options, handler));
+      .catch((error: unknown) => this.#refuse(errorOf(error), handler));
     return true;
   }
 
-  #refuse(error: Error, options: Dispatcher.DispatchOptions, handler: Dispatcher.DispatchHandler): boolean {
-    let refusal = this.#refusals.get(error.message);
-    if (refusal === undefined) {
-      refusal = new Agent({ connect: (_options, callback) => callback(error, null) });
-      this.#refusals.set(error.message, refusal);
-    }
-    return refusal.dispatch(options, handler);
+  #refuse(error: Error, handler: Dispatcher.DispatchHandler): boolean {
+    handler.onResponseError?.(refusedController(error), error);
+    return true;
   }
 
   #proxyFor(route: ProxyRoute): ProxyAgent {
@@ -606,7 +618,7 @@ class OutboundDispatcher extends Dispatcher {
   }
 
   #all(): Dispatcher[] {
-    return [this.#direct, ...this.#proxies.values(), ...this.#refusals.values()];
+    return [this.#direct, ...this.#proxies.values()];
   }
 
   override close(): Promise<void>;

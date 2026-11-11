@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { canonicalJson, groupAlive, sha256Hex } from '@momonga/foundation';
 import { createUnsandboxed } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, waitFor, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { createRun, createSession, makeRuntimeFixture, makeTempHome, runBashThroughPort, signalNever, trackGroup, writeUserSettings } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -27,7 +27,7 @@ const spawnStubbornHolder = (marker: string): number => {
 
 describe('sandbox kind (system timers, none used)', () => {
   it('with sandbox none, Bash asks even in bypassPermissions', async () => {
-    const f = await makeRuntimeFixture({ sandbox: createUnsandboxed({ killGraceMs: 300 }) });
+    const f = await makeRuntimeFixture({ sandbox: createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 300 }) });
     writeUserSettings(f.temp.home, {});
     const session = createSession(f.store, f.temp.project, { env: { PATH: '/usr/bin:/bin' } });
     const runId = await createRun(f.store, session.id);
@@ -41,7 +41,7 @@ describe('sandbox kind (system timers, none used)', () => {
   });
 
   it('a lease of ToolRuntimePort.sandboxes holds the instance given', async () => {
-    const sandbox = createUnsandboxed();
+    const sandbox = createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform });
     const f = await makeRuntimeFixture({ sandbox });
 
     const lease = await f.toolRuntime.port.sandboxes.acquire(signalNever());

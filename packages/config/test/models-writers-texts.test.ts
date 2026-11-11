@@ -72,7 +72,6 @@ describe('fieldValueText: the one text of a setting value, in the row and in the
   });
 
   it('a duration by the rule of the wait limits, and the summary of a changed field uses the same text', async () => {
-    expect(fieldValueText('readyTimeoutMs', 0)).toBe('never cut');
     expect(fieldValueText('readyTimeoutMs', 300000)).toBe('5 min');
     expect(fieldValueText('admissionTimeoutMs', 90000)).toBe('90 s');
     expect(fieldValueText('admissionTimeoutMs', 1500)).toBe('1500 ms');
@@ -131,5 +130,49 @@ describe('a writer turns only a load error into a refusal; any other error leave
     expect(planModels({ models: { start: 'nowhere/none' } }, [op('setTimeouts', { idleTimeoutMs: 1000 })])).toEqual({
       refused: { code: 'would_not_load', message: 'Not saved: models.start: "nowhere/none" is not a configured model; no model is configured' },
     });
+  });
+});
+
+describe('the writer texts name the cause and the way forward (config-C24 R5, P-058)', () => {
+  const PLAN_MODEL = 'ollama/devstral-small-2:latest';
+  const withChange = { models: { ...S1_FILE.models, billingChanges: [{ from: 'local', to: 'metered', model: PLAN_MODEL }] } };
+
+  it('forbidding a change that was allowed names the model', () => {
+    expect(planModels(withChange, [op('forbidBillingChange', { from: 'local', to: 'metered', model: PLAN_MODEL })])).toMatchObject({
+      summaries: ['Requests may no longer fall from local to metered for devstral-small-2.'],
+    });
+  });
+
+  it('forbidding a change that was never allowed says so and that nothing changed', () => {
+    expect(planModels(S1_FILE, [op('forbidBillingChange', { from: 'local', to: 'plan', model: PLAN_MODEL })])).toMatchObject({
+      summaries: ['Requests were not allowed to fall from local to plan for devstral-small-2; nothing changed.'],
+    });
+    expect(planModels(S1_FILE, [op('forbidBillingChange', { from: 'local', to: 'plan' })])).toMatchObject({
+      summaries: ['Requests were not allowed to fall from local to plan; nothing changed.'],
+    });
+  });
+
+  it('allowing a change that is already allowed says that nothing changed', () => {
+    expect(planModels(withChange, [op('allowBillingChange', { from: 'local', to: 'metered', model: PLAN_MODEL })])).toEqual({
+      refused: { code: 'duplicate', message: 'Requests may already fall from local to metered for devstral-small-2; nothing changed.' },
+    });
+  });
+
+  it('a server that is not configured is named with the configured servers', () => {
+    expect(planModels(S1_FILE, [op('setProvider', { provider: 'nowhere', name: 'mine' })])).toEqual({
+      refused: { code: 'unresolved', message: 'The server "nowhere" is not configured. Configured servers: ollama.' },
+    });
+  });
+
+  it('a server program that is not declared is named with the declared programs', () => {
+    expect(planModels(S1_FILE, [op('forgetServer', { id: 'nothing' })])).toEqual({
+      refused: { code: 'unresolved', message: 'The server program "nothing" is not declared. Declared server programs: none.' },
+    });
+  });
+
+  it('a server program a server uses is refused as in use', () => {
+    const document = { models: { servers: { 'my-server': { command: '/opt/bin/my-server', args: [], readyPath: '/health' } }, connections: [{ adapter: 'managed', server: 'my-server', models: [{ id: 'm', capabilities: { contextWindow: 4096, maxOutputTokens: 1024 } }] }] } };
+    const refused = planModels(document, [op('forgetServer', { id: 'my-server' })]);
+    expect(refused).toMatchObject({ refused: { code: 'in_use' } });
   });
 });

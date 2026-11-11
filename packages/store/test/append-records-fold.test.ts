@@ -3,6 +3,7 @@ import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { fixtureCompactionItem, materializeEvents } from '@momonga/testkit';
 import { enqueue, harness, mustClaim, newSession, openStoreAt, rawDb } from './helpers.ts';
+import { encodedRunState, foldedRunState } from './run-state-codec.ts';
 
 const STOP_FEEDBACK = '[Stop hook feedback]\n';
 const USAGE = { input_tokens: 10, output_tokens: 2, total_tokens: 12 };
@@ -161,23 +162,20 @@ const storedRun = async () => {
 
 describe('recovery: the records survive a snapshot and a crash, and agree with a fold of the journal', () => {
   it('writes a snapshot state version above 13, since the state gained fields', async () => {
-    const { dbPath, store, run, claim } = await storedRun();
+    const { store, run, claim } = await storedRun();
     expect(store.append(claim, JOURNAL.slice(1)).kind).toBe('ok');
     const events = store.readRunEvents(run.id, 0, 1000);
-    expect(store.writeSnapshot(claim, events.at(-1)!.seq, foldAll(events, idsOf(run)))).toEqual({ kind: 'ok' });
-    const stored = rawDb(dbPath).prepare('SELECT state_json FROM snapshots WHERE run_id = ?').get(run.id) as { state_json: string };
-    expect((JSON.parse(stored.state_json) as { stateVersion: number }).stateVersion).toBeGreaterThan(13);
+    expect(encodedRunState(foldAll(events, idsOf(run))).json()['stateVersion']).toBeGreaterThan(13);
   });
 
   it('treats a version 13 snapshot, written before the records, as absent so that the records are folded from the journal', async () => {
-    const { dbPath, store, run, claim } = await storedRun();
+    const { store, run, claim } = await storedRun();
     expect(store.append(claim, JOURNAL.slice(1)).kind).toBe('ok');
     const events = store.readRunEvents(run.id, 0, 1000);
-    expect(store.writeSnapshot(claim, events.at(-1)!.seq, foldAll(events, idsOf(run)))).toEqual({ kind: 'ok' });
-    rawDb(dbPath).prepare("UPDATE snapshots SET state_json = json_set(state_json, '$.stateVersion', 13) WHERE run_id = ?").run(run.id);
-    const loaded = store.load(run.id);
-    expect(loaded.snapshot).toBeUndefined();
-    expect(recordsOf(loaded.tail.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId })))).toEqual(recordsOf(foldAll(events, idsOf(run))));
+    const encoded = encodedRunState(foldAll(events, idsOf(run)));
+    encoded.mutate("json_set(state_json, '$.stateVersion', 13)");
+    expect(encoded.read()).toBeUndefined();
+    expect(recordsOf(await foldedRunState(store, run.id))).toEqual(recordsOf(foldAll(events, idsOf(run))));
   });
 
   it('after a crash between a snapshot and later appends, snapshot plus tail gives the same records as a fold of the whole journal', async () => {
@@ -185,13 +183,12 @@ describe('recovery: the records survive a snapshot and a crash, and agree with a
     const split = 12;
     expect(store.append(claim, JOURNAL.slice(1, split)).kind).toBe('ok');
     const early = store.readRunEvents(run.id, 0, 1000);
-    expect(store.writeSnapshot(claim, early.at(-1)!.seq, foldAll(early, idsOf(run)))).toEqual({ kind: 'ok' });
+    const encodedEarly = encodedRunState(foldAll(early, idsOf(run)));
     expect(store.append(claim, [...JOURNAL.slice(split), COMPACTED, hook('Stop')]).kind).toBe('ok');
 
     const reopened = openStoreAt(dbPath, clock);
-    const loaded = reopened.load(run.id);
-    expect(loaded.snapshot?.seq).toBe(early.at(-1)!.seq);
-    const recovered = loaded.tail.reduce(foldRunState, loaded.snapshot!.state);
+    const recovered = reopened.readRunEvents(run.id, early.at(-1)!.seq, 1000).reduce(foldRunState, encodedEarly.read() as RunState);
+    expect(await foldedRunState(reopened, run.id)).toEqual(foldAll(reopened.readRunEvents(run.id, 0, 1000), idsOf(run)));
     const whole = foldAll(reopened.readRunEvents(run.id, 0, 1000), idsOf(run));
     expect(recordsOf(recovered)).toEqual(recordsOf(whole));
     expect(recordsOf(recovered)).toEqual({

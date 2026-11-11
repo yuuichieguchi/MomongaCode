@@ -2,7 +2,7 @@ import type { Stored } from './stored-value.ts';
 import { anything, boolean, boundedInteger, closed, constant, enumOf, integer, nonNegativeInteger, nullable, root, storedEnumOf, string } from './schema-helpers.ts';
 import type { JsonSchema } from './schema-helpers.ts';
 import { UNKNOWN_VALUE } from './stored-value.ts';
-import { CONDITION_SOURCES, CONDITION_STATES, CONDITION_WHENS, NOT_RUN_REASONS, QUIESCENT_BEHAVIOURS, RESIDUAL_RISK_CODES, VERIFICATION_OUTCOMES } from './completion.ts';
+import { CONDITION_SOURCES, CONDITION_STATES, CONDITION_WHENS, NOT_RUN_REASONS, QUIESCENT_BEHAVIOURS, REPORT_ANOMALY_CAUSES, RESIDUAL_RISK_CODES, VERIFICATION_OUTCOMES } from './completion.ts';
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
 import { RULE_NOTE_KINDS, RULE_VERDICTS } from './rule-verdict.ts';
 import { GUIDELINE_TEXT_PATTERN } from './guideline-text.ts';
@@ -35,6 +35,7 @@ const appliedDiffFields = {
   removed: integer,
   diffOmitted: string,
 } as const satisfies Record<string, JsonSchema>;
+const approvalShown: JsonSchema = closed({ title: string, input: anything, effect: string, claim: string, diff: closed(appliedDiffFields, []) }, ['title', 'input']);
 const toolFiles: JsonSchema = { type: 'array', items: closed({ path: string, sha256: string, access: enumOf(FILE_ACCESSES) }, ['path', 'access']) };
 
 const permissionMode = enumOf(PERMISSION_MODES);
@@ -65,7 +66,11 @@ const permissionOption = closed(
   ['optionId', 'name', 'kind'],
 );
 
-const BASE64_PATTERN = '^[A-Za-z0-9+/]+={0,2}$';
+const BASE64_PATTERN = '^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{4})$';
+
+const BASE64_RULE = 'padded base64 (a length that is a multiple of 4)';
+
+export const PATTERN_RULES: ReadonlyMap<string, string> = new Map([[BASE64_PATTERN, BASE64_RULE]]);
 
 const imageAttachment = closed(
   { mediaType: enumOf(IMAGE_MEDIA_TYPES), data: { type: 'string', minLength: 1, pattern: BASE64_PATTERN } },
@@ -113,7 +118,7 @@ const inboxChangeRow = closed({ id: string, delivery: storedEnumOf(INBOX_DELIVER
 
 export const base64ByteLength = (data: string): number => {
   const padding = data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0;
-  return (data.length / 4) * 3 - padding;
+  return Math.floor(((data.length - padding) * 3) / 4);
 };
 
 const elicitationRequest = {
@@ -252,6 +257,11 @@ const runReport = closed(
     operations: {
       type: 'array',
       items: closed({ callId: string, operation: string, target: string, effect: enumOf(OPERATION_EFFECT_OUTCOMES) }, ['callId', 'operation', 'target', 'effect']),
+    },
+    failedCalls: { type: 'array', items: closed({ callId: string, tool: string, seq: nonNegativeInteger }, ['callId', 'tool', 'seq']) },
+    anomalies: {
+      type: 'array',
+      items: closed({ seq: nonNegativeInteger, type: string, callId: string, cause: enumOf(REPORT_ANOMALY_CAUSES) }, ['seq', 'type', 'callId', 'cause']),
     },
   },
   ['runId', 'status', 'durationMs', 'declaration', 'changes', 'conditions', 'notRun', 'residualRisk', 'modelChecks'],
@@ -411,7 +421,17 @@ const runFactsViewProperties: Record<string, JsonSchema> = {
   costNano: nonNegativeInteger,
   steps: nonNegativeInteger,
   limits: closed({ maxSteps: nonNegativeInteger, maxTotalTokens: nonNegativeInteger, maxCostNano: nonNegativeInteger }, []),
-  delegation: closed({ held: nonNegativeInteger, resolvedByPerson: nonNegativeInteger, denied: nonNegativeInteger, waited: boolean }, ['held', 'resolvedByPerson', 'denied', 'waited']),
+  delegation: closed(
+    {
+      held: nonNegativeInteger,
+      resolvedByPerson: nonNegativeInteger,
+      denied: nonNegativeInteger,
+      waited: boolean,
+      holdLatencyMs: nonNegativeInteger,
+      workDuringHolds: closed({ modelSteps: nonNegativeInteger, toolCalls: nonNegativeInteger }, ['modelSteps', 'toolCalls']),
+    },
+    ['held', 'resolvedByPerson', 'denied', 'waited', 'holdLatencyMs', 'workDuringHolds'],
+  ),
   deadlineAt: integer,
   asked: nonNegativeInteger,
   elicited: nonNegativeInteger,
@@ -422,8 +442,19 @@ const runFactsViewProperties: Record<string, JsonSchema> = {
   reconciledNotApplied: nonNegativeInteger,
   reconciledUnknown: nonNegativeInteger,
   basis: runFactsBasis,
+  answers: closed(
+    { allowOnce: nonNegativeInteger, allowAlways: nonNegativeInteger, rejectOnce: nonNegativeInteger, rejectAlways: nonNegativeInteger },
+    ['allowOnce', 'allowAlways', 'rejectOnce', 'rejectAlways'],
+  ),
+  denials: closed(Object.fromEntries(PERMISSION_DENIAL_SOURCES.map((source) => [source, nonNegativeInteger])), [...PERMISSION_DENIAL_SOURCES]),
   declared: boolean,
   met: boolean,
+  mutated: boolean,
+  owed: boolean,
+  verification: closed(
+    { rounds: nonNegativeInteger, firstRoundPassed: nullable(boolean), failedRounds: nonNegativeInteger, checkMs: nonNegativeInteger, fixRoundTokens: nonNegativeInteger },
+    ['rounds', 'firstRoundPassed', 'failedRounds', 'checkMs', 'fixRoundTokens'],
+  ),
   recoveries: { type: 'array', items: recoveryEpisodeView },
 };
 
@@ -522,8 +553,8 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     required: ['callId', 'providerCallId', 'name', 'kind', 'title', 'rawInput'],
   },
   'tool.permission.requested': {
-    properties: { approvalId: string, callId: string, options: { type: 'array', items: permissionOption }, subjectDigest: string, reason: string, suggestedRule: string },
-    required: ['approvalId', 'callId', 'options', 'subjectDigest', 'reason'],
+    properties: { approvalId: string, callId: string, options: { type: 'array', items: permissionOption }, subjectDigest: string, reason: string, suggestedRule: string, shown: approvalShown },
+    required: ['approvalId', 'callId', 'options', 'subjectDigest', 'reason', 'shown'],
   },
   'tool.permission.classified': {
     properties: {
@@ -737,6 +768,17 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       tokensAfterEstimated: { type: 'boolean', const: true },
     },
     required: ['summary', 'replacedThroughSeq'],
+  },
+  'context.inherited_compacted': {
+    properties: {
+      fromRunId: string,
+      summary: string,
+      replacedThroughSeq: nonNegativeInteger,
+      tokensBefore: nonNegativeInteger,
+      tokensAfter: nonNegativeInteger,
+      tokensAfterEstimated: { type: 'boolean', const: true },
+    },
+    required: ['fromRunId', 'summary', 'replacedThroughSeq'],
   },
   'context.governing_loaded': {
     properties: {
@@ -1237,6 +1279,7 @@ export type McpServerView = {
   auth: McpAuthState;
   detail?: string;
   authorization?: McpAuthorizationView;
+  approval?: { digest: string; changed: boolean };
 };
 
 export type JobView = {
@@ -1423,7 +1466,7 @@ export type CompactSessionRequest = { instructions?: string };
 
 export type UserShellPendingResponse = { pending: UserShellRecord[] };
 
-export type UserShellFrame = { type: 'output'; text: string } | { type: 'refused'; reason: string } | { type: 'exit'; record: UserShellRecord };
+export type UserShellFrame = { type: 'unprotected'; reason: string } | { type: 'output'; text: string } | { type: 'refused'; reason: string } | { type: 'exit'; record: UserShellRecord };
 
 export type InboxAddResponse = { row: InboxRowView; pending: InboxRowView[] };
 
@@ -1442,6 +1485,7 @@ export const RUN_API_SCHEMAS = {
         bypassAllowed: boolean,
         sandboxNetwork: enumOf(SESSION_SANDBOX_NETWORKS),
         mcpServers: sessionMcpServers,
+        terminalUi: boolean,
       },
       ['cwd', 'env'],
     ),
@@ -1467,6 +1511,7 @@ export const RUN_API_SCHEMAS = {
   UserShellPendingResponse: root(closed({ pending: { type: 'array', items: userShellRecord } }, ['pending'])),
   UserShellFrame: root({
     anyOf: [
+      closed({ type: constant('unprotected'), reason: string }, ['type', 'reason']),
       closed({ type: constant('output'), text: string }, ['type', 'text']),
       closed({ type: constant('refused'), reason: string }, ['type', 'reason']),
       closed({ type: constant('exit'), record: userShellRecord }, ['type', 'record']),
@@ -1506,6 +1551,7 @@ export const RUN_API_SCHEMAS = {
               auth: enumOf(MCP_AUTH_STATES),
               detail: string,
               authorization: { type: 'object' },
+              approval: closed({ digest: string, changed: { type: 'boolean' } }, ['digest', 'changed']),
             },
             ['name', 'scope', 'transport', 'auth'],
           ),
@@ -1586,6 +1632,7 @@ export const RUN_API_SCHEMAS = {
         createdAt: integer,
         suggestedRule: string,
         reason: string,
+        shown: approvalShown,
         toolCall: closed(
           {
             callId: string,
@@ -1804,6 +1851,7 @@ type ReducedEventType =
   | 'run.started'
   | 'context.compacted'
   | 'context.compaction_rejected'
+  | 'context.inherited_compacted'
   | 'context.inherited'
   | 'instructions.loaded'
   | 'skill.activated';
@@ -1815,6 +1863,7 @@ type PublicPayload =
   | { type: 'run.started'; attempt: number }
   | { type: 'context.compacted'; summary: string; replacedThroughSeq: number; source?: SummarySource; fidelity?: SummaryFidelity; guidelineVersion?: number; tokensBefore?: number; tokensAfter?: number; tokensAfterEstimated?: true }
   | { type: 'context.compaction_rejected'; step?: number; attempt?: number }
+  | { type: 'context.inherited_compacted'; fromRunId: string; summary: string; replacedThroughSeq: number; tokensBefore?: number; tokensAfter?: number; tokensAfterEstimated?: true }
   | {
       type: 'context.inherited';
       fromRunId: string;
@@ -1865,6 +1914,10 @@ export type PublicOpaqueEvent = {
   createdAt: number;
   payload: Record<string, unknown>;
 };
+
+export type PublicStreamEvent = PublicRunEvent | PublicOpaqueEvent;
+
+export const isOpaqueEvent = (event: PublicStreamEvent): event is PublicOpaqueEvent => 'opaque' in event;
 
 const toPublicOpaqueEvent = (event: OpaqueEvent): PublicOpaqueEvent => {
   const { opaque, type, id, runId, sessionId, seq, step, createdAt, payload } = event;
@@ -1921,6 +1974,17 @@ const toPublicKnownEvent = (event: RunEvent | SessionEvent): PublicRunEvent => {
       };
     case 'context.compaction_rejected':
       return { ...envelope, type: event.type, ...(event.attempt === undefined ? {} : { attempt: event.attempt }) };
+    case 'context.inherited_compacted':
+      return {
+        ...envelope,
+        type: event.type,
+        fromRunId: event.fromRunId,
+        summary: event.summary,
+        replacedThroughSeq: event.replacedThroughSeq,
+        ...(event.tokensBefore === undefined ? {} : { tokensBefore: event.tokensBefore }),
+        ...(event.tokensAfter === undefined ? {} : { tokensAfter: event.tokensAfter }),
+        ...(event.tokensAfterEstimated === undefined ? {} : { tokensAfterEstimated: event.tokensAfterEstimated }),
+      };
     case 'context.inherited':
       return {
         ...envelope,
@@ -1950,3 +2014,5 @@ export const runApiSchemaName = (schema: JsonSchema): string => {
   if (entry === undefined) throw new Error('the schema is not one of RUN_API_SCHEMAS');
   return entry[0];
 };
+
+export const PERSON_CAPABILITY_HEADER = 'momonga-person-capability';

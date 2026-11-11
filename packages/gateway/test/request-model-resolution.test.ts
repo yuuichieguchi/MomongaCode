@@ -233,10 +233,10 @@ describe('the model of a request is typed text, resolved once by the leased rout
     let leases = 0;
     const dir = makeDir();
     const socketPath = path.join(dir, 'gw.sock');
-    const { retry, breaker, limits, idempotency, closeGraceMs, sseKeepAliveMs, detachedMaxMs, websocketConnectionMs } = buildConfig({ retry: { maxAttempts: 1, totalWaitMs: 1 } });
+    const { retry, breaker, limits, idempotency, closeGraceMs, sseKeepAliveMs, detachedMaxMs } = buildConfig({ retry: { maxAttempts: 1, totalWaitMs: 1 } });
     const gateway = await createGateway({
       lock: testKernelLock(),
-      limits: { retry, breaker, limits, idempotency, closeGraceMs, sseKeepAliveMs, detachedMaxMs, websocketConnectionMs },
+      limits: { retry, breaker, limits, idempotency, closeGraceMs, sseKeepAliveMs, detachedMaxMs },
       epochs: {
         acquire: async () => {
           leases += 1;
@@ -257,7 +257,7 @@ describe('the model of a request is typed text, resolved once by the leased rout
       role: fixedRolePort('serving'),
     });
     registerCleanup(() => gateway.close());
-    const client = createUdsClient(fixedSocket(socketPath));
+    const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0 });
     registerCleanup(() => client.close());
 
     const pending = postJson(client, '/v1/responses', { model: 'a/x', input: userInput('hi') });

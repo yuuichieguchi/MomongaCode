@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testKernelLock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testKernelLock, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -179,7 +179,7 @@ describe('unsandboxed session tmp dir', () => {
 
   it('sets TMPDIR to the command tmpDir', async () => {
     const tmpDir = tempDir();
-    const proc = createUnsandboxed().spawn(
+    const proc = createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform }).spawn(
       { argv: ['/bin/sh', '-c', 'printf %s "$TMPDIR"'], cwd: tmpDir, env: { ...BASE_ENV, TMPDIR: '/elsewhere' }, tmpDir },
       policy,
       new AbortController().signal,
@@ -192,7 +192,7 @@ describe('unsandboxed session tmp dir', () => {
 
   it('leaves TMPDIR from env untouched when tmpDir is absent', async () => {
     const cwd = tempDir();
-    const proc = createUnsandboxed().spawn(
+    const proc = createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform }).spawn(
       { argv: ['/bin/sh', '-c', 'printf %s "$TMPDIR"'], cwd, env: { ...BASE_ENV, TMPDIR: '/elsewhere' } },
       policy,
       new AbortController().signal,

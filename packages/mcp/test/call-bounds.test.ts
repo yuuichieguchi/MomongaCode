@@ -50,9 +50,9 @@ const toolOf = async (connection: McpServerConnection, settings: { toolIdleTimeo
 const stopOf = (bound: ToolStop['bound'], ms: number, checkpoint?: Record<string, unknown>): ToolStop => ({ bound, ms, checkpoint });
 
 describe('G2 test 8: the defaults are decision 8, from one constants file', () => {
-  it('waits 5 minutes without progress on a network transport, 30 minutes on stdio, and 28 hours overall', () => {
+  it('waits 5 minutes without progress on a network transport, 30 minutes on stdio, and 100 000 000 ms overall', () => {
     expect(MCP_TOOL_IDLE_TIMEOUT_MS).toEqual({ network: 300_000, stdio: 1_800_000 });
-    expect(MCP_TOOL_TOTAL_TIMEOUT_MS).toBe(28 * 60 * 60 * 1000);
+    expect(MCP_TOOL_TOTAL_TIMEOUT_MS).toBe(100_000_000);
   });
 
   it.each([
@@ -64,13 +64,13 @@ describe('G2 test 8: the defaults are decision 8, from one constants file', () =
     expect(tool.timeoutMs).toBe(MCP_TOOL_TOTAL_TIMEOUT_MS);
   });
 
-  it('uses mcp.toolIdleTimeoutMs and mcp.toolTotalTimeoutMs for both transports when the user sets them', async () => {
+  it('uses the idle window and the overall limit the source is given, on either transport', async () => {
     const tool = await toolOf(fakeConnection({ transportKind: 'stdio' }), { toolIdleTimeoutMs: 90_000, toolTotalTimeoutMs: 7_200_000 });
     expect(tool.idleTimeoutMs).toBe(90_000);
     expect(tool.timeoutMs).toBe(7_200_000);
   });
 
-  it('turns the idle window off when mcp.toolIdleTimeoutMs is 0, keeping the overall limit', async () => {
+  it('turns the idle window off when the source is given 0, keeping the overall limit', async () => {
     const tool = await toolOf(fakeConnection({ transportKind: 'network' }), { toolIdleTimeoutMs: 0 });
     expect(tool.idleTimeoutMs).toBeUndefined();
     expect(tool.timeoutMs).toBe(MCP_TOOL_TOTAL_TIMEOUT_MS);
@@ -134,7 +134,7 @@ describe('G2: the call reports progress to the executor instead of extending its
     const result = await harness.resultOf(await registry.snapshot(), 'mcp__jobs__long_job', {});
     expect(result.status).toBe('failed');
     expect(result.output).toBe(
-      'MCP server "jobs" sent no response or progress for 120 ms, so the call to long_job was stopped. The server may have run it; check before repeating it. To wait longer, raise mcp.toolIdleTimeoutMs.',
+      'MCP server "jobs" sent no response or progress for 120 ms, so the call to long_job was stopped. The server may have run it; check before repeating it. To wait longer, raise mcp.toolIdleTimeoutNetworkMs.',
     );
   });
 });
@@ -162,7 +162,7 @@ describe('G2: the English text of each stop', () => {
   it('names the idle window in minutes on a network transport and on stdio', async () => {
     const network = await toolOf(fakeConnection({ transportKind: 'network' }));
     expect(await network.stopText?.(stopOf('idle', 300_000))).toBe(
-      'MCP server "jobs" sent no response or progress for 5 minutes, so the call to long_job was stopped. The server may have run it; check before repeating it. To wait longer, raise mcp.toolIdleTimeoutMs.',
+      'MCP server "jobs" sent no response or progress for 5 minutes, so the call to long_job was stopped. The server may have run it; check before repeating it. To wait longer, raise mcp.toolIdleTimeoutNetworkMs.',
     );
     const stdio = await toolOf(fakeConnection({ transportKind: 'stdio' }));
     expect(await stdio.stopText?.(stopOf('idle', 1_800_000))).toContain('for 30 minutes,');
@@ -171,21 +171,21 @@ describe('G2: the English text of each stop', () => {
   it('names the overall limit in hours', async () => {
     const tool = await toolOf(fakeConnection({ transportKind: 'network' }));
     expect(await tool.stopText?.(stopOf('total', MCP_TOOL_TOTAL_TIMEOUT_MS))).toBe(
-      'The call to long_job on MCP server "jobs" reached the overall limit of 28 hours and was stopped. The server may have run it; check before repeating it.',
+      'The call to long_job on MCP server "jobs" reached the overall limit of 27 hours 46 minutes 40 seconds and was stopped. The server may have run it; check before repeating it.',
     );
   });
 
   it('adds that the task was cancelled on the server only after tasks/cancel succeeded', async () => {
     const tool = await toolOf(fakeConnection({ transportKind: 'network', cancelled: { 'task-1': true } }));
     expect(await tool.stopText?.(stopOf('idle', 300_000, { kind: 'task', taskId: 'task-1', answered: [] }))).toBe(
-      'MCP server "jobs" sent no response or progress for 5 minutes, so the call to long_job was stopped. The server may have run it; check before repeating it. To wait longer, raise mcp.toolIdleTimeoutMs. The task was cancelled on the server.',
+      'MCP server "jobs" sent no response or progress for 5 minutes, so the call to long_job was stopped. The server may have run it; check before repeating it. To wait longer, raise mcp.toolIdleTimeoutNetworkMs. The task was cancelled on the server.',
     );
   });
 
   it('test 7: says the task may still be running when tasks/cancel failed', async () => {
     const tool = await toolOf(fakeConnection({ transportKind: 'network', cancelled: { 'task-1': false } }));
     expect(await tool.stopText?.(stopOf('total', MCP_TOOL_TOTAL_TIMEOUT_MS, { kind: 'task', taskId: 'task-1', answered: [] }))).toBe(
-      'The call to long_job on MCP server "jobs" reached the overall limit of 28 hours and was stopped. The server may have run it; check before repeating it. The task could not be cancelled and may still be running on the server.',
+      'The call to long_job on MCP server "jobs" reached the overall limit of 27 hours 46 minutes 40 seconds and was stopped. The server may have run it; check before repeating it. The task could not be cancelled and may still be running on the server.',
     );
   });
 });
@@ -281,7 +281,7 @@ describe('G2 test 6: the overall limit ends a call that keeps reporting progress
     vi.useRealTimers();
   });
 
-  it('ends at 28 hours with the overall text, not at the 7-day run deadline', async () => {
+  it('ends at 100 000 000 ms with the overall text, not at the 7-day run deadline', async () => {
     vi.useFakeTimers();
     const clock = { now: () => Date.now(), set: () => undefined } as unknown as FakeClock;
     const progressEveryMs = 4 * 60 * 1000;
@@ -317,7 +317,7 @@ describe('G2 test 6: the overall limit ends a call that keeps reporting progress
       settled: true,
       value: {
         status: 'failed',
-        output: 'The call to long_job on MCP server "jobs" reached the overall limit of 28 hours and was stopped. The server may have run it; check before repeating it.',
+        output: 'The call to long_job on MCP server "jobs" reached the overall limit of 27 hours 46 minutes 40 seconds and was stopped. The server may have run it; check before repeating it.',
       },
     });
   });

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ConfigError, DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS } from '@momonga/config';
+import { ConfigError, DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS, hookGroupApprovalDigestOf } from '@momonga/config';
 import { sha256Hex } from '@momonga/foundation';
 import * as runtime from '@momonga/runtime';
 import type { Session } from '@momonga/store';
@@ -43,10 +43,16 @@ const thrownBy = async (call: () => unknown): Promise<unknown> => {
 describe('settings composition hooks and auto mode', () => {
   const stopHook = (command: string) => ({ Stop: [{ hooks: [{ type: 'command', command }] }] });
 
-  it('serves project hooks only once the folder is trusted and always serves the user classifier', async () => {
+  it('serves project hooks only once the folder is trusted and the hook group approved, and always serves the user classifier', async () => {
     const f = await makeRuntimeFixture();
-    writeUserSettings(f.temp.home, { ...chatTargetSettings(DECLARED_CREDENTIAL), hooks: stopHook('user-stop'), autoMode: { classifier: 'x' } });
-    writeProjectSettings(f.temp.project, { hooks: stopHook('project-stop'), autoMode: { classifier: 'attacker' } });
+    const projectStop = stopHook('project-stop');
+    writeUserSettings(f.temp.home, {
+      ...chatTargetSettings(DECLARED_CREDENTIAL),
+      hooks: stopHook('user-stop'),
+      autoMode: { classifier: 'x' },
+      projectApprovals: { [fs.realpathSync(f.temp.project)]: { hooks: (projectStop.Stop ?? []).map((group) => hookGroupApprovalDigestOf('Stop', group)) } },
+    });
+    writeProjectSettings(f.temp.project, { hooks: projectStop, autoMode: { classifier: 'attacker' } });
     const session = createSession(f.store, f.temp.project);
 
     expect((await f.composition.settings.hooks(session, new AbortController().signal)).Stop?.map((group) => group.hooks[0]?.command)).toEqual(['user-stop']);

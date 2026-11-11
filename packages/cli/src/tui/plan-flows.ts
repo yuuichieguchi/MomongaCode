@@ -4,13 +4,13 @@ import { displayMapOf } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import { isLocalServer, offeredServers } from '../commands/models.ts';
 import { NO_SERVER_ANSWERED_TEXT } from '../models-texts.ts';
-import { addBuiltIn, addFoundModel, addFromFound, builtInRowOf, foundNotConfigured, searchServers } from './models/add.ts';
+import { addBuiltIn, addFoundModel, addFromFound, addService, builtInRowOf, foundNotConfigured, searchServers } from './models/add.ts';
 import type { Added } from './models/add.ts';
 import { openEdit } from './models/context.ts';
 import type { FoundServers, ModelsFlowContext } from './models/context.ts';
 import { modelListRows } from './models/model-list.ts';
 import { writeStart } from './models/order.ts';
-import { ADD_WITH_MODELS_ADD, ALSO_AT_START_LABEL, MODEL_CHANGE_NOTE, START_ONE_TEXT, configuredSwitchText, startingModelSetText } from './models/texts.ts';
+import { ALSO_AT_START_LABEL, MODEL_CHANGE_NOTE, START_ONE_TEXT, configuredSwitchText, startingModelSetText } from './models/texts.ts';
 import { couldNotOpenBrowser } from '../browser-text.ts';
 import { SANDBOX_OFF_NOTICE, accountRowLabel, accountsOf, nextAccountLabel, profileOf, profileStateText, savedAccountAction } from '../plan/accounts.ts';
 import { SignInListenerError, SignInListenerFailedError, SignInNotFinishedError, signIn, waitForPaste } from '../plan/sign-in.ts';
@@ -47,13 +47,6 @@ export type PlanFlows = {
 };
 
 type Choice = { row: PickRow; act(): Promise<void> };
-
-const API_KEY_HELP = [
-  'MomongaCode takes an API key in one of two ways:',
-  '  it is saved in the system secret store, or',
-  '  it stays in an environment variable whose name you give.',
-  ADD_WITH_MODELS_ADD,
-].join('\n');
 
 const USE_API_KEY = 'Use an API key';
 const CONNECT_TITLE = 'Connect a model';
@@ -94,8 +87,8 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     return true;
   };
 
-  const apiKeyHelp = async (): Promise<void> => {
-    ports.info(API_KEY_HELP);
+  const addApiKey = async (): Promise<void> => {
+    await connectAdded(await addService(flowContext()));
   };
 
   const catalogPicker = async (profile: PlanProfileView, account: string): Promise<void> => {
@@ -220,7 +213,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     ports.info(profile.messages.description);
     await chooseFrom({}, [
       { row: { label: reconsent ? `Enable ${profile.messages.identityLabel} plan use` : profile.loginLabel, opensBrowser: true }, act: () => signInFlow(profile, account, reconsent) },
-      { row: { label: profile.messages.apiKeyLabel }, act: apiKeyHelp },
+      { row: { label: profile.messages.apiKeyLabel }, act: addApiKey },
     ]);
   };
 
@@ -338,7 +331,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     const local = entries.filter((entry) => entry.billing === 'local');
     await chooseFrom({ title: CONNECT_TITLE }, [
       ...listed.profiles.map((profile) => ({ row: { label: `${profile.messages.pickerLabel} [subscription] · ${profileStateText(profile, listed.accounts)}` }, act: () => providerFlowOf(profile, listed) })),
-      { row: { label: 'Add an API key' }, act: apiKeyHelp },
+      { row: { label: 'Add an API key' }, act: addApiKey },
       ...local.map((entry) => {
         const display = displays.get(entry.id) ?? entry.id;
         return { row: { label: `${display} [local server] · ${healthText(health.models[entry.id])}` }, act: async () => ports.info(configuredSwitchText(display)) };
@@ -437,7 +430,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   const welcome = async (profiles: readonly PlanProfileView[]): Promise<void> => {
     await chooseFrom({ title: 'Connect a model to start' }, [
       ...profiles.map((profile) => ({ row: { label: profile.loginLabel, opensBrowser: true }, act: () => providerFlow(profile) })),
-      { row: { label: USE_API_KEY }, act: apiKeyHelp },
+      { row: { label: USE_API_KEY }, act: addApiKey },
       { row: { label: 'Use a local server' }, act: addLocalServer },
     ]);
   };
@@ -454,14 +447,14 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   const planUseNotEnabled = async (profile: PlanProfileView, account: string | undefined): Promise<void> => {
     await chooseFrom({}, [
       { row: { label: `Enable ${profile.messages.identityLabel} plan use`, opensBrowser: true }, act: () => (account === undefined ? providerFlow(profile) : sentence(profile, account, true)) },
-      { row: { label: USE_API_KEY }, act: apiKeyHelp },
+      { row: { label: USE_API_KEY }, act: addApiKey },
     ]);
   };
 
   const notEligible = async (profile: PlanProfileView): Promise<void> => {
     await chooseFrom({}, [
       { row: { label: 'Use another account' }, act: () => providerFlow(profile) },
-      { row: { label: USE_API_KEY }, act: apiKeyHelp },
+      { row: { label: USE_API_KEY }, act: addApiKey },
       { row: { label: 'Dismiss' }, act: async () => undefined },
     ]);
   };

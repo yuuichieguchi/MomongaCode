@@ -23,7 +23,7 @@ const MODEL_IDLE_MS = 300;
 const MCP_IDLE_MS = 150;
 const REFUNDED_CUT_STREAMS = 3;
 const CHILD_IDLE_STOPS = REFUNDED_CUT_STREAMS + 1;
-const MCP_IDLE_TEXT = `MCP server "jobs" sent no response or progress for ${MCP_IDLE_MS} ms, so the call to long_job was stopped. The server may have run it; check before repeating it. To wait longer, raise mcp.toolIdleTimeoutMs.`;
+const MCP_IDLE_TEXT = `MCP server "jobs" sent no response or progress for ${MCP_IDLE_MS} ms, so the call to long_job was stopped. The server may have run it; check before repeating it. To wait longer, raise mcp.toolIdleTimeoutNetworkMs.`;
 
 const agentsPortOf = (env: Env): AgentsPort =>
   createAgentsPort({
@@ -74,6 +74,16 @@ const untilTerminal = async (env: Env, worker: ReturnType<Env['worker']>, runId:
   throw new Error(`run ${runId} did not end: ${env.run(runId).status}`);
 };
 
+const untilAsked = async (env: Env, worker: ReturnType<Env['worker']>, runId: string): Promise<void> => {
+  for (let cycle = 0; cycle < 20; cycle += 1) {
+    const current = env.run(runId);
+    if (current.status === 'WAITING_HUMAN') return;
+    env.clock.set(Math.max(env.clock.now(), current.availableAt));
+    await env.runOnce(worker);
+  }
+  throw new Error(`run ${runId} did not ask: ${env.run(runId).status}`);
+};
+
 describe('G3: the subagent wait is bounded by the bounds of the child steps (R-G3)', () => {
   it('test 1: a child whose model only sends keep-alives ends by the real gateway idle stop, and the parent wait ends with that failure', async () => {
     const env = await makeEnv({ maxAttempts: 1, maxTotalAttempts: 1 });
@@ -100,7 +110,7 @@ describe('G3: the subagent wait is bounded by the bounds of the child steps (R-G
     expect(env.clock.now()).toBeLessThan(parent.deadlineAt);
   });
 
-  it('test 2: a child whose MCP call never answers ends that call at the G2 idle window, and the parent wait ends when the child ends', async () => {
+  it('test 2: a child whose MCP call never answers ends that call at the G2 idle window, the unknown effect asks the person on the child run, and the parent wait ends when the child ends', async () => {
     const env = await makeEnv();
     env.settings.stored.push({ effect: 'allow', rule: 'mcp__jobs__long_job' });
     writeAgent(env);
@@ -111,8 +121,15 @@ describe('G3: the subagent wait is bounded by the bounds of the child steps (R-G
     await env.runOnce(worker);
     const [child] = env.store.listChildRuns(parent.id);
     if (child === undefined) throw new Error('the parent did not create a child run');
-    expect(await within(untilTerminal(env, worker, child.id), 20 * MCP_IDLE_MS)).toEqual({ settled: true, value: undefined });
+    expect(await within(untilAsked(env, worker, child.id), 20 * MCP_IDLE_MS)).toEqual({ settled: true, value: undefined });
     expect(JSON.stringify(env.ofType(child.id, 'tool.reconciled'))).toContain(JSON.stringify(MCP_IDLE_TEXT));
+    const asks = await env.store.pendingApprovalViews(child.id);
+    expect(asks.map((ask) => ask.kind)).toEqual(['unknown_effect']);
+    const answered = await env.store.resolveApproval(asks[0]?.id ?? '', 'allow_once');
+    expect(answered.kind).toBe('ok');
+
+    await untilTerminal(env, worker, child.id);
+
     expect(env.run(child.id).status).toBe('COMPLETED');
     await untilTerminal(env, worker, parent.id);
     expect(env.ofType(parent.id, 'tool.completed')).toMatchObject([

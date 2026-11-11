@@ -5,7 +5,7 @@ import type { AttachHost, AttachTarget } from '@momonga/context';
 import { OPEN_FLAGS, createPathResolver, settledOrAborted, someAsync } from '@momonga/foundation';
 import type { Clock, FileSystem } from '@momonga/foundation';
 import { tokensForText } from '@momonga/protocol';
-import type { Sandbox } from '@momonga/sandbox';
+import type { ProtectionOnlySandbox } from '@momonga/sandbox';
 import type { RuntimeStore, Session } from '@momonga/store';
 import { listDirectoryEntries, runUserCommand } from '@momonga/tools';
 import type { UserPolicy, UserPolicyFacts } from '@momonga/tools';
@@ -20,7 +20,7 @@ export type UserInputOptions = {
   settings: Pick<SettingsPort, 'rules' | 'trusted'>;
   clock: Clock;
   home: string;
-  unsandboxed: Sandbox;
+  unsandboxed: ProtectionOnlySandbox;
   files: FileSystem;
 };
 
@@ -100,7 +100,10 @@ export const createUserInputPort = ({ tools, policy, store, settings, clock, hom
         shellHost: tools.shellHost,
         signal: io.signal,
         refusal: (asked) => policy.userRefusal({ tool: 'Bash', command: asked }, facts),
-        spawn: (spawned, signal) => unsandboxed.spawn(spawned, facts.sandboxPolicy, signal),
+        spawn: (spawned, signal) => {
+          if (unsandboxed.protection.kind === 'unprotected') io.onUnprotected(unsandboxed.protection.reason);
+          return unsandboxed.spawn(spawned, facts.sandboxPolicy, signal);
+        },
         onOutput: io.onOutput,
       });
     },

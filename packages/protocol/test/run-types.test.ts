@@ -19,6 +19,7 @@ import type {
   ModelResponse,
   PermissionMode,
   PermissionOption,
+  ApprovalShown,
   PrefixEvent,
   RunEvent,
   RunEventPayload,
@@ -82,6 +83,7 @@ describe('run event payloads', () => {
     expectTypeOf<RunEventPayload['type']>().toEqualTypeOf<
       | 'user.message'
       | 'context.compacting'
+      | 'context.inherited_compacted'
       | 'tool.permission.classifying'
       | 'hook.started'
       | 'run.started'
@@ -234,6 +236,7 @@ describe('run event payloads', () => {
       subjectDigest: string;
       suggestedRule?: string;
       reason: string;
+      shown: ApprovalShown;
     }>();
     expectTypeOf<Payload<'tool.permission.resolved'>>().toEqualTypeOf<{
       type: 'tool.permission.resolved';
@@ -526,6 +529,7 @@ describe('RunState', () => {
         itemCount?: number;
       };
       ownCompactionEventSeq?: number;
+      inheritedCompactionRecorded?: true;
       inheritedSummaryItem?: MessageInputItem;
       inheritedTruncations?: { callId: string; handle: string; kind: 'omitted' | 'truncated' | 'reference' }[];
       lastSeq: number;

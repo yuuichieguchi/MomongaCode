@@ -15,7 +15,7 @@ import type { ContextHostEffects, ContextRuntime, ContextLiveInput } from '../sr
 import { LISTED_CONTEXT_WINDOW, LISTED_MAX_OUTPUT_TOKENS, LISTED_PLAN, MODELS_LISTING_REQUEST, PLAN_MODEL, PLAN_TARGET, PRODUCT_WRITTEN_PLAN_CONNECTION, absentGatewaySocket, listingEntry, modelsFailureOn, serveModelsListing, productWrittenPlanModels } from './fake-models-listing.ts';
 import { userModelsOf } from './user-models.ts';
 import { ContextHostError } from '../src/eval/context-host.ts';
-import { KEYCHAIN_UNANSWERED_ADVICE, afterPendingIo, keychainFixture, outcomeOf, useLimitTimers } from './keychain-fixture.ts';
+import { KEYCHAIN_UNANSWERED_ADVICE, keychainFixture, outcomeOf, useLimitTimers, stillPendingAfter, settledAfter } from './keychain-fixture.ts';
 
 const AUTO_MODE_RUNS = 148;
 
@@ -82,6 +82,7 @@ const fake = (options: { abortAt?: { stage: Stage; controller: AbortController }
       },
       getRun: async (id: string) => ({ id, sessionId: `s-${root}`, status: 'COMPLETED', step: 1, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 1 } }),
       runReflection: async () => ({ job: null, charges: [], queuedAhead: 0 }),
+      reportCost: async (runIds: readonly string[]) => runIds.map((runId) => ({ runId, calls: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
       resolveApproval: async () => ({}),
       cancel: async () => ({ status: 200, run: {} }),
       addRule: async () => ({ fact: { id: 'fact' }, size: [], warnings: [] }),
@@ -315,11 +316,9 @@ describe('the credential phase of a check against a secret store that does not a
       await vi.advanceTimersByTimeAsync(FIRST_ANSWERS_AFTER_MS);
       firstAnswer.resolve();
       await keychain.arrived('find-generic-password', 2);
-      await vi.advanceTimersByTimeAsync(COMMAND_LIMIT_MS - FIRST_ANSWERS_AFTER_MS - 1);
-      await afterPendingIo();
-      expect(attempt.state()).toBe('pending');
+      await stillPendingAfter(attempt, COMMAND_LIMIT_MS - FIRST_ANSWERS_AFTER_MS - 1);
       await vi.advanceTimersByTimeAsync(1);
-      await afterPendingIo();
+      await settledAfter(attempt);
 
       expect(attempt.state()).toBe('rejected');
       expect(attempt.error()).toBeInstanceOf(ContextHostError);

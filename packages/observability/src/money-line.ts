@@ -14,10 +14,7 @@ export type MoneyTally = {
 
 const codedCallsOf = (unpriced: Partial<Record<UnpricedCode, number>>): number => Object.values(unpriced).reduce((sum, count) => sum + count, 0);
 
-const CODES_WITH_OWN_COUNTER: readonly UnpricedCode[] = ['plan', 'unknown_billing', 'cache_read_not_reported'];
-
-export const unpricedCallsOf = (unpriced: Partial<Record<UnpricedCode, number>>): number =>
-  UNPRICED_CODES.filter((code) => !CODES_WITH_OWN_COUNTER.includes(code)).reduce((sum, code) => sum + (unpriced[code] ?? 0), 0);
+export const unpricedCallsOf = (unpriced: Partial<Record<UnpricedCode, number>>): number => codedCallsOf(unpriced);
 
 export type LegacyPrecisionPrice = Extract<PricedCall, { kind: 'priced' }> & { legacyPrecision: true };
 

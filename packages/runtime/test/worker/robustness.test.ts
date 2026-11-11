@@ -94,12 +94,12 @@ describe('worker onError and notices', () => {
     let thrown = false;
     const store: RuntimeStore = {
       ...env.store,
-      load: (runId) => {
+      load: (runId, signal) => {
         if (runId === failing.id && !thrown) {
           thrown = true;
           throw failure;
         }
-        return env.store.load(runId);
+        return env.store.load(runId, signal);
       },
     };
     const reported: unknown[] = [];

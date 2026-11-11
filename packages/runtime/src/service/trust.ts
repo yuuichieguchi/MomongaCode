@@ -16,6 +16,17 @@ const requiredPathQuery = (context: Context): string => {
   return target;
 };
 
+export const undecidedFolderNotice = async (
+  trust: Pick<RuntimeStore['trust'], 'decisionAsked'>,
+  folder: string,
+  signal: AbortSignal,
+): Promise<{ trustNotice: string } | Record<string, never>> => {
+  if ((await trust.decisionAsked(folder, signal)).decision !== null) return {};
+  return {
+    trustNotice: `the folder ${folder} is not decided, so its own settings and everything they could make the product run are not loaded; decide it with momonga trust ${folder}`,
+  };
+};
+
 export const registerTrustRoutes = (route: RouteRegistrar, deps: { store: Pick<RuntimeStore, 'trust'>; maxBodyBytes: number }): void => {
   const { store } = deps;
 
@@ -49,5 +60,5 @@ export const registerTrustRoutes = (route: RouteRegistrar, deps: { store: Pick<R
     return new Response(null, { status: 204 });
   };
 
-  route('/v1/trust', { GET: getTrust, PUT: putTrust, DELETE: deleteTrust });
+  route('/v1/trust', { GET: getTrust, PUT: putTrust, DELETE: deleteTrust }, { person: ['PUT', 'DELETE'] });
 };

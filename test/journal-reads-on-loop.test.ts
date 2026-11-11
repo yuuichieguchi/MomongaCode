@@ -42,7 +42,6 @@ describe('statements that read inside payload_json on the main thread (section 7
       ],
       'store/src/memories.ts': [],
       'store/src/append-records.ts': [
-        `reconciled: db.prepare("SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.reconciled' AND json_extract(payload_json, '$.callId') = :callId ORDER BY seq DESC LIMIT 1"),`,
         '`INSERT INTO run_indexed_chars (run_id, chars) SELECT :runId, length(payload_json) FROM events WHERE id = :eventId',
       ],
     });
@@ -86,6 +85,12 @@ describe('readers that answer from append-time records do not walk the journal o
 
   it('arrivals do not re-read every instructions.loaded event at each build (row 21)', () => {
     expect(filesMatching(/readRunEventsOfTypes\([^)]*\['instructions\.loaded'\]/)).toEqual([]);
+  });
+
+  it('the run state of a claim is loaded by the journal thread: the store decodes no journal to load a run, and the worker writes no snapshot', () => {
+    const runtimeStore = fs.readFileSync(path.join(packagesDir, 'store/src/runtime-store.ts'), 'utf8');
+    expect(runtimeStore).not.toMatch(/\bloadInReadTx\b/);
+    expect(filesMatching(/\bwriteSnapshot\(/)).toEqual([]);
   });
 
   it('inheritance neither folds the source nor decodes a copied context.inherited row on the main thread (row 11)', () => {

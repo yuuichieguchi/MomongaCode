@@ -462,7 +462,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
   const performStart = async (startGeneration: number, startSignal: AbortSignal): Promise<ManagedEndpoint> => {
     const stale = client;
     if (stale !== undefined) await closeClient(stale);
-    const startClient = createUdsClient(fixedSocket(options.socketPath));
+    const startClient = createUdsClient(fixedSocket(options.socketPath), { connectTimeoutMs: 0 });
     client = startClient;
     const isCurrent = (): boolean => generation === startGeneration;
     try {

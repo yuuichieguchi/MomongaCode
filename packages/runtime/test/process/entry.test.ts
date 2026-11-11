@@ -236,7 +236,7 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     const { home, paths } = await validHome(context);
     const launched = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
     await waitForReadyOrExit(launched);
-    const client = createUdsClient(fixedSocket(firstGeneration(paths).sockets.runtime));
+    const client = createUdsClient(fixedSocket(firstGeneration(paths).sockets.runtime), { connectTimeoutMs: 0 });
     registerCleanup(context, () => client.close());
 
     const response = await client.request({ method: 'GET', path: '/v1/health' });

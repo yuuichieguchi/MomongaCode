@@ -7,8 +7,10 @@ import { currentRequest, decide, enterValue, leaveFields, withError } from '../.
 import type { ElicitationDecision, ElicitationFlow } from '../../elicit/flow.ts';
 import { PASTED_CALLBACK_MAX_BYTES, pastedCallbackProblem } from '../../plan/sign-in.ts';
 import type { TuiBackend } from '../backend.ts';
-import { applyKeyEvent, emptyEditor, insertText } from '../editor.ts';
+import { applyAction, applyKeyEvent, emptyEditor, insertText, placeText } from '../editor.ts';
 import type { EditorState } from '../editor.ts';
+import { editorUnsetHint } from '../external-editor.ts';
+import type { ExternalEditorPort } from '../external-editor.ts';
 import { capturedOf } from '../keys/capture.ts';
 import type { ActionId, KeyContext, KeyTable } from '../keys/table.ts';
 import { OverlayView, pickerSpec } from '../picker.tsx';
@@ -53,6 +55,10 @@ const VIEWER_CONTEXTS: readonly KeyContext[] = ['viewer'];
 
 const selectActionOf = (event: KeyEvent, keys: KeyTable): ActionId | undefined => keys.actionOf(SELECT_CONTEXTS, event);
 
+const TEXT_CONTEXTS: readonly KeyContext[] = [...SELECT_CONTEXTS, 'chat'];
+
+type TextOverlay = Extract<Overlay, { kind: 'text' }>;
+
 export type PromptsHost = {
   backend: TuiBackend;
   store: TranscriptStore;
@@ -71,6 +77,7 @@ export type PromptsHost = {
   append(entry: Entry): void;
   decideTrust(decision: TrustDecision): void;
   replayKeys(events: readonly KeyEvent[]): void;
+  externalEditor: ExternalEditorPort;
 };
 
 export type PanelFacts = { trustPath: string | undefined; ready: boolean };
@@ -388,7 +395,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
   const approvalTextOf = (approval: PendingApproval): { title: string; lines: SelectLine[] } => {
     const kept = approvalText.current;
     if (kept !== undefined && kept.approvalId === approval.approvalId) return kept;
-    const next = { approvalId: approval.approvalId, ...approvalWording(approval, (callId) => toolOf(store, callId), backend.cwd) };
+    const next = { approvalId: approval.approvalId, ...approvalWording(approval, (callId) => toolOf(store, callId)) };
     approvalText.current = next;
     return next;
   };
@@ -625,21 +632,46 @@ export const usePrompts = (host: PromptsHost): Prompts => {
       selectInput(pickActive(current), event, keys);
       return;
     }
+    textKey(current, event, keys);
+  };
+
+  const submitText = (current: TextOverlay): void => {
+    const text = overlayEditorRef.current.text;
+    const error = current.request.validate(text);
+    if (error !== undefined) {
+      showOverlay({ ...current, error });
+      return;
+    }
+    closeOverlay();
+    current.resolve(text);
+  };
+
+  const editValueExternally = async (current: TextOverlay): Promise<void> => {
+    const outcome = await host.externalEditor.edit(overlayEditorRef.current.text, 'json');
+    if (overlayRef.current !== current) return;
+    if (outcome.kind === 'unset') showOverlay({ ...current, error: editorUnsetHint(host.keys) });
+    else replaceOverlayEditor(placeText(overlayEditorRef.current, outcome.text));
+  };
+
+  const structuredKey = (current: TextOverlay, event: KeyEvent, keys: KeyTable): boolean => {
+    const action = keys.actionOf(TEXT_CONTEXTS, event);
+    if (action === 'editor.submitValue') submitText(current);
+    else if (action === 'editor.external') editValueExternally(current).catch(host.reportError);
+    else if (action === 'select.decide') replaceOverlayEditor(applyAction(overlayEditorRef.current, 'prompt.newline'));
+    else return false;
+    return true;
+  };
+
+  const textKey = (current: TextOverlay, event: KeyEvent, keys: KeyTable): void => {
     const action = selectActionOf(event, keys);
     if (action === 'select.escape') {
       closeOverlay();
       current.resolve(undefined);
       return;
     }
+    if (current.request.structured === true && structuredKey(current, event, keys)) return;
     if (action === 'select.decide') {
-      const text = overlayEditorRef.current.text;
-      const error = current.request.validate(text);
-      if (error !== undefined) {
-        showOverlay({ ...current, error });
-        return;
-      }
-      closeOverlay();
-      current.resolve(text);
+      submitText(current);
       return;
     }
     replaceOverlayEditor(applyKeyEvent(overlayEditorRef.current, event, keys).state);
@@ -723,6 +755,10 @@ export const usePrompts = (host: PromptsHost): Prompts => {
         if (!pastedInto.delivered) pasteIntoWaiting(pastedInto, text);
         return true;
       }
+      if (pastedInto?.kind === 'text') {
+        replaceOverlayEditor(insertText(overlayEditorRef.current, text));
+        return true;
+      }
       const state = store.state();
       if (state.elicitation !== undefined) {
         if (state.elicitation.flow.stage === 'fields' && gate.takes(elicitationSettle(state.elicitation), 'text', 'pointer')) replaceElicitEditor(insertText(elicitEditorRef.current, text));
@@ -736,13 +772,14 @@ export const usePrompts = (host: PromptsHost): Prompts => {
       if (pending !== undefined) gate.show(elicitationSettle(pending), host.draftHeld());
       else if (active?.settle === undefined) gate.show(undefined, false);
       if (active !== undefined) return selectView(active);
-      if (overlay !== undefined && overlay.kind !== 'pick') return <OverlayView overlay={overlay} editor={overlayEditor} keys={host.keys} />;
+      if (overlay !== undefined && overlay.kind !== 'pick') return <OverlayView overlay={overlay} editor={overlayEditor} keys={host.keys} columns={host.columns} rows={host.panelRows} />;
       if (pending === undefined) return undefined;
       return (
         <ElicitationFields
           elicitation={{ ...pending, flow: flowOf(pending) }}
           title={toolOf(store, pending.callId)?.title ?? pending.callId}
           editor={elicitEditor}
+          columns={host.columns}
           waiting={waitingCount(store.state())}
           settling={gate.view(elicitationSettle(pending)).settling}
           keys={host.keys}

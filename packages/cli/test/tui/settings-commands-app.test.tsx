@@ -265,9 +265,13 @@ describe('/hooks', () => {
   });
 });
 
+const TRACKER_DIGEST = 'a'.repeat(64);
+
+const OTHER_APPROVAL = { name: 'other', digest: 'b'.repeat(64) };
+
 const SERVERS: readonly McpServerView[] = [
   { name: 'files', scope: 'user', transport: 'stdio', auth: 'not_required' },
-  { name: 'tracker', scope: 'project', transport: 'http', url: 'https://tracker.example/mcp', auth: 'required' },
+  { name: 'tracker', scope: 'project', transport: 'http', url: 'https://tracker.example/mcp', auth: 'required', approval: { digest: TRACKER_DIGEST, changed: false } },
   { name: 'scratch', scope: 'session', transport: 'stdio', auth: 'not_required' },
 ];
 
@@ -313,25 +317,25 @@ describe('/mcp', () => {
 
   it('removes a server of the user file after asking, enables and disables a server of the project, and says a session server is in no file', async () => {
     const place = freshPlace();
-    writeSettings(place.userFile, { mcpServers: { files: { command: 'npx' } }, disabledMcpjsonServers: ['tracker'] });
+    writeSettings(place.userFile, { mcpServers: { files: { command: 'npx' } }, enabledMcpjsonServers: [OTHER_APPROVAL, 'tracker'], disabledMcpjsonServers: ['tracker'] });
     const started = await startAt(place, { mcpServers: SERVERS });
     await command(started, '/mcp', ADD_HTTP_ROW);
     await press(started, '2', '› 2. tracker');
     const actions = await press(started, KEYS.enter, '1. Enable');
     expect(actions).toContain('2. Disable');
     await press(started, KEYS.enter, APPLIES_NEXT_SESSION);
-    expect(stored(place.userFile)).toEqual({ mcpServers: { files: { command: 'npx' } }, enabledMcpjsonServers: ['tracker'] });
+    expect(stored(place.userFile)).toEqual({ mcpServers: { files: { command: 'npx' } }, enabledMcpjsonServers: [OTHER_APPROVAL, { name: 'tracker', digest: TRACKER_DIGEST }] });
     await press(started, KEYS.enter, '2. Disable');
     await press(started, '2', '› 2. Disable');
     await press(started, KEYS.enter, ADD_HTTP_ROW);
-    expect(stored(place.userFile)).toEqual({ mcpServers: { files: { command: 'npx' } }, disabledMcpjsonServers: ['tracker'] });
+    expect(stored(place.userFile)).toEqual({ mcpServers: { files: { command: 'npx' } }, enabledMcpjsonServers: [OTHER_APPROVAL], disabledMcpjsonServers: ['tracker'] });
     await press(started, '3', '› 3. scratch');
     await press(started, KEYS.enter, (frame) => frame.includes(sessionServerNote('scratch')) && frame.includes(ADD_HTTP_ROW));
     await press(started, '1', '› 1. files');
     await press(started, KEYS.enter, 'Remove files?');
     await press(started, '2', '› 2. Yes');
     await press(started, KEYS.enter, ADD_HTTP_ROW);
-    expect(stored(place.userFile)).toEqual({ disabledMcpjsonServers: ['tracker'] });
+    expect(stored(place.userFile)).toEqual({ enabledMcpjsonServers: [OTHER_APPROVAL], disabledMcpjsonServers: ['tracker'] });
     started.app.unmount();
   });
 });

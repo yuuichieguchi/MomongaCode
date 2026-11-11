@@ -12,7 +12,7 @@ const DAY_MS = 86_400_000;
 
 const NOTE = 'launch with zorpLauncher';
 
-const memoryPortOf = (env: Env) => createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun });
+const memoryPortOf = (env: Env) => createMemoryPort({ platform: process.platform, store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun });
 
 const memoryWorker = (env: Env, id: string, extra: Parameters<Env['worker']>[1] = {}): Worker => env.worker(id, { memories: memoryPortOf(env), ...extra });
 

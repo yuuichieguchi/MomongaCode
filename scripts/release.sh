@@ -99,7 +99,6 @@ delete_draft() {
 }
 
 write_checksums() {
-  cp "$ROOT/$NOTICES_NAME" "$NOTICES"
   (cd "$OUT_DIR" && shasum -a 256 "$ASSET_NAME" "${OTHER_ASSETS[@]}" "$NOTICES_NAME" > "$CHECKSUMS_NAME")
 }
 
@@ -108,6 +107,7 @@ case "$DRY_RUN" in
   *) fail "DRY_RUN must be 0 or 1, got '$DRY_RUN'" ;;
 esac
 
+bash "$ROOT/scripts/release-tools.sh"
 require_env APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER
 [ -f "$RELEASE_SIGNING_KEY" ] || fail "the ssh private key that signs $CHECKSUMS_NAME must be at $RELEASE_SIGNING_KEY"
 [ -f "$APPLE_API_KEY" ] || fail "APPLE_API_KEY must be the path of the App Store Connect .p8 key file"
@@ -187,6 +187,9 @@ assert_executable_format "$OUT_DIR/momonga-win-x64.exe" PE
 for index in "${!OTHER_TARGETS[@]}"; do
   assert_embedded_ripgrep "$OUT_DIR/${OTHER_ASSETS[$index]}" "${OTHER_TARGETS[$index]}"
 done
+
+step "third-party notices of the release"
+run npm run notices -- --output "$NOTICES"
 
 step "checksums and their signature"
 run write_checksums

@@ -10,6 +10,8 @@ import { nodeClock } from '../src/node-ports.ts';
 import type { RuntimeClient } from '../src/client/runtime-client.ts';
 import { SESSION, runView } from './fake-backend.ts';
 
+const FAKE_PERSON_CAPABILITY = 'f'.repeat(32);
+
 type Reply = { status: number; headers?: Record<string, string>; body: string };
 
 type Seen = { method: string; url: string; headers: http.IncomingHttpHeaders; body: string };
@@ -28,7 +30,7 @@ const serve = async (context: TestContext, reply: (seen: Seen) => Reply): Promis
     });
   });
   await new Promise<void>((resolve) => server.listen(socketPath, resolve));
-  const client = createRuntimeClient({ resolveSocket: fixedSocket(socketPath), clock: nodeClock });
+  const client = createRuntimeClient({ personCapability: async () => FAKE_PERSON_CAPABILITY, resolveSocket: fixedSocket(socketPath), clock: nodeClock });
   registerCleanup(context, async () => {
     await client.close();
     server.closeAllConnections();
@@ -61,6 +63,16 @@ describe('request building', () => {
   });
 });
 
+describe('the capability of the person', () => {
+  it('is sent on every request', async (context) => {
+    const { client, seen } = await serve(context, () => json(201, { session: SESSION, strippedEnvKeys: [] }, { location: '/v1/sessions/session-1' }));
+
+    await client.createSession({ cwd: '/work', env: {} });
+
+    expect(seen[0]?.headers['momonga-person-capability']).toBe(FAKE_PERSON_CAPABILITY);
+  });
+});
+
 describe('createSession', () => {
   it('posts the cwd, the environment and only the options that were given', async (context) => {
     const { client, seen } = await serve(context, () => json(201, { session: SESSION, strippedEnvKeys: ['A'] }, { location: '/v1/sessions/session-1' }));
@@ -80,6 +92,21 @@ describe('createSession', () => {
     await client.createSession({ cwd: '/work', env: {}, mcpServers });
 
     expect(JSON.parse(seen[0]?.body ?? '')).toEqual({ cwd: '/work', env: {}, mcpServers });
+  });
+
+  it('posts whether the client has a terminal UI and keeps the notice of an undecided folder', async (context) => {
+    const { client, seen } = await serve(context, () => json(201, { session: SESSION, strippedEnvKeys: [], trustNotice: 'decide it with momonga trust /work' }, { location: '/v1/sessions/session-1' }));
+
+    const created = await client.createSession({ cwd: '/work', env: {}, terminalUi: false });
+
+    expect(JSON.parse(seen[0]?.body ?? '')).toEqual({ cwd: '/work', env: {}, terminalUi: false });
+    expect(created.trustNotice).toBe('decide it with momonga trust /work');
+  });
+
+  it('rejects a notice of an undecided folder that is not a string', async (context) => {
+    const { client } = await serve(context, () => json(201, { session: SESSION, strippedEnvKeys: [], trustNotice: 3 }, { location: '/v1/sessions/session-1' }));
+
+    await expect(client.createSession({ cwd: '/work', env: {}, terminalUi: false })).rejects.toBeInstanceOf(ContractViolation);
   });
 
   it('rejects a body that does not match the Run API contract', async (context) => {

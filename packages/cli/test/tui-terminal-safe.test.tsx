@@ -40,6 +40,7 @@ describe('the TUI prints text a person did not write escaped', () => {
         subjectDigest: 'd',
         reason: HOSTILE,
         options: [{ optionId: 'o1', name: HOSTILE, kind: 'allow_once' }],
+        shown: { title: 'approval', input: {} },
       }),
     );
     const prompt = withoutLinks(await untilFrame(app, 'Permission requested'));

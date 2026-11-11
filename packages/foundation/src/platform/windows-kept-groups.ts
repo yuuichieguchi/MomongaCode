@@ -2,7 +2,7 @@ import { KEEPER_JOB_PREFIX, KEEPER_NAME_FORM } from '../process-contract.ts';
 import type { GroupProbeOptions } from './group-port.ts';
 import { hostKeeperHost } from './windows-keeper-host.ts';
 import { KeeperLostError, attachKept, openKeptLaunch } from './windows-keeper.ts';
-import type { KeeperFailureReason, KeeperHost, KeeperRun, KeptCommand, KeptGroup } from './windows-keeper.ts';
+import type { KeeperFailureReason, KeeperHost, KeeperRun, KeeperStart, KeptCommand, KeptGroup } from './windows-keeper.ts';
 
 export type KeptProcess = KeeperRun & { readonly pid: number | undefined };
 
@@ -10,19 +10,27 @@ export type KeptOpenRequest<P extends KeptProcess> = {
   command: KeptCommand;
   marker: string | undefined;
   descriptors: readonly number[];
-  start(executable: string, args: readonly string[]): P;
+  start: KeeperStart<P>;
 };
 
 export type KeptExit = { kind: 'exit'; code: number } | { kind: 'lost' };
 
-export type KeptOpening<P extends KeptProcess> = { process: P; commandExit: Promise<KeptExit> };
+export type KeptOpening<P extends KeptProcess> = { process: P; commandPid: Promise<number>; commandExit: Promise<KeptExit> };
+
+const REFUSAL_TEXT: Readonly<Record<KeeperFailureReason, string>> = {
+  'containment-unavailable': 'Windows refused to hold its processes in a group that can be ended as one',
+  'launch-failed': 'Windows refused to start it',
+  'marker-unavailable': 'its marker file could not be opened',
+  'name-taken': 'the name chosen for its group is already taken',
+  'job-absent': 'the group it was to join no longer exists',
+};
 
 export class GroupContainmentError extends Error {
   readonly reason: KeeperFailureReason;
   readonly systemError: number;
 
   constructor(reason: KeeperFailureReason, systemError: number) {
-    super(`the command was not started: its processes could not be held in a Job Object (${reason}, Windows error ${systemError})`);
+    super(`the command was not started: ${REFUSAL_TEXT[reason]} (Windows error ${systemError})`);
     this.name = 'GroupContainmentError';
     this.reason = reason;
     this.systemError = systemError;
@@ -110,10 +118,11 @@ export const createKeptGroupControl = (host: KeeperHost): KeptGroupControl => {
       const lifetime = new AbortController();
       const opened = openKeptLaunch(host, { command, onOwnerLoss: 'terminate', marker, descriptors, start, signal: lifetime.signal });
       const entry: Entry = { job: opened.job, live: undefined, gone: false };
-      const started = opened.launched.then((launch) => {
+      const launchedCommand = opened.launched.then((launch) => {
         if (launch.kind === 'refused') throw new GroupContainmentError(launch.reason, launch.systemError);
-        return launch.group;
+        return launch;
       });
+      const started = launchedCommand.then((launch) => launch.group);
       const { pid } = opened.process;
       const endEntry = (): void => {
         if (pid === undefined) entry.gone = true;
@@ -135,8 +144,9 @@ export const createKeptGroupControl = (host: KeeperHost): KeptGroupControl => {
           () => undefined,
         );
       if (pid !== undefined) entries.set(pid, entry);
-      const commandExit = started.then((group) => group.commandExit(lifetime.signal)).then((answer): KeptExit => (answer.kind === 'exit' ? answer : { kind: 'lost' }));
-      return { process: opened.process, commandExit };
+      const commandPid = launchedCommand.then((launch) => launch.commandPid);
+      const commandExit = commandPid.then(() => started).then((group) => group.commandExit(lifetime.signal)).then((answer): KeptExit => (answer.kind === 'exit' ? answer : { kind: 'lost' }));
+      return { process: opened.process, commandPid, commandExit };
     },
     nameOf: (pgid) => entries.get(pgid)?.job.slice(KEEPER_JOB_PREFIX.length),
     recall: (pgid, name) => {

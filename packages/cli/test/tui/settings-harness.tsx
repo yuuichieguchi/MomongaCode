@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { momongaLayout, sha256Hex, systemTiming } from '@momonga/foundation';
 import { App } from '../../src/tui/app.tsx';
+import type { AppProps } from '../../src/tui/app.tsx';
 import type { TuiSettingsPort } from '../../src/tui/screen/notify.ts';
 import { fakeBackend } from '../fake-backend.ts';
 import type { FakeBackend, FakeBackendOptions } from '../fake-backend.ts';
@@ -38,10 +39,10 @@ export const stored = (file: string): unknown => JSON.parse(fs.readFileSync(file
 
 export type Started = { app: Instance; backend: FakeBackend; place: Place };
 
-export const startAt = async (place: Place, options: FakeBackendOptions = {}, tuiSettings?: TuiSettingsPort): Promise<Started> => {
+export const startAt = async (place: Place, options: FakeBackendOptions = {}, tuiSettings?: TuiSettingsPort, extra: Partial<Pick<AppProps, 'externalEditor'>> = {}): Promise<Started> => {
   const backend = fakeBackend({ settingsPlace: { home: place.home, projectDir: place.project }, ...options });
   const terminal = fakeScreenTerminal({ columns: 140, rows: 120 });
-  const app = renderObservable(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={systemTiming} {...(tuiSettings === undefined ? {} : { tuiSettings })} onExit={() => undefined} />);
+  const app = renderObservable(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={systemTiming} {...(tuiSettings === undefined ? {} : { tuiSettings })} {...extra} onExit={() => undefined} />);
   await untilFrame(app, 'mode: manual');
   return { app, backend, place };
 };

@@ -83,7 +83,6 @@ export type TargetSpec = {
   billing?: ConfiguredTarget['billing'];
   maxConcurrency?: number;
   admissionTimeoutMs?: number;
-  capabilities?: ConfiguredTarget['capabilities'];
   counter?: string;
   idempotencyKeyHeader?: string;
   plan?: ConfiguredTarget['plan'];
@@ -103,7 +102,6 @@ export type ConfigOverrides = {
   closeGraceMs?: number;
   sseKeepAliveMs?: number;
   detachedMaxMs?: number;
-  websocketConnectionMs?: number;
 };
 
 const identityOf = (canon: string): { provider: string; ownName: string } => {
@@ -128,7 +126,6 @@ export const buildConfig = (overrides: ConfigOverrides = {}): GatewayConfig => {
       admissionTimeoutMs: spec.admissionTimeoutMs ?? 5000,
       counter: spec.counter ?? counterForTest(canon),
       ...(spec.idempotencyKeyHeader === undefined ? {} : { idempotencyKeyHeader: spec.idempotencyKeyHeader }),
-      ...(spec.capabilities === undefined ? {} : { capabilities: spec.capabilities }),
       ...(spec.plan === undefined ? {} : { plan: spec.plan }),
       ...(spec.keyGroup === undefined ? {} : { keyGroup: spec.keyGroup }),
     };
@@ -148,7 +145,6 @@ export const buildConfig = (overrides: ConfigOverrides = {}): GatewayConfig => {
     closeGraceMs: overrides.closeGraceMs ?? 1000,
     sseKeepAliveMs: overrides.sseKeepAliveMs ?? 15_000,
     detachedMaxMs: overrides.detachedMaxMs ?? 1_800_000,
-    websocketConnectionMs: overrides.websocketConnectionMs ?? 3_600_000,
   };
 };
 
@@ -213,7 +209,7 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
     ...(options.priceTable === undefined ? {} : { priceTable: options.priceTable }),
   });
   registerCleanup(() => gateway.close());
-  const client = createUdsClient(fixedSocket(socketPath));
+  const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0 });
   registerCleanup(() => client.close());
   return { gateway, client, clock, timers, dir, socketPath, dbPath, model };
 };

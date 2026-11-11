@@ -18,7 +18,7 @@ describe('gateway unavailable (system timers)', () => {
     const errors: unknown[] = [];
     const service = await launchService(serviceOptions({ store, clock, home: layout.home, socketPath: layout.socketPath, ports, notifier, errors }));
     onCleanup(() => service.close());
-    const client = createUdsClient(fixedSocket(layout.socketPath));
+    const client = createUdsClient(fixedSocket(layout.socketPath), { connectTimeoutMs: 0 });
     onCleanup(() => client.close());
 
     const response = await sendJson(client, 'POST', '/v1/sessions', { body: { cwd: layout.project, env: { PATH: '/usr/bin:/bin' } } });

@@ -64,10 +64,10 @@ const flat = (text: string): string => text.replace(/\s+/g, ' ');
 
 describe('the auto notice in the TUI', () => {
   it('shows the line autoModeNotice renders for the tui surface from the view of a session that starts in auto', async () => {
-    const notice = (protocol as unknown as { autoModeNotice?: (input: { view: unknown; surface: 'tui' | 'cli' }) => string }).autoModeNotice;
+    const notice = (protocol as unknown as { autoModeNotice?: (input: { view: unknown; surface: 'tui' | 'cli'; shownModel: string }) => string }).autoModeNotice;
     if (notice === undefined) throw new Error('@momonga/protocol does not export autoModeNotice');
-    const view = { alias: 'guard', key: KEY_A, measurement: 'not_measured' };
-    const line = notice({ view, surface: 'tui' });
+    const view = { model: 'guard', key: KEY_A, measurement: 'not_measured' };
+    const line = notice({ view, surface: 'tui', shownModel: 'guard' });
     const { app } = await start({ session: { permissionMode: 'auto', ...({ autoClassifier: view } as object) }, autoModeAvailable: true } as never);
     await untilOutput(app, 'mode: auto');
     await untilOutput(app, (output) => flat(output).includes(flat(line)));

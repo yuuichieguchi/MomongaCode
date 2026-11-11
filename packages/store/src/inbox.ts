@@ -24,19 +24,19 @@ const recordOf = (identity: string, value: unknown, what: string): Record<string
   return value;
 };
 
-const termsOf = (identity: string, text: string): QueuedRunTerms => {
-  const parsed = recordOf(identity, JSON.parse(text), 'itself');
+const termsOf = (identity: string, stored: unknown): QueuedRunTerms => {
+  const parsed = recordOf(identity, stored, 'itself');
   const { timeoutMs, mandate } = parsed;
   if (typeof timeoutMs !== 'number' || !Number.isInteger(timeoutMs) || timeoutMs < 1) throw corrupt(TABLE, identity, 'run_terms_json timeoutMs must be a positive integer');
   const terms = { timeoutMs, limits: recordOf(identity, parsed['limits'], 'limits'), pins: recordOf(identity, parsed['pins'], 'pins') };
   return mandate === undefined ? terms : { ...terms, mandate: recordOf(identity, mandate, 'mandate') as Mandate };
 };
 
-const queuedOf = (context: DecodeContext, identity: string, terms: string | null, origin: string | null): InboxRow['queued'] => {
+const queuedOf = (context: DecodeContext, identity: string, reader: ReturnType<typeof readerFor>, terms: string | null, origin: string | null): InboxRow['queued'] => {
   if (terms === null && origin === null) return null;
   if (terms === null || origin === null) throw corrupt(TABLE, identity, 'run_terms_json and origin are written together');
   const stored: Stored<MemoryOrigin> = storedOneOf(context, TABLE, identity, 'origin', MEMORY_ORIGINS, origin);
-  return { terms: termsOf(identity, terms), origin: stored };
+  return { terms: termsOf(identity, reader.json('run_terms_json')), origin: stored };
 };
 
 const decodeRow = (row: Row, context: DecodeContext): InboxRow => {
@@ -54,7 +54,7 @@ const decodeRow = (row: Row, context: DecodeContext): InboxRow => {
     state: storedOneOf(context, TABLE, identity, 'state', INBOX_STATES, reader.string('state')),
     createdAt: reader.number('created_at'),
     settledAt: reader.nullableNumber('settled_at'),
-    queued: queuedOf(context, identity, reader.nullableString('run_terms_json'), reader.nullableString('origin')),
+    queued: queuedOf(context, identity, reader, reader.nullableString('run_terms_json'), reader.nullableString('origin')),
   };
 };
 

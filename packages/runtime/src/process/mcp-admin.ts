@@ -1,9 +1,9 @@
 import { loadMcpServers } from '@momonga/config';
-import type { McpServerEntry, SettingsUse, UserLayer } from '@momonga/config';
+import type { McpServerEntry, SettingsUse } from '@momonga/config';
 import { AUTHORIZATION_WAIT_MS, CredentialStoreError, canonicalJson, nodeFileSystem, sha256Hex } from '@momonga/foundation';
 import type { Clock, JsonLogger } from '@momonga/foundation';
 import { McpAuthorizationError } from '@momonga/mcp';
-import type { McpAuthorizingPool, McpMarkerOptions, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
+import type { McpAuthorizingPool, McpMarkerOptions, McpPoolOptions, McpRemotePorts, StdioLaunch } from '@momonga/mcp';
 import type { McpAuthorizationView, McpServerView } from '@momonga/protocol';
 import type { RuntimeStore, Session } from '@momonga/store';
 import type { ToolEnv } from '../ports.ts';
@@ -12,7 +12,7 @@ import type { ServiceTimers } from '../service/timers.ts';
 import { asError } from './as-error.ts';
 import { POOL_IDLE_CLOSE_MS } from './constants.ts';
 import type { NetworkOf } from './network-derivation.ts';
-import type { SettingsComposition } from './settings-port.ts';
+import type { SettingsComposition, UserSnapshot } from './settings-port.ts';
 
 export type McpFolder = { cwd: string; env: Readonly<Record<string, string>> };
 
@@ -42,7 +42,7 @@ export type McpAdminOptions = {
   timers: ServiceTimers;
   logger: JsonLogger;
   report(error: unknown): void;
-  settings: Pick<SettingsComposition, 'envFor' | 'admitUserSnapshot' | 'keptLayers' | 'trustOracle'>;
+  settings: Pick<SettingsComposition, 'envFor' | 'referenceEnvFor' | 'admitUserSnapshot' | 'keptLayers' | 'trustOracle'>;
   remote: Omit<McpRemotePorts, 'network'>;
   network: NetworkOf;
   createPool(options: McpPoolOptions): McpAuthorizingPool;
@@ -50,6 +50,7 @@ export type McpAdminOptions = {
   readCloseGraceMs(): number;
   readConnectTimeoutMs(): number | undefined;
   markers?: McpMarkerOptions;
+  launch: StdioLaunch;
   onAuthorizationEnded?: () => void;
 };
 
@@ -63,23 +64,24 @@ type Attempt = {
 };
 
 export const loadSessionMcpServers = (
-  options: { home: string; settings: Pick<SettingsComposition, 'trustOracle' | 'keptLayers'> },
-  session: Pick<Session, 'cwd' | 'mcpServers'>,
+  options: { home: string; settings: Pick<SettingsComposition, 'trustOracle' | 'keptLayers' | 'referenceEnvFor'> },
+  session: Pick<Session, 'cwd' | 'mcpServers' | 'env'>,
   env: ToolEnv,
-  user: UserLayer,
+  snapshot: UserSnapshot,
   use: SettingsUse,
   signal: AbortSignal,
 ): ReturnType<typeof loadMcpServers> =>
-  loadMcpServers({
+  options.settings.referenceEnvFor(session, snapshot, signal).then((referenceEnv) => loadMcpServers({
     home: options.home,
     projectDir: session.cwd,
     trust: options.settings.trustOracle,
     env,
+    referenceEnv,
     signal,
-    user,
+    user: snapshot.user,
     kept: options.settings.keptLayers(use),
     sessionServers: session.mcpServers,
-  });
+  }));
 
 const failureOf = (server: string, error: unknown): { code: string; message: string } => {
   if (error instanceof McpAuthorizationError) return { code: error.failure, message: error.message };
@@ -102,8 +104,8 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
   };
 
   const serverOf = async (scope: McpScope, name: string, signal: AbortSignal): Promise<McpServerEntry> => {
-    const { user } = await options.settings.admitUserSnapshot(signal);
-    const loaded = await loadSessionMcpServers(options, scope, await options.settings.envFor(scope, signal), user, 'admit', signal);
+    const snapshot = await options.settings.admitUserSnapshot(signal);
+    const loaded = await loadSessionMcpServers(options, scope, await options.settings.envFor(scope, signal), snapshot, 'admit', signal);
     const entry = loaded.enabled.find((candidate) => candidate.name === name);
     if (entry === undefined) throw notFound(`${scope.cwd} has no enabled MCP server named ${name}`);
     return entry;
@@ -115,6 +117,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
       projectDir: session.cwd,
       baseEnv: { ...env },
       files: nodeFileSystem,
+      launch: options.launch,
       clock,
       clientVersion: options.clientVersion,
       timers: options.timers,
@@ -154,9 +157,9 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
   };
 
   const serversOf = async (session: McpScope, signal: AbortSignal): Promise<McpServerView[]> => {
-    const { user } = await options.settings.admitUserSnapshot(signal);
+    const snapshot = await options.settings.admitUserSnapshot(signal);
     const env = await options.settings.envFor(session, signal);
-    const loaded = await loadSessionMcpServers(options, session, env, user, 'admit', signal);
+    const loaded = await loadSessionMcpServers(options, session, env, snapshot, 'admit', signal);
     const network = await options.network(signal);
     const key = sha256Hex(canonicalJson({ session: session.id, cwd: session.cwd, servers: loaded.enabled, network: network.identity }));
     const held = acquireProbePool(key, () => poolFor(loaded.enabled, session, env, { ...options.remote, network: network.outbound }));
@@ -175,6 +178,17 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
           auth: probe.state,
           ...(probe.detail === undefined ? {} : { detail: probe.detail }),
           ...(attempt === undefined ? {} : { authorization: { ...attempt.view } }),
+        });
+      }
+      for (const entry of loaded.pendingApproval) {
+        views.push({
+          name: entry.name,
+          scope: entry.scope,
+          transport: 'url' in entry.config ? 'http' : 'stdio',
+          ...('url' in entry.config ? { url: entry.config.url } : {}),
+          auth: 'not_applicable',
+          detail: entry.changed ? 'changed since it was approved' : 'not approved',
+          approval: { digest: entry.digest, changed: entry.changed },
         });
       }
       return views;

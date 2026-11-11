@@ -43,6 +43,7 @@ export type ContextSources = {
   systemPrompt: string;
   tools: readonly FunctionTool[];
   task: DeepReadonly<MessageInputItem>;
+  taskShell?: readonly string[];
   taskSeq: number;
   skillCatalog?: string;
   mandate?: string;
@@ -68,6 +69,7 @@ export type BlobPort = {
 };
 
 export type InstructionReader = {
+  readonly platform: NodeJS.Platform;
   read(path: string): Promise<{ realPath: string; text: string } | undefined>;
   exists(path: string): Promise<boolean>;
   realpath(path: string): Promise<string | undefined>;

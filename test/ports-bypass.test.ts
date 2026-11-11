@@ -29,7 +29,6 @@ const SYNCHRONOUS_ADAPTERS: Readonly<Record<string, string>> = {
 };
 
 const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
-  'packages/cli/src/eval/workspace-probe.ts': { 'node:fs/promises': 3, 'setTimeout': 1 },
   'packages/cli/src/handover/replace-process.ts': { 'node:child_process': 1 },
   'packages/cli/src/ripgrep/host.ts': { 'randomBytes': 1 },
   'packages/cli/src/tui/run-interactive.tsx': { 'node:child_process': 1, 'node:os': 1 },
@@ -41,9 +40,7 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/eval/src/files.ts': { 'node:fs/promises': 4 },
   'packages/foundation/src/code-digest.ts': { 'node:fs/promises': 7 },
   'packages/foundation/src/generation-reaper.ts': { 'node:fs': 6, 'setImmediate': 1 },
-  'packages/foundation/src/handover-leftovers.ts': { 'node:fs': 4 },
   'packages/foundation/src/host-identity.ts': { 'node:fs': 2 },
-  'packages/foundation/src/leftover-sweep.ts': { 'node:fs': 2 },
   'packages/foundation/src/lifeline.ts': { 'node:fs': 1, 'node:net': 1, 'setImmediate': 1 },
   'packages/foundation/src/outbound.ts': { 'node:net': 1, 'node:worker_threads': 1 },
   'packages/foundation/src/owned-directory.ts': { 'node:fs': 4 },
@@ -86,6 +83,7 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/runtime/src/worker/touched-paths.ts': { 'setImmediate': 1 },
   'packages/sandbox/src/bubblewrap.ts': { 'node:child_process': 1, 'node:fs': 7 },
   'packages/sandbox/src/placeholder-journal.ts': { 'node:fs': 16 },
+  'packages/sandbox/src/relay.ts': { 'node:child_process': 1, 'node:net': 3 },
   'packages/sandbox/src/scratch.ts': { 'node:fs': 1 },
   'packages/sandbox/src/seatbelt.ts': { 'node:fs': 1 },
   'packages/skills/src/file-system.ts': { 'node:fs/promises': 4 },
@@ -109,7 +107,6 @@ const CLI_PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
 };
 
 const SYNCHRONOUS_FILE_CALLS: Readonly<Record<string, Counts>> = {
-  'packages/foundation/src/handover-leftovers.ts': { 'closeSync': 1, 'fstatSync': 1, 'openSync': 1, 'readFileSync': 1 },
   'packages/foundation/src/lifeline.ts': { 'fstatSync': 1 },
   'packages/foundation/src/owned-directory.ts': { 'mkdirSync': 1, 'rmSync': 1 },
   'packages/foundation/src/platform/file-identity.ts': { 'fstatSync': 1, 'lstatSync': 1 },

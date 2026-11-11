@@ -1,6 +1,6 @@
-import { JsonDepthError, defineProductSchema, parseOutsideJson, productErrorsText } from '@momonga/foundation';
-import type { ProductValidator, SandboxNetworkSetting } from '@momonga/foundation';
-import { RUN_API_SCHEMAS, runApiSchemaName } from '@momonga/protocol';
+import { JsonDepthError, defineProductSchema, parseOutsideJson } from '@momonga/foundation';
+import type { ProductValidator, SandboxNetworkSetting, UntrustedError } from '@momonga/foundation';
+import { PATTERN_RULES, RUN_API_SCHEMAS, runApiSchemaName } from '@momonga/protocol';
 import type { ImageAttachment, InboxDelivery, JsonSchema, PermissionMode, Mandate } from '@momonga/protocol';
 import { bodyTooLarge, invalidRequest, unsupportedMediaType } from './errors.ts';
 
@@ -12,6 +12,7 @@ export type CreateSessionBody = {
   bypassAllowed?: boolean;
   sandboxNetwork?: SandboxNetworkSetting;
   mcpServers?: Record<string, Record<string, unknown>>;
+  terminalUi?: boolean;
 };
 
 export type PatchSessionBody = { permissionMode?: PermissionMode; model?: string; mcpServers?: Record<string, Record<string, unknown>> };
@@ -119,9 +120,25 @@ export const readJson = async (request: Request, accepted: readonly string[], ma
   }
 };
 
+const fieldOf = (instancePath: string): string =>
+  instancePath
+    .split('/')
+    .slice(1)
+    .map((token) => token.replaceAll('~1', '/').replaceAll('~0', '~'))
+    .reduce((field, token) => (/^(0|[1-9]\d*)$/.test(token) ? `${field}[${token}]` : field === '' ? token : `${field}.${token}`), '');
+
+const ruleOf = (error: UntrustedError): string => {
+  const pattern = error.params['pattern'];
+  const rule = error.keyword === 'pattern' && typeof pattern === 'string' ? PATTERN_RULES.get(pattern) : undefined;
+  return rule === undefined ? error.message : `must be ${rule}`;
+};
+
+const refusalText = (errors: readonly UntrustedError[]): string =>
+  errors.map((error) => (error.instancePath === '' ? `the request body ${error.message}` : `${fieldOf(error.instancePath)} ${ruleOf(error)}`)).join(', ');
+
 export const validateBody = <T>(name: RequestSchemaName, value: unknown): T => {
   const verdict = validators[name](value);
-  if (!verdict.valid) throw invalidRequest(productErrorsText(verdict.errors, 'body'));
+  if (!verdict.valid) throw invalidRequest(refusalText(verdict.errors));
   return value as T;
 };
 

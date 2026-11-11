@@ -6,10 +6,10 @@ import type { MarkerOwners } from './marker-owners.ts';
 import { createMarkerSettle } from './marker-settle.ts';
 import type { MarkerSettle } from './marker-settle.ts';
 import type { Awaitable, Clock, FileRuleProvenance, FileSystem, KernelLockMechanism, MarkerHandle, NetworkScope, OutboundNetwork, PathProbes, PathResolver, ProcessGroupPort, ProcessInspector, Random, ReapReport, Timing, SandboxNetworkSetting, SignalSender, UninspectableRegistry, MomongaPaths } from '@momonga/foundation';
-import { absoluteFrom, askedBy, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule } from '@momonga/policy';
+import { absoluteFrom, askedBy, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule, suggestNetworkRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem, PolicyTool, CoveredProgram, SupersededForm } from '@momonga/policy';
 import { diffFieldsOf, permissionDeniedOutput } from '@momonga/protocol';
-import type { ApprovalBasis, ElicitationRequestView, PermissionDenial, PermissionMode, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
+import type { ApprovalBasis, ApprovalShown, ElicitationRequestView, PermissionDenial, PermissionMode, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
 import { SANDBOX_NETWORK_SCOPES, SANDBOX_STOP_BOUND_MS, SandboxPolicyError, canonicalParentForm } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { RipgrepLocator } from './ripgrep-locator.ts';
@@ -32,7 +32,7 @@ import type { WorkTreeMark, WorkTreeObserver } from './work-tree-observer.ts';
 import { blockedByHeldText, blockerOf, footprintOf } from './footprint.ts';
 import type { Footprint, HeldFootprint } from './footprint.ts';
 import { startsProcesses, ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
-import type { AnyTool, CallOutputFit, DisplayContext, GateFacts, OutputFit, ProbeContext, SpawnMarker, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
+import type { AnyTool, CallOutputFit, DisplayContext, GateFacts, OutputFit, PreconditionContext, ProbeContext, SpawnMarker, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
 import { cleanFailureMessage, groupPortOf } from '@momonga/foundation';
 import { toolRefusalKey, unavailable, validateToolInput } from './validate.ts';
 import type { ValidationResult } from './validate.ts';
@@ -135,6 +135,7 @@ export type NeedsApprovalOutcome = {
   subjectDigest: string;
   suggestedRule?: string;
   title: string;
+  shown: ApprovalShown;
   toolKind: ToolKind;
   locations?: { path: string; line?: number }[];
   footprint: Footprint;
@@ -446,6 +447,23 @@ type Canonicalise = PathProbes['canonicalise'];
 
 type Show = (absolute: string) => Awaitable<string>;
 
+export type ApprovalDescription = { shown: ApprovalShown; state?: string | null };
+
+export const approvalDescriptionOf = async (tool: AnyTool, input: unknown, display: DisplayContext, precondition: PreconditionContext, facts?: GateFacts): Promise<ApprovalDescription> => {
+  const title = await tool.title(input, display);
+  const content = tool.approval === undefined ? {} : await tool.approval(input, precondition, facts);
+  return {
+    shown: {
+      title,
+      input,
+      ...(content.effect === undefined ? {} : { effect: content.effect }),
+      ...(content.claim === undefined ? {} : { claim: content.claim }),
+      ...(content.diff === undefined ? {} : { diff: diffFieldsOf(content.diff) }),
+    },
+    ...(content.state === undefined ? {} : { state: content.state }),
+  };
+};
+
 const digestSubject = async (subject: PermissionSubject, cwd: string, canonicalise: Canonicalise, show: Show): Promise<unknown> => {
   if (subject.kind === 'path') {
     return {
@@ -466,8 +484,8 @@ const digestSubject = async (subject: PermissionSubject, cwd: string, canonicali
   return subject;
 };
 
-export const subjectDigestOf = async (subject: PermissionSubject, cwd: string, canonicalise: Canonicalise, show: Show = (absolute) => absolute): Promise<string> =>
-  sha256Hex(canonicalJson(await digestSubject(subject, cwd, canonicalise, show)));
+export const subjectDigestOf = async (subject: PermissionSubject, described: ApprovalDescription, cwd: string, canonicalise: Canonicalise, show: Show = (absolute) => absolute): Promise<string> =>
+  sha256Hex(canonicalJson({ subject: await digestSubject(subject, cwd, canonicalise, show), ...described }));
 
 const failedOutcome = (callId: string, output: string): ResultOutcome => ({
   callId,
@@ -844,27 +862,28 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     }
     const { approval } = call;
     if (decision.kind === 'ask') {
+      const preconditionContext: PreconditionContext = { ...subjectContextOf(batch), files: options.files, session: batch.session, signal: batch.signal };
+      let described: ApprovalDescription;
+      try {
+        if (stage === 'enforce' && tool.precondition !== undefined) await tool.precondition(input, preconditionContext);
+        described = await approvalDescriptionOf(tool, input, displayContextOf(batch), preconditionContext, target.facts);
+      } catch (error) {
+        return failedOutcome(call.callId, describeThrown(tool.name, error));
+      }
       let subjectDigest: string;
       try {
         const asked = askedBy(options.fs, batch.signal);
-        subjectDigest = await subjectDigestOf(subject, cwd, asked.canonicalise, (absolute) => displayToolPath(batch.session.workingDirectory, absolute, hostPaths(batch.signal)));
+        subjectDigest = await subjectDigestOf(subject, described, cwd, asked.canonicalise, (absolute) => displayToolPath(batch.session.workingDirectory, absolute, hostPaths(batch.signal)));
       } catch (error) {
         return failedOutcome(call.callId, `Permission check failed: ${error instanceof Error ? error.message : String(error)}`);
       }
       if (approval?.subjectDigest !== subjectDigest) {
-        if (stage === 'enforce' && tool.precondition !== undefined) {
-          try {
-            await tool.precondition(input, { ...subjectContextOf(batch), files: options.files, session: batch.session, signal: batch.signal });
-          } catch (error) {
-            return failedOutcome(call.callId, describeThrown(tool.name, error));
-          }
-        }
         if (batch.mode === 'auto' && decision.source === 'mode' && decision.humanOnly !== true) {
           if (batch.classifier === undefined) throw new Error('auto mode needs a classifier');
           const classified = await batch.classifier.classify({
             callId: call.callId,
             toolName: tool.name,
-            title: await tool.title(input, displayContextOf(batch)),
+            title: described.shown.title,
             input,
             reason: decision.reason,
             subjectDigest,
@@ -878,7 +897,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         const suggestedRule =
           unsandboxedExec || decision.source === 'protected' || decision.source === 'hook' || decision.rule?.layer === 'governance'
             ? undefined
-            : await suggestAllowRule(policyTool, subject, cwd, askedBy(options.fs, batch.signal).canonicalise);
+            : decision.network === true
+              ? suggestNetworkRule(subject)
+              : await suggestAllowRule(policyTool, subject, cwd, askedBy(options.fs, batch.signal).canonicalise);
         const locations = tool.locations?.(input, displayContextOf(batch));
         return {
           callId: call.callId,
@@ -886,7 +907,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           decision,
           subjectDigest,
           ...(suggestedRule === undefined ? {} : { suggestedRule }),
-          title: await tool.title(input, displayContextOf(batch)),
+          title: described.shown.title,
+          shown: described.shown,
           toolKind: tool.kind,
           ...(locations === undefined ? {} : { locations }),
           footprint: footprintOf(subject, cwd),

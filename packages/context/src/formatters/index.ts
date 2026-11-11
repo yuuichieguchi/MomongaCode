@@ -4,7 +4,7 @@ import type { OutputFormatterName } from '@momonga/protocol';
 import { formatGrep } from './grep.ts';
 import { formattingViolations } from './invariants.ts';
 import type { FormattingViolation } from './invariants.ts';
-import { formatJson } from './json.ts';
+import { formatJson, isUnreadableJson } from './json.ts';
 import { formatLog } from './log.ts';
 import { readClauseOf } from '../tool-output.ts';
 
@@ -27,8 +27,9 @@ const parsesAsJson = (output: string): boolean => {
   try {
     parseOutsideJson(output);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (isUnreadableJson(error)) return false;
+    throw error;
   }
 };
 

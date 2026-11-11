@@ -1,3 +1,4 @@
+import { isOpaqueEvent } from '@momonga/protocol';
 import type { PublicRunEvent } from '@momonga/protocol';
 import type { EvalRunApi } from '@momonga/eval';
 import { recordedCostsOf } from './recorded-costs.ts';
@@ -39,6 +40,7 @@ export const goldenRunApi = (
       try {
         for await (const frame of client.streamEvents(runId, cursor === undefined ? {} : { lastEventId: cursor })) {
           cursor = frame.id;
+          if (isOpaqueEvent(frame.data)) continue;
           yield frame.data;
         }
         return;

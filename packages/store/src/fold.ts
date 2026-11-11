@@ -261,12 +261,10 @@ const completeCall = (state: RunState, event: Extract<RunEvent, { type: 'tool.co
   };
 };
 
-export const rejectionKeyOf = (name: string, args: unknown): string => sha256Hex(`${name}\n${canonicalJson(args)}`);
-
-const withRejectedCall = (state: RunState, kind: string, rejectionKey: string): RunState => {
+const withRejectedCall = (state: RunState, kind: string, subjectDigest: string): RunState => {
   if (kind !== 'reject_once' && kind !== 'reject_always') return state;
   const known = state.rejectedCalls ?? [];
-  return known.includes(rejectionKey) ? state : { ...state, rejectedCalls: [...known, rejectionKey] };
+  return known.includes(subjectDigest) ? state : { ...state, rejectedCalls: [...known, subjectDigest] };
 };
 
 const withoutHold = (state: RunState, event: RunEvent): RunState => {
@@ -506,7 +504,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
         if (option === undefined || held.subjectDigest === undefined) {
           throw new Error(`run ${state.runId}: ${event.type} for the held approval ${event.approvalId} names unknown option ${event.optionId}`);
         }
-        return withRejectedCall({ ...state, heldCalls: { ...state.heldCalls, [callId]: { ...held, resolution: { optionId: option.optionId, kind: option.kind, subjectDigest: held.subjectDigest } } } }, option.kind, rejectionKeyOf(held.name, held.arguments));
+        return withRejectedCall({ ...state, heldCalls: { ...state.heldCalls, [callId]: { ...held, resolution: { optionId: option.optionId, kind: option.kind, subjectDigest: held.subjectDigest } } } }, option.kind, held.subjectDigest);
       }
       const entry = Object.entries(state.pendingCalls).find(([, call]) => call.approvalId === event.approvalId);
       if (entry === undefined) throw new Error(`run ${state.runId}: ${event.type} refers to unknown approval ${event.approvalId}`);
@@ -529,7 +527,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
           },
         };
       });
-      return chosen === undefined ? resolved : withRejectedCall(resolved, chosen.kind, rejectionKeyOf(asked.name, asked.arguments));
+      return chosen === undefined || asked.subjectDigest === undefined ? resolved : withRejectedCall(resolved, chosen.kind, asked.subjectDigest);
     }
     case 'tool.permission.cancelled': {
       const heldEntry = heldByApproval(state, event.approvalId);
@@ -589,6 +587,8 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       return withoutHold(reconcileCall(state, event), event);
     case 'context.compacted':
       return { ...withCompactionRecorded(compact(state, event), event, true), ownCompactionEventSeq: event.seq };
+    case 'context.inherited_compacted':
+      return { ...state, inheritedCompactionRecorded: true };
     case 'context.compaction_rejected':
       return withCompactionRecorded(rejectCompaction(state, event), event, false);
     case 'context.inherited':

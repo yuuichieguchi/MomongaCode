@@ -1,3 +1,4 @@
+import type { LaunchProtection } from '../child-protection.ts';
 import { spawn } from 'node:child_process';
 import type { ChildProcess, StdioOptions } from 'node:child_process';
 import { closeDescriptorSync, openReadOnlySync } from '../node-file-system.ts';
@@ -18,6 +19,7 @@ export type GroupLaunchRequest = {
   marker?: GroupLaunchMarker;
   port?: ProcessGroupPort;
   spawnProcess?: typeof spawn;
+  protection: LaunchProtection;
 };
 
 export type LeaderExit = { code: number | null; signal: NodeJS.Signals | null };
@@ -26,6 +28,7 @@ export type GroupLaunch = {
   readonly child: ChildProcess;
   readonly pgid: number | undefined;
   onExit(exited: (exit: LeaderExit) => void, failed: (error: Error) => void): void;
+  onStart(started: (commandPid: number) => void): void;
 };
 
 type SpawnPlace = { cwd?: string; env?: Record<string, string> };
@@ -53,19 +56,30 @@ const launchKept = (keeper: GroupKeeper, request: GroupLaunchRequest, spawnProce
     command: { file: request.file, args: request.args },
     marker: marker?.file,
     descriptors: descriptorsBeyondStandard(stdio),
-    start: (executable, args) => {
-      const child = spawnProcess(executable, [...args], { ...placeOf(request), detached: true, windowsHide: true, stdio });
+    start: (executable, args, verbatim) => {
+      const verbatimForm = verbatim === true ? { windowsVerbatimArguments: true, argv0: `"${executable}"` } : {};
+      const child = spawnProcess(executable, [...args], { ...placeOf(request), ...verbatimForm, detached: true, windowsHide: true, stdio });
       return { child, pid: child.pid, exited: exitCodeOf(child) };
     },
   });
   const { child } = opening.process;
-  const ended = opening.commandExit.then(leaderExitOf);
+  let commandPid: number | undefined;
+  const startListeners: ((commandPid: number) => void)[] = [];
+  const started = opening.commandPid.then((pid) => {
+    commandPid = pid;
+    for (const listener of startListeners.splice(0)) listener(pid);
+  });
+  const ended = Promise.all([started, opening.commandExit]).then(([, exit]) => leaderExitOf(exit));
   ended.catch(() => undefined);
   return {
     child,
     pgid: child.pid,
     onExit: (exited, failed) => {
       ended.then(exited, (error: unknown) => failed(error instanceof Error ? error : new Error(String(error))));
+    },
+    onStart: (started) => {
+      if (commandPid === undefined) startListeners.push(started);
+      else started(commandPid);
     },
   };
 };
@@ -87,6 +101,9 @@ const launchDirect = (request: GroupLaunchRequest, spawnProcess: typeof spawn): 
     pgid: child.pid,
     onExit: (exited) => {
       child.once('exit', (code, signal) => exited({ code, signal }));
+    },
+    onStart: (started) => {
+      if (child.pid !== undefined) started(child.pid);
     },
   };
 };

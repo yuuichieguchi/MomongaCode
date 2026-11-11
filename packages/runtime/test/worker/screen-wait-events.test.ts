@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import type { HooksSettings, RunEvent } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
 import { fixedSandboxBindings } from '@momonga/runtime';
@@ -22,7 +22,7 @@ const hooks = (event: keyof HooksSettings, command: string, matcher?: string): H
   [event]: [{ ...(matcher === undefined ? {} : { matcher }), hooks: [{ type: 'command', command }] }],
 });
 
-const workerWithProcesses = (env: Env) => env.worker('worker-1', { tools: { sandboxes: fixedSandboxBindings(createUnsandboxed({ killGraceMs: 200 })) } });
+const workerWithProcesses = (env: Env) => env.worker('worker-1', { tools: { sandboxes: fixedSandboxBindings(createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 200 })) } });
 
 const hookEventsOf = (env: Env, runId: string): Record<string, unknown>[] =>
   env

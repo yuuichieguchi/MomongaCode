@@ -17,7 +17,7 @@ const OPTIONS = [
 
 const call = (seq: number, runId = 'run-1'): RunEventFrame => eventFrame(seq, { type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Bash', kind: 'execute', title: 'Bash npm test', rawInput: {} }, runId);
 const asked = (seq: number, runId = 'run-1'): RunEventFrame =>
-  eventFrame(seq, { type: 'tool.permission.requested', approvalId: 'ap-1', callId: 'c1', subjectDigest: 'd', reason: 'shell commands require approval', options: OPTIONS }, runId);
+  eventFrame(seq, { type: 'tool.permission.requested', approvalId: 'ap-1', callId: 'c1', subjectDigest: 'd', reason: 'shell commands require approval', options: OPTIONS, shown: { title: 'approval', input: {} } }, runId);
 const waits = (seq: number, runId = 'run-1'): RunEventFrame => eventFrame(seq, { type: 'run.status', from: 'RUNNING', to: 'WAITING_HUMAN' }, runId);
 const resolved = (seq: number): RunEventFrame => eventFrame(seq, { type: 'tool.permission.resolved', approvalId: 'ap-1', optionId: 'o1' });
 const goesOn = (seq: number): RunEventFrame => eventFrame(seq, { type: 'run.status', from: 'WAITING_HUMAN', to: 'QUEUED' });

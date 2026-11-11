@@ -23,6 +23,7 @@ import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
 import type { AbandonTarget, AnyTool, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
 import { evidenceHandler, fidelityHandler, inheritPlanHandler, inheritedWindowHandler, reflectionInputHandler, reportHandler, verdictHandler } from '../../src/memory/journal-thread.ts';
 import type { JournalHandler } from '../../src/memory/journal-thread.ts';
+import { RUN_STATE_PAGE_EVENTS } from '../../src/memory/journal-thread-limits.ts';
 import { createFakeGateway } from './fake-gateway.ts';
 import type { FakeGateway } from './fake-gateway.ts';
 import { createFakeSettings } from './fake-settings.ts';
@@ -34,7 +35,9 @@ import type { FakeTracer } from './fake-tracer.ts';
 import { MODEL_ID, resetResponseIds } from './scripts.ts';
 import { fixedSandboxBindings, fixedTracers } from '@momonga/runtime';
 
-import { createFakeRuleVerifier } from './fake-rule-verifier.ts';
+import { installedRuleSolver, productRuleVerifier } from '../../src/process/rule-verifier.ts';
+import { systemTimers } from '../../src/service/timers.ts';
+import type { RuleVerifierPort } from '../../src/ports.ts';
 import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
 export const START_MS = 1_800_000_000_000;
@@ -114,6 +117,7 @@ export const createFakeInstructions = (): FakeInstructions => {
   return {
     files,
     reads,
+    platform: process.platform,
     contains: (directory, candidate) => testPaths().comparableContains(directory, candidate),
     read: async (filePath) => {
       reads.push(filePath);
@@ -133,6 +137,7 @@ export type EnvOptions = {
   preparer?: ContributionPreparer;
   onDecode?: (rows: number, bytes: number) => void;
   onEncode?: (kind: string, bytes: number) => void;
+  ruleVerifier?: RuleVerifierPort;
 };
 
 export type BatchInput = Parameters<ToolExecutor['runBatch']>[0];
@@ -190,6 +195,15 @@ export const journalReaderPreparer = (dbPath: string): ContributionPreparer => (
       db.close();
     }
   },
+  runState: async (request, signal) => {
+    signal?.throwIfAborted();
+    const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
+    try {
+      return await createJournalReader(db).runState(request.runId, { pageEvents: RUN_STATE_PAGE_EVENTS, pause: async () => undefined });
+    } finally {
+      db.close();
+    }
+  },
   measure: async (request) => {
     const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     try {
@@ -199,6 +213,8 @@ export const journalReaderPreparer = (dbPath: string): ContributionPreparer => (
     }
   },
 });
+
+const ruleSolverHost = installedRuleSolver(import.meta.url);
 
 export const makeEnv = async (options: EnvOptions = {}) => {
   resetResponseIds();
@@ -244,8 +260,9 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const toolbox: FakeToolbox = createFakeToolbox();
   const instructions = createFakeInstructions();
   const executorWarnings: string[] = [];
+  const layout = momongaLayout(home, process.platform, process.env);
   const realExecutor = createToolExecutor({
-    layout: momongaLayout(home, process.platform, process.env),
+    layout,
     reap: { inspector: testProcessInspector() },
     shellHost: nodeShellHost(),
     random: systemRandom,
@@ -348,7 +365,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     },
   });
 
-  const ruleVerifier = createFakeRuleVerifier();
+  const ruleVerifier: RuleVerifierPort = options.ruleVerifier ?? productRuleVerifier({ solver: () => ruleSolverHost, paths: layout, timers: systemTimers, shellHost: nodeShellHost(), env: process.env, clock });
 
   const worker = (workerId = 'worker-1', overrides: WorkerOverrides = {}): Worker => {
     const { tools: toolOverrides, toolList, ...rest } = overrides;

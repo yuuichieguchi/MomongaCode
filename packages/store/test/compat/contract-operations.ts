@@ -1,6 +1,7 @@
 import { expect } from 'vitest';
 import { OPTIONS, REQUESTS, call, claimOf, enqueue, ok } from './contract-writer.ts';
 import type { ContractStore } from './contract-writer.ts';
+import { foldedRunStateAt } from '../run-state-codec.ts';
 
 export { buildCompatTemplate, copyTemplate, openContractStore, writeContractRows } from './contract-writer.ts';
 export type { ContractStore } from './contract-writer.ts';
@@ -10,10 +11,10 @@ export type ContractOperation = { name: string; run(contract: ContractStore): Pr
 export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {
     name: 'lists the sessions and reads the runs and events the newer build wrote',
-    run: async ({ store }) => {
+    run: async ({ store, dbPath }) => {
       for (const session of store.listSessions({ limit: 100, cursor: null }).sessions) {
         for (const run of store.listRuns(session.id)) {
-          store.load(run.id);
+          await foldedRunStateAt(dbPath, run.id);
           store.readRunEvents(run.id, 0, 10_000);
           await store.finalTextOf(run.id);
           await store.startedCallsOf(run.id);
@@ -52,7 +53,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
       const claim = claimOf(store, run.id, 'asking-worker');
       ok(store.append(claim, [call('ask-1'), call('ask-2')]), 'append calls');
       const expiresAt = clock.now() + 60_000;
-      const approval = ok(await store.requestApproval(claim, { callId: 'ask-1', options: OPTIONS, event: { subjectDigest: 'a'.repeat(64), reason: 'contract' } }), 'approval').approval;
+      const approval = ok(await store.requestApproval(claim, { callId: 'ask-1', options: OPTIONS, event: { subjectDigest: 'a'.repeat(64), reason: 'contract', shown: { title: 'approval', input: {} } } }), 'approval').approval;
       const elicitation = ok(await store.requestElicitation(claim, { callId: 'ask-2', expiresAt, server: 'remote', requests: REQUESTS }), 'elicitation').approval;
       ok(await store.release(claim, 'WAITING_HUMAN'), 'park');
       expect((await store.resolveApproval(approval.id, 'allow_once')).kind).toBe('ok');

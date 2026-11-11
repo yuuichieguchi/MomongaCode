@@ -21,7 +21,7 @@ import {
 } from '@momonga/foundation';
 import type { Clock, CredentialSecretStore, HelperSelf, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, ProcessInspector, Timing, RolePort, RuleEnforcement, SandboxNetworkSetting, SecretStore, SessionScratch } from '@momonga/foundation';
 import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory, systemResolver } from '@momonga/mcp';
-import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
+import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts, StdioLaunch } from '@momonga/mcp';
 import type { SandboxBindings } from '../ports.ts';
 import type { RuntimeStore, Session } from '@momonga/store';
 import { createBuiltinTools, createGitWorkTreeObserver, createHostRipgrepLocator, createMarkerOwners, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
@@ -49,6 +49,7 @@ import type { EnforcedPolicyFor } from './tool-policy.ts';
 export const sandboxNetworkOf = (session: Pick<Session, 'sandboxNetwork'>, setting: SandboxNetworkSetting): SandboxNetworkSetting => session.sandboxNetwork ?? setting;
 
 export type ToolRuntimeOptions = {
+  mcpLaunch: StdioLaunch;
   lockCapability: LockCapabilityProbe;
   kernelLock: KernelLockMechanism;
   paths: MomongaPaths;
@@ -70,7 +71,7 @@ export type ToolRuntimeOptions = {
   forgeFetch?: ForgeFetch;
   helperSelf?: HelperSelf;
   shellHost: ShellHost;
-  settings: Pick<SettingsComposition, 'envFor' | 'takeUserSnapshot' | 'userSnapshot' | 'admitUserSnapshot' | 'keptLayers' | 'loadSessionSettings' | 'trustOracle'>;
+  settings: Pick<SettingsComposition, 'envFor' | 'referenceEnvFor' | 'takeUserSnapshot' | 'userSnapshot' | 'admitUserSnapshot' | 'keptLayers' | 'loadSessionSettings' | 'trustOracle'>;
   reapTiming: Timing;
   leaseMs: number;
   heartbeatMs: number;
@@ -181,6 +182,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     readCloseGraceMs,
     readConnectTimeoutMs: () => settings.takeUserSnapshot().settings.mcp.connectTimeoutMs,
     markers: { dir: paths.markers.mcp, inspector, onWarning: (message) => logger.warn(message) },
+    launch: options.mcpLaunch,
     ...(options.onAuthorizationEnded === undefined ? {} : { onAuthorizationEnded: options.onAuthorizationEnded }),
   });
   const mcpPools = createMcpPoolCache({ store, notifier, timers, logger, report, readCloseGraceMs });
@@ -220,13 +222,14 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     let acquiredHere = false;
     try {
       const loaded = await settings.loadSessionSettings(session.cwd, snapshot, signal);
-      const mcp = await loadSessionMcpServers({ home, settings }, session, env, snapshot.user, 'read', signal);
+      const mcp = await loadSessionMcpServers({ home, settings }, session, env, snapshot, 'read', signal);
       const sources: McpPool['sources'] = [];
       if (mcp.enabled.length > 0) {
         const servers = mcp.enabled;
-        const { toolIdleTimeoutMs, toolTotalTimeoutMs, connectTimeoutMs } = loaded.settings.mcp;
+        const { toolIdleTimeoutNetworkMs, toolIdleTimeoutStdioMs, toolTotalTimeoutMs, connectTimeoutMs } = loaded.settings.mcp;
         const callBounds = {
-          ...(toolIdleTimeoutMs === undefined ? {} : { toolIdleTimeoutMs }),
+          ...(toolIdleTimeoutNetworkMs === undefined ? {} : { toolIdleTimeoutNetworkMs }),
+          ...(toolIdleTimeoutStdioMs === undefined ? {} : { toolIdleTimeoutStdioMs }),
           ...(toolTotalTimeoutMs === undefined ? {} : { toolTotalTimeoutMs }),
           ...(connectTimeoutMs === undefined ? {} : { connectTimeoutMs }),
         };
@@ -241,6 +244,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
               projectDir: session.cwd,
               baseEnv: env,
               files: nodeFileSystem,
+              launch: options.mcpLaunch,
               clock,
               clientVersion: options.version,
               credentials,

@@ -11,7 +11,7 @@ import { repoRoot } from './bundle.ts';
 import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { WINDOWS_KEEPER_SOURCE, compileWindowsProgram } from './windows-keeper.ts';
-import { pollUntil } from '@momonga/testkit';
+import { pollUntil, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 
 const ZIG_TARGET = 'x86_64-windows-gnu';
 const WAIT_MS = 30_000;
@@ -137,6 +137,7 @@ describe.runIf(process.platform === 'win32')('the keeper on a Windows host', () 
       cwd: root,
       env: Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
       signal,
+      protection: TEST_CHILD_UNPROTECTED,
       killGraceMs: GRACE_MS,
       afterExit: () => undefined,
       groupPort: createJobGroupPort(createKeptGroupControl(hostWith())),

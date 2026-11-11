@@ -2,13 +2,13 @@ import { FIRST_GENERATION, fixedRolePort } from '@momonga/foundation';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { ConfigError, loadMcpServers } from '@momonga/config';
+import { ConfigError, approvalDigestOf, loadMcpServers } from '@momonga/config';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { createMcpPool, inheritedEnvOf } from '@momonga/mcp';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
 import type { RuntimeStore } from '@momonga/store';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_LEASE, unconfiguredDerivedNetworkOf, MCP_MODERN_SERVER_PATH, modelSettings, waitFor, NEVER_CANCELLED, testLocks, testKernelLock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_LEASE, unconfiguredDerivedNetworkOf, MCP_MODERN_SERVER_PATH, modelSettings, waitFor, NEVER_CANCELLED, testLocks, testKernelLock, TEST_STDIO_LAUNCH } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import type { ToolSource } from '@momonga/tools';
 import {
@@ -125,11 +125,11 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     expect(f.counting.created[0]?.clientVersion).toBe(FIXTURE_RUNTIME_VERSION);
   });
 
-  it('G2: passes mcp.toolIdleTimeoutMs and mcp.toolTotalTimeoutMs from the user settings to the pool and its tools', async () => {
+  it('G2: passes the idle key of each transport and mcp.toolTotalTimeoutMs from the user settings to the pool, and a stdio server takes the stdio idle key', async () => {
     const f = await realFixture();
-    writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer }, mcp: { toolIdleTimeoutMs: 600_000, toolTotalTimeoutMs: 7_200_000 } });
+    writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer }, mcp: { toolIdleTimeoutNetworkMs: 400_000, toolIdleTimeoutStdioMs: 600_000, toolTotalTimeoutMs: 7_200_000 } });
     const set = await f.toolRuntime.port.toolSet(await newRun(f), { signal: signalNever(), env: toolEnv() });
-    expect(f.counting.created[0]).toMatchObject({ toolIdleTimeoutMs: 600_000, toolTotalTimeoutMs: 7_200_000 });
+    expect(f.counting.created[0]).toMatchObject({ toolIdleTimeoutNetworkMs: 400_000, toolIdleTimeoutStdioMs: 600_000, toolTotalTimeoutMs: 7_200_000 });
     expect(set.tools.find((tool) => tool.name === 'mcp__fx__echo')).toMatchObject({ idleTimeoutMs: 600_000, timeoutMs: 7_200_000 });
   });
 
@@ -154,10 +154,10 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
       const f = await makeRuntimeFixture();
       await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
       writeJson(path.join(f.temp.project, '.mcp.json'), { mcpServers: { a: fixtureServer, b: fixtureServer } });
-      writeUserSettings(f.temp.home, { enabledMcpjsonServers: ['a'] });
+      writeUserSettings(f.temp.home, { enabledMcpjsonServers: [{ name: 'a', digest: approvalDigestOf(fixtureServer) }] });
       await f.toolRuntime.port.toolSet(await newRun(f), { signal: signalNever(), env: toolEnv() });
 
-      writeUserSettings(f.temp.home, { enabledMcpjsonServers: ['a', 'b'] });
+      writeUserSettings(f.temp.home, { enabledMcpjsonServers: [{ name: 'a', digest: approvalDigestOf(fixtureServer) }, { name: 'b', digest: approvalDigestOf(fixtureServer) }] });
       await f.toolRuntime.port.toolSet(await newRun(f), { signal: signalNever(), env: toolEnv() });
 
       expect(f.pools.pools).toHaveLength(2);
@@ -382,7 +382,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     f.timers.advance(POOL_IDLE_CLOSE_MS);
     await waitFor(() => markerCount(f) === 0, { description: 'the idle pool to close' });
 
-    const mcp = await loadMcpServers({ signal: new AbortController().signal, home: f.temp.home, projectDir: f.temp.project, trust: { isTrusted: () => false }, env: toolEnv() });
+    const mcp = await loadMcpServers({ signal: new AbortController().signal, home: f.temp.home, projectDir: f.temp.project, trust: { isTrusted: () => false }, env: toolEnv(), referenceEnv: toolEnv() });
     const key = sha256Hex(canonicalJson({ project: f.temp.project, servers: mcp.enabled, trust: 'unset', env: inheritedEnvOf(toolEnv()) }));
     const logged = JSON.stringify(f.logger.entries);
     expect(mcp.enabled.map((server) => server.name)).toEqual(['fx']);
@@ -406,7 +406,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     const f = await makeRuntimeFixture();
     let error: unknown;
     try {
-      runtime.createToolRuntime({
+      runtime.createToolRuntime({ mcpLaunch: TEST_STDIO_LAUNCH,
         kernelLock: testKernelLock(),
         lockCapability: testLocks().capability,
         version: '0.0.0-test',

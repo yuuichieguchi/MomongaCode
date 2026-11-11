@@ -154,7 +154,7 @@ describe('the TUI', () => {
     const approval = state.approval;
     if (approval === undefined) throw new Error('expected a pending approval');
     const tools = new Map(state.entries.flatMap((entry) => (entry.kind === 'tool' ? [[entry.callId, entry] as const] : [])));
-    const text = approvalWording(approval, (callId) => tools.get(callId), '/work');
+    const text = approvalWording(approval, (callId) => tools.get(callId));
     expect(text).toEqual({ title: 'Effect unknown: Write /a.txt and 1 more', lines: TEXT_TWO });
     expect(approvalSpec(approval, text.title, text.lines, 1)).toEqual({
       title: 'Effect unknown: Write /a.txt and 1 more',
@@ -169,11 +169,11 @@ describe('the TUI', () => {
   });
 
   it('keeps the title and lines of a permission request', () => {
-    const requested = { type: 'tool.permission.requested', approvalId: 'ap', callId: 'c1', subjectDigest: 'd', reason: 'edits require approval', options: [{ optionId: 'o', name: 'Allow', kind: 'allow_once' }] };
+    const requested = { type: 'tool.permission.requested', approvalId: 'ap', callId: 'c1', subjectDigest: 'd', reason: 'edits require approval', options: [{ optionId: 'o', name: 'Allow', kind: 'allow_once' }], shown: { title: 'approval', input: {} } };
     const state = fold([callOf('c1', 'Write /a.txt'), requested]);
     const approval = state.approval;
     if (approval === undefined) throw new Error('expected a pending approval');
-    const text = approvalWording(approval, () => undefined, '/work');
+    const text = approvalWording(approval, () => undefined);
     expect(text).toEqual({ title: 'c1', lines: ['edits require approval'] });
     expect(approvalSpec(approval, text.title, text.lines, 1).title).toBe('Permission requested: c1');
   });

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createStdioTransport } from '@momonga/mcp';
 import { SHUTDOWN_SETTING_LIMITS, groupTerminationBoundMs, systemTiming, nodeFileSystem } from '@momonga/foundation';
 import type { TerminateOutcome, Timing } from '@momonga/foundation';
-import { MCP_RAW_STDIO_SERVER_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, killGroupsForCleanup, waitFor } from '@momonga/testkit';
+import { MCP_RAW_STDIO_SERVER_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, killGroupsForCleanup, waitFor, TEST_STDIO_LAUNCH } from '@momonga/testkit';
 import { closeGraceOf } from '../src/stdio-transport.ts';
 import { makeRemoteConnection, startHttpFixture } from './remote-harness.ts';
 
@@ -33,7 +33,7 @@ describe('the stop of an MCP stdio server has the one bound of a process group s
       },
     };
     let armedAtStop: number[] = [];
-    const transport = createStdioTransport({ files: nodeFileSystem,
+    const transport = createStdioTransport({ launch: TEST_STDIO_LAUNCH, files: nodeFileSystem,
       name: 'raw',
       config: { command: process.execPath, args: [MCP_RAW_STDIO_SERVER_PATH] },
       projectDir,

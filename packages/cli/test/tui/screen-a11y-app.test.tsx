@@ -158,7 +158,7 @@ describe('the screen-reader display', () => {
     await untilOutput(started.app, 'mode: manual · tokens: 0');
     await running(started);
     started.backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'c1', name: 'Bash', kind: 'execute', title: 'Bash c1', rawInput: { command: 'ls' } }));
-    started.backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: 'asks', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }, { optionId: 'o3', name: 'Reject once', kind: 'reject_once' }] }));
+    started.backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: 'asks', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }, { optionId: 'o3', name: 'Reject once', kind: 'reject_once' }], shown: { title: 'approval', input: {} } }));
     const shown = (await untilFrame(started.app, (now) => now.includes('Permission requested: Bash c1') && now.includes('to choose'))).split('\n').map((line) => line.trimEnd());
     const at = shown.indexOf('Permission requested: Bash c1');
     expect(shown.slice(at, at + 6)).toEqual(['Permission requested: Bash c1', 'asks', 'selected: Allow once', '1. Allow once', '2. Reject once', '1-9 or enter to choose · up/down to move · esc: Reject once · ctrl+c: cancel the run']);

@@ -104,6 +104,43 @@ export const keeperPipeName = (random: NameSource): string => `${KEEPER_PIPE_PRE
 
 export type KeptCommand = { readonly file: string; readonly args: readonly string[] };
 
+export class KeptCommandRefusedError extends Error {
+  readonly command: string;
+
+  constructor(command: string, message: string) {
+    super(message);
+    this.name = 'KeptCommandRefusedError';
+    this.command = command;
+  }
+}
+
+const COMMAND_SCRIPT = /\.(?:cmd|bat)$/i;
+
+const INTERPRETER_CHANGES = /["\r\n%!^&|<>()]/;
+
+const ABSOLUTE_WINDOWS_PATH = /^(?:[A-Za-z]:\\|\\\\)/;
+
+export type KeptCommandLine = { readonly command: KeptCommand; readonly verbatim: boolean };
+
+const quoted = (word: string): string => `"${word}"`;
+
+export const keptCommandLineOf = (command: KeptCommand, interpreter: string): KeptCommandLine => {
+  if (!ABSOLUTE_WINDOWS_PATH.test(command.file)) {
+    throw new KeptCommandRefusedError(command.file, `the command ${command.file} is not an absolute path, so it was not started; give the full path of the program`);
+  }
+  if (!COMMAND_SCRIPT.test(command.file)) return { command, verbatim: false };
+  for (const word of [command.file, ...command.args]) {
+    if (INTERPRETER_CHANGES.test(word)) {
+      const what = word === command.file ? `the path ${JSON.stringify(word)}` : `the argument ${JSON.stringify(word)} of ${command.file}`;
+      throw new KeptCommandRefusedError(
+        command.file,
+        `${what} holds a character that the Windows command interpreter changes (a double quote, a line break, or one of % ! ^ & | < > ( )), so the command was not started; pass the value through an environment variable or a file`,
+      );
+    }
+  }
+  return { command: { file: quoted(interpreter), args: ['/d', '/s', '/c', quoted([command.file, ...command.args].map(quoted).join(' '))] }, verbatim: true };
+};
+
 export type KeeperLaunchWords = { pipe: string; job: string; onOwnerLoss: KeeperOwnerLoss; marker: string | undefined; descriptors: readonly number[]; command: KeptCommand };
 
 export const keeperLaunchArguments = ({ pipe, job, onOwnerLoss, marker, descriptors, command }: KeeperLaunchWords): string[] => [
@@ -134,10 +171,13 @@ export type KeeperListener = {
 
 export type KeeperRun = { readonly exited: Promise<number | undefined> };
 
+export type KeeperStart<P extends KeeperRun> = (executable: string, args: readonly string[], verbatim?: boolean) => P;
+
 export type KeeperHost = {
   executable(): string;
+  commandInterpreter(): string;
   listen(pipe: string): KeeperListener;
-  start(executable: string, args: readonly string[]): KeeperRun;
+  start: KeeperStart<KeeperRun>;
   random: NameSource;
 };
 
@@ -287,13 +327,13 @@ type Connected = { session: Session; first: FirstWord };
 
 type Connecting<P extends KeeperRun> = { process: P; connected: Promise<Connected> };
 
-const connectKeeper = <P extends KeeperRun>(host: KeeperHost, wordsFor: (pipe: string) => string[], start: (executable: string, args: readonly string[]) => P, signal: AbortSignal): Connecting<P> => {
+const connectKeeper = <P extends KeeperRun>(host: KeeperHost, wordsFor: (pipe: string) => string[], start: KeeperStart<P>, signal: AbortSignal, verbatim = false): Connecting<P> => {
   const executable = host.executable();
   const pipe = keeperPipeName(host.random);
   const listener = host.listen(pipe);
   let process: P;
   try {
-    process = start(executable, wordsFor(pipe));
+    process = verbatim ? start(executable, wordsFor(pipe), true) : start(executable, wordsFor(pipe));
   } catch (error) {
     listener.close();
     throw error;
@@ -326,7 +366,7 @@ export type KeptLaunchRequest<P extends KeeperRun> = {
   onOwnerLoss: KeeperOwnerLoss;
   marker: string | undefined;
   descriptors: readonly number[];
-  start(executable: string, args: readonly string[]): P;
+  start: KeeperStart<P>;
   signal: AbortSignal;
 };
 
@@ -337,12 +377,14 @@ export type KeptLaunch<P extends KeeperRun> =
 export type OpenedLaunch<P extends KeeperRun> = { job: string; process: P; launched: Promise<KeptLaunch<P>> };
 
 export const openKeptLaunch = <P extends KeeperRun>(host: KeeperHost, request: KeptLaunchRequest<P>): OpenedLaunch<P> => {
+  const line = keptCommandLineOf(request.command, host.commandInterpreter());
   const job = keeperJobName(host.random);
   const { process, connected } = connectKeeper(
     host,
-    (pipe) => keeperLaunchArguments({ pipe, job, onOwnerLoss: request.onOwnerLoss, marker: request.marker, descriptors: request.descriptors, command: request.command }),
+    (pipe) => keeperLaunchArguments({ pipe, job, onOwnerLoss: request.onOwnerLoss, marker: request.marker, descriptors: request.descriptors, command: line.command }),
     request.start,
     request.signal,
+    line.verbatim,
   );
   const launched = connected.then(({ session, first }): KeptLaunch<P> => {
     if (first.kind === 'started') {
@@ -439,6 +481,9 @@ export const stopKeptGroup = async (group: KeptGroup, options: KeptStopOptions):
   if (probe.kind === 'expired') return 'unconfirmed';
   if (probe.value !== 'alive') return probe.value;
   group.terminate();
-  const end = await withinPhase(async (signal): Promise<KeptStopOutcome> => ((await group.ended(signal)) === 'empty' ? 'terminated' : byName(group, options, signal)), options);
+  const end = await withinPhase(async (signal): Promise<KeptStopOutcome> => {
+    if ((await group.ended(signal)) === 'empty') return 'terminated';
+    return (await byName(group, options, signal)) === 'gone' ? 'terminated' : 'unconfirmed';
+  }, options);
   return end.kind === 'expired' ? 'unconfirmed' : end.value;
 };

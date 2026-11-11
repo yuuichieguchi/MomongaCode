@@ -57,10 +57,20 @@ const FORGE_FORM: readonly FormField[] = [
   { name: 'credentialSecret', label: 'Token: name in the secret store', kind: 'text', required: false, at: ['credential', 'secret'] },
 ];
 
+const ISSUE_WATCH_FORM: readonly FormField[] = [
+  { name: 'repository', label: 'Repository (owner/name)', kind: 'text', required: true },
+  { name: 'labels', label: 'Labels an issue must carry, separated by commas', kind: 'list', required: false },
+  { name: 'authorAssociation', label: 'Authors it takes (OWNER, MEMBER, COLLABORATOR), separated by commas', kind: 'list', required: false },
+  { name: 'mandate', label: 'Mandate of the run it starts', kind: 'text', required: true },
+];
+
 const PRICE_CONSTANTS = { currency: 'USD' } as const;
 
 const priceLine = (entry: Readonly<Record<string, unknown>>): string =>
   `${String(entry['provider'])}/${String(entry['model'])}  from ${String(entry['effectiveFrom'])}  input ${String(entry['inputPerMTok'])}  output ${String(entry['outputPerMTok'])}`;
+
+const issueWatchLine = (entry: Readonly<Record<string, unknown>>): string =>
+  `${String(entry['repository'])}  under ${String(entry['mandate'])}${Array.isArray(entry['labels']) ? `  labels ${entry['labels'].map(String).join(', ')}` : ''}${Array.isArray(entry['authorAssociation']) ? `  authors ${entry['authorAssociation'].map(String).join(', ')}` : ''}`;
 
 const forgeLine = (entry: Readonly<Record<string, unknown>>): string =>
   `${String(entry['id'])}  ${String(entry['descriptor'])}  ${Array.isArray(entry['hosts']) ? entry['hosts'].map(String).join(', ') : ''}  ${String(entry['apiBaseUrl'])}`;
@@ -92,7 +102,8 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'verification.manifests': { label: 'Verification manifests', section: 'Verification', appliesNow: false },
   'verification.required': { label: 'Require a completion condition', section: 'Verification', appliesNow: false },
   enableAllProjectMcpServers: { label: 'Enable every server of .mcp.json', section: 'MCP', appliesNow: false },
-  'mcp.toolIdleTimeoutMs': { label: 'Tool idle timeout (ms)', section: 'MCP', appliesNow: false },
+  'mcp.toolIdleTimeoutNetworkMs': { label: 'Tool idle timeout of URL servers (ms)', section: 'MCP', appliesNow: false },
+  'mcp.toolIdleTimeoutStdioMs': { label: 'Tool idle timeout of command servers (ms)', section: 'MCP', appliesNow: false },
   'mcp.toolTotalTimeoutMs': { label: 'Tool total timeout (ms)', section: 'MCP', appliesNow: false },
   'mcp.connectTimeoutMs': { label: 'Connect timeout (ms)', section: 'MCP', appliesNow: false },
   'models.dialects': { label: 'Schema dialects', section: 'Models', appliesNow: false },
@@ -112,7 +123,7 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'telemetry.otlp.endpoint': { label: 'OTLP endpoint', section: 'Telemetry', appliesNow: false },
   'telemetry.otlp.headers': { label: 'OTLP headers', section: 'Telemetry', appliesNow: false },
   'telemetry.captureMessageContent': { label: 'Capture message content', section: 'Telemetry', appliesNow: false, confirm: { value: true, question: 'Capture message content in telemetry?' } },
-  'telemetry.contentRetentionDays': { label: 'Content retention (days)', section: 'Telemetry', appliesNow: false },
+  'retention.days': { label: 'Retention of every store (days)', section: 'Telemetry', appliesNow: false },
   pricing: { label: 'Prices', section: 'Pricing', appliesNow: false, form: PRICE_FORM, constants: PRICE_CONSTANTS, line: priceLine },
   'limits.maxCostUsd': { label: 'Money limit of a run (USD)', section: 'Budget and delegation', appliesNow: false },
   'ceilings.costUsd': { label: 'Ceiling on the money a mandate may declare (USD)', section: 'Budget and delegation', appliesNow: false },
@@ -120,6 +131,7 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'ceilings.timeMs': { label: 'Ceiling on the time a mandate may declare (ms)', section: 'Budget and delegation', appliesNow: false },
   mandates: { label: 'Mandates by name', section: 'Budget and delegation', appliesNow: false },
   forges: { label: 'Forges for pull request operations', section: 'Git and pull requests', appliesNow: false, form: FORGE_FORM, line: forgeLine },
+  'issues.watch': { label: 'Issues the watch takes', section: 'Git and pull requests', appliesNow: false, form: ISSUE_WATCH_FORM, line: issueWatchLine },
   'operations.protectedRefs': { label: 'Protected branches (a push always asks you)', section: 'Git and pull requests', appliesNow: false },
   'operations.approval': { label: 'Approval class by operation (rule or always)', section: 'Git and pull requests', appliesNow: false },
   autoUpdates: { label: 'Automatic updates', section: 'Updates', appliesNow: false },
@@ -212,9 +224,18 @@ const inLayer = (snapshot: SettingsSnapshot, layer: SettingsLayer, path: readonl
 
 const wordOf = (value: unknown): string => (typeof value === 'boolean' ? switchWordOf(value) : String(value));
 
+const entryNameOf = (member: unknown): string | undefined => {
+  if (typeof member === 'string') return member;
+  return isRecord(member) && typeof member['name'] === 'string' ? member['name'] : undefined;
+};
+
 export const shownValue = (value: unknown): string => {
   if (value === undefined) return NOT_SET;
-  if (Array.isArray(value)) return value.length === 0 ? NONE : value.every((member) => typeof member === 'string') ? value.join(', ') : `${value.length} entries`;
+  if (Array.isArray(value)) {
+    if (value.length === 0) return NONE;
+    const names = value.map(entryNameOf);
+    return names.every((name): name is string => name !== undefined) ? names.join(', ') : `${value.length} entries`;
+  }
   if (isRecord(value)) return Object.keys(value).length === 0 ? NONE : Object.keys(value).join(', ');
   return wordOf(value);
 };
@@ -591,7 +612,7 @@ const editStructured = async (context: SlashContext, snapshot: SettingsSnapshot,
   let draft = JSON.stringify(inLayer(snapshot, layer, leaf.path) ?? {}, null, 2);
   let sentence: string | undefined;
   for (;;) {
-    const text = await context.overlays.promptText({ title: presentation.label, lines: [...STRUCTURED_LINES, ...(sentence === undefined ? [] : [sentence])], initial: draft, validate: jsonProblem });
+    const text = await context.overlays.promptText({ title: presentation.label, lines: [...STRUCTURED_LINES, ...(sentence === undefined ? [] : [sentence])], initial: draft, structured: true, validate: jsonProblem });
     if (text === undefined) return LEFT;
     draft = text;
     const value: unknown = JSON.parse(text);
@@ -619,7 +640,7 @@ const editDialects = async (context: SlashContext, snapshot: SettingsSnapshot, l
   let draft = JSON.stringify(inLayer(snapshot, 'user', leaf.path) ?? {}, null, 2);
   let sentence: string | undefined;
   for (;;) {
-    const text = await context.overlays.promptText({ title: presentation.label, lines: [...STRUCTURED_LINES, ...(sentence === undefined ? [] : [sentence])], initial: draft, validate: jsonProblem });
+    const text = await context.overlays.promptText({ title: presentation.label, lines: [...STRUCTURED_LINES, ...(sentence === undefined ? [] : [sentence])], initial: draft, structured: true, validate: jsonProblem });
     if (text === undefined) return LEFT;
     draft = text;
     const value: unknown = JSON.parse(text);

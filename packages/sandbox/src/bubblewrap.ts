@@ -3,10 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createOwnedDirectory, fileRuleBlocks, hostPaths, mapAsync, procGroupMembers, settledOrAborted, signalGroup, signalGroupExceptLeader, systemTiming } from '@momonga/foundation';
 import type { Awaitable, FileRuleEntry, FileRuleSet, GroupMembersReader, OwnedDirectory, PlaceholderForm, KernelLockMechanism, Timing } from '@momonga/foundation';
-import { SANDBOX_STOP_BOUND_MS, SOCKET_FILTER_SLOT, launch } from './process.ts';
+import type { Duplex } from 'node:stream';
+import { MARKER_SLOT, SANDBOX_STOP_BOUND_MS, SOCKET_FILTER_SLOT, launch } from './process.ts';
+import { RELAY_CHANNEL_SLOT, relayCommandOf, serveRelayToProxy } from './relay.ts';
 import type { LaunchOptions } from './process.ts';
 import { SandboxPolicyError } from './policy-error.ts';
-import { validateSandboxPolicy } from './profile.ts';
+import { assertLoopbackPort, validateSandboxPolicy } from './profile.ts';
 import { EMPTY_FILE_FORM, identityOf, isStillThePlaceholder, recoverPlaceholders, removePlaceholderEntry } from './placeholder-journal.ts';
 import type { PlaceholderIdentity, PlaceholderJournal } from './placeholder-journal.ts';
 import { assertExistingDirectory } from './scratch.ts';
@@ -85,7 +87,7 @@ export type BubblewrapOptions = { tmpDir?: string; scratchDir?: string; cwd?: st
 
 export type SocketPlan = { kind: 'no-unix-sockets' } | { kind: 'named-unix-sockets'; allowed: readonly string[]; denied: readonly string[] };
 
-export type BubblewrapPlan = { args: string[]; placeholders: string[]; forms: Readonly<Record<string, PlaceholderForm>>; sockets: SocketPlan };
+export type BubblewrapPlan = { args: string[]; relay?: { port: number }; placeholders: string[]; forms: Readonly<Record<string, PlaceholderForm>>; sockets: SocketPlan };
 
 export const SOCKET_GUARD_CHANNEL_SLOT = SOCKET_FILTER_SLOT + 1;
 
@@ -182,9 +184,7 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
   };
   const realpath = (target: string): Promise<string> => ask(() => port.realpath(target));
   await validateSandboxPolicy(policy, options.tmpDir === undefined ? {} : { tmpDir: options.tmpDir }, paths);
-  if (typeof policy.network === 'object') {
-    throw new SandboxPolicyError('network_scope_unsupported', 'the bubblewrap sandbox cannot limit a command to one loopback port, so it cannot limit its network to named hosts');
-  }
+  const relayPort = typeof policy.network === 'object' ? assertLoopbackPort(policy.network.loopbackPort) : undefined;
   const heldPlaceholders = options.heldPlaceholders ?? new Set<string>();
   const canonicalize = async (target: string): Promise<string> => {
     const placeholder = [...heldPlaceholders].find((held) => target.startsWith(`${held}/`));
@@ -379,11 +379,20 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
   const reserved = unique(placeholders);
   return {
     args,
+    ...(relayPort === undefined ? {} : { relay: { port: relayPort } }),
     placeholders: reserved,
     forms: Object.fromEntries(reserved.map((placeholder): [string, PlaceholderForm] => [placeholder, policy.protectedSet.forms[placeholder] ?? EMPTY_FILE_FORM])),
     sockets: unixSocketAllow.length === 0 ? { kind: 'no-unix-sockets' } : { kind: 'named-unix-sockets', allowed: unixSocketAllow, denied: readDenied },
   };
 }
+
+export const planProtection = (denied: readonly string[], scratch: readonly string[]): string[] => [
+  '--bind',
+  '/',
+  '/',
+  ...denied.flatMap((area) => ['--tmpfs', area]),
+  ...scratch.flatMap((folder) => ['--bind', folder, folder]),
+];
 
 export const bwrapProbeArguments = (shell: string): string[] => [
   '--unshare-pid',
@@ -437,6 +446,7 @@ export interface BubblewrapSandboxOptions {
   spawnProcess?: LaunchOptions['spawnProcess'];
   groupMembers?: GroupMembersReader;
   socketGuard?: () => Awaitable<string>;
+  relay?: () => Awaitable<readonly string[]>;
   architecture?: string;
   timing?: Timing;
 }
@@ -581,15 +591,30 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
     const stillHeld = await holders();
     throwAll(await attemptAll([...ended.map((placeholder) => () => discard(placeholder, stillHeld)), () => sweepKept(stillHeld)]));
   };
+  const relayPrefixOf = async (signal: AbortSignal): Promise<readonly string[]> => {
+    if (options.relay === undefined) {
+      throw new SandboxPolicyError(
+        'network_relay_missing',
+        'the command may reach only the hosts it was granted, which the Linux sandbox allows only through its network relay, and this installation has no network relay, so the command was not started',
+      );
+    }
+    const relay = options.relay;
+    return settledOrAborted((async () => relay())(), signal);
+  };
   const launchWith = async (command: SandboxCommand, plan: BubblewrapPlan, tmpDir: string, signal: AbortSignal, afterExit: Step, descriptors?: SandboxDescriptors): Promise<SandboxedProcess> => {
     const guard = plan.sockets.kind === 'no-unix-sockets' || options.socketGuard === undefined ? undefined : await settledOrAborted((async () => options.socketGuard?.())(), signal);
-    const wrapped = bubblewrapCommandOf(bwrapPath, plan, command.argv, guard);
+    const marked = command.markerFile !== undefined || descriptors?.markerFd !== undefined;
+    const relayed = plan.relay === undefined ? undefined : { port: plan.relay.port, prefix: await relayPrefixOf(signal) };
+    const argv = relayed === undefined ? command.argv : relayCommandOf(relayed.prefix, relayed.port, marked ? MARKER_SLOT : undefined, command.argv);
+    const wrapped = bubblewrapCommandOf(bwrapPath, plan, argv, guard);
     await hold(plan);
     try {
       return launch({
         file: wrapped.file,
         args: wrapped.args,
+        protection: { kind: 'sandboxed', backend: 'bubblewrap' },
         socketFilter: socketFilter(architecture, wrapped.socketFilter),
+        ...(relayed === undefined ? {} : { channel: { slot: RELAY_CHANNEL_SLOT, serve: (stream: Duplex) => serveRelayToProxy(stream, relayed.port) } }),
         cwd: command.cwd,
         ...(command.markerFile === undefined ? {} : { markerFile: command.markerFile }),
         ...(descriptors?.markerFd === undefined ? {} : { markerFd: descriptors.markerFd }),

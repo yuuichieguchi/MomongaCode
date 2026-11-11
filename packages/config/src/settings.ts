@@ -8,8 +8,8 @@ import { escapePointerSegment } from './json-file.ts';
 import { MCP_EXPANSION_PATTERN, mcpServerNameProblem, mcpServerUrlProblem } from './mcp-server-rules.ts';
 import { PLAN_PROFILES } from './plan-profiles.ts';
 import { connectionAddressProblem } from './probe-record-key.ts';
-import { describeSchemaErrors } from './schema-errors.ts';
-import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA, TUI_NOTIFY_MODES, TUI_SCREEN_MODES, TUI_SETTING_VALUES, TUI_THEMES } from './settings-schema.ts';
+import { describeSchemaErrors, invalidSettingsMessage, schemaProblemOf } from './schema-errors.ts';
+import { ISSUE_AUTHOR_ASSOCIATIONS, MCP_SERVERS_FILE_SCHEMA, apiKeyChoiceProblem, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA, TUI_NOTIFY_MODES, TUI_SCREEN_MODES, TUI_SETTING_VALUES, TUI_THEMES } from './settings-schema.ts';
 
 export type PermissionsSettings = {
   defaultMode?: PermissionMode;
@@ -24,6 +24,7 @@ export type McpStdioServerConfig = {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+  secretEnv?: Record<string, string>;
   cwd?: string;
 };
 
@@ -303,7 +304,7 @@ export type ModelsSettings = {
   idleTimeoutMs?: number;
 };
 
-export type McpCallSettings = { toolIdleTimeoutMs?: number; toolTotalTimeoutMs?: number };
+export type McpCallSettings = { toolIdleTimeoutNetworkMs?: number; toolIdleTimeoutStdioMs?: number; toolTotalTimeoutMs?: number };
 
 export type SandboxSetting = 'seatbelt' | 'bubblewrap' | 'none';
 
@@ -316,15 +317,34 @@ export const defaultSandboxSetting = (platform: NodeJS.Platform = process.platfo
 
 export type OtlpSettings = { endpoint: string; headers?: Record<string, string> };
 
-export type TelemetrySettings = { otlp?: OtlpSettings; captureMessageContent?: boolean; contentRetentionDays?: number };
+export type IssueWatchEntry = { repository: string; labels?: string[]; authorAssociation?: (typeof ISSUE_AUTHOR_ASSOCIATIONS)[number][]; mandate: string };
 
-export type ResolvedTelemetrySettings = { captureMessageContent: boolean; contentRetentionDays: number };
+export type IssuesSettings = { watch?: IssueWatchEntry[] };
 
-export const DEFAULT_CONTENT_RETENTION_DAYS = 30;
+export type TelemetrySettings = { otlp?: OtlpSettings; captureMessageContent?: boolean };
+
+export type ResolvedTelemetrySettings = { captureMessageContent: boolean };
 
 export const resolveTelemetrySettings = (settings: TelemetrySettings | undefined): ResolvedTelemetrySettings => ({
   captureMessageContent: settings?.captureMessageContent === true,
-  contentRetentionDays: settings?.contentRetentionDays ?? DEFAULT_CONTENT_RETENTION_DAYS,
+});
+
+export type RetentionSettings = { days?: number };
+
+export type ProjectCheckAnswer = { commands: string[] } | { declined: true };
+
+export type ProjectChecksSettings = Record<string, ProjectCheckAnswer>;
+
+export type McpServerApproval = string | { name: string; digest: string };
+
+export type ProjectApprovalsSettings = Record<string, { hooks?: string[]; mandate?: string }>;
+
+export type ResolvedRetentionSettings = { days: number };
+
+export const DEFAULT_RETENTION_DAYS = 30;
+
+export const resolveRetentionSettings = (settings: RetentionSettings | undefined): ResolvedRetentionSettings => ({
+  days: settings?.days ?? DEFAULT_RETENTION_DAYS,
 });
 
 export type PriceEntrySettings = {
@@ -402,7 +422,7 @@ export type Settings = {
   credentials?: CredentialsSettings;
   hooks?: Record<string, HookGroups>;
   autoMode?: AutoModeSettings;
-  enabledMcpjsonServers?: string[];
+  enabledMcpjsonServers?: McpServerApproval[];
   disabledMcpjsonServers?: string[];
   enableAllProjectMcpServers?: boolean;
   mcpServers?: Record<string, McpServerConfig>;
@@ -416,11 +436,15 @@ export type Settings = {
   sandboxNetwork?: SandboxNetworkSetting;
   sandboxUnixSockets?: SandboxUnixSocketsSettings;
   telemetry?: TelemetrySettings;
+  retention?: RetentionSettings;
+  projectChecks?: ProjectChecksSettings;
+  projectApprovals?: ProjectApprovalsSettings;
   network?: NetworkSettings;
   pricing?: PriceEntrySettings[];
   limits?: LimitsSettings;
   ceilings?: CeilingsSettings;
   mandates?: Record<string, MandateProfileSettings>;
+  issues?: IssuesSettings;
   forges?: ForgeInstanceSettings[];
   operations?: OperationsSettings;
   memory?: MemorySettings;
@@ -464,28 +488,32 @@ const validateMcpServer: ProductValidator<McpServerConfig> = defineProductSchema
 
 const assertNotHttpSse = (server: unknown, source: string, name: string): void => {
   if (isRecord(server) && server['type'] === 'sse') {
-    throw new ConfigError(`${source}: MCP server ${JSON.stringify(name)} uses the deprecated HTTP+SSE transport, which is not supported; use type "http" (Streamable HTTP)`);
+    throw new ConfigError(invalidSettingsMessage(source, `/mcpServers/${escapePointerSegment(name)}/type`, 'the deprecated HTTP+SSE transport is not supported; use type "http" (Streamable HTTP)'));
   }
 };
 
-const OLD_MODEL_KEYS: Readonly<Record<string, string>> = {
-  targets: 'models.targets is not a setting any more; declare each server under models.connections with its models (see README, Models).',
-  aliases: 'models.aliases is not a setting any more; list the models to try after the model in models.fallback and choose the first with models.start (see README, Models).',
-};
+const RETIRED_KEYS: ReadonlyArray<{ readonly path: readonly [string, string]; readonly sentence: string }> = [
+  { path: ['models', 'targets'], sentence: 'is not a setting any more; declare each server under models.connections with its models (see README, Models).' },
+  { path: ['models', 'aliases'], sentence: 'is not a setting any more; list the models to try after the model in models.fallback and choose the first with models.start (see README, Models).' },
+  { path: ['mcp', 'toolIdleTimeoutMs'], sentence: 'is not a setting any more; set mcp.toolIdleTimeoutNetworkMs for the servers reached by URL and mcp.toolIdleTimeoutStdioMs for the servers started as a command.' },
+  { path: ['telemetry', 'contentRetentionDays'], sentence: 'is not a setting any more; set retention.days in the user settings, the one retention period of every store.' },
+];
 
 const OLD_BILLING_SCOPE_KEY = 'alias';
 
-const assertNoOldModelKeys = (value: unknown, source: string): void => {
-  const models = isRecord(value) ? value['models'] : undefined;
-  if (!isRecord(models)) return;
-  for (const [key, sentence] of Object.entries(OLD_MODEL_KEYS)) {
-    if (Object.hasOwn(models, key)) throw new ConfigError(`${source}: ${sentence}`);
+const assertNoRetiredKeys = (value: unknown, source: string): void => {
+  if (!isRecord(value)) return;
+  for (const { path: [object, key], sentence } of RETIRED_KEYS) {
+    const holder = value[object];
+    if (isRecord(holder) && Object.hasOwn(holder, key)) throw new ConfigError(invalidSettingsMessage(source, `/${object}/${key}`, sentence));
   }
+  const models = value['models'];
+  if (!isRecord(models)) return;
   const changes = models['billingChanges'];
   if (!Array.isArray(changes)) return;
   changes.forEach((change, index) => {
     if (isRecord(change) && Object.hasOwn(change, OLD_BILLING_SCOPE_KEY)) {
-      throw new ConfigError(`${source}: models.billingChanges[${index}].${OLD_BILLING_SCOPE_KEY} is not a setting any more; write "model" with the model it applies to (see README, Models).`);
+      throw new ConfigError(invalidSettingsMessage(source, `/models/billingChanges/${index}/${OLD_BILLING_SCOPE_KEY}`, 'is not a setting any more; write "model" with the model it applies to (see README, Models).'));
     }
   });
 };
@@ -500,7 +528,7 @@ const assertPlanAdapters = (value: unknown, source: string): void => {
     if (typeof profileId !== 'string' || !Object.hasOwn(PLAN_PROFILES, profileId)) return;
     const required = (PLAN_PROFILES[profileId] as NonNullable<(typeof PLAN_PROFILES)[string]>).adapter;
     if ((connection as Record<string, unknown>)['adapter'] !== required) {
-      throw new ConfigError(`${source}: models.connections[${index}]: profile ${profileId} requires adapter ${required}`);
+      throw new ConfigError(invalidSettingsMessage(source, `/models/connections/${index}/adapter`, `the plan ${profileId} requires adapter ${required}`));
     }
   });
 };
@@ -511,15 +539,25 @@ const assertTuiValues = (value: unknown, source: string): void => {
   for (const [name, allowed] of Object.entries(TUI_SETTING_VALUES)) {
     if (!Object.hasOwn(tui, name)) continue;
     const given: unknown = tui[name];
-    if (!allowed.some((member) => member === given)) throw new ConfigError(`${source}: tui.${name} must be one of ${allowed.join(', ')}; got ${JSON.stringify(given)}`);
+    if (!allowed.some((member) => member === given)) throw new ConfigError(invalidSettingsMessage(source, `/tui/${name}`, `must be one of ${allowed.join(', ')}; got ${JSON.stringify(given)}`));
   }
+};
+
+const assertApiKeyChoice = (value: unknown, source: string): void => {
+  const models = isRecord(value) ? value['models'] : undefined;
+  const connections = isRecord(models) ? models['connections'] : undefined;
+  if (!Array.isArray(connections)) return;
+  connections.forEach((connection: unknown, index) => {
+    const problem = isRecord(connection) ? apiKeyChoiceProblem(connection) : undefined;
+    if (problem !== undefined) throw new ConfigError(invalidSettingsMessage(source, `/models/connections/${index}`, problem));
+  });
 };
 
 const assertMcpConnectTimeout = (value: unknown, source: string): void => {
   const mcp = isRecord(value) ? value['mcp'] : undefined;
   if (!isRecord(mcp) || !Object.hasOwn(mcp, 'connectTimeoutMs')) return;
   const problem = mcpConnectTimeoutProblem(mcp['connectTimeoutMs']);
-  if (problem !== undefined) throw new ConfigError(`${source}: ${problem}`);
+  if (problem !== undefined) throw new ConfigError(invalidSettingsMessage(source, '/mcp/connectTimeoutMs', problem));
 };
 
 const assertStopValues = (value: unknown, source: string): void => {
@@ -527,8 +565,8 @@ const assertStopValues = (value: unknown, source: string): void => {
   for (const [name, { object, key }] of Object.entries(STOP_SETTING_KEYS) as Array<[StopValueName, (typeof STOP_SETTING_KEYS)[StopValueName]]>) {
     const holder = value[object];
     if (!isRecord(holder) || !Object.hasOwn(holder, key)) continue;
-    const problem = stopValueProblem(name, holder[key], `${object}.${key}`);
-    if (problem !== undefined) throw new ConfigError(`${source}: ${problem}`);
+    const problem = stopValueProblem(name, holder[key]);
+    if (problem !== undefined) throw new ConfigError(invalidSettingsMessage(source, `/${object}/${key}`, problem));
   }
 };
 
@@ -536,8 +574,9 @@ export const assertSettings = (value: unknown, source: string): Settings => {
   if (isRecord(value) && isRecord(value['mcpServers'])) {
     for (const [name, server] of Object.entries(value['mcpServers'])) assertNotHttpSse(server, source, name);
   }
-  assertNoOldModelKeys(value, source);
+  assertNoRetiredKeys(value, source);
   assertPlanAdapters(value, source);
+  assertApiKeyChoice(value, source);
   assertStopValues(value, source);
   assertMcpConnectTimeout(value, source);
   assertTuiValues(value, source);
@@ -581,7 +620,7 @@ export const assertSettings = (value: unknown, source: string): Settings => {
   const endpoint = settings.telemetry?.otlp?.endpoint;
   if (endpoint !== undefined) {
     const problem = transportUrlProblem(endpoint);
-    if (problem !== undefined) throw new ConfigError(`${source}: ${transportUrlMessage('telemetry.otlp.endpoint', endpoint, problem)}`);
+    if (problem !== undefined) throw new ConfigError(invalidSettingsMessage(source, '/telemetry/otlp/endpoint', transportUrlMessage('the address', endpoint, problem)));
   }
   return settings;
 };
@@ -589,14 +628,29 @@ export const assertSettings = (value: unknown, source: string): Settings => {
 export const assertMcpServersFile = (value: unknown, source: string): McpServersFile => {
   const verdict = validateMcpServersFile(value);
   if (verdict.valid) return verdict.value;
-  throw new ConfigError(`${source}: invalid MCP server file at ${describeSchemaErrors(verdict.errors)}`);
+  throw new ConfigError(`${source}: invalid settings at ${describeSchemaErrors(verdict.errors)}`);
 };
 
 export const assertMcpServer = (value: unknown, source: string, name: string): McpServerConfig => {
   assertNotHttpSse(value, source, name);
   const verdict = validateMcpServer(value);
   if (verdict.valid) return verdict.value;
-  throw new ConfigError(`${source}: invalid MCP server ${JSON.stringify(name)}: ${describeSchemaErrors(verdict.errors)}`);
+  const { pointer, reason } = schemaProblemOf(verdict.errors);
+  throw new ConfigError(invalidSettingsMessage(source, `/mcpServers/${escapePointerSegment(name)}${pointer === '/' ? '' : pointer}`, reason));
+};
+
+const watchMandateProblem = (mandate: string, declared: readonly string[]): string | undefined =>
+  declared.includes(mandate) ? undefined : `${JSON.stringify(mandate)} is not a mandate declared under mandates; the mandates are ${declared.length === 0 ? 'none' : declared.join(', ')}`;
+
+export const checkIssueWatch = (settings: Settings, source: string, warnings: string[]): void => {
+  const declared = Object.keys(settings.mandates ?? {});
+  (settings.issues?.watch ?? []).forEach((entry, index) => {
+    const problem = watchMandateProblem(entry.mandate, declared);
+    if (problem !== undefined) throw new ConfigError(invalidSettingsMessage(source, `/issues/watch/${index}/mandate`, problem));
+    if (entry.labels === undefined && entry.authorAssociation === undefined) {
+      warnings.push(`${source}: issues.watch[${index}] for ${entry.repository} has no labels and no authorAssociation, so it takes no issue; add a filter`);
+    }
+  });
 };
 
 export const KNOWN_SETTINGS_KEYS: readonly string[] = Object.keys(SETTINGS_SCHEMA.properties);

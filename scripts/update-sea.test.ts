@@ -123,7 +123,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('self-update on built single execut
 
     const outcome = await run(installation.bin, ['update'], installation.home);
 
-    expect(outcome).toEqual({ code: 0, stdout: `updated momonga 1.0.0 -> 2.0.0 (${installation.bin})\n`, stderr: '' });
+    expect(outcome).toEqual({ code: 0, stdout: `updated momonga 1.0.0 -> 2.0.0 (${installation.bin})\nUpdated to v2.0.0. No daemon was running; the next command starts v2.0.0.\n`, stderr: '' });
     expect(bytes(installation.bin).equals(bytes(v2))).toBe(true);
     expect(fs.readdirSync(installation.dir)).toEqual(['momonga']);
     expect(fs.statSync(installation.bin).mode & 0o777).toBe(0o755);

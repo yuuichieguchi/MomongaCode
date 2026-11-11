@@ -1,5 +1,5 @@
 import { UNKNOWN_EFFECT_REASON, escapeTerminalLine } from '@momonga/protocol';
-import type { PermissionDenial, PermissionMode, PermissionOption, PublicRunEvent, ToolKind, UserShellRecord } from '@momonga/protocol';
+import type { ApprovalShown, PermissionDenial, PermissionMode, PermissionOption, PublicRunEvent, ToolKind, UserShellRecord } from '@momonga/protocol';
 import { attachedRow } from './attach.ts';
 import { startFlow } from '../elicit/flow.ts';
 import { mcpAuthorizationNotice } from '../mcp/messages.ts';
@@ -54,7 +54,7 @@ export type Entry =
 
 export type ToolEntry = Extract<Entry, { kind: 'tool' }>;
 
-export type PendingApproval = { approvalId: string; callId: string; options: readonly PermissionOption[]; reason: string; suggestedRule?: string; held?: true; unknownCallIds?: readonly string[] };
+export type PendingApproval = { approvalId: string; callId: string; options: readonly PermissionOption[]; reason: string; suggestedRule?: string; held?: true; unknownCallIds?: readonly string[]; shown?: ApprovalShown };
 
 export type PendingElicitation = { inputId: string; callId: string; server: string; flow: ElicitationFlow; submitted: boolean };
 
@@ -248,6 +248,7 @@ const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
         options: event.options,
         reason: event.reason,
         ...(event.suggestedRule === undefined ? {} : { suggestedRule: event.suggestedRule }),
+        shown: event.shown,
       };
       const prompts = enqueue({ head: state.approval, queued: state.queuedApprovals }, pending, (other) => other.approvalId === event.approvalId);
       store.name(approvalKey(event.approvalId), callKey(event.callId));

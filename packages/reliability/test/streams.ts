@@ -66,6 +66,7 @@ export const permissionRequested = (callId: string): RunEventPayload => ({
   options: [{ optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' }],
   subjectDigest: 's'.repeat(64),
   reason: 'ask',
+  shown: { title: 'approval', input: {} },
 });
 
 export const unknownEffectRequested = (callId: string): RunEventPayload => ({

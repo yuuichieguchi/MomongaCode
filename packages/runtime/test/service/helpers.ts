@@ -224,7 +224,11 @@ export const validateJsonBody = (status: number, body: unknown): void => {
 
 export type JsonResponse = { status: number; headers: Record<string, string>; text: string; json: any };
 
-export type RequestInit = { body?: unknown; raw?: string | Uint8Array; headers?: Record<string, string>; contentType?: string | null };
+export type RequestInit = { body?: unknown; raw?: string | Uint8Array; headers?: Record<string, string>; contentType?: string | null; person?: boolean };
+
+export const PERSON_CAPABILITY_TEST_HEADER = 'momonga-person-capability';
+
+export const personCapabilityFileOf = (home: string): string => path.join(home, '.momonga', 'person-capability');
 
 const parseJsonBody = (headers: Record<string, string>, text: string): any =>
   text !== '' && /^application\/(?:[\w.+-]+\+)?json\b/.test(headers['content-type'] ?? '') ? JSON.parse(text) : undefined;
@@ -634,7 +638,7 @@ export const startService = async (overrides: ServiceOverrides & { fakeTimers?: 
     await service.close();
   };
   onCleanup(closeService);
-  const client = createUdsClient(fixedSocket(layout.socketPath));
+  const client = createUdsClient(fixedSocket(layout.socketPath), { connectTimeoutMs: 0 });
   onCleanup(() => client.close());
   let rawDb: DatabaseSync | undefined;
   onCleanup(() => rawDb?.close());
@@ -647,7 +651,8 @@ export const startService = async (overrides: ServiceOverrides & { fakeTimers?: 
     return rawDb;
   };
 
-  const http = (method: string, target: string, init?: RequestInit): Promise<JsonResponse> => sendJson(client, method, target, init);
+  const http = (method: string, target: string, init: RequestInit = {}): Promise<JsonResponse> =>
+    sendJson(client, method, target, init.person === false ? init : { ...init, headers: { [PERSON_CAPABILITY_TEST_HEADER]: fs.readFileSync(personCapabilityFileOf(layout.home), 'utf8'), ...init.headers } });
 
   const createSession = async (body: Record<string, unknown> = {}): Promise<any> => {
     const response = await http('POST', '/v1/sessions', { body: { cwd: layout.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, ...body } });
@@ -742,7 +747,7 @@ export const requestManualApproval = async (
   const result = await env.store.requestApproval(claim, {
     callId,
     options: OPTIONS,
-    event: { subjectDigest: SUBJECT_DIGEST, reason: 'edits require approval', ...extra },
+    event: { subjectDigest: SUBJECT_DIGEST, reason: 'edits require approval', ...extra, shown: { title: 'approval', input: {} } },
   });
   if (result.kind !== 'ok') throw new Error(`requestApproval failed: ${result.kind}`);
   return result.approval.id;
@@ -830,7 +835,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
       gateway,
       settings,
       skills: diskSkillsPort(env.layout.home),
-      memories: runtime.createMemoryPort({ store: env.store, settings, evidenceRun: unavailableEvidenceRun }),
+      memories: runtime.createMemoryPort({ platform: process.platform, store: env.store, settings, evidenceRun: unavailableEvidenceRun }),
       history: inertHistoryPort,
       governance: inertGovernancePort,
       tools,

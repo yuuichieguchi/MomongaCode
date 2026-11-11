@@ -1,5 +1,4 @@
-import { spawn, spawnSync } from 'node:child_process';
-import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import net from 'node:net';
@@ -8,8 +7,10 @@ import path from 'node:path';
 import { Writable } from 'node:stream';
 import type { Readable } from 'node:stream';
 import { isSea } from 'node:sea';
-import { nodeEvalFiles, nodeWorkspaceFiles } from '@momonga/eval';
-import type { WorkspaceProbe } from '@momonga/eval';
+import { loadSettings } from '@momonga/config';
+import type { SandboxSetting } from '@momonga/config';
+import { createWorkspaceProbe, nodeEvalFiles, nodeWorkspaceFiles } from '@momonga/eval';
+import type { CommandSandbox, WorkspaceProbe } from '@momonga/eval';
 import {
   EntryLockHeldError,
   LIFELINE_FD,
@@ -24,85 +25,24 @@ import {
   resolveLayoutLocks,
   minimalChildEnv,
   nodeFileSystem,
+  pidNamespaceOf,
   nodeFileSystemSync,
   systemClock,
   systemRandom,
   systemTiming,
   writeFileAtomically,
   writeFileAtomicallySync,
+  hostProcessGroupPort,
   launchApart,
+  personCapabilityOf,
 } from '@momonga/foundation';
-import type { GuardedStandardStreams, HeldKernelLock, HelperHost, LaunchProgram, ProcessPort, KernelLockMechanism } from '@momonga/foundation';
+import type { GuardedStandardStreams, HeldKernelLock, HelperHost, LaunchProgram, ProcessGroupPort, SandboxNetworkSetting, ProcessPort, KernelLockMechanism } from '@momonga/foundation';
 import { sourceBuiltLinuxSocketGuard, sourceBuiltWindowsKeeper } from './keeper/source.ts';
 import type { SourceKeeperFiles } from './keeper/source.ts';
 import { createHandoverHost } from './handover/host.ts';
 import type { RecordFiles } from './handover/host.ts';
 import { HANDOVER_RECORD_MAX_BYTES } from './handover/record.ts';
 import type { AcpInput, CliClock, CliFiles, CliPorts, SelfExecutable, SpawnDetached } from './ports.ts';
-
-const ABSENT_FILE = '\u0001absent';
-
-const probedContentOf = async (file: string): Promise<Buffer | null> => {
-  try {
-    return await fs.readFile(file);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw error;
-  }
-};
-
-const probedFilesUnder = async (root: string, relative = ''): Promise<string[]> => {
-  const entries = await fs.readdir(path.join(root, relative), { withFileTypes: true });
-  const nested = await Promise.all(
-    entries.map((entry) => {
-      const child = relative === '' ? entry.name : `${relative}/${entry.name}`;
-      return entry.isDirectory() ? probedFilesUnder(root, child) : Promise.resolve([child]);
-    }),
-  );
-  return nested.flat();
-};
-
-const sortedNames = (names: Iterable<string>): string[] => [...names].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
-
-export const createWorkspaceProbe = (env: Readonly<Record<string, string>>): WorkspaceProbe => ({
-  run: (command, timeoutMs, cwd) =>
-    new Promise((resolve, reject) => {
-      const child = spawn(command, { shell: true, cwd, env: { ...env }, stdio: 'ignore', windowsHide: true });
-      let timedOut = false;
-      const timer = setTimeout(() => {
-        timedOut = true;
-        child.kill('SIGKILL');
-      }, timeoutMs);
-      child.once('error', (error) => {
-        clearTimeout(timer);
-        reject(error);
-      });
-      child.once('close', (exitCode) => {
-        clearTimeout(timer);
-        resolve({ exitCode, timedOut });
-      });
-    }),
-
-  digest: async (cwd, paths) => {
-    const hash = crypto.createHash('sha256');
-    for (const relative of sortedNames(paths)) {
-      const content = await probedContentOf(path.join(cwd, relative));
-      hash.update(`${relative}\0`);
-      hash.update(content ?? ABSENT_FILE);
-      hash.update('\0');
-    }
-    return hash.digest('hex');
-  },
-
-  changedPaths: async (cwd, baseDir) => {
-    const changed: string[] = [];
-    for (const relative of sortedNames(new Set([...(await probedFilesUnder(cwd)), ...(await probedFilesUnder(baseDir))]))) {
-      const [here, there] = await Promise.all([probedContentOf(path.join(cwd, relative)), probedContentOf(path.join(baseDir, relative))]);
-      if (here === null || there === null ? here !== there : !here.equals(there)) changed.push(relative);
-    }
-    return changed;
-  },
-});
 
 export const launchProgramThrough =
   (start: typeof launchApart): LaunchProgram =>
@@ -115,6 +55,36 @@ export const launchProgramThrough =
     });
 
 export const launchProgram: LaunchProgram = launchProgramThrough(launchApart);
+
+export type WorkspaceSandboxInput = {
+  home: string;
+  platform: NodeJS.Platform;
+  env: Readonly<Record<string, string | undefined>>;
+  signal: AbortSignal;
+  sandbox: SandboxSetting;
+  network: SandboxNetworkSetting;
+  warn(text: string): void;
+};
+
+export const nodeWorkspaceSandbox = (input: WorkspaceSandboxInput | (() => Promise<WorkspaceSandboxInput>)): CommandSandbox => {
+  let sandbox: Promise<CommandSandbox> | undefined;
+  return {
+    start: async (command, workspace, env, signal) => {
+      sandbox ??= Promise.all([import('@momonga/runtime'), typeof input === 'function' ? input() : input]).then(([{ workspaceCommandSandbox }, resolved]) => workspaceCommandSandbox(resolved));
+      return (await sandbox).start(command, workspace, env, signal);
+    },
+  };
+};
+
+const settingsWorkspaceSandbox = (home: string, cwd: string, signal: AbortSignal, warn: (text: string) => void) => async (): Promise<WorkspaceSandboxInput> => {
+  const { settings } = await loadSettings({ home, projectDir: cwd, cli: {}, trust: { isTrusted: () => false }, signal });
+  return { home, platform: process.platform, env: process.env, signal, sandbox: settings.sandbox, network: settings.sandboxNetwork, warn };
+};
+
+export const nodeWorkspaceProbeOf =
+  (sandbox: CommandSandbox, groups: ProcessGroupPort) =>
+  (env: Readonly<Record<string, string>>): WorkspaceProbe =>
+    createWorkspaceProbe({ env, sandbox, files: nodeWorkspaceFiles, timing: systemTiming, groups });
 
 const LONGEST_HOST_TIMER_MS = 2_147_483_647;
 
@@ -319,17 +289,20 @@ export const acpInputOf = (stdin: Readable): AcpInput => {
   let ended = false;
   let failure: { error: unknown } | undefined;
   let waiting: Arrival[] = [];
+  let queued: Uint8Array[] = [];
   const settle = (): void => {
-    if (failure === undefined && stdin.readableLength === 0 && !ended) return;
+    if (failure === undefined && queued.length === 0 && !ended) return;
     const arrivals = waiting;
     waiting = [];
     for (const arrival of arrivals) {
       if (failure !== undefined) arrival.reject(failure.error);
-      else arrival.resolve(stdin.readableLength > 0 ? 'bytes' : 'end');
+      else arrival.resolve(queued.length > 0 ? 'bytes' : 'end');
     }
   };
-  stdin.on('readable', () => {
-    if (stdin.readableLength === 0) stdin.read();
+  stdin.on('data', (chunk: unknown) => {
+    if (!(chunk instanceof Uint8Array)) {
+      failure = { error: new Error('standard input gave text where the Agent Client Protocol reads bytes') };
+    } else queued.push(chunk);
     settle();
   });
   stdin.on('end', () => {
@@ -342,16 +315,18 @@ export const acpInputOf = (stdin: Readable): AcpInput => {
   });
   return {
     take: () => {
-      const chunk: unknown = stdin.read();
-      if (chunk === null) return undefined;
-      if (!(chunk instanceof Uint8Array)) throw new Error('standard input gave text where the Agent Client Protocol reads bytes');
-      return chunk;
+      if (queued.length === 0) return undefined;
+      const whole = Buffer.concat(queued);
+      queued = [];
+      return whole;
     },
     arrival: () =>
       new Promise((resolve, reject) => {
         waiting.push({ resolve, reject });
         settle();
       }),
+    pause: () => void stdin.pause(),
+    resume: () => void stdin.resume(),
   };
 };
 
@@ -376,14 +351,15 @@ export const nodePorts = (version: string, interrupt: AbortSignal, streams: Guar
     process: nodeProcess,
     tmpdir: os.tmpdir(),
     self,
-    handover: createHandoverHost({ version, pid: process.pid, self, argv: process.argv.slice(2), env: process.env, execArgv: process.execArgv, files: nodeRecordFiles(lock) }),
+    handover: createHandoverHost({ version, parties: async () => ({ writer: process.pid, reader: process.pid, namespace: await pidNamespaceOf(nodeFileSystem) }), self, argv: process.argv.slice(2), env: process.env, execArgv: process.execArgv, files: nodeRecordFiles(lock) }),
     spawnDetached: nodeSpawnDetached,
     terminal: process.stdin.isTTY && process.stdout.isTTY ? { stdin: process.stdin, stdout: process.stdout } : undefined,
     files: nodeFilesLockedBy(lock),
     exec: createHostExec(minimalChildEnv(process.env)),
-    probe: createWorkspaceProbe(minimalChildEnv(process.env)),
+    probe: nodeWorkspaceProbeOf(nodeWorkspaceSandbox(settingsWorkspaceSandbox(home, process.cwd(), interrupt, (text) => streams.stderr.write(`${text}\n`))), hostProcessGroupPort()),
     openUrl: createBrowserOpener({ env: process.env, launch: launchProgram, files: nodeFileSystem }),
     secretStore: () => createPlatformSecretStore(createExecWithStdin(undefined), process.env),
+    personCapability: () => personCapabilityOf({ files: nodeFileSystem, random: systemRandom, lock: lock() }, home),
     acpStdio: () => ({ input: acpInputOf(process.stdin), output: Writable.toWeb(process.stdout) }),
   };
 };

@@ -1,3 +1,4 @@
+import { TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -55,7 +56,7 @@ const contextFor = (survives: boolean) => {
       const stdout = new PassThrough();
       const stderr = new PassThrough();
       const child = Object.assign(new EventEmitter(), { pid: GROUP, stdout, stderr, stdin: null });
-      const launched = launch({
+      const launched = launch({ protection: TEST_CHILD_UNPROTECTED,
         file: '/bin/bash',
         args: [],
         cwd: '/',

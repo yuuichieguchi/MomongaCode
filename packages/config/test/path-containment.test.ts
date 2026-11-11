@@ -29,7 +29,7 @@ const loadWithSocket = (tree: Tree, socketPath: string) => {
   return loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
 };
 
-const loadMcp = (tree: Tree) => loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
+const loadMcp = (tree: Tree) => loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, referenceEnv: {} });
 
 const approveAll = (tree: Tree): void => {
   writeJson(userSettingsPath(tree), { enableAllProjectMcpServers: true });

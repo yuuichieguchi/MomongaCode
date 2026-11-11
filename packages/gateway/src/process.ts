@@ -15,9 +15,11 @@ import {
   registeredServer,
   requireOfferedEndpointForm,
   resolveNetwork,
+  resolveRetentionSettings,
   resolveTelemetrySettings,
   settingsInputsDigest,
   stopValuesOfSettings,
+  telemetryWithReferences,
   upstreamEndpointOf,
 } from '@momonga/config';
 import type { ResolvedModel, ResolvedModels, ResolvedSettings } from '@momonga/config';
@@ -53,7 +55,9 @@ import {
   momongaPaths,
   createSecretKeyFile,
   sweepLeftovers,
+  isProcessAlive,
   leftoverDirectories,
+  pidNamespaceOf,
   requireGenerationDirs,
   generationLayout,
   createRolePort,
@@ -161,6 +165,7 @@ import { createManagedTarget } from './managed/target.ts';
 import { aboutModel, managedConnectionPlace, managedModelName } from './managed/name.ts';
 import type { ExecWithStdinFn, ManagedTarget } from './managed/target.ts';
 import { createGateway } from './server/gateway.ts';
+import { checkModels } from './server/config-check.ts';
 import { createRouter } from './core/router.ts';
 import { createReasoningOriginCodec } from './core/reasoning-origin.ts';
 import { createRedactor } from './core/redaction.ts';
@@ -278,7 +283,7 @@ const RUNTIME_HEALTH_PATH = '/v1/health';
 export const runtimeHealthOver =
   (socketPath: string): RuntimeHealthProbe =>
   async (signal) => {
-    const client = createUdsClient(fixedSocket(socketPath));
+    const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0 });
     try {
       const response = await client.request({ method: 'GET', path: RUNTIME_HEALTH_PATH, signal });
       const text = await response.text();
@@ -308,7 +313,7 @@ const credentialFromSupervisor =
   (socketPath: string, capability: string | undefined, redact: (value: string) => void): HandedCredential =>
   async (name, signal) => {
     if (capability === undefined || capability === '') return undefined;
-    const client = createUdsClient(fixedSocket(socketPath));
+    const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0 });
     try {
       const response = await client.request({ method: 'GET', path: `/v1/credentials/${encodeURIComponent(name)}`, headers: { [CREDENTIAL_CAPABILITY_HEADER]: capability }, signal });
       const text = await response.text();
@@ -1007,7 +1012,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       return outbound;
     };
     signal?.throwIfAborted();
-    await sweepLeftovers({ directories: leftoverDirectories(paths), lock: kernelLock, warn: (message) => logger.warn(message) });
+    await sweepLeftovers({ directories: leftoverDirectories(paths, { files: nodeFileSystem, namespace: await pidNamespaceOf(nodeFileSystem), alive: (pid) => isProcessAlive(pid) }), lock: kernelLock, warn: (message) => logger.warn(message) });
     const hmacKey = createSecretKeyFile(nodeFileSystemSync, systemRandom, kernelLock)(paths.gatewayKey, {
       mustExist: files.databaseExists(paths.databases.gateway),
       dependentPath: paths.databases.gateway,
@@ -1021,9 +1026,9 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         serviceVersion: options.version,
         clock,
         store: traceStore,
-        exporters: exportersFor(current.telemetry, outbound),
+        exporters: exportersFor(telemetryWithReferences(current.telemetry, options.env), outbound),
         captureMessageContent: resolved.captureMessageContent,
-        contentRetentionMs: resolved.contentRetentionDays * DAY_MS,
+        contentRetentionMs: resolveRetentionSettings(current.retention).days * DAY_MS,
       });
     };
     const telemetries = createPinnedDerivation<Telemetry>({
@@ -1039,7 +1044,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     });
     cleanups.push(() => telemetries.retireAll());
     (await telemetries.admit(startSignal)).release();
-    const contentRetentionMs = resolveTelemetrySettings(settings.telemetry).contentRetentionDays * DAY_MS;
+    const contentRetentionMs = resolveRetentionSettings(settings.retention).days * DAY_MS;
     const bodyPurge = startBodyPurge({
       store: traceStore,
       timers,
@@ -1381,8 +1386,10 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       const outbound = previous !== undefined && previous.networkDigest === networkDigest ? previous.network : await outboundNetworkOf(current.network, keySignal);
       const shape = { userDialects: current.models.dialects, headersTimeoutMs: current.models.headersTimeoutMs, idleTimeoutMs: current.models.idleTimeoutMs };
       const outputPolicy: ProbeOutputPolicy = { unboundedOutputReserve: current.context.unboundedOutputReserve };
+      const priceTable = definePriceTable(current.pricing === undefined ? [] : current.pricing);
       const parts = new Map<string, TargetPart>();
       const built: Closable[] = [];
+      let epoch: ProcessEpoch;
       try {
         const displays = displayMapOf(current.models.views);
         for (const [name, target] of current.models.models) {
@@ -1417,35 +1424,35 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           built.push(...part.closables.filter((closable) => !holds.has(closable)));
           parts.set(name, part);
         }
+        const counters = Object.fromEntries([...parts].map(([name, part]) => [name, part.counter]));
+        const config = withCounters(gatewayConfigOf(current.models), counters);
+        const adapters: Record<string, ProviderAdapter> = {};
+        for (const [name, part] of parts) {
+          adapters[name] = part.adapter;
+        }
+        checkModels({ config, adapters });
+        const router = createRouter({
+          config,
+          adapters,
+          clock,
+          timers,
+          redactor: shared.redactor,
+          reasoningOrigin: shared.reasoningOrigin,
+          ...(previous === undefined ? {} : { previous: previous.gateway.router }),
+          live: [...liveEpochs].map((epoch) => epoch.gateway.router),
+        });
+        for (const credential of credentialValuesOf(options.env, credentialEnvNames(current.models), new Map(), (message) => logger.warn(message), outbound.config)) shared.redactor.add(credential);
+        epoch = {
+          gateway: { router, priceTable, telemetry: undefined, planTargets: planTargetRefsOf(current) },
+          priceTable,
+          parts,
+          network: outbound,
+          networkDigest,
+        };
       } catch (error) {
         await Promise.all(built.map((closable) => closable.close(undefined)));
         throw error;
       }
-      const counters = Object.fromEntries([...parts].map(([name, part]) => [name, part.counter]));
-      const config = withCounters(gatewayConfigOf(current.models), counters);
-      const adapters: Record<string, ProviderAdapter> = {};
-      for (const [name, part] of parts) {
-        adapters[name] = part.adapter;
-      }
-      const router = createRouter({
-        config,
-        adapters,
-        clock,
-        timers,
-        redactor: shared.redactor,
-        reasoningOrigin: shared.reasoningOrigin,
-        ...(previous === undefined ? {} : { previous: previous.gateway.router }),
-        live: [...liveEpochs].map((epoch) => epoch.gateway.router),
-      });
-      for (const credential of credentialValuesOf(options.env, credentialEnvNames(current.models), new Map(), (message) => logger.warn(message), outbound.config)) shared.redactor.add(credential);
-      const priceTable = definePriceTable(current.pricing === undefined ? [] : current.pricing);
-      const epoch: ProcessEpoch = {
-        gateway: { router, priceTable, telemetry: undefined, planTargets: planTargetRefsOf(current) },
-        priceTable,
-        parts,
-        network: outbound,
-        networkDigest,
-      };
       for (const closable of closablesOf(epoch)) hold(closable);
       liveEpochs.add(epoch);
       return epoch;
