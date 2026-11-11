@@ -116,7 +116,7 @@ export const elicit = async (ports: CliPorts, paths: MomongaPaths, inputId: stri
   if (actions.length > 1) throw new ElicitationUsageError(`choose one of --accept, --decline, --cancel and --responses, not ${actions.join(' and ')}`);
   if (inputId === undefined && (actions.length > 0 || options.set.length > 0)) throw new ElicitationUsageError('name the elicitation to answer: momonga elicit <id> ...');
   await ensureCurrentDaemon(ports, paths);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   try {
     if (inputId === undefined) {
       const runId = await activeRunIdOf(client, ports.cwd);

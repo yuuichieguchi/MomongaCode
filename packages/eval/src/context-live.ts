@@ -1,4 +1,3 @@
-import fs from 'node:fs/promises';
 import path from 'node:path';
 import { canonicalJson, isRecord, lexicallyWithin } from '@momonga/foundation';
 import type { AddRuleRequest } from '@momonga/protocol';
@@ -6,6 +5,7 @@ import type { CompactionSetting, ContextDataset, ContextMemory, ContextRule, Exp
 import { resolvePolicyOverlay } from './context-policy.ts';
 import type { PolicyOverlay } from './context-policy.ts';
 import { isInsideWorkspace } from './dataset.ts';
+import type { WorkspaceFiles } from './files.ts';
 import { EvalError, driveRun } from './runner.ts';
 import type { Driven, EvalRunApi } from './runner.ts';
 import type { Answerer, Transcript, TranscriptRun } from './transcript.ts';
@@ -84,11 +84,11 @@ export const caseSettingsFor = (
 
 const outsideMessage = (root: string, name: string): string => `workspace step names ${JSON.stringify(name)}, which resolves outside ${root}`;
 
-const deepestExisting = async (target: string): Promise<string> => {
+const deepestExisting = async (files: WorkspaceFiles, target: string): Promise<string> => {
   let candidate = target;
   for (;;) {
     try {
-      await fs.lstat(candidate);
+      await files.lstat(candidate);
       return candidate;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
@@ -97,26 +97,26 @@ const deepestExisting = async (target: string): Promise<string> => {
   }
 };
 
-const resolvedInside = async (root: string, name: string): Promise<string> => {
+const resolvedInside = async (files: WorkspaceFiles, root: string, name: string): Promise<string> => {
   if (!isInsideWorkspace(name)) throw new EvalError(`workspace step names ${JSON.stringify(name)}; steps must use relative paths inside the workspace`);
-  const real = await fs.realpath(root);
+  const real = await files.realpath(root);
   const target = path.join(real, name);
-  const anchor = await deepestExisting(path.dirname(target));
-  if (!lexicallyWithin(await fs.realpath(anchor), real)) throw new EvalError(outsideMessage(root, name));
+  const anchor = await deepestExisting(files, path.dirname(target));
+  if (!lexicallyWithin(await files.realpath(anchor), real)) throw new EvalError(outsideMessage(root, name));
   return target;
 };
 
-export const applyWorkspaceStep = async (root: string, step: WorkspaceStep): Promise<void> => {
+export const applyWorkspaceStep = async (files: WorkspaceFiles, root: string, step: WorkspaceStep): Promise<void> => {
   for (const [name, content] of Object.entries(step.write ?? {})) {
-    const target = await resolvedInside(root, name);
-    await fs.mkdir(path.dirname(target), { recursive: true });
-    const real = await fs.realpath(root);
-    if (!lexicallyWithin(await fs.realpath(path.dirname(target)), real)) throw new EvalError(outsideMessage(root, name));
-    await fs.writeFile(target, content);
+    const target = await resolvedInside(files, root, name);
+    await files.mkdir(path.dirname(target));
+    const real = await files.realpath(root);
+    if (!lexicallyWithin(await files.realpath(path.dirname(target)), real)) throw new EvalError(outsideMessage(root, name));
+    await files.writeFile(target, content);
   }
   for (const name of step.remove ?? []) {
-    const target = await resolvedInside(root, name);
-    await fs.rm(target);
+    const target = await resolvedInside(files, root, name);
+    await files.removeExisting(target);
   }
 };
 

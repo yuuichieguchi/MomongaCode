@@ -32,10 +32,10 @@ export const autoModeConfigured = async (ports: Pick<DaemonPorts, 'home'>): Prom
   return settings.autoMode?.classifier !== undefined;
 };
 
-export const connectRuntime = (paths: MomongaPaths): RuntimeClient => createRuntimeClient({ resolveSocket: currentSocketResolver(paths, 'runtime') });
+export const connectRuntime = (ports: Pick<CliPorts, 'clock'>, paths: MomongaPaths): RuntimeClient => createRuntimeClient({ resolveSocket: currentSocketResolver(paths, 'runtime'), clock: ports.clock });
 
-export const connectSessionRuntime = (ports: Pick<DaemonPorts, 'version'>, paths: MomongaPaths, onNewer?: NewerListener): RuntimeClient =>
-  createRuntimeClient({ resolveSocket: sessionSocketResolver(paths, ports.version, 'runtime'), onMoved: endSessionWhenMovedAway(paths, ports.version, onNewer) });
+export const connectSessionRuntime = (ports: Pick<DaemonPorts, 'version' | 'clock'>, paths: MomongaPaths, onNewer?: NewerListener): RuntimeClient =>
+  createRuntimeClient({ resolveSocket: sessionSocketResolver(paths, ports.version, 'runtime'), clock: ports.clock, onMoved: endSessionWhenMovedAway(paths, ports.version, onNewer) });
 
 export const openSession = async (ports: DaemonPorts & Pick<CliPorts, 'cwd' | 'stderr'>, paths: MomongaPaths, options: OpenSessionOptions): Promise<CliSession> => {
   const { onNewer } = options;

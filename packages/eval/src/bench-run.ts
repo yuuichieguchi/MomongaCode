@@ -1,11 +1,11 @@
 import path from 'node:path';
-import { nodeFileSystem } from '@momonga/foundation';
 import type { AnsweredByView, Mandate, PermissionMode, PublicRunEvent, RunFactsView, RunStatus, StopReason } from '@momonga/protocol';
 import { FACTS_EVENT_TYPES, foldFacts } from '@momonga/reliability';
 import type { FactsEvent, GroupKey, ReliabilityReport } from '@momonga/reliability';
 import { BENCH_DEFAULT_RUNS, mandateOfTask, parseBenchmark, treeDigest } from './bench.ts';
 import type { BenchTask, Benchmark } from './bench.ts';
 import { gradeTrial } from './bench-grade.ts';
+import type { WorkspaceFiles } from './files.ts';
 import type { WorkspaceProbe } from './oracle-grade.ts';
 import { buildBenchmarkReport } from './bench-report.ts';
 import type { BenchmarkTrial } from './bench-report.ts';
@@ -41,6 +41,7 @@ export type BenchRunApi = {
 export type BenchRunPorts = {
   api: BenchRunApi;
   probe: WorkspaceProbe;
+  files: WorkspaceFiles;
   model: string;
   codeDigest: string;
   groupBy: GroupKey;
@@ -108,18 +109,18 @@ const runTrial = async (task: BenchTask, repository: string, workspace: string, 
   const folded = await factsOfRun(api, run.id, run.id, driven.events);
   const children: RunFactsView[] = [];
   for (const child of driven.children) children.push(await factsOfRun(api, child.runId, run.id, child.events));
-  const grade = await gradeTrial({ task, workspace, base: repository, probe: ports.probe });
+  const grade = await gradeTrial({ task, workspace, base: repository, probe: ports.probe, files: ports.files });
   return { facts: { ...folded, met: grade.met }, children, answeredBy: await api.answeredBy(run.id) };
 };
 
-const verifiedRepositories = async (benchmark: Benchmark, root: string): Promise<Map<string, string>> => {
+const verifiedRepositories = async (files: WorkspaceFiles, benchmark: Benchmark, root: string): Promise<Map<string, string>> => {
   const directories = new Map<string, string>();
   for (const task of benchmark.tasks) {
     if (directories.has(task.repository)) continue;
     const declared = benchmark.repositories[task.repository];
     if (declared === undefined) throw new EvalError(`task ${task.id} names the repository ${task.repository}, which the benchmark does not declare`);
     const directory = path.join(root, declared.directory);
-    const digest = await treeDigest(directory);
+    const digest = await treeDigest(files, directory);
     if (digest !== declared.digest) {
       throw new EvalError(`task ${task.id}: the repository ${task.repository} has the digest ${digest} and the benchmark file names ${declared.digest}, so its content is not the one the benchmark was written for`);
     }
@@ -129,8 +130,8 @@ const verifiedRepositories = async (benchmark: Benchmark, root: string): Promise
 };
 
 export const runBenchmark = async (benchmarkFile: string, ports: BenchRunPorts): Promise<BenchRunResult> => {
-  const benchmark = parseBenchmark(await nodeFileSystem.readTextFile(benchmarkFile), benchmarkFile);
-  const repositories = await verifiedRepositories(benchmark, path.dirname(path.resolve(benchmarkFile)));
+  const benchmark = parseBenchmark(await ports.files.readTextFile(benchmarkFile), benchmarkFile);
+  const repositories = await verifiedRepositories(ports.files, benchmark, path.dirname(path.resolve(benchmarkFile)));
   const trials: BenchmarkTrial[] = [];
   const invalidSetup: InvalidSetup[] = [];
   const answeredBy: AnsweredByView[] = [];
@@ -140,7 +141,7 @@ export const runBenchmark = async (benchmarkFile: string, ports: BenchRunPorts):
     if (repository === undefined) throw new EvalError(`task ${task.id} names the repository ${task.repository}, which was not verified`);
     for (let trial = 0; trial < (task.runs ?? BENCH_DEFAULT_RUNS); trial += 1) {
       const workspace = path.join(ports.scratch, `${task.id}-${trial}`);
-      await nodeFileSystem.cp(repository, workspace);
+      await ports.files.cp(repository, workspace);
       if (!(await setUp(task, workspace, ports.probe))) {
         invalidSetup.push({ taskId: task.id, trial });
         ports.onTrial?.({ taskId: task.id, trial, met: 'invalid_setup' });

@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Command } from 'commander';
-import { GATE_NAMES, treeDigest } from '@momonga/eval';
+import { GATE_NAMES, nodeWorkspaceFiles, treeDigest } from '@momonga/eval';
 import { REPORT_PAGE_ROWS, REVIEW_SAMPLE_SIZE } from '@momonga/protocol';
 import type { RunCallView } from '@momonga/protocol';
 
@@ -199,7 +199,7 @@ describe('momonga eval bench --validate', () => {
       JSON.stringify({
         format: 'momonga-bench/1',
         name: 'fixture',
-        repositories: { fix: { directory: 'repos/fix', digest: await treeDigest(path.join(dir, 'repos/fix')) } },
+        repositories: { fix: { directory: 'repos/fix', digest: await treeDigest(nodeWorkspaceFiles, path.join(dir, 'repos/fix')) } },
         tasks: [
           {
             id: 'fix',
@@ -231,7 +231,7 @@ describe('momonga eval bench --validate', () => {
     const { createWorkspaceProbe } = await load<{ createWorkspaceProbe(env: Readonly<Record<string, string>>): Probe }>('node-ports.ts');
     const out: string[] = [];
     const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-    return { ports: { cwd, stdout: { write: (text: string) => out.push(text) }, probe: createWorkspaceProbe(env) }, out };
+    return { ports: { cwd, stdout: { write: (text: string) => out.push(text) }, probe: createWorkspaceProbe(env), files: nodeWorkspaceFiles, tmpdir: os.tmpdir() }, out };
   };
 
   it('exits 0 and names every task as valid when each fails first and passes with its reference, without a model or a daemon', async () => {

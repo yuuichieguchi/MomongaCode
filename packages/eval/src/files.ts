@@ -1,5 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { nodeFileSystem } from '@momonga/foundation';
+import type { FileSystem } from '@momonga/foundation';
 import { parseContextDataset } from './context-dataset.ts';
 import type { ContextDataset } from './context-dataset.ts';
 import { encodeContextReport, parseContextReport } from './context-report.ts';
@@ -17,6 +19,25 @@ export type EvalFiles = {
   readText(file: string): Promise<string>;
   writeText(file: string, text: string): Promise<void>;
   listFiles(directory: string): Promise<string[]>;
+};
+
+export type WorkspaceFiles = Pick<FileSystem, 'stat' | 'lstat' | 'readdir' | 'readdirEntries' | 'readFile' | 'readTextFile' | 'mkdir' | 'writeFile' | 'access' | 'realpath' | 'cp'> & {
+  removeExisting(file: string): Promise<void>;
+};
+
+export const nodeWorkspaceFiles: WorkspaceFiles = {
+  stat: nodeFileSystem.stat,
+  lstat: nodeFileSystem.lstat,
+  readdir: nodeFileSystem.readdir,
+  readdirEntries: nodeFileSystem.readdirEntries,
+  readFile: nodeFileSystem.readFile,
+  readTextFile: nodeFileSystem.readTextFile,
+  mkdir: nodeFileSystem.mkdir,
+  writeFile: nodeFileSystem.writeFile,
+  access: nodeFileSystem.access,
+  realpath: nodeFileSystem.realpath,
+  cp: nodeFileSystem.cp,
+  removeExisting: (file) => fs.rm(file),
 };
 
 const TRANSCRIPT_FILE_SUFFIX = '.transcript.jsonl';

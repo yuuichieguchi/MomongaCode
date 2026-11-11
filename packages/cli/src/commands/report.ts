@@ -85,7 +85,7 @@ export const renderReport = (report: RunReport): string => {
 
 export const showReport = async (ports: CliPorts, paths: MomongaPaths, runId: string | undefined, json: boolean): Promise<number> => {
   await ensureDaemon(ports, paths);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   try {
     const run = await client.getRun(runId ?? (await latestRunIdOf(client, ports.cwd)));
     if (run.report === undefined) throw new Error(`the runtime returned run ${run.id} without its report`);

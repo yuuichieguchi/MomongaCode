@@ -5,6 +5,7 @@ import { registerCleanup, withTempDir } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { createGatewayClient } from '../src/client/gateway-client.ts';
 import { createRuntimeClient } from '../src/client/runtime-client.ts';
+import { nodeClock } from '../src/node-ports.ts';
 import { createSupervisorClient } from '../src/client/supervisor-client.ts';
 
 type Role = 'runtime' | 'gateway' | 'supervisor';
@@ -76,7 +77,7 @@ type Client = { call(): Promise<unknown>; close(): Promise<void> };
 
 const clients: Record<Role, (paths: MomongaPaths) => Client> = {
   runtime: (paths) => {
-    const client = createRuntimeClient({ resolveSocket: currentSocketResolver(paths, 'runtime') });
+    const client = createRuntimeClient({ resolveSocket: currentSocketResolver(paths, 'runtime'), clock: nodeClock });
     return { call: () => client.health(), close: () => client.close() };
   },
   gateway: (paths) => {

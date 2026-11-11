@@ -13,7 +13,7 @@ export type MemoryAddOptions = { kind?: MemoryKind; user: boolean; paths: readon
 export const memoryAdd = async (ports: CliPorts, paths: MomongaPaths, text: string, options: MemoryAddOptions): Promise<number> => {
   if (options.user && options.paths.length > 0) throw new InvalidArgumentError('--path binds a memory to files of this folder, so it cannot be combined with --user');
   await ensureCurrentDaemon(ports, paths);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   try {
     const memory = await client.addMemory({
       text,
@@ -33,7 +33,7 @@ export type MemoryListOptions = { scope?: MemoryScope; project?: string; json: b
 
 export const memoryList = async (ports: CliPorts, paths: MomongaPaths, options: MemoryListOptions): Promise<number> => {
   await ensureCurrentDaemon(ports, paths);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   try {
     const memories = await client.memories({
       ...(options.scope === undefined ? {} : { scope: options.scope }),
@@ -48,7 +48,7 @@ export const memoryList = async (ports: CliPorts, paths: MomongaPaths, options: 
 
 export const memoryShow = async (ports: CliPorts, paths: MomongaPaths, id: string, json: boolean): Promise<number> => {
   await ensureCurrentDaemon(ports, paths);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   try {
     const memory = await client.memory(id);
     ports.stdout.write(`${json ? JSON.stringify(memory) : formatMemory(memory)}\n`);
@@ -60,7 +60,7 @@ export const memoryShow = async (ports: CliPorts, paths: MomongaPaths, id: strin
 
 export const memoryHistory = async (ports: CliPorts, paths: MomongaPaths, id: string, json: boolean): Promise<number> => {
   await ensureCurrentDaemon(ports, paths);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   try {
     const memories = await client.memoryHistory(id);
     ports.stdout.write(`${json ? JSON.stringify(memories) : formatMemoryHistory(memories)}\n`);
@@ -72,7 +72,7 @@ export const memoryHistory = async (ports: CliPorts, paths: MomongaPaths, id: st
 
 export const memoryReview = async (ports: CliPorts, paths: MomongaPaths, options: { json: boolean }): Promise<number> => {
   await ensureCurrentDaemon(ports, paths);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   try {
     const waiting = await client.memories({ state: 'candidate', project: ports.cwd });
     if (options.json) ports.stdout.write(`${JSON.stringify(waiting)}\n`);
@@ -88,7 +88,7 @@ const changeMemory =
   (change: (client: RuntimeClient, id: string) => Promise<MemoryView>, past: string) =>
   async (ports: CliPorts, paths: MomongaPaths, id: string): Promise<number> => {
     await ensureCurrentDaemon(ports, paths);
-    const client = connectRuntime(paths);
+    const client = connectRuntime(ports, paths);
     try {
       const memory = await change(client, id);
       ports.stdout.write(`${past} memory ${memory.id}\n`);
@@ -106,7 +106,7 @@ export const memoryRestore = changeMemory((client, id) => client.restoreMemory(i
 
 export const memoryPromote = async (ports: CliPorts, paths: MomongaPaths, id: string, skill: string): Promise<number> => {
   await ensureCurrentDaemon(ports, paths);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   try {
     const file = await client.promoteMemory(id, skill);
     ports.stdout.write(`promoted memory ${id} to the skill ${skill}: ${file}\n`);
@@ -118,7 +118,7 @@ export const memoryPromote = async (ports: CliPorts, paths: MomongaPaths, id: st
 
 export const memoryDelete = async (ports: CliPorts, paths: MomongaPaths, id: string): Promise<number> => {
   await ensureCurrentDaemon(ports, paths);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   try {
     await client.deleteMemory(id);
     ports.stdout.write(`retired memory ${id}; it stays in momonga memory history\n`);

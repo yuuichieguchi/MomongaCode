@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { isSea } from 'node:sea';
-import { nodeEvalFiles } from '@momonga/eval';
+import { nodeEvalFiles, nodeWorkspaceFiles } from '@momonga/eval';
 import type { WorkspaceProbe } from '@momonga/eval';
 import {
   EntryLockHeldError,
@@ -23,11 +23,12 @@ import {
   nodeFileSystemSync,
   systemClock,
   systemRandom,
+  systemTiming,
   writeFileAtomically,
   writeFileAtomicallySync,
   launchApart,
 } from '@momonga/foundation';
-import type { HeldKernelLock, LaunchProgram } from '@momonga/foundation';
+import type { HeldKernelLock, LaunchProgram, ProcessPort } from '@momonga/foundation';
 import { sourceBuiltWindowsKeeper } from './keeper/source.ts';
 import type { SourceKeeperFiles } from './keeper/source.ts';
 import { createHandoverHost } from './handover/host.ts';
@@ -107,7 +108,9 @@ export const launchProgram: LaunchProgram = (file, args) =>
     child.unref();
   });
 
-const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
+const LONGEST_HOST_TIMER_MS = 2_147_483_647;
+
+const sleepOnce = (ms: number, signal?: AbortSignal): Promise<void> =>
   new Promise((resolve, reject) => {
     if (signal?.aborted === true) {
       reject(signal.reason);
@@ -124,10 +127,20 @@ const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
     signal?.addEventListener('abort', onAbort, { once: true });
   });
 
+const sleep = async (ms: number, signal?: AbortSignal): Promise<void> => {
+  let left = ms;
+  for (; left > LONGEST_HOST_TIMER_MS; left -= LONGEST_HOST_TIMER_MS) await sleepOnce(LONGEST_HOST_TIMER_MS, signal);
+  await sleepOnce(left, signal);
+};
+
 export const nodeClock: CliClock = { now: () => systemClock.now(), sleep };
+
+export const nodeProcess: ProcessPort = { pid: process.pid, uid: () => process.getuid?.(), kill: (pid, signal) => void process.kill(pid, signal) };
 
 export const nodeFiles: CliFiles = {
   ...nodeEvalFiles,
+  ...nodeWorkspaceFiles,
+  copyTreeVerbatim: (from, to) => fs.cp(from, to, { recursive: true, verbatimSymlinks: true }),
   readFile: nodeFileSystem.readFile,
   readTextFile: nodeFileSystem.readTextFile,
   stat: nodeFileSystem.stat,
@@ -268,10 +281,15 @@ export const nodePorts = (version: string, interrupt: AbortSignal): CliPorts => 
     env: process.env,
     cwd: process.cwd(),
     home: process.env['HOME'] ?? os.homedir(),
+    stdin: { isTerminal: process.stdin.isTTY === true, bytes: () => process.stdin },
     stdout: process.stdout,
     stderr: process.stderr,
     clock: nodeClock,
+    timers: systemTiming,
     random: Math.random,
+    uuid: systemRandom.uuid,
+    process: nodeProcess,
+    tmpdir: os.tmpdir(),
     self,
     handover: createHandoverHost({ version, pid: process.pid, self, argv: process.argv.slice(2), env: process.env, execArgv: process.execArgv, files: nodeRecordFiles }),
     spawnDetached: nodeSpawnDetached,

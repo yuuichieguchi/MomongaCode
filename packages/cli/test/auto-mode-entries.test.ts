@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { nodeProcess } from '../src/node-ports.ts';
 import type { EntryIo } from '@momonga/foundation';
 import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
@@ -22,7 +23,7 @@ vi.mock('../src/commands/auto-mode.ts', async (importOriginal) => {
 });
 
 const programWith = (interrupt: AbortSignal) => {
-  const ports = { version: '9.9.9', home: '/h', cwd: '/c', terminal: undefined, env: {}, stdout: { write: () => undefined }, stderr: { write: () => undefined } } as unknown as CliPorts;
+  const ports = { version: '9.9.9', home: '/h', cwd: '/c', terminal: undefined, env: {}, process: nodeProcess, stdout: { write: () => undefined }, stderr: { write: () => undefined } } as unknown as CliPorts;
   const entry = async (): Promise<number> => 0;
   const program = buildProgram({
     ports,

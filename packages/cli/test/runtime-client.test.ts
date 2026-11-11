@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { fixedSocket } from '@momonga/foundation';
 import { ContractViolation } from '../src/client/contract.ts';
 import { RunApiError, createRunBody, createRuntimeClient, eventsHeadersOf, eventsQueryOf } from '../src/client/runtime-client.ts';
+import { nodeClock } from '../src/node-ports.ts';
 import type { RuntimeClient } from '../src/client/runtime-client.ts';
 import { SESSION, runView } from './fake-backend.ts';
 
@@ -27,7 +28,7 @@ const serve = async (context: TestContext, reply: (seen: Seen) => Reply): Promis
     });
   });
   await new Promise<void>((resolve) => server.listen(socketPath, resolve));
-  const client = createRuntimeClient({ resolveSocket: fixedSocket(socketPath) });
+  const client = createRuntimeClient({ resolveSocket: fixedSocket(socketPath), clock: nodeClock });
   registerCleanup(context, async () => {
     await client.close();
     server.closeAllConnections();
