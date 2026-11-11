@@ -21,7 +21,7 @@ import {
   unwritableFailure,
 } from './auth-source.ts';
 import type { AccountView, AuthSource, PlanPause, PlanRead, PlanStatus } from './auth-source.ts';
-import { PLAN_EVENT_INTERNAL, endCodeOf, noPlanEvents } from './events.ts';
+import { PLAN_EVENT_INTERNAL, endCodeOf, eventScalar, noPlanEvents } from './events.ts';
 import type { PlanEvents } from './events.ts';
 import { createGenerationFlight } from './generation-flight.ts';
 import type { GenerationFlight } from './generation-flight.ts';
@@ -684,12 +684,12 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     events('plan.refresh', {
       ...identityOf(account),
       outcome: end.kind,
-      ...(end.kind === 'terminal' || end.kind === 'configuration' ? { code: end.code } : {}),
+      ...(end.kind === 'terminal' || end.kind === 'configuration' ? { code: eventScalar(end.code) } : {}),
       ...(end.kind === 'terminal' ? { interrupted } : {}),
       attempts: end.attempts,
       latencyMs,
       remainingMs,
-      ...(end.kind === 'adopted' && end.tokens.earliest_refresh_at !== undefined ? { earliestRefreshAt: end.tokens.earliest_refresh_at } : {}),
+      ...(end.kind === 'adopted' && end.tokens.earliest_refresh_at !== undefined ? { earliestRefreshAt: eventScalar(end.tokens.earliest_refresh_at) } : {}),
       at,
     });
   };

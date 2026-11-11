@@ -235,7 +235,7 @@ describe('every started plan operation writes its event at every end (P-G6)', ()
     expect((await readRecord(h, 'work'))?.['paused']).toBeUndefined();
   });
 
-  it('an AuthSource whose pause rejects after a classified usage-limit answer ends the catalog read internal, with requestIdHeaders', async () => {
+  it('an AuthSource whose pause rejects after a classified usage-limit answer ends the catalog read with the usage-limit failure, the pause failure as its cause, with requestIdHeaders', async () => {
     const h = await startHarness();
     harnesses.push(h);
     const events: RecordedPlanEvent[] = [];
@@ -256,8 +256,8 @@ describe('every started plan operation writes its event at every end (P-G6)', ()
         throw error;
       },
     };
-    await expect(catalog.read({ profile: h.profile, account: 'work', refresh: true, auth, signal: signal() })).rejects.toBe(error);
-    expect(events.filter((event) => event.name === 'plan.catalog').map((event) => event.data)).toEqual([{ profile: 'chatgpt', account: 'work', outcome: 'internal', requestIdHeaders: ['x-request-id'] }]);
+    await expect(catalog.read({ profile: h.profile, account: 'work', refresh: true, auth, signal: signal() })).rejects.toMatchObject({ body: { code: PAUSE_CODE }, cause: error });
+    expect(events.filter((event) => event.name === 'plan.catalog').map((event) => event.data)).toEqual([{ profile: 'chatgpt', account: 'work', outcome: PAUSE_CODE, requestIdHeaders: ['x-request-id'] }]);
   });
 
   it('a catalog record write that fails after the list was read rejects plan_store_unwritable and keeps the ok event', async () => {

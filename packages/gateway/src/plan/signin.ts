@@ -7,7 +7,7 @@ import type { NamedPlanAccountRef, PlanSignInBeginRequest, PlanSignInBeginRespon
 import { GatewayError, invalidRequest } from '../core/errors.ts';
 import { PLAN_SIGN_IN_DEFAULTS } from '../defaults.ts';
 import { hostIdentityFailure } from './auth-source.ts';
-import { endCodeOf, noPlanEvents } from './events.ts';
+import { endCodeOf, eventScalar, noPlanEvents } from './events.ts';
 import type { PlanEvents } from './events.ts';
 import { ensureHostIdentity, resetHostIdentity } from './host-identity.ts';
 import { CONFLICT_STATUS, SUCCESS_STATUS, answeredLater } from './http-status.ts';
@@ -265,12 +265,12 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
       endStep: progress.endStep,
       durationMs: options.clock.now() - attempt.startedAt,
       port: attempt.port,
-      ...(facts.alg === undefined ? {} : { alg: facts.alg }),
-      ...(facts.kid === undefined ? {} : { kid: facts.kid }),
+      ...(facts.alg === undefined ? {} : { alg: eventScalar(facts.alg) }),
+      ...(facts.kid === undefined ? {} : { kid: eventScalar(facts.kid) }),
       ...(facts.audShape === undefined ? {} : { audShape: facts.audShape }),
-      ...(facts.claimNames === undefined ? {} : { claimNames: facts.claimNames }),
-      ...(progress.scope === undefined ? {} : { scope: progress.scope }),
-      ...(progress.earliestRefreshAt === undefined ? {} : { earliestRefreshAt: progress.earliestRefreshAt }),
+      ...(facts.claimNames === undefined ? {} : { claimNames: facts.claimNames.map(eventScalar) }),
+      ...(progress.scope === undefined ? {} : { scope: eventScalar(progress.scope) }),
+      ...(progress.earliestRefreshAt === undefined ? {} : { earliestRefreshAt: eventScalar(progress.earliestRefreshAt) }),
     });
   };
 
