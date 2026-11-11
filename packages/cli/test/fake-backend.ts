@@ -26,7 +26,9 @@ export const SESSION: SessionView = {
   createdAt: 1,
   envKeys: [],
   activeRunId: null,
+  activeRunAt: null,
   latestRunId: null,
+  latestRunAt: null,
   additionalDirectories: [],
   lastEventId: 0,
 };
@@ -193,7 +195,8 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
   const viewOf = (conversation: FakeConversation): SessionView => {
     const newest = conversation.runs.at(-1);
     const active = conversation.runs.find((run) => !isTerminalStatus(run.status ?? 'COMPLETED'));
-    return { ...SESSION, cwd: session.cwd, ...conversation.session, latestRunId: newest === undefined ? null : newest.id, activeRunId: active === undefined ? null : active.id };
+    const view = { ...SESSION, cwd: session.cwd, ...conversation.session };
+    return { ...view, latestRunId: newest === undefined ? null : newest.id, latestRunAt: newest === undefined ? null : view.createdAt, activeRunId: active === undefined ? null : active.id, activeRunAt: active === undefined ? null : view.createdAt };
   };
   const stored = { listSessions: async (cwd?: string) => conversations.map(viewOf).filter((view) => cwd === undefined || view.cwd === cwd) };
   const conversationRun = (runId: string): { run: FakeConversationRun; view: RunView } | undefined => {
@@ -292,7 +295,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       record('openSession');
       opened.push({ model, permissionMode });
       if (opened.length === 1) return model === undefined ? session : adopt({ ...session, model });
-      return adopt({ ...session, id: `session-${opened.length}`, latestRunId: null, activeRunId: null, ...(model === undefined ? {} : { model }), ...(permissionMode === undefined ? {} : { permissionMode }) });
+      return adopt({ ...session, id: `session-${opened.length}`, latestRunId: null, latestRunAt: null, activeRunId: null, activeRunAt: null, ...(model === undefined ? {} : { model }), ...(permissionMode === undefined ? {} : { permissionMode }) });
     },
     resumeSession: async (id) => {
       record(`resume:${id}`);

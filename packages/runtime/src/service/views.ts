@@ -49,6 +49,8 @@ export const toRunView = (run: Run) => ({
 
 export const toSessionView = (store: RuntimeStore, session: Session) => {
   const runs = store.listRuns(session.id);
+  const active = runs.find((run) => !isTerminalStatus(run.status));
+  const latest = runs.at(-1);
   return {
     id: session.id,
     cwd: session.cwd,
@@ -58,8 +60,10 @@ export const toSessionView = (store: RuntimeStore, session: Session) => {
     createdAt: session.createdAt,
     envKeys: Object.keys(session.env),
     additionalDirectories: [...session.additionalDirectories],
-    activeRunId: runs.find((run) => !isTerminalStatus(run.status))?.id ?? null,
-    latestRunId: runs.at(-1)?.id ?? null,
+    activeRunId: active === undefined ? null : active.id,
+    activeRunAt: active === undefined ? null : active.createdAt,
+    latestRunId: latest === undefined ? null : latest.id,
+    latestRunAt: latest === undefined ? null : latest.createdAt,
     lastEventId: store.sessionMaxEventId(session.id),
   };
 };

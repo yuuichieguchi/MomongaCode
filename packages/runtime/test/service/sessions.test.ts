@@ -45,7 +45,9 @@ describe('session creation, listing and reading', () => {
       createdAt: START_MS,
       envKeys: expect.any(Array),
       activeRunId: null,
+      activeRunAt: null,
       latestRunId: null,
+      latestRunAt: null,
       additionalDirectories: [],
       lastEventId: 0,
     });
@@ -440,7 +442,7 @@ describe('session run pointers and run listing', () => {
     const second = await env.createRun(session.id, { input: 'two' });
 
     const read = await env.http('GET', `/v1/sessions/${session.id}`);
-    expect(read.json.session).toMatchObject({ activeRunId: first.id, latestRunId: second.id });
+    expect(read.json.session).toMatchObject({ activeRunId: first.id, activeRunAt: first.createdAt, latestRunId: second.id, latestRunAt: second.createdAt });
 
     expect((await env.http('POST', `/v1/runs/${first.id}/cancel`)).status).toBe(202);
     expect(await env.store.finishCancelled(() => undefined)).toEqual([first.id]);

@@ -1,5 +1,7 @@
 import type { RuntimeClient } from '../client/runtime-client.ts';
-import type { RunView, SessionView } from '../client/views.ts';
+import type { RunView } from '../client/views.ts';
+import { runsNewestFirst } from '../run/resolve-session.ts';
+import type { RunOfSession, RunOfSessionKind } from '../run/resolve-session.ts';
 
 export class NoRunFound extends Error {
   constructor(cwd: string, wanted: string) {
@@ -8,24 +10,20 @@ export class NoRunFound extends Error {
   }
 }
 
-const newestFirst = (sessions: readonly SessionView[]): SessionView[] => [...sessions].sort((left, right) => right.createdAt - left.createdAt);
+const newestRunOf = async (client: Pick<RuntimeClient, 'listSessions'>, cwd: string, kind: RunOfSessionKind): Promise<RunOfSession | undefined> => runsNewestFirst(await client.listSessions(cwd), kind)[0];
 
-export const activeRunIdOf = async (client: RuntimeClient, cwd: string): Promise<string> => {
-  const session = newestFirst(await client.listSessions(cwd)).find((candidate) => candidate.activeRunId !== null);
-  if (session?.activeRunId === undefined || session.activeRunId === null) throw new NoRunFound(cwd, 'running run');
-  return session.activeRunId;
+export const activeRunIdOf = async (client: Pick<RuntimeClient, 'listSessions'>, cwd: string): Promise<string> => {
+  const active = await newestRunOf(client, cwd, 'active');
+  if (active === undefined) throw new NoRunFound(cwd, 'running run');
+  return active.runId;
 };
 
-export const latestRunIdOf = async (client: RuntimeClient, cwd: string): Promise<string> => {
-  const session = newestFirst(await client.listSessions(cwd)).find((candidate) => candidate.latestRunId !== null);
-  if (session?.latestRunId === undefined || session.latestRunId === null) throw new NoRunFound(cwd, 'run');
-  return session.latestRunId;
-};
+export const latestRunOf = (client: Pick<RuntimeClient, 'listSessions'>, cwd: string): Promise<RunOfSession | undefined> => newestRunOf(client, cwd, 'latest');
 
-export const newestSessionIdOf = async (client: RuntimeClient, cwd: string): Promise<string> => {
-  const session = newestFirst(await client.listSessions(cwd))[0];
-  if (session === undefined) throw new NoRunFound(cwd, 'session');
-  return session.id;
+export const latestRunIdOf = async (client: Pick<RuntimeClient, 'listSessions'>, cwd: string): Promise<string> => {
+  const latest = await latestRunOf(client, cwd);
+  if (latest === undefined) throw new NoRunFound(cwd, 'run');
+  return latest.runId;
 };
 
 export type RunNode = { run: RunView; depth: number };

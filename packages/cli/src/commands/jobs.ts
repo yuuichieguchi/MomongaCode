@@ -4,7 +4,7 @@ import type { JobView } from '@momonga/protocol';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
-import { newestSessionIdOf } from './targets.ts';
+import { NoRunFound, latestRunOf } from './targets.ts';
 
 const endOf = (job: JobView): string => {
   if (job.status === 'running') return '';
@@ -18,7 +18,9 @@ export const listJobs = async (ports: CliPorts, paths: MomongaPaths, sessionId: 
   await ensureCurrentDaemon(ports, paths);
   const client = connectRuntime(ports, paths);
   try {
-    const target = sessionId ?? (await newestSessionIdOf(client, ports.cwd));
+    const latest = sessionId === undefined ? await latestRunOf(client, ports.cwd) : undefined;
+    const target = sessionId ?? latest?.session.id;
+    if (target === undefined) throw new NoRunFound(ports.cwd, 'session');
     const jobs = await client.jobs(target);
     if (json) ports.stdout.write(`${JSON.stringify(jobs)}\n`);
     else ports.stdout.write(jobs.length === 0 ? `session ${target} has no background jobs\n` : `${jobs.map(jobLine).join('\n')}\n`);
