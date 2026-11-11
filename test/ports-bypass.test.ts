@@ -97,7 +97,6 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/supervisor/src/start-supervisor.ts': { 'Math.random': 1, 'setTimeout': 1 },
   'packages/tools/src/operations/askpass-client.ts': { 'node:net': 1 },
   'packages/tools/src/operations/git-credential.ts': { 'node:net': 1 },
-  'packages/verify/src/distribution-files.ts': { 'node:fs/promises': 2 },
 };
 
 const CLI_PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {

@@ -19,7 +19,7 @@ const paths = { home: '/home/u', root: '/home/u/.momonga', keychains: '/home/u/k
 describe('the rule verifier of the runtime process', () => {
   it('prepares an input with the protected set and the secret locations, and starts no thread for it', async () => {
     const host: RuleSolverHost = {
-      ...provedRuleSolver({ executables: '/x' }),
+      ...provedRuleSolver(),
       loadVerifier: async () => ({ ...provedVerifier, secretLocationsOf: (layout: { home: string }) => [{ label: 'ssh', directory: `${layout.home}/.ssh` }] }) as never,
       threadCode: `throw new Error('no thread is expected')`,
     };
@@ -31,7 +31,7 @@ describe('the rule verifier of the runtime process', () => {
     const timers = createFakeTimers(createFakeClock(0));
     const waits: number[] = [];
     const verifier = createRuleVerifier({
-      host: provedRuleSolver({ executables: '/x' }),
+      host: provedRuleSolver(),
       fs: createPolicyFilesystem(),
       paths,
       timers: { setTimeout: (callback, ms) => (waits.push(ms), timers.setTimeout(callback, ms)), clearTimeout: timers.clearTimeout },
@@ -44,7 +44,7 @@ describe('the rule verifier of the runtime process', () => {
   });
 
   it('gives verdict unknown with the reason when its thread fails', async () => {
-    const host: RuleSolverHost = { ...provedRuleSolver({ executables: '/x' }), threadCode: `throw new Error('the solver is broken')` };
+    const host: RuleSolverHost = { ...provedRuleSolver(), threadCode: `throw new Error('the solver is broken')` };
     const verifier = createRuleVerifier({ host, fs: createPolicyFilesystem(), paths, timers: systemTimers, bashPath: () => '/bin/bash', clock: createFakeClock(0) });
     expect(await verifier.verify(await verifier.inputOf(request, NEVER_CANCELLED), new AbortController().signal)).toMatchObject({
       verdict: 'unknown',
@@ -60,7 +60,7 @@ describe('the rule verifier of the runtime process', () => {
   });
 
   it('refuses an input it did not prepare', async () => {
-    const verifier = createRuleVerifier({ host: provedRuleSolver({ executables: '/x' }), fs: createPolicyFilesystem(), paths, timers: systemTimers, bashPath: () => '/bin/bash', clock: createFakeClock(0) });
+    const verifier = createRuleVerifier({ host: provedRuleSolver(), fs: createPolicyFilesystem(), paths, timers: systemTimers, bashPath: () => '/bin/bash', clock: createFakeClock(0) });
     await expect(verifier.verify({ ...request, protectedSet: {}, secretLocations: [], deniedLocations: [] }, new AbortController().signal)).rejects.toThrow('the rule verifier was given an input it did not prepare');
   });
 
@@ -73,7 +73,7 @@ describe('the rule verifier of the runtime process', () => {
   });
 
   it('gives the report of the thread with its verdict, for the command that prints it', async () => {
-    const host: RuleSolverHost = { ...provedRuleSolver({ executables: '/x' }), threadCode: REPORTING_THREAD_CODE };
+    const host: RuleSolverHost = { ...provedRuleSolver(), threadCode: REPORTING_THREAD_CODE };
     const verifier = createRuleVerifier({ host, fs: createPolicyFilesystem(), paths, timers: systemTimers, bashPath: () => '/bin/bash', clock: createFakeClock(0) });
     expect(await verifier.report(await verifier.inputOf(request, NEVER_CANCELLED), new AbortController().signal)).toEqual({
       verdict: { verdict: 'proved', solver: FAKE_SOLVER_VERSION, refuted: [], unknown: [], notProved: [] },
@@ -82,7 +82,7 @@ describe('the rule verifier of the runtime process', () => {
   });
 
   it('gives a report that states the reason when its thread gives no verdict', async () => {
-    const host: RuleSolverHost = { ...provedRuleSolver({ executables: '/x' }), threadCode: `throw new Error('the solver is broken')` };
+    const host: RuleSolverHost = { ...provedRuleSolver(), threadCode: `throw new Error('the solver is broken')` };
     const verifier = createRuleVerifier({ host, fs: createPolicyFilesystem(), paths, timers: systemTimers, bashPath: () => '/bin/bash', clock: createFakeClock(0) });
     expect((await verifier.report(await verifier.inputOf(request, NEVER_CANCELLED), new AbortController().signal)).report).toBe('The rules were not verified: the verification thread failed: the solver is broken');
   });

@@ -1,5 +1,5 @@
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
-import { systemClock, systemRandom } from '@momonga/foundation';
+import { systemClock } from '@momonga/foundation';
 import type { Clock, UnixSocketPolicy } from '@momonga/foundation';
 import type { RuleVerdict, RuleVerdictPhase } from '@momonga/protocol';
 import { ShellNotFoundError, createHostFilesystem, nodeGlobPorts } from '@momonga/policy';
@@ -10,7 +10,7 @@ type SolverSource = Parameters<VerifyModule['openZ3']>[0];
 
 export type RuleSolverRecipe =
   | { readonly kind: 'installed'; readonly entry: string }
-  | { readonly kind: 'bundled'; readonly executablesRoot: string; readonly assets: Readonly<Record<string, Uint8Array>> };
+  | { readonly kind: 'bundled'; readonly entry: string; readonly wasmBinary: Uint8Array };
 
 export type RuleVerifyJob = {
   readonly input: RuleVerifyInput;
@@ -29,16 +29,7 @@ export type RuleVerifyReply = ({ readonly ok: true } & RuleVerification) | { rea
 
 const sourceOf = async (verifier: VerifyModule, recipe: RuleSolverRecipe): Promise<SolverSource> => {
   if (recipe.kind === 'installed') return { entry: recipe.entry };
-  return verifier.ensureBundledZ3({
-    asset: (name) => {
-      const bytes = recipe.assets[name];
-      if (bytes === undefined) throw new Error(`the verification thread was not given the Z3 asset ${name}`);
-      return bytes;
-    },
-    executablesRoot: recipe.executablesRoot,
-    random: systemRandom.float,
-    files: verifier.nodeDistributionFiles,
-  });
+  return { entry: recipe.entry, wasmBinary: recipe.wasmBinary };
 };
 
 const bashPathOf = (job: RuleVerifyJob): string => {

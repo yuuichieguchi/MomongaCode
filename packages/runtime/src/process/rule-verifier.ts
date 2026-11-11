@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { mapAsync, nodeFileSystem, protectedSetFor, sha256Hex } from '@momonga/foundation';
-import type { Awaitable, Clock, MomongaPaths, UnixSocketPolicy, VerdictSubject } from '@momonga/foundation';
+import type { Awaitable, Clock, LayoutLocks, MomongaPaths, UnixSocketPolicy, VerdictSubject } from '@momonga/foundation';
 import { ShellNotFoundError, askedBy } from '@momonga/policy';
 import type { PolicyHostFilesystem } from '@momonga/policy';
 import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
@@ -22,7 +22,7 @@ export type RuleSolverHost = {
   threadCode?: string;
 };
 
-export type RuleSolverSource = (paths: Pick<MomongaPaths, 'executables'>) => RuleSolverHost;
+export type RuleSolverSource = (paths: Pick<MomongaPaths, 'executables'>, locks: LayoutLocks) => RuleSolverHost;
 
 export const RULE_VERIFY_LOAD_ALLOWANCE_MS = 10_000;
 
@@ -104,15 +104,16 @@ export const createRuleVerifier = ({ host, fs: policyFilesystem, paths, timers, 
 export type ProductRuleVerifierDeps = {
   solver: RuleSolverSource | undefined;
   paths: Pick<MomongaPaths, 'home' | 'root' | 'keychains' | 'executables'>;
+  locks: LayoutLocks;
   timers: ServiceTimers;
   shellHost: Pick<ShellHost, 'platform' | 'isExecutable'>;
   env: NodeJS.ProcessEnv;
   clock: Clock;
 };
 
-export const productRuleVerifier = ({ solver, paths, timers, shellHost, env, clock }: ProductRuleVerifierDeps): RuleVerifierPort =>
+export const productRuleVerifier = ({ solver, paths, locks, timers, shellHost, env, clock }: ProductRuleVerifierDeps): RuleVerifierPort =>
   createRuleVerifier({
-    host: solver === undefined ? installedRuleSolver(import.meta.url) : solver(paths),
+    host: solver === undefined ? installedRuleSolver(import.meta.url) : solver(paths, locks),
     fs: createPolicyFilesystem(),
     paths,
     timers,

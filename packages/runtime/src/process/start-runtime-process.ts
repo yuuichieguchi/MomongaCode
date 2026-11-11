@@ -794,7 +794,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     service = runService;
     cleanups.push({ name: 'service', run: () => (retireFrame === undefined ? runService.close() : runService.retire(retireFrame.current)) });
 
-    const ruleVerifier = productRuleVerifier({ solver: options.ruleSolver, paths, timers, shellHost, env: process.env, clock });
+    const ruleVerifier = productRuleVerifier({ solver: options.ruleSolver, paths, locks: options.locks, timers, shellHost, env: process.env, clock });
     await step('workers', () => {
       for (let index = 0; index < workerCount; index += 1) {
         const id = `runtime-${process.pid}-${startedAtMs}-${index}`;
