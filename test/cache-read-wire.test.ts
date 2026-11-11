@@ -96,7 +96,7 @@ describe('the closed wire schemas', () => {
   });
 
   it('accepts a null cached input in the run summary', () => {
-    const summary = { steps: 1, chatCalls: 1, toolCalls: 0, inputTokens: 100, outputTokens: 2, cachedInputTokens: null, cacheReadNotReportedCalls: 1, errorCount: 0, durationMs: 1, chatResults: [] };
+    const summary = { steps: 1, chatCalls: 1, sideCalls: 0, toolCalls: 0, inputTokens: 100, outputTokens: 2, cachedInputTokens: null, cacheReadNotReportedCalls: 1, errorCount: 0, durationMs: 1, chatResults: [] };
 
     expect(acceptsTrace({ runId: 'run-a', summary, spans: [] }), errorsOf(acceptsTrace)).toBe(true);
   });

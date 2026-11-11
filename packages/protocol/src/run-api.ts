@@ -1161,6 +1161,7 @@ export type RunTraceSpan = {
 export type RunTraceSummary = {
   steps: number;
   chatCalls: number;
+  sideCalls: number;
   toolCalls: number;
   inputTokens: number;
   outputTokens: number;
@@ -1564,6 +1565,7 @@ export const RUN_API_SCHEMAS = {
           {
             steps: nonNegativeInteger,
             chatCalls: nonNegativeInteger,
+            sideCalls: nonNegativeInteger,
             toolCalls: nonNegativeInteger,
             inputTokens: nonNegativeInteger,
             outputTokens: nonNegativeInteger,
@@ -1576,7 +1578,7 @@ export const RUN_API_SCHEMAS = {
               items: closed({ step: nonNegativeInteger, attempt: integer, finishReasons: { type: 'array', items: string } }, ['step', 'attempt', 'finishReasons']),
             },
           },
-          ['steps', 'chatCalls', 'toolCalls', 'inputTokens', 'outputTokens', 'cachedInputTokens', 'cacheReadNotReportedCalls', 'errorCount', 'durationMs', 'chatResults'],
+          ['steps', 'chatCalls', 'sideCalls', 'toolCalls', 'inputTokens', 'outputTokens', 'cachedInputTokens', 'cacheReadNotReportedCalls', 'errorCount', 'durationMs', 'chatResults'],
         ),
         spans: {
           type: 'array',
