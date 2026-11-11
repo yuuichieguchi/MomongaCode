@@ -15,7 +15,8 @@ export const APPLIES_NEXT_SESSION = 'applies from the next session';
 export const NOT_SET = 'not set';
 export const NONE = 'none';
 export const ADD_ROW = 'Add';
-export const REMOVE_LABEL = 'remove';
+export const DELETE_LABEL = 'delete';
+export const REMOVE_ACTIONS = ['Remove'] as const;
 export const LIST_ACTIONS = ['Move up', 'Move down', 'Remove'] as const;
 export const ENTRY_ACTIONS = ['Edit', 'Remove'] as const;
 export const CONFIRM_ROWS = ['No', 'Yes'] as const;
@@ -362,7 +363,22 @@ type Collection = {
   readonly applied?: string;
   entries(snapshot: SettingsSnapshot): readonly string[];
   add(context: SlashContext, snapshot: SettingsSnapshot): Promise<Refusal | 'left' | undefined>;
-  act(context: SlashContext, snapshot: SettingsSnapshot, index: number, remove: boolean): Promise<Refusal | 'left' | undefined>;
+  act(context: SlashContext, snapshot: SettingsSnapshot, index: number): Promise<Refusal | 'left' | 'remove' | undefined>;
+  removal(snapshot: SettingsSnapshot, index: number): Removal | undefined;
+};
+
+export type Removal = { readonly question: string; remove(context: SlashContext): Promise<Refusal | undefined> };
+
+export const removeQuestion = (what: string): string => `Remove ${what}?`;
+
+export const chosenAction = async <Action extends string>(context: SlashContext, title: string, actions: readonly Action[]): Promise<Action | undefined> => {
+  const choice = await context.overlays.choose({ title, rows: actions.map((label) => ({ label })), decideOn: 'enter', escape: 'back', filter: false });
+  return choice === undefined ? undefined : actions[choice.index];
+};
+
+const removeAfterAsking = async (context: SlashContext, removal: Removal | undefined): Promise<Refusal | 'left' | undefined> => {
+  if (removal === undefined || !(await confirmed(context, removal.question))) return 'left';
+  return removal.remove(context);
 };
 
 export const runCollection = async (context: SlashContext, collection: Collection): Promise<boolean> => {
@@ -381,7 +397,7 @@ export const runCollection = async (context: SlashContext, collection: Collectio
       decideOn: 'enter',
       escape: 'back',
       filter: false,
-      alt: { label: REMOVE_LABEL },
+      alt: { label: DELETE_LABEL, key: 'select.delete' },
     });
     if (choice === undefined) return changed;
     at = choice.index;
@@ -390,7 +406,8 @@ export const runCollection = async (context: SlashContext, collection: Collectio
       changedNow = false;
       continue;
     }
-    const result = isAdd ? await collection.add(context, snapshot) : await collection.act(context, snapshot, choice.index, choice.alt);
+    const asked = isAdd ? await collection.add(context, snapshot) : choice.alt ? 'remove' : await collection.act(context, snapshot, choice.index);
+    const result = asked === 'remove' ? await removeAfterAsking(context, collection.removal(snapshot, choice.index)) : asked;
     sentence = result === undefined || result === 'left' ? undefined : result.refused;
     changedNow = result === undefined;
     changed = changed || changedNow;
@@ -410,13 +427,16 @@ const listCollection = (leaf: SettingLeaf, presentation: SettingPresentation, la
       const text = await context.overlays.promptText({ title: presentation.label, validate: (entry) => (entry.trim() === '' ? 'expected a value' : undefined) });
       return text === undefined ? 'left' : store(context, [...own(snapshot), text]);
     },
-    act: async (context, snapshot, index, remove) => {
+    act: async (context, snapshot, index) => {
       const items = own(snapshot);
-      if (remove) return store(context, without(items, index));
-      const action = await context.overlays.choose({ title: items[index] ?? '', rows: LIST_ACTIONS.map((label) => ({ label })), decideOn: 'enter', escape: 'back', filter: false });
-      if (action === undefined) return 'left';
-      const chosen = LIST_ACTIONS[action.index];
-      return store(context, chosen === 'Remove' ? without(items, index) : moved(items, index, chosen === 'Move up' ? index - 1 : index + 1));
+      const chosen = await chosenAction(context, items[index] ?? '', LIST_ACTIONS);
+      if (chosen === undefined) return 'left';
+      return chosen === 'Remove' ? 'remove' : store(context, moved(items, index, chosen === 'Move up' ? index - 1 : index + 1));
+    },
+    removal: (snapshot, index) => {
+      const items = own(snapshot);
+      const item = items[index];
+      return item === undefined ? undefined : { question: removeQuestion(item), remove: (context) => store(context, without(items, index)) };
     },
   };
 };
@@ -440,12 +460,15 @@ const mapCollection = (leaf: SettingLeaf, presentation: SettingPresentation, lay
       if (pair === null) return 'left';
       return store(context, { ...own(snapshot), [pair[1] as string]: pair[2] as string });
     },
-    act: async (context, snapshot, index, remove) => {
+    act: async (context, snapshot, index) => {
+      const entry = Object.entries(own(snapshot))[index];
+      if (entry === undefined) return 'left';
+      return (await chosenAction(context, `${entry[0]}=${String(entry[1])}`, REMOVE_ACTIONS)) === undefined ? 'left' : 'remove';
+    },
+    removal: (snapshot, index) => {
       const entries = Object.entries(own(snapshot));
       const entry = entries[index];
-      if (entry === undefined) return 'left';
-      if (!remove && !(await confirmed(context, `Remove ${entry[0]}?`))) return 'left';
-      return store(context, Object.fromEntries(entries.filter((_, position) => position !== index)));
+      return entry === undefined ? undefined : { question: removeQuestion(entry[0]), remove: (context) => store(context, Object.fromEntries(entries.filter((_, position) => position !== index))) };
     },
   };
 };
@@ -483,12 +506,15 @@ const formCollection = (leaf: SettingLeaf, presentation: SettingPresentation, fo
       const values = await formValues(context, presentation.label, form, {});
       return values === undefined ? 'left' : store(context, [...own(snapshot), { ...values, ...presentation.constants }]);
     },
-    act: async (context, snapshot, index, remove) => {
+    removal: (snapshot, index) => {
       const items = own(snapshot);
-      if (remove) return store(context, without(items, index));
-      const action = await context.overlays.choose({ title: entryLine(presentation, items[index]), rows: ENTRY_ACTIONS.map((label) => ({ label })), decideOn: 'enter', escape: 'back', filter: false });
-      if (action === undefined) return 'left';
-      if (ENTRY_ACTIONS[action.index] === 'Remove') return store(context, without(items, index));
+      return index >= items.length ? undefined : { question: removeQuestion(entryLine(presentation, items[index])), remove: (context) => store(context, without(items, index)) };
+    },
+    act: async (context, snapshot, index) => {
+      const items = own(snapshot);
+      const chosen = await chosenAction(context, entryLine(presentation, items[index]), ENTRY_ACTIONS);
+      if (chosen === undefined) return 'left';
+      if (chosen === 'Remove') return 'remove';
       const before = items[index];
       const values = await formValues(context, presentation.label, form, isRecord(before) ? before : {});
       return values === undefined ? 'left' : store(context, items.map((item, position) => (position === index ? { ...values, ...presentation.constants } : item)));

@@ -106,7 +106,8 @@ describe('/permissions', () => {
     await press(started, '2', '› 2. Allow rules');
     const list = await press(started, KEYS.enter, '1. Bash(npm run lint)  project');
     expect(list).toContain('2. Add');
-    expect(list).toContain('tab: remove');
+    expect(list).toContain('delete: delete');
+    expect(list).not.toContain('tab');
     await press(started, '2', '› 2. Add');
     const prompt = await press(started, KEYS.enter, 'Allowed: Bash(npm test:*)');
     expect(prompt).toContain('enter to confirm');
@@ -121,8 +122,54 @@ describe('/permissions', () => {
     await untilOutput(started.app, 'Allowed: Bash(npm test:*)');
     expect(stored(place.userFile)).toEqual({ permissions: { allow: ['Bash(npm test:*)'] } });
     await press(started, '2', '› 2. Bash(npm run lint)  project');
-    await press(started, KEYS.tab, '2. Add');
+    await press(started, KEYS.tab, '› 2. Bash(npm run lint)  project');
+    const asked = await press(started, KEYS.delete, `Remove Bash(npm run lint) from ${place.projectFile}?`);
+    expect(asked).toContain('› 1. No');
+    await press(started, '2', '› 2. Yes');
+    await press(started, KEYS.enter, (frame) => frame.includes('2. Add') && frame.includes(APPLIES_NOW));
     expect(stored(place.projectFile)).toEqual({});
+    started.app.unmount();
+  });
+
+  it('enter on a deny rule opens its action list and removes nothing; delete asks first, and No leaves the rule', async () => {
+    const place = freshPlace();
+    writeSettings(place.userFile, { permissions: { deny: ['Read(./secrets/**)'] } });
+    const started = await startAt(place);
+    await command(started, '/permissions', PERMISSIONS_TITLE);
+    await press(started, '4', '› 4. Deny rules');
+    await press(started, KEYS.enter, '› 1. Read(./secrets/**)  user');
+    const actions = await press(started, KEYS.enter, '› 1. Remove');
+    expect(actions).toContain('Read(./secrets/**)  user');
+    expect(stored(place.userFile)).toEqual({ permissions: { deny: ['Read(./secrets/**)'] } });
+    await press(started, KEYS.escape, '2. Add');
+    await press(started, KEYS.delete, `Remove Read(./secrets/**) from ${place.userFile}?`);
+    await press(started, KEYS.enter, '2. Add');
+    expect(stored(place.userFile)).toEqual({ permissions: { deny: ['Read(./secrets/**)'] } });
+    await press(started, KEYS.enter, '› 1. Remove');
+    await press(started, KEYS.enter, `Remove Read(./secrets/**) from ${place.userFile}?`);
+    await press(started, '2', '› 2. Yes');
+    await press(started, KEYS.enter, (frame) => frame.includes('1. Add') && frame.includes(APPLIES_NOW));
+    expect(stored(place.userFile)).toEqual({});
+    started.app.unmount();
+  });
+
+  it('an additional directory is removed only after the question is answered Yes', async () => {
+    const place = freshPlace();
+    writeSettings(place.userFile, { permissions: { additionalDirectories: [place.home] } });
+    const started = await startAt(place);
+    await command(started, '/permissions', PERMISSIONS_TITLE);
+    await press(started, '5', '› 5. Additional directories');
+    await press(started, KEYS.enter, `› 1. ${place.home}  user`);
+    await press(started, KEYS.enter, '› 1. Remove');
+    expect(stored(place.userFile)).toEqual({ permissions: { additionalDirectories: [place.home] } });
+    await press(started, KEYS.escape, '2. Add');
+    await press(started, KEYS.delete, `Remove ${place.home} from ${place.userFile}?`);
+    await press(started, KEYS.escape, '2. Add');
+    expect(stored(place.userFile)).toEqual({ permissions: { additionalDirectories: [place.home] } });
+    await press(started, KEYS.delete, `Remove ${place.home} from ${place.userFile}?`);
+    await press(started, '2', '› 2. Yes');
+    await press(started, KEYS.enter, (frame) => frame.includes('1. Add') && frame.includes(APPLIES_NOW));
+    expect(stored(place.userFile)).toEqual({});
     started.app.unmount();
   });
 
@@ -186,7 +233,9 @@ describe('/hooks', () => {
     expect(stored(place.userFile)).toEqual({ hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo checked twice', timeout: 30 }] }] } });
     const stop = /(\d)\. Stop {2}\*/.exec(await untilFrame(started.app, 'Stop  *'))?.[1] ?? '';
     await press(started, stop, `› ${stop}. Stop`);
-    await press(started, KEYS.tab, (frame) => frame.includes(HOOKS_TITLE) && !frame.includes('say done'));
+    await press(started, KEYS.delete, (frame) => frame.includes('Remove') && frame.includes('say done') && frame.includes('› 1. No'));
+    await press(started, '2', '› 2. Yes');
+    await press(started, KEYS.enter, (frame) => frame.includes(HOOKS_TITLE) && !frame.includes('say done'));
     expect(stored(place.projectFile)).toEqual({});
     started.app.unmount();
   });

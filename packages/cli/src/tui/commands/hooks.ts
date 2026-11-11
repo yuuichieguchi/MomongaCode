@@ -2,7 +2,7 @@ import type { SettingsLayer, SettingsSnapshot } from '@momonga/config';
 import { isRecord } from '@momonga/foundation';
 import { HOOK_COMMAND_TYPE, HOOK_EVENTS, HOOK_MATCHER_EVENTS, hookMatcherError } from '@momonga/protocol';
 import type { HookCommand, HookEvent, HookMatcherGroup } from '@momonga/protocol';
-import { APPLIES_NOW, ENTRY_ACTIONS, chooseSaveTarget, runCollection, writeSetting } from '../settings-screen.tsx';
+import { APPLIES_NOW, ENTRY_ACTIONS, chooseSaveTarget, chosenAction, removeQuestion, runCollection, writeSetting } from '../settings-screen.tsx';
 import type { Refusal } from '../settings-screen.tsx';
 import type { SlashCommand, SlashContext } from '../slash.ts';
 
@@ -74,12 +74,11 @@ const addHook = async (context: SlashContext, snapshot: SettingsSnapshot): Promi
   return writeSetting(context, layer, { kind: 'update', path: ['hooks', event], update: (current) => [...groupsOf(current), groupOf(asked)] });
 };
 
-const actOnHook = async (context: SlashContext, held: Held | undefined, remove: boolean): Promise<Refusal | 'left' | undefined> => {
+const actOnHook = async (context: SlashContext, held: Held | undefined): Promise<Refusal | 'left' | 'remove' | undefined> => {
   if (held === undefined) return 'left';
-  if (remove) return removeHook(context, held);
-  const action = await context.overlays.choose({ title: hookLine(held), rows: ENTRY_ACTIONS.map((label) => ({ label })), decideOn: 'enter', escape: 'back', filter: false });
-  if (action === undefined) return 'left';
-  if (ENTRY_ACTIONS[action.index] === 'Remove') return removeHook(context, held);
+  const chosen = await chosenAction(context, hookLine(held), ENTRY_ACTIONS);
+  if (chosen === undefined) return 'left';
+  if (chosen === 'Remove') return 'remove';
   const asked = await askHook(context, held.event, held);
   return asked === undefined ? 'left' : replaceHook(context, held, asked);
 };
@@ -94,7 +93,11 @@ export const hooksCommand: SlashCommand = {
       applied: APPLIES_NOW,
       entries: (snapshot) => heldHooks(snapshot).map(hookLine),
       add: (_context, snapshot) => addHook(context, snapshot),
-      act: (_context, snapshot, index, remove) => actOnHook(context, heldHooks(snapshot)[index], remove),
+      act: (_context, snapshot, index) => actOnHook(context, heldHooks(snapshot)[index]),
+      removal: (snapshot, index) => {
+        const held = heldHooks(snapshot)[index];
+        return held === undefined ? undefined : { question: removeQuestion(hookLine(held)), remove: () => removeHook(context, held) };
+      },
     });
   },
 };

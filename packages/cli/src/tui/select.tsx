@@ -21,9 +21,13 @@ export type SelectSpec = {
   readonly interrupt: 'exit' | 'cancel-run' | 'back';
   readonly filter: boolean;
   readonly confirm?: (row: SelectRow, decideKey: string) => string;
-  readonly alt?: { readonly label: string };
+  readonly alt?: { readonly label: string; readonly key?: SecondKey };
   readonly enterOff?: true;
 };
+
+export type SecondKey = Extract<ActionId, 'select.alt' | 'select.delete'>;
+
+const secondKeyOf = (spec: SelectSpec): SecondKey | undefined => (spec.alt === undefined ? undefined : (spec.alt.key ?? 'select.alt'));
 
 export type SelectState = { readonly index: number; readonly top: number; readonly scrolled: boolean; readonly filter: string; readonly confirming: number | undefined };
 
@@ -87,7 +91,7 @@ export const selectHint = (spec: SelectSpec, keys: KeyTable): string => {
   return joinHint([
     ...(spec.decideOn === 'enter' ? [...move, ...choose] : [...choose, ...move]),
     ...(spec.filter ? ['type to filter'] : []),
-    ...(alt === undefined ? [] : keyed(keys.keyHint('select.alt'), (key) => `${key}: ${alt.label}`)),
+    ...(alt === undefined ? [] : keyed(keys.keyHint(alt.key ?? 'select.alt'), (key) => `${key}: ${alt.label}`)),
     ...(spec.escape === 'back' ? keyed(escapeKey, (key) => `${key}: go back`) : []),
     ...(escapeRow === undefined ? [] : keyed(escapeKey, (key) => `${key}: ${escapeRow.label}`)),
     ...(spec.interrupt === 'cancel-run' ? keyed(keys.keyHint('select.interrupt'), (key) => `${key}: cancel the run`) : []),
@@ -174,7 +178,8 @@ export const selectAct = (spec: SelectSpec, state: SelectState, action: ActionId
       if (spec.escape === 'back') return { state, outcome: { kind: 'back' } };
       return spec.escape === 'inactive' ? { state } : { state, outcome: { kind: 'decide', index: spec.escape } };
     case 'select.alt':
-      return spec.alt !== undefined && spec.rows[state.index]?.disabled !== true && stopsOf(spec, state.filter).includes(state.index) ? { state, outcome: { kind: 'alt', index: state.index } } : { state };
+    case 'select.delete':
+      return action === secondKeyOf(spec) && spec.rows[state.index]?.disabled !== true && stopsOf(spec, state.filter).includes(state.index) ? { state, outcome: { kind: 'alt', index: state.index } } : { state };
     case 'select.filterBack':
       return spec.filter ? filtered(spec, state, state.filter.slice(0, -1), capacity) : { state };
     default:
