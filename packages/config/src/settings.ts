@@ -169,7 +169,9 @@ export type ModelEntry = EntryOf<ModelTarget>;
 
 export type ModelConnection = ConnectionOf<ModelTarget>;
 
-export type ConnectionDraft = Omit<ModelConnection, 'models'>;
+type DraftOf<Connection> = Connection extends unknown ? Omit<Connection, 'models'> : never;
+
+export type ConnectionDraft = DraftOf<ModelConnection>;
 
 export type ResolvedManagedTarget = {
   adapter: 'managed';

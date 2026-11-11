@@ -1,4 +1,4 @@
-import { ModelsEditRefused, durationText, editModelsSettings, fieldLabel, fieldValueText, loadUserModels, loadUserSettings, planModelsEdit, providerNameOf, registeredServer, serverKindOf, serverNameFromCommand, serverRegistryOf } from '@momonga/config';
+import { ModelsEditRefused, durationText, editModelsSettings, fieldLabel, fieldValueText, loadUserModels, loadUserSettings, planModelsEdit, providerNameOf, registeredServer, serverKindOf, serverNameFromCommand, serverRegistryOf, settableFieldPath } from '@momonga/config';
 import type { ConnectionDraft, ModelEntry, ModelsEditPlan, ModelsEditPorts, ModelsOperation, ModelsOperations, ModelsReference, ProviderNameInput, ResolvedModels } from '@momonga/config';
 import { EXIT_FAILURE, EXIT_USAGE, createBinaryHashCache, currentSocketResolver, isRecord, parseOutsideJson } from '@momonga/foundation';
 import type { MomongaPaths, OutboundFetch } from '@momonga/foundation';
@@ -604,16 +604,20 @@ const typedValueOf = (text: string): unknown => {
 
 const ENTRY_FIELD_PREFIX = 'models[].';
 
-const fieldPathOf = (field: string): string[] => field.split('.');
+const RENAMED_FIELD = 'id';
 
 const proposeModelField = (set: boolean) => async (_shell: ModelsHost, edit: ModelsEdit, input: FormInput): Promise<ModelsProposal> => {
   const text = argument(input, 0);
   const field = argument(input, 1);
-  const value = set ? typedValueOf(argument(input, 2)) : undefined;
+  const written = set ? argument(input, 2) : undefined;
+  const value = written === undefined || field === RENAMED_FIELD ? written : typedValueOf(written);
   const model = canonOfTyped(edit, text);
+  const keyPath = settableFieldPath('model', field);
   const label = fieldLabel(`${ENTRY_FIELD_PREFIX}${field}`);
+  const operations: ModelsOperations = [{ kind: 'setModelField', model, path: keyPath, value }];
+  if (set && field === RENAMED_FIELD) return { operations, confirm: () => `Rename ${displayIn(edit, model)} to ${String(value)}?` };
   return {
-    operations: [{ kind: 'setModelField', model, path: fieldPathOf(field), value }],
+    operations,
     confirm: () => (set ? `Set ${label} of ${displayIn(edit, model)} to ${fieldValueText(`${ENTRY_FIELD_PREFIX}${field}`, value)}?` : `Clear ${label} of ${displayIn(edit, model)}?`),
   };
 };
@@ -623,7 +627,7 @@ const proposeServerField = (set: boolean) => async (_shell: ModelsHost, _edit: M
   const field = argument(input, 1);
   const value = set ? typedValueOf(argument(input, 2)) : undefined;
   return {
-    operations: [{ kind: 'setConnectionField', provider, path: fieldPathOf(field), value }],
+    operations: [{ kind: 'setConnectionField', provider, path: settableFieldPath('server', field), value }],
     confirm: () => (set ? `Set ${fieldLabel(field)} of ${provider} to ${fieldValueText(field, value)}?` : `Clear ${fieldLabel(field)} of ${provider}?`),
   };
 };

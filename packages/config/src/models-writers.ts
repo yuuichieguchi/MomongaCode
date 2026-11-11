@@ -214,45 +214,43 @@ type Moves = ReadonlyMap<string, string | null>;
 
 const rewriteReferences = (document: Json, state: State, moves: Moves): ModelsReference[] => {
   const references: ModelsReference[] = [];
+  const models = modelsIn(document);
   const movedTo = (text: unknown): string | null | undefined => {
     const canon = canonOfText(state, text);
     return canon === undefined ? undefined : moves.get(canon);
   };
-  const rewrite = (holder: Json, key: string, reference: ModelsReference): void => {
+  const rewrite = (holder: Json, key: string, reference: ModelsReference): boolean => {
     const target = movedTo(holder[key]);
-    if (target === undefined) return;
+    if (target === undefined) return false;
     references.push(reference);
     if (target === null) delete holder[key];
     else holder[key] = target;
+    return target === null;
   };
-  const models = modelsIn(document);
+  const rewriteList = (key: string, moved: (entry: unknown, index: number) => unknown[] | undefined): void => {
+    const written = models[key];
+    if (!Array.isArray(written)) return;
+    const kept = (written as unknown[]).flatMap((entry, index) => moved(entry, index) ?? [entry]);
+    models[key] = kept;
+    if (kept.length < written.length) dropIfEmpty(models, key);
+  };
   rewrite(models, 'start', { kind: 'start' });
-  if (Array.isArray(models['fallback'])) {
-    models['fallback'] = (models['fallback'] as unknown[]).flatMap((text, index) => {
-      const target = movedTo(text);
-      if (target === undefined) return [text];
-      references.push({ kind: 'fallback', position: index + 1 });
-      return target === null ? [] : [target];
-    });
-    dropIfEmpty(models, 'fallback');
-  }
-  if (isRecord(models['roles'])) {
-    for (const job of Object.keys(models['roles'])) rewrite(models['roles'], job, { kind: 'role', job });
-    dropIfEmpty(models, 'roles');
-  }
-  if (isRecord(document['autoMode'])) {
-    rewrite(document['autoMode'], 'classifier', { kind: 'classifier' });
-    dropIfEmpty(document, 'autoMode');
-  }
-  if (Array.isArray(models['billingChanges'])) {
-    models['billingChanges'] = (models['billingChanges'] as Json[]).flatMap((change) => {
-      const target = movedTo(change['model']);
-      if (target === undefined) return [change];
-      references.push({ kind: 'billing' });
-      return target === null ? [] : [{ ...change, model: target }];
-    });
-    dropIfEmpty(models, 'billingChanges');
-  }
+  rewriteList('fallback', (text, index) => {
+    const target = movedTo(text);
+    if (target === undefined) return undefined;
+    references.push({ kind: 'fallback', position: index + 1 });
+    return target === null ? [] : [target];
+  });
+  const roles = models['roles'];
+  if (isRecord(roles) && Object.keys(roles).filter((job) => rewrite(roles, job, { kind: 'role', job })).length > 0) dropIfEmpty(models, 'roles');
+  const autoMode = document['autoMode'];
+  if (isRecord(autoMode) && rewrite(autoMode, 'classifier', { kind: 'classifier' })) dropIfEmpty(document, 'autoMode');
+  rewriteList('billingChanges', (change) => {
+    const target = isRecord(change) ? movedTo(change['model']) : undefined;
+    if (target === undefined) return undefined;
+    references.push({ kind: 'billing' });
+    return target === null ? [] : [{ ...(change as Json), model: target }];
+  });
   return references;
 };
 
@@ -391,10 +389,13 @@ const allowBillingChange = (document: Json, state: State, operation: Extract<Mod
 
 const forbidBillingChange = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'forbidBillingChange' }>): Applied => {
   if (operation.model !== undefined) requireConfigured(state, operation.model);
-  const models = modelsIn(document);
+  const models = document['models'];
   const same = sameBillingChange(state, operation);
-  models['billingChanges'] = billingChangesIn(document).filter((change) => !same(change));
-  dropIfEmpty(models, 'billingChanges');
+  const written = isRecord(models) ? models['billingChanges'] : undefined;
+  if (isRecord(models) && Array.isArray(written) && (written as Json[]).some(same)) {
+    models['billingChanges'] = (written as Json[]).filter((change) => !same(change));
+    dropIfEmpty(models, 'billingChanges');
+  }
   return { summary: () => `Requests may no longer fall from ${operation.from} to ${operation.to}.` };
 };
 
@@ -405,26 +406,30 @@ const SESSION_MODEL_TEXT = "the session's model";
 const setRole = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'setRole' }>): Applied => {
   const { job, model } = operation;
   if (!MODEL_ROLES.includes(job)) refuse('invalid_value', `"${String(job)}" is not a job a model can be chosen for; the jobs are ${MODEL_ROLES.join(', ')}.`);
-  const models = modelsIn(document);
-  const roles = recordAt(models, 'roles');
   if (model === null) {
-    delete roles[job];
-    dropIfEmpty(models, 'roles');
+    const models = document['models'];
+    const written = isRecord(models) ? models['roles'] : undefined;
+    if (isRecord(models) && isRecord(written) && Object.hasOwn(written, job)) {
+      delete written[job];
+      dropIfEmpty(models, 'roles');
+    }
     return { summary: () => `${JOB_LABELS[job]} now uses ${SESSION_MODEL_TEXT}.` };
   }
-  roles[job] = requireConfigured(state, model);
+  recordAt(modelsIn(document), 'roles')[job] = requireConfigured(state, model);
   return { summary: (after) => `${JOB_LABELS[job]} now uses ${displayIn(after, model)}.` };
 };
 
 const setClassifier = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'setClassifier' }>): Applied => {
   const { model } = operation;
-  const autoMode = recordAt(document, 'autoMode');
   if (model === null) {
-    delete autoMode['classifier'];
-    dropIfEmpty(document, 'autoMode');
+    const written = document['autoMode'];
+    if (isRecord(written) && Object.hasOwn(written, 'classifier')) {
+      delete written['classifier'];
+      dropIfEmpty(document, 'autoMode');
+    }
     return { summary: () => `The auto-mode classifier is now ${SESSION_MODEL_TEXT}.` };
   }
-  autoMode['classifier'] = requireConfigured(state, model);
+  recordAt(document, 'autoMode')['classifier'] = requireConfigured(state, model);
   return { summary: (after) => `The auto-mode classifier is now ${displayIn(after, model)}.` };
 };
 
@@ -491,6 +496,73 @@ const TIMEOUT_FIELDS: Readonly<Record<string, FieldRow>> = {
   'models.idleTimeoutMs': { label: 'Wait without any data', kind: 'duration' },
 };
 
+const CONNECTION_FIELD_KEYS = ['adapter', 'baseUrl', 'socketPath', 'apiKeyEnv', 'apiKeySecret', 'plan.account', 'server', 'binary', 'readyTimeoutMs', 'billing', 'apiVersion', 'answers', 'idempotencyKeyHeader', 'maxConcurrency', 'admissionTimeoutMs'] as const;
+
+const ENTRY_FIELD_KEYS = [
+  'toolCalling',
+  'outputBoundField',
+  'maxConcurrency',
+  'admissionTimeoutMs',
+  'capabilities.contextWindow',
+  'capabilities.maxOutputTokens',
+  'capabilities.structuredOutput',
+  'capabilities.jsonMode',
+  'capabilities.streaming',
+  'capabilities.stopSequences',
+  'capabilities.imageInput',
+  'capabilities.imageTokens.pixelsPerToken',
+  'capabilities.imageTokens.maxTokens',
+  'capabilities.imageTokens.minTokens',
+  'capabilities.parallelToolCalls',
+  'capabilities.allowedTools',
+  'capabilities.schemaDialect',
+  'capabilities.tokenCounting',
+  'capabilities.tokenErrorRatio',
+  'capabilities.usageReported',
+  'capabilities.reasoning.*',
+  'capabilities.promptCache.*',
+  'capabilities.sampling.*',
+  'capabilities.source',
+  'capabilities.outputBoundField',
+  'capabilities.systemRole',
+  'capabilities.toolPlacement',
+  'capabilities.inputKinds.*',
+] as const;
+
+const ENTRY_ID_FIELD = 'id';
+
+const MODEL_FIELD_KEYS: readonly string[] = [ENTRY_ID_FIELD, ...ENTRY_FIELD_KEYS];
+
+const FAMILY_MARK = '.*';
+
+const FIELD_SEGMENT_PATTERN = /^[A-Za-z][A-Za-z0-9]*$/;
+
+const fieldIsIn = (table: readonly string[], keyPath: readonly string[]): boolean => {
+  if (keyPath.length === 0 || !keyPath.every((segment) => FIELD_SEGMENT_PATTERN.test(segment))) return false;
+  const field = keyPath.join('.');
+  return table.some((key) => {
+    const family = key.endsWith(FAMILY_MARK);
+    const name = family ? key.slice(0, -FAMILY_MARK.length) : key;
+    return name === field || name.startsWith(`${field}.`) || (family && field.startsWith(`${name}.`));
+  });
+};
+
+const FIELD_SUBJECTS = { model: MODEL_FIELD_KEYS, server: CONNECTION_FIELD_KEYS } as const;
+
+export type FieldSubject = keyof typeof FIELD_SUBJECTS;
+
+const tableFieldOf = (subject: FieldSubject, keyPath: readonly string[]): string => {
+  const field = keyPath.join('.');
+  if (fieldIsIn(FIELD_SUBJECTS[subject], keyPath)) return field;
+  return refuse('invalid_value', `"${field}" is not a field of a ${subject} that can be set. The fields are: ${FIELD_SUBJECTS[subject].join(', ')}.`);
+};
+
+export const settableFieldPath = (subject: FieldSubject, field: string): string[] => {
+  const keyPath = field.split('.');
+  tableFieldOf(subject, keyPath);
+  return keyPath;
+};
+
 const rowIn = (table: Readonly<Record<string, FieldRow>>, field: string): FieldRow | undefined => {
   const parts = field.split('.');
   for (let length = parts.length; length > 0; length -= 1) {
@@ -537,12 +609,24 @@ const setAt = (holder: Json, keyPath: readonly string[], value: unknown): void =
   else holder[key] = structuredClone(value);
 };
 
-const setModelField = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'setModelField' }>): Applied => {
+const renameModel = (document: Json, state: State, model: string, value: unknown, kinds: ServerKinds): Applied => {
+  if (typeof value !== 'string') return refuse('invalid_value', 'A model needs an id. To take the model out of your settings, remove it.');
+  const place = placeOf(state, model);
+  const connection = connectionsIn(document)[place.connection] as Json;
+  (entriesIn(connection)[place.entry] as Json)[ENTRY_ID_FIELD] = withDefaultTag(value, tagOf(connection, kinds));
+  const references = rewriteMoved(document, state, kinds);
+  const before = displayIn(state, model);
+  return { references, summary: (after) => `Renamed ${before} to ${displayIn(after, after.grid[place.connection]?.[place.entry] as string)}.` };
+};
+
+const setModelField = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'setModelField' }>, ports: ModelsEditPorts): Applied => {
   const { model, value } = operation;
   const place = placeOf(state, model);
+  const written = tableFieldOf('model', operation.path);
+  if (written === ENTRY_ID_FIELD) return renameModel(document, state, model, value, ports.kinds);
   const entry = entriesIn(connectionsIn(document)[place.connection] as Json)[place.entry] as Json;
   setAt(entry, operation.path, value);
-  const field = `${ENTRY_FIELD_PREFIX}${operation.path.join('.')}`;
+  const field = `${ENTRY_FIELD_PREFIX}${written}`;
   const canon = (after: State): string => after.grid[place.connection]?.[place.entry] as string;
   if (value === undefined) return { summary: (after) => `Cleared ${fieldLabel(field)} of ${displayIn(after, canon(after))}.` };
   return { summary: (after) => `Set ${fieldLabel(field)} of ${displayIn(after, canon(after))} to ${fieldValueText(field, value)}.` };
@@ -559,7 +643,7 @@ const reservedRefusal = (name: unknown, adapter: unknown, kinds: ServerKinds): v
 const setConnectionField = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'setConnectionField' }>, ports: ModelsEditPorts): Applied => {
   const index = connectionIndexOf(state, operation.provider);
   const connection = connectionsIn(document)[index] as Json;
-  const field = operation.path.join('.');
+  const field = tableFieldOf('server', operation.path);
   const { value } = operation;
   if (field === 'adapter') reservedRefusal(connection['provider'], value, ports.kinds);
   setAt(connection, operation.path, value);
@@ -660,7 +744,7 @@ const apply = (document: Json, state: State, operation: ModelsOperation, ports: 
     case 'setClassifier':
       return setClassifier(document, state, operation);
     case 'setModelField':
-      return setModelField(document, state, operation);
+      return setModelField(document, state, operation, ports);
     case 'setConnectionField':
       return setConnectionField(document, state, operation, ports);
     case 'setProvider':
@@ -747,39 +831,6 @@ export type ModelsSettingWriter = { path: string; operations: readonly ModelsOpe
 const CONNECTION_PATH = 'models.connections[]';
 const ENTRY_PATH = `${CONNECTION_PATH}.models[]`;
 
-const CONNECTION_FIELD_KEYS = ['adapter', 'baseUrl', 'socketPath', 'apiKeyEnv', 'apiKeySecret', 'plan.account', 'server', 'binary', 'readyTimeoutMs', 'billing', 'apiVersion', 'answers', 'idempotencyKeyHeader', 'maxConcurrency', 'admissionTimeoutMs'] as const;
-
-const ENTRY_FIELD_KEYS = [
-  'toolCalling',
-  'outputBoundField',
-  'maxConcurrency',
-  'admissionTimeoutMs',
-  'capabilities.contextWindow',
-  'capabilities.maxOutputTokens',
-  'capabilities.structuredOutput',
-  'capabilities.jsonMode',
-  'capabilities.streaming',
-  'capabilities.stopSequences',
-  'capabilities.imageInput',
-  'capabilities.imageTokens.pixelsPerToken',
-  'capabilities.imageTokens.maxTokens',
-  'capabilities.imageTokens.minTokens',
-  'capabilities.parallelToolCalls',
-  'capabilities.allowedTools',
-  'capabilities.schemaDialect',
-  'capabilities.tokenCounting',
-  'capabilities.tokenErrorRatio',
-  'capabilities.usageReported',
-  'capabilities.reasoning.*',
-  'capabilities.promptCache.*',
-  'capabilities.sampling.*',
-  'capabilities.source',
-  'capabilities.outputBoundField',
-  'capabilities.systemRole',
-  'capabilities.toolPlacement',
-  'capabilities.inputKinds.*',
-] as const;
-
 const REMOVAL_WRITER = { operations: ['removeConnection', 'removeModel'], inSession: ['/models'], shell: ['momonga models remove-server', 'momonga models remove'] } as const;
 
 export const MODELS_SETTING_WRITERS: readonly ModelsSettingWriter[] = [
@@ -788,7 +839,7 @@ export const MODELS_SETTING_WRITERS: readonly ModelsSettingWriter[] = [
   { path: CONNECTION_PATH, operations: ['removeConnection'], inSession: ['/models'], shell: ['momonga models remove-server'] },
   { path: 'models.servers.*', operations: ['removeConnection', 'declareServer', 'setServerField', 'forgetServer'], inSession: ['/models'], shell: ['momonga models remove-server --forget-program', 'momonga models add-program', 'momonga models set-program', 'momonga models forget-program'] },
   { path: `${CONNECTION_PATH}.provider`, operations: ['setProvider'], inSession: ['/models'], shell: ['momonga models name'] },
-  { path: `${ENTRY_PATH}.id`, operations: ['addModel', 'removeModel'], inSession: ['/models'], shell: ['momonga models add', 'momonga models remove'] },
+  { path: `${ENTRY_PATH}.${ENTRY_ID_FIELD}`, operations: ['addModel', 'removeModel', 'setModelField'], inSession: ['/models'], shell: ['momonga models add', 'momonga models remove', 'momonga models set'] },
   ...ENTRY_FIELD_KEYS.map((key) => ({ path: `${ENTRY_PATH}.${key}`, operations: ['setModelField'] as const, inSession: ['/models'], shell: ['momonga models set'] })),
   { path: 'models.start', operations: ['setStart', ...REMOVAL_WRITER.operations], inSession: ['/models start', '/model --start', ...REMOVAL_WRITER.inSession], shell: ['momonga models start', ...REMOVAL_WRITER.shell] },
   { path: 'models.fallback[]', operations: ['setFallback', ...REMOVAL_WRITER.operations], inSession: ['/models fallback', ...REMOVAL_WRITER.inSession], shell: ['momonga models fallback', ...REMOVAL_WRITER.shell] },

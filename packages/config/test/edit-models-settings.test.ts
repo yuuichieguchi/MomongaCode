@@ -611,3 +611,104 @@ describe('the plan is judged with the plan profiles of the loader (P-159)', () =
     expect(documentOf(home)).toEqual({ models: { connections: [S3_PLAN] } });
   });
 });
+
+describe('a field writer changes only the fields of its table, and a rewrite keeps every key it did not change', () => {
+  const MODEL_FIELDS_SENTENCE = 'is not a field of a model that can be set. The fields are: id, toolCalling, outputBoundField, maxConcurrency, admissionTimeoutMs, capabilities.contextWindow,';
+  const SERVER_FIELDS_SENTENCE = 'is not a field of a server that can be set. The fields are: adapter, baseUrl, socketPath, apiKeyEnv, apiKeySecret, plan.account, server, binary, readyTimeoutMs, billing, apiVersion, answers, idempotencyKeyHeader, maxConcurrency, admissionTimeoutMs.';
+
+  it('setting the id of a model that is referred to renames it and rewrites every reference in the same write', async () => {
+    const home = homeWith(REFERRED);
+    const result = await editModels(home, [op('setModelField', { model: LMSTUDIO_GEMMA, path: ['id'], value: 'gemma-3-12b' })]);
+    expect(result.summaries).toEqual(['Renamed lmstudio/gemma-3-4b to gemma-3-12b.']);
+    const renamed = 'lmstudio/gemma-3-12b';
+    const document = documentOf(home);
+    expect(referencesIn(document)).toMatchObject({
+      start: renamed,
+      fallback: [OLLAMA_GEMMA, renamed],
+      roles: { compaction: renamed },
+      classifier: renamed,
+      billingChanges: [{ from: 'local', to: 'metered' }, { from: 'local', to: 'plan', model: renamed }],
+    });
+    expect(await loads(home)).toEqual([OLLAMA_GEMMA, renamed]);
+    const plan = planned(REFERRED, [op('setModelField', { model: LMSTUDIO_GEMMA, path: ['id'], value: 'gemma-3-12b' })]);
+    expect(plan.references).toHaveLength(FIVE_REFERENCES.length);
+    expect(plan.references).toEqual(expect.arrayContaining(FIVE_REFERENCES));
+  });
+
+  it('the id of a model cannot be cleared', async () => {
+    const refused = await refusalOfEdit(editModels(homeWith(REFERRED), [op('setModelField', { model: LMSTUDIO_GEMMA, path: ['id'], value: undefined })]));
+    expect(refused).toEqual({ code: 'invalid_value', message: 'A model needs an id. To take the model out of your settings, remove it.' });
+  });
+
+  it.each([[['nope']], [['capabilities', 'nope']], [['__proto__', 'polluted']], [['capabilities', '__proto__']], [['capabilities', 'reasoning', '__proto__', 'polluted']], [['constructor', 'prototype', 'polluted']], [[]]])(
+    'setModelField refuses the path %j with the fields of the table and writes nothing',
+    async (keyPath) => {
+      const home = homeWith(BASE);
+      const before = textOf(home);
+      const refused = await refusalOfEdit(editModels(home, [op('setModelField', { model: LMSTUDIO_GEMMA, path: keyPath, value: true })]));
+      expect(refused.code).toBe('invalid_value');
+      expect(refused.message).toContain(`"${keyPath.join('.')}" ${MODEL_FIELDS_SENTENCE}`);
+      expect(textOf(home)).toBe(before);
+      expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
+    },
+  );
+
+  it.each([[['nope']], [['provider']], [['models']], [['__proto__', 'polluted']], [['plan', 'profile']]])('setConnectionField refuses the path %j with the fields of the table and writes nothing', async (keyPath) => {
+    const home = homeWith(BASE);
+    const before = textOf(home);
+    const refused = await refusalOfEdit(editModels(home, [op('setConnectionField', { provider: 'lmstudio', path: keyPath, value: 'x' })]));
+    expect(refused).toEqual({ code: 'invalid_value', message: `"${keyPath.join('.')}" ${SERVER_FIELDS_SENTENCE}` });
+    expect(textOf(home)).toBe(before);
+    expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
+  });
+
+  it('a whole object of fields and a field below a family of fields are still written', async () => {
+    const home = homeWith(BASE);
+    await editModels(home, [
+      op('setModelField', { model: LMSTUDIO_GEMMA, path: ['capabilities'], value: { contextWindow: 8192, maxOutputTokens: 512 } }),
+      op('setModelField', { model: LMSTUDIO_GEMMA, path: ['capabilities', 'sampling'], value: { accepts: 'without_thinking' } }),
+      op('setModelField', { model: LMSTUDIO_GEMMA, path: ['capabilities', 'sampling', 'topP'], value: { min: 0.1, max: 1 } }),
+      op('setModelField', { model: LMSTUDIO_GEMMA, path: ['capabilities', 'sampling', 'topP', 'max'], value: 0.9 }),
+    ]);
+    const entry = (connectionsOf(home)[1]?.['models'] as Record<string, unknown>[])[0] as Record<string, unknown>;
+    expect(entry['capabilities']).toEqual({ contextWindow: 8192, maxOutputTokens: 512, sampling: { accepts: 'without_thinking', topP: { min: 0.1, max: 0.9 } } });
+  });
+
+  it('a rename keeps the empty keys it did not change, in their place', async () => {
+    const written = { autoMode: {}, models: { fallback: [], roles: {}, billingChanges: [], connections: S2.models.connections } };
+    const home = homeWith(written);
+    await editModels(home, [op('setProvider', { provider: 'lmstudio', name: 'studio' })]);
+    const document = documentOf(home);
+    expect(Object.keys(document)).toEqual(['autoMode', 'models']);
+    expect(Object.keys(document['models'] as object)).toEqual(['fallback', 'roles', 'billingChanges', 'connections']);
+    expect(document).toMatchObject({ autoMode: {}, models: { fallback: [], roles: {}, billingChanges: [] } });
+    await editModels(home, [op('removeModel', { model: OLLAMA_GEMMA })]);
+    expect(documentOf(home)).toMatchObject({ autoMode: {}, models: { fallback: [], roles: {}, billingChanges: [] } });
+  });
+
+  it('clearing a job, the classifier or a billing change that is not written leaves an empty key as it was', async () => {
+    const written = { autoMode: {}, models: { roles: {}, billingChanges: [], connections: S2.models.connections } };
+    const home = homeWith(written);
+    const before = textOf(home);
+    await editModels(home, [op('setRole', { job: 'compaction', model: null }), op('setClassifier', { model: null }), op('forbidBillingChange', { from: 'local', to: 'metered' })]);
+    expect(textOf(home)).toBe(before);
+  });
+
+  it('a removal still deletes the key whose last entry it removed', async () => {
+    const home = homeWith(REFERRED);
+    await editModels(home, [op('removeModel', { model: LMSTUDIO_GEMMA })]);
+    expect(referencesIn(documentOf(home))).toEqual(AFTER_REMOVAL);
+    expect(documentOf(home)).not.toHaveProperty('autoMode');
+    expect(modelsOf(home)).not.toHaveProperty('roles');
+  });
+
+  it('a connection draft keeps the keys of its adapter', async () => {
+    const keyed: config.ConnectionDraft = { adapter: 'anthropic', baseUrl: 'https://api.anthropic.com', apiKeyEnv: 'ANTHROPIC_API_KEY' };
+    const plan: config.ConnectionDraft = { adapter: 'open-responses', plan: { profile: 'chatgpt' } };
+    const managed: config.ConnectionDraft = { adapter: 'managed', server: 'fm' };
+    expect([keyed.adapter, plan.adapter, managed.adapter]).toEqual(['anthropic', 'open-responses', 'managed']);
+    const home = homeWith();
+    await editModels(home, [addModel(keyed, { id: 'claude-sonnet-4-5', capabilities: { contextWindow: 200000, maxOutputTokens: 64000 } })]);
+    expect(connectionsOf(home)[0]).toMatchObject({ adapter: 'anthropic', apiKeyEnv: 'ANTHROPIC_API_KEY' });
+  });
+});
