@@ -178,6 +178,8 @@ export type Harness = {
   holdNextBackoff(): ReachedGate;
   failNextOutbound(error: Error): void;
   holdNextOutbound(): { reached: Promise<void>; fail(error: Error): void };
+  delayNextOutbound(): { reached: Promise<void>; release(): void };
+  another(options?: { accounts?: Array<{ profile: string; account: string }>; store?: ListableCredentialStore }): Promise<PlanSessions>;
   pendingBounds(): number[];
   fireLatestBound(ms: number): void;
   timing: LimitTiming;
@@ -225,6 +227,8 @@ export const startHarness = async (
   const backoffArrivals: Array<() => void> = [];
   const outboundFailures: Error[] = [];
   const outboundHolds: Array<{ arrive(): void; failed: Promise<never> }> = [];
+  const outboundDelays: Array<{ arrive(): void; released: Promise<void> }> = [];
+  const others: PlanSessions[] = [];
   const warnings: string[] = [];
   const fetchUrls: string[] = [];
   const events: RecordedPlanEvent[] = [];
@@ -296,7 +300,10 @@ export const startHarness = async (
           hold.arrive();
           return hold.failed;
         }
-        return use(fetchPort);
+        const delay = outboundDelays.shift();
+        if (delay === undefined) return use(fetchPort);
+        delay.arrive();
+        return delay.released.then(() => use(fetchPort));
       },
       sleep: (options.wrapSleep ?? ((inner: PlanSleep) => inner))((ms, signal) => {
         if (ms !== TOKEN_ATTEMPT_BOUND_MS && ms !== REVOCATION_ATTEMPT_BOUND_MS) {
@@ -384,6 +391,23 @@ export const startHarness = async (
       outboundHolds.push({ arrive, failed });
       return { reached, fail };
     },
+    delayNextOutbound: () => {
+      let arrive = (): void => undefined;
+      let release = (): void => undefined;
+      const reached = new Promise<void>((resolve) => {
+        arrive = resolve;
+      });
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      outboundDelays.push({ arrive, released });
+      return { reached, release };
+    },
+    another: async (anotherOptions = {}) => {
+      const opened = await open(anotherOptions.accounts ?? [], anotherOptions.store ?? store);
+      others.push(opened);
+      return opened;
+    },
     pendingBounds: () => bounds.map((bound) => bound.ms),
     fireLatestBound: (ms) => {
       const index = bounds.map((bound) => bound.ms).lastIndexOf(ms);
@@ -408,7 +432,7 @@ export const startHarness = async (
       return harness.sessions;
     },
     close: async () => {
-      await harness.sessions.close();
+      await Promise.all([harness.sessions, ...others.splice(0)].map((opened) => opened.close()));
       await auth.close();
       await fs.rm(home, { recursive: true, force: true });
     },

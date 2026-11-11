@@ -31,7 +31,8 @@ import { ownEntry } from './own-entry.ts';
 import { isDateTime } from './pause-end.ts';
 import { parsePlanJson } from './plan-json.ts';
 import { planProfileNamed } from './profiles.ts';
-import { endedByOperation, isTransientStoreFailure, recordAccess, storeReadFailure, storeWriteFailure, withRecord } from './record-io.ts';
+import { endedByOperation, isTransientStoreFailure, recordAccess, refusedEntry, storeReadFailure, storeWriteFailure, withRecord } from './record-io.ts';
+import type { RecordLockRefusal } from './record-io.ts';
 import { grantsScope, lazyRefreshMarginMs, refreshRequiredFor, sendRefresh, sendWasInterrupted, tokenResponseProblem } from './refresh.ts';
 import type { PlanFetch, PlanSleep, RefreshEnd, RefreshTokens } from './refresh.ts';
 import { revokeRefreshToken } from './revoke.ts';
@@ -150,6 +151,7 @@ type Account = {
   profile: PlanProfile;
   label: string;
   loaded: Loaded | undefined;
+  stored: { text: string | undefined } | undefined;
   loading: SharedCall<void> | undefined;
   dirty: boolean;
   unwritable: string | undefined;
@@ -162,7 +164,7 @@ type Account = {
   users: number;
 };
 
-type RecordLock = <T>(account: Account, action: (entry: CredentialEntry) => Promise<T>) => Promise<T>;
+type RecordLock = <T>(account: Account, action: (entry: CredentialEntry, refusal: RecordLockRefusal) => Promise<T>) => Promise<T>;
 
 class UnloadedWhileWaiting extends Error {
   constructor() {
@@ -388,6 +390,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       profile: profileOf(profileId),
       label,
       loaded: undefined,
+      stored: undefined,
       loading: undefined,
       dirty: false,
       unwritable: undefined,
@@ -449,21 +452,76 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       signal,
     );
 
-  const writeRecord = (account: Account, entry: CredentialEntry, record: PlanRecord, signal: AbortSignal): Promise<void> =>
-    recordAccess('write', sessionOf(account), () => entry.write(serialize(record)), signal);
+  const writeRecord = async (account: Account, entry: CredentialEntry, record: PlanRecord, signal: AbortSignal): Promise<void> => {
+    const text = serialize(record);
+    await recordAccess('write', sessionOf(account), () => entry.write(text), signal);
+    account.stored = { text };
+  };
+
+  const markUnreadable = (account: Account, error: unknown): void => {
+    const cause = describeError(causeOf(error));
+    const known = account.loaded?.kind === 'unreadable' && account.loaded.cause === cause;
+    account.loaded = { kind: 'unreadable', cause };
+    if (!known) options.warn(`${sessionOf(account)} cannot be read: ${cause}`);
+  };
+
+  const takeStored = (account: Account, text: string | undefined): void => {
+    account.stored = { text };
+    account.dirty = false;
+    if (text === undefined) {
+      account.loaded = { kind: 'absent' };
+      return;
+    }
+    let record: PlanRecord;
+    try {
+      record = parseRecord(text);
+    } catch (error) {
+      markUnreadable(account, error);
+      return;
+    }
+    adopt(account, record, 'lazy');
+    if (unfinishedSignOutOf(account) !== undefined && account.resumedSignOut === undefined) resumeSignOut(account);
+  };
+
+  const storedIsHeld = (account: Account, text: string | undefined): boolean => account.loaded !== undefined && account.stored !== undefined && account.stored.text === text;
+
+  type Reread = { entry: CredentialEntry; refusal: RecordLockRefusal };
+
+  const reread = async (account: Account, entry: CredentialEntry, signal: AbortSignal): Promise<Reread> => {
+    let text: string | undefined;
+    try {
+      text = await recordAccess('read', sessionOf(account), () => entry.read(), signal);
+    } catch (error) {
+      if (endedByOperation(error, signal)) throw error;
+      const refusal = storeWriteFailure(sessionOf(account), causeOf(error));
+      return { entry: refusedEntry(refusal, error), refusal };
+    }
+    if (!storedIsHeld(account, text)) takeStored(account, text);
+    return { entry: { read: () => Promise.resolve(text), write: (value) => entry.write(value), remove: () => entry.remove() }, refusal: undefined };
+  };
 
   const lockedRecord =
     (signal: AbortSignal): RecordLock =>
     (account, action) =>
-      withRecord(store, account.key, sessionOf(account), action, signal);
+      withRecord(
+        store,
+        account.key,
+        sessionOf(account),
+        async (entry, refusal) => {
+          if (refusal !== undefined) return action(entry, refusal);
+          const held = await reread(account, entry, signal);
+          return action(held.entry, held.refusal);
+        },
+        signal,
+      );
 
   const lockedSinceLoad =
     (signal: AbortSignal): RecordLock =>
     (account, action) => {
       const unloads = account.unloads;
-      return lockedRecord(signal)(account, async (entry) => {
+      return lockedRecord(signal)(account, async (entry, refusal) => {
         if (account.unloads !== unloads) throw new UnloadedWhileWaiting();
-        return action(entry);
+        return action(entry, refusal);
       });
     };
 
@@ -478,21 +536,17 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   };
 
   const loadNow = async (account: Account, signal: AbortSignal): Promise<void> => {
+    let text: string | undefined;
     try {
-      const record = await readRecordOf(account, () => store.read(account.key, signal), signal);
+      text = await recordAccess('read', sessionOf(account), () => store.read(account.key, signal), signal);
       signal.throwIfAborted();
-      if (record === undefined) {
-        account.loaded = { kind: 'absent' };
-        return;
-      }
-      adopt(account, record, 'lazy');
-      if (record.state === 'signing_out') resumeSignOut(account);
     } catch (error) {
       if (endedByOperation(error, signal)) throw error;
-      const cause = describeError(causeOf(error));
-      account.loaded = { kind: 'unreadable', cause };
-      options.warn(`${sessionOf(account)} cannot be read: ${cause}`);
+      account.stored = undefined;
+      markUnreadable(account, error);
+      return;
     }
+    takeStored(account, text);
   };
 
   const leftLoadOf = (error: unknown, signal: AbortSignal): unknown =>
@@ -530,6 +584,11 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   };
 
   const recordOf = (account: Account): PlanRecord | undefined => (account.loaded?.kind === 'record' ? account.loaded.record : undefined);
+
+  const unfinishedSignOutOf = (account: Account): PlanRecord | undefined => {
+    const record = recordOf(account);
+    return record?.state === 'signing_out' ? record : undefined;
+  };
 
   const viewOf = (account: Account): AccountView => {
     const loaded = account.loaded ?? { kind: 'absent' as const };
@@ -847,13 +906,14 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
 
   const unloadForResume = (account: Account): void => {
     account.loaded = undefined;
+    account.stored = undefined;
     account.loading = undefined;
     account.resumedSignOut = undefined;
     account.unloads += 1;
   };
 
   const unloadUnfinishedSignOut = (account: Account): void => {
-    if (recordOf(account)?.state === 'signing_out') unloadForResume(account);
+    if (unfinishedSignOutOf(account) !== undefined) unloadForResume(account);
   };
 
   const signOutUnderLock = async (fetch: PlanFetch, account: Account, progress: SignOutProgress, entry: CredentialEntry, signal: AbortSignal): Promise<SignOutReport> => {
@@ -960,8 +1020,14 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
 
   const moveActive = (ref: NamedPlanAccountRef): Promise<void> =>
     pointerWrites.run(async () => {
-      await heal();
-      const next: ActivePointer = { ...Object.fromEntries(activeLabels), [ref.profile]: ref.account };
+      let written: ActivePointer;
+      try {
+        written = await readActivePointer(fileSystem, paths.active);
+      } catch (error) {
+        pointerProblem = describeError(error);
+        throw storeReadFailure(pointerProblem, error);
+      }
+      const next: ActivePointer = { ...written, [ref.profile]: ref.account };
       try {
         await writeActivePointer(fileSystem, paths.active, next);
       } catch (error) {

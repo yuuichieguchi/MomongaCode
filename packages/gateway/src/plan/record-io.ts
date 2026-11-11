@@ -22,17 +22,19 @@ export const recordAccess = async <T>(kind: 'read' | 'write', what: string, acti
   }
 };
 
-const refusedEntry = (failure: PlanCredentialError): CredentialEntry => ({
-  read: () => Promise.reject(failure),
+export const refusedEntry = (failure: PlanCredentialError, readFailure: unknown = failure): CredentialEntry => ({
+  read: () => Promise.reject(readFailure),
   write: () => Promise.reject(failure),
   remove: () => Promise.reject(failure),
 });
+
+export type RecordLockRefusal = PlanCredentialError | undefined;
 
 export const withRecord = async <T>(
   store: Pick<CredentialStore, 'withKey'>,
   key: string,
   what: string,
-  action: (entry: CredentialEntry) => Promise<T>,
+  action: (entry: CredentialEntry, refusal: RecordLockRefusal) => Promise<T>,
   signal: AbortSignal,
 ): Promise<T> => {
   let started = false;
@@ -41,12 +43,13 @@ export const withRecord = async <T>(
       key,
       (entry) => {
         started = true;
-        return action(entry);
+        return action(entry, undefined);
       },
       signal,
     );
   } catch (error) {
     if (started || endedByOperation(error, signal)) throw error;
-    return action(refusedEntry(storeWriteFailure(what, error)));
+    const refusal = storeWriteFailure(what, error);
+    return action(refusedEntry(refusal), refusal);
   }
 };
