@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import { constants } from 'node:fs';
 import os from 'node:os';
-import { hostPaths } from '@momonga/foundation';
+import { hostPaths, settledOrAborted } from '@momonga/foundation';
 import { INSTRUCTION_FILE_LIMIT_BYTES } from './instructions.ts';
 import type { InstructionReader } from './types.ts';
 
@@ -42,17 +42,20 @@ const withRegularFile = async <T>(
 export const createFsInstructionReader = (signal: AbortSignal): InstructionReader => ({
   contains: (directory, candidate) => hostPaths(signal).comparableContains(directory, candidate),
   read: (filePath) =>
-    withRegularFile(filePath, async (realPath, handle) => {
-      const buffer = new Uint8Array(INSTRUCTION_FILE_LIMIT_BYTES + UTF8_MAX_CHAR_BYTES);
-      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-      return { realPath, text: new TextDecoder().decode(buffer.subarray(0, bytesRead)) };
-    }),
-  exists: async (filePath) => (await withRegularFile(filePath, async () => true)) === true,
+    settledOrAborted(
+      withRegularFile(filePath, async (realPath, handle) => {
+        const buffer = new Uint8Array(INSTRUCTION_FILE_LIMIT_BYTES + UTF8_MAX_CHAR_BYTES);
+        const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+        return { realPath, text: new TextDecoder().decode(buffer.subarray(0, bytesRead)) };
+      }),
+      signal,
+    ),
+  exists: async (filePath) => (await settledOrAborted(withRegularFile(filePath, async () => true), signal)) === true,
   realpath: async (filePath) => {
     try {
-      return await fs.realpath(filePath);
+      return await settledOrAborted(fs.realpath(filePath), signal);
     } catch (error) {
-      if (isAbsent(error)) return undefined;
+      if (!signal.aborted && isAbsent(error)) return undefined;
       throw error;
     }
   },

@@ -211,6 +211,7 @@ export const createTuiBackend = (
         env: await environmentSnapshot(ports, closing.signal),
         ...(chosenMode === undefined ? {} : { permissionMode: chosenMode }),
         ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
+        ...(options.sandboxNetwork === undefined ? {} : { sandboxNetwork: options.sandboxNetwork }),
         ...(chosen === undefined ? {} : { model: chosen }),
       });
       return adopt(created.session);

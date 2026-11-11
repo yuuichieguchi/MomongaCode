@@ -1,8 +1,18 @@
-import { DEFAULT_FORGET_AFTER_DAYS, DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS, parseRule } from '@momonga/config';
+import { DEFAULT_FORGET_AFTER_DAYS, DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS, defaultContextSettings, parseRule } from '@momonga/config';
 import type { PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
 import type { HooksSettings } from '@momonga/protocol';
 import type { SettingsPort } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
+
+export const TOKEN_SETTINGS_OFF: ResolvedContextSettings = {
+  adaptiveBudget: false,
+  autoCompact: true,
+  cachePrefix: false,
+  outputFormatters: [],
+  loopGuidance: false,
+  observedCapacity: false,
+  unboundedOutputReserve: false,
+};
 
 export type FakeSettings = SettingsPort & {
   stored: { effect: 'allow' | 'deny'; rule: string }[];
@@ -33,7 +43,7 @@ export const createFakeSettings = (layout: { home: string; project: string }): F
     hooksValue: {},
     verificationValue: { commands: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS], conditions: [], required: false },
     memoryValue: { reflection: { enabled: false }, forgetAfterDays: DEFAULT_FORGET_AFTER_DAYS, repositoryFacts: false },
-    contextValue: { adaptiveBudget: false, autoCompact: true, cachePrefix: false, outputFormatters: [], loopGuidance: false, observedCapacity: false, unboundedOutputReserve: false },
+    contextValue: defaultContextSettings(),
     toolsValue: { deferral: false, conciseDescriptions: false, ripgrep: 'bundled' },
     classifierModel: undefined,
     hooks: async () => settings.hooksValue,

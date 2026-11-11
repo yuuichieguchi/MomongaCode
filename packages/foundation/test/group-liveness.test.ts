@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { KILL_CONFIRM_MS, ProbeFailedError, canStillRun, createProcessGroupPort, groupTerminationBoundMs, reconcileProcessGroup, terminateGroup } from '@momonga/foundation';
+import { KILL_CONFIRM_MS, POLL_INTERVAL_MS, ProbeFailedError, canStillRun, createProcessGroupPort, groupTerminationBoundMs, reconcileProcessGroup, terminateGroup } from '@momonga/foundation';
 import type { CommandOptions, CommandRunner, FileIdentity, ProcessGroupPort, ProcessInspector, ProcFs, Timing } from '@momonga/foundation';
 import { createFakeClock, createSteppingTiming, sleepDrivenTiming } from '@momonga/testkit';
 
@@ -101,9 +101,9 @@ describe('a group is alive while a member remains that can still run (EPERM from
     expect(await createProcessGroupPort('linux', { run: psRunner([], []), env: {}, procfs: fakeProcfs(running) }).alive(PGID, { signal: stop })).toBe(true);
   });
 
-  it('only the wait before SIGKILL depends on the grace; the window after it is K for every grace', () => {
+  it('only the wait before SIGKILL depends on the grace; the window after it is K and the two polls for every grace', () => {
     expect(groupTerminationBoundMs(100) - groupTerminationBoundMs(0)).toBe(100);
-    expect(groupTerminationBoundMs(0)).toBe(KILL_CONFIRM_MS);
+    expect(groupTerminationBoundMs(0)).toBe(KILL_CONFIRM_MS + 2 * POLL_INTERVAL_MS);
   });
 
   it('with a grace of 0 the group is checked once after SIGKILL', async () => {

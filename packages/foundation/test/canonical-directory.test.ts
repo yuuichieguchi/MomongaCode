@@ -99,12 +99,12 @@ describe('canonicalDirectory', () => {
     expect(result).toEqual({ ok: false, code: 'unresolvable', reason: expect.stringMatching(/^cannot be resolved: .+/) });
   });
 
-  it.skipIf(RUNNING_AS_ROOT)('rejects an unreadable path with "cannot be read"', () => {
+  it.skipIf(RUNNING_AS_ROOT)('rejects an unreadable path with "cannot be read" and the code of the refusal', () => {
     const root = makeDir();
     const locked = path.join(root, 'locked');
     fs.mkdirSync(locked);
     lock(locked);
-    expect(syncPaths.canonicalDirectory(locked)).toEqual({ ok: false, code: 'unreadable', reason: 'cannot be read' });
+    expect(syncPaths.canonicalDirectory(locked)).toEqual({ ok: false, code: 'unreadable', reason: expect.stringMatching(/^cannot be read: EACCES\b/) });
   });
 
   it.skipIf(RUNNING_AS_ROOT)('rejects a child under an unreadable parent with "cannot be resolved: ..."', () => {
@@ -154,7 +154,7 @@ describe('canonicalDirectory failure codes', () => {
     const locked = path.join(root, 'locked');
     fs.mkdirSync(locked);
     lock(locked);
-    expect(syncPaths.canonicalDirectory(locked)).toEqual({ ok: false, code: 'unreadable', reason: 'cannot be read' });
+    expect(syncPaths.canonicalDirectory(locked)).toEqual({ ok: false, code: 'unreadable', reason: expect.stringMatching(/^cannot be read: EACCES\b/) });
 
     const statTarget = path.join(root, 'stat-eacces');
     fs.mkdirSync(statTarget);
@@ -163,15 +163,16 @@ describe('canonicalDirectory failure codes', () => {
       if (String(target) === statTarget) throw errnoError('EACCES');
       return realStat(target, options);
     }) as typeof fs.statSync);
-    expect(syncPaths.canonicalDirectory(statTarget)).toEqual({ ok: false, code: 'unreadable', reason: 'cannot be read' });
+    expect(syncPaths.canonicalDirectory(statTarget)).toEqual({ ok: false, code: 'unreadable', reason: 'cannot be read: EACCES: injected' });
   });
 
-  it('never throws on a non-transient errno: injected EPERM in stat and ENOTSUP in access become unreadable', async () => {
+  it('answers unreadable with the code for an injected EPERM in stat, and rethrows an injected ENOTSUP in access with its code', () => {
     const root = makeDir();
     const statTarget = path.join(root, 'stat-eperm');
     fs.mkdirSync(statTarget);
     const accessTarget = path.join(root, 'access-enotsup');
     fs.mkdirSync(accessTarget);
+    const enotsup = errnoError('ENOTSUP');
     const realStat = fs.statSync;
     const realAccess = fs.accessSync;
     vi.spyOn(fs, 'statSync').mockImplementation(((target: fs.PathLike, options?: fs.StatSyncOptions) => {
@@ -179,17 +180,32 @@ describe('canonicalDirectory failure codes', () => {
       return realStat(target, options);
     }) as typeof fs.statSync);
     vi.spyOn(fs, 'accessSync').mockImplementation((target: fs.PathLike, mode?: number) => {
-      if (String(target) === accessTarget) throw errnoError('ENOTSUP');
+      if (String(target) === accessTarget) throw enotsup;
       realAccess(target, mode);
     });
-    let results: unknown[] = [];
-    await expect((async () => {
-      results = [syncPaths.canonicalDirectory(statTarget), syncPaths.canonicalDirectory(accessTarget)];
-    })()).resolves.toBeUndefined();
-    expect(results).toEqual([
-      { ok: false, code: 'unreadable', reason: 'cannot be read' },
-      { ok: false, code: 'unreadable', reason: 'cannot be read' },
-    ]);
+    expect(syncPaths.canonicalDirectory(statTarget)).toEqual({ ok: false, code: 'unreadable', reason: 'cannot be read: EPERM: injected' });
+    expect(() => syncPaths.canonicalDirectory(accessTarget)).toThrow(enotsup);
+  });
+
+  it('rethrows an injected ENOTSUP in stat and an injected EACCES in access becomes unreadable naming EACCES', () => {
+    const root = makeDir();
+    const statTarget = path.join(root, 'stat-enotsup');
+    fs.mkdirSync(statTarget);
+    const accessTarget = path.join(root, 'access-eacces');
+    fs.mkdirSync(accessTarget);
+    const enotsup = errnoError('ENOTSUP');
+    const realStat = fs.statSync;
+    const realAccess = fs.accessSync;
+    vi.spyOn(fs, 'statSync').mockImplementation(((target: fs.PathLike, options?: fs.StatSyncOptions) => {
+      if (String(target) === statTarget) throw enotsup;
+      return realStat(target, options);
+    }) as typeof fs.statSync);
+    vi.spyOn(fs, 'accessSync').mockImplementation((target: fs.PathLike, mode?: number) => {
+      if (String(target) === accessTarget) throw errnoError('EACCES');
+      realAccess(target, mode);
+    });
+    expect(() => syncPaths.canonicalDirectory(statTarget)).toThrow(enotsup);
+    expect(syncPaths.canonicalDirectory(accessTarget)).toEqual({ ok: false, code: 'unreadable', reason: 'cannot be read: EACCES: injected' });
   });
 
   it('throws the same error for a transient errno: an injected EMFILE in stat and an injected EIO in access', async () => {

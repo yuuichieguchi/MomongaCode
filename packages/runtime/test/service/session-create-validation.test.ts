@@ -276,12 +276,12 @@ describe('session create validation (fake timers)', () => {
     expect(response.json.sessions.map((session: { id: string }) => session.id)).toEqual([created.json.session.id]);
   });
 
-  it('?cwd= on a missing path returns { sessions: [] }', async () => {
+  it('?cwd= on a missing path returns an empty last page', async () => {
     const env = await startService({ fakeTimers: true });
     await env.createSession();
     const response = await env.http('GET', `/v1/sessions?cwd=${encodeURIComponent(path.join(env.layout.root, 'gone', 'deeper'))}`);
     expect(response.status).toBe(200);
-    expect(response.json).toEqual({ sessions: [] });
+    expect(response.json).toEqual({ sessions: [], next: null });
   });
 
   it('?cwd= 400 for a relative path', async () => {

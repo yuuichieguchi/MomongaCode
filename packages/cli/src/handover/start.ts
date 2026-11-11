@@ -5,14 +5,14 @@ import { HANDOVER_TERMINAL_ENV } from '../tui/terminal/constants.ts';
 import { handoverTerminalValue, takeHandoverTerminal } from '../tui/terminal/handover.ts';
 import type { HandoverTerminal } from '../tui/terminal/layer.ts';
 import { LEAVE_EVERY_MODE, leaveSequenceOf } from '../tui/terminal/modes.ts';
-import { parseRecord, sessionOfRecordFile } from './record.ts';
+import { parseRecord, recordNameOf } from './record.ts';
 import type { HandoverKind, HandoverRecord, ParsedRecord } from './record.ts';
 import type { ReplaceTarget } from './replace-process.ts';
 import { keptWorkOf, restoreRefusedText } from './texts.ts';
 
 export const HANDOVER_FLAG = '--handover';
 
-export type HandoverStart = { file: string; session: string; parsed: ParsedRecord; terminal: HandoverTerminal | undefined };
+export type HandoverStart = { file: string; session: string | undefined; parsed: ParsedRecord; terminal: HandoverTerminal | undefined };
 
 export type TakenStart = { args: string[]; started: HandoverStart | undefined };
 
@@ -31,7 +31,7 @@ export const takeHandoverStart = (args: readonly string[], env: Record<string, s
   const at = args.indexOf(HANDOVER_FLAG);
   const file = at === -1 ? undefined : args[at + 1];
   if (at === -1 || file === undefined) return { args: [...args], started: undefined };
-  return { args: [...args.slice(0, at), ...args.slice(at + 2)], started: { file, session: sessionOfRecordFile(file), parsed: readRecord(file, read), terminal } };
+  return { args: [...args.slice(0, at), ...args.slice(at + 2)], started: { file, session: recordNameOf(file)?.session, parsed: readRecord(file, read), terminal } };
 };
 
 export type Refusal = { reason: string; kept: KeptWork; terminal: HandoverTerminal | undefined };

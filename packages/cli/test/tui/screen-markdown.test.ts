@@ -54,10 +54,10 @@ describe('markdown text styles', () => {
 });
 
 describe('markdown code blocks', () => {
-  it('shows a fenced block without its fences, indented two columns, with the language tag dim and the code literal', () => {
+  it('shows a fenced block without its fences, indented two columns, with the language tag dim and the code literal in the colours of its language', () => {
     const rows = markdownRows('```ts\nconst a = **1**;\n\n  [b](https://c.test)\n```\nafter', 40);
     expect(texts(rows)).toEqual(['  ts', '  const a = **1**;', '  ', '    [b](https://c.test)', 'after']);
-    expect(spans(rows)).toEqual([[[2, 4, 'dim']], [[2, 18, 'code']], [], [[2, 23, 'code']], []]);
+    expect(spans(rows)).toEqual([[[2, 4, 'dim']], [[2, 7, 'accent'], [7, 14, 'code'], [14, 15, 'warning'], [15, 18, 'code']], [], [[2, 14, 'code'], [14, 23, 'dim'], [14, 23, 'italic']], []]);
     expect(rows.map((row) => row.prefixCols)).toEqual([2, 2, 2, 2, 0]);
     expect(rows.every((row) => row.links === undefined)).toBe(true);
     expect(logicalText(rows.slice(1, 4))).toBe('const a = **1**;\n\n  [b](https://c.test)');

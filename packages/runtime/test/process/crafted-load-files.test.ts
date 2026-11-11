@@ -42,6 +42,7 @@ const sessionAt = (cwd: string): Session => ({
   permissionMode: 'manual',
   model: 'model',
   bypassAllowed: false,
+  sandboxNetwork: null,
   additionalDirectories: [],
   mcpServers: {},
   createdAt: 0,

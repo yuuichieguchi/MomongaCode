@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { HANDOVER_FORMAT, HANDOVER_RECORD_MAX_BYTES, encodeRecord, parseRecord, recordFileOf, sessionOfRecordFile } from '../../src/handover/record.ts';
+import { HANDOVER_FORMAT, HANDOVER_RECORD_MAX_BYTES, encodeRecord, parseRecord, recordFileOf, recordNameOf } from '../../src/handover/record.ts';
 import type { AcpRecord, StreamRecord, TuiRecord } from '../../src/handover/record.ts';
 
 const COMMON = { format: HANDOVER_FORMAT, fromVersion: '1.2.3', toVersion: '1.2.4', session: 'session-1', lastSeq: { 'run-1': 9, 'run-2': 4 } } as const;
@@ -64,10 +64,26 @@ describe('the handover record (16.4, red test 7)', () => {
     expect(parseRecord(both)).toEqual({ kind: 'refused', reason: 'the record holds both a viewport and a printed count' });
   });
 
-  it('lives under run/handover, named by the session', () => {
-    const file = recordFileOf({ run: '/home/u/.momonga/run' }, 'session-1');
-    expect(file).toBe(path.join('/home/u/.momonga/run', 'handover', 'session-1.json'));
-    expect(sessionOfRecordFile(file)).toBe('session-1');
+  it('lives under run/handover, named by the session and the kind of client', () => {
+    const file = recordFileOf({ run: '/home/u/.momonga/run' }, 'tui', 'session-1');
+    expect(file).toBe(path.join('/home/u/.momonga/run', 'handover', 'session-1.tui.json'));
+    expect(recordNameOf(file)).toEqual({ session: 'session-1', kind: 'tui' });
+  });
+
+  it('gives a TUI and an attach client of one session a record each', () => {
+    const run = { run: '/home/u/.momonga/run' };
+    const tui = recordFileOf(run, 'tui', 'session-1');
+    const attach = recordFileOf(run, 'attach', 'session-1');
+    expect(tui).not.toBe(attach);
+    expect([recordNameOf(tui), recordNameOf(attach)]).toEqual([
+      { session: 'session-1', kind: 'tui' },
+      { session: 'session-1', kind: 'attach' },
+    ]);
+  });
+
+  it('names no session for a file it did not name', () => {
+    expect(recordNameOf('/home/u/.momonga/run/handover/session-1.json')).toBeUndefined();
+    expect(recordNameOf('/home/u/.momonga/run/handover/session-1.shell.json')).toBeUndefined();
   });
 });
 

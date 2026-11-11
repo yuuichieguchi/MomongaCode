@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { ConfigError, loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, stopValuesOfSettings, resolveTelemetrySettings } from '@momonga/config';
 import type { ResolvedSettings, StopValuesReader } from '@momonga/config';
@@ -144,12 +143,15 @@ export type StartRuntimeProcessOptions = {
   bundledRipgrep?: BundledRipgrepSource;
   helperSelf?: HelperSelf;
   ruleSolver?: RuleSolverSource;
+  socketGuard?: SocketGuardSource;
   role?: RolePort;
   requestShutdown?: () => void;
   createAdminPool?: ToolRuntimeOptions['createAdminPool'];
 };
 
 export type BundledRipgrepSource = (paths: Pick<MomongaPaths, 'executables'>, locks: LayoutLocks) => BundledRipgrepResolver;
+
+export type SocketGuardSource = (paths: Pick<MomongaPaths, 'executables'>) => () => Promise<string>;
 
 export type RuntimeCloseResult = {
   clean: boolean;
@@ -175,6 +177,7 @@ type StartedWorker = { id: string; worker: Worker };
 const DEFAULT_SANDBOX_EXEC_PATH = '/usr/bin/sandbox-exec';
 const DEFAULT_LEASE_MS = 30_000;
 const PLACEHOLDER_JOURNAL_DIRECTORY = 'placeholders';
+const SPAWN_DIRECTORY_MODE = 0o700;
 
 const assertPositiveInteger = (name: string, value: number): void => {
   if (!Number.isSafeInteger(value) || value <= 0) throw new RangeError(`${name} must be a positive integer, got ${value}`);
@@ -376,18 +379,18 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     const paths = await step('dirs', async () => {
       await requireGenerationDirs(sharedPaths, options.generation);
       const scoped = scopeToGeneration(sharedPaths, options.generation);
-      await ensureJobOutputDirectory(scoped.jobs);
-      await fs.promises.mkdir(scoped.tmp.spawn, { recursive: true, mode: 0o700 });
+      await ensureJobOutputDirectory(nodeFileSystem, scoped.jobs);
+      await nodeFileSystem.mkdir(scoped.tmp.spawn, SPAWN_DIRECTORY_MODE);
       return scoped;
     });
     const own = generationLayout(canonicalHome, options.generation);
     const rolePort = options.role ?? createRolePort({ paths: sharedPaths, generation: options.generation, logger });
     await step('role', () => rolePort.refresh());
-    const ignorableMarkerDirectories = async (): Promise<string[]> => {
+    const ignorableMarkerDirectories = async (signal: AbortSignal): Promise<string[]> => {
       const directories = [paths.markers.root];
-      for (const generation of (await nodeFileSystem.readdir(sharedPaths.markers.root)).map(generationOfDirectoryName)) {
+      for (const generation of (await settledOrAborted(nodeFileSystem.readdir(sharedPaths.markers.root), signal)).map(generationOfDirectoryName)) {
         if (generation === undefined || generation === options.generation) continue;
-        if (!(await generationIsLive(sharedPaths, generation, { lock: kernelLock }))) directories.push(scopeToGeneration(sharedPaths, generation).markers.root);
+        if (!(await settledOrAborted(generationIsLive(sharedPaths, generation, { lock: kernelLock }), signal))) directories.push(scopeToGeneration(sharedPaths, generation).markers.root);
       }
       return directories;
     };
@@ -432,7 +435,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       const launcherPath = sandboxExecPath ?? (kind === 'seatbelt' ? DEFAULT_SANDBOX_EXEC_PATH : DEFAULT_BWRAP_PATH);
       const launcherName = kind === 'seatbelt' ? 'sandbox-exec' : 'bwrap';
       try {
-        await fs.promises.access(launcherPath, fs.constants.X_OK);
+        await nodeFileSystem.access(launcherPath, 'execute');
       } catch (error) {
         throw new ConfigError(
           `${launcherName} is not available at ${launcherPath}; set "sandbox": "none" in ${paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
@@ -453,7 +456,15 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             `bwrap at ${launcherPath} cannot create a sandbox on this host: ${probe.stderr}; set "sandbox": "none" in ${paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
           );
         }
-        return createBubblewrapSandbox({ bwrapPath: launcherPath, tmpRoot: paths.tmp.spawn, lock: kernelLock, killGraceMs: SANDBOX_KILL_GRACE_MS, journal: createPlaceholderJournal(journalDirectory), holders: () => heldMountPoints() });
+        return createBubblewrapSandbox({
+          bwrapPath: launcherPath,
+          tmpRoot: paths.tmp.spawn,
+          lock: kernelLock,
+          killGraceMs: SANDBOX_KILL_GRACE_MS,
+          journal: createPlaceholderJournal(journalDirectory),
+          holders: () => heldMountPoints(),
+          ...(options.socketGuard === undefined ? {} : { socketGuard: options.socketGuard(paths) }),
+        });
       }
       return createSeatbeltSandbox({ sandboxExecPath: launcherPath, tmpRoot: paths.tmp.spawn, lock: kernelLock, killGraceMs: SANDBOX_KILL_GRACE_MS });
     };
@@ -486,7 +497,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
     const { notifier, store, journalThread } = await step('store', async () => {
       migrateRuntimeDatabase(paths.databases.runtime, storeBusyWaitMs);
-      const { dev, ino } = fs.statSync(paths.databases.runtime);
+      const { dev, ino } = await nodeFileSystem.stat(paths.databases.runtime);
       const startedThread = await startJournalThread({ databasePath: paths.databases.runtime, lock: kernelLock, busyTimeoutMs: storeBusyWaitMs, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
       const createdNotifier = createRunNotifier();
       try {
@@ -608,7 +619,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     cleanups.push({ name: 'gateway-client', run: () => gatewayClient.destroy() });
 
     const ports = await step('ports', async () => {
-      const composition = createSettingsComposition({ home: canonicalHome, platform, cache, store, lock: kernelLock, signal: lifetime.signal });
+      const composition = createSettingsComposition({ home: canonicalHome, platform, cache, store, lock: kernelLock });
       const runtime: ToolRuntime = createToolRuntime({
         version,
         owners: markerOwners,
@@ -750,7 +761,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         sessionReadSettings: settingsComposition.sessionReadSettings,
         skills: skillsPort,
         agents: agentsPort,
-        permissionRules: (session, requestSignal) => settledOrAborted(permissionRulesFor({ store, settings: settingsComposition.settings, clock, home: canonicalHome }, session), requestSignal),
+        permissionRules: (session, requestSignal) => permissionRulesFor({ store, settings: settingsComposition.settings, clock, home: canonicalHome }, session, requestSignal),
         userInput: createUserInputPort({
           tools: toolRuntime.port,
           policy: toolRuntime.userPolicy,
@@ -759,6 +770,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           clock,
           home: canonicalHome,
           unsandboxed: createUnsandboxed({ killGraceMs: SANDBOX_KILL_GRACE_MS }),
+          files: nodeFileSystem,
         }),
         evidenceRun: evidenceRunFor,
         defaults: RUNTIME_DEFAULTS,
@@ -799,6 +811,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         role: rolePort,
         work: { steps: stepsInFlight, jobs: () => toolRuntime.jobs.liveCount() },
         ignorableMarkerDirectories,
+        files: nodeFileSystem,
         onRequestEnd: () => onWorkEnded(),
         onError: (error) => logger.error('service error', { err: asError(error) }),
         onFatal: latchFatal,
@@ -812,6 +825,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       fs: createPolicyFilesystem(),
       paths,
       timers,
+      bashPath: () => resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env: process.env }),
+      clock,
     });
     await step('workers', () => {
       for (let index = 0; index < workerCount; index += 1) {
@@ -839,7 +854,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           defaults: RUNTIME_DEFAULTS.limits,
           home: canonicalHome,
           blobs: store.blobs,
-          instructionReader: createFsInstructionReader(lifetime.signal),
+          instructionReaderFor: createFsInstructionReader,
           wake: notifier,
           onError: (error, context) =>
             logger.error('worker error', {
@@ -904,7 +919,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         pageRows: MEMORY_PAGE_ROWS,
         passIntervalMs: DAY_MS,
         forgetAfterDays: async (project) =>
-          (project === null ? settingsComposition.takeUserSnapshot().settings.memory : await settingsComposition.settings.memory({ cwd: project })).forgetAfterDays,
+          (project === null ? settingsComposition.takeUserSnapshot().settings.memory : await settingsComposition.settings.memory({ cwd: project }, lifetime.signal)).forgetAfterDays,
         onSkipped: (project) => logger.warn(`memory upkeep skipped the project ${project}: the folder no longer exists`),
       });
       const sweepStop = new AbortController();

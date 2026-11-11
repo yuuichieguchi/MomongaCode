@@ -305,7 +305,7 @@ describe('loadSettings security restrictions', () => {
     const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.permissions.defaultMode).toBe('acceptEdits');
     expect(result.settings.autoMode).toEqual({ classifier: 'guard/guard-model' });
-    expect(result.warnings.some((w) => w.includes('auto mode') && w.includes(file))).toBe(true);
+    expect(result.warnings.some((w) => w.includes('permissions.defaultMode auto') && w.includes(file))).toBe(true);
     expect(result.warnings.some((w) => w.includes('autoMode') && w.includes(file))).toBe(true);
   });
 });

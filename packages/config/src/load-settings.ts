@@ -192,8 +192,6 @@ function* resolveDirectory(directory: string, layer: Layer, home: string, warnin
   return undefined;
 }
 
-const UNIX_SOCKET_ALLOW_UNSUPPORTED = 'unix socket allow-lists are not supported by the Linux sandbox; all Unix sockets are denied';
-
 function* ownedByProduct(entry: string, owned: readonly string[]): PathAsking<boolean> {
   for (const directory of owned) {
     if (yield* askedPaths.comparableContains(directory, entry)) return true;
@@ -201,12 +199,8 @@ function* ownedByProduct(entry: string, owned: readonly string[]): PathAsking<bo
   return false;
 }
 
-function* enforceableUnixSockets({ source, allow }: { source: string; allow: string[] }, sandbox: SandboxSetting, home: string, warnings: string[]): PathAsking<string[]> {
+function* enforceableUnixSockets({ source, allow }: { source: string; allow: string[] }, home: string, warnings: string[]): PathAsking<string[]> {
   if (allow.length === 0) return [];
-  if (sandbox === 'bubblewrap') {
-    warnings.push(`${source}: ${UNIX_SOCKET_ALLOW_UNSUPPORTED}`);
-    return [];
-  }
   const owned = [layoutOf(home).root, keyStoreOf(home)];
   const enforceable: string[] = [];
   for (const entry of allow) {
@@ -332,7 +326,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
     if (forges !== undefined) merged.forges = forges;
     if (operations !== undefined) merged.operations = operations;
   }
-  if (unixSockets !== undefined) merged.sandboxUnixSockets = { allow: yield* enforceableUnixSockets(unixSockets, merged.sandbox, home, warnings) };
+  if (unixSockets !== undefined) merged.sandboxUnixSockets = { allow: yield* enforceableUnixSockets(unixSockets, home, warnings) };
   return merged;
 }
 

@@ -383,7 +383,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       systemPrompt: testSystemPrompt,
       home,
       blobs: store.blobs,
-      instructionReader: instructions,
+      instructionReaderFor: () => instructions,
       onFatal: (error: Error) => {
         fatals.push(error);
       },

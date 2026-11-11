@@ -5,7 +5,7 @@ import { openZ3, Z3LoadError } from '../src/engine.ts';
 import { formatReport } from '../src/format.ts';
 import type { VerificationReport } from '../src/index.ts';
 import { exitCodeOf } from '../src/report.ts';
-import { hostFilesystemOf, NEVER_CANCELLED } from '@momonga/testkit';
+import { hostFilesystemOf, NEVER_CANCELLED, testSecretLocations } from '@momonga/testkit';
 import { replayWitness } from '../src/replay.ts';
 import type { PropertyResult } from '../src/report.ts';
 import { caseSensitiveFs, makeLayout, rulesOf } from './harness.ts';
@@ -50,7 +50,6 @@ describe('reporting', () => {
     subject: '1 secret location(s)',
     proves: 'a statement',
     doesNotProve: ['a limit'],
-    byModeDefault: [],
     verdict:
       status === 'proved'
         ? { status, notes: [] }
@@ -75,6 +74,7 @@ describe('reporting', () => {
       solver: 'Z3 4.15.0',
       results: [result('proved'), result('refuted'), result('unknown')],
       mismatches: [],
+      timings: [],
       outsideProof: ['shell commands'],
       exitCode: 1,
     };
@@ -98,6 +98,7 @@ describe('reporting', () => {
       roots: [layout.project],
       mode: 'manual' as const,
       home: layout.home,
+      secretLocations: testSecretLocations(layout.home),
       cwd: layout.project,
       fileRules: { entries: [], exemptDirectory: null, fingerprint: '', flavour: 'posix' as const },
       protectedSet: { forms: {}, roots: [], paths: [], lexicalPaths: [], literals: [], names: [], moduleAnchors: [], worktreeAnchors: [], patterns: { entries: [], exemptDirectory: null, fingerprint: '', flavour: 'posix' as const }, issues: [] },
@@ -128,17 +129,16 @@ describe('formatReport escapes each line', () => {
           proves: 'p',
           doesNotProve: ['a limit'],
           verdict: { status: 'refuted', findings: [{ subject: `rule ${FORGED}`, message: FORGED }], notes: [FORGED] },
-          byModeDefault: [{ subject: `mode ${FORGED}`, message: FORGED }],
         },
       ],
       mismatches: [],
+      timings: [],
       outsideProof: [FORGED],
       exitCode: 1,
     };
     const lines = formatReport(report).split('\n');
     expect(lines).toContain(`  - rule ${SHOWN}: ${SHOWN}`);
     expect(lines).toContain(`  note: ${SHOWN}`);
-    expect(lines).toContain(`  by the mode default, not by a rule: mode ${SHOWN}: ${SHOWN}`);
     expect(lines).toContain(`  - ${SHOWN}`);
     expect(lines.filter((line) => line.startsWith('  momonga'))).toEqual([]);
   });

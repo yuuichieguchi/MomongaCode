@@ -72,10 +72,12 @@ describe('buildMessagesBody', () => {
     ]);
   });
 
-  it('sends an empty object as the input of a call whose arguments are not a JSON object', () => {
-    const inputs = [call('c1', 'read_file', '{oops'), call('c2', 'read_file', '[1]'), call('c3', 'read_file', '')];
+  it('replaces a call whose arguments are not a JSON object, and its result, by a note in the assistant turn', () => {
+    const inputs = [call('c1', 'read_file', '{oops'), output('c1', 'r1'), call('c2', 'read_file', '[1]'), call('c3', 'read_file', '')];
     const blocks = bodyOf(inputs).messages.flatMap((message) => (Array.isArray(message.content) ? message.content : []));
-    expect(blocks.map((block) => (block as { input?: unknown }).input)).toEqual([{}, {}, {}]);
+    expect(blocks.map((block) => block.type)).toEqual(['text', 'text', 'text']);
+    expect(blocks.every((block) => (block as { text: string }).text.includes('A call to the tool read_file was cut off'))).toBe(true);
+    expect(JSON.stringify(blocks)).not.toContain('r1');
   });
 
   it('rejects file input and an image in an assistant turn', () => {

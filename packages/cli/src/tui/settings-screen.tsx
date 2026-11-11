@@ -36,7 +36,7 @@ export type SettingPresentation = {
   readonly line?: (entry: Readonly<Record<string, unknown>>) => string;
 };
 
-export type FormField = { readonly name: string; readonly label: string; readonly kind: 'text' | 'number'; readonly required: boolean };
+export type FormField = { readonly name: string; readonly label: string; readonly kind: 'text' | 'number' | 'list'; readonly required: boolean; readonly at?: readonly string[] };
 
 const PRICE_FORM: readonly FormField[] = [
   { name: 'provider', label: 'Provider', kind: 'text', required: true },
@@ -51,10 +51,10 @@ const PRICE_FORM: readonly FormField[] = [
 const FORGE_FORM: readonly FormField[] = [
   { name: 'id', label: 'Name', kind: 'text', required: true },
   { name: 'descriptor', label: 'Forge kind (a shipped descriptor, such as github)', kind: 'text', required: true },
-  { name: 'host', label: 'Host of the git remote', kind: 'text', required: true },
+  { name: 'hosts', label: 'Hosts of the git remotes, separated by commas', kind: 'list', required: true },
   { name: 'apiBaseUrl', label: 'API base URL', kind: 'text', required: true },
-  { name: 'credentialEnv', label: 'Token: environment variable name (or the next field)', kind: 'text', required: false },
-  { name: 'credentialSecret', label: 'Token: name in the secret store', kind: 'text', required: false },
+  { name: 'credentialEnv', label: 'Token: environment variable name (or the next field)', kind: 'text', required: false, at: ['credential', 'env'] },
+  { name: 'credentialSecret', label: 'Token: name in the secret store', kind: 'text', required: false, at: ['credential', 'secret'] },
 ];
 
 const PRICE_CONSTANTS = { currency: 'USD' } as const;
@@ -62,7 +62,8 @@ const PRICE_CONSTANTS = { currency: 'USD' } as const;
 const priceLine = (entry: Readonly<Record<string, unknown>>): string =>
   `${String(entry['provider'])}/${String(entry['model'])}  from ${String(entry['effectiveFrom'])}  input ${String(entry['inputPerMTok'])}  output ${String(entry['outputPerMTok'])}`;
 
-const forgeLine = (entry: Readonly<Record<string, unknown>>): string => `${String(entry['id'])}  ${String(entry['descriptor'])}  ${String(entry['host'])}  ${String(entry['apiBaseUrl'])}`;
+const forgeLine = (entry: Readonly<Record<string, unknown>>): string =>
+  `${String(entry['id'])}  ${String(entry['descriptor'])}  ${Array.isArray(entry['hosts']) ? entry['hosts'].map(String).join(', ') : ''}  ${String(entry['apiBaseUrl'])}`;
 
 export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'tui.screen': { label: 'Screen mode at start', section: 'Display', appliesNow: false },
@@ -473,20 +474,49 @@ const mapCollection = (leaf: SettingLeaf, presentation: SettingPresentation, lay
   };
 };
 
+const placeOf = (field: FormField): readonly string[] => field.at ?? [field.name];
+
+const valueAtPlace = (entry: Readonly<Record<string, unknown>>, place: readonly string[]): unknown =>
+  place.reduce<unknown>((current, key) => (isRecord(current) ? current[key] : undefined), entry);
+
+const withValueAt = (entry: Record<string, unknown>, place: readonly string[], value: unknown): void => {
+  const [key, ...rest] = place;
+  if (key === undefined) return;
+  if (rest.length === 0) {
+    entry[key] = value;
+    return;
+  }
+  const inner = isRecord(entry[key]) ? { ...entry[key] } : {};
+  withValueAt(inner, rest, value);
+  entry[key] = inner;
+};
+
+const LIST_SEPARATOR = ',';
+
+const formShownValue = (field: FormField, before: unknown): string => {
+  if (before === undefined) return '';
+  return field.kind === 'list' && Array.isArray(before) ? before.map(String).join(`${LIST_SEPARATOR} `) : String(before);
+};
+
+const enteredValue = (field: FormField, text: string): unknown => {
+  if (field.kind === 'number') return Number(text);
+  if (field.kind === 'list') return text.split(LIST_SEPARATOR).map((part) => part.trim()).filter((part) => part !== '');
+  return text;
+};
+
 const formValues = async (context: SlashContext, title: string, form: readonly FormField[], initial: Readonly<Record<string, unknown>>): Promise<Record<string, unknown> | undefined> => {
   const values: Record<string, unknown> = {};
   for (const field of form) {
-    const before = initial[field.name];
     const text = await context.overlays.promptText({
       title: `${title}: ${field.label}`,
-      initial: before === undefined ? '' : String(before),
+      initial: formShownValue(field, valueAtPlace(initial, placeOf(field))),
       validate: (entry) => {
         if (entry.trim() === '') return field.required ? 'expected a value' : undefined;
         return field.kind === 'number' && !Number.isFinite(Number(entry)) ? 'expected a number' : undefined;
       },
     });
     if (text === undefined) return undefined;
-    if (text.trim() !== '') values[field.name] = field.kind === 'number' ? Number(text) : text;
+    if (text.trim() !== '') withValueAt(values, placeOf(field), enteredValue(field, text));
   }
   return values;
 };

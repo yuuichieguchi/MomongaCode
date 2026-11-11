@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { PropertyId, VerificationReport } from '../src/index.ts';
 import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, caseSensitiveFs, makeLayout, rulesOf, useZ3, verifyScenario } from './harness.ts';
 import type { Layout } from './harness.ts';
-import { testProbes } from '@momonga/testkit';
+import { testProbes, testSecretLocations } from '@momonga/testkit';
 
 const z3 = useZ3();
 
@@ -14,7 +14,7 @@ const statusOf = (report: VerificationReport, id: PropertyId): string | undefine
 const decideCommand = async (layout: Layout, rules: readonly PermissionRule[], command: string): Promise<string> => {
   const roots = [layout.project];
   const fileSystem = caseSensitiveFs();
-  return (await decide({
+  return (await decide({ secretLocations: testSecretLocations(layout.home),
     tool: { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' },
     subject: { kind: 'command', tool: 'Bash', command },
     mode: 'manual',

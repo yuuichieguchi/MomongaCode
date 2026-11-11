@@ -7,7 +7,7 @@ import { HOST_RULE_ENFORCEMENT, protectedSetFor } from '@momonga/foundation';
 import { EMPTY_GLOB_TABLE, computeFileRules, createGlobDeadline, decide, parseRule, prepareGlobs, settleGlobs, askedBy } from '@momonga/policy';
 import type { Decision, GlobTable, PermissionRule, RuleEffect } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
-import { TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED } from '@momonga/testkit';
+import { TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED, testSecretLocations } from '@momonga/testkit';
 import { createPolicyFilesystem } from '@momonga/tools';
 
 export const REAL_BASH = '/bin/bash';
@@ -64,7 +64,7 @@ export const makeRealWorkspace = (): RealWorkspace => {
       parseRule(text, { effect, origin: 'user', source: 'user-settings', settingsRoot: project, home, cwd: project }),
     );
     const roots = [project];
-    return await decide({
+    return await decide({ secretLocations: testSecretLocations(home),
       tool: { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' },
       subject: { kind: 'command', tool: 'Bash', command },
       mode: options.mode ?? 'manual',
@@ -111,7 +111,7 @@ export const makeRealWorkspace = (): RealWorkspace => {
         parseRule(text, { effect, origin: 'user', source: 'user-settings', settingsRoot: project, home, cwd: project }),
       );
       const roots = [project];
-      return decide({
+      return decide({ secretLocations: testSecretLocations(home),
         tool: { name: toolName, kind: 'edit', sideEffect: 'write', subjectKind: 'path' },
         subject: { kind: 'path', tool: toolName, paths: [file], access: 'write' },
         mode: options.mode ?? 'manual',

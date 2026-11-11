@@ -115,6 +115,7 @@ const generationOf = (w: World, generation: number, role: GenerationRole = 'serv
       settled.count += 1;
     },
     markerFiles: createNodeJobMarkerFiles(),
+    files: nodeFileSystem,
     killGraceMs: KILL_GRACE_MS,
     reapTiming: w.reapTiming,
     onWarning: () => undefined,

@@ -19,11 +19,11 @@ import {
   layoutProcessInspector,
   systemRandom,
 } from '@momonga/foundation';
-import type { Clock, CredentialSecretStore, HelperSelf, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, ProcessInspector, Timing, RolePort, RuleEnforcement, SecretStore, SessionScratch } from '@momonga/foundation';
+import type { Clock, CredentialSecretStore, HelperSelf, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, ProcessInspector, Timing, RolePort, RuleEnforcement, SandboxNetworkSetting, SecretStore, SessionScratch } from '@momonga/foundation';
 import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/mcp';
 import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { SandboxBindings } from '../ports.ts';
-import type { RuntimeStore } from '@momonga/store';
+import type { RuntimeStore, Session } from '@momonga/store';
 import { createBuiltinTools, createGitWorkTreeObserver, createHostRipgrepLocator, createMarkerOwners, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
 import type { BundledRipgrepResolver, ForgeFetch, MarkerOwners, ShellHost, ToolSet, UserPolicy, WorkTreeObserver } from '@momonga/tools';
 import type { PolicyHostFilesystem } from '@momonga/policy';
@@ -45,6 +45,8 @@ import type { SessionStates } from './session-states.ts';
 import type { SettingsComposition } from './settings-port.ts';
 import { createPolicyFor, createRecoveryContextFor } from './tool-policy.ts';
 import type { EnforcedPolicyFor } from './tool-policy.ts';
+
+export const sandboxNetworkOf = (session: Pick<Session, 'sandboxNetwork'>, setting: SandboxNetworkSetting): SandboxNetworkSetting => session.sandboxNetwork ?? setting;
 
 export type ToolRuntimeOptions = {
   lockCapability: LockCapabilityProbe;
@@ -130,6 +132,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     ownerAlive: async (ownerGeneration) =>
       (await inspectProcessLock(generationLayout(home, ownerGeneration).locks.runtime, { mechanism: kernelLock })).state !== 'free',
     markerFiles: createNodeJobMarkerFiles(lockCapability),
+    files: nodeFileSystem,
     inspector,
     killGraceMs: SANDBOX_KILL_GRACE_MS,
     reapTiming,
@@ -187,7 +190,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     const builder = policyBuilders.get(request.ruleEnforcement) ?? createPolicyFor({ ...policyOptions, ruleEnforcement: request.ruleEnforcement });
     policyBuilders.set(request.ruleEnforcement, builder);
     const { sandboxNetwork, sandboxUnixSockets } = settings.takeUserSnapshot().settings;
-    return { ...(await builder(session, { ...request, unixSocketAllow: sandboxUnixSockets.allow })), sandboxNetwork };
+    return { ...(await builder(session, { ...request, unixSocketAllow: sandboxUnixSockets.allow })), sandboxNetwork: sandboxNetworkOf(session, sandboxNetwork) };
   };
   const recoveryContextFor = createRecoveryContextFor(policyOptions);
   const operationTools = createOperationToolSource({
@@ -215,7 +218,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
 
     let acquiredHere = false;
     try {
-      const loaded = await settings.loadSessionSettings(session.cwd, snapshot);
+      const loaded = await settings.loadSessionSettings(session.cwd, snapshot, signal);
       const mcp = await loadSessionMcpServers({ home, settings }, session, env, snapshot.user, 'read', signal);
       const sources: McpPool['sources'] = [];
       if (mcp.enabled.length > 0) {

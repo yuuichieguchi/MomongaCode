@@ -1,5 +1,5 @@
 import type { Arith, Bool, Context } from 'z3-solver';
-import type { Z3Api } from '../smt.ts';
+import type { Z3Api } from '../../../src/smt.ts';
 
 export type ProofInt = Arith<'main'>;
 

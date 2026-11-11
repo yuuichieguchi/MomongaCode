@@ -1,3 +1,4 @@
+import { testSecretLocations } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
@@ -60,7 +61,7 @@ export const decideRow = async (row: Row, mode: PermissionMode, given?: RowConte
   const make = ruleIn(context.layout);
   const rules = (row.rules ?? []).map(([effect, text]) => make(effect, text));
   const { tool, subject } = subjectOf(row, context);
-  return await decide({
+  return await decide({ secretLocations: testSecretLocations(context.layout.home),
     tool,
     subject,
     mode,
@@ -290,7 +291,7 @@ export const GIT_AND_LINK_ROWS: readonly Row[] = [
   {
     id: 'GL2',
     command: 'cat *',
-    after: askExceptBypass,
+    after: deny4,
     pin: true,
     fs: (layout) => globAt(layout, '*', ['link']),
     prepare: (layout) => symlinkTo(ssh(layout), P(layout, 'link')),

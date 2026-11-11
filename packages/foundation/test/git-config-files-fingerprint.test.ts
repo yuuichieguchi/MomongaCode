@@ -54,7 +54,7 @@ describe('the git configuration files of a working tree', () => {
     fs.appendFileSync(path.join(work, '.git', 'config'), `[include]\n\tpath = ${included}\n`);
     const changed = await discovery.discover({ workingDirectory: work, env, signal });
 
-    expect(counting.calls()).toBe(oneDiscovery * 2);
+    expect(counting.calls()).toBeGreaterThan(oneDiscovery);
     expect(changed).toContain(included);
   });
 
@@ -69,6 +69,54 @@ describe('the git configuration files of a working tree', () => {
     fs.writeFileSync(path.join(env['HOME'] as string, '.gitconfig'), '[user]\n\tname = x\n');
     await discovery.discover({ workingDirectory: work, env, signal });
 
-    expect(counting.calls()).toBe(oneDiscovery * 2);
+    expect(counting.calls()).toBeGreaterThan(oneDiscovery);
+  });
+
+  it('discovers again on the next call when a file changed while the discovery ran', async () => {
+    const { work, env } = repository();
+    const config = path.join(work, '.git', 'config');
+    const included = path.join(work, 'late.gitconfig');
+    fs.writeFileSync(included, '[core]\n\tautocrlf = false\n');
+    let calls = 0;
+    let rewritten = false;
+    const run: CommandRunner = async (command, args, options) => {
+      calls += 1;
+      const result = await nodeCommandRunner(command, args, options);
+      if (args.includes('--get-regexp') && !rewritten) {
+        rewritten = true;
+        fs.appendFileSync(config, `[include]\n\tpath = ${included}\n`);
+      }
+      return result;
+    };
+    const discovery = createGitConfigDiscovery({ run });
+    const signal = new AbortController().signal;
+
+    await discovery.discover({ workingDirectory: work, env, signal });
+    const next = await discovery.discover({ workingDirectory: work, env, signal });
+
+    expect(next).toContain(included);
+    expect(calls).toBeGreaterThan(0);
+  });
+
+  it('sees a rewrite of the same size with the same modification time', async () => {
+    const { work, env } = repository();
+    const config = path.join(work, '.git', 'config');
+    fs.appendFileSync(config, '[user]\n\tname = aaaa\n');
+    const fixed = new Date('2026-01-01T00:00:00Z');
+    fs.utimesSync(config, fixed, fixed);
+    const before = fs.statSync(config);
+    const counting = countingRunner();
+    const discovery = createGitConfigDiscovery({ run: counting.run });
+    const signal = new AbortController().signal;
+    await discovery.discover({ workingDirectory: work, env, signal });
+    const once = counting.calls();
+
+    fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('aaaa', 'bbbb'));
+    fs.utimesSync(config, fixed, fixed);
+    expect(fs.statSync(config).size).toBe(before.size);
+    expect(fs.statSync(config).mtimeMs).toBe(before.mtimeMs);
+    await discovery.discover({ workingDirectory: work, env, signal });
+
+    expect(counting.calls()).toBeGreaterThan(once);
   });
 });

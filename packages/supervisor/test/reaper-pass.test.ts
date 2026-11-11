@@ -36,7 +36,7 @@ const setup = (context: CleanupContext, overrides: Partial<ReaperPassOptions> = 
       findHolders: async () => [],
       reapMarkerDirectory: async (request) => {
         reaps.push(request);
-        return { reaped: 0, kept: 0 };
+        return { reaped: 0, kept: 0, unreaped: [] };
       },
     },
     ...overrides,
@@ -164,7 +164,7 @@ describe('the wait of the reaper pass for a dead generation takes the values of 
         findHolders: async () => [HELD_FOREVER],
         reapMarkerDirectory: async (request) => {
           if (request.label === 'daemon') daemonReapAt.push(s.clock.now());
-          return { reaped: 0, kept: 0 };
+          return { reaped: 0, kept: 0, unreaped: [] };
         },
       },
     };
@@ -180,21 +180,21 @@ describe('the wait of the reaper pass for a dead generation takes the values of 
 
   it('waits the runtime close bound of the values the dead generation recorded when its stop began', async (context) => {
     const reapedAt = await daemonReapTime(context, (stopRecord) => writeStopRecord(stopRecord, 1, PREDECESSOR, testKernelLock()));
-    expect(runtimeMaxCloseMs(PREDECESSOR)).toBe(7000 + 6 * 40 + 28_125);
+    expect(runtimeMaxCloseMs(PREDECESSOR)).toBe(7000 + 6 * 40 + 28_175);
     expect(reapedAt).toBeGreaterThanOrEqual(runtimeMaxCloseMs(PREDECESSOR));
     expect(reapedAt).toBeLessThanOrEqual(runtimeMaxCloseMs(PREDECESSOR) + ORPHAN_POLL_MS);
   });
 
   it('waits the runtime close bound of the allowed maxima when the dead generation left no record', async (context) => {
     const reapedAt = await daemonReapTime(context, async () => undefined);
-    expect(runtimeMaxCloseMs(MAXIMUM_STOP_VALUES)).toBe(508_125);
-    expect(reapedAt).toBeGreaterThanOrEqual(508_125);
-    expect(reapedAt).toBeLessThanOrEqual(508_125 + ORPHAN_POLL_MS);
+    expect(runtimeMaxCloseMs(MAXIMUM_STOP_VALUES)).toBe(508_175);
+    expect(reapedAt).toBeGreaterThanOrEqual(508_175);
+    expect(reapedAt).toBeLessThanOrEqual(508_175 + ORPHAN_POLL_MS);
   });
 
   it('waits the bound of the allowed maxima when the record is invalid or names another generation', async (context) => {
     const reapedAt = await daemonReapTime(context, async (stopRecord) => fs.writeFileSync(stopRecord, `${JSON.stringify({ generation: 2, values: PREDECESSOR })}\n`, { mode: 0o600 }));
-    expect(reapedAt).toBeGreaterThanOrEqual(508_125);
+    expect(reapedAt).toBeGreaterThanOrEqual(508_175);
   });
 
   it('the entry builds the wait from the reaper\'s own options: the bound of the allowed maxima by default, and the reaper option where one is given', async (context) => {
@@ -213,7 +213,7 @@ describe('the wait of the reaper pass for a dead generation takes the values of 
             findHolders: async () => [HELD_FOREVER],
             reapMarkerDirectory: async (request) => {
               if (request.label === 'daemon') daemonReapAt.push(s.clock.now());
-              return { reaped: 0, kept: 0 };
+              return { reaped: 0, kept: 0, unreaped: [] };
             },
           },
         },

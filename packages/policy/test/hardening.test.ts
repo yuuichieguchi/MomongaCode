@@ -7,7 +7,7 @@ import type { PermissionMode } from '@momonga/protocol';
 import { EMPTY_PROTECTED_SET, ruleEnforcementOf } from '@momonga/foundation';
 import { commandRow, kindIn } from './decision-rows.ts';
 import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout, ruleIn, touch } from './helpers.ts';
-import { testProbes } from '@momonga/testkit';
+import { testProbes, testSecretLocations } from '@momonga/testkit';
 
 const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' };
 const READ: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_only' };
@@ -18,7 +18,7 @@ type Spec = { allow?: string[]; ask?: string[]; deny?: string[]; mode?: Permissi
 const bash = async (command: string, spec: Spec = {}) => {
   const layout = makeLayout();
   const make = ruleIn(layout);
-  return (await decide({
+  return (await decide({ secretLocations: testSecretLocations(layout.home),
     tool: BASH,
     subject: { kind: 'command', tool: 'Bash', command },
     mode: spec.mode ?? 'manual',
@@ -195,7 +195,7 @@ describe('S2 and S1: slash-less patterns and case', () => {
     const outside = touch(path.join(layout.outside, 'a.ts'));
     fs.symlinkSync(outside, path.join(layout.project, 'link.ts'));
     const decision = async (file: string) =>
-      await (await decide({ tool: WRITE, subject: subject(file), mode: 'manual', rules: [rule], roots, fileRules: await fileRulesFor([rule], roots), home: layout.home, cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor(roots), protectedSet: EMPTY_PROTECTED_SET })).kind;
+      await (await decide({ secretLocations: testSecretLocations(layout.home), tool: WRITE, subject: subject(file), mode: 'manual', rules: [rule], roots, fileRules: await fileRulesFor([rule], roots), home: layout.home, cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor(roots), protectedSet: EMPTY_PROTECTED_SET })).kind;
     expect(await decision(inside)).toBe('allow');
     expect(await decision(outside)).toBe('ask');
     expect(await decision(path.join(layout.project, 'link.ts'))).toBe('ask');
@@ -209,7 +209,7 @@ describe('S2 and S1: slash-less patterns and case', () => {
     const subject: PermissionSubject = { kind: 'path', tool: 'Read', paths: [file], access: 'read' };
     const roots = [layout.project];
     const decision = async (rule: PermissionRule) =>
-      await decide({ tool: READ, subject, mode: 'manual', rules: [rule], roots, home: layout.home, cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor(roots), protectedSet: EMPTY_PROTECTED_SET, fileRules: await computeFileRules([rule], roots, null, ruleEnforcementOf('none'), testProbes()) });
+      await decide({ secretLocations: testSecretLocations(layout.home), tool: READ, subject, mode: 'manual', rules: [rule], roots, home: layout.home, cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor(roots), protectedSet: EMPTY_PROTECTED_SET, fileRules: await computeFileRules([rule], roots, null, ruleEnforcementOf('none'), testProbes()) });
     expect(await decision(make('deny', 'Read(.env)'))).toMatchObject({ kind: 'deny', source: 'rule' });
     expect(await decision(make('ask', 'Read(.env)'))).toMatchObject({ kind: 'ask', source: 'rule' });
     expect(await decision(make('allow', 'Read(.env)'))).toMatchObject({ kind: 'allow', source: 'rule' });
@@ -234,7 +234,7 @@ describe('read tool sanity', () => {
     const layout = makeLayout();
     const file = touch(path.join(layout.project, 'f'));
     expect(
-      await (await decide({ tool: READ, subject: { kind: 'path', tool: 'Read', paths: [file], access: 'read' }, mode: 'manual', rules: [], roots: [layout.project], home: layout.home, cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]), protectedSet: EMPTY_PROTECTED_SET, fileRules: await fileRulesFor([], [layout.project]) })).kind,
+      await (await decide({ secretLocations: testSecretLocations(layout.home), tool: READ, subject: { kind: 'path', tool: 'Read', paths: [file], access: 'read' }, mode: 'manual', rules: [], roots: [layout.project], home: layout.home, cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]), protectedSet: EMPTY_PROTECTED_SET, fileRules: await fileRulesFor([], [layout.project]) })).kind,
     ).toBe('allow');
   });
 });

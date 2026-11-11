@@ -1,5 +1,5 @@
 import path from 'node:path';
-import type { AnsweredByView, Mandate, PermissionMode, PublicRunEvent, RunFactsView, RunStatus, StopReason } from '@momonga/protocol';
+import type { AnsweredByView, Mandate, PermissionMode, PublicRunEvent, RunCostView, RunFactsView, RunStatus, StopReason } from '@momonga/protocol';
 import { FACTS_EVENT_TYPES, foldFacts } from '@momonga/reliability';
 import type { FactsEvent, GroupKey, ReliabilityReport } from '@momonga/reliability';
 import { BENCH_DEFAULT_RUNS, mandateOfTask, parseBenchmark, treeDigest } from './bench.ts';
@@ -9,7 +9,9 @@ import type { WorkspaceFiles } from './files.ts';
 import type { WorkspaceProbe } from './oracle-grade.ts';
 import { buildBenchmarkReport } from './bench-report.ts';
 import type { BenchmarkTrial } from './bench-report.ts';
+import { failedWithCleanup } from './context-live.ts';
 import { EvalError, driveRun } from './runner.ts';
+import { answeredByOfRuns, nanoOfCostViews, treeSpendOf } from './run-tree.ts';
 
 export type BenchRunView = {
   sessionId: string;
@@ -20,7 +22,6 @@ export type BenchRunView = {
   limits: { maxSteps?: number; maxTotalTokens?: number; maxCostNano?: number };
   step: number;
   tokensTotal: number;
-  costNano: number;
   origin: string;
   agent: string;
   mode: PermissionMode;
@@ -34,18 +35,20 @@ export type BenchRunApi = {
   events(runId: string): AsyncIterable<PublicRunEvent>;
   runOf(runId: string): Promise<BenchRunView>;
   answeredBy(runId: string): Promise<AnsweredByView[]>;
+  costs(runIds: readonly string[]): Promise<RunCostView[]>;
   resolveApproval(approvalId: string, optionId: string): Promise<void>;
   cancelRun(runId: string): Promise<void>;
 };
 
+export type BenchTrialHome = { cwd: string; api: BenchRunApi; close(): Promise<void> };
+
 export type BenchRunPorts = {
-  api: BenchRunApi;
+  open(task: BenchTask, trial: number): Promise<BenchTrialHome>;
   probe: WorkspaceProbe;
   files: WorkspaceFiles;
   model: string;
   codeDigest: string;
   groupBy: GroupKey;
-  scratch: string;
   onTrial?(trial: { taskId: string; trial: number; met: boolean | 'invalid_setup' }): void;
   signal?: AbortSignal;
 };
@@ -73,9 +76,11 @@ const setUp = async (task: BenchTask, workspace: string, probe: WorkspaceProbe, 
   return true;
 };
 
-type Trial = { facts: RunFactsView; children: RunFactsView[]; answeredBy: AnsweredByView[] };
+type Trial = { facts: RunFactsView; children: RunFactsView[]; answeredBy: AnsweredByView[]; costs: RunCostView[] };
 
-const factsOfRun = async (api: BenchRunApi, runId: string, rootRunId: string, events: readonly PublicRunEvent[]): Promise<RunFactsView> => {
+const factsOfRun = async (api: BenchRunApi, runId: string, rootRunId: string, events: readonly PublicRunEvent[], costs: ReadonlyMap<string, RunCostView>): Promise<RunFactsView> => {
+  const cost = costs.get(runId);
+  if (cost === undefined) throw new EvalError(`the cost record holds no entry for run ${runId}`);
   const view = await api.runOf(runId);
   const folded = foldFacts(factsEventsOf(events), {
     runId,
@@ -88,7 +93,7 @@ const factsOfRun = async (api: BenchRunApi, runId: string, rootRunId: string, ev
     deadlineAt: view.deadlineAt,
     step: view.step,
     tokensTotal: view.tokensTotal,
-    costNano: view.costNano,
+    costNano: nanoOfCostViews([cost]),
     model: view.model,
     mode: view.mode,
     agent: view.agent,
@@ -97,8 +102,7 @@ const factsOfRun = async (api: BenchRunApi, runId: string, rootRunId: string, ev
   return { ...folded, declared: view.declared };
 };
 
-const runTrial = async (task: BenchTask, repository: string, workspace: string, ports: BenchRunPorts): Promise<Trial> => {
-  const { api } = ports;
+const runTrial = async (task: BenchTask, repository: string, workspace: string, api: BenchRunApi, ports: BenchRunPorts): Promise<Trial> => {
   const session = await api.createSession({ cwd: workspace, permissionMode: task.permissionMode, model: ports.model });
   const mandate = mandateOfTask(task);
   const run = await api.createRun(session.id, {
@@ -109,11 +113,31 @@ const runTrial = async (task: BenchTask, repository: string, workspace: string, 
   });
   const driven = await driveRun(api, task, run.id, ports.signal);
   ports.signal?.throwIfAborted();
-  const folded = await factsOfRun(api, run.id, run.id, driven.events);
+  const treeRunIds = [run.id, ...driven.children.map((child) => child.runId)];
+  const costs = await api.costs(treeRunIds);
+  const costOfRun = new Map(costs.map((cost) => [cost.runId, cost]));
+  const folded = await factsOfRun(api, run.id, run.id, driven.events, costOfRun);
   const children: RunFactsView[] = [];
-  for (const child of driven.children) children.push(await factsOfRun(api, child.runId, run.id, child.events));
+  for (const child of driven.children) children.push(await factsOfRun(api, child.runId, run.id, child.events, costOfRun));
   const grade = await gradeTrial({ task, workspace, base: repository, probe: ports.probe, files: ports.files });
-  return { facts: { ...folded, met: grade.met }, children, answeredBy: await api.answeredBy(run.id) };
+  const answeredBy = await answeredByOfRuns((runId) => api.answeredBy(runId), treeRunIds);
+  return { facts: { ...folded, ...treeSpendOf([folded, ...children]), met: grade.met }, children, answeredBy, costs };
+};
+
+const inHome = async <T>(home: BenchTrialHome, work: () => Promise<T>): Promise<T> => {
+  let result: T;
+  try {
+    result = await work();
+  } catch (error) {
+    try {
+      await home.close();
+    } catch (cleanup) {
+      throw failedWithCleanup(error, cleanup, 'a trial failed and its temporary home was not released');
+    }
+    throw error;
+  }
+  await home.close();
+  return result;
 };
 
 const verifiedRepositories = async (files: WorkspaceFiles, benchmark: Benchmark, root: string): Promise<Map<string, string>> => {
@@ -144,16 +168,19 @@ export const runBenchmark = async (benchmarkFile: string, ports: BenchRunPorts):
     if (repository === undefined) throw new EvalError(`task ${task.id} names the repository ${task.repository}, which was not verified`);
     for (let trial = 0; trial < (task.runs ?? BENCH_DEFAULT_RUNS); trial += 1) {
       ports.signal?.throwIfAborted();
-      const workspace = path.join(ports.scratch, `${task.id}-${trial}`);
-      await ports.files.cp(repository, workspace);
-      if (!(await setUp(task, workspace, ports.probe, ports.signal))) {
+      const home = await ports.open(task, trial);
+      const outcome = await inHome(home, async () => {
+        await ports.files.cp(repository, home.cwd);
+        if (!(await setUp(task, home.cwd, ports.probe, ports.signal))) return undefined;
+        ports.signal?.throwIfAborted();
+        return runTrial(task, repository, home.cwd, home.api, ports);
+      });
+      if (outcome === undefined) {
         invalidSetup.push({ taskId: task.id, trial });
         ports.onTrial?.({ taskId: task.id, trial, met: 'invalid_setup' });
         continue;
       }
-      ports.signal?.throwIfAborted();
-      const outcome = await runTrial(task, repository, workspace, ports);
-      trials.push({ taskId: task.id, trial, facts: outcome.facts, children: outcome.children });
+      trials.push({ taskId: task.id, trial, facts: outcome.facts, children: outcome.children, costs: outcome.costs });
       answeredBy.push(...outcome.answeredBy);
       if (outcome.answeredBy.length === 0) unrecordedAnswers += 1;
       ports.onTrial?.({ taskId: task.id, trial, met: outcome.facts.met });

@@ -267,7 +267,7 @@ export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): P
   const reporter = makeReporter();
   const pools = makeFakePoolFactory();
   const reapTiming = recordingReapTiming(fixture.clock, fixture.timers);
-  const composition = runtime.createSettingsComposition({ lock: testKernelLock(), signal: new AbortController().signal, home: temp.home, platform: process.platform, cache, store: fixture.store });
+  const composition = runtime.createSettingsComposition({ lock: testKernelLock(), home: temp.home, platform: process.platform, cache, store: fixture.store });
   fs.mkdirSync(temp.paths.jobs, { recursive: true, mode: 0o700 });
   const toolRuntime = runtime.createToolRuntime({
     kernelLock: testKernelLock(),

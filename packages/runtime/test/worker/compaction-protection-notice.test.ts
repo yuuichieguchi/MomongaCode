@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { InputItem } from '@momonga/protocol';
+import { TOKEN_SETTINGS_OFF } from './fake-settings.ts';
 import { capabilitiesFor, makeEnv } from './harness.ts';
 import { textStep } from './scripts.ts';
 import { bigStep, inputOf, padOf, withinTurnWorker } from './within-turn-support.ts';
@@ -13,6 +14,7 @@ const callIdsIn = (items: readonly InputItem[]): string[] =>
 describe('a compaction that runs at a reduced protection level', () => {
   it('journals exactly one recent_steps_shrunk notice naming the reduced step count, although the rebuild after it fits at level 0', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(4000) });
+    env.settings.contextValue = TOKEN_SETTINGS_OFF;
     env.gateway.script.push(
       bigStep('t0', { letter: 'a', size: 0, pad: 'x' }),
       bigStep('t1', { letter: 'a', size: 0, pad: 'y' }),

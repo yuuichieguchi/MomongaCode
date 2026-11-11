@@ -635,18 +635,11 @@ export type ReapMarkerDirectoryOptions = {
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-export class MarkerReapError extends AggregateError {
-  readonly dir: string;
+export type UnreapedMarker = { readonly marker: string; readonly code: string | undefined; readonly error: unknown };
 
-  constructor(dir: string, label: string, failures: ReadonlyArray<{ marker: string; reason: unknown }>) {
-    super(
-      failures.map((failure) => failure.reason),
-      `${label} markers in ${dir} could not be reaped: ${failures.map((failure) => `${failure.marker}: ${messageOf(failure.reason)}`).join('; ')}`,
-    );
-    this.name = 'MarkerReapError';
-    this.dir = dir;
-  }
-}
+export type ReapMarkerDirectoryResult = { reaped: number; kept: number; unreaped: readonly UnreapedMarker[] };
+
+const unreapedNotice = (label: string, { marker, code, error }: UnreapedMarker): string => `${label} marker ${marker} could not be reaped (${code ?? 'no code'}): ${messageOf(error)}; the next start will retry`;
 
 const markerFilesUnder = async (dir: string): Promise<string[]> => {
   let entries: fs.Dirent[];
@@ -703,7 +696,7 @@ export const reapMarkerDirectory = async ({
   signal,
   inspector,
   occasion,
-}: ReapMarkerDirectoryOptions): Promise<{ reaped: number; kept: number }> => {
+}: ReapMarkerDirectoryOptions): Promise<ReapMarkerDirectoryResult> => {
   const markers = await markerFilesUnder(dir);
   const reap: MarkerReap = (marker) =>
     reapMarkedProcesses({ marker, killGraceMs, label, onWarning, ...(kill === undefined ? {} : { kill }), ...(timing === undefined ? {} : { timing }), signal, inspector });
@@ -719,12 +712,12 @@ export const reapMarkerDirectory = async ({
   );
   let reaped = 0;
   let kept = 0;
-  const failures: Array<{ marker: string; reason: unknown }> = [];
+  const unreaped: UnreapedMarker[] = [];
   for (const outcome of outcomes) {
-    if ('failure' in outcome) failures.push({ marker: outcome.marker, reason: outcome.failure });
+    if ('failure' in outcome) unreaped.push({ marker: outcome.marker, code: (outcome.failure as NodeJS.ErrnoException).code, error: outcome.failure });
     else if (outcome.removed) reaped += 1;
     else kept += 1;
   }
-  if (failures.length > 0) throw new MarkerReapError(dir, label, failures);
-  return { reaped, kept };
+  for (const marker of unreaped) onWarning(unreapedNotice(label, marker));
+  return { reaped, kept, unreaped };
 };

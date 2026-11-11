@@ -13,6 +13,7 @@ const scriptedApi = (transcripts: Transcript[]): Scripted => {
   const childEvents = new Map(transcripts.flatMap((transcript) => transcript.children.map((child) => [child.runId, child.events] as const)));
   const queue = [...transcripts];
   record.api = {
+    costs: async () => [],
     createSession: async (input) => {
       record.sessions.push(input.permissionMode);
       return { id: `s${record.sessions.length}` };
@@ -372,6 +373,7 @@ describe('a mandate run that went quiescent, driven by a runner without a person
     const answered = Promise.withResolvers<void>();
     const record = { resolved: [] as { approvalId: string; optionId: string }[], cancelled: [] as string[], api: undefined as unknown as EvalRunApi };
     record.api = {
+      costs: async () => [],
       createSession: async () => ({ id: 's1' }),
       createRun: async () => ({ id: 'run-held' }),
       events: async function* () {

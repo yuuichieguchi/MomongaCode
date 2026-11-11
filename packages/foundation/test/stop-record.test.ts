@@ -77,4 +77,17 @@ describe('the stop record of a generation', () => {
     fs.writeFileSync(layout.stopRecord, text);
     expect(await readStopRecord(layout.stopRecord)).toBeUndefined();
   });
+
+  it.skipIf(process.getuid?.() === 0)('rejects with EACCES when the record exists and cannot be read, and answers no record only when it is absent', async (context) => {
+    const home = homeWithGeneration(context, 3);
+    const layout = generationLayout(home, 3);
+    expect(await readStopRecord(layout.stopRecord)).toBeUndefined();
+    await writeStopRecord(layout.stopRecord, 3, VALUES, testKernelLock());
+    fs.chmodSync(layout.stopRecord, 0o000);
+    try {
+      await expect(readStopRecord(layout.stopRecord)).rejects.toMatchObject({ code: 'EACCES' });
+    } finally {
+      fs.chmodSync(layout.stopRecord, 0o600);
+    }
+  });
 });

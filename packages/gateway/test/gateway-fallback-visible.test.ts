@@ -32,6 +32,7 @@ describe('a call answered by a target other than the first of its alias', () => 
       serviceVersion: '0.0.0',
       clock,
       exporters: [memory],
+      captureMessageContent: true,
       batch: { maxQueueSize: 2048, scheduledDelayMs: 60_000, maxExportBatchSize: 512 },
     });
     registerCleanup(() => telemetry.shutdown());

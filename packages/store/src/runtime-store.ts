@@ -239,8 +239,8 @@ const afterCursor = (cursor: string | null): { afterCreatedAt: number; afterId: 
 
 const prepareStatements = (db: DatabaseSync) => ({
   insertSession: db.prepare(
-    `INSERT INTO sessions (id, cwd, env_json, permission_mode, model, bypass_allowed, additional_directories_json, mcp_servers_json, created_at)
-     VALUES (:id, :cwd, :env, :permissionMode, :model, :bypassAllowed, :additionalDirectories, :mcpServers, :createdAt)`,
+    `INSERT INTO sessions (id, cwd, env_json, permission_mode, model, bypass_allowed, sandbox_network, additional_directories_json, mcp_servers_json, created_at)
+     VALUES (:id, :cwd, :env, :permissionMode, :model, :bypassAllowed, :sandboxNetwork, :additionalDirectories, :mcpServers, :createdAt)`,
   ),
   updateSessionMcpServers: db.prepare('UPDATE sessions SET mcp_servers_json = :mcpServers WHERE id = :id'),
   updateSessionMode: db.prepare('UPDATE sessions SET permission_mode = :permissionMode WHERE id = :id'),
@@ -1313,6 +1313,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           permissionMode: input.permissionMode,
           model: input.model,
           bypassAllowed: input.bypassAllowed === true ? 1 : 0,
+          sandboxNetwork: input.sandboxNetwork ?? null,
           additionalDirectories: canonicalJson(input.additionalDirectories ?? []),
           mcpServers: canonicalJson(input.mcpServers ?? {}),
           createdAt: clock.now(),
@@ -1422,6 +1423,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           permissionMode: parentSession.permissionMode,
           model: input.model,
           bypassAllowed: parentSession.bypassAllowed ? 1 : 0,
+          sandboxNetwork: parentSession.sandboxNetwork,
           additionalDirectories: canonicalJson(parentSession.additionalDirectories),
           mcpServers: canonicalJson(parentSession.mcpServers),
           createdAt: now,

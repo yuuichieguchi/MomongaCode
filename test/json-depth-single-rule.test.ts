@@ -64,7 +64,7 @@ const INTERNAL_PARSES: Readonly<Record<string, InternalParse>> = {
   'packages/supervisor/src/lock-watch.ts': { calls: 1, reason: 'health answers of the product\'s own child services' },
   'packages/verify/src/z3-distribution.ts': { calls: 1, reason: 'the Z3 manifest the product builds and ships' },
   'packages/tools/src/ripgrep-distribution.ts': { calls: 1, reason: 'the ripgrep manifest the product builds and ships' },
-  'packages/foundation/src/platform/windows-keeper-asset.ts': { calls: 1, reason: 'the Windows keeper manifest the product builds and ships' },
+  'packages/foundation/src/platform/bundled-executable.ts': { calls: 1, reason: 'the manifest of a helper executable (the Windows keeper, the Linux socket guard) the product builds and ships' },
   'packages/foundation/src/oauth-provider.ts': { calls: 1, reason: 'the OAuth credential store the product writes' },
   'packages/cli/src/tui/terminal/handover.ts': { calls: 1, reason: 'the terminal state the product hands to its own next process' },
   'packages/cli/src/tui/dismissed-notices.ts': { calls: 1, reason: 'the dismissed notices file the product writes in its state directory' },

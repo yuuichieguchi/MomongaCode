@@ -1,5 +1,5 @@
 import { RUN_ROLE, UNPRICED_CODE_TEXT, describeFallbackCause, escapeTerminalLine } from '@momonga/protocol';
-import type { FallbackCause, UnpricedCode } from '@momonga/protocol';
+import type { SpanFallbackCause, UnpricedCode } from '@momonga/protocol';
 import { RUNLESS } from './billed-calls.ts';
 import type { PricedBilledCall } from './billed-calls.ts';
 import { CACHE_READ_TEXT, isCacheReadReported, noCallReported } from './cache-reads.ts';
@@ -9,7 +9,7 @@ import type { MoneyTally } from './money-line.ts';
 
 export type CostedRun = { runId: string; sessionId: string };
 
-export type CostFallback = { answeredBy: string; calls: number; failed: FallbackCause[] };
+export type CostFallback = { answeredBy: string; calls: number; failed: SpanFallbackCause[] };
 
 export type RoleCost = {
   fallbackCalls?: number;
@@ -106,7 +106,7 @@ const merge = (target: Accumulator, source: Accumulator): void => {
   }
 };
 
-const addFallback = (accumulator: Accumulator, answeredBy: string, failed: FallbackCause[], calls: number): void => {
+const addFallback = (accumulator: Accumulator, answeredBy: string, failed: SpanFallbackCause[], calls: number): void => {
   const key = `${answeredBy}\n${JSON.stringify(failed)}`;
   const known = accumulator.fallbacks.get(key);
   if (known === undefined) accumulator.fallbacks.set(key, { answeredBy, calls, failed });

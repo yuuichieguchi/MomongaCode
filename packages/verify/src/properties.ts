@@ -1,4 +1,5 @@
 import { someAsync } from '@momonga/foundation';
+import type { SecretLocation } from '@momonga/foundation';
 import { comparesByAdjacency, matchPathlessRule, supersededFormOf } from '@momonga/policy';
 import type { PermissionRule, SupersededForm } from '@momonga/policy';
 import type { RuleNote, RuleNoteRule } from '@momonga/protocol';
@@ -11,7 +12,7 @@ import { describeWitness } from './report.ts';
 import { commandDecisionWithout } from './replay.ts';
 import type { Counterexample, Finding, PropertyResult, Verdict } from './report.ts';
 
-export type SecretLocation = { label: string; directory: string; accesses: readonly ('read' | 'write')[] };
+const LOCATION_ACCESSES = ['read', 'write'] as const;
 
 const READ_SUBJECTS: readonly SubjectTool[] = ['Read', 'Glob', 'Grep'];
 const WRITE_SUBJECTS: readonly SubjectTool[] = ['Write'];
@@ -27,9 +28,9 @@ const READ_ONLY_LIMITS = {
 
 const ruleLabel = (rule: PermissionRule): string => `${rule.text} (${rule.origin}: ${rule.source})`;
 
-type Tally = { findings: Finding[]; byModeDefault: Finding[]; notes: string[]; unknowns: string[] };
+type Tally = { findings: Finding[]; notes: string[]; unknowns: string[] };
 
-const newTally = (): Tally => ({ findings: [], byModeDefault: [], notes: [], unknowns: [] });
+const newTally = (): Tally => ({ findings: [], notes: [], unknowns: [] });
 
 const absorb = (tally: Tally, result: Probe, onFound: (counterexample: Counterexample) => Finding): void => {
   if (result.status === 'found') tally.findings.push(onFound(result.counterexample));
@@ -79,7 +80,6 @@ export const checkDenyPrecedence = async (context: QueryContext): Promise<Proper
     proves: 'for every allow rule and every tool it covers, no modelled input is allowed while a deny rule covering that tool matches it',
     doesNotProve: ['inputs outside the modelled input domain', 'that a deny rule describes everything its author meant to forbid', READ_ONLY_LIMITS.denyPrecedence],
     verdict: verdictOf(tally),
-    byModeDefault: tally.byModeDefault,
   };
 };
 
@@ -95,7 +95,7 @@ export const checkSecretReach = async (context: QueryContext, locations: readonl
       tally.unknowns.push(`${location.label} cannot be resolved to its real location (${canonical.reason.kind === 'errno' ? canonical.reason.code : canonical.reason.kind})`);
       continue;
     }
-    for (const access of location.accesses) regions.push({ label: `${location.label} (${access})`, access, region: (resolved) => models.paths.under(resolved, canonical.path) });
+    for (const access of LOCATION_ACCESSES) regions.push({ label: `${location.label} (${access})`, access, region: (resolved) => models.paths.under(resolved, canonical.path) });
   }
   regions.push({ label: 'the protected set of the workspace (write)', access: 'write', region: (resolved) => models.paths.protectedWrite(resolved) });
   for (const { label, access, region } of regions) {
@@ -109,29 +109,19 @@ export const checkSecretReach = async (context: QueryContext, locations: readonl
         message: `${describeWitness(counterexample.witness)} is reachable without approval: ${counterexample.cause}`,
         counterexample,
       }));
-      if (opened.status !== 'none') continue;
-      const reached = await probe(context, 'secret-reach', `${label} through ${tool} by the mode default`, tool, [await region(resolved), outcome.allow]);
-      if (reached.status === 'unknown') tally.unknowns.push(reached.reason);
-      if (reached.status !== 'found') continue;
-      tally.byModeDefault.push({
-        subject: label,
-        message: `${describeWitness(reached.counterexample.witness)} is reachable without approval by the mode default: ${reached.counterexample.cause}`,
-        counterexample: reached.counterexample,
-      });
     }
   }
   return {
     id: 'secret-reach',
     title: 'the rules leave no route to secrets',
     subject: `${regions.length} secret location(s) and access kind(s)`,
-    proves: 'for each listed location and access, no modelled path inside it is allowed without approval by an allow rule; a path that the chosen mode allows with no allow rule is listed as by the mode default, which is the stated consequence of that mode and does not refute the rules',
+    proves: 'for each listed location and access, no modelled path inside it is allowed without approval by an allow rule',
     doesNotProve: [
       'access through programs that read or write a secret location on their own, such as a shell command that expands a variable',
       'secret locations that are not in the list above',
       READ_ONLY_LIMITS.secretReach,
     ],
     verdict: verdictOf(tally),
-    byModeDefault: tally.byModeDefault,
   };
 };
 
@@ -258,7 +248,6 @@ export const checkRuleConsistency = async (context: QueryContext): Promise<Prope
       'nothing is refused by this check: a rule gets a note when removing it changes the decision for no modelled input (it matches nothing, another rule covers it, it is written twice, or a mode already allows what it allows); the notes are computed from the rules alone and are the same in every mode; a Bash deny rule for a wrapper, shell or eval program is tried on concrete commands only, and any other Bash rule outside the modelled command alphabet gets a note that it was not decided',
     doesNotProve: ['that the rules that remain express the intent of their author', 'effects on inputs outside the modelled input domain', READ_ONLY_LIMITS.ruleConsistency],
     verdict: ruleNotes.length === 0 ? { status: 'proved', notes: [] } : { status: 'noted', ruleNotes, notes: ruleNotes.map((note) => note.message) },
-    byModeDefault: [],
   };
 };
 
@@ -291,7 +280,6 @@ export const checkBashAdmission = (context: QueryContext): PropertyResult => {
       READ_ONLY_LIMITS.bashAdmission,
     ],
     verdict: verdictOf(tally),
-    byModeDefault: tally.byModeDefault,
   };
 };
 
@@ -333,7 +321,6 @@ export const checkSupersededForms = (context: QueryContext, forms: readonly Supe
       'the mode default of a command, because only rules are examined',
     ],
     verdict: verdictOf(tally),
-    byModeDefault: tally.byModeDefault,
   };
 };
 
@@ -353,6 +340,5 @@ export const checkMandateHolds = (context: QueryContext, alwaysOperations: reado
     proves: 'no allow rule is written for an operation whose approval class is always, so no rule reads as if it let such an operation run without a person',
     doesNotProve: ['an approval class the user changed under operations.approval in the user settings', 'a push that becomes always by its arguments (force, delete) or by a protected ref'],
     verdict: verdictOf(tally),
-    byModeDefault: tally.byModeDefault,
   };
 };

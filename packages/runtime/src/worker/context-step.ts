@@ -18,7 +18,7 @@ import {
   withCalibration,
   workingStateCapFor,
 } from '@momonga/context';
-import type { ActivatedSkill, ReferenceReaders, TokenMeter, BuildContextInput, ContextArrival, ContextNotice, BuildContextPorts, BuiltContext, CompactionPlan, ContextEviction, LoadedGoverning, PinnedMeasure } from '@momonga/context';
+import type { ActivatedSkill, ReferenceReaders, TokenMeter, BuildContextInput, ContextArrival, ContextNotice, BuildContextPorts, BuiltContext, CompactionBlock, CompactionBlockReason, CompactionPlan, ContextEviction, LoadedGoverning, PinnedMeasure } from '@momonga/context';
 import { TRANSIENT_REQUEST_STATUSES, canonicalJson, sha256Hex } from '@momonga/foundation';
 import { resolveGoverning } from '@momonga/memory';
 import type { Session } from '@momonga/store';
@@ -204,7 +204,7 @@ const offeredInputOf = async (
     recordedReferences: recordedReferencesOf(ctx),
     ...(ctx.memoryShare === undefined ? {} : { memoryShare: ctx.memoryShare }),
     touchedPaths: ctx.touched.probes.witnesses(),
-    trusted: await options.settings.trusted(session),
+    trusted: await options.settings.trusted(session, ctx.control.signal),
     projectRoot: session.cwd,
     home: options.home,
     level,
@@ -259,7 +259,7 @@ const portsOf = (ctx: ClaimContext): BuildContextPorts => {
       handleFor: (content) => ctx.options.blobs.handleFor(content),
       put: (text, blobOptions) => ctx.options.blobs.put(text, { ...blobOptions, runId: ctx.run.id }),
     },
-    instructions: ctx.options.instructionReader,
+    instructions: ctx.options.instructionReaderFor(ctx.control.signal),
     ...(roleModel === undefined ? {} : { compactionTarget: () => compactionRoleCapabilitiesOf(ctx, roleModel) }),
   };
 };
@@ -345,8 +345,8 @@ const buildOnce = async (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, le
 
 type CompactedPayload = Extract<RunEventPayload, { type: 'context.compacted' }>;
 type CompactedEvent = Extract<RunEvent, { type: 'context.compacted' }>;
-type CompactionSource = Pick<CompactionPlan, 'throughSeq' | 'input' | 'summaryTokenCap' | 'focus' | 'pinnedText' | 'notices' | 'tokens'>;
-type CompactionCounts = Required<Pick<CompactedPayload, 'tokensBefore' | 'tokensAfter'>>;
+type CompactionSource = Pick<CompactionPlan, 'throughSeq' | 'input' | 'summaryTokenCap' | 'focus' | 'pinnedText' | 'notices' | 'tokens' | 'rebuilt'>;
+type CompactionCounts = Required<Pick<CompactedPayload, 'tokensBefore' | 'tokensAfter'>> & Pick<CompactedPayload, 'tokensAfterEstimated'>;
 
 const noticeOf = (code: string, message: string): RunEventPayload => ({ type: 'notice', level: 'warning', message, code });
 
@@ -371,8 +371,12 @@ const projectCompaction = (ctx: ClaimContext, throughSeq: number, item: Compacti
 const renderedFacts = (ctx: ClaimContext, projected: RunState, capTokens: number): string => renderedWorkingState(ctx, projected, capTokens, ctx.readers());
 
 const countsWith = async (ctx: ClaimContext, plan: CompactionSource, item: CompactionInputItem | MessageInputItem): Promise<CompactionCounts> => {
+  if (ctx.capabilities.tokenCounting === 'exact') {
+    const rebuilt = await ctx.meter.count({ input: [...plan.rebuilt.before, item, ...plan.rebuilt.after], tools: plan.rebuilt.tools });
+    return { tokensBefore: plan.tokens.input, tokensAfter: rebuilt.inputTokens };
+  }
   const summaryTokens = await ctx.meter.countItem(item, { callNames: {}, withTools: true });
-  return { tokensBefore: plan.tokens.input, tokensAfter: plan.tokens.input - plan.tokens.replaced + plan.tokens.workingStateGrowth + summaryTokens };
+  return { tokensBefore: plan.tokens.input, tokensAfter: plan.tokens.input - plan.tokens.replaced + plan.tokens.workingStateGrowth + summaryTokens, tokensAfterEstimated: true };
 };
 
 const deterministicCompaction = async (ctx: ClaimContext, plan: CompactionSource, guidelineVersion: number, fidelity?: SummaryFidelity): Promise<CompactedPayload> => {
@@ -533,6 +537,7 @@ const unrecordedNoticePayloads = (ctx: ClaimContext, notices: readonly ContextNo
       message: notice.message,
       code: notice.code,
       ...(notice.reduction === undefined ? {} : { reduction: notice.reduction }),
+      ...(notice.key === undefined ? {} : { key: notice.key }),
     });
   }
   return payloads;
@@ -775,18 +780,35 @@ const buildNextUnguarded = async (ctx: ClaimContext, options: { wrapUp?: WrapUpR
   }
 };
 
+export const COMPACTION_WAY_FORWARD: Readonly<Record<CompactionBlockReason, string>> = {
+  deficit_not_closed: 'The session is already small enough; nothing needs to be done.',
+  no_step_boundary_outside_protection: 'Every step lies among the recent steps that are kept; ask for a compaction again after the session has more steps.',
+  protected_step_exceeds_room: 'The latest step alone does not fit; start a new session with /clear, or choose a model with a larger context window.',
+  region_exceeds_summary_input_budget: 'The part to summarise is larger than one summary request may hold; set models.roles.compaction to a model with a larger context window.',
+};
+
+const nothingToCompactMessage = (ctx: ClaimContext, block: CompactionBlock | undefined): string => {
+  if (ctx.journal.state.history.length <= 1) return NOTHING_TO_COMPACT_MESSAGE;
+  if (block === undefined) throw new Error(`run ${ctx.run.id} found no compaction and no reason for it over a history of ${ctx.journal.state.history.length} items`);
+  return `No compaction: ${block.message}. ${COMPACTION_WAY_FORWARD[block.reason]}`;
+};
+
 export const compactOnly = async (ctx: ClaimContext, focus: string | undefined): Promise<void> => {
   if (ctx.options.store.readRunEventsOfTypes(ctx.run.id, ['context.compacted']).length > 0) {
     await ctx.terminals.finish('COMPLETED');
     return;
   }
+  let level = 0;
   for (;;) {
     if ((await cancelIfInterrupted(ctx)) === 'done') return;
     let plan: CompactionPlan | undefined;
+    let blocked: { by: CompactionBlock | undefined; lastLevel: boolean };
     try {
       await advanceTouched(ctx);
       await prepareRecall(ctx);
-      plan = (await buildContext({ ...(await contextInputOf(ctx, undefined, 0)), compactNow: true, ...(focus === undefined ? {} : { compactionFocus: focus }) }, portsOf(ctx))).compaction;
+      const built = await buildContext({ ...(await contextInputOf(ctx, undefined, level)), compactNow: true, ...(focus === undefined ? {} : { compactionFocus: focus }) }, portsOf(ctx));
+      plan = built.compaction;
+      blocked = { by: built.compactionBlockedBy, lastLevel: built.lastLevel };
     } catch (error) {
       if (error instanceof PinnedOverflowError) {
         await ctx.terminals.finish('FAILED', { error: pinnedFailureFor(ctx, error) });
@@ -798,10 +820,15 @@ export const compactOnly = async (ctx: ClaimContext, focus: string | undefined):
       }
       if (!(error instanceof ContextOverflowError)) throw error;
       plan = error.compaction;
+      blocked = { by: error.compactionBlockedBy, lastLevel: error.lastLevel };
     }
     if ((await cancelIfInterrupted(ctx)) === 'done') return;
     if (plan === undefined) {
-      ctx.journal.append([{ type: 'notice', level: 'info', message: NOTHING_TO_COMPACT_MESSAGE, code: NOTHING_TO_COMPACT_CODE }]);
+      if (!blocked.lastLevel) {
+        level += 1;
+        continue;
+      }
+      ctx.journal.append([{ type: 'notice', level: 'info', message: nothingToCompactMessage(ctx, blocked.by), code: NOTHING_TO_COMPACT_CODE }]);
       await ctx.terminals.finish('COMPLETED');
       return;
     }

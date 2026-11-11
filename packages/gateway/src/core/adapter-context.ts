@@ -1,4 +1,4 @@
-import type { AdapterContext, Capabilities, ReasoningOrigin } from '@momonga/protocol';
+import type { AdapterContext, Capabilities, ReasoningOrigin, UpstreamRoute } from '@momonga/protocol';
 import type { Services } from './services.ts';
 import { adapterTargetOf } from './router.ts';
 import type { TargetRuntime } from './router.ts';
@@ -12,7 +12,9 @@ export const adapterContextOf = (
   signal: AbortSignal,
   attempt: number,
   idempotencyKey?: string,
+  route?: (route: UpstreamRoute) => void,
 ): AdapterContext => ({
+  ...(route === undefined ? {} : { route }),
   signal,
   target: adapterTargetOf(target),
   attempt,

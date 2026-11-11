@@ -320,6 +320,7 @@ describe('run event payloads', () => {
       guidelineVersion?: number;
       tokensBefore?: number;
       tokensAfter?: number;
+      tokensAfterEstimated?: true;
     }>();
     expectTypeOf<Payload<'context.governing_loaded'>>().toEqualTypeOf<{
       type: 'context.governing_loaded';
@@ -394,6 +395,7 @@ describe('run event payloads', () => {
       message: string;
       code?: string;
       toolKey?: string;
+      key?: string;
       reduction?: { turn: number; from: number; to: number };
     }>();
   });
@@ -405,6 +407,7 @@ describe('run event payloads', () => {
       message: string;
       code?: string;
       toolKey?: string;
+      key?: string;
       reduction?: { turn: number; from: number; to: number };
       id: number;
       runId: string;

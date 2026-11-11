@@ -16,7 +16,7 @@ import { PreconditionFailedError, StreamFailure, UnsupportedInputError } from '.
 import { RENDERS_EVERY_SAMPLING_FIELD } from '../shared/sampling.ts';
 import { gatewayOutputCeilingOf, watchContent, watchedPostOf } from '../shared/content-idle.ts';
 import type { ContentWatch } from '../shared/content-idle.ts';
-import { createEndpointPool } from '../shared/http-client.ts';
+import { createEndpointPool, routeReportOf } from '../shared/http-client.ts';
 import { isJsonOnlyEnforced, jsonReplyFormatOf, jsonReplyPathOf, jsonReplyPlanOf } from '../shared/json-reply.ts';
 import { retryAfterHint, httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
 import { MAX_SSE_EVENT_BYTES } from '../shared/limits.ts';
@@ -140,7 +140,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
       const endpoint = await options.resolveEndpoint(ctx.target, signal);
       const upstreamModel = await options.upstreamModel?.(ctx.target, signal);
       const response = await sendAuthorized(options.authSource(ctx.target), signal, (bearer) =>
-        pool.clientFor(endpoint).post({
+        pool.clientFor(endpoint).post({ ...routeReportOf(ctx),
           headers: {
             ...idempotencyHeaderOf(ctx),
             'content-type': 'application/json',

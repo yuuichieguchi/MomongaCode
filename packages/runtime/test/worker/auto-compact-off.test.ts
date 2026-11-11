@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { defaultContextSettings } from '@momonga/config';
 import type { RunEventPayload } from '@momonga/protocol';
-import { capabilitiesFor, makeEnv } from './harness.ts';
+import { compactInputOf, compactPinOf } from '../../src/worker/compact-pin.ts';
+import { capabilitiesFor, createdRun, makeEnv } from './harness.ts';
 import { assistantMessage, textStep } from './scripts.ts';
 
 const USAGE = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };
@@ -68,4 +69,27 @@ describe('context.autoCompact under the shipped defaults (design core-on 3.5 ite
     await env.runOnce(env.worker());
     expect(env.ofType(run.id, 'context.compacted')).toHaveLength(1);
   });
+});
+
+describe('an explicit /compact and context.autoCompact', () => {
+  for (const autoCompact of [false, true]) {
+    it(`compacts with the setting ${autoCompact ? 'on' : 'off'}`, async () => {
+      const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
+      env.settings.contextValue = { ...env.settings.contextValue, autoCompact: false };
+      const first = await env.enqueue('question one');
+      await env.seed(first.id, conversation.slice(0, -1), 'release');
+      env.gateway.script.push(textStep('Done.'));
+      await env.runOnce(env.worker());
+      expect(env.ofType(first.id, 'context.compacted')).toEqual([]);
+      env.settings.contextValue = { ...env.settings.contextValue, autoCompact };
+      const compact = createdRun(
+        await env.store.createRunAndEnqueue(env.session.id, { input: compactInputOf(undefined), timeoutMs: 3_600_000, limits: {}, pins: compactPinOf(undefined), history: 'inherit' }),
+      );
+
+      await env.runOnce(env.worker());
+
+      expect(env.run(compact.id).status).toBe('COMPLETED');
+      expect(env.ofType(compact.id, 'context.compacted')).toHaveLength(1);
+    });
+  }
 });

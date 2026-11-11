@@ -82,17 +82,21 @@ describe('/permissions', () => {
     await press(started, '5', '› 5. bypassPermissions');
     await press(started, KEYS.enter, SAVE_TO_TITLE);
     await press(started, '2', '› 2. project');
-    await press(started, KEYS.enter, 'bypassPermissions is only honored in user settings and on the command line; ignored');
+    await press(started, KEYS.enter, 'permissions.defaultMode bypassPermissions is only honored in user settings and on the command line; discarded');
     expect(fs.existsSync(place.projectFile)).toBe(false);
     started.app.unmount();
   });
 
-  it('writes only to the user file for a project that is not trusted', async () => {
+  it('offers the user file and the local file for a project that is not trusted, never the project file', async () => {
     const place = freshPlace();
     const started = await startAt(place, { trust: { path: place.project, decision: 'untrusted' } });
     await command(started, '/permissions', PERMISSIONS_TITLE);
     await press(started, KEYS.enter, '5. bypassPermissions');
     await press(started, '3', '› 3. plan');
+    const target = await press(started, KEYS.enter, SAVE_TO_TITLE);
+    expect(target).toContain('› 1. user');
+    expect(target).toContain('2. local');
+    expect(target).not.toContain('project');
     await press(started, KEYS.enter, `Start mode: plan  ${APPLIES_NEXT_SESSION}`);
     expect(stored(place.userFile)).toEqual({ permissions: { defaultMode: 'plan' } });
     started.app.unmount();

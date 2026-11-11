@@ -78,8 +78,8 @@ export { SETTINGS_SCHEMA } from './settings-schema.ts';
 export { CORE_SETTING_KEYS, NON_CORE_SETTING_KEYS } from './core-settings.ts';
 export type { CoreSettingKey } from './core-settings.ts';
 export { DEFAULT_CONTENT_RETENTION_DAYS, defaultSandboxSetting, resolveTelemetrySettings } from './settings.ts';
-export { resolveNetwork } from './network.ts';
-export type { NetworkEnvironment } from './network.ts';
+export { resolveNetwork, resolveNetworkSources } from './network.ts';
+export type { NetworkEnvironment, NetworkSources, ShownNetworkValue } from './network.ts';
 export {
   DEFAULT_FORGET_AFTER_DAYS,
   DEFAULT_VERIFICATION_COMMANDS,

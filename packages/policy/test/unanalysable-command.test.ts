@@ -1,3 +1,4 @@
+import { testSecretLocations } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { decide } from '@momonga/policy';
 import type { Decision, PolicyTool } from '@momonga/policy';
@@ -18,7 +19,7 @@ const bash = async (command: string, spec: Spec = {}): Promise<Decision> => {
     ...(spec.governingAsk ?? []).map((text) => ({ ...make('ask', text), layer: 'governance' as const })),
     ...(spec.deny ?? []).map((text) => make('deny', text)),
   ];
-  return decide({
+  return decide({ secretLocations: testSecretLocations(layout.home),
     tool: BASH,
     subject: { kind: 'command', tool: 'Bash', command },
     mode: spec.mode ?? 'manual',
