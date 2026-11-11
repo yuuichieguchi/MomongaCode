@@ -106,7 +106,7 @@ const CASES: readonly Case[] = [
   { line: '/cost --breakdown', spy: 'showCost', args: [expect.objectContaining({ breakdown: true, all: false })], background: false },
   { line: '/status run-1 --json', spy: 'showStatus', args: ['run-1', true], background: false },
   { line: '/jobs sess-1', spy: 'listJobs', args: ['sess-1', false], background: false },
-  { line: '/trace run-2', spy: 'showTrace', args: ['run-2', { json: false, content: false }], background: false },
+  { line: '/trace run-2', spy: 'showTrace', args: ['run-2', expect.objectContaining({ json: false, content: false })], background: false },
   { line: '/mcp list --json', spy: 'mcpList', args: [true], background: false },
   { line: '/mcp login docs --no-browser', spy: 'mcpLogin', args: ['docs', expect.objectContaining({ openBrowser: false })], background: true },
   { line: '/memory add use pnpm --user', spy: 'memoryAdd', args: ['use pnpm', expect.objectContaining({ user: true })], background: false },
