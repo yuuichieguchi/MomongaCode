@@ -5,6 +5,7 @@ import type { NetworkRequest, NetworkScopeKind } from '@momonga/foundation';
 import { SANDBOX_NETWORK_SCOPES } from '@momonga/sandbox';
 import { defineTool, ToolExecutionError, ToolInputError } from '../types.ts';
 import { USER_SHELL_HEAD_BYTES, USER_SHELL_TAIL_BYTES } from '@momonga/protocol';
+import { STOP_NOT_CONFIRMED_NOTE } from '@momonga/sandbox';
 import type { SandboxCommand, SandboxExit, SandboxedProcess } from '@momonga/sandbox';
 import type { BackgroundJobs } from '../ports.ts';
 import type { ReconcileContext, ToolContext, ToolResult } from '../types.ts';
@@ -227,6 +228,7 @@ export const bashTool = defineTool<BashInput>({
       let groupNotice: string | undefined;
       [exit, groupNotice] = await Promise.all([child.exited, attached]);
       if (groupNotice !== undefined) notes.push(groupNotice);
+      if (exit.stop === 'not_confirmed') notes.push(STOP_NOT_CONFIRMED_NOTE);
       notes.push(...(await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal: ctx.signal })));
       await pump.settle();
     } finally {

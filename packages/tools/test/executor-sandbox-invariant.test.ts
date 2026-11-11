@@ -22,7 +22,7 @@ const recordingSandbox = (kind: Sandbox['kind']) => {
     kind,
     spawn: (_command, policy): SandboxedProcess => {
       policies.push(policy);
-      return { pid: 0, pgid: 0, stdout: stream(), stderr: stream(), exited: Promise.resolve({ code: 0, signal: null }) };
+      return { pid: 0, pgid: 0, stdout: stream(), stderr: stream(), exited: Promise.resolve({ code: 0, signal: null, stop: 'confirmed' }) };
     },
   };
   return { sandbox, policies };

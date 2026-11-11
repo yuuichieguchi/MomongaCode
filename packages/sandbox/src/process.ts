@@ -216,7 +216,7 @@ export function launch(options: LaunchOptions): SandboxedProcess {
           reject(stdinFailure);
           return;
         }
-        resolve({ code, signal: exitSignal, ...(killedBy === undefined ? {} : { killedBy }), ...(outcome === 'unconfirmed' ? { groupNotStopped: true as const } : {}) });
+        resolve({ code, signal: exitSignal, ...(killedBy === undefined ? {} : { killedBy }), stop: outcome === 'unconfirmed' ? 'not_confirmed' : 'confirmed' });
       }, reject);
     };
     child.once('error', failed);

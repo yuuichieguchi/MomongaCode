@@ -64,7 +64,7 @@ const fakeProcess = (pgid: number, signal: AbortSignal): FakeProcess => {
     stderrStream.end();
     finish(result);
   };
-  signal.addEventListener('abort', () => exit({ code: null, signal: 'SIGTERM', killedBy: 'abort' }), { once: true });
+  signal.addEventListener('abort', () => exit({ code: null, signal: 'SIGTERM', killedBy: 'abort', stop: 'confirmed' }), { once: true });
   return { pid: pgid, pgid, stdout: stdoutStream, stderr: stderrStream, exited, stdoutStream, stderrStream, exit, signal };
 };
 
@@ -176,7 +176,7 @@ describe('background jobs', () => {
     expect(fs.existsSync(path.join(t.markerDir, key))).toBe(true);
     expect(t.jobs.liveKeys().has(key)).toBe(true);
     expect(t.jobs.byCall('call-1')).toMatchObject({ id: jobId, status: 'running' });
-    t.spawned[0]?.exit({ code: 0, signal: null });
+    t.spawned[0]?.exit({ code: 0, signal: null, stop: 'confirmed' });
     await t.settled(jobId);
   });
 
@@ -193,7 +193,7 @@ describe('background jobs', () => {
     expect((await t.jobs.read(t.run.id, jobId, { call: 'read-3' })).output).toBe('');
 
     await process.stdoutStream.write('third\nlast\n');
-    process.exit({ code: 3, signal: null });
+    process.exit({ code: 3, signal: null, stop: 'confirmed' });
     await t.settled(jobId);
     const done = await t.jobs.read(t.run.id, jobId, { call: 'read-4' });
     expect(done.job).toMatchObject({ status: 'exited', exitCode: 3 });
@@ -224,7 +224,7 @@ describe('background jobs', () => {
     await process.stdoutStream.write('ok 1\nERROR a\nok 2\nERROR b\n');
     expect((await t.jobs.read(t.run.id, jobId, { call: 'read-5', keep: createLineFilter('ERROR', {}) })).output).toBe('ERROR a\nERROR b');
     expect((await t.jobs.read(t.run.id, jobId, { call: 'read-6' })).output).toBe('');
-    process.exit({ code: 0, signal: null });
+    process.exit({ code: 0, signal: null, stop: 'confirmed' });
     await t.settled(jobId);
   });
 
@@ -238,7 +238,7 @@ describe('background jobs', () => {
     };
     await expect(t.jobs.read(t.run.id, jobId, { call: 'read-5', keep: refusing })).rejects.toThrow('the pattern is too costly to match');
     expect((await t.jobs.read(t.run.id, jobId, { call: 'read-6' })).output).toBe('ok 1\nERROR a');
-    process.exit({ code: 0, signal: null });
+    process.exit({ code: 0, signal: null, stop: 'confirmed' });
     await t.settled(jobId);
   });
 
@@ -274,7 +274,7 @@ describe('background jobs', () => {
     const t = await setup();
     t.holders.push(777);
     const { jobId } = await t.start('call-1');
-    t.spawned[0]?.exit({ code: 0, signal: null });
+    t.spawned[0]?.exit({ code: 0, signal: null, stop: 'confirmed' });
     await t.settled(jobId);
     expect(t.reconciled).toEqual([{ pgid: 4000 }]);
     expect((await t.jobs.read(t.run.id, jobId, { call: 'read-7' })).output).toContain('Terminated 1 process(es) that outlived the job.');
@@ -286,7 +286,7 @@ describe('background jobs', () => {
     });
     t.holders.push(777);
     const { jobId } = await t.start('call-1');
-    t.spawned[0]?.exit({ code: 0, signal: null });
+    t.spawned[0]?.exit({ code: 0, signal: null, stop: 'confirmed' });
     await t.settled(jobId);
     const { output } = await t.jobs.read(t.run.id, jobId, { call: 'read-7' });
     expect(output).not.toContain('Terminated');
@@ -306,7 +306,7 @@ describe('background jobs', () => {
     for (const key of ['call-1', 'call-2']) {
       const { jobId } = await t.start(key);
       jobIds.push(jobId);
-      t.spawned.at(-1)?.exit({ code: 0, signal: null });
+      t.spawned.at(-1)?.exit({ code: 0, signal: null, stop: 'confirmed' });
       await t.settled(jobId);
     }
     expect(t.warnings.filter((message) => message.includes('could not be inspected'))).toEqual(
@@ -317,7 +317,7 @@ describe('background jobs', () => {
   it('finishes a job as unknown, never as exited, when a process could not be inspected, and does not count it as terminated', async () => {
     const t = await setup(reportingSshd);
     const { jobId } = await t.start('call-1');
-    t.spawned[0]?.exit({ code: 0, signal: null });
+    t.spawned[0]?.exit({ code: 0, signal: null, stop: 'confirmed' });
     await t.settled(jobId);
     expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'unknown', exitCode: 0 });
     expect(t.reconciled).toEqual([]);
@@ -339,7 +339,7 @@ describe('background jobs', () => {
     const key = t.store.jobs.get(jobId)?.idemKey ?? '';
     const finalized = t.settled(jobId);
     await t.spawned[0]?.stdoutStream.write('some output\n');
-    t.spawned[0]?.exit({ code: 0, signal: null });
+    t.spawned[0]?.exit({ code: 0, signal: null, stop: 'confirmed' });
 
     await expect(finalized).rejects.toThrow(message);
 
@@ -395,7 +395,7 @@ describe('background jobs', () => {
     const { jobId } = await t.start('call-1');
     await t.store.release(claim, 'WAITING_TOOL', START_MS + 100_000, { awaits: { runIds: [], jobIds: [jobId] } });
     expect(t.store.getRun(t.run.id)?.status).toBe('WAITING_TOOL');
-    t.spawned[0]?.exit({ code: 0, signal: null });
+    t.spawned[0]?.exit({ code: 0, signal: null, stop: 'confirmed' });
     await t.settled(jobId);
     expect(t.store.getRun(t.run.id)?.status).toBe('QUEUED');
   });
@@ -448,7 +448,7 @@ describe('a job that is still starting is owned by its starter', () => {
     expect(t.reaped).toEqual([]);
     expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'running', pgid: 4000 });
     expect(t.jobs.liveCount()).toBe(1);
-    t.spawned[0]?.exit({ code: 0, signal: null });
+    t.spawned[0]?.exit({ code: 0, signal: null, stop: 'confirmed' });
     await t.settled(jobId);
     expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'exited', exitCode: 0 });
   });
@@ -503,7 +503,7 @@ describe('the check of the processes at the end of a job has its own bound', () 
     const { jobId } = await t.start('call-1');
     const key = t.store.jobs.get(jobId)?.idemKey ?? '';
     await t.spawned[0]?.stdoutStream.write('some output\n');
-    t.spawned[0]?.exit({ code: 0, signal: null });
+    t.spawned[0]?.exit({ code: 0, signal: null, stop: 'confirmed' });
     await listingAsked;
     expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'running' });
 
@@ -526,7 +526,7 @@ describe('the check of the processes at the end of a job has its own bound', () 
     expect(JOB_END_PROBE_MS).toBe(120_000);
     const t = await setup();
     const { jobId } = await t.start('call-1');
-    t.spawned[0]?.exit({ code: 0, signal: null });
+    t.spawned[0]?.exit({ code: 0, signal: null, stop: 'confirmed' });
     await t.settled(jobId);
     expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'exited' });
     expect(t.timers.pending().filter((timer) => timer.delayMs === JOB_END_PROBE_MS)).toEqual([]);
@@ -543,7 +543,7 @@ describe('T16 (a) a live background job owns its marker (PT 3H rule 4: "A marker
     expect(await unsettledKeys(t.markerDir, owners)).toEqual([]);
     expect(t.reconciled).toEqual([]);
     t.holders.push(5000);
-    t.spawned[0]?.exit({ code: 0, signal: null });
+    t.spawned[0]?.exit({ code: 0, signal: null, stop: 'confirmed' });
     await t.settled(jobId);
     expect(await unsettledKeys(t.markerDir, owners)).toEqual([key]);
   });
@@ -569,7 +569,7 @@ describe('a finished job removes its marker only once the marker reads free', ()
     const t = await setup(probes, { owners });
     const { jobId } = await t.start('call-1');
     const key = t.store.jobs.get(jobId)?.idemKey ?? '';
-    t.spawned[0]?.exit({ code: 0, signal: null });
+    t.spawned[0]?.exit({ code: 0, signal: null, stop: 'confirmed' });
     await t.settled(jobId);
     expect(fs.existsSync(path.join(t.markerDir, key))).toBe(true);
     expect(read).toEqual([path.join(t.markerDir, key)]);
@@ -581,7 +581,7 @@ describe('a finished job removes its marker only once the marker reads free', ()
     const t = await setup(probes);
     const { jobId } = await t.start('call-1');
     const key = t.store.jobs.get(jobId)?.idemKey ?? '';
-    t.spawned[0]?.exit({ code: 0, signal: null });
+    t.spawned[0]?.exit({ code: 0, signal: null, stop: 'confirmed' });
     await t.settled(jobId);
     expect(read).toEqual([path.join(t.markerDir, key)]);
     expect(fs.existsSync(path.join(t.markerDir, key))).toBe(false);
