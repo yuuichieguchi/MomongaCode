@@ -2,7 +2,7 @@ import { credentialEnvNames, loadUserSettings, stripCredentialEnv } from '@momon
 import { currentSocketResolver } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { NO_MODEL_TARGET, TARGET_NOT_READY, agentReadiness, messageOf, startModelOf } from '@momonga/protocol';
-import type { MomongaModelList, PermissionMode } from '@momonga/protocol';
+import type { Mandate, MomongaModelList, PermissionMode } from '@momonga/protocol';
 import { createRuntimeClient } from '../client/runtime-client.ts';
 import type { CreatedSession, RuntimeClient } from '../client/runtime-client.ts';
 import type { SessionView } from '../client/views.ts';
@@ -15,6 +15,10 @@ import type { HeadlessReopen } from './resolve-session.ts';
 import { UsageError } from '../usage-error.ts';
 
 export type SessionOptions = { permissionMode?: PermissionMode; bypassAllowed?: boolean; model?: string; signal?: AbortSignal };
+
+export type RunBounds = { mandate?: Mandate; limits?: { maxCostUsd?: number } };
+
+export const runBoundsOf = (bounds: RunBounds): RunBounds => ({ ...(bounds.mandate === undefined ? {} : { mandate: bounds.mandate }), ...(bounds.limits === undefined ? {} : { limits: bounds.limits }) });
 
 export type ListedModels = Pick<MomongaModelList, 'data' | 'start'>;
 

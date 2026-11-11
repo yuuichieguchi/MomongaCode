@@ -32,8 +32,8 @@ import type { ClipboardPrograms } from './screen/clipboard-host.ts';
 import { copyThroughRoutes, readClipboardThroughRoutes } from './screen/clipboard.ts';
 import type { ClipboardContent, CopyOutcome } from './screen/clipboard.ts';
 import { readImageAttachment } from '../images.ts';
-import { autoModeConfigured, connectSessionRuntime, environmentSnapshot, reopenedAsTyped } from '../run/open-session.ts';
-import type { SessionOptions } from '../run/open-session.ts';
+import { autoModeConfigured, connectSessionRuntime, environmentSnapshot, reopenedAsTyped, runBoundsOf } from '../run/open-session.ts';
+import type { RunBounds, SessionOptions } from '../run/open-session.ts';
 
 export type FollowHandlers = {
   onEvent(frame: RunEventFrame): void;
@@ -115,7 +115,7 @@ export type TuiBackend = {
 export const createTuiBackend = (
   ports: CliPorts,
   paths: MomongaPaths,
-  options: SessionOptions,
+  options: SessionOptions & RunBounds,
   history: HistoryStore,
   noticeSources: readonly NoticeSource[],
   clipboard: ClipboardPrograms = createClipboardPrograms(),
@@ -230,7 +230,7 @@ export const createTuiBackend = (
     },
     autoModeAvailable: () => autoModeConfigured(ports, closing.signal),
     startRun: async (text, history, runOptions = {}) =>
-      (await runtime().createRun(current().id, text, { history, ...runOptions })).run,
+      (await runtime().createRun(current().id, text, { history, ...runBoundsOf(options), ...runOptions })).run,
     compact: (instructions) => runtime().compact(current().id, instructions),
     follow: async (runId, handlers) =>
       followRun({

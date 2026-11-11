@@ -11,7 +11,7 @@ import { describeFailure } from '../failure.ts';
 import { noTargetLines } from '../readiness.ts';
 import { createHistoryStore } from '../history-store.ts';
 import type { CliPorts, Terminal } from '../ports.ts';
-import type { SessionOptions } from '../run/open-session.ts';
+import type { RunBounds, SessionOptions } from '../run/open-session.ts';
 import type { Reopen } from '../run/resolve-session.ts';
 import type { UpdateWiring } from '../update/background.ts';
 import { App } from './app.tsx';
@@ -42,7 +42,7 @@ import { adoptionOf, refuseStart } from '../handover/start.ts';
 import type { TuiAdoption, TuiMovePort, TuiSurface } from './handover.ts';
 import type { TuiSettingsPort } from './screen/notify.ts';
 
-export type InteractiveOptions = SessionOptions & { prompt?: string; skill?: string; images?: readonly string[]; reopen?: Reopen; screenReader?: boolean };
+export type InteractiveOptions = SessionOptions & RunBounds & { prompt?: string; skill?: string; images?: readonly string[]; reopen?: Reopen; screenReader?: boolean };
 
 const newerCurrentVersion = async (ports: Pick<CliPorts, 'version'>, paths: MomongaPaths): Promise<string | undefined> => {
   const current = await readCurrentGeneration(paths);
