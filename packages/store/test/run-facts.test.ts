@@ -16,7 +16,7 @@ type FactsStore = {
 const factsOf = (store: RuntimeStore): FactsStore => (store as unknown as { runFacts: FactsStore }).runFacts;
 
 const completeRun = async (store: RuntimeStore, sessionId: string): Promise<string> => {
-  const run = enqueue(store, sessionId);
+  const run = await enqueue(store, sessionId);
   const claim = mustClaim(store, 'w1');
   expect((await store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
   return run.id;

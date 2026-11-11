@@ -7,7 +7,7 @@ describe('the pinned-layer digest of a recorded request', () => {
   it('is recorded with the request, computed from the body that was sent', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Done.'));
-    const run = env.enqueue('Say done');
+    const run = await env.enqueue('Say done');
 
     await env.runOnce(env.worker('worker-1'));
 

@@ -2,13 +2,13 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import type { TestContext } from 'vitest';
-import { loadUserModels } from '@momonga/config';
 import type { UserModels } from '@momonga/config';
 import { fixedSocket, momongaLayout } from '@momonga/foundation';
 import { TARGET_PROBING_MESSAGE, parseCanon } from '@momonga/protocol';
 import type { Capabilities, ProbingCapabilities, UnavailableCapabilities } from '@momonga/protocol';
 import { registerCleanup, withTempDir } from '@momonga/testkit';
 import { createGatewayClient } from '../src/client/gateway-client.ts';
+import { userModelsAt } from './user-models.ts';
 
 export const LISTED_CONTEXT_WINDOW = 400000;
 export const LISTED_MAX_OUTPUT_TOKENS = 64000;
@@ -54,7 +54,7 @@ export const productWrittenPlanModels = (context: TestContext): UserModels => {
   const file = momongaLayout(home, process.platform, process.env).settingsFile;
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   fs.writeFileSync(file, JSON.stringify({ models: { connections: [PRODUCT_WRITTEN_PLAN_CONNECTION] } }), { mode: 0o600 });
-  return loadUserModels({ home });
+  return userModelsAt(home);
 };
 
 export const listingEntry = (id: string, memberCapabilities: Record<string, unknown>) => {

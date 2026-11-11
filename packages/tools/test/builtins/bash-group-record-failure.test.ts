@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { UNMEASURED_CAPABILITY, createMarker, createProcessInspector, hostInspectorPorts, recordMarkerGroup } from '@momonga/foundation';
+import { UNMEASURED_CAPABILITY, createMarker, createProcessInspector, hostInspectorPorts, recordMarkerGroup, systemRandom } from '@momonga/foundation';
 import { createUnsandboxed } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, testPaths, testLocks } from '@momonga/testkit';
-import { createMarkerSettle } from '@momonga/tools';
+import { createMarkerSettle, nodeShellHost } from '@momonga/tools';
 import type { ToolContext } from '@momonga/tools';
 import { bashTool } from '../../src/builtins/bash.ts';
 import { makeClock, makeLayout } from '../helpers.ts';
@@ -51,6 +51,8 @@ describe.runIf(process.platform === 'darwin' || process.platform === 'linux')('B
       signal: new AbortController().signal,
       deadlineAt: Number.MAX_SAFE_INTEGER,
       clock: makeClock(),
+      shellHost: nodeShellHost(),
+      random: systemRandom,
       session: { cwd: layout.project },
       paths: testPaths(),
       sandbox: createUnsandboxed({ killGraceMs: 300 }),

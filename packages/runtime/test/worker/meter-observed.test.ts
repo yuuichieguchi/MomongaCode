@@ -33,7 +33,7 @@ const estimated = (env: Env): Env => {
 const measuredInputs = async (capabilities: Capabilities, prepare: (env: Env) => Env, script: () => ScriptStep[], task: string): Promise<number[]> => {
   const env = prepare(await makeEnv({ capabilities }));
   env.gateway.script.push(...script());
-  env.enqueue(task);
+  await env.enqueue(task);
   await env.runOnce(env.worker());
   return env.gateway.streams.map((stream) => inputTokensOf(stream.body));
 };
@@ -71,7 +71,7 @@ describe('a calibrated count is checked against its calibrated shape', () => {
     expect(estimate - reported).toBeGreaterThan(FLOOR);
     const env = calibrated(await makeEnv({ capabilities: calibratedTarget() }));
     env.gateway.script.push(...oneStep(reported)());
-    const run = env.enqueue(LARGE_TASK);
+    const run = await env.enqueue(LARGE_TASK);
 
     await env.runOnce(env.worker());
 
@@ -84,7 +84,7 @@ describe('a calibrated count is checked against its calibrated shape', () => {
     const runAt = async (reported: number) => {
       const env = calibrated(await makeEnv({ capabilities: calibratedTarget() }));
       env.gateway.script.push(...oneStep(reported)());
-      const run = env.enqueue(LARGE_TASK);
+      const run = await env.enqueue(LARGE_TASK);
       await env.runOnce(env.worker());
       return env.run(run.id);
     };
@@ -107,7 +107,7 @@ describe('the over side of a step built on a report below the count', () => {
     const runAt = async (secondReport: number) => {
       const env = estimated(await makeEnv({ capabilities: estimatedTarget() }));
       env.gateway.script.push(...script(firstReport, secondReport)());
-      const run = env.enqueue(LARGE_TASK);
+      const run = await env.enqueue(LARGE_TASK);
       await env.runOnce(env.worker());
       return { run: env.run(run.id), observed: env.ofType(run.id, 'meter.observed') };
     };
@@ -127,7 +127,7 @@ describe('an exact target', () => {
     const [estimate] = (await measuredInputs(exactTarget(), (env) => env, () => [textStep('Done.')], LARGE_TASK)) as [number];
     const env = await makeEnv({ capabilities: exactTarget() });
     env.gateway.script.push(textStep('Done.', { usage: usageOf(Math.floor(estimate * 0.85), 5) }));
-    const run = env.enqueue(LARGE_TASK);
+    const run = await env.enqueue(LARGE_TASK);
 
     await env.runOnce(env.worker());
 
@@ -140,7 +140,7 @@ describe('meter.observed is journaled with the response', () => {
     const env = await makeEnv({ capabilities: exactTarget() });
     env.gateway.script.push(textStep('Done.', { usage: usageOf(100_000, 5) }));
     const { store, appends } = recordingStore(env);
-    const run = env.enqueue(TASK);
+    const run = await env.enqueue(TASK);
 
     await env.runOnce(env.worker('worker-1', { store }));
 
@@ -175,7 +175,7 @@ describe('meter.observed is journaled with the response', () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(4000) });
     env.gateway.script.push(bigStep('k0', { letter: 'a', size: 0, pad: 'p'.repeat(7400) }), textStep('Here is what I did.'));
     const { store, appends } = recordingStore(env);
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
 
     await env.runOnce(env.worker('worker-1', { ...withinTurnWorker('d'.repeat(4000)), store }));
 
@@ -196,9 +196,9 @@ describe('the meter of a claim is folded from the session journal', () => {
   const measuredAcrossRuns = async (): Promise<[number, number]> => {
     const measuring = await makeEnv({ capabilities: exactTarget() });
     measuring.gateway.script.push(textStep('Done.'), textStep('Again.'));
-    measuring.enqueue(TASK);
+    await measuring.enqueue(TASK);
     await measuring.runOnce(measuring.worker());
-    measuring.enqueue('Now the second task');
+    await measuring.enqueue('Now the second task');
     await measuring.runOnce(measuring.worker());
     return measuring.gateway.streams.map((stream) => inputTokensOf(stream.body)) as [number, number];
   };
@@ -207,9 +207,9 @@ describe('the meter of a claim is folded from the session journal', () => {
     const [firstCount, secondCount] = await measuredAcrossRuns();
     const env = await makeEnv({ capabilities: exactTarget() });
     env.gateway.script.push(textStep('Done.', { usage: usageOf(firstCount - 50, 5) }), textStep('Again.'));
-    const one = env.enqueue(TASK);
+    const one = await env.enqueue(TASK);
     await env.runOnce(env.worker());
-    const two = env.enqueue('Now the second task');
+    const two = await env.enqueue('Now the second task');
     await env.runOnce(env.worker('worker-2'));
 
     expect(env.run(one.id).status).toBe('COMPLETED');
@@ -223,9 +223,9 @@ describe('the meter of a claim is folded from the session journal', () => {
     const runSecond = async (second: ScriptStep) => {
       const env = await makeEnv({ capabilities: exactTarget() });
       env.gateway.script.push(answeredBy(textStep('Done.', { usage: usageOf(firstCount - 50, 5) }), 'secondary'), second);
-      const one = env.enqueue(TASK);
+      const one = await env.enqueue(TASK);
       await env.runOnce(env.worker());
-      const two = env.enqueue('Now the second task');
+      const two = await env.enqueue('Now the second task');
       await env.runOnce(env.worker('worker-2'));
       return { first: env.ofType(one.id, 'meter.observed'), second: env.ofType(two.id, 'meter.observed') };
     };

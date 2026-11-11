@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { brotliDecompressSync } from 'node:zlib';
 import { createLockedEntry, sha256Hex, sweepLeftovers } from '@momonga/foundation';
 import type { FileSystem, KernelLockMechanism, LockedEntry } from '@momonga/foundation';
 
@@ -27,6 +26,7 @@ export type RipgrepDistributionFiles = Pick<FileSystem, 'lstat' | 'mkdirPrivate'
 
 export type RipgrepDistributionPorts = {
   asset(name: string): Uint8Array;
+  decompress(compressed: Uint8Array): Promise<Uint8Array>;
   executablesRoot: string;
   random(): number;
   ownerId: string;
@@ -139,9 +139,9 @@ const sweepStaleStaged = async ({ ports, lock, directory }: Resolution): Promise
 
 const matches = async (resolution: Resolution, file: string): Promise<boolean> => sha256Hex(await resolution.ports.files.readFile(file)) === resolution.manifest.binary.sha256;
 
-const verifiedEmbedded = (resolution: Resolution): { binary: Uint8Array; notices: Uint8Array } => {
+const verifiedEmbedded = async (resolution: Resolution): Promise<{ binary: Uint8Array; notices: Uint8Array }> => {
   const { ports, manifest } = resolution;
-  const binary = new Uint8Array(brotliDecompressSync(ports.asset(manifest.binary.asset)));
+  const binary = await ports.decompress(ports.asset(manifest.binary.asset));
   if (binary.length !== manifest.binary.size || sha256Hex(binary) !== manifest.binary.sha256) {
     throw new RipgrepDistributionError(`the embedded ripgrep ${manifest.binary.asset} does not match the checksum in its manifest`);
   }
@@ -195,7 +195,7 @@ const nextState = async (state: ResolutionState, resolution: Resolution): Promis
     case 'hash':
       return { step: (await matches(resolution, final)) ? 'checked' : 'decompress' };
     case 'decompress': {
-      const { binary, notices } = verifiedEmbedded(resolution);
+      const { binary, notices } = await verifiedEmbedded(resolution);
       const staged = await writeStaged(resolution, binary, '');
       try {
         await placeNotice(resolution, notices);

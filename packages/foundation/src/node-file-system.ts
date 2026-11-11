@@ -9,7 +9,7 @@ export const OPEN_FLAGS = {
   create: fs.constants.O_CREAT,
   exclusive: fs.constants.O_EXCL,
   nonBlocking: fs.constants.O_NONBLOCK,
-  noFollow: (fs.constants as { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0,
+  noFollow: noFollowFlag(),
 } as const;
 
 export type DirectoryIdentity = { dev: bigint; ino: bigint };
@@ -20,7 +20,7 @@ export type DirectoryReader = { read(): Promise<string | null>; close(): Promise
 
 export type RemoveOptions = { readonly recursive: boolean };
 
-export type HeldEntry = { stat(): Promise<fs.Stats>; chmod(mode: number): Promise<void>; close(): Promise<void> };
+export type ReadHandle = { stat(): Promise<fs.Stats>; chmod(mode: number): Promise<void>; read(page: Uint8Array): Promise<number>; close(): Promise<void> };
 
 export interface FileSystem extends AtomicWriteFileSystem {
   rm(file: string, options?: RemoveOptions): Promise<void>;
@@ -31,16 +31,18 @@ export interface FileSystem extends AtomicWriteFileSystem {
   readFile(file: string): Promise<Uint8Array>;
   readTextFile(file: string): Promise<string>;
   mkdir(directory: string, mode?: number): Promise<void>;
-  mkdirOne(directory: string, mode?: number): Promise<void>;
   mkdirPrivate(directory: string): Promise<void>;
   chmod(target: string, mode: number): Promise<void>;
-  openEntry(target: string, flags: number): Promise<HeldEntry>;
   readOwnerOnlyTextFile(file: string, description: string, maxBytes?: number): Promise<string | undefined>;
   writeFile(file: string, content: FileContent): Promise<void>;
   access(file: string, check?: AccessCheck): Promise<void>;
   readlink(file: string): Promise<string>;
   readlinkBytes(file: string): Promise<Uint8Array>;
   readStart(file: string, bytes: number): Promise<Uint8Array>;
+  readRange(file: string, position: number, length: number): Promise<Uint8Array>;
+  openRead(file: string, flags: number): Promise<ReadHandle>;
+  makeDirectory(directory: string, mode?: number): Promise<void>;
+  removeEmptyDirectory(directory: string): Promise<void>;
   realpath(file: string): Promise<string>;
   openDirectory(directory: string): Promise<DirectoryReader>;
   cp(from: string, to: string): Promise<void>;
@@ -130,12 +132,7 @@ export const nodeFileSystem: FileSystem = {
   readFile: async (file) => new Uint8Array(await fs.promises.readFile(file)),
   readTextFile: (file) => fs.promises.readFile(file, 'utf8'),
   mkdir: async (directory, mode) => void (await fs.promises.mkdir(directory, { recursive: true, ...(mode === undefined ? {} : { mode }) })),
-  mkdirOne: (directory, mode) => fs.promises.mkdir(directory, mode === undefined ? {} : { mode }),
   chmod: (target, mode) => fs.promises.chmod(target, mode),
-  openEntry: async (target, flags) => {
-    const handle = await fs.promises.open(target, flags);
-    return { stat: () => handle.stat(), chmod: (mode) => handle.chmod(mode), close: () => handle.close() };
-  },
   mkdirPrivate: async (directory) => {
     await fs.promises.mkdir(directory, { recursive: true, mode: PRIVATE_MODE.directory });
     await fs.promises.chmod(directory, PRIVATE_MODE.directory);
@@ -171,6 +168,32 @@ export const nodeFileSystem: FileSystem = {
       await handle.close();
     }
   },
+  readRange: async (file, position, length) => {
+    const handle = await fs.promises.open(file, 'r');
+    try {
+      const buffer = Buffer.alloc(length);
+      let filled = 0;
+      while (filled < length) {
+        const { bytesRead } = await handle.read(buffer, filled, length - filled, position + filled);
+        if (bytesRead === 0) break;
+        filled += bytesRead;
+      }
+      return buffer.subarray(0, filled);
+    } finally {
+      await handle.close();
+    }
+  },
+  openRead: async (file, flags) => {
+    const handle = await fs.promises.open(file, flags);
+    return {
+      stat: () => handle.stat(),
+      chmod: (mode) => handle.chmod(mode),
+      read: async (page) => (await handle.read(page, 0, page.length, null)).bytesRead,
+      close: () => handle.close(),
+    };
+  },
+  makeDirectory: async (directory, mode) => void (await fs.promises.mkdir(directory, mode === undefined ? {} : { mode })),
+  removeEmptyDirectory: (directory) => fs.promises.rmdir(directory),
   realpath: (file) => fs.promises.realpath(file),
   openDirectory: async (directory) => {
     const handle = await fs.promises.opendir(directory);

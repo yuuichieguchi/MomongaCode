@@ -9,7 +9,7 @@ const UNABORTED = { lock: testKernelLock(), signal: new AbortController().signal
 const userTui = async (tui: Record<string, unknown> | undefined) => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), tui === undefined ? {} : { tui });
-  return (await loadUserSettings({ home: tree.home })).settings.tui;
+  return (await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings.tui;
 };
 
 const A11Y_OFF = { screenReader: false, reducedMotion: false, screen: 'fullscreen', mouse: true, copyOnSelect: true, attachFileMentions: true };
@@ -40,19 +40,19 @@ describe('tui.theme and tui.notify', () => {
   it.each(['solarized', '', 'Dark', 7, null])('refuses the theme %o with the list of the five ids', async (theme) => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { tui: { theme } });
-    await expect(loadUserSettings({ home: tree.home })).rejects.toThrow(`${userSettingsPath(tree)}: tui.theme must be one of auto, dark, light, dark-colorblind, light-colorblind; got ${JSON.stringify(theme)}`);
+    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow(`${userSettingsPath(tree)}: tui.theme must be one of auto, dark, light, dark-colorblind, light-colorblind; got ${JSON.stringify(theme)}`);
   });
 
   it.each(['osc9', true])('refuses the notification value %o with the list of the two', async (notify) => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { tui: { notify } });
-    await expect(loadUserSettings({ home: tree.home })).rejects.toThrow(`${userSettingsPath(tree)}: tui.notify must be one of off, bell; got ${JSON.stringify(notify)}`);
+    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow(`${userSettingsPath(tree)}: tui.notify must be one of off, bell; got ${JSON.stringify(notify)}`);
   });
 
   it('refuses a key the tui object does not have', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { tui: { themes: 'dark' } });
-    await expect(loadUserSettings({ home: tree.home })).rejects.toThrow('/tui/themes');
+    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow('/tui/themes');
   });
 
   it('lets a project layer set a key over the user layer, key by key', async () => {
@@ -71,7 +71,7 @@ describe('writeTuiSetting', () => {
     writeJson(file, { autoUpdates: false, tui: { notify: 'bell' } });
     await writeTuiSetting(tree.home, file, 'theme', 'dark-colorblind', UNABORTED);
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ autoUpdates: false, tui: { notify: 'bell', theme: 'dark-colorblind' } });
-    expect((await loadUserSettings({ home: tree.home })).settings.tui).toEqual({ theme: 'dark-colorblind', notify: 'bell', ...A11Y_OFF });
+    expect((await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings.tui).toEqual({ theme: 'dark-colorblind', notify: 'bell', ...A11Y_OFF });
   });
 
   it('creates the file when there is none', async () => {
@@ -111,7 +111,7 @@ describe('tui.screenReader and tui.reducedMotion', () => {
   it.each(['screenReader', 'reducedMotion'] as const)('refuses a value of %s that is not a boolean', async (name) => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { tui: { [name]: 'on' } });
-    await expect(loadUserSettings({ home: tree.home })).rejects.toThrow(`/tui/${name}`);
+    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow(`/tui/${name}`);
   });
 
   it('are written by writeTuiSetting beside the other keys', async () => {
@@ -133,12 +133,12 @@ describe('tui.attachFileMentions', () => {
   it('refuses a value that is not a boolean', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { tui: { attachFileMentions: 'no' } });
-    await expect(loadUserSettings({ home: tree.home })).rejects.toThrow('/tui/attachFileMentions');
+    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow('/tui/attachFileMentions');
   });
 
   it('is written by the settings writer', async () => {
     const tree = makeTree();
     await writeTuiSetting(tree.home, userSettingsPath(tree), 'attachFileMentions', false, UNABORTED);
-    expect((await loadUserSettings({ home: tree.home })).settings.tui.attachFileMentions).toBe(false);
+    expect((await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings.tui.attachFileMentions).toBe(false);
   });
 });

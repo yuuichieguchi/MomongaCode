@@ -14,7 +14,7 @@ const agentsPortOf = (env: Env): AgentsPort =>
   createAgentsPort({
     home: env.home,
     fileSystem: createNodeSkillFileSystem(),
-    settings: { trusted: () => env.settings.trustedValue },
+    settings: { trusted: async () => env.settings.trustedValue },
     runs: createChildRuns({ store: env.store, modelViews: async () => fakeViewsOf(['fm']) }),
   });
 
@@ -33,7 +33,7 @@ describe('RulePropose in a delegated run', () => {
     writeAgent(env, 'proposer', 'RulePropose');
     const governance = createGovernancePort({ store: env.store, settings: env.settings });
     const worker = env.worker('w1', { agents: agentsPortOf(env), governance });
-    const parent = env.enqueue('Have the proposer add the rule');
+    const parent = await env.enqueue('Have the proposer add the rule');
     env.gateway.script.push(
       callsStep([{ callId: 'call-a', name: 'Agent', args: { description: 'propose', prompt: 'Propose never using pandas', subagent_type: 'proposer' } }]),
       proposal('call-p'),
@@ -107,7 +107,7 @@ describe('a rule retired during a live run', () => {
       },
     });
     env.gateway.script.push(callsStep([{ callId: 'call_r_1', name: 'Retire', args: {} }]), textStep('Done.'));
-    const run = env.enqueue('Retire the rule');
+    const run = await env.enqueue('Retire the rule');
     await env.runOnce(env.worker('w1', { toolList: () => [globbing, retiring], governance: createGovernancePort({ store: env.store, settings: env.settings }) }));
 
     expect(env.run(run.id).status).toBe('COMPLETED');
@@ -123,14 +123,14 @@ describe('RulePropose after a crash', () => {
     const env = await makeEnv();
     const real = createGovernancePort({ store: env.store, settings: env.settings });
     env.gateway.script.push(proposal('call-p'));
-    const run = env.enqueue('Add the rule');
+    const run = await env.enqueue('Add the rule');
     await env.runOnce(env.worker('w1', { governance: real }));
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
     await env.resolveApproval(run.id, 'allow_once');
 
     const crashing: GovernancePort = {
-      load: (session) => ({
-        tools: real.load(session).tools.map((tool) => ({
+      load: async (session) => ({
+        tools: (await real.load(session)).tools.map((tool) => ({
           ...tool,
           execute: async (input, ctx, prepared) => {
             const result = await tool.execute(input, ctx, prepared);

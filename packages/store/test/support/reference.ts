@@ -7,7 +7,7 @@ import { JournalThreadError, applyInheritance, createJournalReader, foldRunState
 import { retractsTask } from '../../src/inherit.ts';
 import type { Claim, ContributionPreparer, InheritanceOutcome, JournalReaderOptions, Run, RuntimeStore, UnaskedCommands } from '@momonga/store';
 import { createFakeClock, fixtureCompactionItem } from '@momonga/testkit';
-import type { FakeClock } from '@momonga/testkit';
+import type { FakeClock, SettledBeforeCleanup } from '@momonga/testkit';
 import { START_MS, TIMEOUT_MS, makeStoreDir, mustClaim, mustRun, newSession, noJournalFacts, openStoreAt, registerCleanup, UNASKED_COMMANDS } from '../helpers.ts';
 import { assistantItem, callItem } from '../inherit-fixtures.ts';
 import type { InheritedEvent } from '../inherit-fixtures.ts';
@@ -74,7 +74,7 @@ export const referenceReaderOf = (reader: unknown): ReferenceReader => {
 export const referenceReader = (db: DatabaseSync, options: ReferenceReaderOptions = {}): ReferenceReader =>
   referenceReaderOf(createJournalReader(db, options as JournalReaderOptions));
 
-export const withReader = <T,>(dbPath: string, read: (reader: ReferenceReader) => T, options: ReferenceReaderOptions = {}): T => {
+export const withReader = <T,>(dbPath: string, read: (reader: ReferenceReader) => SettledBeforeCleanup<T>, options: ReferenceReaderOptions = {}): T => {
   const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
   try {
     return read(referenceReader(db, options));
@@ -239,10 +239,9 @@ export const chainBuilder = (h: ReferenceHarness) => {
   let steps = 0;
   let messages = 0;
   const outputs = new Map<string, string>();
-  const blobWrites: Promise<unknown>[] = [];
 
-  const createRun = (input: string, options: { history?: 'inherit' | 'fresh'; timeoutMs?: number } = {}): Run => {
-    const result = h.store.createRunAndEnqueue(h.sessionId, {
+  const createRun = async (input: string, options: { history?: 'inherit' | 'fresh'; timeoutMs?: number } = {}): Promise<Run> => {
+    const result = await h.store.createRunAndEnqueue(h.sessionId, {
       input,
       timeoutMs: options.timeoutMs ?? TIMEOUT_MS,
       limits: {},
@@ -273,7 +272,7 @@ export const chainBuilder = (h: ReferenceHarness) => {
     append(claim, [requested(step), responded(step, [assistantItem(`m${messages}`, `answer ${messages} ${'a'.repeat(chars)}`)])]);
   };
 
-  const tool = (claim: Claim, options: { outputChars?: number; evict?: boolean; withTokens?: boolean } = {}): string => {
+  const tool = async (claim: Claim, options: { outputChars?: number; evict?: boolean; withTokens?: boolean } = {}): Promise<string> => {
     const step = nextStep();
     calls += 1;
     const callId = `c${calls}`;
@@ -286,16 +285,16 @@ export const chainBuilder = (h: ReferenceHarness) => {
       { type: 'tool.started', callId, idemKey: `k-${callId}` },
       { type: 'tool.completed', callId, status: 'completed', output },
     ]);
-    if (options.evict === true) evict(claim, callId, options.withTokens === false ? undefined : Math.ceil(output.length / 4));
+    if (options.evict === true) await evict(claim, callId, options.withTokens === false ? undefined : Math.ceil(output.length / 4));
     return callId;
   };
 
-  const evict = (claim: Claim, callId: string, tokens?: number): void => {
+  const evict = async (claim: Claim, callId: string, tokens?: number): Promise<void> => {
     const inherited = oracleState(h.store, claim.runId).history.find((entry) => entry.item.type === 'function_call_output' && entry.item.call_id === callId)?.item;
     const output = outputs.get(callId) ?? (inherited?.type === 'function_call_output' && typeof inherited.output === 'string' ? inherited.output : undefined);
     if (output === undefined) throw new Error(`no output is known for call ${callId}`);
     const handle = h.store.blobs.handleFor(output);
-    blobWrites.push(h.store.blobs.put(output, { mediaType: 'text/plain' } as never));
+    await h.store.blobs.put(output, { mediaType: 'text/plain' } as never);
     append(claim, [{ type: 'context.truncated', callId, handle, kind: 'omitted', ...(tokens === undefined ? {} : { tokens }) } as RunEventPayload]);
   };
 
@@ -336,7 +335,6 @@ export const chainBuilder = (h: ReferenceHarness) => {
   type Ending = { to: 'COMPLETED' } | { to: 'STOPPED'; stopReason: StopReason } | { to: 'FAILED'; code: string } | { to: 'CANCELLED' };
 
   const end = async (claim: Claim, ending: Ending): Promise<void> => {
-    await Promise.all(blobWrites.splice(0));
     if (ending.to === 'CANCELLED') {
       const requestedCancel = await h.store.requestCancel(claim.runId);
       if (requestedCancel.kind !== 'ok') throw new Error(`cancel of ${claim.runId} returned ${requestedCancel.kind}`);
@@ -366,8 +364,8 @@ export const chainBuilder = (h: ReferenceHarness) => {
 
 export type Ending = Parameters<ChainBuilder['end']>[1];
 
-export const answeredRun = async (h: ReferenceHarness, b: ChainBuilder, task: string, body: (claim: Claim) => void, options: { fresh?: boolean; oldShape?: boolean; mode?: PermissionMode; ending?: Ending } = {}): Promise<Run> => {
-  const run = b.createRun(task, options.fresh === true ? { history: 'fresh' } : {});
+export const answeredRun = async (h: ReferenceHarness, b: ChainBuilder, task: string, body: (claim: Claim) => unknown, options: { fresh?: boolean; oldShape?: boolean; mode?: PermissionMode; ending?: Ending } = {}): Promise<Run> => {
+  const run = await b.createRun(task, options.fresh === true ? { history: 'fresh' } : {});
   const claim = b.claimNext(run.id);
   const mode = options.mode ?? 'manual';
   if (options.fresh !== true && run.previousRunId !== null) {
@@ -375,7 +373,7 @@ export const answeredRun = async (h: ReferenceHarness, b: ChainBuilder, task: st
     else await b.inherit(claim, mode);
   }
   b.started(claim, mode);
-  body(claim);
+  await body(claim);
   await b.end(claim, options.ending ?? { to: 'COMPLETED' });
   return mustRun(h.store, run.id);
 };
@@ -386,7 +384,7 @@ export const generatedRun = async (h: ReferenceHarness, b: ChainBuilder, random:
     return options.recordTokens ?? drawn;
   };
   const mode: PermissionMode = random.chance(0.2) ? 'plan' : 'manual';
-  const run = b.createRun(`task ${index}`, options.fresh === true ? { history: 'fresh' } : {});
+  const run = await b.createRun(`task ${index}`, options.fresh === true ? { history: 'fresh' } : {});
   const claim = b.claimNext(run.id);
   if (options.fresh !== true && run.previousRunId !== null) {
     if (options.oldShape === true) b.inheritOldShape(claim, mode);
@@ -401,14 +399,14 @@ export const generatedRun = async (h: ReferenceHarness, b: ChainBuilder, random:
   for (let at = 0; at < count; at += 1) {
     const roll = random.next();
     if (roll < 0.35) b.text(claim, random.int(4, 400));
-    else if (roll < 0.8) b.tool(claim, { outputChars: random.int(4, 2000), evict: random.chance(0.4), withTokens: recordTokens() });
+    else if (roll < 0.8) await b.tool(claim, { outputChars: random.int(4, 2000), evict: random.chance(0.4), withTokens: recordTokens() });
     else if (roll < 0.9) {
       const cut = b.compactionCut(run.id);
       if (cut !== undefined) b.compact(claim, cut, random.chance(0.3));
     } else {
       const target = inheritedOutput();
       const withTokens = recordTokens();
-      if (target !== undefined) b.evict(claim, target, withTokens ? 9 : undefined);
+      if (target !== undefined) await b.evict(claim, target, withTokens ? 9 : undefined);
     }
   }
   const tail = random.next();

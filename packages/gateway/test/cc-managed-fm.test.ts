@@ -313,7 +313,7 @@ describe('createManagedTarget token counter failure: one generic text for every 
     const failure = await countTokensOf(managed)(TARGET, { model: 'scripted/system', input: 'count these words' }, new AbortController().signal).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(Error);
     expect((failure as Error).name).not.toBe('PreconditionFailedError');
-    expect((failure as Error).message).toMatch(/^the model "fm": the token counter failed with exit code 69: /);
+    expect((failure as Error).message).toMatch(/^the model "fm\/system": the token counter failed with exit code 69: /);
   });
 
   it('answers /v1/momonga/count_tokens with 502 adapter_error carrying that text when the counter exits 69', async () => {
@@ -325,7 +325,7 @@ describe('createManagedTarget token counter failure: one generic text for every 
     const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'scripted/system', input: 'count these words' }));
     expect(response.status).toBe(502);
     expect(response.body.error).toMatchObject({ code: 'adapter_error' });
-    expect(response.body.error.message).toMatch(/the model "fm": the token counter failed with exit code 69: /);
+    expect(response.body.error.message).toMatch(/the model "fm\/system": the token counter failed with exit code 69: /);
     expect(execCalls).toHaveLength(1);
   });
 

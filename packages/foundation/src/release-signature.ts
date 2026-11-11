@@ -21,7 +21,6 @@ export type VerifyReleaseSignatureInput = {
   publicKey: string;
   checksums: string;
   signature: string;
-  timeoutMs?: number;
   signal?: AbortSignal;
 };
 
@@ -57,7 +56,6 @@ const runVerification = async (
         {
           env: input.env,
           input: checksums,
-          ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
           ...(input.signal === undefined ? {} : { signal: input.signal }),
         },
       );

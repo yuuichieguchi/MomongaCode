@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import * as foundation from '@momonga/foundation';
-import { ensureMomongaDirs, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
+import { ensureMomongaDirs, systemRandom, nodeFileSystem, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { ProcessInspector, ReapMarkedProcessesOptions } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
 import { createFakeClock, testKernelLock } from '@momonga/testkit';
@@ -24,7 +24,7 @@ const heldInspector = { markerState: async () => 'held' } as unknown as ProcessI
 const homeWithCompletedRow = async () => {
   const temp = await makeTempHome();
   await ensureMomongaDirs(temp.paths);
-  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock: createFakeClock(START_MS), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock: createFakeClock(START_MS), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
   store.idempotency.begin(KEY, { expiresAt: START_MS + 60_000, meta: {} });
   store.idempotency.attachProcess(KEY, { pgid: LEDGER_PGID, startedAt: START_MS });
   store.idempotency.complete(KEY, { exitCode: 0 });

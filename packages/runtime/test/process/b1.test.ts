@@ -18,7 +18,7 @@ describe('scenario b1: abort mid-request, then restart (system timers, in-proces
 
     const second = await launchRuntime(stack.temp);
     const stream = await second.stream(`/v1/runs/${run.id}/events`);
-    const frames = await stream.toEnd(30_000);
+    const frames = await stream.toEnd();
     expect(frames.at(-1)).toMatchObject({ type: 'run.status', to: 'COMPLETED' });
     expect(frames.filter((event) => event.type === 'agent.message.delta').map((event) => event.text).join('')).toBe(FAKE_DETERMINISTIC_REPLY);
     expect(stack.completions()).toBe(1);

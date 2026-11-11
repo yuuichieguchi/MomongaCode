@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { MessagePort, isMainThread, parentPort, threadId, workerData } from 'node:worker_threads';
+import { nodeFileSystem, systemRandom } from '@momonga/foundation';
 import { openDatabase } from '@momonga/foundation/sqlite';
 import { REPOSITORY_FACTS_EVENT_TYPES, createRepositoryFactsFold } from '@momonga/memory';
 import { RUN_REPORT_EVENT_TYPES, createRunReportFold } from '@momonga/observability/run-report';
@@ -512,7 +513,7 @@ const serve = (data: JournalThreadData): void => {
   const current: { progress: (() => void) | undefined } = { progress: undefined };
   const gate = createProgressGate({ now: () => performance.now(), intervalMs: JOURNAL_PROGRESS_INTERVAL_MS, post: () => current.progress?.() });
   const reader = createJournalReader(db, { unit: gate.unit });
-  const blobs = createBlobStore(db, UNUSED_CLOCK, data.blobsDir, kernelLockNamed(data.lockName));
+  const blobs = createBlobStore(db, UNUSED_CLOCK, data.blobsDir, { fileSystem: nodeFileSystem, random: systemRandom, lock: kernelLockNamed(data.lockName) });
   serveJournalReader(
     {
       ping: () => ({ threadId }),

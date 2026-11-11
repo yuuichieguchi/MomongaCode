@@ -1,12 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { TestContext } from 'vitest';
-import { loadUserModels } from '@momonga/config';
 import type { ResolvedModel } from '@momonga/config';
 import { momongaLayout } from '@momonga/foundation';
 import type { Capabilities, ChainMemberEntry, LocalServerDetection, MomongaModelEntry, MomongaModelList, UnavailableCapabilities } from '@momonga/protocol';
 import { withTempDir, testKernelLock } from '@momonga/testkit';
 import type { DetectRequest, ModelsShell } from '../src/commands/models.ts';
+import { userModelsAt } from './user-models.ts';
 
 export const OLLAMA_ADDRESS = 'http://127.0.0.1:11434';
 export const LMSTUDIO_ADDRESS = 'http://127.0.0.1:1234/v1';
@@ -109,7 +109,7 @@ const memberOf = (model: ResolvedModel, index: number): ChainMemberEntry => ({
 });
 
 export const listingOf = (home: string): MomongaModelList => {
-  const { resolved } = loadUserModels({ home });
+  const { resolved } = userModelsAt(home);
   const modelOf = (canon: string): ResolvedModel => resolved.models.get(canon) as ResolvedModel;
   const data = [...resolved.models.values()].map(
     (model): MomongaModelEntry => ({

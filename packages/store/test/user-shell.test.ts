@@ -49,7 +49,7 @@ describe('the user_shell event', () => {
     expect(store.userShell.record('nope', INCLUDED)).toEqual({ kind: 'not_found' });
   });
 
-  it('waits for the next run of the session, which carries both kinds in the order typed', () => {
+  it('waits for the next run of the session, which carries both kinds in the order typed', async () => {
     const { store } = harness();
     const session = newSession(store);
     const other = newSession(store, '/work/b');
@@ -59,19 +59,19 @@ describe('the user_shell event', () => {
 
     expect(store.userShell.pending(session.id)).toEqual([INCLUDED, KEPT_OUT]);
 
-    const run = enqueue(store, session.id, 'why does it fail');
+    const run = await enqueue(store, session.id, 'why does it fail');
     const [prompt] = store.readRunEvents(run.id, 0, 10);
     expect(prompt).toMatchObject({ type: 'user.message', text: 'why does it fail', shell: [INCLUDED, KEPT_OUT] });
     expect(store.userShell.pending(session.id)).toEqual([]);
     expect(store.userShell.pending(other.id)).toEqual([INTERRUPTED]);
   });
 
-  it('gives the model the included output with the message and keeps the other out of the history', () => {
+  it('gives the model the included output with the message and keeps the other out of the history', async () => {
     const { store } = harness();
     const session = newSession(store);
     store.userShell.record(session.id, INCLUDED);
     store.userShell.record(session.id, KEPT_OUT);
-    const run = enqueue(store, session.id, 'why does it fail');
+    const run = await enqueue(store, session.id, 'why does it fail');
 
     const [first] = historyOf(store, run.id);
     expect(first?.item).toEqual({
@@ -84,21 +84,21 @@ describe('the user_shell event', () => {
     });
   });
 
-  it('tells whether a run of the session is open', () => {
+  it('tells whether a run of the session is open', async () => {
     const { store } = harness();
     const session = newSession(store);
     expect(store.userShell.runActive(session.id)).toBe(false);
-    enqueue(store, session.id);
+    await enqueue(store, session.id);
     expect(store.userShell.runActive(session.id)).toBe(true);
   });
 });
 
 describe('files attached to a user message', () => {
-  it('are stored with the message and reach the history after the text', () => {
+  it('are stored with the message and reach the history after the text', async () => {
     const { store } = harness();
     const session = newSession(store);
     const attachments: MessageAttachment[] = [{ type: 'attached_file', path: 'a.ts', content: '     1\tx', truncated: false }];
-    const created = store.createRunAndEnqueue(session.id, { input: 'read @a.ts', timeoutMs: TIMEOUT_MS, limits: { maxSteps: 10 }, pins: { model: 'fm' }, attachments });
+    const created = await store.createRunAndEnqueue(session.id, { input: 'read @a.ts', timeoutMs: TIMEOUT_MS, limits: { maxSteps: 10 }, pins: { model: 'fm' }, attachments });
     if (created.kind !== 'created') throw new Error(`expected a run, got ${created.kind}`);
 
     expect(store.readRunEvents(created.run.id, 0, 10)[0]).toMatchObject({ type: 'user.message', attachments });

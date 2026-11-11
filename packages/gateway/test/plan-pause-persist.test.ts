@@ -304,7 +304,7 @@ describe('a record lock that cannot be taken is a failed write under the dirty r
     expect(h.warnings.filter((warning) => warning.startsWith('a background plan session task failed'))).toEqual([]);
   });
 
-  it('a retry of a dirty record whose lock cannot be taken for a transient reason is retried after 30 000 ms and the account is not marked unwritable', async () => {
+  it('a retry of a dirty record whose lock cannot be taken for a transient reason is retried after the doubled wait (30 000 ms, then 60 000 ms) and the account is not marked unwritable', async () => {
     const h = await harness();
     await signedIn(h, 'work');
     let pauseWriteFailures = 1;
@@ -332,11 +332,11 @@ describe('a record lock that cannot be taken is a failed write under the dirty r
     lockRefusals = 1;
     firstWait.release();
     const backgroundFailures = (): string[] => h.warnings.filter((warning) => warning.startsWith('a background plan session task failed'));
-    const retryWaits = (): number => h.sleeps.filter((ms) => ms === 30_000).length;
-    await vi.waitFor(() => expect(retryWaits() === 2 || backgroundFailures().length > 0).toBe(true), CONDITION_WAIT);
+    const retryWaits = (): number[] => h.sleeps.filter((ms) => ms === 30_000 || ms === 60_000);
+    await vi.waitFor(() => expect(retryWaits().length === 2 || backgroundFailures().length > 0).toBe(true), CONDITION_WAIT);
     expect(backgroundFailures()).toEqual([]);
     expect(refused).toBe(1);
-    expect(retryWaits()).toBe(2);
+    expect(retryWaits()).toEqual([30_000, 60_000]);
     expect(source.status()).toEqual({ state: 'active', paused: {} });
     secondWait.release();
     await vi.waitFor(async () => expect((await readRecord(h, 'work'))?.['paused']).toEqual({}), CONDITION_WAIT);

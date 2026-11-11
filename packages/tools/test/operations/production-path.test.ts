@@ -2,14 +2,16 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { REDACTED_MARKER } from '@momonga/foundation';
+import { createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxCommand, SandboxPolicy } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, UNCONFIGURED_NETWORK, testProcessInspector } from '@momonga/testkit';
-import { createOperationTools, createSandboxedArgvRunner, hostGitReader, networkScopeOfDestinations, nodeShellHost } from '@momonga/tools';
+import { createOperationTools, createSandboxedArgvRunner, networkScopeOfDestinations, nodeShellHost } from '@momonga/tools';
 import type { CallOutcome, ResultOutcome } from '@momonga/tools';
 import { call, makeHarness, toolSetOf } from '../harness.ts';
 import { HAS_REAL_SANDBOX, createHostSandbox, makeLayout, policyFor, ruleFor, sessionTmpDirOf } from '../helpers.ts';
 import type { Layout } from '../helpers.ts';
-import { NO_FORGE, contextFor, makeGitWorld, onCleanup, recordOf } from './support.ts';
+import { ENTRY_AS_SCRIPT, NO_FORGE, contextFor, makeGitWorld, onCleanup, recordOf } from './support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -23,12 +25,9 @@ const recordingSandbox = (inner: Sandbox, spawns: Spawn[]): Sandbox => ({
   },
 });
 
-const refusingSandbox: Sandbox = {
-  kind: 'seatbelt',
-  spawn: () => {
-    throw new Error('this test expects no process to be spawned');
-  },
-};
+const GATE_READS: readonly string[] = ['rev-parse', 'remote', 'config'];
+
+const onlyGateReads = (spawns: readonly Spawn[]): boolean => spawns.every((spawn) => spawn.argv[0] === 'git' && GATE_READS.includes(spawn.argv[1] ?? ''));
 
 const setup = async (options: { realSandbox: boolean; origin?: string }) => {
   const world = makeGitWorld();
@@ -39,7 +38,7 @@ const setup = async (options: { realSandbox: boolean; origin?: string }) => {
   const tmpDir = sessionTmpDirOf(layout);
   const harness = makeHarness();
   const spawns: Spawn[] = [];
-  let hostSandbox: Sandbox = refusingSandbox;
+  let hostSandbox: Sandbox = createUnsandboxed();
   if (options.realSandbox) {
     const sandboxTmp = path.join(world.base, 'sandbox-tmp');
     fs.mkdirSync(sandboxTmp);
@@ -51,7 +50,6 @@ const setup = async (options: { realSandbox: boolean; origin?: string }) => {
   fs.mkdirSync(markerDir);
   const tools = createOperationTools({
     runArgv: createSandboxedArgvRunner({ inspector: testProcessInspector(), reconcileSandbox: async () => ({ sandbox, sandboxPolicy: await policyForReconcile(), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: UNCONFIGURED_NETWORK, markerDir, credentialRoot: world.base }),
-    readGit: hostGitReader,
     forge: NO_FORGE,
     settings: { protectedRefs: ['release/*'] },
   });
@@ -124,6 +122,27 @@ describe.skipIf(!HAS_REAL_SANDBOX)('operations through the executor, the policy 
   });
 });
 
+describe.skipIf(!HAS_REAL_SANDBOX)('the pre-push hook of a repository through the executor and the real sandbox', () => {
+  it('runs as its own sandboxed child without the network before the push, and the push runs with the hooks of the repository set aside', async () => {
+    const { world, spawns, run, rule } = await setup({ realSandbox: true });
+    const bare = path.join(world.work, 'remote.git');
+    world.git(world.base, 'init', '--bare', '--initial-branch=main', bare);
+    world.git(world.work, 'remote', 'set-url', 'origin', `file://${bare}`);
+    const ran = path.join(world.work, 'hook-ran');
+    fs.writeFileSync(path.join(world.work, '.git', 'hooks', 'pre-push'), `#!/bin/sh\ncat >> ${ran}\n`, { mode: 0o755 });
+    const head = world.git(world.work, 'rev-parse', 'HEAD');
+    const result = resultOf(await run('GitPush', { remote: 'origin', branch: 'main' }, { rules: [rule('allow', 'GitPush')] }));
+    expect(result.status).toBe('completed');
+    expect(fs.readFileSync(ran, 'utf8')).toBe(`refs/heads/main ${head} refs/heads/main ${'0'.repeat(40)}\n`);
+    const hook = spawns.findIndex((spawn) => spawn.argv[0]?.endsWith('pre-push') === true);
+    const push = spawns.findIndex((spawn) => spawn.argv.includes('push'));
+    expect(hook).toBeGreaterThanOrEqual(0);
+    expect(hook).toBeLessThan(push);
+    expect(spawns[hook]?.policy.network).toBe('deny');
+    expect(world.git(world.base, 'ls-remote', bare, 'refs/heads/main').split(/\s+/)[0]).toBe(head);
+  });
+});
+
 describe.skipIf(!HAS_REAL_SANDBOX)('the reconcile of an operation, which has no sandbox in its context', () => {
   it('runs its probes through the sandbox and the reconcile policy of the runner, and reports a landed commit as already applied', async () => {
     const world = makeGitWorld();
@@ -142,7 +161,6 @@ describe.skipIf(!HAS_REAL_SANDBOX)('the reconcile of an operation, which has no 
     fs.mkdirSync(markerDir);
     const tools = createOperationTools({
       runArgv: createSandboxedArgvRunner({ inspector: testProcessInspector(), reconcileSandbox: async () => ({ sandbox, sandboxPolicy: reconcilePolicy, release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: UNCONFIGURED_NETWORK, markerDir, credentialRoot: world.base }),
-      readGit: hostGitReader,
       forge: NO_FORGE,
       settings: {},
     });
@@ -157,6 +175,29 @@ describe.skipIf(!HAS_REAL_SANDBOX)('the reconcile of an operation, which has no 
     expect(reconciled.outcome).toBe('already_applied');
     expect(spawns.length).toBeGreaterThan(0);
     expect(spawns.every((spawn) => spawn.policy === reconcilePolicy && spawn.policy.network === 'deny')).toBe(true);
+  });
+});
+
+describe('a process started without the executable that answers the prompt of git', () => {
+  it('refuses a call that carries a credential before anything runs, and says why', async () => {
+    const world = makeGitWorld();
+    const spawns: Spawn[] = [];
+    const sandbox = recordingSandbox(createUnsandboxed(), spawns);
+    const layout: Layout = { ...makeLayout(), root: world.base, home: world.home, project: world.work, outside: path.join(world.base, 'outside') };
+    const runArgv = createSandboxedArgvRunner({
+      inspector: testProcessInspector(),
+      reconcileSandbox: async () => ({ sandbox, sandboxPolicy: await policyFor({ layout, tmpDir: sessionTmpDirOf(layout) }), release: () => undefined }),
+      shellHost: nodeShellHost(),
+      outboundNetwork: UNCONFIGURED_NETWORK,
+      markerDir: world.base,
+      credentialRoot: world.base,
+    });
+    const ctx = contextFor(world.work, world.env);
+    const credentials = [{ origin: 'https://forge.example', username: 'x-access-token', password: 'fake-git-credential-for-tests' }];
+    await expect(runArgv(['git', 'version'], { cwd: world.work, env: world.env, signal: ctx.signal, network: 'none', context: ctx, effect: false, credentials })).rejects.toThrow(
+      'git was not run: this process was started without the executable that answers the credential prompt of git',
+    );
+    expect(spawns).toEqual([]);
   });
 });
 
@@ -182,13 +223,13 @@ describe.skipIf(!HAS_REAL_SANDBOX)('the credential of a git child inside the rea
     fs.mkdirSync(markerDir);
     const credentialRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-cred-')));
     onCleanup(() => fs.rmSync(credentialRoot, { recursive: true, force: true }));
-    const runArgv = createSandboxedArgvRunner({ inspector: testProcessInspector(), reconcileSandbox: async () => ({ sandbox, sandboxPolicy: await policyFor({ layout, tmpDir }), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: UNCONFIGURED_NETWORK, markerDir, credentialRoot });
+    const runArgv = createSandboxedArgvRunner({ inspector: testProcessInspector(), reconcileSandbox: async () => ({ sandbox, sandboxPolicy: await policyFor({ layout, tmpDir }), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: UNCONFIGURED_NETWORK, markerDir, credentialRoot, credentialHelper: ENTRY_AS_SCRIPT });
     const ctx = contextFor(world.work, world.env);
     const ask = `"$GIT_ASKPASS" "Password for 'https://x-access-token@forge.example': "`;
     const options = { cwd: world.work, env: world.env, signal: ctx.signal, network: 'none' as const, context: ctx, effect: false };
 
-    const answered = await runArgv(['/bin/sh', '-c', ask], { ...options, credentials: [{ host: 'forge.example', username: 'x-access-token', password: CREDENTIAL }] });
-    expect(answered).toMatchObject({ exitCode: 0, stdout: '[redacted]\n' });
+    const answered = await runArgv(['/bin/sh', '-c', ask], { ...options, credentials: [{ origin: 'https://forge.example', username: 'x-access-token', password: CREDENTIAL }] });
+    expect(answered).toMatchObject({ exitCode: 0, stdout: `${REDACTED_MARKER}\n` });
     const [spawn] = spawns;
     expect(spawn?.policy.unixSocketAllow?.some((entry) => entry.startsWith(credentialRoot))).toBe(true);
     expect(spawn?.argv.some((argument) => argument.includes(CREDENTIAL))).toBe(false);
@@ -200,29 +241,29 @@ describe.skipIf(!HAS_REAL_SANDBOX)('the credential of a git child inside the rea
   });
 });
 
-describe('operations through the executor and the policy, without any process', () => {
+describe('operations through the executor and the policy, which spawn only the reads the permission is decided on', () => {
   const FORGE_ORIGIN = 'https://forge.example/acme/widgets.git';
   const SHA = 'a'.repeat(40);
 
-  it('asks a person for GitPush when no rule allows it, and spawns nothing', async () => {
+  it('asks a person for GitPush when no rule allows it, and runs nothing but those reads', async () => {
     const { run, spawns } = await setup({ realSandbox: false });
     const outcome = await run('GitPush', { remote: 'origin', branch: 'main' });
     expect(outcome?.kind).toBe('needs_approval');
-    expect(spawns).toEqual([]);
+    expect(onlyGateReads(spawns)).toBe(true);
   });
 
   it('asks a person for a push to a protected ref even under an allow rule and bypassPermissions', async () => {
     const { run, rule, spawns } = await setup({ realSandbox: false });
     const outcome = await run('GitPush', { remote: 'origin', branch: 'release/1' }, { rules: [rule('allow', 'GitPush')], mode: 'bypassPermissions' });
     expect(outcome?.kind).toBe('needs_approval');
-    expect(spawns).toEqual([]);
+    expect(onlyGateReads(spawns)).toBe(true);
   });
 
   it('asks a person for PullRequestMerge even under an allow rule and bypassPermissions', async () => {
     const { run, rule, spawns } = await setup({ realSandbox: false, origin: FORGE_ORIGIN });
     const outcome = await run('PullRequestMerge', { number: 7, headSha: SHA }, { rules: [rule('allow', 'PullRequestMerge(*)')], mode: 'bypassPermissions' });
     expect(outcome?.kind).toBe('needs_approval');
-    expect(spawns).toEqual([]);
+    expect(onlyGateReads(spawns)).toBe(true);
   });
 
   it('denies PullRequestMerge under an explicit deny rule', async () => {

@@ -110,13 +110,13 @@ describe('supervisor-level settings evaluation', () => {
     expect(changedCount(h)).toBe(before + 1);
 
     const settingsFile = path.join(h.home, '.momonga', 'settings.json');
-    const realRead = fs.readFileSync;
-    const readSpy = vi.spyOn(fs, 'readFileSync').mockImplementation(((file: fs.PathOrFileDescriptor, options?: unknown) => {
+    const realRead = fs.promises.readFile;
+    const readSpy = vi.spyOn(fs.promises, 'readFile').mockImplementation(((file: fs.PathLike | fs.promises.FileHandle, options?: unknown) => {
       if (typeof file === 'string' && fs.realpathSync(path.dirname(file)) === fs.realpathSync(path.dirname(settingsFile)) && path.basename(file) === 'settings.json') {
-        throw Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' });
+        return Promise.reject(Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' }));
       }
       return realRead(file, options as never);
-    }) as typeof fs.readFileSync);
+    }) as typeof fs.promises.readFile);
     try {
       await edit(h, { ...validSettings(), permissions: { allow: ['Bash(pwd)'] } });
       await pumpUntil(h.timers, () => h.log.withMsg('settings.read_failed').length === 1, { realWork: h.realWork, maxMs: 10_000 });

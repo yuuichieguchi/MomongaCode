@@ -1,26 +1,37 @@
 import path from 'node:path';
-import { MANAGED_READY_LIMIT_MS, MANAGED_RESTART_POLICY, MANAGED_SERVERS, SOCKET_PLACEHOLDER } from '@momonga/protocol';
-import type { ManagedEndpointForm, ManagedServerDescription } from '@momonga/protocol';
+import { fileIdentityComponentOf } from '@momonga/foundation';
+import type { EndpointHost } from '@momonga/foundation';
+import { MANAGED_READY_LIMIT_MS, MANAGED_RESTART_POLICY, MANAGED_SERVERS, SOCKET_PLACEHOLDER, messageOf } from '@momonga/protocol';
+import type { ManagedEndpointForm, ManagedServerDescription, ProbeKeyComponent } from '@momonga/protocol';
+import { ConfigError } from './config-error.ts';
 import type { DeclaredServer } from './settings.ts';
 
 export type ServerRegistry = Readonly<Record<string, ManagedServerDescription>>;
 
 const DEFAULT_DECLARED_ENDPOINT_FORMS: readonly ManagedEndpointForm[] = ['unix'];
 
-const bracketed = (forms: readonly string[]): string => `[${forms.join(', ')}]`;
-
 export const firstOfferedEndpointForm = (description: ManagedServerDescription, hostForms: readonly ManagedEndpointForm[]): ManagedEndpointForm | undefined =>
   description.endpoint.forms.find((form) => hostForms.includes(form));
 
-export const requireOfferedEndpointForm = (description: ManagedServerDescription, hostForms: readonly ManagedEndpointForm[], where: string): ManagedEndpointForm => {
-  const form = firstOfferedEndpointForm(description, hostForms);
+export const requireOfferedEndpointForm = (description: ManagedServerDescription, host: EndpointHost, where: string): ManagedEndpointForm => {
+  const form = firstOfferedEndpointForm(description, host.forms);
   if (form === undefined) {
-    throw new Error(
-      `${where}: server ${JSON.stringify(description.id)} accepts only the endpoint forms ${bracketed(description.endpoint.forms)}, and this host offers ${bracketed(hostForms)}; the target cannot be used on this platform`,
-    );
+    throw new ConfigError(`${where}: ${messageOf('serverFormNotOffered', 'cli', { server: description.id, platform: host.platform, accepted: description.endpoint.forms, offered: host.forms })}`);
   }
   return form;
 };
+
+const OPTION_VALUE = /^-[^=]*=(.*)$/s;
+
+const pathOfArgument = (argument: string): string | undefined => {
+  if (argument === SOCKET_PLACEHOLDER) return undefined;
+  const value = OPTION_VALUE.exec(argument)?.[1] ?? argument;
+  return path.isAbsolute(value) ? value : undefined;
+};
+
+const pathArgumentsOf = (args: readonly string[]): string[] => [...new Set(args.flatMap((argument) => pathOfArgument(argument) ?? []))];
+
+const declaredIdentityOf = (declared: DeclaredServer): readonly ProbeKeyComponent[] => ['binarySha256', 'hostOsBuild', ...pathArgumentsOf(declared.args).map(fileIdentityComponentOf)];
 
 const declaredDescriptionOf = (id: string, declared: DeclaredServer): ManagedServerDescription => ({
   id,
@@ -31,7 +42,7 @@ const declaredDescriptionOf = (id: string, declared: DeclaredServer): ManagedSer
   endpoint: { forms: declared.endpoint?.forms ?? DEFAULT_DECLARED_ENDPOINT_FORMS },
   ready: { method: 'GET', path: declared.readyPath, status: 200, limitMs: MANAGED_READY_LIMIT_MS },
   preconditions: [],
-  identity: ['binarySha256', 'hostOsBuild'],
+  identity: declaredIdentityOf(declared),
   restart: MANAGED_RESTART_POLICY,
   models: { listPath: '/v1/models', idPath: ['data', '0', 'id'] },
   toolForms: ['native', 'envelope'],
@@ -43,15 +54,15 @@ const declaredDescriptionOf = (id: string, declared: DeclaredServer): ManagedSer
 });
 
 const checkDeclaration = (id: string, declared: DeclaredServer, where: string): void => {
-  if (MANAGED_SERVERS.some((server) => server.id === id)) throw new Error(`${where}: ${JSON.stringify(id)} is a built-in managed server and cannot be declared; choose another id`);
-  if (!path.isAbsolute(declared.command)) throw new Error(`${where}.command must be an absolute path; got ${JSON.stringify(declared.command)}`);
+  if (MANAGED_SERVERS.some((server) => server.id === id)) throw new ConfigError(`${where}: ${JSON.stringify(id)} is a built-in managed server and cannot be declared; choose another id`);
+  if (!path.isAbsolute(declared.command)) throw new ConfigError(`${where}.command must be an absolute path; got ${JSON.stringify(declared.command)}`);
   declared.args.forEach((arg, index) => {
     if (arg !== SOCKET_PLACEHOLDER && arg.includes(SOCKET_PLACEHOLDER)) {
-      throw new Error(`${where}.args[${index}] contains ${JSON.stringify(SOCKET_PLACEHOLDER)} inside a longer argument; the placeholder must be a whole argument`);
+      throw new ConfigError(`${where}.args[${index}] contains ${JSON.stringify(SOCKET_PLACEHOLDER)} inside a longer argument; the placeholder must be a whole argument`);
     }
   });
   const placeholders = declared.args.filter((arg) => arg === SOCKET_PLACEHOLDER).length;
-  if (placeholders !== 1) throw new Error(`${where}.args must contain ${JSON.stringify(SOCKET_PLACEHOLDER)} exactly once; found ${placeholders}`);
+  if (placeholders !== 1) throw new ConfigError(`${where}.args must contain ${JSON.stringify(SOCKET_PLACEHOLDER)} exactly once; found ${placeholders}`);
 };
 
 export const serverRegistryOf = (declared: Readonly<Record<string, DeclaredServer>> | undefined, source: string): ServerRegistry => {

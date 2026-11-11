@@ -10,9 +10,9 @@ const insertRow = (dbPath: string, row: { runId: string | null; sessionId: strin
     .run(row.runId, row.sessionId, row.seq, row.seq === null ? null : 0, row.seq === null ? null : 0, START_MS, row.type, JSON.stringify(row.payload));
 
 describe('event decoding after mode.changed became session-scoped', () => {
-  it('treats a run-scoped mode.changed row as corrupt', () => {
+  it('treats a run-scoped mode.changed row as corrupt', async () => {
     const { dbPath, store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     insertRow(dbPath, { runId: run.id, sessionId: run.sessionId, seq: 2, type: 'mode.changed', payload: { type: 'mode.changed', mode: 'plan' } });
 
     expect(() => store.readRunEvents(run.id, 0, 100)).toThrow(/mode\.changed/);

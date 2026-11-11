@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, fakeExec, testLocks } from '@momonga/testkit';
-import { makeDir, switchableRole } from '../gateway-helpers.ts';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakeExec, registerOwned, testLocks } from '@momonga/testkit';
+import { makeDir, switchableRole, registerCleanup } from '../gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, makeHome, modelsOf, writeSettings } from '../gateway-process-helpers.ts';
 import { startGatewayProcess } from '../../src/process.ts';
 
@@ -15,7 +15,7 @@ describe('a gateway whose home was removed while it started writes nothing back 
     writeSettings(home, { models: modelsOf({ local: ccTarget(path.join(makeDir(), 'up.sock'), { toolCalling: 'native' }) }) });
     const role = switchableRole('serving');
     const removals = { count: 0 };
-    const start = startGatewayProcess({
+    const start = registerOwned(registerCleanup, () => startGatewayProcess({
       locks: testLocks(),
       generation: FIRST_GENERATION,
       home,
@@ -30,7 +30,7 @@ describe('a gateway whose home was removed while it started writes nothing back 
           return role.refresh();
         },
       },
-    });
+    }));
 
     await expect(start).rejects.toThrow();
 

@@ -4,7 +4,7 @@ import { parseRule } from '@momonga/policy';
 import type { PermissionRule } from '@momonga/policy';
 import { USER_SHELL_OUTPUT_BYTES } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
-import { runUserCommand } from '@momonga/tools';
+import { nodeShellHost, runUserCommand } from '@momonga/tools';
 import type { UserCommandOutcome } from '@momonga/tools';
 import { BASE_ENV, isAlive, makeBuiltins, trackGroup, waitFor } from './fixtures.ts';
 import type { Builtins } from './fixtures.ts';
@@ -25,6 +25,7 @@ const runAsUser = async (tools: Builtins, command: string, rules: PermissionRule
     command,
     cwd: tools.layout.project,
     env: BASE_ENV,
+    shellHost: nodeShellHost(),
     signal,
     refusal: async (asked) => tools.executor.userRefusal({ tool: 'Bash', command: asked }, await facts),
     spawn: async (spawned, spawnSignal) => {

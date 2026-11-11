@@ -1,5 +1,5 @@
-import fs from 'node:fs/promises';
 import path from 'node:path';
+import type { FileSystem } from '@momonga/foundation';
 import type { BundledRipgrep, BundledRipgrepResolver } from './ripgrep-distribution.ts';
 
 export type RipgrepSource = 'bundled' | 'system' | 'path';
@@ -64,10 +64,12 @@ const executableNamesOf = (env: Readonly<Record<string, string>>): string[] => [
     .map((extension) => `${RIPGREP_BASE_NAME}${extension.toLowerCase()}`),
 ];
 
-const isExecutableFile = async (candidate: string): Promise<boolean> => {
+export type RipgrepSearchFiles = Pick<FileSystem, 'access' | 'stat'>;
+
+const isExecutableFile = async (files: RipgrepSearchFiles, candidate: string): Promise<boolean> => {
   try {
-    await fs.access(candidate, fs.constants.X_OK);
-    return (await fs.stat(candidate)).isFile();
+    await files.access(candidate, 'execute');
+    return (await files.stat(candidate)).isFile();
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === 'ENOENT' || code === 'ENOTDIR' || code === 'EACCES') return false;
@@ -75,21 +77,21 @@ const isExecutableFile = async (candidate: string): Promise<boolean> => {
   }
 };
 
-export const findRipgrepOnPath = async (env: Readonly<Record<string, string>>): Promise<string | undefined> => {
+export const findRipgrepOnPath = async (files: RipgrepSearchFiles, env: Readonly<Record<string, string>>): Promise<string | undefined> => {
   const names = executableNamesOf(env);
   for (const directory of (env['PATH'] ?? '').split(path.delimiter)) {
     if (directory === '' || !path.isAbsolute(directory)) continue;
     for (const name of names) {
       const candidate = path.join(directory, name);
-      if (await isExecutableFile(candidate)) return candidate;
+      if (await isExecutableFile(files, candidate)) return candidate;
     }
   }
   return undefined;
 };
 
-export const isRegularFileOnHost = async (file: string): Promise<boolean> => {
+export const isRegularFileOn = async (files: Pick<FileSystem, 'stat'>, file: string): Promise<boolean> => {
   try {
-    return (await fs.stat(file)).isFile();
+    return (await files.stat(file)).isFile();
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === 'ENOENT' || code === 'ENOTDIR') return false;
@@ -99,10 +101,10 @@ export const isRegularFileOnHost = async (file: string): Promise<boolean> => {
 
 export type HostRipgrepLocatorOptions = { setting: string; env: Readonly<Record<string, string>>; bundled?: BundledRipgrepResolver };
 
-export const createHostRipgrepLocator = ({ setting, env, bundled }: HostRipgrepLocatorOptions): RipgrepLocator =>
+export const ripgrepLocatorOn = (files: RipgrepSearchFiles, { setting, env, bundled }: HostRipgrepLocatorOptions): RipgrepLocator =>
   createRipgrepLocator({
     setting,
     ...(bundled === undefined ? {} : { bundled }),
-    onPath: () => findRipgrepOnPath(env),
-    isRegularFile: isRegularFileOnHost,
+    onPath: () => findRipgrepOnPath(files, env),
+    isRegularFile: (file) => isRegularFileOn(files, file),
   });

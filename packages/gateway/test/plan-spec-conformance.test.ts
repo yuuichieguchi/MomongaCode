@@ -43,6 +43,8 @@ describe('PLAN_SESSION_DEFAULTS: the numbers of design section 6 that P5a uses, 
       marginMs: 121_000,
       revocationBudgetMs: 31_500,
       persistRetryMs: 30_000,
+      persistRetryMaxMs: 900_000,
+      replacedAccessTokensKept: 3,
     });
   });
 

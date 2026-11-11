@@ -28,10 +28,10 @@ const fact = (runId: string, ordinal: number, command: string): SaveCandidateInp
   evidence: [{ kind: 'check', runId, conditionId: `t${ordinal}`, seq: 4 + ordinal, command, exitCode: 0 }],
 });
 
-const started = () => {
+const started = async () => {
   const { store, dbPath } = harness();
   const session = newSession(store, PROJECT);
-  const run = enqueue(store, session.id, 'fix the bug');
+  const run = await enqueue(store, session.id, 'fix the bug');
   const jobs = store.reflection as unknown as Failing;
   jobs.enqueue(run.id);
   jobs.begin(run.id);
@@ -39,8 +39,8 @@ const started = () => {
 };
 
 describe('a failed reflection job keeps the candidates code produced', () => {
-  it('stores the given candidates, records the charge and fails the job in one commit', () => {
-    const { store, run, jobs } = started();
+  it('stores the given candidates, records the charge and fails the job in one commit', async () => {
+    const { store, run, jobs } = await started();
     const failed = jobs.fail(run.id, 'the call failed', charge(run.id), [fact(run.id, 0, 'npm test'), fact(run.id, 1, 'npm run lint')]);
     expect(failed).toMatchObject({ state: 'failed', lastError: 'the call failed' });
     expect(store.contextCharges.list()).toHaveLength(1);
@@ -52,23 +52,23 @@ describe('a failed reflection job keeps the candidates code produced', () => {
     expect(saved[0]?.evidence).toEqual([{ kind: 'check', runId: run.id, conditionId: 't0', seq: 4, command: 'npm test', exitCode: 0 }]);
   });
 
-  it('stores the candidates of a failure that made no model charge', () => {
-    const { store, run, jobs } = started();
+  it('stores the candidates of a failure that made no model charge', async () => {
+    const { store, run, jobs } = await started();
     jobs.fail(run.id, 'the call failed', undefined, [fact(run.id, 0, 'npm test')]);
     expect(store.contextCharges.list()).toEqual([]);
     expect(store.memories.candidates().map((memory) => memory.text)).toEqual(['Run `npm test` to verify a change in this repository.']);
   });
 
-  it('stores no candidate when the job is not running, so a settled job gains nothing', () => {
-    const { store, run, jobs } = started();
+  it('stores no candidate when the job is not running, so a settled job gains nothing', async () => {
+    const { store, run, jobs } = await started();
     jobs.finish(run.id, 'finished elsewhere');
     expect(() => jobs.fail(run.id, 'late', charge(run.id), [fact(run.id, 0, 'npm test')])).toThrow('cannot fail');
     expect(store.memories.candidates()).toEqual([]);
     expect(store.contextCharges.list()).toEqual([]);
   });
 
-  it('commits nothing when a candidate cannot be stored: no charge, no candidate, the job still running', () => {
-    const { store, dbPath, run, jobs } = started();
+  it('commits nothing when a candidate cannot be stored: no charge, no candidate, the job still running', async () => {
+    const { store, dbPath, run, jobs } = await started();
     rawDb(dbPath).exec("CREATE TRIGGER fail_memories BEFORE INSERT ON memories BEGIN SELECT RAISE(ABORT, 'injected failure'); END");
     expect(() => jobs.fail(run.id, 'the call failed', charge(run.id), [fact(run.id, 0, 'npm test')])).toThrow('injected failure');
     expect(store.contextCharges.list()).toEqual([]);

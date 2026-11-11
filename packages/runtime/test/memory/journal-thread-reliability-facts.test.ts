@@ -28,7 +28,7 @@ const responded: RunEventPayload = {
 describe('the runFacts request of the embedded journal thread (P2: the stored facts equal the fold)', () => {
   it('answers with the facts and the call rows foldRunRecord computes over the same journal and the same run row', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work', { history: 'fresh' });
+    const run = await env.enqueue('Work', { history: 'fresh' });
     const claim = await env.seed(
       run.id,
       [
@@ -72,7 +72,7 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
   it('rejects a run whose journal has no run.started as a fold refusal, so the sweeper records it as unavailable', async () => {
     const FactsRefused = factsRefusedError();
     const env = await makeEnv();
-    const run = env.enqueue('Work', { history: 'fresh' });
+    const run = await env.enqueue('Work', { history: 'fresh' });
     const claim = await env.seed(run.id, [responded], 'hold');
     expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     const { dev, ino } = fs.statSync(env.dbPath);
@@ -92,7 +92,7 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
   it('gap A1: a request on a closed client rejects as a JournalThreadError that is not a fold refusal', async () => {
     const FactsRefused = factsRefusedError();
     const env = await makeEnv();
-    const run = env.enqueue('Work', { history: 'fresh' });
+    const run = await env.enqueue('Work', { history: 'fresh' });
     const claim = await env.seed(run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { model: 'fm' }, mode: 'manual' }, responded], 'hold');
     expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     const { dev, ino } = fs.statSync(env.dbPath);

@@ -8,6 +8,7 @@ import { harness, makeStoreDir, newSession } from '../../../store/test/helpers.t
 import { createMemoryPort } from '../../src/process/memory-port.ts';
 import { createRecordViews } from '../../src/memory/views.ts';
 import { SIGNAL } from './recall-fixture.ts';
+import { NEVER_CANCELLED } from '@momonga/testkit';
 
 const SHA = 'a'.repeat(40);
 
@@ -18,12 +19,12 @@ const portsWhere = (ancestor: boolean): EvidencePorts => ({
   isAncestor: async () => ancestor,
 });
 
-const setup = (evidence: (folderA: string) => MemoryEvidence[] = () => [{ kind: 'commit', sha: SHA }]) => {
+const setup = async (evidence: (folderA: string) => MemoryEvidence[] = () => [{ kind: 'commit', sha: SHA }]) => {
   const { store } = harness();
   const folderA = fs.realpathSync.native(makeStoreDir());
   const folderB = fs.realpathSync.native(makeStoreDir());
-  store.trust.set(folderA, 'trusted');
-  store.trust.set(folderB, 'trusted');
+  await store.trust.setAsked(folderA, 'trusted', NEVER_CANCELLED);
+  await store.trust.setAsked(folderB, 'trusted', NEVER_CANCELLED);
   const note = store.memories.addByCommand({
     scope: 'user',
     project: null,
@@ -54,7 +55,7 @@ const statusSeenFrom = async (store: RuntimeStore, folder: string, ancestor: boo
 
 describe('one rule decides which folder a note is checked against', () => {
   it('gives a user note the same status from every viewer and appends no observation for a change of viewer', async () => {
-    const { store, note, folderA, folderB } = setup();
+    const { store, note, folderA, folderB } = await setup();
     const fromA = await statusSeenFrom(store, folderA, true);
     const fromB = await statusSeenFrom(store, folderB, false);
     const views = createRecordViews({
@@ -68,7 +69,7 @@ describe('one rule decides which folder a note is checked against', () => {
   });
 
   it('checks a user note bound to a file of folder A against folder A from every viewer', async () => {
-    const { store, note, folderA, folderB } = setup((folder) => [{ kind: 'file', project: folder, path: 'src/a.ts', sha256: FILE_SHA }]);
+    const { store, note, folderA, folderB } = await setup((folder) => [{ kind: 'file', project: folder, path: 'src/a.ts', sha256: FILE_SHA }]);
     const fromA = await statusSeenFrom(store, folderA, true);
     const fromB = await statusSeenFrom(store, folderB, true);
     const views = createRecordViews({ store, evidenceRun: () => async () => ({ exitCode: 128 }), evidencePorts: () => portsWhere(true) });

@@ -1,53 +1,97 @@
 import { createHash } from 'node:crypto';
-import fs from 'node:fs';
 import path from 'node:path';
-import { StringDecoder } from 'node:string_decoder';
-import { nodeFileSystem, sha256Hex, systemRandom, writeFileAtomically as writeFileAtomicallyThroughLock } from '@momonga/foundation';
-import type { AtomicWriteFileSystem, KernelLockMechanism } from '@momonga/foundation';
+import { OPEN_FLAGS, sha256Hex, writeFileAtomically as writeFileAtomicallyThroughLock } from '@momonga/foundation';
+import type { AtomicWriteFileSystem, FileSystem, KernelLockMechanism, Random } from '@momonga/foundation';
 import type { ToolSessionState } from '../types.ts';
 import { ToolExecutionError } from '../types.ts';
 import { shownPath } from './paths.ts';
 import type { PathScope } from './paths.ts';
 
+export type FileStat = Awaited<ReturnType<FileSystem['stat']>>;
+
 const BINARY_SNIFF_BYTES = 8192;
+const FILE_READ_PAGE_BYTES = 64 * 1024;
 
 export const isMissing = (error: unknown): boolean => (error as NodeJS.ErrnoException).code === 'ENOENT';
 
-export const statIfExists = async (file: string): Promise<fs.Stats | undefined> => {
+export const statIfExists = async (files: Pick<FileSystem, 'stat'>, file: string): Promise<FileStat | undefined> => {
   try {
-    return await fs.promises.stat(file);
+    return await files.stat(file);
   } catch (error) {
     if (isMissing(error)) return undefined;
     throw error;
   }
 };
 
-export const looksBinary = async (file: string): Promise<boolean> => {
-  const handle = await fs.promises.open(file, 'r');
+export const looksBinary = async (files: Pick<FileSystem, 'readStart'>, file: string): Promise<boolean> => (await files.readStart(file, BINARY_SNIFF_BYTES)).includes(0);
+
+type PagedFiles = Pick<FileSystem, 'openRead'>;
+
+async function* pagesOf(files: PagedFiles, file: string): AsyncGenerator<Buffer> {
+  const handle = await files.openRead(file, OPEN_FLAGS.readOnly);
   try {
-    const buffer = Buffer.alloc(BINARY_SNIFF_BYTES);
-    const { bytesRead } = await handle.read(buffer, 0, BINARY_SNIFF_BYTES, 0);
-    return buffer.subarray(0, bytesRead).includes(0);
+    const page = Buffer.alloc(FILE_READ_PAGE_BYTES);
+    for (let bytesRead = await handle.read(page); bytesRead > 0; bytesRead = await handle.read(page)) yield page.subarray(0, bytesRead);
   } finally {
     await handle.close();
   }
+}
+
+export class NotUtf8Error extends Error {
+  constructor() {
+    super('the file is not UTF-8 text');
+    this.name = 'NotUtf8Error';
+  }
+}
+
+type Utf8Decoder = { write(bytes: Uint8Array): string; end(): string };
+
+const utf8Decoder = (): Utf8Decoder => {
+  const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+  const decode = (bytes: Uint8Array | undefined): string => {
+    try {
+      return bytes === undefined ? decoder.decode() : decoder.decode(bytes, { stream: true });
+    } catch (error) {
+      if (error instanceof TypeError) throw new NotUtf8Error();
+      throw error;
+    }
+  };
+  return { write: (bytes) => decode(bytes), end: () => decode(undefined) };
 };
 
-export const sha256OfFile = async (file: string): Promise<string> => {
+export const isUtf8File = async (files: PagedFiles, file: string): Promise<boolean> => {
+  const decoder = utf8Decoder();
+  try {
+    for await (const page of pagesOf(files, file)) decoder.write(page);
+    decoder.end();
+    return true;
+  } catch (error) {
+    if (error instanceof NotUtf8Error) return false;
+    throw error;
+  }
+};
+
+export const readUtf8File = async (files: Pick<FileSystem, 'readFile'>, file: string): Promise<string> => {
+  const decoder = utf8Decoder();
+  return decoder.write(await files.readFile(file)) + decoder.end();
+};
+
+export const sha256OfFile = async (files: PagedFiles, file: string): Promise<string> => {
   const hash = createHash('sha256');
-  for await (const chunk of fs.createReadStream(file)) hash.update(chunk as Buffer);
+  for await (const page of pagesOf(files, file)) hash.update(page);
   return hash.digest('hex');
 };
 
 export type LineScan = { sha256: string; totalLines: number };
 
 export const scanLines = async (
+  files: PagedFiles,
   file: string,
   onLine: (line: string, lineNumber: number) => void,
   signal: AbortSignal,
 ): Promise<LineScan> => {
   const hash = createHash('sha256');
-  const decoder = new StringDecoder('utf8');
+  const decoder = utf8Decoder();
   let pending = '';
   let lineNumber = 0;
   const feed = (text: string): void => {
@@ -61,10 +105,10 @@ export const scanLines = async (
     }
     pending = pending.slice(start);
   };
-  for await (const chunk of fs.createReadStream(file)) {
+  for await (const page of pagesOf(files, file)) {
     signal.throwIfAborted();
-    hash.update(chunk as Buffer);
-    feed(decoder.write(chunk as Buffer));
+    hash.update(page);
+    feed(decoder.write(page));
   }
   feed(decoder.end());
   if (pending !== '') {
@@ -75,6 +119,8 @@ export const scanLines = async (
 };
 
 export type AtomicWrite = {
+  files: FileSystem;
+  random: Random;
   scope: PathScope;
   target: string;
   requestedPath: string;
@@ -84,14 +130,14 @@ export type AtomicWrite = {
   onRenamed(): Promise<string | undefined>;
 };
 
-export const regularFileProblem = (stat: fs.Stats, displayPath: string): string | undefined =>
+export const regularFileProblem = (stat: FileStat, displayPath: string): string | undefined =>
   stat.isFile() ? undefined : `${displayPath} is not a regular file`;
 
 const describeFailure = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-export const updateLedgerAfterWrite = async (session: ToolSessionState, canonical: string, sha256: string): Promise<string | undefined> => {
+export const updateLedgerAfterWrite = async (files: Pick<FileSystem, 'stat'>, session: ToolSessionState, canonical: string, sha256: string): Promise<string | undefined> => {
   try {
-    await recordInLedger(session, canonical, sha256);
+    await recordInLedger(files, session, canonical, sha256);
     return undefined;
   } catch (error) {
     session.readLedger.delete(canonical);
@@ -104,20 +150,20 @@ const differentLocation = async (scope: PathScope, requestedPath: string, expect
     `${await shownPath(scope, requestedPath)} resolves to a different location than when it was approved (${await shownPath(scope, expected)} → ${await shownPath(scope, actual)}); retry the call`,
   );
 
-const assertResolvesTo = async (scope: PathScope, requestedPath: string, directory: string): Promise<void> => {
-  const resolved = await fs.promises.realpath(directory);
+const assertResolvesTo = async (files: Pick<FileSystem, 'realpath'>, scope: PathScope, requestedPath: string, directory: string): Promise<void> => {
+  const resolved = await files.realpath(directory);
   if (resolved !== directory) throw await differentLocation(scope, requestedPath, directory, resolved);
 };
 
-const createMissingDirectories = async (scope: PathScope, directory: string, requestedPath: string): Promise<void> => {
+const createMissingDirectories = async (files: FileSystem, scope: PathScope, directory: string, requestedPath: string): Promise<void> => {
   const missing: string[] = [];
-  for (let current = directory; (await statIfExists(current)) === undefined; current = path.dirname(current)) missing.push(current);
+  for (let current = directory; (await statIfExists(files, current)) === undefined; current = path.dirname(current)) missing.push(current);
   for (const level of missing.reverse()) {
-    await fs.promises.mkdir(level);
+    await files.makeDirectory(level);
     try {
-      await assertResolvesTo(scope, requestedPath, level);
+      await assertResolvesTo(files, scope, requestedPath, level);
     } catch (error) {
-      await fs.promises.rmdir(level).catch((removeError: unknown) => {
+      await files.removeEmptyDirectory(level).catch((removeError: unknown) => {
         const code = (removeError as NodeJS.ErrnoException).code;
         if (code !== 'ENOENT' && code !== 'ENOTEMPTY' && code !== 'ENOTDIR') throw removeError;
       });
@@ -126,10 +172,10 @@ const createMissingDirectories = async (scope: PathScope, directory: string, req
   }
 };
 
-const recordingDirectorySync = (directory: string, failures: unknown[]): AtomicWriteFileSystem => ({
-  ...nodeFileSystem,
+const recordingDirectorySync = (files: FileSystem, directory: string, failures: unknown[]): AtomicWriteFileSystem => ({
+  ...files,
   open: async (file, flags, mode) => {
-    const handle = await nodeFileSystem.open(file, flags, mode);
+    const handle = await files.open(file, flags, mode);
     if (file !== directory) return handle;
     return {
       ...handle,
@@ -145,16 +191,16 @@ const recordingDirectorySync = (directory: string, failures: unknown[]): AtomicW
 });
 
 export const writeFileAtomically = async (write: AtomicWrite): Promise<string | undefined> => {
-  const { target, content, mode } = write;
+  const { files, target, content, mode } = write;
   const directory = path.dirname(target);
-  await createMissingDirectories(write.scope, directory, write.requestedPath);
-  await assertResolvesTo(write.scope, write.requestedPath, directory);
+  await createMissingDirectories(files, write.scope, directory, write.requestedPath);
+  await assertResolvesTo(files, write.scope, write.requestedPath, directory);
   const directorySyncFailures: unknown[] = [];
   let ledgerWarning: string | undefined;
-  await writeFileAtomicallyThroughLock(recordingDirectorySync(directory, directorySyncFailures), systemRandom, target, content, {
+  await writeFileAtomicallyThroughLock(recordingDirectorySync(files, directory, directorySyncFailures), write.random, target, content, {
     mode,
     lock: write.lock,
-    beforePublish: () => assertResolvesTo(write.scope, write.requestedPath, directory),
+    beforePublish: () => assertResolvesTo(files, write.scope, write.requestedPath, directory),
     afterPublish: async () => {
       ledgerWarning = await write.onRenamed();
     },
@@ -170,26 +216,26 @@ export const assertSameLocation = async (scope: PathScope, requestedPath: string
 
 export const newFileMode = (): number => 0o666 & ~process.umask();
 
-export const recordInLedger = async (session: ToolSessionState, canonical: string, sha256: string): Promise<void> => {
-  const stat = await fs.promises.stat(canonical);
+export const recordInLedger = async (files: Pick<FileSystem, 'stat'>, session: ToolSessionState, canonical: string, sha256: string): Promise<void> => {
+  const stat = await files.stat(canonical);
   session.readLedger.set(canonical, { sha256, mtimeMs: stat.mtimeMs });
 };
 
-export const assertReadAndUnchanged = async (session: ToolSessionState, canonical: string, shown: string): Promise<string> => {
+export const assertReadAndUnchanged = async (files: PagedFiles, session: ToolSessionState, canonical: string, shown: string): Promise<string> => {
   const entry = session.readLedger.get(canonical);
   if (entry === undefined) {
     throw new ToolExecutionError(`${shown} has not been read in this session; Read it first before modifying it`);
   }
-  const current = await sha256OfFile(canonical);
+  const current = await sha256OfFile(files, canonical);
   if (current !== entry.sha256) {
     throw new ToolExecutionError(`${shown} has changed since it was last read; Read it again before modifying it`);
   }
   return current;
 };
 
-export const hashOfFileIfExists = async (file: string): Promise<string | null> => {
+export const hashOfFileIfExists = async (files: Pick<FileSystem, 'readFile'>, file: string): Promise<string | null> => {
   try {
-    return sha256Hex(await fs.promises.readFile(file));
+    return sha256Hex(await files.readFile(file));
   } catch (error) {
     if (isMissing(error)) return null;
     throw error;

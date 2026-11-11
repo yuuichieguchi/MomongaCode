@@ -46,7 +46,7 @@ describe('the port of the store (ContributionPreparer, StalePreparation, Journal
 describe('a worker terminal is one operation: plan, await the preparer, commit', () => {
   it('returns a promise and commits the measured contribution immediately before run.status, asking the preparer once with the run and no leading events', async () => {
     const h = withPreparer();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
 
     const pending = h.store.transition(claim, ['RUNNING'], 'COMPLETED');
@@ -60,7 +60,7 @@ describe('a worker terminal is one operation: plan, await the preparer, commit',
 
   it('hands the preparer the preceding events as its leading events and appends exactly those before the contribution', async () => {
     const h = withPreparer();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
 
     expect((await h.store.transition(claim, ['RUNNING'], 'FAILED', { error: { code: 'input_truncated', message: 'truncated' } }, [finalResponse])).kind).toBe('ok');
@@ -71,7 +71,7 @@ describe('a worker terminal is one operation: plan, await the preparer, commit',
 
   it('CommitRefuseStale: a measurement of an older lastSeq writes nothing, and the operation measures again and commits the fresh one', async () => {
     const h = withPreparer([{ kind: 'stale', id: 'old' }, { kind: 'fresh', id: 'new' }]);
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
     const before = typesOf(h.store, run.id);
     const seenAtSecondCall: string[][] = [];
@@ -90,7 +90,7 @@ describe('a worker terminal is one operation: plan, await the preparer, commit',
   it('a failed measurement rejects the operation with the thread error and writes nothing: no event, no status change, the lease still held', async () => {
     const failure = new JournalThreadError('the journal thread exited');
     const h = withPreparer([{ kind: 'fail', error: failure }]);
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
     const before = typesOf(h.store, run.id);
 
@@ -103,7 +103,7 @@ describe('a worker terminal is one operation: plan, await the preparer, commit',
 
   it('a lease lost while the measurement is awaited ends in lease_lost before anything is written', async () => {
     const h = withPreparer();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
     const before = typesOf(h.store, run.id);
     h.fake.during(async () => {
@@ -120,7 +120,7 @@ describe('a worker terminal is one operation: plan, await the preparer, commit',
 
   it('a cancel that lands during the wait refuses the finish; the cancel finish of the same holder then measures again and commits', async () => {
     const h = withPreparer();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
     h.fake.during(async (_request, call) => {
       if (call === 1) expect(await h.store.requestCancel(run.id)).toMatchObject({ kind: 'ok', run: { status: 'CANCELLING' } });
@@ -136,7 +136,7 @@ describe('a worker terminal is one operation: plan, await the preparer, commit',
 
   it('a store with no preparer commits a terminal with no contribution and no error', async () => {
     const h = harness();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
 
     expect((await h.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
@@ -147,7 +147,7 @@ describe('a worker terminal is one operation: plan, await the preparer, commit',
 
   it('measures nothing for a transition that is not terminal', async () => {
     const h = withPreparer();
-    enqueue(h.store, newSession(h.store).id);
+    await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
 
     expect((await h.store.transition(claim, ['RUNNING'], 'WAITING_TOOL')).kind).toBe('ok');
@@ -173,7 +173,7 @@ describe('approval expiry is an operation that awaits the preparer', () => {
 describe('one writer of context.contribution (O12)', () => {
   it('store.append refuses a context.contribution event and the journal is unchanged', async () => {
     const h = withPreparer();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
     const before = typesOf(h.store, run.id);
 

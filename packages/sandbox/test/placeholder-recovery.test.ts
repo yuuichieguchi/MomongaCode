@@ -4,22 +4,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, pollUntil } from '@momonga/testkit';
 import { DEFAULT_BWRAP_PATH, createPlaceholderJournal, heldMountPoints, identityOf, recoverPlaceholders } from '@momonga/sandbox';
 import { makeTempDir } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const POLL_MS = 25;
 const DEADLINE_MS = 20_000;
 
-const until = async (condition: () => boolean, description: string): Promise<void> => {
-  const deadline = Date.now() + DEADLINE_MS;
-  while (!condition()) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${description}`);
-    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
-  }
-};
+const until = (condition: () => boolean, description: string): Promise<void> => pollUntil(condition, { description, boundMs: DEADLINE_MS });
 
 const HOST_SCRIPT = fileURLToPath(new URL('./placeholder-host.ts', import.meta.url));
 const HAS_BWRAP = process.platform === 'linux' && fs.existsSync(DEFAULT_BWRAP_PATH);

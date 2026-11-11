@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ConfigError } from '@momonga/runtime';
 import type { RuntimeStore } from '@momonga/store';
 import type { ExecutionBatchInput } from '@momonga/tools';
-import { waitUntil, within } from './deferred.ts';
+
 import { EXTRA_ROOT, START_MS, makeEnv, toolKey } from './harness.ts';
 import { pinnedStart } from './cancel-fixture.ts';
 import { callsStep, functionCallItem, requestedOffering, textStep } from './scripts.ts';
@@ -12,7 +12,7 @@ describe('worker tool-set notices', () => {
     const env = await makeEnv();
     const known = 'Tool source "mcp-a" failed to list tools: connection refused';
     const fresh = 'Tool source "mcp-b": awaiting approval';
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     await env.seed(run.id, [{ type: 'notice', level: 'warning', message: known }], 'release');
     env.gateway.script.push(textStep('Hello.'));
     const worker = env.worker('worker-1', {
@@ -58,7 +58,7 @@ describe('worker config errors', () => {
           }
         : {},
     );
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(worker)).toBe('yielded');
 
@@ -76,7 +76,7 @@ describe('worker config errors', () => {
         },
       },
     });
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(worker)).toBe('yielded');
 
@@ -88,7 +88,7 @@ describe('worker config errors', () => {
 describe('worker onError and notices', () => {
   it('keeps the run notice when onError is set', async () => {
     const env = await makeEnv();
-    const failing = env.enqueue('Fails to load');
+    const failing = await env.enqueue('Fails to load');
     env.gateway.script.push(textStep('Hello.'));
     const failure = new Error('load exploded');
     let thrown = false;
@@ -105,8 +105,8 @@ describe('worker onError and notices', () => {
     const reported: unknown[] = [];
     const worker = env.worker('worker-1', { store, idlePollMs: 10, onError: (error) => reported.push(error) });
     worker.start();
-    await waitUntil(() => reported.length === 1, 3_000, 'the error to be reported');
-    await within(worker.stop(), 3_000, 'the worker to stop');
+    await env.passTime(() => reported.length === 1, 'the error to be reported');
+    await env.settled(worker.stop(), 'the worker to stop');
 
     expect(reported).toEqual([failure]);
     expect(env.ofType(failing.id, 'notice').map((event) => event.message)).toEqual(['The worker failed on this run: load exploded']);
@@ -117,7 +117,7 @@ describe('worker policyFor', () => {
   it('passes the policyFor roots and sandbox policy to the tool batch', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.gateway.script.push(callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'one' } }]), textStep('Echoed.'));
-    const run = env.enqueue('Echo');
+    const run = await env.enqueue('Echo');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -131,7 +131,7 @@ describe('worker policyFor', () => {
 
   it('passes the policyFor roots to cancel recovery', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Mark it');
+    const run = await env.enqueue('Mark it');
     const key = toolKey(run.id, 1, 'call_m_1');
     await env.seed(
       run.id,
@@ -168,7 +168,7 @@ describe('worker model request metadata', () => {
   it('records metadata with the run id and step as strings in the sent and recorded body', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Hello.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 

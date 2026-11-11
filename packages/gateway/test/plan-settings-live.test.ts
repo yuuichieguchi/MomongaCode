@@ -9,7 +9,7 @@ import { DEFAULT_STOP_VALUES, FIRST_GENERATION, createFileCredentialStore, creat
 import type { UdsClient } from '@momonga/foundation';
 import { saveEndpointRecord, startGatewayProcess } from '@momonga/gateway';
 import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretStore, openResponsesTextReply, registerCleanup, startFakeSiwcAuth, waitFor, withTempDir, testKernelLock, testLocks } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretStore, openResponsesTextReply, registerCleanup, startFakeSiwcAuth, waitFor, withTempDir, registerOwned, testLocks, testKernelLock } from '@momonga/testkit';
 import type { CleanupContext, SiwcAuth } from '@momonga/testkit';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
 import { getJson, userInput, listedEntryOf, listedMembersOf, listedCountersOf } from './gateway-helpers.ts';
@@ -17,7 +17,7 @@ import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, homePaths, launchGateway
 import { startFake } from './cc-support.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
 import { makeReport } from './report-fixture.ts';
-import { ACCOUNT, CALLBACK_PORT, accountRoute, begin, browse, sessionsDirectory, startPlanGateway } from './plan-signin-support.ts';
+import { ACCOUNT, CALLBACK_PORT, accountRoute, begin, browse, completeConfirmed, sessionsDirectory, startPlanGateway } from './plan-signin-support.ts';
 import type { PlanGateway } from './plan-signin-support.ts';
 import { CONDITION_WAIT, PROFILE_ID } from './plan-support.ts';
 
@@ -150,7 +150,7 @@ const startRemoteStack = async (
   for (const record of options.records?.(hostId) ?? []) await store.write(`plan/${PROFILE_ID}/${String(record['account'])}`, JSON.stringify(record), new AbortController().signal);
   const settingsWith = (network: Record<string, unknown>) => ({ credentials: { plaintextTokenFiles: true }, models: pinnedTargets(options.accounts), network });
   replaceSettings(home, settingsWith(options.network));
-  const handle = await startGatewayProcess({
+  const handle = await registerOwned(context, () => startGatewayProcess({
     locks: testLocks(),
     generation: FIRST_GENERATION,
     home,
@@ -159,10 +159,7 @@ const startRemoteStack = async (
     stdout: { write: () => true },
     secretStore: createFakeSecretStore({}),
     planProfiles: { [PROFILE_ID]: options.profile },
-  });
-  registerCleanup(context, async () => {
-    await handle.close(NO_GRACE);
-  });
+  }), (started) => started.close(NO_GRACE));
   const client = createUdsClient(fixedSocket(handle.socketPath));
   registerCleanup(context, () => client.destroy());
   return { home, client, settingsWith };
@@ -275,7 +272,7 @@ const signInAs = async (gateway: PlanGateway, account: string): Promise<void> =>
   const begun = await begin(gateway, { account });
   expect(begun.status).toBe(200);
   const callback = await browse(begun.body.authorizationUrl);
-  const completed = await gateway.post(PLAN_ROUTES.signInComplete, { attemptId: begun.body.attemptId, callbackUrl: callback.toString() });
+  const completed = await completeConfirmed(gateway, begun.body.attemptId, callback.toString());
   expect(completed.body).toMatchObject({ outcome: 'signed_in', account: { label: account } });
 };
 

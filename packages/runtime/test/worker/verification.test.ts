@@ -47,9 +47,9 @@ const recordingSandbox = (): Sandbox => {
 
 const workerOf = (env: Env) => env.worker('worker-1', { tools: { sandboxes: fixedSandboxBindings(recordingSandbox()) } });
 
-const enqueueWith = (env: Env, input: string, completion: Completion | undefined): Run =>
+const enqueueWith = async (env: Env, input: string, completion: Completion | undefined): Promise<Run> =>
   createdRun(
-    env.store.createRunAndEnqueue(env.session.id, {
+    await env.store.createRunAndEnqueue(env.session.id, {
       input,
       timeoutMs: DEADLINE_MS - env.clock.now(),
       limits: {},
@@ -87,7 +87,7 @@ describe('verifiable completion in the worker', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     const command = 'echo "2 tests failed" >&2; exit 1';
     env.gateway.script.push(textStep('All done.'), textStep('Really done.'));
-    const run = enqueueWith(env, 'make the tests pass', { conditions: [{ command }] });
+    const run = await enqueueWith(env, 'make the tests pass', { conditions: [{ command }] });
 
     await env.runOnce(workerOf(env));
 
@@ -105,7 +105,7 @@ describe('verifiable completion in the worker', () => {
   it('counts the output of a check under a call id that the request validation of the gateway accepts, whatever the length of the condition id', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.gateway.script.push(textStep('All done.'), textStep('Really done.'));
-    const run = enqueueWith(env, 'make the tests pass', { conditions: [{ id: `check-${'long-'.repeat(40)}id`, command: 'echo "2 tests failed" >&2; exit 1' }] });
+    const run = await enqueueWith(env, 'make the tests pass', { conditions: [{ id: `check-${'long-'.repeat(40)}id`, command: 'echo "2 tests failed" >&2; exit 1' }] });
 
     await env.runOnce(workerOf(env));
 
@@ -121,7 +121,7 @@ describe('verifiable completion in the worker', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     const command = 'test -f done.txt';
     env.gateway.script.push(callsStep([{ callId: 'call_b_1', name: 'Bash', args: { command } }]), textStep('Verified, it passes.'), textStep('It passes.'));
-    const run = enqueueWith(env, 'make done.txt exist', { conditions: [{ command }] });
+    const run = await enqueueWith(env, 'make done.txt exist', { conditions: [{ command }] });
 
     await env.runOnce(workerOf(env));
 
@@ -133,7 +133,7 @@ describe('verifiable completion in the worker', () => {
   it('runs the conditions again after the model fixes the workspace, and completes only when they pass', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.gateway.script.push(textStep('Done.'), write('call_w_1', path.join(env.project, 'done.txt')), textStep('Fixed.'));
-    const run = enqueueWith(env, 'create done.txt', { conditions: [{ command: 'test -f done.txt' }] });
+    const run = await enqueueWith(env, 'create done.txt', { conditions: [{ command: 'test -f done.txt' }] });
 
     await env.runOnce(workerOf(env));
 
@@ -148,7 +148,7 @@ describe('verifiable completion in the worker', () => {
   it('runs every owed condition in declared order even when the first fails, and reports all failures at once', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.gateway.script.push(textStep('Done.'), textStep('Done.'));
-    const run = enqueueWith(env, 'two checks', { conditions: [{ command: 'echo first-broken; exit 4' }, { command: 'echo second-broken; exit 5' }] });
+    const run = await enqueueWith(env, 'two checks', { conditions: [{ command: 'echo first-broken; exit 4' }, { command: 'echo second-broken; exit 5' }] });
 
     await env.runOnce(workerOf(env));
 
@@ -163,7 +163,7 @@ describe('verifiable completion in the worker', () => {
     const hooked = path.join(env.root, 'hooked');
     env.settings.hooksValue = stopHook(`if [ ! -f ${hooked} ]; then touch ${hooked}; echo "one more thing" >&2; exit 2; fi`);
     env.gateway.script.push(write('call_w_1', path.join(env.project, 'done.txt')), textStep('Done.'), write('call_w_2', path.join(env.project, 'more.txt')), textStep('Done again.'));
-    const run = enqueueWith(env, 'create done.txt', { conditions: [{ command: 'test -f done.txt' }] });
+    const run = await enqueueWith(env, 'create done.txt', { conditions: [{ command: 'test -f done.txt' }] });
 
     await env.runOnce(workerOf(env));
 
@@ -177,7 +177,7 @@ describe('verifiable completion in the worker', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.settings.hooksValue = stopHook('true');
     env.gateway.script.push(textStep('Done.'));
-    const run = enqueueWith(env, 'check', { conditions: [{ command: 'true' }] });
+    const run = await enqueueWith(env, 'check', { conditions: [{ command: 'true' }] });
 
     await env.runOnce(workerOf(env));
 
@@ -192,7 +192,7 @@ describe('verifiable completion in the worker', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.settings.hooksValue = stopHook('true');
     env.gateway.script.push(textStep('Done.'), textStep('Done.'));
-    const run = enqueueWith(env, 'check', { conditions: [{ command: 'false' }] });
+    const run = await enqueueWith(env, 'check', { conditions: [{ command: 'false' }] });
 
     await env.runOnce(workerOf(env));
 
@@ -204,7 +204,7 @@ describe('verifiable completion in the worker', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     spawned.length = 0;
     env.gateway.script.push(textStep('Done.'));
-    const run = enqueueWith(env, 'check', { conditions: [{ command: 'pwd > where.txt' }] });
+    const run = await enqueueWith(env, 'check', { conditions: [{ command: 'pwd > where.txt' }] });
 
     await env.runOnce(workerOf(env));
 
@@ -218,7 +218,7 @@ describe('verifiable completion in the worker', () => {
   it('passes only on exit 0: a condition that exits 0 passes, any other exit fails', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.gateway.script.push(textStep('Done.'));
-    const run = enqueueWith(env, 'check', { conditions: [{ command: 'exit 0' }] });
+    const run = await enqueueWith(env, 'check', { conditions: [{ command: 'exit 0' }] });
 
     await env.runOnce(workerOf(env));
 
@@ -229,7 +229,7 @@ describe('verifiable completion in the worker', () => {
   it('records a condition that outruns its declared timeout as timed_out, never passed', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.gateway.script.push(textStep('Done.'), textStep('Done.'));
-    const run = enqueueWith(env, 'check', { conditions: [{ command: 'sleep 30', timeoutMs: 1000 }] });
+    const run = await enqueueWith(env, 'check', { conditions: [{ command: 'sleep 30', timeoutMs: 1000 }] });
 
     await env.runOnce(workerOf(env));
 
@@ -240,7 +240,7 @@ describe('verifiable completion in the worker', () => {
   it('does not count verification as model steps', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.gateway.script.push(textStep('Done.'), write('call_w_1', path.join(env.project, 'done.txt')), textStep('Fixed.'));
-    const run = enqueueWith(env, 'create done.txt', { conditions: [{ command: 'test -f done.txt' }] });
+    const run = await enqueueWith(env, 'create done.txt', { conditions: [{ command: 'test -f done.txt' }] });
 
     await env.runOnce(workerOf(env));
 
@@ -253,7 +253,7 @@ describe('when a condition is owed', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     standing(env, ['exit 1']);
     env.gateway.script.push(textStep('The answer is 42.'));
-    const run = enqueueWith(env, 'a question', undefined);
+    const run = await enqueueWith(env, 'a question', undefined);
 
     await env.runOnce(workerOf(env));
 
@@ -266,7 +266,7 @@ describe('when a condition is owed', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     standing(env, ['echo lint-broken; exit 1']);
     env.gateway.script.push(write('call_w_1', path.join(env.project, 'a.txt')), textStep('Done.'), textStep('Done.'));
-    const run = enqueueWith(env, 'edit', undefined);
+    const run = await enqueueWith(env, 'edit', undefined);
 
     await env.runOnce(workerOf(env));
 
@@ -277,7 +277,7 @@ describe('when a condition is owed', () => {
   it('evaluates an always condition from the request even when nothing was changed', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.gateway.script.push(textStep('Nothing to do.'));
-    const run = enqueueWith(env, 'check', { conditions: [{ command: 'true' }] });
+    const run = await enqueueWith(env, 'check', { conditions: [{ command: 'true' }] });
 
     await env.runOnce(workerOf(env));
 
@@ -289,7 +289,7 @@ describe('when a condition is owed', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     standing(env, []);
     env.gateway.script.push(write('call_w_1', path.join(env.project, 'a.txt')), textStep('Done.'));
-    const run = enqueueWith(env, 'edit', undefined);
+    const run = await enqueueWith(env, 'edit', undefined);
 
     await env.runOnce(workerOf(env));
 
@@ -303,7 +303,7 @@ describe('the pinned declaration', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     standing(env, ['npm run lint']);
     env.gateway.script.push(textStep('Done.'));
-    const run = enqueueWith(env, 'check', { conditions: [{ command: 'true', timeoutMs: 5000 }], requirements: ['the docs mention it'] });
+    const run = await enqueueWith(env, 'check', { conditions: [{ command: 'true', timeoutMs: 5000 }], requirements: ['the docs mention it'] });
 
     await env.runOnce(workerOf(env));
 
@@ -321,7 +321,7 @@ describe('the pinned declaration', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     standing(env, ['true']);
     env.gateway.script.push(textStep('Done.'));
-    const run = enqueueWith(env, 'check', { conditions: [{ command: 'true' }] });
+    const run = await enqueueWith(env, 'check', { conditions: [{ command: 'true' }] });
 
     await env.runOnce(workerOf(env));
 
@@ -333,7 +333,7 @@ describe('the pinned declaration', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     standing(env, ['npm run lint']);
     env.gateway.script.push(textStep('Done.'));
-    const run = enqueueWith(env, 'check', { conditions: [{ command: 'true' }], inherit: false });
+    const run = await enqueueWith(env, 'check', { conditions: [{ command: 'true' }], inherit: false });
 
     await env.runOnce(workerOf(env));
 
@@ -343,10 +343,10 @@ describe('the pinned declaration', () => {
   it('derives the same id for the same command, so the id does not depend on the source', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.gateway.script.push(textStep('Done.'), textStep('Done.'));
-    const first = enqueueWith(env, 'check', { conditions: [{ command: 'true' }] });
+    const first = await enqueueWith(env, 'check', { conditions: [{ command: 'true' }] });
     await env.runOnce(workerOf(env));
     standing(env, ['true']);
-    const second = enqueueWith(env, 'check again', undefined);
+    const second = await enqueueWith(env, 'check again', undefined);
     await env.runOnce(workerOf(env));
 
     const [left] = pinnedConditions(env, first.id);
@@ -359,7 +359,7 @@ describe('the pinned declaration', () => {
     const env = await makeEnv({ mode: 'manual' });
     standing(env, ['true']);
     env.gateway.script.push(write('call_w_1', path.join(env.project, 'a.txt')), textStep('Done.'));
-    const run = enqueueWith(env, 'edit', undefined);
+    const run = await enqueueWith(env, 'edit', undefined);
 
     await env.runOnce(workerOf(env));
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
@@ -379,7 +379,7 @@ describe('verification.required', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     standing(env, [], true);
     env.gateway.script.push(write('call_w_1', path.join(env.project, 'a.txt')), textStep('Done.'));
-    const run = enqueueWith(env, 'edit', undefined);
+    const run = await enqueueWith(env, 'edit', undefined);
 
     await env.runOnce(workerOf(env));
 
@@ -390,7 +390,7 @@ describe('verification.required', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     standing(env, [], true);
     env.gateway.script.push(textStep('The answer is 42.'));
-    const run = enqueueWith(env, 'a question', undefined);
+    const run = await enqueueWith(env, 'a question', undefined);
 
     await env.runOnce(workerOf(env));
 
@@ -401,7 +401,7 @@ describe('verification.required', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     standing(env, [], false);
     env.gateway.script.push(write('call_w_1', path.join(env.project, 'a.txt')), textStep('Done.'));
-    const run = enqueueWith(env, 'edit', { requirements: ['the docs mention it'] });
+    const run = await enqueueWith(env, 'edit', { requirements: ['the docs mention it'] });
 
     await env.runOnce(workerOf(env));
 
@@ -412,7 +412,7 @@ describe('verification.required', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     standing(env, [], false);
     env.gateway.script.push(write('call_w_1', path.join(env.project, 'a.txt')), textStep('Done.'));
-    const run = enqueueWith(env, 'edit', undefined);
+    const run = await enqueueWith(env, 'edit', undefined);
 
     await env.runOnce(workerOf(env));
 
@@ -430,8 +430,8 @@ describe('limits during the send-back loop', () => {
       write('call_w_2', path.join(env.project, 'b.txt')),
       textStep('Summary.'),
     );
-    const run = createdRun(
-      env.store.createRunAndEnqueue(env.session.id, {
+    const run = await createdRun(
+      await env.store.createRunAndEnqueue(env.session.id, {
         input: 'fix it',
         timeoutMs: DEADLINE_MS - env.clock.now(),
         limits: { maxSteps: 3 },

@@ -159,7 +159,7 @@ describe('run facts this build does not know (11.4)', () => {
   ] as const)('%s.%s decodes as unknown on a newer database', async (table, column, where, read) => {
     const { store, dbPath } = harness();
     const session = newSession(store);
-    const run = enqueue(store, session.id);
+    const run = await enqueue(store, session.id);
     store.runFacts.commit({ rows: [factsRow(run.id, session.id)], calls: [], unavailable: [], throughEventId: 0 });
     markNewer(dbPath);
     writeUnknown(dbPath, table, column, where, run.id);
@@ -178,9 +178,9 @@ describe('a search document of an origin this build does not know (11.4)', () =>
     markNewer(dbPath);
     writeUnknown(dbPath, 'search_docs', 'origin', 'run_id', run.id);
     writeUnknown(dbPath, 'runs', 'origin', 'id', run.id);
-    const own = anchorsOf(store.search.query({ trusted: true, project: `${dir}/a` }, { query: 'zebra', scope: 'project' }));
+    const own = anchorsOf(await store.search.query({ trusted: true, project: `${dir}/a` }, { query: 'zebra', scope: 'project' }));
     expect(own.map((anchor) => [anchor.runId, anchor.origin])).toEqual([[run.id, 'unknown']]);
-    expect(anchorsOf(store.search.query({ trusted: true, project: `${dir}/b` }, { query: 'zebra', scope: 'all' }))).toEqual([]);
+    expect(anchorsOf(await store.search.query({ trusted: true, project: `${dir}/b` }, { query: 'zebra', scope: 'all' }))).toEqual([]);
     const read = await store.search.readRange({ trusted: true, project: `${dir}/a` }, { runId: run.id, limit: 100, redactor });
     expect(read.kind === 'ok' ? read.origin : read.kind).toBe('unknown');
   });

@@ -90,7 +90,7 @@ const sleep = (timers: GatewayTimers, ms: number, signal: AbortSignal): Promise<
     signal.addEventListener('abort', onAbort, { once: true });
   });
 
-const retryAfterSeconds = (retryAfterMs: number): string => String(Math.max(1, Math.ceil(retryAfterMs / 1000)));
+export const retryAfterSeconds = (retryAfterMs: number): string => String(Math.max(1, Math.ceil(retryAfterMs / 1000)));
 
 const finalError = (classified: ClassifiedError, totalWaitMs: number): GatewayError => {
   const { retryAfterMs } = classified;

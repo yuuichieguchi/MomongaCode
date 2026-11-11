@@ -7,7 +7,6 @@ import {
   CREDENTIAL_KEY_MARKER_FILE,
   CREDENTIAL_KEY_PREFIX,
   CredentialStoreError,
-  DEFAULT_LOCK_TIMEOUT_MS,
   OperationLimitError,
   SECURITY_BINARY,
   SecretStoreAbsentError,
@@ -25,6 +24,7 @@ import type { SecretBackend } from '@momonga/foundation/secret-store';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretFiles, createFakeSecurityPort, startLockHolder, waitFor, testKernelLock } from '@momonga/testkit';
 import type { FakeControl, FakeSecurityPort } from '@momonga/testkit';
 import type { ScopedOperations } from '../src/credential-store.ts';
+import { DEFAULT_LOCK_TIMEOUT_MS } from '../src/file-lock.ts';
 import { FAKE_KEY_STORE_ADVICE, createFakeKeyStore, recordFileOf, recordLockOf, steppedPorts } from './support/credential-key-fakes.ts';
 import type { FakeKeyStore } from './support/credential-key-fakes.ts';
 import { KEYCHAIN_PATH, R_ND, R_PATH, fakeLimit, noStoreRefusal } from './support/secret-store-fakes.ts';

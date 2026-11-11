@@ -18,7 +18,14 @@ describe('store onCommit', () => {
     await settle();
     calls.length = 0;
 
-    const run = enqueue(store, session.id);
+    const run = await enqueue(store, session.id);
+    await settle();
+    expect(calls).toEqual([[{ runId: run.id, sessionId: session.id }]]);
+    const claim = mustClaim(store, 'w1');
+    await settle();
+    calls.length = 0;
+
+    store.append(claim, [{ type: 'notice', level: 'info', message: 'one' }]);
 
     expect(calls).toEqual([]);
     await settle();
@@ -28,7 +35,7 @@ describe('store onCommit', () => {
   it('deduplicates several events of one op into one entry', async () => {
     const { calls, onCommit } = recorder();
     const { store } = harness({ onCommit });
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     await settle();
     calls.length = 0;
@@ -60,7 +67,7 @@ describe('store onCommit', () => {
     const { calls, onCommit } = recorder();
     const { store } = harness({ onCommit });
     const session = newSession(store);
-    const run = enqueue(store, session.id);
+    const run = await enqueue(store, session.id);
     await settle();
     calls.length = 0;
 
@@ -81,7 +88,7 @@ describe('store onCommit', () => {
       },
     });
 
-    enqueue(store, newSession(store).id);
+    await enqueue(store, newSession(store).id);
     await settle();
 
     expect(seen).toEqual([1]);
@@ -90,7 +97,7 @@ describe('store onCommit', () => {
   it('fires for the dead-letter run.status appended by the dead-letter sweep', async () => {
     const { calls, onCommit } = recorder();
     const { clock, store } = harness({ onCommit, maxAttempts: 1 });
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
     clock.advance(LEASE_MS + 1);
     await settle();
@@ -112,7 +119,7 @@ describe('store onCommit on rollback', () => {
   it('never reports the touches of a rolled-back op, and the next commit reports only its own', async () => {
     const { calls, onCommit } = recorder();
     const { dbPath, store } = harness({ onCommit });
-    const failing = enqueue(store, newSession(store).id);
+    const failing = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     const otherSession = newSession(store, '/work/b');
     await settle();
@@ -131,7 +138,7 @@ describe('store onCommit on rollback', () => {
     expect(mustRun(store, failing.id).lastSeq).toBe(1);
 
     db.exec('DROP TRIGGER fail_second');
-    const next = enqueue(store, otherSession.id);
+    const next = await enqueue(store, otherSession.id);
     await settle();
 
     expect(calls).toEqual([[{ runId: next.id, sessionId: otherSession.id }]]);

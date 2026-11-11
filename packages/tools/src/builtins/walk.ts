@@ -1,16 +1,20 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import ignore from 'ignore';
 import type { Ignore } from 'ignore';
 import { hostPaths } from '@momonga/foundation';
-import type { FileRuleSet } from '@momonga/foundation';
+import type { FileRuleSet, FileSystem } from '@momonga/foundation';
 import { createReadAccessMatcher } from '../read-access.ts';
 import type { ReadAccessMatcher, ReadFamilyTool } from '../read-access.ts';
 import { isMissing } from './files.ts';
 
 export type WalkEntry = { absolute: string; relative: string };
 
+type Dirent = Awaited<ReturnType<FileSystem['readdirEntries']>>[number];
+
+export type WalkFiles = Pick<FileSystem, 'readTextFile' | 'lstat' | 'stat' | 'readdirEntries'>;
+
 export type WalkOptions = {
+  files: WalkFiles;
   root: string;
   readDenied: readonly string[];
   readAllowed: readonly string[] | undefined;
@@ -42,12 +46,12 @@ export const isPermissionError = (error: unknown): boolean => {
   return code === 'EACCES' || code === 'EPERM';
 };
 
-const loadIgnoreRules = async (directory: string, base: string, onUnreadable: () => void): Promise<IgnoreFrame | undefined> => {
+const loadIgnoreRules = async (files: WalkFiles, directory: string, base: string, onUnreadable: () => void): Promise<IgnoreFrame | undefined> => {
   let rules: Ignore | undefined;
   for (const name of IGNORE_FILE_NAMES) {
     let text: string;
     try {
-      text = await fs.promises.readFile(path.join(directory, name), 'utf8');
+      text = await files.readTextFile(path.join(directory, name));
     } catch (error) {
       if (isMissing(error)) continue;
       if (isPermissionError(error)) {
@@ -73,7 +77,7 @@ const isIgnored = (frames: readonly IgnoreFrame[], relative: string, isDirectory
   return false;
 };
 
-const byName = (left: fs.Dirent, right: fs.Dirent): number => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
+const byName = (left: Dirent, right: Dirent): number => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
 
 const nextComponents = async (directory: string, denied: Blocks): Promise<string[]> => {
   const names = (await denied.allowedWithin(directory)).map((allowed) => allowed.slice(directory.length + 1).split(path.sep)[0] as string);
@@ -86,16 +90,16 @@ export async function* reachableAllowedRoots(
   directory: string,
   base: string,
   frames: readonly IgnoreFrame[],
-  options: Pick<WalkOptions, 'signal' | 'onUnreadable'>,
+  options: Pick<WalkOptions, 'files' | 'signal' | 'onUnreadable'>,
   access: Blocks,
 ): AsyncGenerator<AllowedRoot> {
   options.signal.throwIfAborted();
   const directoryBlocked = await access.blocksResolved(directory);
-  const own = directoryBlocked ? undefined : await loadIgnoreRules(directory, base, options.onUnreadable);
+  const own = directoryBlocked ? undefined : await loadIgnoreRules(options.files, directory, base, options.onUnreadable);
   const active = own === undefined ? frames : [...frames, own];
   for (const name of await nextComponents(directory, access)) {
     const child = path.join(directory, name);
-    const stat = await fs.promises.lstat(child).catch((error: unknown) => {
+    const stat = await options.files.lstat(child).catch((error: unknown) => {
       if (isMissing(error)) return undefined;
       throw error;
     });
@@ -131,11 +135,11 @@ async function* walkDirectory(
   denied: WalkAccess,
 ): AsyncGenerator<WalkEntry> {
   options.signal.throwIfAborted();
-  const own = await loadIgnoreRules(directory, base, options.onUnreadable);
+  const own = await loadIgnoreRules(options.files, directory, base, options.onUnreadable);
   const active = own === undefined ? frames : [...frames, own];
-  let entries: fs.Dirent[];
+  let entries: Dirent[];
   try {
-    entries = await fs.promises.readdir(directory, { withFileTypes: true });
+    entries = await options.files.readdirEntries(directory);
   } catch (error) {
     if (!isPermissionError(error)) throw error;
     options.onUnreadable();
@@ -164,7 +168,7 @@ async function* walkDirectory(
       if (!resolution.ok) continue;
       const canonicalTarget = resolution.path;
       if ((await denied.blocksResolved(canonicalTarget)) || denied.blockedByForms(absolute, canonicalTarget, options.tool) !== undefined) continue;
-      const target = await fs.promises.stat(canonicalTarget).catch((error: unknown) => {
+      const target = await options.files.stat(canonicalTarget).catch((error: unknown) => {
         if (isMissing(error)) return undefined;
         throw error;
       });

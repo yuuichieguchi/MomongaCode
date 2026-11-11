@@ -112,7 +112,7 @@ describe('the timer of a case', () => {
 });
 
 describe('the environment of a session inside a case', () => {
-  const portsWith = (home: string, env: Record<string, string>): CliPorts => ({ platform: 'linux', env, home, files: nodeFiles, process: nodeProcess }) as unknown as CliPorts;
+  const portsWith = (home: string, env: Record<string, string>): CliPorts => ({ platform: 'linux', env, home, files: nodeFiles, process: nodeProcess, interrupt: new AbortController().signal }) as unknown as CliPorts;
 
   const personEnv = {
     PATH: process.env['PATH'] ?? '/usr/bin',

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { PLAN_ROUTES } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import { ACCOUNT, begin, browse, sessionsDirectory, signIn, startPlanGateway } from './plan-signin-support.ts';
+import { ACCOUNT, begin, browse, completeConfirmed, sessionsDirectory, signIn, startPlanGateway } from './plan-signin-support.ts';
 import type { PlanGateway } from './plan-signin-support.ts';
 import { PROFILE_ID } from './plan-support.ts';
 
@@ -20,7 +20,7 @@ const signInSpare = async (gateway: PlanGateway): Promise<void> => {
   const begun = await begin(gateway, { account: SPARE });
   expect(begun.status).toBe(200);
   const callback = await browse(begun.body.authorizationUrl);
-  const completed = await gateway.post(PLAN_ROUTES.signInComplete, { attemptId: begun.body.attemptId, callbackUrl: callback.toString() });
+  const completed = await completeConfirmed(gateway, begun.body.attemptId, callback.toString());
   expect(completed.body).toMatchObject({ outcome: 'signed_in', account: { label: SPARE } });
 };
 

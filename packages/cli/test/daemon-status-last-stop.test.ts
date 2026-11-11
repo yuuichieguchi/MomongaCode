@@ -31,7 +31,7 @@ describe('momonga daemon status shows the values of the last stop (close-grace d
     await start({ version: '1.2.4', generation: 2, pid: 4002 });
     writeUserSettings(home, settingsOf(STOP_VALUES));
 
-    expect(await daemonStatus(ports as unknown as CliPorts, paths)).toBe(0);
+    expect(await daemonStatus({ ...ports, interrupt: new AbortController().signal } as unknown as CliPorts, paths)).toBe(0);
     expect(stdout.chunks.join('')).toBe(SERVING);
   });
 
@@ -41,7 +41,7 @@ describe('momonga daemon status shows the values of the last stop (close-grace d
     await writeStopRecord(generationLayout(home, 2).stopRecord, 2, STOP_VALUES, testKernelLock());
     writeUserSettings(home, settingsOf(STOP_VALUES));
 
-    expect(await daemonStatus(ports as unknown as CliPorts, paths)).toBe(0);
+    expect(await daemonStatus({ ...ports, interrupt: new AbortController().signal } as unknown as CliPorts, paths)).toBe(0);
     expect(stdout.chunks.join('')).toBe(`${SERVING}  last stop: ${STOP_VALUES_TEXT}\n`);
   });
 
@@ -50,7 +50,7 @@ describe('momonga daemon status shows the values of the last stop (close-grace d
     await start({ version: '1.2.4', generation: 2, pid: 4002 });
     await writeStopRecord(generationLayout(home, 2).stopRecord, 2, STOP_VALUES, testKernelLock());
 
-    expect(await daemonStatus(ports as unknown as CliPorts, paths)).toBe(0);
+    expect(await daemonStatus({ ...ports, interrupt: new AbortController().signal } as unknown as CliPorts, paths)).toBe(0);
     expect(stdout.chunks.join('')).toBe(`${SERVING}  last stop: ${STOP_VALUES_TEXT}\n  settings now: ${DEFAULTS_TEXT}\n`);
   });
 
@@ -61,7 +61,7 @@ describe('momonga daemon status shows the values of the last stop (close-grace d
     await writeStopRecord(generationLayout(home, 1).stopRecord, 1, STOP_VALUES, testKernelLock());
     writeUserSettings(home, settingsOf(STOP_VALUES));
 
-    expect(await daemonStatus(ports as unknown as CliPorts, paths)).toBe(0);
+    expect(await daemonStatus({ ...ports, interrupt: new AbortController().signal } as unknown as CliPorts, paths)).toBe(0);
     expect(stdout.chunks.join('')).toBe(
       `${SERVING}v1.2.3 retiring (pid 4001): 1 steps in flight, 0 background jobs, 0 model calls in flight\n  last stop: ${STOP_VALUES_TEXT}\n`,
     );
@@ -72,7 +72,7 @@ describe('momonga daemon status shows the values of the last stop (close-grace d
     await start({ version: '1.2.4', generation: 2, pid: 4002 });
     await writeStopRecord(generationLayout(home, 2).stopRecord, 1, STOP_VALUES, testKernelLock());
 
-    expect(await daemonStatus(ports as unknown as CliPorts, paths)).toBe(0);
+    expect(await daemonStatus({ ...ports, interrupt: new AbortController().signal } as unknown as CliPorts, paths)).toBe(0);
     expect(stdout.chunks.join('')).toBe(SERVING);
   });
 });

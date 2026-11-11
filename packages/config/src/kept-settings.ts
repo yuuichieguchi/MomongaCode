@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { canonicalJson, isRecord, sha256Hex, systemRandom, writeFileAtomicallySync } from '@momonga/foundation';
-import type { FileSystemSync, KernelLockMechanism } from '@momonga/foundation';
+import { canonicalJson, isRecord, settledOrAborted, sha256Hex, writeFileAtomically } from '@momonga/foundation';
+import type { FileSystem, KernelLockMechanism, Random } from '@momonga/foundation';
 import type { ConfigError } from './config-error.ts';
 import { isAbsentPathError, parseJsonText } from './json-file.ts';
 import type { JsonFile } from './json-file.ts';
@@ -11,16 +11,16 @@ const KEPT_DIRECTORY_MODE = 0o700;
 const KEPT_FILE_MODE = 0o600;
 
 export type KeptSettings = {
-  recall(file: string): Kept<JsonFile>;
-  remember(file: string, read: JsonFile): void;
+  recall(file: string, signal: AbortSignal): Promise<Kept<JsonFile>>;
+  remember(file: string, read: JsonFile, signal: AbortSignal): Promise<void>;
   report(file: string, problem: KeptProblem): string;
 };
 
 export type KeptProblem = { kind: 'invalid'; error: ConfigError; identity: string } | { kind: 'unkept'; reason: string } | { kind: 'unusable'; reason: string };
 
 export type KeptRecords = {
-  load(file: string): JsonFile | undefined;
-  save(file: string, read: JsonFile): void;
+  load(file: string, signal: AbortSignal): Promise<JsonFile | undefined>;
+  save(file: string, read: JsonFile, signal: AbortSignal): Promise<void>;
 };
 
 export type KeptSettingsOptions = { records: KeptRecords; onWarning: (message: string) => void };
@@ -32,40 +32,41 @@ export class UnreadableKeptCopyError extends Error {}
 const isJsonFile = (value: unknown): value is JsonFile =>
   isRecord(value) && (value['found'] === false || (value['found'] === true && Object.hasOwn(value, 'value')));
 
-export const diskKeptRecords = (fileSystem: FileSystemSync, directory: string, lock: KernelLockMechanism): KeptRecords => {
+export const diskKeptRecords = (files: FileSystem, random: Random, directory: string, lock: KernelLockMechanism): KeptRecords => {
   const recordOf = (file: string): string => path.join(directory, `${sha256Hex(file)}.json`);
   return {
-    load: (file) => {
-      let handle: number;
+    load: async (file, signal) => {
+      signal.throwIfAborted();
+      const record = recordOf(file);
+      let text: string | undefined;
       try {
-        handle = fileSystem.openReadNoFollowSync(recordOf(file));
+        text = await settledOrAborted(files.readOwnerOnlyTextFile(record, `the kept copy ${record}`), signal);
       } catch (error) {
+        if (signal.aborted) throw signal.reason;
         if (isAbsentPathError(error)) return undefined;
+        if (error instanceof Error && !('code' in error)) throw new UnreadableKeptCopyError(error.message, { cause: error });
         throw error;
       }
-      let bytes: Uint8Array;
+      if (text === undefined) return undefined;
+      let kept: unknown;
       try {
-        bytes = fileSystem.readFileSync(handle);
-      } finally {
-        fileSystem.closeSync(handle);
-      }
-      let record: unknown;
-      try {
-        record = parseJsonText(new TextDecoder().decode(bytes), recordOf(file));
+        kept = parseJsonText(text, record);
       } catch (error) {
         throw new UnreadableKeptCopyError(error instanceof Error ? error.message : String(error), { cause: error });
       }
-      if (!isRecord(record) || record['file'] !== file || !isJsonFile(record['read'])) throw new UnreadableKeptCopyError(`${recordOf(file)}: not a kept copy of ${file}`);
-      return record['read'];
+      if (!isRecord(kept) || kept['file'] !== file || !isJsonFile(kept['read'])) throw new UnreadableKeptCopyError(`${record}: not a kept copy of ${file}`);
+      return kept['read'];
     },
-    save: (file, read) => {
-      fileSystem.mkdirSync(directory, KEPT_DIRECTORY_MODE);
-      writeFileAtomicallySync(fileSystem, systemRandom, recordOf(file), `${JSON.stringify({ file, read })}\n`, { mode: KEPT_FILE_MODE, lock });
+    save: async (file, read, signal) => {
+      signal.throwIfAborted();
+      await settledOrAborted(files.mkdir(directory, KEPT_DIRECTORY_MODE), signal);
+      signal.throwIfAborted();
+      await writeFileAtomically(files, random, recordOf(file), `${JSON.stringify({ file, read })}\n`, { mode: KEPT_FILE_MODE, lock });
     },
   };
 };
 
-export const noKeptRecords: KeptRecords = { load: () => undefined, save: () => undefined };
+export const noKeptRecords: KeptRecords = { load: async () => undefined, save: async () => undefined };
 
 const lineOf = (file: string, problem: KeptProblem): string =>
   problem.kind === 'invalid'
@@ -93,10 +94,11 @@ export function createKeptSettings({ records, onWarning }: KeptSettingsOptions):
     return line;
   };
 
-  const saved = (file: string, read: JsonFile): void => {
+  const saved = async (file: string, read: JsonFile, signal: AbortSignal): Promise<void> => {
     try {
-      records.save(file, read);
+      await records.save(file, read, signal);
     } catch (error) {
+      if (signal.aborted) throw signal.reason;
       report(file, { kind: 'unkept', reason: error instanceof Error ? error.message : String(error) });
       return;
     }
@@ -104,9 +106,9 @@ export function createKeptSettings({ records, onWarning }: KeptSettingsOptions):
     reported.delete(slotOf(file, 'unusable'));
   };
 
-  const loaded = (file: string): JsonFile | undefined => {
+  const loaded = async (file: string, signal: AbortSignal): Promise<JsonFile | undefined> => {
     try {
-      return records.load(file);
+      return await records.load(file, signal);
     } catch (error) {
       if (!(error instanceof UnreadableKeptCopyError)) throw error;
       report(file, { kind: 'unusable', reason: error.message });
@@ -115,18 +117,18 @@ export function createKeptSettings({ records, onWarning }: KeptSettingsOptions):
   };
 
   return {
-    recall: (file) => {
-      const known = copies.get(file) ?? loaded(file);
+    recall: async (file, signal) => {
+      const known = copies.get(file) ?? (await loaded(file, signal));
       if (known === undefined) return undefined;
       copies.set(file, known);
       return { value: known };
     },
-    remember: (file, read) => {
+    remember: async (file, read, signal) => {
       reported.delete(slotOf(file, 'invalid'));
       const known = copies.get(file);
       if (known !== undefined && canonicalJson(known) === canonicalJson(read)) return;
       copies.set(file, read);
-      saved(file, read);
+      await saved(file, read, signal);
     },
     report,
   };

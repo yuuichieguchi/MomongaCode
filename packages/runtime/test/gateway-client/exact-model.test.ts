@@ -26,7 +26,7 @@ const drive = async (env: Env, runId: string): Promise<void> => {
 describe('the requests the runtime itself sends to the gateway name the model by its full reference only (design-model-names 2.2, 4.11)', () => {
   it('sends momonga.exact_model true with the model step, its token counts, the compaction, and the count and the call of the classifier', async () => {
     const stepped = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
-    const run = stepped.enqueue('question one');
+    const run = await stepped.enqueue('question one');
     await stepped.seed(
       run.id,
       [
@@ -54,7 +54,7 @@ describe('the requests the runtime itself sends to the gateway name the model by
     judged.settings.classifierModel = 'guard';
     judged.gateway.capabilitiesByModel['guard'] = capabilitiesFor(judged.gateway.capabilitiesValue.contextWindow, { structuredOutput: 'json_schema' });
     judged.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: path.join(judged.project, 'out.txt'), content: 'x' } }]), textStep(SAFE), textStep('Written.'));
-    const guarded = judged.enqueue('Write out.txt');
+    const guarded = await judged.enqueue('Write out.txt');
     await drive(judged, guarded.id);
     const classifierStreams = judged.gateway.streams.filter((stream) => stream.role === 'classifier');
     expect(classifierStreams.map((stream) => [stream.body.model, stream.body.momonga?.exact_model])).toEqual([['guard', true]]);
@@ -73,7 +73,7 @@ describe('the requests the runtime itself sends to the gateway name the model by
     expect(env.settings).not.toHaveProperty('modelTargets');
     env.gateway.roles = { reflection: 'cheap' };
     env.gateway.script.push(textStep('done'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     await drive(env, run.id);
     expect(env.ofType(run.id, 'run.started')[0]?.pins['roles']).toEqual({ reflection: 'cheap' });
   });

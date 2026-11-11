@@ -10,7 +10,8 @@
     "type": "object",
     "properties": {
       "number": { "type": "integer", "minimum": 1, "description": "The pull request number" },
-      "body": { "type": "string", "minLength": 1 }
+      "body": { "type": "string", "minLength": 1 },
+      "remote": { "type": "string", "pattern": "^[^-\\s][^\\s]*$", "description": "The remote whose forge is asked; origin when left out" }
     },
     "required": ["number", "body"],
     "additionalProperties": false

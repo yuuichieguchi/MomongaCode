@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { HOST_FLAVOUR, groupAlive, compileFileRuleSet, EMPTY_PROTECTED_SET, ruleEnforcementOf, syncPaths, momongaLayout } from '@momonga/foundation';
+import { compileFileRuleSet, EMPTY_PROTECTED_SET, groupAlive, HOST_FLAVOUR, nodeFileSystem, ruleEnforcementOf, syncPaths, systemRandom, momongaLayout } from '@momonga/foundation';
 
 import os from 'node:os';
 import path from 'node:path';
@@ -13,11 +13,11 @@ import type { McpServerConfig, McpServerEntry, PermissionRule, RuleEffect } from
 import { createMcpPool, type McpPool } from '@momonga/mcp';
 
 
-import { createToolExecutor, createToolRegistry } from '@momonga/tools';
+import { createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 
 
 import type { BlobPort, ExecutionBatchInput, IdempotencyPort, LeasedBegin, ToolCall, ToolIdempotencyRecord, ToolSet } from '@momonga/tools';
-import { UNCONFIGURED_NETWORK, MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, createFakeClock, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, killPidsForCleanup, UNBOUNDED_OUTPUT_FIT, type FakeClock, type ModernFixtureRecord, testProcessInspector } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, createFakeClock, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, killPidsForCleanup, UNBOUNDED_OUTPUT_FIT, type FakeClock, type ModernFixtureRecord, pollUntil, testProcessInspector } from '@momonga/testkit';
 
 
 
@@ -75,13 +75,7 @@ export const makeRecordFile = (): string => {
   return file;
 };
 
-export const waitUntil = async (condition: () => boolean, description: string, limitMs = 10_000): Promise<void> => {
-  const startedAt = Date.now();
-  while (!condition()) {
-    if (Date.now() - startedAt > limitMs) throw new Error(`condition not reached: ${description}`);
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-};
+export const waitUntil = (condition: () => boolean, description: string, limitMs = 10_000): Promise<void> => pollUntil(condition, { description, boundMs: limitMs });
 
 export const waitForRecord = async (file: string, predicate: (entry: ModernFixtureRecord) => boolean): Promise<ModernFixtureRecord> => {
   await waitUntil(() => readRecords(file).some(predicate), `record in ${file}`);
@@ -217,7 +211,12 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000), onWa
   fs.mkdirSync(markers, { mode: 0o700 });
   const callLocks = path.join(root, 'call-locks');
   fs.mkdirSync(callLocks, { mode: 0o700 });
-  const executor = createToolExecutor({ layout: momongaLayout(home, process.platform, process.env), reap: { inspector: testProcessInspector() }, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
+  const executor = createToolExecutor({
+    layout: momongaLayout(home, process.platform, process.env),
+    reap: { inspector: testProcessInspector() },
+    shellHost: nodeShellHost(),
+    random: systemRandom,
+    files: nodeFileSystem, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
     idempotency: makeIdempotency(),
     blobs: unusedBlobs,
     clock,

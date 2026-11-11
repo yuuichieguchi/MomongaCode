@@ -16,8 +16,8 @@ export type { Redactor, RedactorOptions } from './redaction.ts';
 export { safeSlice } from './text-slice.ts';
 export { HISTORY_OUTPUT_HEAD_CHARS, HISTORY_OUTPUT_TAIL_CHARS, cutToChars, keepingHeadAndTail } from './history-output.ts';
 export { OUTPUT_READER_TOOL, TRUNCATION_MARKER_SOURCE, truncationMarker } from './output-marker.ts';
-export { BUSY_WAIT_LIMIT_MS, busyTimeoutMs, highestAppliedMigration, immediateTx, joinedTx, migrate, openDatabase, readTx } from './sqlite.ts';
-export type { Migration } from './sqlite.ts';
+export { BUSY_WAIT_LIMIT_MS, busyTimeoutMs, highestAppliedMigration, immediateTx, joinedTx, migrate, openDatabase, openDatabaseWithIdentity, readTx } from './sqlite.ts';
+export type { DatabaseFileIdentity, Migration } from './sqlite.ts';
 export { SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, decodeSse, encodeSse } from './sse.ts';
 export { URL_OPENER_PROGRAMS, createBrowserOpener, openCommandFor, urlOpenerFileFor } from './open-browser.ts';
 export type { LaunchProgram, OpenUrl, ProgramEnd } from './open-browser.ts';
@@ -29,7 +29,7 @@ export { createUdsClient, fixedSocket, isUnixSocketLive, listenUnix } from './ud
 export type { SocketResolver, UdsClient, UdsResponse } from './uds.ts';
 export { uuidv7 } from './uuidv7.ts';
 export { CALL_ID_PREFIX, newCallId } from './call-id.ts';
-export { DEFAULT_LOCK_TIMEOUT_MS, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
+export { LockWaitTimeoutError, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
 export type { FileLockPorts } from './file-lock.ts';
 export { AUTH_DOCUMENT_MAX_BYTES, createFileCredentialStore, createMemoryCredentialStore, credentialFileFor } from './credential-store.ts';
 export type { CredentialEntry, CredentialStore, ListableCredentialStore } from './credential-store.ts';
@@ -67,8 +67,8 @@ export { POLL_INTERVAL_MS, waitUntil } from './wait-until.ts';
 export type { Random } from './random.ts';
 export { systemClock, systemTiming, systemWaitTiming } from './system-timing.ts';
 export { systemRandom } from './system-random.ts';
-export { nodeDescriptorWriter, nodeFileSystem, nodeFileSystemSync } from './node-file-system.ts';
-export type { FileSystem, FileSystemSync } from './node-file-system.ts';
+export { OPEN_FLAGS, nodeDescriptorWriter, nodeFileSystem, nodeFileSystemSync } from './node-file-system.ts';
+export type { FileSystem, FileSystemSync, ReadHandle } from './node-file-system.ts';
 export { forceKillGroup, groupAlive, groupTerminationBoundMs, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from './process-group.ts';
 export type { TerminateOutcome } from './process-group.ts';
 export { procGroupMembers } from './platform/group-members.ts';
@@ -150,7 +150,6 @@ export type { GenerationRole, RolePort } from './generation-role.ts';
 export { GENERATION_RETIRED_CODE, GENERATION_RETIRED_STATUS, MOVED_CODE } from './generation-codes.ts';
 export { formatStartRecord, generationIsLive, listGenerationNumbers, listGenerations, lockReadsHeld, probeGenerationLocks, readStartRecord } from './generation-registry.ts';
 export {
-  ABANDON_REASON_TEXTS,
   CurrentGenerationUnreadableError,
   GenerationCounterError,
   GenerationPrepareError,
@@ -162,6 +161,7 @@ export {
 } from './generation-start.ts';
 export type {
   AbandonReason,
+  StartFailureReason,
   GenerationRef,
   GenerationStartFiles,
   HeldStart,
@@ -179,7 +179,7 @@ export {
 export type { GenerationMarkerReap, GenerationReaperFiles, GenerationReaperOptions, GenerationReaperResult } from './generation-reaper.ts';
 export { compareVersions, orderVersions, tryParseVersion } from './version-order.ts';
 export type { Version } from './version-order.ts';
-export { createBinaryHashCache, createHeldHostReadings, createHostExec, probeKeyComponentLabel, readProbeKeyComponents } from './host-identity.ts';
+export { createBinaryHashCache, createHeldHostReadings, createHostExec, fileIdentityComponentOf, probeKeyComponentLabel, readProbeKeyComponents } from './host-identity.ts';
 export type { BinaryHashCache, HeldHostReadings, HostExec, HostExecAnswer, ProbeKeyReading } from './host-identity.ts';
 export { NoCurrentGenerationError, currentSocketResolver, publishCurrentGeneration, readCurrentGeneration, resolveGenerationFor, versionSocketResolver } from './current-generation.ts';
 export type { CurrentGeneration } from './current-generation.ts';
@@ -307,16 +307,16 @@ export { isProcessAlive } from './process-alive.ts';
 export type { SignalSender } from './process-alive.ts';
 export type { ProcessPort } from './process-port.ts';
 export { HELPER_COMMAND, helperCommandLine } from './executable-helper.ts';
-export type { ExecutableHelpers, HelperHost } from './executable-helper.ts';
-export { SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, endpointFormsOfPlatform, endpointFormsOfSocket, isPipePath, setSocketBind, socketBindRefusalOf, pipePathFor } from './socket-path.ts';
+export type { ExecutableHelper, ExecutableHelpers, HelperHost, HelperSelf } from './executable-helper.ts';
+export { SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, endpointFormsOfSocket, endpointHostOf, isPipePath, setSocketBind, socketBindRefusalOf, pipePathFor } from './socket-path.ts';
 export { MAX_SYMLINK_HOPS, comparableFromParts, containsByComponents, createPathResolver, createSyncPathResolver, hostPaths, setCaseSensitivityProbe, walkPath } from './path-compare.ts';
 export { displayToolPathSync, syncPaths } from './sync-paths.ts';
 export { answeredLater, answeredNow, askedPaths } from './path-asking.ts';
 export type { PathAsking } from './path-asking.ts';
-export type { EndpointForm } from './socket-path.ts';
+export type { EndpointForm, EndpointHost } from './socket-path.ts';
 export { createCapabilityProbe } from './capability-probe.ts';
 export type { CapabilityResult } from './capability-probe.ts';
-export type { LocatedParts, PathResolver, StepRead, SyncPathResolver, WalkEntry } from './path-compare.ts';
+export type { LocatedParts, PathFileSystem, PathResolver, StepRead, SyncPathResolver, WalkEntry } from './path-compare.ts';
 export { isTransientErrno } from './transient-errno.ts';
 export { modeIsPrivate } from './platform/privacy.ts';
 export { BASE_ENTRY_FLAGS, CHILD_ENTRY_FLAGS, COMMON_ENTRY_FLAGS, EntryUsageError, parseFlags } from './entry-flags.ts';
@@ -325,6 +325,8 @@ export { watchLifeline } from './lifeline.ts';
 export { LOG_KEEP, LOG_MAX_BYTES, createRotatingLogFile } from './rotating-log.ts';
 export type { RotatingLogFile } from './rotating-log.ts';
 export { StartupCancelled, exitCodeForStartError, nodeEntryIo, runDaemonEntry } from './daemon-entry.ts';
+export { guardStandardStreams } from './standard-streams.ts';
+export type { GuardedStandardStreams } from './standard-streams.ts';
 export type { DaemonCloseResult, DaemonDefinition, DaemonHandle, DaemonStartContext, EntryIo, EntrySignal } from './daemon-entry.ts';
 export { UNRESOLVABLE_ERRNO_CODES, resolveCanonicalPath, unresolvableReasonOf } from './path-resolution.ts';
 export { everyAsync, filterAsync, findAsync, mapAsync, someAsync } from './sequential.ts';
@@ -345,9 +347,9 @@ export type { HostEntry, NetworkRequest, NetworkScope, NetworkScopeKind, Sandbox
 export type { RuleEnforcement } from './file-rules.ts';
 export { EMPTY_FILE_RULES, FileRuleError, HOST_RULE_ENFORCEMENT, ruleEnforcementOf, compileFileRuleSet, inWritableArea, lexicallyWithin, writableAreaOf, writableCheckOf, fileRuleBlocks, fileRuleBlockingForm, fileRuleFingerprint } from './file-rules.ts';
 export type { FileRuleAccess, FileRuleEntry, FileRuleProvenance, FileRuleSet, FileRuleSpec, WritableArea } from './file-rules.ts';
-export { nodeCommandRunner } from './platform/command-runner.ts';
+export { nodeBoundedCommandRunner, nodeCommandRunner } from './platform/command-runner.ts';
 export { discoverGitConfigFiles } from './git-config-files.ts';
-export type { CommandOptions, CommandResult, CommandRunner } from './platform/command-runner.ts';
+export type { BoundedCommandRunner, CommandOptions, CommandResult, CommandRunner, CommandTimedOut } from './platform/command-runner.ts';
 export { ProbeFailedError, classifyProbeCause, failureOfError, isTransientFailure, probeFailed, valueOrThrow } from './platform/inspector-types.ts';
 export type { ProbeOptions, ProbeResult, ProcessInspector, StartTime, UninspectableProcess } from './platform/inspector-types.ts';
 export { createProcessInspector, hostInspectorPorts, layoutProcessInspector } from './platform/process-inspector.ts';

@@ -29,8 +29,10 @@ const DENIAL_SOURCE_WORDS: Readonly<Record<PermissionDenialSource, string>> = {
   sandbox: 'the sandbox',
   rule: 'a permission rule',
   mode: 'the permission mode',
+  setting: 'a setting',
   hook: 'a hook',
   mandate: 'the mandate of this run',
+  superseded: 'the mandate of this run, which replaces the command',
   held: 'a hold for approval',
 };
 

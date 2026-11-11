@@ -37,7 +37,9 @@ export type MemoryEvidence =
 
 export type StoredMemorySource = MemorySource | { kind: typeof UNKNOWN_VALUE };
 
-export type StoredMemoryEvidence = MemoryEvidence | { kind: typeof UNKNOWN_VALUE };
+export type ModelCallCheckEvidence = { kind: 'check'; runId: string; modelCallId: string; seq: number; command: string; exitCode: number };
+
+export type StoredMemoryEvidence = MemoryEvidence | ModelCallCheckEvidence | { kind: typeof UNKNOWN_VALUE };
 
 export type MemoryRecord = {
   id: string;

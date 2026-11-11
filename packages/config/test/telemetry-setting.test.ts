@@ -7,14 +7,14 @@ const OTLP = { otlp: { endpoint: 'http://127.0.0.1:4318', headers: { 'x-team': '
 describe('telemetry setting', () => {
   it('is absent by default so that export is opt-in', async () => {
     const tree = makeTree();
-    const result = await loadUserSettings({ home: tree.home });
+    const result = await loadUserSettings({ home: tree.home, signal: new AbortController().signal });
     expect(result.settings.telemetry).toBeUndefined();
   });
 
   it('resolves the OTLP endpoint and headers from user settings', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { telemetry: OTLP });
-    const result = await loadUserSettings({ home: tree.home });
+    const result = await loadUserSettings({ home: tree.home, signal: new AbortController().signal });
     expect(result.settings.telemetry).toEqual(OTLP);
     expect(result.warnings).toEqual([]);
   });
@@ -22,16 +22,16 @@ describe('telemetry setting', () => {
   it('rejects an endpoint that is not an http or https URL, naming the pointer', async () => {
     const tree = makeTree();
     const file = writeJson(userSettingsPath(tree), { telemetry: { otlp: { endpoint: 'file:///etc/passwd' } } });
-    const failure = loadUserSettings({ home: tree.home });
+    const failure = loadUserSettings({ home: tree.home, signal: new AbortController().signal });
     await expect(failure).rejects.toThrow(file);
     await expect(failure).rejects.toThrow('/telemetry/otlp/endpoint');
   });
 
   it('turns message content capture on only when the user sets captureMessageContent', async () => {
     const tree = makeTree();
-    expect((await loadUserSettings({ home: tree.home })).settings.telemetry).toBeUndefined();
+    expect((await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings.telemetry).toBeUndefined();
     writeJson(userSettingsPath(tree), { telemetry: { ...OTLP, captureMessageContent: true } });
-    const result = await loadUserSettings({ home: tree.home });
+    const result = await loadUserSettings({ home: tree.home, signal: new AbortController().signal });
     expect(result.settings.telemetry).toEqual({ ...OTLP, captureMessageContent: true });
     expect(result.warnings).toEqual([]);
   });
@@ -39,7 +39,7 @@ describe('telemetry setting', () => {
   it('rejects a captureMessageContent that is not a boolean', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { telemetry: { captureMessageContent: 'yes' } });
-    await expect(loadUserSettings({ home: tree.home })).rejects.toThrow('/telemetry/captureMessageContent');
+    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow('/telemetry/captureMessageContent');
   });
 
   it.each([
@@ -56,7 +56,7 @@ describe('telemetry setting', () => {
   it('rejects an unknown telemetry property', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { telemetry: { otlp: { endpoint: 'http://127.0.0.1:4318', captureContent: true } } });
-    await expect(loadUserSettings({ home: tree.home })).rejects.toThrow('/telemetry/otlp');
+    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow('/telemetry/otlp');
   });
 
   it.each([

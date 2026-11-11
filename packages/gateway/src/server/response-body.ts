@@ -1,6 +1,7 @@
 import type { ResponseResource, StreamEvent } from '@momonga/protocol';
 import { TERMINAL_STREAM_EVENT_TYPES } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, statusFor } from '../core/errors.ts';
+import { retryAfterSeconds } from '../core/retry.ts';
 
 export const collectTerminalResource = async (
   first: StreamEvent,
@@ -11,7 +12,14 @@ export const collectTerminalResource = async (
     if (event.type === 'response.failed') {
       const { error } = event.response;
       const type = error.type ?? 'server_error';
-      throw new GatewayError({ status: statusFor(type, error.code), type, code: error.code, message: error.message });
+      throw new GatewayError({
+        status: statusFor(type, error.code),
+        type,
+        code: error.code,
+        message: error.message,
+        ...(error.plan === undefined ? {} : { plan: error.plan }),
+        ...(error.retryAfterMs === undefined ? {} : { headers: { 'retry-after': retryAfterSeconds(error.retryAfterMs) } }),
+      });
     }
     if ((TERMINAL_STREAM_EVENT_TYPES as readonly string[]).includes(event.type)) {
       return (event as Extract<StreamEvent, { response: ResponseResource }>).response;

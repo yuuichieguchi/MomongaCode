@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GatewayRequestError } from '@momonga/runtime';
-import { waitUntil, within } from './deferred.ts';
+
 import { makeEnv } from './harness.ts';
 import type { ScriptStep } from './fake-gateway.ts';
 import { RECONCILE_FAILURE_PREFIX, fatalStoreError, seedStartedCalls } from './cancel-fixture.ts';
@@ -37,9 +37,9 @@ describe('worker onFatal containment', () => {
       });
 
       worker.start();
-      await waitUntil(() => fatalCalls > 0, 10_000, 'onFatal');
+      await env.passTime(() => fatalCalls > 0, 'onFatal');
       await afterMicrotasks();
-      await within(worker.stop(), 10_000, 'the worker to stop');
+      await env.settled(worker.stop(), 'the worker to stop');
       await afterMicrotasks();
 
       expect(fatalCalls).toBe(1);
@@ -74,12 +74,12 @@ describe('worker onFatal containment when the poll loop dies', () => {
       });
 
       worker.start();
-      await waitUntil(() => fatalCalls > 0, 10_000, 'onFatal');
+      await env.passTime(() => fatalCalls > 0, 'onFatal');
       await afterMicrotasks();
 
       expect(fatalCalls).toBe(1);
       expect(unhandled).toEqual([]);
-      await within(worker.stop(), 10_000, 'the worker to stop');
+      await env.settled(worker.stop(), 'the worker to stop');
     } finally {
       process.off('unhandledRejection', listener);
     }
@@ -90,7 +90,7 @@ describe('worker poll loop after stop', () => {
   it('does not sweep memories after stop() was called while pollOnce was in flight', async () => {
     const env = await makeEnv();
     env.gateway.script.push(gatewayClosed());
-    const requeued = env.enqueue('Requeued');
+    const requeued = await env.enqueue('Requeued');
     const worker = env.worker('worker-1', { random: () => 0.5, idlePollMs: 10 });
     await env.runOnce(worker);
     expect(env.run(requeued.id).status).toBe('QUEUED');
@@ -99,13 +99,13 @@ describe('worker poll loop after stop', () => {
 
     const blocked = gated(textStep('Finished.'));
     env.gateway.script.push(blocked);
-    env.enqueue('In flight');
+    await env.enqueue('In flight');
     worker.start();
-    await within(blocked.gate.reached.promise, 10_000, 'the in-flight claim to reach the model');
+    await env.settled(blocked.gate.reached.promise, 'the in-flight claim to reach the model');
 
     const stopping = worker.stop();
     blocked.gate.release.resolve();
-    await within(stopping, 10_000, 'the worker to stop');
+    await env.settled(stopping, 'the worker to stop');
 
     expect(worker.memorySize()).toBe(1);
   });
@@ -126,7 +126,7 @@ describe('cancel recovery error hook failure', () => {
       },
     });
 
-    await within(env.runOnce(worker), 10_000, 'the cancel recovery');
+    await env.settled(env.runOnce(worker), 'the cancel recovery');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(env.ofType(run.id, 'notice').filter((notice) => notice.level === 'error').map((notice) => notice.message)).toEqual([
@@ -155,14 +155,14 @@ describe('worker start after a fatal error', () => {
     });
 
     worker.start();
-    await waitUntil(() => fatals.length > 0, 10_000, 'onFatal');
-    await within(worker.stop(), 10_000, 'the worker to stop');
+    await env.passTime(() => fatals.length > 0, 'onFatal');
+    await env.settled(worker.stop(), 'the worker to stop');
     const claimsBefore = claims;
 
     expect(() => worker.start()).toThrow(/fatal/i);
     await afterMicrotasks();
     expect(claims).toBe(claimsBefore);
     expect(fatals).toEqual([fatal]);
-    await within(worker.stop(), 10_000, 'the worker to stop again');
+    await env.settled(worker.stop(), 'the worker to stop again');
   });
 });

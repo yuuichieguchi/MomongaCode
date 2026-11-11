@@ -62,6 +62,7 @@ const ruleBlockedGlobs = async (access: ReadAccessMatcher, target: string, isDir
   if (!isDirectory || !access.hasReadRulesFor('Grep')) return [];
   const blocked: RuleBlockedEntry[] = [];
   const walk = walkFiles({
+    files: ctx.files,
     root: target,
     readDenied: ctx.sandboxPolicy.readDenied,
     readAllowed: ctx.sandboxPolicy.readAllowed,
@@ -282,7 +283,7 @@ const searchWithRipgrep = async (
   const access = await createReadAccessMatcher({ readDenied, readAllowed, fileRules: ctx.sandboxPolicy.fileRules }, ctx.paths);
   const allowedRoots: string[] = [];
   if (isDirectory) {
-    for await (const root of reachableAllowedRoots(target, '', [], { signal: ctx.signal, onUnreadable: () => undefined }, access)) allowedRoots.push(root.absolute);
+    for await (const root of reachableAllowedRoots(target, '', [], { files: ctx.files, signal: ctx.signal, onUnreadable: () => undefined }, access)) allowedRoots.push(root.absolute);
   }
   const ruleBlocked = await ruleBlockedGlobs(access, target, isDirectory, ctx);
   const argumentFile = argumentFileOf(ctx);
@@ -392,7 +393,7 @@ export const grepTool = defineTool<GrepInput>({
   execute: async (input, ctx) => {
     const target = await canonicalPathOf(ctx, 'path', input.path ?? '.');
     const shown = await shownPath(ctx, resolvedPathOf(ctx, input.path ?? '.'));
-    const stat = await statIfExists(target);
+    const stat = await statIfExists(ctx.files, target);
     if (stat === undefined) throw new ToolExecutionError(`Path does not exist: ${shown}`);
     const problem = stat.isDirectory() ? undefined : regularFileProblem(stat, shown);
     if (problem !== undefined) throw new ToolExecutionError(problem);
@@ -408,7 +409,7 @@ export const grepTool = defineTool<GrepInput>({
     } finally {
       await ripgrep.release();
     }
-    const ordered = mode === 'files_with_matches' ? await mapAsync(await sortByMtimeThenPath(found.entries), (file) => shownPath(ctx, file)) : found.entries;
+    const ordered = mode === 'files_with_matches' ? await mapAsync(await sortByMtimeThenPath(ctx.files, found.entries), (file) => shownPath(ctx, file)) : found.entries;
     const skipped = ordered.slice(input.offset ?? 0);
     const limited = input.head_limit === undefined || input.head_limit === 0 ? skipped : skipped.slice(0, input.head_limit);
     const lines = limited.length === 0 ? ['No matches found'] : limited;

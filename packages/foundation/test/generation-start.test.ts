@@ -196,6 +196,34 @@ describe('numbering under run/generation.lock (15.1)', () => {
   });
 });
 
+describe('a start whose allocation is withheld', () => {
+  it('answers unallocated where it would allocate, and writes no counter, no generation and no lock', async (context) => {
+    const { paths, lock } = await setup(context);
+
+    expect(await start(paths, lock, '1.2.3', { allocation: 'withheld' })).toEqual({ kind: 'unallocated' });
+
+    expect(fs.existsSync(paths.generationCounter)).toBe(false);
+    expect(generationDirs(paths)).toEqual([]);
+    expect(await lock.isHeld(paths.generationLock)).toBe(false);
+  });
+
+  it('allocates on the next start that allows it', async (context) => {
+    const { paths, lock } = await setup(context);
+    await start(paths, lock, '1.2.3', { allocation: 'withheld' });
+
+    expect(await start(paths, lock, '1.2.3', { allocation: 'allowed' })).toMatchObject({ kind: 'allocated', generation: 1 });
+  });
+
+  it('still joins a start that another process began', async (context) => {
+    const { home, paths, lock } = await setup(context);
+    const layout = makeStartingGeneration(home, 1, '1.2.3');
+    const claim = await lock.claim(layout.startingLock);
+    if (claim.kind !== 'claimed') throw new Error('the starting lock of the fixture is held');
+
+    expect(await start(paths, lock, '1.2.3', { allocation: 'withheld' })).toEqual({ kind: 'joined', generation: 1 });
+  });
+});
+
 describe('the start record and the starting lock (15.2, 15.3 S1)', () => {
   it('writes start.json with the version of the start and the fold version', async (context) => {
     const { home, paths, lock } = await setup(context);

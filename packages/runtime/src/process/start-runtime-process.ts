@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ConfigError, loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, readUserStopValues, keptSettingsDirectory, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
-import type { ResolvedSettings } from '@momonga/config';
+import { ConfigError, loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, stopValuesOfSettings, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
+import type { ResolvedSettings, StopValuesReader } from '@momonga/config';
 import { installTrust, trustFailureText, layoutProcessInspector, busyTimeoutMs } from '@momonga/foundation';
 import {
   acquireProcessLock,
@@ -30,10 +30,10 @@ import {
   SETTINGS_APPLIED_ENV,
   systemClock,
   nodeFileSystem,
-  nodeFileSystemSync,
+  systemRandom,
   runtimeTeardownBudgetMs,
 } from '@momonga/foundation';
-import type { Clock, GenerationRole, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, StopValues, TextStream, LayoutLocks } from '@momonga/foundation';
+import type { Clock, GenerationRole, HelperSelf, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, StopValues, TextStream, LayoutLocks } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore, pageRunBodies, startBodyPurge } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
@@ -138,8 +138,10 @@ export type StartRuntimeProcessOptions = {
   leaseMs?: number;
   signal?: AbortSignal;
   locks: LayoutLocks;
+  stopValues?: StopValuesReader;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
   bundledRipgrep?: BundledRipgrepSource;
+  helperSelf?: HelperSelf;
   ruleSolver?: RuleSolverSource;
   role?: RolePort;
   requestShutdown?: () => void;
@@ -204,7 +206,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   const platform = options.platform ?? process.platform;
   const reapTiming = reapTimingOf(clock, timers);
   const onWarning = (message: string): void => logger.warn(message);
-  const stopValuesReader = createStopValuesReader({ load: () => readUserStopValues(canonicalHome), onNotice: onWarning });
+  const stopValuesReader = options.stopValues ?? createStopValuesReader({ onNotice: onWarning });
   const valuesOfStop = (given: StopValues | undefined): StopValues => given ?? stopValuesReader.read();
   let stopMcpCloseGraceMs: number | undefined;
 
@@ -404,8 +406,14 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     };
     const { cache, settings } = await step('settings', async () => {
       const appliedRecord = process.env[SETTINGS_APPLIED_ENV];
-      const created = createUserSettingsCache({ home: canonicalHome, onWarning, keptRecords: diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(canonicalHome), kernelLock), ...(appliedRecord === undefined ? {} : { appliedRecord }) });
-      const snapshot = created.snapshot();
+      const created = createUserSettingsCache({
+        home: canonicalHome,
+        onWarning,
+        keptRecords: diskKeptRecords(nodeFileSystem, systemRandom, keptSettingsDirectory(canonicalHome), kernelLock),
+        onLoaded: (loaded) => stopValuesReader.remember(stopValuesOfSettings(loaded.settings)),
+        ...(appliedRecord === undefined ? {} : { appliedRecord }),
+      });
+      const snapshot = await created.load(startDeadlineSignal(signal));
       if ('error' in snapshot) throw snapshot.error;
       return { cache: created, settings: snapshot.settings };
     });
@@ -434,7 +442,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       if (kind === 'bubblewrap') {
         let shell: string;
         try {
-          shell = resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env: process.env });
+          shell = await resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env: process.env });
         } catch (error) {
           if (!(error instanceof ShellNotFoundError)) throw error;
           throw new ConfigError(error.message, { cause: error });
@@ -495,7 +503,15 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           onCommit: createdNotifier.onCommit,
           preparer: startedThread,
           unaskedCommands: unaskedCommandsFor(platform),
+          fileSystem: nodeFileSystem,
+          random: systemRandom,
         });
+        try {
+          await opened.blobs.prepare();
+        } catch (error) {
+          opened.close();
+          throw error;
+        }
         return { notifier: createdNotifier, store: opened, journalThread: startedThread };
       } catch (error) {
         await startedThread.close();
@@ -613,6 +629,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         leaseMs,
         heartbeatMs: heartbeatMsFor(leaseMs),
         ...(options.bundledRipgrep === undefined ? {} : { bundledRipgrep: options.bundledRipgrep(paths, options.locks) }),
+        ...(options.helperSelf === undefined ? {} : { helperSelf: options.helperSelf }),
       });
       const tracker: CancelUpstreamTracker = createCancelUpstream({ store, gatewayClient, timers });
       const skills = createSkillsPort({
@@ -1044,10 +1061,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       });
     });
 
-    const ready: ReadyFields = await step('ready', () => {
+    const ready: ReadyFields = await step('ready', async () => {
       signal?.throwIfAborted();
       try {
-        store.checkIdentity();
+        await store.checkIdentity();
       } catch (error) {
         if (!isFatalStoreError(error)) throw error;
         latchFatal(asError(error));

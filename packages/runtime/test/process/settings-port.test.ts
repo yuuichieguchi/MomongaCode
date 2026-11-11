@@ -50,7 +50,7 @@ describe('settings composition hooks and auto mode', () => {
     const session = createSession(f.store, f.temp.project);
 
     expect((await f.composition.settings.hooks(session)).Stop?.map((group) => group.hooks[0]?.command)).toEqual(['user-stop']);
-    f.store.trust.set(f.temp.project, 'trusted');
+    await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
     expect((await f.composition.settings.hooks(session)).Stop?.map((group) => group.hooks[0]?.command)).toEqual(['user-stop', 'project-stop']);
     expect(f.composition.settings.autoModeClassifier()).toBe('x');
     expect((await f.composition.sessionCreateSettings(f.temp.project, signalNever())).autoModeClassifier).toBe('fake/x');
@@ -85,23 +85,28 @@ describe('settings composition hooks and auto mode', () => {
   it('reports no classifier when the user settings name none', async () => {
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, {});
+    await f.cache.load(signalNever());
     expect(f.composition.settings.autoModeClassifier()).toBeUndefined();
   });
 });
 
 describe('settings composition (fake timers, not used by the code under test)', () => {
-  it('takeUserSnapshot returns the latest result and keeps the last good copy once the file is broken', async () => {
+  it('takeUserSnapshot returns the last loaded result, sees a change after the next load and keeps the last good copy once the file is broken', async () => {
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, { permissions: { defaultMode: 'acceptEdits' } });
+    await f.cache.load(signalNever());
 
     const snapshot = f.composition.takeUserSnapshot();
     expect(snapshot.settings.permissions.defaultMode).toBe('acceptEdits');
     expect(snapshot.user.layer?.origin).toBe('user');
 
     writeUserSettings(f.temp.home, { permissions: { defaultMode: 'plan' } });
+    expect(f.composition.takeUserSnapshot().settings.permissions.defaultMode).toBe('acceptEdits');
+    expect((await f.composition.userSnapshot(signalNever())).settings.permissions.defaultMode).toBe('plan');
     expect(f.composition.takeUserSnapshot().settings.permissions.defaultMode).toBe('plan');
 
     writeInvalidUserSettings(f.temp.home);
+    expect((await f.composition.userSnapshot(signalNever())).settings.permissions.defaultMode).toBe('plan');
     expect(f.composition.takeUserSnapshot().settings.permissions.defaultMode).toBe('plan');
   });
 
@@ -137,7 +142,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, { permissions: { defaultMode: 'acceptEdits' } });
     writeProjectSettings(f.temp.project, { permissions: { defaultMode: 'plan' } });
-    f.store.trust.set(f.temp.project, 'trusted');
+    await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
 
     const result = await f.composition.sessionCreateSettings(f.temp.project, signalNever());
 
@@ -146,16 +151,17 @@ describe('settings composition (fake timers, not used by the code under test)', 
   });
 
   it('when the user settings file is invalid before any valid copy was read, sessionCreateSettings, settings.rules, envFor and toolSet throw ConfigError', async () => {
-    const f = await makeRuntimeFixture();
-    writeUserSettings(f.temp.home, {});
+    const temp = await makeTempHome();
+    fs.mkdirSync(path.join(temp.home, '.momonga'), { recursive: true });
+    writeInvalidUserSettings(temp.home);
+    const f = await makeRuntimeFixture({ temp });
     const session = createSession(f.store, f.temp.project, { env: { PLAIN: '1' } });
-    const runId = createRun(f.store, session.id);
-    writeInvalidUserSettings(f.temp.home);
+    const runId = await createRun(f.store, session.id);
 
     expect(await rejectionOf(f.composition.sessionCreateSettings(f.temp.project, signalNever()))).toBeInstanceOf(ConfigError);
     expect(await rejectionOf(f.composition.settings.rules(session))).toBeInstanceOf(ConfigError);
-    expect(await thrownBy(() => f.composition.envFor(session))).toBeInstanceOf(ConfigError);
-    expect(await thrownBy(() => f.toolRuntime.port.envFor(session))).toBeInstanceOf(ConfigError);
+    expect(await rejectionOf((async () => f.composition.envFor(session, signalNever()))())).toBeInstanceOf(ConfigError);
+    expect(await rejectionOf((async () => f.toolRuntime.port.envFor(session, signalNever()))())).toBeInstanceOf(ConfigError);
     expect(await rejectionOf(f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: Object.freeze({ PLAIN: '1' }) }))).toBeInstanceOf(ConfigError);
   });
 
@@ -164,12 +170,12 @@ describe('settings composition (fake timers, not used by the code under test)', 
     writeUserSettings(f.temp.home, chatTargetSettings(DECLARED_CREDENTIAL));
     const session = createSession(f.store, f.temp.project, { env: { [DECLARED_CREDENTIAL]: 'v', PLAIN: '1' } });
     expect(await f.composition.sessionCreateSettings(f.temp.project, signalNever())).toMatchObject({ credentialEnvNames: [DECLARED_CREDENTIAL] });
-    expect(f.composition.envFor(session)).toEqual({ PLAIN: '1' });
+    expect(await f.composition.envFor(session, signalNever())).toEqual({ PLAIN: '1' });
 
     writeInvalidUserSettings(f.temp.home);
 
     expect(await rejectionOf(f.composition.sessionCreateSettings(f.temp.project, signalNever()))).toBeInstanceOf(ConfigError);
-    expect(f.composition.envFor(session)).toEqual({ PLAIN: '1' });
+    expect(await f.composition.envFor(session, signalNever())).toEqual({ PLAIN: '1' });
   });
 
   it('fixing the file restores service without a restart', async () => {
@@ -187,14 +193,14 @@ describe('settings composition (fake timers, not used by the code under test)', 
       credentialEnvNames: [],
     });
     expect((await f.composition.settings.rules(session)).map((rule) => rule.text)).toEqual(['Bash(ls)']);
-    expect(f.composition.envFor(session)).toEqual({ PLAIN: '1' });
+    expect(await f.composition.envFor(session, signalNever())).toEqual({ PLAIN: '1' });
   });
 
-  it('a runtime call takes exactly one snapshot', async () => {
+  it('a runtime request loads the user settings exactly once, and the policy of a call reads the snapshot in memory', async () => {
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, { permissions: { allow: ['Bash(ls)'] } });
     const session = createSession(f.store, f.temp.project, { env: { PLAIN: '1' } });
-    const runId = createRun(f.store, session.id);
+    const runId = await createRun(f.store, session.id);
     const delta = async (call: () => unknown): Promise<number> => {
       const before = f.cache.snapshots;
       await call();
@@ -203,10 +209,10 @@ describe('settings composition (fake timers, not used by the code under test)', 
 
     expect(await delta(() => f.composition.sessionCreateSettings(f.temp.project, signalNever()))).toBe(1);
     expect(await delta(() => f.composition.settings.rules(session))).toBe(1);
-    expect(await delta(() => f.composition.envFor(session))).toBe(1);
-    expect(await delta(() => f.toolRuntime.port.envFor(session))).toBe(1);
+    expect(await delta(() => f.composition.envFor(session, signalNever()))).toBe(1);
+    expect(await delta(() => f.toolRuntime.port.envFor(session, signalNever()))).toBe(1);
     expect(await delta(() => f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: Object.freeze({ PLAIN: '1' }) }))).toBe(1);
-    expect(await delta(() => f.toolRuntime.port.policyFor(session, { signal: NEVER_CANCELLED, env: Object.freeze({ PLAIN: '1' }), rules: [], ruleEnforcement: 'exact-paths' }))).toBe(1);
+    expect(await delta(() => f.toolRuntime.port.policyFor(session, { signal: NEVER_CANCELLED, env: Object.freeze({ PLAIN: '1' }), rules: [], ruleEnforcement: 'exact-paths' }))).toBe(0);
   });
 
   it('loadSessionSettings wraps a non-ConfigError as ConfigError with cause', async () => {
@@ -214,7 +220,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     writeUserSettings(f.temp.home, {});
     const missing = path.join(f.temp.root, 'missing-project');
 
-    const error = await rejectionOf(f.composition.loadSessionSettings(missing, f.composition.takeUserSnapshot()));
+    const error = await rejectionOf(f.composition.loadSessionSettings(missing, await f.composition.userSnapshot(signalNever())));
 
     expect(error).toBeInstanceOf(ConfigError);
     expect((error as Error).cause).toBeInstanceOf(Error);
@@ -224,7 +230,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
   it('loadSessionSettings uses the user layer of the snapshot it is given', async () => {
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, { permissions: { allow: ['Bash(ls)'] } });
-    const snapshot = f.composition.takeUserSnapshot();
+    const snapshot = await f.composition.userSnapshot(signalNever());
     writeUserSettings(f.temp.home, { permissions: { allow: ['Bash(pwd)', 'Bash(cat)'] } });
 
     const loaded = await f.composition.loadSessionSettings(f.temp.project, snapshot);
@@ -232,16 +238,15 @@ describe('settings composition (fake timers, not used by the code under test)', 
     expect(loaded.rules.map((rule) => rule.text)).toEqual(['Bash(ls)']);
   });
 
-  it('trusted(session) is synchronous and reflects the store', async () => {
+  it('trusted(session) reflects the store', async () => {
     const f = await makeRuntimeFixture();
     const session = createSession(f.store, f.temp.project);
 
-    const first = f.composition.settings.trusted(session);
-    expect(first).toBe(false);
-    f.store.trust.set(f.temp.project, 'trusted');
-    expect(f.composition.settings.trusted(session)).toBe(true);
-    f.store.trust.set(f.temp.project, 'untrusted');
-    expect(f.composition.settings.trusted(session)).toBe(false);
+    expect(await f.composition.settings.trusted(session)).toBe(false);
+    await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
+    expect(await f.composition.settings.trusted(session)).toBe(true);
+    await f.store.trust.setAsked(f.temp.project, 'untrusted', NEVER_CANCELLED);
+    expect(await f.composition.settings.trusted(session)).toBe(false);
     expect(await f.composition.trustOracle.isTrusted(f.temp.project, new AbortController().signal)).toBe(false);
   });
 
@@ -253,11 +258,11 @@ describe('settings composition (fake timers, not used by the code under test)', 
     const session = createSession(f.store, sub);
     expect(await f.composition.settings.rules(session)).toEqual([]);
 
-    f.store.trust.set(f.temp.project, 'trusted');
+    await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
 
     const rules = await f.composition.settings.rules(session);
     expect(rules.map((rule) => [rule.text, rule.origin])).toEqual([['Bash(make)', 'project']]);
-    expect(f.composition.settings.trusted(session)).toBe(true);
+    expect(await f.composition.settings.trusted(session)).toBe(true);
     expect(await f.composition.trustOracle.isTrusted(sub, new AbortController().signal)).toBe(true);
   });
 
@@ -266,11 +271,11 @@ describe('settings composition (fake timers, not used by the code under test)', 
     writeUserSettings(f.temp.home, {});
     const inside = makeDir(f.temp.home, 'code', 'app');
     writeProjectSettings(inside, { permissions: { allow: ['Bash(make)'] } });
-    f.store.trust.set(f.temp.home, 'trusted');
+    await f.store.trust.setAsked(f.temp.home, 'trusted', NEVER_CANCELLED);
     const session = createSession(f.store, inside);
 
     expect(await f.composition.trustOracle.isTrusted(inside, new AbortController().signal)).toBe(false);
-    expect(f.composition.settings.trusted(session)).toBe(false);
+    expect(await f.composition.settings.trusted(session)).toBe(false);
     expect(await f.composition.settings.rules(session)).toEqual([]);
   });
 
@@ -291,12 +296,12 @@ describe('settings composition (fake timers, not used by the code under test)', 
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, {});
     const session = createSession(f.store, f.temp.project, { env: { [DECLARED_CREDENTIAL]: 'v', PLAIN: '1' } });
-    expect(f.composition.envFor(session)).toEqual({ [DECLARED_CREDENTIAL]: 'v', PLAIN: '1' });
+    expect(await f.composition.envFor(session, signalNever())).toEqual({ [DECLARED_CREDENTIAL]: 'v', PLAIN: '1' });
 
     writeUserSettings(f.temp.home, chatTargetSettings(DECLARED_CREDENTIAL));
 
-    expect(f.composition.envFor(session)).toEqual({ PLAIN: '1' });
-    expect(f.toolRuntime.port.envFor(session)).toEqual({ PLAIN: '1' });
+    expect(await f.composition.envFor(session, signalNever())).toEqual({ PLAIN: '1' });
+    expect(await f.toolRuntime.port.envFor(session, signalNever())).toEqual({ PLAIN: '1' });
     expect(session.env).toEqual({ [DECLARED_CREDENTIAL]: 'v', PLAIN: '1' });
   });
 
@@ -305,7 +310,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     writeUserSettings(f.temp.home, {});
     const session: Session = createSession(f.store, f.temp.project, { env: { PLAIN: '1' } });
 
-    const env = f.composition.envFor(session) as Record<string, string>;
+    const env = (await f.composition.envFor(session, signalNever())) as Record<string, string>;
 
     expect(Object.isFrozen(env)).toBe(true);
     await expect((async () => {

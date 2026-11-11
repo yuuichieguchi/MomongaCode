@@ -25,7 +25,7 @@ const TUI: TuiRecord = { ...SCREENLESS, view: { key: { runId: 'run-1', seq: 5, i
 
 const SCROLLBACK: TuiRecord = { ...SCREENLESS, printed: 7 };
 
-const ACP: AcpRecord = { ...COMMON, session: 'acp-41', kind: 'acp', initialize: { protocolVersion: 1, clientCapabilities: { session: { notices: {} } } }, sessions: ['session-1', 'session-2'] };
+const ACP: AcpRecord = { ...COMMON, session: 'acp-41', kind: 'acp', initialize: { protocolVersion: 1, clientCapabilities: { session: { notices: {} } } }, sessions: ['session-1', 'session-2'], input: 'eyJqc29ucnBjIg==' };
 
 const ATTACH: StreamRecord = { ...COMMON, kind: 'attach', runId: 'run-2', output: 'stream-json', verbose: true };
 

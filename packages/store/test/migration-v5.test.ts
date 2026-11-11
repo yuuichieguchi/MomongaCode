@@ -64,7 +64,7 @@ describe('migration v5 on a populated v4 database', () => {
   it('records the fifth migration with its name', () => {
     const { dbPath } = migrated();
     const rows = rawDb(dbPath).prepare('SELECT version, name FROM schema_migrations ORDER BY version').all();
-    expect(rows.map((row) => Number(row['version']))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39]);
+    expect(rows.map((row) => Number(row['version']))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42]);
     expect(rows[4]?.['name']).toBe('record whether a run inherits the history of its predecessor');
   });
 
@@ -94,11 +94,11 @@ describe('migration v5 on a populated v4 database', () => {
     expect(() => rawDb(dbPath).prepare("UPDATE runs SET history_mode = NULL WHERE id = 'run-1'").run()).toThrow(/NOT NULL/);
   });
 
-  it('writes the history of a new run explicitly after the migration', () => {
+  it('writes the history of a new run explicitly after the migration', async () => {
     const { dbPath, store } = migrated();
     const session = newSession(store);
-    const first = enqueue(store, session.id, 'first');
-    const second = enqueue(store, session.id, 'second');
+    const first = await enqueue(store, session.id, 'first');
+    const second = await enqueue(store, session.id, 'second');
     expect(historyModes(dbPath)[first.id]).toBe('inherit');
     expect(historyModes(dbPath)[second.id]).toBe('inherit');
     expect(mustRun(store, second.id)).toMatchObject({ previousRunId: first.id, history: 'inherit' });

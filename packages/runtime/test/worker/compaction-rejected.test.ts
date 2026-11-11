@@ -62,7 +62,7 @@ const requestInputs = (env: Env, runId: string): unknown[][] =>
 describe('compaction item rejected at the context build (site 1, count_tokens)', () => {
   const prepare = async (summary = SUMMARY_TEXT, extra: RunEventPayload[] = []) => {
     const env = await makeEnv();
-    const run = env.enqueue('question one');
+    const run = await env.enqueue('question one');
     await env.seed(run.id, [responded(1, 'answer one'), { type: 'user.message', text: 'question two' }, compacted(summary, 2), ...extra], 'release');
     const stepBefore = env.fold(run.id).step;
     env.gateway.countHook = async (request) => {
@@ -145,7 +145,7 @@ describe('compaction item rejected at the context build (site 1, count_tokens)',
 describe('compaction item rejected by compact (site 2)', () => {
   const seedCompactedConversation = async (contextWindow: number, sizes: { second: number; fifth?: number }) => {
     const env = await makeEnv({ capabilities: capabilitiesFor(contextWindow) });
-    const run = env.enqueue('question one');
+    const run = await env.enqueue('question one');
     const payloads = conversation(sizes);
     await env.seed(run.id, [payloads[0]!, payloads[1]!, compacted(SUMMARY_TEXT, 2), ...payloads.slice(2)], 'release');
     let rejectedOnce = false;
@@ -213,7 +213,7 @@ describe('compaction item rejected by the model stream after recovery (site 3)',
 
   const prepare = async (limits: Record<string, unknown> = {}) => {
     const env = await makeEnv();
-    const run = env.enqueue('question one', { limits });
+    const run = await env.enqueue('question one', { limits });
     await env.seed(
       run.id,
       [
@@ -272,11 +272,11 @@ describe('a compaction sent to a role model with a smaller window than the sessi
 
   const refusal = (code: string, message: string): GatewayRequestError => new GatewayRequestError({ status: 400, type: 'invalid_request', code, message });
 
-  const seeded = async () => {
+  const conversationOverTheRoleWindow = async () => {
     const env = await makeEnv({ capabilities: session });
     env.gateway.roles = { compaction: 'cheap' };
     env.gateway.capabilitiesByModel['cheap'] = role;
-    const run = env.enqueue('question one');
+    const run = await env.enqueue('question one');
     await env.seed(run.id, conversation({ second: 60_000, third: 660_000 }), 'release');
     env.gateway.compactHook = async (request) => {
       const cap = request.momonga?.max_summary_tokens ?? largestSummary;
@@ -289,7 +289,7 @@ describe('a compaction sent to a role model with a smaller window than the sessi
   };
 
   it('plans the summary cap and the region for the role model, so the gateway refuses nothing and the model writes the summary', async () => {
-    const { env, run } = await seeded();
+    const { env, run } = await conversationOverTheRoleWindow();
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -302,7 +302,7 @@ describe('a compaction sent to a role model with a smaller window than the sessi
   });
 
   it('asks the gateway for the capabilities of the role model once in the claim', async () => {
-    const { env } = await seeded();
+    const { env } = await conversationOverTheRoleWindow();
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 

@@ -31,7 +31,7 @@ const typesOf = (store: RuntimeStore, runId: string): string[] => store.readRunE
 
 const asked = async (callIds: readonly string[], end: 'running' | 'waiting' = 'waiting'): Promise<{ store: RuntimeStore; dbPath: string; runId: string; claim: Claim; approval: Approval }> => {
   const { store, dbPath } = harness();
-  const run = enqueue(store, newSession(store).id);
+  const run = await enqueue(store, newSession(store).id);
   const claim = mustClaim(store, 'worker-1');
   expect(store.append(claim, callIds.flatMap(unknownCall)).kind).toBe('ok');
   const result = await store.requestUnknownAck(claim, { callIds: [...callIds] });
@@ -43,7 +43,7 @@ const asked = async (callIds: readonly string[], end: 'running' | 'waiting' = 'w
 describe('the fold of an unknown effect', () => {
   it('records a call reconciled as unknown as unacknowledged, and nothing for a known outcome or an interrupted call', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'worker-1');
     store.append(claim, [
       ...unknownCall('call_1'),
@@ -131,7 +131,7 @@ describe('the answer to an unknown effect', () => {
 
   it('a permission approval view names its kind', async () => {
     const { store } = harness();
-    enqueue(store, newSession(store).id);
+    await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'worker-1');
     store.append(claim, [callEvent('call_1')]);
     const result = await store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: 'a'.repeat(64), reason: 'edits require approval' } });
@@ -242,7 +242,7 @@ describe('migration 34: an approval may ask about an unknown effect, and a rule 
     expect(() => insert.run('unknown-2', 'call_10', START_MS + 1, START_MS, 'unknown_effect')).toThrow(/CHECK/);
     expect(() => insert.run('other-1', 'call_11', null, START_MS, 'something_else')).toThrow(/CHECK/);
     expect(() => insert.run('second-pending', 'call_9', null, START_MS, 'unknown_effect')).toThrow(/UNIQUE/);
-    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toEqual({ version: 39 });
+    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toEqual({ version: 42 });
   });
 
   it('creates rule_verdicts keyed by the fingerprint', () => {

@@ -100,6 +100,7 @@ export const createSearchStore = (db: DatabaseSync, context: DecodeContext, read
   );
   const documentById = db.prepare('SELECT * FROM search_docs WHERE id = :id');
   const runDocument = db.prepare("SELECT * FROM search_docs WHERE run_id = :runId AND level = 'run'");
+  const anyDocument = db.prepare('SELECT 1 AS present FROM search_docs WHERE run_id = :runId');
   const runRow = db.prepare('SELECT r.id, r.origin, s.cwd AS project FROM runs r JOIN sessions s ON s.id = r.session_id WHERE r.id = :runId');
   const derived = createDerivedSnapshot(db, context);
   const rangeEvents = db.prepare(
@@ -235,19 +236,39 @@ export const createSearchStore = (db: DatabaseSync, context: DecodeContext, read
     return { step: reader.number('step'), seqFrom: reader.number('seq_from'), seqTo: reader.number('seq_to'), snippet: snippetOf(reader.string('body'), terms) };
   };
 
-  const anchorFor = (run: RunHits, request: HistoryQueryRequest, terms: readonly string[]): { anchor: HistoryAnchor | undefined; withheld: number } => {
-    const runDocRow = runDocument.get({ runId: run.runId });
-    if (runDocRow === undefined) throw corrupt('search_docs', run.runId, 'the run has step documents but no run document');
+  type Denied = (target: string, project: string) => boolean;
+
+  const runDocumentRowOf = (run: RunHits): Row | undefined => {
+    const row = runDocument.get({ runId: run.runId });
+    if (row === undefined && anyDocument.get({ runId: run.runId }) !== undefined) throw corrupt('search_docs', run.runId, 'the run has step documents but no run document');
+    return row;
+  };
+
+  const stepDocumentRowOf = (candidate: Candidate): Row => {
+    const row = documentById.get({ id: candidate.id });
+    if (row === undefined) throw corrupt('search_docs', String(candidate.id), 'the document vanished during the query');
+    return row;
+  };
+
+  const pairsOf = (run: RunHits): { target: string; project: string }[] => {
+    const runDocRow = runDocumentRowOf(run);
+    if (runDocRow === undefined) return [];
+    const project = readerFor('search_docs', run.runId, runDocRow).string('project');
+    const targets = new Set([runDocRow, ...run.steps.map(stepDocumentRowOf)].flatMap(pathsOf));
+    return [...targets].map((target) => ({ target, project }));
+  };
+
+  const anchorFor = (run: RunHits, readDenied: Denied | undefined, terms: readonly string[]): { anchor: HistoryAnchor | undefined; withheld: number } => {
+    const runDocRow = runDocumentRowOf(run);
+    if (runDocRow === undefined) return { anchor: undefined, withheld: 0 };
     const reader = readerFor('search_docs', run.runId, runDocRow);
     const project = reader.string('project');
-    const { readDenied } = request;
     const deniedIn = (row: Row): string[] => (readDenied === undefined ? [] : pathsOf(row).filter((target) => readDenied(target, project)));
     const steps: HistoryStepHit[] = [];
     let withheld = 0;
     for (const candidate of run.steps) {
       if (steps.length === HISTORY_STEP_HITS_PER_ANCHOR) break;
-      const row = documentById.get({ id: candidate.id });
-      if (row === undefined) throw corrupt('search_docs', String(candidate.id), 'the document vanished during the query');
+      const row = stepDocumentRowOf(candidate);
       if (deniedIn(row).length > 0) {
         withheld += 1;
         continue;
@@ -276,21 +297,33 @@ export const createSearchStore = (db: DatabaseSync, context: DecodeContext, read
     };
   };
 
-  const query = (visibility: HistoryVisibility, request: HistoryQueryRequest): HistoryQueryResult =>
-    readTx(db, () => {
-      const terms = termsOf(request.query);
-      if (terms.length === 0) throw new RangeError('a history query needs at least one term');
-      const { candidates, searched } = candidatesFor(visibility, request, terms);
-      const anchors: HistoryAnchor[] = [];
-      let withheld = 0;
-      for (const run of rankRuns(candidates)) {
-        if (anchors.length === HISTORY_SEARCH_ANCHOR_LIMIT) break;
-        const found = anchorFor(run, request, terms);
-        withheld += found.withheld;
-        if (found.anchor !== undefined) anchors.push(found.anchor);
+  const query = async (visibility: HistoryVisibility, request: HistoryQueryRequest): Promise<HistoryQueryResult> => {
+    const terms = termsOf(request.query);
+    if (terms.length === 0) throw new RangeError('a history query needs at least one term');
+    const { candidates, searched } = readTx(db, () => candidatesFor(visibility, request, terms));
+    const { readDenied } = request;
+    const verdicts = new Map<string, boolean>();
+    const keyOf = (target: string, project: string): string => JSON.stringify([project, target]);
+    const answered: Denied = (target, project) => {
+      const verdict = verdicts.get(keyOf(target, project));
+      if (verdict === undefined) throw new Error(`no read verdict was asked for ${target} in the folder ${project}`);
+      return verdict;
+    };
+    const anchors: HistoryAnchor[] = [];
+    let withheld = 0;
+    for (const run of rankRuns(candidates)) {
+      if (anchors.length === HISTORY_SEARCH_ANCHOR_LIMIT) break;
+      if (readDenied !== undefined) {
+        const unanswered = readTx(db, () => pairsOf(run)).filter(({ target, project }) => !verdicts.has(keyOf(target, project)));
+        const asked = await Promise.all(unanswered.map(async ({ target, project }) => [keyOf(target, project), await readDenied(target, project)] as const));
+        for (const [key, verdict] of asked) verdicts.set(key, verdict);
       }
-      return { sessions: sessionsOf(anchors), ...(searched === undefined ? {} : { searched }), ...(withheld === 0 ? {} : { withheld }) };
-    });
+      const found = readTx(db, () => anchorFor(run, readDenied === undefined ? undefined : answered, terms));
+      withheld += found.withheld;
+      if (found.anchor !== undefined) anchors.push(found.anchor);
+    }
+    return { sessions: sessionsOf(anchors), ...(searched === undefined ? {} : { searched }), ...(withheld === 0 ? {} : { withheld }) };
+  };
 
   const lookupRun = (visibility: HistoryVisibility, runId: string): { project: string; origin: Stored<MemoryOrigin> } | undefined => {
     const row = runRow.get({ runId });
@@ -332,7 +365,7 @@ export const createSearchStore = (db: DatabaseSync, context: DecodeContext, read
         taken += 1;
       }
       const next = rows[taken];
-      const events = decodeRunEvents(rows.slice(0, taken));
+      const events = decodeRunEvents(rows.slice(0, taken), context);
       return {
         kind: 'ok',
         runId: request.runId,

@@ -42,7 +42,11 @@ const assertPrivateDirectory = (dir: string): void => {
   }
 };
 
-const ensurePrivateFile = (file: string): void => {
+export type DatabaseFileIdentity = { dev: number; ino: number };
+
+export type OpenedDatabase = { db: DatabaseSync; identity: DatabaseFileIdentity };
+
+const ensurePrivateFile = (file: string): DatabaseFileIdentity => {
   let fd: number;
   try {
     fd = files.openDescriptorSync(file, CREATE_NEW_FLAGS, PRIVATE_FILE_MODE);
@@ -52,23 +56,27 @@ const ensurePrivateFile = (file: string): void => {
     if (!modeIsPrivate(stat, 'file')) {
       throw new Error(`database file ${file} has mode ${formatMode(stat.mode)} but must be 0600; run: chmod 600 ${file}`, { cause: error });
     }
-    return;
+    return { dev: stat.dev, ino: stat.ino };
   }
   try {
     nodeDescriptorWriterSync.chmod(fd, PRIVATE_FILE_MODE);
+    const { dev, ino } = nodeFileSystemSync.fstatSync(fd);
+    return { dev, ino };
   } finally {
     files.closeSync(fd);
   }
 };
 
-export const openDatabase = (file: string, options: OpenDatabaseOptions): DatabaseSync => {
+export const openDatabase = (file: string, options: OpenDatabaseOptions): DatabaseSync => openDatabaseWithIdentity(file, options).db;
+
+export const openDatabaseWithIdentity = (file: string, options: OpenDatabaseOptions): OpenedDatabase => {
   const busyWaitMs = options.busyTimeoutMs;
   if (!Number.isInteger(busyWaitMs) || busyWaitMs < 0) {
     throw new RangeError(`openDatabase: busyTimeoutMs must be a non-negative integer, got ${busyWaitMs}`);
   }
   if (options.createDirectory === true) files.mkdirSync(path.dirname(file), PRIVATE_DIRECTORY_MODE);
   assertPrivateDirectory(path.dirname(file));
-  ensurePrivateFile(file);
+  const identity = ensurePrivateFile(file);
   const db = new DatabaseSync(file, { timeout: busyWaitMs, enableForeignKeyConstraints: true });
   try {
     const journal = db.prepare('PRAGMA journal_mode = WAL').get();
@@ -81,7 +89,7 @@ export const openDatabase = (file: string, options: OpenDatabaseOptions): Databa
     db.close();
     throw error;
   }
-  return db;
+  return { db, identity };
 };
 
 const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>

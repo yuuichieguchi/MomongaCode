@@ -1,4 +1,3 @@
-import { ndJsonStream } from '@agentclientprotocol/sdk';
 import { hostPaths } from '@momonga/foundation';
 import { agentReadiness } from '@momonga/protocol';
 import type { MomongaPaths } from '@momonga/foundation';
@@ -13,6 +12,7 @@ import { HANDOVER_FORMAT, recordFileOf } from '../handover/record.ts';
 import { adoptionOf, refuseStart } from '../handover/start.ts';
 import { newerListenerOf } from '../handover/stream.ts';
 import { createAcpBridge } from './agent.ts';
+import { carriedStream } from './carried-input.ts';
 import { withReplayedInitialize } from './handover.ts';
 
 export const acpDiagnosticText = (message: string): string => `${escapedLines([`momonga: ${message}`])}\n`;
@@ -32,8 +32,8 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
     contextWindowOf: (model) => gateway.contextWindowOf(model),
     readinessOf: async (model) => agentReadiness(await gateway.capabilitiesOf(model)),
     models: async () => listingViewsOf(await gateway.models()),
-    environment: () => environmentSnapshot(ports),
-    autoModeAvailable: () => autoModeConfigured(ports),
+    environment: () => environmentSnapshot(ports, interrupt),
+    autoModeAvailable: () => autoModeConfigured(ports, interrupt),
     canonicalCwd: (cwd) => hostPaths(interrupt).canonicalPath(cwd),
     daemonReady: async () => {
       await ensureSessionDaemon(ports, paths, { signal: interrupt, ...(onNewer === undefined ? {} : { onNewer }) });
@@ -79,8 +79,9 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
       }),
     report: (message) => ports.stderr.write(acpDiagnosticText(message)),
   });
-  const stream = ndJsonStream(stdio.output, stdio.input);
-  const connection = bridge.app.connect(adoption.kind === 'record' ? withReplayedInitialize(stream, adoption.record.initialize) : stream);
+  const carried = carriedStream(stdio, adoption.kind === 'record' ? Buffer.from(adoption.record.input, 'base64') : new Uint8Array());
+  if (adoption.kind === 'record') carried.hold('adoption');
+  const connection = bridge.app.connect(adoption.kind === 'record' ? withReplayedInitialize(carried.stream, adoption.record.initialize) : carried.stream);
   const mover = ports.handover?.mover;
   let named: string | undefined;
   const recordName = (): string => (named ??= `acp-${ports.clock.now()}`);
@@ -91,22 +92,24 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
       return { kind: 'sessions', sessionIds: state === undefined ? [] : state.sessions };
     },
     recordFile: () => (bridge.snapshot() === undefined ? undefined : recordFileOf(paths, recordName())),
-    quiet: bridge.quiet,
+    quiet: () => bridge.quiet() && carried.idle(),
     snapshot: (toVersion) => {
       const state = bridge.snapshot();
       if (state === undefined) throw new Error('the ACP connection is not initialized');
-      return { format: HANDOVER_FORMAT, fromVersion: ports.version, toVersion, session: recordName(), kind: 'acp', ...state };
+      return { format: HANDOVER_FORMAT, fromVersion: ports.version, toVersion, session: recordName(), kind: 'acp', ...state, input: Buffer.from(carried.pending()).toString('base64') };
     },
     terminal: () => undefined,
-    suspend: () => Promise.resolve(),
+    suspend: async () => carried.hold('handover'),
     release: () => undefined,
-    resume: () => undefined,
+    resume: () => carried.release('handover'),
     say: (text) => ports.stderr.write(acpDiagnosticText(text)),
   });
   bridge.onActivity(() => void mover?.check());
+  carried.onIdle(() => void mover?.check());
   if (adoption.kind === 'record') {
     await bridge.adopt(adoption.record);
     ports.handover?.removeRecord(adoption.file);
+    carried.release('adoption');
   }
   const closeOnInterrupt = (): void => connection.close();
   if (interrupt.aborted) closeOnInterrupt();

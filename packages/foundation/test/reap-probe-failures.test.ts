@@ -263,7 +263,7 @@ describe('reaping on time that only the test drives', () => {
     expect(settled).toBe(false);
     expect(clock.now()).toBe(0);
     for (let step = 0; step < markerReapClockBoundMs(100) / 25 && !settled; step += 1) {
-      timers.advance(25);
+      await timers.advanceAsync(25);
       await waitFor(() => settled || timers.pending().length === 2, { description: 'the markers to poll again' });
     }
     expect(await reaping).toEqual({ reaped: 0, kept: 2 });

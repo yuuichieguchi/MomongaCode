@@ -130,15 +130,15 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   const backend = createTuiBackend(ports, paths, options, createHistoryStore(ports.files, path.join(paths.state, 'history.jsonl')), defaultNoticeSources(ports, update));
   const tasks = createBackgroundTasks();
   const autoMode: AutoModePort = {
-    check: async (checkOptions, write) => autoModeCheck(await autoModeCheckPortsOf(ports, write), checkOptions),
-    status: async (statusOptions, write) => autoModeStatus(autoModeStatusPortsOf(ports, write), statusOptions),
+    check: async (checkOptions, write) => autoModeCheck(await autoModeCheckPortsOf(ports, write, checkOptions.signal), checkOptions),
+    status: async (statusOptions, write) => autoModeStatus(await autoModeStatusPortsOf(ports, write, statusOptions.signal), statusOptions),
   };
   let outcome: TuiOutcome = {};
   const onExit = (result: TuiOutcome): void => {
     outcome = result;
   };
   const tuiSettings: TuiSettingsPort = {
-    initial: (await loadUserSettings({ home: paths.home })).settings.tui,
+    initial: (await loadUserSettings({ home: paths.home, signal: ports.interrupt })).settings.tui,
     save: (name, value, signal) => writeTuiSetting(paths.home, paths.settingsFile, name, value, { lock: resolveLayoutLocks(paths).mechanism, signal }),
   };
   const asked: AskedA11y = { screenReaderFlag: options.screenReader === true, env: ports.env };

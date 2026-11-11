@@ -34,7 +34,7 @@ describe('the sweeper finish of a cancelled run that never ran, with no worker i
   it('a QUEUED run: the request leaves it CANCELLING; the sweep commits CANCELLED, then cancels upstream and releases it, without a model call or an execution', async () => {
     const env = await envWithPreparer();
     env.gateway.script.push(textStep('never sent'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const { sweeper, steps } = await recordingSweeper(env);
 
     expect((await env.cancel(run.id)).status).toBe('CANCELLING');
@@ -56,7 +56,7 @@ describe('the sweeper finish of a cancelled run that never ran, with no worker i
   it('a WAITING_HUMAN run with a pending approval and an awaiting call: the sweep commits CANCELLED and then releases it, with nothing executed', async () => {
     const env = await envWithPreparer();
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: `${env.project}/out.txt`, content: 'x' } }]));
-    const run = env.enqueue('Write the file');
+    const run = await env.enqueue('Write the file');
     expect(await env.runOnce(env.worker('worker-1'))).toBe('yielded');
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
     const streamsBefore = env.gateway.streams.length;

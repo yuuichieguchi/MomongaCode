@@ -3,9 +3,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { SECRET_NAME_PATTERN, createMemoryCredentialStore } from '@momonga/foundation';
 import type { ListableCredentialStore } from '@momonga/foundation';
 import { GatewayError } from '../src/core/errors.ts';
-import { gatewayErrorOfCredential } from '../src/plan/api.ts';
+import { planRouteError } from '../src/plan/api.ts';
 import { catalogKey, createPlanCatalog } from '../src/plan/catalog.ts';
-import { fakeAuth } from './plan-auth-support.ts';
 import { PROFILE_ID, editRecord, recordFileOf, recordKey, signedIn, startHarness } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 
@@ -89,7 +88,7 @@ const shownFor = async (h: Harness): Promise<Shown> => {
     () => undefined,
     (thrown: unknown) => thrown,
   );
-  const translated = gatewayErrorOfCredential(error);
+  const translated = planRouteError(error);
   return {
     status: source.status(),
     warnings: [...h.warnings],
@@ -146,7 +145,7 @@ describe('a stored plan catalog record that is refused does not quote the entry 
       outbound: () => Promise.reject(new Error('the stored record is refused before any send')),
       sleep: () => Promise.resolve(),
     });
-    const failure = await catalog.read({ profile: h.profile, account: 'work', refresh: false, auth: fakeAuth(), signal: signal() }).then(
+    const failure = await catalog.record(PROFILE_ID, 'work', signal()).then(
       () => undefined,
       (error: unknown) => error as { code?: unknown; message?: unknown },
     );
@@ -167,7 +166,7 @@ describe('a stored plan catalog record that is refused does not quote the entry 
       outbound: () => Promise.reject(new Error('the stored record is refused before any send')),
       sleep: () => Promise.resolve(),
     });
-    const failure = await catalog.read({ profile: h.profile, account: 'work', refresh: false, auth: fakeAuth(), signal: signal() }).then(
+    const failure = await catalog.record(PROFILE_ID, 'work', signal()).then(
       () => undefined,
       (error: unknown) => error as { code?: unknown; message?: unknown },
     );

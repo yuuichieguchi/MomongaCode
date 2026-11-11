@@ -23,7 +23,7 @@ describe('run admission decides readiness with agentReadiness before any model r
   it('ends a run on an unprobed target FAILED target_not_ready with the probe remedy and sends nothing', async () => {
     const capabilities = capabilitiesFor(32_000, { toolCalling: NEEDS_PROBE });
     const env = await makeEnv({ capabilities });
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await runToEnd(env, run.id);
 
@@ -37,7 +37,7 @@ describe('run admission decides readiness with agentReadiness before any model r
     const capabilities = capabilitiesFor(32_000, { toolCalling: NEEDS_PROBE });
     const shown = agentReadiness(capabilities);
     const env = await makeEnv({ capabilities });
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await runToEnd(env, run.id);
 
@@ -48,7 +48,7 @@ describe('run admission decides readiness with agentReadiness before any model r
   it('runs a target that reports no tool calling without tools on the wire and completes', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(32_000, { toolCalling: 'none' }) });
     env.gateway.script.push(textStep('A plain answer.'));
-    const run = env.enqueue('Explain the module');
+    const run = await env.enqueue('Explain the module');
 
     await runToEnd(env, run.id);
 
@@ -62,7 +62,7 @@ describe('run admission decides readiness with agentReadiness before any model r
   it.each(['native', 'constrained'] as const)('still offers tools to a %s target', async (toolCalling) => {
     const env = await makeEnv({ capabilities: capabilitiesFor(32_000, { toolCalling }) });
     env.gateway.script.push(textStep('Done.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await runToEnd(env, run.id);
 

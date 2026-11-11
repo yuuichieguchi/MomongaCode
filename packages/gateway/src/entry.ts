@@ -1,4 +1,4 @@
-import { ConfigError, createStopValuesReader, readUserStopValues } from '@momonga/config';
+import { ConfigError, createStopValuesReader } from '@momonga/config';
 import type { StopValuesReader } from '@momonga/config';
 import { CHILD_ENTRY_FLAGS, EntryUsageError, gatewayMaxCloseMs, generationLayout, momongaPaths, runDaemonEntry, homeLayout } from '@momonga/foundation';
 import type { EntryIo, FlagSpec, JsonLogger, SecretStore } from '@momonga/foundation';
@@ -15,8 +15,8 @@ export type GatewayEntryDeps = { version: string; secretStore?: SecretStore };
 
 export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps): Promise<number> => {
   let stopValues: StopValuesReader | undefined;
-  const stopValuesOf = (home: string, logger: JsonLogger): StopValuesReader => {
-    stopValues ??= createStopValuesReader({ load: () => readUserStopValues(home), onNotice: (message) => logger.warn(message) });
+  const stopValuesOf = (logger: JsonLogger): StopValuesReader => {
+    stopValues ??= createStopValuesReader({ onNotice: (message) => logger.warn(message) });
     return stopValues;
   };
   return runDaemonEntry(io, {
@@ -24,7 +24,7 @@ export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps): Promise<nu
     version: deps.version,
     flags: GATEWAY_ENTRY_FLAGS,
     maxCloseMs: (_flags, values) => gatewayMaxCloseMs(values),
-    readStopValues: ({ home, logger }) => stopValuesOf(home, logger).read(),
+    readStopValues: ({ logger }) => stopValuesOf(logger).read(),
     ownLockPath: (home, flags) => generationLayout(home, flags.generation).locks.gateway,
     logPath: (home) => homeLayout(home, process.platform).logFiles.gateway,
     isConfigError: (error) => error instanceof ConfigError,
@@ -46,7 +46,7 @@ export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps): Promise<nu
         locks,
         acquireLock,
         requestShutdown: () => requestShutdown(),
-        stopValues: stopValuesOf(home, logger),
+        stopValues: stopValuesOf(logger),
         ...(debugPort === undefined || debugTokenFile === undefined ? {} : { debugTcp: { port: debugPort, tokenFile: debugTokenFile } }),
         ...(deps.secretStore === undefined ? {} : { secretStore: deps.secretStore }),
       });

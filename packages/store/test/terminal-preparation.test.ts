@@ -50,8 +50,8 @@ const outsideTheTransaction = (measurements: readonly Measurement[], runIds: rea
 
 const contributionsOf = (store: RuntimeStore, runId: string): number => store.readRunEvents(runId, 0, 1000).filter((event) => event.type === 'context.contribution').length;
 
-const spawn = (store: RuntimeStore, parentRunId: string, callId: string): Run => {
-  const created = store.createChildRun({ parentRunId, parentCallId: callId, input: 'Child', pins: {}, model: 'fm' });
+const spawn = async (store: RuntimeStore, parentRunId: string, callId: string): Promise<Run> => {
+  const created = await store.createChildRun({ parentRunId, parentCallId: callId, input: 'Child', pins: {}, model: 'fm' });
   if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
   return created.run;
 };
@@ -59,8 +59,8 @@ const spawn = (store: RuntimeStore, parentRunId: string, callId: string): Run =>
 describe('every terminal operation measures one run, outside the write transaction', () => {
   it('the dead-letter sweep measures each exhausted run in its own operation, outside its transaction', async () => {
     const { h, measurements } = measuring({ maxAttempts: 1 });
-    const first = enqueue(h.store, newSession(h.store).id);
-    const second = enqueue(h.store, newSession(h.store).id);
+    const first = await enqueue(h.store, newSession(h.store).id);
+    const second = await enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w1');
     mustClaim(h.store, 'w2');
     h.clock.advance(LEASE_MS);
@@ -78,9 +78,9 @@ describe('every terminal operation measures one run, outside the write transacti
 
   it('dead-lettering a parent moves its queued child to CANCELLING without measuring the child; the child is finished by its own operation', async () => {
     const { h, measurements } = measuring({ maxAttempts: 1 });
-    const parent = enqueue(h.store, newSession(h.store).id);
+    const parent = await enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w1');
-    const child = spawn(h.store, parent.id, 'call_child');
+    const child = await spawn(h.store, parent.id, 'call_child');
     h.clock.advance(LEASE_MS);
 
     expect(await h.store.deadLetterExhausted(ignoreSweepErrors)).toEqual([parent.id]);
@@ -102,7 +102,7 @@ describe('every terminal operation measures one run, outside the write transacti
 
   it('a late answer to an expired elicitation stops the run through an awaited operation, outside the transaction', async () => {
     const { h, measurements } = measuring();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim: Claim = mustClaim(h.store, 'w1');
     expect(h.store.append(claim, [callEvent('call_1')]).kind).toBe('ok');
     const requested = await h.store.requestElicitation(claim, { callId: 'call_1', expiresAt: EXPIRES_MS, server: 'remote', requests: REQUESTS });
@@ -120,11 +120,11 @@ describe('every terminal operation measures one run, outside the write transacti
 
   it('a cancel that reaches grandchildren through a running child moves every descendant to CANCELLING and measures none', async () => {
     const { h, measurements } = measuring();
-    const parent = enqueue(h.store, newSession(h.store).id);
+    const parent = await enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w-parent');
-    const child = spawn(h.store, parent.id, 'call_child');
+    const child = await spawn(h.store, parent.id, 'call_child');
     mustClaim(h.store, 'w-child');
-    const grandchild = spawn(h.store, child.id, 'call_grandchild');
+    const grandchild = await spawn(h.store, child.id, 'call_grandchild');
 
     expect((await cancel(h.store, parent.id)).status).toBe('CANCELLING');
 
@@ -135,11 +135,11 @@ describe('every terminal operation measures one run, outside the write transacti
 
   it('a cancel that reaches a child waiting for a person and its queued child moves both to CANCELLING with their own origins and measures none', async () => {
     const { h, measurements } = measuring();
-    const parent = enqueue(h.store, newSession(h.store).id);
+    const parent = await enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w-parent');
-    const child = spawn(h.store, parent.id, 'call_child');
+    const child = await spawn(h.store, parent.id, 'call_child');
     const childClaim = mustClaim(h.store, 'w-child');
-    const grandchild = spawn(h.store, child.id, 'call_grandchild');
+    const grandchild = await spawn(h.store, child.id, 'call_grandchild');
     expect(h.store.append(childClaim, [callEvent('call_w')]).kind).toBe('ok');
     const approval = await h.store.requestApproval(childClaim, {
       callId: 'call_w',

@@ -18,7 +18,7 @@ const memoryWorker = (env: Env, id: string, extra: Parameters<Env['worker']>[1] 
 
 const saveNote = async (env: Env): Promise<string> => {
   env.gateway.script.push(callsStep([{ callId: 'call_m_1', name: 'MemorySave', args: { text: NOTE, scope: 'user' } }]), textStep('Remembered.'));
-  const run = env.enqueue('Remember this', { history: 'fresh' });
+  const run = await env.enqueue('Remember this', { history: 'fresh' });
   await env.runOnce(memoryWorker(env, 'saver'));
   expect(env.run(run.id).status).toBe('COMPLETED');
   const saved = env.store.memories.list().find((memory) => memory.text === NOTE);
@@ -50,7 +50,7 @@ describe('use is contribution, never being shown', () => {
       env.clock.advance(31 * DAY_MS);
       env.gateway.script.push(textStep('Hello.'));
       const before = env.gateway.streams.length;
-      const run = env.enqueue('Say hello', { history: 'fresh', deadlineAt: env.clock.now() + 3_600_000 });
+      const run = await env.enqueue('Say hello', { history: 'fresh', deadlineAt: env.clock.now() + 3_600_000 });
       await env.runOnce(memoryWorker(env, `worker-${index}`));
       expect(env.run(run.id).status).toBe('COMPLETED');
       expect(requestText(env, before)).toContain(`<memory id="${id}"`);
@@ -82,7 +82,7 @@ describe('use is contribution, never being shown', () => {
       textStep('Running zorpLauncher.'),
     );
     env.clock.advance(60_000);
-    const run = env.enqueue('Start the service', { history: 'fresh' });
+    const run = await env.enqueue('Start the service', { history: 'fresh' });
     await env.runOnce(memoryWorker(env, 'worker-1', { toolList: () => [prepare] }));
 
     expect(env.run(run.id).status).toBe('COMPLETED');

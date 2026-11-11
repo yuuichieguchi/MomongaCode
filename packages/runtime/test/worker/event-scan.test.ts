@@ -11,7 +11,7 @@ describe('worker event reads per claim', () => {
     env.instructions.files.set(agentsPath, 'Prefer small diffs.');
     const target = path.join(env.project, 'out.txt');
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } }]));
-    const run = env.enqueue('Write the file');
+    const run = await env.enqueue('Write the file');
     await env.runOnce(env.worker('worker-1'));
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
     const snapshotSeq = env.store.load(run.id).snapshot?.seq;

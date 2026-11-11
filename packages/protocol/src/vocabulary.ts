@@ -251,8 +251,14 @@ export type MessageInputs = {
   sessionAmbiguous: [given: { readonly id: string; readonly matches: readonly string[] }];
   sessionInOtherFolder: [given: { readonly id: string; readonly folder: string }];
   noSessionToContinue: [given: { readonly folder: string }];
+  notAnId: [given: { readonly value: string }];
   handoverFailed: [given: { readonly toVersion: string; readonly fromVersion: string; readonly reason: string; readonly kept: KeptWork }];
   restoreRefused: [given: { readonly reason: string; readonly kept: KeptWork }];
+  aboutModel: [given: { readonly model: string; readonly text: string }];
+  modelNotReady: [given: { readonly model: string; readonly reason: string }];
+  modelIdChanged: [given: { readonly server: string; readonly model: string; readonly listed: string; readonly entry: string }];
+  serverSocketPathTooLong: [given: { readonly model: string; readonly byteLength: number; readonly directory: string; readonly code: string }];
+  serverFormNotOffered: [given: { readonly server: string; readonly platform: string; readonly accepted: readonly string[]; readonly offered: readonly string[] }];
 };
 
 export type MessageKey = keyof MessageInputs;
@@ -268,10 +274,22 @@ const MESSAGES: { readonly [Key in MessageKey]: (surface: Surface, ...given: Mes
   sessionIdTooShort: (_surface, given) => `No ${WORDS.session} has the id ${given.id}. A shortened id needs at least ${given.minimum} characters.`,
   sessionAmbiguous: (_surface, given) => `${given.id} matches more than one ${WORDS.session}: ${given.matches.join(', ')}`,
   sessionInOtherFolder: (_surface, given) => `That ${WORDS.session} belongs to the ${WORDS.folder} ${given.folder}. Run: cd ${given.folder} && ${reopenSessionCommand(given.id)}`,
+  notAnId: (_surface, given) => `${JSON.stringify(given.value)} is not an id.`,
   noSessionToContinue: (_surface, given) => `No ${WORDS.session} to continue in the ${WORDS.folder} ${given.folder}.`,
   handoverFailed: (surface, given) =>
     `Could not restart into v${given.toVersion} (${given.reason}). This ${WORDS.session} stays on v${given.fromVersion} and keeps working until that version finishes its ${WORDS.run}s.${keptRunsSentence(given.kept)}${UNSENT_INPUT_KEPT[surface]}`,
   restoreRefused: (_surface, given) => `Could not restore the ${WORDS.session} (${given.reason}).${keptSessionSentence(given.kept)}`,
+  aboutModel: (_surface, given) => `the ${WORDS.model} "${given.model}": ${given.text}`,
+  modelNotReady: (_surface, given) => `the ${WORDS.model} "${given.model}" is not ready: ${given.reason}`,
+  modelIdChanged: (_surface, given) =>
+    `The ${WORDS.server} ${given.server} of the ${WORDS.model} ${given.model} lists "${given.listed}", not "${given.entry}". Run /models add to add the ${WORDS.model} it serves now.`,
+  serverSocketPathTooLong: (surface, given) =>
+    MESSAGES.aboutModel(surface, {
+      model: given.model,
+      text: `its ${WORDS.server} socket path is ${given.byteLength} bytes, and the system refused to bind a socket path of that length in ${given.directory} (${given.code}); choose a shorter ${WORDS.server} name`,
+    }),
+  serverFormNotOffered: (_surface, given) =>
+    `the ${WORDS.server} ${JSON.stringify(given.server)} cannot be used on ${given.platform}: it accepts only the socket forms [${given.accepted.join(', ')}], and ${given.platform} offers [${given.offered.join(', ')}]`,
 };
 
 export const MESSAGE_KEYS = Object.keys(MESSAGES) as readonly MessageKey[];

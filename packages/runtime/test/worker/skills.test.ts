@@ -43,7 +43,7 @@ describe('worker skills: catalog', () => {
   it('shows the catalog as a developer item and offers activate_skill with the skill names', async () => {
     const env = await makeEnv();
     writeSkill(projectSkills(env), 'pdf', 'Extract PDF text', PDF_BODY);
-    env.enqueue('Read the pdf');
+    await env.enqueue('Read the pdf');
     env.gateway.script.push(textStep('ok'));
 
     await env.runOnce(env.worker());
@@ -58,7 +58,7 @@ describe('worker skills: catalog', () => {
 
   it('shows neither a catalog nor the tool without skills', async () => {
     const env = await makeEnv();
-    env.enqueue('Say hello');
+    await env.enqueue('Say hello');
     env.gateway.script.push(textStep('ok'));
 
     await env.runOnce(env.worker());
@@ -72,7 +72,7 @@ describe('worker skills: catalog', () => {
     env.settings.trustedValue = false;
     writeSkill(projectSkills(env), 'project-only', 'From the repository', 'Project body');
     writeSkill(path.join(env.home, '.agents', 'skills'), 'user-only', 'From the user', 'User body');
-    const run = env.enqueue('Say hello');
+    const run = await env.enqueue('Say hello');
     env.gateway.script.push(textStep('ok'));
 
     await env.runOnce(env.worker());
@@ -89,7 +89,7 @@ describe('worker skills: catalog', () => {
     const env = await makeEnv();
     writeSkill(projectSkills(env), 'review', 'Project review', 'Project body');
     writeSkill(path.join(env.home, '.agents', 'skills'), 'review', 'User review', 'User body');
-    const run = env.enqueue('Say hello');
+    const run = await env.enqueue('Say hello');
     env.gateway.script.push(textStep('ok'));
 
     await env.runOnce(env.worker());
@@ -103,7 +103,7 @@ describe('worker skills: activation', () => {
   it('records the activation, protects the body and keeps one copy in the next request', async () => {
     const env = await makeEnv();
     const skillDirectory = writeSkill(projectSkills(env), 'pdf', 'Extract PDF text', PDF_BODY, { 'scripts/extract.py': 'print(1)' });
-    const run = env.enqueue('Read the pdf');
+    const run = await env.enqueue('Read the pdf');
     env.gateway.script.push(activate('call_skill', 'pdf'), textStep('Done.'));
 
     await env.runOnce(env.worker());
@@ -132,7 +132,7 @@ describe('worker skills: activation', () => {
   it('keeps the catalog identical across the steps of a run so that the pinned prefix holds', async () => {
     const env = await makeEnv();
     writeSkill(projectSkills(env), 'pdf', 'Extract PDF text', PDF_BODY);
-    env.enqueue('Read the pdf');
+    await env.enqueue('Read the pdf');
     env.gateway.script.push(activate('call_skill', 'pdf'), textStep('Done.'));
 
     await env.runOnce(env.worker());
@@ -145,7 +145,7 @@ describe('worker skills: activation', () => {
   it('does not duplicate a skill that is activated twice', async () => {
     const env = await makeEnv();
     writeSkill(projectSkills(env), 'pdf', 'Extract PDF text', PDF_BODY);
-    const run = env.enqueue('Read the pdf');
+    const run = await env.enqueue('Read the pdf');
     env.gateway.script.push(activate('call_one', 'pdf'), activate('call_two', 'pdf'), textStep('Done.'));
 
     await env.runOnce(env.worker());
@@ -162,7 +162,7 @@ describe('worker skills: activation', () => {
   it('rejects a name that is not in the catalog without activating anything', async () => {
     const env = await makeEnv();
     writeSkill(projectSkills(env), 'pdf', 'Extract PDF text', PDF_BODY);
-    const run = env.enqueue('Read the pdf');
+    const run = await env.enqueue('Read the pdf');
     env.gateway.script.push(activate('call_bad', 'invented'), textStep('Done.'));
 
     await env.runOnce(env.worker());
@@ -175,11 +175,11 @@ describe('worker skills: activation', () => {
   it('lets the next run of the session start with the skill already active', async () => {
     const env = await makeEnv();
     writeSkill(projectSkills(env), 'pdf', 'Extract PDF text', PDF_BODY);
-    env.enqueue('Read the pdf');
+    await env.enqueue('Read the pdf');
     env.gateway.script.push(activate('call_skill', 'pdf'), textStep('Done.'), textStep('Again.'));
     await env.runOnce(env.worker());
 
-    const second = env.enqueue('And once more');
+    const second = await env.enqueue('And once more');
     await env.runOnce(env.worker());
 
     expect(env.run(second.id).status).toBe('COMPLETED');
@@ -202,7 +202,7 @@ describe.for([false, true])('worker skills: oversized skill (observed capacity %
   it('refuses the activation with a tool failure, keeps the run going and leaves the session free of the skill', async () => {
     const env = await envWith();
     writeSkill(projectSkills(env), 'huge', 'A skill larger than the window', OVERSIZED_BODY);
-    const first = env.enqueue('Use the huge skill');
+    const first = await env.enqueue('Use the huge skill');
     env.gateway.script.push(activate('call_huge', 'huge'), textStep('Continuing without it.'), textStep('Next answer.'));
 
     await env.runOnce(env.worker());
@@ -214,7 +214,7 @@ describe.for([false, true])('worker skills: oversized skill (observed capacity %
     expect(env.ofType(first.id, 'skill.activated')).toEqual([]);
     expect(env.fold(first.id).activatedSkills).toEqual([]);
 
-    const second = env.enqueue('Another question');
+    const second = await env.enqueue('Another question');
     await env.runOnce(env.worker());
 
     expect(env.run(second.id).status).toBe('COMPLETED');
@@ -225,7 +225,7 @@ describe.for([false, true])('worker skills: oversized skill (observed capacity %
     const env = await envWith();
     writeSkill(projectSkills(env), 'first', 'Fits alone', 'Follow this rule exactly. '.repeat(500));
     writeSkill(projectSkills(env), 'second', 'Fits alone but not beside the first', 'Follow this rule exactly. '.repeat(500));
-    const run = env.enqueue('Use both skills');
+    const run = await env.enqueue('Use both skills');
     env.gateway.script.push(
       callsStep([
         { callId: 'call_first', name: 'activate_skill', args: { name: 'first' } },
@@ -250,19 +250,19 @@ describe('worker skills: explicit oversized skill', () => {
   it('fails the run that brought it and does not carry it into the next run, while an inherited skill stays', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(8000) });
     writeSkill(projectSkills(env), 'pdf', 'Extract PDF text', PDF_BODY);
-    const warm = env.enqueue('Warm up');
+    const warm = await env.enqueue('Warm up');
     env.gateway.script.push(activate('call_pdf', 'pdf'), textStep('Warm.'));
     await env.runOnce(env.worker());
     expect(env.run(warm.id).status).toBe('COMPLETED');
 
     const content = `<skill_content name="huge">\n${'Follow this rule exactly. '.repeat(2000)}\n</skill_content>`;
-    const first = env.enqueue('Use the huge skill', { skill: { name: 'huge', content } });
+    const first = await env.enqueue('Use the huge skill', { skill: { name: 'huge', content } });
     await env.runOnce(env.worker());
     expect(env.run(first.id).status).toBe('FAILED');
     expect(env.run(first.id).error?.code).toBe('pinned_overflow');
 
     env.gateway.script.push(textStep('Next answer.'));
-    const second = env.enqueue('Another question');
+    const second = await env.enqueue('Another question');
     await env.runOnce(env.worker());
 
     expect(env.run(second.id).status).toBe('COMPLETED');
@@ -310,7 +310,7 @@ describe('worker skills: explicit activation', () => {
     const env = await makeEnv();
     writeSkill(projectSkills(env), 'pdf', 'Extract PDF text', PDF_BODY);
     const content = '<skill_content name="pdf">\nexplicit body\n</skill_content>';
-    const run = env.enqueue('Use the pdf skill', { skill: { name: 'pdf', content } });
+    const run = await env.enqueue('Use the pdf skill', { skill: { name: 'pdf', content } });
     env.gateway.script.push(textStep('Done.'));
 
     await env.runOnce(env.worker());
@@ -322,7 +322,7 @@ describe('worker skills: explicit activation', () => {
   it('does not activate it again when the model asks for the same skill', async () => {
     const env = await makeEnv();
     writeSkill(projectSkills(env), 'pdf', 'Extract PDF text', PDF_BODY);
-    const run = env.enqueue('Use the pdf skill', { skill: { name: 'pdf', content: '<skill_content name="pdf">\nexplicit body\n</skill_content>' } });
+    const run = await env.enqueue('Use the pdf skill', { skill: { name: 'pdf', content: '<skill_content name="pdf">\nexplicit body\n</skill_content>' } });
     env.gateway.script.push(activate('call_skill', 'pdf'), textStep('Done.'));
 
     await env.runOnce(env.worker());
@@ -337,7 +337,7 @@ describe('worker skills: compaction', () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
     writeSkill(projectSkills(env), 'pdf', 'Extract PDF text', PDF_BODY);
     const wrapped = '<skill_content name="pdf">\nrecorded body\n</skill_content>';
-    const run = env.enqueue('Task one');
+    const run = await env.enqueue('Task one');
     await env.seed(
       run.id,
       [
@@ -369,7 +369,7 @@ describe('worker skills: compaction', () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
     writeSkill(projectSkills(env), 'pdf', 'Extract PDF text', PDF_BODY);
     const wrapped = '<skill_content name="pdf">\nrecorded body\n</skill_content>';
-    const run = env.enqueue('Task one');
+    const run = await env.enqueue('Task one');
     await env.seed(
       run.id,
       [
@@ -403,7 +403,7 @@ describe('worker skills: reading bundled resources', () => {
     const env = await makeEnv();
     const userSkill = writeSkill(path.join(env.home, '.agents', 'skills'), 'zip', 'Pack files', 'Zip body');
     const projectSkill = writeSkill(projectSkills(env), 'pdf', 'Extract PDF text', PDF_BODY);
-    env.enqueue('Use tools');
+    await env.enqueue('Use tools');
     env.gateway.script.push(callsStep([{ callId: 'call_echo', name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
 
     await env.runOnce(env.worker());
@@ -416,7 +416,7 @@ describe('worker skills: reading bundled resources', () => {
     const env = await makeEnv();
     env.settings.trustedValue = false;
     writeSkill(projectSkills(env), 'pdf', 'Extract PDF text', PDF_BODY);
-    env.enqueue('Use tools');
+    await env.enqueue('Use tools');
     env.gateway.script.push(callsStep([{ callId: 'call_echo', name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
 
     await env.runOnce(env.worker());

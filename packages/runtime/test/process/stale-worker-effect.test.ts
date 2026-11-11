@@ -16,7 +16,7 @@ const takeOver = async () => {
   const f = await makeRuntimeFixture({ temp, sandbox: createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot: temp.paths.tmp.spawn, killGraceMs: 300 }) });
   writeUserSettings(temp.home, {});
   const session = createSession(f.store, temp.project, { env: { PATH: '/usr/bin:/bin' } });
-  const runId = createRun(f.store, session.id);
+  const runId = await createRun(f.store, session.id);
   const stale = fenceFor(f.store, runId, 'w1');
   f.clock.advance(LEASE_EXPIRY_MS);
   const claim = f.store.claim('w2');

@@ -55,7 +55,7 @@ export type SettingsPort = {
   tools(session: Session): Promise<ResolvedToolsSettings>;
   autoModeClassifier(): string | undefined;
   appendRule(session: Session, entry: AppendedRule, signal: AbortSignal): Promise<void>;
-  trusted(session: Session): boolean;
+  trusted(session: Session): Promise<boolean>;
 };
 
 export type AttachTerms = { ceiling: number; imageInput: boolean; signal: AbortSignal };
@@ -90,13 +90,13 @@ export type MemoryPort = {
 export type GovernanceSet = { tools: readonly AnyTool[] };
 
 export type GovernancePort = {
-  load(session: Session): GovernanceSet;
+  load(session: Session): Promise<GovernanceSet>;
 };
 
 export type HistorySet = { tools: readonly AnyTool[] };
 
 export type HistoryPort = {
-  load(session: Session): HistorySet;
+  load(session: Session): Promise<HistorySet>;
 };
 
 export type AgentCatalogPort = { load(session: Session): Promise<AgentSet> };
@@ -135,7 +135,7 @@ export type RuleVerifierPort = {
 };
 
 export type ToolRuntimePort = {
-  envFor(session: Session): ToolEnv;
+  envFor(session: Session, signal: AbortSignal): ToolEnv | Promise<ToolEnv>;
   toolSet(runId: string, options: { signal: AbortSignal; env: ToolEnv; additionalTools?: readonly AnyTool[]; only?: readonly string[] }): Promise<ToolSet>;
   recoveryToolSet(options: { signal: AbortSignal; additionalTools?: readonly AnyTool[] }): Promise<ToolSet>;
   policyFor(session: Session, options: { env: ToolEnv; rules: readonly PermissionRule[]; readableDirectories?: readonly string[]; ruleEnforcement: RuleEnforcement; signal: AbortSignal; discoverGitConfig?: true }): Promise<ToolPolicy>;

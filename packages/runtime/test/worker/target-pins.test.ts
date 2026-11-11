@@ -30,7 +30,7 @@ const conversation = (): RunEventPayload[] => [
 const prepared = async (roles: Record<string, string> = {}) => {
   const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
   env.gateway.roles = { ...roles };
-  const run = env.enqueue('question one');
+  const run = await env.enqueue('question one');
   await env.seed(run.id, conversation(), 'release');
   env.gateway.compactSummaries.push(CLEAN);
   env.gateway.script.push(textStep('Done.'));
@@ -95,7 +95,7 @@ describe('the pinned provenance of the targets', () => {
     await drive(env, run.id);
     env.gateway.memberFacts = { fm: { adapter: 'chat-completions', upstream: 'fake-model', answers: 'model' } };
     env.gateway.script.push(textStep('Second.'));
-    const second = env.enqueue('Second task');
+    const second = await env.enqueue('Second task');
     await drive(env, second.id);
     expect(env.ofType(second.id, 'run.started')[0]?.pins['targets']).toEqual({ fm: { adapter: 'chat-completions', model: 'fake-model', answers: 'model' } });
   });

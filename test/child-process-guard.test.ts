@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
-import { MINIMAL_CHILD_PATH, SECRET_PROGRAM_ENV, credentialReadScript, credentialWriteScript, minimalChildEnv, nodeCommandRunner } from '@momonga/foundation';
+import { MINIMAL_CHILD_PATH, SECRET_PROGRAM_ENV, credentialReadScript, credentialWriteScript, minimalChildEnv, nodeBoundedCommandRunner } from '@momonga/foundation';
 import { fakeSecretProgramsBin, productTestEnv, spawnTracked, testHostPath } from '@momonga/testkit';
 import childProcessDefault, * as childProcessNamespace from '@momonga/testkit/child-process';
 import { exec, execFile, execFileSync, execSync, fork, spawn, spawnSync } from '@momonga/testkit/child-process';
@@ -283,7 +283,7 @@ describe('the worker guard refuses a product launch of a MomongaCode binary that
 
   it('the update restart, through the real command runner with a hand-built PATH of /usr/bin, is refused before exec', async () => {
     await expectRefusedBeforeLaunch(/\(iii\) it is the product launch of a MomongaCode binary with daemon start/, (d) =>
-      nodeCommandRunner(binaryOf('single-binary', [], d).command, MOMONGA_LAUNCHES.startDaemon.args, { env: { PATH: '/usr/bin:/bin', HOME: d.dir }, timeoutMs: 30_000, signal: new AbortController().signal }),
+      nodeBoundedCommandRunner(binaryOf('single-binary', [], d).command, MOMONGA_LAUNCHES.startDaemon.args, { env: { PATH: '/usr/bin:/bin', HOME: d.dir }, timeoutMs: 30_000, signal: new AbortController().signal }),
     );
   });
 
@@ -371,13 +371,14 @@ describe('the modules every worker loads before its test file', () => {
       'packages/foundation/src/open-browser.ts',
       'packages/foundation/src/operation-limit.ts',
       'packages/foundation/src/platform/privacy.ts',
-      'packages/foundation/src/platform/probe-timing.ts',
       'packages/foundation/src/platform/windows-scripts.ts',
       'packages/foundation/src/process-contract.ts',
       'packages/foundation/src/program-search.ts',
       'packages/foundation/src/secret-store-failures.ts',
       'packages/foundation/src/secret-store.ts',
       'packages/foundation/src/system-timing.ts',
+      'packages/foundation/src/timing.ts',
+      'packages/foundation/src/wait-until.ts',
       'packages/testkit/src/secret-store-env-check.ts',
       'test/support/child-process-guard.ts',
     ]);
@@ -399,6 +400,7 @@ const IMPORT_OF_CHILD_PROCESS = /(?:from\s*|import\s*\(\s*|require\s*\(\s*)['"](
 const ALLOWED_IMPORTERS: ReadonlySet<string> = new Set([
   'packages/cli/test/port-scan.test.ts',
   'packages/testkit/src/child-process.ts',
+  'packages/tools/test/ports-scan.test.ts',
   'test/child-process-guard.test.ts',
   'test/fake-programs.test.ts',
   'test/ports-bypass.test.ts',

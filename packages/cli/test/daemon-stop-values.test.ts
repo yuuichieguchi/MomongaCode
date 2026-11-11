@@ -9,7 +9,7 @@ import { STOP_WAIT_WHEN_UNKNOWN_MS, ensureDaemon, stopDaemon, stopWaitBoundMs } 
 import type { DaemonPorts } from '../src/daemon/ensure-daemon.ts';
 import { PollTimeout } from '../src/poll.ts';
 import type { CliClock, SelfExecutable } from '../src/ports.ts';
-import { recordingSpawn, startFakeSupervisor } from './fake-supervisor.ts';
+import { installedProgram, recordingSpawn, startFakeSupervisor } from './fake-supervisor.ts';
 
 const VERSION = '1.2.3';
 const SELF: SelfExecutable = { kind: 'script', execPath: '/opt/node', script: '/opt/momonga/main.js' };
@@ -45,7 +45,7 @@ const setup = async (context: TestContext) => {
     }
     return supervisor;
   };
-  const ports: DaemonPorts = { version: VERSION, env: { PATH: '/usr/bin' }, home, clock: oversleepingClock(), self: SELF, spawnDetached: recordingSpawn(() => undefined).spawn };
+  const ports: DaemonPorts = { version: VERSION, env: { PATH: '/usr/bin' }, home, clock: oversleepingClock(), self: SELF, spawnDetached: recordingSpawn(() => undefined).spawn, ...installedProgram(VERSION).ports };
   return { paths, ports, start, writeUserSettings };
 };
 

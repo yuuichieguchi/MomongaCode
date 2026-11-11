@@ -84,8 +84,8 @@ const failureOf = async (promise: Promise<unknown>): Promise<{ code: unknown; me
   throw new Error('expected the call to fail');
 };
 
-describe('one serializer for pointer writes, built from the mirror (P-S5, S8, S9)', () => {
-  it('a pointer write never reads the pointer file', async () => {
+describe('one serializer for pointer writes, each built from the file as it is then (P-S5, S8, S9, C47)', () => {
+  it('a pointer write reads the pointer file once, before it writes', async () => {
     const { h, gated } = await gatedHarness();
     await signedIn(h, 'work');
     await signedIn(h, 'home');
@@ -96,7 +96,7 @@ describe('one serializer for pointer writes, built from the mirror (P-S5, S8, S9
     await signedIn(h, 'third');
     const since = gated.recorded.slice(mark).filter((call) => call.path === h.paths.active);
     expect(since.filter((call) => call.method === 'rename')).toHaveLength(3);
-    expect(since.filter((call) => call.method === 'readTextFile' || call.method === 'readOwnerOnlyTextFile')).toEqual([]);
+    expect(since.map((call) => call.method)).toEqual(['readOwnerOnlyTextFile', 'rename', 'readOwnerOnlyTextFile', 'rename', 'readOwnerOnlyTextFile', 'rename']);
   });
 
   it('two pointer writes go through the one serializer and queue behind each other', { timeout: 60_000 }, async () => {
@@ -161,7 +161,8 @@ describe('one serializer for pointer writes, built from the mirror (P-S5, S8, S9
     expect(h.auth.calls.tokenAuthorizationCode).toBe(0);
     expect(signIn.waiting()).toBe(true);
     fs.writeFileSync(h.paths.active, '{}');
-    await expect(signIn.complete(attemptId, browsed.redirect.href, new AbortController().signal)).resolves.toMatchObject({ outcome: 'signed_in' });
+    await expect(signIn.complete(attemptId, browsed.redirect.href, new AbortController().signal)).resolves.toMatchObject({ outcome: 'identity_unconfirmed' });
+    await expect(signIn.confirm(attemptId, new AbortController().signal)).resolves.toMatchObject({ outcome: 'signed_in' });
   });
 
   it('a pointer write that fails after install rejects PLAN_STORE_UNWRITABLE_CODE naming the file, the record stays active, and selectActive then succeeds', async () => {

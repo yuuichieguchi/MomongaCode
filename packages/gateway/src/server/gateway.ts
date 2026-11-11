@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { getRequestListener } from '@hono/node-server';
-import { listenUnix, startDeadlineSignal } from '@momonga/foundation';
+import { HOST_READ_BOUND_MS, listenUnix, startDeadlineSignal } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
 import { createCompactionCodec } from '../core/compaction.ts';
 import { createReasoningOriginCodec } from '../core/reasoning-origin.ts';
@@ -113,6 +113,12 @@ const watchServerErrors = (server: http.Server, onFatal: (error: Error) => void)
   server.on('error', (error: Error) => onFatal(error));
 };
 
+export const boundedHttpServer = (listener: http.RequestListener): http.Server => {
+  const server = http.createServer(listener);
+  server.requestTimeout = HOST_READ_BOUND_MS;
+  return server;
+};
+
 export const createGateway = async (options: GatewayOptions): Promise<Gateway> => {
   checkGatewayOptions(options);
   const limits = limitsOf(options);
@@ -182,7 +188,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       errors,
     });
     transports.push(webSocket);
-    const unixServer = http.createServer(getRequestListener(handler));
+    const unixServer = boundedHttpServer(getRequestListener(handler));
     countRequests(unixServer, tracker);
     webSocket.attach(unixServer);
     servers.push(unixServer);
@@ -203,7 +209,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
         errors,
       });
       transports.push(tcpSockets);
-      tcpServer = http.createServer(getRequestListener(requireToken(token, handler)));
+      tcpServer = boundedHttpServer(getRequestListener(requireToken(token, handler)));
       countRequests(tcpServer, tracker);
       tcpSockets.attach(tcpServer);
       servers.push(tcpServer);

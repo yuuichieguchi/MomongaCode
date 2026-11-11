@@ -30,7 +30,7 @@ describe('loop guidance (T5, context.loopGuidance)', () => {
   it('warns at the t-th identical call, executes it, and stops at the (t+1)-th', async () => {
     const env = await guidedEnv();
     env.gateway.script.push(...repeated('c', 'kx7same', 4), textStep('never sent'));
-    const run = env.enqueue('Loop');
+    const run = await env.enqueue('Loop');
 
     await env.runOnce(env.worker());
 
@@ -47,7 +47,7 @@ describe('loop guidance (T5, context.loopGuidance)', () => {
   it('records the warning for the same signature before the stop (T5-1)', async () => {
     const env = await guidedEnv();
     env.gateway.script.push(...repeated('c', 'kx7same', 4), textStep('never sent'));
-    const run = env.enqueue('Loop');
+    const run = await env.enqueue('Loop');
 
     await env.runOnce(env.worker());
 
@@ -61,7 +61,7 @@ describe('loop guidance (T5, context.loopGuidance)', () => {
   it('puts the guidance last in the request right after the warning, naming the call, its arguments and the count, never the tool output', async () => {
     const env = await guidedEnv();
     env.gateway.script.push(...repeated('c', 'kx7same', 6), textStep('never sent'));
-    const run = env.enqueue('Loop', { limits: { loopThreshold: 5 } });
+    const run = await env.enqueue('Loop', { limits: { loopThreshold: 5 } });
 
     await env.runOnce(env.worker());
 
@@ -83,7 +83,7 @@ describe('loop guidance (T5, context.loopGuidance)', () => {
   it('carries the guidance in one request only, and the next request keeps the prefix through the history (T5-2)', async () => {
     const env = await guidedEnv({ cachePrefix: true });
     env.gateway.script.push(...repeated('c', 'kx7same', 3), echo('d1', 'w2other'), textStep('Done.'));
-    const run = env.enqueue('Loop then change');
+    const run = await env.enqueue('Loop then change');
 
     await env.runOnce(env.worker());
 
@@ -103,7 +103,7 @@ describe('loop guidance (T5, context.loopGuidance)', () => {
   it('warns again instead of stopping when a different call starts repeating after a warning', async () => {
     const env = await guidedEnv();
     env.gateway.script.push(...repeated('a', 'a', 3), ...repeated('b', 'b', 4), textStep('never sent'));
-    const run = env.enqueue('Two loops');
+    const run = await env.enqueue('Two loops');
 
     await env.runOnce(env.worker());
 
@@ -115,7 +115,7 @@ describe('loop guidance (T5, context.loopGuidance)', () => {
   it('works at loopThreshold 2: a warning at the second identical call and a stop at the third', async () => {
     const env = await guidedEnv();
     env.gateway.script.push(...repeated('c', 'kx7same', 3), textStep('never sent'));
-    const run = env.enqueue('Loop', { limits: { loopThreshold: 2 } });
+    const run = await env.enqueue('Loop', { limits: { loopThreshold: 2 } });
 
     await env.runOnce(env.worker());
 
@@ -129,7 +129,7 @@ describe('loop guidance (T5, context.loopGuidance)', () => {
   it('works at loopThreshold 32: the stop needs 31 of the 32 kept groups', async () => {
     const env = await guidedEnv();
     env.gateway.script.push(...repeated('c', 'kx7same', 33), textStep('never sent'));
-    const run = env.enqueue('Loop', { limits: { loopThreshold: 32 } });
+    const run = await env.enqueue('Loop', { limits: { loopThreshold: 32 } });
 
     await env.runOnce(env.worker());
 
@@ -141,7 +141,7 @@ describe('loop guidance (T5, context.loopGuidance)', () => {
   it('lists the distinct calls of the kept groups in the guidance, without their output', async () => {
     const env = await guidedEnv();
     env.gateway.script.push(echo('b1', 'qz4before'), ...repeated('c', 'kx7same', 3), textStep('Done.'));
-    const run = env.enqueue('Loop after another call');
+    const run = await env.enqueue('Loop after another call');
 
     await env.runOnce(env.worker());
 
@@ -156,7 +156,7 @@ describe('loop guidance (T5, context.loopGuidance)', () => {
   it('keeps the old rule with guidance off: no warning, and a stop before the t-th call runs', async () => {
     const env = await makeEnv();
     env.gateway.script.push(...repeated('c', 'kx7same', 3), textStep('never sent'));
-    const run = env.enqueue('Loop');
+    const run = await env.enqueue('Loop');
 
     await env.runOnce(env.worker());
 

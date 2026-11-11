@@ -1,7 +1,8 @@
+import { nodeFileSystem, systemRandom } from '@momonga/foundation';
 import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, testProcessInspector } from '@momonga/testkit';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createToolExecutor } from '@momonga/tools';
+import { createToolExecutor, nodeShellHost } from '@momonga/tools';
 import { call, expectedSubjectDigest, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
 import { keyFor, ruleFor } from './helpers.ts';
@@ -19,7 +20,12 @@ const executorWhoseRecordVanishesAfterGet = (harness: Harness) => {
       return snapshot;
     },
   };
-  return createToolExecutor({ layout: momongaLayout(harness.layout.home, process.platform, process.env), reap: { inspector: testProcessInspector() }, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
+  return createToolExecutor({
+    layout: momongaLayout(harness.layout.home, process.platform, process.env),
+    reap: { inspector: testProcessInspector() },
+    shellHost: nodeShellHost(),
+    random: systemRandom,
+    files: nodeFileSystem, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
     idempotency: vanishingPort,
     blobs: harness.blobs.port,
     clock: harness.clock,

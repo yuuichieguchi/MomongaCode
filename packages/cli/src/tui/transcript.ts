@@ -14,7 +14,7 @@ import { isRecord } from '@momonga/foundation';
 import { appliedDiffOf } from './screen/diff.ts';
 import type { AppliedDiff, DiffFields } from './screen/diff.ts';
 import { EMPTY_USAGE } from './screen/store.ts';
-import { formatTokens } from './screen/footer.tsx';
+import { formatTokens } from '../format-tokens.ts';
 import { tailOf } from './screen/output-tail.ts';
 import type { OutputTail } from './screen/output-tail.ts';
 import { isPrompt } from '../run/prompt-event.ts';
@@ -325,10 +325,13 @@ const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
       appendEntry(store, { kind: 'notice', level: classificationLevel(event), text: escapeTerminalLine(describeClassification(event, toolOf(store, event.callId)?.title ?? event.callId)) });
       return;
     case 'tool.reconciled':
-      updateTool(store, event.callId, (tool) => ({
-        ...withOutput(tool, event.output, event.createdAt),
-        status: event.outcome === 'unknown' ? 'unknown' : event.outcome === 'already_applied' ? 'completed' : 'failed',
-      }));
+      updateTool(store, event.callId, (tool) => {
+        const settled: ToolEntry = {
+          ...withOutput(tool, event.output, event.createdAt),
+          status: event.outcome === 'unknown' ? 'unknown' : event.outcome === 'already_applied' ? 'completed' : 'failed',
+        };
+        return event.outcome === 'already_applied' ? withDiff(settled, event) : settled;
+      });
       return;
     case 'plan.updated':
       retirePlan(store, { kind: 'retired' });

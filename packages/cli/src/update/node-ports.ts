@@ -10,7 +10,7 @@ import {
   resolveLayoutLocks,
   inspectProcessLock,
   listGenerations,
-  nodeCommandRunner,
+  nodeBoundedCommandRunner,
   nodeDescriptorWriter,
   nodeFileSystem,
   sweepLeftovers,
@@ -189,7 +189,7 @@ export const nodeUpdateState = (paths: MomongaPaths, lock: KernelLockMechanism):
 export const nodeDaemonProbe = (paths: MomongaPaths, clock: CliClock, lock: KernelLockMechanism): DaemonProbe => ({
   running: async () => (await listGenerations(paths, { lock })).some((listed) => listed.live),
   retiring: async () => retiringWorkOf(await listLiveGenerations({ clock }, paths, { lock })),
-  restartBoundMs: () => daemonReadyBoundMs(),
+  readyBoundMs: () => daemonReadyBoundMs(),
 });
 
 const definedEnv = (env: Readonly<Record<string, string | undefined>>): Record<string, string> =>
@@ -205,11 +205,11 @@ export const nodeUpdatePorts = (ports: CliPorts, paths: MomongaPaths, lock: Kern
   clock: ports.clock,
   http: leasedUpdateHttp(ports),
   fs: nodeUpdateFs(lock),
-  run: nodeCommandRunner,
+  run: nodeBoundedCommandRunner,
   lock: nodeUpdateLock(paths, lock),
   state: nodeUpdateState(paths, lock),
   daemon: nodeDaemonProbe(paths, ports.clock, lock),
-  autoUpdates: async () => (await loadUserSettings({ home: ports.home })).settings.autoUpdates,
+  autoUpdates: async () => (await loadUserSettings({ home: ports.home, signal: ports.interrupt })).settings.autoUpdates,
   spawnDetached: ports.spawnDetached,
   stderr: ports.stderr,
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { startService, waitUntil } from './helpers.ts';
+import { startService, pollFor } from './helpers.ts';
 import type { StreamEvent } from './helpers.ts';
 
 const labelOf = (event: StreamEvent): string => (event.type === 'notice' ? String(event.message) : event.type === 'mode.changed' ? `mode:${String(event.mode)}` : event.type);
@@ -64,7 +64,7 @@ describe('session stream', () => {
     expect((await env.store.transition(claimB, ['CANCELLING'], 'CANCELLED')).kind).toBe('ok');
     const stream = await env.stream(`/v1/sessions/${session.id}/events`, { idField: 'id' });
     await stream.until((event) => event.type === 'run.status' && event.runId === runB.id && event.to === 'CANCELLED');
-    await waitUntil(() => env.notifier.subscriberCount() === 1, 5000, 'the session subscriber');
+    await pollFor(() => env.notifier.subscriberCount() === 1, 5000, 'the session subscriber');
 
     expect((await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { permissionMode: 'manual' } })).status).toBe(200);
 

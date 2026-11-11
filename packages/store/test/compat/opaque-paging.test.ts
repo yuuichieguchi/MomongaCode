@@ -6,10 +6,10 @@ import { appendForeignRunEvent, appendForeignSessionEvent, recordNewerMigration 
 const notices = (count: number, prefix: string): RunEventPayload[] => Array.from({ length: count }, (_, index) => ({ type: 'notice', level: 'info', message: `${prefix}${index + 1}` }));
 
 describe('a page of reads that holds an opaque event (H7, 11.4)', () => {
-  it('still returns limit known events while more exist, so a short page still means the end', () => {
+  it('still returns limit known events while more exist, so a short page still means the end', async () => {
     const { store, dbPath } = harness();
     const session = newSession(store);
-    const run = enqueue(store, session.id, 'task');
+    const run = await enqueue(store, session.id, 'task');
     const claim = mustClaim(store, 'w1');
     const db = rawDb(dbPath);
     recordNewerMigration(db);

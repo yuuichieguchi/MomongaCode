@@ -65,7 +65,7 @@ describe('pacedReapTiming (a fake clock paired with a real host operation)', () 
       });
     });
     child.kill('SIGKILL');
-    void timing.pairedWith(death);
+    void timing.pairedWith(() => death);
 
     const deadline = timing.now() + 50;
     let polls = 0;
@@ -82,12 +82,69 @@ describe('pacedReapTiming (a fake clock paired with a real host operation)', () 
   it('a real operation that failed no longer holds the sleep, and its failure stays with its owner', async () => {
     const clock = createFakeClock(0);
     const timing = pacedReapTiming(clock);
-    const read = timing.pairedWith(fs.promises.readFile('/nonexistent/paced-reap-timing'));
+    const read = timing.pairedWith(() => fs.promises.readFile('/nonexistent/paced-reap-timing'));
 
     await sleep(timing, 25);
     await sleep(timing, 25);
 
     await expect(read).rejects.toThrow(/ENOENT/);
     expect(timing.now()).toBe(50);
+  });
+
+  it('refuses a sleep made by the operation it is paired with, which could never end, and the refusal ends the operation', async () => {
+    const clock = createFakeClock(0);
+    const timing = pacedReapTiming(clock);
+    const operation = timing.pairedWith(async () => {
+      await Promise.resolve();
+      await sleep(timing, 25);
+    });
+
+    await expect(operation).rejects.toThrow(/paired with this timing/);
+    await sleep(timing, 25);
+    expect(timing.now()).toBe(25);
+  });
+
+  it('lets an operation paired with one timing sleep on another', async () => {
+    const clock = createFakeClock(0);
+    const timing = pacedReapTiming(clock);
+    const other = pacedReapTiming(createFakeClock(0));
+
+    await timing.pairedWith(() => sleep(other, 25));
+    await sleep(timing, 25);
+
+    expect(other.now()).toBe(25);
+    expect(timing.now()).toBe(25);
+  });
+
+  it('records each sleep when it is asked for, before the sleep waits', async () => {
+    const clock = createFakeClock(0);
+    const timing = pacedReapTiming(clock);
+    let release: () => void = () => undefined;
+    void timing.pairedWith(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+
+    const sleeping = Promise.all([sleep(timing, 25), sleep(timing, 100)]);
+    expect(timing.sleeps).toEqual([25, 100]);
+    release();
+    await sleeping;
+  });
+
+  it('fires the fake timers that fall inside a sleep, at their own time on the shared clock', async () => {
+    const clock = createFakeClock(0);
+    const timers = createFakeTimers(clock);
+    const timing = pacedReapTiming(clock, timers);
+    const fired: number[] = [];
+    timers.setTimeout(() => fired.push(clock.now()), 100);
+
+    await sleep(timing, 25);
+    expect(fired).toEqual([]);
+    await sleep(timing, 100);
+
+    expect(fired).toEqual([100]);
+    expect(timing.now()).toBe(125);
   });
 });

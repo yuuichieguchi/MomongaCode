@@ -30,13 +30,13 @@ describe('sandbox kind (system timers, none used)', () => {
     const f = await makeRuntimeFixture({ sandbox: createUnsandboxed({ killGraceMs: 300 }) });
     writeUserSettings(f.temp.home, {});
     const session = createSession(f.store, f.temp.project, { env: { PATH: '/usr/bin:/bin' } });
-    const runId = createRun(f.store, session.id);
+    const runId = await createRun(f.store, session.id);
 
     const { outcome } = await runBashThroughPort(f, session, runId, 'echo hi', 'bypassPermissions');
 
     expect(outcome.kind).toBe('needs_approval');
     if (outcome.kind !== 'needs_approval') return;
-    expect(outcome.decision).toEqual({ kind: 'ask', source: 'mode', reason: 'no sandbox is available: file deny rules are checked on the command text only, so command execution requires approval' });
+    expect(outcome.decision).toEqual({ kind: 'ask', source: 'mode', humanOnly: true, reason: 'no sandbox is available: file deny rules are checked on the command text only, so command execution requires approval' });
     expect(outcome.suggestedRule).toBeUndefined();
   });
 

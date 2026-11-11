@@ -101,7 +101,7 @@ describe('a declared server whose binary exists but cannot be read for its hash 
       binary,
       exec: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
       probeRecordDir,
-      target: 'workbench',
+      serverName: 'workbench',
       requestLimitMs: 300_000,
       isUsableBinary: async () => true,
       readKey,

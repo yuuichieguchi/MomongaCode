@@ -72,10 +72,10 @@ export type { SteppingTiming } from './stepping-timing.ts';
 export { DEFAULT_DRIVE_MAX_STEPS, driveFakeTime } from './drive-fake-time.ts';
 export type { DriveFakeTimeOptions } from './drive-fake-time.ts';
 export type { FakeTimers, PendingTimer } from './fake-timers.ts';
-export { afterMicrotasks, waitFor } from './wait-for.ts';
+export { afterMicrotasks, pollUntil, waitFor } from './wait-for.ts';
 export { createRealWorkScope, quiesce, settleRealWork, waitForRealWork } from './real-work.ts';
 export type { RealWorkScope } from './real-work.ts';
-export type { WaitForOptions } from './wait-for.ts';
+export type { PollUntilOptions, WaitForOptions } from './wait-for.ts';
 export { OPEN_RESPONSES_SPEC_URL, createOpenResponsesValidator, loadOpenResponsesSpec } from './open-responses-schema.ts';
 export type { OpenResponsesSpec, OpenResponsesValidator, SchemaCheck } from './open-responses-schema.ts';
 export { responseResource, textResponseEvents, usageOf } from './open-responses-fixtures.ts';
@@ -135,9 +135,8 @@ export {
   isUnderTestTempBase,
   registerCleanup,
   spawnTracked,
-  closeOnceStarted,
   createTempDir,
-  ownedStart,
+  registerOwned,
   removeTempDir,
   testTempBases,
   tempDirPrefixFor,
@@ -145,7 +144,7 @@ export {
   withTempDir,
   realProcessTestSignal,
 } from './test-support.ts';
-export type { CleanupContext, TempDirOptions, TrackedChild } from './test-support.ts';
+export type { CleanupContext, CleanupOwner, CleanupRegistrar, SettledBeforeCleanup, TempDirOptions, TrackedChild } from './test-support.ts';
 export { createFakeEntryIo, parseJsonLines } from './fake-entry-io.ts';
 export type { FakeEntryIo, FakeEntryIoOptions, JsonLine } from './fake-entry-io.ts';
 export { DAEMON_BIN_EXIT_DEADLINE_MS, DAEMON_BIN_READY_DEADLINE_MS, readJsonLinesFile, startDaemonBin } from './daemon-bin.ts';

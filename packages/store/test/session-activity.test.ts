@@ -6,7 +6,7 @@ describe('sessionActivity', () => {
     const { clock, store } = harness();
     const session = newSession(store);
     clock.advance(100);
-    enqueue(store, session.id, 'first');
+    await enqueue(store, session.id, 'first');
     clock.advance(250);
     const result = store.setPermissionMode(session.id, 'plan');
     if (result.kind !== 'ok') throw new Error('expected the mode change to apply');
@@ -19,7 +19,7 @@ describe('sessionActivity', () => {
     const quiet = newSession(store, '/work/quiet');
     const busy = newSession(store, '/work/busy');
     clock.advance(500);
-    enqueue(store, busy.id, 'busy');
+    await enqueue(store, busy.id, 'busy');
 
     expect(store.sessionActivity(quiet.id)).toEqual({ lastActivityAt: START_MS, hasActiveRun: false });
   });
@@ -36,7 +36,7 @@ describe('sessionActivity', () => {
   it('hasActiveRun tracks non-terminal runs', async () => {
     const { store } = harness();
     const session = newSession(store);
-    const run = enqueue(store, session.id, 'work');
+    const run = await enqueue(store, session.id, 'work');
     expect(store.sessionActivity(session.id)?.hasActiveRun).toBe(true);
 
     const claim = mustClaim(store, 'worker-1');
@@ -47,7 +47,7 @@ describe('sessionActivity', () => {
     if (completed.kind !== 'ok') throw new Error(`expected COMPLETED, got ${completed.kind}`);
     expect(store.sessionActivity(session.id)?.hasActiveRun).toBe(false);
 
-    const queued = enqueue(store, session.id, 'again');
+    const queued = await enqueue(store, session.id, 'again');
     expect(store.sessionActivity(session.id)?.hasActiveRun).toBe(true);
     expect((await cancelToEnd(store, queued.id)).status).toBe('CANCELLED');
     expect(store.sessionActivity(session.id)?.hasActiveRun).toBe(false);

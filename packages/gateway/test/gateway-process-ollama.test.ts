@@ -78,7 +78,7 @@ describe('an ollama target in a started gateway', () => {
 
     const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
     const entry = models.body.data.find((model: { id: string }) => model.id === 'fast');
-    const { settings } = await loadUserSettings({ home });
+    const { settings } = await loadUserSettings({ home, signal: new AbortController().signal });
     const target = settings.models.models.get(`local/${OLLAMA_LISTED}`);
     if (target === undefined) throw new Error('the settings resolved no local target');
 

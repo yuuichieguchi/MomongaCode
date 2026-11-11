@@ -162,6 +162,7 @@ export type HeldStart = { release(): void };
 
 export type StartOutcome =
   | { kind: 'allocated'; generation: number; starting: HeldStart }
+  | { kind: 'unallocated' }
   | { kind: 'joined'; generation: number }
   | { kind: 'serving'; generation: number; version: string }
   | { kind: 'older'; version: string }
@@ -173,6 +174,7 @@ export type BeginGenerationStartOptions = {
   foldVersion: number;
   lock: KernelLockMechanism;
   trigger?: StartTrigger;
+  allocation?: 'allowed' | 'withheld';
   draining?: number;
   files?: GenerationStartFiles;
   onProbeFailure?: LockProbeOptions['onProbeFailure'];
@@ -201,10 +203,11 @@ const allocate = async (
   options: BeginGenerationStartOptions,
   files: GenerationStartFiles,
   floor: number,
-): Promise<Extract<StartOutcome, { kind: 'allocated' }>> => {
+): Promise<Extract<StartOutcome, { kind: 'allocated' | 'unallocated' }>> => {
   const generation = ((await readGenerationCounter(paths, files)) ?? floor) + 1;
   if (!Number.isSafeInteger(generation)) throw new GenerationCounterError(paths.generationCounter, 'it is larger than a safe integer');
   await refuseUnfitGenerationSocketsBeforeCreation(paths, generation);
+  if (options.allocation === 'withheld') return { kind: 'unallocated' };
   try {
     await writeFileAtomically(files.atomic, systemRandom, paths.generationCounter, `${generation}\n`, { mode: GENERATION_COUNTER_MODE, lock: options.lock });
     await files.createGenerationDirs(paths, generation);
@@ -257,13 +260,9 @@ export const ABANDON_REASONS = ['directory-missing', 'record-missing', 'record-u
 
 export type AbandonReason = (typeof ABANDON_REASONS)[number];
 
-export const ABANDON_REASON_TEXTS: Readonly<Record<AbandonReason, string>> = {
-  'directory-missing': 'its directory was removed',
-  'record-missing': 'its start record is missing',
-  'record-unreadable': 'its start record cannot be read',
-  'version-differs': 'the installed program is another version',
-  'lock-held': 'another process holds its lock',
-};
+export const START_FAILURE_REASONS = [...ABANDON_REASONS, 'stopped-before-ready', 'exited-before-ready', 'launch-failed', 'older-started-first'] as const;
+
+export type StartFailureReason = (typeof START_FAILURE_REASONS)[number];
 
 export type GenerationClaim = { kind: 'claimed'; lock: ProcessLock } | { kind: 'abandoned'; reason: AbandonReason } | { kind: 'busy' };
 

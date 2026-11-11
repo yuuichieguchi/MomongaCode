@@ -85,14 +85,12 @@ describe('sign-in complete installs a validated identity (P5b, 5.3)', () => {
     await gateway.close();
   });
 
-  it('asks a returning account with its saved client id, id_token_hint and login_hint, and no agent_name_hint', async () => {
+  it('asks a returning account with its saved client id and no agent_name_hint', async () => {
     const gateway = await startPlanGateway();
     const { callback } = await signIn(gateway);
     const returning = await begin(gateway);
     const params = new URL(returning.body.authorizationUrl).searchParams;
     expect(params.get('client_id')).toBe(callback.searchParams.get('client_id'));
-    expect(params.get('id_token_hint')).toMatch(/^[\w-]+\.[\w-]+\.[\w-]+$/);
-    expect(params.get('login_hint')).toBe(gateway.auth.identity.email);
     expect(params.has('agent_name_hint')).toBe(false);
     await gateway.close();
   });
@@ -295,7 +293,8 @@ describe('the five sign-in failures settled in O-R5-4', () => {
     expect(second.completed.body).toMatchObject({ outcome: 'signed_in' });
     gateway.auth.subjectOverride = undefined;
     held.release();
-    expect(failureOf(await firstCompleting)).toEqual({
+    expect((await firstCompleting).body).toMatchObject({ outcome: 'identity_unconfirmed' });
+    expect(failureOf(await gateway.post(PLAN_ROUTES.signInComplete, { attemptId: first.body.attemptId, identityConfirmed: true }))).toEqual({
       status: 409,
       type: 'invalid_request',
       code: 'registration_superseded',

@@ -13,9 +13,9 @@ export const observedViewOf = async (store: ObservingStore, record: MemoryRecord
   return { ...record, observedStatus: status, status };
 };
 
-export const observedViewsOf = async (store: ObservingStore, records: readonly MemoryRecord[], contextOf: (record: MemoryRecord) => MemoryStatusContext): Promise<MemoryView[]> => {
+export const observedViewsOf = async (store: ObservingStore, records: readonly MemoryRecord[], contextOf: (record: MemoryRecord) => MemoryStatusContext | Promise<MemoryStatusContext>): Promise<MemoryView[]> => {
   const views: MemoryView[] = [];
-  for (const record of records) views.push(await observedViewOf(store, record, contextOf(record)));
+  for (const record of records) views.push(await observedViewOf(store, record, await contextOf(record)));
   return views;
 };
 
@@ -46,12 +46,15 @@ export type RecordViewsOptions = {
 export const createRecordViews = (options: RecordViewsOptions): RecordViews => {
   const portsFor = options.evidencePorts ?? createEvidencePorts;
   const reading = (signal: AbortSignal): RecordViewsReading => {
-    const contexts = new Map<string, MemoryStatusContext>();
-    const contextOf = (project: string): MemoryStatusContext => {
+    const contexts = new Map<string, Promise<MemoryStatusContext>>();
+    const createContext = async (project: string): Promise<MemoryStatusContext> => {
+      const trusted = (await options.store.trust.decisionAsked(project, signal)).decision === 'trusted';
+      return { project, trusted, ports: portsFor({ project, trusted, run: options.evidenceRun(project), signal }) };
+    };
+    const contextOf = (project: string): Promise<MemoryStatusContext> => {
       const known = contexts.get(project);
       if (known !== undefined) return known;
-      const trusted = options.store.trust.decisionFor(project).decision === 'trusted';
-      const created = { project, trusted, ports: portsFor({ project, trusted, run: options.evidenceRun(project), signal }) };
+      const created = createContext(project);
       contexts.set(project, created);
       return created;
     };

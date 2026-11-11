@@ -256,7 +256,7 @@ describe('run event payloads', () => {
       content?: unknown[];
       truncated?: boolean;
       handle?: string;
-      denial?: { source: 'sandbox' | 'rule' | 'mode' | 'hook' | 'mandate' | 'held'; reason: string };
+      denial?: { source: 'sandbox' | 'rule' | 'mode' | 'setting' | 'hook' | 'mandate' | 'superseded' | 'held'; reason: string };
       files?: { path: string; sha256?: string; access: 'read' | 'write' | 'remove' }[];
       mutated?: true;
       command?: string;
@@ -290,6 +290,10 @@ describe('run event payloads', () => {
       files?: { path: string; sha256?: string; access: 'read' | 'write' | 'remove' }[];
       command?: string;
       effect?: { operation: string; target: string; outcome: 'applied' | 'already_applied' | 'failed' | 'unknown' };
+      hunks?: { oldStart: number; newStart: number; lines: string[] }[];
+      added?: number;
+      removed?: number;
+      diffOmitted?: string;
     }>();
   });
 

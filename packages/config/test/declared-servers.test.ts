@@ -21,13 +21,13 @@ const declaring = (servers: Record<string, unknown>, targets: Record<string, Rec
 const loadUser = async (models: Record<string, unknown>) => {
   const tree = makeTree();
   const file = userFile(tree, models);
-  return { tree, file, loaded: await loadUserSettings({ home: tree.home }) };
+  return { tree, file, loaded: await loadUserSettings({ home: tree.home, signal: new AbortController().signal }) };
 };
 
 const refusalOf = async (models: Record<string, unknown>): Promise<string> => {
   const tree = makeTree();
   userFile(tree, models);
-  const outcome = await loadUserSettings({ home: tree.home }).then(
+  const outcome = await loadUserSettings({ home: tree.home, signal: new AbortController().signal }).then(
     () => undefined,
     (error: unknown) => (error as Error).message,
   );

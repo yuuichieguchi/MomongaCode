@@ -5,7 +5,7 @@ import type { RuntimeClient } from '../src/client/runtime-client.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { EXIT_INTERRUPTED } from '@momonga/foundation';
 import { runHeadless, watchRun } from '../src/run/headless.ts';
-import { recordingSpawn, virtualClock } from './fake-supervisor.ts';
+import { installedProgram, recordingSpawn, virtualClock } from './fake-supervisor.ts';
 import { capabilitiesOf, runView } from './fake-backend.ts';
 
 describe('an interrupt that arrives before the run is followed', () => {
@@ -22,6 +22,7 @@ describe('an interrupt that arrives before the run is followed', () => {
       clock: virtualClock(),
       self: { kind: 'single-binary', execPath: '/opt/momonga' },
       spawnDetached: spawn,
+      ...installedProgram('1.0.0').ports,
       stdout: { write: () => undefined },
       stderr: { write: () => undefined },
     } as unknown as CliPorts;
@@ -50,7 +51,7 @@ describe('an interrupt that arrives before the run is followed', () => {
     const interrupt = new AbortController();
     interrupt.abort();
 
-    const code = await watchRun(ports, paths, { client, runId: 'run-1', format: 'text', verbose: false, interrupt: interrupt.signal });
+    const code = await watchRun(ports, paths, { client, runId: 'run-1', format: 'text', verbose: false, interrupt: interrupt.signal, onInterrupt: 'cancel' });
 
     expect(cancelled).toEqual(['run-1']);
     expect(code).toBe(EXIT_INTERRUPTED);

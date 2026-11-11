@@ -8,7 +8,7 @@ import { responseResource } from '@momonga/testkit';
 import { streamModel } from '../../src/worker/model-stream.ts';
 import type { ClaimContext } from '../../src/worker/claim-context.ts';
 import { fatalStoreError } from './cancel-fixture.ts';
-import { deferred, within } from './deferred.ts';
+import { deferred } from './deferred.ts';
 import { LEASE_MS, bodyDigest, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { MODEL_ID, textStep } from './scripts.ts';
@@ -53,7 +53,7 @@ const journaledText = (env: Env, runId: string): string =>
 describe('partial assistant text on an interrupted stream', () => {
   it('flushes the buffered deltas when the stream fails, so the journal holds the complete received text', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Talk');
+    const run = await env.enqueue('Talk');
     const gateway = partialGateway(env, ['Hello ', 'wor', 'ld'], async () => {
       throw new GatewayRequestError({ status: 0, type: 'transport', code: 'stream_interrupted', message: 'the gateway stream was interrupted: other side closed' });
     });
@@ -67,14 +67,14 @@ describe('partial assistant text on an interrupted stream', () => {
 
   it('flushes the buffered deltas when the run is cancelled mid-stream', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Talk');
+    const run = await env.enqueue('Talk');
     const gateway = partialGateway(env, ['Partial ', 'answer'], async (signal) => {
       await env.store.requestCancel(run.id);
       await untilAborted(signal);
       throw new Error('The operation was aborted');
     });
 
-    await within(env.runOnce(env.worker('worker-1', { gateway, cancelPollMs: 5 })), 5_000, 'the cancelled claim to settle');
+    await env.settled(env.runOnce(env.worker('worker-1', { gateway, cancelPollMs: 5 })), 'the cancelled claim to settle');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(journaledText(env, run.id)).toBe('Partial answer');
@@ -82,7 +82,7 @@ describe('partial assistant text on an interrupted stream', () => {
 
   it('appends nothing and does not throw when the lease is lost during the stream', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Talk');
+    const run = await env.enqueue('Talk');
     const stolen = deferred<number>();
     let stolenFlag = false;
     const appendsAfterSteal: unknown[] = [];
@@ -103,8 +103,8 @@ describe('partial assistant text on an interrupted stream', () => {
     });
 
     const running = env.runOnce(env.worker('worker-1', { gateway, heartbeatMs: 10, store }));
-    const stolenAtSeq = await within(stolen.promise, 5_000, 'the lease to be stolen');
-    await expect(within(running, 5_000, 'the first worker to stop after losing its lease')).resolves.toBe('yielded');
+    const stolenAtSeq = await env.settled(stolen.promise, 'the lease to be stolen');
+    await expect(env.settled(running, 'the first worker to stop after losing its lease')).resolves.toBe('yielded');
 
     expect(env.run(run.id)).toMatchObject({ status: 'RUNNING', leaseOwner: 'worker-thief', lastSeq: stolenAtSeq });
     expect(env.ofType(run.id, 'agent.message.delta')).toEqual([]);
@@ -114,7 +114,7 @@ describe('partial assistant text on an interrupted stream', () => {
 
   it('propagates a fatal store error raised by the abort flush to the worker and does not requeue', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Talk');
+    const run = await env.enqueue('Talk');
     const fatal = fatalStoreError();
     const store: RuntimeStore = {
       ...env.store,
@@ -176,7 +176,7 @@ describe('partial assistant text on an interrupted stream', () => {
 
   it('clears the partial text when recovery restarts the stream', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const body = { model: 'fm', input: [{ type: 'message', role: 'user', content: 'Work' }], store: false, stream: true };
     const seeded: RunEventPayload[] = [
       { type: 'model.requested', step: 1, attempt: 1, digest: bodyDigest(body), body },
@@ -201,7 +201,7 @@ describe('partial assistant text on an interrupted stream', () => {
 
   it('still restarts a recovered stream that emitted only reasoning before the crash', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const body = { model: 'fm', input: [{ type: 'message', role: 'user', content: 'Work' }], store: false, stream: true };
     await env.seed(
       run.id,

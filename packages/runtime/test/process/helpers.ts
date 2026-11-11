@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach } from 'vitest';
 import { createUserSettingsCache, diskKeptRecords, keptSettingsDirectory } from '@momonga/config';
 import type { UserSettingsCache } from '@momonga/config';
-import { DEFAULT_STOP_VALUES, FIRST_GENERATION, mcpPoolCloseBoundMs, claimPathOf, ensureMomongaDirs, fixedRolePort, momongaPaths, nodeFileSystemSync, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, FIRST_GENERATION, mcpPoolCloseBoundMs, claimPathOf, ensureMomongaDirs, fixedRolePort, momongaPaths, nodeFileSystem, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { JsonLogger, LogFields, MomongaPaths, Timing, RolePort, SessionScratch } from '@momonga/foundation';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
@@ -11,7 +11,7 @@ import type { RunNotifier, SettingsComposition, ToolRuntime } from '@momonga/run
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
-import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, UNCONFIGURED_NETWORK, createFakeClock, closeOnceStarted, createFakeTimers, createTempDir, driveFakeTime, fakeReapTiming, killGroupsForCleanup, modelSettings, removeTempDir, NEVER_CANCELLED, testKernelLock, testLocks } from '@momonga/testkit';
+import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, UNCONFIGURED_NETWORK, createFakeClock, createFakeTimers, createTempDir, driveFakeTime, fakeReapTiming, killGroupsForCleanup, modelSettings, removeTempDir, NEVER_CANCELLED, testKernelLock, testLocks } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { fixedSandboxBindings } from '@momonga/runtime';
@@ -41,11 +41,6 @@ afterEach(async () => {
 });
 
 export const onCleanup = (cleanup: Cleanup): void => void cleanups.push(cleanup);
-
-export const closedAtCleanup = <Handle extends { close: () => Promise<unknown> }>(started: Promise<Handle>): Promise<Handle> => {
-  onCleanup(closeOnceStarted(started));
-  return started;
-};
 
 export type TempHome = { root: string; home: string; paths: MomongaPaths; project: string; dbPath: string };
 
@@ -91,18 +86,20 @@ export const chatTargetSettings = (apiKeyEnv: string): Record<string, unknown> =
 export type CountingCache = UserSettingsCache & { snapshots: number };
 
 export const makeCache = (home: string): CountingCache => {
-  const inner = createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(home), testKernelLock()) });
+  const inner = createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: diskKeptRecords(nodeFileSystem, systemRandom, keptSettingsDirectory(home), testKernelLock()) });
   const cache: CountingCache = {
     snapshots: 0,
     get: () => inner.get(),
     kept: inner.kept,
-    read: () => {
+    read: () => inner.read(),
+    snapshot: () => inner.snapshot(),
+    load: (signal) => {
       cache.snapshots += 1;
-      return inner.read();
+      return inner.load(signal);
     },
-    snapshot: () => {
+    loadOrKeep: (signal) => {
       cache.snapshots += 1;
-      return inner.snapshot();
+      return inner.loadOrKeep(signal);
     },
   };
   return cache;
@@ -112,7 +109,7 @@ export type StoreFixture = { store: RuntimeStore; notifier: RunNotifier; clock: 
 
 export const openStore = (temp: TempHome, clock: FakeClock = createFakeClock(START_MS)): StoreFixture => {
   const notifier = runtime.createRunNotifier();
-  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS,
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: temp.dbPath,
     home: temp.home,
     clock,
@@ -139,8 +136,8 @@ export const createSession = (
     ...(extra.mcpServers === undefined ? {} : { mcpServers: extra.mcpServers }),
   });
 
-export const createRun = (store: RuntimeStore, sessionId: string): string => {
-  const result = store.createRunAndEnqueue(sessionId, { input: 'hello', timeoutMs: 3_600_000, limits: {}, pins: {} }) as { run?: { id: string } };
+export const createRun = async (store: RuntimeStore, sessionId: string): Promise<string> => {
+  const result = (await store.createRunAndEnqueue(sessionId, { input: 'hello', timeoutMs: 3_600_000, limits: {}, pins: {} })) as { run?: { id: string } };
   const id = result.run?.id;
   if (id === undefined) throw new Error(`run was not created: ${JSON.stringify(result)}`);
   return id;
@@ -263,6 +260,8 @@ export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): P
   const temp = options.temp ?? (await makeTempHome());
   const fixture = openStore(temp);
   const cache = makeCache(temp.home);
+  await cache.load(new AbortController().signal);
+  cache.snapshots = 0;
   const logger = makeLogger();
   const reporter = makeReporter();
   const pools = makeFakePoolFactory();
@@ -347,7 +346,7 @@ export const runBashThroughPort = async (
 ) => {
   const port = f.toolRuntime.port;
   const signal = signalNever();
-  const env = port.envFor(session);
+  const env = await port.envFor(session, signalNever());
   const binding = (await port.sandboxes.acquire(signal)).value;
   const policy = await port.policyFor(session, { signal: NEVER_CANCELLED, env, rules: [], ruleEnforcement: binding.ruleEnforcement });
   const toolSet = await port.toolSet(runId, { signal, env });

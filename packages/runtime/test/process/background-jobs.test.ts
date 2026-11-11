@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { canonicalJson, createUninspectableRegistry, sha256Hex, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
+import { canonicalJson, createUninspectableRegistry, nodeFileSystem, sha256Hex, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { SandboxExit, SandboxedProcess } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { Run, RuntimeStore } from '@momonga/store';
@@ -11,7 +11,7 @@ import { createBackgroundJobs, createNodeJobMarkerFiles } from '@momonga/runtime
 import type { BackgroundJobRegistry } from '@momonga/runtime';
 import { JOB_END_PROBE_MS } from '../../src/process/constants.ts';
 import { createJobOutput } from '../../src/process/job-output.ts';
-import { createMarkerOwners, unsettledKeys } from '@momonga/tools';
+import { createLineFilter, createMarkerOwners, unsettledKeys } from '@momonga/tools';
 import { jobGenerationOptions } from './job-fixture.ts';
 import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
@@ -74,16 +74,16 @@ afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
-const setup = (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}, extra: Record<string, unknown> = {}) => {
+const setup = async (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}, extra: Record<string, unknown> = {}) => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-jobs-')));
   roots.push(root);
   const markerDir = path.join(root, 'markers');
   fs.mkdirSync(markerDir);
   const clock = createFakeClock(START_MS);
   const timers = createFakeTimers(clock);
-  const store: RuntimeStore = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS, path: path.join(root, 'runtime.db'), home: root, clock, leaseMs: 1000, maxAttempts: 5, maxTotalAttempts: 50 });
+  const store: RuntimeStore = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: path.join(root, 'runtime.db'), home: root, clock, leaseMs: 1000, maxAttempts: 5, maxTotalAttempts: 50 });
   const session = store.createSession({ cwd: root, env: {}, permissionMode: 'manual', model: 'fm' });
-  const created = store.createRunAndEnqueue(session.id, { input: 'go', timeoutMs: 3_600_000, limits: {}, pins: {} });
+  const created = await store.createRunAndEnqueue(session.id, { input: 'go', timeoutMs: 3_600_000, limits: {}, pins: {} });
   if (created.kind !== 'created') throw new Error('expected a run');
   const run: Run = created.run;
   const warnings: string[] = [];
@@ -164,7 +164,7 @@ describe('the job output window', () => {
 
 describe('background jobs', () => {
   it('starts a job once per call, records its process and keeps its marker while it runs', async () => {
-    const t = setup();
+    const t = await setup();
     const { jobId } = await t.start('call-1');
     expect(jobId).toMatch(/^bash_[0-9a-f]{12}$/);
     expect((await t.start('call-1')).jobId).toBe(jobId);
@@ -180,7 +180,7 @@ describe('background jobs', () => {
   });
 
   it('reads new output incrementally while the job runs and from the stored blob afterwards', async () => {
-    const t = setup();
+    const t = await setup();
     const { jobId } = await t.start('call-1');
     const process = t.spawned[0] as FakeProcess;
     await Promise.all([process.stdoutStream.write('first\n'), process.stderrStream.write('oops\n')]);
@@ -204,7 +204,7 @@ describe('background jobs', () => {
   });
 
   it('returns the same bytes when a read is replayed by its call after a crash, and new bytes for the next call', async () => {
-    const t = setup();
+    const t = await setup();
     const { jobId } = await t.start('call-1');
     const process = t.spawned[0] as FakeProcess;
     await process.stdoutStream.write('first\n');
@@ -217,18 +217,32 @@ describe('background jobs', () => {
   });
 
   it('filters new output by line and discards the lines it drops', async () => {
-    const t = setup();
+    const t = await setup();
     const { jobId } = await t.start('call-1');
     const process = t.spawned[0] as FakeProcess;
     await process.stdoutStream.write('ok 1\nERROR a\nok 2\nERROR b\n');
-    expect((await t.jobs.read(t.run.id, jobId, { call: 'read-5', filter: /ERROR/ })).output).toBe('ERROR a\nERROR b');
+    expect((await t.jobs.read(t.run.id, jobId, { call: 'read-5', keep: createLineFilter('ERROR', {}) })).output).toBe('ERROR a\nERROR b');
     expect((await t.jobs.read(t.run.id, jobId, { call: 'read-6' })).output).toBe('');
     process.exit({ code: 0, signal: null });
     await t.settled(jobId);
   });
 
+  it('leaves the new output unread when the line filter refuses it', async () => {
+    const t = await setup();
+    const { jobId } = await t.start('call-1');
+    const process = t.spawned[0] as FakeProcess;
+    await process.stdoutStream.write('ok 1\nERROR a\n');
+    const refusing = async (): Promise<readonly string[]> => {
+      throw new Error('the pattern is too costly to match');
+    };
+    await expect(t.jobs.read(t.run.id, jobId, { call: 'read-5', keep: refusing })).rejects.toThrow('the pattern is too costly to match');
+    expect((await t.jobs.read(t.run.id, jobId, { call: 'read-6' })).output).toBe('ok 1\nERROR a');
+    process.exit({ code: 0, signal: null });
+    await t.settled(jobId);
+  });
+
   it('kills a running job, records it as stopped and reports how it ended', async () => {
-    const t = setup();
+    const t = await setup();
     const { jobId } = await t.start('call-1');
     const killed = await t.jobs.kill(t.run.id, jobId);
     expect(killed).toMatchObject({ kill: 'stopped', view: { id: jobId, status: 'killed', signal: 'SIGTERM' } });
@@ -237,7 +251,7 @@ describe('background jobs', () => {
   });
 
   it('stops a job at its time limit', async () => {
-    const t = setup();
+    const t = await setup();
     const { jobId } = await t.start('call-1', 'sleep 30', 5000);
     t.timers.advance(4999);
     expect(t.spawned[0]?.signal.aborted).toBe(false);
@@ -247,7 +261,7 @@ describe('background jobs', () => {
   });
 
   it('stops every live job at shutdown', async () => {
-    const t = setup();
+    const t = await setup();
     const first = await t.start('call-1');
     const second = await t.start('call-2');
     await t.jobs.stopAll();
@@ -256,7 +270,7 @@ describe('background jobs', () => {
   });
 
   it('terminates processes that outlive the job and says so in the output', async () => {
-    const t = setup();
+    const t = await setup();
     t.holders.push(777);
     const { jobId } = await t.start('call-1');
     t.spawned[0]?.exit({ code: 0, signal: null });
@@ -266,7 +280,7 @@ describe('background jobs', () => {
   });
 
   it('counts only the holders the reap proved and signalled, and names the ones it left alone', async () => {
-    const t = setup({
+    const t = await setup({
       reconcileProcessGroup: async () => ({ outcome: 'unknown', output: '', stopped: false, stoppedHolders: [], leftAlonePids: [777], unsignalledPids: [] }),
     });
     t.holders.push(777);
@@ -286,7 +300,7 @@ describe('background jobs', () => {
   };
 
   it('names a process that could not be inspected through the warning path, once for each job', async () => {
-    const t = setup(reportingSshd);
+    const t = await setup(reportingSshd);
     const jobIds: string[] = [];
     for (const key of ['call-1', 'call-2']) {
       const { jobId } = await t.start(key);
@@ -300,7 +314,7 @@ describe('background jobs', () => {
   });
 
   it('finishes a job as unknown, never as exited, when a process could not be inspected, and does not count it as terminated', async () => {
-    const t = setup(reportingSshd);
+    const t = await setup(reportingSshd);
     const { jobId } = await t.start('call-1');
     t.spawned[0]?.exit({ code: 0, signal: null });
     await t.settled(jobId);
@@ -314,7 +328,7 @@ describe('background jobs', () => {
     ['looking up the holders of the marker', { findHolders: async () => { throw new Error('lsof is unavailable'); } }, 'lsof is unavailable'],
     ['storing the output', {}, 'the blob store is full'],
   ])('finishes the job as unknown, reports the error and frees its slot when %s fails', async (_label, probes, message) => {
-    const t = setup(probes);
+    const t = await setup(probes);
     if (message === 'the blob store is full') {
       t.store.blobs.put = () => {
         throw new Error(message);
@@ -338,10 +352,10 @@ describe('background jobs', () => {
   });
 
   it('refuses a job id that belongs to another session tree', async () => {
-    const t = setup();
+    const t = await setup();
     const { jobId } = await t.start('call-1');
     const other = t.store.createSession({ cwd: t.root, env: {}, permissionMode: 'manual', model: 'fm' });
-    const created = t.store.createRunAndEnqueue(other.id, { input: 'x', timeoutMs: 1000, limits: {}, pins: {} });
+    const created = await t.store.createRunAndEnqueue(other.id, { input: 'x', timeoutMs: 1000, limits: {}, pins: {} });
     if (created.kind !== 'created') throw new Error('expected a run');
     expect(() => t.jobs.status(created.run.id, jobId)).toThrow(`Unknown job ${jobId}`);
     await expect(t.jobs.kill(created.run.id, jobId)).rejects.toThrow('Unknown job');
@@ -349,14 +363,14 @@ describe('background jobs', () => {
   });
 
   it('limits the running jobs of one session', async () => {
-    const t = setup();
+    const t = await setup();
     for (let index = 0; index < 8; index += 1) await t.start(`call-${index}`);
     await expect(t.start('call-8')).rejects.toThrow('already has 8 running background jobs');
     await t.jobs.stopAll();
   });
 
   it('records a job whose process could not be spawned as unknown and passes the error on', async () => {
-    const t = setup();
+    const t = await setup();
     await expect(
       t.jobs.start({
         runId: t.run.id,
@@ -374,7 +388,7 @@ describe('background jobs', () => {
   });
 
   it('wakes a run that waits on the job when the job ends', async () => {
-    const t = setup();
+    const t = await setup();
     const claim = t.store.claim('w1');
     if (claim === null) throw new Error('expected a claim');
     const { jobId } = await t.start('call-1');
@@ -386,7 +400,7 @@ describe('background jobs', () => {
   });
 
   it('reconciles the jobs a dead runtime left running as unknown, once, without guessing an outcome', async () => {
-    const t = setup();
+    const t = await setup();
     const { jobs: store } = t.store;
     const started = store.start({ id: 'bash_orphan000000', idemKey: 'k'.repeat(64), sessionId: t.run.sessionId, runId: t.run.id, callId: 'c', command: 'sleep 99' });
     store.attachProcess(started.job.id, 5151);
@@ -409,7 +423,7 @@ describe('a job that is still starting is owned by its starter', () => {
   it('a reconcile that runs between the row insert and the end of the start leaves the job alone, and the start completes', async () => {
     const nodeMarkerFiles = createNodeJobMarkerFiles();
     const hook: { duringStart: () => Promise<void> } = { duringStart: async () => undefined };
-    const t = setup(
+    const t = await setup(
       {},
       {
         markerFiles: {
@@ -441,7 +455,7 @@ describe('a job that is still starting is owned by its starter', () => {
 
 describe('the output file of a job follows its row', () => {
   it('a file a crash left with no row does not stop the same call from starting after a restart, and the job does not show the old bytes', async () => {
-    const t = setup();
+    const t = await setup();
     const jobId = `bash_${sha256Hex(canonicalJson(['call-1', 'background'])).slice(0, 12)}`;
     const leftover = path.join(t.root, 'jobs', `${jobId}.out`);
     fs.writeFileSync(leftover, 'bytes of the start that crashed\n', { mode: 0o600 });
@@ -456,7 +470,7 @@ describe('the output file of a job follows its row', () => {
   });
 
   it('a file that a row names is not removed: the start is refused and the file keeps its bytes', async () => {
-    const t = setup();
+    const t = await setup();
     const jobId = `bash_${sha256Hex(canonicalJson(['call-1', 'background'])).slice(0, 12)}`;
     const named = path.join(t.root, 'jobs', `${jobId}.out`);
     fs.writeFileSync(named, 'bytes of another job\n', { mode: 0o600 });
@@ -476,7 +490,7 @@ describe('the check of the processes at the end of a job has its own bound', () 
       asked = resolve;
     });
     const probeSignals: AbortSignal[] = [];
-    const t = setup({
+    const t = await setup({
       findHolders: (_marker, { signal }) => {
         probeSignals.push(signal);
         asked();
@@ -509,7 +523,7 @@ describe('the check of the processes at the end of a job has its own bound', () 
 
   it('the bound is the decided 120 s and no timer of it stays after a job that ended in time', async () => {
     expect(JOB_END_PROBE_MS).toBe(120_000);
-    const t = setup();
+    const t = await setup();
     const { jobId } = await t.start('call-1');
     t.spawned[0]?.exit({ code: 0, signal: null });
     await t.settled(jobId);
@@ -521,7 +535,7 @@ describe('the check of the processes at the end of a job has its own bound', () 
 describe('T16 (a) a live background job owns its marker (PT 3H rule 4: "A marker is owned while a live owner holds it")', () => {
   it('while the job runs its marker is not unsettled and nothing signals it; at its end a held marker becomes unsettled', async () => {
     const owners = createMarkerOwners();
-    const t = setup({}, { owners });
+    const t = await setup({}, { owners });
     const { jobId } = await t.start('call-1');
     const key = t.store.jobs.get(jobId)?.idemKey ?? '';
     expect(fs.existsSync(path.join(t.markerDir, key))).toBe(true);
@@ -551,7 +565,7 @@ describe('a finished job removes its marker only once the marker reads free', ()
   it('keeps the marker of a job whose marker is still held with nobody named, and leaves it to the next occasion', async () => {
     const owners = createMarkerOwners();
     const { probes, read } = readingState('held');
-    const t = setup(probes, { owners });
+    const t = await setup(probes, { owners });
     const { jobId } = await t.start('call-1');
     const key = t.store.jobs.get(jobId)?.idemKey ?? '';
     t.spawned[0]?.exit({ code: 0, signal: null });
@@ -563,7 +577,7 @@ describe('a finished job removes its marker only once the marker reads free', ()
 
   it('removes the marker of a finished job whose marker reads free', async () => {
     const { probes, read } = readingState('free');
-    const t = setup(probes);
+    const t = await setup(probes);
     const { jobId } = await t.start('call-1');
     const key = t.store.jobs.get(jobId)?.idemKey ?? '';
     t.spawned[0]?.exit({ code: 0, signal: null });

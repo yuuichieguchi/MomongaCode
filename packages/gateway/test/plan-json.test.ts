@@ -8,7 +8,6 @@ import { readActivePointer } from '../src/plan/active-account.ts';
 import { catalogKey, createPlanCatalog } from '../src/plan/catalog.ts';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
 import { NOT_VALID_JSON, parsePlanJson } from '../src/plan/plan-json.ts';
-import { fakeAuth } from './plan-auth-support.ts';
 import { PROFILE_ID, recordKey, signedIn, startHarness } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 
@@ -111,7 +110,7 @@ describe('each of the four stored plan files that fails the parser for any reaso
       outbound: () => Promise.reject(new Error('the stored record is refused before any send')),
       sleep: () => Promise.resolve(),
     });
-    const failure = await rejectionOf(catalog.read({ profile: h.profile, account: 'work', refresh: false, auth: fakeAuth(), signal: signal() }));
+    const failure = await rejectionOf(catalog.record(PROFILE_ID, 'work', signal()));
     expect(failure).toMatchObject({ code: 'plan_store_unreadable', message: `the plan model list of ${PROFILE_ID} account work cannot be read: the plan catalog record is not valid JSON` });
   });
 

@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createUserSettingsCache, noKeptRecords } from '@momonga/config';
+import { ConfigError, createKeptSettings, noKeptRecords, userSettingsOfText } from '@momonga/config';
 import type { UserSettingsCache, UserSettingsSnapshot } from '@momonga/config';
-import { FIRST_GENERATION, createJsonLogger, generationLayout, momongaPaths, roleEndpoint } from '@momonga/foundation';
+import { FIRST_GENERATION, answeredNow, createJsonLogger, generationLayout, momongaPaths, roleEndpoint, syncPaths } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { createFakeClock, createFakeKernelLock, createFakeTimers, parseJsonLines, withTempDir, testProcessInspector } from '@momonga/testkit';
 import type { CleanupContext, FakeClock, FakeKernelLock, FakeTimers, JsonLine } from '@momonga/testkit';
@@ -45,7 +45,18 @@ export type SettingsDouble = UserSettingsCache & {
   script: ((real: () => UserSettingsSnapshot) => UserSettingsSnapshot) | undefined;
 };
 
-export const settingsDouble = (real: UserSettingsCache): SettingsDouble => {
+export const settingsOnDisk = (home: string): UserSettingsSnapshot => {
+  const file = momongaPaths(home, process.platform, {}).settingsFile;
+  try {
+    return answeredNow(userSettingsOfText(home, fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined), syncPaths);
+  } catch (error) {
+    if (error instanceof ConfigError) return { error };
+    throw error;
+  }
+};
+
+export const settingsDouble = (home: string, onWarning: (message: string) => void): SettingsDouble => {
+  const real = (): UserSettingsSnapshot => settingsOnDisk(home);
   const double: SettingsDouble = {
     snapshotCalls: 0,
     getCalls: 0,
@@ -58,12 +69,14 @@ export const settingsDouble = (real: UserSettingsCache): SettingsDouble => {
       double.getCalls += 1;
       throw new Error('the supervisor must never call read() on the settings cache');
     },
-    kept: real.kept,
+    kept: createKeptSettings({ records: noKeptRecords, onWarning }),
     snapshot: () => {
       double.snapshotCalls += 1;
       const script = double.script;
-      return script === undefined ? real.snapshot() : script(() => real.snapshot());
+      return script === undefined ? real() : script(real);
     },
+    load: async () => double.snapshot(),
+    loadOrKeep: async () => double.read(),
   };
   return double;
 };
@@ -77,7 +90,6 @@ export type ManagerHarness = {
   timers: FakeTimers;
   port: FakeSpawnPort;
   settings: SettingsDouble;
-  realSettings: UserSettingsCache;
   warnings: string[];
   reapCalls: ReapCall[];
   reapResult: () => Promise<{ removed: boolean }>;
@@ -120,8 +132,7 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
   const timers = createFakeTimers(clock);
   const port = createFakeSpawnPort({ role });
   const warnings: string[] = [];
-  const realSettings = createUserSettingsCache({ home, onWarning: (message) => warnings.push(message), keptRecords: noKeptRecords });
-  const settings = settingsDouble(realSettings);
+  const settings = settingsDouble(home, (message) => warnings.push(message));
   const lines: string[] = [];
   const logger = createJsonLogger({
     service: 'supervisor',
@@ -149,7 +160,6 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
     timers,
     port,
     settings,
-    realSettings,
     warnings,
     reapCalls,
     reapResult: async () => ({ removed: true }),

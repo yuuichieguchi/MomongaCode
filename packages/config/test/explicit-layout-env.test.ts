@@ -48,8 +48,8 @@ describe('config names the directories under the home without an environment, an
   it('in loadUserSettings and the user settings cache', async () => {
     forget();
     const tree = makeTree();
-    await loadUserSettings({ home: tree.home });
-    createUserSettingsCache({ home: tree.home, onWarning: () => {}, keptRecords: noKeptRecords }).get();
+    await loadUserSettings({ home: tree.home, signal: new AbortController().signal });
+    await createUserSettingsCache({ home: tree.home, onWarning: () => {}, keptRecords: noKeptRecords }).load(new AbortController().signal);
     expectNoEnvironmentOfItsOwn();
   });
 

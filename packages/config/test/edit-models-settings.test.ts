@@ -9,6 +9,7 @@ import { S1_FILE, S2, S2_LMSTUDIO, S3_PLAN, S4, S4_SERVER } from './model-fixtur
 import { connectionsOf, documentOf, editModels, homeWith, idsOf, modelsOf, op, planModels, refusalOfEdit, textOf } from './models-edit.ts';
 import type { Home, Operation, Planned } from './models-edit.ts';
 import { testPaths, testKernelLock } from '@momonga/testkit';
+import type { KernelLockMechanism } from '@momonga/foundation';
 
 const OLLAMA = { adapter: 'ollama', baseUrl: 'http://127.0.0.1:11434' };
 const DEVSTRAL = { id: 'devstral-small-2:latest', capabilities: { contextWindow: 131072, maxOutputTokens: 32768 } };
@@ -58,7 +59,7 @@ const AFTER_REMOVAL: References = { start: undefined, fallback: [OLLAMA_GEMMA], 
 
 const FIVE_REFERENCES = [{ kind: 'start' }, { kind: 'fallback', position: 2 }, { kind: 'role', job: 'compaction' }, { kind: 'classifier' }, { kind: 'billing' }];
 
-const loads = async (home: Home): Promise<string[]> => [...((await loadUserSettings({ home: home.tree.home })).settings.models as unknown as { models: ReadonlyMap<string, unknown> }).models.keys()];
+const loads = async (home: Home): Promise<string[]> => [...((await loadUserSettings({ home: home.tree.home, signal: new AbortController().signal })).settings.models as unknown as { models: ReadonlyMap<string, unknown> }).models.keys()];
 
 const planned = (document: unknown, operations: readonly Operation[]): Planned => {
   const plan = planModels(document, operations);
@@ -119,6 +120,13 @@ describe('addModel: the one way a model enters the settings', () => {
     expect(again.wrote).toBe(false);
     expect(again.summaries).toEqual(['devstral-small-2 is already in your settings.']);
     expect(textOf(home)).toBe(before);
+  });
+
+  it('a server found at localhost and the same server written by hand at 127.0.0.1 are one connection', async () => {
+    const home = homeWith(S1_FILE);
+    const added = await editModels(home, [addModel({ ...OLLAMA, baseUrl: 'http://localhost:11434' }, QWEN)]);
+    expect(added.model).toBe(QWEN_MODEL);
+    expect(connectionsOf(home)).toEqual([{ ...OLLAMA, models: [DEVSTRAL, QWEN] }]);
   });
 
   it('a recognised LM Studio server keeps the name the search gave it, at its own address and at another one', async () => {
@@ -530,5 +538,186 @@ describe('what the writer never does', () => {
     expect(textOf(home)).toBe(before);
     expect(renames.mock.calls.filter(([, to]) => String(to) === home.file)).toEqual([]);
     expect(await loads(home)).toEqual([DEVSTRAL_MODEL]);
+  });
+});
+
+describe('a settings file that does not load can be edited, and only a result that does not load is refused', () => {
+  const DANGLING = { models: { connections: [{ ...OLLAMA, models: [DEVSTRAL, QWEN] }], start: 'ollama/removed-by-hand:latest' } };
+  const START_SENTENCE = 'models.start: "ollama/removed-by-hand:latest" is not a configured model; configured models: devstral-small-2, qwen3.8:27b';
+
+  it('the file with a start model that was removed by hand does not load', async () => {
+    const home = homeWith(DANGLING);
+    await expect(loadUserSettings({ home: home.tree.home, signal: new AbortController().signal })).rejects.toThrow(START_SENTENCE);
+  });
+
+  it('setStart to a configured model repairs it, and so does clearing the start model', async () => {
+    const chosen = homeWith(DANGLING);
+    expect((await editModels(chosen, [op('setStart', { model: QWEN_MODEL })])).summaries).toEqual(['New sessions start with qwen3.8:27b.']);
+    expect(modelsOf(chosen).start).toBe(QWEN_MODEL);
+    expect(await loads(chosen)).toEqual([DEVSTRAL_MODEL, QWEN_MODEL]);
+    const cleared = homeWith(DANGLING);
+    await editModels(cleared, [op('setStart', { model: null })]);
+    expect(modelsOf(cleared).start).toBeUndefined();
+    expect(await loads(cleared)).toEqual([DEVSTRAL_MODEL, QWEN_MODEL]);
+  });
+
+  it('a removal and an addition go through in the write that also repairs the start model', async () => {
+    const removed = homeWith(DANGLING);
+    await editModels(removed, [op('removeModel', { model: DEVSTRAL_MODEL }), op('setStart', { model: QWEN_MODEL })]);
+    expect(await loads(removed)).toEqual([QWEN_MODEL]);
+    const added = homeWith(DANGLING);
+    const result = await editModels(added, [addModel(LMSTUDIO, { id: 'gemma-3-4b', capabilities: GEMMA_WINDOW }), op('setStart', { model: LMSTUDIO_GEMMA })]);
+    expect(result.summaries).toEqual(['Added gemma-3-4b. It is used from the next request.', 'New sessions start with gemma-3-4b.']);
+    expect(await loads(added)).toEqual([DEVSTRAL_MODEL, QWEN_MODEL, LMSTUDIO_GEMMA]);
+  });
+
+  it('an edit that leaves the start model as it is is refused with the key of the result, and the bytes of the file stay', async () => {
+    const home = homeWith(DANGLING);
+    const before = textOf(home);
+    const refused = await refusalOfEdit(editModels(home, [addModel(LMSTUDIO, { id: 'gemma-3-4b', capabilities: GEMMA_WINDOW })]));
+    expect(refused).toEqual({ code: 'would_not_load', message: `Not saved: ${START_SENTENCE}, gemma-3-4b` });
+    expect(textOf(home)).toBe(before);
+  });
+
+  it('a model entry the loader refuses is repaired by setting the fields it lacks', async () => {
+    const home = homeWith({ models: { connections: [{ ...OLLAMA, models: [{ id: 'llama3.2:latest' }] }] } });
+    await expect(loadUserSettings({ home: home.tree.home, signal: new AbortController().signal })).rejects.toThrow();
+    await editModels(home, [
+      op('setModelField', { model: 'ollama/llama3.2:latest', path: ['capabilities', 'contextWindow'], value: 8192 }),
+      op('setModelField', { model: 'ollama/llama3.2:latest', path: ['capabilities', 'maxOutputTokens'], value: 2048 }),
+    ]);
+    expect(await loads(home)).toEqual(['ollama/llama3.2:latest']);
+  });
+
+  it('a value outside the models section that does not load is named when a models edit leaves it', async () => {
+    const home = homeWith({ tui: { theme: 'bogus' }, models: { connections: [{ ...OLLAMA, models: [DEVSTRAL, QWEN] }] } });
+    const refused = await refusalOfEdit(editModels(home, [op('setStart', { model: QWEN_MODEL })]));
+    expect(refused.code).toBe('invalid_value');
+    expect(refused.message).toContain('tui.theme must be one of');
+  });
+});
+
+describe('the plan is judged with the plan profiles of the loader (P-159)', () => {
+  const PLAN_CHOICE = addModel({ adapter: 'open-responses', plan: { profile: 'chatgpt' } }, { id: 'gpt-5.5' });
+  const editWith = (home: Home, planProfiles: unknown): Promise<unknown> =>
+    (config as unknown as { editModelsSettings(home: string, file: string, operations: readonly Operation[], options: { lock: KernelLockMechanism; signal: AbortSignal; planProfiles: unknown }): Promise<unknown> }).editModelsSettings(home.tree.home, home.file, [PLAN_CHOICE], {
+      lock: testKernelLock(),
+      signal: new AbortController().signal,
+      planProfiles,
+    });
+
+  it('a plan connection the shipped profiles accept is refused when the profiles the loader was given do not hold its profile', async () => {
+    const home = homeWith();
+    const refused = await refusalOfEdit(editWith(home, {}));
+    expect(refused.code).toBe('would_not_load');
+    expect(refused.message).toContain('unknown plan profile "chatgpt"; the known profiles are none');
+    expect(fs.existsSync(home.file)).toBe(false);
+  });
+
+  it('and is written when those profiles hold it', async () => {
+    const home = homeWith();
+    await editWith(home, config.PLAN_PROFILES);
+    expect(documentOf(home)).toEqual({ models: { connections: [S3_PLAN] } });
+  });
+});
+
+describe('a field writer changes only the fields of its table, and a rewrite keeps every key it did not change', () => {
+  const MODEL_FIELDS_SENTENCE = 'is not a field of a model that can be set. The fields are: id, toolCalling, outputBoundField, maxConcurrency, admissionTimeoutMs, capabilities.contextWindow,';
+  const SERVER_FIELDS_SENTENCE = 'is not a field of a server that can be set. The fields are: adapter, baseUrl, socketPath, apiKeyEnv, apiKeySecret, plan.account, server, binary, readyTimeoutMs, billing, apiVersion, answers, idempotencyKeyHeader, maxConcurrency, admissionTimeoutMs.';
+
+  it('setting the id of a model that is referred to renames it and rewrites every reference in the same write', async () => {
+    const home = homeWith(REFERRED);
+    const result = await editModels(home, [op('setModelField', { model: LMSTUDIO_GEMMA, path: ['id'], value: 'gemma-3-12b' })]);
+    expect(result.summaries).toEqual(['Renamed lmstudio/gemma-3-4b to gemma-3-12b.']);
+    const renamed = 'lmstudio/gemma-3-12b';
+    const document = documentOf(home);
+    expect(referencesIn(document)).toMatchObject({
+      start: renamed,
+      fallback: [OLLAMA_GEMMA, renamed],
+      roles: { compaction: renamed },
+      classifier: renamed,
+      billingChanges: [{ from: 'local', to: 'metered' }, { from: 'local', to: 'plan', model: renamed }],
+    });
+    expect(await loads(home)).toEqual([OLLAMA_GEMMA, renamed]);
+    const plan = planned(REFERRED, [op('setModelField', { model: LMSTUDIO_GEMMA, path: ['id'], value: 'gemma-3-12b' })]);
+    expect(plan.references).toHaveLength(FIVE_REFERENCES.length);
+    expect(plan.references).toEqual(expect.arrayContaining(FIVE_REFERENCES));
+  });
+
+  it('the id of a model cannot be cleared', async () => {
+    const refused = await refusalOfEdit(editModels(homeWith(REFERRED), [op('setModelField', { model: LMSTUDIO_GEMMA, path: ['id'], value: undefined })]));
+    expect(refused).toEqual({ code: 'invalid_value', message: 'A model needs an id. To take the model out of your settings, remove it.' });
+  });
+
+  it.each([[['nope']], [['capabilities', 'nope']], [['__proto__', 'polluted']], [['capabilities', '__proto__']], [['capabilities', 'reasoning', '__proto__', 'polluted']], [['constructor', 'prototype', 'polluted']], [[]]])(
+    'setModelField refuses the path %j with the fields of the table and writes nothing',
+    async (keyPath) => {
+      const home = homeWith(BASE);
+      const before = textOf(home);
+      const refused = await refusalOfEdit(editModels(home, [op('setModelField', { model: LMSTUDIO_GEMMA, path: keyPath, value: true })]));
+      expect(refused.code).toBe('invalid_value');
+      expect(refused.message).toContain(`"${keyPath.join('.')}" ${MODEL_FIELDS_SENTENCE}`);
+      expect(textOf(home)).toBe(before);
+      expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
+    },
+  );
+
+  it.each([[['nope']], [['provider']], [['models']], [['__proto__', 'polluted']], [['plan', 'profile']]])('setConnectionField refuses the path %j with the fields of the table and writes nothing', async (keyPath) => {
+    const home = homeWith(BASE);
+    const before = textOf(home);
+    const refused = await refusalOfEdit(editModels(home, [op('setConnectionField', { provider: 'lmstudio', path: keyPath, value: 'x' })]));
+    expect(refused).toEqual({ code: 'invalid_value', message: `"${keyPath.join('.')}" ${SERVER_FIELDS_SENTENCE}` });
+    expect(textOf(home)).toBe(before);
+    expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
+  });
+
+  it('a whole object of fields and a field below a family of fields are still written', async () => {
+    const home = homeWith(BASE);
+    await editModels(home, [
+      op('setModelField', { model: LMSTUDIO_GEMMA, path: ['capabilities'], value: { contextWindow: 8192, maxOutputTokens: 512 } }),
+      op('setModelField', { model: LMSTUDIO_GEMMA, path: ['capabilities', 'sampling'], value: { accepts: 'without_thinking' } }),
+      op('setModelField', { model: LMSTUDIO_GEMMA, path: ['capabilities', 'sampling', 'topP'], value: { min: 0.1, max: 1 } }),
+      op('setModelField', { model: LMSTUDIO_GEMMA, path: ['capabilities', 'sampling', 'topP', 'max'], value: 0.9 }),
+    ]);
+    const entry = (connectionsOf(home)[1]?.['models'] as Record<string, unknown>[])[0] as Record<string, unknown>;
+    expect(entry['capabilities']).toEqual({ contextWindow: 8192, maxOutputTokens: 512, sampling: { accepts: 'without_thinking', topP: { min: 0.1, max: 0.9 } } });
+  });
+
+  it('a rename keeps the empty keys it did not change, in their place', async () => {
+    const written = { autoMode: {}, models: { fallback: [], roles: {}, billingChanges: [], connections: S2.models.connections } };
+    const home = homeWith(written);
+    await editModels(home, [op('setProvider', { provider: 'lmstudio', name: 'studio' })]);
+    const document = documentOf(home);
+    expect(Object.keys(document)).toEqual(['autoMode', 'models']);
+    expect(Object.keys(document['models'] as object)).toEqual(['fallback', 'roles', 'billingChanges', 'connections']);
+    expect(document).toMatchObject({ autoMode: {}, models: { fallback: [], roles: {}, billingChanges: [] } });
+    await editModels(home, [op('removeModel', { model: OLLAMA_GEMMA })]);
+    expect(documentOf(home)).toMatchObject({ autoMode: {}, models: { fallback: [], roles: {}, billingChanges: [] } });
+  });
+
+  it('clearing a job, the classifier or a billing change that is not written leaves an empty key as it was', async () => {
+    const written = { autoMode: {}, models: { roles: {}, billingChanges: [], connections: S2.models.connections } };
+    const home = homeWith(written);
+    const before = textOf(home);
+    await editModels(home, [op('setRole', { job: 'compaction', model: null }), op('setClassifier', { model: null }), op('forbidBillingChange', { from: 'local', to: 'metered' })]);
+    expect(textOf(home)).toBe(before);
+  });
+
+  it('a removal still deletes the key whose last entry it removed', async () => {
+    const home = homeWith(REFERRED);
+    await editModels(home, [op('removeModel', { model: LMSTUDIO_GEMMA })]);
+    expect(referencesIn(documentOf(home))).toEqual(AFTER_REMOVAL);
+    expect(documentOf(home)).not.toHaveProperty('autoMode');
+    expect(modelsOf(home)).not.toHaveProperty('roles');
+  });
+
+  it('a connection draft keeps the keys of its adapter', async () => {
+    const keyed: config.ConnectionDraft = { adapter: 'anthropic', baseUrl: 'https://api.anthropic.com', apiKeyEnv: 'ANTHROPIC_API_KEY' };
+    const plan: config.ConnectionDraft = { adapter: 'open-responses', plan: { profile: 'chatgpt' } };
+    const managed: config.ConnectionDraft = { adapter: 'managed', server: 'fm' };
+    expect([keyed.adapter, plan.adapter, managed.adapter]).toEqual(['anthropic', 'open-responses', 'managed']);
+    const home = homeWith();
+    await editModels(home, [addModel(keyed, { id: 'claude-sonnet-4-5', capabilities: { contextWindow: 200000, maxOutputTokens: 64000 } })]);
+    expect(connectionsOf(home)[0]).toMatchObject({ adapter: 'anthropic', apiKeyEnv: 'ANTHROPIC_API_KEY' });
   });
 });

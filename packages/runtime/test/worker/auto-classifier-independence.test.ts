@@ -18,7 +18,7 @@ const runWithRecords = async (records: readonly AutoFitRecord[]) => {
   env.gateway.capabilitiesByModel['guard'] = capabilitiesFor(env.gateway.capabilitiesValue.contextWindow, { structuredOutput: 'json_schema' });
   const target = path.join(env.project, 'out.txt');
   env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } }]), textStep(SAFE), textStep('Written.'));
-  const run = env.enqueue('Write out.txt');
+  const run = await env.enqueue('Write out.txt');
   await env.runOnce(env.worker());
   return { env, run, target };
 };

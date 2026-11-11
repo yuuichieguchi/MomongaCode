@@ -14,6 +14,20 @@ export const systemFileLockPorts: FileLockPorts = { timing: systemWaitTiming, ra
 
 export type FileLockOptions = { ports: FileLockPorts; mechanism: KernelLockMechanism; signal?: AbortSignal; timeoutMs?: number };
 
+export class LockWaitTimeoutError extends Error {
+  readonly lockPath: string;
+  readonly timeoutMs: number;
+  readonly holder: string | undefined;
+
+  constructor(lockPath: string, timeoutMs: number, holder: string | undefined) {
+    super(`timed out after ${timeoutMs}ms waiting for lock ${lockPath} held by ${holder === undefined || holder === '' ? 'another process' : `process ${holder}`}`);
+    this.name = 'LockWaitTimeoutError';
+    this.lockPath = lockPath;
+    this.timeoutMs = timeoutMs;
+    this.holder = holder;
+  }
+}
+
 const NEVER_ABORTED = new AbortController().signal;
 
 const waitBoundOf = (options: FileLockOptions): number => {
@@ -33,9 +47,7 @@ const acquireWithinTimeout = async (lockPath: string, options: FileLockOptions):
     signal,
   });
   if (outcome.kind === 'aborted') throw signal.reason;
-  if (outcome.kind === 'timed_out') {
-    throw new Error(`timed out after ${timeoutMs}ms waiting for lock ${lockPath} held by ${outcome.holder === undefined || outcome.holder === '' ? 'another process' : `process ${outcome.holder}`}`);
-  }
+  if (outcome.kind === 'timed_out') throw new LockWaitTimeoutError(lockPath, timeoutMs, outcome.holder);
   return outcome.lock;
 };
 

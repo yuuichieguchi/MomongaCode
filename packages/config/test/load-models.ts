@@ -20,7 +20,7 @@ export type Loaded = { tree: Tree; file: string; models: LoadedModels; warnings:
 export const loadFile = async (document: unknown): Promise<Loaded> => {
   const tree = makeTree();
   const file = writeJson(userSettingsPath(tree), document);
-  const result = await loadUserSettings({ home: tree.home });
+  const result = await loadUserSettings({ home: tree.home, signal: new AbortController().signal });
   return { tree, file, models: result.settings.models as unknown as LoadedModels, warnings: result.warnings };
 };
 
@@ -29,7 +29,7 @@ export const loadModelsSection = (models: unknown): Promise<Loaded> => loadFile(
 export const refusalOf = async (document: unknown): Promise<{ file: string; message: string }> => {
   const tree = makeTree();
   const file = writeJson(userSettingsPath(tree), document);
-  const error = await loadUserSettings({ home: tree.home }).then(
+  const error = await loadUserSettings({ home: tree.home, signal: new AbortController().signal }).then(
     () => undefined,
     (caught: unknown) => caught,
   );

@@ -2,14 +2,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createUserSettingsCache, noKeptRecords, stripCredentialEnv } from '@momonga/config';
+import { stripCredentialEnv } from '@momonga/config';
 import { MINIMAL_CHILD_PATH, NETWORK_ENV_NAMES, SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV, SECRET_REFUSAL_ENV, secretStoreEnvFor } from '@momonga/foundation';
 import { waitFor } from '@momonga/testkit';
 import { COLLIDING_CREDENTIAL_DETAIL, definedEnv, gatewayEnv, runtimeEnv } from '../src/child-env.ts';
 import type { CredentialSettings } from '../src/child-env.ts';
 import { HELD_RETRY_MS } from '../src/constants.ts';
 import { errnoError } from './support/p2-fake-spawn-port.ts';
-import { createManagerHarness, settingsDeclaring, writeInvalidSettings, writeSettings } from './support/p2-manager-harness.ts';
+import { createManagerHarness, settingsDeclaring, settingsOnDisk, writeInvalidSettings, writeSettings } from './support/p2-manager-harness.ts';
 import { pollUntil } from './support/p2-poll.ts';
 import { startSupervisorHarness } from './support/p2-supervisor-harness.ts';
 
@@ -21,7 +21,7 @@ const declaring = (...names: string[]): CredentialSettings =>
 const TOKEN_LIKE = 'sk-' + 'placeholder-value';
 
 const configErrorMessage = (home: string): string => {
-  const snapshot = createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: noKeptRecords }).snapshot();
+  const snapshot = settingsOnDisk(home);
   if (!('error' in snapshot)) throw new Error('expected the settings file to be invalid');
   return snapshot.error.message;
 };
@@ -320,10 +320,11 @@ describe('settings at the supervisor', () => {
   });
 
   it('the cache warning is neutral and the supervisor states its own policy', async (context) => {
-    const harness = await startSupervisorHarness(context, { settings: {} });
+    const harness = await startSupervisorHarness(context, { settings: {}, overrides: { watchSettings: true } });
     await pollUntil(() => harness.port.calls.length === 2, 3000, 'both roles spawned');
     writeInvalidSettings(harness.home);
     const message = configErrorMessage(harness.home);
+    await pollUntil(() => harness.log.events('settings.invalid').length === 1, 10_000, 'the change of the settings file loaded');
     const runtime = harness.port.children.find((child) => child.args[0]?.includes('runtime'));
     expect(runtime).toBeDefined();
     runtime?.exit(1);

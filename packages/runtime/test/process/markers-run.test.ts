@@ -2,11 +2,11 @@ import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { claimRetry, ensureMomongaDirs, groupAlive, momongaPaths, readAttemptRecord, recordMarkerGroup, FIRST_GENERATION, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
+import { claimRetry, ensureMomongaDirs, groupAlive, momongaPaths, readAttemptRecord, recordMarkerGroup, FIRST_GENERATION, systemRandom, nodeFileSystem, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, spawnTracked, withTempDir, firstGeneration, testKernelLock } from '@momonga/testkit';
+import { HOLD_UNTIL_SIGNALLED, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, spawnTracked, withTempDir, firstGeneration, registerOwned, testKernelLock } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
-import { START_MS, createRun, createSession, trackGroup, writeUserSettings } from './helpers.ts';
+import { START_MS, createRun, createSession, trackGroup, writeUserSettings, onCleanup } from './helpers.ts';
 import { RUNTIME_VERSION, captureStream, failureOf, hookLogger, isLockFree, launchRuntime, modelSettings, prepareStack, readDb, startRuntimeProcess, stepsLogged, prepareGeneration, scopedPaths } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
 import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
@@ -49,7 +49,7 @@ const spawnHolder = (marker: string, content?: (pid: number) => string): number 
   const fd = fs.openSync(marker, 'w', 0o600);
   let pid: number | undefined;
   try {
-    pid = spawn('/bin/sh', ['-c', 'exec sleep 30'], { detached: true, stdio: ['ignore', 'ignore', 'ignore', fd] }).pid;
+    pid = spawn('/bin/sh', ['-c', `exec ${HOLD_UNTIL_SIGNALLED}`], { detached: true, stdio: ['ignore', 'ignore', 'ignore', fd] }).pid;
     if (pid !== undefined && content !== undefined) fs.writeSync(fd, content(pid));
   } finally {
     fs.closeSync(fd);
@@ -59,11 +59,11 @@ const spawnHolder = (marker: string, content?: (pid: number) => string): number 
   return pid;
 };
 
-const seedStore = async (temp: RunHome, seed: (store: ReturnType<typeof openRuntimeStore>) => void): Promise<void> => {
+const seedStore = async (temp: RunHome, seed: (store: ReturnType<typeof openRuntimeStore>) => void | Promise<void>): Promise<void> => {
   await prepareGeneration(temp);
-  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock: createFakeClock(SEED_MS), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock: createFakeClock(SEED_MS), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
   try {
-    seed(store);
+    await seed(store);
   } finally {
     store.close();
   }
@@ -138,10 +138,10 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
     const jobId = 'bash_dead00000000';
     const idemKey = keyOf('j');
     let pgid: number | undefined;
-    await seedStore(stack.temp, (store) => {
+    await seedStore(stack.temp, async (store) => {
       store.idempotency.begin(idemKey, { expiresAt: SEED_MS + 30 * 86_400_000, meta: { job: true } });
       const session = createSession(store, stack.temp.project);
-      store.jobs.start({ id: jobId, idemKey, sessionId: session.id, runId: createRun(store, session.id), callId: 'c', command: 'sleep 30' });
+      store.jobs.start({ id: jobId, idemKey, sessionId: session.id, runId: await createRun(store, session.id), callId: 'c', command: 'sleep 30' });
       pgid = spawnHolder(path.join(scopedPaths(stack.temp).markers.tools, idemKey));
       store.jobs.attachProcess(jobId, pgid);
     });
@@ -165,7 +165,7 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
     control.lookupError = injected;
     const logger = hookLogger(() => undefined);
     const stdout = captureStream();
-    const error = await failureOf(startRuntimeProcess({ generation: FIRST_GENERATION, home: stack.temp.home, version: RUNTIME_VERSION, logger, stdout }));
+    const error = await failureOf(registerOwned(onCleanup, () => startRuntimeProcess({ generation: FIRST_GENERATION, home: stack.temp.home, version: RUNTIME_VERSION, logger, stdout })));
     expect(error).toBe(injected);
     expect(stepsLogged(logger).at(-1)).toBe('tool-markers');
     expect(stepsLogged(logger, 'teardown.step')).toEqual(['store', 'sandbox', 'lock']);
@@ -189,7 +189,7 @@ const trackedRunHome = (context: CleanupContext): RunHome => {
 const trackedHolder = (context: CleanupContext, marker: string): number => {
   const fd = fs.openSync(marker, 'w', 0o600);
   try {
-    return spawnTracked(context, '/bin/sh', ['-c', 'exec sleep 30'], { stdio: ['ignore', 'ignore', 'ignore', fd] }).pid;
+    return spawnTracked(context, '/bin/sh', ['-c', `exec ${HOLD_UNTIL_SIGNALLED}`], { stdio: ['ignore', 'ignore', 'ignore', fd] }).pid;
   } finally {
     fs.closeSync(fd);
   }
@@ -200,10 +200,10 @@ type Seeded = { runId: string; pgid: number; lastClaimAt: number };
 const seedTakenOverRun = async (context: CleanupContext, temp: RunHome, deadLetterInSeed: boolean): Promise<Seeded> => {
   await prepareGeneration(temp);
   const clock = createFakeClock(SEED_MS);
-  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock, leaseMs: LEASE_MS, maxAttempts: MAX_ATTEMPTS, maxTotalAttempts: 20 });
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock, leaseMs: LEASE_MS, maxAttempts: MAX_ATTEMPTS, maxTotalAttempts: 20 });
   try {
     const session = createSession(store, temp.project);
-    const runId = createRun(store, session.id);
+    const runId = await createRun(store, session.id);
     for (let claim = 0; claim < MAX_ATTEMPTS; claim += 1) {
       if (claim > 0) clock.advance(LEASE_MS + 1);
       if (store.claim(`seed-worker-${claim}`)?.runId !== runId) throw new Error(`seed claim ${claim} did not take run ${runId}`);

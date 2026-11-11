@@ -1,8 +1,9 @@
 import { waitFor } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { UPDATE_CHECK_COMMAND, announceUpdate, runBackgroundCheck, startBackgroundCheck } from '../src/update/background.ts';
+import { CANDIDATE_CHECK_TIMEOUT_MS } from '../src/update/install.ts';
 import { assetNameFor } from '../src/update/source.ts';
-import { DAEMON_RESTART_BOUND_MS, NEW_BINARY, OLD_BINARY, PUBLIC_KEY, setupUpdate } from './update-harness.ts';
+import { DAEMON_READY_BOUND_MS, NEW_BINARY, OLD_BINARY, PUBLIC_KEY, setupUpdate } from './update-harness.ts';
 import type { HarnessOptions, UpdateHarness } from './update-harness.ts';
 
 const interrupt = (): AbortSignal => new AbortController().signal;
@@ -219,7 +220,7 @@ describe('runBackgroundCheck: the detached check itself', () => {
 
     const restart = harness.runs.find((call) => call.args[0] === 'daemon');
     expect(restart?.args).toEqual(['daemon', 'start']);
-    expect(restart?.options.timeoutMs).toBe(DAEMON_RESTART_BOUND_MS);
+    expect(restart?.options.timeoutMs).toBe(CANDIDATE_CHECK_TIMEOUT_MS + DAEMON_READY_BOUND_MS);
     expect(restart?.options.signal).toBe(signal);
   });
 

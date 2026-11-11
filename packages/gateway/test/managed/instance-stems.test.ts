@@ -2,8 +2,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { withTempDir, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import { managedInstancePaths, momongaPaths } from '@momonga/foundation';
-import { FM_SERVER } from '@momonga/protocol';
-import { createManagedServer } from '../../src/index.ts';
+import { FM_SERVER, messageOf } from '@momonga/protocol';
+import { createManagedServer, managedModelName } from '../../src/index.ts';
 
 const HOME = '/home/someone';
 const paths = momongaPaths(HOME, 'linux', {});
@@ -24,7 +24,7 @@ describe('the instance of a managed server is named by its server name (design-m
       inspector: testProcessInspector(),
       lock: testKernelLock(),
       description: FM_SERVER,
-      target: 'system',
+      target: managedModelName(provider, { declared: 'system' }),
       binary: '/opt/fake/fm',
       socketPath: instance.socketPath,
       lockPath: instance.lockPath,
@@ -36,8 +36,14 @@ describe('the instance of a managed server is named by its server name (design-m
       readStopGraceMs: () => 1000,
       onWarning: () => undefined,
     });
-    await expect(server.ensureRunning(new AbortController().signal)).rejects.toThrow(
-      /^the model "system": its server socket path is \d+ bytes, and the system refused to bind a socket path of that length in .+ \((ENAMETOOLONG|EINVAL)\); choose a shorter server name$/,
+    const refusal = await server.ensureRunning(new AbortController().signal).then(
+      () => undefined,
+      (error: unknown) => error as Error,
     );
+    const message = refusal?.message ?? '';
+    const measured = / in (.+) \((ENAMETOOLONG|EINVAL)\); /.exec(message);
+    const text = messageOf('serverSocketPathTooLong', 'gateway', { model: `${provider}/system`, byteLength: Buffer.byteLength(instance.socketPath), directory: measured?.[1] ?? '', code: measured?.[2] ?? '' });
+    expect(text).toMatch(/^the model "server-n+\/system": its server socket path is \d+ bytes, and the system refused to bind a socket path of that length in .+ \((ENAMETOOLONG|EINVAL)\); choose a shorter server name$/);
+    expect(message).toBe(text);
   });
 });

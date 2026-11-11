@@ -1,8 +1,6 @@
 import fs from 'node:fs';
 import * as config from '@momonga/config';
-import { PLAN_PROFILES } from '@momonga/config';
 import * as protocol from '@momonga/protocol';
-import { MANAGED_SERVERS } from '@momonga/protocol';
 import { makeTree, userSettingsPath, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 import { testKernelLock } from '@momonga/testkit';
@@ -37,8 +35,6 @@ export const editModels = (home: Home, operations: readonly Operation[], signal:
 export const planModels = (document: unknown, operations: readonly Operation[]): Plan =>
   exported<(document: unknown, operations: readonly Operation[], ports: unknown) => Plan>('planModelsEdit')(document, operations, {
     kinds: (protocol as Record<string, unknown>)['SERVER_KINDS'],
-    planProfiles: PLAN_PROFILES,
-    servers: Object.fromEntries(MANAGED_SERVERS.map((server) => [server.id, server])),
   });
 
 export const refusalOfEdit = async (editing: Promise<unknown>): Promise<Refused> => {

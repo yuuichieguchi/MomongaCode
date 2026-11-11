@@ -1,6 +1,6 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Duplex, Readable } from 'node:stream';
-import { createStopValuesReader, stopValuesOfSettings } from '@momonga/config';
+import { createStopValuesReader } from '@momonga/config';
 import type { StopValuesReader, UserSettingsCache, UserSettingsSnapshot } from '@momonga/config';
 import {
   claimLockForChild,
@@ -180,14 +180,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   const { role, timers, clock, logger } = options;
   const stopValuesReader =
     options.stopValues ??
-    createStopValuesReader({
-      load: () => {
-        const snapshot = options.settings.snapshot();
-        if ('error' in snapshot) throw snapshot.error;
-        return stopValuesOfSettings(snapshot.settings);
-      },
-      onNotice: (detail) => writeEvent(logger, settingsWarning({ detail })),
-    });
+    createStopValuesReader({ onNotice: (detail) => writeEvent(logger, settingsWarning({ detail })) });
 
   let state: ChildState = 'pending';
   let generation = 0;

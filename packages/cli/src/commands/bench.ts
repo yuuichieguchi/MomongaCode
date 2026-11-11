@@ -15,7 +15,7 @@ import type { CliPorts } from '../ports.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import { EvaluateUsageError } from './evaluate.ts';
 
-export type EvaluateBenchOptions = { validate: boolean; model?: string; report?: string };
+export type EvaluateBenchOptions = { validate: boolean; model?: string; report?: string; interrupt: AbortSignal };
 
 export const BENCHMARK_FILE = 'benchmark.json';
 
@@ -105,10 +105,10 @@ export const benchRunApi = (client: BenchClient, env: Readonly<Record<string, st
   };
 };
 
-const run = async (ports: CliPorts, paths: MomongaPaths, benchmarkFile: string, options: { model: string; report?: string }): Promise<number> => {
-  const model = pinnedModelOf(shellModelsOf(ports), options.model);
+const run = async (ports: CliPorts, paths: MomongaPaths, benchmarkFile: string, options: { model: string; report?: string; interrupt: AbortSignal }): Promise<number> => {
+  const model = pinnedModelOf(await shellModelsOf(ports, options.interrupt), options.model);
   await ensureCurrentDaemon(ports, paths);
-  const env = await environmentSnapshot(ports);
+  const env = await environmentSnapshot(ports, options.interrupt);
   const client = connectRuntime(ports, paths);
   const scratch = await createOwnedDirectory({ parent: ports.tmpdir, prefix: WORKSPACE_PREFIX, lock: resolveLayoutLocks(paths).mechanism });
   try {
@@ -120,6 +120,7 @@ const run = async (ports: CliPorts, paths: MomongaPaths, benchmarkFile: string, 
       codeDigest: await codeDigestOfRunningProcess(),
       groupBy: 'model',
       scratch: scratch.path,
+      signal: options.interrupt,
     });
     if (options.report !== undefined) await ports.files.writeText(path.resolve(ports.cwd, options.report), encodeReliabilityReport(report));
     ports.stdout.write(formatReliabilityReport(report));
@@ -138,5 +139,5 @@ export const evaluateBench = async (ports: CliPorts, paths: MomongaPaths, direct
     return validate(ports, paths, benchmarkFile);
   }
   if (options.model === undefined) throw new EvaluateUsageError('--model <model> is required for a run of the benchmark: it names the model every task runs on');
-  return run(ports, paths, benchmarkFile, { model: options.model, ...(options.report === undefined ? {} : { report: options.report }) });
+  return run(ports, paths, benchmarkFile, { model: options.model, interrupt: options.interrupt, ...(options.report === undefined ? {} : { report: options.report }) });
 };

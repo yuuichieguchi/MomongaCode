@@ -44,7 +44,7 @@ const advanceUntil = async (
     if (status === 'WAITING_HUMAN') throw new Error(`run ${runId} asked for approval`);
     await new Promise<void>((resolve) => setTimeout(resolve, 10));
     const next = [...timers.pending()].sort((left, right) => left.dueAt - right.dueAt)[0];
-    if (next !== undefined && status === 'QUEUED') timers.advance(Math.max(0, next.dueAt - clock.now()));
+    if (next !== undefined && status === 'QUEUED') await timers.advanceAsync(Math.max(0, next.dueAt - timers.monotonicMs()));
   }
   throw new Error(`run ${runId} did not reach a terminal state`);
 };

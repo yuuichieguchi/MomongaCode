@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { FIRST_GENERATION, createUdsClient, inspectProcessLock, momongaPaths, fixedSocket } from '@momonga/foundation';
+import { EXIT_ALREADY_RUNNING, FIRST_GENERATION, createUdsClient, inspectProcessLock, momongaPaths, fixedSocket } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS, runGatewayEntry } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, startLockHolder, withTempDir, firstGeneration, testKernelLock } from '@momonga/testkit';
@@ -67,13 +67,13 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     expect(lastLine(stderrJson(io))).toMatchObject({ msg: 'entry.exit', service: 'gateway', code: 78, path: 'start-failed', clean: false });
   });
 
-  it('gateway: a held gateway.lock gives 75', async (context) => {
+  it('gateway: a held gateway.lock gives the exit code of a daemon already running', async (context) => {
     const { home, paths } = await validHome(context);
     runDir(paths);
     await startLockHolder(context, firstGeneration(paths).locks.gateway);
     const { io, exit } = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
 
-    expect(await exit).toBe(75);
+    expect(await exit).toBe(EXIT_ALREADY_RUNNING);
     expect(io.stdoutText()).toBe('');
   });
 
@@ -99,7 +99,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     expect(await launched.exit).toBe(0);
   });
 
-  it('gateway: a home given through a symlink still gives 75 (the entry canonicalises the home)', async (context) => {
+  it('gateway: a home given through a symlink still gives the exit code of a daemon already running (the entry canonicalises the home)', async (context) => {
     const { home, paths } = await validHome(context);
     runDir(paths);
     await startLockHolder(context, firstGeneration(paths).locks.gateway);
@@ -107,7 +107,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     fs.symlinkSync(home, link);
     const { exit } = launch(context, link, [`--home=${link}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr'], {}, link);
 
-    expect(await exit).toBe(75);
+    expect(await exit).toBe(EXIT_ALREADY_RUNNING);
   });
 
   it('gateway: a clean close gives 0, one stdout line, no lock left, entry.exit close/sigterm in the role log', async (context) => {

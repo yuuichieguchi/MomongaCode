@@ -1,7 +1,9 @@
-export const cancellableTimer = (ms: number): { done: Promise<void>; cancel(): void } => {
-  let handle: NodeJS.Timeout | undefined;
+import type { ToolTimers } from './ports.ts';
+
+export const cancellableTimer = (timers: ToolTimers, ms: number): { done: Promise<void>; cancel(): void } => {
+  let handle: unknown;
   const done = new Promise<void>((resolve) => {
-    handle = setTimeout(resolve, ms);
+    handle = timers.setTimeout(resolve, ms);
   });
-  return { done, cancel: () => clearTimeout(handle) };
+  return { done, cancel: () => timers.clearTimeout(handle) };
 };

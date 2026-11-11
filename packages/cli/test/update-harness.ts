@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { RELEASE_SIGNATURE_KNOWN_ANSWER, RELEASE_SIGNATURE_TOOL } from '@momonga/foundation';
-import type { CommandOptions, CommandResult } from '@momonga/foundation';
+import type { BoundedCommandRunner, CommandResult, CommandTimedOut } from '@momonga/foundation';
 import { registerCleanup, withTempDir, testKernelLock } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import type { DetachedSpawn, SelfExecutable } from '../src/ports.ts';
@@ -18,20 +18,23 @@ export const PUBLIC_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6U
 export const OLD_BINARY = Buffer.from('old-binary-bytes');
 export const NEW_BINARY = Buffer.from('new-binary-bytes-of-a-newer-release');
 
-export const DAEMON_RESTART_BOUND_MS = 123_456;
+export const DAEMON_READY_BOUND_MS = 60_000;
 
-export type RunCall = { file: string; args: readonly string[]; options: CommandOptions; targetContent: string; stagedContent: string | undefined };
+type BoundedCommandOptions = Parameters<BoundedCommandRunner>[2];
 
-export type SignatureCheck = { args: readonly string[]; options: CommandOptions; allowedSigners: string; signature: string; directory: string };
+export type RunCall = { file: string; args: readonly string[]; options: BoundedCommandOptions; targetContent: string; stagedContent: string | undefined };
+
+export type SignatureCheck = { args: readonly string[]; options: BoundedCommandOptions; allowedSigners: string; signature: string; directory: string };
 
 export type Control = {
-  signature: CommandResult;
+  signature: CommandResult | CommandTimedOut;
   knownAnswer: CommandResult;
   signatureToolMissing: boolean;
-  codesign: CommandResult;
+  codesign: CommandResult | CommandTimedOut;
   reportedVersion: string | undefined;
+  candidateTimedOut: boolean;
   daemonRunning: boolean;
-  daemonStart: CommandResult;
+  daemonStart: CommandResult | CommandTimedOut;
   retiring: { steps: number; jobs: number; versions: string[] };
   lockHeld: boolean;
   autoUpdates: boolean;
@@ -67,6 +70,8 @@ export type HarnessOptions = {
 
 const ok = (stdout = ''): CommandResult => ({ exitCode: 0, stdout, stderr: '' });
 
+export const timedOutAt = (timeoutMs: number, stderr = ''): CommandTimedOut => ({ timedOut: true, timeoutMs, stdout: '', stderr });
+
 export const setupUpdate = async (context: TestContext, options: HarnessOptions = {}): Promise<UpdateHarness> => {
   const root = withTempDir(context, { asHome: true });
   const dir = path.join(root, 'bin');
@@ -82,6 +87,7 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
     signatureToolMissing: false,
     codesign: ok(),
     reportedVersion: undefined,
+    candidateTimedOut: false,
     daemonRunning: false,
     daemonStart: ok(),
     retiring: { steps: 0, jobs: 0, versions: [] },
@@ -117,6 +123,7 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
       }
       runs.push({ file, args, options, targetContent: fs.readFileSync(target, 'utf8'), stagedContent: readText(file) });
       if (file === '/usr/bin/codesign') return control.codesign;
+      if (args[0] === '--version' && control.candidateTimedOut) return timedOutAt(options.timeoutMs);
       if (args[0] === '--version') return ok(`${control.reportedVersion ?? (server.latestTag ?? '').slice(1)}\n`);
       if (args[0] === 'daemon' && args[1] === 'start') return control.daemonStart;
       throw new Error(`unexpected command ${file} ${args.join(' ')}`);
@@ -139,7 +146,7 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
         state.writes.push(value);
       },
     },
-    daemon: { running: async () => control.daemonRunning, retiring: async () => control.retiring, restartBoundMs: async () => DAEMON_RESTART_BOUND_MS },
+    daemon: { running: async () => control.daemonRunning, retiring: async () => control.retiring, readyBoundMs: async () => DAEMON_READY_BOUND_MS },
     autoUpdates: async () => control.autoUpdates,
     spawnDetached: (spec) => {
       let rejectExit: (error: Error) => void = () => undefined;

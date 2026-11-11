@@ -10,7 +10,7 @@ export type FirstRequest = { inputUpper: number; toolTokens: number };
 export const firstRequestOf = async (task = 'Work'): Promise<FirstRequest> => {
   const env = await makeEnv();
   env.gateway.script.push(textStep('probe'));
-  const run = env.enqueue(task);
+  const run = await env.enqueue(task);
   await env.runOnce(env.worker());
   const [first] = env.ofType(run.id, 'model.requested');
   if (first?.budget === undefined) throw new Error('the probe run sent no model request with a budget record');

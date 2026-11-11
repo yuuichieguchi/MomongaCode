@@ -7,7 +7,7 @@ import { createJsonLogger, createUdsClient, inspectProcessLock, systemClock, FIR
 import type { TextStream } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS, createGateway, startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, ownedStart, createFakeClock, createFakeTimers, createScriptedAdapter, registerCleanup, startFakeChatCompletions, withTempDir, testLocks, testKernelLock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, createScriptedAdapter, registerCleanup, startFakeChatCompletions, withTempDir, registerOwned, testLocks, testKernelLock } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
 import { HMAC_KEY, PRIMARY, START_MS, TEST_VERSION, buildConfig, postJson, userInput } from './gateway-helpers.ts';
@@ -106,15 +106,12 @@ const closeQuietly = async (handle: GatewayProcess): Promise<void> => {
 };
 
 const start = async (context: CleanupContext, options: Parameters<typeof startGatewayProcess>[0]): Promise<GatewayProcess> => {
-  const handle = await ownedStart(context, startGatewayProcess({ stdout: capture(), ...options }));
-  registerCleanup(context, () => closeQuietly(handle));
-  return handle;
+  return registerOwned(context, () => startGatewayProcess({ stdout: capture(), ...options }), closeQuietly);
 };
 
-const rejectionOf = async (context: CleanupContext, promise: Promise<GatewayProcess>): Promise<unknown> => {
+const rejectionOf = async (started: Promise<GatewayProcess>): Promise<unknown> => {
   try {
-    const handle = await ownedStart(context, promise);
-    registerCleanup(context, () => closeQuietly(handle));
+    await started;
   } catch (error) {
     return error;
   }
@@ -147,7 +144,7 @@ describe('startGatewayProcess startup unwind (§4.3)', () => {
     const log = capture();
     const logger = createJsonLogger({ service: 'gateway', clock: systemClock, stream: log });
 
-    const error = await rejectionOf(context, startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, logger, stdout: capture() }));
+    const error = await rejectionOf(registerOwned(context, () => startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, logger, stdout: capture() }), closeQuietly));
 
     expect(error).toBe(original);
     expect(error).not.toBeInstanceOf(AggregateError);
@@ -163,7 +160,7 @@ describe('startGatewayProcess startup unwind (§4.3)', () => {
     const home = withTempDir(context, { asHome: true });
     prepareGenerationHome(home);
     writeSettings(home, { models: modelsOf({ '9-bad-name': { adapter: 'managed', server: 'fm', model: 'system' } }) });
-    const error = await rejectionOf(context, startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout: capture() }));
+    const error = await rejectionOf(registerOwned(context, () => startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout: capture() }), closeQuietly));
     expect(error).toBeInstanceOf(ConfigError);
     expect((await inspectProcessLock(homePaths(home).lock, { mechanism: testKernelLock() })).state).toBe('free');
   });
@@ -200,7 +197,7 @@ describe('startGatewayProcess startup unwind (§4.3)', () => {
     controller.abort(reason);
     const stdout = capture();
 
-    const error = await rejectionOf(context, startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout, signal: controller.signal }));
+    const error = await rejectionOf(registerOwned(context, () => startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout, signal: controller.signal }), closeQuietly));
 
     expect(error).toBe(reason);
     expect(stdout.lines()).toEqual([]);
@@ -214,7 +211,7 @@ describe('startGatewayProcess startup unwind (§4.3)', () => {
     control.afterCreateGateway = () => controller.abort(reason);
     const stdout = capture();
 
-    const error = await rejectionOf(context, startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout, signal: controller.signal }));
+    const error = await rejectionOf(registerOwned(context, () => startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout, signal: controller.signal }), closeQuietly));
 
     expect(error).toBe(reason);
     expect(stdout.lines()).toEqual([]);
@@ -311,6 +308,7 @@ describe('gateway fatal (§4.2, §4.3)', () => {
       servers.push(server);
       return server;
     }) as typeof http.createServer);
+    registerCleanup(context, () => spy.mockRestore());
     const seen: Error[] = [];
     const gateway = await createGateway({
       lock: testKernelLock(),

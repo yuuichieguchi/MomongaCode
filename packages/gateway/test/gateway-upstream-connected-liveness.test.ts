@@ -109,9 +109,11 @@ const startUpstream = async (transport: Transport, steps: readonly UpstreamStep[
   return { endpoint: { kind: 'tcp', baseUrl: `http://127.0.0.1:${address.port}/v1`, network: UNCONFIGURED_NETWORK }, requests: () => received };
 };
 
-const settingsLiveness = (headersTimeoutMs: number, idleTimeoutMs: number): UpstreamLiveness => ({ headersTimeoutMs, idleTimeoutMs }) as unknown as UpstreamLiveness;
+type LivenessBounds = Pick<UpstreamLiveness, 'headersTimeoutMs' | 'idleTimeoutMs'>;
 
-const askThrough = async (transport: Transport, steps: readonly UpstreamStep[], liveness: UpstreamLiveness, maxAttempts = 1) => {
+const settingsLiveness = (headersTimeoutMs: number, idleTimeoutMs: number): LivenessBounds => ({ headersTimeoutMs, idleTimeoutMs });
+
+const askThrough = async (transport: Transport, steps: readonly UpstreamStep[], bounds: LivenessBounds, maxAttempts = 1) => {
   const upstream = await startUpstream(transport, steps);
   const clock = createFakeClock(START_MS);
   const timers = createFakeTimers(clock);
@@ -119,7 +121,7 @@ const askThrough = async (transport: Transport, steps: readonly UpstreamStep[], 
     resolveEndpoint: async () => upstream.endpoint,
     capabilities: async () => REMOTE_CAPABILITIES,
     clock,
-    liveness,
+    liveness: { ...bounds, timers },
   });
   registerCleanup(() => adapter.close());
   const harness = await startGateway({

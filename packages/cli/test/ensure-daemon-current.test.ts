@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { ensureDaemon } from '../src/daemon/ensure-daemon.ts';
 import type { DaemonPorts } from '../src/daemon/ensure-daemon.ts';
 import type { CliClock, SelfExecutable } from '../src/ports.ts';
-import { createFakeWork, recordingSpawn, startFakeSupervisor } from './fake-supervisor.ts';
+import { createFakeWork, installedProgram, recordingSpawn, startFakeSupervisor } from './fake-supervisor.ts';
 import type { FakeSupervisor } from './fake-supervisor.ts';
 
 const VERSION = '1.2.3';
@@ -46,7 +46,7 @@ describe('ensureDaemon and run/current', () => {
       });
       return undefined;
     });
-    const ports: DaemonPorts = { version: VERSION, env: { PATH: '/usr/bin' }, home, clock, self: SELF, spawnDetached: spawn };
+    const ports: DaemonPorts = { version: VERSION, env: { PATH: '/usr/bin' }, home, clock, self: SELF, spawnDetached: spawn, ...installedProgram(VERSION).ports };
 
     let returned = false;
     const pending = ensureDaemon(ports, paths, { bounds: BOUNDS }).finally(() => {

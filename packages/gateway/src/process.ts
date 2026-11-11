@@ -8,10 +8,8 @@ import {
   derivedInputsOf,
   diskKeptRecords,
   keptSettingsDirectory,
-  loadUserSettings,
   probeRecordKeyOf,
   providerNameOf,
-  readUserStopValues,
   registeredIds,
   registeredServer,
   requireOfferedEndpointForm,
@@ -22,7 +20,7 @@ import {
   upstreamEndpointOf,
 } from '@momonga/config';
 import type { ResolvedModel, ResolvedModels, ResolvedSettings } from '@momonga/config';
-import { CAPABILITIES_UNKNOWN_CODE, PLAN_USE_NOT_ENABLED_CODE, SERVER_KINDS, SIGN_IN_REQUIRED_CODE, USAGE_PAUSED_CODE, displayMapOf, planAccountRefOf, PLAN_STORE_UNREADABLE_STATE, PLAN_STORE_UNWRITABLE_STATE } from '@momonga/protocol';
+import { CAPABILITIES_UNKNOWN_CODE, PLAN_USE_NOT_ENABLED_CODE, SERVER_KINDS, SIGN_IN_REQUIRED_CODE, USAGE_PAUSED_CODE, WORDS, displayMapOf, planAccountRefOf, PLAN_STORE_UNREADABLE_STATE, PLAN_STORE_UNWRITABLE_STATE } from '@momonga/protocol';
 import type { ManagedServerDescription, PlanAccountRef, PlanHealthReason, TargetHealthReason, GatewayHealth } from '@momonga/protocol';
 import {
   acquireProcessLock,
@@ -45,7 +43,7 @@ import {
   createUdsClient,
   fixedSocket,
   SETTINGS_APPLIED_ENV,
-  nodeFileSystemSync,
+  systemRandom,
   startDeadlineSignal,
   codeDigestOfRunningProcess,
   createBinaryHashCache,
@@ -64,6 +62,7 @@ import {
   EXIT_RETIRED,
   SWEEP_INTERVAL_MS,
   BUSY_WAIT_LIMIT_MS,
+  nodeFileSystemSync,
 } from '@momonga/foundation';
 import type { EndpointProbeKey, PlanProfiles, ServerRegistry, StopValuesReader } from '@momonga/config';
 import type {
@@ -84,7 +83,7 @@ import type {
   StopValues,
   TextStream,
 } from '@momonga/foundation';
-import { createEncryptedCredentialStore, createFileCredentialStore, createOutboundDispatcher, givenCredentialSecretStore, installTrust, layoutProcessInspector, nodeFileSystem, outboundFetch, systemRandom, trustFailureText, proxyPasswordsOf } from '@momonga/foundation';
+import { createEncryptedCredentialStore, createFileCredentialStore, createOutboundDispatcher, givenCredentialSecretStore, installTrust, layoutProcessInspector, nodeFileSystem, outboundFetch, trustFailureText, proxyPasswordsOf } from '@momonga/foundation';
 import type { KernelLockMechanism, LayoutLocks, ProcessInspector } from '@momonga/foundation';
 import {
   buildCostReport,
@@ -158,6 +157,7 @@ import type { OllamaMeasurement } from './probe/ollama.ts';
 import { endpointKeyOfLock, endpointLockKeyOf } from './probe/endpoint-record.ts';
 import type { EndpointKey, EndpointLockKey } from './probe/endpoint-record.ts';
 import { createManagedTarget } from './managed/target.ts';
+import { aboutModel, managedConnectionPlace, managedModelName } from './managed/name.ts';
 import type { ExecWithStdinFn, ManagedTarget } from './managed/target.ts';
 import { createGateway } from './server/gateway.ts';
 import { createRouter } from './core/router.ts';
@@ -410,7 +410,7 @@ const requiredServer = (servers: ServerRegistry | undefined, id: string): Manage
 };
 
 type ManagedAdapterWiring = {
-  display: string;
+  connectionPlace: string;
   target: Extract<ResolvedTarget, { adapter: 'managed' }>;
   description: ManagedServerDescription;
   paths: MomongaPaths;
@@ -447,9 +447,10 @@ export const instanceSocketOf = (form: EndpointForm, unixSocketPath: string, hom
 type ManagedCore = { managed: ManagedTarget; probeKey: string | undefined };
 
 const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedCore> => {
-  const { display, target, description, paths } = wiring;
+  const { target, description, paths } = wiring;
   const { provider } = target;
-  const form = requireOfferedEndpointForm(description, wiring.hostForms, `the server ${provider}`);
+  const name = managedModelName(provider, { declared: target.model });
+  const form = requireOfferedEndpointForm(description, { platform: wiring.platform, forms: wiring.hostForms }, wiring.connectionPlace);
   const inForm = (instance: ManagedInstancePaths): ManagedInstancePaths => ({ ...instance, socketPath: instanceSocketOf(form, instance.socketPath, wiring.home, wiring.generation) });
   const serving = inForm(managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'serve', provider, incarnation: wiring.incarnation }));
   const probing = inForm(managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'probe', provider }));
@@ -461,7 +462,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
   let managed: ManagedTarget | undefined;
   const server = createManagedServer({
     description,
-    target: display,
+    target: name,
     binary: target.binary,
     socketPath: serving.socketPath,
     lockPath: serving.lockPath,
@@ -475,7 +476,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     readStopGraceMs: wiring.readStopGraceMs,
     onWarning: wiring.onWarning,
     onChildStart: async (signal) => {
-      if (managed === undefined) throw new Error(`the server of the model ${display} started a child before the model was wired`);
+      if (managed === undefined) throw new Error(aboutModel(name, `the ${WORDS.server} ${provider} started a child before the ${WORDS.model} was wired`));
       await managed.childStarting(signal);
     },
     onChildExit: () => managed?.childExited(),
@@ -484,7 +485,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
   });
   const measure = measureManagedServer({
     description,
-    target: display,
+    target: name,
     binary: target.binary,
     instance: probing,
     lock: wiring.lock,
@@ -502,8 +503,8 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     ...spawnPort,
   });
   const subject = managedProbeSubject({
-    target: display,
-    precondition: managedPrecondition(description, display, target.binary, wiring.exec, wiring.files.isUsableBinary, wiring.requestLimitMs),
+    target: name,
+    precondition: managedPrecondition(description, name, target.binary, wiring.exec, wiring.files.isUsableBinary, wiring.requestLimitMs),
     probeRecordDir: paths.probe,
     lock: wiring.lock,
     readKey: freshKey,
@@ -517,7 +518,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     binary: target.binary,
     exec: wiring.execWithStdin,
     probeRecordDir: paths.probe,
-    target: display,
+    serverName: provider,
     requestLimitMs: wiring.requestLimitMs,
     isUsableBinary: wiring.files.isUsableBinary,
     readKey,
@@ -525,14 +526,14 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     startProbe: (key) => wiring.autoProbe.ensure(subject, lockKeyOf(key)),
     instanceProbe: (unknown) =>
       createInstanceProbe({
-        target: display,
+        target: name,
         unknown,
         dir: paths.probe,
         measure: (signal) => measure({ key: {}, signal }),
         retryAfterMs: PROBE_RETRY_AFTER_MS,
         clock: wiring.timers,
         onNotice: wiring.onWarning,
-        onFailure: (error) => wiring.onWarning(`the measurement of the model ${display} failed: ${error instanceof Error ? error.message : String(error)}`),
+        onFailure: (error) => wiring.onWarning(aboutModel(name, `the measurement failed: ${error instanceof Error ? error.message : String(error)}`)),
       }),
     currency,
     ...(target.capabilities === undefined ? {} : { declaredCapabilities: target.capabilities }),
@@ -933,7 +934,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   let closing: Shutdown | undefined;
   const closingValues = (): StopValues | undefined => closing?.values;
   let retired = false;
-  const stopValues = options.stopValues ?? createStopValuesReader({ load: () => readUserStopValues(options.home), onNotice: (message) => logger.warn(message) });
+  const stopValues = options.stopValues ?? createStopValuesReader({ onNotice: (message) => logger.warn(message) });
 
   const shutdown = async (values: StopValues): Promise<GatewayCloseResult> => {
     phase = 'closing';
@@ -983,14 +984,14 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const cache = createUserSettingsCache({
       home: options.home,
       onWarning: (message) => logger.warn(message),
-      keptRecords: diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(options.home), kernelLock),
+      keptRecords: diskKeptRecords(nodeFileSystem, systemRandom, keptSettingsDirectory(options.home), kernelLock),
       ...appliedRecordOf(options.env),
       planProfiles,
+      onLoaded: (loaded) => stopValues.remember(stopValuesOfSettings(loaded.settings)),
     });
-    const started = cache.snapshot();
+    const started = await cache.load(startSignal);
     if ('error' in started) throw started.error;
     const { settings } = started;
-    stopValues.remember(stopValuesOfSettings(settings));
     const outboundNetworkOf = async (section: ResolvedSettings['network'], installSignal: AbortSignal | undefined): Promise<OutboundNetwork> => {
       const config = resolveNetwork(section, options.env);
       const outbound: OutboundNetwork = { config, trust: await installTrust(config, files, installSignal === undefined ? {} : { signal: installSignal }) };
@@ -1120,6 +1121,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       profiles: planProfiles,
       paths: { sessions: paths.planSessions, host: paths.planHost, active: paths.planActive },
       store: options.planStore === undefined ? planRecordStore : options.planStore(planRecordStore),
+      ...(secretStore.backend === undefined ? {} : { storeBackend: secretStore.backend }),
       fileSystem: nodeFileSystem,
       lock: kernelLock,
       accounts: [],
@@ -1262,7 +1264,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           carried ??
           (await (async (): Promise<ManagedPart> => {
             const built = await createManagedCore({
-              display,
+              connectionPlace: managedConnectionPlace(paths.settingsFile, current.models.connections, target.provider),
               target,
               description: server,
               paths,

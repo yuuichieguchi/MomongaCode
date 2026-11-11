@@ -22,7 +22,7 @@
   ],
   "effect": { "argv": ["git", "merge", "-q", "--ff-only", "refs/remotes/{input.remote}/{input.branch}"] },
   "applied": [["after.behind", { "literal": "0" }]],
-  "unchanged": [["after.head", "before.head"]],
+  "unchanged": [{ "ifObserved": "before.head", "then": [["after.head", "before.head"]], "else": [["after.head", { "literal": "" }]] }],
   "guard": "compare_and_set",
   "supersedes": [["git", "pull"]],
   "report": "The checked-out branch is at {after.head} and contains every commit of {input.remote}/{input.branch}."

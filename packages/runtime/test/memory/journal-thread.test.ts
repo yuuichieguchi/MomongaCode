@@ -3,7 +3,7 @@ import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import type { TestContext } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
-import { openDatabase, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
+import { openDatabase, systemRandom, nodeFileSystem, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { JournalThreadError, openRuntimeStore } from '@momonga/store';
 import { createFakeClock, createFakeTimers, withTempDir, testKernelLock } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
@@ -27,7 +27,7 @@ type Fixture = { readonly databasePath: string; readonly identity: { dev: number
 const fixture = (context: TestContext): Fixture => {
   const dir = withTempDir(context);
   const databasePath = path.join(dir, 'runtime.db');
-  openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), unaskedCommands: UNASKED_COMMANDS, path: databasePath, home: dir, clock: createFakeClock(0), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 50 }).close();
+  openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: databasePath, home: dir, clock: createFakeClock(0), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 50 }).close();
   const stat = fs.statSync(databasePath);
   return { databasePath, identity: { dev: stat.dev, ino: stat.ino }, dir, marker: path.join(dir, 'spawns') };
 };

@@ -54,7 +54,9 @@ const signInAs = async (gateway: PlanGateway, account: string) => {
   const begun = await begin(gateway, { account });
   expect(begun.status).toBe(200);
   const callback = await browse(begun.body.authorizationUrl);
-  const completed = await gateway.post(PLAN_ROUTES.signInComplete, { attemptId: begun.body.attemptId, callbackUrl: callback.toString() });
+  const exchanged = await gateway.post(PLAN_ROUTES.signInComplete, { attemptId: begun.body.attemptId, callbackUrl: callback.toString() });
+  expect(exchanged.body).toMatchObject({ outcome: 'identity_unconfirmed' });
+  const completed = await gateway.post(PLAN_ROUTES.signInComplete, { attemptId: begun.body.attemptId, identityConfirmed: true });
   expect(completed.body).toMatchObject({ outcome: 'signed_in', account: { label: account } });
   const authorization = new URL(begun.body.authorizationUrl as string);
   return [callback.searchParams.get('code') ?? '', authorization.searchParams.get('state') ?? '', authorization.searchParams.get('nonce') ?? '', authorization.toString(), callback.toString()];

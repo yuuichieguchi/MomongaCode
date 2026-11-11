@@ -86,7 +86,7 @@ describe('claims across processes', () => {
     const wins = { parent: 0, child: 0 };
     const parseClaim = (reply: string): Claim | null => JSON.parse(reply) as Claim | null;
     for (let round = 0; round < 30; round += 1) {
-      enqueue(store, newSession(store, `/work/${round}`).id);
+      await enqueue(store, newSession(store, `/work/${round}`).id);
       let parentClaim: Claim | null;
       let childClaim: Claim | null;
       if (round % 3 === 0) {
@@ -113,7 +113,7 @@ describe('claims across processes', () => {
 
   it('rejects every write from a stale worker after another process reclaimed the run', async () => {
     const { dbPath, store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const child = await startChild(dbPath);
     const stale = mustClaim(store, 'parent');
     expect(await child.send(`clock ${START_MS + LEASE_MS}`)).toBe('ok');

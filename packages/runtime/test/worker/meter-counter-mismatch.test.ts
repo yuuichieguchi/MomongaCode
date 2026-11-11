@@ -37,7 +37,7 @@ const sessionWithReports = async (answer: (counter: string) => MomongaResponseEx
   const env = await makeEnv({ capabilities: exactTarget() });
   env.gateway.chainsByModel[env.session.model] = [PRIMARY_TARGET, SECONDARY];
   env.gateway.script.push(answeredWith(textStep('Earlier.'), answer(fakeCounterOf(listed))));
-  const earlier = env.enqueue('An earlier task of the session');
+  const earlier = await env.enqueue('An earlier task of the session');
   await env.runOnce(env.worker());
   expect(env.run(earlier.id).status).toBe('COMPLETED');
   return env;
@@ -56,7 +56,7 @@ describe.each(CASES)('an answer replayed after a counter change, for %s', (_labe
     const streamsBefore = env.gateway.streams.length;
     env.gateway.script.push(answeredWith(textStep('Stored before the restart.', { usage: REJECTED_USAGE }), answer(stale)), answeredWith(textStep('Answered by the new target.'), answer(fakeCounterOf(target))));
     const { store, appends } = recordingStore(env);
-    const run = env.enqueue('The task the restarted gateway answers');
+    const run = await env.enqueue('The task the restarted gateway answers');
 
     expect(await env.runOnce(env.worker('worker-1', { store }))).toBe('yielded');
 
@@ -92,7 +92,7 @@ describe.each(CASES)('an answer replayed after a counter change, for %s', (_labe
   it('gives it no truncation verdict: a report far below the count does not fail the run', async () => {
     const env = await sessionWithReports(answer, target);
     env.gateway.script.push(answeredWith(textStep('Stored before the restart.', { usage: usageOf(10, 5) }), answer(stale)));
-    const run = env.enqueue(`The task the restarted gateway answers ${'padding '.repeat(400)}`);
+    const run = await env.enqueue(`The task the restarted gateway answers ${'padding '.repeat(400)}`);
 
     expect(await env.runOnce(env.worker('worker-1'))).toBe('yielded');
 
@@ -109,7 +109,7 @@ describe('the attempt of a resend', () => {
       { events: [], error: new GatewayRequestError({ status: 0, type: 'transport', code: 'gateway_unavailable', message: 'the gateway connection was lost', provenNotSent: false }) },
       textStep('Recovered.'),
     );
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(env.worker('worker-1'))).toBe('yielded');
     env.clock.set(Math.max(env.clock.now(), env.run(run.id).availableAt));
@@ -130,7 +130,7 @@ describe('the charge of a rejected answer', () => {
   it('counts the rejected answer once in the fold usage and the store usage', async () => {
     const env = await makeEnv({ capabilities: exactTarget() });
     env.gateway.script.push(answeredWith(textStep('Stored before the restart.', { usage: REJECTED_USAGE }), byPrimary(BEFORE_RESTART_PRIMARY)), textStep('Answered by the new target.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await env.runOnce(env.worker('worker-1'));
     env.clock.set(Math.max(env.clock.now(), env.run(run.id).availableAt));
@@ -153,7 +153,7 @@ describe('the charge of a rejected answer', () => {
         throw new LeaseLostError();
       }
     });
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await env.runOnce(env.worker('worker-1', { store }));
     expect(stopped).toBe(true);
@@ -207,7 +207,7 @@ describe.each([
     const env = await makeEnv({ capabilities: exactTarget(), maxAttempts: 3, maxTotalAttempts: 3 });
     env.gateway.script.push(broken(textStep('A broken answer.', { usage: REJECTED_USAGE })), textStep('A whole answer.'));
     const { store, appends } = recordingStore(env);
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(env.worker('worker-1', { store }))).toBe('yielded');
 

@@ -1,17 +1,39 @@
+import type { EventEmitter } from 'node:events';
+import type { Readable } from 'node:stream';
 import type { JobView } from '@momonga/protocol';
 import type { SandboxedProcess } from '@momonga/sandbox';
+
+export type PortChild = EventEmitter & {
+  stdout: Readable | null | undefined;
+  stderr: Readable | null | undefined;
+  kill(signal: NodeJS.Signals): boolean;
+  unref(): void;
+};
+
+export type ChildSpawnOptions = { cwd?: string; env: Readonly<Record<string, string>>; signal?: AbortSignal };
+
+export type ChildPorts = {
+  spawn(file: string, args: readonly string[], options: ChildSpawnOptions): PortChild;
+  setTimeout(callback: () => void, ms: number): unknown;
+  clearTimeout(handle: unknown): void;
+};
+
+export type ToolTimers = Pick<ChildPorts, 'setTimeout' | 'clearTimeout'>;
 
 export type ToolIdempotencyRecord = {
   key: string;
   state: 'PENDING' | 'UNKNOWN';
   meta: Record<string, unknown>;
   pgid?: number;
+  groupName?: string;
   startedAt?: number;
   leaseToken?: number;
   authorisedAt?: number;
   createdAt: number;
   expiresAt: number;
 };
+
+export type AttachedProcess = { pgid: number; startedAt: number; groupName?: string };
 
 export type ToolIdempotencyLookup =
   | { s: 'PENDING'; rec: ToolIdempotencyRecord }
@@ -29,7 +51,7 @@ export type LeasedOutcome = { kind: 'ok' } | { kind: 'lease_lost' };
 export type LeasedIdempotencyPort = {
   begin(key: string, options: { expiresAt: number; meta: Record<string, unknown> }): LeasedBegin;
   authorise(key: string, purpose?: 'reconcile'): LeasedOutcome;
-  attachProcess(key: string, process: { pgid: number; startedAt: number }): LeasedOutcome;
+  attachProcess(key: string, process: AttachedProcess): LeasedOutcome;
   checkpoint(key: string, state: Record<string, unknown> | undefined): LeasedOutcome;
   complete(key: string, result: unknown, meta?: Record<string, unknown>): LeasedOutcome;
 };
@@ -73,11 +95,13 @@ export class RetiringYield extends Error {
   }
 }
 
+export type LineFilter = (lines: readonly string[]) => Promise<readonly string[]>;
+
 export type BackgroundJobs = {
   start(request: BackgroundJobStart): Promise<{ jobId: string }>;
   byCall(callKey: string): JobView | undefined;
   status(runId: string, jobId: string): JobView;
-  read(runId: string, jobId: string, options: { call: string; filter?: RegExp }): Promise<BackgroundJobRead>;
+  read(runId: string, jobId: string, options: { call: string; keep?: LineFilter }): Promise<BackgroundJobRead>;
   kill(runId: string, jobId: string): Promise<BackgroundJobKill>;
 };
 

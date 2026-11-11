@@ -29,7 +29,7 @@ describe('the message a run stores when its model is not ready (design-model-nam
   it('stores exactly the unavailable message of the listing, one line, with no remedy that names a command', async () => {
     const env = await makeEnv();
     env.gateway.capabilitiesByModel[env.session.model] = UNAVAILABLE;
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await runToEnd(env, run.id);
 
@@ -43,7 +43,7 @@ describe('the message a run stores when its model is not ready (design-model-nam
 
   it('stores the message and the remedy line of the probe for a model that needs a probe, as before', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(32_000, { toolCalling: NEEDS_PROBE }) });
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await runToEnd(env, run.id);
 

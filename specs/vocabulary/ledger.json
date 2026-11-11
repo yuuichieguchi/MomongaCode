@@ -230,10 +230,6 @@
       "packages/config/src/project-mandate.ts": {
         "project": 2
       },
-      "packages/config/src/server-registry.ts": {
-        "endpoint": 1,
-        "target": 1
-      },
       "packages/config/src/settings.ts": {
         "target": 1
       },
@@ -297,9 +293,6 @@
       },
       "packages/foundation/src/file-rules.ts": {
         "directory": 2
-      },
-      "packages/foundation/src/generation-start.ts": {
-        "directory": 1
       },
       "packages/foundation/src/json-depth.ts": {
         "limit": 1
@@ -420,15 +413,18 @@
         "profile": 1
       },
       "packages/gateway/src/plan/api.ts": {
-        "profile": 2
+        "profile": 1
+      },
+      "packages/gateway/src/plan/profiles.ts": {
+        "profile": 1
+      },
+      "packages/gateway/src/plan/request-limit.ts": {
+        "limit": 1
       },
       "packages/gateway/src/plan/session.ts": {
         "limit": 2,
-        "profile": 4,
+        "profile": 3,
         "task": 2
-      },
-      "packages/gateway/src/plan/signin.ts": {
-        "profile": 1
       },
       "packages/gateway/src/probe/endpoint-record.ts": {
         "endpoint": 1,
@@ -723,14 +719,14 @@
       },
       "packages/store/src/runtime-store.ts": {
         "job": 2,
-        "limit": 13,
+        "limit": 14,
         "project": 1
       },
       "packages/store/src/schema.ts": {
         "directory": 1,
         "job": 8,
         "limit": 5,
-        "project": 6,
+        "project": 7,
         "target": 4,
         "task": 2
       },

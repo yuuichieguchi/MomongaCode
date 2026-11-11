@@ -48,7 +48,7 @@ describe('state/dismissed-notices.json', () => {
   it('records a dismissal as { key: ISO time } with mode 0600 and reads it back', async () => {
     const state = path.join(freshHome(), 'state');
     fs.mkdirSync(state, { recursive: true });
-    await dismissNotice(lockedFiles, state, 'invite:chatgpt', new Date('2026-11-10T01:02:03.000Z'), new AbortController().signal);
+    await dismissNotice(lockedFiles, state, 'invite:chatgpt', new Date('2026-11-10T01:02:03.000Z'), new AbortController().signal, () => undefined);
     const file = path.join(state, 'dismissed-notices.json');
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ 'invite:chatgpt': '2026-11-10T01:02:03.000Z' });
     expect(fs.statSync(file).mode & 0o777).toBe(0o600);
@@ -58,8 +58,8 @@ describe('state/dismissed-notices.json', () => {
   it('keeps earlier dismissals when another is added', async () => {
     const state = path.join(freshHome(), 'state');
     fs.mkdirSync(state, { recursive: true });
-    await dismissNotice(lockedFiles, state, 'invite:chatgpt', new Date('2026-11-10T00:00:00.000Z'), new AbortController().signal);
-    await dismissNotice(lockedFiles, state, 'invite:other', new Date('2026-11-11T00:00:00.000Z'), new AbortController().signal);
+    await dismissNotice(lockedFiles, state, 'invite:chatgpt', new Date('2026-11-10T00:00:00.000Z'), new AbortController().signal, () => undefined);
+    await dismissNotice(lockedFiles, state, 'invite:other', new Date('2026-11-11T00:00:00.000Z'), new AbortController().signal, () => undefined);
     expect(await readDismissedNotices(nodeFiles, state, () => undefined)).toEqual({ 'invite:chatgpt': '2026-11-10T00:00:00.000Z', 'invite:other': '2026-11-11T00:00:00.000Z' });
   });
 
@@ -70,6 +70,20 @@ describe('state/dismissed-notices.json', () => {
     const warnings: string[] = [];
     expect(await readDismissedNotices(nodeFiles, state, (warning) => void warnings.push(warning))).toEqual({});
     expect(warnings).toHaveLength(1);
+  });
+
+  it('keeps a file that cannot be parsed when a notice is dismissed over it: its text is kept under a name the warning gives, and the new file is written after the warning', async () => {
+    const state = path.join(freshHome(), 'state');
+    fs.mkdirSync(state, { recursive: true });
+    const file = path.join(state, 'dismissed-notices.json');
+    fs.writeFileSync(file, '{not json');
+    const at = new Date('2026-11-11T00:00:00.000Z');
+    const kept = `${file}.unreadable-${at.getTime()}`;
+    const warnings: { text: string; keptThen: string; fileThen: string }[] = [];
+    await dismissNotice(lockedFiles, state, 'invite:chatgpt', at, new AbortController().signal, (text) => void warnings.push({ text, keptThen: fs.readFileSync(kept, 'utf8'), fileThen: fs.readFileSync(file, 'utf8') }));
+    expect(fs.readFileSync(kept, 'utf8')).toBe('{not json');
+    expect(warnings).toEqual([{ text: `${file} is not a map of notice keys to times; it is kept as ${kept} and a new file is started`, keptThen: '{not json', fileThen: '{not json' }]);
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ 'invite:chatgpt': '2026-11-11T00:00:00.000Z' });
   });
 
   it('reads an absent file as no dismissals and no warning', async () => {

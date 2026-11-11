@@ -1,10 +1,9 @@
-import os from 'node:os';
 import { createExecWithStdin, createGivenSecretStore, createOutboundDispatcher, findOutboundError, givenSecretStoreChildEnv, minimalChildEnv, outboundFetch, protectedSetFor } from '@momonga/foundation';
-import type { MomongaPaths, OutboundNetwork, ProcessInspector, SecretStore } from '@momonga/foundation';
+import type { HelperSelf, MomongaPaths, OutboundNetwork, ProcessInspector, SecretStore } from '@momonga/foundation';
 import { askedBy, computeFileRules } from '@momonga/policy';
 import type { PolicyHostPorts } from '@momonga/policy';
-import { buildSandboxPolicy, createForgeAccess, createOperationTools, createSandboxedArgvRunner, forgeCredentialOf, hostGitReader, loadForgeDescriptors } from '@momonga/tools';
-import type { AnyTool, ForgeCredentialReference, ForgeFetch, MarkerOwners, ReconcileContext, ReconcileSandbox, ShellHost } from '@momonga/tools';
+import { buildSandboxPolicy, createForgeAccess, createOperationTools, createSandboxedArgvRunner, forgeCredentialOf, loadForgeDescriptors } from '@momonga/tools';
+import type { AnyTool, ForgeCredentialReference, ForgeFetch, MarkerOwners, ProbeContext, ReconcileSandbox, ShellHost } from '@momonga/tools';
 import type { SandboxBindings } from '../ports.ts';
 import type { UserSnapshot } from './settings-port.ts';
 
@@ -20,6 +19,7 @@ export type OperationToolsOptions = {
   secretStore?: () => SecretStore;
   environment?: Readonly<Record<string, string | undefined>>;
   forgeFetch?: ForgeFetch;
+  helperSelf?: HelperSelf;
 };
 
 const outboundForgeFetch =
@@ -41,7 +41,7 @@ export const createOperationToolSource = (options: OperationToolsOptions): ((sna
   const environment = options.environment ?? process.env;
   const secretStore = options.secretStore ?? (() => createGivenSecretStore(createExecWithStdin({ ...minimalChildEnv(process.env), ...givenSecretStoreChildEnv(process.env) }), process.env));
 
-  const reconcileSandbox = async (context: ReconcileContext): Promise<ReconcileSandbox> => {
+  const reconcileSandbox = async (context: ProbeContext): Promise<ReconcileSandbox> => {
     const held = await options.sandboxes.acquire(context.signal);
     const roots = [...context.roots];
     const ports = askedBy(options.fs, context.signal);
@@ -68,7 +68,16 @@ export const createOperationToolSource = (options: OperationToolsOptions): ((sna
     return value;
   };
 
-  const runArgv = createSandboxedArgvRunner({ reconcileSandbox, shellHost: options.shellHost, outboundNetwork: options.network, markerDir: options.paths.markers.tools, credentialRoot: os.tmpdir(), owners: options.owners, inspector: options.inspector });
+  const runArgv = createSandboxedArgvRunner({
+    reconcileSandbox,
+    shellHost: options.shellHost,
+    outboundNetwork: options.network,
+    markerDir: options.paths.markers.tools,
+    credentialRoot: options.paths.tmp.spawn,
+    ...(options.helperSelf === undefined ? {} : { credentialHelper: options.helperSelf }),
+    owners: options.owners,
+    inspector: options.inspector,
+  });
   const fetch = options.forgeFetch ?? outboundForgeFetch(options.network);
   const descriptors = loadForgeDescriptors();
 
@@ -76,7 +85,6 @@ export const createOperationToolSource = (options: OperationToolsOptions): ((sna
     const { forges, operations } = snapshot.settings;
     return createOperationTools({
       runArgv,
-      readGit: hostGitReader,
       forge: createForgeAccess({
         descriptors,
         instances: (forges ?? []).map((forge) => ({ id: forge.id, descriptor: forge.descriptor, host: forge.host, apiBaseUrl: forge.apiBaseUrl, credential: forgeCredentialOf(forge) })),

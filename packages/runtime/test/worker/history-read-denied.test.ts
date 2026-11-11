@@ -32,7 +32,7 @@ const compactedJournal = (): RunEventPayload[] => [
 const workingStateOf = async (deny: boolean): Promise<{ text: string; status: string }> => {
   const env = await makeEnv();
   if (deny) env.settings.extraRules.push({ effect: 'deny', rule: 'HistoryRead' });
-  const run = env.enqueue('question one');
+  const run = await env.enqueue('question one');
   await env.seed(run.id, compactedJournal(), 'release');
   env.gateway.script.push(textStep('Done.'));
   expect(await env.runOnce(env.worker('worker-1', { toolList: () => [historyRead] }))).toBe('yielded');

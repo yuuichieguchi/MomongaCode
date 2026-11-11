@@ -30,7 +30,7 @@ const aliasEnv = async (): Promise<Env> => {
 const measuredCount = async (): Promise<number> => {
   const env = await aliasEnv();
   env.gateway.script.push(textStep('Done.'));
-  env.enqueue(LARGE_TASK);
+  await env.enqueue(LARGE_TASK);
   await env.runOnce(env.worker());
   return inputTokensOf(env.gateway.streams[0]!.body);
 };
@@ -43,7 +43,7 @@ describe('a configured tokenErrorRatio of the first target on a mixed model', ()
     expect(count - reported).toBeLessThan(FLOOR + Math.ceil(RATIO * count));
     const env = await aliasEnv();
     env.gateway.script.push(textStep('Done.', { usage: usageOf(reported, 5) }));
-    const run = env.enqueue(LARGE_TASK);
+    const run = await env.enqueue(LARGE_TASK);
 
     await env.runOnce(env.worker());
 

@@ -6,7 +6,7 @@ import { nodeCommandRunner } from './platform/command-runner.ts';
 import type { CommandRunner } from './platform/command-runner.ts';
 import { isAtomicWriteTemporary } from './atomic-file.ts';
 import { OPEN_FLAGS, nodeFileSystem } from './node-file-system.ts';
-import type { FileSystem, HeldEntry } from './node-file-system.ts';
+import type { FileSystem, ReadHandle } from './node-file-system.ts';
 import { handoverLeftovers } from './handover-leftovers.ts';
 import type { LeftoverDirectory } from './leftover-sweep.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
@@ -271,12 +271,12 @@ export class MomongaDirectoryError extends Error {
 const reasonOf = (error: NodeJS.ErrnoException): string =>
   error.errno === undefined || error.code === undefined ? error.message : `${util.getSystemErrorMessage(error.errno)} (${error.code})`;
 
-const files: Pick<FileSystem, 'mkdir' | 'mkdirOne' | 'chmod' | 'openEntry' | 'lstat' | 'stat' | 'realpath'> = nodeFileSystem;
+const files: Pick<FileSystem, 'mkdir' | 'makeDirectory' | 'chmod' | 'openRead' | 'lstat' | 'stat' | 'realpath'> = nodeFileSystem;
 
 const createDirectory = async (directory: string, options: { mode: number } | { recursive: true }): Promise<void> => {
   try {
     if ('recursive' in options) await files.mkdir(directory);
-    else await files.mkdirOne(directory, options.mode);
+    else await files.makeDirectory(directory, options.mode);
   } catch (error) {
     const failure = error as NodeJS.ErrnoException;
     if (failure.code === 'EEXIST' && !('recursive' in options)) return;
@@ -402,7 +402,7 @@ export const scopeToGeneration = (paths: MomongaPaths, generation: number): Momo
 export const createGenerationDirs = async (paths: MomongaPaths, generation: number, ports: PlatformDirectoryPorts = {}): Promise<void> => {
   const platform = ports.platform ?? process.platform;
   const scoped = scopeToGeneration(paths, generation);
-  await files.mkdirOne(path.join(paths.run, generationDirectoryName(generation)), 0o700);
+  await files.makeDirectory(path.join(paths.run, generationDirectoryName(generation)), 0o700);
   for (const directory of [paths.markers.root, scoped.markers.root, ...MARKER_KINDS.map((kind) => scoped.markers[kind])]) {
     await ensurePrivateDirectory(directory, platform);
   }
@@ -487,9 +487,9 @@ const assertOwnedDirectory = (directory: string, stat: Stats, uid: number): void
 
 const sameInode = (left: Stats, right: Stats): boolean => left.dev === right.dev && left.ino === right.ino;
 
-const openDirectoryNoFollow = async (target: string, flags: number): Promise<HeldEntry> => {
+const openDirectoryNoFollow = async (target: string, flags: number): Promise<ReadHandle> => {
   try {
-    return await files.openEntry(target, flags);
+    return await files.openRead(target, flags);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === 'ELOOP' || code === 'ENOTDIR') {
@@ -506,7 +506,7 @@ const ensureSessionTmpDirWindows = async (paths: MomongaPaths, sessionId: string
     throw new SessionTmpDirError(`${paths.tmp.sessions} is missing, a link, or not a directory; refusing to use it`);
   }
   try {
-    await files.mkdirOne(directory);
+    await files.makeDirectory(directory);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
   }
@@ -574,14 +574,14 @@ const ensureClaimedSessionTmpDir = async (paths: MomongaPaths, sessionId: string
   if (uid === undefined) throw new Error('process.getuid is required to verify directory ownership');
   const openFlags = OPEN_FLAGS.readOnly | directoryFlag(platform) | noFollowFlag(platform);
   const directory = path.join(paths.tmp.sessions, sessionId);
-  let rootHandle: HeldEntry | undefined;
-  let childHandle: HeldEntry | undefined;
+  let rootHandle: ReadHandle | undefined;
+  let childHandle: ReadHandle | undefined;
   try {
     rootHandle = await openDirectoryNoFollow(paths.tmp.sessions, openFlags);
     const rootStat = await rootHandle.stat();
     assertOwnedDirectory(paths.tmp.sessions, rootStat, uid);
     try {
-      await files.mkdirOne(directory, 0o700);
+      await files.makeDirectory(directory, 0o700);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     }

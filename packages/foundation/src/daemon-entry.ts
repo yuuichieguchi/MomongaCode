@@ -7,6 +7,8 @@ import { watchLifeline } from './lifeline.ts';
 import type { LifelineHandlers, LifelineWatch } from './lifeline.ts';
 import { ENTRY_HARD_EXIT_MARGIN_MS, EXIT_ALREADY_RUNNING, EXIT_CONFIG, EXIT_FAILURE, EXIT_OK, STDIO_EXIT_FLUSH_MS, STOP_MESSAGE_OVERLONG_REASON, createJsonLogger, parseStopMessage } from './process-contract.ts';
 import type { JsonLogger, StopValues, TextStream } from './process-contract.ts';
+import { guardStandardStreams } from './standard-streams.ts';
+import type { GuardedStandardStreams, StandardStream } from './standard-streams.ts';
 import { ProcessLockHeldError, UnadoptedEnv, acquireProcessLock } from './process-lock.ts';
 import type { DescribeHolder, ProcessLock } from './process-lock.ts';
 import { resolveLayoutLocks } from './platform/lock-capability.ts';
@@ -475,13 +477,8 @@ const flushed = (stream: NodeJS.WriteStream): Promise<void> =>
     stream.write('', () => resolve());
   });
 
-type StandardStream = 'stdout' | 'stderr';
-
-const BROKEN_PIPE = 'EPIPE';
-
-export const nodeEntryIo = (host: NodeJS.Process = process): EntryIo => {
+export const nodeEntryIo = (host: NodeJS.Process = process, streams: GuardedStandardStreams = guardStandardStreams(host)): EntryIo => {
   const openLogFiles = new Set<RotatingLogFile>();
-  const closedStreams = new Set<StandardStream>();
   const lastReportAt = new Map<string, number>();
   const withinInterval = (key: string, now: number): boolean => {
     const last = lastReportAt.get(key);
@@ -492,7 +489,7 @@ export const nodeEntryIo = (host: NodeJS.Process = process): EntryIo => {
   const recordLine = (now: number, level: 'warn' | 'error', msg: string, fields: Readonly<Record<string, unknown>>): string =>
     `${JSON.stringify({ ts: new Date(now).toISOString(), level, pid: host.pid, msg, ...fields })}\n`;
   const writeToStderr = (line: string): void => {
-    if (!closedStreams.has('stderr')) host.stderr.write(line);
+    streams.stderr.write(line);
   };
   const reportWriteFailure = (error: Error): void => {
     const now = Date.now();
@@ -503,28 +500,22 @@ export const nodeEntryIo = (host: NodeJS.Process = process): EntryIo => {
     for (const file of openLogFiles) file.write(line);
     if (stream !== 'stderr') writeToStderr(line);
   };
-  const onStreamError = (stream: StandardStream, error: NodeJS.ErrnoException): void => {
+  const onStreamError = (stream: StandardStream, error: NodeJS.ErrnoException, kind: 'closed' | 'failed'): void => {
     const now = Date.now();
-    if (error.code === BROKEN_PIPE) {
-      if (closedStreams.has(stream)) return;
-      closedStreams.add(stream);
+    if (kind === 'closed') {
       recordStreamFailure(stream, recordLine(now, 'warn', 'stdio.closed', { stream, code: error.code }));
       return;
     }
     if (withinInterval(`${stream}:${String(error.code)}`, now)) return;
     recordStreamFailure(stream, recordLine(now, 'error', 'logs.write_failed', { stream, code: error.code, message: error.message }));
   };
-  host.stdout.on('error', (error: NodeJS.ErrnoException) => onStreamError('stdout', error));
-  host.stderr.on('error', (error: NodeJS.ErrnoException) => onStreamError('stderr', error));
-  const guarded = (stream: StandardStream, target: NodeJS.WriteStream): TextStream => ({
-    write: (chunk) => (closedStreams.has(stream) ? true : target.write(chunk)),
-  });
+  streams.observe({ closed: (stream, error) => onStreamError(stream, error, 'closed'), failed: (stream, error) => onStreamError(stream, error, 'failed') });
   return {
     argv: host.argv.slice(2),
     env: host.env,
     home: host.env['HOME'] ?? os.homedir(),
-    stdout: guarded('stdout', host.stdout),
-    stderr: guarded('stderr', host.stderr),
+    stdout: streams.stdout,
+    stderr: streams.stderr,
     clock: systemClock,
     timers: { setTimeout: (callback, ms) => setTimeout(callback, ms), clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout) },
     onSignal: (signal, handler) => {
