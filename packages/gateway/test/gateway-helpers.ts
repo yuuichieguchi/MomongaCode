@@ -202,6 +202,7 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
     dbPath,
     hmacKey: options.hmacKey ?? HMAC_KEY,
     socketPath,
+    pid: process.pid,
     version: TEST_VERSION,
     ...(options.onError === undefined ? {} : { onError: options.onError }),
     ...(options.costReport === undefined ? {} : { costReport: options.costReport }),

@@ -34,6 +34,7 @@ describe('watchServerErrors is module-internal (B3)', () => {
       dbPath: path.join(dir, 'state', 'gateway.db'),
       hmacKey: HMAC_KEY,
       socketPath: path.join(dir, 'gw.sock'),
+      pid: process.pid,
       version: TEST_VERSION,
       onFatal: (error) => void seen.push(error),
     });

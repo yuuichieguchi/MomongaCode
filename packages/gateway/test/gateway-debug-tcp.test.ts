@@ -32,6 +32,7 @@ const constructWith = (debugTcp: { host: string; port: number; token: string }) 
       dbPath: path.join(dir, 'state', 'gateway.db'),
       hmacKey: HMAC_KEY,
       socketPath: path.join(dir, 'gw.sock'),
+      pid: process.pid,
       version: TEST_VERSION,
       debugTcp: debugTcp as unknown as NonNullable<GatewayOptions['debugTcp']>,
     }))(),

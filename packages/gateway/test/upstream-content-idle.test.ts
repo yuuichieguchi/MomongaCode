@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { createAnthropicAdapter, createChatCompletionsAdapter, createOpenResponsesAdapter, UPSTREAM_LIVENESS_DEFAULTS } from '@momonga/gateway';
 import type { UpstreamLiveness } from '@momonga/gateway';
 import type { AdapterContext, AdapterRequest, Capabilities, ProviderAdapter, StreamEvent } from '@momonga/protocol';
-import { anthropicMessageStart, createFakeClock, openingEvents } from '@momonga/testkit';
+import { anthropicMessageStart, createFakeClock, hostTimers, openingEvents } from '@momonga/testkit';
 import { START_MS, registerCleanup } from './gateway-helpers.ts';
 import { CC_CAPABILITIES } from './cc-support.ts';
 import { contextOf } from './own-reasoning.ts';
@@ -16,7 +16,7 @@ import { REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
 const IDLE_MS = 400;
 const PING_EVERY_MS = 40;
 const TEST_TIMEOUT_MS = 20_000;
-const LIVENESS: UpstreamLiveness = { headersTimeoutMs: 5_000, idleTimeoutMs: IDLE_MS };
+const LIVENESS: UpstreamLiveness = { headersTimeoutMs: 5_000, idleTimeoutMs: IDLE_MS, timers: hostTimers };
 const IDLE_TEXT = `The model sent no output for ${IDLE_MS / 1000} s (only keep-alive signals arrived), so the call was stopped. Raise models.idleTimeoutMs if this model needs longer.`;
 const REQUEST: AdapterRequest = { model: 'upstream-model', input: [{ type: 'message', role: 'user', content: 'hi' }] };
 

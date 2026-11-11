@@ -181,6 +181,7 @@ describe('adapter and gateway shutdown', () => {
       dbPath: path.join(dir, 'state', 'gateway.db'),
       hmacKey: HMAC_KEY,
       socketPath,
+      pid: process.pid,
       version: TEST_VERSION,
     });
     const closing = gateway.close();

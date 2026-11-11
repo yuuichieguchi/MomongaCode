@@ -28,6 +28,7 @@ export type AppDependencies = {
   activeRequests: () => number;
   startedAtSeconds: number;
   startedAt: string;
+  pid: number;
   version: string;
   costReport: ((runs: readonly { runId: string; sessionId: string }[], includeRunless: boolean, signal: AbortSignal) => Promise<{ report: GatewayCostReportView; text: string }>) | undefined;
   billedCalls: ((runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean, signal: AbortSignal) => Promise<BilledCallsPageView>) | undefined;
@@ -187,7 +188,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
         ...(await router.health()),
         version: dependencies.version,
         apiVersion: 1,
-        pid: process.pid,
+        pid: dependencies.pid,
         startedAt: dependencies.startedAt,
         state: services.closeSignal.aborted ? 'draining' : dependencies.isRetiring() ? 'retiring' : 'running',
         activeRequests: dependencies.activeRequests(),

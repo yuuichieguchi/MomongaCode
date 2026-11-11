@@ -176,6 +176,8 @@ export type StartGatewayProcessOptions = {
   timers?: GatewayTimers;
   random?: () => number;
   files?: ProcessFilePorts;
+  platform?: NodeJS.Platform;
+  pid?: number;
   exec?: ExecFn;
   execWithStdin?: ExecWithStdinFn;
   secretStore?: SecretStore;
@@ -418,6 +420,8 @@ type ManagedAdapterWiring = {
   autoProbe: AutoProbe;
   probeServers: Set<ManagedServer>;
   timers: ManagedServerTimers;
+  timeoutSignal: GatewayTimers['timeoutSignal'];
+  platform: NodeJS.Platform;
   role: RolePort;
   home: string;
   hostForms: readonly EndpointForm[];
@@ -445,8 +449,8 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
   const serving = inForm(managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'serve', provider, incarnation: wiring.incarnation }));
   const probing = inForm(managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'probe', provider }));
   const host = createHeldHostReadings();
-  const readKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: process.platform, hashes: wiring.hashes, host });
-  const freshKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: process.platform, hashes: wiring.hashes });
+  const readKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: wiring.platform, hashes: wiring.hashes, host });
+  const freshKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: wiring.platform, hashes: wiring.hashes });
   const currency = managedCurrencyOf(description, { userDialects: wiring.userDialects });
   const spawnPort = wiring.spawn === undefined ? {} : { spawn: wiring.spawn };
   let managed: ManagedTarget | undefined;
@@ -493,7 +497,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     precondition: managedPrecondition(description, display, target.binary, wiring.exec, wiring.files.isUsableBinary, wiring.requestLimitMs),
     probeRecordDir: paths.probe,
     readKey: freshKey,
-    keySignal: () => AbortSignal.timeout(wiring.requestLimitMs),
+    keySignal: () => wiring.timeoutSignal(wiring.requestLimitMs),
     measure,
     currency,
   });
@@ -872,12 +876,14 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   const timers = options.timers ?? systemProcessPorts.timers;
   const random = options.random ?? systemProcessPorts.random;
   const files = options.files ?? systemProcessPorts.files;
+  const platform = options.platform ?? systemProcessPorts.platform;
+  const pid = options.pid ?? systemProcessPorts.pid;
   const logger = options.logger ?? createJsonLogger({ service: 'gateway', clock });
   const { signal } = options;
-  const role = options.role ?? createRolePort({ paths: momongaPaths(options.home, process.platform, {}), generation: options.generation, logger });
+  const role = options.role ?? createRolePort({ paths: momongaPaths(options.home, platform, {}), generation: options.generation, logger });
   const startSignal = startDeadlineSignal(signal);
   const stdout = options.stdout ?? process.stdout;
-  const paths = momongaPaths(options.home, process.platform, {});
+  const paths = momongaPaths(options.home, platform, {});
   signal?.throwIfAborted();
   const own = generationLayout(options.home, options.generation);
   await requireGenerationDirs(paths, options.generation);
@@ -1241,6 +1247,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
               autoProbe,
               probeServers,
               timers: managedTimers,
+              timeoutSignal: timers.timeoutSignal,
+              platform,
               role,
               home: options.home,
               hostForms: endpointFormsOfSocket(own.sockets.gateway),
@@ -1467,6 +1475,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       clock,
       timers,
       random,
+      pid,
       dbPath: paths.databases.gateway,
       hmacKey,
       socketPath: own.sockets.gateway,
@@ -1498,7 +1507,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     requestGatewayAbort = () => void gateway.abort(closeValues);
     gatewayAbandonedRuns = () => gateway.abandonedRuns;
     signal?.throwIfAborted();
-    const ready: ReadyFields = { service: 'gateway', pid: process.pid, version: options.version, socketPath: gateway.socketPath, startedAt: gateway.startedAt };
+    const ready: ReadyFields = { service: 'gateway', pid, version: options.version, socketPath: gateway.socketPath, startedAt: gateway.startedAt };
     announceReady(ready, stdout);
     phase = 'running';
     if (fatalError !== undefined) void abort();
@@ -1516,7 +1525,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const leaveWhenUnheld = async (): Promise<void> => {
       gateway.releaseIdleConnections();
       if (retired || !holdsNothing()) return;
-      const standing = await runtimeHealth(AbortSignal.any([lifetime.signal, AbortSignal.timeout(CONTROL_REQUEST_TIMEOUT_MS)]));
+      const standing = await runtimeHealth(AbortSignal.any([lifetime.signal, timers.timeoutSignal(CONTROL_REQUEST_TIMEOUT_MS)]));
       if (standing === 'busy' || phase !== 'running' || role.current() !== 'retiring' || !holdsNothing()) return;
       retired = true;
       logger.info('generation.retired', { data: { generation: options.generation } });

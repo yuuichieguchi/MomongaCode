@@ -251,6 +251,7 @@ describe('the model of a request is typed text, resolved once by the leased rout
       dbPath: path.join(dir, 'state', 'gateway.db'),
       hmacKey: HMAC_KEY,
       socketPath,
+      pid: process.pid,
       version: TEST_VERSION,
       role: fixedRolePort('serving'),
     });

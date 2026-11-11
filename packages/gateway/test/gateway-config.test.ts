@@ -21,6 +21,7 @@ const construct = (overrides: { hmacKey?: Uint8Array; debugTcp?: { host: string;
     dbPath: path.join(dir, 'state', 'gateway.db'),
     hmacKey: overrides.hmacKey ?? HMAC_KEY,
     socketPath: path.join(dir, 'gw.sock'),
+    pid: process.pid,
     version: TEST_VERSION,
     ...(overrides.debugTcp === undefined ? {} : { debugTcp: overrides.debugTcp }),
   });
@@ -88,6 +89,7 @@ describe('readerStallMs', () => {
         dbPath: path.join(dir, 'state', 'gateway.db'),
         hmacKey: HMAC_KEY,
         socketPath: path.join(dir, 'gw.sock'),
+        pid: process.pid,
         version: TEST_VERSION,
       }),
     ).rejects.toThrow(/readerStallMs/);
