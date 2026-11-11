@@ -1,4 +1,4 @@
-import { NO_MODEL_CONNECTED_TEXT, displayMapOf } from '@momonga/protocol';
+import { NO_MODEL_CONNECTED_TEXT, PLAN_LABEL_REFUSAL, displayMapOf, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME } from '@momonga/protocol';
 import type { MomongaModelList, PlanAccountView, PlanAccountsResponse, PlanProfileView, PlanSignInCompleteResponse, TargetBilling } from '@momonga/protocol';
 import type { OpenUrl } from '@momonga/foundation';
 import { couldNotOpenBrowser } from '../browser-text.ts';
@@ -139,11 +139,11 @@ const chosenProfile = async (ports: AuthLoginPorts, listed: PlanAccountsResponse
 
 const outcomeLines = (profile: PlanProfileView, account: string, answer: PlanSignInCompleteResponse): string[] => {
   switch (answer.outcome) {
-    case 'retry':
+    case RETRY_OUTCOME:
       return [codeNotAcceptedLine('headless', profile, account)];
-    case 'plan_disabled':
+    case PLAN_DISABLED_STATE:
       return planDisabledLines('headless', profile, answer.account.label);
-    case 'signed_in':
+    case SIGNED_IN_OUTCOME:
       return [
         signedInLine(answer.account),
         ...(answer.firstSignIn ? [profile.messages.firstSignIn.title, profile.messages.firstSignIn.body, `${profile.messages.manageUsageLabel}: ${profile.usageUrl}`] : []),
@@ -152,6 +152,10 @@ const outcomeLines = (profile: PlanProfileView, account: string, answer: PlanSig
 };
 
 export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions): Promise<number> => {
+  if (options.account !== undefined && !isPlanLabel(options.account)) {
+    print(ports.stderr, [`momonga: ${PLAN_LABEL_REFUSAL}`]);
+    return EXIT_USAGE;
+  }
   const listed = await ports.plan.accounts();
   const profile = await chosenProfile(ports, listed, options.provider);
   if (profile === undefined) return EXIT_USAGE;
@@ -210,7 +214,7 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
     throw error;
   }
   print(ports.stdout, outcomeLines(profile, account, answer));
-  return answer.outcome === 'signed_in' ? 0 : EXIT_NOT_SIGNED_IN;
+  return answer.outcome === SIGNED_IN_OUTCOME ? 0 : EXIT_NOT_SIGNED_IN;
 };
 
 export type AuthLogoutPorts = { stdout: Writer; stderr: Writer; plan: PlanGatewayClient } & TerminalPorts;

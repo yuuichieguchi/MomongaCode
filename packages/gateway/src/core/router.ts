@@ -78,7 +78,7 @@ export type TargetRuntime = {
   gate: AdmissionGate;
   capabilityOverride: CapabilityOverride | undefined;
   idempotencyKeyHeader: string | undefined;
-  plan: { profile: string; account?: string } | undefined;
+  plan: PlanAccountRef | undefined;
   keyGroup: string | undefined;
   lastFailure: { code: string | null; message: string } | undefined;
   servedAccount: () => PlanAccountRef | undefined;

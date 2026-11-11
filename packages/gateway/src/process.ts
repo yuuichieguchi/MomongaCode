@@ -22,8 +22,8 @@ import {
   upstreamEndpointOf,
 } from '@momonga/config';
 import type { ResolvedModel, ResolvedModels, ResolvedSettings } from '@momonga/config';
-import { CAPABILITIES_UNKNOWN_CODE, PLAN_USE_NOT_ENABLED_CODE, SERVER_KINDS, SIGN_IN_REQUIRED_CODE, USAGE_PAUSED_CODE, displayMapOf } from '@momonga/protocol';
-import type { ManagedServerDescription, PlanHealthReason, TargetHealthReason, GatewayHealth } from '@momonga/protocol';
+import { CAPABILITIES_UNKNOWN_CODE, PLAN_USE_NOT_ENABLED_CODE, SERVER_KINDS, SIGN_IN_REQUIRED_CODE, USAGE_PAUSED_CODE, displayMapOf, planAccountRefOf, PLAN_STORE_UNREADABLE_STATE, PLAN_STORE_UNWRITABLE_STATE } from '@momonga/protocol';
+import type { ManagedServerDescription, PlanAccountRef, PlanHealthReason, TargetHealthReason, GatewayHealth } from '@momonga/protocol';
 import {
   acquireProcessLock,
   JsonDepthError,
@@ -711,8 +711,8 @@ const HEALTH_REASON_OF_PLAN: Readonly<Record<PlanHealthReason, TargetHealthReaso
   [SIGN_IN_REQUIRED_CODE]: SIGN_IN_REQUIRED_CODE,
   [PLAN_USE_NOT_ENABLED_CODE]: SIGN_IN_REQUIRED_CODE,
   [USAGE_PAUSED_CODE]: SIGN_IN_REQUIRED_CODE,
-  store_unreadable: 'store_unreadable',
-  store_unwritable: 'store_unwritable',
+  [PLAN_STORE_UNREADABLE_STATE]: PLAN_STORE_UNREADABLE_STATE,
+  [PLAN_STORE_UNWRITABLE_STATE]: PLAN_STORE_UNWRITABLE_STATE,
 };
 
 const healthResultOf = (health: PlanHealth): HealthResult => ({
@@ -787,8 +787,10 @@ const keyGroupOf = (target: ResolvedTarget): { keyGroup?: string } => {
   return { keyGroup: typeof baseUrl === 'string' ? new URL(baseUrl).origin : target.provider };
 };
 
-const planRefOf = (target: ResolvedTarget): { plan?: { profile: string; account?: string } } =>
-  'plan' in target ? { plan: { profile: target.plan.profile, ...(target.plan.account === undefined ? {} : { account: target.plan.account }) } } : {};
+const planRefOf = (target: ResolvedTarget): { plan?: PlanAccountRef } => {
+  const plan = 'plan' in target ? planAccountRefOf(target.plan) : undefined;
+  return plan === undefined ? {} : { plan };
+};
 
 const requiredCounter = (counters: Readonly<Record<string, string>>, name: string): string => {
   const counter = counters[name];

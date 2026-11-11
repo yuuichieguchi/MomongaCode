@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { PLAN_LABEL_REFUSAL } from '@momonga/protocol';
 import { runView } from './fake-backend.ts';
 import { KEYS, untilFrame, untilOutput, withoutLinks } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
@@ -125,6 +126,22 @@ describe('the account picker and a new sign-in', () => {
     expect(bodyOf(backend, 'sign-in/begin')).toEqual({ profile: 'chatgpt', account: 'chatgpt-2', port: LISTENER_PORT });
     expect(backend.openedUrls).toEqual([AUTHORIZATION_URL]);
     expect(bodyOf(backend, 'sign-in/complete')).toEqual({ attemptId: 'attempt-1', callbackUrl: `http://127.0.0.1:${LISTENER_PORT}/auth/callback?code=code-1&state=st-1` });
+    app.unmount();
+  });
+
+  it('refuses a label outside the label rule with the one text of every surface and begins no sign-in', async () => {
+    const { app, backend } = await startPlan({ accounts: [account({ label: 'chatgpt' })] });
+    await ready(app);
+    await submitLine(app, '/login chatgpt');
+    await choose(app, 'Add another account or workspace');
+    await untilFrame(app, 'chatgpt-2');
+    app.stdin.write('/x');
+    await untilFrame(app, 'chatgpt-2/x');
+    app.stdin.write(KEYS.enter);
+    const refused = withoutLinks(await untilFrame(app, 'the account label must match'));
+    expect(refused).not.toContain('a label must match');
+    expect(refused.replaceAll(/\s+/g, '')).toContain(PLAN_LABEL_REFUSAL.replaceAll(/\s+/g, ''));
+    expect(routesOf(backend)).not.toContain('sign-in/begin');
     app.unmount();
   });
 

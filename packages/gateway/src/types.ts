@@ -4,7 +4,7 @@ import type { PlanApi } from './plan/api.ts';
 import type { GatewayEpochs } from './core/services.ts';
 import type { ReasoningOriginCodec } from './core/reasoning-origin.ts';
 import type { Redactor } from './core/redaction.ts';
-import type { BilledCallsCursorView, BilledCallsPageView, CapabilityOverride, GatewayCostReportView, MomongaModelRoles, ProviderAdapter, TargetAnswers, TargetBilling, TraceContentPage } from '@momonga/protocol';
+import type { BilledCallsCursorView, BilledCallsPageView, CapabilityOverride, GatewayCostReportView, MomongaModelRoles, PlanAccountRef, ProviderAdapter, TargetAnswers, TargetBilling, TraceContentPage } from '@momonga/protocol';
 
 export type GatewayTargetConfig = {
   kind: string;
@@ -18,7 +18,7 @@ export type GatewayTargetConfig = {
   counter: string;
   idempotencyKeyHeader?: string;
   capabilities?: CapabilityOverride;
-  plan?: { profile: string; account?: string };
+  plan?: PlanAccountRef;
   keyGroup?: string;
 };
 

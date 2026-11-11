@@ -4,6 +4,7 @@ import { CONDITION_SOURCES, CONDITION_STATES, CONDITION_WHENS, NOT_RUN_REASONS, 
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
 import { RULE_VERDICTS } from './rule-verdict.ts';
 import { GUIDELINE_TEXT_PATTERN } from './guideline-text.ts';
+import { PLAN_LABEL_PATTERN } from './plan-account.ts';
 import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts';
 import { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
 import { CACHE_MISS_CAUSES, PREFIX_EVENTS } from './prefix-events.ts';
@@ -1346,6 +1347,10 @@ export const DAEMON_CURRENT_EVENT = 'daemon.current';
 
 export type DaemonCurrentFrame = { generation: number; version: string };
 
+const planLabel: JsonSchema = { type: 'string', pattern: PLAN_LABEL_PATTERN };
+
+const planAccountRef = closed({ profile: planLabel, account: planLabel }, ['profile']);
+
 const runView = closed(
   {
     id: string,
@@ -1353,7 +1358,7 @@ const runView = closed(
     ordinal: integer,
     status: storedEnumOf(RUN_STATUSES),
     stopReason: storedEnumOf(STOP_REASONS),
-    error: closed({ code: string, message: string, plan: closed({ profile: string, account: string }, ['profile', 'account']) }, ['code', 'message']),
+    error: closed({ code: string, message: string, plan: planAccountRef }, ['code', 'message']),
     usage,
     step: nonNegativeInteger,
     limits: runLimits,

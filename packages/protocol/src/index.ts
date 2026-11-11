@@ -197,6 +197,19 @@ export {
   PLAN_CODES,
   PLAN_HEALTH_REASONS,
   PLAN_REVOCATIONS,
+  PLAN_REVOCATION_ANSWERS,
+  PLAN_REVOCATION_CONFIRMED,
+  PLAN_REVOCATION_NONE,
+  PLAN_REVOCATION_UNCONFIRMED,
+  PLAN_STORE_STATES,
+  PLAN_STORE_UNREADABLE_STATE,
+  PLAN_STORE_UNWRITABLE_STATE,
+  PLAN_DISABLED_STATE,
+  PLAN_SIGN_IN_FAILURE,
+  PLAN_SIGN_IN_OUTCOMES,
+  SIGNED_IN_OUTCOME,
+  RETRY_OUTCOME,
+  INVALID_GRANT_REASON,
   CREDENTIAL_EFFECTS,
   ERROR_FALLBACKS,
   PLAN_ACCOUNT_STATES,
@@ -218,6 +231,8 @@ export type {
   ErrorRules,
   PlanAccountRef,
   PlanHealthReason,
+  PlanRevocationAnswer,
+  PlanStoreState,
   PlanAccountState,
   PlanAccountView,
   PlanAccountsResponse,
@@ -681,7 +696,7 @@ export type {
   ResponseToolChoice,
   Usage,
 } from './open-responses.ts';
-export { MOMONGA_EVENT_PREFIX, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE } from './gateway-api.ts';
+export { MOMONGA_EVENT_PREFIX, SERVICE_UNAVAILABLE_STATUS, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE, isTargetProbing } from './gateway-api.ts';
 export type {
   CountTokensMethod,
   CountTokensMomongaExtension,
@@ -738,4 +753,5 @@ export type {
 } from './supervisor-api.ts';
 export { BILLING_CHANGE_ALLOWED, BILLING_CHANGE_REASONS, BILLING_CHANGE_REFUSED, describeFallbackCause, fallbackCauseName, isFallbackCause, isFallbackCauseList } from './fallback-cause.ts';
 export type { BillingChangeReason, BillingChangeRecord, FallbackCause } from './fallback-cause.ts';
-export { planAccountRefOf } from './plan-account.ts';
+export { PLAN_LABEL_PATTERN, PLAN_LABEL_REFUSAL, isPlanLabel, planAccountRefOf } from './plan-account.ts';
+export type { NamedPlanAccountRef } from './plan-account.ts';

@@ -16,8 +16,8 @@ const ready = async (app: Instance): Promise<void> => {
   await untilFrame(app, 'mode: manual');
 };
 
-const failWith = (backend: FakePlanBackend, code: string, message: string): void => {
-  backend.finish(runView({ status: 'FAILED', error: { code, message, plan: PLAN } as never }));
+const failWith = (backend: FakePlanBackend, code: string, message: string, plan: { profile: string; account?: string } = PLAN): void => {
+  backend.finish(runView({ status: 'FAILED', error: { code, message, plan } }));
 };
 
 const expectIdentityBeforeMessage = (block: string, message: string): void => {
@@ -52,6 +52,22 @@ describe('the plan_use_not_enabled block of the TUI (P6.5, O-R5-6 designed and n
     await choose(app, 'Enable ChatGPT plan use');
     await eventually(() => backend.planCalls.some((call) => call.route === 'sign-in/begin'), 'the sign-in begin');
     expect(backend.planCalls.find((call) => call.route === 'sign-in/begin')?.body).toEqual({ profile: 'chatgpt', account: 'work', port: LISTENER_PORT, reconsent: true });
+    app.unmount();
+  });
+
+  it('with a plan that names no account, shows the identity line alone and Enable opens the account choice of the profile', async () => {
+    const { app, backend } = await startPlan({ accounts: [account({ label: 'work', state: 'plan_disabled' })], callbackArrives: false });
+    await ready(app);
+    await runStarted(backend, app, 'go');
+    failWith(backend, 'plan_use_not_enabled', NOT_ENABLED_MESSAGE, { profile: 'chatgpt' });
+    const block = await untilRow(app, 'Enable ChatGPT plan use');
+    expect(block).toContain(`${CHATGPT.messages.identityLabel}\n`);
+    expect(block).not.toContain(`${CHATGPT.messages.identityLabel} ·`);
+    expect(block).not.toContain('undefined');
+    await choose(app, 'Enable ChatGPT plan use');
+    const picker = await untilRow(app, 'Add another account or workspace');
+    expect(picker).toContain(CHATGPT.messages.pickerLabel);
+    expect(backend.planCalls.some((call) => call.route === 'sign-in/begin')).toBe(false);
     app.unmount();
   });
 });

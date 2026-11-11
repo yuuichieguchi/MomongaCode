@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { isRecord, systemRandom, writeFileAtomically } from '@momonga/foundation';
 import type { FileSystem } from '@momonga/foundation';
-import { PLAN_LABEL_PATTERN, isPlanLabel } from './label.ts';
+import { PLAN_LABEL_PATTERN, isPlanLabel } from '@momonga/protocol';
 
 export type ActivePointer = Record<string, string>;
 
@@ -27,13 +27,14 @@ export const readActivePointer = async (fileSystem: FileSystem, file: string): P
   }
   const parsed = parsedPointer(file, text);
   if (!isRecord(parsed)) throw new Error(`the active plan account file ${file} is not a JSON object`);
-  const pointer: ActivePointer = {};
-  for (const [profile, account] of Object.entries(parsed)) {
-    if (typeof account !== 'string') throw new Error(`the active plan account file ${file} names an account that is not text`);
-    if (!isPlanLabel(account)) throw new Error(`the active plan account file ${file} names an account that does not match ${PLAN_LABEL_PATTERN}`);
-    pointer[profile] = account;
-  }
-  return pointer;
+  return Object.fromEntries(
+    Object.entries(parsed).map(([profile, account]): [string, string] => {
+      if (!isPlanLabel(profile)) throw new Error(`the active plan account file ${file} names a profile that does not match ${PLAN_LABEL_PATTERN}`);
+      if (typeof account !== 'string') throw new Error(`the active plan account file ${file} names an account that is not text`);
+      if (!isPlanLabel(account)) throw new Error(`the active plan account file ${file} names an account that does not match ${PLAN_LABEL_PATTERN}`);
+      return [profile, account];
+    }),
+  );
 };
 
 export const writeActivePointer = async (fileSystem: FileSystem, file: string, pointer: ActivePointer): Promise<void> => {
