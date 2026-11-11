@@ -158,7 +158,7 @@ describe('GitFetch', () => {
     world.git(world.work, 'remote', 'set-url', '--push', 'origin', path.join(world.base, 'elsewhere.git'));
     const tool = operationTool('GitFetch', { runArgv: countingRunner().run });
     const ctx = contextFor(world.work, world.env);
-    const facts = await tool.gateFacts?.({ remote: 'origin', branch: 'main' }, ctx, { signal: ctx.signal, env: ctx.env });
+    const facts = await tool.gateFacts?.({ remote: 'origin', branch: 'main' }, ctx, { signal: ctx.signal, env: ctx.env, context: ctx });
     const subject = tool.subject({ remote: 'origin', branch: 'main' }, { paths: testPaths(), cwd: world.work, workingDirectory: world.work, home: world.home, roots: [world.work] }, facts);
     expect(subject).toMatchObject({ kind: 'repo', operation: 'GitFetch', remote: 'origin', refs: ['main'], destinations: [world.bare], destinationsMatchFetch: true });
   });

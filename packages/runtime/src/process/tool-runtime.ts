@@ -254,7 +254,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
 
       const registry = createToolRegistry();
       for (const tool of createBuiltinTools()) registry.register(tool);
-      for (const tool of operationTools(snapshot)) registry.register(tool);
+      if (trust === 'trusted') for (const tool of operationTools(snapshot)) registry.register(tool);
       for (const tool of additionalTools ?? []) registry.register(tool);
       for (const source of sources) registry.addSource(source);
       const set = await registry.snapshot({ signal, ...(only === undefined ? {} : { only }) });

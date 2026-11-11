@@ -32,7 +32,7 @@ import type { WorkTreeMark, WorkTreeObserver } from './work-tree-observer.ts';
 import { blockedByHeldText, blockerOf, footprintOf } from './footprint.ts';
 import type { Footprint, HeldFootprint } from './footprint.ts';
 import { startsProcesses, ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
-import type { AnyTool, CallOutputFit, DisplayContext, GateFacts, OutputFit, SpawnMarker, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
+import type { AnyTool, CallOutputFit, DisplayContext, GateFacts, OutputFit, ProbeContext, SpawnMarker, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
 import { cleanFailureMessage, groupPortOf } from '@momonga/foundation';
 import { toolRefusalKey, unavailable, validateToolInput } from './validate.ts';
 import type { ValidationResult } from './validate.ts';
@@ -413,10 +413,10 @@ const subjectContextOf = (batch: BatchCore, signal: AbortSignal = batch.signal):
 
 const displayContextOf = (batch: BatchCore): DisplayContext => ({ cwd: batch.session.cwd, workingDirectory: batch.session.workingDirectory, paths: hostPaths(batch.signal) });
 
-const subjectOfTool = async (tool: AnyTool, input: unknown, batch: BatchCore): Promise<{ subject: PermissionSubject; facts?: GateFacts }> => {
+const subjectOfTool = async (tool: AnyTool, input: unknown, batch: BatchCore, probe: () => ProbeContext): Promise<{ subject: PermissionSubject; facts?: GateFacts }> => {
   const context = subjectContextOf(batch);
   if (tool.gateFacts === undefined) return { subject: tool.subject(input, context) };
-  const facts = await tool.gateFacts(input, context, { signal: batch.signal, env: batch.env });
+  const facts = await tool.gateFacts(input, context, { signal: batch.signal, env: batch.env, context: probe() });
   return { subject: tool.subject(input, context, facts), facts };
 };
 
@@ -699,6 +699,19 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
 
   const globBudget = globBudgetMs({ leaseMs: options.leaseMs, heartbeatMs: options.heartbeatMs });
 
+  const probeContextOf = (batch: ExecutionBatchInput, key: string): ProbeContext => ({
+    idemKey: key,
+    clock,
+    deadlineAt: batch.deadlineAt,
+    signal: batch.signal,
+    roots: rootsOf(batch),
+    random: options.random,
+    files: options.files,
+    sandbox: batch.sandbox,
+    sandboxPolicy: batch.sandboxPolicy,
+    ...(batch.tmpDir === undefined ? {} : { tmpDir: batch.tmpDir }),
+  });
+
   const evaluatePolicy = async (
     call: Pick<ToolCall, 'callId'>,
     tool: PolicyTool,
@@ -784,7 +797,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         let subject: PermissionSubject;
         let facts: GateFacts | undefined;
         try {
-          ({ subject, facts } = await subjectOfTool(tool, validation.value, batch));
+          ({ subject, facts } = await subjectOfTool(tool, validation.value, batch, () => probeContextOf(batch, key)));
         } catch (error) {
           return failedOutcome(call.callId, describeThrown(tool.name, error));
         }
@@ -933,7 +946,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     let subject: PermissionSubject;
     let facts: GateFacts | undefined;
     try {
-      ({ subject, facts } = await subjectOfTool(tool, input, batch));
+      ({ subject, facts } = await subjectOfTool(tool, input, batch, () => probeContextOf(batch, key)));
     } catch (error) {
       return outcome(failedOutcome(call.callId, describeThrown(tool.name, error)));
     }

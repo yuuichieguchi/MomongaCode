@@ -6,8 +6,6 @@ import { executableCheckOn } from './builtins/shell.ts';
 import type { ShellHost, ShellPorts } from './builtins/shell.ts';
 import { directoryEntriesOn, fileCandidatesOn } from './file-listing.ts';
 import type { FileListingOptions, FileListingPorts } from './file-listing.ts';
-import { createGitReader } from './operations/git-read.ts';
-import type { GitReader } from './operations/git-read.ts';
 import { policyFilesystemOn } from './policy-filesystem.ts';
 import type { ChildPorts } from './ports.ts';
 import { ripgrepLocatorOn } from './ripgrep-locator.ts';
@@ -32,7 +30,6 @@ export const createPolicyFilesystem = (
   childPorts: ChildPorts = nodeChildPorts(),
 ): PolicyHostFilesystem => policyFilesystemOn(platform, shellPorts, childPorts);
 
-export const hostGitReader: GitReader = createGitReader(nodeChildPorts());
 
 export const createHostRipgrepLocator = (options: HostRipgrepLocatorOptions): RipgrepLocator => ripgrepLocatorOn(nodeFileSystem, options);
 

@@ -80,7 +80,8 @@ export { buildSandboxPolicy, createBuiltinTools } from './builtins/index.ts';
 export { MAX_TIMEOUT_MS as MAX_COMMAND_TIMEOUT_MS, runUserCommand, shellCommandSubject } from './builtins/bash.ts';
 export type { UserCommandHost, UserCommandOutcome } from './builtins/bash.ts';
 export type { PolicyFacts, UserPolicy, UserPolicyFacts, UserSubject } from './executor.ts';
-export { readOnlyEnvironment, readOnlySandboxPolicy } from './read-only-call.ts';
+export { gitEnvironment, gitProxyEnvironment, readOnlyEnvironment, readOnlySandboxPolicy } from './read-only-call.ts';
+export type { GitEnvironmentRequest } from './read-only-call.ts';
 export { directoryEntriesOn, fileCandidatesOn } from './file-listing.ts';
 export type { FileListingOptions, FileListingPorts } from './file-listing.ts';
 export type { SandboxPolicyOptions } from './builtins/index.ts';
@@ -91,7 +92,6 @@ export {
   createGitWorkTreeObserver,
   createHostRipgrepLocator,
   createPolicyFilesystem,
-  hostGitReader,
   listDirectoryEntries,
   listFileCandidates,
   nodeChildPorts,
@@ -152,7 +152,7 @@ export { COVERED_PROGRAMS, OPERATION_SPECS, operationCatalogueFacts } from './op
 export type { OperationCatalogueFacts } from './operations/catalogue.ts';
 export { OPERATION_CRASH_POINTS, OPERATION_GUARDS, OperationSpecError, describeClause, evaluateClauses, failedClauses, parseOperationSpec, supersededForms } from './operations/spec.ts';
 export type { Clause, ClauseItem, Guard, OperationSpec } from './operations/spec.ts';
-export type { GateCall, GateFacts, OperationEffect } from './types.ts';
+export type { GateCall, GateFacts, OperationEffect, ProbeContext } from './types.ts';
 export { openGitCredentialChannel } from './operations/git-credential.ts';
 export type { GitCredentialChannel, GitCredentialChannelOptions, GitHostCredential } from './operations/git-credential.ts';
 export { createOperationTools } from './operations/runner.ts';

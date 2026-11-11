@@ -3,6 +3,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { parseOutsideJson } from '@momonga/foundation';
 import type { FileSystem, Random } from '@momonga/foundation';
+import { appendGitConfig } from '../read-only-call.ts';
 import { ASKPASS_CLIENT_SOURCE, GIT_CREDENTIAL_NONCE_ENV, GIT_CREDENTIAL_SOCKET_ENV } from './askpass-client.ts';
 
 export type GitHostCredential = { readonly host: string; readonly username: string; readonly password: string };
@@ -41,15 +42,6 @@ const parseAsk = (line: string): Ask | undefined => {
   if (typeof value !== 'object' || value === null) return undefined;
   const { nonce, prompt } = value as Record<string, unknown>;
   return typeof nonce === 'string' && typeof prompt === 'string' ? { nonce, prompt } : undefined;
-};
-
-const configAppended = (env: Readonly<Record<string, string>>, entries: ReadonlyArray<readonly [string, string]>): Record<string, string> => {
-  const given = Number(env['GIT_CONFIG_COUNT'] ?? '0');
-  const start = Number.isInteger(given) && given > 0 ? given : 0;
-  return {
-    GIT_CONFIG_COUNT: String(start + entries.length),
-    ...Object.fromEntries(entries.flatMap(([key, value], index) => [[`GIT_CONFIG_KEY_${start + index}`, key], [`GIT_CONFIG_VALUE_${start + index}`, value]])),
-  };
 };
 
 export type GitCredentialChannelOptions = { root: string; random: Pick<Random, 'hex'>; files: Pick<FileSystem, 'mkdtemp' | 'mkdirPrivate' | 'open' | 'rm'> };
@@ -124,12 +116,11 @@ export const openGitCredentialChannel = async (credentials: readonly GitHostCred
   return {
     directory,
     environment: (env) => ({
-      ...env,
+      ...appendGitConfig(env, [['credential.helper', '']]),
       GIT_ASKPASS: askpassPath,
       GIT_TERMINAL_PROMPT: '0',
       [GIT_CREDENTIAL_SOCKET_ENV]: socketPath,
       [GIT_CREDENTIAL_NONCE_ENV]: nonce,
-      ...configAppended(env, [['credential.helper', '']]),
     }),
     redact: (text) => credentials.reduce((clean, credential) => clean.split(credential.password).join(REDACTED), text),
     close: async () => {

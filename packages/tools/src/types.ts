@@ -135,7 +135,9 @@ export type OperationEffectOutcome = (typeof OPERATION_EFFECT_OUTCOMES)[number];
 
 export type GateFacts = Record<string, unknown>;
 
-export type GateCall = { signal: AbortSignal; env: Readonly<Record<string, string>> };
+export type ProbeContext = Pick<ReconcileContext, 'idemKey' | 'clock' | 'deadlineAt' | 'tmpDir' | 'signal' | 'roots' | 'random' | 'files'> & Partial<Pick<ToolContext, 'sandbox' | 'sandboxPolicy'>>;
+
+export type GateCall = { signal: AbortSignal; env: Readonly<Record<string, string>>; context: ProbeContext };
 
 export type OperationEffect = { operation: string; target: string; outcome: OperationEffectOutcome };
 

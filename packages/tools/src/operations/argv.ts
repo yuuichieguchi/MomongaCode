@@ -3,13 +3,15 @@ import { canonicalJson, groupRecordOutcome, sha256Hex } from '@momonga/foundatio
 import type { NetworkScope, OutboundNetwork, ProcessInspector } from '@momonga/foundation';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { openGrantedNetwork } from '../builtins/network-egress.ts';
+import type { GrantedNetwork } from '../builtins/network-egress.ts';
 import type { ShellHost } from '../builtins/shell.ts';
 import { createCapture, pumpOutput } from '../capture.ts';
 import type { MarkerOwners } from '../marker-owners.ts';
 import { requireSpawnMarker, settleFinishedCommand } from '../marker-settle.ts';
 import { runSandboxedCommand } from '../sandboxed-command.ts';
 import { ToolExecutionError } from '../types.ts';
-import type { ReconcileContext, ToolContext } from '../types.ts';
+import { gitProxyEnvironment } from '../read-only-call.ts';
+import type { ProbeContext, ToolContext } from '../types.ts';
 import { openGitCredentialChannel } from './git-credential.ts';
 import type { GitCredentialChannel, GitHostCredential } from './git-credential.ts';
 
@@ -22,9 +24,10 @@ export type ArgvOptions = {
   env: Readonly<Record<string, string>>;
   signal: AbortSignal;
   network: RenderedNetwork;
-  context: ReconcileContext | ToolContext;
+  context: ProbeContext | ToolContext;
   effect: boolean;
   credentials?: readonly GitHostCredential[];
+  stdin?: string;
 };
 
 export type ArgvRunner = (argv: readonly string[], options: ArgvOptions) => Promise<ArgvResult>;
@@ -32,7 +35,7 @@ export type ArgvRunner = (argv: readonly string[], options: ArgvOptions) => Prom
 export type ReconcileSandbox = { sandbox: Sandbox; sandboxPolicy: SandboxPolicy; release(): void };
 
 export type SandboxedRunnerPorts = {
-  reconcileSandbox(context: ReconcileContext): Promise<ReconcileSandbox>;
+  reconcileSandbox(context: ProbeContext): Promise<ReconcileSandbox>;
   shellHost: ShellHost;
   outboundNetwork: OutboundNetwork;
   markerDir: string;
@@ -72,17 +75,27 @@ const supplyCredentials = async (ports: SandboxedRunnerPorts, options: ArgvOptio
   };
 };
 
-const isToolContext = (context: ReconcileContext | ToolContext): context is ToolContext => 'sandboxPolicy' in context;
+const startsEffects = (context: ProbeContext | ToolContext): context is ToolContext => 'spawnMarker' in context && context.spawnMarker !== undefined;
+
+const sandboxOf = (ports: SandboxedRunnerPorts, context: ProbeContext): Promise<ReconcileSandbox> | ReconcileSandbox =>
+  context.sandbox === undefined || context.sandboxPolicy === undefined ? ports.reconcileSandbox(context) : { sandbox: context.sandbox, sandboxPolicy: context.sandboxPolicy, release: () => undefined };
+
+const destinationsOf = (network: RenderedNetwork): readonly string[] => (network === 'none' ? [] : network.destinations);
+
+const grantNetwork = async (options: ArgvOptions, argv: readonly string[], granting: Pick<ToolContext, 'outboundNetwork' | 'sandboxPolicy'>): Promise<GrantedNetwork> => {
+  const destinations = destinationsOf(options.network);
+  const granted = await openGrantedNetwork({ network: networkScopeOfDestinations(destinations, programOf(argv)), outboundNetwork: granting.outboundNetwork, sandboxPolicy: granting.sandboxPolicy, env: options.env });
+  return granted.proxy === undefined ? granted : { ...granted, env: gitProxyEnvironment(granted.env, granted.proxy, destinations) };
+};
 
 const programOf = (argv: readonly string[]): string => argv.slice(0, 2).join(' ');
 
 const runProbe = async (ports: SandboxedRunnerPorts, argv: readonly string[], options: ArgvOptions, sequence: number): Promise<ArgvResult> => {
   const { context } = options;
-  const scope = networkScopeOfDestinations(options.network === 'none' ? [] : options.network.destinations, programOf(argv));
-  const held: ReconcileSandbox = isToolContext(context) ? { sandbox: context.sandbox, sandboxPolicy: context.sandboxPolicy, release: () => undefined } : await ports.reconcileSandbox(context);
-  let network: Awaited<ReturnType<typeof openGrantedNetwork>>;
+  const held: ReconcileSandbox = await sandboxOf(ports, context);
+  let network: GrantedNetwork;
   try {
-    network = await openGrantedNetwork({ network: scope, outboundNetwork: ports.outboundNetwork, sandboxPolicy: held.sandboxPolicy, env: options.env });
+    network = await grantNetwork(options, argv, { outboundNetwork: ports.outboundNetwork, sandboxPolicy: held.sandboxPolicy });
   } catch (error) {
     held.release();
     throw error;
@@ -102,6 +115,7 @@ const runProbe = async (ports: SandboxedRunnerPorts, argv: readonly string[], op
       clock: context.clock,
       signal: options.signal,
       timeoutMs: Math.max(0, context.deadlineAt - context.clock.now()),
+      ...(options.stdin === undefined ? {} : { stdin: options.stdin }),
       ...(context.tmpDir === undefined ? {} : { tmpDir: context.tmpDir }),
       ...(ports.inspector === undefined ? {} : { inspector: ports.inspector }),
       ...(ports.owners === undefined ? {} : { owners: ports.owners }),
@@ -119,7 +133,7 @@ const runProbe = async (ports: SandboxedRunnerPorts, argv: readonly string[], op
 
 const runEffect = async (ports: SandboxedRunnerPorts, argv: readonly string[], options: ArgvOptions, context: ToolContext): Promise<ArgvResult> => {
   const { file, fd, settle } = await requireSpawnMarker(context, programOf(argv));
-  const network = await openGrantedNetwork({ network: networkScopeOfDestinations(options.network === 'none' ? [] : options.network.destinations, programOf(argv)), outboundNetwork: context.outboundNetwork, sandboxPolicy: context.sandboxPolicy, env: options.env });
+  const network = await grantNetwork(options, argv, context);
   let supplied: Supplied | undefined;
   try {
     supplied = await supplyCredentials(ports, options, network);
@@ -152,7 +166,7 @@ const runEffect = async (ports: SandboxedRunnerPorts, argv: readonly string[], o
 export const createSandboxedArgvRunner = (ports: SandboxedRunnerPorts): ArgvRunner => {
   let sequence = 0;
   return (argv, options) => {
-    if (options.effect && isToolContext(options.context) && options.context.spawnMarker !== undefined) return runEffect(ports, argv, options, options.context);
+    if (options.effect && startsEffects(options.context)) return runEffect(ports, argv, options, options.context);
     sequence += 1;
     return runProbe(ports, argv, options, sequence);
   };

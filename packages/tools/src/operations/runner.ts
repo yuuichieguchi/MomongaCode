@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { foldedKey, wildcardMatches } from '@momonga/policy';
 import type { PermissionSubject } from '@momonga/policy';
 import { ToolExecutionError, defineTool } from '../types.ts';
@@ -5,20 +6,20 @@ import type { AnyTool, GateCall, GateFacts, OperationEffect, ReconcileContext, R
 import type { ToolIdempotencyRecord } from '../ports.ts';
 import type { ForgeAccess } from '../forge/instances.ts';
 import { parseRemoteUrl } from '../forge/remote.ts';
-import { readOnlyEnvironment } from '../read-only-call.ts';
-import { resolveDestinations, resolveRepository, sameList } from './git-read.ts';
-import type { Destinations, GitReader } from './git-read.ts';
+import { gitEnvironment, isHttpDestination } from '../read-only-call.ts';
+import { createGitReader, repositoryTrustKeys, resolveDestinations, resolveRepository, sameList } from './git-read.ts';
+import type { Destinations, GitReadOptions, GitReader } from './git-read.ts';
 import type { ArgvRunner, RenderedNetwork } from './argv.ts';
 import type { GitHostCredential } from './git-credential.ts';
 import { OPERATION_SPECS } from './catalogue.ts';
 import { FORGE_REMOTE_INPUT, asksForge, describeClause, evaluateClauses, failedClauses } from './spec.ts';
-import type { ArgvCall, ArgvItem, ForgeCall, Network, OperationSpec, Probe } from './spec.ts';
+import type { ArgvCall, ArgvItem, ForgeCall, Network, OperationSpec, PrePushHook, Probe } from './spec.ts';
 import { isTruthy, lookup, lookupList, renderTemplate } from './template.ts';
 import type { Scope } from './template.ts';
 
 export type OperationSettings = { readonly protectedRefs?: readonly string[]; readonly approval?: Readonly<Record<string, 'rule' | 'always'>> };
 
-export type OperationDeps = { runArgv: ArgvRunner; readGit: GitReader; forge: ForgeAccess; settings: OperationSettings };
+export type OperationDeps = { runArgv: ArgvRunner; forge: ForgeAccess; settings: OperationSettings };
 
 type Observation = Record<string, unknown>;
 
@@ -30,8 +31,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 const PUSH_URLS = 'pushUrls';
 
 const callOf = (idemKey: string, destination?: string): Record<string, string> => ({ key: idemKey, ...(destination === undefined ? {} : { destination }) });
-
-const remoteEnvironment = (env: Readonly<Record<string, string>>): Record<string, string> => ({ ...env, GIT_TERMINAL_PROMPT: '0', GIT_PAGER: 'cat', PAGER: 'cat' });
 
 const FORGE_REMOTE = 'forgeRemote';
 const REPO_ROOT = 'repoRoot';
@@ -98,7 +97,17 @@ const flatten = (observation: Observation, prefix = ''): string[] =>
     return [`${prefix}${key}=${typeof value === 'string' ? JSON.stringify(value) : 'not observed'}`];
   });
 
-type Runtime = { spec: OperationSpec; deps: OperationDeps };
+type Runtime = { spec: OperationSpec; deps: OperationDeps; readGit: GitReader };
+
+const readAt = (cwd: string, call: GateCall): GitReadOptions => ({ cwd, env: call.env, signal: call.signal, context: call.context });
+
+const refuseRepositoryTrustKeys = async (runtime: Runtime, repoRoot: string, call: GateCall): Promise<void> => {
+  const [key] = await repositoryTrustKeys(runtime.readGit, readAt(repoRoot, call));
+  if (key === undefined) return;
+  throw new ToolExecutionError(
+    `${runtime.spec.name} was not run: the configuration of this repository sets ${key}, which changes who vouches for the remote and cannot be set aside for one command. Remove it from the repository (git config --local --unset ${key}), or, if the setting is yours, keep it in your own configuration (git config --global ${key} <value>).`,
+  );
+};
 
 const forgeRemoteNameOf = (input: Record<string, unknown>): string => {
   const named = input[FORGE_REMOTE_INPUT];
@@ -107,7 +116,7 @@ const forgeRemoteNameOf = (input: Record<string, unknown>): string => {
 
 const resolveForgeRemote = async (runtime: Runtime, input: Record<string, unknown>, repoRoot: string, call: GateCall): Promise<string> => {
   const remote = forgeRemoteNameOf(input);
-  const { fetch } = await resolveDestinations(runtime.deps.readGit, remote, { cwd: repoRoot, env: call.env, signal: call.signal });
+  const { fetch } = await resolveDestinations(runtime.readGit, remote, readAt(repoRoot, call));
   const first = fetch[0];
   if (first === undefined) throw new ToolExecutionError(`the repository has no remote named ${remote}`);
   return first;
@@ -128,7 +137,7 @@ const observeArgv = async (runtime: Runtime, via: Extract<Probe['via'], { argv: 
   const network = renderNetwork(via.network, scope);
   const result = await runtime.deps.runArgv(renderArgv(via.argv, scope), {
     cwd: repoRoot,
-    env: network === 'none' ? readOnlyEnvironment(ctx.env) : remoteEnvironment(ctx.env),
+    env: gitEnvironment(ctx.env, network === 'none' ? { mode: 'read' } : { mode: 'network', destinations: network.destinations }),
     signal: ctx.signal,
     network,
     context: ctx,
@@ -184,19 +193,21 @@ const reachedOf = (runtime: Runtime, destinations: Destinations): string[] => (f
 
 const destinationsOf = async (runtime: Runtime, input: Record<string, unknown>, repoRoot: string, call: GateCall): Promise<string[] | undefined> => {
   const remote = remoteNameOf(runtime, input);
-  return remote === undefined ? undefined : reachedOf(runtime, await resolveDestinations(runtime.deps.readGit, remote, { cwd: repoRoot, env: call.env, signal: call.signal }));
+  return remote === undefined ? undefined : reachedOf(runtime, await resolveDestinations(runtime.readGit, remote, readAt(repoRoot, call)));
 };
 
 const GATE_PUSH = 'pushUrls';
 const GATE_FETCH = 'fetchUrls';
 
 const gateFactsOf = async (runtime: Runtime, input: Record<string, unknown>, ctx: SubjectContext, call: GateCall): Promise<GateFacts> => {
-  const repoRoot = await resolveRepository(runtime.deps.readGit, { cwd: ctx.cwd, env: call.env, signal: call.signal });
+  const repoRoot = await resolveRepository(runtime.readGit, readAt(ctx.cwd, call));
   const located = { [REPO_ROOT]: repoRoot, ...(asksForge(runtime.spec) ? { [FORGE_REMOTE]: await resolveForgeRemote(runtime, input, repoRoot, call) } : {}) };
   const remote = remoteNameOf(runtime, input);
   if (remote === undefined) return located;
-  const destinations = await resolveDestinations(runtime.deps.readGit, remote, { cwd: repoRoot, env: call.env, signal: call.signal });
-  return { ...located, [GATE_PUSH]: reachedOf(runtime, destinations), [GATE_FETCH]: destinations.fetch };
+  const destinations = await resolveDestinations(runtime.readGit, remote, readAt(repoRoot, call));
+  const reached = reachedOf(runtime, destinations);
+  if (reached.some(isHttpDestination)) await refuseRepositoryTrustKeys(runtime, repoRoot, call);
+  return { ...located, [GATE_PUSH]: reached, [GATE_FETCH]: destinations.fetch };
 };
 
 const locatedOf = (name: string, source: Record<string, unknown> | undefined): Located => {
@@ -263,7 +274,7 @@ const runEffect = async (runtime: Runtime, effect: ArgvCall | ForgeCall, ctx: To
     const network = renderNetwork(effect.network, scope);
     const result = await runtime.deps.runArgv(renderArgv(effect.argv, scope), {
       cwd: repoRoot,
-      env: remoteEnvironment(ctx.env),
+      env: gitEnvironment(ctx.env, network === 'none' ? { mode: 'local' } : { mode: 'network', destinations: network.destinations }),
       signal: ctx.signal,
       network,
       context: ctx,
@@ -282,9 +293,52 @@ const runEffect = async (runtime: Runtime, effect: ArgvCall | ForgeCall, ctx: To
   return answer.status === 'success' ? undefined : `the forge answered ${answer.status.replace('_', ' ')}`;
 };
 
+const PRE_PUSH = 'pre-push';
+const OBJECT_ID = /^[0-9a-f]+$/;
+const DELETED_REF = '(delete)';
+const NOT_RUNNABLE: readonly string[] = ['ENOENT', 'ENOTDIR', 'EACCES'];
+
+const isExecutable = async (ctx: ToolContext, file: string): Promise<boolean> => {
+  try {
+    await ctx.files.access(file, 'execute');
+    return true;
+  } catch (error) {
+    if (NOT_RUNNABLE.includes((error as NodeJS.ErrnoException).code ?? '')) return false;
+    throw error;
+  }
+};
+
+const prePushLine = (hook: PrePushHook, scope: Scope, remoteSha: string): string => {
+  const ref = renderTemplate(hook.ref, scope);
+  const localSha = lookup(scope, hook.localSha) ?? '';
+  const absent = '0'.repeat((OBJECT_ID.test(remoteSha) ? remoteSha : localSha).length);
+  const remote = remoteSha === '' ? absent : remoteSha;
+  return isTruthy(scope, hook.delete) ? `${DELETED_REF} ${absent} ${ref} ${remote}\n` : `${ref} ${localSha} ${ref} ${remote}\n`;
+};
+
+const runPrePushHook = async (runtime: Runtime, hook: PrePushHook, ctx: ToolContext, scope: Scope, repoRoot: string): Promise<string | undefined> => {
+  const step = { cwd: repoRoot, env: gitEnvironment(ctx.env, { mode: 'local' }), signal: ctx.signal, network: 'none' as const, context: ctx, effect: false };
+  const located = await runtime.deps.runArgv(['git', 'rev-parse', '--git-path', `hooks/${PRE_PUSH}`], step);
+  if (located.exitCode !== 0) throw new ToolExecutionError(`the hooks of the repository could not be located: ${located.stderr.trim()}`);
+  const program = path.resolve(repoRoot, located.stdout.replace(/\r?\n$/, ''));
+  if (!(await isExecutable(ctx, program))) return undefined;
+  const probe = runtime.spec.observe.find((candidate) => candidate.id === hook.remoteProbe);
+  if (probe === undefined || !('argv' in probe.via)) throw new ToolExecutionError(`${runtime.spec.name} names no argv probe ${hook.remoteProbe} for its ${PRE_PUSH} hook`);
+  for (const destination of recordedPushUrls(scope)) {
+    const remoteSha = await observeArgv(runtime, probe.via, ctx, { ...scope, call: callOf(ctx.idemKey, destination) }, repoRoot);
+    if (remoteSha === undefined) return `the remote ${destination} could not be read before the ${PRE_PUSH} hook, so nothing was sent`;
+    const ran = await runtime.deps.runArgv([program, renderTemplate(hook.remote, scope), destination], { ...step, stdin: prePushLine(hook, scope, remoteSha) });
+    if (ran.exitCode !== 0) {
+      const printed = [ran.stdout.trim(), ran.stderr.trim()].filter((text) => text !== '').join('\n');
+      return `the ${PRE_PUSH} hook of the repository exited with ${ran.exitCode}, so nothing was sent to ${destination}${printed === '' ? '' : `:\n${printed.slice(0, STDERR_LIMIT)}`}`;
+    }
+  }
+  return undefined;
+};
+
 const executeOperation = async (runtime: Runtime, input: Record<string, unknown>, ctx: ToolContext, prepared: Record<string, unknown> | undefined): Promise<ToolResult> => {
   const { spec } = runtime;
-  const call: GateCall = { signal: ctx.signal, env: ctx.env };
+  const call: GateCall = { signal: ctx.signal, env: ctx.env, context: ctx };
   const recorded = locatedOf(spec.name, prepared);
   if (spec.effect === undefined) {
     const after = await observe(runtime, ctx, input, undefined, recorded);
@@ -306,6 +360,10 @@ const executeOperation = async (runtime: Runtime, input: Record<string, unknown>
   }
   if (evaluateClauses(spec.applied, beforeScope)) return settledResult(runtime, beforeScope, 'already_applied');
   const effectScope = scopeOf(ctx, input, before, undefined, recorded);
+  if (spec.prePush !== undefined) {
+    const stopped = await runPrePushHook(runtime, spec.prePush, ctx, effectScope, recorded.repoRoot);
+    if (stopped !== undefined) return failedResult(runtime, beforeScope, stopped, undefined);
+  }
   let effectProblem: string | undefined;
   try {
     effectProblem = await runEffect(runtime, spec.effect, ctx, effectScope, recorded.repoRoot);
@@ -336,7 +394,7 @@ const reconcileOperation = async (runtime: Runtime, input: Record<string, unknow
 };
 
 const approvedDestinations = async (runtime: Runtime, input: Record<string, unknown>, ctx: ToolContext, repoRoot: string, gateFacts: Record<string, unknown> | undefined): Promise<string[] | undefined> => {
-  const current = await destinationsOf(runtime, input, repoRoot, { signal: ctx.signal, env: ctx.env });
+  const current = await destinationsOf(runtime, input, repoRoot, { signal: ctx.signal, env: ctx.env, context: ctx });
   if (current === undefined) return undefined;
   const approved = stringList(gateFacts?.[GATE_PUSH]);
   if (approved === undefined) throw new ToolExecutionError(`${runtime.spec.name} was started without the ${placesOf(runtime)} its permission was decided on`);
@@ -389,7 +447,7 @@ const subjectOf = (runtime: Runtime, input: Record<string, unknown>, gateFacts: 
 };
 
 const toolOf = (spec: OperationSpec, deps: OperationDeps): AnyTool => {
-  const runtime: Runtime = { spec, deps };
+  const runtime: Runtime = { spec, deps, readGit: createGitReader(deps.runArgv) };
   const body = {
     name: spec.name,
     description: spec.description,
@@ -403,7 +461,7 @@ const toolOf = (spec: OperationSpec, deps: OperationDeps): AnyTool => {
     execute: (input: Record<string, unknown>, ctx: ToolContext, prepared: Record<string, unknown> | undefined): Promise<ToolResult> => executeOperation(runtime, input, ctx, prepared),
   };
   const locate = async (input: Record<string, unknown>, ctx: ToolContext, gateFacts: Record<string, unknown> | undefined): Promise<{ facts: Record<string, unknown>; located: Located }> => {
-    const facts = gateFacts ?? (await gateFactsOf(runtime, input, ctx, { signal: ctx.signal, env: ctx.env }));
+    const facts = gateFacts ?? (await gateFactsOf(runtime, input, ctx, { signal: ctx.signal, env: ctx.env, context: ctx }));
     return { facts, located: locatedOf(spec.name, facts) };
   };
   if (spec.sideEffect === 'read_only') {

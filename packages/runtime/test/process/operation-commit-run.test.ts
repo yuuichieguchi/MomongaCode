@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { finishApprovingPrompts, launchRuntime, modelSettings, prepareStack, readDb, scriptedToolCall, sessionEnvFor, startGateway, waitForStatus } from './run-helpers.ts';
-import type { RunHome } from './run-helpers.ts';
+import type { Launched, RunHome } from './run-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -31,6 +31,14 @@ const stagedRepository = (temp: RunHome): void => {
   gitIn(temp, 'add', 'notes.txt');
 };
 
+const trust = async (launched: Pick<Launched, 'http'>, temp: RunHome): Promise<void> => {
+  const response = await launched.http('PUT', '/v1/trust', { body: { path: temp.project, decision: 'trusted' } });
+  if (response.status !== 200) throw new Error(`trust failed with ${response.status}: ${response.text}`);
+};
+
+const offeredTools = (temp: RunHome, runId: string): string[] =>
+  readDb<{ payload_json: string }>(temp.paths.databases.runtime, "SELECT payload_json FROM events WHERE run_id = ? AND type = 'tool.offered' ORDER BY seq", runId).flatMap((row) => (JSON.parse(row.payload_json) as { names: string[] }).names);
+
 type Completed = { status: string; output: string; effect?: { operation: string; outcome: string } };
 
 const completedCalls = (temp: RunHome, runId: string): Completed[] =>
@@ -46,6 +54,7 @@ describe('GitCommit through the runtime process, composed as the product compose
     stagedRepository(stack.temp);
     await startGateway(stack.temp);
     const launched = await launchRuntime(stack.temp);
+    await trust(launched, stack.temp);
     const session = await launched.createSession(BYPASS);
     const run = await launched.createRun(session.id, { input: 'commit the staged file' });
     expect(await finishApprovingPrompts(launched, stack.temp, run.id)).toBe('COMPLETED');
@@ -70,6 +79,7 @@ describe('GitCommit through the runtime process, composed as the product compose
     emptyRepository(stack.temp);
     await startGateway(stack.temp);
     const launched = await launchRuntime(stack.temp);
+    await trust(launched, stack.temp);
     const session = await launched.createSession();
     const run = await launched.createRun(session.id, { input: 'write, stage and commit notes.txt', mandate: { profile: 'stage-commit' } });
     await waitForStatus(stack.temp, run.id, FINAL);
@@ -80,5 +90,24 @@ describe('GitCommit through the runtime process, composed as the product compose
     ]);
     expect(gitIn(stack.temp, 'log', '-1', '--format=%s')).toBe('add notes');
     expect(gitIn(stack.temp, 'status', '--porcelain')).toBe('');
+  });
+
+  it('offers the Git and pull request operations only in a folder the person trusts', async () => {
+    const stack = await prepareStack({ script: [textReply('first'), textReply('second')] });
+    stack.settings({ sandbox: HOST_KIND, ...modelSettings(stack.fake.socketPath, 32_768) });
+    emptyRepository(stack.temp);
+    gitIn(stack.temp, 'config', 'http.sslVerify', 'false');
+    await startGateway(stack.temp);
+    const launched = await launchRuntime(stack.temp);
+    const session = await launched.createSession();
+    const before = await launched.createRun(session.id, { input: 'hello' });
+    expect(await waitForStatus(stack.temp, before.id, FINAL)).toBe('COMPLETED');
+    const untrusted = offeredTools(stack.temp, before.id);
+    expect(untrusted).toContain('Bash');
+    expect(untrusted.filter((name) => name.startsWith('Git') || name.startsWith('PullRequest'))).toEqual([]);
+    await trust(launched, stack.temp);
+    const after = await launched.createRun(session.id, { input: 'hello again' });
+    expect(await waitForStatus(stack.temp, after.id, FINAL)).toBe('COMPLETED');
+    expect(offeredTools(stack.temp, after.id)).toEqual(expect.arrayContaining(['GitPush', 'GitCommit', 'PullRequestCreate']));
   });
 });

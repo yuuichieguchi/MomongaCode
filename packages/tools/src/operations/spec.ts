@@ -49,6 +49,8 @@ export type SubjectSpec =
   | { readonly kind: 'repo'; readonly remote?: string; readonly refs?: readonly string[]; readonly alwaysWhen?: readonly string[]; readonly direction?: RemoteDirection }
   | { readonly kind: 'forge'; readonly pr?: string; readonly headSha?: string };
 
+export type PrePushHook = { readonly remote: string; readonly ref: string; readonly localSha: string; readonly remoteProbe: string; readonly delete: string };
+
 export type OperationSpec = {
   readonly name: string;
   readonly description: string;
@@ -62,6 +64,7 @@ export type OperationSpec = {
   readonly observe: readonly Probe[];
   readonly require: readonly ClauseItem[];
   readonly effect?: ArgvCall | ForgeCall;
+  readonly prePush?: PrePushHook;
   readonly applied: readonly ClauseItem[];
   readonly unchanged: readonly ClauseItem[];
   readonly guard?: Guard;
@@ -100,6 +103,13 @@ const STRING_MAP = { type: 'object', additionalProperties: { type: 'string' } } 
 const FORGE_NAME = { enum: [...FORGE_VOCABULARY] } as const;
 const ARGV_CALL = { type: 'object', properties: { argv: ARGV, network: NETWORK }, required: ['argv'], additionalProperties: false } as const;
 const FORGE_CALL = { type: 'object', properties: { forge: FORGE_NAME, args: STRING_MAP }, required: ['forge', 'args'], additionalProperties: false } as const;
+
+const PRE_PUSH = {
+  type: 'object',
+  properties: { remote: { type: 'string', minLength: 1 }, ref: { type: 'string', minLength: 1 }, localSha: REFERENCE, remoteProbe: { type: 'string', minLength: 1 }, delete: REFERENCE },
+  required: ['remote', 'ref', 'localSha', 'remoteProbe', 'delete'],
+  additionalProperties: false,
+} as const;
 
 const SPEC_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -159,6 +169,7 @@ const SPEC_SCHEMA = {
     },
     require: { type: 'array', items: CLAUSE_ITEM },
     effect: { oneOf: [ARGV_CALL, FORGE_CALL] },
+    prePush: PRE_PUSH,
     applied: { type: 'array', items: CLAUSE_ITEM },
     unchanged: { type: 'array', items: CLAUSE_ITEM },
     guard: { enum: [...OPERATION_GUARDS] },
@@ -231,6 +242,14 @@ export const parseOperationSpec = (value: unknown): OperationSpec => {
     const bound = boundInputs(spec.effect, spec.require ?? []);
     const unbound = subjectInputs(spec.subject).find((reference) => !bound.has(reference));
     if (unbound !== undefined) throw new OperationSpecError(`${spec.name}: the approval names ${unbound}, which is neither an argument of the effect nor required against an observation`);
+  }
+  if (spec.prePush !== undefined) {
+    const sends = spec.effect !== undefined && 'argv' in spec.effect && spec.effect.network === 'destinations';
+    if (!sends) throw new OperationSpecError(`${spec.name} declares the pre-push hook, which belongs only to an effect that sends to the push destinations`);
+    const remoteProbe = spec.observe.find((probe) => probe.id === spec.prePush?.remoteProbe);
+    if (remoteProbe === undefined || !('argv' in remoteProbe.via) || remoteProbe.via.each !== 'pushUrls') {
+      throw new OperationSpecError(`${spec.name}: the pre-push hook reads the remote value from ${spec.prePush.remoteProbe}, which must be a probe that observes each push destination`);
+    }
   }
   if (asksForge(spec) && !takesOptionalForgeRemote(spec.input)) throw new OperationSpecError(`${spec.name} asks a forge and must take the optional string input ${FORGE_REMOTE_INPUT}, which names the remote whose forge is asked`);
   const ids = spec.observe.map((probe) => probe.id);

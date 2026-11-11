@@ -55,7 +55,9 @@ describe('the repository of an operation is the one that contains the working di
     expect(result.status).toBe('completed');
     await parts.reconcile(prepared, Date.now());
     expect(runner.calls.some((argv) => argv.includes('commit'))).toBe(true);
-    expect(new Set(runner.directories)).toEqual(new Set([world.work]));
+    const located = runner.calls.map((argv, index) => ({ resolves: argv.includes('--show-toplevel'), directory: runner.directories[index] }));
+    expect(new Set(located.filter((call) => !call.resolves).map((call) => call.directory))).toEqual(new Set([world.work]));
+    expect(located.filter((call) => call.resolves)).toEqual([{ resolves: true, directory: path.join(world.work, 'pkg') }]);
   });
 
   it('keeps the repository it was approved for when the session moves before the interrupted call is reconciled', async () => {
