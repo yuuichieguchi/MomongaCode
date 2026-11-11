@@ -290,7 +290,7 @@ export const GIT_AND_LINK_ROWS: readonly Row[] = [
   {
     id: 'GL2',
     command: 'cat *',
-    after: askExceptBypass,
+    after: deny4,
     pin: true,
     fs: (layout) => globAt(layout, '*', ['link']),
     prepare: (layout) => symlinkTo(ssh(layout), P(layout, 'link')),

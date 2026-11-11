@@ -5,7 +5,7 @@ import { hostFilesystemOf, NEVER_CANCELLED } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import type { PropertyId, PropertyResult, VerificationReport } from '../src/index.ts';
 import { checkDenyPrecedence, checkRuleConsistency, checkSecretReach } from '../src/properties.ts';
-import type { SecretLocation } from '../src/properties.ts';
+import type { SecretLocation } from '../src/index.ts';
 import type { QueryContext } from '../src/queries.ts';
 import type { SolveResult } from '../src/smt.ts';
 import { buildQueryContext } from '../src/verify.ts';
@@ -57,7 +57,7 @@ describe('round 2, finding 8: secret locations are compared by their real locati
   it('reports unknown, never proved, when a secret location cannot be resolved', async () => {
     const layout = makeLayout();
     fs.symlinkSync(path.join(layout.home, 'loop'), path.join(layout.home, 'loop'));
-    const location: SecretLocation = { label: '~/loop', directory: path.join(layout.home, 'loop', 'keys'), accesses: ['read'] };
+    const location: SecretLocation = { label: '~/loop', directory: path.join(layout.home, 'loop', 'keys') };
     const report = await verifyScenario(z3.engine().api, layout, rulesOf(layout, []), { secretLocations: [sshLocation(layout), location] });
 
     const reach = resultOf(report, 'secret-reach');

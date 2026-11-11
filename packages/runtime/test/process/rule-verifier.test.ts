@@ -19,7 +19,7 @@ describe('the rule verifier of the runtime process', () => {
   it('prepares an input with the protected set and the secret locations, and starts no thread for it', async () => {
     const host: RuleSolverHost = {
       ...provedRuleSolver({ executables: '/x' }),
-      loadVerifier: async () => ({ ...provedVerifier, secretLocationsOf: (home: string) => [{ label: 'ssh', directory: `${home}/.ssh`, accesses: ['read', 'write'] }] }) as never,
+      loadVerifier: async () => ({ ...provedVerifier, secretLocationsOf: (home: string) => [{ label: 'ssh', directory: `${home}/.ssh` }] }) as never,
       threadCode: `throw new Error('no thread is expected')`,
     };
     const verifier = createRuleVerifier({ host, fs: createPolicyFilesystem(), paths, timers: systemTimers, bashPath: () => '/bin/bash', clock: createFakeClock(0) });
@@ -116,18 +116,14 @@ describe('the rule verifier with the installed solver, in the thread of the prod
     return { root, facts: { roots: [`${root}/work`], home: `${root}/home`, cwd: `${root}/work`, exemptDirectory: `${root}/home/.momonga/tmp/sessions/s1`, enforcement: 'exact-paths' } };
   };
 
-  it.for(PERMISSION_MODES)('refuses no run in the %s mode when no rule is written: what the mode default alone opens is recorded as by the mode default', async (mode, context) => {
+  it.for(PERMISSION_MODES)('refuses no run in the %s mode when no rule is written: no mode default opens a secret location', async (mode, context) => {
     const { root, facts } = homeIn(context);
     const verifier = verifierIn(root);
     const verdict = await verifier.verify(await verifier.inputOf({ ...facts, mode, rules: [] }, NEVER_CANCELLED), new AbortController().signal);
     expect(verdict.refuted).toEqual([]);
     expect(verdict.verdict).not.toBe('refuted');
     expect(policyRefusal({ fingerprint: 'f'.repeat(64), ...verdict })).toBeUndefined();
-    if (mode === 'bypassPermissions') {
-      expect(verdict.byModeDefault).toEqual(expect.arrayContaining([expect.objectContaining({ property: 'secret-reach', message: expect.stringContaining('by the mode default') })]));
-    } else {
-      expect(verdict).not.toHaveProperty('byModeDefault');
-    }
+    expect(verdict).not.toHaveProperty('byModeDefault');
   });
 
   it.for(PERMISSION_MODES)('refuses the run in the %s mode when one rule opens a secret location, naming the rule', async (mode, context) => {

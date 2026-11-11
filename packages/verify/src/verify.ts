@@ -1,5 +1,5 @@
-import { systemClock } from '@momonga/foundation';
-import type { Clock, ProtectedSet, RuleEnforcement } from '@momonga/foundation';
+import { standardSecretLocations, systemClock } from '@momonga/foundation';
+import type { Clock, ProtectedSet, RuleEnforcement, SecretLocation } from '@momonga/foundation';
 import { askedBy, computeFileRules } from '@momonga/policy';
 import type { PermissionRule, PolicyHostFilesystem, SupersededForm } from '@momonga/policy';
 import type { PermissionMode, RuleVerdictPhase } from '@momonga/protocol';
@@ -8,7 +8,6 @@ import { alphabetFor } from './char-set.ts';
 import { createCommandModel } from './command-model.ts';
 import { createPathModel } from './path-model.ts';
 import { checkBashAdmission, checkDenyPrecedence, checkRuleConsistency, checkMandateHolds, checkSecretReach, checkSupersededForms } from './properties.ts';
-import type { SecretLocation } from './properties.ts';
 import { buildSubjects } from './queries.ts';
 import type { QueryContext } from './queries.ts';
 import { exitCodeOf } from './report.ts';
@@ -70,7 +69,8 @@ export const buildQueryContext = async (api: Z3Api, request: VerifyRequest): Pro
   const probes = askedBy(fs, signal);
   const fileRules = await computeFileRules(rules, roots, exemptDirectory, enforcement, probes);
   const locationTexts: string[] = [];
-  for (const location of secretLocations) {
+  const deniedDirectories = standardSecretLocations(home).map((location) => location.directory);
+  for (const location of [...secretLocations, ...standardSecretLocations(home)]) {
     const canonical = await probes.canonicalise(location.directory);
     locationTexts.push(location.directory, ...(canonical.ok ? [canonical.path] : []));
   }
@@ -87,7 +87,7 @@ export const buildQueryContext = async (api: Z3Api, request: VerifyRequest): Pro
     ...fileRules.entries.flatMap((entry) => [entry.anchorDirectory, entry.lexicalDirectory]),
   ]);
   const smt = createSmt(api, alphabet);
-  const paths = await createPathModel({ smt, fileRules, protectedSet, roots, probes });
+  const paths = await createPathModel({ smt, fileRules, protectedSet, roots, secretDirectories: deniedDirectories, probes });
   const commands = createCommandModel(smt);
   const models = { smt, paths, commands, rules, mode };
   return {

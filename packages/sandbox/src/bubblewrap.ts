@@ -77,7 +77,7 @@ export const nodeFilesystemPort: FilesystemPort = {
     ),
 };
 
-export type BubblewrapOptions = { tmpDir?: string; scratchDir?: string; cwd: string; heldPlaceholders?: ReadonlySet<string> };
+export type BubblewrapOptions = { tmpDir?: string; scratchDir?: string; cwd?: string; heldPlaceholders?: ReadonlySet<string> };
 
 export type BubblewrapPlan = { args: string[]; placeholders: string[]; forms: Readonly<Record<string, PlaceholderForm>> };
 
@@ -319,8 +319,7 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
     ...reallow,
     ...scratch,
     ...unique(maskedDirectories).flatMap((directory) => ['--remount-ro', directory]),
-    '--chdir',
-    options.cwd,
+    ...(options.cwd === undefined ? [] : ['--chdir', options.cwd]),
   ];
   const reserved = unique(placeholders);
   return { args, placeholders: reserved, forms: Object.fromEntries(reserved.map((placeholder): [string, PlaceholderForm] => [placeholder, policy.protectedSet.forms[placeholder] ?? EMPTY_FILE_FORM])) };

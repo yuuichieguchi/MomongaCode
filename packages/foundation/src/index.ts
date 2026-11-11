@@ -3,6 +3,8 @@ export { TRANSIENT_REQUEST_STATUSES, isRetryableHttp, parseShouldRetry } from '.
 export { canonicalJson, sha256Hex } from './canonical-json.ts';
 export { verdictKey, verdictSubjectOf } from './rule-fingerprint.ts';
 export type { VerdictSubject } from './rule-fingerprint.ts';
+export { CREDENTIAL_PATHS, secretLocationsIn, standardSecretLocations } from './secret-locations.ts';
+export type { SecretLocation } from './secret-locations.ts';
 export { capText, sanitizeServerText } from './untrusted-text.ts';
 export { CircuitBreaker } from './circuit-breaker.ts';
 export { codeDigestOf, codeDigestOfRunningProcess } from './code-digest.ts';

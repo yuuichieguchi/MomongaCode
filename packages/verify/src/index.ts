@@ -4,7 +4,7 @@ export { Z3DistributionError, ensureBundledZ3, parseZ3Manifest, Z3_API_FILE, Z3_
 export type { BundledZ3, DistributionFiles, DistributionPorts, Z3Manifest } from './z3-distribution.ts';
 export { needsVerdict, verifyPermissions } from './verify.ts';
 export type { VerifyRequest } from './verify.ts';
-export type { SecretLocation } from './properties.ts';
+export type { SecretLocation } from '@momonga/foundation';
 export type { Counterexample, Finding, ModelMismatch, PropertyId, PropertyResult, Replay, Verdict, VerificationReport } from './report.ts';
 export { describeWitness } from './report.ts';
 export type { Z3Api } from './smt.ts';

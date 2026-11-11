@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { DEFAULT_SANDBOX_NETWORK, EMPTY_FILE_RULES, describeNetworkScope, filterAsync, findAsync, isProtectedWrite, lexicallyWithin, networkScopeOfRequest, someAsync } from '@momonga/foundation';
-import type { FileRuleSet, ProtectedSet, SandboxNetworkSetting, UnresolvableReason } from '@momonga/foundation';
+import { DEFAULT_SANDBOX_NETWORK, EMPTY_FILE_RULES, describeNetworkScope, filterAsync, findAsync, isProtectedWrite, lexicallyWithin, networkScopeOfRequest, someAsync, standardSecretLocations } from '@momonga/foundation';
+import type { FileRuleSet, ProtectedSet, SandboxNetworkSetting, SecretLocation, UnresolvableReason } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { ApprovalBasis, PermissionMode } from '@momonga/protocol';
 import { commandApproval } from './approval.ts';
@@ -163,8 +163,38 @@ const protectedDecision = async (input: DecideInput, subject: PermissionSubject)
   return reason === undefined ? undefined : { kind: 'ask', source: 'protected', reason, humanOnly: true };
 };
 
-const checkGuards = async (input: DecideInput, subject: PermissionSubject): Promise<Decision | undefined> =>
-  (await scanDeny(input, subject, applicableRules(input, subject))).denied ?? protectedDecision(input, subject);
+const secretLocationOf = async (input: DecideInput, target: string): Promise<SecretLocation | undefined> => {
+  const real = await input.fs.canonicalise(absoluteFrom(target, input.cwd));
+  if (!real.ok) return undefined;
+  return findAsync(standardSecretLocations(input.home), async (location) => {
+    const directory = await input.fs.canonicalise(location.directory);
+    if (!directory.ok) return false;
+    const fold = await input.fs.volumeProbe(directory.path);
+    return fold ? lexicallyWithin(real.path.toLowerCase(), directory.path.toLowerCase()) : lexicallyWithin(real.path, directory.path);
+  });
+};
+
+const secretDecision = async (input: DecideInput, subject: PermissionSubject): Promise<Decision | undefined> => {
+  if (subject.kind !== 'path') return undefined;
+  const madeReadable = subject.access === 'read' ? (input.readRoots ?? []) : [];
+  for (const target of subject.paths) {
+    const location = await secretLocationOf(input, target);
+    if (location === undefined || (await insideRoots([target], madeReadable, input.cwd, input.fs))) continue;
+    const place = absoluteFrom(target, input.cwd) === location.directory ? `it is ${location.label}` : `it is inside ${location.label}`;
+    return { kind: 'deny', source: 'protected', reason: `${subject.access === 'read' ? 'reading' : 'writing to'} ${target} is denied in every permission mode: ${place}, a secret location` };
+  }
+  return undefined;
+};
+
+const writtenRuleDecides = async (input: DecideInput, subject: PermissionSubject, applicable: Applicable): Promise<boolean> =>
+  someAsync(applicable, async ({ rule, ruleIndex }) => rule.effect !== 'deny' && (await matchRule(rule, subject, input.fileRules, ruleIndex, input.fs.canonicalise)));
+
+const checkGuards = async (input: DecideInput, subject: PermissionSubject): Promise<Decision | undefined> => {
+  const applicable = applicableRules(input, subject);
+  const guarded = (await scanDeny(input, subject, applicable)).denied ?? (await protectedDecision(input, subject));
+  if (guarded !== undefined || (await writtenRuleDecides(input, subject, applicable))) return guarded;
+  return secretDecision(input, subject);
+};
 
 const modeDefault = async (input: DecideInput, subject: PermissionSubject): Promise<Decision> => {
   const { mode, roots, cwd } = input;
@@ -236,7 +266,7 @@ const decideSubject = async (input: DecideInput, tool: PolicyTool, subject: Perm
   if (unread?.humanOnly === true) return unread;
   const asked = askRules[0];
   if (asked !== undefined) {
-    if (mode === 'bypassPermissions') return byMode('allow', `bypassPermissions mode overrides ask rule ${describeRule(asked.rule)}`);
+    if (mode === 'bypassPermissions') return (await secretDecision(input, subject)) ?? byMode('allow', `bypassPermissions mode overrides ask rule ${describeRule(asked.rule)}`);
     return byRule('ask', asked.rule, 'approval required');
   }
   if (unread !== undefined) return unread;
@@ -252,7 +282,7 @@ const decideSubject = async (input: DecideInput, tool: PolicyTool, subject: Perm
       : (await findAsync(allowRules, ({ rule, ruleIndex }) => matchRule(rule, subject, fileRules, ruleIndex, canonicalise)))?.rule;
   if (allowed !== undefined) return byRule('allow', allowed, 'allowed');
 
-  return modeDefault(input, subject);
+  return (await secretDecision(input, subject)) ?? modeDefault(input, subject);
 };
 
 const mergePlans = (plans: readonly PathPlan[]): PathPlan => ({

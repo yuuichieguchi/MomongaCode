@@ -30,7 +30,6 @@ const kindOf = (refuted: RuleRefutation[], mismatches: number, undecided: number
 export const verdictOfReport = (report: VerificationReport, solver: string): RuleVerdict => {
   const refuted = report.results.flatMap((result) => (result.verdict.status === 'refuted' ? result.verdict.findings.filter(confirmed).map((finding) => refutationOf(result.id, finding)) : []));
   const notes = report.results.flatMap((result) => (result.verdict.status === 'noted' ? result.verdict.ruleNotes : []));
-  const byModeDefault = report.results.flatMap((result) => result.byModeDefault.map((finding) => refutationOf(result.id, finding)));
   const undecided = report.results.flatMap((result) => (result.verdict.status === 'unknown' ? [{ property: result.id, reason: result.verdict.reason }] : []));
   const mismatched = report.mismatches.map((mismatch) => ({
     property: mismatch.property,
@@ -41,7 +40,6 @@ export const verdictOfReport = (report: VerificationReport, solver: string): Rul
     solver,
     refuted,
     ...(notes.length === 0 ? {} : { notes }),
-    ...(byModeDefault.length === 0 ? {} : { byModeDefault }),
     unknown: [...undecided, ...mismatched],
     notProved: [...report.outsideProof],
     ...(report.timings.length === 0 ? {} : { phases: [...report.timings] }),

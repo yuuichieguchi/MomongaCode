@@ -27,10 +27,6 @@ const describeResult = (result: PropertyResult): string[] => {
     }
   }
   if (verdict.status === 'unknown') lines.push(`  undecided: ${verdict.reason}`);
-  for (const finding of result.byModeDefault) {
-    lines.push(`  by the mode default, not by a rule: ${finding.subject}: ${finding.message}`);
-    if (finding.counterexample !== undefined) lines.push(...describeCounterexample(finding.counterexample));
-  }
   for (const note of verdict.notes) lines.push(`  note: ${note}`);
   lines.push(`  does not prove: ${result.doesNotProve.join('; ')}`);
   return lines;

@@ -34,7 +34,8 @@ const causeOf = (subject: SubjectModel, outcome: Outcome, kind: DecisionKind, re
     subject.terms.find((term) => term.rule.effect === effect && readBool(pick(term)));
   if (kind === 'deny') {
     const hit = matching('deny', (term) => term.position) ?? matching('deny', (term) => term.incidental);
-    return hit === undefined ? `${mode} mode refuses this tool` : `denied by ${describeRule(hit)}`;
+    if (hit !== undefined) return `denied by ${describeRule(hit)}`;
+    return readBool(outcome.secretDenied) ? 'a secret location is denied in every permission mode' : `${mode} mode refuses this tool`;
   }
   if (kind === 'allow') {
     if (readBool(outcome.allowedByRule)) {

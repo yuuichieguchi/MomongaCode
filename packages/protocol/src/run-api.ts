@@ -1698,7 +1698,6 @@ export const RUN_API_SCHEMAS = {
             verdict: enumOf(RULE_VERDICTS),
             solver: string,
             refuted: { type: 'array', items: closed({ property: string, subject: string, message: string, counterexample: string }, ['property', 'subject', 'message']) },
-            byModeDefault: { type: 'array', items: closed({ property: string, subject: string, message: string, counterexample: string }, ['property', 'subject', 'message']) },
             notes: {
               type: 'array',
               items: closed(

@@ -1,6 +1,6 @@
 import { canonicalJson, sha256Hex } from './canonical-json.ts';
 
-export const RULE_VERDICT_DEFINITION = 3;
+export const RULE_VERDICT_DEFINITION = 4;
 
 export type VerdictSubject = {
   readonly rules: readonly unknown[];

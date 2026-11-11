@@ -33,7 +33,7 @@ describe.runIf(HAS_REAL_SANDBOX && process.platform === 'darwin')('T17 (d) a san
     }
     const started = Date.now();
     try {
-      const result = resultOf(await tools.run('Bash', { command: `cd ${socketDir} && /usr/bin/curl -s -m 5 --unix-socket ${socketName} -X POST http://localhost/v1/markers/${'a'.repeat(64)}/ignore; echo "exit:$?"` }, {}, 'allow_once', 'reach'));
+      const result = resultOf(await tools.run('Bash', { command: `run='${socketDir}'; cd "$run" && /usr/bin/curl -s -m 5 --unix-socket ${socketName} -X POST http://localhost/v1/markers/${'a'.repeat(64)}/ignore; echo "exit:$?"` }, {}, 'allow_once', 'reach'));
       expect({ ms: Date.now() - started < 20_000, output: result.output }).toMatchObject({ ms: true });
       expect(result.output).toMatch(/exit:[1-9]/);
       expect(result.output).not.toContain('HTTP');

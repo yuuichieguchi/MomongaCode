@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, momongaLayout, protectedSetFor, syncPaths } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, momongaLayout, protectedSetFor, standardSecretLocations, syncPaths } from '@momonga/foundation';
 import { fakePolicyFilesystem, NEVER_CANCELLED } from '@momonga/testkit';
 
 import { buildSandboxPolicy } from '@momonga/tools';
@@ -56,7 +56,7 @@ describe('buildSandboxPolicy session tmp invariants', () => {
     const { layout, sessions, tmpDir } = fixture();
     const ssh = path.join(layout.home, '.ssh');
     const policy = await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, extraReadDenied: [ssh] }, NEVER_CANCELLED);
-    expect(policy.readDenied).toEqual([path.join(layout.home, '.momonga'), momongaLayout(layout.home).keychains, sessions, ssh]);
+    expect(policy.readDenied).toEqual([...standardSecretLocations(layout.home).map((location) => location.directory), sessions, ssh]);
   });
 
   it('allows reading tmpDir without a readAllowed option', async () => {

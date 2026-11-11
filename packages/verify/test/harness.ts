@@ -55,7 +55,7 @@ export type RuleSpec = readonly [effect: RuleEffect, text: string];
 export const rulesOf = (layout: Layout, specs: readonly RuleSpec[], origin: 'user' | 'project' = 'project'): PermissionRule[] =>
   specs.map(([effect, text]) => parseRule(text, { effect, origin, source: `${origin}-settings`, settingsRoot: layout.project, home: layout.home, cwd: layout.project }));
 
-export const sshLocation = (layout: Layout): SecretLocation => ({ label: '~/.ssh', directory: path.join(layout.home, '.ssh'), accesses: ['read', 'write'] });
+export const sshLocation = (layout: Layout): SecretLocation => ({ label: '~/.ssh', directory: path.join(layout.home, '.ssh') });
 
 export type VerifyOptions = {
   mode?: PermissionMode;

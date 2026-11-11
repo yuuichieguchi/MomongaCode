@@ -11,7 +11,7 @@ const facts = {
   exemptDirectory: '/home/u/.momonga/tmp/sessions/s1',
   enforcement: 'exact-paths',
   protectedSet: { paths: ['/work/.git'], lexicalPaths: [], literals: [] },
-  secretLocations: [{ label: '~/.ssh', directory: '/home/u/.ssh', accesses: ['read'] }],
+  secretLocations: [{ label: '~/.ssh', directory: '/home/u/.ssh' }],
 } as const;
 
 describe('the subject of a verdict', () => {

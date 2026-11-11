@@ -50,7 +50,6 @@ describe('reporting', () => {
     subject: '1 secret location(s)',
     proves: 'a statement',
     doesNotProve: ['a limit'],
-    byModeDefault: [],
     verdict:
       status === 'proved'
         ? { status, notes: [] }
@@ -129,7 +128,6 @@ describe('formatReport escapes each line', () => {
           proves: 'p',
           doesNotProve: ['a limit'],
           verdict: { status: 'refuted', findings: [{ subject: `rule ${FORGED}`, message: FORGED }], notes: [FORGED] },
-          byModeDefault: [{ subject: `mode ${FORGED}`, message: FORGED }],
         },
       ],
       mismatches: [],
@@ -140,7 +138,6 @@ describe('formatReport escapes each line', () => {
     const lines = formatReport(report).split('\n');
     expect(lines).toContain(`  - rule ${SHOWN}: ${SHOWN}`);
     expect(lines).toContain(`  note: ${SHOWN}`);
-    expect(lines).toContain(`  by the mode default, not by a rule: mode ${SHOWN}: ${SHOWN}`);
     expect(lines).toContain(`  - ${SHOWN}`);
     expect(lines.filter((line) => line.startsWith('  momonga'))).toEqual([]);
   });
