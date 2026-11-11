@@ -32,6 +32,13 @@ const describeResult = (result: PropertyResult): string[] => {
   return lines;
 };
 
+const resultLine = (report: VerificationReport): string => {
+  const refuted = report.results.filter((result) => result.verdict.status === 'refuted').map((result) => result.title);
+  if (refuted.length > 0) return `Refuted: ${refuted.join('; ')}`;
+  const unknown = report.results.flatMap((result) => (result.verdict.status === 'unknown' ? [`${result.title}: ${result.verdict.reason}`] : []));
+  return unknown.length > 0 ? `Unknown: ${unknown.join('; ')}` : 'No rule is refuted';
+};
+
 export const formatReport = (report: VerificationReport): string => {
   const lines = [
     `policy verification of ${report.ruleCount} rule(s) in ${report.mode} mode with ${report.solver}`,
@@ -46,5 +53,6 @@ export const formatReport = (report: VerificationReport): string => {
   }
   lines.push('Outside the proof:');
   for (const item of report.outsideProof) lines.push(`  - ${item}`);
+  lines.push('', resultLine(report));
   return lines.map(escapeTerminalLine).join('\n');
 };
