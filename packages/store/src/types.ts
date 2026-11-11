@@ -69,6 +69,12 @@ export type Session = {
   createdAt: number;
 };
 
+export type SessionPageRequest = { cwd?: string; limit: number; cursor: string | null };
+
+export type ListedSession = Session & { activeRunId: string | null; latestRunId: string | null };
+
+export type SessionPage = { sessions: ListedSession[]; next: string | null };
+
 export type CreateSessionInput = {
   cwd: string;
   env: Record<string, string>;
@@ -146,9 +152,10 @@ export type InboxRow = {
   state: Stored<InboxState>;
   createdAt: number;
   settledAt: number | null;
+  queued: { terms: QueuedRunTerms; origin: Stored<MemoryOrigin> } | null;
 };
 
-export type QueuedRunTerms = { timeoutMs: number; limits: Record<string, unknown> };
+export type QueuedRunTerms = { timeoutMs: number; limits: Record<string, unknown>; pins: Record<string, unknown>; mandate?: Mandate };
 
 export type InboxAddInput = { delivery: InboxDelivery; text: string; images?: ImageAttachment[]; run: QueuedRunTerms };
 
@@ -620,7 +627,7 @@ export type GuidelineStore = {
 export type RuntimeStore = {
   createSession(input: CreateSessionInput): Session;
   getSession(id: string): Session | undefined;
-  listSessions(filter?: { cwd?: string }): Session[];
+  listSessions(request: SessionPageRequest): SessionPage;
   createRunAndEnqueue(sessionId: string, input: CreateRunInput): Promise<CreateRunResult>;
   findRunByIdempotencyKey(sessionId: string, key: string): { run: Run; requestDigest: string | null } | undefined;
   sessionActivity(sessionId: string): { lastActivityAt: number; hasActiveRun: boolean } | undefined;

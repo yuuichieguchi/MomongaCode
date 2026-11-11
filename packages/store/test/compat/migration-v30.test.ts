@@ -51,7 +51,7 @@ describe('migration 30: generation ownership of leases and jobs (17.5, 20.51)', 
     const db = rawDb(dbPath);
     expect(db.prepare('SELECT lease_generation FROM runs').all().map((row) => row['lease_generation'])).toEqual([null]);
     expect(db.prepare('SELECT owner_generation, kill_requested_at, output_path FROM jobs').all()).toEqual([{ owner_generation: null, kill_requested_at: null, output_path: null }]);
-    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toMatchObject({ version: 41 });
+    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toMatchObject({ version: 42 });
   });
 
   it('reads a job row written before the migration without an owner, a kill request or an output path', () => {

@@ -19,8 +19,8 @@ describe('sessions', () => {
     expect(a.id).not.toBe(b.id);
     expect(store.getSession(b.id)).toEqual(b);
     expect(store.getSession('missing')).toBeUndefined();
-    expect(store.listSessions().map((session) => session.id)).toEqual([a.id, b.id, c.id]);
-    expect(store.listSessions({ cwd: '/work/a' }).map((session) => session.id)).toEqual([a.id, c.id]);
+    expect(store.listSessions({ limit: 100, cursor: null }).sessions.map((session) => session.id)).toEqual([a.id, b.id, c.id]);
+    expect(store.listSessions({ cwd: '/work/a', limit: 100, cursor: null }).sessions.map((session) => session.id)).toEqual([a.id, c.id]);
   });
 });
 

@@ -2,7 +2,7 @@ import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, openDatabaseWithIdentity, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
 import type { DatabaseFileIdentity } from '@momonga/foundation';
-import { FIDELITY_FOLD_VERSION, INBOX_MAX_PENDING, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, admitRequest, unknownEffectLines, unknownEffectOptions } from '@momonga/protocol';
+import { FIDELITY_FOLD_VERSION, INBOX_MAX_PENDING, REPORT_PAGE_ROWS, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, admitRequest, unknownEffectLines, unknownEffectOptions } from '@momonga/protocol';
 import type { Admission, CallTiming, MemoryOrigin, ElicitationAnswerRecord, ElicitationRequestView, InboxDelivery, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, TreeSpend, RunStatus, SessionEventPayload, TerminalStatus, UserShellRecord } from '@momonga/protocol';
 import { createAppendRecords, columnsOf } from './append-records.ts';
 import { createVerdictWriter } from './fidelity-verdicts.ts';
@@ -50,6 +50,7 @@ import type {
   InboxAddResult,
   InboxDeliverResult,
   InboxRow,
+  ListedSession,
   InboxStore,
   UserShellStore,
   InboxWithdrawResult,
@@ -210,6 +211,29 @@ const TERMINAL_LIST = TERMINAL_STATUSES.map((status) => `'${status}'`).join(', '
 
 const ROOT_SESSION = 'NOT EXISTS (SELECT 1 FROM runs child WHERE child.session_id = s.id AND child.parent_run_id IS NOT NULL)';
 
+export const SESSION_PAGE_ROWS = REPORT_PAGE_ROWS;
+
+const sessionPageOf = (db: DatabaseSync, index: string, folder: string) =>
+  db.prepare(
+    `SELECT s.*,
+       (SELECT r.id FROM runs r WHERE r.session_id = s.id AND r.ordinal = (SELECT MIN(a.ordinal) FROM runs a WHERE a.session_id = s.id AND a.status NOT IN (${TERMINAL_LIST}))) AS active_run_id,
+       (SELECT r.id FROM runs r WHERE r.session_id = s.id AND r.ordinal = (SELECT MAX(l.ordinal) FROM runs l WHERE l.session_id = s.id)) AS latest_run_id
+     FROM sessions s INDEXED BY ${index}
+     WHERE ${folder}${ROOT_SESSION} AND (s.created_at, s.id) > (:afterCreatedAt, :afterId)
+     ORDER BY s.created_at, s.id LIMIT :fetch`,
+  );
+
+const SESSION_CURSOR = /^(\d+):([0-9a-f-]+)$/;
+
+const sessionCursorOf = (session: Session): string => `${session.createdAt}:${session.id}`;
+
+const afterCursor = (cursor: string | null): { afterCreatedAt: number; afterId: string } => {
+  if (cursor === null) return { afterCreatedAt: -1, afterId: '' };
+  const parts = SESSION_CURSOR.exec(cursor);
+  if (parts === null) throw new RangeError(`the session cursor ${JSON.stringify(cursor)} was not given by this list`);
+  return { afterCreatedAt: Number(parts[1]), afterId: String(parts[2]) };
+};
+
 const prepareStatements = (db: DatabaseSync) => ({
   insertSession: db.prepare(
     `INSERT INTO sessions (id, cwd, env_json, permission_mode, model, bypass_allowed, additional_directories_json, mcp_servers_json, created_at)
@@ -220,8 +244,8 @@ const prepareStatements = (db: DatabaseSync) => ({
   updateSessionModel: db.prepare('UPDATE sessions SET model = :model WHERE id = :id'),
   sessionMaxEventId: db.prepare('SELECT COALESCE(MAX(id), 0) AS max_id FROM events WHERE session_id = :sessionId'),
   selectSession: db.prepare('SELECT * FROM sessions WHERE id = :id'),
-  listSessions: db.prepare(`SELECT * FROM sessions s WHERE ${ROOT_SESSION} ORDER BY created_at, rowid`),
-  listSessionsByCwd: db.prepare(`SELECT * FROM sessions s WHERE cwd = :cwd AND ${ROOT_SESSION} ORDER BY created_at, rowid`),
+  sessionPage: sessionPageOf(db, 'sessions_by_created', ''),
+  sessionPageByCwd: sessionPageOf(db, 'sessions_by_cwd_created', 'cwd = :cwd AND '),
   childRuns: db.prepare('SELECT * FROM runs WHERE parent_run_id = :runId ORDER BY created_at, rowid'),
   childByCall: db.prepare('SELECT * FROM runs WHERE parent_run_id = :parentRunId AND parent_call_id = :parentCallId'),
   parentSessionOf: db.prepare(
@@ -718,15 +742,30 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return requireRun(id);
   };
 
-  const startNextQueued = (sessionId: string, terms: QueuedRunTerms, origin: Stored<MemoryOrigin>): void => {
+  const startNextQueued = (sessionId: string): void => {
     if (inboxTable.pendingCount(sessionId) === 0 || inboxTable.sessionHasOpenRun(sessionId)) return;
     const sessionRow = sql.selectSession.get({ id: sessionId });
     if (sessionRow === undefined) throw new Error(`session ${sessionId} of a waiting message does not exist`);
     inboxTable.queuePendingSteer(sessionId);
     const head = inboxTable.firstQueued(sessionId);
     if (head === undefined) return;
+    if (head.queued === null) throw new Error(`the waiting message ${head.id} was chosen to start a run but records no terms`);
     if (!inboxTable.settle(head.id, 'delivered')) throw new Error(`the first waiting message of session ${sessionId} could not be delivered`);
-    insertRootRun(sessionRow, { input: head.text, ...(head.images === undefined ? {} : { images: head.images }), timeoutMs: terms.timeoutMs, limits: terms.limits, pins: {}, history: 'inherit' }, origin, 'queue');
+    const { terms, origin } = head.queued;
+    insertRootRun(
+      sessionRow,
+      {
+        input: head.text,
+        ...(head.images === undefined ? {} : { images: head.images }),
+        timeoutMs: terms.timeoutMs,
+        limits: terms.limits,
+        pins: terms.pins,
+        history: 'inherit',
+        ...(terms.mandate === undefined ? {} : { mandate: terms.mandate }),
+      },
+      origin,
+      'queue',
+    );
     announceInbox(sessionId);
   };
 
@@ -771,7 +810,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     writeRun(next);
     if (isTerminal(to) || to === 'CANCELLING') cancelChildren(run.id);
     if (isTerminal(to)) wakeParent(run);
-    if (isTerminal(to) && run.parentRunId === null) startNextQueued(run.sessionId, { timeoutMs: run.deadlineAt - run.createdAt, limits: run.limits }, run.origin);
+    if (isTerminal(to) && run.parentRunId === null) startNextQueued(run.sessionId);
     return requireRun(run.id);
   };
 
@@ -1225,10 +1264,10 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return transaction<InboxAddResult>(() => {
         if (sql.selectSession.get({ id: sessionId }) === undefined) return { kind: 'not_found' };
         if (inboxTable.pendingCount(sessionId) >= INBOX_MAX_PENDING) return { kind: 'full' };
-        const added = inboxTable.insert({ id: uuidv7(clock), sessionId, delivery: input.delivery, text: input.text, images: input.images });
+        const added = inboxTable.insert({ id: uuidv7(clock), sessionId, delivery: input.delivery, text: input.text, images: input.images, terms: input.run, origin });
         const open = inboxTable.sessionHasOpenRun(sessionId);
         if (open) announceInbox(sessionId);
-        else startNextQueued(sessionId, input.run, origin);
+        else startNextQueued(sessionId);
         const row = inboxTable.get(added.id);
         if (row === undefined) throw new Error(`inbox row ${added.id} vanished after it was written`);
         return { kind: 'added', row, pending: inboxTable.pending(sessionId) };
@@ -1298,8 +1337,16 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return row === undefined ? undefined : decodeSession(row, decodeContext);
     },
 
-    listSessions: (filter) =>
-      (filter?.cwd === undefined ? sql.listSessions.all() : sql.listSessionsByCwd.all({ cwd: filter.cwd })).map((row) => decodeSession(row, decodeContext)),
+    listSessions: ({ cwd, limit, cursor }) => {
+      const bounds = { ...afterCursor(cursor), fetch: limit + 1 };
+      const rows = readTx(db, () => (cwd === undefined ? sql.sessionPage.all(bounds) : sql.sessionPageByCwd.all({ ...bounds, cwd })));
+      const sessions = rows.slice(0, limit).map((row): ListedSession => {
+        const reader = readerFor('sessions', String(row['id']), row);
+        return { ...decodeSession(row, decodeContext), activeRunId: reader.nullableString('active_run_id'), latestRunId: reader.nullableString('latest_run_id') };
+      });
+      const last = sessions.at(-1);
+      return { sessions, next: rows.length > limit && last !== undefined ? sessionCursorOf(last) : null };
+    },
 
     setPermissionMode: (sessionId, mode: PermissionMode) =>
       transaction<SetPermissionModeResult>(() => {

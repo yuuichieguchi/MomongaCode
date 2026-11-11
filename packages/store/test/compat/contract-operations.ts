@@ -11,7 +11,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {
     name: 'lists the sessions and reads the runs and events the newer build wrote',
     run: async ({ store }) => {
-      for (const session of store.listSessions()) {
+      for (const session of store.listSessions({ limit: 100, cursor: null }).sessions) {
         for (const run of store.listRuns(session.id)) {
           store.load(run.id);
           store.readRunEvents(run.id, 0, 10_000);

@@ -135,7 +135,7 @@ describe('migration 27 over a version-26 database', () => {
       ]);
       expect(await store.expireApprovals(EXPIRES_MS + 1, rethrow)).toEqual([]);
       expect(store.approvals.get('appr-pending')?.status).toBe('pending');
-      expect(rawDb(dbPath).prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toEqual({ version: 41 });
+      expect(rawDb(dbPath).prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toEqual({ version: 42 });
     } finally {
       store.close();
     }

@@ -6,7 +6,7 @@ import { redactor } from './search-fixture.ts';
 
 const OWN: HistoryVisibility = { trusted: true, project: '/work/a' };
 
-const TERMS = { timeoutMs: 60_000, limits: {} };
+const TERMS = { timeoutMs: 60_000, limits: {}, pins: {} };
 
 const writeForeign = (dbPath: string, column: 'delivery' | 'state', id: string, newer: boolean): void => {
   const db = rawDb(dbPath);

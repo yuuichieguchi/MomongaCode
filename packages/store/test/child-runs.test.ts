@@ -98,8 +98,8 @@ describe('createChildRun', () => {
     const { session: childSession, run: child } = await spawn(h.store, mustRun(h.store, parent.id), 'call-1');
     const grandchild = await h.store.createChildRun({ parentRunId: child.id, parentCallId: 'g', input: 'x', pins: {}, model: 'fm' });
     if (grandchild.kind !== 'created') throw new Error('expected a grandchild');
-    expect(h.store.listSessions().map((entry) => entry.id)).toEqual([session.id]);
-    expect(h.store.listSessions({ cwd: '/work/a' }).map((entry) => entry.id)).toEqual([session.id]);
+    expect(h.store.listSessions({ limit: 100, cursor: null }).sessions.map((entry) => entry.id)).toEqual([session.id]);
+    expect(h.store.listSessions({ cwd: '/work/a', limit: 100, cursor: null }).sessions.map((entry) => entry.id)).toEqual([session.id]);
     expect(h.store.rootSessionId(childSession.id)).toBe(session.id);
     expect(h.store.rootSessionId(grandchild.session.id)).toBe(session.id);
     expect(h.store.rootSessionId(session.id)).toBe(session.id);

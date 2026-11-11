@@ -1,12 +1,12 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_STATES, TERMINAL_STATUSES, base64ByteLength } from '@momonga/protocol';
-import type { ImageAttachment, InboxDelivery, InboxRowView, InboxState } from '@momonga/protocol';
+import { IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_STATES, MEMORY_ORIGINS, TERMINAL_STATUSES, base64ByteLength } from '@momonga/protocol';
+import type { ImageAttachment, InboxDelivery, InboxRowView, InboxState, Mandate, MemoryOrigin, Stored } from '@momonga/protocol';
 import type { DecodeContext } from './decode-context.ts';
 import { corrupt, isRecord, readerFor, storedOneOf } from './rows.ts';
 import type { Row } from './rows.ts';
-import type { InboxRow } from './types.ts';
+import type { InboxRow, QueuedRunTerms } from './types.ts';
 
 const TABLE = 'run_inbox';
 
@@ -17,6 +17,26 @@ const imageOf = (identity: string, value: unknown): ImageAttachment => {
   const mediaType = IMAGE_MEDIA_TYPES.find((candidate) => candidate === value['mediaType']);
   if (mediaType === undefined) throw corrupt(TABLE, identity, `attachments holds the unknown media type ${JSON.stringify(value['mediaType'])}`);
   return { mediaType, data: value['data'] };
+};
+
+const recordOf = (identity: string, value: unknown, what: string): Record<string, unknown> => {
+  if (!isRecord(value)) throw corrupt(TABLE, identity, `run_terms_json ${what} must be an object`);
+  return value;
+};
+
+const termsOf = (identity: string, text: string): QueuedRunTerms => {
+  const parsed = recordOf(identity, JSON.parse(text), 'itself');
+  const { timeoutMs, mandate } = parsed;
+  if (typeof timeoutMs !== 'number' || !Number.isInteger(timeoutMs) || timeoutMs < 1) throw corrupt(TABLE, identity, 'run_terms_json timeoutMs must be a positive integer');
+  const terms = { timeoutMs, limits: recordOf(identity, parsed['limits'], 'limits'), pins: recordOf(identity, parsed['pins'], 'pins') };
+  return mandate === undefined ? terms : { ...terms, mandate: recordOf(identity, mandate, 'mandate') as Mandate };
+};
+
+const queuedOf = (context: DecodeContext, identity: string, terms: string | null, origin: string | null): InboxRow['queued'] => {
+  if (terms === null && origin === null) return null;
+  if (terms === null || origin === null) throw corrupt(TABLE, identity, 'run_terms_json and origin are written together');
+  const stored: Stored<MemoryOrigin> = storedOneOf(context, TABLE, identity, 'origin', MEMORY_ORIGINS, origin);
+  return { terms: termsOf(identity, terms), origin: stored };
 };
 
 const decodeRow = (row: Row, context: DecodeContext): InboxRow => {
@@ -34,16 +54,17 @@ const decodeRow = (row: Row, context: DecodeContext): InboxRow => {
     state: storedOneOf(context, TABLE, identity, 'state', INBOX_STATES, reader.string('state')),
     createdAt: reader.number('created_at'),
     settledAt: reader.nullableNumber('settled_at'),
+    queued: queuedOf(context, identity, reader.nullableString('run_terms_json'), reader.nullableString('origin')),
   };
 };
 
 export const inboxRowView = (row: InboxRow): InboxRowView => {
-  const { images, ...rest } = row;
+  const { images, queued: _queued, ...rest } = row;
   return { ...rest, ...(images === undefined ? {} : { images: images.map((image) => ({ mediaType: image.mediaType, byteLength: base64ByteLength(image.data) })) }) };
 };
 
 export type InboxTable = {
-  insert(input: { id: string; sessionId: string; delivery: InboxDelivery; text: string; images: readonly ImageAttachment[] | undefined }): InboxRow;
+  insert(input: { id: string; sessionId: string; delivery: InboxDelivery; text: string; images: readonly ImageAttachment[] | undefined; terms: QueuedRunTerms; origin: MemoryOrigin }): InboxRow;
   get(id: string): InboxRow | undefined;
   pending(sessionId: string): InboxRow[];
   pendingCount(sessionId: string): number;
@@ -59,14 +80,14 @@ export const createInboxTable = (db: DatabaseSync, clock: Clock, context: Decode
   const sql = {
     nextSeq: db.prepare(`SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM ${TABLE} WHERE session_id = :sessionId`),
     insert: db.prepare(
-      `INSERT INTO ${TABLE} (id, session_id, delivery, text, attachments, seq, state, created_at, settled_at)
-       VALUES (:id, :sessionId, :delivery, :text, :attachments, :seq, 'pending', :createdAt, NULL)`,
+      `INSERT INTO ${TABLE} (id, session_id, delivery, text, attachments, seq, state, created_at, settled_at, run_terms_json, origin)
+       VALUES (:id, :sessionId, :delivery, :text, :attachments, :seq, 'pending', :createdAt, NULL, :terms, :origin)`,
     ),
     byId: db.prepare(`SELECT * FROM ${TABLE} WHERE id = :id`),
     pending: db.prepare(`SELECT * FROM ${TABLE} WHERE session_id = :sessionId AND state = 'pending' ORDER BY seq`),
     pendingCount: db.prepare(`SELECT COUNT(*) AS pending FROM ${TABLE} WHERE session_id = :sessionId AND state = 'pending'`),
     pendingSteer: db.prepare(`SELECT * FROM ${TABLE} WHERE session_id = :sessionId AND state = 'pending' AND delivery = 'steer' ORDER BY seq`),
-    firstQueued: db.prepare(`SELECT * FROM ${TABLE} WHERE session_id = :sessionId AND state = 'pending' AND delivery = 'queue' ORDER BY seq LIMIT 1`),
+    firstQueued: db.prepare(`SELECT * FROM ${TABLE} WHERE session_id = :sessionId AND state = 'pending' AND delivery = 'queue' AND run_terms_json IS NOT NULL ORDER BY seq LIMIT 1`),
     settle: db.prepare(`UPDATE ${TABLE} SET state = :state, settled_at = :settledAt WHERE id = :id AND state = 'pending'`),
     queuePendingSteer: db.prepare(`UPDATE ${TABLE} SET delivery = 'queue' WHERE session_id = :sessionId AND state = 'pending' AND delivery = 'steer'`),
     openRun: db.prepare(`SELECT EXISTS (SELECT 1 FROM runs WHERE session_id = :sessionId AND status NOT IN (${TERMINAL_LIST})) AS open`),
@@ -96,6 +117,8 @@ export const createInboxTable = (db: DatabaseSync, clock: Clock, context: Decode
         attachments: canonicalJson(input.images ?? []),
         seq: numberOf(sql.nextSeq.get({ sessionId: input.sessionId }), input.sessionId, 'next'),
         createdAt: clock.now(),
+        terms: canonicalJson(input.terms),
+        origin: input.origin,
       });
       const row = get(input.id);
       if (row === undefined) throw new Error(`inbox row ${input.id} vanished after it was written`);

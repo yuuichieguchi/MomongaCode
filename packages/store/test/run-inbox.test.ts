@@ -9,10 +9,10 @@ import type { InboxRow, Run, RuntimeStore } from '@momonga/store';
 import { MIGRATIONS } from '../src/schema.ts';
 import { START_MS, TIMEOUT_MS, cancelToEnd, enqueue, harness, makeStoreDir, mustClaim, mustRun, newSession, openStoreAt, rawDb } from './helpers.ts';
 
-const TERMS = { timeoutMs: TIMEOUT_MS, limits: { maxSteps: 10 } };
+const TERMS = { timeoutMs: TIMEOUT_MS, limits: { maxSteps: 10 }, pins: {} };
 
 const inboxMigration = (): Migration => {
-  const found = MIGRATIONS.filter((migration) => /run_inbox/.test(migration.sql));
+  const found = MIGRATIONS.filter((migration) => /CREATE TABLE run_inbox/.test(migration.sql));
   if (found.length !== 1 || found[0] === undefined) throw new Error(`expected one migration that creates run_inbox, found ${found.length}`);
   return found[0];
 };
@@ -88,7 +88,7 @@ describe('adding, listing and taking back (design 5.3)', () => {
     const first = await add(h.store, session.id, 'queue', 'one');
     const second = await add(h.store, session.id, 'steer', 'two');
     const foreign = await add(h.store, other.id, 'queue', 'elsewhere');
-    expect(first).toEqual({ id: expect.any(String), sessionId: session.id, delivery: 'queue', text: 'one', seq: 1, state: 'pending', createdAt: h.clock.now(), settledAt: null });
+    expect(first).toEqual({ id: expect.any(String), sessionId: session.id, delivery: 'queue', text: 'one', seq: 1, state: 'pending', createdAt: h.clock.now(), settledAt: null, queued: { terms: TERMS, origin: 'untrusted' } });
     expect(second.seq).toBe(2);
     expect(foreign.seq).toBe(1);
     expect(texts(h.store.inbox.list(session.id))).toEqual(['queue:one', 'steer:two']);

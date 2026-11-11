@@ -1,4 +1,5 @@
 export { MEMORY_MATCH_LIMIT, MEMORY_SCAN_LIMIT } from './memory-constants.ts';
+export { SESSION_PAGE_ROWS } from './runtime-store.ts';
 export { foldRunState, initialRunState } from './fold.ts';
 export { ITEM_EVENT_TYPES, itemCountOf, itemsOfEvent } from './history-items.ts';
 export type { ItemFacts, ProducedItem } from './history-items.ts';
@@ -134,6 +135,9 @@ export type {
   ModelCallRecord,
   StartedCall,
   Session,
+  SessionPage,
+  SessionPageRequest,
+  ListedSession,
   SessionMcpServers,
   SetModelResult,
   SetPermissionModeResult,

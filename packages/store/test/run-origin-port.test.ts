@@ -103,7 +103,7 @@ describe('the origin of a run is resolved before the transaction that creates it
     const session = store.createSession({ cwd: project, env: {}, permissionMode: 'manual', model: 'fm' });
     gate.hold();
 
-    const adding = store.inbox.add(session.id, { delivery: 'queue', text: 'queued', run: { timeoutMs: TIMEOUT_MS, limits: {} } });
+    const adding = store.inbox.add(session.id, { delivery: 'queue', text: 'queued', run: { timeoutMs: TIMEOUT_MS, limits: {}, pins: {} } });
     await gate.reached;
 
     expect(writerIsFree(dbPath)).toBe(true);

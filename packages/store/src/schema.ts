@@ -1218,6 +1218,13 @@ DROP TABLE memory_evidence;
 ALTER TABLE memory_evidence_with_condition RENAME TO memory_evidence;
 `;
 
+const SESSION_PAGES_AND_QUEUED_TERMS = `
+CREATE INDEX sessions_by_created ON sessions (created_at, id);
+CREATE INDEX sessions_by_cwd_created ON sessions (cwd, created_at, id);
+ALTER TABLE run_inbox ADD COLUMN run_terms_json TEXT;
+ALTER TABLE run_inbox ADD COLUMN origin TEXT;
+`;
+
 const STORED_SETS_RECORDED = `
 SELECT 'event type: user_shell; inbox delivery: steer, queue; inbox state: pending, delivered, withdrawn';
 `;
@@ -1419,5 +1426,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 41,
     name: 'record the condition of a check in the evidence of a memory in condition_id, by rebuilding memory_evidence with every row kept: a row written before keeps the model call it named in call_id, and a check row holds exactly one of the two',
     sql: CHECK_EVIDENCE_CONDITION,
+  },
+  {
+    version: 42,
+    name: 'read the sessions a page at a time through an index in the order of the page, and keep with a waiting message the terms and the origin of the run it starts, so a queued run takes them from the request that queued it and never from the run that ended',
+    sql: SESSION_PAGES_AND_QUEUED_TERMS,
   },
 ];

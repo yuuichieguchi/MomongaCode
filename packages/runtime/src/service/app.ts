@@ -14,8 +14,8 @@ import type { Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, M
 import { mentionsOf } from '@momonga/context';
 import type { AttachedMentions } from '@momonga/context';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
-import { JournalThreadError, inboxRowView, knownValue, sameRunRequest } from '@momonga/store';
-import type { ContextCharge, Run, RuntimeStore, Session } from '@momonga/store';
+import { JournalThreadError, SESSION_PAGE_ROWS, inboxRowView, knownValue, sameRunRequest } from '@momonga/store';
+import type { ContextCharge, ListedSession, Run, RuntimeStore, Session } from '@momonga/store';
 import { GatewayRequestError, ModelUnlistedError } from '../gateway-client.ts';
 import { sessionModelNotConfiguredText } from '../worker/model-texts.ts';
 import type { AgentCatalogPort, SkillsPort, UserInputPort } from '../ports.ts';
@@ -325,9 +325,20 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return json({ session: await sessionViewOf(session, context.req.raw.signal, settings), strippedEnvKeys: stripped.removed }, 201, { location: `/v1/sessions/${session.id}` });
   };
 
+  const everySession = (filter: { cwd?: string }): ListedSession[] => {
+    const sessions: ListedSession[] = [];
+    let cursor: string | null = null;
+    do {
+      const page = store.listSessions({ ...filter, limit: SESSION_PAGE_ROWS, cursor });
+      sessions.push(...page.sessions);
+      cursor = page.next;
+    } while (cursor !== null);
+    return sessions;
+  };
+
   const listSessions: Handler = async (context) => {
     const requested = context.req.query('cwd');
-    if (requested === undefined) return json({ sessions: store.listSessions().map((session) => toSessionView(store, session)) });
+    if (requested === undefined) return json({ sessions: everySession({}).map((session) => toSessionView(store, session)) });
     requireAbsolute(requested, 'cwd');
     let cwd: string;
     try {
@@ -336,7 +347,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       if (isTransientErrno(error)) throw error;
       throw invalidRequest(`cwd ${requested} cannot be resolved: ${(error as Error).message}`, 'cwd');
     }
-    return json({ sessions: store.listSessions({ cwd }).map((session) => toSessionView(store, session)) });
+    return json({ sessions: everySession({ cwd }).map((session) => toSessionView(store, session)) });
   };
 
   const getSession: Handler = async (context) => json({ session: await sessionViewOf(requireSession(context.req.param('id') ?? ''), context.req.raw.signal) });
@@ -527,7 +538,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       delivery: body.delivery,
       text: body.text,
       ...(body.images === undefined ? {} : { images: body.images }),
-      run: { timeoutMs: deps.defaults.runTimeoutMs, limits: { ...deps.defaults.limits } },
+      run: { timeoutMs: deps.defaults.runTimeoutMs, limits: { ...deps.defaults.limits }, pins: {} },
     });
     if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
     if (result.kind === 'full') throw conflict(INBOX_FULL_CODE, inboxFullMessage());
@@ -613,10 +624,10 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
         if (isTransientErrno(error)) throw error;
         throw invalidRequest(`cwd ${requestedCwd} cannot be resolved: ${(error as Error).message}`, 'cwd');
       }
-      runs = store.listSessions({ cwd }).flatMap((session) => runsOfSession(session.id));
+      runs = everySession({ cwd }).flatMap((session) => runsOfSession(session.id));
       charges = store.contextCharges.list({ project: cwd });
     } else {
-      runs = store.listSessions().flatMap((session) => runsOfSession(session.id));
+      runs = everySession({}).flatMap((session) => runsOfSession(session.id));
       charges = store.contextCharges.list();
     }
     const format = context.req.query('format') ?? 'json';
