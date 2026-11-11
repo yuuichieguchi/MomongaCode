@@ -79,7 +79,10 @@ export type { GovernanceRuleEntry, ParseRuleOptions, PathToolName, PermissionRul
 export { SETTINGS_SCHEMA } from './settings-schema.ts';
 export { CORE_SETTING_KEYS, NON_CORE_SETTING_KEYS } from './core-settings.ts';
 export type { CoreSettingKey } from './core-settings.ts';
-export { DEFAULT_CONTENT_RETENTION_DAYS, defaultSandboxSetting, resolveTelemetrySettings } from './settings.ts';
+export { DEFAULT_RETENTION_DAYS, defaultSandboxSetting, resolveRetentionSettings, resolveTelemetrySettings } from './settings.ts';
+export { MAX_RETENTION_DAYS, MIN_RETENTION_DAYS } from './settings-schema.ts';
+export { DECLARED_CHECK_SOURCES, acceptedCheckOf, declaredChecksOf } from './declared-checks.ts';
+export type { AcceptedCheck, DeclaredCheck, DeclaredCheckSource } from './declared-checks.ts';
 export { resolveNetwork, resolveNetworkSources } from './network.ts';
 export type { NetworkEnvironment, NetworkSources, ShownNetworkValue } from './network.ts';
 export {
@@ -148,7 +151,11 @@ export type {
   MandateProfileSettings,
   OperationApprovalClass,
   OperationsSettings,
+  ResolvedRetentionSettings,
   ResolvedTelemetrySettings,
+  ProjectCheckAnswer,
+  ProjectChecksSettings,
+  RetentionSettings,
   TelemetrySettings,
   GatewaySettings,
   McpSettings,

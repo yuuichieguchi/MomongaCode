@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { callEvent, enqueue, harness, mustClaim, newSession } from './helpers.ts';
+import { roundTripped } from './run-state-codec.ts';
 
 describe('tool.waiting', () => {
   it('records what a call awaits without changing its status, and ignores job.finished', async () => {
@@ -20,10 +21,8 @@ describe('tool.waiting', () => {
   it('survives a snapshot round trip', async () => {
     const { store } = harness();
     const run = await enqueue(store, newSession(store).id);
-    const claim = mustClaim(store, 'w1');
-    store.append(claim, [callEvent('c1'), { type: 'tool.waiting', callId: 'c1', awaits: { kind: 'job', jobId: 'bash_x' } }]);
+    store.append(mustClaim(store, 'w1'), [callEvent('c1'), { type: 'tool.waiting', callId: 'c1', awaits: { kind: 'job', jobId: 'bash_x' } }]);
     const state = store.readRunEvents(run.id, 0, 100).reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));
-    expect(store.writeSnapshot(claim, state.lastSeq, state).kind).toBe('ok');
-    expect(store.load(run.id).snapshot?.state.pendingCalls['c1']?.awaiting).toEqual({ kind: 'job', jobId: 'bash_x' });
+    expect(roundTripped(state)?.pendingCalls['c1']?.awaiting).toEqual({ kind: 'job', jobId: 'bash_x' });
   });
 });

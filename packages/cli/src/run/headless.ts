@@ -589,6 +589,7 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
   }
   if (session === undefined) return EXIT_INTERRUPTED;
   try {
+    if (session.created.trustNotice !== undefined) ports.stderr.write(noteText([`momonga: ${session.created.trustNotice}`]));
     const readiness = agentReadiness(await options.capabilitiesOf(session.created.session.model));
     if (readiness.state === 'probing') ports.stderr.write(`${escapedLines([`momonga: ${readiness.message}`])}\n`);
     if (readiness.state === 'needs_probe' || readiness.state === 'unavailable') {

@@ -4,13 +4,13 @@ import type { UserSettingsCache } from './user-settings.ts';
 
 export type SettingsKeyPath = 'context.unboundedOutputReserve' | 'credentials.plaintextTokenFiles';
 
-export type SettingsSection = 'models' | 'network' | 'pricing' | 'telemetry' | 'sandbox' | SettingsKeyPath;
+export type SettingsSection = 'models' | 'network' | 'pricing' | 'telemetry' | 'retention' | 'sandbox' | SettingsKeyPath;
 
 export type DerivedObjectDeclaration = { readonly id: DerivedObjectId; readonly inputs: readonly SettingsSection[] };
 
 export const DERIVED_OBJECTS = [
   { id: 'D1', inputs: ['models', 'network', 'pricing', 'context.unboundedOutputReserve'] },
-  { id: 'D2', inputs: ['network', 'telemetry'] },
+  { id: 'D2', inputs: ['network', 'telemetry', 'retention'] },
   { id: 'D3', inputs: ['sandbox'] },
   { id: 'D4', inputs: ['network'] },
   { id: 'D5', inputs: ['network', 'credentials.plaintextTokenFiles'] },

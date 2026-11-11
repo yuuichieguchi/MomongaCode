@@ -160,6 +160,21 @@ describe('a move that fails (16.4, M4)', () => {
     expect(log.filter((step) => step === 'write')).toHaveLength(2);
   });
 
+  it('says a write failure once per version and reason: again only for another reason or a newer version', async () => {
+    const faults: Faults = { write: Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' }) };
+    const { mover, log, said } = setup(faults);
+    await mover.learned('1.2.4');
+    await mover.check();
+    expect(log.filter((step) => step === 'write')).toHaveLength(2);
+    expect(said.filter((text) => text.startsWith('Could not restart'))).toHaveLength(1);
+    faults.write = Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+    await mover.check();
+    expect(said.filter((text) => text.startsWith('Could not restart'))).toHaveLength(2);
+    faults.write = Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+    await mover.learned('1.2.5');
+    expect(said.filter((text) => text.startsWith('Could not restart'))).toHaveLength(3);
+  });
+
   it('a write failure is not a refusal: a later check after the fault cleared moves to that version', async () => {
     const faults: Faults = { write: new Error('the lock of the record is held by another process') };
     const { mover, log, targets } = setup(faults);

@@ -64,12 +64,12 @@ const spanIdsOfBodies = (file: string): string[] => {
   }
 };
 
-const startWith = async (telemetry?: Record<string, unknown>) => {
+const startWith = async (retention?: Record<string, unknown>) => {
   const fake = await startFake({ scenario: 'tools-ok' });
   const home = makeHome();
   writeSettings(home, {
     models: modelsOf({ primary: ccTarget(fake.socketPath) }),
-    ...(telemetry === undefined ? {} : { telemetry }),
+    ...(retention === undefined ? {} : { retention }),
   });
   captureStdout();
   const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
@@ -104,8 +104,8 @@ describe('the gateway process owns a trace store and starts the body purge', () 
     expect(control.purges[0]?.legacyRetentionMs).toBe(30 * DAY_MS);
   });
 
-  it('hands the configured telemetry.contentRetentionDays to the legacy move', async () => {
-    await startWith({ contentRetentionDays: 7 });
+  it('hands the configured retention.days to the legacy move', async () => {
+    await startWith({ days: 7 });
     expect(control.purges[0]?.legacyRetentionMs).toBe(7 * DAY_MS);
   });
 });

@@ -33,7 +33,7 @@ const cancellingRun = async (): Promise<{ env: Env; claim: Claim; leave: ReturnT
   await env.store.requestCancel(run.id);
   expect(env.run(run.id).status).toBe('CANCELLING');
   const control = startClaimControl({ store: env.store, timers: createFakeTimers(env.clock), claim, role: fixedRolePort('serving'), heartbeatMs: 1000, cancelPollMs: 1000 });
-  const journal = openJournal({ store: env.store, claim, lost: control.lost });
+  const journal = await openJournal({ store: env.store, claim, signal: control.signal, lost: control.lost });
   return { env, claim, leave: createTerminals({ store: env.store, claim, journal, control, clock: env.clock }) };
 };
 

@@ -83,7 +83,7 @@ describe('session create validation (fake timers)', () => {
       status: 400,
       body: { error: { type: 'invalid_request', code: 'invalid_request', param: 'cwd', message: expect.stringMatching(new RegExp(`^cwd ${loop} cannot be resolved: .+`)) } },
     });
-    expectCwdRejected(await post(env, { cwd: locked }), `cwd ${locked} cannot be read`);
+    expectCwdRejected(await post(env, { cwd: locked }), `cwd ${locked} cannot be read: permission denied (EACCES)`);
     expect(env.store.listSessions({ limit: 100, cursor: null }).sessions).toEqual([]);
     expect(env.ports.settingsCalls).toEqual([]);
   });

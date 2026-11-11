@@ -13,7 +13,7 @@ import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
 import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 import { testHostPath } from '@momonga/testkit';
 import type { FakeControl } from '@momonga/testkit';
-import { KEYCHAIN_UNANSWERED_ADVICE, NO_DEFAULT_KEYCHAIN_REASON, afterPendingIo, keychainFixture, outcomeOf, useLimitTimers } from './keychain-fixture.ts';
+import { KEYCHAIN_UNANSWERED_ADVICE, NO_DEFAULT_KEYCHAIN_REASON, keychainFixture, outcomeOf, useLimitTimers, stillPendingAfter } from './keychain-fixture.ts';
 import { NO_HELPER } from './no-helper.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -153,9 +153,7 @@ describe('gateway probe of a model whose server key is a secret the store cannot
     const attempt = outcomeOf(runCli(home, ['gateway', 'probe', 'remote/system', '--samples', '1'], { secretStore: () => keychain.store }, interrupt.signal));
     if (waitsForLimit) {
       await keychain.arrived('find-generic-password');
-      await vi.advanceTimersByTimeAsync(COMMAND_LIMIT_MS - 1);
-      await afterPendingIo();
-      expect(attempt.state()).toBe('pending');
+      await stillPendingAfter(attempt, COMMAND_LIMIT_MS - 1);
       await vi.advanceTimersByTimeAsync(1);
     }
     await vi.waitFor(() => expect(attempt.state()).not.toBe('pending'), { timeout: 20_000 });

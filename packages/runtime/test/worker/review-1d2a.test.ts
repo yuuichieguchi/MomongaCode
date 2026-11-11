@@ -106,9 +106,9 @@ describe('WW2: CANCELLING branch guard', () => {
     const holder: { worker?: Worker; aborting?: Promise<void> | undefined } = {};
     const store: RuntimeStore = {
       ...env.store,
-      load: (runId) => {
+      load: (runId, signal) => {
         holder.aborting ??= holder.worker?.abort('shutdown');
-        return env.store.load(runId);
+        return env.store.load(runId, signal);
       },
     };
     holder.worker = env.worker('worker-1', { store });
@@ -217,12 +217,12 @@ describe('WS2: error hook and abort during stop', () => {
     let thrown = false;
     const store: RuntimeStore = {
       ...env.store,
-      load: (runId) => {
+      load: (runId, signal) => {
         if (runId === failing.id && !thrown) {
           thrown = true;
           throw new Error('load exploded');
         }
-        return env.store.load(runId);
+        return env.store.load(runId, signal);
       },
     };
     let hookCalls = 0;

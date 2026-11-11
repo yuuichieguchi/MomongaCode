@@ -52,6 +52,10 @@ export const MCP_SERVER_SCHEMA = {
 export const ENV_NAME_PATTERN = '^[A-Za-z_][A-Za-z0-9_]*$';
 export const PROVIDER_NAME_PATTERN_SOURCE = PROVIDER_NAME_PATTERN.source;
 
+export const MIN_RETENTION_DAYS = 1;
+
+export const MAX_RETENTION_DAYS = 36500;
+
 const POSITIVE_INTEGER = { type: 'integer', minimum: 1 } as const;
 const OUTPUT_TOKEN_BOUND = { type: 'integer', minimum: MIN_REQUEST_OUTPUT_TOKENS } as const;
 const NON_NEGATIVE_INTEGER = { type: 'integer', minimum: 0 } as const;
@@ -646,8 +650,21 @@ export const SETTINGS_SCHEMA = {
           additionalProperties: false,
         },
         captureMessageContent: { type: 'boolean' },
-        contentRetentionDays: POSITIVE_INTEGER,
       },
+      additionalProperties: false,
+    },
+    projectChecks: {
+      type: 'object',
+      additionalProperties: {
+        oneOf: [
+          { type: 'object', properties: { commands: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } } }, required: ['commands'], additionalProperties: false },
+          { type: 'object', properties: { declined: { const: true } }, required: ['declined'], additionalProperties: false },
+        ],
+      },
+    },
+    retention: {
+      type: 'object',
+      properties: { days: { type: 'integer', minimum: MIN_RETENTION_DAYS, maximum: MAX_RETENTION_DAYS } },
       additionalProperties: false,
     },
   },
