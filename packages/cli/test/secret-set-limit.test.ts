@@ -2,7 +2,7 @@ import { OperationLimitError, StoreCallEndedError, momongaLayout } from '@momong
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { secretSet } from '../src/commands/secret.ts';
 import { describeFailure } from '../src/failure.ts';
-import { KEYCHAIN_UNANSWERED_ADVICE, afterPendingIo, keychainFixture, outcomeOf, secretSetPorts, useLimitTimers } from './keychain-fixture.ts';
+import { KEYCHAIN_UNANSWERED_ADVICE, keychainFixture, outcomeOf, secretSetPorts, useLimitTimers, stillPendingAfter, settledAfter } from './keychain-fixture.ts';
 
 const COMMAND_LIMIT_MS = 300_000;
 
@@ -27,11 +27,9 @@ describe('momonga secret set against a secret store that does not answer', () =>
 
     const attempt = outcomeOf(secretSet(ports, momongaLayout('/home/u', process.platform, process.env), 'k', interruptOf().signal));
     await keychain.arrived('add-generic-password');
-    await vi.advanceTimersByTimeAsync(COMMAND_LIMIT_MS - 1);
-    await afterPendingIo();
-    expect(attempt.state()).toBe('pending');
+    await stillPendingAfter(attempt, COMMAND_LIMIT_MS - 1);
     await vi.advanceTimersByTimeAsync(1);
-    await afterPendingIo();
+    await settledAfter(attempt);
 
     expect(attempt.state()).toBe('rejected');
     expect(attempt.error()).toBeInstanceOf(StoreCallEndedError);
@@ -61,11 +59,9 @@ describe('momonga secret set against a secret store that does not answer', () =>
     writeAnswer.resolve();
     await keychain.arrived('find-generic-password');
     expect(keychain.items).toEqual({ k: 'v' });
-    await vi.advanceTimersByTimeAsync(COMMAND_LIMIT_MS - WRITE_ANSWERS_AFTER_MS - 1);
-    await afterPendingIo();
-    expect(attempt.state()).toBe('pending');
+    await stillPendingAfter(attempt, COMMAND_LIMIT_MS - WRITE_ANSWERS_AFTER_MS - 1);
     await vi.advanceTimersByTimeAsync(1);
-    await afterPendingIo();
+    await settledAfter(attempt);
 
     expect(attempt.state()).toBe('rejected');
     expect(attempt.error()).toBeInstanceOf(StoreCallEndedError);

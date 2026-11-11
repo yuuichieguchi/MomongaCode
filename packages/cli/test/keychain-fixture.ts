@@ -91,7 +91,19 @@ export const outcomeOf = <T>(pending: Promise<T>): Outcome<T> => {
   return { state: () => state, value: () => value, error: () => error };
 };
 
-export const afterPendingIo = (): Promise<void> => new Promise<void>((resolve) => void setImmediate(resolve));
+const SETTLE_WAIT = { timeout: 2_000, interval: 0 };
+
+export const settledAfter = async <T>(outcome: Outcome<T>): Promise<Outcome<T>> => {
+  await vi.waitFor(() => {
+    if (outcome.state() === 'pending') throw new Error('the operation has not settled');
+  }, SETTLE_WAIT);
+  return outcome;
+};
+
+export const stillPendingAfter = async (outcome: Outcome<unknown>, ms: number): Promise<void> => {
+  await vi.advanceTimersByTimeAsync(ms);
+  if (outcome.state() !== 'pending') throw new Error(`the operation settled ${outcome.state()} before its limit: ${String(outcome.error() ?? outcome.value())}`);
+};
 
 export const useLimitTimers = (): void => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
