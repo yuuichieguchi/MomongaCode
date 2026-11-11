@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { billedCallsOfRun, billedUsageOf, summarizeRun } from '@momonga/observability';
-import { harness } from './helpers.ts';
+import { billedUsageOf, summarizeRun } from '@momonga/observability';
+import { harness, billedCallsOfRun } from './helpers.ts';
 import { TABLE, recordCalls } from './cache-read-fixtures.ts';
 import type { CallSpec } from './cache-read-fixtures.ts';
 

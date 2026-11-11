@@ -15,7 +15,7 @@ const CHILD_SCRIPT = `
 import { dirname } from 'node:path';
 const { openRuntimeStore } = await import(process.argv[2]);
 const [dbPath, runId, rounds] = [process.argv[3], process.argv[4], Number(process.argv[5])];
-const store = openRuntimeStore({ path: dbPath, home: dirname(dbPath), clock: { now: () => Date.now() }, leaseMs: 60000, maxAttempts: 5, maxTotalAttempts: 1000 });
+const store = openRuntimeStore({ unaskedCommands: { readOnly: [], edit: [] }, path: dbPath, home: dirname(dbPath), clock: { now: () => Date.now() }, leaseMs: 60000, maxAttempts: 5, maxTotalAttempts: 1000 });
 process.stdout.write('ready\\n');
 let written = 0;
 let tries = 0;

@@ -37,6 +37,7 @@ import { MODEL_ID, resetResponseIds } from './scripts.ts';
 import { fixedSandboxBindings, fixedTracers } from '@momonga/runtime';
 
 import { createFakeRuleVerifier } from './fake-rule-verifier.ts';
+import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
 export const START_MS = 1_800_000_000_000;
 export const LEASE_MS = 30_000;
@@ -218,7 +219,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const dbPath = path.join(stateDir, 'runtime.db');
   const clock: FakeClock = createFakeClock(START_MS);
   const scriptedContributions = new Map<string, ContributionItems>();
-  const store: RuntimeStore = openRuntimeStore({
+  const store: RuntimeStore = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home,
     clock,

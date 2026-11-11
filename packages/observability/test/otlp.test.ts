@@ -20,7 +20,7 @@ import { RUNTIME_TEARDOWN_BUDGET_MS } from '@momonga/foundation';
 import { OTLP_SPAN_KIND, decodeOtlpSpans, startOtlpCollector } from '@momonga/testkit';
 import type { OtlpCollector } from '@momonga/testkit';
 import type { OutboundNetwork } from '@momonga/foundation';
-import { RUN_ID, SENTINEL, harness, registerCleanup } from './helpers.ts';
+import { RUN_ID, SENTINEL, harness, registerCleanup, bodiesOfSpan } from './helpers.ts';
 
 const UNREACHABLE_EXPORT_TIMEOUT_MS = 300;
 
@@ -164,7 +164,7 @@ describe('OTLP export of GenAI spans to a loopback collector', () => {
     for (const key of Object.values(GENAI_CONTENT_SEMCONV)) expect(exported?.attributes[key]).toBe(`${key} ${SENTINEL}`);
     const [stored] = h.store.spansForRun(RUN_ID);
     expect(JSON.stringify(stored)).not.toContain(SENTINEL);
-    expect(h.store.bodiesForSpan(chat.spanContext().spanId).map((body) => body.kind).sort()).toEqual(Object.values(GENAI_CONTENT_SEMCONV).sort());
+    expect(bodiesOfSpan(h.store, chat.spanContext().spanId).map((body) => body.kind).sort()).toEqual(Object.values(GENAI_CONTENT_SEMCONV).sort());
   });
 });
 

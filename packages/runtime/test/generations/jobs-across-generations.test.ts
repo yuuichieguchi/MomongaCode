@@ -14,6 +14,7 @@ import { createBackgroundJobs, createNodeJobMarkerFiles } from '@momonga/runtime
 import type { BackgroundJobRegistry } from '@momonga/runtime';
 import { JOB_OUTPUT_FILE_MAX_BYTES, JOB_OUTPUT_WINDOW_BYTES } from '../../src/process/constants.ts';
 import { jobKillWaitMs } from '../../src/process/background-jobs.ts';
+import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
 const START_MS = 1_800_000_000_000;
 const KILL_GRACE_MS = 1000;
@@ -81,7 +82,7 @@ const world = (): World => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-jobs-gen-')));
   roots.push(root);
   const clock = createFakeClock(START_MS);
-  const store = openRuntimeStore({ path: path.join(root, 'runtime.db'), home: root, clock, leaseMs: 1000, maxAttempts: 5, maxTotalAttempts: 50 });
+  const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS, path: path.join(root, 'runtime.db'), home: root, clock, leaseMs: 1000, maxAttempts: 5, maxTotalAttempts: 50 });
   const session = store.createSession({ cwd: root, env: {}, permissionMode: 'manual', model: 'fm' });
   const created = store.createRunAndEnqueue(session.id, { input: 'go', timeoutMs: 3_600_000, limits: {}, pins: {} });
   if (created.kind !== 'created') throw new Error('expected a run');

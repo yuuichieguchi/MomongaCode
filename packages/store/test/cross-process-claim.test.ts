@@ -19,7 +19,7 @@ import fs from 'node:fs';
 import { createInterface } from 'node:readline';
 const { openRuntimeStore } = await import(process.argv[2]);
 let now = Number(process.argv[4]);
-const store = openRuntimeStore({ path: process.argv[3], home: dirname(process.argv[3]), clock: { now: () => now }, leaseMs: ${LEASE_MS}, maxAttempts: 5, maxTotalAttempts: 1000 });
+const store = openRuntimeStore({ unaskedCommands: { readOnly: [], edit: [] }, path: process.argv[3], home: dirname(process.argv[3]), clock: { now: () => now }, leaseMs: ${LEASE_MS}, maxAttempts: 5, maxTotalAttempts: 1000 });
 const lines = createInterface({ input: process.stdin });
 process.stdout.write('ready\\n');
 for await (const line of lines) {

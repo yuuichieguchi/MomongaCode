@@ -67,8 +67,6 @@ export type TraceStore = {
   spansForRun(runId: string): SpanRecord[];
   spansWithoutRun(): SpanRecord[];
   billedChatSpansAfter(runId: string | null, afterSeq: number, limit: number): IngestedSpan[];
-  spansForTrace(traceId: string): SpanRecord[];
-  bodiesForSpan(spanId: string): BodyRecord[];
   bodiesOfRunAfter(runId: string, afterId: number, limit: number): StoredBody[];
   purgeBodies(nowMs: number): number;
   moveLegacyContent(options: { retentionMs: number }): number;
@@ -315,8 +313,6 @@ const prepareStatements = (db: DatabaseSync) => ({
   ),
   spansForRun: db.prepare('SELECT * FROM spans WHERE run_id = ? ORDER BY start_ms, end_ms DESC, rowid'),
   spansWithoutRun: db.prepare('SELECT * FROM spans WHERE run_id IS NULL ORDER BY start_ms, end_ms DESC, rowid'),
-  spansForTrace: db.prepare('SELECT * FROM spans WHERE trace_id = ? ORDER BY start_ms, end_ms DESC, rowid'),
-  bodiesForSpan: db.prepare('SELECT * FROM bodies WHERE span_id = ? AND expires_at_ms > ? ORDER BY id'),
   bodiesOfRunAfter: db.prepare(
     `SELECT b.* FROM bodies b
      WHERE b.id > ? AND b.expires_at_ms > ?
@@ -431,8 +427,6 @@ const createStore = (db: DatabaseSync, statements: Statements, clock: Clock): Tr
           : all(statements.billedChatSpansOfRun, runId, afterSeq, ...filter);
       return rows.map((row) => ({ seq: readInteger('spans', String(row['span_id']), row, 'ingest_seq'), span: decodeSpan(row) }));
     },
-    spansForTrace: (traceId) => all(statements.spansForTrace, traceId).map(decodeSpan),
-    bodiesForSpan: (spanId) => all(statements.bodiesForSpan, spanId, clock.now()).map(decodeBody),
     bodiesOfRunAfter: (runId, afterId, limit) =>
       all(statements.bodiesOfRunAfter, afterId, clock.now(), runId, limit).map((row) => ({ id: readInteger('bodies', String(row['id']), row, 'id'), body: decodeBody(row) })),
     purgeBodies,

@@ -1196,6 +1196,64 @@ ALTER TABLE run_facts ADD COLUMN mandate_denied INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE run_facts ADD COLUMN quiescent INTEGER NOT NULL DEFAULT 0 CHECK (quiescent IN (0, 1));
 `;
 
+const MEMORY_ROWS_WITHOUT_DELETE_RULES = `
+DROP TRIGGER memories_index_delete;
+DROP TRIGGER memories_replacements_insert;
+DROP TRIGGER memories_replacements_update;
+
+CREATE TABLE memory_replacements_kept (
+  replaced_id TEXT NOT NULL,
+  successor_id TEXT NOT NULL REFERENCES memories (id),
+  PRIMARY KEY (replaced_id, successor_id)
+) WITHOUT ROWID;
+INSERT INTO memory_replacements_kept (replaced_id, successor_id) SELECT replaced_id, successor_id FROM memory_replacements;
+DROP TABLE memory_replacements;
+ALTER TABLE memory_replacements_kept RENAME TO memory_replacements;
+CREATE INDEX memory_replacements_by_successor ON memory_replacements (successor_id);
+CREATE TRIGGER memories_replacements_insert AFTER INSERT ON memories BEGIN
+  INSERT OR IGNORE INTO memory_replacements (replaced_id, successor_id) SELECT value, NEW.id FROM json_each(NEW.supersedes_json);
+END;
+CREATE TRIGGER memories_replacements_update AFTER UPDATE OF supersedes_json ON memories BEGIN
+  DELETE FROM memory_replacements WHERE successor_id = OLD.id;
+  INSERT OR IGNORE INTO memory_replacements (replaced_id, successor_id) SELECT value, NEW.id FROM json_each(NEW.supersedes_json);
+END;
+
+CREATE TABLE memory_evidence_kept (
+  memory_id TEXT NOT NULL REFERENCES memories (id),
+  ordinal INTEGER NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('file', 'commit', 'check')),
+  project TEXT,
+  path TEXT,
+  sha256 TEXT,
+  sha TEXT,
+  run_id TEXT,
+  call_id TEXT,
+  seq INTEGER,
+  command TEXT,
+  exit_code INTEGER,
+  PRIMARY KEY (memory_id, ordinal),
+  CHECK (
+    kind <> 'file'
+    OR (project IS NOT NULL AND path IS NOT NULL AND sha256 IS NOT NULL
+      AND sha IS NULL AND run_id IS NULL AND call_id IS NULL AND seq IS NULL AND command IS NULL AND exit_code IS NULL)
+  ),
+  CHECK (
+    kind <> 'commit'
+    OR (sha IS NOT NULL
+      AND project IS NULL AND path IS NULL AND sha256 IS NULL AND run_id IS NULL AND call_id IS NULL AND seq IS NULL AND command IS NULL AND exit_code IS NULL)
+  ),
+  CHECK (
+    kind <> 'check'
+    OR (run_id IS NOT NULL AND call_id IS NOT NULL AND seq IS NOT NULL AND command IS NOT NULL AND exit_code IS NOT NULL
+      AND project IS NULL AND path IS NULL AND sha256 IS NULL AND sha IS NULL)
+  )
+);
+INSERT INTO memory_evidence_kept (memory_id, ordinal, kind, project, path, sha256, sha, run_id, call_id, seq, command, exit_code)
+  SELECT memory_id, ordinal, kind, project, path, sha256, sha, run_id, call_id, seq, command, exit_code FROM memory_evidence;
+DROP TABLE memory_evidence;
+ALTER TABLE memory_evidence_kept RENAME TO memory_evidence;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -1304,5 +1362,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 38,
     name: 'record in the facts of a run the money its tree spent, its money limit, and for a run under a mandate its held calls, the holds a person resolved, its denials outside the mandate and whether it waited for a person',
     sql: RUN_FACTS_MONEY_AND_MANDATE,
+  },
+  {
+    version: 39,
+    name: 'remove what served the delete of a memory, which the database refuses: the trigger that cleared its index row and the cascades of memory_replacements and memory_evidence, by rebuilding the two tables with every row kept',
+    sql: MEMORY_ROWS_WITHOUT_DELETE_RULES,
   },
 ];

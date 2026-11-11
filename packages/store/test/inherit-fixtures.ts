@@ -93,11 +93,10 @@ export const MARKER_TEXT = {
 } as const;
 
 export const MODE_RULE: Record<PermissionMode, string> = {
-  manual:
-    "File changes and commands need the user's approval unless an allow rule covers them; read-only commands (ls, cat, echo, pwd, head, tail, grep, find, wc, which, diff, stat, du, cd, file, sort, ps on Linux and read-only git) run without asking.",
+  manual: "File changes and commands need the user's approval unless an allow rule covers them. Read-only uses of these commands run without asking: ls, cat, git.",
   acceptEdits:
-    'File edits and the filesystem commands mkdir, touch, rm, rmdir, mv, cp and sed inside the workspace are accepted without asking, and read-only commands run without asking; other actions still need approval unless an allow rule covers them.',
-  plan: "Do not edit files; research and propose a plan for the user to approve. Read-only commands (ls, cat, echo, pwd, head, tail, grep, find, wc, which, diff, stat, du, cd, file, sort, ps on Linux and read-only git) run without asking; any other command needs the user's approval unless an allow rule covers it.",
+    'File edits and these filesystem commands inside the workspace are accepted without asking: mkdir, rm. Read-only uses of these commands run without asking: ls, cat, git. Other actions still need approval unless an allow rule covers them.',
+  plan: "Do not edit files; research and propose a plan for the user to approve. Read-only uses of these commands run without asking: ls, cat, git. Any other command needs the user's approval unless an allow rule covers it.",
   auto: "Tool calls that would need approval are first reviewed by an automatic safety classifier; calls it does not clearly approve still need the user's approval. Stay within what the user asked.",
   bypassPermissions: 'Tool calls run without asking the user; be careful with destructive actions.',
 };
