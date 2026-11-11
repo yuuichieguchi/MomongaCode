@@ -65,6 +65,25 @@ describe('a request answered moved (20.33)', () => {
     expect(sleeps).toEqual([1000]);
   });
 
+  it('is resent the same way when a starting daemon answered that it is starting', async (context) => {
+    const seen: Seen[] = [];
+    let answered = 0;
+    const startingText = 'The daemon is still starting and accepts no new work yet. The request was not run; send it again.';
+    const socket = await listen(context, 'starting', seen, () => {
+      answered += 1;
+      return answered === 1
+        ? { status: 503, headers: { 'content-type': 'application/json', 'retry-after': '1' }, body: JSON.stringify({ error: { type: 'server_error', code: 'starting', message: startingText } }) }
+        : json(201, { session: SESSION, strippedEnvKeys: [] });
+    });
+    const { client, sleeps } = clientOver(context, async () => socket);
+
+    const created = await client.createSession({ cwd: '/work', env: {} });
+
+    expect(created.session.id).toBe(SESSION.id);
+    expect(seen).toHaveLength(2);
+    expect(sleeps).toEqual([1000]);
+  });
+
   it('is resent at most three times, then raised with the 503 text', async (context) => {
     const seen: Seen[] = [];
     const retiring = await listen(context, 'retiring', seen, () => moved);

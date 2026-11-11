@@ -258,6 +258,7 @@ export type MessageInputs = {
   modelIdChanged: [given: { readonly server: string; readonly model: string; readonly listed: string; readonly entry: string }];
   serverSocketPathTooLong: [given: { readonly model: string; readonly byteLength: number; readonly directory: string; readonly code: string }];
   serverFormNotOffered: [given: { readonly server: string; readonly platform: string; readonly accepted: readonly string[]; readonly offered: readonly string[] }];
+  daemonStarting: [];
 };
 
 export type MessageKey = keyof MessageInputs;
@@ -288,6 +289,7 @@ const MESSAGES: { readonly [Key in MessageKey]: (surface: Surface, ...given: Mes
     }),
   serverFormNotOffered: (_surface, given) =>
     `the ${WORDS.server} ${JSON.stringify(given.server)} cannot be used on ${given.platform}: it accepts only the socket forms [${given.accepted.join(', ')}], and ${given.platform} offers [${given.offered.join(', ')}]`,
+  daemonStarting: () => `The ${WORDS.daemon} is still starting and accepts no new work yet. The request was not run; send it again.`,
 };
 
 export const MESSAGE_KEYS = Object.keys(MESSAGES) as readonly MessageKey[];

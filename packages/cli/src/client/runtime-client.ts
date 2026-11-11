@@ -1,5 +1,5 @@
 import type { McpServerConfig } from '@momonga/config';
-import { HOST_READ_BOUND_MS, MOVED_CODE, createUdsClient, decodeSse, isRecord, parseRetryAfter } from '@momonga/foundation';
+import { GENERATION_STARTING_CODE, HOST_READ_BOUND_MS, MOVED_CODE, createUdsClient, decodeSse, isRecord, parseRetryAfter } from '@momonga/foundation';
 import type { SocketResolver, UdsResponse } from '@momonga/foundation';
 import { DAEMON_CURRENT_EVENT, STREAM_FAILED_EVENT, WORDS } from '@momonga/protocol';
 import type { AddMemoryRequest, AddRuleRequest, PutRuleVerdictRequest, RuleVerdict, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, Mandate } from '@momonga/protocol';
@@ -77,6 +77,8 @@ export class RunApiError extends Error {
 }
 
 export const MOVED_RESENDS = 3;
+
+const RESENT_REFUSAL_CODES: ReadonlySet<string | undefined> = new Set([MOVED_CODE, GENERATION_STARTING_CODE]);
 
 const SOCKET_ERROR_RESENDS = 1;
 
@@ -316,7 +318,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
       const text = await response.text();
       if (expected.includes(response.status)) return { response, body: response.status === 204 ? undefined : init.raw === true ? text : parsed(text, description) };
       const failure = new RunApiError(description, response.status, text);
-      if (response.status !== 503 || failure.code !== MOVED_CODE || movedResends >= MOVED_RESENDS) throw failure;
+      if (response.status !== 503 || !RESENT_REFUSAL_CODES.has(failure.code) || movedResends >= MOVED_RESENDS) throw failure;
       const retryAfterMs = parseRetryAfter(response.headers['retry-after'], options.clock.now());
       if (retryAfterMs === undefined) throw failure;
       await options.onMoved?.();

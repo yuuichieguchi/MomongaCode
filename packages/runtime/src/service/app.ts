@@ -39,6 +39,7 @@ import {
   notFound,
   serviceUnavailable,
   skillUnavailable,
+  starting,
   targetNotReady,
   unknownSkill,
 } from './errors.ts';
@@ -63,7 +64,7 @@ import { registerTrustRoutes } from './trust.ts';
 import type { ServiceTimers } from './timers.ts';
 import { answeredByOf } from './answered-by.ts';
 import { runTermsOf } from './delegation.ts';
-import type { DelegationPort } from './delegation.ts';
+import type { DelegationPort, RunTerms, RunTermsRequest } from './delegation.ts';
 
 const projectMandateOf = async (delegation: DelegationPort | undefined, cwd: string, signal: AbortSignal): Promise<ProjectMandate | undefined> => {
   if (delegation === undefined) return undefined;
@@ -246,7 +247,9 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
 
   const drainingError = () => serviceUnavailable('draining', 'the service is draining and accepts no new work');
 
-  const newWorkRefusal = (): ApiError | undefined => (deps.isDraining() ? drainingError() : deps.role() === 'serving' ? undefined : moved());
+  const refusalOfRole: Readonly<Record<GenerationRole, (() => ApiError) | undefined>> = { starting, serving: undefined, retiring: moved };
+
+  const newWorkRefusal = (): ApiError | undefined => (deps.isDraining() ? drainingError() : refusalOfRole[deps.role()]?.());
 
   const refuseNewWork = (): void => {
     const refusal = newWorkRefusal();
@@ -267,7 +270,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     }
   };
 
-  const settingsThrough = async (load: () => Promise<SessionCreateSettings>): Promise<SessionCreateSettings> => {
+  const settingsThrough = async <Loaded>(load: () => Promise<Loaded>): Promise<Loaded> => {
     try {
       return await load();
     } catch (error) {
@@ -439,6 +442,23 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     }
   };
 
+  const admittedTermsOf = async (session: Session, request: RunTermsRequest, signal: AbortSignal): Promise<RunTerms> => {
+    await sessionSettingsOf(session.cwd, signal);
+    const { views } = await gatewayListing(signal);
+    const sessionModel = resolveStoredModelRef(storedModelRef(session.model), views);
+    if (sessionModel === undefined) throw modelNotConfigured(sessionModelNotConfiguredText(session.model));
+    const { delegation } = deps;
+    const terms = await runTermsOf({
+      request,
+      defaults: deps.defaults,
+      settings: delegation === undefined ? {} : await settingsThrough(() => delegation.settings(signal)),
+      ...(delegation === undefined ? {} : { project: () => projectMandateOf(delegation, session.cwd, signal) }),
+      billing: async () => (delegation === undefined ? { metered: false, priced: false } : delegation.chainBilling(sessionModel.canon, signal)),
+    });
+    await refuseDeniedConditions(session, terms.mandate);
+    return terms;
+  };
+
   const reportedView = async (run: Run, signal: AbortSignal) => ({ ...toRunView(run), report: (await store.journalFacts.report({ runId: run.id }, signal)).report });
 
   const createRun: Handler = async (context) => {
@@ -467,25 +487,15 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     if (refused !== undefined) return refused;
     const replayed = await replay();
     if (replayed !== undefined) return replayed;
-    await sessionSettingsOf(session.cwd, context.req.raw.signal);
-    const { views } = await gatewayListing(context.req.raw.signal);
-    if (resolveStoredModelRef(storedModelRef(session.model), views) === undefined) throw modelNotConfigured(sessionModelNotConfiguredText(session.model));
+    const terms = await admittedTermsOf(
+      session,
+      { ...(body.mandate === undefined ? {} : { mandate: body.mandate }), ...(body.limits === undefined ? {} : { limits: body.limits }), ...(body.timeoutMs === undefined ? {} : { timeoutMs: body.timeoutMs }) },
+      context.req.raw.signal,
+    );
     const skill = body.skill === undefined ? undefined : await activationOf(session, body.skill);
     await requireImageInput(session, body.images, context.req.raw.signal);
     const attached = await attachedTo(session, body, context.req.raw.signal);
     const images = [...(body.images ?? []), ...attached.images];
-    const sessionModel = resolveStoredModelRef(storedModelRef(session.model), views);
-    const terms = await runTermsOf({
-      request: { ...(body.mandate === undefined ? {} : { mandate: body.mandate }), ...(body.limits === undefined ? {} : { limits: body.limits }), ...(body.timeoutMs === undefined ? {} : { timeoutMs: body.timeoutMs }) },
-      defaults: deps.defaults,
-      settings: deps.delegation?.settings() ?? {},
-      ...(deps.delegation === undefined ? {} : { project: () => projectMandateOf(deps.delegation, session.cwd, context.req.raw.signal) }),
-      billing: async () => {
-        if (deps.delegation === undefined || sessionModel === undefined) return { metered: false, priced: false };
-        return deps.delegation.chainBilling(sessionModel.canon, context.req.raw.signal);
-      },
-    });
-    await refuseDeniedConditions(session, terms.mandate);
     const refusedDuringChecks = replayWhileRefusing();
     if (refusedDuringChecks !== undefined) return refusedDuringChecks;
     const result = await store.createRunAndEnqueue(session.id, {
@@ -513,12 +523,13 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     requireRootSession(session);
     refuseNewWork();
     const body = validateBody<CompactSessionRequest>('CompactSessionRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
+    const terms = await admittedTermsOf(session, {}, context.req.raw.signal);
     refuseNewWork();
     if (store.userShell.runActive(session.id)) throw conflict(USER_SHELL_RUN_ACTIVE_CODE, 'a run of this session is working; the compaction starts when it has ended');
     const result = await store.createRunAndEnqueue(session.id, {
       input: compactInputOf(body.instructions),
-      timeoutMs: deps.defaults.runTimeoutMs,
-      limits: { ...deps.defaults.limits },
+      timeoutMs: terms.timeoutMs,
+      limits: terms.limits,
       pins: compactPinOf(body.instructions),
       history: 'inherit',
     });
@@ -527,18 +538,24 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return json({ run: toRunView(result.run) }, 202, { location: `/v1/runs/${result.run.id}` });
   };
 
+  const refuseRunStartedByInbox = (session: Session): void => {
+    if (deps.isDraining()) throw drainingError();
+    if (!store.userShell.runActive(session.id)) refuseNewWork();
+  };
+
   const addInbox: Handler = async (context) => {
     const session = requireSession(context.req.param('id') ?? '');
     requireRootSession(session);
-    if (deps.isDraining()) throw drainingError();
+    refuseRunStartedByInbox(session);
     const body = validateBody<AddInboxBody>('AddInboxRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
     await requireImageInput(session, body.images, context.req.raw.signal);
-    if (deps.isDraining()) throw drainingError();
+    const terms = await admittedTermsOf(session, {}, context.req.raw.signal);
+    refuseRunStartedByInbox(session);
     const result = await store.inbox.add(session.id, {
       delivery: body.delivery,
       text: body.text,
       ...(body.images === undefined ? {} : { images: body.images }),
-      run: { timeoutMs: deps.defaults.runTimeoutMs, limits: { ...deps.defaults.limits }, pins: {} },
+      run: { timeoutMs: terms.timeoutMs, limits: terms.limits, pins: {} },
     });
     if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
     if (result.kind === 'full') throw conflict(INBOX_FULL_CODE, inboxFullMessage());

@@ -724,8 +724,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         notifier,
         modelListing: (requestSignal) => gatewayClient.listing({ signal: requestSignal }),
         delegation: {
-          settings: () => {
-            const { limits, ceilings, mandates } = settingsComposition.takeUserSnapshot().settings;
+          settings: async (requestSignal) => {
+            const { limits, ceilings, mandates } = (await settingsComposition.userSnapshot(requestSignal)).settings;
             return { ...(limits === undefined ? {} : { limits }), ...(ceilings === undefined ? {} : { ceilings }), ...(mandates === undefined ? {} : { mandates }) };
           },
           projectMandate: async (cwd, requestSignal) => loadProjectMandate({ projectDir: cwd, trusted: await settingsComposition.trustOracle.isTrusted(cwd, requestSignal), signal: requestSignal }),

@@ -459,7 +459,10 @@ export type ServiceOverrides = {
   mcp?: McpAdminPort;
   userInput?: runtime.UserInputPort;
   evidenceRun?: (project: string) => EvidenceRun;
+  delegation?: DelegationPort;
 };
+
+export type DelegationPort = NonNullable<Parameters<typeof runtime.createRunService>[0]['delegation']>;
 
 export type Notifier = { onCommit(touched: { runId?: string; sessionId: string }[]): void; subscriberCount(): number };
 
@@ -571,6 +574,7 @@ export const serviceOptions = (
   work: overrides.work ?? { steps: () => 0, jobs: () => 0 },
   ignorableMarkerDirectories: overrides.ignorableMarkerDirectories ?? (async () => [momongaLayout(base.home).markers.root]),
   ...(overrides.onRequestEnd === undefined ? {} : { onRequestEnd: overrides.onRequestEnd }),
+  ...(overrides.delegation === undefined ? {} : { delegation: overrides.delegation }),
   onError: (error: unknown) => base.errors.push(error),
   ...(base.fatals === undefined ? {} : { onFatal: (error: Error) => base.fatals?.push(error) }),
 });
