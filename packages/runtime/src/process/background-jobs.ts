@@ -8,8 +8,8 @@ import type { BackgroundJobs, MarkerOwners } from '@momonga/tools';
 import { toJobView as viewOf } from '../service/views.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { asError } from './as-error.ts';
-import { JOB_ID_HEX_CHARS, JOB_IDEMPOTENCY_TTL_MS, JOB_KILL_OWNER_WAKE_MS, JOB_OUTPUT_FILE_MAX_BYTES, JOB_OUTPUT_WINDOW_BYTES, JOB_RECONCILE_BATCH_JOBS, JOB_STREAM_DRAIN_MS, MAX_RUNNING_JOBS_PER_SESSION } from './constants.ts';
-import { jobOutputFileErrorCode, jobOutputPathOf, openJobOutputFile, readJobFileWindow, removeJobOutputFile } from './job-output-file.ts';
+import { JOB_END_PROBE_MS, JOB_ID_HEX_CHARS, JOB_IDEMPOTENCY_TTL_MS, JOB_KILL_OWNER_WAKE_MS, JOB_OUTPUT_FILE_MAX_BYTES, JOB_OUTPUT_WINDOW_BYTES, JOB_RECONCILE_BATCH_JOBS, JOB_STREAM_DRAIN_MS, MAX_RUNNING_JOBS_PER_SESSION } from './constants.ts';
+import { jobOutputFileErrorCode, jobOutputPathOf, openJobOutputFile, readJobFileWindow, removeJobOutputFile, removeLeftoverJobOutputFile } from './job-output-file.ts';
 import type { JobOutputFile } from './job-output-file.ts';
 import { createJobOutput } from './job-output.ts';
 import type { JobMarkerFiles } from './job-marker-files.ts';
@@ -59,6 +59,10 @@ export const jobKillWaitMs = (killGraceMs: number): number => markerReapClockBou
 export { JOB_RECONCILE_BATCH_JOBS };
 
 type StopReason = 'killed' | 'timeout' | 'shutdown';
+
+type EndProbe = { uninspectable: UninspectableProcess[]; remaining: number[]; refused: UninspectableProcess[]; liveness: ReturnType<typeof commandMayStillRun> };
+
+const END_PROBE_EXPIRED_NOTE = `the check of the processes of this job did not end within ${JOB_END_PROBE_MS} ms, so whether one still runs is unknown`;
 
 type LiveJob = {
   job: Job;
@@ -128,6 +132,37 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     }
   };
 
+  const endProbeBound = (): { signal: AbortSignal; expired(): boolean; dispose(): void } => {
+    const bound = new AbortController();
+    const handle = timers.setTimeout(() => bound.abort(new Error(`the check of the processes of a background job did not end within ${JOB_END_PROBE_MS} ms`)), JOB_END_PROBE_MS);
+    return { signal: AbortSignal.any([lifecycle, bound.signal]), expired: () => bound.signal.aborted, dispose: () => timers.clearTimeout(handle) };
+  };
+
+  const probeEnd = async (entry: LiveJob, process: SandboxedProcess, marker: string, signal: AbortSignal): Promise<EndProbe> => {
+    const { job } = entry;
+    const uninspectable: UninspectableProcess[] = [];
+    const reportOnce = reportUninspectableOnce(onWarning, `background job ${job.id}`, options.uninspectable);
+    const holders = await probes.findHolders(marker, {
+      signal,
+      onUninspectable: (unreadable) => {
+        uninspectable.push(unreadable);
+        reportOnce(unreadable);
+      },
+    });
+    if (holders.length > 0) {
+      const reaped = await probes.reconcileProcessGroup({ pgid: process.pgid, marker }, { killGraceMs, timing: reapTiming, signal });
+      const notes = outlivedNotes(reaped, 'job');
+      if (notes.length > 0) entry.output.push(Buffer.from(`\n${notes.join('\n')}\n`));
+    }
+    const refused: UninspectableProcess[] = [];
+    const remaining = holders.length === 0 && uninspectable.length === 0 ? [] : await probes.findHolders(marker, { signal, onUninspectable: (unreadable) => void refused.push(unreadable) });
+    const markerState = await probes.markerState(marker, { signal, mode: owners.modeOf(job.idemKey) ?? 'listed' });
+    const unnamed = markerState === 'held' && remaining.length === 0;
+    const runnable = unnamed ? await groupAlive(process.pgid, groupPort, signal) : undefined;
+    const liveness = commandMayStillRun({ marker: markerState, listing: { kind: 'listed', holders: remaining, refused }, ...(runnable === undefined ? {} : { group: { kind: 'read', runnable } }) });
+    return { uninspectable, remaining, refused, liveness };
+  };
+
   const finalize = async (entry: LiveJob, process: SandboxedProcess, pumps: Promise<void>, timer: unknown): Promise<void> => {
     const { job } = entry;
     const marker = path.join(markerDir, job.idemKey);
@@ -141,36 +176,29 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       const [exit, groupNotice] = await Promise.all([process.exited, groupRecordOutcome(recordMarkerGroup(marker, process.pgid), marker)]);
       if (groupNotice !== undefined) entry.output.push(Buffer.from(`\n${groupNotice}\n`));
       timers.clearTimeout(timer);
-      const uninspectable: UninspectableProcess[] = [];
-      const reportOnce = reportUninspectableOnce(onWarning, `background job ${job.id}`, options.uninspectable);
-      const holders = await probes.findHolders(marker, {
-        signal: lifecycle,
-        onUninspectable: (unreadable) => {
-          uninspectable.push(unreadable);
-          reportOnce(unreadable);
-        },
-      });
-      if (holders.length > 0) {
-        const reaped = await probes.reconcileProcessGroup({ pgid: process.pgid, marker }, { killGraceMs, timing: reapTiming, signal: lifecycle });
-        const notes = outlivedNotes(reaped, 'job');
-        if (notes.length > 0) entry.output.push(Buffer.from(`\n${notes.join('\n')}\n`));
+      const probe = endProbeBound();
+      let ended: EndProbe | undefined;
+      try {
+        ended = await probeEnd(entry, process, marker, probe.signal);
+      } catch (error) {
+        if (!probe.expired()) throw error;
+      } finally {
+        probe.dispose();
       }
-      const refused: UninspectableProcess[] = [];
-      const remaining = holders.length === 0 && uninspectable.length === 0 ? [] : await probes.findHolders(marker, { signal: lifecycle, onUninspectable: (process) => void refused.push(process) });
-      const markerState = await probes.markerState(marker, { signal: lifecycle, mode: owners.modeOf(job.idemKey) ?? 'listed' });
-      const unnamed = markerState === 'held' && remaining.length === 0;
-      const runnable = unnamed ? await groupAlive(process.pgid, groupPort, lifecycle) : undefined;
-      const liveness = commandMayStillRun({ marker: markerState, listing: { kind: 'listed', holders: remaining, refused }, ...(runnable === undefined ? {} : { group: { kind: 'read', runnable } }) });
-      markerSettled = liveness.answer === 'no';
-      if (remaining.length === 0) {
-        const notes = unnamedLivenessNotes(exit, liveness, refused);
-        if (notes.length > 0) entry.output.push(Buffer.from(`\n${notes.join('\n')}\n`));
+      if (ended === undefined) entry.output.push(Buffer.from(`\n${END_PROBE_EXPIRED_NOTE}\n`));
+      else {
+        markerSettled = ended.liveness.answer === 'no';
+        if (ended.remaining.length === 0) {
+          const notes = unnamedLivenessNotes(exit, ended.liveness, ended.refused);
+          if (notes.length > 0) entry.output.push(Buffer.from(`\n${notes.join('\n')}\n`));
+        }
       }
+      const inspected = ended !== undefined && ended.uninspectable.length === 0;
       await drain(pumps);
       const window = entry.output.window();
       const stored = window.bytes.length === 0 ? undefined : await store.blobs.put(window.bytes, { mediaType: 'text/plain', runId: job.runId });
       const result: JobResult = {
-        status: uninspectable.length > 0 ? 'unknown' : entry.stopReason === undefined ? 'exited' : 'killed',
+        status: !inspected ? 'unknown' : entry.stopReason === undefined ? 'exited' : 'killed',
         ...(exit.code === null ? {} : { exitCode: exit.code }),
         ...(exit.signal === null ? {} : { signal: exit.signal }),
         ...(stored === undefined ? {} : { output: { handle: stored.handle, start: window.start, total: window.total } }),
@@ -277,6 +305,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     let fileFailure: ((code: string) => void) | undefined;
     let file: JobOutputFile;
     try {
+      if (store.jobs.get(jobId) === undefined) await removeLeftoverJobOutputFile(outputPath);
       file = await openJobOutputFile({ path: outputPath, maxBytes: JOB_OUTPUT_FILE_MAX_BYTES, onFailure: (code) => fileFailure?.(code) });
     } catch (error) {
       throw new ToolExecutionError(`could not start the background job: its output file could not be created (${jobOutputFileErrorCode(error)})`);
@@ -306,12 +335,12 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       await discardFile();
       throw error;
     }
+    ownedKeys.add(idemKey);
+    owners.register(idemKey, { alive: () => ownedKeys.has(idemKey) });
     const marker = path.join(markerDir, idemKey);
     const controller = new AbortController();
     let process: SandboxedProcess;
     let created = false;
-    ownedKeys.add(idemKey);
-    owners.register(idemKey, { alive: () => ownedKeys.has(idemKey) });
     try {
       process = await markerFiles.create(marker, (markerFd, mode) => {
         created = true;
@@ -417,7 +446,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       const batch = batchOptions === undefined ? ordered : ordered.slice(0, batchOptions.batch);
       for (const job of batch) {
         reconcileCursor = job.id;
-        if (live.has(job.id)) continue;
+        if (ownedKeys.has(job.idemKey)) continue;
         if (await ownerLives(job)) continue;
         await reconcileOrphan(job);
       }

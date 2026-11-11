@@ -14,7 +14,7 @@ export default defineConfig({
         test: {
           name: 'unit',
           provide: { [RUN_CLASS_KEY]: 'heavy-when-whole' },
-          setupFiles: ['test/support/child-process-guard.ts'],
+          setupFiles: ['test/support/child-process-guard.ts', 'test/support/temp-entry-recorder.ts'],
           globalSetup: ['test/support/run-lock.ts', 'test/support/fake-secret-programs.ts', 'test/support/thread-modules.ts', 'test/support/pinned-ripgrep.ts', 'test/support/leak-guard.ts'],
           include: ['packages/*/test/**/*.test.ts', 'packages/*/test/**/*.test.tsx', 'test/**/*.test.ts'],
           exclude: [...configDefaults.exclude, CALIBRATION_TESTS],
@@ -26,7 +26,7 @@ export default defineConfig({
           name: 'calibration',
           provide: { [RUN_CLASS_KEY]: 'heavy' },
           include: [CALIBRATION_TESTS],
-          setupFiles: ['test/support/child-process-guard.ts'],
+          setupFiles: ['test/support/child-process-guard.ts', 'test/support/temp-entry-recorder.ts'],
           globalSetup: ['test/support/run-lock.ts', 'test/support/fake-secret-programs.ts', 'test/support/thread-modules.ts', 'test/support/leak-guard.ts'],
           fileParallelism: false,
         },
@@ -36,7 +36,7 @@ export default defineConfig({
         test: {
           name: 'packaging',
           include: ['scripts/**/*.test.ts'],
-          setupFiles: ['test/support/child-process-guard.ts'],
+          setupFiles: ['test/support/child-process-guard.ts', 'test/support/temp-entry-recorder.ts'],
           globalSetup: ['test/support/run-lock.ts', 'test/support/fake-secret-programs.ts', 'test/support/thread-modules.ts', 'test/support/leak-guard.ts'],
           fileParallelism: false,
           hookTimeout: E2E_HOOK_TIMEOUT_MS,

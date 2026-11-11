@@ -4,7 +4,7 @@ import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import { hostFilesystemOf, NEVER_CANCELLED } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import type { PropertyId, PropertyResult, VerificationReport } from '../src/index.ts';
-import { checkBashAdmission, checkDenyPrecedence, checkRuleConsistency, checkSecretReach } from '../src/properties.ts';
+import { checkDenyPrecedence, checkRuleConsistency, checkSecretReach } from '../src/properties.ts';
 import type { SecretLocation } from '../src/properties.ts';
 import type { QueryContext } from '../src/queries.ts';
 import type { SolveResult } from '../src/smt.ts';
@@ -90,6 +90,7 @@ const forceUnknownAt = (context: QueryContext, site: number): { calls: () => num
 
 type Property = {
   id: PropertyId;
+  undecided: 'unknown' | 'noted';
   rules: readonly RuleSpec[];
   check: (context: QueryContext, locations: readonly SecretLocation[]) => Promise<PropertyResult>;
 };
@@ -97,28 +98,26 @@ type Property = {
 const PROPERTIES: readonly Property[] = [
   {
     id: 'deny-precedence',
+    undecided: 'unknown',
     rules: [['allow', 'Read(./a/**)'], ['deny', 'Read(./a/secret/**)']],
     check: (context) => checkDenyPrecedence(context),
   },
   {
     id: 'secret-reach',
+    undecided: 'unknown',
     rules: [['deny', 'Read(~/.ssh/**)'], ['deny', 'Edit(~/.ssh/**)']],
     check: checkSecretReach,
   },
   {
     id: 'rule-consistency',
-    rules: [['allow', 'Edit(./a/**)'], ['deny', 'Edit(./a/secret/**)']],
+    undecided: 'noted',
+    rules: [['allow', 'mcp__srv'], ['deny', 'mcp__srv__danger']],
     check: (context) => checkRuleConsistency(context),
-  },
-  {
-    id: 'bash-admission',
-    rules: [['allow', 'Bash(git status:*)'], ['deny', 'Bash(git push:*)']],
-    check: (context) => checkBashAdmission(context),
   },
 ];
 
 describe('round 2, finding 9: a query the solver cannot decide never leaves a property proved', () => {
-  it.each(PROPERTIES)('$id: a forced timeout at every query site, one site at a time', async ({ id, rules, check }) => {
+  it.each(PROPERTIES)('$id: a forced timeout at every query site, one site at a time', async ({ id, undecided, rules, check }) => {
     const layout = makeLayout();
     const roots = [layout.project];
     const fileSystem = caseSensitiveFs();
@@ -152,6 +151,6 @@ describe('round 2, finding 9: a query the solver cannot decide never leaves a pr
       const result = await check(await context, [sshLocation(layout)]);
       statuses.push(result.verdict.status);
     }
-    expect(statuses).toEqual(Array.from({ length: sites }, () => 'unknown'));
+    expect(statuses).toEqual(Array.from({ length: sites }, () => undecided));
   }, SOLVER_EXHAUSTIVE_SWEEP_TEST_TIMEOUT_MS);
 });

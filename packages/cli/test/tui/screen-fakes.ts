@@ -1,11 +1,11 @@
 import type { PublicRunEvent } from '@momonga/protocol';
+import { createClaimTable } from '../../src/tui/screen/input.ts';
 import type { ScreenTerminal } from '../../src/tui/screen/input.ts';
 import { createTranscriptStore } from '../../src/tui/screen/store.ts';
 import type { TranscriptState, TranscriptStore } from '../../src/tui/screen/store.ts';
 import type { TerminalEvent } from '../../src/tui/terminal/events.ts';
 import type { ScreenRequest, TerminalState } from '../../src/tui/terminal/layer.ts';
 import type { ScreenMode } from '../../src/tui/terminal/modes.ts';
-import { NEWLINE_HINT } from '../../src/tui/terminal/negotiation.ts';
 import type { NegotiationState } from '../../src/tui/terminal/negotiation.ts';
 import { foldChildEvent, foldEvent } from '../../src/tui/transcript.ts';
 import type { Entry } from '../../src/tui/transcript.ts';
@@ -76,7 +76,7 @@ export type FakeScreenTerminal = ScreenTerminal & {
 export const fakeScreenTerminal = (given: { screen?: ScreenMode; columns?: number; rows?: number } = {}): FakeScreenTerminal => {
   const listeners = new Set<() => void>();
   const screenListeners = new Set<(request: ScreenRequest) => void>();
-  const claims: ((event: TerminalEvent) => boolean)[] = [];
+  const claims = createClaimTable();
   const observers = new Set<(event: TerminalEvent) => void>();
   const screens: ScreenMode[] = [];
   const titles: string[] = [];
@@ -84,7 +84,6 @@ export const fakeScreenTerminal = (given: { screen?: ScreenMode; columns?: numbe
   let state: TerminalState = {
     screen: given.screen ?? 'fullscreen',
     negotiation: 'unknown',
-    newlineHint: 'ctrl+j',
     enabled: [],
     size: { columns: given.columns ?? 160, rows: given.rows ?? 100 },
     tooSmall: false,
@@ -135,20 +134,15 @@ export const fakeScreenTerminal = (given: { screen?: ScreenMode; columns?: numbe
           observers.delete(observer);
         };
       },
-      claim: (handler) => {
-        claims.unshift(handler);
-        return () => {
-          claims.splice(claims.indexOf(handler), 1);
-        };
-      },
+      claim: claims.claim,
     },
     emit: (event) => {
       for (const observer of [...observers]) observer(event);
-      return claims.some((claim) => claim(event));
+      return claims.offer(event);
     },
     resize: (columns, rows) => publish({ ...state, size: { columns, rows } }),
     shrink: (tooSmall) => publish({ ...state, tooSmall }),
-    negotiate: (negotiation) => publish({ ...state, negotiation, newlineHint: NEWLINE_HINT[negotiation] }),
+    negotiate: (negotiation) => publish({ ...state, negotiation }),
     request: (request) => {
       for (const listener of [...screenListeners]) listener(request);
     },

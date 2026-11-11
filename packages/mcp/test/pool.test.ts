@@ -136,7 +136,7 @@ describe('createMcpPool crash and reconnect', () => {
     expect(harness.pool.diagnostics()[0]?.state).toBe('connected');
   });
 
-  it('gives up after three failed reconnects, fails fast while open, and recovers after resetAfterMs', async () => {
+  it('gives up at the third failure in a row (the crash of the server and two failed reconnects), fails fast while open, and recovers after resetAfterMs', async () => {
     const recordFile = makeRecordFile();
     const launcher = makeLauncher(recordFile);
     const harness = makePool([entry('modern', launcher.config)]);
@@ -147,28 +147,28 @@ describe('createMcpPool crash and reconnect', () => {
 
     launcher.broken();
     expect((await executor.resultOf(set, 'mcp__modern__crash', { code: 3 })).status).toBe('failed');
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
       const failed = await executor.resultOf(set, 'mcp__modern__echo', { text: 'retry' });
       expect(failed.status).toBe('failed');
       expect(failed.output.startsWith('MCP server "modern" ')).toBe(true);
     }
-    expect(launcher.launches()).toBe(4);
+    expect(launcher.launches()).toBe(3);
 
     const fastFailed = await executor.resultOf(set, 'mcp__modern__echo', { text: 'open' });
     expect(fastFailed.status).toBe('failed');
     expect(fastFailed.output.startsWith('MCP server "modern" is unavailable: ')).toBe(true);
     expect(fastFailed.output.length).toBeGreaterThan('MCP server "modern" is unavailable: '.length);
-    expect(launcher.launches()).toBe(4);
+    expect(launcher.launches()).toBe(3);
     expect(harness.pool.diagnostics()[0]?.state).toBe('unavailable');
 
     harness.clock.advance(59_999);
     expect((await executor.resultOf(set, 'mcp__modern__echo', { text: 'still open' })).output.startsWith('MCP server "modern" is unavailable: ')).toBe(true);
-    expect(launcher.launches()).toBe(4);
+    expect(launcher.launches()).toBe(3);
 
     launcher.healthy();
     harness.clock.advance(1);
     expect((await executor.resultOf(set, 'mcp__modern__echo', { text: 'recovered' })).output).toBe('recovered');
-    expect(launcher.launches()).toBe(5);
+    expect(launcher.launches()).toBe(4);
     expect(harness.pool.diagnostics()[0]?.state).toBe('connected');
   });
 });

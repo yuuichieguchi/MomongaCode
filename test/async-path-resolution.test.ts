@@ -65,7 +65,6 @@ const ASYNCHRONOUS_FILES: readonly string[] = [
 const SYNCHRONOUS_USERS: Readonly<Record<string, string>> = {
   'packages/foundation/src/sync-paths.ts': 'the synchronous driver of the one resolution algorithm',
   'packages/foundation/src/index.ts': 'exports the synchronous driver',
-  'packages/foundation/src/daemon-entry.ts': 'the home of a daemon process is resolved once at process start, before its log file opens and before a signal handler or a socket exists',
   'packages/config/src/models.ts': 'the user settings are parsed under the synchronous user-settings cache, once per change of the file and once at the begin of a stop',
   'packages/config/src/user-settings.ts': 'the synchronous user-settings cache: one parse per change of the file and one at the begin of a stop',
   'packages/config/src/edit-settings.ts': 'the settings editor checks a document inside its synchronous edit under the settings lock',

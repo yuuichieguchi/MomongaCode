@@ -96,7 +96,7 @@ describe('the value in a prompt panel', () => {
 describe('the field panel of an MCP server', () => {
   it('expands the tabs of the texts the server sent and shows their control characters as text', () => {
     const flow = startFlow([{ key: 'k', mode: 'form', message: `fill\t${OSC_52}in`, requestedSchema: { type: 'object', properties: { name: { type: 'string', title: `Na\tme`, description: `the\t${UNKNOWN_CSI}name` } }, required: ['name'] } }], 'fx');
-    const { lastFrame, unmount } = render(<ElicitationFields elicitation={{ inputId: 'i1', callId: 'c1', server: 'fx', flow, submitted: false }} title={'ti\ttle'} editor={editorWith('')} waiting={0} keys={DEFAULT_KEY_TABLE} />);
+    const { lastFrame, unmount } = render(<ElicitationFields elicitation={{ inputId: 'i1', callId: 'c1', server: 'fx', flow, submitted: false }} title={'ti\ttle'} editor={editorWith('')} waiting={0} settling={false} keys={DEFAULT_KEY_TABLE} />);
     const drawn = drawnOf(lastFrame());
     expect(drawn).toContain(`fill${' '.repeat(TAB_COLUMNS)}\\u001b]52;c;AA==\\u0007in`);
     expect(drawn).toContain(`Na${' '.repeat(TAB_COLUMNS)}me`);

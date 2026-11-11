@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import * as evaluation from '@momonga/eval';
-import { DATASET_FORMAT, gradeChecks, mandateOfTask, parseDataset } from '@momonga/eval';
+import { DATASET_FORMAT, gradeChecks, mandateOfTask, nodeWorkspaceFiles, parseDataset } from '@momonga/eval';
 
 const DATASET_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'datasets', 'completion.json');
 
@@ -60,7 +60,7 @@ const probeOf = (exits: Record<string, number | 'timeout'>, digests: { workspace
 });
 
 const gradeWith = (checks: readonly object[], probe: ReturnType<typeof probeOf>) =>
-  gradeChecks({ checks: checks as never, graderFiles: {}, workspace: 'work', base: 'base', probe });
+  gradeChecks({ checks: checks as never, graderFiles: {}, workspace: 'work', base: 'base', probe, files: nodeWorkspaceFiles });
 
 const within = async (allowed: string[], changed: string[]): Promise<boolean> =>
   (await gradeWith([{ id: 'bounded', kind: 'changedPathsWithin', paths: allowed }], probeOf({}, { workspace: '', base: '' }, changed))).met;

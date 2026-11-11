@@ -1,5 +1,5 @@
-import { DEFAULT_DIALECT_ID, DEFAULT_SYSTEM_ROLE, DEFAULT_TOOL_PLACEMENT, compactionSummaryMessage } from '@momonga/protocol';
-import type { AdapterInputItem, AdapterRequest, Capabilities, ContentPart, DialectId, FunctionTool, InputItem, ReasoningOrigin, SystemRole, ToolPlacement } from '@momonga/protocol';
+import { DEFAULT_DIALECT_ID, DEFAULT_SYSTEM_ROLE, DEFAULT_TOOL_PLACEMENT, acceptedReasoningEfforts, clampReasoningEffort, compactionSummaryMessage, outputTokensFor } from '@momonga/protocol';
+import type { AdapterInputItem, AdapterRequest, Capabilities, ContentPart, DialectId, FunctionTool, InputItem, OutputTokenCapabilities, ReasoningEffort, ReasoningOrigin, SystemRole, ToolPlacement } from '@momonga/protocol';
 import { NO_USER_DIALECTS, resolveDialect } from '../../dialect/choice.ts';
 import type { UserDialects } from '../../dialect/choice.ts';
 import { RenderLedger } from '../../dialect/ledger.ts';
@@ -15,6 +15,10 @@ import { carriedSamplingOf } from '../shared/sampling.ts';
 
 export type AdditionalToolsItem = { type: 'additional_tools'; role: 'developer'; tools: FunctionTool[] };
 
+export const OPEN_RESPONSES_REASONING_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh'] as const satisfies readonly ReasoningEffort[];
+
+export type OpenResponsesReasoningEffort = (typeof OPEN_RESPONSES_REASONING_EFFORTS)[number];
+
 export type OpenResponsesRequestBody = {
   [unknownField: string]: unknown;
   model: string;
@@ -27,6 +31,7 @@ export type OpenResponsesRequestBody = {
   tool_choice?: AdapterRequest['tool_choice'];
   parallel_tool_calls?: boolean;
   max_output_tokens?: number;
+  reasoning?: { effort: OpenResponsesReasoningEffort };
   temperature?: number;
   top_p?: number;
   frequency_penalty?: number;
@@ -78,6 +83,7 @@ export type ResponsesRendering = {
   ledger?: RenderLedger;
   jsonReply?: JsonReplyPlan | undefined;
   carriesOutputBound?: boolean;
+  output?: OutputTokenCapabilities;
   systemRole?: SystemRole;
   toolPlacement?: ToolPlacement;
 };
@@ -88,6 +94,30 @@ const textFieldOf = (plan: JsonReplyPlan | undefined, dialect: ResolvedDialect):
   if (isJsonOnlyEnforced(plan)) return { text: { format: { type: 'json_object' } } };
   const format = jsonReplyFormatOf(plan, dialect);
   return format === undefined ? {} : { text: { format: { type: 'json_schema', ...format } } };
+};
+
+const isWireEffort = (effort: ReasoningEffort): effort is OpenResponsesReasoningEffort => OPEN_RESPONSES_REASONING_EFFORTS.some((accepted) => accepted === effort);
+
+const reasoningFieldOf = (request: AdapterRequest, output: OutputTokenCapabilities | undefined): Pick<OpenResponsesRequestBody, 'reasoning'> => {
+  const requested = request.reasoning_effort;
+  const reasoning = output?.reasoning;
+  if (requested === undefined || reasoning === undefined || reasoning.control === 'none') return {};
+  if (reasoning.control === 'thinking') {
+    throw new UnsupportedInputError(
+      'unsupported_input',
+      'the target declares capabilities.reasoning with control "thinking", but the Open Responses wire carries reasoning only as an effort; declare control "reasoning_effort" or "none"',
+      'reasoning_effort',
+    );
+  }
+  const effort = clampReasoningEffort(requested, acceptedReasoningEfforts(reasoning).filter(isWireEffort));
+  if (!isWireEffort(effort)) throw new Error(`the reasoning effort ${effort} is not one the Open Responses wire accepts`);
+  return { reasoning: { effort } };
+};
+
+const outputBoundFieldOf = (request: AdapterRequest, rendering: ResponsesRendering): Pick<OpenResponsesRequestBody, 'max_output_tokens'> => {
+  const requested = request.max_output_tokens;
+  if (rendering.carriesOutputBound === false || requested === undefined || requested === null) return {};
+  return { max_output_tokens: rendering.output === undefined ? requested : outputTokensFor(rendering.output, request.reasoning_effort, requested) };
 };
 
 export const buildResponsesBody = (request: AdapterRequest, origin: ReasoningOrigin, rendering: ResponsesRendering = {}): OpenResponsesRequestBody => {
@@ -111,7 +141,8 @@ export const buildResponsesBody = (request: AdapterRequest, origin: ReasoningOri
     ...(tools.length === 0 || additional ? {} : { tools }),
     ...(tools.length === 0 || request.tool_choice === undefined ? {} : { tool_choice: request.tool_choice }),
     ...(tools.length === 0 || request.parallel_tool_calls === undefined ? {} : { parallel_tool_calls: request.parallel_tool_calls }),
-    ...(rendering.carriesOutputBound === false || request.max_output_tokens === undefined || request.max_output_tokens === null ? {} : { max_output_tokens: request.max_output_tokens }),
+    ...outputBoundFieldOf(request, rendering),
+    ...reasoningFieldOf(request, rendering.output),
     ...textFieldOf(rendering.jsonReply, dialect),
     ...carriedSamplingOf(request),
   };

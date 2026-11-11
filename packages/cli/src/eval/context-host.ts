@@ -87,13 +87,13 @@ export const assertSocketsFit = async (paths: MomongaPaths, refuseUnfitSockets: 
 export const pinnedModelOf = (user: UserModels, text: string): string => {
   const { views } = user.resolved;
   const resolution = resolveTypedModelRef(typedModelText(text), views);
-  if (resolution.kind !== 'found') throw modelRefErrorOf(text, resolution, views);
+  if (resolution.kind !== 'found') throw modelRefErrorOf(text, resolution, views, 'cli');
   return resolution.model.canon;
 };
 
 const chainMembersOf = (models: ResolvedModels, model: string): ResolvedModel[] => {
   const chain = models.chains.get(model);
-  if (chain === undefined) throw new ContextHostError(modelRefErrorOf(model, { kind: 'not_found' }, models.views).message);
+  if (chain === undefined) throw new ContextHostError(modelRefErrorOf(model, { kind: 'not_found' }, models.views, 'cli').message);
   return chain.map((canon) => {
     const member = models.models.get(canon);
     if (member === undefined) throw new TypeError(`the chain of ${model} names ${canon}, which the resolved settings do not hold`);

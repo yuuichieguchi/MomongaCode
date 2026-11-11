@@ -86,6 +86,7 @@ const adminSetup = async () => {
   const created: McpPoolOptions[] = [];
   const reader = { graceMs: 900, reads: 0 };
   const admin = createMcpAdmin({
+    clientVersion: '0.0.0-test',
     home: temp.home,
     readConnectTimeoutMs: () => undefined,
     store,

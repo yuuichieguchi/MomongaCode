@@ -209,14 +209,16 @@ describe('local servers from the welcome', () => {
 });
 
 describe('the invitation banner', () => {
-  it('invites a home with a model and no account, and Not now is remembered as invite:chatgpt', async () => {
+  it('invites a home with a model and no account with one line that names /login, and Not now in /login is remembered as invite:chatgpt', async () => {
     const { app, backend } = await startPlan({ accounts: [] });
     const frame = await untilFrame(app, 'Use your ChatGPT plan in this app.');
-    expect(frame).toContain('Continue with ChatGPT');
-    expect(frame).toContain('Not now');
+    expect(frame).toContain('/login');
+    expect(frame).not.toContain('Not now');
+    await submitLine(app, '/login');
     await choose(app, 'Not now');
     await eventually(() => backend.dismissals.length > 0, 'the dismissal');
     expect(backend.dismissals).toEqual(['invite:chatgpt']);
+    await untilFrame(app, (shown) => !shown.includes('Not now'));
     await quiet();
     expect(app.lastFrame()).not.toContain('Use your ChatGPT plan in this app.');
     app.unmount();

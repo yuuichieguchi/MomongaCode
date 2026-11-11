@@ -3,6 +3,7 @@ import type { SocketResolver } from '@momonga/foundation';
 import type { AnsweredByView, PermissionMode, ReportPage, RunHealth, Mandate } from '@momonga/protocol';
 import { RunApiError, createRuntimeClient as createProductClient } from '../../packages/cli/src/client/runtime-client.ts';
 import type { RuntimeClient as ProductClient } from '../../packages/cli/src/client/runtime-client.ts';
+import { nodeClock } from '../../packages/cli/src/node-ports.ts';
 import type { ApprovalView, RunView, SessionView } from '../../packages/cli/src/client/views.ts';
 import type { E2eHome } from './home.ts';
 import { until } from './wait.ts';
@@ -54,7 +55,7 @@ export const framesOfType = (frames: readonly RunEventFrame[], type: string): Ru
 type StreamOutcome = { kind: 'match'; frame: RunEventFrame } | { kind: 'ended' } | { kind: 'failed'; error: unknown };
 
 export const createRuntimeClient = (home: E2eHome, resolveSocket: SocketResolver = fixedSocket(firstGeneration(home.paths).sockets.runtime)): RuntimeClient => {
-  const product: ProductClient = createProductClient({ resolveSocket });
+  const product: ProductClient = createProductClient({ resolveSocket, clock: nodeClock });
   const http = createUdsClient(resolveSocket);
   const openStreams = new Set<{ abort(): Promise<void> }>();
 

@@ -1,3 +1,4 @@
+import { messageOf } from '@momonga/protocol';
 import { describe, expect, it } from 'vitest';
 import type { MomongaModelList, PlanAccountView, PlanModelsResponse, PlanProfileView } from '@momonga/protocol';
 import * as authCommands from '../src/commands/auth.ts';
@@ -160,7 +161,7 @@ describe('the auth status model line (O-R5-4 S8)', () => {
     const { plan } = fakePlan();
     const stdout = writer();
     await authCommands.authStatus({ stdout, plan, listing: async () => EMPTY }, { json: false });
-    expect(stdout.text().trimEnd().split('\n').at(-1)).toBe('model: none (No model is connected. Use /login to connect one.)');
+    expect(stdout.text().trimEnd().split('\n').at(-1)).toBe(`model: none (${messageOf('noModelConnected', 'cli')})`);
     const json = writer();
     const listing = listingOf(homeWith(context, S3).home);
     await authCommands.authStatus({ stdout: json, plan, listing: async () => listing }, { json: true });

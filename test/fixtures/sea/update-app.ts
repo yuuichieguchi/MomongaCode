@@ -1,7 +1,7 @@
 import { nodeCommandRunner, nodeEntryIo } from '@momonga/foundation';
 import { daemonEntries } from '../../../packages/cli/src/daemon/entries.ts';
 import { describeFailure } from '../../../packages/cli/src/failure.ts';
-import { nodePorts } from '../../../packages/cli/src/node-ports.ts';
+import { nodeHelperHost, nodePorts } from '../../../packages/cli/src/node-ports.ts';
 import { buildProgram, pathsOf } from '../../../packages/cli/src/program.ts';
 import { nodeUpdateWiring } from '../../../packages/cli/src/update/wiring.ts';
 import { nodePolicyVerifyHost } from '../../../packages/cli/src/verify/host.ts';
@@ -22,6 +22,7 @@ export const runUpdateFixture = async (version: string): Promise<void> => {
     ports,
     policyVerify: async () => nodePolicyVerifyHost(ports, await pathsOf(ports)),
     entries: daemonEntries(ports.self, ports.version, ports.spawnDetached),
+    helper: { helpers: async () => ({}), call: undefined, host: nodeHelperHost() },
     update: () => ({
       ...wiring,
       build: { repo: FIXTURE_REPO, teamId: FIXTURE_TEAM_ID, publicKey: process.env[PUBLIC_KEY_ENV] },

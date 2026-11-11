@@ -1,0 +1,818 @@
+{
+  "proves": "No prose text of the product (a string, a template piece or the text of an element in packages/*/src, and each line of the scanned documents) holds a banned variant of the vocabulary table beyond the counts below. It does not prove that a counted use is correct.",
+  "otherMeaning": "A use read and found to be in the other meaning the table states for the word (keptFor). It stays.",
+  "burnDown": "A use nobody has read against the table yet: it is either in the other meaning or it is to be replaced by the word of the table, by the package of the area that owns the file. A count only shrinks.",
+  "uses": {
+    "otherMeaning": {
+      "packages/cli/src/commands/report.ts": {
+        "limit": 2
+      },
+      "packages/cli/src/models-texts.ts": {
+        "gateway": 1
+      },
+      "packages/eval/src/context-improve.ts": {
+        "benchmark": 5,
+        "cap": 4
+      },
+      "packages/eval/src/context-report.ts": {
+        "cap": 1
+      }
+    },
+    "burnDown": {
+      "README.md": {
+        "benchmark": 2,
+        "compact": 1,
+        "conversation": 1,
+        "directory": 6,
+        "endpoint": 2,
+        "evaluation": 1,
+        "gateway": 7,
+        "job": 6,
+        "limit": 1,
+        "Momonga Code": 17,
+        "profile": 1,
+        "project": 14,
+        "target": 4,
+        "task": 1
+      },
+      "packages/agents/src/pin.ts": {
+        "task": 1
+      },
+      "packages/agents/src/scan.ts": {
+        "project": 1
+      },
+      "packages/agents/src/tool.ts": {
+        "conversation": 1,
+        "task": 6
+      },
+      "packages/cli/src/acp/events.ts": {
+        "job": 1
+      },
+      "packages/cli/src/client/gateway-client.ts": {
+        "gateway": 2,
+        "target": 1
+      },
+      "packages/cli/src/client/golden-run-api.ts": {
+        "job": 1
+      },
+      "packages/cli/src/command-limit.ts": {
+        "limit": 1
+      },
+      "packages/cli/src/commands/bench.ts": {
+        "benchmark": 4,
+        "task": 1
+      },
+      "packages/cli/src/commands/daemon.ts": {
+        "job": 2
+      },
+      "packages/cli/src/commands/gateway.ts": {
+        "endpoint": 1,
+        "gateway": 1
+      },
+      "packages/cli/src/commands/jobs.ts": {
+        "job": 1
+      },
+      "packages/cli/src/commands/models.ts": {
+        "conversation": 1,
+        "profile": 1
+      },
+      "packages/cli/src/commands/register.ts": {
+        "benchmark": 7,
+        "cap": 1,
+        "directory": 5,
+        "job": 5,
+        "limit": 1,
+        "project": 1,
+        "summaries": 1,
+        "task": 5
+      },
+      "packages/cli/src/commands/secret.ts": {
+        "gateway": 1
+      },
+      "packages/cli/src/commands/update.ts": {
+        "job": 1
+      },
+      "packages/cli/src/daemon/ensure-daemon.ts": {
+        "task": 1
+      },
+      "packages/cli/src/eval/context-host.ts": {
+        "benchmark": 4,
+        "directory": 1,
+        "gateway": 3
+      },
+      "packages/cli/src/eval/yield-host.ts": {
+        "benchmark": 1
+      },
+      "packages/cli/src/plan/accounts.ts": {
+        "directory": 1,
+        "limit": 1
+      },
+      "packages/cli/src/plan/sign-in.ts": {
+        "gateway": 1
+      },
+      "packages/cli/src/program.ts": {
+        "conversation": 2,
+        "directory": 4,
+        "gateway": 2,
+        "limit": 1
+      },
+      "packages/cli/src/run/headless.ts": {
+        "limit": 1
+      },
+      "packages/cli/src/run/skill-invocation.ts": {
+        "task": 1
+      },
+      "packages/cli/src/tui/app.tsx": {
+        "task": 5
+      },
+      "packages/cli/src/tui/commands/auth.ts": {
+        "task": 1
+      },
+      "packages/cli/src/tui/commands/clear.ts": {
+        "conversation": 1
+      },
+      "packages/cli/src/tui/commands/compact.ts": {
+        "compact": 1,
+        "conversation": 1
+      },
+      "packages/cli/src/tui/commands/delegate.ts": {
+        "task": 2
+      },
+      "packages/cli/src/tui/commands/init.ts": {
+        "project": 1
+      },
+      "packages/cli/src/tui/commands/mcp.ts": {
+        "project": 1
+      },
+      "packages/cli/src/tui/commands/models.ts": {
+        "job": 1,
+        "limit": 1
+      },
+      "packages/cli/src/tui/commands/permissions.ts": {
+        "directory": 4
+      },
+      "packages/cli/src/tui/commands/resume.ts": {
+        "conversation": 3
+      },
+      "packages/cli/src/tui/commands/rule.ts": {
+        "target": 1
+      },
+      "packages/cli/src/tui/commands/shell-commands.ts": {
+        "cap": 1,
+        "gateway": 1,
+        "job": 1,
+        "task": 1
+      },
+      "packages/cli/src/tui/models/hub.ts": {
+        "job": 1,
+        "limit": 1
+      },
+      "packages/cli/src/tui/models/order.ts": {
+        "job": 1
+      },
+      "packages/cli/src/tui/models/texts.ts": {
+        "job": 2,
+        "limit": 2,
+        "task": 1
+      },
+      "packages/cli/src/tui/screen/prompt-panel.tsx": {
+        "project": 2
+      },
+      "packages/cli/src/tui/screen/waiting-row.tsx": {
+        "conversation": 1
+      },
+      "packages/cli/src/tui/settings-screen.tsx": {
+        "ceiling": 3,
+        "directory": 1,
+        "endpoint": 1,
+        "limit": 2
+      },
+      "packages/cli/src/tui/slash.ts": {
+        "task": 3
+      },
+      "packages/cli/src/tui/transcript.ts": {
+        "conversation": 1,
+        "job": 1
+      },
+      "packages/cli/src/update/install.ts": {
+        "directory": 1
+      },
+      "packages/config/src/edit-settings.ts": {
+        "directory": 1
+      },
+      "packages/config/src/json-file.ts": {
+        "project": 1,
+        "target": 1
+      },
+      "packages/config/src/layers.ts": {
+        "gateway": 1,
+        "project": 2
+      },
+      "packages/config/src/load-settings.ts": {
+        "directory": 1,
+        "project": 1
+      },
+      "packages/config/src/mcp-servers.ts": {
+        "project": 2
+      },
+      "packages/config/src/models-writers.ts": {
+        "job": 1,
+        "limit": 3
+      },
+      "packages/config/src/models.ts": {
+        "profile": 3
+      },
+      "packages/config/src/plan-profiles.ts": {
+        "limit": 2,
+        "profile": 5,
+        "target": 1
+      },
+      "packages/config/src/project-mandate.ts": {
+        "project": 2
+      },
+      "packages/config/src/server-registry.ts": {
+        "endpoint": 1,
+        "target": 1
+      },
+      "packages/config/src/settings.ts": {
+        "target": 1
+      },
+      "packages/context/src/budget.ts": {
+        "target": 1
+      },
+      "packages/context/src/errors.ts": {
+        "conversation": 1
+      },
+      "packages/context/src/formatters/json.ts": {
+        "task": 1
+      },
+      "packages/context/src/instructions.ts": {
+        "project": 5
+      },
+      "packages/context/src/memory.ts": {
+        "task": 1
+      },
+      "packages/context/src/working-state.ts": {
+        "job": 1
+      },
+      "packages/eval/src/bench-report.ts": {
+        "benchmark": 1,
+        "task": 6
+      },
+      "packages/eval/src/bench-run.ts": {
+        "benchmark": 3
+      },
+      "packages/eval/src/bench.ts": {
+        "benchmark": 4,
+        "directory": 4,
+        "task": 1
+      },
+      "packages/eval/src/context-dataset.ts": {
+        "target": 2
+      },
+      "packages/eval/src/context-live.ts": {
+        "cap": 1
+      },
+      "packages/eval/src/guideline-prompts.ts": {
+        "conversation": 2,
+        "summaries": 1,
+        "task": 2
+      },
+      "packages/eval/src/reliability-compare.ts": {
+        "benchmark": 2,
+        "task": 1
+      },
+      "packages/eval/src/report.ts": {
+        "limit": 3
+      },
+      "packages/eval/src/transcript.ts": {
+        "job": 1,
+        "target": 3
+      },
+      "packages/eval/src/yield-report.ts": {
+        "summaries": 1
+      },
+      "packages/foundation/src/daemon-entry.ts": {
+        "target": 1
+      },
+      "packages/foundation/src/file-rules.ts": {
+        "directory": 2
+      },
+      "packages/foundation/src/generation-start.ts": {
+        "directory": 1
+      },
+      "packages/foundation/src/json-depth.ts": {
+        "limit": 1
+      },
+      "packages/foundation/src/json-reply.ts": {
+        "target": 2
+      },
+      "packages/foundation/src/momonga-paths.ts": {
+        "directory": 11
+      },
+      "packages/foundation/src/path-compare.ts": {
+        "directory": 4,
+        "target": 1
+      },
+      "packages/foundation/src/platform/darwin-inspector.ts": {
+        "directory": 1
+      },
+      "packages/foundation/src/platform/sqlite-lock.ts": {
+        "limit": 1
+      },
+      "packages/foundation/src/platform/windows-keeper-host.ts": {
+        "job": 1
+      },
+      "packages/foundation/src/platform/windows-kept-groups.ts": {
+        "job": 3
+      },
+      "packages/foundation/src/schema-reference-cycles.ts": {
+        "target": 1
+      },
+      "packages/foundation/src/secret-store.ts": {
+        "gateway": 1,
+        "target": 4
+      },
+      "packages/foundation/src/sqlite.ts": {
+        "directory": 4,
+        "limit": 1
+      },
+      "packages/foundation/src/uds.ts": {
+        "directory": 6
+      },
+      "packages/gateway/src/adapters/anthropic/request.ts": {
+        "endpoint": 1,
+        "target": 1
+      },
+      "packages/gateway/src/adapters/anthropic/stream-driver.ts": {
+        "conversation": 1
+      },
+      "packages/gateway/src/adapters/chat-completions/adapter.ts": {
+        "target": 1
+      },
+      "packages/gateway/src/adapters/chat-completions/incremental-json.ts": {
+        "limit": 1
+      },
+      "packages/gateway/src/adapters/ollama/history.ts": {
+        "gateway": 1
+      },
+      "packages/gateway/src/adapters/open-responses/request.ts": {
+        "target": 1
+      },
+      "packages/gateway/src/adapters/replay-adapter.ts": {
+        "directory": 3
+      },
+      "packages/gateway/src/adapters/shared/compact.ts": {
+        "conversation": 2,
+        "limit": 2
+      },
+      "packages/gateway/src/core/errors.ts": {
+        "endpoint": 1,
+        "gateway": 3
+      },
+      "packages/gateway/src/core/image-tokens.ts": {
+        "target": 1
+      },
+      "packages/gateway/src/core/input.ts": {
+        "gateway": 1
+      },
+      "packages/gateway/src/core/quote.ts": {
+        "ceiling": 1
+      },
+      "packages/gateway/src/core/respond.ts": {
+        "gateway": 1
+      },
+      "packages/gateway/src/core/router.ts": {
+        "cap": 1,
+        "gateway": 1
+      },
+      "packages/gateway/src/core/store.ts": {
+        "gateway": 4,
+        "target": 5
+      },
+      "packages/gateway/src/core/tool-choice.ts": {
+        "target": 5
+      },
+      "packages/gateway/src/core/unary.ts": {
+        "compact": 1,
+        "conversation": 1,
+        "target": 1
+      },
+      "packages/gateway/src/dialect/constructs.ts": {
+        "target": 3
+      },
+      "packages/gateway/src/dialect/failure.ts": {
+        "target": 1
+      },
+      "packages/gateway/src/dialect/inline-refs.ts": {
+        "target": 2
+      },
+      "packages/gateway/src/dialect/primitives.ts": {
+        "target": 1
+      },
+      "packages/gateway/src/key-read-limit.ts": {
+        "limit": 2
+      },
+      "packages/gateway/src/managed/server.ts": {
+        "directory": 1
+      },
+      "packages/gateway/src/plan/active-account.ts": {
+        "profile": 1
+      },
+      "packages/gateway/src/plan/api.ts": {
+        "profile": 1
+      },
+      "packages/gateway/src/plan/profiles.ts": {
+        "profile": 1
+      },
+      "packages/gateway/src/plan/request-limit.ts": {
+        "limit": 1
+      },
+      "packages/gateway/src/plan/session.ts": {
+        "limit": 2,
+        "profile": 3,
+        "task": 2
+      },
+      "packages/gateway/src/probe/endpoint-record.ts": {
+        "endpoint": 1,
+        "gateway": 1,
+        "target": 5
+      },
+      "packages/gateway/src/probe/record.ts": {
+        "gateway": 1
+      },
+      "packages/gateway/src/probe/remedy.ts": {
+        "gateway": 1
+      },
+      "packages/gateway/src/process.ts": {
+        "endpoint": 1,
+        "gateway": 4,
+        "limit": 1,
+        "profile": 1
+      },
+      "packages/gateway/src/server/app.ts": {
+        "gateway": 4,
+        "limit": 2
+      },
+      "packages/gateway/src/server/body.ts": {
+        "limit": 1
+      },
+      "packages/gateway/src/server/websocket.ts": {
+        "limit": 1
+      },
+      "packages/mcp/src/common-passwords.data.ts": {
+        "compact": 1,
+        "gateway": 1,
+        "project": 1,
+        "target": 1
+      },
+      "packages/mcp/src/connection.ts": {
+        "task": 2
+      },
+      "packages/mcp/src/limit-texts.ts": {
+        "limit": 3
+      },
+      "packages/mcp/src/remote-policy.ts": {
+        "project": 2
+      },
+      "packages/mcp/src/schema-sanitizer.ts": {
+        "limit": 1
+      },
+      "packages/mcp/src/source.ts": {
+        "limit": 1,
+        "task": 2
+      },
+      "packages/mcp/src/suspension.ts": {
+        "task": 2
+      },
+      "packages/mcp/src/task-handle.ts": {
+        "task": 1
+      },
+      "packages/mcp/src/tasks.ts": {
+        "task": 2
+      },
+      "packages/memory/src/governing-facts.ts": {
+        "project": 1,
+        "target": 3
+      },
+      "packages/memory/src/memory-status.ts": {
+        "project": 1
+      },
+      "packages/observability/src/otlp.ts": {
+        "endpoint": 1
+      },
+      "packages/observability/src/trace-store.ts": {
+        "limit": 4
+      },
+      "packages/policy/src/decide.ts": {
+        "directory": 1,
+        "project": 2,
+        "target": 2
+      },
+      "packages/policy/src/shell.ts": {
+        "target": 1
+      },
+      "packages/protocol/src/capabilities.ts": {
+        "target": 2
+      },
+      "packages/protocol/src/reliability.ts": {
+        "limit": 2,
+        "task": 1
+      },
+      "packages/protocol/src/run-types.ts": {
+        "compact": 1
+      },
+      "packages/reliability/src/cost.ts": {
+        "task": 8
+      },
+      "packages/reliability/src/report.ts": {
+        "limit": 1,
+        "task": 7
+      },
+      "packages/runtime/src/gateway-client.ts": {
+        "compact": 4,
+        "gateway": 10
+      },
+      "packages/runtime/src/memory/add-memory.ts": {
+        "project": 5
+      },
+      "packages/runtime/src/memory/evidence.ts": {
+        "project": 3
+      },
+      "packages/runtime/src/memory/journal-thread.ts": {
+        "limit": 2
+      },
+      "packages/runtime/src/memory/reflection-input.ts": {
+        "project": 1,
+        "task": 1
+      },
+      "packages/runtime/src/memory/reflection.ts": {
+        "job": 1
+      },
+      "packages/runtime/src/memory/views.ts": {
+        "project": 2
+      },
+      "packages/runtime/src/process/background-jobs.ts": {
+        "job": 8
+      },
+      "packages/runtime/src/process/history-port.ts": {
+        "project": 1
+      },
+      "packages/runtime/src/process/start-runtime-process.ts": {
+        "project": 1
+      },
+      "packages/runtime/src/process/tool-markers.ts": {
+        "directory": 1
+      },
+      "packages/runtime/src/prompts/init.ts": {
+        "project": 1
+      },
+      "packages/runtime/src/service/answered-by.ts": {
+        "target": 2
+      },
+      "packages/runtime/src/service/app.ts": {
+        "gateway": 3
+      },
+      "packages/runtime/src/service/delegation.ts": {
+        "limit": 1
+      },
+      "packages/runtime/src/service/errors.ts": {
+        "limit": 1
+      },
+      "packages/runtime/src/service/memories.ts": {
+        "directory": 1,
+        "project": 2
+      },
+      "packages/runtime/src/service/rules.ts": {
+        "gateway": 1,
+        "project": 1,
+        "target": 1
+      },
+      "packages/runtime/src/system-prompt.ts": {
+        "conversation": 2,
+        "directory": 3,
+        "project": 1
+      },
+      "packages/runtime/src/worker/admitted-request.ts": {
+        "ceiling": 2,
+        "gateway": 1
+      },
+      "packages/runtime/src/worker/auto-classifier.ts": {
+        "task": 1
+      },
+      "packages/runtime/src/worker/budget.ts": {
+        "limit": 4
+      },
+      "packages/runtime/src/worker/claim-runner.ts": {
+        "gateway": 3
+      },
+      "packages/runtime/src/worker/compact-pin.ts": {
+        "compact": 2
+      },
+      "packages/runtime/src/worker/context-step.ts": {
+        "conversation": 2,
+        "gateway": 1,
+        "task": 1
+      },
+      "packages/runtime/src/worker/gateway-policy.ts": {
+        "conversation": 1,
+        "gateway": 1
+      },
+      "packages/runtime/src/worker/limits.ts": {
+        "limit": 2
+      },
+      "packages/runtime/src/worker/model-step.ts": {
+        "gateway": 1,
+        "target": 3
+      },
+      "packages/runtime/src/worker/model-stream.ts": {
+        "gateway": 1
+      },
+      "packages/runtime/src/worker/pins.ts": {
+        "target": 3
+      },
+      "packages/runtime/src/worker/skill-admission.ts": {
+        "conversation": 1
+      },
+      "packages/runtime/src/worker/tool-admission.ts": {
+        "conversation": 1
+      },
+      "packages/runtime/src/worker/touched-paths.ts": {
+        "project": 1
+      },
+      "packages/runtime/src/worker/verification-step.ts": {
+        "task": 1
+      },
+      "packages/runtime/src/worker/wrap-up.ts": {
+        "conversation": 1,
+        "limit": 1
+      },
+      "packages/sandbox/src/bubblewrap.ts": {
+        "limit": 1
+      },
+      "packages/sandbox/src/egress-proxy.ts": {
+        "target": 1
+      },
+      "packages/sandbox/src/placeholder-journal.ts": {
+        "directory": 1
+      },
+      "packages/sandbox/src/profile.ts": {
+        "target": 2
+      },
+      "packages/sandbox/src/scratch.ts": {
+        "directory": 1
+      },
+      "packages/skills/src/activation.ts": {
+        "directory": 2
+      },
+      "packages/skills/src/catalog.ts": {
+        "task": 2
+      },
+      "packages/skills/src/scan.ts": {
+        "directory": 4,
+        "project": 1
+      },
+      "packages/skills/src/tool.ts": {
+        "conversation": 1,
+        "task": 2
+      },
+      "packages/store/src/append-records.ts": {
+        "limit": 12,
+        "target": 2,
+        "task": 3
+      },
+      "packages/store/src/blobs.ts": {
+        "directory": 1,
+        "limit": 1
+      },
+      "packages/store/src/codec.ts": {
+        "profile": 1
+      },
+      "packages/store/src/context-charges.ts": {
+        "project": 1
+      },
+      "packages/store/src/derived-repair.ts": {
+        "limit": 3
+      },
+      "packages/store/src/governing.ts": {
+        "project": 2,
+        "target": 1
+      },
+      "packages/store/src/guidelines.ts": {
+        "limit": 1
+      },
+      "packages/store/src/inbox.ts": {
+        "limit": 2
+      },
+      "packages/store/src/inherit-reference.ts": {
+        "limit": 4,
+        "task": 4
+      },
+      "packages/store/src/inherit.ts": {
+        "conversation": 1,
+        "task": 3
+      },
+      "packages/store/src/jobs.ts": {
+        "job": 10
+      },
+      "packages/store/src/memories.ts": {
+        "limit": 8,
+        "project": 12
+      },
+      "packages/store/src/reflection.ts": {
+        "job": 6,
+        "limit": 1,
+        "project": 1
+      },
+      "packages/store/src/run-facts.ts": {
+        "limit": 4
+      },
+      "packages/store/src/runtime-store.ts": {
+        "job": 2,
+        "limit": 13,
+        "project": 1
+      },
+      "packages/store/src/schema.ts": {
+        "directory": 1,
+        "job": 8,
+        "limit": 5,
+        "project": 6,
+        "target": 4,
+        "task": 2
+      },
+      "packages/store/src/search.ts": {
+        "limit": 5,
+        "project": 5
+      },
+      "packages/supervisor/src/shutdown.ts": {
+        "gateway": 1
+      },
+      "packages/tools/src/builtins/bash.ts": {
+        "directory": 2,
+        "job": 9,
+        "limit": 1
+      },
+      "packages/tools/src/builtins/edit.ts": {
+        "directory": 5
+      },
+      "packages/tools/src/builtins/files.ts": {
+        "directory": 1
+      },
+      "packages/tools/src/builtins/glob.ts": {
+        "directory": 6
+      },
+      "packages/tools/src/builtins/grep.ts": {
+        "directory": 4
+      },
+      "packages/tools/src/builtins/jobs.ts": {
+        "job": 11
+      },
+      "packages/tools/src/builtins/read-output.ts": {
+        "limit": 2
+      },
+      "packages/tools/src/builtins/read.ts": {
+        "directory": 5,
+        "limit": 2
+      },
+      "packages/tools/src/builtins/update-plan.ts": {
+        "task": 2
+      },
+      "packages/tools/src/builtins/write.ts": {
+        "directory": 5
+      },
+      "packages/tools/src/executor.ts": {
+        "limit": 1
+      },
+      "packages/tools/src/governance/tools.ts": {
+        "project": 3,
+        "target": 1
+      },
+      "packages/tools/src/history/render.ts": {
+        "project": 1
+      },
+      "packages/tools/src/history/tools.ts": {
+        "project": 2
+      },
+      "packages/tools/src/memory/tools.ts": {
+        "conversation": 1,
+        "project": 3
+      },
+      "packages/verify/src/dialect-model/primitives.ts": {
+        "target": 2
+      },
+      "packages/verify/src/dialect-model/seeds.ts": {
+        "target": 2
+      },
+      "packages/verify/src/properties.ts": {
+        "directory": 1
+      },
+      "packages/verify/src/secret-locations.ts": {
+        "gateway": 1
+      },
+      "packages/verify/src/verify.ts": {
+        "directory": 1,
+        "profile": 1
+      }
+    }
+  }
+}

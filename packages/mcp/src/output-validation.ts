@@ -1,7 +1,7 @@
 import { ProtocolError, ProtocolErrorCode } from '@modelcontextprotocol/client';
 import type { CallToolResult, Tool } from '@modelcontextprotocol/client';
 import { checkWithPatterns, compileUntrustedSchema, patternRefusal, validateUntrusted } from '@momonga/foundation';
-import { sanitizeSchema } from './schema-sanitizer.ts';
+import { boundedSchemaCopy } from './schema-copy.ts';
 
 export const validateStructuredOutput = async (
   identity: string,
@@ -12,14 +12,14 @@ export const validateStructuredOutput = async (
 ): Promise<CallToolResult> => {
   const schema = tool?.outputSchema;
   if (schema === undefined) return result;
-  const sanitized = sanitizeSchema(schema as Record<string, unknown>);
-  compileUntrustedSchema(sanitized);
+  const copied = boundedSchemaCopy(schema as Record<string, unknown>);
+  compileUntrustedSchema(copied);
   if (result.isError === true) return result;
   if (result.structuredContent === undefined) {
     throw new ProtocolError(ProtocolErrorCode.InvalidRequest, `Tool ${name} has an output schema but did not return structured content`);
   }
   const content = result.structuredContent;
-  const checked = await checkWithPatterns(() => validateUntrusted(identity, sanitized, content), signal === undefined ? {} : { signal });
+  const checked = await checkWithPatterns(() => validateUntrusted(identity, copied, content), signal === undefined ? {} : { signal });
   if (checked.kind === 'stopped') throw (signal as AbortSignal).reason;
   if (checked.kind === 'not-checked') throw new ProtocolError(ProtocolErrorCode.InvalidParams, patternRefusal(`output of ${name}`, content, checked));
   const verdict = checked.value;

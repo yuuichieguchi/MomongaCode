@@ -16,7 +16,7 @@ export const jobLine = (job: JobView): string => `${job.id}  ${job.status}${endO
 
 export const listJobs = async (ports: CliPorts, paths: MomongaPaths, sessionId: string | undefined, json: boolean): Promise<number> => {
   await ensureCurrentDaemon(ports, paths);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   try {
     const target = sessionId ?? (await newestSessionIdOf(client, ports.cwd));
     const jobs = await client.jobs(target);

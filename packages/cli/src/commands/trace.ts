@@ -104,7 +104,7 @@ export type TraceOptions = { json: boolean; content: boolean; pageSize: number }
 
 export const showTrace = async (ports: CliPorts, paths: MomongaPaths, runId: string | undefined, options: TraceOptions): Promise<number> => {
   await ensureCurrentDaemon(ports, paths);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   try {
     const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
     try {

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/tui/app.tsx';
 import type { TuiOutcome } from '../../src/tui/app.tsx';
 import { createScreenInput } from '../../src/tui/screen/input.ts';
+import { NEWLINE_HINT } from '../../src/tui/terminal/negotiation.ts';
 import { TerminalFrame } from '../../src/tui/terminal/frame.tsx';
 import { createInkStdin } from '../../src/tui/terminal/ink-stdin.ts';
 import { createTerminalLayer } from '../../src/tui/terminal/layer.ts';
@@ -77,7 +78,7 @@ describe('the existing screen on top of the terminal layer', () => {
     app.feed(`${ESC}[13;2u`);
     app.feed('yo');
     await app.shows('yo');
-    expect(app.layer.state().newlineHint).toBe('shift+enter');
+    expect(NEWLINE_HINT[app.layer.state().negotiation]).toBe('shift+enter');
     app.feed(`${ESC}[?7u${ESC}[?1;2c`);
     const cleared = app.redrawn();
     app.feed('\u0003');

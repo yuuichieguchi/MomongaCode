@@ -99,9 +99,9 @@ describe('session/new', () => {
       modes: {
         currentModeId: 'manual',
         availableModes: [
-          { id: 'manual', name: 'Manual', description: 'asks before every file change and command' },
-          { id: 'acceptEdits', name: 'Accept edits', description: 'accepts file edits inside the workspace, asks before commands' },
-          { id: 'plan', name: 'Plan', description: 'read-only tools, the agent proposes a plan' },
+          { id: 'manual', name: 'manual', description: 'asks before every file change and command' },
+          { id: 'acceptEdits', name: 'acceptEdits', description: 'accepts file edits inside the workspace, asks before commands' },
+          { id: 'plan', name: 'plan', description: 'read-only tools, the agent proposes a plan' },
         ],
       },
       configOptions: [

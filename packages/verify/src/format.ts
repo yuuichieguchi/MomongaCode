@@ -2,7 +2,7 @@ import { escapeTerminalLine } from '@momonga/protocol';
 import { describeWitness } from './report.ts';
 import type { Counterexample, PropertyResult, Replay, VerificationReport } from './report.ts';
 
-const STATUS_LABEL = { proved: 'PROVED ', refuted: 'REFUTED', unknown: 'UNKNOWN' } as const;
+const STATUS_LABEL = { proved: 'PROVED ', noted: 'NOTES  ', refuted: 'REFUTED', unknown: 'UNKNOWN' } as const;
 
 const describeReplay = (replay: Replay): string => {
   if ('skipped' in replay) return `not compared with the decision code: ${replay.skipped}`;

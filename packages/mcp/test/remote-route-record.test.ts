@@ -99,6 +99,7 @@ describe('the route an MCP connection took is on its connection record', { timeo
 
   it('records no route for a stdio server', () => {
     const connection = createManagedConnection({
+      clientVersion: '0.0.0-test',
       name: 'local',
       config: { command: process.execPath, args: ['-e', ''] },
       scope: 'user',

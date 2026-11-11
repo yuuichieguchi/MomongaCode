@@ -36,12 +36,12 @@ const decideCall = async ({ command = 'npm install', network, mode = 'manual', s
 const allowNpm = (layout: ReturnType<typeof makeLayout>): PermissionRule[] => [ruleIn(layout)('allow', 'Bash(npm install)')];
 
 describe('a command that requests the network', () => {
-  it.each(['manual', 'acceptEdits', 'plan', 'auto'] as const)('asks a person in %s mode, naming the scope, with the default setting', async (mode) => {
+  it.each(['manual', 'acceptEdits', 'plan', 'auto'] as const)('asks in %s mode, naming the scope, with the default setting', async (mode) => {
     const decision = await decideCall({ network: 'open', mode });
     expect((await decision).kind).toBe('ask');
     expect((await decision).source).toBe('mode');
     expect((await decision).reason).toContain('the command requests unrestricted network access');
-    expect((await decision).humanOnly).toBe(true);
+    expect((await decision).humanOnly).toBeUndefined();
   });
 
   it('asks even when an allow rule covers the command, because a network grant is never saved', async () => {
@@ -63,7 +63,8 @@ describe('a command that requests the network', () => {
 
   it('names the hosts of a request for named hosts', async () => {
     const decision = await decideCall({ network: { hosts: ['registry.example.org', 'github.example.com:443'] }, rules: allowNpm });
-    expect(decision).toMatchObject({ kind: 'ask', reason: 'the command requests network access to github.example.com:443, registry.example.org only (through the sandbox proxy, which carries HTTP and HTTPS; a program that does not use the proxy variables stays without network)', humanOnly: true });
+    expect(decision).toMatchObject({ kind: 'ask', reason: 'the command requests network access to github.example.com:443, registry.example.org only (through the sandbox proxy, which carries HTTP and HTTPS; a program that does not use the proxy variables stays without network)' });
+    expect(decision.humanOnly).toBeUndefined();
   });
 
   it('refuses every request when the setting is deny, in every mode', async () => {

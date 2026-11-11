@@ -6,7 +6,7 @@ type Recorded = { block: Record<string, unknown>; partialJson: string };
 
 export class AssistantRecorder {
   private readonly open = new Map<number, Recorded>();
-  private readonly finished = new Map<number, Record<string, unknown>>();
+  private readonly finished = new Map<number, Recorded>();
 
   start(index: number, block: AnthropicContentBlock): void {
     this.open.set(index, { block: structuredClone(block.raw), partialJson: '' });
@@ -41,17 +41,20 @@ export class AssistantRecorder {
     const recorded = this.open.get(index);
     if (recorded === undefined) return;
     this.open.delete(index);
-    if (recorded.partialJson !== '') {
-      recorded.block['input'] = parseUpstreamJson(recorded.partialJson, (what) => new UpstreamProtocolError(`the upstream streamed tool input is malformed: ${what}`));
-    }
-    this.finished.set(index, recorded.block);
+    this.finished.set(index, recorded);
   }
 
   get unfinished(): number {
     return this.open.size;
   }
 
-  content(): Record<string, unknown>[] {
-    return [...this.finished.entries()].sort(([left], [right]) => left - right).map(([, block]) => block);
+  continuationContent(): Record<string, unknown>[] {
+    return [...this.finished.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([, { block, partialJson }]) =>
+        partialJson === ''
+          ? block
+          : { ...block, input: parseUpstreamJson(partialJson, (what) => new UpstreamProtocolError(`the upstream paused the turn with a tool input that cannot be sent back: ${what}`)) },
+      );
   }
 }

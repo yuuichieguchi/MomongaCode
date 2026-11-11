@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { TestContext } from 'vitest';
-import { FIRST_GENERATION, SocketPathUnsupportedError, assertUnixSocketPathFits, forceKillGroup, generationLayout, isProcessAlive, shortTempBase } from '@momonga/foundation';
+import { FIRST_GENERATION, SocketPathUnsupportedError, assertUnixSocketPathFits, forceKillGroup, generationLayout, isProcessAlive, realGroupTiming, shortTempBase } from '@momonga/foundation';
 import { stopSupervisorHolders } from './process-groups.ts';
 
 export const TEST_RUN_ENV = 'MOMONGA_TEST_RUN';
@@ -150,7 +150,7 @@ const waitForExit = (child: ChildProcess): Promise<void> =>
 
 const killTracked = async (child: TrackedChild, ownGroup: boolean): Promise<void> => {
   if (ownGroup) {
-    const gone = await forceKillGroup(child.pid, { deadline: Date.now() + PROCESS_KILL_DEADLINE_MS });
+    const gone = await forceKillGroup(child.pid, { deadline: realGroupTiming.monotonicMs() + PROCESS_KILL_DEADLINE_MS });
     if (!gone) throw new Error(`cleanup could not kill process group ${child.pid}`);
   } else if (child.exitCode === null && child.signalCode === null) {
     child.kill('SIGKILL');

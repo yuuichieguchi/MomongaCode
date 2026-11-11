@@ -1,9 +1,14 @@
 import type { SchemaNarrowing } from './dialect.ts';
 import type { FallbackCause } from './fallback-cause.ts';
 import type { PlanAccountRef } from './plan-account.ts';
+import { MAX_TOOL_NAME_CHARS } from './reference-kinds.ts';
 import type { ModelCost, UnpricedOutcome } from './token-anatomy.ts';
 
 export const OPEN_RESPONSES_VERSION = '2026-04-24' as const;
+
+export const TOOL_NAME_PATTERN = new RegExp(`^[a-zA-Z0-9_-]{1,${MAX_TOOL_NAME_CHARS}}$`);
+
+export const isToolName = (name: string): boolean => TOOL_NAME_PATTERN.test(name);
 
 export const OPEN_RESPONSES_STREAM_EVENT_TYPES = [
   'response.created',
