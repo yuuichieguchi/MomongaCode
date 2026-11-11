@@ -6,7 +6,7 @@ import { DIFF_FILE_TOO_LARGE, DIFF_MAX_BYTES, diffOfContents } from './applied-d
 import type { AppliedDiff } from './applied-diff.ts';
 import { pluralize, splitLines } from './format.ts';
 import { accessedPathOf, canonicalPathOf, resolvedPathOf, shownPath } from './paths.ts';
-import { parsePreparedWrite, reconcileWrite } from './prepared.ts';
+import { approvalOfPreparedWrite, parsePreparedWrite, reconcileWrite } from './prepared.ts';
 import type { PreparedWrite } from './prepared.ts';
 
 type WriteInput = { file_path: string; content: string };
@@ -64,7 +64,7 @@ export const writeTool = defineTool<WriteInput>({
   title: async (input, ctx) => `Write ${await shownPath(ctx, await accessedPathOf(ctx, input.file_path))}`,
   locations: (input, ctx) => [{ path: resolvedPathOf(ctx, input.file_path) }],
   subject: (input, ctx) => ({ kind: 'path', tool: 'Write', paths: [resolvedPathOf(ctx, input.file_path)], access: 'write' }),
-  precondition: async (input, ctx) => void (await planWrite(input, ctx)),
+  approval: async (input, ctx) => approvalOfPreparedWrite(await prepareWrite(input, ctx)),
   prepare: prepareWrite,
   execute: async (input, ctx, prepared) => {
     const plan = parsePreparedWrite(prepared);
