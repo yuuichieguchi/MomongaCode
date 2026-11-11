@@ -153,7 +153,7 @@ describe('the verification state', () => {
 
 describe('snapshots and the new state fields', () => {
   it('bumps the snapshot state version', () => {
-    expect(SNAPSHOT_STATE_VERSION).toBe(22);
+    expect(SNAPSHOT_STATE_VERSION).toBe(23);
   });
 
   it('discards an old snapshot without the new fields, so the run refolds from the journal', () => {

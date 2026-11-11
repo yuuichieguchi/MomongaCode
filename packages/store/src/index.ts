@@ -1,6 +1,6 @@
 export { MEMORY_MATCH_LIMIT, MEMORY_SCAN_LIMIT } from './memory-constants.ts';
 export { SESSION_PAGE_ROWS } from './runtime-store.ts';
-export { foldRunState, initialRunState, rejectionKeyOf } from './fold.ts';
+export { foldRunState, initialRunState } from './fold.ts';
 export { decodeRunState, encodeRunState } from './codec.ts';
 export { ITEM_EVENT_TYPES, itemCountOf, itemsOfEvent } from './history-items.ts';
 export type { ItemFacts, ProducedItem } from './history-items.ts';

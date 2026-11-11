@@ -560,7 +560,7 @@ const isWorkingFacts = (value: unknown): boolean =>
   isArrayOf(value['itemEvents'], (entry) => isRecord(entry) && Number.isInteger(entry['itemSeq']) && Number.isInteger(entry['eventSeq'])) &&
   (value['replacedThroughEventSeq'] === undefined || Number.isInteger(value['replacedThroughEventSeq']));
 
-export const SNAPSHOT_STATE_VERSION = 22;
+export const SNAPSHOT_STATE_VERSION = 23;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 
