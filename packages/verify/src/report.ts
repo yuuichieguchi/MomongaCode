@@ -1,5 +1,5 @@
 import type { DecisionKind } from '@momonga/policy';
-import type { PermissionMode } from '@momonga/protocol';
+import type { PermissionMode, RuleNote } from '@momonga/protocol';
 import type { Witness } from './decision-model.ts';
 
 export const PROPERTY_IDS = ['deny-precedence', 'secret-reach', 'rule-consistency', 'bash-admission', 'superseded-forms', 'mandate-holds'] as const;
@@ -28,6 +28,7 @@ export type Finding = {
 
 export type Verdict =
   | { status: 'proved'; notes: readonly string[] }
+  | { status: 'noted'; ruleNotes: readonly RuleNote[]; notes: readonly string[] }
   | { status: 'refuted'; findings: readonly Finding[]; notes: readonly string[] }
   | { status: 'unknown'; reason: string; notes: readonly string[] };
 
@@ -67,4 +68,4 @@ export const describeWitness = (witness: Witness): string => {
 };
 
 export const exitCodeOf = (results: readonly PropertyResult[], mismatches: readonly ModelMismatch[]): 0 | 1 =>
-  mismatches.length === 0 && results.every((result) => result.verdict.status === 'proved') ? 0 : 1;
+  mismatches.length === 0 && results.every((result) => result.verdict.status === 'proved' || result.verdict.status === 'noted') ? 0 : 1;

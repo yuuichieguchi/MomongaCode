@@ -6,7 +6,7 @@ import type { AutoClassifierView } from '@momonga/protocol';
 import { registeredServer } from './server-registry.ts';
 import { AUTO_MODE_DATASET_TEXT } from './auto-mode-dataset.ts';
 import { ConfigError } from './config-error.ts';
-import { isAbsentPathError } from './json-file.ts';
+import { isAbsentPathError, parseJsonText } from './json-file.ts';
 import { layoutOf } from './layout.ts';
 import type { ResolvedModel, ResolvedModels } from './models.ts';
 import { endpointKeyOf, upstreamEndpointOf } from './probe-record-key.ts';
@@ -187,7 +187,7 @@ export const readAutoFitRecord = async (directory: string, key: AutoFitKey): Pro
     if (isAbsentPathError(error)) return undefined;
     throw error;
   }
-  return recordOf(JSON.parse(text) as unknown, file);
+  return recordOf(parseJsonText(text, file), file);
 };
 
 export const writeAutoFitRecord = async (directory: string, record: AutoFitRecord, randomHex: (bytes: number) => string): Promise<string> => {

@@ -98,13 +98,6 @@ export const billedCallOf = (runId: string, span: SpanRecord, table: PriceTable)
   };
 };
 
-export const billedCallsOfRun = (store: TraceStore, runId: string, table: PriceTable): BilledCall[] =>
-  store
-    .spansForRun(runId)
-    .filter(isBilledChat)
-    .toSorted((left, right) => left.startMs - right.startMs || (left.spanId < right.spanId ? -1 : 1))
-    .map((span) => billedCallOf(runId, span, table));
-
 const wireOf = (call: BilledCall): BilledCallWire => {
   const { price, spanId: _spanId, ...rest } = call;
   return { ...rest, price: price.kind === 'priced' ? { kind: 'priced', units: price.units.toString(), priceVersion: price.priceVersion } : price };

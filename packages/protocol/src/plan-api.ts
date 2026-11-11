@@ -1,5 +1,5 @@
 import type { ErrorType } from './open-responses.ts';
-import type { PlanAccountRef } from './plan-account.ts';
+import type { NamedPlanAccountRef } from './plan-account.ts';
 
 export type { PlanAccountRef } from './plan-account.ts';
 
@@ -37,7 +37,12 @@ export const PLAN_CODES = [
   CAPABILITIES_UNKNOWN_CODE,
 ] as const;
 
-export const PLAN_HEALTH_REASONS = [SIGN_IN_REQUIRED_CODE, PLAN_USE_NOT_ENABLED_CODE, USAGE_PAUSED_CODE, 'store_unreadable', 'store_unwritable'] as const;
+export const PLAN_STORE_UNREADABLE_STATE = 'store_unreadable' as const;
+export const PLAN_STORE_UNWRITABLE_STATE = 'store_unwritable' as const;
+export const PLAN_STORE_STATES = [PLAN_STORE_UNREADABLE_STATE, PLAN_STORE_UNWRITABLE_STATE] as const;
+export type PlanStoreState = (typeof PLAN_STORE_STATES)[number];
+
+export const PLAN_HEALTH_REASONS = [SIGN_IN_REQUIRED_CODE, PLAN_USE_NOT_ENABLED_CODE, USAGE_PAUSED_CODE, ...PLAN_STORE_STATES] as const;
 export type PlanHealthReason = (typeof PLAN_HEALTH_REASONS)[number];
 export type UsageLimitCode = (typeof USAGE_LIMIT_CODES)[number];
 
@@ -82,7 +87,9 @@ export type PlanProfileMessages = {
   firstSignIn: { title: string; body: string; action: string };
 };
 
-export const PLAN_ACCOUNT_STATES = ['active', 'plan_disabled', 'needs_sign_in', 'signing_out', 'registered', 'store_unreadable', 'store_unwritable'] as const;
+export const PLAN_DISABLED_STATE = 'plan_disabled' as const;
+
+export const PLAN_ACCOUNT_STATES = ['active', PLAN_DISABLED_STATE, 'needs_sign_in', 'signing_out', 'registered', ...PLAN_STORE_STATES] as const;
 export type PlanAccountState = (typeof PLAN_ACCOUNT_STATES)[number];
 
 export const PLAN_API_PREFIX = '/v1/momonga/plan';
@@ -117,11 +124,11 @@ export type PlanListProblem = { file: string; cause: string };
 
 export type PlanAccountsResponse = { profiles: readonly PlanProfileView[]; accounts: readonly PlanAccountView[]; listProblems?: readonly PlanListProblem[] };
 
-export type PlanActiveRequest = PlanAccountRef;
+export type PlanActiveRequest = NamedPlanAccountRef;
 
-export type PlanActiveResponse = { active: PlanAccountRef };
+export type PlanActiveResponse = { active: NamedPlanAccountRef };
 
-export type PlanSignInBeginRequest = PlanAccountRef & { port: number; reconsent?: boolean };
+export type PlanSignInBeginRequest = NamedPlanAccountRef & { port: number; reconsent?: boolean };
 
 export type PlanSignInBeginResponse = { attemptId: string; authorizationUrl: string; state: string; expiresAt: string };
 
@@ -129,29 +136,46 @@ export type PlanSignInCompleteRequest = { attemptId: string; callbackUrl: string
 
 export type PlanSignInFailureRule = { status: number; type: ErrorType; template: string };
 
+export const PLAN_SIGN_IN_FAILURE = {
+  attemptNotFound: 'attempt_not_found',
+  attemptExpired: 'attempt_expired',
+  stateMismatch: 'state_mismatch',
+  accessDenied: 'access_denied',
+  authorizationFailed: 'authorization_failed',
+  registrationIncomplete: 'registration_incomplete',
+  clientMismatch: 'client_mismatch',
+  registrationSuperseded: 'registration_superseded',
+  exchangeRejected: 'exchange_rejected',
+  exchangeUnavailable: 'exchange_unavailable',
+  tokenResponseInvalid: 'token_response_invalid',
+  idTokenInvalid: 'id_token_invalid',
+  jwksUnavailable: 'jwks_unavailable',
+  identityMismatch: 'identity_mismatch',
+} as const;
+
 export const PLAN_SIGN_IN_FAILURE_RULES = {
-  attempt_not_found: { status: 404, type: 'not_found', template: 'This sign-in attempt is no longer open.' },
-  attempt_expired: { status: 400, type: 'invalid_request', template: 'This sign-in attempt expired before the browser returned.' },
-  state_mismatch: { status: 400, type: 'invalid_request', template: 'The sign-in response did not belong to this attempt and was ignored.' },
-  access_denied: { status: 400, type: 'invalid_request', template: 'Sign-in was cancelled in the browser.' },
-  authorization_failed: { status: 400, type: 'invalid_request', template: '{identityLabel} refused the sign-in ({error}).' },
-  registration_incomplete: { status: 400, type: 'invalid_request', template: '{identityLabel} did not return an app registration, so nothing was saved.' },
-  client_mismatch: {
+  [PLAN_SIGN_IN_FAILURE.attemptNotFound]: { status: 404, type: 'not_found', template: 'This sign-in attempt is no longer open.' },
+  [PLAN_SIGN_IN_FAILURE.attemptExpired]: { status: 400, type: 'invalid_request', template: 'This sign-in attempt expired before the browser returned.' },
+  [PLAN_SIGN_IN_FAILURE.stateMismatch]: { status: 400, type: 'invalid_request', template: 'The sign-in response did not belong to this attempt and was ignored.' },
+  [PLAN_SIGN_IN_FAILURE.accessDenied]: { status: 400, type: 'invalid_request', template: 'Sign-in was cancelled in the browser.' },
+  [PLAN_SIGN_IN_FAILURE.authorizationFailed]: { status: 400, type: 'invalid_request', template: '{identityLabel} refused the sign-in ({error}).' },
+  [PLAN_SIGN_IN_FAILURE.registrationIncomplete]: { status: 400, type: 'invalid_request', template: '{identityLabel} did not return an app registration, so nothing was saved.' },
+  [PLAN_SIGN_IN_FAILURE.clientMismatch]: {
     status: 400,
     type: 'invalid_request',
     template: '{identityLabel} returned a different app registration than the one saved for this account. The saved account was left unchanged.',
   },
-  registration_superseded: {
+  [PLAN_SIGN_IN_FAILURE.registrationSuperseded]: {
     status: 409,
     type: 'invalid_request',
     template: 'Another sign-in for this account finished first. An app registered during this attempt remains listed in {identityLabel} settings; you can remove it there.',
   },
-  exchange_rejected: { status: 400, type: 'invalid_request', template: '{identityLabel} rejected the sign-in code ({error}).' },
-  exchange_unavailable: { status: 502, type: 'server_error', template: '{identityLabel} could not be reached to finish the sign-in.' },
-  token_response_invalid: { status: 502, type: 'server_error', template: '{identityLabel} returned a sign-in response this version cannot use ({reason}). Nothing was saved.' },
-  id_token_invalid: { status: 400, type: 'invalid_request', template: 'The identity returned by {identityLabel} could not be verified ({check}). Nothing was saved.' },
-  jwks_unavailable: { status: 502, type: 'server_error', template: 'The keys needed to verify the identity returned by {identityLabel} could not be fetched.' },
-  identity_mismatch: { status: 400, type: 'invalid_request', template: 'The account that signed in is not the account saved under this label. Nothing was changed.' },
+  [PLAN_SIGN_IN_FAILURE.exchangeRejected]: { status: 400, type: 'invalid_request', template: '{identityLabel} rejected the sign-in code ({error}).' },
+  [PLAN_SIGN_IN_FAILURE.exchangeUnavailable]: { status: 502, type: 'server_error', template: '{identityLabel} could not be reached to finish the sign-in.' },
+  [PLAN_SIGN_IN_FAILURE.tokenResponseInvalid]: { status: 502, type: 'server_error', template: '{identityLabel} returned a sign-in response this version cannot use ({reason}). Nothing was saved.' },
+  [PLAN_SIGN_IN_FAILURE.idTokenInvalid]: { status: 400, type: 'invalid_request', template: 'The identity returned by {identityLabel} could not be verified ({check}). Nothing was saved.' },
+  [PLAN_SIGN_IN_FAILURE.jwksUnavailable]: { status: 502, type: 'server_error', template: 'The keys needed to verify the identity returned by {identityLabel} could not be fetched.' },
+  [PLAN_SIGN_IN_FAILURE.identityMismatch]: { status: 400, type: 'invalid_request', template: 'The account that signed in is not the account saved under this label. Nothing was changed.' },
 } as const satisfies Readonly<Record<string, PlanSignInFailureRule>>;
 
 export type PlanSignInFailure = keyof typeof PLAN_SIGN_IN_FAILURE_RULES;
@@ -161,17 +185,27 @@ export const PLAN_SIGN_IN_FAILURES = Object.keys(PLAN_SIGN_IN_FAILURE_RULES) as 
 export const ID_TOKEN_CHECKS = ['algorithm', 'signature', 'issuer', 'audience', 'expired', 'nonce', 'subject'] as const;
 export type IdTokenCheck = (typeof ID_TOKEN_CHECKS)[number];
 
+export const SIGNED_IN_OUTCOME = 'signed_in' as const;
+export const RETRY_OUTCOME = 'retry' as const;
+export const PLAN_SIGN_IN_OUTCOMES = [SIGNED_IN_OUTCOME, PLAN_DISABLED_STATE, RETRY_OUTCOME] as const;
+export const INVALID_GRANT_REASON = 'invalid_grant' as const;
+
 export type PlanSignInCompleteResponse =
-  | { outcome: 'signed_in' | 'plan_disabled'; account: PlanAccountView; firstSignIn: boolean }
-  | { outcome: 'retry'; reason: 'invalid_grant' };
+  | { outcome: typeof SIGNED_IN_OUTCOME | typeof PLAN_DISABLED_STATE; account: PlanAccountView; firstSignIn: boolean }
+  | { outcome: typeof RETRY_OUTCOME; reason: typeof INVALID_GRANT_REASON };
 
 export type PlanSignInCancelRequest = { attemptId: string };
 
 export type PlanSignInCancelResponse = { cancelled: boolean };
 
-export type PlanSignOutRequest = PlanAccountRef;
+export type PlanSignOutRequest = NamedPlanAccountRef;
 
-export const PLAN_REVOCATIONS = ['confirmed', 'unconfirmed', 'none'] as const;
+export const PLAN_REVOCATION_CONFIRMED = 'confirmed' as const;
+export const PLAN_REVOCATION_UNCONFIRMED = 'unconfirmed' as const;
+export const PLAN_REVOCATION_NONE = 'none' as const;
+export const PLAN_REVOCATION_ANSWERS = [PLAN_REVOCATION_CONFIRMED, PLAN_REVOCATION_UNCONFIRMED] as const;
+export type PlanRevocationAnswer = (typeof PLAN_REVOCATION_ANSWERS)[number];
+export const PLAN_REVOCATIONS = [...PLAN_REVOCATION_ANSWERS, PLAN_REVOCATION_NONE] as const;
 export type PlanRevocation = (typeof PLAN_REVOCATIONS)[number];
 
 export type PlanSignOutResponse = { revocation: PlanRevocation; usageUrl: string };

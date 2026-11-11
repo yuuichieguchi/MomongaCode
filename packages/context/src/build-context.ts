@@ -1,12 +1,13 @@
 import {
   COMPACT_AT,
   EVICT_LOW_WATER,
-  SUMMARY_PROMPT_TOKENS,
   findDanglingOutput,
   findUnpairedCalls,
   floorRatio,
+  largestSummaryCapFor,
   quantizedRatioOf,
   summaryItemTokensFor,
+  summaryPromptTokensFor,
   summaryTokenCapFor,
 } from '@momonga/protocol';
 import type { Capabilities, FunctionCallOutputInputItem, FunctionTool, InputItem, MessageInputItem } from '@momonga/protocol';
@@ -636,7 +637,6 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
 
   const roomLeft = ceiling - floorTokens;
   const itemCap = input.itemCap ?? itemCapFor(capabilities, roomLeft);
-  const summaryCap = summaryTokenCapFor(capabilities, roomLeft);
   const callNames = new Map<string, string>();
   const countContextFor = (callId: string): ItemCountContext => {
     const name = callNames.get(callId);
@@ -948,12 +948,15 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
             },
           };
     }
+    const target = ports.compactionTarget === undefined ? (input.calibration === undefined ? capabilities : withCalibration(capabilities, input.calibration)) : await ports.compactionTarget();
+    const summaryCap = Math.min(summaryTokenCapFor(capabilities, roomLeft), largestSummaryCapFor(target));
+    const summaryCeiling = summaryInputCeilingFor(target);
+    const promptTokens = summaryPromptTokensFor(input.compactionFocus);
     const growth = await workingStateGrowth();
     const item = summaryItemTokensFor(summaryCap) + growth;
     const layersOnly = (await countInput(layers)).inputTokens;
     const previousSummary = summaryItems.length === 0 ? 0 : (await countInput([...layers, ...summaryItems])).inputTokens - layersOnly;
     const taskTokens = floorTokens - layersOnly;
-    const summaryCeiling = summaryInputCeilingFor(input.calibration === undefined ? capabilities : withCalibration(capabilities, input.calibration));
     let overBudget: CompactionBlock | undefined;
     for (const cutIndex of cuts.toReversed()) {
       const prefix = slots.slice(0, cutIndex + 1);
@@ -961,10 +964,10 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
       const counted = await countInput([...layers, ...summaryItems, ...prefix.map(shown)]);
       const region = counted.inputTokens - layersOnly;
       const regionWithTask = region + (taskInside ? taskTokens : 0);
-      if (regionWithTask + SUMMARY_PROMPT_TOKENS + summaryCap > summaryCeiling) {
+      if (regionWithTask + promptTokens + summaryCap > summaryCeiling) {
         overBudget = {
           reason: 'region_exceeds_summary_input_budget',
-          message: `the compactable region needs ${regionWithTask} tokens plus ${SUMMARY_PROMPT_TOKENS} for the instructions and ${summaryCap} for the summary, more than the ${summaryCeiling} a summary request may hold`,
+          message: `the compactable region needs ${regionWithTask} tokens plus ${promptTokens} for the instructions and ${summaryCap} for the summary, more than the ${summaryCeiling} a summary request may hold`,
         };
         continue;
       }
@@ -993,9 +996,10 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
           throughSeq,
           input: [...summaryItems, ...compactionInput],
           summaryTokenCap: summaryCap,
+          ...(input.compactionFocus === undefined ? {} : { focus: input.compactionFocus }),
           pinnedText: [...layers, task].map((item) => textOfItem(item)).join('\n'),
           notices: protectionNotices,
-          tokens: { input: total.inputTokens, replaced: region, workingStateGrowth: growth },
+          tokens: { input: total.inputTokens, replaced: region, workingStateGrowth: growth, request: regionWithTask + promptTokens },
         },
       };
     }

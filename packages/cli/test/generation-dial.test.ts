@@ -5,6 +5,7 @@ import { registerCleanup, withTempDir } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { createGatewayClient } from '../src/client/gateway-client.ts';
 import { createRuntimeClient } from '../src/client/runtime-client.ts';
+import { nodeClock } from '../src/node-ports.ts';
 import { createSupervisorClient } from '../src/client/supervisor-client.ts';
 
 type Role = 'runtime' | 'gateway' | 'supervisor';
@@ -12,7 +13,7 @@ type Role = 'runtime' | 'gateway' | 'supervisor';
 const BODIES: Record<Role, { path: string; body: unknown }> = {
   runtime: {
     path: '/v1/health',
-    body: { status: 'ok', version: '1.0.0', apiVersion: 1, pid: 4242, startedAt: '2026-11-09T00:00:00.000Z', state: 'running', sandbox: 'none' },
+    body: { status: 'ok', version: '1.0.0', apiVersion: 1, pid: 4242, startedAt: '2026-11-09T00:00:00.000Z', state: 'running', role: 'serving', steps: 0, jobs: 0, sandbox: 'none' },
   },
   gateway: { path: '/v1/momonga/models', body: { object: 'list', data: [], start: null, roles: {} } },
   supervisor: { path: '/v1/health', body: { status: 'ok', version: '1.0.0', pid: 4243, phase: 'running', children: [] } },
@@ -76,7 +77,7 @@ type Client = { call(): Promise<unknown>; close(): Promise<void> };
 
 const clients: Record<Role, (paths: MomongaPaths) => Client> = {
   runtime: (paths) => {
-    const client = createRuntimeClient({ resolveSocket: currentSocketResolver(paths, 'runtime') });
+    const client = createRuntimeClient({ resolveSocket: currentSocketResolver(paths, 'runtime'), clock: nodeClock });
     return { call: () => client.health(), close: () => client.close() };
   },
   gateway: (paths) => {

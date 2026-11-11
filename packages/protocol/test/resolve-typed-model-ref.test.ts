@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ModelRefError, modelRefErrorOf, resolveTypedModelRef, typedModelText } from '../src/index.ts';
-import type { TypedResolution } from '../src/index.ts';
+import type { Surface, TypedResolution } from '../src/index.ts';
 import { CANON_EQUAL, S1, S2, SLASH_ID, view } from './model-ref-fixtures.ts';
 import type { View } from './model-ref-fixtures.ts';
 
@@ -12,10 +12,10 @@ const canonOfFound = (text: string, views: readonly View[]): string => {
   return resolution.model.canon;
 };
 
-const refusalOf = (text: string, views: readonly View[]): ModelRefError => {
+const refusalOf = (text: string, views: readonly View[], surface: Surface = 'tui'): ModelRefError => {
   const resolution = typed(text, views);
   if (resolution.kind === 'found') throw new Error(`${JSON.stringify(text)} resolved to ${resolution.model.canon}`);
-  return modelRefErrorOf(text, resolution, views);
+  return modelRefErrorOf(text, resolution, views, surface);
 };
 
 const serversOf = (names: readonly string[]): View[] => names.map((name) => view(name, 'x'));
@@ -90,5 +90,10 @@ describe('modelRefErrorOf: the one sentence of each refusal', () => {
 
   it('not found with no model configured says how to connect one', () => {
     expect(refusalOf('nope', []).message).toBe('The model "nope" is not configured. No model is connected. Use /login to connect one.');
+  });
+
+  it('not found with no model configured names a shell command where the reader is in a shell', () => {
+    expect(refusalOf('nope', [], 'cli').message).toBe('The model "nope" is not configured. No model is connected. Run momonga models add to add one, or momonga auth login to sign in.');
+    expect(refusalOf('nope', [], 'gateway').message).not.toContain('/login');
   });
 });

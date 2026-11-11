@@ -8,7 +8,7 @@ const SIGNATURE = 'Bash {"command":"npm test"}';
 
 const trace: RunTraceView = {
   runId: 'run-1',
-  summary: { steps: 3, chatCalls: 3, toolCalls: 2, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, errorCount: 0, durationMs: 30, chatResults: [] },
+  summary: { steps: 3, chatCalls: 3, sideCalls: 0, toolCalls: 2, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, errorCount: 0, durationMs: 30, chatResults: [] },
   spans: [],
   calls: [
     { step: 1, attempt: 1 },

@@ -1,12 +1,12 @@
+import { PLAN_REVOCATION_CONFIRMED, PLAN_REVOCATION_UNCONFIRMED } from '@momonga/protocol';
 import { JsonDepthError, isRecord, isRetryableHttp, parseOutsideJson, parseRetryAfter } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
+import type { PlanRevocationAnswer } from '@momonga/protocol';
 import type { PlanProfile } from '@momonga/config';
 import { nextWait } from '../core/retry.ts';
 import type { WaitPolicy } from '../core/retry.ts';
 import { boundedSend } from './refresh.ts';
 import type { BoundedSendPorts, SendOutcome } from './refresh.ts';
-
-export type RevocationAnswer = 'confirmed' | 'unconfirmed';
 
 export type RevokeRequest = {
   ports: BoundedSendPorts;
@@ -43,22 +43,22 @@ const isEmptySuccess = (outcome: SendOutcome): boolean => outcome.kind === 'answ
 
 const mayResend = (outcome: SendOutcome): boolean => outcome.kind === 'unanswered' || isRetryableHttp(outcome.status, undefined);
 
-export const revokeRefreshToken = async (request: RevokeRequest): Promise<RevocationAnswer> => {
+export const revokeRefreshToken = async (request: RevokeRequest): Promise<PlanRevocationAnswer> => {
   request.signal.throwIfAborted();
   const discovery = await boundedSend(request.ports, request.profile.oauth.discoveryUrl, { method: 'GET', headers: { accept: 'application/json' } }, request.attemptTimeoutMs, request.maxBodyBytes);
   const endpoint = revocationEndpointOf(request.profile, discovery);
-  if (endpoint === undefined) return 'unconfirmed';
+  if (endpoint === undefined) return PLAN_REVOCATION_UNCONFIRMED;
   const body = new URLSearchParams({ token: request.refreshToken, token_type_hint: 'refresh_token', client_id: request.clientId }).toString();
   const startedAt = request.clock.now();
   for (let attempt = 0; attempt < request.attempts; attempt += 1) {
     request.signal.throwIfAborted();
     const outcome = await boundedSend(request.ports, endpoint, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body }, request.attemptTimeoutMs, request.maxBodyBytes);
-    if (isEmptySuccess(outcome)) return 'confirmed';
-    if (!mayResend(outcome) || attempt + 1 >= request.attempts) return 'unconfirmed';
+    if (isEmptySuccess(outcome)) return PLAN_REVOCATION_CONFIRMED;
+    if (!mayResend(outcome) || attempt + 1 >= request.attempts) return PLAN_REVOCATION_UNCONFIRMED;
     const retryAfterMs = outcome.kind === 'answered' ? parseRetryAfter(outcome.headers.get('retry-after'), request.clock.now()) : undefined;
     const decision = nextWait({ attempt, ...(retryAfterMs === undefined ? {} : { retryAfterMs }), elapsedMs: request.clock.now() - startedAt, policy: request.waitPolicy });
-    if (decision.kind === 'leave') return 'unconfirmed';
+    if (decision.kind === 'leave') return PLAN_REVOCATION_UNCONFIRMED;
     await request.ports.sleep(decision.ms, request.signal);
   }
-  return 'unconfirmed';
+  return PLAN_REVOCATION_UNCONFIRMED;
 };

@@ -6,6 +6,7 @@ import { openRuntimeStore } from '@momonga/store';
 import type { Claim, Run, RuntimeStore } from '@momonga/store';
 import { createFakeClock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
+import { UNASKED_COMMANDS } from '../helpers.ts';
 
 export const CONTRACT_START_MS = 1_900_000_000_000;
 const LEASE_MS = 1000;
@@ -19,7 +20,7 @@ export const REQUESTS: ElicitationRequestView[] = [{ key: 'who', mode: 'form', m
 export type ContractStore = { store: RuntimeStore; clock: FakeClock; dbPath: string; close(): void };
 
 export const openContractStore = (dbPath: string, clock: FakeClock = createFakeClock(CONTRACT_START_MS)): ContractStore => {
-  const store = openRuntimeStore({ path: dbPath, home: path.dirname(dbPath), clock, leaseMs: LEASE_MS, maxAttempts: 5, maxTotalAttempts: 1000 });
+  const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS, path: dbPath, home: path.dirname(dbPath), clock, leaseMs: LEASE_MS, maxAttempts: 5, maxTotalAttempts: 1000 });
   return { store, clock, dbPath, close: () => store.close() };
 };
 

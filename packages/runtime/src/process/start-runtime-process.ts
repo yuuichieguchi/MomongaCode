@@ -42,6 +42,7 @@ import type { Telemetry, TraceStore } from '@momonga/observability';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
+import { unaskedCommandsFor } from '@momonga/policy';
 import { FIDELITY_PRUNE_BATCH_ROWS, isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import { createRuleVerifier, installedRuleSolver } from './rule-verifier.ts';
@@ -487,6 +488,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           generation: options.generation,
           onCommit: createdNotifier.onCommit,
           preparer: startedThread,
+          unaskedCommands: unaskedCommandsFor(platform),
         });
         return { notifier: createdNotifier, store: opened, journalThread: startedThread };
       } catch (error) {

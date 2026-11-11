@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import type { CompactRequest, CompactResource, InputItem, RunEventPayload, RunState } from '@momonga/protocol';
+import { LOWEST_REASONING_EFFORT, admitRequest, marginFloorFor, outputTokensFor } from '@momonga/protocol';
+import type { Capabilities, CompactRequest, CompactResource, InputItem, RunEventPayload, RunState } from '@momonga/protocol';
 import { initialRunState } from '@momonga/store';
 import { fixtureCompactionContent } from '@momonga/testkit';
 import type { ClaimContext } from '../../src/worker/claim-context.ts';
+import type { BudgetAccount } from '../../src/worker/admitted-request.ts';
 import { GatewayRequestError } from '../../src/gateway-client.ts';
 import { compactThrough } from '../../src/worker/context-step.ts';
 import { capabilitiesFor } from './harness.ts';
@@ -22,6 +24,9 @@ const withBlob: RunState['history'] = [
 type FidelityAsked = { runId: string; throughEventSeq: number; cwd: string; tokens: { token: string; claim: string }[] };
 
 type ContextOptions = {
+  roles?: { compaction?: string };
+  roleCapabilities?: Capabilities;
+  budget?: BudgetAccount;
   failAppendOnce?: boolean;
   summaryText?: string;
   history?: RunState['history'];
@@ -32,7 +37,7 @@ type ContextOptions = {
   step?: number;
 };
 
-const PLAN_TOKENS = { input: 9000, replaced: 7000, workingStateGrowth: 30 };
+const PLAN_TOKENS = { input: 9000, replaced: 7000, workingStateGrowth: 30, request: 7500 };
 const SUMMARY_ITEM_TOKENS = 70;
 const COUNTS = { tokensBefore: 9000, tokensAfter: 2100 };
 
@@ -50,9 +55,16 @@ const contextFor = (options: ContextOptions = {}) => {
   const appendedAtRequest: RunEventPayload[][] = [];
   let appendFailures = options.failAppendOnce === true ? 1 : 0;
   let tick = 0;
+  const clockReads = { count: 0 };
+  const capabilityRequests: string[] = [];
   const ctx = {
     options: {
-      clock: { now: () => (tick += 40) },
+      clock: {
+        now: () => {
+          clockReads.count += 1;
+          return (tick += 40);
+        },
+      },
       blobs: {
         read: async (handle: string) => {
           blobReads.count += 1;
@@ -71,6 +83,11 @@ const contextFor = (options: ContextOptions = {}) => {
         },
       },
       gateway: {
+        capabilities: async (model: string) => {
+          capabilityRequests.push(model);
+          if (options.roleCapabilities === undefined) throw new Error(`no capabilities are scripted for ${model}`);
+          return options.roleCapabilities;
+        },
         compact: async (request: CompactRequest, callOptions: { idempotencyKey: string }) => {
           requests.push({ request: structuredClone(request), idempotencyKey: callOptions.idempotencyKey });
           appendedAtRequest.push([...appended]);
@@ -97,10 +114,11 @@ const contextFor = (options: ContextOptions = {}) => {
       },
     },
     run: { id: 'run_compact', sessionId: 'session_compact', deadlineAt: 2_000_000_000_000 },
-    budget: unlimitedBudget(),
+    budget: options.budget ?? unlimitedBudget(),
     model: 'fm',
+    display: (model: string) => model,
     meter: { countItem: async () => SUMMARY_ITEM_TOKENS },
-    roles: {},
+    roles: options.roles ?? {},
     capabilities: capabilitiesFor(40_000),
     verificationCommands: [],
     readers: () => ({}),
@@ -129,7 +147,7 @@ const contextFor = (options: ContextOptions = {}) => {
     },
     agentSpan: { traceparent: undefined },
   } as unknown as ClaimContext;
-  return { ctx, appended, batches, requests, produced, blobReads, asked, appendedAtRequest };
+  return { ctx, appended, batches, requests, produced, blobReads, asked, appendedAtRequest, clockReads, capabilityRequests };
 };
 
 const keyOf = (request: CompactRequest): string => sha256Hex(canonicalJson(['run_compact', 'compact', sha256Hex(canonicalJson(request))]));
@@ -152,7 +170,7 @@ describe('compactThrough', () => {
 
   it('sends the focus text as momonga.instructions and leaves the request as it is without one', async () => {
     const { ctx, requests } = contextFor();
-    await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, tokens: PLAN_TOKENS, notices: [] }, 'keep the parser decisions');
+    await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, tokens: PLAN_TOKENS, notices: [], focus: 'keep the parser decisions' });
     await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 241, pinnedText, tokens: PLAN_TOKENS, notices: [] });
     expect(requests[0]?.request.momonga).toEqual({ max_summary_tokens: 240, retains_user_request: true, exact_model: true, instructions: 'keep the parser decisions' });
     expect(requests[1]?.request.momonga).toEqual({ max_summary_tokens: 241, retains_user_request: true, exact_model: true });
@@ -176,11 +194,12 @@ describe('compactThrough', () => {
   });
 
   it('records the measured duration of the compaction call on its charge', async () => {
-    const { ctx, appended } = contextFor();
+    const { ctx, appended, clockReads } = contextFor();
 
     await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, tokens: PLAN_TOKENS, notices: [] });
 
     expect(appended[1]).toMatchObject({ type: 'usage.charged', purpose: 'compaction', timing: { durationMs: 40 }, responseId: 'compaction_1' });
+    expect(clockReads.count).toBe(2);
   });
 
   it('derives a new key when only the cap differs', async () => {
@@ -255,6 +274,75 @@ describe('compactThrough', () => {
     expect(requests[1]?.idempotencyKey).toBe(requests[0]?.idempotencyKey);
     expect(produced.size).toBe(1);
     expect(appended.filter((payload) => payload.type === 'context.compacted')).toEqual([expect.objectContaining({ summary: 'S1', source: 'model' })]);
+  });
+});
+
+type Ask = Parameters<typeof admitRequest>[0];
+
+const NOTHING_SPENT = { totalTokens: 0, costNano: 0, unpricedCalls: 0, reservedTokens: 0, reservedNano: 0 };
+
+const recordingBudget = (priceUnits: string[] = []) => {
+  const asks: Ask[] = [];
+  const priced = priceUnits.length > 0;
+  const account: BudgetAccount = {
+    limits: { maxTotalTokens: Number.MAX_SAFE_INTEGER, ...(priced ? { maxCostNano: Number.MAX_SAFE_INTEGER } : {}) },
+    quote: async (model) => {
+      const units = priceUnits.shift();
+      return units === undefined ? { model, priced: false } : { model, priced: true, inUnits: units, outUnits: units, priceVersions: [`v${units}`] };
+    },
+    spend: () => NOTHING_SPENT,
+    ledger: {
+      admitModelRequest: (ask) => {
+        asks.push(ask);
+        return admitRequest(ask, NOTHING_SPENT);
+      },
+    },
+    release: () => undefined,
+    tail: Promise.resolve(),
+  };
+  return { account, asks };
+};
+
+describe('a compaction request sized for the model that receives it', () => {
+  const input: InputItem[] = [TASK, { type: 'function_call', call_id: 'c1', name: 'Read', arguments: '{}' }, { type: 'function_call_output', call_id: 'c1', output: 'ok' }];
+  const pinnedText = 'You are the compact-through test agent.';
+  const plan = { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, tokens: PLAN_TOKENS, notices: [] };
+
+  it('is admitted at the size of the request the plan gives, not at the size of the whole input', async () => {
+    const { account, asks } = recordingBudget();
+    const { ctx } = contextFor({ budget: account });
+
+    await compactThrough(ctx, plan);
+
+    expect(asks.map((ask) => ask.inputUpper)).toEqual([PLAN_TOKENS.request + marginFloorFor(40_000)]);
+  });
+
+  it('reads the capabilities of the role model once in a claim and sizes the output and the margin by them', async () => {
+    const roleCapabilities = capabilitiesFor(8000, { maxOutputTokens: 200 });
+    const { account, asks } = recordingBudget();
+    const { ctx, requests, capabilityRequests } = contextFor({ budget: account, roles: { compaction: 'cheap' }, roleCapabilities });
+
+    await compactThrough(ctx, plan);
+    await compactThrough(ctx, { ...plan, summaryTokenCap: 239 });
+
+    expect(capabilityRequests).toEqual(['cheap']);
+    expect(requests.map((entry) => entry.request.model)).toEqual(['cheap', 'cheap']);
+    expect(asks[0]).toMatchObject({ inputUpper: PLAN_TOKENS.request + marginFloorFor(8000), outputWanted: outputTokensFor(roleCapabilities, LOWEST_REASONING_EFFORT, 240) });
+  });
+
+  it('keeps the key when only the reservation differs, so a retry after a crash meets the request already paid for', async () => {
+    const { account } = recordingBudget(['1000000000', '2000000000']);
+    const { ctx, requests, produced } = contextFor({ budget: account, failAppendOnce: true });
+
+    await expect(compactThrough(ctx, plan)).rejects.toThrow('the claim ended before the compaction was recorded');
+    await compactThrough(ctx, plan);
+
+    const ceilings = requests.map((entry) => entry.request.momonga?.max_cost_nano);
+    expect(ceilings.every((ceiling) => typeof ceiling === 'number')).toBe(true);
+    expect(ceilings[0]).not.toBe(ceilings[1]);
+    expect(requests[1]?.idempotencyKey).toBe(requests[0]?.idempotencyKey);
+    expect(requests[0]?.idempotencyKey).toBe(keyOf({ model: 'fm', input, momonga: { max_summary_tokens: 240, retains_user_request: true, exact_model: true } }));
+    expect(produced.size).toBe(1);
   });
 });
 

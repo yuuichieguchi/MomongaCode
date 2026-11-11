@@ -7,7 +7,7 @@ import { projectInheritance } from '@momonga/store';
 import { MIGRATIONS } from '../src/schema.ts';
 import { claimed, closureEntry, ended, foldOf, task, requested, responded, callItem, toolCall } from './inherit-fixtures.ts';
 import type { InheritedEvent } from './inherit-fixtures.ts';
-import { makeStoreDir } from './helpers.ts';
+import { makeStoreDir, UNASKED_COMMANDS } from './helpers.ts';
 
 const USAGE_LIMIT_CLOSURE = 'Not run: the previous request stopped because the usage allowance was reached before this tool call ran.';
 
@@ -37,7 +37,7 @@ describe('runs.stop_reason accepts usage_limit after migration 29 (P3c, M7 stora
 describe('a call left open by a usage stop is closed with its own text (P3c, inherit.ts)', () => {
   it('closes the dangling call with the usage-allowance sentence', () => {
     const state = foldOf([task('Write it'), ...claimed('manual'), requested(1), responded(1, [callItem('c1')]), toolCall('c1'), ended('STOPPED', 'usage_limit')]);
-    const payload = projectInheritance(state, { status: 'STOPPED', stopReason: 'usage_limit' as never }, { kind: 'final', currentMode: 'manual' }) as InheritedEvent;
+    const payload = projectInheritance(state, { status: 'STOPPED', stopReason: 'usage_limit' as never }, { kind: 'final', currentMode: 'manual', unasked: UNASKED_COMMANDS }) as InheritedEvent;
     expect(payload.history.at(-1)).toEqual(closureEntry(payload.history.length, 'c1', USAGE_LIMIT_CLOSURE));
   });
 });

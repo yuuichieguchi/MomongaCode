@@ -1,28 +1,50 @@
-export type RequestTracker = {
+import type { SharedWorkHold, WorkRegistry } from '../core/run.ts';
+
+export type RequestTracker = WorkRegistry & {
   begin(): () => void;
   idle(): Promise<void>;
   active(): number;
 };
 
+type Work = { subscribers: number };
+
 export const createRequestTracker = (): RequestTracker => {
-  let active = 0;
+  let requests = 0;
+  const works = new Set<Work>();
   let idleWaiters: Array<() => void> = [];
+  const holdsNothing = (): boolean => requests === 0 && works.size === 0;
+  const settle = (): void => {
+    if (!holdsNothing()) return;
+    const waiters = idleWaiters;
+    idleWaiters = [];
+    for (const waiter of waiters) waiter();
+  };
+  const detachedWorks = (): number => [...works].filter((work) => work.subscribers === 0).length;
   return {
     begin: () => {
-      active += 1;
+      requests += 1;
       let ended = false;
       return () => {
         if (ended) return;
         ended = true;
-        active -= 1;
-        if (active === 0) {
-          const waiters = idleWaiters;
-          idleWaiters = [];
-          for (const waiter of waiters) waiter();
-        }
+        requests -= 1;
+        settle();
       };
     },
-    active: () => active,
-    idle: () => (active === 0 ? Promise.resolve() : new Promise<void>((resolve) => idleWaiters.push(resolve))),
+    beginWork: (): SharedWorkHold => {
+      const work: Work = { subscribers: 0 };
+      works.add(work);
+      return {
+        subscribers: (count) => {
+          work.subscribers = count;
+        },
+        end: () => {
+          works.delete(work);
+          settle();
+        },
+      };
+    },
+    active: () => requests + detachedWorks(),
+    idle: () => (holdsNothing() ? Promise.resolve() : new Promise<void>((resolve) => idleWaiters.push(resolve))),
   };
 };

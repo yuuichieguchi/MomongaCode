@@ -9,6 +9,7 @@ import { createFakeClock } from '@momonga/testkit';
 import { createMarkerOwners } from '@momonga/tools';
 import { reapToolMarkers } from '../../src/process/tool-markers.ts';
 import { START_MS, makeTempHome } from './helpers.ts';
+import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
 type MarkerGroupApi = { recordMarkerGroup(marker: string, pgid: number): Promise<void> };
 
@@ -23,7 +24,7 @@ const heldInspector = { markerState: async () => 'held' } as unknown as ProcessI
 const homeWithCompletedRow = async () => {
   const temp = await makeTempHome();
   await ensureMomongaDirs(temp.paths);
-  const store = openRuntimeStore({ path: temp.paths.databases.runtime, home: temp.home, clock: createFakeClock(START_MS), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
+  const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock: createFakeClock(START_MS), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
   store.idempotency.begin(KEY, { expiresAt: START_MS + 60_000, meta: {} });
   store.idempotency.attachProcess(KEY, { pgid: LEDGER_PGID, startedAt: START_MS });
   store.idempotency.complete(KEY, { exitCode: 0 });

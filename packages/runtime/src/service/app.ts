@@ -9,14 +9,14 @@ import { denyingRuleFor } from '@momonga/policy';
 import { shellCommandSubject } from '@momonga/tools';
 import { canonicalJson, hostPaths, isTransientErrno, sha256Hex } from '@momonga/foundation';
 import type { Clock, GenerationRole, PathResolver } from '@momonga/foundation';
-import { AUTO_MODE_UNAVAILABLE, NO_MODEL_TARGET, RUN_STATUSES, TARGET_PROBING_MESSAGE, agentReadiness, displayMapOf, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, USER_SHELL_RUN_ACTIVE_CODE, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
+import { AUTO_MODE_UNAVAILABLE, NO_MODEL_TARGET, RUN_STATUSES, TARGET_PROBING_MESSAGE, agentReadiness, displayMapOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, USER_SHELL_RUN_ACTIVE_CODE, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
 import type { Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
 import { mentionsOf } from '@momonga/context';
 import type { AttachedMentions } from '@momonga/context';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
 import { JournalThreadError, inboxRowView, knownValue, sameRunRequest } from '@momonga/store';
 import type { ContextCharge, Run, RuntimeStore, Session } from '@momonga/store';
-import { GatewayRequestError, ModelUnlistedError, isTargetProbing } from '../gateway-client.ts';
+import { GatewayRequestError, ModelUnlistedError } from '../gateway-client.ts';
 import { sessionModelNotConfiguredText } from '../worker/model-texts.ts';
 import type { AgentCatalogPort, SkillsPort, UserInputPort } from '../ports.ts';
 import { registerUserShellRoutes } from './user-shell-routes.ts';
@@ -169,7 +169,7 @@ const capabilitiesReadFailure = (error: unknown): unknown => {
 const requestedModelOf = (text: string, views: ModelViews): string => {
   const resolution = resolveTypedModelRef(typedModelText(text), views);
   if (resolution.kind === 'found') return resolution.model.canon;
-  throw invalidRequest(modelRefErrorOf(text, resolution, views).message, 'model');
+  throw invalidRequest(modelRefErrorOf(text, resolution, views, 'gateway').message, 'model');
 };
 
 const displayIn = (views: ModelViews, model: string): string => displayMapOf(views).get(model) ?? model;

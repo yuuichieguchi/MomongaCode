@@ -18,7 +18,7 @@ export type RuleAddOptions = {
 
 const withRuntime = async <T>(ports: CliPorts, paths: MomongaPaths, use: (client: ReturnType<typeof connectRuntime>) => Promise<T>): Promise<T> => {
   await ensureCurrentDaemon(ports, paths);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   try {
     return await use(client);
   } finally {

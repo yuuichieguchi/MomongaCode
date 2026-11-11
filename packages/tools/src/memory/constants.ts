@@ -1,8 +1,6 @@
 import { MAX_REDACTED_CHARS } from '@momonga/foundation';
 
-export const MEMORY_SAVE_TOOL_NAME = 'MemorySave';
-
-export const MEMORY_SEARCH_TOOL_NAME = 'MemorySearch';
+export { MEMORY_SAVE_TOOL_NAME, MEMORY_SEARCH_TOOL_NAME } from '@momonga/protocol';
 
 export const MEMORY_TEXT_MAX_CHARS = Math.floor(MAX_REDACTED_CHARS / 2);
 

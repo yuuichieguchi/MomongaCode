@@ -1,5 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { findProgramOnPath, systemTiming } from '@momonga/foundation';
+import { findProgramOnPath } from '@momonga/foundation';
 import type { FileCandidates } from '@momonga/foundation';
 import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView } from '@momonga/protocol';
 import { editSettings, readSettingsSnapshot } from '@momonga/config';
@@ -186,8 +186,8 @@ export const createTuiBackend = (
     plan,
     health: () => withGateway((gateway) => gateway.health()),
     sandbox: async () => (await runtime().health()).sandbox,
-    startSignInListener: loopbackSignInListener(closing.signal),
-    signInTimers: systemTiming,
+    startSignInListener: loopbackSignInListener(ports.timers, closing.signal),
+    signInTimers: ports.timers,
     modelList: () => withGateway((gateway) => gateway.modelList(closing.signal)),
     modelsHost: (signal, onWarning) => {
       const interrupt = AbortSignal.any([closing.signal, signal]);

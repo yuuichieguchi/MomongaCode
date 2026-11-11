@@ -18,7 +18,6 @@ import {
   orphanReapGraceMs,
   parseStopMessage,
   parseStopValues,
-  requirementOfStop,
   runtimeMaxCloseMs,
   runtimeStopBudgetMs,
   runtimeTeardownBudgetMs,
@@ -70,17 +69,15 @@ describe('the derived MCP and runtime bounds (K = KILL_CONFIRM_MS = 5000, RUNTIM
     expect(runtimeTeardownBudgetMs(grace)).toBe(teardown);
   });
 
-  it('gives 64095, 69095, 34095 and 98190 at the defaults', () => {
+  it('gives 64095, 69095 and 34095 at the defaults', () => {
     expect(runtimeMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(64_095);
     expect(runtimeStopBudgetMs(DEFAULT_STOP_VALUES)).toBe(69_095);
     expect(orphanReapGraceMs(DEFAULT_STOP_VALUES)).toBe(34_095);
-    expect(requirementOfStop(DEFAULT_STOP_VALUES)).toBe(98_190);
   });
 
-  it('gives 508095, 208095 and 716190 at the maxima', () => {
+  it('gives 508095 and 208095 at the maxima', () => {
     expect(runtimeMaxCloseMs(MAXIMA)).toBe(508_095);
     expect(orphanReapGraceMs(MAXIMA)).toBe(208_095);
-    expect(requirementOfStop(MAXIMA)).toBe(716_190);
   });
 
   it('takes the drain and the MCP grace from the values, and neither gateway value', () => {

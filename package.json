@@ -13,6 +13,7 @@
     "test": "MOMONGA_TLC_REUSE=0 vitest run --project unit",
     "test:reuse": "MOMONGA_TLC_REUSE=1 vitest run --project unit",
     "test:tlc-deep": "MOMONGA_TLC_REUSE=0 MOMONGA_TLC_TIER=deep vitest run --project unit test/formal",
+    "test:setup": "node scripts/fetch-tla.ts",
     "test:e2e": "vitest run --project e2e",
     "test:packaging": "vitest run --project packaging",
     "calibrate:offloop": "vitest run --project calibration --silent=false packages/runtime/test/calibration/offloop-cost.test.ts",

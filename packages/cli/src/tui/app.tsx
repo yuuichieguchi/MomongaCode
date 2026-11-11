@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Text, useApp, useStdout } from 'ink';
-import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, NO_MODEL_CONNECTED_TEXT, agentReadiness, autoModeNotice, displayMapOf, isNotListedCapabilities } from '@momonga/protocol';
+import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, displayMapOf, isNotListedCapabilities, messageOf, PLAN_DISABLED_STATE } from '@momonga/protocol';
 import type { ChainCapabilities, ImageAttachment, InboxDelivery, InboxRowView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import type { RunView, SessionView } from '../client/views.ts';
@@ -151,7 +151,7 @@ const EDITOR_CONTEXTS: readonly KeyContext[] = ['chat', 'global'];
 
 type Phase = { kind: 'starting' } | { kind: 'trust'; path: string } | { kind: 'welcome' } | { kind: 'unconnected' } | { kind: 'ready' };
 
-const NO_MODEL_NOTE = NO_MODEL_CONNECTED_TEXT;
+const NO_MODEL_NOTE = messageOf('noModelConnected', 'tui');
 const RESUBMIT_NOTICE = 'Signed in again. Retrying your last prompt.';
 
 const PLAN_BLOCK_CODES: ReadonlySet<string> = new Set([PLAN_USE_NOT_ENABLED_CODE, PLAN_NOT_ELIGIBLE_CODE]);
@@ -657,7 +657,7 @@ export function App(props: AppProps) {
       return;
     }
     enterPhase({ kind: 'unconnected' });
-    const usable = listed.accounts.find((account) => account.active && (account.state === 'active' || account.state === 'plan_disabled'));
+    const usable = listed.accounts.find((account) => account.active && (account.state === 'active' || account.state === PLAN_DISABLED_STATE));
     if (usable !== undefined) runFlow(() => flows.catalogPicker(profileOf(listed.profiles, usable.profile), usable.label));
   };
 

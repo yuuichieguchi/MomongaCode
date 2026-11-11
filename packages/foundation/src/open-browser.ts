@@ -9,14 +9,29 @@ const OPENERS: readonly { program: string; argsFor(url: URL): readonly string[] 
   { program: 'rundll32', argsFor: (url) => ['url.dll,FileProtocolHandler', url.toString()] },
 ];
 
-export const openCommandFor = (url: URL, env: SearchEnv): OpenCommand => {
+export const URL_OPENER_PROGRAMS: readonly string[] = OPENERS.map((opener) => opener.program);
+
+const browserOf = (env: SearchEnv): string | undefined => {
   const browser = env['BROWSER'];
-  if (browser !== undefined && browser !== '') return { file: browser, args: [url.toString()] };
+  return browser === undefined || browser === '' ? undefined : browser;
+};
+
+const openerOnPath = (env: SearchEnv): { file: string; argsFor(url: URL): readonly string[] } | undefined => {
   for (const opener of OPENERS) {
     const file = findProgramOnPath(opener.program, env);
-    if (file !== undefined) return { file, args: opener.argsFor(url) };
+    if (file !== undefined) return { file, argsFor: opener.argsFor };
   }
-  throw new Error(`no program to open a URL was found on PATH; looked for ${OPENERS.map((opener) => opener.program).join(', ')}, and BROWSER is not set`);
+  return undefined;
+};
+
+export const urlOpenerFileFor = (env: SearchEnv): string | undefined => browserOf(env) ?? openerOnPath(env)?.file;
+
+export const openCommandFor = (url: URL, env: SearchEnv): OpenCommand => {
+  const browser = browserOf(env);
+  if (browser !== undefined) return { file: browser, args: [url.toString()] };
+  const opener = openerOnPath(env);
+  if (opener !== undefined) return { file: opener.file, args: opener.argsFor(url) };
+  throw new Error(`no program to open a URL was found on PATH; looked for ${URL_OPENER_PROGRAMS.join(', ')}, and BROWSER is not set`);
 };
 
 export type ProgramEnd = { readonly exitCode: number | null; readonly signal: NodeJS.Signals | null };

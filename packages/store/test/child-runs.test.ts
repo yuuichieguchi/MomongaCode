@@ -135,8 +135,8 @@ describe('shared budget', () => {
         response: { status: 'completed', output: [], usage: { input_tokens: 20, output_tokens: 10, total_tokens: 30 } },
       },
     ]);
-    expect(h.store.treeTokens(parent.id)).toBe(45);
-    expect(h.store.treeTokens(child.id)).toBe(45);
+    expect(h.store.treeSpend(parent.id).totalTokens).toBe(45);
+    expect(h.store.treeSpend(child.id).totalTokens).toBe(45);
   });
 });
 
@@ -292,6 +292,6 @@ describe('a session that never had children', () => {
     const h = harness();
     const run = enqueue(h.store, newSession(h.store).id);
     expect(h.store.listChildRuns(run.id)).toEqual([]);
-    expect(h.store.treeTokens(run.id)).toBe(0);
+    expect(h.store.treeSpend(run.id).totalTokens).toBe(0);
   });
 });

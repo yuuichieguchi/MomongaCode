@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KILL_CONFIRM_MS, ProbeFailedError, canStillRun, createProcessGroupPort, groupTerminationBoundMs, reconcileProcessGroup, terminateGroup } from '@momonga/foundation';
-import type { CommandOptions, CommandRunner, FileIdentity, GroupTiming, ProcessGroupPort, ProcessInspector, ProcFs, ReapTiming } from '@momonga/foundation';
-import { createFakeClock } from '@momonga/testkit';
+import type { CommandOptions, CommandRunner, FileIdentity, ProcessGroupPort, ProcessInspector, ProcFs, ReapTiming, Timing } from '@momonga/foundation';
+import { createFakeClock, createSteppingTiming } from '@momonga/testkit';
 
 const PGID = 1_999_999_001;
 const UNRELATED_PGID = 1_999_999_002;
@@ -26,17 +26,9 @@ const fakeGroup = (members: Member[], onKill: (member: Member) => void) => {
   return { signals };
 };
 
-const fakeTiming = (): { timing: GroupTiming; now(): number } => {
+const fakeTiming = (): { timing: Timing; now(): number } => {
   const clock = createFakeClock(0);
-  return {
-    now: () => clock.now(),
-    timing: {
-      now: () => clock.now(),
-      sleep: async (ms) => {
-        clock.advance(ms);
-      },
-    },
-  };
+  return { now: () => clock.now(), timing: createSteppingTiming(clock) };
 };
 
 type PsCall = { args: readonly string[]; options: CommandOptions };

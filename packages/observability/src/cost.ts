@@ -120,7 +120,7 @@ const memberPriceOf = (member: QuotedMember, table: PriceTable, atMs: number): M
   const entry = findPriceEntry(table, member.provider, member.model, atMs);
   if (entry === undefined) return undefined;
   return {
-    inUnits: larger(scaledPrice(entry.inputPerMTok), scaledPrice(entry.cacheWritePerMTok ?? 0)),
+    inUnits: [entry.inputPerMTok, entry.cacheWritePerMTok ?? 0, entry.cachedInputPerMTok ?? 0].map(scaledPrice).reduce(larger),
     outUnits: scaledPrice(entry.outputPerMTok),
     priceVersion: entry.effectiveFrom,
   };

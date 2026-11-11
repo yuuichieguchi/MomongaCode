@@ -7,7 +7,7 @@ import { createDerivedSnapshot } from './derived-repair.ts';
 import { isFatalStoreError } from './fatal.ts';
 import { foldRunState, initialRunState } from './fold.ts';
 import { InheritanceError, isReferenceInherited, projectReference, rebaseOntoReference, referenceDigest, retractsTask, signReference } from './inherit.ts';
-import type { InheritanceOutcome } from './inherit.ts';
+import type { InheritanceOutcome, UnaskedCommands } from './inherit.ts';
 import { createRecordWalker } from './record-walk.ts';
 import type { RecordVisit, WalkUnits } from './record-walk.ts';
 import { knownValue } from './rows.ts';
@@ -32,7 +32,7 @@ export type InheritedWindowReply = {
   omittedOlder: boolean;
 };
 
-export type InheritPlanRequest = { runId: string; mode: PermissionMode };
+export type InheritPlanRequest = { runId: string; mode: PermissionMode; unasked: UnaskedCommands };
 
 export type InheritWalked = { runId: string; lastSeq: number; status: RunStatus };
 
@@ -554,7 +554,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
 
   type TerminalRun = Run & { status: TerminalStatus };
 
-  const resolveSource = (run: Run, mode: PermissionMode): InheritPlanReply => {
+  const resolveSource = (run: Run, { mode, unasked }: Pick<InheritPlanRequest, 'mode' | 'unasked'>): InheritPlanReply => {
     const walked: InheritWalked[] = [];
     const unmaterialised: TerminalRun[] = [];
     let base: TerminalRun;
@@ -594,7 +594,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
     const { unsigned } = projectReference(
       sourceState,
       { ...outcomeOf(sourceRun), carriedSkills },
-      { kind: 'final', currentMode: mode },
+      { kind: 'final', currentMode: mode, unasked },
       { fromRunId: base.id, fromLastSeq: base.lastSeq, fromNextItemSeq: baseState.nextItemSeq, ...(folded.pointer === undefined ? {} : { compaction: folded.pointer }), via, itemCount: 0 },
     );
     const itemCount = retainedCount({ ...unsigned, digest: '' }, pointerFloor);
@@ -606,7 +606,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
     if (run.history !== 'inherit' || run.previousRunId === null) return { kind: 'none' };
     if (hasInheritedEvent(run.id)) return { kind: 'already' };
     try {
-      return resolveSource(run, request.mode);
+      return resolveSource(run, request);
     } catch (error) {
       if (error instanceof InheritanceError || isFatalStoreError(error)) throw error;
       throw new InheritanceError('previous_run_unreadable', `the previous run of ${run.id} could not be read`, { cause: error });

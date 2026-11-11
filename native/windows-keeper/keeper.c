@@ -21,6 +21,15 @@
 #define RECHECK_MS 100
 #define REQUEST_LINE_LIMIT 64
 #define NUMBER_TEXT_LIMIT 11
+#define STANDARD_DESCRIPTORS 3
+#define DESCRIPTOR_OPEN 0x01
+#define RESERVED_SIZE_LIMIT 0xFFFFu
+
+typedef struct {
+  DWORD count;
+  const BYTE *flags;
+  const BYTE *handles;
+} DESCRIPTOR_BLOCK;
 
 static HANDLE g_pipe = INVALID_HANDLE_VALUE;
 static HANDLE g_port = NULL;
@@ -98,6 +107,21 @@ static void say_number(const char *word, DWORD value) {
   length += put_number(line + length, value);
   line[length] = '\n';
   pipe_write(line, length + 1);
+}
+
+static void say_started(DWORD pid, const DWORD *descriptors, DWORD count) {
+  char *line = allocate(REQUEST_LINE_LIMIT + (SIZE_T)count * (NUMBER_TEXT_LIMIT + 1));
+  DWORD length = put_text(line, "started ");
+  DWORD index;
+  length += put_number(line + length, pid);
+  for (index = 0; index < count; index += 1) {
+    line[length] = ' ';
+    length += 1;
+    length += put_number(line + length, descriptors[index]);
+  }
+  line[length] = '\n';
+  pipe_write(line, length + 1);
+  release(line);
 }
 
 static DECLSPEC_NORETURN void fail(const char *reason, DWORD exit_code, DWORD system_error) {
@@ -427,11 +451,75 @@ static DWORD add_inherited(HANDLE *handles, DWORD count, HANDLE handle) {
   return count + 1;
 }
 
-static HANDLE start_command(WCHAR *command_line, HANDLE marker, DWORD *pid) {
+static BOOL listed(const HANDLE *handles, DWORD count, HANDLE handle) {
+  DWORD index;
+  for (index = 0; index < count; index += 1) {
+    if (handles[index] == handle) return TRUE;
+  }
+  return FALSE;
+}
+
+static BOOL parse_descriptors(const WCHAR *word, DWORD *descriptors, DWORD *count) {
+  DWORD value = 0;
+  BOOL digits = FALSE;
+  *count = 0;
+  if (same(word, L"-")) return TRUE;
+  for (;; word += 1) {
+    if (*word >= L'0' && *word <= L'9') {
+      value = value * 10 + (DWORD)(*word - L'0');
+      if (value > RESERVED_SIZE_LIMIT) return FALSE;
+      digits = TRUE;
+    } else if ((*word == L',' || *word == 0) && digits) {
+      descriptors[*count] = value;
+      *count += 1;
+      value = 0;
+      digits = FALSE;
+      if (*word == 0) return TRUE;
+    } else {
+      return FALSE;
+    }
+  }
+}
+
+static DESCRIPTOR_BLOCK own_descriptor_block(void) {
+  STARTUPINFOW own;
+  DESCRIPTOR_BLOCK block;
+  int declared = 0;
+  ZeroMemory(&block, sizeof block);
+  ZeroMemory(&own, sizeof own);
+  own.cb = sizeof own;
+  GetStartupInfoW(&own);
+  if (own.lpReserved2 == NULL || own.cbReserved2 < sizeof declared) return block;
+  CopyMemory(&declared, own.lpReserved2, sizeof declared);
+  if (declared <= 0 || (SIZE_T)declared > (own.cbReserved2 - sizeof declared) / (1 + sizeof(HANDLE))) return block;
+  block.count = (DWORD)declared;
+  block.flags = own.lpReserved2 + sizeof declared;
+  block.handles = block.flags + block.count;
+  return block;
+}
+
+static HANDLE descriptor_handle(const DESCRIPTOR_BLOCK *block, DWORD descriptor) {
+  HANDLE handle;
+  CopyMemory(&handle, block->handles + (SIZE_T)descriptor * sizeof handle, sizeof handle);
+  return handle;
+}
+
+static void put_descriptor(BYTE *block, DWORD count, DWORD descriptor, BYTE flags, HANDLE handle) {
+  BYTE *slots = block + sizeof(int) + count;
+  block[sizeof(int) + descriptor] = flags;
+  CopyMemory(slots + (SIZE_T)descriptor * sizeof handle, &handle, sizeof handle);
+}
+
+static HANDLE start_command(WCHAR *command_line, HANDLE marker, const DWORD *descriptors, DWORD descriptor_count, DWORD *pid) {
   STARTUPINFOEXW startup;
   PROCESS_INFORMATION started;
-  HANDLE handles[4];
+  DESCRIPTOR_BLOCK own = own_descriptor_block();
+  HANDLE *handles = allocate((STANDARD_DESCRIPTORS + 1 + (SIZE_T)descriptor_count) * sizeof(HANDLE));
+  HANDLE standard[STANDARD_DESCRIPTORS];
+  BYTE *block = NULL;
+  DWORD block_size = 0;
   DWORD count = 0;
+  DWORD index;
   SIZE_T size = 0;
   ZeroMemory(&startup, sizeof startup);
   ZeroMemory(&started, sizeof started);
@@ -444,6 +532,29 @@ static HANDLE start_command(WCHAR *command_line, HANDLE marker, DWORD *pid) {
   count = add_inherited(handles, count, startup.StartupInfo.hStdOutput);
   count = add_inherited(handles, count, startup.StartupInfo.hStdError);
   count = add_inherited(handles, count, marker);
+  if (own.count > 0) {
+    int declared = (int)own.count;
+    block_size = (DWORD)(sizeof declared + (SIZE_T)own.count * (1 + sizeof(HANDLE)));
+    block = allocate(block_size);
+    CopyMemory(block, &declared, sizeof declared);
+    for (index = 0; index < own.count; index += 1) put_descriptor(block, own.count, index, 0, INVALID_HANDLE_VALUE);
+    standard[0] = startup.StartupInfo.hStdInput;
+    standard[1] = startup.StartupInfo.hStdOutput;
+    standard[2] = startup.StartupInfo.hStdError;
+    for (index = 0; index < STANDARD_DESCRIPTORS && index < own.count; index += 1) put_descriptor(block, own.count, index, own.flags[index], standard[index]);
+  }
+  for (index = 0; index < descriptor_count; index += 1) {
+    DWORD descriptor = descriptors[index];
+    HANDLE handle;
+    if (descriptor < STANDARD_DESCRIPTORS || descriptor >= own.count || (own.flags[descriptor] & DESCRIPTOR_OPEN) == 0) fail("launch-failed", EXIT_LAUNCH_FAILED, ERROR_INVALID_HANDLE);
+    handle = descriptor_handle(&own, descriptor);
+    SetLastError(ERROR_INVALID_HANDLE);
+    count = add_inherited(handles, count, handle);
+    if (!listed(handles, count, handle)) fail("launch-failed", EXIT_LAUNCH_FAILED, GetLastError());
+    put_descriptor(block, own.count, descriptor, own.flags[descriptor], handle);
+  }
+  startup.StartupInfo.cbReserved2 = (WORD)block_size;
+  startup.StartupInfo.lpReserved2 = block;
   if (count > 0) {
     InitializeProcThreadAttributeList(NULL, 1, 0, &size);
     startup.lpAttributeList = allocate(size);
@@ -452,6 +563,13 @@ static HANDLE start_command(WCHAR *command_line, HANDLE marker, DWORD *pid) {
   }
   if (!CreateProcessW(NULL, command_line, NULL, NULL, count > 0, EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW, NULL, NULL, &startup.StartupInfo, &started)) fail("launch-failed", EXIT_LAUNCH_FAILED, GetLastError());
   CloseHandle(started.hThread);
+  for (index = 0; index < descriptor_count; index += 1) CloseHandle(descriptor_handle(&own, descriptors[index]));
+  if (startup.lpAttributeList != NULL) {
+    DeleteProcThreadAttributeList(startup.lpAttributeList);
+    release(startup.lpAttributeList);
+  }
+  if (block != NULL) release(block);
+  release(handles);
   *pid = started.dwProcessId;
   return started.hProcess;
 }
@@ -470,19 +588,24 @@ static DWORD launch(WCHAR *cursor) {
   WCHAR *job = take_word(&cursor);
   WCHAR *owner_loss = take_word(&cursor);
   WCHAR *marker_word = take_word(&cursor);
+  WCHAR *descriptor_word = take_word(&cursor);
   WCHAR *separator = take_word(&cursor);
   WCHAR *command_line = after_blanks(cursor);
   BOOL terminate_on_owner_loss = same(owner_loss, L"terminate");
+  DWORD *descriptors = allocate(((SIZE_T)lstrlenW(descriptor_word) + 1) * sizeof(DWORD));
+  DWORD descriptor_count = 0;
   HANDLE marker = NULL;
   HANDLE command;
   DWORD pid = 0;
   if (!terminate_on_owner_loss && !same(owner_loss, L"persist")) return EXIT_USAGE;
   if (!same(separator, L"--") || *command_line == 0) return EXIT_USAGE;
+  if (!parse_descriptors(descriptor_word, descriptors, &descriptor_count)) return EXIT_USAGE;
   connect_pipe(pipe);
   create_job(job);
   if (!same(marker_word, L"-")) marker = open_marker(marker_word);
-  command = start_command(command_line, marker, &pid);
-  say_number("started", pid);
+  command = start_command(command_line, marker, descriptors, descriptor_count, &pid);
+  say_started(pid, descriptors, descriptor_count);
+  release(descriptors);
   start_thread(wait_for_command, command);
   start_thread(read_requests, NULL);
   return serve(TRUE, terminate_on_owner_loss, FALSE);

@@ -40,6 +40,10 @@ const exitCodeOf = (child: ChildProcess): Promise<number | undefined> =>
 
 const leaderExitOf = (exit: KeptExit): LeaderExit => (exit.kind === 'exit' ? { code: exit.code, signal: null } : { code: null, signal: 'SIGKILL' });
 
+const STANDARD_SLOTS = 3;
+
+const descriptorsBeyondStandard = (stdio: readonly LaunchSlot[]): number[] => stdio.flatMap((slot, descriptor) => (descriptor >= STANDARD_SLOTS && slot !== 'ignore' ? [descriptor] : []));
+
 const launchKept = (keeper: GroupKeeper, request: GroupLaunchRequest, spawnProcess: typeof spawn): GroupLaunch => {
   const { marker } = request;
   if (marker !== undefined && marker.file === undefined) throw new Error(`the marker of ${request.file} reaches a kept command by its path, and only a descriptor was given`);
@@ -48,6 +52,7 @@ const launchKept = (keeper: GroupKeeper, request: GroupLaunchRequest, spawnProce
   const opening = keeper.open({
     command: { file: request.file, args: request.args },
     marker: marker?.file,
+    descriptors: descriptorsBeyondStandard(stdio),
     start: (executable, args) => {
       const child = spawnProcess(executable, [...args], { ...placeOf(request), detached: true, windowsHide: true, stdio });
       return { child, pid: child.pid, exited: exitCodeOf(child) };

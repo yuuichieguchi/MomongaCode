@@ -25,7 +25,7 @@ const usage = { total: { input_tokens: 1, output_tokens: 1 }, responses: [] } as
 const viewWith = (calls: unknown[]): RunTraceView =>
   ({
     runId: 'run-1',
-    summary: { steps: 2, chatCalls: 0, toolCalls: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, errorCount: 0, durationMs: 30, chatResults: [] },
+    summary: { steps: 2, chatCalls: 0, sideCalls: 0, toolCalls: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, errorCount: 0, durationMs: 30, chatResults: [] },
     spans: [],
     calls,
   }) as unknown as RunTraceView;

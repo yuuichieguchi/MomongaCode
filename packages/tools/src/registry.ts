@@ -1,13 +1,11 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { modelVisibleTools } from '@momonga/policy';
 import type { PermissionRule } from '@momonga/policy';
-import { MAX_TOOL_NAME_CHARS } from '@momonga/protocol';
+import { TOOL_NAME_PATTERN } from '@momonga/protocol';
 import type { FitRankedFunctionTool, PermissionMode, ReferenceKind } from '@momonga/protocol';
 import { compileToolSchemas } from './validate.ts';
 import { TOOL_TIERS } from './types.ts';
 import type { AnyTool } from './types.ts';
-
-const TOOL_NAME = new RegExp(`^[A-Za-z0-9_-]{1,${MAX_TOOL_NAME_CHARS}}$`);
 
 export type ToolSourceListing = { tools: AnyTool[]; notices: string[]; authorizationRequired?: string[] };
 
@@ -39,7 +37,7 @@ export type ToolRegistry = {
 };
 
 const assertRegistrable = (tool: AnyTool): void => {
-  if (!TOOL_NAME.test(tool.name)) throw new Error(`invalid tool name ${JSON.stringify(tool.name)}: must match ${TOOL_NAME.source}`);
+  if (!TOOL_NAME_PATTERN.test(tool.name)) throw new Error(`invalid tool name ${JSON.stringify(tool.name)}: must match ${TOOL_NAME_PATTERN.source}`);
   if (tool.inputSchema['type'] !== 'object') throw new Error(`tool ${JSON.stringify(tool.name)} input schema must have root type "object"`);
   compileToolSchemas(tool);
 };

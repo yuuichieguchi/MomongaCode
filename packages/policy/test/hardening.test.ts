@@ -61,17 +61,17 @@ describe('B1: wrappers around shell -c payloads', () => {
 });
 
 describe('B2: unanalysable commands fail closed against deny', () => {
-  it.each(["(r''m x)", '{ r"m" x; }', 'echo <(true); r""m x'])('%j is denied', async (command) => {
-    expect(await bash(command, { deny: ['Bash(rm:*)'] })).toBe('deny');
+  it.each(["(r''m x)", '{ r"m" x; }', 'echo <(true); r""m x'])('%j is approved by no allow rule and denied where nobody is asked', async (command) => {
+    expect(await bash(command, { deny: ['Bash(rm:*)'], allow: ['Bash'] })).toBe('ask');
     expect(await bash(command, { deny: ['Bash(rm:*)'], mode: 'bypassPermissions' })).toBe('deny');
   });
 });
 
 describe('B3: opaque command words and payloads fail closed against deny', () => {
   it.each(['R=rm; $R x', 'sh -c "$X"', 'eval $X', 'bash s.sh', 'bash < s.sh', 'echo rm | sh', 'printf rm|bash', 'source s.sh', '. s.sh'])(
-    '%j is denied',
+    '%j is approved by no allow rule and denied where nobody is asked',
     async (command) => {
-      expect(await bash(command, { deny: ['Bash(rm:*)'] })).toBe('deny');
+      expect(await bash(command, { deny: ['Bash(rm:*)'], allow: ['Bash'] })).toBe('ask');
       expect(await bash(command, { deny: ['Bash(rm:*)'], mode: 'bypassPermissions' })).toBe('deny');
     },
   );

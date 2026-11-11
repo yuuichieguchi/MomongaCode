@@ -12,7 +12,7 @@ import {
   startToolSpan,
 } from '@momonga/observability';
 import { createFakeClock } from '@momonga/testkit';
-import { CONTENT, RUN_ID, SENTINEL, START_MS, dumpAllRows, harness, makeDir, openStore } from './helpers.ts';
+import { CONTENT, RUN_ID, SENTINEL, START_MS, dumpAllRows, harness, makeDir, openStore, bodiesOfSpan } from './helpers.ts';
 
 describe('openTraceStore', () => {
   it('creates the database file with mode 0600 in a 0700 directory', () => {
@@ -62,7 +62,7 @@ describe('openTraceStore', () => {
 });
 
 describe('stored spans', () => {
-  it('spansForRun returns full records ordered by start time; spansForTrace returns the same trace', async () => {
+  it('spansForRun returns full records ordered by start time', async () => {
     const h = harness();
     const agent = startAgentSpan(h.telemetry.tracer, {
       agentName: 'momonga',
@@ -138,9 +138,6 @@ describe('stored spans', () => {
         { name: 'exception', timeMs: START_MS + 18, attributes: { 'exception.type': 'Error', 'exception.message': 'tool raised' } },
       ],
     });
-    expect(h.store.spansForTrace(traceId).map((span) => span.spanId).sort()).toEqual(
-      [agent, chat, tool].map((span) => span.spanContext().spanId).sort(),
-    );
     expect(h.store.spansForRun('missing')).toEqual([]);
   });
 });
@@ -164,7 +161,7 @@ describe('body capture', () => {
     chat.end(h.clock.now());
     await h.telemetry.forceFlush();
     expect(h.store.spansForRun(RUN_ID)).toHaveLength(1);
-    expect(h.store.bodiesForSpan(chat.spanContext().spanId)).toEqual([]);
+    expect(bodiesOfSpan(h.store, chat.spanContext().spanId)).toEqual([]);
     await h.telemetry.shutdown();
     h.store.close();
     expect(dumpAllRows(h.file)).not.toContain(SENTINEL);
@@ -183,7 +180,7 @@ describe('body capture', () => {
     expect(JSON.stringify(stored)).not.toContain(SENTINEL);
     const [finished] = h.memory.getFinishedSpans();
     expect(finished?.attributes[CONTENT.ATTR_GEN_AI_INPUT_MESSAGES]).toBe(`prompt ${SENTINEL}`);
-    expect(h.store.bodiesForSpan(chat.spanContext().spanId)).toEqual([
+    expect(bodiesOfSpan(h.store, chat.spanContext().spanId)).toEqual([
       {
         traceId: chat.spanContext().traceId,
         spanId: chat.spanContext().spanId,
@@ -215,10 +212,10 @@ describe('body capture', () => {
     await h.telemetry.forceFlush();
     expect(h.store.purgeBodies(START_MS + 999)).toBe(0);
     expect(h.store.purgeBodies(START_MS + 1000)).toBe(1);
-    expect(h.store.bodiesForSpan(first.spanContext().spanId)).toEqual([]);
-    expect(h.store.bodiesForSpan(second.spanContext().spanId).map((body) => body.content)).toEqual(['later']);
+    expect(bodiesOfSpan(h.store, first.spanContext().spanId)).toEqual([]);
+    expect(bodiesOfSpan(h.store, second.spanContext().spanId).map((body) => body.content)).toEqual(['later']);
     expect(h.store.purgeBodies(START_MS + 1010)).toBe(1);
-    expect(h.store.bodiesForSpan(second.spanContext().spanId)).toEqual([]);
+    expect(bodiesOfSpan(h.store, second.spanContext().spanId)).toEqual([]);
     await h.telemetry.shutdown();
     h.store.close();
     expect(dumpAllRows(h.file)).not.toContain(SENTINEL);

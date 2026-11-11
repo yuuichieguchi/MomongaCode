@@ -19,6 +19,7 @@
     "@momonga/reliability": "*",
     "@momonga/runtime": "*",
     "@momonga/supervisor": "*",
+    "@momonga/tools": "*",
     "@momonga/verify": "*",
     "ajv": "8.20.0",
     "commander": "15.0.0",
