@@ -104,6 +104,33 @@ export type ReportCostPage = { costs: RunCostView[] };
 
 export const MAX_TRACE_CONTENT_PAGE = 50;
 
+export const TRACE_CONTENT_PAGE_OPTION = { flag: '--page-size', minimum: 1, maximum: MAX_TRACE_CONTENT_PAGE, default: MAX_TRACE_CONTENT_PAGE } as const;
+
+export const RELIABILITY_DERIVATIONS = {
+  RELIABILITY_FORMAT:
+    'The name of the stored report form with its version. The version rises by one when a report of the older form cannot be read as the new one, and RETIRED_RELIABILITY_FORMATS says by name what each older form lacks.',
+  MIN_RATE_POPULATION:
+    'The smallest population whose zero-failure Wilson upper bound at 95% is at most 10%: z^2 / (n + z^2) with z = 1.959963984540054 gives 9.9% at n = 35 and more than 10% at n = 34. Below it a rate is printed as counts.',
+  REVIEW_SAMPLE_SIZE:
+    'The smallest number of reviewed calls whose zero-miss Wilson upper bound at 95% is at most 5%: z^2 / (n + z^2) with z = 1.959963984540054 gives 5.0% at n = 73. It is the size of permissions review --sample when no number is given.',
+  REPORT_PAGE_ROWS:
+    'Equal to MAX_BILLED_CALLS_PAGE, the bound the billed-call paging of the cost report already uses. A facts row carries columns only and no payload JSON, and one cost request names at most this many runs.',
+  FACTS_SWEEP_BATCH_RUNS:
+    'Equal to SEARCH_INDEX_BATCH_RUNS: the bounded background folds of the daemon share one cadence, and each run of a tick costs one journal thread request.',
+  INDICATOR_DEFINITIONS_VERSION:
+    'A counter, not a measure: a change to any indicator formula raises it by one, and stored run facts of an older version are folded again. 2 is the set of formulas that has the money limit in the Budget Overrun Rate and the figures of mandate runs.',
+  MAIN_AGENT: 'The name under which a report groups the work a root run did itself, beside the names of its subagents. A product word, not a measure.',
+  COST_CURRENCY:
+    'The one currency of the product: every price of the price table is stated in US dollars, so a cost is never converted and a report never adds amounts of two currencies.',
+  COST_UNIT_DIGITS: 'Derived: the decimal places of one US dollar in units of the price table, log10(NANO_PER_USD x PRICE_UNITS_PER_NANO) = 9 + 6.',
+  MAX_TRACE_CONTENT_PAGE:
+    'The most stored message bodies one request for the content of a trace returns. A product choice with no formula: a body has no size bound of its own, so no byte budget fixes the count, and it bounds only the rows of one read. trace --content --page-size reads fewer bodies per request, from 1 to this value, and this value when omitted.',
+  'permissions review --sample needs --seed':
+    'The sample is the first calls in an order fixed by the call and the seed, so the seed is what lets a person come back to a sample: the same seed lists the same calls again, and without one a second listing could not be matched to the labels already stored.',
+  'trace --content --json':
+    'One JSON object per line, one line per stored body, because the content is read page by page and written as each page arrives: the whole content of a run is never held in memory, and a reader may stop after any line.',
+} as const satisfies Record<string, string>;
+
 export type TraceContentView = { id: number; spanId: string; kind: string; content: string; createdAtMs: number; expiresAtMs: number };
 
 export type TraceContentPage = { bodies: TraceContentView[]; next: number | null };

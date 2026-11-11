@@ -1,7 +1,7 @@
 import { Command, CommanderError, InvalidArgumentError, Option } from 'commander';
 import { EXIT_FAILURE, EXIT_OK, EXIT_USAGE, currentSocketResolver } from '@momonga/foundation';
 import type { EntryIo } from '@momonga/foundation';
-import { PERMISSION_MODES } from '@momonga/protocol';
+import { PERMISSION_MODES, TRACE_CONTENT_PAGE_OPTION } from '@momonga/protocol';
 import type { Mandate, PermissionMode } from '@momonga/protocol';
 import { serveAcp } from './acp/serve.ts';
 import { daemonStart, daemonStatus, daemonStop } from './commands/daemon.ts';
@@ -65,6 +65,14 @@ const integerArgument =
   (text: string): number => {
     const value = Number(text);
     if (!Number.isInteger(value) || value < minimum) throw new InvalidArgumentError(`expected an integer of at least ${minimum}`);
+    return value;
+  };
+
+const integerBetween =
+  (minimum: number, maximum: number) =>
+  (text: string): number => {
+    const value = Number(text);
+    if (!Number.isInteger(value) || value < minimum || value > maximum) throw new InvalidArgumentError(`expected an integer from ${minimum} to ${maximum}`);
     return value;
   };
 
@@ -217,8 +225,15 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
     .description('show the model and tool spans of a run; the latest run of this directory when no id is given')
     .option('--json', 'print the trace as JSON')
     .option('--content', 'print the stored message content of the run that has not expired, instead of the trace; with --json one JSON object per line')
-    .action(async (runId: string | undefined, options: { json?: true; content?: true }) => {
-      deps.complete(await showTrace(ports, await pathsOf(ports), runId, { json: options.json === true, content: options.content === true }));
+    .option(
+      `${TRACE_CONTENT_PAGE_OPTION.flag} <count>`,
+      `with --content: the stored bodies read per request, from ${TRACE_CONTENT_PAGE_OPTION.minimum} to ${TRACE_CONTENT_PAGE_OPTION.maximum}; ${TRACE_CONTENT_PAGE_OPTION.default} when omitted`,
+      integerBetween(TRACE_CONTENT_PAGE_OPTION.minimum, TRACE_CONTENT_PAGE_OPTION.maximum),
+      TRACE_CONTENT_PAGE_OPTION.default,
+    )
+    .action(async (runId: string | undefined, options: { json?: true; content?: true; pageSize: number }, command: Command) => {
+      if (options.content !== true && command.getOptionValueSource('pageSize') === 'cli') throw new UsageError(`${TRACE_CONTENT_PAGE_OPTION.flag} sets how many stored bodies --content reads per request, so it needs --content`);
+      deps.complete(await showTrace(ports, await pathsOf(ports), runId, { json: options.json === true, content: options.content === true, pageSize: options.pageSize }));
     });
 
   program
