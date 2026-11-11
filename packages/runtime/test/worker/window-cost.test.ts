@@ -50,7 +50,7 @@ const windowCounts = async (logEvents: number): Promise<Counts> => {
 
   counting.on = true;
   const listed = env.store.lastTerminalRootRuns(env.session.cwd, CONTRIBUTION_WINDOW_RUNS);
-  const share = await memoryShareFor({ store: env.store, settings: env.settings, session: env.session, run: env.run(next.id) });
+  const share = await memoryShareFor({ signal: new AbortController().signal, store: env.store, settings: env.settings, session: env.session, run: env.run(next.id) });
   counting.on = false;
 
   expect(listed).toHaveLength(CONTRIBUTION_WINDOW_RUNS);

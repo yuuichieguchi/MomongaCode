@@ -1,3 +1,4 @@
+import { testSecretLocations } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { decide } from '@momonga/policy';
@@ -48,6 +49,7 @@ const decideWith = async (layout: Layout, tool: PolicyTool, subject: PermissionS
     rules,
     roots,
     home: layout.home,
+    secretLocations: testSecretLocations(layout.home),
     cwd: layout.project,
     fileRules: await fileRulesFor(rules, roots),
     protectedSet: EMPTY_PROTECTED_SET,

@@ -214,7 +214,7 @@ export type NoticeCode =
   | 'recent_turns_shrunk'
   | 'recent_steps_shrunk';
 
-export type ContextNotice = { code: NoticeCode; message: string; reduction?: NoticeReduction };
+export type ContextNotice = { code: NoticeCode; message: string; reduction?: NoticeReduction; key?: string };
 
 export type EvictionKind = 'omitted' | 'truncated' | 'reference';
 
@@ -236,6 +236,7 @@ export type CompactionPlan = {
   pinnedText: string;
   notices: ContextNotice[];
   tokens: CompactionTokens;
+  rebuilt: { before: InputItem[]; after: InputItem[]; tools: FunctionTool[] };
 };
 
 export type CompactionBlockReason =
@@ -269,6 +270,8 @@ export type BuiltContext = {
   inputDigest: string;
   evictions: ContextEviction[];
   compaction?: CompactionPlan;
+  compactionBlockedBy?: CompactionBlock;
+  lastLevel: boolean;
   notices: ContextNotice[];
   loadedInstructions: LoadedInstruction[];
   loadedMemoryIds: string[];

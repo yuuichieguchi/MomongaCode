@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { allowedDropKeys } from '../src/dialect-model/primitives.ts';
-import { checkCase, emptyStats, isDeletionOf, type CheckClass } from '../src/dialect-model/harness.ts';
-import type { Definition, Rule } from '../src/dialect-model/definition.ts';
-import { render, type Rendered } from '../src/dialect-model/render.ts';
-import type { Site } from '../src/dialect-model/selector.ts';
-import { BUILTINS } from '../src/dialect-model/definition.ts';
+import { allowedDropKeys } from './support/dialect-model/primitives.ts';
+import { checkCase, emptyStats, isDeletionOf, type CheckClass } from './support/dialect-model/harness.ts';
+import type { Definition, Rule } from './support/dialect-model/definition.ts';
+import { render, type Rendered } from './support/dialect-model/render.ts';
+import type { Site } from './support/dialect-model/selector.ts';
+import { BUILTINS } from './support/dialect-model/definition.ts';
 import { productRenderer } from './dialect-product.test.ts';
 
 const ANY = [{ kinds: ['any'] }];

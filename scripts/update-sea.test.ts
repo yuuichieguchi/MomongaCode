@@ -13,7 +13,7 @@ import { buildSea } from './sea.ts';
 import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { RUNS_MACOS_ARM64_ARTIFACTS } from './support/host.ts';
-import { productTestEnv } from '@momonga/testkit';
+import { modelSettings, productTestEnv } from '@momonga/testkit';
 
 const FIXTURE_REPO = 'acme/momonga';
 const PINNED_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl';
@@ -248,10 +248,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('self-update on built single execut
       JSON.stringify({
         autoUpdates: false,
         sandbox: 'none',
-        models: {
-          aliases: { default: ['up'] },
-          targets: { up: { adapter: 'chat-completions', provider: 'fake', model: 'm', baseUrl: 'http://127.0.0.1:9', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } } },
-        },
+        ...modelSettings({ start: 'fake/m', models: [{ provider: 'fake', id: 'm', baseUrl: 'http://127.0.0.1:9', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }] }),
       }),
     );
     publishV2();

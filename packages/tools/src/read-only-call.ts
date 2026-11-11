@@ -2,14 +2,11 @@ import { GIT_APPROVED_SUBCOMMANDS } from '@momonga/policy';
 import type { NetworkScope } from '@momonga/foundation';
 import type { SandboxNetwork, SandboxPolicy } from '@momonga/sandbox';
 import type { ToolContext } from './types.ts';
-import { DESTINATION_PLACE, GIT_PROTOCOLS, overrideOf, overridesOf } from './git-config-table.ts';
-import type { ConfigEntry } from './git-config-table.ts';
-
-const PROGRAM_KEYS: readonly ConfigEntry[] = overridesOf(['program']);
+import { isHttpDestination, overridesOf, productSetEntriesOf } from './git-config-table.ts';
+import type { ConfigEntry, UrlRewrite } from './git-config-table.ts';
 
 const READ_ONLY_GIT_CONFIG: readonly ConfigEntry[] = [
-  ...PROGRAM_KEYS,
-  ...overridesOf(['protocol']),
+  ...overridesOf(['program', 'protocol']),
   ...GIT_APPROVED_SUBCOMMANDS.map((subcommand): ConfigEntry => [`pager.${subcommand}`, 'false']),
 ];
 
@@ -37,43 +34,9 @@ const CLEARED_GIT_VARIABLES: ReadonlySet<string> = new Set([
 
 const INHERITED_CONFIG_VARIABLE = /^GIT_CONFIG_(COUNT|KEY_[0-9]+|VALUE_[0-9]+)$/;
 
-const LOCAL_DESTINATION = /^(file:\/\/|\/)/;
-const URL_SCHEME = /^([a-z][a-z0-9+.-]*):\/\//i;
-const HTTP_PROTOCOLS: readonly string[] = ['http', 'https'];
-
-const protocolOf = (destination: string): string | undefined => (LOCAL_DESTINATION.test(destination) ? 'file' : URL_SCHEME.exec(destination)?.[1]?.toLowerCase());
-
-export const isHttpDestination = (destination: string): boolean => HTTP_PROTOCOLS.includes(protocolOf(destination) ?? '');
-
 const httpDestinationsOf = (destinations: readonly string[]): string[] => destinations.filter(isHttpDestination);
 
-const forEachDestination = (entries: readonly ConfigEntry[], destinations: readonly string[]): ConfigEntry[] =>
-  entries.flatMap(([key, value]): ConfigEntry[] => (key.includes(DESTINATION_PLACE) ? httpDestinationsOf(destinations).map((destination): ConfigEntry => [key.replace(DESTINATION_PLACE, destination), value]) : [[key, value]]));
-
-const ALLOWED = 'always';
-
-const protocolEntries = (destinations: readonly string[]): ConfigEntry[] => {
-  const needed = new Set(destinations.map(protocolOf));
-  return GIT_PROTOCOLS.map((name): ConfigEntry => {
-    const [key, value] = overrideOf(`protocol.${name}.allow`);
-    return [key, needed.has(name) ? ALLOWED : value];
-  });
-};
-
-export type UrlRewrite = { readonly from: string; readonly to: string };
-
-const REWRITE_KINDS: readonly string[] = ['insteadOf', 'pushInsteadOf'];
-
-const rewriteEntries = (rewrites: readonly UrlRewrite[]): ConfigEntry[] => rewrites.flatMap(({ from, to }) => REWRITE_KINDS.map((kind): ConfigEntry => [`url.${to}.${kind}`, from]));
-
-const keptAsWritten = (destinations: readonly string[]): UrlRewrite[] => httpDestinationsOf(destinations).map((destination) => ({ from: destination, to: destination }));
-
-const networkConfig = (destinations: readonly string[], rewrites: readonly UrlRewrite[]): ConfigEntry[] => [
-  ...PROGRAM_KEYS,
-  ...protocolEntries(destinations),
-  ...forEachDestination(overridesOf(['transport', 'recursion', 'credential']), destinations),
-  ...rewriteEntries([...keptAsWritten(destinations), ...rewrites]),
-];
+const networkConfig = (destinations: readonly string[], rewrites: readonly UrlRewrite[]): ConfigEntry[] => productSetEntriesOf(destinations, rewrites).map(({ entry }) => entry);
 
 export type GitEnvironmentRequest =
   | { readonly mode: 'read' }

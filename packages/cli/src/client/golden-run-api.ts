@@ -1,5 +1,6 @@
 import type { PublicRunEvent } from '@momonga/protocol';
 import type { EvalRunApi } from '@momonga/eval';
+import { recordedCostsOf } from './recorded-costs.ts';
 import { DaemonMoved } from './runtime-client.ts';
 import type { RuntimeClient } from './runtime-client.ts';
 
@@ -28,7 +29,7 @@ const pause = async (settle: ReflectionSettle): Promise<void> => {
 };
 
 export const goldenRunApi = (
-  client: Pick<RuntimeClient, 'createSession' | 'createRun' | 'streamEvents' | 'getRun' | 'runReflection' | 'runAnsweredBy' | 'resolveApproval' | 'cancel'>,
+  client: Pick<RuntimeClient, 'createSession' | 'createRun' | 'streamEvents' | 'getRun' | 'runReflection' | 'runAnsweredBy' | 'reportCost' | 'resolveApproval' | 'cancel'>,
   sessionEnv: Readonly<Record<string, string>> | undefined,
   settle: ReflectionSettle,
 ): EvalRunApi => {
@@ -74,6 +75,7 @@ export const goldenRunApi = (
     }),
     events,
     answeredBy: async (runId) => (await client.runAnsweredBy(runId)).answeredBy,
+    costs: (runIds) => recordedCostsOf(client, runIds),
     getRun: async (runId) => {
       const run = await client.getRun(runId);
       const model = pinnedModels.get(run.sessionId);

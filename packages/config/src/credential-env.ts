@@ -19,10 +19,10 @@ export const looksLikeCredentialName = (name: string): boolean => {
 
 export const isCredentialEnvName = looksLikeCredentialName;
 
-export type CredentialNaming = { models: Pick<ResolvedModels, 'connections'>; forges?: readonly { credentialEnv?: string }[] | undefined };
+export type CredentialNaming = { models: Pick<ResolvedModels, 'connections'>; forges?: readonly { credential: { env: string } | { secret: string } }[] | undefined };
 
 export const forgeCredentialNamesOf = (settings: Pick<CredentialNaming, 'forges'>): string[] =>
-  [...new Set((settings.forges ?? []).flatMap((forge) => (forge.credentialEnv === undefined ? [] : [forge.credentialEnv])))].sort();
+  [...new Set((settings.forges ?? []).flatMap((forge) => ('env' in forge.credential ? [forge.credential.env] : [])))].sort();
 
 export const credentialNamesOf = (settings: CredentialNaming): string[] => [...new Set([...credentialEnvNames(settings.models), ...forgeCredentialNamesOf(settings)])].sort();
 

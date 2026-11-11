@@ -137,6 +137,9 @@ describe('protocol/src/trace-attributes.ts', () => {
       role: 'momonga.role',
       failureMessage: 'momonga.failure_message',
       fallbackCauses: 'momonga.fallback_causes',
+      route: 'momonga.route',
+      errorCode: 'momonga.error_code',
+      routeProxy: 'momonga.route.proxy',
       toolBackendSource: 'tool.backend.source',
       toolBackendVersion: 'tool.backend.version',
     });

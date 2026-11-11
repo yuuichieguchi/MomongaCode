@@ -126,3 +126,22 @@ describe('a window that holds Bash and exactly one more tool', () => {
     expect(namesOf(built.tools)).toEqual(['Alpha', 'KillBash', 'BashOutput', 'Bash']);
   });
 });
+
+describe('the selection stops at the first tool that does not fit', () => {
+  it('keeps no later tool once a tool by rank is left out, though a later one would fit', async () => {
+    const heavyBash = IN_RANK_ORDER.map((tool) => (tool.name === 'Bash' ? ranked('Bash', 1, 20_000) : tool));
+    const built = await buildWith([...heavyBash].reverse(), 1_536);
+    expect(namesOf(built.tools)).toEqual(['Read']);
+    const notice = droppedNoticeOf(built);
+    for (const name of ['Bash', 'Alpha', 'Beta', 'Gamma', 'Delta']) expect(notice).toContain(name);
+  });
+
+  it('names the model, its declared window and what to do, and carries the model and window as its key', async () => {
+    const heavyBash = IN_RANK_ORDER.map((tool) => (tool.name === 'Bash' ? ranked('Bash', 1, 20_000) : tool));
+    const built = await buildWith(heavyBash, 1_536);
+    const notice = built.notices.find((entry) => entry.code === 'tools_dropped');
+    expect(notice?.message).toContain('the declared context window of test-model (1536 tokens)');
+    expect(notice?.message).toContain('raise the declared context window of that model, or shorten the instructions');
+    expect(notice?.key).toBe(JSON.stringify({ contextWindow: 1536, model: 'test-model' }));
+  });
+});

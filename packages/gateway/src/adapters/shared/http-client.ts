@@ -1,6 +1,7 @@
 import { request } from 'undici';
-import { createOutboundDispatcher, createUdsClient, fixedSocket } from '@momonga/foundation';
-import type { OutboundNetwork } from '@momonga/foundation';
+import { createOutboundDispatcher, createUdsClient, fixedSocket, routeOf } from '@momonga/foundation';
+import type { OutboundNetwork, Route } from '@momonga/foundation';
+import type { AdapterContext, UpstreamRoute } from '@momonga/protocol';
 import type { GatewayTimers } from '../../types.ts';
 
 export type UpstreamEndpoint = { kind: 'unix'; socketPath: string } | { kind: 'tcp'; baseUrl: string; network: OutboundNetwork };
@@ -26,6 +27,14 @@ export type CompletionPost = {
   signal: AbortSignal;
   subpath?: string;
   streamed?: true;
+  onRoute?: (route: UpstreamRoute) => void;
+};
+
+export const routeReportOf = (ctx: Pick<AdapterContext, 'route'>): Pick<CompletionPost, 'onRoute'> => (ctx.route === undefined ? {} : { onRoute: ctx.route });
+
+const upstreamRouteOf = (route: Route): UpstreamRoute => {
+  if (route.kind === 'proxy' || route.kind === 'unsupported') return { kind: route.kind, proxy: route.display };
+  return { kind: route.kind };
 };
 
 const STREAMED_BODY_TIMEOUT_MS = 0;
@@ -47,8 +56,10 @@ const lowercased = (headers: Record<string, string | string[] | undefined>): Rec
 const unixClient = (socketPath: string, route: EndpointRoute, liveness: UpstreamLiveness): EndpointClient => {
   const client = createUdsClient(fixedSocket(socketPath), { headersTimeoutMs: liveness.headersTimeoutMs, bodyTimeoutMs: liveness.idleTimeoutMs });
   return {
-    post: ({ subpath, streamed, ...options }) =>
-      client.request({ method: 'POST', path: `${route.unixPath}${subpath ?? ''}`, ...options, ...(streamed === undefined ? {} : { bodyTimeoutMs: STREAMED_BODY_TIMEOUT_MS }) }),
+    post: ({ subpath, streamed, onRoute, ...options }) => {
+      onRoute?.({ kind: 'direct' });
+      return client.request({ method: 'POST', path: `${route.unixPath}${subpath ?? ''}`, ...options, ...(streamed === undefined ? {} : { bodyTimeoutMs: STREAMED_BODY_TIMEOUT_MS }) });
+    },
     close: () => client.close(),
   };
 };
@@ -64,7 +75,9 @@ const tcpClient = (endpoint: Extract<UpstreamEndpoint, { kind: 'tcp' }>, route: 
   let closing: Promise<void> | undefined;
   return {
     post: async (options) => {
-      const response = await request(urlFor(options.subpath), {
+      const destination = urlFor(options.subpath);
+      options.onRoute?.(upstreamRouteOf(routeOf(destination, endpoint.network.config)));
+      const response = await request(destination, {
         dispatcher: agent,
         method: 'POST',
         headers: options.headers,

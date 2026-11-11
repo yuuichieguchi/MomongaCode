@@ -49,7 +49,7 @@ const prepared = async (layer: Layer, allow: string): Promise<RuntimeFixture> =>
 };
 
 const ruleTexts = async (f: RuntimeFixture, session: ReturnType<typeof createSession>): Promise<string[]> =>
-  (await f.composition.settings.rules(session)).map((rule) => rule.text);
+  (await f.composition.settings.rules(session, new AbortController().signal)).map((rule) => rule.text);
 
 describe.each(LAYERS)('one rule for the $name settings file (SettingsHealth)', (layer) => {
   it('NoRunFails, ReadsValid: an in-run read after the file broke returns the last good copy and does not throw', async () => {
@@ -60,8 +60,8 @@ describe.each(LAYERS)('one rule for the $name settings file (SettingsHealth)', (
     breakFile(layer.fileOf(f));
 
     expect(await ruleTexts(f, session)).toEqual(['Bash(ls)']);
-    expect(await f.composition.settings.hooks(session)).toEqual({});
-    expect((await f.composition.settings.memory({ cwd: f.temp.project })).forgetAfterDays).toBe(30);
+    expect(await f.composition.settings.hooks(session, new AbortController().signal)).toEqual({});
+    expect((await f.composition.settings.memory({ cwd: f.temp.project }, new AbortController().signal)).forgetAfterDays).toBe(30);
   });
 
   it('AdmittedOnlyWhenValid, RefusalNamesFile: admission while the file is broken is refused with a ConfigError naming the file', async () => {
@@ -120,6 +120,6 @@ describe('the memory upkeep pass has no Run and never throws on a broken file (S
     expect('error' in (await f.cache.load(signalNever()))).toBe(true);
 
     expect(f.composition.takeUserSnapshot().settings.memory.forgetAfterDays).toBe(12);
-    expect((await f.composition.settings.memory({ cwd: f.temp.project })).forgetAfterDays).toBe(12);
+    expect((await f.composition.settings.memory({ cwd: f.temp.project }, new AbortController().signal)).forgetAfterDays).toBe(12);
   });
 });

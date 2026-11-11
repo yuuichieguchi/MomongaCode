@@ -1,6 +1,6 @@
 import { DEFAULT_MAX_MESSAGE_BYTES, MessageTooLargeError, RequestError } from '@agentclientprotocol/sdk';
 import type { AnyMessage } from '@agentclientprotocol/sdk';
-import { isRecord } from '@momonga/foundation';
+import { JsonDepthError, isRecord, parseOutsideJson } from '@momonga/foundation';
 import type { AcpStdio } from '../ports.ts';
 import type { MessageStream } from './handover.ts';
 
@@ -101,9 +101,9 @@ export const carriedStream = (stdio: AcpStdio, carried: Uint8Array): CarriedStre
     if (text === '') return undefined;
     let parsed: unknown;
     try {
-      parsed = JSON.parse(text);
-    } catch {
-      await write(refusalOf(RequestError.parseError()));
+      parsed = parseOutsideJson(text);
+    } catch (error) {
+      await write(refusalOf(error instanceof JsonDepthError ? RequestError.parseError(undefined, error.message) : RequestError.parseError()));
       return undefined;
     }
     if (Array.isArray(parsed)) {

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONTENT_RETENTION_DAYS } from '@momonga/config';
-import { proofArith } from '../../src/proofs/arith.ts';
-import type { ProofArith, ProofInt } from '../../src/proofs/arith.ts';
-import { expectRefuted, prove } from '../../src/proofs/prove.ts';
+import { proofArith } from '../support/proofs/arith.ts';
+import type { ProofArith, ProofInt } from '../support/proofs/arith.ts';
+import { expectRefuted, prove } from '../support/proofs/prove.ts';
 import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, useZ3 } from '../harness.ts';
 
 const DAY_MS = 86_400_000;

@@ -1,13 +1,13 @@
 import { defineProductSchema, isRecord, parseOutsideJson, productErrorsText } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
-import { MEMORY_ORIGINS, REFLECTION_JOB_STATES, RUN_API_SCHEMAS, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
+import { MEMORY_ORIGINS, REFLECTION_JOB_STATES, REPORT_SCHEMAS, RUN_API_SCHEMAS, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import { validateResolvedPolicy } from './context-policy.ts';
 import type { PolicyOverlay } from './context-policy.ts';
 import type { CheckResult, TrialGrade } from './oracle-grade.ts';
 import { RETIRED_POLICY_REASON, NEW_PAIR_COMMANDS } from './retired-formats.ts';
-import type { ContextChargeView, MemoryOrigin, PublicRunEvent, ReflectionJobState, RunStatus, StopReason, Stored } from '@momonga/protocol';
+import type { ContextChargeView, MemoryOrigin, PublicRunEvent, ReflectionJobState, ReportCostPage, RunCostView, RunStatus, StopReason, Stored } from '@momonga/protocol';
 
-export const TRANSCRIPT_FORMAT = 'momonga-transcript/8';
+export const TRANSCRIPT_FORMAT = 'momonga-transcript/9';
 const RETIRED_TRANSCRIPT_FORMATS: Readonly<Record<string, string>> = {
   'momonga-transcript/1': 'subagent runs',
   'momonga-transcript/2': 'the side effect of a tool call',
@@ -16,6 +16,7 @@ const RETIRED_TRANSCRIPT_FORMATS: Readonly<Record<string, string>> = {
   'momonga-transcript/5': 'an answerer whose adapter and model are unknown (a paid answer that recorded no answering target)',
   'momonga-transcript/6': 'whether the upstream reported the cache reads of each call',
   'momonga-transcript/7': 'the model each session used (it was recorded as an alias name)',
+  'momonga-transcript/8': 'the cost record of their runs',
 };
 
 export type TranscriptRun = {
@@ -43,6 +44,7 @@ export type Transcript = {
   run: TranscriptRun;
   events: PublicRunEvent[];
   children: TranscriptChild[];
+  costs: RunCostView[];
   policy: PolicyOverlay | null;
   codeDigest: string | null;
   answeredBy?: Answerer[];
@@ -160,6 +162,14 @@ const reflectionOf = (value: unknown, where: string): TranscriptReflection => {
   };
 };
 
+const validateCostPage: ProductValidator<ReportCostPage> = defineProductSchema('report/ReportCostPage', REPORT_SCHEMAS.ReportCostPage);
+
+const costsOf = (value: unknown, where: string): RunCostView[] => {
+  const verdict = validateCostPage({ costs: value });
+  if (!verdict.valid) throw new TranscriptError(`${where}: costs must be the cost record of the runs: ${productErrorsText(verdict.errors, 'costs')}`);
+  return verdict.value.costs;
+};
+
 const answeredByOf = (value: unknown, where: string): Answerer[] => {
   if (!Array.isArray(value)) throw new TranscriptError(`${where}: answeredBy must be a list`);
   return value.map((entry): Answerer => {
@@ -215,6 +225,7 @@ export const encodeTranscript = (transcript: Transcript): string => {
     runIndex: transcript.runIndex,
     run: transcript.run,
     children: transcript.children.map(({ runId, agent }) => ({ runId, agent })),
+    costs: transcript.costs,
     policy: transcript.policy,
     codeDigest: transcript.codeDigest,
     ...(transcript.answeredBy === undefined ? {} : { answeredBy: transcript.answeredBy }),
@@ -263,6 +274,7 @@ export const decodeTranscript = (text: string, source: string): Transcript => {
   if (!isNonNegativeInteger(runIndex)) throw new TranscriptError(`${source}:1: runIndex must be a non-negative integer`);
   const run = runOf(header['run'], `${source}:1`);
   const children = childrenOf(header['children'], `${source}:1`);
+  const costs = costsOf(header['costs'], `${source}:1`);
   if ((header['policy'] === null) !== (header['codeDigest'] === null)) throw new TranscriptError(`${source}:1: policy and codeDigest are both null or both recorded`);
   const policy = policyOf(header['policy'], `${source}:1`);
   const codeDigest = codeDigestOf(header['codeDigest'], `${source}:1`);
@@ -294,6 +306,7 @@ export const decodeTranscript = (text: string, source: string): Transcript => {
     run,
     events,
     children,
+    costs,
     policy,
     codeDigest,
     ...(header['answeredBy'] === undefined ? {} : { answeredBy: answeredByOf(header['answeredBy'], `${source}:1`) }),

@@ -46,7 +46,7 @@ export type WorkerOptions = {
   systemPrompt?: (context: SystemPromptContext) => string;
   home: string;
   blobs: WorkerBlobs;
-  instructionReader: InstructionReader;
+  instructionReaderFor(signal: AbortSignal): InstructionReader;
   onError?: (error: unknown, context: WorkerErrorContext) => void;
   onContextOverflow?: (error: ContextOverflowError) => void;
   onFatal: (error: Error) => void;

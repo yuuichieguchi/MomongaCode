@@ -6,7 +6,7 @@ import { computeFileRules, decide, parseRule } from '@momonga/policy';
 import type { PermissionRule, PermissionSubject, PolicyTool, RuleEffect } from '@momonga/policy';
 import { TEST_SEARCH_PATH, fakeFs, isWritableFor, makeLayout, touch } from './helpers.ts';
 import type { Layout } from './helpers.ts';
-import { testProbes } from '@momonga/testkit';
+import { testProbes, testSecretLocations } from '@momonga/testkit';
 
 const TOOLS: Record<string, PolicyTool> = {
   Read: { name: 'Read', kind: 'read', sideEffect: 'read_only' },
@@ -37,7 +37,7 @@ const decideOn = async (fx: Fixture, specs: readonly RuleSpec[], tool: keyof typ
   const roots = [fx.project, fx.extra];
   const access = tool === 'Write' ? 'write' : 'read';
   const subject: PermissionSubject = { kind: 'path', tool, paths: [target], access };
-  const decision = await decide({
+  const decision = await decide({ secretLocations: testSecretLocations(fx.home),
     tool: TOOLS[tool] as PolicyTool,
     subject,
     mode,

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { ABANDON_KILL_GRACE_MS, ABORT_SETTLE_LIMIT_MS, NO_NETWORK, UNMEASURED_CAPABILITY, canonicalJson, comparableFromParts, containsByComponents, computeBackoff, createMarker, describeNetworkScope, displayToolPath, enforcedNetworkScope, fileRuleFingerprint, findAsync, hostPaths, systemWaitTiming, lexicallyWithin, mapAsync, momongaLayout, networkScopeOfRequest, reapMarkedProcessesWithReport, recordMarkerGroup, settledOrAborted, sha256Hex, someAsync, writableAreaOf, writableCheckOf } from '@momonga/foundation';
+import { ABANDON_KILL_GRACE_MS, ABORT_SETTLE_LIMIT_MS, NO_NETWORK, UNMEASURED_CAPABILITY, canonicalJson, comparableFromParts, containsByComponents, computeBackoff, createMarker, describeNetworkScope, displayToolPath, enforcedNetworkScope, fileRuleFingerprint, findAsync, hostPaths, systemWaitTiming, lexicallyWithin, mapAsync, momongaLayout, networkScopeOfRequest, reapMarkedProcessesWithReport, recordMarkerGroup, settledOrAborted, sha256Hex, someAsync, writableAreaOf, writableCheckOf, standardSecretLocations } from '@momonga/foundation';
 import { createMarkerGuard } from './marker-guard.ts';
 import { createMarkerOwners } from './marker-owners.ts';
 import type { MarkerOwners } from './marker-owners.ts';
@@ -340,7 +340,7 @@ const requireResolvable = async (files: Pick<FileSystem, 'lstat'>, entry: string
 
 type AccessFacts = Pick<ExecutionBatchInput, 'sandboxPolicy' | 'home' | 'tmpDir' | 'signal'>;
 
-export type GuardedLayout = Pick<MomongaPaths, 'root' | 'keychains'>;
+export type GuardedLayout = Pick<MomongaPaths, 'home' | 'root' | 'keychains'>;
 
 type WriteGuard = (subject: PermissionSubject, cwd: string) => Promise<string | undefined>;
 
@@ -769,6 +769,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       fs: settleGlobs(options.fs, globs, batch.signal),
       searchPath: batch.env['PATH'],
       isWritable: access.isWritable,
+      secretLocations: standardSecretLocations(options.layout),
       ...(batch.sandboxNetwork === undefined ? {} : { sandboxNetwork: batch.sandboxNetwork }),
       ...(batch.mandate === undefined ? {} : { mandate: true as const, supersededForms: batch.mandate.supersededForms, coveredPrograms: batch.mandate.coveredPrograms }),
     });

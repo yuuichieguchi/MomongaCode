@@ -30,6 +30,7 @@ const completedRun = (id: string, step: number, totalTokens: number): Transcript
 });
 
 export const finalAnswerTranscript = (caseId: string, runIndex: number): Transcript => ({
+  costs: [],
   caseId,
   runIndex,
   run: completedRun(`run-${caseId}-${runIndex}`, 1, 12),
@@ -39,6 +40,7 @@ export const finalAnswerTranscript = (caseId: string, runIndex: number): Transcr
 });
 
 export const toolRoundTripTranscript = (caseId: string, runIndex: number): Transcript => ({
+  costs: [],
   caseId,
   runIndex,
   run: completedRun(`run-${caseId}-${runIndex}`, 2, 59),
@@ -48,6 +50,7 @@ export const toolRoundTripTranscript = (caseId: string, runIndex: number): Trans
 });
 
 export const approvalTranscript = (caseId: string, runIndex: number): Transcript => ({
+  costs: [],
   caseId,
   runIndex,
   run: completedRun(`run-${caseId}-${runIndex}`, 2, 48),
@@ -93,6 +96,7 @@ export type ScriptedChild = { runId: string; agent: string; calls: readonly Scri
 export const callsTranscript = (caseId: string, calls: readonly ScriptedCall[], children: readonly ScriptedChild[] = []): Transcript => ({
   caseId,
   runIndex: 0,
+  costs: [],
   run: completedRun(`run-${caseId}`, 2, 40),
   events: publicEventsOf(calls.flatMap(payloadsOfCall)),
   children: children.map((child): TranscriptChild => ({ runId: child.runId, agent: child.agent, events: publicEventsOf(child.calls.flatMap(payloadsOfCall)) })),

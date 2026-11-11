@@ -217,15 +217,15 @@ export const decodeReliabilityReport = (text: string): ReliabilityReport => {
   if (kind === 'real' ? harness !== null : harness === null || harness === undefined) {
     return fail('report.harness', kind === 'real' ? 'null for a real report' : `present for a ${kind} report`);
   }
-  const rowsOnlyFor = (key: string, owner: ReportKindName): void => {
-    if (fields[key] !== undefined && kind !== owner) fail(`report.${key}`, `absent from a ${kind} report`);
+  const rowsOnlyFor = (key: string, ...owners: ReportKindName[]): void => {
+    if (fields[key] !== undefined && !owners.includes(kind)) fail(`report.${key}`, `absent from a ${kind} report`);
   };
   rowsOnlyFor('tasks', 'benchmark');
   rowsOnlyFor('scenarios', 'injection');
   rowsOnlyFor('witnessed', 'injection');
   rowsOnlyFor('population', 'injection');
   rowsOnlyFor('period', 'real');
-  rowsOnlyFor('cost', 'real');
+  rowsOnlyFor('cost', 'real', 'benchmark');
   return {
     format: RELIABILITY_FORMAT,
     kind,

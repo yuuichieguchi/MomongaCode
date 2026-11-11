@@ -9,7 +9,7 @@ import {
   MIN_MARGIN,
   OUTPUT_RESERVE,
 } from '@momonga/protocol';
-import type { ErrorBound, ProofArith, ProofBool, ProofInt } from '../../src/proofs/arith.ts';
+import type { ErrorBound, ProofArith, ProofBool, ProofInt } from '../support/proofs/arith.ts';
 
 export type Ratio = { readonly num: number; readonly den: number };
 

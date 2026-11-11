@@ -40,10 +40,15 @@ describe('UpdateSwitch.tla and the gateway agree', () => {
 
   it('a new call starts only while serving, and the code refuses it while retiring before anything is sent upstream', () => {
     expect(definitionOf('GwCallStart')).toContain('gw[g] = "serving"');
-    const app = sourceOf('gateway', 'src', 'server', 'app.ts');
-    for (const route of ['/v1/responses', '/v1/responses/compact', '/v1/momonga/count_tokens']) {
-      expect(app).toContain(`app.post('${route}', async (context) => {\n    refuseWhileRetiring();`);
-    }
+    const gateway = sourceOf('gateway', 'src', 'server', 'gateway.ts');
+    expect(gateway).toContain("const admitNewCall = (): void => {\n      if (isRetiring()) throw generationRetiredError();\n    };");
+    expect(gateway).toContain('createResponsesService(services, validator, tracker, admitNewCall)');
+    expect(gateway).toContain('createUnaryService(services, validator, tracker, admitNewCall)');
+    expect(sourceOf('gateway', 'src', 'core', 'responses-service.ts')).toContain('return { stream, events: replay(found.frames) };\n      }\n    }\n    admitNewCall();');
+    const unary = sourceOf('gateway', 'src', 'core', 'unary.ts');
+    expect(unary).toContain('else return Promise.resolve(stored.resource);\n    }\n    admitNewCall();');
+    expect(unary).toContain('countTokens: (rawBody, signal, deadlineHeader) => {\n      admitNewCall();');
+    expect(unary).toContain('if (key !== undefined) return compactKeyed(rawBody, key, signal, deadlineHeader, trace);\n      admitNewCall();');
   });
 
   it('GwExit needs no open call and no open flight, and the code asks to leave only when it holds neither', () => {
@@ -63,7 +68,7 @@ describe('UpdateSwitch.tla and the gateway agree', () => {
 
   it('the gateway and the runtime tick by the one constant of foundation', () => {
     expect(SWEEP_INTERVAL_MS).toBe(1000);
-    expect(sourceOf('gateway', 'src', 'process.ts')).toMatch(/\n {2}SWEEP_INTERVAL_MS,\n\} from '@momonga\/foundation';/);
+    expect(sourceOf('gateway', 'src', 'process.ts')).toMatch(/import \{[^}]*\bSWEEP_INTERVAL_MS\b[^}]*\} from '@momonga\/foundation';/);
     expect(sourceOf('gateway', 'src', 'process.ts')).toContain('}, SWEEP_INTERVAL_MS);');
     expect(sourceOf('runtime', 'src', 'service', 'service.ts')).toMatch(/import \{[^}]*\bSWEEP_INTERVAL_MS\b[^}]*\} from '@momonga\/foundation';/);
   });

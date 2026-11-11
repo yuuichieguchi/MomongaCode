@@ -111,7 +111,7 @@ describe('gitpr: a runtime SIGKILL at a step of a git or pull request operation'
     const stack = await startStack({
       home,
       deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY },
-      settings: { forges: [{ id: 'local', descriptor: 'github', host: forge.host, apiBaseUrl: forge.origin, credentialSecret: FORGE_SECRET }] },
+      settings: { forges: [{ id: 'local', descriptor: 'github', hosts: [forge.host], apiBaseUrl: forge.origin, credential: { secret: FORGE_SECRET } }] },
       script: loadThen('PullRequestCreate', { head: HEAD_BRANCH, base: 'main', title: 'Add x', body: 'Adds x', headSha: head }),
     });
     const runtime = createRuntimeClient(home);

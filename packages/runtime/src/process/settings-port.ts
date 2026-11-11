@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { appendPermissionRule, autoFitKeyOf, readClassifierProbeKeys, ConfigError, systemFileLockPorts, credentialNamesOf, loadSettings, stripCredentialEnv } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, KeptLayers, LoadSettingsResult, ResolvedSettings, SettingsUse, TrustOracle, UserLayer, UserSettingsCache } from '@momonga/config';
-import { createBinaryHashCache, createHeldHostReadings, createHostExec } from '@momonga/foundation';
+import { createBinaryHashCache, createHeldHostReadings, createHostExec, settledOrAborted } from '@momonga/foundation';
 import type { RuntimeStore, Session } from '@momonga/store';
 import type { SettingsPort, ToolEnv } from '../ports.ts';
 import type { SessionCreateSettings } from '../service/app.ts';
@@ -20,7 +20,6 @@ export type SettingsCompositionOptions = {
   cache: UserSettingsCache;
   store: Pick<RuntimeStore, 'trust'>;
   lock: KernelLockMechanism;
-  signal: AbortSignal;
 };
 
 export type SettingsComposition = {
@@ -32,12 +31,12 @@ export type SettingsComposition = {
   takeUserSnapshot(): UserSnapshot;
   userSnapshot(signal: AbortSignal): Promise<UserSnapshot>;
   admitUserSnapshot(signal: AbortSignal): Promise<UserSnapshot>;
-  loadSessionSettings(cwd: string, snapshot: UserSnapshot): Promise<LoadSettingsResult>;
+  loadSessionSettings(cwd: string, snapshot: UserSnapshot, signal: AbortSignal): Promise<LoadSettingsResult>;
   trustOracle: TrustOracle;
   admitted<T>(admit: () => Promise<T> | T): Promise<T>;
 };
 
-export const createSettingsComposition = ({ home, platform, cache, store, lock, signal: lifetime }: SettingsCompositionOptions): SettingsComposition => {
+export const createSettingsComposition = ({ home, platform, cache, store, lock }: SettingsCompositionOptions): SettingsComposition => {
   if (!path.isAbsolute(home)) throw new TypeError(`home must be an absolute path, got ${home}`);
 
   const trustOracle: TrustOracle = { isTrusted: async (dir, signal) => (await store.trust.decisionAsked(dir, signal)).decision === 'trusted' };
@@ -79,9 +78,9 @@ export const createSettingsComposition = ({ home, platform, cache, store, lock, 
   const settingsFor = (cwd: string, snapshot: UserSnapshot, use: SettingsUse, signal: AbortSignal): Promise<LoadSettingsResult> =>
     loadSettings({ home, projectDir: cwd, cli: {}, trust: trustOracle, signal, user: snapshot.user, kept: keptLayers(use) });
 
-  const loadSessionSettings = (cwd: string, snapshot: UserSnapshot): Promise<LoadSettingsResult> => settingsFor(cwd, snapshot, 'read', lifetime);
+  const loadSessionSettings = (cwd: string, snapshot: UserSnapshot, signal: AbortSignal): Promise<LoadSettingsResult> => settledOrAborted(settingsFor(cwd, snapshot, 'read', signal), signal);
 
-  const currentSessionSettings = async (cwd: string): Promise<LoadSettingsResult> => loadSessionSettings(cwd, await userSnapshot(lifetime));
+  const currentSessionSettings = async (cwd: string, signal: AbortSignal): Promise<LoadSettingsResult> => loadSessionSettings(cwd, await settledOrAborted(userSnapshot(signal), signal), signal);
 
   const sessionSettingsFrom = async (snapshot: UserSnapshot, loaded: LoadSettingsResult, signal: AbortSignal): Promise<SessionCreateSettings> => {
     const { permissions } = loaded.settings;
@@ -115,15 +114,15 @@ export const createSettingsComposition = ({ home, platform, cache, store, lock, 
   };
 
   const settings: SettingsPort = {
-    rules: async (session) => (await currentSessionSettings(session.cwd)).rules,
-    hooks: async (session) => (await currentSessionSettings(session.cwd)).settings.hooks,
-    verification: async (session) => (await currentSessionSettings(session.cwd)).settings.verification,
-    memory: async (target) => (await currentSessionSettings(target.cwd)).settings.memory,
-    context: async (session) => (await currentSessionSettings(session.cwd)).settings.context,
-    tools: async (session) => (await currentSessionSettings(session.cwd)).settings.tools,
+    rules: async (session, signal) => (await currentSessionSettings(session.cwd, signal)).rules,
+    hooks: async (session, signal) => (await currentSessionSettings(session.cwd, signal)).settings.hooks,
+    verification: async (session, signal) => (await currentSessionSettings(session.cwd, signal)).settings.verification,
+    memory: async (target, signal) => (await currentSessionSettings(target.cwd, signal)).settings.memory,
+    context: async (session, signal) => (await currentSessionSettings(session.cwd, signal)).settings.context,
+    tools: async (session, signal) => (await currentSessionSettings(session.cwd, signal)).settings.tools,
     autoModeClassifier: () => takeUserSnapshot().settings.autoMode?.classifier,
     appendRule: (session, { effect, rule }, signal) => appendPermissionRule({ lock, ports: systemFileLockPorts, home, projectDir: session.cwd, rule, effect, signal }),
-    trusted: async (session) => (await store.trust.decisionAsked(session.cwd, lifetime)).decision === 'trusted',
+    trusted: async (session, signal) => (await settledOrAborted(store.trust.decisionAsked(session.cwd, signal), signal)).decision === 'trusted',
   };
 
   return { settings, sessionCreateSettings, sessionReadSettings, keptLayers, envFor, takeUserSnapshot, userSnapshot, admitUserSnapshot, loadSessionSettings, trustOracle, admitted };

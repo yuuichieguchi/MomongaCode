@@ -328,6 +328,9 @@
       "packages/foundation/src/schema-reference-cycles.ts": {
         "target": 1
       },
+      "packages/foundation/src/secret-locations.ts": {
+        "gateway": 1
+      },
       "packages/foundation/src/secret-store.ts": {
         "gateway": 1,
         "target": 4
@@ -790,17 +793,8 @@
         "conversation": 1,
         "project": 3
       },
-      "packages/verify/src/dialect-model/primitives.ts": {
-        "target": 2
-      },
-      "packages/verify/src/dialect-model/seeds.ts": {
-        "target": 2
-      },
       "packages/verify/src/properties.ts": {
         "directory": 1
-      },
-      "packages/verify/src/secret-locations.ts": {
-        "gateway": 1
       },
       "packages/verify/src/verify.ts": {
         "directory": 1,

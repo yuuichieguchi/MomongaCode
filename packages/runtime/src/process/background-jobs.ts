@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { POLL_INTERVAL_MS, sleep, canonicalJson, claimRetry, commandMayStillRun, findHolders, groupAlive, groupPortOf, groupRecordOutcome, markerReapClockBoundMs, outlivedNotes, reapMarkedProcesses, recordMarkerGroup, reconcileProcessGroup, reportUninspectableOnce, sha256Hex } from '@momonga/foundation';
-import type { Clock, MarkerMode, MarkerState, ProcessGroupPort, Timing, RolePort, UninspectableProcess, UninspectableRegistry, ProcessInspector } from '@momonga/foundation';
+import type { Clock, FileSystem, MarkerMode, MarkerState, ProcessGroupPort, Timing, RolePort, UninspectableProcess, UninspectableRegistry, ProcessInspector } from '@momonga/foundation';
 import type { SandboxedProcess } from '@momonga/sandbox';
 import type { Job, JobResult, RuntimeStore } from '@momonga/store';
 import { RetiringYield, ToolExecutionError, createMarkerOwners, unnamedLivenessNotes } from '@momonga/tools';
@@ -27,6 +27,7 @@ export type BackgroundJobsOptions = {
   ownerAlive(ownerGeneration: number): Promise<boolean>;
   onSettled?: () => void;
   markerFiles: JobMarkerFiles;
+  files: FileSystem;
   inspector: ProcessInspector;
   owners?: MarkerOwners;
   killGraceMs: number;
@@ -123,7 +124,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
   const discardOutputFile = async (file: JobOutputFile, jobId: string): Promise<void> => {
     try {
       await file.close();
-      await removeJobOutputFile(file.path);
+      await removeJobOutputFile(options.files, file.path);
     } catch (error) {
       onWarning(`the output file of background job ${jobId} could not be removed: ${asError(error).message}`);
     }
@@ -261,7 +262,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     let output: JobResult['output'];
     if (job.outputPath !== undefined) {
       try {
-        const window = await readJobFileWindow(job.outputPath, 0, JOB_OUTPUT_WINDOW_BYTES);
+        const window = await readJobFileWindow(options.files, job.outputPath, 0, JOB_OUTPUT_WINDOW_BYTES);
         if (window !== undefined && window.bytes.length > 0) {
           output = { handle: (await store.blobs.put(window.bytes, { mediaType: 'text/plain', runId: job.runId })).handle, start: window.start, total: window.total };
         }
@@ -272,7 +273,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     store.jobs.finish(job.id, { status: 'unknown', ...(output === undefined ? {} : { output }) });
     settleRecord(job, { job: job.id, status: 'unknown' });
     if (job.outputPath !== undefined) {
-      await removeJobOutputFile(job.outputPath).catch((error: unknown) => onWarning(`the output file of background job ${job.id} could not be removed: ${asError(error).message}`));
+      await removeJobOutputFile(options.files, job.outputPath).catch((error: unknown) => onWarning(`the output file of background job ${job.id} could not be removed: ${asError(error).message}`));
     }
   };
 
@@ -304,8 +305,8 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     let fileFailure: ((code: string) => void) | undefined;
     let file: JobOutputFile;
     try {
-      if (store.jobs.get(jobId) === undefined) await removeLeftoverJobOutputFile(outputPath);
-      file = await openJobOutputFile({ path: outputPath, maxBytes: JOB_OUTPUT_FILE_MAX_BYTES, onFailure: (code) => fileFailure?.(code) });
+      if (store.jobs.get(jobId) === undefined) await removeLeftoverJobOutputFile(options.files, outputPath);
+      file = await openJobOutputFile(options.files, { path: outputPath, maxBytes: JOB_OUTPUT_FILE_MAX_BYTES, onFailure: (code) => fileFailure?.(code) });
     } catch (error) {
       throw new ToolExecutionError(`could not start the background job: its output file could not be created (${jobOutputFileErrorCode(error)})`);
     }
@@ -375,7 +376,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       return { text: window.bytes.subarray(begin - window.start).toString('utf8'), omitted: Math.max(0, window.start - from), total: window.total };
     }
     if (job.status === 'running' && job.outputPath !== undefined) {
-      const window = await readJobFileWindow(job.outputPath, from, JOB_OUTPUT_WINDOW_BYTES);
+      const window = await readJobFileWindow(options.files, job.outputPath, from, JOB_OUTPUT_WINDOW_BYTES);
       if (window !== undefined) return { text: window.bytes.toString('utf8'), omitted: Math.max(0, window.start - from), total: window.total };
       const reread = store.jobs.get(job.id);
       if (reread === undefined || reread.status === 'running') return { text: '', omitted: 0, total: job.readOffset };

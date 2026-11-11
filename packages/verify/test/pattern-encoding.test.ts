@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fileRuleBlocks, protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import type { PolicyFilesystem } from '@momonga/policy';
-import { hostFilesystemOf, NEVER_CANCELLED } from '@momonga/testkit';
+import { hostFilesystemOf, NEVER_CANCELLED, testSecretLocations } from '@momonga/testkit';
 import type { Witness } from '../src/decision-model.ts';
 import { buildQueryContext } from '../src/verify.ts';
 import { UnsupportedRegexError, parseRegexSource } from '../src/regex-source.ts';
@@ -56,7 +56,7 @@ const modelMatches = async (layout: Layout, specifier: string, fileSystem: Polic
   const [base] = rulesOf(layout, [['deny', `Read(${specifier})`]], 'user');
   const rule = { ...(base as NonNullable<typeof base>), ...(exceptions.length > 0 ? { exceptions } : {}) };
   const roots = [layout.project];
-  const context = await buildQueryContext(z3.engine().api, { signal: NEVER_CANCELLED,
+  const context = await buildQueryContext(z3.engine().api, { deniedLocations: testSecretLocations(layout.home), signal: NEVER_CANCELLED,
     rules: [rule],
     roots,
     mode: 'manual',

@@ -21,9 +21,9 @@ const pinnedConditionOf = (layer: Layer, condition: NonNullable<CompletionDeclar
   ...(condition.timeoutMs === undefined ? {} : { timeoutMs: condition.timeoutMs }),
 });
 
-export const completionPinFor = async (input: { run: Run; session: Session; settings: Pick<SettingsPort, 'verification'> }): Promise<CompletionPin> => {
-  const { run, session, settings } = input;
-  const standing = await settings.verification(session);
+export const completionPinFor = async (input: { run: Run; session: Session; settings: Pick<SettingsPort, 'verification'>; signal: AbortSignal }): Promise<CompletionPin> => {
+  const { run, session, settings, signal } = input;
+  const standing = await settings.verification(session, signal);
   const request = requestMandateOf(run);
   const profile = readAgentPin(run.pins)?.mandate;
   const layers: Layer[] = [

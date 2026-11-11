@@ -99,6 +99,7 @@ const setup = async (probes: Parameters<typeof createBackgroundJobs>[0]['probes'
     markerDir,
     ...jobGenerationOptions(root),
     markerFiles: createNodeJobMarkerFiles(),
+    files: nodeFileSystem,
     killGraceMs: 10,
     reapTiming: sleepDrivenTiming({ now: () => clock.now(), sleep: async () => undefined }),
     onWarning: (message) => warnings.push(message),
