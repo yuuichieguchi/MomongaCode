@@ -19,6 +19,7 @@ import { serverRegistryOf } from './server-registry.ts';
 import type { PlanProfiles, ResolvedModels } from './models.ts';
 import { localSettingsFile, pathExists, worktreeRootOf } from './local-settings.ts';
 import type { RuleOrigin } from './rule.ts';
+import { invalidSettingsMessage } from './schema-errors.ts';
 import { assertSettings, checkIssueWatch, KNOWN_SETTINGS_KEYS } from './settings.ts';
 import type { Settings } from './settings.ts';
 
@@ -64,7 +65,7 @@ const assertRipgrepSetting = (value: unknown, file: string): void => {
   if (typeof tools !== 'object' || tools === null || !Object.hasOwn(tools, 'ripgrep')) return;
   const ripgrep: unknown = (tools as Record<string, unknown>)['ripgrep'];
   if (typeof ripgrep === 'string' && (RIPGREP_NAMED_SETTINGS.includes(ripgrep) || path.isAbsolute(ripgrep))) return;
-  throw new ConfigError(`${file}: tools.ripgrep must be "bundled", "system" or an absolute path; got ${JSON.stringify(ripgrep)}`);
+  throw new ConfigError(invalidSettingsMessage(file, '/tools/ripgrep', `must be "bundled", "system" or an absolute path; got ${JSON.stringify(ripgrep)}`));
 };
 
 const USER_ONLY_MODES = ['bypassPermissions', 'auto'] as const;

@@ -69,7 +69,7 @@ describe('editSettings', () => {
     await expect(editSettings(placeOf(tree), 'user', { kind: 'set', path: ['tui', 'theme'], value: 'solarized' }, UNABORTED)).rejects.toThrow(
       `${file}: invalid settings at /tui/theme: must be one of auto, dark, light, dark-colorblind, light-colorblind; got "solarized"`,
     );
-    await expect(editSettings(placeOf(tree), 'user', { kind: 'set', path: ['tools', 'ripgrep'], value: 'rg' }, UNABORTED)).rejects.toThrow(`${file}: tools.ripgrep must be "bundled", "system" or an absolute path; got "rg"`);
+    await expect(editSettings(placeOf(tree), 'user', { kind: 'set', path: ['tools', 'ripgrep'], value: 'rg' }, UNABORTED)).rejects.toThrow(`${file}: invalid settings at /tools/ripgrep: must be "bundled", "system" or an absolute path; got "rg"`);
     expect(fs.existsSync(file)).toBe(false);
   });
 
