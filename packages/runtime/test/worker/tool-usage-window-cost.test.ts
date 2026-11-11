@@ -71,7 +71,7 @@ describe('the cost of the tool usage window at root run start (person item 9)', 
     let bodyBytes = 0;
     for (let index = 0; index < TOOL_USAGE_WINDOW_RUNS; index += 1) {
       env.clock.advance(1);
-      const run = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Past work', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
+      const run = await createdRun(await env.store.createRunAndEnqueue(env.session.id, { input: 'Past work', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
       const events = runEvents(env.clock.now());
       bodyBytes += events.reduce((sum, event) => sum + (event.type === 'model.requested' ? Buffer.byteLength(JSON.stringify(event.body)) : 0), 0);
       const claim = await env.seed(run.id, events, 'hold');

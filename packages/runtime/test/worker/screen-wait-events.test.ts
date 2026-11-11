@@ -44,7 +44,7 @@ describe('tool.permission.classifying: the event that backs the wait for the aut
   it('is written with the call id and the subject digest before the classifier is asked, and tool.permission.classified ends it', async () => {
     const { env, write } = await autoSetup();
     env.gateway.script.push(write, textStep(verdict), textStep('Written.'));
-    const run = env.enqueue('Write out.txt');
+    const run = await env.enqueue('Write out.txt');
     const writtenAtTheCall: number[] = [];
     const stream = env.gateway.stream;
     env.gateway.stream = (body, options) => {
@@ -66,7 +66,7 @@ describe('tool.permission.classifying: the event that backs the wait for the aut
   it('is not written when no classifier is asked', async () => {
     const { env, write } = await autoSetup(null);
     env.gateway.script.push(write);
-    const run = env.enqueue('Write out.txt');
+    const run = await env.enqueue('Write out.txt');
 
     await env.runOnce(env.worker());
 
@@ -80,7 +80,7 @@ describe('hook.started: the event that backs the wait for a hook (design-screens
     const env = await makeEnv();
     env.settings.hooksValue = { ...hooks('UserPromptSubmit', 'echo "prompt-context"'), ...hooks('SessionStart', 'echo "session-context"', 'startup'), ...hooks('Stop', 'true') };
     env.gateway.script.push(textStep('Hi.'));
-    const run = env.enqueue('hello');
+    const run = await env.enqueue('hello');
 
     await env.runOnce(workerWithProcesses(env));
 
@@ -100,7 +100,7 @@ describe('hook.started: the event that backs the wait for a hook (design-screens
     const marker = path.join(env.project, 'hook-ran.txt');
     env.settings.hooksValue = hooks('UserPromptSubmit', `echo ran > ${marker}`);
     env.gateway.script.push(textStep('Hi.'));
-    const run = env.enqueue('hello');
+    const run = await env.enqueue('hello');
     const startedAtTheModelCall: number[] = [];
     const stream = env.gateway.stream;
     env.gateway.stream = (body, options) => {
@@ -123,7 +123,7 @@ describe('hook.started: the event that backs the wait for a hook (design-screens
     const target = path.join(env.project, 'out.txt');
     env.settings.hooksValue = { ...hooks('PreToolUse', 'echo "writes are frozen" >&2; exit 2', 'Write') };
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } }]), textStep('Blocked.'));
-    const run = env.enqueue('write it');
+    const run = await env.enqueue('write it');
 
     await env.runOnce(workerWithProcesses(env));
 
@@ -138,7 +138,7 @@ describe('hook.started: the event that backs the wait for a hook (design-screens
   it('is not written for a run without hooks', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Hi.'));
-    const run = env.enqueue('hello');
+    const run = await env.enqueue('hello');
 
     await env.runOnce(env.worker());
 

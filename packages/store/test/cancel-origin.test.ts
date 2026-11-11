@@ -22,7 +22,7 @@ const typesOf = (store: RuntimeStore, runId: string): string[] =>
 describe('a cancel request never terminates a run (O13 b3)', () => {
   it('moves a QUEUED run to CANCELLING with cancel origin QUEUED, synchronously and without asking the preparer', async () => {
     const h = withPreparer();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     expect(mustRun(h.store, run.id).cancelOrigin).toBeNull();
 
     const result = await h.store.requestCancel(run.id);
@@ -49,7 +49,7 @@ describe('a cancel request never terminates a run (O13 b3)', () => {
 
   it('records the cancel origin RUNNING for a run cancelled while a worker holds it', async () => {
     const h = withPreparer();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w1');
 
     expect(await h.store.requestCancel(run.id)).toMatchObject({ kind: 'ok', run: { status: 'CANCELLING', cancelOrigin: 'RUNNING' } });
@@ -57,9 +57,9 @@ describe('a cancel request never terminates a run (O13 b3)', () => {
 
   it('moves a running parent and its queued child to CANCELLING, each with its own origin, measuring nothing and writing no contribution', async () => {
     const h = withPreparer();
-    const parent = enqueue(h.store, newSession(h.store).id);
+    const parent = await enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w-parent');
-    const created = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, model: 'fm' });
+    const created = await h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, model: 'fm' });
     if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
 
     await h.store.requestCancel(parent.id);
@@ -74,7 +74,7 @@ describe('a cancel request never terminates a run (O13 b3)', () => {
 describe('the claim exclusion of sweeper-owned runs', () => {
   it('never claims a CANCELLING run whose cancel origin is QUEUED, and leaves its attempts untouched', async () => {
     const h = withPreparer();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     await h.store.requestCancel(run.id);
 
     expect(h.store.claim('w1')).toBeNull();
@@ -95,7 +95,7 @@ describe('the claim exclusion of sweeper-owned runs', () => {
 
   it('still claims a CANCELLING run whose cancel origin is RUNNING once its lease expired', async () => {
     const h = withPreparer();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w1');
     await h.store.requestCancel(run.id);
     h.clock.advance(LEASE_MS + 1);
@@ -107,7 +107,7 @@ describe('the claim exclusion of sweeper-owned runs', () => {
 describe('the runs.cancel_origin column', () => {
   it('exists, is NULL for a run that is not CANCELLING, and refuses a value outside QUEUED, WAITING_HUMAN, RUNNING and WAITING_TOOL', async () => {
     const h = withPreparer();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const db = rawDb(h.dbPath);
 
     const columns = (db.prepare('PRAGMA table_info(runs)').all() as { name: string }[]).map((column) => column.name);

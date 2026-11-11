@@ -1,12 +1,12 @@
 import path from 'node:path';
-import { APPROVAL_BASES, SIDE_EFFECTS, VERIFICATION_OUTCOMES, FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, STORED_MODEL_KEYS, decodeStoredModel, planAccountRefOf, INBOX_DELIVERIES, INBOX_STATES } from '@momonga/protocol';
+import { APPROVAL_BASES, SIDE_EFFECTS, VERIFICATION_OUTCOMES, FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, STORED_MODEL_KEYS, EVENT_PAYLOAD_RENAMES, withCurrentNames, decodeStoredModel, planAccountRefOf, INBOX_DELIVERIES, INBOX_STATES } from '@momonga/protocol';
 import type { OpaqueEvent, RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload, InboxRowView, UserShellRecord } from '@momonga/protocol';
 import { InheritanceError } from './inherit.ts';
 import { DATABASE_NOT_NEWER } from './decode-context.ts';
 import type { DecodeContext } from './decode-context.ts';
 import { hasConsistentSeqs } from './seqs.ts';
 import { CANCEL_ORIGINS } from './transitions.ts';
-import { corrupt, expectOneOf, storedOneOf, expectRecord, expectStringRecord, isRecord, readerFor } from './rows.ts';
+import { UNKNOWN_VALUE, corrupt, expectOneOf, storedOneOf, expectRecord, expectStringRecord, isRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
 import type { Run, RunError, Session, SessionMcpServers } from './types.ts';
 
@@ -232,7 +232,8 @@ const decodeRunEvent = (row: Row, identity: string, type: string, payload: Recor
     leaseToken: reader.number('lease_token'),
     createdAt: reader.number('created_at'),
   };
-  return { ...payload, ...envelope } as RunEvent;
+  const renames = Object.hasOwn(EVENT_PAYLOAD_RENAMES, type) ? EVENT_PAYLOAD_RENAMES[type as RunEventPayload['type']] : undefined;
+  return { ...(renames === undefined ? payload : withCurrentNames(payload, renames)), ...envelope } as RunEvent;
 };
 
 const isInboxRowView = (value: unknown): value is InboxRowView =>
@@ -243,8 +244,8 @@ const isInboxRowView = (value: unknown): value is InboxRowView =>
   Number.isInteger(value['seq']) &&
   Number.isInteger(value['createdAt']) &&
   (value['settledAt'] === null || Number.isInteger(value['settledAt'])) &&
-  INBOX_DELIVERIES.some((delivery) => delivery === value['delivery']) &&
-  INBOX_STATES.some((state) => state === value['state']);
+  [...INBOX_DELIVERIES, UNKNOWN_VALUE].some((delivery) => delivery === value['delivery']) &&
+  [...INBOX_STATES, UNKNOWN_VALUE].some((state) => state === value['state']);
 
 export const userShellRecordOf = (identity: string, payload: Record<string, unknown>): UserShellRecord => {
   const { command, exitCode, output, include } = payload;

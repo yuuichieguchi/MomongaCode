@@ -44,7 +44,7 @@ describe('path-scoped governing facts activate from the session record of declar
     addLegacyFact(env);
     const tool = locatingTool('mcp__docs__open_page', env.session.cwd);
     env.gateway.script.push(callsStep([{ callId: 'k_open', name: 'mcp__docs__open_page', args: { page: 'legacy/a.ts' } }]), textStep('done'));
-    const run = env.enqueue('Work on the parser');
+    const run = await env.enqueue('Work on the parser');
     await env.runOnce(env.worker('worker-1', { toolList: () => [tool] }));
     expect(env.run(run.id).status).toBe('COMPLETED');
     const [first, second] = requestTexts(env);
@@ -56,7 +56,7 @@ describe('path-scoped governing facts activate from the session record of declar
     const env = await makeEnv({ mode: 'bypassPermissions' });
     const tool = locatingTool('mcp__docs__open_page', env.session.cwd);
     env.gateway.script.push(callsStep([{ callId: 'k_open', name: 'mcp__docs__open_page', args: { page: 'legacy/a.ts' } }]), textStep('done'));
-    const first = env.enqueue('Look at the legacy parser');
+    const first = await env.enqueue('Look at the legacy parser');
     await env.runOnce(env.worker('worker-1', { toolList: () => [tool] }));
     expect(env.run(first.id).status).toBe('COMPLETED');
     expect(requestTexts(env).join('\n')).not.toContain(FACT);
@@ -64,7 +64,7 @@ describe('path-scoped governing facts activate from the session record of declar
     addLegacyFact(env);
     const before = env.gateway.streams.length;
     env.gateway.script.push(textStep('ok'));
-    const second = env.enqueue('Now continue', { history: 'fresh' });
+    const second = await env.enqueue('Now continue', { history: 'fresh' });
     await env.runOnce(env.worker('worker-2', { toolList: () => [tool] }));
     expect(env.run(second.id).status).toBe('COMPLETED');
     expect(requestTexts(env, before)[0]).toContain(FACT);

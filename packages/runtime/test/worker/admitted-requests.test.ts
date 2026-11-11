@@ -49,7 +49,7 @@ const conversation: RunEventPayload[] = [
 const conversed = async (): Promise<Env> => {
   const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
   metered(env);
-  const first = env.enqueue('question one');
+  const first = await env.enqueue('question one');
   await env.seed(first.id, conversation, 'release');
   env.gateway.script.push(textStep('Done.'));
   await env.runOnce(env.worker());
@@ -57,8 +57,8 @@ const conversed = async (): Promise<Env> => {
   return env;
 };
 
-const enqueueCompact = (env: Env, limits: Record<string, number>) =>
-  createdRun(env.store.createRunAndEnqueue(env.session.id, { input: compactInputOf(undefined), timeoutMs: HOUR_MS, limits, pins: compactPinOf(undefined), history: 'inherit' }));
+const enqueueCompact = async (env: Env, limits: Record<string, number>) =>
+  createdRun(await env.store.createRunAndEnqueue(env.session.id, { input: compactInputOf(undefined), timeoutMs: HOUR_MS, limits, pins: compactPinOf(undefined), history: 'inherit' }));
 
 describe('every model request of the runtime is admitted by the one budget', () => {
   it('sends a model request from one file only, the one that takes the admission', () => {
@@ -71,7 +71,7 @@ describe('every model request of the runtime is admitted by the one budget', () 
 
   it('stops the run with budget.exhausted before a compaction the money left does not pay for', async () => {
     const env = await conversed();
-    const run = enqueueCompact(env, { maxCostUsd: 0.000001 });
+    const run = await enqueueCompact(env, { maxCostUsd: 0.000001 });
 
     await env.runOnce(env.worker());
 
@@ -83,7 +83,7 @@ describe('every model request of the runtime is admitted by the one budget', () 
 
   it('stops the run before a compaction the tokens left do not pay for', async () => {
     const env = await conversed();
-    const run = enqueueCompact(env, { maxTotalTokens: 100 });
+    const run = await enqueueCompact(env, { maxTotalTokens: 100 });
 
     await env.runOnce(env.worker());
 
@@ -94,7 +94,7 @@ describe('every model request of the runtime is admitted by the one budget', () 
 
   it('sends an admitted compaction with the ceiling of its reservation and holds no reservation afterwards', async () => {
     const env = await conversed();
-    const run = enqueueCompact(env, { maxCostUsd: 5 });
+    const run = await enqueueCompact(env, { maxCostUsd: 5 });
 
     await env.runOnce(env.worker());
 
@@ -109,7 +109,7 @@ describe('every model request of the runtime is admitted by the one budget', () 
 
   it('sends a compaction of a run without a money limit with no ceiling', async () => {
     const env = await conversed();
-    const run = enqueueCompact(env, {});
+    const run = await enqueueCompact(env, {});
 
     await env.runOnce(env.worker());
 
@@ -123,7 +123,7 @@ describe('every model request of the runtime is admitted by the one budget', () 
     env.settings.classifierModel = 'guard';
     env.gateway.capabilitiesByModel['guard'] = capabilitiesFor(env.gateway.capabilitiesValue.contextWindow, { structuredOutput: 'json_schema' });
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: `${env.project}/out.txt`, content: 'x' } }]), textStep('never the classifier reply'));
-    const run = env.enqueue('Write out.txt', { limits: { maxCostUsd: 1 } });
+    const run = await env.enqueue('Write out.txt', { limits: { maxCostUsd: 1 } });
 
     await env.runOnce(env.worker());
 
@@ -145,7 +145,7 @@ describe('every model request of the runtime is admitted by the one budget', () 
       textStep(JSON.stringify({ verdict: 'safe', confidence: 'high', rationale: 'ok' })),
       textStep('Written.'),
     );
-    const run = env.enqueue('Write out.txt', { limits: { maxCostUsd: 5 } });
+    const run = await env.enqueue('Write out.txt', { limits: { maxCostUsd: 5 } });
 
     await env.runOnce(env.worker());
 

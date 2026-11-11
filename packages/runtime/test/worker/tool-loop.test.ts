@@ -24,7 +24,7 @@ describe('worker tool loop', () => {
       ),
       textStep('All done.', { usage: usageOf(150, 5) }),
     );
-    const run = env.enqueue('Echo two things');
+    const run = await env.enqueue('Echo two things');
 
     await env.runOnce(env.worker());
 
@@ -76,7 +76,7 @@ describe('worker tool loop', () => {
   it('records the plan from a plan tool as plan.updated', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([{ callId: 'call_p_1', name: 'UpdatePlan', args: { step: 'write tests' } }]), textStep('Planned.'));
-    const run = env.enqueue('Plan the work');
+    const run = await env.enqueue('Plan the work');
 
     await env.runOnce(env.worker());
 
@@ -96,7 +96,7 @@ describe('worker tool loop', () => {
     const env = await makeEnv({ mode: 'acceptEdits' });
     const target = `${env.project}/notes.txt`;
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'hi' } }]), textStep('Written.'));
-    const run = env.enqueue('Write notes');
+    const run = await env.enqueue('Write notes');
 
     await env.runOnce(env.worker());
 

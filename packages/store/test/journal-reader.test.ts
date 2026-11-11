@@ -14,9 +14,9 @@ const finalResponse: RunEventPayload = {
 };
 
 describe('createJournalReader: the reads the journal thread runs over its own connection', () => {
-  it('measures a run over a second connection: the hook sees its event types from the journal followed by the leading events, and the reply carries the lastSeq it read', () => {
+  it('measures a run over a second connection: the hook sees its event types from the journal followed by the leading events, and the reply carries the lastSeq it read', async () => {
     const h = harness();
-    const run = enqueue(h.store, newSession(h.store).id, 'measure me');
+    const run = await enqueue(h.store, newSession(h.store).id, 'measure me');
     mustClaim(h.store, 'w1');
     const lastSeq = mustRun(h.store, run.id).lastSeq;
     const seen: RunEvent[][] = [];
@@ -41,9 +41,9 @@ describe('createJournalReader: the reads the journal thread runs over its own co
     expect(mustRun(h.store, run.id).lastSeq).toBe(lastSeq);
   });
 
-  it('carries no journaled flag: a contribution is never read back from the journal', () => {
+  it('carries no journaled flag: a contribution is never read back from the journal', async () => {
     const h = harness();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const hook: TerminalContribution = { eventTypes: ['user.message'], measure: () => undefined };
     const db = openDatabase(h.dbPath);
     registerCleanup(() => db.close());

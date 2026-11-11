@@ -160,7 +160,7 @@ describe('a setting of the repository that changes who vouches for the forge', (
     fs.appendFileSync(world.env['GIT_CONFIG_GLOBAL'] as string, '[http]\n\tsslCAInfo = /own/ca\n');
     const tool = operationTool('GitPush', { runArgv: countingRunner().run });
     const ctx = contextFor(world.work, world.env);
-    expect(await tool.gateFacts?.(PUSH, ctx, { signal: ctx.signal, env: ctx.env, context: ctx })).toMatchObject({ pushUrls: ['https://forge.example/acme/widgets.git'] });
+    expect(await tool.gateFacts?.(PUSH, ctx, { signal: ctx.signal, env: ctx.env, context: ctx })).toMatchObject({ destinations: ['https://forge.example/acme/widgets.git'] });
   });
 });
 

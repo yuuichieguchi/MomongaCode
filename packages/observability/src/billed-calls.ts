@@ -2,6 +2,7 @@ import { GENAI_SEMCONV, MOMONGA_ATTRIBUTES, OPERATIONS, UNKNOWN_BILLING } from '
 import { priceCall } from './cost.ts';
 import type { CallBilling, PriceTable, PricedCall } from './cost.ts';
 import type { SpanRecord, TraceStore } from './trace-store.ts';
+import { SPAN_ATTRIBUTE_RENAMES, withCurrentNames } from '@momonga/protocol';
 import type { PriceNotRecorded, UnpricedCode, UsageSource } from '@momonga/protocol';
 
 const A = GENAI_SEMCONV.attributes;
@@ -61,12 +62,13 @@ const billingOf = (span: SpanRecord): CallBilling => {
   return value === 'metered' || value === 'local' || value === 'plan' ? value : UNKNOWN_BILLING;
 };
 
-export const billedUsageOf = (span: SpanRecord): BilledCall['usage'] => {
+export const billedUsageOf = (stored: SpanRecord): BilledCall['usage'] => {
+  const span: SpanRecord = { ...stored, attributes: withCurrentNames(stored.attributes, SPAN_ATTRIBUTE_RENAMES) };
   const cachedInputTokens = reportedNumber(span, A.ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS);
   return {
     inputTokens: reportedNumber(span, A.ATTR_GEN_AI_USAGE_INPUT_TOKENS) ?? 0,
     ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
-    cacheWriteInputTokens: reportedNumber(span, MOMONGA_ATTRIBUTES.cacheWriteInputTokens) ?? 0,
+    cacheWriteInputTokens: reportedNumber(span, A.ATTR_GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS) ?? 0,
     outputTokens: reportedNumber(span, A.ATTR_GEN_AI_USAGE_OUTPUT_TOKENS) ?? 0,
     reasoningTokens: reportedNumber(span, A.ATTR_GEN_AI_USAGE_REASONING_OUTPUT_TOKENS) ?? 0,
   };

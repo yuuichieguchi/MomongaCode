@@ -30,7 +30,7 @@ describe('sandbox kind (system timers, none used)', () => {
     const f = await makeRuntimeFixture({ sandbox: createUnsandboxed({ killGraceMs: 300 }) });
     writeUserSettings(f.temp.home, {});
     const session = createSession(f.store, f.temp.project, { env: { PATH: '/usr/bin:/bin' } });
-    const runId = createRun(f.store, session.id);
+    const runId = await createRun(f.store, session.id);
 
     const { outcome } = await runBashThroughPort(f, session, runId, 'echo hi', 'bypassPermissions');
 

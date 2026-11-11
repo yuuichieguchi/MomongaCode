@@ -14,7 +14,7 @@ vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 const ABSENT: ClaimedToken = { token: 'npm run never-recorded', claim: 'executed' };
 
 const inheritingChild = async (h: ReferenceHarness, b: ChainBuilder) => {
-  const child = b.createRun('the child task');
+  const child = await b.createRun('the child task');
   const claim = b.claimNext(child.id);
   expect(await b.inherit(claim, 'manual')).toEqual({ kind: 'inherited' });
   return mustRun(h.store, child.id);
@@ -71,7 +71,7 @@ describe('the record cut runs to the end of every ancestor and reports its own f
       b.text(claim);
       b.compact(claim, 3);
     });
-    const late = b.createRun('Too late', { timeoutMs: 1000 });
+    const late = await b.createRun('Too late', { timeoutMs: 1000 });
     h.clock.advance(2000);
     expect(await h.store.expireApprovals(h.clock.now(), (error: unknown) => { throw error; })).toEqual([late.id]);
     const child = await inheritingChild(h, b);
@@ -119,11 +119,11 @@ describe('differential cases of the generator: via, omitted tasks, a compaction 
   it('a via link: the never-started task is part of the record', async () => {
     const h = referenceHarness();
     const b = chainBuilder(h);
-    const first = b.createRun('Say hello', { history: 'fresh' });
+    const first = await b.createRun('Say hello', { history: 'fresh' });
     const claim = b.claimNext(first.id);
     b.started(claim, 'manual');
     await b.tool(claim);
-    const late = b.createRun('Too late', { timeoutMs: 1000 });
+    const late = await b.createRun('Too late', { timeoutMs: 1000 });
     h.clock.advance(2000);
     expect(await h.store.expireApprovals(h.clock.now(), (error: unknown) => { throw error; })).toEqual([late.id]);
     await b.end(claim, { to: 'COMPLETED' });
@@ -137,11 +137,11 @@ describe('differential cases of the generator: via, omitted tasks, a compaction 
   it('a retracted task is not in the record', async () => {
     const h = referenceHarness();
     const b = chainBuilder(h);
-    const first = b.createRun('Say hello', { history: 'fresh' });
+    const first = await b.createRun('Say hello', { history: 'fresh' });
     const claim = b.claimNext(first.id);
     b.started(claim, 'manual');
     await b.tool(claim);
-    const retracted = b.createRun('Never mind this');
+    const retracted = await b.createRun('Never mind this');
     expect((await h.store.requestCancel(retracted.id)).kind).toBe('ok');
     await h.store.finishCancelled((error) => {
       throw error;

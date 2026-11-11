@@ -23,10 +23,10 @@ type Lifecycle = RuntimeMemoryStore & {
 
 const lifecycleOf = (store: RuntimeStore): Lifecycle => store.memories as Lifecycle;
 
-const started = () => {
+const started = async () => {
   const { store, clock } = harness();
   const session = newSession(store, PROJECT);
-  const run = enqueue(store, session.id);
+  const run = await enqueue(store, session.id);
   const claim = mustClaim(store, 'w1');
   expect(store.append(claim, ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'].map(callEvent)).kind).toBe('ok');
   const memories = lifecycleOf(store);
@@ -40,14 +40,14 @@ const ids = (records: readonly MemoryRecord[]): string[] => records.map((record)
 
 describe('candidates', () => {
   it('stores a candidate with its reflection source and state', async () => {
-    const { session, run, candidate } = started();
+    const { session, run, candidate } = await started();
     const { memory, created } = candidate(2, 'tests need a seed', 'procedure');
     expect(created).toBe(true);
     expect(memory).toMatchObject({ state: 'candidate', kind: 'procedure', text: 'tests need a seed', source: { kind: 'reflection', sessionId: session.id, runId: run.id, ordinal: 2 } });
   });
 
   it('is idempotent per ordinal, so a retried job adds nothing', async () => {
-    const { candidate } = started();
+    const { candidate } = await started();
     const first = candidate(0, 'one');
     const again = candidate(0, 'one');
     expect(again.created).toBe(false);
@@ -55,7 +55,7 @@ describe('candidates', () => {
   });
 
   it('is never recalled, ranked, or found by a search, whichever notes the search includes', async () => {
-    const { store, candidate } = started();
+    const { store, candidate } = await started();
     const { memory } = candidate(0, 'seeded fixture note');
     expect(recalled(store, VISIBLE)).toEqual([]);
     expect(store.memories.search(VISIBLE, ['seeded'])).toEqual([]);
@@ -66,7 +66,7 @@ describe('candidates', () => {
   });
 
   it('lists what waits for a person, per project', async () => {
-    const { memories, candidate, saved } = started();
+    const { memories, candidate, saved } = await started();
     await saved('c1', 'active note');
     const { memory } = candidate(0, 'waiting');
     expect(ids(memories.candidates({ project: PROJECT }))).toEqual([memory.id]);
@@ -76,7 +76,7 @@ describe('candidates', () => {
 
 describe('accept and reject', () => {
   it('makes an accepted candidate recallable and takes it off the list', async () => {
-    const { store, memories, candidate } = started();
+    const { store, memories, candidate } = await started();
     const { memory } = candidate(0, 'waiting');
     expect(memories.accept(memory.id)).toMatchObject({ kind: 'accepted', memory: { id: memory.id, state: 'active' } });
     expect(ids(recalled(store, VISIBLE))).toEqual([memory.id]);
@@ -84,7 +84,7 @@ describe('accept and reject', () => {
   });
 
   it('never makes a rejected candidate live', async () => {
-    const { store, memories, candidate } = started();
+    const { store, memories, candidate } = await started();
     const { memory } = candidate(0, 'waiting');
     expect(memories.reject(memory.id).kind).toBe('rejected');
     expect(recalled(store, VISIBLE)).toEqual([]);
@@ -93,7 +93,7 @@ describe('accept and reject', () => {
   });
 
   it('keeps a rejected candidate out of recall and plain search, finds it with all, and never restores it', async () => {
-    const { store, memories, candidate } = started();
+    const { store, memories, candidate } = await started();
     const { memory } = candidate(0, 'seeded fixture note');
     memories.reject(memory.id);
     expect(memories.get(memory.id)?.state).toBe('rejected');
@@ -106,14 +106,14 @@ describe('accept and reject', () => {
   });
 
   it('accept sets keptAt, so a candidate that waited is not archived at once', async () => {
-    const { clock, memories, candidate } = started();
+    const { clock, memories, candidate } = await started();
     const { memory } = candidate(0, 'waiting');
     clock.advance(5000);
     expect(memories.accept(memory.id).memory?.keptAt).toBe(clock.now());
   });
 
   it('accepts only a candidate', async () => {
-    const { memories, saved } = started();
+    const { memories, saved } = await started();
     expect(memories.accept((await saved('c1', 'active note')).id).kind).toBe('not_candidate');
     expect(memories.accept('missing').kind).toBe('not_found');
   });
@@ -121,7 +121,7 @@ describe('accept and reject', () => {
 
 describe('paging for upkeep', () => {
   it('pages the active memories by creation order and id, from a cursor', async () => {
-    const { clock, memories, saved } = started();
+    const { clock, memories, saved } = await started();
     const notes: MemoryRecord[] = [];
     for (const [index, text] of ['a', 'b', 'c', 'd', 'e'].entries()) {
       clock.advance(1);
@@ -135,7 +135,7 @@ describe('paging for upkeep', () => {
   });
 
   it('leaves out what is not active or was retired, and names what a newer note replaced', async () => {
-    const { store, run, memories, candidate, saved } = started();
+    const { store, run, memories, candidate, saved } = await started();
     const kept = await saved('c1', 'kept');
     const archived = await saved('c2', 'archived');
     memories.archive(archived.id);
@@ -148,7 +148,7 @@ describe('paging for upkeep', () => {
   });
 
   it('counts every write of a memory in its revision, and a read or a refused change not at all', async () => {
-    const { store, memories, candidate, saved } = started();
+    const { store, memories, candidate, saved } = await started();
     const start = memories.revision();
     const note = await saved('c1', 'one');
     expect(memories.revision()).toBe(start + 1);
@@ -168,7 +168,7 @@ describe('paging for upkeep', () => {
 
 describe('duplicate and archive', () => {
   it('records duplicate_of and hides the copy from recall, while all still finds it', async () => {
-    const { store, memories, saved } = started();
+    const { store, memories, saved } = await started();
     const older = await saved('c1', 'same text');
     const newer = await saved('c2', 'same text');
     expect(memories.markDuplicate(newer.id, older.id)).toMatchObject({ memory: { state: 'duplicate', duplicateOf: older.id } });
@@ -177,7 +177,7 @@ describe('duplicate and archive', () => {
   });
 
   it('archives without deleting and restores to active', async () => {
-    const { store, memories, saved } = started();
+    const { store, memories, saved } = await started();
     const note = await saved('c1', 'old habit');
     expect(memories.archive(note.id)).toMatchObject({ memory: { state: 'archived' } });
     expect(recalled(store, VISIBLE)).toEqual([]);
@@ -188,7 +188,7 @@ describe('duplicate and archive', () => {
   });
 
   it('restore sets keptAt, so the next sweep does not archive it again', async () => {
-    const { clock, memories, saved } = started();
+    const { clock, memories, saved } = await started();
     const note = await saved('c1', 'old habit');
     memories.archive(note.id);
     clock.advance(1000);
@@ -196,7 +196,7 @@ describe('duplicate and archive', () => {
   });
 
   it('restores only an archived memory', async () => {
-    const { memories, saved } = started();
+    const { memories, saved } = await started();
     expect(memories.restore((await saved('c1', 'active note')).id).kind).toBe('not_archived');
     expect(memories.restore('missing').kind).toBe('not_found');
   });

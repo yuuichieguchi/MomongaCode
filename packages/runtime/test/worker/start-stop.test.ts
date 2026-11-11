@@ -7,8 +7,8 @@ describe('worker poll loop', () => {
   it('claims queued runs after start and resolves stop once drained', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('First.'), textStep('Second.'));
-    const first = env.enqueue('one');
-    const second = env.enqueue('two');
+    const first = await env.enqueue('one');
+    const second = await env.enqueue('two');
     const worker = env.worker();
 
     worker.start();

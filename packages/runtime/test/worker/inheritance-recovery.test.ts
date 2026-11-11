@@ -30,7 +30,7 @@ const watchedStore = (env: Env, previousRunId: string, reads: Reads): RuntimeSto
 
 const answered = async (env: Env, task: string, answer: string): Promise<string> => {
   env.gateway.script.push(textStep(answer));
-  const run = env.enqueue(task);
+  const run = await env.enqueue(task);
   expect((await settle(env, run.id)).status).toBe('COMPLETED');
   return run.id;
 };
@@ -41,7 +41,7 @@ describe('recovery of an inheriting run killed during its first model call', () 
     const first = await answered(env, 'Say hello', 'Hello there.');
     const blocked = gated(textStep('Recovered answer.'), 4);
     env.gateway.script.push(blocked);
-    const second = env.enqueue('And again');
+    const second = await env.enqueue('And again');
     const abandoned = env.runOnce(env.worker('worker-a'));
     await env.settled(blocked.gate.reached.promise, 'the first stream of run 2 to start');
     const [requested] = env.ofType(second.id, 'model.requested');
@@ -81,7 +81,7 @@ describe('recovery of an inheriting run killed during its first model call', () 
     const control = await makeEnv();
     await answered(control, 'Say hello', 'Hello there.');
     control.gateway.script.push(textStep('Answer.'));
-    const controlRun = control.enqueue('And again');
+    const controlRun = await control.enqueue('And again');
     await settle(control, controlRun.id);
 
     const env = await makeEnv();
@@ -97,7 +97,7 @@ describe('recovery of an inheriting run killed during its first model call', () 
       },
     };
     env.gateway.script.push(textStep('Answer.'));
-    const second = env.enqueue('And again');
+    const second = await env.enqueue('And again');
     await env.runOnce(env.worker('worker-a', { tools }));
     expect(env.run(second.id).status).toBe('RUNNING');
     expect(env.ofType(second.id, 'model.requested')).toEqual([]);

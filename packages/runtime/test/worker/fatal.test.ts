@@ -61,7 +61,7 @@ describe('worker fatal store errors', () => {
     const fatal = fatalStoreError();
     const fatals: Error[] = [];
     let failed = false;
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     env.gateway.script.push(textStep('never sent'));
     const store = countingStore(env, {
       append: (claim, payloads) => {
@@ -98,7 +98,7 @@ describe('worker fatal store errors', () => {
     const fatals: Error[] = [];
     const blocked = gated(textStep('never finished'));
     env.gateway.script.push(blocked);
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const store = countingStore(env, {
       heartbeat: () => {
         throw fatal;
@@ -158,7 +158,7 @@ describe('worker fatal store errors', () => {
       },
     });
     env.gateway.script.push(textStep('Hello.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const worker = env.worker('worker-1', { store, idlePollMs: 1, onFatal: (error) => fatals.push(error), onError: (error) => errors.push(error) });
 
     worker.start();

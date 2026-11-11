@@ -4,7 +4,7 @@ import { DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS } from '@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { CreateResponseBody, StreamEvent } from '@momonga/protocol';
 import type { GatewayCallOptions } from '@momonga/runtime';
-import { createFakeTimers } from '@momonga/testkit';
+import { createFakeTimers, NEVER_CANCELLED } from '@momonga/testkit';
 import { createIdempotencyRegistry } from '../../../gateway/src/core/idempotency.ts';
 import { GATEWAY_CONFIG_DEFAULTS } from '../../../gateway/src/defaults.ts';
 import type { StoredIdempotency } from '../../../gateway/src/core/store.ts';
@@ -37,12 +37,12 @@ const digestOf = (body: CreateResponseBody): string => {
   return sha256Hex(canonicalJson(unstreamed));
 };
 
-const setup = () => {
+const setup = async () => {
   const opened = harness();
   const { clock, dbPath } = opened;
   const store = withInProcessFacts(opened.store, dbPath);
   const project = makeStoreDir();
-  store.trust.set(project, 'trusted');
+  await store.trust.setAsked(project, 'trusted', NEVER_CANCELLED);
   const session = newSession(store, project);
   const upstream = createFakeGateway(capabilitiesFor(100_000, { structuredOutput: 'json_schema' }));
   const stored = new Map<string, StoredIdempotency>();
@@ -109,7 +109,7 @@ const setup = () => {
     };
   };
   const verifiedRun = async () => {
-    const run = enqueue(store, session.id, 'fix the bug');
+    const run = await enqueue(store, session.id, 'fix the bug');
     await finishClaimed(store, [
       ...fileTool('w1', 'Write', { path: path.join(project, 'src/a.ts'), sha256: SHA, access: 'write' }),
       ...checked('npm test', 0, 'ok'),
@@ -119,7 +119,7 @@ const setup = () => {
   return { clock, api, upstream, refusals, replays, memory, reflector, failCompleteOnce, verifiedRun };
 };
 
-type Env = ReturnType<typeof setup>;
+type Env = Awaited<ReturnType<typeof setup>>;
 
 const failFirstAttemptAfterTheCall = async (env: Env): Promise<string> => {
   const run = await env.verifiedRun();
@@ -138,7 +138,7 @@ const retry = async (env: Env): Promise<void> => {
 
 describe('the retry identity of a reflection request', () => {
   it('sends a retry whose max_output_tokens changed with memory.reflection.maxTokens as a new request, and finishes the job', async () => {
-    const env = setup();
+    const env = await setup();
     const runId = await failFirstAttemptAfterTheCall(env);
     env.memory.maxTokens = 300;
     await retry(env);
@@ -150,7 +150,7 @@ describe('the retry identity of a reflection request', () => {
   });
 
   it('answers a retry with the identical body from the earlier call, with no second upstream call', async () => {
-    const env = setup();
+    const env = await setup();
     const runId = await failFirstAttemptAfterTheCall(env);
     await retry(env);
     expect(env.refusals).toEqual([]);
@@ -160,7 +160,7 @@ describe('the retry identity of a reflection request', () => {
   });
 
   it('keys the call by the run and the digest of the request body, as the summary request is keyed', async () => {
-    const env = setup();
+    const env = await setup();
     const run = await env.verifiedRun();
     env.upstream.script.push(textStep(EMPTY_REPLY));
     expect(await env.reflector.runOne(SIGNAL)).toBe('ran');
@@ -171,7 +171,7 @@ describe('the retry identity of a reflection request', () => {
   });
 
   it('sends a retry whose body changed with the capabilities of the model as a new request, and finishes the job', async () => {
-    const env = setup();
+    const env = await setup();
     const runId = await failFirstAttemptAfterTheCall(env);
     env.upstream.capabilitiesValue = capabilitiesFor(8192, { structuredOutput: 'json_schema' });
     await retry(env);

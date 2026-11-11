@@ -92,18 +92,18 @@ afterEach(async () => {
 
 export const inertMemoryPort: MemoryPort = { load: async () => ({ prepare: async () => undefined, ranked: () => [], hasMore: () => false, matchCap: () => undefined, tools: [] }) };
 
-export const inertHistoryPort: HistoryPort = { load: () => ({ tools: [] }) };
+export const inertHistoryPort: HistoryPort = { load: async () => ({ tools: [] }) };
 
-export const inertGovernancePort: GovernancePort = { load: () => ({ tools: [] }) };
+export const inertGovernancePort: GovernancePort = { load: async () => ({ tools: [] }) };
 
 export const unavailableEvidenceRun = (): EvidenceRun => async () => ({ exitCode: 128 });
 
 export const diskSkillsPort = (home: string, trusted: () => boolean = () => true): SkillsPort =>
-  createSkillsPort({ loader: createSkillLoader({ home, fileSystem: createNodeSkillFileSystem() }), settings: { trusted } });
+  createSkillsPort({ loader: createSkillLoader({ home, fileSystem: createNodeSkillFileSystem() }), settings: { trusted: async () => trusted() } });
 
 export const diskAgentCatalog = (home: string, trusted: () => boolean = () => true): AgentCatalogPort => {
   const loader = createAgentLoader({ home, fileSystem: createNodeSkillFileSystem() });
-  return { load: (session) => loader.load({ projectRoot: session.cwd, trusted: trusted() }) };
+  return { load: async (session) => loader.load({ projectRoot: session.cwd, trusted: trusted() }) };
 };
 
 export type FakeInstructions = InstructionReader & { files: Map<string, string>; reads: string[] };
@@ -165,7 +165,7 @@ const inProcessFidelity = (dbPath: string) => async (request: object): Promise<n
   try {
     const handler = fidelityHandler({
       reader: createJournalReader(db),
-      blobs: createBlobStore(db, createFakeClock(START_MS), blobDirectoryOf(dbPath)),
+      blobs: createBlobStore(db, createFakeClock(START_MS), blobDirectoryOf(dbPath), { fileSystem: nodeFileSystem, random: systemRandom }),
       current: { progress: undefined },
       gateFor: () => ({ unit: () => undefined }),
     });
@@ -219,7 +219,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const clock: FakeClock = createFakeClock(START_MS);
   const timers: FakeTimers = createFakeTimers(clock);
   const scriptedContributions = new Map<string, ContributionItems>();
-  const store: RuntimeStore = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
+  const store: RuntimeStore = openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home,
     clock,
@@ -386,12 +386,12 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     return running;
   };
 
-  const enqueue = (
+  const enqueue = async (
     input = 'Say hello',
     extra: { limits?: Record<string, unknown>; deadlineAt?: number; history?: 'inherit' | 'fresh'; skill?: { name: string; content: string }; mandate?: Mandate } = {},
-  ): Run =>
+  ): Promise<Run> =>
     createdRun(
-      store.createRunAndEnqueue(session.id, {
+      await store.createRunAndEnqueue(session.id, {
         input,
         timeoutMs: (extra.deadlineAt ?? DEADLINE_MS) - clock.now(),
         limits: extra.limits ?? {},
@@ -544,7 +544,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   };
 };
 
-export const createdRun = (result: ReturnType<RuntimeStore['createRunAndEnqueue']>): Run => {
+export const createdRun = (result: Awaited<ReturnType<RuntimeStore['createRunAndEnqueue']>>): Run => {
   if (result.kind !== 'created' && result.kind !== 'existing') throw new Error(`expected a run, got ${result.kind}`);
   return result.run;
 };

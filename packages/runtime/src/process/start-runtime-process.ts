@@ -498,7 +498,15 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           onCommit: createdNotifier.onCommit,
           preparer: startedThread,
           unaskedCommands: unaskedCommandsFor(platform),
+          fileSystem: nodeFileSystem,
+          random: systemRandom,
         });
+        try {
+          await opened.blobs.prepare();
+        } catch (error) {
+          opened.close();
+          throw error;
+        }
         return { notifier: createdNotifier, store: opened, journalThread: startedThread };
       } catch (error) {
         await startedThread.close();
@@ -1048,10 +1056,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       });
     });
 
-    const ready: ReadyFields = await step('ready', () => {
+    const ready: ReadyFields = await step('ready', async () => {
       signal?.throwIfAborted();
       try {
-        store.checkIdentity();
+        await store.checkIdentity();
       } catch (error) {
         if (!isFatalStoreError(error)) throw error;
         latchFatal(asError(error));

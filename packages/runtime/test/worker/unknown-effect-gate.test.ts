@@ -9,7 +9,7 @@ import { functionCallItem, requestedOffering, textStep } from './scripts.ts';
 const CALLS = ['call_w_1', 'call_w_2'] as const;
 
 const interrupted = async (env: Env, callIds: readonly string[]): Promise<string> => {
-  const run = env.enqueue('Write the files');
+  const run = await env.enqueue('Write the files');
   const targetOf = (callId: string): string => path.join(env.project, `${callId}.txt`);
   const payloads: RunEventPayload[] = [
     requestedOffering(1, ['Write']),
@@ -109,7 +109,7 @@ describe('a tool call whose effect is unknown after a crash', () => {
 
   it('a crash between the unknown outcome and the ask: the next claim asks, once', async () => {
     const env = await makeEnv({ mode: 'acceptEdits' });
-    const run = env.enqueue('Write the file');
+    const run = await env.enqueue('Write the file');
     const target = path.join(env.project, 'out.txt');
     await env.seed(
       run.id,

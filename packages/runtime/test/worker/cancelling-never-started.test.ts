@@ -25,7 +25,7 @@ const sweeperOf = async (env: Env, errors: unknown[] = []) => {
 
 const waitingHumanRun = async (env: Env) => {
   env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: `${env.project}/out.txt`, content: 'x' } }]));
-  const run = env.enqueue('Write the file');
+  const run = await env.enqueue('Write the file');
   expect(await env.runOnce(env.worker('worker-1'))).toBe('yielded');
   expect(env.run(run.id).status).toBe('WAITING_HUMAN');
   expect(env.store.approvals.listPending(run.id)).toHaveLength(1);
@@ -37,7 +37,7 @@ describe('a run cancelled before any worker held it is the sweeper\'s to finish 
   it('a QUEUED run cancelled is CANCELLING, is not claimable at once or ever, and no worker takes it', async () => {
     const { env } = await envWithPreparer();
     env.gateway.script.push(textStep('never sent'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.cancel(run.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'QUEUED' });
 
@@ -50,7 +50,7 @@ describe('a run cancelled before any worker held it is the sweeper\'s to finish 
   it('the sweeper finishes a QUEUED cancel as CANCELLED without a model call, its contribution before the status', async () => {
     const { env, fake } = await envWithPreparer();
     env.gateway.script.push(textStep('never sent'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     await env.cancel(run.id);
     const errors: unknown[] = [];
 

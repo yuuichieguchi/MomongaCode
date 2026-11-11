@@ -109,7 +109,7 @@ export type StoreFixture = { store: RuntimeStore; notifier: RunNotifier; clock: 
 
 export const openStore = (temp: TempHome, clock: FakeClock = createFakeClock(START_MS)): StoreFixture => {
   const notifier = runtime.createRunNotifier();
-  const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
+  const store = openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: temp.dbPath,
     home: temp.home,
     clock,
@@ -136,8 +136,8 @@ export const createSession = (
     ...(extra.mcpServers === undefined ? {} : { mcpServers: extra.mcpServers }),
   });
 
-export const createRun = (store: RuntimeStore, sessionId: string): string => {
-  const result = store.createRunAndEnqueue(sessionId, { input: 'hello', timeoutMs: 3_600_000, limits: {}, pins: {} }) as { run?: { id: string } };
+export const createRun = async (store: RuntimeStore, sessionId: string): Promise<string> => {
+  const result = (await store.createRunAndEnqueue(sessionId, { input: 'hello', timeoutMs: 3_600_000, limits: {}, pins: {} })) as { run?: { id: string } };
   const id = result.run?.id;
   if (id === undefined) throw new Error(`run was not created: ${JSON.stringify(result)}`);
   return id;

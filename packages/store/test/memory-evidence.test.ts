@@ -7,10 +7,10 @@ import { callEvent, enqueue, harness, mustClaim, newSession, recalled } from './
 
 const CALLS = ['c1', 'c2', 'c3', 'c4', 'c5'];
 
-const started = () => {
+const started = async () => {
   const { store, clock } = harness();
   const session = newSession(store, '/work/a');
-  const run = enqueue(store, session.id);
+  const run = await enqueue(store, session.id);
   const claim = mustClaim(store, 'w1');
   expect(store.append(claim, CALLS.map(callEvent)).kind).toBe('ok');
   return { store, clock, run };
@@ -29,19 +29,19 @@ const VISIBLE = { trusted: true, project: '/work/a' } as const;
 
 describe('saving', () => {
   it('stores kind, supersedes and evidence in order', async () => {
-    const { store, run } = started();
+    const { store, run } = await started();
     const older = await save(store, run.id, 'c1', 'older');
     const memory = await save(store, run.id, 'c2', 'newer', { kind: 'procedure', supersedes: [older.id], evidence: EVIDENCE });
     expect(store.memories.get(memory.id)).toMatchObject({ kind: 'procedure', supersedes: [older.id], evidence: EVIDENCE });
   });
 
   it('keeps status out of the record, because status is computed at read', async () => {
-    const { store, run } = started();
+    const { store, run } = await started();
     expect(await save(store, run.id, 'c1', 'note')).not.toHaveProperty('status');
   });
 
   it('does not add evidence twice for a replayed call', async () => {
-    const { store, run } = started();
+    const { store, run } = await started();
     const input: SaveMemoryInput = { origin: 'trusted', scope: 'project', project: '/work/a', text: 'x', runId: run.id, step: 1, callId: 'c1', evidence: EVIDENCE };
     await store.memories.save(input);
     expect((await store.memories.save(input)).memory.evidence).toEqual(EVIDENCE);
@@ -50,7 +50,7 @@ describe('saving', () => {
 
 describe('recall', () => {
   it('leaves out a superseded memory and a retired one, and history shows them', async () => {
-    const { store, run } = started();
+    const { store, run } = await started();
     const older = await save(store, run.id, 'c1', 'older');
     const newer = await save(store, run.id, 'c2', 'newer', { supersedes: [older.id] });
     const retired = await save(store, run.id, 'c3', 'retired');
@@ -69,20 +69,20 @@ describe('search', () => {
   });
 
   it('matches a mid-word substring through the trigram index', async () => {
-    const { store, run } = started();
+    const { store, run } = await started();
     const memory = await save(store, run.id, 'c1', 'the tokenizer lives here');
     expect(store.memories.search(VISIBLE, ['okeni']).map((entry) => entry.id)).toEqual([memory.id]);
   });
 
   it('requires every term', async () => {
-    const { store, run } = started();
+    const { store, run } = await started();
     const both = await save(store, run.id, 'c1', 'alpha and bravo');
     await save(store, run.id, 'c2', 'alpha only');
     expect(store.memories.search(VISIBLE, ['alpha', 'bravo']).map((entry) => entry.id)).toEqual([both.id]);
   });
 
   it('treats a query as text, never as FTS syntax', async () => {
-    const { store, run } = started();
+    const { store, run } = await started();
     const memory = await save(store, run.id, 'c1', 'use "quotes" OR NOT stars*');
     expect(store.memories.search(VISIBLE, ['"quotes"']).map((entry) => entry.id)).toEqual([memory.id]);
     expect(store.memories.search(VISIBLE, ['NEAR(a b)'])).toEqual([]);
@@ -90,14 +90,14 @@ describe('search', () => {
   });
 
   it('finds a term shorter than three characters, as in Japanese', async () => {
-    const { store, run } = started();
+    const { store, run } = await started();
     const memory = await save(store, run.id, 'c1', '仕様を確認した');
     await save(store, run.id, 'c2', 'unrelated');
     expect(store.memories.search(VISIBLE, ['仕様']).map((entry) => entry.id)).toEqual([memory.id]);
   });
 
   it('leaves out superseded and retired memories by default and shows them with include all', async () => {
-    const { store, run } = started();
+    const { store, run } = await started();
     const older = await save(store, run.id, 'c1', 'shared word');
     const newer = await save(store, run.id, 'c2', 'shared word again', { supersedes: [older.id] });
     const retired = await save(store, run.id, 'c3', 'shared word retired');
@@ -107,7 +107,7 @@ describe('search', () => {
   });
 
   it('says on a replaced note which notes replaced it, and not on the one that replaced it', async () => {
-    const { store, run } = started();
+    const { store, run } = await started();
     const older = await save(store, run.id, 'c1', 'shared word');
     const newer = await save(store, run.id, 'c2', 'shared word again', { supersedes: [older.id] });
     expect(store.memories.get(older.id)?.supersededBy).toEqual([newer.id]);
@@ -118,7 +118,7 @@ describe('search', () => {
   });
 
   it('keeps visibility with include all: another project stays hidden', async () => {
-    const { store, run } = started();
+    const { store, run } = await started();
     await save(store, run.id, 'c1', 'shared word', { project: '/work/b' });
     expect(store.memories.search(VISIBLE, ['shared'], { include: 'all' })).toEqual([]);
     expect(store.memories.search({ trusted: false }, ['shared'], { include: 'all' })).toEqual([]);
@@ -127,7 +127,7 @@ describe('search', () => {
 
 describe('matchingIds', () => {
   it('gives the ids matching any term, for the first rank of recall', async () => {
-    const { store, run } = started();
+    const { store, run } = await started();
     const first = await save(store, run.id, 'c1', 'touches src/parser.ts');
     const second = await save(store, run.id, 'c2', 'about the sweeper');
     await save(store, run.id, 'c3', 'nothing else');
@@ -135,7 +135,7 @@ describe('matchingIds', () => {
   });
 
   it('is not widened to almost every note by a one-letter word of the task', async () => {
-    const { store, run } = started();
+    const { store, run } = await started();
     const wanted = await save(store, run.id, 'c1', 'the bug lives in the sweeper');
     await save(store, run.id, 'c2', 'banana bread recipe');
     await save(store, run.id, 'c3', 'a gardening note');
@@ -143,7 +143,7 @@ describe('matchingIds', () => {
   });
 
   it('still matches a short word when it is the whole query, and a two-character Japanese word beside others', async () => {
-    const { store, run } = started();
+    const { store, run } = await started();
     const letter = await save(store, run.id, 'c1', 'x marks the spot');
     const japanese = await save(store, run.id, 'c2', '設計の方針');
     await save(store, run.id, 'c3', 'unrelated');

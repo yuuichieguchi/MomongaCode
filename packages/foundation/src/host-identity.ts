@@ -2,7 +2,10 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { pipeline } from 'node:stream/promises';
+import { nodeFileSystem } from './node-file-system.ts';
+import type { FileSystem } from './node-file-system.ts';
 import { settledOrAborted } from './operation-limit.ts';
+import { isErrno } from './platform/inspector-types.ts';
 import { startSharedCall } from './shared-call.ts';
 import type { SharedCall } from './shared-call.ts';
 
@@ -38,7 +41,17 @@ export const PROBE_KEY_COMPONENT_LABELS: Readonly<Record<string, string>> = {
   hostOsBuild: 'OS build',
 };
 
+const FILE_IDENTITY_COMPONENT_PREFIX = 'fileIdentity:';
+
+export type FileIdentityComponent = `${typeof FILE_IDENTITY_COMPONENT_PREFIX}${string}`;
+
+export const fileIdentityComponentOf = (file: string): FileIdentityComponent => `${FILE_IDENTITY_COMPONENT_PREFIX}${file}`;
+
+const fileOfComponent = (component: string): string | undefined => (component.startsWith(FILE_IDENTITY_COMPONENT_PREFIX) ? component.slice(FILE_IDENTITY_COMPONENT_PREFIX.length) : undefined);
+
 export const probeKeyComponentLabel = (component: string): string => {
+  const file = fileOfComponent(component);
+  if (file !== undefined) return `identity of the file ${file}`;
   const label = PROBE_KEY_COMPONENT_LABELS[component];
   if (label === undefined) throw new Error(`the probe key component ${component} has no reader`);
   return label;
@@ -103,7 +116,9 @@ const UNHELD: HeldHostReadings = { held: (_component, signal, read) => settledOr
 
 const UNCACHED: BinaryHashCache = { sha256Of: (file, signal) => streamedSha256(file, signal) };
 
-type ComponentRequest = { binary: string; platform: NodeJS.Platform; exec: HostExec; signal: AbortSignal; hashes: BinaryHashCache; host: HeldHostReadings };
+type StatFiles = Pick<FileSystem, 'stat'>;
+
+type ComponentRequest = { binary: string; platform: NodeJS.Platform; exec: HostExec; signal: AbortSignal; hashes: BinaryHashCache; host: HeldHostReadings; files: StatFiles };
 
 type ComponentReader = (request: ComponentRequest) => Promise<ProbeKeyReading>;
 
@@ -140,6 +155,28 @@ const COMPONENT_READERS: Readonly<Record<string, ComponentReader>> = {
   },
 };
 
+const ABSENT_FILE_IDENTITY = 'absent';
+
+const fileIdentityReader =
+  (file: string): ComponentReader =>
+  async ({ files, signal }) => {
+    try {
+      return { kind: 'read', value: fileIdentityOf(await files.stat(file)) };
+    } catch (error) {
+      signal.throwIfAborted();
+      if (isErrno(error, 'ENOENT')) return { kind: 'read', value: ABSENT_FILE_IDENTITY };
+      return { kind: 'unreadable', reason: `the file ${file} cannot be read: ${reasonOf(error)}` };
+    }
+  };
+
+const readerOf = (component: string): ComponentReader => {
+  const file = fileOfComponent(component);
+  if (file !== undefined) return fileIdentityReader(file);
+  const reader = COMPONENT_READERS[component];
+  if (reader === undefined) throw new Error(`the probe key component ${component} has no reader`);
+  return reader;
+};
+
 export type ReadProbeKeyComponentsRequest = {
   identity: readonly string[];
   binary: string;
@@ -148,16 +185,16 @@ export type ReadProbeKeyComponentsRequest = {
   signal: AbortSignal;
   hashes?: BinaryHashCache;
   host?: HeldHostReadings;
+  files?: StatFiles;
 };
 
 export const readProbeKeyComponents = async (request: ReadProbeKeyComponentsRequest): Promise<ProbeKeyReadings> => {
   const hashes = request.hashes ?? UNCACHED;
   const host = request.host ?? UNHELD;
   const readings: ProbeKeyReadings = {};
+  const files = request.files ?? nodeFileSystem;
   for (const component of request.identity) {
-    const reader = COMPONENT_READERS[component];
-    if (reader === undefined) throw new Error(`the probe key component ${component} has no reader`);
-    readings[component] = await reader({ binary: request.binary, platform: request.platform, exec: request.exec, signal: request.signal, hashes, host });
+    readings[component] = await readerOf(component)({ binary: request.binary, platform: request.platform, exec: request.exec, signal: request.signal, hashes, host, files });
   }
   return readings;
 };

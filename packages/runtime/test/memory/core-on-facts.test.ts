@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { MemoryRecord, RunEventPayload } from '@momonga/protocol';
-import { createFakeTimers } from '@momonga/testkit';
+import { createFakeTimers, NEVER_CANCELLED } from '@momonga/testkit';
 import type { RuntimeStore } from '@momonga/store';
 import { defaultMemorySettings } from '@momonga/config';
 import { enqueue, harness, makeStoreDir, newSession } from '../../../store/test/helpers.ts';
@@ -28,16 +28,16 @@ const MANIFESTS = ['package.json'];
 const NPM_TEST_FACT = 'Run `npm test` to verify a change in this repository.';
 const LINT_FACT = 'Run `npm run lint` to verify a change in this repository.';
 
-const setup = () => {
+const setup = async () => {
   const opened = harness();
   const { clock } = opened;
   const store = withInProcessFacts(opened.store, opened.dbPath);
   const project = makeStoreDir();
-  store.trust.set(project, 'trusted');
+  await store.trust.setAsked(project, 'trusted', NEVER_CANCELLED);
   const session = newSession(store, project);
   const gateway = createFakeGateway(capabilitiesFor(100_000, { structuredOutput: 'json_schema' }));
   const settings = {
-    trusted: (target: { cwd: string }) => store.trust.decisionFor(target.cwd).decision === 'trusted',
+    trusted: async (target: { cwd: string }) => (await store.trust.decisionAsked(target.cwd, NEVER_CANCELLED)).decision === 'trusted',
     verification: async () => ({ commands: [...COMMANDS], manifests: [...MANIFESTS] }),
     memory: async () => defaultMemorySettings(),
   };
@@ -55,7 +55,7 @@ const setup = () => {
       random: () => 0.5,
     });
   const finishedRun = async (events: readonly RunEventPayload[]) => {
-    const run = enqueue(store, session.id, 'fix the bug');
+    const run = await enqueue(store, session.id, 'fix the bug');
     await finishClaimed(store, events);
     return run;
   };
@@ -72,7 +72,7 @@ const VERIFIED_TWICE = (project: string): RunEventPayload[] => [
 
 describe('memory.repositoryFacts under the shipped defaults (design core-on 3.5 item 4)', () => {
   it('writes one procedure candidate per passing verification command of a verified run in a trusted folder', async () => {
-    const env = setup();
+    const env = await setup();
     env.gateway.script.push(textStep(JSON.stringify({ candidates: [] })));
     const run = await env.finishedRun(VERIFIED_TWICE(env.project));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');

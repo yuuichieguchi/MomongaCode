@@ -14,7 +14,7 @@ const restartedEvents = (env: Env, runId: string): RunEvent[] => env.events(runI
 describe('worker send fencing', () => {
   it('does not resend the in-flight request after losing the lease while preparing the claim', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     await env.seed(run.id, [requested()], 'crash');
     const reached = deferred<void>();
     const gate = deferred<void>();
@@ -41,7 +41,7 @@ describe('worker send fencing', () => {
 describe('worker model.stream.restarted', () => {
   it('appends model.stream.restarted before re-subscribing to a step that already emitted deltas', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     await env.seed(run.id, [requested(), { type: 'agent.message.delta', step: 1, attempt: 1, itemId: 'msg_partial', text: 'partial ' }], 'crash');
     env.gateway.script.push(textStep('Full answer.'));
 
@@ -59,7 +59,7 @@ describe('worker model.stream.restarted', () => {
 
   it('does not append model.stream.restarted when the step emitted no deltas', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     await env.seed(run.id, [requested()], 'crash');
     env.gateway.script.push(textStep('Full answer.'));
 

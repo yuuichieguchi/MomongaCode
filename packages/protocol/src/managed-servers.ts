@@ -4,7 +4,7 @@ export type ManagedServerErrorKind = (typeof MANAGED_SERVER_ERROR_KINDS)[number]
 
 export const PROBE_KEY_COMPONENTS = ['binarySha256', 'hostOsBuild'] as const;
 
-export type ProbeKeyComponent = (typeof PROBE_KEY_COMPONENTS)[number];
+export type ProbeKeyComponent = (typeof PROBE_KEY_COMPONENTS)[number] | `fileIdentity:${string}`;
 
 export const MANAGED_DECLARABLE_FIELDS = ['contextWindow', 'maxOutputTokens'] as const;
 

@@ -10,7 +10,7 @@ describe('worker approval wait', () => {
     const env = await makeEnv();
     const deadlineAt = START_MS + 60_000;
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: `${env.project}/out.txt`, content: 'x' } }]));
-    const run = env.enqueue('Write the file', { deadlineAt });
+    const run = await env.enqueue('Write the file', { deadlineAt });
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -35,7 +35,7 @@ describe('worker approvals for a whole batch', () => {
       ]),
       textStep('Both planned.'),
     );
-    const run = env.enqueue('Plan twice');
+    const run = await env.enqueue('Plan twice');
 
     expect(await env.runOnce(env.worker('worker-1'))).toBe('yielded');
 
@@ -88,7 +88,7 @@ describe('worker wake hook', () => {
     expect(listeners.size).toBe(1);
 
     env.gateway.script.push(textStep('Hello.'));
-    const run = env.enqueue('Say hello');
+    const run = await env.enqueue('Say hello');
     for (const listener of [...listeners]) listener();
 
     await env.passTime(() => env.run(run.id).status === 'COMPLETED', 'the woken worker to complete the run');

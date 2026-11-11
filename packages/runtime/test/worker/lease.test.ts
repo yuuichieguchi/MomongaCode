@@ -8,7 +8,7 @@ describe('worker lease loss', () => {
     const env = await makeEnv();
     const blocked = gated(textStep('late answer', { chunks: ['late ', 'answer'] }), 4);
     env.gateway.script.push(blocked);
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const running = env.runOnce(env.worker('worker-a'));
     await env.settled(blocked.gate.reached.promise, 'the stream to start');
     const [started] = env.ofType(run.id, 'run.started');
@@ -32,7 +32,7 @@ describe('worker lease loss', () => {
     const env = await makeEnv();
     const blocked = gated(textStep('never delivered'), 4);
     env.gateway.script.push(blocked);
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const running = env.runOnce(env.worker('worker-a', { heartbeatMs: 10 }));
     await env.settled(blocked.gate.reached.promise, 'the stream to start');
 

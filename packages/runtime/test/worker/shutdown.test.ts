@@ -43,7 +43,7 @@ describe('worker shutdown through abort', () => {
     const env = await makeEnv();
     const blocked = gated(textStep('never finished', { chunks: ['partial ', 'answer'] }), 4);
     env.gateway.script.push(blocked);
-    const run = env.enqueue('Long answer');
+    const run = await env.enqueue('Long answer');
     const worker = env.worker();
     const running = env.runOnce(worker);
     await env.settled(blocked.gate.reached.promise, 'the stream to start');
@@ -67,7 +67,7 @@ describe('worker shutdown through abort', () => {
       await untilAborted(ctx.signal);
     };
     env.gateway.script.push(callsStep([{ callId: 'call_m_1', name: 'Mark', args: { value: 'one' } }]));
-    const run = env.enqueue('Mark it');
+    const run = await env.enqueue('Mark it');
     const worker = env.worker();
     const running = env.runOnce(worker);
     const claimEnded = running.then(() => {
@@ -95,7 +95,7 @@ describe('worker shutdown through abort', () => {
 
   it('writes nothing during cancel recovery and leaves the run CANCELLING with the lease cleared', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Mark it');
+    const run = await env.enqueue('Mark it');
     await env.seed(run.id, markCallSeed(run.id), 'crash');
     env.store.idempotency.begin(toolKey(run.id, 1, 'call_m_1'), { expiresAt: START_MS + 86_400_000, meta: { tool: 'Mark' } });
     expect((await env.cancel(run.id)).status).toBe('CANCELLING');
@@ -125,7 +125,7 @@ describe('worker shutdown through abort', () => {
 
   it('releases a CANCELLING claim without a CANCELLED transition when the shutdown lands during the upstream cancel', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const body = { model: 'fm', input: [{ type: 'message', role: 'user', content: 'Work' }], store: false, stream: true };
     await env.seed(run.id, [{ type: 'model.requested', step: 1, attempt: 1, digest: bodyDigest(body), body }], 'crash');
     expect((await env.cancel(run.id)).status).toBe('CANCELLING');
@@ -159,7 +159,7 @@ describe('worker shutdown through abort', () => {
     const env = await makeEnv();
     const worker = env.worker();
     await env.settled(worker.abort('shutdown'), 'the shutdown abort on an idle worker');
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     env.gateway.script.push(textStep('never sent'));
 
     expect(await env.runOnce(worker)).toBe('idle');
@@ -171,7 +171,7 @@ describe('worker shutdown through abort', () => {
     const env = await makeEnv();
     const blocked = gated(textStep('never finished'), 0);
     env.gateway.script.push(blocked);
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const worker = env.worker('worker-1', { idlePollMs: 10 });
     worker.start();
     await env.settled(blocked.gate.reached.promise, 'the stream to start');
@@ -188,7 +188,7 @@ describe('worker graceful stop', () => {
     const env = await makeEnv();
     const blocked = gated(callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'one' } }]), 0);
     env.gateway.script.push(blocked);
-    const run = env.enqueue('Echo one');
+    const run = await env.enqueue('Echo one');
     const worker = env.worker('worker-1', { idlePollMs: 10 });
     worker.start();
     await env.settled(blocked.gate.reached.promise, 'the stream to start');

@@ -8,7 +8,7 @@ describe('the worker harness has one time source: the clock and the timers of th
     const env = await makeEnv();
     const blocked = gated(textStep('late answer'), 0);
     env.gateway.script.push(blocked);
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     let heartbeats = 0;
     const store = {
       ...env.store,
@@ -36,7 +36,7 @@ describe('the worker harness has one time source: the clock and the timers of th
     const env = await makeEnv();
     const blocked = gated(textStep('late answer'), 0);
     env.gateway.script.push(blocked);
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const running = env.runOnce(env.worker('worker-a'));
     await blocked.gate.reached.promise;
 

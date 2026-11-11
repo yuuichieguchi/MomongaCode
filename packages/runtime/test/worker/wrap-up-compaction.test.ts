@@ -9,7 +9,7 @@ describe('wrap-up build', () => {
   it('makes no proactive compaction call although the context is above the high-water mark', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(4000) });
     env.gateway.script.push(...sixPaddedSteps(), textStep('Here is what I did.'));
-    const run = env.enqueue('Fill the context', { limits: { maxSteps: 6 } });
+    const run = await env.enqueue('Fill the context', { limits: { maxSteps: 6 } });
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 
@@ -23,7 +23,7 @@ describe('wrap-up build', () => {
   it('compacts proactively at the same step when the run is not wrapping up', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(4000) });
     env.gateway.script.push(...sixPaddedSteps(), textStep('done'));
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 

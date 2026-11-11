@@ -29,7 +29,7 @@ describe('cancel recovery of an interrupted call', () => {
   it('reconciles a started call with a PENDING record as unknown before CANCELLED', async () => {
     const env = await makeEnv();
     const runs: string[] = [];
-    const run = env.enqueue('Touch it');
+    const run = await env.enqueue('Touch it');
     const key = toolKey(run.id, 1, 'call_t_1');
     await env.seed(
       run.id,
@@ -70,7 +70,7 @@ describe('per-call completion events', () => {
       ]),
       textStep('Both done.'),
     );
-    const run = env.enqueue('Slow and fast');
+    const run = await env.enqueue('Slow and fast');
     const running = env.runOnce(env.worker());
 
     try {
@@ -92,7 +92,7 @@ describe('context notices and loaded instructions', () => {
     env.instructions.files.set(agentsPath, 'Untrusted rule.');
     env.settings.trustedValue = false;
     env.gateway.script.push(callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await env.runOnce(env.worker());
 
@@ -108,7 +108,7 @@ describe('context notices and loaded instructions', () => {
     const agentsPath = path.join(env.project, 'AGENTS.md');
     env.instructions.files.set(agentsPath, 'Prefer small diffs.');
     env.gateway.script.push(callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await env.runOnce(env.worker());
 
@@ -125,7 +125,7 @@ describe('incomplete responses', () => {
     const env = await makeEnv();
     const { incompleteStep } = await import('./scripts.ts');
     env.gateway.script.push(incompleteStep([assistantMessage('msg_cut', 'cut')]));
-    const run = env.enqueue('Long');
+    const run = await env.enqueue('Long');
 
     await env.runOnce(env.worker());
 
@@ -135,7 +135,7 @@ describe('incomplete responses', () => {
   it('records a completed response with status completed and no incomplete reason', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Fine.'));
-    const run = env.enqueue('Short');
+    const run = await env.enqueue('Short');
 
     await env.runOnce(env.worker());
 
@@ -146,7 +146,7 @@ describe('incomplete responses', () => {
 
   it('recovers a crash after a recorded incomplete answer to STOPPED(max_tokens)', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Long');
+    const run = await env.enqueue('Long');
     await env.seed(
       run.id,
       [
@@ -170,7 +170,7 @@ describe('incomplete responses', () => {
 describe('final-summary guard on recovery', () => {
   it('does not execute a function call returned by the recorded final-summary call and stops with the limit reason', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work', { limits: { maxSteps: 1 } });
+    const run = await env.enqueue('Work', { limits: { maxSteps: 1 } });
     const summaryBody = {
       model: 'fm',
       input: [],

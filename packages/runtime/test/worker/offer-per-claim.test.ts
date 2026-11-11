@@ -29,7 +29,7 @@ const runWithMidClaimFact = async (cachePrefix: boolean, overrides: Partial<AddG
     added(env, overrides);
   };
   env.gateway.script.push(callsStep([{ callId: 'c1', name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
-  const run = env.enqueue('Echo then finish');
+  const run = await env.enqueue('Echo then finish');
   await env.runOnce(env.worker());
   return { env, run, requests: env.ofType(run.id, 'model.requested') };
 };

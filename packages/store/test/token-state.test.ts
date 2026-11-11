@@ -108,9 +108,9 @@ const JOURNAL: RunEventPayload[] = [
   { type: 'loop.warned', signature: 'sig-1' } as RunEventPayload,
 ];
 
-const storedSnapshot = () => {
+const storedSnapshot = async () => {
   const { dbPath, store } = harness();
-  const run = enqueue(store, newSession(store).id, 'continue the work');
+  const run = await enqueue(store, newSession(store).id, 'continue the work');
   const claim = mustClaim(store, 'w1');
   expect(store.append(claim, JOURNAL).kind).toBe('ok');
   const events: RunEvent[] = store.readRunEvents(run.id, 0, 1000);
@@ -126,20 +126,20 @@ const storedSnapshot = () => {
 };
 
 describe('snapshot state version', () => {
-  it('is newer than 15 and is written as such', () => {
+  it('is newer than 15 and is written as such', async () => {
     expect(SNAPSHOT_STATE_VERSION).toBeGreaterThan(15);
-    expect(storedSnapshot().storedJson()['stateVersion']).toBe(SNAPSHOT_STATE_VERSION);
+    expect((await storedSnapshot()).storedJson()['stateVersion']).toBe(SNAPSHOT_STATE_VERSION);
   });
 
-  it('round-trips the loaded tools, the loop warning and the arrival seqs', () => {
-    const { store, run, state } = storedSnapshot();
+  it('round-trips the loaded tools, the loop warning and the arrival seqs', async () => {
+    const { store, run, state } = await storedSnapshot();
     expect(state.loadedTools).toEqual(['Grep']);
     expect(state.loopWarned).toEqual({ signature: 'sig-1' });
     expect(store.load(run.id).snapshot?.state).toEqual(state);
   });
 
-  it('treats a version 12 snapshot as absent and rebuilds the state from the journal', () => {
-    const { store, run, state, events, mutate } = storedSnapshot();
+  it('treats a version 12 snapshot as absent and rebuilds the state from the journal', async () => {
+    const { store, run, state, events, mutate } = await storedSnapshot();
     mutate("json_set(state_json, '$.stateVersion', 12)");
     const loaded = store.load(run.id);
     expect(loaded.snapshot).toBeUndefined();
@@ -153,8 +153,8 @@ describe('snapshot state version', () => {
     ['a loop warning without a signature', "json_remove(state_json, '$.loopWarned.signature')"],
     ['a loaded instruction without a seq', "json_remove(state_json, '$.loadedInstructions[0].seq')"],
     ['an activated skill without a seq', "json_remove(state_json, '$.activatedSkills[0].seq')"],
-  ])('reports a snapshot with %s as corrupt', (_label, expression) => {
-    const { store, run, mutate } = storedSnapshot();
+  ])('reports a snapshot with %s as corrupt', async (_label, expression) => {
+    const { store, run, mutate } = await storedSnapshot();
     mutate(expression);
     expect(() => store.load(run.id)).toThrow(/corrupt/);
   });

@@ -22,7 +22,7 @@ describe('a tool result reaches the model enclosed, while the journal stays raw'
   it('encloses the output of a tool that declares nothing and keeps the stored event raw', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([{ callId: 'call_f_1', name: 'Fetch', args: { value: 'x' } }]), textStep('Done.'));
-    const run = env.enqueue('Fetch it');
+    const run = await env.enqueue('Fetch it');
     await env.runOnce(env.worker('worker-1', { toolList: () => [fetchTool] }));
 
     const providerCallId = env.gateway.callId('call_f_1');

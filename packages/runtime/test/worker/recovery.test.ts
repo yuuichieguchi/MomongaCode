@@ -16,7 +16,7 @@ describe('worker recovery (b1): crash after model.requested', () => {
     const env = await makeEnv();
     const blocked = gated(textStep('Recovered answer.', { usage: usageOf(80, 6) }), 4);
     env.gateway.script.push(blocked);
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const abandoned = env.runOnce(env.worker('worker-a'));
     await env.settled(blocked.gate.reached.promise, 'the first stream to start');
     const [firstRequest] = env.ofType(run.id, 'model.requested');
@@ -47,7 +47,7 @@ describe('worker recovery (b1): crash after model.requested', () => {
 describe('worker recovery (b2): crash during a tool with a PENDING record', () => {
   it('reconciles the interrupted call and never runs it again', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Mark it');
+    const run = await env.enqueue('Mark it');
     const key = toolKey(run.id, 1, 'call_m_1');
     await env.seed(
       run.id,
@@ -78,7 +78,7 @@ describe('worker recovery (b2): crash during a tool with a PENDING record', () =
 describe('worker recovery of pending calls', () => {
   it('executes a call left requested between tool.call and the batch, without re-requesting the recorded step', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Echo');
+    const run = await env.enqueue('Echo');
     await env.seed(
       run.id,
       [
@@ -101,7 +101,7 @@ describe('worker recovery of pending calls', () => {
 
   it('completes a run whose recorded final answer was never followed by a transition, without a model call', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Answer');
+    const run = await env.enqueue('Answer');
     await env.seed(run.id, [responded(1, [assistantMessage('msg_done', 'Already answered.')])], 'crash');
 
     await env.runOnce(env.worker());
@@ -112,7 +112,7 @@ describe('worker recovery of pending calls', () => {
 
   it('re-releases a call awaiting approval to WAITING_HUMAN, reusing the pending approval', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Write');
+    const run = await env.enqueue('Write');
     const target = `${env.project}/out.txt`;
     const options = [
       { optionId: 'opt-ao', name: 'Allow once', kind: 'allow_once' as const },

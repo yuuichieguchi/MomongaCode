@@ -9,18 +9,19 @@ import { createMemoryPort } from '../../src/process/memory-port.ts';
 import { prepareCommandMemory } from '../../src/memory/add-memory.ts';
 import type { EvidenceRun } from '../../src/memory/evidence.ts';
 import { SIGNAL } from './recall-fixture.ts';
+import { NEVER_CANCELLED } from '@momonga/testkit';
 
 const HEAD = 'd'.repeat(40);
 const RECORDED = 'e'.repeat(64);
 
 const gitAnsweringHead: EvidenceRun = async () => ({ exitCode: 0, stdout: `${HEAD}\n` });
 
-const trustedGitFolder = () => {
+const trustedGitFolder = async () => {
   const { store } = harness();
   const folder = fs.realpathSync.native(makeStoreDir());
   fs.mkdirSync(path.join(folder, 'src'));
   fs.writeFileSync(path.join(folder, 'src', 'a.ts'), 'export const a = 1;\n');
-  store.trust.set(folder, 'trusted');
+  await store.trust.setAsked(folder, 'trusted', NEVER_CANCELLED);
   return { store, folder };
 };
 
@@ -36,7 +37,7 @@ const saveThroughTool = async (store: RuntimeStore, folder: string, scope: Memor
     evidenceRun: () => gitAnsweringHead,
   });
   const session = newSession(store, folder);
-  const run = enqueue(store, session.id);
+  const run = await enqueue(store, session.id);
   const claim = mustClaim(store, 'w1');
   if (store.append(claim, [callEvent('call-1')]).kind !== 'ok') throw new Error('the tool call was not recorded');
   const set = await port.load(session, SIGNAL);
@@ -47,7 +48,7 @@ const saveThroughTool = async (store: RuntimeStore, folder: string, scope: Memor
 };
 
 const commandContext = (store: RuntimeStore) => ({
-  trusted: (project: string) => store.trust.get(project) === 'trusted',
+  trusted: async (project: string) => (await store.trust.decisionAsked(project, NEVER_CANCELLED)).decision === 'trusted',
   evidenceRun: () => gitAnsweringHead,
   signal: SIGNAL,
 });
@@ -63,7 +64,7 @@ const savedEvidence = (store: RuntimeStore, scope: MemoryScope): StoredMemoryEvi
 
 describe('an any-project memory carries no repository evidence on any path', () => {
   it('saves a user memory through the tool in a trusted git folder with no commit and no file evidence', async () => {
-    const { store, folder } = trustedGitFolder();
+    const { store, folder } = await trustedGitFolder();
     await saveThroughTool(store, folder, 'user');
     const users = store.memories.list().filter((memory) => memory.scope === 'user');
     expect(users).toHaveLength(1);
@@ -71,13 +72,13 @@ describe('an any-project memory carries no repository evidence on any path', () 
   });
 
   it('never stores file or commit evidence on a user memory saved through the tool with paths', async () => {
-    const { store, folder } = trustedGitFolder();
+    const { store, folder } = await trustedGitFolder();
     await saveThroughTool(store, folder, 'user', ['src/a.ts']).catch(() => undefined);
     expect(repositoryEvidenceOf(savedEvidence(store, 'user'))).toEqual([]);
   });
 
   it('prepares a user memory through the command with no commit and no file evidence', async () => {
-    const { store } = trustedGitFolder();
+    const { store } = await trustedGitFolder();
     const prepared = await prepareCommandMemory({ text: 'the parser keeps tokens in a flat array', scope: 'user' }, commandContext(store));
     expect(prepared.evidence).toEqual([]);
   });
@@ -85,7 +86,7 @@ describe('an any-project memory carries no repository evidence on any path', () 
 
 describe('a project memory keeps its repository evidence on every path', () => {
   it('binds the recorded file hash and the head commit through the tool', async () => {
-    const { store, folder } = trustedGitFolder();
+    const { store, folder } = await trustedGitFolder();
     await saveThroughTool(store, folder, 'project', ['src/a.ts']);
     expect(repositoryEvidenceOf(savedEvidence(store, 'project'))).toEqual([
       { kind: 'file', project: folder, path: 'src/a.ts', sha256: RECORDED },
@@ -94,7 +95,7 @@ describe('a project memory keeps its repository evidence on every path', () => {
   });
 
   it('binds the file hash and the head commit through the command', async () => {
-    const { store, folder } = trustedGitFolder();
+    const { store, folder } = await trustedGitFolder();
     const prepared = await prepareCommandMemory(
       { text: 'the parser keeps tokens in a flat array', scope: 'project', project: folder, paths: ['src/a.ts'] },
       commandContext(store),

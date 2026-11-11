@@ -9,7 +9,7 @@ const markerText = async (platform: NodeJS.Platform, from: PermissionMode, to: P
   const h = referenceHarness({ unaskedCommands: unaskedCommandsFor(platform) });
   const b = chainBuilder(h);
   await answeredRun(h, b, 'Say hello', (claim) => b.text(claim), { fresh: true, mode: from });
-  const child = b.createRun('And again');
+  const child = await b.createRun('And again');
   expect(await b.inherit(b.claimNext(child.id), to)).toEqual({ kind: 'inherited' });
   const [marker] = referenceOf(h.store, child.id).synthesised;
   const content = marker?.item.type === 'message' ? marker.item.content : undefined;

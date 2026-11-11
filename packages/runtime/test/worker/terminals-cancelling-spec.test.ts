@@ -27,7 +27,7 @@ const outcomeOf = (run: Run): string => {
 
 const cancellingRun = async (): Promise<{ env: Env; claim: Claim; leave: ReturnType<typeof createTerminals> }> => {
   const env = await makeEnv();
-  const run = env.enqueue();
+  const run = await env.enqueue();
   const claim = env.store.claim('w1');
   if (claim === null) throw new Error('the run could not be claimed');
   await env.store.requestCancel(run.id);

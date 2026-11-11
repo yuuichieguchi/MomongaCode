@@ -88,18 +88,18 @@ export const createDerivedRepair = (db: DatabaseSync, records: AppendRecords, de
 
   const repairPage = (runId: string, throughSeq: number): boolean => {
     const marks = watermarksOf(runId);
-    let caughtUp = true;
-    for (const derivation of DERIVATIONS) {
-      const after = marks.get(derivation) ?? 0;
-      if (after >= throughSeq) continue;
-      const rows = sql.tail.all({ runId, after, through: throughSeq, limit: REPAIR_PAGE_EVENTS });
-      for (const event of decodeRunEvents(rows, decodeContext)) apply(derivation, event);
-      const last = rows.at(-1);
-      const reached = last === undefined || rows.length < REPAIR_PAGE_EVENTS ? throughSeq : readerFor('events', runId, last).number('seq');
+    const lagging = DERIVATIONS.map((derivation) => ({ derivation, after: marks.get(derivation) ?? 0 })).filter(({ after }) => after < throughSeq);
+    if (lagging.length === 0) return true;
+    const rows = sql.tail.all({ runId, after: Math.min(...lagging.map(({ after }) => after)), through: throughSeq, limit: REPAIR_PAGE_EVENTS });
+    const events = decodeRunEvents(rows, decodeContext);
+    const last = rows.at(-1);
+    const reached = last === undefined || rows.length < REPAIR_PAGE_EVENTS ? throughSeq : readerFor('events', runId, last).number('seq');
+    for (const { derivation, after } of lagging) {
+      if (after >= reached) continue;
+      for (const event of events) if (event.seq > after) apply(derivation, event);
       sql.advance.run({ runId, derivation, seq: reached });
-      if (reached < throughSeq) caughtUp = false;
     }
-    return caughtUp;
+    return reached >= throughSeq;
   };
 
   const recordAppended = (event: RecordedEvent): void => {

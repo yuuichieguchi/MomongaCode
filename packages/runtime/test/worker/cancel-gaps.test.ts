@@ -27,7 +27,7 @@ describe('worker cancel before the model request', () => {
       reached.resolve();
       await gate.promise;
     };
-    const run = env.enqueue('Count first');
+    const run = await env.enqueue('Count first');
     const running = env.runOnce(env.worker('worker-1', { cancelPollMs: 10 }));
     try {
       await env.settled(reached.promise, 'countTokens to be called');
@@ -47,7 +47,7 @@ describe('worker cancel before the model request', () => {
 
   it('makes no model request when the cancel arrives while compacting', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
-    const run = env.enqueue('Task one');
+    const run = await env.enqueue('Task one');
     await env.seed(
       run.id,
       [
@@ -88,7 +88,7 @@ describe('worker cancel with a non-cancel error', () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'x' } }]));
     const reached = deferred<void>();
-    const run = env.enqueue('Echo');
+    const run = await env.enqueue('Echo');
     const running = env.runOnce(
       env.worker('worker-1', {
         cancelPollMs: 10,

@@ -219,11 +219,11 @@ describe('startRuntimeProcess startup (system timers)', () => {
   it('an EMFILE during the startup settings read is thrown unchanged, not as ConfigError (exit class 1)', async () => {
     const temp = sandboxNoneHome();
     const injected = errnoError('EMFILE');
-    const realReadFile = fs.promises.readFile;
-    const spy = vi.spyOn(fs.promises, 'readFile').mockImplementation(((file: unknown, ...rest: unknown[]) => {
-      if (typeof file === 'string' && path.resolve(file) === temp.paths.settingsFile) return Promise.reject(injected);
-      return (realReadFile as (...args: unknown[]) => Promise<unknown>).call(fs.promises, file, ...rest);
-    }) as typeof fs.promises.readFile);
+    const realLstat = fs.promises.lstat;
+    const spy = vi.spyOn(fs.promises, 'lstat').mockImplementation((async (file: fs.PathLike, options?: fs.StatOptions) => {
+      if (String(file) === temp.paths.settingsFile) throw injected;
+      return realLstat(file, options);
+    }) as typeof fs.promises.lstat);
     try {
       const { started, logger } = startBare(temp);
       const error = await failureOf(started);

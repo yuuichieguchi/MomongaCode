@@ -10,7 +10,7 @@ describe('worker cancel', () => {
     const env = await makeEnv();
     const blocked = gated(textStep('never finished', { chunks: ['partial ', 'answer'] }), 4);
     env.gateway.script.push(blocked, textStep('never sent'));
-    const run = env.enqueue('Long answer');
+    const run = await env.enqueue('Long answer');
     const running = env.runOnce(env.worker());
     await env.settled(blocked.gate.reached.promise, 'the stream to start');
 
@@ -32,7 +32,7 @@ describe('worker cancel', () => {
   it('cancels during a long tool honoring its signal within 3 s and finalizes the call', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([{ callId: 'call_wait_1', name: 'Wait', args: { value: 'forever' } }]), textStep('never sent'));
-    const run = env.enqueue('Wait for a long time');
+    const run = await env.enqueue('Wait for a long time');
     const running = env.runOnce(env.worker());
     await env.settled(env.toolbox.waitStarted.promise, 'the long tool to start');
 
@@ -51,7 +51,7 @@ describe('worker cancel', () => {
 
   it('takes the cancel path without a model call when a crashed run was left CANCELLING', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     await env.seed(run.id, [], 'crash');
     expect((await env.cancel(run.id)).status).toBe('CANCELLING');
 

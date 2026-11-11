@@ -34,11 +34,11 @@ const tick = async (timers: ReturnType<typeof createFakeTimers>, ms: number): Pr
 };
 
 const injectStatFailure = (file: string, error: Error) => {
-  const realStatSync = fs.statSync;
-  return vi.spyOn(fs, 'statSync').mockImplementation(((target: fs.PathLike, options?: fs.StatSyncOptions) => {
+  const realStat = fs.promises.stat;
+  return vi.spyOn(fs.promises, 'stat').mockImplementation((async (target: fs.PathLike, options?: fs.StatOptions) => {
     if (String(target) === file) throw error;
-    return realStatSync(target, options);
-  }) as typeof fs.statSync);
+    return realStat(target, options);
+  }) as typeof fs.promises.stat);
 };
 
 const replaceFile = (file: string): void => {

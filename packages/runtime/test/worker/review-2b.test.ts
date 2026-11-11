@@ -28,7 +28,7 @@ describe('worker recovery of a not_applied call under the current policy', () =>
       reconcile: async () => ({ outcome: 'not_applied', output: '' }),
     });
     const toolList = () => [...env.toolbox.tools(), patch];
-    const run = env.enqueue('Patch the file');
+    const run = await env.enqueue('Patch the file');
     const key = toolKey(run.id, 1, 'call_p_1');
     const payloads: RunEventPayload[] = [
       requestedOffering(1, ['Patch']),
@@ -68,9 +68,9 @@ describe('worker recovery of a not_applied call under the current policy', () =>
 describe('worker reporter with a throwing onError hook', () => {
   it('falls back to the claim notice, keeps claiming and stops cleanly', async () => {
     const env = await makeEnv();
-    const failing = env.enqueue('Fails to load');
+    const failing = await env.enqueue('Fails to load');
     const other = env.store.createSession({ cwd: env.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, permissionMode: 'manual', model: MODEL_ID });
-    const healthy = createdRun(env.store.createRunAndEnqueue(other.id, { input: 'Say hello', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {} }));
+    const healthy = await createdRun(await env.store.createRunAndEnqueue(other.id, { input: 'Say hello', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {} }));
     env.gateway.script.push(textStep('Hello.'));
     const store: RuntimeStore = {
       ...env.store,

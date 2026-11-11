@@ -35,7 +35,7 @@ export const pinnedStart = (): RunEventPayload => ({
 export type StartedCall = { callId: string; name: string; kind?: ToolKind; args?: Record<string, unknown> };
 
 export const seedStartedCalls = async (env: Env, calls: readonly StartedCall[], options: { cancel?: boolean } = {}) => {
-  const run = env.enqueue('Work');
+  const run = await env.enqueue('Work');
   const keys = Object.fromEntries(calls.map((call) => [call.callId, toolKey(run.id, 1, call.callId)]));
   const payloads: RunEventPayload[] = [
     pinnedStart(),

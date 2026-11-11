@@ -31,7 +31,7 @@ describe('the snapshots a worker terminal encodes on the loop (O14: a terminal t
     const encoded: string[] = [];
     const env = await makeEnv({ onEncode: (kind) => void encoded.push(kind) });
     env.gateway.script.push(textStep('done'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const { store, order } = recording(env, () => undefined);
 
     await env.runOnce(env.worker('worker-1', { store }));
@@ -46,7 +46,7 @@ describe('the snapshots a worker terminal encodes on the loop (O14: a terminal t
   it('writes none when a cancel arrives between the final response and the transition', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('done'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const { store, order } = recording(env, async (to) => {
       if (to === 'COMPLETED') await env.store.requestCancel(run.id);
     });
@@ -63,7 +63,7 @@ describe('the snapshot a yield writes, which the next claim start reads (row 3: 
   it('writes exactly one at the yield to a human, at the last seq of the run, so the next claim folds no tail', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: path.join(env.project, 'out.txt'), content: 'approved' } }]));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const { store, order } = recording(env, () => undefined);
 
     expect(await env.runOnce(env.worker('worker-1', { store }))).toBe('yielded');

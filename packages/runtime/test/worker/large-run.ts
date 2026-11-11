@@ -68,7 +68,7 @@ export const stepEvents = (step: number): RunEventPayload[] => {
 export type LargeRun = { run: Run; claim: Claim; memoryIds: string[] };
 
 const savedMemories = async (env: Env): Promise<string[]> => {
-  const saver = env.enqueue('Save notes', { history: 'fresh' });
+  const saver = await env.enqueue('Save notes', { history: 'fresh' });
   const saverClaim = await env.seed(
     saver.id,
     Array.from({ length: MEMORIES }, (_unused, index): RunEventPayload => ({ type: 'tool.call', callId: `save_${index}`, providerCallId: `save_${index}`, name: 'MemorySave', kind: 'other', title: 'save', rawInput: {} })),
@@ -86,7 +86,7 @@ const savedMemories = async (env: Env): Promise<string[]> => {
 export const seedLargeRun = async (env: Env, steps: number): Promise<LargeRun> => {
   const memoryIds = await savedMemories(env);
   env.clock.advance(1);
-  const run = env.enqueue('Work through the logs', { history: 'fresh' });
+  const run = await env.enqueue('Work through the logs', { history: 'fresh' });
   const middle = Math.floor(steps / 2);
   const claim = await env.seed(
     run.id,
@@ -105,7 +105,7 @@ export const seedLargeRun = async (env: Env, steps: number): Promise<LargeRun> =
     const appended = env.store.append(claim, chunk);
     if (appended.kind !== 'ok') throw new Error(`the large run could not be seeded: ${appended.kind}`);
   }
-  return { run, claim, memoryIds };
+  return { run: run, claim, memoryIds };
 };
 
 export const foldedThrough = (env: Env, run: Run, throughSeq: number): RunState => {

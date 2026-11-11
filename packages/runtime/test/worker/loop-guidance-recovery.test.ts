@@ -45,7 +45,7 @@ describe('loop.warned is one fact with the calls of the same response (review H1
     const env = await guidedEnv();
     const appends: string[][] = [];
     env.gateway.script.push(echo('c1', SAME), echo('c2', SAME), echo('c3', SAME), textStep('never sent'));
-    const run = env.enqueue('Loop', { limits: { loopThreshold: 2 } });
+    const run = await env.enqueue('Loop', { limits: { loopThreshold: 2 } });
     const recording = recordingStore(env.store, (types) => {
       appends.push(types);
       return 'write';
@@ -64,7 +64,7 @@ describe('loop.warned is one fact with the calls of the same response (review H1
     let warnedSeen = false;
     let crashed = false;
     env.gateway.script.push(echo('c1', SAME), echo('c2', SAME), echo('c3', SAME), textStep('never sent'));
-    const run = env.enqueue('Loop', { limits: { loopThreshold: 2 } });
+    const run = await env.enqueue('Loop', { limits: { loopThreshold: 2 } });
     const crashing = recordingStore(env.store, (types) => {
       if (crashed) return 'write';
       if (types.includes('loop.warned')) warnedSeen = true;
@@ -101,7 +101,7 @@ const invalidCompaction = (): GatewayRequestError =>
 describe('the guidance stays pending until a response follows the warning (review H2)', () => {
   it('carries the guidance in the request rebuilt after compaction_rejected, and drops it once the model answered it', async () => {
     const env = await guidedEnv();
-    const run = env.enqueue('question one', { limits: { loopThreshold: 2 } });
+    const run = await env.enqueue('question one', { limits: { loopThreshold: 2 } });
     await env.seed(
       run.id,
       [

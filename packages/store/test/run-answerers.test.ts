@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { canonicalJson, migrate } from '@momonga/foundation';
+import { canonicalJson, migrate, systemRandom, nodeFileSystem } from '@momonga/foundation';
 import type { RunEventPayload } from '@momonga/protocol';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
@@ -54,9 +54,9 @@ const observed = (target: string): RunEventPayload => ({
   tokenCounting: 'estimated',
 });
 
-const appendedRun = (store: RuntimeStore, events: RunEventPayload[]): string => {
+const appendedRun = async (store: RuntimeStore, events: RunEventPayload[]): Promise<string> => {
   const session = newSession(store);
-  const run = enqueue(store, session.id);
+  const run = await enqueue(store, session.id);
   const claim = mustClaim(store, 'w1');
   expect(store.append(claim, events).kind).toBe('ok');
   return run.id;
@@ -70,7 +70,7 @@ const tableOf = (dbPath: string, runId: string): string[] =>
 
 const recorded = async (events: RunEventPayload[]): Promise<{ read: string[]; table: string[] }> => {
   const { store, dbPath } = harness();
-  const runId = appendedRun(store, events);
+  const runId = await appendedRun(store, events);
   return { read: await store.answeringTargetsOf(runId), table: tableOf(dbPath, runId) };
 };
 
@@ -110,8 +110,8 @@ describe('run_answerers, the per-run record of the targets that answered, writte
 
   it('a run with no paid answer has no answerer, and another run of the store does not leak into it', async () => {
     const { store } = harness();
-    const answered = appendedRun(store, [requested(1), responded(1, 'primary')]);
-    const quiet = enqueue(store, newSession(store, '/work/b').id);
+    const answered = await appendedRun(store, [requested(1), responded(1, 'primary')]);
+    const quiet = await enqueue(store, newSession(store, '/work/b').id);
     expect(await store.answeringTargetsOf(answered)).toEqual(['primary']);
     expect(await store.answeringTargetsOf(quiet.id)).toEqual([]);
   });
@@ -182,7 +182,7 @@ describe('reading the answerers of a run does not grow with its journal', () => 
   const decodedReading = async (meterEvents: number): Promise<{ targets: string[]; rows: number }> => {
     const dbPath = path.join(makeStoreDir(), 'runtime.db');
     let rows = 0;
-    const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
+    const store = openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
       path: dbPath,
       home: path.dirname(dbPath),
       clock: createFakeClock(START_MS),
@@ -194,7 +194,7 @@ describe('reading the answerers of a run does not grow with its journal', () => 
       },
     });
     registerCleanup(() => store.close());
-    const runId = appendedRun(store, [requested(1), responded(1, 'primary'), ...Array.from({ length: meterEvents }, () => observed('primary'))]);
+    const runId = await appendedRun(store, [requested(1), responded(1, 'primary'), ...Array.from({ length: meterEvents }, () => observed('primary'))]);
     rows = 0;
     const targets = await store.answeringTargetsOf(runId);
     return { targets, rows };

@@ -9,7 +9,7 @@ import type { ReferenceHarness } from './support/reference.ts';
 vi.setConfig({ testTimeout: 300_000 });
 
 const childOf = async (h: ReferenceHarness, b: ReturnType<typeof chainBuilder>) => {
-  const child = b.createRun('the child task');
+  const child = await b.createRun('the child task');
   expect(await b.inherit(b.claimNext(child.id), 'manual')).toEqual({ kind: 'inherited' });
   return child;
 };

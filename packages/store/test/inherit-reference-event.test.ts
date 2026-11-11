@@ -197,7 +197,7 @@ describe('R12 at read time: the reader recomputes the digest of the planner fiel
     const h = referenceHarness();
     const b = chainBuilder(h);
     await answeredRun(h, b, 'Say hello', (claim) => b.text(claim), { fresh: true });
-    const child = b.createRun('And again');
+    const child = await b.createRun('And again');
     expect(await b.inherit(b.claimNext(child.id), 'plan')).toEqual({ kind: 'inherited' });
     expect(referenceOf(h.store, child.id).synthesised).toEqual([markerEntry(3, modeChangedText('manual', 'plan'))]);
     const db = rawDb(h.dbPath);
