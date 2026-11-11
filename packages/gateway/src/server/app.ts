@@ -71,6 +71,11 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   const requestSignalOf = (context: Context): AbortSignal => AbortSignal.any([context.req.raw.signal, services.closeSignal]);
   const keepAliveMsFor = (idleBoundMs: number): number =>
     Math.min(services.config.sseKeepAliveMs, Math.max(1, Math.floor(idleBoundMs / KEEP_ALIVES_PER_IDLE_BOUND)));
+  const jsonObjectBody = async (context: Context): Promise<Record<string, unknown>> => {
+    const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
+    if (!isRecord(raw)) throw invalidRequest('invalid_body', 'the request body must be a JSON object');
+    return raw;
+  };
   const app = new Hono();
 
   app.use(async (context, next) => {
@@ -167,8 +172,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   );
 
   app.post(QUOTE_ROUTE, async (context) => {
-    const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
-    const model = isRecord(raw) ? raw['model'] : undefined;
+    const { model } = await jsonObjectBody(context);
     if (typeof model !== 'string' || model === '') throw invalidRequest('invalid_body', 'model is required and must be a non-empty string', 'model');
     return withPinnedServices(services, readSignalOf(context), async ({ router, priceTable }) => context.json(quoteOf(router, model, priceTable, services.clock.now())));
   });
@@ -189,23 +193,20 @@ export const createApp = (dependencies: AppDependencies): Hono => {
 
   app.post('/v1/momonga/cost', async (context) => {
     if (dependencies.costReport === undefined) throw notFound('cost_unavailable', 'this gateway keeps no trace store to price runs from');
-    const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
-    const runs = (raw as { runs?: unknown }).runs;
+    const { runs, includeRunless } = await jsonObjectBody(context);
     if (
       !Array.isArray(runs) ||
-      !runs.every((run): run is { runId: string; sessionId: string } => typeof run?.runId === 'string' && typeof run?.sessionId === 'string')
+      !runs.every((run): run is { runId: string; sessionId: string } => isRecord(run) && typeof run['runId'] === 'string' && typeof run['sessionId'] === 'string')
     ) {
       throw invalidRequest('invalid_body', 'runs must be a list of { runId, sessionId }', 'runs');
     }
-    const includeRunless = (raw as { includeRunless?: unknown }).includeRunless;
     if (typeof includeRunless !== 'boolean') throw invalidRequest('invalid_body', 'includeRunless must be a boolean', 'includeRunless');
     return context.json(await dependencies.costReport(runs, includeRunless, readSignalOf(context)));
   });
 
   app.post('/v1/momonga/cost/calls', async (context) => {
     if (dependencies.billedCalls === undefined) throw notFound('cost_unavailable', 'this gateway keeps no trace store to price runs from');
-    const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
-    const { runIds, cursor, limit, includeRunless } = isRecord(raw) ? raw : { runIds: undefined, cursor: undefined, limit: undefined, includeRunless: undefined };
+    const { runIds, cursor, limit, includeRunless } = await jsonObjectBody(context);
     if (typeof includeRunless !== 'boolean') throw invalidRequest('invalid_body', 'includeRunless must be a boolean', 'includeRunless');
     if (!Array.isArray(runIds) || !runIds.every((runId): runId is string => typeof runId === 'string') || new Set(runIds).size !== runIds.length) {
       throw invalidRequest('invalid_body', 'runIds must be a list of distinct run ids', 'runIds');
