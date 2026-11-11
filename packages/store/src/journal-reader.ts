@@ -227,7 +227,7 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
   const latestNotice = db.prepare(
     `SELECT * FROM events WHERE type = 'notice' AND run_id IN (SELECT id FROM runs WHERE session_id = :sessionId)
        AND json_extract(payload_json, '$.code') = :code AND json_extract(payload_json, '$.key') = :key
-     ORDER BY id DESC LIMIT 1`,
+     ORDER BY id DESC`,
   );
 
   const latestSessionNotice = (sessionId: string, code: string, key: string): RunEvent | undefined => {
