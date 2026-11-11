@@ -18,7 +18,7 @@ const managedInstancePaths: InstancePaths = (paths, instance) => {
 describe('/markers ignore accepts every marker kind (design-managed-servers section 17, item 17; decision 12)', () => {
   it('sets the ignored byte of a managed server marker under markers/targets/<target>, named as the survivor notice names it', async () => {
     const env = await startService({ fakeTimers: true });
-    const dir = path.join(momongaLayout(env.layout.home).markers.targets, 'apple');
+    const dir = path.join(momongaLayout(env.layout.home, process.platform, process.env).markers.targets, 'apple');
     fs.mkdirSync(dir, { recursive: true });
     const marker = path.join(dir, MANAGED_MARKER);
     fs.writeFileSync(marker, 'r00110\n');

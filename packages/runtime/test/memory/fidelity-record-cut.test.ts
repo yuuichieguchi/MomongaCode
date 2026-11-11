@@ -122,7 +122,7 @@ describe('differential cases of the generator: via, omitted tasks, a compaction 
     const first = await b.createRun('Say hello', { history: 'fresh' });
     const claim = b.claimNext(first.id);
     b.started(claim, 'manual');
-    b.tool(claim);
+    await b.tool(claim);
     const late = await b.createRun('Too late', { timeoutMs: 1000 });
     h.clock.advance(2000);
     expect(await h.store.expireApprovals(h.clock.now(), (error: unknown) => { throw error; })).toEqual([late.id]);
@@ -140,7 +140,7 @@ describe('differential cases of the generator: via, omitted tasks, a compaction 
     const first = await b.createRun('Say hello', { history: 'fresh' });
     const claim = b.claimNext(first.id);
     b.started(claim, 'manual');
-    b.tool(claim);
+    await b.tool(claim);
     const retracted = await b.createRun('Never mind this');
     expect((await h.store.requestCancel(retracted.id)).kind).toBe('ok');
     await h.store.finishCancelled((error) => {
@@ -169,8 +169,8 @@ describe('differential cases of the generator: via, omitted tasks, a compaction 
     const h = referenceHarness();
     const b = chainBuilder(h);
     await answeredRun(h, b, 'task 1', (claim) => b.tool(claim), { fresh: true });
-    await answeredRun(h, b, 'two', (claim) => {
-      b.tool(claim);
+    await answeredRun(h, b, 'two', async (claim) => {
+      await b.tool(claim);
       b.compact(claim, 4);
     });
     const child = await inheritingChild(h, b);

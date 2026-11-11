@@ -8,6 +8,7 @@ export type FakeTimers = {
   clearTimeout(handle: unknown): void;
   timeoutSignal(ms: number): AbortSignal;
   advance(ms: number): void;
+  advanceAsync(ms: number): Promise<void>;
   pending(): PendingTimer[];
   now(): number;
   monotonicMs(): number;
@@ -15,6 +16,10 @@ export type FakeTimers = {
 };
 
 type Entry = PendingTimer & { callback: () => void };
+
+const realSetImmediate = setImmediate;
+
+const microtasksDrained = (): Promise<void> => new Promise<void>((resolve) => realSetImmediate(resolve));
 
 const NODE_TIMEOUT_MAX_MS = 2_147_483_647;
 
@@ -38,8 +43,22 @@ export const createFakeTimers = (clock: FakeClock): FakeTimers => {
   const start = (callback: () => void, ms: number): number => {
     const delayMs = nodeTimerDelay(ms);
     const id = nextId++;
-    entries.set(id, { id, delayMs, dueAt: clock.now() + delayMs, callback: AsyncResource.bind(callback) });
+    entries.set(id, { id, delayMs, dueAt: clock.monotonicMs() + delayMs, callback: AsyncResource.bind(callback) });
     return id;
+  };
+  const moveTo = (monotonicMs: number): void => {
+    clock.advance(Math.max(0, monotonicMs - clock.monotonicMs()));
+  };
+  const targetOf = (name: string, ms: number): number => {
+    if (!Number.isFinite(ms) || ms < 0) throw new RangeError(`FakeTimers.${name}: ms must be a non-negative finite number, got ${ms}`);
+    return clock.monotonicMs() + ms;
+  };
+  const takeDue = (target: number): Entry | undefined => {
+    const entry = earliestDue(target);
+    if (entry === undefined) return undefined;
+    entries.delete(entry.id);
+    moveTo(entry.dueAt);
+    return entry;
   };
   return {
     setTimeout: start,
@@ -52,17 +71,29 @@ export const createFakeTimers = (clock: FakeClock): FakeTimers => {
       if (typeof handle === 'number') entries.delete(handle);
     },
     advance: (ms) => {
-      if (!Number.isFinite(ms) || ms < 0) throw new RangeError(`FakeTimers.advance: ms must be a non-negative finite number, got ${ms}`);
-      const target = clock.now() + ms;
-      for (let entry = earliestDue(target); entry !== undefined; entry = earliestDue(target)) {
-        entries.delete(entry.id);
-        clock.set(Math.max(clock.now(), entry.dueAt));
-        entry.callback();
+      const target = targetOf('advance', ms);
+      const first = takeDue(target);
+      if (first !== undefined) {
+        first.callback();
+        const second = earliestDue(target);
+        if (second !== undefined) {
+          throw new Error(
+            `FakeTimers.advance: timer ${second.id}, due at ${second.dueAt}, falls inside this advance of ${ms} ms after timer ${first.id} already ran; the real scheduler runs every pending microtask between two timer callbacks and a synchronous advance cannot, so use await advanceAsync(${ms})`,
+          );
+        }
       }
-      clock.set(target);
+      moveTo(target);
+    },
+    advanceAsync: async (ms) => {
+      const target = targetOf('advanceAsync', ms);
+      for (let entry = takeDue(target); entry !== undefined; entry = takeDue(target)) {
+        entry.callback();
+        await microtasksDrained();
+      }
+      moveTo(target);
     },
     now: () => clock.now(),
-    monotonicMs: () => clock.now(),
+    monotonicMs: () => clock.monotonicMs(),
     nextDueAt: () => earliestDue(Number.POSITIVE_INFINITY)?.dueAt,
     pending: () =>
       [...entries.values()].sort((a, b) => a.id - b.id).map(({ id, delayMs, dueAt }) => ({ id, delayMs, dueAt })),

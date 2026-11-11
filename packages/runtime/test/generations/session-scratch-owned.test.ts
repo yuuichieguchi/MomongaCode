@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { claimPathOf, ensureSessionTmpDir, hostKernelLock, releaseSessionScratch } from '@momonga/foundation';
+import { claimPathOf, ensureSessionTmpDir, releaseSessionScratch } from '@momonga/foundation';
 import * as runtime from '@momonga/runtime';
-import { createFakeClock, createFakeKernelLock } from '@momonga/testkit';
+import { createFakeClock, createFakeKernelLock, testKernelLock } from '@momonga/testkit';
 import { START_MS, makeLogger, makeTempHome } from '../process/helpers.ts';
 
 const SOURCE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src');
@@ -30,7 +30,7 @@ describe('the claim of a session scratch directory (17.6, 20.41)', () => {
 
   it('is released at eviction, so the next sweep may take the directory', async () => {
     const temp = await makeTempHome();
-    const lock = hostKernelLock();
+    const lock = testKernelLock();
     const { dir } = await ensureSessionTmpDir(temp.paths, 'session-1', { lock });
     const claimPath = claimPathOf(lock, dir, 'sidecar');
     const clock = createFakeClock(START_MS);

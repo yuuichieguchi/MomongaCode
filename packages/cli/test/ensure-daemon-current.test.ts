@@ -17,7 +17,7 @@ const yieldOnce = (): Promise<void> => new Promise<void>((resolve) => setImmedia
 describe('ensureDaemon and run/current', () => {
   it('never returns from a start before the started generation has published run/current', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const work = createFakeWork();
     let releasePublish: () => void = () => undefined;

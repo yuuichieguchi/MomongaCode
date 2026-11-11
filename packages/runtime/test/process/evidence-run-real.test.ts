@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ensureMomongaDirs, momongaPaths, ruleEnforcementOf } from '@momonga/foundation';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, heldMountPoints } from '@momonga/sandbox';
 import type { Sandbox } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, withTempDir, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { createEvidencePorts, readGitHead } from '../../src/memory/evidence.ts';
 import { createEvidenceRunner } from '../../src/process/evidence-run.ts';
@@ -21,9 +21,9 @@ const HOST_SANDBOX_KIND = process.platform === 'darwin' ? ('seatbelt' as const) 
 
 const realSandbox = (tmpRoot: string): Sandbox => {
   fs.mkdirSync(tmpRoot, { recursive: true });
-  if (process.platform === 'darwin') return createSeatbeltSandbox({ tmpRoot, killGraceMs: KILL_GRACE_MS });
+  if (process.platform === 'darwin') return createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot, killGraceMs: KILL_GRACE_MS });
   if (!fs.existsSync(DEFAULT_BWRAP_PATH)) throw new Error(`the evidence runner test needs real bwrap at ${DEFAULT_BWRAP_PATH}`);
-  return createBubblewrapSandbox({ tmpRoot, killGraceMs: KILL_GRACE_MS, journal: createPlaceholderJournal(`${tmpRoot}-journal`), holders: () => heldMountPoints() });
+  return createBubblewrapSandbox({ lock: testKernelLock(), tmpRoot, killGraceMs: KILL_GRACE_MS, journal: createPlaceholderJournal(`${tmpRoot}-journal`), holders: () => heldMountPoints() });
 };
 
 const teeingStderr = (inner: Sandbox, captured: string[]): Sandbox => ({
@@ -42,7 +42,7 @@ const teeingStderr = (inner: Sandbox, captured: string[]): Sandbox => ({
 
 const setup = async (context: TestContext) => {
   const home = withTempDir(context, { asHome: true });
-  const paths = momongaPaths(home);
+  const paths = momongaPaths(home, process.platform, process.env);
   await ensureMomongaDirs(paths);
   const root = fs.realpathSync(withTempDir(context));
   const project = path.join(root, 'project');
@@ -64,7 +64,7 @@ describe.runIf(HAS_REAL_SANDBOX)('the evidence runner on the real sandbox of thi
     git('commit', '-q', '-am', 'two');
     const head = git('rev-parse', 'HEAD');
     const unrelated = git('commit-tree', '-m', 'unrelated', `${head}^{tree}`);
-    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(realSandbox(path.join(root, 'scratch'))), env: { PATH: '/usr/bin:/bin' } })(project);
+    const run = createEvidenceRunner({ reap: { inspector: testProcessInspector() }, paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(realSandbox(path.join(root, 'scratch'))), env: { PATH: '/usr/bin:/bin' } })(project);
     const options = { project, trusted: true, run, signal: new AbortController().signal };
 
     await expect(readGitHead(options)).resolves.toBe(head);
@@ -86,7 +86,7 @@ describe.runIf(HAS_REAL_SANDBOX)('the evidence runner on the real sandbox of thi
 
     const captured: string[] = [];
     const sandbox = teeingStderr(realSandbox(path.join(root, 'scratch')), captured);
-    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: { PATH: '/usr/bin:/bin' } })(project);
+    const run = createEvidenceRunner({ reap: { inspector: testProcessInspector() }, paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: { PATH: '/usr/bin:/bin' } })(project);
     const result = await run(
       { argv: ['git', 'status'], cwd: project, env: { GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0' }, network: 'deny' },
       new AbortController().signal,

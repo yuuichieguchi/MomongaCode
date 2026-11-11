@@ -143,7 +143,7 @@ describe('Grep hands ripgrep its flags through an owner-only file that lives onl
     const result = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { ripgrep: bundled } as never));
     expect(result.status).toBe('completed');
     const [only] = seen;
-    expect(path.dirname(only?.file as string)).toBe(momongaLayout(tools.layout.home).grepArguments);
+    expect(path.dirname(only?.file as string)).toBe(momongaLayout(tools.layout.home, process.platform, process.env).grepArguments);
     expect(only?.mode).toBe(0o600);
     expect(only?.text.split('\n')).toContain('--null');
     expect(only?.text.split('\n')).not.toContain('--no-config');

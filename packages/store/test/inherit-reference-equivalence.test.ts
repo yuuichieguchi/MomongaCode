@@ -192,8 +192,8 @@ describe('R2 on fixed journals: every shape 13.7 lists', () => {
   it('a compaction in a later run whose cut lies inside an earlier run stops the walk at floorSeq', async () => {
     const h = referenceHarness();
     const b = chainBuilder(h);
-    await answeredRun(h, b, 'one', (claim) => {
-      b.tool(claim);
+    await answeredRun(h, b, 'one', async (claim) => {
+      await b.tool(claim);
       b.text(claim);
     }, { fresh: true });
     await answeredRun(h, b, 'two', (claim) => {
@@ -226,8 +226,8 @@ describe('R2 on fixed journals: every shape 13.7 lists', () => {
     const h = referenceHarness();
     const b = chainBuilder(h);
     let callId = '';
-    await answeredRun(h, b, 'one', (claim) => {
-      callId = b.tool(claim, { outputChars: 3000 });
+    await answeredRun(h, b, 'one', async (claim) => {
+      callId = await b.tool(claim, { outputChars: 3000 });
     }, { fresh: true });
     await answeredRun(h, b, 'two', (claim) => b.evict(claim, callId, 750));
     const child = await inheritingChild(h, b);
@@ -259,8 +259,8 @@ describe('known difference (d) of 13.7: evicted holds only delivered ids', () =>
     const h = referenceHarness();
     const b = chainBuilder(h);
     let evicted = '';
-    await answeredRun(h, b, 'one', (claim) => {
-      evicted = b.tool(claim, { evict: true });
+    await answeredRun(h, b, 'one', async (claim) => {
+      evicted = await b.tool(claim, { evict: true });
       b.text(claim);
       b.compact(claim, 3);
       b.text(claim);
@@ -278,9 +278,9 @@ describe('R16: the backward count meets each run task seq', () => {
   const twoRuns = async () => {
     const h = referenceHarness();
     const b = chainBuilder(h);
-    const first = await answeredRun(h, b, 'one', (claim) => {
+    const first = await answeredRun(h, b, 'one', async (claim) => {
       b.text(claim);
-      b.tool(claim);
+      await b.tool(claim);
     }, { fresh: true });
     const child = await inheritingChild(h, b);
     return { h, first, child };

@@ -13,11 +13,12 @@ import {
   createFakeSecurityPort,
   createFakeTimers,
   openResponsesTextReply,
-  ownedStart,
   registerCleanup,
   startFakeAnthropic,
   startFakeOpenResponses,
   withTempDir,
+  registerOwned,
+  testLocks,
 } from '@momonga/testkit';
 import type { CleanupContext, FakeControl, FakeTimers, FakeUpstreamReply, FakeUpstreamServer } from '@momonga/testkit';
 import { PROCESS_VERSION, baseEnv, fakeSecretHost, givenStoreOnHost, homePaths, portOnSecretHost, writeSettings, prepareHome, modelsOf } from './gateway-process-helpers.ts';
@@ -116,7 +117,8 @@ const startStack = async (
   const control: FakeControl = { ...READY_CONTROL, ...options.control };
   const security = portOnSecretHost(createFakeSecurityPort(() => options.secrets, undefined, { control: () => control }), store, host);
   const lines: string[] = [];
-  const handle = await ownedStart(context, startGatewayProcess({
+  const handle = await registerOwned(context, () => startGatewayProcess({
+    locks: testLocks(),
     generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, { ...host.env, ...options.env }),
@@ -257,7 +259,8 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
         }),
     });
     let portCalls = 0;
-    const handle = await ownedStart(context, startGatewayProcess({
+    const handle = await registerOwned(context, () => startGatewayProcess({
+      locks: testLocks(),
       generation: FIRST_GENERATION,
       home,
       env: baseEnv(home, fakeHostPath(context, store).env),
@@ -293,7 +296,7 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
       models: modelsOf({ local: { adapter: 'open-responses', provider: 'fake', model: 'm', socketPath: openResponses.socketPath, capabilities: CAPABILITIES } }),
     });
     const security = createFakeSecurityPort(() => ({}));
-    const handle = await ownedStart(context, startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home, fakeHostPath(context, store).env), version: PROCESS_VERSION, execWithStdin: security, stdout: { write: () => true } }));
+    const handle = await registerOwned(context, () => startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home, fakeHostPath(context, store).env), version: PROCESS_VERSION, execWithStdin: security, stdout: { write: () => true } }));
     registerCleanup(context, async () => {
       await handle.close();
     });

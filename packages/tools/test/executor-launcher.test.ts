@@ -36,7 +36,7 @@ const launcherHarness = async (layout: Layout) => {
   const sessionsTmpRoot = path.join(harness.layout.root, 'sessions');
   const tmpDir = path.join(sessionsTmpRoot, 'one');
   fs.mkdirSync(tmpDir, { recursive: true });
-  const sandboxPolicy = await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: await computeFileRules([], [home], null, ruleEnforcementOf('none'), testProbes()), roots: [home], home, tmpDir, sessionsTmpRoot }, NEVER_CANCELLED);
+  const sandboxPolicy = await buildSandboxPolicy({ layout: momongaLayout(home, process.platform, process.env), protectedSet: EMPTY_PROTECTED_SET, fileRules: await computeFileRules([], [home], null, ruleEnforcementOf('none'), testProbes()), roots: [home], home, tmpDir, sessionsTmpRoot }, NEVER_CANCELLED);
   const rewriteRecord = (content: string): void => {
     const file = path.join(home, '.momonga', 'bin', 'launcher-links');
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -109,7 +109,7 @@ describe('executor: the launcher link is always write-denied without following i
   it('still refuses writes into the momonga root and the keychains', async () => {
     const { home, attempt } = await launcherHarness('plain');
     expectRefused(await attempt(path.join(home, '.momonga', 'x')));
-    expectRefused(await attempt(path.join(momongaLayout(home).keychains, 'x')));
+    expectRefused(await attempt(path.join(momongaLayout(home, process.platform, process.env).keychains, 'x')));
   });
 });
 

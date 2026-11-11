@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { PermissionRule } from '@momonga/config';
 import type { ToolEnv } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
-import { within } from './deferred.ts';
+
 import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { seedStartedCalls } from './cancel-fixture.ts';
@@ -45,7 +45,7 @@ const recover = async (env: Env, brokenSettings: boolean) => {
       },
     },
   });
-  await within(env.runOnce(worker), 10_000, 'the cancel recovery');
+  await env.settled(env.runOnce(worker), 'the cancel recovery');
   return {
     status: env.run(run.id).status,
     reconciled: env.ofType(run.id, 'tool.reconciled').map((event) => ({ callId: event.callId, outcome: event.outcome, output: event.output })),

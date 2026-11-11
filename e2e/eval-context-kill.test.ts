@@ -10,6 +10,7 @@ import { createE2eHome } from './support/home.ts';
 import { UPSTREAM_MODEL_REF, baseSettings, sandboxChoiceOf, startUpstream, writeSettingsFile } from './support/stack.ts';
 import { chatCompletions, hangReply, textReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const HANG_TASK = 'Hang forever.';
 const QUICK_TASK = 'Say done.';
@@ -68,7 +69,7 @@ describe('momonga eval context after SIGKILL', () => {
     const running = startCli(home, ['eval', 'context', hanging, '--model', UPSTREAM_MODEL_REF], { boundMs: 4 * E2E_RUN_COMPLETED_BOUND_MS });
     const root = await until(() => rootOwnedBy(running.pid), { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the case home to name its owner' });
     await until(() => chatCompletions(fake).length > 0, { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the case run to reach the upstream' });
-    const lock = await inspectProcessLock(generationLayout(root, FIRST_GENERATION).locks.supervisor);
+    const lock = await inspectProcessLock(generationLayout(root, FIRST_GENERATION).locks.supervisor, { mechanism: testKernelLock() });
     if (lock.state !== 'held') throw new Error(`the case daemon holds no supervisor lock (${lock.state})`);
     const daemon = lock.pid;
     expect(isProcessAlive(daemon)).toBe(true);

@@ -8,7 +8,7 @@ import type { HookExecution, HooksSettings } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
 import { createToolHooks, nodeShellHost } from '@momonga/tools';
 import type { HookRunContext } from '@momonga/tools';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testLocks } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -55,7 +55,7 @@ const contextWith = (command: string, run: CommandRunner) => {
     deadlineAt: Date.now() + 60_000,
     started: () => undefined,
     report: (execution: HookExecution) => void executions.push(execution),
-    inspector: createProcessInspector(process.platform, { ...hostInspectorPorts(), run, capability: notProved } as never),
+    inspector: createProcessInspector(process.platform, { ...hostInspectorPorts(testLocks().capability), run, capability: notProved } as never),
   } as HookRunContext;
   return { context, executions, markerDir };
 };

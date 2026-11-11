@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createMemoryPort } from '@momonga/runtime';
 import type { Worker } from '@momonga/runtime';
-import { within } from './deferred.ts';
+
 import { LEASE_MS, makeEnv, textOf, unavailableEvidenceRun } from './harness.ts';
 import type { Env } from './harness.ts';
 import { assistantMessage, callsStep, gated, incompleteStep, refusalStep, textStep, textThenCallsStep } from './scripts.ts';
@@ -104,10 +104,10 @@ describe('context.contribution at terminal', () => {
     const run = await env.enqueue('Say hello', { history: 'fresh' });
 
     const running = env.runOnce(memoryWorker(env, 'worker-2'));
-    await within(blocked.gate.reached.promise, 5_000, 'the second stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the second stream to start');
     await env.cancel(run.id);
     blocked.gate.release.resolve();
-    await within(running, 5_000, 'the worker to settle');
+    await env.settled(running, 'the worker to settle');
     if (env.run(run.id).status !== 'CANCELLED') await env.runOnce(memoryWorker(env, 'worker-3'));
 
     expect(env.run(run.id).status).toBe('CANCELLED');
@@ -143,13 +143,13 @@ describe('context.contribution at terminal', () => {
     const run = await env.enqueue('Say hello', { history: 'fresh' });
 
     const abandoned = env.runOnce(memoryWorker(env, 'worker-a'));
-    await within(blocked.gate.reached.promise, 5_000, 'the second stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the second stream to start');
     env.clock.advance(LEASE_MS + 1);
     const recovering = env.runOnce(memoryWorker(env, 'worker-b'));
-    await within(env.gateway.nthStream(before + 2), 5_000, 'the recovery re-send');
+    await env.settled(env.gateway.nthStream(before + 2), 'the recovery re-send');
     blocked.gate.release.resolve();
-    await within(recovering, 5_000, 'the recovering worker');
-    await within(abandoned, 5_000, 'the abandoned worker to stop');
+    await env.settled(recovering, 'the recovering worker');
+    await env.settled(abandoned, 'the abandoned worker to stop');
 
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.ofType(run.id, 'context.contribution').map((event) => event.items)).toEqual([[{ kind: 'memory', id, contributed: true }]]);

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { HOLD_UNTIL_SIGNALLED, HOLD_UNTIL_SIGNALLED_ARGV, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, sleepDrivenTiming } from '@momonga/testkit';
+import { HOLD_UNTIL_SIGNALLED, HOLD_UNTIL_SIGNALLED_ARGV, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, sleepDrivenTiming, testProcessInspector } from '@momonga/testkit';
 import { POLL_INTERVAL_MS, findHolders, holderGroups, markerReapClockBoundMs, reapMarkedProcesses, reconcileProcessGroup } from '@momonga/foundation';
 import type { ProbeResult, ProcessInspector, Timing } from '@momonga/foundation';
 
@@ -141,7 +141,7 @@ describe('reconcileProcessGroup', () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const pgid = await deadGroup(dir);
-    const result = await reconcileProcessGroup({ pgid, marker }, { killGraceMs: 100 });
+    const result = await reconcileProcessGroup({ pgid, marker }, { inspector: testProcessInspector(), killGraceMs: 100 });
     expect(result.outcome).toBe('unknown');
     expect(result.output).toMatch(/no longer running/i);
   });
@@ -150,7 +150,7 @@ describe('reconcileProcessGroup', () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker });
-    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 3000 });
+    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { inspector: testProcessInspector(), killGraceMs: 3000 });
     expect(result.outcome).toBe('unknown');
     expectStopped(result.output);
     expect(fs.readFileSync(path.join(dir, 'term'), 'utf8')).toBe('term\n');
@@ -162,7 +162,7 @@ describe('reconcileProcessGroup', () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, IGNORING_MEMBER_SCRIPT, { fd3: marker, readyFiles: ['ready', 'member'] });
-    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 300 });
+    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { inspector: testProcessInspector(), killGraceMs: 300 });
     expect(result.outcome).toBe('unknown');
     expect(fs.readFileSync(path.join(dir, 'term'), 'utf8')).toBe('term\n');
     await group.leaderReaped;
@@ -176,7 +176,7 @@ describe('reconcileProcessGroup', () => {
     await group.leaderReaped;
     expect(alive(group.pgid)).toBe(false);
     expect(alive(-group.pgid)).toBe(true);
-    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 100 });
+    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { inspector: testProcessInspector(), killGraceMs: 100 });
     expect(result.outcome).toBe('unknown');
     await group.leaderReaped;
     expect(await waitUntil(() => !alive(-group.pgid), 5000)).toBe(true);
@@ -188,7 +188,7 @@ describe('reconcileProcessGroup', () => {
     const pgid = await deadGroup(dir);
     const holder = startEscapedHolder(marker);
     expect(await waitUntil(() => alive(holder), 2000)).toBe(true);
-    const result = await reconcileProcessGroup({ pgid, marker }, { killGraceMs: 100 });
+    const result = await reconcileProcessGroup({ pgid, marker }, { inspector: testProcessInspector(), killGraceMs: 100 });
     expect(result.outcome).toBe('unknown');
     expectStopped(result.output);
     expect(await waitUntil(() => !alive(holder), 5000)).toBe(true);
@@ -198,7 +198,7 @@ describe('reconcileProcessGroup', () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker, sandboxed: true });
-    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 3000 });
+    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { inspector: testProcessInspector(), killGraceMs: 3000 });
     expect(result.outcome).toBe('unknown');
     expect(fs.readFileSync(path.join(dir, 'term'), 'utf8')).toBe('term\n');
     await group.leaderReaped;
@@ -209,7 +209,7 @@ describe('reconcileProcessGroup', () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, TERM_MARKER_SCRIPT);
-    await expectLeftAlone(group, await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 100 }));
+    await expectLeftAlone(group, await reconcileProcessGroup({ pgid: group.pgid, marker }, { inspector: testProcessInspector(), killGraceMs: 100 }));
   });
 
   it('leaves a group alone when it holds a different marker file', async () => {
@@ -217,14 +217,14 @@ describe('reconcileProcessGroup', () => {
     const marker = makeMarker(dir);
     const other = makeMarker(dir, 'other-marker');
     const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: other });
-    await expectLeftAlone(group, await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 100 }));
+    await expectLeftAlone(group, await reconcileProcessGroup({ pgid: group.pgid, marker }, { inspector: testProcessInspector(), killGraceMs: 100 }));
   });
 
   it('leaves a group alone when its members closed the inherited descriptor', async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, CLOSED_FD_SCRIPT, { fd3: marker });
-    await expectLeftAlone(group, await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 100 }));
+    await expectLeftAlone(group, await reconcileProcessGroup({ pgid: group.pgid, marker }, { inspector: testProcessInspector(), killGraceMs: 100 }));
   });
 
   it('leaves a live group alone when the marker file is missing', async () => {
@@ -232,7 +232,7 @@ describe('reconcileProcessGroup', () => {
     const marker = makeMarker(dir);
     const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker });
     fs.rmSync(marker);
-    await expectLeftAlone(group, await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 100 }));
+    await expectLeftAlone(group, await reconcileProcessGroup({ pgid: group.pgid, marker }, { inspector: testProcessInspector(), killGraceMs: 100 }));
   });
 
   it('does not SIGKILL a surviving non-holder after the only holder exited on TERM', async () => {
@@ -240,7 +240,7 @@ describe('reconcileProcessGroup', () => {
     const marker = makeMarker(dir);
     const script = `/bin/sh -c 'exec 3<&-; trap "" TERM; touch "$DIR/member"; while :; do sleep 1; done' & trap 'exit 0' TERM; touch "$DIR/ready"; wait`;
     const group = await startGroup(dir, script, { fd3: marker, readyFiles: ['ready', 'member'] });
-    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 3000 });
+    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { inspector: testProcessInspector(), killGraceMs: 3000 });
     await group.leaderReaped;
     expect(result.outcome).toBe('unknown');
     expect(result.output).toMatch(/left alone/i);
@@ -263,7 +263,7 @@ describe('reconcileProcessGroup', () => {
       }
       process.kill(pid, signal);
     };
-    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 300, kill });
+    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { inspector: testProcessInspector(), killGraceMs: 300, kill });
     expect(result.outcome).toBe('unknown');
     expect(result.output).toContain(String(blocked));
     expect(attempts.some(([pid, signal]) => pid === blocked && signal === 'SIGTERM')).toBe(true);
@@ -289,7 +289,7 @@ describe('reconcileProcessGroup structured result', () => {
     const marker = makeMarker(dir);
     const group = await startGroup(dir, CLOSED_FD_SCRIPT, { fd3: marker });
     const { signals, kill } = recordingKill();
-    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 100, kill });
+    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { inspector: testProcessInspector(), killGraceMs: 100, kill });
     expect(result.leftAloneGroup).toBe(group.pgid);
     expect(result.unsignalledPids).toEqual([]);
     expect(signals).toEqual([]);
@@ -300,7 +300,7 @@ describe('reconcileProcessGroup structured result', () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker });
-    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 300 });
+    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { inspector: testProcessInspector(), killGraceMs: 300 });
     expect(result.leftAloneGroup).toBeUndefined();
     expect(result.unsignalledPids).toEqual([]);
     expect(result.leftAlonePids).toEqual([]);
@@ -312,7 +312,7 @@ describe('reconcileProcessGroup structured result', () => {
     const marker = makeMarker(dir);
     const script = `/bin/sh -c 'exec 3<&-; trap "" TERM; touch "$DIR/member"; while :; do sleep 1; done' & trap 'exit 0' TERM; touch "$DIR/ready"; wait`;
     const group = await startGroup(dir, script, { fd3: marker, readyFiles: ['ready', 'member'] });
-    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 3000 });
+    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { inspector: testProcessInspector(), killGraceMs: 3000 });
     await group.leaderReaped;
     expect(result.leftAloneGroup).toBe(group.pgid);
     expect(result.unsignalledPids).toEqual([]);
@@ -334,7 +334,7 @@ describe('reconcileProcessGroup structured result', () => {
     expect(await waitUntil(() => fs.existsSync(ready), 10_000)).toBe(true);
     expect(holdersOf(marker)).toContain(pid);
     const { signals, kill } = recordingKill();
-    const result = await reconcileProcessGroup({ pgid: pid, marker }, { killGraceMs: 3000, kill });
+    const result = await reconcileProcessGroup({ pgid: pid, marker }, { inspector: testProcessInspector(), killGraceMs: 3000, kill });
     expect(signals.filter(([, signal]) => signal === 'SIGTERM')).toEqual([[-pid, 'SIGTERM']]);
     expect(result.leftAlonePids).not.toContain(pid);
     expect(result.leftAloneGroup).toBe(pid);
@@ -354,7 +354,7 @@ describe('reconcileProcessGroup structured result', () => {
       }
       process.kill(pid, signal);
     };
-    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 300, kill });
+    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { inspector: testProcessInspector(), killGraceMs: 300, kill });
     expect(result.unsignalledPids).toEqual([blocked]);
     expect(result.leftAloneGroup).toBeUndefined();
     expect(alive(blocked)).toBe(true);
@@ -364,14 +364,14 @@ describe('reconcileProcessGroup structured result', () => {
 describe('findHolders', () => {
   it('returns an empty list when nothing holds the marker', async () => {
     const marker = makeMarker(makeDir());
-    expect(await findHolders(marker, { signal: new AbortController().signal })).toEqual([]);
+    expect(await findHolders(marker, { inspector: testProcessInspector(), signal: new AbortController().signal })).toEqual([]);
   });
 
   it('excludes the current process even when it holds the marker open', async () => {
     const marker = makeMarker(makeDir());
     const fd = fs.openSync(marker, 'r');
     try {
-      expect(await findHolders(marker, { signal: new AbortController().signal })).toEqual([]);
+      expect(await findHolders(marker, { inspector: testProcessInspector(), signal: new AbortController().signal })).toEqual([]);
     } finally {
       fs.closeSync(fd);
     }
@@ -381,7 +381,7 @@ describe('findHolders', () => {
     const marker = makeMarker(makeDir());
     const holder = startEscapedHolder(marker);
     expect(await waitUntil(() => holdersOf(marker).includes(holder), 5000)).toBe(true);
-    expect(await findHolders(marker, { signal: new AbortController().signal })).toEqual([holder]);
+    expect(await findHolders(marker, { inspector: testProcessInspector(), signal: new AbortController().signal })).toEqual([holder]);
   });
 });
 
@@ -392,7 +392,7 @@ describe('holderGroups', () => {
     const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker });
     const holders = holdersOf(marker);
     expect(holders.length).toBeGreaterThan(0);
-    const groups = await holderGroups(holders, [], { signal: new AbortController().signal });
+    const groups = await holderGroups(holders, [], { inspector: testProcessInspector(), signal: new AbortController().signal });
     expect(groups).toHaveLength(holders.length);
     expect(new Set(groups)).toEqual(new Set([group.pgid]));
   });
@@ -401,7 +401,7 @@ describe('holderGroups', () => {
     const marker = makeMarker(makeDir());
     const holder = startEscapedHolder(marker);
     expect(await waitUntil(() => holdersOf(marker).includes(holder), 5000)).toBe(true);
-    expect(await holderGroups([holder], [], { signal: new AbortController().signal })).toEqual([holder]);
+    expect(await holderGroups([holder], [], { inspector: testProcessInspector(), signal: new AbortController().signal })).toEqual([holder]);
   });
 });
 
@@ -428,7 +428,7 @@ describe('reconcileProcessGroup timing injection', () => {
       process.kill(pid, signal);
     };
     const hour = 3_600_000;
-    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: hour, kill, timing });
+    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { inspector: testProcessInspector(), killGraceMs: hour, kill, timing });
     expect(result.outcome).toBe('unknown');
     expect(signals[0]).toEqual({ pid: -group.pgid, signal: 'SIGTERM', at: 0 });
     const killed = signals.find(({ signal }) => signal === 'SIGKILL');
@@ -447,7 +447,7 @@ describe('reconcileProcessGroup timing injection', () => {
       if (signal !== 0) throw Object.assign(new Error(`kill EINVAL ${pid}`), { code: 'EINVAL', errno: -22, syscall: 'kill' });
       process.kill(pid, signal);
     };
-    await expect(reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 100, kill })).rejects.toThrow('kill EINVAL');
+    await expect(reconcileProcessGroup({ pgid: group.pgid, marker }, { inspector: testProcessInspector(), killGraceMs: 100, kill })).rejects.toThrow('kill EINVAL');
   });
 });
 

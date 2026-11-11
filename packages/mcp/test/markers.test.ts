@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { findHolders, readMarkerGroup } from '@momonga/foundation';
-import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_SETSID_GRANDCHILD_ENV, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_SETSID_GRANDCHILD_ENV, REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector } from '@momonga/testkit';
 import { createTransport, descriptorPath, eventually, groupExists, makeDir, pidAlive, rawConfig, startRaw, trackPid } from './raw-transport.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -34,7 +34,7 @@ describe('MCP stdio transport markers', () => {
     expect(await readMarkerGroup(marker)).toBe(pid);
     expect(transport.pgid).toBe(pid);
     expect(await descriptorPath(pid, 3)).toBe(fs.realpathSync(marker));
-    expect(await findHolders(marker, { signal: new AbortController().signal })).toEqual([pid]);
+    expect(await findHolders(marker, { inspector: testProcessInspector(), signal: new AbortController().signal })).toEqual([pid]);
   });
 
   it('removes the marker when the command cannot be resolved', async () => {
@@ -84,7 +84,7 @@ describe('MCP stdio transport markers', () => {
     const grandchild = Number(fs.readFileSync(readyFile, 'utf8'));
     trackPid(grandchild);
     const [marker] = markerFiles(dir) as [string];
-    await eventually(async () => (await findHolders(marker, { signal: new AbortController().signal })).includes(grandchild), 'the grandchild to hold the marker');
+    await eventually(async () => (await findHolders(marker, { inspector: testProcessInspector(), signal: new AbortController().signal })).includes(grandchild), 'the grandchild to hold the marker');
 
     await transport.close();
 

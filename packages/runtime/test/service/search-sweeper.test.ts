@@ -21,7 +21,7 @@ describe('startSearchSweeper', () => {
     const budgets: unknown[] = [];
     const store = { search: { indexBatch: (options: { maxChars?: number }) => (budgets.push(options.maxChars), { runs: 0 }) } };
     const sweeper = startSearchSweeper({ store, timers, intervalMs: 1000, batchSize: 3, redactor, onError: () => undefined });
-    timers.advance(1000);
+    await timers.advanceAsync(1000);
     await afterMicrotasks();
     await sweeper.close();
     expect(budgets).toEqual([HISTORY_INDEX_BATCH_CHARS]);
@@ -43,14 +43,14 @@ describe('startSearchSweeper', () => {
       },
     };
     const sweeper = startSearchSweeper({ store, timers, intervalMs: 1000, batchSize: 3, redactor, onError: (error: unknown) => errors.push(error) });
-    timers.advance(1000);
+    await timers.advanceAsync(1000);
     await afterMicrotasks();
-    timers.advance(1000);
+    await timers.advanceAsync(1000);
     await afterMicrotasks();
     expect(limits).toEqual([3, 3]);
     expect(errors).toEqual([failure]);
     await sweeper.close();
-    timers.advance(5000);
+    await timers.advanceAsync(5000);
     await afterMicrotasks();
     expect(limits).toEqual([3, 3]);
     expect(timers.pending()).toEqual([]);
@@ -64,12 +64,12 @@ describe('startSearchSweeper', () => {
     await openRun(store, '/work/a2', 'alphaterm live');
     const sweeper = startSearchSweeper({ store, timers, intervalMs: 1000, batchSize: 1, redactor, onError: (error: unknown) => { throw error; } });
     const found = async () => anchorsOf(await store.search.query({ trusted: false, project: '/work/a' }, { query: 'alphaterm', scope: 'project' })).length;
-    timers.advance(1000);
+    await timers.advanceAsync(1000);
     await afterMicrotasks();
     expect(await found()).toBe(1);
-    timers.advance(1000);
+    await timers.advanceAsync(1000);
     await afterMicrotasks();
-    timers.advance(1000);
+    await timers.advanceAsync(1000);
     await afterMicrotasks();
     expect(await found()).toBe(done.length);
     expect(anchorsOf(await store.search.query({ trusted: false, project: '/work/a2' }, { query: 'alphaterm', scope: 'project' }))).toEqual([]);
@@ -83,9 +83,9 @@ describe('the service', () => {
     const session = await env.createSession();
     const run = await env.createRun(session.id, { input: `deploy notes ${FAKE_KEY}` });
     await env.store.requestCancel(run.id);
-    env.timers?.advance(1000);
+    await env.timers?.advanceAsync(1000);
     await afterMicrotasks();
-    env.timers?.advance(1000);
+    await env.timers?.advanceAsync(1000);
     await afterMicrotasks();
     const visibility = { trusted: false, project: session.cwd } as const;
     const anchors = anchorsOf(await env.store.search.query(visibility, { query: 'deploy notes', scope: 'project' }));

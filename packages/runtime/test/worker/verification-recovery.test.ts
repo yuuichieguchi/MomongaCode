@@ -11,7 +11,7 @@ import * as tools from '@momonga/tools';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, waitFor } from '@momonga/testkit';
 import { spawn } from '@momonga/testkit/child-process';
 import { groupExists } from './cancel-fixture.ts';
-import { within } from './deferred.ts';
+
 import { DEADLINE_MS, createdRun, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { assistantMessage, textStep } from './scripts.ts';
@@ -152,16 +152,12 @@ describe('recovery during verification', () => {
     const run = await enqueueWith(env, `echo $$ > ${pidFile}; touch ${started}; sleep 30`);
 
     const running = env.runOnce(workerOf(env, 'worker-1'));
-    await within(
-      (async () => {
+    await env.settled((async () => {
         await waitFor(() => fs.existsSync(started), { description: 'the check to start' });
-      })(),
-      10_000,
-      'the check to start',
-    );
+      })(), 'the check to start');
     const checkPid = Number(fs.readFileSync(pidFile, 'utf8').trim());
     env.store.requestCancel(run.id);
-    await within(running, 10_000, 'the worker to finish after cancel');
+    await env.settled(running, 'the worker to finish after cancel');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(completions(env, run.id).filter((event) => event.outcome === 'passed' || event.outcome === 'failed')).toEqual([]);
@@ -175,15 +171,11 @@ describe('recovery during verification', () => {
     const run = await enqueueWith(env, `touch ${started}; sleep 30`, env.clock.now() + 1500);
 
     const running = env.runOnce(workerOf(env, 'worker-1'));
-    await within(
-      (async () => {
+    await env.settled((async () => {
         await waitFor(() => fs.existsSync(started), { description: 'the check to start' });
-      })(),
-      10_000,
-      'the check to start',
-    );
+      })(), 'the check to start');
     env.clock.advance(2000);
-    await within(running, 10_000, 'the worker to finish at the deadline');
+    await env.settled(running, 'the worker to finish at the deadline');
 
     expect(completions(env, run.id)).toMatchObject([{ outcome: 'timed_out' }]);
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'timeout' });

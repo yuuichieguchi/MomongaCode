@@ -6,6 +6,8 @@ import { Command } from 'commander';
 import { GATE_NAMES, nodeWorkspaceFiles, treeDigest } from '@momonga/eval';
 import { REPORT_PAGE_ROWS, REVIEW_SAMPLE_SIZE } from '@momonga/protocol';
 import type { RunCallView } from '@momonga/protocol';
+import { momongaPaths, ensureMomongaDirs } from '@momonga/foundation';
+import type { MomongaPaths } from '@momonga/foundation';
 
 type Review = { runId: string; callId: string; label: string; reviewedAt: number };
 type ReviewPage = { calls: RunCallView[]; reviews: Review[]; nextCursor: string | null };
@@ -32,6 +34,20 @@ type BenchCommand = {
 const load = async <T>(name: string): Promise<T> => (await import('../src/' + name)) as T;
 
 const dirs: string[] = [];
+const layoutOfFreshHome = async (): Promise<MomongaPaths> => {
+  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-cli-bench-home-')));
+  benchHomes.push(home);
+  const paths = momongaPaths(home, process.platform, {});
+  await ensureMomongaDirs(paths);
+  return paths;
+};
+
+const benchHomes: string[] = [];
+
+afterEach(() => {
+  for (const home of benchHomes.splice(0)) fs.rmSync(home, { recursive: true, force: true });
+});
+
 afterEach(() => {
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
@@ -238,7 +254,7 @@ describe('momonga eval bench --validate', () => {
     const { evaluateBench } = await load<BenchCommand>('commands/bench.ts');
     const dir = await benchmark(BUGGY);
     const { ports, out } = await portsOf(path.dirname(dir));
-    expect(await evaluateBench(ports, undefined, path.basename(dir), { validate: true })).toBe(0);
+    expect(await evaluateBench(ports, await layoutOfFreshHome(), path.basename(dir), { validate: true })).toBe(0);
     expect(out.join('')).toBe('Task fix: valid; labelled easy by fixture on 2026-11-06; the reference changes 1 file, 1 line added and 1 removed\nThe benchmark fixture is valid: 1 task.\n');
   });
 
@@ -246,7 +262,7 @@ describe('momonga eval bench --validate', () => {
     const { evaluateBench } = await load<BenchCommand>('commands/bench.ts');
     const dir = await benchmark(FIXED);
     const { ports, out } = await portsOf(dir);
-    expect(await evaluateBench(ports, undefined, dir, { validate: true })).toBe(1);
+    expect(await evaluateBench(ports, await layoutOfFreshHome(), dir, { validate: true })).toBe(1);
     expect(out.join('')).toBe('Task fix: the oracle already passes on the initial repository; labelled easy by fixture on 2026-11-06; the reference changes 0 files, 0 lines added and 0 removed\nThe benchmark fixture is not valid: 1 of 1 task has a problem.\n');
   });
 
@@ -254,8 +270,8 @@ describe('momonga eval bench --validate', () => {
     const { evaluateBench } = await load<BenchCommand>('commands/bench.ts');
     const dir = await benchmark(BUGGY);
     const { ports } = await portsOf(dir);
-    await expect(evaluateBench(ports, undefined, dir, { validate: false })).rejects.toThrow(/--model <model> is required/);
-    await expect(evaluateBench(ports, undefined, dir, { validate: true, model: 'fake/system' })).rejects.toThrow(/--validate runs no model/);
+    await expect(evaluateBench(ports, await layoutOfFreshHome(), dir, { validate: false })).rejects.toThrow(/--model <model> is required/);
+    await expect(evaluateBench(ports, await layoutOfFreshHome(), dir, { validate: true, model: 'fake/system' })).rejects.toThrow(/--validate runs no model/);
   });
 
   it('the probe reports a command that outlives its time as timed out, and the paths that differ from a base', async () => {

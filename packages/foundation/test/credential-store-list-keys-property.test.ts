@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createEncryptedCredentialStore, createMemoryCredentialStore, credentialFileFor } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testKernelLock } from '@momonga/testkit';
 import { createFakeKeyStore } from './support/credential-key-fakes.ts';
 import { makeTemporaryDirectory } from './support/temporary-directory.ts';
 import { seededRandom } from './seeded-random.ts';
@@ -57,6 +57,7 @@ describe('listKeys of the encrypted store equals the set of records created (O-R
         secretStore: { kind: 'available', store: createFakeKeyStore() },
         plaintextTokenFiles: () => given.plaintext,
         keyOfPlaintext: KEY_OF_PLAINTEXT,
+        lock: testKernelLock(),
       } as Parameters<typeof createEncryptedCredentialStore>[0]);
       for (const key of given.written) await store.write(key, recordFor(key), new AbortController().signal);
       fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -89,6 +90,7 @@ describe('listKeys of the encrypted store equals the set of records created (O-R
     const home = makeTemporaryDirectory();
     const directory = path.join(home, 'state', 'plan-sessions');
     const store = createEncryptedCredentialStore({
+      lock: testKernelLock(),
       directory,
       stateDirectory: path.join(home, 'state'),
       secretStore: { kind: 'available', store: createFakeKeyStore() },
@@ -104,6 +106,7 @@ describe('listKeys of the encrypted store equals the set of records created (O-R
     const home = makeTemporaryDirectory();
     fs.mkdirSync(path.join(home, 'state', 'plan-sessions'), { recursive: true, mode: 0o700 });
     const store = createEncryptedCredentialStore({
+      lock: testKernelLock(),
       directory: path.join(home, 'state', 'plan-sessions'),
       stateDirectory: path.join(home, 'state'),
       secretStore: { kind: 'available', store: createFakeKeyStore() },

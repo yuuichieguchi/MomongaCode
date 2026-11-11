@@ -10,7 +10,7 @@ describe('supervisor client response bound', () => {
   });
 
   it('fails a shutdown request the supervisor never answers once the bound passes', async (context) => {
-    const paths = momongaPaths(withTempDir(context, { asHome: true }));
+    const paths = momongaPaths(withTempDir(context, { asHome: true }), process.platform, process.env);
     await ensureMomongaDirs(paths);
     const supervisor = await startFakeSupervisor({ paths, version: '1.2.3', unresponsiveShutdown: { onRequest: () => undefined } });
     registerCleanup(context, () => supervisor.stop());

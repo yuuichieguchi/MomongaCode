@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { startService, waitUntil } from './helpers.ts';
+import { startService, pollFor } from './helpers.ts';
 
 describe('cancelUpstream', () => {
   it('is called once with the run id after a QUEUED run is cancelled', async () => {
@@ -18,7 +18,7 @@ describe('cancelUpstream', () => {
     const response = await env.http('POST', `/v1/runs/${run.id}/cancel`);
 
     expect(response.status).toBe(202);
-    await waitUntil(() => calls.length > 0, 3_000, 'cancelUpstream to be called');
+    await pollFor(() => calls.length > 0, 3_000, 'cancelUpstream to be called');
     expect(calls).toEqual([{ runId: run.id, status: 'CANCELLED' }]);
   });
 
@@ -54,7 +54,7 @@ describe('cancelUpstream', () => {
 
     expect(response.status).toBe(202);
     expect(response.json.run.status).toBe('CANCELLING');
-    await waitUntil(() => env.errors.length > 0, 3_000, 'the failure to reach onError');
+    await pollFor(() => env.errors.length > 0, 3_000, 'the failure to reach onError');
     expect(env.errors).toEqual([failure]);
   });
 });

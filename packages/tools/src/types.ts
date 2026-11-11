@@ -1,17 +1,15 @@
 import type { CallStop } from './call-stop.ts';
-import type { Awaitable, Clock, FileSystem, NetworkScope, OutboundNetwork, PathResolver, Random } from '@momonga/foundation';
+import type { Awaitable, Clock, FileSystem, KernelLockMechanism, NetworkScope, OutboundNetwork, PathResolver, ProcessInspector, Random } from '@momonga/foundation';
 import type { ShellHost } from './builtins/shell.ts';
 import type { MarkerSettle } from './marker-settle.ts';
 import type { PermissionSubject } from '@momonga/policy';
 import { OPERATION_EFFECT_OUTCOMES } from '@momonga/protocol';
-import type { DiffHunk, ElicitationRequestView, ReferenceKind, SideEffect, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
+import type { AppliedDiffFields, ElicitationRequestView, ReferenceKind, SideEffect, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { RipgrepLocator } from './ripgrep-locator.ts';
 import type { BackgroundJobs, BlobPort, ToolIdempotencyRecord } from './ports.ts';
 
-export type ToolContent =
-  | { type: 'content'; content: { type: 'text'; text: string } }
-  | { type: 'diff'; path: string; oldText: string | null; newText: string };
+export type ToolContent = { type: 'content'; content: { type: 'text'; text: string } };
 
 export type PlanEntry = {
   content: string;
@@ -41,11 +39,7 @@ export type ToolResult = {
   exitCode?: number;
   validatorFailure?: string;
   backend?: ToolBackend;
-  hunks?: DiffHunk[];
-  added?: number;
-  removed?: number;
-  diffOmitted?: string;
-};
+} & AppliedDiffFields;
 
 export type ToolPending = { status: 'pending'; awaits: ToolAwait; wakeAt?: number };
 
@@ -110,6 +104,8 @@ export type ReconcileContext = SubjectContext & {
   idemKey: string;
   outputFit: CallOutputFit;
   tmpDir?: string;
+  kernelLock: KernelLockMechanism;
+  inspector: ProcessInspector;
   processMarker?: string;
   earlierAttempt?: { stopped: boolean };
   traceparent?: string;
@@ -145,7 +141,7 @@ export type ReconcileResult = {
   outcome: (typeof OPERATION_RECONCILE_OUTCOMES)[number];
   output: string;
   effect?: OperationEffect;
-};
+} & AppliedDiffFields;
 
 export const TOOL_TIERS = ['essential', 'common', 'optional'] as const;
 

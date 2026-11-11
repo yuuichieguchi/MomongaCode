@@ -62,6 +62,19 @@ const toolContentItem = (item: unknown): ToolCallContent => {
 
 export const toolContentOf = (items: readonly unknown[]): ToolCallContent[] => items.map(toolContentItem);
 
+const hunkSide = (lines: readonly string[], absent: '+' | '-'): string | null => {
+  const kept = lines.filter((line) => !line.startsWith(absent));
+  return kept.length === 0 ? null : kept.map((line) => `${line.slice(1)}\n`).join('');
+};
+
+type ChangeRecord = Pick<Extract<PublicRunEvent, { type: 'tool.completed' }>, 'files' | 'hunks'>;
+
+const diffContentOf = ({ files, hunks }: ChangeRecord): ToolCallContent[] | undefined => {
+  const written = files?.find((file) => file.access === 'write');
+  if (written === undefined || hunks === undefined || hunks.length === 0) return undefined;
+  return hunks.map((hunk) => ({ type: 'diff', path: written.path, oldText: hunkSide(hunk.lines, '+'), newText: hunkSide(hunk.lines, '-') ?? '' }));
+};
+
 export const toolCallIdOf = (runId: string, callId: string): string => `${runId}/${callId}`;
 
 const messageIdOf = (runId: string, itemId: string): string => `${runId}/${itemId}`;
@@ -191,7 +204,7 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
             event.denial !== undefined
               ? outputContent(describeDenial(event.denial))
               : event.content === undefined
-                ? outputContent(event.output)
+                ? (diffContentOf(event) ?? outputContent(event.output))
                 : toolContentOf(event.content),
           rawOutput: event.output,
         }),
@@ -200,7 +213,7 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
     case 'tool.reconciled':
       state.found.set(toolCallIdOf(event.runId, event.callId), event.output);
       return [
-        toolUpdate(toolCallIdOf(event.runId, event.callId), { status: reconciledStatus(event.outcome), content: outputContent(event.output), rawOutput: event.output }),
+        toolUpdate(toolCallIdOf(event.runId, event.callId), { status: reconciledStatus(event.outcome), content: diffContentOf(event) ?? outputContent(event.output), rawOutput: event.output }),
       ];
     case 'plan.updated':
       return [{ kind: 'update', update: { sessionUpdate: 'plan', entries: event.entries.map(({ content, priority, status }) => ({ content, priority, status })) } }];

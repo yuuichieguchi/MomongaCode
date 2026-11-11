@@ -437,10 +437,10 @@ describe('scheduling and restart', () => {
     const env = await setup();
     const run = await queued(env);
     const stopping = new AbortController();
-    env.gateway.script.push({ events: [], error: new DOMException('aborted', 'AbortError') });
     stopping.abort();
-    await expect(env.reflector().runOne(stopping.signal)).rejects.toThrow();
+    await expect(env.reflector().runOne(stopping.signal)).rejects.toBe(stopping.signal.reason);
     expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'running', attempts: 0 });
+    expect(env.gateway.streams).toEqual([]);
     env.gateway.script.push(textStep(CANDIDATE_REPLY([])));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', attempts: 1 });
@@ -451,9 +451,8 @@ describe('scheduling and restart', () => {
     const run = await queued(env);
     for (let stop = 0; stop < MAX_ATTEMPTS + 2; stop += 1) {
       const stopping = new AbortController();
-      env.gateway.script.push({ events: [], error: new DOMException('aborted', 'AbortError') });
       stopping.abort();
-      await expect(env.reflector().runOne(stopping.signal)).rejects.toThrow();
+      await expect(env.reflector().runOne(stopping.signal)).rejects.toBe(stopping.signal.reason);
     }
     expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'running', attempts: 0 });
     const failure = new Error('connection lost');
@@ -633,10 +632,13 @@ describe('candidates of a reflection', () => {
     };
 
     const turn = env.reflector(() => true, env.store, { evidenceRun: () => hangs, attemptTimeoutMs: 40_000, timers }).runOne(SIGNAL);
-    const failure = expect(turn).rejects.toThrow();
-    await started;
-    timers.advance(40_000);
-    await failure;
+    await Promise.all([
+      expect(turn).rejects.toThrow(),
+      (async () => {
+        await started;
+        timers.advance(40_000);
+      })(),
+    ]);
 
     expect(env.api.memories.candidates()).toEqual([]);
     expect(env.api.reflection.get((await run).id)?.state).not.toBe('done');
@@ -963,8 +965,8 @@ describe('the model has no way to decide on a candidate', () => {
   });
 
   it('keeps the review routes behind the runtime socket, which the sandbox protects from the model', async () => {
-    const paths = momongaPaths('/home/user');
-    const areas = protectedRootAreasOf(paths, '/home/user');
+    const paths = momongaPaths('/home/user', process.platform, process.env);
+    const areas = protectedRootAreasOf(paths);
     expect(areas.some((area) => firstGeneration(paths).sockets.runtime.startsWith(`${area}/`) || firstGeneration(paths).sockets.runtime === area)).toBe(true);
   });
 });

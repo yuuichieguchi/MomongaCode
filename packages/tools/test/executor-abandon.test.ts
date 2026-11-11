@@ -2,9 +2,9 @@ import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { KILL_CONFIRM_MS, POLL_INTERVAL_MS, createUninspectableRegistry, defaultProcessInspector, findHolders, groupAlive } from '@momonga/foundation';
+import { KILL_CONFIRM_MS, POLL_INTERVAL_MS, createUninspectableRegistry, findHolders, groupAlive } from '@momonga/foundation';
 import type { ProcessInspector, Timing, SignalSender, UninspectableRegistry } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, sleepDrivenTiming } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, sleepDrivenTiming, testProcessInspector } from '@momonga/testkit';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness, HarnessOptions } from './harness.ts';
 import { deferred, keyFor } from './helpers.ts';
@@ -96,7 +96,7 @@ const fakeTiming = (overlapTarget = 1): Timing & { active: number; maxActive: nu
 };
 
 const firstListingKept = (): ProcessInspector => {
-  const host = defaultProcessInspector();
+  const host = testProcessInspector();
   let listed: ReturnType<ProcessInspector['holdersOf']> | undefined;
   return {
     startTimeOf: (pid, options) => host.startTimeOf(pid, options),
@@ -107,7 +107,7 @@ const firstListingKept = (): ProcessInspector => {
 };
 
 const harnessWith = (reap: { kill?: SignalSender; timing?: Timing; killGraceMs?: number; inspector?: ProcessInspector; uninspectable?: UninspectableRegistry }): Harness =>
-  makeHarness({ executor: { reap } } as HarnessOptions);
+  makeHarness({ executor: { reap: { inspector: testProcessInspector(), ...reap } } });
 
 describe('executor abandon', () => {
   it('abandon kills the process group of a PENDING call, marks the record UNKNOWN and returns unknown', async () => {
@@ -132,7 +132,7 @@ describe('executor abandon', () => {
     const pgid = spawnHolder(marker, 'sleep 30 & exec 3>&-; wait');
     seedPending(harness, KEY_A, pgid);
     await eventually(async () => {
-      const holders = await findHolders(marker, { signal: new AbortController().signal });
+      const holders = await findHolders(marker, { inspector: testProcessInspector(), signal: new AbortController().signal });
       return holders.length === 1 && holders[0] !== pgid;
     }, 'the leader to close fd 3 while its sleep child keeps it');
 
@@ -154,7 +154,7 @@ describe('executor abandon', () => {
     const grandchild = Number(fs.readFileSync(pidFile, 'utf8'));
     pids.push(grandchild);
     expect(grandchild).toBeGreaterThan(1);
-    await eventually(async () => (await findHolders(marker, { signal: new AbortController().signal })).includes(grandchild), 'the grandchild to hold the marker');
+    await eventually(async () => (await findHolders(marker, { inspector: testProcessInspector(), signal: new AbortController().signal })).includes(grandchild), 'the grandchild to hold the marker');
 
     const outcomes = await harness.executor.abandon([{ callId: 'call-a', idemKey: KEY_A }], { signal: noSignal() });
 
@@ -362,7 +362,7 @@ describe('executor abandon', () => {
         now += ms;
       },
     });
-    const harness = makeHarness({ executor: { reap: { timing }, reconcileCapMs: 100 } });
+    const harness = makeHarness({ executor: { reap: { inspector: testProcessInspector(), timing }, reconcileCapMs: 100 } });
     seedPending(harness, KEY_A);
     harness.kernelLock.holdExternally(path.join(harness.callLockDir, `${KEY_A}.lock`), 4242);
 

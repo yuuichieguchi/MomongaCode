@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
-import { deferred, within } from './deferred.ts';
+import { deferred } from './deferred.ts';
 import { LEASE_MS, bodyDigest, makeEnv, modelKey } from './harness.ts';
 import type { Env } from './harness.ts';
 import { textStep } from './scripts.ts';
@@ -25,13 +25,13 @@ describe('worker send fencing', () => {
     env.gateway.script.push(textStep('never sent by the stale worker'));
     const running = env.runOnce(env.worker('worker-stale'));
     try {
-      await within(reached.promise, 5_000, 'the stale worker to read the rules');
+      await env.settled(reached.promise, 'the stale worker to read the rules');
       env.clock.advance(LEASE_MS + 1);
       expect(env.store.claim('worker-thief')?.runId).toBe(run.id);
     } finally {
       gate.resolve();
     }
-    await within(running, 5_000, 'the stale worker to stop');
+    await env.settled(running, 'the stale worker to stop');
 
     expect(env.gateway.streams).toEqual([]);
     expect(env.run(run.id).leaseOwner).toBe('worker-thief');

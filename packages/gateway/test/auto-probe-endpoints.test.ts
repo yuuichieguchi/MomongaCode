@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { TARGET_NOT_READY, TARGET_PROBING } from '@momonga/protocol';
 import { acquireProbeLock, endpointKeyOf, endpointLockKeyOf, probeEndpointTarget } from '@momonga/gateway';
 import type { EndpointKey } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, fakeExec } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakeExec, testKernelLock } from '@momonga/testkit';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
 import { readFileTool, startFake } from './cc-support.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, writeSettings, modelOf, modelsOf, pause, until } from './gateway-process-helpers.ts';
@@ -79,10 +79,10 @@ describe('P10 RecordUnderLock: every probe-able auto target takes the automatic 
     const fake = await startFake({ scenario: 'tools-ok' });
     const probeRecordDir = path.join(makeHome(), 'probe');
     const key = { endpoint: `unix:${fake.socketPath}`, model: 'system' };
-    const held = await acquireProbeLock(probeRecordDir, endpointLockKeyOf(key), 'system');
+    const held = await acquireProbeLock(probeRecordDir, endpointLockKeyOf(key), 'system', testKernelLock());
 
     let settled = false;
-    const probing = probeEndpointTarget({ probeRecordDir, upstream: { kind: 'unix', socketPath: fake.socketPath }, key, model: 'system', apiKey: undefined, samples: 1 }).finally(() => {
+    const probing = probeEndpointTarget({ lock: testKernelLock(), probeRecordDir, upstream: { kind: 'unix', socketPath: fake.socketPath }, key, model: 'system', apiKey: undefined, samples: 1 }).finally(() => {
       settled = true;
     });
     await until(() => fake.requests.some((request) => request.path === '/v1/chat/completions'), 'the CLI probe to measure');

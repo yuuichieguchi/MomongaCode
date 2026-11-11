@@ -85,7 +85,7 @@ describe('T17 the attempt record in the marker file (decision 12)', () => {
   it.runIf(process.platform === 'darwin')('(h) a one-byte in-place write succeeds on a marker locked by another process', async () => {
     const root = makeTemporaryDirectory();
     const proofDir = path.join(root, 'lock-proof');
-    fs.mkdirSync(proofDir);
+    fs.mkdirSync(proofDir, { mode: 0o700 });
     const capability = createLockCapability({ proofDir });
     const marker = path.join(root, 'held');
     const handle = await createMarker(marker, { capability });

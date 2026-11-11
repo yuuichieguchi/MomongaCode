@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./child-process": "./src/child-process.ts",
-    "./first-generation": "./src/first-generation.ts"
+    "./first-generation": "./src/first-generation.ts",
+    "./test-support": "./src/test-support.ts"
   },
   "dependencies": {
     "@hono/node-server": "2.1.6",

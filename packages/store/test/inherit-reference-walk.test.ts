@@ -53,9 +53,9 @@ describe('R3: the window is a pure function of the reference and the records at 
   it('two reads are equal, and an append to the source after the commit changes nothing', async () => {
     const h = referenceHarness();
     const b = chainBuilder(h);
-    const source = await answeredRun(h, b, 'Say hello', (claim) => {
+    const source = await answeredRun(h, b, 'Say hello', async (claim) => {
       b.text(claim);
-      b.tool(claim, { evict: true });
+      await b.tool(claim, { evict: true });
       b.text(claim);
     }, { fresh: true });
     const child = await childOf(h, b);

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { canonicalJson, isRecord, settledOrAborted, sha256Hex, writeFileAtomically } from '@momonga/foundation';
-import type { FileSystem, Random } from '@momonga/foundation';
+import type { FileSystem, KernelLockMechanism, Random } from '@momonga/foundation';
 import type { ConfigError } from './config-error.ts';
 import { isAbsentPathError, parseJsonText } from './json-file.ts';
 import type { JsonFile } from './json-file.ts';
@@ -32,7 +32,7 @@ export class UnreadableKeptCopyError extends Error {}
 const isJsonFile = (value: unknown): value is JsonFile =>
   isRecord(value) && (value['found'] === false || (value['found'] === true && Object.hasOwn(value, 'value')));
 
-export const diskKeptRecords = (files: FileSystem, random: Random, directory: string): KeptRecords => {
+export const diskKeptRecords = (files: FileSystem, random: Random, directory: string, lock: KernelLockMechanism): KeptRecords => {
   const recordOf = (file: string): string => path.join(directory, `${sha256Hex(file)}.json`);
   return {
     load: async (file, signal) => {
@@ -61,7 +61,7 @@ export const diskKeptRecords = (files: FileSystem, random: Random, directory: st
       signal.throwIfAborted();
       await settledOrAborted(files.mkdir(directory, KEPT_DIRECTORY_MODE), signal);
       signal.throwIfAborted();
-      await writeFileAtomically(files, random, recordOf(file), `${JSON.stringify({ file, read })}\n`, { mode: KEPT_FILE_MODE });
+      await writeFileAtomically(files, random, recordOf(file), `${JSON.stringify({ file, read })}\n`, { mode: KEPT_FILE_MODE, lock });
     },
   };
 };

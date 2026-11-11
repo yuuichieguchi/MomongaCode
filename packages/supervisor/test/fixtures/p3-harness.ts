@@ -6,7 +6,7 @@ import { PassThrough } from 'node:stream';
 import { createJsonLogger, momongaPaths, fixedSocket } from '@momonga/foundation';
 import type { JsonLogger, MomongaPaths, TextStream } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { createFakeClock, createFakeTimers, createRealWorkScope, driveFakeTime, prepareGenerationForTest, quiesce, registerCleanup, settleRealWork, waitFor, withTempDir } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createRealWorkScope, driveFakeTime, prepareGenerationForTest, quiesce, registerCleanup, registerOwned, settleRealWork, waitFor, withTempDir, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import type { CleanupContext, FakeClock, FakeTimers, JsonLine, RealWorkScope } from '@momonga/testkit';
 
 export { createRealWorkScope, quiesce };
@@ -349,12 +349,8 @@ export const recordingMarkerPorts = (overrides: MarkerPorts = {}, record?: strin
   return { ports, calls };
 };
 
-const advanceToDue = (timers: FakeTimers, due: number): void => {
-  timers.advance(Math.max(0, due - timers.now()));
-};
-
 export const pump = async (timers: FakeTimers, realWork: RealWorkScope, ms: number): Promise<void> => {
-  const target = timers.now() + ms;
+  const target = timers.monotonicMs() + ms;
   await driveFakeTime(timers, {
     done: () => {
       const due = timers.nextDueAt();
@@ -365,7 +361,7 @@ export const pump = async (timers: FakeTimers, realWork: RealWorkScope, ms: numb
     settle: () => settleRealWork(realWork, () => false, 'fake time to pump'),
     detail: () => realWork.describe(),
   });
-  advanceToDue(timers, target);
+  await timers.advanceAsync(Math.max(0, target - timers.monotonicMs()));
   await settleRealWork(realWork, () => false, 'fake time pumped');
 };
 
@@ -437,12 +433,12 @@ export type HarnessOptions = {
 
 export const prepareHome = (context: CleanupContext): { home: string; paths: MomongaPaths } => {
   const home = withTempDir(context, { asHome: true });
-  return { home, paths: momongaPaths(home) };
+  return { home, paths: momongaPaths(home, process.platform, process.env) };
 };
 
 export const startHarness = async (context: CleanupContext, options: HarnessOptions = {}): Promise<Harness> => {
   const home = options.home ?? withTempDir(context, { asHome: true });
-  const paths = momongaPaths(home);
+  const paths = momongaPaths(home, process.platform, process.env);
   if (options.settingsText !== undefined) writeSettingsText(home, options.settingsText);
   else writeSettings(home, options.settings ?? validSettings());
   const generation = options.generation ?? HARNESS_GENERATION;
@@ -460,7 +456,14 @@ export const startHarness = async (context: CleanupContext, options: HarnessOpti
     options.onStdout?.(chunk);
   });
   const markers = recordingMarkerPorts(options.markerPorts ?? {}, order);
-  const started = await realWork.run(() => startSupervisor({
+  const abortAtCleanup = async (process: SupervisorProcess): Promise<void> => {
+    fake.dieOnAnySignal();
+    const closing = settledFlag(realWork.run(() => process.abort()));
+    await pumpUntil(timers, () => closing.settled(), { realWork, maxMs: HARNESS_CLOSE_BOUND_MS, description: 'harness abort settles' });
+  };
+  const started = await registerOwned(context, () => realWork.run(() => startSupervisor({
+    lockMechanism: testKernelLock(),
+    inspector: testProcessInspector(),
     home,
     version: TEST_VERSION,
     generation,
@@ -483,17 +486,12 @@ export const startHarness = async (context: CleanupContext, options: HarnessOpti
     random: () => 0.5,
     watchSettings: false,
     ...options.overrides,
-  }));
+  })), abortAtCleanup);
   const supervisor: SupervisorProcess = {
     ...started,
     close: () => realWork.run(() => started.close()),
     abort: () => realWork.run(() => started.abort()),
   };
-  registerCleanup(context, async () => {
-    fake.dieOnAnySignal();
-    const closing = settledFlag(supervisor.abort());
-    await pumpUntil(timers, () => closing.settled(), { realWork, maxMs: HARNESS_CLOSE_BOUND_MS, description: 'harness abort settles' });
-  });
   const health = (): SupervisorHealth => supervisor.health();
   const child = (role: ChildRole): SupervisorHealth['children'][number] => {
     const found = health().children.find((entry) => entry.role === role);

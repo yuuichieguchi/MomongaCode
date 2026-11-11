@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ATOMIC_WRITE_STEP_ACTIONS, GENERATION_REAPER_STEPS, GENERATION_REAPER_STEP_ACTIONS, LEFTOVER_LOCK_FORMS, atomicWriteSteps, createKernelLockMechanism, lockFormOf } from '@momonga/foundation';
+import { ATOMIC_WRITE_STEP_ACTIONS, GENERATION_REAPER_STEPS, GENERATION_REAPER_STEP_ACTIONS, LEFTOVER_LOCK_FORMS, atomicWriteSteps, lockFormOf } from '@momonga/foundation';
 import { readManifest } from './formal/manifest.ts';
+import { expectedKernelLockOn } from '@momonga/testkit';
 
 const root = path.resolve(import.meta.dirname, '..');
 const specDirectory = path.join(root, 'specs', 'tla');
@@ -66,7 +67,7 @@ describe('T7: LeftoverCleanup.tla and the code name the same lock forms', () => 
 
   for (const { platform, kind, config } of PLATFORM_FORMS) {
     it(`${platform}, a ${kind} entry, uses the lock form that ${config}.cfg checks`, () => {
-      expect(lockFormOf(createKernelLockMechanism(platform), kind)).toBe(configValue(config, 'LockForm'));
+      expect(lockFormOf(expectedKernelLockOn(platform), kind)).toBe(configValue(config, 'LockForm'));
     });
   }
 

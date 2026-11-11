@@ -40,7 +40,7 @@ export const hookRunContextFor = (
   markerDir: ctx.options.tools.markerDir,
   ...(ctx.options.tools.owners === undefined ? {} : { owners: ctx.options.tools.owners }),
   ...(ctx.options.tools.lockCapability === undefined ? {} : { lockCapability: ctx.options.tools.lockCapability }),
-  ...(ctx.options.tools.inspector === undefined ? {} : { inspector: ctx.options.tools.inspector }),
+  inspector: ctx.options.tools.inspector,
   runId: ctx.run.id,
   session: { id: session.id, permissionMode: session.permissionMode },
   clock: ctx.options.clock,

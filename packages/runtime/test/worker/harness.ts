@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
-import { canonicalJson, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, HOST_RULE_ENFORCEMENT, nodeFileSystem, openDatabase, sha256Hex, systemRandom } from '@momonga/foundation';
+import { canonicalJson, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, HOST_RULE_ENFORCEMENT, nodeFileSystem, openDatabase, sha256Hex, systemRandom, BUSY_WAIT_LIMIT_MS, momongaLayout } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { InstructionReader } from '@momonga/context';
 import { computeFileRules } from '@momonga/policy';
@@ -16,15 +16,13 @@ import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import { blobDirectoryOf, createBlobStore, createJournalReader, foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
 import type { Claim, ContributionPreparer, ReportReply, Run, RuntimeStore, Session } from '@momonga/store';
-import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, testProbes, testPaths } from '@momonga/testkit';
-import type { FakeClock } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, driveFakeTime, testProbes, testPaths, testKernelLock, testProcessInspector } from '@momonga/testkit';
+import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
 import type { AbandonTarget, AnyTool, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
 import { evidenceHandler, fidelityHandler, inheritPlanHandler, inheritedWindowHandler, reflectionInputHandler, reportHandler, verdictHandler } from '../../src/memory/journal-thread.ts';
 import type { JournalHandler } from '../../src/memory/journal-thread.ts';
-import { systemTimers } from '../../src/service/timers.ts';
-import { within } from './deferred.ts';
 import { createFakeGateway } from './fake-gateway.ts';
 import type { FakeGateway } from './fake-gateway.ts';
 import { createFakeSettings } from './fake-settings.ts';
@@ -42,6 +40,7 @@ import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 export const START_MS = 1_800_000_000_000;
 export const LEASE_MS = 30_000;
 export const DEADLINE_MS = START_MS + 3_600_000;
+export const PASS_TIME_HORIZON_MS = 2 * LEASE_MS;
 export const EXTRA_ROOT = '/opt/momonga-extra-root';
 export const TEST_PROMPT_PREFIX = 'You are the MomongaCode test agent working in';
 
@@ -153,7 +152,7 @@ export type Env = Awaited<ReturnType<typeof makeEnv>>;
 export type ContributionItems = Extract<RunEventPayload, { type: 'context.contribution' }>['items'];
 
 const inProcessFacts = (dbPath: string, handlerFor: (reader: ReturnType<typeof createJournalReader>) => JournalHandler) => async (request: object): Promise<never> => {
-  const db = openDatabase(dbPath);
+  const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
   try {
     return (await handlerFor(createJournalReader(db))(request as Record<string, unknown>, () => undefined)) as never;
   } finally {
@@ -162,11 +161,11 @@ const inProcessFacts = (dbPath: string, handlerFor: (reader: ReturnType<typeof c
 };
 
 const inProcessFidelity = (dbPath: string) => async (request: object): Promise<never> => {
-  const db = openDatabase(dbPath);
+  const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
   try {
     const handler = fidelityHandler({
       reader: createJournalReader(db),
-      blobs: createBlobStore(db, createFakeClock(START_MS), blobDirectoryOf(dbPath), { fileSystem: nodeFileSystem, random: systemRandom }),
+      blobs: createBlobStore(db, createFakeClock(START_MS), blobDirectoryOf(dbPath), { lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom }),
       current: { progress: undefined },
       gateFor: () => ({ unit: () => undefined }),
     });
@@ -184,7 +183,7 @@ export const journalReaderPreparer = (dbPath: string): ContributionPreparer => (
   reflectionInput: inProcessFacts(dbPath, reflectionInputHandler),
   fidelity: inProcessFidelity(dbPath),
   report: async (request) => {
-    const db = openDatabase(dbPath);
+    const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     try {
       return (await reportHandler(db, createJournalReader(db))(request, () => undefined)) as ReportReply;
     } finally {
@@ -192,7 +191,7 @@ export const journalReaderPreparer = (dbPath: string): ContributionPreparer => (
     }
   },
   measure: async (request) => {
-    const db = openDatabase(dbPath);
+    const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     try {
       return createJournalReader(db).measure(contributionAtTerminal, request);
     } finally {
@@ -218,8 +217,9 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   fs.mkdirSync(sessionTmpDir, { recursive: true, mode: 0o700 });
   const dbPath = path.join(stateDir, 'runtime.db');
   const clock: FakeClock = createFakeClock(START_MS);
+  const timers: FakeTimers = createFakeTimers(clock);
   const scriptedContributions = new Map<string, ContributionItems>();
-  const store: RuntimeStore = openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
+  const store: RuntimeStore = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home,
     clock,
@@ -245,6 +245,8 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const instructions = createFakeInstructions();
   const executorWarnings: string[] = [];
   const realExecutor = createToolExecutor({
+    layout: momongaLayout(home, process.platform, process.env),
+    reap: { inspector: testProcessInspector() },
     shellHost: nodeShellHost(),
     random: systemRandom,
     files: nodeFileSystem, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
@@ -289,8 +291,8 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   cleanups.push(() => rawDb?.close());
   cleanups.push(async () => {
     gateway.releaseAll();
-    await within(Promise.allSettled(pendingRuns), 10_000, 'abandoned worker runs to settle');
-    await within(Promise.allSettled(workers.map((worker) => worker.stop())), 10_000, 'workers to stop');
+    await settled(Promise.allSettled(pendingRuns), 'abandoned worker runs to settle');
+    await settled(Promise.allSettled(workers.map((worker) => worker.stop())), 'workers to stop');
   });
 
   const session: Session = store.createSession({
@@ -307,6 +309,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   };
 
   const toolRuntime = (toolList: () => AnyTool[]): ToolRuntimePort => ({
+    inspector: testProcessInspector(),
     workTreeObserver: (target: Session) => createGitWorkTreeObserver({ storeDir: path.join(stateDir, 'observer'), workTree: target.cwd, trusted: false }),
     envFor: (target: Session) => {
       const env: ToolEnv = { ...target.env };
@@ -366,7 +369,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       leaseMs: LEASE_MS,
       random: () => 0.5,
       platform: process.platform,
-      timers: systemTimers,
+      timers,
       systemPrompt: testSystemPrompt,
       home,
       blobs: store.blobs,
@@ -416,6 +419,19 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     if (failures.length > 0) throw failures[0];
     if (!finished.includes(runId)) throw new Error(`the sweep did not finish run ${runId}`);
     return run(runId);
+  };
+
+  const passTime = (done: () => boolean, description: string, horizonMs = PASS_TIME_HORIZON_MS): Promise<void> =>
+    driveFakeTime(timers, { done, horizonAt: timers.monotonicMs() + horizonMs, description });
+
+  const settled = async <T>(work: Promise<T>, description: string, horizonMs = PASS_TIME_HORIZON_MS): Promise<T> => {
+    let ended = false;
+    const tracked = work.finally(() => {
+      ended = true;
+    });
+    tracked.catch(() => undefined);
+    await passTime(() => ended, description, horizonMs);
+    return tracked;
   };
 
   const scriptContribution = (runId: string, items: ContributionItems): void => {
@@ -495,6 +511,9 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     callLocks,
     dbPath,
     clock,
+    timers,
+    passTime,
+    settled,
     store,
     gateway,
     settings,

@@ -19,6 +19,7 @@ import type { PriceTable } from '@momonga/observability';
 import { gatewayModelIn } from '@momonga/runtime';
 import type { GatewayCallOptions, GatewayListing, GatewayModel, GatewayPort, ListedGatewayModel } from '@momonga/runtime';
 import { fixtureCompactionContent, usageOf } from '@momonga/testkit';
+import { createRequestValidator } from '../../../gateway/src/core/validation.ts';
 import { deferred } from './deferred.ts';
 import type { Deferred } from './deferred.ts';
 
@@ -64,13 +65,6 @@ type Generation = {
   outcome: Promise<{ kind: 'events'; events: StreamEvent[] } | { kind: 'error'; error: Error }>;
 };
 
-export class FakeAbortError extends Error {
-  constructor() {
-    super('The operation was aborted');
-    this.name = 'AbortError';
-  }
-}
-
 export const tokensOfText = (text: string): number => Math.ceil(text.length / 4);
 
 const isStoredTerminal = (events: readonly StreamEvent[]): boolean => {
@@ -112,10 +106,27 @@ export const fakeCounterOf = (target: string): string => createHash('sha256').up
 
 const issueCallId = (): string => `call_${uuidv7().replaceAll('-', '')}`;
 
+const validator = createRequestValidator();
+
+type Refusal = { error: unknown };
+
+const refusalOf = (parse: () => unknown): Refusal | undefined => {
+  try {
+    parse();
+    return undefined;
+  } catch (error) {
+    return { error };
+  }
+};
+
+async function* failing(error: unknown): AsyncGenerator<StreamEvent> {
+  throw error;
+}
+
 const abortedPromise = (signal: AbortSignal): Promise<never> =>
   new Promise<never>((_resolve, reject) => {
-    if (signal.aborted) reject(new FakeAbortError());
-    else signal.addEventListener('abort', () => reject(new FakeAbortError()), { once: true });
+    if (signal.aborted) reject(signal.reason);
+    else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
   });
 
 export type FakeGateway = GatewayPort & {
@@ -290,7 +301,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
 
   async function* replay(events: readonly StreamEvent[], signal: AbortSignal): AsyncGenerator<StreamEvent> {
     for (const event of events) {
-      if (signal.aborted) throw new FakeAbortError();
+      if (signal.aborted) throw signal.reason;
       yield event;
     }
   }
@@ -305,7 +316,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
     const { step } = generation;
     const prefixLength = step.gate === undefined ? 0 : Math.min(step.gate.afterEvents, step.events.length);
     for (const event of step.events.slice(0, prefixLength)) {
-      if (signal.aborted) throw new FakeAbortError();
+      if (signal.aborted) throw signal.reason;
       yield event;
     }
     step.gate?.reached.resolve();
@@ -364,6 +375,8 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
     },
 
     stream: (body, options) => {
+      if (options.signal.aborted) return failing(options.signal.reason);
+      const refusal = refusalOf(() => validator.parseCreate(body));
       const key = options.idempotencyKey;
       const cached = completed.get(key);
       const running = inFlight.get(key);
@@ -379,12 +392,14 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
       };
       gateway.streams.push(record);
       waiterFor(record.index).resolve(record);
+      if (refusal !== undefined) return failing(refusal.error);
       if (cached !== undefined) return replay(cached, options.signal);
       if (running !== undefined) return attach(running, options.signal);
       return lead(startGeneration(key, body), options.signal);
     },
 
     compact: async (request, options) => {
+      options.signal.throwIfAborted();
       gateway.compacts.push({
         request: structuredClone(request),
         idempotencyKey: options.idempotencyKey,
@@ -393,6 +408,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
         signal: options.signal,
         runId: options.runId,
       });
+      validator.parseCompact(request);
       await gateway.compactHook?.(request, options.signal);
       const summary = gateway.compactSummaries.shift() ?? `summary ${gateway.compacts.length}`;
       const item: ItemField = { type: 'compaction', id: `cmp_${gateway.compacts.length}`, encrypted_content: fixtureCompactionContent(summary) };
@@ -410,6 +426,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
     countTokens: async (request: CountTokensRequest, options?: { signal?: AbortSignal }): Promise<CountTokensResult> => {
       gateway.counts.push(request);
       gateway.countCalls.push({ request, signal: options?.signal });
+      validator.parseCountTokens(request);
       await gateway.countHook?.(request, options?.signal);
       const instructions = request.instructions === undefined || request.instructions === null ? 0 : tokensOfText(request.instructions);
       const input =

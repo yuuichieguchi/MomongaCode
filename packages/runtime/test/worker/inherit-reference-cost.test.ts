@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import v8 from 'node:v8';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { openDatabase } from '@momonga/foundation';
+import { openDatabase, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { Claim, RuntimeStore } from '@momonga/store';
 import { startJournalThread } from '../../src/memory/journal-thread-client.ts';
 import type { JournalThreadClient } from '../../src/memory/journal-thread-client.ts';
@@ -17,6 +17,7 @@ import { callsStep, textStep } from './scripts.ts';
 import { settle } from './inheritance-support.ts';
 import { builderOf, harnessOf, referenceFactsOf } from './inherit-reference-support.ts';
 import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: 600_000 });
 
@@ -33,7 +34,7 @@ afterEach(async () => {
 
 const threadOn = async (dbPath: string): Promise<ReferenceClient> => {
   const { dev, ino } = fs.statSync(dbPath);
-  const client = await startJournalThread({ databasePath: dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+  const client = await startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath: dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
   clients.push(client);
   const candidate = client as Partial<ReferenceClient>;
   if (typeof candidate.inheritedWindow !== 'function') throw new Error('the journal thread client has no inheritedWindow');
@@ -60,7 +61,7 @@ const sourceWithChain = async (steps: number) => {
 };
 
 const snapshotOfDb = (dbPath: string) => {
-  const db = openDatabase(dbPath);
+  const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
   try {
     return {
       events: db.prepare('SELECT count(*) AS n, max(id) AS last FROM events').get(),
@@ -101,8 +102,8 @@ describe('R6: what crosses the thread boundary is bounded by W and the item boun
     const h = referenceHarness();
     const b = chainBuilder(h);
     let callId = '';
-    await answeredRun(h, b, 'one', (claim) => {
-      callId = b.tool(claim, { outputChars: 30_000, evict: true });
+    await answeredRun(h, b, 'one', async (claim) => {
+      callId = await b.tool(claim, { outputChars: 30_000, evict: true });
       b.text(claim);
     }, { fresh: true });
     const child = await b.createRun('child');

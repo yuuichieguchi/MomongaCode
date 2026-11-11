@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { CONTEXT_DATASET_FORMAT, buildContextReport, expandContextDataset, parseContextDataset } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
 import { FIRST_GENERATION, SecretUnavailableError, SocketPathUnsupportedError, momongaLayout } from '@momonga/foundation';
-import { createFakeKernelLock } from '@momonga/testkit';
+import { createFakeKernelLock, waitFor } from '@momonga/testkit';
 import type { MomongaPaths } from '@momonga/foundation';
 import { FM_SERVER } from '@momonga/protocol';
 import type { OutputFormatterName, PublicRunEvent } from '@momonga/protocol';
@@ -336,8 +336,7 @@ describe('a live context run', () => {
     const context = harness({ hang: true });
     const interrupt = new AbortController();
     const running = runContextLive(context.effects, input({ interrupt: interrupt.signal }));
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect([...context.alive]).toHaveLength(1);
+    await waitFor(() => [...context.alive].length === 1, { description: 'the daemon of the case to be started' });
     interrupt.abort();
     await expect(running).rejects.toThrow(ContextInterrupted);
     noDaemonLeft(context);

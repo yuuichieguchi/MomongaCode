@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testKernelLock } from '@momonga/testkit';
 import { collect, isAlive, makeTempDir, run, waitUntilDead } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -53,7 +53,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox (real sandbox-ex
     root = await tempDir();
     outside = await tempDir();
     tmpRoot = await tempDir();
-    sandbox = createSeatbeltSandbox({ tmpRoot, killGraceMs: KILL_GRACE_MS });
+    sandbox = createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot, killGraceMs: KILL_GRACE_MS });
   });
 
   afterEach(async () => {
@@ -270,7 +270,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox (real sandbox-ex
 
   it('throws naming a missing sandbox-exec path', async () => {
     const missing = path.join(outside, 'no-such-sandbox-exec');
-    await expect((async () => createSeatbeltSandbox({ sandboxExecPath: missing, tmpRoot, killGraceMs: KILL_GRACE_MS }))()).rejects.toThrow(
+    await expect((async () => createSeatbeltSandbox({ lock: testKernelLock(), sandboxExecPath: missing, tmpRoot, killGraceMs: KILL_GRACE_MS }))()).rejects.toThrow(
       missing,
     );
   });

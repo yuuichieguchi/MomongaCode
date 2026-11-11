@@ -101,7 +101,7 @@ describe('MCP pool cache (fake timers)', () => {
     expect(second.pool).not.toBe(first.pool);
     expect(t.watcherCount()).toBe(1);
     expect(t.cache.size()).toBe(2);
-    t.timers.advance(POOL_IDLE_CLOSE_MS);
+    await t.timers.advanceAsync(POOL_IDLE_CLOSE_MS);
     await flushMicrotasks();
     expect((first.pool as FakePool).closes).toBe(1);
     expect((second.pool as FakePool).closes).toBe(0);
@@ -132,7 +132,7 @@ describe('MCP pool cache (fake timers)', () => {
 
     expect(t.cache.release('r1')).toBe(false);
     expect(t.watcherCount()).toBe(0);
-    t.timers.advance(POOL_IDLE_CLOSE_MS);
+    await t.timers.advanceAsync(POOL_IDLE_CLOSE_MS);
     await flushMicrotasks();
     expect((pool as FakePool).closes).toBe(1);
   });
@@ -151,7 +151,7 @@ describe('MCP pool cache (fake timers)', () => {
     expect(t.watcherCount()).toBe(0);
     expect(t.cache.release('r1')).toBe(false);
     expect(t.timers.pending().map((timer) => timer.delayMs)).toContain(POOL_IDLE_CLOSE_MS);
-    t.timers.advance(POOL_IDLE_CLOSE_MS);
+    await t.timers.advanceAsync(POOL_IDLE_CLOSE_MS);
     await flushMicrotasks();
     expect((pool as FakePool).closes).toBe(1);
   });
@@ -165,7 +165,7 @@ describe('MCP pool cache (fake timers)', () => {
     await flushMicrotasks();
     t.wake('r1');
     t.wake('r2');
-    t.timers.advance(POOL_REFERENCE_AUDIT_MS);
+    await t.timers.advanceAsync(POOL_REFERENCE_AUDIT_MS);
     await flushMicrotasks();
 
     expect(t.watcherCount()).toBe(2);
@@ -188,12 +188,12 @@ describe('MCP pool cache (fake timers)', () => {
     const { pool } = t.cache.acquire('r1', t.spec('k'));
     t.cache.release('r1');
 
-    t.timers.advance(POOL_IDLE_CLOSE_MS - 1);
+    await t.timers.advanceAsync(POOL_IDLE_CLOSE_MS - 1);
     await flushMicrotasks();
     expect((pool as FakePool).closes).toBe(0);
     expect(t.cache.size()).toBe(1);
 
-    t.timers.advance(1);
+    await t.timers.advanceAsync(1);
     await flushMicrotasks();
     expect((pool as FakePool).closes).toBe(1);
     expect(t.cache.size()).toBe(0);
@@ -205,10 +205,10 @@ describe('MCP pool cache (fake timers)', () => {
     t.statuses.set('r2', 'RUNNING');
     const { pool } = t.cache.acquire('r1', t.spec('k'));
     t.cache.release('r1');
-    t.timers.advance(POOL_IDLE_CLOSE_MS - 1);
+    await t.timers.advanceAsync(POOL_IDLE_CLOSE_MS - 1);
 
     const again = t.cache.acquire('r2', t.spec('k'));
-    t.timers.advance(POOL_IDLE_CLOSE_MS * 2);
+    await t.timers.advanceAsync(POOL_IDLE_CLOSE_MS * 2);
     await flushMicrotasks();
 
     expect(again.pool).toBe(pool);
@@ -224,11 +224,11 @@ describe('MCP pool cache (fake timers)', () => {
     await flushMicrotasks();
     t.statuses.set('r1', 'FAILED');
 
-    t.timers.advance(POOL_REFERENCE_AUDIT_MS - 1);
+    await t.timers.advanceAsync(POOL_REFERENCE_AUDIT_MS - 1);
     await flushMicrotasks();
     expect(t.watcherCount()).toBe(1);
 
-    t.timers.advance(1);
+    await t.timers.advanceAsync(1);
     await flushMicrotasks();
     expect(t.watcherCount()).toBe(0);
     expect(t.cache.release('r1')).toBe(false);
@@ -240,12 +240,12 @@ describe('MCP pool cache (fake timers)', () => {
     t.cache.acquire('r1', t.spec('k'));
     await flushMicrotasks();
 
-    t.timers.advance(POOL_REFERENCE_AUDIT_MS);
+    await t.timers.advanceAsync(POOL_REFERENCE_AUDIT_MS);
     await flushMicrotasks();
     expect(t.timers.pending().filter((timer) => timer.delayMs === POOL_REFERENCE_AUDIT_MS)).toHaveLength(1);
 
     t.statuses.set('r1', 'STOPPED');
-    t.timers.advance(POOL_REFERENCE_AUDIT_MS);
+    await t.timers.advanceAsync(POOL_REFERENCE_AUDIT_MS);
     await flushMicrotasks();
     expect(t.watcherCount()).toBe(0);
   });
@@ -284,7 +284,7 @@ describe('MCP pool cache (fake timers)', () => {
 
     await t.cache.closeAll(CLOSE_GRACE_MS);
     t.wake('r1');
-    t.timers.advance(POOL_REFERENCE_AUDIT_MS * 2);
+    await t.timers.advanceAsync(POOL_REFERENCE_AUDIT_MS * 2);
     await flushMicrotasks();
 
     expect(t.reads()).toBe(before);
@@ -297,7 +297,7 @@ describe('MCP pool cache (fake timers)', () => {
     const slow = makeFakePool(undefined, true);
     t.cache.acquire('r1', t.spec('k', slow));
     t.cache.release('r1');
-    t.timers.advance(POOL_IDLE_CLOSE_MS);
+    await t.timers.advanceAsync(POOL_IDLE_CLOSE_MS);
     await flushMicrotasks();
     expect(slow.closes).toBe(1);
     expect(t.cache.size()).toBe(0);
@@ -379,7 +379,7 @@ describe('MCP pool cache (fake timers)', () => {
     t.cache.acquire('r1', t.spec('k', failing));
     t.cache.release('r1');
 
-    t.timers.advance(POOL_IDLE_CLOSE_MS);
+    await t.timers.advanceAsync(POOL_IDLE_CLOSE_MS);
     await flushMicrotasks();
 
     expect(t.logger.entries.some((entry) => entry.level === 'warn' && entry.msg.includes('close exploded'))).toBe(true);

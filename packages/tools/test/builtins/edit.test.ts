@@ -7,7 +7,7 @@ import { catN, makeBuiltins, range, resultOf, sha256 } from './fixtures.ts';
 const ACCEPT = { mode: 'acceptEdits' } as const;
 
 describe('Edit', () => {
-  it('replaces a unique match, shows a numbered snippet, and returns a whole-file diff', async () => {
+  it('replaces a unique match, shows a numbered snippet, and returns the hunks of the change with no file text beside them', async () => {
     const tools = await makeBuiltins();
     const file = tools.write('e.txt', 'one\ntwo\nthree\n');
     tools.markRead(file);
@@ -15,7 +15,8 @@ describe('Edit', () => {
     expect(result.status).toBe('completed');
     expect(fs.readFileSync(file, 'utf8')).toBe('one\nTWO\nthree\n');
     expect(result.output).toContain(catN(['one', 'TWO', 'three']));
-    expect(result.content).toEqual([{ type: 'diff', path: file, oldText: 'one\ntwo\nthree\n', newText: 'one\nTWO\nthree\n' }]);
+    expect(result.content).toBeUndefined();
+    expect(result).toMatchObject({ hunks: [{ oldStart: 1, newStart: 1, lines: [' one', '-two', '+TWO', ' three'] }], added: 1, removed: 1 });
     expect(tools.session.readLedger.get(file)).toEqual({ sha256: sha256('one\nTWO\nthree\n'), mtimeMs: fs.statSync(file).mtimeMs });
   });
 
@@ -27,13 +28,13 @@ describe('Edit', () => {
     expect(result.files).toEqual([{ path: file, sha256: sha256('one\nTWO\n'), access: 'write' }]);
   });
 
-  it('records path, preHash and postHash as the prepared state', async () => {
+  it('records path, preHash, postHash and the diff as the prepared state', async () => {
     const tools = await makeBuiltins();
     const file = tools.write('p.txt', 'a\n');
     tools.markRead(file);
     resultOf(await tools.run('Edit', { file_path: file, old_string: 'a', new_string: 'b' }, ACCEPT));
     const begin = tools.idempotency.log.find((entry) => entry.op === 'begin');
-    expect(begin?.op === 'begin' ? begin.meta : undefined).toEqual({ tool: 'Edit', runId: 'run-1', prepared: { path: file, preHash: sha256('a\n'), postHash: sha256('b\n') }, facts: { files: [{ path: file, access: 'write' }] } });
+    expect(begin?.op === 'begin' ? begin.meta : undefined).toEqual({ tool: 'Edit', runId: 'run-1', prepared: { path: file, preHash: sha256('a\n'), postHash: sha256('b\n'), diff: { hunks: [{ oldStart: 1, newStart: 1, lines: ['-a', '+b'] }], added: 1, removed: 1 } }, facts: { files: [{ path: file, access: 'write' }] } });
   });
 
   it('limits the snippet to four lines of context around the edit', async () => {

@@ -12,7 +12,7 @@ export const seaKeeperAssets = (): EmbeddedKeeperAssets | undefined =>
 export const hostLaunchesThroughKeeper = (): boolean => hostProcessGroupPort().keeper !== undefined;
 
 export const provideEmbeddedWindowsKeeper = async (
-  ports: Pick<CliPorts, 'home' | 'platform' | 'interrupt'>,
+  ports: Pick<CliPorts, 'home' | 'platform' | 'env' | 'interrupt'>,
   assets: EmbeddedKeeperAssets | undefined = seaKeeperAssets(),
   provide: (file: string, sha256: string) => void = provideCheckedWindowsKeeper,
   provideSource: (executable: () => string) => void = provideWindowsKeeper,

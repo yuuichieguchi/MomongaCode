@@ -91,7 +91,7 @@ describe('tool marker sweep wiring (§8)', () => {
 
     await passServingTime(timers, TOOL_MARKER_SWEEP_MS, () => markerSweeps.signals.length === 1, 'the first sweep tick to start');
     expect(markerSweeps.signals[0]?.aborted).toBe(false);
-    timers.advance(TOOL_MARKER_SWEEP_MS - 1);
+    await timers.advanceAsync(TOOL_MARKER_SWEEP_MS - 1);
     expect(markerSweeps.signals[0]?.aborted).toBe(false);
     await passServingTime(timers, 1, () => markerSweeps.signals.length === 2, 'the next sweep tick to start after the first was ended');
     expect(markerSweeps.signals[0]?.aborted).toBe(true);

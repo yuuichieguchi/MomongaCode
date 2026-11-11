@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createKernelLockMechanism, nodeFileSystem, nodeFileSystemSync, systemRandom, writeFileAtomically, writeFileAtomicallySync } from '@momonga/foundation';
+import { nodeFileSystem, nodeFileSystemSync, systemRandom, writeFileAtomically, writeFileAtomicallySync } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
 import { makeTemporaryDirectory } from './support/temporary-directory.ts';
+import { expectedKernelLockOn } from '@momonga/testkit';
 
 const MECHANISMS: readonly NodeJS.Platform[] = ['darwin', 'linux'];
 const VICTIM_TEXT = 'the file a link points to';
@@ -60,13 +61,13 @@ describe('S6: a symbolic link placed at the temporary between the claim and the 
     for (const writer of WRITERS) {
       it(`${platform} mechanism, ${writer.label}: the file the link points to stays unchanged`, async () => {
         const { target, victim } = scene();
-        await outcomeOf(() => writer.run(target, swappingAfterClaim(createKernelLockMechanism(platform), victim)));
+        await outcomeOf(() => writer.run(target, swappingAfterClaim(expectedKernelLockOn(platform), victim)));
         expect(fs.readFileSync(victim, 'utf8')).toBe(VICTIM_TEXT);
       });
 
       it(`${platform} mechanism, ${writer.label}: the write is refused and the published file stays a regular file with its old content`, async () => {
         const { target, victim } = scene();
-        expect(await outcomeOf(() => writer.run(target, swappingAfterClaim(createKernelLockMechanism(platform), victim)))).toBe('refused');
+        expect(await outcomeOf(() => writer.run(target, swappingAfterClaim(expectedKernelLockOn(platform), victim)))).toBe('refused');
         expect(fs.lstatSync(target).isSymbolicLink()).toBe(false);
         expect(fs.readFileSync(target, 'utf8')).toBe(TARGET_TEXT);
       });

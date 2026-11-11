@@ -5,6 +5,7 @@ import type { SpanExporter } from '@opentelemetry/sdk-trace';
 import { closeTelemetry, contextOf, createTelemetry, openTraceStore, startAgentSpan, startChatSpan, traceparentOf } from '@momonga/observability';
 import { createFakeClock } from '@momonga/testkit';
 import { QUIET_BATCH, RUN_ID, START_MS, dumpAllRows, harness, makeDir } from './helpers.ts';
+import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
 const TRACEPARENT = /^00-([0-9a-f]{32})-([0-9a-f]{16})-01$/;
 
@@ -80,7 +81,7 @@ describe('closeTelemetry', () => {
   it('flushes pending spans into the store, shuts telemetry down and closes the store', async () => {
     const clock = createFakeClock(START_MS);
     const file = path.join(makeDir(), 'gateway.db');
-    const store = openTraceStore({ path: file, clock });
+    const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file, clock });
     const exportedRunIds: unknown[] = [];
     let exporterShutdown = false;
     const recorder: SpanExporter = {

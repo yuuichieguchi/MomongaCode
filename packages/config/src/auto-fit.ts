@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalJson, isRecord, nodeFileSystem, readProbeKeyComponents, sha256Hex, systemRandom, writeFileAtomically } from '@momonga/foundation';
-import type { BinaryHashCache, HeldHostReadings, HostExec } from '@momonga/foundation';
+import type { BinaryHashCache, HeldHostReadings, HostExec, KernelLockMechanism } from '@momonga/foundation';
 import type { AutoClassifierView } from '@momonga/protocol';
 import { registeredServer } from './server-registry.ts';
 import { AUTO_MODE_DATASET_TEXT } from './auto-mode-dataset.ts';
@@ -194,9 +194,9 @@ export const readAutoFitRecord = async (directory: string, key: AutoFitKey): Pro
   return text === undefined ? undefined : recordOf(parseJsonText(text, file), file);
 };
 
-export const writeAutoFitRecord = async (directory: string, record: AutoFitRecord, randomHex: (bytes: number) => string): Promise<string> => {
+export const writeAutoFitRecord = async (directory: string, record: AutoFitRecord, randomHex: (bytes: number) => string, lock: KernelLockMechanism): Promise<string> => {
   await fs.promises.mkdir(directory, { recursive: true, mode: RECORD_DIRECTORY_MODE });
   const file = fileOf(directory, record.key);
-  await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: randomHex }, file, `${JSON.stringify(record, null, 2)}\n`, { mode: RECORD_FILE_MODE });
+  await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: randomHex }, file, `${JSON.stringify(record, null, 2)}\n`, { mode: RECORD_FILE_MODE, lock });
   return file;
 };

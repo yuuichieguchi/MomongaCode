@@ -2,7 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_STATES, MEMORY_ORIGINS, TERMINAL_STATUSES, base64ByteLength } from '@momonga/protocol';
-import type { ImageAttachment, InboxDelivery, InboxRowView, InboxState, Mandate, MemoryOrigin, Stored } from '@momonga/protocol';
+import type { ImageAttachment, InboxChangeRow, InboxDelivery, InboxRowView, InboxState, Mandate, MemoryOrigin, Stored } from '@momonga/protocol';
 import type { DecodeContext } from './decode-context.ts';
 import { corrupt, isRecord, readerFor, storedOneOf } from './rows.ts';
 import type { Row } from './rows.ts';
@@ -62,6 +62,8 @@ export const inboxRowView = (row: InboxRow): InboxRowView => {
   const { images, queued: _queued, ...rest } = row;
   return { ...rest, ...(images === undefined ? {} : { images: images.map((image) => ({ mediaType: image.mediaType, byteLength: base64ByteLength(image.data) })) }) };
 };
+
+export const inboxChangeRow = ({ id, delivery, state, seq }: InboxRow): InboxChangeRow => ({ id, delivery, state, seq });
 
 export type InboxTable = {
   insert(input: { id: string; sessionId: string; delivery: InboxDelivery; text: string; images: readonly ImageAttachment[] | undefined; terms: QueuedRunTerms; origin: MemoryOrigin }): InboxRow;

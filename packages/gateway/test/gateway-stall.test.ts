@@ -72,7 +72,7 @@ describe('a client that stops reading', () => {
     const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter }, config: { targets: { 'scripted/scripted-primary': { maxConcurrency: 1 } } } });
     const first = sseIterator(await postJson(harness.client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true }));
     await first.next();
-    harness.timers.advance(READER_STALL_MS);
+    await harness.timers.advanceAsync(READER_STALL_MS);
     const second = sseIterator(await postJson(harness.client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true }));
     const types: string[] = [];
     for (let step = await second.next(); step.done !== true; step = await second.next()) types.push(step.value.data.type as string);

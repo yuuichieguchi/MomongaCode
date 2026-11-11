@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
-import { deferred, within } from './deferred.ts';
+import { deferred } from './deferred.ts';
 import { START_MS, bodyDigest, makeEnv, modelKey, toolKey } from './harness.ts';
 import { pinnedStart } from './cancel-fixture.ts';
 import type { Env } from './harness.ts';
@@ -46,10 +46,10 @@ describe('worker shutdown through abort', () => {
     const run = await env.enqueue('Long answer');
     const worker = env.worker();
     const running = env.runOnce(worker);
-    await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the stream to start');
 
-    await within(worker.abort('shutdown'), 5_000, 'the shutdown abort to resolve');
-    await within(running, 5_000, 'the claim to settle');
+    await env.settled(worker.abort('shutdown'), 'the shutdown abort to resolve');
+    await env.settled(running, 'the claim to settle');
 
     expect(env.gateway.streams[0]?.signal.aborted).toBe(true);
     expect(env.gateway.streams[0]?.signal.reason).toBe('shutdown');
@@ -73,10 +73,10 @@ describe('worker shutdown through abort', () => {
     const claimEnded = running.then(() => {
       throw new Error(`the claim settled before the tool started: ${JSON.stringify(env.ofType(run.id, 'notice').map((event) => event.message))}`);
     });
-    await within(Promise.race([toolStarted.promise, claimEnded]), 5_000, 'the tool to start');
+    await env.settled(Promise.race([toolStarted.promise, claimEnded]), 'the tool to start');
 
-    await within(worker.abort('shutdown'), 5_000, 'the shutdown abort to resolve');
-    await within(running, 5_000, 'the claim to settle');
+    await env.settled(worker.abort('shutdown'), 'the shutdown abort to resolve');
+    await env.settled(running, 'the claim to settle');
 
     expect(toolSignals.map((signal) => signal.aborted)).toEqual([true]);
     expect(env.fold(run.id).pendingCalls[env.gateway.callId('call_m_1')]?.status).toBe('started');
@@ -108,15 +108,15 @@ describe('worker shutdown through abort', () => {
     const attemptsBefore = env.run(run.id).attempts;
     const worker = env.worker();
     const running = env.runOnce(worker);
-    await within(reconcileReached.promise, 5_000, 'cancel recovery to reconcile');
+    await env.settled(reconcileReached.promise, 'cancel recovery to reconcile');
     const seqBefore = env.run(run.id).lastSeq;
 
     try {
-      await within(worker.abort('shutdown'), 5_000, 'the shutdown abort to resolve');
+      await env.settled(worker.abort('shutdown'), 'the shutdown abort to resolve');
     } finally {
       reconcileGate.resolve();
     }
-    await within(running, 5_000, 'the claim to settle');
+    await env.settled(running, 'the claim to settle');
 
     expect(env.ofType(run.id, 'tool.reconciled')).toEqual([]);
     expect(env.events(run.id).filter((event) => event.seq > seqBefore && event.type !== 'run.status')).toEqual([]);
@@ -141,14 +141,14 @@ describe('worker shutdown through abort', () => {
     const claimEnded = running.then(() => {
       throw new Error('the claim settled without calling the upstream cancel');
     });
-    await within(Promise.race([cancelReached.promise, claimEnded]), 5_000, 'the upstream cancel to start');
+    await env.settled(Promise.race([cancelReached.promise, claimEnded]), 'the upstream cancel to start');
 
     try {
-      await within(worker.abort('shutdown'), 5_000, 'the shutdown abort to resolve');
+      await env.settled(worker.abort('shutdown'), 'the shutdown abort to resolve');
     } finally {
       cancelGate.resolve();
     }
-    await within(running, 5_000, 'the claim to settle');
+    await env.settled(running, 'the claim to settle');
 
     expect(env.gateway.cancels.map((call) => call.idempotencyKey)).toEqual([modelKey(run.id, 1, 1)]);
     expect(env.gateway.streams).toEqual([]);
@@ -158,7 +158,7 @@ describe('worker shutdown through abort', () => {
   it('stops claiming after a shutdown abort', async () => {
     const env = await makeEnv();
     const worker = env.worker();
-    await within(worker.abort('shutdown'), 5_000, 'the shutdown abort on an idle worker');
+    await env.settled(worker.abort('shutdown'), 'the shutdown abort on an idle worker');
     const run = await env.enqueue('Work');
     env.gateway.script.push(textStep('never sent'));
 
@@ -174,9 +174,9 @@ describe('worker shutdown through abort', () => {
     const run = await env.enqueue('Work');
     const worker = env.worker('worker-1', { idlePollMs: 10 });
     worker.start();
-    await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the stream to start');
 
-    await within(worker.abort('shutdown'), 5_000, 'the shutdown abort to resolve');
+    await env.settled(worker.abort('shutdown'), 'the shutdown abort to resolve');
 
     expectYieldedWithoutTrace(env, run.id, 'QUEUED', 0);
     expect(env.gateway.streams[0]?.signal.aborted).toBe(true);
@@ -191,11 +191,11 @@ describe('worker graceful stop', () => {
     const run = await env.enqueue('Echo one');
     const worker = env.worker('worker-1', { idlePollMs: 10 });
     worker.start();
-    await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the stream to start');
 
     const stopping = worker.stop();
     blocked.gate.release.resolve();
-    await within(stopping, 5_000, 'the graceful stop to resolve');
+    await env.settled(stopping, 'the graceful stop to resolve');
 
     expect(env.ofType(run.id, 'model.responded')).toEqual([expect.objectContaining({ step: 1, attempt: 1 })]);
     expect(env.toolbox.executions).toEqual([]);

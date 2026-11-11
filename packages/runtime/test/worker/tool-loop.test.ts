@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { usageOf } from '@momonga/testkit';
-import { deferred, within } from './deferred.ts';
+import { deferred } from './deferred.ts';
 import { makeEnv, modelKey } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 
@@ -12,7 +12,7 @@ describe('worker tool loop', () => {
     env.toolbox.hooks['Echo'] = async () => {
       started += 1;
       if (started === 2) bothStarted.resolve();
-      await within(bothStarted.promise, 5_000, 'both read-only calls to run concurrently');
+      await env.settled(bothStarted.promise, 'both read-only calls to run concurrently');
     };
     env.gateway.script.push(
       callsStep(

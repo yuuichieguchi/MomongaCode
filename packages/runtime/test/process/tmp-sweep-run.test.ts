@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { ensureMomongaDirs, hostKernelLock, sidecarOf, systemRandom, nodeFileSystem } from '@momonga/foundation';
+import { ensureMomongaDirs, sidecarOf, systemRandom, nodeFileSystem, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, testKernelLock } from '@momonga/testkit';
 import { START_MS, makeAbandonedDirectory } from './helpers.ts';
 import { launchRuntime, scopedPaths, sessionEnvFor, startStack, stepsLogged } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
@@ -19,7 +19,7 @@ type Seeded = { idle: string; recent: string; active: string; activeSymlink: str
 const seedSessions = async (temp: RunHome): Promise<Seeded> => {
   await ensureMomongaDirs(temp.paths);
   const clock = createFakeClock(START_MS);
-  const store = openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock, leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock, leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
   const session = () => store.createSession({ cwd: temp.project, env: { ...sessionEnvFor(temp.home) }, permissionMode: 'manual', model: 'default' }).id;
   try {
     const idle = session();
@@ -73,7 +73,7 @@ describe('startup tmp sweeps through startRuntimeProcess (system timers, fake cl
     await launchRuntime(stack.temp, { clock: createFakeClock(RUNTIME_MS) });
 
     const keptNames = [seeded.active, seeded.activeSymlink, seeded.recent, 'unknown-link', '.removing-0190a000-0000-7000-8000-000000000000'];
-    const keptSidecars = [seeded.active, seeded.recent].map((id) => path.basename(sidecarOf(hostKernelLock(), path.join(root, id))));
+    const keptSidecars = [seeded.active, seeded.recent].map((id) => path.basename(sidecarOf(testKernelLock(), path.join(root, id))));
     expect(fs.readdirSync(root).sort()).toEqual([...keptNames, ...keptSidecars].sort());
     expect(fs.lstatSync(path.join(root, seeded.activeSymlink)).isSymbolicLink()).toBe(true);
     expect(fs.readFileSync(path.join(root, seeded.active, 'work', 'f'), 'utf8')).toBe('x');

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { afterMicrotasks, fixtureCompactionItem } from '@momonga/testkit';
-import { LEASE_MS, START_MS, expectError, openStore, startService, waitUntil } from './helpers.ts';
+import { LEASE_MS, START_MS, expectError, openStore, startService, pollFor } from './helpers.ts';
 import type { ServiceEnv, StreamEvent } from './helpers.ts';
 
 const range = (from: number, to: number): number[] => Array.from({ length: Math.max(0, to - from + 1) }, (_, index) => from + index);
@@ -105,9 +105,9 @@ describe('run stream under concurrent writes', () => {
     const lateStream = late[0];
     const lateCursor = lateCursors[0];
     if (lateStream === undefined || lateCursor === undefined) throw new Error('late subscriber missing');
-    expect(seqsOf(await early.toEnd(20_000))).toEqual(range(1, finalSeq));
-    expect(seqsOf(await atEnd.toEnd(20_000))).toEqual(range(initial + 1, finalSeq));
-    expect(seqsOf(await lateStream.toEnd(20_000))).toEqual(range(lateCursor + 1, finalSeq));
+    expect(seqsOf(await early.toEnd())).toEqual(range(1, finalSeq));
+    expect(seqsOf(await atEnd.toEnd())).toEqual(range(initial + 1, finalSeq));
+    expect(seqsOf(await lateStream.toEnd())).toEqual(range(lateCursor + 1, finalSeq));
   });
 });
 
@@ -116,14 +116,14 @@ describe('run stream termination', () => {
     const env = await startService();
     const { run, claim, lastSeq } = await runningRunWithNotices(env, 2);
     const stream = await env.stream(`/v1/runs/${run.id}/events?after=${lastSeq}`);
-    await waitUntil(() => env.notifier.subscriberCount() === 1, 5000, 'the subscriber to register');
+    await pollFor(() => env.notifier.subscriberCount() === 1, 5000, 'the subscriber to register');
 
     expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
 
     const rest = await stream.toEnd();
     expect(rest.at(-1)).toMatchObject({ type: 'run.status', to: 'COMPLETED' });
     expect(seqsOf(rest)).toEqual(range(lastSeq + 1, (await env.getRun(run.id)).lastSeq));
-    await waitUntil(() => env.notifier.subscriberCount() === 0, 5000, 'the subscriber to unregister');
+    await pollFor(() => env.notifier.subscriberCount() === 0, 5000, 'the subscriber to unregister');
   });
 
   it('ends after a dead letter appended by the dead-letter sweep', async () => {
@@ -133,7 +133,7 @@ describe('run stream termination', () => {
     env.claimRun(run.id, 'doomed-worker');
     const before = await env.getRun(run.id);
     const stream = await env.stream(`/v1/runs/${run.id}/events?after=${before.lastSeq}`);
-    await waitUntil(() => env.notifier.subscriberCount() === 1, 5000, 'the subscriber to register');
+    await pollFor(() => env.notifier.subscriberCount() === 1, 5000, 'the subscriber to register');
 
     env.clock.advance(LEASE_MS + 1);
     expect(env.store.claim('next-worker')).toBeNull();
@@ -157,10 +157,10 @@ describe('run stream termination', () => {
 
     const atEnd = await env.stream(`/v1/runs/${run.id}/events?after=${terminal.lastSeq}`);
     expect(atEnd.status).toBe(200);
-    expect(await atEnd.toEnd(2000)).toEqual([]);
+    expect(await atEnd.toEnd()).toEqual([]);
 
     const fromStart = await env.stream(`/v1/runs/${run.id}/events`);
-    expect(seqsOf(await fromStart.toEnd(2000))).toEqual(range(1, terminal.lastSeq));
+    expect(seqsOf(await fromStart.toEnd())).toEqual(range(1, terminal.lastSeq));
   });
 });
 
@@ -171,13 +171,13 @@ describe('run stream liveness', () => {
     if (timers === undefined) throw new Error('fake timers missing');
     const { run, lastSeq } = await runningRunWithNotices(env, 1);
     const stream = await env.stream(`/v1/runs/${run.id}/events?after=${lastSeq}`);
-    await waitUntil(() => env.notifier.subscriberCount() === 1, 5000, 'the subscriber to register');
-    await waitUntil(() => timers.pending().some((timer) => timer.delayMs === 15_000), 5000, 'the keep-alive timer');
+    await pollFor(() => env.notifier.subscriberCount() === 1, 5000, 'the subscriber to register');
+    await pollFor(() => timers.pending().some((timer) => timer.delayMs === 15_000), 5000, 'the keep-alive timer');
 
-    timers.advance(15_000);
+    await timers.advanceAsync(15_000);
     expect(await stream.nextComment()).toBe('keep-alive');
-    await waitUntil(() => timers.pending().some((timer) => timer.delayMs === 15_000), 5000, 'the next keep-alive timer');
-    timers.advance(15_000);
+    await pollFor(() => timers.pending().some((timer) => timer.delayMs === 15_000), 5000, 'the next keep-alive timer');
+    await timers.advanceAsync(15_000);
     expect(await stream.nextComment()).toBe('keep-alive');
     expect(stream.events).toEqual([]);
   });
@@ -187,12 +187,12 @@ describe('run stream liveness', () => {
     const { run, lastSeq } = await runningRunWithNotices(env, 1);
     const first = await env.stream(`/v1/runs/${run.id}/events?after=${lastSeq}`);
     const second = await env.stream(`/v1/runs/${run.id}/events?after=${lastSeq}`);
-    await waitUntil(() => env.notifier.subscriberCount() === 2, 5000, 'two subscribers');
+    await pollFor(() => env.notifier.subscriberCount() === 2, 5000, 'two subscribers');
 
     first.close();
-    await waitUntil(() => env.notifier.subscriberCount() === 1, 5000, 'one subscriber after the first disconnect');
+    await pollFor(() => env.notifier.subscriberCount() === 1, 5000, 'one subscriber after the first disconnect');
     second.close();
-    await waitUntil(() => env.notifier.subscriberCount() === 0, 5000, 'no subscribers');
+    await pollFor(() => env.notifier.subscriberCount() === 0, 5000, 'no subscribers');
   });
 
   it('delivers events written through a second store connection via the data_version fallback', async () => {
@@ -201,7 +201,7 @@ describe('run stream liveness', () => {
     const run = await env.createRun(session.id);
     const initial = await env.getRun(run.id);
     const stream = await env.stream(`/v1/runs/${run.id}/events?after=${initial.lastSeq}`);
-    await waitUntil(() => env.notifier.subscriberCount() === 1, 5000, 'the subscriber to register');
+    await pollFor(() => env.notifier.subscriberCount() === 1, 5000, 'the subscriber to register');
 
     const second = openStore(env.layout.dbPath, env.clock);
     const claim = second.claim('remote-worker');
