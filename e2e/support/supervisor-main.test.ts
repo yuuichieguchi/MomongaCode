@@ -149,6 +149,7 @@ describe('supervisor-main guard', () => {
     expect(guardSupervisorHome([], input)).toEqual(expect.stringContaining('--home'));
     expect(guardSupervisorHome([`--home=${other}`], input)).toEqual(expect.stringContaining('--home'));
     expect(guardSupervisorHome([`--home=${home}`, '--log-target=file'], input)).toBeUndefined();
+    expect(guardSupervisorHome([`--home=${home}`, '--log-target=file', '--generation=1'], input)).toBeUndefined();
   });
 });
 

@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { titleOf } from './support/cases.ts';
 import { createUdsClient, fixedSocket } from '@momonga/foundation';
 import type { MomongaModelList } from '@momonga/protocol';
 import { firstGeneration, modelSettings, startFakeChatCompletions } from '@momonga/testkit';
@@ -16,7 +17,7 @@ const CAPABILITIES = { contextWindow: 8192, maxOutputTokens: 1024 };
 const modelsAsked = (fake: FakeChatCompletionsServer): unknown[] => chatCompletions(fake).map((request) => (request.body as { model?: unknown }).model);
 
 describe('two servers that serve a model of the same name', () => {
-  it('lists one entry per server with the same own name and a different provider, and a request by the full reference of each reaches only its server', { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('same-name-two-servers'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const servers = await Promise.all(
       PROVIDERS.map(async (provider) => {

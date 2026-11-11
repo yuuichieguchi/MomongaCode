@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
-import { FIRST_GENERATION, assertUnixSocketPathFits, ensureMomongaDirs, generationLayout, isProcessAlive, momongaPaths } from '@momonga/foundation';
+import { FIRST_GENERATION, assertUnixSocketPathFits, ensureMomongaDirs, generationLayout, isProcessAlive, momongaPaths, scopeToGeneration } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { stopSupervisorHolders } from '@momonga/testkit';
 import { createProcessLedger } from './ledger.ts';
@@ -130,6 +130,8 @@ export const createE2eHome = async (options: CreateE2eHomeOptions = {}): Promise
   homes.push(home);
   return home;
 };
+
+export const markersOf = (home: Pick<E2eHome, 'paths'>, generation: number = FIRST_GENERATION): MomongaPaths['markers'] => scopeToGeneration(home.paths, generation).markers;
 
 export const registerE2eCleanup = (cleanup: E2eCleanup): void => {
   cleanups.push(cleanup);

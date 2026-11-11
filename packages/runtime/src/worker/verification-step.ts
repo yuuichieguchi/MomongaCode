@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { reapMarkedProcesses } from '@momonga/foundation';
+import { newCallId, reapMarkedProcesses } from '@momonga/foundation';
 import { VERIFICATION_FEEDBACK_PREFIX, conditionOwed } from '@momonga/protocol';
 import type { ConditionResult, PinnedCondition, RunEventPayload, VerificationOutcome } from '@momonga/protocol';
 import { MAX_COMMAND_TIMEOUT_MS, runSandboxedCommand, verificationMarkerName } from '@momonga/tools';
@@ -104,7 +104,7 @@ const runCheck = async (ctx: ClaimContext, condition: PinnedCondition, attempt: 
   if (result.kind === 'cancelled') return 'interrupted';
   const { outcome, exitCode } = outcomeOf(result);
   const output = outputOf(result);
-  const call = { callId: markerName, tool: CHECK_OUTPUT_TOOL };
+  const call = { callId: newCallId(clock), tool: CHECK_OUTPUT_TOOL };
   const fits = await ctx.outputFit.fits(output, call);
   const handle = fits ? undefined : (await ctx.options.blobs.put(output, { mediaType: OUTPUT_MEDIA_TYPE, runId: ctx.run.id })).handle;
   const inline = handle === undefined ? output : await ctx.outputFit.fit(output, handle, call);

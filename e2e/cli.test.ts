@@ -51,6 +51,13 @@ const jsonLines = (text: string): Record<string, unknown>[] =>
       return Object.fromEntries(Object.entries(parsed));
     });
 
+const endedByItself = (records: ReturnType<typeof supervisorLog>): boolean => {
+  const ended = records.findIndex((record) => record.msg === 'generation.ended');
+  const closes = records.flatMap((record, index) => (record.msg === 'shutdown.begin' ? [index] : []));
+  const last = records.at(-1);
+  return ended !== -1 && closes.length === 1 && ended < (closes[0] ?? -1) && last?.msg === 'entry.exit' && last['code'] === 0 && last['trigger'] === 'request';
+};
+
 const rootRunOf = (treeJson: string): { id: string; lastSeq: number } => {
   const tree: unknown = JSON.parse(treeJson);
   const root: unknown = Array.isArray(tree) ? tree[0] : undefined;
@@ -287,8 +294,8 @@ describe('cli: momonga -p', () => {
     expect(result.stdout).toBe('from the new daemon\n');
     expect((await stack.supervisor.exited).code).toBe(0);
     const oldRecords = supervisorLog(home.paths, oldPid);
-    expect(oldRecords.filter((record) => record.msg === 'shutdown.begin')).toEqual([]);
     expect(oldRecords.filter((record) => record.msg === 'generation.retiring')).toHaveLength(1);
+    expect(endedByItself(oldRecords)).toBe(true);
     const status = await runCliWithFakes(home, ['daemon', 'status']);
     expect(status.stdout).toMatch(/^momonga daemon running: pid \d+, version 2\.0\.0, phase running/);
     expect(Number(/pid (\d+)/.exec(status.stdout)?.[1])).not.toBe(oldPid);
@@ -296,7 +303,7 @@ describe('cli: momonga -p', () => {
 
   it(titleOf('cli-older-daemon-active-run'), { timeout: NEWER_CLIENT_RUN_BOUND_MS + E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
-    const stack = await startStack({ home, script: [textReply('held run'), textReply('another run')], version: '1.0.0' });
+    const stack = await startStack({ home, script: [textReply('another run'), textReply('held run')], version: '1.0.0' });
     const hold = stack.fake.hold();
     const runtime = createRuntimeClient(home);
     const session = await runtime.createSession();
@@ -320,7 +327,7 @@ describe('cli: momonga -p', () => {
     hold.release();
     await until(() => heldStatus() === 'COMPLETED', { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the run that was active in the older daemon to complete in its own generation' });
     expect((await stack.supervisor.exited).code).toBe(0);
-    expect(supervisorLog(home.paths, oldPid).filter((record) => record.msg === 'shutdown.begin')).toEqual([]);
+    expect(endedByItself(supervisorLog(home.paths, oldPid))).toBe(true);
     const heldCalls = stack.fake.requests.filter((request) => request.path === '/v1/chat/completions' && JSON.stringify(request.body).includes('work in progress'));
     expect(heldCalls).toHaveLength(1);
   });
@@ -379,11 +386,11 @@ describe('cli: momonga -p', () => {
     expect(version.code).toBe(0);
     expect(version.stdout).toBe(`${cliPackage.version}\n`);
 
-    const status = await runCli(home, ['daemon', 'status'], { env: { HOME: longHome } });
-    expect(status.code).toBe(1);
-    expect(status.stdout).toBe('');
-    expect(status.stderr).toMatch(/^momonga: Unix socket path .* must be shorter than/);
-    expect(status.stderr).not.toContain('    at ');
+    const uncreatable = await runCli(home, ['daemon', 'status'], { env: { HOME: longHome } });
+    expect(uncreatable.code).toBe(1);
+    expect(uncreatable.stdout).toBe('');
+    expect(uncreatable.stderr).toMatch(new RegExp(`^momonga: The directory ${longHome}\\S* could not be created: `));
+    expect(uncreatable.stderr).not.toContain('    at ');
   });
 
   it(titleOf('cli-reconnect'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
@@ -460,22 +467,27 @@ describe('cli: gateway probe', () => {
   it.runIf(process.platform === 'darwin')(titleOf('cli-probe'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const fakeFm = await createFakeFm({ dir: home.root });
-    writeSettingsFile(home, modelSettings({ models: [{ adapter: 'managed', provider: 'fm', server: 'fm', id: 'system' }] }));
-    const probed = await runCli(home, ['gateway', 'probe', 'fm/system', '--fm-binary', fakeFm.binaryPath, '--samples', '2']);
+    const settingsWithBinary = (binary: string) => modelSettings({ models: [{ adapter: 'managed', provider: 'fm', server: 'fm', binary, id: 'system' }] });
+    writeSettingsFile(home, settingsWithBinary(fakeFm.binaryPath));
+    const probed = await runCli(home, ['gateway', 'probe', 'fm/system', '--samples', '2']);
 
     expect(probed.stderr).toBe('');
     expect(probed.code).toBe(0);
     expect(probed.stdout).toMatch(/^probed system: model .+, context window \d+/m);
     expect(probed.stdout).toMatch(/tool calling: (native|constrained|none)/);
-    expect(fs.existsSync(path.join(home.paths.probe, 'fm.json'))).toBe(true);
+    const recordFile = /^ {2}recorded in (.+)$/m.exec(probed.stdout)?.[1] ?? '';
+    expect(path.dirname(recordFile)).toBe(home.paths.probe);
+    expect(fs.readdirSync(home.paths.probe).filter((name) => name.endsWith('.json'))).toEqual([path.basename(recordFile)]);
 
     const unlicensed = path.join(home.root, 'unlicensed-fm');
     fs.writeFileSync(unlicensed, '#!/bin/sh\nexit 69\n', { mode: 0o755 });
-    const refused = await runCli(home, ['gateway', 'probe', 'fm/system', '--fm-binary', unlicensed]);
+    writeSettingsFile(home, settingsWithBinary(unlicensed));
+    const refused = await runCli(home, ['gateway', 'probe', 'fm/system']);
     expect(refused.code).toBe(1);
     expect(refused.stderr).toContain('remedy: sudo fm license');
 
-    const unknown = await runCli(home, ['gateway', 'probe', 'nope', '--fm-binary', fakeFm.binaryPath]);
+    writeSettingsFile(home, settingsWithBinary(fakeFm.binaryPath));
+    const unknown = await runCli(home, ['gateway', 'probe', 'nope']);
     expect(unknown.code).toBe(1);
     expect(unknown.stderr).toContain('The model "nope" is not configured. Configured models: system.');
   });

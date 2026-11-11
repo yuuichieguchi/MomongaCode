@@ -1,4 +1,4 @@
-import { MAX_JSON_DEPTH, uuidv7 } from '@momonga/foundation';
+import { MAX_JSON_DEPTH, newCallId } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { EnvelopeReader } from './envelope-reader.ts';
 import { MalformedOutputError, UpstreamProtocolError } from '../shared/failures.ts';
@@ -28,7 +28,7 @@ export const createConstrainedSink = (emitter: ResponseEmitter, plan: Constraine
       if (nextKey >= MAX_TOOL_CALLS) throw new MalformedOutputError(`the model emitted more than ${MAX_TOOL_CALLS} tool calls`);
       const key = nextKey;
       nextKey += 1;
-      emitter.beginCall(key, `call_${uuidv7(clock).replaceAll('-', '')}`, name);
+      emitter.beginCall(key, newCallId(clock), name);
       emitter.appendCallArguments(key, argumentsJson);
       emitter.completeCall(key);
     },

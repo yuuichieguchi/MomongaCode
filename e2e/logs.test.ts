@@ -11,7 +11,7 @@ import type { LogRecord } from './support/log-reader.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import { DEFAULT_E2E_DEPS, shutdownBarrier, startStack } from './support/stack.ts';
 import { childOf, pidOf } from './support/supervisor-client.ts';
-import { E2E_MARGIN_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
+import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 import { firstGeneration } from '@momonga/testkit';
 
 const NOISY_DAEMON_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'support', 'fixtures', 'noisy-daemon.ts');
@@ -57,7 +57,7 @@ describe('logs', () => {
     const { run } = await runtime.createRun(session.id, 'Say hello');
     const stream = runtime.events(run.id);
     registerE2eCleanup(() => stream.close());
-    const frames = await stream.toEnd(E2E_MARGIN_MS);
+    const frames = await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
     expect(frames.at(-1)?.data).toMatchObject({ type: 'run.status', to: 'COMPLETED' });
 
     const health = await stack.client.health();

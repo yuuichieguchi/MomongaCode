@@ -10,7 +10,8 @@ import type { GatewayPort } from '@momonga/runtime';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { FakeRoute, FakeScriptedReply } from '@momonga/testkit';
 import { usageOf, NEVER_CANCELLED } from '@momonga/testkit';
-import { createBuiltinTools, harnessOutputToolsOf } from '@momonga/tools';
+import { createBuiltinTools, createOperationTools, harnessOutputToolsOf, hostGitReader } from '@momonga/tools';
+import type { ArgvRunner, ForgeAccess } from '@momonga/tools';
 import { budgetFor, capacityFor, inputCeilingFor, itemCapFor } from '../../packages/context/src/budget.ts';
 import { errorBoundFor } from '../../packages/gateway/src/core/estimate.ts';
 import { makeEnv, unavailableEvidenceRun } from '../../packages/runtime/test/worker/harness.ts';
@@ -397,6 +398,17 @@ type DryRunInput = { readonly plan: PlanInput; readonly steps: readonly PlannedS
 
 const TERMINAL: ReadonlySet<string> = new Set(['COMPLETED', 'STOPPED', 'FAILED', 'CANCELLED']);
 
+const noOperationRuns: ArgvRunner = async () => {
+  throw new Error('a dry run plans no Git or Pull Request operation, so none is run');
+};
+
+const NO_FORGE: ForgeAccess = {
+  request: async () => {
+    throw new Error('a dry run configures no forge');
+  },
+  gitCredential: async () => undefined,
+};
+
 export type DryRunRecord = DryRun & { readonly journal: readonly JournalEvent[]; readonly bodies: readonly unknown[]; readonly counts: readonly CountTokensResult[]; readonly observedCounts: readonly number[] };
 
 export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput): Promise<DryRunRecord> => {
@@ -433,7 +445,7 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
       countTokens: async (request, options) => {
         const result = await client.countTokens(request, options);
         const perturbed = { ...result, input_tokens: Math.max(0, result.input_tokens + perturbation) };
-        if (request.momonga === undefined) {
+        if (request.momonga?.lenient_items === undefined) {
           counts.push(result);
           observedCounts.push(perturbed.input_tokens);
         }
@@ -457,7 +469,7 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
       home: plan.home.home,
       instructionReader: createFsInstructionReader(NEVER_CANCELLED),
       defaults: RUNTIME_DEFAULTS.limits,
-      toolList: () => createBuiltinTools(),
+      toolList: () => [...createBuiltinTools(), ...createOperationTools({ runArgv: noOperationRuns, readGit: hostGitReader, forge: NO_FORGE, settings: {} })],
       memories: createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }),
       history: createHistoryPort({
         store: env.store,

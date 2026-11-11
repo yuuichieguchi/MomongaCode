@@ -6,7 +6,7 @@ import { titleOf } from './support/cases.ts';
 import { OPEN_LOG_FILE_NAME, SECRETS_FILE_NAME, runCli } from './support/cli.ts';
 import type { E2eHome } from './support/home.ts';
 import { PNG_BYTES, WINDOW_WITH_ROOM_FOR_ALL_TOOLS_AND_AN_IMAGE, prepareProduct, requestText, writePng, writeUserSkill } from './support/product.ts';
-import { KEYS, spawnPty, untilRunEnds } from './support/pty.ts';
+import { answerTrust, KEYS, spawnPty, untilRunEnds } from './support/pty.ts';
 import type { PtySession } from './support/pty.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
@@ -14,8 +14,7 @@ import { E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 const spawnWithFakes = (home: E2eHome, args: readonly string[] = []): Promise<PtySession> => spawnPty(home, args, {}, { fakes: true });
 
 const trustAndWait = async (pty: PtySession, mode = 'manual'): Promise<void> => {
-  await pty.waitFor('Do you trust the files in');
-  pty.write('1');
+  await answerTrust(pty, 'trust');
   await pty.waitFor(`mode: ${mode}`);
 };
 
@@ -71,8 +70,7 @@ describe('the startup screen through a pty', () => {
   it('shows the squirrel, the version, the model with its target and the mode above the first prompt', { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const { home } = await prepareProduct();
     const pty = await spawnWithFakes(home);
-    await pty.waitFor('Do you trust the files in');
-    pty.write('1');
+    await answerTrust(pty, 'trust');
     await pty.waitFor('model: default → primary');
     const screen = pty.screen();
     console.log(screen.slice(screen.indexOf('╭')));
@@ -187,8 +185,7 @@ describe('MCP input in the terminal', () => {
     fs.mkdirSync(skills, { recursive: true });
     fs.writeFileSync(path.join(skills, 'SKILL.md'), '---\nname: nameless\n---\nBody.\n');
     const pty = await spawnWithFakes(home);
-    await pty.waitFor('Do you trust the files in');
-    pty.write('1');
+    await answerTrust(pty, 'trust');
     await pty.waitFor('model: default → primary');
     await pty.waitFor('! Agent at');
     await pty.waitFor(wrappedText('broken.md was skipped: the description is missing or empty'));

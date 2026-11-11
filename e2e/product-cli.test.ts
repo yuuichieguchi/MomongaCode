@@ -1,13 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { CACHE_READ_TEXT } from '@momonga/observability';
+import { CACHE_READS_NOT_REPORTED } from '@momonga/protocol';
 import { startMcpHttpFixture, startMcpOauthFixture } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
 import { OPEN_LOG_FILE_NAME, runCli, runCliWithFakes, startCli, startCliWithFakes } from './support/cli.ts';
 import type { CliResult } from './support/cli.ts';
 import type { E2eHome } from './support/home.ts';
 import { PNG_BYTES, WINDOW_WITH_ROOM_FOR_ALL_TOOLS_AND_AN_IMAGE, prepareProduct, requestText, writePng, writeUserSkill } from './support/product.ts';
-import { UPSTREAM_MODEL, UPSTREAM_MODEL_REF, UPSTREAM_PROVIDER } from './support/stack.ts';
+import { UPSTREAM_CONTEXT_WINDOW, UPSTREAM_MODEL, UPSTREAM_MODEL_REF, UPSTREAM_PROVIDER } from './support/stack.ts';
 import { chatCompletions, reportedTokensOfRequest, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, policyVerifyBoundMs, until } from './support/wait.ts';
 
@@ -42,7 +44,7 @@ describe('momonga models, cost and memory', () => {
     const json = jsonOf((await runCli(home, ['models', '--json'])).stdout);
     expect(json).toMatchObject({
       start: UPSTREAM_MODEL_REF,
-      models: [{ model: UPSTREAM_MODEL_REF, name: UPSTREAM_MODEL, provider: UPSTREAM_PROVIDER, address: null, contextWindow: 8192, fallback: [] }],
+      models: [{ model: UPSTREAM_MODEL_REF, name: UPSTREAM_MODEL, provider: UPSTREAM_PROVIDER, address: null, contextWindow: UPSTREAM_CONTEXT_WINDOW, fallback: [] }],
     });
   });
 
@@ -110,7 +112,7 @@ describe('momonga models, cost and memory', () => {
     const text = await runCli(home, ['cost', '--all']);
     expect(text.code).toBe(0);
     expect(text.stdout).toContain('cost report');
-    expect(text.stdout).toContain(`total: 2 call(s), ${inputTokens} input (0 cached) + 10 output tokens`);
+    expect(text.stdout).toContain(`total: 2 call(s), ${CACHE_READ_TEXT.inputClause({ calls: 2, notReported: 2, inputTokens, cachedInputTokens: null })} + 10 output tokens, not complete: ${CACHE_READS_NOT_REPORTED} in 2 call(s)\n`);
     const mixed = await runCli(home, ['cost', secondRun.run_id, '--all']);
     expect(mixed.code).toBe(1);
     expect(mixed.stderr).toContain('choose one of a run id, --session and --all');

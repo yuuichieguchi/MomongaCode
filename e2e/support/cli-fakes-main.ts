@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createKeychainSecretStore } from '@momonga/foundation';
-import { createFakeSecurityPort } from '@momonga/testkit';
+import { SECURITY_BINARY, createKeychainSecretStore } from '@momonga/foundation';
+import { FAKE_KEYCHAIN_PATH, createFakeSecretFiles, createFakeSecurityPort } from '@momonga/testkit';
 import packageJson from '../../packages/cli/package.json' with { type: 'json' };
 import { runMain } from '../../packages/cli/src/run-main.ts';
 
@@ -38,6 +38,8 @@ await runMain(versionOverride() ?? packageJson.version, {
         () => readSecrets(file),
         (name, value) => fs.writeFileSync(file, JSON.stringify({ ...readSecrets(file), [name]: value })),
       ),
+      SECURITY_BINARY,
+      createFakeSecretFiles(() => new Set([FAKE_KEYCHAIN_PATH])),
     );
   },
 });

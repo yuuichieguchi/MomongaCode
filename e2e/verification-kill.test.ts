@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { skipCase, titleOf } from './support/cases.ts';
-import { createE2eHome } from './support/home.ts';
+import { createE2eHome, markersOf } from './support/home.ts';
 import { groupAlive, isAlive } from './support/process.ts';
 import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import { sandboxOrSkip } from './support/sandbox.ts';
@@ -33,7 +33,7 @@ describe('v: a completion check interrupted by a runtime SIGKILL', () => {
 
       await until(() => linesOf(runs)?.length === 1, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the first run of the check has started' });
       const firstHolder = await until(() => Number(linesOf(holder)?.[0]) || undefined, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the pid of the first check' });
-      expect(fs.readdirSync(home.paths.markers.tools).length).toBeGreaterThanOrEqual(1);
+      expect(fs.readdirSync(markersOf(home).tools).length).toBeGreaterThanOrEqual(1);
 
       const before = await stack.client.health();
       const oldRuntimePid = childOf(before, 'runtime').pid;

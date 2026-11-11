@@ -46,10 +46,18 @@ export type PtySession = {
 export const untilRunEnds = (pty: PtySession, mode: string): Promise<void> =>
   pty.waitFor(new RegExp(`mode: ${mode} \\(shift\\+tab\\) · tokens: [\\d.]+k?( · context: \\d+%)?\\s*$`));
 
+const TRUST_ROWS = { trust: '1', decline: '2' } as const;
+
+export const answerTrust = async (pty: PtySession, row: keyof typeof TRUST_ROWS): Promise<void> => {
+  await pty.waitFor('Do you trust the files in');
+  pty.write(TRUST_ROWS[row]);
+  pty.write(KEYS.enter);
+};
+
 const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 
-export const spawnPty = async (home: E2eHome, args: readonly string[], env: Readonly<Record<string, string>> = {}, options: { fakes?: true } = {}): Promise<PtySession> => {
-  const bundle = options.fakes === true ? CLI_FAKES_BUNDLE : CLI_BUNDLE;
+export const spawnPty = async (home: E2eHome, args: readonly string[], env: Readonly<Record<string, string>> = {}, options: { fakes?: true; bundle?: string } = {}): Promise<PtySession> => {
+  const bundle = options.bundle ?? (options.fakes === true ? CLI_FAKES_BUNDLE : CLI_BUNDLE);
   const childEnv = options.fakes === true ? { ...fakePortsEnv(home), ...env } : env;
   fifoCounter += 1;
   const fifo = path.join(home.root, `pty-input-${fifoCounter}`);

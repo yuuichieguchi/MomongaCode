@@ -26,19 +26,31 @@ const portsOf = (home: string) => ({ home, platform: process.platform, interrupt
 describe('the composition root extracts the bundled keeper and provides it to the group port', () => {
   it('provides no embedded keeper outside a single executable and in a single executable that carries no keeper', async () => {
     const provided: string[] = [];
-    await provideEmbeddedWindowsKeeper(portsOf(homeOf()), undefined, (file) => void provided.push(file), () => undefined);
-    await provideEmbeddedWindowsKeeper(portsOf(homeOf()), { present: () => false, raw: () => new Uint8Array() }, (file) => void provided.push(file), () => undefined);
+    await provideEmbeddedWindowsKeeper(portsOf(homeOf()), undefined, (file) => void provided.push(file), () => undefined, () => true);
+    await provideEmbeddedWindowsKeeper(portsOf(homeOf()), { present: () => false, raw: () => new Uint8Array() }, (file) => void provided.push(file), () => undefined, () => true);
     expect(provided).toEqual([]);
   });
 
   it('extracts the keeper under the executables area and provides its path with the checksum of the manifest', async () => {
     const provided: Array<[string, string]> = [];
     const assets = { present: (name: string) => name === WINDOWS_KEEPER_MANIFEST_ASSET, raw: (name: string) => (name === WINDOWS_KEEPER_MANIFEST_ASSET ? MANIFEST : BINARY) };
-    await provideEmbeddedWindowsKeeper(portsOf(homeOf()), assets, (file, sha256) => void provided.push([file, sha256]));
+    await provideEmbeddedWindowsKeeper(portsOf(homeOf()), assets, (file, sha256) => void provided.push([file, sha256]), () => undefined, () => true);
     const [file, sha256] = provided[0] as [string, string];
     expect(sha256).toBe(SHA);
     expect(path.basename(file)).toBe('momonga-keeper.exe');
     expect(sha256Hex(fs.readFileSync(file))).toBe(SHA);
+  });
+
+  it('provides nothing and leaves the home untouched where commands are not launched through a keeper', async () => {
+    const provided: unknown[] = [];
+    const blocker = path.join(homeOf(), 'not-a-directory');
+    fs.writeFileSync(blocker, '');
+    const assets = { present: (name: string) => name === WINDOWS_KEEPER_MANIFEST_ASSET, raw: (name: string) => (name === WINDOWS_KEEPER_MANIFEST_ASSET ? MANIFEST : BINARY) };
+    const unreachable = portsOf(path.join(blocker, 'home'));
+    await provideEmbeddedWindowsKeeper(unreachable, assets, (file) => void provided.push(file), (executable) => void provided.push(executable), () => false);
+    await provideEmbeddedWindowsKeeper(unreachable, undefined, (file) => void provided.push(file), (executable) => void provided.push(executable), () => false);
+    expect(provided).toEqual([]);
+    expect(fs.statSync(blocker).isFile()).toBe(true);
   });
 
   it('the provided keeper is checked before every start: a changed byte is refused', () => {

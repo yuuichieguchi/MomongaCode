@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { skipCase, titleOf } from './support/cases.ts';
 import { readDb } from './support/db.ts';
-import { createE2eHome } from './support/home.ts';
+import { createE2eHome, markersOf } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { TOOL_GROUPS_SQL } from './support/ledger.ts';
 import { groupAlive, hostPidOf, isAlive } from './support/process.ts';
@@ -86,8 +86,15 @@ const killRuntimeDuringBash = async (command: (files: { effect: string; shell: s
   const kill = (): void => {
     process.kill(oldRuntimePid, 'SIGKILL');
   };
-  const completed = (): Promise<unknown> =>
-    until(async () => (await runtime.getRun(run.id)).run.status === 'COMPLETED', { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: `run ${run.id} COMPLETED after recovery` });
+  const completed = async (): Promise<void> => {
+    await until(async () => (await runtime.getRun(run.id)).run.status === 'WAITING_HUMAN', { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: `run ${run.id} WAITING_HUMAN after recovery` });
+    const pending = await runtime.approvals(run.id);
+    expect(pending.map((approval) => approval.kind)).toEqual(['unknown_effect']);
+    const [unknownAsk] = pending;
+    if (unknownAsk === undefined) throw new Error('expected one approval about the unknown effect');
+    await runtime.resolveApproval(unknownAsk.id, 'allow_once');
+    await until(async () => (await runtime.getRun(run.id)).run.status === 'COMPLETED', { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: `run ${run.id} COMPLETED after the answer` });
+  };
   return { home, files, pgid, runId: run.id, runtime, stack, kill, completed };
 };
 
@@ -163,7 +170,7 @@ describe('b2: Bash under the platform sandbox', () => {
       expect(toolGroups).toHaveLength(1);
       const pgid = toolGroups[0] as number;
       expect(groupAlive(pgid)).toBe(true);
-      expect(fs.readdirSync(home.paths.markers.tools).length).toBeGreaterThanOrEqual(1);
+      expect(fs.readdirSync(markersOf(home).tools).length).toBeGreaterThanOrEqual(1);
 
       const before = await stack.client.health();
       const oldRuntimePid = childOf(before, 'runtime').pid;
@@ -210,7 +217,7 @@ describe('b2: Bash under the platform sandbox', () => {
       expect(lastMessage?.tool_call_id).toBe(recoveredCallId);
       expect(reconciled[0]?.data.callId).toBe(recoveredCallId);
       expect(textOf(lastMessage?.content)).toContain(UNKNOWN_EFFECT_SENTENCE);
-      expect(fs.readdirSync(home.paths.markers.tools)).toEqual([]);
+      expect(fs.readdirSync(markersOf(home).tools)).toEqual([]);
 
       const after = await stack.client.health();
       const runtimeAfter = childOf(after, 'runtime');

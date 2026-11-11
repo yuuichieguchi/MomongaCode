@@ -8,6 +8,7 @@ import { fixedSandboxBindings } from '@momonga/runtime';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { Run } from '@momonga/store';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { createRequestValidator } from '../../../gateway/src/core/validation.ts';
 import { DEADLINE_MS, createdRun, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
@@ -99,6 +100,21 @@ describe('verifiable completion in the worker', () => {
     expect(message).toContain('2 tests failed');
     expect(message).toMatch(/exit(ed)?( with)?( code)? 1/);
     expect(JSON.stringify(env.gateway.streams[1]?.body.input)).toContain('2 tests failed');
+  });
+
+  it('counts the output of a check under a call id that the request validation of the gateway accepts, whatever the length of the condition id', async () => {
+    const env = await makeEnv({ mode: 'bypassPermissions' });
+    env.gateway.script.push(textStep('All done.'), textStep('Really done.'));
+    const run = enqueueWith(env, 'make the tests pass', { conditions: [{ id: `check-${'long-'.repeat(40)}id`, command: 'echo "2 tests failed" >&2; exit 1' }] });
+
+    await env.runOnce(workerOf(env));
+
+    expect(completions(env, run.id)).toMatchObject([{ round: 1, outcome: 'failed', exitCode: 1 }]);
+    const validator = createRequestValidator();
+    const checkCounts = env.gateway.counts.filter((request) => JSON.stringify(request.input).includes('2 tests failed') && JSON.stringify(request.input).includes('function_call_output'));
+    expect(checkCounts.length).toBeGreaterThan(0);
+    for (const request of env.gateway.counts) expect(() => validator.parseCountTokens(structuredClone(request))).not.toThrow();
+    for (const body of env.gateway.streams.map((stream) => stream.body)) expect(() => validator.parseCreate(structuredClone(body))).not.toThrow();
   });
 
   it('does not accept a command the model ran itself as evidence, even when it equals the condition and succeeded', async () => {

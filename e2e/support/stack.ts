@@ -5,11 +5,11 @@ import type { ChildProcessByStdio } from '@momonga/testkit/child-process';
 import type { Readable, Writable } from 'node:stream';
 import { expect } from 'vitest';
 import type { SandboxSetting } from '@momonga/config';
-import { MINIMAL_CHILD_PATH, parseReadyLine } from '@momonga/foundation';
+import { MINIMAL_CHILD_PATH, createUdsClient, fixedSocket, parseReadyLine } from '@momonga/foundation';
 import type { ReadyFields } from '@momonga/foundation';
 import type { SupervisorChildState, SupervisorHealth, SupervisorPhase, TargetAnswers } from '@momonga/protocol';
 import type { ChildRole } from '@momonga/supervisor';
-import { modelSettings, productTestEnv, startFakeChatCompletions } from '@momonga/testkit';
+import { firstGeneration, modelSettings, productTestEnv, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeRoute, FakeScriptedReply } from '@momonga/testkit';
 import { SUPERVISOR_APP_VERSION } from './app-version.ts';
 import { registerE2eCleanup } from './home.ts';
@@ -31,7 +31,7 @@ export const SUPERVISOR_ENV_PATH = MINIMAL_CHILD_PATH;
 export const STDERR_TAIL_BYTES = 64 * 1024;
 export const UPSTREAM_MODEL = 'system';
 export const UPSTREAM_PROVIDER = 'fake';
-export const UPSTREAM_CONTEXT_WINDOW = 8192;
+export const UPSTREAM_CONTEXT_WINDOW = 16_384;
 
 export const DEFAULT_E2E_DEPS: E2eDeps = {
   runtime: { leaseMs: E2E_LEASE_MS, workerCount: 1 },
@@ -321,6 +321,23 @@ export const settingsOf = (home: E2eHome, kind: StackSandbox, options: StartStac
 const satisfied = (health: SupervisorHealth, wanted: StackReadiness): boolean =>
   health.phase === wanted.phase && ROLES.every((role) => health.children.find((child) => child.role === role)?.state === wanted.children[role]);
 
+const RUNTIME_SERVING_ROLE = 'serving';
+
+const runtimeRoleOf = async (home: E2eHome): Promise<unknown> => {
+  const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime));
+  try {
+    const response = await client.request({ method: 'GET', path: '/v1/health' });
+    const body: unknown = JSON.parse(await response.text());
+    return typeof body === 'object' && body !== null && 'role' in body ? body.role : undefined;
+  } finally {
+    await client.close();
+  }
+};
+
+const untilRuntimeServes = async (home: E2eHome, deadlineMs: number): Promise<void> => {
+  await until(async () => (await runtimeRoleOf(home)) === RUNTIME_SERVING_ROLE, { deadlineMs, description: 'the runtime of the started generation to accept new work (role serving)' });
+};
+
 export const startUpstream = async (home: E2eHome, options: StartStackOptions): Promise<FakeChatCompletionsServer> => {
   if (options.upstream !== undefined) {
     if (options.script !== undefined) throw new Error('startStack: script cannot be combined with a caller-supplied upstream');
@@ -392,6 +409,7 @@ export const startStack = async (options: StartStackOptions): Promise<E2eStack> 
     } finally {
       polling.abort();
     }
+    if (satisfied(health, DEFAULT_READINESS)) await untilRuntimeServes(home, remainingMs());
   }
 
   return {

@@ -1,5 +1,5 @@
 import { getAssetKeys, getRawAsset, isSea } from 'node:sea';
-import { WINDOWS_KEEPER_MANIFEST_ASSET, ensureBundledWindowsKeeper, nodeFileSystem, parseWindowsKeeperManifest, provideCheckedWindowsKeeper, provideWindowsKeeper, systemRandom } from '@momonga/foundation';
+import { WINDOWS_KEEPER_MANIFEST_ASSET, ensureBundledWindowsKeeper, hostProcessGroupPort, nodeFileSystem, parseWindowsKeeperManifest, provideCheckedWindowsKeeper, provideWindowsKeeper, systemRandom } from '@momonga/foundation';
 import type { CliPorts } from '../ports.ts';
 import { pathsOf } from '../paths.ts';
 import { hostSourceBuiltWindowsKeeper } from '../node-ports.ts';
@@ -9,12 +9,16 @@ export type EmbeddedKeeperAssets = { present(name: string): boolean; raw(name: s
 export const seaKeeperAssets = (): EmbeddedKeeperAssets | undefined =>
   isSea() ? { present: (name) => getAssetKeys().includes(name), raw: (name) => new Uint8Array(getRawAsset(name)) } : undefined;
 
+export const hostLaunchesThroughKeeper = (): boolean => hostProcessGroupPort().keeper !== undefined;
+
 export const provideEmbeddedWindowsKeeper = async (
   ports: Pick<CliPorts, 'home' | 'platform' | 'interrupt'>,
   assets: EmbeddedKeeperAssets | undefined = seaKeeperAssets(),
   provide: (file: string, sha256: string) => void = provideCheckedWindowsKeeper,
   provideSource: (executable: () => string) => void = provideWindowsKeeper,
+  launchesThroughKeeper: () => boolean = hostLaunchesThroughKeeper,
 ): Promise<void> => {
+  if (!launchesThroughKeeper()) return;
   if (assets === undefined) {
     provideSource(hostSourceBuiltWindowsKeeper((await pathsOf(ports)).executables));
     return;

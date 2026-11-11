@@ -83,7 +83,7 @@ describe('token anatomy end to end', () => {
       reasoningTokens: REASONING_FIRST + REASONING_SECOND,
     });
     expect(forRun.cacheHitRatio).toBeCloseTo(CACHED_SECOND / input, 12);
-    expect(forRun.cost).toEqual({ amount, currency: 'USD', unpricedCalls: 0 });
+    expect(forRun.cost).toEqual({ amount, currency: 'USD', unpricedCalls: 0, priceNotRecordedCalls: 0, priceVersions: ['1970-01-01'], unpriced: {} });
     expect(forRun.timeToFirstToken?.n).toBe(2);
     expect(forRun.duration?.n).toBe(2);
     expect(forRun.duration?.p95).toBeGreaterThanOrEqual(forRun.duration?.median ?? Number.POSITIVE_INFINITY);
