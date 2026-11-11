@@ -1,14 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { leftoverDirectories, momongaPaths, nodeFileLockOps, sweepLeftovers } from '@momonga/foundation';
+import { isProcessAlive, leftoverDirectories, momongaPaths, nodeFileLockOps, nodeFileSystem, pidNamespaceOf, sweepLeftovers } from '@momonga/foundation';
 import type { FileLockOps, HeldKernelLock } from '@momonga/foundation';
+import type { HandoverLeftoverPorts } from '../src/handover-leftovers.ts';
 import { createLockedFile } from '../src/platform/lock-capability.ts';
 import { OPEN_FLAGS } from '../src/node-file-system.ts';
 import { makeTemporaryDirectory } from './support/temporary-directory.ts';
 import { expectedKernelLockOn, testKernelLock } from '@momonga/testkit';
 
 const PID_NO_PROCESS_HAS = 99_999_999;
+
+const HANDOVER: HandoverLeftoverPorts = { files: nodeFileSystem, namespace: await pidNamespaceOf(nodeFileSystem), alive: (pid) => isProcessAlive(pid) };
 
 const holdEntry = async (entry: string): Promise<HeldKernelLock> => {
   const outcome = await testKernelLock().claim(entry);
@@ -34,7 +37,7 @@ describe('secret-key-file.ts:41-49 replaced (S1): the gateway start sweeps dirna
       fs.writeFileSync(unheld, 'left by a crash', { mode: 0o600 });
       abandoned.lock.release();
       try {
-        const registered = leftoverDirectories(paths).filter((entry) => entry.directory === directory);
+        const registered = leftoverDirectories(paths, HANDOVER).filter((entry) => entry.directory === directory);
         expect(registered).toHaveLength(1);
         await sweepLeftovers({ directories: registered, lock, files: { readdir: (dir) => fs.promises.readdir(dir), rm: (file) => fs.promises.rm(file, { recursive: true, force: true }) } });
         expect(fs.existsSync(held)).toBe(true);
@@ -91,21 +94,21 @@ describe('C3: the registered list of leftover directories is data in momonga-pat
   it('registers the plan sessions, the state directory of the secret key, the spawn scratch and the session scratch', () => {
     const home = makeTemporaryDirectory();
     const paths = momongaPaths(home, process.platform, process.env);
-    const registered = leftoverDirectories(paths).map((entry) => entry.directory);
+    const registered = leftoverDirectories(paths, HANDOVER).map((entry) => entry.directory);
     expect(registered).toEqual(expect.arrayContaining([paths.planSessions, path.dirname(paths.gatewayKey), paths.tmp.spawn, paths.tmp.sessions]));
     expect(new Set(registered).size).toBe(registered.length);
   });
 
   it('names only temporaries as leftovers, never a published file', () => {
     const paths = momongaPaths(makeTemporaryDirectory(), process.platform, process.env);
-    const stateDirectory = leftoverDirectories(paths).find((entry) => entry.directory === path.dirname(paths.gatewayKey));
+    const stateDirectory = leftoverDirectories(paths, HANDOVER).find((entry) => entry.directory === path.dirname(paths.gatewayKey));
     expect(stateDirectory?.isLeftover(`.${path.basename(paths.gatewayKey)}.0a1b2c.tmp`)).toBe(true);
     expect(stateDirectory?.isLeftover(path.basename(paths.gatewayKey))).toBe(false);
   });
 
   it('registers run/ for the temporaries of its atomic writes, and never names run/current, the counter, a lock or a generation directory (20.66)', () => {
     const paths = momongaPaths(makeTemporaryDirectory(), process.platform, process.env);
-    const run = leftoverDirectories(paths).find((entry) => entry.directory === paths.run);
+    const run = leftoverDirectories(paths, HANDOVER).find((entry) => entry.directory === paths.run);
     expect(run?.isLeftover('.current.0a1b2c.tmp')).toBe(true);
     expect(run?.isLeftover('.generation.counter.0a1b2c.tmp')).toBe(true);
     for (const name of ['current', 'generation.counter', 'generation.lock', 'g1', 'markers', 'call-locks']) expect(run?.isLeftover(name), name).toBe(false);
@@ -117,7 +120,7 @@ describe('S8: every directory the product writes entries in is swept, including 
 
   it('registers the store blobs directory and the probe record directory', () => {
     const paths = momongaPaths(makeTemporaryDirectory(), process.platform, process.env);
-    const registered = leftoverDirectories(paths).map((entry) => entry.directory);
+    const registered = leftoverDirectories(paths, HANDOVER).map((entry) => entry.directory);
     expect(registered).toEqual(expect.arrayContaining([blobsOf(paths), paths.probe]));
   });
 
@@ -138,7 +141,7 @@ describe('S8: every directory the product writes entries in is swept, including 
       if (holding.kind !== 'claimed') throw new Error(`${inFlight} could not be claimed by the test`);
       fs.writeFileSync(inFlight, 'blob being written', { mode: 0o600 });
       try {
-        const registered = leftoverDirectories(paths).filter((entry) => entry.directory === blobs);
+        const registered = leftoverDirectories(paths, HANDOVER).filter((entry) => entry.directory === blobs);
         expect(registered).toHaveLength(1);
         await sweepLeftovers({ directories: registered, lock, files: { readdir: (dir) => fs.promises.readdir(dir), rm: (file) => fs.promises.rm(file, { recursive: true, force: true }) } });
         expect(fs.readdirSync(blobs).filter((name) => name.startsWith(path.basename(crashed)))).toEqual([]);

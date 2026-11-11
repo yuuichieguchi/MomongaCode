@@ -1,5 +1,5 @@
-import fs from 'node:fs';
 import path from 'node:path';
+import { nodeFileSystem } from './node-file-system.ts';
 import type { ClaimOutcome, HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 import { claimPathOf, lockFormOf, sidecarSuffixOf } from './platform/lock-form.ts';
 import type { LockForm } from './platform/lock-form.ts';
@@ -12,8 +12,10 @@ export type LeftoverFiles = {
 export type LeftoverDirectory = {
   readonly directory: string;
   isLeftover(name: string): boolean;
-  retain?(name: string): boolean;
+  retain?(name: string): Promise<Retention>;
 };
+
+export type Retention = { kind: 'free' } | { kind: 'kept' } | { kind: 'reported'; reason: string };
 
 export type LeftoverSweep = { readonly removed: readonly string[]; readonly kept: readonly string[] };
 
@@ -25,8 +27,8 @@ export type SweepLeftoversOptions = {
 };
 
 export const nodeLeftoverFiles: LeftoverFiles = {
-  readdir: (directory) => fs.promises.readdir(directory),
-  rm: (entry) => fs.promises.rm(entry, { recursive: true, force: true }),
+  readdir: (directory) => nodeFileSystem.readdir(directory),
+  rm: (entry) => nodeFileSystem.rm(entry, { recursive: true }),
 };
 
 type Unit = { name: string; entry: boolean; sidecar: boolean };
@@ -90,7 +92,9 @@ const removeUnderClaim = async (files: LeftoverFiles, unit: Unit, entry: string,
 
 type EntryErrors = ((message: string) => void) | undefined;
 
-const keptMessage = (entry: string, error: unknown): string => `leftover cleanup kept ${entry}: ${codeOf(error) ?? (error instanceof Error ? error.message : String(error))}`;
+const keptText = (entry: string, reason: string): string => `leftover cleanup kept ${entry}: ${reason}`;
+
+const keptMessage = (entry: string, error: unknown): string => keptText(entry, codeOf(error) ?? (error instanceof Error ? error.message : String(error)));
 
 const reportedOr = async <T>(entry: string, onEntryError: EntryErrors, failed: T, work: () => Promise<T>): Promise<T> => {
   if (onEntryError === undefined) return work();
@@ -102,10 +106,10 @@ const reportedOr = async <T>(entry: string, onEntryError: EntryErrors, failed: T
   }
 };
 
-const isRetained = (registered: LeftoverDirectory, unit: Unit, held: HeldKernelLock): boolean => {
-  if (!unit.entry || registered.retain === undefined) return false;
+const retentionOf = async (registered: LeftoverDirectory, unit: Unit, held: HeldKernelLock): Promise<Retention> => {
+  if (!unit.entry || registered.retain === undefined) return { kind: 'free' };
   try {
-    return registered.retain(unit.name);
+    return await registered.retain(unit.name);
   } catch (error) {
     held.release();
     throw error;
@@ -121,8 +125,10 @@ const sweepUnit = async (registered: LeftoverDirectory, lock: KernelLockMechanis
     return outcome.kind === 'claimed' ? outcome.lock : undefined;
   });
   if (held === undefined) return 'kept';
-  if (isRetained(registered, unit, held)) {
+  const retention = await retentionOf(registered, unit, held);
+  if (retention.kind !== 'free') {
     held.release();
+    if (retention.kind === 'reported') onEntryError?.(keptText(entry, retention.reason));
     return 'kept';
   }
   return reportedOr<UnitOutcome>(entry, onEntryError, 'kept', async () => {

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { HANDOVER_DIRECTORY, HANDOVER_RECORD_MAX_BYTES, HANDOVER_RECORD_OWNER_FIELD, HANDOVER_RECORD_SUFFIX, handoverDirectoryOf, isRecord, parseOutsideJson } from '@momonga/foundation';
-import type { MomongaPaths } from '@momonga/foundation';
+import { HANDOVER_DIRECTORY, HANDOVER_RECORD_MAX_BYTES, HANDOVER_RECORD_SUFFIX, handoverDirectoryOf, handoverRecordFields, isRecord, parseOutsideJson } from '@momonga/foundation';
+import type { HandoverRecordParties, MomongaPaths } from '@momonga/foundation';
 import type { ImageAttachment } from '@momonga/protocol';
 import { OUTPUT_FORMATS } from '../run/output-format.ts';
 import type { OutputFormat } from '../run/output-format.ts';
@@ -60,8 +60,8 @@ export type EncodedRecord = { kind: 'fits'; text: string } | { kind: 'too-large'
 
 export type ParsedRecord = { kind: 'record'; record: HandoverRecord } | { kind: 'refused'; reason: string };
 
-export const encodeRecord = (record: HandoverRecord, writerPid: number): EncodedRecord => {
-  const text = JSON.stringify({ ...record, [HANDOVER_RECORD_OWNER_FIELD]: writerPid });
+export const encodeRecord = (record: HandoverRecord, parties: HandoverRecordParties): EncodedRecord => {
+  const text = JSON.stringify({ ...record, ...handoverRecordFields(parties) });
   const bytes = Buffer.byteLength(text, 'utf8');
   return bytes > HANDOVER_RECORD_MAX_BYTES ? { kind: 'too-large', bytes } : { kind: 'fits', text };
 };

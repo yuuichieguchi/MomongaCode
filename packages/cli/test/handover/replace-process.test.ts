@@ -14,6 +14,7 @@ type FakeChild = RelayChild & EventEmitter & { signals: NodeJS.Signals[] };
 
 const relayHost = (log: string[]) => {
   const child: FakeChild = Object.assign(new EventEmitter(), {
+    pid: 4242,
     signals: [] as NodeJS.Signals[],
     kill: (signal: NodeJS.Signals) => {
       child.signals.push(signal);
@@ -51,7 +52,7 @@ describe('the handover replaces the process in place where the host reports exec
         calls.push({ file, args, env });
         throw new Error('execve returned control');
       },
-    }, { release: () => log.push('release') });
+    }, { release: () => log.push('release'), relayed: () => undefined });
     await expect(replaced).rejects.toThrow('execve returned control');
     expect(calls).toEqual([{ file: '/opt/momonga', args: ['/opt/momonga', ...TARGET.args], env: TARGET.env }]);
     expect(spawned).toEqual([]);
@@ -63,7 +64,7 @@ describe('the relay, where the host has no execve (red tests 2 and 14, O5)', () 
   it('releases the input before the child is spawned, with inherited stdio and the environment of the target', async () => {
     const log: string[] = [];
     const { host, spawned } = relayHost(log);
-    void replaceProcess(TARGET, host, { release: () => log.push('release') });
+    void replaceProcess(TARGET, host, { release: () => log.push('release'), relayed: () => undefined });
     await Promise.resolve();
     expect(log).toEqual(['release', 'spawn']);
     expect(spawned).toEqual([{ file: '/opt/momonga', args: TARGET.args, stdio: 'inherit', env: TARGET.env }]);
@@ -71,7 +72,7 @@ describe('the relay, where the host has no execve (red tests 2 and 14, O5)', () 
 
   it('exits with the status of the child', async () => {
     const { host, child, exits } = relayHost([]);
-    const relayed = replaceProcess(TARGET, host, { release: () => undefined });
+    const relayed = replaceProcess(TARGET, host, { release: () => undefined, relayed: () => undefined });
     child.emit('spawn');
     child.emit('exit', 7, null);
     expect(await relayed).toBe('relayed');
@@ -80,7 +81,7 @@ describe('the relay, where the host has no execve (red tests 2 and 14, O5)', () 
 
   it('exits with 128 plus the signal number when a signal ended the child', async () => {
     const { host, child, exits } = relayHost([]);
-    const relayed = replaceProcess(TARGET, host, { release: () => undefined });
+    const relayed = replaceProcess(TARGET, host, { release: () => undefined, relayed: () => undefined });
     child.emit('spawn');
     child.emit('exit', null, 'SIGTERM');
     await relayed;
@@ -89,16 +90,40 @@ describe('the relay, where the host has no execve (red tests 2 and 14, O5)', () 
 
   it('forwards SIGTERM and SIGHUP sent to its own pid to the child', async () => {
     const { host, child, signalListeners } = relayHost([]);
-    void replaceProcess(TARGET, host, { release: () => undefined });
+    void replaceProcess(TARGET, host, { release: () => undefined, relayed: () => undefined });
     child.emit('spawn');
     signalListeners.get('SIGTERM')?.();
     signalListeners.get('SIGHUP')?.();
     expect(child.signals).toEqual(['SIGTERM', 'SIGHUP']);
   });
 
+  it('names the child to its hooks once it is spawned, and not before', async () => {
+    const log: string[] = [];
+    const { host, child } = relayHost(log);
+    void replaceProcess(TARGET, host, { release: () => log.push('release'), relayed: (pid) => log.push(`relayed ${pid}`) });
+    await Promise.resolve();
+    expect(log).toEqual(['release', 'spawn']);
+    child.emit('spawn');
+    expect(log).toEqual(['release', 'spawn', 'relayed 4242']);
+  });
+
+  it('ends the child and fails when the hooks cannot name it', async () => {
+    const { host, child, exits } = relayHost([]);
+    const relayed = replaceProcess(TARGET, host, {
+      release: () => undefined,
+      relayed: () => {
+        throw new Error('EACCES: the record cannot be written');
+      },
+    });
+    child.emit('spawn');
+    await expect(relayed).rejects.toThrow('EACCES');
+    expect(child.signals).toEqual(['SIGTERM']);
+    expect(exits).toEqual([]);
+  });
+
   it('fails, and exits nothing, when the child cannot be started', async () => {
     const { host, child, exits } = relayHost([]);
-    const relayed = replaceProcess(TARGET, host, { release: () => undefined });
+    const relayed = replaceProcess(TARGET, host, { release: () => undefined, relayed: () => undefined });
     child.emit('error', new Error('spawn /opt/momonga ENOENT'));
     await expect(relayed).rejects.toThrow('ENOENT');
     expect(exits).toEqual([]);
@@ -138,7 +163,7 @@ const realRelay = (code: number) => {
     },
   };
   const target: ReplaceTarget = { file: process.execPath, args: [FIXTURE, released, String(code)], env: { ...process.env } };
-  const relayed = replaceProcess(target, host, { release: () => fs.writeFileSync(released, '') });
+  const relayed = replaceProcess(target, host, { release: () => fs.writeFileSync(released, ''), relayed: () => undefined });
   return { relayed, exits, listeners, started };
 };
 

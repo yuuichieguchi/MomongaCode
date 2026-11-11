@@ -9,6 +9,7 @@ export const RELAYED_SIGNALS = ['SIGTERM', 'SIGHUP'] as const;
 export type RelayedSignal = (typeof RELAYED_SIGNALS)[number];
 
 export type RelayChild = {
+  readonly pid?: number | undefined;
   once(event: 'spawn', listener: () => void): unknown;
   once(event: 'error', listener: (error: Error) => void): unknown;
   once(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
@@ -22,7 +23,7 @@ export type ReplaceHost = {
   onSignal(signal: RelayedSignal, listener: () => void): void;
 };
 
-export type ReplaceHooks = { release(): void };
+export type ReplaceHooks = { release(): void; relayed(childPid: number): void };
 
 const exitCodeOf = (code: number | null, signal: NodeJS.Signals | null): number => code ?? EXIT_SIGNAL_BASE + (signal === null ? 0 : os.constants.signals[signal]);
 
@@ -33,6 +34,13 @@ const relay = (target: ReplaceTarget, host: ReplaceHost, hooks: ReplaceHooks): P
     child.once('error', reject);
     child.once('spawn', () => {
       for (const signal of RELAYED_SIGNALS) host.onSignal(signal, () => void child.kill(signal));
+      try {
+        if (child.pid === undefined) throw new Error(`the relayed ${target.file} started without a pid`);
+        hooks.relayed(child.pid);
+      } catch (error) {
+        child.kill('SIGTERM');
+        reject(error);
+      }
     });
     child.once('exit', (code, signal) => {
       host.exit(exitCodeOf(code, signal));
