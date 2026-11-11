@@ -1,6 +1,6 @@
 # Third-party notices
 
-The Momonga Code executables embed the third-party components listed here, each with its version, its licence and its full notice text. This file is generated from the build's inputs by `npm run notices`; it is not edited by hand.
+The MomongaCode executables embed the third-party components listed here, each with its version, its licence and its full notice text. This file is generated from the build's inputs by `npm run notices`; it is not edited by hand.
 
 ## Node.js 26.12.1
 
@@ -2938,7 +2938,7 @@ The externally maintained libraries used by Node.js are:
 ## ripgrep 15.2.0
 
 - Licence: Unlicense OR MIT.
-- The official release binaries, pinned by sha256 in `scripts/ripgrep-release.ts`. The same texts are embedded in the executable and written as `NOTICE.txt` beside the extracted `rg`, in `executables/ripgrep-<version>-<hash>/` under the Momonga Code cache directory.
+- The official release binaries, pinned by sha256 in `scripts/ripgrep-release.ts`. The same texts are embedded in the executable and written as `NOTICE.txt` beside the extracted `rg`, in `executables/ripgrep-<version>-<hash>/` under the MomongaCode cache directory.
 
 COPYING:
 

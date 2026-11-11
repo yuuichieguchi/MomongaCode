@@ -122,7 +122,7 @@ const nativeComponents = (sources: NoticeSources): NoticeComponent[] => [
     licence: 'Unlicense OR MIT',
     texts: textsOf(sources.ripgrepDirectory, RIPGREP_LICENCE_FILES),
     where:
-      'The official release binaries, pinned by sha256 in `scripts/ripgrep-release.ts`. The same texts are embedded in the executable and written as `NOTICE.txt` beside the extracted `rg`, in `executables/ripgrep-<version>-<hash>/` under the Momonga Code cache directory.',
+      'The official release binaries, pinned by sha256 in `scripts/ripgrep-release.ts`. The same texts are embedded in the executable and written as `NOTICE.txt` beside the extracted `rg`, in `executables/ripgrep-<version>-<hash>/` under the MomongaCode cache directory.',
   },
   {
     name: 'mingw-w64 runtime',
@@ -149,7 +149,7 @@ export const renderNotices = (components: readonly NoticeComponent[]): string =>
   [
     '# Third-party notices',
     '',
-    'The Momonga Code executables embed the third-party components listed here, each with its version, its licence and its full notice text. This file is generated from the build\'s inputs by `npm run notices`; it is not edited by hand.',
+    'The MomongaCode executables embed the third-party components listed here, each with its version, its licence and its full notice text. This file is generated from the build\'s inputs by `npm run notices`; it is not edited by hand.',
     ...components.map((component) => `\n${sectionOf(component)}`),
     '',
   ].join('\n');
