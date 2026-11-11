@@ -133,7 +133,7 @@ describe('buildCostReport', () => {
         parent,
       );
       recordChatResponse(chat, { finishReasons: ['stop'], usageSource: 'reported', usage: { inputTokens: 10, outputTokens: 5 } });
-      if (fallback) recordFallbackCauses(chat, causes);
+      if (fallback) recordFallbackCauses(chat, causes, true);
       chat.end(h.clock.now());
     }
     agent.end(h.clock.now());

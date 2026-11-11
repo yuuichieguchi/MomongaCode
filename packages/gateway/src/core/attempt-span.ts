@@ -121,7 +121,7 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
         usageSource: info.usageSource,
         usage: chatUsageOf({ usage: info.usage, usageSource: info.usageSource, cacheWriteInputTokens: info.cacheWriteInputTokens }),
       });
-      recordFallbackCauses(span, info.fallbackCauses);
+      recordFallbackCauses(span, info.fallbackCauses, telemetry.captureMessageContent);
       if (telemetry.captureMessageContent) recordChatResponseContent(span, chatResponseMessagesOf(info.output, info.finishReason));
       end();
     },

@@ -12,7 +12,7 @@ import { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES,
 import { CACHE_MISS_CAUSES, PREFIX_EVENTS } from './prefix-events.ts';
 import type { PrefixEvent } from './prefix-events.ts';
 import { BILLING_CHANGE_REASONS } from './fallback-cause.ts';
-import type { FallbackCause } from './fallback-cause.ts';
+import type { FallbackCause, SpanFallbackCause } from './fallback-cause.ts';
 import { TARGET_BILLINGS } from './capabilities.ts';
 import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES, REFLECTION_DROP_CAUSES, REFLECTION_JOB_STATES, VALIDITY_CLOSERS } from './memory.ts';
 import type { ContextChargePurpose, SummaryFidelity, SummarySource } from './context-record.ts';
@@ -1249,7 +1249,7 @@ export type JobView = {
 };
 
 export type JobsResponse = { jobs: JobView[] };
-export type CostFallbackView = { answeredBy: string; calls: number; failed: FallbackCause[] };
+export type CostFallbackView = { answeredBy: string; calls: number; failed: SpanFallbackCause[] };
 
 export type RoleCostView = {
   fallbackCalls?: number;

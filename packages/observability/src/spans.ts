@@ -1,5 +1,6 @@
 import { SpanKind, SpanStatusCode } from '@opentelemetry/api';
 import type { Context, Span, Tracer } from '@opentelemetry/api';
+import { spanFallbackCauseOf } from '@momonga/protocol';
 import type { FallbackCause } from '@momonga/protocol';
 import type { UsageSource } from '@momonga/protocol';
 import { EXCEPTION_EVENT, GENAI_CONTENT_SEMCONV, GENAI_SEMCONV, MOMONGA_ATTRIBUTES, OPERATIONS } from './semconv.ts';
@@ -121,8 +122,8 @@ export const recordChatFailure = (span: Span, message: string): void => {
   span.setAttribute(MOMONGA_ATTRIBUTES.failureMessage, message);
 };
 
-export const recordFallbackCauses = (span: Span, causes: readonly FallbackCause[]): void => {
-  if (causes.length > 0) span.setAttribute(MOMONGA_ATTRIBUTES.fallbackCauses, JSON.stringify(causes));
+export const recordFallbackCauses = (span: Span, causes: readonly FallbackCause[], captureMessageContent: boolean): void => {
+  if (causes.length > 0) span.setAttribute(MOMONGA_ATTRIBUTES.fallbackCauses, JSON.stringify(causes.map((cause) => spanFallbackCauseOf(cause, captureMessageContent))));
 };
 
 export const recordChatUsage = (span: Span, usage: ChatUsage, usageSource: UsageSource): void => {
