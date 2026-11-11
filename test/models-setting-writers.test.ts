@@ -33,11 +33,57 @@ const OPERATIONS = [
 
 const PENDING: readonly Pending[] = [];
 
-const rows = (): readonly WriterRow[] => {
-  const table = (config as Record<string, unknown>)['MODELS_SETTING_WRITERS'];
-  if (!Array.isArray(table)) throw new Error('@momonga/config does not export MODELS_SETTING_WRITERS (packages/config/src/models-writers.ts)');
-  return table as WriterRow[];
+const CONNECTION_PATH = 'models.connections[]';
+const ENTRY_PATH = `${CONNECTION_PATH}.models[]`;
+const REMOVAL_WRITER = { operations: ['removeConnection', 'removeModel'], inSession: ['/models'], shell: ['momonga models remove-server', 'momonga models remove'] } as const;
+
+const FIXED_ROWS: readonly WriterRow[] = [
+  { path: `${CONNECTION_PATH}.plan.profile`, operations: ['addModel'], inSession: ['/login'], shell: ['momonga auth login'] },
+  { path: CONNECTION_PATH, operations: ['removeConnection'], inSession: ['/models'], shell: ['momonga models remove-server'] },
+  { path: 'models.servers.*', operations: ['removeConnection', 'declareServer', 'setServerField', 'forgetServer'], inSession: ['/models'], shell: ['momonga models remove-server --forget-program', 'momonga models add-program', 'momonga models set-program', 'momonga models forget-program'] },
+  { path: `${CONNECTION_PATH}.provider`, operations: ['setProvider'], inSession: ['/models'], shell: ['momonga models name'] },
+  { path: `${ENTRY_PATH}.id`, operations: ['addModel', 'removeModel', 'setModelField'], inSession: ['/models'], shell: ['momonga models add', 'momonga models remove', 'momonga models set'] },
+  { path: 'models.start', operations: ['setStart', ...REMOVAL_WRITER.operations], inSession: ['/models start', '/model --start', ...REMOVAL_WRITER.inSession], shell: ['momonga models start', ...REMOVAL_WRITER.shell] },
+  { path: 'models.fallback[]', operations: ['setFallback', ...REMOVAL_WRITER.operations], inSession: ['/models fallback', ...REMOVAL_WRITER.inSession], shell: ['momonga models fallback', ...REMOVAL_WRITER.shell] },
+  { path: 'models.roles.*', operations: ['setRole', ...REMOVAL_WRITER.operations], inSession: ['/models role', ...REMOVAL_WRITER.inSession], shell: ['momonga models role', ...REMOVAL_WRITER.shell] },
+  { path: 'autoMode.classifier', operations: ['setClassifier', ...REMOVAL_WRITER.operations], inSession: ['/models role', '/auto-mode', ...REMOVAL_WRITER.inSession], shell: ['momonga models role set classifier', ...REMOVAL_WRITER.shell] },
+  { path: 'models.billingChanges[].from', operations: ['allowBillingChange', 'forbidBillingChange'], inSession: ['/models billing', '/models fallback'], shell: ['momonga models billing'] },
+  { path: 'models.billingChanges[].to', operations: ['allowBillingChange', 'forbidBillingChange'], inSession: ['/models billing', '/models fallback'], shell: ['momonga models billing'] },
+  { path: 'models.billingChanges[].model', operations: ['allowBillingChange', 'forbidBillingChange', ...REMOVAL_WRITER.operations], inSession: ['/models billing', '/models fallback', ...REMOVAL_WRITER.inSession], shell: ['momonga models billing', ...REMOVAL_WRITER.shell] },
+  { path: 'models.dialects.*', operations: ['setDialects'], inSession: ['/config'], shell: ['momonga models dialects set'] },
+  { path: 'models.headersTimeoutMs', operations: ['setTimeouts'], inSession: ['/models timeouts'], shell: ['momonga models timeouts'] },
+  { path: 'models.idleTimeoutMs', operations: ['setTimeouts'], inSession: ['/models timeouts'], shell: ['momonga models timeouts'] },
+];
+
+const fieldOfLeaf = (leaf: string, prefix: string): string =>
+  leaf
+    .slice(prefix.length + 1)
+    .split('.')
+    .map((segment) => (segment.endsWith('[]') ? segment.slice(0, -2) : segment))
+    .filter((segment) => segment !== '*')
+    .join('.');
+
+const settable = (subject: 'model' | 'server', field: string): boolean => {
+  try {
+    config.settableFieldPath(subject, field);
+    return true;
+  } catch (error) {
+    if (error instanceof config.ModelsEditRefused) return false;
+    throw error;
+  }
 };
+
+const fieldRowOf = (leaf: string): WriterRow | undefined => {
+  if (leaf.startsWith(`${ENTRY_PATH}.`)) {
+    return settable('model', fieldOfLeaf(leaf, ENTRY_PATH)) ? { path: leaf, operations: ['setModelField'], inSession: ['/models'], shell: ['momonga models set'] } : undefined;
+  }
+  if (leaf.startsWith(`${CONNECTION_PATH}.`)) {
+    return settable('server', fieldOfLeaf(leaf, CONNECTION_PATH)) ? { path: leaf, operations: ['setConnectionField', 'addModel'], inSession: ['/models'], shell: ['momonga models set-server', 'momonga models add'] } : undefined;
+  }
+  return undefined;
+};
+
+const rows = (): readonly WriterRow[] => [...FIXED_ROWS, ...settingLeaves().flatMap((leaf) => (FIXED_ROWS.some((row) => covers(row.path, leaf)) ? [] : (fieldRowOf(leaf) ?? [])))];
 
 const isSchema = (value: unknown): value is Schema => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -97,7 +143,7 @@ const shellReached = (form: string, register: string): boolean => {
 const pendingOf = (increment: Pending['removedBy']): string[] => PENDING.filter((entry) => entry.removedBy === increment).map((entry) => entry.form).sort();
 
 describe('every model setting can be changed from inside MomongaCode (I-N13)', () => {
-  it('every leaf of the schema under models and autoMode.classifier has a row of MODELS_SETTING_WRITERS', () => {
+  it('every leaf of the schema under models and autoMode.classifier has a writer: a fixed row or a field the models writer can set', () => {
     const table = rows();
     const leaves = settingLeaves();
     expect(leaves).toContain('models.start');

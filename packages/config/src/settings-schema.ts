@@ -368,6 +368,18 @@ const ANTHROPIC_CONNECTION_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+const KEY_REQUIRED_ADAPTERS: readonly unknown[] = [ANTHROPIC_CONNECTION_SCHEMA.properties.adapter.const];
+
+const API_KEY_NAMES = Object.keys(API_KEY_PROPERTIES);
+
+export const apiKeyChoiceProblem = (connection: Readonly<Record<string, unknown>>): string | undefined => {
+  if (Object.hasOwn(connection, 'plan')) return undefined;
+  const given = API_KEY_NAMES.filter((name) => Object.hasOwn(connection, name));
+  if (given.length > 1) return `set one of ${API_KEY_NAMES.join(' or ')}, not both`;
+  if (given.length === 0 && KEY_REQUIRED_ADAPTERS.includes(connection['adapter'])) return `needs ${API_KEY_NAMES.join(' or ')}`;
+  return undefined;
+};
+
 const OLLAMA_CONNECTION_SCHEMA = {
   type: 'object',
   properties: {

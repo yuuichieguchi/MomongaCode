@@ -194,7 +194,7 @@ describe('removing a model or a server removes every reference to it in the same
   it('removeConnection removes the server with its models; a server program is forgotten only when no connection uses it', async () => {
     const home = homeWith(BASE);
     const used = await refusalOfEdit(editModels(home, [op('forgetServer', { id: 'llama-server' })]));
-    expect(used).toEqual({ code: 'duplicate', message: 'llama-server is used by llama-server; remove that server first.' });
+    expect(used).toEqual({ code: 'in_use', message: 'llama-server is used by llama-server; remove that server first.' });
     const removed = await editModels(home, [op('removeConnection', { provider: 'llama-server' })]);
     expect(removed.summaries).toEqual(['Removed llama-server and its 1 model.']);
     expect(connectionsOf(home).map((connection) => connection['adapter'])).toEqual(['ollama', 'chat-completions']);

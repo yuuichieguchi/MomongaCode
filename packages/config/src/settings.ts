@@ -9,7 +9,7 @@ import { MCP_EXPANSION_PATTERN, mcpServerNameProblem, mcpServerUrlProblem } from
 import { PLAN_PROFILES } from './plan-profiles.ts';
 import { connectionAddressProblem } from './probe-record-key.ts';
 import { describeSchemaErrors, invalidSettingsMessage, schemaProblemOf } from './schema-errors.ts';
-import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA, TUI_NOTIFY_MODES, TUI_SCREEN_MODES, TUI_SETTING_VALUES, TUI_THEMES } from './settings-schema.ts';
+import { MCP_SERVERS_FILE_SCHEMA, apiKeyChoiceProblem, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA, TUI_NOTIFY_MODES, TUI_SCREEN_MODES, TUI_SETTING_VALUES, TUI_THEMES } from './settings-schema.ts';
 
 export type PermissionsSettings = {
   defaultMode?: PermissionMode;
@@ -538,6 +538,16 @@ const assertTuiValues = (value: unknown, source: string): void => {
   }
 };
 
+const assertApiKeyChoice = (value: unknown, source: string): void => {
+  const models = isRecord(value) ? value['models'] : undefined;
+  const connections = isRecord(models) ? models['connections'] : undefined;
+  if (!Array.isArray(connections)) return;
+  connections.forEach((connection: unknown, index) => {
+    const problem = isRecord(connection) ? apiKeyChoiceProblem(connection) : undefined;
+    if (problem !== undefined) throw new ConfigError(invalidSettingsMessage(source, `/models/connections/${index}`, problem));
+  });
+};
+
 const assertMcpConnectTimeout = (value: unknown, source: string): void => {
   const mcp = isRecord(value) ? value['mcp'] : undefined;
   if (!isRecord(mcp) || !Object.hasOwn(mcp, 'connectTimeoutMs')) return;
@@ -561,6 +571,7 @@ export const assertSettings = (value: unknown, source: string): Settings => {
   }
   assertNoRetiredKeys(value, source);
   assertPlanAdapters(value, source);
+  assertApiKeyChoice(value, source);
   assertStopValues(value, source);
   assertMcpConnectTimeout(value, source);
   assertTuiValues(value, source);

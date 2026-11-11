@@ -13,5 +13,3 @@ export const CORE_SETTING_KEYS = [
 ] as const;
 
 export type CoreSettingKey = (typeof CORE_SETTING_KEYS)[number];
-
-export const NON_CORE_SETTING_KEYS: readonly string[] = ['tools.ripgrep', 'memory.forgetAfterDays', 'memory.reflection.maxTokens'];
