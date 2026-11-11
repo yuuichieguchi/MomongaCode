@@ -11,6 +11,15 @@ export interface SeatbeltProfile {
   params: Record<string, string>;
 }
 
+const HIGHEST_PORT = 65_535;
+
+export const assertLoopbackPort = (loopbackPort: number): number => {
+  if (!Number.isInteger(loopbackPort) || loopbackPort < 1 || loopbackPort > HIGHEST_PORT) {
+    throw new SandboxPolicyError('network_port_invalid', `network.loopbackPort must be a port number: ${String(loopbackPort)}`);
+  }
+  return loopbackPort;
+};
+
 export const paramArgsOf = (params: Record<string, string>): string[] => Object.entries(params).flatMap(([name, value]) => ['-D', `${name}=${value}`]);
 
 type Within = (candidate: string, root: string) => Awaitable<boolean>;
@@ -276,10 +285,7 @@ export async function buildSeatbeltProfile(policy: SandboxPolicy, options: { tmp
   const unixSocketAllow = unique(await mapAsync(policy.unixSocketAllow ?? [], paths.canonicalPath));
   if (policy.network === 'allow') lines.push(...GRANTED_NETWORK_RULES);
   if (typeof policy.network === 'object') {
-    const { loopbackPort } = policy.network;
-    if (!Number.isInteger(loopbackPort) || loopbackPort < 1 || loopbackPort > 65_535) {
-      throw new SandboxPolicyError('network_port_invalid', `network.loopbackPort must be a port number: ${String(loopbackPort)}`);
-    }
+    const loopbackPort = assertLoopbackPort(policy.network.loopbackPort);
     lines.push(`(allow network-outbound (remote ip "localhost:${loopbackPort}"))`);
   }
   for (const name of define('UNIX_SOCKET_ALLOW', unixSocketAllow)) {

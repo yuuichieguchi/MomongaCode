@@ -52,6 +52,6 @@ export interface Sandbox {
 
 export const SANDBOX_NETWORK_SCOPES: Readonly<Record<Sandbox['kind'], readonly NetworkScopeKind[]>> = {
   seatbelt: ['none', 'hosts', 'open'],
-  bubblewrap: ['none', 'open'],
+  bubblewrap: ['none', 'hosts', 'open'],
   none: ['open'],
 };

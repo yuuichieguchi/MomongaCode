@@ -86,6 +86,7 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/runtime/src/worker/touched-paths.ts': { 'setImmediate': 1 },
   'packages/sandbox/src/bubblewrap.ts': { 'node:child_process': 1, 'node:fs': 7 },
   'packages/sandbox/src/placeholder-journal.ts': { 'node:fs': 16 },
+  'packages/sandbox/src/relay.ts': { 'node:child_process': 1, 'node:net': 3 },
   'packages/sandbox/src/scratch.ts': { 'node:fs': 1 },
   'packages/sandbox/src/seatbelt.ts': { 'node:fs': 1 },
   'packages/skills/src/file-system.ts': { 'node:fs/promises': 4 },
