@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import type { ForgeAccess } from '@momonga/tools';
-import { REPOSITORY_KEY_RULES, gitEnvironment, repositoryKeyRuleOf } from '@momonga/tools';
+import { REPOSITORY_KEY_RULES, gitEnvironment, productSetEntriesOf, repositoryKeyRuleOf } from '@momonga/tools';
 import { contextFor, countingRunner, makeGitWorld, operationTool, partsOf, remoteSha, settle } from './support.ts';
 import type { GitWorld } from './support.ts';
 
@@ -204,20 +204,22 @@ describe('the one table of the settings a repository may carry into a fetch or a
   it('is where the environment of a network git process takes every value it sets over the repository', () => {
     const world = makeGitWorld();
     const destination = 'https://forge.example/acme/widgets.git';
-    const env = gitEnvironment(world.env, { mode: 'network', destinations: [destination], rewrites: [] });
+    const alias = { from: 'https://alias.example/acme/widgets.git', to: destination };
+    const env = gitEnvironment(world.env, { mode: 'network', destinations: [destination], rewrites: [alias] });
     const count = Number(env['GIT_CONFIG_COUNT']);
-    const set = Array.from({ length: count }, (_, index) => [env[`GIT_CONFIG_KEY_${index}`], env[`GIT_CONFIG_VALUE_${index}`]] as const);
-    const isRewrite = (key: string | undefined): boolean => (key ?? '').startsWith('url.');
-    expect(set.filter(([key]) => isRewrite(key))).toEqual([
-      [`url.${destination}.insteadOf`, destination],
-      [`url.${destination}.pushInsteadOf`, destination],
-    ]);
-    for (const [key] of set.filter(([name]) => isRewrite(name))) expect(repositoryKeyRuleOf((key ?? '').replace(destination, 'x').toLowerCase())?.verdict, key).toBe('refused');
-    for (const [key, value] of set.filter(([name]) => !isRewrite(name))) {
-      const rule = repositoryKeyRuleOf((key ?? '').replace(destination, 'x').toLowerCase());
-      expect(rule?.verdict, key).toBe('overridden');
-      if (rule?.verdict === 'overridden' && !(key ?? '').startsWith('protocol.')) expect(value, key).toBe(rule.set[1]);
+    const set = Array.from({ length: count }, (_, index) => [env[`GIT_CONFIG_KEY_${index}`] ?? '', env[`GIT_CONFIG_VALUE_${index}`] ?? ''] as const);
+    const produced = productSetEntriesOf([destination], [{ from: destination, to: destination }, alias]);
+    expect(set).toEqual(produced.map(({ entry }) => entry));
+    for (const { entry, rule } of produced) {
+      expect(REPOSITORY_KEY_RULES, entry[0]).toContain(rule);
+      expect(repositoryKeyRuleOf(entry[0].replaceAll(destination, 'x').toLowerCase()), entry[0]).toBe(rule);
     }
+    expect(produced.filter(({ entry }) => entry[0].startsWith('url.')).map(({ entry }) => entry)).toEqual([
+      [`url.${destination}.insteadOf`, destination],
+      [`url.${destination}.insteadOf`, alias.from],
+      [`url.${destination}.pushInsteadOf`, destination],
+      [`url.${destination}.pushInsteadOf`, alias.from],
+    ]);
     const effective = (key: string): string => execFileSync('git', ['config', key], { cwd: world.work, env: { ...env }, encoding: 'utf8' }).trim();
     world.git(world.work, 'config', 'fetch.recurseSubmodules', 'true');
     world.git(world.work, 'config', 'submodule.recurse', 'true');

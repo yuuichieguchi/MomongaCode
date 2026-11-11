@@ -1,10 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 import { markdownRows } from '../../src/tui/screen/markdown.ts';
 import { createRowCache } from '../../src/tui/screen/row-cache.ts';
 import { createTranscriptStore } from '../../src/tui/screen/store.ts';
 import type { Row } from '../../src/tui/screen/wrap.ts';
 import { foldEvent } from '../../src/tui/transcript.ts';
 import { eventOf, manualSchedule, seeded, storeOf, ROW_RENDERERS } from './screen-fakes.ts';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const texts = (rows: readonly Row[]): string[] => rows.map((row) => row.text);
 const spans = (rows: readonly Row[]): unknown[] => rows.map((row) => row.spans);

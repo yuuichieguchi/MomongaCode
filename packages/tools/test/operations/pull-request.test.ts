@@ -28,7 +28,7 @@ const setup = async (shape: ForgeShape, host?: string): Promise<Setup> => {
   const credentialReads: string[] = [];
   const access = createForgeAccess({
     descriptors: [descriptor],
-    instances: [{ id: 'local', descriptor: descriptor.id, host: host ?? forge.host, apiBaseUrl: forge.origin, credential: { env: 'FAKE_FORGE_TOKEN' } }],
+    instances: [{ id: 'local', descriptor: descriptor.id, hosts: [host ?? forge.host], apiBaseUrl: forge.origin, credential: { env: 'FAKE_FORGE_TOKEN' } }],
     fetch: TEST_FETCH,
     readCredential: async (reference) => {
       credentialReads.push(JSON.stringify(reference));

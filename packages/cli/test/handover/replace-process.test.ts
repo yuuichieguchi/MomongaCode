@@ -1,5 +1,10 @@
+import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterEach, describe, expect, it } from 'vitest';
 import { replaceProcess } from '../../src/handover/replace-process.ts';
 import type { RelayChild, ReplaceHost, ReplaceTarget } from '../../src/handover/replace-process.ts';
 
@@ -97,5 +102,58 @@ describe('the relay, where the host has no execve (red tests 2 and 14, O5)', () 
     child.emit('error', new Error('spawn /opt/momonga ENOENT'));
     await expect(relayed).rejects.toThrow('ENOENT');
     expect(exits).toEqual([]);
+  });
+});
+
+const FIXTURE = fileURLToPath(new URL('../fixtures/relay-child.mjs', import.meta.url));
+
+const folders: string[] = [];
+
+afterEach(() => {
+  for (const folder of folders.splice(0)) fs.rmSync(folder, { recursive: true, force: true });
+});
+
+const realRelay = (code: number) => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-relay-'));
+  folders.push(folder);
+  const released = path.join(folder, 'released');
+  const exits: number[] = [];
+  const listeners = new Map<string, () => void>();
+  let spawned: () => void = () => undefined;
+  const started = new Promise<void>((resolve) => {
+    spawned = resolve;
+  });
+  const host: ReplaceHost = {
+    execve: undefined,
+    spawn: (file, args, options) => {
+      const child = spawn(file, args, options);
+      child.once('spawn', () => spawned());
+      return child;
+    },
+    exit: (exitCode) => {
+      exits.push(exitCode);
+    },
+    onSignal: (signal, listener) => {
+      listeners.set(signal, listener);
+    },
+  };
+  const target: ReplaceTarget = { file: process.execPath, args: [FIXTURE, released, String(code)], env: { ...process.env } };
+  const relayed = replaceProcess(target, host, { release: () => fs.writeFileSync(released, '') });
+  return { relayed, exits, listeners, started };
+};
+
+describe('the relay with a real child process', () => {
+  it('releases the input before the child starts, and exits with the status of the child', async () => {
+    const { relayed, exits } = realRelay(7);
+    expect(await relayed).toBe('relayed');
+    expect(exits).toEqual([7]);
+  });
+
+  it('forwards a signal sent to the relay to the child, and exits with 128 plus its number', async () => {
+    const { relayed, exits, listeners, started } = realRelay(0);
+    await started;
+    listeners.get('SIGTERM')?.();
+    await relayed;
+    expect(exits).toEqual([128 + os.constants.signals.SIGTERM]);
   });
 });

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import { MAX_GLOB_MATCHES, computeFileRules, createGlobDeadline, decide, prepareGlobs, settleGlobs, askedBy } from '@momonga/policy';
 import type { DecideInput, GlobDeadline } from '@momonga/policy';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED, afterMicrotasks } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED, afterMicrotasks, testSecretLocations } from '@momonga/testkit';
 import { createPolicyFilesystem } from '@momonga/tools';
 import type { ChildPorts, ChildSpawnOptions, PortChild } from '@momonga/tools';
 import { makeRealWorkspace } from './real-workspace.ts';
@@ -176,6 +176,7 @@ describe('expandGlob stays inside the decision budget (HIGH-1)', () => {
       rules: [],
       roots,
       home: workspace.home,
+      secretLocations: testSecretLocations(workspace.home),
       cwd: workspace.project,
       fileRules: await computeFileRules([], roots, null, ruleEnforcementOf('none'), testProbes()),
       protectedSet: await protectedSetFor(roots, askedBy(host, NEVER_CANCELLED)),

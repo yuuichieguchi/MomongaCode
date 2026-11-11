@@ -24,6 +24,7 @@ export type MoverPorts = {
   pid: number;
   write(file: string, text: string): void;
   remove(file: string): void;
+  handOver(file: string): void;
   target(recordFile: string, terminal: HandoverTerminal | undefined): ReplaceTarget;
   replace(target: ReplaceTarget, hooks: ReplaceHooks): Promise<'relayed'>;
 };
@@ -45,9 +46,13 @@ export const createMover = (ports: MoverPorts): Mover => {
   const toldTooLarge = new Set<string>();
   const refusals = new Map<string, string>();
 
+  const said = (on: MoveSurface, version: string, reason: string): void => {
+    on.say(handoverFailedText(on.surface, { toVersion: version, fromVersion: ports.version, reason, kept: on.kept() }));
+  };
+
   const stayed = (on: MoveSurface, version: string, reason: string): void => {
     tried.add(version);
-    on.say(handoverFailedText(on.surface, { toVersion: version, fromVersion: ports.version, reason, kept: on.kept() }));
+    said(on, version, reason);
   };
 
   const tooLarge = (on: MoveSurface, version: string): void => {
@@ -57,7 +62,6 @@ export const createMover = (ports: MoverPorts): Mover => {
   };
 
   const replaceWith = async (on: MoveSurface, file: string, version: string): Promise<void> => {
-    let written = false;
     try {
       const encoded = encodeRecord(on.snapshot(version), ports.pid);
       if (encoded.kind !== 'fits') {
@@ -66,10 +70,20 @@ export const createMover = (ports: MoverPorts): Mover => {
         return;
       }
       ports.write(file, encoded.text);
-      written = true;
-      await ports.replace(ports.target(file, on.terminal()), { release: on.release });
     } catch (error) {
-      if (written) ports.remove(file);
+      on.resume();
+      said(on, version, reasonOf(error));
+      return;
+    }
+    try {
+      await ports.replace(ports.target(file, on.terminal()), {
+        release: () => {
+          on.release();
+          ports.handOver(file);
+        },
+      });
+    } catch (error) {
+      ports.remove(file);
       on.resume();
       stayed(on, version, reasonOf(error));
     }

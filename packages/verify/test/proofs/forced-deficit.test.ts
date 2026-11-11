@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { MARGIN_RATIO, MIN_MARGIN } from '@momonga/protocol';
-import { proofArith } from '../../src/proofs/arith.ts';
-import type { ProofArith } from '../../src/proofs/arith.ts';
-import { prove } from '../../src/proofs/prove.ts';
+import { proofArith } from '../support/proofs/arith.ts';
+import type { ProofArith } from '../support/proofs/arith.ts';
+import { prove } from '../support/proofs/prove.ts';
 import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, useZ3 } from '../harness.ts';
 
 const MAX_WINDOW = 2n ** 33n;

@@ -583,8 +583,8 @@ export {
   hookTimeoutMs,
 } from './hooks.ts';
 export type { HookCommand, HookEvent, HookExecution, HookStart, HookMatcherGroup, HookOutcome, HookPreToolDecision, HooksSettings } from './hooks.ts';
-export { POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, REFUSING_PROPERTIES, RULE_FINGERPRINT_PATTERN, RULE_NOTE_KINDS, RULE_VERDICTS, RULE_VERIFY_BUDGET_MS, isPinnedRuleVerdict, isRuleVerdict, policyRefutedMessage, policyVerdictNotice, refusingRefutations } from './rule-verdict.ts';
-export type { PinnedRuleVerdict, PutRuleVerdictRequest, RuleNote, RuleNoteKind, RuleNoteRule, RuleRefutation, RuleVerdict, RuleVerdictKind } from './rule-verdict.ts';
+export { FINAL_RULE_VERDICTS, POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, REFUSING_PROPERTIES, RULE_FINGERPRINT_PATTERN, RULE_NOTE_KINDS, RULE_VERDICTS, RULE_VERIFY_BUDGET_MS, isFinalRuleVerdict, isPinnedRuleVerdict, isRuleVerdict, policyRefutedMessage, policyVerdictNotice, refusingRefutations } from './rule-verdict.ts';
+export type { PinnedRuleVerdict, PutRuleVerdictRequest, RuleNote, RuleNoteKind, RuleNoteRule, RuleRefutation, RuleVerdict, RuleVerdictKind, RuleVerdictPhase } from './rule-verdict.ts';
 export {
   CONDITION_SOURCES,
   CONDITION_STATES,
@@ -768,6 +768,7 @@ export type {
   AdapterCompactRequest,
   AdapterCompactResult,
   AdapterContext,
+  UpstreamRoute,
   AdapterCountTokensResult,
   AdapterInputItem,
   AdapterRequest,
@@ -798,8 +799,8 @@ export type {
   SupervisorPhase,
   SupervisorShutdownResponse,
 } from './supervisor-api.ts';
-export { BILLING_CHANGE_ALLOWED, BILLING_CHANGE_REASONS, BILLING_CHANGE_REFUSED, describeFallbackCause, fallbackCauseName, isFallbackCause, isFallbackCauseList } from './fallback-cause.ts';
-export type { BillingChangeReason, BillingChangeRecord, FallbackCause } from './fallback-cause.ts';
+export { BILLING_CHANGE_ALLOWED, BILLING_CHANGE_REASONS, BILLING_CHANGE_REFUSED, describeFallbackCause, fallbackCauseName, isFallbackCause, isFallbackCauseList, isSpanFallbackCause, isSpanFallbackCauseList, spanFallbackCauseOf } from './fallback-cause.ts';
+export type { BillingChangeReason, BillingChangeRecord, FallbackCause, SpanFallbackCause } from './fallback-cause.ts';
 export { PLAN_LABEL_PATTERN, PLAN_LABEL_REFUSAL, isPlanLabel, planAccountRefOf } from './plan-account.ts';
 export type { NamedPlanAccountRef } from './plan-account.ts';
 export type { JsonSchema } from './schema-helpers.ts';

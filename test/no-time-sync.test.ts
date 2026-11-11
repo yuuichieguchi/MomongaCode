@@ -30,6 +30,8 @@ const KEPT: Readonly<Record<string, Kept>> = {
   'packages/supervisor/test/p3-harness-pump.test.ts': { kinds: { 'timer wait': 2 }, reason: 'the subject is the pump of the harness against real timers and real I/O' },
   'test/no-time-sync.test.ts': { kinds: { 'holder that ends by itself': 2 }, reason: 'the two holder fixtures are the texts the scan itself is tested with' },
   'packages/testkit/test/drive-fake-time.test.ts': { kinds: { 'wall-clock reading': 3 }, reason: 'the subject is the fake-time driver; its real-time deadline is the property under test' },
+  'packages/verify/test/support/dialect-model/gate.ts': { kinds: { 'wall-clock reading': 2 }, reason: 'the gate script of the dialect model prints the wall time its run took; nothing waits on the reading' },
+  'packages/verify/test/support/dialect-model/harness.ts': { kinds: { 'wall-clock reading': 2 }, reason: 'the shrinking of a counterexample ends at a wall-clock budget; no assertion depends on where it ends' },
 };
 
 const BURN_DOWN: Readonly<Record<string, BurnDown>> = {

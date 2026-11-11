@@ -1,10 +1,10 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import { validateUntrusted } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
-import type { CrossCheck } from '../src/dialect-model/harness.ts';
-import type { Json, Schema } from '../src/dialect-model/json.ts';
-import { isObject } from '../src/dialect-model/json.ts';
-import { runSubject, SUBJECTS } from '../src/dialect-model/subjects.ts';
+import type { CrossCheck } from './support/dialect-model/harness.ts';
+import type { Json, Schema } from './support/dialect-model/json.ts';
+import { isObject } from './support/dialect-model/json.ts';
+import { runSubject, SUBJECTS } from './support/dialect-model/subjects.ts';
 
 const SCHEMAS_PER_SUBJECT = Number(process.env['DIALECT_MODEL_SCHEMAS'] ?? '300');
 const GATE_TIMEOUT_MS = 60 * 60 * 1000;

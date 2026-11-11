@@ -9,8 +9,9 @@ import type { ToolIdempotencyRecord } from '../ports.ts';
 import type { ForgeFields } from '../forge/http.ts';
 import type { ForgeAccess } from '../forge/instances.ts';
 import { hostedRemoteOf, parseRemoteUrl } from '../forge/remote.ts';
-import { gitEnvironment, isHttpDestination } from '../read-only-call.ts';
-import type { UrlRewrite } from '../read-only-call.ts';
+import { gitEnvironment } from '../read-only-call.ts';
+import { isHttpDestination } from '../git-config-table.ts';
+import type { UrlRewrite } from '../git-config-table.ts';
 import { createGitReader, repositoryOwnKeys, resolveDestinations, resolveRepository, sameList, writtenUrls } from './git-read.ts';
 import type { GitReadOptions, GitReader, RepositoryKey } from './git-read.ts';
 import { UNKNOWN_KEY_REASON, repositoryKeyRuleOf } from '../git-config-table.ts';
@@ -361,7 +362,8 @@ const runEffect = async (runtime: Runtime, effect: ArgvCall | ForgeCall, ctx: To
     signal: ctx.signal,
     boundMs: Math.max(0, ctx.deadlineAt - ctx.clock.now()),
   });
-  return answer.status === 'success' ? undefined : `the forge answered ${answer.status.replace('_', ' ')}`;
+  if (answer.status === 'success') return undefined;
+  return `the forge answered ${answer.status.replace('_', ' ')}${answer.message === '' ? '' : `: ${answer.message}`}`;
 };
 
 const PRE_PUSH = 'pre-push';

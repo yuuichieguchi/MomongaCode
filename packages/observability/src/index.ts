@@ -28,6 +28,7 @@ export {
   recordChatRequestContent,
   recordFallbackCauses,
   recordChatResponse,
+  recordChatUsage,
   recordChatResponseContent,
   recordError,
   recordToolBackend,

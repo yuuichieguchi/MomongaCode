@@ -77,8 +77,8 @@ export const createRowCache = (renderers: RowRenderers, schedule: ParseSchedule)
   };
 
   const parseUnit = (id: number, cached: Cached, answer: Answer): void => {
-    cached.rows.length = answer.parsedRows;
     const unit = renderers.answerRows(answer.text, answer.point, cached.width, { references: answer.scan.references, settled: answer.settled, unit: true });
+    cached.rows.length = answer.parsedRows - unit.retract;
     appendTo(cached.rows, unit.rows);
     answer.point = unit.point;
     answer.parsedRows = cached.rows.length;

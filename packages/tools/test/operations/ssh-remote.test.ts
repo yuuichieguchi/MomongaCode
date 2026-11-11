@@ -33,7 +33,7 @@ const setup = async (declared: 'declared' | 'undeclared' = 'declared') => {
   const descriptor = descriptorOfGithub();
   const gitServer = await startFakeGitHttp({ projectRoot: served, username: descriptor.auth.gitUsername, password: CREDENTIAL, tls: { certPem: minted.certPem, keyPem: minted.keyPem, host: TLS_HOST } });
   onCleanup(() => gitServer.close());
-  const instances: ForgeInstance[] = declared === 'declared' ? [{ id: 'local', descriptor: descriptor.id, host: gitServer.host, apiBaseUrl: 'https://api.forge.invalid', credential: { env: 'FAKE_FORGE_TOKEN' } }] : [];
+  const instances: ForgeInstance[] = declared === 'declared' ? [{ id: 'local', descriptor: descriptor.id, hosts: [gitServer.host], apiBaseUrl: 'https://api.forge.invalid', credential: { env: 'FAKE_FORGE_TOKEN' } }] : [];
   const forge = createForgeAccess({ descriptors: [descriptor], instances, fetch: TEST_FETCH, readCredential: async () => CREDENTIAL });
   world.write('a.txt', 'one\n');
   const head = world.commitAll('first');
@@ -159,7 +159,7 @@ describe('a remote that is reached over SSH and is on no declared forge', () => 
 });
 
 describe('the HTTPS place of a remote on a declared forge', () => {
-  const access = (host: string) => createForgeAccess({ descriptors: [descriptorOfGithub()], instances: [{ id: 'f', descriptor: 'github', host, apiBaseUrl: 'https://api.forge.invalid', credential: { env: 'T' } }], fetch: TEST_FETCH, readCredential: async () => CREDENTIAL });
+  const access = (host: string) => createForgeAccess({ descriptors: [descriptorOfGithub()], instances: [{ id: 'f', descriptor: 'github', hosts: [host], apiBaseUrl: 'https://api.forge.invalid', credential: { env: 'T' } }], fetch: TEST_FETCH, readCredential: async () => CREDENTIAL });
 
   it.each([
     ['git@github.com:acme/widgets.git', 'https://github.com/acme/widgets.git'],

@@ -37,7 +37,7 @@ describe.runIf(HAS_REAL_SANDBOX)('always-denied writes under real sandbox Bash',
   it('cwd / cannot write home/.momonga', async () => {
     const fx = await escapeFixture(true);
     const target = path.join(fx.momonga, 'x');
-    const result = resultOf(await bash(fx.tools, `touch '${fx.markerFor(['/'])}' && printf escaped > '${target}'`, await fx.extraFor(['/'], '/')));
+    const result = resultOf(await bash(fx.tools, `escaped='${target}'; touch '${fx.markerFor(['/'])}' && printf escaped > "$escaped"`, await fx.extraFor(['/'], '/')));
     expect(fs.existsSync(fx.markerFor(['/']))).toBe(true);
     expect(result.status).toBe('failed');
     expect(fs.existsSync(target)).toBe(false);
@@ -46,7 +46,7 @@ describe.runIf(HAS_REAL_SANDBOX)('always-denied writes under real sandbox Bash',
   it('cwd home cannot write home/.momonga', async () => {
     const fx = await escapeFixture(true);
     const target = path.join(fx.momonga, 'x');
-    const result = resultOf(await bash(fx.tools, `touch '${fx.markerFor([fx.home])}' && printf escaped > '${target}'`, await fx.extraFor([fx.home], fx.home)));
+    const result = resultOf(await bash(fx.tools, `escaped='${target}'; touch '${fx.markerFor([fx.home])}' && printf escaped > "$escaped"`, await fx.extraFor([fx.home], fx.home)));
     expect(fs.existsSync(fx.markerFor([fx.home]))).toBe(true);
     expect(result.status).toBe('failed');
     expect(fs.existsSync(target)).toBe(false);
@@ -55,7 +55,7 @@ describe.runIf(HAS_REAL_SANDBOX)('always-denied writes under real sandbox Bash',
   it('cwd home cannot write home/Library/Keychains', async () => {
     const fx = await escapeFixture(true);
     const target = path.join(fx.keychains, 'x');
-    const result = resultOf(await bash(fx.tools, `touch '${fx.markerFor([fx.home])}' && printf escaped > '${target}'`, await fx.extraFor([fx.home], fx.home)));
+    const result = resultOf(await bash(fx.tools, `escaped='${target}'; touch '${fx.markerFor([fx.home])}' && printf escaped > "$escaped"`, await fx.extraFor([fx.home], fx.home)));
     expect(fs.existsSync(fx.markerFor([fx.home]))).toBe(true);
     expect(result.status).toBe('failed');
     expect(fs.existsSync(target)).toBe(false);
@@ -85,7 +85,7 @@ describe.runIf(HAS_REAL_SANDBOX)('always-denied writes under real sandbox Bash',
     expect(ok.status).toBe('completed');
     expect(fs.readFileSync(inside, 'utf8')).toBe('hello');
     const target = path.join(fx.momonga, 'x');
-    const denied = resultOf(await bash(fx.tools, `touch '${fx.markerFor([project])}' && printf escaped > '${target}'`, await fx.extraFor([project], project)));
+    const denied = resultOf(await bash(fx.tools, `escaped='${target}'; touch '${fx.markerFor([project])}' && printf escaped > "$escaped"`, await fx.extraFor([project], project)));
     expect(fs.existsSync(fx.markerFor([project]))).toBe(true);
     expect(denied.status).toBe('failed');
     expect(fs.existsSync(target)).toBe(false);

@@ -1,8 +1,12 @@
+import { highlightCode } from './highlight.ts';
+import type { CodeSpan } from './highlight.ts';
 import type { StyleToken } from './tokens.ts';
 import { displayWidth, inertText, parseWebUrl, wrapLine } from './wrap.ts';
 import type { Link, Row, Span } from './wrap.ts';
 
 export const MARKDOWN_UNIT_BYTES = 16 * 1024;
+
+export const HIGHLIGHT_MAX_BYTES = 64 * 1024;
 
 const INLINE_NESTING_MAX = 8;
 const WIDEST_GRAPHEME_COLUMNS = 2;
@@ -280,7 +284,7 @@ const NO_PREFIX: Prefix = { first: '', rest: '' };
 
 const fits = (prefix: string, width: number): boolean => displayWidth(prefix) + WIDEST_GRAPHEME_COLUMNS <= width;
 
-const wrapInline = (inline: Inline, width: number, prefix: Prefix = NO_PREFIX): Row[] => {
+const wrapInline = (inline: Inline, width: number, prefix: Prefix = NO_PREFIX, leadToken: StyleToken | null = MARKDOWN_STYLE.gutter): Row[] => {
   let from = 0;
   return wrapLine(inline.text, width, { ...prefix, links: false }).map((row, index) => {
     const lead = index === 0 ? prefix.first : prefix.rest;
@@ -288,7 +292,7 @@ const wrapInline = (inline: Inline, width: number, prefix: Prefix = NO_PREFIX): 
     const shift = lead.length - from;
     const start = from;
     from = to;
-    const spans: Span[] = lead === '' ? [] : [[0, lead.length, MARKDOWN_STYLE.gutter]];
+    const spans: Span[] = lead === '' || leadToken === null ? [] : [[0, lead.length, leadToken]];
     for (const [spanStart, spanEnd, token] of inline.spans) if (spanStart < to && spanEnd > start) spans.push([Math.max(spanStart, start) + shift, Math.min(spanEnd, to) + shift, token]);
     const links: Link[] = [];
     for (const [linkStart, linkEnd, url] of inline.links) if (linkStart < to && linkEnd > start) links.push([Math.max(linkStart, start) + shift, Math.min(linkEnd, to) + shift, url]);
@@ -341,9 +345,54 @@ const lineRows = (line: string, width: number, references: References): Row[] =>
   return wrapInline(inlineOf(content, references), width, lead);
 };
 
-const codeRows = (line: string, width: number, role: Role): Row[] => {
-  const prefix: Prefix = fits(CODE_INDENT, width) ? { first: CODE_INDENT, rest: CODE_INDENT } : NO_PREFIX;
-  return wrapLine(line, width, { ...prefix, links: false }).map((row) => (row.text.length === prefix.first.length ? row : { ...row, spans: [[prefix.first.length, row.text.length, MARKDOWN_STYLE[role]]] }));
+const codePrefix = (width: number): Prefix => (fits(CODE_INDENT, width) ? { first: CODE_INDENT, rest: CODE_INDENT } : NO_PREFIX);
+
+const codeRows = (line: string, width: number, role: Role): Row[] => wrapInline({ text: line, spans: [[0, line.length, MARKDOWN_STYLE[role]]], links: [] }, width, codePrefix(width), null);
+
+const coloredRows = (line: string, colours: readonly CodeSpan[], width: number): Row[] => {
+  const spans: Span[] = [];
+  let reached = 0;
+  for (const [start, end, tokens] of colours) {
+    if (start > reached) spans.push([reached, start, MARKDOWN_STYLE.code]);
+    for (const token of tokens) spans.push([start, end, token]);
+    reached = end;
+  }
+  if (reached < line.length) spans.push([reached, line.length, MARKDOWN_STYLE.code]);
+  return wrapInline({ text: line, spans, links: [] }, width, codePrefix(width), null);
+};
+
+const codeLinesOf = (text: string, from: number, to: number): string[] => {
+  if (to <= from) return [];
+  const read = linesOf(text.slice(0, to), from);
+  const found: string[] = [];
+  for (let line = read.at(found.length); line !== undefined; line = read.at(found.length)) found.push(line);
+  if (text[to - 1] === '\n') found.pop();
+  return found;
+};
+
+const blockRowsOf = (lines: readonly string[], language: string, width: number): Row[] | undefined => {
+  const code = lines.join('\n');
+  const colours = Buffer.byteLength(code) > HIGHLIGHT_MAX_BYTES ? undefined : highlightCode(code, language);
+  if (colours === undefined) return undefined;
+  const rows: Row[] = [];
+  let base = 0;
+  let next = 0;
+  for (const line of lines) {
+    const end = base + line.length;
+    const own: CodeSpan[] = [];
+    while (colours[next] !== undefined && (colours[next]?.[0] ?? end) < end) {
+      const [start, stop, tokens] = colours[next] ?? [end, end, []];
+      if (Math.min(stop, end) > Math.max(start, base)) own.push([Math.max(start, base) - base, Math.min(stop, end) - base, tokens]);
+      if (stop > end + 1) {
+        colours[next] = [end + 1, stop, tokens];
+        break;
+      }
+      next += 1;
+    }
+    rows.push(...coloredRows(line, own, width));
+    base = end + 1;
+  }
+  return rows;
 };
 
 const languageRows = (info: string, width: number): Row[] => {
@@ -429,14 +478,17 @@ const tableRows = (lines: readonly string[], { width, references }: Page, drawin
   return [borderRow(widths, '┌', '┬', '┐'), ...gridRows(headers, widths), borderRow(widths, '├', '┼', '┤'), ...body.flatMap((cells) => gridRows(cells, widths)), borderRow(widths, '└', '┴', '┘')];
 };
 
+type CodeBlock = { readonly from: number; readonly language: string; readonly rows: number };
+
 export type BlockState = {
   readonly fence: Fence | undefined;
+  readonly code: CodeBlock | undefined;
   readonly list: number | undefined;
   readonly paragraph: 'none' | 'top' | 'item';
   readonly records: readonly string[] | undefined;
 };
 
-const OUTSIDE: BlockState = { fence: undefined, list: undefined, paragraph: 'none', records: undefined };
+const OUTSIDE: BlockState = { fence: undefined, code: undefined, list: undefined, paragraph: 'none', records: undefined };
 
 export type ParsePoint = { readonly characters: number; readonly state: BlockState };
 
@@ -556,7 +608,7 @@ const linesOf = (text: string, from: number): Lines => {
 
 export type Reading = { tables: TableDrawing; references: References; settled: boolean; unit: boolean };
 
-export type Parsed = { rows: Row[]; point: ParsePoint; tail: Row[] | undefined };
+export type Parsed = { rows: Row[]; retract: number; point: ParsePoint; tail: Row[] | undefined };
 
 export const parseMarkdown = (text: string, from: ParsePoint, width: number, reading: Reading): Parsed => {
   const lines = linesOf(text, from.characters);
@@ -567,19 +619,44 @@ export const parseMarkdown = (text: string, from: ParsePoint, width: number, rea
     return lines.at(index);
   };
   const rows: Row[] = [];
+  let retract = 0;
   let index = 0;
   let { state } = from;
   let taken = 0;
+  const colourBlock = (code: CodeBlock, to: number): void => {
+    const coloured = blockRowsOf(codeLinesOf(text, code.from, to), code.language, width);
+    if (coloured === undefined) return;
+    const dropped = Math.min(code.rows, rows.length);
+    rows.length -= dropped;
+    retract += code.rows - dropped;
+    for (const row of coloured) rows.push(row);
+  };
+  const traced = (before: BlockState, block: Block): BlockState => {
+    const after = block.state;
+    if (before.fence === undefined && after.fence !== undefined) {
+      const [language = ''] = (fenceOf(lines.at(index) ?? '')?.info ?? '').split(SPACE);
+      return { ...after, code: { from: lines.startOf(block.next), language, rows: 0 } };
+    }
+    const { code } = before;
+    if (code === undefined) return after;
+    if (after.fence !== undefined) return { ...after, code: { ...code, rows: code.rows + block.rows.length } };
+    colourBlock(code, lines.startOf(index));
+    return { ...after, code: undefined };
+  };
   while (lines.at(index) !== undefined) {
     examined = 0;
     const block = blockAt(look, index, state, page);
     if (!reading.settled && !lines.complete(examined - 1)) break;
     const bytes = Buffer.byteLength(text.slice(lines.startOf(index), lines.startOf(block.next)));
-    if (reading.unit && taken > 0 && taken + bytes > MARKDOWN_UNIT_BYTES) return { rows, point: { characters: lines.startOf(index), state }, tail: undefined };
+    if (reading.unit && taken > 0 && taken + bytes > MARKDOWN_UNIT_BYTES) return { rows, retract, point: { characters: lines.startOf(index), state }, tail: undefined };
     for (const row of block.rows) rows.push(row);
+    state = traced(state, block);
     index = block.next;
-    state = block.state;
     taken += bytes;
+  }
+  if (reading.settled && state.code !== undefined) {
+    colourBlock(state.code, text.length);
+    state = { ...state, code: undefined };
   }
   const point: ParsePoint = { characters: lines.startOf(index), state };
   const tail: Row[] = [];
@@ -589,7 +666,7 @@ export const parseMarkdown = (text: string, from: ParsePoint, width: number, rea
     index = block.next;
     state = block.state;
   }
-  return { rows, point, tail };
+  return { rows, retract, point, tail };
 };
 
 export type ReferenceScan = { readonly characters: number; readonly fence: Fence | undefined; readonly references: References };

@@ -18,6 +18,7 @@ import {
   createExecWithStdin,
   createHostExec,
   createPlatformSecretStore,
+  ensureBundledLinuxSocketGuard,
   guardStandardStreams,
   momongaLayout,
   resolveLayoutLocks,
@@ -32,7 +33,7 @@ import {
   launchApart,
 } from '@momonga/foundation';
 import type { GuardedStandardStreams, HeldKernelLock, HelperHost, LaunchProgram, ProcessPort, KernelLockMechanism } from '@momonga/foundation';
-import { sourceBuiltWindowsKeeper } from './keeper/source.ts';
+import { sourceBuiltLinuxSocketGuard, sourceBuiltWindowsKeeper } from './keeper/source.ts';
 import type { SourceKeeperFiles } from './keeper/source.ts';
 import { createHandoverHost } from './handover/host.ts';
 import type { RecordFiles } from './handover/host.ts';
@@ -215,6 +216,20 @@ export const runKeeperBuild = (script: string, workDir: string): number | null =
 export const hostSourceBuiltWindowsKeeper = (executablesRoot: string): (() => string) =>
   sourceBuiltWindowsKeeper({ script: WINDOWS_KEEPER_BUILD_SCRIPT, executablesRoot, build: runKeeperBuild, files: nodeSourceKeeperFiles, random: systemRandom });
 
+export const LINUX_SOCKET_GUARD_BUILD_SCRIPT = path.resolve(import.meta.dirname, '..', '..', '..', 'scripts', 'linux-socket-guard.ts');
+
+export const runSocketGuardBuild = (script: string, workDir: string): number | null => {
+  const run = spawnSync(process.execPath, [script, '--work-dir', workDir, '--compiler', 'host'], { stdio: ['ignore', 'ignore', 'inherit'] });
+  if (run.error !== undefined) throw run.error;
+  return run.status;
+};
+
+export const hostExtractedLinuxSocketGuard = (asset: (name: string) => Uint8Array, executablesRoot: string): Promise<string> =>
+  ensureBundledLinuxSocketGuard({ asset, executablesRoot, random: systemRandom, files: nodeFileSystem });
+
+export const hostSourceBuiltLinuxSocketGuard = (executablesRoot: string): (() => string) =>
+  sourceBuiltLinuxSocketGuard({ script: LINUX_SOCKET_GUARD_BUILD_SCRIPT, executablesRoot, build: runSocketGuardBuild, files: nodeSourceKeeperFiles, random: systemRandom });
+
 export const nodeSpawnDetached: SpawnDetached = (spec) => {
   const child = launchApart(spec.command, spec.args, {
     cwd: spec.cwd,
@@ -289,6 +304,12 @@ export const nodeRecordFiles = (lock: LockSource): RecordFiles => ({
   },
   remove: (file) => {
     dropRecord(file, claimRecord(lock(), file));
+  },
+  handOver: (file) => {
+    const held = heldRecords.get(file);
+    if (held === undefined) throw new Error(`this process holds no record ${file} to hand over`);
+    heldRecords.delete(file);
+    held.release();
   },
 });
 

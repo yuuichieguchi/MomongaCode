@@ -69,7 +69,7 @@ export const read = (callId: string, path: string, output: string): RunEventPayl
 
 export const bash = (callId: string, command: string, status: 'completed' | 'failed'): RunEventPayload[] => [
   call(callId, 'Bash', { command }),
-  { type: 'tool.completed', callId, status, output: '' },
+  { type: 'tool.completed', callId, status, output: '', command },
 ];
 
 const started = (callId: string): RunEventPayload => ({ type: 'tool.started', callId, idemKey: `key-${callId}` });

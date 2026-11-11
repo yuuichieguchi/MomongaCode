@@ -14,9 +14,9 @@ import {
   summaryItemTokensFor,
 } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
-import { proofArith } from '../../src/proofs/arith.ts';
-import type { ProofArith, ProofInt } from '../../src/proofs/arith.ts';
-import { expectRefuted, prove } from '../../src/proofs/prove.ts';
+import { proofArith } from '../support/proofs/arith.ts';
+import type { ProofArith, ProofInt } from '../support/proofs/arith.ts';
+import { expectRefuted, prove } from '../support/proofs/prove.ts';
 import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, useZ3 } from '../harness.ts';
 import { anyCeiling, b2FitGoal, b2StepGoal, ceilOf, floorOf, hypothesesSatisfiable, marksOf, named, windowOf } from './budget-model.ts';
 

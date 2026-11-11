@@ -3,13 +3,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createOwnedDirectorySync, fileRuleBlocks, hostPaths, mapAsync, procGroupMembers, settledOrAborted, signalGroup, signalGroupExceptLeader } from '@momonga/foundation';
 import type { Awaitable, FileRuleEntry, FileRuleSet, GroupMembersReader, OwnedDirectorySync, PlaceholderForm, KernelLockMechanism } from '@momonga/foundation';
-import { SANDBOX_STOP_BOUND_MS, launch } from './process.ts';
+import { SANDBOX_STOP_BOUND_MS, SOCKET_FILTER_SLOT, launch } from './process.ts';
 import type { LaunchOptions } from './process.ts';
 import { SandboxPolicyError } from './policy-error.ts';
 import { validateSandboxPolicy } from './profile.ts';
 import { EMPTY_FILE_FORM, identityOf, isStillThePlaceholder, removePlaceholderEntry } from './placeholder-journal.ts';
 import type { PlaceholderIdentity, PlaceholderJournal } from './placeholder-journal.ts';
 import { assertExistingDirectory } from './scratch.ts';
+import { socketFilter, socketFilterArchitectureOf } from './seccomp.ts';
+import type { SocketFilterKind } from './seccomp.ts';
 import type { DirectoryPort } from './scratch.ts';
 import type { Sandbox, SandboxCommand, SandboxDescriptors, SandboxPolicy, SandboxedProcess } from './types.ts';
 
@@ -77,9 +79,48 @@ export const nodeFilesystemPort = (lock: KernelLockMechanism): FilesystemPort =>
     ),
 });
 
-export type BubblewrapOptions = { tmpDir?: string; scratchDir?: string; cwd: string; heldPlaceholders?: ReadonlySet<string> };
+export type BubblewrapOptions = { tmpDir?: string; scratchDir?: string; cwd?: string; heldPlaceholders?: ReadonlySet<string> };
 
-export type BubblewrapPlan = { args: string[]; placeholders: string[]; forms: Readonly<Record<string, PlaceholderForm>> };
+export type SocketPlan = { kind: 'no-unix-sockets' } | { kind: 'named-unix-sockets'; allowed: readonly string[]; denied: readonly string[] };
+
+export type BubblewrapPlan = { args: string[]; placeholders: string[]; forms: Readonly<Record<string, PlaceholderForm>>; sockets: SocketPlan };
+
+export const SOCKET_GUARD_CHANNEL_SLOT = SOCKET_FILTER_SLOT + 1;
+
+export type BubblewrapCommand = { file: string; args: string[]; socketFilter: SocketFilterKind };
+
+export const bubblewrapCommandOf = (bwrapPath: string, plan: BubblewrapPlan, argv: readonly string[], socketGuard: string | undefined): BubblewrapCommand => {
+  const { sockets } = plan;
+  if (sockets.kind === 'no-unix-sockets') {
+    return { file: bwrapPath, args: [...plan.args, '--seccomp', String(SOCKET_FILTER_SLOT), '--', ...argv], socketFilter: sockets.kind };
+  }
+  if (socketGuard === undefined) {
+    throw new SandboxPolicyError(
+      'socket_guard_missing',
+      `the command may reach the Unix sockets under ${sockets.allowed.join(', ')}, which the Linux sandbox allows only through its socket guard, and this installation has no socket guard, so the command was not started`,
+    );
+  }
+  return {
+    file: socketGuard,
+    args: [
+      'supervise',
+      String(SOCKET_GUARD_CHANNEL_SLOT),
+      ...sockets.allowed.flatMap((entry) => ['--allow', entry]),
+      ...sockets.denied.flatMap((entry) => ['--deny', entry]),
+      '--',
+      bwrapPath,
+      ...plan.args,
+      '--',
+      socketGuard,
+      'enter',
+      String(SOCKET_FILTER_SLOT),
+      String(SOCKET_GUARD_CHANNEL_SLOT),
+      '--',
+      ...argv,
+    ],
+    socketFilter: sockets.kind,
+  };
+};
 
 type Ownership = { form: PlaceholderForm; identity?: PlaceholderIdentity };
 
@@ -147,6 +188,7 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
   const writeDenied = unique(await mapAsync(policy.writeDenied, canonicalize));
   const readDenied = unique(await mapAsync(policy.readDenied, canonicalize));
   const readAllowed = unique(await mapAsync(policy.readAllowed ?? [], canonicalize));
+  const unixSocketAllow = unique(await mapAsync(policy.unixSocketAllow ?? [], paths.canonicalPath));
   const sessionTmpDir = options.tmpDir === undefined ? undefined : await paths.canonicalPath(options.tmpDir);
   const scratchDir = options.scratchDir === undefined ? undefined : await paths.canonicalPath(options.scratchDir);
   const placeholders: string[] = [];
@@ -319,11 +361,15 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
     ...reallow,
     ...scratch,
     ...unique(maskedDirectories).flatMap((directory) => ['--remount-ro', directory]),
-    '--chdir',
-    options.cwd,
+    ...(options.cwd === undefined ? [] : ['--chdir', options.cwd]),
   ];
   const reserved = unique(placeholders);
-  return { args, placeholders: reserved, forms: Object.fromEntries(reserved.map((placeholder): [string, PlaceholderForm] => [placeholder, policy.protectedSet.forms[placeholder] ?? EMPTY_FILE_FORM])) };
+  return {
+    args,
+    placeholders: reserved,
+    forms: Object.fromEntries(reserved.map((placeholder): [string, PlaceholderForm] => [placeholder, policy.protectedSet.forms[placeholder] ?? EMPTY_FILE_FORM])),
+    sockets: unixSocketAllow.length === 0 ? { kind: 'no-unix-sockets' } : { kind: 'named-unix-sockets', allowed: unixSocketAllow, denied: readDenied },
+  };
 }
 
 export const bwrapProbeArguments = (shell: string): string[] => [
@@ -377,12 +423,15 @@ export interface BubblewrapSandboxOptions {
   holders: () => ReadonlySet<string>;
   spawnProcess?: LaunchOptions['spawnProcess'];
   groupMembers?: GroupMembersReader;
+  socketGuard?: () => Awaitable<string>;
+  architecture?: string;
 }
 
 export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sandbox {
   const bwrapPath = options.bwrapPath ?? DEFAULT_BWRAP_PATH;
   const filesystem = options.filesystem ?? nodeFilesystemPort(options.lock);
   const groupMembers = options.groupMembers ?? procGroupMembers;
+  const architecture = socketFilterArchitectureOf(options.architecture ?? process.arch);
   const signalSandboxTerm = async (pgid: number, stop: AbortSignal): Promise<void> => {
     if (signalGroupExceptLeader(pgid, 'SIGTERM', groupMembers) === 0) await signalGroup(pgid, 'SIGTERM', undefined, stop);
   };
@@ -489,12 +538,15 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
     steps.push(sweepKept);
     throwAll(attemptAll(steps));
   };
-  const launchWith = (command: SandboxCommand, plan: BubblewrapPlan, tmpDir: string, signal: AbortSignal, afterExit: () => void, descriptors?: SandboxDescriptors): SandboxedProcess => {
+  const launchWith = async (command: SandboxCommand, plan: BubblewrapPlan, tmpDir: string, signal: AbortSignal, afterExit: () => void, descriptors?: SandboxDescriptors): Promise<SandboxedProcess> => {
+    const guard = plan.sockets.kind === 'no-unix-sockets' || options.socketGuard === undefined ? undefined : await settledOrAborted((async () => options.socketGuard?.())(), signal);
+    const wrapped = bubblewrapCommandOf(bwrapPath, plan, command.argv, guard);
     hold(plan);
     try {
       return launch({
-        file: bwrapPath,
-        args: [...plan.args, '--', ...command.argv],
+        file: wrapped.file,
+        args: wrapped.args,
+        socketFilter: socketFilter(architecture, wrapped.socketFilter),
         cwd: command.cwd,
         ...(command.markerFile === undefined ? {} : { markerFile: command.markerFile }),
         ...(descriptors?.markerFd === undefined ? {} : { markerFd: descriptors.markerFd }),
@@ -537,14 +589,14 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
         const planned = { heldPlaceholders: new Set([...held.keys(), ...kept.keys()]), cwd: command.cwd };
         if (command.tmpDir !== undefined) {
           assertExistingDirectory(command.tmpDir, directories);
-          return launchWith(command, await planBubblewrap(policy, { ...planned, tmpDir: command.tmpDir }, signal, filesystem), command.tmpDir, signal, () => undefined, descriptors);
+          return await launchWith(command, await planBubblewrap(policy, { ...planned, tmpDir: command.tmpDir }, signal, filesystem), command.tmpDir, signal, () => undefined, descriptors);
         }
         const tmpRoot = await settledOrAborted((async () => filesystem.realpath(options.tmpRoot))(), signal);
         const scratch = filesystem.makeScratchDirectory(tmpRoot, 'sandbox-');
         try {
           const scratchDir = await hostPaths(signal).canonicalPath(scratch.path);
           const plan = await planBubblewrap(policy, { ...planned, scratchDir }, signal, filesystem);
-          return launchWith(command, plan, scratch.path, signal, () => scratch.dispose(), descriptors);
+          return await launchWith(command, plan, scratch.path, signal, () => scratch.dispose(), descriptors);
         } catch (error) {
           scratch.dispose();
           throw error;

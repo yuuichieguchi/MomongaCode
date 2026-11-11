@@ -54,6 +54,7 @@ describe('the words of the plan API are protocol constants (A4)', () => {
       'id_token_invalid',
       'jwks_unavailable',
       'identity_mismatch',
+      'identity_not_exchanged',
     ]);
     expect(Object.keys(PLAN_SIGN_IN_FAILURE_RULES)).toEqual(Object.values(PLAN_SIGN_IN_FAILURE));
     expect(PLAN_SIGN_IN_FAILURES).toEqual(Object.values(PLAN_SIGN_IN_FAILURE));
@@ -61,7 +62,7 @@ describe('the words of the plan API are protocol constants (A4)', () => {
   });
 
   it('the sign-in outcomes and the retry reason are named, and the complete answer is typed by them', () => {
-    expect(PLAN_SIGN_IN_OUTCOMES).toEqual(['signed_in', 'plan_disabled', 'retry']);
+    expect(PLAN_SIGN_IN_OUTCOMES).toEqual(['signed_in', 'plan_disabled', 'retry', 'identity_unconfirmed']);
     expect([SIGNED_IN_OUTCOME, RETRY_OUTCOME, INVALID_GRANT_REASON]).toEqual(['signed_in', 'retry', 'invalid_grant']);
     expectTypeOf<PlanSignInCompleteResponse['outcome']>().toEqualTypeOf<(typeof PLAN_SIGN_IN_OUTCOMES)[number]>();
     expectTypeOf<Extract<PlanSignInCompleteResponse, { outcome: typeof RETRY_OUTCOME }>['reason']>().toEqualTypeOf<typeof INVALID_GRANT_REASON>();

@@ -119,6 +119,7 @@ describe('a move that stays tells the remedy of the surface that stays', () => {
       pid: 1,
       write: () => undefined,
       remove: () => undefined,
+      handOver: () => undefined,
       target: (recordFile) => ({ file: '/opt/momonga', args: ['--handover', recordFile], env: {} }),
       replace: () => Promise.reject(new Error('the mover replaced a process it refused to move')),
     });

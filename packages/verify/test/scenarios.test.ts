@@ -133,16 +133,14 @@ describe('rule sets that open what the protection forbids', () => {
     expect(report.mismatches).toEqual([]);
   }, SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS);
 
-  it('lists a secret that the mode default, not a rule, reaches when the workspace contains it, and does not refute the rules', async () => {
+  it('proves that no mode default reaches a secret that the workspace contains', async () => {
     const layout = makeLayout();
     const report = await verifyScenario(z3.engine().api, layout, rulesOf(layout, []), { roots: [layout.home], secretLocations: [sshLocation(layout)] });
 
     const reach = resultOf(report, 'secret-reach');
     expect(reach.verdict.status).toBe('proved');
-    expect(reach.byModeDefault[0]?.counterexample?.cause).toContain('mode default');
-    expect(reach.byModeDefault[0]?.message).toContain('by the mode default');
-    expect(formatReport(report)).toContain('  by the mode default, not by a rule: ~/.ssh');
-    expect(verdictOfReport(report, 'z3 1')).toMatchObject({ verdict: 'proved', refuted: [], byModeDefault: expect.arrayContaining([expect.objectContaining({ property: 'secret-reach', subject: '~/.ssh (read)' })]) });
+    expect(formatReport(report)).not.toContain('by the mode default');
+    expect(verdictOfReport(report, 'z3 1')).toMatchObject({ verdict: 'proved', refuted: [] });
     expect(report.exitCode).toBe(0);
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
@@ -152,15 +150,14 @@ describe('rule sets that open what the protection forbids', () => {
     expect(resultOf(report, 'secret-reach').verdict.status).toBe('proved');
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
-  it('shows that bypassPermissions leaves a secret open by its mode default until a deny rule closes it, and that an allow rule over it refutes the rules', async () => {
+  it('shows that bypassPermissions opens no secret by its mode default, with or without a deny rule, and that an allow rule over it refutes the rules', async () => {
     const open = await run([], { mode: 'bypassPermissions' });
     expect(resultOf(open.report, 'secret-reach').verdict.status).toBe('proved');
-    expect(resultOf(open.report, 'secret-reach').byModeDefault.length).toBeGreaterThan(0);
+    expect(open.report.mismatches).toEqual([]);
     expect(verdictOfReport(open.report, 'z3 1').verdict).toBe('proved');
 
     const closed = await run([['deny', 'Read(~/.ssh/**)']], { mode: 'bypassPermissions' });
     expect(resultOf(closed.report, 'secret-reach').verdict.status).toBe('proved');
-    expect(resultOf(closed.report, 'secret-reach').byModeDefault.filter((finding) => finding.subject.startsWith('~/.ssh') && finding.subject.includes('read'))).toEqual([]);
 
     const opened = await run([['allow', 'Read(~/**)']], { mode: 'bypassPermissions' });
     expect(resultOf(opened.report, 'secret-reach').verdict.status).toBe('refuted');

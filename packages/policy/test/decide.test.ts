@@ -1,3 +1,4 @@
+import { testSecretLocations } from '@momonga/testkit';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { decide } from '@momonga/policy';
@@ -57,7 +58,7 @@ const expectedWithRule = (effect: 'allow' | 'ask' | 'deny', mode: (typeof MODES)
 };
 
 const run = async (layout: Layout, c: Case, mode: PermissionMode, effects: Array<'allow' | 'ask' | 'deny'>) =>
-  await decide({
+  await decide({ secretLocations: testSecretLocations(layout.home),
     tool: c.tool,
     subject: c.subject(layout),
     mode,
@@ -106,7 +107,7 @@ describe('decide precedence', () => {
   it('deny beats ask beats allow regardless of order and origin', async () => {
     const layout = makeLayout();
     const subject: PermissionSubject = { kind: 'command', tool: 'Bash', command: 'make build' };
-    const base = { tool: BASH, subject, mode: 'manual' as const, roots: [layout.project], home: layout.home, cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]), protectedSet: EMPTY_PROTECTED_SET };
+    const base = { tool: BASH, subject, mode: 'manual' as const, roots: [layout.project], home: layout.home, secretLocations: testSecretLocations(layout.home), cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]), protectedSet: EMPTY_PROTECTED_SET };
     const allowCli = ruleIn(layout, 'cli')('allow', 'Bash(make build)');
     const askLocal = ruleIn(layout, 'local')('ask', 'Bash(make:*)');
     const denyProject = ruleIn(layout, 'project')('deny', 'Bash(make:*)');
@@ -127,7 +128,7 @@ describe('decide precedence', () => {
   it('treats additional roots as inside', async () => {
     const layout = makeLayout();
     const file = touch(path.join(layout.outside, 'g.txt'));
-    const decision = await decide({
+    const decision = await decide({ secretLocations: testSecretLocations(layout.home),
       tool: EDIT,
       subject: { kind: 'path', tool: 'Edit', paths: [file], access: 'write' },
       mode: 'acceptEdits',
@@ -151,7 +152,7 @@ describe('decide adversarial Bash', () => {
   const bash = async (command: string, extra: { mode?: PermissionMode; deny?: string[] } = {}) => {
     const layout = makeLayout();
     const make = ruleIn(layout);
-    return (await decide({
+    return (await decide({ secretLocations: testSecretLocations(layout.home),
       tool: BASH,
       subject: { kind: 'command', tool: 'Bash', command },
       mode: extra.mode ?? 'manual',
@@ -196,8 +197,8 @@ describe('decide adversarial Bash', () => {
 
   it('treats redirections as write subjects outside the workspace', async () => {
     expect(await bash('ls > /etc/passwd')).toBe('ask');
-    expect(await bash('echo x > ~/.ssh/config')).toBe('ask');
-    expect(await bash('echo x >> ~/.ssh/config')).toBe('ask');
+    expect(await bash('echo x > ~/.ssh/config')).toBe('deny');
+    expect(await bash('echo x >> ~/.ssh/config')).toBe('deny');
     expect(await bash('ls > /etc/passwd', { deny: ['Write(//etc/**)'] })).toBe('deny');
     expect(await bash('ls > /etc/passwd', { deny: ['Write(//etc/**)'], mode: 'bypassPermissions' })).toBe('deny');
     expect(await bash('echo x > ~/.ssh/config', { deny: ['Edit(~/.ssh/**)'] })).toBe('deny');

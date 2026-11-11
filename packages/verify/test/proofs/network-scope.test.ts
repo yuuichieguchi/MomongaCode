@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { NETWORK_SCOPE_KINDS, NO_NETWORK, OPEN_NETWORK, enforcedNetworkScope, networkScopeWithin } from '@momonga/foundation';
 import type { NetworkScope, NetworkScopeKind } from '@momonga/foundation';
 import { SANDBOX_NETWORK_SCOPES } from '@momonga/sandbox';
-import { proofArith } from '../../src/proofs/arith.ts';
-import type { ProofArith, ProofBool, ProofInt } from '../../src/proofs/arith.ts';
-import { expectRefuted, prove } from '../../src/proofs/prove.ts';
+import { proofArith } from '../support/proofs/arith.ts';
+import type { ProofArith, ProofBool, ProofInt } from '../support/proofs/arith.ts';
+import { expectRefuted, prove } from '../support/proofs/prove.ts';
 import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, useZ3 } from '../harness.ts';
 
 const NONE = 0n;

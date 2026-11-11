@@ -49,6 +49,7 @@ describe('16.8: the record names its owner and is held by its writer', () => {
       pid: 4242,
       write: (_file, text) => void written.push(text),
       remove: () => undefined,
+      handOver: () => undefined,
       target: (recordFile) => ({ file: '/opt/momonga', args: ['--handover', recordFile], env: {} }),
       replace: () => Promise.reject(new Error('execve EACCES')),
     });
@@ -70,7 +71,7 @@ describe('16.8: the record names its owner and is held by its writer', () => {
 
   it('a written record is kept by the sweep while its writer lives, whatever pid it names, and leaves no temporary', async () => {
     const paths = pathsOf();
-    const file = recordFileOf(paths, 'session-1');
+    const file = recordFileOf(paths, 'attach', 'session-1');
     recordFiles.write(file, textOf(PID_NO_PROCESS_HAS));
     try {
       expect(fs.statSync(file).mode & 0o777).toBe(0o600);
@@ -84,7 +85,7 @@ describe('16.8: the record names its owner and is held by its writer', () => {
 
   it('a second write of the same record by the same process replaces it', () => {
     const paths = pathsOf();
-    const file = recordFileOf(paths, 'session-1');
+    const file = recordFileOf(paths, 'attach', 'session-1');
     recordFiles.write(file, textOf(1));
     recordFiles.write(file, textOf(2));
     expect(handoverRecordOwner(recordFiles.read(file))).toBe(2);
@@ -93,7 +94,7 @@ describe('16.8: the record names its owner and is held by its writer', () => {
 
   it('the writer that removes its record leaves nothing in the directory', () => {
     const paths = pathsOf();
-    const file = recordFileOf(paths, 'session-1');
+    const file = recordFileOf(paths, 'attach', 'session-1');
     recordFiles.write(file, textOf(process.pid));
     recordFiles.remove(file);
     expect(fs.readdirSync(path.dirname(file))).toEqual([]);
@@ -101,7 +102,7 @@ describe('16.8: the record names its owner and is held by its writer', () => {
 
   it('the adopting process that removes a record it did not write leaves nothing in the directory', async () => {
     const paths = pathsOf();
-    const file = recordFileOf(paths, 'session-1');
+    const file = recordFileOf(paths, 'attach', 'session-1');
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     const lock = testKernelLock();
     const outcome = await lock.claim(`${file}.lock`);
@@ -110,5 +111,20 @@ describe('16.8: the record names its owner and is held by its writer', () => {
     outcome.lock.release();
     recordFiles.remove(file);
     expect(fs.readdirSync(path.dirname(file))).toEqual([]);
+  });
+});
+
+describe('a record belongs to one attached client', () => {
+  it('a TUI and an attach client of one session each write, read and remove their own record', () => {
+    const paths = pathsOf();
+    const tui = recordFileOf(paths, 'tui', 'session-1');
+    const attach = recordFileOf(paths, 'attach', 'session-1');
+    recordFiles.write(tui, textOf(1));
+    recordFiles.write(attach, textOf(2));
+    expect([handoverRecordOwner(recordFiles.read(tui)), handoverRecordOwner(recordFiles.read(attach))]).toEqual([1, 2]);
+    recordFiles.remove(tui);
+    expect(handoverRecordOwner(recordFiles.read(attach))).toBe(2);
+    recordFiles.remove(attach);
+    expect(fs.readdirSync(path.dirname(tui))).toEqual([]);
   });
 });

@@ -144,12 +144,15 @@ export type StartRuntimeProcessOptions = {
   bundledRipgrep?: BundledRipgrepSource;
   helperSelf?: HelperSelf;
   ruleSolver?: RuleSolverSource;
+  socketGuard?: SocketGuardSource;
   role?: RolePort;
   requestShutdown?: () => void;
   createAdminPool?: ToolRuntimeOptions['createAdminPool'];
 };
 
 export type BundledRipgrepSource = (paths: Pick<MomongaPaths, 'executables'>, locks: LayoutLocks) => BundledRipgrepResolver;
+
+export type SocketGuardSource = (paths: Pick<MomongaPaths, 'executables'>) => () => Promise<string>;
 
 export type RuntimeCloseResult = {
   clean: boolean;
@@ -453,7 +456,15 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             `bwrap at ${launcherPath} cannot create a sandbox on this host: ${probe.stderr}; set "sandbox": "none" in ${paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
           );
         }
-        return createBubblewrapSandbox({ bwrapPath: launcherPath, tmpRoot: paths.tmp.spawn, lock: kernelLock, killGraceMs: SANDBOX_KILL_GRACE_MS, journal: createPlaceholderJournal(journalDirectory), holders: () => heldMountPoints() });
+        return createBubblewrapSandbox({
+          bwrapPath: launcherPath,
+          tmpRoot: paths.tmp.spawn,
+          lock: kernelLock,
+          killGraceMs: SANDBOX_KILL_GRACE_MS,
+          journal: createPlaceholderJournal(journalDirectory),
+          holders: () => heldMountPoints(),
+          ...(options.socketGuard === undefined ? {} : { socketGuard: options.socketGuard(paths) }),
+        });
       }
       return createSeatbeltSandbox({ sandboxExecPath: launcherPath, tmpRoot: paths.tmp.spawn, lock: kernelLock, killGraceMs: SANDBOX_KILL_GRACE_MS });
     };
@@ -812,6 +823,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       fs: createPolicyFilesystem(),
       paths,
       timers,
+      bashPath: () => resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env: process.env }),
+      clock,
     });
     await step('workers', () => {
       for (let index = 0; index < workerCount; index += 1) {

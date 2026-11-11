@@ -23,6 +23,7 @@ export type Outcome = {
   allow: Bool;
   allowedByRule: Bool;
   allowedByDefault: Bool;
+  secretDenied: Bool;
   byDefault: Bool;
   guarded: Bool;
   asked: Bool;
@@ -38,6 +39,7 @@ export type SubjectModel = {
   terms: readonly RuleTerms[];
   guard: Bool;
   planDeny: Bool;
+  secret: Bool;
   dynamicAsk: Bool;
   defaultAllow: Bool;
   askingModeDefaults: readonly ModeDefault[];
@@ -92,6 +94,7 @@ export const createSubject = (models: DecisionModels, tool: SubjectTool, name: s
       terms,
       guard: no,
       planDeny: no,
+      secret: no,
       dynamicAsk: dynamicRead,
       defaultAllow: bypass ? yes : defaultAllowTerm,
       askingModeDefaults: [{ modes: ASKING_MODES, allow: defaultAllowTerm }],
@@ -123,6 +126,7 @@ export const createSubject = (models: DecisionModels, tool: SubjectTool, name: s
       terms,
       guard: no,
       planDeny: mode === 'plan' ? ctx.Not(readOnly) : no,
+      secret: no,
       dynamicAsk: no,
       defaultAllow: bypass ? yes : no,
       askingModeDefaults: [{ modes: ASKING_MODES, allow: no }],
@@ -147,7 +151,9 @@ export const createSubject = (models: DecisionModels, tool: SubjectTool, name: s
     const match = rule.specifier === undefined ? yes : paths.ruleMatches(vars, index);
     return [{ index, rule, position: match, incidental: no, strict: match }];
   });
-  const inside = paths.inside(vars.resolved);
+  const secret = paths.secret(vars.resolved);
+  const open = ctx.Not(secret);
+  const inside = ctx.And(open, paths.inside(vars.resolved));
   const insideModes = ASKING_MODES.filter((asking) => access === 'read' || asking === 'acceptEdits');
   const askingModeDefaults: ModeDefault[] = [
     { modes: insideModes, allow: inside },
@@ -160,8 +166,9 @@ export const createSubject = (models: DecisionModels, tool: SubjectTool, name: s
     terms,
     guard: access === 'write' ? paths.protectedWrite(vars.resolved) : no,
     planDeny: mode === 'plan' && access === 'write' ? yes : no,
+    secret,
     dynamicAsk: no,
-    defaultAllow: bypass ? yes : (askingModeDefaults.find((entry) => entry.modes.includes(mode)) as ModeDefault).allow,
+    defaultAllow: bypass ? open : (askingModeDefaults.find((entry) => entry.modes.includes(mode)) as ModeDefault).allow,
     askingModeDefaults,
     witness: (read) => ({ kind: 'path', tool, access, requested: read(vars.requested), resolved: read(vars.resolved) }),
     bind: (witness) => (witness.kind === 'path' ? [vars.requested.eq(smt.stringValue(witness.requested)), vars.resolved.eq(smt.stringValue(witness.resolved))] : []),
@@ -207,8 +214,8 @@ export const outcomeOf = (models: DecisionModels, subject: SubjectModel, exclude
   const allowMatch = anyOf(smt, ofEffect('allow').map((term) => term.strict));
 
   const denied = bypass ? ctx.Or(denyPosition, denyIncidental) : denyPosition;
-  const deny = ctx.Or(denied, subject.planDeny);
-  const open = ctx.Not(deny);
+  const refused = ctx.Or(denied, subject.planDeny);
+  const open = ctx.Not(refused);
   const guarded = ctx.And(open, subject.guard);
   const afterGuard = ctx.And(open, ctx.Not(subject.guard));
   const asked = ctx.And(afterGuard, askMatch);
@@ -216,9 +223,13 @@ export const outcomeOf = (models: DecisionModels, subject: SubjectModel, exclude
   const incidentalAsk = ctx.And(afterAsk, denyIncidental);
   const afterIncidental = ctx.And(afterAsk, ctx.Not(denyIncidental));
   const allowedByRule = ctx.And(afterIncidental, allowMatch);
-  const allowedByDefault = ctx.And(afterIncidental, ctx.Not(allowMatch), subject.defaultAllow);
-  const askedByDefault = ctx.And(afterIncidental, ctx.Not(allowMatch), ctx.Not(subject.defaultAllow));
-  const askOverridden = bypass ? ctx.And(asked, ctx.Not(governingAskMatch)) : ctx.Bool.val(false);
+  const leftToDefault = ctx.And(afterIncidental, ctx.Not(allowMatch));
+  const overridable = bypass ? ctx.And(asked, ctx.Not(governingAskMatch)) : ctx.Bool.val(false);
+  const secretDenied = ctx.And(ctx.Or(leftToDefault, overridable), subject.secret);
+  const deny = ctx.Or(refused, secretDenied);
+  const allowedByDefault = ctx.And(leftToDefault, ctx.Not(subject.secret), subject.defaultAllow);
+  const askedByDefault = ctx.And(leftToDefault, ctx.Not(subject.secret), ctx.Not(subject.defaultAllow));
+  const askOverridden = ctx.And(overridable, ctx.Not(subject.secret));
   const askHeld = bypass ? ctx.And(asked, governingAskMatch) : asked;
   const dynamicAsk = ctx.And(open, subject.dynamicAsk);
   const allow = ctx.And(ctx.Or(allowedByRule, allowedByDefault, askOverridden), ctx.Not(dynamicAsk));
@@ -229,6 +240,7 @@ export const outcomeOf = (models: DecisionModels, subject: SubjectModel, exclude
     allow,
     allowedByRule,
     allowedByDefault,
+    secretDenied,
     byDefault: ctx.And(ctx.Or(allowedByDefault, askedByDefault), ctx.Not(dynamicAsk)),
     guarded,
     asked,

@@ -66,9 +66,16 @@ export const encodeRecord = (record: HandoverRecord, writerPid: number): Encoded
   return bytes > HANDOVER_RECORD_MAX_BYTES ? { kind: 'too-large', bytes } : { kind: 'fits', text };
 };
 
-export const recordFileOf = (paths: Pick<MomongaPaths, 'run'>, session: string): string => path.join(handoverDirectoryOf(paths), `${session}${RECORD_SUFFIX}`);
+export type RecordName = { session: string; kind: HandoverKind };
 
-export const sessionOfRecordFile = (file: string): string => path.basename(file, RECORD_SUFFIX);
+export const recordFileOf = (paths: Pick<MomongaPaths, 'run'>, kind: HandoverKind, session: string): string => path.join(handoverDirectoryOf(paths), `${session}.${kind}${RECORD_SUFFIX}`);
+
+export const recordNameOf = (file: string): RecordName | undefined => {
+  const stem = path.basename(file, RECORD_SUFFIX);
+  const dot = stem.lastIndexOf('.');
+  const kind = HANDOVER_KINDS.find((candidate) => candidate === stem.slice(dot + 1));
+  return dot <= 0 || kind === undefined ? undefined : { session: stem.slice(0, dot), kind };
+};
 
 export const attachmentDigest = (image: ImageAttachment): string => createHash('sha256').update(image.mediaType).update('\n').update(image.data).digest('hex');
 
