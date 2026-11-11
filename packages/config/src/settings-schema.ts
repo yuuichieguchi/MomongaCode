@@ -439,7 +439,8 @@ export const SETTINGS_SCHEMA = {
     mcp: {
       type: 'object',
       properties: {
-        toolIdleTimeoutMs: NON_NEGATIVE_INTEGER,
+        toolIdleTimeoutNetworkMs: NON_NEGATIVE_INTEGER,
+        toolIdleTimeoutStdioMs: NON_NEGATIVE_INTEGER,
         toolTotalTimeoutMs: POSITIVE_INTEGER,
         closeGraceMs: { type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.max },
         connectTimeoutMs: { type: 'integer', minimum: MCP_CONNECT_TIMEOUT_LIMITS.min, maximum: MCP_CONNECT_TIMEOUT_LIMITS.max },

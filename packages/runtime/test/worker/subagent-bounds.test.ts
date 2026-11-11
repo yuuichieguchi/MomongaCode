@@ -23,7 +23,7 @@ const MODEL_IDLE_MS = 300;
 const MCP_IDLE_MS = 150;
 const REFUNDED_CUT_STREAMS = 3;
 const CHILD_IDLE_STOPS = REFUNDED_CUT_STREAMS + 1;
-const MCP_IDLE_TEXT = `MCP server "jobs" sent no response or progress for ${MCP_IDLE_MS} ms, so the call to long_job was stopped. The server may have run it; check before repeating it. To wait longer, raise mcp.toolIdleTimeoutMs.`;
+const MCP_IDLE_TEXT = `MCP server "jobs" sent no response or progress for ${MCP_IDLE_MS} ms, so the call to long_job was stopped. The server may have run it; check before repeating it. To wait longer, raise mcp.toolIdleTimeoutNetworkMs.`;
 
 const agentsPortOf = (env: Env): AgentsPort =>
   createAgentsPort({

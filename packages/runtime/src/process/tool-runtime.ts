@@ -224,9 +224,10 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
       const sources: McpPool['sources'] = [];
       if (mcp.enabled.length > 0) {
         const servers = mcp.enabled;
-        const { toolIdleTimeoutMs, toolTotalTimeoutMs, connectTimeoutMs } = loaded.settings.mcp;
+        const { toolIdleTimeoutNetworkMs, toolIdleTimeoutStdioMs, toolTotalTimeoutMs, connectTimeoutMs } = loaded.settings.mcp;
         const callBounds = {
-          ...(toolIdleTimeoutMs === undefined ? {} : { toolIdleTimeoutMs }),
+          ...(toolIdleTimeoutNetworkMs === undefined ? {} : { toolIdleTimeoutNetworkMs }),
+          ...(toolIdleTimeoutStdioMs === undefined ? {} : { toolIdleTimeoutStdioMs }),
           ...(toolTotalTimeoutMs === undefined ? {} : { toolTotalTimeoutMs }),
           ...(connectTimeoutMs === undefined ? {} : { connectTimeoutMs }),
         };

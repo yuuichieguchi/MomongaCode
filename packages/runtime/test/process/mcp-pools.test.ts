@@ -125,11 +125,11 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     expect(f.counting.created[0]?.clientVersion).toBe(FIXTURE_RUNTIME_VERSION);
   });
 
-  it('G2: passes mcp.toolIdleTimeoutMs and mcp.toolTotalTimeoutMs from the user settings to the pool and its tools', async () => {
+  it('G2: passes the idle key of each transport and mcp.toolTotalTimeoutMs from the user settings to the pool, and a stdio server takes the stdio idle key', async () => {
     const f = await realFixture();
-    writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer }, mcp: { toolIdleTimeoutMs: 600_000, toolTotalTimeoutMs: 7_200_000 } });
+    writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer }, mcp: { toolIdleTimeoutNetworkMs: 400_000, toolIdleTimeoutStdioMs: 600_000, toolTotalTimeoutMs: 7_200_000 } });
     const set = await f.toolRuntime.port.toolSet(await newRun(f), { signal: signalNever(), env: toolEnv() });
-    expect(f.counting.created[0]).toMatchObject({ toolIdleTimeoutMs: 600_000, toolTotalTimeoutMs: 7_200_000 });
+    expect(f.counting.created[0]).toMatchObject({ toolIdleTimeoutNetworkMs: 400_000, toolIdleTimeoutStdioMs: 600_000, toolTotalTimeoutMs: 7_200_000 });
     expect(set.tools.find((tool) => tool.name === 'mcp__fx__echo')).toMatchObject({ idleTimeoutMs: 600_000, timeoutMs: 7_200_000 });
   });
 
