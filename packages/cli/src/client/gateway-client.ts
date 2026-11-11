@@ -299,7 +299,10 @@ export const createGatewayClient = (options: { resolveSocket: SocketResolver }):
   const answer = async (method: HttpMethod, path: string, body: unknown): Promise<string> => {
     const response = await http.request({ method, path, ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }) });
     const text = await response.text();
-    if (response.status < 200 || response.status > 299) throw new GatewayAnswerError(`${method} ${path} answered ${response.status}: ${text}`, response.status, answerBodyOf(text));
+    if (response.status < 200 || response.status > 299) {
+      const refusal = answerBodyOf(text);
+      throw new GatewayAnswerError(refusal === undefined ? `${method} ${path} answered ${response.status}: ${text}` : refusal.message, response.status, refusal);
+    }
     return text;
   };
 

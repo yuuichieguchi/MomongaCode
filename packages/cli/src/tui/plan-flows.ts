@@ -13,9 +13,9 @@ import { writeStart } from './models/order.ts';
 import { ADD_WITH_MODELS_ADD, ALSO_AT_START_LABEL, MODEL_CHANGE_NOTE, START_ONE_TEXT, configuredSwitchText, startingModelSetText } from './models/texts.ts';
 import { couldNotOpenBrowser } from '../browser-text.ts';
 import { SANDBOX_OFF_NOTICE, accountRowLabel, accountsOf, nextAccountLabel, profileOf, profileStateText, savedAccountAction } from '../plan/accounts.ts';
-import { SignInAttemptNotFoundError, SignInExpiredError, SignInGatewayStoppedError, SignInListenerError, SignInListenerFailedError, signIn, waitForPaste } from '../plan/sign-in.ts';
+import { SignInListenerError, SignInListenerFailedError, SignInNotFinishedError, signIn, waitForPaste } from '../plan/sign-in.ts';
 import type { SignInShown } from '../plan/sign-in.ts';
-import { IDENTITY_CANCEL, IDENTITY_CHOICES, IDENTITY_SAVE, codeNotAcceptedLine, identityNotConfirmedLine, identityQuestion, listProblemLine, planDisabledLines, resumeLine, signedInLine, signedOutLines, tryAgainLine } from '../plan/texts.ts';
+import { IDENTITY_CANCEL, IDENTITY_CHOICES, IDENTITY_SAVE, SIGN_IN_WORD, cancelledText, codeNotAcceptedLine, identityNotConfirmedLine, identityQuestion, listProblemLine, planDisabledLines, resumeLine, signInFailureLine, signedInLine, signedOutLines } from '../plan/texts.ts';
 import type { TuiBackend } from './backend.ts';
 import type { OverlayPorts, PickRow } from './picker.tsx';
 import { NOT_NOW_LABEL, invitationKeyOf } from './screen/menu.tsx';
@@ -180,15 +180,15 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       );
     } catch (error) {
       if (cancel.signal.aborted && error === cancel.signal.reason) {
-        ports.info('sign-in cancelled');
+        ports.info(cancelledText(SIGN_IN_WORD));
         return;
       }
-      if (error instanceof SignInListenerError || error instanceof SignInListenerFailedError || error instanceof SignInGatewayStoppedError) {
+      if (error instanceof SignInListenerError || error instanceof SignInListenerFailedError) {
         ports.info(error.message);
         return;
       }
-      if (error instanceof SignInExpiredError || error instanceof SignInAttemptNotFoundError) {
-        ports.info(`${error.message} ${tryAgainLine('tui', { profile: profile.id, account })}`);
+      if (error instanceof SignInNotFinishedError) {
+        ports.info(signInFailureLine('tui', { profile: profile.id, account }, error));
         return;
       }
       throw error;
@@ -204,8 +204,8 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         ports.info(identityNotConfirmedLine('tui', { profile: profile.id, account }, answer.identity));
         return;
       case PLAN_DISABLED_STATE:
-        for (const line of planDisabledLines('tui', profile, account)) ports.info(line);
-        await sentence(profile, account, true);
+        for (const line of planDisabledLines('tui', profile, answer.account.label)) ports.info(line);
+        await sentence(profile, answer.account.label, true);
         return;
       case SIGNED_IN_OUTCOME:
         ports.info(signedInLine(answer.account));

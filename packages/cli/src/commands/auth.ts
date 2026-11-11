@@ -2,7 +2,6 @@ import { PLAN_LABEL_REFUSAL, displayMapOf, messageOf, isPlanLabel, PLAN_DISABLED
 import type { MomongaModelList, PlanAccountView, PlanAccountsResponse, PlanProfileView, PlanSignInCompleteResponse, PlanSignInIdentity, TargetBilling } from '@momonga/protocol';
 import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE } from '@momonga/foundation';
 import type { OpenUrl } from '@momonga/foundation';
-import { couldNotOpenBrowser } from '../browser-text.ts';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import type { PlanGatewayClient } from '../client/gateway-client.ts';
 import { listedModelOf } from './models.ts';
@@ -10,16 +9,14 @@ import { createInterface } from 'node:readline';
 import { SANDBOX_OFF_NOTICE, accountStateWord, accountsOf, nextAccountLabel, profileOf, savedAccountAction } from '../plan/accounts.ts';
 import {
   PASTE_LABEL,
-  SignInAttemptNotFoundError,
-  SignInExpiredError,
-  SignInGatewayStoppedError,
   SignInListenerError,
   SignInListenerFailedError,
+  SignInNotFinishedError,
   pastedCallbackProblem,
   signIn,
 } from '../plan/sign-in.ts';
 import type { SandboxKind, SignInWaitTimers, StartSignInListener } from '../plan/sign-in.ts';
-import { IDENTITY_CHOICES, IDENTITY_SAVE, codeNotAcceptedLine, identityNotConfirmedLine, identityQuestion, listProblemLine, noBrowserHintLine, planDisabledLines, resumeLine, sensitiveUrlLines, signedInLine, signedOutLines, tryAgainLine } from '../plan/texts.ts';
+import { IDENTITY_CHOICES, IDENTITY_SAVE, SIGN_IN_WORD, browserNotOpenedLine, cancelledLine, codeNotAcceptedLine, identityNotConfirmedLine, identityQuestion, listProblemLine, noBrowserHintLine, planDisabledLines, resumeLine, sensitiveUrlLines, signInFailureLine, signedInLine, signedOutLines } from '../plan/texts.ts';
 import { escapedLines } from '../terminal-writer.ts';
 import { UsageError } from '../usage-error.ts';
 
@@ -165,7 +162,6 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
   }
   if ((await ports.sandbox()) === 'none') print(ports.stderr, SANDBOX_OFF_NOTICE);
   print(ports.stdout, [profile.messages.description]);
-  const tryAgain = tryAgainLine('cli', { profile: profile.id, account });
   const pasted =
     ports.isTerminal
       ? (state: string, signal: AbortSignal): Promise<string> => {
@@ -196,7 +192,7 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
           print(ports.stdout, [noBrowserHintLine(profile.id, account)]);
           ports.openUrl(url, waiting, (message) => {
             print(ports.stdout, sensitiveUrlLines(url));
-            print(ports.stderr, [`${couldNotOpenBrowser(message)} Open the URL above to continue.`]);
+            print(ports.stderr, [browserNotOpenedLine(message)]);
           });
         },
       },
@@ -204,14 +200,14 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
     );
   } catch (error) {
     if (ports.signal.aborted && error === ports.signal.reason) {
-      print(ports.stderr, ['momonga: sign-in cancelled']);
+      print(ports.stderr, [cancelledLine(SIGN_IN_WORD)]);
       return EXIT_INTERRUPTED;
     }
-    if (error instanceof SignInExpiredError || error instanceof SignInAttemptNotFoundError) {
-      print(ports.stderr, [`${error.message} ${tryAgain}`]);
+    if (error instanceof SignInNotFinishedError) {
+      print(ports.stderr, [signInFailureLine('cli', { profile: profile.id, account }, error)]);
       return EXIT_FAILURE;
     }
-    if (error instanceof SignInListenerError || error instanceof SignInListenerFailedError || error instanceof SignInGatewayStoppedError) {
+    if (error instanceof SignInListenerError || error instanceof SignInListenerFailedError) {
       print(ports.stderr, [error.message]);
       return EXIT_FAILURE;
     }

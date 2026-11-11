@@ -76,24 +76,36 @@ export class SignInListenerFailedError extends Error {
   }
 }
 
-export class SignInExpiredError extends Error {
+export class SignInNotFinishedError extends Error {}
+
+export class SignInExpiredError extends SignInNotFinishedError {
   constructor() {
     super(`Sign-in was not completed within ${SIGN_IN_WAIT_SECONDS} seconds.`);
     this.name = 'SignInExpiredError';
   }
 }
 
-export class SignInGatewayStoppedError extends Error {
+export class SignInGatewayStoppedError extends SignInNotFinishedError {
   constructor(cause: unknown) {
-    super('The gateway stopped before the sign-in finished. Start the sign-in again.', { cause });
+    super('The gateway stopped before the sign-in finished.', { cause });
     this.name = 'SignInGatewayStoppedError';
   }
 }
 
-export class SignInAttemptNotFoundError extends Error {
+export class SignInAttemptNotFoundError extends SignInNotFinishedError {
   constructor(message: string) {
     super(message);
     this.name = 'SignInAttemptNotFoundError';
+  }
+}
+
+export class SignInRefusedError extends SignInNotFinishedError {
+  readonly code: string;
+
+  constructor(answer: { code: string; message: string }, cause: unknown) {
+    super(answer.message, { cause });
+    this.name = 'SignInRefusedError';
+    this.code = answer.code;
   }
 }
 
@@ -118,8 +130,9 @@ const completed = async (plan: PlanGatewayClient, request: PlanSignInCompleteReq
     return await plan.signInComplete(request);
   } catch (error) {
     if (!(error instanceof GatewayAnswerError)) throw new SignInGatewayStoppedError(error);
-    if (error.answer?.code === ATTEMPT_NOT_FOUND) throw new SignInAttemptNotFoundError(error.answer.message);
-    throw error;
+    if (error.answer === undefined) throw error;
+    if (error.answer.code === ATTEMPT_NOT_FOUND) throw new SignInAttemptNotFoundError(error.answer.message);
+    throw new SignInRefusedError(error.answer, error);
   }
 };
 

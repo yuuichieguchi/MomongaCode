@@ -1,5 +1,6 @@
 import { PLAN_REVOCATION_CONFIRMED, PLAN_REVOCATION_NONE, PLAN_REVOCATION_UNCONFIRMED, messageOf } from '@momonga/protocol';
 import type { PlanAccountRef, PlanSignInIdentity, PlanSignOutResponse, Surface } from '@momonga/protocol';
+import { couldNotOpenBrowser } from '../browser-text.ts';
 import { reconsentCommand, signInCommandOf } from '../policy-messages.ts';
 
 export const SENSITIVE_URL_LINE = 'Open this URL (it is sensitive: do not share it):';
@@ -30,6 +31,16 @@ export const identityNotConfirmedLine = (surface: Surface, plan: PlanAccountRef 
   messageOf('signInIdentityNotConfirmed', surface, { identity: identityText(identity), account: plan.account, command: signInCommandOf(surface, plan) });
 
 export const tryAgainLine = (surface: Surface, plan: PlanAccountRef): string => `Run ${signInCommandOf(surface, plan)} to try again.`;
+
+export const signInFailureLine = (surface: Surface, plan: PlanAccountRef, failure: { message: string }): string => `${failure.message} ${tryAgainLine(surface, plan)}`;
+
+export const browserNotOpenedLine = (message: string): string => `${couldNotOpenBrowser(message)} Open the URL above to continue.`;
+
+export const cancelledText = (what: string): string => `${what} cancelled`;
+
+export const cancelledLine = (what: string): string => `momonga: ${cancelledText(what)}`;
+
+export const SIGN_IN_WORD = 'sign-in';
 
 export const codeNotAcceptedLine = (surface: Surface, profile: { id: string; messages: { identityLabel: string } }, account: string): string =>
   `${profile.messages.identityLabel} did not accept the sign-in code (invalid_grant). ${tryAgainLine(surface, { profile: profile.id, account })}`;
