@@ -1,4 +1,4 @@
-import { PRICE_NOT_RECORDED, UNPRICED_CODES, UNPRICED_CODE_TEXT } from '@momonga/protocol';
+import { LEGACY_PRECISION_TEXT, PRICE_NOT_RECORDED, UNPRICED_CODES, UNPRICED_CODE_TEXT } from '@momonga/protocol';
 import type { PriceNotRecorded, UnpricedCode } from '@momonga/protocol';
 import { LOCAL_PRICE_VERSION, amountOfUnits } from './cost.ts';
 import type { PricedCall } from './cost.ts';
@@ -9,6 +9,7 @@ export type MoneyTally = {
   priceNotRecorded: number;
   amount: number | null;
   meteredPriceVersions: readonly string[];
+  legacyPrecisionCalls: number;
 };
 
 const codedCallsOf = (unpriced: Partial<Record<UnpricedCode, number>>): number => Object.values(unpriced).reduce((sum, count) => sum + count, 0);
@@ -18,7 +19,9 @@ const CODES_WITH_OWN_COUNTER: readonly UnpricedCode[] = ['plan', 'unknown_billin
 export const unpricedCallsOf = (unpriced: Partial<Record<UnpricedCode, number>>): number =>
   UNPRICED_CODES.filter((code) => !CODES_WITH_OWN_COUNTER.includes(code)).reduce((sum, code) => sum + (unpriced[code] ?? 0), 0);
 
-export type CallPrice = PricedCall | PriceNotRecorded;
+export type LegacyPrecisionPrice = Extract<PricedCall, { kind: 'priced' }> & { legacyPrecision: true };
+
+export type CallPrice = PricedCall | LegacyPrecisionPrice | PriceNotRecorded;
 
 const pricedOf = (tally: Pick<MoneyTally, 'calls' | 'unpriced' | 'priceNotRecorded'>): number => tally.calls - codedCallsOf(tally.unpriced) - tally.priceNotRecorded;
 
@@ -27,6 +30,7 @@ export const moneyTallyOf = (outcomes: readonly CallPrice[]): MoneyTally => {
   const versions = new Set<string>();
   let units = 0n;
   let priceNotRecorded = 0;
+  let legacyPrecisionCalls = 0;
   for (const outcome of outcomes) {
     if (outcome.kind === 'not_recorded') {
       priceNotRecorded += 1;
@@ -34,15 +38,16 @@ export const moneyTallyOf = (outcomes: readonly CallPrice[]): MoneyTally => {
       unpriced[outcome.code] = (unpriced[outcome.code] ?? 0) + 1;
     } else {
       units += outcome.units;
+      if ('legacyPrecision' in outcome) legacyPrecisionCalls += 1;
       if (outcome.priceVersion !== LOCAL_PRICE_VERSION) versions.add(outcome.priceVersion);
     }
   }
-  return { calls: outcomes.length, unpriced, priceNotRecorded, amount: amountOfUnits(units), meteredPriceVersions: [...versions].sort() };
+  return { calls: outcomes.length, unpriced, priceNotRecorded, amount: amountOfUnits(units), meteredPriceVersions: [...versions].sort(), legacyPrecisionCalls };
 };
 
 export const moneyAmountOf = (tally: MoneyTally): number | null => (tally.calls > 0 && pricedOf(tally) === 0 ? null : tally.amount);
 
-export const describeMoney = (tally: MoneyTally): string => {
+const describeMoneyOf = (tally: MoneyTally): string => {
   if (tally.calls === 0) return 'no calls';
   const priced = pricedOf(tally);
   if (priced > 0 && tally.amount === null) throw new RangeError(`a scope with ${priced} priced call(s) has no amount`);
@@ -60,3 +65,8 @@ export const describeMoney = (tally: MoneyTally): string => {
   return `${amount} at price version ${tally.meteredPriceVersions.join(',')}`;
 };
 
+
+export const describeMoney = (tally: MoneyTally): string => {
+  const line = describeMoneyOf(tally);
+  return tally.legacyPrecisionCalls === 0 ? line : `${line}; ${LEGACY_PRECISION_TEXT(tally.legacyPrecisionCalls)}`;
+};

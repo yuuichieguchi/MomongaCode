@@ -94,6 +94,7 @@ describe('worker cancel with a non-cancel error', () => {
         cancelPollMs: 10,
         tools: {
           executor: {
+            holdCall: (key, signal) => env.executor.holdCall(key, signal),
             runBatch: async ({ signal }) => {
               reached.resolve();
               await untilAborted(signal);

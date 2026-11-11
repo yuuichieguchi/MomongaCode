@@ -8,7 +8,7 @@ import type { Stored } from './stored-value.ts';
 import type { CompactionInputItem, InputItem, MessageInputItem } from './open-responses.ts';
 import type { ApprovalBasis, PermissionDenial } from './permission-denial.ts';
 import type { BudgetExhausted, CallFootprint, HeldCallView, HeldOutcome, RequestBudget, RunUsage } from './budget.ts';
-import type { CallTiming, ModelCost, TokenAnatomy, UnpricedOutcome } from './token-anatomy.ts';
+import type { CallTiming, RecordedModelCost, TokenAnatomy, UnpricedOutcome } from './token-anatomy.ts';
 
 export const RUN_STATUSES = [
   'QUEUED',
@@ -56,7 +56,7 @@ export type ApprovalKind = (typeof APPROVAL_KINDS)[number];
 
 export const unknownEffectOptions = (): PermissionOption[] => [{ optionId: 'allow_once', name: 'Continue', kind: 'allow_once' }];
 
-export const UNKNOWN_EFFECT_REASON = 'Its effect is unknown because the runtime stopped while it ran.';
+export const UNKNOWN_EFFECT_REASON = 'Its effect is unknown because the call was stopped before it reported a result.';
 
 export const UNKNOWN_EFFECT_ADVICE = 'Inspect the current state, then continue. To stop instead, cancel the run.';
 
@@ -159,7 +159,7 @@ export type ModelResponse = {
     input_tokens_details?: { cached_tokens: number };
     output_tokens_details?: { reasoning_tokens: number };
   };
-  momonga?: { cacheWriteInputTokens?: number; cacheReadNotReported?: true; cost?: ModelCost; unpriced?: UnpricedOutcome };
+  momonga?: { cacheWriteInputTokens?: number; cacheReadNotReported?: true; cost?: RecordedModelCost; unpriced?: UnpricedOutcome };
   timing?: CallTiming;
 };
 
@@ -364,7 +364,7 @@ export type RunEventPayload =
       responseId?: string;
       cachedInputTokens?: number;
       cacheWriteInputTokens?: number;
-      cost?: ModelCost;
+      cost?: RecordedModelCost;
       unpriced?: UnpricedOutcome;
       timing?: CallTiming;
       target?: string;
@@ -483,6 +483,7 @@ export type RunState = {
   usage: RunUsage;
   heldCalls?: Record<string, HeldCall>;
   quiescent?: true;
+  rejectedCalls?: string[];
   history: { seq: number; item: InputItem; callId?: string; handle?: string; omittedTokens?: number }[];
   nextItemSeq: number;
   summary?: { item: CompactionInputItem | MessageInputItem; summary: string; replacedThroughSeq: number };

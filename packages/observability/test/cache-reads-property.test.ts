@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildCostBreakdown, buildCostReport } from '@momonga/observability';
-import { harness, billedCallsOfRun } from './helpers.ts';
+import { buildCostBreakdown } from '@momonga/observability';
+import { harness, billedCallsOfRun, costReportOfSpans } from './helpers.ts';
 import { seededRandom } from './seeded-random.ts';
 import type { Random } from './seeded-random.ts';
 import { TABLE, asBreakdownCall, recordCalls } from './cache-read-fixtures.ts';
@@ -38,7 +38,7 @@ describe('cache-read figures over random mixes of reporting and billing', () => 
       const h = harness();
       await recordCalls(h, 'run-a', generated.map((call) => call.spec));
 
-      const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
+      const report = costReportOfSpans(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
       const breakdown = buildCostBreakdown(billedCallsOfRun(h.store, 'run-a', TABLE).map(asBreakdownCall), {});
 
       const n = generated.length;

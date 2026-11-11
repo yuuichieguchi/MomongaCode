@@ -48,7 +48,7 @@ export const modelCall = (shape: CallShape): RunEventPayload =>
         total_tokens: (shape.inputTokens ?? 1000) + 50,
         ...(shape.cached === undefined ? {} : { input_tokens_details: { cached_tokens: shape.cached } }),
       },
-      ...(shape.cost === undefined ? {} : { momonga: { cost: { amount: shape.cost, currency: 'USD', priceVersion: '2026-01-01' } } }),
+      ...(shape.cost === undefined ? {} : { momonga: { cost: { amount: shape.cost, units: null, currency: 'USD', priceVersion: '2026-01-01' } } }),
       timing: { firstEventMs: 10, durationMs: 100 },
     },
   }) as unknown as RunEventPayload;
@@ -72,7 +72,7 @@ export const reflectionCharge = (cost: number | undefined, cached: number | unde
   createdAt: 1,
   detail: {
     ...(cached === undefined ? {} : { cachedInputTokens: cached }),
-    ...(cost === undefined ? {} : { cost: { amount: cost, currency: 'USD' as const, priceVersion: '2026-01-01' } }),
+    ...(cost === undefined ? {} : { cost: { amount: cost, units: null, currency: 'USD' as const, priceVersion: '2026-01-01' } }),
     timing: { durationMs: 70 },
   },
 });

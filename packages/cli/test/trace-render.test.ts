@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { RunTraceSpan, RunTraceView, UsageReport } from '@momonga/protocol';
+import type { RunTraceSpan, RunTraceView } from '@momonga/protocol';
 import { renderTrace } from '../src/commands/trace.ts';
 import { terminalSink } from '../src/terminal-writer.ts';
 
@@ -20,7 +20,6 @@ const view = (spans: RunTraceSpan[]): RunTraceView => ({
   spans: [span({ spanId: 'root', name: 'invoke_agent momonga', parentSpanId: null, kind: 'INTERNAL', endMs: 30 }), ...spans],
 });
 
-const usage = { total: { input_tokens: 1, output_tokens: 1 }, responses: [] } as unknown as UsageReport;
 
 describe('renderTrace', () => {
   it('names the target of a chat call, the target that failed and why when a fallback target answered', () => {
@@ -46,7 +45,6 @@ describe('renderTrace', () => {
           },
         }),
       ]),
-      usage,
     );
 
     expect(text).toContain('chat m  10 ms  ERROR  target primary, attempt 1: server_error: primary is down');
@@ -57,7 +55,6 @@ describe('renderTrace', () => {
     const hostile = 'x\u001b]0;pwn\u0007\u009b2J‮y';
     const text = renderTrace(
       view([span({ spanId: 'a', name: `execute_tool ${hostile}`, status: 'ERROR', attributes: { 'momonga.target': 'primary', 'momonga.failure_message': hostile } })]),
-      usage,
     );
 
     const written: string[] = [];
@@ -67,7 +64,7 @@ describe('renderTrace', () => {
   });
 
   it('leaves a call answered by the first target without a fallback note', () => {
-    const text = renderTrace(view([span({ spanId: 'a', name: 'chat m', attributes: { 'momonga.target': 'primary', 'momonga.attempt': 1 } })]), usage);
+    const text = renderTrace(view([span({ spanId: 'a', name: 'chat m', attributes: { 'momonga.target': 'primary', 'momonga.attempt': 1 } })]));
 
     expect(text).toContain('chat m  10 ms  OK  target primary, attempt 1');
     expect(text).not.toContain('answered after');

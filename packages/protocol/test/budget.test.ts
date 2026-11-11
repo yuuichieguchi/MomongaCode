@@ -69,7 +69,7 @@ describe('the money meter counts in whole nano-USD, rounded up', () => {
 
   it('counts a cost from its exact price units when the record carries them, and from the decimal text of the amount otherwise', () => {
     expect(nanoOfCost({ amount: 17, units: '17000000000000001' })).toBe(17_000_000_001);
-    expect(nanoOfCost({ amount: 17 })).toBe(17_000_000_000);
+    expect(nanoOfCost({ amount: 17, units: null })).toBe(17_000_000_000);
     expect(() => nanoOfUnits('1.5')).toThrow(RangeError);
   });
 

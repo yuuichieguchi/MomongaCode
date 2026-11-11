@@ -41,7 +41,7 @@ const asked = async (callIds: readonly string[], end: 'running' | 'waiting' = 'w
 };
 
 describe('the fold of an unknown effect', () => {
-  it('records a call reconciled as unknown as unacknowledged, and nothing for a known outcome or an interrupted call', async () => {
+  it('records every call reconciled as unknown as unacknowledged, an interrupted one included, and nothing for a known outcome', async () => {
     const { store } = harness();
     const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'worker-1');
@@ -54,7 +54,7 @@ describe('the fold of an unknown effect', () => {
       { type: 'tool.started', callId: 'call_3', idemKey: 'idem-3' },
       { type: 'tool.reconciled', callId: 'call_3', outcome: 'unknown', output: 'timed out', interrupted: 'timeout' },
     ]);
-    expect(stateOf(store, run.id).unknownEffects).toEqual({ call_1: { acknowledged: false } });
+    expect(stateOf(store, run.id).unknownEffects).toEqual({ call_1: { acknowledged: false }, call_3: { acknowledged: false } });
   });
 
   it('starts empty', () => {
@@ -180,7 +180,7 @@ describe('the snapshot of a run with an unknown effect', () => {
     const state = stateOf(store, runId);
     expect(store.writeSnapshot(claim, state.lastSeq, state)).toEqual({ kind: 'ok' });
     expect(store.load(runId).snapshot?.state).toEqual(state);
-    expect(SNAPSHOT_STATE_VERSION).toBe(19);
+    expect(SNAPSHOT_STATE_VERSION).toBe(21);
     rawDb(dbPath).prepare("UPDATE snapshots SET state_json = json_remove(json_set(state_json, '$.stateVersion', 17), '$.unknownEffects') WHERE run_id = ?").run(runId);
     const loaded = store.load(runId);
     expect(loaded.snapshot).toBeUndefined();

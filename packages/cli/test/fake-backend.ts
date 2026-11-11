@@ -68,7 +68,7 @@ export type FakeBackend = TuiBackend & {
   readonly started: { text: string; history: 'inherit' | 'fresh'; options?: StartRunOptions }[];
   readonly elicitationAnswers: { inputId: string; responses: Readonly<Record<string, ElicitationAnswerRecord>> }[];
   readonly openedUrls: string[];
-  readonly openUrlCalls: { url: URL; watch: AbortSignal | undefined; onFailure(message: string): void }[];
+  readonly openUrlCalls: { url: URL; watch: AbortSignal; onFailure(message: string): void }[];
   readonly recorded: string[];
   emit(frame: RunEventFrame): void;
   following(): FollowHandlers;

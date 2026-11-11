@@ -24,7 +24,7 @@ const TEXT_TWO = [`Write /a.txt: ${UNKNOWN_EFFECT_REASON}`, `What the recovery f
 
 describe('the texts of an unknown effect', () => {
   it('say why the effect is unknown and what to do', () => {
-    expect(UNKNOWN_EFFECT_REASON).toBe('Its effect is unknown because the runtime stopped while it ran.');
+    expect(UNKNOWN_EFFECT_REASON).toBe('Its effect is unknown because the call was stopped before it reported a result.');
     expect(UNKNOWN_EFFECT_ADVICE).toBe('Inspect the current state, then continue. To stop instead, cancel the run.');
     expect(OPTIONS).toEqual([{ optionId: 'allow_once', name: 'Continue', kind: 'allow_once' }]);
   });

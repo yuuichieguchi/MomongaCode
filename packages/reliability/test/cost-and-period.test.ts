@@ -105,6 +105,7 @@ describe('Cost per Successful Task (X6)', () => {
     runId,
     calls,
     notPriced,
+    legacyPrecisionCalls: 0,
     priced: priced.map(([priceVersion, units]) => ({ currency: 'USD', priceVersion, units: units.toString() })),
   });
   const costs = [

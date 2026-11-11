@@ -178,3 +178,40 @@ describe('a tool call whose effect is unknown after a crash', () => {
     expect(pendingOf(env, runId)).toEqual([]);
   });
 });
+
+describe('a call interrupted while it ran, whose effect is unknown', () => {
+  it('asks a person like any unknown effect, and the ask shows what the interruption left', async () => {
+    const env = await makeEnv({ mode: 'acceptEdits' });
+    const run = await env.enqueue('Write the file');
+    const target = path.join(env.project, 'out.txt');
+    const stopped = 'Write timed out after 60000 ms. Its effect is unknown.';
+    await env.seed(
+      run.id,
+      [
+        requestedOffering(1, ['Write']),
+        {
+          type: 'model.responded',
+          step: 1,
+          attempt: 1,
+          response: { status: 'completed', output: [functionCallItem({ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } })], usage: { input_tokens: 50, output_tokens: 5, total_tokens: 55 } },
+        },
+        { type: 'tool.call', callId: 'call_w_1', providerCallId: 'call_w_1', name: 'Write', kind: 'edit', title: `Write ${target}`, rawInput: { file_path: target, content: 'x' } },
+        { type: 'tool.started', callId: 'call_w_1', idemKey: toolKey(run.id, 1, 'call_w_1') },
+        { type: 'tool.reconciled', callId: 'call_w_1', outcome: 'unknown', output: stopped, interrupted: 'timeout' },
+      ],
+      'crash',
+    );
+    env.gateway.script.push(textStep('Checked.'));
+
+    await env.runOnce(env.worker());
+
+    expect(env.run(run.id).status).toBe('WAITING_HUMAN');
+    expect(env.ofType(run.id, 'tool.unknown.requested')).toEqual([expect.objectContaining({ callIds: ['call_w_1'] })]);
+    const [approval] = pendingOf(env, run.id);
+    expect(approval).toMatchObject({ kind: 'unknown_effect', callId: 'call_w_1' });
+    const view = await env.store.approvalView(approval?.id ?? '');
+    expect(view?.reason).toContain(`What the recovery found: ${stopped}`);
+    expect(requestsAfterUnknown(env, run.id)).toEqual([]);
+  });
+});
+

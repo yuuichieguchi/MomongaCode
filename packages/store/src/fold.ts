@@ -8,7 +8,9 @@ import {
   findDanglingOutput,
   heldEndOf,
   initialVerificationState,
+  isLegacyPrecisionCost,
   nanoOfCost,
+  recordedCostOf,
   reconciliationMutates,
   withCommand,
   withItemEvents,
@@ -19,7 +21,7 @@ import {
   withVerificationStarted,
   withWritten,
 } from '@momonga/protocol';
-import type { HeldCall, InputItem, ReconciledOutcome, RunEvent, RunEventPayload, RunState, StopReason, ToolFile, WorkingFacts } from '@momonga/protocol';
+import type { HeldCall, InputItem, ReconciledOutcome, RunEvent, RunEventPayload, RunState, StopReason, StoredModelCost, ToolFile, WorkingFacts } from '@momonga/protocol';
 import { applyInheritance, applyReferenceInheritance, isReferenceInherited } from './inherit.ts';
 import { itemsOfEvent } from './history-items.ts';
 import type { ItemFacts, ProducedItem } from './history-items.ts';
@@ -70,8 +72,11 @@ export const spendOf = (event: RunEventPayload): RunState['usage'] | undefined =
   return undefined;
 };
 
-const moneyOf = (billed: { cost?: { amount: number; units?: string }; unpriced?: unknown } | undefined): { costNano?: number; unpricedCalls?: number } => {
-  if (billed?.cost !== undefined) return { costNano: nanoOfCost(billed.cost) };
+const moneyOf = (billed: { cost?: StoredModelCost; unpriced?: unknown } | undefined): { costNano?: number; unpricedCalls?: number; legacyPrecisionCalls?: number } => {
+  if (billed?.cost !== undefined) {
+    const cost = recordedCostOf(billed.cost);
+    return { costNano: nanoOfCost(cost), ...(isLegacyPrecisionCost(cost) ? { legacyPrecisionCalls: 1 } : {}) };
+  }
   return billed?.unpriced === undefined ? {} : { unpricedCalls: 1 };
 };
 
@@ -90,10 +95,15 @@ export const addUsage = (total: RunState['usage'], spend: RunState['usage']): Ru
   ...moneySum(total, spend),
 });
 
-const moneySum = (total: RunState['usage'], spend: RunState['usage']): { costNano?: number; unpricedCalls?: number } => {
+const moneySum = (total: RunState['usage'], spend: RunState['usage']): { costNano?: number; unpricedCalls?: number; legacyPrecisionCalls?: number } => {
   const costNano = sumOf(total.costNano, spend.costNano);
   const unpricedCalls = sumOf(total.unpricedCalls, spend.unpricedCalls);
-  return { ...(costNano === undefined ? {} : { costNano }), ...(unpricedCalls === undefined ? {} : { unpricedCalls }) };
+  const legacyPrecisionCalls = sumOf(total.legacyPrecisionCalls, spend.legacyPrecisionCalls);
+  return {
+    ...(costNano === undefined ? {} : { costNano }),
+    ...(unpricedCalls === undefined ? {} : { unpricedCalls }),
+    ...(legacyPrecisionCalls === undefined ? {} : { legacyPrecisionCalls }),
+  };
 };
 
 const toStopReason = (reason: string, state: RunState): StopReason => {
@@ -226,12 +236,11 @@ const withReconciledFacts = (facts: WorkingFacts, event: Extract<RunEvent, { typ
 const reconcileCall = (state: RunState, event: Extract<RunEvent, { type: 'tool.reconciled' }>): RunState => {
   const call = requireCall(state, event.callId, event.type);
   const finished = finishCall(state, event, 'reconciled');
-  const asks = event.outcome === 'unknown' && event.interrupted === undefined;
   return {
     ...finished,
     workingFacts: withReconciledFacts(finished.workingFacts, event),
     lastMutationSeq: reconciliationMutates(mutationFactsOf(call), event.outcome) ? event.seq : finished.lastMutationSeq,
-    ...(asks ? { unknownEffects: { ...finished.unknownEffects, [event.callId]: { acknowledged: false } } } : {}),
+    ...(event.outcome === 'unknown' ? { unknownEffects: { ...finished.unknownEffects, [event.callId]: { acknowledged: false } } } : {}),
   };
 };
 
@@ -250,6 +259,14 @@ const completeCall = (state: RunState, event: Extract<RunEvent, { type: 'tool.co
     workingFacts: withToolFacts(finished.workingFacts, call, event),
     lastMutationSeq: completionMutates(mutationFactsOf(call), event) ? event.seq : finished.lastMutationSeq,
   };
+};
+
+export const rejectionKeyOf = (name: string, args: unknown): string => sha256Hex(`${name}\n${canonicalJson(args)}`);
+
+const withRejectedCall = (state: RunState, kind: string, rejectionKey: string): RunState => {
+  if (kind !== 'reject_once' && kind !== 'reject_always') return state;
+  const known = state.rejectedCalls ?? [];
+  return known.includes(rejectionKey) ? state : { ...state, rejectedCalls: [...known, rejectionKey] };
 };
 
 const withoutHold = (state: RunState, event: RunEvent): RunState => {
@@ -484,11 +501,13 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
         if (option === undefined || held.subjectDigest === undefined) {
           throw new Error(`run ${state.runId}: ${event.type} for the held approval ${event.approvalId} names unknown option ${event.optionId}`);
         }
-        return { ...state, heldCalls: { ...state.heldCalls, [callId]: { ...held, resolution: { optionId: option.optionId, kind: option.kind, subjectDigest: held.subjectDigest } } } };
+        return withRejectedCall({ ...state, heldCalls: { ...state.heldCalls, [callId]: { ...held, resolution: { optionId: option.optionId, kind: option.kind, subjectDigest: held.subjectDigest } } } }, option.kind, rejectionKeyOf(held.name, held.arguments));
       }
       const entry = Object.entries(state.pendingCalls).find(([, call]) => call.approvalId === event.approvalId);
       if (entry === undefined) throw new Error(`run ${state.runId}: ${event.type} refers to unknown approval ${event.approvalId}`);
-      return withCall(state, entry[0], event.type, (call) => {
+      const [, asked] = entry;
+      const chosen = asked.options?.find((candidate) => candidate.optionId === event.optionId);
+      const resolved = withCall(state, entry[0], event.type, (call) => {
         const option = call.options?.find((candidate) => candidate.optionId === event.optionId);
         if (option === undefined || call.subjectDigest === undefined) {
           throw new Error(`run ${state.runId}: ${event.type} for approval ${event.approvalId} names unknown option ${event.optionId}`);
@@ -505,6 +524,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
           },
         };
       });
+      return chosen === undefined ? resolved : withRejectedCall(resolved, chosen.kind, rejectionKeyOf(asked.name, asked.arguments));
     }
     case 'tool.permission.cancelled': {
       const heldEntry = heldByApproval(state, event.approvalId);

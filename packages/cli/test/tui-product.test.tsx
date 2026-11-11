@@ -118,6 +118,25 @@ describe('elicitation in the TUI', () => {
     app.unmount();
   });
 
+  it('the URL elicitation hears of a failed launch until the next key press, and not after it', async () => {
+    const { backend, app } = await start();
+    await untilFrame(app, 'mode: manual');
+    await runStarted(backend, app, 'ask');
+    backend.emit(toolCall('c1'));
+    backend.emit(requestInput('in2', 'c1', [URL_REQUEST]));
+    await untilFrame(app, 'Sign in to continue');
+    app.stdin.write('1');
+    await quiet();
+    app.stdin.write(KEYS.enter);
+    await backend.called('elicit:in2');
+    const watch = backend.openUrlCalls[0]?.watch;
+    expect(watch?.aborted).toBe(false);
+    app.stdin.write('x');
+    await quiet();
+    expect(watch?.aborted).toBe(true);
+    app.unmount();
+  });
+
   it('clears the prompt when the runtime reports the elicitation resolved', async () => {
     const { backend, app } = await start();
     await untilFrame(app, 'mode: manual');

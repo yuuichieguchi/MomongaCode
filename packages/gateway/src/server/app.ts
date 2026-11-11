@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { MAX_TRACE_CONTENT_PAGE, QUOTE_ROUTE, ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
 import { MAX_BILLED_CALLS_PAGE } from '@momonga/observability';
-import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView, GatewayHealth, ModelList, MomongaModelList, TraceContentPage } from '@momonga/protocol';
+import type { BilledCallsCursorView, BilledCallsPageView, GatewayHealth, ModelList, MomongaModelList, TraceContentPage } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, gatewayClosedError, invalidRequest, notFound } from '../core/errors.ts';
 import type { ResponsesService, SubmitHeaders } from '../core/responses-service.ts';
 import { withinPlanOperation } from '../plan/api.ts';
@@ -30,7 +30,6 @@ export type AppDependencies = {
   startedAt: string;
   pid: number;
   version: string;
-  costReport: ((runs: readonly { runId: string; sessionId: string }[], includeRunless: boolean, signal: AbortSignal) => Promise<{ report: GatewayCostReportView; text: string }>) | undefined;
   billedCalls: ((runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean, signal: AbortSignal) => Promise<BilledCallsPageView>) | undefined;
   traceContent: ((runId: string, after: number, limit: number, signal: AbortSignal) => Promise<TraceContentPage>) | undefined;
   errors: ErrorExit;
@@ -185,29 +184,8 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     }),
   );
 
-  app.get('/v1/momonga/usage', (context) => {
-    const runId = context.req.query('run_id');
-    if (runId === undefined || runId === '') {
-      throw invalidRequest('invalid_query', 'the run_id query parameter is required', 'run_id');
-    }
-    return context.json(services.store.usageReport(runId));
-  });
-
-  app.post('/v1/momonga/cost', async (context) => {
-    if (dependencies.costReport === undefined) throw notFound('cost_unavailable', 'this gateway keeps no trace store to price runs from');
-    const { runs, includeRunless } = await jsonObjectBody(context);
-    if (
-      !Array.isArray(runs) ||
-      !runs.every((run): run is { runId: string; sessionId: string } => isRecord(run) && typeof run['runId'] === 'string' && typeof run['sessionId'] === 'string')
-    ) {
-      throw invalidRequest('invalid_body', 'runs must be a list of { runId, sessionId }', 'runs');
-    }
-    if (typeof includeRunless !== 'boolean') throw invalidRequest('invalid_body', 'includeRunless must be a boolean', 'includeRunless');
-    return context.json(await dependencies.costReport(runs, includeRunless, readSignalOf(context)));
-  });
-
   app.post('/v1/momonga/cost/calls', async (context) => {
-    if (dependencies.billedCalls === undefined) throw notFound('cost_unavailable', 'this gateway keeps no trace store to price runs from');
+    if (dependencies.billedCalls === undefined) throw notFound('cost_unavailable', 'this gateway keeps no trace store to list the model calls of runs from');
     const { runIds, cursor, limit, includeRunless } = await jsonObjectBody(context);
     if (typeof includeRunless !== 'boolean') throw invalidRequest('invalid_body', 'includeRunless must be a boolean', 'includeRunless');
     if (!Array.isArray(runIds) || !runIds.every((runId): runId is string => typeof runId === 'string') || new Set(runIds).size !== runIds.length) {

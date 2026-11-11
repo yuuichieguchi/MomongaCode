@@ -1,9 +1,9 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { describe, expect, it } from 'vitest';
-import { buildCostBreakdown, buildCostReport, summarizeRun } from '@momonga/observability';
+import { buildCostBreakdown, summarizeRun } from '@momonga/observability';
 import { RUN_API_SCHEMAS } from '@momonga/protocol';
-import { harness, billedCallsOfRun } from '../packages/observability/test/helpers.ts';
+import { harness, billedCallsOfRun, costReportOfSpans } from '../packages/observability/test/helpers.ts';
 import { TABLE, asBreakdownCall, recordCalls } from '../packages/observability/test/cache-read-fixtures.ts';
 import type { CallSpec } from '../packages/observability/test/cache-read-fixtures.ts';
 
@@ -25,7 +25,7 @@ const MIXES: Record<string, readonly CallSpec[]> = {
 const surfacesOf = async (specs: readonly CallSpec[]) => {
   const h = harness();
   await recordCalls(h, 'run-a', specs);
-  const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
+  const report = costReportOfSpans(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
   const breakdown = buildCostBreakdown(billedCallsOfRun(h.store, 'run-a', TABLE).map(asBreakdownCall), {});
   const summary = summarizeRun(h.store, 'run-a');
   return { report, breakdown, summary };
@@ -65,7 +65,7 @@ describe('the closed wire schemas', () => {
     unknownBillingCalls: 0,
     cacheReadNotReportedCalls: 1,
     cacheReadUnpricedCalls: 1,
-    priceNotRecordedCalls: 0,
+    priceNotRecordedCalls: 0, legacyPrecisionCalls: 0,
     planCalls: 0,
     planInputTokens: 0,
     planOutputTokens: 0,

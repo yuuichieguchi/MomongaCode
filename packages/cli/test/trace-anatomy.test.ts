@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { RunTraceView, TokenAnatomy, UsageReport } from '@momonga/protocol';
+import type { RunTraceView, TokenAnatomy } from '@momonga/protocol';
 import { renderTrace } from '../src/commands/trace.ts';
 
 const ANATOMY: TokenAnatomy = {
@@ -20,7 +20,6 @@ const ANATOMY: TokenAnatomy = {
   tools: { Read: 40, Write: 60 },
 };
 
-const usage = { total: { input_tokens: 1, output_tokens: 1 }, responses: [] } as unknown as UsageReport;
 
 const viewWith = (calls: unknown[]): RunTraceView =>
   ({
@@ -32,7 +31,7 @@ const viewWith = (calls: unknown[]): RunTraceView =>
 
 describe('renderTrace shows what each model call was made of', () => {
   it('prints the layers of every call, marked as estimates, with the tools by name', () => {
-    const text = renderTrace(viewWith([{ step: 1, attempt: 1, anatomy: ANATOMY }]), usage);
+    const text = renderTrace(viewWith([{ step: 1, attempt: 1, anatomy: ANATOMY }]));
 
     const line = text.split('\n').find((entry) => entry.includes('step 1, attempt 1'));
     expect(line).toBeDefined();
@@ -50,7 +49,7 @@ describe('renderTrace shows what each model call was made of', () => {
   });
 
   it('says the layers were not recorded for a call from before the anatomy existed', () => {
-    const text = renderTrace(viewWith([{ step: 1, attempt: 1, anatomy: ANATOMY }, { step: 2, attempt: 1 }]), usage);
+    const text = renderTrace(viewWith([{ step: 1, attempt: 1, anatomy: ANATOMY }, { step: 2, attempt: 1 }]));
 
     expect(text).toContain('step 2, attempt 1: layers not recorded');
     expect(text.indexOf('step 1, attempt 1')).toBeLessThan(text.indexOf('step 2, attempt 1'));
