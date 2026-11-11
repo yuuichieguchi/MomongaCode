@@ -49,6 +49,6 @@ describe('the retry of a model call travels with its charged usage in the journa
     });
     expect(report.runs[0]?.retries).toBe(1);
     expect(report.total.retries).toBe(1);
-    expect(text).toMatch(new RegExp(`run ${runId}: 2 call\\\\(s\\\\), .*, 1 of them a retry`));
+    expect(text.split('\n').find((line) => line.trim().startsWith(`run ${runId}:`))).toMatch(/^ {4}run \S+: 2 call\(s\), .*, 1 of them a retry$/);
   });
 });

@@ -60,6 +60,7 @@ describe('runCostsOf (X6: the priced units of the billed calls of each run)', ()
       {
         runId: 'run-a',
         calls: 5,
+        retries: 0,
         notPriced: 2,
         legacyPrecisionCalls: 0,
         priced: [

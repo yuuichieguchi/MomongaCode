@@ -65,13 +65,13 @@ describe('transcript codec', () => {
   });
 
   it.each(['policy', 'codeDigest'])('refuses a version 9 header without %s', (field) => {
-    const header: Record<string, unknown> = { format: 'momonga-transcript/9', caseId: 'c1', runIndex: 0, run: finalAnswerTranscript('c1', 0).run, children: [], costs: [], policy: RESOLVED_ON_POLICY, codeDigest: 'c'.repeat(64) };
+    const header: Record<string, unknown> = { format: 'momonga-transcript/10', caseId: 'c1', runIndex: 0, run: finalAnswerTranscript('c1', 0).run, children: [], costs: [], policy: RESOLVED_ON_POLICY, codeDigest: 'c'.repeat(64) };
     delete header[field];
     expect(() => decodeTranscript(`${JSON.stringify(header)}\n{"end":true,"events":0,"childEvents":0}\n`, 'new.jsonl')).toThrow(new RegExp(`new\\.jsonl:1: ${field}`));
   });
 
   it('refuses a version 9 header without a children list instead of reading it as no subagents', () => {
-    const header = { format: 'momonga-transcript/9', caseId: 'c1', runIndex: 0, run: finalAnswerTranscript('c1', 0).run, costs: [], policy: RESOLVED_ON_POLICY, codeDigest: 'c'.repeat(64) };
+    const header = { format: 'momonga-transcript/10', caseId: 'c1', runIndex: 0, run: finalAnswerTranscript('c1', 0).run, costs: [], policy: RESOLVED_ON_POLICY, codeDigest: 'c'.repeat(64) };
     expect(() => decodeTranscript(`${JSON.stringify(header)}\n`, 'new.jsonl')).toThrow(/new\.jsonl:1: children must be a list/);
   });
 });

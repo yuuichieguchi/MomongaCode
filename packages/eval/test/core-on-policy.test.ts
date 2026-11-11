@@ -168,7 +168,7 @@ describe('the report records the resolved policy (design core-on 3.2, test 8)', 
 
 describe('the transcript format (design core-on 3.2)', () => {
   it('is format 9 and refuses a format 7 transcript as retired', () => {
-    expect(TRANSCRIPT_FORMAT).toBe('momonga-transcript/9');
+    expect(TRANSCRIPT_FORMAT).toBe('momonga-transcript/10');
     const transcript = { ...recorded('a-on', 0, []), policy: RESOLVED_ON as unknown as PolicyOverlay, codeDigest: RECORDED_CODE_DIGEST };
     const lines = encodeTranscript(transcript).split('\n');
     const header = JSON.parse(lines[0] ?? '{}') as Record<string, unknown>;

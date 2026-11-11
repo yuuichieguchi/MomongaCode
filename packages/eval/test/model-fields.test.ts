@@ -130,10 +130,10 @@ describe('eval records name a model by its full reference (design-model-names 3.
 
   it('the formats are context report /7, transcript /9 and guideline outcome /3', async () => {
     expect(CONTEXT_REPORT_FORMAT).toBe('momonga-eval-context-report/7');
-    expect(TRANSCRIPT_FORMAT).toBe('momonga-transcript/9');
+    expect(TRANSCRIPT_FORMAT).toBe('momonga-transcript/10');
     expect(GUIDELINE_OUTCOME_FORMAT).toBe('momonga-guideline-outcome/3');
     expect(reportOf([], () => LOCAL).format).toBe('momonga-eval-context-report/7');
-    expect(JSON.parse(encodeTranscript(recorded('a-on', 0, [], { model: LOCAL })).split('\n')[0] ?? '')).toMatchObject({ format: 'momonga-transcript/9', run: { model: LOCAL } });
+    expect(JSON.parse(encodeTranscript(recorded('a-on', 0, [], { model: LOCAL })).split('\n')[0] ?? '')).toMatchObject({ format: 'momonga-transcript/10', run: { model: LOCAL } });
     expect(outcomeFileOf(await improved(), { name: 'fields', digest: 'e'.repeat(64) }).format).toBe('momonga-guideline-outcome/3');
   });
 
@@ -143,7 +143,7 @@ describe('eval records name a model by its full reference (design-model-names 3.
     const text = `${JSON.stringify(header)}\n${JSON.stringify({ end: true, events: 0, childEvents: 0 })}\n`;
     expect(() => decodeTranscript(text, 'old.jsonl')).toThrow(TranscriptError);
     expect(() => decodeTranscript(text, 'old.jsonl')).toThrow(
-      'old.jsonl:1: momonga-transcript/7 transcripts do not record the model each session used (it was recorded as an alias name), so they cannot be graded as momonga-transcript/9; record the case again',
+      'old.jsonl:1: momonga-transcript/7 transcripts do not record the model each session used (it was recorded as an alias name), so they cannot be graded as momonga-transcript/10; record the case again',
     );
 
     const { models, ...rest } = reportOf([], () => LOCAL);

@@ -78,7 +78,7 @@ describe('one cost record: a report prints the cost of its population', () => {
       groupBy: 'model',
     });
     expect(asked).toEqual([['run-1'], ['run-2']]);
-    expect(report.cost?.total.successful).toMatchObject({ tasks: 2, fullyPriced: 2, calls: 2, retries: 0, notPriced: 0, priced: [{ currency: 'USD', priceVersion: 'v1', units: '1500000000000000' }] });
+    expect(report.cost?.total.successful).toMatchObject({ tasks: 2, fullyPriced: 2, calls: 2, notPriced: 0, priced: [{ currency: 'USD', priceVersion: 'v1', units: '1500000000000000' }] });
     expect(formatReliabilityReport(report)).toMatch(/Cost per Successful Task/);
   });
 

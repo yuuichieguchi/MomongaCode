@@ -179,6 +179,7 @@ export const REPORT_SCHEMAS = {
       items: closedRequiringAll({
         runId: nonEmptyString,
         calls: nonNegativeInteger,
+        retries: nonNegativeInteger,
         notPriced: nonNegativeInteger,
         legacyPrecisionCalls: nonNegativeInteger,
         priced: { type: 'array', items: closedRequiringAll({ currency: { const: COST_CURRENCY }, priceVersion: nonEmptyString, units: { type: 'string', pattern: '^[0-9]+$' } }) },

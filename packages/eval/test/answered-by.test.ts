@@ -45,8 +45,8 @@ const realModelCheck = (baseline: ContextReport, candidate: ContextReport) =>
   compareContextReports(baseline, candidate, { seed: 1 }).gate.checks.find((check) => check.name === 'real_model');
 
 describe('the transcript records what answered', () => {
-  it('is format momonga-transcript/9', () => {
-    expect(TRANSCRIPT_FORMAT).toBe('momonga-transcript/9');
+  it('is format momonga-transcript/10', () => {
+    expect(TRANSCRIPT_FORMAT).toBe('momonga-transcript/10');
   });
 
   it('an unknown answerer without adapter and upstreamModel is written and parsed back without those fields', () => {
