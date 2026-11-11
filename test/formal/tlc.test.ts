@@ -2,7 +2,8 @@ import { spawn, spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { TEST_SETUP_COMMAND, requireTlaJar } from '../../scripts/fetch-tla.ts';
 import { createTempRoot, removeTempRoot } from '../../scripts/support/temp.ts';
 import { MANIFEST_FORMAT, TLC_WORKERS, discoveryProblems, readManifest, runTlc, verdictProblems } from './manifest.ts';
 import type { Manifest, ManifestEntry, TlcRun } from './manifest.ts';
@@ -113,6 +114,28 @@ const pathWithChattyJava = (root: string): string => {
   fs.chmodSync(path.join(bin, 'java'), 0o755);
   return `${bin}:/usr/bin:/bin`;
 };
+
+beforeAll(() => {
+  requireTlaJar(repoRoot);
+});
+
+describe('the tools the formal suite needs', () => {
+  let root = '';
+
+  beforeEach(() => {
+    root = createTempRoot();
+  });
+
+  afterEach(async () => {
+    await removeTempRoot(root);
+  });
+
+  it('fails with the setup command, never a skip, in a checkout whose .cache/tla is absent', () => {
+    expect(fs.existsSync(path.join(root, '.cache', 'tla'))).toBe(false);
+    expect(() => requireTlaJar(root)).toThrow(`run ${TEST_SETUP_COMMAND}`);
+    expect(TEST_SETUP_COMMAND).toBe('npm run test:setup');
+  });
+});
 
 describe('the manifest of specs/tla', () => {
   it('is readable and declares its format', () => {
