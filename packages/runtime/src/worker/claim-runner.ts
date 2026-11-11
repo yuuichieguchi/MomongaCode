@@ -272,7 +272,7 @@ const requeueOrStop = async (
     return;
   }
   const now = options.clock.now();
-  const backoff = computeBackoff({ attempt: memory.streak, baseMs: REQUEUE_BASE_MS, maxMs: REQUEUE_MAX_MS, random: options.random });
+  const backoff = computeBackoff({ attempt: memory.streak, baseMs: REQUEUE_BASE_MS, maxMs: REQUEUE_MAX_MS, random: { float: options.random } });
   const availableAt = now + (disposition.kind === 'defer' ? disposition.retryAfterMs : Math.max(backoff, disposition.retryAfterMs));
   const deadlineAt = options.store.getRun(claim.runId)?.deadlineAt;
   if (deadlineAt !== undefined && availableAt >= deadlineAt) {

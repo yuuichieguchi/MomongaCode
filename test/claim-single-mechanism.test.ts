@@ -2,24 +2,26 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { withFileLock } from '@momonga/foundation';
-import type { ReapTiming } from '@momonga/foundation';
-import { createFakeKernelLock } from '@momonga/testkit';
+import type { Timing } from '@momonga/foundation';
+import { createFakeKernelLock, sleepDrivenTiming, createFakeRandom } from '@momonga/testkit';
 import { createCallLocks } from '../packages/tools/src/call-lock.ts';
 
 const sourceOf = (relative: string): string => fs.readFileSync(path.resolve(import.meta.dirname, '..', relative), 'utf8');
 
 const ADAPTERS = ['packages/foundation/src/file-lock.ts', 'packages/tools/src/call-lock.ts'];
 
-const recordingTiming = (): ReapTiming & { sleeps: number[] } => {
+const recordingTiming = (): Timing & { sleeps: number[] } => {
   let current = 0;
   const sleeps: number[] = [];
   return {
     sleeps,
-    now: () => current,
-    sleep: async (ms) => {
-      current += ms;
-      sleeps.push(ms);
-    },
+    ...sleepDrivenTiming({
+      now: () => current,
+      sleep: async (ms) => {
+        current += ms;
+        sleeps.push(ms);
+      },
+    }),
   };
 };
 
@@ -40,7 +42,7 @@ describe('the one claim loop', () => {
     const callTiming = recordingTiming();
 
     await withFileLock(lockPath, async () => undefined, {
-      ports: { clock: { now: () => fileTiming.now() }, sleep: (ms) => fileTiming.sleep(ms), randomHex: () => 'deadbeef' },
+      ports: { timing: fileTiming, random: createFakeRandom(1) },
       mechanism: fake,
       timeoutMs: 100,
     }).catch(() => undefined);

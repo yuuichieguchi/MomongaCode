@@ -25,7 +25,7 @@ import {
   STDIO_EXIT_FLUSH_MS,
   CHILD_STDIO_FLUSH_MS,
   ABORT_SETTLE_LIMIT_MS,
-  GROUP_POLL_INTERVAL_MS,
+  POLL_INTERVAL_MS,
   KILL_CONFIRM_MS,
   SANDBOX_KILL_GRACE_MS,
   SHUTDOWN_DRAIN_BOUND_MS,
@@ -247,18 +247,18 @@ describe('formatLogLine', () => {
 
 describe('close budgets', () => {
   it('pins the runtime budgets and the default drain', () => {
-    expect([RUNTIME_ABORT_BUDGET_MS, RUNTIME_TEARDOWN_BUDGET_MS, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS]).toEqual([8020, 10_000, 30_000]);
+    expect([RUNTIME_ABORT_BUDGET_MS, RUNTIME_TEARDOWN_BUDGET_MS, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS]).toEqual([8050, 10_000, 30_000]);
   });
 
   it('RUNTIME_ABORT_BUDGET_MS is derived: the held-call settle plus the sandbox group stop at its worst, its grace, K and two group polls (design 2.3)', () => {
-    expect([ABORT_SETTLE_LIMIT_MS, SANDBOX_KILL_GRACE_MS, GROUP_POLL_INTERVAL_MS]).toEqual([2000, 1000, 10]);
-    expect(RUNTIME_ABORT_BUDGET_MS).toBe(ABORT_SETTLE_LIMIT_MS + SANDBOX_KILL_GRACE_MS + KILL_CONFIRM_MS + 2 * GROUP_POLL_INTERVAL_MS);
+    expect([ABORT_SETTLE_LIMIT_MS, SANDBOX_KILL_GRACE_MS, POLL_INTERVAL_MS]).toEqual([2000, 1000, 25]);
+    expect(RUNTIME_ABORT_BUDGET_MS).toBe(ABORT_SETTLE_LIMIT_MS + SANDBOX_KILL_GRACE_MS + KILL_CONFIRM_MS + 2 * POLL_INTERVAL_MS);
   });
 
-  it('runtimeMaxCloseMs equals drain + 8020 + 10000 + 6 x MCP grace + 75 + 2K', () => {
-    expect(runtimeMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 0, mcpCloseGraceMs: 0 })).toBe(28_095);
-    expect(runtimeMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(64_095);
-    expect(runtimeMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 1, mcpCloseGraceMs: 0 })).toBe(28_096);
+  it('runtimeMaxCloseMs equals drain + 8050 + 10000 + 6 x MCP grace + 75 + 2K', () => {
+    expect(runtimeMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 0, mcpCloseGraceMs: 0 })).toBe(28_125);
+    expect(runtimeMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(64_125);
+    expect(runtimeMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 1, mcpCloseGraceMs: 0 })).toBe(28_126);
   });
 
   it('pins the gateway close at the default stop values, the margins and the stdio flushes', () => {
@@ -288,8 +288,8 @@ describe('close budgets', () => {
   });
 
   it('supervisorMaxCloseMs counts every wait of the orderly shutdown once', () => {
-    expect(supervisorMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(143_245);
-    expect(supervisorMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 0, mcpCloseGraceMs: 0 })).toBe(107_245);
+    expect(supervisorMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(143_275);
+    expect(supervisorMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 0, mcpCloseGraceMs: 0 })).toBe(107_275);
     for (const drain of [1, 1000, 12_345]) {
       const values = { ...DEFAULT_STOP_VALUES, drainTimeoutMs: drain };
       const steps = [

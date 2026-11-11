@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ConfigError, appendPermissionRule, systemFileLockPorts, loadMcpServers, loadSettings } from '@momonga/config';
 import type { FileLockPorts } from '@momonga/config';
 import { hostKernelLock } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, testPaths } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, testPaths, sleepDrivenTiming, createFakeRandom } from '@momonga/testkit';
 import { settingsLockPath } from '../src/file-lock.ts';
 import { connectionOf, distrusting, localSettingsDir, localSettingsPath, makeDir, makeTree, mcpJsonPath, projectSettingsPath, repoLocalSettingsPath, trusting, userSettingsPath, writeJson, writeText } from './helpers.ts';
 
@@ -113,11 +113,13 @@ const steppedFileLockPorts = (): FileLockPorts => {
   let now = 1_000_000;
   let sequence = 0;
   return {
-    clock: { now: () => now },
-    sleep: async (ms) => {
-      now += ms;
-    },
-    randomHex: () => `fake${(sequence += 1).toString(16).padStart(8, '0')}`,
+    timing: sleepDrivenTiming({
+      now: () => now,
+      sleep: async (ms) => {
+        now += ms;
+      },
+    }),
+    random: { ...createFakeRandom(1), hex: () => `fake${(sequence += 1).toString(16).padStart(8, '0')}` },
   };
 };
 

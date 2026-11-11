@@ -24,12 +24,12 @@ const thrownBy = (action: () => unknown): unknown => {
 
 type Fault = { error?: Error };
 
-const faultStat = (target: string, fault: Fault): void => {
-  const real = fs.statSync;
-  vi.spyOn(fs, 'statSync').mockImplementation(((file: fs.PathLike, options?: unknown) => {
+const faultLstat = (target: string, fault: Fault): void => {
+  const real = fs.lstatSync;
+  vi.spyOn(fs, 'lstatSync').mockImplementation(((file: fs.PathLike, options?: unknown) => {
     if (String(file) === target && fault.error !== undefined) throw fault.error;
     return real(file, options as never);
-  }) as typeof fs.statSync);
+  }) as typeof fs.lstatSync);
 };
 
 const faultRead = (target: string, fault: Fault): void => {
@@ -45,7 +45,7 @@ afterEach(() => {
 });
 
 describe('UserSettingsCache with a transient errno after a good load', () => {
-  for (const site of ['stat', 'read'] as const) {
+  for (const site of ['lstat', 'read'] as const) {
     it(`get() keeps the last good settings and snapshot() throws the same EMFILE when the ${site} fails`, () => {
       const tree = makeTree();
       const file = userSettingsPath(tree);
@@ -55,7 +55,7 @@ describe('UserSettingsCache with a transient errno after a good load', () => {
 
       writeAt(file, { env: { TZ: 'newer' } }, T1);
       const fault: Fault = { error: errnoError('EMFILE') };
-      if (site === 'stat') faultStat(file, fault);
+      if (site === 'lstat') faultLstat(file, fault);
       else faultRead(file, fault);
 
       expect(thrownBy(() => cache.get())).toBeUndefined();

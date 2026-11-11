@@ -116,8 +116,6 @@ const tryExpand = (expand: () => McpServerConfig): { config: McpServerConfig } |
   }
 };
 
-const SENSITIVE_VARIABLE = /(URL|DSN|PAT|CREDENTIAL|CONN|SESSION|COOKIE)/i;
-
 const allowAnyVariable: VariableGuard = () => false;
 
 const loadLayersForUser = async (options: LayerOptions): Promise<LoadedLayers> => {
@@ -256,7 +254,7 @@ export const loadMcpServers = async ({ home, projectDir, trust, env, signal, use
   }
 
   const protectedNames = new Set(credentialEnvNames(loaded.models));
-  const refuseCredentialVariable: VariableGuard = (variable) => looksLikeCredentialName(variable) || SENSITIVE_VARIABLE.test(variable) || protectedNames.has(variable);
+  const refuseCredentialVariable: VariableGuard = (variable) => looksLikeCredentialName(variable) || protectedNames.has(variable);
   const projectServers = await readProjectServers(mcpJson, projectDir, seen, warnings, asker);
   for (const [name, rawConfig] of Object.entries(projectServers ?? {})) {
     const isEnabled = !disabled.has(name) && (approveAll || approved.has(name));

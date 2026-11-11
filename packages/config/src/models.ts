@@ -12,7 +12,8 @@ import {
   typedModelText,
   withDefaultTag,
 } from '@momonga/protocol';
-import type { AnthropicApiVersion, DialectDefinition, ModelView, ModelViews, ServerKinds, TargetBilling } from '@momonga/protocol';
+import type { AnthropicApiVersion, DialectDefinition, ImageCapability, ImageTokenModel, ModelView, ModelViews, ServerKinds, TargetBilling } from '@momonga/protocol';
+import { ConfigError, toConfigError } from './config-error.ts';
 import { chainRoomVerdict, roomNumbersText } from './chain-room.ts';
 import type { ChainMember } from './chain-room.ts';
 import { checkModelDialects, resolveDialects } from './dialects.ts';
@@ -20,7 +21,7 @@ import { layoutOf } from './layout.ts';
 import { PLAN_PROFILES } from './plan-profiles.ts';
 import { addressProblem } from './probe-record-key.ts';
 import type { PlanProfile } from './plan-profiles.ts';
-import { PROVIDER_NAME_RULE_TEXT, isProviderName, providerNameOf, reservedNameProblem, serverKindOf } from './provider-name.ts';
+import { PROVIDER_NAME_RULE_TEXT, derivedNameProblem, isProviderName, providerNameOf, reservedNameProblem, serverKindOf } from './provider-name.ts';
 import { registeredIds, registeredServer, requireOfferedEndpointForm } from './server-registry.ts';
 import type { ServerRegistry } from './server-registry.ts';
 import type {
@@ -99,6 +100,15 @@ export type ResolveModelsOptions = {
 
 type Where = { connection: string; entry: string };
 
+const declaredImageCapability = (imageInput: boolean | undefined, imageTokens: ImageTokenModel | undefined, where: string): ImageCapability | Record<never, never> => {
+  if (imageInput === undefined && imageTokens === undefined) return {};
+  try {
+    return imageCapability(imageInput ?? false, imageTokens, `${where}: `);
+  } catch (error) {
+    throw toConfigError(error);
+  }
+};
+
 const LOCAL_SERVER_DEFAULTS = { billing: 'local', maxConcurrency: 1 } as const satisfies { billing: TargetBilling; maxConcurrency: number };
 
 const DEFAULT_ADMISSION_TIMEOUT_MS = 30_000;
@@ -108,10 +118,10 @@ const unknownServerMessage = (where: string, id: string, servers: ServerRegistry
 
 const resolveManaged = (target: ManagedTarget, { connection, entry }: Where, servers: ServerRegistry): ResolvedManagedTarget => {
   const description = registeredServer(servers, target.server);
-  if (description === undefined) throw new Error(unknownServerMessage(connection, target.server, servers));
+  if (description === undefined) throw new ConfigError(unknownServerMessage(connection, target.server, servers));
   requireOfferedEndpointForm(description, endpointFormsOfPlatform(), connection);
   for (const field of Object.keys(target.capabilities ?? {})) {
-    if (!(description.declarable as readonly string[]).includes(field)) throw new Error(`${entry}: capabilities.${field} is not a field the server ${JSON.stringify(description.id)} lets a model declare; declarable: ${description.declarable.join(', ')}`);
+    if (!(description.declarable as readonly string[]).includes(field)) throw new ConfigError(`${entry}: capabilities.${field} is not a field the server ${JSON.stringify(description.id)} lets a model declare; declarable: ${description.declarable.join(', ')}`);
   }
   return {
     adapter: 'managed',
@@ -131,17 +141,17 @@ const resolveManaged = (target: ManagedTarget, { connection, entry }: Where, ser
 const checkBaseUrl = (baseUrl: string, where: string, carriesCredential: boolean): void => {
   const problem = transportUrlProblem(baseUrl);
   if (problem === 'cleartext' && carriesCredential) {
-    throw new Error(`${where}: baseUrl ${redactedUrl(baseUrl)} must use https: because this connection sends a credential (http: to another computer is only allowed for a connection without one)`);
+    throw new ConfigError(`${where}: baseUrl ${redactedUrl(baseUrl)} must use https: because this connection sends a credential (http: to another computer is only allowed for a connection without one)`);
   }
-  if (problem !== undefined && problem !== 'cleartext') throw new Error(`${where}: ${transportUrlMessage('baseUrl', baseUrl, problem)}`);
-  if (baseUrl.includes('?') || baseUrl.includes('#')) throw new Error(`${where}: baseUrl must not contain a query or fragment`);
+  if (problem !== undefined && problem !== 'cleartext') throw new ConfigError(`${where}: ${transportUrlMessage('baseUrl', baseUrl, problem)}`);
+  if (baseUrl.includes('?') || baseUrl.includes('#')) throw new ConfigError(`${where}: baseUrl must not contain a query or fragment`);
 };
 
 const checkSocketPath = (socketPath: string, home: string | undefined, where: string): void => {
-  if (!path.isAbsolute(socketPath)) throw new Error(`${where}: socketPath ${JSON.stringify(socketPath)} must be an absolute path`);
+  if (!path.isAbsolute(socketPath)) throw new ConfigError(`${where}: socketPath ${JSON.stringify(socketPath)} must be an absolute path`);
   if (home === undefined) return;
   if (syncPaths.comparableContains(syncPaths.canonicalPath(layoutOf(home).run), syncPaths.canonicalPath(socketPath))) {
-    throw new Error(`${where}: socketPath ${socketPath} must not be inside ${layoutOf(home).run}`);
+    throw new ConfigError(`${where}: socketPath ${socketPath} must not be inside ${layoutOf(home).run}`);
   }
 };
 
@@ -194,7 +204,7 @@ const checkSamplingRange = (capabilities: Pick<TargetCapabilitiesCore, 'sampling
   if (sampling?.accepts !== 'without_thinking') return;
   const { min, max } = sampling.topP;
   if (min > max) {
-    throw new Error(`${where}: capabilities.sampling.topP.min (${min}) must not exceed capabilities.sampling.topP.max (${max})`);
+    throw new ConfigError(`${where}: capabilities.sampling.topP.min (${min}) must not exceed capabilities.sampling.topP.max (${max})`);
   }
 };
 
@@ -207,7 +217,7 @@ const resolveRemote = (
 ) => {
   const { baseUrl, socketPath } = target;
   const problem = addressProblem(target);
-  if (problem !== undefined) throw new Error(`${connection}: ${problem}`);
+  if (problem !== undefined) throw new ConfigError(`${connection}: ${problem}`);
   if (baseUrl !== undefined) checkBaseUrl(baseUrl, connection, target.apiKeyEnv !== undefined || target.apiKeySecret !== undefined);
   if (socketPath !== undefined) checkSocketPath(socketPath, home, connection);
   checkSamplingRange(target.capabilities, where);
@@ -215,7 +225,7 @@ const resolveRemote = (
   const { imageInput, imageTokens, ...core } = { ...defaults, ...target.capabilities, maxConcurrency };
   const capabilities = {
     ...core,
-    ...(imageInput === undefined && imageTokens === undefined ? {} : imageCapability(imageInput ?? false, imageTokens, `${where}: `)),
+    ...declaredImageCapability(imageInput, imageTokens, where),
   };
   return {
     ...(baseUrl === undefined ? {} : { baseUrl }),
@@ -250,20 +260,20 @@ const resolvePlan = (target: PlanOpenResponsesTarget, provider: string, { connec
   const profile = Object.hasOwn(profiles, profileId) ? profiles[profileId] : undefined;
   if (profile === undefined) {
     const known = Object.keys(profiles).map((id) => JSON.stringify(id)).join(', ');
-    throw new Error(`${where}: unknown plan profile ${JSON.stringify(profileId)}; the known profiles are ${known === '' ? 'none' : known}`);
+    throw new ConfigError(`${where}: unknown plan profile ${JSON.stringify(profileId)}; the known profiles are ${known === '' ? 'none' : known}`);
   }
   for (const key of ['apiKeyEnv', 'apiKeySecret'] as const) {
-    if (target[key] !== undefined) throw new Error(`${where}: plan cannot be combined with ${key}; a plan connection takes its credential from the signed-in account`);
+    if (target[key] !== undefined) throw new ConfigError(`${where}: plan cannot be combined with ${key}; a plan connection takes its credential from the signed-in account`);
   }
   if (target.socketPath !== undefined) {
-    throw new Error(`${where}: plan cannot be combined with socketPath; a plan connection sends its bearer only to ${profile.oauth.resource}`);
+    throw new ConfigError(`${where}: plan cannot be combined with socketPath; a plan connection sends its bearer only to ${profile.oauth.resource}`);
   }
   const baseUrl = target.baseUrl ?? profile.targetDefaults.baseUrl;
   checkBaseUrl(baseUrl, where, true);
   const resourceOrigin = new URL(profile.oauth.resource).origin;
   const baseOrigin = new URL(baseUrl).origin;
   if (baseOrigin !== resourceOrigin) {
-    throw new Error(`${where}: baseUrl ${baseUrl} has origin ${baseOrigin}, but plan profile ${profile.id} sends its bearer only to origin ${resourceOrigin}`);
+    throw new ConfigError(`${where}: baseUrl ${baseUrl} has origin ${baseOrigin}, but plan profile ${profile.id} sends its bearer only to origin ${resourceOrigin}`);
   }
   const declared = target.capabilities ?? {};
   checkSamplingRange(declared, entry);
@@ -280,7 +290,7 @@ const resolvePlan = (target: PlanOpenResponsesTarget, provider: string, { connec
     billing: target.billing ?? profile.targetDefaults.billing,
     capabilities: {
       ...core,
-      ...(imageInput === undefined && imageTokens === undefined ? {} : imageCapability(imageInput ?? false, imageTokens, `${entry}: `)),
+      ...declaredImageCapability(imageInput, imageTokens, entry),
     },
     maxConcurrency,
     admissionTimeoutMs: target.admissionTimeoutMs ?? 30000,
@@ -292,7 +302,7 @@ const checkThinkingBudgets = (target: AnthropicTarget, where: string): void => {
   if (reasoning?.control !== 'thinking' || reasoning.form !== 'budget') return;
   for (const [effort, budget] of Object.entries(reasoning.budgets)) {
     if (budget >= maxOutputTokens) {
-      throw new Error(`${where}: capabilities.reasoning.budgets.${effort} is ${budget}, which must be below capabilities.maxOutputTokens (${maxOutputTokens})`);
+      throw new ConfigError(`${where}: capabilities.reasoning.budgets.${effort} is ${budget}, which must be below capabilities.maxOutputTokens (${maxOutputTokens})`);
     }
   }
 };
@@ -301,7 +311,7 @@ const checkSamplingVersion = (target: AnthropicTarget, apiVersion: AnthropicApiV
   const { sampling } = target.capabilities;
   if (sampling === undefined || sampling.accepts === 'none') return;
   if (anthropicVersionSamplingBound(apiVersion).length === 0) {
-    throw new Error(`${where}: capabilities.sampling declares accepts ${sampling.accepts}, but apiVersion ${apiVersion} accepts no sampling parameter; declare accepts none or set apiVersion to a version that accepts them`);
+    throw new ConfigError(`${where}: capabilities.sampling declares accepts ${sampling.accepts}, but apiVersion ${apiVersion} accepts no sampling parameter; declare accepts none or set apiVersion to a version that accepts them`);
   }
 };
 
@@ -337,7 +347,7 @@ const NATIVE_JSON_ONLY_FORM: Record<Exclude<ModelTarget['adapter'], 'managed'>, 
 
 const checkJsonMode = (target: ModelTarget, where: string): void => {
   if (target.adapter === 'managed' || target.capabilities?.jsonMode !== 'json_object' || NATIVE_JSON_ONLY_FORM[target.adapter]) return;
-  throw new Error(`${where}: capabilities.jsonMode is json_object, but the adapter ${target.adapter} has no JSON-only request form; declare jsonMode none or remove it`);
+  throw new ConfigError(`${where}: capabilities.jsonMode is json_object, but the adapter ${target.adapter} has no JSON-only request form; declare jsonMode none or remove it`);
 };
 
 type ResolveContext = { home: string | undefined; warnings: string[]; servers: ServerRegistry; profiles: PlanProfiles };
@@ -363,7 +373,7 @@ const idempotencyKeyHeaderOf = (target: ModelTarget, where: string): { idempoten
   const { idempotencyKeyHeader } = target;
   if (idempotencyKeyHeader === undefined) return {};
   if (REQUEST_OWN_HEADERS.includes(idempotencyKeyHeader.toLowerCase())) {
-    throw new Error(`${where}: idempotencyKeyHeader ${JSON.stringify(idempotencyKeyHeader)} is a header the request already carries; write the header this server reads an idempotency key from`);
+    throw new ConfigError(`${where}: idempotencyKeyHeader ${JSON.stringify(idempotencyKeyHeader)} is a header the request already carries; write the header this server reads an idempotency key from`);
   }
   return { idempotencyKeyHeader };
 };
@@ -386,11 +396,11 @@ const MANAGED_ONE_MODEL_TEXT = 'a managed server serves one model; list one entr
 const checkEntryCount = (connection: ModelConnection, where: string): void => {
   const count = connection.models?.length ?? 0;
   if (connection.adapter !== 'managed') {
-    if (count === 0) throw new Error(`${where}: ${NO_MODELS_TEXT}`);
+    if (count === 0) throw new ConfigError(`${where}: ${NO_MODELS_TEXT}`);
     return;
   }
-  if (count === 0) throw new Error(`${where}: ${MANAGED_NO_MODEL_TEXT}`);
-  if (count > 1) throw new Error(`${where}: ${MANAGED_ONE_MODEL_TEXT}`);
+  if (count === 0) throw new ConfigError(`${where}: ${MANAGED_NO_MODEL_TEXT}`);
+  if (count > 1) throw new ConfigError(`${where}: ${MANAGED_ONE_MODEL_TEXT}`);
 };
 
 const flatTargetOf = (connection: ModelConnection, index: number, ownName: string): ModelTarget => {
@@ -407,24 +417,28 @@ const checkDuplicateIds = (connection: ModelConnection, ownNames: readonly strin
     if (earlier === index) return;
     const here = `${where}.models[${index}]`;
     const there = `${key}.models[${earlier}]`;
-    if (written[index] === written[earlier]) throw new Error(`${here}: the id ${JSON.stringify(written[index])} is already listed at ${there}`);
-    throw new Error(`${here}: ${JSON.stringify(written[index])} is the same model as ${JSON.stringify(written[earlier])} at ${there} (an id without a tag means the tag ${defaultTag})`);
+    if (written[index] === written[earlier]) throw new ConfigError(`${here}: the id ${JSON.stringify(written[index])} is already listed at ${there}`);
+    throw new ConfigError(`${here}: ${JSON.stringify(written[index])} is the same model as ${JSON.stringify(written[earlier])} at ${there} (an id without a tag means the tag ${defaultTag})`);
   });
 };
 
 const checkProviderName = (connection: ModelConnection, where: string, kinds: ServerKinds): void => {
   const { provider } = connection;
-  if (provider === undefined) return;
-  if (!isProviderName(provider)) throw new Error(`${where}.provider: ${JSON.stringify(provider)} ${PROVIDER_NAME_RULE_TEXT}`);
+  if (provider === undefined) {
+    const problem = derivedNameProblem(connection, kinds);
+    if (problem !== undefined) throw new ConfigError(`${where}: ${problem}`);
+    return;
+  }
+  if (!isProviderName(provider)) throw new ConfigError(`${where}.provider: ${JSON.stringify(provider)} ${PROVIDER_NAME_RULE_TEXT}`);
   const reserved = reservedNameProblem(provider, connection.adapter, kinds);
-  if (reserved !== undefined) throw new Error(`${where}.provider: ${reserved}`);
+  if (reserved !== undefined) throw new ConfigError(`${where}.provider: ${reserved}`);
 };
 
 const checkDistinctProviders = (providers: readonly string[], source: string): void => {
   providers.forEach((provider, index) => {
     const earlier = providers.indexOf(provider);
     if (earlier === index) return;
-    throw new Error(`${source}: models.connections[${earlier}] and models.connections[${index}] both resolve to the server name ${JSON.stringify(provider)}; write "provider" on one of them`);
+    throw new ConfigError(`${source}: models.connections[${earlier}] and models.connections[${index}] both resolve to the server name ${JSON.stringify(provider)}; write "provider" on one of them`);
   });
 };
 
@@ -494,7 +508,7 @@ type References = { start: string | undefined; fallback: string[]; roles: ModelR
 const resolveReferences = (models: ModelsSettings | undefined, classifier: string | undefined, views: ModelViews, displays: ReadonlyMap<string, string>, source: string): References => {
   const canonAt = (key: string, text: string): string => {
     const outcome = referenceProblem(text, views, displays);
-    if ('problem' in outcome) throw new Error(`${source}: ${key}: ${outcome.problem}`);
+    if ('problem' in outcome) throw new ConfigError(`${source}: ${key}: ${outcome.problem}`);
     return outcome.canon;
   };
   const start = models?.start === undefined ? undefined : canonAt('models.start', models.start);
@@ -509,7 +523,7 @@ const resolveReferences = (models: ModelsSettings | undefined, classifier: strin
 
 const checkBillingChanges = (changes: readonly BillingChange[], source: string): void => {
   changes.forEach((change, index) => {
-    if (change.from === change.to) throw new Error(`${source}: models.billingChanges[${index}]: from and to are both ${JSON.stringify(change.from)}; a change of billing kind needs two different kinds`);
+    if (change.from === change.to) throw new ConfigError(`${source}: models.billingChanges[${index}]: from and to are both ${JSON.stringify(change.from)}; a change of billing kind needs two different kinds`);
   });
 };
 

@@ -35,7 +35,7 @@ const isProbeable = (model: ResolvedModel): model is ProbeableModel => model.ada
 
 export const probeSubjectOf = (models: ResolvedModels, text: string): ProbeSubject => {
   const resolution = resolveTypedModelRef(typedModelText(text), models.views);
-  if (resolution.kind !== 'found') throw modelRefErrorOf(text, resolution, models.views);
+  if (resolution.kind !== 'found') throw modelRefErrorOf(text, resolution, models.views, 'cli');
   const { canon } = resolution.model;
   const displays = displayMapOf(models.views);
   const display = displays.get(canon) ?? canon;

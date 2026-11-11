@@ -2,7 +2,7 @@ import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ensureMomongaDirs, groupAlive, momongaPaths, FIRST_GENERATION } from '@momonga/foundation';
+import { claimRetry, ensureMomongaDirs, groupAlive, momongaPaths, readAttemptRecord, recordMarkerGroup, FIRST_GENERATION } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, spawnTracked, withTempDir, firstGeneration, registerOwned } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
@@ -76,12 +76,25 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
     const stack = await prepareStack();
     await prepareGeneration(stack.temp);
     const marker = path.join(scopedPaths(stack.temp).markers.mcp, 'fx-left-behind');
-    const pgid = spawnHolder(marker, (pid) => `${pid}\n`);
+    const pgid = spawnHolder(marker);
+    await recordMarkerGroup(marker, pgid);
     expect(await groupExists(pgid)).toBe(true);
     const launched = await launchRuntime(stack.temp);
     expect(stepsLogged(launched.logger)).toContain('mcp-markers');
     expect(await groupExists(pgid)).toBe(false);
     expect(fs.existsSync(marker)).toBe(false);
+  });
+
+  it('the start reap of MCP markers spends the startup retry of a marker once: a marker whose startup retry is spent is left for the other occasions', async () => {
+    const stack = await prepareStack();
+    await prepareGeneration(stack.temp);
+    const marker = path.join(scopedPaths(stack.temp).markers.mcp, 'fx-startup-spent');
+    const pgid = spawnHolder(marker);
+    await recordMarkerGroup(marker, pgid);
+    expect(await claimRetry(marker, 'startup', { signal: new AbortController().signal })).toBe('claimed');
+    await launchRuntime(stack.temp);
+    expect(await groupExists(pgid)).toBe(true);
+    expect((await readAttemptRecord(marker)).spent).toEqual({ guard: false, sweep: false, startup: true, shutdown: false });
   });
 
   it('tool markers are reaped at start by record state: every held marker is reaped whatever its row says, holder-less markers are deleted', async () => {
@@ -155,7 +168,7 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
     const error = await failureOf(registerOwned(onCleanup, () => startRuntimeProcess({ generation: FIRST_GENERATION, home: stack.temp.home, version: RUNTIME_VERSION, logger, stdout })));
     expect(error).toBe(injected);
     expect(stepsLogged(logger).at(-1)).toBe('tool-markers');
-    expect(stepsLogged(logger, 'teardown.step')).toEqual(['store', 'lock']);
+    expect(stepsLogged(logger, 'teardown.step')).toEqual(['store', 'sandbox', 'lock']);
     expect(await groupExists(holder)).toBe(true);
     expect(await isLockFree(firstGeneration(stack.temp.paths).locks.runtime)).toBe(true);
     expect(stdout.chunks).toEqual([]);

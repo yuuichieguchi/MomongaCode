@@ -115,6 +115,54 @@ describe('editSettings', () => {
   });
 });
 
+describe('editSettings on a file that does not load', () => {
+  it('removes the value that keeps the user file from loading, and the file loads afterwards', async () => {
+    const tree = makeTree();
+    const file = userSettingsPath(tree);
+    writeJson(file, { autoUpdates: false, tui: { theme: 'bogus' } });
+    await expect(loadUserSettings({ home: tree.home })).rejects.toBeInstanceOf(ConfigError);
+    await editSettings(placeOf(tree), 'user', { kind: 'unset', path: ['tui', 'theme'] }, UNABORTED);
+    expect(stored(file)).toEqual({ autoUpdates: false });
+    expect((await loadUserSettings({ home: tree.home })).settings.autoUpdates).toBe(false);
+  });
+
+  it('replaces the value that keeps the file from loading by one that loads', async () => {
+    const tree = makeTree();
+    const file = userSettingsPath(tree);
+    writeJson(file, { tui: { theme: 'bogus' } });
+    await editSettings(placeOf(tree), 'user', { kind: 'set', path: ['tui', 'theme'], value: 'dark' }, UNABORTED);
+    expect(stored(file)).toEqual({ tui: { theme: 'dark' } });
+  });
+
+  it('refuses an edit whose result still does not load, names the key of the result and keeps the bytes of the file', async () => {
+    const tree = makeTree();
+    const file = userSettingsPath(tree);
+    writeJson(file, { autoUpdates: false, tui: { theme: 'bogus' } });
+    const before = fs.readFileSync(file, 'utf8');
+    const refused = editSettings(placeOf(tree), 'user', { kind: 'set', path: ['autoUpdates'], value: true }, UNABORTED);
+    await expect(refused).rejects.toBeInstanceOf(ConfigError);
+    await expect(refused).rejects.toThrow(`${file}: tui.theme must be one of`);
+    expect(fs.readFileSync(file, 'utf8')).toBe(before);
+  });
+
+  it('removes a deny rule that cannot be read, which refuses the whole load until it is gone', async () => {
+    const tree = makeTree();
+    const file = userSettingsPath(tree);
+    writeJson(file, { permissions: { deny: ['Bash(', 'Bash(rm:*)'] } });
+    await expect(loadUserSettings({ home: tree.home })).rejects.toBeInstanceOf(ConfigError);
+    await editSettings(placeOf(tree), 'user', { kind: 'update', path: ['permissions', 'deny'], update: (current) => (current as string[]).filter((rule) => rule !== 'Bash(') }, UNABORTED);
+    expect(stored(file)).toEqual({ permissions: { deny: ['Bash(rm:*)'] } });
+  });
+
+  it('repairs a project file that does not load and also holds a value the loader discards with a warning', async () => {
+    const tree = makeTree();
+    const file = projectSettingsPath(tree);
+    writeJson(file, { sandbox: 'none', context: { autoCompact: 'sometimes' } });
+    await editSettings(placeOf(tree), 'project', { kind: 'unset', path: ['context', 'autoCompact'] }, UNABORTED);
+    expect(stored(file)).toEqual({ sandbox: 'none' });
+  });
+});
+
 describe('readSettingsSnapshot', () => {
   it('gives each layer with its file and what the file holds, the layers a change may go to, and the defaults', async () => {
     const tree = makeTree();

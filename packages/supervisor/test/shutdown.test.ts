@@ -2,19 +2,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
-import {
-  ENTRY_HARD_EXIT_MARGIN_MS,
-  DEFAULT_STOP_VALUES,
-  gatewayAbortBudgetMs,
-  gatewayMaxCloseMs,
-  gatewayStopBudgetMs,
-  RUNTIME_ABORT_BUDGET_MS,
-  SHUTDOWN_MARGIN_MS,
-  runtimeMaxCloseMs,
-  runtimeTeardownBudgetMs,
-  supervisorMaxCloseMs,
-  inspectProcessLock,
-} from '@momonga/foundation';
+import { ENTRY_HARD_EXIT_MARGIN_MS, DEFAULT_STOP_VALUES, gatewayAbortBudgetMs, gatewayMaxCloseMs, gatewayStopBudgetMs, RUNTIME_ABORT_BUDGET_MS, SHUTDOWN_MARGIN_MS, runtimeMaxCloseMs, runtimeTeardownBudgetMs, supervisorMaxCloseMs, inspectProcessLock, sleep } from '@momonga/foundation';
 import type { ReapMarkerDirectoryOptions, StopValues } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, registerCleanup, spawnTracked, waitFor, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
@@ -66,7 +54,7 @@ describe('childCloseBudgetMs', () => {
     expect(childCloseBudgetMs('runtime', 'term', DEFAULT_STOP_VALUES)).toBe(RUNTIME_TERM_BOUND);
     expect(childCloseBudgetMs('gateway', 'term', DEFAULT_STOP_VALUES)).toBe(GATEWAY_TERM_BOUND);
     expect(childCloseBudgetMs('runtime', 'int', DEFAULT_STOP_VALUES)).toBe(RUNTIME_INT_BOUND);
-    expect(childCloseBudgetMs('runtime', 'int', DEFAULT_STOP_VALUES)).toBe(39_095);
+    expect(childCloseBudgetMs('runtime', 'int', DEFAULT_STOP_VALUES)).toBe(39_125);
     expect(childCloseBudgetMs('gateway', 'int', DEFAULT_STOP_VALUES)).toBe(27_075);
   });
 });
@@ -590,7 +578,7 @@ describe('shutdown during the orphan reap', () => {
     const h = await startHarness(context, {
       ...inPhase2(async (options) => {
         await new Promise<void>((resolve) => options.signal?.addEventListener('abort', () => resolve(), { once: true }));
-        await options.timing?.sleep(options.killGraceMs);
+        if (options.timing !== undefined) await sleep(options.timing, options.killGraceMs);
         return { reaped: 0, kept: 1 };
       }),
       overrides: { orphanGraceMs: 250, orphanReapGraceMs: 200 },

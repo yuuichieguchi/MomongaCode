@@ -24,14 +24,24 @@ describe('user additionalDirectories resolution', () => {
     expect(result.settings.permissions.additionalDirectories).toEqual([real, real]);
   });
 
-  it('a missing entry throws ConfigError with the "does not exist" reason', async () => {
+  it('a missing entry is skipped with a warning naming the file and the entry, and the other entries load', async () => {
     const tree = makeTree();
-    const file = writeJson(userSettingsPath(tree), { permissions: { additionalDirectories: ['~/missing-extra'] } });
+    const present = path.join(tree.home, 'present-extra');
+    fs.mkdirSync(present);
+    const file = writeJson(userSettingsPath(tree), { autoUpdates: false, permissions: { additionalDirectories: ['~/missing-extra', '~/present-extra'] } });
+    const result = await loadUserSettings({ home: tree.home });
+    expect(result.settings.permissions.additionalDirectories).toEqual([present]);
+    expect(result.settings.autoUpdates).toBe(false);
+    expect(result.warnings).toEqual([`${file}: additionalDirectories entry "~/missing-extra" does not exist; skipped`]);
+  });
+
+  it('a file entry beside a missing entry still fails the load', async () => {
+    const tree = makeTree();
+    fs.writeFileSync(path.join(tree.home, 'plain-file'), '');
+    writeJson(userSettingsPath(tree), { permissions: { additionalDirectories: ['~/missing-extra', './plain-file'] } });
     const error = await failureOf(loadUserSettings({ home: tree.home }));
     expect(error).toBeInstanceOf(ConfigError);
-    expect(error.message).toContain(`${file}: additionalDirectories entry `);
-    expect(error.message).toContain('~/missing-extra');
-    expect(error.message).toMatch(/ does not exist$/);
+    expect(error.message).toMatch(/ is not a directory$/);
   });
 
   it('a file entry throws ConfigError with the "is not a directory" reason', async () => {
@@ -56,10 +66,11 @@ describe('user additionalDirectories resolution', () => {
     expect(error.message).toMatch(/ cannot be resolved: /);
   });
 
-  it('a missing user entry also fails loadSettings with ConfigError', async () => {
+  it('a missing user entry is skipped by loadSettings with the same warning', async () => {
     const tree = makeTree();
-    writeJson(userSettingsPath(tree), { permissions: { additionalDirectories: ['~/missing-extra'] } });
-    const error = await failureOf(loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }));
-    expect(error.message).toMatch(/additionalDirectories entry .* does not exist$/);
+    const file = writeJson(userSettingsPath(tree), { permissions: { additionalDirectories: ['~/missing-extra'] } });
+    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    expect(result.settings.permissions.additionalDirectories).toEqual([]);
+    expect(result.warnings).toEqual([`${file}: additionalDirectories entry "~/missing-extra" does not exist; skipped`]);
   });
 });

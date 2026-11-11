@@ -15,7 +15,7 @@ export type EvidenceCommand = {
   network: 'deny';
 };
 
-export type EvidenceCommandResult = { exitCode: number | null; stdout?: string; notStarted?: string };
+export type EvidenceCommandResult = { exitCode: number | null; stdout?: string; stdoutOmittedBytes?: number; notStarted?: string };
 
 export type EvidenceRun = (command: EvidenceCommand, signal: AbortSignal) => Promise<EvidenceCommandResult>;
 

@@ -125,11 +125,11 @@ export const resolveRequestModel = (text: string, exact: boolean, views: ModelVi
   if (exact) {
     const stored = resolveStoredModelRef(storedModelRef(text), views);
     if (stored !== undefined) return stored;
-    throw notFound('model_not_found', modelRefErrorOf(text, { kind: 'not_found' }, views).message, 'model');
+    throw notFound('model_not_found', modelRefErrorOf(text, { kind: 'not_found' }, views, 'gateway').message, 'model');
   }
   const resolution = resolveTypedModelRef(typedModelText(text), views);
   if (resolution.kind === 'found') return resolution.model;
-  const { message } = modelRefErrorOf(text, resolution, views);
+  const { message } = modelRefErrorOf(text, resolution, views, 'gateway');
   throw resolution.kind === 'ambiguous' ? invalidRequest('ambiguous_model', message, 'model') : notFound('model_not_found', message, 'model');
 };
 

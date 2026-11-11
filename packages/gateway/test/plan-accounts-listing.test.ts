@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { credentialFileFor, momongaLayout } from '@momonga/foundation';
 import { PLAN_ROUTES } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import { gatewayErrorOfCredential } from '../src/plan/api.ts';
+import { planRouteError } from '../src/plan/api.ts';
 import { PlanCredentialError } from '../src/plan/auth-source.ts';
 import { GatewayError, statusFor } from '../src/core/errors.ts';
 import { ACCOUNT, accountRoute, begin, browse, sessionsDirectory, signIn, startPlanGateway } from './plan-signin-support.ts';
@@ -278,7 +278,7 @@ describe('O-R5-6 L4: the load resumes an interrupted sign-out', () => {
 
 describe('admin routes translate a PlanCredentialError by the one status rule of M7 (O-R5-6 G 9)', () => {
   const translatedOf = (code: string, retryable: boolean): GatewayError => {
-    const translated = gatewayErrorOfCredential(new PlanCredentialError(code, `message of ${code}`, retryable));
+    const translated = planRouteError(new PlanCredentialError(code, `message of ${code}`, retryable));
     expect(translated).toBeInstanceOf(GatewayError);
     return translated as GatewayError;
   };

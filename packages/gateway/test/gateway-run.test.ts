@@ -3,6 +3,8 @@ import { createFakeClock, createFakeTimers, textResponseEvents, waitFor } from '
 import type { StreamEvent } from '@momonga/protocol';
 import { startBufferedRun } from '../src/core/run.ts';
 import type { RunControl } from '../src/core/run.ts';
+import { createRedactor } from '../src/core/redaction.ts';
+import { createErrorExit } from '../src/server/error-exit.ts';
 import { sseResponse } from '../src/server/sse.ts';
 import { gatewayClosedError } from '../src/core/errors.ts';
 import { START_MS } from './gateway-helpers.ts';
@@ -188,7 +190,7 @@ describe('sseResponse on shutdown', () => {
       next: () => new Promise(() => undefined),
       return: async () => ({ done: true, value: undefined }),
     };
-    const response = sseResponse(events[0] as StreamEvent, rest, { timers, keepAliveMs: 1000, readerStallMs: 30_000, signal: closing.signal, onError: () => undefined });
+    const response = sseResponse(events[0] as StreamEvent, rest, { timers, keepAliveMs: 1000, readerStallMs: 30_000, signal: closing.signal, answer: createErrorExit(createRedactor({ credentials: [] }), undefined).answer });
     closing.abort(gatewayClosedError());
     await expect(response.text()).rejects.toMatchObject({ body: { code: 'gateway_closed' } });
   });

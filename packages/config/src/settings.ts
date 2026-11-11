@@ -2,7 +2,8 @@ import path from 'node:path';
 import { defineProductSchema, mcpConnectTimeoutProblem, stopValueProblem, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
 import type { ProductValidator, SandboxNetworkSetting, StopValueName } from '@momonga/foundation';
 import type { AnthropicApiVersion, CapabilitiesCore, ManagedEndpointForm, DialectDefinition, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetAnswers, TargetBilling, PermissionMode } from '@momonga/protocol';
-import { priceTableProblem } from '@momonga/protocol';
+import { OPERATION_RULE_TOOLS, priceTableProblem } from '@momonga/protocol';
+import { ConfigError } from './config-error.ts';
 import { escapePointerSegment } from './json-file.ts';
 import { MCP_EXPANSION_PATTERN, mcpServerNameProblem, mcpServerUrlProblem } from './mcp-server-rules.ts';
 import { PLAN_PROFILES } from './plan-profiles.ts';
@@ -168,7 +169,9 @@ export type ModelEntry = EntryOf<ModelTarget>;
 
 export type ModelConnection = ConnectionOf<ModelTarget>;
 
-export type ConnectionDraft = Omit<ModelConnection, 'models'>;
+type DraftOf<Connection> = Connection extends unknown ? Omit<Connection, 'models'> : never;
+
+export type ConnectionDraft = DraftOf<ModelConnection>;
 
 export type ResolvedManagedTarget = {
   adapter: 'managed';
@@ -458,7 +461,7 @@ const validateMcpServer: ProductValidator<McpServerConfig> = defineProductSchema
 
 const assertNotHttpSse = (server: unknown, source: string, name: string): void => {
   if (isRecord(server) && server['type'] === 'sse') {
-    throw new Error(`${source}: MCP server ${JSON.stringify(name)} uses the deprecated HTTP+SSE transport, which is not supported; use type "http" (Streamable HTTP)`);
+    throw new ConfigError(`${source}: MCP server ${JSON.stringify(name)} uses the deprecated HTTP+SSE transport, which is not supported; use type "http" (Streamable HTTP)`);
   }
 };
 
@@ -473,13 +476,13 @@ const assertNoOldModelKeys = (value: unknown, source: string): void => {
   const models = isRecord(value) ? value['models'] : undefined;
   if (!isRecord(models)) return;
   for (const [key, sentence] of Object.entries(OLD_MODEL_KEYS)) {
-    if (Object.hasOwn(models, key)) throw new Error(`${source}: ${sentence}`);
+    if (Object.hasOwn(models, key)) throw new ConfigError(`${source}: ${sentence}`);
   }
   const changes = models['billingChanges'];
   if (!Array.isArray(changes)) return;
   changes.forEach((change, index) => {
     if (isRecord(change) && Object.hasOwn(change, OLD_BILLING_SCOPE_KEY)) {
-      throw new Error(`${source}: models.billingChanges[${index}].${OLD_BILLING_SCOPE_KEY} is not a setting any more; write "model" with the model it applies to (see README, Models).`);
+      throw new ConfigError(`${source}: models.billingChanges[${index}].${OLD_BILLING_SCOPE_KEY} is not a setting any more; write "model" with the model it applies to (see README, Models).`);
     }
   });
 };
@@ -494,7 +497,7 @@ const assertPlanAdapters = (value: unknown, source: string): void => {
     if (typeof profileId !== 'string' || !Object.hasOwn(PLAN_PROFILES, profileId)) return;
     const required = (PLAN_PROFILES[profileId] as NonNullable<(typeof PLAN_PROFILES)[string]>).adapter;
     if ((connection as Record<string, unknown>)['adapter'] !== required) {
-      throw new Error(`${source}: models.connections[${index}]: profile ${profileId} requires adapter ${required}`);
+      throw new ConfigError(`${source}: models.connections[${index}]: profile ${profileId} requires adapter ${required}`);
     }
   });
 };
@@ -505,7 +508,7 @@ const assertTuiValues = (value: unknown, source: string): void => {
   for (const [name, allowed] of Object.entries(TUI_SETTING_VALUES)) {
     if (!Object.hasOwn(tui, name)) continue;
     const given: unknown = tui[name];
-    if (!allowed.some((member) => member === given)) throw new Error(`${source}: tui.${name} must be one of ${allowed.join(', ')}; got ${JSON.stringify(given)}`);
+    if (!allowed.some((member) => member === given)) throw new ConfigError(`${source}: tui.${name} must be one of ${allowed.join(', ')}; got ${JSON.stringify(given)}`);
   }
 };
 
@@ -513,7 +516,7 @@ const assertMcpConnectTimeout = (value: unknown, source: string): void => {
   const mcp = isRecord(value) ? value['mcp'] : undefined;
   if (!isRecord(mcp) || !Object.hasOwn(mcp, 'connectTimeoutMs')) return;
   const problem = mcpConnectTimeoutProblem(mcp['connectTimeoutMs']);
-  if (problem !== undefined) throw new Error(`${source}: ${problem}`);
+  if (problem !== undefined) throw new ConfigError(`${source}: ${problem}`);
 };
 
 const assertStopValues = (value: unknown, source: string): void => {
@@ -522,7 +525,7 @@ const assertStopValues = (value: unknown, source: string): void => {
     const holder = value[object];
     if (!isRecord(holder) || !Object.hasOwn(holder, key)) continue;
     const problem = stopValueProblem(name, holder[key], `${object}.${key}`);
-    if (problem !== undefined) throw new Error(`${source}: ${problem}`);
+    if (problem !== undefined) throw new ConfigError(`${source}: ${problem}`);
   }
 };
 
@@ -536,43 +539,47 @@ export const assertSettings = (value: unknown, source: string): Settings => {
   assertMcpConnectTimeout(value, source);
   assertTuiValues(value, source);
   const verdict = validateSettings(value);
-  if (!verdict.valid) throw new Error(`${source}: invalid settings at ${describeSchemaErrors(verdict.errors)}`);
+  if (!verdict.valid) throw new ConfigError(`${source}: invalid settings at ${describeSchemaErrors(verdict.errors)}`);
   const settings = verdict.value;
   (settings.credentials?.valuePatterns ?? []).forEach((pattern, index) => {
     try {
       new RegExp(pattern);
     } catch (error) {
-      throw new Error(`${source}: invalid settings at /credentials/valuePatterns/${index}: not a regular expression`, { cause: error });
+      throw new ConfigError(`${source}: invalid settings at /credentials/valuePatterns/${index}: not a regular expression`, { cause: error });
     }
   });
   (settings.network?.extraCaFiles ?? []).forEach((file, index) => {
-    if (!path.isAbsolute(file)) throw new Error(`${source}: invalid settings at /network/extraCaFiles/${index}: not an absolute path`);
+    if (!path.isAbsolute(file)) throw new ConfigError(`${source}: invalid settings at /network/extraCaFiles/${index}: not an absolute path`);
   });
   (settings.sandboxUnixSockets?.allow ?? []).forEach((entry, index) => {
-    if (!path.isAbsolute(entry)) throw new Error(`${source}: invalid settings at /sandboxUnixSockets/allow/${index}: not an absolute path`);
+    if (!path.isAbsolute(entry)) throw new ConfigError(`${source}: invalid settings at /sandboxUnixSockets/allow/${index}: not an absolute path`);
   });
   (settings.forges ?? []).forEach((forge, index) => {
     const references = [forge.credentialEnv, forge.credentialSecret].filter((reference) => reference !== undefined).length;
-    if (references !== 1) throw new Error(`${source}: invalid settings at /forges/${index}: exactly one of credentialEnv and credentialSecret must name the token`);
+    if (references !== 1) throw new ConfigError(`${source}: invalid settings at /forges/${index}: exactly one of credentialEnv and credentialSecret must name the token`);
   });
   for (const [name, server] of Object.entries(settings.mcpServers ?? {})) {
     const pointer = `/mcpServers/${escapePointerSegment(name)}`;
     const nameProblem = mcpServerNameProblem(name);
-    if (nameProblem !== undefined) throw new Error(`${source}: invalid settings at ${pointer}: ${nameProblem}`);
+    if (nameProblem !== undefined) throw new ConfigError(`${source}: invalid settings at ${pointer}: ${nameProblem}`);
     if (!('url' in server) || MCP_EXPANSION_PATTERN.test(server.url)) continue;
     const urlProblem = mcpServerUrlProblem(server.url, 'user');
-    if (urlProblem !== undefined) throw new Error(`${source}: invalid settings at ${pointer}/url: ${urlProblem.message}`);
+    if (urlProblem !== undefined) throw new ConfigError(`${source}: invalid settings at ${pointer}/url: ${urlProblem.message}`);
+  }
+  const operations: readonly string[] = OPERATION_RULE_TOOLS;
+  for (const name of Object.keys(settings.operations?.approval ?? {})) {
+    if (!operations.includes(name)) throw new ConfigError(`${source}: invalid settings at /operations/approval/${escapePointerSegment(name)}: not an operation; the operations are ${operations.join(', ')}`);
   }
   (settings.models?.connections ?? []).forEach((connection, index) => {
     const problem = connectionAddressProblem(connection);
-    if (problem !== undefined) throw new Error(`${source}: invalid settings at /models/connections/${index}: ${problem}`);
+    if (problem !== undefined) throw new ConfigError(`${source}: invalid settings at /models/connections/${index}: ${problem}`);
   });
   const price = priceTableProblem(settings.pricing ?? []);
-  if (price !== undefined) throw new Error(`${source}: invalid settings at /pricing/${price.index}${price.field === undefined ? '' : `/${price.field}`}: ${price.reason}`);
+  if (price !== undefined) throw new ConfigError(`${source}: invalid settings at /pricing/${price.index}${price.field === undefined ? '' : `/${price.field}`}: ${price.reason}`);
   const endpoint = settings.telemetry?.otlp?.endpoint;
   if (endpoint !== undefined) {
     const problem = transportUrlProblem(endpoint);
-    if (problem !== undefined) throw new Error(`${source}: ${transportUrlMessage('telemetry.otlp.endpoint', endpoint, problem)}`);
+    if (problem !== undefined) throw new ConfigError(`${source}: ${transportUrlMessage('telemetry.otlp.endpoint', endpoint, problem)}`);
   }
   return settings;
 };
@@ -580,14 +587,14 @@ export const assertSettings = (value: unknown, source: string): Settings => {
 export const assertMcpServersFile = (value: unknown, source: string): McpServersFile => {
   const verdict = validateMcpServersFile(value);
   if (verdict.valid) return verdict.value;
-  throw new Error(`${source}: invalid MCP server file at ${describeSchemaErrors(verdict.errors)}`);
+  throw new ConfigError(`${source}: invalid MCP server file at ${describeSchemaErrors(verdict.errors)}`);
 };
 
 export const assertMcpServer = (value: unknown, source: string, name: string): McpServerConfig => {
   assertNotHttpSse(value, source, name);
   const verdict = validateMcpServer(value);
   if (verdict.valid) return verdict.value;
-  throw new Error(`${source}: invalid MCP server ${JSON.stringify(name)}: ${describeSchemaErrors(verdict.errors)}`);
+  throw new ConfigError(`${source}: invalid MCP server ${JSON.stringify(name)}: ${describeSchemaErrors(verdict.errors)}`);
 };
 
 export const KNOWN_SETTINGS_KEYS: readonly string[] = Object.keys(SETTINGS_SCHEMA.properties);

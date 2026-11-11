@@ -9,7 +9,7 @@ import type { ScreenTimers } from '../../src/tui/screen/timers.ts';
 import { SPINNER_FRAMES, SPINNER_MS } from '../../src/tui/screen/waiting-row.tsx';
 import { fakeBackend } from '../fake-backend.ts';
 import type { FakeBackendOptions } from '../fake-backend.ts';
-import { KEYS, renderObservable, untilFrame, untilOutput } from '../ink-helpers.ts';
+import { KEYS, renderObservable, untilFrame, untilOutput, TEST_KEY_SETTLE_MS, settleAtOnce } from '../ink-helpers.ts';
 import { frame } from '../tui-harness.tsx';
 import { fakeScreenTerminal } from './screen-fakes.ts';
 
@@ -36,7 +36,7 @@ const startWith = async (given: { settings?: Partial<ResolvedTuiSettings>; asked
     },
     clearTimeout: (handle) => systemTiming.clearTimeout(handle),
   };
-  const app = renderObservable(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={timers} tuiSettings={tuiSettings} {...(given.asked === undefined ? {} : { a11y: given.asked })} {...given.extra} onExit={() => undefined} />);
+  const app = renderObservable(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={settleAtOnce(timers)} keySettleMs={TEST_KEY_SETTLE_MS} tuiSettings={tuiSettings} {...(given.asked === undefined ? {} : { a11y: given.asked })} {...given.extra} onExit={() => undefined} />);
   return { backend, terminal, app, saved, delays };
 };
 
@@ -135,7 +135,7 @@ describe('the screen-reader display', () => {
 
   it('shows a prompt as numbered lines with the selected one named, no marker and no box', async () => {
     const started = await startWith({ ...READER, backend: { trust: { path: '/work/project', decision: null } }, screen: { screen: 'scrollback', columns: 100, rows: 30 } });
-    const frameLines = (await untilFrame(started.app, 'Do you trust the files in /work/project?')).split('\n').map((line) => line.trimEnd());
+    const frameLines = (await untilFrame(started.app, (now) => now.includes('Do you trust the files in /work/project?') && now.includes('to choose'))).split('\n').map((line) => line.trimEnd());
     const shown = frameLines.slice(frameLines.indexOf('Do you trust the files in /work/project?'));
     expect(shown).toEqual([
       'Do you trust the files in /work/project?',
@@ -160,7 +160,7 @@ describe('the screen-reader display', () => {
     await running(started);
     started.backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'c1', name: 'Bash', kind: 'execute', title: 'Bash c1', rawInput: { command: 'ls' } }));
     started.backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: 'asks', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }, { optionId: 'o3', name: 'Reject once', kind: 'reject_once' }] }));
-    const shown = (await untilFrame(started.app, 'Permission requested: Bash c1')).split('\n').map((line) => line.trimEnd());
+    const shown = (await untilFrame(started.app, (now) => now.includes('Permission requested: Bash c1') && now.includes('to choose'))).split('\n').map((line) => line.trimEnd());
     const at = shown.indexOf('Permission requested: Bash c1');
     expect(shown.slice(at, at + 6)).toEqual(['Permission requested: Bash c1', 'asks', 'selected: Allow once', '1. Allow once', '2. Reject once', '1-9 or enter to choose · up/down to move · esc: Reject once · ctrl+c: cancel the run']);
     started.app.unmount();

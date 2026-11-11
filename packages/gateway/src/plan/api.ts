@@ -1,8 +1,8 @@
-import { editModelsSettings } from '@momonga/config';
+import { ModelsEditRefused, editModelsSettings } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
 import { isRecord } from '@momonga/foundation';
-import type { Clock } from '@momonga/foundation';
-import { PLAN_ACCOUNT_NOT_SELECTABLE_CODE, PLAN_LABEL_REFUSAL, isPlanLabel, RETRY_OUTCOME } from '@momonga/protocol';
+import type { Clock, LimitTiming } from '@momonga/foundation';
+import { PLAN_ACCOUNT_NOT_FOUND_CODE, PLAN_ACCOUNT_NOT_SELECTABLE_CODE, PLAN_LABEL_REFUSAL, isPlanLabel, RETRY_OUTCOME } from '@momonga/protocol';
 import type {
   NamedPlanAccountRef,
   PlanAccountRef,
@@ -19,10 +19,13 @@ import type {
   PlanSignOutResponse,
 } from '@momonga/protocol';
 import { GatewayError, invalidRequest, notFound, statusFor } from '../core/errors.ts';
+import { retryAfterSeconds } from '../core/retry.ts';
 import { PlanCredentialError, credentialErrorType, statusOf } from './auth-source.ts';
-import { limitFailureOf } from './request-limit.ts';
+import { PLAN_OPERATION_LIMIT, limitFailureOf, withinRequestLimit } from './request-limit.ts';
 import type { AccountView } from './auth-source.ts';
 import { NO_REPORTED_WINDOW } from './catalog.ts';
+import { CONFLICT_STATUS, INVALID_REQUEST_STATUS, RETRYABLE_STATUS } from './http-status.ts';
+import { planProfileNamed } from './profiles.ts';
 import type { PlanCatalog } from './catalog.ts';
 import { ownEntry } from './own-entry.ts';
 import { PlanAccountNotSelectableError } from './session.ts';
@@ -80,24 +83,33 @@ const portOf = (body: unknown): number => {
   return value;
 };
 
-const RETRYABLE_STATUS = 503;
-const CONFLICT_STATUS = 409;
+const MODELS_EDIT_CONFLICTS: ReadonlySet<ModelsEditRefused['code']> = new Set<ModelsEditRefused['code']>(['name_taken', 'duplicate', 'would_not_load']);
 
-export const gatewayErrorOfCredential = (error: unknown): unknown => {
+export const planRouteError = (error: unknown): unknown => {
   if (error instanceof PlanAccountNotSelectableError) return invalidRequest(PLAN_ACCOUNT_NOT_SELECTABLE_CODE, error.message, null, CONFLICT_STATUS);
+  if (error instanceof ModelsEditRefused) return invalidRequest(error.code, error.message, null, MODELS_EDIT_CONFLICTS.has(error.code) ? CONFLICT_STATUS : INVALID_REQUEST_STATUS);
   const failure = error instanceof PlanCredentialError ? error : limitFailureOf(error);
   if (failure === undefined) return error;
   const type = credentialErrorType(failure.code);
-  return new GatewayError({ status: failure.retryable ? RETRYABLE_STATUS : statusFor(type, failure.code), type, code: failure.code, message: failure.message });
+  return new GatewayError({
+    status: failure.retryable ? RETRYABLE_STATUS : statusFor(type, failure.code),
+    type,
+    code: failure.code,
+    message: failure.message,
+    ...(failure.retryAfterMs === undefined ? {} : { headers: { 'retry-after': retryAfterSeconds(failure.retryAfterMs) } }),
+  });
 };
 
 const translated = async <T>(work: () => Promise<T>): Promise<T> => {
   try {
     return await work();
   } catch (error) {
-    throw gatewayErrorOfCredential(error);
+    throw planRouteError(error);
   }
 };
+
+export const withinPlanOperation = <T>(timing: LimitTiming, signal: AbortSignal, step: (signal: AbortSignal) => Promise<T>): Promise<T> =>
+  translated(() => withinRequestLimit(PLAN_OPERATION_LIMIT, timing, signal, step));
 
 export const accountViewOf = (ref: NamedPlanAccountRef, view: AccountView, active: boolean, pinnedBy: readonly string[], nowMs: number): PlanAccountView | undefined => {
   const status = statusOf(view, nowMs);
@@ -118,11 +130,9 @@ export const accountViewOf = (ref: NamedPlanAccountRef, view: AccountView, activ
 export const createPlanApi = (options: PlanApiOptions): PlanApi => {
   const { sessions } = options;
 
-  const profileOf = (id: string): PlanProfile => {
-    const profile = ownEntry(options.profiles, id);
-    if (profile === undefined) throw invalidRequest('plan_profile_unknown', `no plan profile is named ${JSON.stringify(id)}`, 'profile');
-    return profile;
-  };
+  const profileOf = (id: string): PlanProfile => planProfileNamed(options.profiles, id);
+
+  const accountNotFound = (ref: NamedPlanAccountRef): GatewayError => notFound(PLAN_ACCOUNT_NOT_FOUND_CODE, `no ${ref.profile} account is labelled ${JSON.stringify(ref.account)}`, 'account');
 
   const activeLabels = (): ReadonlyMap<string, string> =>
     new Map(
@@ -139,7 +149,7 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
     await sessions.load(ref, signal);
     const found = (await sessions.known(signal)).find((entry) => entry.profile === ref.profile && entry.account === ref.account);
     const view = found === undefined ? undefined : accountViewOf(ref, found.view, active.get(ref.profile) === ref.account, pinnedBy(ref, targets), options.clock.now());
-    if (view === undefined) throw notFound('plan_account_not_found', `no ${ref.profile} account is labelled ${JSON.stringify(ref.account)}`, 'account');
+    if (view === undefined) throw accountNotFound(ref);
     return view;
   };
 
@@ -167,15 +177,14 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
     const account = accountLabelOf(label);
     if (profile === undefined || profile === '') throw invalidRequest('invalid_query', 'the profile query parameter is required', 'profile');
     const chosen = profileOf(profile);
-    if ((await sessions.registration({ profile: chosen.id, account }, signal)) === undefined) {
-      throw notFound('plan_account_not_found', `no ${chosen.id} account is labelled ${JSON.stringify(account)}`, 'account');
-    }
+    const ref = { profile: chosen.id, account };
+    if ((await sessions.registration(ref, signal)) === undefined) throw accountNotFound(ref);
     return { profile: chosen, account };
   };
 
   const addedModelOf = async (profile: string, slug: string, signal: AbortSignal): Promise<string> => {
     const connection = { adapter: 'open-responses' as const, plan: { profile } };
-    const { model } = await editModelsSettings(options.home, options.settingsFile, [{ kind: 'addModel', choice: { connection, model: { id: slug } } }], { signal });
+    const { model } = await editModelsSettings(options.home, options.settingsFile, [{ kind: 'addModel', choice: { connection, model: { id: slug } } }], { signal, planProfiles: options.profiles });
     if (model === undefined) throw new TypeError(`the settings writer added the plan model ${slug} without naming it`);
     return model;
   };
@@ -234,9 +243,10 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
         await viewNamed(ref, targets, signal);
         return { resumed: await sessions.resume(ref, signal) };
       }),
-    resetHost: async () => {
-      const { hostId } = await options.signIn.resetHost();
-      return { hostId };
-    },
+    resetHost: () =>
+      translated(async () => {
+        const { hostId } = await options.signIn.resetHost();
+        return { hostId };
+      }),
   };
 };

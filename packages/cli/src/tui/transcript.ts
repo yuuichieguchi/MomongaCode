@@ -509,6 +509,9 @@ type OpenPrompts = Pick<TranscriptState, 'approval' | 'queuedApprovals' | 'elici
 const heldApprovalsOf = (state: Pick<TranscriptState, 'approval' | 'queuedApprovals'>): PendingApproval[] =>
   [...(state.approval === undefined ? [] : [state.approval]), ...state.queuedApprovals].filter((approval) => approval.held === true);
 
+export const promptTakesFocus = (state: OpenPrompts & Pick<TranscriptState, 'phase' | 'runStatus'>): boolean =>
+  state.elicitation !== undefined || (state.approval !== undefined && (state.approval.held !== true || state.runStatus === 'WAITING_HUMAN' || state.phase?.kind === 'awaited'));
+
 export const blockingPrompt = (state: OpenPrompts): boolean => state.elicitation !== undefined || (state.approval !== undefined && state.approval.held !== true);
 
 export const heldPhaseText = (count: number): string => `${count} call${count === 1 ? '' : 's'} held for your approval`;

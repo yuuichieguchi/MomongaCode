@@ -1,8 +1,9 @@
-import { randomBytes } from 'node:crypto';
 import { LOCK_FD } from './process-contract.ts';
 import { hostKernelLock } from './platform/host-kernel-lock.ts';
 import { HOLDER_READ_MAX_BYTES, LockAdoptionError, writeHolderOrRelease } from './platform/kernel-lock.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
+import type { Random } from './random.ts';
+import { systemRandom } from './system-random.ts';
 
 export { HOLDER_READ_MAX_BYTES, LockAdoptionError };
 
@@ -29,9 +30,7 @@ export const LOCK_NONCE_ENV = 'MOMONGA_LOCK_NONCE';
 const NONCE_BYTES = 16;
 const HANDOFF_PREFIX = 'handoff:';
 
-export type ProcessLockOptions = { mechanism?: KernelLockMechanism; randomNonce?: () => string };
-
-const randomHandoffNonce = (): string => randomBytes(NONCE_BYTES).toString('hex');
+export type ProcessLockOptions = { mechanism?: KernelLockMechanism; random?: Random };
 
 export type InspectProcessLockOptions = ProcessLockOptions;
 
@@ -90,7 +89,7 @@ export const claimLockForChild = (lockPath: string, options: ProcessLockOptions 
   }
   const { lock } = outcome;
   if (lock.descriptor === undefined) throw new Error(`${mechanism.name} claimed ${lockPath} without an inheritable descriptor`);
-  const nonce = (options.randomNonce ?? randomHandoffNonce)();
+  const nonce = (options.random ?? systemRandom).hex(NONCE_BYTES);
   writeHolderOrRelease(lock, `${HANDOFF_PREFIX}${nonce}`);
   return {
     kind: 'claimed',

@@ -1,3 +1,4 @@
+import { TEST_KEY_SETTLE_MS, settleAtOnce } from './ink-helpers.ts';
 import { PLAN_PROFILES } from '@momonga/config';
 import type {
   DetectedLocalServer,
@@ -200,7 +201,7 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
 export const startPlan = async (options: FakePlanOptions = {}, extra: Pick<AppProps, 'initialPrompt' | 'initialSkill' | 'startup'> = {}, screen: Parameters<typeof fakeScreenTerminal>[0] = {}) => {
   const backend = fakePlanBackend(options);
   const outcomes: TuiOutcome[] = [];
-  const app = renderObservable(<App backend={backend as TuiBackend} terminal={fakeScreenTerminal(screen)} now={Date.now} timers={systemTiming} initialMode={undefined} {...extra} onExit={(outcome) => void outcomes.push(outcome)} />);
+  const app = renderObservable(<App backend={backend as TuiBackend} terminal={fakeScreenTerminal(screen)} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} initialMode={undefined} {...extra} onExit={(outcome) => void outcomes.push(outcome)} />);
   return { backend, app, outcomes };
 };
 

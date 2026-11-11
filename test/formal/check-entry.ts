@@ -1,4 +1,4 @@
-import { realGroupTiming, waitForGroupGone } from '@momonga/foundation';
+import { systemWaitTiming, waitForGroupGone } from '@momonga/foundation';
 import type { ProcessGroupPort, Timing } from '@momonga/foundation';
 import type { ManifestEntry, Tier, TlcRun } from './manifest-reader.ts';
 import { RAN_REASONS, RECORD_FORMAT, keyOf, keyPartsOf, refusalOf, sealedRecord } from './reuse.ts';
@@ -31,7 +31,7 @@ type FinishedRun = { readonly run: TlcRun; readonly problems: readonly string[] 
 
 const runAndJudge = async (request: CheckRequest, args: readonly string[]): Promise<FinishedRun> => {
   const { entry } = request;
-  const timing = request.timing ?? realGroupTiming;
+  const timing = request.timing ?? systemWaitTiming;
   const deadline = timing.monotonicMs() + request.limitMs;
   const run = await runTlc({ script: request.script, config: entry.config, args, budgetCpuSeconds: entry.budgetCpuSeconds });
   const groupGone = await waitForGroupGone(run.pid, deadline, request.groupPort, timing);

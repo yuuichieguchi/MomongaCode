@@ -1,6 +1,10 @@
 export { editUserSettings } from './edit-user-settings.ts';
+export { editProjectMandate } from './edit-project-file.ts';
+export type { EditProjectMandateOptions, ProjectMandateEdit } from './edit-project-file.ts';
 export type { EditUserSettingsOptions } from './edit-user-settings.ts';
-export { MODELS_SETTING_WRITERS, ModelsEditRefused, durationText, editModelsSettings, fieldLabel, fieldValueText, planModelsEdit, serverNameFromCommand } from './models-writers.ts';
+export { settingsFileLock, settingsWriterPorts } from './file-lock.ts';
+export type { SettingsFileLockOptions, SettingsLockPort, SettingsWriterOptions, SettingsWriterPorts } from './file-lock.ts';
+export { MODELS_SETTING_WRITERS, ModelsEditRefused, durationText, editModelsSettings, fieldLabel, fieldValueText, planModelsEdit, serverNameFromCommand, settableFieldPath } from './models-writers.ts';
 export type {
   ModelsEditPlan,
   ModelsEditPorts,
@@ -67,7 +71,7 @@ export { assertSessionMcpServers, loadMcpServers } from './mcp-servers.ts';
 export { mcpServerNameProblem, mcpServerUrlProblem, mcpServerUrlProblemOf } from './mcp-server-rules.ts';
 export type { McpServerUrlProblem } from './mcp-server-rules.ts';
 export type { LoadMcpServersOptions, LoadMcpServersResult, McpServerEntry, McpServerFailure, McpServerScope } from './mcp-servers.ts';
-export { COMMAND_PREFIX_SUFFIX, EDIT_TOOLS, OPERATION_RULE_TOOLS, checkRuleText, parseGovernanceRule, PATH_TOOLS, PATH_TOOL_RULES, hasBalancedParentheses, isPathTool, parseRule, RuleParseError } from './rule.ts';
+export { COMMAND_PREFIX_SUFFIX, EDIT_TOOLS, NETWORK_RULE_NOT_ENFORCED, NETWORK_RULE_SUBJECT, OPERATION_RULE_TOOLS, checkRuleText, parseGovernanceRule, PATH_TOOLS, PATH_TOOL_RULES, hasBalancedParentheses, isPathTool, parseRule, RuleParseError } from './rule.ts';
 export type { GovernanceRuleEntry, ParseRuleOptions, PathToolName, PermissionRule, RuleEffect, RuleLayer, RuleOrigin } from './rule.ts';
 export { SETTINGS_SCHEMA } from './settings-schema.ts';
 export { CORE_SETTING_KEYS, NON_CORE_SETTING_KEYS } from './core-settings.ts';

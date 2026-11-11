@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { KILL_CONFIRM_MS, ProcessLockHeldError, acquireProcessLock, createUdsClient, fixedSocket, isPipePath, isUnixSocketLive, socketBindRefusalOf, systemClock } from '@momonga/foundation';
-import type { GenerationRole, ProcessLock, UdsClient } from '@momonga/foundation';
+import { KILL_CONFIRM_MS, ProcessLockHeldError, acquireProcessLock, createUdsClient, fixedSocket, isPipePath, isUnixSocketLive, socketBindRefusalOf, startSharedCall, systemClock } from '@momonga/foundation';
+import type { GenerationRole, ProcessLock, SharedCall, UdsClient } from '@momonga/foundation';
 import { SOCKET_PLACEHOLDER } from '@momonga/protocol';
 import type { HealthResult, ManagedEndpointForm, ManagedServerDescription } from '@momonga/protocol';
 import { realTimers } from '../process-ports.ts';
@@ -119,6 +119,8 @@ const refusalHealth = (refusal: RefusedVerdict): HealthResult => ({
   ...(refusal.remedy === undefined ? {} : { remediation: refusal.remedy }),
 });
 
+const NEVER_ENDED = new AbortController().signal;
+
 export const createManagedServer = (options: ManagedServerOptions): ManagedServer => {
   const { description, target } = options;
   const exec = options.exec ?? createExecFn(options.env);
@@ -137,7 +139,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
   let generation = 0;
   let current: RunningChild | undefined;
   let client: UdsClient | undefined;
-  let startPromise: Promise<ManagedEndpoint> | undefined;
+  let startFlight: SharedCall<ManagedEndpoint> | undefined;
   let endStart: AbortController | undefined;
   let restartRun: Promise<void> | undefined;
   let restartTimer: unknown;
@@ -496,7 +498,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     return endpoint;
   };
 
-  const begin = (signal: AbortSignal | undefined): Promise<ManagedEndpoint> => {
+  const begin = (): SharedCall<ManagedEndpoint> => {
     state = 'starting';
     generation += 1;
     totalRestarts = 0;
@@ -506,21 +508,26 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     failure = NOT_RUNNING;
     const ended = new AbortController();
     endStart = ended;
-    const started = performStart(generation, signal === undefined ? ended.signal : AbortSignal.any([ended.signal, signal]));
-    startPromise = started;
+    const startGeneration = generation;
+    const started = startSharedCall(
+      ended.signal,
+      (shared) => performStart(startGeneration, shared),
+      () => undefined,
+    );
+    startFlight = started;
     const clear = (): void => {
-      if (startPromise === started) startPromise = undefined;
+      if (startFlight === started) startFlight = undefined;
       if (endStart === ended) endStart = undefined;
     };
-    started.then(clear, clear);
+    started.work.then(clear, clear);
     return started;
   };
 
-  const start = (signal?: AbortSignal): Promise<ManagedEndpoint> => {
-    if (state === 'starting' && startPromise !== undefined) return startPromise;
+  const start = (signal: AbortSignal = NEVER_ENDED): Promise<ManagedEndpoint> => {
+    if (state === 'starting' && startFlight !== undefined) return startFlight.join(signal);
     if (state === 'running' || state === 'restarting') return Promise.reject(new Error(said('the server is already started')));
-    if (startPromise !== undefined) return startPromise.then(undefined, () => undefined).then(() => begin(signal));
-    return begin(signal);
+    if (startFlight !== undefined) return startFlight.work.then(undefined, () => undefined).then(() => start(signal));
+    return begin().join(signal);
   };
 
   return {
@@ -549,8 +556,8 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
       const stopping = current;
       const closing = client;
       if (stopping !== undefined) await terminate(stopping, stop?.stopGraceMs);
-      const pendingStart = startPromise;
-      if (pendingStart !== undefined) await pendingStart.then(undefined, () => undefined);
+      const pendingStart = startFlight;
+      if (pendingStart !== undefined) await pendingStart.work.then(undefined, () => undefined);
       const pendingRestart = restartRun;
       if (pendingRestart !== undefined) await pendingRestart;
       if (closing !== undefined) await closeClient(closing);

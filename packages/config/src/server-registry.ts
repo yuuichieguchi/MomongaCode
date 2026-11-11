@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { MANAGED_READY_LIMIT_MS, MANAGED_RESTART_POLICY, MANAGED_SERVERS, SOCKET_PLACEHOLDER } from '@momonga/protocol';
 import type { ManagedEndpointForm, ManagedServerDescription } from '@momonga/protocol';
+import { ConfigError } from './config-error.ts';
 import type { DeclaredServer } from './settings.ts';
 
 export type ServerRegistry = Readonly<Record<string, ManagedServerDescription>>;
@@ -15,7 +16,7 @@ export const firstOfferedEndpointForm = (description: ManagedServerDescription, 
 export const requireOfferedEndpointForm = (description: ManagedServerDescription, hostForms: readonly ManagedEndpointForm[], where: string): ManagedEndpointForm => {
   const form = firstOfferedEndpointForm(description, hostForms);
   if (form === undefined) {
-    throw new Error(
+    throw new ConfigError(
       `${where}: server ${JSON.stringify(description.id)} accepts only the endpoint forms ${bracketed(description.endpoint.forms)}, and this host offers ${bracketed(hostForms)}; the target cannot be used on this platform`,
     );
   }
@@ -43,15 +44,15 @@ const declaredDescriptionOf = (id: string, declared: DeclaredServer): ManagedSer
 });
 
 const checkDeclaration = (id: string, declared: DeclaredServer, where: string): void => {
-  if (MANAGED_SERVERS.some((server) => server.id === id)) throw new Error(`${where}: ${JSON.stringify(id)} is a built-in managed server and cannot be declared; choose another id`);
-  if (!path.isAbsolute(declared.command)) throw new Error(`${where}.command must be an absolute path; got ${JSON.stringify(declared.command)}`);
+  if (MANAGED_SERVERS.some((server) => server.id === id)) throw new ConfigError(`${where}: ${JSON.stringify(id)} is a built-in managed server and cannot be declared; choose another id`);
+  if (!path.isAbsolute(declared.command)) throw new ConfigError(`${where}.command must be an absolute path; got ${JSON.stringify(declared.command)}`);
   declared.args.forEach((arg, index) => {
     if (arg !== SOCKET_PLACEHOLDER && arg.includes(SOCKET_PLACEHOLDER)) {
-      throw new Error(`${where}.args[${index}] contains ${JSON.stringify(SOCKET_PLACEHOLDER)} inside a longer argument; the placeholder must be a whole argument`);
+      throw new ConfigError(`${where}.args[${index}] contains ${JSON.stringify(SOCKET_PLACEHOLDER)} inside a longer argument; the placeholder must be a whole argument`);
     }
   });
   const placeholders = declared.args.filter((arg) => arg === SOCKET_PLACEHOLDER).length;
-  if (placeholders !== 1) throw new Error(`${where}.args must contain ${JSON.stringify(SOCKET_PLACEHOLDER)} exactly once; found ${placeholders}`);
+  if (placeholders !== 1) throw new ConfigError(`${where}.args must contain ${JSON.stringify(SOCKET_PLACEHOLDER)} exactly once; found ${placeholders}`);
 };
 
 export const serverRegistryOf = (declared: Readonly<Record<string, DeclaredServer>> | undefined, source: string): ServerRegistry => {

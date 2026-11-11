@@ -1,22 +1,39 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import type { Timing } from '@momonga/foundation';
 import type { FakeClock } from './fake-clock.ts';
 import { createFakeTimers } from './fake-timers.ts';
 import type { FakeTimers } from './fake-timers.ts';
 
-export const fakeReapTiming = (clock: FakeClock, timers: FakeTimers): { now(): number; sleep(ms: number): Promise<void> } => ({
-  now: () => clock.now(),
-  sleep: (ms) => timers.advanceAsync(ms),
-});
+export type SleepSource = { now(): number; sleep(ms: number): Promise<unknown> };
 
-export const drivenReapTiming = (clock: FakeClock, timers: FakeTimers): { now(): number; sleep(ms: number): Promise<void> } => ({
-  now: () => clock.now(),
-  sleep: (ms) =>
-    new Promise<void>((resolve) => {
-      timers.setTimeout(resolve, ms);
-    }),
-});
+export const sleepDrivenTiming = (source: SleepSource): Timing => {
+  const waiting = new Set<object>();
+  return {
+    now: () => source.now(),
+    monotonicMs: () => source.now(),
+    setTimeout: (callback, ms) => {
+      const handle = {};
+      waiting.add(handle);
+      void source.sleep(ms).then(() => {
+        if (waiting.delete(handle)) callback();
+      });
+      return handle;
+    },
+    clearTimeout: (handle) => {
+      waiting.delete(handle as object);
+    },
+  };
+};
 
-export type PacedReapTiming = { now(): number; sleep(ms: number): Promise<void>; readonly sleeps: number[]; pairedWith<T>(startRealOperation: () => Promise<T>): Promise<T> };
+export const fakeReapTiming = (clock: FakeClock, timers: FakeTimers): Timing =>
+  sleepDrivenTiming({
+    now: () => clock.now(),
+    sleep: (ms) => timers.advanceAsync(ms),
+  });
+
+export const drivenReapTiming = (_clock: FakeClock, timers: FakeTimers): Timing => timers;
+
+export type PacedReapTiming = Timing & { readonly sleeps: number[]; pairedWith<T>(startRealOperation: () => Promise<T>): Promise<T> };
 
 const eventLoopTurn = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
 
@@ -24,9 +41,24 @@ export const pacedReapTiming = (clock: FakeClock, timers: FakeTimers = createFak
   const inFlight = new Set<Promise<void>>();
   const sleeps: number[] = [];
   const insidePairedOperation = new AsyncLocalStorage<true>();
-  return {
+  const paced = sleepDrivenTiming({
     now: () => clock.now(),
+    sleep: async (ms) => {
+      await timers.advanceAsync(ms);
+      if (inFlight.size === 0) await eventLoopTurn();
+      else await Promise.all([...inFlight]);
+    },
+  });
+  return {
+    ...paced,
     sleeps,
+    setTimeout: (callback, ms) => {
+      if (insidePairedOperation.getStore() === true) {
+        throw new Error('pacedReapTiming: an operation paired with this timing slept on it; the sleep waits for the operation and the operation for the sleep, so neither could end');
+      }
+      sleeps.push(ms);
+      return paced.setTimeout(callback, ms);
+    },
     pairedWith: (startRealOperation) => {
       const realOperation = insidePairedOperation.run(true, async () => startRealOperation());
       const settled: Promise<void> = realOperation.then(
@@ -36,15 +68,6 @@ export const pacedReapTiming = (clock: FakeClock, timers: FakeTimers = createFak
       inFlight.add(settled);
       void settled.then(() => inFlight.delete(settled));
       return realOperation;
-    },
-    sleep: async (ms) => {
-      if (insidePairedOperation.getStore() === true) {
-        throw new Error('pacedReapTiming: an operation paired with this timing slept on it; the sleep waits for the operation and the operation for the sleep, so neither could end');
-      }
-      sleeps.push(ms);
-      await timers.advanceAsync(ms);
-      if (inFlight.size === 0) await eventLoopTurn();
-      else await Promise.all([...inFlight]);
     },
   };
 };

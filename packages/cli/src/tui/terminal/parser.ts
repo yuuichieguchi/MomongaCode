@@ -1,8 +1,8 @@
 import { MAX_SEQUENCE_BYTES, PASTE_ABANDON_BYTES, PASTE_MAX_BYTES } from './constants.ts';
-import { MOUSE_BUTTONS, NO_KEY_MODIFIERS, WHEEL_BUTTONS } from './events.ts';
+import { KEY_RELEASED, MOUSE_BUTTONS, NO_KEY_MODIFIERS, WHEEL_BUTTONS } from './events.ts';
 import type { KeyEvent, KeyModifiers, KeyName, TerminalEvent } from './events.ts';
 
-export type InputParser = { push(bytes: Uint8Array): TerminalEvent[]; holdsLoneEscape(): boolean; settle(): TerminalEvent[] };
+export type InputParser = { push(bytes: Uint8Array): TerminalEvent[]; holdsOpen(): boolean; settle(): TerminalEvent[] };
 
 const ESC = '\u001b';
 const BEL = '\u0007';
@@ -146,7 +146,7 @@ const kittyKey = (parameters: string): Interpreted => {
   const code = numberOf(codeText);
   const modified = modifiedOf(modifierField);
   if (code === undefined || modified === undefined) return 'unknown';
-  if (modified.released) return [];
+  if (modified.released) return [KEY_RELEASED];
   if (textField !== '') {
     const codePoints = numbersOf(textField, ':');
     if (codePoints === undefined || !codePoints.every(isPrintable)) return 'unknown';
@@ -169,14 +169,14 @@ const tildeKey = (parameters: string): Interpreted => {
   const name = TILDE_KEYS[code];
   const modified = modifiedOf(fields[1]);
   if (name === undefined || modified === undefined) return 'unknown';
-  return modified.released ? [] : [namedKey(name, modified.modifiers)];
+  return modified.released ? [KEY_RELEASED] : [namedKey(name, modified.modifiers)];
 };
 
 const letterKey = (parameters: string, final: string): Interpreted => {
   const fields = parameters === '' ? [] : parameters.split(';');
   const modified = modifiedOf(fields.at(-1) === undefined || fields.length < 2 ? undefined : fields.at(-1));
   if (modified === undefined) return 'unknown';
-  if (modified.released) return [];
+  if (modified.released) return [KEY_RELEASED];
   if (final === 'Z') return [namedKey('tab', { ...modified.modifiers, shift: true })];
   const name = LETTER_KEYS[final];
   return name === undefined ? 'unknown' : [namedKey(name, modified.modifiers)];
@@ -319,6 +319,7 @@ export const createInputParser = (): InputParser => {
   let pending = '';
   let readEndedWithEscape = false;
   let paste: OpenPaste | undefined;
+  let cutBySettle: string | undefined;
 
   const closed = (open: OpenPaste): TerminalEvent => (open.overflow ? OVERFLOWED_PASTE : { type: 'paste', text: open.pieces.join(''), overflow: false });
 
@@ -355,17 +356,51 @@ export const createInputParser = (): InputParser => {
 
   const holdsLoneEscape = (): boolean => pending === ESC && readEndedWithEscape && paste === undefined;
 
+  const holdsBareIntroducer = (): boolean => paste === undefined && pending.length === 2 && pending.startsWith(ESC) && INTRODUCERS[pending.charAt(1)] !== undefined;
+
+  const holdsAbandonedPaste = (): boolean => paste?.abandoned === true;
+
+  const holdsOpen = (): boolean => holdsLoneEscape() || holdsBareIntroducer() || holdsAbandonedPaste();
+
   const settle = (): TerminalEvent[] => {
+    if (holdsAbandonedPaste()) {
+      paste = undefined;
+      cutBySettle = pending === '' ? undefined : pending;
+      pending = '';
+      return [];
+    }
+    if (holdsBareIntroducer()) {
+      const key = plainKey(pending.charCodeAt(1), true);
+      cutBySettle = pending;
+      pending = '';
+      return [key];
+    }
     if (!holdsLoneEscape()) return [];
     pending = '';
     readEndedWithEscape = false;
     return [namedKey('escape', NO_KEY_MODIFIERS)];
   };
 
+  const continuesCut = (cut: string, read: string): boolean => {
+    const joined = cut + read;
+    if (joined.startsWith(PASTE_END)) return true;
+    const sequence = INTRODUCERS[cut.charAt(1)];
+    if (cut.length !== 2 || sequence === undefined) return false;
+    const step = sequence(joined, 0);
+    return step !== 'incomplete' && step.next > cut.length + 1 && (step.pasteStarts || step.events.length > 0);
+  };
+
+  const resumed = (read: string): string => {
+    if (read === '' || cutBySettle === undefined) return read;
+    const cut = cutBySettle;
+    cutBySettle = undefined;
+    return continuesCut(cut, read) ? cut + read : read;
+  };
+
   const push = (bytes: Uint8Array): TerminalEvent[] => {
     const events: TerminalEvent[] = [];
     const heldEscape = holdsLoneEscape();
-    const buffer = pending + decoder.decode(bytes, { stream: true });
+    const buffer = pending + resumed(decoder.decode(bytes, { stream: true }));
     pending = '';
     let at = 0;
     while (at < buffer.length) {
@@ -394,5 +429,5 @@ export const createInputParser = (): InputParser => {
     return events;
   };
 
-  return { push, holdsLoneEscape, settle };
+  return { push, holdsOpen, settle };
 };

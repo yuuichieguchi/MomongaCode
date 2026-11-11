@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { reconcileProcessGroup } from '@momonga/foundation';
-import type { MarkerState, ProcessGroupPort, ProcessInspector, ReapTiming } from '@momonga/foundation';
-import { createFakeClock } from '@momonga/testkit';
+import type { MarkerState, ProcessGroupPort, ProcessInspector, Timing } from '@momonga/foundation';
+import { createFakeClock, sleepDrivenTiming } from '@momonga/testkit';
 
 const PGID = 1_999_999_031;
 const COULD_NOT_CHECK = (reason: string) =>
@@ -18,9 +18,9 @@ const inspectorWith = (state: MarkerState): ProcessInspector =>
 
 const goneGroup: ProcessGroupPort = { signal: async () => undefined, alive: async () => false };
 
-const reapTiming = (): ReapTiming => {
+const reapTiming = (): Timing => {
   const clock = createFakeClock(0);
-  return { now: () => clock.now(), sleep: async (ms) => void clock.advance(ms) };
+  return sleepDrivenTiming({ now: () => clock.now(), sleep: async (ms) => void clock.advance(ms) });
 };
 
 const reconcile = (state: MarkerState) =>

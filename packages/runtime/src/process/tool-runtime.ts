@@ -21,7 +21,7 @@ import {
   ruleEnforcementOf,
   sha256Hex,
 } from '@momonga/foundation';
-import type { Clock, CredentialSecretStore, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, OutboundNetwork, ProcessInspector, ReapTiming, RolePort, RuleEnforcement, SecretStore, SessionScratch } from '@momonga/foundation';
+import type { Clock, CredentialSecretStore, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, OutboundNetwork, ProcessInspector, Timing, RolePort, RuleEnforcement, SecretStore, SessionScratch } from '@momonga/foundation';
 import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/mcp';
 import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { SandboxBindings } from '../ports.ts';
@@ -55,7 +55,9 @@ export type ToolRuntimeOptions = {
   generation: number;
   role: Pick<RolePort, 'current'>;
   onJobSettled?: () => void;
+  onAuthorizationEnded?: () => void;
   home: string;
+  version: string;
   store: RuntimeStore;
   notifier: Pick<RunNotifier, 'watchRun'>;
   clock: Clock;
@@ -68,7 +70,7 @@ export type ToolRuntimeOptions = {
   forgeFetch?: ForgeFetch;
   shellHost: ShellHost;
   settings: Pick<SettingsComposition, 'envFor' | 'takeUserSnapshot' | 'admitUserSnapshot' | 'keptLayers' | 'loadSessionSettings' | 'trustOracle'>;
-  reapTiming: ReapTiming;
+  reapTiming: Timing;
   leaseMs: number;
   heartbeatMs: number;
   createPool?: (options: McpPoolOptions) => McpPool;
@@ -167,9 +169,11 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     settings,
     remote: mcpRemote,
     createPool: options.createAdminPool ?? createMcpPool,
+    clientVersion: options.version,
     readCloseGraceMs,
     readConnectTimeoutMs: () => settings.takeUserSnapshot().settings.mcp.connectTimeoutMs,
     markers: { dir: paths.markers.mcp, onWarning: (message) => logger.warn(message) },
+    ...(options.onAuthorizationEnded === undefined ? {} : { onAuthorizationEnded: options.onAuthorizationEnded }),
   });
   const mcpPools = createMcpPoolCache({ store, notifier, timers, logger, report, readCloseGraceMs });
   const sessionStates = createSessionStates({ clock, store, logger, releaseScratch: (sessionId) => releaseSessionScratch(path.join(paths.tmp.sessions, sessionId)) });
@@ -228,6 +232,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
               projectDir: session.cwd,
               baseEnv: env,
               clock,
+              clientVersion: options.version,
               credentials,
               credentialNames,
               timers,

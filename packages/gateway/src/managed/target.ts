@@ -1,4 +1,5 @@
-import { canonicalJson, createUdsClient, fixedSocket, probeKeyComponentLabel } from '@momonga/foundation';
+import { canonicalJson, createUdsClient, fixedSocket, probeKeyComponentLabel, startSharedCall } from '@momonga/foundation';
+import type { SharedCall } from '@momonga/foundation';
 import { countReplyOf } from '@momonga/protocol';
 import type {
   AdapterStop,
@@ -46,6 +47,8 @@ import { declaredDialectRefusal, needsProbeOf } from '../probe/remedy.ts';
 import { missingExecutableVerdict, notReadyText } from './preconditions.ts';
 import type { ExecResult } from './preconditions.ts';
 import type { ManagedServer } from './server.ts';
+
+const NEVER_ENDED = new AbortController().signal;
 
 export type ExecWithStdinFn = (file: string, args: readonly string[], stdin: string, signal: AbortSignal) => Promise<ExecResult>;
 
@@ -283,7 +286,26 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
     }
   };
 
-  let listedModel: Promise<string> | undefined;
+  let listedModel: SharedCall<string> | undefined;
+  const sharedListing = (socketPath: string): SharedCall<string> => {
+    const forget = (): void => {
+      if (listedModel === listing) listedModel = undefined;
+    };
+    const listing: SharedCall<string> = startSharedCall(
+      NEVER_ENDED,
+      async (shared) => {
+        try {
+          return await listedModelId(socketPath, shared);
+        } catch (error) {
+          forget();
+          throw error;
+        }
+      },
+      forget,
+    );
+    listedModel = listing;
+    return listing;
+  };
   let servedId: string | undefined;
   const upstreamModel = async (_target: AdapterTarget, signal: AbortSignal): Promise<string> => {
     const recordedModel = lastRecorded().report?.modelId;
@@ -292,11 +314,7 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
       return options.declaredModel ?? recordedModel;
     }
     const endpoint = await options.server.ensureRunning(signal);
-    listedModel ??= listedModelId(endpoint.path, signal).catch((error: unknown) => {
-      listedModel = undefined;
-      throw error;
-    });
-    servedId = await listedModel;
+    servedId = await (listedModel ?? sharedListing(endpoint.path)).join(signal);
     checkServedId(servedId);
     return options.declaredModel ?? servedId;
   };

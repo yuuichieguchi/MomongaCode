@@ -77,6 +77,7 @@ export const makeRemoteConnection = (options: RemoteHarnessOptions) => {
     ...(options.resolver === undefined ? {} : { resolver: options.resolver }),
   };
   const connection = createManagedConnection({
+    clientVersion: '0.0.0-test',
     name: 'remote',
     config: {
       type: 'http',

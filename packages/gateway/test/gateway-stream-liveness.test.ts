@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { StreamEvent } from '@momonga/protocol';
 import { createFakeClock, createFakeTimers, createScriptedAdapter, textResponseEvents, waitFor } from '@momonga/testkit';
+import { createRedactor } from '../src/core/redaction.ts';
+import { createErrorExit } from '../src/server/error-exit.ts';
 import { sseResponse } from '../src/server/sse.ts';
 import { START_MS, postJson, startGateway, userInput } from './gateway-helpers.ts';
 import { BUDGET, driveTimers } from './retry-support.ts';
@@ -270,14 +272,14 @@ describe('sseResponse before the first event', () => {
       return: async () => ({ done: true, value: undefined }),
     };
 
-    const response = sseResponse(undefined, rest, { ...quietOptions, timers, keepAliveMs: 1000, onError: (error) => reported.push(error) });
+    const response = sseResponse(undefined, rest, { ...quietOptions, timers, keepAliveMs: 1000, answer: createErrorExit(createRedactor({ credentials: [] }), (error) => reported.push(error)).answer });
 
     expect(errorEventOf(await response.text())).toMatchObject({
       type: 'error',
       status: 500,
       error: { type: 'server_error', code: 'internal_error', message: 'store exploded' },
     });
-    expect(reported).toEqual([failure]);
+    expect(reported.map((error) => (error instanceof Error ? error.message : error))).toEqual([failure.message]);
   });
 
   it('keeps erroring the stream once an event was written', async () => {
@@ -290,7 +292,7 @@ describe('sseResponse before the first event', () => {
       return: async () => ({ done: true, value: undefined }),
     };
 
-    const response = sseResponse(first, rest, { ...quietOptions, timers, keepAliveMs: 1000, onError: (error) => reported.push(error) });
+    const response = sseResponse(first, rest, { ...quietOptions, timers, keepAliveMs: 1000, answer: createErrorExit(createRedactor({ credentials: [] }), (error) => reported.push(error)).answer });
 
     await expect(response.text()).rejects.toBe(failure);
     expect(reported).toEqual([]);

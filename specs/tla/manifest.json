@@ -4589,6 +4589,18 @@
       "budgetCpuSeconds": 11
     },
     {
+      "config": "LeftoverCleanup.twoStarters",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 2064736,
+      "measuredSeconds": 2077.87,
+      "measuredCpuSeconds": 1939.18,
+      "budgetCpuSeconds": 3882,
+      "measuredNote": "measured on a loaded machine (1-minute load 20 to 43 during the run); to be re-measured on a quiet machine (1-minute load below 15)"
+    },
+    {
       "config": "SettingsSwap",
       "role": "check",
       "expect": "holds",
@@ -5666,10 +5678,25 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 514043,
-      "measuredSeconds": 914.94,
-      "measuredCpuSeconds": 1127.05,
-      "budgetCpuSeconds": 2258,
-      "note": "holds on the 2026-11-10 head; CPU measured with one worker alone at 1-minute load 3.4 (1127.05 CPU s, 1104.51 s wall); the wall field is the earlier two-worker value"
+      "measuredSeconds": 1643.45,
+      "measuredCpuSeconds": 1232.24,
+      "budgetCpuSeconds": 2468,
+      "note": "holds on the 2026-11-10 head; CPU measured with one worker alone at 1-minute load 3.4 (1127.05 CPU s, 1104.51 s wall); the wall field is the earlier two-worker value",
+      "measuredNote": "re-measured after the gateway exit guard (1-minute load 7 to 15 during the run)"
+    },
+    {
+      "config": "UpdateSwitch.gwExitWithStep",
+      "role": "evidence",
+      "expect": {
+        "violates": "GwNoExitWhileStepping",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 39427,
+      "measuredSeconds": 33.12,
+      "measuredCpuSeconds": 36.17,
+      "budgetCpuSeconds": 76
     },
     {
       "config": "UpdateSwitch.upkeep",

@@ -80,15 +80,17 @@ describe('UserSettingsCache.snapshot', () => {
     expect(cache.get().env).toEqual({ TZ: 'fixed' });
   });
 
-  it('a failed load is never cached, so fixing the cause restores service without touching the file', () => {
+  it('a failed load is cached under the content of the file, and a changed content loads', () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
-    const extra = path.join(tree.home, 'extra');
-    writeAt(file, { permissions: { additionalDirectories: [extra] } }, T0);
+    writeAt(file, { tui: { theme: 'bogus' } }, T0);
     const { cache } = cacheFor(tree);
-    expect(errorOf(cache.snapshot())).toBeInstanceOf(ConfigError);
-    fs.mkdirSync(extra);
-    expect(settingsOf(cache.snapshot()).settings.permissions.additionalDirectories).toEqual([extra]);
+    const failed = cache.snapshot();
+    expect(errorOf(failed)).toBeInstanceOf(ConfigError);
+    writeAt(file, { tui: { theme: 'bogus' } }, T1);
+    expect(cache.snapshot()).toBe(failed);
+    writeAt(file, { autoUpdates: false }, T1);
+    expect(settingsOf(cache.snapshot()).settings.autoUpdates).toBe(false);
   });
 
   it('a non-ConfigError failure is wrapped as ConfigError with cause', () => {
@@ -228,7 +230,7 @@ describe('warnings for a broken user settings file', () => {
     expect(invalidFileWarnings(warnings)).toHaveLength(2);
   });
 
-  it('warns again when the file identity changes with the same error', () => {
+  it('warns once when the same content is written again with the same error', () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeAt(file, { env: { TZ: 'good' } }, T0);
@@ -240,7 +242,7 @@ describe('warnings for a broken user settings file', () => {
     writeTextAt(file, '{ broken', T2);
     cache.snapshot();
     cache.get();
-    expect(invalidFileWarnings(warnings)).toHaveLength(2);
+    expect(invalidFileWarnings(warnings)).toHaveLength(1);
   });
 
   it('the warning states the problem and no policy', () => {

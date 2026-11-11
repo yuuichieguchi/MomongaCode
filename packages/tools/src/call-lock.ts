@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { CLAIM_POLL_MS, claimWithin, sweepLeftovers } from '@momonga/foundation';
-import type { KernelLockMechanism, ReapTiming } from '@momonga/foundation';
+import { claimWithin, sweepLeftovers } from '@momonga/foundation';
+import type { KernelLockMechanism, Timing } from '@momonga/foundation';
 
 export class EarlierAttemptNotStoppedError extends Error {
   readonly code = 'earlier_attempt_not_stopped';
@@ -28,13 +28,13 @@ export type CallLocks = {
 export type CallLocksOptions = {
   dir: string;
   mechanism: KernelLockMechanism;
-  timing: ReapTiming;
+  timing: Timing;
   waitMs: number;
 };
 
 export const createCallLocks = ({ dir, mechanism, timing, waitMs }: CallLocksOptions): CallLocks => ({
   acquire: async (key, signal) => {
-    const outcome = await claimWithin({ mechanism, lockPath: path.join(dir, `${key}${CALL_LOCK_SUFFIX}`), holder: String(process.pid), timing, pollMs: CLAIM_POLL_MS, waitMs, signal });
+    const outcome = await claimWithin({ mechanism, lockPath: path.join(dir, `${key}${CALL_LOCK_SUFFIX}`), holder: String(process.pid), timing, waitMs, signal });
     if (outcome.kind === 'aborted') return 'aborted';
     if (outcome.kind === 'claimed') return { release: () => outcome.lock.dispose() };
     throw new EarlierAttemptNotStoppedError(

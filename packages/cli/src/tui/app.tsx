@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Text, useApp, useStdout } from 'ink';
-import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, NO_MODEL_CONNECTED_TEXT, agentReadiness, autoModeNotice, displayMapOf, isNotListedCapabilities, PLAN_DISABLED_STATE } from '@momonga/protocol';
+import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, displayMapOf, isNotListedCapabilities, messageOf, PLAN_DISABLED_STATE } from '@momonga/protocol';
 import type { ChainCapabilities, ImageAttachment, InboxDelivery, InboxRowView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import type { RunView, SessionView } from '../client/views.ts';
@@ -48,7 +48,9 @@ import { HistoryView } from './screen/history-view.tsx';
 import { CHAT_MARK, InputBox, inputContentRows, inputOffsetAt, inputRowsOf } from './screen/input-box.tsx';
 import type { ScreenTerminal } from './screen/input.ts';
 import { allocate, menuRowsCap, panelRowsCap, regionAt } from './screen/layout.ts';
-import { isMenuAction, useSlashMenu } from './screen/menu.tsx';
+import { chordContextsOf, keyRouteOf } from './screen/key-route.ts';
+import type { KeyRoute, KeyRouteFacts } from './screen/key-route.ts';
+import { INVITATION_ROWS, InvitationLine, invitationKeyOf, isMenuAction, useSlashMenu } from './screen/menu.tsx';
 import { Screen } from './screen/screen.tsx';
 import { createTranscriptStore } from './screen/store.ts';
 import { SubagentRows } from './screen/subagents.tsx';
@@ -61,13 +63,15 @@ import { commandPhaseText, WaitingRow, waitingOf } from './screen/waiting-row.ts
 import type { Loading, WaitingPhase } from './screen/waiting-row.tsx';
 import { createSlashRegistry, namesOf, parseSlash, NEEDS_SESSION_NOTE } from './slash.ts';
 import type { AutoModePort, ShellPort, SlashCommand, SlashRegistry } from './slash.ts';
+import { KEY_SETTLE_MS } from './terminal/constants.ts';
 import type { KeyEvent, TerminalEvent } from './terminal/events.ts';
 import type { ScreenMode } from './terminal/modes.ts';
+import { NEWLINE_HINT } from './terminal/negotiation.ts';
 import { UNSTORED_TUI_SETTINGS, useAttention } from './screen/notify.ts';
 import type { NotifyMode, TuiSettingsPort } from './screen/notify.ts';
 import { UNREPORTED_COLOUR_HOST, appearanceOf, applyAppearance, applyTheme } from './screen/theme.ts';
 import type { ColourHost, ThemeId } from './screen/theme.ts';
-import { appendEntry, BANNER_KEY, foldChildEvent, foldLiveEvent, foldReplayedEvent, blockingPrompt, nextMode, runCreated, runLeft, sessionTokens, setThoughtWindow, shownRunPhase, subagentEnded, subagentStarted, thoughtWindowOf } from './transcript.ts';
+import { appendEntry, BANNER_KEY, foldChildEvent, foldLiveEvent, foldReplayedEvent, blockingPrompt, nextMode, promptTakesFocus, runCreated, runLeft, sessionTokens, setThoughtWindow, shownRunPhase, subagentEnded, subagentStarted, thoughtWindowOf } from './transcript.ts';
 import type { Entry } from './transcript.ts';
 import { attachmentDigest } from '../handover/record.ts';
 import type { HandoverAttachment, HandoverInput, HandoverNote } from '../handover/record.ts';
@@ -100,6 +104,7 @@ export type AppProps = {
   copyOnSelect?: boolean;
   colour?: ColourHost;
   tuiSettings?: TuiSettingsPort;
+  keySettleMs?: number;
   move?: TuiMovePort;
   adoption?: TuiAdoption;
   now(): number;
@@ -143,14 +148,10 @@ type ExitAction = Extract<ActionId, 'prompt.interrupt' | 'prompt.exit'>;
 const MENU_CONTEXTS: readonly KeyContext[] = ['menu'];
 const SHELL_CONTEXTS: readonly KeyContext[] = ['shell'];
 const EDITOR_CONTEXTS: readonly KeyContext[] = ['chat', 'global'];
-const VIEWPORT_CONTEXTS: readonly KeyContext[] = ['viewport'];
-const VIEWER_CONTEXTS: readonly KeyContext[] = ['viewer'];
-const PANEL_CONTEXTS: readonly KeyContext[] = ['select', 'viewer'];
-const PROMPT_CONTEXTS: readonly KeyContext[] = ['select', 'viewer', 'chat'];
 
 type Phase = { kind: 'starting' } | { kind: 'trust'; path: string } | { kind: 'welcome' } | { kind: 'unconnected' } | { kind: 'ready' };
 
-const NO_MODEL_NOTE = NO_MODEL_CONNECTED_TEXT;
+const NO_MODEL_NOTE = messageOf('noModelConnected', 'tui');
 const RESUBMIT_NOTICE = 'Signed in again. Retrying your last prompt.';
 
 const PLAN_BLOCK_CODES: ReadonlySet<string> = new Set([PLAN_USE_NOT_ENABLED_CODE, PLAN_NOT_ELIGIBLE_CODE]);
@@ -282,7 +283,7 @@ export function App(props: AppProps) {
         session: opened.id,
         lastSeq: origins.applied(),
         neg: state.negotiation,
-        hint: state.newlineHint,
+        hint: NEWLINE_HINT[state.negotiation],
         size: state.size,
         ...(state.screen === 'fullscreen' ? { view: viewOf(facts.current.position, origins), toggles: togglesOf(store) } : { printed: feedRef.current.handed() }),
         input: { text: current.text, cursor: current.cursor, historyIndex: current.historyIndex ?? null, draft: current.draft, pastes: current.pastes.map((paste) => ({ ...paste })), pasteCount: current.pasteCount },
@@ -384,6 +385,7 @@ export function App(props: AppProps) {
   const waitFor = <T,>(phase: string, work: (signal: AbortSignal) => Promise<T>): Promise<T> => {
     const waiting: WaitingPhase = { text: phase, startedAt: now() };
     setCommands((running) => [...running, waiting]);
+    prompts.releaseHeldKeys();
     return tasks.run(work).finally(() => setCommands((running) => running.filter((other) => other !== waiting)));
   };
 
@@ -513,7 +515,7 @@ export function App(props: AppProps) {
   const openSession = async (chosen: string | undefined): Promise<void> => enterFirstSession(await backend.openSession(chosen));
 
   const runFlow = (work: () => Promise<void>): void => {
-    work().catch(reportError);
+    prompts.flow(work).catch(reportError);
   };
 
   const applyModel = async (chosen: string): Promise<void> => {
@@ -580,6 +582,10 @@ export function App(props: AppProps) {
   const prompts = usePrompts({
     backend,
     store,
+    terminal,
+    timers,
+    keySettleMs: props.keySettleMs ?? KEY_SETTLE_MS,
+    draftHeld: () => editorRef.current.text !== '',
     columns,
     panelRows: panelRowsCap(rows),
     keys,
@@ -590,7 +596,7 @@ export function App(props: AppProps) {
     exit: () => finish({}),
     append,
     decideTrust,
-    acceptInvitation: (invitation) => runFlow(() => flows.providerFlow(invitation.profile)),
+    replayKeys: (events) => replayHeldKeys(events),
   });
   const { overlayPorts, overlay } = prompts;
 
@@ -605,7 +611,7 @@ export function App(props: AppProps) {
     await runPrompt(kept.text, kept.options);
   };
 
-  const flows: PlanFlows = createPlanFlows({ ...overlayPorts, backend, info: note, toast: (text) => view.showToast(text), connected: connectModel, refreshConnection, signedIn: resubmitAfterSignIn, found, model: () => sessionModelRef.current, wait: waitFor });
+  const flows: PlanFlows = createPlanFlows({ ...overlayPorts, backend, info: note, toast: (text) => view.showToast(text), connected: connectModel, refreshConnection, signedIn: resubmitAfterSignIn, found, model: () => sessionModelRef.current, wait: waitFor, invitationAnswered: () => prompts.dismissInvitation() });
 
   const showUsageLimit = async (code: string, plan: PlanAccountRef): Promise<void> => {
     const listed = await backend.plan.accounts();
@@ -626,7 +632,7 @@ export function App(props: AppProps) {
 
   const offerInvitation = async (listed: PlanAccountsResponse): Promise<void> => {
     const dismissed = await backend.dismissedNotices();
-    const invited = listed.profiles.find((profile) => accountsOf(profile.id, listed.accounts).length === 0 && !Object.hasOwn(dismissed, `invite:${profile.id}`));
+    const invited = listed.profiles.find((profile) => accountsOf(profile.id, listed.accounts).length === 0 && !Object.hasOwn(dismissed, invitationKeyOf(profile.id)));
     if (invited === undefined || typedRef.current) return;
     prompts.invite({ profile: invited });
   };
@@ -1068,11 +1074,7 @@ export function App(props: AppProps) {
       },
       setModel: applyModel,
     });
-    try {
-      await ran;
-    } finally {
-      prompts.closeLoading();
-    }
+    await ran;
     return true;
   };
 
@@ -1097,7 +1099,7 @@ export function App(props: AppProps) {
   };
 
   const submitSafely = (text: string): void => {
-    submit(text).catch(reportError);
+    prompts.flow(() => submit(text)).catch(reportError);
   };
 
   const sendInitialPrompt = useEffectEvent((): void => {
@@ -1111,7 +1113,7 @@ export function App(props: AppProps) {
       if (initialSkill === undefined) await submit(initialPrompt);
       else await runPrompt(initialPrompt, { skill: initialSkill });
     };
-    send().catch(reportError);
+    prompts.flow(send).catch(reportError);
   });
 
   const reading = loading !== undefined;
@@ -1323,6 +1325,7 @@ export function App(props: AppProps) {
       if (!starting) toolView.showNewest();
     } else if (action === 'run.stop') {
       if (working) cancelNewest();
+      else if (invitationShown) prompts.dismissInvitation();
     } else if (action === 'prompt.interrupt') {
       if (starting) finish({});
       else if (working) cancelNewest();
@@ -1340,6 +1343,75 @@ export function App(props: AppProps) {
     else if (action === undefined && typed !== undefined) replaceEditor(insertText(current, typed));
   };
 
+  const routeFacts = (): KeyRouteFacts => ({
+    trust: phase.kind === 'trust',
+    toolView: toolView.shown,
+    overlay: prompts.overlayKind(),
+    betweenLists: prompts.betweenLists(),
+    welcome: phase.kind === 'welcome',
+    prompt: prompts.promptStage(),
+    detail: prompts.detailShown(panelFacts),
+    shellDraft: isShellDraft(editorRef.current.text),
+    menuOpen: slashMenu.open || atMenu.open,
+    fullscreen,
+  });
+
+  const onDraftKey = (route: 'shell' | 'menu' | 'editor', event: KeyEvent, pressed: KeyTable, action: ActionId | undefined, typed: string | undefined): void => {
+    if (route === 'shell') {
+      const shellAction = pressed.actionOf(SHELL_CONTEXTS, event);
+      if (shellAction === 'shell.run') runShell();
+      else if (shellAction === 'shell.leave') leaveShell();
+      else if (action !== 'prompt.submit' && action !== 'prompt.queue' && action !== 'prompt.steer') onEditorAction(action, typed);
+      return;
+    }
+    if (route === 'menu') {
+      const menuAction = pressed.actionOf(MENU_CONTEXTS, event);
+      const atAct = isMenuAction(menuAction) ? atMenu.act(editorRef.current, menuAction) : undefined;
+      if (atAct !== undefined) {
+        applyAtAct(atAct);
+        return;
+      }
+      const menuAct = isMenuAction(menuAction) ? slashMenu.act(editorRef.current.text, menuAction) : undefined;
+      if (menuAct?.kind === 'handled') return;
+      if (menuAct !== undefined) placeMenuText(menuAct.text);
+      if (menuAct?.kind === 'complete') return;
+    }
+    onEditorAction(action, typed);
+  };
+
+  const routeKey = (route: KeyRoute, event: KeyEvent, pressed: KeyTable): void => {
+    const action = pressed.actionOf(EDITOR_CONTEXTS, event);
+    const typed = pressed.typedOf(event);
+    switch (route) {
+      case 'trust':
+        if (phase.kind === 'trust') prompts.trustKey(phase.path, event, pressed);
+        return;
+      case 'tool-view':
+        if (!toolView.key(event, pressed)) routeKey(keyRouteOf({ ...routeFacts(), toolView: false }), event, pressed);
+        return;
+      case 'overlay':
+        prompts.overlayKey(event, pressed);
+        return;
+      case 'between-lists':
+        if (!prompts.holdKey(event, pressed)) routeKey(keyRouteOf(routeFacts()), event, pressed);
+        return;
+      case 'welcome':
+        return;
+      case 'prompt':
+      case 'shell':
+      case 'menu':
+      case 'editor':
+        if (typed !== undefined) {
+          typedRef.current = true;
+          prompts.dismissInvitation();
+        }
+        if (action === 'mode.cycle') {
+          if (sessionModel !== undefined) cycleMode();
+        } else if (route === 'prompt') prompts.runPromptKey(event, pressed);
+        else onDraftKey(route, event, pressed, action, typed);
+    }
+  };
+
   const onKey = (event: KeyEvent, pressed: KeyTable): void => {
     bindings.poll(now());
     const action = pressed.actionOf(EDITOR_CONTEXTS, event);
@@ -1347,47 +1419,19 @@ export function App(props: AppProps) {
       disarmExit();
       setHint(undefined);
     }
-    const typed = pressed.typedOf(event);
-    if (phase.kind === 'trust') {
-      prompts.trustKey(phase.path, event, pressed);
-      return;
-    }
-    if (toolView.key(event, pressed)) return;
-    if (prompts.overlayKey(event, pressed)) return;
-    if (phase.kind === 'welcome') return;
-    if (!busy && editorRef.current.text === '' && prompts.invitationKey(event, pressed)) return;
-    if (typed !== undefined) {
-      typedRef.current = true;
-      prompts.dismissInvitation();
-    }
-    if (action === 'mode.cycle') {
-      if (sessionModel !== undefined) cycleMode();
-      return;
-    }
-    if (prompts.runPromptKey(event, pressed)) return;
-    if (isShellDraft(editorRef.current.text)) {
-      const shellAction = pressed.actionOf(SHELL_CONTEXTS, event);
-      if (shellAction === 'shell.run') runShell();
-      else if (shellAction === 'shell.leave') leaveShell();
-      else if (action !== 'prompt.submit' && action !== 'prompt.queue' && action !== 'prompt.steer') onEditorAction(action, typed);
-      return;
-    }
-    const menuAction = pressed.actionOf(MENU_CONTEXTS, event);
-    const atAct = isMenuAction(menuAction) ? atMenu.act(editorRef.current, menuAction) : undefined;
-    if (atAct !== undefined) {
-      applyAtAct(atAct);
-      return;
-    }
-    const menuAct = isMenuAction(menuAction) ? slashMenu.act(editorRef.current.text, menuAction) : undefined;
-    if (menuAct?.kind === 'handled') return;
-    if (menuAct !== undefined) placeMenuText(menuAct.text);
-    if (menuAct?.kind === 'complete') return;
-    onEditorAction(action, typed);
+    routeKey(keyRouteOf(routeFacts()), event, pressed);
   };
+
+  const replayHeldKeys = useEffectEvent((events: readonly KeyEvent[]): void => {
+    for (const event of events) {
+      const route = keyRouteOf(routeFacts());
+      if (route === 'shell' || route === 'menu' || route === 'editor') onKey(event, keys);
+    }
+  });
 
   const onPaste = (text: string): void => {
     if (prompts.paste(text)) return;
-    if (phase.kind === 'trust' || phase.kind === 'welcome' || overlay !== undefined || transcript.approval !== undefined) return;
+    if (phase.kind === 'trust' || phase.kind === 'welcome' || overlay !== undefined || promptTakesFocus(transcript)) return;
     disarmExit();
     setHint(undefined);
     const paths = imageInput ? pastedImagePaths(text) : undefined;
@@ -1405,7 +1449,7 @@ export function App(props: AppProps) {
     return event.type === 'paste' || event.type === 'key';
   });
 
-  useEffect(() => terminal.input.claim((event) => onTyped(event)), [terminal]);
+  useEffect(() => terminal.input.claim('typing', (event) => onTyped(event)), [terminal]);
 
   const servedMember = model?.chain.find((member) => member.model === servedTarget);
   const servedPlan = servedMember?.billing === 'plan' ? servedMember.plan : undefined;
@@ -1416,7 +1460,8 @@ export function App(props: AppProps) {
   const panel = prompts.panel(panelFacts);
   const shownPanel = fullscreen && panelRows === undefined ? undefined : panel;
   const inputShown = (phase.kind === 'starting' || phase.kind === 'ready' || phase.kind === 'unconnected') && shownPanel === undefined;
-  const menuShown = inputShown && (invitationShown || slashMenu.open || atMenu.open);
+  const completionOpen = slashMenu.open || atMenu.open;
+  const menuShown = inputShown && (invitationShown || completionOpen);
   const shownAttachments = heldAttachments(attachments, editor.text);
   const shownEditor = shellDraft ? { ...editor, text: editor.text.slice(SHELL_MARK.length), cursor: Math.max(0, editor.cursor - SHELL_MARK.length) } : editor;
   const waitingLines = inputShown ? waitingRows(waitingMessages, columns) : [];
@@ -1435,7 +1480,7 @@ export function App(props: AppProps) {
   const allocation = allocate(rows, {
     waiting: waiting === undefined || a11y.screenReader ? 0 : 1,
     inputRows: inputRowsOf(shownEditor, columns),
-    menu: !menuShown ? 0 : invitationInMenu ? prompts.invitationRows : atMenu.open ? atMenu.rows : slashMenu.rows,
+    menu: !menuShown ? 0 : invitationInMenu ? INVITATION_ROWS : atMenu.open ? atMenu.rows : slashMenu.rows,
     subagents: transcript.subagents.length,
     footerSecond: (!fullscreen || planRowFits(planRow, columns) ? (planRow === undefined ? 0 : 1) : 0) + (busyHintRow === undefined ? 0 : 1),
     lines: inputShown ? shownAttachments.length + waitingLines.length : 0,
@@ -1454,7 +1499,7 @@ export function App(props: AppProps) {
     copy: (text) => backend.copyToClipboard(text),
     openLink: (url) => backend.openUrl(url, undefined, (message) => reportError(new Error(message))),
     reportError,
-    keyFacts: () => ({ panelOpen: panel !== undefined || toolView.shown, menuOpen: menuShown, inputEmpty: editorRef.current.text === '' }),
+    keyFacts: () => ({ panelOpen: panel !== undefined || toolView.shown, menuOpen: completionOpen, inputEmpty: editorRef.current.text === '' }),
     keys,
     a11y,
   });
@@ -1476,14 +1521,10 @@ export function App(props: AppProps) {
     active: fullscreen && !switching,
     allocation,
     panelOpen: shownPanel !== undefined,
-    menuOpen: menuShown,
+    menuOpen: inputShown && completionOpen,
     panelPress: (row) => prompts.press(panelFacts, row),
     panelWheel: (wheelRows) => prompts.wheel(panelFacts, wheelRows),
     menuPress: (row) => {
-      if (invitationInMenu) {
-        prompts.invitationPress(row);
-        return;
-      }
       if (atMenu.open) {
         const atAct = atMenu.press(editorRef.current, row);
         if (atAct !== undefined) applyAtAct(atAct);
@@ -1492,9 +1533,7 @@ export function App(props: AppProps) {
       const act = slashMenu.press(row, allocation.menu);
       if (act?.kind === 'complete') placeMenuText(act.text);
     },
-    menuWheel: (wheelRows) => {
-      if (!invitationInMenu) slashMenu.wheel(wheelRows);
-    },
+    menuWheel: (wheelRows) => slashMenu.wheel(wheelRows),
   });
   const onInputPress = useEffectEvent((event: TerminalEvent): boolean => {
     if (!fullscreen || switching || panel !== undefined || !inputShown) return false;
@@ -1505,22 +1544,16 @@ export function App(props: AppProps) {
     if (offset !== undefined) replaceEditor(placeCaret(editorRef.current, offset + (shellDraft ? SHELL_MARK.length : 0)));
     return true;
   });
-  useEffect(() => terminal.input.claim((event) => onInputPress(event)), [terminal]);
-  const chordContexts = (): readonly KeyContext[] => {
-    if (phase.kind === 'trust' || overlay !== undefined) return PANEL_CONTEXTS;
-    if (toolView.shown) return VIEWER_CONTEXTS;
-    if (transcript.approval !== undefined || transcript.elicitation !== undefined) return PROMPT_CONTEXTS;
-    return [...(menuShown ? MENU_CONTEXTS : []), ...(fullscreen ? VIEWPORT_CONTEXTS : []), ...EDITOR_CONTEXTS];
-  };
+  useEffect(() => terminal.input.claim('input-caret', (event) => onInputPress(event)), [terminal]);
   const onChord = useEffectEvent((event: TerminalEvent): boolean => {
     if (event.type !== 'key') return false;
-    const step = keys.chordStep(chordContexts(), chord.current, event);
+    const step = keys.chordStep(chordContextsOf(routeFacts()), chord.current, event);
     chord.current = step.kind === 'pending' ? step.prefix : undefined;
     if (step.kind === 'none') return false;
     if (step.kind === 'action' && !view.act(step.id)) onKey(event, chordPressOf(keys, step.id));
     return true;
   });
-  useEffect(() => terminal.input.claim((event) => onChord(event)), [terminal]);
+  useEffect(() => terminal.input.claim('chord', (event) => onChord(event)), [terminal]);
   useEffect(() => {
     facts.current = { overlay: overlay !== undefined, position: view.position, tasks, terminal, flush: waitUntilRenderFlush };
     feedRef.current = feed;
@@ -1591,7 +1624,7 @@ export function App(props: AppProps) {
         ) : (
           <HistoryView key={historyGeneration} store={store} source={view.source} feed={feed} />
         ),
-        menu: !menuShown ? null : invitationInMenu ? prompts.invitationView() : atMenu.open ? <AtList labels={atMenu.labels} index={atMenu.index} /> : slashMenu.view(fullscreen ? allocation.menu : slashMenu.rows),
+        menu: !menuShown ? null : invitationInMenu && prompts.invitation !== undefined ? <InvitationLine invitation={prompts.invitation} keys={keys} /> : atMenu.open ? <AtList labels={atMenu.labels} index={atMenu.index} /> : slashMenu.view(fullscreen ? allocation.menu : slashMenu.rows),
         waiting: waiting === undefined || a11y.screenReader ? null : <WaitingRow waiting={waiting} now={now} timers={timers} keys={keys} reducedMotion={a11y.reducedMotion} onTick={pollKeyFile} />,
         lines: inputShown ? (
           <>

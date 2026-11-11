@@ -31,15 +31,20 @@ export const busyDeliveryOf = (keys: KeyTable, action: ActionId | undefined): In
   return sharesSubmitKey('prompt.queue') ? 'queue' : undefined;
 };
 
+const keyed = (keys: KeyTable, action: ActionId, does: string): string[] => {
+  const key = keys.keyHint(action);
+  return key === '' ? [] : [`${key}: ${does}`];
+};
+
 export const busyHint = (keys: KeyTable, waiting: boolean): string =>
   [
-    `${keys.keyHint('prompt.steer')}: steer after the next tool call`,
-    `${keys.keyHint('prompt.queue')}: queue for after this run`,
-    `${keys.keyHint('run.stop')}: stop`,
-    ...(waiting ? [`${keys.keyHint('editor.up')}: take back waiting messages`] : []),
+    ...keyed(keys, 'prompt.steer', 'steer after the next tool call'),
+    ...keyed(keys, 'prompt.queue', 'queue for after this run'),
+    ...keyed(keys, 'run.stop', 'stop'),
+    ...(waiting ? keyed(keys, 'editor.up', 'take back waiting messages') : []),
   ].join(HINT_SEPARATOR);
 
-export const completionHint = (keys: KeyTable): string => [`${keys.keyHint('menu.complete')}: complete`, `${keys.keyHint('menu.close')}: close the list`].join(HINT_SEPARATOR);
+export const completionHint = (keys: KeyTable): string => [...keyed(keys, 'menu.complete', 'complete'), ...keyed(keys, 'menu.close', 'close the list')].join(HINT_SEPARATOR);
 
 const truncated = (text: string, width: number): string => {
   if (displayWidth(text) <= width) return text;

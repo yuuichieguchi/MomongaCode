@@ -25,6 +25,7 @@ const plain = { ctrl: false, alt: false, shift: false, super: false, hyper: fals
 const unmodified = { ctrl: false, alt: false, shift: false };
 const named = (name: KeyName, mods: Partial<typeof plain> = {}): TerminalEvent => ({ type: 'key', name, ...plain, ...mods });
 const text = (value: string, mods: Partial<typeof plain> = {}): TerminalEvent => ({ type: 'key', text: value, ...plain, ...mods });
+const RELEASE: TerminalEvent = { type: 'release' };
 const textOf = (value: string): TerminalEvent[] => [...value].map((character) => text(character));
 const bytesOf = (value: string): Buffer => Buffer.from(value, 'utf8');
 
@@ -85,7 +86,9 @@ describe('keys', () => {
     ['ctrl+right', `${ESC}[1;5C`, [named('right', { ctrl: true })]],
     ['shift+alt+up', `${ESC}[1;4A`, [named('up', { shift: true, alt: true })]],
     ['alt+up as a doubled escape', `${ESC}${ESC}[A`, [named('up', { alt: true })]],
-    ['an arrow release under the kitty flags', `${ESC}[1;1:3A`, []],
+    ['an arrow release under the kitty flags', `${ESC}[1;1:3A`, [RELEASE]],
+    ['a delete release under the kitty flags', `${ESC}[3;1:3~`, [RELEASE]],
+    ['a letter release under the kitty flags', `${ESC}[97;1:3u`, [RELEASE]],
     ['insert', `${ESC}[2~`, [named('insert')]],
     ['delete', `${ESC}[3~`, [named('delete')]],
     ['shift+delete', `${ESC}[3;2~`, [named('delete', { shift: true })]],
@@ -163,9 +166,9 @@ describe('a lone ESC byte', () => {
   it('is held at the end of a read and emitted when the settle ends with no byte', () => {
     const parser = createInputParser();
     expect(parser.push(bytesOf(ESC))).toEqual([]);
-    expect(parser.holdsLoneEscape()).toBe(true);
+    expect(parser.holdsOpen()).toBe(true);
     expect(parser.settle()).toEqual([named('escape')]);
-    expect(parser.holdsLoneEscape()).toBe(false);
+    expect(parser.holdsOpen()).toBe(false);
     expect(parser.settle()).toEqual([]);
   });
 
@@ -180,14 +183,14 @@ describe('a lone ESC byte', () => {
     const parser = createInputParser();
     expect(parser.push(bytesOf(ESC))).toEqual([]);
     expect(parser.push(bytesOf('a'))).toEqual([named('escape'), text('a')]);
-    expect(parser.holdsLoneEscape()).toBe(false);
+    expect(parser.holdsOpen()).toBe(false);
   });
 
   it('stays held across an empty read', () => {
     const parser = createInputParser();
     expect(parser.push(bytesOf(ESC))).toEqual([]);
     expect(parser.push(new Uint8Array(0))).toEqual([]);
-    expect(parser.holdsLoneEscape()).toBe(true);
+    expect(parser.holdsOpen()).toBe(true);
     expect(parser.push(bytesOf(ESC))).toEqual([named('escape')]);
     expect(parser.push(bytesOf('\r'))).toEqual([named('escape'), named('enter')]);
   });
@@ -208,23 +211,75 @@ describe('a lone ESC byte', () => {
     expect(parseText(`${ESC}x`)).toEqual([text('x', { alt: true })]);
   });
 
-  it('is not held by the settle while a sequence is open, a paste is open, or a character is incomplete', () => {
+  it.each([
+    ['[', text('[', { alt: true })],
+    ['O', text('O', { alt: true })],
+    [']', text(']', { alt: true })],
+  ] as [string, TerminalEvent][])('with %s and nothing after it is the Alt key of a legacy terminal once the settle ends, and the next key is read as a key', (introducer, expected) => {
+    const parser = createInputParser();
+    expect(parser.push(bytesOf(`${ESC}${introducer}`))).toEqual([]);
+    expect(parser.holdsOpen()).toBe(true);
+    expect(parser.settle()).toEqual([expected]);
+    expect(parser.holdsOpen()).toBe(false);
+    expect(parser.push(bytesOf('A'))).toEqual([text('A')]);
+  });
+
+  it('with [ whose settle ended is still the start of the paste marker that the next read completes: the paste is one paste and none of its text is a key', () => {
+    const parser = createInputParser();
+    parser.push(bytesOf(`${ESC}[`));
+    expect(parser.settle()).toEqual([text('[', { alt: true })]);
+    expect(parser.push(bytesOf(`200~rm -rf x\r1\r${ESC}[201~z`))).toEqual([{ type: 'paste', text: 'rm -rf x\r1\r', overflow: false }, text('z')]);
+  });
+
+  it('with [ whose settle ended is still the start of a sequence with parameters that the next read completes', () => {
+    const parser = createInputParser();
+    parser.push(bytesOf(`${ESC}[`));
+    parser.settle();
+    expect(parser.push(bytesOf('1;5Cx'))).toEqual([named('right', { ctrl: true }), text('x')]);
+  });
+
+  it('with [ whose settle ended is the Alt key of a legacy terminal, and what is typed later is typed keys', () => {
+    for (const typed of ['A', 'a', '2', '~', '2x']) {
+      const parser = createInputParser();
+      parser.push(bytesOf(`${ESC}[`));
+      expect(parser.settle()).toEqual([text('[', { alt: true })]);
+      expect(parser.push(bytesOf(typed)), typed).toEqual(textOf(typed));
+      expect(parser.push(bytesOf('b'))).toEqual([text('b')]);
+    }
+  });
+
+  it('reads only the very next read as the continuation of an introducer whose settle ended', () => {
+    const parser = createInputParser();
+    parser.push(bytesOf(`${ESC}[`));
+    parser.settle();
+    parser.push(bytesOf('a'));
+    expect(parser.push(bytesOf('200~'))).toEqual(textOf('200~'));
+  });
+
+  it('with [ is still the start of a sequence when its next byte arrives within the settle', () => {
+    const parser = createInputParser();
+    parser.push(bytesOf(`${ESC}[`));
+    expect(parser.push(bytesOf('A'))).toEqual([named('up')]);
+    expect(parser.holdsOpen()).toBe(false);
+  });
+
+  it('is not held by the settle while a longer sequence is open, a paste is open, or a character is incomplete', () => {
     const open = createInputParser();
     open.push(bytesOf(`${ESC}[1`));
-    expect(open.holdsLoneEscape()).toBe(false);
+    expect(open.holdsOpen()).toBe(false);
     expect(open.settle()).toEqual([]);
     expect(open.push(bytesOf(';5C'))).toEqual([named('right', { ctrl: true })]);
 
     const pasting = createInputParser();
     pasting.push(bytesOf(`${ESC}[200~a${ESC}`));
-    expect(pasting.holdsLoneEscape()).toBe(false);
+    expect(pasting.holdsOpen()).toBe(false);
     expect(pasting.settle()).toEqual([]);
     expect(pasting.push(bytesOf(`b${ESC}[201~`))).toEqual([{ type: 'paste', text: `a${ESC}b`, overflow: false }]);
 
     const partial = createInputParser();
     const bytes = bytesOf(`${ESC}é`);
     partial.push(bytes.subarray(0, 2));
-    expect(partial.holdsLoneEscape()).toBe(false);
+    expect(partial.holdsOpen()).toBe(false);
     expect(partial.settle()).toEqual([]);
     expect(partial.push(bytes.subarray(2))).toEqual([text('é', { alt: true })]);
   });
@@ -336,7 +391,35 @@ describe('bracketed paste', () => {
     expect(events).toEqual([OVERFLOWED]);
     expect(parser.push(bytesOf(`\rrm -rf x\r${ESC}[A\u0003`))).toEqual([]);
     expect(parser.push(chunk)).toEqual([]);
-    expect(parser.holdsLoneEscape()).toBe(false);
+    expect(parser.holdsOpen()).toBe(true);
+  });
+
+  it('ends the dropping of an abandoned paste when the settle ends with no byte, so a terminal that never sends the end marker gets its keys back', () => {
+    const parser = createInputParser();
+    const events: TerminalEvent[] = [...parser.push(bytesOf(`${START}${'x'.repeat(PASTE_ABANDON_BYTES)}`))];
+    expect(events).toEqual([OVERFLOWED]);
+    expect(parser.push(bytesOf('still the paste\r'))).toEqual([]);
+    expect(parser.holdsOpen()).toBe(true);
+    expect(parser.settle()).toEqual([]);
+    expect(parser.holdsOpen()).toBe(false);
+    expect(parser.push(bytesOf(`a${ESC}[A`))).toEqual([text('a'), named('up')]);
+  });
+
+  it('swallows the end marker of an abandoned paste that the settle cut after its first bytes', () => {
+    for (const cut of [1, 2, 3, 5]) {
+      const parser = createInputParser();
+      parser.push(bytesOf(`${START}${'x'.repeat(PASTE_ABANDON_BYTES)}${END.slice(0, cut)}`));
+      expect(parser.settle(), `cut ${cut}`).toEqual([]);
+      expect(parser.push(bytesOf(`${END.slice(cut)}a`)), `cut ${cut}`).toEqual([text('a')]);
+    }
+  });
+
+  it('keeps a paste under the limit open however long the input is idle', () => {
+    const parser = createInputParser();
+    parser.push(bytesOf(`${START}slow `));
+    expect(parser.holdsOpen()).toBe(false);
+    expect(parser.settle()).toEqual([]);
+    expect(parser.push(bytesOf(`paste${END}`))).toEqual([{ type: 'paste', text: 'slow paste', overflow: false }]);
   });
 
   it('reads keys again after the end marker of an abandoned paste, and reports that paste only once', () => {

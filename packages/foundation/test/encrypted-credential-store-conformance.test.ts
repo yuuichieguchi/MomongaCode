@@ -28,11 +28,12 @@ describe('encrypted credential store conforms to CredentialKey.tla (Reread, Crea
       if (!fs.existsSync(markerFile)) events.push('marker_absent_at_os_write');
       if (!fs.existsSync(recordFile)) events.push('os_item_written');
     };
-    const ports = { ...systemFileLockPorts, randomHex: (bytes: number) => {
+    const hex = (bytes: number): string => {
       if (!fs.existsSync(markerFile)) events.push('marker_file_written');
       else if (!fs.existsSync(recordFile)) events.push('record_written_with_marker');
-      return systemFileLockPorts.randomHex(bytes);
-    } };
+      return systemFileLockPorts.random.hex(bytes);
+    };
+    const ports = { ...systemFileLockPorts, random: { ...systemFileLockPorts.random, hex } };
     const store = createEncryptedCredentialStore({
       directory,
       stateDirectory,

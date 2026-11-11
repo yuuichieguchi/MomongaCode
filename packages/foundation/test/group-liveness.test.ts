@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KILL_CONFIRM_MS, ProbeFailedError, canStillRun, createProcessGroupPort, groupTerminationBoundMs, reconcileProcessGroup, terminateGroup } from '@momonga/foundation';
-import type { CommandOptions, CommandRunner, FileIdentity, ProcessGroupPort, ProcessInspector, ProcFs, ReapTiming, Timing } from '@momonga/foundation';
-import { createFakeClock, createSteppingTiming } from '@momonga/testkit';
+import type { CommandOptions, CommandRunner, FileIdentity, ProcessGroupPort, ProcessInspector, ProcFs, Timing } from '@momonga/foundation';
+import { createFakeClock, createSteppingTiming, sleepDrivenTiming } from '@momonga/testkit';
 
 const PGID = 1_999_999_001;
 const UNRELATED_PGID = 1_999_999_002;
@@ -124,9 +124,9 @@ describe('one liveness rule for every reader of a group (process-markers, Linux,
     markerState: async () => 'free',
   } as unknown as ProcessInspector;
 
-  const reapTiming = (): ReapTiming => {
+  const reapTiming = (): Timing => {
     const clock = createFakeClock(0);
-    return { now: () => clock.now(), sleep: async (ms) => void clock.advance(ms) };
+    return sleepDrivenTiming({ now: () => clock.now(), sleep: async (ms) => void clock.advance(ms) });
   };
 
   const groupRefusesSignals = (target: number): void => {

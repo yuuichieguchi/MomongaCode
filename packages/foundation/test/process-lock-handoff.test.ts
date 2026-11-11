@@ -15,7 +15,7 @@ import {
   inspectProcessLock,
 } from '@momonga/foundation';
 import type { InheritedLockRequest, KernelLockMechanism } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, registerCleanup, spawnTracked, withTempDir, createFakeRandom } from '@momonga/testkit';
 import type { CleanupContext, TrackedChild } from '@momonga/testkit';
 import { ADOPTER_FIXTURE, exitOf, firstLine, spawnFixture } from './support/lock-processes.ts';
 
@@ -43,7 +43,7 @@ describe('the hand-off goes through the lock mechanism on both sides', () => {
   it('takes the hand-off nonce from the injected random source', (context) => {
     const lockPath = path.join(withTempDir(context), 'runtime.lock');
     const kernel = createFakeKernelLock({ inheritable: true });
-    const claim = claimLockForChild(lockPath, { mechanism: kernel, randomNonce: () => 'fixed-nonce' });
+    const claim = claimLockForChild(lockPath, { mechanism: kernel, random: { ...createFakeRandom(1), hex: () => 'fixed-nonce' } });
     if (claim.kind !== 'claimed') throw new Error(`expected a claim, got ${claim.kind}`);
     expect(claim.handoff.env[LOCK_NONCE_ENV]).toBe('fixed-nonce');
     expect(fs.readFileSync(lockPath, 'utf8')).toBe('handoff:fixed-nonce');

@@ -1,4 +1,7 @@
+import type { Clock } from './clock.ts';
 import type { Timing } from './timing.ts';
+
+const clearHostTimer = (handle: unknown): void => clearTimeout(handle as NodeJS.Timeout);
 
 export const systemTiming: Timing = {
   now: () => Date.now(),
@@ -8,5 +11,14 @@ export const systemTiming: Timing = {
     timer.unref();
     return timer;
   },
-  clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout),
+  clearTimeout: clearHostTimer,
 };
+
+export const systemWaitTiming: Timing = {
+  now: systemTiming.now,
+  monotonicMs: systemTiming.monotonicMs,
+  setTimeout: (callback, ms) => setTimeout(callback, ms),
+  clearTimeout: clearHostTimer,
+};
+
+export const systemClock: Clock = systemTiming;

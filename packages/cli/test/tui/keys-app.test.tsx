@@ -21,7 +21,7 @@ import { DEFAULT_SLASH_COMMANDS } from '../../src/tui/commands/index.ts';
 import type { KeyEvent, KeyName } from '../../src/tui/terminal/events.ts';
 import { fakeBackend } from '../fake-backend.ts';
 import type { FakeBackendOptions } from '../fake-backend.ts';
-import { KEYS as PRESS, renderObservable, untilFrame, untilOutput } from '../ink-helpers.ts';
+import { KEYS as PRESS, renderObservable, untilFrame, untilOutput, TEST_KEY_SETTLE_MS, settleAtOnce } from '../ink-helpers.ts';
 import { frame } from '../tui-harness.tsx';
 import { fakeScreenTerminal } from './screen-fakes.ts';
 
@@ -69,7 +69,7 @@ const disk = (initial?: string) => {
 const startWith = async (options: FakeBackendOptions, extra: Partial<AppProps>, screen: Parameters<typeof fakeScreenTerminal>[0] = {}) => {
   const backend = fakeBackend(options);
   const terminal = fakeScreenTerminal(screen);
-  const app = renderObservable(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={systemTiming} {...extra} onExit={() => undefined} />);
+  const app = renderObservable(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} {...extra} onExit={() => undefined} />);
   return { backend, terminal, app };
 };
 
@@ -150,13 +150,13 @@ describe('every hint is generated from the keys in force (P11)', () => {
     const commands = createSlashRegistry(DEFAULT_SLASH_COMMANDS).list();
     const lines = helpText({ commands, keys: rebound, negotiation: 'unknown', screen: 'fullscreen' }).split('\n');
     const keyLines = lines.slice(lines.indexOf('Keys') + 1, lines.indexOf('Mouse'));
-    for (const row of rebound.rows().filter((candidate) => ['chat', 'viewport', 'global'].includes(candidate.context) && candidate.id !== 'prompt.newline' && candidate.default.length > 0)) expect(keyLines).toContain(`  ${rebound.hintFor(row.id)}: ${row.description}`);
-    expect(keyLines).toContain('  ctrl+n: new line');
-    expect(keyLines).toContain('  \\ then f6: new line');
-    expect(keyLines).toContain('  alt+m: cycles the mode');
-    expect(keyLines).toContain('  f2: stops the run');
-    expect(keyLines).toContain('  f7: scroll up half a screen');
-    for (const old of ['shift+tab', 'ctrl+j', 'shift+enter', 'alt+enter', 'esc: stops the run', 'ctrl+o', 'pageup', 'ctrl+g', 'backspace']) expect(keyLines.join('\n')).not.toContain(old);
+    for (const row of rebound.rows().filter((candidate) => ['chat', 'viewport', 'global'].includes(candidate.context) && candidate.id !== 'prompt.newline' && candidate.default.length > 0)) expect(keyLines).toContain(`  ${rebound.hintFor(row.id)}  ${row.description}`);
+    expect(keyLines).toContain('  ctrl+n  new line');
+    expect(keyLines).toContain('  \\ then f6  new line');
+    expect(keyLines).toContain('  alt+m  cycles the mode');
+    expect(keyLines).toContain('  f2  stops the run');
+    expect(keyLines).toContain('  f7  scroll up half a screen');
+    for (const old of ['shift+tab', 'ctrl+j', 'shift+enter', 'alt+enter', 'esc  stops the run', 'ctrl+o', 'pageup', 'ctrl+g', 'backspace']) expect(keyLines.join('\n')).not.toContain(old);
     expect(lines).toContain('  /keybindings  show the keys of every action and change them; the changes are written to the key-binding file');
     const unbound = helpText({ commands, keys: tableOf(['chat', { 'ctrl+r': null }]), negotiation: 'unknown', screen: 'fullscreen' });
     expect(unbound).not.toContain('search the history');
@@ -199,7 +199,7 @@ describe('a rebound key on the screen', () => {
   it('decides a prompt with the rebound keys, and the hint under the list names them', async () => {
     const started = await withFile(file(['select', { f3: 'select.decide', enter: null, q: 'select.escape', escape: null }]), { trust: { path: '/work/project', decision: null } });
     const { app, backend, terminal } = started;
-    const shown = await untilFrame(app, 'Do you trust the files in /work/project?');
+    const shown = await untilFrame(app, 'f3 to choose');
     expect(shown).toContain('up/down to move · f3 to choose · q: No, continue without its project settings');
     app.stdin.write(PRESS.enter);
     app.stdin.write(PRESS.escape);

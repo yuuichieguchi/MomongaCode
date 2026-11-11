@@ -1,3 +1,4 @@
+import { sleepDrivenTiming } from '@momonga/testkit';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -38,7 +39,7 @@ const survivingWorld = () => {
   const kill: SignalSender = (pid, signal) => {
     if (signal !== 0) sent.push([pid, signal]);
   };
-  const timing = { now: () => now, sleep: async (ms: number) => void (now += ms) };
+  const timing = sleepDrivenTiming({ now: () => now, sleep: async (ms: number) => void (now += ms) });
   return { sent, warnings, inspector, kill, timing };
 };
 

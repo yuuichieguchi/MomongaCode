@@ -12,6 +12,7 @@ import {
   USAGE_PAUSED_CODE,
 } from '@momonga/protocol';
 import type { ErrorType, PlanAccountRef, PlanAccountState, PlanHealthReason } from '@momonga/protocol';
+import { describeError } from '../core/describe-error.ts';
 import { storeReadFailure } from './record-io.ts';
 import type { PlanRecord } from './session.ts';
 
@@ -96,7 +97,7 @@ export const unavailableFailure = (): PlanCredentialError =>
   new PlanCredentialError(PLAN_CREDENTIAL_UNAVAILABLE_CODE, 'the plan access token could not be refreshed; try again', true);
 
 export const hostIdentityFailure = (error: unknown): PlanCredentialError =>
-  new PlanCredentialError(PLAN_HOST_IDENTITY_UNAVAILABLE_CODE, error instanceof Error ? error.message : String(error), false);
+  new PlanCredentialError(PLAN_HOST_IDENTITY_UNAVAILABLE_CODE, describeError(error), false);
 
 export const signInRequiredCondition = (profile: PlanProfile, record: PlanRecord | undefined): Condition => ({
   reason: SIGN_IN_REQUIRED_CODE,

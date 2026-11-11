@@ -58,7 +58,9 @@ export type Overlay =
   | { readonly kind: 'capture'; readonly request: CaptureRequest; readonly problem?: string; readonly resolve: (outcome: CaptureOutcome | undefined) => void }
   | { readonly kind: 'text'; readonly request: TextRequest; readonly error?: string; readonly resolve: (text: string | undefined) => void }
   | WaitingOverlay
-  | { readonly kind: 'loading'; readonly title: string };
+  | { readonly kind: 'loading'; readonly title: string; cancel(): void };
+
+export type Loaded<T> = { readonly kind: 'read'; readonly value: T } | { readonly kind: 'cancelled' };
 
 export type OverlayPorts = {
   pick(request: PickRequest): Promise<number | undefined>;
@@ -68,7 +70,7 @@ export type OverlayPorts = {
   waiting(view: WaitingView, handlers: WaitingHandlers): void;
   closeWaiting(): void;
   delivered(): void;
-  loading(title: string): void;
+  loading<T>(title: string, read: () => Promise<T>): Promise<Loaded<T>>;
 };
 
 const keyed = (key: string, text: (key: string) => string): string[] => (key === '' ? [] : [text(key)]);
@@ -81,6 +83,10 @@ export const waitingHint = (keys: KeyTable): string =>
   ]);
 
 export const textHint = (keys: KeyTable): string => joinHint([...keyed(keys.keyHint('select.decide'), (key) => `${key} to confirm`), ...keyed(keys.keyHint('select.escape'), (key) => `${key}: go back`)]);
+
+export const READING_TEXT = 'reading…';
+
+export const loadingHint = (keys: KeyTable): string => joinHint([READING_TEXT, ...keyed(keys.keyHint('select.escape'), (key) => `${key} cancels`)]);
 
 export type PanelOverlay = Exclude<Overlay, { kind: 'pick' }>;
 
@@ -137,7 +143,7 @@ export function OverlayView({ overlay, editor, keys }: { overlay: PanelOverlay; 
       return (
         <Box flexDirection="column">
           <Text bold>{escapeTerminalLine(overlay.title)}</Text>
-          <Text dimColor>reading…</Text>
+          <Text dimColor>{loadingHint(keys)}</Text>
         </Box>
       );
     case 'waiting':

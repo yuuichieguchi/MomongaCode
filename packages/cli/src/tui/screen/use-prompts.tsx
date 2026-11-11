@@ -12,21 +12,23 @@ import type { EditorState } from '../editor.ts';
 import { capturedOf } from '../keys/capture.ts';
 import type { ActionId, KeyContext, KeyTable } from '../keys/table.ts';
 import { OverlayView, pickerSpec } from '../picker.tsx';
-import type { Overlay, OverlayPorts, WaitingOverlay } from '../picker.tsx';
+import type { Loaded, Overlay, OverlayPorts, PickChoice, PickRequest, WaitingOverlay } from '../picker.tsx';
 import { detailCapacity, detailTop, DetailView, SELECT_CONTEXTS, selectClick, selectKey, selectLayout, selectRowAt, selectStart, selectText, SelectView, selectWheel } from '../select.tsx';
 import type { SelectFrame, SelectLayout, SelectLine, SelectOutcome, SelectSpec, SelectState, SelectStep, TextRow } from '../select.tsx';
 import type { KeyEvent, TerminalEvent } from '../terminal/events.ts';
-import { toolOf, withElicitationFlow } from '../transcript.ts';
+import { promptTakesFocus, toolOf, withElicitationFlow } from '../transcript.ts';
 import type { Entry, PendingApproval, PendingElicitation } from '../transcript.ts';
 import { WHEEL_ROWS } from './constants.ts';
 import type { ScreenTerminal } from './input.ts';
 import { regionAt } from './layout.ts';
 import type { RowAllocation } from './layout.ts';
-import { INVITATION_ACCEPT, invitationSpec } from './menu.tsx';
 import type { Invitation } from './menu.tsx';
 import { approvalSpec, approvalWording, decisionChoices, ElicitationFields, elicitationSpec, TRUST_CHOICES, trustSpec } from './prompt-panel.tsx';
 import type { TrustDecision } from './prompt-panel.tsx';
+import { createPromptGate, UNDER_HANDS_LINE } from './prompt-settle.ts';
+import type { PromptIntent, PromptSource } from './prompt-settle.ts';
 import type { TranscriptState, TranscriptStore } from './store.ts';
+import type { ScreenTimers } from './timers.ts';
 
 const WAITING_INPUT_BYTES = PASTED_CALLBACK_MAX_BYTES + 1;
 
@@ -50,11 +52,13 @@ const VIEWER_CONTEXTS: readonly KeyContext[] = ['viewer'];
 
 const selectActionOf = (event: KeyEvent, keys: KeyTable): ActionId | undefined => keys.actionOf(SELECT_CONTEXTS, event);
 
-const INVITATION_ACTIONS: readonly ActionId[] = ['select.up', 'select.down', 'select.pageUp', 'select.pageDown', 'select.first', 'select.last', 'select.decide', 'select.escape', 'select.interrupt'];
-
 export type PromptsHost = {
   backend: TuiBackend;
   store: TranscriptStore;
+  terminal: ScreenTerminal;
+  timers: ScreenTimers;
+  keySettleMs: number;
+  draftHeld(): boolean;
   columns: number;
   panelRows: number;
   keys: KeyTable;
@@ -65,7 +69,7 @@ export type PromptsHost = {
   exit(): void;
   append(entry: Entry): void;
   decideTrust(decision: TrustDecision): void;
-  acceptInvitation(invitation: Invitation): void;
+  replayKeys(events: readonly KeyEvent[]): void;
 };
 
 export type PanelFacts = { trustPath: string | undefined; ready: boolean };
@@ -73,16 +77,18 @@ export type PanelFacts = { trustPath: string | undefined; ready: boolean };
 export type Prompts = {
   overlayPorts: OverlayPorts;
   overlay: Overlay | undefined;
-  closeLoading(): void;
   invitation: Invitation | undefined;
-  invitationRows: number;
-  invitationView(): ReactNode;
-  invitationPress(row: number): void;
   invite(invitation: Invitation): void;
   dismissInvitation(): void;
+  flow<T>(work: () => Promise<T>): Promise<T>;
+  betweenLists(): boolean;
+  holdKey(event: KeyEvent, keys: KeyTable): boolean;
+  releaseHeldKeys(): void;
+  overlayKind(): Overlay['kind'] | undefined;
+  promptStage(): 'decision' | 'fields' | undefined;
+  detailShown(facts: PanelFacts): boolean;
   trustKey(path: string, event: KeyEvent, keys: KeyTable): void;
   overlayKey(event: KeyEvent, keys: KeyTable): boolean;
-  invitationKey(event: KeyEvent, keys: KeyTable): boolean;
   runPromptKey(event: KeyEvent, keys: KeyTable): boolean;
   paste(text: string): boolean;
   panel(facts: PanelFacts): ReactNode | undefined;
@@ -90,11 +96,15 @@ export type Prompts = {
   wheel(facts: PanelFacts, rows: number): void;
 };
 
-type Active = { owner: string; spec: SelectSpec; border: boolean; sending: boolean; on(outcome: SelectOutcome): void; highlighted?: (index: number) => void };
+type Active = { owner: string; spec: SelectSpec; border: boolean; sending: boolean; settle?: string; on(outcome: SelectOutcome): void; highlighted?: (index: number) => void };
 
 const TRUST_OWNER = 'trust';
 
 const DIGIT = /^[1-9]$/;
+
+const approvalOwner = (approval: PendingApproval): string => `approval:${approval.approvalId}`;
+
+const elicitationSettle = (pending: PendingElicitation): string => `input:${pending.inputId}`;
 
 const waitingCount = (state: TranscriptState): number =>
   (state.approval === undefined ? 0 : 1) + state.queuedApprovals.length + (state.elicitation === undefined ? 0 : 1) + state.queuedElicitations.length;
@@ -124,7 +134,7 @@ export const usePromptPointer = (host: PromptPointerHost): void => {
     return true;
   });
   const { terminal } = host;
-  useEffect(() => terminal.input.claim((event) => onEvent(event)), [terminal]);
+  useEffect(() => terminal.input.claim('prompt-pointer', (event) => onEvent(event)), [terminal]);
 };
 
 export const usePrompts = (host: PromptsHost): Prompts => {
@@ -147,9 +157,48 @@ export const usePrompts = (host: PromptsHost): Prompts => {
   const overlayEditorRef = useRef<EditorState>(overlayEditor);
   const [invitation, setInvitation] = useState<Invitation | undefined>(undefined);
 
+  const [gate] = useState(() => createPromptGate({ timers: host.timers, settleMs: host.keySettleMs, onChange: redraw }));
+  const { terminal } = host;
+  useEffect(
+    () =>
+      terminal.input.observe((event) => {
+        if (event.type === 'key') gate.keyPressed();
+        else if (event.type === 'release') gate.keyReleased();
+      }),
+    [terminal, gate],
+  );
+  useEffect(() => gate.stop, [gate]);
+
+  const shownAs = (settle: string, spec: SelectSpec): SelectSpec => {
+    gate.show(settle, host.draftHeld());
+    return gate.view(settle).underHands ? { ...spec, decideOn: 'immediate', enterOff: true, lines: [...(spec.lines ?? []), UNDER_HANDS_LINE] } : spec;
+  };
+
+  const takes = (active: Active, intent: PromptIntent, source: PromptSource): boolean => active.settle === undefined || gate.takes(active.settle, intent, source);
+
+  const settlingOf = (active: Active): boolean => active.settle !== undefined && gate.view(active.settle).settling;
+
+  const intentOf = (active: Active, event: KeyEvent, keys: KeyTable): PromptIntent => {
+    const typed = keys.typedOf(event);
+    const action = active.spec.filter && typed !== undefined ? undefined : keys.actionOf(SELECT_CONTEXTS, event, 'plain');
+    if (action === 'select.decide') return 'enter';
+    return action === undefined && typed !== undefined && DIGIT.test(typed) ? 'choice' : 'other';
+  };
+
+  const flows = useRef(0);
+  const heldKeys = useRef<KeyEvent[] | undefined>(undefined);
+
+  const takeHeldKeys = (): KeyEvent[] => {
+    const held = heldKeys.current ?? [];
+    heldKeys.current = undefined;
+    return held;
+  };
+
   const showOverlay = (next: Overlay | undefined): void => {
     overlayRef.current = next;
     setOverlayState(next);
+    if (next === undefined || next.kind === 'loading') return;
+    for (const event of takeHeldKeys()) keyOfFlow(event, host.keys);
   };
 
   const replaceOverlayEditor = (next: EditorState): void => {
@@ -162,16 +211,20 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     setElicitEditor(next);
   };
 
+  const openPick = (request: PickRequest, resolve: (choice: PickChoice | undefined) => void): void => {
+    pickId.current += 1;
+    request.onHighlight?.(pickerSpec(request).initial);
+    showOverlay({ kind: 'pick', request, resolve });
+  };
+
   const overlayPorts: OverlayPorts = {
     pick: (request) =>
       new Promise((resolve) => {
-        pickId.current += 1;
-        showOverlay({ kind: 'pick', request, resolve: (choice) => resolve(choice?.index) });
+        openPick(request, (choice) => resolve(choice?.index));
       }),
     choose: (request) =>
       new Promise((resolve) => {
-        pickId.current += 1;
-        showOverlay({ kind: 'pick', request, resolve });
+        openPick(request, resolve);
       }),
     captureKey: (request) =>
       new Promise((resolve) => {
@@ -202,7 +255,40 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     closeWaiting: () => {
       if (overlayRef.current?.kind === 'waiting') showOverlay(undefined);
     },
-    loading: (title) => showOverlay({ kind: 'loading', title }),
+    loading: <T,>(title: string, read: () => Promise<T>) =>
+      new Promise<Loaded<T>>((resolve, reject) => {
+        let reading = true;
+        const close = (): void => {
+          reading = false;
+          if (overlayRef.current === shown) showOverlay(undefined);
+        };
+        const shown: Overlay = {
+          kind: 'loading',
+          title,
+          cancel: () => {
+            if (!reading) return;
+            close();
+            resolve({ kind: 'cancelled' });
+          },
+        };
+        showOverlay(shown);
+        const answered = async (): Promise<T> => read();
+        answered().then(
+          (value) => {
+            if (!reading) return;
+            close();
+            resolve({ kind: 'read', value });
+          },
+          (error: unknown) => {
+            if (!reading) {
+              host.reportError(error);
+              return;
+            }
+            close();
+            reject(errorOf(error));
+          },
+        );
+      }),
   };
 
   const stateOf = (active: Active): SelectState => (selection.current?.owner === active.owner ? selection.current.state : selectStart(active.spec));
@@ -250,6 +336,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
   };
 
   const selectInput = (active: Active, event: KeyEvent, keys: KeyTable): void => {
+    if (!takes(active, intentOf(active, event, keys), 'key')) return;
     const action = active.spec.filter && keys.typedOf(event) !== undefined ? undefined : keys.actionOf(SELECT_CONTEXTS, event, 'plain');
     if (action === 'select.interrupt') {
       active.on({ kind: 'interrupt', action: active.spec.interrupt });
@@ -270,7 +357,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
   };
 
   const selectPress = (active: Active, row: number): void => {
-    if (active.sending || detailOf(active) !== undefined) return;
+    if (active.sending || detailOf(active) !== undefined || !takes(active, 'choice', 'pointer')) return;
     const index = selectRowAt(layoutOf(active), row);
     if (index !== undefined) apply(active, selectClick(active.spec, stateOf(active), index));
   };
@@ -288,7 +375,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     const shown = detailOf(active);
     if (shown !== undefined) return <DetailView text={textOf(active)} frame={frameOf(active)} top={shown.top} keys={host.keys} />;
     const error = errorFor(active);
-    return <SelectView spec={active.spec} state={stateOf(active)} layout={layoutOf(active)} border={frameOf(active).border} sending={active.sending} keys={host.keys} {...(error === undefined ? {} : { error })} />;
+    return <SelectView spec={active.spec} state={stateOf(active)} layout={layoutOf(active)} border={frameOf(active).border} sending={active.sending} settling={settlingOf(active)} keys={host.keys} {...(error === undefined ? {} : { error })} />;
   };
 
   const markSent = (owner: string): void => {
@@ -306,11 +393,12 @@ export const usePrompts = (host: PromptsHost): Prompts => {
   };
 
   const approvalActive = (approval: PendingApproval): Active => {
-    const owner = `approval:${approval.approvalId}`;
+    const owner = approvalOwner(approval);
     const { title, lines } = approvalTextOf(approval);
     return {
       owner,
-      spec: approvalSpec(approval, title, lines, waitingCount(store.state())),
+      settle: owner,
+      spec: shownAs(owner, approvalSpec(approval, title, lines, waitingCount(store.state()))),
       border: true,
       sending: sent.current === owner,
       on: (outcome) => {
@@ -374,7 +462,8 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     const flow = flowOf(pending);
     return {
       owner: `input:${pending.inputId}:${flowGeneration.current}`,
-      spec: elicitationSpec({ ...pending, flow }, toolOf(store, pending.callId)?.title ?? pending.callId, waitingCount(store.state())),
+      settle: elicitationSettle(pending),
+      spec: shownAs(elicitationSettle(pending), elicitationSpec({ ...pending, flow }, toolOf(store, pending.callId)?.title ?? pending.callId, waitingCount(store.state()))),
       border: true,
       sending: pending.submitted,
       on: (outcome) => {
@@ -391,6 +480,9 @@ export const usePrompts = (host: PromptsHost): Prompts => {
       return;
     }
     const action = selectActionOf(event, keys);
+    const settle = elicitationSettle(pending);
+    gate.show(settle, host.draftHeld());
+    if (!gate.takes(settle, action === 'select.interrupt' || action === 'select.escape' ? 'other' : 'text', 'key')) return;
     if (action === 'select.interrupt') {
       host.cancelNewest();
       return;
@@ -411,7 +503,8 @@ export const usePrompts = (host: PromptsHost): Prompts => {
 
   const trustActive = (path: string): Active => ({
     owner: TRUST_OWNER,
-    spec: trustSpec(path),
+    settle: TRUST_OWNER,
+    spec: shownAs(TRUST_OWNER, trustSpec(path)),
     border: true,
     sending: sent.current === TRUST_OWNER,
     on: (outcome) => {
@@ -426,7 +519,10 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     },
   });
 
-  const closeOverlay = (): void => showOverlay(undefined);
+  const closeOverlay = (): void => {
+    showOverlay(undefined);
+    if (flows.current > 0) heldKeys.current ??= [];
+  };
 
   const pickActive = (current: Extract<Overlay, { kind: 'pick' }>): Active => ({
     owner: `pick:${pickId.current}`,
@@ -441,27 +537,6 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     },
   });
 
-  const invitationActive = (shown: Invitation): Active => ({
-    owner: `invite:${shown.profile.id}`,
-    spec: invitationSpec(shown),
-    border: false,
-    sending: false,
-    on: (outcome) => {
-      if (outcome.kind === 'alt') return;
-      setInvitation(undefined);
-      if (outcome.kind !== 'decide') return;
-      if (outcome.index === INVITATION_ACCEPT) host.acceptInvitation(shown);
-      else backend.dismissNotice(`invite:${shown.profile.id}`).catch(host.reportError);
-    },
-  });
-
-  const invitationActs = (event: KeyEvent, keys: KeyTable): boolean => {
-    const action = selectActionOf(event, keys);
-    if (action !== undefined) return INVITATION_ACTIONS.includes(action);
-    const typed = keys.typedOf(event);
-    return typed !== undefined && DIGIT.test(typed);
-  };
-
   const panelActive = ({ trustPath, ready }: PanelFacts): Active | undefined => {
     if (trustPath !== undefined) return trustActive(trustPath);
     const current = overlayRef.current;
@@ -469,8 +544,10 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     if (!ready) return undefined;
     const state = store.state();
     if (state.elicitation !== undefined) return flowOf(state.elicitation).stage === 'decision' ? elicitationActive(state.elicitation) : undefined;
-    return state.approval === undefined ? undefined : approvalActive(state.approval);
+    return state.approval === undefined || !promptTakesFocus(state) ? undefined : approvalActive(state.approval);
   };
+
+  const fieldsShown = (facts: PanelFacts): PendingElicitation | undefined => (facts.ready && facts.trustPath === undefined && overlayRef.current === undefined ? store.state().elicitation : undefined);
 
   const typeIntoWaiting = (current: WaitingOverlay, after: EditorState): void => {
     const before = overlayEditorRef.current;
@@ -534,7 +611,11 @@ export const usePrompts = (host: PromptsHost): Prompts => {
       waitingKey(current, event, keys);
       return;
     }
-    if (current.kind === 'loading') return;
+    if (current.kind === 'loading') {
+      const action = selectActionOf(event, keys);
+      if (action === 'select.escape' || action === 'select.interrupt') current.cancel();
+      return;
+    }
     if (current.kind === 'capture') {
       captureKey(current, event);
       return;
@@ -563,21 +644,58 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     replaceOverlayEditor(applyKeyEvent(overlayEditorRef.current, event, keys).state);
   };
 
+  const holdKey = (event: KeyEvent, keys: KeyTable): boolean => {
+    const held = heldKeys.current;
+    if (held === undefined) return false;
+    const action = selectActionOf(event, keys);
+    if (action === 'select.escape' || action === 'select.interrupt') {
+      heldKeys.current = undefined;
+      return false;
+    }
+    held.push(event);
+    return true;
+  };
+
+  function keyOfFlow(event: KeyEvent, keys: KeyTable): void {
+    const current = overlayRef.current;
+    if (current !== undefined) overlayKeyOf(current, event, keys);
+    else holdKey(event, keys);
+  }
+
+  const releaseHeldKeys = (): void => {
+    const held = takeHeldKeys();
+    if (held.length > 0) host.replayKeys(held);
+  };
+
+  const flow = async <T,>(work: () => Promise<T>): Promise<T> => {
+    flows.current += 1;
+    try {
+      return await work();
+    } finally {
+      flows.current -= 1;
+      if (flows.current === 0) releaseHeldKeys();
+    }
+  };
+
   return {
     overlayPorts,
     overlay,
-    closeLoading: () => {
-      if (overlayRef.current?.kind === 'loading') showOverlay(undefined);
-    },
     invitation,
-    invitationRows: invitation === undefined ? 0 : textOf(invitationActive(invitation)).length + invitationSpec(invitation).rows.length + 1,
-    invitationView: () => (invitation === undefined ? null : selectView(invitationActive(invitation))),
-    invitationPress: (row) => {
-      if (invitation !== undefined) selectPress(invitationActive(invitation), row);
-    },
     invite: (next) => setInvitation(next),
-    dismissInvitation: () => {
-      if (invitation !== undefined) setInvitation(undefined);
+    dismissInvitation: () => setInvitation(undefined),
+    flow,
+    betweenLists: () => heldKeys.current !== undefined && overlayRef.current === undefined,
+    holdKey,
+    releaseHeldKeys,
+    overlayKind: () => overlayRef.current?.kind,
+    promptStage: () => {
+      const state = store.state();
+      if (state.elicitation !== undefined) return flowOf(state.elicitation).stage === 'decision' ? 'decision' : 'fields';
+      return state.approval === undefined || !promptTakesFocus(state) ? undefined : 'decision';
+    },
+    detailShown: (facts) => {
+      const active = panelActive(facts);
+      return active !== undefined && detailOf(active) !== undefined;
     },
     trustKey: (path, event, keys) => selectInput(trustActive(path), event, keys),
     overlayKey: (event, keys) => {
@@ -586,18 +704,13 @@ export const usePrompts = (host: PromptsHost): Prompts => {
       overlayKeyOf(current, event, keys);
       return true;
     },
-    invitationKey: (event, keys) => {
-      if (invitation === undefined || !invitationActs(event, keys)) return false;
-      selectInput(invitationActive(invitation), event, keys);
-      return true;
-    },
     runPromptKey: (event, keys) => {
       const state = store.state();
       if (state.elicitation !== undefined) {
         elicitationKey(state.elicitation, event, keys);
         return true;
       }
-      if (state.approval !== undefined) {
+      if (state.approval !== undefined && promptTakesFocus(state)) {
         selectInput(approvalActive(state.approval), event, keys);
         return true;
       }
@@ -611,18 +724,29 @@ export const usePrompts = (host: PromptsHost): Prompts => {
       }
       const state = store.state();
       if (state.elicitation !== undefined) {
-        if (state.elicitation.flow.stage === 'fields') replaceElicitEditor(insertText(elicitEditorRef.current, text));
+        if (state.elicitation.flow.stage === 'fields' && gate.takes(elicitationSettle(state.elicitation), 'text', 'pointer')) replaceElicitEditor(insertText(elicitEditorRef.current, text));
         return true;
       }
       return false;
     },
     panel: (facts) => {
       const active = panelActive(facts);
+      const pending = active === undefined ? fieldsShown(facts) : undefined;
+      if (pending !== undefined) gate.show(elicitationSettle(pending), host.draftHeld());
+      else if (active?.settle === undefined) gate.show(undefined, false);
       if (active !== undefined) return selectView(active);
       if (overlay !== undefined && overlay.kind !== 'pick') return <OverlayView overlay={overlay} editor={overlayEditor} keys={host.keys} />;
-      const pending = facts.ready && facts.trustPath === undefined && overlay === undefined ? store.state().elicitation : undefined;
       if (pending === undefined) return undefined;
-      return <ElicitationFields elicitation={{ ...pending, flow: flowOf(pending) }} title={toolOf(store, pending.callId)?.title ?? pending.callId} editor={elicitEditor} waiting={waitingCount(store.state())} keys={host.keys} />;
+      return (
+        <ElicitationFields
+          elicitation={{ ...pending, flow: flowOf(pending) }}
+          title={toolOf(store, pending.callId)?.title ?? pending.callId}
+          editor={elicitEditor}
+          waiting={waitingCount(store.state())}
+          settling={gate.view(elicitationSettle(pending)).settling}
+          keys={host.keys}
+        />
+      );
     },
     press: (facts, row) => {
       const active = panelActive(facts);

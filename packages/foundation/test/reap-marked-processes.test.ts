@@ -6,7 +6,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HOLD_UNTIL_SIGNALLED, HOLD_UNTIL_SIGNALLED_ARGV, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, killGroupsForCleanup, killPidsForCleanup, pacedReapTiming, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeTimers, PacedReapTiming, TrackedChild } from '@momonga/testkit';
-import { KILL_CONFIRM_MS, MarkerReapError, createProcessInspector, hostInspectorPorts, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reconcileProcessGroup } from '@momonga/foundation';
+import { KILL_CONFIRM_MS, MarkerReapError, createProcessInspector, hostInspectorPorts, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reconcileProcessGroup, sleep } from '@momonga/foundation';
 import type { CommandRunner, ProcessInspector } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: 4 * REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -821,7 +821,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
     const requests: Array<{ file: string; timeoutMs: number | undefined; signalAborted: boolean | undefined }> = [];
     const slowListing: CommandRunner = async (file, _args, options) => {
       requests.push({ file, timeoutMs: options.timeoutMs, signalAborted: options.signal?.aborted });
-      await fake.timing.sleep(SLOW_LISTING_MS);
+      await sleep(fake.timing, SLOW_LISTING_MS);
       if (options.timeoutMs !== undefined && options.timeoutMs < SLOW_LISTING_MS) throw Object.assign(new Error(`${file} killed after ${options.timeoutMs} ms`), { killed: true, signal: 'SIGKILL' });
       if (options.signal?.aborted === true) throw Object.assign(new Error('aborted'), { name: 'AbortError', code: 'ABORT_ERR' });
       return { exitCode: 1, stdout: '', stderr: '' };

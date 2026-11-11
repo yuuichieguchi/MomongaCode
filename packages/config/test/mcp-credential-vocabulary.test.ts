@@ -30,6 +30,26 @@ describe('the security vocabulary decides which variables a project .mcp.json ma
     expect(result.warnings).toEqual([]);
   });
 
+  it.each(['PATH', 'GOPATH', 'PYTHONPATH', 'NODE_PATH', 'CONNECT_TIMEOUT'])('lets a project server reference %s, which only holds a credential word inside another word', async (variable) => {
+    const result = await load(variable, 'plain');
+    expect(names(result.enabled)).toContain('s');
+    expect(result.warnings).toEqual([]);
+  });
+
+  it.each(['DATABASE_URL', 'GITHUB_PAT', 'DB_CONN', 'SENTRY_DSN', 'SESSION_COOKIE', 'XDG_SESSION_TYPE'])('skips the server that references %s, named with a whole word of the vocabulary', async (variable) => {
+    const secret = `secret-value-of-${variable}`;
+    const result = await load(variable, secret);
+    expect(names(result.enabled)).not.toContain('s');
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toContain(variable);
+    expect(JSON.stringify(result)).not.toContain(secret);
+  });
+
+  it('decides a project server reference and the session env by the same names', () => {
+    const env = { DATABASE_URL: 'postgres://h/db', GITHUB_PAT: 'p', DB_CONN: 'c', SENTRY_DSN: 'd', GOPATH: '/go', CONNECT_TIMEOUT: '5' };
+    expect(stripCredentialEnv(env, [])).toEqual({ env: { GOPATH: '/go', CONNECT_TIMEOUT: '5' }, removed: ['DATABASE_URL', 'DB_CONN', 'GITHUB_PAT', 'SENTRY_DSN'] });
+  });
+
   it('withholds the same names from the session env snapshot', () => {
     const env = { SSH_AUTH_SOCK: '/tmp/agent.sock', GIT_AUTHOR_NAME: 'A' };
     expect(stripCredentialEnv(env, [])).toEqual({ env: { GIT_AUTHOR_NAME: 'A' }, removed: ['SSH_AUTH_SOCK'] });

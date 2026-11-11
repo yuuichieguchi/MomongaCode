@@ -105,6 +105,20 @@ describe('a key-binding file resolved against the table', () => {
     expect(rejections(resolveBindings(file(['chat', { tab: 'prompt.steer' }])))).toEqual(['chat tab: prompt.queue would have no key']);
   });
 
+  it('lets queue take Enter as the Enter of the busy state: submit keeps it, and steer gives it up', () => {
+    const swapped = resolveBindings(file(['chat', { enter: 'prompt.queue', tab: 'prompt.steer' }]));
+    expect(rejections(swapped)).toEqual([]);
+    expect([keysOf(swapped, 'prompt.submit'), keysOf(swapped, 'prompt.queue'), keysOf(swapped, 'prompt.steer')]).toEqual([['enter'], ['enter'], ['tab']]);
+    const both = resolveBindings(file(['chat', { enter: 'prompt.queue', 'ctrl+s': 'prompt.steer' }]));
+    expect(rejections(both)).toEqual([]);
+    expect([keysOf(both, 'prompt.submit'), keysOf(both, 'prompt.queue'), keysOf(both, 'prompt.steer')]).toEqual([['enter'], ['enter', 'tab'], ['ctrl+s']]);
+  });
+
+  it('never leaves prompt.submit without a key', () => {
+    expect(rejections(resolveBindings(file(['chat', { enter: null }])))).toEqual(['chat enter: prompt.submit would have no key']);
+    expect(keysOf(resolveBindings(file(['chat', { enter: null }])), 'prompt.submit')).toEqual(['enter']);
+  });
+
   it.each<[string, [string, Record<string, string | null>], string]>([
     ['an unknown context', ['editor', { 'ctrl+e': 'editor.lineEnd' }], 'editor ctrl+e: unknown context editor'],
     ['an unknown action', ['chat', { 'ctrl+e': 'editor.fly' }], 'chat ctrl+e: unknown action editor.fly'],
@@ -413,6 +427,24 @@ describe('the key-binding file on disk', () => {
     store.poll(10_000 + 2 * KEY_FILE_STAT_MS);
     await settled(() => store.report().fileProblem === undefined);
     expect(store.report().rows).toEqual(KEYS);
+  });
+
+  it('applies a poll that arrives while a reload is under way, after that reload', async () => {
+    const { store, edit, files, stats } = await opened(JSON.stringify(file()));
+    const gate = Promise.withResolvers<void>();
+    const stat = files.stat;
+    files.stat = async (asked) => {
+      const found = await stat(asked);
+      await gate.promise;
+      return found;
+    };
+    store.poll(10_000);
+    edit(JSON.stringify(file(['chat', { 'alt+s': 'history.search' }])));
+    store.poll(10_000 + KEY_FILE_STAT_MS);
+    const statsWhileReading = stats.length;
+    gate.resolve();
+    await settled(() => store.table().keysFor('history.search').includes('alt+s'));
+    expect(stats.length).toBe(statsWhileReading + 1);
   });
 
   it('does not read a file that did not change', async () => {

@@ -155,21 +155,21 @@ describe('the wait of the reaper pass for a dead generation takes the values of 
 
   it('waits the runtime close bound of the values the dead generation recorded when its stop began', async (context) => {
     const reapedAt = await daemonReapTime(context, (stopRecord) => writeStopRecord(stopRecord, 1, PREDECESSOR));
-    expect(runtimeMaxCloseMs(PREDECESSOR)).toBe(7000 + 6 * 40 + 28_095);
+    expect(runtimeMaxCloseMs(PREDECESSOR)).toBe(7000 + 6 * 40 + 28_125);
     expect(reapedAt).toBeGreaterThanOrEqual(runtimeMaxCloseMs(PREDECESSOR));
     expect(reapedAt).toBeLessThanOrEqual(runtimeMaxCloseMs(PREDECESSOR) + ORPHAN_POLL_MS);
   });
 
   it('waits the runtime close bound of the allowed maxima when the dead generation left no record', async (context) => {
     const reapedAt = await daemonReapTime(context, async () => undefined);
-    expect(runtimeMaxCloseMs(MAXIMUM_STOP_VALUES)).toBe(508_095);
-    expect(reapedAt).toBeGreaterThanOrEqual(508_095);
-    expect(reapedAt).toBeLessThanOrEqual(508_095 + ORPHAN_POLL_MS);
+    expect(runtimeMaxCloseMs(MAXIMUM_STOP_VALUES)).toBe(508_125);
+    expect(reapedAt).toBeGreaterThanOrEqual(508_125);
+    expect(reapedAt).toBeLessThanOrEqual(508_125 + ORPHAN_POLL_MS);
   });
 
   it('waits the bound of the allowed maxima when the record is invalid or names another generation', async (context) => {
     const reapedAt = await daemonReapTime(context, async (stopRecord) => fs.writeFileSync(stopRecord, `${JSON.stringify({ generation: 2, values: PREDECESSOR })}\n`, { mode: 0o600 }));
-    expect(reapedAt).toBeGreaterThanOrEqual(508_095);
+    expect(reapedAt).toBeGreaterThanOrEqual(508_125);
   });
 
   it('removes the stop record with the directory of the dead generation, as one known entry of it', async (context) => {

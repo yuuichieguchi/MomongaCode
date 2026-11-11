@@ -7,6 +7,7 @@ import { inertPrinterSet } from './command-specs.ts';
 import type { CommandSpec } from './command-specs.ts';
 import { gitSubcommandSpec } from './git-subcommands.ts';
 import { STRUCTURAL_SPECS, analyzeCommand } from './shell.ts';
+import { wildcardMatches } from './wildcard.ts';
 import type { Analysis, Segment, Word } from './shell.ts';
 
 const INERT_PRINTERS = inertPrinterSet(STRUCTURAL_SPECS);
@@ -14,14 +15,16 @@ const WORD_PIECE_SEPARATOR = /[=!]/;
 
 export type MatchStrength = 'position' | 'unanalysable' | 'incidental';
 
-export type CommandPattern = { kind: 'exact'; text: string } | { kind: 'prefix'; words: string[] };
+export type CommandPattern = { kind: 'exact'; text: string } | { kind: 'glob'; text: string } | { kind: 'prefix'; words: string[] };
+
+const COMMAND_GLOB = '*';
 
 export const commandPatternOf = (rule: PermissionRule): CommandPattern => {
   const specifier = rule.specifier as string;
   if (specifier.endsWith(COMMAND_PREFIX_SUFFIX)) {
     return { kind: 'prefix', words: specifier.slice(0, -COMMAND_PREFIX_SUFFIX.length).trim().split(/\s+/) };
   }
-  return { kind: 'exact', text: specifier.trim() };
+  return { kind: specifier.includes(COMMAND_GLOB) ? 'glob' : 'exact', text: specifier.trim() };
 };
 
 const patternWords = (pattern: CommandPattern): string[] => (pattern.kind === 'prefix' ? pattern.words : pattern.text.split(/\s+/));
@@ -62,12 +65,15 @@ const matchSkippingOptions = (words: Word[], expected: string[], offset: number)
 
 export const comparesByAdjacency = (rule: PermissionRule): boolean => {
   if (rule.specifier === undefined || rule.effect === 'allow') return false;
-  const words = patternWords(commandPatternOf(rule));
+  const pattern = commandPatternOf(rule);
+  if (pattern.kind === 'glob') return false;
+  const words = patternWords(pattern);
   return words.length > 1 && optionTableOf(words[0] as string) === undefined;
 };
 
 const strictSegmentMatches = (pattern: CommandPattern, segment: Segment): boolean => {
   if (pattern.kind === 'exact') return segment.text === pattern.text;
+  if (pattern.kind === 'glob') return segment.prefixEligible && wildcardMatches(pattern.text, segment.text);
   return segment.prefixEligible && prefixMatchesAt(segment.words, pattern.words, segment.commandIndex > 0 ? 0 : segment.strictIndex, false);
 };
 
@@ -81,7 +87,22 @@ const expandWordPieces = (words: Word[]): Word[] =>
     return [word, ...pieces];
   });
 
+const commandTextsFrom = (segment: Segment, offset: number): string[] => {
+  const words = segment.words.slice(offset).map((word) => word.value);
+  const program = words[0];
+  if (program === undefined) return [];
+  return [words.join(' '), [path.basename(program), ...words.slice(1)].join(' ')];
+};
+
+const globSegmentStrength = (text: string, segment: Segment): MatchStrength | null => {
+  const offsets = [0, segment.commandIndex, segment.effectiveIndex].filter((offset) => offset >= 0);
+  const candidates = [segment.text, ...offsets.flatMap((offset) => commandTextsFrom(segment, offset))];
+  if (candidates.some((candidate) => wildcardMatches(text, candidate))) return 'position';
+  return segment.unanalyzable ? 'unanalysable' : null;
+};
+
 const conservativeSegmentStrength = (pattern: CommandPattern, segment: Segment): MatchStrength | null => {
+  if (pattern.kind === 'glob') return globSegmentStrength(pattern.text, segment);
   if (pattern.kind === 'exact' && segment.text === pattern.text) return 'position';
   const expected = patternWords(pattern);
   const coversWholeCommand = (offset: number, length: number): boolean => pattern.kind === 'prefix' || offset + expected.length === length;
@@ -117,6 +138,7 @@ export const commandMatchStrength = (rule: PermissionRule, command: string): Mat
   const pattern = commandPatternOf(rule);
   if (pattern.kind === 'exact' && command.trim() === pattern.text) return 'position';
   const analysis = analyzeCommand(command);
+  if (pattern.kind === 'glob' && rule.effect !== 'allow' && wildcardMatches(pattern.text, command.trim())) return 'position';
   if (rule.effect === 'allow') {
     const covered = analysis !== null && analysis.segments.length > 0 && analysis.segments.every((segment) => strictSegmentMatches(pattern, segment));
     return covered ? 'position' : null;

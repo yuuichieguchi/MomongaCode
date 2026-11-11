@@ -7,18 +7,19 @@ import type { NamedPlanAccountRef, PlanSignInBeginRequest, PlanSignInBeginRespon
 import { GatewayError, invalidRequest } from '../core/errors.ts';
 import { PLAN_SIGN_IN_DEFAULTS } from '../defaults.ts';
 import { hostIdentityFailure } from './auth-source.ts';
-import { endCodeOf, noPlanEvents } from './events.ts';
+import { endCodeOf, eventScalar, noPlanEvents } from './events.ts';
 import type { PlanEvents } from './events.ts';
 import { ensureHostIdentity, resetHostIdentity } from './host-identity.ts';
+import { CONFLICT_STATUS, SUCCESS_STATUS, answeredLater } from './http-status.ts';
 import type { HostIdentity } from './host-identity.ts';
 import { createIdTokenVerifier, idTokenFacts } from './id-token.ts';
 import type { IdTokenFacts, IdTokenVerifier } from './id-token.ts';
 import type { PlanOutbound } from './outbound.ts';
-import { boundedSend, refreshRequiredFor, tokenResponseProblem } from './refresh.ts';
-import type { PlanFetch, PlanSleep, PlanTokenResponse } from './refresh.ts';
+import { boundedSend, refreshRequiredFor, tokenResponseOf } from './refresh.ts';
+import type { PlanFetch, PlanSleep, RefreshTokens } from './refresh.ts';
 import { createSerial } from './serial.ts';
 import { OAUTH_ACCESS_DENIED, OAUTH_INVALID_GRANT } from './oauth-wire.ts';
-import { ownEntry } from './own-entry.ts';
+import { planProfileNamed } from './profiles.ts';
 import type { PlanSessions, Registration } from './session.ts';
 
 export type SignInEnd = { outcome: typeof SIGNED_IN_OUTCOME | typeof PLAN_DISABLED_STATE; ref: NamedPlanAccountRef; firstSignIn: boolean } | { outcome: typeof RETRY_OUTCOME; reason: typeof INVALID_GRANT_REASON };
@@ -83,10 +84,6 @@ const failureCodeOf = (error: unknown): string | undefined => {
 const MIN_PORT = 1;
 const MAX_PORT = 65_535;
 
-const CONFLICT_STATUS = 409;
-const SUCCESS_STATUS = 200;
-const TOO_MANY_REQUESTS = 429;
-const SERVER_ERROR_FLOOR = 500;
 const UNSPECIFIED = 'unspecified';
 const OVERSIZE_REASON = `the token response is larger than ${PLAN_SIGN_IN_DEFAULTS.authBodyBytes} bytes`;
 const NO_ID_TOKEN_REASON = 'the token response has no ID token';
@@ -136,11 +133,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
   const events = options.events ?? noPlanEvents;
   const hostGate = createSerial();
 
-  const profileOf = (id: string): PlanProfile => {
-    const profile = ownEntry(options.profiles, id);
-    if (profile === undefined) throw invalidRequest('plan_profile_unknown', `no plan profile is named ${JSON.stringify(id)}`, 'profile');
-    return profile;
-  };
+  const profileOf = (id: string): PlanProfile => planProfileNamed(options.profiles, id);
 
   const verifierOf = (profile: PlanProfile): IdTokenVerifier => {
     const existing = verifiers.get(profile.id);
@@ -158,9 +151,17 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     return attempt;
   };
 
+  const removeExpired = (): void => {
+    const now = options.clock.now();
+    for (const attempt of [...attempts.values()]) if (now >= attempt.expiresAt) consume(attempt.id);
+  };
+
   let completing = 0;
 
-  const waiting = (): boolean => completing > 0 || [...attempts.values()].some((attempt) => options.clock.now() < attempt.expiresAt);
+  const waiting = (): boolean => {
+    removeExpired();
+    return completing > 0 || attempts.size > 0;
+  };
 
   const beginAttempt = async (profile: PlanProfile, request: PlanSignInBeginRequest, signal: AbortSignal): Promise<Attempt> => {
     await options.sessions.pointerReady();
@@ -170,6 +171,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     const { hostId } = await ensureHostIdentity(options.fileSystem, options.hostFile, { accountsExist }).catch((error: unknown) => {
       throw hostIdentityFailure(error);
     });
+    removeExpired();
     const key = attemptKey(profile.id, request.account);
     const replaced = pendingByAccount.get(key);
     if (replaced !== undefined) attempts.delete(replaced);
@@ -196,7 +198,9 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
   const resetHost = (): Promise<HostIdentity> =>
     hostGate.run(async () => {
       if (waiting()) throw invalidRequest(PLAN_SIGN_IN_PENDING_CODE, 'A sign-in is waiting for the browser. Finish or cancel it, then reset the host.', null, CONFLICT_STATUS);
-      return resetHostIdentity(options.fileSystem, options.hostFile);
+      return resetHostIdentity(options.fileSystem, options.hostFile).catch((error: unknown) => {
+        throw hostIdentityFailure(error);
+      });
     });
 
   const begin = async (request: PlanSignInBeginRequest, signal: AbortSignal): Promise<PlanSignInBeginResponse> => {
@@ -226,7 +230,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     return { attemptId: attempt.id, authorizationUrl: url.toString(), state: attempt.state, expiresAt: new Date(attempt.expiresAt).toISOString() };
   };
 
-  const exchange = async (fetch: PlanFetch, attempt: Attempt, clientId: string, code: string, progress: Progress): Promise<PlanTokenResponse | { outcome: typeof RETRY_OUTCOME; reason: typeof INVALID_GRANT_REASON }> => {
+  const exchange = async (fetch: PlanFetch, attempt: Attempt, clientId: string, code: string, progress: Progress): Promise<RefreshTokens | { outcome: typeof RETRY_OUTCOME; reason: typeof INVALID_GRANT_REASON }> => {
     const { profile } = attempt;
     const form = { grant_type: 'authorization_code', client_id: clientId, code, code_verifier: attempt.verifier, redirect_uri: attempt.redirectUri, resource: profile.oauth.resource };
     const answer = await boundedSend(
@@ -236,7 +240,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
       PLAN_SIGN_IN_DEFAULTS.exchangeTimeoutMs,
       PLAN_SIGN_IN_DEFAULTS.authBodyBytes,
     );
-    if (answer.kind === 'unanswered' || answer.status === TOO_MANY_REQUESTS || answer.status >= SERVER_ERROR_FLOOR) throw signInFailure(PLAN_SIGN_IN_FAILURE.exchangeUnavailable, profile);
+    if (answer.kind === 'unanswered' || answeredLater(answer.status)) throw signInFailure(PLAN_SIGN_IN_FAILURE.exchangeUnavailable, profile);
     if (answer.truncated) {
       progress.endStep = STEP_TOKEN_RESPONSE;
       throw signInFailure(PLAN_SIGN_IN_FAILURE.tokenResponseInvalid, profile, { reason: OVERSIZE_REASON });
@@ -249,9 +253,9 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     }
     progress.endStep = STEP_TOKEN_RESPONSE;
     const scope = isRecord(body) ? body['scope'] : undefined;
-    const problem = tokenResponseProblem(body, { refreshRequired: typeof scope === 'string' && refreshRequiredFor(scope) });
-    if (problem !== undefined) throw signInFailure(PLAN_SIGN_IN_FAILURE.tokenResponseInvalid, profile, { reason: problem });
-    return body as PlanTokenResponse;
+    const reading = tokenResponseOf(body, { refreshRequired: typeof scope === 'string' && refreshRequiredFor(scope) });
+    if ('problem' in reading) throw signInFailure(PLAN_SIGN_IN_FAILURE.tokenResponseInvalid, profile, { reason: reading.problem });
+    return reading.tokens;
   };
 
   const signInEvent = (attempt: Attempt, progress: Progress, end: { outcome: (typeof PLAN_SIGN_IN_OUTCOMES)[number] } | { outcome: 'failed'; failure: string }): void => {
@@ -263,12 +267,12 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
       endStep: progress.endStep,
       durationMs: options.clock.now() - attempt.startedAt,
       port: attempt.port,
-      ...(facts.alg === undefined ? {} : { alg: facts.alg }),
-      ...(facts.kid === undefined ? {} : { kid: facts.kid }),
+      ...(facts.alg === undefined ? {} : { alg: eventScalar(facts.alg) }),
+      ...(facts.kid === undefined ? {} : { kid: eventScalar(facts.kid) }),
       ...(facts.audShape === undefined ? {} : { audShape: facts.audShape }),
-      ...(facts.claimNames === undefined ? {} : { claimNames: facts.claimNames }),
-      ...(progress.scope === undefined ? {} : { scope: progress.scope }),
-      ...(progress.earliestRefreshAt === undefined ? {} : { earliestRefreshAt: progress.earliestRefreshAt }),
+      ...(facts.claimNames === undefined ? {} : { claimNames: facts.claimNames.map(eventScalar) }),
+      ...(progress.scope === undefined ? {} : { scope: eventScalar(progress.scope) }),
+      ...(progress.earliestRefreshAt === undefined ? {} : { earliestRefreshAt: eventScalar(progress.earliestRefreshAt) }),
     });
   };
 
@@ -286,6 +290,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
 
   const completeAttempt = async (fetch: PlanFetch, attemptId: string, callbackUrl: string, signal: AbortSignal): Promise<SignInEnd> => {
     const attempt = consume(attemptId);
+    removeExpired();
     if (attempt === undefined) throw signInFailure(PLAN_SIGN_IN_FAILURE.attemptNotFound, undefined);
     const progress: Progress = { endStep: STEP_ATTEMPT, facts: {} };
     try {
