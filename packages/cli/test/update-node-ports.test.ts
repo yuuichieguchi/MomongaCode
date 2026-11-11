@@ -2,14 +2,17 @@ import fs from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
-import { ensureMomongaDirs, momongaPaths, systemTiming } from '@momonga/foundation';
+import type { Readable, Writable } from 'node:stream';
+import { ensureMomongaDirs, kernelLockNamed, momongaPaths, sidecarOf, systemTiming } from '@momonga/foundation';
 import type { OutboundNetwork } from '@momonga/foundation';
-import { registerCleanup, withTempDir, testKernelLock } from '@momonga/testkit';
+import { registerCleanup, spawnTracked, withTempDir, testKernelLock } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { daemonReadyBoundMs } from '../src/daemon/ensure-daemon.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { MAX_REDIRECTS, STAGING_PREFIX, UPDATE_TRANSFER_OPTIONS, leasedUpdateHttp, nodeDaemonProbe, nodeUpdateFs, nodeUpdateLock, nodeUpdatePorts, nodeUpdateState } from '../src/update/node-ports.ts';
 import { readyChildren, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
+
+const ASIDE_ENTRY = path.join(import.meta.dirname, 'update-aside-entry.ts');
 
 const unusedPort = (name: string): never =>
   new Proxy(() => undefined, {
@@ -275,13 +278,39 @@ describe('publishing over a running executable', () => {
     const { directory, target, staged } = await setup(context);
     await nodeUpdateFs(testKernelLock(), runningImageRename(target)).publish(staged, target);
     expect(fs.readFileSync(target, 'utf8')).toBe('new');
-    const leftovers = fs.readdirSync(directory).filter((name) => name !== 'momonga.exe');
-    expect(leftovers).toHaveLength(1);
-    expect(leftovers[0]?.startsWith(STAGING_PREFIX)).toBe(true);
-    expect(fs.readFileSync(path.join(directory, leftovers[0] as string), 'utf8')).toBe('old');
-    await nodeUpdateFs(testKernelLock()).removeLeftovers(directory);
-    expect(fs.readdirSync(directory)).toEqual(['momonga.exe']);
+    const lock = testKernelLock();
+    const asides = fs.readdirSync(directory).filter((name) => name !== 'momonga.exe' && !name.endsWith(sidecarOf(lock, '')));
+    expect(asides).toHaveLength(1);
+    expect(asides[0]?.startsWith(STAGING_PREFIX)).toBe(true);
+    expect(fs.readFileSync(path.join(directory, asides[0] as string), 'utf8')).toBe('old');
   });
+
+  for (const mechanism of ['file-lock', 'sqlite-lock'] as const) {
+    it(`names the aside of the running file as a locked entry that the sweep keeps while its process runs and removes after it ends (${mechanism})`, async (context) => {
+      const { directory, target, staged } = await setup(context);
+      const child = spawnTracked(context, process.execPath, [ASIDE_ENTRY, mechanism, target, staged], { stdio: ['pipe', 'pipe', 'pipe'] });
+      const exited = new Promise<number | null>((resolve) => child.once('exit', (code) => resolve(code)));
+      let stderr = '';
+      (child.stderr as Readable).on('data', (chunk: Buffer) => (stderr += chunk.toString('utf8')));
+      await new Promise<void>((resolve, reject) => {
+        (child.stdout as Readable).on('data', (chunk: Buffer) => {
+          if (chunk.toString('utf8').includes('published')) resolve();
+        });
+        child.once('exit', () => reject(new Error(`the publishing process ended before it published: ${stderr}`)));
+      });
+      const asideOf = (): string[] => fs.readdirSync(directory).filter((name) => name.startsWith(STAGING_PREFIX) && !name.slice(STAGING_PREFIX.length).includes('.'));
+      expect(fs.readFileSync(target, 'utf8')).toBe('new');
+      expect(asideOf()).toHaveLength(1);
+
+      await nodeUpdateFs(kernelLockNamed(mechanism)).removeLeftovers(directory);
+      expect(asideOf()).toHaveLength(1);
+
+      (child.stdin as Writable).end();
+      expect(await exited).toBe(0);
+      await nodeUpdateFs(kernelLockNamed(mechanism)).removeLeftovers(directory);
+      expect(fs.readdirSync(directory)).toEqual(['momonga.exe']);
+    });
+  }
 
   it('puts the old file back when the new one cannot be moved in', async (context) => {
     const { directory, target, staged } = await setup(context);

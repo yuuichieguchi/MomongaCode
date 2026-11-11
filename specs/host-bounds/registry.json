@@ -125,6 +125,7 @@
       {"name":"PASTE_ABANDON_BYTES","file":"packages/cli/src/tui/terminal/constants.ts","lacks":["row"]},
       {"name":"PASTE_MAX_BYTES","file":"packages/cli/src/tui/terminal/constants.ts","lacks":["row"]},
       {"name":"CANDIDATE_CHECK_TIMEOUT_MS","file":"packages/cli/src/update/install.ts","lacks":["kind"]},
+      {"name":"STAGED_NAME_BYTES","file":"packages/cli/src/update/node-ports.ts","lacks":["row"]},
       {"name":"TRANSFER_STALL_TIMEOUT_MS","file":"packages/cli/src/update/node-ports.ts","lacks":["kind"]},
       {"name":"KEY_HEX_CHARS","file":"packages/config/src/file-lock.ts","lacks":["row"]},
       {"name":"MINUTE_MS","file":"packages/config/src/models-writers.ts","lacks":["kind","row"]},

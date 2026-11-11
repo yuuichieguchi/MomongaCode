@@ -128,7 +128,6 @@ const NAMED_ONLY_BY_TESTS: readonly string[] = [
   'attachKept',
   'bsdFileLock',
   'canStillRun',
-  'claimNewEntry',
   'classifyProbeCause',
   'clearUntrustedSchemaCaches',
   'codeDigestOf',

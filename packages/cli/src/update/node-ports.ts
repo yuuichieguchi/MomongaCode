@@ -1,10 +1,10 @@
-import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { loadUserSettings } from '@momonga/config';
 import {
   ProcessLockHeldError,
   acquireProcessLock,
+  claimNewEntry,
   createLockedEntry,
   createOutboundDispatcher,
   resolveLayoutLocks,
@@ -17,7 +17,7 @@ import {
   systemRandom,
   writeFileAtomically,
 } from '@momonga/foundation';
-import type { KernelLockMechanism, LockedEntry, LockedEntryFiles, MomongaPaths, OutboundNetwork, OutboundOptions } from '@momonga/foundation';
+import type { HeldKernelLock, KernelLockMechanism, LockedEntry, LockedEntryFiles, MomongaPaths, OutboundNetwork, OutboundOptions } from '@momonga/foundation';
 import { interceptors, request } from 'undici';
 import { withOutboundNetwork } from '../network.ts';
 import { daemonReadyBoundMs } from '../daemon/ensure-daemon.ts';
@@ -72,20 +72,31 @@ const errorCodeOf = (error: unknown): string | undefined => {
 
 type Rename = (from: string, to: string) => Promise<void>;
 
-const publishReplacing = async (rename: Rename, staged: string, target: string): Promise<void> => {
+const STAGED_NAME_BYTES = 6;
+
+const publishReplacing = async (rename: Rename, lock: KernelLockMechanism, staged: string, target: string): Promise<HeldKernelLock | undefined> => {
   try {
     await rename(staged, target);
+    return undefined;
   } catch (error) {
     const code = errorCodeOf(error);
     if (code === undefined || !REPLACE_REFUSED_CODES.has(code)) throw error;
-    const aside = path.join(path.dirname(target), `${STAGING_PREFIX}${randomBytes(6).toString('hex')}`);
-    await rename(target, aside);
+    const aside = path.join(path.dirname(target), `${STAGING_PREFIX}${systemRandom.hex(STAGED_NAME_BYTES)}`);
+    const held = await claimNewEntry(lock, aside, 'sidecar');
+    try {
+      await rename(target, aside);
+    } catch (refused) {
+      held.dispose();
+      throw refused;
+    }
     try {
       await rename(staged, target);
     } catch (second) {
       await rename(aside, target);
+      held.dispose();
       throw second;
     }
+    return held;
   }
 };
 
@@ -103,11 +114,12 @@ const stagingFiles: LockedEntryFiles = {
 
 export const nodeUpdateFs = (lock: KernelLockMechanism, rename: Rename = fs.rename): UpdateFs => {
   const staging = new Map<string, LockedEntry>();
+  const asidesHeldWhileThisProcessRuns: HeldKernelLock[] = [];
   return {
     realpath: (file) => fs.realpath(file),
     modeOf: async (file) => (await fs.stat(file)).mode & 0o777,
     stage: async (directory, mode): Promise<StagedFile> => {
-      const file = path.join(directory, `${STAGING_PREFIX}${randomBytes(6).toString('hex')}`);
+      const file = path.join(directory, `${STAGING_PREFIX}${systemRandom.hex(STAGED_NAME_BYTES)}`);
       const entry = await createLockedEntry(stagingFiles, lock, file, mode);
       staging.set(file, entry);
       let closed = false;
@@ -123,7 +135,8 @@ export const nodeUpdateFs = (lock: KernelLockMechanism, rename: Rename = fs.rena
     },
     publish: async (staged, target) => {
       staging.get(staged)?.assertStillNamed();
-      await publishReplacing(rename, staged, target);
+      const aside = await publishReplacing(rename, lock, staged, target);
+      if (aside !== undefined) asidesHeldWhileThisProcessRuns.push(aside);
       staging.get(staged)?.finish();
       staging.delete(staged);
     },

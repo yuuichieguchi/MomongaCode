@@ -91,13 +91,27 @@ describe('lock-capability.ts:43,79: two creators of one locked file never remove
 });
 
 describe('C3: the registered list of leftover directories is data in momonga-paths.ts', () => {
-  it('registers the plan sessions, the state directory of the secret key, the spawn scratch and the session scratch', () => {
+  it('registers the plan sessions, the state directory of the secret key and the session scratch, and not the spawn scratch, whose entries are generation directories', () => {
     const home = makeTemporaryDirectory();
     const paths = momongaPaths(home, process.platform, process.env);
     const registered = leftoverDirectories(paths, HANDOVER).map((entry) => entry.directory);
-    expect(registered).toEqual(expect.arrayContaining([paths.planSessions, path.dirname(paths.gatewayKey), paths.tmp.spawn, paths.tmp.sessions]));
+    expect(registered).toEqual(expect.arrayContaining([paths.planSessions, path.dirname(paths.gatewayKey), paths.tmp.sessions]));
+    expect(registered).not.toContain(paths.tmp.spawn);
     expect(new Set(registered).size).toBe(registered.length);
   });
+
+  for (const platform of ['darwin', 'linux'] as const) {
+    it(`${platform} mechanism: a sweep of every registered directory keeps no generation scratch of the spawn scratch as an unproved leftover (14.2)`, async () => {
+      const lock = expectedKernelLockOn(platform);
+      const paths = momongaPaths(makeTemporaryDirectory(), process.platform, process.env);
+      const scratch = path.join(paths.tmp.spawn, 'g1');
+      fs.mkdirSync(scratch, { recursive: true });
+      const swept = await sweepLeftovers({ directories: leftoverDirectories(paths, HANDOVER), lock });
+      expect(swept.kept).not.toContain(scratch);
+      expect(swept.removed).not.toContain(scratch);
+      expect(fs.existsSync(scratch)).toBe(true);
+    });
+  }
 
   it('names only temporaries as leftovers, never a published file', () => {
     const paths = momongaPaths(makeTemporaryDirectory(), process.platform, process.env);

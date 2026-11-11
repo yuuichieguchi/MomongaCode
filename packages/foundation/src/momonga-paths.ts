@@ -353,7 +353,6 @@ export const leftoverDirectories = (paths: MomongaPaths, handover: HandoverLefto
   { directory: paths.planSessions, isLeftover: isAtomicWriteTemporary },
   { directory: paths.planCatalog, isLeftover: isAtomicWriteTemporary },
   { directory: path.dirname(paths.gatewayKey), isLeftover: isAtomicWriteTemporary },
-  { directory: paths.tmp.spawn, isLeftover: everyName },
   { directory: paths.tmp.sessions, isLeftover: everyName, retain: retainedByItsOwnersRule },
   { directory: path.join(path.dirname(paths.databases.runtime), STORE_BLOBS_DIRECTORY), isLeftover: isAtomicWriteTemporary },
   { directory: paths.probe, isLeftover: isAtomicWriteTemporary },

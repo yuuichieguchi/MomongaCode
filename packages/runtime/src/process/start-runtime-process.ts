@@ -151,7 +151,7 @@ export type StartRuntimeProcessOptions = {
 
 export type BundledRipgrepSource = (paths: Pick<MomongaPaths, 'executables'>, locks: LayoutLocks) => BundledRipgrepResolver;
 
-export type SocketGuardSource = (paths: Pick<MomongaPaths, 'executables'>) => () => Promise<string>;
+export type SocketGuardSource = (paths: Pick<MomongaPaths, 'executables'>, locks: LayoutLocks) => () => Promise<string>;
 
 export type RuntimeCloseResult = {
   clean: boolean;
@@ -467,7 +467,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           killGraceMs: SANDBOX_KILL_GRACE_MS,
           journal: createPlaceholderJournal(journalDirectory),
           holders: () => heldMountPoints(),
-          ...(options.socketGuard === undefined ? {} : { socketGuard: options.socketGuard(paths) }),
+          ...(options.socketGuard === undefined ? {} : { socketGuard: options.socketGuard(paths, options.locks) }),
           ...(helperSelf === undefined ? {} : { relay: () => helperCommandLine(helperSelf, NETWORK_RELAY_HELPER, []) }),
         });
       }
