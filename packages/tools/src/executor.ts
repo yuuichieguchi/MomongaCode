@@ -928,9 +928,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       return outcome(failedOutcome(call.callId, describeThrown(tool.name, error)));
     }
     const target: GateTarget = { input, subject, ...(facts === undefined ? {} : { facts }) };
-    const blocker = blockerOf(footprintOf(subject, cwd), held.filter((entry) => entry.callId !== call.callId));
+    const footprint = footprintOf(subject, cwd);
+    const blocker = blockerOf(footprint, held.filter((entry) => entry.callId !== call.callId));
     if (blocker !== undefined) {
-      const reason = blockedByHeldText(blocker.callId);
+      const reason = blockedByHeldText(blocker.callId, footprint);
       return outcome({ callId: call.callId, kind: 'result', result: { status: 'failed', output: reason, denial: { source: 'held', reason } } });
     }
 
