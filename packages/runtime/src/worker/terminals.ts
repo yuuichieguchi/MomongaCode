@@ -12,6 +12,12 @@ export type TerminalsOptions = {
   clock: Clock;
 };
 
+export const releaseClaimLease = async (store: RuntimeStore, claim: Claim, clock: Clock): Promise<'done'> => {
+  const result = await store.releaseLease(claim, { availableAt: clock.now(), refundAttempt: true });
+  if (result.kind === 'conflict') throw new Error(`run ${claim.runId} could not release its lease: ${result.reason ?? 'conflict'}`);
+  return 'done';
+};
+
 export const createTerminals = ({ store, claim, journal, control, clock }: TerminalsOptions): Terminals => {
   const cancel = async (): Promise<'done'> => {
     const result = await store.transition(claim, ['CANCELLING'], 'CANCELLED');
@@ -20,11 +26,7 @@ export const createTerminals = ({ store, claim, journal, control, clock }: Termi
     return 'done';
   };
 
-  const yieldLease = async (): Promise<'done'> => {
-    const result = await store.releaseLease(claim, { availableAt: clock.now(), refundAttempt: true });
-    if (result.kind === 'conflict') throw new Error(`run ${claim.runId} could not release its lease: ${result.reason ?? 'conflict'}`);
-    return 'done';
-  };
+  const yieldLease = (): Promise<'done'> => releaseClaimLease(store, claim, clock);
 
   const settle = (result: RunMutationResult): 'settled' | 'cancelling' => {
     if (result.kind === 'lease_lost') control.lost();
@@ -43,10 +45,7 @@ export const createTerminals = ({ store, claim, journal, control, clock }: Termi
       }
       return 'done';
     },
-    yieldTo: async (to, availableAt, options) => {
-      journal.snapshot();
-      return settle(await store.release(claim, to, availableAt, options)) === 'cancelling' ? yieldLease() : 'done';
-    },
+    yieldTo: async (to, availableAt, options) => (settle(await store.release(claim, to, availableAt, options)) === 'cancelling' ? yieldLease() : 'done'),
     cancel,
     yieldLease,
   };

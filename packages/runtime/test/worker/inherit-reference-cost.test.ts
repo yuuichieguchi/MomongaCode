@@ -2,8 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import v8 from 'node:v8';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { openDatabase, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
+import { canonicalJson, openDatabase, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { Claim, RuntimeStore } from '@momonga/store';
+import { encodeRunState } from '@momonga/store';
 import { startJournalThread } from '../../src/memory/journal-thread-client.ts';
 import type { JournalThreadClient } from '../../src/memory/journal-thread-client.ts';
 import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../../src/memory/journal-thread-limits.ts';
@@ -17,7 +18,7 @@ import { callsStep, textStep } from './scripts.ts';
 import { settle } from './inheritance-support.ts';
 import { builderOf, harnessOf, referenceFactsOf } from './inherit-reference-support.ts';
 import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
-import { testKernelLock } from '@momonga/testkit';
+import { NEVER_CANCELLED, testKernelLock } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: 600_000 });
 
@@ -214,13 +215,11 @@ const childSnapshotBytes = async (steps: number): Promise<number> => {
   env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: path.join(env.project, 'out.txt'), content: 'approved' } }]));
   expect(await env.runOnce(env.worker('worker-1'))).toBe('yielded');
   expect(env.run(child.id).status).toBe('WAITING_HUMAN');
-  const row = env.raw().prepare('SELECT state_json FROM snapshots WHERE run_id = ? ORDER BY seq DESC LIMIT 1').get(child.id) as { state_json: string } | undefined;
-  if (row === undefined) throw new Error(`run ${child.id} has no snapshot`);
-  return Buffer.byteLength(row.state_json);
+  return Buffer.byteLength(canonicalJson(encodeRunState((await env.store.load(child.id, NEVER_CANCELLED)).state)));
 };
 
-describe('R13: a snapshot never holds the window', () => {
-  it('the snapshot a child writes at its yield is the same size whether its source has 15 or 1000 steps', async () => {
+describe('R13: the run state of a child never holds the window', () => {
+  it('the encoded state of a child at its yield is the same size whether its source has 15 or 1000 steps', async () => {
     const small = await childSnapshotBytes(15);
     const large = await childSnapshotBytes(1000);
     expect(Math.abs(large - small)).toBeLessThan(256);
@@ -243,9 +242,10 @@ describe('R14: no history is read before the window is installed', () => {
     const child = await b.createRun('And again');
     const claim = b.claimNext(child.id);
     expect(await env.store.inheritContext(claim, { mode: 'manual' })).toEqual({ kind: 'inherited' });
-    const journal = openJournal({
+    const journal = await openJournal({
       store: env.store,
       claim,
+      signal: NEVER_CANCELLED,
       lost: () => {
         throw new Error('lease lost');
       },
@@ -263,13 +263,11 @@ describe('R14: no history is read before the window is installed', () => {
     expect(subject.state.taskSeq).toBe(3);
   });
 
-  it('the snapshot the journal writes holds the own items only', async () => {
+  it('the run state loaded through the journal holds the own items only, the window stays beside it', async () => {
     const { env, child, journal } = await committedChild();
     const subject = windowed(journal);
     subject.installWindow(await referenceFactsOf(env.store).inheritedWindow({ runId: child.id, windowTokens: 100_000, floorTokens: 1 }));
-    subject.snapshot();
-    const row = env.raw().prepare('SELECT state_json FROM snapshots WHERE run_id = ? ORDER BY seq DESC LIMIT 1').get(child.id) as { state_json: string };
-    const stored = JSON.parse(row.state_json) as { history: { seq: number }[] };
-    expect(stored.history.map((entry) => entry.seq)).toEqual([3]);
+    expect(subject.state.history.map((entry) => entry.seq)).toEqual([1, 2, 3]);
+    expect((await env.store.load(child.id, NEVER_CANCELLED)).state.history.map((entry) => entry.seq)).toEqual([3]);
   });
 });

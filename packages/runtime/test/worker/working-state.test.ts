@@ -4,6 +4,7 @@ import { sha256Hex } from '@momonga/foundation';
 import { tokensForText } from '@momonga/protocol';
 import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
+import { NEVER_CANCELLED } from '@momonga/testkit';
 import { capabilitiesFor, makeEnv } from './harness.ts';
 
 const IDS = { runId: 'run-ws', sessionId: 'session-ws' };
@@ -362,23 +363,23 @@ describe('recovery', () => {
     const run = await env.enqueue('the original task');
     const claim = await env.seed(run.id, payloads, 'hold');
     const state = env.fold(run.id);
-    expect(env.store.writeSnapshot(claim, state.lastSeq, state)).toEqual({ kind: 'ok' });
     return { env, run, claim, state };
   };
 
-  it('renders the same text from a snapshot as from the journal', async () => {
+  it('renders the same text from the state the journal thread loads as from the journal', async () => {
     const { env, run, state } = await snapshotted([...write('w', '/p/a.ts', 'x'), ...bash('b', 'npm test', 1), compactedThrough(1)]);
-    const restored = env.store.load(run.id).snapshot?.state as RunState;
+    const restored = (await env.store.load(run.id, NEVER_CANCELLED)).state;
     expect(restored).toEqual(state);
     expect(render(restored)).toBe(render(state));
   });
 
-  it('renders the same text from a snapshot followed by more events', async () => {
-    const { env, run, claim } = await snapshotted([...write('w', '/p/a.ts', 'x'), compactedThrough(1)]);
+  it('renders the same text from a loaded state followed by more events', async () => {
+    const { env, run, claim, state } = await snapshotted([...write('w', '/p/a.ts', 'x'), compactedThrough(1)]);
     expect(env.store.append(claim, bash('b', 'make lint', 2)).kind).toBe('ok');
-    const loaded = env.store.load(run.id);
-    const recovered = loaded.tail.reduce(foldRunState, loaded.snapshot?.state as RunState);
-    expect(loaded.tail.length).toBeGreaterThan(0);
+    const tail = env.store.readRunEvents(run.id, state.lastSeq, 100);
+    const recovered = tail.reduce(foldRunState, state);
+    expect(tail.length).toBeGreaterThan(0);
+    expect((await env.store.load(run.id, NEVER_CANCELLED)).state).toEqual(recovered);
     expect(render(recovered)).toBe(render(env.fold(run.id)));
   });
 });

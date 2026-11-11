@@ -37,7 +37,7 @@ import { deferredPinFor, tokenPinFor, tokenPolicyOf } from './token-pin.ts';
 import { completionPinFor } from './completion-pin.ts';
 import type { RunPins } from './pins.ts';
 import { createSkillAdmission } from './skill-admission.ts';
-import { createTerminals } from './terminals.ts';
+import { createTerminals, releaseClaimLease } from './terminals.ts';
 import { extendToolSet, harnessOutputToolsOf, operationCatalogueFacts } from '@momonga/tools';
 import { createLoadToolsTool } from './load-tools-tool.ts';
 import { createToolLoading } from './tool-admission.ts';
@@ -146,7 +146,7 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
   let fatal = false;
   let leftToRecovery = false;
   try {
-    journal = openJournal({ store, claim, lost: control.lost });
+    journal = await openJournal({ store, claim, signal: control.recoverySignal, lost: control.lost });
     terminals = createTerminals({ store, claim, journal, control, clock: options.clock });
     tracerLease = await options.tracers.acquire(control.signal);
     agentSpan = tracerLease.value.startAgentSpan({ runId: claim.runId, sessionId: claim.sessionId, attempt: claim.attempt });
@@ -161,6 +161,10 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
       throw cause;
     }
     if (control.leaseLost() || cause instanceof LeaseLostError) return;
+    if (journal === undefined && cause instanceof ShutdownError) {
+      await releaseClaimLease(store, claim, options.clock);
+      return;
+    }
     if (control.shuttingDown() && cause instanceof JournalThreadError) {
       leftToRecovery = true;
       return;

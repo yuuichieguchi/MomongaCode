@@ -95,9 +95,9 @@ describe('worker default error reporter', () => {
     const appends: RunEventPayload[][] = [];
     const store: RuntimeStore = {
       ...env.store,
-      load: (runId) => {
+      load: (runId, signal) => {
         if (runId === failing.id) throw new Error('load exploded');
-        return env.store.load(runId);
+        return env.store.load(runId, signal);
       },
       append: (claim, payloads) => {
         appends.push([...payloads]);
@@ -123,14 +123,14 @@ describe('worker default error reporter', () => {
     let stolenAtSeq: number | undefined;
     const store: RuntimeStore = {
       ...env.store,
-      load: (runId) => {
+      load: (runId, signal) => {
         if (runId === failing.id && stolenAtSeq === undefined) {
           env.clock.advance(LEASE_MS + 1);
           if (env.store.claim('worker-thief')?.runId !== failing.id) throw new Error('the thief did not steal the failing run');
           stolenAtSeq = env.run(failing.id).lastSeq;
           throw new Error('load exploded');
         }
-        return env.store.load(runId);
+        return env.store.load(runId, signal);
       },
     };
 
@@ -151,9 +151,9 @@ describe('worker default error reporter', () => {
     env.gateway.script.push(textStep('Hello.'));
     const store: RuntimeStore = {
       ...env.store,
-      load: (runId) => {
+      load: (runId, signal) => {
         if (runId === failing.id) throw new Error('load exploded');
-        return env.store.load(runId);
+        return env.store.load(runId, signal);
       },
       append: (claim, payloads) => {
         if (payloads.some(isFailureNotice)) throw new Error('reporter append exploded');

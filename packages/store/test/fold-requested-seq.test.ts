@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { START_MS, enqueue, harness, mustClaim, newSession } from './helpers.ts';
+import { roundTripped } from './run-state-codec.ts';
 
 const IDS = { runId: 'run-1', sessionId: 'sess-1' };
 
@@ -43,18 +44,15 @@ describe('snapshot codec: requestedSeq', () => {
   const snapshotWith = async (patch: (state: RunState) => RunState) => {
     const { store } = harness();
     const run = await enqueue(store, newSession(store).id);
-    const claim = mustClaim(store, 'worker-1');
-    const appended = store.append(claim, [notice('first'), requested(1)]);
+    const appended = store.append(mustClaim(store, 'worker-1'), [notice('first'), requested(1)]);
     if (appended.kind !== 'ok') throw new Error('expected the append to succeed');
     const state = store.readRunEvents(run.id, 0, 100).reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));
-    const written = store.writeSnapshot(claim, state.lastSeq, patch(state));
-    if (written.kind !== 'ok') throw new Error('expected the snapshot to be written');
-    return { store, runId: run.id, state };
+    return { read: () => roundTripped(patch(state)), state };
   };
 
   it('round-trips requestedSeq', async () => {
-    const { store, runId, state } = await snapshotWith((state) => state);
-    const loaded = store.load(runId).snapshot?.state;
+    const { read, state } = await snapshotWith((state) => state);
+    const loaded = read();
     expect(loaded?.inFlightModelRequest).toMatchObject({ requestedSeq: 3 });
     expect(loaded).toEqual(state);
   });
@@ -64,12 +62,12 @@ describe('snapshot codec: requestedSeq', () => {
     ['a string requestedSeq', '3'],
     ['a non-integer requestedSeq', 2.5],
   ])('rejects a snapshot whose in-flight request holds %s', async (_label, value) => {
-    const { store, runId } = await snapshotWith((state) => {
+    const { read } = await snapshotWith((state) => {
       const inFlight = { ...(state.inFlightModelRequest as Record<string, unknown>) };
       if (value === undefined) delete inFlight['requestedSeq'];
       else inFlight['requestedSeq'] = value;
       return { ...state, inFlightModelRequest: inFlight } as RunState;
     });
-    expect(() => store.load(runId)).toThrow(/does not hold a RunState/);
+    expect(() => read()).toThrow(/does not hold a RunState/);
   });
 });

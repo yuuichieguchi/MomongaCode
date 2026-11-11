@@ -3,6 +3,7 @@ import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { fixtureCompactionItem } from '@momonga/testkit';
 import { enqueue, harness, mustClaim, newSession } from './helpers.ts';
+import { foldedRunState, roundTripped } from './run-state-codec.ts';
 import {
   NEXT_RUN,
   assistantItem,
@@ -222,10 +223,8 @@ describe('snapshot plus tail equals the full fold for an inheriting run', () => 
     expect(full.mode).toBe('plan');
     for (let k = 1; k <= events.length; k += 1) {
       const prefix = events.slice(0, k).reduce(foldRunState, initial);
-      expect(store.writeSnapshot(claim, events[k - 1]!.seq, prefix)).toEqual({ kind: 'ok' });
-      const loaded = store.load(run.id);
-      expect(loaded.snapshot?.seq).toBe(events[k - 1]!.seq);
-      expect(loaded.tail.reduce(foldRunState, loaded.snapshot?.state ?? initial)).toEqual(full);
+      expect(events.slice(k).reduce(foldRunState, roundTripped(prefix) as RunState)).toEqual(full);
     }
+    expect(await foldedRunState(store, run.id)).toEqual(full);
   });
 });

@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { describe, expect, it } from 'vitest';
-import { createRedactor, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
+import { canonicalJson, createRedactor, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { buildRunReport } from '@momonga/observability';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
-import { HISTORY_INDEX_BATCH_CHARS } from '@momonga/store';
+import { HISTORY_INDEX_BATCH_CHARS, encodeRunState } from '@momonga/store';
 import type { ContributionPreparer } from '@momonga/store';
 import { startJournalThread } from '../../src/memory/journal-thread-client.ts';
 import type { JournalThreadClient } from '../../src/memory/journal-thread-client.ts';
@@ -13,13 +13,12 @@ import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../../src/memory/journal-thread
 import { journalReaderPreparer, makeEnv } from '../worker/harness.ts';
 import type { Env } from '../worker/harness.ts';
 import { foldedThrough, seedLargeRun } from '../worker/large-run.ts';
-import { testKernelLock } from '@momonga/testkit';
+import { NEVER_CANCELLED, testKernelLock } from '@momonga/testkit';
 
 const SIZES = [15, 50, 150, 1000] as const;
 const BODY_TOKENS = [100_000, 400_000, 1_000_000] as const;
 const CHARS_PER_TOKEN = 4;
 const TICK_MS = 5;
-const SNAPSHOT_INTERVAL_EVENTS = 200;
 const MB = 1024 * 1024;
 const READ_CHUNK = 1000;
 const CALIBRATION_TIMEOUT_MS = 30 * 60 * 1000;
@@ -85,6 +84,7 @@ const threadOf = (dbPath: () => string): { preparer: ContributionPreparer; clien
       reflectionInput: async (request) => (await client()).reflectionInput(request),
       fidelity: async (request) => (await client()).fidelity(request),
       report: async (request) => (await client()).report(request),
+      runState: async (request, signal) => (await client()).runState(request, signal),
     },
     close: async () => {
       if (started !== undefined) await (await started).close();
@@ -132,28 +132,10 @@ const measureSize = async (steps: number): Promise<Measured> => {
     await spawn.value.close();
 
     reset(counter);
-    const loadWhole = await timed(() => env.store.load(run.id));
-    const wholeTail = { rows: counter.rows, bytes: counter.bytes };
-
-    const behindSeq = Math.max(0, lastSeq - (SNAPSHOT_INTERVAL_EVENTS - 1));
-    let behindTail = wholeTail;
-    let loadBehind = loadWhole;
-    if (behindSeq > 0) {
-      const behind = foldedThrough(env, run, behindSeq);
-      expect(env.store.writeSnapshot(claim, behindSeq, behind).kind).toBe('ok');
-      reset(counter);
-      loadBehind = await timed(() => env.store.load(run.id));
-      behindTail = { rows: counter.rows, bytes: counter.bytes };
-    }
-
-    const state = foldedThrough(env, run, lastSeq);
-    reset(counter);
-    const write = await timed(() => env.store.writeSnapshot(claim, state.lastSeq, state));
-    expect(write.value.kind).toBe('ok');
-    const snapshotBytes = counter.encoded.get('snapshot') ?? 0;
-    reset(counter);
-    const loadCurrent = await timed(() => env.store.load(run.id));
-    const currentTail = { rows: counter.rows, bytes: counter.bytes };
+    const loadThread = await timed(() => env.store.load(run.id, NEVER_CANCELLED));
+    const loadThreadLoop = { rows: counter.rows, bytes: counter.bytes };
+    expect(loadThread.value.state).toEqual(foldedThrough(env, run, lastSeq));
+    const stateBytes = Buffer.byteLength(canonicalJson(encodeRunState(loadThread.value.state)));
 
     const viaThread = await timed(async () => (await thread.client()).measure({ runId: run.id, leading: [] }));
     const inline = await timed(() => journalReaderPreparer(env.dbPath).measure({ runId: run.id, leading: [] }));
@@ -184,19 +166,11 @@ const measureSize = async (steps: number): Promise<Measured> => {
       events: lastSeq,
       journalMb: round(journalBytes / MB),
       threadSpawnMs: round(spawn.wallMs),
-      snapshotMb: round(snapshotBytes / MB),
-      snapshotWriteMs: round(write.loopCpuMs),
-      snapshotWriteMsPerMb: perMb(write.loopCpuMs, snapshotBytes),
-      claimStartSnapshotAtLastSeqMs: round(loadCurrent.loopCpuMs),
-      claimStartSnapshotAtLastSeqMsPerMb: perMb(loadCurrent.loopCpuMs, snapshotBytes),
-      claimStartSnapshotAtLastSeqTailRows: currentTail.rows,
-      claimStartSnapshotAtLastSeqTailMb: round(currentTail.bytes / MB),
-      claimStartSnapshotBehindMs: round(loadBehind.loopCpuMs),
-      claimStartSnapshotBehindTailRows: behindTail.rows,
-      claimStartSnapshotBehindTailMb: round(behindTail.bytes / MB),
-      claimStartNoSnapshotMs: round(loadWhole.loopCpuMs),
-      claimStartNoSnapshotTailRows: wholeTail.rows,
-      claimStartNoSnapshotTailMb: round(wholeTail.bytes / MB),
+      runStateMb: round(stateBytes / MB),
+      claimStartThreadWallMs: round(loadThread.wallMs),
+      claimStartThreadLoopCpuMs: round(loadThread.loopCpuMs),
+      claimStartThreadLoopGapMs: round(loadThread.loopGapMs),
+      claimStartThreadLoopDecodedRows: loadThreadLoop.rows,
       contributionThreadWallMs: round(viaThread.wallMs),
       contributionThreadMsPerMb: perMb(viaThread.wallMs, journalBytes),
       contributionThreadMsPerEvent: round(viaThread.wallMs / lastSeq),
@@ -246,7 +220,7 @@ const bodyDecode = async (tokens: number): Promise<Measured> => {
 };
 
 describe('what a unit of journal work costs on this host (design section 7, calibration check)', () => {
-  it('records the costs of the journal thread, the inline control, the run state snapshot, the claim start, the run report, the search indexing probe and a recorded request body', async () => {
+  it('records the costs of the journal thread, the inline control, the claim start through the journal thread, the run report, the search indexing probe and a recorded request body', async () => {
     const [cpu] = os.cpus();
     const host = { cpu: cpu?.model, cores: os.availableParallelism(), platform: `${os.platform()}-${os.arch()}`, node: process.version, loadAverage1m: round(os.loadavg()[0] ?? 0), coreClass: 'not pinned: the scheduler of the host chooses' };
     console.info(`offloop calibration host ${JSON.stringify(host)}`);

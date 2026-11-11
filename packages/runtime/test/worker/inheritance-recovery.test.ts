@@ -4,6 +4,7 @@ import { canonicalJson } from '@momonga/foundation';
 import type { RuntimeStore } from '@momonga/store';
 import { foldRunState, initialRunState } from '@momonga/store';
 
+import { NEVER_CANCELLED } from '@momonga/testkit';
 import { LEASE_MS, makeEnv, modelKey } from './harness.ts';
 import type { Env } from './harness.ts';
 import { gated, textStep } from './scripts.ts';
@@ -18,9 +19,9 @@ const watchedStore = (env: Env, previousRunId: string, reads: Reads): RuntimeSto
     reads.inheritContext += 1;
     return env.store.inheritContext(claim, options);
   },
-  load: (runId) => {
+  load: (runId, signal) => {
     if (runId === previousRunId) reads.loadPrevious += 1;
-    return env.store.load(runId);
+    return env.store.load(runId, signal);
   },
   readRunEvents: (runId, afterSeq, limit) => {
     if (runId === previousRunId) reads.readPrevious += 1;
@@ -114,24 +115,19 @@ describe('recovery of an inheriting run killed during its first model call', () 
     expect(envNeutralJson(env, (rebuilt?.body as { input: unknown }).input)).toBe(envNeutralJson(control, (uninterrupted?.body as { input: unknown }).input));
   });
 
-  it('reproduces the same state from a full fold when the snapshots are dropped', async () => {
+  it('the state loaded through the journal is the full fold of the run, and its inherited window is unchanged', async () => {
     const env = await makeEnv();
     await answered(env, 'Say hello', 'Hello there.');
     const second = await answered(env, 'And again', 'Again.');
-    const withSnapshot = env.store.load(second);
     const initial = initialRunState({ runId: second, sessionId: env.session.id });
-    const before = withSnapshot.tail.reduce(foldRunState, withSnapshot.snapshot?.state ?? initial);
+    const before = (await env.store.load(second, NEVER_CANCELLED)).state;
     expect(before.inherited).toMatchObject({ form: 'reference', fromNextItemSeq: 3, itemCount: 2 });
     expect(before.taskSeq).toBe(3);
     expect(before.history.map((entry) => entry.seq)).toEqual([3, 4]);
     const request = { runId: second, windowTokens: 100_000, floorTokens: 1 };
     const window = await referenceFactsOf(env.store).inheritedWindow(request);
 
-    env.raw().prepare('DELETE FROM snapshots WHERE run_id = ?').run(second);
-    const replayed = env.store.load(second);
-
-    expect(replayed.snapshot).toBeUndefined();
-    expect(replayed.tail.reduce(foldRunState, initial)).toEqual(before);
+    expect(env.store.readRunEvents(second, 0, 1000).reduce(foldRunState, initial)).toEqual(before);
     expect(await referenceFactsOf(env.store).inheritedWindow(request)).toEqual(window);
     expect(window.entries.map((entry) => entry.seq)).toEqual([1, 2]);
   });
