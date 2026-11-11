@@ -1,11 +1,14 @@
 import { orderVersions } from '@momonga/foundation';
+import type { KeptWork, Surface } from '@momonga/protocol';
 import type { HandoverTerminal } from '../tui/terminal/layer.ts';
-import { encodeRecord, sessionOfRecordFile } from './record.ts';
+import { encodeRecord } from './record.ts';
 import type { HandoverRecord } from './record.ts';
 import type { ReplaceHooks, ReplaceTarget } from './replace-process.ts';
 import { handoverFailedText, recordTooLargeText, restartingText } from './texts.ts';
 
 export type MoveSurface = {
+  surface: Surface;
+  kept(): KeptWork;
   recordFile(): string | undefined;
   quiet(): boolean;
   snapshot(toVersion: string): HandoverRecord;
@@ -42,9 +45,9 @@ export const createMover = (ports: MoverPorts): Mover => {
   const toldTooLarge = new Set<string>();
   const refusals = new Map<string, string>();
 
-  const stayed = (on: MoveSurface, file: string, version: string, reason: string): void => {
+  const stayed = (on: MoveSurface, version: string, reason: string): void => {
     tried.add(version);
-    on.say(handoverFailedText({ toVersion: version, fromVersion: ports.version, reason, session: sessionOfRecordFile(file) }));
+    on.say(handoverFailedText(on.surface, { toVersion: version, fromVersion: ports.version, reason, kept: on.kept() }));
   };
 
   const tooLarge = (on: MoveSurface, version: string): void => {
@@ -68,7 +71,7 @@ export const createMover = (ports: MoverPorts): Mover => {
     } catch (error) {
       if (written) ports.remove(file);
       on.resume();
-      stayed(on, file, version, reasonOf(error));
+      stayed(on, version, reasonOf(error));
     }
   };
 
@@ -94,7 +97,7 @@ export const createMover = (ports: MoverPorts): Mover => {
     if (on === undefined || version === undefined || file === undefined || tried.has(version)) return Promise.resolve();
     const refusal = refusals.get(version);
     if (refusal !== undefined) {
-      stayed(on, file, version, refusal);
+      stayed(on, version, refusal);
       return Promise.resolve();
     }
     if (!on.quiet()) return Promise.resolve();

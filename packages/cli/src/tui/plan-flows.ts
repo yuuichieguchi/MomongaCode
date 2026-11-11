@@ -1,4 +1,4 @@
-import { NO_MODEL_CONNECTED_TEXT, PLAN_LABEL_REFUSAL, SIGN_IN_REQUIRED_CODE, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME } from '@momonga/protocol';
+import { PLAN_LABEL_REFUSAL, messageOf, SIGN_IN_REQUIRED_CODE, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME } from '@momonga/protocol';
 import type { DetectedManagedServer, GatewayHealth, MomongaModelEntry, PlanAccountRef, PlanAccountView, PlanAccountsResponse, PlanProfileView, TargetHealth } from '@momonga/protocol';
 import { displayMapOf } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
@@ -380,7 +380,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     const found = opened === undefined ? [] : foundNotConfigured(opened.edit, remembered);
     const { rows, listed: listedRows } = modelListRows({ listing, current, health, found });
     if (rows.length + catalogChoices.length === 0) {
-      ports.info(NO_MODEL_CONNECTED_TEXT);
+      ports.info(messageOf('noModelConnected', 'tui'));
       return;
     }
     const displays = displayMapOf(listingViewsOf(entries));

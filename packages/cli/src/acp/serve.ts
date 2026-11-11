@@ -85,6 +85,11 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
   let named: string | undefined;
   const recordName = (): string => (named ??= `acp-${ports.clock.now()}`);
   const detach = mover?.attach({
+    surface: 'acp',
+    kept: () => {
+      const state = bridge.snapshot();
+      return { kind: 'sessions', sessionIds: state === undefined ? [] : state.sessions };
+    },
     recordFile: () => (bridge.snapshot() === undefined ? undefined : recordFileOf(paths, recordName())),
     quiet: bridge.quiet,
     snapshot: (toVersion) => {
