@@ -6,6 +6,7 @@ import { usageOf } from '@momonga/testkit';
 import { createGovernancePort } from '@momonga/runtime';
 import { defineTool } from '@momonga/tools';
 import { inputTokensOf } from './fake-gateway.ts';
+import { TOKEN_SETTINGS_OFF } from './fake-settings.ts';
 import { capabilitiesFor, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
@@ -36,6 +37,7 @@ const toolNamed = (name: string, description: string, execute: () => void = () =
 const estimatedEnv = async (): Promise<Env> => {
   const env = await makeEnv({ capabilities: sized(), mode: 'bypassPermissions' });
   env.gateway.countMethod = 'estimated';
+  env.settings.contextValue = TOKEN_SETTINGS_OFF;
   return env;
 };
 
