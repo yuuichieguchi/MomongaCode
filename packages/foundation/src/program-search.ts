@@ -51,3 +51,35 @@ export const findProgramOnPath = async (program: string, env: SearchEnv, files: 
 
 export const findProgramOnPathSync = (program: string, env: SearchEnv, files: ProgramSearchFilesSync): string | undefined =>
   programCandidatesOf(program, env).find((candidate) => isExecutableFileSync(files, candidate));
+
+export type ProgramOwnerFiles = Pick<FileSystemSync, 'lstatSync'> & { realPathOf(file: string): string };
+
+const OTHERS_WRITE = 0o022;
+const STICKY = 0o1000;
+
+const ancestorsOf = (file: string): string[] => {
+  const chain = [file];
+  for (let current = file; path.dirname(current) !== current; current = path.dirname(current)) chain.push(path.dirname(current));
+  return chain;
+};
+
+const ownedByPersonOrRoot = (uid: number, person: number): boolean => uid === person || uid === 0;
+
+const ownerProblemOfChain = (file: string, files: ProgramOwnerFiles, person: number): string | undefined => {
+  const chain = ancestorsOf(file);
+  for (const [index, entry] of chain.entries()) {
+    const stat = files.lstatSync(entry);
+    const ownerText = `${entry} (owner uid ${stat.uid}, mode ${(stat.mode & 0o7777).toString(8)})`;
+    if (!ownedByPersonOrRoot(stat.uid, person)) return `${ownerText} is owned by another account`;
+    if (stat.isSymbolicLink() || stat.uid === person || (stat.mode & OTHERS_WRITE) === 0) continue;
+    const below = index === 0 ? undefined : chain[index - 1];
+    const guardedBySticky = stat.isDirectory() && (stat.mode & STICKY) !== 0 && below !== undefined && ownedByPersonOrRoot(files.lstatSync(below).uid, person);
+    if (!guardedBySticky) return `${ownerText} can be changed by another account`;
+  }
+  return undefined;
+};
+
+export const programOwnerProblemSync = (file: string, files: ProgramOwnerFiles, person: number): string | undefined => {
+  const problem = ownerProblemOfChain(file, files, person) ?? ownerProblemOfChain(files.realPathOf(file), files, person);
+  return problem === undefined ? undefined : `${file} is not used: ${problem}; a program run for secrets must be owned by you or root, in folders that only you or root can change`;
+};

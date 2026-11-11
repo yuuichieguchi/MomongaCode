@@ -13,7 +13,7 @@ const REPORT = {
   keywordSupport: { enum: true, anyOf: true, const: true, pattern: true, minimum: true, nested: true, additionalProperties: true },
   schemaDialect: { selected: 'json-schema-2020-12', shape: 'union', tried: [{ id: 'json-schema-2020-12', result: 'accepted' }] },
   stopSequences: true,
-  maxConcurrency: 1,
+  maxConcurrency: { value: 1, evidence: 'refused' },
   imageInputAccepted: false,
   guardrail: {},
 };

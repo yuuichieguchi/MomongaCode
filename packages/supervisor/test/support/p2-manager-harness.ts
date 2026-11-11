@@ -1,3 +1,4 @@
+import { secretStoreEnvFor } from '@momonga/foundation';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ConfigError, createKeptSettings, noKeptRecords, userSettingsOfText } from '@momonga/config';
@@ -170,6 +171,7 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
     backgroundErrors,
   } as ManagerHarness;
   const launcher: Launcher = options.launcher ?? (() => ({ command: process.execPath, args: [FIXTURE_BIN] }));
+  const managerEnv = options.env ?? { PATH: testHostPath('/usr/bin:/bin'), HOME: home, FOO: 'foo' };
   const managerOptions: ChildManagerOptions = {
     inspector: testProcessInspector(),
     role,
@@ -186,7 +188,8 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
     },
     endpoint: roleEndpoint(layout, role),
     launcher,
-    env: options.env ?? { PATH: testHostPath('/usr/bin:/bin'), HOME: home, FOO: 'foo' },
+    env: managerEnv,
+    secretStoreEnv: secretStoreEnvFor(managerEnv, { platform: process.platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) }),
     spawn: options.port ?? port,
     settings,
     signal: new AbortController().signal,

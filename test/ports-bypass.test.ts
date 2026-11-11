@@ -54,6 +54,7 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/foundation/src/platform/procfs.ts': { 'node:fs': 5 },
   'packages/foundation/src/platform/sqlite-lock.ts': { 'node:fs': 6, 'node:os': 1 },
   'packages/foundation/src/platform/windows-keeper-host.ts': { 'node:child_process': 1, 'node:net': 1 },
+  'packages/foundation/src/process-contract.ts': { 'AbortSignal.timeout': 1 },
   'packages/foundation/src/rotating-log.ts': { 'node:fs': 8 },
   'packages/foundation/src/short-temp-base.ts': { 'node:os': 1 },
   'packages/foundation/src/socket-path.ts': { 'node:net': 1 },
@@ -61,17 +62,14 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/gateway/src/adapters/replay-adapter.ts': { 'node:fs': 10 },
   'packages/gateway/src/managed/fm-processes.ts': { 'node:fs': 4, 'randomUUID': 1 },
   'packages/gateway/src/managed/server.ts': { 'node:fs': 5 },
-  'packages/gateway/src/probe/auto-probe.ts': { 'setTimeout': 1 },
-  'packages/gateway/src/probe/client.ts': { 'setTimeout': 1 },
   'packages/gateway/src/probe/endpoint-record.ts': { 'node:fs': 1 },
-  'packages/gateway/src/probe/ollama.ts': { 'new Date()': 1 },
   'packages/gateway/src/probe/record.ts': { 'node:fs': 4 },
-  'packages/gateway/src/probe/run-probe.ts': { 'new Date()': 1, 'performance.now': 4 },
   'packages/mcp/src/connection.ts': { 'Math.random': 1 },
   'packages/mcp/src/stdio-transport.ts': { 'randomUUID': 1 },
   'packages/mcp/src/timers.ts': { 'setTimeout': 1 },
   'packages/policy/src/glob-expansion.ts': { 'performance.now': 1 },
   'packages/policy/src/host-filesystem.ts': { 'node:child_process': 1, 'setTimeout': 1 },
+  'packages/runtime/src/memory/deadline-signal.ts': { 'AbortSignal.timeout': 1 },
   'packages/runtime/src/memory/evidence.ts': { 'node:fs': 3 },
   'packages/runtime/src/memory/journal-thread-client.ts': { 'node:worker_threads': 4, 'setTimeout': 1 },
   'packages/runtime/src/memory/journal-thread.ts': { 'node:fs': 1, 'node:worker_threads': 8, 'performance.now': 2, 'setImmediate': 1 },
@@ -163,6 +161,7 @@ describe('ports bypass scan', () => {
   it('counts the host capabilities that have no port call of the same name', () => {
     expect(counted('setImmediate(done);\nglobalThis.setTimeout(done, 1);')).toEqual({ setImmediate: 1, setTimeout: 1 });
     expect(counted('const stamp = new Date();\nconst shown = new Date(stamp.getTime());')).toEqual({ 'new Date()': 1 });
+    expect(counted('const bound = AbortSignal.timeout(5);\nconst both = AbortSignal.any([bound, given]);')).toEqual({ 'AbortSignal.timeout': 1 });
     expect(counted('process.kill(pid, 0);\nconst t = process.hrtime.bigint();')).toEqual({ 'process.kill': 1, 'process.hrtime': 1 });
     expect(counted("import { spawn } from 'node:child_process';\nimport os from 'node:os';\nimport net from 'node:net';\nimport { Worker } from 'node:worker_threads';\nspawn(a);\nos.homedir();\nnet.connect(b);\nnew Worker(c);")).toEqual({
       'node:child_process': 1,

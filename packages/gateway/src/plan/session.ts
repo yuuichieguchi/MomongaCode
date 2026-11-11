@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { PlanProfile } from '@momonga/config';
-import { HOST_READ_BOUND_MS, endedStoreCall, isAtomicWriteTemporary, isRecord, operationLimit, sweepLeftovers, systemRandom } from '@momonga/foundation';
+import { HOST_READ_BOUND_MS, endedStoreCall, isAtomicWriteTemporary, isRecord, operationLimit, settledOrAborted, sweepLeftovers, systemRandom } from '@momonga/foundation';
 import type { Clock, CredentialEntry, FileSystem, KernelLockMechanism, LimitTiming, ListableCredentialStore, SecretBackend } from '@momonga/foundation';
 import { PLAN_ACCOUNT_STATES, PLAN_DISABLED_STATE, PLAN_LABEL_PATTERN, PLAN_REVOCATION_CONFIRMED, PLAN_REVOCATION_NONE, PLAN_REVOCATION_UNCONFIRMED, PLAN_SIGN_IN_FAILURE, PLAN_STORE_STATES, SIGNED_IN_OUTCOME, isPlanLabel } from '@momonga/protocol';
 import type { NamedPlanAccountRef, PlanAccountRef, PlanAccountState, PlanListProblem, PlanRevocation, PlanRevocationAnswer, PlanStoreState } from '@momonga/protocol';
@@ -347,24 +347,6 @@ const sweepTemporaries = async (fileSystem: FileSystem, directory: string, lock:
     lock,
     warn,
     files: { readdir: (entries) => fileSystem.readdir(entries), rm: (entry) => fileSystem.rm(entry, { recursive: true }) },
-  });
-};
-
-const waitFor = <T>(work: Promise<T>, signal: AbortSignal): Promise<T> => {
-  if (signal.aborted) return Promise.reject(signal.reason);
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = (): void => reject(signal.reason);
-    signal.addEventListener('abort', onAbort, { once: true });
-    work.then(
-      (value) => {
-        signal.removeEventListener('abort', onAbort);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener('abort', onAbort);
-        reject(error);
-      },
-    );
   });
 };
 
@@ -1044,7 +1026,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       return { revocation: PLAN_REVOCATION_UNCONFIRMED, usageUrl: account.profile.usageUrl };
     }
     return asAfterLoad(account, signal, async (locked) => {
-      const resumed = account.resumedSignOut === undefined ? undefined : await waitFor(account.resumedSignOut, signal);
+      const resumed = account.resumedSignOut === undefined ? undefined : await settledOrAborted(account.resumedSignOut, signal);
       return resumed ?? runSignOut(account, signal, false, locked);
     });
   };

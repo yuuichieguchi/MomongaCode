@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { isAcceptableAddress, isLoopbackAddress, isLoopbackHost } from '@momonga/foundation';
+import { isAcceptableAddress, isLoopbackAddress } from '@momonga/foundation';
+import { isLoopbackHost } from '../src/loopback.ts';
 
 const REFUSING_LOOPBACK = { loopback: false } as const;
 const ALLOWING_LOOPBACK = { loopback: true } as const;
@@ -101,9 +102,9 @@ describe('the one definition of an address a name may not silently resolve to', 
     });
   });
 
-  it.each(EMBEDDINGS.filter(({ form }) => !form.startsWith('mapped')))('does not take 127.0.0.1 embedded as $form for this computer, even where loopback is allowed', ({ of }) => {
-    expect(isLoopbackAddress(of('127.0.0.1'))).toBe(false);
-    expect(isAcceptableAddress(of('127.0.0.1'), ALLOWING_LOOPBACK)).toBe(false);
+  it.each(EMBEDDINGS.filter(({ form }) => !form.startsWith('mapped')))('takes 127.0.0.1 embedded as $form for this computer, by the address it carries', ({ of }) => {
+    expect(isLoopbackAddress(of('127.0.0.1'))).toBe(true);
+    expect(isAcceptableAddress(of('127.0.0.1'), ALLOWING_LOOPBACK)).toBe(true);
   });
 
   it.each(['example.org', '', '1.2.3', '1.2.3.4.5', ':::', '[::1]', 'localhost'])('throws for %j, which is not an address', (text) => {
@@ -113,9 +114,10 @@ describe('the one definition of an address a name may not silently resolve to', 
 
   it('is the definition the loopback host check reads', () => {
     for (const address of LOOPBACK) expect(isLoopbackHost(address)).toBe(true);
-    for (const address of [...GLOBAL, '10.0.0.1', '::', '2002:7f00:1::1', '64:ff9b::127.0.0.1']) expect(isLoopbackHost(address)).toBe(false);
+    for (const address of [...GLOBAL, '10.0.0.1', '::']) expect(isLoopbackHost(address)).toBe(false);
+    for (const address of ['2002:7f00:1::1', '64:ff9b::127.0.0.1']) expect(isLoopbackHost(address)).toBe(true);
     expect(isLoopbackHost('[::1]')).toBe(true);
-    expect(isLoopbackHost('LOCALHOST.')).toBe(true);
-    expect(isLoopbackHost('api.localhost')).toBe(true);
+    expect(isLoopbackHost('LOCALHOST.')).toBe(false);
+    expect(isLoopbackHost('api.localhost')).toBe(false);
   });
 });

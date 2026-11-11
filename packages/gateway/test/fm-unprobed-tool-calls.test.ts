@@ -9,7 +9,7 @@ import { START_MS, makeDir, postJson, readJson, registerCleanup, userInput } fro
 import { readFileTool, startFake } from './cc-support.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import { OLLAMA_LISTED, startFakeOllama } from './ollama-support.ts';
-import { fmRecordKey, fmTargetBase, probingAnswer, recordKeyOptions } from './fm-record-support.ts';
+import { fmRecordKey, fmModelBase, probingAnswer, recordKeyOptions } from './fm-record-support.ts';
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 import { FIRST_GENERATION } from '@momonga/foundation';
 
@@ -29,7 +29,7 @@ const unprobedFm = async (toolCallingSetting: 'auto' | 'native') => {
   const fake = await startFake({ scenario: 'tools-ok', wire: 'fm' });
   const starts: KnownProbeKey[] = [];
   const managed = await createManagedTarget({
-    ...fmTargetBase(),
+    ...fmModelBase(),
     server: servingFake(fake.socketPath),
     binary: '/usr/bin/fm',
     exec: async () => ({ exitCode: 0, stdout: '20\n', stderr: '' }),

@@ -10,6 +10,7 @@ import { REAL_FM_STOP_GRACE_MS, registerCleanup } from './gateway-helpers.ts';
 import { MINIMAL_PATH, isAlive, makeHome, pause, until } from './gateway-process-helpers.ts';
 import { FM_SERVER } from '@momonga/protocol';
 import { readMarkerGroup } from '@momonga/foundation';
+import { systemTiming } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -50,6 +51,7 @@ type ServeOptions = Parameters<typeof createManagedServer>[0];
 const NO_RESTART_FM = { ...FM_SERVER, restart: { ...FM_SERVER.restart, backoffMs: 600_000, maxRestarts: 0 } };
 
 const serveOptions = (context: Setup, onWarning: ServeOptions['onWarning']): ServeOptions => ({
+  timers: systemTiming,
   inspector: testProcessInspector(),
   lock: testKernelLock(),
   description: NO_RESTART_FM,
@@ -80,6 +82,7 @@ const makeServe = (context: Setup, overrides: Partial<ServeOptions> = {}): Manag
     env: { PATH: MINIMAL_PATH, HOME: context.dir, TMPDIR: context.dir },
     markerDirectory: context.markers,
     exec: fakeExec,
+    timers: systemTiming,
     onWarning: (message) => warnings.push(message),
     ...overrides,
   });

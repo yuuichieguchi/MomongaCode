@@ -19,7 +19,6 @@ export const makeReport = (nativeValidRate: number, constrainedValidRate: number
     additionalProperties: true,
   },
   stopSequences: false,
-  maxConcurrency: 1,
   imageInputAccepted: false,
   guardrail: {},
   tokenCalibration: { ratio: 1.1, errorBound: 0.05 },

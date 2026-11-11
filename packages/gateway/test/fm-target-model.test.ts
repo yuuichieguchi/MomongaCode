@@ -5,7 +5,7 @@ import type { KnownProbeKey } from '@momonga/config';
 import { startFakeChatCompletions, type FakeChatCompletionsServer, testKernelLock } from '@momonga/testkit';
 import { makeDir } from './gateway-helpers.ts';
 import { makeReport } from './report-fixture.ts';
-import { FM_CURRENCY, fmRecordKey, fmTargetBase, IDLE_AUTO_PROBE, NO_AUTO_PROBE, primed, probingAnswer, recordKeyOptions } from './fm-record-support.ts';
+import { FM_CURRENCY, fmRecordKey, fmModelBase, IDLE_AUTO_PROBE, NO_AUTO_PROBE, primed, probingAnswer, recordKeyOptions } from './fm-record-support.ts';
 import type { StartProbe } from './fm-record-support.ts';
 import { MODEL_ID_CHANGED_CODE, TARGET_PROBING } from '@momonga/protocol';
 
@@ -50,7 +50,7 @@ const targetOf = async (fmServe: ManagedServer, extra: TargetExtra = {}) => {
   const probeRecordDir = extra.probeRecordDir ?? makeDir();
   if (extra.unprobed !== true) await saveProbeRecord(probeRecordDir, RECORD_KEY, extra.report ?? makeReport(1, 1), FM_CURRENCY, testKernelLock());
   const managed = createManagedTarget({
-    ...fmTargetBase(),
+    ...fmModelBase(),
     server: fmServe,
     binary: '/usr/bin/fm',
     exec: async () => ({ exitCode: 0, stdout: '', stderr: '' }),

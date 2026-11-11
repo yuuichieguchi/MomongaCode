@@ -30,7 +30,6 @@ export const PLAN_SESSION_DEFAULTS = {
   skewMs: PLAN_SKEW_MS,
   refreshBudgetMs: PLAN_REFRESH_BUDGET_MS,
   marginMs: PLAN_SKEW_MS + PLAN_REFRESH_BUDGET_MS,
-  revocationBudgetMs: planRetry.maxAttempts * PLAN_REVOCATION_TIMEOUT_MS + planRetry.baseMs + 2 * planRetry.baseMs,
   persistRetryMs: GATEWAY_CONFIG_DEFAULTS.breaker.openMs,
   persistRetryMaxMs: PLAN_ACCESS_LIFETIME_MS / PERSIST_ATTEMPTS_PER_ACCESS_LIFETIME,
   replacedAccessTokensKept: 3,
@@ -52,4 +51,3 @@ export const PLAN_SIGN_IN_DEFAULTS = {
   verifierBytes: 32,
 } as const;
 
-export const UPSTREAM_LIVENESS_DEFAULTS = { headersTimeoutMs: 300_000, idleTimeoutMs: 300_000 } as const;

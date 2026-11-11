@@ -7,7 +7,7 @@ import { managedCurrencyOf, saveProbeRecord } from '@momonga/gateway';
 import type { ManagedServer, ManagedTargetOptions } from '@momonga/gateway';
 import { FM_SERVER, TARGET_PROBING_MESSAGE } from '@momonga/protocol';
 import type { Probing, ProbeReport } from '@momonga/protocol';
-import { FAKE_OS_BUILD, testKernelLock } from '@momonga/testkit';
+import { FAKE_OS_BUILD, hostTimers, testKernelLock } from '@momonga/testkit';
 import { makeReport } from './report-fixture.ts';
 
 export const FM_CURRENCY = managedCurrencyOf(FM_SERVER, { userDialects: {} });
@@ -49,10 +49,11 @@ export const idleServer: ManagedServer = {
   health: async () => ({ ok: true }),
 };
 
-export const fmTargetBase = (serverName = 'fm'): Omit<ManagedTargetOptions, 'server' | 'exec' | 'binary' | 'probeRecordDir' | 'readKey' | 'startProbe' | 'toolCallingSetting'> => ({
+export const fmModelBase = (serverName = 'fm'): Omit<ManagedTargetOptions, 'server' | 'exec' | 'binary' | 'probeRecordDir' | 'readKey' | 'startProbe' | 'toolCallingSetting'> => ({
   description: FM_SERVER,
   serverName,
   requestLimitMs: 300_000,
+  timeoutSignal: hostTimers.timeoutSignal,
   isUsableBinary: async () => true,
   onInstanceEnd: () => undefined,
   instanceProbe: () => {

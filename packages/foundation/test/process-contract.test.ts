@@ -40,11 +40,11 @@ import {
   announceReady,
   createJsonLogger,
   formatLogLine,
-  isLoopbackHost,
   minimalChildEnv,
   parseReadyLine,
   runtimeMaxCloseMs,
   supervisorMaxCloseMs,
+  claimsLoopback,
 } from '@momonga/foundation';
 import type { LogFields, ReadyFields } from '@momonga/foundation';
 import { createFakeClock } from '@momonga/testkit';
@@ -89,15 +89,15 @@ describe('minimal child env', () => {
   });
 });
 
-describe('isLoopbackHost', () => {
+describe('claimsLoopback', () => {
   it.each(['localhost', '127.0.0.1', '127.255.255.254', '127.1.2.3', '::1', '[::1]'])('accepts %s', (host) => {
-    expect(isLoopbackHost(host)).toBe(true);
+    expect(claimsLoopback(host)).toBe(true);
   });
 
   it.each(['example.com', '128.0.0.1', '126.255.255.255', '10.0.0.1', '0.0.0.0', '::', '[::]', '127.0.0.1.evil.com', 'localhost.evil.com', '', '::2'])(
     'rejects %s',
     (host) => {
-      expect(isLoopbackHost(host)).toBe(false);
+      expect(claimsLoopback(host)).toBe(false);
     },
   );
 });

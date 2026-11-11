@@ -149,17 +149,14 @@ describe('session/new', () => {
     await harness.peer.close();
   });
 
-  it('refuses two MCP servers with one name', async () => {
+  it('refuses an MCP server whose label has no letter or digit', async () => {
     const harness = startAgent();
     await harness.peer.request('initialize', INITIALIZE);
 
     const failure = errorOf(
       await harness.peer.request('session/new', {
         cwd: SESSION.cwd,
-        mcpServers: [
-          { name: 'fx', command: 'a', args: [], env: [] },
-          { name: 'fx', command: 'b', args: [], env: [] },
-        ],
+        mcpServers: [{ name: '@/.', command: 'a', args: [], env: [] }],
       }),
     );
 
