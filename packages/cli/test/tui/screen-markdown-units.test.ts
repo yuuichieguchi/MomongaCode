@@ -238,22 +238,21 @@ describe('a table larger than one unit', () => {
 });
 
 describe('the inline marks of one line at the unit bound', () => {
-  const best = (text: string): number => {
-    let least = Number.POSITIVE_INFINITY;
-    for (let round = 0; round < 5; round += 1) {
-      const started = performance.now();
+  const searchesOf = (text: string): number => {
+    const search = vi.spyOn(String.prototype, 'indexOf');
+    try {
       markdownRows(text, 80);
-      least = Math.min(least, performance.now() - started);
+      return search.mock.calls.length;
+    } finally {
+      search.mockRestore();
     }
-    return least;
   };
 
-  it('cost what a plain line of the same size costs, within one order, for marks that never close and code marks of every length', () => {
+  it('are found with a number of searches linear in the line, for marks that never close and code marks of every length', () => {
     const size = MARKDOWN_UNIT_BYTES - 64;
     const filled = (piece: string): string => piece.repeat(Math.floor(size / piece.length));
     const everyLength = Array.from({ length: 400 }, (_, index) => '`'.repeat(index + 1)).join(' ').slice(0, size);
-    const plain = best(filled('plain text '));
-    for (const line of [filled('*a _b '), filled('*_'), filled('* a* '), filled('` `` '), filled('*a **b '), filled('[a]('), everyLength]) expect(best(line)).toBeLessThan(10 * plain + 5);
+    for (const line of [filled('*a _b '), filled('*_'), filled('* a* '), filled('` `` '), filled('*a **b '), filled('[a]('), everyLength]) expect(searchesOf(line)).toBeLessThan(4 * line.length);
   });
 });
 

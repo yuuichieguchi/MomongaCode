@@ -13,6 +13,9 @@ const stored = (count: number): SessionView[] => Array.from({ length: count }, (
 const gatedReads = (sessions: readonly SessionView[]) => {
   const started: string[] = [];
   const gates = new Map<string, PromiseWithResolvers<void>>();
+  const awaited: { count: number; reached: PromiseWithResolvers<void> }[] = [];
+  let reading = 0;
+  let most = 0;
   const gateOf = (sessionId: string): PromiseWithResolvers<void> => {
     const gate = gates.get(sessionId) ?? Promise.withResolvers<void>();
     gates.set(sessionId, gate);
@@ -22,32 +25,39 @@ const gatedReads = (sessions: readonly SessionView[]) => {
     listSessions: async () => [...sessions],
     listRuns: async (sessionId): Promise<RunView[]> => {
       started.push(sessionId);
+      reading += 1;
+      most = Math.max(most, reading);
+      for (const wait of awaited) if (started.length >= wait.count) wait.reached.resolve();
       await gateOf(sessionId).promise;
+      reading -= 1;
       return [runView({ id: `second-${sessionId}`, sessionId, ordinal: 2 }), runView({ id: `first-${sessionId}`, sessionId, ordinal: 1 }), runView({ id: `child-${sessionId}`, sessionId, ordinal: 3, parentRunId: `first-${sessionId}` })];
     },
     streamEvents: async function* (runId): AsyncGenerator<RunEventFrame> {
       yield frame({ type: 'user.message', text: `prompt of ${runId}` });
     },
   };
-  return { reads, started, release: (sessionId: string): void => gateOf(sessionId).resolve() };
-};
-
-const turn = async (): Promise<void> => {
-  for (let count = 0; count < 5; count += 1) await new Promise<void>((resolve) => setImmediate(resolve));
+  const startedAtLeast = (count: number): Promise<void> => {
+    const reached = Promise.withResolvers<void>();
+    if (started.length >= count) reached.resolve();
+    else awaited.push({ count, reached });
+    return reached.promise;
+  };
+  return { reads, started, startedAtLeast, mostAtOnce: (): number => most, release: (sessionId: string): void => gateOf(sessionId).resolve() };
 };
 
 describe('the sessions /resume lists (cli-tui-23)', () => {
   it('reads the sessions of a batch together and never more than the bound at once', async () => {
     const sessions = stored(SESSION_READS_AT_ONCE + 2);
-    const { reads, started, release } = gatedReads(sessions);
+    const { reads, started, startedAtLeast, mostAtOnce, release } = gatedReads(sessions);
     const listing = listedSessions(reads, CWD, undefined, new AbortController().signal);
-    await turn();
+    await startedAtLeast(SESSION_READS_AT_ONCE);
     expect(started).toHaveLength(SESSION_READS_AT_ONCE);
     for (const id of started.slice()) release(id);
-    await turn();
+    await startedAtLeast(sessions.length);
     expect(started).toHaveLength(sessions.length);
     for (const session of sessions) release(session.id);
     const listed = await listing;
+    expect(mostAtOnce()).toBe(SESSION_READS_AT_ONCE);
     expect(listed.map((session) => session.id)).toEqual(sessions.map((session) => session.id).reverse());
   });
 
