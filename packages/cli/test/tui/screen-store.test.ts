@@ -58,7 +58,7 @@ describe('the transcript store', () => {
 
   it('counts the leading entries that can no longer change, and keeps the banner live while it is the only entry', () => {
     const store = createTranscriptStore();
-    appendEntry(store, { kind: 'banner', banner: { config: { version: '1', home: '/h', color: false }, model: 'a', cwd: '/h', notices: [] } }, 'banner');
+    appendEntry(store, { kind: 'banner', banner: { config: { version: '1', home: '/h' }, model: 'a', cwd: '/h', notices: [] } }, 'banner');
     expect(store.settledCount()).toBe(0);
     storeOf([call], store);
     expect(store.settledCount()).toBe(1);
