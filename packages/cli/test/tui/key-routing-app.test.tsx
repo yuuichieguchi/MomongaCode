@@ -5,6 +5,8 @@ import { DEFAULT_KEY_TABLE } from '../../src/tui/keys/table.ts';
 import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
 import { CHATGPT, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, quiet, startPlan, submitLine, untilRow } from '../fake-plan-gateway.tsx';
 import type { FakePlanBackend } from '../fake-plan-gateway.tsx';
+import { runView } from '../fake-backend.ts';
+import { runStarted } from '../tui-harness.tsx';
 
 vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
 
@@ -221,6 +223,43 @@ describe('a key typed between two lists of one flow reaches the list that opens'
     expect(app.lastFrame()).not.toContain('> ab');
     held.resolve();
     await untilFrame(app, '> ab');
+    app.unmount();
+  });
+});
+
+describe('a browser starts only from enter or a click on the row that says so', () => {
+  it('digits typed at the welcome screen move the highlight and start no sign-in; enter on the sign-in row does', async () => {
+    const { app, backend } = await startPlan({ models: [], accounts: [] });
+    await untilRow(app, 'Continue with ChatGPT');
+    for (const key of ['1', '1', '1']) {
+      app.stdin.write(key);
+      await quiet();
+    }
+    expect(app.lastFrame()).toContain('Connect a model to start');
+    expect(signInSteps(backend)).toEqual([]);
+    expect(backend.openedUrls).toEqual([]);
+    app.stdin.write(KEYS.enter);
+    await untilFrame(app, (shown) => !shown.includes('Connect a model to start') && shown.includes('1. Continue with ChatGPT'));
+    app.stdin.write('1');
+    await quiet();
+    expect(signInSteps(backend)).toEqual([]);
+    expect(backend.openedUrls).toEqual([]);
+    app.stdin.write(KEYS.enter);
+    await eventually(() => backend.openedUrls.length === 1, 'the browser');
+    app.unmount();
+  });
+
+  it('the digit of the Manage usage row opens no URL, and enter opens it', async () => {
+    const { app, backend } = await startPlan({ accounts: [account({ paused: {} })] });
+    await untilFrame(app, 'mode: manual');
+    await runStarted(backend, app, 'go');
+    backend.finish(runView({ status: 'STOPPED', stopReason: 'usage_limit' as never, error: { code: 'plan_usage_limit', message: 'Manage usage', plan: { profile: 'chatgpt', account: 'chatgpt' } } as never }));
+    await untilRow(app, 'Manage usage');
+    app.stdin.write('1');
+    await quiet();
+    expect(backend.openedUrls).toEqual([]);
+    app.stdin.write(KEYS.enter);
+    await eventually(() => backend.openedUrls.length === 1, 'the usage page');
     app.unmount();
   });
 });

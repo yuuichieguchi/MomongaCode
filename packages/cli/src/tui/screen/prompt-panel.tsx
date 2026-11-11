@@ -96,7 +96,7 @@ export const elicitationSpec = (elicitation: PendingElicitation, title: string, 
   return {
     title: elicitationTitle(elicitation, title, waiting),
     lines: [request.message, ...(request.mode === 'url' ? [`URL: ${request.url}`] : []), ...(flow.error === undefined ? [] : [{ text: flow.error, color: 'red' }])],
-    rows: choices.map((choice) => ({ label: choice.label })),
+    rows: choices.map((choice) => ({ label: choice.label, ...(choice.decision === 'accept' && request.mode === 'url' ? { opensBrowser: true } : {}) })),
     initial: 0,
     decideOn: 'immediate',
     escape: choices.findIndex((choice) => choice.decision === 'decline'),

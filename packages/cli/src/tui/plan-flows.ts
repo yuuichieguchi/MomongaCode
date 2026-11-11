@@ -205,7 +205,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   const sentence = async (profile: PlanProfileView, account: string, reconsent: boolean): Promise<void> => {
     ports.info(profile.messages.description);
     await chooseFrom({}, [
-      { row: { label: reconsent ? `Enable ${profile.messages.identityLabel} plan use` : profile.loginLabel }, act: () => signInFlow(profile, account, reconsent) },
+      { row: { label: reconsent ? `Enable ${profile.messages.identityLabel} plan use` : profile.loginLabel, opensBrowser: true }, act: () => signInFlow(profile, account, reconsent) },
       { row: { label: profile.messages.apiKeyLabel }, act: apiKeyHelp },
     ]);
   };
@@ -418,7 +418,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
 
   const welcome = async (profiles: readonly PlanProfileView[]): Promise<void> => {
     await chooseFrom({ title: 'Connect a model to start' }, [
-      ...profiles.map((profile) => ({ row: { label: profile.loginLabel }, act: () => providerFlow(profile) })),
+      ...profiles.map((profile) => ({ row: { label: profile.loginLabel, opensBrowser: true }, act: () => providerFlow(profile) })),
       { row: { label: USE_API_KEY }, act: apiKeyHelp },
       { row: { label: 'Use a local server' }, act: addLocalServer },
     ]);
@@ -426,7 +426,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
 
   const usageLimit = async (profile: PlanProfileView): Promise<void> => {
     await chooseFrom({}, [
-      { row: { label: profile.messages.manageUsageLabel }, act: async () =>
+      { row: { label: profile.messages.manageUsageLabel, opensBrowser: true }, act: async () =>
           backend.openUrl(new URL(profile.usageUrl), undefined, (message) => ports.info(`${couldNotOpenBrowser(message)} ${profile.messages.manageUsageLabel}: ${profile.usageUrl}`)),
       },
       { row: { label: 'Dismiss' }, act: async () => undefined },
@@ -435,7 +435,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
 
   const planUseNotEnabled = async (profile: PlanProfileView, account: string): Promise<void> => {
     await chooseFrom({}, [
-      { row: { label: `Enable ${profile.messages.identityLabel} plan use` }, act: () => sentence(profile, account, true) },
+      { row: { label: `Enable ${profile.messages.identityLabel} plan use`, opensBrowser: true }, act: () => sentence(profile, account, true) },
       { row: { label: USE_API_KEY }, act: apiKeyHelp },
     ]);
   };

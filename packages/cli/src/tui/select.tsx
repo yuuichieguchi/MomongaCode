@@ -7,7 +7,7 @@ import type { KeyEvent } from './terminal/events.ts';
 import { styleOf as styleOfTokens } from './screen/theme.ts';
 import { withoutTabs, wrapLine } from './screen/wrap.ts';
 
-export type SelectRow = { readonly label: string; readonly disabled?: boolean; readonly separator?: boolean };
+export type SelectRow = { readonly label: string; readonly disabled?: boolean; readonly separator?: boolean; readonly opensBrowser?: boolean };
 
 export type SelectLine = string | { readonly text: string; readonly color?: string; readonly dim?: boolean; readonly bold?: boolean; readonly first?: string };
 
@@ -196,7 +196,8 @@ export const selectKey = (spec: SelectSpec, state: SelectState, event: KeyEvent,
   if (DIGIT.test(typed)) {
     const index = stopsOf(spec, state.filter)[Number(typed) - 1];
     if (index === undefined) return { state };
-    return spec.decideOn === 'immediate' ? chosen(spec, state, index, capacity) : { state: { ...highlighted(spec, state, index, capacity), confirming: undefined } };
+    const waitsForEnter = spec.rows[index]?.opensBrowser === true && spec.enterOff !== true;
+    return spec.decideOn === 'immediate' && !waitsForEnter ? chosen(spec, state, index, capacity) : { state: { ...highlighted(spec, state, index, capacity), confirming: undefined } };
   }
   return { state };
 };
@@ -315,7 +316,7 @@ export type SelectViewProps = { spec: SelectSpec; state: SelectState; layout: Se
 
 export function SelectView({ spec, state, layout, border, sending, settling, keys, error }: SelectViewProps) {
   const { screenReader } = currentA11y();
-  const stops = spec.rows.flatMap((row, index) => (row.separator === true ? [] : [index]));
+  const stops = stopsOf(spec, state.filter);
   const confirming = state.confirming === undefined ? undefined : spec.rows[state.confirming];
   const highlightedRow = spec.rows[state.index];
   return (

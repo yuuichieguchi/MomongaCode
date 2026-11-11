@@ -12,7 +12,7 @@ import type { EditorState } from '../editor.ts';
 import { capturedOf } from '../keys/capture.ts';
 import type { ActionId, KeyContext, KeyTable } from '../keys/table.ts';
 import { OverlayView, pickerSpec } from '../picker.tsx';
-import type { Loaded, Overlay, OverlayPorts, WaitingOverlay } from '../picker.tsx';
+import type { Loaded, Overlay, OverlayPorts, PickChoice, PickRequest, WaitingOverlay } from '../picker.tsx';
 import { detailCapacity, detailTop, DetailView, SELECT_CONTEXTS, selectClick, selectKey, selectLayout, selectRowAt, selectStart, selectText, SelectView, selectWheel } from '../select.tsx';
 import type { SelectFrame, SelectLayout, SelectLine, SelectOutcome, SelectSpec, SelectState, SelectStep, TextRow } from '../select.tsx';
 import type { KeyEvent, TerminalEvent } from '../terminal/events.ts';
@@ -211,16 +211,20 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     setElicitEditor(next);
   };
 
+  const openPick = (request: PickRequest, resolve: (choice: PickChoice | undefined) => void): void => {
+    pickId.current += 1;
+    request.onHighlight?.(pickerSpec(request).initial);
+    showOverlay({ kind: 'pick', request, resolve });
+  };
+
   const overlayPorts: OverlayPorts = {
     pick: (request) =>
       new Promise((resolve) => {
-        pickId.current += 1;
-        showOverlay({ kind: 'pick', request, resolve: (choice) => resolve(choice?.index) });
+        openPick(request, (choice) => resolve(choice?.index));
       }),
     choose: (request) =>
       new Promise((resolve) => {
-        pickId.current += 1;
-        showOverlay({ kind: 'pick', request, resolve });
+        openPick(request, resolve);
       }),
     captureKey: (request) =>
       new Promise((resolve) => {

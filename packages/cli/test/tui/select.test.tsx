@@ -199,6 +199,26 @@ describe('the list in the rows it is given', () => {
   });
 });
 
+describe('a row that opens a browser or starts a sign-in', () => {
+  const of = spec({ rows: [{ label: 'a' }, { label: 'Continue in the browser', opensBrowser: true }, { label: 'c' }] });
+
+  it('is only highlighted by its digit, and enter or a click decides it', () => {
+    const digit = press(of, selectStart(of), '2');
+    expect(digit.outcome).toBeUndefined();
+    expect(digit.state.index).toBe(1);
+    expect(press(of, digit.state, '', { return: true }).outcome).toEqual({ kind: 'decide', index: 1 });
+    expect(selectClick(of, selectStart(of), 1).outcome).toEqual({ kind: 'decide', index: 1 });
+  });
+
+  it('leaves the other rows of the list decided by their digit', () => {
+    expect(press(of, selectStart(of), '3').outcome).toEqual({ kind: 'decide', index: 2 });
+  });
+
+  it('is decided by its digit in a list whose enter is off', () => {
+    expect(press({ ...of, enterOff: true }, selectStart(of), '2').outcome).toEqual({ kind: 'decide', index: 1 });
+  });
+});
+
 describe('the rows as drawn', () => {
   const drawn = (of: SelectSpec, state: SelectState, extra: { sending?: boolean; error?: string } = {}): string => {
     const frame = { width: 60, rows: 20, border: false };
@@ -208,6 +228,12 @@ describe('the rows as drawn', () => {
     return shown;
   };
 
+  it('numbers a row by its place in the filtered list', () => {
+    const of = spec({ filter: true, rows: [{ label: 'alpha' }, { label: 'beta' }, { label: 'gamma' }, { label: 'Betamax' }] });
+    const filtered = after(of, [['b'], ['e']]).state;
+    expect(drawn(of, filtered).split('\n').slice(0, 3)).toEqual(['filter: be', '› 1. beta', '  2. Betamax']);
+  });
+
   it('marks the highlighted row, numbers every row and says which cannot be chosen', () => {
     const of = spec({ title: 'Models', rows: [{ label: 'a' }, { label: 'b', disabled: true }, { label: 'found by search', separator: true }, { label: 'c' }] });
     expect(drawn(of, selectStart(of)).split('\n')).toEqual(['Models', '› 1. a', '  2. b (unavailable)', '  found by search', '  3. c', '1-9 or enter to choose · up/down to move · esc: go back']);
@@ -216,7 +242,7 @@ describe('the rows as drawn', () => {
   it('shows the filter and its matches', () => {
     const of = spec({ filter: true, rows: [{ label: 'alpha' }, { label: 'beta' }] });
     const state = after(of, [['b']]).state;
-    expect(drawn(of, state).split('\n')).toEqual(['filter: b', '› 2. beta', 'enter to choose · up/down to move · type to filter · esc: go back']);
+    expect(drawn(of, state).split('\n')).toEqual(['filter: b', '› 1. beta', 'enter to choose · up/down to move · type to filter · esc: go back']);
   });
 
   it('shows sending... in the place of the hint after a decision was sent, and the error of a failed send above the hint', () => {
