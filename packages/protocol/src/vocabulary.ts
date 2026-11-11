@@ -193,6 +193,10 @@ export const SIGN_IN_COMMAND = `${WORDS.command} auth login`;
 
 export const TUI_SIGN_IN_COMMAND = '/login';
 
+export const signOutCommand = (account: string): string => `${WORDS.command} auth logout ${account}`;
+
+export const TUI_SIGN_OUT_COMMAND = '/logout';
+
 export type KeptWork = { readonly kind: 'sessions'; readonly sessionIds: readonly string[] } | { readonly kind: 'run'; readonly runId: string } | { readonly kind: 'unnamed' };
 
 const keptCommandsOf = (kept: KeptWork): readonly string[] => {
@@ -259,6 +263,7 @@ export type MessageInputs = {
   serverSocketPathTooLong: [given: { readonly model: string; readonly byteLength: number; readonly directory: string; readonly code: string }];
   signInIdentityQuestion: [given: { readonly provider: string; readonly identity: string; readonly account: string }];
   signInIdentityNotConfirmed: [given: { readonly identity: string; readonly account: string; readonly command: string }];
+  planRecordUnreadable: [given: { readonly account: string; readonly cause: string | undefined; readonly signInCommand: string }];
 };
 
 export type MessageKey = keyof MessageInputs;
@@ -290,7 +295,11 @@ const MESSAGES: { readonly [Key in MessageKey]: (surface: Surface, ...given: Mes
   signInIdentityQuestion: (_surface, given) => `The sign-in at ${given.provider} is for ${given.identity}. Save this account under the label ${given.account}?`,
   signInIdentityNotConfirmed: (surface, given) =>
     `The sign-in for ${given.identity} was not saved under the label ${given.account}, because the account was not confirmed. Run ${given.command} to sign in again${SIGN_IN_AGAIN_UNASKED[surface]}.`,
+  planRecordUnreadable: (surface, given) =>
+    `The saved record of ${given.account} cannot be read${given.cause === undefined ? '' : ` (${given.cause})`}. Run ${given.signInCommand} to replace it with a new sign-in, or ${forgetRecordCommand(surface, given.account)} to forget it on this computer; forgetting it does not revoke the session at the provider.`,
 };
+
+const forgetRecordCommand = (surface: Surface, account: string): string => (surface === 'tui' ? TUI_SIGN_OUT_COMMAND : signOutCommand(account));
 
 const SIGN_IN_AGAIN_UNASKED: Readonly<Record<Surface, string>> = {
   cli: ', or add --yes to save the account without the question',

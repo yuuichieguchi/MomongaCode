@@ -119,6 +119,7 @@ export type PlanSessions = {
   register(input: RegisterInput, signal: AbortSignal): Promise<{ outcome: 'registered' } | Rejected>;
   install(input: InstallInput, signal: AbortSignal): Promise<Installed | Rejected>;
   registration(ref: NamedPlanAccountRef, signal: AbortSignal): Promise<Registration | undefined>;
+  registrationToReplace(ref: NamedPlanAccountRef, signal: AbortSignal): Promise<Registration | undefined>;
   load(ref: NamedPlanAccountRef, signal: AbortSignal): Promise<void>;
   known(signal: AbortSignal): Promise<readonly KnownAccount[]>;
   listProblems(): readonly PlanListProblem[];
@@ -540,6 +541,32 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     await load(account, signal);
     return operation(lockedRecord(signal));
   };
+
+  const forgetUnreadable = (account: Account, signal: AbortSignal): Promise<boolean> =>
+    withRecord(
+      store,
+      account.key,
+      sessionOf(account),
+      async (entry, refusal) => {
+        if (refusal !== undefined) throw refusal;
+        let text: string | undefined;
+        try {
+          text = await entry.read();
+          if (text !== undefined) parseRecord(text);
+        } catch (error) {
+          if (endedByOperation(error, signal)) throw error;
+          await recordAccess('write', sessionOf(account), () => entry.remove(), signal);
+          account.stored = { text: undefined };
+          account.loaded = { kind: 'absent' };
+          account.dirty = false;
+          account.unwritable = undefined;
+          return true;
+        }
+        if (!storedIsHeld(account, text)) takeStored(account, text);
+        return false;
+      },
+      signal,
+    );
 
   const loadNow = async (account: Account, signal: AbortSignal): Promise<void> => {
     let text: string | undefined;
@@ -1012,6 +1039,10 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
 
   const signOutAccount = async (account: Account, signal: AbortSignal): Promise<SignOutReport> => {
     await load(account, signal);
+    if (account.loaded?.kind === 'unreadable' && (await forgetUnreadable(account, signal))) {
+      events('plan.sign_out', { ...identityOf(account), resumed: false, end: 'cleared', revocation: PLAN_REVOCATION_UNCONFIRMED });
+      return { revocation: PLAN_REVOCATION_UNCONFIRMED, usageUrl: account.profile.usageUrl };
+    }
     return asAfterLoad(account, signal, async (locked) => {
       const resumed = account.resumedSignOut === undefined ? undefined : await waitFor(account.resumedSignOut, signal);
       return resumed ?? runSignOut(account, signal, false, locked);
@@ -1061,6 +1092,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
 
   const registerAccount = async (account: Account, input: RegisterInput, signal: AbortSignal): Promise<{ outcome: 'registered' } | Rejected> => {
     await load(account, signal);
+    if (account.loaded?.kind === 'unreadable') await forgetUnreadable(account, signal);
     return asAfterLoad(account, signal, (locked) =>
       locked(account, async (entry) => {
         const existing = await readRecordOf(account, () => entry.read(), signal);
@@ -1132,6 +1164,12 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   };
 
   const registration = (ref: NamedPlanAccountRef, signal: AbortSignal): Promise<Registration | undefined> => forAccount(ref, (account) => registrationOfAccount(account, signal));
+
+  const registrationToReplace = (ref: NamedPlanAccountRef, signal: AbortSignal): Promise<Registration | undefined> =>
+    forAccount(ref, async (account) => {
+      await load(account, signal);
+      return account.loaded?.kind === 'unreadable' ? undefined : registrationOfAccount(account, signal);
+    });
 
   const registrationOfAccount = async (account: Account, signal: AbortSignal): Promise<Registration | undefined> => {
     await load(account, signal);
@@ -1266,6 +1304,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     register,
     install,
     registration,
+    registrationToReplace,
     load: (ref, signal) => forAccount(ref, (account) => load(account, signal)),
     known,
     listProblems,

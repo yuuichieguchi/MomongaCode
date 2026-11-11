@@ -87,6 +87,7 @@ describe('messageOf: one builder per message, which names the command of the sur
       serverSocketPathTooLong: (surface) => messageOf('serverSocketPathTooLong', surface, { model: 'fm/system', byteLength: 105, directory: '/run/g1', code: 'EINVAL' }),
       signInIdentityQuestion: (surface) => messageOf('signInIdentityQuestion', surface, { provider: 'ChatGPT', identity: 'ada@example.com', account: 'work' }),
       signInIdentityNotConfirmed: (surface) => messageOf('signInIdentityNotConfirmed', surface, { identity: 'ada@example.com', account: 'work', command: 'momonga auth login chatgpt --account work' }),
+      planRecordUnreadable: (surface) => messageOf('planRecordUnreadable', surface, { account: 'work', cause: 'bad tag', signInCommand: 'momonga auth login chatgpt --account work' }),
     };
     expect(MESSAGE_KEYS.flatMap((key) => SURFACES.flatMap((surface) => bannedVariantsIn(samples[key](surface)).map((use) => `${key} on ${surface}: ${use.variant}`)))).toEqual([]);
   });

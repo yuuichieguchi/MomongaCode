@@ -233,7 +233,9 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
     signOut: (body, signal) =>
       translated(async () => {
         const ref = accountRefOf(body);
-        await signedInRef(ref.profile, ref.account, signal);
+        profileOf(ref.profile);
+        await sessions.load(ref, signal);
+        if (!(await sessions.known(signal)).some((entry) => entry.profile === ref.profile && entry.account === ref.account)) throw accountNotFound(ref);
         const report = await sessions.signOut(ref, signal);
         return { revocation: report.revocation, usageUrl: report.usageUrl };
       }),

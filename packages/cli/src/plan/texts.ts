@@ -30,6 +30,9 @@ export const identityQuestion = (surface: Surface, profile: { messages: { identi
 export const identityNotConfirmedLine = (surface: Surface, plan: PlanAccountRef & { account: string }, identity: PlanSignInIdentity): string =>
   messageOf('signInIdentityNotConfirmed', surface, { identity: identityText(identity), account: plan.account, command: signInCommandOf(surface, plan) });
 
+export const recordUnreadableLine = (surface: Surface, account: { profile: string; label: string; cause?: string }): string =>
+  messageOf('planRecordUnreadable', surface, { account: account.label, cause: account.cause, signInCommand: signInCommandOf(surface, { profile: account.profile, account: account.label }) });
+
 export const tryAgainLine = (surface: Surface, plan: PlanAccountRef): string => `Run ${signInCommandOf(surface, plan)} to try again.`;
 
 export const signInFailureLine = (surface: Surface, plan: PlanAccountRef, failure: { message: string }): string => `${failure.message} ${tryAgainLine(surface, plan)}`;

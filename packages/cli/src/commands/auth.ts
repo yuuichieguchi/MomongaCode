@@ -16,7 +16,7 @@ import {
   signIn,
 } from '../plan/sign-in.ts';
 import type { SandboxKind, SignInWaitTimers, StartSignInListener } from '../plan/sign-in.ts';
-import { IDENTITY_CHOICES, IDENTITY_SAVE, SIGN_IN_WORD, browserNotOpenedLine, cancelledLine, codeNotAcceptedLine, identityNotConfirmedLine, identityQuestion, listProblemLine, noBrowserHintLine, planDisabledLines, resumeLine, sensitiveUrlLines, signInFailureLine, signedInLine, signedOutLines } from '../plan/texts.ts';
+import { IDENTITY_CHOICES, IDENTITY_SAVE, SIGN_IN_WORD, browserNotOpenedLine, cancelledLine, codeNotAcceptedLine, identityNotConfirmedLine, identityQuestion, listProblemLine, noBrowserHintLine, planDisabledLines, recordUnreadableLine, resumeLine, sensitiveUrlLines, signInFailureLine, signedInLine, signedOutLines } from '../plan/texts.ts';
 import { escapedLines } from '../terminal-writer.ts';
 import { UsageError } from '../usage-error.ts';
 
@@ -116,8 +116,7 @@ const pastedLine =
     }
   };
 
-const unfixableAccount = (listed: PlanAccountsResponse, profile: string, label: string): PlanAccountView | undefined =>
-  accountsOf(profile, listed.accounts).find((account) => account.label === label && savedAccountAction(account) === 'none');
+const savedUnder = (listed: PlanAccountsResponse, profile: string, label: string): PlanAccountView | undefined => accountsOf(profile, listed.accounts).find((account) => account.label === label);
 
 export type AuthLoginOptions = { provider?: string; account?: string; reconsent?: boolean; browser?: boolean; yes?: boolean };
 
@@ -155,11 +154,13 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
   const profile = await chosenProfile(ports, listed, options.provider);
   if (profile === undefined) return EXIT_USAGE;
   const account = options.account ?? nextAccountLabel(profile.id, listed.accounts);
-  const unfixable = unfixableAccount(listed, profile.id, account);
-  if (unfixable !== undefined) {
-    print(ports.stderr, [`${unfixable.label}: ${accountStateWord(unfixable)}`, ...(unfixable.cause === undefined ? [] : [`cause: ${unfixable.cause}`])]);
+  const saved = savedUnder(listed, profile.id, account);
+  const savedAction = saved === undefined ? undefined : savedAccountAction(saved);
+  if (saved !== undefined && savedAction === 'none') {
+    print(ports.stderr, [`${saved.label}: ${accountStateWord(saved)}`, ...(saved.cause === undefined ? [] : [`cause: ${saved.cause}`])]);
     return EXIT_FAILURE;
   }
+  if (saved !== undefined && savedAction === 'replace') print(ports.stderr, [recordUnreadableLine('cli', saved)]);
   if ((await ports.sandbox()) === 'none') print(ports.stderr, SANDBOX_OFF_NOTICE);
   print(ports.stdout, [profile.messages.description]);
   const pasted =
