@@ -1,7 +1,7 @@
 import type { Stored } from './stored-value.ts';
 import { boolean, closedRequiringAll, nonEmptyString, nonNegativeInteger, nullable, string } from './schema-helpers.ts';
 import type { JsonSchema } from './schema-helpers.ts';
-import type { ApprovalBasis } from './permission-denial.ts';
+import type { ApprovalBasis, PermissionDenialSource } from './permission-denial.ts';
 import type { PermissionMode, RunStatus, SideEffect, StopReason } from './run-types.ts';
 
 export const RELIABILITY_FORMAT = 'momonga-reliability/6';
@@ -39,7 +39,18 @@ export type RecoveryEpisodeView = {
 
 export type RunFactsLimits = { maxSteps?: number; maxTotalTokens?: number; maxCostNano?: number };
 
-export type RunFactsDelegation = { held: number; resolvedByPerson: number; denied: number; waited: boolean };
+export type RunFactsDelegation = {
+  held: number;
+  resolvedByPerson: number;
+  denied: number;
+  waited: boolean;
+  holdLatencyMs: number;
+  workDuringHolds: { modelSteps: number; toolCalls: number };
+};
+
+export type RunFactsAnswers = { allowOnce: number; allowAlways: number; rejectOnce: number; rejectAlways: number };
+
+export type RunFactsDenials = Record<PermissionDenialSource, number>;
 
 export type RunFactsBasis = { readOnly: number; rule: number; mode: number; hook: number; classifier: number; person: number };
 
@@ -75,6 +86,8 @@ export type RunFactsView = {
   reconciledNotApplied: number;
   reconciledUnknown: number;
   basis: RunFactsBasis;
+  answers: RunFactsAnswers;
+  denials: RunFactsDenials;
   declared: boolean;
   met: boolean;
   mutated: boolean;

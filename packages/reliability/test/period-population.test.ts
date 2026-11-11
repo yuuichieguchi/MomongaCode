@@ -36,6 +36,8 @@ const row = (runId: string, overrides: Partial<RunFactsView> = {}): RunFactsView
   mutated: false,
   owed: false,
   verification: { rounds: 0, firstRoundPassed: null, failedRounds: 0, checkMs: 0, fixRoundTokens: 0 },
+  answers: { allowOnce: 0, allowAlways: 0, rejectOnce: 0, rejectAlways: 0 },
+  denials: { sandbox: 0, rule: 0, mode: 0, setting: 0, hook: 0, mandate: 0, superseded: 0, held: 0 },
   basis: { readOnly: 0, rule: 0, mode: 0, hook: 0, classifier: 0, person: 0 },
   declared: true,
   met: true,

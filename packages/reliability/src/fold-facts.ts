@@ -1,5 +1,5 @@
 import { INDICATOR_DEFINITIONS_VERSION, TERMINAL_STATUSES, completionMutates, heldEndOf, pinnedCompletionOf, pinnedDelegationOf, reconciliationMutates } from '@momonga/protocol';
-import type { MutationFacts, PinnedCompletion, RecoveryCause, RecoveryEpisodeView, RecoveryOutcome, RunEvent, RunFactsView, RunFactsVerification } from '@momonga/protocol';
+import type { MutationFacts, PermissionOption, PinnedCompletion, RunFactsAnswers, RunFactsDenials, RecoveryCause, RecoveryEpisodeView, RecoveryOutcome, RunEvent, RunFactsView, RunFactsVerification } from '@momonga/protocol';
 import type { RunInfo } from './types.ts';
 
 type Episode = {
@@ -16,6 +16,10 @@ const BASIS_KEYS = { read_only: 'readOnly', rule: 'rule', mode: 'mode', hook: 'h
 const basisKey = (basis: keyof typeof BASIS_KEYS): (typeof BASIS_KEYS)[keyof typeof BASIS_KEYS] => BASIS_KEYS[basis];
 
 const isTerminal = (status: string): boolean => TERMINAL_STATUSES.some((terminal) => terminal === status);
+
+const ANSWER_KEYS = { allow_once: 'allowOnce', allow_always: 'allowAlways', reject_once: 'rejectOnce', reject_always: 'rejectAlways' } as const satisfies Record<PermissionOption['kind'], keyof RunFactsAnswers>;
+
+type Hold = { from: number; to: number };
 
 const conditionsOf = (completion: PinnedCompletion | undefined): PinnedCompletion['conditions'] => completion?.conditions ?? [];
 
@@ -70,7 +74,13 @@ export const createFactsFold = (): FactsFold => {
   let completion: PinnedCompletion | undefined;
   let started = false;
   const calls = new Map<string, MutationFacts>();
-  const approvals = new Map<string, { callId: string; rejecting: Set<string> }>();
+  const approvals = new Map<string, { callId: string; rejecting: Set<string>; kinds: Map<string, PermissionOption['kind']> }>();
+  const answers: RunFactsAnswers = { allowOnce: 0, allowAlways: 0, rejectOnce: 0, rejectAlways: 0 };
+  const denials: RunFactsDenials = { sandbox: 0, rule: 0, mode: 0, setting: 0, hook: 0, mandate: 0, superseded: 0, held: 0 };
+  const heldAt = new Map<string, { seq: number; createdAt: number }>();
+  const holds: Hold[] = [];
+  const workSeqs: { seq: number; kind: 'model' | 'tool'; callId?: string }[] = [];
+  let holdLatencyMs = 0;
   let mutated = false;
   const rounds: Rounds = { outcomes: new Map(), checkMs: 0, firstFailedSeq: undefined, fixRoundTokens: 0 };
   let mandated: boolean | undefined;
@@ -130,6 +140,12 @@ export const createFactsFold = (): FactsFold => {
   const add = (event: FactsEvent): void => {
     const ended = heldEndOf(event);
     if (ended !== undefined && ended.outcome !== 'withdrawn') resolvedByPerson += 1;
+    const heldSince = ended === undefined ? undefined : heldAt.get(ended.callId);
+    if (ended !== undefined && heldSince !== undefined) {
+      holds.push({ from: heldSince.seq, to: event.seq });
+      heldAt.delete(ended.callId);
+      if (ended.outcome !== 'withdrawn') holdLatencyMs += event.createdAt - heldSince.createdAt;
+    }
     switch (event.type) {
       case 'run.started': {
         if (!started) completion = pinnedCompletionOf(event.pins);
@@ -161,6 +177,7 @@ export const createFactsFold = (): FactsFold => {
       }
       case 'model.responded':
         if (rounds.firstFailedSeq !== undefined) rounds.fixRoundTokens += event.response.usage.total_tokens;
+        workSeqs.push({ seq: event.seq, kind: 'model' });
         progress(event);
         break;
       case 'tool.call':
@@ -185,12 +202,15 @@ export const createFactsFold = (): FactsFold => {
       }
       case 'tool.held':
         heldCalls.add(event.callId);
+        heldAt.set(event.callId, { seq: event.seq, createdAt: event.createdAt });
         break;
       case 'run.quiescent':
         waited = true;
         break;
       case 'tool.completed': {
         if (event.denial?.source === 'mandate') denied += 1;
+        if (event.denial === undefined) workSeqs.push({ seq: event.seq, kind: 'tool', callId: event.callId });
+        else denials[event.denial.source] += 1;
         const completedCall = calls.get(event.callId);
         if (completedCall !== undefined && completionMutates(completedCall, event)) mutated = true;
         settle(event.callId);
@@ -213,11 +233,17 @@ export const createFactsFold = (): FactsFold => {
         break;
       }
       case 'tool.permission.requested':
-        approvals.set(event.approvalId, { callId: event.callId, rejecting: new Set(event.options.filter((option) => option.kind.startsWith('reject')).map((option) => option.optionId)) });
+        approvals.set(event.approvalId, {
+          callId: event.callId,
+          rejecting: new Set(event.options.filter((option) => option.kind.startsWith('reject')).map((option) => option.optionId)),
+          kinds: new Map(event.options.map((option) => [option.optionId, option.kind])),
+        });
         asked += 1;
         break;
       case 'tool.permission.resolved': {
         const approval = approvals.get(event.approvalId);
+        const kind = approval?.kinds.get(event.optionId);
+        if (kind !== undefined) answers[ANSWER_KEYS[kind]] += 1;
         const call = approval === undefined ? undefined : calls.get(approval.callId);
         if (approval !== undefined && call !== undefined && approval.rejecting.has(event.optionId)) call.rejected = true;
         break;
@@ -234,6 +260,12 @@ export const createFactsFold = (): FactsFold => {
       default:
         break;
     }
+  };
+
+  const workDuringHoldsOf = (): { modelSteps: number; toolCalls: number } => {
+    const intervals = [...holds, ...[...heldAt.values()].map((held) => ({ from: held.seq, to: Number.POSITIVE_INFINITY }))];
+    const during = workSeqs.filter((work) => (work.callId === undefined || !heldCalls.has(work.callId)) && intervals.some((hold) => work.seq > hold.from && work.seq < hold.to));
+    return { modelSteps: during.filter((work) => work.kind === 'model').length, toolCalls: during.filter((work) => work.kind === 'tool').length };
   };
 
   const finish = (info: RunInfo): RunFactsView => {
@@ -259,7 +291,7 @@ export const createFactsFold = (): FactsFold => {
       costNano: info.costNano,
       steps: info.step,
       limits: info.limits,
-      ...(mandated === true ? { delegation: { held: heldCalls.size, resolvedByPerson, denied, waited } } : {}),
+      ...(mandated === true ? { delegation: { held: heldCalls.size, resolvedByPerson, denied, waited, holdLatencyMs, workDuringHolds: workDuringHoldsOf() } } : {}),
       ...(info.deadlineAt === undefined ? {} : { deadlineAt: info.deadlineAt }),
       asked,
       elicited,
@@ -270,6 +302,8 @@ export const createFactsFold = (): FactsFold => {
       reconciledNotApplied,
       reconciledUnknown,
       basis,
+      answers,
+      denials,
       declared: conditionsOf(completion).length > 0,
       met: info.status === 'COMPLETED',
       mutated,

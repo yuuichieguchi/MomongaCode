@@ -1,5 +1,25 @@
 import { INDICATOR_DEFINITIONS_VERSION, UNKNOWN_VALUE } from '@momonga/protocol';
-import type { GroupKey, IndicatorGroups, Indicators, RunFacts, TaskLabels } from './types.ts';
+import type { GroupKey, IndicatorGroups, Indicators, PermissionFigures, RunFacts, TaskLabels } from './types.ts';
+
+const emptyPermissions = (): PermissionFigures => ({
+  basis: { readOnly: 0, rule: 0, mode: 0, hook: 0, classifier: 0, person: 0 },
+  asks: 0,
+  answers: { allowOnce: 0, allowAlways: 0, rejectOnce: 0, rejectAlways: 0 },
+  denials: { sandbox: 0, rule: 0, mode: 0, setting: 0, hook: 0, mandate: 0, superseded: 0, held: 0 },
+});
+
+const sumCounts = <K extends string>(left: Record<K, number>, right: Record<K, number>): Record<K, number> => {
+  const sum = { ...left };
+  for (const key in right) sum[key] = left[key] + right[key];
+  return sum;
+};
+
+const addPermissions = (left: PermissionFigures, right: PermissionFigures): PermissionFigures => ({
+  basis: sumCounts(left.basis, right.basis),
+  asks: left.asks + right.asks,
+  answers: sumCounts(left.answers, right.answers),
+  denials: sumCounts(left.denials, right.denials),
+});
 
 type TaskPartial = {
   root: RunFacts | undefined;
@@ -18,6 +38,7 @@ type TaskPartial = {
   stoppedEpisodes: number;
   durations: number[];
   clockSkew: number;
+  permissions: PermissionFigures;
 };
 
 export type Aggregate = { groupBy: GroupKey; tasks: ReadonlyMap<string, TaskPartial>; unavailableRoots: ReadonlySet<string>; labels: ReadonlyMap<string, TaskLabels> };
@@ -64,6 +85,7 @@ const partialOf = (row: RunFacts): TaskPartial => {
     stoppedEpisodes,
     durations,
     clockSkew,
+    permissions: { basis: row.basis, asks: row.asked, answers: row.answers, denials: row.denials },
   };
 };
 
@@ -88,6 +110,7 @@ const combine = (left: TaskPartial, right: TaskPartial): TaskPartial => {
     stoppedEpisodes: left.stoppedEpisodes + right.stoppedEpisodes,
     durations: [...left.durations, ...right.durations],
     clockSkew: left.clockSkew + right.clockSkew,
+    permissions: addPermissions(left.permissions, right.permissions),
   };
 };
 
@@ -190,6 +213,7 @@ type Accumulator = {
   moneyOverK: number;
   moneyOverN: number;
   delegation: Indicators['delegation'];
+  permissions: Map<string, PermissionFigures>;
   verification: Indicators['verification'];
   budgetStops: number;
   timeN: number;
@@ -222,7 +246,8 @@ const emptyAccumulator = (): Accumulator => ({
   overrunN: 0,
   moneyOverK: 0,
   moneyOverN: 0,
-  delegation: { n: 0, intervened: 0, unattended: 0, waited: 0, held: 0, denied: 0 },
+  delegation: { n: 0, intervened: 0, unattended: 0, waited: 0, held: 0, denied: 0, resolvedHolds: 0, holdLatencyMs: 0, workDuringHolds: { modelSteps: 0, toolCalls: 0 } },
+  permissions: new Map(),
   verification: { firstRoundPassed: { k: 0, n: 0 }, failedRound: { k: 0, n: 0 }, coverage: { k: 0, n: 0 }, checkMs: 0, elapsedMs: 0, fixRoundTokens: 0 },
   budgetStops: 0,
   timeN: 0,
@@ -322,8 +347,12 @@ const accumulate = (accumulator: Accumulator, root: RunFacts, task: TaskPartial,
     delegation.denied += root.delegation.denied;
     if (root.delegation.resolvedByPerson > 0) delegation.intervened += 1;
     if (root.delegation.waited) delegation.waited += 1;
+    delegation.resolvedHolds += root.delegation.resolvedByPerson;
+    delegation.holdLatencyMs += root.delegation.holdLatencyMs;
+    delegation.workDuringHolds = sumCounts(delegation.workDuringHolds, root.delegation.workDuringHolds);
     if (root.status === 'COMPLETED' && root.delegation.held === 0) delegation.unattended += 1;
   }
+  accumulator.permissions.set(root.mode, addPermissions(accumulator.permissions.get(root.mode) ?? emptyPermissions(), task.permissions));
   const { verification } = accumulator;
   if (root.verification.rounds > 0) {
     verification.firstRoundPassed.n += 1;
@@ -388,7 +417,8 @@ const finish = (accumulator: Accumulator): Indicators => {
     duplicates: { journal: { k: accumulator.duplicatesK, n: accumulator.duplicatesN }, prevented: accumulator.prevented, unknown: accumulator.unknown },
     intervention: { k: accumulator.interventionK, n: accumulator.counted },
     overrun: { k: accumulator.overrunK, n: accumulator.overrunN, budgetStops: accumulator.budgetStops, money: { k: accumulator.moneyOverK, n: accumulator.moneyOverN } },
-    delegation: { ...accumulator.delegation },
+    delegation: { ...accumulator.delegation, workDuringHolds: { ...accumulator.delegation.workDuringHolds } },
+    permissions: Object.fromEntries([...accumulator.permissions.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))),
     verification: {
       firstRoundPassed: { ...accumulator.verification.firstRoundPassed },
       failedRound: { ...accumulator.verification.failedRound },

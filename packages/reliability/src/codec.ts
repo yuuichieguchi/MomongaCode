@@ -1,9 +1,9 @@
 import { parseOutsideJson } from '@momonga/foundation';
-import { COST_CURRENCY, RELIABILITY_FORMAT, RETIRED_RELIABILITY_FORMATS } from '@momonga/protocol';
+import { COST_CURRENCY, PERMISSION_DENIAL_SOURCES, RELIABILITY_FORMAT, RETIRED_RELIABILITY_FORMATS } from '@momonga/protocol';
 import type { Period } from './aggregate.ts';
 import type { CostGroups, CostIndicators, CostSide } from './cost.ts';
 import { GROUP_KEYS } from './types.ts';
-import type { Indicators } from './types.ts';
+import type { Indicators, PermissionFigures } from './types.ts';
 import { REPORT_KINDS } from './report.ts';
 import type { Harness, NotRun, ReliabilityReport, ReportKind as ReportKindName, ScenarioRow, TaskRow } from './report.ts';
 
@@ -38,6 +38,23 @@ const rateOf = (fields: Fields, path: string): { k: number; n: number } => {
 };
 
 const rateAt = (value: unknown, path: string): { k: number; n: number } => rateOf(fieldsAt(value, path), path);
+
+const countsAt = <K extends string>(value: unknown, path: string, keys: readonly K[]): Record<K, number> => {
+  const fields = fieldsAt(value, path);
+  const extra = Object.keys(fields).find((key) => !keys.some((known) => known === key));
+  if (extra !== undefined) fail(`${path}.${extra}`, 'absent');
+  return Object.fromEntries(keys.map((key) => [key, countAt(fields, key, path)])) as Record<K, number>;
+};
+
+const decodePermissions = (value: unknown, path: string): PermissionFigures => {
+  const fields = fieldsAt(value, path);
+  return {
+    basis: countsAt(fields['basis'], `${path}.basis`, ['readOnly', 'rule', 'mode', 'hook', 'classifier', 'person']),
+    asks: countAt(fields, 'asks', path),
+    answers: countsAt(fields['answers'], `${path}.answers`, ['allowOnce', 'allowAlways', 'rejectOnce', 'rejectAlways']),
+    denials: countsAt(fields['denials'], `${path}.denials`, PERMISSION_DENIAL_SOURCES),
+  };
+};
 
 const decodeIndicators = (value: unknown, path: string): Indicators => {
   const fields = fieldsAt(value, path);
@@ -94,7 +111,13 @@ const decodeIndicators = (value: unknown, path: string): Indicators => {
       waited: countAt(delegation, 'waited', `${path}.delegation`),
       held: countAt(delegation, 'held', `${path}.delegation`),
       denied: countAt(delegation, 'denied', `${path}.delegation`),
+      resolvedHolds: countAt(delegation, 'resolvedHolds', `${path}.delegation`),
+      holdLatencyMs: countAt(delegation, 'holdLatencyMs', `${path}.delegation`),
+      workDuringHolds: countsAt(delegation['workDuringHolds'], `${path}.delegation.workDuringHolds`, ['modelSteps', 'toolCalls']),
     },
+    permissions: Object.fromEntries(
+      Object.entries(fieldsAt(fields['permissions'], `${path}.permissions`)).map(([mode, figures]) => [mode, decodePermissions(figures, `${path}.permissions.${mode}`)]),
+    ),
     time: {
       n: countAt(time, 'n', `${path}.time`),
       meanActiveMs: meanAt(time, 'meanActiveMs', `${path}.time`),

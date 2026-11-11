@@ -1259,6 +1259,24 @@ ALTER TABLE run_facts ADD COLUMN check_ms INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE run_facts ADD COLUMN fix_round_tokens INTEGER NOT NULL DEFAULT 0;
 `;
 
+const RUN_FACTS_PERMISSIONS_AND_HOLDS = `
+ALTER TABLE run_facts ADD COLUMN answers_allow_once INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE run_facts ADD COLUMN answers_allow_always INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE run_facts ADD COLUMN answers_reject_once INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE run_facts ADD COLUMN answers_reject_always INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE run_facts ADD COLUMN denials_sandbox INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE run_facts ADD COLUMN denials_rule INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE run_facts ADD COLUMN denials_mode INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE run_facts ADD COLUMN denials_setting INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE run_facts ADD COLUMN denials_hook INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE run_facts ADD COLUMN denials_mandate INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE run_facts ADD COLUMN denials_superseded INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE run_facts ADD COLUMN denials_held INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE run_facts ADD COLUMN hold_latency_ms INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE run_facts ADD COLUMN hold_model_steps INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE run_facts ADD COLUMN hold_tool_calls INTEGER NOT NULL DEFAULT 0;
+`;
+
 const MEMORY_ROWS_WITHOUT_DELETE_RULES = `
 DROP TRIGGER memories_index_delete;
 DROP TRIGGER memories_replacements_insert;
@@ -1464,5 +1482,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 45,
     name: 'record in the facts of a run whether it mutated the work tree, whether it owed a completion condition, and its verification rounds: how many ran, whether the first passed, how many failed, the time its checks took and the tokens of the rounds that fixed a failed check',
     sql: RUN_FACTS_VERIFICATION,
+  },
+  {
+    version: 46,
+    name: 'record in the facts of a run the answer kinds of its asks, its denials by source, and for a run under a mandate the time a person took to resolve its holds and the model steps and tool calls completed while a call was held',
+    sql: RUN_FACTS_PERMISSIONS_AND_HOLDS,
   },
 ];

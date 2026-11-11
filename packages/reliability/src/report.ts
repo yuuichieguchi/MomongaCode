@@ -4,7 +4,7 @@ import { indicatorsOf } from './aggregate.ts';
 import type { Aggregate, Period } from './aggregate.ts';
 import { costLines } from './cost.ts';
 import type { CostGroups, CostIndicators } from './cost.ts';
-import type { GroupKey, Indicators, Rate } from './types.ts';
+import type { GroupKey, Indicators, PermissionFigures, Rate } from './types.ts';
 import { wilsonInterval } from './wilson.ts';
 
 export const REPORT_KINDS = ['real', 'benchmark', 'injection'] as const;
@@ -77,8 +77,20 @@ export const describeRate = ({ k, n }: Rate): string => {
 
 const milliseconds = (value: number | null): string => (value === null ? 'n/a' : `${value} ms`);
 
+const plural = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;
+
+const permissionLine = (mode: string, { basis, asks, answers, denials }: PermissionFigures): string => {
+  const answered = answers.allowOnce + answers.allowAlways + answers.rejectOnce + answers.rejectAlways;
+  return [
+    `Permission decisions (mode ${escapeTerminalLine(mode)}): by basis read_only ${basis.readOnly}, rule ${basis.rule}, mode ${basis.mode}, hook ${basis.hook}, classifier ${basis.classifier}, person ${basis.person}`,
+    `asks ${asks}`,
+    `answers allow_once ${answers.allowOnce}, allow_always ${answers.allowAlways}, reject_once ${answers.rejectOnce}, reject_always ${answers.rejectAlways}, unanswered ${asks - answered}`,
+    `denials ${Object.entries(denials).map(([source, count]) => `${source} ${count}`).join(', ')}`,
+  ].join('; ');
+};
+
 const indicatorLines = (indicators: Indicators, cost?: CostIndicators): string[] => {
-  const { completion, recovery, recoveryTime, duplicates, intervention, overrun, delegation, time, verification } = indicators;
+  const { completion, recovery, recoveryTime, duplicates, intervention, overrun, delegation, time, verification, permissions } = indicators;
   return [
     completion.n === 0
       ? `Task Completion Rate: not measurable: no task declared a completion condition (${completion.undeclared} tasks without one)`
@@ -89,6 +101,8 @@ const indicatorLines = (indicators: Indicators, cost?: CostIndicators): string[]
     `Human Intervention Rate: ${describeRate(intervention)}`,
     `Budget Overrun Rate: ${describeRate(overrun)}; over the money limit ${describeRate(overrun.money)}; budget stops ${overrun.budgetStops}`,
     `Delegation (mandate runs): n=${delegation.n}; a person resolved a held call in ${describeRate({ k: delegation.intervened, n: delegation.n })}; completed with no held call ${describeRate({ k: delegation.unattended, n: delegation.n })}; waited for a person at least once ${delegation.waited}; held calls ${delegation.held}; denied outside the mandate ${delegation.denied}`,
+    `Holds (mandate runs): work done while a call was held ${plural(delegation.workDuringHolds.modelSteps, 'model step', 'model steps')}, ${plural(delegation.workDuringHolds.toolCalls, 'tool call', 'tool calls')}; hold latency ${delegation.resolvedHolds === 0 ? 'n/a (no hold was resolved by a person)' : `mean ${Math.round(delegation.holdLatencyMs / delegation.resolvedHolds)} ms over ${plural(delegation.resolvedHolds, 'hold', 'holds')} resolved by a person`}`,
+    ...Object.entries(permissions).map(([mode, figures]) => permissionLine(mode, figures)),
     `Time per Successful Task: n=${time.n}, active mean ${milliseconds(time.meanActiveMs)}, elapsed mean ${milliseconds(time.meanElapsedMs)}`,
     `Verification Success Rate (first round passed): ${describeRate(verification.firstRoundPassed)}`,
     `Averted False Completion (runs with a failed round): ${describeRate(verification.failedRound)}`,
