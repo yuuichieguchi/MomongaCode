@@ -45,8 +45,8 @@ export {
   writeAutoFitRecord,
 } from './auto-fit.ts';
 export type { AutoFitFailedBound, AutoFitKey, AutoFitKeyResult, AutoFitMeasurement, AutoFitProportion, AutoFitRecord, ClassifierCode, ClassifierIdentity, ClassifierKeyPorts, ClassifierProbeKeys } from './auto-fit.ts';
-export { isCredentialEnvName, stripCredentialEnv } from './credential-env.ts';
-export type { CredentialRules } from './credential-env.ts';
+export { credentialNamesOf, forgeCredentialNamesOf, isCredentialEnvName, stripCredentialEnv } from './credential-env.ts';
+export type { CredentialNaming, CredentialRules } from './credential-env.ts';
 export { loadSettings } from './load-settings.ts';
 export { MODEL_ROLES, TUI_NOTIFY_MODES, TUI_SCREEN_MODES, TUI_THEMES } from './settings-schema.ts';
 export { editSettings, readSettingsSnapshot } from './edit-settings.ts';
@@ -78,8 +78,8 @@ export { SETTINGS_SCHEMA } from './settings-schema.ts';
 export { CORE_SETTING_KEYS, NON_CORE_SETTING_KEYS } from './core-settings.ts';
 export type { CoreSettingKey } from './core-settings.ts';
 export { DEFAULT_CONTENT_RETENTION_DAYS, defaultSandboxSetting, resolveTelemetrySettings } from './settings.ts';
-export { resolveNetwork } from './network.ts';
-export type { NetworkEnvironment } from './network.ts';
+export { resolveNetwork, resolveNetworkSources } from './network.ts';
+export type { NetworkEnvironment, NetworkSources, ShownNetworkValue } from './network.ts';
 export {
   DEFAULT_FORGET_AFTER_DAYS,
   DEFAULT_VERIFICATION_COMMANDS,

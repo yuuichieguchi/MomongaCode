@@ -1,5 +1,5 @@
 import { INDICATOR_DEFINITIONS_VERSION, UNKNOWN_VALUE } from '@momonga/protocol';
-import type { GroupKey, IndicatorGroups, Indicators, RunFacts } from './types.ts';
+import type { GroupKey, IndicatorGroups, Indicators, RunFacts, TaskLabels } from './types.ts';
 
 type TaskPartial = {
   root: RunFacts | undefined;
@@ -20,9 +20,9 @@ type TaskPartial = {
   clockSkew: number;
 };
 
-export type Aggregate = { groupBy: GroupKey; tasks: ReadonlyMap<string, TaskPartial>; unavailableRoots: ReadonlySet<string> };
+export type Aggregate = { groupBy: GroupKey; tasks: ReadonlyMap<string, TaskPartial>; unavailableRoots: ReadonlySet<string>; labels: ReadonlyMap<string, TaskLabels> };
 
-export type AggregateOptions = { groupBy: GroupKey; unavailableRoots?: readonly string[] };
+export type AggregateOptions = { groupBy: GroupKey; unavailableRoots?: readonly string[]; labels?: ReadonlyMap<string, TaskLabels> };
 
 const holdsUnknown = (row: RunFacts): boolean =>
   [row.status, row.stopReason, row.mode, ...row.recoveries.flatMap((episode) => [episode.cause, episode.outcome])].includes(UNKNOWN_VALUE);
@@ -102,7 +102,7 @@ const addRows = (tasks: Map<string, TaskPartial>, rows: readonly RunFacts[]): vo
 export const aggregate = (rows: readonly RunFacts[], options: AggregateOptions): Aggregate => {
   const tasks = new Map<string, TaskPartial>();
   addRows(tasks, rows);
-  return { groupBy: options.groupBy, tasks, unavailableRoots: new Set(options.unavailableRoots) };
+  return { groupBy: options.groupBy, tasks, unavailableRoots: new Set(options.unavailableRoots), labels: new Map(options.labels) };
 };
 
 export const merge = (left: Aggregate, right: Aggregate): Aggregate => {
@@ -112,20 +112,23 @@ export const merge = (left: Aggregate, right: Aggregate): Aggregate => {
     const existing = tasks.get(rootRunId);
     tasks.set(rootRunId, existing === undefined ? partial : combine(existing, partial));
   }
-  return { groupBy: left.groupBy, tasks, unavailableRoots: new Set([...left.unavailableRoots, ...right.unavailableRoots]) };
+  return { groupBy: left.groupBy, tasks, unavailableRoots: new Set([...left.unavailableRoots, ...right.unavailableRoots]), labels: new Map([...left.labels, ...right.labels]) };
 };
 
 export type Period = { days: number; fromMs: number; toMs: number };
 
 export const withinPeriod = (aggregated: Aggregate, period: Period): Aggregate => {
   const outside = new Set<string>();
+  const rootless: string[] = [];
   for (const [rootRunId, { root }] of aggregated.tasks) {
-    if (root !== undefined && (root.endedAt < period.fromMs || root.endedAt > period.toMs)) outside.add(rootRunId);
+    if (root === undefined) rootless.push(rootRunId);
+    else if (root.endedAt < period.fromMs || root.endedAt > period.toMs) outside.add(rootRunId);
   }
   return {
     groupBy: aggregated.groupBy,
     tasks: new Map([...aggregated.tasks].filter(([rootRunId]) => !outside.has(rootRunId))),
-    unavailableRoots: new Set([...aggregated.unavailableRoots].filter((rootRunId) => !outside.has(rootRunId))),
+    unavailableRoots: new Set([...aggregated.unavailableRoots, ...rootless].filter((rootRunId) => !outside.has(rootRunId))),
+    labels: aggregated.labels,
   };
 };
 
@@ -139,7 +142,13 @@ const weekOf = (ms: number): string => {
   return new Date(weekStart * DAY_MS).toISOString().slice(0, 10);
 };
 
-const groupOf = (row: RunFacts, groupBy: GroupKey): string => {
+const labelOf = (row: RunFacts, labels: ReadonlyMap<string, TaskLabels>, key: keyof TaskLabels): string => {
+  const label = labels.get(row.rootRunId);
+  if (label === undefined) throw new RangeError(`the root run ${row.rootRunId} has no ${key} label, so it cannot be grouped by ${key}`);
+  return label[key];
+};
+
+const groupOf = (row: RunFacts, groupBy: GroupKey, labels: ReadonlyMap<string, TaskLabels>): string => {
   switch (groupBy) {
     case 'model':
       return row.model;
@@ -151,6 +160,9 @@ const groupOf = (row: RunFacts, groupBy: GroupKey): string => {
       return row.origin;
     case 'period':
       return weekOf(row.endedAt);
+    case 'taskType':
+    case 'difficulty':
+      return labelOf(row, labels, groupBy);
   }
 };
 
@@ -377,7 +389,7 @@ export const indicatorsOf = (aggregated: Aggregate): IndicatorGroups => {
   for (const [rootRunId, task] of aggregated.tasks) {
     const unavailable = aggregated.unavailableRoots.has(rootRunId);
     place(total, rootRunId, task, unavailable);
-    const key = groupOf(task.root ?? task.earliest, aggregated.groupBy);
+    const key = groupOf(task.root ?? task.earliest, aggregated.groupBy, aggregated.labels);
     let group = groups.get(key);
     if (group === undefined) {
       group = emptyAccumulator();
@@ -408,7 +420,7 @@ export const countedTasksOf = (aggregated: Aggregate): CountedTask[] => {
   for (const [rootRunId, task] of aggregated.tasks) {
     const { root } = task;
     if (root === undefined || aggregated.unavailableRoots.has(rootRunId) || exclusionOf(task) !== undefined) continue;
-    counted.push({ rootRunId, group: groupOf(root, aggregated.groupBy), met: root.met, tokens: root.tokensTotal, runIds: [...task.runIds].sort() });
+    counted.push({ rootRunId, group: groupOf(root, aggregated.groupBy, aggregated.labels), met: root.met, tokens: root.tokensTotal, runIds: [...task.runIds].sort() });
   }
   return counted.sort((left, right) => (left.rootRunId < right.rootRunId ? -1 : 1));
 };

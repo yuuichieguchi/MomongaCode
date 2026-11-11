@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { nodeFileLockOps } from '../../src/platform/kernel-lock.ts';
-import { createLockCapability } from '../../src/platform/lock-capability.ts';
+import { LockProofFailedError, createLockCapability } from '../../src/platform/lock-capability.ts';
 import { momongaLayout } from '../../src/momonga-paths.ts';
 import { makeTemporaryDirectory } from '../support/temporary-directory.ts';
 import { LOCK_FLAG_BITS, countingOps, lockIgnoringOps, lockRejectingOps, switchableOps } from '../support/probe-fakes.ts';
@@ -75,6 +75,23 @@ describe('T3 lock proof and detection', () => {
     } finally {
       fs.closeSync(liveDescriptor);
     }
+  });
+
+  it.runIf(process.platform === 'darwin')('(d) a leftover whose shared open fails with EIO leaves the directory unmeasured, and the decision names EIO', async () => {
+    const { proofDir, markerDir } = directories();
+    const leftover = path.join(proofDir, 'leftover-of-a-killed-prover');
+    fs.writeFileSync(leftover, '');
+    const ops = {
+      ...nodeFileLockOps,
+      open: (file: string, flags: number, mode?: number): number => {
+        if (file === leftover) throw Object.assign(new Error(`EIO: injected, open '${file}'`), { code: 'EIO' });
+        return nodeFileLockOps.open(file, flags, mode);
+      },
+    };
+    const capability = createLockCapability({ proofDir, ops });
+    expect(await capability.of(markerDir)).toBe('unmeasured');
+    expect(() => capability.decide(markerDir)).toThrow(LockProofFailedError);
+    expect(() => capability.decide(markerDir)).toThrow(/EIO/);
   });
 
   it.runIf(process.platform === 'darwin')('(e) a measurement is cached: a second use with the same st_dev runs no second proof', async () => {

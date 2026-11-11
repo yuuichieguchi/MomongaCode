@@ -30,6 +30,7 @@ const pickerOf = (harness: FlowHarness, connected: string[] = []) => {
     delivered: () => undefined,
     loading: async (_title, read) => ({ kind: 'read', value: await read() }),
     invitationAnswered: () => undefined,
+    untilNextKey: () => new AbortController().signal,
     info: harness.context.info,
     toast: harness.context.info,
     connected: async (model) => void connected.push(model),

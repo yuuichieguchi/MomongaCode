@@ -1,8 +1,8 @@
 import type { McpServerConfig } from '@momonga/config';
 import { GENERATION_STARTING_CODE, HOST_READ_BOUND_MS, MOVED_CODE, createUdsClient, decodeSse, isRecord, parseRetryAfter } from '@momonga/foundation';
-import type { SocketResolver, UdsResponse } from '@momonga/foundation';
+import type { SandboxNetworkSetting, SocketResolver, UdsResponse } from '@momonga/foundation';
 import { DAEMON_CURRENT_EVENT, STREAM_FAILED_EVENT, WORDS, messageOf } from '@momonga/protocol';
-import type { AddMemoryRequest, AddRuleRequest, PutRuleVerdictRequest, RuleVerdict, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, Mandate } from '@momonga/protocol';
+import type { AddMemoryRequest, AddRuleRequest, PutRuleVerdictRequest, RuleVerdict, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, ReportRecomputePage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, Mandate } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
@@ -31,6 +31,7 @@ import {
   checkReflection,
   checkReportCost,
   checkReportPage,
+  checkReportRecompute,
   checkReviewPage,
   checkStoreReview,
   checkTraceContent,
@@ -119,6 +120,7 @@ export type CreateSessionInput = {
   permissionMode?: PermissionMode;
   model?: string;
   bypassAllowed?: boolean;
+  sandboxNetwork?: SandboxNetworkSetting;
   mcpServers?: Readonly<Record<string, McpServerConfig>>;
 };
 
@@ -213,6 +215,7 @@ export type RuntimeClient = {
   reportReviews(request: { cursor: string | null; limit: number }): Promise<ReviewPage>;
   storeReview(request: StoreReviewRequest): Promise<PermissionReviewView>;
   reportCost(runIds: readonly string[]): Promise<RunCostView[]>;
+  reportRecompute(runIds: readonly string[]): Promise<ReportRecomputePage>;
   traceContent(runId: string, request: { after: number; limit: number }): Promise<TraceContentPage>;
   cost(filter?: CostFilter): Promise<CostReportView>;
   costText(filter?: CostFilter): Promise<string>;
@@ -362,6 +365,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
         ...(input.permissionMode === undefined ? {} : { permissionMode: input.permissionMode }),
         ...(input.model === undefined ? {} : { model: input.model }),
         ...(input.bypassAllowed === undefined ? {} : { bypassAllowed: input.bypassAllowed }),
+        ...(input.sandboxNetwork === undefined ? {} : { sandboxNetwork: input.sandboxNetwork }),
         ...(input.mcpServers === undefined ? {} : { mcpServers: input.mcpServers }),
       },
     });
@@ -741,6 +745,11 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     return checkReportCost(body, 'POST /v1/report/cost').costs;
   };
 
+  const reportRecompute = async (runIds: readonly string[]): Promise<ReportRecomputePage> => {
+    const { body } = await send('POST', '/v1/report/recompute', [200], { body: { runIds } });
+    return checkReportRecompute(body, 'POST /v1/report/recompute');
+  };
+
   const traceContent = async (runId: string, request: { after: number; limit: number }): Promise<TraceContentPage> => {
     const path = `/v1/runs/${pathSegment(runId)}/trace/content?${new URLSearchParams({ after: String(request.after), limit: String(request.limit) }).toString()}`;
     const { body } = await send('GET', path, [200]);
@@ -892,6 +901,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     reportReviews,
     storeReview,
     reportCost,
+    reportRecompute,
     traceContent,
     cost,
     costText,

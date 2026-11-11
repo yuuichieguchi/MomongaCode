@@ -337,6 +337,14 @@ const canonicalPath = (input: string): Asking<string> => canonicalWith(input, fo
 
 const canonicalThroughFiles = (value: string): Asking<string> => canonicalWith(value, throughFilesStep);
 
+const DENIED_ERRNO: ReadonlySet<string> = new Set(['EACCES', 'EPERM']);
+
+const deniedOrRethrown = (error: unknown): CanonicalDirectoryResult => {
+  const code = errnoOf(error);
+  if (code === undefined || !DENIED_ERRNO.has(code)) throw error;
+  return { ok: false, code: 'unreadable', reason: `cannot be read: ${(error as Error).message}` };
+};
+
 function* canonicalDirectory(input: string): Asking<CanonicalDirectoryResult> {
   if (!path.isAbsolute(input)) return { ok: false, code: 'not_absolute', reason: 'must be an absolute path' };
   let canonical: string;
@@ -358,15 +366,14 @@ function* canonicalDirectory(input: string): Asking<CanonicalDirectoryResult> {
     if (code !== undefined && UNRESOLVABLE_ERRNO.has(code)) {
       return { ok: false, code: 'unresolvable', reason: `cannot be resolved: ${(error as Error).message}` };
     }
-    return { ok: false, code: 'unreadable', reason: 'cannot be read' };
+    return deniedOrRethrown(error);
   }
   if (!stat.isDirectory()) return { ok: false, code: 'not_directory', reason: 'is not a directory' };
   try {
     yield* ask<void>({ op: 'list', target: canonical });
   } catch (error) {
     yield* rethrowIfCancelled();
-    if (isTransientErrno(error)) throw error;
-    return { ok: false, code: 'unreadable', reason: 'cannot be read' };
+    return deniedOrRethrown(error);
   }
   return { ok: true, path: canonical };
 }

@@ -59,7 +59,7 @@ export const startSupervisorHarness = async (
     restart: { baseMs: 1, maxMs: 1, minMs: 1 },
     markerPorts: {
       findHolders: async () => [],
-      reapMarkerDirectory: async () => ({ reaped: 0, kept: 0 }),
+      reapMarkerDirectory: async () => ({ reaped: 0, kept: 0, unreaped: [] }),
       reapMarkedProcesses: async (reapOptions) => {
         reapCalls.push(reapOptions.marker);
         return { removed: true };

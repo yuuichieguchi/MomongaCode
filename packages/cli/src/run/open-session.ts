@@ -1,6 +1,6 @@
 import { credentialEnvNames, loadUserSettings, stripCredentialEnv } from '@momonga/config';
 import { currentSocketResolver } from '@momonga/foundation';
-import type { MomongaPaths } from '@momonga/foundation';
+import type { MomongaPaths, SandboxNetworkSetting } from '@momonga/foundation';
 import { NO_MODEL_TARGET, TARGET_NOT_READY, agentReadiness, messageOf, startModelOf } from '@momonga/protocol';
 import type { Mandate, MomongaModelList, PermissionMode } from '@momonga/protocol';
 import { createRuntimeClient } from '../client/runtime-client.ts';
@@ -14,7 +14,7 @@ import { reopenedSession } from './resolve-session.ts';
 import type { HeadlessReopen } from './resolve-session.ts';
 import { UsageError } from '../usage-error.ts';
 
-export type SessionOptions = { permissionMode?: PermissionMode; bypassAllowed?: boolean; model?: string; signal?: AbortSignal };
+export type SessionOptions = { permissionMode?: PermissionMode; bypassAllowed?: boolean; sandboxNetwork?: SandboxNetworkSetting; model?: string; signal?: AbortSignal };
 
 export type RunBounds = { mandate?: Mandate; limits?: { maxCostUsd?: number } };
 
@@ -89,6 +89,7 @@ export const openSession = async (ports: DaemonPorts & Pick<CliPorts, 'cwd' | 's
       env: await environmentSnapshot(ports, options.signal ?? ports.interrupt),
       ...(options.permissionMode === undefined ? {} : { permissionMode: options.permissionMode }),
       ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
+      ...(options.sandboxNetwork === undefined ? {} : { sandboxNetwork: options.sandboxNetwork }),
       ...(options.model === undefined ? {} : { model: options.model }),
     });
     return { client, created, close: () => client.close() };

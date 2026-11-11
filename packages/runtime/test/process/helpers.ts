@@ -7,11 +7,11 @@ import { DEFAULT_STOP_VALUES, FIRST_GENERATION, mcpPoolCloseBoundMs, claimPathOf
 import type { JsonLogger, LogFields, MomongaPaths, Timing, RolePort, SessionScratch } from '@momonga/foundation';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
-import type { RunNotifier, SettingsComposition, ToolRuntime } from '@momonga/runtime';
+import type { NetworkOf, RunNotifier, SettingsComposition, ToolRuntime } from '@momonga/runtime';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
-import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, UNCONFIGURED_NETWORK, createFakeClock, createFakeTimers, createTempDir, driveFakeTime, fakeReapTiming, killGroupsForCleanup, modelSettings, removeTempDir, NEVER_CANCELLED, testKernelLock, testLocks } from '@momonga/testkit';
+import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, unconfiguredDerivedNetworkOf, createFakeClock, createFakeTimers, createTempDir, driveFakeTime, fakeReapTiming, killGroupsForCleanup, modelSettings, removeTempDir, NEVER_CANCELLED, testKernelLock, testLocks } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { fixedSandboxBindings } from '@momonga/runtime';
@@ -252,6 +252,7 @@ export type RuntimeFixtureOptions = {
   reapTiming?: Timing;
   role?: RolePort;
   generation?: number;
+  network?: NetworkOf;
 };
 
 export const FIXTURE_RUNTIME_VERSION = '0.0.0-fixture';
@@ -272,7 +273,7 @@ export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): P
     kernelLock: testKernelLock(),
     lockCapability: testLocks().capability,
     version: FIXTURE_RUNTIME_VERSION,
-    network: UNCONFIGURED_NETWORK,
+    network: options.network ?? unconfiguredDerivedNetworkOf,
     paths: temp.paths,
     sharedPaths: temp.paths,
     generation: options.generation ?? FIRST_GENERATION,

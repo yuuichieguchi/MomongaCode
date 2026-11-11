@@ -9,3 +9,7 @@ export const hostTimers = {
 };
 
 export const UNDICI_DEFAULT_LIVENESS = { headersTimeoutMs: 300_000, idleTimeoutMs: 300_000, timers: hostTimers } as const;
+
+export const unconfiguredNetworkOf = (): Promise<OutboundNetwork> => Promise.resolve(UNCONFIGURED_NETWORK);
+
+export const unconfiguredDerivedNetworkOf = (): Promise<{ outbound: OutboundNetwork; identity: string }> => Promise.resolve({ outbound: UNCONFIGURED_NETWORK, identity: 'unconfigured' });

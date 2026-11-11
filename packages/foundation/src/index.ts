@@ -24,7 +24,7 @@ export type { DatabaseFileIdentity, Migration } from './sqlite.ts';
 export { SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, decodeSse, encodeSse } from './sse.ts';
 export { URL_OPENER_PROGRAMS, createBrowserOpener, openCommandFor, urlOpenerFileFor } from './open-browser.ts';
 export type { LaunchProgram, OpenUrl, ProgramEnd } from './open-browser.ts';
-export { findProgramOnPath } from './program-search.ts';
+export { findProgramOnPath, findProgramOnPathSync } from './program-search.ts';
 export { FILE_CANDIDATE_LIMIT, directoryEntriesOf } from './file-candidates.ts';
 export type { FileCandidates } from './file-candidates.ts';
 export type { SseEvent } from './sse.ts';
@@ -302,7 +302,8 @@ export {
   supervisorMaxCloseMs,
 } from './process-contract.ts';
 export type { EventPayload, JsonLogger, LogFields, LogLevel, LogValue, ReadyFields, ReservedLogKey, StopValueName, StopValues, TextStream } from './process-contract.ts';
-export { MarkerReapError, findHolders, holderGroups, markerReapClockBoundMs, reapMarkedProcesses, reapMarkedProcessesWithReport, recallMarkerGroup, reapMarkerDirectory, outlivedNotes, reconcileProcessGroup, reportUninspectableOnce, stoppedCommandResult } from './process-markers.ts';
+export { findHolders, holderGroups, markerReapClockBoundMs, reapMarkedProcesses, reapMarkedProcessesWithReport, recallMarkerGroup, reapMarkerDirectory, outlivedNotes, reconcileProcessGroup, reportUninspectableOnce, stoppedCommandResult } from './process-markers.ts';
+export type { ReapMarkerDirectoryResult } from './process-markers.ts';
 export type { MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirectoryOptions, ReapReport } from './process-markers.ts';
 export { createLiveIdentities } from './platform/live-identities.ts';
 export { createUninspectableRegistry } from './uninspectable-registry.ts';
@@ -352,7 +353,7 @@ export type { RuleEnforcement } from './file-rules.ts';
 export { EMPTY_FILE_RULES, FileRuleError, HOST_RULE_ENFORCEMENT, ruleEnforcementOf, compileFileRuleSet, inWritableArea, lexicallyWithin, writableAreaOf, writableCheckOf, fileRuleBlocks, fileRuleBlockingForm, fileRuleFingerprint } from './file-rules.ts';
 export type { FileRuleAccess, FileRuleEntry, FileRuleProvenance, FileRuleSet, FileRuleSpec, WritableArea } from './file-rules.ts';
 export { nodeBoundedCommandRunner, nodeCommandRunner } from './platform/command-runner.ts';
-export { discoverGitConfigFiles } from './git-config-files.ts';
+export { createGitConfigDiscovery } from './git-config-files.ts';
 export type { BoundedCommandRunner, CommandOptions, CommandResult, CommandRunner, CommandTimedOut } from './platform/command-runner.ts';
 export { ProbeFailedError, classifyProbeCause, failureOfError, isTransientFailure, probeFailed, valueOrThrow } from './platform/inspector-types.ts';
 export type { ProbeOptions, ProbeResult, ProcessInspector, StartTime, UninspectableProcess } from './platform/inspector-types.ts';

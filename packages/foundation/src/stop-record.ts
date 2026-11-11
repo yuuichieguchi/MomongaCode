@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { writeFileAtomically } from './atomic-file.ts';
 import { nodeFileSystem } from './node-file-system.ts';
@@ -25,11 +24,11 @@ const generationOfDirectory = (file: string): number | undefined => {
 
 const readRecordText = async (file: string): Promise<string | undefined> => {
   try {
-    const stat = await fs.promises.lstat(file);
+    const stat = await nodeFileSystem.lstat(file);
     if (!stat.isFile()) return undefined;
-    return await fs.promises.readFile(file, 'utf8');
+    return await nodeFileSystem.readTextFile(file);
   } catch (error) {
-    if (typeof (error as NodeJS.ErrnoException).code === 'string') return undefined;
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
   }
 };

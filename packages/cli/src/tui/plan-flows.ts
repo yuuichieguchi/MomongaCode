@@ -31,6 +31,7 @@ export type PlanFlowPorts = OverlayPorts & {
   readonly model: () => string | undefined;
   wait<T>(phase: string, work: (signal: AbortSignal) => Promise<T>): Promise<T>;
   invitationAnswered(): void;
+  untilNextKey(): AbortSignal;
 };
 
 export type PlanFlows = {
@@ -444,7 +445,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   const usageLimit = async (profile: PlanProfileView): Promise<void> => {
     await chooseFrom({}, [
       { row: { label: profile.messages.manageUsageLabel, opensBrowser: true }, act: async () =>
-          backend.openUrl(new URL(profile.usageUrl), undefined, (message) => ports.info(`${couldNotOpenBrowser(message)} ${profile.messages.manageUsageLabel}: ${profile.usageUrl}`)),
+          backend.openUrl(new URL(profile.usageUrl), ports.untilNextKey(), (message) => ports.info(`${couldNotOpenBrowser(message)} ${profile.messages.manageUsageLabel}: ${profile.usageUrl}`)),
       },
       { row: { label: 'Dismiss' }, act: async () => undefined },
     ]);

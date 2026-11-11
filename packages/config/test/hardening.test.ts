@@ -320,3 +320,17 @@ describe('S6 follow-up: sensitive variable names in project .mcp.json', () => {
     expect(result.warnings.filter((w) => w.includes('"s"') && w.includes(variable))).toHaveLength(1);
   });
 });
+
+describe('a repository layer cannot raise the permission mode', () => {
+  it.each([
+    ['project', 'bypassPermissions', projectSettingsPath],
+    ['local', 'bypassPermissions', localSettingsPath],
+    ['project', 'auto', projectSettingsPath],
+  ] as const)('discards a %s defaultMode %s with a warning naming the file and the key, and the session takes the default mode', async (_layer, mode, fileOf) => {
+    const tree = makeTree();
+    const file = writeJson(fileOf(tree), { permissions: { defaultMode: mode } });
+    const result = await load(tree);
+    expect(result.settings.permissions.defaultMode).toBeUndefined();
+    expect(result.warnings).toEqual([`${file}: permissions.defaultMode ${mode} is only honored in user settings and on the command line; discarded`]);
+  });
+});

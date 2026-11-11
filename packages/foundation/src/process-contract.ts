@@ -42,12 +42,12 @@ export const DAEMON_MARKER_KILL_GRACE_MS = 2000;
 export const ABANDON_KILL_GRACE_MS = 2000;
 export const ABORT_SETTLE_LIMIT_MS = 2000;
 export const SANDBOX_KILL_GRACE_MS = 1000;
-export const RUNTIME_ABORT_BUDGET_MS = ABORT_SETTLE_LIMIT_MS + SANDBOX_KILL_GRACE_MS + KILL_CONFIRM_MS + 2 * POLL_INTERVAL_MS;
+export const groupTerminationBoundMs = (graceMs: number): number => graceMs + KILL_CONFIRM_MS + 2 * POLL_INTERVAL_MS;
+export const RUNTIME_ABORT_BUDGET_MS = ABORT_SETTLE_LIMIT_MS + groupTerminationBoundMs(SANDBOX_KILL_GRACE_MS);
 export const RUNTIME_TEARDOWN_BUDGET_MS = 10_000;
 export const STARTUP_TIMEOUT_MS = 60_000;
 
 export const startDeadlineSignal = (given: AbortSignal | undefined): AbortSignal => given ?? AbortSignal.timeout(STARTUP_TIMEOUT_MS);
-export const groupTerminationBoundMs = (graceMs: number): number => graceMs + KILL_CONFIRM_MS;
 export const MARKER_REAP_GRACE_WINDOWS = 3;
 export const markerReapClockBoundMs = (killGraceMs: number): number => MARKER_REAP_GRACE_WINDOWS * (killGraceMs + POLL_INTERVAL_MS) + KILL_CONFIRM_MS;
 export const managedServerStopBoundMs = (stopGraceMs: number): number => stopGraceMs + KILL_CONFIRM_MS + markerReapClockBoundMs(stopGraceMs);

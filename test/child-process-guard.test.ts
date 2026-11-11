@@ -296,7 +296,7 @@ describe('the worker guard refuses a product launch of a MomongaCode binary that
   });
 });
 
-const PRINT_SECRET_PROGRAM = `import { findProgramOnPath } from ${JSON.stringify(path.resolve(import.meta.dirname, '../packages/foundation/src/program-search.ts'))}; process.stdout.write(JSON.stringify({ path: process.env.PATH ?? null, security: findProgramOnPath('security', process.env) ?? null }));`;
+const PRINT_SECRET_PROGRAM = `import { findProgramOnPathSync } from ${JSON.stringify(path.resolve(import.meta.dirname, '../packages/foundation/src/program-search.ts'))}; import { nodeFileSystemSync } from ${JSON.stringify(path.resolve(import.meta.dirname, '../packages/foundation/src/node-file-system.ts'))}; process.stdout.write(JSON.stringify({ path: process.env.PATH ?? null, security: findProgramOnPathSync('security', process.env, nodeFileSystemSync) ?? null }));`;
 
 const printedBy = (stdout: string | Buffer): { path: string | null; security: string | null } => JSON.parse(String(stdout)) as { path: string | null; security: string | null };
 

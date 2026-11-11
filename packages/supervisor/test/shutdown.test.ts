@@ -1,3 +1,4 @@
+import type { ReapMarkerDirectoryResult } from '@momonga/foundation';
 import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
@@ -55,7 +56,7 @@ describe('childCloseBudgetMs', () => {
     expect(childCloseBudgetMs('runtime', 'term', DEFAULT_STOP_VALUES)).toBe(RUNTIME_TERM_BOUND);
     expect(childCloseBudgetMs('gateway', 'term', DEFAULT_STOP_VALUES)).toBe(GATEWAY_TERM_BOUND);
     expect(childCloseBudgetMs('runtime', 'int', DEFAULT_STOP_VALUES)).toBe(RUNTIME_INT_BOUND);
-    expect(childCloseBudgetMs('runtime', 'int', DEFAULT_STOP_VALUES)).toBe(39_125);
+    expect(childCloseBudgetMs('runtime', 'int', DEFAULT_STOP_VALUES)).toBe(39_175);
     expect(childCloseBudgetMs('gateway', 'int', DEFAULT_STOP_VALUES)).toBe(27_075);
   });
 });
@@ -542,15 +543,15 @@ describe('shutdown and settings changes', () => {
 });
 
 describe('shutdown during the orphan reap', () => {
-  const inPhase2 = (onReap: (options: ReapMarkerDirectoryOptions) => Promise<{ reaped: number; kept: number }>): HarnessOptions => ({
+  const inPhase2 = (onReap: (options: ReapMarkerDirectoryOptions) => Promise<ReapMarkerDirectoryResult>): HarnessOptions => ({
     prepare: (_home, paths) => void writeMarker(paths, 'runtime-old'),
     markerPorts: { findHolders: async () => [999_999], reapMarkerDirectory: onReap },
   });
 
-  const untilAborted = (options: ReapMarkerDirectoryOptions, seen: { aborted?: boolean }): Promise<{ reaped: number; kept: number }> => {
+  const untilAborted = (options: ReapMarkerDirectoryOptions, seen: { aborted?: boolean }): Promise<ReapMarkerDirectoryResult> => {
     seen.aborted = options.signal?.aborted ?? true;
     return new Promise((resolve) => {
-      options.signal?.addEventListener('abort', () => resolve({ reaped: 1, kept: 0 }), { once: true });
+      options.signal?.addEventListener('abort', () => resolve({ reaped: 1, kept: 0, unreaped: [] }), { once: true });
     });
   };
 
@@ -579,7 +580,7 @@ describe('shutdown during the orphan reap', () => {
       ...inPhase2(async (options) => {
         await new Promise<void>((resolve) => options.signal?.addEventListener('abort', () => resolve(), { once: true }));
         if (options.timing !== undefined) await sleep(options.timing, options.killGraceMs);
-        return { reaped: 0, kept: 1 };
+        return { reaped: 0, kept: 1, unreaped: [] };
       }),
     });
     await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, maxMs: 5000 });
@@ -612,7 +613,7 @@ describe('shutdown during the orphan reap', () => {
   it('a shutdown trigger between ready and the first launch step spawns nothing', async (context) => {
     const h = await startHarness(context, {
       markerPorts: {
-        reapMarkerDirectory: (options) => new Promise((resolve) => options.signal?.addEventListener('abort', () => resolve({ reaped: 0, kept: 0 }), { once: true })),
+        reapMarkerDirectory: (options) => new Promise((resolve) => options.signal?.addEventListener('abort', () => resolve({ reaped: 0, kept: 0, unreaped: [] }), { once: true })),
       },
     });
     const closing = h.supervisor.close();

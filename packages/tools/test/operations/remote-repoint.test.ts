@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { EMPTY_GLOB_TABLE, computeFileRules, decide, settleGlobs, askedBy } from '@momonga/policy';
-import { discoverGitConfigFiles, protectedSetFor, ruleEnforcementOf, momongaLayout } from '@momonga/foundation';
+import { createGitConfigDiscovery, protectedSetFor, ruleEnforcementOf, momongaLayout } from '@momonga/foundation';
 import { TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED, testSecretLocations } from '@momonga/testkit';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { buildSandboxPolicy, createPolicyFilesystem } from '@momonga/tools';
@@ -95,7 +95,7 @@ describe.skipIf(!HAS_REAL_SANDBOX)('repointing the remote when the workspace roo
     const tmpDir = path.join(workspace.base, 'sessions', 'session-1');
     for (const directory of [tmpDir, path.join(workspace.base, 'sandbox-tmp')]) fs.mkdirSync(directory, { recursive: true });
     const filesystem = createPolicyFilesystem();
-    const gitConfigFiles = await discoverGitConfigFiles({ workingDirectory: project, env, signal: new AbortController().signal });
+    const gitConfigFiles = await createGitConfigDiscovery().discover({ workingDirectory: project, env, signal: new AbortController().signal });
     const protectedSet = await protectedSetFor(roots, askedBy(filesystem, NEVER_CANCELLED), gitConfigFiles);
     const fileRules = await computeFileRules([], roots, tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes());
     const policy = await buildSandboxPolicy({ layout: momongaLayout(home, process.platform, process.env), roots, home, tmpDir, sessionsTmpRoot: path.join(workspace.base, 'sessions'), fileRules, protectedSet, network: 'deny' }, NEVER_CANCELLED);

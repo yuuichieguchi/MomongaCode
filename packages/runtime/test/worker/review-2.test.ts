@@ -1,5 +1,5 @@
 import { nodeFileSystem, systemRandom } from '@momonga/foundation';
-import { UNCONFIGURED_NETWORK, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, testProcessInspector } from '@momonga/testkit';
+import { unconfiguredNetworkOf, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, testProcessInspector } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
 import type { GatewayPort } from '@momonga/runtime';
@@ -61,7 +61,7 @@ describe('worker cancel recovery with a hanging reconcile', () => {
     reap: { inspector: testProcessInspector() },
     shellHost: nodeShellHost(),
     random: systemRandom,
-    files: nodeFileSystem, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
+    files: nodeFileSystem, outboundNetwork: unconfiguredNetworkOf, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
       idempotency: env.store.idempotency,
       blobs: env.store.blobs,
       clock: env.clock,

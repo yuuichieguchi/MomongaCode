@@ -1,6 +1,6 @@
 import type { RuleVerdictStore } from './rule-verdicts.ts';
 import type { Stored, UNKNOWN_VALUE } from './rows.ts';
-import type { Clock, FileSystem, Random, Redactor, KernelLockMechanism } from '@momonga/foundation';
+import type { Clock, FileSystem, Random, Redactor, KernelLockMechanism, SandboxNetworkSetting } from '@momonga/foundation';
 import type { CANCEL_ORIGINS } from './transitions.ts';
 import type { PermissionReviewsStore } from './permission-reviews.ts';
 import type { InheritPlanReply, InheritPlanRequest, InheritedWindowReply, InheritedWindowRequest } from './inherit-reference.ts';
@@ -64,6 +64,7 @@ export type Session = {
   permissionMode: Stored<PermissionMode>;
   model: string;
   bypassAllowed: boolean;
+  sandboxNetwork: SandboxNetworkSetting | null;
   additionalDirectories: readonly string[];
   mcpServers: SessionMcpServers;
   createdAt: number;
@@ -81,6 +82,7 @@ export type CreateSessionInput = {
   permissionMode: PermissionMode;
   model: string;
   bypassAllowed?: boolean;
+  sandboxNetwork?: SandboxNetworkSetting;
   additionalDirectories?: readonly string[];
   mcpServers?: SessionMcpServers;
 };
