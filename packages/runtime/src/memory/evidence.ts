@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { lexicallyWithin, resolveToolPath } from '@momonga/foundation';
+import { containsByComponents, lexicallyWithin } from '@momonga/foundation';
 import { EvidenceOutsideRootError, EvidenceUnreadableError } from '@momonga/memory';
 import type { EvidencePorts } from '@momonga/memory';
 import type { MemoryEvidence, MemoryScope } from '@momonga/protocol';
@@ -121,10 +121,13 @@ export const runFactsOf = (runId: string, reply: EvidenceReply): BoundFacts => (
   check: reply.check === null ? null : { kind: 'check', runId, ...reply.check },
 });
 
+export const memoryPathOf = (paths: path.PlatformPath, project: string, resolved: string): string => paths.relative(project, resolved).split(paths.sep).join('/');
+
 export type BindMemoryEvidenceInput = {
   scope: MemoryScope;
   paths: readonly string[];
   project: string | null;
+  platform: NodeJS.Platform;
   trusted: boolean;
   facts(paths: readonly string[]): Promise<BoundFacts>;
   head(): Promise<string | undefined>;
@@ -137,16 +140,17 @@ export const bindMemoryEvidence = async (input: BindMemoryEvidenceInput): Promis
   }
   const { project } = input;
   if (project === null) throw new Error('a project memory is bound to a project');
-  const resolvedPaths = input.paths.map((given) => resolveToolPath(project, given));
+  const paths = input.platform === 'win32' ? path.win32 : path.posix;
+  const resolvedPaths = input.paths.map((given) => paths.resolve(project, given));
   const facts = await input.facts(resolvedPaths);
   const bound = new Map<string, MemoryEvidence>();
   for (const [index, given] of input.paths.entries()) {
     const resolved = resolvedPaths[index];
     const recorded = facts.recorded[index];
     if (resolved === undefined || recorded === undefined) throw new Error(`the journal thread answered ${facts.recorded.length} recorded hashes for ${input.paths.length} paths`);
-    if (!lexicallyWithin(resolved, project)) throw new MemoryEvidenceError(`${given} is outside the project, so a note cannot be bound to it`);
+    if (!containsByComponents({ existing: project, tail: [] }, { existing: resolved, tail: [] }, false, paths)) throw new MemoryEvidenceError(`${given} is outside the project, so a note cannot be bound to it`);
     if (recorded === null) throw new MemoryEvidenceError(`${given} was not read or written in this run, so a note cannot be bound to it. Read the file first.`);
-    bound.set(resolved, { kind: 'file', project, path: path.relative(project, resolved), sha256: recorded.sha256 });
+    bound.set(resolved, { kind: 'file', project, path: memoryPathOf(paths, project, resolved), sha256: recorded.sha256 });
   }
   const commit = input.trusted ? await input.head() : undefined;
   const { check } = facts;

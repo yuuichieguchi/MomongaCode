@@ -115,6 +115,7 @@ export const createFakeInstructions = (): FakeInstructions => {
   return {
     files,
     reads,
+    platform: process.platform,
     contains: (directory, candidate) => testPaths().comparableContains(directory, candidate),
     read: async (filePath) => {
       reads.push(filePath);
