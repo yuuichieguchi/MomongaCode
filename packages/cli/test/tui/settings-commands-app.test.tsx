@@ -198,7 +198,7 @@ describe('/permissions', () => {
 });
 
 describe('/hooks', () => {
-  it('lists the hooks by event with matcher, command and file, and adds, edits and removes one', async () => {
+  it('lists the hooks by event with matcher, command and file, and adds and edits one', async () => {
     const place = freshPlace();
     writeSettings(place.projectFile, { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'say done', timeout: 5 }] }] } });
     const started = await startAt(place);
@@ -231,8 +231,14 @@ describe('/hooks', () => {
     await press(started, KEYS.enter, HOOK_TIMEOUT_TITLE);
     await press(started, KEYS.enter, 'PreToolUse  Bash  echo checked twice  timeout 30  user');
     expect(stored(place.userFile)).toEqual({ hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo checked twice', timeout: 30 }] }] } });
-    const stop = /(\d)\. Stop {2}\*/.exec(await untilFrame(started.app, 'Stop  *'))?.[1] ?? '';
-    await press(started, stop, `› ${stop}. Stop`);
+    started.app.unmount();
+  });
+
+  it('removes a hook only after the question is answered Yes', async () => {
+    const place = freshPlace();
+    writeSettings(place.projectFile, { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'say done', timeout: 5 }] }] } });
+    const started = await startAt(place);
+    await command(started, '/hooks', HOOKS_TITLE);
     await press(started, KEYS.delete, (frame) => frame.includes('Remove') && frame.includes('say done') && frame.includes('› 1. No'));
     await press(started, '2', '› 2. Yes');
     await press(started, KEYS.enter, (frame) => frame.includes(HOOKS_TITLE) && !frame.includes('say done'));
