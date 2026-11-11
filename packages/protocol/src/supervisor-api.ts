@@ -41,7 +41,7 @@ export type SupervisorChildHealth = {
   nextAttemptAt?: string;
   lastExit?: { code: number | null; signal: string | null; at: string; reason: SupervisorExitReason };
   heldReason?: string;
-  external?: { pid?: number; probe: 'pending' | 'healthy' | 'unhealthy' | 'unreachable' };
+  external?: { pid?: number; probe: 'pending' | 'healthy' | 'unhealthy' | 'unresponsive' | 'unreachable' };
 };
 
 export type SupervisorHealth = {
