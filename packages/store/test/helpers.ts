@@ -3,12 +3,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
-import { canonicalJson, openDatabase, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, openDatabase, sha256Hex, systemRandom, nodeFileSystem } from '@momonga/foundation';
 import type { RunEventPayload } from '@momonga/protocol';
 import { JournalThreadError, createJournalReader, openRuntimeStore } from '@momonga/store';
 import type { Claim, ContributionPreparer, HistoryQueryResult, Run, RuntimeStore, RuntimeStoreOptions, TerminalContribution } from '@momonga/store';
-import { createFakeClock } from '@momonga/testkit';
-import type { FakeClock } from '@momonga/testkit';
+import { NEVER_CANCELLED, createFakeClock } from '@momonga/testkit';
+import type { FakeClock, SettledBeforeCleanup } from '@momonga/testkit';
 import { UNASKED_COMMANDS } from './support/unasked.ts';
 
 export { UNASKED_COMMANDS };
@@ -44,13 +44,14 @@ export type StoreOptions = {
   home?: string;
   generation?: number;
   unaskedCommands?: RuntimeStoreOptions['unaskedCommands'];
+  fileSystem?: RuntimeStoreOptions['fileSystem'];
 };
 
 const unexercised = (): Promise<never> => Promise.reject(new JournalThreadError('this store test double answers no journal facts'));
 
 export const noJournalFacts = { inheritPlan: unexercised, inheritedWindow: unexercised, verdict: unexercised, evidence: unexercised, reflectionInput: unexercised, fidelity: unexercised, report: unexercised };
 
-const readerReply = <T,>(dbPath: string, read: (reader: ReturnType<typeof createJournalReader>) => T): T => {
+const readerReply = <T,>(dbPath: string, read: (reader: ReturnType<typeof createJournalReader>) => SettledBeforeCleanup<T>): T => {
   const db = openDatabase(dbPath);
   try {
     return read(createJournalReader(db));
@@ -96,7 +97,7 @@ export const hookPreparer = (hook: TerminalContribution, dbPath: string): Contri
 });
 
 export const openStoreAt =(dbPath: string, clock: FakeClock, options: StoreOptions = {}): RuntimeStore => {
-  const store = openRuntimeStore({
+  const store = openRuntimeStore({ fileSystem: options.fileSystem ?? nodeFileSystem, random: systemRandom,
     unaskedCommands: options.unaskedCommands ?? UNASKED_COMMANDS,
     path: dbPath,
     home: options.home ?? path.dirname(dbPath),
@@ -134,14 +135,19 @@ export const rawDb = (dbPath: string): DatabaseSync => {
   return db;
 };
 
+export const exactTrustOf = async (store: RuntimeStore, target: string): Promise<Awaited<ReturnType<RuntimeStore['trust']['decisionAsked']>>['decision']> => {
+  const answer = await store.trust.decisionAsked(target, NEVER_CANCELLED);
+  return answer.inheritedFrom === undefined ? answer.decision : null;
+};
+
 export const newSession = (store: RuntimeStore, cwd = '/work/a') =>
   store.createSession({ cwd, env: { PATH: '/usr/bin' }, permissionMode: 'manual', model: 'fm' });
 
 export const TIMEOUT_MS = 3_600_000;
 export const DEADLINE_MS = START_MS + TIMEOUT_MS;
 
-export const enqueue = (store: RuntimeStore, sessionId: string, input = 'hello', idempotencyKey?: string): Run => {
-  const result = store.createRunAndEnqueue(sessionId, {
+export const enqueue = async (store: RuntimeStore, sessionId: string, input = 'hello', idempotencyKey?: string): Promise<Run> => {
+  const result = await store.createRunAndEnqueue(sessionId, {
     input,
     ...(idempotencyKey === undefined ? {} : { idempotencyKey, requestDigest: sha256Hex(canonicalJson({ input })) }),
     timeoutMs: TIMEOUT_MS,

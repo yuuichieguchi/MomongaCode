@@ -5,9 +5,9 @@ import { vi } from 'vitest';
 import { FIRST_GENERATION, SWEEP_INTERVAL_MS, createGivenSecretStore, createUdsClient, fixedSocket, generationLayout, momongaPaths, secretStoreEnvFor } from '@momonga/foundation';
 import type { SecretProcessPort, SecretStore, UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { killPidsForCleanup, modelSettings, FAKE_KEYCHAIN_PATH, createFakeSecretFiles, createTempDir, prepareGenerationForTest, removeTempDir } from '@momonga/testkit';
+import { killPidsForCleanup, modelSettings, FAKE_KEYCHAIN_PATH, createFakeSecretFiles, createTempDir, prepareGenerationForTest, removeTempDir, registerOwned } from '@momonga/testkit';
 import type { ModelSettings, FakeSecurityPort, PendingTimer } from '@momonga/testkit';
-import { registerCleanup, closedAtCleanup } from './gateway-helpers.ts';
+import { registerCleanup } from './gateway-helpers.ts';
 
 export const PROCESS_VERSION = '1.10.0-test';
 export const MINIMAL_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
@@ -119,11 +119,7 @@ export const captureStdout = (): StdoutCapture => {
 };
 
 export const launchGateway = async (options: GatewayProcessOptions): Promise<GatewayProcessHandle> => {
-  const handle = await closedAtCleanup(startGatewayProcess(options));
-  registerCleanup(async () => {
-    await handle.close();
-  });
-  return handle;
+  return registerOwned(registerCleanup, () => startGatewayProcess(options));
 };
 
 export const clientFor = (socketPath: string): UdsClient => {

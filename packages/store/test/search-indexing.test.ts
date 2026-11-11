@@ -33,7 +33,7 @@ describe('search indexing', () => {
 
   it('skips runs that have not ended', async () => {
     const { store, dbPath } = harness();
-    const { run } = openRun(store, '/work/a', 'running', [STEP]);
+    const { run } = await openRun(store, '/work/a', 'running', [STEP]);
     expect(await store.search.indexBatch({ limit: 10, redactor })).toEqual({ runs: 0 });
     expect(docCountOf(dbPath, run.id)).toBe(0);
   });
@@ -48,7 +48,7 @@ describe('search indexing', () => {
   it('indexes a run that was queued and cancelled before any worker claimed it', async () => {
     const { store, dbPath } = harness();
     const session = store.createSession({ cwd: '/work/a', env: {}, permissionMode: 'manual', model: 'fm' });
-    const created = store.createRunAndEnqueue(session.id, { input: 'never started', timeoutMs: 1000, limits: {}, pins: {} });
+    const created = await store.createRunAndEnqueue(session.id, { input: 'never started', timeoutMs: 1000, limits: {}, pins: {} });
     if (created.kind !== 'created') throw new Error(created.kind);
     await store.requestCancel(created.run.id);
     expect(await store.finishCancelled(() => undefined)).toEqual([created.run.id]);
@@ -68,7 +68,7 @@ describe('search indexing', () => {
 
   it('still indexes a run that started before others and ended after the cursor passed them', async () => {
     const { store, dbPath } = harness();
-    const late = openRun(store, '/work/a', 'slow', [STEP]);
+    const late = await openRun(store, '/work/a', 'slow', [STEP]);
     const quick = await finishedRun(store, '/work/b', 'quick', [STEP]);
     await store.search.indexBatch({ limit: 10, redactor });
     expect(indexedRuns(dbPath)).toEqual([quick.id]);

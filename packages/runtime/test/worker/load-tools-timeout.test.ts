@@ -3,7 +3,8 @@ import type { ResolvedContextSettings } from '@momonga/config';
 import { TOOL_USAGE_WINDOW_RUNS } from '@momonga/memory';
 import type { FunctionTool } from '@momonga/protocol';
 import type { AnyTool } from '@momonga/tools';
-import { deferred, waitUntil, within } from './deferred.ts';
+import { pollUntil } from '@momonga/testkit';
+import { deferred } from './deferred.ts';
 import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
@@ -11,6 +12,7 @@ import { callsStep, textStep } from './scripts.ts';
 const LOADER = 'LoadTools';
 const WORK_TOOLS = ['Echo', 'Counter', 'Write'];
 const TOOL_TIMER_MS = 300;
+const TOOL_EXECUTOR_REAL_TIMER_BOUND_MS = 20_000;
 const SLOW_TEST_MS = 60_000;
 
 const toolsOf = (body: unknown): FunctionTool[] => (body as { tools?: FunctionTool[] }).tools ?? [];
@@ -25,7 +27,7 @@ const deferralEnv = async (context: Partial<ResolvedContextSettings> = {}): Prom
   const warm = env.worker('warm', { toolList: workToolsOf(env) });
   for (let index = 0; index < TOOL_USAGE_WINDOW_RUNS; index += 1) {
     env.gateway.script.push(callsStep([{ callId: `warm-${index}`, name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
-    const run = env.enqueue(`warm ${index}`, { history: 'fresh' });
+    const run = await env.enqueue(`warm ${index}`, { history: 'fresh' });
     await env.runOnce(warm);
     expect(env.run(run.id).status).toBe('COMPLETED');
   }
@@ -48,14 +50,14 @@ const runWithTimedOutAdmission = async (env: Env) => {
     callsStep([{ callId: 'echo-1', name: 'Echo', args: { value: 'after' } }]),
     textStep('Done.'),
   );
-  const run = env.enqueue('Use the tools', { history: 'fresh', deadlineAt: env.clock.now() + TOOL_TIMER_MS });
+  const run = await env.enqueue('Use the tools', { history: 'fresh', deadlineAt: env.clock.now() + TOOL_TIMER_MS });
   const running = env.runOnce(env.worker('main', { toolList: workToolsOf(env) }));
-  await waitUntil(() => loaderCallIds(env, run.id).length >= 1 && env.ofType(run.id, 'tool.reconciled').some((event) => event.callId === loaderCallIds(env, run.id)[0]), 20_000, 'the first LoadTools to end by its timer');
+  await pollUntil(() => loaderCallIds(env, run.id).length >= 1 && env.ofType(run.id, 'tool.reconciled').some((event) => event.callId === loaderCallIds(env, run.id)[0]), { description: 'the first LoadTools to end by the real timer of the tool executor', boundMs: TOOL_EXECUTOR_REAL_TIMER_BOUND_MS });
   admissionGate.resolve();
-  await within(running, 20_000, 'the run to finish');
+  await running;
   const [first, second] = loaderCallIds(env, run.id);
-  const completed = (callId: string | undefined) => env.ofType(run.id, 'tool.completed').find((event) => event.callId === callId);
-  return { run, gated: () => gated, first: env.ofType(run.id, 'tool.reconciled').find((event) => event.callId === first), second: completed(second), requests: env.ofType(run.id, 'model.requested') };
+  const completed = async (callId: string | undefined) => env.ofType(run.id, 'tool.completed').find((event) => event.callId === callId);
+  return { run, gated: () => gated, first: env.ofType(run.id, 'tool.reconciled').find((event) => event.callId === first), second: await completed(second), requests: env.ofType(run.id, 'model.requested') };
 };
 
 describe('a tool is loaded exactly when tool.loaded is journaled (review H3)', () => {

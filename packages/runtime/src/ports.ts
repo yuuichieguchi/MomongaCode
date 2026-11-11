@@ -55,7 +55,7 @@ export type SettingsPort = {
   tools(session: Session): Promise<ResolvedToolsSettings>;
   autoModeClassifier(): string | undefined;
   appendRule(session: Session, entry: AppendedRule, signal: AbortSignal): Promise<void>;
-  trusted(session: Session): boolean;
+  trusted(session: Session): Promise<boolean>;
 };
 
 export type AttachTerms = { ceiling: number; imageInput: boolean; signal: AbortSignal };
@@ -90,13 +90,13 @@ export type MemoryPort = {
 export type GovernanceSet = { tools: readonly AnyTool[] };
 
 export type GovernancePort = {
-  load(session: Session): GovernanceSet;
+  load(session: Session): Promise<GovernanceSet>;
 };
 
 export type HistorySet = { tools: readonly AnyTool[] };
 
 export type HistoryPort = {
-  load(session: Session): HistorySet;
+  load(session: Session): Promise<HistorySet>;
 };
 
 export type AgentCatalogPort = { load(session: Session): Promise<AgentSet> };

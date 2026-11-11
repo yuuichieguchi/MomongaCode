@@ -79,12 +79,14 @@ describe('messageOf: one builder per message, which names the command of the sur
       sessionAmbiguous: (surface) => messageOf('sessionAmbiguous', surface, { id: 'i', matches: ['i1', 'i2'] }),
       sessionInOtherFolder: (surface) => messageOf('sessionInOtherFolder', surface, { id: 'i', folder: '/f' }),
       noSessionToContinue: (surface) => messageOf('noSessionToContinue', surface, { folder: '/f' }),
+      notAnId: (surface) => messageOf('notAnId', surface, { value: '..' }),
       handoverFailed: (surface) => messageOf('handoverFailed', surface, { toVersion: '2', fromVersion: '1', reason: 'r', kept: { kind: 'run', runId: 'r1' } }),
       restoreRefused: (surface) => messageOf('restoreRefused', surface, { reason: 'r', kept: { kind: 'unnamed' } }),
       aboutModel: (surface) => messageOf('aboutModel', surface, { model: 'fm/system', text: 'the server was stopped' }),
       modelNotReady: (surface) => messageOf('modelNotReady', surface, { model: 'fm/system', reason: 'the executable is missing' }),
       modelIdChanged: (surface) => messageOf('modelIdChanged', surface, { server: 'fm', model: 'fm/system', listed: 'renamed', entry: 'system' }),
       serverSocketPathTooLong: (surface) => messageOf('serverSocketPathTooLong', surface, { model: 'fm/system', byteLength: 105, directory: '/run/g1', code: 'EINVAL' }),
+      serverFormNotOffered: (surface) => messageOf('serverFormNotOffered', surface, { server: 'loom', platform: 'win32', accepted: ['unix'], offered: ['pipe'] }),
     };
     expect(MESSAGE_KEYS.flatMap((key) => SURFACES.flatMap((surface) => bannedVariantsIn(samples[key](surface)).map((use) => `${key} on ${surface}: ${use.variant}`)))).toEqual([]);
   });

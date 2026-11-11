@@ -51,7 +51,7 @@ describe('the verdict of the permission rules before a run', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.ruleVerifier.answer = () => refuted;
     env.gateway.script.push(textStep('Hello.'));
-    const run = env.enqueue('Say hello');
+    const run = await env.enqueue('Say hello');
 
     await env.runOnce(env.worker());
 
@@ -67,7 +67,7 @@ describe('the verdict of the permission rules before a run', () => {
     const env = await makeEnv();
     env.ruleVerifier.answer = () => ({ ...refuted, refuted: [{ property, subject: 'a rule', message: 'what the protection forbids' }] });
     env.gateway.script.push(textStep('Hello.'));
-    const run = env.enqueue('Say hello');
+    const run = await env.enqueue('Say hello');
 
     await env.runOnce(env.worker());
 
@@ -79,7 +79,7 @@ describe('the verdict of the permission rules before a run', () => {
     const env = await makeEnv();
     env.ruleVerifier.answer = () => refutedWithoutRefusal;
     env.gateway.script.push(textStep('Hello.'));
-    const run = env.enqueue('Say hello');
+    const run = await env.enqueue('Say hello');
 
     await env.runOnce(env.worker());
 
@@ -90,7 +90,7 @@ describe('the verdict of the permission rules before a run', () => {
   it('a proved rule set starts the run, and run.started pins the verdict with its fingerprint and what is not proved', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Hello.'));
-    const run = env.enqueue('Say hello');
+    const run = await env.enqueue('Say hello');
 
     await env.runOnce(env.worker());
 
@@ -104,7 +104,7 @@ describe('the verdict of the permission rules before a run', () => {
     env.settings.extraRules.push({ effect: 'deny', rule: 'Read(.env)' }, { effect: 'ask', rule: 'Write' });
     env.ruleVerifier.answer = () => new Promise<RuleVerdict>(() => undefined);
     env.gateway.script.push(textStep('Hello.'));
-    const run = env.enqueue('Say hello');
+    const run = await env.enqueue('Say hello');
 
     await env.runOnce(env.worker());
 
@@ -123,7 +123,7 @@ describe('the verdict of the permission rules before a run', () => {
       return answered.promise;
     };
     env.gateway.script.push(textStep('Hello.'));
-    const run = env.enqueue('Say hello');
+    const run = await env.enqueue('Say hello');
     const running = env.runOnce(env.worker());
     await asked.promise;
     expect(env.ofType(run.id, 'model.requested')).toEqual([]);
@@ -138,7 +138,7 @@ describe('the verdict of the permission rules before a run', () => {
   it('a rule set that loses its last allow rule during the run is noticed once as needing no verdict, at level info', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.gateway.script.push(callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'one' } }]), textStep('Echoed.'));
-    const run = env.enqueue('Echo');
+    const run = await env.enqueue('Echo');
     env.settings.rulesHook = async (read) => {
       if (read === 2) env.settings.extraRules.splice(0);
     };
@@ -153,7 +153,7 @@ describe('the verdict of the permission rules before a run', () => {
   it('the verified subject names the scratch folder the session exempts from the file rules, so the proof models what the run does', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Hello.'));
-    env.enqueue('Say hello');
+    await env.enqueue('Say hello');
 
     await env.runOnce(env.worker());
 
@@ -163,9 +163,9 @@ describe('the verdict of the permission rules before a run', () => {
   it('a second run with the same input reads the stored verdict and does not call the verifier', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('One.'), textStep('Two.'));
-    const first = env.enqueue('Say one');
+    const first = await env.enqueue('Say one');
     await env.runOnce(env.worker('worker-1'));
-    const second = env.enqueue('Say two');
+    const second = await env.enqueue('Say two');
 
     await env.runOnce(env.worker('worker-2'));
 
@@ -178,7 +178,7 @@ describe('the verdict of the permission rules before a run', () => {
     const env = await makeEnv();
     env.ruleVerifier.answer = () => unknown;
     env.gateway.script.push(textStep('Hello.'));
-    const run = env.enqueue('Say hello');
+    const run = await env.enqueue('Say hello');
 
     await env.runOnce(env.worker());
 
@@ -192,11 +192,11 @@ describe('the verdict of the permission rules before a run', () => {
     const answers: Array<RuleVerdict | Promise<RuleVerdict>> = [unknown, retried.promise];
     env.ruleVerifier.answer = () => answers.shift() ?? proved;
     env.gateway.script.push(textStep('One.'), textStep('Two.'), textStep('Three.'));
-    const first = env.enqueue('Say one');
+    const first = await env.enqueue('Say one');
     await env.runOnce(env.worker('worker-1'));
     expect(storedVerdicts(env, first.id)).toBeUndefined();
 
-    const second = env.enqueue('Say two');
+    const second = await env.enqueue('Say two');
     await env.runOnce(env.worker('worker-2'));
 
     expect(env.run(second.id).status).toBe('COMPLETED');
@@ -206,7 +206,7 @@ describe('the verdict of the permission rules before a run', () => {
 
     retried.resolve(proved);
     await vi.waitFor(() => expect(storedVerdicts(env, second.id)?.verdict).toEqual(proved));
-    const third = env.enqueue('Say three');
+    const third = await env.enqueue('Say three');
     await env.runOnce(env.worker('worker-3'));
     expect(env.ofType(third.id, 'run.started')[0]?.pins['policyVerdict']).toMatchObject({ verdict: 'proved' });
     expect(env.ruleVerifier.verified).toHaveLength(2);
@@ -219,7 +219,7 @@ describe('the verdict of the permission rules before a run', () => {
     env.ruleVerifier.answer = () => answers.shift() ?? proved;
     env.gateway.script.push(textStep('One.'), textStep('Two.'), textStep('Three.'));
     for (const [index, prompt] of ['Say one', 'Say two', 'Say three'].entries()) {
-      env.enqueue(prompt);
+      await env.enqueue(prompt);
       await env.runOnce(env.worker(`worker-${index}`));
     }
     expect(env.ruleVerifier.verified).toHaveLength(2);
@@ -231,7 +231,7 @@ describe('the verdict of the permission rules before a run', () => {
     const env = await makeEnv();
     env.ruleVerifier.answer = () => failed;
     env.gateway.script.push(textStep('Hello.'));
-    const run = env.enqueue('Say hello');
+    const run = await env.enqueue('Say hello');
 
     await env.runOnce(env.worker());
 
@@ -254,7 +254,7 @@ describe('the verdict of the permission rules before a run', () => {
       return new Promise<RuleVerdict>((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason)));
     };
     env.gateway.script.push(textStep('Hello.'));
-    const run = env.enqueue('Say hello');
+    const run = await env.enqueue('Say hello');
     const stopped = env.worker('worker-1');
     const running = env.runOnce(stopped);
     await verifying;
@@ -273,7 +273,7 @@ describe('the verdict of the permission rules before a run', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.ruleVerifier.answer = (input: unknown) => (JSON.stringify(input).includes('.env') ? refuted : proved);
     env.gateway.script.push(callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'one' } }]), textStep('Echoed.'));
-    const run = env.enqueue('Echo');
+    const run = await env.enqueue('Echo');
     env.settings.rulesHook = async (read) => {
       if (read === 2 && !env.settings.extraRules.some((entry) => entry.rule === 'Read(.env)')) env.settings.extraRules.push({ effect: 'allow', rule: 'Read(.env)' });
     };
@@ -298,7 +298,7 @@ describe('the verdict of the permission rules before a run', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.ruleVerifier.answer = (input: unknown) => (JSON.stringify(input).includes('secret.txt') ? verdict : proved);
     env.gateway.script.push(callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'one' } }]), textStep('Echoed.'));
-    const run = env.enqueue('Echo');
+    const run = await env.enqueue('Echo');
     env.settings.rulesHook = async (read) => {
       if (read === 2) env.settings.extraRules.push({ effect: 'deny', rule: `Read(${path.join(env.project, 'secret.txt')})` });
     };
@@ -312,7 +312,7 @@ describe('the verdict of the permission rules before a run', () => {
   it('a changed rule set that proves clean lets the batch run, with one notice of its verdict, and an unchanged one writes no notice', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.gateway.script.push(callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'one' } }]), callsStep([{ callId: 'call_e_2', name: 'Echo', args: { value: 'two' } }]), textStep('Echoed.'));
-    const run = env.enqueue('Echo');
+    const run = await env.enqueue('Echo');
     env.settings.rulesHook = async (read) => {
       if (read === 2) env.settings.extraRules.push({ effect: 'deny', rule: `Read(${path.join(env.project, 'secret.txt')})` });
     };

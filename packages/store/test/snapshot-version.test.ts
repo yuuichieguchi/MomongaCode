@@ -36,9 +36,9 @@ const INHERITED = inheritedEvent({
   mode: 'plan',
 });
 
-const storedSnapshot = (leading: readonly RunEventPayload[] = []) => {
+const storedSnapshot = async (leading: readonly RunEventPayload[] = []) => {
   const { dbPath, store } = harness();
-  const run = enqueue(store, newSession(store).id, 'continue the work');
+  const run = await enqueue(store, newSession(store).id, 'continue the work');
   const claim = mustClaim(store, 'w1');
   expect(store.append(claim, [...leading, ...journal]).kind).toBe('ok');
   const events: RunEvent[] = store.readRunEvents(run.id, 0, 1000);
@@ -59,19 +59,19 @@ const CALL: RunEventPayload = { type: 'tool.call', callId: 'c1', providerCallId:
 const classifiedWithoutDigest = { type: 'tool.permission.classified', callId: 'c1', outcome: 'allow' } as unknown as RunEventPayload;
 
 describe('snapshot state version 11', () => {
-  it('writes the current stateVersion', () => {
-    const { storedJson } = storedSnapshot();
+  it('writes the current stateVersion', async () => {
+    const { storedJson } = await storedSnapshot();
     expect(storedJson()['stateVersion']).toBe(SNAPSHOT_STATE_VERSION);
   });
 
-  it('reports a snapshot without the working facts as corrupt', () => {
-    const { store, run, mutate } = storedSnapshot();
+  it('reports a snapshot without the working facts as corrupt', async () => {
+    const { store, run, mutate } = await storedSnapshot();
     mutate("json_remove(state_json, '$.workingFacts')");
     expect(() => store.load(run.id)).toThrow(/corrupt/);
   });
 
-  it('treats a version 9 snapshot as absent and rebuilds it from the journal', () => {
-    const { store, run, state, events, mutate } = storedSnapshot();
+  it('treats a version 9 snapshot as absent and rebuilds it from the journal', async () => {
+    const { store, run, state, events, mutate } = await storedSnapshot();
     mutate("json_set(state_json, '$.stateVersion', 9)");
     const loaded = store.load(run.id);
     expect(loaded.snapshot).toBeUndefined();
@@ -79,8 +79,8 @@ describe('snapshot state version 11', () => {
     expect(loaded.tail.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }) as RunState)).toEqual(state);
   });
 
-  it('treats a version 15 snapshot, the last that carried the touched list, as absent and rebuilds a state without it', () => {
-    const { store, run, state, events, mutate } = storedSnapshot();
+  it('treats a version 15 snapshot, the last that carried the touched list, as absent and rebuilds a state without it', async () => {
+    const { store, run, state, events, mutate } = await storedSnapshot();
     mutate("json_set(json_set(state_json, '$.stateVersion', 15), '$.workingFacts.touched', json('[{\"kind\":\"file\",\"path\":\"/work/a/x.ts\"}]'))");
     const loaded = store.load(run.id);
     expect(loaded.snapshot).toBeUndefined();
@@ -90,23 +90,23 @@ describe('snapshot state version 11', () => {
     expect(loaded.tail).toEqual(events);
   });
 
-  it('folds a classification journaled without a subject digest into no classification, so the snapshot stays readable', () => {
-    const { store, run, state } = storedSnapshot([CALL, classifiedWithoutDigest]);
+  it('folds a classification journaled without a subject digest into no classification, so the snapshot stays readable', async () => {
+    const { store, run, state } = await storedSnapshot([CALL, classifiedWithoutDigest]);
     expect(state.pendingCalls['c1']).toBeDefined();
     expect(state.pendingCalls['c1']).not.toHaveProperty('classification');
     expect(store.load(run.id).snapshot?.state).toEqual(state);
   });
 
-  it('round-trips taskSeq and inherited for an inheriting run', () => {
-    const { store, run, state, storedJson } = storedSnapshot([INHERITED]);
+  it('round-trips taskSeq and inherited for an inheriting run', async () => {
+    const { store, run, state, storedJson } = await storedSnapshot([INHERITED]);
     expect(state.taskSeq).toBe(3);
     expect(state.inherited).toEqual({ fromRunId: 'run-prev', fromLastSeq: 7, digest: INHERITED.digest });
     expect(storedJson()['taskSeq']).toBe(3);
     expect(store.load(run.id).snapshot?.state).toEqual(state);
   });
 
-  it('treats a version 6 snapshot of an inheriting run as absent and replays the event from the journal', () => {
-    const { store, run, state, events, mutate } = storedSnapshot([INHERITED]);
+  it('treats a version 6 snapshot of an inheriting run as absent and replays the event from the journal', async () => {
+    const { store, run, state, events, mutate } = await storedSnapshot([INHERITED]);
     mutate("json_set(state_json, '$.stateVersion', 6)");
     const loaded = store.load(run.id);
     expect(loaded.snapshot).toBeUndefined();
@@ -114,8 +114,8 @@ describe('snapshot state version 11', () => {
     expect(loaded.tail.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }) as RunState)).toEqual(state);
   });
 
-  it('round-trips streaming with seen, the mode and a plain-message summary', () => {
-    const { store, run, state } = storedSnapshot();
+  it('round-trips streaming with seen, the mode and a plain-message summary', async () => {
+    const { store, run, state } = await storedSnapshot();
     expect(state.mode).toBe('plan');
     expect(state.streaming).toEqual({ step: 2, attempt: 1, seen: true, items: [{ itemId: 'm2', text: 'partial answer' }] });
     expect(state.summary).toEqual({ item: PLAIN, summary: 'first part', replacedThroughSeq: 3 });
@@ -124,8 +124,8 @@ describe('snapshot state version 11', () => {
     expect(loaded.snapshot?.state).toEqual(state);
   });
 
-  it('treats an otherwise valid version 6 snapshot as absent and falls back to the full fold', () => {
-    const { store, run, state, events, mutate } = storedSnapshot();
+  it('treats an otherwise valid version 6 snapshot as absent and falls back to the full fold', async () => {
+    const { store, run, state, events, mutate } = await storedSnapshot();
     mutate("json_set(state_json, '$.stateVersion', 6)");
     const loaded = store.load(run.id);
     expect(loaded.snapshot).toBeUndefined();
@@ -140,8 +140,8 @@ describe('snapshot state version 11', () => {
     ['an unknown mode', "json_set(state_json, '$.mode', 'yolo')"],
     ['a plain-message summary whose role is not user', "json_set(state_json, '$.summary.item.role', 'assistant')"],
     ['a plain-message summary without string content', "json_set(state_json, '$.summary.item.content', 3)"],
-  ])('reports a snapshot with %s as corrupt', (_label, expression) => {
-    const { store, run, mutate } = storedSnapshot();
+  ])('reports a snapshot with %s as corrupt', async (_label, expression) => {
+    const { store, run, mutate } = await storedSnapshot();
     mutate(expression);
     expect(() => store.load(run.id)).toThrow(/corrupt/);
   });
@@ -152,8 +152,8 @@ describe('snapshot state version 11', () => {
     ['an inherited record without a digest', "json_remove(state_json, '$.inherited.digest')"],
     ['an inherited record whose fromLastSeq is not an integer', "json_set(state_json, '$.inherited.fromLastSeq', 'seven')"],
     ['an inherited record whose fromRunId is not a string', "json_set(state_json, '$.inherited.fromRunId', 3)"],
-  ])('reports an inheriting snapshot with %s as corrupt', (_label, expression) => {
-    const { store, run, mutate } = storedSnapshot([INHERITED]);
+  ])('reports an inheriting snapshot with %s as corrupt', async (_label, expression) => {
+    const { store, run, mutate } = await storedSnapshot([INHERITED]);
     mutate(expression);
     expect(() => store.load(run.id)).toThrow(/corrupt/);
   });

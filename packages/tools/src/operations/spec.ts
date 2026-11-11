@@ -39,7 +39,7 @@ export type ArgvCall = { readonly argv: readonly ArgvItem[]; readonly network?: 
 export type ForgeCall = { readonly forge: ForgeOperationName; readonly args: Readonly<Record<string, string>> };
 
 export type ProbeSource =
-  | (ArgvCall & { readonly extract?: 'trim' | 'firstField'; readonly emptyOnFailure?: true; readonly each?: 'pushUrls' })
+  | (ArgvCall & { readonly extract?: 'trim' | 'firstField'; readonly emptyOnFailure?: true; readonly each?: 'destinations' })
   | (ForgeCall & { readonly shape: 'one' | 'list' | 'count'; readonly contains?: { readonly field: string; readonly value: string } });
 
 export type Probe = { readonly id: string; readonly via: ProbeSource };
@@ -145,7 +145,7 @@ const SPEC_SCHEMA = {
             oneOf: [
               {
                 type: 'object',
-                properties: { argv: ARGV, network: NETWORK, extract: { enum: ['trim', 'firstField'] }, emptyOnFailure: { const: true }, each: { const: 'pushUrls' } },
+                properties: { argv: ARGV, network: NETWORK, extract: { enum: ['trim', 'firstField'] }, emptyOnFailure: { const: true }, each: { const: 'destinations' } },
                 required: ['argv'],
                 additionalProperties: false,
               },
@@ -247,7 +247,7 @@ export const parseOperationSpec = (value: unknown): OperationSpec => {
     const sends = spec.effect !== undefined && 'argv' in spec.effect && spec.effect.network === 'destinations';
     if (!sends) throw new OperationSpecError(`${spec.name} declares the pre-push hook, which belongs only to an effect that sends to the push destinations`);
     const remoteProbe = spec.observe.find((probe) => probe.id === spec.prePush?.remoteProbe);
-    if (remoteProbe === undefined || !('argv' in remoteProbe.via) || remoteProbe.via.each !== 'pushUrls') {
+    if (remoteProbe === undefined || !('argv' in remoteProbe.via) || remoteProbe.via.each !== 'destinations') {
       throw new OperationSpecError(`${spec.name}: the pre-push hook reads the remote value from ${spec.prePush.remoteProbe}, which must be a probe that observes each push destination`);
     }
   }

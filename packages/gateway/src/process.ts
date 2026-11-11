@@ -444,7 +444,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
   const { target, description, paths } = wiring;
   const { provider } = target;
   const name = managedModelName(provider, { declared: target.model });
-  const form = requireOfferedEndpointForm(description, wiring.hostForms, wiring.connectionPlace);
+  const form = requireOfferedEndpointForm(description, { platform: wiring.platform, forms: wiring.hostForms }, wiring.connectionPlace);
   const inForm = (instance: ManagedInstancePaths): ManagedInstancePaths => ({ ...instance, socketPath: instanceSocketOf(form, instance.socketPath, wiring.home, wiring.generation) });
   const serving = inForm(managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'serve', provider, incarnation: wiring.incarnation }));
   const probing = inForm(managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'probe', provider }));

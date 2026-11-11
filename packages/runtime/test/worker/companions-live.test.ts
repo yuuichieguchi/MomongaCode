@@ -43,7 +43,7 @@ const bashDeniedEnv = async (cachePrefix: boolean): Promise<Env> => {
 describe('companions follow the session jobs live at each build unless the offer is frozen (review M2)', () => {
   it('offers the job tools from the next build of the same claim when a job starts mid-claim, with every token setting off', async () => {
     const env = await bashDeniedEnv(false);
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     env.toolbox.hooks.Echo = async () => startJob(env, run.id);
 
     await env.runOnce(env.worker('w1', { toolList: withJobTools(env) }));
@@ -56,7 +56,7 @@ describe('companions follow the session jobs live at each build unless the offer
 
   it('withdraws the job tools from the next build of the same claim when the job ends mid-claim, with every token setting off', async () => {
     const env = await bashDeniedEnv(false);
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     startJob(env, run.id);
     env.toolbox.hooks.Echo = async () => {
       env.store.jobs.finish(JOB_ID, { status: 'exited', exitCode: 0 });
@@ -72,7 +72,7 @@ describe('companions follow the session jobs live at each build unless the offer
 
   it('keeps the job state of claim start for the whole claim under cachePrefix', async () => {
     const env = await bashDeniedEnv(true);
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     env.toolbox.hooks.Echo = async () => startJob(env, run.id);
 
     await env.runOnce(env.worker('w1', { toolList: withJobTools(env) }));

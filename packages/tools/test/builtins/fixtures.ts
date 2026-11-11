@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, expect } from 'vitest';
-import { killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
+import { killGroupsForCleanup, killPidsForCleanup, pollUntil } from '@momonga/testkit';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createBuiltinTools } from '@momonga/tools';
 import type { BackgroundJobs, CallOutcome, ExecutionBatchInput, NeedsApprovalOutcome, ResultOutcome, ToolExecutorOptions, ToolSet } from '@momonga/tools';
@@ -57,12 +57,8 @@ export const isAlive = (target: number): boolean => {
 };
 
 export const waitFor = async (condition: () => boolean, timeoutMs = 5000): Promise<boolean> => {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (condition()) return true;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  return condition();
+  await pollUntil(condition, { description: 'the condition of the builtin fixture', boundMs: timeoutMs });
+  return true;
 };
 
 export const resultOf = (outcome: CallOutcome | undefined): ResultOutcome['result'] => {

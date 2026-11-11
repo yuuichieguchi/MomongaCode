@@ -243,9 +243,9 @@ const declaredFake = async () => {
   registerCleanup(() => killGroupsForCleanup(readDump(dumpFile).map((record) => record.pid)));
   const home = makeHome();
   writeSettings(home, {
-    models: modelsOf({ workbench: { adapter: 'managed', server: 'bench', model: 'fake-1', toolCalling: 'auto' } }, { servers: { bench: { command: fake.binaryPath, args: ['run', '--socket', '{socket}'], readyPath: '/ready' } } }),
+    models: modelsOf({ workbench: { adapter: 'managed', server: 'anvil', model: 'fake-1', toolCalling: 'auto' } }, { servers: { anvil: { command: fake.binaryPath, args: ['run', '--socket', '{socket}'], readyPath: '/ready' } } }),
   });
-  return { binary: fake.binaryPath, dumpFile, home, description: await descriptionIn(home, 'bench') };
+  return { binary: fake.binaryPath, dumpFile, home, description: await descriptionIn(home, 'anvil') };
 };
 
 describe('the probe of a declared server records under the key of 19.4 on the instance places of 18.2.1 (R-S19-20)', () => {
@@ -254,7 +254,7 @@ describe('the probe of a declared server records under the key of 19.4 on the in
     const handle = await launch(home);
     expect((await postJson(clientFor(handle.socketPath), '/v1/responses', ask())).status).toBe(503);
     const key = keyOf(description, binary, 'fake-1');
-    expect(JSON.parse(key.canonical)).toEqual({ subject: 'bench', model: 'fake-1', binarySha256: sha256OfFile(binary), hostOsBuild: FAKE_OS_BUILD });
+    expect(JSON.parse(key.canonical)).toEqual({ subject: 'anvil', model: 'fake-1', binarySha256: sha256OfFile(binary), hostOsBuild: FAKE_OS_BUILD });
     await until(() => recordFiles(home).includes(`${key.digest}.json`), 'the probe record');
     const probeRuns = serves(dumpFile, 'run').map((record) => record.argv[record.argv.indexOf('--socket') + 1]);
     expect(probeRuns).toContain(path.join(targetsDir(home), '_probe-workbench.sock'));

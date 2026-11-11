@@ -9,7 +9,7 @@ describe('terminalRunIdsWithCheckpoint', () => {
   it('lists cancelled runs whose pending call record holds a checkpoint, in creation order, and leaves out queued runs and runs without one', async () => {
     const { store } = harness();
     const sessionId = newSession(store).id;
-    const withCheckpoint = enqueue(store, sessionId, 'first');
+    const withCheckpoint = await enqueue(store, sessionId, 'first');
     const claim = mustClaim(store, 'w1');
     const ledger = store.idempotency.holding(claim);
     ledger.begin('a'.repeat(64), { expiresAt: EXPIRES_AT, meta: { tool: 'Ask', runId: withCheckpoint.id } });
@@ -19,10 +19,10 @@ describe('terminalRunIdsWithCheckpoint', () => {
 
     expect(await store.requestCancel(withCheckpoint.id)).toMatchObject({ kind: 'ok', run: { status: 'CANCELLING' } });
     expect((await store.transition(claim, ['CANCELLING'], 'CANCELLED'))).toMatchObject({ kind: 'ok' });
-    const withoutCheckpoint = enqueue(store, sessionId, 'second');
+    const withoutCheckpoint = await enqueue(store, sessionId, 'second');
     store.idempotency.begin('e'.repeat(64), { expiresAt: EXPIRES_AT, meta: { tool: 'Ask', runId: withoutCheckpoint.id } });
     expect((await cancelToEnd(store, withoutCheckpoint.id)).status).toBe('CANCELLED');
-    const queued = enqueue(store, sessionId, 'third');
+    const queued = await enqueue(store, sessionId, 'third');
     store.idempotency.begin('b'.repeat(64), { expiresAt: EXPIRES_AT, meta: { tool: 'Ask', runId: queued.id } });
 
     expect(store.terminalRunIdsWithCheckpoint()).toEqual([withCheckpoint.id]);
@@ -30,7 +30,7 @@ describe('terminalRunIdsWithCheckpoint', () => {
 
   it('lists a run that was dead-lettered to FAILED while its call record holds a checkpoint', async () => {
     const { clock, store } = harness({ maxAttempts: 1 });
-    const run = enqueue(store, newSession(store).id, 'first');
+    const run = await enqueue(store, newSession(store).id, 'first');
     const claim = mustClaim(store, 'w1');
     const ledger = store.idempotency.holding(claim);
     ledger.begin('f'.repeat(64), { expiresAt: EXPIRES_AT, meta: { tool: 'Ask', runId: run.id } });
@@ -45,7 +45,7 @@ describe('terminalRunIdsWithCheckpoint', () => {
 
   it('does not select a terminal run again once its checkpoint was cleared, although the record stays pending', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id, 'first');
+    const run = await enqueue(store, newSession(store).id, 'first');
     const claim = mustClaim(store, 'w1');
     const key = 'c'.repeat(64);
     const ledger = store.idempotency.holding(claim);
@@ -63,7 +63,7 @@ describe('terminalRunIdsWithCheckpoint', () => {
 
   it('drops a run once its pending record has been resolved', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id, 'first');
+    const run = await enqueue(store, newSession(store).id, 'first');
     const claim = mustClaim(store, 'w1');
     const key = 'c'.repeat(64);
     const ledger = store.idempotency.holding(claim);

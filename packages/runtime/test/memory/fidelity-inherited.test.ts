@@ -17,10 +17,10 @@ const RUN_PINS = {
   capabilities: { contextWindow: 100_000, maxOutputTokens: 4096, parallelToolCalls: false, streaming: true, tokenCounting: 'exact', toolCalling: 'native' },
 } as const;
 
-type Env = ReturnType<typeof fidelityEnv>;
+type Env = Awaited<ReturnType<typeof fidelityEnv>>;
 
 const inheriting = async (env: Env, events: readonly RunEventPayload[], input: string, outcome: 'COMPLETED' | 'FAILED' = 'COMPLETED') => {
-  const run = enqueue(env.store, env.session.id, input);
+  const run = await enqueue(env.store, env.session.id, input);
   const claim = mustClaim(env.store, 'w1');
   expect(await env.store.inheritContext(claim, { mode: 'manual', facts: env.store.journalFacts })).toEqual({ kind: 'inherited' });
   const appended = env.store.append(claim, [{ type: 'run.started', attempt: claim.attempt, now: 0, pins: { ...RUN_PINS } }, ...events]);
@@ -48,13 +48,13 @@ const summaryOf = (text: string, replacedThroughSeq: number): RunEventPayload =>
 
 describe('an inherited summary is checked against the whole record of the chain (decision 39 C, 13.12 R-F2)', () => {
   it('attests a token held only by an inherited tool output', async () => {
-    const env = fidelityEnv();
+    const env = await fidelityEnv();
     const [, second] = await chainOf(env, [startedCall('c1', { command: 'ls' }, `log: ${TOKEN} done`), []]);
     expect(await attestedIn(env, second ?? '', 'executed')).toEqual([TOKEN]);
   });
 
   it('attests a token held only by an item older than the window bound of the same run', async () => {
-    const env = fidelityEnv();
+    const env = await fidelityEnv();
     const filler = Array.from({ length: 40 }, (_unused, index) => modelSaid(index + 1, `filler answer ${index} `.padEnd(400, 'x'))).flat();
     const [, second] = await chainOf(env, [[...startedCall('c1', { command: 'ls' }, `log: ${TOKEN} done`), ...filler], []]);
     const client = await env.client();
@@ -65,7 +65,7 @@ describe('an inherited summary is checked against the whole record of the chain 
   });
 
   it('attests a token held only by an item at or below the compaction floor of the reference', async () => {
-    const env = fidelityEnv();
+    const env = await fidelityEnv();
     const [, second] = await chainOf(env, [[...startedCall('c1', { command: 'ls' }, `log: ${TOKEN} done`), summaryOf('DONE: listed the folder', 2)], []]);
     const inherited = env.allEvents(second ?? '').find((event) => event.type === 'context.inherited');
     expect(inherited).toMatchObject({ form: 'reference', compaction: expect.objectContaining({ runId: expect.any(String) }) });
@@ -76,20 +76,20 @@ describe('an inherited summary is checked against the whole record of the chain 
   });
 
   it('attests a token held three runs back in the chain', async () => {
-    const env = fidelityEnv();
+    const env = await fidelityEnv();
     const ids = await chainOf(env, [startedCall('c1', { command: TOKEN }), [], [], []]);
     expect(await attestedIn(env, ids[3] ?? '', 'executed')).toEqual([TOKEN]);
   });
 
   it('attests an inherited user message for an any claim and not for an executed claim', async () => {
-    const env = fidelityEnv();
+    const env = await fidelityEnv();
     const [, second] = await chainOf(env, [[{ type: 'user.message', text: `please run ${TOKEN} later` } as RunEventPayload], []]);
     expect(await attestedIn(env, second ?? '', 'any')).toEqual([TOKEN]);
     expect(await attestedIn(env, second ?? '', 'executed')).toEqual([]);
   });
 
   it('reports a reference whose source records were removed as unreadable chain:<runId>, not as a silent miss and not as an error', async () => {
-    const env = fidelityEnv();
+    const env = await fidelityEnv();
     const [first, second] = await chainOf(env, [startedCall('c1', { command: TOKEN }), []]);
     const db = rawDb(env.dbPath);
     db.exec('PRAGMA foreign_keys = OFF');
@@ -103,9 +103,9 @@ describe('an inherited summary is checked against the whole record of the chain 
 
 describe('inherited events are classified by the one function of the run own events (13.12 R-F2a, test (g), decision 37 B)', () => {
   const both = async (events: readonly RunEventPayload[], claim: Claim, firstOutcome: 'COMPLETED' | 'FAILED' = 'COMPLETED', token = TOKEN) => {
-    const single = fidelityEnv();
+    const single = await fidelityEnv();
     const alone = await single.finished(events, firstOutcome);
-    const chained = fidelityEnv();
+    const chained = await fidelityEnv();
     const ids = await chainOf(chained, [events, [], []], firstOutcome);
     return { single: await attestedIn(single, alone.id, claim, token), inherited: await attestedIn(chained, ids[2] ?? '', claim, token) };
   };
@@ -197,7 +197,7 @@ const oracle = (journals: readonly (readonly RunEvent[])[], tokens: readonly Cla
 describe('differential: an inheriting run attests what one run holding the concatenated events attests (13.12 test (d))', () => {
   it.each([1, 2, 3, 4, 5, 6, 7, 8])('seed %i', async (seed) => {
     const random = seeded(seed);
-    const env = fidelityEnv();
+    const env = await fidelityEnv();
     const runs = [0, 1, 2].map((run) => generatedRun(random, run));
     const ids = await chainOf(env, runs);
     const tokens: ClaimedToken[] = POOL.map((token, index) => ({ token, claim: index % 2 === 0 ? 'executed' : 'any' }));

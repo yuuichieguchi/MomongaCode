@@ -42,7 +42,7 @@ const envFor = async (observedCapacity: boolean): Promise<Env> => {
 const taskReaching = async (observedCapacity: boolean, target: number): Promise<string> => {
   const env = await envFor(observedCapacity);
   env.gateway.script.push(textStep('Done.'));
-  env.enqueue('y'.repeat(4));
+  await env.enqueue('y'.repeat(4));
   await env.runOnce(env.worker('probe', { toolList: () => [adding(() => undefined)], governance: createGovernancePort({ store: env.store, settings: env.settings }) }));
   const body = env.gateway.streams[0]?.body;
   if (body === undefined) throw new Error('the probe made no model call');
@@ -69,7 +69,7 @@ describe.for([false, true])('a text-only governing fact added mid-run (observed 
       }),
     ];
     env.gateway.script.push(callsStep([{ callId: 'call_a_1', name: 'Adder', args: {} }]), textStep('Done.'));
-    const run = env.enqueue(task);
+    const run = await env.enqueue(task);
 
     await env.runOnce(env.worker('w1', { toolList: tools, governance: createGovernancePort({ store: env.store, settings: env.settings }) }));
 

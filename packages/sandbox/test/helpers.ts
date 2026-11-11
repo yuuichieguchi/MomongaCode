@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { SandboxedProcess } from '@momonga/sandbox';
+import { pollUntil } from '@momonga/testkit';
 
 export function makeTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'mm-'));
@@ -34,10 +35,6 @@ export function isAlive(pid: number): boolean {
 }
 
 export async function waitUntilDead(pids: number[], timeoutMs: number): Promise<boolean> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    if (pids.every((pid) => !isAlive(pid))) return true;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  return pids.every((pid) => !isAlive(pid));
+  await pollUntil(() => pids.every((pid) => !isAlive(pid)), { description: `processes ${pids.join(', ')} to die`, boundMs: timeoutMs });
+  return true;
 }

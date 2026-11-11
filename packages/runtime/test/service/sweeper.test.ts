@@ -9,9 +9,9 @@ import type { ServiceEnv } from './helpers.ts';
 
 type Sweeper = { close(): void | Promise<void> };
 
-const tick = async (timers: { advance(ms: number): void }, ms: number, step = 1000): Promise<void> => {
+const tick = async (timers: { advanceAsync(ms: number): Promise<void> }, ms: number, step = 1000): Promise<void> => {
   for (let elapsed = 0; elapsed < ms; elapsed += step) {
-    timers.advance(step);
+    await timers.advanceAsync(step);
     await afterMicrotasks();
   }
 };
@@ -39,15 +39,15 @@ describe('startApprovalSweeper', () => {
 
     const sweeper = startSweeper({ store, clock, timers, intervalMs: 1000, releaseStopped: async () => undefined, onError: (error: unknown) => errors.push(error) });
 
-    timers.advance(1000);
+    await timers.advanceAsync(1000);
     await afterMicrotasks();
     expect(calls.filter((now) => now !== START_MS)).toEqual([START_MS + 1000]);
     expect(errors).toEqual([failure]);
-    timers.advance(1000);
+    await timers.advanceAsync(1000);
     await afterMicrotasks();
     expect(calls.filter((now) => now !== START_MS)).toEqual([START_MS + 1000, START_MS + 2000]);
     for (let tick = 0; tick < 3; tick += 1) {
-      timers.advance(1000);
+      await timers.advanceAsync(1000);
       await afterMicrotasks();
     }
     expect(calls.filter((now) => now !== START_MS)).toEqual([START_MS + 1000, START_MS + 2000, START_MS + 3000, START_MS + 4000, START_MS + 5000]);
@@ -55,7 +55,7 @@ describe('startApprovalSweeper', () => {
 
     await sweeper.close();
     const callsAtClose = calls.length;
-    timers.advance(5000);
+    await timers.advanceAsync(5000);
     await afterMicrotasks();
     expect(calls).toHaveLength(callsAtClose);
     expect(timers.pending()).toEqual([]);
@@ -87,9 +87,9 @@ describe('startApprovalSweeper with an awaited expireApprovals', () => {
       onError: (error: unknown) => errors.push(error),
     });
 
-    timers.advance(1000);
+    await timers.advanceAsync(1000);
     await afterMicrotasks();
-    timers.advance(3000);
+    await timers.advanceAsync(3000);
     await afterMicrotasks();
     expect(calls).toEqual([START_MS + 1000]);
     expect(released).toEqual([]);
@@ -98,7 +98,7 @@ describe('startApprovalSweeper with an awaited expireApprovals', () => {
     await afterMicrotasks();
     expect(released).toEqual(['run-stopped']);
     expect(errors).toEqual([]);
-    timers.advance(1000);
+    await timers.advanceAsync(1000);
     await afterMicrotasks();
     expect(calls).toEqual([START_MS + 1000, START_MS + 5000]);
 
@@ -128,7 +128,7 @@ describe('startApprovalSweeper names the run in an error report (review of fd3c8
     };
     const sweeper = startSweeper({ store, clock, timers, intervalMs: 1000, releaseStopped: async () => undefined, onError: (...args: unknown[]) => void reports.push(args) });
 
-    timers.advance(1000);
+    await timers.advanceAsync(1000);
     await afterMicrotasks();
 
     expect(reports).toEqual([[failure, 'run-not-stopped']]);
@@ -217,7 +217,7 @@ describe('startApprovalSweeper release of stopped runs', () => {
       onError: (error: unknown) => errors.push(error),
     });
 
-    timers.advance(1000);
+    await timers.advanceAsync(1000);
     await sweeper.close();
 
     expect(released).toEqual(['run-a', 'run-b']);

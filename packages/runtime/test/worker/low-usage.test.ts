@@ -16,7 +16,7 @@ const capabilities = () => capabilitiesFor(WINDOW, { maxOutputTokens: 1024 });
 const estimatedInputTokens = async (): Promise<number> => {
   const env = await makeEnv({ capabilities: capabilities() });
   env.gateway.script.push(textStep('Done.'));
-  env.enqueue(TASK);
+  await env.enqueue(TASK);
   await env.runOnce(env.worker());
   const first = env.gateway.streams[0];
   if (first === undefined) throw new Error('the measuring run made no model call');
@@ -30,7 +30,7 @@ describe('worker with a server that reports fewer input tokens than the estimate
       callsStep([{ callId: 'call_low_1', name: 'Echo', args: { value: 'a' } }], usageOf(10, 5)),
       textStep('Done.'),
     );
-    const run = env.enqueue(TASK);
+    const run = await env.enqueue(TASK);
 
     await env.runOnce(env.worker());
 
@@ -47,7 +47,7 @@ describe('worker with a server that reports fewer input tokens than the estimate
     const estimate = await estimatedInputTokens();
     const env = await makeEnv({ capabilities: capabilities() });
     env.gateway.script.push(textStep('Done.', { usage: usageOf(10, 5) }));
-    const run = env.enqueue(TASK);
+    const run = await env.enqueue(TASK);
 
     await env.runOnce(env.worker());
 
@@ -61,7 +61,7 @@ describe('worker with a server that reports fewer input tokens than the estimate
     const estimate = await estimatedInputTokens();
     const env = await makeEnv({ capabilities: capabilities() });
     env.gateway.script.push(textStep('Done.', { usage: usageOf(estimate - marginFloorFor(WINDOW), 5) }));
-    const run = env.enqueue(TASK);
+    const run = await env.enqueue(TASK);
 
     await env.runOnce(env.worker());
 
@@ -72,7 +72,7 @@ describe('worker with a server that reports fewer input tokens than the estimate
     const estimate = await estimatedInputTokens();
     const env = await makeEnv({ capabilities: capabilities() });
     env.gateway.script.push(textStep('Done.', { usage: usageOf(estimate - marginFloorFor(WINDOW) - 1, 5) }));
-    const run = env.enqueue(TASK);
+    const run = await env.enqueue(TASK);
 
     await env.runOnce(env.worker());
 
@@ -83,7 +83,7 @@ describe('worker with a server that reports fewer input tokens than the estimate
     const estimate = await estimatedInputTokens();
     const env = await makeEnv({ capabilities: capabilities() });
     env.gateway.script.push(textStep('Done.', { usage: usageOf(estimate * 2, 5) }));
-    const run = env.enqueue(TASK);
+    const run = await env.enqueue(TASK);
 
     await env.runOnce(env.worker());
 
@@ -98,7 +98,7 @@ describe('worker with an estimated token count', () => {
     const env = await makeEnv({ capabilities: capabilities() });
     env.gateway.countMethod = 'estimated';
     env.gateway.script.push(textStep('Done.'));
-    env.enqueue(LARGE_TASK);
+    await env.enqueue(LARGE_TASK);
     await env.runOnce(env.worker());
     const first = env.gateway.streams[0];
     if (first === undefined) throw new Error('the measuring run made no model call');
@@ -110,7 +110,7 @@ describe('worker with an estimated token count', () => {
     const env = await makeEnv({ capabilities: capabilities() });
     env.gateway.countMethod = 'estimated';
     env.gateway.script.push(textStep('Done.', { usage: usageOf(Math.floor(estimate * 0.85), 5) }));
-    const run = env.enqueue(LARGE_TASK);
+    const run = await env.enqueue(LARGE_TASK);
 
     await env.runOnce(env.worker());
 
@@ -122,7 +122,7 @@ describe('worker with an estimated token count', () => {
     const env = await makeEnv({ capabilities: capabilities() });
     env.gateway.countMethod = 'estimated';
     env.gateway.script.push(textStep('Done.', { usage: usageOf(Math.floor(estimate * 0.5), 5) }));
-    const run = env.enqueue(LARGE_TASK);
+    const run = await env.enqueue(LARGE_TASK);
 
     await env.runOnce(env.worker());
 
@@ -139,7 +139,7 @@ describe('worker with an estimated token count', () => {
       const env = await makeEnv({ capabilities: capabilities() });
       env.gateway.countMethod = 'estimated';
       env.gateway.script.push(...script('auto', 'auto'));
-      env.enqueue(LARGE_TASK);
+      await env.enqueue(LARGE_TASK);
       await env.runOnce(env.worker());
       const [first, second] = env.gateway.streams;
       if (first === undefined || second === undefined) throw new Error('the measuring run made fewer than two model calls');
@@ -154,7 +154,7 @@ describe('worker with an estimated token count', () => {
       const env = await makeEnv({ capabilities: capabilities() });
       env.gateway.countMethod = 'estimated';
       env.gateway.script.push(...script(Math.floor(first * share), Math.floor(second * share)));
-      const run = env.enqueue(LARGE_TASK);
+      const run = await env.enqueue(LARGE_TASK);
 
       await env.runOnce(env.worker());
 
@@ -169,14 +169,14 @@ describe('worker with an estimated token count', () => {
     const at = await makeEnv({ capabilities: capabilities() });
     at.gateway.countMethod = 'estimated';
     at.gateway.script.push(textStep('Done.', { usage: usageOf(estimate - allowed, 5) }));
-    const atRun = at.enqueue(LARGE_TASK);
+    const atRun = await at.enqueue(LARGE_TASK);
     await at.runOnce(at.worker());
     expect(at.run(atRun.id).status).toBe('COMPLETED');
 
     const below = await makeEnv({ capabilities: capabilities() });
     below.gateway.countMethod = 'estimated';
     below.gateway.script.push(textStep('Done.', { usage: usageOf(estimate - allowed - 1, 5) }));
-    const belowRun = below.enqueue(LARGE_TASK);
+    const belowRun = await below.enqueue(LARGE_TASK);
     await below.runOnce(below.worker());
     expect(below.run(belowRun.id)).toMatchObject({ status: 'FAILED', error: { code: 'input_truncated' } });
   });
@@ -214,7 +214,7 @@ describe('the estimate of a step is read from the meter, not counted again', () 
       callsStep([{ callId: 'call_c_2', name: 'Echo', args: { value: 'b' } }]),
       textStep('Done.'),
     );
-    const run = env.enqueue(TASK);
+    const run = await env.enqueue(TASK);
 
     await env.runOnce(env.worker());
 
@@ -232,7 +232,7 @@ describe('the estimate of a step is read from the meter, not counted again', () 
       callsStep([{ callId: 'call_c_2', name: 'Echo', args: { value: 'b' } }]),
       textStep('Done.'),
     );
-    const run = env.enqueue(TASK);
+    const run = await env.enqueue(TASK);
 
     await env.runOnce(env.worker());
 
@@ -246,7 +246,7 @@ describe('the margin after a fallback step follows the counting method of the ta
   const estimateOf = async (): Promise<number> => {
     const env = await makeEnv({ capabilities: capabilities() });
     env.gateway.script.push(textStep('Done.'));
-    env.enqueue(LARGE_TASK);
+    await env.enqueue(LARGE_TASK);
     await env.runOnce(env.worker());
     const first = env.gateway.streams[0];
     if (first === undefined) throw new Error('the measuring run made no model call');
@@ -259,7 +259,7 @@ describe('the margin after a fallback step follows the counting method of the ta
     env.gateway.countMethod = 'estimated';
     env.gateway.countMethodByTarget.set('secondary', secondary);
     env.gateway.script.push(answeredByFallback(textStep('Done.', { usage: usageOf(Math.floor(estimate * share), 5) }), 'secondary'));
-    const run = env.enqueue(LARGE_TASK);
+    const run = await env.enqueue(LARGE_TASK);
     await env.runOnce(env.worker());
     return env.run(run.id);
   };
@@ -278,7 +278,7 @@ describe('the margin floor after a fallback step comes from the context window o
     const estimate = await (async () => {
       const env = await makeEnv({ capabilities: capabilities() });
       env.gateway.script.push(textStep('Done.'));
-      env.enqueue(TASK);
+      await env.enqueue(TASK);
       await env.runOnce(env.worker());
       const first = env.gateway.streams[0];
       if (first === undefined) throw new Error('the measuring run made no model call');
@@ -288,7 +288,7 @@ describe('the margin floor after a fallback step comes from the context window o
     if (window !== undefined) env.gateway.capabilitiesByTarget.set('secondary', capabilitiesFor(window, { maxOutputTokens: 512 }));
     const reported = estimate - marginFloorFor(window ?? WINDOW) - 1;
     env.gateway.script.push(answeredByFallback(textStep('Done.', { usage: usageOf(reported, 5) }), 'secondary'));
-    const run = env.enqueue(TASK);
+    const run = await env.enqueue(TASK);
     await env.runOnce(env.worker());
     return { run: env.run(run.id), env };
   };
@@ -302,14 +302,14 @@ describe('the margin floor after a fallback step comes from the context window o
     const estimate = await (async () => {
       const env = await makeEnv({ capabilities: capabilities() });
       env.gateway.script.push(textStep('Done.'));
-      env.enqueue(TASK);
+      await env.enqueue(TASK);
       await env.runOnce(env.worker());
       return inputTokensOf((env.gateway.streams[0] as NonNullable<(typeof env.gateway.streams)[number]>).body);
     })();
     const env = await makeEnv({ capabilities: capabilities() });
     env.gateway.capabilitiesByTarget.set('secondary', capabilitiesFor(2000, { maxOutputTokens: 512 }));
     env.gateway.script.push(answeredByFallback(textStep('Done.', { usage: usageOf(estimate - marginFloorFor(2000), 5) }), 'secondary'));
-    const run = env.enqueue(TASK);
+    const run = await env.enqueue(TASK);
     await env.runOnce(env.worker());
     expect(env.run(run.id).status).toBe('COMPLETED');
   });
@@ -329,7 +329,7 @@ describe('the truncation check completes before the response is journalled', () 
     const env = await makeEnv({ capabilities: capabilities() });
     failingOnce(env);
     env.gateway.script.push(answeredByFallback(textStep('Done.', { usage: usageOf(10, 5) }), 'secondary'));
-    const run = env.enqueue(TASK);
+    const run = await env.enqueue(TASK);
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -350,7 +350,7 @@ describe('the truncation check completes before the response is journalled', () 
     const env = await makeEnv({ capabilities: capabilities() });
     failingOnce(env);
     env.gateway.script.push(answeredByFallback(textStep('Done.'), 'secondary'));
-    const run = env.enqueue(TASK);
+    const run = await env.enqueue(TASK);
 
     await env.runOnce(env.worker());
     env.clock.set(Math.max(env.clock.now(), env.run(run.id).availableAt));
@@ -367,7 +367,7 @@ describe('worker with a fallback target that answered', () => {
     const env = await makeEnv({ capabilities: capabilities() });
     env.gateway.countScaleByTarget.set('secondary', 0.1);
     env.gateway.script.push(answeredByFallback(textStep('Done.', { usage: usageOf(Math.ceil(estimate * 0.1), 5) }), 'secondary'));
-    const run = env.enqueue(TASK);
+    const run = await env.enqueue(TASK);
 
     await env.runOnce(env.worker());
 
@@ -378,7 +378,7 @@ describe('worker with a fallback target that answered', () => {
   it('counts the input for the target that answered, not for the primary', async () => {
     const env = await makeEnv({ capabilities: capabilities() });
     env.gateway.script.push(answeredByFallback(textStep('Done.'), 'secondary'));
-    env.enqueue(TASK);
+    await env.enqueue(TASK);
 
     await env.runOnce(env.worker());
 
@@ -390,7 +390,7 @@ describe('worker with a fallback target that answered', () => {
   it('still stops when the target that answered reports fewer tokens than its own count less the margin', async () => {
     const env = await makeEnv({ capabilities: capabilities() });
     env.gateway.script.push(answeredByFallback(textStep('Done.', { usage: usageOf(10, 5) }), 'secondary'));
-    const run = env.enqueue(TASK);
+    const run = await env.enqueue(TASK);
 
     await env.runOnce(env.worker());
 
@@ -405,7 +405,7 @@ describe('worker with a fallback target that answered', () => {
       answeredByFallback(callsStep([{ callId: 'call_f_1', name: 'Echo', args: { value: 'a' } }], usageOf(Math.ceil(estimate * 0.1), 5)), 'secondary'),
       textStep('Done.'),
     );
-    const run = env.enqueue(TASK);
+    const run = await env.enqueue(TASK);
 
     await env.runOnce(env.worker());
     await env.runOnce(env.worker());

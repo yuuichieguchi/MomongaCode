@@ -58,7 +58,7 @@ describe('output fit from the pinned floor', () => {
     const env = await makeEnv({ capabilities: W4000 });
     env.instructions.files.set(`${env.project}/AGENTS.md`, 'r'.repeat(4800));
     env.gateway.script.push(callsStep([{ callId: 'e1', name: 'Dump', args: { value: 'x' } }]), textStep('done'));
-    const run = env.enqueue('Dump once');
+    const run = await env.enqueue('Dump once');
 
     await env.runOnce(env.worker('worker-1', { toolList: () => [...env.toolbox.tools(), dumpTool] }));
 
@@ -81,7 +81,7 @@ describe('output fit from the pinned floor', () => {
   it('keeps an output that fits the item cap as it is, with no handle', async () => {
     const env = await makeEnv({ capabilities: W4000 });
     env.gateway.script.push(callsStep([{ callId: 'e1', name: 'Echo', args: { value: 'small' } }]), textStep('done'));
-    const run = env.enqueue('Echo once');
+    const run = await env.enqueue('Echo once');
 
     await env.runOnce(env.worker());
 
@@ -92,7 +92,7 @@ describe('output fit from the pinned floor', () => {
 
   it('reconciles a started call of a recovered claim with the capability-only item cap and no count_tokens call', async () => {
     const env = await makeEnv({ capabilities: W4000 });
-    const run = env.enqueue('Mark it');
+    const run = await env.enqueue('Mark it');
     const key = toolKey(run.id, 1, 'call_m_1');
     await env.seed(
       run.id,
@@ -126,7 +126,7 @@ describe('output fit from the pinned floor', () => {
 
   it('fails pinned_overflow from the lazy measurement before executing a pending call', async () => {
     const env = await makeEnv({ capabilities: W4000 });
-    const run = env.enqueue('Echo it');
+    const run = await env.enqueue('Echo it');
     await env.seed(run.id, [requestedOffering(1, ['Echo']), responded(1, [functionCallItem({ callId: 'call_e_1', name: 'Echo', args: { value: 'x' } })])], 'crash');
     env.instructions.files.set(`${env.project}/AGENTS.md`, 'r'.repeat(16_000));
 

@@ -3,8 +3,8 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_STOP_VALUES, FIRST_GENERATION, momongaPaths } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, killGroupsForCleanup } from '@momonga/testkit';
-import { closedAtCleanup, makeDir, postJson, readJson, registerCleanup, userInput } from '../gateway-helpers.ts';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, killGroupsForCleanup, registerOwned } from '@momonga/testkit';
+import { makeDir, postJson, readJson, registerCleanup, userInput } from '../gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, homePaths, makeHome, modelsOf } from '../gateway-process-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -47,10 +47,11 @@ describe('the name of a managed model over the epochs of the settings (gateway-a
     const apple = { adapter: 'managed', server: 'fm', model: OWN_NAME, binary: fm.binaryPath, toolCalling: 'native', capabilities: { contextWindow: 4096, maxOutputTokens: 512 } };
     const pear = ccTarget(path.join(makeDir(), 'no-server.sock'), { model: OWN_NAME, toolCalling: 'native' });
     replaceSettings(home, { models: modelsOf({ apple }) });
-    const handle = await closedAtCleanup(startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout: { write: () => true } }));
-    registerCleanup(async () => {
-      await handle.close({ ...DEFAULT_STOP_VALUES, closeGraceMs: 0, managedServerStopGraceMs: 0 });
-    });
+    const handle = await registerOwned(
+      registerCleanup,
+      () => startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout: { write: () => true } }),
+      (started) => started.close({ ...DEFAULT_STOP_VALUES, closeGraceMs: 0, managedServerStopGraceMs: 0 }),
+    );
     const ask = async () => readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: `apple/${OWN_NAME}`, input: userInput('hello') }));
 
     const alone = await ask();

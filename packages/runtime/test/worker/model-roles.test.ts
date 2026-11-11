@@ -32,7 +32,7 @@ const conversation = (): RunEventPayload[] => [
 const prepared = async (roles: Record<string, string> = {}) => {
   const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
   env.gateway.roles = { ...roles };
-  const run = env.enqueue('question one');
+  const run = await env.enqueue('question one');
   await env.seed(run.id, conversation(), 'release');
   env.gateway.compactSummaries.push(CLEAN);
   env.gateway.script.push(textStep('Done.'));
@@ -144,7 +144,7 @@ describe('the pinned roles', () => {
     await drive(env, run.id);
     env.gateway.roles = { compaction: 'other' };
     env.gateway.script.push(textStep('Second.'));
-    const second = env.enqueue('Second task');
+    const second = await env.enqueue('Second task');
     await drive(env, second.id);
     expect(env.ofType(second.id, 'run.started')[0]?.pins['roles']).toEqual({ compaction: 'other' });
   });
@@ -152,9 +152,9 @@ describe('the pinned roles', () => {
   const childOf = async (parentPins: Record<string, unknown>) => {
     const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
     env.gateway.roles = { compaction: 'cheap' };
-    const parent = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Parent', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
+    const parent = await createdRun(await env.store.createRunAndEnqueue(env.session.id, { input: 'Parent', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
     const claim = await env.seed(parent.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { model: 'fm', ...parentPins }, mode: 'manual' }], 'hold');
-    const created = env.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, model: 'fm' });
+    const created = await env.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, model: 'fm' });
     if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
     expect((await env.store.releaseLease(claim, { availableAt: env.clock.now() + 3_600_000 })).kind).toBe('ok');
     env.gateway.roles = { compaction: 'other' };
@@ -194,7 +194,7 @@ describe('the capability check of autoMode.classifier', () => {
     const { env, target, write } = await autoSetup('judge');
     env.gateway.capabilitiesByModel['judge'] = capabilitiesFor(100_000, { structuredOutput: 'json_schema' });
     env.gateway.script.push(write, textStep(VERDICT), textStep('Written.'));
-    const run = env.enqueue('Write out.txt');
+    const run = await env.enqueue('Write out.txt');
     await env.runOnce(env.worker());
     expect(env.gateway.streams[1]?.body.model).toBe('judge');
     expect(env.gateway.streams.map((stream) => stream.role)).toEqual([undefined, 'classifier', undefined]);
@@ -206,7 +206,7 @@ describe('the capability check of autoMode.classifier', () => {
     const { env, target, write } = await autoSetup('judge');
     env.gateway.capabilitiesByModel['judge'] = capabilitiesFor(100_000, { structuredOutput: 'none' });
     env.gateway.script.push(write, textStep(VERDICT), textStep('Written.'));
-    const run = env.enqueue('Write out.txt');
+    const run = await env.enqueue('Write out.txt');
     await env.runOnce(env.worker());
     expect(env.gateway.streams[1]?.body.model).toBe('judge');
     expect(env.ofType(run.id, 'tool.permission.classified')).toMatchObject([{ outcome: 'allow', model: 'judge' }]);

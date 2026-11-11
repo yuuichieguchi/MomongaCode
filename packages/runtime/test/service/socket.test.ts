@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createUdsClient, fixedSocket } from '@momonga/foundation';
 import { createFakeClock } from '@momonga/testkit';
-import { START_MS, createFakePorts, createNotifier, launchService, makeLayout, onCleanup, openStore, sendJson, serviceOptions, startService, waitUntil } from './helpers.ts';
+import { START_MS, createFakePorts, createNotifier, launchService, makeLayout, onCleanup, openStore, sendJson, serviceOptions, startService, pollFor } from './helpers.ts';
 import type { Layout } from './helpers.ts';
 
 const attempt = async (layout: Layout, socketPath: string, home = layout.home) => {
@@ -79,12 +79,12 @@ describe('run service socket', () => {
     const session = await env.createSession();
     const run = await env.createRun(session.id);
     const stream = await env.stream(`/v1/runs/${run.id}/events`);
-    await waitUntil(() => env.notifier.subscriberCount() === 1, 5000, 'the subscriber to register');
+    await pollFor(() => env.notifier.subscriberCount() === 1, 5000, 'the subscriber to register');
 
     await env.closeService();
 
     expect(fs.existsSync(env.layout.socketPath)).toBe(false);
-    await waitUntil(() => stream.ended, 5000, 'the open stream to end');
+    await pollFor(() => stream.ended, 5000, 'the open stream to end');
     expect(env.notifier.subscriberCount()).toBe(0);
     const fresh = createUdsClient(fixedSocket(env.layout.socketPath));
     onCleanup(() => fresh.close());

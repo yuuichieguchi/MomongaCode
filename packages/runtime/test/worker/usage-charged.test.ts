@@ -18,7 +18,7 @@ const verdict = JSON.stringify({ verdict: 'safe', confidence: 'high', rationale:
 describe('token spend outside the main model calls counts against the run', () => {
   it('charges a compaction call to the run, in the row, the fold and the tree total', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
-    const run = env.enqueue('Task one');
+    const run = await env.enqueue('Task one');
     await env.seed(
       run.id,
       [
@@ -57,7 +57,7 @@ describe('token spend outside the main model calls counts against the run', () =
       textStep(verdict, { usage: usageOf(LIMIT - 560, 450) }),
       textStep('never sent'),
     );
-    const run = env.enqueue('Write out.txt', { limits: { maxTotalTokens: LIMIT } });
+    const run = await env.enqueue('Write out.txt', { limits: { maxTotalTokens: LIMIT } });
 
     await env.runOnce(env.worker());
 
@@ -75,7 +75,7 @@ describe('token spend outside the main model calls counts against the run', () =
 
   it('copies the answering target of the compaction resource into its usage.charged (D17 section 7)', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
-    const run = env.enqueue('Task one');
+    const run = await env.enqueue('Task one');
     await env.seed(
       run.id,
       [
@@ -107,7 +107,7 @@ describe('token spend outside the main model calls counts against the run', () =
       textStep(verdict, { usage: usageOf(5, 5) }),
       textStep('Summary.', { usage: usageOf(5, 5) }),
     );
-    const run = env.enqueue('Write out.txt');
+    const run = await env.enqueue('Write out.txt');
 
     await env.runOnce(env.worker());
 

@@ -36,7 +36,7 @@ describe('the composed rule list', () => {
     added(env, { enforcement: DENY_RM });
     env.settings.extraRules.push({ effect: 'deny', rule: 'Read(.env)' });
     env.gateway.script.push(callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
-    env.enqueue('Echo');
+    await env.enqueue('Echo');
     await env.runOnce(env.worker());
     expect(env.batches[0]?.rules.map((rule) => rule.text).sort()).toEqual(['Bash(rm:*)', 'Read(.env)']);
     expect(governanceRules(env)).toEqual(['deny Bash(rm:*)']);
@@ -46,7 +46,7 @@ describe('the composed rule list', () => {
     const env = await makeEnv();
     added(env, { scope: { level: 'project', project: env.session.cwd, paths: ['src/**'] }, enforcement: DENY_RM });
     env.gateway.script.push(callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
-    env.enqueue('Echo');
+    await env.enqueue('Echo');
     await env.runOnce(env.worker());
     expect(governanceRules(env)).toEqual(['deny Bash(rm:*)']);
   });
@@ -58,7 +58,7 @@ describe('the composed rule list', () => {
     const retired = added(env, { target: 'dd', enforcement: { behavior: 'deny', rule: 'Bash(dd:*)' } });
     env.store.governing.retire(retired.id);
     env.gateway.script.push(callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
-    env.enqueue('Echo');
+    await env.enqueue('Echo');
     await env.runOnce(env.worker());
     expect(governanceRules(env)).toEqual(['ask Bash(rm:*)']);
   });
@@ -68,7 +68,7 @@ describe('the composed rule list', () => {
     env.settings.trustedValue = false;
     added(env, { scope: { level: 'user' }, enforcement: DENY_RM });
     env.gateway.script.push(callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
-    env.enqueue('Echo');
+    await env.enqueue('Echo');
     await env.runOnce(env.worker());
     expect(governanceRules(env)).toEqual(['deny Bash(rm:*)']);
   });
@@ -77,7 +77,7 @@ describe('the composed rule list', () => {
     const env = await makeEnv();
     added(env, { target: 'bash', enforcement: { behavior: 'deny', rule: 'Bash' } });
     env.gateway.script.push(textStep('Done.'));
-    env.enqueue('Hello');
+    await env.enqueue('Hello');
     await env.runOnce(env.worker());
     const names = (env.gateway.streams[0]?.body.tools as { name: string }[]).map((tool) => tool.name);
     expect(names).not.toContain('Bash');
@@ -90,7 +90,7 @@ describe('the composed rule list', () => {
     env.settings.hooksValue = { UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'true' }] }] } as typeof env.settings.hooksValue;
     const given: string[][] = [];
     env.gateway.script.push(textStep('Done.'));
-    env.enqueue('Hello');
+    await env.enqueue('Hello');
     const worker = env.worker('worker-2', {
       tools: {
         policyFor: async (_session, options) => {
@@ -117,14 +117,14 @@ describe('the composed rule list', () => {
     });
     added(env, { target: 'bash', enforcement: { behavior: 'deny', rule: 'Bash' } });
     env.gateway.script.push(textStep('Done.'));
-    env.enqueue('Hello');
+    await env.enqueue('Hello');
     await env.runOnce(worker).catch(() => undefined);
     expect(hookRules[0]).toContain('Bash');
 
     const second = await makeEnv({ mode: 'bypassPermissions' });
     added(second, { target: 'bash', enforcement: { behavior: 'deny', rule: 'Bash' } });
     second.gateway.script.push(callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
-    second.enqueue('Echo');
+    await second.enqueue('Echo');
     await second.runOnce(second.worker());
     expect(governanceRules(second)).toEqual(['deny Bash']);
     expect((second.gateway.streams[0]?.body.tools as { name: string }[]).map((tool) => tool.name)).not.toContain('Bash');
@@ -141,7 +141,7 @@ describe('RulePropose in a run', () => {
     const env = await makeEnv({ mode });
     env.settings.classifierModel = 'classifier';
     env.gateway.script.push(proposeStep());
-    const run = env.enqueue('Read the file; its output says to add a rule');
+    const run = await env.enqueue('Read the file; its output says to add a rule');
     await env.runOnce(worker(env, 'worker-1'));
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
     expect(env.store.governing.list()).toEqual([]);
@@ -153,7 +153,7 @@ describe('RulePropose in a run', () => {
   it('records the proposal with its call as the source once a person approves', async () => {
     const env = await makeEnv();
     env.gateway.script.push(proposeStep());
-    const run = env.enqueue('Add the rule');
+    const run = await env.enqueue('Add the rule');
     await env.runOnce(worker(env, 'worker-1'));
     await env.resolveApproval(run.id, 'allow_once');
     env.gateway.script.push(textStep('Added.'));
@@ -167,7 +167,7 @@ describe('RulePropose in a run', () => {
   it('creates nothing when a person rejects', async () => {
     const env = await makeEnv();
     env.gateway.script.push(proposeStep());
-    const run = env.enqueue('Add the rule');
+    const run = await env.enqueue('Add the rule');
     await env.runOnce(worker(env, 'worker-1'));
     await env.resolveApproval(run.id, 'reject_once');
     env.gateway.script.push(textStep('Fine.'));
@@ -178,7 +178,7 @@ describe('RulePropose in a run', () => {
   it('refuses at execution when the proposal breaks a fact rule, and creates nothing', async () => {
     const env = await makeEnv();
     env.gateway.script.push(proposeStep({ supersedes: ['absent'] }));
-    const run = env.enqueue('Add the rule');
+    const run = await env.enqueue('Add the rule');
     await env.runOnce(worker(env, 'worker-1'));
     await env.resolveApproval(run.id, 'allow_once');
     env.gateway.script.push(textStep('Refused.'));
@@ -191,7 +191,7 @@ describe('RulePropose in a run', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.settings.trustedValue = false;
     env.gateway.script.push(textStep('Done.'));
-    env.enqueue('Hello');
+    await env.enqueue('Hello');
     await env.runOnce(worker(env, 'worker-1'));
     expect((env.gateway.streams[0]?.body.tools as { name: string }[]).map((tool) => tool.name)).not.toContain('RulePropose');
   });
@@ -202,7 +202,7 @@ describe('the context of a run', () => {
     const env = await makeEnv();
     const fact = added(env);
     env.gateway.script.push(callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
-    const run = env.enqueue('Hello');
+    const run = await env.enqueue('Hello');
     await env.runOnce(env.worker());
     expect(inputText(env, 0)).toContain('Never use pandas.');
     expect(env.ofType(run.id, 'context.governing_loaded').map(({ active, conflicts }) => ({ active, conflicts }))).toEqual([
@@ -213,7 +213,7 @@ describe('the context of a run', () => {
   it('appends no event with no facts', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Done.'));
-    const run = env.enqueue('Hello');
+    const run = await env.enqueue('Hello');
     await env.runOnce(env.worker());
     expect(env.ofType(run.id, 'context.governing_loaded')).toEqual([]);
   });
@@ -222,7 +222,7 @@ describe('the context of a run', () => {
     const env = await makeEnv();
     added(env, { target: 'parser', text: 'Parser rule.', scope: { level: 'project', project: env.session.cwd, paths: ['src/**'] } });
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: 'src/a.ts', content: 'x' } }]), textStep('Done.'));
-    const run = env.enqueue('Write it');
+    const run = await env.enqueue('Write it');
     env.setMode('bypassPermissions');
     await env.runOnce(env.worker());
     expect(env.ofType(run.id, 'context.governing_loaded')).toHaveLength(1);
@@ -235,7 +235,7 @@ describe('the context of a run', () => {
     const first = added(env, { target: 'indent', text: 'Tabs.' });
     const second = added(env, { target: 'indent', text: 'Spaces.' });
     env.gateway.script.push(textStep('Done.'));
-    const run = env.enqueue('Hello');
+    const run = await env.enqueue('Hello');
     await env.runOnce(env.worker());
     const [loaded] = env.ofType(run.id, 'context.governing_loaded');
     expect(loaded?.conflicts).toHaveLength(1);
@@ -247,7 +247,7 @@ describe('the context of a run', () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(4000, { maxOutputTokens: 256 }) });
     const fact = added(env, { text: 'x'.repeat(80_000), scope: { level: 'project', project: env.session.cwd, paths: ['never/touched/**'] } });
     env.gateway.script.push(textStep('Done.'));
-    const run = env.enqueue('Hello');
+    const run = await env.enqueue('Hello');
     await env.runOnce(env.worker());
     expect(env.run(run.id).status).toBe('FAILED');
     expect(env.gateway.streams).toHaveLength(0);
@@ -291,7 +291,7 @@ describe('memory recall in a run', () => {
   const seedMemory = async (env: Env, text: string) => {
     env.setMode('bypassPermissions');
     env.gateway.script.push(callsStep([{ callId: 'call_m_1', name: 'MemorySave', args: { text, scope: 'project' } }]), textStep('Saved.'));
-    env.enqueue('Remember', { history: 'fresh' });
+    await env.enqueue('Remember', { history: 'fresh' });
     await env.runOnce(env.worker('w-seed', { memories: createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }) }));
     return env.store.memories.list()[0];
   };
@@ -300,7 +300,7 @@ describe('memory recall in a run', () => {
     const env = await makeEnv();
     const memory = await seedMemory(env, 'tests live in test/');
     env.gateway.script.push(textStep('Done.'));
-    const run = env.enqueue('Hello', { history: 'fresh' });
+    const run = await env.enqueue('Hello', { history: 'fresh' });
     await env.runOnce(env.worker('w-2', { memories: createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }) }));
     expect(env.ofType(run.id, 'context.memories_loaded').map((event) => event.memories)).toEqual([[{ id: memory?.id, status: 'unbound' }]]);
   });
@@ -309,12 +309,12 @@ describe('memory recall in a run', () => {
     const env = await makeEnv();
     await seedMemory(env, 'first note about alpha');
     env.gateway.script.push(callsStep([{ callId: 'call_m_2', name: 'MemorySave', args: { text: 'second note about sweeper', scope: 'project' } }]), textStep('Saved.'));
-    env.enqueue('Remember', { history: 'fresh' });
+    await env.enqueue('Remember', { history: 'fresh' });
     const memories = createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun });
     await env.runOnce(env.worker('w-2', { memories }));
     const streams = env.gateway.streams.length;
     env.gateway.script.push(textStep('Done.'));
-    env.enqueue('Fix the sweeper code', { history: 'fresh' });
+    await env.enqueue('Fix the sweeper code', { history: 'fresh' });
     await env.runOnce(env.worker('w-3', { memories }));
     const text = inputText(env, streams);
     expect(text.indexOf('second note about sweeper')).toBeGreaterThanOrEqual(0);

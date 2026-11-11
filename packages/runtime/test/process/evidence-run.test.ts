@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { closeMarkerDescriptor, ensureMomongaDirs, momongaPaths, ruleEnforcementOf } from '@momonga/foundation';
 import { SandboxPolicyError, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxCommand, SandboxPolicy } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, pollUntil, withTempDir } from '@momonga/testkit';
 import { createEvidenceRunner } from '../../src/process/evidence-run.ts';
 import { fixedSandboxBindings } from '@momonga/runtime';
 
@@ -102,7 +102,7 @@ describe('the evidence runner', () => {
     const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} })(project);
     const caller = new AbortController();
     const answer = run({ argv: ['/bin/sleep', '60'], cwd: project, env: {}, network: 'deny' }, caller.signal);
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await pollUntil(() => pids.length === 1, { description: 'the evidence command to be spawned', boundMs: REAL_PROCESS_TEST_TIMEOUT_MS / 2 });
     caller.abort();
 
     await expect(answer).resolves.toMatchObject({ exitCode: null });

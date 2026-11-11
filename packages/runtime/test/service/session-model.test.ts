@@ -55,7 +55,7 @@ describe('the model of a session (design-model-names 3.1, 2.2, 12.1 N2.4)', () =
       param: 'model',
       message: 'The model "nope" is not configured. Configured models: devstral-small-2, qwen3.8:27b.',
     });
-    expect(env.store.listSessions()).toEqual([]);
+    expect(env.store.listSessions({ limit: 100, cursor: null }).sessions).toEqual([]);
   });
 
   it('refuses a name two servers serve with the sentence that names both', async () => {

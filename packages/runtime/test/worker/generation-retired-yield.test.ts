@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { fixedRolePort } from '@momonga/foundation';
 import { GatewayRequestError } from '@momonga/runtime';
 import { mutableRole } from '../shared/mutable-role.ts';
-import { within } from './deferred.ts';
+
 import { makeEnv } from './harness.ts';
 import type { ScriptStep } from './fake-gateway.ts';
 import { callsStep, gated, textStep } from './scripts.ts';
@@ -21,7 +21,7 @@ describe('the claim gate by role (17.1, 20.2)', () => {
   it.each(['starting', 'retiring'] as const)('a %s worker claims nothing: the queued run stays queued', async (role) => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('never sent'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(env.worker('w1', { role: fixedRolePort(role) }))).toBe('idle');
 
@@ -32,7 +32,7 @@ describe('the claim gate by role (17.1, 20.2)', () => {
   it('refreshes the role before every claim, so the first claim after a promotion waits for no tick', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Done.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const role = mutableRole('starting');
     const worker = env.worker('w1', { role: role.port });
 
@@ -49,7 +49,7 @@ describe('a retire-yield (20.3, 18.1.3)', () => {
   it('yields the run untouched when the gateway refuses the model call with generation_retired', async () => {
     const env = await makeEnv();
     env.gateway.script.push(thrown(RETIRED), textStep('Done on the serving generation.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const role = mutableRole('serving');
 
     expect(await env.runOnce(env.worker('w1', { role: role.port }))).toBe('yielded');
@@ -68,7 +68,7 @@ describe('a retire-yield (20.3, 18.1.3)', () => {
   it('yields the run untouched when the gateway cannot be reached and the role, read fresh, is retiring', async () => {
     const env = await makeEnv();
     env.gateway.script.push(thrown(NEVER_REACHED), textStep('never sent here'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const role = mutableRole('serving');
     const worker = env.worker('w1', { role: { current: role.port.current, refresh: async () => (role.refreshes() === 0 ? role.port.refresh() : (role.set('retiring'), role.port.refresh())) } });
 
@@ -81,7 +81,7 @@ describe('a retire-yield (20.3, 18.1.3)', () => {
   it('keeps the ordinary requeue, with its attempt.failed record, when the gateway cannot be reached while serving', async () => {
     const env = await makeEnv();
     env.gateway.script.push(thrown(NEVER_REACHED), textStep('Recovered.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(env.worker('w1'))).toBe('yielded');
 
@@ -95,14 +95,14 @@ describe('a step in flight when the role becomes retiring (17.1, 20.31)', () => 
     const env = await makeEnv();
     const blocked = gated(callsStep([{ callId: 'c1', name: 'Echo', args: { value: 'x' } }]), 1);
     env.gateway.script.push(blocked, textStep('Done.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const role = mutableRole('serving');
     const running = env.runOnce(env.worker('w1', { role: role.port }));
-    await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the stream to start');
 
     role.set('retiring');
     blocked.gate.release.resolve();
-    expect(await within(running, 10_000, 'the retiring worker to finish its step')).toBe('yielded');
+    expect(await env.settled(running, 'the retiring worker to finish its step')).toBe('yielded');
 
     expect(env.ofType(run.id, 'model.responded')).toHaveLength(1);
     expect(env.gateway.streams).toHaveLength(1);

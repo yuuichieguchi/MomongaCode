@@ -11,7 +11,7 @@ import type { RunNotifier, SettingsComposition, ToolRuntime } from '@momonga/run
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
-import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, UNCONFIGURED_NETWORK, createFakeClock, closeOnceStarted, createFakeTimers, createTempDir, driveFakeTime, fakeReapTiming, killGroupsForCleanup, modelSettings, removeTempDir, NEVER_CANCELLED } from '@momonga/testkit';
+import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, UNCONFIGURED_NETWORK, createFakeClock, createFakeTimers, createTempDir, driveFakeTime, fakeReapTiming, killGroupsForCleanup, modelSettings, removeTempDir, NEVER_CANCELLED } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { fixedSandboxBindings } from '@momonga/runtime';
@@ -41,11 +41,6 @@ afterEach(async () => {
 });
 
 export const onCleanup = (cleanup: Cleanup): void => void cleanups.push(cleanup);
-
-export const closedAtCleanup = <Handle extends { close: () => Promise<unknown> }>(started: Promise<Handle>): Promise<Handle> => {
-  onCleanup(closeOnceStarted(started));
-  return started;
-};
 
 export type TempHome = { root: string; home: string; paths: MomongaPaths; project: string; dbPath: string };
 
@@ -114,7 +109,7 @@ export type StoreFixture = { store: RuntimeStore; notifier: RunNotifier; clock: 
 
 export const openStore = (temp: TempHome, clock: FakeClock = createFakeClock(START_MS)): StoreFixture => {
   const notifier = runtime.createRunNotifier();
-  const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
+  const store = openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: temp.dbPath,
     home: temp.home,
     clock,
@@ -141,8 +136,8 @@ export const createSession = (
     ...(extra.mcpServers === undefined ? {} : { mcpServers: extra.mcpServers }),
   });
 
-export const createRun = (store: RuntimeStore, sessionId: string): string => {
-  const result = store.createRunAndEnqueue(sessionId, { input: 'hello', timeoutMs: 3_600_000, limits: {}, pins: {} }) as { run?: { id: string } };
+export const createRun = async (store: RuntimeStore, sessionId: string): Promise<string> => {
+  const result = (await store.createRunAndEnqueue(sessionId, { input: 'hello', timeoutMs: 3_600_000, limits: {}, pins: {} })) as { run?: { id: string } };
   const id = result.run?.id;
   if (id === undefined) throw new Error(`run was not created: ${JSON.stringify(result)}`);
   return id;

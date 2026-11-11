@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { ResolvedContextSettings } from '@momonga/config';
 import { TOOL_USAGE_WINDOW_RUNS } from '@momonga/memory';
-import type { FunctionTool } from '@momonga/protocol';
+import type { Capabilities, FunctionTool } from '@momonga/protocol';
 import { defineTool } from '@momonga/tools';
 import type { AnyTool } from '@momonga/tools';
 import { toolUsageWindowOf } from '../../src/worker/tool-usage-window.ts';
-import { makeEnv } from './harness.ts';
+import { capabilitiesFor, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 
@@ -17,6 +17,9 @@ const namesOf = (body: unknown): string[] => toolsOf(body).map((tool) => tool.na
 const loaderOf = (body: unknown): FunctionTool | undefined => toolsOf(body).find((tool) => tool.name === LOADER);
 const enumOf = (body: unknown): unknown =>
   (loaderOf(body)?.parameters as { properties?: { names?: { items?: { enum?: unknown } } } } | undefined)?.properties?.names?.items?.enum;
+
+const SMALL_WINDOW_TOKENS = 16_000;
+const WORDS_OVER_THE_SMALL_WINDOW = 12_000;
 
 const bigTool = (descriptionWords: number): AnyTool =>
   defineTool<Record<string, unknown>>({
@@ -38,8 +41,8 @@ const bigTool = (descriptionWords: number): AnyTool =>
 
 const workToolsOf = (env: Env, extra: readonly AnyTool[] = []) => (): AnyTool[] => [...env.toolbox.tools().filter((tool) => WORK_TOOLS.includes(tool.name)), ...extra];
 
-const deferralEnv = async (context: Partial<ResolvedContextSettings> = {}) => {
-  const env = await makeEnv();
+const deferralEnv = async (context: Partial<ResolvedContextSettings> = {}, capabilities?: Capabilities) => {
+  const env = await makeEnv(capabilities === undefined ? {} : { capabilities });
   env.settings.toolsValue = { ...env.settings.toolsValue, deferral: true };
   env.settings.contextValue = { ...env.settings.contextValue, ...context };
   return env;
@@ -50,7 +53,7 @@ const warmWindow = async (env: Env, extra: readonly AnyTool[] = []): Promise<str
   const ids: string[] = [];
   for (let index = 0; index < TOOL_USAGE_WINDOW_RUNS; index += 1) {
     env.gateway.script.push(callsStep([{ callId: `warm-${index}`, name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
-    const run = env.enqueue(`warm ${index}`, { history: 'fresh' });
+    const run = await env.enqueue(`warm ${index}`, { history: 'fresh' });
     await env.runOnce(worker);
     expect(env.run(run.id).status).toBe('COMPLETED');
     ids.push(run.id);
@@ -60,7 +63,7 @@ const warmWindow = async (env: Env, extra: readonly AnyTool[] = []): Promise<str
 
 const runDeferred = async (env: Env, steps: Parameters<typeof env.gateway.script.push>, extra: readonly AnyTool[] = []) => {
   env.gateway.script.push(...steps);
-  const run = env.enqueue('Use the tools', { history: 'fresh' });
+  const run = await env.enqueue('Use the tools', { history: 'fresh' });
   await env.runOnce(env.worker('main', { toolList: workToolsOf(env, extra) }));
   return { run, requests: env.ofType(run.id, 'model.requested') };
 };
@@ -173,13 +176,13 @@ describe('LoadTools adds the definitions from the next request (5.2, Q7)', () =>
   });
 
   it('refuses a load whose definition does not fit, with the measured reason, and changes nothing (T3-5)', async () => {
-    const env = await deferralEnv();
+    const env = await deferralEnv({}, capabilitiesFor(SMALL_WINDOW_TOKENS));
     await warmWindow(env, [bigTool(1)]);
 
     const { run, requests } = await runDeferred(
       env,
       [callsStep([{ callId: 'load-big', name: LOADER, args: { names: ['Big'] } }]), textStep('Done.')],
-      [bigTool(200_000)],
+      [bigTool(WORDS_OVER_THE_SMALL_WINDOW)],
     );
     const refused = completedOf(env, run.id, LOADER, 0);
 

@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { harness, mustRun, newSession, TIMEOUT_MS } from './helpers.ts';
 import type { RuntimeStore } from '@momonga/store';
 
-const create = (store: RuntimeStore, sessionId: string, input: string, history?: 'inherit' | 'fresh') => {
-  const result = store.createRunAndEnqueue(sessionId, {
+const create = async (store: RuntimeStore, sessionId: string, input: string, history?: 'inherit' | 'fresh') => {
+  const result = await store.createRunAndEnqueue(sessionId, {
     input,
     timeoutMs: TIMEOUT_MS,
     limits: {},
@@ -15,20 +15,20 @@ const create = (store: RuntimeStore, sessionId: string, input: string, history?:
 };
 
 describe('run history and previous run', () => {
-  it('gives the first run of a session no previous run and the inherit default', () => {
+  it('gives the first run of a session no previous run and the inherit default', async () => {
     const { store } = harness();
-    const run = create(store, newSession(store).id, 'first');
+    const run = await create(store, newSession(store).id, 'first');
     expect(run.previousRunId).toBeNull();
     expect(run.history).toBe('inherit');
     expect(mustRun(store, run.id)).toMatchObject({ previousRunId: null, history: 'inherit' });
   });
 
-  it('points every later run at the latest run of the session', () => {
+  it('points every later run at the latest run of the session', async () => {
     const { store } = harness();
     const session = newSession(store);
-    const first = create(store, session.id, 'first');
-    const second = create(store, session.id, 'second');
-    const third = create(store, session.id, 'third', 'fresh');
+    const first = await create(store, session.id, 'first');
+    const second = await create(store, session.id, 'second');
+    const third = await create(store, session.id, 'third', 'fresh');
     expect(second).toMatchObject({ previousRunId: first.id, history: 'inherit' });
     expect(third).toMatchObject({ previousRunId: second.id, history: 'fresh' });
     expect(mustRun(store, third.id)).toMatchObject({ previousRunId: second.id, history: 'fresh' });
@@ -39,19 +39,19 @@ describe('run history and previous run', () => {
     ]);
   });
 
-  it('stores an explicit inherit as inherit', () => {
+  it('stores an explicit inherit as inherit', async () => {
     const { store } = harness();
     const session = newSession(store);
-    create(store, session.id, 'first');
-    expect(create(store, session.id, 'second', 'inherit').history).toBe('inherit');
+    await create(store, session.id, 'first');
+    expect((await create(store, session.id, 'second', 'inherit')).history).toBe('inherit');
   });
 
-  it('keeps previous runs per session', () => {
+  it('keeps previous runs per session', async () => {
     const { store } = harness();
     const a = newSession(store, '/work/a');
     const b = newSession(store, '/work/b');
-    create(store, a.id, 'a1');
-    const b1 = create(store, b.id, 'b1');
+    await create(store, a.id, 'a1');
+    const b1 = await create(store, b.id, 'b1');
     expect(b1.previousRunId).toBeNull();
   });
 });

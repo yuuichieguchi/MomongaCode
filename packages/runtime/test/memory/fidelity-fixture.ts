@@ -57,8 +57,8 @@ export const modelSaid = (step: number, text: string): RunEventPayload[] => [
   },
 ];
 
-export const fidelityEnv = () => {
-  const env = factsStore();
+export const fidelityEnv = async () => {
+  const env = await factsStore();
   const blobsDir = path.join(env.dir, 'blobs');
   const fidelity = async (runId: string, tokens: readonly { token: string; claim: Claim }[], throughEventSeq?: number): Promise<FidelityReply> => {
     const { dev, ino } = fs.statSync(env.dbPath);

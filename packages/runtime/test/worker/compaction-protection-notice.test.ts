@@ -20,7 +20,7 @@ describe('a compaction that runs at a reduced protection level', () => {
       textStep('done'),
     );
     env.gateway.compactSummaries.push('S1');
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 

@@ -6,7 +6,7 @@ import { PassThrough } from 'node:stream';
 import { createJsonLogger, momongaPaths, fixedSocket } from '@momonga/foundation';
 import type { JsonLogger, MomongaPaths, TextStream } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { createFakeClock, createFakeTimers, createRealWorkScope, driveFakeTime, prepareGenerationForTest, quiesce, registerCleanup, settleRealWork, waitFor, withTempDir } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createRealWorkScope, driveFakeTime, prepareGenerationForTest, quiesce, registerCleanup, registerOwned, settleRealWork, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeClock, FakeTimers, JsonLine, RealWorkScope } from '@momonga/testkit';
 
 export { createRealWorkScope, quiesce };
@@ -349,12 +349,8 @@ export const recordingMarkerPorts = (overrides: MarkerPorts = {}, record?: strin
   return { ports, calls };
 };
 
-const advanceToDue = (timers: FakeTimers, due: number): void => {
-  timers.advance(Math.max(0, due - timers.now()));
-};
-
 export const pump = async (timers: FakeTimers, realWork: RealWorkScope, ms: number): Promise<void> => {
-  const target = timers.now() + ms;
+  const target = timers.monotonicMs() + ms;
   await driveFakeTime(timers, {
     done: () => {
       const due = timers.nextDueAt();
@@ -365,7 +361,7 @@ export const pump = async (timers: FakeTimers, realWork: RealWorkScope, ms: numb
     settle: () => settleRealWork(realWork, () => false, 'fake time to pump'),
     detail: () => realWork.describe(),
   });
-  advanceToDue(timers, target);
+  await timers.advanceAsync(Math.max(0, target - timers.monotonicMs()));
   await settleRealWork(realWork, () => false, 'fake time pumped');
 };
 
@@ -460,7 +456,12 @@ export const startHarness = async (context: CleanupContext, options: HarnessOpti
     options.onStdout?.(chunk);
   });
   const markers = recordingMarkerPorts(options.markerPorts ?? {}, order);
-  const started = await realWork.run(() => startSupervisor({
+  const abortAtCleanup = async (process: SupervisorProcess): Promise<void> => {
+    fake.dieOnAnySignal();
+    const closing = settledFlag(realWork.run(() => process.abort()));
+    await pumpUntil(timers, () => closing.settled(), { realWork, maxMs: HARNESS_CLOSE_BOUND_MS, description: 'harness abort settles' });
+  };
+  const started = await registerOwned(context, () => realWork.run(() => startSupervisor({
     home,
     version: TEST_VERSION,
     generation,
@@ -483,17 +484,12 @@ export const startHarness = async (context: CleanupContext, options: HarnessOpti
     random: () => 0.5,
     watchSettings: false,
     ...options.overrides,
-  }));
+  })), abortAtCleanup);
   const supervisor: SupervisorProcess = {
     ...started,
     close: () => realWork.run(() => started.close()),
     abort: () => realWork.run(() => started.abort()),
   };
-  registerCleanup(context, async () => {
-    fake.dieOnAnySignal();
-    const closing = settledFlag(supervisor.abort());
-    await pumpUntil(timers, () => closing.settled(), { realWork, maxMs: HARNESS_CLOSE_BOUND_MS, description: 'harness abort settles' });
-  });
   const health = (): SupervisorHealth => supervisor.health();
   const child = (role: ChildRole): SupervisorHealth['children'][number] => {
     const found = health().children.find((entry) => entry.role === role);

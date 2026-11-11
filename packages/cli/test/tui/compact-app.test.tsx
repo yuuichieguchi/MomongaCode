@@ -27,7 +27,7 @@ describe('/compact', () => {
     backend.emit(frame({ type: 'context.compacting', step: 0, attempt: 1 }));
     await untilFrame(app, 'compacting the conversation');
     backend.emit(frame({ type: 'context.compacted', summary: 's', replacedThroughSeq: 3, tokensBefore: 84_000, tokensAfter: 12_000 }));
-    const shown = await untilOutput(app, 'Compacted: 84.0k -> 12.0k tokens');
+    const shown = await untilOutput(app, 'Compacted: 84k -> 12k tokens');
     expect(shown).not.toContain('context compacted');
     backend.emit(frame({ type: 'run.status', from: 'RUNNING', to: 'COMPLETED' }));
     backend.finish(runView());

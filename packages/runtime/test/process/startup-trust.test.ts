@@ -3,8 +3,8 @@ import path from 'node:path';
 import tls from 'node:tls';
 import { X509Certificate } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import { writeUserSettings } from './helpers.ts';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, registerOwned } from '@momonga/testkit';
+import { writeUserSettings, onCleanup } from './helpers.ts';
 import { RUNTIME_VERSION, captureStream, hookLogger, makeRunHome, startRuntimeProcess } from './run-helpers.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
 
@@ -25,11 +25,7 @@ describe('runtime process start', () => {
     const pem = fs.readFileSync(FIXTURE, 'utf8');
     expect(installed(pem)).toBe(false);
 
-    const runtimeProcess = await startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream() });
-    try {
-      expect(installed(pem)).toBe(true);
-    } finally {
-      await runtimeProcess.close();
-    }
+    await registerOwned(onCleanup, () => startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream() }));
+    expect(installed(pem)).toBe(true);
   });
 });

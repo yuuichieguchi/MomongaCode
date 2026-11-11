@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
 import { GatewayRequestError } from '@momonga/runtime';
-import { deferred, waitUntil, within } from './deferred.ts';
+import { deferred } from './deferred.ts';
 import { LEASE_MS, bodyDigest, capabilitiesFor, compactKey, makeEnv, modelKey } from './harness.ts';
 import type { Env } from './harness.ts';
 import { assistantMessage, gated, textStep } from './scripts.ts';
@@ -37,13 +37,13 @@ describe('worker gateway cancel wiring', () => {
     const env = await makeEnv();
     const blocked = gated(textStep('never finished', { chunks: ['partial ', 'answer'] }), 4);
     env.gateway.script.push(blocked);
-    const run = env.enqueue('Long answer');
+    const run = await env.enqueue('Long answer');
     const statuses = recordStatusAtCancel(env, run.id);
     const running = env.runOnce(env.worker('worker-1', { cancelPollMs: 10 }));
-    await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the stream to start');
 
     await env.store.requestCancel(run.id);
-    await within(running, 5_000, 'the worker to finish after cancel');
+    await env.settled(running, 'the worker to finish after cancel');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(env.gateway.cancels.map((call) => call.idempotencyKey)).toEqual([modelKey(run.id, 1, 1)]);
@@ -53,7 +53,7 @@ describe('worker gateway cancel wiring', () => {
 
   it('cancels the live compaction key upstream when the cancel lands while compacting', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
-    const run = env.enqueue('Task one');
+    const run = await env.enqueue('Task one');
     await env.seed(
       run.id,
       [
@@ -75,10 +75,10 @@ describe('worker gateway cancel wiring', () => {
     };
     const statuses = recordStatusAtCancel(env, run.id);
     const running = env.runOnce(env.worker('worker-1', { cancelPollMs: 10 }));
-    await within(compacting.promise, 5_000, 'the compaction to start');
+    await env.settled(compacting.promise, 'the compaction to start');
 
     await env.store.requestCancel(run.id);
-    await within(running, 5_000, 'the worker to finish after cancel');
+    await env.settled(running, 'the worker to finish after cancel');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(env.gateway.cancels.map((call) => call.idempotencyKey)).toEqual([compactKey(run.id, env.gateway.compacts[0]?.request)]);
@@ -88,7 +88,7 @@ describe('worker gateway cancel wiring', () => {
 
   it('cancels the folded in-flight model key on a CANCELLING claim', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     await seedInFlightRequest(env, run.id);
     expect((await env.cancel(run.id)).status).toBe('CANCELLING');
     const statuses = recordStatusAtCancel(env, run.id);
@@ -103,7 +103,7 @@ describe('worker gateway cancel wiring', () => {
 
   it('does not cancel upstream on a CANCELLING claim with no in-flight model request', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     await env.seed(run.id, [], 'crash');
     expect((await env.cancel(run.id)).status).toBe('CANCELLING');
 
@@ -115,7 +115,7 @@ describe('worker gateway cancel wiring', () => {
 
   it('reaches CANCELLED with a notice when the upstream cancel rejects', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     await seedInFlightRequest(env, run.id);
     await env.cancel(run.id);
     env.gateway.cancelHook = async () => {
@@ -133,7 +133,7 @@ describe('worker gateway cancel wiring', () => {
 
   it('leaves the bound of the upstream cancel to the gateway client and aborts it only with the claim', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     await seedInFlightRequest(env, run.id);
     await env.cancel(run.id);
     const abortedAtSettle: boolean[] = [];
@@ -142,7 +142,7 @@ describe('worker gateway cancel wiring', () => {
       abortedAtSettle.push(signal?.aborted ?? true);
     };
 
-    await within(env.runOnce(env.worker()), 10_000, 'the cancel to settle');
+    await env.settled(env.runOnce(env.worker()), 'the cancel to settle');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(abortedAtSettle).toEqual([false]);
@@ -152,7 +152,7 @@ describe('worker gateway cancel wiring', () => {
   it('does not cancel upstream after a fatal gateway failure', async () => {
     const env = await makeEnv();
     env.gateway.script.push({ events: [], error: new GatewayRequestError({ status: 401, type: 'invalid_request', code: 'authentication_failed', message: 'rejected' }) });
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await env.runOnce(env.worker());
 
@@ -164,16 +164,16 @@ describe('worker gateway cancel wiring', () => {
     const env = await makeEnv();
     const blocked = gated(textStep('late answer', { chunks: ['late ', 'answer'] }), 4);
     env.gateway.script.push(blocked);
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const running = env.runOnce(env.worker('worker-a', { heartbeatMs: 10, cancelPollMs: 10 }));
-    await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the stream to start');
 
     env.clock.advance(LEASE_MS + 1);
     expect(env.store.claim('worker-thief')?.runId).toBe(run.id);
-    await waitUntil(() => env.gateway.streams[0]?.signal.reason === 'lease_lost', 3_000, 'the heartbeat to abort the stream for the lost lease');
+    await env.passTime(() => env.gateway.streams[0]?.signal.reason === 'lease_lost', 'the heartbeat to abort the stream for the lost lease');
     await env.store.requestCancel(run.id);
     blocked.gate.release.resolve();
-    await within(running, 5_000, 'the first worker to stop after losing its lease');
+    await env.settled(running, 'the first worker to stop after losing its lease');
 
     expect(env.gateway.cancels).toEqual([]);
     expect(env.gateway.capabilitiesCalls).toHaveLength(1);

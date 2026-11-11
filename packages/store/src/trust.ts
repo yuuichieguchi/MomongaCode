@@ -1,15 +1,16 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { type Clock, answeredLater, answeredNow, askedPaths, hostPaths, nodeFileSystem, settledOrAborted, syncPaths } from '@momonga/foundation';
-import type { PathAsking } from '@momonga/foundation';
+import { type Clock, answeredLater, askedPaths, createPathResolver, settledOrAborted } from '@momonga/foundation';
+import type { PathAsking, PathFileSystem } from '@momonga/foundation';
 import { readerFor, storedOneOf } from './rows.ts';
 import type { DecodeContext } from './decode-context.ts';
 import type { StoredTrustDecision, TrustAnswer, TrustDecision, TrustStore } from './types.ts';
 
 const DECISIONS = ['trusted', 'untrusted'] as const;
 
-export const createTrustStore = (db: DatabaseSync, clock: Clock, home: string, context: DecodeContext): TrustStore => {
+const isNotFound = (error: unknown): boolean => typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
+
+export const createTrustStore = (db: DatabaseSync, clock: Clock, home: string, context: DecodeContext, fileSystem: PathFileSystem): TrustStore => {
   const select = db.prepare('SELECT * FROM trust WHERE path = :path');
   const upsert = db.prepare(
     `INSERT INTO trust (path, decision, decided_at) VALUES (:path, :decision, :decidedAt)
@@ -21,13 +22,19 @@ export const createTrustStore = (db: DatabaseSync, clock: Clock, home: string, c
     if (row === undefined) return undefined;
     return storedOneOf(context, 'trust', real, 'decision', DECISIONS, readerFor('trust', real, row).string('decision'));
   };
-  function* deciding(target: string): PathAsking<TrustAnswer> {
-    let start: string;
-    try {
-      start = yield* askedPaths.realPath(target);
-    } catch {
-      return { decision: null };
+  function* resolvedThroughExistingPart(target: string): PathAsking<string> {
+    const missing: string[] = [];
+    for (let current = path.resolve(target); ; current = path.dirname(current)) {
+      try {
+        return path.join(yield* askedPaths.realPath(current), ...missing);
+      } catch (error) {
+        if (!isNotFound(error) || path.dirname(current) === current) throw error;
+        missing.unshift(path.basename(current));
+      }
     }
+  }
+  function* deciding(target: string): PathAsking<TrustAnswer> {
+    const start = yield* resolvedThroughExistingPart(target);
     for (let current = start; ; current = path.dirname(current)) {
       const decision = decisionAt(current);
       const exactOnly = yield* askedPaths.comparableContains(current, home);
@@ -45,24 +52,20 @@ export const createTrustStore = (db: DatabaseSync, clock: Clock, home: string, c
     upsert.run({ path: real, decision, decidedAt: clock.now() });
   }
   return {
-    get: (target): StoredTrustDecision | undefined => decisionAt(syncPaths.realPath(target)),
-    decisionFor: (target) => answeredNow(deciding(target), syncPaths),
-    decisionAsked: (target, signal) => answeredLater(deciding(target), hostPaths(signal), signal),
-    set: (target, decision) => answeredNow(setting(target, decision), syncPaths),
-    setAsked: (target, decision, signal) => answeredLater(setting(target, decision), hostPaths(signal), signal),
-    clear: (target) => {
-      const resolved = fs.existsSync(target) ? syncPaths.realPath(target) : path.resolve(target);
-      remove.run({ path: resolved });
-    },
+    decisionAsked: (target, signal) => answeredLater(deciding(target), createPathResolver(fileSystem, signal), signal),
+    setAsked: (target, decision, signal) => answeredLater(setting(target, decision), createPathResolver(fileSystem, signal), signal),
     clearAsked: async (target, signal) => {
       const present = await settledOrAborted(
-        nodeFileSystem.access(target, 'exists').then(
+        fileSystem.access(target, 'exists').then(
           () => true,
-          () => false,
+          (error: unknown) => {
+            if (isNotFound(error)) return false;
+            throw error;
+          },
         ),
         signal,
       );
-      const resolved = present ? await hostPaths(signal).realPath(target) : path.resolve(target);
+      const resolved = present ? await createPathResolver(fileSystem, signal).realPath(target) : path.resolve(target);
       remove.run({ path: resolved });
     },
   };

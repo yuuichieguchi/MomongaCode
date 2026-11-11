@@ -1,4 +1,4 @@
-import type { ListedSession, TuiBackend } from '../backend.ts';
+import type { SessionSummary, TuiBackend } from '../backend.ts';
 import type { PickRequest } from '../picker.tsx';
 import { displayWidth, segmentsOf } from '../screen/wrap.ts';
 import type { SlashCommand } from '../slash.ts';
@@ -34,7 +34,7 @@ const cutTo = (text: string, columns: number): string => {
   return `${kept}${CUT_MARK}`;
 };
 
-export const conversationRow = (listed: ListedSession, now: number, columns: number): string => {
+export const conversationRow = (listed: SessionSummary, now: number, columns: number): string => {
   const facts = ` · ${ageText(listed.createdAt, now)} · ${listed.runs} ${listed.runs === 1 ? 'run' : 'runs'}`;
   return `${cutTo(listed.firstPrompt.replaceAll(/\s+/g, ' ').trim(), columns - ROW_MARGIN_COLUMNS - displayWidth(facts))}${facts}`;
 };

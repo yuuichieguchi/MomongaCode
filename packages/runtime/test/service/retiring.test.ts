@@ -29,11 +29,11 @@ const serviceIn = async (role: GenerationRole) => {
 describe.each(['starting', 'retiring'] as const)('a %s runtime refuses the requests that create work (17.1, 20.2, 20.33)', (role) => {
   it('answers POST /v1/sessions with 503 moved, retry-after 1 and no sockets in the body, and creates nothing', async () => {
     const { env } = await serviceIn(role);
-    const before = env.store.listSessions().length;
+    const before = env.store.listSessions({ limit: 100, cursor: null }).sessions.length;
 
     expectMoved(await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: { PATH: '/usr/bin:/bin' } } }));
 
-    expect(env.store.listSessions()).toHaveLength(before);
+    expect(env.store.listSessions({ limit: 100, cursor: null }).sessions).toHaveLength(before);
   });
 
   it('answers a new POST runs with 503 moved and stores no run', async () => {

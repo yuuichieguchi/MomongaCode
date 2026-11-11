@@ -6,7 +6,7 @@ import { OPTIONS, awaitingApproval } from './approval-fixture.ts';
 
 const digestOf = (body: unknown): string => sha256Hex(canonicalJson(body));
 
-const createRun = (store: RuntimeStore, sessionId: string, input: string, idempotencyKey?: string, requestDigest?: string) =>
+const createRun = async (store: RuntimeStore, sessionId: string, input: string, idempotencyKey?: string, requestDigest?: string) =>
   store.createRunAndEnqueue(sessionId, {
     input,
     ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
@@ -25,7 +25,7 @@ describe('createRunAndEnqueue typed result', () => {
     const session = newSession(store);
     const digest = digestOf({ input: 'hello' });
 
-    const result = createRun(store, session.id, 'hello', 'key-1', digest);
+    const result = await createRun(store, session.id, 'hello', 'key-1', digest);
 
     if (result.kind !== 'created') throw new Error(`expected created, got ${result.kind}`);
     expect(result.run).toMatchObject({ sessionId: session.id, ordinal: 1, status: 'QUEUED' });
@@ -36,10 +36,10 @@ describe('createRunAndEnqueue typed result', () => {
     const { store } = harness();
     const session = newSession(store);
     const digest = digestOf({ input: 'hello' });
-    const first = createRun(store, session.id, 'hello', 'key-1', digest);
+    const first = await createRun(store, session.id, 'hello', 'key-1', digest);
     if (first.kind !== 'created') throw new Error('expected created');
 
-    const again = createRun(store, session.id, 'hello', 'key-1', digest);
+    const again = await createRun(store, session.id, 'hello', 'key-1', digest);
 
     expect(again).toEqual({ kind: 'existing', run: mustRun(store, first.run.id) });
     expect(store.listRuns(session.id)).toHaveLength(1);
@@ -48,42 +48,42 @@ describe('createRunAndEnqueue typed result', () => {
   it('returns key_reused for the same key with a different digest', async () => {
     const { store } = harness();
     const session = newSession(store);
-    createRun(store, session.id, 'hello', 'key-1', digestOf({ input: 'hello' }));
+    await createRun(store, session.id, 'hello', 'key-1', digestOf({ input: 'hello' }));
 
-    expect(createRun(store, session.id, 'bye', 'key-1', digestOf({ input: 'bye' }))).toEqual({ kind: 'key_reused' });
+    expect(await createRun(store, session.id, 'bye', 'key-1', digestOf({ input: 'bye' }))).toEqual({ kind: 'key_reused' });
     expect(store.listRuns(session.id)).toHaveLength(1);
   });
 
   it('returns key_reused when the stored run has a NULL digest', async () => {
     const { store } = harness();
     const session = newSession(store);
-    createRun(store, session.id, 'hello', 'key-1');
+    await createRun(store, session.id, 'hello', 'key-1');
 
-    expect(createRun(store, session.id, 'hello', 'key-1', digestOf({ input: 'hello' }))).toEqual({ kind: 'key_reused' });
+    expect(await createRun(store, session.id, 'hello', 'key-1', digestOf({ input: 'hello' }))).toEqual({ kind: 'key_reused' });
   });
 
   it('scopes keys to the session', async () => {
     const { store } = harness();
     const digest = digestOf({ input: 'hello' });
-    const first = createRun(store, newSession(store).id, 'hello', 'key-1', digest);
-    const second = createRun(store, newSession(store).id, 'hello', 'key-1', digest);
+    const first = await createRun(store, newSession(store).id, 'hello', 'key-1', digest);
+    const second = await createRun(store, newSession(store).id, 'hello', 'key-1', digest);
     expect([first.kind, second.kind]).toEqual(['created', 'created']);
   });
 
   it('returns not_found for an unknown session instead of throwing', async () => {
     const { store } = harness();
-    expect(createRun(store, 'ghost', 'hello')).toEqual({ kind: 'not_found' });
+    expect(await createRun(store, 'ghost', 'hello')).toEqual({ kind: 'not_found' });
   });
 
   it('records previous_run_id as the session highest-ordinal earlier run', async () => {
     const { dbPath, store } = harness();
     const session = newSession(store);
     const other = newSession(store);
-    const first = enqueue(store, session.id, 'one');
-    enqueue(store, other.id, 'elsewhere');
-    const second = enqueue(store, session.id, 'two');
+    const first = await enqueue(store, session.id, 'one');
+    await enqueue(store, other.id, 'elsewhere');
+    const second = await enqueue(store, session.id, 'two');
     await cancel(store, second.id);
-    const third = enqueue(store, session.id, 'three');
+    const third = await enqueue(store, session.id, 'three');
 
     expect(runColumns(dbPath, first.id)).toMatchObject({ previous_run_id: null });
     expect(runColumns(dbPath, second.id)).toMatchObject({ previous_run_id: first.id });
@@ -94,7 +94,7 @@ describe('createRunAndEnqueue typed result', () => {
 describe('requestCancel typed result', () => {
   it('returns ok with changed for a QUEUED run that becomes CANCELLING', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const result = await store.requestCancel(run.id);
     expect(result).toEqual({ kind: 'ok', changed: true, run: mustRun(store, run.id) });
     expect(mustRun(store, run.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'QUEUED' });
@@ -102,14 +102,14 @@ describe('requestCancel typed result', () => {
 
   it('returns ok with changed for a RUNNING run that becomes CANCELLING', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
     expect(await store.requestCancel(run.id)).toMatchObject({ kind: 'ok', changed: true, run: { status: 'CANCELLING', cancelRequested: true } });
   });
 
   it('returns ok without a change for a CANCELLING run', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
     await cancel(store, run.id);
     const before = mustRun(store, run.id);
@@ -118,7 +118,7 @@ describe('requestCancel typed result', () => {
 
   it('returns ok without a change for a terminal run and appends nothing', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     await store.release(mustClaim(store, 'w1'), 'COMPLETED');
     const before = mustRun(store, run.id);
     expect(await store.requestCancel(run.id)).toEqual({ kind: 'ok', changed: false, run: before });
@@ -135,7 +135,7 @@ describe('setPermissionMode', () => {
   it('updates the session and appends one session-scoped mode.changed event', async () => {
     const { clock, store } = harness();
     const session = newSession(store);
-    const run = enqueue(store, session.id);
+    const run = await enqueue(store, session.id);
     clock.advance(3);
 
     const result = store.setPermissionMode(session.id, 'plan');
@@ -166,7 +166,7 @@ describe('setModel', () => {
   it('updates the session and appends one session-scoped model.changed event naming both models', async () => {
     const { clock, store } = harness();
     const session = newSession(store);
-    const run = enqueue(store, session.id);
+    const run = await enqueue(store, session.id);
     clock.advance(3);
 
     const result = store.setModel(session.id, 'other');
@@ -201,9 +201,9 @@ describe('readSessionEvents', () => {
   it('returns run events of every run and session events in global id order', async () => {
     const { store } = harness();
     const session = newSession(store);
-    const first = enqueue(store, session.id, 'one');
+    const first = await enqueue(store, session.id, 'one');
     store.setPermissionMode(session.id, 'acceptEdits');
-    const second = enqueue(store, session.id, 'two');
+    const second = await enqueue(store, session.id, 'two');
 
     const events = store.readSessionEvents(session.id, 0, 100);
 
@@ -222,7 +222,7 @@ describe('readSessionEvents', () => {
   it('reports 0 as the maximum event id of a session with no events and ignores other sessions', async () => {
     const { store } = harness();
     const empty = newSession(store);
-    enqueue(store, newSession(store).id);
+    await enqueue(store, newSession(store).id);
     expect(store.sessionMaxEventId(empty.id)).toBe(0);
   });
 });
@@ -231,10 +231,10 @@ describe('listRuns', () => {
   it('lists the session runs by ordinal, optionally filtered by status', async () => {
     const { store } = harness();
     const session = newSession(store);
-    const first = enqueue(store, session.id, 'one');
-    const second = enqueue(store, session.id, 'two');
-    const third = enqueue(store, session.id, 'three');
-    enqueue(store, newSession(store).id, 'elsewhere');
+    const first = await enqueue(store, session.id, 'one');
+    const second = await enqueue(store, session.id, 'two');
+    const third = await enqueue(store, session.id, 'three');
+    await enqueue(store, newSession(store).id, 'elsewhere');
     await cancel(store, second.id);
     expect(await store.finishCancelled(() => undefined)).toEqual([second.id]);
 
@@ -307,7 +307,7 @@ describe('createRunAndEnqueue deadline', () => {
     const session = newSession(store);
     clock.advance(7);
 
-    const result = store.createRunAndEnqueue(session.id, { input: 'x', timeoutMs: 12_345, limits: {}, pins: {} });
+    const result = await store.createRunAndEnqueue(session.id, { input: 'x', timeoutMs: 12_345, limits: {}, pins: {} });
 
     if (result.kind !== 'created') throw new Error(`expected created, got ${result.kind}`);
     expect(result.run.createdAt).toBe(START_MS + 7);

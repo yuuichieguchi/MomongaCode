@@ -27,6 +27,7 @@ export type FakeUpstreamOptions = {
   respond?: (request: RecordedUpstreamRequest) => FakeUpstreamReply | undefined;
   authenticate?: (headers: http.IncomingHttpHeaders) => FakeUpstreamReply | undefined;
   socketPath?: string;
+  listedModel?: string;
 };
 
 export type FakeUpstreamServer = {
@@ -82,6 +83,8 @@ const serve = async (reply: FakeUpstreamReply, response: http.ServerResponse): P
 
 export const serveFakeUpstreamReply = serve;
 
+const MODEL_LISTING_PATH = '/v1/models';
+
 export const startFakeSseUpstream = async (options: FakeUpstreamOptions): Promise<FakeUpstreamServer> => {
   const requests: RecordedUpstreamRequest[] = [];
   const script = [...(options.script ?? [])];
@@ -97,6 +100,10 @@ export const startFakeSseUpstream = async (options: FakeUpstreamOptions): Promis
         } catch {
           body = raw;
         }
+      }
+      if (options.listedModel !== undefined && request.method === 'GET' && request.url === MODEL_LISTING_PATH) {
+        await serve({ kind: 'json', body: { object: 'list', data: [{ id: options.listedModel, object: 'model' }] } }, response);
+        return;
       }
       const recorded: RecordedUpstreamRequest = { method: request.method ?? 'GET', path: request.url ?? '/', headers: request.headers, body };
       requests.push(recorded);

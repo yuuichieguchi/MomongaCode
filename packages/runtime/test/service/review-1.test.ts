@@ -8,7 +8,7 @@ import type { RuntimeStore } from '@momonga/store';
 import { afterMicrotasks, waitFor, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { eventStreamResponse } from '../../src/service/event-stream.ts';
-import { START_MS, expectError, onCleanup, openStore, startService, waitUntil } from './helpers.ts';
+import { START_MS, expectError, onCleanup, openStore, startService, pollFor } from './helpers.ts';
 import type { ServiceEnv } from './helpers.ts';
 
 const runningRun = async (env: ServiceEnv) => {
@@ -84,7 +84,7 @@ describe('SW2 data_version poll failure', () => {
     const run = await env.createRun(session.id);
     const initial = (await env.getRun(run.id)).lastSeq as number;
     const stream = await env.stream(`/v1/runs/${run.id}/events?after=${initial}`);
-    await waitUntil(() => env.notifier.subscriberCount() === 1, 5000, 'the subscriber to register');
+    await pollFor(() => env.notifier.subscriberCount() === 1, 5000, 'the subscriber to register');
 
     failNext = true;
     expect(() => timers.advance(50)).not.toThrow();
@@ -202,11 +202,15 @@ describe('SS3 single clock read for run timestamps', () => {
         now += 1;
         return now;
       },
+      monotonicMs: () => now,
       advance: (ms) => {
         now += ms;
       },
       set: (ms) => {
         now = ms;
+      },
+      stepWall: () => {
+        throw new Error('this clock has one value and cannot step its wall time alone');
       },
     };
     const env = await startService({ clock: ticking });
@@ -235,7 +239,7 @@ describe('SS5 coverage gaps', () => {
     expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     const lastSeq = (await env.getRun(run.id)).lastSeq as number;
 
-    const frames = await (await env.stream(`/v1/runs/${run.id}/events`)).toEnd(10_000);
+    const frames = await (await env.stream(`/v1/runs/${run.id}/events`)).toEnd();
 
     expect(frames.map((event) => event.seq)).toEqual(Array.from({ length: lastSeq }, (_, index) => index + 1));
     expect(frames.filter((event) => event.type === 'notice').map((event) => String(event.message).slice(0, 1))).toEqual(['A', 'B', 'C']);
@@ -344,11 +348,11 @@ describe('SS5 coverage gaps', () => {
     const env = await startService();
     const { run, lastSeq } = await runningRun(env);
     const streams = await Promise.all([0, 1, 2].map(() => env.stream(`/v1/runs/${run.id}/events?after=${lastSeq}`)));
-    await waitUntil(() => env.notifier.subscriberCount() === 3, 5000, 'three subscribers');
+    await pollFor(() => env.notifier.subscriberCount() === 3, 5000, 'three subscribers');
 
     await env.closeService();
 
-    await waitUntil(() => streams.every((stream) => stream.ended), 5000, 'every stream to end');
+    await pollFor(() => streams.every((stream) => stream.ended), 5000, 'every stream to end');
     expect(env.notifier.subscriberCount()).toBe(0);
   });
 });

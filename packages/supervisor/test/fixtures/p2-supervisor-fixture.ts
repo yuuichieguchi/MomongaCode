@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { FIRST_GENERATION } from '@momonga/foundation';
 import { prepareGenerationForTest } from '@momonga/testkit/first-generation';
+import { registerOwned } from '@momonga/testkit/test-support';
 import { startSupervisor } from '../../src/start-supervisor.ts';
 import { createSpawnPort } from '../../src/spawn-port.ts';
 import type { SpawnPort } from '../../src/child-manager.ts';
@@ -25,7 +26,13 @@ const spawn: SpawnPort = process.argv.includes('--leak-marker-fd')
   : realPort;
 
 prepareGenerationForTest(home, FIRST_GENERATION, '0.0.0-fixture');
-const supervisor = await startSupervisor({
+const closeOnSigterm = (close: () => Promise<void>): void => {
+  process.on('SIGTERM', () => {
+    void close().then(() => process.exit(0));
+  });
+};
+
+await registerOwned(closeOnSigterm, () => startSupervisor({
   home,
   version: '0.0.0-fixture',
   generation: FIRST_GENERATION,
@@ -35,8 +42,4 @@ const supervisor = await startSupervisor({
   stdout: process.stdout,
   watchSettings: false,
   orphanReapGraceMs: 200,
-});
-
-process.on('SIGTERM', () => {
-  void supervisor.close().then(() => process.exit(0));
-});
+}));

@@ -127,11 +127,11 @@ export const inboxFullMessage = (): string => `${INBOX_MAX_PENDING} messages are
 export type InboxRowView = {
   id: string;
   sessionId: string;
-  delivery: InboxDelivery;
+  delivery: Stored<InboxDelivery>;
   text: string;
   images?: { mediaType: ImageMediaType; byteLength: number }[];
   seq: number;
-  state: InboxState;
+  state: Stored<InboxState>;
   createdAt: number;
   settledAt: number | null;
 };

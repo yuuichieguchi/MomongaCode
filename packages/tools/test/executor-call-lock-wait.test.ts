@@ -36,6 +36,18 @@ const reconcilingEdit = () =>
 
 const sourceOf = (relative: string): string => fs.readFileSync(path.resolve(import.meta.dirname, '..', '..', relative), 'utf8');
 
+const argumentsOfCall = (source: string, callee: string): string => {
+  const open = source.indexOf(`${callee}({`);
+  if (open === -1) throw new Error(`no call of ${callee}`);
+  let depth = 0;
+  for (let index = open + callee.length; index < source.length; index += 1) {
+    if (source[index] === '(') depth += 1;
+    if (source[index] === ')') depth -= 1;
+    if (depth === 0) return source.slice(open, index + 1);
+  }
+  throw new Error(`the call of ${callee} is not closed`);
+};
+
 describe('the wait for a held call lock', () => {
   it('outlasts a long heartbeat plus the settle limit, whatever the reconcile cap is', async () => {
     let harness: Harness | undefined;
@@ -66,7 +78,7 @@ describe('the wait for a held call lock', () => {
   });
 
   it('receives the heartbeat of the configured lease in the runtime process', () => {
-    expect(sourceOf('runtime/src/process/tool-runtime.ts')).toMatch(/createToolExecutor\(\{[^}]*heartbeatMs/s);
-    expect(sourceOf('runtime/src/process/start-runtime-process.ts')).toMatch(/createToolRuntime\(\{(?:(?!\n {6}\}\);).)*\n {8}heartbeatMs: heartbeatMsFor\(leaseMs\),/s);
+    expect(argumentsOfCall(sourceOf('runtime/src/process/tool-runtime.ts'), 'createToolExecutor')).toMatch(/^\s*heartbeatMs: options\.heartbeatMs,$/m);
+    expect(argumentsOfCall(sourceOf('runtime/src/process/start-runtime-process.ts'), 'createToolRuntime')).toMatch(/^\s*heartbeatMs: heartbeatMsFor\(leaseMs\),$/m);
   });
 });

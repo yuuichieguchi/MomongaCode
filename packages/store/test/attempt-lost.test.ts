@@ -12,7 +12,7 @@ const lastSeq = (store: RuntimeStore, runId: string): number => store.readRunEve
 describe('claim records a takeover as attempt.lost in its own transaction', () => {
   it('a takeover of an expired RUNNING lease appends attempt.lost with lastLiveAt = previous lease_expires_at - leaseMs, the last heartbeat', async () => {
     const { clock, store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const first = mustClaim(store, 'w1');
     clock.advance(300);
     expect(store.heartbeat(first).kind).toBe('ok');
@@ -27,7 +27,7 @@ describe('claim records a takeover as attempt.lost in its own transaction', () =
 
   it('a takeover of an expired CANCELLING lease appends attempt.lost too', async () => {
     const { clock, store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
     expect((await cancel(store, run.id)).status).toBe('CANCELLING');
     clock.advance(LEASE_MS);
@@ -37,7 +37,7 @@ describe('claim records a takeover as attempt.lost in its own transaction', () =
 
   it('a chain of takeovers appends one attempt.lost per takeover, each with the last live instant of the holder it replaced', async () => {
     const { clock, store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
     clock.advance(LEASE_MS);
     const second = mustClaim(store, 'w2');
@@ -50,7 +50,7 @@ describe('claim records a takeover as attempt.lost in its own transaction', () =
 
   it('a first claim and a claim after a graceful drain append nothing; only the later takeover appends, once', async () => {
     const { clock, store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const first = mustClaim(store, 'w1');
     expect(lostRecords(store, run.id)).toEqual([]);
     expect((await store.release(first, 'QUEUED', START_MS, { refundAttempt: true })).kind).toBe('ok');

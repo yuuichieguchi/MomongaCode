@@ -57,8 +57,8 @@ describe('the memo of attestation verdicts (decision 40 B, 13.12b)', () => {
   it('sets checked_through only at a seq with no call pending: just before the tool.call of a call that never completed', async () => {
     const h = referenceHarness();
     const b = chainBuilder(h);
-    const run = await answeredRun(h, b, 'root', (claim) => {
-      b.tool(claim);
+    const run = await answeredRun(h, b, 'root', async (claim) => {
+      await b.tool(claim);
       b.openCall(claim, true);
     }, { fresh: true, ending: { to: 'STOPPED', stopReason: 'timeout' } });
     const pending = eventsOf(h.store, run.id).filter((event) => event.type === 'tool.call').at(-1);

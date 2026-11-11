@@ -8,7 +8,7 @@ describe('worker loop detection', () => {
   it('stops at loop before executing the third identical call with identical outputs', async () => {
     const env = await makeEnv();
     env.gateway.script.push(echo('call_l_1', 'same'), echo('call_l_2', 'same'), echo('call_l_3', 'same'), textStep('never sent'));
-    const run = env.enqueue('Loop');
+    const run = await env.enqueue('Loop');
 
     await env.runOnce(env.worker());
 
@@ -23,7 +23,7 @@ describe('worker loop detection', () => {
     const env = await makeEnv();
     const count = (callId: string) => callsStep([{ callId, name: 'Counter', args: { value: 'same' } }]);
     env.gateway.script.push(count('call_c_1'), count('call_c_2'), count('call_c_3'), textStep('Counted.'));
-    const run = env.enqueue('Count');
+    const run = await env.enqueue('Count');
 
     await env.runOnce(env.worker());
 
@@ -34,7 +34,7 @@ describe('worker loop detection', () => {
   it('does not treat a repeat separated by a different call as a loop', async () => {
     const env = await makeEnv();
     env.gateway.script.push(echo('call_a_1', 'a'), echo('call_a_2', 'a'), echo('call_b_1', 'b'), echo('call_a_3', 'a'), textStep('Done.'));
-    const run = env.enqueue('Mix');
+    const run = await env.enqueue('Mix');
 
     await env.runOnce(env.worker());
 
@@ -45,7 +45,7 @@ describe('worker loop detection', () => {
   it('uses loopThreshold from run.limits', async () => {
     const env = await makeEnv();
     env.gateway.script.push(echo('call_l_1', 'same'), echo('call_l_2', 'same'), textStep('never sent'));
-    const run = env.enqueue('Loop', { limits: { loopThreshold: 2 } });
+    const run = await env.enqueue('Loop', { limits: { loopThreshold: 2 } });
 
     await env.runOnce(env.worker());
 

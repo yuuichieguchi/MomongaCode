@@ -63,7 +63,7 @@ describe('worker gateway error policy: fatal 4xx', () => {
   it.each(FATAL)('fails the run with the gateway code and message on %s', async (_label, fields) => {
     const env = await makeEnv();
     env.gateway.script.push(thrown(fields), textStep('never sent'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await claimOnce(env, env.worker());
 
@@ -80,7 +80,7 @@ describe('worker gateway error policy: fatal 4xx', () => {
     env.gateway.capabilitiesHook = async () => {
       throw gatewayError(fields);
     };
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await claimOnce(env, env.worker());
 
@@ -97,7 +97,7 @@ describe('worker gateway error policy: fatal 4xx', () => {
     env.gateway.capabilitiesHook = async () => {
       throw gatewayError(fields);
     };
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await claimOnce(env, env.worker());
 
@@ -112,7 +112,7 @@ describe('worker gateway error policy: fatal 4xx', () => {
   it('passes the claim signal to capabilities', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Hello.'));
-    env.enqueue('Work');
+    await env.enqueue('Work');
 
     await claimOnce(env, env.worker());
 
@@ -127,7 +127,7 @@ describe('worker gateway error policy: fatal 4xx', () => {
     env.gateway.countHook = async () => {
       throw gatewayError({ status: 401, type: 'invalid_request', code: 'authentication_failed', message: 'counting was rejected' });
     };
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await claimOnce(env, env.worker());
 
@@ -137,7 +137,7 @@ describe('worker gateway error policy: fatal 4xx', () => {
 
   it('composes the deterministic summary and records the code when a proactive compact rejects with invalid_request', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
-    const run = env.enqueue('Task one');
+    const run = await env.enqueue('Task one');
     const responded = (step: number, text: string): RunEventPayload => ({
       type: 'model.responded',
       step,
@@ -177,7 +177,7 @@ describe('worker gateway error policy: timeout', () => {
   it.each(TIMEOUT)('stops the run with timeout on %s', async (_label, failure) => {
     const env = await makeEnv();
     env.gateway.script.push(failure(), textStep('never sent'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await claimOnce(env, env.worker());
 
@@ -190,7 +190,7 @@ describe('worker gateway error policy: refundable', () => {
   it.each(REFUNDABLE)('requeues with a refunded attempt on %s', async (_label, fields) => {
     const env = await makeEnv();
     env.gateway.script.push(thrown(fields), textStep('Recovered.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const worker = env.worker();
 
     await claimOnce(env, worker);
@@ -213,7 +213,7 @@ describe('worker gateway error policy: refundable', () => {
       calls += 1;
       if (calls === 1) throw gatewayError({ status: 503, type: 'server_error', code: 'gateway_closed', message: 'the gateway is shutting down' });
     };
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await claimOnce(env, env.worker());
 
@@ -226,7 +226,7 @@ describe('worker gateway error policy: hop failures and deferrals requeue, every
   it.each(HOP_FAILURES)('requeues with a counted attempt on %s', async (_label, fields) => {
     const env = await makeEnv();
     env.gateway.script.push(thrown(fields), textStep('Recovered.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const worker = env.worker();
 
     await claimOnce(env, worker);
@@ -244,7 +244,7 @@ describe('worker gateway error policy: hop failures and deferrals requeue, every
   it.each(AFTER_THE_GATEWAY_BUDGET)('fails the run on its first claim with the gateway code and message on %s', async (_label, fields) => {
     const env = await makeEnv();
     env.gateway.script.push(thrown(fields), textStep('never sent'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await claimOnce(env, env.worker());
 
@@ -255,7 +255,7 @@ describe('worker gateway error policy: hop failures and deferrals requeue, every
   it('fails the run on its first claim with internal_error and the message of a plain error thrown by non-gateway code', async () => {
     const env = await makeEnv();
     env.gateway.script.push({ events: [], error: new Error('the parser blew up') }, textStep('never sent'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await claimOnce(env, env.worker());
 
@@ -266,7 +266,7 @@ describe('worker gateway error policy: hop failures and deferrals requeue, every
   it('requeues a deferral at exactly its retryAfterMs', async () => {
     const env = await makeEnv();
     env.gateway.script.push(thrown(deferral(120_000)));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await claimOnce(env, env.worker('worker-1', { random: FIXED_RANDOM }));
 
@@ -276,7 +276,7 @@ describe('worker gateway error policy: hop failures and deferrals requeue, every
 
   it('fails the run with rate_limited instead of requeueing a deferral at or after the deadline', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work', { deadlineAt: env.clock.now() + 60_000 });
+    const run = await env.enqueue('Work', { deadlineAt: env.clock.now() + 60_000 });
     env.gateway.script.push(thrown(deferral(60_000)));
 
     await claimOnce(env, env.worker('worker-1', { random: FIXED_RANDOM }));
@@ -287,7 +287,7 @@ describe('worker gateway error policy: hop failures and deferrals requeue, every
   it('grows the backoff with the streak and resets it after a successful model response', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.gateway.script.push(hopFailure(), hopFailure(), callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'one' } }]), hopFailure());
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const worker = env.worker('worker-1', { random: FIXED_RANDOM });
 
     await claimOnce(env, worker);
@@ -317,7 +317,7 @@ describe('worker gateway error policy: stream_interrupted cap', () => {
     const env = await makeEnv();
     const interrupted = (): ScriptStep => thrown({ status: 0, type: 'transport', code: 'stream_interrupted', message: 'the stream closed early' });
     env.gateway.script.push(interrupted(), interrupted(), interrupted(), interrupted(), interrupted());
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const worker = env.worker('worker-1', { random: FIXED_RANDOM });
     const attempts: number[] = [];
 
@@ -337,7 +337,7 @@ describe('worker gateway error policy: stream_interrupted cap', () => {
 describe('worker deadline at claim start', () => {
   it('stops a run claimed at or after its deadline before reading the tool set or capabilities', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work', { deadlineAt: env.clock.now() + 1_000 });
+    const run = await env.enqueue('Work', { deadlineAt: env.clock.now() + 1_000 });
     env.clock.advance(1_000);
     let toolSetReads = 0;
     const worker = env.worker('worker-1', {

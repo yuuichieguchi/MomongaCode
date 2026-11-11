@@ -17,6 +17,31 @@ const blockFor = (ms: number): void => {
 };
 
 describe('driveFakeTime', () => {
+  it('runs the continuation of a timer before the next timer due at the same instant, as the real scheduler does', async () => {
+    const clock = createFakeClock(0);
+    const timers = createFakeTimers(clock);
+    const order: string[] = [];
+    let release: () => void = () => undefined;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    timers.setTimeout(() => release(), 100);
+    const bound = timers.setTimeout(() => order.push('bound fired'), 100);
+    let finished = false;
+    void (async () => {
+      await released;
+      await Promise.resolve();
+      timers.clearTimeout(bound);
+      order.push('continuation');
+      finished = true;
+    })();
+
+    await driveFakeTime(timers, { done: () => finished, horizonAt: 1000, description: 'the continuation' });
+
+    expect(order).toEqual(['continuation']);
+    expect(clock.now()).toBe(100);
+  });
+
   it('fires each timer of the scenario up to its horizon and never fast-forwards a periodic timer beyond it', async () => {
     const clock = createFakeClock(0);
     const timers = createFakeTimers(clock);

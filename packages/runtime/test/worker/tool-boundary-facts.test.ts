@@ -38,7 +38,7 @@ describe('structured facts set at the tool boundary', () => {
   it('journals the files a tool reports, and the fold keeps a written file as a working fact', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { content: 'hello' } }]), textStep('Done.'));
-    const run = env.enqueue();
+    const run = await env.enqueue();
 
     await env.runOnce(env.worker('worker-1', { toolList: factTools }));
 
@@ -51,7 +51,7 @@ describe('structured facts set at the tool boundary', () => {
   it('journals the command of a command subject and the exit code a tool reports, and the fold keeps a failed command whose file effects were not observed as a working fact', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.gateway.script.push(callsStep([{ callId: 'call_b_1', name: 'Bash', args: { command: 'make lint' } }]), textStep('Done.'));
-    const run = env.enqueue();
+    const run = await env.enqueue();
 
     await env.runOnce(env.worker('worker-1', { toolList: factTools }));
 

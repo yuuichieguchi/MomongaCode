@@ -18,9 +18,9 @@ const journal: RunEventPayload[] = [
   { type: 'tool.completed', callId: 'c1', status: 'completed', output: 'ok', command: 'rm old.ts', exitCode: 0, files: [{ path: '/p/old.ts', access: 'remove' }] } as RunEventPayload,
 ];
 
-const stored = () => {
+const stored = async () => {
   const { dbPath, store } = harness();
-  const run = enqueue(store, newSession(store).id, 'remove a file');
+  const run = await enqueue(store, newSession(store).id, 'remove a file');
   const claim = mustClaim(store, 'w1');
   expect(store.append(claim, journal).kind).toBe('ok');
   const events: RunEvent[] = store.readRunEvents(run.id, 0, 1000);
@@ -36,12 +36,12 @@ const stored = () => {
 };
 
 describe('snapshot state version for removal and observation', () => {
-  it('writes the current stateVersion', () => {
-    expect(stored().storedJson()['stateVersion']).toBe(SNAPSHOT_STATE_VERSION);
+  it('writes the current stateVersion', async () => {
+    expect((await stored()).storedJson()['stateVersion']).toBe(SNAPSHOT_STATE_VERSION);
   });
 
-  it('treats a version 14 snapshot as absent and refolds from the journal', () => {
-    const { store, run, state, events, mutate } = stored();
+  it('treats a version 14 snapshot as absent and refolds from the journal', async () => {
+    const { store, run, state, events, mutate } = await stored();
     mutate("json_set(state_json, '$.stateVersion', 14)");
     const loaded = store.load(run.id);
     expect(loaded.snapshot).toBeUndefined();
@@ -49,14 +49,14 @@ describe('snapshot state version for removal and observation', () => {
     expect(loaded.tail.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }) as RunState)).toEqual(state);
   });
 
-  it('round-trips a removed written fact and an observed command', () => {
-    const { store, run, state } = stored();
+  it('round-trips a removed written fact and an observed command', async () => {
+    const { store, run, state } = await stored();
     expect(state.workingFacts.written).toEqual([{ path: '/p/old.ts', removed: true, seq: expect.any(Number) }]);
     expect(store.load(run.id).snapshot?.state).toEqual(state);
   });
 
-  it('reports a snapshot whose removed flag is not true as corrupt', () => {
-    const { store, run, mutate } = stored();
+  it('reports a snapshot whose removed flag is not true as corrupt', async () => {
+    const { store, run, mutate } = await stored();
     mutate("json_set(state_json, '$.workingFacts.written[0].removed', 'yes')");
     expect(() => store.load(run.id)).toThrow(/corrupt/);
   });
