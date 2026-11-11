@@ -6,6 +6,7 @@ import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { NEVER_CANCELLED } from '@momonga/testkit';
 import { capabilitiesFor, makeEnv } from './harness.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const IDS = { runId: 'run-ws', sessionId: 'session-ws' };
 const USAGE = { input_tokens: 1, output_tokens: 1, total_tokens: 2 };
@@ -17,7 +18,7 @@ const tokensOf = (text: string): number => Math.ceil(text.length / 4);
 const journal = (payloads: readonly RunEventPayload[]): RunEvent[] =>
   payloads.map((payload, index) => ({ ...payload, id: index + 1, ...IDS, seq: index + 1, step: 1, leaseToken: 1, createdAt: 1 }) as RunEvent);
 
-const fold = (payloads: readonly RunEventPayload[]): RunState => journal(payloads).reduce(foldRunState, initialRunState(IDS));
+const fold = (payloads: readonly RunEventPayload[]): RunState => journal(payloads).reduce(foldRunState, initialRunState({ ...IDS, fence: TEST_FENCE }));
 
 const toolCall = (callId: string, name: string, rawInput: unknown): RunEventPayload[] => [
   {

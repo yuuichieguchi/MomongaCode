@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { sha256Hex } from '@momonga/foundation';
 import { buildSystemPrompt } from '@momonga/runtime';
+import { TEST_FENCE } from '@momonga/testkit';
 
-const CONTEXT = { cwd: '/work/project', platform: 'darwin' };
+const CONTEXT = { cwd: '/work/project', platform: 'darwin', fence: TEST_FENCE };
 
 describe('system prompt', () => {
   it('is byte-stable for the same session context', () => {
@@ -13,8 +14,8 @@ describe('system prompt', () => {
     const prompt = buildSystemPrompt(CONTEXT);
     expect(prompt).toContain('/work/project');
     expect(prompt).toContain('darwin');
-    expect(buildSystemPrompt({ ...CONTEXT, cwd: '/work/other' })).not.toBe(prompt);
-    expect(buildSystemPrompt({ ...CONTEXT, platform: 'linux' })).not.toBe(prompt);
+    expect(buildSystemPrompt({ ...CONTEXT, cwd: '/work/other', fence: TEST_FENCE })).not.toBe(prompt);
+    expect(buildSystemPrompt({ ...CONTEXT, platform: 'linux', fence: TEST_FENCE })).not.toBe(prompt);
   });
 
   it('contains no timestamp or random id', () => {

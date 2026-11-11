@@ -72,6 +72,7 @@ describe('messageOf: one builder per message, which names the command of the sur
   it('uses no banned variant in any message on any surface', () => {
     const samples: Record<(typeof MESSAGE_KEYS)[number], (surface: (typeof SURFACES)[number]) => string> = {
       noModelConnected: (surface) => messageOf('noModelConnected', surface),
+      billingChangeRefused: (surface) => messageOf('billingChangeRefused', surface, { model: 'm', from: 'plan', to: 'metered' }),
       modelAmbiguous: (surface) => messageOf('modelAmbiguous', surface, { text: 'x', choices: ['a/x', 'b/x'] }),
       modelNotConfigured: (surface) => messageOf('modelNotConfigured', surface, { text: 'x', choices: [] }),
       sessionNotFound: (surface) => messageOf('sessionNotFound', surface, { id: 'i' }),

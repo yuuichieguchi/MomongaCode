@@ -4,6 +4,7 @@ import { foldRunState, initialRunState } from '@momonga/store';
 import { FIXTURE_RUN_ID, FIXTURE_SESSION_ID, materializeEvents } from '@momonga/testkit';
 import { outcomePayloads } from '../../src/worker/tool-step.ts';
 import { expectSchema } from '../service/helpers.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 type Outcome = Parameters<typeof outcomePayloads>[0];
 
@@ -77,7 +78,7 @@ describe('the journal record of a live timeout', () => {
       ...outcomePayloads(liveOutcome('unknown', 'timeout', 'npm test')),
     ] as RunEventPayload[];
     const events = materializeEvents(payloads);
-    const state = events.reduce(foldRunState, initialRunState({ runId: FIXTURE_RUN_ID, sessionId: FIXTURE_SESSION_ID }));
+    const state = events.reduce(foldRunState, initialRunState({ runId: FIXTURE_RUN_ID, sessionId: FIXTURE_SESSION_ID, fence: TEST_FENCE }));
     expect(state.workingFacts.commands).toEqual([{ command: 'npm test', failed: false, reconciled: 'unknown', seq: 6 }]);
   });
 });

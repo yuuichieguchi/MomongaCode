@@ -101,7 +101,7 @@ describe('headless asks capabilitiesOf(model) at session open and shows the verd
     expect(log).toContain(`capabilitiesOf:${SESSION.model}`);
     expect(log).not.toContain('createRun');
     expect(result.stderr).toContain(NEEDS_PROBE.remedy);
-    expect(result.stderr).toContain('target_not_ready');
+    expect(result.stderr).not.toContain('target_not_ready');
   });
 
   it('shows that the model is being measured, once per model and OS build, before the run is created, and the run proceeds', async (context) => {
@@ -128,7 +128,7 @@ describe('headless refuses a model the gateway lists as unavailable before the r
     const result = await headlessReading(context, UNAVAILABLE, 'text');
 
     expect(log).not.toContain('createRun');
-    expect(result.stderr).toBe(`momonga: target_not_ready: ${UNAVAILABLE_MESSAGE}\n${UNAVAILABLE_REMEDY}\n`);
+    expect(result.stderr).toBe(`momonga: ${UNAVAILABLE_MESSAGE}\n${UNAVAILABLE_REMEDY}\n`);
     expect(result.stdout).toBe('');
     expect(result.code).toBe(EXIT_FAILURE);
   });

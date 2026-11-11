@@ -5,12 +5,14 @@ import { buildContext, itemCapFor, measurePinned } from '@momonga/context';
 import type { BuildContextInput } from '@momonga/context';
 import { HOME, PROJECT, capabilitiesFor, fakeBlobs, fakeReader, sourcesWith } from './helpers.ts';
 import { ESTIMATED, meterOf, piece, pieceCounter } from './meter-fixtures.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const WINDOW = 4096;
 const sized = capabilitiesFor(WINDOW, { tokenCounting: 'estimated', maxOutputTokens: 1024 });
 
 const inputWith = (extra: Partial<BuildContextInput>): BuildContextInput => ({
   capabilities: sized,
+  fence: TEST_FENCE,
   model: 'm',
   sources: sourcesWith({ systemPrompt: 'system#1900', task: piece('task', 10) as MessageInputItem }),
   evicted: new Set<string>(),

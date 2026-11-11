@@ -1496,7 +1496,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const flushTelemetry = async (requestSignal: AbortSignal): Promise<void> => {
       const traced = await telemetries.acquire(requestSignal);
       try {
-        await traced.value.forceFlush();
+        await traced.value.flushLocal();
       } finally {
         traced.release();
       }
