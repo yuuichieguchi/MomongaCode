@@ -29,10 +29,22 @@ const parseOutcome = (value: unknown): BackgroundOutcome | undefined => {
   return undefined;
 };
 
-export const parseUpdateState = (value: unknown): UpdateState => {
+const invalidStateFile = (file: string): Error => new Error(`the update state file ${file} is not valid; remove it to reset the background update check`);
+
+const jsonOf = (text: string, file: string): unknown => {
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    if (error instanceof SyntaxError) throw invalidStateFile(file);
+    throw error;
+  }
+};
+
+export const parseUpdateState = (text: string, file: string): UpdateState => {
+  const value = jsonOf(text, file);
   if (isRecord(value) && typeof value['checkedAt'] === 'number' && typeof value['announced'] === 'boolean') {
     const outcome = parseOutcome(value['outcome']);
     if (outcome !== undefined) return { checkedAt: value['checkedAt'], outcome, announced: value['announced'] };
   }
-  throw new Error('the update state file is not valid; remove it to reset the background update check');
+  throw invalidStateFile(file);
 };

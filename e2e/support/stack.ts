@@ -324,7 +324,7 @@ const satisfied = (health: SupervisorHealth, wanted: StackReadiness): boolean =>
 const RUNTIME_SERVING_ROLE = 'serving';
 
 const runtimeRoleOf = async (home: E2eHome): Promise<unknown> => {
-  const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime));
+  const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime), { connectTimeoutMs: 0 });
   try {
     const response = await client.request({ method: 'GET', path: '/v1/health' });
     const body: unknown = JSON.parse(await response.text());

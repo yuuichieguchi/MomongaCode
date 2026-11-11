@@ -8,7 +8,7 @@ import { createUninspectableRegistry, systemRandom, nodeFileSystem, BUSY_WAIT_LI
 import type { MarkerState, ProcessGroupPort } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { createFakeClock, createFakeTimers, sleepDrivenTiming, testKernelLock, testProcessInspector } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, sleepDrivenTiming, testKernelLock, testProcessInspector, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { createBackgroundJobs, createNodeJobMarkerFiles } from '@momonga/runtime';
 import { launch } from '../../../sandbox/src/process.ts';
 import type { LaunchOptions } from '../../../sandbox/src/process.ts';
@@ -82,7 +82,7 @@ const runJob = async (survives: boolean) => {
       const stdout = new PassThrough();
       const stderr = new PassThrough();
       const child = Object.assign(new EventEmitter(), { pid: GROUP, stdout, stderr, stdin: null });
-      const launched = launch({
+      const launched = launch({ protection: TEST_CHILD_UNPROTECTED,
         file: '/bin/bash',
         args: [],
         cwd: '/',

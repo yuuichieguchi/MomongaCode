@@ -3,7 +3,7 @@ import type { ProductValidator } from '@momonga/foundation';
 import { GOVERNING_KINDS } from '@momonga/protocol';
 import type { GoverningKind } from '@momonga/protocol';
 import { DATASET_SCHEMA, DatasetError, assertGoldenCases, describeFirstError, isInsideWorkspace, jsonOf } from './dataset.ts';
-import type { GoldenCase } from './dataset.ts';
+import type { GoldenCase, GraderSpec } from './dataset.ts';
 import { pickFrom, seededRandom } from './random.ts';
 
 export const CONTEXT_DATASET_FORMAT = 'momonga-eval-context/1';
@@ -32,6 +32,8 @@ export type ContextMemory = { text: string; paths: string[] };
 
 export type RevisionChain = { id: string; kind: GoverningKind; target: string; text: string };
 
+export type StateGraders = { fromRun: number; graders: GraderSpec[] };
+
 export type ContextCase = GoldenCase & {
   scenario: string;
   compaction: CompactionSetting;
@@ -42,6 +44,7 @@ export type ContextCase = GoldenCase & {
   noise: { level: number; topics: string[] };
   workspace?: WorkspaceStep[];
   gold?: GoldAnchor[];
+  stateGraders?: StateGraders[];
 };
 
 export type ContextDataset = { format: typeof CONTEXT_DATASET_FORMAT; name: string; cases: ContextCase[] };
@@ -123,6 +126,15 @@ export const CONTEXT_DATASET_SCHEMA = {
                 remove: { type: 'array', items: string },
               },
               required: ['beforeRun'],
+              additionalProperties: false,
+            },
+          },
+          stateGraders: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { fromRun: { type: 'integer', minimum: 1 }, graders: goldenCaseSchema.properties.graders },
+              required: ['fromRun', 'graders'],
               additionalProperties: false,
             },
           },
@@ -259,7 +271,24 @@ const assertNoiseNamesNoTarget = (entry: ContextCase, source: string): void => {
   }
 };
 
-const PAIR_FIELDS = ['input', 'permissionMode', 'onAsk', 'runs', 'timeoutMs', 'files', 'workspace', 'rules', 'revisionDepth', 'revisionChain', 'memories', 'noise', 'graders'] as const;
+const assertStateGraders = (entry: ContextCase, source: string): void => {
+  const states = entry.stateGraders ?? [];
+  states.forEach((state, index) => {
+    if (state.fromRun >= entry.runs) {
+      throw new DatasetError(`${source}: case ${entry.id}: state graders ${index} start at run ${state.fromRun} but the case has ${entry.runs} run(s); fromRun counts from 1 to runs - 1`);
+    }
+    const previous = states[index - 1];
+    if (previous !== undefined && previous.fromRun >= state.fromRun) {
+      throw new DatasetError(`${source}: case ${entry.id}: state graders ${index} start at run ${state.fromRun}, not after the run ${previous.fromRun} of the state before them`);
+    }
+  });
+  assertGoldenCases({ cases: states.map((state) => ({ ...entry, id: `${entry.id} from run ${state.fromRun}`, graders: state.graders })) }, source);
+};
+
+export const gradersOfRun = (entry: Pick<ContextCase, 'graders' | 'stateGraders'>, runIndex: number): readonly GraderSpec[] =>
+  (entry.stateGraders ?? []).filter((state) => state.fromRun <= runIndex).at(-1)?.graders ?? entry.graders;
+
+const PAIR_FIELDS = ['input', 'permissionMode', 'onAsk', 'runs', 'timeoutMs', 'files', 'workspace', 'rules', 'revisionDepth', 'revisionChain', 'memories', 'noise', 'graders', 'stateGraders'] as const;
 
 const assertPairs = (dataset: ContextDataset, source: string): void => {
   const scenarios = [...new Set(dataset.cases.map((entry) => entry.scenario))];
@@ -290,6 +319,7 @@ export const parseContextDataset = (text: string, source: string): ContextDatase
     assertRevisions(entry, source);
     assertWorkspace(entry, source);
     assertMemoryPaths(entry, source);
+    assertStateGraders(entry, source);
     assertNoiseNamesNoTarget(entry, source);
   }
   assertPairs(dataset, source);

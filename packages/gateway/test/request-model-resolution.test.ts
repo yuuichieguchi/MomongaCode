@@ -257,7 +257,7 @@ describe('the model of a request is typed text, resolved once by the leased rout
       role: fixedRolePort('serving'),
     });
     registerCleanup(() => gateway.close());
-    const client = createUdsClient(fixedSocket(socketPath));
+    const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0 });
     registerCleanup(() => client.close());
 
     const pending = postJson(client, '/v1/responses', { model: 'a/x', input: userInput('hi') });

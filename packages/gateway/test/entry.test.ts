@@ -134,7 +134,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     await waitForReadyOrExit(launched);
     const hold = fake.hold();
     registerCleanup(context, () => hold.release());
-    const client = createUdsClient(fixedSocket(firstGeneration(paths).sockets.gateway));
+    const client = createUdsClient(fixedSocket(firstGeneration(paths).sockets.gateway), { connectTimeoutMs: 0 });
     registerCleanup(context, () => client.close());
     const request = postJson(client, '/v1/responses', { model: 'primary/system', input: userInput('hold me') }, { 'idempotency-key': 'entry-held' }).catch(() => undefined);
     await hold.waitForRequest();
@@ -176,7 +176,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     const { home, paths, fake } = await validHome(context, { apiKeyEnv: 'MOMONGA_ENTRY_KEY' });
     const launched = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr'], { MOMONGA_ENTRY_KEY: API_KEY_VALUE });
     await waitForReadyOrExit(launched);
-    const client = createUdsClient(fixedSocket(firstGeneration(paths).sockets.gateway));
+    const client = createUdsClient(fixedSocket(firstGeneration(paths).sockets.gateway), { connectTimeoutMs: 0 });
     registerCleanup(context, () => client.close());
 
     const response = await readJson(await postJson(client, '/v1/responses', { model: 'primary/system', input: userInput('hi') }));

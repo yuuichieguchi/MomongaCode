@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attachmentSummaryOf, toPublicRunEvent, userMessageContent, userShellText } from '@momonga/protocol';
+import { attachmentSummaryOf, includedShellTexts, toPublicRunEvent, userMessageContent, userShellText } from '@momonga/protocol';
 import type { MessageAttachment, RunEvent, UserShellRecord } from '@momonga/protocol';
 
 const FILE: MessageAttachment = { type: 'attached_file', path: 'src/app.tsx', content: '     1\tone\n     2\ttwo', truncated: false };
@@ -12,12 +12,10 @@ describe('what the model receives for a user message', () => {
     expect(userMessageContent('hello', undefined)).toEqual([{ type: 'input_text', text: 'hello' }]);
   });
 
-  it('puts the output of ! before the text in the form of a user shell command, and leaves the output of !! out', () => {
+  it('gives the output of ! in the form of a user shell command apart from the typed text, and leaves the output of !! out', () => {
     expect(userShellText(SHOWN)).toBe('<user_shell_command><command>make test</command><exit_code>2</exit_code><output>FAIL</output></user_shell_command>');
-    expect(userMessageContent('why', undefined, { shell: [SHOWN, KEPT_OUT] })).toEqual([
-      { type: 'input_text', text: userShellText(SHOWN) },
-      { type: 'input_text', text: 'why' },
-    ]);
+    expect(includedShellTexts([SHOWN, KEPT_OUT])).toEqual([userShellText(SHOWN)]);
+    expect(userMessageContent('why', undefined)).toEqual([{ type: 'input_text', text: 'why' }]);
   });
 
   it('gives an interrupted command an empty exit code', () => {

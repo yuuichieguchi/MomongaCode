@@ -634,7 +634,7 @@ export const startService = async (overrides: ServiceOverrides & { fakeTimers?: 
     await service.close();
   };
   onCleanup(closeService);
-  const client = createUdsClient(fixedSocket(layout.socketPath));
+  const client = createUdsClient(fixedSocket(layout.socketPath), { connectTimeoutMs: 0 });
   onCleanup(() => client.close());
   let rawDb: DatabaseSync | undefined;
   onCleanup(() => rawDb?.close());

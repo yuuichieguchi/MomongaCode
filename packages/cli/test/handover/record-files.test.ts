@@ -2,10 +2,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { handoverLeftovers, handoverRecordOwner, momongaPaths, sweepLeftovers } from '@momonga/foundation';
+import { handoverLeftovers, handoverRecordOwner, isProcessAlive, momongaPaths, nodeFileSystem, pidNamespaceOf, sweepLeftovers } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { nodeRecordFiles } from '../../src/node-ports.ts';
+import { spawn } from 'node:child_process';
 import { createMover } from '../../src/handover/mover.ts';
+import { replaceProcess } from '../../src/handover/replace-process.ts';
+import type { RelayChild } from '../../src/handover/replace-process.ts';
 import { HANDOVER_FORMAT, encodeRecord, parseRecord, recordFileOf } from '../../src/handover/record.ts';
 import type { StreamRecord } from '../../src/handover/record.ts';
 import { testKernelLock } from '@momonga/testkit';
@@ -24,12 +27,13 @@ const pathsOf = (): MomongaPaths => {
 };
 
 const textOf = (pid: number): string => {
-  const encoded = encodeRecord(RECORD, pid);
+  const encoded = encodeRecord(RECORD, { writer: pid, reader: pid, namespace: 'single' });
   if (encoded.kind !== 'fits') throw new Error('the record of the test does not fit');
   return encoded.text;
 };
 
-const sweep = (paths: MomongaPaths) => sweepLeftovers({ directories: [handoverLeftovers(paths)], lock: testKernelLock() });
+const sweep = async (paths: MomongaPaths) =>
+  sweepLeftovers({ directories: [handoverLeftovers(paths, { files: nodeFileSystem, namespace: await pidNamespaceOf(nodeFileSystem), alive: (pid) => isProcessAlive(pid) })], lock: testKernelLock() });
 
 afterEach(() => {
   for (const home of homes.splice(0)) fs.rmSync(home, { recursive: true, force: true });
@@ -42,11 +46,11 @@ describe('16.8: the record names its owner and is held by its writer', () => {
     expect(parseRecord(text)).toEqual({ kind: 'record', record: RECORD });
   });
 
-  it('the mover writes the pid of its process into the record', async () => {
+  it('the mover writes the parties it is given into the record: the writer, the reader and the reader\'s pid namespace', async () => {
     const written: string[] = [];
     const mover = createMover({
       version: '1.2.3',
-      pid: 4242,
+      parties: async () => ({ writer: 4242, reader: 4343, namespace: 'pid:[4026531836]' }),
       write: (_file, text) => void written.push(text),
       remove: () => undefined,
       handOver: () => undefined,
@@ -67,6 +71,7 @@ describe('16.8: the record names its owner and is held by its writer', () => {
     });
     await mover.learned('1.2.4');
     expect(written.map(handoverRecordOwner)).toEqual([4242]);
+    expect(written.map((text): unknown => JSON.parse(text))).toEqual([expect.objectContaining({ pid: 4242, reader: 4343, namespace: 'pid:[4026531836]' })]);
   });
 
   it('a written record is kept by the sweep while its writer lives, whatever pid it names, and leaves no temporary', async () => {
@@ -126,5 +131,70 @@ describe('a record belongs to one attached client', () => {
     expect(handoverRecordOwner(recordFiles.read(attach))).toBe(2);
     recordFiles.remove(attach);
     expect(fs.readdirSync(path.dirname(tui))).toEqual([]);
+  });
+});
+
+describe('P-323: a relayed record names the child as its reader', () => {
+  it('the sweep keeps the record while the relayed child lives, after the relay parent has handed its lock over, and removes it once the child is gone', async () => {
+    const paths = pathsOf();
+    const file = recordFileOf(paths, 'attach', 'session-1');
+    const namespace = await pidNamespaceOf(nodeFileSystem);
+    const children: RelayChild[] = [];
+    let childPid: number | undefined;
+    const spawned = new Promise<void>((resolve) => {
+      const mover = createMover({
+        version: '1.2.3',
+        parties: async () => ({ writer: process.pid, reader: process.pid, namespace }),
+        write: recordFiles.write,
+        remove: recordFiles.remove,
+        handOver: (handed) => {
+          recordFiles.handOver(handed);
+          resolve();
+        },
+        target: () => ({ file: process.execPath, args: ['-e', 'setInterval(() => undefined, 1000)'], env: {} }),
+        replace: (target, hooks) =>
+          replaceProcess(
+            target,
+            {
+              execve: undefined,
+              spawn: (command, args) => {
+                const child = spawn(command, args, { stdio: 'ignore' });
+                childPid = child.pid;
+                children.push(child);
+                return child;
+              },
+              exit: () => undefined,
+              onSignal: () => undefined,
+            },
+            hooks,
+          ),
+      });
+      mover.attach({
+        surface: 'cli',
+        kept: () => ({ kind: 'run', runId: RECORD.runId }),
+        recordFile: () => file,
+        quiet: () => true,
+        snapshot: () => RECORD,
+        terminal: () => undefined,
+        suspend: async () => undefined,
+        release: () => undefined,
+        resume: () => undefined,
+        say: () => undefined,
+      });
+      void mover.learned('1.2.4');
+    });
+    await spawned;
+    const child = children[0];
+    if (child === undefined || childPid === undefined) throw new Error('the relay started no child');
+    const ended = new Promise<void>((resolve) => child.once('exit', () => resolve()));
+    try {
+      expect(JSON.parse(recordFiles.read(file))).toMatchObject({ pid: process.pid, reader: childPid, namespace });
+      expect((await sweep(paths)).removed).toEqual([]);
+      expect(fs.existsSync(file)).toBe(true);
+    } finally {
+      child.kill('SIGKILL');
+      await ended;
+    }
+    expect((await sweep(paths)).removed).toEqual([file]);
   });
 });

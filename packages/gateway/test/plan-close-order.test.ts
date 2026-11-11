@@ -37,7 +37,7 @@ describe('O-R5-6 L1: the close order keeps a refresh in flight to its end', () =
     });
     const closing = gateway.close();
     await vi.waitFor(async () => {
-      const probe = createUdsClient(fixedSocket(gateway.socketPath));
+      const probe = createUdsClient(fixedSocket(gateway.socketPath), { connectTimeoutMs: 0 });
       try {
         await expect(probe.request({ method: 'GET', path: '/v1/momonga/models' }).then((response) => response.text())).rejects.toThrow();
       } finally {

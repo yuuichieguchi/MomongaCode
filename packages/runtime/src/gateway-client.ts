@@ -381,7 +381,7 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
   const unaryTimeoutMs = options.unaryTimeoutMs ?? DEFAULT_UNARY_TIMEOUT_MS;
   const cancelTimeoutMs = options.cancelTimeoutMs ?? DEFAULT_CANCEL_TIMEOUT_MS;
   const streamIdleTimeoutMs = options.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS;
-  const uds: UdsClient = createUdsClient(options.resolveSocket, { headersTimeoutMs: 0, bodyTimeoutMs: 0 });
+  const uds: UdsClient = createUdsClient(options.resolveSocket, { connectTimeoutMs: 0, headersTimeoutMs: 0, bodyTimeoutMs: 0 });
   let destroyed = false;
 
   const clientDestroyed = (): GatewayRequestError => transportError('client_destroyed', 'the gateway client was destroyed');

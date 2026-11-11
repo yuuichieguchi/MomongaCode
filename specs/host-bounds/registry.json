@@ -160,6 +160,7 @@
       {"name":"BUNDLED_EXECUTABLE_STAGED_NAME_BYTES","file":"packages/foundation/src/platform/bundled-executable.ts","lacks":["row"]},
       {"name":"BOOT_TIME_RESOLUTION_MS","file":"packages/foundation/src/platform/linux-inspector.ts","lacks":["kind"]},
       {"name":"STAGING_SUFFIX_BYTES","file":"packages/foundation/src/platform/lock-capability.ts","lacks":["row"]},
+      {"name":"OWNER_ONLY_SECRET_BYTES","file":"packages/foundation/src/platform/owner-only-secret.ts","lacks":["row"]},
       {"name":"ABORT_SETTLE_LIMIT_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind","row"]},
       {"name":"CHILD_STDIO_FLUSH_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind"]},
       {"name":"CONTROL_REQUEST_TIMEOUT_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind"]},
@@ -365,8 +366,8 @@
     "clientsWithoutEveryBound": {
       "packages/cli/src/client/gateway-client.ts": 1,
       "packages/cli/src/client/runtime-client.ts": 1,
-      "packages/foundation/src/outbound.ts": 5,
-      "packages/foundation/src/uds.ts": 2,
+      "packages/foundation/src/outbound.ts": 4,
+      "packages/foundation/src/uds.ts": 1,
       "packages/gateway/src/managed/server.ts": 1,
       "packages/gateway/src/managed/target.ts": 1,
       "packages/gateway/src/probe/client.ts": 1,

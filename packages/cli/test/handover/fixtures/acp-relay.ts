@@ -28,12 +28,12 @@ if (role === 'new') {
   const carried = carriedStream(stdio(), new Uint8Array());
   process.on('message', () => {
     carried.hold('handover');
-    const encoded = encodeRecord({ format: HANDOVER_FORMAT, fromVersion: '1.0.0', toVersion: '1.0.1', session: 'acp-1', lastSeq: {}, kind: 'acp', initialize: null, sessions: [], input: Buffer.from(carried.pending()).toString('base64') }, process.pid);
+    const encoded = encodeRecord({ format: HANDOVER_FORMAT, fromVersion: '1.0.0', toVersion: '1.0.1', session: 'acp-1', lastSeq: {}, kind: 'acp', initialize: null, sessions: [], input: Buffer.from(carried.pending()).toString('base64') }, { writer: process.pid, reader: process.pid, namespace: 'single' });
     if (encoded.kind !== 'fits') throw new Error('the record does not fit');
     writeFileSync(recordFile, encoded.text);
     process.send?.('held');
     process.disconnect?.();
-    void replaceProcess({ file: process.execPath, args: [process.argv[1] ?? '', 'new', recordFile], env: process.env }, { ...hostReplace, execve: undefined }, { release: () => undefined });
+    void replaceProcess({ file: process.execPath, args: [process.argv[1] ?? '', 'new', recordFile], env: process.env }, { ...hostReplace, execve: undefined }, { release: () => undefined, relayed: () => undefined });
   });
   await answer(carried, 'old');
 }

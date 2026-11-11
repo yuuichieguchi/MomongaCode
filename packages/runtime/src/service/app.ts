@@ -60,7 +60,7 @@ import type { McpAdminPort } from './input-routes.ts';
 import { canonicalProject } from './project-query.ts';
 import { registerReportRoutes } from './report-routes.ts';
 import type { ReportRouteDeps } from './report-routes.ts';
-import { registerTrustRoutes } from './trust.ts';
+import { registerTrustRoutes, undecidedFolderNotice } from './trust.ts';
 import type { ServiceTimers } from './timers.ts';
 import { answeredByOf } from './answered-by.ts';
 import { runTermsOf } from './delegation.ts';
@@ -334,7 +334,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const mcpServers = checkedMcpServers(body.mcpServers ?? {});
     refuseNewWork();
     const session = store.createSession({ cwd, env: stripped.env, permissionMode, model, bypassAllowed, ...(body.sandboxNetwork === undefined ? {} : { sandboxNetwork: body.sandboxNetwork }), additionalDirectories, mcpServers });
-    return json({ session: await sessionViewOf(session, context.req.raw.signal, settings), strippedEnvKeys: stripped.removed }, 201, { location: `/v1/sessions/${session.id}` });
+    const notice = body.terminalUi === false ? await undecidedFolderNotice(store.trust, cwd, context.req.raw.signal) : {};
+    return json({ session: await sessionViewOf(session, context.req.raw.signal, settings), strippedEnvKeys: stripped.removed, ...notice }, 201, { location: `/v1/sessions/${session.id}` });
   };
 
   const everySession = (filter: { cwd?: string }): ListedSession[] => {

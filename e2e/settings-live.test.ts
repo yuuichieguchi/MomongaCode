@@ -76,7 +76,7 @@ describe('decision 76: a settings edit during a held run applies in place (desig
       description: 'the supervisor to log the settings change',
     });
     writeSettingsFile(home, '{ "models": ');
-    const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.gateway));
+    const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.gateway), { connectTimeoutMs: 0 });
     try {
       const response = await client.request({
         method: 'POST',

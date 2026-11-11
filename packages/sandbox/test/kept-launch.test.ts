@@ -1,3 +1,4 @@
+import { TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
@@ -47,6 +48,7 @@ const worldOf = (script: (keeper: FakeKeeper, index: number) => void): World => 
         cwd: 'C:\\work',
         env: { SystemRoot: 'C:\\Windows' },
         signal: controller.signal,
+        protection: TEST_CHILD_UNPROTECTED,
         killGraceMs: KILL_GRACE_MS,
         afterExit: () => void (world.afterExit += 1),
         spawnProcess: ((file: string, args: readonly string[], options: Spawned['options']) => {

@@ -7,7 +7,7 @@ import { createUnsandboxed } from '@momonga/sandbox';
 import { fixedSandboxBindings } from '@momonga/runtime';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { Run } from '@momonga/store';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { EarlierAttemptNotStoppedError, verificationMarkerName } from '@momonga/tools';
 import type { ToolExecutor } from '@momonga/tools';
 import { createRequestValidator } from '../../../gateway/src/core/validation.ts';
@@ -37,7 +37,7 @@ const feedbackPrefix = (): string => {
 const spawned: { argv: readonly string[]; policy: SandboxPolicy }[] = [];
 
 const recordingSandbox = (): Sandbox => {
-  const inner = createUnsandboxed({ killGraceMs: 200 });
+  const inner = createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 200 });
   return {
     ...inner,
     kind: 'seatbelt',

@@ -653,6 +653,7 @@ export type RuntimeStore = {
   ): Promise<ServiceMutationResult>;
   readRunEvents(runId: string, afterSeq: number, limit: number): RunEvent[];
   readRunEventsOfTypes(runId: string, types: readonly RunEventPayload['type'][], afterSeq?: number): RunEvent[];
+  latestSessionNotice(sessionId: string, code: string, key: string): RunEvent | undefined;
   readLatestRunEventBefore<T extends RunEventPayload['type']>(runId: string, type: T, beforeSeq: number): Extract<RunEvent, { type: T }> | undefined;
   readModelCallEvents(runId: string): Promise<ModelCallRecord[]>;
   toolCallSeq(runId: string, callId: string): Promise<number | undefined>;
@@ -695,6 +696,7 @@ export type RuntimeStore = {
   deadLetterExhausted(onError: SweepErrorSink): Promise<string[]>;
   terminalRunIdsWithCheckpoint(): string[];
   hasActiveRun(): boolean;
+  catchUpDerived(pages: number): Promise<boolean>;
   approvalView(approvalId: string): Promise<ApprovalView | undefined>;
   pendingApprovalViews(runId: string): Promise<ApprovalView[]>;
   inheritContext(claim: Claim, options: { mode: PermissionMode; facts?: Pick<JournalFacts, 'inheritPlan'> }): Promise<InheritContextResult>;

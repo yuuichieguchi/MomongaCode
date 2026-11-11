@@ -87,7 +87,7 @@ const startKeyedStack = async (
     },
     gatewayMaxCloseMs(DEFAULT_STOP_VALUES),
   );
-  const client = createUdsClient(fixedSocket(handle.socketPath));
+  const client = createUdsClient(fixedSocket(handle.socketPath), { connectTimeoutMs: 0 });
   registerCleanup(context, () => client.close());
   const closeAndScan = async (scan: ScanOptions = {}): Promise<void> => {
     closed = true;
@@ -326,7 +326,7 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
     },
     gatewayMaxCloseMs(DEFAULT_STOP_VALUES),
   );
-  const client = createUdsClient(fixedSocket(handle.socketPath));
+  const client = createUdsClient(fixedSocket(handle.socketPath), { connectTimeoutMs: 0 });
   registerCleanup(context, () => client.close());
   return { client };
 };

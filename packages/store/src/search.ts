@@ -93,11 +93,12 @@ export const createSearchStore = (db: DatabaseSync, context: DecodeContext, read
      ORDER BY e.id LIMIT 1`,
   );
   const seqBounds = db.prepare('SELECT (SELECT MIN(seq) FROM events WHERE run_id = :runId) AS first_seq, (SELECT MAX(seq) FROM events WHERE run_id = :runId) AS last_seq');
-  const runIndexed = db.prepare("SELECT 1 AS present FROM search_docs WHERE run_id = :runId AND level = 'run' LIMIT 1");
+  const runIndexed = db.prepare("SELECT 1 AS present FROM search_docs WHERE run_id = :runId AND level = 'run'");
   const insertDocument = db.prepare(
     `INSERT INTO search_docs (level, session_id, run_id, step, project, origin, outcome, seq_from, seq_to, at, body, paths_json)
      VALUES (:level, :sessionId, :runId, :step, :project, :origin, :outcome, :seqFrom, :seqTo, :at, :body, :pathsJson)`,
   );
+  const advanceRunDocument = db.prepare("UPDATE search_docs SET seq_from = :seqFrom, seq_to = :seqTo, body = :body, paths_json = :pathsJson WHERE run_id = :runId AND level = 'run'");
   const documentById = db.prepare('SELECT * FROM search_docs WHERE id = :id');
   const runDocument = db.prepare("SELECT * FROM search_docs WHERE run_id = :runId AND level = 'run'");
   const anyDocument = db.prepare('SELECT 1 AS present FROM search_docs WHERE run_id = :runId');
@@ -153,8 +154,13 @@ export const createSearchStore = (db: DatabaseSync, context: DecodeContext, read
         pathsJson: JSON.stringify(document.paths),
       });
     };
-    if (runIndexed.get({ runId }) === undefined) insert(runDocumentOf({ ...view.searchDraftRunOf(runId), ...seqBoundsOf(runId) }, outcome, redactor));
     const page = view.searchDraftPageOf(runId, pageChars);
+    const bounds = seqBoundsOf(runId);
+    const prefixTo = page.more ? (page.steps.at(-1)?.seqTo ?? bounds.seqFrom) : bounds.seqTo;
+    const draftRun = view.searchDraftRunOf(runId, prefixTo);
+    const prefixDocument = runDocumentOf({ ...draftRun, finalText: page.more ? '' : draftRun.finalText, seqFrom: bounds.seqFrom, seqTo: prefixTo }, outcome, redactor);
+    if (runIndexed.get({ runId }) === undefined) insert(prefixDocument);
+    else advanceRunDocument.run({ runId, seqFrom: prefixDocument.seqFrom, seqTo: prefixDocument.seqTo, body: prefixDocument.body, pathsJson: JSON.stringify(prefixDocument.paths) });
     for (const step of page.steps) {
       const document = stepDocumentOf(step, redactor);
       if (document !== undefined) insert(document);

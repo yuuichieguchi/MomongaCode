@@ -11,6 +11,8 @@ export interface SeatbeltProfile {
   params: Record<string, string>;
 }
 
+export const paramArgsOf = (params: Record<string, string>): string[] => Object.entries(params).flatMap(([name, value]) => ['-D', `${name}=${value}`]);
+
 type Within = (candidate: string, root: string) => Awaitable<boolean>;
 
 const withinOf =
@@ -289,5 +291,23 @@ export async function buildSeatbeltProfile(policy: SandboxPolicy, options: { tmp
     }
   }
 
+  return { profile: `${lines.join('\n')}\n`, params };
+}
+
+const PROTECTION_BASE_RULES = ['(version 1)', '(allow default)'];
+
+export function buildProtectionProfile(denied: readonly string[], scratch: readonly string[]): SeatbeltProfile {
+  const params: Record<string, string> = {};
+  const lines = [...PROTECTION_BASE_RULES];
+  denied.forEach((area, index) => {
+    const name = `HOME_DENIED_${index}`;
+    params[name] = area;
+    lines.push(`(deny file-read* file-write* (subpath (param "${name}")))`, `(deny network-outbound (remote unix-socket (subpath (param "${name}"))))`);
+  });
+  scratch.forEach((folder, index) => {
+    const name = `SCRATCH_ALLOWED_${index}`;
+    params[name] = folder;
+    lines.push(`(allow file-read* file-write* (subpath (param "${name}")))`);
+  });
   return { profile: `${lines.join('\n')}\n`, params };
 }

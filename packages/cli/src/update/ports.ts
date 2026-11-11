@@ -22,7 +22,7 @@ export type UpdateLockHandle = { release(): void };
 
 export type UpdateLock = { acquire(): Promise<UpdateLockHandle | undefined>; isHeld(): Promise<boolean> };
 
-export type UpdateStateStore = { read(): Promise<unknown>; write(state: unknown): Promise<void> };
+export type UpdateStateStore = { readonly file: string; read(): Promise<string | undefined>; write(state: unknown): Promise<void> };
 
 export type RetiringWork = { steps: number; jobs: number; versions: string[] };
 

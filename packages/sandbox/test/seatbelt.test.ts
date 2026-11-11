@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testKernelLock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testKernelLock, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { collect, isAlive, makeTempDir, run, waitUntilDead } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -260,7 +260,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox (real sandbox-ex
   });
 
   it('the unsandboxed runner can write to the outside dir, proving the outside check is meaningful', async () => {
-    const unsandboxed = createUnsandboxed();
+    const unsandboxed = createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform });
     expect(unsandboxed.kind).toBe('none');
     const target = path.join(outside, 'written.txt');
     const result = await run(await sh(`printf free > '${target}'`, {}, { using: unsandboxed }));
