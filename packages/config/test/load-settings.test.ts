@@ -396,12 +396,12 @@ describe('loadSettings validation', () => {
     await expect(failure).rejects.toThrow('/permissions/allow');
   });
 
-  it('reports an invalid permission rule naming the rule text and file', async () => {
+  it('reports an invalid permission rule naming the rule text, the key and the file, and loads the file', async () => {
     const tree = makeTree();
     const file = writeJson(userSettingsPath(tree), { permissions: { deny: ['Bash(unclosed'] } });
-    const failure = loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
-    await expect(failure).rejects.toThrow(file);
-    await expect(failure).rejects.toThrow('Bash(unclosed');
+    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    expect(result.rules).toEqual([]);
+    expect(result.warnings).toEqual([`${file}: invalid settings at /permissions/deny/0: invalid permission rule "Bash(unclosed": missing closing parenthesis; the rule is ignored`]);
   });
 
   it('warns about unknown top-level keys instead of failing', async () => {

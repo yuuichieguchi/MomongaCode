@@ -23,8 +23,9 @@ import type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSett
 import { layoutOf } from './layout.ts';
 import { loadLayers, normalizeHooks } from './layers.ts';
 import type { KeptLayers, Layer, TrustOracle, UserLayer } from './layers.ts';
-import { EDIT_TOOLS, NEGATION_PREFIX, isPathTool, parseRule, RuleParseError } from './rule.ts';
+import { EDIT_TOOLS, NEGATION_PREFIX, NETWORK_RULE_SUBJECT, checkRuleText, isPathTool, parseRule, RuleParseError } from './rule.ts';
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
+import { escapePointerSegment } from './json-file.ts';
 import { assertSettings, defaultSandboxSetting, defaultTuiSettings } from './settings.ts';
 import type { AutoModeSettings, CredentialsSettings, McpSettings, RuntimeSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, ResolvedSandboxUnixSockets, ResolvedTuiSettings, SandboxSetting, Settings, TelemetrySettings, CeilingsSettings, ForgeInstanceSettings, LimitsSettings, MandateProfileSettings, OperationsSettings } from './settings.ts';
 import type { ResolvedModels } from './models.ts';
@@ -99,15 +100,22 @@ const isRelativeForm = (specifier: string): boolean => !specifier.startsWith('/'
 
 const withException = (rule: PermissionRule, pattern: string): PermissionRule => ({ ...rule, exceptions: [...(rule.exceptions ?? []), pattern] });
 
-const attachNegations = (effect: RuleEffect, parsed: readonly PermissionRule[], layer: Layer, warnings: string[]): PermissionRule[] => {
+type ListedRule = { rule: PermissionRule; pointer: string };
+
+const unreadableRule = (source: string, pointer: string, error: RuleParseError, consequence: string): string => `${source}: invalid settings at ${pointer}: ${error.message}; ${consequence}`;
+
+const RULE_IGNORED = 'the rule is ignored';
+
+const attachNegations = (effect: RuleEffect, parsed: readonly ListedRule[], layer: Layer, warnings: string[]): PermissionRule[] => {
   const kept: PermissionRule[] = [];
-  for (const rule of parsed) {
+  for (const { rule, pointer } of parsed) {
     if (!isNegation(rule)) {
       kept.push(rule);
       continue;
     }
     if (effect === 'allow') {
-      throw new ConfigError(`${layer.source}: ${new RuleParseError(rule.text, 'negation_in_allow: a ! pattern is not allowed in an allow rule').message}`);
+      warnings.push(unreadableRule(layer.source, pointer, new RuleParseError(rule.text, 'negation_in_allow: a ! pattern is not allowed in an allow rule'), RULE_IGNORED));
+      continue;
     }
     const pattern = (rule.specifier as string).slice(NEGATION_PREFIX.length);
     let attached = false;
@@ -123,17 +131,43 @@ const attachNegations = (effect: RuleEffect, parsed: readonly PermissionRule[], 
 
 export const parseLayerRules = (layer: Layer, home: string, projectDir: string, warnings: string[]): PermissionRule[] =>
   EFFECTS.flatMap((effect) => {
-    const parsed: PermissionRule[] = [];
-    for (const text of layer.settings.permissions?.[effect] ?? []) {
+    const parsed: ListedRule[] = [];
+    for (const [index, text] of (layer.settings.permissions?.[effect] ?? []).entries()) {
+      const pointer = `/permissions/${effect}/${index}`;
+      let rule: PermissionRule;
       try {
-        parsed.push(parseRule(text, { effect, origin: layer.origin, source: layer.source, settingsRoot: layer.ruleRoot, home, cwd: projectDir }));
+        rule = parseRule(text, { effect, origin: layer.origin, source: layer.source, settingsRoot: layer.ruleRoot, home, cwd: projectDir });
       } catch (error) {
-        if (error instanceof RuleParseError) throw new ConfigError(`${layer.source}: ${error.message}`, { cause: error });
-        throw error;
+        if (!(error instanceof RuleParseError)) throw error;
+        warnings.push(unreadableRule(layer.source, pointer, error, RULE_IGNORED));
+        continue;
       }
+      if (rule.tool === NETWORK_RULE_SUBJECT && layer.origin !== 'user') {
+        warnings.push(`${layer.source}: permissions.${effect} rule ${JSON.stringify(text)} is only honored in user settings; discarded`);
+        continue;
+      }
+      parsed.push({ rule, pointer });
     }
     return attachNegations(effect, parsed, layer, warnings);
   });
+
+const readableMandates = (mandates: Record<string, MandateProfileSettings>, source: string, warnings: string[]): Record<string, MandateProfileSettings> =>
+  Object.fromEntries(
+    Object.entries(mandates).filter(([name, mandate]) =>
+      EFFECTS.every((effect) =>
+        (mandate[effect] ?? []).every((text, index) => {
+          try {
+            checkRuleText(text);
+            return true;
+          } catch (error) {
+            if (!(error instanceof RuleParseError)) throw error;
+            warnings.push(unreadableRule(source, `/mandates/${escapePointerSegment(name)}/${effect}/${index}`, error, `the mandate ${name} is not loaded`));
+            return false;
+          }
+        }),
+      ),
+    ),
+  );
 
 function* resolveDirectory(directory: string, layer: Layer, home: string): PathAsking<string> {
   const expanded = directory === '~' ? home : directory.startsWith('~/') ? path.join(home, directory.slice(2)) : directory;
@@ -267,7 +301,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
     if (pricing !== undefined) merged.pricing = pricing;
     if (limits !== undefined) merged.limits = limits;
     if (ceilings !== undefined) merged.ceilings = ceilings;
-    if (mandates !== undefined) merged.mandates = mandates;
+    if (mandates !== undefined) merged.mandates = readableMandates(mandates, layer.source, warnings);
     if (forges !== undefined) merged.forges = forges;
     if (operations !== undefined) merged.operations = operations;
   }
