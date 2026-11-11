@@ -197,6 +197,7 @@ export type UserPolicy = { userRefusal(subject: UserSubject, facts: UserPolicyFa
 
 export type ToolExecutor = {
   runBatch(input: BatchInput): Promise<CallOutcome[]>;
+  holdCall(key: string, signal: AbortSignal): Promise<CallLock | 'aborted'>;
   abandon(targets: readonly AbandonTarget[], options: { signal: AbortSignal }): Promise<AbandonOutcome[]>;
   release(targets: readonly ReleaseTarget[], options: { toolSet: () => Promise<ToolSet>; signal: AbortSignal }): Promise<void>;
 };
@@ -1842,5 +1843,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     await Promise.all(targets.map((target) => releaseTarget(target, loadOnce, signal)));
   };
 
-  return { runBatch, userRefusal, abandon, release, inFlightKeys: () => new Set(activeKeys.keys()) };
+  const holdCall: ToolExecutor['holdCall'] = async (key, signal) => {
+    const acquired = await callLocks.acquire(key, signal);
+    return acquired === 'aborted' ? acquired : { release: () => releaseCallLock(acquired) };
+  };
+
+  return { runBatch, holdCall, userRefusal, abandon, release, inFlightKeys: () => new Set(activeKeys.keys()) };
 };

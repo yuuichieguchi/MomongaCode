@@ -2,7 +2,7 @@ import path from 'node:path';
 import { newCallId, reapMarkedProcesses } from '@momonga/foundation';
 import { VERIFICATION_FEEDBACK_PREFIX, conditionOwed } from '@momonga/protocol';
 import type { ConditionResult, PinnedCondition, RunEventPayload, VerificationOutcome } from '@momonga/protocol';
-import { MAX_COMMAND_TIMEOUT_MS, runSandboxedCommand, verificationMarkerName } from '@momonga/tools';
+import { EarlierAttemptNotStoppedError, MAX_COMMAND_TIMEOUT_MS, runSandboxedCommand, verificationMarkerName } from '@momonga/tools';
 import type { SandboxedCommandResult } from '@momonga/tools';
 import { MARKER_REAP_KILL_GRACE_MS } from '../process/constants.ts';
 import type { ClaimContext, Flow } from './claim-context.ts';
@@ -75,15 +75,25 @@ const reapStaleCheck = async (ctx: ClaimContext, marker: string): Promise<void> 
     signal: ctx.control.signal,
     inspector: ctx.options.tools.inspector,
   });
-  if (!removed) throw new Error(`a completion check of run ${ctx.run.id} left by an earlier attempt could not be stopped: ${warnings.join('; ')}`);
+  if (!removed) throw new EarlierAttemptNotStoppedError(`a completion check of run ${ctx.run.id} left by an earlier attempt could not be stopped: ${warnings.join('; ')}`, 'survived');
 };
 
 type Round = { round: number; mutationSeq: number; commands: SessionCommands };
 
-const runCheck = async (ctx: ClaimContext, condition: PinnedCondition, attempt: number, { round, mutationSeq, commands }: Round): Promise<Checked | 'interrupted'> => {
+const runCheck = async (ctx: ClaimContext, condition: PinnedCondition, attempt: number, round: Round): Promise<Checked | 'interrupted'> => {
+  const checkName = verificationMarkerName({ runId: ctx.run.id, round: round.round, conditionId: condition.id });
+  const lock = await ctx.options.tools.executor.holdCall(checkName, ctx.control.signal);
+  if (lock === 'aborted') return 'interrupted';
+  try {
+    return await runHeldCheck(ctx, condition, attempt, round, checkName);
+  } finally {
+    lock.release();
+  }
+};
+
+const runHeldCheck = async (ctx: ClaimContext, condition: PinnedCondition, attempt: number, { round, mutationSeq, commands }: Round, checkName: string): Promise<Checked | 'interrupted'> => {
   const { clock, tools } = ctx.options;
-  const markerName = verificationMarkerName({ runId: ctx.run.id, round, conditionId: condition.id });
-  const marker = path.join(tools.markerDir, markerName);
+  const marker = path.join(tools.markerDir, checkName);
   await reapStaleCheck(ctx, marker);
   ctx.journal.append([{ type: 'verification.started', round, conditionId: condition.id, command: condition.command, mutationSeq, attempt }]);
   const result = await runSandboxedCommand({
