@@ -59,6 +59,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
         ledger,
         jsonReply,
         carriesOutputBound: carriesResponsesOutputBound(capabilities),
+        output: capabilities,
         ...(capabilities.systemRole === undefined ? {} : { systemRole: capabilities.systemRole }),
         ...(capabilities.toolPlacement === undefined ? {} : { toolPlacement: capabilities.toolPlacement }),
         ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }),
@@ -130,14 +131,14 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
     for await (const event of create(summaryRequest, ctx)) {
       const collected = summaryOfTerminal(event, cap);
       if (collected === undefined) continue;
-      const usage = collected.usage ?? estimatedUsage(wireTokensOf(buildResponsesBody(summaryRequest, ctx.reasoningOrigin), capabilities.imageTokens), tokensForText(collected.summary));
+      const usage = collected.usage ?? estimatedUsage(wireTokensOf(buildResponsesBody(summaryRequest, ctx.reasoningOrigin, { carriesOutputBound: carriesResponsesOutputBound(capabilities), output: capabilities }), capabilities.imageTokens), tokensForText(collected.summary));
       return { summary: collected.summary, usage, usageSource: collected.usage === null ? ('estimated' as const) : ('reported' as const) };
     }
     throw new StreamFailure('upstream_protocol_error', 'model_error', 'the upstream ended without a terminal event');
   };
 
   const renderCompactWire = (request: AdapterCompactRequest, _target: AdapterTarget, cap: number, origin: ReasoningOrigin, capabilities: Capabilities): Record<string, unknown> => {
-    const { model: _model, stream: _stream, store: _store, ...wire } = buildResponsesBody(summaryRequestOf(request, cap, origin), origin, { carriesOutputBound: carriesResponsesOutputBound(capabilities) });
+    const { model: _model, stream: _stream, store: _store, ...wire } = buildResponsesBody(summaryRequestOf(request, cap, origin), origin, { carriesOutputBound: carriesResponsesOutputBound(capabilities), output: capabilities });
     return wire;
   };
 
