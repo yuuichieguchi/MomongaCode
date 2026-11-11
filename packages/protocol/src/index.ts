@@ -549,7 +549,7 @@ export {
 } from './auto-mode.ts';
 export type { ClassifierVerdict } from './auto-mode.ts';
 export { AUTO_FIT_FAILED_BOUNDS, AUTO_FIT_MEASUREMENTS, AUTO_MODE_CAVEAT, AUTO_MODE_CHECK_COMMANDS, autoModeNotice } from './auto-mode-gate.ts';
-export type { AutoClassifierFacts, AutoClassifierKey, AutoClassifierView, AutoModeSurface } from './auto-mode-gate.ts';
+export type { AutoClassifierFacts, AutoClassifierKey, AutoClassifierRefusal, AutoClassifierView, AutoModeSurface } from './auto-mode-gate.ts';
 export { TOOL_OUTPUT_TAG, boundaryOf, envelopeOf } from './tool-envelope.ts';
 export type { ToolOutputEnvelope } from './tool-envelope.ts';
 export {

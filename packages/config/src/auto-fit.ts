@@ -194,6 +194,15 @@ export const readAutoFitRecord = async (directory: string, key: AutoFitKey): Pro
   return text === undefined ? undefined : recordOf(parseJsonText(text, file), file);
 };
 
+export const readAutoFitView = async (directory: string, model: string, key: AutoFitKey): Promise<AutoClassifierView> => {
+  try {
+    return autoFitViewOf(model, key, await readAutoFitRecord(directory, key));
+  } catch (error) {
+    if (!(error instanceof ConfigError)) throw error;
+    return { model, key, measurement: 'unreadable', refusal: { file: fileOf(directory, key), reason: error.message } };
+  }
+};
+
 export const writeAutoFitRecord = async (directory: string, record: AutoFitRecord, randomHex: (bytes: number) => string): Promise<string> => {
   await fs.promises.mkdir(directory, { recursive: true, mode: RECORD_DIRECTORY_MODE });
   const file = fileOf(directory, record.key);
