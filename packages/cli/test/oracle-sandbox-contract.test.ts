@@ -29,7 +29,7 @@ afterEach(() => {
 });
 
 describe('the real sandbox port of the oracle commands is the sandbox of a tool command (darwin, and linux with bubblewrap; the linux leg runs in the container)', () => {
-  it.skipIf(PLATFORM_SANDBOX === undefined)('an oracle command that writes outside its workspace is denied, and one that writes into its workspace is not', async () => {
+  it.skipIf(PLATFORM_SANDBOX === undefined)('an oracle command that writes outside its workspace and its scratch is denied; one that writes into its workspace or its own scratch (TMPDIR, removed when it ends) is not', async () => {
     const env = { PATH: '/usr/bin:/bin', HOME: home };
     const paths = momongaPaths(home, process.platform, env);
     await ensureMomongaDirs(paths);
@@ -48,6 +48,11 @@ describe('the real sandbox port of the oracle commands is the sandbox of a tool 
     expect(fs.existsSync(leak)).toBe(false);
     expect(await probe.run('echo x > made.txt', 30_000, workspace)).toEqual({ exitCode: 0, timedOut: false });
     expect(fs.readFileSync(path.join(workspace, 'made.txt'), 'utf8')).toBe('x\n');
+    expect(await probe.run('test -n "$TMPDIR" && echo x > "$TMPDIR/scratch.txt" && test -f "$TMPDIR/scratch.txt"', 30_000, workspace)).toEqual({ exitCode: 0, timedOut: false });
+    expect(await probe.run(`echo "$TMPDIR" > ${path.join(workspace, 'scratch-path.txt')}`, 30_000, workspace)).toEqual({ exitCode: 0, timedOut: false });
+    const scratch = fs.readFileSync(path.join(workspace, 'scratch-path.txt'), 'utf8').trim();
+    expect(scratch.startsWith(fs.realpathSync(paths.tmp.sessions))).toBe(true);
+    expect(fs.existsSync(scratch)).toBe(false);
     expect(warnings).toEqual([]);
   });
 

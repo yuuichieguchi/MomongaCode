@@ -1,4 +1,4 @@
-import { canonicalHomeOf, hostPaths, momongaPaths, nodeFileSystem, resolveLayoutLocks, ruleEnforcementOf } from '@momonga/foundation';
+import { canonicalHomeOf, ensureSessionTmpDir, hostPaths, momongaPaths, nodeFileSystem, releaseSessionScratch, resolveLayoutLocks, ruleEnforcementOf, systemRandom } from '@momonga/foundation';
 import type { LayoutEnvironment, SandboxNetworkSetting } from '@momonga/foundation';
 import { DEFAULT_BWRAP_PATH, bubblewrapPresent, childProtectionFor } from '@momonga/sandbox';
 import type { SandboxSetting } from '@momonga/sandbox';
@@ -20,6 +20,8 @@ export type WorkspaceCommandRun = { pgid: number; exited: Promise<{ code: number
 
 export type WorkspaceCommandSandbox = { start(command: string, workspace: string, env: Readonly<Record<string, string>>, signal: AbortSignal): Promise<WorkspaceCommandRun> };
 
+const ORACLE_SCRATCH_PREFIX = 'oracle-';
+
 const drained = async (stream: AsyncIterable<Uint8Array>): Promise<void> => {
   for await (const _chunk of stream);
 };
@@ -30,12 +32,13 @@ export const workspaceCommandSandbox = async (input: WorkspaceCommandSandboxInpu
   const paths = momongaPaths(home, input.platform, input.env);
   const shellHost = nodeShellHost();
   const bubblewrap = input.platform === 'linux' && (await bubblewrapPresent(DEFAULT_BWRAP_PATH, (file) => nodeFileSystem.access(file, 'execute')));
+  const kernelLock = resolveLayoutLocks(paths).mechanism;
   const sandbox = await createSandboxOf({
     platform: input.platform,
     paths,
     env: input.env,
     shellHost,
-    kernelLock: resolveLayoutLocks(paths).mechanism,
+    kernelLock,
     journalDirectory: placeholderJournalDirectoryOf(paths),
     noneProtection: childProtectionFor({ sandbox: 'none', home, platform: input.platform, env: input.env, bubblewrap }),
     warn: input.warn,
@@ -46,10 +49,30 @@ export const workspaceCommandSandbox = async (input: WorkspaceCommandSandboxInpu
   return {
     start: async (command, workspace, env, signal) => {
       const root = await resolver.canonicalPath(workspace);
-      const policy = await toolSandboxPolicyOf({ paths, home, fs: createPolicyFilesystem(), ruleEnforcement }, { roots: [root], tmpDir: undefined, rules: [], gitConfigFiles: [], readableDirectories: [] }, signal);
-      const child = await sandbox.spawn({ argv: [shell, '-c', command], cwd: root, env }, { ...policy, network }, signal);
-      const output = Promise.all([drained(child.stdout), drained(child.stderr)]);
-      return { pgid: child.pgid, exited: Promise.all([child.exited, output]).then(([exit]) => ({ code: exit.code })) };
+      const scratch = await ensureSessionTmpDir(paths, `${ORACLE_SCRATCH_PREFIX}${systemRandom.uuid()}`, { lock: kernelLock });
+      const removeScratch = async (): Promise<void> => {
+        releaseSessionScratch(scratch.dir);
+        await nodeFileSystem.rm(scratch.dir, { recursive: true });
+      };
+      try {
+        const policy = await toolSandboxPolicyOf({ paths, home, fs: createPolicyFilesystem(), ruleEnforcement }, { roots: [root], tmpDir: scratch.dir, rules: [], gitConfigFiles: [], readableDirectories: [] }, signal);
+        const child = await sandbox.spawn({ argv: [shell, '-c', command], cwd: root, env, tmpDir: scratch.dir }, { ...policy, network }, signal);
+        const output = Promise.all([drained(child.stdout), drained(child.stderr)]);
+        const exited = Promise.all([child.exited, output]).then(
+          async ([exit]) => {
+            await removeScratch();
+            return { code: exit.code };
+          },
+          async (error: unknown) => {
+            await removeScratch();
+            throw error;
+          },
+        );
+        return { pgid: child.pgid, exited };
+      } catch (error) {
+        await removeScratch();
+        throw error;
+      }
     },
   };
 };
