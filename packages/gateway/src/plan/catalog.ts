@@ -20,7 +20,7 @@ import type { PlanOutbound } from './outbound.ts';
 import { SUCCESS_STATUS } from './http-status.ts';
 import { ownEntry } from './own-entry.ts';
 import { parsePlanJson } from './plan-json.ts';
-import { recordAccess } from './record-io.ts';
+import { endedByOperation, recordAccess } from './record-io.ts';
 import { responseBytes } from './refresh.ts';
 import type { PlanFetch, PlanSleep } from './refresh.ts';
 
@@ -195,11 +195,22 @@ export const createPlanCatalog = (options: PlanCatalogOptions): PlanCatalog => {
     }
   };
 
+  const readableRecord = async (request: CatalogRead): Promise<CatalogRecord | undefined> => {
+    try {
+      return await record(request.profile.id, request.account, request.signal);
+    } catch (error) {
+      if (endedByOperation(error, request.signal)) throw error;
+      return undefined;
+    }
+  };
+
   const read = async (request: CatalogRead): Promise<PlanModelsResponse> => {
     const key = catalogKey(request.profile.id, request.account);
-    const saved = await record(request.profile.id, request.account, request.signal);
-    const answered = answers.get(key);
-    if (!request.refresh && saved !== undefined && answered !== undefined && answered.readAt === saved.readAt && isFresh(saved, options.clock.now())) return answered;
+    const answered = request.refresh ? undefined : answers.get(key);
+    if (answered !== undefined) {
+      const saved = await readableRecord(request);
+      if (saved !== undefined && answered.readAt === saved.readAt && isFresh(saved, options.clock.now())) return answered;
+    }
     const response = await options.outbound(request.signal, (fetch) => readUpstream(fetch, request));
     const fresh = recordOf(response);
     await recordAccess('write', listOf(request.profile.id, request.account), () => options.store.write(key, JSON.stringify(fresh), request.signal), request.signal);
