@@ -46,6 +46,7 @@ export type TextRow = { readonly text: string; readonly color?: string; readonly
 export type SelectLayout = {
   readonly text: readonly TextRow[];
   readonly more: number;
+  readonly moreRow: boolean;
   readonly items: readonly number[];
   readonly above: number;
   readonly below: number;
@@ -242,16 +243,18 @@ export const selectLayout = (spec: SelectSpec, state: SelectState, text: readonl
   const textRoom = Math.max(0, available - listRows);
   const shown = text.length <= textRoom ? text : text.slice(0, Math.max(0, textRoom - 1));
   const more = text.length - shown.length;
+  const moreRow = more > 0 && textRoom > 0;
   const capacity = Math.max(LIST_FLOOR_ROWS, listRows);
   const position = Math.max(0, listed.indexOf(state.index));
   const span = spanAt(listed.length, state.scrolled ? state.top : topFor(position, state.top, listed.length, capacity), capacity);
   return {
     text: shown,
     more,
+    moreRow,
     items: listed.slice(span.start, span.end),
     above: span.start,
     below: listed.length - span.end,
-    listTop: border / 2 + shown.length + (more > 0 ? 1 : 0) + filterRows,
+    listTop: border / 2 + shown.length + (moreRow ? 1 : 0) + filterRows,
     capacity,
   };
 };
@@ -322,7 +325,7 @@ export function SelectView({ spec, state, layout, border, sending, settling, key
   return (
     <Panel border={border}>
       <TextRows rows={layout.text} />
-      {layout.more > 0 ? <Text dimColor wrap="truncate">{moreLinesText(layout.more, keys)}</Text> : null}
+      {layout.moreRow ? <Text dimColor wrap="truncate">{moreLinesText(layout.more, keys)}</Text> : null}
       {screenReader && highlightedRow !== undefined ? <Text wrap="truncate">{escapeTerminalLine(selectedText(highlightedRow.label))}</Text> : null}
       {spec.filter ? <Text wrap="truncate">{`filter: ${escapeTerminalLine(state.filter)}`}</Text> : null}
       {layout.above > 0 ? <MoreRow direction="up" count={layout.above} /> : null}
@@ -336,7 +339,7 @@ export function SelectView({ spec, state, layout, border, sending, settling, key
       {layout.below > 0 ? <MoreRow direction="down" count={layout.below} /> : null}
       {confirming === undefined || spec.confirm === undefined ? null : <Text {...styleOfTokens(['warning'])} wrap="truncate">{escapeTerminalLine(spec.confirm(confirming, keys.keyHint('select.decide')))}</Text>}
       {error === undefined ? null : <Text {...styleOfTokens(['error'])} wrap="truncate">{escapeTerminalLine(error)}</Text>}
-      <Text dimColor wrap="truncate">{sending ? SENDING_TEXT : settling ? ' ' : selectHint(spec, keys)}</Text>
+      <Text dimColor wrap="truncate">{sending ? SENDING_TEXT : layout.more > 0 && !layout.moreRow ? moreLinesText(layout.more, keys) : settling ? ' ' : selectHint(spec, keys)}</Text>
     </Panel>
   );
 }
