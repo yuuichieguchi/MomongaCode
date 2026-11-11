@@ -140,7 +140,7 @@ const lineAndColumn = (text: string, offset: number): { line: number; column: nu
 
 const FORBIDDEN_KEYS: ReadonlySet<string> = new Set(['__proto__', 'constructor', 'prototype']);
 
-const escapePointerSegment = (segment: string): string => segment.replaceAll('~', '~0').replaceAll('/', '~1');
+export const escapePointerSegment = (segment: string): string => segment.replaceAll('~', '~0').replaceAll('/', '~1');
 
 const rejectForbiddenKeys = (value: unknown, pointer: string, source: string): void => {
   if (Array.isArray(value)) {

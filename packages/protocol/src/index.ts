@@ -725,7 +725,9 @@ export type {
 } from './adapter.ts';
 export { ADAPTER_NEUTRAL_ERROR_CODES } from './adapter.ts';
 export type { AdapterNeutralErrorCode } from './adapter.ts';
-export { OPEN_RESPONSES_OPENAPI } from './open-responses-spec.ts';
+export { MIN_REQUEST_OUTPUT_TOKENS, OPEN_RESPONSES_OPENAPI } from './open-responses-spec.ts';
+export { PRICE_CURRENCY, PRICE_DECIMAL_PLACES, priceEffectiveFromMs, priceRowIdentity, priceTableProblem, validatePriceTable } from './price-table.ts';
+export type { PriceField, PriceRow, PriceTableProblem } from './price-table.ts';
 export { OPEN_RESPONSES_COMPONENT_NAMES, OPEN_RESPONSES_REGISTRY_ID, OPEN_RESPONSES_REMOTE_DOCUMENTS, OPEN_RESPONSES_SCHEMA_REGISTRY, openResponsesComponentSchema, openResponsesSchemaRegistry } from './open-responses-registry.ts';
 export { SUPERVISOR_API_VERSION } from './supervisor-api.ts';
 export type {

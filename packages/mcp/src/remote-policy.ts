@@ -3,6 +3,7 @@ import { isIP } from 'node:net';
 import type { LookupFunction } from 'node:net';
 import type { RequestInit as UndiciRequestInit } from 'undici';
 import type { FetchLike } from '@modelcontextprotocol/client';
+import { mcpServerUrlProblemOf } from '@momonga/config';
 import type { McpServerScope } from '@momonga/config';
 import { createOutboundDispatcher, findOutboundError, isAcceptableAddress, outboundFetch } from '@momonga/foundation';
 import type { OutboundNetwork } from '@momonga/foundation';
@@ -20,16 +21,10 @@ const withoutBrackets = (hostname: string): string => (hostname.startsWith('[') 
 
 const LOOPBACK_NAME = /(^|\.)localhost$/;
 
-const allowedSchemes = (scope: McpServerScope): readonly string[] => (scope === 'project' ? ['https:'] : ['https:', 'http:']);
-
 export const assertRemoteUrl = (text: string, scope: McpServerScope): URL => {
   const url = new URL(text);
-  if (!allowedSchemes(scope).includes(url.protocol)) {
-    throw new McpRemotePolicyError('scheme', `${scope}-scope MCP server URLs must use ${allowedSchemes(scope).join(' or ').replaceAll(':', '')}; got ${url.protocol.replace(':', '')}`);
-  }
-  if (url.username !== '' || url.password !== '') {
-    throw new McpRemotePolicyError('credentials_in_url', 'MCP server URLs must not embed credentials; use headers or OAuth');
-  }
+  const problem = mcpServerUrlProblemOf(url, scope);
+  if (problem !== undefined) throw new McpRemotePolicyError(problem.code, problem.message);
   if (scope === 'project') {
     const host = url.hostname.replace(/\.$/, '');
     const literal = withoutBrackets(host);
@@ -44,7 +39,7 @@ export const assertRemoteUrl = (text: string, scope: McpServerScope): URL => {
 };
 
 export const assertAuthorizationUrl = (url: URL, scope: McpServerScope): void => {
-  if (!allowedSchemes(scope).includes(url.protocol)) {
+  if (mcpServerUrlProblemOf(url, scope)?.code === 'scheme') {
     throw new McpRemotePolicyError('authorization_url_scheme', `refusing to open an authorization URL with scheme ${url.protocol.replace(':', '')}`);
   }
   assertRemoteUrl(url.href, scope);
