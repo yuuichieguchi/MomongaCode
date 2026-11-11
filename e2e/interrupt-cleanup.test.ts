@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { EXIT_INTERRUPTED } from '@momonga/foundation';
 import type { FakeRoute } from '@momonga/testkit';
+import { titleOf } from './support/cases.ts';
 import { startCli } from './support/cli.ts';
 import { readDb } from './support/db.ts';
 import { createE2eHome } from './support/home.ts';
@@ -22,7 +23,7 @@ const DATASET = JSON.stringify({
 });
 
 describe('momonga eval after two interrupts in a row', () => {
-  it('cancels the run it started, starts no other, removes the workspaces it made and exits 130', { timeout: 2 * E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('eval-interrupt-cleanup'), { timeout: 2 * E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const fake = await startUpstream(home, { home, routes: ROUTES });
     writeSettingsFile(home, baseSettings(home, sandboxChoiceOf({ home }).kind));
