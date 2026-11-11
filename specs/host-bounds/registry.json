@@ -251,7 +251,6 @@
       {"name":"HEAD_BYTES","file":"packages/policy/src/host-filesystem.ts","lacks":["row"]},
       {"name":"PATH_MAX_BYTES","file":"packages/policy/src/host-filesystem.ts","lacks":["row"]},
       {"name":"HOOK_DEFAULT_TIMEOUT_SECONDS","file":"packages/protocol/src/hooks.ts","lacks":["kind","row"]},
-      {"name":"USER_PROMPT_HOOK_DEFAULT_TIMEOUT_SECONDS","file":"packages/protocol/src/hooks.ts","lacks":["kind","row"]},
       {"name":"MANAGED_READY_LIMIT_MS","file":"packages/protocol/src/managed-servers.ts","lacks":["kind","row"]},
       {"name":"RULE_VERIFY_BUDGET_MS","file":"packages/protocol/src/rule-verdict.ts","lacks":["kind","row"]},
       {"name":"DAY_MS","file":"packages/protocol/src/run-api.ts","lacks":["kind"]},
