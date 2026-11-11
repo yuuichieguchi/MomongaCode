@@ -1,11 +1,12 @@
 import { isRecord } from '@momonga/foundation';
+import { COMPACT_PIN_KEY } from '@momonga/protocol';
 
 export type CompactPin = { instructions?: string };
 
-export const compactPinOf = (instructions: string | undefined): { compact: CompactPin } => ({ compact: instructions === undefined ? {} : { instructions } });
+export const compactPinOf = (instructions: string | undefined): { compact: CompactPin } => ({ [COMPACT_PIN_KEY]: instructions === undefined ? {} : { instructions } });
 
 export const readCompactPin = (pins: Record<string, unknown>): CompactPin | undefined => {
-  const value = pins['compact'];
+  const value = pins[COMPACT_PIN_KEY];
   if (value === undefined) return undefined;
   if (!isRecord(value)) throw new TypeError('the compact pin of this run is malformed');
   const { instructions } = value;

@@ -1,3 +1,4 @@
+import { canonicalJson } from '@momonga/foundation';
 import {
   COMPACT_AT,
   EVICT_LOW_WATER,
@@ -277,13 +278,15 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
     const kept: FunctionTool[] = [...required];
     const droppedForRoom: string[] = [];
     const droppedTiers: (string | undefined)[] = [];
+    let stopped = false;
     for (const tool of inFitOrder) {
       if (required.includes(tool)) continue;
       if (!standsWith(tool, kept)) {
         droppedForRoom.push(`${tool.name} (with ${hostOf[tool.name]})`);
         droppedTiers.push(tierOf.get(tool.name));
-      } else if (await stableFitsFloor([...kept, tool])) kept.push(tool);
+      } else if (!stopped && (await stableFitsFloor([...kept, tool]))) kept.push(tool);
       else {
+        stopped = true;
         droppedForRoom.push(tool.name);
         droppedTiers.push(tierOf.get(tool.name));
       }
@@ -298,7 +301,8 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
   if (leftOut.length > 0) {
     notices.push({
       code: 'tools_dropped',
-      message: `Tools ${leftOut.join('; ')} were left out because the declared context window leaves no room for them`,
+      message: `Tools ${leftOut.join('; ')} were left out because the declared context window of ${input.model} (${capabilities.contextWindow} tokens) leaves no room for them; raise the declared context window of that model, or shorten the instructions`,
+      key: canonicalJson({ contextWindow: capabilities.contextWindow, model: input.model }),
     });
   }
   const evaluate = async (layerItems: InputItem[]): Promise<Evaluation> => {
@@ -595,6 +599,11 @@ export const measurePinned = async (input: BuildContextInput, ports: BuildContex
   };
 };
 
+export type EvictionPass = { kind: 'batch' } | { kind: 'toLowMark'; lowMark: number };
+
+export const evictionPassFor = (layout: BuildContextInput['layout'], marks: { floorTokens: number; highMark: number }): EvictionPass =>
+  layout === 'cachePrefix' ? { kind: 'batch' } : { kind: 'toLowMark', lowMark: marks.floorTokens + floorRatio(EVICT_LOW_WATER, marks.highMark - marks.floorTokens) };
+
 export const buildContext = async (input: BuildContextInput, suppliedPorts: BuildContextPorts): Promise<BuiltContext> => {
   let ports = suppliedPorts;
   const { capabilities, sources, evicted } = input;
@@ -828,12 +837,13 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     });
   }
 
-  const assemble = (): InputItem[] => {
-    const items = slots.map(shown);
-    const taskIndex = slots.findIndex((slot) => slot.seq > sources.taskSeq);
-    const ordered = taskIndex < 0 ? [...items, task] : [...items.slice(0, taskIndex), task, ...items.slice(taskIndex)];
-    return [...layers, ...summaryItems, ...ordered, ...workingStateItems, ...trailing];
+  const withTask = (kept: readonly Slot[]): InputItem[] => {
+    const items = kept.map(shown);
+    const taskIndex = kept.findIndex((slot) => slot.seq > sources.taskSeq);
+    return taskIndex < 0 ? [...items, task] : [...items.slice(0, taskIndex), task, ...items.slice(taskIndex)];
   };
+
+  const assemble = (): InputItem[] => [...layers, ...summaryItems, ...withTask(slots), ...workingStateItems, ...trailing];
 
   let firstEvicted: number | undefined;
 
@@ -1000,6 +1010,15 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
           pinnedText: [...layers, task].map((item) => textOfItem(item)).join('\n'),
           notices: protectionNotices,
           tokens: { input: total.inputTokens, replaced: region, workingStateGrowth: growth, request: regionWithTask + promptTokens },
+          rebuilt: {
+            before: [...layers],
+            after: [
+              ...withTask(slots.slice(cutIndex + 1)),
+              ...(sources.projectedWorkingState === undefined ? workingStateItems : [workingStateMessage(sources.projectedWorkingState)]),
+              ...trailing,
+            ],
+            tools: [...tools],
+          },
         },
       };
     }
@@ -1029,22 +1048,20 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     throw await pinnedBoundError(undefined, boundOfBuild(0));
   };
   let highMark = await highMarkNow();
-  const lowMark = (): number => floorTokens + floorRatio(EVICT_LOW_WATER, highMark - floorTokens);
   const loadOf = (counted: MeterCount): number => counted.inputTokens + counted.underAt(counted.inputTokens);
   if (total.inputTokens > highMark || !fits(total)) {
     const unevicted = total;
     const snapshot = passSnapshot();
-    if (cachePrefix) {
+    const pass = evictionPassFor(input.layout, { floorTokens, highMark });
+    if (pass.kind === 'batch') {
       while (await evictOldest()) continue;
+      if (firstEvicted !== undefined && (input.forms !== undefined || input.renderedFull !== undefined)) await rerenderFrom(firstEvicted);
+      total = await measureAssembled();
     } else {
-      while ((total.inputTokens > lowMark() || !fits(total)) && (await evictOldest())) {
+      while ((total.inputTokens > pass.lowMark || !fits(total)) && (await evictOldest())) {
         if (input.forms !== undefined || input.renderedFull !== undefined) await rerenderFrom(firstEvicted as number);
         total = await measureAssembled();
       }
-    }
-    if (cachePrefix) {
-      if (firstEvicted !== undefined && (input.forms !== undefined || input.renderedFull !== undefined)) await rerenderFrom(firstEvicted);
-      total = await measureAssembled();
     }
     const kept = fits(total) || (!fits(unevicted) && loadOf(total) < loadOf(unevicted));
     if (!kept) {
@@ -1125,6 +1142,8 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     inputDigest: total.inputDigest,
     evictions: reported(),
     ...(hint !== undefined && 'plan' in hint ? { compaction: hint.plan } : {}),
+    ...(hint !== undefined && 'blocked' in hint ? { compactionBlockedBy: hint.blocked } : {}),
+    lastLevel,
     notices,
     loadedInstructions: [discovered.user, discovered.root, ...head.instructionFiles]
       .filter((file) => file !== undefined)
