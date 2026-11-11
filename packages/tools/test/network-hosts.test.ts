@@ -75,7 +75,8 @@ describe('a Bash call that asks for named hosts, before it runs', () => {
     expect(first.decision.reason).toBe(`shell commands require approval; the command requests network access to github.example.com:443, registry.example.org only (${PROXY_NOTE})`);
     expect(first.suggestedRule).toBeUndefined();
     const reordered = approvalOf(await tools.run('Bash', { command: 'npm install', network: { hosts: ['github.example.com:443', 'registry.example.org'] } }, { mode: 'manual' }));
-    expect(reordered.subjectDigest).toBe(first.subjectDigest);
+    expect(reordered.decision).toEqual(first.decision);
+    expect(reordered.subjectDigest).not.toBe(first.subjectDigest);
     const wider = approvalOf(await tools.run('Bash', { command: 'npm install', network: { hosts: ['registry.example.org', 'github.example.com:443', 'evil.example.net'] } }, { mode: 'manual' }));
     expect(wider.subjectDigest).not.toBe(first.subjectDigest);
     const open = approvalOf(await tools.run('Bash', { command: 'npm install', network: 'open' }, { mode: 'manual' }));

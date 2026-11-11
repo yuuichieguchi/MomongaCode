@@ -2,8 +2,8 @@ import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, openDatabaseWithIdentity, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
 import type { DatabaseFileIdentity } from '@momonga/foundation';
-import { FIDELITY_FOLD_VERSION, INBOX_MAX_PENDING, REPORT_PAGE_ROWS, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, admitRequest, unknownEffectLines, unknownEffectOptions } from '@momonga/protocol';
-import type { Admission, CallTiming, MemoryOrigin, ElicitationAnswerRecord, ElicitationRequestView, InboxDelivery, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, TreeSpend, RunStatus, SessionEventPayload, TerminalStatus, UserShellRecord } from '@momonga/protocol';
+import { FIDELITY_FOLD_VERSION, INBOX_MAX_PENDING, REPORT_PAGE_ROWS, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, admitRequest, isApprovalShown, unknownEffectLines, unknownEffectOptions } from '@momonga/protocol';
+import type { Admission, ApprovalShown, CallTiming, MemoryOrigin, ElicitationAnswerRecord, ElicitationRequestView, InboxDelivery, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, TreeSpend, RunStatus, SessionEventPayload, TerminalStatus, UserShellRecord } from '@momonga/protocol';
 import { createAppendRecords, columnsOf } from './append-records.ts';
 import { createVerdictWriter } from './fidelity-verdicts.ts';
 import { createApprovalStore } from './approvals.ts';
@@ -357,6 +357,16 @@ const prepareStatements = (db: DatabaseSync) => ({
   ),
   listExhausted: db.prepare(`SELECT r.* FROM runs r WHERE ${CLAIMABLE} AND ${EXHAUSTED} ${CLAIM_ORDER}`),
   exhaustedById: db.prepare(`SELECT r.* FROM runs r WHERE r.id = :id AND ${CLAIMABLE} AND ${EXHAUSTED}`),
+  unshownPendingRuns: db.prepare(
+    `SELECT DISTINCT a.run_id AS run_id FROM approvals a JOIN events e ON e.run_id = a.run_id AND e.type = 'tool.permission.requested' AND e.approval_id = a.id
+     WHERE a.status = 'pending' AND a.kind = 'permission' AND json_extract(e.payload_json, '$.shown') IS NULL
+     ORDER BY a.run_id`,
+  ),
+  unshownPendingOfRun: db.prepare(
+    `SELECT a.id AS id FROM approvals a JOIN events e ON e.run_id = a.run_id AND e.type = 'tool.permission.requested' AND e.approval_id = a.id
+     WHERE a.run_id = :runId AND a.status = 'pending' AND a.kind = 'permission' AND json_extract(e.payload_json, '$.shown') IS NULL
+     ORDER BY e.seq`,
+  ),
   listSweeperOwned: db.prepare(
     `SELECT r.* FROM runs r
      WHERE ${KNOWN_RUN_VALUES} AND r.status = 'CANCELLING' AND r.cancel_origin IN ('QUEUED', 'WAITING_HUMAN') AND (r.lease_owner IS NULL OR r.lease_expires_at <= :now)
@@ -997,14 +1007,15 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     };
   };
 
-  const requestOf = (approval: Approval): { reason: string; suggestedRule?: string } => {
+  const requestOf = (approval: Approval): { reason: string; suggestedRule?: string; shown?: ApprovalShown } => {
     const row = derivedView.permissionRequestOf(approval.runId, approval.id);
     if (row === undefined) throw corrupt('approvals', approval.id, `run ${approval.runId} has no tool.permission.requested event for approval ${approval.id}`);
     const payload = expectRecord('events', approval.id, 'payload_json', readerFor('events', approval.id, row).json('payload_json'));
-    const { reason, suggestedRule } = payload;
+    const { reason, suggestedRule, shown } = payload;
     if (typeof reason !== 'string') throw corrupt('events', approval.id, 'reason must be a string');
     if (suggestedRule !== undefined && typeof suggestedRule !== 'string') throw corrupt('events', approval.id, 'suggestedRule must be a string');
-    return { reason, ...(suggestedRule === undefined ? {} : { suggestedRule }) };
+    if (shown !== undefined && !isApprovalShown(shown)) throw corrupt('events', approval.id, 'shown must hold a string title and the input');
+    return { reason, ...(suggestedRule === undefined ? {} : { suggestedRule }), ...(shown === undefined ? {} : { shown }) };
   };
 
   const titleOf = (approval: Approval, callId: string): string => {
@@ -1033,7 +1044,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
   const viewOf = (approval: Approval): ApprovalView => {
     if (approval.kind !== 'permission' && approval.kind !== 'unknown_effect') throw corrupt('approvals', approval.id, `an approval of kind ${approval.kind} has no approval view`);
-    const { reason, suggestedRule } = approval.kind === 'unknown_effect' ? { reason: unknownReasonOf(approval), suggestedRule: undefined } : requestOf(approval);
+    const { reason, suggestedRule, shown } = approval.kind === 'unknown_effect' ? { reason: unknownReasonOf(approval), suggestedRule: undefined, shown: undefined } : requestOf(approval);
     return {
       id: approval.id,
       kind: approval.kind,
@@ -1044,6 +1055,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       createdAt: approval.createdAt,
       ...(suggestedRule === undefined ? {} : { suggestedRule }),
       reason,
+      ...(shown === undefined ? {} : { shown }),
       toolCall: toolCallOf(approval),
     };
   };
@@ -1657,6 +1669,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       fillPage(afterSeq, limit, (after, wanted) => sql.runEvents.all({ runId, after, limit: wanted }), (row) => readerFor('events', runId, row).number('seq'), decodeEvents),
 
     readRunEventsOfTypes: (runId, types, afterSeq) => journalReader.eventsOfTypes(runId, types, afterSeq),
+    latestSessionNotice: (sessionId, code, key) => journalReader.latestSessionNotice(sessionId, code, key),
 
     readLatestRunEventBefore: <T extends RunEventPayload['type']>(runId: string, type: T, beforeSeq: number) => {
       if (type === 'model.requested') return readLatestRequest(runId, beforeSeq) as Extract<RunEvent, { type: T }> | undefined;
@@ -1750,6 +1763,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
             subjectDigest: input.event.subjectDigest,
             reason: input.event.reason,
             ...(input.event.suggestedRule === undefined ? {} : { suggestedRule: input.event.suggestedRule }),
+            shown: input.event.shown,
           });
           if (input.held !== undefined) {
             const { footprint, placeholder } = input.held;
@@ -1856,6 +1870,33 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         }
       }
       return stopped;
+    },
+
+    reaskUnshownApprovals: async (onError) => {
+      const reasked: string[] = [];
+      for (const row of sql.unshownPendingRuns.all()) {
+        const runId = readerFor('approvals', 'unshown', row).string('run_id');
+        try {
+          const didReask = await derivedReads.write({ runTree: runId }, () => {
+            const ids = sql.unshownPendingOfRun.all({ runId }).map((entry) => readerFor('approvals', runId, entry).string('id'));
+            if (ids.length === 0) return false;
+            const events = ids.map((id) => {
+              const approval = approvalOps.store.get(id);
+              if (approval === undefined) throw new Error(`approval ${id} vanished while it was asked again`);
+              approvalOps.end(id, 'superseded');
+              return cancelledEvent(approval, 'superseded');
+            });
+            const run = requireRun(runId);
+            if (run.status === 'WAITING_HUMAN' && approvalOps.store.listPending(run.id).length === 0) changeStatus(run, 'QUEUED', { edges: SERVICE_TRANSITIONS, availableAt: clock.now() }, events);
+            else writeRun({ ...appendPayloads(run, events), version: run.version + 1 });
+            return true;
+          });
+          if (didReask) reasked.push(runId);
+        } catch (error) {
+          onError(error, runId);
+        }
+      }
+      return reasked;
     },
 
     finishCancelled: async (onError) => {

@@ -7,7 +7,7 @@ import type { HookExecution } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
 import { createMarkerOwners, createToolHooks, nodeShellHost, unsettledKeys } from '@momonga/tools';
 import type { HookRunContext } from '@momonga/tools';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector, pollUntil } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector, pollUntil, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -29,7 +29,7 @@ describe('T16 (c) a hook run in flight owns its marker', () => {
     const executions: HookExecution[] = [];
     const context = {
       hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: `touch ${ready}; while [ ! -e ${go} ]; do sleep 0.02; done` }] }] },
-      sandbox: createUnsandboxed({ killGraceMs: 200 }),
+      sandbox: createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 200 }),
       sandboxPolicy: { writableRoots: [dir], writeDenied: [], writeDeniedLiterals: [], readDenied: [], network: 'deny', fileRules: EMPTY_FILE_RULES, protectedSet: EMPTY_PROTECTED_SET },
       env: { PATH: '/usr/bin:/bin' },
       shellHost: nodeShellHost(),

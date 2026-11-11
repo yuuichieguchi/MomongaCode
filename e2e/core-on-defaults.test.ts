@@ -52,7 +52,7 @@ const approveEachAsk = async (runtime: RuntimeClient, runId: string, asks: numbe
 };
 
 const trust = async (home: E2eHome, project: string): Promise<void> => {
-  const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime));
+  const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime), { connectTimeoutMs: 0 });
   try {
     const response = await client.request({ method: 'PUT', path: '/v1/trust', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: project, decision: 'trusted' }) });
     expect(response.status).toBe(200);

@@ -302,7 +302,7 @@ export const launchRuntime = async (temp: RunHome, options: LaunchOptions = {}):
 };
 
 export const clientOf = (temp: RunHome, generation: number = FIRST_GENERATION) => {
-  const client = createUdsClient(fixedSocket(generationLayout(temp.home, generation).sockets.runtime));
+  const client = createUdsClient(fixedSocket(generationLayout(temp.home, generation).sockets.runtime), { connectTimeoutMs: 0 });
   onCleanup(() => client.close());
   const http = (method: string, target: string, init?: RequestInit): Promise<JsonResponse> => sendJson(client, method, target, init);
   const createSession = async (body: Record<string, unknown> = {}): Promise<any> => {

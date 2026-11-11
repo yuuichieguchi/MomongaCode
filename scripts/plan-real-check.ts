@@ -6,6 +6,7 @@ import type { ModelsOperation, ModelsOperations } from '@momonga/config';
 import { CONTEXT_REPORT_FORMAT } from '@momonga/eval';
 import { NoCurrentGenerationError, createUdsClient, currentSocketResolver, fixedSocket, isRecord, momongaLayout, resolveLayoutLocks } from '@momonga/foundation';
 import type { MomongaPaths, UdsClient } from '@momonga/foundation';
+import { settingsChangeWithin, writtenEntryOf } from './plan-real-check-settings.ts';
 import { SIGNED_IN_OUTCOME, WORKSPACE_USAGE_LIMIT_CODE, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
 
 const REPORT_FORMAT = 'momonga-plan-real-check/1';
@@ -430,24 +431,14 @@ const readSettings = (paths: MomongaPaths): Record<string, unknown> => {
   return parsed;
 };
 
-const writtenEntries = (paths: MomongaPaths, connection: number): readonly unknown[] => {
-  const models = readSettings(paths)['models'];
-  const connections = isRecord(models) && Array.isArray(models['connections']) ? (models['connections'] as readonly unknown[]) : [];
-  const written = connections[connection];
-  return isRecord(written) && Array.isArray(written['models']) ? (written['models'] as readonly unknown[]) : [];
-};
-
 const planModelOf = async (paths: MomongaPaths, typed: string, signal: AbortSignal): Promise<PlanModel | undefined> => {
   const { resolved } = await loadUserModels({ home: paths.home, signal });
   const resolution = resolveTypedModelRef(typedModelText(typed), resolved.views);
   if (resolution.kind !== 'found') return undefined;
-  const { canon, provider } = resolution.model;
+  const { canon } = resolution.model;
   const target = resolved.models.get(canon);
   if (target === undefined || !('plan' in target) || target.plan === undefined) return undefined;
-  const connection = resolved.connections.findIndex((candidate) => candidate.provider === provider);
-  const position = [...resolved.models.values()].filter((model) => model.provider === provider).findIndex((model) => model.canon === canon);
-  const entry = writtenEntries(paths, connection)[position];
-  if (!isRecord(entry)) throw new Error(`${paths.settingsFile}: the model entry of ${canon} was not found`);
+  const entry = writtenEntryOf(readSettings(paths), target);
   const capabilities = entry['capabilities'];
   return { canon, declared: isRecord(capabilities) ? structuredClone(capabilities) : undefined };
 };
@@ -464,7 +455,9 @@ const capabilityOf = (model: PlanModel, field: 'promptCache' | 'reasoning', valu
 const changeSettings = async (paths: MomongaPaths, operations: ModelsOperations, signal: AbortSignal): Promise<void> => {
   const lock = resolveLayoutLocks(paths).mechanism;
   try {
-    await editModelsSettings(paths.home, paths.settingsFile, operations, { lock, signal });
+    await settingsChangeWithin(signal, async (limited) => {
+      await editModelsSettings(paths.home, paths.settingsFile, operations, { lock, signal: limited });
+    });
   } catch (error) {
     throw new Refusal(`the settings file ${paths.settingsFile} could not be changed: ${causeText(error)}`);
   }
@@ -527,7 +520,7 @@ const throughGateway = async (command: Exclude<Command, 'collect'>, paths: Momon
   const interrupt = new AbortController();
   const model = await planModelOf(paths, typed, interrupt.signal);
   if (model === undefined) return steps.map((step) => notRun(step, notOnePlanModel(typed)));
-  const client = createUdsClient(fixedSocket(socketPath));
+  const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: 0 });
   try {
     return command === 'carriage' ? await carriage(client, paths, model, interrupt.signal) : await requestSize(client, model);
   } finally {

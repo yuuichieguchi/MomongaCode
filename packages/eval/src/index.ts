@@ -25,6 +25,7 @@ export {
   bindingRuleIds,
   chainRulesOf,
   expandContextDataset,
+  gradersOfRun,
   noiseTurnsFor,
   parseContextDataset,
   rulesOf,
@@ -41,6 +42,7 @@ export type {
   GoldSource,
   NoiseTurn,
   RevisionChain,
+  StateGraders,
   WorkspaceStep,
 } from './context-dataset.ts';
 export {
@@ -72,6 +74,7 @@ export {
   encodeContextReport,
   formatContextReport,
   parseContextReport,
+  qualityMetricsWithData,
 } from './context-report.ts';
 export type { BuildContextReportInput, ClusteredProportion, ContextCaseReport, ContextMetrics, ContextModel, ContextReport, ModelDependentMetric, StoppedRun } from './context-report.ts';
 export { CONTEXT_GATE_NAMES, GATE_CHECKS, GATE_NAMES, TOKEN_PRIMARY_METRICS, compareContextReports, formatContextComparison } from './context-compare.ts';

@@ -135,7 +135,7 @@ describe('permission', () => {
     const state = createMapperState();
     map(call, { state });
 
-    expect(map({ type: 'tool.permission.requested', approvalId: 'a1', callId: 'call-1', options: [...options], subjectDigest: 'd', reason: 'edits require approval' }, { state })).toEqual([
+    expect(map({ type: 'tool.permission.requested', approvalId: 'a1', callId: 'call-1', options: [...options], subjectDigest: 'd', reason: 'edits require approval', shown: { title: 'Edit a.txt', input: { file_path: '/a.txt' } } }, { state })).toEqual([
       {
         kind: 'permission',
         approvalId: 'a1',
@@ -145,8 +145,29 @@ describe('permission', () => {
     ]);
   });
 
+  it('shows what will run: the judged input, the effect, the claim of the model labelled and the change to the file', () => {
+    const state = createMapperState();
+    map(call, { state });
+    const shown = {
+      title: 'Edit a.txt',
+      input: { file_path: '/a.txt', old_string: 'x', new_string: 'y' },
+      effect: 'the effect',
+      claim: 'Fix the typo',
+      diff: { hunks: [{ oldStart: 1, newStart: 1, lines: ['-x', '+y'] }] },
+    };
+    const [effect] = map({ type: 'tool.permission.requested', approvalId: 'a1', callId: 'call-1', options: [...options], subjectDigest: 'd', reason: 'edits require approval', shown }, { state });
+    expect(effect).toMatchObject({
+      kind: 'permission',
+      toolCall: {
+        title: 'Edit a.txt',
+        rawInput: shown.input,
+        content: [{ type: 'content', content: { type: 'text', text: ['the effect', 'The model describes it as: Fix the typo', '@@ -1 +1 @@', '-x', '+y'].join('\n') } }],
+      },
+    });
+  });
+
   it('refuses a request about a call nobody announced', () => {
-    expect(() => map({ type: 'tool.permission.requested', approvalId: 'a1', callId: 'call-9', options: [...options], subjectDigest: 'd', reason: 'edits require approval' })).toThrow(
+    expect(() => map({ type: 'tool.permission.requested', approvalId: 'a1', callId: 'call-9', options: [...options], subjectDigest: 'd', reason: 'edits require approval', shown: { title: 'approval', input: {} } })).toThrow(
       'approval a1 asks about call call-9, which no tool.call event announced',
     );
   });
@@ -327,7 +348,7 @@ describe('events of a subagent run', () => {
     const state = createMapperState();
     mapChild(call, state);
 
-    const effects = mapChild({ type: 'tool.permission.requested', approvalId: 'ap-1', callId: 'call-1', subjectDigest: 'd', reason: 'edits require approval', options: [], expiresAt: 10 } as EventPayload, state);
+    const effects = mapChild({ type: 'tool.permission.requested', approvalId: 'ap-1', callId: 'call-1', subjectDigest: 'd', reason: 'edits require approval', options: [], expiresAt: 10, shown: { title: 'approval', input: {} } } as EventPayload, state);
 
     expect(effects).toMatchObject([{ kind: 'permission', approvalId: 'ap-1', toolCall: { title: 'reviewer: Edit a.txt', status: 'pending' } }]);
   });

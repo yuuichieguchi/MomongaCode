@@ -132,9 +132,9 @@ const startStack = async (
   registerCleanup(context, async () => {
     await handle.close();
   });
-  const client = createUdsClient(fixedSocket(handle.socketPath));
+  const client = createUdsClient(fixedSocket(handle.socketPath), { connectTimeoutMs: 0 });
   registerCleanup(context, () => client.close());
-  const patient = createUdsClient(fixedSocket(handle.socketPath), { headersTimeoutMs: PATIENT_CLIENT_MS, bodyTimeoutMs: PATIENT_CLIENT_MS });
+  const patient = createUdsClient(fixedSocket(handle.socketPath), { connectTimeoutMs: 0, headersTimeoutMs: PATIENT_CLIENT_MS, bodyTimeoutMs: PATIENT_CLIENT_MS });
   registerCleanup(context, () => patient.destroy());
   return { home, client, handle, anthropic, openResponses, security, control, patient, programPath: host.programPath, logText: () => lines.join('') };
 };
@@ -274,7 +274,7 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
     registerCleanup(context, async () => {
       await handle.close();
     });
-    const client = createUdsClient(fixedSocket(handle.socketPath));
+    const client = createUdsClient(fixedSocket(handle.socketPath), { connectTimeoutMs: 0 });
     registerCleanup(context, () => client.close());
     expect(portCalls).toBe(0);
     const failed = await post(client, request);

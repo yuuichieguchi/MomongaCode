@@ -62,7 +62,7 @@ describe('haystack builder', () => {
 
   it('writes the haystack as Grep shows it from the project cwd, hashed into the handle', async () => {
     const home = await createE2eHome();
-    const haystack = writeHaystack(home.project);
+    const haystack = await writeHaystack(home.project);
     expect(haystack.grepLines[0]?.startsWith(grepPrefixOf(HAYSTACK_FILE_NAME, 1))).toBe(true);
     expect(haystack.grepOutput).toHaveLength(HAYSTACK_TARGET_CHARS);
     expect(haystack.handle).toBe(sha256Hex(haystack.grepOutput));
@@ -236,7 +236,7 @@ describe('acceptance (a) support', () => {
 
   it.for([0, -2, 2])('the dry run hands the runtime counts shifted by exactly %i tokens', { timeout: 2 * E2E_TEST_TIMEOUT_MS }, async (perturbation) => {
     const home = await createE2eHome();
-    const haystack = writeHaystack(home.project);
+    const haystack = await writeHaystack(home.project);
     const summary = summaryTextOf(haystack.handle);
     const planningHome = await createE2eHome();
     await startStack({ home: planningHome, sandbox: 'none', target: acceptanceTarget('native'), routes: [summaryRoute(summary)] });
@@ -252,7 +252,7 @@ describe('acceptance (a) support', () => {
 
   it.for(FIDELITY)('the in-process dry run reproduces the real stack ($label)', { timeout: 2 * E2E_TEST_TIMEOUT_MS }, async ({ spec, shape, fillers }) => {
     const home = await createE2eHome();
-    const haystack = writeHaystack(home.project);
+    const haystack = await writeHaystack(home.project);
     const summary = summaryTextOf(haystack.handle);
     const target = acceptanceTarget(spec.toolCalling);
     const planningHome = await createE2eHome();

@@ -131,7 +131,7 @@ export const journal = (conditions: readonly Condition[] | undefined, steps: rea
       ...(step.locations === undefined ? {} : { locations: step.locations }),
     });
     if (step.rejected === true) {
-      events.push({ type: 'tool.permission.requested', approvalId: `a-${callId}`, callId, options: [{ optionId: 'no', name: 'No', kind: 'reject_once' }], subjectDigest: 'd', reason: 'ask' });
+      events.push({ type: 'tool.permission.requested', approvalId: `a-${callId}`, callId, options: [{ optionId: 'no', name: 'No', kind: 'reject_once' }], subjectDigest: 'd', reason: 'ask', shown: { title: 'approval', input: {} } });
       events.push({ type: 'tool.permission.resolved', approvalId: `a-${callId}`, optionId: 'no' });
     }
     if (step.started) events.push({ type: 'tool.started', callId, idemKey: `k-${callId}`, ...(step.basis === 'unrecorded' ? {} : { basis: step.basis }) });

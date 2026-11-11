@@ -184,6 +184,27 @@ export type DiffHunk = { oldStart: number; newStart: number; lines: string[] };
 
 export type AppliedDiffFields = { hunks?: DiffHunk[]; added?: number; removed?: number; diffOmitted?: string };
 
+export type ApprovalShown = { title: string; input: unknown; effect?: string; claim?: string; diff?: AppliedDiffFields };
+
+export const MODEL_CLAIM_LEAD = 'The model describes it as: ';
+
+export const CHANGE_NOT_SHOWN_LEAD = 'The change is not shown: ';
+
+export const hunkHeaderOf = (hunk: DiffHunk): string => `@@ -${hunk.oldStart} +${hunk.newStart} @@`;
+
+export const approvalShownLines = (shown: ApprovalShown): string[] => [
+  ...(shown.effect === undefined ? [] : shown.effect.split('\n')),
+  ...(shown.claim === undefined ? [] : [`${MODEL_CLAIM_LEAD}${shown.claim}`]),
+  ...(shown.diff?.diffOmitted === undefined ? [] : [`${CHANGE_NOT_SHOWN_LEAD}${shown.diff.diffOmitted}`]),
+  ...(shown.diff?.hunks ?? []).flatMap((hunk) => [hunkHeaderOf(hunk), ...hunk.lines]),
+];
+
+export const isApprovalShown = (value: unknown): value is ApprovalShown => {
+  if (typeof value !== 'object' || value === null || !('input' in value)) return false;
+  const { title, effect, claim } = value as Record<string, unknown>;
+  return typeof title === 'string' && (effect === undefined || typeof effect === 'string') && (claim === undefined || typeof claim === 'string');
+};
+
 export const diffFieldsOf = ({ hunks, added, removed, diffOmitted }: AppliedDiffFields): AppliedDiffFields => ({
   ...(hunks === undefined ? {} : { hunks }),
   ...(added === undefined ? {} : { added }),
@@ -256,6 +277,7 @@ export type RunEventPayload =
       subjectDigest: string;
       reason: string;
       suggestedRule?: string;
+      shown: ApprovalShown;
     }
   | {
       type: 'tool.permission.classified';

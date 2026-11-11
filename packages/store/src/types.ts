@@ -6,6 +6,7 @@ import type { PermissionReviewsStore } from './permission-reviews.ts';
 import type { InheritPlanReply, InheritPlanRequest, InheritedWindowReply, InheritedWindowRequest } from './inherit-reference.ts';
 import type { UnaskedCommands } from './inherit.ts';
 import type {
+  ApprovalShown,
   CallFootprint,
   BilledDetail,
   Capabilities,
@@ -307,6 +308,7 @@ export type ApprovalView = {
   createdAt: number;
   suggestedRule?: string;
   reason: string;
+  shown?: ApprovalShown;
   toolCall: {
     callId: string;
     name: string;
@@ -653,6 +655,7 @@ export type RuntimeStore = {
   ): Promise<ServiceMutationResult>;
   readRunEvents(runId: string, afterSeq: number, limit: number): RunEvent[];
   readRunEventsOfTypes(runId: string, types: readonly RunEventPayload['type'][], afterSeq?: number): RunEvent[];
+  latestSessionNotice(sessionId: string, code: string, key: string): RunEvent | undefined;
   readLatestRunEventBefore<T extends RunEventPayload['type']>(runId: string, type: T, beforeSeq: number): Extract<RunEvent, { type: T }> | undefined;
   readModelCallEvents(runId: string): Promise<ModelCallRecord[]>;
   toolCallSeq(runId: string, callId: string): Promise<number | undefined>;
@@ -677,7 +680,7 @@ export type RuntimeStore = {
     input: {
       callId: string;
       options: PermissionOption[];
-      event: { subjectDigest: string; reason: string; suggestedRule?: string };
+      event: { subjectDigest: string; reason: string; suggestedRule?: string; shown: ApprovalShown };
       held?: { footprint: CallFootprint; placeholder?(approvalId: string): string };
     },
   ): Promise<RequestApprovalResult>;
@@ -691,6 +694,7 @@ export type RuntimeStore = {
   elicitationView(elicitationId: string): Promise<ElicitationView | undefined>;
   pendingElicitationViews(runId: string): Promise<ElicitationView[]>;
   expireApprovals(nowMs: number, onError: SweepErrorSink): Promise<string[]>;
+  reaskUnshownApprovals(onError: SweepErrorSink): Promise<string[]>;
   finishCancelled(onError: SweepErrorSink): Promise<string[]>;
   deadLetterExhausted(onError: SweepErrorSink): Promise<string[]>;
   terminalRunIdsWithCheckpoint(): string[];

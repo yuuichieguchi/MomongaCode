@@ -155,6 +155,7 @@ const requestApproval = async (ctx: ClaimContext, outcome: NeedsApprovalOutcome,
       subjectDigest: outcome.subjectDigest,
       reason: outcome.decision.reason,
       ...(outcome.suggestedRule === undefined ? {} : { suggestedRule: outcome.suggestedRule }),
+      shown: outcome.shown,
     },
     ...(held === undefined ? {} : { held: { footprint: { reads: [...outcome.footprint.reads], writes: [...outcome.footprint.writes] }, ...(held.late ? {} : { placeholder: heldOutput }) } }),
   });

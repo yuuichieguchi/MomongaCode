@@ -57,7 +57,7 @@ type StreamOutcome = { kind: 'match'; frame: RunEventFrame } | { kind: 'ended' }
 
 export const createRuntimeClient = (home: E2eHome, resolveSocket: SocketResolver = fixedSocket(firstGeneration(home.paths).sockets.runtime)): RuntimeClient => {
   const product: ProductClient = createProductClient({ resolveSocket, clock: nodeClock });
-  const http = createUdsClient(resolveSocket);
+  const http = createUdsClient(resolveSocket, { connectTimeoutMs: 0 });
   const openStreams = new Set<{ abort(): Promise<void> }>();
 
   const createSession = async (options: CreateSessionOptions = {}): Promise<{ session: SessionView }> => {

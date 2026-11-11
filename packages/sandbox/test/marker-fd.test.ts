@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testKernelLock } from '@momonga/testkit';
+import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testKernelLock, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -36,7 +36,7 @@ const holdersOf = (file: string): number[] => {
 
 const variants: Array<[string, (tmpRoot: string) => Sandbox]> = [
   ['seatbelt', (tmpRoot) => createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot, killGraceMs: 300 })],
-  ['unsandboxed', () => createUnsandboxed({ killGraceMs: 300 })],
+  ['unsandboxed', () => createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 300 })],
 ];
 
 describe.runIf(process.platform === 'darwin').each(variants)('marker file as fd 3 (%s)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, (kind, make) => {

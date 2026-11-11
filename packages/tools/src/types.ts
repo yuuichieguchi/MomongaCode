@@ -163,6 +163,8 @@ export const TOOL_OUTPUT_ORIGINS = ['external', 'harness'] as const;
 
 export type ToolOutputOrigin = (typeof TOOL_OUTPUT_ORIGINS)[number];
 
+export type ApprovalContent = { effect?: string; claim?: string; state?: string | null; diff?: AppliedDiffFields };
+
 export type ToolDefinition<Input> = SideEffectBinding<Input> & ToolBody<Input>;
 
 export type ToolBody<Input> = {
@@ -188,6 +190,7 @@ export type ToolBody<Input> = {
   locations?(input: Input, ctx: DisplayContext): { path: string; line?: number }[];
   gateFacts?(input: Input, ctx: SubjectContext, call: GateCall): Promise<GateFacts>;
   precondition?(input: Input, ctx: PreconditionContext): Promise<void>;
+  approval?(input: Input, ctx: PreconditionContext, gateFacts?: GateFacts): Promise<ApprovalContent>;
   prepare?(input: Input, ctx: ToolContext, gateFacts?: GateFacts): Promise<Record<string, unknown>>;
   execute(input: Input, ctx: ToolContext, prepared: Record<string, unknown> | undefined): Promise<ToolResult | ToolPending>;
   reconcile?(input: Input, record: ToolIdempotencyRecord, ctx: ReconcileContext): Promise<ReconcileResult>;

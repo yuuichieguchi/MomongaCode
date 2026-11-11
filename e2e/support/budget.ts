@@ -9,7 +9,7 @@ import { RUNTIME_DEFAULTS, buildSystemPrompt, createGatewayClient, createHistory
 import type { GatewayPort } from '@momonga/runtime';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { FakeRoute, FakeScriptedReply } from '@momonga/testkit';
-import { usageOf } from '@momonga/testkit';
+import { usageOf, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { createBuiltinTools, createOperationTools, harnessOutputToolsOf } from '@momonga/tools';
 import type { ArgvRunner, ForgeAccess } from '@momonga/tools';
 import { budgetFor, capacityFor, inputCeilingFor, itemCapFor } from '../../packages/context/src/budget.ts';
@@ -480,7 +480,7 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
         redactor: createRedactor({ credentials: [] }),
         enforcement: () => 'exact-paths',
       }),
-      tools: { sandboxes: fixedSandboxBindings(createUnsandboxed()) },
+      tools: { sandboxes: fixedSandboxBindings(createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform })) },
       onContextOverflow: (error: ContextOverflowError) => {
         overflows.push({ inputTokens: error.inputTokens, inputBudget: error.inputBudget, level: error.level });
       },

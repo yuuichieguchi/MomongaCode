@@ -69,7 +69,7 @@ describe('run service socket', () => {
     const linkedHome = path.join(layout.root, 'hl');
     fs.symlinkSync(layout.home, linkedHome, 'dir');
     const service = await attempt(layout, layout.socketPath, linkedHome);
-    const client = createUdsClient(fixedSocket(service.socketPath));
+    const client = createUdsClient(fixedSocket(service.socketPath), { connectTimeoutMs: 0 });
     onCleanup(() => client.close());
     expect((await sendJson(client, 'GET', '/v1/health')).status).toBe(200);
   });
@@ -86,7 +86,7 @@ describe('run service socket', () => {
     expect(fs.existsSync(env.layout.socketPath)).toBe(false);
     await pollFor(() => stream.ended, 5000, 'the open stream to end');
     expect(env.notifier.subscriberCount()).toBe(0);
-    const fresh = createUdsClient(fixedSocket(env.layout.socketPath));
+    const fresh = createUdsClient(fixedSocket(env.layout.socketPath), { connectTimeoutMs: 0 });
     onCleanup(() => fresh.close());
     await expect(fresh.request({ method: 'GET', path: '/v1/health' })).rejects.toThrow();
   });

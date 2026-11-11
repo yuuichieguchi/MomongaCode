@@ -44,7 +44,7 @@ const runToEnd = async (runtime: RuntimeClient, runId: string): Promise<void> =>
 };
 
 const getJson = async (home: E2eHome, target: string): Promise<{ status: number; json: Json; text: string }> => {
-  const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime));
+  const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime), { connectTimeoutMs: 0 });
   try {
     const response = await client.request({ method: 'GET', path: target });
     const text = await response.text();

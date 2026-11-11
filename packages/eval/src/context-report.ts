@@ -4,7 +4,7 @@ import { CACHE_READS_NOT_REPORTED, MODEL_KINDS, PRICE_NOT_RECORDED, UNPRICED_COD
 import type { ModelKind } from '@momonga/protocol';
 import { clusterBootstrap } from './bootstrap.ts';
 import type { Cluster } from './bootstrap.ts';
-import { COMPACTION_SETTINGS, expandContextDataset } from './context-dataset.ts';
+import { COMPACTION_SETTINGS, bindingRuleIds, expandContextDataset, gradersOfRun } from './context-dataset.ts';
 import { RESOLVED_POLICY_SCHEMA } from './context-policy.ts';
 import type { PolicyOverlay } from './context-policy.ts';
 import { NEW_PAIR_COMMANDS, RETIRED_POLICY_REASON } from './retired-formats.ts';
@@ -157,7 +157,7 @@ const measureRun = (entry: ExpandedCase, transcript: Transcript): RunMeasure => 
   const governance = governanceCountsOf(entry.rules, transcript.events, transcript.ruleIds);
   const recalled = recalledOf(transcript.events);
   const retrieval = entry.gold === undefined || stopped ? undefined : retrievalOf(goldRangesOf(entry.gold, transcript.events), transcript.events);
-  const passed = !stopped && grade(entry.graders, transcript).passed;
+  const passed = !stopped && grade(gradersOfRun(entry, transcript.runIndex), transcript).passed;
   const none: Cluster = { numerator: 0, denominator: 0 };
   return {
     passed,
@@ -180,6 +180,19 @@ const measureRun = (entry: ExpandedCase, transcript: Transcript): RunMeasure => 
     token: tokenFactsOf(runs, stopped ? { state: 'none' } : transcript.reflection),
   };
 };
+
+const QUALITY_DATA: Record<QualityMetricName, (entry: ExpandedCase) => boolean> = {
+  continuationRate: (entry) => entry.compaction === 'on',
+  governanceFidelity: (entry) => bindingRuleIds(entry.rules).length > 0,
+  governanceConsistency: (entry) => entry.rules.length > 0,
+  governanceMinimality: (entry) => bindingRuleIds(entry.rules).length > 0,
+  memoryStaleRate: (entry) => (entry.memories ?? []).length > 0,
+  retrievalPrecision: (entry) => entry.gold !== undefined,
+  retrievalRecall: (entry) => (entry.gold ?? []).length > 0,
+};
+
+export const qualityMetricsWithData = (entry: ExpandedCase): QualityMetricName[] =>
+  QUALITY_METRICS.filter(({ name }) => QUALITY_DATA[name](entry)).map(({ name }) => name);
 
 const UNMEASURED_PREFIX = 'could not be measured';
 

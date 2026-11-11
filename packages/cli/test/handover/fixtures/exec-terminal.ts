@@ -27,7 +27,7 @@ if (taken.started === undefined) {
   hostTerminalOutput(process.stdout).writeSync(`before-exec pid=${process.pid} ${ttyState()}\r\n`);
   const target = handoverTarget({ self: { kind: 'script', execPath: process.execPath, script }, execArgv: process.execArgv, args: taken.args, env: process.env }, RECORD, lose ? undefined : terminal);
   layer.release();
-  await replaceProcess(target, hostReplace, { release: () => undefined });
+  await replaceProcess(target, hostReplace, { release: () => undefined, relayed: () => undefined });
 } else {
   const outcome = startWithHandoverTerminal(layer, taken.started.terminal, 'kitty');
   hostTerminalOutput(process.stdout).writeSync(`after-exec pid=${process.pid} ${outcome} enabled=${layer.state().enabled.join(',')} value=${String(process.env['MOMONGA_HANDOVER_TERMINAL'])} ${ttyState()}\r\n`);

@@ -104,7 +104,7 @@ describe('canonicalDirectory', () => {
     const locked = path.join(root, 'locked');
     fs.mkdirSync(locked);
     lock(locked);
-    expect(syncPaths.canonicalDirectory(locked)).toEqual({ ok: false, code: 'unreadable', reason: expect.stringMatching(/^cannot be read: EACCES\b/) });
+    expect(syncPaths.canonicalDirectory(locked)).toEqual({ ok: false, code: 'unreadable', reason: 'cannot be read: permission denied (EACCES)' });
   });
 
   it.skipIf(RUNNING_AS_ROOT)('rejects a child under an unreadable parent with "cannot be resolved: ..."', () => {
@@ -154,7 +154,7 @@ describe('canonicalDirectory failure codes', () => {
     const locked = path.join(root, 'locked');
     fs.mkdirSync(locked);
     lock(locked);
-    expect(syncPaths.canonicalDirectory(locked)).toEqual({ ok: false, code: 'unreadable', reason: expect.stringMatching(/^cannot be read: EACCES\b/) });
+    expect(syncPaths.canonicalDirectory(locked)).toEqual({ ok: false, code: 'unreadable', reason: 'cannot be read: permission denied (EACCES)' });
 
     const statTarget = path.join(root, 'stat-eacces');
     fs.mkdirSync(statTarget);
@@ -163,7 +163,7 @@ describe('canonicalDirectory failure codes', () => {
       if (String(target) === statTarget) throw errnoError('EACCES');
       return realStat(target, options);
     }) as typeof fs.statSync);
-    expect(syncPaths.canonicalDirectory(statTarget)).toEqual({ ok: false, code: 'unreadable', reason: 'cannot be read: EACCES: injected' });
+    expect(syncPaths.canonicalDirectory(statTarget)).toEqual({ ok: false, code: 'unreadable', reason: 'cannot be read: permission denied (EACCES)' });
   });
 
   it('answers unreadable with the code for an injected EPERM in stat, and rethrows an injected ENOTSUP in access with its code', () => {
@@ -183,7 +183,7 @@ describe('canonicalDirectory failure codes', () => {
       if (String(target) === accessTarget) throw enotsup;
       realAccess(target, mode);
     });
-    expect(syncPaths.canonicalDirectory(statTarget)).toEqual({ ok: false, code: 'unreadable', reason: 'cannot be read: EPERM: injected' });
+    expect(syncPaths.canonicalDirectory(statTarget)).toEqual({ ok: false, code: 'unreadable', reason: 'cannot be read: operation not permitted (EPERM)' });
     expect(() => syncPaths.canonicalDirectory(accessTarget)).toThrow(enotsup);
   });
 
@@ -205,7 +205,7 @@ describe('canonicalDirectory failure codes', () => {
       realAccess(target, mode);
     });
     expect(() => syncPaths.canonicalDirectory(statTarget)).toThrow(enotsup);
-    expect(syncPaths.canonicalDirectory(accessTarget)).toEqual({ ok: false, code: 'unreadable', reason: 'cannot be read: EACCES: injected' });
+    expect(syncPaths.canonicalDirectory(accessTarget)).toEqual({ ok: false, code: 'unreadable', reason: 'cannot be read: permission denied (EACCES)' });
   });
 
   it('throws the same error for a transient errno: an injected EMFILE in stat and an injected EIO in access', async () => {

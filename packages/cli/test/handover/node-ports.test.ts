@@ -20,7 +20,7 @@ const fileOfFreshHome = (): string => {
 };
 
 const TEXT = (() => {
-  const encoded = encodeRecord({ format: HANDOVER_FORMAT, fromVersion: '1.2.3', toVersion: '1.2.4', session: 'session-1', lastSeq: {}, kind: 'attach', runId: 'run-1', output: 'text', verbose: false }, process.pid);
+  const encoded = encodeRecord({ format: HANDOVER_FORMAT, fromVersion: '1.2.3', toVersion: '1.2.4', session: 'session-1', lastSeq: {}, kind: 'attach', runId: 'run-1', output: 'text', verbose: false }, { writer: process.pid, reader: process.pid, namespace: 'single' });
   if (encoded.kind !== 'fits') throw new Error('the record of the test does not fit');
   return encoded.text;
 })();

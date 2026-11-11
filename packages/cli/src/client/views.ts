@@ -1,4 +1,4 @@
-import type { ApprovalStatus, AutoClassifierView, ElicitationRequestView, PermissionMode, PermissionOption, PlanAccountRef, RunStatus, StopReason, Stored, ToolKind, RunReport } from '@momonga/protocol';
+import type { ApprovalShown, ApprovalStatus, AutoClassifierView, ElicitationRequestView, PermissionMode, PermissionOption, PlanAccountRef, RunStatus, StopReason, Stored, ToolKind, RunReport } from '@momonga/protocol';
 
 export type SessionView = {
   readonly id: string;
@@ -63,6 +63,7 @@ export type ApprovalView = {
   readonly createdAt: number;
   readonly suggestedRule?: string;
   readonly reason: string;
+  readonly shown?: ApprovalShown;
   readonly toolCall: ApprovalToolCall;
 };
 

@@ -388,7 +388,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
   const approvalTextOf = (approval: PendingApproval): { title: string; lines: SelectLine[] } => {
     const kept = approvalText.current;
     if (kept !== undefined && kept.approvalId === approval.approvalId) return kept;
-    const next = { approvalId: approval.approvalId, ...approvalWording(approval, (callId) => toolOf(store, callId), backend.cwd) };
+    const next = { approvalId: approval.approvalId, ...approvalWording(approval, (callId) => toolOf(store, callId)) };
     approvalText.current = next;
     return next;
   };

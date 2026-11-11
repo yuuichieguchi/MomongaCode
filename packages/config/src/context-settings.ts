@@ -1,5 +1,6 @@
 import { OUTPUT_FORMATTERS } from '@momonga/protocol';
 import type { OutputFormatterName } from '@momonga/protocol';
+import type { AcceptedCheck } from './declared-checks.ts';
 import type { ContextSettings, MemorySettings, RipgrepSetting, ToolsSettings, VerificationSettings } from './settings.ts';
 
 export type ResolvedMemorySettings = { reflection: { enabled: boolean; maxTokens?: number }; forgetAfterDays: number; repositoryFacts: boolean };
@@ -81,7 +82,7 @@ export const mergeVerificationSettings = (base: ResolvedVerificationSettings, la
   return {
     commands: layer.commands ?? base.commands,
     manifests: layer.manifests ?? base.manifests,
-    conditions: layer.commands ?? base.conditions,
+    conditions: base.conditions,
     required: layer.required ?? base.required,
   };
 };
@@ -102,4 +103,14 @@ export const mergeContextSettings = (base: ResolvedContextSettings, layer: Conte
 export const mergeToolsSettings = (base: ResolvedToolsSettings, layer: ToolsSettings | undefined): ResolvedToolsSettings => {
   if (layer === undefined) return base;
   return { deferral: layer.deferral ?? base.deferral, conciseDescriptions: layer.conciseDescriptions ?? base.conciseDescriptions, ripgrep: layer.ripgrep ?? base.ripgrep };
+};
+
+export const withCompletionConditions = (
+  verification: ResolvedVerificationSettings,
+  declaredCommands: readonly string[] | undefined,
+  accepted: AcceptedCheck | undefined,
+): ResolvedVerificationSettings => {
+  if (declaredCommands !== undefined) return { ...verification, conditions: [...declaredCommands] };
+  if (accepted !== undefined && 'commands' in accepted) return { ...verification, conditions: [...accepted.commands] };
+  return { ...verification, conditions: [] };
 };

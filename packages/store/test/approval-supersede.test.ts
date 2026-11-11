@@ -23,7 +23,7 @@ const setup = async () => {
 };
 
 const request = async (store: RuntimeStore, claim: Claim, options: PermissionOption[], subjectDigest: string) => {
-  const result = await store.requestApproval(claim, { callId: 'call_1', options, event: { subjectDigest, reason: 'edits require approval' } });
+  const result = await store.requestApproval(claim, { callId: 'call_1', options, event: { subjectDigest, reason: 'edits require approval', shown: { title: 'approval', input: {} } } });
   if (result.kind !== 'ok') throw new Error(`expected ok, got ${result.kind}`);
   return result.approval;
 };

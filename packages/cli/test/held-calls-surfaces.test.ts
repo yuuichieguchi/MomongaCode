@@ -12,7 +12,7 @@ const HELD_TEXT = 'Not run yet: waiting for a person to approve (ap-1).';
 
 const call = { type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'PullRequestMerge', kind: 'other', title: 'Merge pull request #7', rawInput: { number: 7 } };
 const other = { type: 'tool.call', callId: 'c2', providerCallId: 'p2', name: 'Bash', kind: 'execute', title: 'Bash cat out.txt', rawInput: { command: 'cat out.txt' } };
-const requested = { type: 'tool.permission.requested', approvalId: 'ap-1', callId: 'c1', subjectDigest: 'd', options: [{ optionId: 'o', name: 'Allow once', kind: 'allow_once' }], reason: REASON };
+const requested = { type: 'tool.permission.requested', approvalId: 'ap-1', callId: 'c1', subjectDigest: 'd', options: [{ optionId: 'o', name: 'Allow once', kind: 'allow_once' }], reason: REASON, shown: { title: 'approval', input: {} } };
 const held = { type: 'tool.held', callId: 'c1', approvalId: 'ap-1', reason: REASON, footprint: { reads: [], writes: ['pr:forge.example/acme/widgets#7'] } };
 const placeholder = { type: 'tool.completed', callId: 'c1', status: 'failed', output: HELD_TEXT, denial: { source: 'held', reason: REASON } };
 const blocked = { type: 'tool.completed', callId: 'c2', status: 'failed', output: 'Not run: blocked by the held call c1', denial: { source: 'held', reason: 'Not run: blocked by the held call c1' } };
@@ -33,8 +33,8 @@ describe('a held call in the TUI', () => {
   it('says in the panel that the run goes on while the call waits', () => {
     const state = fold([call, requested, held, placeholder]);
     if (state.approval === undefined) throw new Error('no approval is pending');
-    expect(approvalLines(state.approval, undefined, '/work')).toEqual([REASON, HELD_PANEL_LINE]);
-    expect(approvalLines({ ...state.approval, held: undefined } as never, undefined, '/work')).toEqual([REASON]);
+    expect(approvalLines(state.approval)).toEqual([REASON, HELD_PANEL_LINE]);
+    expect(approvalLines({ ...state.approval, held: undefined } as never)).toEqual([REASON]);
   });
 
   it('keeps the waiting row while the run works on, and names the held calls in it', () => {

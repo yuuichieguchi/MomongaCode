@@ -651,6 +651,16 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     const name = callNames.get(callId);
     return { callNames: name === undefined ? {} : { [callId]: name }, withTools: input.tools !== 'none' };
   };
+  const shellMessage = (text: string): InputItem => ({ type: 'message', role: 'user', content: [{ type: 'input_text', text }] });
+  const shellItems: InputItem[] = [];
+  for (const text of sources.taskShell ?? []) {
+    const count = (candidate: string): Promise<number> => meter.countItem(shellMessage(candidate), countContextFor(''));
+    const handle = blobs.handleFor(text);
+    const fitted = await fitToTokens({ text, cap: itemCap, handle, reader, count });
+    if (fitted !== text) await blobs.put(text, { mediaType: BLOB_MEDIA_TYPE });
+    shellItems.push(shellMessage(fitted));
+  }
+  const taskItems = [...shellItems, task];
   const reports = new Map<string, { eviction: ContextEviction; state: OutputState }>();
   const referenceReports: ContextEviction[] = [];
   const reported = (): ContextEviction[] => [
@@ -840,7 +850,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   const withTask = (kept: readonly Slot[]): InputItem[] => {
     const items = kept.map(shown);
     const taskIndex = kept.findIndex((slot) => slot.seq > sources.taskSeq);
-    return taskIndex < 0 ? [...items, task] : [...items.slice(0, taskIndex), task, ...items.slice(taskIndex)];
+    return taskIndex < 0 ? [...items, ...taskItems] : [...items.slice(0, taskIndex), ...taskItems, ...items.slice(taskIndex)];
   };
 
   const assemble = (): InputItem[] => [...layers, ...summaryItems, ...withTask(slots), ...workingStateItems, ...trailing];
@@ -1000,7 +1010,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
       const throughSeq = (slots[cutIndex] as Slot).seq;
       const items = prefix.map(shown);
       const taskAt = prefix.findIndex((slot) => slot.seq > sources.taskSeq);
-      const compactionInput = taskAt < 0 ? items : [...items.slice(0, taskAt), task, ...items.slice(taskAt)];
+      const compactionInput = taskAt < 0 ? items : [...items.slice(0, taskAt), ...taskItems, ...items.slice(taskAt)];
       return {
         plan: {
           throughSeq,

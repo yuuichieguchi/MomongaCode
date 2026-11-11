@@ -82,6 +82,21 @@ describe('createSession', () => {
     expect(JSON.parse(seen[0]?.body ?? '')).toEqual({ cwd: '/work', env: {}, mcpServers });
   });
 
+  it('posts whether the client has a terminal UI and keeps the notice of an undecided folder', async (context) => {
+    const { client, seen } = await serve(context, () => json(201, { session: SESSION, strippedEnvKeys: [], trustNotice: 'decide it with momonga trust /work' }, { location: '/v1/sessions/session-1' }));
+
+    const created = await client.createSession({ cwd: '/work', env: {}, terminalUi: false });
+
+    expect(JSON.parse(seen[0]?.body ?? '')).toEqual({ cwd: '/work', env: {}, terminalUi: false });
+    expect(created.trustNotice).toBe('decide it with momonga trust /work');
+  });
+
+  it('rejects a notice of an undecided folder that is not a string', async (context) => {
+    const { client } = await serve(context, () => json(201, { session: SESSION, strippedEnvKeys: [], trustNotice: 3 }, { location: '/v1/sessions/session-1' }));
+
+    await expect(client.createSession({ cwd: '/work', env: {}, terminalUi: false })).rejects.toBeInstanceOf(ContractViolation);
+  });
+
   it('rejects a body that does not match the Run API contract', async (context) => {
     const { client } = await serve(context, () => json(201, { session: { id: 'x' }, strippedEnvKeys: [] }));
 

@@ -13,7 +13,7 @@ export const INPUT_REQUESTS: ElicitationRequestView[] = [{ key: 'who', mode: 'fo
 export type Awaiting = { runId: string; sessionId: string; claim: Claim; approvals: Approval[] };
 
 export const requestFor = async (store: RuntimeStore, claim: Claim, callId: string, subjectDigest = DIGEST): Promise<Approval> => {
-  const result = await store.requestApproval(claim, { callId, options: OPTIONS, event: { subjectDigest, suggestedRule: `Write(/work/a/${callId}.txt)`, reason: 'edits require approval' } });
+  const result = await store.requestApproval(claim, { callId, options: OPTIONS, event: { subjectDigest, suggestedRule: `Write(/work/a/${callId}.txt)`, reason: 'edits require approval', shown: { title: 'approval', input: {} } } });
   if (result.kind !== 'ok') throw new Error(`expected an approval for ${callId}, got ${result.kind}`);
   return result.approval;
 };

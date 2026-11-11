@@ -550,7 +550,7 @@ export type {
 } from './governance.ts';
 export { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
 export type { ContextChargePurpose, ContributionKind, SummaryFidelity, SummarySectionCoverage, SummarySource } from './context-record.ts';
-export { attachedFileText, attachmentText, imageDataUrl, userMessageContent, userShellText } from './user-content.ts';
+export { attachedFileText, attachmentText, imageDataUrl, includedShellTexts, userMessageContent, userShellText } from './user-content.ts';
 export type { UserMessageExtras } from './user-content.ts';
 export { imageMediaTypeOf } from './image-media.ts';
 export { escapeXmlAttribute, escapeXmlText } from './xml.ts';
@@ -647,7 +647,7 @@ export type { OperationEffectRecord } from './run-types.ts';
 export type { ApprovalBasis, PermissionDenial, PermissionDenialSource } from './permission-denial.ts';
 export { EXECUTED_TEXT_EVENT_TYPES, readExecutedText } from './executed-text.ts';
 export type { ExecutedTextEvent, ExecutedTextEventType, ExecutedTextHandlers } from './executed-text.ts';
-export { diffFieldsOf, heldEndOf, OPERATION_EFFECT_OUTCOMES, APPROVAL_KINDS, APPROVAL_STATUSES, UNKNOWN_EFFECT_ADVICE, UNKNOWN_EFFECT_REASON, unknownEffectLines, unknownEffectOptions, unknownEffectTitle, isInheritedReference, IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_FULL_CODE, INBOX_MAX_PENDING, INBOX_STATES, inboxFullMessage, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, USAGE_CHARGE_PURPOSES, USER_SHELL_COMMAND_CHARS, USER_SHELL_HEAD_BYTES, USER_SHELL_OUTPUT_BYTES, USER_SHELL_RUN_ACTIVE_CODE, USER_SHELL_TAIL_BYTES, COMPACT_PIN_KEY, NOTHING_TO_COMPACT_CODE, NOTHING_TO_COMPACT_MESSAGE, PROMPT_TEXT_MAX_CHARS } from './run-types.ts';
+export { diffFieldsOf, isApprovalShown, approvalShownLines, hunkHeaderOf, MODEL_CLAIM_LEAD, CHANGE_NOT_SHOWN_LEAD, heldEndOf, OPERATION_EFFECT_OUTCOMES, APPROVAL_KINDS, APPROVAL_STATUSES, UNKNOWN_EFFECT_ADVICE, UNKNOWN_EFFECT_REASON, unknownEffectLines, unknownEffectOptions, unknownEffectTitle, isInheritedReference, IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_FULL_CODE, INBOX_MAX_PENDING, INBOX_STATES, inboxFullMessage, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, USAGE_CHARGE_PURPOSES, USER_SHELL_COMMAND_CHARS, USER_SHELL_HEAD_BYTES, USER_SHELL_OUTPUT_BYTES, USER_SHELL_RUN_ACTIVE_CODE, USER_SHELL_TAIL_BYTES, COMPACT_PIN_KEY, NOTHING_TO_COMPACT_CODE, NOTHING_TO_COMPACT_MESSAGE, PROMPT_TEXT_MAX_CHARS } from './run-types.ts';
 export type {
   ActivatedSkillEntry,
   ActivatedSkillRecord,
@@ -691,6 +691,7 @@ export type {
   TerminalStatus,
   DiffHunk,
   AppliedDiffFields,
+  ApprovalShown,
   ToolAwait,
   ToolKind,
   ModelRejectionReason,

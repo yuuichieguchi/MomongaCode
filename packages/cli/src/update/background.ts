@@ -30,8 +30,8 @@ const isApplicable = (wiring: UpdateWiring): boolean => {
 };
 
 const readState = async (ports: UpdatePorts): Promise<UpdateState | undefined> => {
-  const raw = await ports.state.read();
-  return raw === undefined ? undefined : parseUpdateState(raw);
+  const text = await ports.state.read();
+  return text === undefined ? undefined : parseUpdateState(text, ports.state.file);
 };
 
 const noticeOf = (ports: UpdatePorts, state: UpdateState): string | undefined => {

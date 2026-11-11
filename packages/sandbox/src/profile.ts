@@ -11,6 +11,8 @@ export interface SeatbeltProfile {
   params: Record<string, string>;
 }
 
+export const paramArgsOf = (params: Record<string, string>): string[] => Object.entries(params).flatMap(([name, value]) => ['-D', `${name}=${value}`]);
+
 type Within = (candidate: string, root: string) => Awaitable<boolean>;
 
 const withinOf =
@@ -103,6 +105,15 @@ async function metadataAncestors(allowed: readonly string[], denied: readonly st
   }
   return unique(found);
 }
+
+export const SYSTEM_RESOLVER_SOCKET = '/private/var/run/mDNSResponder';
+
+const GRANTED_NETWORK_RULES = [
+  '(allow network-outbound (remote ip))',
+  `(allow network-outbound (remote unix-socket (path-literal "${SYSTEM_RESOLVER_SOCKET}")))`,
+  '(allow network-bind (local ip))',
+  '(allow network-inbound (local ip))',
+];
 
 const DEVICE_NODE_RULES = [
   '(allow file-write-data (literal "/dev/null") (literal "/dev/dtracehelper"))',
@@ -263,7 +274,7 @@ export async function buildSeatbeltProfile(policy: SandboxPolicy, options: { tmp
     lines.push(...DEVICE_NODE_RULES);
   }
   const unixSocketAllow = unique(await mapAsync(policy.unixSocketAllow ?? [], paths.canonicalPath));
-  if (policy.network === 'allow') lines.push('(allow network*)');
+  if (policy.network === 'allow') lines.push(...GRANTED_NETWORK_RULES);
   if (typeof policy.network === 'object') {
     const { loopbackPort } = policy.network;
     if (!Number.isInteger(loopbackPort) || loopbackPort < 1 || loopbackPort > 65_535) {
@@ -280,5 +291,23 @@ export async function buildSeatbeltProfile(policy: SandboxPolicy, options: { tmp
     }
   }
 
+  return { profile: `${lines.join('\n')}\n`, params };
+}
+
+const PROTECTION_BASE_RULES = ['(version 1)', '(allow default)'];
+
+export function buildProtectionProfile(denied: readonly string[], scratch: readonly string[]): SeatbeltProfile {
+  const params: Record<string, string> = {};
+  const lines = [...PROTECTION_BASE_RULES];
+  denied.forEach((area, index) => {
+    const name = `HOME_DENIED_${index}`;
+    params[name] = area;
+    lines.push(`(deny file-read* file-write* (subpath (param "${name}")))`, `(deny network-outbound (remote unix-socket (subpath (param "${name}"))))`);
+  });
+  scratch.forEach((folder, index) => {
+    const name = `SCRATCH_ALLOWED_${index}`;
+    params[name] = folder;
+    lines.push(`(allow file-read* file-write* (subpath (param "${name}")))`);
+  });
   return { profile: `${lines.join('\n')}\n`, params };
 }

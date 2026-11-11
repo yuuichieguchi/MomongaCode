@@ -270,12 +270,13 @@ describe('runContextDataset', () => {
     expect(transcripts.map((transcript) => transcript.datasetSeed)).toEqual([42, 42]);
   });
 
-  it('refuses the report of an off case whose run holds a compaction', async () => {
+  it('lists the run of an off case that holds a compaction as stopped, because it cannot be measured', async () => {
     const events = publicEventsOf([compacted(1, 'model', fidelity([], 1, 1))]);
     const context = harness({ events: (cwd) => (cwd.endsWith('-off') ? events : []) });
     const dataset = datasetOf(pair('a'));
     const { transcripts } = await runContextDataset(expandContextDataset(dataset, 1), context.ports);
-    expect(() => buildReportAs({ dataset, transcripts, model: 'fake', seed: 1, datasetSeed: 1 })).toThrow(EvalError);
+    const report = buildReportAs({ dataset, transcripts, model: 'fake', seed: 1, datasetSeed: 1 });
+    expect(report.stopped).toEqual([{ caseId: 'a-off', runIndex: 0, reason: expect.stringMatching(/^could not be measured: case a-off has compaction off but its run/u) }]);
   });
 });
 

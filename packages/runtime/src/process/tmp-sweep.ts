@@ -1,5 +1,5 @@
 import { sweepLeftovers } from '@momonga/foundation';
-import type { KernelLockMechanism, LeftoverFiles } from '@momonga/foundation';
+import type { KernelLockMechanism, LeftoverFiles, Retention } from '@momonga/foundation';
 import type { RuntimeStore } from '@momonga/store';
 import { nodeRuntimeFiles } from './runtime-files.ts';
 import type { RuntimeFiles } from './runtime-files.ts';
@@ -42,9 +42,9 @@ export const sweepSessionTmp = async ({
   files?: RuntimeFiles;
   lock: KernelLockMechanism;
 }): Promise<{ removed: number; kept: number }> => {
-  const retained = (sessionId: string): boolean => {
+  const retained = async (sessionId: string): Promise<Retention> => {
     const activity = store.sessionActivity(sessionId);
-    return activity !== undefined && (activity.hasActiveRun || now - activity.lastActivityAt < SESSION_TMP_RETENTION_MS);
+    return activity !== undefined && (activity.hasActiveRun || now - activity.lastActivityAt < SESSION_TMP_RETENTION_MS) ? { kind: 'kept' } : { kind: 'free' };
   };
   const swept = await sweepLeftovers({
     directories: [{ directory: root, isLeftover: everyName, retain: retained }],

@@ -112,7 +112,7 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'telemetry.otlp.endpoint': { label: 'OTLP endpoint', section: 'Telemetry', appliesNow: false },
   'telemetry.otlp.headers': { label: 'OTLP headers', section: 'Telemetry', appliesNow: false },
   'telemetry.captureMessageContent': { label: 'Capture message content', section: 'Telemetry', appliesNow: false, confirm: { value: true, question: 'Capture message content in telemetry?' } },
-  'telemetry.contentRetentionDays': { label: 'Content retention (days)', section: 'Telemetry', appliesNow: false },
+  'retention.days': { label: 'Retention of every store (days)', section: 'Telemetry', appliesNow: false },
   pricing: { label: 'Prices', section: 'Pricing', appliesNow: false, form: PRICE_FORM, constants: PRICE_CONSTANTS, line: priceLine },
   'limits.maxCostUsd': { label: 'Money limit of a run (USD)', section: 'Budget and delegation', appliesNow: false },
   'ceilings.costUsd': { label: 'Ceiling on the money a mandate may declare (USD)', section: 'Budget and delegation', appliesNow: false },

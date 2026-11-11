@@ -81,7 +81,7 @@ export type ApprovalOps = {
   listPendingDue(runId: string, nowMs: number): Approval[];
   markResolved(id: string, optionId: string): Approval;
   markAnswered(id: string, responses: Record<string, ElicitationAnswerRecord>): Approval;
-  end(id: string, status: 'expired' | 'withdrawn'): void;
+  end(id: string, status: 'expired' | 'withdrawn' | 'superseded'): void;
 };
 
 export const createApprovalStore = (db: DatabaseSync, clock: Clock, context: DecodeContext): ApprovalOps => {
