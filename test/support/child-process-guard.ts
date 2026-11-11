@@ -2,10 +2,11 @@ import fs from 'node:fs';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { findProgramOnPath } from '@momonga/foundation/program-search';
+import { findProgramOnPathSync } from '@momonga/foundation/program-search';
+import { nodeFileSystemSync } from '../../packages/foundation/src/node-file-system.ts';
 import { SECRET_STORE_SEARCHED_PROGRAMS, credentialReadScript, credentialWriteScript } from '@momonga/foundation/secret-store';
 import { MOMONGA_LAUNCHES } from '../../packages/cli/src/daemon/launcher.ts';
-import { URL_OPENER_PROGRAMS, urlOpenerFileFor } from '../../packages/foundation/src/open-browser.ts';
+import { URL_OPENER_PROGRAMS, urlOpenerFileForSync } from '../../packages/foundation/src/open-browser.ts';
 import { chosenSecretProgramOutsideFakes, givenSecretProgramOutsideFakes, isInsideFakeSecretPrograms, realFileOf } from '../../packages/testkit/src/secret-store-env-check.ts';
 
 const LAUNCHERS = ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork'] as const;
@@ -119,7 +120,13 @@ const hasSecretProgramName = (fileName: string): boolean => SECRET_PROGRAM_NAMES
 
 const resolvedCommand = (command: string, env: ProcessEnv, cwd: unknown): string | undefined => {
   if (isPathLike(command)) return path.resolve(typeof cwd === 'string' ? cwd : process.cwd(), command);
-  return findProgramOnPath(command, env['PATH'] === undefined ? { ...env, PATH: EXECVP_DEFAULT_PATH } : env);
+  const searched = env['PATH'] ?? EXECVP_DEFAULT_PATH;
+  const base = typeof cwd === 'string' ? cwd : process.cwd();
+  const asSpawnSearches = searched
+    .split(path.delimiter)
+    .map((entry) => path.resolve(base, entry))
+    .join(path.delimiter);
+  return findProgramOnPathSync(command, { ...env, PATH: asSpawnSearches }, nodeFileSystemSync);
 };
 
 const NOT_A_FILE_NAME: ReadonlySet<string> = new Set(['ENAMETOOLONG', 'EINVAL', 'ERR_INVALID_ARG_VALUE']);
@@ -163,7 +170,7 @@ const browserOutsideFakes = (env: ProcessEnv, cwd: unknown): string | undefined 
 };
 
 const inheritedOpenerOutsideFakes = (): string | undefined => {
-  const opener = urlOpenerFileFor(process.env);
+  const opener = urlOpenerFileForSync(process.env, nodeFileSystemSync);
   return opener === undefined || isInsideFakeSecretPrograms(opener) ? undefined : opener;
 };
 

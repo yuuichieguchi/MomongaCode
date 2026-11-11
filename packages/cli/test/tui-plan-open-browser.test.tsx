@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { runView } from './fake-backend.ts';
 import { untilFrame, untilOutput, withoutLinks } from './ink-helpers.ts';
 import { runStarted } from './tui-harness.tsx';
-import { AUTHORIZATION_URL, PLAN_TEST_TIMEOUT_MS, account, choose, startPlan, submitLine } from './fake-plan-gateway.tsx';
+import { AUTHORIZATION_URL, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, startPlan, submitLine } from './fake-plan-gateway.tsx';
 
 vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
 
@@ -25,7 +25,20 @@ describe('the TUI starts the browser through the opener port and hears of a fail
     await choose(app, 'Manage usage');
     await untilOutput(app, (shown) => withoutLinks(shown).includes('Could not open the browser (no opener). Manage usage: https://chatgpt.com/settings/usage'));
     expect(backend.openUrlCalls).toHaveLength(1);
-    expect(backend.openUrlCalls[0]?.watch).toBeUndefined();
+    app.unmount();
+  });
+
+  it('Manage usage hears of a failed launch until the next key press, and not after it', async () => {
+    const { app, backend } = await startPlan({ accounts: [account({ paused: {} })] });
+    await untilFrame(app, 'mode: manual');
+    await runStarted(backend, app, 'go');
+    backend.finish(runView({ status: 'STOPPED', stopReason: 'usage_limit' as never, error: { code: 'plan_usage_limit', message: 'Manage usage', plan: { profile: 'chatgpt', account: 'chatgpt' } } as never }));
+    await choose(app, 'Manage usage');
+    await eventually(() => backend.openUrlCalls.length === 1, 'the opener was asked');
+    const watch = backend.openUrlCalls[0]?.watch;
+    expect(watch?.aborted).toBe(false);
+    app.stdin.write('x');
+    await eventually(() => watch?.aborted === true, 'the next key press ended the watch');
     app.unmount();
   });
 
