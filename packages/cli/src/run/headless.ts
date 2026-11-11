@@ -140,14 +140,23 @@ const noteText = (lines: readonly string[]): string => `${escapedLines(lines)}\n
 
 const leadWith = (prefix: string, lines: readonly string[]): string[] => lines.map((line, index) => (index === 0 ? `${prefix}${line}` : line));
 
+export type PendingAsk = { id: string; answerWith: string };
+
 export type FrameSink = {
   absorb(frame: RunEventFrame): void;
   handle(frame: RunEventFrame): void;
   handleChild(frame: RunEventFrame, agent: string): void;
   finalText(): string;
+  texts(): string;
   pending(): number;
+  unanswerable(): PendingAsk[];
   onQuiescent(listener: () => void): void;
+  onUnanswerable(listener: () => void): void;
 };
+
+type Ask = { runId: string; held: boolean; answerWith: string };
+
+const approveCommand = (approvalId: string): string => `${WORDS.command} approve ${approvalId}`;
 
 const awaitedOf = (awaits: Extract<PublicRunEvent, { type: 'tool.waiting' }>['awaits']): string =>
   awaits.kind === 'run' ? `subagent ${awaits.agent} (run ${awaits.runId})` : `job ${awaits.jobId}`;
@@ -161,12 +170,14 @@ const budgetFigure = (dimension: string, value: number): string => (dimension ==
 export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, format: OutputFormat, verbose: boolean): FrameSink => {
   const items = new Map<string, string>();
   const titles = new Map<string, string>();
-  let lastItem: string | undefined;
-  let needsNewline = false;
   let lastFailure: AttemptFailed | undefined;
-  const open = new Set<string>();
+  const open = new Map<string, Ask>();
+  const waitingForPerson = new Set<string>();
   const found = new Map<string, string>();
   const quiescentListeners: Array<() => void> = [];
+  const unanswerableListeners: Array<() => void> = [];
+
+  const unanswerable = (): PendingAsk[] => [...open].flatMap(([id, ask]) => (!ask.held && waitingForPerson.has(ask.runId) ? [{ id, answerWith: ask.answerWith }] : []));
 
   const unknownCallsOf = (callIds: readonly string[]): UnknownEffectCall[] =>
     callIds.map((callId) => {
@@ -175,10 +186,18 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
     });
 
   const track = (event: PublicRunEvent): void => {
-    if (event.type === 'tool.permission.requested' || event.type === 'tool.unknown.requested') open.add(event.approvalId);
+    if (event.type === 'tool.permission.requested' || event.type === 'tool.unknown.requested') open.set(event.approvalId, { runId: event.runId, held: false, answerWith: approveCommand(event.approvalId) });
     else if (event.type === 'tool.permission.resolved' || event.type === 'tool.permission.cancelled' || event.type === 'tool.unknown.resolved' || event.type === 'tool.unknown.cancelled') open.delete(event.approvalId);
-    else if (event.type === 'tool.elicitation.requested') open.add(event.inputId);
+    else if (event.type === 'tool.elicitation.requested') open.set(event.inputId, { runId: event.runId, held: false, answerWith: `${WORDS.command} elicit ${event.inputId}` });
     else if (event.type === 'tool.elicitation.resolved' || event.type === 'tool.elicitation.cancelled') open.delete(event.inputId);
+    else if (event.type === 'tool.held') {
+      const ask = open.get(event.approvalId);
+      if (ask !== undefined) open.set(event.approvalId, { ...ask, held: true });
+    } else if (event.type === 'run.status') {
+      if (event.to === 'WAITING_HUMAN') waitingForPerson.add(event.runId);
+      else waitingForPerson.delete(event.runId);
+    }
+    if (unanswerable().length > 0) for (const listener of unanswerableListeners) listener();
   };
 
   const note = (lines: readonly string[]): void => {
@@ -195,7 +214,8 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
       case 'tool.completed':
         if (verbose || event.status === 'failed') {
           const outcome = event.denial === undefined ? event.status : describeDenial(event.denial);
-          note([`momonga: tool ${titles.get(event.callId) ?? event.callId} ${outcome}`]);
+          const reason = event.status === 'failed' && event.effect !== undefined ? event.output.trimEnd() : '';
+          note([`momonga: tool ${titles.get(event.callId) ?? event.callId} ${outcome}`, ...(reason === '' ? [] : reason.split('\n').map((line) => `  ${line}`))]);
         }
         break;
       case 'hook.completed':
@@ -317,8 +337,6 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
 
   const keep = (event: Extract<PublicRunEvent, { type: 'agent.message.delta' }>): void => {
     items.set(event.itemId, `${items.get(event.itemId) ?? ''}${event.text}`);
-    lastItem = event.itemId;
-    needsNewline = !event.text.endsWith('\n');
   };
 
   const absorb = (frame: RunEventFrame): void => {
@@ -333,13 +351,8 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
     const event = frame.data;
     track(event);
     if (format === 'stream-json') ports.stdout.write(`${JSON.stringify(event)}\n`);
-    if (event.type !== 'agent.message.delta') {
-      present(event, undefined);
-      return;
-    }
-    if (format === 'text' && lastItem !== undefined && lastItem !== event.itemId && needsNewline) ports.stdout.write('\n');
-    keep(event);
-    if (format === 'text') ports.stdout.write(event.text);
+    if (event.type === 'agent.message.delta') keep(event);
+    else present(event, undefined);
   };
 
   const handleChild = (frame: RunEventFrame, agent: string): void => {
@@ -350,7 +363,24 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
   };
 
   const finalText = (): string => [...items.values()].at(-1) ?? '';
-  return { absorb, handle, handleChild, finalText, pending: () => open.size, onQuiescent: (listener) => void quiescentListeners.push(listener) };
+
+  const texts = (): string => {
+    let whole = '';
+    for (const item of items.values()) whole += whole === '' || whole.endsWith('\n') || item === '' ? item : `\n${item}`;
+    return whole === '' || whole.endsWith('\n') ? whole : `${whole}\n`;
+  };
+
+  return {
+    absorb,
+    handle,
+    handleChild,
+    finalText,
+    texts,
+    pending: () => open.size,
+    unanswerable,
+    onQuiescent: (listener) => void quiescentListeners.push(listener),
+    onUnanswerable: (listener) => void unanswerableListeners.push(listener),
+  };
 };
 
 export type WatchOptions = {
@@ -359,13 +389,14 @@ export type WatchOptions = {
   format: OutputFormat;
   verbose: boolean;
   leaveWhenQuiescent?: boolean;
+  leaveWhenAsked?: boolean;
   after?: number;
   interrupt: AbortSignal;
   onInterrupt: 'cancel' | 'detach';
   move?: StreamMove;
 };
 
-type Leaving = 'quiescent' | 'detached';
+type Leaving = 'quiescent' | 'asked' | 'detached';
 
 export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: WatchOptions): Promise<number> => {
   const { client, runId } = options;
@@ -374,6 +405,10 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
     void client.cancel(runId).catch((error: unknown) => {
       ports.stderr.write(noteText([`momonga: cancel failed: ${error instanceof Error ? error.message : String(error)}`]));
     });
+  };
+  const writeTexts = (to: Pick<CliPorts['stdout'], 'write'>): void => {
+    const texts = sink.texts();
+    if (texts !== '') to.write(texts);
   };
   const leave = new AbortController();
   let leaving: Leaving | undefined;
@@ -408,6 +443,7 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
     void move?.mover.check();
   };
   if (options.leaveWhenQuiescent === true) sink.onQuiescent(() => leaveAs('quiescent'));
+  if (options.leaveWhenAsked === true) sink.onUnanswerable(() => leaveAs('asked'));
   let run: RunView;
   try {
     run = await followRun({
@@ -438,7 +474,18 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
     if (leaving === undefined) throw error;
     options.interrupt.removeEventListener('abort', onInterrupt);
     const left = await client.getRun(runId);
-    if (options.format !== 'text') ports.stdout.write(`${JSON.stringify(resultOf(left, sink.finalText()))}\n`);
+    if (options.format === 'text') writeTexts(ports.stderr);
+    else ports.stdout.write(`${JSON.stringify(resultOf(left, sink.finalText()))}\n`);
+    if (leaving === 'asked') {
+      ports.stderr.write(
+        noteText([
+          `momonga: ${WORDS.run} ${runId} waits for an answer this command cannot give, and stays in the ${WORDS.daemon}; it goes on when you answer:`,
+          ...sink.unanswerable().map((ask) => `  ${ask.id}  ${ask.answerWith}`),
+          `  ${attachRunCommand(runId)} follows the ${WORDS.run} again`,
+        ]),
+      );
+      return EXIT_WAITING_FOR_APPROVAL;
+    }
     if (leaving === 'detached') {
       ports.stderr.write(noteText([`momonga: detached from ${WORDS.run} ${runId}, which is ${left.status} and stays in the ${WORDS.daemon}; ${attachRunCommand(runId)} follows it again, and ${WORDS.command} cancel ${runId} ends it`]));
       return EXIT_INTERRUPTED;
@@ -449,12 +496,8 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
     detach?.();
   }
   options.interrupt.removeEventListener('abort', onInterrupt);
-  const text = sink.finalText();
-  if (options.format === 'text') {
-    if (text !== '' && !text.endsWith('\n')) ports.stdout.write('\n');
-  } else {
-    ports.stdout.write(`${JSON.stringify(resultOf(run, text))}\n`);
-  }
+  if (options.format === 'text') writeTexts(run.status === 'COMPLETED' ? ports.stdout : ports.stderr);
+  else ports.stdout.write(`${JSON.stringify(resultOf(run, sink.finalText()))}\n`);
   if (run.status === 'COMPLETED') return EXIT_OK;
   ports.stderr.write(`${describeEnd(run)}\n`);
   return run.status === 'CANCELLED' ? EXIT_INTERRUPTED : EXIT_FAILURE;
@@ -489,7 +532,7 @@ export const resumeStream = async (ports: CliPorts, paths: MomongaPaths, adopted
     await client.getRun(record.runId);
     ports.handover?.removeRecord(file);
     const move = streamMoveOf(ports, paths, record.kind);
-    return await watchRun(ports, paths, { client, runId: record.runId, format: record.output, verbose: record.verbose, after: record.lastSeq[record.runId] ?? 0, interrupt, onInterrupt: record.kind === 'attach' ? 'detach' : 'cancel', ...(move === undefined ? {} : { move }) });
+    return await watchRun(ports, paths, { client, runId: record.runId, format: record.output, verbose: record.verbose, after: record.lastSeq[record.runId] ?? 0, interrupt, onInterrupt: record.kind === 'attach' ? 'detach' : 'cancel', leaveWhenAsked: record.kind === 'headless', ...(move === undefined ? {} : { move }) });
   } finally {
     await client.close();
   }
@@ -556,7 +599,7 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
         `${JSON.stringify({ type: 'system', subtype: 'init', session_id: sessionId, run_id: started.id, cwd: ports.cwd, permission_mode: session.created.session.permissionMode, stripped_env_keys: session.created.strippedEnvKeys })}\n`,
       );
     }
-    return await watchRun(ports, paths, { client: session.client, runId: started.id, format: options.format, verbose: options.verbose, leaveWhenQuiescent: options.mandate?.hold?.onQuiescent !== 'wait', interrupt: options.interrupt, onInterrupt: 'cancel', ...(move === undefined ? {} : { move }) });
+    return await watchRun(ports, paths, { client: session.client, runId: started.id, format: options.format, verbose: options.verbose, leaveWhenQuiescent: options.mandate?.hold?.onQuiescent !== 'wait', leaveWhenAsked: true, interrupt: options.interrupt, onInterrupt: 'cancel', ...(move === undefined ? {} : { move }) });
   } finally {
     await session.close();
   }

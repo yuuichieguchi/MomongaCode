@@ -185,7 +185,10 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
         deps.complete(await runHeadless(ports, paths, { capabilitiesOf, prompt: options.print, format: options.outputFormat, verbose: options.verbose === true, interrupt: deps.interrupt, ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...mandateOf(options), ...(options.maxCostUsd === undefined ? {} : { limits: { maxCostUsd: options.maxCostUsd } }), ...session, ...(resumed === undefined ? {} : { reopen: resumed }) }));
         return;
       }
-      if (ports.terminal === undefined) throw new Error('the interactive session needs a terminal; pass --print <prompt> to run without one');
+      if (ports.terminal === undefined) {
+        const read = prompt === undefined ? '' : ` "${prompt}" is not the name of a command and was read as its first prompt;`;
+        throw new Error(`the interactive session needs a terminal;${read} pass --print <prompt> to run without one`);
+      }
       const { runInteractive } = await import('./tui/run-interactive.tsx');
       deps.complete(await runInteractive(ports, await pathsOf(ports), ports.terminal, { ...(prompt === undefined ? {} : { prompt }), ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...session, ...(reopen === undefined ? {} : { reopen }), screenReader: options.screenReader === true }, await deps.update(), createShellPort(given)));
     });

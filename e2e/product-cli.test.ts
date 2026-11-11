@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { EXIT_WAITING_FOR_APPROVAL } from '@momonga/foundation';
 import { CACHE_READ_TEXT } from '@momonga/observability';
 import { CACHE_READS_NOT_REPORTED } from '@momonga/protocol';
 import { startMcpHttpFixture, startMcpOauthFixture } from '@momonga/testkit';
@@ -241,10 +242,15 @@ describe('momonga with MCP servers', () => {
       expect(answered.stdout).toMatch(/^elicitation \S+ resolved; run \S+ is /);
 
       const finished = await running.result;
-      expect(finished.code).toBe(0);
-      expect(finished.stdout).toBe('done\n');
+      expect(finished.code).toBe(EXIT_WAITING_FOR_APPROVAL);
+      expect(finished.stdout).toBe('');
       expect(finished.stderr).toContain(`momonga: waiting for input ${inputId}  MCP server remote asks for input`);
       expect(finished.stderr).toContain(`momonga elicit ${inputId} --decline`);
+      expect(finished.stderr).toContain(`  ${inputId}  momonga elicit ${inputId}`);
+      const runId = /momonga attach (\S+)/.exec(finished.stderr)?.[1] ?? '';
+      const followed = await runCli(home, ['attach', runId]);
+      expect(followed.code).toBe(0);
+      expect(followed.stdout).toBe('done\n');
       expect(requestText(chatCompletions(fake).at(-1))).toContain('hello Ada');
       expect(fixture.rpcRecords('tools/call')).toHaveLength(2);
     } finally {
