@@ -55,7 +55,7 @@ describe('an upgrade from version 13 over rows that already exist', () => {
     const db = rawDb(dbPath);
     expect(db.prepare("SELECT pinned_digest FROM events WHERE type = 'model.requested' ORDER BY seq").all().map((row) => row['pinned_digest'])).toEqual([null, null]);
     expect(db.prepare('SELECT dropped_json FROM reflection_jobs').all().map((row) => row['dropped_json'])).toEqual([null]);
-    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toMatchObject({ version: 37 });
+    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toMatchObject({ version: 38 });
   });
 
   it('still decodes an old reflection job, with no dropped candidates and the reason it had', () => {

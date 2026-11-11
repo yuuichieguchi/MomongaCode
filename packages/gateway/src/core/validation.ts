@@ -317,7 +317,7 @@ const validateCompactMomonga = (value: unknown): void => {
   if (momonga === undefined) return;
   requireKnownKeys(momonga, ['max_summary_tokens', 'retains_user_request', 'guideline', 'instructions', 'exact_model', 'max_cost_nano', 'max_input_tokens'], ['momonga']);
   requireExactModelFlag(momonga);
-  requireCostCeiling(momonga, momonga['max_summary_tokens'], 'momonga.max_summary_tokens');
+  requireCostCeiling(momonga, momonga['max_summary_tokens'], MOMONGA_REQUEST_FIELDS.maxSummaryTokens);
   const cap = momonga['max_summary_tokens'];
   if (cap !== undefined && (!Number.isInteger(cap) || (cap as number) < MIN_SUMMARY_TOKENS)) {
     throwIssue({ segments: ['momonga', 'max_summary_tokens'], message: `must be an integer of at least ${MIN_SUMMARY_TOKENS}` });

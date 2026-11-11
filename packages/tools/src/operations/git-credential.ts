@@ -2,6 +2,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
+import { parseOutsideJson } from '@momonga/foundation';
 
 export type GitHostCredential = { readonly host: string; readonly username: string; readonly password: string };
 
@@ -47,7 +48,7 @@ type Ask = { nonce: string; prompt: string };
 const parseAsk = (line: string): Ask | undefined => {
   let value: unknown;
   try {
-    value = JSON.parse(line);
+    value = parseOutsideJson(line);
   } catch {
     return undefined;
   }
