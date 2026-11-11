@@ -6,7 +6,7 @@ const NOT_CONFIRMED_NOTE = 'A process of the command could not be confirmed stop
 
 const exitingWith = (exit: SandboxExit): Sandbox => ({
   kind: 'seatbelt',
-  spawn: () => ({ pid: 999_981, pgid: 999_981, stdout: (async function* () {})(), stderr: (async function* () {})(), exited: Promise.resolve(exit) }),
+  spawn: () => ({ pid: 999_981, pgid: 999_981, rebind: () => undefined, stdout: (async function* () {})(), stderr: (async function* () {})(), exited: Promise.resolve(exit) }),
 });
 
 describe('the stop outcome of a Bash command', () => {

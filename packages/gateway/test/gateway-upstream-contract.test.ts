@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { InMemorySpanExporter } from '@opentelemetry/sdk-trace';
 import { createTelemetry } from '@momonga/observability';
-import { createReplayAdapter } from '@momonga/gateway';
+import { createReplayAdapter } from './support/replay-adapter.ts';
 import type { StreamEvent } from '@momonga/protocol';
 import { createFakeClock, createScriptedAdapter, responseResource, textResponseEvents } from '@momonga/testkit';
 import {

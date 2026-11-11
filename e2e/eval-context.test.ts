@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { TRANSCRIPT_FORMAT } from '@momonga/eval';
 import { SHORT_TEMP_BASE } from '@momonga/foundation';
-import { envelopeOf } from '@momonga/protocol';
+import { TOOL_OUTPUT_TAG, fenceUntrusted } from '@momonga/protocol';
 import type { FakeRoute } from '@momonga/testkit';
 import { ROOT_PREFIX } from '../packages/cli/src/eval/context-host.ts';
 import { DEFAULT_KEEP_RECENT_STEPS } from '../packages/context/src/levels.ts';
@@ -15,6 +15,7 @@ import { createE2eHome } from './support/home.ts';
 import { UPSTREAM_MODEL_REF, baseSettings, sandboxChoiceOf, startUpstream, writeSettingsFile } from './support/stack.ts';
 import { SCRIPTED_USAGE, chatCompletions, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
+import { fenceBoundaryIn } from '@momonga/testkit';
 
 const LONG_STEPS = 14;
 const LONG_FILE_LINES = LONG_STEPS + 1;
@@ -189,7 +190,7 @@ describe('momonga eval context live', () => {
       expect(path.basename(seen.workspace)).toBe('w');
       expect(path.basename(caseHome).startsWith(ROOT_PREFIX)).toBe(true);
       expect(caseHome).not.toBe(home.home);
-      expect(seen.output).toBe(envelopeOf({ content: caseHome, callId: seen.callId, tool: 'Bash' }));
+      expect(seen.output).toBe(fenceUntrusted(TOOL_OUTPUT_TAG, { call: seen.callId, tool: 'Bash' }, caseHome, fenceBoundaryIn(seen.output)));
     }
     expect(byId.get('long-on')?.compactions).toBeGreaterThanOrEqual(1);
     expect(byId.get('long-on')?.passedRuns).toBe(1);

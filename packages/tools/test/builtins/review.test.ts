@@ -220,7 +220,7 @@ describe('review 4: Bash stream errors', () => {
       kind: 'seatbelt',
       spawn: (): SandboxedProcess => ({
         pid: 2_147_483_000,
-        pgid: 2_147_483_000,
+        pgid: 2_147_483_000, rebind: () => undefined,
         stdout: stream('stdout', async () => {
           stdoutCalls += 1;
           if (stdoutCalls === 1) return { done: false, value: Buffer.from('partial\n') };

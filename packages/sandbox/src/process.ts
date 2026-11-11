@@ -46,7 +46,8 @@ const stdioOf = (stdinMode: 'ignore' | 'pipe', options: LaunchOptions): LaunchSl
 
 export function launch(options: LaunchOptions): SandboxedProcess {
   const stdinMode = options.stdin === undefined ? 'ignore' : 'pipe';
-  const { signal, killGraceMs } = options;
+  const { killGraceMs } = options;
+  let signal = options.signal;
   const timing = options.timing ?? systemWaitTiming;
   const stopBoundOf = (ms: number): AbortSignal => Deadline.after(ms, options.timing ?? systemTiming).signal;
   const groupPort = options.groupPort ?? hostProcessGroupPort();
@@ -226,5 +227,13 @@ export function launch(options: LaunchOptions): SandboxedProcess {
   signal.addEventListener('abort', onAbort, { once: true });
   if (signal.aborted) onAbort();
 
-  return { pid, pgid: pid, stdout, stderr, exited };
+  const rebind = (next: AbortSignal): void => {
+    signal.removeEventListener('abort', onAbort);
+    signal = next;
+    if (leaderExited || childError !== undefined) return;
+    next.addEventListener('abort', onAbort, { once: true });
+    if (next.aborted) onAbort();
+  };
+
+  return { pid, pgid: pid, stdout, stderr, exited, rebind };
 }

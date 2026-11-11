@@ -28,6 +28,7 @@ import {
   type TouchedPath,
 } from '@momonga/context';
 import { testPaths } from '@momonga/testkit';
+import { TEST_FENCE } from '@momonga/testkit';
 
 export const MODEL = 'test-model';
 export const HOME = '/home/u';
@@ -234,6 +235,7 @@ export const inputFor = (
   overrides: Partial<BuildContextInput> = {},
 ): BuildContextInput => ({
   capabilities,
+  fence: TEST_FENCE,
   model: MODEL,
   sources: sourcesWith(),
   evicted: new Set<string>(),

@@ -470,7 +470,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const fold = (runId: string): RunState => {
     const run = store.getRun(runId);
     if (run === undefined) throw new Error(`unknown run ${runId}`);
-    return events(runId).reduce(foldRunState, initialRunState({ runId, sessionId: run.sessionId }));
+    return events(runId).reduce(foldRunState, initialRunState({ runId, sessionId: run.sessionId, fence: store.getSession(run.sessionId)?.fenceNonce ?? '' }));
   };
 
   const run = (runId: string): Run => {

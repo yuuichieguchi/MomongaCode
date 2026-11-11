@@ -4,12 +4,13 @@ import { decodeEvent } from '../src/codec.ts';
 import { foldRunState, initialRunState } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import { TIMEOUT_MS, enqueue, harness, newSession } from './helpers.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const INCLUDED: UserShellRecord = { command: 'make test', exitCode: 2, output: 'FAIL src/a.test.ts', include: true };
 const KEPT_OUT: UserShellRecord = { command: 'cat notes.txt', exitCode: 0, output: 'private', include: false };
 const INTERRUPTED: UserShellRecord = { command: 'sleep 600', exitCode: null, output: '[terminated by SIGTERM]', include: true };
 
-const historyOf = (store: RuntimeStore, runId: string) => store.readRunEvents(runId, 0, 100).reduce(foldRunState, initialRunState({ runId, sessionId: 's' })).history;
+const historyOf = (store: RuntimeStore, runId: string) => store.readRunEvents(runId, 0, 100).reduce(foldRunState, initialRunState({ runId, sessionId: 's', fence: TEST_FENCE })).history;
 
 const sessionRow = (payload: Record<string, unknown> & { type: string }) => ({
   id: 7,
@@ -78,7 +79,7 @@ describe('the user_shell event', () => {
       type: 'message',
       role: 'user',
       content: [
-        { type: 'input_text', text: '<user_shell_command><command>make test</command><exit_code>2</exit_code><output>FAIL src/a.test.ts</output></user_shell_command>' },
+        { type: 'input_text', text: `<user_shell_command command="make test" exit_code="2" boundary="${TEST_FENCE}">\nFAIL src/a.test.ts\n</user_shell_command boundary="${TEST_FENCE}">` },
         { type: 'input_text', text: 'why does it fail' },
       ],
     });
@@ -107,7 +108,7 @@ describe('files attached to a user message', () => {
       role: 'user',
       content: [
         { type: 'input_text', text: 'read @a.ts' },
-        { type: 'input_text', text: '<attached_file path="a.ts">\n     1\tx\n</attached_file>' },
+        { type: 'input_text', text: `<attached_file path="a.ts" boundary="${TEST_FENCE}">\n     1\tx\n</attached_file boundary="${TEST_FENCE}">` },
       ],
     });
   });

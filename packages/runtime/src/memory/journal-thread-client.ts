@@ -1,7 +1,7 @@
 import { MessageChannel, Worker, receiveMessageOnPort } from 'node:worker_threads';
 import type { MessagePort } from 'node:worker_threads';
-import { CONDITION_STATES, NOT_RUN_REASONS, RESIDUAL_RISK_CODES } from '@momonga/protocol';
-import type { RunCallView, RunFactsRecord, RunFactsView, RunReport } from '@momonga/protocol';
+import { CONDITION_STATES, FACTS_SKIPPED_CANCELLED_BEFORE_START, NOT_RUN_REASONS, RESIDUAL_RISK_CODES } from '@momonga/protocol';
+import type { RunCallView, RunFactsAnswer, RunFactsView, RunReport } from '@momonga/protocol';
 import { FactsRefusedError, InheritanceError, JournalThreadError, UnknownValueError, blobDirectoryOf, decodeRunState } from '@momonga/store';
 import type {
   ContributionMeasured,
@@ -43,7 +43,7 @@ export type JournalThreadClient = ContributionPreparer & {
   readonly identity: { readonly dev: number; readonly ino: number };
   request(request: { readonly kind: string } & Readonly<Record<string, unknown>>, signal?: AbortSignal): Promise<JournalThreadReply>;
   ping(): Promise<{ readonly threadId: number }>;
-  runFacts(runId: string, signal?: AbortSignal): Promise<RunFactsRecord>;
+  runFacts(runId: string, signal?: AbortSignal): Promise<RunFactsAnswer>;
   close(): Promise<void>;
 };
 
@@ -183,7 +183,8 @@ const fidelityOf = (reply: JournalThreadReply): FidelityReply => {
   return { lastSeq: lastSeqOf(reply, 'fidelity'), attested, unreadable, checkedThrough, verdicts };
 };
 
-const runFactsOf = (reply: JournalThreadReply, runId: string): RunFactsRecord => {
+const runFactsOf = (reply: JournalThreadReply, runId: string): RunFactsAnswer => {
+  if (reply['skipped'] === FACTS_SKIPPED_CANCELLED_BEFORE_START) return { skipped: FACTS_SKIPPED_CANCELLED_BEFORE_START };
   const { facts, calls } = reply;
   if (!isRecord(facts) || facts['runId'] !== runId || typeof facts['definitionsVersion'] !== 'number' || !Array.isArray(facts['recoveries'])) {
     throw new JournalThreadError(`journal thread runFacts reply carries malformed facts for run ${runId}`);

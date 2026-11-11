@@ -67,7 +67,7 @@ const fakeProcess = (pgid: number, signal: AbortSignal): FakeProcess => {
     finish(result);
   };
   signal.addEventListener('abort', () => exit({ code: null, signal: 'SIGTERM', killedBy: 'abort', stop: 'confirmed' }), { once: true });
-  return { pid: pgid, pgid, stdout: out, stderr: err, exited, out, exit, signal };
+  return { pid: pgid, pgid, rebind: () => undefined, stdout: out, stderr: err, exited, out, exit, signal };
 };
 
 const roots: string[] = [];

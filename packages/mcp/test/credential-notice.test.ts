@@ -36,13 +36,13 @@ describe('MCP credential values configured in a stdio env are redacted', () => {
   it('replaces an env credential value in tool output before the model sees it', async () => {
     const { set } = await modernWithEnv({ DB_PASSWORD: 'hunter2hunter2' });
     const result = await makeExecutor().resultOf(set, 'mcp__modern__echo', { text: 'leak hunter2hunter2 end' });
-    expect(result.output).toBe('leak [redacted] end');
+    expect(result.output).toBe('leak [REDACTED] end');
   });
 
   it('replaces a common env credential value in tool output while accepting it', async () => {
     const { set } = await modernWithEnv({ API_TOKEN: 'password' });
     const result = await makeExecutor().resultOf(set, 'mcp__modern__echo', { text: 'x password y' });
-    expect(result.output).toBe('x [redacted] y');
+    expect(result.output).toBe('x [REDACTED] y');
   });
 });
 

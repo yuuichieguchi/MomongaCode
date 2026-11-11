@@ -25,14 +25,13 @@ import { listLiveGenerations, retiringWorkOf } from '../daemon/generations.ts';
 import type { CliClock, CliPorts } from '../ports.ts';
 import type { DaemonProbe, StagedFile, UpdateFs, UpdateHttp, UpdateLock, UpdatePorts, UpdateStateStore } from './ports.ts';
 
-export const TRANSFER_STALL_TIMEOUT_MS = 30_000;
 export const MAX_REDIRECTS = 5;
 export const STAGING_PREFIX = '.momonga-update.';
 export const UPDATE_LOCK_FILE = 'update.lock';
 export const UPDATE_STATE_FILE = 'update.json';
 const UPDATE_STATE_MODE = 0o600;
 
-export const UPDATE_TRANSFER_OPTIONS: OutboundOptions = { connectReplyTimeoutMs: TRANSFER_STALL_TIMEOUT_MS, headersTimeout: TRANSFER_STALL_TIMEOUT_MS, bodyTimeout: TRANSFER_STALL_TIMEOUT_MS };
+export const transferOptionsOf = (stallTimeoutMs: number): OutboundOptions => ({ connectReplyTimeoutMs: stallTimeoutMs, headersTimeout: stallTimeoutMs, bodyTimeout: stallTimeoutMs });
 
 export type NetworkLease = <T>(signal: AbortSignal, use: (network: OutboundNetwork) => Promise<T>) => Promise<T>;
 
@@ -58,10 +57,14 @@ export const leasedUpdateHttp = (lease: NetworkLease, options: OutboundOptions, 
     }),
 });
 
-const cliUpdateHttp = (ports: CliPorts): UpdateHttp =>
-  leasedUpdateHttp((signal, use) => withOutboundNetwork(ports, signal, use), UPDATE_TRANSFER_OPTIONS, (error) => {
-    ports.stderr.write(`momonga: the update connection could not be closed: ${error instanceof Error ? error.message : String(error)}\n`);
-  });
+const cliUpdateHttp = (ports: CliPorts): UpdateHttp => ({
+  get: async (url, options) => {
+    const { stallTimeoutMs } = (await loadUserSettings({ home: ports.home, signal: options.signal })).settings.update;
+    return leasedUpdateHttp((signal, use) => withOutboundNetwork(ports, signal, use), transferOptionsOf(stallTimeoutMs), (error) => {
+      ports.stderr.write(`momonga: the update connection could not be closed: ${error instanceof Error ? error.message : String(error)}\n`);
+    }).get(url, options);
+  },
+});
 
 const REPLACE_REFUSED_CODES: ReadonlySet<string> = new Set(['EPERM', 'EACCES', 'EBUSY']);
 

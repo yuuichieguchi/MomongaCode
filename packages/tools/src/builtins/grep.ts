@@ -33,7 +33,7 @@ type GrepInput = {
   multiline?: boolean;
 };
 
-type SearchResult = { entries: string[]; unreadable: boolean };
+type SearchResult = { entries: string[]; unreadable: boolean; partial?: true };
 
 const UNREADABLE_NOTE = '(some paths could not be read)';
 
@@ -225,6 +225,10 @@ const recordsOf = async (stdout: string, mode: OutputMode, input: GrepInput, vis
 
 const GROUP_SEPARATOR = '--';
 
+const completeRecordsOf = (stdout: string, mode: OutputMode): string => stdout.slice(0, stdout.lastIndexOf(mode === 'files_with_matches' ? NUL : '\n') + 1);
+
+export const partialSearchNote = (ms: number, found: 'matches' | 'entries'): string => `Search stopped after ${ms} ms; the ${found} above are partial. Try a narrower path or pattern.`;
+
 const grepPolicyOf = (ctx: ToolContext): SandboxPolicy => {
   const { readDenied, readAllowed } = ctx.sandboxPolicy;
   return { writableRoots: [], writeDenied: [], writeDeniedLiterals: [], readDenied, ...(readAllowed === undefined ? {} : { readAllowed }), network: 'deny', fileRules: ctx.sandboxPolicy.fileRules, protectedSet: EMPTY_PROTECTED_SET };
@@ -238,9 +242,9 @@ type RipgrepCommand = { argv: string[]; cwd: string; env: Record<string, string>
 
 type RipgrepRun = { stdout: string; stderr: string; exit: SandboxExit };
 
-const runRipgrep = async (ctx: ToolContext, command: RipgrepCommand, policy: SandboxPolicy, notes: string[]): Promise<RipgrepRun> => {
+const runRipgrep = async (ctx: ToolContext, command: RipgrepCommand, policy: SandboxPolicy, notes: string[], stop: AbortSignal = ctx.signal): Promise<RipgrepRun> => {
   const { file, fd, settle } = await requireSpawnMarker(ctx, 'Grep');
-  const child = await ctx.sandbox.spawn({ ...command, markerFile: file }, policy, ctx.signal, { markerFd: fd });
+  const child = await ctx.sandbox.spawn({ ...command, markerFile: file }, policy, stop, { markerFd: fd });
   const attached = groupRecordOutcome(ctx.attachProcess({ pgid: child.pgid, startedAt: ctx.clock.now() }), file);
   const [stdout, stderr, exit, groupNotice] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited, attached]);
   if (groupNotice !== undefined) notes.push(groupNotice);
@@ -327,7 +331,8 @@ const runSearch = async (
     }
     return shown;
   };
-  const { stdout, stderr, exit } = await runRipgrep(ctx, command, policy, notes);
+  const { stdout, stderr, exit } = await runRipgrep(ctx, command, policy, notes, AbortSignal.any([ctx.signal, ctx.expired]));
+  if (ctx.expired.aborted) return { entries: await recordsOf(completeRecordsOf(stdout, mode), mode, input, visible, show), unreadable: false, partial: true };
   if (exit.code === 1 && stdout === '') return { entries: [], unreadable: false };
   if (exit.code === 0) return { entries: await recordsOf(stdout, mode, input, visible, show), unreadable: false };
   if (exit.code === 2) {
@@ -383,7 +388,8 @@ export const grepTool = defineTool<GrepInput>({
     required: ['pattern'],
     additionalProperties: false,
   },
-  timeoutMs: 60_000,
+  timeoutMs: (_input, limits) => limits.search.timeoutMs,
+  expiry: 'detach',
   title: (input) => `Grep ${input.pattern}`,
   locations: (input, ctx) => [{ path: resolvedPathOf(ctx, input.path ?? '.') }],
   subject: (input, ctx) => {
@@ -413,6 +419,7 @@ export const grepTool = defineTool<GrepInput>({
     const skipped = ordered.slice(input.offset ?? 0);
     const limited = input.head_limit === undefined || input.head_limit === 0 ? skipped : skipped.slice(0, input.head_limit);
     const lines = limited.length === 0 ? ['No matches found'] : limited;
-    return { status: 'completed', output: [...lines, ...(found.unreadable ? [UNREADABLE_NOTE] : []), ...notes].join('\n'), backend };
+    const partial = found.partial === true ? [partialSearchNote(ctx.limits.search.timeoutMs, 'matches')] : [];
+    return { status: 'completed', output: [...lines, ...(found.unreadable ? [UNREADABLE_NOTE] : []), ...partial, ...notes].join('\n'), backend };
   },
 });

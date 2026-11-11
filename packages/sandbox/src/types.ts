@@ -45,6 +45,7 @@ export interface SandboxedProcess {
   stdout: AsyncIterable<Uint8Array>;
   stderr: AsyncIterable<Uint8Array>;
   exited: Promise<SandboxExit>;
+  rebind(signal: AbortSignal): void;
 }
 
 export interface Sandbox {

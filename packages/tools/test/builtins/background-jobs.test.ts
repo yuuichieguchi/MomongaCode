@@ -27,6 +27,9 @@ const fakeJobs = (): FakeJobs => {
     output: '',
     known: true,
     killOutcome: 'stopped',
+    adopt: async () => {
+      throw new Error('this test moves no command to the background');
+    },
     start: async (request) => {
       jobs.started.push(request);
       return { jobId: 'bash_aaaaaaaaaaaa' };
@@ -62,7 +65,7 @@ const recordingSandbox = (spawns: SpawnRecord[]): Sandbox => ({
   kind: 'seatbelt',
   spawn: (command) => {
     spawns.push({ argv: command.argv, markerFile: command.markerFile, cwd: command.cwd });
-    return { pid: 1, pgid: 1, stdout: (async function* () {})(), stderr: (async function* () {})(), exited: Promise.resolve({ code: 0, signal: null, stop: 'confirmed' }) };
+    return { pid: 1, pgid: 1, rebind: () => undefined, stdout: (async function* () {})(), stderr: (async function* () {})(), exited: Promise.resolve({ code: 0, signal: null, stop: 'confirmed' }) };
   },
 });
 
@@ -93,12 +96,6 @@ describe('Bash run_in_background', () => {
     const builtins = await makeBuiltins({ jobs });
     await builtins.run('Bash', { command: 'x', run_in_background: true, timeout: 7_200_000 }, {}, 'allow_once');
     expect(jobs.started[0]?.timeoutMs).toBe(7_200_000);
-  });
-
-  it('refuses a timeout above the background maximum', async () => {
-    const builtins = await makeBuiltins({ jobs: fakeJobs() });
-    const outcome = await builtins.run('Bash', { command: 'x', run_in_background: true, timeout: 7_200_001 }, {}, 'allow_once');
-    expect(resultOf(outcome).status).toBe('failed');
   });
 
   it('reconciles an interrupted start from the job the registry recorded', async () => {

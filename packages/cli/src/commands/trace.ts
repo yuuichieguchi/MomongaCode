@@ -32,7 +32,7 @@ const chatDetail = (span: RunTraceSpan): string => {
     return `  ${where}: ${typeof errorType === 'string' ? `${errorType}: ` : ''}${failure}`;
   }
   const causes = fallbackCausesOf(span);
-  return `  ${where}${causes.length === 0 ? '' : `, answered after ${causes.map(describeFallbackCause).join('; ')}`}`;
+  return `  ${where}${causes.length === 0 ? '' : `, answered after ${causes.map((cause) => describeFallbackCause(cause, 'cli')).join('; ')}`}`;
 };
 
 const spanLines = (spans: readonly RunTraceSpan[], parent: string | null, depth: number): string[] =>

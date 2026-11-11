@@ -33,5 +33,6 @@ export const authSourceWithinRequestLimit = (auth: AuthSource, limit: PlanReques
   read: (signal) => withinRequestLimit(limit, timing, signal, (bound) => auth.read(bound)),
   rejected: (generation, signal) => withinRequestLimit(limit, timing, signal, (bound) => auth.rejected(generation, bound)),
   pause: (pause, signal) => withinRequestLimit(limit, timing, signal, (bound) => auth.pause(pause, bound)),
+  expire: (code, signal) => withinRequestLimit(limit, timing, signal, (bound) => auth.expire(code, bound)),
   resume: (signal) => withinRequestLimit(limit, timing, signal, (bound) => auth.resume(bound)),
 });

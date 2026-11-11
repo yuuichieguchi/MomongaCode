@@ -3,6 +3,7 @@ import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { decodeEvent } from '../src/codec.ts';
 import { START_MS } from './helpers.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const IDS = { runId: 'run-1', sessionId: 'sess-1' };
 
@@ -11,7 +12,7 @@ const foldAll = (payloads: readonly RunEventPayload[]): RunState =>
     const step = 'step' in payload && typeof payload.step === 'number' ? payload.step : 0;
     const event = { ...payload, id: index + 1, ...IDS, seq: index + 1, step, leaseToken: 1, createdAt: START_MS } as RunEvent;
     return foldRunState(state, event);
-  }, initialRunState(IDS));
+  }, initialRunState({ ...IDS, fence: TEST_FENCE }));
 
 const BODY = { model: 'fm', input: [], stream: true };
 
