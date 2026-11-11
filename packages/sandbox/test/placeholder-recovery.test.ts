@@ -51,9 +51,9 @@ describe('the placeholder journal and the recovery at runtime start', () => {
       const first = createPlaceholderJournal(directory);
       first.intend('/w/.mcp.json', 100);
       first.intend('/w/.envrc', 200);
-      first.complete('/w/.envrc', { device: '1', inode: '3', birthMs: 250 });
+      first.complete('/w/.envrc', { device: '1', inode: '3' });
       expect(createPlaceholderJournal(directory).records()).toEqual([
-        { path: '/w/.envrc', intentMs: 200, form: { kind: 'file', bytes: '' }, identity: { device: '1', inode: '3', birthMs: 250 } },
+        { path: '/w/.envrc', intentMs: 200, form: { kind: 'file', bytes: '' }, identity: { device: '1', inode: '3' } },
         { path: '/w/.mcp.json', intentMs: 100, form: { kind: 'file', bytes: '' }, identity: null },
       ]);
       first.forget('/w/.envrc');
@@ -62,7 +62,7 @@ describe('the placeholder journal and the recovery at runtime start', () => {
 
     it('refuses to complete a path that has no intent', () => {
       const journal = createPlaceholderJournal(path.join(tempDir(), 'journal'));
-      expect(() => journal.complete('/w/.mcp.json', { device: '1', inode: '2', birthMs: 3 })).toThrow('no intent');
+      expect(() => journal.complete('/w/.mcp.json', { device: '1', inode: '2' })).toThrow('no intent');
     });
 
     it('refuses a malformed record instead of skipping it', () => {
@@ -80,43 +80,59 @@ describe('the placeholder journal and the recovery at runtime start', () => {
       journal.intend(target, Date.now() + ahead);
     };
 
-    it('killed after the intent and before the create: nothing to remove, the record is dropped', () => {
+    it('killed after the intent and before the create: nothing is there, the record is forgotten', () => {
       const work = tempDir();
       const journal = createPlaceholderJournal(path.join(tempDir(), 'journal'));
       intentOf(journal, path.join(work, '.mcp.json'), 0);
-      expect(recoverPlaceholders(journal, { holders: noHolders })).toEqual({ removed: [], kept: [] });
+      expect(recoverPlaceholders(journal, { holders: noHolders })).toEqual({ removed: [], kept: [], unrecovered: [] });
       expect(journal.records()).toEqual([]);
     });
 
-    it('killed after the intent and before the create, with a person file of that name already there: the file stays', () => {
+    it('killed after the intent and before the create, with a person file of that name already there: the file stays, is reported and its record is kept', () => {
       const work = tempDir();
       const target = path.join(work, '.mcp.json');
       fs.writeFileSync(target, '');
       const journal = createPlaceholderJournal(path.join(tempDir(), 'journal'));
       intentOf(journal, target, 60_000);
-      expect(recoverPlaceholders(journal, { holders: noHolders }).removed).toEqual([]);
+      expect(recoverPlaceholders(journal, { holders: noHolders })).toEqual({ removed: [], kept: [], unrecovered: [target] });
       expect(fs.existsSync(target)).toBe(true);
-      expect(journal.records()).toEqual([]);
+      expect(journal.records()).toHaveLength(1);
     });
 
-    it('killed after the create and before the completion: the empty file born after the intent is removed', () => {
+    it('killed after the create and before the completion: the file of the placeholder form with no recorded identity stays, is reported and its record is kept', () => {
       const work = tempDir();
       const target = path.join(work, '.mcp.json');
       const journal = createPlaceholderJournal(path.join(tempDir(), 'journal'));
       intentOf(journal, target, 0);
       fs.writeFileSync(target, '');
-      expect(recoverPlaceholders(journal, { holders: noHolders }).removed).toEqual([target]);
-      expect(fs.existsSync(target)).toBe(false);
+      expect(recoverPlaceholders(journal, { holders: noHolders })).toEqual({ removed: [], kept: [], unrecovered: [target] });
+      expect(fs.existsSync(target)).toBe(true);
+      expect(journal.records()).toHaveLength(1);
+    });
+
+    it('a file the person creates under that name after the crash stays, and the record is reported at every start until the path is gone', () => {
+      const work = tempDir();
+      const target = path.join(work, '.mcp.json');
+      const journal = createPlaceholderJournal(path.join(tempDir(), 'journal'));
+      intentOf(journal, target, 0);
+      expect(recoverPlaceholders(journal, { holders: noHolders }).unrecovered).toEqual([]);
+      intentOf(journal, target, 0);
+      fs.writeFileSync(target, '');
+      expect(recoverPlaceholders(journal, { holders: noHolders }).unrecovered).toEqual([target]);
+      expect(recoverPlaceholders(journal, { holders: noHolders }).unrecovered).toEqual([target]);
+      expect(fs.existsSync(target)).toBe(true);
+      fs.rmSync(target);
+      expect(recoverPlaceholders(journal, { holders: noHolders })).toEqual({ removed: [], kept: [], unrecovered: [] });
       expect(journal.records()).toEqual([]);
     });
 
-    it('killed after the create and before the completion, but the file has content: it stays', () => {
+    it('killed after the create and before the completion, but the file has content: it stays and is reported', () => {
       const work = tempDir();
       const target = path.join(work, '.mcp.json');
       const journal = createPlaceholderJournal(path.join(tempDir(), 'journal'));
       intentOf(journal, target, 0);
       fs.writeFileSync(target, '{}');
-      expect(recoverPlaceholders(journal, { holders: noHolders }).removed).toEqual([]);
+      expect(recoverPlaceholders(journal, { holders: noHolders })).toEqual({ removed: [], kept: [], unrecovered: [target] });
       expect(fs.readFileSync(target, 'utf8')).toBe('{}');
     });
 
@@ -126,18 +142,18 @@ describe('the placeholder journal and the recovery at runtime start', () => {
       const journal = createPlaceholderJournal(path.join(tempDir(), 'journal'));
       intentOf(journal, target, 0);
       fs.writeFileSync(target, '');
-      expect(recoverPlaceholders(journal, { holders: () => new Set([target]) })).toEqual({ removed: [], kept: [target] });
+      expect(recoverPlaceholders(journal, { holders: () => new Set([target]) })).toEqual({ removed: [], kept: [], unrecovered: [target] });
       expect(journal.records()).toHaveLength(1);
     });
 
-    it('killed after the completion: the recorded identity decides, birth time included', () => {
+    it('killed after the completion: the recorded device and inode decide', () => {
       const work = tempDir();
       const target = path.join(work, '.mcp.json');
       const journal = createPlaceholderJournal(path.join(tempDir(), 'journal'));
       journal.intend(target, Date.now());
       fs.writeFileSync(target, '');
       const identity = identityOf(target);
-      journal.complete(target, { ...identity, birthMs: identity.birthMs + 5000 });
+      journal.complete(target, { ...identity, inode: `${identity.inode}0` });
       expect(recoverPlaceholders(journal, { holders: noHolders }).removed).toEqual([]);
       expect(fs.existsSync(target)).toBe(true);
     });
@@ -188,7 +204,7 @@ describe('the placeholder journal and the recovery at runtime start', () => {
       const work = tempDir();
       const journal = createPlaceholderJournal(path.join(tempDir(), 'journal'));
       journaled(journal, path.join(work, '.mcp.json'));
-      expect(recoverPlaceholders(journal, { holders: noHolders })).toEqual({ removed: [path.join(work, '.mcp.json')], kept: [] });
+      expect(recoverPlaceholders(journal, { holders: noHolders })).toEqual({ removed: [path.join(work, '.mcp.json')], kept: [], unrecovered: [] });
       expect(fs.existsSync(path.join(work, '.mcp.json'))).toBe(false);
       expect(journal.records()).toEqual([]);
     });
@@ -198,7 +214,7 @@ describe('the placeholder journal and the recovery at runtime start', () => {
       const journal = createPlaceholderJournal(path.join(tempDir(), 'journal'));
       const target = path.join(work, '.envrc');
       journaled(journal, target);
-      expect(recoverPlaceholders(journal, { holders: () => new Set([target]) })).toEqual({ removed: [], kept: [target] });
+      expect(recoverPlaceholders(journal, { holders: () => new Set([target]) })).toEqual({ removed: [], kept: [target], unrecovered: [] });
       expect(fs.existsSync(target)).toBe(true);
       expect(journal.records()).toHaveLength(1);
     });
@@ -233,7 +249,7 @@ describe('the placeholder journal and the recovery at runtime start', () => {
       const target = path.join(work, '.mcp.json');
       journaled(journal, target);
       fs.rmSync(target);
-      expect(recoverPlaceholders(journal, { holders: noHolders })).toEqual({ removed: [], kept: [] });
+      expect(recoverPlaceholders(journal, { holders: noHolders })).toEqual({ removed: [], kept: [], unrecovered: [] });
       expect(journal.records()).toEqual([]);
     });
   });
@@ -259,7 +275,7 @@ describe('the placeholder journal and the recovery at runtime start', () => {
       expect(journal.records().map((record) => record.path).sort()).toEqual(targets);
       for (const record of journal.records()) expect(record.identity).not.toBeNull();
       for (const target of targets) expect(heldMountPoints().has(target)).toBe(true);
-      expect(recoverPlaceholders(journal)).toEqual({ removed: [], kept: targets });
+      expect(recoverPlaceholders(journal)).toEqual({ removed: [], kept: targets, unrecovered: [] });
       for (const target of targets) expect(fs.existsSync(target)).toBe(true);
     });
 

@@ -132,12 +132,13 @@ describe('the life of a placeholder (stand-in bwrap)', () => {
       expect(real().records()).toEqual([]);
     });
 
-    it('after the file was created and before the completion: an intent-only record, and recovery removes the empty file', async () => {
+    it('after the file was created and before the completion: an intent-only record, and recovery keeps the file, reports it and keeps the record', async () => {
       await killedAt('before-complete');
       expect(fs.readdirSync(work)).toEqual(['.mcp.json']);
       expect(real().records().map((record) => record.identity)).toEqual([null]);
-      expect(recoverPlaceholders(real(), { holders: () => new Set() }).removed).toEqual([mcp()]);
-      expect(fs.readdirSync(work)).toEqual([]);
+      expect(recoverPlaceholders(real(), { holders: () => new Set() })).toEqual({ removed: [], kept: [], unrecovered: [mcp()] });
+      expect(fs.readdirSync(work)).toEqual(['.mcp.json']);
+      expect(real().records()).toHaveLength(1);
     });
 
     it('after the completion and before the spawn: a complete record, and recovery removes the empty file', async () => {

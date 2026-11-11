@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { PlaceholderForm } from '@momonga/foundation';
 
-export type PlaceholderIdentity = { device: string; inode: string; birthMs: number };
+export type PlaceholderIdentity = { device: string; inode: string };
 
 export type PlaceholderRecord = { path: string; intentMs: number; form: PlaceholderForm; identity: PlaceholderIdentity | null };
 
@@ -16,7 +16,7 @@ export type PlaceholderJournal = {
 
 export type RecoveryPorts = { holders: () => ReadonlySet<string> };
 
-export type RecoveryResult = { removed: string[]; kept: string[] };
+export type RecoveryResult = { removed: string[]; kept: string[]; unrecovered: string[] };
 
 export type ProcPort = { list(directory: string): string[]; read(file: string): string };
 
@@ -26,17 +26,14 @@ const RECORD_SUFFIX = '.json';
 const OCTAL_ESCAPE = /\\([0-7]{3})/g;
 const PROCESS_DIRECTORY = /^\d+$/;
 const MOUNT_POINT_FIELD = 4;
-const NS_PER_MS = 1e6;
 const VANISHED = new Set(['ENOENT', 'ESRCH', 'EINVAL']);
 const NOT_OURS = new Set(['EACCES', 'EPERM']);
-
-export const FILESYSTEM_TIMESTAMP_GRANULARITY_MS = 10;
 
 export const EMPTY_FILE_FORM: PlaceholderForm = { kind: 'file', bytes: '' };
 
 export const identityOf = (target: string): PlaceholderIdentity => {
   const stat = fs.lstatSync(target, { bigint: true });
-  return { device: String(stat.dev), inode: String(stat.ino), birthMs: Number(stat.birthtimeNs) / NS_PER_MS };
+  return { device: String(stat.dev), inode: String(stat.ino) };
 };
 
 const hasForm = (target: string, stat: fs.BigIntStats, form: PlaceholderForm): boolean => {
@@ -48,19 +45,12 @@ const hasForm = (target: string, stat: fs.BigIntStats, form: PlaceholderForm): b
 export const isStillThePlaceholder = (target: string, identity: PlaceholderIdentity, form: PlaceholderForm = EMPTY_FILE_FORM): boolean => {
   const stat = fs.lstatSync(target, { bigint: true, throwIfNoEntry: false });
   if (stat === undefined || !hasForm(target, stat, form)) return false;
-  return String(stat.dev) === identity.device && String(stat.ino) === identity.inode && Number(stat.birthtimeNs) / NS_PER_MS === identity.birthMs;
+  return String(stat.dev) === identity.device && String(stat.ino) === identity.inode;
 };
 
 export const removePlaceholderEntry = (target: string, form: PlaceholderForm): void => {
   if (form.kind === 'directory') fs.rmdirSync(target);
   else fs.unlinkSync(target);
-};
-
-const wasBornAfterIntent = (target: string, intentMs: number, form: PlaceholderForm): boolean => {
-  const stat = fs.lstatSync(target, { bigint: true, throwIfNoEntry: false });
-  if (stat === undefined || !hasForm(target, stat, form)) return false;
-  const birthMs = Number(stat.birthtimeNs) / NS_PER_MS;
-  return birthMs > 0 && birthMs >= intentMs - FILESYSTEM_TIMESTAMP_GRANULARITY_MS;
 };
 
 const fileNameOf = (target: string): string => `${createHash('sha256').update(target).digest('hex').slice(0, 32)}${RECORD_SUFFIX}`;
@@ -76,11 +66,11 @@ const syncDirectory = (directory: string): void => {
 
 const parseIdentity = (file: string, value: unknown): PlaceholderIdentity | null => {
   if (value === null) return null;
-  const { device, inode, birthMs } = (value ?? {}) as Record<string, unknown>;
-  if (typeof device !== 'string' || typeof inode !== 'string' || typeof birthMs !== 'number') {
-    throw new Error(`the placeholder record ${file} has an identity without a device, an inode or a birth time`);
+  const { device, inode } = (value ?? {}) as Record<string, unknown>;
+  if (typeof device !== 'string' || typeof inode !== 'string') {
+    throw new Error(`the placeholder record ${file} has an identity without a device or an inode`);
   }
-  return { device, inode, birthMs };
+  return { device, inode };
 };
 
 const parseForm = (file: string, value: unknown): PlaceholderForm => {
@@ -177,16 +167,20 @@ export const heldMountPoints = (port: ProcPort = nodeProcPort): ReadonlySet<stri
 
 const NODE_RECOVERY_PORTS: RecoveryPorts = { holders: () => heldMountPoints() };
 
-const isRecoverable = (record: PlaceholderRecord): boolean =>
-  record.identity === null ? wasBornAfterIntent(record.path, record.intentMs, record.form) : isStillThePlaceholder(record.path, record.identity, record.form);
+const exists = (target: string): boolean => fs.lstatSync(target, { throwIfNoEntry: false }) !== undefined;
 
 export const recoverPlaceholders = (journal: PlaceholderJournal, ports: RecoveryPorts = NODE_RECOVERY_PORTS): RecoveryResult => {
-  const result: RecoveryResult = { removed: [], kept: [] };
+  const result: RecoveryResult = { removed: [], kept: [], unrecovered: [] };
   const records = journal.records();
   if (records.length === 0) return result;
   const holders = ports.holders();
   for (const record of records) {
-    if (!isRecoverable(record)) {
+    if (record.identity === null) {
+      if (exists(record.path)) result.unrecovered.push(record.path);
+      else journal.forget(record.path);
+      continue;
+    }
+    if (!isStillThePlaceholder(record.path, record.identity, record.form)) {
       journal.forget(record.path);
       continue;
     }

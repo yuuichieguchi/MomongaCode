@@ -43,9 +43,9 @@ describe('the journal record carries the form', () => {
     const first = createPlaceholderJournal(journalDirectory);
     first.intend('/w/.git', 100, DIRECTORY_FORM);
     first.intend('/w/.git/commondir', 200, COMMONDIR_FORM);
-    first.complete('/w/.git', { device: '1', inode: '2', birthMs: 150 });
+    first.complete('/w/.git', { device: '1', inode: '2' });
     expect(createPlaceholderJournal(journalDirectory).records()).toEqual([
-      { path: '/w/.git', intentMs: 100, form: DIRECTORY_FORM, identity: { device: '1', inode: '2', birthMs: 150 } },
+      { path: '/w/.git', intentMs: 100, form: DIRECTORY_FORM, identity: { device: '1', inode: '2' } },
       { path: '/w/.git/commondir', intentMs: 200, form: COMMONDIR_FORM, identity: null },
     ]);
   });
@@ -59,7 +59,7 @@ describe('the journal record carries the form', () => {
     createPlaceholderJournal(journalDirectory);
     fs.writeFileSync(path.join(journalDirectory, 'legacy.json'), JSON.stringify({ path: '/w/.mcp.json', intentMs: 5, identity: { device: '7', inode: '8', birthMs: 9 } }));
     expect(createPlaceholderJournal(journalDirectory).records()).toEqual([
-      { path: '/w/.mcp.json', intentMs: 5, form: EMPTY_FILE, identity: { device: '7', inode: '8', birthMs: 9 } },
+      { path: '/w/.mcp.json', intentMs: 5, form: EMPTY_FILE, identity: { device: '7', inode: '8' } },
     ]);
   });
 
@@ -142,7 +142,7 @@ describe('recovery at start removes a placeholder only in its form', () => {
     const commondir = path.join(work, 'sub-commondir');
     journaled(journal, git, DIRECTORY_FORM);
     journaled(journal, commondir, COMMONDIR_FORM);
-    expect(recoverPlaceholders(journal, { holders: noHolders })).toEqual({ removed: [git, commondir].sort(), kept: [] });
+    expect(recoverPlaceholders(journal, { holders: noHolders })).toEqual({ removed: [git, commondir].sort(), kept: [], unrecovered: [] });
     expect(fs.existsSync(git)).toBe(false);
     expect(fs.existsSync(commondir)).toBe(false);
     expect(journal.records()).toEqual([]);
@@ -152,7 +152,7 @@ describe('recovery at start removes a placeholder only in its form', () => {
     const journal = createPlaceholderJournal(journalDirectory);
     const git = path.join(work, '.git');
     journaled(journal, git, DIRECTORY_FORM);
-    expect(recoverPlaceholders(journal, { holders: () => new Set([git]) })).toEqual({ removed: [], kept: [git] });
+    expect(recoverPlaceholders(journal, { holders: () => new Set([git]) })).toEqual({ removed: [], kept: [git], unrecovered: [] });
     expect(fs.lstatSync(git).isDirectory()).toBe(true);
     expect(journal.records()).toHaveLength(1);
   });
@@ -165,7 +165,7 @@ describe('recovery at start removes a placeholder only in its form', () => {
     journaled(journal, commondir, COMMONDIR_FORM);
     fs.writeFileSync(path.join(git, 'HEAD'), 'ref: refs/heads/main\n');
     fs.writeFileSync(commondir, '../main\n');
-    expect(recoverPlaceholders(journal, { holders: noHolders })).toEqual({ removed: [], kept: [] });
+    expect(recoverPlaceholders(journal, { holders: noHolders })).toEqual({ removed: [], kept: [], unrecovered: [] });
     expect(fs.readdirSync(git)).toEqual(['HEAD']);
     expect(fs.readFileSync(commondir, 'utf8')).toBe('../main\n');
     expect(journal.records()).toEqual([]);
