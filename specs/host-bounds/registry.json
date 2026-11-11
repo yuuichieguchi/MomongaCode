@@ -66,6 +66,7 @@
     {"name":"RULE_VERIFY_LOAD_ALLOWANCE_MS","file":"packages/runtime/src/process/rule-verifier.ts","kind":"P","owner":"policy-verify-sandbox","row":"verify.md"},
     {"name":"DEFAULT_IDLE_POLL_MS","file":"packages/runtime/src/worker/worker.ts","kind":"C","owner":"runtime","row":"runtime-store.md"},
     {"name":"CREDENTIAL_RANDOM_BYTES","file":"packages/sandbox/src/egress-proxy.ts","kind":"stated","owner":"policy-verify-sandbox","row":"verify.md"},
+    {"name":"TUNNEL_OPENING_MAX_BYTES","file":"packages/sandbox/src/egress-proxy.ts","kind":"stated","owner":"policy-verify-sandbox","row":"verify.md"},
     {"name":"READ_PAGE_BYTES","file":"packages/store/src/blobs.ts","kind":"stated","owner":"store","row":"runtime-store.md"},
     {"name":"HISTORY_INDEX_BATCH_CHARS","file":"packages/store/src/search-constants.ts","kind":"stated","owner":"store","row":"context.md"},
     {"name":"HISTORY_READ_PAGE_CHARS","file":"packages/store/src/search-constants.ts","kind":"stated","owner":"store","row":"context.md"},
