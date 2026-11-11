@@ -30,7 +30,7 @@ import type { ReplayQueue } from './replay.ts';
 import { applyAction, emptyEditor, enterOf, expandedText, insertPaste, insertSpan, insertText, isEditorAction, placeCaret, placeText, pushHistory, withHistory } from './editor.ts';
 import { hasMentionToken, imageSpanLabel, NO_CLIPBOARD_PROGRAM_HINT, NO_IMAGE_INPUT_HINT, useAtMenu } from './attach.ts';
 import type { AtAct } from './attach.ts';
-import { isShellDraft, SHELL_MARK, shellCommandOf, shellEnded, shellFailed, shellHint, shellLabel, shellOutput, shellStarted, showShellRecord, withoutShellMark } from './user-shell.ts';
+import { leftShell, SHELL_MARK, shellCommandOf, shellEnded, shellFailed, shellHint, shellHistoryText, shellLabel, shellOutput, shellStarted, showShellRecord, typedIntoDraft } from './user-shell.ts';
 import { INBOX_FULL_HINT, busyDeliveryOf, busyHint, completionHint, draftOf, isInboxFull, onFirstLine, takenBack, waitingRows } from './busy-input.ts';
 import type { EditorState } from './editor.ts';
 import { editorUnsetHint } from './external-editor.ts';
@@ -289,8 +289,8 @@ export function App(props: AppProps) {
         hint: NEWLINE_HINT[state.negotiation],
         size: state.size,
         ...(state.screen === 'fullscreen' ? { view: viewOf(facts.current.position, origins), toggles: togglesOf(store) } : { printed: feedRef.current.handed() }),
-        input: { text: current.text, cursor: current.cursor, historyIndex: current.historyIndex ?? null, draft: current.draft, pastes: current.pastes.map((paste) => ({ ...paste })), pasteCount: current.pasteCount },
-        attachments: heldAttachments(attachmentsRef.current, current.text).map((attachment) => ({ file: attachment.file, sha256: attachmentDigest(attachment.image) })),
+        input: { text: current.text, cursor: current.cursor, historyIndex: current.historyIndex ?? null, draft: current.draft, draftPastes: current.draftPastes.map((paste) => ({ ...paste })), pastes: current.pastes.map((paste) => ({ ...paste })), pasteCount: current.pasteCount, shell: current.shell },
+        attachments: heldAttachments(attachmentsRef.current, current.pastes).map((attachment) => ({ file: attachment.file, sha256: attachmentDigest(attachment.image) })),
         notes: origins.notes(),
       };
     };
@@ -600,6 +600,7 @@ export function App(props: AppProps) {
     append,
     decideTrust,
     replayKeys: (events) => replayHeldKeys(events),
+    externalEditor,
   });
   const { overlayPorts, overlay } = prompts;
 
@@ -846,7 +847,7 @@ export function App(props: AppProps) {
   const resumePorts = { backend, pick: overlayPorts.pick, info: note, resume: resumeSession, now, columns: () => terminal.state().size.columns };
 
   const restoreInput = (input: HandoverInput): void => {
-    replaceEditor({ ...editorRef.current, text: input.text, cursor: input.cursor, historyIndex: input.historyIndex ?? undefined, draft: input.draft ?? '', pastes: input.pastes ?? [], pasteCount: input.pasteCount ?? 0 });
+    replaceEditor({ ...editorRef.current, text: input.text, cursor: input.cursor, historyIndex: input.historyIndex ?? undefined, draft: input.draft ?? '', draftPastes: input.draftPastes ?? [], pastes: input.pastes ?? [], pasteCount: input.pasteCount ?? 0, shell: input.shell ?? false });
   };
 
   const readRecordedImage = async (file: string): Promise<{ image: ImageAttachment } | { reason: string }> => {
@@ -934,7 +935,7 @@ export function App(props: AppProps) {
   const sendWhileBusy = (delivery: InboxDelivery): void => {
     const draft = draftOf(editorRef.current);
     if (draft === undefined) return;
-    const sent = heldAttachments(attachmentsRef.current, draft.text);
+    const sent = heldAttachments(attachmentsRef.current, editorRef.current.pastes);
     replaceEditor(draft.state);
     setAttachments([]);
     backend.recordHistory(draft.text).catch(reportError);
@@ -992,7 +993,7 @@ export function App(props: AppProps) {
 
   const runPrompt = (text: string, options: StartRunOptions = {}): Promise<void> =>
     runStarted(() => {
-      const sent = heldAttachments(attachmentsRef.current, text);
+      const sent = attachmentsRef.current;
       setAttachments([]);
       for (const attachment of sent) note(`attached ${describeAttachment(attachment.file, attachment.image)}`);
       const runOptions: StartRunOptions = {
@@ -1171,7 +1172,7 @@ export function App(props: AppProps) {
   const imageInput = capabilities?.imageInput === true;
 
   const slashMenu = useSlashMenu({ text: editor.text, commands: slash.list(), active: phase.kind === 'ready' || phase.kind === 'unconnected', height: rows });
-  const shellDraft = isShellDraft(editor.text);
+  const shellDraft = editor.shell;
   const atMenu = useAtMenu({
     editor,
     active: phase.kind === 'ready' && !shellDraft,
@@ -1214,7 +1215,7 @@ export function App(props: AppProps) {
       replaceEditor(outcome.state);
       return;
     }
-    const asked = shellCommandOf(outcome.text);
+    const asked = shellCommandOf(editorRef.current);
     if (asked === undefined) return;
     if (phase.kind === 'starting') {
       setHint(STILL_STARTING_HINT);
@@ -1228,8 +1229,9 @@ export function App(props: AppProps) {
       note(NEEDS_SESSION_NOTE);
       return;
     }
-    replaceEditor(outcome.state);
-    backend.recordHistory(outcome.text).catch(reportError);
+    const remembered = shellHistoryText(asked);
+    replaceEditor(emptyEditor(pushHistory(editorRef.current.history, remembered)));
+    backend.recordHistory(remembered).catch(reportError);
     const running = shellStarted(store, asked, now());
     const command: WaitingPhase = { text: commandPhaseText(shellLabel(asked)), startedAt: now() };
     shellRunning.current = true;
@@ -1240,7 +1242,8 @@ export function App(props: AppProps) {
       };
       signal.addEventListener('abort', stop, { once: true });
       try {
-        shellEnded(store, running, await backend.userInput.shell(asked.command, asked.include, (text) => shellOutput(store, running, text)), now());
+        const io = { onUnprotected: (reason: string) => showUnprotected(reason), onOutput: (text: string) => shellOutput(store, running, text) };
+        shellEnded(store, running, await backend.userInput.shell(asked.command, asked.include, io), now());
       } catch (error) {
         shellFailed(store, running, now());
         throw error;
@@ -1253,7 +1256,14 @@ export function App(props: AppProps) {
     tasks.run(work).catch(reportError);
   };
 
-  const leaveShell = (): void => replaceEditor(placeText(editorRef.current, withoutShellMark(editorRef.current.text)));
+  const leaveShell = (): void => replaceEditor(leftShell(editorRef.current));
+
+  const unprotectedShown = useRef(false);
+  const showUnprotected = (reason: string): void => {
+    if (unprotectedShown.current) return;
+    unprotectedShown.current = true;
+    note(reason);
+  };
   const placeMenuText = (text: string): void => replaceEditor(placeText(editorRef.current, text));
 
   const invitationShown = prompts.invitation !== undefined && overlay === undefined && !busy && editor.text === '';
@@ -1284,7 +1294,7 @@ export function App(props: AppProps) {
   };
 
   const editExternally = async (): Promise<void> => {
-    const outcome = await externalEditor.edit(expandedText(editorRef.current));
+    const outcome = await externalEditor.edit(expandedText(editorRef.current), 'draft');
     if (outcome.kind === 'unset') setHint(editorUnsetHint(keys));
     else replaceEditor(placeText(editorRef.current, outcome.text));
   };
@@ -1315,6 +1325,7 @@ export function App(props: AppProps) {
       note(NO_MODEL_NOTE);
       return;
     }
+    setAttachments(heldAttachments(attachmentsRef.current, editorRef.current.pastes));
     replaceEditor(outcome.state);
     backend.recordHistory(outcome.text).catch(reportError);
     submitSafely(outcome.text);
@@ -1348,7 +1359,7 @@ export function App(props: AppProps) {
     else if (action === 'prompt.pasteImage') runFlow(pasteFromClipboard);
     else if (action === 'editor.deleteBefore' && current.text === '' && attachmentsRef.current.length > 0) setAttachments(attachmentsRef.current.slice(0, -1));
     else if (isEditorAction(action)) replaceEditor(applyAction(current, action));
-    else if (action === undefined && typed !== undefined) replaceEditor(insertText(current, typed));
+    else if (action === undefined && typed !== undefined) replaceEditor(typedIntoDraft(current, typed));
   };
 
   const routeFacts = (): KeyRouteFacts => ({
@@ -1359,7 +1370,7 @@ export function App(props: AppProps) {
     welcome: phase.kind === 'welcome',
     prompt: prompts.promptStage(),
     detail: prompts.detailShown(panelFacts),
-    shellDraft: isShellDraft(editorRef.current.text),
+    shellDraft: editorRef.current.shell,
     menuOpen: slashMenu.open || atMenu.open,
     fullscreen,
   });
@@ -1368,7 +1379,7 @@ export function App(props: AppProps) {
     if (route === 'shell') {
       const shellAction = pressed.actionOf(SHELL_CONTEXTS, event);
       if (shellAction === 'shell.run') runShell();
-      else if (shellAction === 'shell.leave') leaveShell();
+      else if (shellAction === 'shell.leave' || (action === 'editor.deleteBefore' && editorRef.current.text === '')) leaveShell();
       else if (action !== 'prompt.submit' && action !== 'prompt.queue' && action !== 'prompt.steer') onEditorAction(action, typed);
       return;
     }
@@ -1469,8 +1480,7 @@ export function App(props: AppProps) {
   const inputShown = (phase.kind === 'starting' || phase.kind === 'ready' || phase.kind === 'unconnected') && panel === undefined;
   const completionOpen = slashMenu.open || atMenu.open;
   const menuShown = inputShown && (invitationShown || completionOpen);
-  const shownAttachments = heldAttachments(attachments, editor.text);
-  const shownEditor = shellDraft ? { ...editor, text: editor.text.slice(SHELL_MARK.length), cursor: Math.max(0, editor.cursor - SHELL_MARK.length) } : editor;
+  const shownAttachments = heldAttachments(attachments, editor.pastes);
   const waitingLines = inputShown ? waitingRows(waitingMessages, columns) : [];
   const busyHintRow = !inputShown || phase.kind !== 'ready' ? undefined : shellDraft ? shellHint(keys) : !busy ? undefined : slashMenu.open || atMenu.open ? completionHint(keys) : busyHint(keys, waitingMessages.length > 0);
   const invitationInMenu = menuShown && phase.kind === 'ready' && invitationShown;
@@ -1486,7 +1496,7 @@ export function App(props: AppProps) {
   });
   const rowRequests: RowRequests = {
     waiting: waiting === undefined || a11y.screenReader ? 0 : 1,
-    inputRows: inputRowsOf(shownEditor, columns),
+    inputRows: inputRowsOf(editor, columns),
     invitation: invitationInMenu ? INVITATION_ROWS : 0,
     menu: !menuShown || invitationInMenu ? 0 : atMenu.open ? atMenu.rows : slashMenu.rows,
     subagents: transcript.subagents.length,
@@ -1550,8 +1560,8 @@ export function App(props: AppProps) {
     if (event.type !== 'mouse' || event.kind !== 'press' || event.button !== 'left') return false;
     const hit = regionAt(allocation, event.row);
     if (hit?.region !== 'input') return false;
-    const offset = inputOffsetAt(shownEditor, columns, inputContentRows(allocation.input), hit.row, event.col);
-    if (offset !== undefined) replaceEditor(placeCaret(editorRef.current, offset + (shellDraft ? SHELL_MARK.length : 0)));
+    const offset = inputOffsetAt(editor, columns, inputContentRows(allocation.input), hit.row, event.col);
+    if (offset !== undefined) replaceEditor(placeCaret(editorRef.current, offset));
     return true;
   });
   useEffect(() => terminal.input.claim('input-caret', (event) => onInputPress(event)), [terminal]);
@@ -1646,7 +1656,7 @@ export function App(props: AppProps) {
             ))}
           </>
         ) : null,
-        input: inputShown ? <InputBox editor={shownEditor} mark={shellDraft ? SHELL_MARK : CHAT_MARK} columns={columns} framed={!a11y.screenReader} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={inputTopOf(fullscreen ? allocation : naturalRows(feed.live(view.source, store.settledCount()).length, rowRequests))} /> : null,
+        input: inputShown ? <InputBox editor={editor} mark={shellDraft ? SHELL_MARK : CHAT_MARK} columns={columns} framed={!a11y.screenReader} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={inputTopOf(fullscreen ? allocation : naturalRows(feed.live(view.source, store.settledCount()).length, rowRequests))} /> : null,
         footer: (
           <>
             <Footer facts={footerFacts} hint={a11y.screenReader ? undefined : hint} unconnected={phase.kind === 'unconnected'} planRow={a11y.screenReader ? undefined : planRow} width={columns} rows={fullscreen ? allocation.footer - busyHintRows : 2} keys={keys} />

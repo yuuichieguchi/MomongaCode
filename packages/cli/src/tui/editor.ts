@@ -1,9 +1,9 @@
 import type { KeyContext, KeyTable } from './keys/table.ts';
 import type { KeyEvent } from './terminal/events.ts';
 
-export type PastedSpan = { readonly label: string; readonly text: string };
+export type PastedSpan = { readonly start: number; readonly label: string; readonly text: string };
 
-type Snapshot = { readonly text: string; readonly cursor: number };
+type Snapshot = { readonly text: string; readonly cursor: number; readonly pastes: readonly PastedSpan[] };
 
 export type EditorState = {
   text: string;
@@ -11,9 +11,11 @@ export type EditorState = {
   history: readonly string[];
   historyIndex: number | undefined;
   draft: string;
+  draftPastes: readonly PastedSpan[];
   killed: string | undefined;
   pastes: readonly PastedSpan[];
   pasteCount: number;
+  shell: boolean;
   undo: readonly Snapshot[];
   typing: boolean;
 };
@@ -48,7 +50,7 @@ export const UNDO_STEPS_MAX = 100;
 export const PASTE_COLLAPSE_LINES = 3;
 export const PASTE_COLLAPSE_CHARACTERS = 800;
 
-export const emptyEditor = (history: readonly string[] = []): EditorState => ({ text: '', cursor: 0, history, historyIndex: undefined, draft: '', killed: undefined, pastes: [], pasteCount: 0, undo: [], typing: false });
+export const emptyEditor = (history: readonly string[] = []): EditorState => ({ text: '', cursor: 0, history, historyIndex: undefined, draft: '', draftPastes: [], killed: undefined, pastes: [], pasteCount: 0, shell: false, undo: [], typing: false });
 
 const LINE_CONTINUATION = '\\';
 
@@ -57,11 +59,27 @@ const words = new Intl.Segmenter(undefined, { granularity: 'word' });
 
 type Range = { start: number; end: number };
 
-const spansOf = (state: EditorState): Range[] =>
-  state.pastes.flatMap(({ label }) => {
-    const start = state.text.indexOf(label);
-    return start < 0 ? [] : [{ start, end: start + label.length }];
+const spansOf = (state: EditorState): Range[] => state.pastes.map(({ start, label }) => ({ start, end: start + label.length }));
+
+const shiftedSpans = (pastes: readonly PastedSpan[], start: number, end: number, inserted: number): PastedSpan[] =>
+  pastes.flatMap((paste) => {
+    const spanEnd = paste.start + paste.label.length;
+    if (spanEnd <= start) return [paste];
+    if (paste.start >= end) return [{ ...paste, start: paste.start + inserted - (end - start) }];
+    return [];
   });
+
+const graphemeCount = (text: string): number => [...graphemes.segment(text)].length;
+
+const offsetAfterGraphemes = (text: string, from: number, to: number, count: number): number => {
+  let taken = 0;
+  for (const { index, segment } of graphemes.segment(text.slice(from, to))) {
+    if (taken === count) return from + index;
+    taken += 1;
+    if (taken === count) return from + index + segment.length;
+  }
+  return to;
+};
 
 const characterStartBefore = (text: string, cursor: number): number => {
   let start = 0;
@@ -99,22 +117,23 @@ const outsideSpans = (state: EditorState, cursor: number, toward: 'start' | 'end
 
 const movedTo = (state: EditorState, cursor: number, toward: 'start' | 'end' = 'end'): EditorState => ({ ...state, cursor: outsideSpans(state, cursor, toward), typing: false });
 
-const remembered = (state: EditorState): readonly Snapshot[] => [...state.undo, { text: state.text, cursor: state.cursor }].slice(-UNDO_STEPS_MAX);
+const remembered = (state: EditorState): readonly Snapshot[] => [...state.undo, { text: state.text, cursor: state.cursor, pastes: state.pastes }].slice(-UNDO_STEPS_MAX);
 
-const edited = (state: EditorState, text: string, cursor: number, typing = false): EditorState => ({
+const spliced = (state: EditorState, start: number, end: number, text: string, typing = false): EditorState => ({
   ...state,
-  text,
-  cursor,
+  text: state.text.slice(0, start) + text + state.text.slice(end),
+  cursor: start + text.length,
+  pastes: shiftedSpans(state.pastes, start, end, text.length),
   historyIndex: undefined,
   undo: typing && state.typing ? state.undo : remembered(state),
   typing,
 });
 
-const removed = (state: EditorState, start: number, end: number): EditorState => (start === end ? { ...state, typing: false } : edited(state, state.text.slice(0, start) + state.text.slice(end), start));
+const removed = (state: EditorState, start: number, end: number): EditorState => (start === end ? { ...state, typing: false } : spliced(state, start, end, ''));
 
 const killed = (state: EditorState, start: number, end: number): EditorState => (start === end ? { ...state, typing: false } : { ...removed(state, start, end), killed: state.text.slice(start, end) });
 
-const inserted = (state: EditorState, text: string, typing: boolean): EditorState => edited(state, state.text.slice(0, state.cursor) + text + state.text.slice(state.cursor), state.cursor + text.length, typing);
+const inserted = (state: EditorState, text: string, typing: boolean): EditorState => spliced(state, state.cursor, state.cursor, text, typing);
 
 const lineStart = (text: string, cursor: number): number => text.lastIndexOf('\n', cursor - 1) + 1;
 
@@ -125,19 +144,32 @@ const lineEnd = (text: string, cursor: number): number => {
 
 const moveVertically = (state: EditorState, direction: -1 | 1): EditorState | undefined => {
   const start = lineStart(state.text, state.cursor);
-  const column = state.cursor - start;
+  const column = graphemeCount(state.text.slice(start, state.cursor));
   if (direction === -1) {
     if (start === 0) return undefined;
-    const previousStart = lineStart(state.text, start - 1);
-    return movedTo(state, Math.min(previousStart + column, start - 1));
+    return movedTo(state, offsetAfterGraphemes(state.text, lineStart(state.text, start - 1), start - 1, column));
   }
   const end = lineEnd(state.text, state.cursor);
   if (end >= state.text.length) return undefined;
   const nextStart = end + 1;
-  return movedTo(state, Math.min(nextStart + column, lineEnd(state.text, nextStart)));
+  return movedTo(state, offsetAfterGraphemes(state.text, nextStart, lineEnd(state.text, nextStart), column));
 };
 
-const recalled = (state: EditorState, text: string, historyIndex: number | undefined, draft: string): EditorState => ({ ...state, text, cursor: text.length, historyIndex, draft, typing: false });
+type Kept = { readonly text: string; readonly pastes: readonly PastedSpan[] };
+
+const recalled = (state: EditorState, shown: Kept, historyIndex: number | undefined, draft: Kept): EditorState => ({
+  ...state,
+  text: shown.text,
+  pastes: shown.pastes,
+  cursor: shown.text.length,
+  historyIndex,
+  draft: draft.text,
+  draftPastes: draft.pastes,
+  shell: false,
+  typing: false,
+});
+
+const entry = (text: string): Kept => ({ text, pastes: [] });
 
 const recall = (state: EditorState, direction: -1 | 1): EditorState | undefined => {
   if (state.history.length === 0) return undefined;
@@ -145,13 +177,14 @@ const recall = (state: EditorState, direction: -1 | 1): EditorState | undefined 
     const index = state.historyIndex === undefined ? state.history.length - 1 : state.historyIndex - 1;
     const text = state.history[index];
     if (index < 0 || text === undefined) return undefined;
-    return recalled(state, text, index, state.historyIndex === undefined ? state.text : state.draft);
+    return recalled(state, entry(text), index, state.historyIndex === undefined ? { text: state.text, pastes: state.pastes } : { text: state.draft, pastes: state.draftPastes });
   }
   if (state.historyIndex === undefined) return undefined;
   const index = state.historyIndex + 1;
-  if (index >= state.history.length) return recalled(state, state.draft, undefined, state.draft);
+  const draft = { text: state.draft, pastes: state.draftPastes };
+  if (index >= state.history.length) return recalled(state, draft, undefined, draft);
   const text = state.history[index];
-  return text === undefined ? undefined : recalled(state, text, index, state.draft);
+  return text === undefined ? undefined : recalled(state, entry(text), index, draft);
 };
 
 const normalizeNewlines = (text: string): string => text.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
@@ -168,15 +201,27 @@ export const insertPaste = (state: EditorState, pasted: string): EditorState => 
   const lines = text.split('\n').length;
   if (lines <= PASTE_COLLAPSE_LINES && text.length <= PASTE_COLLAPSE_CHARACTERS) return inserted(state, text, false);
   const number = state.pasteCount + 1;
-  const label = pastedLabel(number, lines);
-  return { ...inserted(state, label, false), pastes: [...state.pastes, { label, text }], pasteCount: number };
+  return { ...withSpan(state, pastedLabel(number, lines), text), pasteCount: number };
 };
 
-export const insertSpan = (state: EditorState, label: string): EditorState => ({ ...inserted(state, label, false), pastes: [...state.pastes, { label, text: label }] });
+const withSpan = (state: EditorState, label: string, text: string): EditorState => {
+  const after = inserted(state, label, false);
+  return { ...after, pastes: [...after.pastes, { start: state.cursor, label, text }] };
+};
 
-export const expandedText = (state: EditorState): string => state.pastes.reduce((text, paste) => text.replace(paste.label, () => paste.text), state.text);
+export const insertSpan = (state: EditorState, label: string): EditorState => withSpan(state, label, label);
 
-export const placeText = (state: EditorState, text: string): EditorState => edited(state, text, text.length);
+export const expandedText = (state: EditorState): string => {
+  let text = '';
+  let at = 0;
+  for (const paste of state.pastes.toSorted((left, right) => left.start - right.start)) {
+    text += state.text.slice(at, paste.start) + paste.text;
+    at = paste.start + paste.label.length;
+  }
+  return text + state.text.slice(at);
+};
+
+export const placeText = (state: EditorState, text: string): EditorState => ({ ...spliced(state, 0, state.text.length, text), pastes: [], shell: false });
 
 export const placeCaret = (state: EditorState, cursor: number): EditorState => movedTo(state, Math.max(0, Math.min(cursor, state.text.length)));
 
@@ -228,7 +273,7 @@ export const applyAction = (state: EditorState, action: EditorAction): EditorSta
 export type EnterOutcome = { kind: 'newline'; state: EditorState } | { kind: 'blank' } | { kind: 'submit'; state: EditorState; text: string };
 
 export const enterOf = (state: EditorState): EnterOutcome => {
-  if (state.text[state.cursor - 1] === LINE_CONTINUATION) return { kind: 'newline', state: inserted({ ...state, text: state.text.slice(0, state.cursor - 1) + state.text.slice(state.cursor), cursor: state.cursor - 1 }, '\n', false) };
+  if (state.text[state.cursor - 1] === LINE_CONTINUATION) return { kind: 'newline', state: spliced(state, state.cursor - 1, state.cursor, '\n') };
   if (state.text.trim() === '') return { kind: 'blank' };
   const text = expandedText(state);
   return { kind: 'submit', state: emptyEditor(pushHistory(state.history, text)), text };

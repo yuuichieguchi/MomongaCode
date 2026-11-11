@@ -127,6 +127,7 @@ export const KEYS = {
   ctrlU: '\u0015',
   ctrlV: '\u0016',
   ctrlW: '\u0017',
+  ctrlX: '\u0018',
   ctrlY: '\u0019',
   ctrlUnderscore: '\u001f',
   altB: '\u001bb',
