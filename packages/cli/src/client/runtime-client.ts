@@ -1,6 +1,6 @@
 import type { McpServerConfig } from '@momonga/config';
 import { GENERATION_STARTING_CODE, HOST_READ_BOUND_MS, MOVED_CODE, createUdsClient, decodeSse, isRecord, parseRetryAfter } from '@momonga/foundation';
-import type { SocketResolver, UdsResponse } from '@momonga/foundation';
+import type { SandboxNetworkSetting, SocketResolver, UdsResponse } from '@momonga/foundation';
 import { DAEMON_CURRENT_EVENT, STREAM_FAILED_EVENT, WORDS, messageOf } from '@momonga/protocol';
 import type { AddMemoryRequest, AddRuleRequest, PutRuleVerdictRequest, RuleVerdict, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, Mandate } from '@momonga/protocol';
 import {
@@ -119,6 +119,7 @@ export type CreateSessionInput = {
   permissionMode?: PermissionMode;
   model?: string;
   bypassAllowed?: boolean;
+  sandboxNetwork?: SandboxNetworkSetting;
   mcpServers?: Readonly<Record<string, McpServerConfig>>;
 };
 
@@ -362,6 +363,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
         ...(input.permissionMode === undefined ? {} : { permissionMode: input.permissionMode }),
         ...(input.model === undefined ? {} : { model: input.model }),
         ...(input.bypassAllowed === undefined ? {} : { bypassAllowed: input.bypassAllowed }),
+        ...(input.sandboxNetwork === undefined ? {} : { sandboxNetwork: input.sandboxNetwork }),
         ...(input.mcpServers === undefined ? {} : { mcpServers: input.mcpServers }),
       },
     });

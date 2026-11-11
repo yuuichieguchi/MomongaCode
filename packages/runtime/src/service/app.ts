@@ -331,7 +331,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const stripped = stripCredentialEnv(body.env, settings.credentialEnvNames, settings.credentials);
     const mcpServers = checkedMcpServers(body.mcpServers ?? {});
     refuseNewWork();
-    const session = store.createSession({ cwd, env: stripped.env, permissionMode, model, bypassAllowed, additionalDirectories, mcpServers });
+    const session = store.createSession({ cwd, env: stripped.env, permissionMode, model, bypassAllowed, ...(body.sandboxNetwork === undefined ? {} : { sandboxNetwork: body.sandboxNetwork }), additionalDirectories, mcpServers });
     return json({ session: await sessionViewOf(session, context.req.raw.signal, settings), strippedEnvKeys: stripped.removed }, 201, { location: `/v1/sessions/${session.id}` });
   };
 

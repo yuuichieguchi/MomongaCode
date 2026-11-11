@@ -254,7 +254,7 @@ With `"sandbox": "none"` none of these bounds apply, so an allow rule no longer 
 | --- | --- |
 | `permissions.defaultMode`, `allow`, `ask`, `deny`, `additionalDirectories` | Permission mode, rules, and extra directories |
 | `sandbox` | `seatbelt`, `bubblewrap`, or `none`. Default: `seatbelt` on macOS, `bubblewrap` on Linux, `none` elsewhere. With `none`, Bash asks before every command |
-| `sandboxNetwork` | `deny`, `ask`, or `allow`. Default: `ask`. What happens when a Bash call asks for the network: refused, asked of you for each call, or granted without asking. User settings and the command line only |
+| `sandboxNetwork` | `deny`, `ask`, or `allow`. Default: `ask`. What happens when a Bash call asks for the network: refused, asked of you for each call, or granted without asking. User settings and the command line only (`--sandbox-network` sets it for the session it starts) |
 | `sandboxUnixSockets.allow` | Absolute paths. A sandboxed command may connect to a Unix socket at one of these paths or below it; every other Unix socket is denied, and the sockets of Momonga Code are always denied. Default: none. User settings only. The Linux sandbox cannot enforce a list, so there no entry is applied and every Unix socket stays denied |
 | `env` | Environment variables for sessions |
 | `credentials` | `env`, `keep`, `valuePatterns`: which environment variables and values are treated as credentials |

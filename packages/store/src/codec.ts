@@ -1,4 +1,6 @@
 import path from 'node:path';
+import { SANDBOX_NETWORK_SETTINGS } from '@momonga/foundation';
+import type { SandboxNetworkSetting } from '@momonga/foundation';
 import { APPROVAL_BASES, SIDE_EFFECTS, VERIFICATION_OUTCOMES, FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, STORED_MODEL_KEYS, EVENT_PAYLOAD_RENAMES, withCurrentNames, decodeStoredModel, planAccountRefOf, INBOX_DELIVERIES, INBOX_STATES } from '@momonga/protocol';
 import type { OpaqueEvent, RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload, InboxChangeRow, UserShellRecord } from '@momonga/protocol';
 import { InheritanceError } from './inherit.ts';
@@ -30,6 +32,9 @@ const expectServerRecords = (identity: string, value: unknown): SessionMcpServer
   return record as SessionMcpServers;
 };
 
+const sandboxNetworkOf = (identity: string, value: string | null): SandboxNetworkSetting | null =>
+  value === null ? null : expectOneOf('sessions', identity, 'sandbox_network', SANDBOX_NETWORK_SETTINGS, value);
+
 export const decodeSession = (row: Row, context: DecodeContext): Session => {
   const identity = identityOf(row);
   const reader = readerFor('sessions', identity, row);
@@ -40,6 +45,7 @@ export const decodeSession = (row: Row, context: DecodeContext): Session => {
     permissionMode: storedOneOf(context, 'sessions', identity, 'permission_mode', PERMISSION_MODES, reader.string('permission_mode')),
     model: reader.string('model'),
     bypassAllowed: reader.flag('bypass_allowed'),
+    sandboxNetwork: sandboxNetworkOf(identity, reader.nullableString('sandbox_network')),
     additionalDirectories: expectAbsolutePaths('sessions', identity, 'additional_directories_json', reader.json('additional_directories_json')),
     mcpServers: expectServerRecords(identity, reader.json('mcp_servers_json')),
     createdAt: reader.number('created_at'),

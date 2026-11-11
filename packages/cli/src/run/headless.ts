@@ -1,5 +1,5 @@
 import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_WAITING_FOR_APPROVAL, isRecord } from '@momonga/foundation';
-import type { MomongaPaths } from '@momonga/foundation';
+import type { MomongaPaths, SandboxNetworkSetting } from '@momonga/foundation';
 import { TARGET_NOT_READY, WORDS, agentReadiness, attachRunCommand, heldEndOf, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
 import type { BudgetExhausted, Mandate, MomongaModelEntry, PermissionMode, PlanAccountRef, PublicRunEvent, QuiescentBehaviour, RunReport, Surface, UnknownEffectCall } from '@momonga/protocol';
 import { noTargetLines } from '../readiness.ts';
@@ -40,6 +40,7 @@ export type HeadlessOptions = {
   format: OutputFormat;
   permissionMode?: PermissionMode;
   bypassAllowed?: boolean;
+  sandboxNetwork?: SandboxNetworkSetting;
   model?: string;
   reopen?: HeadlessReopen;
   capabilitiesOf(model: string): Promise<MomongaModelEntry['capabilities']>;
@@ -525,6 +526,7 @@ const openInterruptibleSession = async (ports: CliPorts, paths: MomongaPaths, op
       ...onNewerOf(ports),
       ...(options.permissionMode === undefined ? {} : { permissionMode: options.permissionMode }),
       ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
+      ...(options.sandboxNetwork === undefined ? {} : { sandboxNetwork: options.sandboxNetwork }),
       ...(options.model === undefined ? {} : { model: options.model }),
     };
     return await openSession(ports, paths, options.reopen === undefined ? typed : { ...typed, reopen: options.reopen, modelList: options.modelList });

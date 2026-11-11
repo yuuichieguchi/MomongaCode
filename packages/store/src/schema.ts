@@ -1218,6 +1218,10 @@ DROP TABLE memory_evidence;
 ALTER TABLE memory_evidence_with_condition RENAME TO memory_evidence;
 `;
 
+const SESSION_SANDBOX_NETWORK = `
+ALTER TABLE sessions ADD COLUMN sandbox_network TEXT CHECK (sandbox_network IS NULL OR sandbox_network IN ('deny', 'ask', 'allow'));
+`;
+
 const SESSION_PAGES_AND_QUEUED_TERMS = `
 CREATE INDEX sessions_by_created ON sessions (created_at, id);
 CREATE INDEX sessions_by_cwd_created ON sessions (cwd, created_at, id);
@@ -1431,5 +1435,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 42,
     name: 'read the sessions a page at a time through an index in the order of the page, and keep with a waiting message the terms and the origin of the run it starts, so a queued run takes them from the request that queued it and never from the run that ended',
     sql: SESSION_PAGES_AND_QUEUED_TERMS,
+  },
+  {
+    version: 43,
+    name: 'keep with a session the network of a sandboxed command the command line gave (deny, ask or allow), which wins over the user setting; a session without one leaves it to the user setting',
+    sql: SESSION_SANDBOX_NETWORK,
   },
 ];

@@ -1425,6 +1425,8 @@ export type InboxAddResponse = { row: InboxRowView; pending: InboxRowView[] };
 
 export type InboxWithdrawResponse = { outcome: InboxWithdrawOutcome; row: InboxRowView; pending: InboxRowView[] };
 
+export const SESSION_SANDBOX_NETWORKS = ['deny', 'ask', 'allow'] as const;
+
 export const RUN_API_SCHEMAS = {
   CreateSessionRequest: root(
     closed(
@@ -1434,6 +1436,7 @@ export const RUN_API_SCHEMAS = {
         permissionMode,
         model: { type: 'string', minLength: 1 },
         bypassAllowed: boolean,
+        sandboxNetwork: enumOf(SESSION_SANDBOX_NETWORKS),
         mcpServers: sessionMcpServers,
       },
       ['cwd', 'env'],
