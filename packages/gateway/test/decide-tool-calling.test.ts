@@ -43,7 +43,7 @@ describe('capabilitiesFromProbe', () => {
     report.stopSequences = true;
     report.imageInputAccepted = true;
     report.imageTokens = { pixelsPerToken: 700, maxTokens: 1500, minTokens: 1 };
-    report.maxConcurrency = 2;
+    report.maxConcurrency = { value: 2, evidence: 'refused' };
     report.parallelToolCalls = { accepted: true, multiCallRate: 0 };
     report.streaming = { supported: true, doneSentinel: true, usageInStream: true };
     const capabilities = capabilitiesFromProbe(report, { mode: 'native' });
@@ -65,6 +65,12 @@ describe('capabilitiesFromProbe', () => {
     });
     expect(capabilities.maxOutputTokens).toBeGreaterThan(0);
     expect(capabilities.maxOutputTokens).toBeLessThanOrEqual(4096);
+  });
+
+  it('runs a model whose max concurrency was not measured one request at a time', () => {
+    const unmeasured = makeReport(1, 1);
+    delete unmeasured.maxConcurrency;
+    expect(capabilitiesFromProbe(unmeasured, { mode: 'native' }).maxConcurrency).toBe(1);
   });
 
   it('leaves parallel tool calls unknown when the probe measured nothing or the server refused the setting', () => {

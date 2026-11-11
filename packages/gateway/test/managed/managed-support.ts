@@ -6,6 +6,7 @@ import path from 'node:path';
 import * as gateway from '@momonga/gateway';
 import * as protocol from '@momonga/protocol';
 import { FAKE_SERVER, FAKE_SERVER_KEY_MISSING_EXIT, FAKE_SERVER_REFUSAL, FAKE_SERVER_REMEDY, testKernelLock, testProcessInspector } from '@momonga/testkit';
+import { systemTiming } from '@momonga/foundation';
 import type { KernelLockMechanism, ProcessInspector } from '@momonga/foundation';
 
 export type ExecAnswer = { exitCode: number; stdout: string; stderr: string };
@@ -49,7 +50,7 @@ export const exportOf = <T>(module: unknown, name: string, from: string): T => {
 };
 
 export const createManagedServer = (options: ManagedServerOptions): ManagedServerHandle =>
-  exportOf<(options: ManagedServerOptions) => ManagedServerHandle>(gateway, 'createManagedServer', '@momonga/gateway')({ lock: testKernelLock(), inspector: testProcessInspector(), ...options });
+  exportOf<(options: ManagedServerOptions) => ManagedServerHandle>(gateway, 'createManagedServer', '@momonga/gateway')({ lock: testKernelLock(), inspector: testProcessInspector(), timers: systemTiming, ...options });
 
 export const fmServer = (): Record<string, unknown> & { ready: { path: string }; restart: Record<string, number> } =>
   exportOf(protocol, 'FM_SERVER', '@momonga/protocol');

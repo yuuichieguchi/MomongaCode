@@ -91,7 +91,7 @@ describe('probe record failure handling', () => {
     expect(error).toBeInstanceOf(Error);
     const message = (error as Error).message;
     expect(message).toContain(recordFile(dir));
-    expect(message).toContain(`/gateway probe ${TARGET}`);
+    expect(message).toContain(`momonga gateway probe ${TARGET}`);
     expect(message).toContain('Delete it');
     expect((error as Error).cause).toBeInstanceOf(SyntaxError);
   });
@@ -103,7 +103,7 @@ describe('probe record failure handling', () => {
     fs.writeFileSync(recordFile(dir), JSON.stringify({ ...stored, report: { probedAt: 'now', schemaDialect: stored.report.schemaDialect } }));
     const error = await loadProbeRecord(dir, key, FM_CURRENCY, TARGET).catch((e: unknown) => e);
     expect((error as Error).message).toContain(recordFile(dir));
-    expect((error as Error).message).toContain(`/gateway probe ${TARGET}`);
+    expect((error as Error).message).toContain(`momonga gateway probe ${TARGET}`);
     expect((error as Error).cause).toBeInstanceOf(Error);
   });
 

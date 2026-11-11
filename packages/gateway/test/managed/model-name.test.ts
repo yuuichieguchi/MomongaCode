@@ -6,7 +6,7 @@ import { MODEL_ID_CHANGED_CODE, messageOf } from '@momonga/protocol';
 import { startFakeChatCompletions, type FakeChatCompletionsServer, testKernelLock } from '@momonga/testkit';
 import { makeDir } from '../gateway-helpers.ts';
 import { makeReport } from '../report-fixture.ts';
-import { FM_CURRENCY, NO_AUTO_PROBE, fmRecordKey, fmTargetBase, recordKeyOptions } from '../fm-record-support.ts';
+import { FM_CURRENCY, NO_AUTO_PROBE, fmRecordKey, fmModelBase, recordKeyOptions } from '../fm-record-support.ts';
 
 const RECORD_KEY: KnownProbeKey = fmRecordKey('cd'.repeat(32), '25A100');
 const ASKED = { name: 'apple/declared', display: 'declared', model: 'declared' };
@@ -28,7 +28,7 @@ const targetOf = async (server: ManagedServer, extra: { declaredModel?: string; 
   const probeRecordDir = makeDir();
   if (extra.recordedModel !== undefined) await saveProbeRecord(probeRecordDir, RECORD_KEY, { ...makeReport(1, 1), modelId: extra.recordedModel }, FM_CURRENCY, testKernelLock());
   return createManagedTarget({
-    ...fmTargetBase('apple'),
+    ...fmModelBase('apple'),
     server,
     binary: '/usr/bin/fm',
     exec: async () => ({ exitCode: extra.exitCode ?? 0, stdout: '', stderr: 'refused' }),

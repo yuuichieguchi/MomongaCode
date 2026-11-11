@@ -8,11 +8,12 @@ import { OLLAMA_CAPABILITIES, OLLAMA_MODEL, startFakeOllama } from './ollama-sup
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
 import { NO_PROBE_START } from './fm-record-support.ts';
 import { UNCONFIGURED_NETWORK, testKernelLock } from '@momonga/testkit';
+import { hostProbePorts } from './probe-ports-support.ts';
 
 const probeWith = async (cacheProbe: 'automatic' | 'none' | 'unreported') => {
   const fake = await startFakeOllama({ cacheProbe });
   const dir = makeDir();
-  const result = await probeOllamaTarget({ lock: testKernelLock(), probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 32768 });
+  const result = await probeOllamaTarget({ ports: hostProbePorts, lock: testKernelLock(), probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 32768 });
   return { fake, dir, result };
 };
 
@@ -34,7 +35,7 @@ describe('the Ollama probe measures the prompt cache from a repeated /api/chat',
   it('records nothing when the answer carries no cached count, and saves a valid record', async () => {
     const { dir, result } = await probeWith('unreported');
     expect(result.report).not.toHaveProperty('promptCache');
-    expect((await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS))?.report).toEqual(result.report);
+    expect((await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS, 'the-model'))?.report).toEqual(result.report);
   });
 });
 
@@ -56,7 +57,7 @@ describe('the Ollama cache probe builds its chat body with the adapter body buil
 describe('the probed Ollama cache becomes the capability unless declared', () => {
   const targetFor = async (declared: Capabilities) => {
     const { dir, result } = await probeWith('automatic');
-    const record = await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS);
+    const record = await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS, 'the-model');
     return createProbedOllamaTarget({
       targetName: 'local',
       endpoint: result.key.endpoint,

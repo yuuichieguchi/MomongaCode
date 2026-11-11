@@ -41,7 +41,6 @@ describe('PLAN_SESSION_DEFAULTS: the numbers of design section 6 that P5a uses, 
       skewMs: 60_000,
       refreshBudgetMs: 61_000,
       marginMs: 121_000,
-      revocationBudgetMs: 31_500,
       persistRetryMs: 30_000,
       persistRetryMaxMs: 900_000,
       replacedAccessTokensKept: 3,
@@ -54,10 +53,6 @@ describe('PLAN_SESSION_DEFAULTS: the numbers of design section 6 that P5a uses, 
 
   it('derives M = S + B', () => {
     expect(PLAN_SESSION_DEFAULTS.marginMs).toBe(PLAN_SESSION_DEFAULTS.skewMs + PLAN_SESSION_DEFAULTS.refreshBudgetMs);
-  });
-
-  it('derives the revocation budget = attempts x T_rev + 500 + 1000', () => {
-    expect(PLAN_SESSION_DEFAULTS.revocationBudgetMs).toBe(retry.maxAttempts * PLAN_SESSION_DEFAULTS.revocationTimeoutMs + retry.baseMs + 2 * retry.baseMs);
   });
 
   it('takes the persist retry from breaker.openMs', () => {

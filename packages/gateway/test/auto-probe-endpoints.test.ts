@@ -10,6 +10,7 @@ import { readFileTool, startFake } from './cc-support.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, writeSettings, modelOf, modelsOf, pause, until } from './gateway-process-helpers.ts';
 import { OLLAMA_LISTED, startFakeOllama } from './ollama-support.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
+import { hostProbePorts } from './probe-ports-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -82,7 +83,7 @@ describe('P10 RecordUnderLock: every probe-able auto target takes the automatic 
     const held = await acquireProbeLock(probeRecordDir, endpointLockKeyOf(key), 'system', testKernelLock());
 
     let settled = false;
-    const probing = probeEndpointTarget({ lock: testKernelLock(), probeRecordDir, upstream: { kind: 'unix', socketPath: fake.socketPath }, key, model: 'system', apiKey: undefined, samples: 1 }).finally(() => {
+    const probing = probeEndpointTarget({ ports: hostProbePorts, lock: testKernelLock(), probeRecordDir, upstream: { kind: 'unix', socketPath: fake.socketPath }, key, model: 'system', apiKey: undefined, samples: 1 }).finally(() => {
       settled = true;
     });
     await until(() => fake.requests.some((request) => request.path === '/v1/chat/completions'), 'the CLI probe to measure');
