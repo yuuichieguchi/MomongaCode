@@ -1,22 +1,23 @@
 import { nodeFileSystem, systemRandom } from '@momonga/foundation';
-import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, testProcessInspector } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, FAKE_LEASE, createFakeClock, createFakeTimers, fakePolicyFilesystem, hostFilesystemOf, testProcessInspector } from '@momonga/testkit';
+import type { FakeTimers } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createToolExecutor, nodeShellHost } from '@momonga/tools';
 import type { ReconcileContext } from '@momonga/tools';
-import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
+import { call, fakeTimedShellHost, makeHarness, makeTool, onFakeTime, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
 import { keyFor, minimalPolicyFor } from './helpers.ts';
 import { momongaLayout } from '@momonga/foundation';
 
 const KEY = keyFor('run-1', 1, 'c1');
 
-const boundedExecutor = (harness: Harness, capMs: number, graceMs: number) =>
+const boundedExecutor = (harness: Harness, capMs: number, graceMs: number, timers?: FakeTimers) =>
   createToolExecutor({
     layout: momongaLayout(harness.layout.home, process.platform, process.env),
     reap: { inspector: testProcessInspector() },
-    shellHost: nodeShellHost(),
+    shellHost: timers === undefined ? nodeShellHost() : fakeTimedShellHost(timers),
     random: systemRandom,
     files: nodeFileSystem, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
     idempotency: harness.idempotency.port,
@@ -29,8 +30,6 @@ const boundedExecutor = (harness: Harness, capMs: number, graceMs: number) =>
     reconcileCapMs: capMs,
     reconcileGraceMs: graceMs,
   });
-
-const after = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe('executor defers later calls after a post-reconcile needs_approval', () => {
   it('defers the Write after a concurrent read whose recovered re-execution now asks', async () => {
@@ -75,11 +74,12 @@ describe('executor distrusts a reconcile that settled after the cap', () => {
     const harness = makeHarness();
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Mark' });
     let executed = 0;
+    const timers = createFakeTimers(createFakeClock(0));
     const tool = makeTool('Mark', {
       kind: 'edit',
       sideEffect: 'write', subjectKind: 'none',
       reconcile: async () => {
-        await after(60);
+        await new Promise<void>((resolve) => timers.setTimeout(() => resolve(), 60));
         return { outcome: 'not_applied', output: '' };
       },
       execute: async () => {
@@ -88,9 +88,13 @@ describe('executor distrusts a reconcile that settled after the cap', () => {
       },
     });
 
-    const [outcome] = await boundedExecutor(harness, 20, 1_000).runBatch(
-      await harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { mode: 'bypassPermissions' }),
+    const { value: outcomes } = await onFakeTime(
+      timers,
+      boundedExecutor(harness, 20, 1_000, timers).runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { mode: 'bypassPermissions' })),
+      2_000,
+      'the outcome of a reconcile that settles inside the grace window',
     );
+    const [outcome] = outcomes;
 
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', reconciled: 'unknown', result: { status: 'failed' } });
     expect(executed).toBe(0);

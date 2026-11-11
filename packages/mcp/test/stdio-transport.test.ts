@@ -515,7 +515,6 @@ const readEscapedPid = async (readyFile: string): Promise<number> => {
 };
 
 const ESCAPED_HOST_PATH = path.join(import.meta.dirname, 'fixtures', 'escaped-grandchild-host.ts');
-const QUIET_WINDOW_MS = 300;
 
 describe('createStdioTransport pipes after close', () => {
   it('stops reading stdout and stderr once onclose fires even if an escaped grandchild holds the pipes', async () => {
@@ -528,8 +527,7 @@ describe('createStdioTransport pipes after close', () => {
     const stderrBefore = transport.diagnostics().stderrTail;
     const messagesBefore = messages.length;
     process.kill(escapedPid, 'SIGUSR1');
-    await until(() => fs.existsSync(`${readyFile}.ack`), 'escaped grandchild wrote');
-    await new Promise((resolve) => setTimeout(resolve, QUIET_WINDOW_MS));
+    await until(() => fs.existsSync(`${readyFile}.ack`) && fs.readFileSync(`${readyFile}.ack`, 'utf8').endsWith('\n'), 'escaped grandchild wrote and was refused on both pipes');
     expect(fs.readFileSync(`${readyFile}.ack`, 'utf8')).toBe('stdout=EPIPE stderr=EPIPE\n');
     expect(pidAlive(escapedPid)).toBe(true);
     expect(messages.length).toBe(messagesBefore);

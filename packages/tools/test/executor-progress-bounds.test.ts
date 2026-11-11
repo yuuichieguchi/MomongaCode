@@ -1,14 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { callStopOf } from '@momonga/tools';
 import type { ToolContext, ToolStop } from '@momonga/tools';
-import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
+import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import type { FakeTimers } from '@momonga/testkit';
+import { call, fakeTimedShellHost, makeHarness, makeTool, onFakeTime, toolSetOf } from './harness.ts';
 
 const waitForAbort = (ctx: ToolContext): Promise<{ status: 'failed'; output: string }> =>
   new Promise((resolve) => {
     ctx.signal.addEventListener('abort', () => resolve({ status: 'failed', output: 'aborted by signal' }), { once: true });
   });
 
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+const sleepOn = (timers: FakeTimers) => (ms: number): Promise<void> => new Promise((resolve) => timers.setTimeout(resolve, ms));
+
+const onFakeTimers = () => {
+  const timers = createFakeTimers(createFakeClock(0));
+  return { timers, sleep: sleepOn(timers), harness: makeHarness({ executor: { shellHost: fakeTimedShellHost(timers) } }) };
+};
 
 const outputOf = (outcome: unknown): string => {
   const value = outcome as { kind?: string; result?: { output?: string } };
@@ -23,7 +30,7 @@ const stopTextOf = (stops: ToolStop[]) => async (stop: ToolStop): Promise<string
 
 describe('G2: a call bounded by an idle window that progress restarts, an overall limit and the run deadline (audit-unbounded-waits-2026-11-07.md, R-G2a)', () => {
   it('test 9: reportProgress restarts the idle window, so a call that keeps reporting outlives one window', async () => {
-    const harness = makeHarness();
+    const { timers, sleep, harness } = onFakeTimers();
     const stops: ToolStop[] = [];
     const tool = makeTool('Probe', {
       timeoutMs: 5_000,
@@ -37,13 +44,13 @@ describe('G2: a call bounded by an idle window that progress restarts, an overal
         return { status: 'completed', output: 'finished after progress' };
       },
     });
-    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Probe')]));
+    const { value: outcomes } = await onFakeTime(timers, harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Probe')])), 5_000, 'the call that keeps reporting');
     expect(outputOf(outcomes[0])).toBe('finished after progress');
     expect(stops).toEqual([]);
   });
 
   it('ends a call that stops reporting at the idle window, with the stop text of the tool', async () => {
-    const harness = makeHarness();
+    const { timers, sleep, harness } = onFakeTimers();
     const stops: ToolStop[] = [];
     const tool = makeTool('Probe', {
       timeoutMs: 5_000,
@@ -55,15 +62,14 @@ describe('G2: a call bounded by an idle window that progress restarts, an overal
         return waitForAbort(ctx);
       },
     });
-    const startedAt = Date.now();
-    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Probe')]));
-    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(140);
+    const { value: outcomes, atMs } = await onFakeTime(timers, harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Probe')])), 5_000, 'the call that stops reporting');
+    expect(atMs).toBe(150);
     expect(outputOf(outcomes[0])).toBe('stopped by idle after 100 ms');
     expect(stops).toMatchObject([{ bound: 'idle', ms: 100 }]);
   });
 
   it('test 9: progress never extends a call past its overall limit', async () => {
-    const harness = makeHarness();
+    const { timers, sleep, harness } = onFakeTimers();
     const stops: ToolStop[] = [];
     const tool = makeTool('Probe', {
       timeoutMs: 200,
@@ -77,9 +83,8 @@ describe('G2: a call bounded by an idle window that progress restarts, an overal
         }
       },
     });
-    const startedAt = Date.now();
-    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Probe')]));
-    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    const { value: outcomes, atMs } = await onFakeTime(timers, harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Probe')])), 5_000, 'the call that keeps reporting past its limit');
+    expect(atMs).toBeLessThan(300);
     expect(outputOf(outcomes[0])).toBe('stopped by total after 200 ms');
   });
 

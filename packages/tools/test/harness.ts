@@ -2,11 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalJson, nodeFileSystem, resolveCanonicalPath, sha256Hex, systemRandom, truncationMarker, validateUntrusted, momongaLayout } from '@momonga/foundation';
 import { absoluteFrom } from '@momonga/policy';
-import { UNCONFIGURED_NETWORK, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, testPaths, testProcessInspector } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, FAKE_LEASE, createFakeKernelLock, driveFakeTime, fakePolicyFilesystem, hostFilesystemOf, testPaths, testProcessInspector } from '@momonga/testkit';
+import type { FakeTimers } from '@momonga/testkit';
 import type { PermissionSubject } from '@momonga/policy';
 import { createHostRipgrepLocator, createToolExecutor, createToolRegistry, defineTool, nodeShellHost, schemaIdentity } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../test/support/pinned-ripgrep.ts';
-import type { AnyTool, CallOutputFit, ExecutionBatchInput, OutputCall, OutputFit, SideEffectBinding, ToolBody, ToolCall, ToolContext, ToolDefinition, ToolExecutorOptions, ToolSet, WorkTreeObserver } from '@momonga/tools';
+import type { AnyTool, CallOutputFit, ExecutionBatchInput, OutputCall, OutputFit, ShellHost, SideEffectBinding, ToolBody, ToolCall, ToolContext, ToolDefinition, ToolExecutorOptions, ToolSet, WorkTreeObserver } from '@momonga/tools';
 import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode, SideEffect } from '@momonga/protocol';
 import { fakeSandbox, makeBlobs, makeClock, makeIdempotency, makeLayout, minimalPolicyFor } from './helpers.ts';
@@ -81,6 +82,28 @@ export const toolSetOf = async (...tools: AnyTool[]): Promise<ToolSet> => {
 };
 
 export type Harness = ReturnType<typeof makeHarness>;
+
+export const fakeTimedShellHost = (timers: FakeTimers): ShellHost => {
+  const host = nodeShellHost();
+  return { ...host, child: { ...host.child, setTimeout: (callback, ms) => timers.setTimeout(callback, ms), clearTimeout: (handle) => timers.clearTimeout(handle) } };
+};
+
+export const onFakeTime = async <T>(timers: FakeTimers, work: Promise<T>, horizonMs: number, description: string): Promise<{ value: T; atMs: number }> => {
+  let settled: { value: T; atMs: number } | undefined;
+  let failure: { error: unknown } | undefined;
+  work.then(
+    (value) => {
+      settled = { value, atMs: timers.monotonicMs() };
+    },
+    (error: unknown) => {
+      failure = { error };
+    },
+  );
+  await driveFakeTime(timers, { done: () => settled !== undefined || failure !== undefined, horizonAt: timers.monotonicMs() + horizonMs, description });
+  if (failure !== undefined) throw failure.error;
+  if (settled === undefined) throw new Error(`${description} did not settle`);
+  return settled;
+};
 
 export type HarnessOptions = {
   outputLimitChars?: number;
