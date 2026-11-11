@@ -43,8 +43,8 @@ const finish = async (store: RuntimeStore, claim: Claim, payloads: readonly RunE
   expect((await store.transition(claim, ['RUNNING'], to, to === 'FAILED' ? { error: { code: 'server_error', message: 'x' } } : undefined)).kind).toBe('ok');
 };
 
-const createRun = (store: RuntimeStore, sessionId: string, input: string, extra: { history?: 'inherit' | 'fresh'; timeoutMs?: number } = {}): Run => {
-  const result = store.createRunAndEnqueue(sessionId, {
+const createRun = async (store: RuntimeStore, sessionId: string, input: string, extra: { history?: 'inherit' | 'fresh'; timeoutMs?: number } = {}): Promise<Run> => {
+  const result = await store.createRunAndEnqueue(sessionId, {
     input,
     timeoutMs: extra.timeoutMs ?? TIMEOUT_MS,
     limits: {},
@@ -77,7 +77,7 @@ const inheritanceError = (code: 'previous_run_unreadable' | 'previous_run_incons
 const completedPredecessor = async (options: StoreOptions = {}) => {
   const env: Harness = harness({ leaseMs: LONG_LEASE_MS, ...options });
   const session = newSession(env.store);
-  const first = enqueue(env.store, session.id, 'Say hello');
+  const first = await enqueue(env.store, session.id, 'Say hello');
   await finish(env.store, mustClaim(env.store, 'w1'), answer('hello'));
   return { ...env, session, first };
 };
@@ -91,7 +91,7 @@ const writable = (dbPath: string): DatabaseSync => {
 describe('inheritContext: the happy path', () => {
   it('appends context.inherited at seq 2 with the predecessor conversation and the current mode', async () => {
     const { store, session, first } = await completedPredecessor();
-    const second = enqueue(store, session.id, 'And again');
+    const second = await enqueue(store, session.id, 'And again');
     const claim = mustClaim(store, 'w1');
     expect(claim.runId).toBe(second.id);
 
@@ -134,7 +134,7 @@ describe('inheritContext: the happy path', () => {
 
   it('records the mode passed by the Worker and announces a change from the predecessor mode', async () => {
     const { store, session } = await completedPredecessor();
-    const second = enqueue(store, session.id, 'And again');
+    const second = await enqueue(store, session.id, 'And again');
     expect(await store.inheritContext(mustClaim(store, 'w1'), { mode: 'plan' })).toEqual({ kind: 'inherited' });
     const event = inheritedOf(store, second.id);
     expect(event.history.at(-1)).toEqual(markerEntry(3, modeChangedText('manual', 'plan')));
@@ -145,7 +145,7 @@ describe('inheritContext: the happy path', () => {
 
   it('returns already on a second call and appends nothing', async () => {
     const { store, session } = await completedPredecessor();
-    const second = enqueue(store, session.id, 'And again');
+    const second = await enqueue(store, session.id, 'And again');
     const claim = mustClaim(store, 'w1');
     expect(await store.inheritContext(claim, { mode: 'manual' })).toEqual({ kind: 'inherited' });
     expect(await store.inheritContext(claim, { mode: 'plan' })).toEqual({ kind: 'already' });
@@ -155,19 +155,19 @@ describe('inheritContext: the happy path', () => {
   it('returns none for the first run of a session and for a fresh run, and appends nothing', async () => {
     const { store } = harness({ leaseMs: LONG_LEASE_MS });
     const session = newSession(store);
-    const first = enqueue(store, session.id, 'Say hello');
+    const first = await enqueue(store, session.id, 'Say hello');
     const firstClaim = mustClaim(store, 'w1');
     expect(await store.inheritContext(firstClaim, { mode: 'manual' })).toEqual({ kind: 'none' });
     expect(store.readRunEvents(first.id, 0, 100).map((event) => event.type)).toEqual(['user.message']);
     await finish(store, firstClaim, answer('hello'));
-    const fresh = createRun(store, session.id, 'Start over', { history: 'fresh' });
+    const fresh = await createRun(store, session.id, 'Start over', { history: 'fresh' });
     expect(await store.inheritContext(mustClaim(store, 'w1'), { mode: 'manual' })).toEqual({ kind: 'none' });
     expect(store.readRunEvents(fresh.id, 0, 100).map((event) => event.type)).toEqual(['user.message']);
   });
 
   it('returns lease_lost for a stale claim and appends nothing', async () => {
     const { store, session } = await completedPredecessor();
-    const second = enqueue(store, session.id, 'And again');
+    const second = await enqueue(store, session.id, 'And again');
     const claim = mustClaim(store, 'w1');
     expect(await store.inheritContext({ ...claim, leaseToken: claim.leaseToken + 1 }, { mode: 'manual' })).toEqual({ kind: 'lease_lost' });
     expect(store.readRunEvents(second.id, 0, 100)).toHaveLength(1);
@@ -175,7 +175,7 @@ describe('inheritContext: the happy path', () => {
 
   it('returns conflict when the predecessor is not terminal', async () => {
     const { store, session, first, dbPath } = await completedPredecessor();
-    const second = enqueue(store, session.id, 'And again');
+    const second = await enqueue(store, session.id, 'And again');
     const claim = mustClaim(store, 'w1');
     writable(dbPath).prepare("UPDATE runs SET status = 'RUNNING' WHERE id = ?").run(first.id);
     expect(await store.inheritContext(claim, { mode: 'manual' })).toMatchObject({ kind: 'conflict' });
@@ -184,18 +184,18 @@ describe('inheritContext: the happy path', () => {
 });
 
 describe('inheritContext: the look-through walk', () => {
-  const runningPredecessor = () => {
+  const runningPredecessor = async () => {
     const env = harness({ leaseMs: LONG_LEASE_MS });
     const session = newSession(env.store);
-    const first = enqueue(env.store, session.id, 'Say hello');
+    const first = await enqueue(env.store, session.id, 'Say hello');
     const firstClaim = mustClaim(env.store, 'w1');
     return { ...env, session, first, firstClaim };
   };
 
   it('skips a run the user cancelled in the queue: its task is not inherited', async () => {
-    const { store, session, first, firstClaim } = runningPredecessor();
-    const retracted = enqueue(store, session.id, 'Never mind this');
-    const third = enqueue(store, session.id, 'Do this instead');
+    const { store, session, first, firstClaim } = await runningPredecessor();
+    const retracted = await enqueue(store, session.id, 'Never mind this');
+    const third = await enqueue(store, session.id, 'Do this instead');
     expect(store.claim('w2')).toBeNull();
     expect((await cancelToEnd(store, retracted.id)).status).toBe('CANCELLED');
     expect(store.claim('w2')).toBeNull();
@@ -215,9 +215,9 @@ describe('inheritContext: the look-through walk', () => {
   });
 
   it('keeps the task of a run that timed out in the queue, followed by the unprocessed marker', async () => {
-    const { store, clock, session, first, firstClaim } = runningPredecessor();
-    const timedOut = createRun(store, session.id, 'Too late', { timeoutMs: 1000 });
-    const third = enqueue(store, session.id, 'Now this');
+    const { store, clock, session, first, firstClaim } = await runningPredecessor();
+    const timedOut = await createRun(store, session.id, 'Too late', { timeoutMs: 1000 });
+    const third = await enqueue(store, session.id, 'Now this');
     clock.advance(2000);
     expect((await store.expireApprovals(clock.now(), (error: unknown) => { throw error; }))).toEqual([timedOut.id]);
     expect(mustRun(store, timedOut.id)).toMatchObject({ status: 'STOPPED', stopReason: 'timeout' });
@@ -242,10 +242,10 @@ describe('inheritContext: the look-through walk', () => {
   });
 
   it('inherits the base run directly when every run between was cancelled in the queue', async () => {
-    const { store, session, first, firstClaim } = runningPredecessor();
-    const second = enqueue(store, session.id, 'retracted one');
-    const third = enqueue(store, session.id, 'retracted two');
-    const fourth = enqueue(store, session.id, 'the real one');
+    const { store, session, first, firstClaim } = await runningPredecessor();
+    const second = await enqueue(store, session.id, 'retracted one');
+    const third = await enqueue(store, session.id, 'retracted two');
+    const fourth = await enqueue(store, session.id, 'the real one');
     await cancelToEnd(store, second.id);
     await cancelToEnd(store, third.id);
     await finish(store, firstClaim, answer('hello'));
@@ -259,9 +259,9 @@ describe('inheritContext: the look-through walk', () => {
   });
 
   it('returns conflict when a run read during the walk changed before the write phase', async () => {
-    const { store, dbPath, session, firstClaim } = runningPredecessor();
-    const middle = enqueue(store, session.id, 'retracted');
-    const third = enqueue(store, session.id, 'the real one');
+    const { store, dbPath, session, firstClaim } = await runningPredecessor();
+    const middle = await enqueue(store, session.id, 'retracted');
+    const third = await enqueue(store, session.id, 'the real one');
     await cancelToEnd(store, middle.id);
     await finish(store, firstClaim, answer('hello'));
     const claim = mustClaim(store, 'w2');
@@ -284,8 +284,8 @@ describe('inheritContext: the look-through walk', () => {
   });
 
   it('never makes a later run claimable before the predecessor is terminal', async () => {
-    const { store, session } = runningPredecessor();
-    enqueue(store, session.id, 'waits');
+    const { store, session } = await runningPredecessor();
+    await enqueue(store, session.id, 'waits');
     expect(store.claim('w2')).toBeNull();
   });
 });
@@ -293,8 +293,8 @@ describe('inheritContext: the look-through walk', () => {
 describe('inheritContext: runs that were never processed', () => {
   it('marks a run that was claimed, requeued and then timed out in the queue as unprocessed', async () => {
     const { store, clock, session } = await completedPredecessor();
-    const requeued = createRun(store, session.id, 'Too late', { timeoutMs: 1000 });
-    const third = enqueue(store, session.id, 'Now this');
+    const requeued = await createRun(store, session.id, 'Too late', { timeoutMs: 1000 });
+    const third = await enqueue(store, session.id, 'Now this');
     const requeuedClaim = mustClaim(store, 'w2');
     expect(requeuedClaim.runId).toBe(requeued.id);
     expect((await store.release(requeuedClaim, 'QUEUED')).kind).toBe('ok');
@@ -314,8 +314,8 @@ describe('inheritContext: runs that were never processed', () => {
   it('contributes nothing for a first run of a session cancelled in the queue', async () => {
     const { store } = harness({ leaseMs: LONG_LEASE_MS });
     const session = newSession(store);
-    const first = enqueue(store, session.id, 'Never mind');
-    const second = enqueue(store, session.id, 'The real one');
+    const first = await enqueue(store, session.id, 'Never mind');
+    const second = await enqueue(store, session.id, 'The real one');
     expect((await cancelToEnd(store, first.id)).status).toBe('CANCELLED');
     const claim = mustClaim(store, 'w1');
     expect(claim.runId).toBe(second.id);
@@ -331,8 +331,8 @@ describe('inheritContext: runs that were never processed', () => {
 
   it('contributes nothing for a fresh run cancelled in the queue', async () => {
     const { store, session } = await completedPredecessor();
-    const fresh = createRun(store, session.id, 'Start over', { history: 'fresh' });
-    const next = enqueue(store, session.id, 'The real one');
+    const fresh = await createRun(store, session.id, 'Start over', { history: 'fresh' });
+    const next = await enqueue(store, session.id, 'The real one');
     expect((await cancelToEnd(store, fresh.id)).status).toBe('CANCELLED');
     const claim = mustClaim(store, 'w1');
     expect(claim.runId).toBe(next.id);
@@ -347,12 +347,12 @@ describe('inheritContext: runs that were never processed', () => {
 
   it('keeps the inherited conversation and drops only the task of a run whose first claim was cancelling after the inherit append', async () => {
     const { store, session, first } = await completedPredecessor();
-    const second = enqueue(store, session.id, 'Cancelled early');
+    const second = await enqueue(store, session.id, 'Cancelled early');
     const secondClaim = mustClaim(store, 'w1');
     expect(await store.inheritContext(secondClaim, { mode: 'manual' })).toEqual({ kind: 'inherited' });
     expect(await store.requestCancel(second.id)).toMatchObject({ kind: 'ok', run: { status: 'CANCELLING' } });
     expect((await store.transition(secondClaim, ['CANCELLING'], 'CANCELLED')).kind).toBe('ok');
-    const third = enqueue(store, session.id, 'Third');
+    const third = await enqueue(store, session.id, 'Third');
     const claim = mustClaim(store, 'w1');
     expect(claim.runId).toBe(third.id);
 
@@ -372,7 +372,7 @@ describe('inheritContext: runs that were never processed', () => {
 describe('inheritContext: the write phase rechecks', () => {
   it('returns already when context.inherited appears between the read and write phases', async () => {
     const { store, dbPath, session } = await completedPredecessor();
-    const second = enqueue(store, session.id, 'And again');
+    const second = await enqueue(store, session.id, 'And again');
     const claim = mustClaim(store, 'w1');
     writable(dbPath).exec(`
       CREATE TRIGGER plant_inherited_on_fence AFTER UPDATE ON runs WHEN NEW.id = '${second.id}' BEGIN
@@ -393,7 +393,7 @@ describe('inheritContext: predecessors that ended badly', () => {
   it('inherits a dead-lettered predecessor and closes its dangling call', async () => {
     const { store, clock } = harness({ maxAttempts: 1 });
     const session = newSession(store);
-    const first = enqueue(store, session.id, 'Write it');
+    const first = await enqueue(store, session.id, 'Write it');
     const firstClaim = mustClaim(store, 'w1');
     expect(
       store.append(firstClaim, [
@@ -403,7 +403,7 @@ describe('inheritContext: predecessors that ended badly', () => {
         toolCall('c1'),
       ]).kind,
     ).toBe('ok');
-    const second = enqueue(store, session.id, 'Try again');
+    const second = await enqueue(store, session.id, 'Try again');
     clock.advance(LEASE_MS + 1);
     expect(store.claim('w2')).toBeNull();
     expect(await deadLetterAll(store)).toEqual([first.id]);
@@ -420,7 +420,7 @@ describe('inheritContext: predecessors that ended badly', () => {
 
   it('throws previous_run_unreadable for an undecodable predecessor event and appends nothing', async () => {
     const { store, dbPath, session, first } = await completedPredecessor();
-    const second = enqueue(store, session.id, 'And again');
+    const second = await enqueue(store, session.id, 'And again');
     const claim = mustClaim(store, 'w1');
     const db = writable(dbPath);
     db.exec('DROP TRIGGER events_reject_update');
@@ -434,7 +434,7 @@ describe('inheritContext: predecessors that ended badly', () => {
     const { store, dbPath, session, first } = await completedPredecessor();
     const db = writable(dbPath);
     db.prepare(`INSERT INTO snapshots (run_id, seq, state_json, created_at) VALUES (?, 1, '{"stateVersion":${SNAPSHOT_STATE_VERSION},"runId":7}', 0)`).run(first.id);
-    const second = enqueue(store, session.id, 'And again');
+    const second = await enqueue(store, session.id, 'And again');
     const claim = mustClaim(store, 'w1');
     expect(await store.inheritContext(claim, { mode: 'manual' })).toEqual({ kind: 'inherited' });
     const inherited = store.readRunEvents(second.id, 0, 100).filter((event) => event.type === 'context.inherited');
@@ -451,7 +451,7 @@ describe('inheritContext: predecessors that ended badly', () => {
        VALUES (?, ?, ?, 1, 1, 0, 'tool.started', '{"callId":"c_ghost","idemKey":"k","type":"tool.started"}')`,
     ).run(first.id, session.id, lastSeq + 1);
     db.prepare('UPDATE runs SET last_seq = ? WHERE id = ?').run(lastSeq + 1, first.id);
-    enqueue(store, session.id, 'And again');
+    await enqueue(store, session.id, 'And again');
     const claim = mustClaim(store, 'w1');
     expect(await thrown(() => store.inheritContext(claim, { mode: 'manual' }))).toEqual(inheritanceError('previous_run_unreadable'));
   });
@@ -463,9 +463,9 @@ describe('inheritContext: predecessors that ended badly', () => {
   ])('throws previous_run_inconsistent for %s', async (_label, plant) => {
     const { store, dbPath, session, first } = await completedPredecessor();
     const otherSession = newSession(store, '/work/other');
-    const other = enqueue(store, otherSession.id, 'elsewhere');
+    const other = await enqueue(store, otherSession.id, 'elsewhere');
     await finish(store, mustClaim(store, 'w9'), answer('elsewhere'));
-    const second = enqueue(store, session.id, 'And again');
+    const second = await enqueue(store, session.id, 'And again');
     const claim = mustClaim(store, 'w1');
     expect(claim.runId).toBe(second.id);
     writable(dbPath).exec(plant({ second: second.id, other: other.id, first: first.id }));
@@ -476,7 +476,7 @@ describe('inheritContext: predecessors that ended badly', () => {
 
   it('lets a fatal SQLite error propagate unwrapped', async () => {
     const { store, dbPath, session } = await completedPredecessor();
-    enqueue(store, session.id, 'And again');
+    await enqueue(store, session.id, 'And again');
     const claim = mustClaim(store, 'w1');
     const raw = new DatabaseSync(dbPath, { defensive: false });
     try {
@@ -497,8 +497,8 @@ describe('session serialisation', () => {
   it.each(['QUEUED', 'RUNNING', 'WAITING_HUMAN', 'CANCELLING'] as const)('does not make the next run claimable while the predecessor is %s', async (status) => {
     const { store, dbPath } = harness({ leaseMs: LONG_LEASE_MS });
     const session = newSession(store);
-    const first = enqueue(store, session.id, 'first');
-    enqueue(store, session.id, 'second');
+    const first = await enqueue(store, session.id, 'first');
+    await enqueue(store, session.id, 'second');
     writable(dbPath).prepare("UPDATE runs SET status = ?, cancel_origin = CASE WHEN ? = 'CANCELLING' THEN 'RUNNING' END, available_at = ?, lease_owner = 'someone', lease_expires_at = ? WHERE id = ?").run(status, status, START_MS + TIMEOUT_MS, START_MS + LONG_LEASE_MS, first.id);
     expect(store.claim('w1')).toBeNull();
   });

@@ -5,7 +5,7 @@ import { createTokenMeter } from '@momonga/context';
 import { momongaPaths, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import { probeOllamaTarget, startGatewayProcess } from '@momonga/gateway';
 import type { CountTokensRequest, CountTokensResult, FunctionTool, InputItem } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, modelSettings, startFakeChatCompletions, closeOnceStarted, createTempDir, removeTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, modelSettings, startFakeChatCompletions, registerOwned, createTempDir, removeTempDir } from '@momonga/testkit';
 import type { ModelSpec } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import { OLLAMA_MODEL, startFakeOllama } from '../../../gateway/test/ollama-support.ts';
@@ -49,9 +49,10 @@ const launch = async (home: string) => {
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
   closers.push(() => stdout.mockRestore());
   await prepareGatewayHome(home);
-  const started = startGatewayProcess({ generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: '1.10.0-test' });
-  closers.push(closeOnceStarted(started));
-  const gateway = await started;
+  const gateway = await registerOwned(
+    (cleanup) => void closers.push(cleanup),
+    () => startGatewayProcess({ generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: '1.10.0-test' }),
+  );
   const client = createGatewayClient({ resolveSocket: fixedSocket(gateway.socketPath), clock: fakeClock(), version: CLIENT_VERSION });
   closers.push(() => client.destroy().catch(() => {}));
   return client;

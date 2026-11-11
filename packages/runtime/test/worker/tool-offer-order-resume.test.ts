@@ -27,14 +27,14 @@ describe('decision 52 across a resume whose build drops a tool', () => {
     const warm = env.worker('warm', { toolList: workTools(env) });
     for (let index = 0; index < TOOL_USAGE_WINDOW_RUNS; index += 1) {
       env.gateway.script.push(callsStep([{ callId: `warm-${index}`, name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
-      env.enqueue(`warm ${index}`, { history: 'fresh' });
+      await env.enqueue(`warm ${index}`, { history: 'fresh' });
       await env.runOnce(warm);
     }
     env.gateway.script.push(
       callsStep([{ callId: 'load-1', name: LOADER, args: { names: ['Counter', 'Write'] } }]),
       callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: path.join(env.project, 'out.txt'), content: 'one' } }]),
     );
-    const run = env.enqueue('Use the tools', { history: 'fresh' });
+    const run = await env.enqueue('Use the tools', { history: 'fresh' });
     await env.runOnce(env.worker('worker-1', { toolList: workTools(env) }));
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
     const beforeResume = env.ofType(run.id, 'model.requested').map((event) => withoutLoader(namesOf(event.body)));

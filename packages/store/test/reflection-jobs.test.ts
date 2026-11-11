@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RuntimeStore } from '@momonga/store';
 import { START_MS, callEvent, enqueue, harness, makeStoreDir, mustClaim, newSession, rawDb } from './helpers.ts';
+import { NEVER_CANCELLED } from '@momonga/testkit';
 
 type Job = { runId: string; state: string; attempts: number; lastError: string | null; dropped: { ordinal: number; text: string | null; cause: string; reason: string }[]; createdAt: number; updatedAt: number };
 
@@ -21,25 +22,25 @@ const jobsOf = (store: RuntimeStore): Jobs => {
   return found;
 };
 
-const setup = () => {
+const setup = async () => {
   const { store, clock, dbPath } = harness();
   const session = newSession(store);
-  const first = enqueue(store, session.id, 'one');
+  const first = await enqueue(store, session.id, 'one');
   return { store, clock, dbPath, session, first, jobs: jobsOf(store) };
 };
 
 describe('reflection jobs', () => {
-  it('creates one pending job per run', () => {
-    const { jobs, first } = setup();
+  it('creates one pending job per run', async () => {
+    const { jobs, first } = await setup();
     expect(jobs.enqueue(first.id)).toBe(true);
     expect(jobs.enqueue(first.id)).toBe(false);
     expect(jobs.get(first.id)).toEqual({ runId: first.id, state: 'pending', attempts: 0, lastError: null, dropped: [], createdAt: START_MS, updatedAt: START_MS });
   });
 
-  it('counts the open jobs created before a job, pending or running and not finished, as the jobs ahead of it', () => {
-    const { store, clock, session, first, jobs } = setup();
-    const second = enqueue(store, session.id, 'two');
-    const third = enqueue(store, session.id, 'three');
+  it('counts the open jobs created before a job, pending or running and not finished, as the jobs ahead of it', async () => {
+    const { store, clock, session, first, jobs } = await setup();
+    const second = await enqueue(store, session.id, 'two');
+    const third = await enqueue(store, session.id, 'three');
     const aheadOf = (runId: string): number => (jobs as unknown as { aheadOf(runId: string): number }).aheadOf(runId);
     jobs.enqueue(first.id);
     clock.advance(10);
@@ -55,7 +56,7 @@ describe('reflection jobs', () => {
   });
 
   it('is written in the terminal transition of a completed root run, in the same step as the status', async () => {
-    const { store, jobs, first } = setup();
+    const { store, jobs, first } = await setup();
     const claim = mustClaim(store, 'w1');
     expect(jobs.get(first.id)).toBeUndefined();
     expect((await store.transition(claim, ['RUNNING'], 'COMPLETED', {})).kind).toBe('ok');
@@ -63,17 +64,17 @@ describe('reflection jobs', () => {
   });
 
   it.each(['FAILED', 'STOPPED'] as const)('is not written for a run that ended %s', async (outcome) => {
-    const { store, jobs, first } = setup();
+    const { store, jobs, first } = await setup();
     const claim = mustClaim(store, 'w1');
     expect((await store.transition(claim, ['RUNNING'], outcome, outcome === 'FAILED' ? { error: { code: 'x', message: 'x' } } : { stopReason: 'budget' })).kind).toBe('ok');
     expect(jobs.get(first.id)).toBeUndefined();
   });
 
   it('is not written for a child run, which belongs to the run that spawned it', async () => {
-    const { store, jobs, first } = setup();
+    const { store, jobs, first } = await setup();
     const parentClaim = mustClaim(store, 'w1');
     expect(store.append(parentClaim, [callEvent('c1')]).kind).toBe('ok');
-    const spawned = store.createChildRun({ parentRunId: first.id, parentCallId: 'c1', input: 'child task', pins: {}, model: 'fm' });
+    const spawned = await store.createChildRun({ parentRunId: first.id, parentCallId: 'c1', input: 'child task', pins: {}, model: 'fm' });
     if (spawned.kind !== 'created') throw new Error(`expected a child run, got ${spawned.kind}`);
     const childClaim = mustClaim(store, 'w2');
     expect(childClaim.runId).toBe(spawned.run.id);
@@ -81,8 +82,8 @@ describe('reflection jobs', () => {
     expect(jobs.get(spawned.run.id)).toBeUndefined();
   });
 
-  it('ends failed with the reason, and is never handed out again', () => {
-    const { jobs, first } = setup();
+  it('ends failed with the reason, and is never handed out again', async () => {
+    const { jobs, first } = await setup();
     jobs.enqueue(first.id);
     jobs.begin(first.id);
     expect(jobs.fail(first.id, 'connection lost')).toMatchObject({ state: 'failed', lastError: 'connection lost', attempts: 1 });
@@ -90,57 +91,57 @@ describe('reflection jobs', () => {
     expect(() => jobs.begin(first.id)).toThrow();
   });
 
-  it('hands out the oldest job that is not excluded', () => {
-    const { store, clock, jobs, first, session } = setup();
+  it('hands out the oldest job that is not excluded', async () => {
+    const { store, clock, jobs, first, session } = await setup();
     jobs.enqueue(first.id);
     clock.advance(10);
-    const second = enqueue(store, session.id, 'two');
+    const second = await enqueue(store, session.id, 'two');
     jobs.enqueue(second.id);
     expect(jobs.next(new Set([first.id]))?.runId).toBe(second.id);
     expect(jobs.next(new Set([first.id, second.id]))).toBeUndefined();
   });
 
-  it('reports the origin recorded when the run was created', () => {
-    const { store, jobs, first } = setup();
+  it('reports the origin recorded when the run was created', async () => {
+    const { store, jobs, first } = await setup();
     expect(jobs.runOrigin(first.id)).toBe('untrusted');
     const folder = makeStoreDir();
-    store.trust.set(folder, 'trusted');
-    const trustedRun = enqueue(store, newSession(store, folder).id, 'two');
+    await store.trust.setAsked(folder, 'trusted', NEVER_CANCELLED);
+    const trustedRun = await enqueue(store, newSession(store, folder).id, 'two');
     expect(jobs.runOrigin(trustedRun.id)).toBe('trusted');
     expect(jobs.runOrigin('missing')).toBeUndefined();
   });
 
-  it('counts an attempt when a job begins', () => {
-    const { jobs, first } = setup();
+  it('counts an attempt when a job begins', async () => {
+    const { jobs, first } = await setup();
     jobs.enqueue(first.id);
     expect(jobs.begin(first.id)).toMatchObject({ state: 'running', attempts: 1 });
   });
 
-  it('hands out the oldest job first', () => {
-    const { store, clock, jobs, first, session } = setup();
+  it('hands out the oldest job first', async () => {
+    const { store, clock, jobs, first, session } = await setup();
     jobs.enqueue(first.id);
     clock.advance(10);
-    jobs.enqueue(enqueue(store, session.id, 'two').id);
+    jobs.enqueue((await enqueue(store, session.id, 'two')).id);
     expect(jobs.next()?.runId).toBe(first.id);
   });
 
-  it('hands out a job left running by a crash, so a restart resumes it', () => {
-    const { jobs, first } = setup();
+  it('hands out a job left running by a crash, so a restart resumes it', async () => {
+    const { jobs, first } = await setup();
     jobs.enqueue(first.id);
     jobs.begin(first.id);
     expect(jobs.next()).toMatchObject({ runId: first.id, state: 'running', attempts: 1 });
   });
 
-  it('never hands out a finished job again', () => {
-    const { jobs, first } = setup();
+  it('never hands out a finished job again', async () => {
+    const { jobs, first } = await setup();
     jobs.enqueue(first.id);
     jobs.begin(first.id);
     expect(jobs.finish(first.id).state).toBe('done');
     expect(jobs.next()).toBeUndefined();
   });
 
-  it('keeps the reason of a skipped job', () => {
-    const { jobs, first } = setup();
+  it('keeps the reason of a skipped job', async () => {
+    const { jobs, first } = await setup();
     jobs.enqueue(first.id);
     jobs.begin(first.id);
     expect(jobs.finish(first.id, 'output failed the schema')).toMatchObject({ lastError: 'output failed the schema' });
@@ -172,8 +173,8 @@ describe('settling a reflection job', () => {
     evidence: [],
   });
 
-  const started = () => {
-    const env = setup();
+  const started = async () => {
+    const env = await setup();
     const settling = env.store.reflection as unknown as Settling;
     env.jobs.enqueue(env.first.id);
     env.jobs.begin(env.first.id);
@@ -185,16 +186,16 @@ describe('settling a reflection job', () => {
     db.exec(`CREATE TRIGGER fail_${table} BEFORE INSERT ON ${table} BEGIN SELECT RAISE(ABORT, 'injected failure'); END`);
   };
 
-  it('records the charge, stores the candidates and finishes the job in one commit', () => {
-    const { store, settling, first } = started();
+  it('records the charge, stores the candidates and finishes the job in one commit', async () => {
+    const { store, settling, first } = await started();
     const done = settling.complete({ runId: first.id, charge: charge(first.id), candidates: [candidate(first.id, 0, 'one'), candidate(first.id, 1, 'two')], reason: 'kept two' });
     expect(done).toMatchObject({ state: 'done', lastError: 'kept two' });
     expect(store.contextCharges.list()).toHaveLength(1);
     expect(store.memories.candidates().map((memory) => memory.text)).toEqual(['one', 'two']);
   });
 
-  it('keeps the dropped candidates with the job and reads them back whole', () => {
-    const { settling, first } = started();
+  it('keeps the dropped candidates with the job and reads them back whole', async () => {
+    const { settling, first } = await started();
     const dropped: Dropped[] = [
       { ordinal: 0, text: null, cause: 'text_rule', reason: 'looks like a credential' },
       { ordinal: 2, text: 'repeated note', cause: 'duplicate', reason: 'already known' },
@@ -204,16 +205,16 @@ describe('settling a reflection job', () => {
     expect(settling.get(first.id)).toMatchObject({ state: 'done', lastError: 'every candidate the model proposed was dropped', dropped });
   });
 
-  it('refuses to read a dropped candidate of an unknown cause', () => {
-    const { store, settling, first, dbPath } = started();
+  it('refuses to read a dropped candidate of an unknown cause', async () => {
+    const { store, settling, first, dbPath } = await started();
     settling.complete({ runId: first.id, charge: null, candidates: [], dropped: [{ ordinal: 0, text: 'x', cause: 'duplicate', reason: 'r' }] });
     rawDb(dbPath).prepare('UPDATE reflection_jobs SET dropped_json = ? WHERE run_id = ?').run('[{"ordinal":0,"text":"x","cause":"bored","reason":"r"}]', first.id);
     expect(() => (store.reflection as unknown as Jobs).get(first.id)).toThrow(/dropped_json/);
   });
 
-  it('finds the latest job of the runs of one folder', () => {
-    const env = setup();
-    const other = enqueue(env.store, newSession(env.store, '/work/b').id, 'elsewhere');
+  it('finds the latest job of the runs of one folder', async () => {
+    const env = await setup();
+    const other = await enqueue(env.store, newSession(env.store, '/work/b').id, 'elsewhere');
     const jobs = env.store.reflection as unknown as Settling;
     jobs.enqueue(env.first.id);
     jobs.begin(env.first.id);
@@ -227,9 +228,9 @@ describe('settling a reflection job', () => {
     expect(jobs.latestForProject('/work/none')).toBeUndefined();
   });
 
-  it('answers the newest settled job of a folder when it has several', () => {
-    const env = setup();
-    const second = enqueue(env.store, env.session.id, 'again');
+  it('answers the newest settled job of a folder when it has several', async () => {
+    const env = await setup();
+    const second = await enqueue(env.store, env.session.id, 'again');
     const jobs = env.store.reflection as unknown as Settling;
     jobs.enqueue(env.first.id);
     jobs.begin(env.first.id);
@@ -241,14 +242,14 @@ describe('settling a reflection job', () => {
     expect(jobs.latestForProject('/work/a')).toMatchObject({ runId: second.id, lastError: 'newer' });
   });
 
-  it('records no charge when it is given none', () => {
-    const { store, settling, first } = started();
+  it('records no charge when it is given none', async () => {
+    const { store, settling, first } = await started();
     expect(settling.complete({ runId: first.id, charge: null, candidates: [] })).toMatchObject({ state: 'done' });
     expect(store.contextCharges.list()).toEqual([]);
   });
 
-  it('commits nothing when a candidate cannot be stored: no charge, no candidate, the job still running', () => {
-    const { store, settling, first, dbPath } = started();
+  it('commits nothing when a candidate cannot be stored: no charge, no candidate, the job still running', async () => {
+    const { store, settling, first, dbPath } = await started();
     failOn(dbPath, 'memories');
     expect(() => settling.complete({ runId: first.id, charge: charge(first.id), candidates: [candidate(first.id, 0, 'one')] })).toThrow('injected failure');
     expect(store.contextCharges.list()).toEqual([]);
@@ -256,44 +257,44 @@ describe('settling a reflection job', () => {
     expect(settling.get(first.id)).toMatchObject({ state: 'running' });
   });
 
-  it('commits nothing when the charge cannot be recorded', () => {
-    const { store, settling, first, dbPath } = started();
+  it('commits nothing when the charge cannot be recorded', async () => {
+    const { store, settling, first, dbPath } = await started();
     failOn(dbPath, 'context_charges');
     expect(() => settling.complete({ runId: first.id, charge: charge(first.id), candidates: [candidate(first.id, 0, 'one')] })).toThrow('injected failure');
     expect(store.memories.candidates()).toEqual([]);
     expect(settling.get(first.id)).toMatchObject({ state: 'running' });
   });
 
-  it('commits nothing when the job is not running any more, so a finished job is never charged again', () => {
-    const { store, settling, first } = started();
+  it('commits nothing when the job is not running any more, so a finished job is never charged again', async () => {
+    const { store, settling, first } = await started();
     settling.finish(first.id, 'finished elsewhere');
     expect(() => settling.complete({ runId: first.id, charge: charge(first.id), candidates: [candidate(first.id, 0, 'one')] })).toThrow('cannot finish');
     expect(store.contextCharges.list()).toEqual([]);
     expect(store.memories.candidates()).toEqual([]);
   });
 
-  it('records the charge together with the failure of the job', () => {
-    const { store, settling, first } = started();
+  it('records the charge together with the failure of the job', async () => {
+    const { store, settling, first } = await started();
     expect(settling.fail(first.id, 'the call failed', charge(first.id))).toMatchObject({ state: 'failed', lastError: 'the call failed' });
     expect(store.contextCharges.list()).toHaveLength(1);
   });
 
-  it('records no charge when the failure cannot be written', () => {
-    const { store, settling, first } = started();
+  it('records no charge when the failure cannot be written', async () => {
+    const { store, settling, first } = await started();
     settling.finish(first.id);
     expect(() => settling.fail(first.id, 'late', charge(first.id))).toThrow('cannot fail');
     expect(store.contextCharges.list()).toEqual([]);
   });
 
-  it('gives back the attempt of a job that was aborted, and leaves it to be handed out again', () => {
-    const { settling, first } = started();
+  it('gives back the attempt of a job that was aborted, and leaves it to be handed out again', async () => {
+    const { settling, first } = await started();
     expect(settling.release(first.id)).toMatchObject({ state: 'running', attempts: 0 });
     expect(settling.next()).toMatchObject({ runId: first.id });
     expect(settling.begin(first.id)).toMatchObject({ attempts: 1 });
   });
 
-  it('refuses to give back an attempt that was never taken, or of a finished job', () => {
-    const { settling, first } = started();
+  it('refuses to give back an attempt that was never taken, or of a finished job', async () => {
+    const { settling, first } = await started();
     settling.release(first.id);
     expect(() => settling.release(first.id)).toThrow('cannot release');
     settling.begin(first.id);

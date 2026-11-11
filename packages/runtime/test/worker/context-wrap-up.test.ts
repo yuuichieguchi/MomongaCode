@@ -19,7 +19,7 @@ describe('context-overflow wrap-up (path 3)', () => {
   it('makes one tool-less model call with the counted instruction last and stops with budget after the reply', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(4000) });
     env.gateway.script.push(...overflowScript(), textStep('Here is what I did.'));
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
     const { store, appends } = recordingStore(env);
 
     await env.runOnce(env.worker('worker-1', { ...withinTurnWorker(LONG_DESCRIPTION), store }));
@@ -44,7 +44,7 @@ describe('context-overflow wrap-up (path 3)', () => {
   it('asks the final summary for the lowest reasoning effort and no other step', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(4000) });
     env.gateway.script.push(...overflowScript(), { events: [], error: gatewayError(400, 'invalid_request', 'invalid_request') });
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker(LONG_DESCRIPTION)));
 
@@ -56,7 +56,7 @@ describe('context-overflow wrap-up (path 3)', () => {
   it('ends STOPPED budget with the gateway code when the wrap-up call is rejected with a 400', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(4000) });
     env.gateway.script.push(...overflowScript(), { events: [], error: gatewayError(400, 'invalid_request', 'invalid_request') });
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker(LONG_DESCRIPTION)));
 
@@ -68,7 +68,7 @@ describe('context-overflow wrap-up (path 3)', () => {
   it('cannot leave a stop notice behind a crash before the wrap-up request, and a recovery rebuild that fits continues the run', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(4000) });
     env.gateway.script.push(...overflowScript(), textStep('Continued normally.'));
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
     let crashed = false;
     const steals: Promise<void>[] = [];
     const { store, appends } = recordingStore(env, (payloads) => {

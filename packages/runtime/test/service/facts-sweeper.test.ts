@@ -136,7 +136,7 @@ describe('startFactsSweeper (FactsSweeper.tla)', () => {
     const timers = createFakeTimers(clock);
     const session = newSession(store).id;
     const complete = async (): Promise<string> => {
-      const run = enqueue(store, session);
+      const run = await enqueue(store, session);
       const claim = mustClaim(store, 'w1');
       expect((await store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
       return run.id;

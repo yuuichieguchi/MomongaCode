@@ -73,7 +73,7 @@ export const FALLBACK_TITLE = 'If the model cannot answer, MomongaCode tries the
 export const FALLBACK_ADD_ROW = 'Add a model';
 export const FALLBACK_ACTIONS = ['Remove', 'Move up', 'Move down'] as const;
 
-export const billingQuestion = (from: string, to: string, server: string): string => `Requests that fall from ${from} to ${to} would be charged by ${server}. Allow this change? [y/N]`;
+export const billingQuestion = (from: string, to: string, server: string): string => `Requests that fall from ${from} to ${to} would be charged by ${server}. Allow this change?`;
 
 export const billingScopeQuestion = (display: string): string => `Allow it for every model, or only for ${display}?`;
 

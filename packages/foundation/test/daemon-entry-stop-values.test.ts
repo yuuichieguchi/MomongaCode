@@ -2,7 +2,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { COMMON_ENTRY_FLAGS, DEFAULT_STOP_VALUES, ENTRY_HARD_EXIT_MARGIN_MS, formatStopMessage, runDaemonEntry, hostPaths } from '@momonga/foundation';
 import type { DaemonCloseResult, DaemonDefinition, DaemonHandle, DaemonStartContext, EntryIo, EntrySignal, StopValues } from '@momonga/foundation';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
 
 const HOME = '/Users/alice';
 const START_MS = 1_800_000_000_000;
@@ -88,7 +88,7 @@ const launch = async () => {
     },
   };
   void runDaemonEntry(io, definition);
-  await settle();
+  await waitFor(() => contexts.length === 1, { description: 'the start of the daemon' });
   return {
     timers,
     reads,

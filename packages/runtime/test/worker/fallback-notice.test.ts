@@ -23,7 +23,7 @@ describe('a model call answered by a target other than the first of its model', 
         fallbackCauses: [{ target: 'primary', code: 'provider_unavailable', message: 'the chat-completions upstream is unreachable' }],
       }),
     );
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await env.runOnce(env.worker());
 
@@ -40,7 +40,7 @@ describe('a model call answered by a target other than the first of its model', 
   it('says nothing when the first target answered', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Done.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await env.runOnce(env.worker());
 

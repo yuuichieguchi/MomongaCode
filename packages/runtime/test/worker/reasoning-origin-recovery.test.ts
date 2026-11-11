@@ -23,7 +23,7 @@ const respondedWithReasoning: RunEventPayload = {
 describe('the signed reasoning marker in encrypted_content survives the journal and a recovery replay (item 5)', () => {
   it('keeps the marker in the recorded response and sends it in the next request after a crash', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Echo x');
+    const run = await env.enqueue('Echo x');
     await env.seed(
       run.id,
       [

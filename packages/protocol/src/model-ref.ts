@@ -124,7 +124,6 @@ export const STORED_MODEL_KEYS = {
   modelChanged: { current: 'model', legacy: 'modelAlias' },
   previousModel: { current: 'previousModel', legacy: 'previousModelAlias' },
   pin: { current: 'model', legacy: 'modelAlias' },
-  classified: { current: 'model', legacy: 'alias' },
 } as const;
 
 export const decodeStoredModel = (record: Record<string, unknown>, keys: { current: string; legacy: string }): StoredModelRef | undefined => {

@@ -52,7 +52,7 @@ describe('the expiry of requests for input reports a failing run and expires the
 describe('the sweeper-owned finish of a cancelled run that never ran (finishCancelled)', () => {
   it('ends a run cancelled while QUEUED as CANCELLED with its contribution, clears the cancel origin, and measures that run only', async () => {
     const h = withPreparer();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     await h.store.requestCancel(run.id);
     const { reported, onError } = reporter();
 
@@ -79,7 +79,7 @@ describe('the sweeper-owned finish of a cancelled run that never ran (finishCanc
 
   it('leaves a run cancelled while RUNNING to its holder or a claim', async () => {
     const h = withPreparer();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w1');
     await h.store.requestCancel(run.id);
     h.clock.advance(LEASE_MS + 1);
@@ -93,8 +93,8 @@ describe('the sweeper-owned finish of a cancelled run that never ran (finishCanc
   it('reports a thread failure for one run with its id, leaves that run CANCELLING and unchanged, finishes the others, and finishes it at the next sweep', async () => {
     const failure = new JournalThreadError('the journal thread exited');
     const h = withPreparer([{ kind: 'fail', error: failure }]);
-    const first = enqueue(h.store, newSession(h.store, '/work/a').id);
-    const second = enqueue(h.store, newSession(h.store, '/work/b').id);
+    const first = await enqueue(h.store, newSession(h.store, '/work/a').id);
+    const second = await enqueue(h.store, newSession(h.store, '/work/b').id);
     await h.store.requestCancel(first.id);
     await h.store.requestCancel(second.id);
     const before = typesOf(h.store, first.id);
@@ -116,7 +116,7 @@ describe('the sweeper-owned finish of a cancelled run that never ran (finishCanc
 describe('dead-lettering has one owner, the sweep (O7); claim only claims', () => {
   it('claim neither returns nor dead-letters an exhausted run, stays synchronous and never asks the preparer', async () => {
     const h = withPreparer([], { maxAttempts: 1 });
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w1');
     h.clock.advance(LEASE_MS);
 
@@ -130,7 +130,7 @@ describe('dead-lettering has one owner, the sweep (O7); claim only claims', () =
 
   it('deadLetterExhausted ends the exhausted run FAILED as a dead letter with its contribution before the status', async () => {
     const h = withPreparer([], { maxAttempts: 1 });
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w1');
     h.clock.advance(LEASE_MS);
     const { reported, onError } = reporter();
@@ -148,7 +148,7 @@ describe('dead-lettering has one owner, the sweep (O7); claim only claims', () =
   it('reports a thread failure per run and retries it at the next sweep', async () => {
     const failure = new JournalThreadError('the journal thread exited');
     const h = withPreparer([{ kind: 'fail', error: failure }], { maxAttempts: 1 });
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w1');
     h.clock.advance(LEASE_MS);
     const { reported, onError } = reporter();
@@ -163,7 +163,7 @@ describe('dead-lettering has one owner, the sweep (O7); claim only claims', () =
 
   it('never dead-letters a sweeper-owned run, even when its attempts are spent; the cancel finish ends it CANCELLED', async () => {
     const h = withPreparer([], { maxAttempts: 1, maxTotalAttempts: 1 });
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
     expect((await h.store.release(claim, 'QUEUED')).kind).toBe('ok');
     await h.store.requestCancel(run.id);

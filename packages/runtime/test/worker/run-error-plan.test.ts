@@ -14,7 +14,7 @@ describe('a run ended by a plan target failure keeps the plan account in its err
   it('a thrown usage limit with plan stops the run with the plan in its error', async () => {
     const env = await makeEnv();
     env.gateway.script.push(throwing({ status: 429, type: 'too_many_requests', code: 'plan_usage_limit', message: 'Manage usage.', plan: PLAN }), textStep('never sent'));
-    const run = env.enqueue('Work', { limits: { maxSteps: 5 } });
+    const run = await env.enqueue('Work', { limits: { maxSteps: 5 } });
 
     await env.runOnce(env.worker());
 
@@ -24,7 +24,7 @@ describe('a run ended by a plan target failure keeps the plan account in its err
   it('a thrown sign_in_required with plan fails the run with the plan in its error', async () => {
     const env = await makeEnv();
     env.gateway.script.push(throwing({ status: 401, type: 'invalid_request', code: 'sign_in_required', message: 'The ChatGPT sign-in expired.', plan: PLAN }), textStep('never sent'));
-    const run = env.enqueue('Work', { limits: { maxSteps: 5 } });
+    const run = await env.enqueue('Work', { limits: { maxSteps: 5 } });
 
     await env.runOnce(env.worker());
 
@@ -35,7 +35,7 @@ describe('a run ended by a plan target failure keeps the plan account in its err
   it('a response.failed with a usage code and plan stops the run like the thrown form, with no wrap-up call', async () => {
     const env = await makeEnv();
     env.gateway.script.push(failedStep('plan_usage_limit', 'too_many_requests', PLAN), textStep('never sent'));
-    const run = env.enqueue('Work', { limits: { maxSteps: 5 } });
+    const run = await env.enqueue('Work', { limits: { maxSteps: 5 } });
 
     await env.runOnce(env.worker());
 
@@ -47,7 +47,7 @@ describe('a run ended by a plan target failure keeps the plan account in its err
   it('a response.failed with plan_not_eligible and plan fails the run with the plan in its error', async () => {
     const env = await makeEnv();
     env.gateway.script.push(failedStep('plan_not_eligible', 'server_error', PLAN), textStep('never sent'));
-    const run = env.enqueue('Work', { limits: { maxSteps: 5 } });
+    const run = await env.enqueue('Work', { limits: { maxSteps: 5 } });
 
     await env.runOnce(env.worker());
 
@@ -58,7 +58,7 @@ describe('a run ended by a plan target failure keeps the plan account in its err
   it('a response.failed without plan fails the run with no plan key', async () => {
     const env = await makeEnv();
     env.gateway.script.push(failedStep('upstream_unavailable'), textStep('never sent'));
-    const run = env.enqueue('Work', { limits: { maxSteps: 5 } });
+    const run = await env.enqueue('Work', { limits: { maxSteps: 5 } });
 
     await env.runOnce(env.worker());
 
@@ -72,7 +72,7 @@ describe('a run ended by a plan target failure keeps the plan account in its err
     const env = await makeEnv({ maxAttempts: 3, maxTotalAttempts: 3 });
     const planFailure = (): ScriptStep => throwing({ status: 502, type: 'server_error', code: 'provider_unavailable', message: 'the plan upstream is unreachable', plan: PLAN });
     env.gateway.script.push(planFailure(), planFailure(), planFailure());
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       expect(await env.runOnce(env.worker(`worker-${attempt}`))).toBe('yielded');

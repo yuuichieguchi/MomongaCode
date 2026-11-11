@@ -11,7 +11,7 @@ const LONGEST_RUN_MS = 7 * DAY_MS;
 
 const advance = async (timers: FakeTimers, ms: number, step: number): Promise<void> => {
   for (let elapsed = 0; elapsed < ms; elapsed += step) {
-    timers.advance(step);
+    await timers.advanceAsync(step);
     await afterMicrotasks();
   }
 };

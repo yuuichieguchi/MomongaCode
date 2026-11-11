@@ -62,8 +62,8 @@ describe('a value a consumer refuses is refused when the settings file loads, wi
     const serverRegistryOf = exported<(declared: unknown, source: string) => unknown>(config, 'serverRegistryOf', '@momonga/config');
     const absent = process.platform === 'win32' ? 'unix' : 'pipe';
     const models = { ...S4.models, servers: Object.fromEntries(Object.entries(S4.models.servers).map(([id, server]) => [id, { ...server, endpoint: { forms: [absent] } }])) };
-    expect(() => resolveModels(models, { source: 'settings.json', home: undefined, warnings: [], servers: serverRegistryOf(models.servers, 'settings.json') })).toThrow(/accepts only the endpoint forms/);
-    expect((await refusalOf({ models })).message).toMatch(/accepts only the endpoint forms/);
+    expect(() => resolveModels(models, { source: 'settings.json', home: undefined, warnings: [], servers: serverRegistryOf(models.servers, 'settings.json') })).toThrow(/accepts only the socket forms/);
+    expect((await refusalOf({ models })).message).toMatch(/accepts only the socket forms/);
   });
 
   it('an MCP server name the MCP tool names cannot carry', async () => {

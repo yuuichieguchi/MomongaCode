@@ -10,9 +10,9 @@ const answer = (text: string): Record<string, unknown> => ({
   response: { id: `resp-${text}`, status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] }], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } },
 });
 
-const finishedByOlderBuild = (lagEvents: number) => {
+const finishedByOlderBuild = async (lagEvents: number) => {
   const env = harness();
-  const run = enqueue(env.store, newSession(env.store).id, 'task');
+  const run = await enqueue(env.store, newSession(env.store).id, 'task');
   mustClaim(env.store, 'w-old');
   const db = rawDb(env.dbPath);
   db.exec('BEGIN');
@@ -32,7 +32,7 @@ const lastAnswerInEvents = (db: ReturnType<typeof rawDb>, runId: string): string
 
 describe('a read of a derivation brings it up to date (H7, 11.5 correction rules 1 and 4)', () => {
   it('an older-build append that lands while the read pages still shows in what the read returns, which is what its snapshot events say', async () => {
-    const { store, run, db } = finishedByOlderBuild(2 * REPAIR_PAGE_EVENTS + 10);
+    const { store, run, db } = await finishedByOlderBuild(2 * REPAIR_PAGE_EVENTS + 10);
     let appended = 0;
     let stopped = false;
     const appendBetweenPages = (): void => {
@@ -49,7 +49,7 @@ describe('a read of a derivation brings it up to date (H7, 11.5 correction rules
   });
 
   it('a lag of three pages frees the event loop between its pages, so an interleaved timer runs between them', async () => {
-    const { store, run } = finishedByOlderBuild(2 * REPAIR_PAGE_EVENTS + 10);
+    const { store, run } = await finishedByOlderBuild(2 * REPAIR_PAGE_EVENTS + 10);
     let ticks = 0;
     let reading = true;
     const tick = (): void => {
@@ -67,7 +67,7 @@ describe('a read of a derivation brings it up to date (H7, 11.5 correction rules
 
 describe('a writable read takes the write lock only to write a page (H7, 11.5, settled at I1 Stage C)', () => {
   it('a read with no lag answers while another connection holds an open write transaction', async () => {
-    const { store, run, db } = finishedByOlderBuild(0);
+    const { store, run, db } = await finishedByOlderBuild(0);
     expect(await store.finalTextOf(run.id)).toBe('first answer');
     db.exec('BEGIN IMMEDIATE');
     try {

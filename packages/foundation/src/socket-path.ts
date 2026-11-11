@@ -19,7 +19,9 @@ const ENDPOINT_FORMS_OF_PATH_FLAVOUR: Readonly<Record<'filesystem' | 'pipe', rea
 
 export const endpointFormsOfSocket = (hostSocketPath: string): readonly EndpointForm[] => ENDPOINT_FORMS_OF_PATH_FLAVOUR[isPipePath(hostSocketPath) ? 'pipe' : 'filesystem'];
 
-export const endpointFormsOfPlatform = (platform: NodeJS.Platform = process.platform): readonly EndpointForm[] => ENDPOINT_FORMS_OF_PATH_FLAVOUR[platform === 'win32' ? 'pipe' : 'filesystem'];
+export type EndpointHost = { readonly platform: string; readonly forms: readonly EndpointForm[] };
+
+export const endpointHostOf = (platform: NodeJS.Platform = process.platform): EndpointHost => ({ platform, forms: ENDPOINT_FORMS_OF_PATH_FLAVOUR[platform === 'win32' ? 'pipe' : 'filesystem'] });
 
 export const pipePathFor = (home: string, name: string): string => {
   const scope = createHash('sha256').update(home.toLowerCase()).digest('hex').slice(0, 16);

@@ -280,14 +280,20 @@ const USAGE_REPORT_KIND = 'a usage report';
 export const createGatewayClient = (options: { resolveSocket: SocketResolver }): GatewayClient => {
   const http = createUdsClient(options.resolveSocket);
 
-  const send = async (path: string, signal?: AbortSignal): Promise<{ status: number; text: string }> => {
-    const response = await http.request({ method: 'GET', path, ...(signal === undefined ? {} : { signal }) });
+  type Sent = { status: number; text: string };
+
+  const sendOnce = async (method: HttpMethod, path: string, body: unknown, signal: AbortSignal | undefined): Promise<Sent> => {
+    const response = await http.request({ method, path, ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }), ...(signal === undefined ? {} : { signal }) });
     return { status: response.status, text: await response.text() };
   };
 
+  const send = async (method: HttpMethod, path: string, body: unknown, signal: AbortSignal | undefined): Promise<Sent> => {
+    const first = await sendOnce(method, path, body, signal);
+    return retiredRefusalOf(first.text) === undefined ? first : sendOnce(method, path, body, signal);
+  };
+
   const getJson = async (path: string, what: string, signal?: AbortSignal): Promise<unknown> => {
-    const first = await send(path, signal);
-    const settled = retiredRefusalOf(first.text) === undefined ? first : await send(path, signal);
+    const settled = await send('GET', path, undefined, signal);
     const refusal = retiredRefusalOf(settled.text);
     if (refusal !== undefined) throw new Error(refusal);
     if (settled.status !== 200) throw new Error(`GET ${path} answered ${settled.status}: ${settled.text}`);
@@ -297,11 +303,10 @@ export const createGatewayClient = (options: { resolveSocket: SocketResolver }):
   };
 
   const answer = async (method: HttpMethod, path: string, body: unknown): Promise<string> => {
-    const response = await http.request({ method, path, ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }) });
-    const text = await response.text();
-    if (response.status < 200 || response.status > 299) {
+    const { status, text } = await send(method, path, body, undefined);
+    if (status < 200 || status > 299) {
       const refusal = answerBodyOf(text);
-      throw new GatewayAnswerError(refusal === undefined ? `${method} ${path} answered ${response.status}: ${text}` : refusal.message, response.status, refusal);
+      throw new GatewayAnswerError(refusal === undefined ? `${method} ${path} answered ${status}: ${text}` : refusal.message, status, refusal);
     }
     return text;
   };

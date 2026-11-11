@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, LOG_KEEP, LOG_MAX_BYTES, createJsonLogger, createRotatingLogFile, momongaPaths, systemClock } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, prepareGenerationForTest, registerCleanup, withTempDir, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, prepareGenerationForTest, registerCleanup, withTempDir, firstGeneration, registerOwned } from '@momonga/testkit';
 import type { JsonLine } from '@momonga/testkit';
 import { startSupervisor } from '../src/start-supervisor.ts';
 import { OVERLONG_STDERR_BYTES, OWN_LOG_MSG, RAW_STDERR_LINES, STRAY_STDOUT_LINE } from './fixtures/p3b-engine-child.ts';
@@ -36,7 +36,7 @@ describe('supervisor.log and role logs with real children', () => {
     const logger = createJsonLogger({ service: 'supervisor', clock: systemClock, stream: { write: (chunk) => (sink.write(chunk), true) } });
     const port = trackedSpawnPort(context);
     prepareGenerationForTest(home, FIRST_GENERATION, '0.0.0-e2e');
-    const supervisor = await startSupervisor({
+    const supervisor = await registerOwned(context, () => startSupervisor({
       home,
       version: '0.0.0-e2e',
       generation: FIRST_GENERATION,
@@ -48,10 +48,7 @@ describe('supervisor.log and role logs with real children', () => {
       watchSettings: false,
       startupTimeoutMs: 20_000,
       orphanReapGraceMs: 200,
-    });
-    registerCleanup(context, async () => {
-      await supervisor.abort();
-    });
+    }), (started) => started.abort());
 
     const supervisorLines = (): JsonLine[] => readLines(paths.logFiles.supervisor);
     const wrapped = (msg: string, role: string): JsonLine[] => supervisorLines().filter((line) => line.msg === msg && line['child'] === role);

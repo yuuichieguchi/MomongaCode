@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createRedactor } from '@momonga/foundation';
 import { anchorsOf, harness, rawDb } from './helpers.ts';
 import { FAKE_KEY, finishedRun, indexAll, projectDir, redactor } from './search-fixture.ts';
+import { NEVER_CANCELLED } from '@momonga/testkit';
 
 type DocRow = { level: string; session_id: string; run_id: string; step: number | null; project: string; origin: string; outcome: string; seq_from: number; seq_to: number; at: number; body: string };
 
@@ -17,7 +18,7 @@ describe('search documents', () => {
   it('builds one run document with the task, final text, touched paths and outcome, by code', async () => {
     const { store, dbPath, clock, dir } = harness();
     const project = projectDir(dir, 'a');
-    store.trust.set(project, 'trusted');
+    await store.trust.setAsked(project, 'trusted', NEVER_CANCELLED);
     const run = await finishedRun(store, project, 'rename the widget parser', [
       { text: 'intermediate musing', tool: { name: 'Read', path: '/work/a/src/widget.ts', output: 'recorded tool text' } },
       { text: 'the parser is renamed' },
@@ -95,7 +96,7 @@ describe('search documents', () => {
     expect(bodies.join('\n')).not.toContain(FAKE_KEY);
     expect(indexMatches(dbPath, 'abcdefghij')).toBe(0);
     expect(indexMatches(dbPath, 'xyz012345')).toBe(0);
-    expect(anchorsOf(store.search.query({ trusted: true, project: '/work/a' }, { query: 'abcdefghij', scope: 'project' }))).toEqual([]);
+    expect(anchorsOf(await store.search.query({ trusted: true, project: '/work/a' }, { query: 'abcdefghij', scope: 'project' }))).toEqual([]);
   });
 
   it('never cuts a secret before redacting it, wherever the head and tail end', async () => {

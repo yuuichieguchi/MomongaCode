@@ -44,7 +44,7 @@ const runMeasured = async (step: ScriptStep): Promise<{ runId: string; status: s
     return measure(input);
   });
   env.gateway.script.push(step);
-  const run = env.enqueue(TASK);
+  const run = await env.enqueue(TASK);
 
   await env.runOnce(env.worker());
 

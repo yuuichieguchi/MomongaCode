@@ -13,7 +13,7 @@ describe('claim', () => {
   it('claims a queued run, making it RUNNING with a fresh lease', async () => {
     const { clock, store } = harness();
     const session = newSession(store);
-    const run = enqueue(store, session.id);
+    const run = await enqueue(store, session.id);
     clock.advance(5);
     const claim = mustClaim(store, 'w1');
     expect(claim).toEqual({ runId: run.id, sessionId: session.id, workerId: 'w1', leaseToken: 1, attempt: 1, status: 'RUNNING' });
@@ -29,9 +29,9 @@ describe('claim', () => {
 
   it('claims oldest available first across sessions', async () => {
     const { clock, store } = harness();
-    const late = enqueue(store, newSession(store, '/a').id);
+    const late = await enqueue(store, newSession(store, '/a').id);
     clock.advance(1);
-    const early = enqueue(store, newSession(store, '/b').id);
+    const early = await enqueue(store, newSession(store, '/b').id);
     clock.advance(1);
     await store.release(mustClaim(store, 'w0'), 'QUEUED', START_MS + 100);
     expect(mustClaim(store, 'w1').runId).toBe(early.id);
@@ -41,9 +41,9 @@ describe('claim', () => {
 
   it('breaks available_at ties by creation time', async () => {
     const { clock, store } = harness();
-    const first = enqueue(store, newSession(store, '/a').id);
+    const first = await enqueue(store, newSession(store, '/a').id);
     clock.advance(1);
-    const second = enqueue(store, newSession(store, '/b').id);
+    const second = await enqueue(store, newSession(store, '/b').id);
     const firstClaim = mustClaim(store, 'w1');
     await store.release(firstClaim, 'QUEUED', START_MS + 50);
     const secondClaim = mustClaim(store, 'w1');
@@ -55,7 +55,7 @@ describe('claim', () => {
 
   it('does not claim a run before its available_at', async () => {
     const { clock, store } = harness();
-    enqueue(store, newSession(store).id);
+    await enqueue(store, newSession(store).id);
     await store.release(mustClaim(store, 'w1'), 'QUEUED', START_MS + 500);
     clock.set(START_MS + 499);
     expect(store.claim('w2')).toBeNull();
@@ -66,9 +66,9 @@ describe('claim', () => {
   it('serializes runs within a session until the earlier one is terminal', async () => {
     const { clock, store } = harness();
     const session = newSession(store);
-    const r1 = enqueue(store, session.id, 'one');
+    const r1 = await enqueue(store, session.id, 'one');
     clock.advance(1);
-    const r2 = enqueue(store, session.id, 'two');
+    const r2 = await enqueue(store, session.id, 'two');
     const c1 = mustClaim(store, 'w1');
     expect(c1.runId).toBe(r1.id);
     expect(store.claim('w2')).toBeNull();
@@ -86,7 +86,7 @@ describe('claim', () => {
 
   it('reclaims a RUNNING run only after its lease expired, keeping RUNNING and bumping token and attempt', async () => {
     const { clock, store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
     clock.advance(LEASE_MS - 1);
     expect(store.claim('w2')).toBeNull();
@@ -98,7 +98,7 @@ describe('claim', () => {
 
   it('reclaims an expired CANCELLING run as CANCELLING', async () => {
     const { clock, store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
     expect((await cancel(store, run.id)).status).toBe('CANCELLING');
     clock.advance(LEASE_MS);
@@ -109,9 +109,9 @@ describe('claim', () => {
 
   it('skips a run whose attempts would exceed maxAttempts, moves on to the next candidate, and the sweep dead-letters it', async () => {
     const { clock, store } = harness({ maxAttempts: 2 });
-    const doomed = enqueue(store, newSession(store, '/a').id);
+    const doomed = await enqueue(store, newSession(store, '/a').id);
     clock.advance(1);
-    const healthy = enqueue(store, newSession(store, '/b').id);
+    const healthy = await enqueue(store, newSession(store, '/b').id);
     expect(mustClaim(store, 'w1').runId).toBe(doomed.id);
     expect(mustClaim(store, 'w1').runId).toBe(healthy.id);
     clock.advance(LEASE_MS);
@@ -128,7 +128,7 @@ describe('claim', () => {
 
   it('returns null when the only candidate is exhausted, leaving the dead letter to the sweep', async () => {
     const { clock, store } = harness({ maxAttempts: 1 });
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
     clock.advance(LEASE_MS);
     expect(store.claim('w2')).toBeNull();
@@ -140,7 +140,7 @@ describe('claim', () => {
   it('never hands the same run to two connections', async () => {
     const { dbPath, clock, store } = harness();
     const other = openStoreAt(dbPath, clock);
-    enqueue(store, newSession(store).id);
+    await enqueue(store, newSession(store).id);
     const results = [store.claim('a'), other.claim('b'), store.claim('c'), other.claim('d')];
     expect(results.filter((claim) => claim !== null)).toHaveLength(1);
   });
@@ -164,7 +164,7 @@ describe('attempt accounting', () => {
     'never dead-letters a run that voluntarily gives up its lease more often than maxAttempts (%s)',
     async (via) => {
       const { store } = harness({ maxAttempts: 2 });
-      const run = enqueue(store, newSession(store).id);
+      const run = await enqueue(store, newSession(store).id);
       for (let round = 1; round <= 7; round += 1) {
         const claim = mustClaim(store, 'w1');
         expect(claim.attempt).toBe(round);
@@ -176,7 +176,7 @@ describe('attempt accounting', () => {
 
   it('dead-letters after maxAttempts crashed holders', async () => {
     const { clock, store } = harness({ maxAttempts: 3 });
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
     clock.advance(LEASE_MS);
     expect(mustClaim(store, 'w2')).toMatchObject({ attempt: 2 });
@@ -192,7 +192,7 @@ describe('attempt accounting', () => {
 
   it('forgives earlier crashes once the holder releases voluntarily', async () => {
     const { clock, store } = harness({ maxAttempts: 2 });
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
     clock.advance(LEASE_MS);
     const takeover = mustClaim(store, 'w2');
@@ -208,7 +208,7 @@ describe('attempt accounting', () => {
 
   it('ends an exhausted CANCELLING run as CANCELLED, keeping the cancel intent', async () => {
     const { clock, store } = harness({ maxAttempts: 1 });
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
     await store.requestCancel(run.id);
     clock.advance(LEASE_MS);
@@ -225,7 +225,7 @@ describe('attempt accounting', () => {
 
   it('ends an exhausted RUNNING run as FAILED', async () => {
     const { clock, store } = harness({ maxAttempts: 1 });
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
     clock.advance(LEASE_MS);
     expect(store.claim('w2')).toBeNull();
@@ -238,7 +238,7 @@ describe('attempt accounting', () => {
 describe('total attempt cap', () => {
   it('dead-letters a run that keeps cycling through crash, takeover and voluntary release', async () => {
     const { clock, store } = harness({ maxAttempts: 2, maxTotalAttempts: 6 });
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     for (let cycle = 0; cycle < 3; cycle += 1) {
       mustClaim(store, 'crasher');
       clock.advance(LEASE_MS);
@@ -260,7 +260,7 @@ describe('total attempt cap', () => {
 
   it('leaves normal resumes within the cap alone', async () => {
     const { store } = harness({ maxAttempts: 2, maxTotalAttempts: 8 });
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     for (let round = 1; round <= 8; round += 1) {
       const claim = mustClaim(store, 'w1');
       expect(claim.attempt).toBe(round);
@@ -274,7 +274,7 @@ describe('total attempt cap', () => {
 
   it('ends a run over the cap as CANCELLED when cancel was requested', async () => {
     const { clock, store } = harness({ maxAttempts: 1, maxTotalAttempts: 1 });
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
     await store.requestCancel(run.id);
     clock.advance(LEASE_MS);
@@ -288,7 +288,7 @@ describe('total attempt cap', () => {
 describe('heartbeat lease renewal', () => {
   it('renews an expired lease that nobody reclaimed', async () => {
     const { clock, store } = harness();
-    enqueue(store, newSession(store).id);
+    await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     clock.advance(LEASE_MS * 10);
     expect(store.heartbeat(claim).kind).toBe('ok');
@@ -297,7 +297,7 @@ describe('heartbeat lease renewal', () => {
 
   it('refuses to renew once another worker reclaimed the run', async () => {
     const { clock, store } = harness();
-    enqueue(store, newSession(store).id);
+    await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     clock.advance(LEASE_MS);
     mustClaim(store, 'w2');
@@ -308,7 +308,7 @@ describe('heartbeat lease renewal', () => {
 describe('heartbeat', () => {
   it('extends the lease so another worker cannot claim', async () => {
     const { clock, store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     clock.advance(800);
     expect(store.heartbeat(claim)).toEqual({ kind: 'ok', cancelRequested: false, status: 'RUNNING' });
@@ -321,7 +321,7 @@ describe('heartbeat', () => {
 
   it('reports a pending cancel request', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     await store.requestCancel(run.id);
     expect(store.heartbeat(claim)).toEqual({ kind: 'ok', cancelRequested: true, status: 'CANCELLING' });
@@ -329,7 +329,7 @@ describe('heartbeat', () => {
 
   it('renews an expired lease nobody else has taken', async () => {
     const { clock, store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     clock.advance(LEASE_MS + 10);
     expect(store.heartbeat(claim).kind).toBe('ok');
@@ -338,7 +338,7 @@ describe('heartbeat', () => {
 
   it('returns lease_lost for a wrong owner or token', async () => {
     const { store } = harness();
-    enqueue(store, newSession(store).id);
+    await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     expect(store.heartbeat({ ...claim, workerId: 'intruder' })).toEqual({ kind: 'lease_lost' });
     expect(store.heartbeat({ ...claim, leaseToken: claim.leaseToken + 1 })).toEqual({ kind: 'lease_lost' });
@@ -348,7 +348,7 @@ describe('heartbeat', () => {
 describe('release', () => {
   it('clears the lease and makes the run claimable again at availableAt', async () => {
     const { clock, store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     const result = await store.release(claim, 'QUEUED', START_MS + 200);
     expect(result.kind).toBe('ok');
@@ -366,7 +366,7 @@ describe('release', () => {
 
   it('defaults availableAt to now', async () => {
     const { clock, store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     clock.advance(42);
     await store.release(claim, 'QUEUED');
@@ -375,7 +375,7 @@ describe('release', () => {
 
   it('is fenced', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     expect(await store.release({ ...claim, leaseToken: 99 }, 'QUEUED')).toEqual({ kind: 'lease_lost' });
     expect(mustRun(store, run.id).status).toBe('RUNNING');
@@ -385,7 +385,7 @@ describe('release', () => {
 describe('requestCancel', () => {
   it('moves a QUEUED run to CANCELLING, which no claim takes, and the sweep ends it CANCELLED', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const cancelling = await cancel(store, run.id);
     expect(cancelling).toMatchObject({ id: run.id, status: 'CANCELLING' });
     expect(store.readRunEvents(run.id, 0, 10).at(-1)).toMatchObject({ type: 'run.status', from: 'QUEUED', to: 'CANCELLING' });
@@ -396,21 +396,21 @@ describe('requestCancel', () => {
 
   it('moves a WAITING_HUMAN run to CANCELLING, and the sweep ends it CANCELLED', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     await parkWaitingHuman(store, mustClaim(store, 'w1'));
     expect((await cancelToEnd(store, run.id)).status).toBe('CANCELLED');
   });
 
   it('moves a RUNNING run to CANCELLING with cancel_requested', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
     expect(await cancel(store, run.id)).toMatchObject({ status: 'CANCELLING', cancelRequested: true, leaseOwner: 'w1' });
   });
 
   it('moves a WAITING_TOOL run to CANCELLING and makes it claimable now', async () => {
     const { clock, store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     await store.release(mustClaim(store, 'w1'), 'WAITING_TOOL', START_MS + 1_000_000);
     clock.advance(7);
     expect(await cancel(store, run.id)).toMatchObject({
@@ -424,7 +424,7 @@ describe('requestCancel', () => {
 
   it('leaves a terminal run unchanged', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     await store.release(mustClaim(store, 'w1'), 'COMPLETED');
     const before = mustRun(store, run.id);
     const lastSeq = store.readRunEvents(run.id, 0, 100).length;
@@ -442,7 +442,7 @@ describe('fencing across connections', () => {
   it('rejects every write from the stale lease holder and writes nothing', async () => {
     const { dbPath, clock, store: workerA } = harness();
     const workerB = openStoreAt(dbPath, clock);
-    const run = enqueue(workerA, newSession(workerA).id);
+    const run = await enqueue(workerA, newSession(workerA).id);
     const claimA = mustClaim(workerA, 'A');
     expect(workerA.append(claimA, [{ type: 'notice', level: 'info', message: 'from A' }])).toEqual({ kind: 'ok', lastSeq: 2 });
     clock.advance(LEASE_MS + 1);

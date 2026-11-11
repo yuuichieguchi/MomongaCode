@@ -15,7 +15,7 @@ const sessionWithRuns = async (store: RuntimeStore, clock: FakeClock, specs: rea
   const runs: Run[] = [];
   for (const spec of specs) {
     clock.advance(1000);
-    const run = enqueue(store, session.id, spec.task);
+    const run = await enqueue(store, session.id, spec.task);
     const claim = store.claim(`worker-${run.id}`);
     if (claim?.runId !== run.id) throw new Error(`expected to claim ${run.id}`);
     const appended = store.append(claim, (spec.steps ?? []).flatMap((step, index) => stepEvents(index + 1, step)));
@@ -33,7 +33,7 @@ describe('the history search hierarchy: session, run, step', () => {
     const { store, clock } = harness();
     const { sessionId, runs } = await sessionWithRuns(store, clock, [{ task: 'fix the quokka parser' }, { task: 'test the quokka parser' }]);
     await indexAll(store);
-    const result = store.search.query(OWN, { query: 'quokka', scope: 'project' });
+    const result = await store.search.query(OWN, { query: 'quokka', scope: 'project' });
     expect(result.sessions).toHaveLength(1);
     expect(result.sessions[0]?.sessionId).toBe(sessionId);
     expect(result.sessions[0]?.project).toBe('/work/a');
@@ -46,7 +46,7 @@ describe('the history search hierarchy: session, run, step', () => {
     const passing = await sessionWithRuns(store, clock, [{ task: 'unrelated work' }, { task: 'wombat migration' }]);
     clock.advance(1000);
     await indexAll(store);
-    const result = store.search.query(OWN, { query: 'wombat', scope: 'project' });
+    const result = await store.search.query(OWN, { query: 'wombat', scope: 'project' });
     expect(result.sessions.map((session) => session.sessionId)).toEqual([passing.sessionId, failing.sessionId]);
   });
 
@@ -54,7 +54,7 @@ describe('the history search hierarchy: session, run, step', () => {
     const { store, clock } = harness();
     const { runs } = await sessionWithRuns(store, clock, [{ task: 'numbat one' }, { task: 'something else' }, { task: 'numbat two' }]);
     await indexAll(store);
-    const [session] = store.search.query(OWN, { query: 'numbat', scope: 'project' }).sessions;
+    const [session] = (await store.search.query(OWN, { query: 'numbat', scope: 'project' })).sessions;
     const shown = session?.runs ?? [];
     expect(shown.map((anchor) => anchor.runId).sort()).toEqual([runs[0]?.id, runs[2]?.id].sort());
     const times = shown.map((anchor) => anchor.at);
@@ -69,7 +69,7 @@ describe('the history search hierarchy: session, run, step', () => {
       { task: 'second', steps: [{ tool: { name: 'Read', path: '/work/a/open.txt', output: 'bilby inside the open file' } }] },
     ]);
     await indexAll(store);
-    const result = store.search.query(OWN, { query: 'bilby', scope: 'project', readDenied: (target) => target.startsWith('/work/a/secret/') });
+    const result = await store.search.query(OWN, { query: 'bilby', scope: 'project', readDenied: (target) => target.startsWith('/work/a/secret/') });
     const [session] = result.sessions;
     expect(session?.runs.map((anchor) => anchor.runId)).toEqual([runs[1]?.id]);
     const at = session?.runs[0]?.at;
@@ -85,7 +85,7 @@ describe('the history search hierarchy: session, run, step', () => {
       Array.from({ length: HISTORY_SEARCH_ANCHOR_LIMIT + 2 }, (_unused, index) => ({ task: `dingo task ${index}` })),
     );
     await indexAll(store);
-    const result = store.search.query(OWN, { query: 'dingo', scope: 'project' });
+    const result = await store.search.query(OWN, { query: 'dingo', scope: 'project' });
     expect(result.sessions).toHaveLength(1);
     expect(result.sessions.flatMap((session) => session.runs)).toHaveLength(HISTORY_SEARCH_ANCHOR_LIMIT);
   });

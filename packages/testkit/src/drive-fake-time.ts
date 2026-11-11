@@ -25,7 +25,7 @@ export const driveFakeTime = async (timers: FakeTimers, options: DriveFakeTimeOp
   const settle = options.settle ?? macrotask;
   const ready = options.ready ?? (() => true);
   const considered = options.considered ?? (() => true);
-  const horizonMs = horizonAt - timers.now();
+  const horizonMs = horizonAt - timers.monotonicMs();
   const startedAt = performance.now();
   const fail = (reason: string): Error => {
     const detail = options.detail === undefined ? '' : `; ${options.detail()}`;
@@ -45,6 +45,6 @@ export const driveFakeTime = async (timers: FakeTimers, options: DriveFakeTimeOp
     }
     options.beforeAdvance?.(candidates);
     const nextDue = Math.min(...candidates.map((timer) => timer.dueAt));
-    timers.advance(Math.max(0, nextDue - timers.now()));
+    await timers.advanceAsync(Math.max(0, nextDue - timers.monotonicMs()));
   }
 };

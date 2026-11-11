@@ -53,19 +53,19 @@ const runCase = async ({ seed, window, autoCompact, heavyRuns }: Case, shape: Sh
     await generatedRun(h, b, random, index, { fresh: index === 0, oldShape: shape === 'copy' && index > 0, recordTokens: false });
   }
   for (let heavy = 0; heavy < heavyRuns; heavy += 1) {
-    const run = b.createRun(`heavy ${heavy}`);
+    const run = await b.createRun(`heavy ${heavy}`);
     const claim = b.claimNext(run.id);
     if (shape === 'copy') b.inheritOldShape(claim, 'manual');
     else await b.inherit(claim, 'manual');
     b.started(claim, 'manual');
     for (let step = 0; step < 6; step += 1) {
       b.text(claim, 6_000);
-      b.tool(claim, { outputChars: 1_500, evict: step % 3 === 0, withTokens: false });
+      await b.tool(claim, { outputChars: 1_500, evict: step % 3 === 0, withTokens: false });
     }
     await b.end(claim, { to: 'COMPLETED' });
   }
   const trace: FactsTrace = newFactsTrace();
-  const child = shape === 'copy' ? await plantOldShapeChild(env, 'the child task') : b.createRun('the child task');
+  const child = shape === 'copy' ? await plantOldShapeChild(env, 'the child task') : await b.createRun('the child task');
   env.gateway.script.push(textStep('Done.'), textStep('Done again.'));
   const store = shape === 'reference' ? tracedStore(env.store, trace) : env.store;
   await settle(env, child.id, env.worker('worker-1', { store }));
@@ -129,10 +129,10 @@ describe('the window request carries W = C + S over the claim targets and the ma
     const capabilities = capabilitiesFor(30_000);
     const env = await makeEnv({ capabilities });
     const b = builderOf(env);
-    const first = b.createRun('Say hello', { history: 'fresh' });
+    const first = await b.createRun('Say hello', { history: 'fresh' });
     env.gateway.script.push(textStep('Hello.'));
     await settle(env, first.id);
-    const child = b.createRun('And again');
+    const child = await b.createRun('And again');
     env.gateway.script.push(textStep('Again.'));
     const trace = newFactsTrace();
     await settle(env, child.id, env.worker('worker-1', { store: tracedStore(env.store, trace) }));
@@ -145,12 +145,12 @@ describe('known differences of 13.7, pinned as stated', () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(5_000) });
     env.settings.contextValue = { ...env.settings.contextValue, adaptiveBudget: false, autoCompact: false };
     const b = builderOf(env);
-    const first = b.createRun('Big history', { history: 'fresh' });
+    const first = await b.createRun('Big history', { history: 'fresh' });
     const claim = b.claimNext(first.id);
     b.started(claim, 'manual');
     for (let step = 0; step < 30; step += 1) b.text(claim, 2_000);
     await b.end(claim, { to: 'COMPLETED' });
-    const child = b.createRun('Next');
+    const child = await b.createRun('Next');
     const trace = newFactsTrace();
     await settle(env, child.id, env.worker('worker-1', { store: tracedStore(env.store, trace) }));
     expect(trace.windowReplies.at(-1)?.omittedOlder).toBe(true);
@@ -162,10 +162,10 @@ describe('known differences of 13.7, pinned as stated', () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(5_000) });
     env.settings.contextValue = { ...env.settings.contextValue, adaptiveBudget: false, autoCompact: false };
     const b = builderOf(env);
-    const first = b.createRun('Corrupt early', { history: 'fresh' });
+    const first = await b.createRun('Corrupt early', { history: 'fresh' });
     const claim = b.claimNext(first.id);
     b.started(claim, 'manual');
-    const callId = b.tool(claim);
+    const callId = await b.tool(claim);
     for (let step = 0; step < 30; step += 1) b.text(claim, 2_000);
     await b.end(claim, { to: 'COMPLETED' });
     const db = env.raw();
@@ -173,7 +173,7 @@ describe('known differences of 13.7, pinned as stated', () => {
     db.prepare(
       `UPDATE events SET payload_json = json_set(payload_json, '$.response.output[0]', json('{"type":"message","id":"m-x","role":"assistant","status":"completed","content":[{"type":"output_text","text":"no call","annotations":[]}]}')) WHERE run_id = ? AND type = 'model.responded' AND json_extract(payload_json, '$.response.output[0].call_id') = ?`,
     ).run(first.id, callId);
-    const child = b.createRun('Next');
+    const child = await b.createRun('Next');
     const trace = newFactsTrace();
     await settle(env, child.id, env.worker('worker-1', { store: tracedStore(env.store, trace) }));
     expect(trace.windowReplies.at(-1)?.omittedOlder).toBe(true);
@@ -186,15 +186,15 @@ describe('known differences of 13.7, pinned as stated', () => {
       const env = await makeEnv();
       env.gateway.rewriteCallIds = false;
       const b = builderOf(env);
-      const first = b.createRun('Write it', { history: 'fresh' });
+      const first = await b.createRun('Write it', { history: 'fresh' });
       const claim = b.claimNext(first.id);
       b.started(claim, 'manual');
-      const callId = b.tool(claim, { evict: true, withTokens: false });
+      const callId = await b.tool(claim, { evict: true, withTokens: false });
       b.text(claim);
       b.compact(claim, 3);
       b.text(claim);
       await b.end(claim, { to: 'COMPLETED' });
-      const child = shape === 'copy' ? await plantOldShapeChild(env, 'Again') : b.createRun('Again');
+      const child = shape === 'copy' ? await plantOldShapeChild(env, 'Again') : await b.createRun('Again');
       env.gateway.script.push(callsStep([{ callId, name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
       await settle(env, child.id);
       return { run: env.run(child.id), state: env.fold(child.id) };
@@ -211,7 +211,7 @@ describe('D2: context.truncated records the output token count', () => {
   it('an eviction written by the worker carries tokens, a positive integer of the evicted output size', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
     env.settings.contextValue = { ...env.settings.contextValue, adaptiveBudget: false, autoCompact: false };
-    const run = env.enqueue('question one');
+    const run = await env.enqueue('question one');
     const usage = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };
     const responded = (step: number, output: unknown[]): RunEventPayload => ({ type: 'model.responded', step, attempt: 1, response: { status: 'completed', output, usage } }) as RunEventPayload;
     await env.seed(

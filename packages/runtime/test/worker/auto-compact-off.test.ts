@@ -25,7 +25,7 @@ const conversation: RunEventPayload[] = [
 const runSeeded = async (autoCompact: boolean) => {
   const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
   env.settings.contextValue = { ...env.settings.contextValue, adaptiveBudget: false, autoCompact };
-  const run = env.enqueue('question one');
+  const run = await env.enqueue('question one');
   await env.seed(run.id, conversation, 'release');
   env.gateway.script.push(textStep('Done.'));
   await env.runOnce(env.worker());
@@ -62,7 +62,7 @@ describe('context.autoCompact under the shipped defaults (design core-on 3.5 ite
   it('reads autoCompact on per claim and compacts this conversation', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
     env.settings.contextValue = defaultContextSettings();
-    const run = env.enqueue('question one');
+    const run = await env.enqueue('question one');
     await env.seed(run.id, conversation, 'release');
     env.gateway.script.push(textStep('Done.'));
     await env.runOnce(env.worker());

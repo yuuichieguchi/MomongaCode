@@ -17,7 +17,7 @@ import type { AppProps, TuiOutcome } from '../src/tui/app.tsx';
 import type { PlanGatewayClient } from '../src/client/gateway-client.ts';
 import type { SignInListener, TuiBackend } from '../src/tui/backend.ts';
 import type { SignInWaitTimers, StartSignInListener } from '../src/plan/sign-in.ts';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, pollUntil } from '@momonga/testkit';
 import { SESSION, fakeBackend } from './fake-backend.ts';
 import type { FakeBackend, FakeBackendOptions } from './fake-backend.ts';
 import { FRAME_BOUND_MS, KEYS, renderObservable, untilFrame } from './ink-helpers.ts';
@@ -242,13 +242,7 @@ export const submitLine = async (app: Instance, text: string): Promise<void> => 
 
 export const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
-export const eventually = async (holds: () => boolean, what: string): Promise<void> => {
-  const deadline = Date.now() + FRAME_BOUND_MS;
-  while (!holds()) {
-    if (Date.now() > deadline) throw new Error(`${what} did not happen within ${FRAME_BOUND_MS} ms`);
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-};
+export const eventually = (holds: () => boolean, what: string): Promise<void> => pollUntil(holds, { description: what, boundMs: FRAME_BOUND_MS });
 
 export const quiet = async (): Promise<void> => {
   for (let tick = 0; tick < 20; tick += 1) await settle();

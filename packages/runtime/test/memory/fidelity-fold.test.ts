@@ -8,7 +8,7 @@ vi.setConfig({ testTimeout: 120_000 });
 const TOKEN = 'make deploy-staging';
 
 const attested = async (events: readonly RunEventPayload[], claim: 'executed' | 'any', input = 'fix the bug'): Promise<string[]> => {
-  const env = fidelityEnv();
+  const env = await fidelityEnv();
   const run = await env.finished(events, 'COMPLETED', input);
   return (await env.fidelity(run.id, [{ token: TOKEN, claim }])).attested;
 };
@@ -41,7 +41,7 @@ describe('the fidelity fold decides sources by event type', () => {
   });
 
   it('attests a token in a handled blob', async () => {
-    const env = fidelityEnv();
+    const env = await fidelityEnv();
     const { handle } = await env.store.blobs.put(`head\nthe blob says ${TOKEN}\ntail`, { mediaType: 'text/plain' } as never);
     const run = await env.finished(startedCall('c1', { command: 'ls' }, 'omitted', { handle }));
     expect((await env.fidelity(run.id, [{ token: TOKEN, claim: 'executed' }])).attested).toEqual([TOKEN]);
@@ -54,13 +54,13 @@ describe('the fidelity fold decides sources by event type', () => {
   });
 
   it('attests a recorded file path by equality after stripping the working directory', async () => {
-    const env = fidelityEnv();
+    const env = await fidelityEnv();
     const run = await env.finished(startedCall('c1', { command: 'gen' }, 'ok', { files: [{ path: `${env.project}/src/gen.ts`, sha256: 'a'.repeat(64), access: 'write' }] }));
     expect((await env.fidelity(run.id, [{ token: 'src/gen.ts', claim: 'executed' }])).attested).toEqual(['src/gen.ts']);
   });
 
   it('ignores events after throughEventSeq', async () => {
-    const env = fidelityEnv();
+    const env = await fidelityEnv();
     const run = await env.finished(startedCall('c1', { command: TOKEN }));
     expect((await env.fidelity(run.id, [{ token: TOKEN, claim: 'executed' }], 1)).attested).toEqual([]);
   });

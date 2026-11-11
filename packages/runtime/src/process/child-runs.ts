@@ -66,7 +66,7 @@ export const createChildRuns = ({ store, modelViews }: ChildRunsOptions): ChildR
       const parentPins = parentPinsOf(store, parentRunId);
       const model = agent.model === undefined ? parentPins.model : agentModelOf(agent.name, agent.model, await modelViews());
       const delegated = parentPins.delegation;
-      const created = store.createChildRun({
+      const created = await store.createChildRun({
         parentRunId,
         parentCallId,
         input: prompt,

@@ -3,7 +3,7 @@ import { LeaseLostError } from '@momonga/runtime';
 import { canonicalJson } from '@momonga/foundation';
 import type { RuntimeStore } from '@momonga/store';
 import { foldRunState, initialRunState } from '@momonga/store';
-import { within } from './deferred.ts';
+
 import { LEASE_MS, makeEnv, modelKey } from './harness.ts';
 import type { Env } from './harness.ts';
 import { gated, textStep } from './scripts.ts';
@@ -30,7 +30,7 @@ const watchedStore = (env: Env, previousRunId: string, reads: Reads): RuntimeSto
 
 const answered = async (env: Env, task: string, answer: string): Promise<string> => {
   env.gateway.script.push(textStep(answer));
-  const run = env.enqueue(task);
+  const run = await env.enqueue(task);
   expect((await settle(env, run.id)).status).toBe('COMPLETED');
   return run.id;
 };
@@ -41,9 +41,9 @@ describe('recovery of an inheriting run killed during its first model call', () 
     const first = await answered(env, 'Say hello', 'Hello there.');
     const blocked = gated(textStep('Recovered answer.'), 4);
     env.gateway.script.push(blocked);
-    const second = env.enqueue('And again');
+    const second = await env.enqueue('And again');
     const abandoned = env.runOnce(env.worker('worker-a'));
-    await within(blocked.gate.reached.promise, 5_000, 'the first stream of run 2 to start');
+    await env.settled(blocked.gate.reached.promise, 'the first stream of run 2 to start');
     const [requested] = env.ofType(second.id, 'model.requested');
     if (requested === undefined) throw new Error('expected model.requested');
 
@@ -51,10 +51,10 @@ describe('recovery of an inheriting run killed during its first model call', () 
     const trace = newFactsTrace();
     env.clock.advance(LEASE_MS + 1);
     const recovering = env.runOnce(env.worker('worker-b', { store: tracedStore(watchedStore(env, first, reads), trace) }));
-    await within(env.gateway.nthStream(1), 5_000, 'the recovery re-send');
+    await env.settled(env.gateway.nthStream(1), 'the recovery re-send');
     blocked.gate.release.resolve();
-    await within(recovering, 5_000, 'the recovering worker');
-    await within(abandoned, 5_000, 'the abandoned worker to stop');
+    await env.settled(recovering, 'the recovering worker');
+    await env.settled(abandoned, 'the abandoned worker to stop');
 
     expect(env.run(second.id).status).toBe('COMPLETED');
     expect(reads).toEqual({ inheritContext: 0, loadPrevious: 0, readPrevious: 0 });
@@ -81,7 +81,7 @@ describe('recovery of an inheriting run killed during its first model call', () 
     const control = await makeEnv();
     await answered(control, 'Say hello', 'Hello there.');
     control.gateway.script.push(textStep('Answer.'));
-    const controlRun = control.enqueue('And again');
+    const controlRun = await control.enqueue('And again');
     await settle(control, controlRun.id);
 
     const env = await makeEnv();
@@ -97,7 +97,7 @@ describe('recovery of an inheriting run killed during its first model call', () 
       },
     };
     env.gateway.script.push(textStep('Answer.'));
-    const second = env.enqueue('And again');
+    const second = await env.enqueue('And again');
     await env.runOnce(env.worker('worker-a', { tools }));
     expect(env.run(second.id).status).toBe('RUNNING');
     expect(env.ofType(second.id, 'model.requested')).toEqual([]);

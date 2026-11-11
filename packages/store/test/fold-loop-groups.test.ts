@@ -129,9 +129,9 @@ describe('loop groups through a snapshot', () => {
     ...batch(3, [{ callId: 'c1', value: 'x' }]),
   ];
 
-  const stored = (split: number) => {
+  const stored = async (split: number) => {
     const { dbPath, store } = harness();
-    const run = enqueue(store, newSession(store).id, 'loop');
+    const run = await enqueue(store, newSession(store).id, 'loop');
     const claim = mustClaim(store, 'w1');
     expect(store.append(claim, payloads.slice(0, split)).kind).toBe('ok');
     const head: RunEvent[] = store.readRunEvents(run.id, 0, 1000);
@@ -143,8 +143,8 @@ describe('loop groups through a snapshot', () => {
     return { store, run, full, dbPath };
   };
 
-  it.for([5, 9, 12])('folds identically from a snapshot taken after %i payloads and from all events', (split) => {
-    const { store, run, full } = stored(split);
+  it.for([5, 9, 12])('folds identically from a snapshot taken after %i payloads and from all events', async (split) => {
+    const { store, run, full } = await stored(split);
     const loaded = store.load(run.id);
     const resumed = loaded.tail.reduce(foldRunState, loaded.snapshot?.state as RunState);
     expect(full.loopGroups).toHaveLength(2);
@@ -163,15 +163,15 @@ describe('loop groups through a snapshot', () => {
     ['a loop group outputSignature that is not 64 hex characters', "json_set(state_json, '$.loopGroups[0].outputSignature', 'abc')"],
     ['a loopOpen with more calls than callIds', "json_set(state_json, '$.loopOpen.callIds', json('[]'))"],
     ['a loopOpen output hash that is not 64 hex characters', "json_set(state_json, '$.loopOpen.outputs', json('{\"c1\":\"abc\"}'))"],
-  ] as const)('reports a snapshot with %s as corrupt', ([, expression]) => {
-    const { store, run, dbPath } = stored(payloads.length);
+  ] as const)('reports a snapshot with %s as corrupt', async ([, expression]) => {
+    const { store, run, dbPath } = await stored(payloads.length);
     const db = rawDb(dbPath);
     db.prepare(`UPDATE snapshots SET state_json = ${expression} WHERE run_id = ?`).run(run.id);
     expect(() => store.load(run.id)).toThrow(/corrupt/);
   });
 
-  it('reports a snapshot with more than 32 loop groups as corrupt', () => {
-    const { store, run, dbPath } = stored(payloads.length);
+  it('reports a snapshot with more than 32 loop groups as corrupt', async () => {
+    const { store, run, dbPath } = await stored(payloads.length);
     const groups = JSON.stringify(Array.from({ length: 33 }, () => ({ signature: 'a'.repeat(64) })));
     rawDb(dbPath).prepare(`UPDATE snapshots SET state_json = json_set(state_json, '$.loopGroups', json(?)) WHERE run_id = ?`).run(groups, run.id);
     expect(() => store.load(run.id)).toThrow(/corrupt/);

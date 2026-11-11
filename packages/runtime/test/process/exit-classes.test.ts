@@ -3,10 +3,10 @@ import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/config';
 import { EXIT_ALREADY_RUNNING, EXIT_CONFIG, EXIT_FAILURE, FIRST_GENERATION, ProcessLockHeldError, ensureGenerationDirs, ensureMomongaDirs } from '@momonga/foundation';
-import { trackGroup, writeInvalidUserSettings, writeUserSettings } from './helpers.ts';
+import { trackGroup, writeInvalidUserSettings, writeUserSettings, onCleanup } from './helpers.ts';
 import { RUNTIME_VERSION, captureStream, failureOf, hookLogger, launchRuntime, makeRunHome, runtimeAlreadyRunningError, startRuntimeProcess, startStack } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, firstGeneration, registerOwned } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -26,7 +26,7 @@ const spawnDetachedSleeper = (): number => {
 };
 
 const startFailure = (temp: RunHome, extra: Record<string, unknown> = {}): Promise<unknown> =>
-  failureOf(startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream(), ...extra }));
+  failureOf(registerOwned(onCleanup, () => startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream(), ...extra })));
 
 describe('exit classes of startRuntimeProcess errors (system timers)', () => {
   it('exit 77 applies only when the error is a ProcessLockHeldError with lockPath equal to paths.locks.runtime', async () => {

@@ -8,7 +8,7 @@ describe('model.requested records the prefix relation to the previous request of
   it('records the whole previous request as preserved when no named event lies between two requests', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([{ callId: 'c1', name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
-    const run = env.enqueue('Echo then finish');
+    const run = await env.enqueue('Echo then finish');
 
     await env.runOnce(env.worker());
 
@@ -26,7 +26,7 @@ describe('model.requested records the prefix relation to the previous request of
       if (changed.kind !== 'ok') throw new Error(`the mode could not be changed: ${changed.kind}`);
     };
     env.gateway.script.push(callsStep([{ callId: 'c1', name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
-    const run = env.enqueue('Echo then finish');
+    const run = await env.enqueue('Echo then finish');
 
     await env.runOnce(env.worker());
     await env.runOnce(env.worker());

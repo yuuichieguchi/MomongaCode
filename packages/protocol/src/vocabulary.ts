@@ -255,6 +255,7 @@ export type MessageInputs = {
   sessionAmbiguous: [given: { readonly id: string; readonly matches: readonly string[] }];
   sessionInOtherFolder: [given: { readonly id: string; readonly folder: string }];
   noSessionToContinue: [given: { readonly folder: string }];
+  notAnId: [given: { readonly value: string }];
   handoverFailed: [given: { readonly toVersion: string; readonly fromVersion: string; readonly reason: string; readonly kept: KeptWork }];
   restoreRefused: [given: { readonly reason: string; readonly kept: KeptWork }];
   aboutModel: [given: { readonly model: string; readonly text: string }];
@@ -264,6 +265,7 @@ export type MessageInputs = {
   signInIdentityQuestion: [given: { readonly provider: string; readonly identity: string; readonly account: string }];
   signInIdentityNotConfirmed: [given: { readonly identity: string; readonly account: string; readonly command: string }];
   planRecordUnreadable: [given: { readonly account: string; readonly cause: string | undefined; readonly signInCommand: string }];
+  serverFormNotOffered: [given: { readonly server: string; readonly platform: string; readonly accepted: readonly string[]; readonly offered: readonly string[] }];
 };
 
 export type MessageKey = keyof MessageInputs;
@@ -279,6 +281,7 @@ const MESSAGES: { readonly [Key in MessageKey]: (surface: Surface, ...given: Mes
   sessionIdTooShort: (_surface, given) => `No ${WORDS.session} has the id ${given.id}. A shortened id needs at least ${given.minimum} characters.`,
   sessionAmbiguous: (_surface, given) => `${given.id} matches more than one ${WORDS.session}: ${given.matches.join(', ')}`,
   sessionInOtherFolder: (_surface, given) => `That ${WORDS.session} belongs to the ${WORDS.folder} ${given.folder}. Run: cd ${given.folder} && ${reopenSessionCommand(given.id)}`,
+  notAnId: (_surface, given) => `${JSON.stringify(given.value)} is not an id.`,
   noSessionToContinue: (_surface, given) => `No ${WORDS.session} to continue in the ${WORDS.folder} ${given.folder}.`,
   handoverFailed: (surface, given) =>
     `Could not restart into v${given.toVersion} (${given.reason}). This ${WORDS.session} stays on v${given.fromVersion} and keeps working until that version finishes its ${WORDS.run}s.${keptRunsSentence(given.kept)}${UNSENT_INPUT_KEPT[surface]}`,
@@ -297,6 +300,8 @@ const MESSAGES: { readonly [Key in MessageKey]: (surface: Surface, ...given: Mes
     `The sign-in for ${given.identity} was not saved under the label ${given.account}, because the account was not confirmed. Run ${given.command} to sign in again${SIGN_IN_AGAIN_UNASKED[surface]}.`,
   planRecordUnreadable: (surface, given) =>
     `The saved record of ${given.account} cannot be read${given.cause === undefined ? '' : ` (${given.cause})`}. Run ${given.signInCommand} to replace it with a new sign-in, or ${forgetRecordCommand(surface, given.account)} to forget it on this computer; forgetting it does not revoke the session at the provider.`,
+  serverFormNotOffered: (_surface, given) =>
+    `the ${WORDS.server} ${JSON.stringify(given.server)} cannot be used on ${given.platform}: it accepts only the socket forms [${given.accepted.join(', ')}], and ${given.platform} offers [${given.offered.join(', ')}]`,
 };
 
 const forgetRecordCommand = (surface: Surface, account: string): string => (surface === 'tui' ? TUI_SIGN_OUT_COMMAND : signOutCommand(account));

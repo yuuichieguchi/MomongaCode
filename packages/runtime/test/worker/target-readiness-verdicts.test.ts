@@ -20,7 +20,7 @@ describe(`the session-start surface owns the no-tools notice (design R3: ${DESIG
   it('a tool-less run journals no no-tools notice of its own, so no surface shows the verdict twice', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(32_000, { toolCalling: 'none' }) });
     env.gateway.script.push(textStep('A plain answer.'));
-    const run = env.enqueue('Explain the module');
+    const run = await env.enqueue('Explain the module');
 
     await runToEnd(env, run.id);
 
@@ -37,7 +37,7 @@ describe(`admission reads a definite refusal at capabilities() as unavailable (d
     env.gateway.capabilitiesHook = async () => {
       throw new GatewayRequestError({ status: 412, type: 'invalid_request', code: 'precondition_failed', message: reason });
     };
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await runToEnd(env, run.id);
 

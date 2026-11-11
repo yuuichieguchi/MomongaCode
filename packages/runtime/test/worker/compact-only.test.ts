@@ -24,9 +24,9 @@ const conversation: RunEventPayload[] = [
 
 type Env = Awaited<ReturnType<typeof makeEnv>>;
 
-const enqueueCompact = (env: Env, instructions?: string) =>
+const enqueueCompact = async (env: Env, instructions?: string) =>
   createdRun(
-    env.store.createRunAndEnqueue(env.session.id, {
+    await env.store.createRunAndEnqueue(env.session.id, {
       input: compactInputOf(instructions),
       timeoutMs: HOUR_MS,
       limits: {},
@@ -37,7 +37,7 @@ const enqueueCompact = (env: Env, instructions?: string) =>
 
 const conversed = async (): Promise<Env> => {
   const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
-  const first = env.enqueue('question one');
+  const first = await env.enqueue('question one');
   await env.seed(first.id, conversation, 'release');
   env.gateway.script.push(textStep('Done.'));
   await env.runOnce(env.worker());
@@ -50,7 +50,7 @@ describe('a run whose only work is to compact the context now', () => {
   it('compacts with the one compaction call, records the counts, makes no model step and ends COMPLETED', async () => {
     const env = await conversed();
     const streamsBefore = env.gateway.streams.length;
-    const run = enqueueCompact(env);
+    const run = await enqueueCompact(env);
 
     await env.runOnce(env.worker());
 
@@ -69,7 +69,7 @@ describe('a run whose only work is to compact the context now', () => {
 
   it('gives the text after the command to the compaction request as its focus', async () => {
     const env = await conversed();
-    const run = enqueueCompact(env, 'keep the parser decisions');
+    const run = await enqueueCompact(env, 'keep the parser decisions');
 
     await env.runOnce(env.worker());
 
@@ -80,7 +80,7 @@ describe('a run whose only work is to compact the context now', () => {
 
   it('ends at once with the notice when there is nothing to cut', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
-    const run = enqueueCompact(env);
+    const run = await enqueueCompact(env);
 
     await env.runOnce(env.worker());
 
@@ -93,10 +93,10 @@ describe('a run whose only work is to compact the context now', () => {
 
   it('gives the next run the summary in place of what was cut', async () => {
     const env = await conversed();
-    const compact = enqueueCompact(env);
+    const compact = await enqueueCompact(env);
     await env.runOnce(env.worker());
     expect(env.run(compact.id).status).toBe('COMPLETED');
-    const next = env.enqueue('question six');
+    const next = await env.enqueue('question six');
     env.gateway.script.push(textStep('Done again.'));
 
     await env.runOnce(env.worker());

@@ -20,7 +20,7 @@ const shareWindowWith = async (noticesPerRun: number) => {
   env.settings.contextValue = { ...env.settings.contextValue, adaptiveBudget: true, autoCompact: true };
   for (let index = 0; index < WINDOW_RUNS; index += 1) {
     env.clock.advance(1);
-    const run = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Past work', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
+    const run = await createdRun(await env.store.createRunAndEnqueue(env.session.id, { input: 'Past work', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
     const dropped: RunEventPayload[] = index === WINDOW_RUNS - 1 ? [{ type: 'notice', level: 'warning', message: 'dropped', code: 'memories_dropped' }] : [];
     const claim = await env.seed(
       run.id,
@@ -30,7 +30,7 @@ const shareWindowWith = async (noticesPerRun: number) => {
     env.scriptContribution(run.id, [{ kind: 'memory', id: `past-${index}`, contributed: true }]);
     expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
   }
-  const next = env.enqueue('Next', { history: 'fresh' });
+  const next = await env.enqueue('Next', { history: 'fresh' });
   decoded.counting = true;
   const share = await memoryShareFor({ store: env.store, settings: env.settings, session: env.session, run: env.run(next.id) });
   decoded.counting = false;

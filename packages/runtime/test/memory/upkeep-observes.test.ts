@@ -5,13 +5,14 @@ import { sha256Hex } from '@momonga/foundation';
 import { harness, makeStoreDir } from '../../../store/test/helpers.ts';
 import { runMemoryUpkeep } from '../../src/memory/upkeep.ts';
 import { createRecordViews } from '../../src/memory/views.ts';
+import { NEVER_CANCELLED } from '@momonga/testkit';
 
 const SIGNAL = new AbortController().signal;
 
-const setup = () => {
+const setup = async () => {
   const { store, clock } = harness();
   const project = fs.realpathSync.native(makeStoreDir());
-  store.trust.set(project, 'trusted');
+  await store.trust.setAsked(project, 'trusted', NEVER_CANCELLED);
   const views = createRecordViews({ store, evidenceRun: () => async () => ({ exitCode: null }) });
   const bound = (name: string, content: string) => {
     fs.writeFileSync(path.join(project, name), content);
@@ -23,7 +24,7 @@ const setup = () => {
 
 describe('an upkeep page observes every active note', () => {
   it('a page observes every active note, not only idle ones', async () => {
-    const { store, clock, project, bound, upkeep } = setup();
+    const { store, clock, project, bound, upkeep } = await setup();
     const fresh = bound('fresh.ts', 'first content');
     const unchanged = bound('same.ts', 'kept content');
     fs.writeFileSync(path.join(project, 'fresh.ts'), 'changed content');
@@ -36,7 +37,7 @@ describe('an upkeep page observes every active note', () => {
   });
 
   it('observations do not move revision(), so a pass does not restart itself', async () => {
-    const { store, clock, project, bound, upkeep } = setup();
+    const { store, clock, project, bound, upkeep } = await setup();
     const note = bound('fresh.ts', 'first content');
     fs.writeFileSync(path.join(project, 'fresh.ts'), 'changed content');
     clock.advance(1000);
