@@ -1,3 +1,4 @@
+import { settingsLayerOfRule } from '@momonga/config';
 import { PinnedOverflowError, formatToolOutput, formattedHeader, readersOffered } from '@momonga/context';
 import { canonicalJson, hostPaths, parseBoundedJson, spanValueOfJsonText } from '@momonga/foundation';
 import { diffFieldsOf, termsOf } from '@momonga/protocol';
@@ -191,7 +192,7 @@ const persistRule = async (
   await options.settings.appendRule(session, { effect, rule }, ctx.control.signal);
   const persisted: RunEventPayload = { type: 'approval.rule.persisted', approvalId, effect, rule };
   journal.append(
-    effect === 'allow' ? [persisted, { type: 'notice', level: 'info', message: `Saved the allow rule ${rule} to the local settings.`, code: 'allow_rule_saved' }] : [persisted],
+    effect === 'allow' ? [persisted, { type: 'notice', level: 'info', message: `Saved the allow rule ${rule} to the ${settingsLayerOfRule(rule)} settings.`, code: 'allow_rule_saved' }] : [persisted],
   );
 };
 

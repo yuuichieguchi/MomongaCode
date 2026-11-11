@@ -74,6 +74,13 @@ describe('the Bash tool tells the model how to ask for named hosts', () => {
 });
 
 describe('a Bash call that asks for named hosts, before it runs', () => {
+  it('suggests the Network rule of the one host it asks for, which the user settings keep', async () => {
+    const tools = await makeBuiltins({ sandbox: neverSpawning('seatbelt') });
+    const asked = approvalOf(await tools.run('Bash', { command: 'ls', network: { hosts: ['Registry.example.org'] } }, { mode: 'manual' }));
+    expect(asked.decision).toMatchObject({ kind: 'ask', network: true });
+    expect(asked.suggestedRule).toBe('Network(registry.example.org)');
+  });
+
   it('asks naming the hosts and the proxy, suggests no rule, and binds the approval to the set of hosts', async () => {
     const tools = await makeBuiltins({ sandbox: neverSpawning('seatbelt') });
     const first = approvalOf(await tools.run('Bash', { command: 'npm install', network: { hosts: ['registry.example.org', 'Github.example.com:443'] } }, { mode: 'manual' }));
